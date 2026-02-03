@@ -57,6 +57,47 @@
 - **Timestamps**: Stored as UTC; default input/display timezone is Australia/Melbourne
 - **Sign Convention**: Negative = expense (money out), Positive = income (money in)
 
+### Implementation Assumptions (v1)
+
+- **DB Constraints**:
+  - `transactions.source_hash` unique when present.
+  - `transactions.external_id` unique per `account_id` when present.
+  - `tags.name` unique.
+  - `transaction_tags` composite primary key `(transaction_id, tag_id)`.
+  - Enum-like fields enforced via `CHECK` constraints.
+- **Indexes**:
+  - `transactions(account_id, date)` for list views and filters.
+  - `transactions(status, date)` for dashboards.
+  - `transactions(category_id)` and `transactions(merchant_name)` for filtering/search.
+  - `pending_reconciliations(status)` for queue view.
+- **Migrations**: `golang-migrate` with SQL files in `internal/database/migrations`.
+- **Timezone**:
+  - Persist timestamps in UTC.
+  - UI date boundaries apply in configured local timezone.
+  - `date` is derived from local timezone at ingestion and stored in UTC date form.
+- **Categorization Precedence**:
+  - User override (manual) > merchant rules > LLM suggestion.
+  - LLM auto-apply only when confidence ≥ 0.70 and no user/category set.
+  - Re-categorization only happens when user explicitly triggers it.
+- **Reconciliation Merge Policy**:
+  - Keep later/posted transaction as canonical.
+  - Status on the earlier row set to `reconciled`; it is hidden by default filters.
+  - For conflicts: prefer any user-entered fields (category/tags/comment) from either row.
+- **Import Format (MVP)**:
+  - CSV with headers: `date, posted_date, description, amount, external_id, account`.
+  - `amount` is decimal dollars; converted to cents integer.
+  - `date` interpreted in UI timezone and stored as UTC date.
+- **LLM Operational Defaults**:
+  - Timeout 8s; retry once on transient errors.
+  - Batch size 10; 1s delay between batches.
+  - If LLM fails, fall back to “uncategorized” and log.
+- **Logging**:
+  - Text logs to stderr.
+  - `info` for normal operations, `warn` for recoverable failures, `error` for terminal failures.
+- **Testing**:
+  - Unit tests use in-memory SQLite.
+  - Integration tests use file-based temp DB under `./tmp` or `t.TempDir()`.
+
 ### Core Schema
 
 #### `accounts`
