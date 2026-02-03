@@ -1,0 +1,2 @@
+# jaskmoney
+money management TUI
