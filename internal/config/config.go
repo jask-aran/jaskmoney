@@ -25,6 +25,7 @@ type DatabaseConfig struct {
 type LLMConfig struct {
 	Provider  string
 	APIKeyEnv string
+	APIKey    string
 	Model     string
 }
 
@@ -43,6 +44,7 @@ func Load() (Config, error) {
 	v.SetDefault("database.path", filepath.Join(os.Getenv("HOME"), ".local", "share", "jaskmoney", "jaskmoney.db"))
 	v.SetDefault("llm.provider", "gemini")
 	v.SetDefault("llm.api_key_env", "GEMINI_API_KEY")
+	v.SetDefault("llm.api_key", "")
 	v.SetDefault("llm.model", "gemini-2.5-flash-preview-05-20")
 	v.SetDefault("ui.date_format", "02/01")
 	v.SetDefault("ui.currency_symbol", "$")
@@ -70,4 +72,33 @@ func Load() (Config, error) {
 		return Config{}, fmt.Errorf("unmarshal config: %w", err)
 	}
 	return c, nil
+}
+
+// Save writes the provided config to disk, creating the config directory if needed.
+// This is primarily used by the TUI settings view for non-sensitive preferences.
+// The API key is stored in plain text in the config file; encourage users to prefer env vars.
+func Save(cfg Config) error {
+	path := os.Getenv("JASKMONEY_CONFIG")
+	if path == "" {
+		path = filepath.Join(os.Getenv("HOME"), ".config", "jaskmoney", "config.toml")
+	}
+	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+		return fmt.Errorf("mkdir config dir: %w", err)
+	}
+
+	v := viper.New()
+	v.SetConfigType("toml")
+	v.Set("database.path", cfg.Database.Path)
+	v.Set("llm.provider", cfg.LLM.Provider)
+	v.Set("llm.api_key_env", cfg.LLM.APIKeyEnv)
+	v.Set("llm.api_key", cfg.LLM.APIKey)
+	v.Set("llm.model", cfg.LLM.Model)
+	v.Set("ui.date_format", cfg.UI.DateFormat)
+	v.Set("ui.currency_symbol", cfg.UI.CurrencySymbol)
+	v.Set("ui.timezone", cfg.UI.Timezone)
+
+	if err := v.WriteConfigAs(path); err != nil {
+		return fmt.Errorf("write config: %w", err)
+	}
+	return nil
 }

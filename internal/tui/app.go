@@ -11,25 +11,39 @@ import (
 
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
+	"github.com/google/uuid"
 
+	"github.com/jask/jaskmoney/internal/config"
 	"github.com/jask/jaskmoney/internal/database/repository"
 	"github.com/jask/jaskmoney/internal/service"
 )
 
 // App ties together views.
 type App struct {
-	ctx          context.Context
-	repos        Repos
-	services     Services
-	state        appState
-	transactions []repository.Transaction
-	pending      []pendingView
-	categories   map[string]string // id -> name
-	txCursor     int
-	recCursor    int
-	month        time.Time
-	status       string
-	tz           *time.Location
+	ctx               context.Context
+	repos             Repos
+	services          Services
+	cfg               config.Config
+	state             appState
+	transactions      []repository.Transaction
+	pending           []pendingView
+	categories        []repository.Category
+	categoryName      map[string]string // id -> name
+	txCursor          int
+	recCursor         int
+	categoryCursor    int
+	settingsCursor    int
+	month             time.Time
+	status            string
+	tz                *time.Location
+	modal             modalState
+	settingsMode      settingsMode
+	inputBuffer       string
+	editingCategoryID string
+	apiKeyCached      string
+	showAPIKey        bool
+	currency          string
+	dateFormat        string
 
 	// import flow
 	importPath  string
@@ -47,6 +61,7 @@ type Services struct {
 	Categorizer *service.CategorizerService
 	Reconciler  *service.Reconciler
 	Ingest      *service.IngestService
+	Maintenance *service.MaintenanceService
 }
 
 type appState string
@@ -56,20 +71,50 @@ const (
 	viewTransactions appState = "transactions"
 	viewReconcile    appState = "reconcile"
 	viewImport       appState = "import"
+	viewSettings     appState = "settings"
 )
 
-func New(ctx context.Context, repos Repos, services Services, tz *time.Location) *App {
+type modalState string
+
+const (
+	modalNone           modalState = ""
+	modalCategoryPicker modalState = "categoryPicker"
+	modalConfirmReset   modalState = "confirmReset"
+	modalEditCategory   modalState = "editCategory"
+	modalNewCategory    modalState = "newCategory"
+	modalEditAPIKey     modalState = "editAPIKey"
+)
+
+type settingsMode string
+
+const (
+	settingsModeIdle    settingsMode = "idle"
+	settingsModeNew     settingsMode = "newCategory"
+	settingsModeRename  settingsMode = "renameCategory"
+	settingsModeAPIKey  settingsMode = "apiKey"
+	settingsModeConfirm settingsMode = "confirm"
+)
+
+func New(ctx context.Context, cfg config.Config, repos Repos, services Services, tz *time.Location) *App {
 	if tz == nil {
 		tz = time.Local
 	}
+	apiKey := os.Getenv(cfg.LLM.APIKeyEnv)
+	if apiKey == "" {
+		apiKey = cfg.LLM.APIKey
+	}
 	return &App{
-		ctx:         ctx,
-		repos:       repos,
-		services:    services,
-		month:       time.Now().UTC(),
-		tz:          tz,
-		importPath:  "ANZ 040226.csv",
-		defaultAcct: "ANZ",
+		ctx:          ctx,
+		repos:        repos,
+		services:     services,
+		cfg:          cfg,
+		month:        time.Now().UTC(),
+		tz:           tz,
+		importPath:   "ANZ 040226.csv",
+		defaultAcct:  "ANZ",
+		apiKeyCached: apiKey,
+		currency:     cfg.UI.CurrencySymbol,
+		dateFormat:   cfg.UI.DateFormat,
 	}
 }
 
@@ -109,19 +154,21 @@ func (a *App) loadCategories() tea.Cmd {
 		if err != nil {
 			return errMsg{err}
 		}
-		m := make(map[string]string, len(cats))
-		for _, c := range cats {
-			m[c.ID] = c.Name
-		}
-		return categoriesMsg(m)
+		return categoryListMsg(cats)
 	}
 }
 
 func (a *App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	switch m := msg.(type) {
 	case tea.KeyMsg:
+		if a.modal != modalNone {
+			return a.handleModalKey(m)
+		}
 		if a.state == viewImport {
 			return a.handleImportKey(m)
+		}
+		if a.state == viewSettings {
+			return a.handleSettingsKey(m)
 		}
 		switch m.String() {
 		case "q", "ctrl+c":
@@ -135,6 +182,9 @@ func (a *App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		case "i":
 			a.state = viewImport
 			a.status = ""
+		case "p":
+			a.state = viewSettings
+			a.status = ""
 		case "up", "k":
 			if a.state == viewTransactions && a.txCursor > 0 {
 				a.txCursor--
@@ -142,12 +192,18 @@ func (a *App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			if a.state == viewReconcile && a.recCursor > 0 {
 				a.recCursor--
 			}
+			if a.state == viewSettings && a.settingsCursor > 0 {
+				a.settingsCursor--
+			}
 		case "down", "j":
 			if a.state == viewTransactions && a.txCursor < len(a.transactions)-1 {
 				a.txCursor++
 			}
 			if a.state == viewReconcile && a.recCursor < len(a.pending)-1 {
 				a.recCursor++
+			}
+			if a.state == viewSettings && a.settingsCursor < len(a.categories)-1 {
+				a.settingsCursor++
 			}
 		case "a":
 			if a.state == viewTransactions && len(a.transactions) > 0 {
@@ -172,6 +228,13 @@ func (a *App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				id := a.pending[a.recCursor].PR.ID
 				return a, a.reconcileDecisionCmd(id, false)
 			}
+		case "c":
+			if a.state == viewTransactions {
+				a.modal = modalCategoryPicker
+				if a.categoryCursor >= len(a.categories)+1 {
+					a.categoryCursor = 0
+				}
+			}
 		}
 	case transactionsMsg:
 		a.transactions = []repository.Transaction(m)
@@ -183,8 +246,12 @@ func (a *App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		if a.recCursor >= len(a.pending) {
 			a.recCursor = 0
 		}
-	case categoriesMsg:
-		a.categories = map[string]string(m)
+	case categoryListMsg:
+		a.categories = []repository.Category(m)
+		a.categoryName = make(map[string]string, len(a.categories))
+		for _, c := range a.categories {
+			a.categoryName[c.ID] = c.Name
+		}
 	case statusMsg:
 		a.status = string(m)
 	case errMsg:
@@ -203,16 +270,23 @@ func (a *App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 }
 
 func (a *App) View() string {
+	var body string
 	switch a.state {
 	case viewTransactions:
-		return renderTransactions(a.transactions, a.categories, a.txCursor, a.status)
+		body = a.renderTransactions()
 	case viewReconcile:
-		return renderReconcile(a.pending, a.recCursor, a.categories, a.status)
+		body = a.renderReconcile()
 	case viewImport:
-		return renderImport(a.importPath, a.lastImport, a.status)
+		body = a.renderImport()
+	case viewSettings:
+		body = a.renderSettings()
 	default:
-		return renderDashboard(a.month, a.transactions, a.pending, a.categories, a.status)
+		body = a.renderDashboard()
 	}
+	if a.modal != modalNone {
+		body += "\n\n" + a.renderModal()
+	}
+	return body
 }
 
 // commands
@@ -258,6 +332,94 @@ func (a *App) reconcileDecisionCmd(id string, isDup bool) tea.Cmd {
 			return statusMsg("dismissed")
 		},
 		a.loadPending(),
+	)
+}
+
+func (a *App) setCategoryCmd(txID string, categoryID *string) tea.Cmd {
+	return tea.Batch(
+		func() tea.Msg {
+			if err := a.repos.Transactions.UpdateCategory(a.ctx, txID, categoryID); err != nil {
+				return errMsg{err}
+			}
+			if categoryID == nil {
+				return statusMsg("category cleared")
+			}
+			return statusMsg("category updated")
+		},
+		a.loadTransactions(),
+	)
+}
+
+func (a *App) createCategoryCmd(name string) tea.Cmd {
+	return tea.Batch(
+		func() tea.Msg {
+			c := repository.Category{ID: uuid.NewString(), Name: strings.TrimSpace(name), SortOrder: len(a.categories) + 1}
+			if err := a.repos.Categories.Upsert(a.ctx, c); err != nil {
+				return errMsg{err}
+			}
+			return statusMsg("category added")
+		},
+		a.loadCategories(),
+	)
+}
+
+func (a *App) renameCategoryCmd(cat repository.Category, name string) tea.Cmd {
+	return tea.Batch(
+		func() tea.Msg {
+			c := cat
+			c.Name = strings.TrimSpace(name)
+			if err := a.repos.Categories.Upsert(a.ctx, c); err != nil {
+				return errMsg{err}
+			}
+			return statusMsg("category renamed")
+		},
+		a.loadCategories(),
+		a.loadTransactions(),
+	)
+}
+
+func (a *App) deleteCategoryCmd(cat repository.Category) tea.Cmd {
+	return tea.Batch(
+		func() tea.Msg {
+			if err := a.repos.Categories.Delete(a.ctx, cat.ID); err != nil {
+				return errMsg{err}
+			}
+			return statusMsg("category removed")
+		},
+		a.loadCategories(),
+		a.loadTransactions(),
+	)
+}
+
+func (a *App) resetCmd() tea.Cmd {
+	return tea.Batch(
+		func() tea.Msg {
+			if a.services.Maintenance == nil {
+				return errMsg{fmt.Errorf("maintenance not configured")}
+			}
+			if err := a.services.Maintenance.Reset(a.ctx); err != nil {
+				return errMsg{err}
+			}
+			a.txCursor, a.recCursor, a.settingsCursor = 0, 0, 0
+			a.categoryCursor = 0
+			return statusMsg("database reset (empty) - import or seed categories")
+		},
+		a.loadTransactions(),
+		a.loadPending(),
+		a.loadCategories(),
+	)
+}
+
+func (a *App) saveAPIKeyCmd(key string) tea.Cmd {
+	return tea.Batch(
+		func() tea.Msg {
+			a.cfg.LLM.APIKey = strings.TrimSpace(key)
+			if err := config.Save(a.cfg); err != nil {
+				return errMsg{err}
+			}
+			a.apiKeyCached = a.cfg.LLM.APIKey
+			return statusMsg("API key saved to config (restart to apply)")
+		},
 	)
 }
 
@@ -321,12 +483,165 @@ func (a *App) handleImportKey(m tea.KeyMsg) (tea.Model, tea.Cmd) {
 	return a, nil
 }
 
+func (a *App) handleModalKey(m tea.KeyMsg) (tea.Model, tea.Cmd) {
+	switch a.modal {
+	case modalCategoryPicker:
+		switch m.String() {
+		case "esc":
+			a.modal = modalNone
+		case "up", "k":
+			if a.categoryCursor > 0 {
+				a.categoryCursor--
+			}
+		case "down", "j":
+			max := len(a.categories) // +1 for [none]
+			if a.categoryCursor < max {
+				a.categoryCursor++
+			}
+		case "enter":
+			if len(a.transactions) == 0 {
+				a.modal = modalNone
+				return a, nil
+			}
+			tx := a.transactions[a.txCursor]
+			a.modal = modalNone
+			if a.categoryCursor == 0 {
+				return a, a.setCategoryCmd(tx.ID, nil)
+			}
+			idx := a.categoryCursor - 1
+			if idx >= len(a.categories) {
+				return a, nil
+			}
+			catID := a.categories[idx].ID
+			return a, a.setCategoryCmd(tx.ID, &catID)
+		}
+	case modalConfirmReset:
+		switch m.String() {
+		case "y", "Y":
+			a.modal = modalNone
+			return a, a.resetCmd()
+		case "n", "N", "esc":
+			a.modal = modalNone
+		}
+	case modalNewCategory, modalEditCategory, modalEditAPIKey:
+		switch m.Type {
+		case tea.KeyEsc:
+			a.modal = modalNone
+			a.inputBuffer = ""
+			a.settingsMode = settingsModeIdle
+		case tea.KeyEnter:
+			text := strings.TrimSpace(a.inputBuffer)
+			if text == "" {
+				a.status = "enter a value"
+				return a, nil
+			}
+			mode := a.modal
+			a.modal = modalNone
+			a.inputBuffer = ""
+			switch mode {
+			case modalNewCategory:
+				a.settingsMode = settingsModeIdle
+				return a, a.createCategoryCmd(text)
+			case modalEditCategory:
+				cat := a.categoryByID(a.editingCategoryID)
+				if cat == nil {
+					return a, nil
+				}
+				a.settingsMode = settingsModeIdle
+				return a, a.renameCategoryCmd(*cat, text)
+			case modalEditAPIKey:
+				a.settingsMode = settingsModeIdle
+				return a, a.saveAPIKeyCmd(text)
+			}
+		case tea.KeyBackspace, tea.KeyCtrlH, tea.KeyDelete:
+			if len(a.inputBuffer) > 0 {
+				a.inputBuffer = a.inputBuffer[:len(a.inputBuffer)-1]
+			}
+		case tea.KeySpace:
+			a.inputBuffer += " "
+		case tea.KeyRunes:
+			a.inputBuffer += string(m.Runes)
+		}
+	}
+	return a, nil
+}
+
+func (a *App) handleSettingsKey(m tea.KeyMsg) (tea.Model, tea.Cmd) {
+	switch m.String() {
+	case "q", "ctrl+c":
+		return a, tea.Quit
+	case "esc", "d":
+		a.state = viewDashboard
+		a.status = ""
+		return a, nil
+	case "t":
+		a.state = viewTransactions
+		return a, nil
+	case "up", "k":
+		if a.settingsCursor > 0 {
+			a.settingsCursor--
+		}
+	case "down", "j":
+		if a.settingsCursor < len(a.categories)-1 {
+			a.settingsCursor++
+		}
+	case "n":
+		a.modal = modalNewCategory
+		a.settingsMode = settingsModeNew
+		a.inputBuffer = ""
+		return a, nil
+	case "enter":
+		if len(a.categories) == 0 {
+			a.status = "no categories to rename"
+			return a, nil
+		}
+		a.modal = modalEditCategory
+		a.settingsMode = settingsModeRename
+		a.editingCategoryID = a.categories[a.settingsCursor].ID
+		a.inputBuffer = a.categories[a.settingsCursor].Name
+		return a, nil
+	case "backspace", "delete":
+		if len(a.categories) == 0 {
+			return a, nil
+		}
+		return a, a.deleteCategoryCmd(a.categories[a.settingsCursor])
+	case "e":
+		a.modal = modalEditAPIKey
+		a.settingsMode = settingsModeAPIKey
+		a.inputBuffer = a.apiKeyCached
+		return a, nil
+	case "v":
+		a.showAPIKey = !a.showAPIKey
+	case "x":
+		a.modal = modalConfirmReset
+		a.settingsMode = settingsModeConfirm
+		return a, nil
+	}
+	if m.Type == tea.KeyBackspace || m.Type == tea.KeyCtrlH || m.Type == tea.KeyDelete {
+		if len(a.categories) == 0 {
+			return a, nil
+		}
+		return a, a.deleteCategoryCmd(a.categories[a.settingsCursor])
+	}
+	return a, nil
+}
+
+func (a *App) categoryByID(id string) *repository.Category {
+	for _, c := range a.categories {
+		if c.ID == id {
+			copy := c
+			return &copy
+		}
+	}
+	return nil
+}
+
 // messages
 type transactionsMsg []repository.Transaction
 
 type pendingMsg []pendingView
 
-type categoriesMsg map[string]string
+type categoryListMsg []repository.Category
 
 type statusMsg string
 
@@ -346,51 +661,44 @@ type pendingView struct {
 // styles
 var titleStyle = lipgloss.NewStyle().Bold(true).Underline(true)
 
-func renderImport(path string, last *service.IngestResult, status string) string {
+func (a *App) renderImport() string {
 	title := titleStyle.Render("Import CSV")
-	body := fmt.Sprintf("CSV path: %s\nType a path (e.g. ANZ 040226.csv) and press Enter to ingest into the database.\n[enter] Import  [esc] Back  [q] Quit", path)
-	if last != nil {
-		body += fmt.Sprintf("\nLast import: %d imported, %d skipped, %d errors", last.Imported, last.Skipped, len(last.Errors))
-		if len(last.Errors) > 0 {
-			body += "\nFirst error: " + last.Errors[0].Error()
-			if len(last.Errors) > 1 {
-				body += fmt.Sprintf(" (+%d more)", len(last.Errors)-1)
+	body := fmt.Sprintf("CSV path: %s\nType a path (e.g. ANZ 040226.csv) and press Enter to ingest into the database.\n[enter] Import  [esc] Back  [q] Quit", a.importPath)
+	if a.lastImport != nil {
+		body += fmt.Sprintf("\nLast import: %d imported, %d skipped, %d errors", a.lastImport.Imported, a.lastImport.Skipped, len(a.lastImport.Errors))
+		if len(a.lastImport.Errors) > 0 {
+			body += "\nFirst error: " + a.lastImport.Errors[0].Error()
+			if len(a.lastImport.Errors) > 1 {
+				body += fmt.Sprintf(" (+%d more)", len(a.lastImport.Errors)-1)
 			}
 		}
 	}
-	if status != "" {
-		body += "\n" + status
+	if a.status != "" {
+		body += "\n" + a.status
 	}
 	return fmt.Sprintf("%s\n%s", title, body)
 }
 
-func renderDashboard(month time.Time, txs []repository.Transaction, pending []pendingView, categories map[string]string, status string) string {
-	title := titleStyle.Render("JaskMoney Dashboard - " + month.Format("January 2006"))
+func (a *App) renderDashboard() string {
+	title := titleStyle.Render("JaskMoney Dashboard - " + a.month.Format("January 2006"))
 	var spend int64
-	for _, t := range txs {
+	for _, t := range a.transactions {
 		spend += t.AmountCents
 	}
-	total, uncategorized := len(txs), 0
-	for _, t := range txs {
+	total, uncategorized := len(a.transactions), 0
+	for _, t := range a.transactions {
 		if t.CategoryID == nil {
 			uncategorized++
 		}
 	}
-	body := fmt.Sprintf("Total net: $%.2f\nTxns: %d  Uncategorized: %d  Pending reconcile: %d", float64(spend)/100, total, uncategorized, len(pending))
-	// top categories (expenses only, most negative)
+	body := fmt.Sprintf("Total net: %s%.2f\nTxns: %d  Uncategorized: %d  Pending reconcile: %d", a.currency, float64(spend)/100, total, uncategorized, len(a.pending))
+
 	totals := map[string]int64{}
-	for _, t := range txs {
+	for _, t := range a.transactions {
 		if t.AmountCents >= 0 {
 			continue
 		}
-		key := "[uncategorized]"
-		if t.CategoryID != nil {
-			if name, ok := categories[*t.CategoryID]; ok {
-				key = name
-			} else {
-				key = *t.CategoryID
-			}
-		}
+		key := a.categoryLabel(t.CategoryID)
 		totals[key] += t.AmountCents
 	}
 	type pair struct {
@@ -407,46 +715,38 @@ func renderDashboard(month time.Time, txs []repository.Transaction, pending []pe
 	}
 	body += "\nTop categories:"
 	for _, p := range pairs {
-		body += fmt.Sprintf("\n- %-24s $%.2f", p.name, float64(-p.total)/100)
+		body += fmt.Sprintf("\n- %-24s %s%.2f", p.name, a.currency, float64(-p.total)/100)
 	}
-	body += "\n[t] Transactions  [r] Reconcile  [i] Import CSV  [q] Quit"
-	if status != "" {
-		body += "\n" + status
+	body += "\n[t] Transactions  [r] Reconcile  [i] Import CSV  [p] Settings  [q] Quit"
+	if a.status != "" {
+		body += "\n" + a.status
 	}
 	return fmt.Sprintf("%s\n%s", title, body)
 }
 
-func renderTransactions(txs []repository.Transaction, categories map[string]string, cursor int, status string) string {
+func (a *App) renderTransactions() string {
 	title := titleStyle.Render("Transactions")
 	out := title + "\n"
-	for i, t := range txs {
+	for i, t := range a.transactions {
 		marker := " "
-		if i == cursor {
+		if i == a.txCursor {
 			marker = "▶"
 		}
-		cat := "[uncategorized]"
-		if t.CategoryID != nil {
-			if name, ok := categories[*t.CategoryID]; ok {
-				cat = name
-			} else {
-				cat = *t.CategoryID
-			}
-		}
-		out += fmt.Sprintf("%s %s  %-30s  %8.2f  %s\n", marker, t.Date.Format("01/02"), t.RawDescription, float64(t.AmountCents)/100, cat)
+		out += fmt.Sprintf("%s %s  %-40s  %8.2f  %s\n", marker, t.Date.In(a.tz).Format(a.dateFormat), t.RawDescription, float64(t.AmountCents)/100, a.categoryLabel(t.CategoryID))
 	}
-	out += "[d] Dashboard  [r] Reconcile  [a] AI categorize  [g] Categorize all  [i] Import CSV  [q] Quit"
-	if status != "" {
-		out += "\n" + status
+	out += "[d] Dashboard  [r] Reconcile  [a] AI categorize  [g] Categorize all  [c] Pick category  [i] Import CSV  [p] Settings  [q] Quit"
+	if a.status != "" {
+		out += "\n" + a.status
 	}
 	return out
 }
 
-func renderReconcile(pending []pendingView, cursor int, categories map[string]string, status string) string {
+func (a *App) renderReconcile() string {
 	title := titleStyle.Render("Reconciliation Queue")
-	if len(pending) == 0 {
-		return fmt.Sprintf("%s\nNo pending matches.\n[d] Dashboard  [t] Transactions  [s] Scan  [i] Import CSV  [q] Quit", title)
+	if len(a.pending) == 0 {
+		return fmt.Sprintf("%s\nNo pending matches.\n[d] Dashboard  [t] Transactions  [s] Scan  [i] Import CSV  [p] Settings  [q] Quit", title)
 	}
-	pv := pending[cursor]
+	pv := a.pending[a.recCursor]
 	aDesc, bDesc := "<missing>", "<missing>"
 	aAmt, bAmt := 0.0, 0.0
 	if pv.A != nil {
@@ -457,30 +757,104 @@ func renderReconcile(pending []pendingView, cursor int, categories map[string]st
 		bDesc = pv.B.RawDescription
 		bAmt = float64(pv.B.AmountCents) / 100
 	}
-	aCat, bCat := "[uncategorized]", "[uncategorized]"
-	if pv.A != nil && pv.A.CategoryID != nil {
-		if name, ok := categories[*pv.A.CategoryID]; ok && name != "" {
-			aCat = name
-		} else {
-			aCat = *pv.A.CategoryID
-		}
+	aCat, bCat := a.categoryLabel(nil), a.categoryLabel(nil)
+	if pv.A != nil {
+		aCat = a.categoryLabel(pv.A.CategoryID)
 	}
-	if pv.B != nil && pv.B.CategoryID != nil {
-		if name, ok := categories[*pv.B.CategoryID]; ok && name != "" {
-			bCat = name
-		} else {
-			bCat = *pv.B.CategoryID
-		}
+	if pv.B != nil {
+		bCat = a.categoryLabel(pv.B.CategoryID)
 	}
-	out := fmt.Sprintf("%s\nMatch %d of %d  Similarity: %.2f\nA: %-40s %8.2f  %s\nB: %-40s %8.2f  %s\n[y] Merge  [n] Not duplicate  [s] Scan  [d] Dashboard  [t] Transactions  [i] Import CSV  [q] Quit", title, cursor+1, len(pending), pv.PR.Similarity, aDesc, aAmt, aCat, bDesc, bAmt, bCat)
+	out := fmt.Sprintf("%s\nMatch %d of %d  Similarity: %.2f\nA: %-40s %8.2f  %s\nB: %-40s %8.2f  %s\n[y] Merge  [n] Not duplicate  [s] Scan  [d] Dashboard  [t] Transactions  [i] Import CSV  [p] Settings  [q] Quit", title, a.recCursor+1, len(a.pending), pv.PR.Similarity, aDesc, aAmt, aCat, bDesc, bAmt, bCat)
 	if pv.PR.LLMConfidence != nil {
 		out += fmt.Sprintf("\nAI confidence: %.2f", *pv.PR.LLMConfidence)
 	}
 	if pv.PR.LLMReasoning != nil {
 		out += fmt.Sprintf("\nAI reasoning: %s", *pv.PR.LLMReasoning)
 	}
-	if status != "" {
-		out += "\n" + status
+	if a.status != "" {
+		out += "\n" + a.status
 	}
 	return out
+}
+
+func (a *App) renderSettings() string {
+	title := titleStyle.Render("Settings")
+	out := title + "\n"
+	out += "Categories (manual control)\n"
+	if len(a.categories) == 0 {
+		out += "  (no categories yet)\n"
+	} else {
+		for i, c := range a.categories {
+			marker := " "
+			if i == a.settingsCursor {
+				marker = "▶"
+			}
+			out += fmt.Sprintf("%s %s\n", marker, c.Name)
+		}
+	}
+	out += "\n[n] New  [enter] Rename  [del] Delete\n"
+
+	apiValue := "(not set)"
+	if a.apiKeyCached != "" {
+		if a.showAPIKey {
+			apiValue = a.apiKeyCached
+		} else {
+			apiValue = strings.Repeat("*", len(a.apiKeyCached))
+		}
+	}
+	out += fmt.Sprintf("LLM API key (%s): %s\n", a.cfg.LLM.APIKeyEnv, apiValue)
+	out += "[e] Edit API key (stored in config)  [v] Toggle visibility\n"
+	out += "\n[x] Reset database (clears everything)\n"
+	out += "[d] Dashboard  [t] Transactions  [q] Quit"
+	if a.status != "" {
+		out += "\n" + a.status
+	}
+	return out
+}
+
+func (a *App) renderModal() string {
+	switch a.modal {
+	case modalCategoryPicker:
+		out := titleStyle.Render("Select Category") + "\n"
+		options := []string{"[none] (clear category)"}
+		for _, c := range a.categories {
+			label := c.Name
+			if c.ParentID != nil {
+				parent := a.categoryName[*c.ParentID]
+				if parent != "" {
+					label = parent + " > " + c.Name
+				}
+			}
+			options = append(options, label)
+		}
+		for i, opt := range options {
+			marker := " "
+			if i == a.categoryCursor {
+				marker = "▶"
+			}
+			out += fmt.Sprintf("%s %s\n", marker, opt)
+		}
+		out += "[enter] Select  [esc] Cancel"
+		return out
+	case modalConfirmReset:
+		return titleStyle.Render("Reset database?") + "\nThis will delete all data.\n[y] Yes  [n] No"
+	case modalNewCategory:
+		return titleStyle.Render("New category") + fmt.Sprintf("\n%s\n[enter] Save  [esc] Cancel", a.inputBuffer)
+	case modalEditCategory:
+		return titleStyle.Render("Rename category") + fmt.Sprintf("\n%s\n[enter] Save  [esc] Cancel", a.inputBuffer)
+	case modalEditAPIKey:
+		return titleStyle.Render("Set LLM API key (stored in config.toml)") + fmt.Sprintf("\n%s\n[enter] Save  [esc] Cancel", a.inputBuffer)
+	default:
+		return ""
+	}
+}
+
+func (a *App) categoryLabel(id *string) string {
+	if id == nil {
+		return "[uncategorized]"
+	}
+	if name, ok := a.categoryName[*id]; ok && name != "" {
+		return name
+	}
+	return *id
 }
