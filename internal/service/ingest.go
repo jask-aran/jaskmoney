@@ -36,75 +36,43 @@ type IngestResult struct {
 // CSV columns: date, posted_date, description, amount, external_id, account
 // amount is dollars (string with optional minus), converted to cents.
 func (s *IngestService) ImportCSV(ctx context.Context, r io.Reader, tz *time.Location) (IngestResult, error) {
-	res := IngestResult{}
-	csvr := csv.NewReader(bufio.NewReader(r))
-	csvr.TrimLeadingSpace = true
-	csvr.FieldsPerRecord = -1
-	line := 0
-	for {
-		line++
-		rec, err := csvr.Read()
-		if err == io.EOF {
-			break
+	return s.ingest(ctx, r, tz, func(rec []string, loc *time.Location) (*repository.Transaction, error) {
+		if len(rec) < 6 {
+			return nil, fmt.Errorf("expected 6 columns (date, posted_date, description, amount, external_id, account)")
 		}
+		date, err := parseLocalDate(rec[0], loc)
 		if err != nil {
-			res.Errors = append(res.Errors, fmt.Errorf("line %d: %w", line, err))
-			continue
-		}
-		if len(rec) < 6 { // date, posted_date, description, amount, external_id, account
-			res.Errors = append(res.Errors, fmt.Errorf("line %d: expected 6 columns", line))
-			continue
-		}
-		dateStr, postedStr, desc, amountStr, externalID, accountName := rec[0], rec[1], rec[2], rec[3], rec[4], rec[5]
-		date, err := parseLocalDate(dateStr, tz)
-		if err != nil {
-			res.Errors = append(res.Errors, fmt.Errorf("line %d date: %w", line, err))
-			continue
+			return nil, fmt.Errorf("date: %w", err)
 		}
 		var posted *time.Time
-		if strings.TrimSpace(postedStr) != "" {
-			p, err := parseLocalDate(postedStr, tz)
+		if strings.TrimSpace(rec[1]) != "" {
+			p, err := parseLocalDate(rec[1], loc)
 			if err != nil {
-				res.Errors = append(res.Errors, fmt.Errorf("line %d posted_date: %w", line, err))
-				continue
+				return nil, fmt.Errorf("posted_date: %w", err)
 			}
 			posted = &p
 		}
-		amountCents, err := dollarsToCents(amountStr)
+		amountCents, err := dollarsToCents(rec[3])
 		if err != nil {
-			res.Errors = append(res.Errors, fmt.Errorf("line %d amount: %w", line, err))
-			continue
+			return nil, fmt.Errorf("amount: %w", err)
 		}
-
-		acct, err := s.accountForName(ctx, accountName)
+		desc := rec[2]
+		acct, err := s.accountForName(ctx, rec[5])
 		if err != nil {
-			res.Errors = append(res.Errors, fmt.Errorf("line %d account: %w", line, err))
-			continue
+			return nil, fmt.Errorf("account: %w", err)
 		}
-
-		t := repository.Transaction{
+		return &repository.Transaction{
 			ID:             uuid.NewString(),
 			AccountID:      acct.ID,
-			ExternalID:     nullableStr(externalID),
+			ExternalID:     nullableStr(rec[4]),
 			Date:           date,
 			PostedDate:     posted,
 			AmountCents:    amountCents,
 			RawDescription: desc,
 			Status:         chooseStatus(posted, ""),
 			SourceHash:     hashSource(acct.ID, date.Format(time.DateOnly), fmt.Sprintf("%d", amountCents), desc),
-		}
-		if err := s.Transactions.Insert(ctx, t); err != nil {
-			// skip duplicates on unique constraint
-			if strings.Contains(err.Error(), "UNIQUE") {
-				res.Skipped++
-				continue
-			}
-			res.Errors = append(res.Errors, fmt.Errorf("line %d insert: %w", line, err))
-			continue
-		}
-		res.Imported++
-	}
-	return res, nil
+		}, nil
+	})
 }
 
 // ImportANZSimple ingests ANZ export with no headers: date, amount, description.
@@ -115,15 +83,44 @@ func (s *IngestService) ImportANZSimple(ctx context.Context, r io.Reader, accoun
 	if strings.TrimSpace(accountName) == "" {
 		accountName = "ANZ"
 	}
+	acct, err := s.accountForName(ctx, accountName)
+	if err != nil {
+		return IngestResult{}, err
+	}
+
+	return s.ingest(ctx, r, tz, func(rec []string, loc *time.Location) (*repository.Transaction, error) {
+		if len(rec) < 3 {
+			return nil, fmt.Errorf("expected 3 columns (date, amount, description)")
+		}
+		date, err := parseANZDate(rec[0], loc)
+		if err != nil {
+			return nil, fmt.Errorf("date: %w", err)
+		}
+		amountCents, err := dollarsToCents(rec[1])
+		if err != nil {
+			return nil, fmt.Errorf("amount: %w", err)
+		}
+		desc := strings.TrimSpace(rec[2])
+		posted := date
+		return &repository.Transaction{
+			ID:             uuid.NewString(),
+			AccountID:      acct.ID,
+			Date:           date,
+			PostedDate:     &posted,
+			AmountCents:    amountCents,
+			RawDescription: desc,
+			Status:         "posted",
+			SourceHash:     hashSource(acct.ID, date.Format(time.DateOnly), fmt.Sprintf("%d", amountCents), desc),
+		}, nil
+	})
+}
+
+// ingest reads CSV rows and uses builder to convert to a Transaction.
+func (s *IngestService) ingest(ctx context.Context, r io.Reader, tz *time.Location, build func([]string, *time.Location) (*repository.Transaction, error)) (IngestResult, error) {
 	res := IngestResult{}
 	csvr := csv.NewReader(bufio.NewReader(r))
 	csvr.TrimLeadingSpace = true
 	csvr.FieldsPerRecord = -1
-
-	acct, err := s.accountForName(ctx, accountName)
-	if err != nil {
-		return res, err
-	}
 
 	line := 0
 	for {
@@ -136,33 +133,15 @@ func (s *IngestService) ImportANZSimple(ctx context.Context, r io.Reader, accoun
 			res.Errors = append(res.Errors, fmt.Errorf("line %d: %w", line, err))
 			continue
 		}
-		if len(rec) < 3 {
-			res.Errors = append(res.Errors, fmt.Errorf("line %d: expected 3 columns (date, amount, description)", line))
+		if len(rec) == 0 || strings.TrimSpace(strings.Join(rec, "")) == "" {
 			continue
 		}
-		date, err := parseANZDate(rec[0], tz)
+		t, err := build(rec, tz)
 		if err != nil {
-			res.Errors = append(res.Errors, fmt.Errorf("line %d date: %w", line, err))
+			res.Errors = append(res.Errors, fmt.Errorf("line %d: %w", line, err))
 			continue
 		}
-		amountCents, err := dollarsToCents(rec[1])
-		if err != nil {
-			res.Errors = append(res.Errors, fmt.Errorf("line %d amount: %w", line, err))
-			continue
-		}
-		desc := strings.TrimSpace(rec[2])
-		posted := date
-		t := repository.Transaction{
-			ID:             uuid.NewString(),
-			AccountID:      acct.ID,
-			Date:           date,
-			PostedDate:     &posted,
-			AmountCents:    amountCents,
-			RawDescription: desc,
-			Status:         "posted",
-			SourceHash:     hashSource(acct.ID, date.Format(time.DateOnly), fmt.Sprintf("%d", amountCents), desc),
-		}
-		if err := s.Transactions.Insert(ctx, t); err != nil {
+		if err := s.Transactions.Insert(ctx, *t); err != nil {
 			if strings.Contains(err.Error(), "UNIQUE") {
 				res.Skipped++
 				continue
@@ -255,5 +234,8 @@ func (s *IngestService) accountForName(ctx context.Context, name string) (reposi
 
 func deterministicAccountID(name string) string {
 	key := strings.ToLower(strings.TrimSpace(filepath.Base(name)))
+	if key == "" {
+		key = "account"
+	}
 	return uuid.NewSHA1(uuid.NameSpaceOID, []byte(key)).String()
 }

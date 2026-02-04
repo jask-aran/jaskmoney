@@ -29,7 +29,9 @@
 .env
 
 # Local binaries
-jaskmoney
+/bin/jaskmoney
 
 # Sample CSVs with real data
 ANZ *.csv
+
+!cmd/jaskmoney/
