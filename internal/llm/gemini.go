@@ -2,6 +2,7 @@ package llm
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"strings"
 	"time"
@@ -25,6 +26,21 @@ func (g *GeminiProvider) Categorize(ctx context.Context, req CategorizeRequest) 
 	ctx, cancel := context.WithTimeout(ctx, 8*time.Second)
 	defer cancel()
 
+	var lastErr error
+	for attempt := 0; attempt < 2; attempt++ { // retry once on transient failure
+		resp, err := g.categorizeOnce(ctx, req)
+		if err == nil {
+			return resp, nil
+		}
+		lastErr = err
+		if errors.Is(err, context.DeadlineExceeded) || errors.Is(err, context.Canceled) {
+			break
+		}
+	}
+	return CategorizeResponse{}, lastErr
+}
+
+func (g *GeminiProvider) categorizeOnce(ctx context.Context, req CategorizeRequest) (CategorizeResponse, error) {
 	desc := strings.ToLower(req.Transaction.Description)
 	bestCat, bestScore := "", 0.0
 	for _, cat := range req.Categories {
@@ -54,6 +70,21 @@ func (g *GeminiProvider) ReconciliationJudge(ctx context.Context, req ReconcileR
 	ctx, cancel := context.WithTimeout(ctx, 8*time.Second)
 	defer cancel()
 
+	var lastErr error
+	for attempt := 0; attempt < 2; attempt++ {
+		resp, err := g.judgeOnce(ctx, req)
+		if err == nil {
+			return resp, nil
+		}
+		lastErr = err
+		if errors.Is(err, context.DeadlineExceeded) || errors.Is(err, context.Canceled) {
+			break
+		}
+	}
+	return ReconcileResponse{}, lastErr
+}
+
+func (g *GeminiProvider) judgeOnce(ctx context.Context, req ReconcileRequest) (ReconcileResponse, error) {
 	// identical amount assumed by upstream filter; use description similarity + date difference
 	sim := textSimilarity(strings.ToLower(req.TransactionA.Description), strings.ToLower(req.TransactionB.Description))
 	datePenalty := float64(req.DateDifferenceDays) / 7.0
