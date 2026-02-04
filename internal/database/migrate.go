@@ -7,11 +7,12 @@ import (
 	"github.com/golang-migrate/migrate/v4"
 	"github.com/golang-migrate/migrate/v4/database/sqlite3"
 	_ "github.com/golang-migrate/migrate/v4/source/file"
+	_ "github.com/mattn/go-sqlite3"
 )
 
 // RunMigrations applies all up migrations found at path.
 func RunMigrations(dbPath, migrationsPath string) error {
-	dsn := fmt.Sprintf("file:%s?_foreign_keys=on", dbPath)
+	dsn := fmt.Sprintf("sqlite3://%s?_foreign_keys=on", dbPath)
 
 	m, err := migrate.New(
 		fmt.Sprintf("file://%s", migrationsPath),
