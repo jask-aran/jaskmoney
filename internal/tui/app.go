@@ -29,10 +29,13 @@ type App struct {
 	pending           []pendingView
 	categories        []repository.Category
 	categoryName      map[string]string // id -> name
+	tags              []repository.Tag
+	tagNameToID       map[string]string
 	txCursor          int
 	recCursor         int
 	categoryCursor    int
 	settingsCursor    int
+	tagInput          string
 	month             time.Time
 	status            string
 	tz                *time.Location
@@ -40,6 +43,7 @@ type App struct {
 	settingsMode      settingsMode
 	inputBuffer       string
 	editingCategoryID string
+	editingTxID       string
 	apiKeyCached      string
 	showAPIKey        bool
 	currency          string
@@ -55,6 +59,7 @@ type Repos struct {
 	Transactions *repository.TransactionRepo
 	Categories   *repository.CategoryRepo
 	Pending      *repository.ReconciliationRepo
+	Tags         *repository.TagRepo
 }
 
 type Services struct {
@@ -83,6 +88,7 @@ const (
 	modalEditCategory   modalState = "editCategory"
 	modalNewCategory    modalState = "newCategory"
 	modalEditAPIKey     modalState = "editAPIKey"
+	modalTagEditor      modalState = "tagEditor"
 )
 
 type settingsMode string
@@ -119,7 +125,7 @@ func New(ctx context.Context, cfg config.Config, repos Repos, services Services,
 }
 
 func (a *App) Init() tea.Cmd {
-	return tea.Batch(a.loadTransactions(), a.loadPending(), a.loadCategories())
+	return tea.Batch(a.loadTransactions(), a.loadPending(), a.loadCategories(), a.loadTags())
 }
 
 func (a *App) loadTransactions() tea.Cmd {
@@ -158,6 +164,19 @@ func (a *App) loadCategories() tea.Cmd {
 	}
 }
 
+func (a *App) loadTags() tea.Cmd {
+	return func() tea.Msg {
+		if a.repos.Tags == nil {
+			return tagListMsg(nil)
+		}
+		tags, err := a.repos.Tags.List(a.ctx)
+		if err != nil {
+			return errMsg{err}
+		}
+		return tagListMsg(tags)
+	}
+}
+
 func (a *App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	switch m := msg.(type) {
 	case tea.KeyMsg:
@@ -174,7 +193,11 @@ func (a *App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		case "q", "ctrl+c":
 			return a, tea.Quit
 		case "t":
-			a.state = viewTransactions
+			if a.state == viewTransactions {
+				a.openTagEditor()
+			} else {
+				a.state = viewTransactions
+			}
 		case "d":
 			a.state = viewDashboard
 		case "r":
@@ -208,14 +231,17 @@ func (a *App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		case "a":
 			if a.state == viewTransactions && len(a.transactions) > 0 {
 				tx := a.transactions[a.txCursor]
+				a.status = "categorizing..."
 				return a, a.categorizeCmd(tx)
 			}
 		case "g":
 			if a.state == viewTransactions {
+				a.status = "categorizing..."
 				return a, a.categorizeAllCmd()
 			}
 		case "s":
 			if a.state == viewReconcile {
+				a.status = "scanning..."
 				return a, a.detectCmd()
 			}
 		case "y":
@@ -245,6 +271,12 @@ func (a *App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		a.pending = []pendingView(m)
 		if a.recCursor >= len(a.pending) {
 			a.recCursor = 0
+		}
+	case tagListMsg:
+		a.tags = []repository.Tag(m)
+		a.tagNameToID = make(map[string]string, len(a.tags))
+		for _, t := range a.tags {
+			a.tagNameToID[strings.ToLower(t.Name)] = t.ID
 		}
 	case categoryListMsg:
 		a.categories = []repository.Category(m)
@@ -423,6 +455,61 @@ func (a *App) saveAPIKeyCmd(key string) tea.Cmd {
 	)
 }
 
+func (a *App) saveTagsCmd(tx repository.Transaction, input string) tea.Cmd {
+	return tea.Batch(
+		func() tea.Msg {
+			names := normalizeTags(input)
+			desired := map[string]string{} // name -> tagID
+			for _, name := range names {
+				lower := strings.ToLower(name)
+				if id, ok := a.tagNameToID[lower]; ok {
+					desired[lower] = id
+					continue
+				}
+				if a.repos.Tags == nil {
+					return errMsg{fmt.Errorf("tags repo not configured")}
+				}
+				tag, err := a.repos.Tags.ByName(a.ctx, name)
+				if err != nil {
+					return errMsg{err}
+				}
+				tagID := ""
+				if tag == nil {
+					tagID = uuid.NewString()
+					if err := a.repos.Tags.Upsert(a.ctx, repository.Tag{ID: tagID, Name: name}); err != nil {
+						return errMsg{err}
+					}
+				} else {
+					tagID = tag.ID
+				}
+				desired[lower] = tagID
+				a.tagNameToID[lower] = tagID
+			}
+
+			existing := map[string]repository.Tag{}
+			for _, t := range tx.Tags {
+				existing[strings.ToLower(t.Name)] = t
+			}
+
+			for _, id := range desired {
+				if err := a.repos.Transactions.AttachTag(a.ctx, tx.ID, id); err != nil {
+					return errMsg{err}
+				}
+			}
+			for name, t := range existing {
+				if _, ok := desired[name]; !ok {
+					if err := a.repos.Transactions.RemoveTag(a.ctx, tx.ID, t.ID); err != nil {
+						return errMsg{err}
+					}
+				}
+			}
+			return statusMsg("tags updated")
+		},
+		a.loadTransactions(),
+		a.loadTags(),
+	)
+}
+
 func (a *App) ingestCmd(path string) tea.Cmd {
 	abs := path
 	if !filepath.IsAbs(path) {
@@ -562,6 +649,31 @@ func (a *App) handleModalKey(m tea.KeyMsg) (tea.Model, tea.Cmd) {
 		case tea.KeyRunes:
 			a.inputBuffer += string(m.Runes)
 		}
+	case modalTagEditor:
+		switch m.Type {
+		case tea.KeyEsc:
+			a.modal = modalNone
+			a.tagInput = ""
+		case tea.KeyEnter:
+			text := strings.TrimSpace(a.tagInput)
+			a.modal = modalNone
+			if a.editingTxID == "" {
+				return a, nil
+			}
+			tx := a.transactionByID(a.editingTxID)
+			if tx == nil {
+				return a, nil
+			}
+			return a, a.saveTagsCmd(*tx, text)
+		case tea.KeyBackspace, tea.KeyCtrlH, tea.KeyDelete:
+			if len(a.tagInput) > 0 {
+				a.tagInput = a.tagInput[:len(a.tagInput)-1]
+			}
+		case tea.KeySpace:
+			a.tagInput += " "
+		case tea.KeyRunes:
+			a.tagInput += string(m.Runes)
+		}
 	}
 	return a, nil
 }
@@ -636,12 +748,38 @@ func (a *App) categoryByID(id string) *repository.Category {
 	return nil
 }
 
+func (a *App) transactionByID(id string) *repository.Transaction {
+	for i := range a.transactions {
+		if a.transactions[i].ID == id {
+			return &a.transactions[i]
+		}
+	}
+	return nil
+}
+
+func (a *App) openTagEditor() {
+	if len(a.transactions) == 0 {
+		a.status = "no transactions"
+		return
+	}
+	tx := a.transactions[a.txCursor]
+	var existing []string
+	for _, t := range tx.Tags {
+		existing = append(existing, t.Name)
+	}
+	a.editingTxID = tx.ID
+	a.tagInput = strings.Join(existing, ", ")
+	a.modal = modalTagEditor
+}
+
 // messages
 type transactionsMsg []repository.Transaction
 
 type pendingMsg []pendingView
 
 type categoryListMsg []repository.Category
+
+type tagListMsg []repository.Tag
 
 type statusMsg string
 
@@ -732,9 +870,17 @@ func (a *App) renderTransactions() string {
 		if i == a.txCursor {
 			marker = "▶"
 		}
-		out += fmt.Sprintf("%s %s  %-40s  %8.2f  %s\n", marker, t.Date.In(a.tz).Format(a.dateFormat), t.RawDescription, float64(t.AmountCents)/100, a.categoryLabel(t.CategoryID))
+		tagText := ""
+		if len(t.Tags) > 0 {
+			var names []string
+			for _, tg := range t.Tags {
+				names = append(names, tg.Name)
+			}
+			tagText = " [" + strings.Join(names, ", ") + "]"
+		}
+		out += fmt.Sprintf("%s %s  %-40s  %8.2f  %s%s\n", marker, t.Date.In(a.tz).Format(a.dateFormat), t.RawDescription, float64(t.AmountCents)/100, a.categoryLabel(t.CategoryID), tagText)
 	}
-	out += "[d] Dashboard  [r] Reconcile  [a] AI categorize  [g] Categorize all  [c] Pick category  [i] Import CSV  [p] Settings  [q] Quit"
+	out += "[d] Dashboard  [r] Reconcile  [a] AI categorize  [g] Categorize all  [c] Pick category  [t] Tags  [i] Import CSV  [p] Settings  [q] Quit"
 	if a.status != "" {
 		out += "\n" + a.status
 	}
@@ -844,6 +990,8 @@ func (a *App) renderModal() string {
 		return titleStyle.Render("Rename category") + fmt.Sprintf("\n%s\n[enter] Save  [esc] Cancel", a.inputBuffer)
 	case modalEditAPIKey:
 		return titleStyle.Render("Set LLM API key (stored in config.toml)") + fmt.Sprintf("\n%s\n[enter] Save  [esc] Cancel", a.inputBuffer)
+	case modalTagEditor:
+		return titleStyle.Render("Edit tags (comma-separated)") + fmt.Sprintf("\n%s\n[enter] Save  [esc] Cancel", a.tagInput)
 	default:
 		return ""
 	}
@@ -857,4 +1005,24 @@ func (a *App) categoryLabel(id *string) string {
 		return name
 	}
 	return *id
+}
+
+func normalizeTags(input string) []string {
+	raw := strings.FieldsFunc(input, func(r rune) bool {
+		return r == ',' || r == ';' || r == ' ' || r == '\t' || r == '\n'
+	})
+	seen := map[string]struct{}{}
+	var out []string
+	for _, part := range raw {
+		p := strings.TrimSpace(strings.ToLower(part))
+		if p == "" {
+			continue
+		}
+		if _, ok := seen[p]; ok {
+			continue
+		}
+		seen[p] = struct{}{}
+		out = append(out, p)
+	}
+	return out
 }
