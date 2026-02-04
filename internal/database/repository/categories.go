@@ -27,6 +27,11 @@ func (r *CategoryRepo) Upsert(ctx context.Context, c Category) error {
 	return err
 }
 
+func (r *CategoryRepo) Delete(ctx context.Context, id string) error {
+	_, err := r.db.ExecContext(ctx, `DELETE FROM categories WHERE id = ?`, id)
+	return err
+}
+
 func (r *CategoryRepo) List(ctx context.Context) ([]Category, error) {
 	rows, err := r.db.QueryContext(ctx, `SELECT id, parent_id, name, icon, sort_order FROM categories ORDER BY sort_order, name`)
 	if err != nil {
