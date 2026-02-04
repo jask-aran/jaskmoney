@@ -233,9 +233,12 @@ func (s *IngestService) accountForName(ctx context.Context, name string) (reposi
 }
 
 func deterministicAccountID(name string) string {
-	key := strings.ToLower(strings.TrimSpace(filepath.Base(name)))
-	if key == "" {
-		key = "account"
+	clean := strings.ToLower(strings.TrimSpace(name))
+	if clean == "" {
+		clean = "account"
 	}
-	return uuid.NewSHA1(uuid.NameSpaceOID, []byte(key)).String()
+	// include institution-ish hint (basename) to reduce collisions while staying deterministic
+	base := strings.ToLower(strings.TrimSpace(filepath.Base(name)))
+	raw := clean + "|" + base
+	return uuid.NewSHA1(uuid.NameSpaceOID, []byte(raw)).String()
 }
