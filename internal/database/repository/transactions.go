@@ -105,14 +105,20 @@ func (r *TransactionRepo) List(ctx context.Context, f TransactionFilters) ([]Tra
 		if err != nil {
 			return nil, err
 		}
-		tags, err := r.fetchTags(ctx, t.ID)
+		out = append(out, t)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+
+	for i := range out {
+		tags, err := r.fetchTags(ctx, out[i].ID)
 		if err != nil {
 			return nil, err
 		}
-		t.Tags = tags
-		out = append(out, t)
+		out[i].Tags = tags
 	}
-	return out, rows.Err()
+	return out, nil
 }
 
 func (r *TransactionRepo) fetchTags(ctx context.Context, transactionID string) ([]Tag, error) {

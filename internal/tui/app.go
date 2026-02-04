@@ -3,7 +3,10 @@ package tui
 import (
 	"context"
 	"fmt"
+	"os"
+	"path/filepath"
 	"sort"
+	"strings"
 	"time"
 
 	tea "github.com/charmbracelet/bubbletea"
@@ -26,6 +29,12 @@ type App struct {
 	recCursor    int
 	month        time.Time
 	status       string
+	tz           *time.Location
+
+	// import flow
+	importPath  string
+	lastImport  *service.IngestResult
+	defaultAcct string
 }
 
 type Repos struct {
@@ -37,6 +46,7 @@ type Repos struct {
 type Services struct {
 	Categorizer *service.CategorizerService
 	Reconciler  *service.Reconciler
+	Ingest      *service.IngestService
 }
 
 type appState string
@@ -45,10 +55,22 @@ const (
 	viewDashboard    appState = "dashboard"
 	viewTransactions appState = "transactions"
 	viewReconcile    appState = "reconcile"
+	viewImport       appState = "import"
 )
 
-func New(ctx context.Context, repos Repos, services Services) *App {
-	return &App{ctx: ctx, repos: repos, services: services, month: time.Now().UTC()}
+func New(ctx context.Context, repos Repos, services Services, tz *time.Location) *App {
+	if tz == nil {
+		tz = time.Local
+	}
+	return &App{
+		ctx:         ctx,
+		repos:       repos,
+		services:    services,
+		month:       time.Now().UTC(),
+		tz:          tz,
+		importPath:  "ANZ 040226.csv",
+		defaultAcct: "ANZ",
+	}
 }
 
 func (a *App) Init() tea.Cmd {
@@ -98,6 +120,9 @@ func (a *App) loadCategories() tea.Cmd {
 func (a *App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	switch m := msg.(type) {
 	case tea.KeyMsg:
+		if a.state == viewImport {
+			return a.handleImportKey(m)
+		}
 		switch m.String() {
 		case "q", "ctrl+c":
 			return a, tea.Quit
@@ -107,6 +132,9 @@ func (a *App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			a.state = viewDashboard
 		case "r":
 			a.state = viewReconcile
+		case "i":
+			a.state = viewImport
+			a.status = ""
 		case "up", "k":
 			if a.state == viewTransactions && a.txCursor > 0 {
 				a.txCursor--
@@ -161,6 +189,15 @@ func (a *App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		a.status = string(m)
 	case errMsg:
 		a.status = "error: " + m.Error()
+	case ingestDoneMsg:
+		a.lastImport = &m.Result
+		summary := fmt.Sprintf("imported %d, skipped %d", m.Result.Imported, m.Result.Skipped)
+		if len(m.Result.Errors) > 0 {
+			summary += fmt.Sprintf(", errors %d (see import view)", len(m.Result.Errors))
+		}
+		a.status = summary
+		a.state = viewTransactions
+		return a, tea.Batch(a.loadTransactions(), a.loadPending())
 	}
 	return a, nil
 }
@@ -171,6 +208,8 @@ func (a *App) View() string {
 		return renderTransactions(a.transactions, a.categories, a.txCursor, a.status)
 	case viewReconcile:
 		return renderReconcile(a.pending, a.recCursor, a.categories, a.status)
+	case viewImport:
+		return renderImport(a.importPath, a.lastImport, a.status)
 	default:
 		return renderDashboard(a.month, a.transactions, a.pending, a.categories, a.status)
 	}
@@ -222,6 +261,66 @@ func (a *App) reconcileDecisionCmd(id string, isDup bool) tea.Cmd {
 	)
 }
 
+func (a *App) ingestCmd(path string) tea.Cmd {
+	abs := path
+	if !filepath.IsAbs(path) {
+		if p, err := filepath.Abs(path); err == nil {
+			abs = p
+		}
+	}
+	a.status = "importing..."
+	account := a.defaultAcct
+	if a.services.Ingest == nil {
+		return func() tea.Msg { return errMsg{fmt.Errorf("ingest service not configured")} }
+	}
+	return func() tea.Msg {
+		f, err := os.Open(abs)
+		if err != nil {
+			return errMsg{fmt.Errorf("open %s: %w", abs, err)}
+		}
+		defer f.Close()
+
+		res, err := a.services.Ingest.ImportANZSimple(a.ctx, f, account, a.tz)
+		if err != nil {
+			return errMsg{err}
+		}
+		if len(res.Errors) > 0 {
+			for i := range res.Errors {
+				res.Errors[i] = fmt.Errorf("%s: %w", filepath.Base(abs), res.Errors[i])
+			}
+		}
+		return ingestDoneMsg{Result: res}
+	}
+}
+
+func (a *App) handleImportKey(m tea.KeyMsg) (tea.Model, tea.Cmd) {
+	switch m.String() {
+	case "q", "ctrl+c":
+		return a, tea.Quit
+	}
+	switch m.Type {
+	case tea.KeyEsc:
+		a.state = viewDashboard
+		a.status = ""
+	case tea.KeyEnter:
+		path := strings.TrimSpace(a.importPath)
+		if path == "" {
+			a.status = "enter a CSV path"
+			return a, nil
+		}
+		return a, a.ingestCmd(path)
+	case tea.KeyBackspace, tea.KeyCtrlH, tea.KeyDelete:
+		if len(a.importPath) > 0 {
+			a.importPath = a.importPath[:len(a.importPath)-1]
+		}
+	case tea.KeySpace:
+		a.importPath += " "
+	case tea.KeyRunes:
+		a.importPath += string(m.Runes)
+	}
+	return a, nil
+}
+
 // messages
 type transactionsMsg []repository.Transaction
 
@@ -233,6 +332,10 @@ type statusMsg string
 
 type errMsg struct{ error }
 
+type ingestDoneMsg struct {
+	Result service.IngestResult
+}
+
 // pendingView enriches pending reconciliation with transaction rows.
 type pendingView struct {
 	PR repository.PendingReconciliation
@@ -242,6 +345,24 @@ type pendingView struct {
 
 // styles
 var titleStyle = lipgloss.NewStyle().Bold(true).Underline(true)
+
+func renderImport(path string, last *service.IngestResult, status string) string {
+	title := titleStyle.Render("Import CSV")
+	body := fmt.Sprintf("CSV path: %s\nType a path (e.g. ANZ 040226.csv) and press Enter to ingest into the database.\n[enter] Import  [esc] Back  [q] Quit", path)
+	if last != nil {
+		body += fmt.Sprintf("\nLast import: %d imported, %d skipped, %d errors", last.Imported, last.Skipped, len(last.Errors))
+		if len(last.Errors) > 0 {
+			body += "\nFirst error: " + last.Errors[0].Error()
+			if len(last.Errors) > 1 {
+				body += fmt.Sprintf(" (+%d more)", len(last.Errors)-1)
+			}
+		}
+	}
+	if status != "" {
+		body += "\n" + status
+	}
+	return fmt.Sprintf("%s\n%s", title, body)
+}
 
 func renderDashboard(month time.Time, txs []repository.Transaction, pending []pendingView, categories map[string]string, status string) string {
 	title := titleStyle.Render("JaskMoney Dashboard - " + month.Format("January 2006"))
@@ -288,7 +409,7 @@ func renderDashboard(month time.Time, txs []repository.Transaction, pending []pe
 	for _, p := range pairs {
 		body += fmt.Sprintf("\n- %-24s $%.2f", p.name, float64(-p.total)/100)
 	}
-	body += "\n[t] Transactions  [r] Reconcile  [q] Quit"
+	body += "\n[t] Transactions  [r] Reconcile  [i] Import CSV  [q] Quit"
 	if status != "" {
 		body += "\n" + status
 	}
@@ -313,7 +434,7 @@ func renderTransactions(txs []repository.Transaction, categories map[string]stri
 		}
 		out += fmt.Sprintf("%s %s  %-30s  %8.2f  %s\n", marker, t.Date.Format("01/02"), t.RawDescription, float64(t.AmountCents)/100, cat)
 	}
-	out += "[d] Dashboard  [r] Reconcile  [a] AI categorize  [g] Categorize all  [q] Quit"
+	out += "[d] Dashboard  [r] Reconcile  [a] AI categorize  [g] Categorize all  [i] Import CSV  [q] Quit"
 	if status != "" {
 		out += "\n" + status
 	}
@@ -323,7 +444,7 @@ func renderTransactions(txs []repository.Transaction, categories map[string]stri
 func renderReconcile(pending []pendingView, cursor int, categories map[string]string, status string) string {
 	title := titleStyle.Render("Reconciliation Queue")
 	if len(pending) == 0 {
-		return fmt.Sprintf("%s\nNo pending matches.\n[d] Dashboard  [t] Transactions  [s] Scan  [q] Quit", title)
+		return fmt.Sprintf("%s\nNo pending matches.\n[d] Dashboard  [t] Transactions  [s] Scan  [i] Import CSV  [q] Quit", title)
 	}
 	pv := pending[cursor]
 	aDesc, bDesc := "<missing>", "<missing>"
@@ -351,7 +472,7 @@ func renderReconcile(pending []pendingView, cursor int, categories map[string]st
 			bCat = *pv.B.CategoryID
 		}
 	}
-	out := fmt.Sprintf("%s\nMatch %d of %d  Similarity: %.2f\nA: %-40s %8.2f  %s\nB: %-40s %8.2f  %s\n[y] Merge  [n] Not duplicate  [s] Scan  [d] Dashboard  [t] Transactions  [q] Quit", title, cursor+1, len(pending), pv.PR.Similarity, aDesc, aAmt, aCat, bDesc, bAmt, bCat)
+	out := fmt.Sprintf("%s\nMatch %d of %d  Similarity: %.2f\nA: %-40s %8.2f  %s\nB: %-40s %8.2f  %s\n[y] Merge  [n] Not duplicate  [s] Scan  [d] Dashboard  [t] Transactions  [i] Import CSV  [q] Quit", title, cursor+1, len(pending), pv.PR.Similarity, aDesc, aAmt, aCat, bDesc, bAmt, bCat)
 	if pv.PR.LLMConfidence != nil {
 		out += fmt.Sprintf("\nAI confidence: %.2f", *pv.PR.LLMConfidence)
 	}
