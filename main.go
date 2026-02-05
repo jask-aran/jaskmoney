@@ -11,37 +11,98 @@ import (
 	"strings"
 	"time"
 
-	"github.com/charmbracelet/bubbles/table"
-	"github.com/charmbracelet/bubbles/textinput"
+	"github.com/charmbracelet/bubbles/help"
+	"github.com/charmbracelet/bubbles/key"
+	"github.com/charmbracelet/bubbles/list"
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
-	"github.com/charmbracelet/x/ansi"
 	_ "modernc.org/sqlite"
 )
 
 const dateInputFormat = "2/01/2006"
 
 var (
-	titleStyle  = lipgloss.NewStyle().Bold(true)
-	statusStyle = lipgloss.NewStyle().Foreground(lipgloss.Color("241"))
-	footerStyle = lipgloss.NewStyle().Foreground(lipgloss.Color("239"))
-	dimStyle    = lipgloss.NewStyle().Foreground(lipgloss.Color("240"))
-	modalStyle  = lipgloss.NewStyle().Border(lipgloss.RoundedBorder()).Padding(1, 2).Background(lipgloss.Color("235"))
+	titleStyle     = lipgloss.NewStyle().Bold(true)
+	statusStyle    = lipgloss.NewStyle().Foreground(lipgloss.Color("241"))
+	footerStyle    = lipgloss.NewStyle().Foreground(lipgloss.Color("255")).Background(lipgloss.Color("238")).Padding(0, 2)
+	statusBarStyle = lipgloss.NewStyle().Foreground(lipgloss.Color("252")).Background(lipgloss.Color("236")).Padding(0, 2)
+	dimStyle       = lipgloss.NewStyle().Foreground(lipgloss.Color("240"))
+	modalStyle     = lipgloss.NewStyle().Border(lipgloss.RoundedBorder()).Padding(1, 2).Background(lipgloss.Color("235"))
+	listBoxStyle   = lipgloss.NewStyle().Border(lipgloss.RoundedBorder()).Padding(0, 1)
 )
 
+type transaction struct {
+	dateRaw     string
+	amount      float64
+	description string
+}
+
+type fileItem struct {
+	name string
+}
+
+func (f fileItem) Title() string       { return f.name }
+func (f fileItem) Description() string { return "" }
+func (f fileItem) FilterValue() string { return f.name }
+
+type keyMap struct {
+	Import key.Binding
+	Quit   key.Binding
+	UpDown key.Binding
+	Enter  key.Binding
+	Clear  key.Binding
+	Close  key.Binding
+	Filter key.Binding
+}
+
+func newKeyMap() keyMap {
+	return keyMap{
+		Import: key.NewBinding(key.WithKeys("i"), key.WithHelp("i", "import")),
+		Quit:   key.NewBinding(key.WithKeys("q", "ctrl+c"), key.WithHelp("q", "quit")),
+		UpDown: key.NewBinding(key.WithKeys("up", "down"), key.WithHelp("↑/↓", "scroll/select")),
+		Enter:  key.NewBinding(key.WithKeys("enter"), key.WithHelp("enter", "import")),
+		Clear:  key.NewBinding(key.WithKeys("c"), key.WithHelp("c", "clear db")),
+		Close:  key.NewBinding(key.WithKeys("esc"), key.WithHelp("esc", "close")),
+		Filter: key.NewBinding(key.WithKeys("/"), key.WithHelp("/", "filter")),
+	}
+}
+
+func (k keyMap) ShortHelp() []key.Binding {
+	return []key.Binding{k.Import, k.UpDown, k.Quit}
+}
+
+func (k keyMap) FullHelp() [][]key.Binding {
+	return [][]key.Binding{{k.Import, k.UpDown, k.Quit}}
+}
+
+type modalKeyMap struct {
+	keyMap
+}
+
+func (k modalKeyMap) ShortHelp() []key.Binding {
+	return []key.Binding{k.Enter, k.Clear, k.Close, k.UpDown, k.Filter, k.Quit}
+}
+
+func (k modalKeyMap) FullHelp() [][]key.Binding {
+	return [][]key.Binding{{k.Enter, k.Clear, k.Close, k.UpDown, k.Filter, k.Quit}}
+}
+
 type model struct {
-	db         *sql.DB
-	table      table.Model
-	status     string
-	ready      bool
-	basePath   string
-	showPopup  bool
-	popupInput textinput.Model
-	files      []string
-	filtered   []string
-	cursor     int
-	width      int
-	height     int
+	db        *sql.DB
+	status    string
+	ready     bool
+	basePath  string
+	showPopup bool
+	fileList  list.Model
+	help      help.Model
+	keys      keyMap
+	modalKeys modalKeyMap
+	rows      []transaction
+	cursor    int
+	topIndex  int
+	width     int
+	height    int
+	listReady bool
 }
 
 type dbReadyMsg struct {
@@ -56,12 +117,12 @@ type ingestDoneMsg struct {
 }
 
 type refreshDoneMsg struct {
-	rows []table.Row
+	rows []transaction
 	err  error
 }
 
 type filesLoadedMsg struct {
-	files []string
+	items []list.Item
 	err   error
 }
 
@@ -78,26 +139,27 @@ func main() {
 }
 
 func newModel() model {
-	tbl := table.New(
-		table.WithColumns([]table.Column{
-			{Title: "Date", Width: 12},
-			{Title: "Amount", Width: 12},
-			{Title: "Description", Width: 60},
-		}),
-		table.WithFocused(true),
-	)
-	styles := table.DefaultStyles()
-	styles.Header = styles.Header.Bold(true)
-	tbl.SetStyles(styles)
+	listModel := list.New([]list.Item{}, list.NewDefaultDelegate(), 0, 0)
+	listModel.Title = "Import Popup"
+	listModel.SetShowStatusBar(false)
+	listModel.SetFilteringEnabled(true)
+	listModel.SetShowHelp(false)
+	listModel.DisableQuitKeybindings()
 
 	cwd, _ := os.Getwd()
-	popupInput := textinput.New()
-	popupInput.Placeholder = "Filter CSV files..."
-	popupInput.Prompt = "Find: "
+	helpModel := help.New()
+	helpModel.ShortSeparator = "  "
+	helpModel.Styles.ShortKey = lipgloss.NewStyle()
+	helpModel.Styles.ShortDesc = lipgloss.NewStyle()
+	helpModel.Styles.ShortSeparator = lipgloss.NewStyle()
 	return model{
-		table:      tbl,
-		basePath:   cwd,
-		popupInput: popupInput,
+		basePath: cwd,
+		fileList: listModel,
+		help:     helpModel,
+		keys:     newKeyMap(),
+		modalKeys: modalKeyMap{
+			keyMap: newKeyMap(),
+		},
 	}
 }
 
@@ -125,13 +187,12 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.status = fmt.Sprintf("DB error: %v", msg.err)
 			return m, nil
 		}
-		if m.db == nil {
-			return m, nil
-		}
-		m.table.SetRows(msg.rows)
+		m.rows = msg.rows
 		m.ready = true
+		m.cursor = 0
+		m.topIndex = 0
 		if m.status == "" {
-			m.status = "Ready. Press Enter to import."
+			m.status = "Transactions list ready. Press i to open the import popup."
 		}
 		return m, nil
 	case filesLoadedMsg:
@@ -140,12 +201,8 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.showPopup = false
 			return m, nil
 		}
-		m.files = msg.files
-		m.applyFilter()
-		m.ready = true
-		if len(m.filtered) == 0 {
-			m.status = "No CSV files found."
-		}
+		m.fileList.SetItems(msg.items)
+		m.listReady = true
 		return m, nil
 	case clearDoneMsg:
 		if msg.err != nil {
@@ -173,6 +230,13 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			rows, err := loadRows(m.db)
 			return refreshDoneMsg{rows: rows, err: err}
 		}
+	case tea.WindowSizeMsg:
+		m.width = msg.Width
+		m.height = msg.Height
+		m.help.Width = msg.Width
+		m.resizeList()
+		m.ensureCursorInWindow()
+		return m, nil
 	case tea.KeyMsg:
 		if m.showPopup {
 			return m.updatePopup(msg)
@@ -182,37 +246,302 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			return m, tea.Quit
 		case "i":
 			m.showPopup = true
-			m.popupInput.SetValue("")
-			m.popupInput.Focus()
-			m.cursor = 0
+			m.listReady = false
+			m.fileList.ResetFilter()
+			m.fileList.Select(0)
 			return m, loadFilesCmd(m.basePath)
+		case "up", "k", "ctrl+p":
+			if m.cursor > 0 {
+				m.cursor--
+				if m.cursor < m.topIndex {
+					m.topIndex--
+				}
+				if m.topIndex < 0 {
+					m.topIndex = 0
+				}
+			}
+			return m, nil
+		case "down", "j", "ctrl+n":
+			if m.cursor < len(m.rows)-1 {
+				m.cursor++
+				visible := m.visibleRows()
+				if visible <= 0 {
+					visible = 1
+				}
+				if m.cursor >= m.topIndex+visible {
+					m.topIndex++
+				}
+				maxTop := len(m.rows) - visible
+				if maxTop < 0 {
+					maxTop = 0
+				}
+				if m.topIndex > maxTop {
+					m.topIndex = maxTop
+				}
+			}
+			return m, nil
 		}
-	case tea.WindowSizeMsg:
-		m.width = msg.Width
-		m.height = msg.Height
-		m.resizeTable()
 		return m, nil
 	}
 
-	var cmd tea.Cmd
-	m.table, _ = m.table.Update(msg)
-	return m, cmd
+	return m, nil
 }
 
 func (m model) View() string {
-	header := titleStyle.Render("Transactions")
 	status := statusStyle.Render(m.status)
 
 	if !m.ready {
-		return fmt.Sprintf("%s\n\n%s", header, status)
+		return status
 	}
 
-	main := fmt.Sprintf("%s\n\n%s\n\n%s", header, status, m.table.View())
-	footer := footerStyle.Render(m.footerText())
+	content := renderTable(m.rows, m.cursor, m.topIndex, m.visibleRows(), m.listContentWidth())
+	listView := listBoxStyle.Render(content)
+	main := listView
+	statusLine := m.renderStatus(m.status)
+	footer := m.renderFooter(m.footerText())
 	if m.showPopup {
-		return m.composeModal(main, footer)
+		return m.composeModal(main, statusLine, footer)
 	}
-	return m.placeWithFooter(main, footer)
+	return m.placeWithFooter(main, statusLine, footer)
+}
+
+func (m model) footerText() string {
+	if m.showPopup {
+		return m.help.View(m.modalKeys)
+	}
+	return m.help.View(m.keys)
+}
+
+func (m *model) visibleRows() int {
+	if m.height == 0 {
+		return 10
+	}
+	frameV := listBoxStyle.GetVerticalFrameSize()
+	available := m.height - 2 - frameV - 1
+	if available < 3 {
+		available = 3
+	}
+	if available > 20 {
+		available = 20
+	}
+	return available
+}
+
+func (m *model) listContentWidth() int {
+	if m.width == 0 {
+		return 80
+	}
+	frameH := listBoxStyle.GetHorizontalFrameSize()
+	contentWidth := m.width - frameH
+	if contentWidth < 20 {
+		contentWidth = 20
+	}
+	return contentWidth
+}
+
+func (m *model) resizeList() {
+	if m.width == 0 || m.height == 0 {
+		return
+	}
+	listWidth := min(70, m.width-6)
+	if listWidth < 40 {
+		listWidth = 40
+	}
+	m.fileList.SetWidth(listWidth)
+	m.fileList.SetHeight(min(14, m.height-8))
+}
+
+func (m model) contentWidth() int {
+	if m.width == 0 {
+		return 80
+	}
+	return m.width
+}
+
+func (m model) updatePopup(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
+	switch msg.String() {
+	case "esc":
+		m.showPopup = false
+		return m, nil
+	case "ctrl+c", "q":
+		return m, tea.Quit
+	case "c":
+		if m.db == nil {
+			m.status = "Database not ready."
+			return m, nil
+		}
+		m.status = "Clearing database..."
+		return m, func() tea.Msg {
+			_, err := m.db.Exec("DELETE FROM transactions")
+			return clearDoneMsg{err: err}
+		}
+	case "enter":
+		item, ok := m.fileList.SelectedItem().(fileItem)
+		if !ok || item.name == "" {
+			m.status = "No file selected."
+			return m, nil
+		}
+		if m.db == nil {
+			m.status = "Database not ready."
+			return m, nil
+		}
+		m.status = "Importing..."
+		m.showPopup = false
+		return m, ingestCmd(m.db, item.name, m.basePath)
+	}
+
+	var cmd tea.Cmd
+	m.fileList, cmd = m.fileList.Update(msg)
+	return m, cmd
+}
+
+func (m model) composeModal(base, statusLine, footer string) string {
+	baseDim := dimLines(base)
+	baseView := m.placeWithFooter(baseDim, statusLine, footer)
+	if m.height == 0 || m.width == 0 {
+		return baseView + "\n\n" + m.popupView()
+	}
+	modalContent := lipgloss.NewStyle().Width(m.fileList.Width()).Render(m.popupView())
+	modal := modalStyle.Render(modalContent)
+	lines := splitLines(modal)
+	modalWidth := maxLineWidth(lines)
+	modalHeight := len(lines)
+
+	targetHeight := m.height - 2
+	if targetHeight < 1 {
+		targetHeight = 1
+	}
+	x := (m.width - modalWidth) / 2
+	if x < 0 {
+		x = 0
+	}
+	y := (targetHeight - modalHeight) / 2
+	if y < 0 {
+		y = 0
+	}
+	return overlayAt(baseView, modal, x, y, m.width, targetHeight)
+}
+
+func (m model) popupView() string {
+	if !m.listReady {
+		return "Loading CSV files..."
+	}
+	return m.fileList.View()
+}
+
+func (m model) placeWithFooter(body, statusLine, footer string) string {
+	if m.height == 0 {
+		return body + "\n\n" + statusLine + "\n" + footer
+	}
+	contentHeight := m.height - 2
+	if contentHeight < 1 {
+		contentHeight = 1
+	}
+	if lipgloss.Height(body) >= contentHeight {
+		return body + "\n" + statusLine + "\n" + footer
+	}
+	main := lipgloss.Place(m.width, contentHeight, lipgloss.Left, lipgloss.Top, body)
+	return main + "\n" + statusLine + "\n" + footer
+}
+
+func (m *model) ensureCursorVisible() {
+	m.ensureCursorInWindow()
+}
+
+func (m *model) ensureCursorInWindow() {
+	visible := m.visibleRows()
+	if visible <= 0 {
+		return
+	}
+	if m.cursor < m.topIndex {
+		m.topIndex = m.cursor
+	} else if m.cursor >= m.topIndex+visible {
+		m.topIndex = m.cursor - visible + 1
+	}
+	maxTop := len(m.rows) - visible
+	if maxTop < 0 {
+		maxTop = 0
+	}
+	if m.topIndex > maxTop {
+		m.topIndex = maxTop
+	}
+	if m.topIndex < 0 {
+		m.topIndex = 0
+	}
+}
+
+func overlayAt(base, overlay string, x, y, width, height int) string {
+	baseLines := splitLines(base)
+	overlayLines := splitLines(overlay)
+	overlayWidth := maxLineWidth(overlayLines)
+	for i, line := range overlayLines {
+		row := y + i
+		if row < 0 || row >= len(baseLines) || row >= height {
+			continue
+		}
+		target := padRight(baseLines[row], width)
+		left := cutPlain(target, 0, x)
+		right := ""
+		if width > 0 {
+			right = cutPlain(target, x+overlayWidth, width)
+		}
+		overlayLine := padRight(line, overlayWidth)
+		baseLines[row] = left + overlayLine + right
+	}
+	return strings.Join(baseLines, "\n")
+}
+
+func splitLines(s string) []string {
+	if s == "" {
+		return []string{""}
+	}
+	return strings.Split(s, "\n")
+}
+
+func maxLineWidth(lines []string) int {
+	max := 0
+	for _, line := range lines {
+		if w := lipgloss.Width(line); w > max {
+			max = w
+		}
+	}
+	return max
+}
+
+func padRight(s string, width int) string {
+	if width <= 0 {
+		return s
+	}
+	w := lipgloss.Width(s)
+	if w >= width {
+		return s
+	}
+	return s + strings.Repeat(" ", width-w)
+}
+
+func cutPlain(s string, left, right int) string {
+	if right <= left {
+		return ""
+	}
+	runes := []rune(s)
+	if left < 0 {
+		left = 0
+	}
+	if right > len(runes) {
+		right = len(runes)
+	}
+	if left > len(runes) {
+		return ""
+	}
+	return string(runes[left:right])
+}
+
+func dimLines(s string) string {
+	lines := splitLines(s)
+	for i, line := range lines {
+		lines[i] = dimStyle.Render(line)
+	}
+	return strings.Join(lines, "\n")
 }
 
 func openDB(path string) (*sql.DB, error) {
@@ -297,17 +626,17 @@ func loadFilesCmd(basePath string) tea.Cmd {
 		if err != nil {
 			return filesLoadedMsg{err: err}
 		}
-		var files []string
+		var items []list.Item
 		for _, entry := range entries {
 			if entry.IsDir() {
 				continue
 			}
 			name := entry.Name()
 			if strings.HasSuffix(strings.ToLower(name), ".csv") {
-				files = append(files, name)
+				items = append(items, fileItem{name: name})
 			}
 		}
-		return filesLoadedMsg{files: files, err: nil}
+		return filesLoadedMsg{items: items, err: nil}
 	}
 }
 
@@ -321,25 +650,21 @@ func parseDateISO(input string) (string, error) {
 
 func parseAmount(input string) (float64, error) {
 	input = strings.ReplaceAll(input, ",", "")
-	return strconvParseFloat(input)
-}
-
-func strconvParseFloat(input string) (float64, error) {
 	return strconv.ParseFloat(input, 64)
 }
 
-func loadRows(db *sql.DB) ([]table.Row, error) {
+func loadRows(db *sql.DB) ([]transaction, error) {
 	rows, err := db.Query(`
 		SELECT date_raw, amount, description
 		FROM transactions
-		ORDER BY date_iso ASC, id ASC
+		ORDER BY id ASC
 	`)
 	if err != nil {
 		return nil, err
 	}
 	defer rows.Close()
 
-	var out []table.Row
+	var out []transaction
 	for rows.Next() {
 		var dateRaw string
 		var amount float64
@@ -347,236 +672,76 @@ func loadRows(db *sql.DB) ([]table.Row, error) {
 		if err := rows.Scan(&dateRaw, &amount, &description); err != nil {
 			return nil, err
 		}
-		out = append(out, table.Row{dateRaw, fmt.Sprintf("%.2f", amount), description})
+		out = append(out, transaction{dateRaw: dateRaw, amount: amount, description: description})
 	}
 	return out, rows.Err()
 }
 
-func (m *model) applyFilter() {
-	query := strings.ToLower(strings.TrimSpace(m.popupInput.Value()))
-	if query == "" {
-		m.filtered = append([]string{}, m.files...)
-		m.cursor = 0
-		return
+func renderTable(rows []transaction, cursor int, topIndex int, visible int, width int) string {
+	cursorWidth := 2
+	dateWidth := 12
+	amountWidth := 12
+	descWidth := width - dateWidth - amountWidth - cursorWidth - 6
+	if descWidth < 20 {
+		descWidth = 20
 	}
-	var out []string
-	for _, f := range m.files {
-		if strings.Contains(strings.ToLower(f), query) {
-			out = append(out, f)
+
+	header := fmt.Sprintf("  %-*s  %-*s  %-*s", dateWidth, "Date", amountWidth, "Amount", descWidth, "Description")
+	lines := []string{header}
+	end := topIndex + visible
+	if end > len(rows) {
+		end = len(rows)
+	}
+	for i := topIndex; i < end; i++ {
+		row := rows[i]
+		displayIndex := i
+		amount := fmt.Sprintf("%.2f", row.amount)
+		desc := truncate(row.description, descWidth)
+		prefix := "  "
+		if displayIndex == cursor {
+			prefix = "> "
 		}
+		lines = append(lines, fmt.Sprintf("%s%-*s  %-*s  %-*s", prefix, dateWidth, row.dateRaw, amountWidth, amount, descWidth, desc))
 	}
-	m.filtered = out
-	if m.cursor >= len(m.filtered) {
-		m.cursor = 0
-	}
+	content := strings.Join(lines, "\n")
+	return content
 }
 
-func (m model) updatePopup(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
-	switch msg.String() {
-	case "esc":
-		m.showPopup = false
-		return m, nil
-	case "ctrl+c":
-		return m, tea.Quit
-	case "up", "k":
-		if m.cursor > 0 {
-			m.cursor--
-		}
-		return m, nil
-	case "down", "j":
-		if m.cursor < len(m.filtered)-1 {
-			m.cursor++
-		}
-		return m, nil
-	case "c":
-		if m.db == nil {
-			m.status = "Database not ready."
-			return m, nil
-		}
-		m.status = "Clearing database..."
-		return m, func() tea.Msg {
-			_, err := m.db.Exec("DELETE FROM transactions")
-			return clearDoneMsg{err: err}
-		}
-	case "enter":
-		if len(m.filtered) == 0 {
-			m.status = "No file selected."
-			return m, nil
-		}
-		filename := m.filtered[m.cursor]
-		if m.db == nil {
-			m.status = "Database not ready."
-			return m, nil
-		}
-		m.status = "Importing..."
-		m.showPopup = false
-		return m, ingestCmd(m.db, filename, m.basePath)
-	}
-
-	var cmd tea.Cmd
-	m.popupInput, cmd = m.popupInput.Update(msg)
-	m.applyFilter()
-	return m, cmd
-}
-
-func (m model) popupView() string {
-	var b strings.Builder
-	b.WriteString(titleStyle.Render("Import CSV  •  Clear DB (c)  •  Close (esc)"))
-	b.WriteString("\n")
-	b.WriteString(m.popupInput.View())
-	b.WriteString("\n\n")
-	if len(m.filtered) == 0 {
-		b.WriteString(statusStyle.Render("No matching CSV files."))
-		return b.String()
-	}
-	for i, name := range m.filtered {
-		cursor := "  "
-		if i == m.cursor {
-			cursor = "> "
-		}
-		b.WriteString(cursor + name + "\n")
-	}
-	return b.String()
-}
-
-func (m *model) resizeTable() {
-	if m.height == 0 {
-		return
-	}
-	// Header(1) + blank(1) + status(1) + blank(1) + footer(1) + padding(1)
-	usable := m.height - 6
-	if usable < 3 {
-		usable = 3
-	}
-	m.table.SetHeight(usable)
-	if m.width > 0 {
-		descWidth := m.width - 12 - 12 - 6
-		if descWidth < 20 {
-			descWidth = 20
-		}
-		m.table.SetColumns([]table.Column{
-			{Title: "Date", Width: 12},
-			{Title: "Amount", Width: 12},
-			{Title: "Description", Width: descWidth},
-		})
-	}
-}
-
-func (m model) placeWithFooter(body, footer string) string {
-	if m.height == 0 {
-		return body + "\n\n" + footer
-	}
-	contentHeight := m.height - 1
-	if contentHeight < 1 {
-		contentHeight = 1
-	}
-	main := lipgloss.Place(m.width, contentHeight, lipgloss.Left, lipgloss.Top, body)
-	return main + "\n" + footer
-}
-
-func (m model) footerText() string {
-	if m.showPopup {
-		return "enter: import  c: clear db  esc: close  ↑/↓: select  type: filter  q: quit"
-	}
-	return "i: import  q: quit  ↑/↓: scroll"
-}
-
-func (m model) composeModal(body, footer string) string {
-	basePlain := ansi.Strip(body)
-	base := m.placeWithFooter(dimLines(basePlain), footer)
-	if m.height == 0 || m.width == 0 {
-		return base + "\n\n" + m.popupView()
-	}
-	modal := modalStyle.Render(m.popupView())
-	lines := splitLines(modal)
-	modalWidth := maxLineWidth(lines)
-	modalHeight := len(lines)
-
-	targetHeight := m.height - 1
-	if targetHeight < 1 {
-		targetHeight = 1
-	}
-	x := (m.width - modalWidth) / 2
-	if x < 0 {
-		x = 0
-	}
-	y := (targetHeight - modalHeight) / 2
-	if y < 0 {
-		y = 0
-	}
-	return overlayAt(base, modal, x, y, m.width, targetHeight)
-}
-
-func overlayAt(base, overlay string, x, y, width, height int) string {
-	baseLines := splitLines(base)
-	overlayLines := splitLines(overlay)
-	overlayWidth := maxLineWidth(overlayLines)
-	for i, line := range overlayLines {
-		row := y + i
-		if row < 0 || row >= len(baseLines) || row >= height {
-			continue
-		}
-		target := padRight(baseLines[row], width)
-		left := cutPlain(target, 0, x)
-		right := ""
-		if width > 0 {
-			right = cutPlain(target, x+overlayWidth, width)
-		}
-		overlayLine := padRight(line, overlayWidth)
-		baseLines[row] = left + overlayLine + right
-	}
-	return strings.Join(baseLines, "\n")
-}
-
-func splitLines(s string) []string {
-	if s == "" {
-		return []string{""}
-	}
-	return strings.Split(s, "\n")
-}
-
-func maxLineWidth(lines []string) int {
-	max := 0
-	for _, line := range lines {
-		if w := lipgloss.Width(line); w > max {
-			max = w
-		}
-	}
-	return max
-}
-
-func padRight(s string, width int) string {
+func truncate(s string, width int) string {
 	if width <= 0 {
-		return s
-	}
-	w := lipgloss.Width(s)
-	if w >= width {
-		return s
-	}
-	return s + strings.Repeat(" ", width-w)
-}
-
-func cutPlain(s string, left, right int) string {
-	if right <= left {
 		return ""
 	}
 	runes := []rune(s)
-	if left < 0 {
-		left = 0
+	if len(runes) <= width {
+		return s
 	}
-	if right > len(runes) {
-		right = len(runes)
+	if width <= 1 {
+		return string(runes[:width])
 	}
-	if left > len(runes) {
-		return ""
-	}
-	return string(runes[left:right])
+	return string(runes[:width-1]) + "…"
 }
 
-func dimLines(s string) string {
-	lines := splitLines(s)
-	for i, line := range lines {
-		lines[i] = dimStyle.Render(line)
+func (m model) renderFooter(text string) string {
+	if m.width == 0 {
+		return footerStyle.Render(text)
 	}
-	return strings.Join(lines, "\n")
+	flat := strings.ReplaceAll(text, "\n", " ")
+	padded := padRight(flat, m.width)
+	return footerStyle.Render(padded)
+}
+
+func (m model) renderStatus(text string) string {
+	if m.width == 0 {
+		return statusBarStyle.Render(text)
+	}
+	flat := strings.ReplaceAll(text, "\n", " ")
+	padded := padRight(flat, m.width)
+	return statusBarStyle.Render(padded)
+}
+
+func min(a, b int) int {
+	if a < b {
+		return a
+	}
+	return b
 }
