@@ -47,10 +47,7 @@ func (r *Reconciler) DetectAndQueue(ctx context.Context) error {
 				TransactionB:       txToLLM(b),
 				DateDifferenceDays: int(math.Abs(a.Date.Sub(b.Date).Hours()) / 24),
 			})
-			if err != nil {
-				continue
-			}
-			// queue for user review regardless of judgment, but keep confidence
+			// queue for user review regardless of judgment, but keep confidence when available
 			pr := repository.PendingReconciliation{
 				ID:             uuid.NewString(),
 				TransactionAID: a.ID,
@@ -59,12 +56,14 @@ func (r *Reconciler) DetectAndQueue(ctx context.Context) error {
 				Status:         "pending",
 				CreatedAt:      time.Now().UTC(),
 			}
-			if resp.Confidence > 0 {
-				pr.LLMConfidence = &resp.Confidence
-			}
-			if resp.Reasoning != "" {
-				reason := resp.Reasoning
-				pr.LLMReasoning = &reason
+			if err == nil {
+				if resp.Confidence > 0 {
+					pr.LLMConfidence = &resp.Confidence
+				}
+				if resp.Reasoning != "" {
+					reason := resp.Reasoning
+					pr.LLMReasoning = &reason
+				}
 			}
 			if err := r.Pending.Add(ctx, pr); err != nil {
 				return err

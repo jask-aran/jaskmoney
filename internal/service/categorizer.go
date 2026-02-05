@@ -2,6 +2,7 @@ package service
 
 import (
 	"context"
+	"strings"
 	"time"
 
 	"github.com/google/uuid"
@@ -20,9 +21,9 @@ type CategorizerService struct {
 	Provider     llm.LLMProvider
 }
 
-func (s *CategorizerService) CategorizeTransaction(ctx context.Context, tx repository.Transaction) error {
+func (s *CategorizerService) CategorizeTransaction(ctx context.Context, tx repository.Transaction, allowOverride bool) error {
 	// 1) user override already? if category set and source user we don't know; assume any set means skip
-	if tx.CategoryID != nil {
+	if tx.CategoryID != nil && !allowOverride {
 		return nil
 	}
 
@@ -43,7 +44,7 @@ func (s *CategorizerService) CategorizeTransaction(ctx context.Context, tx repos
 		Categories:     s.categoryNames(ctx),
 	})
 	if err != nil {
-		return nil // degrade gracefully
+		return err
 	}
 
 	if resp.Confidence >= llmConfidenceThreshold {
@@ -97,11 +98,8 @@ func (s *CategorizerService) categoryNames(ctx context.Context) []string {
 	if err != nil {
 		return nil
 	}
-	out := make([]string, 0, len(cats))
-	for _, c := range cats {
-		out = append(out, c.Name)
-	}
-	return out
+	_, paths := buildCategoryPaths(cats)
+	return paths
 }
 
 func (s *CategorizerService) findCategoryIDByName(ctx context.Context, name string) string {
@@ -109,10 +107,45 @@ func (s *CategorizerService) findCategoryIDByName(ctx context.Context, name stri
 	if err != nil {
 		return ""
 	}
+	index, _ := buildCategoryPaths(cats)
+	if id, ok := index[normalizeCategoryName(name)]; ok {
+		return id
+	}
+	clean := normalizeCategoryName(name)
 	for _, c := range cats {
-		if c.Name == name {
+		if normalizeCategoryName(c.Name) == clean {
 			return c.ID
 		}
 	}
 	return ""
+}
+
+func buildCategoryPaths(cats []repository.Category) (map[string]string, []string) {
+	byID := make(map[string]repository.Category, len(cats))
+	for _, c := range cats {
+		byID[c.ID] = c
+	}
+	index := make(map[string]string, len(cats))
+	paths := make([]string, 0, len(cats))
+	for _, c := range cats {
+		path := c.Name
+		if !strings.Contains(path, ">") {
+			parent := c.ParentID
+			for parent != nil {
+				p, ok := byID[*parent]
+				if !ok {
+					break
+				}
+				path = p.Name + " > " + path
+				parent = p.ParentID
+			}
+		}
+		index[normalizeCategoryName(path)] = c.ID
+		paths = append(paths, path)
+	}
+	return index, paths
+}
+
+func normalizeCategoryName(name string) string {
+	return strings.ToLower(strings.TrimSpace(name))
 }

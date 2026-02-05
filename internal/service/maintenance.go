@@ -24,8 +24,6 @@ func (s *MaintenanceService) Reset(ctx context.Context) error {
 			"transaction_tags",
 			"merchant_rules",
 			"transactions",
-			"tags",
-			"categories",
 			"accounts",
 		}
 		for _, t := range tables {

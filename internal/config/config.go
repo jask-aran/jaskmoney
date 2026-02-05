@@ -45,7 +45,7 @@ func Load() (Config, error) {
 	v.SetDefault("llm.provider", "gemini")
 	v.SetDefault("llm.api_key_env", "GEMINI_API_KEY")
 	v.SetDefault("llm.api_key", "")
-	v.SetDefault("llm.model", "gemini-2.5-flash-preview-05-20")
+	v.SetDefault("llm.model", "gemini-3-flash-preview")
 	v.SetDefault("ui.date_format", "02/01")
 	v.SetDefault("ui.currency_symbol", "$")
 	v.SetDefault("ui.timezone", "Australia/Melbourne")

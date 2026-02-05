@@ -8,12 +8,15 @@ require (
 	github.com/agnivade/levenshtein v1.2.1
 	github.com/charmbracelet/bubbletea v1.3.10
 	github.com/charmbracelet/lipgloss v1.1.0
+	github.com/openai/openai-go v0.0.0-00010101000000-000000000000
 	github.com/golang-migrate/migrate/v4 v4.19.1
 	github.com/golangci/golangci-lint v1.64.8
 	github.com/google/uuid v1.6.0
 	github.com/mattn/go-sqlite3 v1.14.33
 	github.com/spf13/viper v1.21.0
 )
+
+replace github.com/openai/openai-go => ./internal/openai
 
 require (
 	4d63.com/gocheckcompilerdirectives v1.3.0 // indirect
