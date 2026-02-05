@@ -11,7 +11,6 @@ import (
 	"strings"
 	"time"
 
-	"github.com/charmbracelet/bubbles/help"
 	"github.com/charmbracelet/bubbles/key"
 	"github.com/charmbracelet/bubbles/list"
 	tea "github.com/charmbracelet/bubbletea"
@@ -26,8 +25,7 @@ var (
 	statusStyle    = lipgloss.NewStyle().Foreground(lipgloss.Color("241"))
 	footerStyle    = lipgloss.NewStyle().Foreground(lipgloss.Color("255")).Background(lipgloss.Color("238")).Padding(0, 2)
 	statusBarStyle = lipgloss.NewStyle().Foreground(lipgloss.Color("252")).Background(lipgloss.Color("236")).Padding(0, 2)
-	dimStyle       = lipgloss.NewStyle().Foreground(lipgloss.Color("240"))
-	modalStyle     = lipgloss.NewStyle().Border(lipgloss.RoundedBorder()).Padding(1, 2).Background(lipgloss.Color("235"))
+	modalStyle     = lipgloss.NewStyle().Border(lipgloss.RoundedBorder()).Padding(0, 1)
 	listBoxStyle   = lipgloss.NewStyle().Border(lipgloss.RoundedBorder()).Padding(0, 1)
 )
 
@@ -45,6 +43,26 @@ func (f fileItem) Title() string       { return f.name }
 func (f fileItem) Description() string { return "" }
 func (f fileItem) FilterValue() string { return f.name }
 
+type fileItemDelegate struct{}
+
+func (d fileItemDelegate) Height() int  { return 1 }
+func (d fileItemDelegate) Spacing() int { return 0 }
+func (d fileItemDelegate) Update(msg tea.Msg, m *list.Model) tea.Cmd {
+	return nil
+}
+func (d fileItemDelegate) Render(w io.Writer, m list.Model, index int, item list.Item) {
+	entry, ok := item.(fileItem)
+	if !ok {
+		return
+	}
+	prefix := "  "
+	if index == m.Index() {
+		prefix = "> "
+	}
+	line := fmt.Sprintf("%s%s", prefix, entry.name)
+	fmt.Fprint(w, padRight(line, m.Width()))
+}
+
 type keyMap struct {
 	Import key.Binding
 	Quit   key.Binding
@@ -52,7 +70,6 @@ type keyMap struct {
 	Enter  key.Binding
 	Clear  key.Binding
 	Close  key.Binding
-	Filter key.Binding
 }
 
 func newKeyMap() keyMap {
@@ -63,7 +80,6 @@ func newKeyMap() keyMap {
 		Enter:  key.NewBinding(key.WithKeys("enter"), key.WithHelp("enter", "import")),
 		Clear:  key.NewBinding(key.WithKeys("c"), key.WithHelp("c", "clear db")),
 		Close:  key.NewBinding(key.WithKeys("esc"), key.WithHelp("esc", "close")),
-		Filter: key.NewBinding(key.WithKeys("/"), key.WithHelp("/", "filter")),
 	}
 }
 
@@ -80,11 +96,11 @@ type modalKeyMap struct {
 }
 
 func (k modalKeyMap) ShortHelp() []key.Binding {
-	return []key.Binding{k.Enter, k.Clear, k.Close, k.UpDown, k.Filter, k.Quit}
+	return []key.Binding{k.Enter, k.Clear, k.Close, k.UpDown, k.Quit}
 }
 
 func (k modalKeyMap) FullHelp() [][]key.Binding {
-	return [][]key.Binding{{k.Enter, k.Clear, k.Close, k.UpDown, k.Filter, k.Quit}}
+	return [][]key.Binding{{k.Enter, k.Clear, k.Close, k.UpDown, k.Quit}}
 }
 
 type model struct {
@@ -94,7 +110,6 @@ type model struct {
 	basePath  string
 	showPopup bool
 	fileList  list.Model
-	help      help.Model
 	keys      keyMap
 	modalKeys modalKeyMap
 	rows      []transaction
@@ -139,23 +154,19 @@ func main() {
 }
 
 func newModel() model {
-	listModel := list.New([]list.Item{}, list.NewDefaultDelegate(), 0, 0)
-	listModel.Title = "Import Popup"
+	listModel := list.New([]list.Item{}, fileItemDelegate{}, 0, 0)
+	listModel.Title = "Imports"
+	listModel.Styles.Title = titleStyle
+	listModel.Styles.NoItems = lipgloss.NewStyle()
 	listModel.SetShowStatusBar(false)
-	listModel.SetFilteringEnabled(true)
+	listModel.SetFilteringEnabled(false)
 	listModel.SetShowHelp(false)
 	listModel.DisableQuitKeybindings()
 
 	cwd, _ := os.Getwd()
-	helpModel := help.New()
-	helpModel.ShortSeparator = "  "
-	helpModel.Styles.ShortKey = lipgloss.NewStyle()
-	helpModel.Styles.ShortDesc = lipgloss.NewStyle()
-	helpModel.Styles.ShortSeparator = lipgloss.NewStyle()
 	return model{
 		basePath: cwd,
 		fileList: listModel,
-		help:     helpModel,
 		keys:     newKeyMap(),
 		modalKeys: modalKeyMap{
 			keyMap: newKeyMap(),
@@ -233,7 +244,6 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case tea.WindowSizeMsg:
 		m.width = msg.Width
 		m.height = msg.Height
-		m.help.Width = msg.Width
 		m.resizeList()
 		m.ensureCursorInWindow()
 		return m, nil
@@ -247,7 +257,6 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		case "i":
 			m.showPopup = true
 			m.listReady = false
-			m.fileList.ResetFilter()
 			m.fileList.Select(0)
 			return m, loadFilesCmd(m.basePath)
 		case "up", "k", "ctrl+p":
@@ -294,9 +303,10 @@ func (m model) View() string {
 		return status
 	}
 
-	content := renderTable(m.rows, m.cursor, m.topIndex, m.visibleRows(), m.listContentWidth())
-	listView := listBoxStyle.Render(content)
-	main := listView
+	overview := m.renderSection("Overview", renderOverview(m.rows, m.listContentWidth()))
+	content := renderTable(m.rows, m.cursor, m.topIndex, m.visibleRows(), m.listContentWidth(), !m.showPopup)
+	transactions := m.renderSection("Transactions", content)
+	main := overview + "\n\n" + transactions
 	statusLine := m.renderStatus(m.status)
 	footer := m.renderFooter(m.footerText())
 	if m.showPopup {
@@ -307,9 +317,9 @@ func (m model) View() string {
 
 func (m model) footerText() string {
 	if m.showPopup {
-		return m.help.View(m.modalKeys)
+		return renderHelp(m.modalKeys.ShortHelp())
 	}
-	return m.help.View(m.keys)
+	return renderHelp(m.keys.ShortHelp())
 }
 
 func (m *model) visibleRows() int {
@@ -317,7 +327,10 @@ func (m *model) visibleRows() int {
 		return 10
 	}
 	frameV := listBoxStyle.GetVerticalFrameSize()
-	available := m.height - 2 - frameV - 1
+	overviewHeight := 1 + frameV + overviewLineCount()
+	sectionGap := 1
+	transactionsHeader := 1
+	available := m.height - 2 - overviewHeight - sectionGap - transactionsHeader - frameV - 1
 	if available < 3 {
 		available = 3
 	}
@@ -332,11 +345,32 @@ func (m *model) listContentWidth() int {
 		return 80
 	}
 	frameH := listBoxStyle.GetHorizontalFrameSize()
-	contentWidth := m.width - frameH
+	contentWidth := m.sectionWidth() - frameH
 	if contentWidth < 20 {
 		contentWidth = 20
 	}
 	return contentWidth
+}
+
+func (m model) renderSection(title, content string) string {
+	header := titleStyle.Render(title)
+	// v0.11 width + centering was perfect; keep the same gutter on both sides.
+	section := header + "\n" + listBoxStyle.Width(m.sectionWidth()).Render(content)
+	if m.width == 0 {
+		return section
+	}
+	return lipgloss.Place(m.width, lipgloss.Height(section), lipgloss.Center, lipgloss.Top, section)
+}
+
+func (m *model) sectionWidth() int {
+	if m.width == 0 {
+		return 80
+	}
+	width := m.width - 4
+	if width < 20 {
+		width = m.width
+	}
+	return width
 }
 
 func (m *model) resizeList() {
@@ -396,8 +430,7 @@ func (m model) updatePopup(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 }
 
 func (m model) composeModal(base, statusLine, footer string) string {
-	baseDim := dimLines(base)
-	baseView := m.placeWithFooter(baseDim, statusLine, footer)
+	baseView := m.placeWithFooter(base, statusLine, footer)
 	if m.height == 0 || m.width == 0 {
 		return baseView + "\n\n" + m.popupView()
 	}
@@ -470,6 +503,23 @@ func (m *model) ensureCursorInWindow() {
 	}
 }
 
+func splitLines(s string) []string {
+	if s == "" {
+		return []string{""}
+	}
+	return strings.Split(s, "\n")
+}
+
+func maxLineWidth(lines []string) int {
+	max := 0
+	for _, line := range lines {
+		if w := lipgloss.Width(line); w > max {
+			max = w
+		}
+	}
+	return max
+}
+
 func overlayAt(base, overlay string, x, y, width, height int) string {
 	baseLines := splitLines(base)
 	overlayLines := splitLines(overlay)
@@ -489,23 +539,6 @@ func overlayAt(base, overlay string, x, y, width, height int) string {
 		baseLines[row] = left + overlayLine + right
 	}
 	return strings.Join(baseLines, "\n")
-}
-
-func splitLines(s string) []string {
-	if s == "" {
-		return []string{""}
-	}
-	return strings.Split(s, "\n")
-}
-
-func maxLineWidth(lines []string) int {
-	max := 0
-	for _, line := range lines {
-		if w := lipgloss.Width(line); w > max {
-			max = w
-		}
-	}
-	return max
 }
 
 func padRight(s string, width int) string {
@@ -534,14 +567,6 @@ func cutPlain(s string, left, right int) string {
 		return ""
 	}
 	return string(runes[left:right])
-}
-
-func dimLines(s string) string {
-	lines := splitLines(s)
-	for i, line := range lines {
-		lines[i] = dimStyle.Render(line)
-	}
-	return strings.Join(lines, "\n")
 }
 
 func openDB(path string) (*sql.DB, error) {
@@ -677,17 +702,18 @@ func loadRows(db *sql.DB) ([]transaction, error) {
 	return out, rows.Err()
 }
 
-func renderTable(rows []transaction, cursor int, topIndex int, visible int, width int) string {
+func renderTable(rows []transaction, cursor int, topIndex int, visible int, width int, colorAmounts bool) string {
 	cursorWidth := 2
 	dateWidth := 12
 	amountWidth := 12
 	descWidth := width - dateWidth - amountWidth - cursorWidth - 6
-	if descWidth < 20 {
-		descWidth = 20
+	if descWidth < 5 {
+		descWidth = 5
 	}
 
 	header := fmt.Sprintf("  %-*s  %-*s  %-*s", dateWidth, "Date", amountWidth, "Amount", descWidth, "Description")
 	lines := []string{header}
+	creditStyle := lipgloss.NewStyle().Foreground(lipgloss.Color("2"))
 	end := topIndex + visible
 	if end > len(rows) {
 		end = len(rows)
@@ -695,13 +721,19 @@ func renderTable(rows []transaction, cursor int, topIndex int, visible int, widt
 	for i := topIndex; i < end; i++ {
 		row := rows[i]
 		displayIndex := i
-		amount := fmt.Sprintf("%.2f", row.amount)
+		amountText := fmt.Sprintf("%.2f", row.amount)
+		amountField := padRight(amountText, amountWidth)
+		if colorAmounts && row.amount > 0 {
+			amountField = creditStyle.Render(amountField)
+		}
 		desc := truncate(row.description, descWidth)
 		prefix := "  "
 		if displayIndex == cursor {
 			prefix = "> "
 		}
-		lines = append(lines, fmt.Sprintf("%s%-*s  %-*s  %-*s", prefix, dateWidth, row.dateRaw, amountWidth, amount, descWidth, desc))
+		dateField := padRight(row.dateRaw, dateWidth)
+		descField := padRight(desc, descWidth)
+		lines = append(lines, prefix+dateField+"  "+amountField+"  "+descField)
 	}
 	content := strings.Join(lines, "\n")
 	return content
@@ -719,6 +751,47 @@ func truncate(s string, width int) string {
 		return string(runes[:width])
 	}
 	return string(runes[:width-1]) + "…"
+}
+
+func renderOverview(rows []transaction, width int) string {
+	net, debits := 0.0, 0.0
+	for _, row := range rows {
+		net += row.amount
+		if row.amount < 0 {
+			debits += row.amount
+		}
+	}
+	lines := []string{
+		fmt.Sprintf("%-12s %12.2f", "Net Value", net),
+		fmt.Sprintf("%-12s %12.2f", "Net Debits", debits),
+	}
+	for i, line := range lines {
+		lines[i] = padRight(line, width)
+	}
+	return strings.Join(lines, "\n")
+}
+
+func overviewLineCount() int {
+	return 2
+}
+
+func renderHelp(bindings []key.Binding) string {
+	parts := make([]string, 0, len(bindings))
+	for _, binding := range bindings {
+		help := binding.Help()
+		if help.Key == "" && help.Desc == "" {
+			continue
+		}
+		parts = append(parts, boldKey(help.Key)+" "+help.Desc)
+	}
+	return strings.Join(parts, "  ")
+}
+
+func boldKey(text string) string {
+	if text == "" {
+		return ""
+	}
+	return "\x1b[1m" + text + "\x1b[22m"
 }
 
 func (m model) renderFooter(text string) string {
