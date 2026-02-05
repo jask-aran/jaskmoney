@@ -1,37 +1,6 @@
-# Binaries
-/bin/
-
-# Go build artifacts
-*.exe
-*.exe~
-*.dll
-*.so
-*.dylib
-
-# Go cache
-.gocache/
-.gomodcache/
-
-# Editor/OS
-.DS_Store
-.vscode/
-.idea/
-
-# App data
-*.db
-*.db-wal
-*.db-shm
-
-# Logs
-*.log
-
-# Env
-.env
-
-# Local binaries
-/bin/jaskmoney
-
-# Sample CSVs with real data
-ANZ *.csv
-
-!cmd/jaskmoney/
+.venv/
+.uv-cache/
+__pycache__/
+*.pyc
+transactions.db
+ANZ 040226.csv
