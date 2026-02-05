@@ -1,7 +1,7 @@
 # AGENTS.md
 
 This guide is for agentic coding assistants working in this repository.
-Follow the conventions in SPEC.md and existing Go code.
+Refer to the beads issue tracker and use it to track all identified issues through the course of working, and progress made on existing issues, including ones that were created on user request.
 
 ## Project Summary
 
@@ -9,7 +9,7 @@ Follow the conventions in SPEC.md and existing Go code.
 - Language: Go (go 1.23)
 - UI: Bubbletea + Lipgloss
 - Storage: SQLite (single-user, local)
-- LLM: Gemini 2.5 Flash (swappable provider)
+- LLM: Gemini Flash (swappable provider)
 - Time handling: store UTC; input/display default Australia/Melbourne
 - Amounts: integer cents (int64), negative = expense, positive = income
 
@@ -54,19 +54,6 @@ Environment variables:
 
 - `GEMINI_API_KEY` (required for LLM)
 - `JASKMONEY_CONFIG` (optional config path override)
-
-Beads task tracking:
-
-- Beads CLI is initialized for this repo (`bd init` already run).
-- Issues live in `.beads/` and use the prefix `jaskmoney-`.
-- Useful commands:
-  - `bd ready` (list unblocked tasks)
-  - `bd create "Title" -p 0` (create a P0 task)
-  - `bd dep add <child> <parent>` (link tasks)
-  - `bd show <id>` (view details)
-  - `bd sync` (sync Beads state)
-- Agents should use `bd` for task tracking instead of ad-hoc markdown plans.
-- Prefer querying `bd ready`/`bd show` before starting work to understand dependencies.
 
 ## Cursor / Copilot Rules
 
@@ -169,28 +156,49 @@ Documentation:
 - Format: `make fmt`
 - Single test: `go test ./path/to/pkg -run TestName`
 
-## Landing the Plane (Session Completion)
 
-**When ending a work session**, you MUST complete ALL steps below. Work is NOT complete until `git push` succeeds.
+ZFC (Zero Framework Cognition) Principles
 
-**MANDATORY WORKFLOW:**
+Core Architecture Principle: This application is pure orchestration that delegates ALL reasoning to external AI. We build a “thin, safe, deterministic shell” around AI reasoning with strong guardrails and observability.
 
-1. **File issues for remaining work** - Create issues for anything that needs follow-up
-2. **Run quality gates** (if code changed) - Tests, linters, builds
-3. **Update issue status** - Close finished work, update in-progress items
-4. **PUSH TO REMOTE** - This is MANDATORY:
-   ```bash
-   git pull --rebase
-   bd sync
-   git push
-   git status  # MUST show "up to date with origin"
-   ```
-5. **Clean up** - Clear stashes, prune remote branches
-6. **Verify** - All changes committed AND pushed
-7. **Hand off** - Provide context for next session
+✅ ZFC-Compliant (Allowed)
 
-**CRITICAL RULES:**
-- Work is NOT complete until `git push` succeeds
-- NEVER stop before pushing - that leaves work stranded locally
-- NEVER say "ready to push when you are" - YOU must push
-- If push fails, resolve and retry until it succeeds
+Pure Orchestration
+
+IO and Plumbing • Read/write files, list directories, parse JSON, serialize/deserialize • Persist to stores, watch events, index documents
+
+Structural Safety Checks • Schema validation, required fields verification • Path traversal prevention, timeout enforcement, cancellation handling
+
+Policy Enforcement • Budget caps, rate limits, confidence thresholds • “Don’t run without approval” gates
+
+Mechanical Transforms • Parameter substitution (e.g., ${param} replacement) • Compilation • Formatting and rendering AI-provided data
+
+State Management • Lifecycle tracking, progress monitoring • Mission journaling, escalation policy execution
+
+Typed Error Handling • Use SDK-provided error classes (instanceof checks) • Avoid message parsing
+
+❌ ZFC-Violations (Forbidden)
+
+Local Intelligence/Reasoning
+
+Ranking/Scoring/Selection • Any algorithm that chooses among alternatives based on heuristics or weights
+
+Plan/Composition/Scheduling • Decisions about dependencies, ordering, parallelization, retry policies
+
+Semantic Analysis • Inferring complexity, scope, file dependencies • Determining “what should be done next”
+
+Heuristic Classification • Keyword-based routing • Fallback decision trees • Domain-specific rules
+
+Quality Judgment • Opinionated validation beyond structural safety • Recommendations like “test-first recommended”
+
+🔄 ZFC-Compliant Pattern
+
+The Correct Flow
+
+1. Gather Raw Context (IO only) • User intent, project files, constraints, mission state
+
+2. Call AI for Decisions • Classification, selection, composition • Ordering, validation, next steps
+
+3. Validate Structure • Schema conformance • Safety checks • Policy enforcement
+
+4. Execute Mechanically • Run AI’s decisions without modification

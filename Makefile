@@ -27,6 +27,9 @@ tidy:
 build:
 	@go build ./cmd/$(APP)
 
+.PHONY: verify
+verify: fmt test build
+
 .PHONY: run
 run:
 	@go run ./cmd/$(APP)

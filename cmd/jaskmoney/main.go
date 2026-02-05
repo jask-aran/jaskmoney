@@ -6,17 +6,18 @@ import (
 	"log"
 	"os"
 	"path/filepath"
+	"strings"
 	"time"
 
 	tea "github.com/charmbracelet/bubbletea"
-	"github.com/google/uuid"
 
 	"github.com/jask/jaskmoney/internal/config"
 	"github.com/jask/jaskmoney/internal/database"
 	"github.com/jask/jaskmoney/internal/database/repository"
 	"github.com/jask/jaskmoney/internal/llm"
+	"github.com/jask/jaskmoney/internal/prefs"
+	"github.com/jask/jaskmoney/internal/secrets"
 	"github.com/jask/jaskmoney/internal/service"
-	"github.com/jask/jaskmoney/internal/testdata"
 	"github.com/jask/jaskmoney/internal/tui"
 )
 
@@ -54,17 +55,20 @@ func main() {
 	reconRepo := repository.NewReconciliationRepo(db)
 	tagRepo := repository.NewTagRepo(db)
 
-	// seed minimal data if empty
-	seedIfEmpty(ctx, txRepo, acctRepo, catRepo, ruleRepo)
-
-	apiKey := os.Getenv(cfg.LLM.APIKeyEnv)
-	if apiKey == "" {
-		apiKey = cfg.LLM.APIKey
+	// restore categories from prefs file if present
+	if cats, err := prefs.LoadCategories(); err == nil && len(cats) > 0 {
+		for _, c := range cats {
+			_ = catRepo.Upsert(ctx, c)
+		}
 	}
 
+	apiKey := resolveAPIKey(cfg)
+
+	provider := llmProvider(cfg.LLM.Provider, apiKey, cfg.LLM.Model)
+
 	// services (ready for wiring into TUI)
-	categorizer := &service.CategorizerService{Transactions: txRepo, Rules: ruleRepo, Categories: catRepo, Provider: llm.NewGeminiProvider(apiKey, cfg.LLM.Model)}
-	reconciler := &service.Reconciler{Transactions: txRepo, Pending: reconRepo, Provider: llm.NewGeminiProvider(apiKey, cfg.LLM.Model)}
+	categorizer := &service.CategorizerService{Transactions: txRepo, Rules: ruleRepo, Categories: catRepo, Provider: provider}
+	reconciler := &service.Reconciler{Transactions: txRepo, Pending: reconRepo, Provider: provider}
 	ingester := &service.IngestService{Transactions: txRepo, Accounts: acctRepo}
 	maintenance := &service.MaintenanceService{DB: db}
 
@@ -78,25 +82,36 @@ func main() {
 		tui.Repos{Transactions: txRepo, Categories: catRepo, Pending: reconRepo, Tags: tagRepo},
 		tui.Services{Categorizer: categorizer, Reconciler: reconciler, Ingest: ingester, Maintenance: maintenance},
 		loc,
-	))
+	), tea.WithAltScreen())
 	if _, err := p.Run(); err != nil {
 		fmt.Printf("error: %v\n", err)
 	}
 }
 
-func seedIfEmpty(ctx context.Context, txRepo *repository.TransactionRepo, acctRepo *repository.AccountRepo, catRepo *repository.CategoryRepo, ruleRepo *repository.MerchantRuleRepo) {
-	txs, err := txRepo.List(ctx, repository.TransactionFilters{})
-	if err == nil && len(txs) > 0 {
-		return
+func llmProvider(name, apiKey, model string) llm.LLMProvider {
+	switch strings.ToLower(strings.TrimSpace(name)) {
+	case "openai":
+		return llm.NewOpenAIProvider(apiKey, model)
+	default:
+		return llm.NewGeminiProvider(apiKey, model)
 	}
-	repos := testdata.Repos{Accounts: acctRepo, Categories: catRepo, Transactions: txRepo}
-	_ = testdata.Seed(ctx, repos)
-	// sample rule using first category
-	cats, _ := catRepo.List(ctx)
-	catID := ""
-	if len(cats) > 0 {
-		catID = cats[0].ID
+}
+
+func resolveAPIKey(cfg config.Config) string {
+	provider := strings.ToLower(strings.TrimSpace(cfg.LLM.Provider))
+	env := strings.TrimSpace(cfg.LLM.APIKeyEnv)
+	if env == "" {
+		if provider == "openai" {
+			env = "OPENAI_API_KEY"
+		} else {
+			env = "GEMINI_API_KEY"
+		}
 	}
-	rule := repository.MerchantRule{ID: uuid.NewString(), Pattern: "UBER EATS", PatternType: "contains", CategoryID: catID, Confidence: 0.9, Source: "user"}
-	_ = ruleRepo.Add(ctx, rule)
+	if v := os.Getenv(env); v != "" {
+		return v
+	}
+	if k, err := secrets.FetchProviderKey(provider); err == nil {
+		return k
+	}
+	return strings.TrimSpace(cfg.LLM.APIKey)
 }
