@@ -83,11 +83,3 @@ func truncate(s string, width int) string {
 	}
 	return ansi.Truncate(s, width, "…")
 }
-
-// boldKey wraps text in ANSI bold escape sequences.
-func boldKey(text string) string {
-	if text == "" {
-		return ""
-	}
-	return "\x1b[1m" + text + "\x1b[22m"
-}

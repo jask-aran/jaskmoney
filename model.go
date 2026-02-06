@@ -16,9 +16,15 @@ import (
 // Domain types
 // ---------------------------------------------------------------------------
 
+const appName = "Jaskmoney"
+
+// Tab indices
 const (
-	appName         = "Jaskmoney"
-	screenDashboard = "Dashboard"
+	tabDashboard    = 0
+	tabTransactions = 1
+	tabAnalytics    = 2
+	tabSettings     = 3
+	tabCount        = 4
 )
 
 type transaction struct {
@@ -53,7 +59,7 @@ func (d fileItemDelegate) Render(w io.Writer, m list.Model, index int, item list
 	}
 	prefix := "  "
 	if index == m.Index() {
-		prefix = "> "
+		prefix = cursorStyle.Render("> ")
 	}
 	line := fmt.Sprintf("%s%s", prefix, entry.name)
 	fmt.Fprint(w, padRight(line, m.Width()))
@@ -64,31 +70,35 @@ func (d fileItemDelegate) Render(w io.Writer, m list.Model, index int, item list
 // ---------------------------------------------------------------------------
 
 type keyMap struct {
-	Import key.Binding
-	Quit   key.Binding
-	UpDown key.Binding
-	Enter  key.Binding
-	Clear  key.Binding
-	Close  key.Binding
+	Import  key.Binding
+	Quit    key.Binding
+	UpDown  key.Binding
+	Enter   key.Binding
+	Clear   key.Binding
+	Close   key.Binding
+	NextTab key.Binding
+	PrevTab key.Binding
 }
 
 func newKeyMap() keyMap {
 	return keyMap{
-		Import: key.NewBinding(key.WithKeys("i"), key.WithHelp("i", "import")),
-		Quit:   key.NewBinding(key.WithKeys("q", "ctrl+c"), key.WithHelp("q", "quit")),
-		UpDown: key.NewBinding(key.WithKeys("up", "down"), key.WithHelp("↑/↓", "scroll/select")),
-		Enter:  key.NewBinding(key.WithKeys("enter"), key.WithHelp("enter", "import")),
-		Clear:  key.NewBinding(key.WithKeys("c"), key.WithHelp("c", "clear db")),
-		Close:  key.NewBinding(key.WithKeys("esc"), key.WithHelp("esc", "close")),
+		Import:  key.NewBinding(key.WithKeys("i"), key.WithHelp("i", "import")),
+		Quit:    key.NewBinding(key.WithKeys("q", "ctrl+c"), key.WithHelp("q", "quit")),
+		UpDown:  key.NewBinding(key.WithKeys("up", "down"), key.WithHelp("j/k", "navigate")),
+		Enter:   key.NewBinding(key.WithKeys("enter"), key.WithHelp("enter", "select")),
+		Clear:   key.NewBinding(key.WithKeys("c"), key.WithHelp("c", "clear db")),
+		Close:   key.NewBinding(key.WithKeys("esc"), key.WithHelp("esc", "close")),
+		NextTab: key.NewBinding(key.WithKeys("tab"), key.WithHelp("tab", "next tab")),
+		PrevTab: key.NewBinding(key.WithKeys("shift+tab"), key.WithHelp("shift+tab", "prev tab")),
 	}
 }
 
 func (k keyMap) ShortHelp() []key.Binding {
-	return []key.Binding{k.Import, k.UpDown, k.Quit}
+	return []key.Binding{k.NextTab, k.PrevTab, k.UpDown, k.Quit}
 }
 
 func (k keyMap) FullHelp() [][]key.Binding {
-	return [][]key.Binding{{k.Import, k.UpDown, k.Quit}}
+	return [][]key.Binding{{k.NextTab, k.PrevTab, k.UpDown, k.Quit}}
 }
 
 type modalKeyMap struct {
@@ -141,7 +151,7 @@ type model struct {
 	status    string
 	ready     bool
 	basePath  string
-	screen    string
+	activeTab int
 	showPopup bool
 	fileList  list.Model
 	keys      keyMap
@@ -166,10 +176,10 @@ func newModel() model {
 
 	cwd, _ := os.Getwd()
 	return model{
-		basePath: cwd,
-		screen:   screenDashboard,
-		fileList: listModel,
-		keys:     newKeyMap(),
+		basePath:  cwd,
+		activeTab: tabDashboard,
+		fileList:  listModel,
+		keys:      newKeyMap(),
 		modalKeys: modalKeyMap{
 			keyMap: newKeyMap(),
 		},
@@ -221,18 +231,68 @@ func (m model) View() string {
 		return status
 	}
 
-	overview := m.renderSection("Overview", renderOverview(m.rows, m.listContentWidth()))
-	content := renderTable(m.rows, m.cursor, m.topIndex, m.visibleRows(), m.listContentWidth(), true)
-	transactions := m.renderSection("Transactions", content)
-	header := renderHeader(appName, m.screen, m.width)
-	main := header + "\n\n" + overview + "\n\n" + transactions
+	header := renderHeader(appName, m.activeTab, m.width)
 	statusLine := m.renderStatus(m.status)
-	footer := m.renderFooter(m.footerText())
+	footer := m.renderFooter(m.footerBindings())
+
+	var body string
+	switch m.activeTab {
+	case tabDashboard:
+		body = m.dashboardView()
+	case tabTransactions:
+		body = m.transactionsView()
+	case tabAnalytics:
+		body = m.analyticsView()
+	case tabSettings:
+		body = m.settingsView()
+	default:
+		body = m.dashboardView()
+	}
+
+	main := header + "\n\n" + body
 
 	if m.showPopup {
 		return m.composeModal(main, statusLine, footer)
 	}
 	return m.placeWithFooter(main, statusLine, footer)
+}
+
+// ---------------------------------------------------------------------------
+// Per-tab views
+// ---------------------------------------------------------------------------
+
+func (m model) dashboardView() string {
+	overview := m.renderSection("Overview", renderOverview(m.rows, m.listContentWidth()))
+	content := renderTable(m.rows, m.cursor, m.topIndex, m.visibleRows(), m.listContentWidth(), true)
+	transactions := m.renderSection("Transactions", content)
+	return overview + "\n\n" + transactions
+}
+
+func (m model) transactionsView() string {
+	content := renderTable(m.rows, m.cursor, m.topIndex, m.visibleRows(), m.listContentWidth(), true)
+	return m.renderSection("Transactions", content)
+}
+
+func (m model) analyticsView() string {
+	placeholder := lipgloss.NewStyle().Foreground(colorOverlay1).Render(
+		"Analytics features coming in v0.3\n\n" +
+			"Planned:\n" +
+			"  - Spending trends over time\n" +
+			"  - Category comparison\n" +
+			"  - Monthly/weekly breakdowns\n" +
+			"  - Budget tracking")
+	return m.renderSection("Analytics", placeholder)
+}
+
+func (m model) settingsView() string {
+	placeholder := lipgloss.NewStyle().Foreground(colorOverlay1).Render(
+		"Settings coming soon\n\n" +
+			"Planned:\n" +
+			"  - Category management\n" +
+			"  - Category rules\n" +
+			"  - Import management\n" +
+			"  - Database operations")
+	return m.renderSection("Settings", placeholder)
 }
 
 // ---------------------------------------------------------------------------
@@ -258,7 +318,7 @@ func (m model) handleRefreshDone(msg refreshDoneMsg) (tea.Model, tea.Cmd) {
 	m.cursor = 0
 	m.topIndex = 0
 	if m.status == "" {
-		m.status = "Transactions list ready. Press i to open the import popup."
+		m.status = "Ready. Press tab to switch views, i to import."
 	}
 	return m, nil
 }
@@ -306,6 +366,12 @@ func (m model) updateMain(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	switch msg.String() {
 	case "ctrl+c", "q":
 		return m, tea.Quit
+	case "tab":
+		m.activeTab = (m.activeTab + 1) % tabCount
+		return m, nil
+	case "shift+tab":
+		m.activeTab = (m.activeTab - 1 + tabCount) % tabCount
+		return m, nil
 	case "i":
 		m.showPopup = true
 		m.listReady = false
@@ -383,11 +449,11 @@ func (m model) updatePopup(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 // Layout helpers
 // ---------------------------------------------------------------------------
 
-func (m model) footerText() string {
+func (m model) footerBindings() []key.Binding {
 	if m.showPopup {
-		return renderHelp(m.modalKeys.ShortHelp())
+		return m.modalKeys.ShortHelp()
 	}
-	return renderHelp(m.keys.ShortHelp())
+	return m.keys.ShortHelp()
 }
 
 func (m *model) visibleRows() int {
@@ -395,13 +461,14 @@ func (m *model) visibleRows() int {
 		return 10
 	}
 	frameV := listBoxStyle.GetVerticalFrameSize()
-	headerHeight := headerLineCount()
+	headerHeight := 1 // single-line header now
 	headerGap := 1
 	sectionHeaderHeight := sectionHeaderLineCount()
 	overviewHeight := frameV + sectionHeaderHeight + overviewLineCount()
 	sectionGap := 1
 	tableHeaderHeight := 1
-	available := m.height - 2 - headerHeight - headerGap - overviewHeight - sectionGap - frameV - sectionHeaderHeight - tableHeaderHeight
+	scrollIndicator := 1
+	available := m.height - 2 - headerHeight - headerGap - overviewHeight - sectionGap - frameV - sectionHeaderHeight - tableHeaderHeight - scrollIndicator
 	if available < 3 {
 		available = 3
 	}
@@ -477,10 +544,6 @@ func (m *model) ensureCursorInWindow() {
 	if m.topIndex < 0 {
 		m.topIndex = 0
 	}
-}
-
-func headerLineCount() int {
-	return 2
 }
 
 func sectionHeaderLineCount() int {

@@ -9,39 +9,128 @@ import (
 )
 
 // ---------------------------------------------------------------------------
-// Styles — single source of truth for all lipgloss styles
+// Styles — Catppuccin Mocha themed
 // ---------------------------------------------------------------------------
 
 var (
-	titleStyle     = lipgloss.NewStyle().Bold(true)
-	headerAppStyle = lipgloss.NewStyle().Foreground(lipgloss.Color("81")).Bold(true)
-	headerTabStyle = lipgloss.NewStyle().Foreground(lipgloss.Color("255")).Bold(true)
-	headerBarStyle = lipgloss.NewStyle().Foreground(lipgloss.Color("255")).Background(lipgloss.Color("238")).Padding(0, 2)
-	statusStyle    = lipgloss.NewStyle().Foreground(lipgloss.Color("241"))
-	footerStyle    = lipgloss.NewStyle().Foreground(lipgloss.Color("255")).Background(lipgloss.Color("238")).Padding(0, 2)
-	statusBarStyle = lipgloss.NewStyle().Foreground(lipgloss.Color("252")).Background(lipgloss.Color("236")).Padding(0, 2)
-	modalStyle     = lipgloss.NewStyle().Border(lipgloss.RoundedBorder()).Padding(0, 1)
-	listBoxStyle   = lipgloss.NewStyle().Border(lipgloss.RoundedBorder()).Padding(0, 1)
+	// Section titles
+	titleStyle = lipgloss.NewStyle().Foreground(colorBrand).Bold(true)
+
+	// Header bar (spans full width)
+	headerBarStyle = lipgloss.NewStyle().
+			Foreground(colorText).
+			Background(colorMantle).
+			Padding(0, 2)
+
+	// App name in header
+	headerAppStyle = lipgloss.NewStyle().
+			Foreground(colorBrand).
+			Bold(true)
+
+	// Tab styles
+	activeTabStyle = lipgloss.NewStyle().
+			Foreground(colorAccent).
+			Background(colorSurface0).
+			Bold(true).
+			Padding(0, 1)
+
+	inactiveTabStyle = lipgloss.NewStyle().
+				Foreground(colorOverlay1).
+				Background(colorMantle).
+				Padding(0, 1)
+
+	tabSepStyle = lipgloss.NewStyle().
+			Foreground(colorOverlay0).
+			Background(colorMantle)
+
+	// Loading / status text
+	statusStyle = lipgloss.NewStyle().Foreground(colorSubtext0)
+
+	// Footer bar
+	footerStyle = lipgloss.NewStyle().
+			Foreground(colorSubtext0).
+			Background(colorMantle).
+			Padding(0, 2)
+
+	// Status bar (above footer)
+	statusBarStyle = lipgloss.NewStyle().
+			Foreground(colorSubtext1).
+			Background(colorSurface0).
+			Padding(0, 2)
+
+	// Section containers
+	listBoxStyle = lipgloss.NewStyle().
+			Border(lipgloss.RoundedBorder()).
+			BorderForeground(colorSurface1).
+			Padding(0, 1)
+
+	// Modal overlay
+	modalStyle = lipgloss.NewStyle().
+			Border(lipgloss.RoundedBorder()).
+			BorderForeground(colorAccent).
+			Padding(0, 1)
+
+	// Help key styling — these inherit footer background via Inherit()
+	helpKeyStyle = lipgloss.NewStyle().
+			Foreground(colorAccent).
+			Bold(true)
+
+	helpDescStyle = lipgloss.NewStyle().
+			Foreground(colorSubtext0)
+
+	// Table styles
+	tableHeaderStyle = lipgloss.NewStyle().
+				Foreground(colorSubtext0).
+				Bold(true)
+
+	creditStyle = lipgloss.NewStyle().Foreground(colorSuccess)
+	debitStyle  = lipgloss.NewStyle().Foreground(colorError)
+
+	cursorStyle = lipgloss.NewStyle().Foreground(colorAccent).Bold(true)
+
+	// Scroll indicator
+	scrollStyle = lipgloss.NewStyle().Foreground(colorOverlay1)
 )
+
+// ---------------------------------------------------------------------------
+// Tab names
+// ---------------------------------------------------------------------------
+
+var tabNames = []string{"Dashboard", "Transactions", "Analytics", "Settings"}
 
 // ---------------------------------------------------------------------------
 // Section & chrome rendering
 // ---------------------------------------------------------------------------
 
-func renderHeader(appName, screen string, width int) string {
-	line1 := headerAppStyle.Render(appName)
-	line2 := headerTabStyle.Render(screen)
+func renderHeader(appName string, activeTab, width int) string {
+	// Line 1: App name + tab bar
+	name := headerAppStyle.Render(appName)
+
+	// Build tab bar
+	var tabs []string
+	for i, tab := range tabNames {
+		if i == activeTab {
+			tabs = append(tabs, activeTabStyle.Render(tab))
+		} else {
+			tabs = append(tabs, inactiveTabStyle.Render(tab))
+		}
+	}
+	tabBar := tabSepStyle.Render(" ") + strings.Join(tabs, tabSepStyle.Render("│"))
+
+	line1Content := name + "  " + tabBar
+
 	if width <= 0 {
-		return headerBarStyle.Render(line1) + "\n" + headerBarStyle.Render(line2)
+		return headerBarStyle.Render(line1Content)
 	}
 	style := headerBarStyle.Width(width)
-	return style.Render(line1) + "\n" + style.Render(line2)
+	return style.Render(line1Content)
 }
 
 func (m model) renderSection(title, content string) string {
 	contentWidth := m.sectionContentWidth()
 	header := padRight(titleStyle.Render(title), contentWidth)
-	separator := strings.Repeat("-", contentWidth)
+	sepStyle := lipgloss.NewStyle().Foreground(colorSurface2)
+	separator := sepStyle.Render(strings.Repeat("─", contentWidth))
 	sectionContent := header + "\n" + separator + "\n" + content
 	section := listBoxStyle.Width(m.sectionWidth()).Render(sectionContent)
 	if m.width == 0 {
@@ -50,22 +139,36 @@ func (m model) renderSection(title, content string) string {
 	return lipgloss.Place(m.width, lipgloss.Height(section), lipgloss.Center, lipgloss.Top, section)
 }
 
-func (m model) renderFooter(text string) string {
-	if m.width == 0 {
-		return footerStyle.Render(text)
+func (m model) renderFooter(bindings []key.Binding) string {
+	// Build help text where every character carries the footer background.
+	bg := colorMantle
+	keyStyle := helpKeyStyle.Background(bg)
+	descStyle := helpDescStyle.Background(bg)
+	space := lipgloss.NewStyle().Background(bg).Render(" ")
+	sep := lipgloss.NewStyle().Background(bg).Render("  ")
+
+	parts := make([]string, 0, len(bindings))
+	for _, binding := range bindings {
+		help := binding.Help()
+		if help.Key == "" && help.Desc == "" {
+			continue
+		}
+		parts = append(parts, keyStyle.Render(help.Key)+space+descStyle.Render(help.Desc))
 	}
-	flat := strings.ReplaceAll(text, "\n", " ")
-	padded := padRight(flat, m.width)
-	return footerStyle.Render(padded)
+	content := strings.Join(parts, sep)
+
+	if m.width == 0 {
+		return footerStyle.Render(content)
+	}
+	return footerStyle.Width(m.width).Render(content)
 }
 
 func (m model) renderStatus(text string) string {
-	if m.width == 0 {
-		return statusBarStyle.Render(text)
-	}
 	flat := strings.ReplaceAll(text, "\n", " ")
-	padded := padRight(flat, m.width)
-	return statusBarStyle.Render(padded)
+	if m.width == 0 {
+		return statusBarStyle.Render(flat)
+	}
+	return statusBarStyle.Width(m.width).Render(flat)
 }
 
 func (m model) placeWithFooter(body, statusLine, footer string) string {
@@ -80,6 +183,12 @@ func (m model) placeWithFooter(body, statusLine, footer string) string {
 		return body + "\n" + statusLine + "\n" + footer
 	}
 	main := lipgloss.Place(m.width, contentHeight, lipgloss.Left, lipgloss.Top, body)
+	// Ensure every line is full-width to prevent ghosting from previous frames
+	lines := splitLines(main)
+	for i, line := range lines {
+		lines[i] = padRight(line, m.width)
+	}
+	main = strings.Join(lines, "\n")
 	return main + "\n" + statusLine + "\n" + footer
 }
 
@@ -134,8 +243,9 @@ func renderTable(rows []transaction, cursor, topIndex, visible, width int, color
 	}
 
 	header := fmt.Sprintf("  %-*s  %-*s  %-*s", dateWidth, "Date", amountWidth, "Amount", descWidth, "Description")
-	lines := []string{header}
-	creditStyle := lipgloss.NewStyle().Foreground(lipgloss.Color("2"))
+	headerLine := tableHeaderStyle.Render(header)
+	lines := []string{headerLine}
+
 	end := topIndex + visible
 	if end > len(rows) {
 		end = len(rows)
@@ -144,18 +254,35 @@ func renderTable(rows []transaction, cursor, topIndex, visible, width int, color
 		row := rows[i]
 		amountText := fmt.Sprintf("%.2f", row.amount)
 		amountField := padRight(amountText, amountWidth)
-		if colorAmounts && row.amount > 0 {
-			amountField = creditStyle.Render(amountField)
+		if colorAmounts {
+			if row.amount > 0 {
+				amountField = creditStyle.Render(amountField)
+			} else if row.amount < 0 {
+				amountField = debitStyle.Render(amountField)
+			}
 		}
 		desc := truncate(row.description, descWidth)
 		prefix := "  "
 		if i == cursor {
-			prefix = "> "
+			prefix = cursorStyle.Render("> ")
 		}
 		dateField := padRight(row.dateRaw, dateWidth)
 		descField := padRight(desc, descWidth)
 		lines = append(lines, prefix+dateField+"  "+amountField+"  "+descField)
 	}
+
+	// Scroll indicator
+	total := len(rows)
+	if total > 0 && visible > 0 {
+		start := topIndex + 1
+		endIdx := topIndex + visible
+		if endIdx > total {
+			endIdx = total
+		}
+		indicator := scrollStyle.Render(fmt.Sprintf("── showing %d-%d of %d ──", start, endIdx, total))
+		lines = append(lines, indicator)
+	}
+
 	return strings.Join(lines, "\n")
 }
 
@@ -167,9 +294,12 @@ func renderOverview(rows []transaction, width int) string {
 			debits += row.amount
 		}
 	}
+	labelStyle := lipgloss.NewStyle().Foreground(colorSubtext0)
+	valueStyle := lipgloss.NewStyle().Foreground(colorPeach)
+
 	lines := []string{
-		fmt.Sprintf("%-12s %12.2f", "Net Value", net),
-		fmt.Sprintf("%-12s %12.2f", "Net Debits", debits),
+		labelStyle.Render(fmt.Sprintf("%-12s", "Net Value")) + " " + valueStyle.Render(fmt.Sprintf("%12.2f", net)),
+		labelStyle.Render(fmt.Sprintf("%-12s", "Net Debits")) + " " + valueStyle.Render(fmt.Sprintf("%12.2f", debits)),
 	}
 	for i, line := range lines {
 		lines[i] = padRight(line, width)
@@ -179,20 +309,4 @@ func renderOverview(rows []transaction, width int) string {
 
 func overviewLineCount() int {
 	return 2
-}
-
-// ---------------------------------------------------------------------------
-// Help bar
-// ---------------------------------------------------------------------------
-
-func renderHelp(bindings []key.Binding) string {
-	parts := make([]string, 0, len(bindings))
-	for _, binding := range bindings {
-		help := binding.Help()
-		if help.Key == "" && help.Desc == "" {
-			continue
-		}
-		parts = append(parts, boldKey(help.Key)+" "+help.Desc)
-	}
-	return strings.Join(parts, "  ")
 }
