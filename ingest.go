@@ -33,8 +33,12 @@ func ingestCmd(db *sql.DB, filename, basePath string, formats []csvFormat, skipD
 		if err != nil {
 			return ingestDoneMsg{count: count, dupes: dupes, err: err, file: base}
 		}
-		_, _ = insertImportRecord(db, base, count)
-		_, _ = applyCategoryRules(db)
+		if _, err := insertImportRecord(db, base, count); err != nil {
+			return ingestDoneMsg{count: count, dupes: dupes, err: err, file: base}
+		}
+		if _, err := applyCategoryRules(db); err != nil {
+			return ingestDoneMsg{count: count, dupes: dupes, err: err, file: base}
+		}
 		return ingestDoneMsg{count: count, dupes: dupes, err: nil, file: base}
 	}
 }

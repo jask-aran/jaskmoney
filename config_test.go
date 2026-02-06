@@ -131,14 +131,11 @@ func TestParseDefaultConfigTOML(t *testing.T) {
 	if err != nil {
 		t.Fatalf("parsing default config: %v", err)
 	}
-	if len(formats) != 2 {
-		t.Fatalf("expected 2 formats in default config, got %d", len(formats))
+	if len(formats) != 1 {
+		t.Fatalf("expected 1 format in default config, got %d", len(formats))
 	}
 	if formats[0].Name != "ANZ" {
-		t.Errorf("first format = %q, want %q", formats[0].Name, "ANZ")
-	}
-	if formats[1].Name != "CBA" {
-		t.Errorf("second format = %q, want %q", formats[1].Name, "CBA")
+		t.Errorf("default format = %q, want %q", formats[0].Name, "ANZ")
 	}
 }
 

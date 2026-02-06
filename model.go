@@ -44,7 +44,6 @@ type transaction struct {
 // ---------------------------------------------------------------------------
 
 type keyMap struct {
-	Import  key.Binding
 	Quit    key.Binding
 	UpDown  key.Binding
 	Enter   key.Binding
@@ -63,7 +62,6 @@ type keyMap struct {
 
 func newKeyMap() keyMap {
 	return keyMap{
-		Import:  key.NewBinding(key.WithKeys("i"), key.WithHelp("i", "import")),
 		Quit:    key.NewBinding(key.WithKeys("q", "ctrl+c"), key.WithHelp("q", "quit")),
 		UpDown:  key.NewBinding(key.WithKeys("up", "down"), key.WithHelp("j/k", "navigate")),
 		Enter:   key.NewBinding(key.WithKeys("enter"), key.WithHelp("enter", "select")),
@@ -274,14 +272,25 @@ type model struct {
 }
 
 func newModel() model {
-	cwd, _ := os.Getwd()
-	formats, _ := loadFormats()
+	cwd, cwdErr := os.Getwd()
+	if cwdErr != nil || cwd == "" {
+		cwd = "."
+	}
+	formats, fmtErr := loadFormats()
+	status := ""
+	statusErr := false
+	if fmtErr != nil {
+		status = fmt.Sprintf("Format config error: %v", fmtErr)
+		statusErr = true
+	}
 	return model{
 		basePath:       cwd,
 		activeTab:      tabDashboard,
 		maxVisibleRows: 20,
 		keys:           newKeyMap(),
 		formats:        formats,
+		status:         status,
+		statusErr:      statusErr,
 	}
 }
 
@@ -515,7 +524,8 @@ func (m model) handleRefreshDone(msg refreshDoneMsg) (tea.Model, tea.Cmd) {
 	if m.status == "" {
 		m.cursor = 0
 		m.topIndex = 0
-		m.status = "Ready. Press tab to switch views, i to import."
+		m.status = "Ready. Press tab to switch views, import from Settings."
+		m.statusErr = false
 	}
 	// Clamp cursor to valid range after data change
 	filtered := m.getFilteredRows()
@@ -607,11 +617,6 @@ func (m model) updateMain(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	case "shift+tab":
 		m.activeTab = (m.activeTab - 1 + tabCount) % tabCount
 		return m, nil
-	case "i":
-		m.importPicking = true
-		m.importFiles = nil
-		m.importCursor = 0
-		return m, loadFilesCmd(m.basePath)
 	}
 
 	// Transactions-specific keys
@@ -752,6 +757,16 @@ func (m model) updateNavigation(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			m.cursor = 0
 			m.topIndex = 0
 			m.status = "Date filter: " + dateRangeName(m.filterDateRange)
+			m.statusErr = false
+			return m, nil
+		case "esc":
+			if m.searchQuery != "" {
+				m.searchQuery = ""
+				m.cursor = 0
+				m.topIndex = 0
+				m.status = "Search cleared."
+				m.statusErr = false
+			}
 			return m, nil
 		case "enter":
 			if len(filtered) > 0 && m.cursor < len(filtered) {
@@ -767,30 +782,44 @@ func (m *model) cycleCategoryFilter() {
 	if len(m.categories) == 0 {
 		return
 	}
+	order := make([]int, 0, len(m.categories)+1)
+	nameByID := make(map[int]string, len(m.categories)+1)
+	for _, c := range m.categories {
+		order = append(order, c.id)
+		nameByID[c.id] = c.name
+	}
+	// Sentinel for uncategorised transactions
+	order = append(order, 0)
+	nameByID[0] = "Uncategorised"
+
 	if m.filterCategories == nil {
 		// First press: filter to first category only
-		m.filterCategories = map[int]bool{m.categories[0].id: true}
-		m.status = "Filter: " + m.categories[0].name
+		m.filterCategories = map[int]bool{order[0]: true}
+		m.status = "Filter: " + nameByID[order[0]]
+		m.statusErr = false
 		return
 	}
 	// Find which single category is selected and advance to next
-	for i, c := range m.categories {
-		if m.filterCategories[c.id] {
-			next := (i + 1) % (len(m.categories) + 1)
-			if next == len(m.categories) {
+	for i, id := range order {
+		if m.filterCategories[id] {
+			next := (i + 1) % (len(order) + 1)
+			if next == len(order) {
 				// Wrapped around: clear filter
 				m.filterCategories = nil
 				m.status = "Filter: all categories"
+				m.statusErr = false
 				return
 			}
-			m.filterCategories = map[int]bool{m.categories[next].id: true}
-			m.status = "Filter: " + m.categories[next].name
+			m.filterCategories = map[int]bool{order[next]: true}
+			m.status = "Filter: " + nameByID[order[next]]
+			m.statusErr = false
 			return
 		}
 	}
 	// Shouldn't reach here, reset
 	m.filterCategories = nil
 	m.status = "Filter: all categories"
+	m.statusErr = false
 }
 
 func (m *model) openDetail(txn transaction) {
@@ -880,13 +909,7 @@ func (m model) updateDetail(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		txnID := m.detailIdx
 		notes := m.detailNotes
 		return m, func() tea.Msg {
-			if err := updateTransactionCategory(m.db, txnID, catID); err != nil {
-				return txnSavedMsg{err: err}
-			}
-			if err := updateTransactionNotes(m.db, txnID, notes); err != nil {
-				return txnSavedMsg{err: err}
-			}
-			return txnSavedMsg{}
+			return txnSavedMsg{err: updateTransactionDetail(m.db, txnID, catID, notes)}
 		}
 	}
 	return m, nil
@@ -1139,6 +1162,7 @@ func (m model) updateSettingsRules(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		m.settMode = settModeAddRule
 		m.settInput = ""
 		m.settRuleCatIdx = 0
+		m.settEditID = 0
 		return m, nil
 	case "e":
 		if m.settItemCursor < len(m.rules) {
@@ -1318,6 +1342,7 @@ func (m model) updateSettingsRuleInput(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	case "esc":
 		m.settMode = settModeNone
 		m.settInput = ""
+		m.settEditID = 0
 		return m, nil
 	case "enter":
 		if m.settInput == "" {
@@ -1349,6 +1374,7 @@ func (m model) updateSettingsRuleCatPicker(msg tea.KeyMsg) (tea.Model, tea.Cmd) 
 	case "esc":
 		m.settMode = settModeNone
 		m.settInput = ""
+		m.settEditID = 0
 		return m, nil
 	case "j", "down":
 		if m.settRuleCatIdx < len(m.categories)-1 {

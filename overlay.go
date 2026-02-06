@@ -76,7 +76,7 @@ func padRight(s string, width int) string {
 	return s + strings.Repeat(" ", width-w)
 }
 
-// truncate shortens s to width runes, appending "..." if truncated.
+// truncate shortens s to a visual width, appending "…" if truncated.
 func truncate(s string, width int) string {
 	if width <= 0 {
 		return ""

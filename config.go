@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"strings"
 
 	"github.com/BurntSushi/toml"
 )
@@ -45,18 +46,6 @@ amount_col = 1
 desc_col = 2
 desc_join = true
 amount_strip = ","
-
-[[format]]
-name = "CBA"
-description = "Commonwealth Bank Australia"
-date_format = "02/01/2006"
-has_header = true
-delimiter = ","
-date_col = 0
-amount_col = 1
-desc_col = 2
-desc_join = false
-amount_strip = ","
 `
 
 // configDir returns the directory for jaskmoney config files,
@@ -83,25 +72,28 @@ func configPath() (string, error) {
 func loadFormats() ([]csvFormat, error) {
 	path, err := configPath()
 	if err != nil {
-		return defaultFormats(), nil
+		return defaultFormats(), err
 	}
 
 	// Create config file with defaults if missing
 	if _, err := os.Stat(path); os.IsNotExist(err) {
 		if mkErr := os.MkdirAll(filepath.Dir(path), 0755); mkErr != nil {
-			return defaultFormats(), nil
+			return defaultFormats(), fmt.Errorf("create config dir: %w", mkErr)
 		}
 		if wErr := os.WriteFile(path, []byte(defaultConfigTOML), 0644); wErr != nil {
-			return defaultFormats(), nil
+			return defaultFormats(), fmt.Errorf("write default config: %w", wErr)
 		}
 	}
 
 	data, err := os.ReadFile(path)
 	if err != nil {
-		return defaultFormats(), nil
+		return defaultFormats(), fmt.Errorf("read config: %w", err)
 	}
-
-	return parseFormats(data)
+	formats, parseErr := parseFormats(data)
+	if parseErr != nil {
+		return defaultFormats(), parseErr
+	}
+	return formats, nil
 }
 
 // parseFormats parses TOML bytes into format definitions.
@@ -146,7 +138,7 @@ func defaultFormats() []csvFormat {
 // findFormat looks up a format by name (case-insensitive).
 func findFormat(formats []csvFormat, name string) *csvFormat {
 	for i := range formats {
-		if formats[i].Name == name {
+		if strings.EqualFold(formats[i].Name, name) {
 			return &formats[i]
 		}
 	}
