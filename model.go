@@ -16,6 +16,11 @@ import (
 // Domain types
 // ---------------------------------------------------------------------------
 
+const (
+	appName         = "Jaskmoney"
+	screenDashboard = "Dashboard"
+)
+
 type transaction struct {
 	dateRaw     string
 	amount      float64
@@ -136,6 +141,7 @@ type model struct {
 	status    string
 	ready     bool
 	basePath  string
+	screen    string
 	showPopup bool
 	fileList  list.Model
 	keys      keyMap
@@ -161,6 +167,7 @@ func newModel() model {
 	cwd, _ := os.Getwd()
 	return model{
 		basePath: cwd,
+		screen:   screenDashboard,
 		fileList: listModel,
 		keys:     newKeyMap(),
 		modalKeys: modalKeyMap{
@@ -217,7 +224,8 @@ func (m model) View() string {
 	overview := m.renderSection("Overview", renderOverview(m.rows, m.listContentWidth()))
 	content := renderTable(m.rows, m.cursor, m.topIndex, m.visibleRows(), m.listContentWidth(), true)
 	transactions := m.renderSection("Transactions", content)
-	main := overview + "\n\n" + transactions
+	header := renderHeader(appName, m.screen, m.width)
+	main := header + "\n\n" + overview + "\n\n" + transactions
 	statusLine := m.renderStatus(m.status)
 	footer := m.renderFooter(m.footerText())
 
@@ -387,10 +395,13 @@ func (m *model) visibleRows() int {
 		return 10
 	}
 	frameV := listBoxStyle.GetVerticalFrameSize()
-	overviewHeight := 1 + frameV + overviewLineCount()
+	headerHeight := headerLineCount()
+	headerGap := 1
+	sectionHeaderHeight := sectionHeaderLineCount()
+	overviewHeight := frameV + sectionHeaderHeight + overviewLineCount()
 	sectionGap := 1
-	transactionsHeader := 1
-	available := m.height - 2 - overviewHeight - sectionGap - transactionsHeader - frameV - 1
+	tableHeaderHeight := 1
+	available := m.height - 2 - headerHeight - headerGap - overviewHeight - sectionGap - frameV - sectionHeaderHeight - tableHeaderHeight
 	if available < 3 {
 		available = 3
 	}
@@ -404,10 +415,21 @@ func (m *model) listContentWidth() int {
 	if m.width == 0 {
 		return 80
 	}
+	contentWidth := m.sectionContentWidth()
+	if contentWidth < 20 {
+		return 20
+	}
+	return contentWidth
+}
+
+func (m *model) sectionContentWidth() int {
+	if m.width == 0 {
+		return 80
+	}
 	frameH := listBoxStyle.GetHorizontalFrameSize()
 	contentWidth := m.sectionWidth() - frameH
-	if contentWidth < 20 {
-		contentWidth = 20
+	if contentWidth < 1 {
+		contentWidth = 1
 	}
 	return contentWidth
 }
@@ -455,4 +477,12 @@ func (m *model) ensureCursorInWindow() {
 	if m.topIndex < 0 {
 		m.topIndex = 0
 	}
+}
+
+func headerLineCount() int {
+	return 2
+}
+
+func sectionHeaderLineCount() int {
+	return 2
 }

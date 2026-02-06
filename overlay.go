@@ -3,7 +3,7 @@ package main
 import (
 	"strings"
 
-	"github.com/charmbracelet/lipgloss"
+	"github.com/charmbracelet/x/ansi"
 )
 
 // overlayAt composites an overlay string on top of a base string at the given
@@ -18,12 +18,24 @@ func overlayAt(base, overlay string, x, y, width, height int) string {
 			continue
 		}
 		target := padRight(baseLines[row], width)
-		left := cutPlain(target, 0, x)
+		left := ansi.Truncate(target, x, "")
+		leftWidth := ansi.StringWidth(left)
+		if leftWidth < x {
+			left += strings.Repeat(" ", x-leftWidth)
+		}
+
+		overlayLine := padRight(line, overlayWidth)
+		pos := x + ansi.StringWidth(overlayLine)
 		right := ""
 		if width > 0 {
-			right = cutPlain(target, x+overlayWidth, width)
+			right = ansi.TruncateLeft(target, pos, "")
+			rightWidth := ansi.StringWidth(right)
+			gap := width - pos - rightWidth
+			if gap > 0 {
+				right = strings.Repeat(" ", gap) + right
+			}
 		}
-		overlayLine := padRight(line, overlayWidth)
+
 		baseLines[row] = left + overlayLine + right
 	}
 	return strings.Join(baseLines, "\n")
@@ -45,7 +57,7 @@ func splitLines(s string) []string {
 func maxLineWidth(lines []string) int {
 	m := 0
 	for _, line := range lines {
-		if w := lipgloss.Width(line); w > m {
+		if w := ansi.StringWidth(line); w > m {
 			m = w
 		}
 	}
@@ -57,29 +69,11 @@ func padRight(s string, width int) string {
 	if width <= 0 {
 		return s
 	}
-	w := lipgloss.Width(s)
+	w := ansi.StringWidth(s)
 	if w >= width {
 		return s
 	}
 	return s + strings.Repeat(" ", width-w)
-}
-
-// cutPlain returns the rune-slice s[left:right], clamped to bounds.
-func cutPlain(s string, left, right int) string {
-	if right <= left {
-		return ""
-	}
-	runes := []rune(s)
-	if left < 0 {
-		left = 0
-	}
-	if right > len(runes) {
-		right = len(runes)
-	}
-	if left > len(runes) {
-		return ""
-	}
-	return string(runes[left:right])
 }
 
 // truncate shortens s to width runes, appending "..." if truncated.
@@ -87,14 +81,7 @@ func truncate(s string, width int) string {
 	if width <= 0 {
 		return ""
 	}
-	runes := []rune(s)
-	if len(runes) <= width {
-		return s
-	}
-	if width <= 1 {
-		return string(runes[:width])
-	}
-	return string(runes[:width-1]) + "…"
+	return ansi.Truncate(s, width, "…")
 }
 
 // boldKey wraps text in ANSI bold escape sequences.
