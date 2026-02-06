@@ -7,9 +7,11 @@ import (
 	"strings"
 	"time"
 
+	"github.com/NimbleMarkets/ntcharts/canvas"
+	"github.com/NimbleMarkets/ntcharts/linechart"
+	tslc "github.com/NimbleMarkets/ntcharts/linechart/timeserieslinechart"
 	"github.com/charmbracelet/bubbles/key"
 	"github.com/charmbracelet/lipgloss"
-	"github.com/guptarohit/asciigraph"
 )
 
 // ---------------------------------------------------------------------------
@@ -149,16 +151,42 @@ func renderHeader(appName string, activeTab, width int) string {
 }
 
 func (m model) renderSection(title, content string) string {
-	contentWidth := m.sectionContentWidth()
+	return m.renderSectionSizedAligned(title, content, m.sectionWidth(), true, lipgloss.Center)
+}
+
+func (m model) renderSectionNoSeparator(title, content string) string {
+	return m.renderSectionSizedAligned(title, content, m.sectionWidth(), false, lipgloss.Center)
+}
+
+func (m model) renderSectionSized(title, content string, sectionWidth int, withSeparator bool) string {
+	return m.renderSectionSizedAligned(title, content, sectionWidth, withSeparator, lipgloss.Center)
+}
+
+func (m model) renderSectionSizedLeft(title, content string, sectionWidth int, withSeparator bool) string {
+	return m.renderSectionSizedAligned(title, content, sectionWidth, withSeparator, lipgloss.Left)
+}
+
+func (m model) renderSectionSizedAligned(title, content string, sectionWidth int, withSeparator bool, align lipgloss.Position) string {
+	if sectionWidth <= 0 {
+		sectionWidth = m.sectionWidth()
+	}
+	frameH := listBoxStyle.GetHorizontalFrameSize()
+	contentWidth := sectionWidth - frameH
+	if contentWidth < 1 {
+		contentWidth = 1
+	}
 	header := padRight(titleStyle.Render(title), contentWidth)
-	sepStyle := lipgloss.NewStyle().Foreground(colorSurface2)
-	separator := sepStyle.Render(strings.Repeat("─", contentWidth))
-	sectionContent := header + "\n" + separator + "\n" + content
-	section := listBoxStyle.Width(m.sectionWidth()).Render(sectionContent)
+	sectionContent := header + "\n" + content
+	if withSeparator {
+		sepStyle := lipgloss.NewStyle().Foreground(colorSurface2)
+		separator := sepStyle.Render(strings.Repeat("─", contentWidth))
+		sectionContent = header + "\n" + separator + "\n" + content
+	}
+	section := listBoxStyle.Width(sectionWidth).Render(sectionContent)
 	if m.width == 0 {
 		return section
 	}
-	return lipgloss.Place(m.width, lipgloss.Height(section), lipgloss.Center, lipgloss.Top, section)
+	return lipgloss.Place(m.width, lipgloss.Height(section), align, lipgloss.Top, section)
 }
 
 func (m model) renderFooter(bindings []key.Binding) string {
@@ -399,12 +427,18 @@ func renderCategoryTag(name, color string, width int) string {
 // transaction count, category count, date range.
 func renderSummaryCards(rows []transaction, categories []category, width int) string {
 	var income, expenses float64
+	var uncatCount int
+	var uncatTotal float64
 	var minDate, maxDate string
 	for _, r := range rows {
 		if r.amount > 0 {
 			income += r.amount
 		} else {
 			expenses += r.amount
+		}
+		if isUncategorised(r) {
+			uncatCount++
+			uncatTotal += math.Abs(r.amount)
 		}
 		if minDate == "" || r.dateISO < minDate {
 			minDate = r.dateISO
@@ -436,15 +470,22 @@ func renderSummaryCards(rows []transaction, categories []category, width int) st
 		col3W = 20
 	}
 
+	debits := math.Abs(expenses)
+	credits := income
+
 	row1 := padRight(labelSty.Render("Balance      ")+balanceStyle(balance, greenSty, redSty), col1W) +
-		padRight(labelSty.Render("Transactions ")+valSty.Render(fmt.Sprintf("%d", len(rows))), col2W) +
+		padRight(labelSty.Render("Uncat ")+valSty.Render(fmt.Sprintf("%d (%s)", uncatCount, formatMoney(uncatTotal))), col2W) +
 		padRight(labelSty.Render("Date Range   ")+valSty.Render(dateRange), col3W)
 
-	row2 := padRight(labelSty.Render("Income       ")+greenSty.Render(formatMoney(income)), col1W) +
-		padRight(labelSty.Render("Expenses     ")+redSty.Render(formatMoney(math.Abs(expenses))), col2W) +
+	row2 := padRight(labelSty.Render("Debits       ")+redSty.Render(formatMoney(debits)), col1W) +
+		padRight(labelSty.Render("Transactions ")+valSty.Render(fmt.Sprintf("%d", len(rows))), col2W) +
 		padRight(labelSty.Render("Categories   ")+valSty.Render(fmt.Sprintf("%d", activeCats)), col3W)
 
-	return row1 + "\n" + row2
+	row3 := padRight(labelSty.Render("Credits      ")+greenSty.Render(formatMoney(credits)), col1W) +
+		padRight("", col2W) +
+		padRight("", col3W)
+
+	return row1 + "\n" + row2 + "\n" + row3
 }
 
 func balanceStyle(amount float64, green, red lipgloss.Style) string {
@@ -479,6 +520,24 @@ func formatMoney(v float64) string {
 		return "-" + result
 	}
 	return result
+}
+
+func formatWholeNumber(v float64) string {
+	if v < 0 {
+		v = -v
+	}
+	whole := int64(math.Round(v))
+	s := fmt.Sprintf("%d", whole)
+	if len(s) > 3 {
+		var parts []string
+		for len(s) > 3 {
+			parts = append([]string{s[len(s)-3:]}, parts...)
+			s = s[:len(s)-3]
+		}
+		parts = append([]string{s}, parts...)
+		s = strings.Join(parts, ",")
+	}
+	return s
 }
 
 // formatDateShort converts "2006-01-02" to "02-01-06" (dd-mm-yy).
@@ -606,71 +665,249 @@ func renderCategoryBreakdown(rows []transaction, width int) string {
 	return strings.Join(lines, "\n")
 }
 
-// aggregateDaily computes a cumulative running balance over the last nMonths
-// months. For a credit account: debits (amount < 0) increase the balance owed,
-// credits (amount >= 0) decrease it. The result is one data point per day.
-func aggregateDaily(rows []transaction, nMonths int) ([]float64, []string) {
+const spendingTrackerDays = 60
+const spendingTrackerHeight = 14
+const spendingTrackerYStep = 1
+
+func aggregateDailySpend(rows []transaction, days int) ([]float64, []time.Time) {
+	if days <= 0 {
+		return nil, nil
+	}
 	now := time.Now()
-	start := time.Date(now.Year(), now.Month()-time.Month(nMonths-1), 1, 0, 0, 0, 0, time.Local)
 	end := time.Date(now.Year(), now.Month(), now.Day(), 0, 0, 0, 0, time.Local)
+	start := end.AddDate(0, 0, -(days - 1))
 	startISO := start.Format("2006-01-02")
 	endISO := end.Format("2006-01-02")
 
-	// Net daily change: debits add to balance owed, credits subtract.
 	byDay := make(map[string]float64)
 	for _, r := range rows {
 		if r.dateISO < startISO || r.dateISO > endISO {
 			continue
 		}
-		// Debits are negative amounts — negate to make them positive (increase).
-		// Credits are positive amounts — negate to make them negative (decrease).
+		if isUncategorised(r) {
+			continue
+		}
+		if r.amount >= 0 {
+			continue
+		}
 		byDay[r.dateISO] += -r.amount
 	}
 
-	var data []float64
-	var labels []string
-	var cumulative float64
+	values := make([]float64, 0, days)
+	dates := make([]time.Time, 0, days)
 	for d := start; !d.After(end); d = d.AddDate(0, 0, 1) {
 		key := d.Format("2006-01-02")
-		cumulative += byDay[key]
-		data = append(data, math.Max(0, cumulative))
-		// Only label the 1st of each month
-		if d.Day() == 1 {
-			labels = append(labels, d.Format("Jan"))
-		}
+		values = append(values, byDay[key])
+		dates = append(dates, d)
 	}
-	return data, labels
+	return values, dates
 }
 
-// renderMonthlyTrend renders an asciigraph cumulative balance chart over the last 3 months.
-func renderMonthlyTrend(rows []transaction, width int) string {
-	data, labels := aggregateDaily(rows, 3)
-	if len(data) == 0 {
-		return lipgloss.NewStyle().Foreground(colorOverlay1).Render("No data for trend chart.")
+func isUncategorised(r transaction) bool {
+	if r.categoryName != "" {
+		return r.categoryName == "Uncategorised"
+	}
+	return r.categoryID == nil
+}
+
+func renderSpendingTracker(rows []transaction, width int) string {
+	return renderSpendingTrackerWithWeekAnchor(rows, width, time.Sunday)
+}
+
+func renderSpendingTrackerWithWeekAnchor(rows []transaction, width int, weekAnchor time.Weekday) string {
+	if width <= 0 {
+		width = 20
+	}
+	values, dates := aggregateDailySpend(rows, spendingTrackerDays)
+	if len(dates) == 0 {
+		return lipgloss.NewStyle().Foreground(colorOverlay1).Render("No data for spending tracker.")
 	}
 
-	chartWidth := width - 15
-	if chartWidth < 20 {
-		chartWidth = 20
+	start := dates[0]
+	end := dates[len(dates)-1]
+	maxVal := 0.0
+	for _, v := range values {
+		if v > maxVal {
+			maxVal = v
+		}
 	}
-	chartHeight := 8
-
-	chart := asciigraph.Plot(
-		data,
-		asciigraph.Height(chartHeight),
-		asciigraph.Width(chartWidth),
-		asciigraph.SeriesColors(asciigraph.Red),
-		asciigraph.Caption("Cumulative balance (last 3 months)"),
-	)
-
-	// Add month labels below
-	if len(labels) > 0 {
-		spacing := max(1, chartWidth/max(1, len(labels))-len(labels[0]))
-		labelLine := lipgloss.NewStyle().Foreground(colorSubtext0).Render(
-			"  " + strings.Join(labels, strings.Repeat(" ", spacing)))
-		return chart + "\n" + labelLine
+	if maxVal == 0 {
+		maxVal = 1
 	}
-	return chart
+	minVal := -(maxVal * 0.08)
+
+	chart := tslc.New(width, spendingTrackerHeight)
+	chart.Model.XLabelFormatter = spendingXLabelFormatter()
+	chart.Model.YLabelFormatter = spendingYLabelFormatter()
+	chart.SetXStep(1)
+	chart.SetYStep(spendingTrackerYStep)
+	chart.SetStyle(lipgloss.NewStyle().Foreground(colorPeach))
+	chart.AxisStyle = lipgloss.NewStyle().Foreground(colorSurface2)
+	chart.LabelStyle = lipgloss.NewStyle().Foreground(colorOverlay1)
+	chart.SetTimeRange(start, end)
+	chart.SetViewTimeRange(start, end)
+	chart.SetYRange(minVal, maxVal)
+	chart.SetViewYRange(minVal, maxVal)
+
+	for i, d := range dates {
+		chart.Push(tslc.TimePoint{Time: d, Value: values[i]})
+	}
+
+	chart.DrawBraille()
+	clearAxes(&chart)
+	raiseXAxisLabels(&chart)
+	drawVerticalGridlines(&chart, dates, spendingMinorGridStep(len(dates)), weekAnchor)
+
+	return chart.View()
+}
+
+func spendingMinorGridStep(days int) int {
+	// TODO: Make this dynamic from selected timeframe + width once configurable
+	// chart date ranges are implemented.
+	if days >= 60 {
+		return 2
+	}
+	return 1
+}
+
+func spendingXLabelFormatter() linechart.LabelFormatter {
+	return func(_ int, v float64) string {
+		t := time.Unix(int64(v), 0).In(time.Local)
+		day := t.Day()
+		if day == 1 {
+			return t.Format("Jan")
+		}
+		switch day {
+		case 8, 15, 22, 29:
+			return fmt.Sprintf("%d", day)
+		default:
+			return ""
+		}
+	}
+}
+
+func spendingYLabelFormatter() linechart.LabelFormatter {
+	pattern := []bool{true, false, true, true, false, true, false, true, true}
+	return func(i int, v float64) string {
+		if v < 0 {
+			return ""
+		}
+		if v < 0.5 {
+			return "0"
+		}
+		if pattern[i%len(pattern)] {
+			return formatWholeNumber(v)
+		}
+		return ""
+	}
+}
+
+func clearAxes(chart *tslc.Model) {
+	origin := chart.Origin()
+	topY := origin.Y - chart.GraphHeight()
+	if topY < 0 {
+		topY = 0
+	}
+	for y := topY; y <= origin.Y; y++ {
+		p := canvas.Point{X: origin.X, Y: y}
+		chart.Canvas.SetCell(p, canvas.NewCell(0))
+	}
+	for x := origin.X; x < chart.Width(); x++ {
+		p := canvas.Point{X: x, Y: origin.Y}
+		chart.Canvas.SetCell(p, canvas.NewCell(0))
+	}
+}
+
+func raiseXAxisLabels(chart *tslc.Model) {
+	origin := chart.Origin()
+	labelY := origin.Y + 1
+	if labelY < 0 || labelY >= chart.Canvas.Height() {
+		return
+	}
+	for x := 0; x < chart.Width(); x++ {
+		from := canvas.Point{X: x, Y: labelY}
+		cell := chart.Canvas.Cell(from)
+		if cell.Rune == 0 {
+			continue
+		}
+		to := canvas.Point{X: x, Y: origin.Y}
+		if chart.Canvas.Cell(to).Rune != 0 {
+			continue
+		}
+		chart.Canvas.SetCell(to, cell)
+		chart.Canvas.SetCell(from, canvas.NewCell(0))
+	}
+}
+
+func drawVerticalGridlines(chart *tslc.Model, dates []time.Time, minorStep int, weekAnchor time.Weekday) {
+	if len(dates) == 0 || minorStep <= 0 {
+		return
+	}
+	origin := chart.Origin()
+	topY := origin.Y - chart.GraphHeight()
+	// Keep gridlines inside the graphing area only (like Bagels/plotext vline),
+	// so they stop just above the axis/tick-label row.
+	bottomY := origin.Y - 1
+	if topY < 0 || bottomY < 0 {
+		return
+	}
+	minorStyle := lipgloss.NewStyle().Foreground(colorSurface1)
+	majorStyle := lipgloss.NewStyle().Foreground(colorBlue)
+	columns := make(map[int]bool) // x -> isMajor
+	for i, d := range dates {
+		isMajor := isMajorWeekBoundary(d, weekAnchor)
+		if !isMajor && i%minorStep != 0 {
+			continue
+		}
+		x := chartColumnX(chart, d)
+		if x <= origin.X || x >= chart.Width() {
+			continue
+		}
+		if isMajor {
+			columns[x] = true
+			continue
+		}
+		if _, exists := columns[x]; !exists {
+			columns[x] = false
+		}
+	}
+	for x, isMajor := range columns {
+		style := minorStyle
+		if isMajor {
+			style = majorStyle
+		}
+		for y := topY; y <= bottomY; y++ {
+			p := canvas.Point{X: x, Y: y}
+			if chart.Canvas.Cell(p).Rune != 0 {
+				continue
+			}
+			chart.Canvas.SetRuneWithStyle(p, '│', style)
+		}
+	}
+}
+
+func isMajorWeekBoundary(d time.Time, weekAnchor time.Weekday) bool {
+	return d.Weekday() == weekAnchor
+}
+
+func spendingWeekAnchorLabel(weekday time.Weekday) string {
+	if weekday == time.Monday {
+		return "Monday"
+	}
+	return "Sunday"
+}
+
+func chartColumnX(chart *tslc.Model, ts time.Time) int {
+	point := canvas.Float64Point{X: float64(ts.Unix()), Y: chart.ViewMinY()}
+	scaled := chart.ScaleFloat64Point(point)
+	p := canvas.CanvasPointFromFloat64Point(chart.Origin(), scaled)
+	if chart.YStep() > 0 {
+		p.X++
+	}
+	if chart.XStep() > 0 {
+		p.Y--
+	}
+	return p.X
 }
 
 // ---------------------------------------------------------------------------
@@ -711,11 +948,14 @@ func renderSettingsContent(m model) string {
 
 	leftCol := catBox + "\n" + rulesBox
 
-	// Right column: Database + Import History (combined)
+	// Right column: Chart + Database & Imports (stacked)
+	chartContent := renderSettingsChart(m, rightWidth-4)
+	chartBox := renderSettingsSectionBox("Chart", settSecChart, m, rightWidth, chartContent)
+
 	dbContent := renderSettingsDBImport(m, rightWidth-4)
 	dbBox := renderSettingsSectionBox("Database & Imports", settSecDBImport, m, rightWidth, dbContent)
 
-	rightCol := dbBox
+	rightCol := chartBox + "\n" + dbBox
 
 	return lipgloss.JoinHorizontal(lipgloss.Top, leftCol, strings.Repeat(" ", gap), rightCol)
 }
@@ -845,6 +1085,21 @@ func renderSettingsRules(m model, width int) string {
 		target := lipgloss.NewStyle().Foreground(catColor).Render(catName)
 		lines = append(lines, prefix+pattern+arrow+target)
 	}
+	return strings.Join(lines, "\n")
+}
+
+func renderSettingsChart(m model, width int) string {
+	var lines []string
+	labelSty := lipgloss.NewStyle().Foreground(colorSubtext0)
+	valSty := lipgloss.NewStyle().Foreground(colorPeach)
+
+	lines = append(lines, labelSty.Render("Week boundary:  ")+valSty.Render(spendingWeekAnchorLabel(m.spendingWeekAnchor)))
+	lines = append(lines, labelSty.Render("History window: ")+valSty.Render(fmt.Sprintf("%d days", spendingTrackerDays)))
+	lines = append(lines, labelSty.Render("Minor grid:     ")+valSty.Render("every 2 days"))
+	lines = append(lines, "")
+	lines = append(lines, scrollStyle.Render("h/l or enter to toggle boundary"))
+
+	_ = width
 	return strings.Join(lines, "\n")
 }
 

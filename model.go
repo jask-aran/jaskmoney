@@ -181,12 +181,13 @@ const (
 const (
 	settSecCategories = iota
 	settSecRules
+	settSecChart
 	settSecDBImport // combined Database + Import History
 	settSecCount
 )
 
 // Column mapping: left column has Categories (row 0) and Rules (row 1).
-// Right column has DB+Import (row 0 only).
+// Right column has Chart (row 0) and DB+Import (row 1).
 const (
 	settColLeft  = 0
 	settColRight = 1
@@ -268,7 +269,8 @@ type model struct {
 	confirmID      int    // ID for pending confirm (category or rule)
 
 	// Configurable display
-	maxVisibleRows int // max rows shown in transaction table (5-50, default 20)
+	maxVisibleRows     int          // max rows shown in transaction table (5-50, default 20)
+	spendingWeekAnchor time.Weekday // week boundary marker for spending tracker (Sunday/Monday)
 }
 
 func newModel() model {
@@ -284,13 +286,14 @@ func newModel() model {
 		statusErr = true
 	}
 	return model{
-		basePath:       cwd,
-		activeTab:      tabDashboard,
-		maxVisibleRows: 20,
-		keys:           newKeyMap(),
-		formats:        formats,
-		status:         status,
-		statusErr:      statusErr,
+		basePath:           cwd,
+		activeTab:          tabDashboard,
+		maxVisibleRows:     20,
+		spendingWeekAnchor: time.Sunday,
+		keys:               newKeyMap(),
+		formats:            formats,
+		status:             status,
+		statusErr:          statusErr,
 	}
 }
 
@@ -460,9 +463,32 @@ func (m model) View() string {
 
 func (m model) dashboardView() string {
 	w := m.listContentWidth()
-	summary := m.renderSection("Overview", renderSummaryCards(m.rows, m.categories, w))
-	breakdown := m.renderSection("Spending by Category", renderCategoryBreakdown(m.rows, w))
-	trend := m.renderSection("Cumulative Balance", renderMonthlyTrend(m.rows, w))
+	summary := m.renderSectionNoSeparator("Overview", renderSummaryCards(m.rows, m.categories, w))
+	narrowSectionWidth := m.sectionWidth() * 60 / 100
+	if narrowSectionWidth < 24 {
+		narrowSectionWidth = 24
+	}
+	if narrowSectionWidth > m.sectionWidth() {
+		narrowSectionWidth = m.sectionWidth()
+	}
+	narrowContentWidth := narrowSectionWidth - listBoxStyle.GetHorizontalFrameSize()
+	if narrowContentWidth < 1 {
+		narrowContentWidth = 1
+	}
+
+	breakdown := m.renderSectionSizedLeft(
+		"Spending by Category",
+		renderCategoryBreakdown(m.rows, narrowContentWidth),
+		narrowSectionWidth,
+		false,
+	)
+
+	trend := m.renderSectionSizedLeft(
+		"Spending Tracker",
+		renderSpendingTrackerWithWeekAnchor(m.rows, narrowContentWidth, m.spendingWeekAnchor),
+		narrowSectionWidth,
+		false,
+	)
 	return summary + "\n" + breakdown + "\n" + trend
 }
 
@@ -974,6 +1000,9 @@ func (m model) findDetailTxn() *transaction {
 // settSectionForColumn returns the settSection index given current column and row.
 func settSectionForColumn(col, row int) int {
 	if col == settColRight {
+		if row == 0 {
+			return settSecChart
+		}
 		return settSecDBImport
 	}
 	// Left column: row 0 = Categories, row 1 = Rules
@@ -990,8 +1019,10 @@ func settColumnRow(sec int) (int, int) {
 		return settColLeft, 0
 	case settSecRules:
 		return settColLeft, 1
-	case settSecDBImport:
+	case settSecChart:
 		return settColRight, 0
+	case settSecDBImport:
+		return settColRight, 1
 	}
 	return settColLeft, 0
 }
@@ -1038,29 +1069,24 @@ func (m model) updateSettings(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	case "l", "right":
 		if m.settColumn == settColLeft {
 			m.settColumn = settColRight
-			m.settSection = settSecDBImport
+			m.settSection = settSecChart
 		}
 		return m, nil
 	case "j", "down":
-		if m.settColumn == settColLeft {
-			col, row := settColumnRow(m.settSection)
-			row++
-			if row > 1 {
-				row = 0
-			}
-			m.settSection = settSectionForColumn(col, row)
+		col, row := settColumnRow(m.settSection)
+		row++
+		if row > 1 {
+			row = 0
 		}
-		// Right column has only one section, j does nothing
+		m.settSection = settSectionForColumn(col, row)
 		return m, nil
 	case "k", "up":
-		if m.settColumn == settColLeft {
-			col, row := settColumnRow(m.settSection)
-			row--
-			if row < 0 {
-				row = 1
-			}
-			m.settSection = settSectionForColumn(col, row)
+		col, row := settColumnRow(m.settSection)
+		row--
+		if row < 0 {
+			row = 1
 		}
+		m.settSection = settSectionForColumn(col, row)
 		return m, nil
 	case "enter":
 		m.settActive = true
@@ -1090,6 +1116,8 @@ func (m model) updateSettingsActive(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		return m.updateSettingsCategories(msg)
 	case settSecRules:
 		return m.updateSettingsRules(msg)
+	case settSecChart:
+		return m.updateSettingsChart(msg)
 	case settSecDBImport:
 		return m.updateSettingsDBImport(msg)
 	}
@@ -1223,6 +1251,21 @@ func (m model) updateSettingsDBImport(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			m.maxVisibleRows--
 			m.status = fmt.Sprintf("Rows per page: %d", m.maxVisibleRows)
 		}
+		return m, nil
+	}
+	return m, nil
+}
+
+func (m model) updateSettingsChart(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
+	switch msg.String() {
+	case "h", "left", "l", "right", "enter":
+		if m.spendingWeekAnchor == time.Monday {
+			m.spendingWeekAnchor = time.Sunday
+		} else {
+			m.spendingWeekAnchor = time.Monday
+		}
+		m.status = fmt.Sprintf("Spending tracker week boundary: %s", spendingWeekAnchorLabel(m.spendingWeekAnchor))
+		m.statusErr = false
 		return m, nil
 	}
 	return m, nil
@@ -1470,6 +1513,11 @@ func (m model) settingsFooterBindings() []key.Binding {
 				key.NewBinding(key.WithHelp("e", "edit")),
 				key.NewBinding(key.WithHelp("d", "delete")),
 				key.NewBinding(key.WithHelp("A", "apply all")),
+			)
+		case settSecChart:
+			return append(base,
+				key.NewBinding(key.WithHelp("h/l", "toggle week boundary")),
+				key.NewBinding(key.WithHelp("enter", "toggle")),
 			)
 		case settSecDBImport:
 			return append(base,
