@@ -72,8 +72,8 @@ func importCSV(db *sql.DB, path string) (int, error) {
 			return inserted, fmt.Errorf("parse amount %q: %w", amountRaw, err)
 		}
 		_, err = tx.Exec(`
-			INSERT INTO transactions (date_raw, date_iso, amount, description)
-			VALUES (?, ?, ?, ?)
+			INSERT INTO transactions (date_raw, date_iso, amount, description, notes)
+			VALUES (?, ?, ?, ?, '')
 		`, dateRaw, dateISO, amount, description)
 		if err != nil {
 			return inserted, fmt.Errorf("insert row: %w", err)
