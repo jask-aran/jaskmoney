@@ -288,6 +288,26 @@ func loadCategories(db *sql.DB) ([]category, error) {
 	return out, rows.Err()
 }
 
+// loadCategoryByNameCI returns a category by case-insensitive exact name.
+func loadCategoryByNameCI(db *sql.DB, name string) (*category, error) {
+	var c category
+	var isDef int
+	err := db.QueryRow(`
+		SELECT id, name, color, sort_order, is_default
+		FROM categories
+		WHERE LOWER(name) = LOWER(?)
+		LIMIT 1
+	`, name).Scan(&c.id, &c.name, &c.color, &c.sortOrder, &isDef)
+	if err == sql.ErrNoRows {
+		return nil, nil
+	}
+	if err != nil {
+		return nil, fmt.Errorf("query category by name: %w", err)
+	}
+	c.isDefault = isDef == 1
+	return &c, nil
+}
+
 // ---------------------------------------------------------------------------
 // Category rule types and queries
 // ---------------------------------------------------------------------------
@@ -394,6 +414,42 @@ func updateTransactionCategory(db *sql.DB, txnID int, categoryID *int) error {
 		return fmt.Errorf("update category: %w", err)
 	}
 	return nil
+}
+
+// updateTransactionsCategory sets the same category for a list of transactions
+// atomically and returns the number of affected rows.
+func updateTransactionsCategory(db *sql.DB, txnIDs []int, categoryID *int) (int, error) {
+	if len(txnIDs) == 0 {
+		return 0, nil
+	}
+	tx, err := db.Begin()
+	if err != nil {
+		return 0, fmt.Errorf("begin tx: %w", err)
+	}
+	defer tx.Rollback() //nolint:errcheck // rollback is a no-op after commit
+
+	stmt, err := tx.Prepare("UPDATE transactions SET category_id = ? WHERE id = ?")
+	if err != nil {
+		return 0, fmt.Errorf("prepare update category: %w", err)
+	}
+	defer stmt.Close()
+
+	affected := 0
+	for _, txnID := range txnIDs {
+		res, execErr := stmt.Exec(categoryID, txnID)
+		if execErr != nil {
+			return 0, fmt.Errorf("update category for txn %d: %w", txnID, execErr)
+		}
+		n, rowsErr := res.RowsAffected()
+		if rowsErr != nil {
+			return 0, fmt.Errorf("rows affected for txn %d: %w", txnID, rowsErr)
+		}
+		affected += int(n)
+	}
+	if err := tx.Commit(); err != nil {
+		return 0, fmt.Errorf("commit tx: %w", err)
+	}
+	return affected, nil
 }
 
 // updateTransactionNotes sets the notes for a transaction.

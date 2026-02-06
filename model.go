@@ -102,6 +102,13 @@ type rulesAppliedMsg struct {
 	err   error
 }
 
+type quickCategoryAppliedMsg struct {
+	count        int
+	categoryName string
+	created      bool
+	err          error
+}
+
 type confirmExpiredMsg struct{}
 
 // Sort columns
@@ -216,6 +223,8 @@ type model struct {
 	detailCatCursor int // cursor in category picker
 	detailNotes     string
 	detailEditing   string // "category" or "notes" or ""
+	catPicker       *pickerState
+	catPickerFor    []int
 
 	// Settings state
 	rules          []categoryRule
@@ -324,6 +333,10 @@ func (m model) View() string {
 	if m.importDupeModal {
 		dupeModal := renderDupeModal(m.importDupeFile, m.importDupeTotal, m.importDupeCount)
 		return m.composeOverlay(main, statusLine, footer, dupeModal)
+	}
+	if m.catPicker != nil {
+		picker := renderPicker(m.catPicker, min(56, m.width-10))
+		return m.composeOverlay(main, statusLine, footer, picker)
 	}
 	return m.placeWithFooter(main, statusLine, footer)
 }

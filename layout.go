@@ -101,6 +101,9 @@ func (m model) footerBindings() []key.Binding {
 	if m.importDupeModal {
 		return m.keys.HelpBindings(scopeDupeModal)
 	}
+	if m.catPicker != nil {
+		return m.keys.HelpBindings(scopeCategoryPicker)
+	}
 	if m.searchMode {
 		return m.keys.HelpBindings(scopeSearch)
 	}

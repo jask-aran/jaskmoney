@@ -27,6 +27,7 @@ const (
 	scopeDashboardCustomInput     = "dashboard_custom_input"
 	scopeTransactions             = "transactions"
 	scopeDetailModal              = "detail_modal"
+	scopeCategoryPicker           = "category_picker"
 	scopeFilePicker               = "file_picker"
 	scopeDupeModal                = "dupe_modal"
 	scopeSearch                   = "search"
@@ -54,6 +55,7 @@ const (
 	actionFilterCategory     Action = "filter_category"
 	actionToggleSelect       Action = "toggle_select"
 	actionRangeHighlight     Action = "range_highlight"
+	actionQuickCategory      Action = "quick_category"
 	actionTimeframe          Action = "timeframe"
 	actionMove               Action = "move"
 	actionImportAll          Action = "import_all"
@@ -114,12 +116,18 @@ func NewKeyRegistry() *KeyRegistry {
 	reg(scopeTransactions, actionSearch, []string{"/"}, "search")
 	reg(scopeTransactions, actionSort, []string{"s"}, "sort")
 	reg(scopeTransactions, actionFilterCategory, []string{"f"}, "filter cat")
+	reg(scopeTransactions, actionQuickCategory, []string{"c"}, "quick cat")
 	reg(scopeTransactions, actionToggleSelect, []string{"space", " "}, "toggle sel")
 	reg(scopeTransactions, actionRangeHighlight, []string{"shift+up/down", "shift+up", "shift+down"}, "hl range")
 	reg(scopeTransactions, actionSelect, []string{"enter"}, "select")
 	reg(scopeTransactions, actionNavigate, []string{"j/k", "j", "k", "up", "down", "ctrl+p", "ctrl+n"}, "navigate")
 	reg(scopeTransactions, actionNextTab, []string{"tab"}, "next tab")
 	reg(scopeTransactions, actionQuit, []string{"q", "ctrl+c"}, "quit")
+
+	// Category quick picker footer.
+	reg(scopeCategoryPicker, actionNavigate, []string{"j/k", "j", "k", "up", "down"}, "navigate")
+	reg(scopeCategoryPicker, actionSelect, []string{"enter"}, "apply")
+	reg(scopeCategoryPicker, actionClose, []string{"esc"}, "cancel")
 
 	// Detail / file picker footers: enter, esc, j/k, q
 	reg(scopeDetailModal, actionSelect, []string{"enter"}, "select")
