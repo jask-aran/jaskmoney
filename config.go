@@ -1,10 +1,12 @@
 package main
 
 import (
+	"bytes"
 	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
+	"time"
 
 	"github.com/BurntSushi/toml"
 )
@@ -29,7 +31,16 @@ type csvFormat struct {
 
 // configFile is the top-level TOML structure.
 type configFile struct {
-	Format []csvFormat `toml:"format"`
+	Format   []csvFormat `toml:"format"`
+	Settings appSettings `toml:"settings"`
+}
+
+type appSettings struct {
+	RowsPerPage      int    `toml:"rows_per_page"`
+	SpendingWeekFrom string `toml:"spending_week_from"` // "sunday" or "monday"
+	DashTimeframe    int    `toml:"dash_timeframe"`
+	DashCustomStart  string `toml:"dash_custom_start"`
+	DashCustomEnd    string `toml:"dash_custom_end"`
 }
 
 const defaultConfigTOML = `# Jaskmoney CSV Format Definitions
@@ -46,6 +57,13 @@ amount_col = 1
 desc_col = 2
 desc_join = true
 amount_strip = ","
+
+[settings]
+rows_per_page = 20
+spending_week_from = "sunday"
+dash_timeframe = 0
+dash_custom_start = ""
+dash_custom_end = ""
 `
 
 // configDir returns the directory for jaskmoney config files,
@@ -70,51 +88,130 @@ func configPath() (string, error) {
 // loadFormats loads CSV format definitions from the config file.
 // If the file doesn't exist, it is created with the default ANZ format.
 func loadFormats() ([]csvFormat, error) {
+	formats, _, err := loadAppConfig()
+	return formats, err
+}
+
+func defaultSettings() appSettings {
+	return appSettings{
+		RowsPerPage:      20,
+		SpendingWeekFrom: "sunday",
+		DashTimeframe:    dashTimeframeThisMonth,
+		DashCustomStart:  "",
+		DashCustomEnd:    "",
+	}
+}
+
+func loadAppConfig() ([]csvFormat, appSettings, error) {
 	path, err := configPath()
 	if err != nil {
-		return defaultFormats(), err
+		return defaultFormats(), defaultSettings(), err
 	}
 
 	// Create config file with defaults if missing
 	if _, err := os.Stat(path); os.IsNotExist(err) {
 		if mkErr := os.MkdirAll(filepath.Dir(path), 0755); mkErr != nil {
-			return defaultFormats(), fmt.Errorf("create config dir: %w", mkErr)
+			return defaultFormats(), defaultSettings(), fmt.Errorf("create config dir: %w", mkErr)
 		}
 		if wErr := os.WriteFile(path, []byte(defaultConfigTOML), 0644); wErr != nil {
-			return defaultFormats(), fmt.Errorf("write default config: %w", wErr)
+			return defaultFormats(), defaultSettings(), fmt.Errorf("write default config: %w", wErr)
 		}
 	}
 
 	data, err := os.ReadFile(path)
 	if err != nil {
-		return defaultFormats(), fmt.Errorf("read config: %w", err)
+		return defaultFormats(), defaultSettings(), fmt.Errorf("read config: %w", err)
 	}
-	formats, parseErr := parseFormats(data)
+	formats, settings, parseErr := parseConfig(data)
 	if parseErr != nil {
-		return defaultFormats(), parseErr
+		return defaultFormats(), defaultSettings(), parseErr
 	}
-	return formats, nil
+	return formats, settings, nil
 }
 
 // parseFormats parses TOML bytes into format definitions.
 func parseFormats(data []byte) ([]csvFormat, error) {
+	formats, _, err := parseConfig(data)
+	return formats, err
+}
+
+// parseConfig parses TOML bytes into full config content.
+func parseConfig(data []byte) ([]csvFormat, appSettings, error) {
 	var cfg configFile
 	if err := toml.Unmarshal(data, &cfg); err != nil {
-		return nil, fmt.Errorf("parse formats.toml: %w", err)
+		return nil, defaultSettings(), fmt.Errorf("parse formats.toml: %w", err)
 	}
 	if len(cfg.Format) == 0 {
-		return nil, fmt.Errorf("no formats defined in config")
+		return nil, defaultSettings(), fmt.Errorf("no formats defined in config")
 	}
 	// Validate
 	for i, f := range cfg.Format {
 		if f.Name == "" {
-			return nil, fmt.Errorf("format[%d]: name is required", i)
+			return nil, defaultSettings(), fmt.Errorf("format[%d]: name is required", i)
 		}
 		if f.DateFormat == "" {
-			return nil, fmt.Errorf("format[%d] %q: date_format is required", i, f.Name)
+			return nil, defaultSettings(), fmt.Errorf("format[%d] %q: date_format is required", i, f.Name)
 		}
 	}
-	return cfg.Format, nil
+	settings := normalizeSettings(cfg.Settings)
+	return cfg.Format, settings, nil
+}
+
+func normalizeSettings(s appSettings) appSettings {
+	out := defaultSettings()
+	if s.RowsPerPage >= 5 && s.RowsPerPage <= 50 {
+		out.RowsPerPage = s.RowsPerPage
+	}
+	switch strings.ToLower(strings.TrimSpace(s.SpendingWeekFrom)) {
+	case "monday":
+		out.SpendingWeekFrom = "monday"
+	default:
+		out.SpendingWeekFrom = "sunday"
+	}
+	if s.DashTimeframe >= 0 && s.DashTimeframe < dashTimeframeCount {
+		out.DashTimeframe = s.DashTimeframe
+	}
+	out.DashCustomStart = strings.TrimSpace(s.DashCustomStart)
+	out.DashCustomEnd = strings.TrimSpace(s.DashCustomEnd)
+	if out.DashCustomStart != "" {
+		if _, err := time.Parse("2006-01-02", out.DashCustomStart); err != nil {
+			out.DashCustomStart = ""
+		}
+	}
+	if out.DashCustomEnd != "" {
+		if _, err := time.Parse("2006-01-02", out.DashCustomEnd); err != nil {
+			out.DashCustomEnd = ""
+		}
+	}
+	return out
+}
+
+func saveAppSettings(s appSettings) error {
+	path, err := configPath()
+	if err != nil {
+		return err
+	}
+	if err := os.MkdirAll(filepath.Dir(path), 0755); err != nil {
+		return fmt.Errorf("create config dir: %w", err)
+	}
+	cfg := configFile{
+		Format:   defaultFormats(),
+		Settings: normalizeSettings(s),
+	}
+	if data, readErr := os.ReadFile(path); readErr == nil {
+		if formats, _, parseErr := parseConfig(data); parseErr == nil {
+			cfg.Format = formats
+		}
+	}
+
+	var buf bytes.Buffer
+	if err := toml.NewEncoder(&buf).Encode(cfg); err != nil {
+		return fmt.Errorf("encode formats.toml: %w", err)
+	}
+	if err := os.WriteFile(path, buf.Bytes(), 0644); err != nil {
+		return fmt.Errorf("write formats.toml: %w", err)
+	}
+	return nil
 }
 
 // defaultFormats returns the built-in ANZ format.
