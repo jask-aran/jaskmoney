@@ -143,10 +143,71 @@ func currentSchemaVersion(db *sql.DB) (int, error) {
 	return ver, err
 }
 
-// migrateSchema drops all existing tables and recreates the v2 schema.
-// This is acceptable for a personal tool where data can be re-imported.
+// migrateSchema evolves the database from fromVersion to the current schema.
+// When migrating from v1 (version 0), existing transactions are preserved with
+// category_id = NULL. Tables that don't exist in v1 are created fresh.
 func migrateSchema(db *sql.DB, fromVersion int) error {
-	// Drop old tables (order matters for foreign keys)
+	if fromVersion == 0 {
+		return migrateFromV1(db)
+	}
+	// Unknown version — drop and recreate (should not happen in practice).
+	return migrateClean(db)
+}
+
+// migrateFromV1 preserves v1 transactions while adding v2 tables and columns.
+func migrateFromV1(db *sql.DB) error {
+	// Check whether a v1 transactions table exists.
+	var hasTxns int
+	err := db.QueryRow(`SELECT COUNT(*) FROM sqlite_master WHERE type='table' AND name='transactions'`).Scan(&hasTxns)
+	if err != nil {
+		return fmt.Errorf("check transactions table: %w", err)
+	}
+
+	if hasTxns == 1 {
+		// Rename old transactions table so we can recreate with the v2 schema.
+		if _, err := db.Exec("ALTER TABLE transactions RENAME TO _v1_transactions"); err != nil {
+			return fmt.Errorf("rename v1 transactions: %w", err)
+		}
+	}
+
+	// Drop any other old tables that may conflict.
+	for _, t := range []string{"category_rules", "imports", "categories", "schema_meta"} {
+		if _, err := db.Exec("DROP TABLE IF EXISTS " + t); err != nil {
+			return fmt.Errorf("drop table %s: %w", t, err)
+		}
+	}
+
+	// Create full v2 schema.
+	if _, err := db.Exec(schemaV2); err != nil {
+		return fmt.Errorf("create v2 schema: %w", err)
+	}
+	if err := seedDefaultCategories(db); err != nil {
+		return fmt.Errorf("seed categories: %w", err)
+	}
+
+	// Copy v1 rows into v2 transactions table (category_id = NULL, notes = '').
+	if hasTxns == 1 {
+		_, err := db.Exec(`
+			INSERT INTO transactions (date_raw, date_iso, amount, description, notes)
+			SELECT date_raw, date_iso, amount, description, ''
+			FROM _v1_transactions
+		`)
+		if err != nil {
+			return fmt.Errorf("copy v1 transactions: %w", err)
+		}
+		if _, err := db.Exec("DROP TABLE _v1_transactions"); err != nil {
+			return fmt.Errorf("drop temp v1 table: %w", err)
+		}
+	}
+
+	if _, err := db.Exec("INSERT INTO schema_meta (version) VALUES (?)", schemaVersion); err != nil {
+		return fmt.Errorf("insert schema version: %w", err)
+	}
+	return nil
+}
+
+// migrateClean drops everything and starts fresh (fallback for unknown versions).
+func migrateClean(db *sql.DB) error {
 	drops := []string{
 		"DROP TABLE IF EXISTS category_rules",
 		"DROP TABLE IF EXISTS transactions",
@@ -159,22 +220,15 @@ func migrateSchema(db *sql.DB, fromVersion int) error {
 			return fmt.Errorf("drop table: %w", err)
 		}
 	}
-
-	// Create v2 schema
 	if _, err := db.Exec(schemaV2); err != nil {
 		return fmt.Errorf("create v2 schema: %w", err)
 	}
-
-	// Seed default categories
 	if err := seedDefaultCategories(db); err != nil {
 		return fmt.Errorf("seed categories: %w", err)
 	}
-
-	// Record schema version
 	if _, err := db.Exec("INSERT INTO schema_meta (version) VALUES (?)", schemaVersion); err != nil {
 		return fmt.Errorf("insert schema version: %w", err)
 	}
-
 	return nil
 }
 
@@ -306,12 +360,15 @@ func loadImports(db *sql.DB) ([]importRecord, error) {
 // Transaction queries (v2)
 // ---------------------------------------------------------------------------
 
-// loadRows retrieves all transactions ordered by date (newest first), then id.
+// loadRows retrieves all transactions with category info, ordered by date (newest first).
 func loadRows(db *sql.DB) ([]transaction, error) {
 	rows, err := db.Query(`
-		SELECT date_raw, amount, description
-		FROM transactions
-		ORDER BY date_iso DESC, id DESC
+		SELECT t.id, t.date_raw, t.date_iso, t.amount, t.description,
+		       t.category_id, COALESCE(c.name, 'Uncategorised'), COALESCE(c.color, '#7f849c'),
+		       t.notes
+		FROM transactions t
+		LEFT JOIN categories c ON t.category_id = c.id
+		ORDER BY t.date_iso DESC, t.id DESC
 	`)
 	if err != nil {
 		return nil, fmt.Errorf("query transactions: %w", err)
@@ -321,7 +378,8 @@ func loadRows(db *sql.DB) ([]transaction, error) {
 	var out []transaction
 	for rows.Next() {
 		var t transaction
-		if err := rows.Scan(&t.dateRaw, &t.amount, &t.description); err != nil {
+		if err := rows.Scan(&t.id, &t.dateRaw, &t.dateISO, &t.amount, &t.description,
+			&t.categoryID, &t.categoryName, &t.categoryColor, &t.notes); err != nil {
 			return nil, fmt.Errorf("scan transaction: %w", err)
 		}
 		out = append(out, t)
@@ -329,22 +387,250 @@ func loadRows(db *sql.DB) ([]transaction, error) {
 	return out, rows.Err()
 }
 
+// updateTransactionCategory sets the category for a transaction.
+func updateTransactionCategory(db *sql.DB, txnID int, categoryID *int) error {
+	_, err := db.Exec("UPDATE transactions SET category_id = ? WHERE id = ?", categoryID, txnID)
+	if err != nil {
+		return fmt.Errorf("update category: %w", err)
+	}
+	return nil
+}
+
+// updateTransactionNotes sets the notes for a transaction.
+func updateTransactionNotes(db *sql.DB, txnID int, notes string) error {
+	_, err := db.Exec("UPDATE transactions SET notes = ? WHERE id = ?", notes, txnID)
+	if err != nil {
+		return fmt.Errorf("update notes: %w", err)
+	}
+	return nil
+}
+
+// ---------------------------------------------------------------------------
+// Category CRUD
+// ---------------------------------------------------------------------------
+
+// insertCategory adds a new category and returns its ID.
+func insertCategory(db *sql.DB, name, color string) (int, error) {
+	// Determine next sort_order
+	var maxOrder int
+	err := db.QueryRow("SELECT COALESCE(MAX(sort_order), 0) FROM categories").Scan(&maxOrder)
+	if err != nil {
+		return 0, fmt.Errorf("max sort_order: %w", err)
+	}
+	res, err := db.Exec(`
+		INSERT INTO categories (name, color, sort_order, is_default)
+		VALUES (?, ?, ?, 0)
+	`, name, color, maxOrder+1)
+	if err != nil {
+		return 0, fmt.Errorf("insert category: %w", err)
+	}
+	id, err := res.LastInsertId()
+	if err != nil {
+		return 0, fmt.Errorf("last insert id: %w", err)
+	}
+	return int(id), nil
+}
+
+// updateCategory modifies an existing category's name and color.
+func updateCategory(db *sql.DB, id int, name, color string) error {
+	_, err := db.Exec("UPDATE categories SET name = ?, color = ? WHERE id = ?", name, color, id)
+	if err != nil {
+		return fmt.Errorf("update category: %w", err)
+	}
+	return nil
+}
+
+// deleteCategory removes a category by ID. Returns an error if it is the
+// default ("Uncategorised") category.
+func deleteCategory(db *sql.DB, id int) error {
+	var isDef int
+	err := db.QueryRow("SELECT is_default FROM categories WHERE id = ?", id).Scan(&isDef)
+	if err != nil {
+		return fmt.Errorf("check default: %w", err)
+	}
+	if isDef == 1 {
+		return fmt.Errorf("cannot delete default category")
+	}
+	_, err = db.Exec("DELETE FROM categories WHERE id = ?", id)
+	if err != nil {
+		return fmt.Errorf("delete category: %w", err)
+	}
+	return nil
+}
+
+// ---------------------------------------------------------------------------
+// Category rule CRUD
+// ---------------------------------------------------------------------------
+
+// insertCategoryRule adds a new rule and returns its ID.
+func insertCategoryRule(db *sql.DB, pattern string, categoryID int) (int, error) {
+	res, err := db.Exec(`
+		INSERT INTO category_rules (pattern, category_id, priority)
+		VALUES (?, ?, 0)
+	`, pattern, categoryID)
+	if err != nil {
+		return 0, fmt.Errorf("insert rule: %w", err)
+	}
+	id, err := res.LastInsertId()
+	if err != nil {
+		return 0, fmt.Errorf("last insert id: %w", err)
+	}
+	return int(id), nil
+}
+
+// updateCategoryRule modifies a rule's pattern and target category.
+func updateCategoryRule(db *sql.DB, id int, pattern string, categoryID int) error {
+	_, err := db.Exec("UPDATE category_rules SET pattern = ?, category_id = ? WHERE id = ?",
+		pattern, categoryID, id)
+	if err != nil {
+		return fmt.Errorf("update rule: %w", err)
+	}
+	return nil
+}
+
+// deleteCategoryRule removes a rule by ID.
+func deleteCategoryRule(db *sql.DB, id int) error {
+	_, err := db.Exec("DELETE FROM category_rules WHERE id = ?", id)
+	if err != nil {
+		return fmt.Errorf("delete rule: %w", err)
+	}
+	return nil
+}
+
+// applyCategoryRules runs all rules against uncategorised transactions.
+// It uses case-insensitive LIKE matching. Returns the number of rows updated.
+func applyCategoryRules(db *sql.DB) (int, error) {
+	rules, err := loadCategoryRules(db)
+	if err != nil {
+		return 0, err
+	}
+	total := 0
+	for _, r := range rules {
+		res, err := db.Exec(`
+			UPDATE transactions
+			SET category_id = ?
+			WHERE category_id IS NULL
+			AND LOWER(description) LIKE LOWER(?)
+		`, r.categoryID, "%"+r.pattern+"%")
+		if err != nil {
+			return total, fmt.Errorf("apply rule %q: %w", r.pattern, err)
+		}
+		n, _ := res.RowsAffected()
+		total += int(n)
+	}
+	return total, nil
+}
+
+// ---------------------------------------------------------------------------
+// Import record helpers
+// ---------------------------------------------------------------------------
+
+// insertImportRecord records an import and returns its ID.
+func insertImportRecord(db *sql.DB, filename string, rowCount int) (int, error) {
+	res, err := db.Exec(`INSERT INTO imports (filename, row_count) VALUES (?, ?)`,
+		filename, rowCount)
+	if err != nil {
+		return 0, fmt.Errorf("insert import: %w", err)
+	}
+	id, err := res.LastInsertId()
+	if err != nil {
+		return 0, fmt.Errorf("last insert id: %w", err)
+	}
+	return int(id), nil
+}
+
+// ---------------------------------------------------------------------------
+// Database info
+// ---------------------------------------------------------------------------
+
+// dbInfo holds summary statistics about the database.
+type dbInfo struct {
+	schemaVersion    int
+	transactionCount int
+	categoryCount    int
+	ruleCount        int
+	importCount      int
+}
+
+// loadDBInfo retrieves summary statistics.
+func loadDBInfo(db *sql.DB) (dbInfo, error) {
+	var info dbInfo
+	err := db.QueryRow("SELECT COALESCE(version, 0) FROM schema_meta LIMIT 1").Scan(&info.schemaVersion)
+	if err != nil {
+		return info, fmt.Errorf("schema version: %w", err)
+	}
+	if err := db.QueryRow("SELECT COUNT(*) FROM transactions").Scan(&info.transactionCount); err != nil {
+		return info, fmt.Errorf("transaction count: %w", err)
+	}
+	if err := db.QueryRow("SELECT COUNT(*) FROM categories").Scan(&info.categoryCount); err != nil {
+		return info, fmt.Errorf("category count: %w", err)
+	}
+	if err := db.QueryRow("SELECT COUNT(*) FROM category_rules").Scan(&info.ruleCount); err != nil {
+		return info, fmt.Errorf("rule count: %w", err)
+	}
+	if err := db.QueryRow("SELECT COUNT(*) FROM imports").Scan(&info.importCount); err != nil {
+		return info, fmt.Errorf("import count: %w", err)
+	}
+	return info, nil
+}
+
+// clearAllData deletes all transactions, imports, and category rules,
+// but preserves categories.
+func clearAllData(db *sql.DB) error {
+	statements := []string{
+		"DELETE FROM transactions",
+		"DELETE FROM imports",
+	}
+	for _, stmt := range statements {
+		if _, err := db.Exec(stmt); err != nil {
+			return fmt.Errorf("clear data: %w", err)
+		}
+	}
+	return nil
+}
+
 // ---------------------------------------------------------------------------
 // Tea commands
 // ---------------------------------------------------------------------------
 
-// refreshCmd returns a Bubble Tea command that reloads rows from the database.
+// refreshCmd returns a Bubble Tea command that reloads rows, categories,
+// rules, and imports.
 func refreshCmd(db *sql.DB) tea.Cmd {
 	return func() tea.Msg {
 		rows, err := loadRows(db)
-		return refreshDoneMsg{rows: rows, err: err}
+		if err != nil {
+			return refreshDoneMsg{err: err}
+		}
+		cats, err := loadCategories(db)
+		if err != nil {
+			return refreshDoneMsg{err: err}
+		}
+		rules, err := loadCategoryRules(db)
+		if err != nil {
+			return refreshDoneMsg{err: err}
+		}
+		imports, err := loadImports(db)
+		if err != nil {
+			return refreshDoneMsg{err: err}
+		}
+		info, err := loadDBInfo(db)
+		if err != nil {
+			return refreshDoneMsg{err: err}
+		}
+		return refreshDoneMsg{
+			rows:       rows,
+			categories: cats,
+			rules:      rules,
+			imports:    imports,
+			info:       info,
+		}
 	}
 }
 
-// clearCmd returns a Bubble Tea command that deletes all transactions.
+// clearCmd returns a Bubble Tea command that deletes all data.
 func clearCmd(db *sql.DB) tea.Cmd {
 	return func() tea.Msg {
-		_, err := db.Exec("DELETE FROM transactions")
+		err := clearAllData(db)
 		return clearDoneMsg{err: err}
 	}
 }
