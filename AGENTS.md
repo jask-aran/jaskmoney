@@ -21,6 +21,7 @@ Supporting files:
 - `ANZ.csv` — sample import data.
 - `transactions.db` — local runtime artifact (do not commit).
 - `v0.2-spec.md` — design specification document.
+- `/home/jask/bagels-ref` — local reference clone of Bagels for chart/style parity checks.
 
 ### Where new code should go
 
@@ -169,9 +170,26 @@ If you add a new format:
 
 ## Rendering & UI Rules
 
-- Cumulative balance chart uses running total (debits increase, credits decrease).
+- Spending tracker is a 60-day daily spend chart (debits only; uncategorised excluded).
+- Spending tracker uses `ntcharts` time-series with braille/dotted data stroke.
+- Vertical guides are Bagels-inspired:
+  - Minor guides every 2 days.
+  - Weekly boundary guides are color-emphasized, not thicker glyphs.
+  - Guides render behind data (skip cells already occupied by plotted data).
+  - Guides stop at the plot area (do not enter tick-label rows).
+- X labels are intentionally close to the bottom plot edge.
+- Dashboard section title separators are intentionally disabled.
+- On Dashboard, `Spending by Category` and `Spending Tracker` render at 60% width and are left-aligned.
 - Transaction table supports optional category column (nil categories hides it).
 - `formatMonth` must handle invalid dates safely (no slicing panic).
+
+## External Reference
+
+- Bagels reference repo is kept locally at `/home/jask/bagels-ref`.
+- For spending tracker parity, inspect:
+  - `src/bagels/components/modules/spending/__init__.py`
+  - `src/bagels/components/modules/spending/plots.py`
+- Treat `/tmp/bagels` as disposable; use `/home/jask/bagels-ref` as the durable reference path.
 
 ## Testing Guidelines
 

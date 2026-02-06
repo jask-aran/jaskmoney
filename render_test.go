@@ -25,18 +25,21 @@ func TestRenderSummaryCardsContainsValues(t *testing.T) {
 	cats := []category{{id: 1, name: "Groceries"}, {id: 2, name: "Income"}}
 	output := renderSummaryCards(rows, cats, 80)
 
-	// Should contain income, expenses, transaction count
+	// Should contain balance, debits, credits, transaction count
 	if !strings.Contains(output, "Balance") {
 		t.Error("missing Balance label")
 	}
-	if !strings.Contains(output, "Income") {
-		t.Error("missing Income label")
+	if !strings.Contains(output, "Debits") {
+		t.Error("missing Debits label")
 	}
-	if !strings.Contains(output, "Expenses") {
-		t.Error("missing Expenses label")
+	if !strings.Contains(output, "Credits") {
+		t.Error("missing Credits label")
 	}
-	if !strings.Contains(output, "5") { // 5 transactions
-		t.Error("missing transaction count")
+	if !strings.Contains(output, "Transactions") {
+		t.Error("missing transaction label")
+	}
+	if !strings.Contains(output, "Uncat") {
+		t.Error("missing Uncat label")
 	}
 }
 
@@ -114,49 +117,49 @@ func TestRenderCategoryBreakdownTopSixPlusOther(t *testing.T) {
 }
 
 // ---------------------------------------------------------------------------
-// Monthly aggregation tests
+// Daily spend aggregation tests
 // ---------------------------------------------------------------------------
 
-func TestAggregateDailyBasic(t *testing.T) {
+func TestAggregateDailySpendBasic(t *testing.T) {
 	now := time.Now()
 	today := now.Format("2006-01-02")
 	rows := []transaction{
-		{dateISO: today, amount: -100.00}, // debit: cumulative += 100
-		{dateISO: today, amount: -50.00},  // debit: cumulative += 50
-		{dateISO: today, amount: 500.00},  // credit: cumulative -= 500
+		{dateISO: today, amount: -100.00, categoryName: "Groceries"},
+		{dateISO: today, amount: -50.00, categoryName: "Dining"},
+		{dateISO: today, amount: 500.00, categoryName: "Income"},
+		{dateISO: today, amount: -25.00, categoryName: "Uncategorised"},
 	}
-	data, labels := aggregateDaily(rows, 3)
-	if len(data) == 0 {
-		t.Fatal("expected non-empty data")
+	data, dates := aggregateDailySpend(rows, spendingTrackerDays)
+	if len(data) != spendingTrackerDays {
+		t.Fatalf("expected %d data points, got %d", spendingTrackerDays, len(data))
 	}
-	// Cumulative: debits add (+150), credit subtracts (-500) = -350, clamped to 0.
+	if len(dates) != spendingTrackerDays {
+		t.Fatalf("expected %d dates, got %d", spendingTrackerDays, len(dates))
+	}
 	last := data[len(data)-1]
-	if last != 0.0 {
-		t.Errorf("cumulative balance = %.2f, want 0.00 (clamped from net -350)", last)
-	}
-	// Labels should contain month abbreviations
-	if len(labels) == 0 {
-		t.Error("expected at least one month label")
+	if last != 150.00 {
+		t.Errorf("daily spend = %.2f, want 150.00", last)
 	}
 }
 
-func TestAggregateDailyExcludesOldData(t *testing.T) {
+func TestAggregateDailySpendExcludesOldData(t *testing.T) {
+	old := time.Now().AddDate(0, 0, -(spendingTrackerDays + 5)).Format("2006-01-02")
 	rows := []transaction{
-		{dateISO: "2020-01-15", amount: -100.00},
+		{dateISO: old, amount: -100.00},
 	}
-	data, _ := aggregateDaily(rows, 3)
+	data, _ := aggregateDailySpend(rows, spendingTrackerDays)
 	for _, v := range data {
 		if v != 0 {
-			t.Errorf("old data should be excluded from cumulative, got %.2f", v)
+			t.Errorf("old data should be excluded from daily spend, got %.2f", v)
 			break
 		}
 	}
 }
 
-func TestAggregateDailyEmpty(t *testing.T) {
-	data, _ := aggregateDaily(nil, 3)
-	if len(data) == 0 {
-		t.Fatal("expected data points even with no transactions")
+func TestAggregateDailySpendEmpty(t *testing.T) {
+	data, _ := aggregateDailySpend(nil, spendingTrackerDays)
+	if len(data) != spendingTrackerDays {
+		t.Fatalf("expected %d data points, got %d", spendingTrackerDays, len(data))
 	}
 	for _, v := range data {
 		if v != 0 {
@@ -166,35 +169,46 @@ func TestAggregateDailyEmpty(t *testing.T) {
 	}
 }
 
-func TestAggregateDailyCreditReducesBalance(t *testing.T) {
+func TestAggregateDailySpendCreditOnly(t *testing.T) {
 	now := time.Now()
-	today := now.Format("2006-01-02")
-	yesterday := now.AddDate(0, 0, -1).Format("2006-01-02")
 	rows := []transaction{
-		{dateISO: yesterday, amount: -200.00}, // debit: cumulative += 200
-		{dateISO: today, amount: 100.00},      // credit: cumulative -= 100
+		{dateISO: now.Format("2006-01-02"), amount: 500.00},
 	}
-	data, _ := aggregateDaily(rows, 3)
-	if len(data) < 2 {
-		t.Fatal("expected at least 2 data points")
-	}
-	// The last data point should reflect the net: 200 - 100 = 100
+	data, _ := aggregateDailySpend(rows, spendingTrackerDays)
 	last := data[len(data)-1]
-	if last != 100.00 {
-		t.Errorf("cumulative balance = %.2f, want 100.00", last)
+	if last != 0.0 {
+		t.Errorf("credit-only daily spend should be 0, got %.2f", last)
 	}
 }
 
-func TestAggregateDailyCreditOnlyClampedToZero(t *testing.T) {
+func TestRenderSpendingTrackerShowsYAxisLabels(t *testing.T) {
 	now := time.Now()
 	rows := []transaction{
-		{dateISO: now.Format("2006-01-02"), amount: 500.00}, // credit only
+		{dateISO: now.Format("2006-01-02"), amount: -123.45},
 	}
-	data, _ := aggregateDaily(rows, 3)
-	// Net is -500, clamped to 0
-	last := data[len(data)-1]
-	if last != 0.0 {
-		t.Errorf("credit-only cumulative should be clamped to 0, got %.2f", last)
+	output := renderSpendingTracker(rows, 80)
+	if strings.Contains(output, "$") {
+		t.Error("did not expect currency symbol in Y-axis labels")
+	}
+}
+
+func TestRenderSpendingTrackerShowsGridlines(t *testing.T) {
+	now := time.Now()
+	rows := []transaction{
+		{dateISO: now.Format("2006-01-02"), amount: -123.45, categoryName: "Groceries"},
+	}
+	output := renderSpendingTrackerWithWeekAnchor(rows, 80, time.Sunday)
+	if !strings.Contains(output, "│") {
+		t.Error("expected vertical gridline glyph")
+	}
+}
+
+func TestSpendingMinorGridStep(t *testing.T) {
+	if got := spendingMinorGridStep(60); got != 2 {
+		t.Errorf("spendingMinorGridStep(60) = %d, want 2", got)
+	}
+	if got := spendingMinorGridStep(30); got != 1 {
+		t.Errorf("spendingMinorGridStep(30) = %d, want 1", got)
 	}
 }
 
@@ -277,40 +291,32 @@ func TestFormatDateShort(t *testing.T) {
 }
 
 // ---------------------------------------------------------------------------
-// Monthly trend rendering tests
+// Spending tracker rendering tests
 // ---------------------------------------------------------------------------
 
-func TestRenderMonthlyTrendEmpty(t *testing.T) {
-	output := renderMonthlyTrend(nil, 80)
+func TestRenderSpendingTrackerEmpty(t *testing.T) {
+	output := renderSpendingTracker(nil, 80)
 	if output == "" {
 		t.Error("expected non-empty output even with no data")
 	}
 }
 
-func TestRenderMonthlyTrendContainsCaption(t *testing.T) {
-	now := time.Now()
-	rows := []transaction{
-		{dateISO: now.Format("2006-01-02"), amount: -100.00},
-	}
-	output := renderMonthlyTrend(rows, 80)
-	if !strings.Contains(output, "Cumulative balance") {
-		t.Error("missing cumulative balance label in chart caption")
-	}
-}
-
-func TestRenderMonthlyTrendCreditOnly(t *testing.T) {
-	// Credit-only data should produce a flat zero line (clamped)
+func TestRenderSpendingTrackerCreditOnly(t *testing.T) {
 	now := time.Now()
 	rows := []transaction{
 		{dateISO: now.Format("2006-01-02"), amount: 500.00},
 	}
-	output := renderMonthlyTrend(rows, 80)
-	// Should still render (all zeros chart)
+	output := renderSpendingTracker(rows, 80)
 	if output == "" {
 		t.Error("expected non-empty output")
 	}
-	if !strings.Contains(output, "Cumulative balance") {
-		t.Error("missing cumulative balance caption")
+}
+
+func TestDashboardViewSpendingTrackerTitle(t *testing.T) {
+	m := newModel()
+	output := m.dashboardView()
+	if !strings.Contains(output, "Spending Tracker") {
+		t.Error("missing Spending Tracker title in dashboard")
 	}
 }
 
@@ -421,10 +427,10 @@ func TestRenderCategoryBreakdownEmptyMessage(t *testing.T) {
 	}
 }
 
-func TestRenderMonthlyTrendAlwaysRenders(t *testing.T) {
-	output := renderMonthlyTrend(nil, 80)
+func TestRenderSpendingTrackerAlwaysRenders(t *testing.T) {
+	output := renderSpendingTracker(nil, 80)
 	if output == "" {
-		t.Error("trend chart should render even with no data (zero line)")
+		t.Error("spending tracker should render even with no data")
 	}
 }
 

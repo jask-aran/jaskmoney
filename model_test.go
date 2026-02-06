@@ -2,6 +2,7 @@ package main
 
 import (
 	"testing"
+	"time"
 
 	tea "github.com/charmbracelet/bubbletea"
 )
@@ -259,14 +260,14 @@ func TestSettingsColumnNavigation(t *testing.T) {
 		t.Fatalf("initial section = %d, want %d", m.settSection, settSecCategories)
 	}
 
-	// l moves to right column (DB+Import)
+	// l moves to right column (Chart)
 	m2, _ := m.updateSettings(keyMsg("l"))
 	m3 := m2.(model)
 	if m3.settColumn != settColRight {
 		t.Errorf("after l: column = %d, want %d", m3.settColumn, settColRight)
 	}
-	if m3.settSection != settSecDBImport {
-		t.Errorf("after l: section = %d, want %d", m3.settSection, settSecDBImport)
+	if m3.settSection != settSecChart {
+		t.Errorf("after l: section = %d, want %d", m3.settSection, settSecChart)
 	}
 
 	// h moves back to left column
@@ -277,6 +278,24 @@ func TestSettingsColumnNavigation(t *testing.T) {
 	}
 	if m5.settSection != settSecCategories {
 		t.Errorf("after h: section = %d, want %d", m5.settSection, settSecCategories)
+	}
+}
+
+func TestSettingsRightColumnJK(t *testing.T) {
+	m := testSettingsModel()
+	m.settColumn = settColRight
+	m.settSection = settSecChart
+
+	m2, _ := m.updateSettings(keyMsg("j"))
+	m3 := m2.(model)
+	if m3.settSection != settSecDBImport {
+		t.Errorf("after j: section = %d, want %d", m3.settSection, settSecDBImport)
+	}
+
+	m4, _ := m3.updateSettings(keyMsg("k"))
+	m5 := m4.(model)
+	if m5.settSection != settSecChart {
+		t.Errorf("after k: section = %d, want %d", m5.settSection, settSecChart)
 	}
 }
 
@@ -491,6 +510,26 @@ func TestSettingsDBClearConfirm(t *testing.T) {
 	m3 := m2.(model)
 	if m3.confirmAction != "clear_db" {
 		t.Errorf("confirmAction = %q, want %q", m3.confirmAction, "clear_db")
+	}
+}
+
+func TestSettingsChartToggleWeekBoundary(t *testing.T) {
+	m := testSettingsModel()
+	m.settSection = settSecChart
+	m.settColumn = settColRight
+	m.settActive = true
+	m.spendingWeekAnchor = time.Sunday
+
+	m2, _ := m.updateSettings(keyMsg("enter"))
+	m3 := m2.(model)
+	if m3.spendingWeekAnchor != time.Monday {
+		t.Errorf("after enter: week anchor = %v, want Monday", m3.spendingWeekAnchor)
+	}
+
+	m4, _ := m3.updateSettings(keyMsg("l"))
+	m5 := m4.(model)
+	if m5.spendingWeekAnchor != time.Sunday {
+		t.Errorf("after l: week anchor = %v, want Sunday", m5.spendingWeekAnchor)
 	}
 }
 
