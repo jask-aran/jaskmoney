@@ -493,7 +493,10 @@ func formatDateShort(dateISO string) string {
 func formatMonth(dateISO string) string {
 	t, err := time.Parse("2006-01-02", dateISO)
 	if err != nil {
-		return dateISO[:7]
+		if len(dateISO) >= 7 {
+			return dateISO[:7]
+		}
+		return dateISO
 	}
 	return t.Format("Jan 2006")
 }
@@ -601,52 +604,6 @@ func renderCategoryBreakdown(rows []transaction, width int) string {
 	}
 
 	return strings.Join(lines, "\n")
-}
-
-// monthlyAggregate holds income and expenses for a single month.
-type monthlyAggregate struct {
-	month    string // "2006-01"
-	income   float64
-	expenses float64 // stored as positive
-}
-
-// aggregateMonthly computes monthly income and expense totals from transactions,
-// returning only the last nMonths months up to now.
-func aggregateMonthly(rows []transaction, nMonths int) []monthlyAggregate {
-	now := time.Now()
-	cutoff := time.Date(now.Year(), now.Month()-time.Month(nMonths-1), 1, 0, 0, 0, 0, time.Local)
-
-	byMonth := make(map[string]*monthlyAggregate)
-	for _, r := range rows {
-		t, err := time.Parse("2006-01-02", r.dateISO)
-		if err != nil || t.Before(cutoff) {
-			continue
-		}
-		key := t.Format("2006-01")
-		agg, ok := byMonth[key]
-		if !ok {
-			agg = &monthlyAggregate{month: key}
-			byMonth[key] = agg
-		}
-		if r.amount > 0 {
-			agg.income += r.amount
-		} else {
-			agg.expenses += math.Abs(r.amount)
-		}
-	}
-
-	// Generate all months in range (even empty ones)
-	var result []monthlyAggregate
-	for i := 0; i < nMonths; i++ {
-		m := time.Date(now.Year(), now.Month()-time.Month(nMonths-1-i), 1, 0, 0, 0, 0, time.Local)
-		key := m.Format("2006-01")
-		if agg, ok := byMonth[key]; ok {
-			result = append(result, *agg)
-		} else {
-			result = append(result, monthlyAggregate{month: key})
-		}
-	}
-	return result
 }
 
 // aggregateDaily computes a cumulative running balance over the last nMonths

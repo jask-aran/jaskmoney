@@ -405,6 +405,24 @@ func updateTransactionNotes(db *sql.DB, txnID int, notes string) error {
 	return nil
 }
 
+// updateTransactionDetail updates category and notes in a single transaction.
+func updateTransactionDetail(db *sql.DB, txnID int, categoryID *int, notes string) error {
+	tx, err := db.Begin()
+	if err != nil {
+		return fmt.Errorf("begin tx: %w", err)
+	}
+	defer tx.Rollback() //nolint:errcheck // rollback is a no-op after commit
+
+	_, err = tx.Exec("UPDATE transactions SET category_id = ?, notes = ? WHERE id = ?", categoryID, notes, txnID)
+	if err != nil {
+		return fmt.Errorf("update transaction: %w", err)
+	}
+	if err := tx.Commit(); err != nil {
+		return fmt.Errorf("commit tx: %w", err)
+	}
+	return nil
+}
+
 // ---------------------------------------------------------------------------
 // Category CRUD
 // ---------------------------------------------------------------------------
@@ -574,8 +592,7 @@ func loadDBInfo(db *sql.DB) (dbInfo, error) {
 	return info, nil
 }
 
-// clearAllData deletes all transactions, imports, and category rules,
-// but preserves categories.
+// clearAllData deletes all transactions and imports, but preserves categories and rules.
 func clearAllData(db *sql.DB) error {
 	statements := []string{
 		"DELETE FROM transactions",
@@ -624,13 +641,5 @@ func refreshCmd(db *sql.DB) tea.Cmd {
 			imports:    imports,
 			info:       info,
 		}
-	}
-}
-
-// clearCmd returns a Bubble Tea command that deletes all data.
-func clearCmd(db *sql.DB) tea.Cmd {
-	return func() tea.Msg {
-		err := clearAllData(db)
-		return clearDoneMsg{err: err}
 	}
 }
