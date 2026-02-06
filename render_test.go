@@ -458,7 +458,7 @@ func TestRenderHeaderZeroWidth(t *testing.T) {
 func TestRenderTransactionTableBasic(t *testing.T) {
 	rows := testDashboardRows()
 	cats := []category{{id: 1, name: "Groceries"}}
-	output := renderTransactionTable(rows, cats, 0, 0, 5, 80, sortByDate, false)
+	output := renderTransactionTable(rows, cats, nil, nil, 0, 0, 5, 80, sortByDate, false)
 	if !strings.Contains(output, "Date") {
 		t.Error("missing Date column header")
 	}
@@ -475,7 +475,7 @@ func TestRenderTransactionTableBasic(t *testing.T) {
 
 func TestRenderTransactionTableNilCategoriesHidesColumn(t *testing.T) {
 	rows := testDashboardRows()
-	output := renderTransactionTable(rows, nil, 0, 0, 5, 80, sortByDate, false)
+	output := renderTransactionTable(rows, nil, nil, nil, 0, 0, 5, 80, sortByDate, false)
 	if strings.Contains(output, "Category") {
 		t.Error("Category column should be hidden when categories is nil")
 	}
@@ -483,11 +483,11 @@ func TestRenderTransactionTableNilCategoriesHidesColumn(t *testing.T) {
 
 func TestRenderTransactionTableSortIndicator(t *testing.T) {
 	rows := testDashboardRows()
-	output := renderTransactionTable(rows, nil, 0, 0, 5, 80, sortByDate, true)
+	output := renderTransactionTable(rows, nil, nil, nil, 0, 0, 5, 80, sortByDate, true)
 	if !strings.Contains(output, "▲") {
 		t.Error("missing ascending sort indicator")
 	}
-	output2 := renderTransactionTable(rows, nil, 0, 0, 5, 80, sortByDate, false)
+	output2 := renderTransactionTable(rows, nil, nil, nil, 0, 0, 5, 80, sortByDate, false)
 	if !strings.Contains(output2, "▼") {
 		t.Error("missing descending sort indicator")
 	}
@@ -495,14 +495,14 @@ func TestRenderTransactionTableSortIndicator(t *testing.T) {
 
 func TestRenderTransactionTableScrollIndicator(t *testing.T) {
 	rows := testDashboardRows()
-	output := renderTransactionTable(rows, nil, 0, 0, 3, 80, sortByDate, false)
+	output := renderTransactionTable(rows, nil, nil, nil, 0, 0, 3, 80, sortByDate, false)
 	if !strings.Contains(output, "showing") {
 		t.Error("missing scroll indicator")
 	}
 }
 
 func TestRenderTransactionTableEmpty(t *testing.T) {
-	output := renderTransactionTable(nil, nil, 0, 0, 10, 80, sortByDate, false)
+	output := renderTransactionTable(nil, nil, nil, nil, 0, 0, 10, 80, sortByDate, false)
 	if !strings.Contains(output, "Date") {
 		t.Error("empty table should still show column headers")
 	}

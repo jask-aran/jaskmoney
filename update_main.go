@@ -137,6 +137,7 @@ func (m model) handleRefreshDone(msg refreshDoneMsg) (tea.Model, tea.Cmd) {
 	m.imports = msg.imports
 	m.dbInfo = msg.info
 	m.ready = true
+	m.pruneSelections()
 	// Only reset cursor on first load, not on subsequent refreshes
 	if m.status == "" {
 		m.cursor = 0
@@ -313,8 +314,12 @@ func (m model) updateDupeModal(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 
 func (m model) updateNavigation(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	filtered := m.getFilteredRows()
+	m.ensureRangeSelectionValid(filtered)
 	switch msg.String() {
 	case "up", "k", "ctrl+p":
+		if m.rangeSelecting {
+			m.clearRangeSelection()
+		}
 		if m.cursor > 0 {
 			m.cursor--
 			if m.cursor < m.topIndex {
@@ -323,6 +328,9 @@ func (m model) updateNavigation(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		}
 		return m, nil
 	case "down", "j", "ctrl+n":
+		if m.rangeSelecting {
+			m.clearRangeSelection()
+		}
 		if m.cursor < len(filtered)-1 {
 			m.cursor++
 			visible := m.visibleRows()
@@ -334,11 +342,23 @@ func (m model) updateNavigation(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			}
 		}
 		return m, nil
+	case "shift+up":
+		m.moveCursorWithShift(-1, filtered)
+		return m, nil
+	case "shift+down":
+		m.moveCursorWithShift(1, filtered)
+		return m, nil
 	case "g":
+		if m.rangeSelecting {
+			m.clearRangeSelection()
+		}
 		m.cursor = 0
 		m.topIndex = 0
 		return m, nil
 	case "G":
+		if m.rangeSelecting {
+			m.clearRangeSelection()
+		}
 		m.cursor = len(filtered) - 1
 		if m.cursor < 0 {
 			m.cursor = 0
@@ -355,25 +375,57 @@ func (m model) updateNavigation(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	if m.activeTab == tabTransactions {
 		switch msg.String() {
 		case "/":
+			if m.rangeSelecting {
+				m.clearRangeSelection()
+			}
 			m.searchMode = true
 			m.searchQuery = ""
 			return m, nil
 		case "s":
+			if m.rangeSelecting {
+				m.clearRangeSelection()
+			}
 			m.sortColumn = (m.sortColumn + 1) % sortColumnCount
 			m.cursor = 0
 			m.topIndex = 0
 			return m, nil
 		case "S":
+			if m.rangeSelecting {
+				m.clearRangeSelection()
+			}
 			m.sortAscending = !m.sortAscending
 			m.cursor = 0
 			m.topIndex = 0
 			return m, nil
 		case "f":
+			if m.rangeSelecting {
+				m.clearRangeSelection()
+			}
 			m.cycleCategoryFilter()
 			m.cursor = 0
 			m.topIndex = 0
 			return m, nil
+		case " ", "space":
+			highlighted := m.highlightedRows(filtered)
+			if len(highlighted) > 0 {
+				m.toggleSelectionForHighlighted(highlighted, filtered)
+			} else {
+				m.toggleSelectionAtCursor(filtered)
+			}
+			return m, nil
 		case "esc":
+			if m.rangeSelecting {
+				m.clearRangeSelection()
+				m.status = "Range highlight cleared."
+				m.statusErr = false
+				return m, nil
+			}
+			if m.selectedCount() > 0 {
+				m.clearSelections()
+				m.status = "Selection cleared."
+				m.statusErr = false
+				return m, nil
+			}
 			if m.searchQuery != "" {
 				m.searchQuery = ""
 				m.cursor = 0
@@ -390,6 +442,185 @@ func (m model) updateNavigation(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		}
 	}
 	return m, nil
+}
+
+func (m *model) selectedCount() int {
+	if m == nil || len(m.selectedRows) == 0 {
+		return 0
+	}
+	return len(m.selectedRows)
+}
+
+func (m *model) clearSelections() {
+	if m == nil {
+		return
+	}
+	m.selectedRows = make(map[int]bool)
+	m.selectionAnchor = 0
+}
+
+func (m *model) clearRangeSelection() {
+	if m == nil {
+		return
+	}
+	m.rangeSelecting = false
+	m.rangeAnchorID = 0
+	m.rangeCursorID = 0
+}
+
+func (m *model) pruneSelections() {
+	if m == nil {
+		return
+	}
+	if m.selectedRows == nil {
+		m.selectedRows = make(map[int]bool)
+	}
+	if len(m.selectedRows) == 0 {
+		return
+	}
+
+	keep := make(map[int]bool, len(m.rows))
+	for _, r := range m.rows {
+		keep[r.id] = true
+	}
+	for id := range m.selectedRows {
+		if !keep[id] {
+			delete(m.selectedRows, id)
+		}
+	}
+	if m.selectionAnchor != 0 && !keep[m.selectionAnchor] {
+		m.selectionAnchor = 0
+	}
+	if m.rangeAnchorID != 0 && !keep[m.rangeAnchorID] {
+		m.clearRangeSelection()
+	}
+	if m.rangeCursorID != 0 && !keep[m.rangeCursorID] {
+		m.clearRangeSelection()
+	}
+}
+
+func (m *model) toggleSelectionAtCursor(filtered []transaction) {
+	if m == nil || len(filtered) == 0 || m.cursor < 0 || m.cursor >= len(filtered) {
+		return
+	}
+	if m.selectedRows == nil {
+		m.selectedRows = make(map[int]bool)
+	}
+
+	id := filtered[m.cursor].id
+	if m.selectedRows[id] {
+		delete(m.selectedRows, id)
+	} else {
+		m.selectedRows[id] = true
+	}
+	m.selectionAnchor = id
+}
+
+func indexInFiltered(filtered []transaction, txnID int) int {
+	if txnID == 0 {
+		return -1
+	}
+	for i := range filtered {
+		if filtered[i].id == txnID {
+			return i
+		}
+	}
+	return -1
+}
+
+func (m *model) moveCursorWithShift(delta int, filtered []transaction) {
+	if m == nil || len(filtered) == 0 || delta == 0 {
+		return
+	}
+	if !m.rangeSelecting {
+		if m.cursor >= 0 && m.cursor < len(filtered) {
+			m.rangeAnchorID = filtered[m.cursor].id
+			m.rangeCursorID = filtered[m.cursor].id
+		}
+		m.rangeSelecting = true
+	}
+
+	next := m.cursor + delta
+	if next < 0 {
+		next = 0
+	}
+	if next > len(filtered)-1 {
+		next = len(filtered) - 1
+	}
+	m.cursor = next
+	visible := m.visibleRows()
+	if visible <= 0 {
+		visible = 1
+	}
+	if m.cursor < m.topIndex {
+		m.topIndex = m.cursor
+	} else if m.cursor >= m.topIndex+visible {
+		m.topIndex = m.cursor - visible + 1
+	}
+	m.rangeCursorID = filtered[m.cursor].id
+}
+
+func (m *model) ensureRangeSelectionValid(filtered []transaction) bool {
+	if m == nil || !m.rangeSelecting {
+		return false
+	}
+	if len(filtered) == 0 {
+		m.clearRangeSelection()
+		return false
+	}
+	if indexInFiltered(filtered, m.rangeAnchorID) < 0 || indexInFiltered(filtered, m.rangeCursorID) < 0 {
+		m.clearRangeSelection()
+		return false
+	}
+	return true
+}
+
+func (m model) highlightedRows(filtered []transaction) map[int]bool {
+	if !m.rangeSelecting || len(filtered) == 0 {
+		return nil
+	}
+	anchorIdx := indexInFiltered(filtered, m.rangeAnchorID)
+	cursorIdx := indexInFiltered(filtered, m.rangeCursorID)
+	if anchorIdx < 0 || cursorIdx < 0 {
+		return nil
+	}
+	start := anchorIdx
+	end := cursorIdx
+	if start > end {
+		start, end = end, start
+	}
+	out := make(map[int]bool, end-start+1)
+	for i := start; i <= end; i++ {
+		out[filtered[i].id] = true
+	}
+	return out
+}
+
+func (m *model) toggleSelectionForHighlighted(highlighted map[int]bool, filtered []transaction) {
+	if m == nil || len(highlighted) == 0 {
+		return
+	}
+	if m.selectedRows == nil {
+		m.selectedRows = make(map[int]bool)
+	}
+
+	allSelected := true
+	for id := range highlighted {
+		if !m.selectedRows[id] {
+			allSelected = false
+			break
+		}
+	}
+	for id := range highlighted {
+		if allSelected {
+			delete(m.selectedRows, id)
+		} else {
+			m.selectedRows[id] = true
+		}
+	}
+	if m.cursor >= 0 && m.cursor < len(filtered) {
+		m.selectionAnchor = filtered[m.cursor].id
+	}
 }
 
 func (m model) updateDashboard(msg tea.KeyMsg) (tea.Model, tea.Cmd) {

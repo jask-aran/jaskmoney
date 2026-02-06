@@ -204,6 +204,11 @@ type model struct {
 
 	// Transactions filter
 	filterCategories map[int]bool // category ID -> enabled (nil = show all)
+	selectedRows     map[int]bool // transaction ID -> selected
+	selectionAnchor  int          // last toggled/selected transaction ID for range selection
+	rangeSelecting   bool         // true when shift-range highlight is active
+	rangeAnchorID    int          // anchor transaction ID for active highlight range
+	rangeCursorID    int          // cursor transaction ID for active highlight range
 
 	// Transaction detail modal
 	showDetail      bool
@@ -263,6 +268,7 @@ func newModel() model {
 		dashTimeframe:      dashTimeframeThisMonth,
 		keys:               NewKeyRegistry(),
 		formats:            formats,
+		selectedRows:       make(map[int]bool),
 		status:             status,
 		statusErr:          statusErr,
 	}
@@ -368,9 +374,17 @@ func (m model) dashboardView() string {
 func (m model) transactionsView() string {
 	filtered := m.getFilteredRows()
 	total := len(m.rows)
+	highlighted := m.highlightedRows(filtered)
+	cursorTxnID := 0
+	if m.cursor >= 0 && m.cursor < len(filtered) {
+		cursorTxnID = filtered[m.cursor].id
+	}
 
 	// Build title with count info
 	title := fmt.Sprintf("Transactions (%d/%d)", len(filtered), total)
+	if selected := m.selectedCount(); selected > 0 {
+		title = fmt.Sprintf("Transactions (%d selected)", selected)
+	}
 
 	// Search bar
 	var searchBar string
@@ -380,7 +394,18 @@ func (m model) transactionsView() string {
 		searchBar = searchPromptStyle.Render("/") + " " + searchInputStyle.Render(m.searchQuery) + "  " + lipgloss.NewStyle().Foreground(colorOverlay1).Render("(esc clear)") + "\n"
 	}
 
-	content := searchBar + renderTransactionTable(filtered, m.categories, m.cursor, m.topIndex, m.visibleRows(), m.listContentWidth(), m.sortColumn, m.sortAscending)
+	content := searchBar + renderTransactionTable(
+		filtered,
+		m.categories,
+		m.selectedRows,
+		highlighted,
+		cursorTxnID,
+		m.topIndex,
+		m.visibleRows(),
+		m.listContentWidth(),
+		m.sortColumn,
+		m.sortAscending,
+	)
 	return m.renderSection(title, content)
 }
 
