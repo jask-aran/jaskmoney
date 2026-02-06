@@ -2,6 +2,8 @@ package main
 
 import (
 	"fmt"
+	"sort"
+	"strings"
 	"time"
 
 	tea "github.com/charmbracelet/bubbletea"
@@ -82,6 +84,8 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.status = fmt.Sprintf("Applied rules: %d transactions updated.", msg.count)
 		m.statusErr = false
 		return m, refreshCmd(m.db)
+	case quickCategoryAppliedMsg:
+		return m.handleQuickCategoryApplied(msg)
 	case confirmExpiredMsg:
 		m.confirmAction = ""
 		m.confirmID = 0
@@ -95,6 +99,9 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 		if m.importPicking {
 			return m.updateFilePicker(msg)
+		}
+		if m.catPicker != nil {
+			return m.updateCatPicker(msg)
 		}
 		if m.searchMode {
 			return m.updateSearch(msg)
@@ -213,6 +220,25 @@ func (m model) handleIngestDone(msg ingestDoneMsg) (tea.Model, tea.Cmd) {
 		m.status = fmt.Sprintf("Imported %d transactions from %s (%d duplicates skipped)", msg.count, msg.file, msg.dupes)
 	} else {
 		m.status = fmt.Sprintf("Imported %d transactions from %s", msg.count, msg.file)
+	}
+	m.statusErr = false
+	if m.db == nil {
+		return m, nil
+	}
+	return m, refreshCmd(m.db)
+}
+
+func (m model) handleQuickCategoryApplied(msg quickCategoryAppliedMsg) (tea.Model, tea.Cmd) {
+	if msg.err != nil {
+		m.setError(fmt.Sprintf("Quick categorize failed: %v", msg.err))
+		return m, nil
+	}
+	m.catPicker = nil
+	m.catPickerFor = nil
+	if msg.created {
+		m.status = fmt.Sprintf("Created %q and applied to %d transaction(s).", msg.categoryName, msg.count)
+	} else {
+		m.status = fmt.Sprintf("Category %q applied to %d transaction(s).", msg.categoryName, msg.count)
 	}
 	m.statusErr = false
 	if m.db == nil {
@@ -413,6 +439,8 @@ func (m model) updateNavigation(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 				m.toggleSelectionAtCursor(filtered)
 			}
 			return m, nil
+		case "c":
+			return m.openQuickCategoryPicker(filtered)
 		case "esc":
 			if m.rangeSelecting {
 				m.clearRangeSelection()
@@ -439,6 +467,113 @@ func (m model) updateNavigation(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 				m.openDetail(filtered[m.cursor])
 			}
 			return m, nil
+		}
+	}
+	return m, nil
+}
+
+func (m model) openQuickCategoryPicker(filtered []transaction) (tea.Model, tea.Cmd) {
+	targetIDs := m.quickCategoryTargets(filtered)
+	if len(targetIDs) == 0 {
+		m.status = "No transaction selected."
+		m.statusErr = false
+		return m, nil
+	}
+	if len(m.categories) == 0 {
+		m.status = "No categories available."
+		m.statusErr = false
+		return m, nil
+	}
+
+	items := make([]pickerItem, 0, len(m.categories))
+	for _, c := range m.categories {
+		items = append(items, pickerItem{
+			ID:    c.id,
+			Label: c.name,
+			Color: c.color,
+		})
+	}
+	m.catPicker = newPicker("Quick Categorize", items, false, "Create")
+	m.catPickerFor = targetIDs
+	return m, nil
+}
+
+func (m model) quickCategoryTargets(filtered []transaction) []int {
+	if len(m.selectedRows) > 0 {
+		out := make([]int, 0, len(m.selectedRows))
+		for id := range m.selectedRows {
+			out = append(out, id)
+		}
+		sort.Ints(out)
+		return out
+	}
+	if len(filtered) == 0 || m.cursor < 0 || m.cursor >= len(filtered) {
+		return nil
+	}
+	return []int{filtered[m.cursor].id}
+}
+
+func (m model) updateCatPicker(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
+	if m.catPicker == nil {
+		return m, nil
+	}
+	res := m.catPicker.HandleKey(msg.String())
+	switch res.Action {
+	case pickerActionCancelled:
+		m.catPicker = nil
+		m.catPickerFor = nil
+		m.status = "Quick categorize cancelled."
+		m.statusErr = false
+		return m, nil
+	case pickerActionSelected:
+		if m.db == nil {
+			m.setError("Database not ready.")
+			return m, nil
+		}
+		targetIDs := append([]int(nil), m.catPickerFor...)
+		catID := res.ItemID
+		catName := res.ItemLabel
+		db := m.db
+		return m, func() tea.Msg {
+			n, err := updateTransactionsCategory(db, targetIDs, &catID)
+			return quickCategoryAppliedMsg{count: n, categoryName: catName, created: false, err: err}
+		}
+	case pickerActionCreate:
+		if m.db == nil {
+			m.setError("Database not ready.")
+			return m, nil
+		}
+		name := strings.TrimSpace(res.CreatedQuery)
+		if name == "" {
+			m.setError("Category name cannot be empty.")
+			return m, nil
+		}
+		targetIDs := append([]int(nil), m.catPickerFor...)
+		db := m.db
+		return m, func() tea.Msg {
+			colors := CategoryAccentColors()
+			color := "#a6e3a1"
+			if len(colors) > 0 {
+				color = string(colors[0])
+			}
+
+			created := true
+			catID, err := insertCategory(db, name, color)
+			if err != nil {
+				created = false
+				existing, lookupErr := loadCategoryByNameCI(db, name)
+				if lookupErr != nil {
+					return quickCategoryAppliedMsg{err: err}
+				}
+				if existing == nil {
+					return quickCategoryAppliedMsg{err: err}
+				}
+				catID = existing.id
+				name = existing.name
+			}
+
+			n, err := updateTransactionsCategory(db, targetIDs, &catID)
+			return quickCategoryAppliedMsg{count: n, categoryName: name, created: created, err: err}
 		}
 	}
 	return m, nil
