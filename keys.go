@@ -23,6 +23,8 @@ type KeyRegistry struct {
 const (
 	scopeGlobal                   = "global"
 	scopeDashboard                = "dashboard"
+	scopeDashboardTimeframe       = "dashboard_timeframe"
+	scopeDashboardCustomInput     = "dashboard_custom_input"
 	scopeTransactions             = "transactions"
 	scopeDetailModal              = "detail_modal"
 	scopeFilePicker               = "file_picker"
@@ -46,10 +48,12 @@ const (
 	actionNavigate           Action = "navigate"
 	actionSelect             Action = "select"
 	actionClose              Action = "close"
+	actionCancel             Action = "cancel"
 	actionSearch             Action = "search"
 	actionSort               Action = "sort"
 	actionFilterCategory     Action = "filter_category"
-	actionDateRange          Action = "date_range"
+	actionTimeframe          Action = "timeframe"
+	actionMove               Action = "move"
 	actionImportAll          Action = "import_all"
 	actionSkipDupes          Action = "skip_dupes"
 	actionClearSearch        Action = "clear_search"
@@ -89,17 +93,25 @@ func NewKeyRegistry() *KeyRegistry {
 	reg(scopeGlobal, actionNextTab, []string{"tab"}, "next tab")
 	reg(scopeGlobal, actionPrevTab, []string{"shift+tab"}, "prev tab")
 
-	// Dashboard footer: tab, shift+tab, j/k, q
+	// Dashboard footer: d, tab, shift+tab, q
+	reg(scopeDashboard, actionTimeframe, []string{"d"}, "timeframe")
 	reg(scopeDashboard, actionNextTab, []string{"tab"}, "next tab")
 	reg(scopeDashboard, actionPrevTab, []string{"shift+tab"}, "prev tab")
-	reg(scopeDashboard, actionNavigate, []string{"j/k", "j", "k", "up", "down"}, "navigate")
 	reg(scopeDashboard, actionQuit, []string{"q", "ctrl+c"}, "quit")
 
-	// Transactions footer: /, s, f, d, enter, j/k, tab, q
+	// Dashboard timeframe focus footer: h/l, enter, esc
+	reg(scopeDashboardTimeframe, actionMove, []string{"h/l", "h", "left", "l", "right"}, "navigate")
+	reg(scopeDashboardTimeframe, actionSelect, []string{"enter"}, "select")
+	reg(scopeDashboardTimeframe, actionCancel, []string{"esc"}, "cancel")
+
+	// Dashboard custom input footer: enter, esc
+	reg(scopeDashboardCustomInput, actionConfirm, []string{"enter"}, "confirm")
+	reg(scopeDashboardCustomInput, actionCancel, []string{"esc"}, "cancel")
+
+	// Transactions footer: /, s, f, enter, j/k, tab, q
 	reg(scopeTransactions, actionSearch, []string{"/"}, "search")
 	reg(scopeTransactions, actionSort, []string{"s"}, "sort")
 	reg(scopeTransactions, actionFilterCategory, []string{"f"}, "filter cat")
-	reg(scopeTransactions, actionDateRange, []string{"d"}, "date range")
 	reg(scopeTransactions, actionSelect, []string{"enter"}, "select")
 	reg(scopeTransactions, actionNavigate, []string{"j/k", "j", "k", "up", "down", "ctrl+p", "ctrl+n"}, "navigate")
 	reg(scopeTransactions, actionNextTab, []string{"tab"}, "next tab")

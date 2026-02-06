@@ -1,9 +1,13 @@
 package main
 
 import (
+	"math"
+	"sort"
 	"strings"
 	"testing"
 	"time"
+
+	tslc "github.com/NimbleMarkets/ntcharts/linechart/timeserieslinechart"
 )
 
 // ---------------------------------------------------------------------------
@@ -204,11 +208,80 @@ func TestRenderSpendingTrackerShowsGridlines(t *testing.T) {
 }
 
 func TestSpendingMinorGridStep(t *testing.T) {
-	if got := spendingMinorGridStep(60); got != 2 {
-		t.Errorf("spendingMinorGridStep(60) = %d, want 2", got)
+	if got := spendingMinorGridStep(60, 80); got != 2 {
+		t.Errorf("spendingMinorGridStep(60, 80) = %d, want 2", got)
 	}
-	if got := spendingMinorGridStep(30); got != 1 {
-		t.Errorf("spendingMinorGridStep(30) = %d, want 1", got)
+	if got := spendingMinorGridStep(30, 80); got != 1 {
+		t.Errorf("spendingMinorGridStep(30, 80) = %d, want 1", got)
+	}
+	if got := spendingMinorGridStep(365, 80); got <= 2 {
+		t.Errorf("spendingMinorGridStep(365, 80) = %d, want >2", got)
+	}
+	if got := spendingMinorGridStep(730, 80); got < 14 {
+		t.Errorf("spendingMinorGridStep(730, 80) = %d, want >=14", got)
+	}
+}
+
+func TestSpendingMajorModeForDays(t *testing.T) {
+	if got := spendingMajorModeForDays(90); got != spendingMajorWeek {
+		t.Errorf("spendingMajorModeForDays(90) = %v, want week", got)
+	}
+	if got := spendingMajorModeForDays(180); got != spendingMajorMonth {
+		t.Errorf("spendingMajorModeForDays(180) = %v, want month", got)
+	}
+	if got := spendingMajorModeForDays(730); got != spendingMajorQuarter {
+		t.Errorf("spendingMajorModeForDays(730) = %v, want quarter", got)
+	}
+}
+
+func TestSpendingYScale(t *testing.T) {
+	step, maxY := spendingYScale(1234.0, 14)
+	if step <= 0 {
+		t.Fatalf("step = %.2f, want > 0", step)
+	}
+	if maxY < 1234.0 {
+		t.Fatalf("maxY = %.2f, want >= 1234", maxY)
+	}
+	if math.Mod(maxY, step) != 0 {
+		t.Fatalf("maxY %.2f should be multiple of step %.2f", maxY, step)
+	}
+}
+
+func TestSpendingXLabelsRespectSpacing(t *testing.T) {
+	start := time.Date(2025, time.January, 1, 0, 0, 0, 0, time.Local)
+	end := start.AddDate(0, 0, 364)
+	var dates []time.Time
+	for d := start; !d.After(end); d = d.AddDate(0, 0, 1) {
+		dates = append(dates, d)
+	}
+
+	chart := tslc.New(80, spendingTrackerHeight)
+	chart.SetTimeRange(start, end)
+	chart.SetViewTimeRange(start, end)
+	chart.SetYRange(0, 100)
+	chart.SetViewYRange(0, 100)
+	chart.SetXStep(1)
+	chart.SetYStep(1)
+
+	graphCols := chart.Width() - chart.Origin().X - 1
+	labels := spendingXLabels(&chart, dates, spendingMinorGridStep(len(dates), graphCols), spendingMajorModeForDays(len(dates)))
+	if len(labels) == 0 {
+		t.Fatal("expected at least one x-axis label")
+	}
+
+	var xs []int
+	for iso := range labels {
+		d, err := time.ParseInLocation("2006-01-02", iso, time.Local)
+		if err != nil {
+			t.Fatalf("invalid label date key %q: %v", iso, err)
+		}
+		xs = append(xs, chartColumnX(&chart, d))
+	}
+	sort.Ints(xs)
+	for i := 1; i < len(xs); i++ {
+		if xs[i]-xs[i-1] < 6 {
+			t.Fatalf("label columns too close: %d and %d", xs[i-1], xs[i])
+		}
 	}
 }
 
@@ -232,6 +305,25 @@ func TestFormatMoney(t *testing.T) {
 		got := formatMoney(tt.input)
 		if got != tt.want {
 			t.Errorf("formatMoney(%.2f) = %q, want %q", tt.input, got, tt.want)
+		}
+	}
+}
+
+func TestFormatAxisTick(t *testing.T) {
+	tests := []struct {
+		in   float64
+		want string
+	}{
+		{500, "500"},
+		{1000, "1k"},
+		{1500, "1.5k"},
+		{12_500, "12k"},
+		{1_200_000, "1.2m"},
+		{15_100_000, "15m"},
+	}
+	for _, tt := range tests {
+		if got := formatAxisTick(tt.in); got != tt.want {
+			t.Errorf("formatAxisTick(%.2f) = %q, want %q", tt.in, got, tt.want)
 		}
 	}
 }

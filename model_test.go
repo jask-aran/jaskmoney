@@ -59,7 +59,7 @@ func TestMatchesSearchDescription(t *testing.T) {
 
 func TestFilteredRowsSearch(t *testing.T) {
 	rows := testTransactions()
-	result := filteredRows(rows, "woolworths", nil, dateRangeAll, sortByDate, false)
+	result := filteredRows(rows, "woolworths", nil, sortByDate, false)
 	if len(result) != 1 {
 		t.Fatalf("expected 1 result for 'woolworths', got %d", len(result))
 	}
@@ -74,7 +74,7 @@ func TestFilteredRowsSearch(t *testing.T) {
 
 func TestSortByDateAscending(t *testing.T) {
 	rows := testTransactions()
-	result := filteredRows(rows, "", nil, dateRangeAll, sortByDate, true)
+	result := filteredRows(rows, "", nil, sortByDate, true)
 	if len(result) != 5 {
 		t.Fatalf("expected 5 rows, got %d", len(result))
 	}
@@ -89,7 +89,7 @@ func TestSortByDateAscending(t *testing.T) {
 
 func TestSortByDateDescending(t *testing.T) {
 	rows := testTransactions()
-	result := filteredRows(rows, "", nil, dateRangeAll, sortByDate, false)
+	result := filteredRows(rows, "", nil, sortByDate, false)
 	// Descending: newest first
 	if result[0].dateISO != "2026-02-04" {
 		t.Errorf("first row dateISO = %q, want %q", result[0].dateISO, "2026-02-04")
@@ -98,7 +98,7 @@ func TestSortByDateDescending(t *testing.T) {
 
 func TestSortByAmount(t *testing.T) {
 	rows := testTransactions()
-	result := filteredRows(rows, "", nil, dateRangeAll, sortByAmount, true)
+	result := filteredRows(rows, "", nil, sortByAmount, true)
 	// Ascending: most negative first
 	if result[0].amount != -55.30 {
 		t.Errorf("first row amount = %.2f, want -55.30", result[0].amount)
@@ -110,7 +110,7 @@ func TestSortByAmount(t *testing.T) {
 
 func TestSortByCategory(t *testing.T) {
 	rows := testTransactions()
-	result := filteredRows(rows, "", nil, dateRangeAll, sortByCategory, true)
+	result := filteredRows(rows, "", nil, sortByCategory, true)
 	// Ascending alphabetical by category name
 	if result[0].categoryName != "Dining & Drinks" {
 		t.Errorf("first category = %q, want %q", result[0].categoryName, "Dining & Drinks")
@@ -119,7 +119,7 @@ func TestSortByCategory(t *testing.T) {
 
 func TestSortByDescription(t *testing.T) {
 	rows := testTransactions()
-	result := filteredRows(rows, "", nil, dateRangeAll, sortByDescription, true)
+	result := filteredRows(rows, "", nil, sortByDescription, true)
 	if result[0].description != "DAN MURPHYS" {
 		t.Errorf("first description = %q, want %q", result[0].description, "DAN MURPHYS")
 	}
@@ -131,7 +131,7 @@ func TestSortByDescription(t *testing.T) {
 
 func TestCategoryFilterNil(t *testing.T) {
 	rows := testTransactions()
-	result := filteredRows(rows, "", nil, dateRangeAll, sortByDate, false)
+	result := filteredRows(rows, "", nil, sortByDate, false)
 	if len(result) != 5 {
 		t.Errorf("nil filter should return all rows, got %d", len(result))
 	}
@@ -140,7 +140,7 @@ func TestCategoryFilterNil(t *testing.T) {
 func TestCategoryFilterSingle(t *testing.T) {
 	rows := testTransactions()
 	filter := map[int]bool{2: true} // Groceries
-	result := filteredRows(rows, "", filter, dateRangeAll, sortByDate, false)
+	result := filteredRows(rows, "", filter, sortByDate, false)
 	if len(result) != 1 {
 		t.Fatalf("expected 1 Groceries row, got %d", len(result))
 	}
@@ -152,7 +152,7 @@ func TestCategoryFilterSingle(t *testing.T) {
 func TestCategoryFilterMultiple(t *testing.T) {
 	rows := testTransactions()
 	filter := map[int]bool{2: true, 3: true} // Groceries + Dining
-	result := filteredRows(rows, "", filter, dateRangeAll, sortByDate, false)
+	result := filteredRows(rows, "", filter, sortByDate, false)
 	if len(result) != 2 {
 		t.Errorf("expected 2 rows, got %d", len(result))
 	}
@@ -161,7 +161,7 @@ func TestCategoryFilterMultiple(t *testing.T) {
 func TestCategoryFilterUncategorised(t *testing.T) {
 	rows := testTransactions()
 	filter := map[int]bool{0: true} // sentinel for nil category
-	result := filteredRows(rows, "", filter, dateRangeAll, sortByDate, false)
+	result := filteredRows(rows, "", filter, sortByDate, false)
 	if len(result) != 2 {
 		t.Errorf("expected 2 uncategorised rows, got %d", len(result))
 	}
@@ -175,7 +175,7 @@ func TestFilterComposition(t *testing.T) {
 	rows := testTransactions()
 	// Search for "payment" + uncategorised filter
 	filter := map[int]bool{0: true}
-	result := filteredRows(rows, "payment", filter, dateRangeAll, sortByDate, false)
+	result := filteredRows(rows, "payment", filter, sortByDate, false)
 	if len(result) != 2 {
 		t.Errorf("expected 2 rows matching 'payment' + uncategorised, got %d", len(result))
 	}
@@ -200,29 +200,6 @@ func TestSortColumnName(t *testing.T) {
 		got := sortColumnName(tt.col)
 		if got != tt.want {
 			t.Errorf("sortColumnName(%d) = %q, want %q", tt.col, got, tt.want)
-		}
-	}
-}
-
-// ---------------------------------------------------------------------------
-// Date range name test
-// ---------------------------------------------------------------------------
-
-func TestDateRangeName(t *testing.T) {
-	tests := []struct {
-		r    int
-		want string
-	}{
-		{dateRangeAll, "all time"},
-		{dateRangeThisMonth, "this month"},
-		{dateRangeLastMonth, "last month"},
-		{dateRange3Months, "last 3 months"},
-		{dateRange6Months, "last 6 months"},
-	}
-	for _, tt := range tests {
-		got := dateRangeName(tt.r)
-		if got != tt.want {
-			t.Errorf("dateRangeName(%d) = %q, want %q", tt.r, got, tt.want)
 		}
 	}
 }

@@ -113,14 +113,31 @@ const (
 	sortColumnCount
 )
 
-// Date range presets
+// Dashboard timeframe presets
 const (
-	dateRangeAll = iota
-	dateRangeThisMonth
-	dateRangeLastMonth
-	dateRange3Months
-	dateRange6Months
+	dashTimeframeThisMonth = iota
+	dashTimeframeLastMonth
+	dashTimeframe1Month
+	dashTimeframe2Months
+	dashTimeframe3Months
+	dashTimeframe6Months
+	dashTimeframeYTD
+	dashTimeframe1Year
+	dashTimeframeCustom
+	dashTimeframeCount
 )
+
+var dashTimeframeLabels = []string{
+	"This Month",
+	"Last Month",
+	"1M",
+	"2M",
+	"3M",
+	"6M",
+	"YTD",
+	"1Y",
+	"Custom",
+}
 
 // Settings sections — flat index for navigation
 const (
@@ -185,9 +202,8 @@ type model struct {
 	sortColumn    int
 	sortAscending bool
 
-	// Filter
+	// Transactions filter
 	filterCategories map[int]bool // category ID -> enabled (nil = show all)
-	filterDateRange  int
 
 	// Transaction detail modal
 	showDetail      bool
@@ -213,6 +229,15 @@ type model struct {
 	confirmAction  string // pending confirm action ("clear_db", "delete_cat", "delete_rule")
 	confirmID      int    // ID for pending confirm (category or rule)
 
+	// Dashboard timeframe
+	dashTimeframe       int
+	dashTimeframeFocus  bool
+	dashTimeframeCursor int
+	dashCustomStart     string
+	dashCustomEnd       string
+	dashCustomInput     string
+	dashCustomEditing   bool
+
 	// Configurable display
 	maxVisibleRows     int          // max rows shown in transaction table (5-50, default 20)
 	spendingWeekAnchor time.Weekday // week boundary marker for spending tracker (Sunday/Monday)
@@ -235,6 +260,7 @@ func newModel() model {
 		activeTab:          tabDashboard,
 		maxVisibleRows:     20,
 		spendingWeekAnchor: time.Sunday,
+		dashTimeframe:      dashTimeframeThisMonth,
 		keys:               NewKeyRegistry(),
 		formats:            formats,
 		status:             status,
@@ -301,8 +327,11 @@ func (m model) View() string {
 // ---------------------------------------------------------------------------
 
 func (m model) dashboardView() string {
+	rows := m.getDashboardRows()
 	w := m.listContentWidth()
-	summary := m.renderSectionNoSeparator("Overview", renderSummaryCards(m.rows, m.categories, w))
+	chips := renderDashboardTimeframeChips(dashTimeframeLabels, m.dashTimeframe, m.dashTimeframeCursor, m.dashTimeframeFocus)
+	customInput := renderDashboardCustomInput(m.dashCustomStart, m.dashCustomEnd, m.dashCustomInput, m.dashCustomEditing)
+	summary := m.renderSectionNoSeparator("Overview", renderSummaryCards(rows, m.categories, w))
 	narrowSectionWidth := m.sectionWidth() * 60 / 100
 	if narrowSectionWidth < 24 {
 		narrowSectionWidth = 24
@@ -317,29 +346,31 @@ func (m model) dashboardView() string {
 
 	breakdown := m.renderSectionSizedLeft(
 		"Spending by Category",
-		renderCategoryBreakdown(m.rows, narrowContentWidth),
+		renderCategoryBreakdown(rows, narrowContentWidth),
 		narrowSectionWidth,
 		false,
 	)
 
+	rangeStart, rangeEnd := m.dashboardChartRange(time.Now())
 	trend := m.renderSectionSizedLeft(
 		"Spending Tracker",
-		renderSpendingTrackerWithWeekAnchor(m.rows, narrowContentWidth, m.spendingWeekAnchor),
+		renderSpendingTrackerWithRange(rows, narrowContentWidth, m.spendingWeekAnchor, rangeStart, rangeEnd),
 		narrowSectionWidth,
 		false,
 	)
-	return summary + "\n" + breakdown + "\n" + trend
+	out := chips
+	if customInput != "" {
+		out += "\n" + customInput
+	}
+	return out + "\n" + summary + "\n" + breakdown + "\n" + trend
 }
 
 func (m model) transactionsView() string {
 	filtered := m.getFilteredRows()
 	total := len(m.rows)
 
-	// Build title with filter info
+	// Build title with count info
 	title := fmt.Sprintf("Transactions (%d/%d)", len(filtered), total)
-	if m.filterDateRange != dateRangeAll {
-		title += " — " + dateRangeName(m.filterDateRange)
-	}
 
 	// Search bar
 	var searchBar string

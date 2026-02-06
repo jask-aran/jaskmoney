@@ -2,6 +2,7 @@ package main
 
 import (
 	"fmt"
+	"time"
 
 	tea "github.com/charmbracelet/bubbletea"
 )
@@ -239,6 +240,10 @@ func (m model) updateMain(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	if m.activeTab == tabTransactions {
 		return m.updateNavigation(msg)
 	}
+	// Dashboard-specific keys
+	if m.activeTab == tabDashboard {
+		return m.updateDashboard(msg)
+	}
 	return m, nil
 }
 
@@ -368,13 +373,6 @@ func (m model) updateNavigation(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			m.cursor = 0
 			m.topIndex = 0
 			return m, nil
-		case "d":
-			m.filterDateRange = (m.filterDateRange + 1) % 5 // cycle through date presets
-			m.cursor = 0
-			m.topIndex = 0
-			m.status = "Date filter: " + dateRangeName(m.filterDateRange)
-			m.statusErr = false
-			return m, nil
 		case "esc":
 			if m.searchQuery != "" {
 				m.searchQuery = ""
@@ -392,6 +390,111 @@ func (m model) updateNavigation(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		}
 	}
 	return m, nil
+}
+
+func (m model) updateDashboard(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
+	if m.dashCustomEditing {
+		return m.updateDashboardCustomInput(msg)
+	}
+
+	switch msg.String() {
+	case "d":
+		m.dashTimeframeFocus = !m.dashTimeframeFocus
+		if m.dashTimeframeFocus {
+			m.dashTimeframeCursor = m.dashTimeframe
+		}
+		return m, nil
+	}
+
+	if !m.dashTimeframeFocus {
+		return m, nil
+	}
+
+	switch msg.String() {
+	case "h", "left":
+		m.dashTimeframeCursor--
+		if m.dashTimeframeCursor < 0 {
+			m.dashTimeframeCursor = dashTimeframeCount - 1
+		}
+		return m, nil
+	case "l", "right":
+		m.dashTimeframeCursor = (m.dashTimeframeCursor + 1) % dashTimeframeCount
+		return m, nil
+	case "enter":
+		if m.dashTimeframeCursor == dashTimeframeCustom {
+			m.dashCustomEditing = true
+			m.dashCustomStart = ""
+			m.dashCustomEnd = ""
+			m.dashCustomInput = ""
+			m.status = "Custom timeframe: enter start date (YYYY-MM-DD)."
+			m.statusErr = false
+			return m, nil
+		}
+		m.dashTimeframe = m.dashTimeframeCursor
+		m.dashTimeframeFocus = false
+		m.status = fmt.Sprintf("Dashboard timeframe: %s", dashTimeframeLabel(m.dashTimeframe))
+		m.statusErr = false
+		return m, nil
+	case "esc":
+		m.dashTimeframeFocus = false
+		m.status = "Timeframe selection cancelled."
+		m.statusErr = false
+		return m, nil
+	}
+	return m, nil
+}
+
+func (m model) updateDashboardCustomInput(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
+	switch msg.String() {
+	case "esc":
+		m.dashCustomEditing = false
+		m.dashTimeframeFocus = false
+		m.dashCustomInput = ""
+		m.dashCustomStart = ""
+		m.dashCustomEnd = ""
+		m.status = "Custom timeframe cancelled."
+		m.statusErr = false
+		return m, nil
+	case "backspace":
+		if len(m.dashCustomInput) > 0 {
+			m.dashCustomInput = m.dashCustomInput[:len(m.dashCustomInput)-1]
+		}
+		return m, nil
+	case "enter":
+		if _, err := time.Parse("2006-01-02", m.dashCustomInput); err != nil {
+			m.setError("Invalid date. Use YYYY-MM-DD.")
+			return m, nil
+		}
+		if m.dashCustomStart == "" {
+			m.dashCustomStart = m.dashCustomInput
+			m.dashCustomInput = ""
+			m.status = "Custom timeframe: enter end date (YYYY-MM-DD)."
+			m.statusErr = false
+			return m, nil
+		}
+		m.dashCustomEnd = m.dashCustomInput
+		m.dashCustomInput = ""
+		start, _ := time.Parse("2006-01-02", m.dashCustomStart)
+		end, _ := time.Parse("2006-01-02", m.dashCustomEnd)
+		if end.Before(start) {
+			m.setError("End date must be on or after start date.")
+			m.dashCustomEnd = ""
+			return m, nil
+		}
+		m.dashTimeframe = dashTimeframeCustom
+		m.dashTimeframeCursor = dashTimeframeCustom
+		m.dashCustomEditing = false
+		m.dashTimeframeFocus = false
+		m.status = fmt.Sprintf("Dashboard timeframe: %s to %s", m.dashCustomStart, m.dashCustomEnd)
+		m.statusErr = false
+		return m, nil
+	default:
+		r := msg.String()
+		if len(r) == 1 && r[0] >= 32 && r[0] < 127 {
+			m.dashCustomInput += r
+		}
+		return m, nil
+	}
 }
 
 func (m *model) cycleCategoryFilter() {
