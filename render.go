@@ -14,6 +14,9 @@ import (
 
 var (
 	titleStyle     = lipgloss.NewStyle().Bold(true)
+	headerAppStyle = lipgloss.NewStyle().Foreground(lipgloss.Color("81")).Bold(true)
+	headerTabStyle = lipgloss.NewStyle().Foreground(lipgloss.Color("255")).Bold(true)
+	headerBarStyle = lipgloss.NewStyle().Foreground(lipgloss.Color("255")).Background(lipgloss.Color("238")).Padding(0, 2)
 	statusStyle    = lipgloss.NewStyle().Foreground(lipgloss.Color("241"))
 	footerStyle    = lipgloss.NewStyle().Foreground(lipgloss.Color("255")).Background(lipgloss.Color("238")).Padding(0, 2)
 	statusBarStyle = lipgloss.NewStyle().Foreground(lipgloss.Color("252")).Background(lipgloss.Color("236")).Padding(0, 2)
@@ -25,9 +28,22 @@ var (
 // Section & chrome rendering
 // ---------------------------------------------------------------------------
 
+func renderHeader(appName, screen string, width int) string {
+	line1 := headerAppStyle.Render(appName)
+	line2 := headerTabStyle.Render(screen)
+	if width <= 0 {
+		return headerBarStyle.Render(line1) + "\n" + headerBarStyle.Render(line2)
+	}
+	style := headerBarStyle.Width(width)
+	return style.Render(line1) + "\n" + style.Render(line2)
+}
+
 func (m model) renderSection(title, content string) string {
-	header := titleStyle.Render(title)
-	section := header + "\n" + listBoxStyle.Width(m.sectionWidth()).Render(content)
+	contentWidth := m.sectionContentWidth()
+	header := padRight(titleStyle.Render(title), contentWidth)
+	separator := strings.Repeat("-", contentWidth)
+	sectionContent := header + "\n" + separator + "\n" + content
+	section := listBoxStyle.Width(m.sectionWidth()).Render(sectionContent)
 	if m.width == 0 {
 		return section
 	}
