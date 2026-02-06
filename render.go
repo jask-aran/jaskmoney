@@ -12,6 +12,7 @@ import (
 	tslc "github.com/NimbleMarkets/ntcharts/linechart/timeserieslinechart"
 	"github.com/charmbracelet/bubbles/key"
 	"github.com/charmbracelet/lipgloss"
+	"github.com/charmbracelet/x/ansi"
 )
 
 // ---------------------------------------------------------------------------
@@ -98,7 +99,26 @@ var (
 	creditStyle = lipgloss.NewStyle().Foreground(colorSuccess)
 	debitStyle  = lipgloss.NewStyle().Foreground(colorError)
 
-	cursorStyle = lipgloss.NewStyle().Foreground(colorAccent).Bold(true)
+	cursorStyle         = lipgloss.NewStyle().Foreground(colorAccent).Bold(true)
+	txnRowSelectedStyle = lipgloss.NewStyle().
+				Background(colorSurface0)
+	txnRowHighlightedStyle = lipgloss.NewStyle().
+				Background(colorMantle)
+	txnRowSelectedHighlightedStyle = lipgloss.NewStyle().
+					Background(colorSurface1)
+	txnRowCursorStyle = lipgloss.NewStyle().
+				Background(colorSurface2).
+				Bold(true)
+	txnRowCursorSelectedStyle = lipgloss.NewStyle().
+					Background(colorSurface2).
+					Bold(true)
+	txnRowCursorHighlightedStyle = lipgloss.NewStyle().
+					Background(colorSurface2).
+					Bold(true)
+	txnRowCursorSelectedHighlightedStyle = lipgloss.NewStyle().
+						Background(colorAccent).
+						Foreground(colorBase).
+						Bold(true)
 
 	// Scroll indicator
 	scrollStyle = lipgloss.NewStyle().Foreground(colorOverlay1)
@@ -317,8 +337,18 @@ func renderDupeModal(file string, total, dupes int) string {
 
 // renderTransactionTable renders the transaction table with optional category column.
 // If categories is nil (dashboard mode), the category column is hidden.
-func renderTransactionTable(rows []transaction, categories []category, cursor, topIndex, visible, width int, sortCol int, sortAsc bool) string {
-	cursorW := 2
+func renderTransactionTable(
+	rows []transaction,
+	categories []category,
+	selectedRows map[int]bool,
+	highlightedRows map[int]bool,
+	cursorTxnID int,
+	topIndex,
+	visible,
+	width int,
+	sortCol int,
+	sortAsc bool,
+) string {
 	dateW := 9 // dd-mm-yy = 8 chars + 1 pad
 	amountW := 11
 	catW := 0
@@ -331,7 +361,7 @@ func renderTransactionTable(rows []transaction, categories []category, cursor, t
 	if showCats {
 		numSeps = 4
 	}
-	descW := width - dateW - amountW - catW - cursorW - numSeps
+	descW := width - dateW - amountW - catW - numSeps
 	if descW < 5 {
 		descW = 5
 	}
@@ -344,9 +374,9 @@ func renderTransactionTable(rows []transaction, categories []category, cursor, t
 	var header string
 	if showCats {
 		catLbl := addSortIndicator("Category", sortByCategory, sortCol, sortAsc)
-		header = fmt.Sprintf("  %-*s"+sep+"%-*s"+sep+"%-*s"+sep+"%-*s", dateW, dateLbl, amountW, amtLbl, catW, catLbl, descW, descLbl)
+		header = fmt.Sprintf("%-*s"+sep+"%-*s"+sep+"%-*s"+sep+"%-*s", dateW, dateLbl, amountW, amtLbl, catW, catLbl, descW, descLbl)
 	} else {
-		header = fmt.Sprintf("  %-*s"+sep+"%-*s"+sep+"%-*s", dateW, dateLbl, amountW, amtLbl, descW, descLbl)
+		header = fmt.Sprintf("%-*s"+sep+"%-*s"+sep+"%-*s", dateW, dateLbl, amountW, amtLbl, descW, descLbl)
 	}
 	headerLine := tableHeaderStyle.Render(header)
 	lines := []string{headerLine}
@@ -361,28 +391,43 @@ func renderTransactionTable(rows []transaction, categories []category, cursor, t
 		// Amount with color
 		amountText := fmt.Sprintf("%.2f", row.amount)
 		amountField := padRight(amountText, amountW)
-		if row.amount > 0 {
-			amountField = creditStyle.Render(amountField)
-		} else if row.amount < 0 {
-			amountField = debitStyle.Render(amountField)
-		}
 
-		// Cursor prefix
-		prefix := "  "
-		if i == cursor {
-			prefix = cursorStyle.Render("> ")
+		// Row state style with separate cursor overlay.
+		selected := selectedRows != nil && selectedRows[row.id]
+		highlighted := highlightedRows != nil && highlightedRows[row.id]
+		isCursor := cursorTxnID != 0 && row.id == cursorTxnID
+		rowBg, cursorStrong := rowStateBackgroundAndCursor(selected, highlighted, isCursor)
+		cellStyle := lipgloss.NewStyle().Background(rowBg)
+		if cursorStrong {
+			cellStyle = cellStyle.Bold(true)
 		}
+		sepField := cellStyle.Render(sep)
 
 		dateField := padRight(formatDateShort(row.dateISO), dateW)
 		desc := truncate(row.description, descW)
 		descField := padRight(desc, descW)
 
-		if showCats {
-			catField := renderCategoryTag(row.categoryName, row.categoryColor, catW)
-			lines = append(lines, prefix+dateField+sep+amountField+sep+catField+sep+descField)
-		} else {
-			lines = append(lines, prefix+dateField+sep+amountField+sep+descField)
+		var line string
+		amountStyle := lipgloss.NewStyle().Background(rowBg)
+		if cursorStrong {
+			amountStyle = amountStyle.Bold(true)
 		}
+		if row.amount > 0 {
+			amountStyle = amountStyle.Foreground(colorSuccess)
+		} else if row.amount < 0 {
+			amountStyle = amountStyle.Foreground(colorError)
+		}
+		amountField = amountStyle.Render(amountField)
+
+		if showCats {
+			catField := renderCategoryTagOnBackground(row.categoryName, row.categoryColor, catW, rowBg, cursorStrong)
+			line = cellStyle.Render(dateField) + sepField + amountField + sepField + catField + sepField + cellStyle.Render(descField)
+		} else {
+			line = cellStyle.Render(dateField) + sepField + amountField + sepField + cellStyle.Render(descField)
+		}
+		// Ensure row backgrounds span the full table width.
+		line = line + cellStyle.Render(strings.Repeat(" ", max(0, width-ansi.StringWidth(line))))
+		lines = append(lines, line)
 	}
 
 	// Scroll indicator
@@ -417,6 +462,41 @@ func renderCategoryTag(name, color string, width int) string {
 	}
 	style := lipgloss.NewStyle().Foreground(lipgloss.Color(color))
 	return padRight(style.Render(display), width)
+}
+
+func renderCategoryTagOnBackground(name, color string, width int, bg lipgloss.Color, bold bool) string {
+	display := truncate(name, width-1)
+	style := lipgloss.NewStyle().Background(bg)
+	if bold {
+		style = style.Bold(true)
+	}
+	if color == "" || color == "#7f849c" {
+		style = style.Foreground(colorOverlay1)
+	} else {
+		style = style.Foreground(lipgloss.Color(color))
+	}
+	return style.Render(padRight(display, width))
+}
+
+func rowStateBackgroundAndCursor(selected, highlighted, isCursor bool) (lipgloss.Color, bool) {
+	switch {
+	case isCursor && selected && highlighted:
+		return colorAccent, true
+	case isCursor && selected:
+		return colorSurface2, true
+	case isCursor && highlighted:
+		return colorSurface2, true
+	case isCursor:
+		return colorSurface2, true
+	case selected && highlighted:
+		return colorSurface1, false
+	case selected:
+		return colorSurface0, false
+	case highlighted:
+		return colorMantle, false
+	default:
+		return "", false
+	}
 }
 
 // ---------------------------------------------------------------------------

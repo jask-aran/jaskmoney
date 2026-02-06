@@ -52,6 +52,8 @@ const (
 	actionSearch             Action = "search"
 	actionSort               Action = "sort"
 	actionFilterCategory     Action = "filter_category"
+	actionToggleSelect       Action = "toggle_select"
+	actionRangeHighlight     Action = "range_highlight"
 	actionTimeframe          Action = "timeframe"
 	actionMove               Action = "move"
 	actionImportAll          Action = "import_all"
@@ -112,6 +114,8 @@ func NewKeyRegistry() *KeyRegistry {
 	reg(scopeTransactions, actionSearch, []string{"/"}, "search")
 	reg(scopeTransactions, actionSort, []string{"s"}, "sort")
 	reg(scopeTransactions, actionFilterCategory, []string{"f"}, "filter cat")
+	reg(scopeTransactions, actionToggleSelect, []string{"space", " "}, "toggle sel")
+	reg(scopeTransactions, actionRangeHighlight, []string{"shift+up/down", "shift+up", "shift+down"}, "hl range")
 	reg(scopeTransactions, actionSelect, []string{"enter"}, "select")
 	reg(scopeTransactions, actionNavigate, []string{"j/k", "j", "k", "up", "down", "ctrl+p", "ctrl+n"}, "navigate")
 	reg(scopeTransactions, actionNextTab, []string{"tab"}, "next tab")
