@@ -225,57 +225,6 @@ func (m model) renderStatus(text string, isErr bool) string {
 	return style.Width(m.width).Render(flat)
 }
 
-func (m model) placeWithFooter(body, statusLine, footer string) string {
-	if m.height == 0 {
-		return body + "\n\n" + statusLine + "\n" + footer
-	}
-	contentHeight := m.height - 2
-	if contentHeight < 1 {
-		contentHeight = 1
-	}
-	if lipgloss.Height(body) >= contentHeight {
-		return body + "\n" + statusLine + "\n" + footer
-	}
-	main := lipgloss.Place(m.width, contentHeight, lipgloss.Left, lipgloss.Top, body)
-	// Ensure every line is full-width to prevent ghosting from previous frames
-	lines := splitLines(main)
-	for i, line := range lines {
-		lines[i] = padRight(line, m.width)
-	}
-	main = strings.Join(lines, "\n")
-	return main + "\n" + statusLine + "\n" + footer
-}
-
-// ---------------------------------------------------------------------------
-// Modal overlay
-// ---------------------------------------------------------------------------
-
-func (m model) composeOverlay(base, statusLine, footer, content string) string {
-	baseView := m.placeWithFooter(base, statusLine, footer)
-	if m.height == 0 || m.width == 0 {
-		return baseView + "\n\n" + content
-	}
-	modalContent := lipgloss.NewStyle().Width(min(60, m.width-10)).Render(content)
-	modal := modalStyle.Render(modalContent)
-	lines := splitLines(modal)
-	modalWidth := maxLineWidth(lines)
-	modalHeight := len(lines)
-
-	targetHeight := m.height - 2
-	if targetHeight < 1 {
-		targetHeight = 1
-	}
-	x := (m.width - modalWidth) / 2
-	if x < 0 {
-		x = 0
-	}
-	y := (targetHeight - modalHeight) / 2
-	if y < 0 {
-		y = 0
-	}
-	return overlayAt(baseView, modal, x, y, m.width, targetHeight)
-}
-
 // renderFilePicker renders a simple list of CSV files with a cursor.
 func renderFilePicker(files []string, cursor int) string {
 	if len(files) == 0 {
