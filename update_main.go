@@ -84,6 +84,11 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.status = fmt.Sprintf("Applied rules: %d transactions updated.", msg.count)
 		m.statusErr = false
 		return m, refreshCmd(m.db)
+	case settingsSavedMsg:
+		if msg.err != nil {
+			m.setError(fmt.Sprintf("Save settings failed: %v", msg.err))
+		}
+		return m, nil
 	case quickCategoryAppliedMsg:
 		return m.handleQuickCategoryApplied(msg)
 	case confirmExpiredMsg:
@@ -245,6 +250,26 @@ func (m model) handleQuickCategoryApplied(msg quickCategoryAppliedMsg) (tea.Mode
 		return m, nil
 	}
 	return m, refreshCmd(m.db)
+}
+
+func (m model) currentAppSettings() appSettings {
+	out := defaultSettings()
+	out.RowsPerPage = m.maxVisibleRows
+	if m.spendingWeekAnchor == time.Monday {
+		out.SpendingWeekFrom = "monday"
+	} else {
+		out.SpendingWeekFrom = "sunday"
+	}
+	out.DashTimeframe = m.dashTimeframe
+	out.DashCustomStart = m.dashCustomStart
+	out.DashCustomEnd = m.dashCustomEnd
+	return normalizeSettings(out)
+}
+
+func saveSettingsCmd(s appSettings) tea.Cmd {
+	return func() tea.Msg {
+		return settingsSavedMsg{err: saveAppSettings(s)}
+	}
 }
 
 // ---------------------------------------------------------------------------
@@ -800,7 +825,7 @@ func (m model) updateDashboard(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		m.dashTimeframeFocus = false
 		m.status = fmt.Sprintf("Dashboard timeframe: %s", dashTimeframeLabel(m.dashTimeframe))
 		m.statusErr = false
-		return m, nil
+		return m, saveSettingsCmd(m.currentAppSettings())
 	case "esc":
 		m.dashTimeframeFocus = false
 		m.status = "Timeframe selection cancelled."
@@ -853,7 +878,7 @@ func (m model) updateDashboardCustomInput(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		m.dashTimeframeFocus = false
 		m.status = fmt.Sprintf("Dashboard timeframe: %s to %s", m.dashCustomStart, m.dashCustomEnd)
 		m.statusErr = false
-		return m, nil
+		return m, saveSettingsCmd(m.currentAppSettings())
 	default:
 		r := msg.String()
 		if len(r) == 1 && r[0] >= 32 && r[0] < 127 {

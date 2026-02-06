@@ -258,12 +258,16 @@ func (m model) updateSettingsDBImport(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		if m.maxVisibleRows < 50 {
 			m.maxVisibleRows++
 			m.status = fmt.Sprintf("Rows per page: %d", m.maxVisibleRows)
+			m.statusErr = false
+			return m, saveSettingsCmd(m.currentAppSettings())
 		}
 		return m, nil
 	case "-":
 		if m.maxVisibleRows > 5 {
 			m.maxVisibleRows--
 			m.status = fmt.Sprintf("Rows per page: %d", m.maxVisibleRows)
+			m.statusErr = false
+			return m, saveSettingsCmd(m.currentAppSettings())
 		}
 		return m, nil
 	}
@@ -280,7 +284,7 @@ func (m model) updateSettingsChart(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		}
 		m.status = fmt.Sprintf("Spending tracker week boundary: %s", spendingWeekAnchorLabel(m.spendingWeekAnchor))
 		m.statusErr = false
-		return m, nil
+		return m, saveSettingsCmd(m.currentAppSettings())
 	}
 	return m, nil
 }

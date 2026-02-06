@@ -102,6 +102,10 @@ type rulesAppliedMsg struct {
 	err   error
 }
 
+type settingsSavedMsg struct {
+	err error
+}
+
 type quickCategoryAppliedMsg struct {
 	count        int
 	categoryName string
@@ -262,19 +266,25 @@ func newModel() model {
 	if cwdErr != nil || cwd == "" {
 		cwd = "."
 	}
-	formats, fmtErr := loadFormats()
+	formats, appCfg, fmtErr := loadAppConfig()
 	status := ""
 	statusErr := false
 	if fmtErr != nil {
 		status = fmt.Sprintf("Format config error: %v", fmtErr)
 		statusErr = true
 	}
+	weekAnchor := time.Sunday
+	if appCfg.SpendingWeekFrom == "monday" {
+		weekAnchor = time.Monday
+	}
 	return model{
 		basePath:           cwd,
 		activeTab:          tabDashboard,
-		maxVisibleRows:     20,
-		spendingWeekAnchor: time.Sunday,
-		dashTimeframe:      dashTimeframeThisMonth,
+		maxVisibleRows:     appCfg.RowsPerPage,
+		spendingWeekAnchor: weekAnchor,
+		dashTimeframe:      appCfg.DashTimeframe,
+		dashCustomStart:    appCfg.DashCustomStart,
+		dashCustomEnd:      appCfg.DashCustomEnd,
 		keys:               NewKeyRegistry(),
 		formats:            formats,
 		selectedRows:       make(map[int]bool),
