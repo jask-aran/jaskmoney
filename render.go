@@ -225,6 +225,57 @@ func (m model) renderStatus(text string, isErr bool) string {
 	return style.Width(m.width).Render(flat)
 }
 
+func renderDashboardTimeframeChips(labels []string, active, cursor int, focused bool) string {
+	baseStyle := lipgloss.NewStyle().Foreground(colorSubtext0)
+	activeStyle := lipgloss.NewStyle().Foreground(colorAccent).Bold(true)
+
+	parts := make([]string, 0, len(labels))
+	for i, label := range labels {
+		chip := "[" + label + "]"
+		style := baseStyle
+		if i == active {
+			style = activeStyle
+		}
+		text := style.Render(chip)
+		if focused && i == cursor {
+			text = cursorStyle.Render(">") + text
+		}
+		parts = append(parts, text)
+	}
+	return strings.Join(parts, " ")
+}
+
+func renderDashboardCustomInput(start, end, input string, editing bool) string {
+	if !editing {
+		return ""
+	}
+
+	startText := start
+	if startText == "" {
+		startText = "YYYY-MM-DD"
+	}
+	endText := end
+	if endText == "" {
+		endText = "YYYY-MM-DD"
+	}
+
+	if start == "" {
+		startText = input + "_"
+	} else {
+		endText = input + "_"
+	}
+
+	labelStyle := lipgloss.NewStyle().Foreground(colorOverlay1)
+	valueStyle := lipgloss.NewStyle().Foreground(colorAccent)
+	promptStyle := lipgloss.NewStyle().Foreground(colorSubtext0)
+
+	fields := labelStyle.Render("Custom Range: ") +
+		valueStyle.Render("Start ") + valueStyle.Render(startText) + "  " +
+		valueStyle.Render("End ") + valueStyle.Render(endText)
+	prompt := promptStyle.Render("Enter confirms each field, Esc cancels.")
+	return fields + "\n" + prompt
+}
+
 // renderFilePicker renders a simple list of CSV files with a cursor.
 func renderFilePicker(files []string, cursor int) string {
 	if len(files) == 0 {
@@ -618,6 +669,22 @@ const spendingTrackerDays = 60
 const spendingTrackerHeight = 14
 const spendingTrackerYStep = 1
 
+type spendingMajorMode int
+
+const (
+	spendingMajorWeek spendingMajorMode = iota
+	spendingMajorMonth
+	spendingMajorQuarter
+)
+
+type spendingAxisPlan struct {
+	minorStepDays int
+	majorMode     spendingMajorMode
+	xLabels       map[string]string // YYYY-MM-DD -> label
+	yStep         float64
+	yMax          float64
+}
+
 func aggregateDailySpend(rows []transaction, days int) ([]float64, []time.Time) {
 	if days <= 0 {
 		return nil, nil
@@ -625,9 +692,21 @@ func aggregateDailySpend(rows []transaction, days int) ([]float64, []time.Time) 
 	now := time.Now()
 	end := time.Date(now.Year(), now.Month(), now.Day(), 0, 0, 0, 0, time.Local)
 	start := end.AddDate(0, 0, -(days - 1))
+	return aggregateDailySpendForRange(rows, start, end)
+}
+
+func aggregateDailySpendForRange(rows []transaction, start, end time.Time) ([]float64, []time.Time) {
+	if end.Before(start) {
+		return nil, nil
+	}
+	start = time.Date(start.Year(), start.Month(), start.Day(), 0, 0, 0, 0, time.Local)
+	end = time.Date(end.Year(), end.Month(), end.Day(), 0, 0, 0, 0, time.Local)
 	startISO := start.Format("2006-01-02")
 	endISO := end.Format("2006-01-02")
-
+	days := int(end.Sub(start).Hours()/24) + 1
+	if days <= 0 {
+		return nil, nil
+	}
 	byDay := make(map[string]float64)
 	for _, r := range rows {
 		if r.dateISO < startISO || r.dateISO > endISO {
@@ -664,16 +743,23 @@ func renderSpendingTracker(rows []transaction, width int) string {
 }
 
 func renderSpendingTrackerWithWeekAnchor(rows []transaction, width int, weekAnchor time.Weekday) string {
+	now := time.Now()
+	end := time.Date(now.Year(), now.Month(), now.Day(), 0, 0, 0, 0, time.Local)
+	start := end.AddDate(0, 0, -(spendingTrackerDays - 1))
+	return renderSpendingTrackerWithRange(rows, width, weekAnchor, start, end)
+}
+
+func renderSpendingTrackerWithRange(rows []transaction, width int, weekAnchor time.Weekday, start, end time.Time) string {
 	if width <= 0 {
 		width = 20
 	}
-	values, dates := aggregateDailySpend(rows, spendingTrackerDays)
+	values, dates := aggregateDailySpendForRange(rows, start, end)
 	if len(dates) == 0 {
 		return lipgloss.NewStyle().Foreground(colorOverlay1).Render("No data for spending tracker.")
 	}
 
-	start := dates[0]
-	end := dates[len(dates)-1]
+	start = dates[0]
+	end = dates[len(dates)-1]
 	maxVal := 0.0
 	for _, v := range values {
 		if v > maxVal {
@@ -683,11 +769,8 @@ func renderSpendingTrackerWithWeekAnchor(rows []transaction, width int, weekAnch
 	if maxVal == 0 {
 		maxVal = 1
 	}
-	minVal := -(maxVal * 0.08)
 
 	chart := tslc.New(width, spendingTrackerHeight)
-	chart.Model.XLabelFormatter = spendingXLabelFormatter()
-	chart.Model.YLabelFormatter = spendingYLabelFormatter()
 	chart.SetXStep(1)
 	chart.SetYStep(spendingTrackerYStep)
 	chart.SetStyle(lipgloss.NewStyle().Foreground(colorPeach))
@@ -695,8 +778,13 @@ func renderSpendingTrackerWithWeekAnchor(rows []transaction, width int, weekAnch
 	chart.LabelStyle = lipgloss.NewStyle().Foreground(colorOverlay1)
 	chart.SetTimeRange(start, end)
 	chart.SetViewTimeRange(start, end)
-	chart.SetYRange(minVal, maxVal)
-	chart.SetViewYRange(minVal, maxVal)
+
+	plan := planSpendingAxes(&chart, dates, maxVal)
+	minVal := -(plan.yMax * 0.08)
+	chart.SetYRange(minVal, plan.yMax)
+	chart.SetViewYRange(minVal, plan.yMax)
+	chart.Model.XLabelFormatter = spendingXLabelFormatter(plan.xLabels)
+	chart.Model.YLabelFormatter = spendingYLabelFormatter(plan.yStep, plan.yMax)
 
 	for i, d := range dates {
 		chart.Push(tslc.TimePoint{Time: d, Value: values[i]})
@@ -705,50 +793,270 @@ func renderSpendingTrackerWithWeekAnchor(rows []transaction, width int, weekAnch
 	chart.DrawBraille()
 	clearAxes(&chart)
 	raiseXAxisLabels(&chart)
-	drawVerticalGridlines(&chart, dates, spendingMinorGridStep(len(dates)), weekAnchor)
+	drawVerticalGridlines(&chart, dates, plan, weekAnchor)
 
 	return chart.View()
 }
 
-func spendingMinorGridStep(days int) int {
-	// TODO: Make this dynamic from selected timeframe + width once configurable
-	// chart date ranges are implemented.
-	if days >= 60 {
+func planSpendingAxes(chart *tslc.Model, dates []time.Time, maxVal float64) spendingAxisPlan {
+	graphCols := chart.Width() - chart.Origin().X - 1
+	if graphCols < 1 {
+		graphCols = chart.Width()
+	}
+	minor := spendingMinorGridStep(len(dates), graphCols)
+	mode := spendingMajorModeForDays(len(dates))
+	yStep, yMax := spendingYScale(maxVal, chart.GraphHeight())
+	return spendingAxisPlan{
+		minorStepDays: minor,
+		majorMode:     mode,
+		xLabels:       spendingXLabels(chart, dates, minor, mode),
+		yStep:         yStep,
+		yMax:          yMax,
+	}
+}
+
+func spendingMinorGridStep(days, graphCols int) int {
+	if days <= 0 {
+		return 1
+	}
+	if days <= 30 {
+		return 1
+	}
+	if days <= 60 {
 		return 2
 	}
-	return 1
+	if graphCols <= 0 {
+		graphCols = days
+	}
+	maxMinorLines := max(1, graphCols/2)
+	base := int(math.Ceil(float64(days) / float64(maxMinorLines)))
+	if base < 1 {
+		base = 1
+	}
+	return snapGridStep(base)
 }
 
-func spendingXLabelFormatter() linechart.LabelFormatter {
+func snapGridStep(base int) int {
+	steps := []int{1, 2, 3, 5, 7, 10, 14, 21, 30, 45, 60, 90}
+	for _, s := range steps {
+		if base <= s {
+			return s
+		}
+	}
+	chunk := 30
+	return int(math.Ceil(float64(base)/float64(chunk))) * chunk
+}
+
+func spendingMajorModeForDays(days int) spendingMajorMode {
+	if days <= 120 {
+		return spendingMajorWeek
+	}
+	if days <= 540 {
+		return spendingMajorMonth
+	}
+	return spendingMajorQuarter
+}
+
+func spendingXLabels(chart *tslc.Model, dates []time.Time, minorStep int, majorMode spendingMajorMode) map[string]string {
+	labels := make(map[string]string)
+	if len(dates) == 0 {
+		return labels
+	}
+
+	type candidate struct {
+		x     int
+		iso   string
+		label string
+		prio  int
+	}
+
+	var cands []candidate
+	add := func(d time.Time, label string, prio int) {
+		x := chartColumnX(chart, d)
+		if x <= chart.Origin().X || x >= chart.Width() {
+			return
+		}
+		cands = append(cands, candidate{
+			x:     x,
+			iso:   d.Format("2006-01-02"),
+			label: label,
+			prio:  prio,
+		})
+	}
+
+	start := dates[0]
+	end := dates[len(dates)-1]
+	startLabel := start.Format("2 Jan")
+	endLabel := end.Format("2 Jan")
+	if start.Year() != end.Year() {
+		startLabel = start.Format("2 Jan 06")
+		endLabel = end.Format("2 Jan 06")
+	}
+	add(start, startLabel, 0)
+	add(end, endLabel, 0)
+
+	for i, d := range dates {
+		if d.Day() == 1 {
+			switch majorMode {
+			case spendingMajorQuarter:
+				if isQuarterStart(d) {
+					label := d.Format("Jan")
+					if d.Month() == time.January {
+						label = d.Format("Jan 06")
+					}
+					add(d, label, 1)
+				}
+			default:
+				label := d.Format("Jan")
+				if d.Month() == time.January {
+					label = d.Format("Jan 06")
+				}
+				add(d, label, 1)
+			}
+		}
+		if len(dates) <= 90 && minorStep > 0 && i%minorStep == 0 {
+			add(d, fmt.Sprintf("%d", d.Day()), 2)
+		}
+	}
+
+	minGap := 6
+	// Place higher-priority labels first, then fill remaining space.
+	for prio := 0; prio <= 2; prio++ {
+		var tier []candidate
+		for _, c := range cands {
+			if c.prio == prio {
+				tier = append(tier, c)
+			}
+		}
+		sort.Slice(tier, func(i, j int) bool { return tier[i].x < tier[j].x })
+		for _, c := range tier {
+			if canPlaceXLabel(c, labels, dates, chart, minGap) {
+				labels[c.iso] = c.label
+			}
+		}
+	}
+	return labels
+}
+
+func canPlaceXLabel(c struct {
+	x     int
+	iso   string
+	label string
+	prio  int
+}, placed map[string]string, dates []time.Time, chart *tslc.Model, minGap int) bool {
+	for iso := range placed {
+		t, err := time.ParseInLocation("2006-01-02", iso, time.Local)
+		if err != nil {
+			continue
+		}
+		x := chartColumnX(chart, t)
+		if intAbs(x-c.x) < minGap {
+			return false
+		}
+	}
+	return true
+}
+
+func intAbs(v int) int {
+	if v < 0 {
+		return -v
+	}
+	return v
+}
+
+func spendingXLabelFormatter(labels map[string]string) linechart.LabelFormatter {
 	return func(_ int, v float64) string {
 		t := time.Unix(int64(v), 0).In(time.Local)
-		day := t.Day()
-		if day == 1 {
-			return t.Format("Jan")
-		}
-		switch day {
-		case 8, 15, 22, 29:
-			return fmt.Sprintf("%d", day)
-		default:
-			return ""
-		}
+		iso := t.Format("2006-01-02")
+		return labels[iso]
 	}
 }
 
-func spendingYLabelFormatter() linechart.LabelFormatter {
-	pattern := []bool{true, false, true, true, false, true, false, true, true}
-	return func(i int, v float64) string {
+func spendingYScale(maxVal float64, graphHeight int) (float64, float64) {
+	if maxVal <= 0 {
+		maxVal = 1
+	}
+	targetTicks := max(3, min(6, graphHeight/3))
+	if targetTicks <= 1 {
+		targetTicks = 3
+	}
+	rawStep := maxVal / float64(targetTicks-1)
+	step := niceCeil(rawStep)
+	if step < 1 {
+		step = 1
+	}
+	yMax := math.Ceil(maxVal/step) * step
+	if yMax < step {
+		yMax = step
+	}
+	return step, yMax
+}
+
+func niceCeil(v float64) float64 {
+	if v <= 0 {
+		return 1
+	}
+	pow := math.Pow(10, math.Floor(math.Log10(v)))
+	f := v / pow
+	switch {
+	case f <= 1:
+		return 1 * pow
+	case f <= 2:
+		return 2 * pow
+	case f <= 5:
+		return 5 * pow
+	default:
+		return 10 * pow
+	}
+}
+
+func spendingYLabelFormatter(step, yMax float64) linechart.LabelFormatter {
+	tolerance := step * 0.2
+	return func(_ int, v float64) string {
 		if v < 0 {
 			return ""
 		}
-		if v < 0.5 {
+		if v < tolerance {
 			return "0"
 		}
-		if pattern[i%len(pattern)] {
-			return formatWholeNumber(v)
+		nearest := math.Round(v/step) * step
+		if nearest < 0 || nearest > yMax+step*0.01 {
+			return ""
 		}
-		return ""
+		if math.Abs(v-nearest) > tolerance {
+			return ""
+		}
+		if nearest < 0.5 {
+			return "0"
+		}
+		return formatAxisTick(nearest)
 	}
+}
+
+func formatAxisTick(v float64) string {
+	if v < 0 {
+		v = -v
+	}
+	switch {
+	case v >= 1_000_000:
+		m := v / 1_000_000
+		if m < 10 {
+			return trimTrailingDecimal(fmt.Sprintf("%.1fm", m))
+		}
+		return fmt.Sprintf("%dm", int(m))
+	case v >= 1_000:
+		k := v / 1_000
+		if k < 10 {
+			return trimTrailingDecimal(fmt.Sprintf("%.1fk", k))
+		}
+		return fmt.Sprintf("%dk", int(k))
+	default:
+		return formatWholeNumber(v)
+	}
+}
+
+func trimTrailingDecimal(s string) string {
+	return strings.Replace(s, ".0", "", 1)
 }
 
 func clearAxes(chart *tslc.Model) {
@@ -788,8 +1096,8 @@ func raiseXAxisLabels(chart *tslc.Model) {
 	}
 }
 
-func drawVerticalGridlines(chart *tslc.Model, dates []time.Time, minorStep int, weekAnchor time.Weekday) {
-	if len(dates) == 0 || minorStep <= 0 {
+func drawVerticalGridlines(chart *tslc.Model, dates []time.Time, plan spendingAxisPlan, weekAnchor time.Weekday) {
+	if len(dates) == 0 || plan.minorStepDays <= 0 {
 		return
 	}
 	origin := chart.Origin()
@@ -804,8 +1112,8 @@ func drawVerticalGridlines(chart *tslc.Model, dates []time.Time, minorStep int, 
 	majorStyle := lipgloss.NewStyle().Foreground(colorBlue)
 	columns := make(map[int]bool) // x -> isMajor
 	for i, d := range dates {
-		isMajor := isMajorWeekBoundary(d, weekAnchor)
-		if !isMajor && i%minorStep != 0 {
+		isMajor := isMajorBoundary(d, plan.majorMode, weekAnchor)
+		if !isMajor && i%plan.minorStepDays != 0 {
 			continue
 		}
 		x := chartColumnX(chart, d)
@@ -835,8 +1143,26 @@ func drawVerticalGridlines(chart *tslc.Model, dates []time.Time, minorStep int, 
 	}
 }
 
-func isMajorWeekBoundary(d time.Time, weekAnchor time.Weekday) bool {
-	return d.Weekday() == weekAnchor
+func isMajorBoundary(d time.Time, mode spendingMajorMode, weekAnchor time.Weekday) bool {
+	switch mode {
+	case spendingMajorWeek:
+		return d.Weekday() == weekAnchor
+	case spendingMajorMonth:
+		return d.Day() == 1
+	case spendingMajorQuarter:
+		return d.Day() == 1 && isQuarterStart(d)
+	default:
+		return false
+	}
+}
+
+func isQuarterStart(d time.Time) bool {
+	switch d.Month() {
+	case time.January, time.April, time.July, time.October:
+		return true
+	default:
+		return false
+	}
 }
 
 func spendingWeekAnchorLabel(weekday time.Weekday) string {
@@ -1041,10 +1367,23 @@ func renderSettingsChart(m model, width int) string {
 	var lines []string
 	labelSty := lipgloss.NewStyle().Foreground(colorSubtext0)
 	valSty := lipgloss.NewStyle().Foreground(colorPeach)
+	now := time.Now()
+	start, end := m.dashboardChartRange(now)
+	days := int(end.Sub(start).Hours()/24) + 1
+	minor := spendingMinorGridStep(days, 80)
+	major := "weekly"
+	switch spendingMajorModeForDays(days) {
+	case spendingMajorMonth:
+		major = "monthly"
+	case spendingMajorQuarter:
+		major = "quarterly"
+	}
 
 	lines = append(lines, labelSty.Render("Week boundary:  ")+valSty.Render(spendingWeekAnchorLabel(m.spendingWeekAnchor)))
-	lines = append(lines, labelSty.Render("History window: ")+valSty.Render(fmt.Sprintf("%d days", spendingTrackerDays)))
-	lines = append(lines, labelSty.Render("Minor grid:     ")+valSty.Render("every 2 days"))
+	lines = append(lines, labelSty.Render("Timeframe:      ")+valSty.Render(dashTimeframeLabel(m.dashTimeframe)))
+	lines = append(lines, labelSty.Render("History window: ")+valSty.Render(fmt.Sprintf("%d days", days)))
+	lines = append(lines, labelSty.Render("Minor grid:     ")+valSty.Render(fmt.Sprintf("every %d day(s)", minor)))
+	lines = append(lines, labelSty.Render("Major grid:     ")+valSty.Render(major))
 	lines = append(lines, "")
 	lines = append(lines, scrollStyle.Render("h/l or enter to toggle boundary"))
 

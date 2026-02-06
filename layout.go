@@ -104,6 +104,14 @@ func (m model) footerBindings() []key.Binding {
 	if m.searchMode {
 		return m.keys.HelpBindings(scopeSearch)
 	}
+	if m.activeTab == tabDashboard {
+		if m.dashCustomEditing {
+			return m.keys.HelpBindings(scopeDashboardCustomInput)
+		}
+		if m.dashTimeframeFocus {
+			return m.keys.HelpBindings(scopeDashboardTimeframe)
+		}
+	}
 	if m.activeTab == tabTransactions {
 		return m.keys.HelpBindings(scopeTransactions)
 	}
