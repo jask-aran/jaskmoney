@@ -8,23 +8,27 @@ This is a Go TUI application built with the [Bubble Tea](https://github.com/char
 |---|---|
 | `main.go` | Entry point only — creates the `tea.Program` and runs it. |
 | `model.go` | Bubble Tea model: types, messages, `Init`/`Update`/`View`, key handling, layout helpers. |
-| `db.go` | SQLite database: open, schema, queries, and tea.Cmd wrappers (`refreshCmd`, `clearCmd`). |
-| `ingest.go` | CSV import pipeline: parsing, validation, transactional insert, file scanning. |
+| `db.go` | SQLite database: open, schema, migrations, queries, and tea.Cmd wrappers (`refreshCmd`, `clearCmd`). |
+| `ingest.go` | CSV import pipeline: format-driven parsing, duplicate detection, transactional insert, file scanning. |
 | `render.go` | All visual output: styles, section/table/overview rendering, footer, status bar, modal overlay. |
 | `overlay.go` | Generic string utilities: overlay compositing, padding, truncation, line splitting. |
+| `theme.go` | Catppuccin Mocha color constants, semantic aliases, and category accent palette. |
+| `config.go` | TOML-based CSV format configuration: loading, parsing, validation, default creation. |
 
 Supporting files:
 - `go.mod`, `go.sum` — module definition and dependencies.
 - `ANZ.csv` — sample import data.
 - `transactions.db` — local runtime artifact (do not commit).
+- `v0.2-spec.md` — design specification document.
 
 ### Where new code should go
 
-- **New data sources or import formats** — `ingest.go` (or a new file like `import_ofx.go` for a distinct format).
+- **New data sources or import formats** — `ingest.go` (or a new file like `import_ofx.go` for a distinct format). Define TOML format entries in `config.go`.
 - **New database queries or migrations** — `db.go`.
 - **New UI views, sections, or visual components** — `render.go`.
 - **New Bubble Tea messages or model fields** — `model.go`.
 - **New string/layout utilities** — `overlay.go`.
+- **New color constants or theme changes** — `theme.go`.
 - **New CLI subcommands or flags** — `main.go`.
 
 When the project outgrows a flat structure, migrate to:
