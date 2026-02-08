@@ -190,23 +190,69 @@ func (m model) renderSectionSizedAligned(title, content string, sectionWidth int
 	if sectionWidth <= 0 {
 		sectionWidth = m.sectionWidth()
 	}
-	frameH := listBoxStyle.GetHorizontalFrameSize()
-	contentWidth := sectionWidth - frameH
-	if contentWidth < 1 {
-		contentWidth = 1
-	}
-	header := padRight(titleStyle.Render(title), contentWidth)
-	sectionContent := header + "\n" + content
-	if withSeparator {
-		sepStyle := lipgloss.NewStyle().Foreground(colorSurface2)
-		separator := sepStyle.Render(strings.Repeat("─", contentWidth))
-		sectionContent = header + "\n" + separator + "\n" + content
-	}
-	section := listBoxStyle.Width(sectionWidth).Render(sectionContent)
+	section := renderTitledSectionBox(title, content, sectionWidth, withSeparator)
 	if m.width == 0 {
 		return section
 	}
 	return lipgloss.Place(m.width, lipgloss.Height(section), align, lipgloss.Top, section)
+}
+
+func renderTitledSectionBox(title, content string, sectionWidth int, withSeparator bool) string {
+	if sectionWidth < 4 {
+		sectionWidth = 4
+	}
+	innerWidth := sectionWidth - 2 // excludes vertical borders
+	contentWidth := innerWidth - 2 // excludes horizontal padding inside borders
+	if contentWidth < 1 {          // guard small terminals
+		contentWidth = 1
+		innerWidth = contentWidth + 2
+		sectionWidth = innerWidth + 2
+	}
+
+	borderStyle := lipgloss.NewStyle().Foreground(colorSurface1)
+	sepStyle := lipgloss.NewStyle().Foreground(colorSurface2)
+	v := borderStyle.Render("│")
+	tl := borderStyle.Render("╭")
+	tr := borderStyle.Render("╮")
+	bl := borderStyle.Render("╰")
+	br := borderStyle.Render("╯")
+
+	titleText := " " + strings.TrimSpace(title) + " "
+	if ansi.StringWidth(titleText) > innerWidth {
+		titleText = " " + truncate(strings.TrimSpace(title), max(1, innerWidth-2)) + " "
+	}
+	titleRendered := titleStyle.Render(titleText)
+	titleW := ansi.StringWidth(titleText)
+	dashes := innerWidth - titleW
+	if dashes < 0 {
+		dashes = 0
+	}
+	leftDash := 1
+	if dashes == 0 {
+		leftDash = 0
+	} else if leftDash > dashes {
+		leftDash = dashes
+	}
+	rightDash := dashes - leftDash
+	top := tl + borderStyle.Render(strings.Repeat("─", leftDash)) + titleRendered + borderStyle.Render(strings.Repeat("─", rightDash)) + tr
+
+	lines := splitLines(content)
+	if len(lines) == 0 {
+		lines = []string{""}
+	}
+
+	out := []string{top}
+	if withSeparator {
+		sep := v + " " + sepStyle.Render(strings.Repeat("─", contentWidth)) + " " + v
+		out = append(out, sep)
+	}
+	for _, line := range lines {
+		row := v + " " + padRight(truncate(line, contentWidth), contentWidth) + " " + v
+		out = append(out, row)
+	}
+	bottom := bl + borderStyle.Render(strings.Repeat("─", innerWidth)) + br
+	out = append(out, bottom)
+	return strings.Join(out, "\n")
 }
 
 func (m model) renderFooter(bindings []key.Binding) string {
@@ -658,7 +704,7 @@ type categorySpend struct {
 }
 
 // renderCategoryBreakdown renders a horizontal bar chart of spending by category.
-// Shows top 6 + "Other" bucket. Each bar uses the category's color.
+// All categories are shown, sorted by spend descending.
 func renderCategoryBreakdown(rows []transaction, width int) string {
 	// Aggregate expenses by category
 	spendMap := make(map[string]*categorySpend)
@@ -693,38 +739,110 @@ func renderCategoryBreakdown(rows []transaction, width int) string {
 		return sorted[i].amount > sorted[j].amount
 	})
 
-	// Top 6 + Other
-	maxBars := 6
-	var display []categorySpend
-	var otherAmount float64
-	for i, s := range sorted {
-		if i < maxBars {
-			display = append(display, s)
-		} else {
-			otherAmount += s.amount
+	display := sorted
+	maxAmount := 0.0
+	for _, s := range display {
+		if s.amount > maxAmount {
+			maxAmount = s.amount
 		}
 	}
-	if otherAmount > 0 {
-		display = append(display, categorySpend{name: "Other", color: "#9399b2", amount: otherAmount})
+	if maxAmount <= 0 {
+		maxAmount = 1
 	}
 
-	// Render bars
-	nameW := 16
-	pctW := 6
-	amtW := 12
-	barW := width - nameW - pctW - amtW - 4
-	if barW < 5 {
-		barW = 5
+	// Render bars: give more width to names while keeping the bar useful.
+	if width < 24 {
+		width = 24
+	}
+	pctW := 4 // e.g. " 42%"
+	amtW := 0
+	for _, s := range display {
+		w := len("$" + formatWholeNumber(s.amount))
+		if w > amtW {
+			amtW = w
+		}
+	}
+	if amtW < 2 {
+		amtW = 2
+	}
+	// columns: [name][bar][ ][pct][ ][amount]
+	minBarW := 1
+	available := width - (1 + pctW + 1 + amtW)
+	if available < 0 {
+		available = 0
+	}
+	maxNameW := 26 // cap so very long custom names don't consume the chart
+	longestNameW := 0
+	for _, s := range display {
+		if w := len(s.name); w > longestNameW {
+			longestNameW = w
+		}
+	}
+	nameW := longestNameW + 2 // a little breathing room before bars
+	if nameW > maxNameW {
+		nameW = maxNameW
+	}
+	minNameW := 4
+	if nameW < minNameW {
+		nameW = minNameW
+	}
+	maxNameForBar := available - minBarW
+	if nameW > maxNameForBar {
+		nameW = maxNameForBar
+	}
+	if nameW < 0 {
+		nameW = 0
+	}
+	barW := available - nameW
+	if barW < minBarW {
+		need := minBarW - barW
+		if nameW >= need {
+			nameW -= need
+			barW = minBarW
+		} else {
+			barW = 0
+			nameW = available
+		}
 	}
 
 	var lines []string
 	for _, s := range display {
 		pct := s.amount / totalExpenses * 100
-		filled := int(float64(barW) * s.amount / totalExpenses)
-		if filled < 1 && s.amount > 0 {
+		pctText := fmt.Sprintf("%4.0f%%", pct)
+		amtText := fmt.Sprintf("%*s", amtW, "$"+formatWholeNumber(s.amount))
+		reservedRight := 1 + ansi.StringWidth(pctText) + 1 + ansi.StringWidth(amtText)
+		availableLeft := width - reservedRight
+		if availableLeft < 0 {
+			availableLeft = 0
+		}
+
+		rowNameW := nameW
+		if rowNameW > availableLeft-minBarW {
+			rowNameW = availableLeft - minBarW
+		}
+		if rowNameW < 0 {
+			rowNameW = 0
+		}
+		rowBarW := availableLeft - rowNameW
+		if rowBarW < 0 {
+			rowBarW = 0
+		}
+
+		ratio := s.amount / maxAmount
+		filled := int(math.Round(float64(rowBarW) * ratio))
+		if ratio >= 0.999999 {
+			filled = rowBarW
+		}
+		if filled < 1 && s.amount > 0 && rowBarW > 0 {
 			filled = 1
 		}
-		empty := barW - filled
+		if filled > rowBarW {
+			filled = rowBarW
+		}
+		if filled < 0 {
+			filled = 0
+		}
+		empty := rowBarW - filled
 
 		catColor := lipgloss.Color(s.color)
 		if s.color == "" {
@@ -734,11 +852,33 @@ func renderCategoryBreakdown(rows []transaction, width int) string {
 		nameSty := lipgloss.NewStyle().Foreground(catColor)
 		barFilled := lipgloss.NewStyle().Foreground(catColor).Render(strings.Repeat("█", filled))
 		barEmpty := lipgloss.NewStyle().Foreground(colorSurface2).Render(strings.Repeat("░", empty))
-		pctStr := lipgloss.NewStyle().Foreground(colorSubtext0).Render(fmt.Sprintf("%5.1f%%", pct))
-		amtStr := lipgloss.NewStyle().Foreground(colorPeach).Render(fmt.Sprintf("%10s", formatMoney(s.amount)))
+		pctStr := lipgloss.NewStyle().Foreground(colorSubtext0).Render(pctText)
+		amtStr := lipgloss.NewStyle().Foreground(colorPeach).Render(amtText)
 
-		line := padRight(nameSty.Render(truncate(s.name, nameW-1)), nameW) +
+		nameText := ""
+		if rowNameW > 0 {
+			nameText = padRight(nameSty.Render(truncate(s.name, rowNameW)), rowNameW)
+		}
+		line := nameText +
 			barFilled + barEmpty + " " + pctStr + " " + amtStr
+		for ansi.StringWidth(line) > width {
+			if rowBarW > 0 {
+				rowBarW--
+				if filled > rowBarW {
+					filled = rowBarW
+				}
+				empty = rowBarW - filled
+				barFilled = lipgloss.NewStyle().Foreground(catColor).Render(strings.Repeat("█", filled))
+				barEmpty = lipgloss.NewStyle().Foreground(colorSurface2).Render(strings.Repeat("░", empty))
+			} else if rowNameW > 0 {
+				rowNameW--
+				nameText = padRight(nameSty.Render(truncate(s.name, rowNameW)), rowNameW)
+			} else {
+				break
+			}
+			line = nameText + barFilled + barEmpty + " " + pctStr + " " + amtStr
+		}
+		line = padRight(line, width)
 		lines = append(lines, line)
 	}
 

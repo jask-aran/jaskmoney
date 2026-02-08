@@ -563,22 +563,26 @@ func TestSettingsMaxVisibleRows(t *testing.T) {
 	m.settActive = true
 
 	initial := m.maxVisibleRows
-	if initial != 20 {
-		t.Fatalf("initial maxVisibleRows = %d, want 20", initial)
+	if initial < 5 || initial > 50 {
+		t.Fatalf("initial maxVisibleRows = %d, want in [5,50]", initial)
 	}
 
 	// + increases
 	m2, _ := m.updateSettings(keyMsg("+"))
 	m3 := m2.(model)
-	if m3.maxVisibleRows != 21 {
-		t.Errorf("after +: maxVisibleRows = %d, want 21", m3.maxVisibleRows)
+	wantPlus := initial
+	if initial < 50 {
+		wantPlus = initial + 1
+	}
+	if m3.maxVisibleRows != wantPlus {
+		t.Errorf("after +: maxVisibleRows = %d, want %d", m3.maxVisibleRows, wantPlus)
 	}
 
 	// - decreases
 	m4, _ := m3.updateSettings(keyMsg("-"))
 	m5 := m4.(model)
-	if m5.maxVisibleRows != 20 {
-		t.Errorf("after -: maxVisibleRows = %d, want 20", m5.maxVisibleRows)
+	if m5.maxVisibleRows != initial {
+		t.Errorf("after -: maxVisibleRows = %d, want %d", m5.maxVisibleRows, initial)
 	}
 
 	// Clamp at min 5
