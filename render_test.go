@@ -98,10 +98,13 @@ func TestRenderCategoryBreakdownCorrectCategories(t *testing.T) {
 	if !strings.Contains(output, "%") {
 		t.Error("missing percentage")
 	}
+	if strings.Contains(output, "…") {
+		t.Error("unexpected truncation ellipsis in category breakdown output")
+	}
 }
 
-func TestRenderCategoryBreakdownTopSixPlusOther(t *testing.T) {
-	// Create 8 categories of expenses — should show 6 + Other
+func TestRenderCategoryBreakdownShowsAllCategories(t *testing.T) {
+	// Create 8 categories of expenses — all should be shown.
 	var rows []transaction
 	cats := []string{"A", "B", "C", "D", "E", "F", "G", "H"}
 	for i, c := range cats {
@@ -113,10 +116,10 @@ func TestRenderCategoryBreakdownTopSixPlusOther(t *testing.T) {
 	}
 	output := renderCategoryBreakdown(rows, 80)
 
-	// Top 6 by amount should be H, G, F, E, D, C (largest first)
-	// "Other" should aggregate A + B
-	if !strings.Contains(output, "Other") {
-		t.Error("expected 'Other' bucket for categories beyond top 6")
+	for _, c := range cats {
+		if !strings.Contains(output, c) {
+			t.Errorf("expected category %q in output", c)
+		}
 	}
 }
 
