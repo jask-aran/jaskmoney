@@ -144,6 +144,21 @@ func TestRenderCategoryBreakdownIncludesKnownZeroSpendCategories(t *testing.T) {
 	}
 }
 
+func TestRenderCategoryBreakdownStableOrderOnTies(t *testing.T) {
+	rows := []transaction{
+		{amount: -10.0, categoryName: "B"},
+		{amount: -10.0, categoryName: "A"},
+	}
+
+	first := renderCategoryBreakdown(rows, nil, 80)
+	for i := 0; i < 20; i++ {
+		next := renderCategoryBreakdown(rows, nil, 80)
+		if next != first {
+			t.Fatalf("category breakdown output changed between renders on tie amounts")
+		}
+	}
+}
+
 // ---------------------------------------------------------------------------
 // Daily spend aggregation tests
 // ---------------------------------------------------------------------------
@@ -165,8 +180,8 @@ func TestAggregateDailySpendBasic(t *testing.T) {
 		t.Fatalf("expected %d dates, got %d", spendingTrackerDays, len(dates))
 	}
 	last := data[len(data)-1]
-	if last != 150.00 {
-		t.Errorf("daily spend = %.2f, want 150.00", last)
+	if last != 175.00 {
+		t.Errorf("daily spend = %.2f, want 175.00", last)
 	}
 }
 
@@ -457,14 +472,14 @@ func TestRenderHeaderContainsAllTabs(t *testing.T) {
 }
 
 func TestRenderHeaderActiveTabHighlight(t *testing.T) {
-	// Verify that tab 0 active contains "Dashboard" and tab 1 active contains "Transactions"
+	// Verify header still includes expected tab labels for current nav set.
 	h0 := renderHeader("App", 0, 80, "")
 	h1 := renderHeader("App", 1, 80, "")
 	if !strings.Contains(h0, "Dashboard") {
 		t.Error("tab 0 header missing Dashboard")
 	}
-	if !strings.Contains(h1, "Transactions") {
-		t.Error("tab 1 header missing Transactions")
+	if !strings.Contains(h1, "Settings") {
+		t.Error("tab 1 header missing Settings")
 	}
 }
 
@@ -482,7 +497,7 @@ func TestRenderHeaderZeroWidth(t *testing.T) {
 func TestRenderTransactionTableBasic(t *testing.T) {
 	rows := testDashboardRows()
 	cats := []category{{id: 1, name: "Groceries"}}
-	output := renderTransactionTable(rows, cats, nil, nil, 0, 0, 5, 80, sortByDate, false)
+	output := renderTransactionTable(rows, cats, nil, nil, nil, 0, 0, 5, 80, sortByDate, false)
 	if !strings.Contains(output, "Date") {
 		t.Error("missing Date column header")
 	}
@@ -499,7 +514,7 @@ func TestRenderTransactionTableBasic(t *testing.T) {
 
 func TestRenderTransactionTableNilCategoriesHidesColumn(t *testing.T) {
 	rows := testDashboardRows()
-	output := renderTransactionTable(rows, nil, nil, nil, 0, 0, 5, 80, sortByDate, false)
+	output := renderTransactionTable(rows, nil, nil, nil, nil, 0, 0, 5, 80, sortByDate, false)
 	if strings.Contains(output, "Category") {
 		t.Error("Category column should be hidden when categories is nil")
 	}
@@ -507,11 +522,11 @@ func TestRenderTransactionTableNilCategoriesHidesColumn(t *testing.T) {
 
 func TestRenderTransactionTableSortIndicator(t *testing.T) {
 	rows := testDashboardRows()
-	output := renderTransactionTable(rows, nil, nil, nil, 0, 0, 5, 80, sortByDate, true)
+	output := renderTransactionTable(rows, nil, nil, nil, nil, 0, 0, 5, 80, sortByDate, true)
 	if !strings.Contains(output, "▲") {
 		t.Error("missing ascending sort indicator")
 	}
-	output2 := renderTransactionTable(rows, nil, nil, nil, 0, 0, 5, 80, sortByDate, false)
+	output2 := renderTransactionTable(rows, nil, nil, nil, nil, 0, 0, 5, 80, sortByDate, false)
 	if !strings.Contains(output2, "▼") {
 		t.Error("missing descending sort indicator")
 	}
@@ -519,16 +534,35 @@ func TestRenderTransactionTableSortIndicator(t *testing.T) {
 
 func TestRenderTransactionTableScrollIndicator(t *testing.T) {
 	rows := testDashboardRows()
-	output := renderTransactionTable(rows, nil, nil, nil, 0, 0, 3, 80, sortByDate, false)
+	output := renderTransactionTable(rows, nil, nil, nil, nil, 0, 0, 3, 80, sortByDate, false)
 	if !strings.Contains(output, "showing") {
 		t.Error("missing scroll indicator")
 	}
 }
 
 func TestRenderTransactionTableEmpty(t *testing.T) {
-	output := renderTransactionTable(nil, nil, nil, nil, 0, 0, 10, 80, sortByDate, false)
+	output := renderTransactionTable(nil, nil, nil, nil, nil, 0, 0, 10, 80, sortByDate, false)
 	if !strings.Contains(output, "Date") {
 		t.Error("empty table should still show column headers")
+	}
+}
+
+func TestRenderTransactionTableDescriptionDisplayLimit40(t *testing.T) {
+	rows := []transaction{
+		{
+			id:          1,
+			dateISO:     "2026-02-10",
+			amount:      -12.34,
+			description: "123456789012345678901234567890123456789012345678901234567890",
+		},
+	}
+
+	output := renderTransactionTable(rows, nil, nil, nil, nil, 1, 0, 5, 120, sortByDate, false)
+	if strings.Contains(output, "12345678901234567890123456789012345678901") {
+		t.Fatal("description should not render past 40 chars in table")
+	}
+	if !strings.Contains(output, "123456789012345678901234567890123456789…") {
+		t.Fatal("expected 40-char capped description with ellipsis")
 	}
 }
 

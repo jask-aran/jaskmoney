@@ -57,6 +57,26 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.status = "Category deleted."
 		m.statusErr = false
 		return m, refreshCmd(m.db)
+	case tagSavedMsg:
+		if msg.err != nil {
+			m.setError(fmt.Sprintf("Tag save failed: %v", msg.err))
+			return m, nil
+		}
+		m.settMode = settModeNone
+		m.settInput = ""
+		m.settInput2 = ""
+		m.status = "Tag saved."
+		m.statusErr = false
+		return m, refreshCmd(m.db)
+	case tagDeletedMsg:
+		if msg.err != nil {
+			m.setError(fmt.Sprintf("Delete failed: %v", msg.err))
+			return m, nil
+		}
+		m.confirmAction = ""
+		m.status = "Tag deleted."
+		m.statusErr = false
+		return m, refreshCmd(m.db)
 	case ruleSavedMsg:
 		if msg.err != nil {
 			m.setError(fmt.Sprintf("Rule save failed: %v", msg.err))
@@ -91,6 +111,8 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m, nil
 	case quickCategoryAppliedMsg:
 		return m.handleQuickCategoryApplied(msg)
+	case quickTagsAppliedMsg:
+		return m.handleQuickTagsApplied(msg)
 	case accountNukedMsg:
 		if msg.err != nil {
 			m.setError(fmt.Sprintf("Account nuke failed: %v", msg.err))
@@ -118,6 +140,9 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 		if m.catPicker != nil {
 			return m.updateCatPicker(msg)
+		}
+		if m.tagPicker != nil {
+			return m.updateTagPicker(msg)
 		}
 		if m.accountNukePicker != nil {
 			return m.updateAccountNukePicker(msg)
@@ -167,6 +192,12 @@ func (m model) handleRefreshDone(msg refreshDoneMsg) (tea.Model, tea.Cmd) {
 	m.rows = msg.rows
 	m.categories = msg.categories
 	m.rules = msg.rules
+	m.tags = msg.tags
+	m.tagRules = msg.tagRules
+	m.txnTags = msg.txnTags
+	if m.txnTags == nil {
+		m.txnTags = make(map[int][]tag)
+	}
 	m.imports = msg.imports
 	m.accounts = msg.accounts
 	m.dbInfo = msg.info
@@ -290,6 +321,21 @@ func (m model) handleQuickCategoryApplied(msg quickCategoryAppliedMsg) (tea.Mode
 	return m, refreshCmd(m.db)
 }
 
+func (m model) handleQuickTagsApplied(msg quickTagsAppliedMsg) (tea.Model, tea.Cmd) {
+	if msg.err != nil {
+		m.setError(fmt.Sprintf("Quick tagging failed: %v", msg.err))
+		return m, nil
+	}
+	m.tagPicker = nil
+	m.tagPickerFor = nil
+	m.status = fmt.Sprintf("Updated tags for %d transaction(s).", msg.count)
+	m.statusErr = false
+	if m.db == nil {
+		return m, nil
+	}
+	return m, refreshCmd(m.db)
+}
+
 func (m model) currentAppSettings() appSettings {
 	out := defaultSettings()
 	out.RowsPerPage = m.maxVisibleRows
@@ -342,10 +388,16 @@ func (m model) updateMain(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	}
 	if m.isAction(scopeGlobal, actionNextTab, msg) {
 		m.activeTab = (m.activeTab + 1) % tabCount
+		if m.activeTab == tabManager {
+			m.managerMode = managerModeTransactions
+		}
 		return m, nil
 	}
 	if m.isAction(scopeGlobal, actionPrevTab, msg) {
 		m.activeTab = (m.activeTab - 1 + tabCount) % tabCount
+		if m.activeTab == tabManager {
+			m.managerMode = managerModeTransactions
+		}
 		return m, nil
 	}
 
@@ -364,6 +416,38 @@ func (m model) updateMain(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 }
 
 func (m model) updateManager(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
+	keyName := normalizeKeyName(msg.String())
+	if m.managerMode == managerModeTransactions {
+		if m.isAction(scopeManagerTransactions, actionFocusAccounts, msg) {
+			if m.rangeSelecting {
+				m.clearRangeSelection()
+			}
+			m.managerMode = managerModeAccounts
+			return m, nil
+		}
+		txnMode := m
+		txnMode.activeTab = tabTransactions
+		// Keep navigation viewport in sync with manager rendering for this key event,
+		// but do not persistently mutate configured rows-per-page.
+		originalMaxRows := txnMode.maxVisibleRows
+		txnMode.maxVisibleRows = m.managerVisibleRows()
+		next, cmd := txnMode.updateNavigation(msg)
+		out, ok := next.(model)
+		if !ok {
+			return m, cmd
+		}
+		out.maxVisibleRows = originalMaxRows
+		out.activeTab = tabManager
+		out.managerMode = managerModeTransactions
+		return out, cmd
+	}
+
+	if m.isAction(scopeManager, actionBack, msg) || keyName == "esc" {
+		m.managerMode = managerModeTransactions
+		m.ensureCursorInWindow()
+		return m, nil
+	}
+
 	if len(m.accounts) == 0 {
 		if m.isAction(scopeManager, actionAdd, msg) {
 			m.openManagerAccountModal(true, nil)
@@ -375,7 +459,6 @@ func (m model) updateManager(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	if idx < 0 {
 		return m, nil
 	}
-	keyName := normalizeKeyName(msg.String())
 	switch {
 	case m.isAction(scopeManager, actionNavigate, msg) && (keyName == "j" || keyName == "down" || keyName == "ctrl+n"):
 		if idx < len(m.accounts)-1 {
@@ -394,6 +477,8 @@ func (m model) updateManager(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	case m.isAction(scopeManager, actionAdd, msg):
 		m.openManagerAccountModal(true, nil)
 		return m, nil
+	case m.isAction(scopeManager, actionQuickTag, msg):
+		return m.openQuickTagPicker(m.getFilteredRows())
 	case m.isAction(scopeManager, actionToggleSelect, msg):
 		if m.filterAccounts == nil {
 			m.filterAccounts = make(map[int]bool)
@@ -514,10 +599,10 @@ func (m model) updateManagerModal(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	case m.isAction(scopeManagerModal, actionClose, msg):
 		m.closeManagerAccountModal()
 		return m, nil
-	case m.isAction(scopeManagerModal, actionMove, msg) && (keyName == "j" || keyName == "down" || keyName == "ctrl+n"):
+	case m.isAction(scopeManagerModal, actionNavigate, msg) && (keyName == "j" || keyName == "down" || keyName == "ctrl+n"):
 		m.managerEditFocus = (m.managerEditFocus + 1) % 4
 		return m, nil
-	case m.isAction(scopeManagerModal, actionMove, msg):
+	case m.isAction(scopeManagerModal, actionNavigate, msg):
 		m.managerEditFocus = (m.managerEditFocus - 1 + 4) % 4
 		return m, nil
 	case m.isAction(scopeManagerModal, actionColor, msg):
@@ -778,6 +863,8 @@ func (m model) updateNavigation(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			return m, nil
 		case m.isAction(scopeTransactions, actionQuickCategory, msg):
 			return m.openQuickCategoryPicker(filtered)
+		case m.isAction(scopeTransactions, actionQuickTag, msg):
+			return m.openQuickTagPicker(filtered)
 		case keyName == "esc":
 			if m.rangeSelecting {
 				m.clearRangeSelection()
@@ -850,6 +937,56 @@ func (m model) quickCategoryTargets(filtered []transaction) []int {
 	return []int{filtered[m.cursor].id}
 }
 
+func (m model) openQuickTagPicker(filtered []transaction) (tea.Model, tea.Cmd) {
+	targetIDs := m.quickCategoryTargets(filtered)
+	if len(targetIDs) == 0 {
+		m.status = "No transaction selected."
+		m.statusErr = false
+		return m, nil
+	}
+
+	items := make([]pickerItem, 0, len(m.tags))
+	var txnCategoryID *int
+	if len(targetIDs) == 1 {
+		if txn := m.findTxnByID(targetIDs[0]); txn != nil {
+			txnCategoryID = txn.categoryID
+		}
+	}
+	for _, tg := range m.tags {
+		section := "Global"
+		if tg.categoryID != nil {
+			if txnCategoryID != nil && *txnCategoryID == *tg.categoryID {
+				section = "Scoped"
+			} else {
+				section = "Other Scoped"
+			}
+		}
+		items = append(items, pickerItem{
+			ID:      tg.id,
+			Label:   tg.name,
+			Color:   tg.color,
+			Section: section,
+		})
+	}
+	m.tagPicker = newPicker("Quick Tags", items, true, "Create")
+	m.tagPickerFor = targetIDs
+	if len(targetIDs) == 1 {
+		for _, tg := range m.txnTags[targetIDs[0]] {
+			m.tagPicker.selected[tg.id] = true
+		}
+	}
+	return m, nil
+}
+
+func (m model) findTxnByID(id int) *transaction {
+	for i := range m.rows {
+		if m.rows[i].id == id {
+			return &m.rows[i]
+		}
+	}
+	return nil
+}
+
 func (m model) updateCatPicker(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	if m.catPicker == nil {
 		return m, nil
@@ -911,6 +1048,81 @@ func (m model) updateCatPicker(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 
 			n, err := updateTransactionsCategory(db, targetIDs, &catID)
 			return quickCategoryAppliedMsg{count: n, categoryName: name, created: created, err: err}
+		}
+	}
+	return m, nil
+}
+
+func (m model) updateTagPicker(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
+	if m.tagPicker == nil {
+		return m, nil
+	}
+	res := m.tagPicker.HandleKey(msg.String())
+	switch res.Action {
+	case pickerActionCancelled:
+		m.tagPicker = nil
+		m.tagPickerFor = nil
+		m.status = "Quick tagging cancelled."
+		m.statusErr = false
+		return m, nil
+	case pickerActionSubmitted:
+		if m.db == nil {
+			m.setError("Database not ready.")
+			return m, nil
+		}
+		targetIDs := append([]int(nil), m.tagPickerFor...)
+		selected := append([]int(nil), res.SelectedIDs...)
+		db := m.db
+		return m, func() tea.Msg {
+			if len(targetIDs) == 1 {
+				err := setTransactionTags(db, targetIDs[0], selected)
+				return quickTagsAppliedMsg{count: len(targetIDs), err: err}
+			}
+			_, err := addTagsToTransactions(db, targetIDs, selected)
+			return quickTagsAppliedMsg{count: len(targetIDs), err: err}
+		}
+	case pickerActionCreate:
+		if m.db == nil {
+			m.setError("Database not ready.")
+			return m, nil
+		}
+		name := strings.TrimSpace(res.CreatedQuery)
+		if name == "" {
+			m.setError("Tag name cannot be empty.")
+			return m, nil
+		}
+		targetIDs := append([]int(nil), m.tagPickerFor...)
+		db := m.db
+		return m, func() tea.Msg {
+			tagID := 0
+			created, err := insertTag(db, name, "", nil)
+			if err != nil {
+				existing, lookupErr := loadTagByNameCI(db, name)
+				if lookupErr != nil {
+					return quickTagsAppliedMsg{err: err}
+				}
+				if existing == nil {
+					return quickTagsAppliedMsg{err: err}
+				}
+				tagID = existing.id
+			} else {
+				tagID = created
+			}
+			if len(targetIDs) == 1 {
+				current, loadErr := loadTransactionTags(db)
+				if loadErr != nil {
+					return quickTagsAppliedMsg{err: loadErr}
+				}
+				desired := []int{tagID}
+				for _, tg := range current[targetIDs[0]] {
+					if tg.id != tagID {
+						desired = append(desired, tg.id)
+					}
+				}
+				return quickTagsAppliedMsg{count: 1, err: setTransactionTags(db, targetIDs[0], desired)}
+			}
+			_, err = addTagsToTransactions(db, targetIDs, []int{tagID})
+			return quickTagsAppliedMsg{count: len(targetIDs), err: err}
 		}
 	}
 	return m, nil
@@ -1115,13 +1327,13 @@ func (m model) updateDashboard(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 
 	keyName := normalizeKeyName(msg.String())
 	switch {
-	case m.isAction(scopeDashboardTimeframe, actionMove, msg) && (keyName == "h" || keyName == "left"):
+	case m.isAction(scopeDashboardTimeframe, actionColumn, msg) && (keyName == "h" || keyName == "left"):
 		m.dashTimeframeCursor--
 		if m.dashTimeframeCursor < 0 {
 			m.dashTimeframeCursor = dashTimeframeCount - 1
 		}
 		return m, nil
-	case m.isAction(scopeDashboardTimeframe, actionMove, msg):
+	case m.isAction(scopeDashboardTimeframe, actionColumn, msg):
 		m.dashTimeframeCursor = (m.dashTimeframeCursor + 1) % dashTimeframeCount
 		return m, nil
 	case m.isAction(scopeDashboardTimeframe, actionSelect, msg):
@@ -1377,14 +1589,17 @@ func (m model) findDetailTxn() *transaction {
 // settSectionForColumn returns the settSection index given current column and row.
 func settSectionForColumn(col, row int) int {
 	if col == settColRight {
-		if row == 0 {
+		if row <= 0 {
 			return settSecChart
 		}
 		return settSecDBImport
 	}
-	// Left column: row 0 = Categories, row 1 = Rules
-	if row == 0 {
+	// Left column: row 0 = Categories, row 1 = Tags, row 2 = Rules
+	if row <= 0 {
 		return settSecCategories
+	}
+	if row == 1 {
+		return settSecTags
 	}
 	return settSecRules
 }
@@ -1394,8 +1609,10 @@ func settColumnRow(sec int) (int, int) {
 	switch sec {
 	case settSecCategories:
 		return settColLeft, 0
-	case settSecRules:
+	case settSecTags:
 		return settColLeft, 1
+	case settSecRules:
+		return settColLeft, 2
 	case settSecChart:
 		return settColRight, 0
 	case settSecDBImport:
@@ -1408,6 +1625,8 @@ func settingsActiveScope(section int) string {
 	switch section {
 	case settSecCategories:
 		return scopeSettingsActiveCategories
+	case settSecTags:
+		return scopeSettingsActiveTags
 	case settSecRules:
 		return scopeSettingsActiveRules
 	case settSecChart:
@@ -1421,7 +1640,7 @@ func settingsActiveScope(section int) string {
 
 func (m model) updateSettings(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	// Text input modes (always handled first)
-	if m.settMode == settModeAddCat || m.settMode == settModeEditCat {
+	if m.settMode == settModeAddCat || m.settMode == settModeEditCat || m.settMode == settModeAddTag || m.settMode == settModeEditTag {
 		return m.updateSettingsTextInput(msg)
 	}
 	if m.settMode == settModeAddRule || m.settMode == settModeEditRule {
@@ -1468,7 +1687,11 @@ func (m model) updateSettings(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	case m.isAction(scopeSettingsNav, actionSection, msg) && (keyName == "j" || keyName == "down" || keyName == "ctrl+n"):
 		col, row := settColumnRow(m.settSection)
 		row++
-		if row > 1 {
+		maxRow := 2
+		if col == settColRight {
+			maxRow = 1
+		}
+		if row > maxRow {
 			row = 0
 		}
 		m.settSection = settSectionForColumn(col, row)
@@ -1477,7 +1700,11 @@ func (m model) updateSettings(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		col, row := settColumnRow(m.settSection)
 		row--
 		if row < 0 {
-			row = 1
+			if col == settColRight {
+				row = 1
+			} else {
+				row = 2
+			}
 		}
 		m.settSection = settSectionForColumn(col, row)
 		return m, nil
@@ -1507,6 +1734,8 @@ func (m model) updateSettingsActive(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	switch m.settSection {
 	case settSecCategories:
 		return m.updateSettingsCategories(msg)
+	case settSecTags:
+		return m.updateSettingsTags(msg)
 	case settSecRules:
 		return m.updateSettingsRules(msg)
 	case settSecChart:
@@ -1562,6 +1791,55 @@ func (m model) updateSettingsCategories(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			m.confirmID = cat.id
 			keyLabel := m.primaryActionKey(scopeSettingsActiveCategories, actionDelete, "d")
 			m.status = fmt.Sprintf("Press %s again to delete %q", keyLabel, cat.name)
+			return m, confirmTimerCmd()
+		}
+		return m, nil
+	}
+	return m, nil
+}
+
+func (m model) updateSettingsTags(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
+	keyName := normalizeKeyName(msg.String())
+	switch {
+	case m.isAction(scopeSettingsActiveTags, actionNavigate, msg) && (keyName == "j" || keyName == "down" || keyName == "ctrl+n"):
+		if m.settItemCursor < len(m.tags)-1 {
+			m.settItemCursor++
+		}
+		return m, nil
+	case m.isAction(scopeSettingsActiveTags, actionNavigate, msg):
+		if m.settItemCursor > 0 {
+			m.settItemCursor--
+		}
+		return m, nil
+	case m.isAction(scopeSettingsActiveTags, actionAdd, msg):
+		m.settMode = settModeAddTag
+		m.settInput = ""
+		m.settColorIdx = 0
+		m.settEditID = 0
+		return m, nil
+	case m.isAction(scopeSettingsActiveTags, actionEdit, msg):
+		if m.settItemCursor < len(m.tags) {
+			tg := m.tags[m.settItemCursor]
+			m.settMode = settModeEditTag
+			m.settEditID = tg.id
+			m.settInput = tg.name
+			m.settColorIdx = 0
+			colors := TagAccentColors()
+			for i, c := range colors {
+				if string(c) == tg.color {
+					m.settColorIdx = i
+					break
+				}
+			}
+		}
+		return m, nil
+	case m.isAction(scopeSettingsActiveTags, actionDelete, msg):
+		if m.settItemCursor < len(m.tags) {
+			tg := m.tags[m.settItemCursor]
+			m.confirmAction = "delete_tag"
+			m.confirmID = tg.id
+			keyLabel := m.primaryActionKey(scopeSettingsActiveTags, actionDelete, "d")
+			m.status = fmt.Sprintf("Press %s again to delete tag %q", keyLabel, tg.name)
 			return m, confirmTimerCmd()
 		}
 		return m, nil
@@ -1743,6 +2021,18 @@ func (m model) updateSettingsConfirm(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 				return ruleDeletedMsg{err: deleteCategoryRule(db, id)}
 			}
 		}
+	case "delete_tag":
+		if m.isAction(scopeSettingsActiveTags, actionDelete, msg) {
+			if m.db == nil {
+				return m, nil
+			}
+			db := m.db
+			id := m.confirmID
+			m.confirmAction = ""
+			return m, func() tea.Msg {
+				return tagDeletedMsg{err: deleteTag(db, id)}
+			}
+		}
 	case "clear_db":
 		if m.isAction(scopeSettingsActiveDBImport, actionClearDB, msg) {
 			if m.db == nil {
@@ -1766,26 +2056,32 @@ func (m model) updateSettingsConfirm(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 
 // updateSettingsTextInput handles text input for add/edit category.
 func (m model) updateSettingsTextInput(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
+	scope := scopeSettingsModeCat
+	palette := CategoryAccentColors()
+	isTagMode := m.settMode == settModeAddTag || m.settMode == settModeEditTag
+	if isTagMode {
+		scope = scopeSettingsModeTag
+		palette = TagAccentColors()
+	}
+
 	keyName := normalizeKeyName(msg.String())
 	switch {
-	case m.isAction(scopeSettingsModeCat, actionClose, msg):
+	case m.isAction(scope, actionClose, msg):
 		m.settMode = settModeNone
 		m.settInput = ""
 		m.settInput2 = ""
 		return m, nil
-	case m.isAction(scopeSettingsModeCat, actionColor, msg) && (keyName == "left" || keyName == "h"):
-		colors := CategoryAccentColors()
-		if len(colors) > 0 {
-			m.settColorIdx = (m.settColorIdx - 1 + len(colors)) % len(colors)
+	case m.isAction(scope, actionColor, msg) && (keyName == "left" || keyName == "h"):
+		if len(palette) > 0 {
+			m.settColorIdx = (m.settColorIdx - 1 + len(palette)) % len(palette)
 		}
 		return m, nil
-	case m.isAction(scopeSettingsModeCat, actionColor, msg):
-		colors := CategoryAccentColors()
-		if len(colors) > 0 {
-			m.settColorIdx = (m.settColorIdx + 1) % len(colors)
+	case m.isAction(scope, actionColor, msg):
+		if len(palette) > 0 {
+			m.settColorIdx = (m.settColorIdx + 1) % len(palette)
 		}
 		return m, nil
-	case m.isAction(scopeSettingsModeCat, actionSave, msg):
+	case m.isAction(scope, actionSave, msg):
 		if m.settInput == "" {
 			m.status = "Name cannot be empty."
 			return m, nil
@@ -1793,10 +2089,25 @@ func (m model) updateSettingsTextInput(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		if m.db == nil {
 			return m, nil
 		}
-		colors := CategoryAccentColors()
-		color := string(colors[m.settColorIdx])
+		color := ""
+		if len(palette) > 0 {
+			color = string(palette[m.settColorIdx%len(palette)])
+		}
 		name := m.settInput
 		db := m.db
+		if isTagMode {
+			if m.settMode == settModeAddTag {
+				return m, func() tea.Msg {
+					_, err := insertTag(db, name, color, nil)
+					return tagSavedMsg{err: err}
+				}
+			}
+			id := m.settEditID
+			return m, func() tea.Msg {
+				err := updateTag(db, id, name, color)
+				return tagSavedMsg{err: err}
+			}
+		}
 		if m.settMode == settModeAddCat {
 			return m, func() tea.Msg {
 				_, err := insertCategory(db, name, color)

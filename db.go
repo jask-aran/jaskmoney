@@ -13,7 +13,8 @@ import (
 // Schema version
 // ---------------------------------------------------------------------------
 
-const schemaVersion = 3
+const schemaVersion = 4
+const mandatoryIgnoreTagName = "IGNORE"
 
 // ---------------------------------------------------------------------------
 // Default categories seeded on fresh DB
@@ -37,11 +38,18 @@ var defaultCategories = []struct {
 	{"Uncategorised", "#7f849c", 10, 1},
 }
 
+var mandatoryTags = []struct {
+	name  string
+	color string
+}{
+	{mandatoryIgnoreTagName, "#f38ba8"},
+}
+
 // ---------------------------------------------------------------------------
 // Schema DDL
 // ---------------------------------------------------------------------------
 
-const schemaV2 = `
+const schemaV4 = `
 CREATE TABLE IF NOT EXISTS schema_meta (
 	version INTEGER NOT NULL
 );
@@ -62,49 +70,25 @@ CREATE TABLE IF NOT EXISTS category_rules (
 	UNIQUE(pattern)
 );
 
-CREATE TABLE IF NOT EXISTS transactions (
-	id            INTEGER PRIMARY KEY AUTOINCREMENT,
-	date_raw      TEXT NOT NULL,
-	date_iso      TEXT NOT NULL,
-	amount        REAL NOT NULL,
-	description   TEXT NOT NULL,
-	category_id   INTEGER REFERENCES categories(id) ON DELETE SET NULL,
-	notes         TEXT NOT NULL DEFAULT '',
-	import_id     INTEGER REFERENCES imports(id),
-	created_at    TEXT NOT NULL DEFAULT (datetime('now'))
-);
-
-CREATE TABLE IF NOT EXISTS imports (
-	id            INTEGER PRIMARY KEY AUTOINCREMENT,
-	filename      TEXT NOT NULL,
-	row_count     INTEGER NOT NULL,
-	imported_at   TEXT NOT NULL DEFAULT (datetime('now'))
-);
-
-CREATE INDEX IF NOT EXISTS idx_transactions_date ON transactions(date_iso);
-CREATE INDEX IF NOT EXISTS idx_transactions_category ON transactions(category_id);
-CREATE INDEX IF NOT EXISTS idx_category_rules_pattern ON category_rules(pattern);
-`
-
-const schemaV3 = `
-CREATE TABLE IF NOT EXISTS schema_meta (
-	version INTEGER NOT NULL
-);
-
-CREATE TABLE IF NOT EXISTS categories (
+CREATE TABLE IF NOT EXISTS tags (
 	id          INTEGER PRIMARY KEY AUTOINCREMENT,
 	name        TEXT NOT NULL UNIQUE,
-	color       TEXT NOT NULL,
-	sort_order  INTEGER NOT NULL DEFAULT 0,
-	is_default  INTEGER NOT NULL DEFAULT 0
+	color       TEXT NOT NULL DEFAULT '#94e2d5',
+	category_id INTEGER REFERENCES categories(id) ON DELETE SET NULL,
+	sort_order  INTEGER NOT NULL DEFAULT 0
 );
 
-CREATE TABLE IF NOT EXISTS category_rules (
-	id            INTEGER PRIMARY KEY AUTOINCREMENT,
-	pattern       TEXT NOT NULL,
-	category_id   INTEGER NOT NULL REFERENCES categories(id) ON DELETE CASCADE,
-	priority      INTEGER NOT NULL DEFAULT 0,
-	UNIQUE(pattern)
+CREATE TABLE IF NOT EXISTS transaction_tags (
+	transaction_id INTEGER NOT NULL REFERENCES transactions(id) ON DELETE CASCADE,
+	tag_id         INTEGER NOT NULL REFERENCES tags(id) ON DELETE CASCADE,
+	PRIMARY KEY (transaction_id, tag_id)
+);
+
+CREATE TABLE IF NOT EXISTS tag_rules (
+	id       INTEGER PRIMARY KEY AUTOINCREMENT,
+	pattern  TEXT NOT NULL UNIQUE,
+	tag_id   INTEGER NOT NULL REFERENCES tags(id) ON DELETE CASCADE,
+	priority INTEGER NOT NULL DEFAULT 0
 );
 
 CREATE TABLE IF NOT EXISTS accounts (
@@ -144,6 +128,8 @@ CREATE INDEX IF NOT EXISTS idx_transactions_category ON transactions(category_id
 CREATE INDEX IF NOT EXISTS idx_transactions_account ON transactions(account_id);
 CREATE INDEX IF NOT EXISTS idx_category_rules_pattern ON category_rules(pattern);
 CREATE INDEX IF NOT EXISTS idx_accounts_sort_order ON accounts(sort_order);
+CREATE INDEX IF NOT EXISTS idx_tags_sort_order ON tags(sort_order);
+CREATE INDEX IF NOT EXISTS idx_tag_rules_pattern ON tag_rules(pattern);
 `
 
 // ---------------------------------------------------------------------------
@@ -176,6 +162,10 @@ func openDB(path string) (*sql.DB, error) {
 			return nil, fmt.Errorf("migrate schema: %w", err)
 		}
 	}
+	if err := ensureMandatoryTags(db); err != nil {
+		_ = db.Close()
+		return nil, fmt.Errorf("ensure mandatory tags: %w", err)
+	}
 
 	return db, nil
 }
@@ -204,119 +194,47 @@ func currentSchemaVersion(db *sql.DB) (int, error) {
 	return ver, err
 }
 
-// migrateSchema evolves the database from fromVersion to the current schema.
-// When migrating from v1 (version 0), existing transactions are preserved with
-// category_id = NULL. Tables that don't exist in v1 are created fresh.
+// migrateSchema upgrades the schema to the current version.
 func migrateSchema(db *sql.DB, fromVersion int) error {
-	if fromVersion == 0 {
-		return migrateFromV1(db)
+	if fromVersion == 3 {
+		return migrateFromV3ToV4(db)
 	}
-	if fromVersion == 2 {
-		return migrateFromV2(db)
-	}
-	// Unknown version — drop and recreate (should not happen in practice).
 	return migrateClean(db)
 }
 
-// migrateFromV1 preserves v1 transactions while adding v3 tables and columns.
-func migrateFromV1(db *sql.DB) error {
-	// Check whether a v1 transactions table exists.
-	var hasTxns int
-	err := db.QueryRow(`SELECT COUNT(*) FROM sqlite_master WHERE type='table' AND name='transactions'`).Scan(&hasTxns)
-	if err != nil {
-		return fmt.Errorf("check transactions table: %w", err)
+func migrateFromV3ToV4(db *sql.DB) error {
+	stmts := []string{
+		`CREATE TABLE IF NOT EXISTS tags (
+			id          INTEGER PRIMARY KEY AUTOINCREMENT,
+			name        TEXT NOT NULL UNIQUE,
+			color       TEXT NOT NULL DEFAULT '#94e2d5',
+			category_id INTEGER REFERENCES categories(id) ON DELETE SET NULL,
+			sort_order  INTEGER NOT NULL DEFAULT 0
+		)`,
+		`CREATE TABLE IF NOT EXISTS transaction_tags (
+			transaction_id INTEGER NOT NULL REFERENCES transactions(id) ON DELETE CASCADE,
+			tag_id         INTEGER NOT NULL REFERENCES tags(id) ON DELETE CASCADE,
+			PRIMARY KEY (transaction_id, tag_id)
+		)`,
+		`CREATE TABLE IF NOT EXISTS tag_rules (
+			id       INTEGER PRIMARY KEY AUTOINCREMENT,
+			pattern  TEXT NOT NULL UNIQUE,
+			tag_id   INTEGER NOT NULL REFERENCES tags(id) ON DELETE CASCADE,
+			priority INTEGER NOT NULL DEFAULT 0
+		)`,
+		`CREATE INDEX IF NOT EXISTS idx_tags_sort_order ON tags(sort_order)`,
+		`CREATE INDEX IF NOT EXISTS idx_tag_rules_pattern ON tag_rules(pattern)`,
 	}
-
-	if hasTxns == 1 {
-		// Rename old transactions table so we can recreate with the v2 schema.
-		if _, err := db.Exec("ALTER TABLE transactions RENAME TO _v1_transactions"); err != nil {
-			return fmt.Errorf("rename v1 transactions: %w", err)
+	for _, stmt := range stmts {
+		if _, err := db.Exec(stmt); err != nil {
+			return fmt.Errorf("migrate v3->v4 statement failed: %w", err)
 		}
-	}
-
-	// Drop any other old tables that may conflict.
-	for _, t := range []string{"category_rules", "imports", "categories", "schema_meta"} {
-		if _, err := db.Exec("DROP TABLE IF EXISTS " + t); err != nil {
-			return fmt.Errorf("drop table %s: %w", t, err)
-		}
-	}
-
-	// Create full v2 schema first, then evolve to v3.
-	if _, err := db.Exec(schemaV2); err != nil {
-		return fmt.Errorf("create v2 schema: %w", err)
-	}
-	if err := seedDefaultCategories(db); err != nil {
-		return fmt.Errorf("seed categories: %w", err)
-	}
-
-	// Copy v1 rows into v2 transactions table (category_id = NULL, notes = '').
-	if hasTxns == 1 {
-		_, err := db.Exec(`
-			INSERT INTO transactions (date_raw, date_iso, amount, description, notes)
-			SELECT date_raw, date_iso, amount, description, ''
-			FROM _v1_transactions
-		`)
-		if err != nil {
-			return fmt.Errorf("copy v1 transactions: %w", err)
-		}
-		if _, err := db.Exec("DROP TABLE _v1_transactions"); err != nil {
-			return fmt.Errorf("drop temp v1 table: %w", err)
-		}
-	}
-
-	if _, err := db.Exec("INSERT INTO schema_meta (version) VALUES (2)"); err != nil {
-		return fmt.Errorf("insert schema version v2: %w", err)
-	}
-	if err := migrateFromV2(db); err != nil {
-		return fmt.Errorf("migrate v2->v3: %w", err)
-	}
-	return nil
-}
-
-func migrateFromV2(db *sql.DB) error {
-	if _, err := db.Exec(`
-		CREATE TABLE IF NOT EXISTS accounts (
-			id         INTEGER PRIMARY KEY AUTOINCREMENT,
-			name       TEXT NOT NULL UNIQUE,
-			type       TEXT NOT NULL CHECK(type IN ('debit','credit')) DEFAULT 'debit',
-			sort_order INTEGER NOT NULL DEFAULT 0,
-			is_active  INTEGER NOT NULL DEFAULT 1
-		)
-	`); err != nil {
-		return fmt.Errorf("create accounts table: %w", err)
-	}
-	if _, err := db.Exec(`
-		CREATE TABLE IF NOT EXISTS account_selection (
-			account_id INTEGER NOT NULL REFERENCES accounts(id) ON DELETE CASCADE
-		)
-	`); err != nil {
-		return fmt.Errorf("create account_selection table: %w", err)
-	}
-	hasAccountID, err := tableHasColumn(db, "transactions", "account_id")
-	if err != nil {
-		return fmt.Errorf("check transactions.account_id: %w", err)
-	}
-	if !hasAccountID {
-		if _, err := db.Exec(`ALTER TABLE transactions ADD COLUMN account_id INTEGER REFERENCES accounts(id)`); err != nil {
-			return fmt.Errorf("add transactions.account_id: %w", err)
-		}
-	}
-	if _, err := db.Exec(`CREATE INDEX IF NOT EXISTS idx_transactions_account ON transactions(account_id)`); err != nil {
-		return fmt.Errorf("create transactions account index: %w", err)
-	}
-	if _, err := db.Exec(`CREATE INDEX IF NOT EXISTS idx_accounts_sort_order ON accounts(sort_order)`); err != nil {
-		return fmt.Errorf("create accounts sort index: %w", err)
-	}
-
-	seedID, err := ensureSeedANZAccount(db)
-	if err != nil {
-		return fmt.Errorf("ensure seed ANZ account: %w", err)
-	}
-	if _, err := db.Exec(`UPDATE transactions SET account_id = ? WHERE account_id IS NULL`, seedID); err != nil {
-		return fmt.Errorf("backfill transactions account_id: %w", err)
 	}
 	if _, err := db.Exec(`DELETE FROM schema_meta`); err != nil {
 		return fmt.Errorf("clear schema_meta: %w", err)
+	}
+	if err := ensureMandatoryTags(db); err != nil {
+		return fmt.Errorf("ensure tags v3->v4: %w", err)
 	}
 	if _, err := db.Exec(`INSERT INTO schema_meta (version) VALUES (?)`, schemaVersion); err != nil {
 		return fmt.Errorf("set schema version: %w", err)
@@ -324,12 +242,17 @@ func migrateFromV2(db *sql.DB) error {
 	return nil
 }
 
-// migrateClean drops everything and starts fresh (fallback for unknown versions).
+// migrateClean drops everything and starts fresh at schema v4.
 func migrateClean(db *sql.DB) error {
 	drops := []string{
+		"DROP TABLE IF EXISTS transaction_tags",
+		"DROP TABLE IF EXISTS tag_rules",
 		"DROP TABLE IF EXISTS category_rules",
+		"DROP TABLE IF EXISTS account_selection",
 		"DROP TABLE IF EXISTS transactions",
 		"DROP TABLE IF EXISTS imports",
+		"DROP TABLE IF EXISTS tags",
+		"DROP TABLE IF EXISTS accounts",
 		"DROP TABLE IF EXISTS categories",
 		"DROP TABLE IF EXISTS schema_meta",
 	}
@@ -338,40 +261,17 @@ func migrateClean(db *sql.DB) error {
 			return fmt.Errorf("drop table: %w", err)
 		}
 	}
-	if _, err := db.Exec(schemaV2); err != nil {
-		return fmt.Errorf("create v2 schema: %w", err)
+	if _, err := db.Exec(schemaV4); err != nil {
+		return fmt.Errorf("create v4 schema: %w", err)
 	}
 	if err := seedDefaultCategories(db); err != nil {
 		return fmt.Errorf("seed categories: %w", err)
 	}
-	if _, err := db.Exec(`CREATE TABLE IF NOT EXISTS accounts (
-		id         INTEGER PRIMARY KEY AUTOINCREMENT,
-		name       TEXT NOT NULL UNIQUE,
-		type       TEXT NOT NULL CHECK(type IN ('debit','credit')) DEFAULT 'debit',
-		sort_order INTEGER NOT NULL DEFAULT 0,
-		is_active  INTEGER NOT NULL DEFAULT 1
-	)`); err != nil {
-		return fmt.Errorf("create accounts table: %w", err)
-	}
-	if _, err := db.Exec(`CREATE TABLE IF NOT EXISTS account_selection (
-		account_id INTEGER NOT NULL REFERENCES accounts(id) ON DELETE CASCADE
-	)`); err != nil {
-		return fmt.Errorf("create account_selection table: %w", err)
-	}
-	if _, err := db.Exec(`ALTER TABLE transactions ADD COLUMN account_id INTEGER REFERENCES accounts(id)`); err != nil {
-		return fmt.Errorf("add transactions.account_id: %w", err)
-	}
-	if _, err := db.Exec(`CREATE INDEX IF NOT EXISTS idx_transactions_account ON transactions(account_id)`); err != nil {
-		return fmt.Errorf("create transactions account index: %w", err)
-	}
-	if _, err := db.Exec(`CREATE INDEX IF NOT EXISTS idx_accounts_sort_order ON accounts(sort_order)`); err != nil {
-		return fmt.Errorf("create accounts sort index: %w", err)
+	if err := ensureMandatoryTags(db); err != nil {
+		return fmt.Errorf("seed tags: %w", err)
 	}
 	if _, err := db.Exec("INSERT INTO schema_meta (version) VALUES (?)", schemaVersion); err != nil {
 		return fmt.Errorf("insert schema version: %w", err)
-	}
-	if _, err := ensureSeedANZAccount(db); err != nil {
-		return fmt.Errorf("seed ANZ account: %w", err)
 	}
 	return nil
 }
@@ -395,56 +295,21 @@ func seedDefaultCategories(db *sql.DB) error {
 	return nil
 }
 
-func tableHasColumn(db *sql.DB, tableName, columnName string) (bool, error) {
-	rows, err := db.Query("PRAGMA table_info(" + tableName + ")")
-	if err != nil {
-		return false, err
-	}
-	defer rows.Close()
-	for rows.Next() {
-		var cid int
-		var name, colType string
-		var notNull, pk int
-		var dflt sql.NullString
-		if err := rows.Scan(&cid, &name, &colType, &notNull, &dflt, &pk); err != nil {
-			return false, err
+func ensureMandatoryTags(db *sql.DB) error {
+	for _, t := range mandatoryTags {
+		var id int
+		err := db.QueryRow(`SELECT id FROM tags WHERE LOWER(name) = LOWER(?) LIMIT 1`, t.name).Scan(&id)
+		if err == nil {
+			continue
 		}
-		if strings.EqualFold(name, columnName) {
-			return true, nil
+		if err != sql.ErrNoRows {
+			return fmt.Errorf("lookup mandatory tag %q: %w", t.name, err)
+		}
+		if _, err := insertTag(db, t.name, t.color, nil); err != nil {
+			return fmt.Errorf("insert mandatory tag %q: %w", t.name, err)
 		}
 	}
-	return false, rows.Err()
-}
-
-func ensureSeedANZAccount(db *sql.DB) (int, error) {
-	var id int
-	err := db.QueryRow(`
-		SELECT id
-		FROM accounts
-		WHERE LOWER(name) = LOWER(?)
-		LIMIT 1
-	`, "ANZ").Scan(&id)
-	if err == nil {
-		if _, err := db.Exec(`UPDATE accounts SET type='credit' WHERE id = ?`, id); err != nil {
-			return 0, fmt.Errorf("ensure ANZ credit type: %w", err)
-		}
-		return id, nil
-	}
-	if err != sql.ErrNoRows {
-		return 0, fmt.Errorf("query ANZ seed account: %w", err)
-	}
-	res, err := db.Exec(`
-		INSERT INTO accounts (name, type, sort_order, is_active)
-		VALUES (?, 'credit', 1, 1)
-	`, "ANZ")
-	if err != nil {
-		return 0, fmt.Errorf("insert ANZ seed account: %w", err)
-	}
-	lastID, err := res.LastInsertId()
-	if err != nil {
-		return 0, fmt.Errorf("last insert id for ANZ seed account: %w", err)
-	}
-	return int(lastID), nil
+	return nil
 }
 
 // ---------------------------------------------------------------------------
@@ -793,6 +658,289 @@ func applyCategoryRules(db *sql.DB) (int, error) {
 }
 
 // ---------------------------------------------------------------------------
+// Tags and tag rules
+// ---------------------------------------------------------------------------
+
+type tag struct {
+	id         int
+	name       string
+	color      string
+	categoryID *int
+	sortOrder  int
+}
+
+type tagRule struct {
+	id       int
+	pattern  string
+	tagID    int
+	priority int
+}
+
+func loadTags(db *sql.DB) ([]tag, error) {
+	rows, err := db.Query(`
+		SELECT id, name, color, category_id, sort_order
+		FROM tags
+		ORDER BY sort_order ASC, LOWER(name) ASC, id ASC
+	`)
+	if err != nil {
+		return nil, fmt.Errorf("query tags: %w", err)
+	}
+	defer rows.Close()
+	var out []tag
+	for rows.Next() {
+		var t tag
+		if err := rows.Scan(&t.id, &t.name, &t.color, &t.categoryID, &t.sortOrder); err != nil {
+			return nil, fmt.Errorf("scan tag: %w", err)
+		}
+		out = append(out, t)
+	}
+	return out, rows.Err()
+}
+
+func loadTagByNameCI(db *sql.DB, name string) (*tag, error) {
+	var t tag
+	err := db.QueryRow(`
+		SELECT id, name, color, category_id, sort_order
+		FROM tags
+		WHERE LOWER(name) = LOWER(?)
+		LIMIT 1
+	`, name).Scan(&t.id, &t.name, &t.color, &t.categoryID, &t.sortOrder)
+	if err == sql.ErrNoRows {
+		return nil, nil
+	}
+	if err != nil {
+		return nil, fmt.Errorf("query tag by name: %w", err)
+	}
+	return &t, nil
+}
+
+func insertTag(db *sql.DB, name, color string, categoryID *int) (int, error) {
+	var maxOrder int
+	if err := db.QueryRow(`SELECT COALESCE(MAX(sort_order), 0) FROM tags`).Scan(&maxOrder); err != nil {
+		return 0, fmt.Errorf("max tag sort_order: %w", err)
+	}
+	if strings.TrimSpace(color) == "" {
+		color = autoTagColor(name)
+	}
+	res, err := db.Exec(`
+		INSERT INTO tags (name, color, category_id, sort_order)
+		VALUES (?, ?, ?, ?)
+	`, name, color, categoryID, maxOrder+1)
+	if err != nil {
+		return 0, fmt.Errorf("insert tag: %w", err)
+	}
+	lastID, err := res.LastInsertId()
+	if err != nil {
+		return 0, fmt.Errorf("last insert id tag: %w", err)
+	}
+	return int(lastID), nil
+}
+
+func updateTag(db *sql.DB, id int, name, color string) error {
+	if strings.TrimSpace(color) == "" {
+		color = autoTagColor(name)
+	}
+	if _, err := db.Exec(`UPDATE tags SET name = ?, color = ? WHERE id = ?`, name, color, id); err != nil {
+		return fmt.Errorf("update tag: %w", err)
+	}
+	return nil
+}
+
+func deleteTag(db *sql.DB, id int) error {
+	var name string
+	if err := db.QueryRow(`SELECT name FROM tags WHERE id = ?`, id).Scan(&name); err != nil {
+		return fmt.Errorf("lookup tag: %w", err)
+	}
+	if strings.EqualFold(strings.TrimSpace(name), mandatoryIgnoreTagName) {
+		return fmt.Errorf("cannot delete mandatory tag %q", mandatoryIgnoreTagName)
+	}
+	if _, err := db.Exec(`DELETE FROM tags WHERE id = ?`, id); err != nil {
+		return fmt.Errorf("delete tag: %w", err)
+	}
+	return nil
+}
+
+func loadTagRules(db *sql.DB) ([]tagRule, error) {
+	rows, err := db.Query(`
+		SELECT id, pattern, tag_id, priority
+		FROM tag_rules
+		ORDER BY priority DESC, id ASC
+	`)
+	if err != nil {
+		return nil, fmt.Errorf("query tag rules: %w", err)
+	}
+	defer rows.Close()
+	var out []tagRule
+	for rows.Next() {
+		var r tagRule
+		if err := rows.Scan(&r.id, &r.pattern, &r.tagID, &r.priority); err != nil {
+			return nil, fmt.Errorf("scan tag rule: %w", err)
+		}
+		out = append(out, r)
+	}
+	return out, rows.Err()
+}
+
+func insertTagRule(db *sql.DB, pattern string, tagID int) (int, error) {
+	res, err := db.Exec(`
+		INSERT INTO tag_rules (pattern, tag_id, priority)
+		VALUES (?, ?, 0)
+	`, pattern, tagID)
+	if err != nil {
+		return 0, fmt.Errorf("insert tag rule: %w", err)
+	}
+	lastID, err := res.LastInsertId()
+	if err != nil {
+		return 0, fmt.Errorf("last insert id tag rule: %w", err)
+	}
+	return int(lastID), nil
+}
+
+func loadTransactionTags(db *sql.DB) (map[int][]tag, error) {
+	rows, err := db.Query(`
+		SELECT tt.transaction_id, t.id, t.name, t.color, t.category_id, t.sort_order
+		FROM transaction_tags tt
+		JOIN tags t ON t.id = tt.tag_id
+		ORDER BY tt.transaction_id ASC, t.sort_order ASC, LOWER(t.name) ASC, t.id ASC
+	`)
+	if err != nil {
+		return nil, fmt.Errorf("query transaction tags: %w", err)
+	}
+	defer rows.Close()
+	out := make(map[int][]tag)
+	for rows.Next() {
+		var txnID int
+		var t tag
+		if err := rows.Scan(&txnID, &t.id, &t.name, &t.color, &t.categoryID, &t.sortOrder); err != nil {
+			return nil, fmt.Errorf("scan transaction tag: %w", err)
+		}
+		out[txnID] = append(out[txnID], t)
+	}
+	return out, rows.Err()
+}
+
+func upsertTransactionTag(db *sql.DB, txnID, tagID int) error {
+	if _, err := db.Exec(`
+		INSERT INTO transaction_tags (transaction_id, tag_id)
+		VALUES (?, ?)
+		ON CONFLICT(transaction_id, tag_id) DO NOTHING
+	`, txnID, tagID); err != nil {
+		return fmt.Errorf("upsert transaction tag txn=%d tag=%d: %w", txnID, tagID, err)
+	}
+	return nil
+}
+
+func setTransactionTags(db *sql.DB, txnID int, tagIDs []int) error {
+	tx, err := db.Begin()
+	if err != nil {
+		return fmt.Errorf("begin set transaction tags: %w", err)
+	}
+	defer tx.Rollback() //nolint:errcheck
+	if _, err := tx.Exec(`DELETE FROM transaction_tags WHERE transaction_id = ?`, txnID); err != nil {
+		return fmt.Errorf("clear transaction tags: %w", err)
+	}
+	for _, tagID := range tagIDs {
+		if _, err := tx.Exec(`INSERT INTO transaction_tags (transaction_id, tag_id) VALUES (?, ?)`, txnID, tagID); err != nil {
+			return fmt.Errorf("insert transaction tag: %w", err)
+		}
+	}
+	if err := tx.Commit(); err != nil {
+		return fmt.Errorf("commit set transaction tags: %w", err)
+	}
+	return nil
+}
+
+func addTagsToTransactions(db *sql.DB, txnIDs, tagIDs []int) (int, error) {
+	if len(txnIDs) == 0 || len(tagIDs) == 0 {
+		return 0, nil
+	}
+	tx, err := db.Begin()
+	if err != nil {
+		return 0, fmt.Errorf("begin add tags to transactions: %w", err)
+	}
+	defer tx.Rollback() //nolint:errcheck
+
+	affected := 0
+	for _, txnID := range txnIDs {
+		for _, tagID := range tagIDs {
+			res, err := tx.Exec(`
+				INSERT INTO transaction_tags (transaction_id, tag_id)
+				VALUES (?, ?)
+				ON CONFLICT(transaction_id, tag_id) DO NOTHING
+			`, txnID, tagID)
+			if err != nil {
+				return 0, fmt.Errorf("insert transaction tag txn=%d tag=%d: %w", txnID, tagID, err)
+			}
+			n, _ := res.RowsAffected()
+			affected += int(n)
+		}
+	}
+	if err := tx.Commit(); err != nil {
+		return 0, fmt.Errorf("commit add tags to transactions: %w", err)
+	}
+	return affected, nil
+}
+
+func applyTagRules(db *sql.DB) (int, error) {
+	rules, err := loadTagRules(db)
+	if err != nil {
+		return 0, err
+	}
+	rows, err := db.Query(`SELECT id, description FROM transactions`)
+	if err != nil {
+		return 0, fmt.Errorf("query transactions for tag rules: %w", err)
+	}
+	defer rows.Close()
+
+	type txnDesc struct {
+		id   int
+		desc string
+	}
+	var txns []txnDesc
+	for rows.Next() {
+		var t txnDesc
+		if err := rows.Scan(&t.id, &t.desc); err != nil {
+			return 0, fmt.Errorf("scan txn for tag rules: %w", err)
+		}
+		txns = append(txns, t)
+	}
+	if err := rows.Err(); err != nil {
+		return 0, err
+	}
+
+	applied := 0
+	for _, r := range rules {
+		pat := strings.ToLower(strings.TrimSpace(r.pattern))
+		if pat == "" {
+			continue
+		}
+		for _, txn := range txns {
+			if !strings.Contains(strings.ToLower(txn.desc), pat) {
+				continue
+			}
+			if err := upsertTransactionTag(db, txn.id, r.tagID); err != nil {
+				return applied, fmt.Errorf("apply tag rule %q: %w", r.pattern, err)
+			}
+			applied++
+		}
+	}
+	return applied, nil
+}
+
+func autoTagColor(name string) string {
+	palette := TagAccentColors()
+	if len(palette) == 0 {
+		return "#94e2d5"
+	}
+	s := strings.ToLower(strings.TrimSpace(name))
+	sum := 0
+	for i := 0; i < len(s); i++ {
+		sum += int(s[i]) * (i + 1)
+	}
+	return string(palette[sum%len(palette)])
+}
+
+// ---------------------------------------------------------------------------
 // Import record helpers
 // ---------------------------------------------------------------------------
 
@@ -1064,6 +1212,8 @@ type dbInfo struct {
 	transactionCount int
 	categoryCount    int
 	ruleCount        int
+	tagCount         int
+	tagRuleCount     int
 	importCount      int
 	accountCount     int
 }
@@ -1083,6 +1233,12 @@ func loadDBInfo(db *sql.DB) (dbInfo, error) {
 	}
 	if err := db.QueryRow("SELECT COUNT(*) FROM category_rules").Scan(&info.ruleCount); err != nil {
 		return info, fmt.Errorf("rule count: %w", err)
+	}
+	if err := db.QueryRow("SELECT COUNT(*) FROM tags").Scan(&info.tagCount); err != nil {
+		return info, fmt.Errorf("tag count: %w", err)
+	}
+	if err := db.QueryRow("SELECT COUNT(*) FROM tag_rules").Scan(&info.tagRuleCount); err != nil {
+		return info, fmt.Errorf("tag rule count: %w", err)
 	}
 	if err := db.QueryRow("SELECT COUNT(*) FROM imports").Scan(&info.importCount); err != nil {
 		return info, fmt.Errorf("import count: %w", err)
@@ -1127,6 +1283,18 @@ func refreshCmd(db *sql.DB) tea.Cmd {
 		if err != nil {
 			return refreshDoneMsg{err: err}
 		}
+		tags, err := loadTags(db)
+		if err != nil {
+			return refreshDoneMsg{err: err}
+		}
+		tagRules, err := loadTagRules(db)
+		if err != nil {
+			return refreshDoneMsg{err: err}
+		}
+		txnTags, err := loadTransactionTags(db)
+		if err != nil {
+			return refreshDoneMsg{err: err}
+		}
 		imports, err := loadImports(db)
 		if err != nil {
 			return refreshDoneMsg{err: err}
@@ -1147,6 +1315,9 @@ func refreshCmd(db *sql.DB) tea.Cmd {
 			rows:             rows,
 			categories:       cats,
 			rules:            rules,
+			tags:             tags,
+			tagRules:         tagRules,
+			txnTags:          txnTags,
 			imports:          imports,
 			accounts:         accounts,
 			selectedAccounts: selectedAccounts,

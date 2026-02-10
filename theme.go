@@ -82,3 +82,13 @@ func CategoryAccentColors() []lipgloss.Color {
 		colorYellow, colorRed, colorMaroon, colorRosewater, colorSky,
 	}
 }
+
+// TagAccentColors returns the set of accent colors available for tag assignment.
+// This palette intentionally differs from categories.
+func TagAccentColors() []lipgloss.Color {
+	return []lipgloss.Color{
+		colorRosewater, colorSky, colorLavender, colorFlamingo,
+		colorSapphire, colorYellow, colorMaroon, colorMauve,
+		colorPink, colorTeal, colorBlue, colorGreen,
+	}
+}

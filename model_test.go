@@ -30,7 +30,7 @@ func testTransactions() []transaction {
 
 func TestMatchesSearchEmptyQuery(t *testing.T) {
 	txn := transaction{description: "anything"}
-	if !matchesSearch(txn, "") {
+	if !matchesSearch(txn, "", nil) {
 		t.Error("empty query should match everything")
 	}
 }
@@ -50,7 +50,7 @@ func TestMatchesSearchDescription(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.query, func(t *testing.T) {
-			if got := matchesSearch(txn, tt.query); got != tt.want {
+			if got := matchesSearch(txn, tt.query, nil); got != tt.want {
 				t.Errorf("matchesSearch(%q) = %v, want %v", tt.query, got, tt.want)
 			}
 		})
@@ -59,7 +59,7 @@ func TestMatchesSearchDescription(t *testing.T) {
 
 func TestFilteredRowsSearch(t *testing.T) {
 	rows := testTransactions()
-	result := filteredRows(rows, "woolworths", nil, nil, sortByDate, false)
+	result := filteredRows(rows, "woolworths", nil, nil, nil, sortByDate, false)
 	if len(result) != 1 {
 		t.Fatalf("expected 1 result for 'woolworths', got %d", len(result))
 	}
@@ -74,7 +74,7 @@ func TestFilteredRowsSearch(t *testing.T) {
 
 func TestSortByDateAscending(t *testing.T) {
 	rows := testTransactions()
-	result := filteredRows(rows, "", nil, nil, sortByDate, true)
+	result := filteredRows(rows, "", nil, nil, nil, sortByDate, true)
 	if len(result) != 5 {
 		t.Fatalf("expected 5 rows, got %d", len(result))
 	}
@@ -89,7 +89,7 @@ func TestSortByDateAscending(t *testing.T) {
 
 func TestSortByDateDescending(t *testing.T) {
 	rows := testTransactions()
-	result := filteredRows(rows, "", nil, nil, sortByDate, false)
+	result := filteredRows(rows, "", nil, nil, nil, sortByDate, false)
 	// Descending: newest first
 	if result[0].dateISO != "2026-02-04" {
 		t.Errorf("first row dateISO = %q, want %q", result[0].dateISO, "2026-02-04")
@@ -98,7 +98,7 @@ func TestSortByDateDescending(t *testing.T) {
 
 func TestSortByAmount(t *testing.T) {
 	rows := testTransactions()
-	result := filteredRows(rows, "", nil, nil, sortByAmount, true)
+	result := filteredRows(rows, "", nil, nil, nil, sortByAmount, true)
 	// Ascending: most negative first
 	if result[0].amount != -55.30 {
 		t.Errorf("first row amount = %.2f, want -55.30", result[0].amount)
@@ -110,7 +110,7 @@ func TestSortByAmount(t *testing.T) {
 
 func TestSortByCategory(t *testing.T) {
 	rows := testTransactions()
-	result := filteredRows(rows, "", nil, nil, sortByCategory, true)
+	result := filteredRows(rows, "", nil, nil, nil, sortByCategory, true)
 	// Ascending alphabetical by category name
 	if result[0].categoryName != "Dining & Drinks" {
 		t.Errorf("first category = %q, want %q", result[0].categoryName, "Dining & Drinks")
@@ -119,7 +119,7 @@ func TestSortByCategory(t *testing.T) {
 
 func TestSortByDescription(t *testing.T) {
 	rows := testTransactions()
-	result := filteredRows(rows, "", nil, nil, sortByDescription, true)
+	result := filteredRows(rows, "", nil, nil, nil, sortByDescription, true)
 	if result[0].description != "DAN MURPHYS" {
 		t.Errorf("first description = %q, want %q", result[0].description, "DAN MURPHYS")
 	}
@@ -131,7 +131,7 @@ func TestSortByDescription(t *testing.T) {
 
 func TestCategoryFilterNil(t *testing.T) {
 	rows := testTransactions()
-	result := filteredRows(rows, "", nil, nil, sortByDate, false)
+	result := filteredRows(rows, "", nil, nil, nil, sortByDate, false)
 	if len(result) != 5 {
 		t.Errorf("nil filter should return all rows, got %d", len(result))
 	}
@@ -140,7 +140,7 @@ func TestCategoryFilterNil(t *testing.T) {
 func TestCategoryFilterSingle(t *testing.T) {
 	rows := testTransactions()
 	filter := map[int]bool{2: true} // Groceries
-	result := filteredRows(rows, "", filter, nil, sortByDate, false)
+	result := filteredRows(rows, "", filter, nil, nil, sortByDate, false)
 	if len(result) != 1 {
 		t.Fatalf("expected 1 Groceries row, got %d", len(result))
 	}
@@ -152,7 +152,7 @@ func TestCategoryFilterSingle(t *testing.T) {
 func TestCategoryFilterMultiple(t *testing.T) {
 	rows := testTransactions()
 	filter := map[int]bool{2: true, 3: true} // Groceries + Dining
-	result := filteredRows(rows, "", filter, nil, sortByDate, false)
+	result := filteredRows(rows, "", filter, nil, nil, sortByDate, false)
 	if len(result) != 2 {
 		t.Errorf("expected 2 rows, got %d", len(result))
 	}
@@ -161,7 +161,7 @@ func TestCategoryFilterMultiple(t *testing.T) {
 func TestCategoryFilterUncategorised(t *testing.T) {
 	rows := testTransactions()
 	filter := map[int]bool{0: true} // sentinel for nil category
-	result := filteredRows(rows, "", filter, nil, sortByDate, false)
+	result := filteredRows(rows, "", filter, nil, nil, sortByDate, false)
 	if len(result) != 2 {
 		t.Errorf("expected 2 uncategorised rows, got %d", len(result))
 	}
@@ -175,7 +175,7 @@ func TestFilterComposition(t *testing.T) {
 	rows := testTransactions()
 	// Search for "payment" + uncategorised filter
 	filter := map[int]bool{0: true}
-	result := filteredRows(rows, "payment", filter, nil, sortByDate, false)
+	result := filteredRows(rows, "payment", filter, nil, nil, sortByDate, false)
 	if len(result) != 2 {
 		t.Errorf("expected 2 rows matching 'payment' + uncategorised, got %d", len(result))
 	}
@@ -201,6 +201,20 @@ func TestSortColumnName(t *testing.T) {
 		if got != tt.want {
 			t.Errorf("sortColumnName(%d) = %q, want %q", tt.col, got, tt.want)
 		}
+	}
+}
+
+func TestDashboardSpendRowsExcludesIgnoreTag(t *testing.T) {
+	rows := []transaction{
+		{id: 1, amount: -10, description: "A"},
+		{id: 2, amount: -20, description: "B"},
+	}
+	txnTags := map[int][]tag{
+		2: {{id: 1, name: "IGNORE"}},
+	}
+	out := dashboardSpendRows(rows, txnTags)
+	if len(out) != 1 || out[0].id != 1 {
+		t.Fatalf("dashboardSpendRows = %+v, want only txn id 1", out)
 	}
 }
 
@@ -278,25 +292,25 @@ func TestSettingsRightColumnJK(t *testing.T) {
 
 func TestSettingsLeftColumnJK(t *testing.T) {
 	m := testSettingsModel()
-	// Left column: j toggles between Categories and Rules
+	// Left column: Categories -> Tags -> Rules -> Categories
 	m2, _ := m.updateSettings(keyMsg("j"))
 	m3 := m2.(model)
-	if m3.settSection != settSecRules {
-		t.Errorf("after j: section = %d, want %d", m3.settSection, settSecRules)
+	if m3.settSection != settSecTags {
+		t.Errorf("after j: section = %d, want %d", m3.settSection, settSecTags)
 	}
 
-	// j again wraps back to Categories
+	// j again moves to Rules
 	m4, _ := m3.updateSettings(keyMsg("j"))
 	m5 := m4.(model)
-	if m5.settSection != settSecCategories {
-		t.Errorf("after j j: section = %d, want %d", m5.settSection, settSecCategories)
+	if m5.settSection != settSecRules {
+		t.Errorf("after j j: section = %d, want %d", m5.settSection, settSecRules)
 	}
 
-	// k from Categories wraps to Rules
+	// k from Rules goes back to Tags
 	m6, _ := m5.updateSettings(keyMsg("k"))
 	m7 := m6.(model)
-	if m7.settSection != settSecRules {
-		t.Errorf("after k: section = %d, want %d", m7.settSection, settSecRules)
+	if m7.settSection != settSecTags {
+		t.Errorf("after k: section = %d, want %d", m7.settSection, settSecTags)
 	}
 }
 
@@ -724,4 +738,118 @@ func TestFilePickerNavigation(t *testing.T) {
 // keyMsg helper for tests
 func keyMsg(k string) tea.KeyMsg {
 	return tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune(k)}
+}
+
+func assertScrollableWindowInvariant(
+	t *testing.T,
+	m model,
+	steps int,
+	moveDown func(model) model,
+	visibleFn func(model) int,
+) {
+	t.Helper()
+	wantMaxRows := m.maxVisibleRows
+	wantVisible := visibleFn(m)
+	if wantVisible < 1 {
+		t.Fatalf("invalid visible rows: %d", wantVisible)
+	}
+	for i := 0; i < steps; i++ {
+		m = moveDown(m)
+		if m.maxVisibleRows != wantMaxRows {
+			t.Fatalf("maxVisibleRows mutated at step %d: got %d want %d", i, m.maxVisibleRows, wantMaxRows)
+		}
+		if gotVisible := visibleFn(m); gotVisible != wantVisible {
+			t.Fatalf("visible rows changed at step %d: got %d want %d", i, gotVisible, wantVisible)
+		}
+		if m.cursor >= m.topIndex+wantVisible {
+			t.Fatalf("cursor escaped window at step %d: cursor=%d topIndex=%d visible=%d", i, m.cursor, m.topIndex, wantVisible)
+		}
+	}
+}
+
+func TestTransactionsTableDownNavigationViewportStable(t *testing.T) {
+	m := newModel()
+	m.ready = true
+	m.activeTab = tabTransactions
+	m.height = 28
+	m.width = 120
+	m.maxVisibleRows = 20
+	rows := make([]transaction, 0, 80)
+	for i := 0; i < 80; i++ {
+		rows = append(rows, transaction{
+			id:          i + 1,
+			dateISO:     "2026-02-10",
+			amount:      float64(-i - 1),
+			description: "TXN",
+			categoryName: "Uncategorised",
+		})
+	}
+	m.rows = rows
+
+	assertScrollableWindowInvariant(
+		t,
+		m,
+		40,
+		func(in model) model {
+			next, _ := in.updateNavigation(keyMsg("down"))
+			return next.(model)
+		},
+		func(in model) int { return in.visibleRows() },
+	)
+}
+
+func TestManagerTransactionsDownNavigationDoesNotShrinkVisibleRows(t *testing.T) {
+	m := newModel()
+	m.ready = true
+	m.activeTab = tabManager
+	m.managerMode = managerModeTransactions
+	m.height = 28
+	m.width = 120
+	m.maxVisibleRows = 20
+
+	// Build enough rows to force scrolling.
+	rows := make([]transaction, 0, 80)
+	for i := 0; i < 80; i++ {
+		rows = append(rows, transaction{
+			id:          i + 1,
+			dateISO:     "2026-02-10",
+			amount:      float64(-i - 1),
+			description: "TXN",
+			categoryName:"Uncategorised",
+		})
+	}
+	m.rows = rows
+	assertScrollableWindowInvariant(
+		t,
+		m,
+		40,
+		func(in model) model {
+			next, _ := in.updateManager(keyMsg("down"))
+			return next.(model)
+		},
+		func(in model) int { return in.managerVisibleRows() },
+	)
+}
+
+func TestFilePickerCursorClampsWithRepeatedNavigation(t *testing.T) {
+	m := newModel()
+	m.ready = true
+	m.importPicking = true
+	m.importFiles = []string{"a.csv", "b.csv", "c.csv"}
+	m.importCursor = 0
+
+	for i := 0; i < 20; i++ {
+		next, _ := m.updateFilePicker(keyMsg("down"))
+		m = next.(model)
+	}
+	if m.importCursor != len(m.importFiles)-1 {
+		t.Fatalf("importCursor after repeated down = %d, want %d", m.importCursor, len(m.importFiles)-1)
+	}
+	for i := 0; i < 20; i++ {
+		next, _ := m.updateFilePicker(keyMsg("up"))
+		m = next.(model)
+	}
+	if m.importCursor != 0 {
+		t.Fatalf("importCursor after repeated up = %d, want 0", m.importCursor)
+	}
 }

@@ -175,40 +175,42 @@ date_format = "2/01/2006"
 	}
 }
 
-func TestParseKeybindingsConfigProfilesAndScopes(t *testing.T) {
+func TestParseKeybindingsConfigActionBindings(t *testing.T) {
 	defaults := NewKeyRegistry().ExportKeybindingConfig()
 	data := []byte(`
-version = 1
+version = 2
 
-[profiles.shared_nav]
-navigate = ["j", "k", "up", "down"]
-
-[scopes.transactions]
-use = ["shared_nav"]
-
-[scopes.transactions.bind]
+[bindings]
 quick_category = ["ctrl+k"]
+close = ["esc"]
 `)
-	items, err := parseKeybindingsConfig(data, defaults)
+	items, migrated, err := parseKeybindingsConfig(data, defaults)
 	if err != nil {
 		t.Fatalf("parseKeybindingsConfig: %v", err)
 	}
+	if migrated {
+		t.Fatal("did not expect v2 keybindings to be marked migrated")
+	}
 
 	foundQuick := false
-	foundNav := false
+	foundCloseInDetail := false
+	foundCloseInFile := false
 	for _, it := range items {
 		if it.Scope == scopeTransactions && it.Action == string(actionQuickCategory) {
 			foundQuick = len(it.Keys) == 1 && it.Keys[0] == "ctrl+k"
 		}
-		if it.Scope == scopeTransactions && it.Action == string(actionNavigate) {
-			foundNav = len(it.Keys) == 4
+		if it.Scope == scopeDetailModal && it.Action == string(actionClose) {
+			foundCloseInDetail = len(it.Keys) == 1 && it.Keys[0] == "esc"
+		}
+		if it.Scope == scopeFilePicker && it.Action == string(actionClose) {
+			foundCloseInFile = len(it.Keys) == 1 && it.Keys[0] == "esc"
 		}
 	}
 	if !foundQuick {
-		t.Fatal("expected quick_category override from bind")
+		t.Fatal("expected quick_category override from action bindings")
 	}
-	if !foundNav {
-		t.Fatal("expected navigate keys inherited from profile")
+	if !foundCloseInDetail || !foundCloseInFile {
+		t.Fatal("expected close override to apply to every scope exposing close")
 	}
 }
 
@@ -276,7 +278,7 @@ keys = ["ctrl+k"]
 	}
 }
 
-func TestRenderKeybindingsTemplateReadableProfileNames(t *testing.T) {
+func TestRenderKeybindingsTemplateActionBindings(t *testing.T) {
 	bindings := []keybindingConfig{
 		{Scope: "scope_a", Action: string(actionQuit), Keys: []string{"q", "ctrl+c"}},
 		{Scope: "scope_a", Action: string(actionClose), Keys: []string{"esc"}},
@@ -284,10 +286,46 @@ func TestRenderKeybindingsTemplateReadableProfileNames(t *testing.T) {
 		{Scope: "scope_b", Action: string(actionClose), Keys: []string{"esc"}},
 	}
 	out := renderKeybindingsTemplate(bindings)
-	if !strings.Contains(out, "[profiles.close_quit]") && !strings.Contains(out, "[profiles.quit_close]") {
-		t.Fatalf("expected readable profile name, got:\\n%s", out)
+	if !strings.Contains(out, "version = 2") {
+		t.Fatalf("expected v2 keybindings template, got:\\n%s", out)
 	}
-	if strings.Contains(out, "[profiles.shared_") {
-		t.Fatalf("expected no generic shared_N profile names, got:\\n%s", out)
+	if !strings.Contains(out, "[bindings]") {
+		t.Fatalf("expected bindings table, got:\\n%s", out)
+	}
+	if strings.Count(out, "quit =") != 1 {
+		t.Fatalf("expected one quit action entry, got:\\n%s", out)
+	}
+}
+
+func TestMaterializeKeybindingsMigratesManagerQuickTagConflict(t *testing.T) {
+	defaults := []keybindingConfig{
+		{Scope: "manager", Action: "edit", Keys: []string{"t"}},
+		{Scope: "manager", Action: "quick_tag", Keys: []string{"T"}},
+	}
+	fileBindings := []keybindingConfig{
+		{Scope: "manager", Action: "edit", Keys: []string{"t"}},
+		{Scope: "manager", Action: "quick_tag", Keys: []string{"t"}},
+	}
+
+	out, changed, err := materializeKeybindings(defaults, fileBindings)
+	if err != nil {
+		t.Fatalf("materializeKeybindings: %v", err)
+	}
+	if !changed {
+		t.Fatal("expected changed=true after migration")
+	}
+
+	var quick []string
+	for _, b := range out {
+		if b.Scope == "manager" && b.Action == "quick_tag" {
+			quick = b.Keys
+			break
+		}
+	}
+	if len(quick) == 0 {
+		t.Fatal("expected manager/quick_tag binding")
+	}
+	if normalizeKeyName(quick[0]) == "t" {
+		t.Fatalf("expected quick_tag not to conflict with edit key 't', got %+v", quick)
 	}
 }

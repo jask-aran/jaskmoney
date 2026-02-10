@@ -21,12 +21,17 @@ const appName = "Jaskmoney"
 
 // Tab indices
 const (
-	tabManager      = 0
-	tabDashboard    = 1
-	tabSettings     = 2
+	tabManager   = 0
+	tabDashboard = 1
+	tabSettings  = 2
 	// Legacy transactions tab constant retained for internal/tests-only flows.
 	tabTransactions = 99
 	tabCount        = 3
+)
+
+const (
+	managerModeTransactions = iota
+	managerModeAccounts
 )
 
 type transaction struct {
@@ -64,6 +69,9 @@ type refreshDoneMsg struct {
 	rows             []transaction
 	categories       []category
 	rules            []categoryRule
+	tags             []tag
+	tagRules         []tagRule
+	txnTags          map[int][]tag
 	imports          []importRecord
 	accounts         []account
 	selectedAccounts map[int]bool
@@ -99,6 +107,14 @@ type categoryDeletedMsg struct {
 	err error
 }
 
+type tagSavedMsg struct {
+	err error
+}
+
+type tagDeletedMsg struct {
+	err error
+}
+
 type ruleSavedMsg struct {
 	err error
 }
@@ -121,6 +137,11 @@ type quickCategoryAppliedMsg struct {
 	categoryName string
 	created      bool
 	err          error
+}
+
+type quickTagsAppliedMsg struct {
+	count int
+	err   error
 }
 
 type accountNukedMsg struct {
@@ -169,6 +190,7 @@ var dashTimeframeLabels = []string{
 // Settings sections — flat index for navigation
 const (
 	settSecCategories = iota
+	settSecTags
 	settSecRules
 	settSecChart
 	settSecDBImport // combined Database + Import History
@@ -187,6 +209,8 @@ const (
 	settModeNone     = "" // browsing
 	settModeAddCat   = "add_cat"
 	settModeEditCat  = "edit_cat"
+	settModeAddTag   = "add_tag"
+	settModeEditTag  = "edit_tag"
 	settModeAddRule  = "add_rule"
 	settModeEditRule = "edit_rule"
 	settModeRuleCat  = "rule_cat" // picking category for a rule
@@ -247,10 +271,15 @@ type model struct {
 	detailEditing     string // "category" or "notes" or ""
 	catPicker         *pickerState
 	catPickerFor      []int
+	tagPicker         *pickerState
+	tagPickerFor      []int
 	accountNukePicker *pickerState
 
 	// Settings state
 	rules          []categoryRule
+	tags           []tag
+	tagRules       []tagRule
+	txnTags        map[int][]tag
 	imports        []importRecord
 	dbInfo         dbInfo
 	settSection    int    // which section is focused (settSec*)
@@ -269,6 +298,7 @@ type model struct {
 	// Manager state
 	managerCursor     int
 	managerSelectedID int
+	managerMode       int
 	managerModalOpen  bool
 	managerModalIsNew bool
 	managerEditID     int
@@ -323,6 +353,7 @@ func newModel() model {
 	return model{
 		basePath:           cwd,
 		activeTab:          tabManager,
+		managerMode:        managerModeTransactions,
 		maxVisibleRows:     appCfg.RowsPerPage,
 		spendingWeekAnchor: weekAnchor,
 		dashTimeframe:      appCfg.DashTimeframe,
@@ -331,6 +362,7 @@ func newModel() model {
 		keys:               keys,
 		formats:            formats,
 		selectedRows:       make(map[int]bool),
+		txnTags:            make(map[int][]tag),
 		status:             status,
 		statusErr:          statusErr,
 	}
@@ -375,7 +407,7 @@ func (m model) View() string {
 	if m.showDetail {
 		txn := m.findDetailTxn()
 		if txn != nil {
-			detail := renderDetail(*txn, m.categories, m.detailCatCursor, m.detailNotes, m.detailEditing)
+			detail := renderDetail(*txn, m.categories, m.txnTags[txn.id], m.detailCatCursor, m.detailNotes, m.detailEditing)
 			return m.composeOverlay(main, statusLine, footer, detail)
 		}
 	}
@@ -389,6 +421,10 @@ func (m model) View() string {
 	}
 	if m.catPicker != nil {
 		picker := renderPicker(m.catPicker, min(56, m.width-10))
+		return m.composeOverlay(main, statusLine, footer, picker)
+	}
+	if m.tagPicker != nil {
+		picker := renderPicker(m.tagPicker, min(56, m.width-10))
 		return m.composeOverlay(main, statusLine, footer, picker)
 	}
 	if m.accountNukePicker != nil {
@@ -416,6 +452,7 @@ func (m model) dashboardView() string {
 	)
 	customInput := renderDashboardCustomInput(m.dashCustomStart, m.dashCustomEnd, m.dashCustomInput, m.dashCustomEditing)
 	summary := m.renderSectionSizedLeft("Overview", renderSummaryCards(rows, m.categories, w), m.sectionWidth(), false)
+	spendRows := dashboardSpendRows(rows, m.txnTags)
 	totalWidth := m.sectionWidth()
 	gap := 2
 	trackerWidth := (totalWidth - gap) * 60 / 100
@@ -447,13 +484,13 @@ func (m model) dashboardView() string {
 	rangeStart, rangeEnd := m.dashboardChartRange(time.Now())
 	trend := renderTitledSectionBox(
 		"Spending Tracker",
-		renderSpendingTrackerWithRange(rows, trackerContentWidth, m.spendingWeekAnchor, rangeStart, rangeEnd),
+		renderSpendingTrackerWithRange(spendRows, trackerContentWidth, m.spendingWeekAnchor, rangeStart, rangeEnd),
 		trackerWidth,
 		false,
 	)
 	breakdown := renderTitledSectionBox(
 		"Spending by Category",
-		renderCategoryBreakdown(rows, m.categories, breakdownContentWidth),
+		renderCategoryBreakdown(spendRows, m.categories, breakdownContentWidth),
 		breakdownWidth,
 		false,
 	)
@@ -466,22 +503,53 @@ func (m model) dashboardView() string {
 }
 
 func (m model) managerView() string {
-	accountsCard := m.renderSectionSizedLeft("Accounts", renderManagerContent(m), m.sectionWidth(), false)
-
-	rows := filteredRows(m.rows, "", nil, m.filterAccounts, sortByDate, false)
-	txContent := renderTransactionTable(
-		rows,
-		m.categories,
-		nil,
-		nil,
-		0,
-		0,
-		max(1, m.maxVisibleRows),
-		m.listContentWidth(),
-		sortByDate,
-		false,
-	)
-	transactionsCard := m.renderSectionSizedLeft("Transactions", txContent, m.sectionWidth(), false)
+	accountsFocused := m.managerMode == managerModeAccounts
+	accountsContent := renderManagerAccountStrip(m, accountsFocused, m.managerSectionContentWidth())
+	accountsCard := renderManagerSectionBox("Accounts", accountsFocused, accountsFocused, m.sectionWidth(), accountsContent)
+	rows := m.getFilteredRows()
+	txVisibleRows := m.managerVisibleRows()
+	var txContent string
+	if m.managerMode == managerModeTransactions {
+		highlighted := m.highlightedRows(rows)
+		cursorTxnID := 0
+		if m.cursor >= 0 && m.cursor < len(rows) {
+			cursorTxnID = rows[m.cursor].id
+		}
+		searchBar := ""
+		if m.searchMode {
+			searchBar = searchPromptStyle.Render("/") + " " + searchInputStyle.Render(m.searchQuery+"_") + "\n"
+		} else if m.searchQuery != "" {
+			searchBar = searchPromptStyle.Render("/") + " " + searchInputStyle.Render(m.searchQuery) + "  " + lipgloss.NewStyle().Foreground(colorOverlay1).Render("(esc clear)") + "\n"
+		}
+		txContent = searchBar + renderTransactionTable(
+			rows,
+			m.categories,
+			m.txnTags,
+			m.selectedRows,
+			highlighted,
+			cursorTxnID,
+			m.topIndex,
+			txVisibleRows,
+			m.managerSectionContentWidth(),
+			m.sortColumn,
+			m.sortAscending,
+		)
+	} else {
+		txContent = renderTransactionTable(
+			rows,
+			m.categories,
+			m.txnTags,
+			nil,
+			nil,
+			0,
+			0,
+			txVisibleRows,
+			m.managerSectionContentWidth(),
+			sortByDate,
+			false,
+		)
+	}
+	transactionsCard := renderManagerSectionBox("Transactions", !accountsFocused, !accountsFocused, m.sectionWidth(), txContent)
 	return accountsCard + "\n" + transactionsCard
 }
 
@@ -532,6 +600,7 @@ func (m model) transactionsView() string {
 	content := searchBar + renderTransactionTable(
 		filtered,
 		m.categories,
+		m.txnTags,
 		m.selectedRows,
 		highlighted,
 		cursorTxnID,
@@ -608,6 +677,8 @@ func (m model) settingsFooterBindings() []key.Binding {
 		switch m.settMode {
 		case settModeAddCat, settModeEditCat:
 			return m.keys.HelpBindings(scopeSettingsModeCat)
+		case settModeAddTag, settModeEditTag:
+			return m.keys.HelpBindings(scopeSettingsModeTag)
 		case settModeAddRule, settModeEditRule:
 			return m.keys.HelpBindings(scopeSettingsModeRule)
 		case settModeRuleCat:
@@ -621,6 +692,8 @@ func (m model) settingsFooterBindings() []key.Binding {
 		switch m.settSection {
 		case settSecCategories:
 			return m.keys.HelpBindings(scopeSettingsActiveCategories)
+		case settSecTags:
+			return m.keys.HelpBindings(scopeSettingsActiveTags)
 		case settSecRules:
 			return m.keys.HelpBindings(scopeSettingsActiveRules)
 		case settSecChart:
@@ -649,6 +722,9 @@ func (m model) footerBindings() []key.Binding {
 	if m.catPicker != nil {
 		return m.keys.HelpBindings(scopeCategoryPicker)
 	}
+	if m.tagPicker != nil {
+		return m.keys.HelpBindings(scopeTagPicker)
+	}
 	if m.accountNukePicker != nil {
 		return m.keys.HelpBindings(scopeAccountNukePicker)
 	}
@@ -667,6 +743,11 @@ func (m model) footerBindings() []key.Binding {
 		}
 	}
 	if m.activeTab == tabManager {
+		if m.managerMode == managerModeTransactions {
+			b := append([]key.Binding{}, m.keys.HelpBindings(scopeTransactions)...)
+			b = append(b, m.keys.HelpBindings(scopeManagerTransactions)...)
+			return b
+		}
 		return m.keys.HelpBindings(scopeManager)
 	}
 	if m.activeTab == tabSettings {
@@ -722,19 +803,34 @@ func (m *model) sectionContentWidth() int {
 	return contentWidth
 }
 
+func (m *model) managerSectionContentWidth() int {
+	if m.width == 0 {
+		return 80
+	}
+	frameH := settingsActiveBorderStyle.GetHorizontalFrameSize()
+	contentWidth := m.sectionWidth() - frameH
+	if contentWidth < 1 {
+		contentWidth = 1
+	}
+	return contentWidth
+}
+
 func (m *model) sectionWidth() int {
 	if m.width == 0 {
 		return 80
 	}
-	if m.width < 20 {
+	if m.width <= 2 {
 		return m.width
 	}
-	// Leave just a minimal right-side breathing room while reclaiming prior dead space.
-	return m.width - 1
+	// Keep a hard right-side margin to avoid border clipping.
+	return m.width - 2
 }
 
 func (m *model) ensureCursorInWindow() {
 	visible := m.visibleRows()
+	if m.activeTab == tabManager && m.managerMode == managerModeTransactions {
+		visible = m.managerVisibleRows()
+	}
 	if visible <= 0 {
 		return
 	}
@@ -763,6 +859,14 @@ func (m *model) ensureCursorInWindow() {
 	}
 }
 
+func (m *model) managerVisibleRows() int {
+	v := m.visibleRows() - 4
+	if v < 3 {
+		v = 3
+	}
+	return v
+}
+
 func sectionHeaderLineCount() int {
 	return 2
 }
@@ -788,13 +892,36 @@ func (m model) accountFilterLabel() string {
 	return fmt.Sprintf("%d Accounts", len(m.filterAccounts))
 }
 
+func dashboardSpendRows(rows []transaction, txnTags map[int][]tag) []transaction {
+	if len(rows) == 0 || len(txnTags) == 0 {
+		return rows
+	}
+	out := make([]transaction, 0, len(rows))
+	for _, r := range rows {
+		if hasIgnoreTag(txnTags[r.id]) {
+			continue
+		}
+		out = append(out, r)
+	}
+	return out
+}
+
+func hasIgnoreTag(tags []tag) bool {
+	for _, tg := range tags {
+		if strings.EqualFold(strings.TrimSpace(tg.name), "IGNORE") {
+			return true
+		}
+	}
+	return false
+}
+
 // getFilteredRows returns the current filtered/sorted view of transactions.
 func (m model) getFilteredRows() []transaction {
-	return filteredRows(m.rows, m.searchQuery, m.filterCategories, m.filterAccounts, m.sortColumn, m.sortAscending)
+	return filteredRows(m.rows, m.searchQuery, m.filterCategories, m.filterAccounts, m.txnTags, m.sortColumn, m.sortAscending)
 }
 
 func (m model) getDashboardRows() []transaction {
-	rows := filteredRows(m.rows, "", nil, m.filterAccounts, sortByDate, false)
+	rows := filteredRows(m.rows, "", nil, m.filterAccounts, m.txnTags, sortByDate, false)
 	return filterByTimeframe(rows, m.dashTimeframe, m.dashCustomStart, m.dashCustomEnd, time.Now())
 }
 
@@ -816,10 +943,10 @@ func (m model) dashboardChartRange(now time.Time) (time.Time, time.Time) {
 
 // filteredRows returns the subset of m.rows matching active transactions filters,
 // sorted by the current sort column/direction.
-func filteredRows(rows []transaction, searchQuery string, filterCats map[int]bool, filterAccounts map[int]bool, sortCol int, sortAsc bool) []transaction {
+func filteredRows(rows []transaction, searchQuery string, filterCats map[int]bool, filterAccounts map[int]bool, txnTags map[int][]tag, sortCol int, sortAsc bool) []transaction {
 	var out []transaction
 	for _, r := range rows {
-		if !matchesSearch(r, searchQuery) {
+		if !matchesSearch(r, searchQuery, txnTags[r.id]) {
 			continue
 		}
 		if !matchesCategoryFilter(r, filterCats) {
@@ -902,15 +1029,23 @@ func timeframeBounds(timeframe int, customStart, customEnd string, now time.Time
 	}
 }
 
-func matchesSearch(t transaction, query string) bool {
+func matchesSearch(t transaction, query string, tags []tag) bool {
 	if query == "" {
 		return true
 	}
 	q := strings.ToLower(query)
-	return strings.Contains(strings.ToLower(t.description), q) ||
+	if strings.Contains(strings.ToLower(t.description), q) ||
 		strings.Contains(strings.ToLower(t.categoryName), q) ||
 		strings.Contains(t.dateISO, q) ||
-		strings.Contains(t.dateRaw, q)
+		strings.Contains(t.dateRaw, q) {
+		return true
+	}
+	for _, tg := range tags {
+		if strings.Contains(strings.ToLower(tg.name), q) {
+			return true
+		}
+	}
+	return false
 }
 
 func matchesCategoryFilter(t transaction, filterCats map[int]bool) bool {

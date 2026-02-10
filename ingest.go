@@ -39,7 +39,7 @@ func ingestCmd(db *sql.DB, filename, basePath string, formats []csvFormat, skipD
 				file: base,
 			}
 		}
-		count, dupes, err := importCSVForAccount(db, path, *format, &acct.id, acct.acctType, skipDupes)
+		count, dupes, err := importCSVForAccount(db, path, *format, &acct.id, skipDupes)
 		if err != nil {
 			return ingestDoneMsg{count: count, dupes: dupes, err: err, file: base}
 		}
@@ -47,6 +47,9 @@ func ingestCmd(db *sql.DB, filename, basePath string, formats []csvFormat, skipD
 			return ingestDoneMsg{count: count, dupes: dupes, err: err, file: base}
 		}
 		if _, err := applyCategoryRules(db); err != nil {
+			return ingestDoneMsg{count: count, dupes: dupes, err: err, file: base}
+		}
+		if _, err := applyTagRules(db); err != nil {
 			return ingestDoneMsg{count: count, dupes: dupes, err: err, file: base}
 		}
 		return ingestDoneMsg{count: count, dupes: dupes, err: nil, file: base}
@@ -73,7 +76,7 @@ func scanDupesCmd(db *sql.DB, filename, basePath string, formats []csvFormat) te
 		if acct == nil {
 			return dupeScanMsg{err: fmt.Errorf("account %q not found; create or sync it in Manager", format.Account), file: base}
 		}
-		total, dupes, err := countDuplicatesForAccount(db, path, *format, &acct.id, acct.acctType)
+		total, dupes, err := countDuplicatesForAccount(db, path, *format, &acct.id)
 		if err != nil {
 			return dupeScanMsg{err: err, file: base}
 		}
@@ -103,12 +106,12 @@ func detectFormat(formats []csvFormat, filename string) *csvFormat {
 // importCSV reads a CSV file using the given format and inserts valid rows.
 // When skipDupes is true, rows matching (date_iso, amount, description) are skipped.
 func importCSV(db *sql.DB, path string, format csvFormat, skipDupes bool) (inserted int, dupes int, err error) {
-	return importCSVForAccount(db, path, format, nil, "debit", skipDupes)
+	return importCSVForAccount(db, path, format, nil, skipDupes)
 }
 
 // importCSVForAccount reads a CSV file using the given format and inserts valid rows.
 // When skipDupes is true, rows matching (date_iso, amount, description, account_id) are skipped.
-func importCSVForAccount(db *sql.DB, path string, format csvFormat, accountID *int, _ string, skipDupes bool) (inserted int, dupes int, err error) {
+func importCSVForAccount(db *sql.DB, path string, format csvFormat, accountID *int, skipDupes bool) (inserted int, dupes int, err error) {
 	f, err := os.Open(path)
 	if err != nil {
 		return 0, 0, fmt.Errorf("open csv: %w", err)
@@ -212,10 +215,10 @@ func importCSVForAccount(db *sql.DB, path string, format csvFormat, accountID *i
 
 // countDuplicates scans a CSV file and counts how many rows would be duplicates.
 func countDuplicates(db *sql.DB, path string, format csvFormat) (total int, dupes int, err error) {
-	return countDuplicatesForAccount(db, path, format, nil, "debit")
+	return countDuplicatesForAccount(db, path, format, nil)
 }
 
-func countDuplicatesForAccount(db *sql.DB, path string, format csvFormat, accountID *int, _ string) (total int, dupes int, err error) {
+func countDuplicatesForAccount(db *sql.DB, path string, format csvFormat, accountID *int) (total int, dupes int, err error) {
 	f, err := os.Open(path)
 	if err != nil {
 		return 0, 0, fmt.Errorf("open csv: %w", err)

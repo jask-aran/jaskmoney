@@ -213,3 +213,21 @@ func TestPickerEscReturnsCancelled(t *testing.T) {
 		t.Fatalf("action = %v, want %v", res.Action, pickerActionCancelled)
 	}
 }
+
+func TestPickerCursorClampsWithRepeatedNavigation(t *testing.T) {
+	p := newPicker("Tags", testPickerItems(), false, "Create")
+
+	for i := 0; i < 50; i++ {
+		_ = p.HandleKey("down")
+	}
+	if p.cursor != p.maxCursorIndex() {
+		t.Fatalf("cursor after repeated down = %d, want %d", p.cursor, p.maxCursorIndex())
+	}
+
+	for i := 0; i < 50; i++ {
+		_ = p.HandleKey("up")
+	}
+	if p.cursor != 0 {
+		t.Fatalf("cursor after repeated up = %d, want 0", p.cursor)
+	}
+}
