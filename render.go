@@ -140,13 +140,13 @@ var (
 // Tab names
 // ---------------------------------------------------------------------------
 
-var tabNames = []string{"Dashboard", "Transactions", "Settings"}
+var tabNames = []string{"Manager", "Dashboard", "Transactions", "Settings"}
 
 // ---------------------------------------------------------------------------
 // Section & chrome rendering
 // ---------------------------------------------------------------------------
 
-func renderHeader(appName string, activeTab, width int) string {
+func renderHeader(appName string, activeTab, width int, accountLabel string) string {
 	// Line 1: App name + tab bar
 	name := headerAppStyle.Render(appName)
 
@@ -162,6 +162,10 @@ func renderHeader(appName string, activeTab, width int) string {
 	tabBar := tabSepStyle.Render(" ") + strings.Join(tabs, tabSepStyle.Render("│"))
 
 	line1Content := name + "  " + tabBar
+	if strings.TrimSpace(accountLabel) != "" {
+		acct := lipgloss.NewStyle().Foreground(colorSubtext0).Render(accountLabel)
+		line1Content += "  " + acct
+	}
 
 	if width <= 0 {
 		return headerBarStyle.Render(line1Content)
@@ -311,6 +315,28 @@ func renderDashboardTimeframeChips(labels []string, active, cursor int, focused 
 	return strings.Join(parts, " ")
 }
 
+func renderDashboardControlsLine(chips, dateRange string, width int) string {
+	if strings.TrimSpace(dateRange) == "" {
+		return chips
+	}
+	labelSty := lipgloss.NewStyle().Foreground(colorSubtext0)
+	valueSty := lipgloss.NewStyle().Foreground(colorPeach)
+	rangeChunk := labelSty.Render("Date Range ") + valueSty.Render(dateRange)
+	if width <= 0 {
+		return chips + "  " + rangeChunk
+	}
+	chipsW := ansi.StringWidth(chips)
+	rangeW := ansi.StringWidth(rangeChunk)
+	if chipsW+2+rangeW <= width {
+		gap := width - chipsW - rangeW
+		if gap < 2 {
+			gap = 2
+		}
+		return chips + strings.Repeat(" ", gap) + rangeChunk
+	}
+	return chips + "  " + rangeChunk
+}
+
 func renderDashboardCustomInput(start, end, input string, editing bool) string {
 	if !editing {
 		return ""
@@ -398,16 +424,24 @@ func renderTransactionTable(
 	dateW := 9 // dd-mm-yy = 8 chars + 1 pad
 	amountW := 11
 	catW := 0
+	accountW := 0
 	showCats := categories != nil
+	showAccounts := hasMultipleAccountNames(rows)
 	if showCats {
 		catW = 15
+	}
+	if showAccounts {
+		accountW = 14
 	}
 	sep := " " // single-space column separator
 	numSeps := 3
 	if showCats {
 		numSeps = 4
 	}
-	descW := width - dateW - amountW - catW - numSeps
+	if showAccounts {
+		numSeps++
+	}
+	descW := width - dateW - amountW - catW - accountW - numSeps
 	if descW < 5 {
 		descW = 5
 	}
@@ -418,9 +452,14 @@ func renderTransactionTable(
 	descLbl := addSortIndicator("Description", sortByDescription, sortCol, sortAsc)
 
 	var header string
-	if showCats {
+	if showCats && showAccounts {
+		catLbl := addSortIndicator("Category", sortByCategory, sortCol, sortAsc)
+		header = fmt.Sprintf("%-*s"+sep+"%-*s"+sep+"%-*s"+sep+"%-*s"+sep+"%-*s", dateW, dateLbl, amountW, amtLbl, catW, catLbl, accountW, "Account", descW, descLbl)
+	} else if showCats {
 		catLbl := addSortIndicator("Category", sortByCategory, sortCol, sortAsc)
 		header = fmt.Sprintf("%-*s"+sep+"%-*s"+sep+"%-*s"+sep+"%-*s", dateW, dateLbl, amountW, amtLbl, catW, catLbl, descW, descLbl)
+	} else if showAccounts {
+		header = fmt.Sprintf("%-*s"+sep+"%-*s"+sep+"%-*s"+sep+"%-*s", dateW, dateLbl, amountW, amtLbl, accountW, "Account", descW, descLbl)
 	} else {
 		header = fmt.Sprintf("%-*s"+sep+"%-*s"+sep+"%-*s", dateW, dateLbl, amountW, amtLbl, descW, descLbl)
 	}
@@ -465,9 +504,16 @@ func renderTransactionTable(
 		}
 		amountField = amountStyle.Render(amountField)
 
-		if showCats {
+		if showCats && showAccounts {
+			catField := renderCategoryTagOnBackground(row.categoryName, row.categoryColor, catW, rowBg, cursorStrong)
+			accountField := cellStyle.Render(padRight(truncate(row.accountName, accountW), accountW))
+			line = cellStyle.Render(dateField) + sepField + amountField + sepField + catField + sepField + accountField + sepField + cellStyle.Render(descField)
+		} else if showCats {
 			catField := renderCategoryTagOnBackground(row.categoryName, row.categoryColor, catW, rowBg, cursorStrong)
 			line = cellStyle.Render(dateField) + sepField + amountField + sepField + catField + sepField + cellStyle.Render(descField)
+		} else if showAccounts {
+			accountField := cellStyle.Render(padRight(truncate(row.accountName, accountW), accountW))
+			line = cellStyle.Render(dateField) + sepField + amountField + sepField + accountField + sepField + cellStyle.Render(descField)
 		} else {
 			line = cellStyle.Render(dateField) + sepField + amountField + sepField + cellStyle.Render(descField)
 		}
@@ -489,6 +535,21 @@ func renderTransactionTable(
 	}
 
 	return strings.Join(lines, "\n")
+}
+
+func hasMultipleAccountNames(rows []transaction) bool {
+	seen := make(map[string]bool)
+	for _, r := range rows {
+		name := strings.TrimSpace(r.accountName)
+		if name == "" {
+			continue
+		}
+		seen[strings.ToLower(name)] = true
+		if len(seen) > 1 {
+			return true
+		}
+	}
+	return false
 }
 
 func addSortIndicator(label string, col, activeCol int, asc bool) string {
@@ -550,12 +611,11 @@ func rowStateBackgroundAndCursor(selected, highlighted, isCursor bool) (lipgloss
 // ---------------------------------------------------------------------------
 
 // renderSummaryCards renders the summary cards: balance, income, expenses,
-// transaction count, category count, date range.
+// transaction count, uncategorised count/amount.
 func renderSummaryCards(rows []transaction, categories []category, width int) string {
 	var income, expenses float64
 	var uncatCount int
 	var uncatTotal float64
-	var minDate, maxDate string
 	for _, r := range rows {
 		if r.amount > 0 {
 			income += r.amount
@@ -566,6 +626,40 @@ func renderSummaryCards(rows []transaction, categories []category, width int) st
 			uncatCount++
 			uncatTotal += math.Abs(r.amount)
 		}
+	}
+	balance := income + expenses
+
+	_ = categories
+	labelSty := lipgloss.NewStyle().Foreground(colorSubtext0)
+	valSty := lipgloss.NewStyle().Foreground(colorPeach)
+	greenSty := lipgloss.NewStyle().Foreground(colorSuccess)
+	redSty := lipgloss.NewStyle().Foreground(colorError)
+
+	// 3 rows, 2 columns
+	col1W := 32
+	col2W := width - col1W
+	if col2W < 16 {
+		col2W = 16
+	}
+
+	debits := math.Abs(expenses)
+	credits := income
+
+	row1 := padRight(labelSty.Render("Balance      ")+balanceStyle(balance, greenSty, redSty), col1W) +
+		padRight(labelSty.Render("Uncat ")+valSty.Render(fmt.Sprintf("%d (%s)", uncatCount, formatMoney(uncatTotal))), col2W)
+
+	row2 := padRight(labelSty.Render("Debits       ")+redSty.Render(formatMoney(debits)), col1W) +
+		padRight(labelSty.Render("Transactions ")+valSty.Render(fmt.Sprintf("%d", len(rows))), col2W)
+
+	row3 := padRight(labelSty.Render("Credits      ")+greenSty.Render(formatMoney(credits)), col1W) +
+		padRight("", col2W)
+
+	return row1 + "\n" + row2 + "\n" + row3
+}
+
+func dashboardDateRange(rows []transaction) string {
+	var minDate, maxDate string
+	for _, r := range rows {
 		if minDate == "" || r.dateISO < minDate {
 			minDate = r.dateISO
 		}
@@ -573,45 +667,10 @@ func renderSummaryCards(rows []transaction, categories []category, width int) st
 			maxDate = r.dateISO
 		}
 	}
-	balance := income + expenses
-
-	labelSty := lipgloss.NewStyle().Foreground(colorSubtext0)
-	valSty := lipgloss.NewStyle().Foreground(colorPeach)
-	greenSty := lipgloss.NewStyle().Foreground(colorSuccess)
-	redSty := lipgloss.NewStyle().Foreground(colorError)
-
-	dateRange := "—"
-	if minDate != "" {
-		dateRange = formatMonth(minDate) + " – " + formatMonth(maxDate)
+	if minDate == "" {
+		return "—"
 	}
-
-	// Active categories (categories used by at least one transaction)
-	activeCats := countActiveCategories(rows)
-
-	// 2 rows, 3 columns
-	col1W := 28
-	col2W := 28
-	col3W := width - col1W - col2W
-	if col3W < 20 {
-		col3W = 20
-	}
-
-	debits := math.Abs(expenses)
-	credits := income
-
-	row1 := padRight(labelSty.Render("Balance      ")+balanceStyle(balance, greenSty, redSty), col1W) +
-		padRight(labelSty.Render("Uncat ")+valSty.Render(fmt.Sprintf("%d (%s)", uncatCount, formatMoney(uncatTotal))), col2W) +
-		padRight(labelSty.Render("Date Range   ")+valSty.Render(dateRange), col3W)
-
-	row2 := padRight(labelSty.Render("Debits       ")+redSty.Render(formatMoney(debits)), col1W) +
-		padRight(labelSty.Render("Transactions ")+valSty.Render(fmt.Sprintf("%d", len(rows))), col2W) +
-		padRight(labelSty.Render("Categories   ")+valSty.Render(fmt.Sprintf("%d", activeCats)), col3W)
-
-	row3 := padRight(labelSty.Render("Credits      ")+greenSty.Render(formatMoney(credits)), col1W) +
-		padRight("", col2W) +
-		padRight("", col3W)
-
-	return row1 + "\n" + row2 + "\n" + row3
+	return formatMonth(minDate) + " – " + formatMonth(maxDate)
 }
 
 func balanceStyle(amount float64, green, red lipgloss.Style) string {
@@ -704,8 +763,8 @@ type categorySpend struct {
 }
 
 // renderCategoryBreakdown renders a horizontal bar chart of spending by category.
-// All categories are shown, sorted by spend descending.
-func renderCategoryBreakdown(rows []transaction, width int) string {
+// All known categories are shown, sorted by spend descending.
+func renderCategoryBreakdown(rows []transaction, categories []category, width int) string {
 	// Aggregate expenses by category
 	spendMap := make(map[string]*categorySpend)
 	var totalExpenses float64
@@ -726,8 +785,22 @@ func renderCategoryBreakdown(rows []transaction, width int) string {
 		}
 	}
 
-	if totalExpenses == 0 {
-		return lipgloss.NewStyle().Foreground(colorOverlay1).Render("No expense data to display.")
+	// Ensure every known category appears, even if absent in the current period.
+	for _, c := range categories {
+		name := strings.TrimSpace(c.name)
+		if name == "" {
+			continue
+		}
+		if _, ok := spendMap[name]; !ok {
+			spendMap[name] = &categorySpend{name: name, color: c.color, amount: 0}
+		}
+	}
+	if _, ok := spendMap["Uncategorised"]; !ok {
+		spendMap["Uncategorised"] = &categorySpend{name: "Uncategorised", color: "", amount: 0}
+	}
+
+	if len(spendMap) == 0 {
+		return lipgloss.NewStyle().Foreground(colorOverlay1).Render("No category data to display.")
 	}
 
 	// Sort by amount descending
@@ -807,7 +880,10 @@ func renderCategoryBreakdown(rows []transaction, width int) string {
 
 	var lines []string
 	for _, s := range display {
-		pct := s.amount / totalExpenses * 100
+		pct := 0.0
+		if totalExpenses > 0 {
+			pct = s.amount / totalExpenses * 100
+		}
 		pctText := fmt.Sprintf("%4.0f%%", pct)
 		amtText := fmt.Sprintf("%*s", amtW, "$"+formatWholeNumber(s.amount))
 		reservedRight := 1 + ansi.StringWidth(pctText) + 1 + ansi.StringWidth(amtText)
@@ -1623,6 +1699,7 @@ func renderSettingsDBImport(m model, width int) string {
 	lines = append(lines, labelSty.Render("Categories:      ")+valSty.Render(fmt.Sprintf("%d", info.categoryCount)))
 	lines = append(lines, labelSty.Render("Rules:           ")+valSty.Render(fmt.Sprintf("%d", info.ruleCount)))
 	lines = append(lines, labelSty.Render("Imports:         ")+valSty.Render(fmt.Sprintf("%d", info.importCount)))
+	lines = append(lines, labelSty.Render("Accounts:        ")+valSty.Render(fmt.Sprintf("%d", info.accountCount)))
 	lines = append(lines, labelSty.Render("Rows per page:   ")+valSty.Render(fmt.Sprintf("%d", m.maxVisibleRows)))
 	lines = append(lines, "")
 
@@ -1642,6 +1719,100 @@ func renderSettingsDBImport(m model, width int) string {
 		}
 	}
 
+	return strings.Join(lines, "\n")
+}
+
+func renderManagerContent(m model) string {
+	if len(m.accounts) == 0 {
+		return lipgloss.NewStyle().Foreground(colorOverlay1).Render("No accounts yet. Press 'a' to create one.")
+	}
+
+	cardStyle := lipgloss.NewStyle().
+		Border(lipgloss.RoundedBorder()).
+		BorderForeground(colorSurface1).
+		Padding(0, 1)
+	activeCardStyle := cardStyle.Copy().BorderForeground(colorAccent)
+	focused := m.managerFocusedIndex()
+
+	var cards []string
+	for i, acc := range m.accounts {
+		style := cardStyle
+		if i == focused {
+			style = activeCardStyle
+		}
+		isSelected := len(m.filterAccounts) == 0 || m.filterAccounts[acc.id]
+		sel := "Scope: Off"
+		selColor := colorOverlay1
+		if isSelected {
+			sel = "Scope: On"
+			selColor = colorSuccess
+		}
+		typeColor := colorSubtext1
+		if acc.acctType == "credit" {
+			typeColor = colorPeach
+		}
+		headerPrefix := "  "
+		if i == focused {
+			headerPrefix = "> "
+		}
+		header := lipgloss.NewStyle().Bold(true).Foreground(colorText).Render(headerPrefix + acc.name)
+		meta := lipgloss.NewStyle().Foreground(typeColor).Render(strings.ToUpper(acc.acctType))
+		activePill := lipgloss.NewStyle().Foreground(selColor).Render(sel)
+		body := header + "  " + meta + "  " + activePill
+		cards = append(cards, style.Render(body))
+	}
+	return strings.Join(cards, "\n")
+}
+
+func renderManagerAccountModal(m model) string {
+	label := "Edit Account"
+	if m.managerModalIsNew {
+		label = "Create Account"
+	}
+
+	var lines []string
+	lines = append(lines, detailActiveStyle.Render(label))
+	if len(m.accounts) == 0 {
+		// keep lint happy for zero-account new flow; modal itself still renders fields
+	}
+
+	nameVal := m.managerEditName
+	if m.managerEditFocus == 0 {
+		nameVal += "_"
+	}
+	typeVal := strings.ToUpper(m.managerEditType)
+	activeVal := "false"
+	if m.managerEditActive {
+		activeVal = "true"
+	}
+	prefixVal := m.managerEditPrefix
+	if m.managerEditFocus == 2 {
+		prefixVal += "_"
+	}
+
+	pfx0 := "  "
+	pfx1 := "  "
+	pfx2 := "  "
+	pfx3 := "  "
+	if m.managerEditFocus == 0 {
+		pfx0 = cursorStyle.Render("> ")
+	}
+	if m.managerEditFocus == 1 {
+		pfx1 = cursorStyle.Render("> ")
+	}
+	if m.managerEditFocus == 2 {
+		pfx2 = cursorStyle.Render("> ")
+	}
+	if m.managerEditFocus == 3 {
+		pfx3 = cursorStyle.Render("> ")
+	}
+
+	lines = append(lines, pfx0+detailLabelStyle.Render("Name:         ")+detailValueStyle.Render(nameVal))
+	lines = append(lines, pfx1+detailLabelStyle.Render("Type:         ")+detailValueStyle.Render(typeVal))
+	lines = append(lines, pfx2+detailLabelStyle.Render("Import Prefix:")+detailValueStyle.Render(" "+prefixVal))
+	lines = append(lines, pfx3+detailLabelStyle.Render("Is Active:    ")+detailValueStyle.Render(activeVal))
+	lines = append(lines, "")
+	lines = append(lines, scrollStyle.Render("j/k field  h/l or space toggle  enter save  esc cancel"))
 	return strings.Join(lines, "\n")
 }
 

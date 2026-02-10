@@ -106,3 +106,46 @@ func TestKeyRegistryScopeHelpOrder(t *testing.T) {
 		}
 	}
 }
+
+func TestKeyRegistryApplyOverridesScopedReuse(t *testing.T) {
+	r := NewKeyRegistry()
+	err := r.ApplyOverrides([]shortcutOverride{
+		{Scope: scopeTransactions, Action: string(actionQuickCategory), Keys: []string{"CTRL + K"}},
+		{Scope: scopeSettingsActiveDBImport, Action: string(actionClearDB), Keys: []string{"ctrl+k"}},
+	})
+	if err != nil {
+		t.Fatalf("ApplyOverrides: %v", err)
+	}
+	if got := r.Lookup("ctrl+k", scopeTransactions); got == nil || got.Action != actionQuickCategory {
+		t.Fatalf("transactions ctrl+k = %+v, want quick_category", got)
+	}
+	if got := r.Lookup("ctrl+k", scopeSettingsActiveDBImport); got == nil || got.Action != actionClearDB {
+		t.Fatalf("settings db ctrl+k = %+v, want clear_db", got)
+	}
+}
+
+func TestKeyRegistryApplyOverridesConflictInScopeFails(t *testing.T) {
+	r := NewKeyRegistry()
+	err := r.ApplyOverrides([]shortcutOverride{
+		{Scope: scopeTransactions, Action: string(actionQuickCategory), Keys: []string{"ctrl+k"}},
+		{Scope: scopeTransactions, Action: string(actionSort), Keys: []string{"ctrl+k"}},
+	})
+	if err == nil {
+		t.Fatal("expected conflict error")
+	}
+}
+
+func TestNormalizeKeyNameCombos(t *testing.T) {
+	tests := map[string]string{
+		"CTRL + C":    "ctrl+c",
+		" shift +tab": "shift+tab",
+		"Return":      "enter",
+		"SPACEBAR":    "space",
+		" ":           "space",
+	}
+	for in, want := range tests {
+		if got := normalizeKeyName(in); got != want {
+			t.Fatalf("normalizeKeyName(%q) = %q, want %q", in, got, want)
+		}
+	}
+}

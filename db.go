@@ -3,6 +3,7 @@ package main
 import (
 	"database/sql"
 	"fmt"
+	"strings"
 
 	tea "github.com/charmbracelet/bubbletea"
 	_ "modernc.org/sqlite"
@@ -12,7 +13,7 @@ import (
 // Schema version
 // ---------------------------------------------------------------------------
 
-const schemaVersion = 2
+const schemaVersion = 3
 
 // ---------------------------------------------------------------------------
 // Default categories seeded on fresh DB
@@ -37,7 +38,7 @@ var defaultCategories = []struct {
 }
 
 // ---------------------------------------------------------------------------
-// Schema DDL (v2)
+// Schema DDL
 // ---------------------------------------------------------------------------
 
 const schemaV2 = `
@@ -83,6 +84,66 @@ CREATE TABLE IF NOT EXISTS imports (
 CREATE INDEX IF NOT EXISTS idx_transactions_date ON transactions(date_iso);
 CREATE INDEX IF NOT EXISTS idx_transactions_category ON transactions(category_id);
 CREATE INDEX IF NOT EXISTS idx_category_rules_pattern ON category_rules(pattern);
+`
+
+const schemaV3 = `
+CREATE TABLE IF NOT EXISTS schema_meta (
+	version INTEGER NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS categories (
+	id          INTEGER PRIMARY KEY AUTOINCREMENT,
+	name        TEXT NOT NULL UNIQUE,
+	color       TEXT NOT NULL,
+	sort_order  INTEGER NOT NULL DEFAULT 0,
+	is_default  INTEGER NOT NULL DEFAULT 0
+);
+
+CREATE TABLE IF NOT EXISTS category_rules (
+	id            INTEGER PRIMARY KEY AUTOINCREMENT,
+	pattern       TEXT NOT NULL,
+	category_id   INTEGER NOT NULL REFERENCES categories(id) ON DELETE CASCADE,
+	priority      INTEGER NOT NULL DEFAULT 0,
+	UNIQUE(pattern)
+);
+
+CREATE TABLE IF NOT EXISTS accounts (
+	id         INTEGER PRIMARY KEY AUTOINCREMENT,
+	name       TEXT NOT NULL UNIQUE,
+	type       TEXT NOT NULL CHECK(type IN ('debit','credit')) DEFAULT 'debit',
+	sort_order INTEGER NOT NULL DEFAULT 0,
+	is_active  INTEGER NOT NULL DEFAULT 1
+);
+
+CREATE TABLE IF NOT EXISTS account_selection (
+	account_id INTEGER NOT NULL REFERENCES accounts(id) ON DELETE CASCADE
+);
+
+CREATE TABLE IF NOT EXISTS transactions (
+	id            INTEGER PRIMARY KEY AUTOINCREMENT,
+	date_raw      TEXT NOT NULL,
+	date_iso      TEXT NOT NULL,
+	amount        REAL NOT NULL,
+	description   TEXT NOT NULL,
+	category_id   INTEGER REFERENCES categories(id) ON DELETE SET NULL,
+	notes         TEXT NOT NULL DEFAULT '',
+	import_id     INTEGER REFERENCES imports(id),
+	account_id    INTEGER REFERENCES accounts(id),
+	created_at    TEXT NOT NULL DEFAULT (datetime('now'))
+);
+
+CREATE TABLE IF NOT EXISTS imports (
+	id            INTEGER PRIMARY KEY AUTOINCREMENT,
+	filename      TEXT NOT NULL,
+	row_count     INTEGER NOT NULL,
+	imported_at   TEXT NOT NULL DEFAULT (datetime('now'))
+);
+
+CREATE INDEX IF NOT EXISTS idx_transactions_date ON transactions(date_iso);
+CREATE INDEX IF NOT EXISTS idx_transactions_category ON transactions(category_id);
+CREATE INDEX IF NOT EXISTS idx_transactions_account ON transactions(account_id);
+CREATE INDEX IF NOT EXISTS idx_category_rules_pattern ON category_rules(pattern);
+CREATE INDEX IF NOT EXISTS idx_accounts_sort_order ON accounts(sort_order);
 `
 
 // ---------------------------------------------------------------------------
@@ -150,11 +211,14 @@ func migrateSchema(db *sql.DB, fromVersion int) error {
 	if fromVersion == 0 {
 		return migrateFromV1(db)
 	}
+	if fromVersion == 2 {
+		return migrateFromV2(db)
+	}
 	// Unknown version — drop and recreate (should not happen in practice).
 	return migrateClean(db)
 }
 
-// migrateFromV1 preserves v1 transactions while adding v2 tables and columns.
+// migrateFromV1 preserves v1 transactions while adding v3 tables and columns.
 func migrateFromV1(db *sql.DB) error {
 	// Check whether a v1 transactions table exists.
 	var hasTxns int
@@ -177,7 +241,7 @@ func migrateFromV1(db *sql.DB) error {
 		}
 	}
 
-	// Create full v2 schema.
+	// Create full v2 schema first, then evolve to v3.
 	if _, err := db.Exec(schemaV2); err != nil {
 		return fmt.Errorf("create v2 schema: %w", err)
 	}
@@ -200,8 +264,62 @@ func migrateFromV1(db *sql.DB) error {
 		}
 	}
 
-	if _, err := db.Exec("INSERT INTO schema_meta (version) VALUES (?)", schemaVersion); err != nil {
-		return fmt.Errorf("insert schema version: %w", err)
+	if _, err := db.Exec("INSERT INTO schema_meta (version) VALUES (2)"); err != nil {
+		return fmt.Errorf("insert schema version v2: %w", err)
+	}
+	if err := migrateFromV2(db); err != nil {
+		return fmt.Errorf("migrate v2->v3: %w", err)
+	}
+	return nil
+}
+
+func migrateFromV2(db *sql.DB) error {
+	if _, err := db.Exec(`
+		CREATE TABLE IF NOT EXISTS accounts (
+			id         INTEGER PRIMARY KEY AUTOINCREMENT,
+			name       TEXT NOT NULL UNIQUE,
+			type       TEXT NOT NULL CHECK(type IN ('debit','credit')) DEFAULT 'debit',
+			sort_order INTEGER NOT NULL DEFAULT 0,
+			is_active  INTEGER NOT NULL DEFAULT 1
+		)
+	`); err != nil {
+		return fmt.Errorf("create accounts table: %w", err)
+	}
+	if _, err := db.Exec(`
+		CREATE TABLE IF NOT EXISTS account_selection (
+			account_id INTEGER NOT NULL REFERENCES accounts(id) ON DELETE CASCADE
+		)
+	`); err != nil {
+		return fmt.Errorf("create account_selection table: %w", err)
+	}
+	hasAccountID, err := tableHasColumn(db, "transactions", "account_id")
+	if err != nil {
+		return fmt.Errorf("check transactions.account_id: %w", err)
+	}
+	if !hasAccountID {
+		if _, err := db.Exec(`ALTER TABLE transactions ADD COLUMN account_id INTEGER REFERENCES accounts(id)`); err != nil {
+			return fmt.Errorf("add transactions.account_id: %w", err)
+		}
+	}
+	if _, err := db.Exec(`CREATE INDEX IF NOT EXISTS idx_transactions_account ON transactions(account_id)`); err != nil {
+		return fmt.Errorf("create transactions account index: %w", err)
+	}
+	if _, err := db.Exec(`CREATE INDEX IF NOT EXISTS idx_accounts_sort_order ON accounts(sort_order)`); err != nil {
+		return fmt.Errorf("create accounts sort index: %w", err)
+	}
+
+	seedID, err := ensureSeedANZAccount(db)
+	if err != nil {
+		return fmt.Errorf("ensure seed ANZ account: %w", err)
+	}
+	if _, err := db.Exec(`UPDATE transactions SET account_id = ? WHERE account_id IS NULL`, seedID); err != nil {
+		return fmt.Errorf("backfill transactions account_id: %w", err)
+	}
+	if _, err := db.Exec(`DELETE FROM schema_meta`); err != nil {
+		return fmt.Errorf("clear schema_meta: %w", err)
+	}
+	if _, err := db.Exec(`INSERT INTO schema_meta (version) VALUES (?)`, schemaVersion); err != nil {
+		return fmt.Errorf("set schema version: %w", err)
 	}
 	return nil
 }
@@ -226,8 +344,34 @@ func migrateClean(db *sql.DB) error {
 	if err := seedDefaultCategories(db); err != nil {
 		return fmt.Errorf("seed categories: %w", err)
 	}
+	if _, err := db.Exec(`CREATE TABLE IF NOT EXISTS accounts (
+		id         INTEGER PRIMARY KEY AUTOINCREMENT,
+		name       TEXT NOT NULL UNIQUE,
+		type       TEXT NOT NULL CHECK(type IN ('debit','credit')) DEFAULT 'debit',
+		sort_order INTEGER NOT NULL DEFAULT 0,
+		is_active  INTEGER NOT NULL DEFAULT 1
+	)`); err != nil {
+		return fmt.Errorf("create accounts table: %w", err)
+	}
+	if _, err := db.Exec(`CREATE TABLE IF NOT EXISTS account_selection (
+		account_id INTEGER NOT NULL REFERENCES accounts(id) ON DELETE CASCADE
+	)`); err != nil {
+		return fmt.Errorf("create account_selection table: %w", err)
+	}
+	if _, err := db.Exec(`ALTER TABLE transactions ADD COLUMN account_id INTEGER REFERENCES accounts(id)`); err != nil {
+		return fmt.Errorf("add transactions.account_id: %w", err)
+	}
+	if _, err := db.Exec(`CREATE INDEX IF NOT EXISTS idx_transactions_account ON transactions(account_id)`); err != nil {
+		return fmt.Errorf("create transactions account index: %w", err)
+	}
+	if _, err := db.Exec(`CREATE INDEX IF NOT EXISTS idx_accounts_sort_order ON accounts(sort_order)`); err != nil {
+		return fmt.Errorf("create accounts sort index: %w", err)
+	}
 	if _, err := db.Exec("INSERT INTO schema_meta (version) VALUES (?)", schemaVersion); err != nil {
 		return fmt.Errorf("insert schema version: %w", err)
+	}
+	if _, err := ensureSeedANZAccount(db); err != nil {
+		return fmt.Errorf("seed ANZ account: %w", err)
 	}
 	return nil
 }
@@ -249,6 +393,58 @@ func seedDefaultCategories(db *sql.DB) error {
 		}
 	}
 	return nil
+}
+
+func tableHasColumn(db *sql.DB, tableName, columnName string) (bool, error) {
+	rows, err := db.Query("PRAGMA table_info(" + tableName + ")")
+	if err != nil {
+		return false, err
+	}
+	defer rows.Close()
+	for rows.Next() {
+		var cid int
+		var name, colType string
+		var notNull, pk int
+		var dflt sql.NullString
+		if err := rows.Scan(&cid, &name, &colType, &notNull, &dflt, &pk); err != nil {
+			return false, err
+		}
+		if strings.EqualFold(name, columnName) {
+			return true, nil
+		}
+	}
+	return false, rows.Err()
+}
+
+func ensureSeedANZAccount(db *sql.DB) (int, error) {
+	var id int
+	err := db.QueryRow(`
+		SELECT id
+		FROM accounts
+		WHERE LOWER(name) = LOWER(?)
+		LIMIT 1
+	`, "ANZ").Scan(&id)
+	if err == nil {
+		if _, err := db.Exec(`UPDATE accounts SET type='credit' WHERE id = ?`, id); err != nil {
+			return 0, fmt.Errorf("ensure ANZ credit type: %w", err)
+		}
+		return id, nil
+	}
+	if err != sql.ErrNoRows {
+		return 0, fmt.Errorf("query ANZ seed account: %w", err)
+	}
+	res, err := db.Exec(`
+		INSERT INTO accounts (name, type, sort_order, is_active)
+		VALUES (?, 'credit', 1, 1)
+	`, "ANZ")
+	if err != nil {
+		return 0, fmt.Errorf("insert ANZ seed account: %w", err)
+	}
+	lastID, err := res.LastInsertId()
+	if err != nil {
+		return 0, fmt.Errorf("last insert id for ANZ seed account: %w", err)
+	}
+	return int(lastID), nil
 }
 
 // ---------------------------------------------------------------------------
@@ -377,7 +573,7 @@ func loadImports(db *sql.DB) ([]importRecord, error) {
 }
 
 // ---------------------------------------------------------------------------
-// Transaction queries (v2)
+// Transaction queries
 // ---------------------------------------------------------------------------
 
 // loadRows retrieves all transactions with category info, ordered by date (newest first).
@@ -385,9 +581,10 @@ func loadRows(db *sql.DB) ([]transaction, error) {
 	rows, err := db.Query(`
 		SELECT t.id, t.date_raw, t.date_iso, t.amount, t.description,
 		       t.category_id, COALESCE(c.name, 'Uncategorised'), COALESCE(c.color, '#7f849c'),
-		       t.notes
+		       t.notes, t.account_id, COALESCE(a.name, ''), COALESCE(a.type, '')
 		FROM transactions t
 		LEFT JOIN categories c ON t.category_id = c.id
+		LEFT JOIN accounts a ON t.account_id = a.id
 		ORDER BY t.date_iso DESC, t.id DESC
 	`)
 	if err != nil {
@@ -399,7 +596,7 @@ func loadRows(db *sql.DB) ([]transaction, error) {
 	for rows.Next() {
 		var t transaction
 		if err := rows.Scan(&t.id, &t.dateRaw, &t.dateISO, &t.amount, &t.description,
-			&t.categoryID, &t.categoryName, &t.categoryColor, &t.notes); err != nil {
+			&t.categoryID, &t.categoryName, &t.categoryColor, &t.notes, &t.accountID, &t.accountName, &t.accountType); err != nil {
 			return nil, fmt.Errorf("scan transaction: %w", err)
 		}
 		out = append(out, t)
@@ -614,6 +811,250 @@ func insertImportRecord(db *sql.DB, filename string, rowCount int) (int, error) 
 }
 
 // ---------------------------------------------------------------------------
+// Accounts
+// ---------------------------------------------------------------------------
+
+type account struct {
+	id        int
+	name      string
+	acctType  string
+	sortOrder int
+	isActive  bool
+}
+
+func loadAccounts(db *sql.DB) ([]account, error) {
+	rows, err := db.Query(`
+		SELECT id, name, type, sort_order, is_active
+		FROM accounts
+		ORDER BY sort_order ASC, LOWER(name) ASC, id ASC
+	`)
+	if err != nil {
+		return nil, fmt.Errorf("query accounts: %w", err)
+	}
+	defer rows.Close()
+
+	var out []account
+	for rows.Next() {
+		var a account
+		var active int
+		if err := rows.Scan(&a.id, &a.name, &a.acctType, &a.sortOrder, &active); err != nil {
+			return nil, fmt.Errorf("scan account: %w", err)
+		}
+		a.isActive = active == 1
+		out = append(out, a)
+	}
+	return out, rows.Err()
+}
+
+func loadAccountByNameCI(db *sql.DB, name string) (*account, error) {
+	var a account
+	var active int
+	err := db.QueryRow(`
+		SELECT id, name, type, sort_order, is_active
+		FROM accounts
+		WHERE LOWER(name) = LOWER(?)
+		LIMIT 1
+	`, name).Scan(&a.id, &a.name, &a.acctType, &a.sortOrder, &active)
+	if err == sql.ErrNoRows {
+		return nil, nil
+	}
+	if err != nil {
+		return nil, fmt.Errorf("query account by name: %w", err)
+	}
+	a.isActive = active == 1
+	return &a, nil
+}
+
+func insertAccount(db *sql.DB, name, acctType string, isActive bool) (int, error) {
+	var maxOrder int
+	if err := db.QueryRow(`SELECT COALESCE(MAX(sort_order), 0) FROM accounts`).Scan(&maxOrder); err != nil {
+		return 0, fmt.Errorf("max account sort_order: %w", err)
+	}
+	active := 0
+	if isActive {
+		active = 1
+	}
+	res, err := db.Exec(`
+		INSERT INTO accounts (name, type, sort_order, is_active)
+		VALUES (?, ?, ?, ?)
+	`, name, normalizeAccountType(acctType), maxOrder+1, active)
+	if err != nil {
+		return 0, fmt.Errorf("insert account: %w", err)
+	}
+	lastID, err := res.LastInsertId()
+	if err != nil {
+		return 0, fmt.Errorf("last insert id account: %w", err)
+	}
+	return int(lastID), nil
+}
+
+func updateAccount(db *sql.DB, id int, name, acctType string, isActive bool) error {
+	active := 0
+	if isActive {
+		active = 1
+	}
+	_, err := db.Exec(`
+		UPDATE accounts
+		SET name = ?, type = ?, is_active = ?
+		WHERE id = ?
+	`, name, normalizeAccountType(acctType), active, id)
+	if err != nil {
+		return fmt.Errorf("update account: %w", err)
+	}
+	return nil
+}
+
+func countTransactionsForAccount(db *sql.DB, accountID int) (int, error) {
+	var n int
+	if err := db.QueryRow(`SELECT COUNT(*) FROM transactions WHERE account_id = ?`, accountID).Scan(&n); err != nil {
+		return 0, fmt.Errorf("count transactions for account %d: %w", accountID, err)
+	}
+	return n, nil
+}
+
+func clearTransactionsForAccount(db *sql.DB, accountID int) (int, error) {
+	res, err := db.Exec(`DELETE FROM transactions WHERE account_id = ?`, accountID)
+	if err != nil {
+		return 0, fmt.Errorf("clear transactions for account %d: %w", accountID, err)
+	}
+	n, err := res.RowsAffected()
+	if err != nil {
+		return 0, fmt.Errorf("rows affected clear account %d: %w", accountID, err)
+	}
+	return int(n), nil
+}
+
+func deleteAccountIfEmpty(db *sql.DB, accountID int) error {
+	count, err := countTransactionsForAccount(db, accountID)
+	if err != nil {
+		return err
+	}
+	if count > 0 {
+		return fmt.Errorf("account has %d transactions; clear it first", count)
+	}
+	if _, err := db.Exec(`DELETE FROM account_selection WHERE account_id = ?`, accountID); err != nil {
+		return fmt.Errorf("delete account selection: %w", err)
+	}
+	if _, err := db.Exec(`DELETE FROM accounts WHERE id = ?`, accountID); err != nil {
+		return fmt.Errorf("delete account: %w", err)
+	}
+	return nil
+}
+
+func nukeAccountWithTransactions(db *sql.DB, accountID int) (int, error) {
+	tx, err := db.Begin()
+	if err != nil {
+		return 0, fmt.Errorf("begin nuke account tx: %w", err)
+	}
+	defer tx.Rollback() //nolint:errcheck
+
+	res, err := tx.Exec(`DELETE FROM transactions WHERE account_id = ?`, accountID)
+	if err != nil {
+		return 0, fmt.Errorf("delete account transactions: %w", err)
+	}
+	if _, err := tx.Exec(`DELETE FROM account_selection WHERE account_id = ?`, accountID); err != nil {
+		return 0, fmt.Errorf("delete account selection: %w", err)
+	}
+	if _, err := tx.Exec(`DELETE FROM accounts WHERE id = ?`, accountID); err != nil {
+		return 0, fmt.Errorf("delete account: %w", err)
+	}
+	if err := tx.Commit(); err != nil {
+		return 0, fmt.Errorf("commit nuke account: %w", err)
+	}
+	n, _ := res.RowsAffected()
+	return int(n), nil
+}
+
+func saveSelectedAccounts(db *sql.DB, accountIDs []int) error {
+	tx, err := db.Begin()
+	if err != nil {
+		return fmt.Errorf("begin save selected accounts: %w", err)
+	}
+	defer tx.Rollback() //nolint:errcheck
+
+	if _, err := tx.Exec(`DELETE FROM account_selection`); err != nil {
+		return fmt.Errorf("clear account selection: %w", err)
+	}
+	for _, id := range accountIDs {
+		if _, err := tx.Exec(`INSERT INTO account_selection (account_id) VALUES (?)`, id); err != nil {
+			return fmt.Errorf("insert selected account %d: %w", id, err)
+		}
+	}
+	if err := tx.Commit(); err != nil {
+		return fmt.Errorf("commit save selected accounts: %w", err)
+	}
+	return nil
+}
+
+func loadSelectedAccounts(db *sql.DB) (map[int]bool, error) {
+	rows, err := db.Query(`SELECT account_id FROM account_selection`)
+	if err != nil {
+		return nil, fmt.Errorf("query account_selection: %w", err)
+	}
+	defer rows.Close()
+
+	out := make(map[int]bool)
+	for rows.Next() {
+		var id int
+		if err := rows.Scan(&id); err != nil {
+			return nil, fmt.Errorf("scan account_selection: %w", err)
+		}
+		out[id] = true
+	}
+	return out, rows.Err()
+}
+
+func syncAccountsFromFormats(db *sql.DB, formats []csvFormat) error {
+	type entry struct {
+		fmt csvFormat
+		pos int
+	}
+	byName := make(map[string]entry)
+	for i, f := range formats {
+		name := strings.TrimSpace(f.Account)
+		if name == "" {
+			name = strings.TrimSpace(f.Name)
+		}
+		if name == "" {
+			continue
+		}
+		f.Account = name
+		byName[strings.ToLower(name)] = entry{fmt: f, pos: i}
+	}
+	for _, ent := range byName {
+		existing, err := loadAccountByNameCI(db, ent.fmt.Account)
+		if err != nil {
+			return err
+		}
+		sortOrder := ent.fmt.SortOrder
+		if sortOrder <= 0 {
+			sortOrder = ent.pos + 1
+		}
+		active := 1
+		if !ent.fmt.IsActive {
+			active = 0
+		}
+		if existing == nil {
+			if _, err := db.Exec(`
+				INSERT INTO accounts (name, type, sort_order, is_active)
+				VALUES (?, ?, ?, ?)
+			`, ent.fmt.Account, normalizeAccountType(ent.fmt.AccountType), sortOrder, active); err != nil {
+				return fmt.Errorf("insert synced account %q: %w", ent.fmt.Account, err)
+			}
+			continue
+		}
+		if _, err := db.Exec(`
+			UPDATE accounts
+			SET type = ?, sort_order = ?, is_active = ?
+			WHERE id = ?
+		`, normalizeAccountType(ent.fmt.AccountType), sortOrder, active, existing.id); err != nil {
+			return fmt.Errorf("update synced account %q: %w", ent.fmt.Account, err)
+		}
+	}
+	return nil
+}
+
+// ---------------------------------------------------------------------------
 // Database info
 // ---------------------------------------------------------------------------
 
@@ -624,6 +1065,7 @@ type dbInfo struct {
 	categoryCount    int
 	ruleCount        int
 	importCount      int
+	accountCount     int
 }
 
 // loadDBInfo retrieves summary statistics.
@@ -644,6 +1086,9 @@ func loadDBInfo(db *sql.DB) (dbInfo, error) {
 	}
 	if err := db.QueryRow("SELECT COUNT(*) FROM imports").Scan(&info.importCount); err != nil {
 		return info, fmt.Errorf("import count: %w", err)
+	}
+	if err := db.QueryRow("SELECT COUNT(*) FROM accounts").Scan(&info.accountCount); err != nil {
+		return info, fmt.Errorf("account count: %w", err)
 	}
 	return info, nil
 }
@@ -686,16 +1131,26 @@ func refreshCmd(db *sql.DB) tea.Cmd {
 		if err != nil {
 			return refreshDoneMsg{err: err}
 		}
+		accounts, err := loadAccounts(db)
+		if err != nil {
+			return refreshDoneMsg{err: err}
+		}
+		selectedAccounts, err := loadSelectedAccounts(db)
+		if err != nil {
+			return refreshDoneMsg{err: err}
+		}
 		info, err := loadDBInfo(db)
 		if err != nil {
 			return refreshDoneMsg{err: err}
 		}
 		return refreshDoneMsg{
-			rows:       rows,
-			categories: cats,
-			rules:      rules,
-			imports:    imports,
-			info:       info,
+			rows:             rows,
+			categories:       cats,
+			rules:            rules,
+			imports:          imports,
+			accounts:         accounts,
+			selectedAccounts: selectedAccounts,
+			info:             info,
 		}
 	}
 }
