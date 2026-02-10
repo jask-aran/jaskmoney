@@ -53,7 +53,14 @@ func runValidation() error {
 	if format == nil {
 		return fmt.Errorf("detect format failed")
 	}
-	total, dupes, err := countDuplicates(db, csvPath, *format)
+	acct, err := loadAccountByNameCI(db, format.Account)
+	if err != nil {
+		return fmt.Errorf("load account: %w", err)
+	}
+	if acct == nil {
+		return fmt.Errorf("mapped account not found: %s", format.Account)
+	}
+	total, dupes, err := countDuplicatesForAccount(db, csvPath, *format, &acct.id, acct.acctType)
 	if err != nil {
 		return fmt.Errorf("count duplicates: %w", err)
 	}

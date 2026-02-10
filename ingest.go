@@ -29,7 +29,17 @@ func ingestCmd(db *sql.DB, filename, basePath string, formats []csvFormat, skipD
 		if format == nil {
 			return ingestDoneMsg{err: fmt.Errorf("no matching format for %q", base), file: base}
 		}
-		count, dupes, err := importCSV(db, path, *format, skipDupes)
+		acct, err := loadAccountByNameCI(db, format.Account)
+		if err != nil {
+			return ingestDoneMsg{err: fmt.Errorf("resolve account %q: %w", format.Account, err), file: base}
+		}
+		if acct == nil {
+			return ingestDoneMsg{
+				err:  fmt.Errorf("account %q not found; create or sync it in Manager", format.Account),
+				file: base,
+			}
+		}
+		count, dupes, err := importCSVForAccount(db, path, *format, &acct.id, acct.acctType, skipDupes)
 		if err != nil {
 			return ingestDoneMsg{count: count, dupes: dupes, err: err, file: base}
 		}
@@ -56,7 +66,14 @@ func scanDupesCmd(db *sql.DB, filename, basePath string, formats []csvFormat) te
 		if format == nil {
 			return dupeScanMsg{err: fmt.Errorf("no matching format for %q", base), file: base}
 		}
-		total, dupes, err := countDuplicates(db, path, *format)
+		acct, err := loadAccountByNameCI(db, format.Account)
+		if err != nil {
+			return dupeScanMsg{err: fmt.Errorf("resolve account %q: %w", format.Account, err), file: base}
+		}
+		if acct == nil {
+			return dupeScanMsg{err: fmt.Errorf("account %q not found; create or sync it in Manager", format.Account), file: base}
+		}
+		total, dupes, err := countDuplicatesForAccount(db, path, *format, &acct.id, acct.acctType)
 		if err != nil {
 			return dupeScanMsg{err: err, file: base}
 		}
@@ -69,7 +86,11 @@ func scanDupesCmd(db *sql.DB, filename, basePath string, formats []csvFormat) te
 func detectFormat(formats []csvFormat, filename string) *csvFormat {
 	lower := strings.ToLower(filename)
 	for i := range formats {
-		if strings.HasPrefix(lower, strings.ToLower(formats[i].Name)) {
+		prefix := strings.ToLower(strings.TrimSpace(formats[i].ImportPrefix))
+		if prefix == "" {
+			prefix = strings.ToLower(strings.TrimSpace(formats[i].Name))
+		}
+		if strings.HasPrefix(lower, prefix) {
 			return &formats[i]
 		}
 	}
@@ -82,6 +103,12 @@ func detectFormat(formats []csvFormat, filename string) *csvFormat {
 // importCSV reads a CSV file using the given format and inserts valid rows.
 // When skipDupes is true, rows matching (date_iso, amount, description) are skipped.
 func importCSV(db *sql.DB, path string, format csvFormat, skipDupes bool) (inserted int, dupes int, err error) {
+	return importCSVForAccount(db, path, format, nil, "debit", skipDupes)
+}
+
+// importCSVForAccount reads a CSV file using the given format and inserts valid rows.
+// When skipDupes is true, rows matching (date_iso, amount, description, account_id) are skipped.
+func importCSVForAccount(db *sql.DB, path string, format csvFormat, accountID *int, _ string, skipDupes bool) (inserted int, dupes int, err error) {
 	f, err := os.Open(path)
 	if err != nil {
 		return 0, 0, fmt.Errorf("open csv: %w", err)
@@ -158,10 +185,9 @@ func importCSV(db *sql.DB, path string, format csvFormat, skipDupes bool) (inser
 		if parseErr != nil {
 			return inserted, dupes, fmt.Errorf("parse amount %q: %w", amountRaw, parseErr)
 		}
-
 		// Duplicate check
 		if skipDupes {
-			key := duplicateKey(dateISO, amount, description)
+			key := duplicateKeyForAccount(dateISO, amount, description, accountID)
 			if existingSet[key] {
 				dupes++
 				continue
@@ -170,9 +196,9 @@ func importCSV(db *sql.DB, path string, format csvFormat, skipDupes bool) (inser
 		}
 
 		_, execErr := tx.Exec(`
-			INSERT INTO transactions (date_raw, date_iso, amount, description, notes)
-			VALUES (?, ?, ?, ?, '')
-		`, dateRaw, dateISO, amount, description)
+				INSERT INTO transactions (date_raw, date_iso, amount, description, notes, account_id)
+				VALUES (?, ?, ?, ?, '', ?)
+			`, dateRaw, dateISO, amount, description, accountID)
 		if execErr != nil {
 			return inserted, dupes, fmt.Errorf("insert row: %w", execErr)
 		}
@@ -186,6 +212,10 @@ func importCSV(db *sql.DB, path string, format csvFormat, skipDupes bool) (inser
 
 // countDuplicates scans a CSV file and counts how many rows would be duplicates.
 func countDuplicates(db *sql.DB, path string, format csvFormat) (total int, dupes int, err error) {
+	return countDuplicatesForAccount(db, path, format, nil, "debit")
+}
+
+func countDuplicatesForAccount(db *sql.DB, path string, format csvFormat, accountID *int, _ string) (total int, dupes int, err error) {
 	f, err := os.Open(path)
 	if err != nil {
 		return 0, 0, fmt.Errorf("open csv: %w", err)
@@ -248,7 +278,7 @@ func countDuplicates(db *sql.DB, path string, format csvFormat) (total int, dupe
 			continue
 		}
 		total++
-		key := duplicateKey(dateISO, amount, description)
+		key := duplicateKeyForAccount(dateISO, amount, description, accountID)
 		if existingSet[key] || seenInFile[key] {
 			dupes++
 		}
@@ -259,12 +289,20 @@ func countDuplicates(db *sql.DB, path string, format csvFormat) (total int, dupe
 
 // duplicateKey builds a composite key for duplicate detection.
 func duplicateKey(dateISO string, amount float64, description string) string {
-	return fmt.Sprintf("%s|%.2f|%s", dateISO, amount, strings.ToLower(description))
+	return duplicateKeyForAccount(dateISO, amount, description, nil)
+}
+
+func duplicateKeyForAccount(dateISO string, amount float64, description string, accountID *int) string {
+	acc := 0
+	if accountID != nil {
+		acc = *accountID
+	}
+	return fmt.Sprintf("%s|%.2f|%s|%d", dateISO, amount, strings.ToLower(description), acc)
 }
 
 // loadDuplicateSet returns a set of existing transaction keys for fast lookup.
 func loadDuplicateSet(db *sql.DB) (map[string]bool, error) {
-	rows, err := db.Query("SELECT date_iso, amount, description FROM transactions")
+	rows, err := db.Query("SELECT date_iso, amount, description, account_id FROM transactions")
 	if err != nil {
 		return nil, err
 	}
@@ -273,10 +311,11 @@ func loadDuplicateSet(db *sql.DB) (map[string]bool, error) {
 	for rows.Next() {
 		var dateISO, desc string
 		var amount float64
-		if err := rows.Scan(&dateISO, &amount, &desc); err != nil {
+		var accountID *int
+		if err := rows.Scan(&dateISO, &amount, &desc, &accountID); err != nil {
 			return nil, err
 		}
-		set[duplicateKey(dateISO, amount, desc)] = true
+		set[duplicateKeyForAccount(dateISO, amount, desc, accountID)] = true
 	}
 	return set, rows.Err()
 }

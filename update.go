@@ -91,6 +91,17 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m, nil
 	case quickCategoryAppliedMsg:
 		return m.handleQuickCategoryApplied(msg)
+	case accountNukedMsg:
+		if msg.err != nil {
+			m.setError(fmt.Sprintf("Account nuke failed: %v", msg.err))
+			return m, nil
+		}
+		m.status = fmt.Sprintf("Nuked %q (%d transactions removed).", msg.accountName, msg.deletedTxns)
+		m.statusErr = false
+		if m.db == nil {
+			return m, nil
+		}
+		return m, refreshCmd(m.db)
 	case confirmExpiredMsg:
 		m.confirmAction = ""
 		m.confirmID = 0
@@ -107,6 +118,12 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 		if m.catPicker != nil {
 			return m.updateCatPicker(msg)
+		}
+		if m.accountNukePicker != nil {
+			return m.updateAccountNukePicker(msg)
+		}
+		if m.managerModalOpen {
+			return m.updateManagerModal(msg)
 		}
 		if m.searchMode {
 			return m.updateSearch(msg)
@@ -135,6 +152,10 @@ func (m model) handleDBReady(msg dbReadyMsg) (tea.Model, tea.Cmd) {
 		return m, nil
 	}
 	m.db = msg.db
+	if err := syncAccountsFromFormats(m.db, m.formats); err != nil {
+		m.setError(fmt.Sprintf("Account sync error: %v", err))
+		return m, nil
+	}
 	return m, refreshCmd(m.db)
 }
 
@@ -147,9 +168,26 @@ func (m model) handleRefreshDone(msg refreshDoneMsg) (tea.Model, tea.Cmd) {
 	m.categories = msg.categories
 	m.rules = msg.rules
 	m.imports = msg.imports
+	m.accounts = msg.accounts
 	m.dbInfo = msg.info
+	if len(msg.selectedAccounts) == 0 {
+		m.filterAccounts = nil
+	} else {
+		m.filterAccounts = msg.selectedAccounts
+	}
 	m.ready = true
 	m.pruneSelections()
+	if m.managerCursor >= len(m.accounts) {
+		m.managerCursor = len(m.accounts) - 1
+	}
+	if m.managerCursor < 0 {
+		m.managerCursor = 0
+	}
+	idx := m.managerFocusedIndex()
+	if idx >= 0 {
+		m.managerCursor = idx
+		m.managerSelectedID = m.accounts[idx].id
+	}
 	// Only reset cursor on first load, not on subsequent refreshes
 	if m.status == "" {
 		m.cursor = 0
@@ -272,18 +310,41 @@ func saveSettingsCmd(s appSettings) tea.Cmd {
 	}
 }
 
+func (m model) isAction(scope string, action Action, msg tea.KeyMsg) bool {
+	reg := m.keys
+	if reg == nil {
+		reg = NewKeyRegistry()
+	}
+	b := reg.Lookup(msg.String(), scope)
+	return b != nil && b.Action == action
+}
+
+func (m model) primaryActionKey(scope string, action Action, fallback string) string {
+	reg := m.keys
+	if reg == nil {
+		reg = NewKeyRegistry()
+	}
+	for _, b := range reg.BindingsForScope(scope) {
+		if b.Action == action && len(b.Keys) > 0 {
+			return b.Keys[0]
+		}
+	}
+	return fallback
+}
+
 // ---------------------------------------------------------------------------
 // Key-input handlers
 // ---------------------------------------------------------------------------
 
 func (m model) updateMain(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
-	switch msg.String() {
-	case "ctrl+c", "q":
+	if m.isAction(scopeGlobal, actionQuit, msg) {
 		return m, tea.Quit
-	case "tab":
+	}
+	if m.isAction(scopeGlobal, actionNextTab, msg) {
 		m.activeTab = (m.activeTab + 1) % tabCount
 		return m, nil
-	case "shift+tab":
+	}
+	if m.isAction(scopeGlobal, actionPrevTab, msg) {
 		m.activeTab = (m.activeTab - 1 + tabCount) % tabCount
 		return m, nil
 	}
@@ -296,28 +357,271 @@ func (m model) updateMain(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	if m.activeTab == tabDashboard {
 		return m.updateDashboard(msg)
 	}
+	if m.activeTab == tabManager {
+		return m.updateManager(msg)
+	}
 	return m, nil
+}
+
+func (m model) updateManager(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
+	if len(m.accounts) == 0 {
+		if m.isAction(scopeManager, actionAdd, msg) {
+			m.openManagerAccountModal(true, nil)
+		}
+		return m, nil
+	}
+
+	idx := m.managerFocusedIndex()
+	if idx < 0 {
+		return m, nil
+	}
+	keyName := normalizeKeyName(msg.String())
+	switch {
+	case m.isAction(scopeManager, actionNavigate, msg) && (keyName == "j" || keyName == "down" || keyName == "ctrl+n"):
+		if idx < len(m.accounts)-1 {
+			idx++
+		}
+		m.managerCursor = idx
+		m.managerSelectedID = m.accounts[idx].id
+		return m, nil
+	case m.isAction(scopeManager, actionNavigate, msg):
+		if idx > 0 {
+			idx--
+		}
+		m.managerCursor = idx
+		m.managerSelectedID = m.accounts[idx].id
+		return m, nil
+	case m.isAction(scopeManager, actionAdd, msg):
+		m.openManagerAccountModal(true, nil)
+		return m, nil
+	case m.isAction(scopeManager, actionToggleSelect, msg):
+		if m.filterAccounts == nil {
+			m.filterAccounts = make(map[int]bool)
+		}
+		// "All accounts active" is represented by an empty map.
+		// On first toggle, materialize current all-active state so a single
+		// toggle only affects the focused account.
+		if len(m.filterAccounts) == 0 {
+			for _, acc := range m.accounts {
+				m.filterAccounts[acc.id] = true
+			}
+		}
+		id := m.accounts[idx].id
+		if m.filterAccounts[id] {
+			delete(m.filterAccounts, id)
+		} else {
+			m.filterAccounts[id] = true
+		}
+		return m, nil
+	case m.isAction(scopeManager, actionSave, msg):
+		if m.db == nil {
+			m.setError("Database not ready.")
+			return m, nil
+		}
+		ids := make([]int, 0, len(m.filterAccounts))
+		for id := range m.filterAccounts {
+			ids = append(ids, id)
+		}
+		db := m.db
+		return m, func() tea.Msg {
+			if err := saveSelectedAccounts(db, ids); err != nil {
+				return refreshDoneMsg{err: err}
+			}
+			return refreshCmd(db)()
+		}
+	case m.isAction(scopeManager, actionSelect, msg) || m.isAction(scopeManager, actionEdit, msg):
+		acc := m.accounts[idx]
+		m.openManagerAccountModal(false, &acc)
+		return m, nil
+	case m.isAction(scopeManager, actionClearDB, msg):
+		if m.db == nil {
+			m.setError("Database not ready.")
+			return m, nil
+		}
+		acc := m.accounts[idx]
+		db := m.db
+		return m, func() tea.Msg {
+			if _, err := clearTransactionsForAccount(db, acc.id); err != nil {
+				return refreshDoneMsg{err: err}
+			}
+			return refreshCmd(db)()
+		}
+	case m.isAction(scopeManager, actionDelete, msg):
+		if m.db == nil {
+			m.setError("Database not ready.")
+			return m, nil
+		}
+		acc := m.accounts[idx]
+		count, err := countTransactionsForAccount(m.db, acc.id)
+		if err != nil {
+			m.setError(fmt.Sprintf("Count failed: %v", err))
+			return m, nil
+		}
+		if count > 0 {
+			m.status = fmt.Sprintf("Account %q has %d transactions. Press c to clear, then d to delete.", acc.name, count)
+			m.statusErr = false
+			return m, nil
+		}
+		db := m.db
+		return m, func() tea.Msg {
+			if err := deleteAccountIfEmpty(db, acc.id); err != nil {
+				return refreshDoneMsg{err: err}
+			}
+			if err := removeFormatForAccount(acc.name); err != nil {
+				return refreshDoneMsg{err: err}
+			}
+			return refreshCmd(db)()
+		}
+	}
+	return m, nil
+}
+
+func (m *model) openManagerAccountModal(isNew bool, acc *account) {
+	m.managerModalOpen = true
+	m.managerModalIsNew = isNew
+	m.managerEditFocus = 0
+	if isNew || acc == nil {
+		m.managerEditID = 0
+		m.managerEditName = ""
+		m.managerEditType = "debit"
+		m.managerEditPrefix = ""
+		m.managerEditActive = true
+		return
+	}
+	m.managerEditID = acc.id
+	m.managerEditName = acc.name
+	m.managerEditType = normalizeAccountType(acc.acctType)
+	m.managerEditPrefix = strings.ToLower(acc.name)
+	for _, f := range m.formats {
+		if strings.EqualFold(f.Account, acc.name) || strings.EqualFold(f.Name, acc.name) {
+			if strings.TrimSpace(f.ImportPrefix) != "" {
+				m.managerEditPrefix = strings.TrimSpace(f.ImportPrefix)
+			}
+			break
+		}
+	}
+	m.managerEditActive = acc.isActive
+}
+
+func (m *model) closeManagerAccountModal() {
+	m.managerModalOpen = false
+	m.managerModalIsNew = false
+}
+
+func (m model) updateManagerModal(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
+	keyName := normalizeKeyName(msg.String())
+	switch {
+	case m.isAction(scopeManagerModal, actionClose, msg):
+		m.closeManagerAccountModal()
+		return m, nil
+	case m.isAction(scopeManagerModal, actionMove, msg) && (keyName == "j" || keyName == "down" || keyName == "ctrl+n"):
+		m.managerEditFocus = (m.managerEditFocus + 1) % 4
+		return m, nil
+	case m.isAction(scopeManagerModal, actionMove, msg):
+		m.managerEditFocus = (m.managerEditFocus - 1 + 4) % 4
+		return m, nil
+	case m.isAction(scopeManagerModal, actionColor, msg):
+		if m.managerEditFocus == 1 {
+			if m.managerEditType == "credit" {
+				m.managerEditType = "debit"
+			} else {
+				m.managerEditType = "credit"
+			}
+		} else if m.managerEditFocus == 3 {
+			m.managerEditActive = !m.managerEditActive
+		}
+		return m, nil
+	case keyName == "backspace":
+		if m.managerEditFocus == 0 && len(m.managerEditName) > 0 {
+			m.managerEditName = m.managerEditName[:len(m.managerEditName)-1]
+		}
+		if m.managerEditFocus == 2 && len(m.managerEditPrefix) > 0 {
+			m.managerEditPrefix = m.managerEditPrefix[:len(m.managerEditPrefix)-1]
+		}
+		return m, nil
+	case m.isAction(scopeManagerModal, actionSave, msg):
+		name := strings.TrimSpace(m.managerEditName)
+		if name == "" {
+			m.setError("Account name cannot be empty.")
+			return m, nil
+		}
+		prefix := strings.TrimSpace(m.managerEditPrefix)
+		if prefix == "" {
+			prefix = strings.ToLower(name)
+		}
+		if m.db == nil {
+			m.setError("Database not ready.")
+			return m, nil
+		}
+		db := m.db
+		isNew := m.managerModalIsNew
+		id := m.managerEditID
+		acctType := normalizeAccountType(m.managerEditType)
+		active := m.managerEditActive
+		m.closeManagerAccountModal()
+		return m, func() tea.Msg {
+			if isNew {
+				newID, err := insertAccount(db, name, acctType, active)
+				if err != nil {
+					return refreshDoneMsg{err: err}
+				}
+				id = newID
+			} else {
+				if err := updateAccount(db, id, name, acctType, active); err != nil {
+					return refreshDoneMsg{err: err}
+				}
+			}
+			if err := upsertFormatForAccount(name, acctType); err != nil {
+				return refreshDoneMsg{err: err}
+			}
+			formats, _, err := loadAppConfig()
+			if err != nil {
+				return refreshDoneMsg{err: err}
+			}
+			for i := range formats {
+				if strings.EqualFold(formats[i].Account, name) || strings.EqualFold(formats[i].Name, name) {
+					formats[i].ImportPrefix = prefix
+				}
+			}
+			if err := saveFormats(formats); err != nil {
+				return refreshDoneMsg{err: err}
+			}
+			return refreshCmd(db)()
+		}
+	default:
+		r := msg.String()
+		if len(r) == 1 && r[0] >= 32 && r[0] < 127 {
+			if m.managerEditFocus == 0 {
+				m.managerEditName += r
+			}
+			if m.managerEditFocus == 2 {
+				m.managerEditPrefix += r
+			}
+		}
+		return m, nil
+	}
 }
 
 // updateFilePicker handles keys in the CSV file picker overlay.
 func (m model) updateFilePicker(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
-	switch msg.String() {
-	case "esc":
+	keyName := normalizeKeyName(msg.String())
+	switch {
+	case m.isAction(scopeFilePicker, actionClose, msg):
 		m.importPicking = false
 		return m, nil
-	case "ctrl+c", "q":
+	case m.isAction(scopeFilePicker, actionQuit, msg) || m.isAction(scopeGlobal, actionQuit, msg):
 		return m, tea.Quit
-	case "j", "down":
+	case m.isAction(scopeFilePicker, actionNavigate, msg) && (keyName == "j" || keyName == "down" || keyName == "ctrl+n"):
 		if m.importCursor < len(m.importFiles)-1 {
 			m.importCursor++
 		}
 		return m, nil
-	case "k", "up":
+	case m.isAction(scopeFilePicker, actionNavigate, msg):
 		if m.importCursor > 0 {
 			m.importCursor--
 		}
 		return m, nil
-	case "enter":
+	case m.isAction(scopeFilePicker, actionSelect, msg):
 		if len(m.importFiles) == 0 || m.importCursor >= len(m.importFiles) {
 			m.status = "No file selected."
 			m.statusErr = false
@@ -339,25 +643,26 @@ func (m model) updateFilePicker(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 // updateDupeModal handles keys in the duplicate decision modal.
 // a = force import all, s = skip duplicates, esc/c = cancel.
 func (m model) updateDupeModal(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
-	switch msg.String() {
-	case "a":
+	keyName := normalizeKeyName(msg.String())
+	switch {
+	case m.isAction(scopeDupeModal, actionImportAll, msg):
 		// Force import all (including dupes)
 		m.importDupeModal = false
 		m.status = "Importing all (including duplicates)..."
 		m.statusErr = false
 		return m, ingestCmd(m.db, m.importDupeFile, m.basePath, m.formats, false)
-	case "s":
+	case m.isAction(scopeDupeModal, actionSkipDupes, msg):
 		// Skip duplicates
 		m.importDupeModal = false
 		m.status = "Importing (skipping duplicates)..."
 		m.statusErr = false
 		return m, ingestCmd(m.db, m.importDupeFile, m.basePath, m.formats, true)
-	case "esc", "c":
+	case m.isAction(scopeDupeModal, actionClose, msg) || keyName == "c":
 		m.importDupeModal = false
 		m.status = "Import cancelled."
 		m.statusErr = false
 		return m, nil
-	case "ctrl+c", "q":
+	case m.isAction(scopeGlobal, actionQuit, msg):
 		return m, tea.Quit
 	}
 	return m, nil
@@ -366,7 +671,9 @@ func (m model) updateDupeModal(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 func (m model) updateNavigation(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	filtered := m.getFilteredRows()
 	m.ensureRangeSelectionValid(filtered)
-	switch msg.String() {
+	rawKey := msg.String()
+	keyName := normalizeKeyName(msg.String())
+	switch keyName {
 	case "up", "k", "ctrl+p":
 		if m.rangeSelecting {
 			m.clearRangeSelection()
@@ -393,46 +700,51 @@ func (m model) updateNavigation(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			}
 		}
 		return m, nil
-	case "shift+up":
-		m.moveCursorWithShift(-1, filtered)
-		return m, nil
-	case "shift+down":
-		m.moveCursorWithShift(1, filtered)
-		return m, nil
 	case "g":
-		if m.rangeSelecting {
-			m.clearRangeSelection()
-		}
-		m.cursor = 0
-		m.topIndex = 0
-		return m, nil
-	case "G":
-		if m.rangeSelecting {
-			m.clearRangeSelection()
-		}
-		m.cursor = len(filtered) - 1
-		if m.cursor < 0 {
+		if rawKey == "g" {
+			if m.rangeSelecting {
+				m.clearRangeSelection()
+			}
 			m.cursor = 0
-		}
-		visible := m.visibleRows()
-		m.topIndex = m.cursor - visible + 1
-		if m.topIndex < 0 {
 			m.topIndex = 0
+			return m, nil
+		}
+		if rawKey == "G" {
+			if m.rangeSelecting {
+				m.clearRangeSelection()
+			}
+			m.cursor = len(filtered) - 1
+			if m.cursor < 0 {
+				m.cursor = 0
+			}
+			visible := m.visibleRows()
+			m.topIndex = m.cursor - visible + 1
+			if m.topIndex < 0 {
+				m.topIndex = 0
+			}
+			return m, nil
+		}
+	}
+	if m.isAction(scopeTransactions, actionRangeHighlight, msg) {
+		if keyName == "shift+up" {
+			m.moveCursorWithShift(-1, filtered)
+		} else {
+			m.moveCursorWithShift(1, filtered)
 		}
 		return m, nil
 	}
 
 	// These only apply on the Transactions tab
 	if m.activeTab == tabTransactions {
-		switch msg.String() {
-		case "/":
+		switch {
+		case m.isAction(scopeTransactions, actionSearch, msg):
 			if m.rangeSelecting {
 				m.clearRangeSelection()
 			}
 			m.searchMode = true
 			m.searchQuery = ""
 			return m, nil
-		case "s":
+		case m.isAction(scopeTransactions, actionSort, msg) && msg.String() != "S":
 			if m.rangeSelecting {
 				m.clearRangeSelection()
 			}
@@ -440,7 +752,7 @@ func (m model) updateNavigation(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			m.cursor = 0
 			m.topIndex = 0
 			return m, nil
-		case "S":
+		case msg.String() == "S":
 			if m.rangeSelecting {
 				m.clearRangeSelection()
 			}
@@ -448,7 +760,7 @@ func (m model) updateNavigation(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			m.cursor = 0
 			m.topIndex = 0
 			return m, nil
-		case "f":
+		case m.isAction(scopeTransactions, actionFilterCategory, msg):
 			if m.rangeSelecting {
 				m.clearRangeSelection()
 			}
@@ -456,7 +768,7 @@ func (m model) updateNavigation(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			m.cursor = 0
 			m.topIndex = 0
 			return m, nil
-		case " ", "space":
+		case m.isAction(scopeTransactions, actionToggleSelect, msg):
 			highlighted := m.highlightedRows(filtered)
 			if len(highlighted) > 0 {
 				m.toggleSelectionForHighlighted(highlighted, filtered)
@@ -464,9 +776,9 @@ func (m model) updateNavigation(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 				m.toggleSelectionAtCursor(filtered)
 			}
 			return m, nil
-		case "c":
+		case m.isAction(scopeTransactions, actionQuickCategory, msg):
 			return m.openQuickCategoryPicker(filtered)
-		case "esc":
+		case keyName == "esc":
 			if m.rangeSelecting {
 				m.clearRangeSelection()
 				m.status = "Range highlight cleared."
@@ -487,7 +799,7 @@ func (m model) updateNavigation(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 				m.statusErr = false
 			}
 			return m, nil
-		case "enter":
+		case m.isAction(scopeTransactions, actionSelect, msg):
 			if len(filtered) > 0 && m.cursor < len(filtered) {
 				m.openDetail(filtered[m.cursor])
 			}
@@ -788,8 +1100,8 @@ func (m model) updateDashboard(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		return m.updateDashboardCustomInput(msg)
 	}
 
-	switch msg.String() {
-	case "d":
+	switch {
+	case m.isAction(scopeDashboard, actionTimeframe, msg):
 		m.dashTimeframeFocus = !m.dashTimeframeFocus
 		if m.dashTimeframeFocus {
 			m.dashTimeframeCursor = m.dashTimeframe
@@ -801,17 +1113,18 @@ func (m model) updateDashboard(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		return m, nil
 	}
 
-	switch msg.String() {
-	case "h", "left":
+	keyName := normalizeKeyName(msg.String())
+	switch {
+	case m.isAction(scopeDashboardTimeframe, actionMove, msg) && (keyName == "h" || keyName == "left"):
 		m.dashTimeframeCursor--
 		if m.dashTimeframeCursor < 0 {
 			m.dashTimeframeCursor = dashTimeframeCount - 1
 		}
 		return m, nil
-	case "l", "right":
+	case m.isAction(scopeDashboardTimeframe, actionMove, msg):
 		m.dashTimeframeCursor = (m.dashTimeframeCursor + 1) % dashTimeframeCount
 		return m, nil
-	case "enter":
+	case m.isAction(scopeDashboardTimeframe, actionSelect, msg):
 		if m.dashTimeframeCursor == dashTimeframeCustom {
 			m.dashCustomEditing = true
 			m.dashCustomStart = ""
@@ -826,7 +1139,7 @@ func (m model) updateDashboard(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		m.status = fmt.Sprintf("Dashboard timeframe: %s", dashTimeframeLabel(m.dashTimeframe))
 		m.statusErr = false
 		return m, saveSettingsCmd(m.currentAppSettings())
-	case "esc":
+	case m.isAction(scopeDashboardTimeframe, actionCancel, msg):
 		m.dashTimeframeFocus = false
 		m.status = "Timeframe selection cancelled."
 		m.statusErr = false
@@ -836,8 +1149,8 @@ func (m model) updateDashboard(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 }
 
 func (m model) updateDashboardCustomInput(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
-	switch msg.String() {
-	case "esc":
+	switch {
+	case m.isAction(scopeDashboardCustomInput, actionCancel, msg):
 		m.dashCustomEditing = false
 		m.dashTimeframeFocus = false
 		m.dashCustomInput = ""
@@ -846,12 +1159,12 @@ func (m model) updateDashboardCustomInput(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		m.status = "Custom timeframe cancelled."
 		m.statusErr = false
 		return m, nil
-	case "backspace":
+	case msg.String() == "backspace":
 		if len(m.dashCustomInput) > 0 {
 			m.dashCustomInput = m.dashCustomInput[:len(m.dashCustomInput)-1]
 		}
 		return m, nil
-	case "enter":
+	case m.isAction(scopeDashboardCustomInput, actionConfirm, msg):
 		if _, err := time.Parse("2006-01-02", m.dashCustomInput); err != nil {
 			m.setError("Invalid date. Use YYYY-MM-DD.")
 			return m, nil
@@ -950,25 +1263,25 @@ func (m *model) openDetail(txn transaction) {
 }
 
 func (m model) updateSearch(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
-	switch msg.String() {
-	case "esc":
+	switch {
+	case m.isAction(scopeSearch, actionClearSearch, msg):
 		m.searchMode = false
 		m.searchQuery = ""
 		m.cursor = 0
 		m.topIndex = 0
 		return m, nil
-	case "enter":
+	case m.isAction(scopeSearch, actionConfirm, msg):
 		m.searchMode = false
 		// Keep the query active, just exit input mode
 		return m, nil
-	case "backspace":
+	case msg.String() == "backspace":
 		if len(m.searchQuery) > 0 {
 			m.searchQuery = m.searchQuery[:len(m.searchQuery)-1]
 			m.cursor = 0
 			m.topIndex = 0
 		}
 		return m, nil
-	case "ctrl+c":
+	case m.isAction(scopeGlobal, actionQuit, msg):
 		return m, tea.Quit
 	default:
 		// Only add printable characters
@@ -986,27 +1299,28 @@ func (m model) updateDetail(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	if m.detailEditing == "notes" {
 		return m.updateDetailNotes(msg)
 	}
-	switch msg.String() {
-	case "esc":
+	keyName := normalizeKeyName(msg.String())
+	switch {
+	case m.isAction(scopeDetailModal, actionClose, msg):
 		m.showDetail = false
 		return m, nil
-	case "ctrl+c", "q":
+	case m.isAction(scopeDetailModal, actionQuit, msg) || m.isAction(scopeGlobal, actionQuit, msg):
 		return m, tea.Quit
-	case "j", "down":
+	case m.isAction(scopeDetailModal, actionNavigate, msg) && (keyName == "j" || keyName == "down" || keyName == "ctrl+n"):
 		if m.detailCatCursor < len(m.categories)-1 {
 			m.detailCatCursor++
 		}
 		return m, nil
-	case "k", "up":
+	case m.isAction(scopeDetailModal, actionNavigate, msg):
 		if m.detailCatCursor > 0 {
 			m.detailCatCursor--
 		}
 		return m, nil
-	case "n":
+	case msg.String() == "n":
 		// Switch to notes editing
 		m.detailEditing = "notes"
 		return m, nil
-	case "enter":
+	case m.isAction(scopeDetailModal, actionSelect, msg):
 		// Save category + notes
 		if m.db == nil {
 			return m, nil
@@ -1026,16 +1340,16 @@ func (m model) updateDetail(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 }
 
 func (m model) updateDetailNotes(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
-	switch msg.String() {
-	case "esc", "enter":
+	switch {
+	case m.isAction(scopeDetailModal, actionClose, msg) || m.isAction(scopeDetailModal, actionSelect, msg):
 		m.detailEditing = ""
 		return m, nil
-	case "backspace":
+	case msg.String() == "backspace":
 		if len(m.detailNotes) > 0 {
 			m.detailNotes = m.detailNotes[:len(m.detailNotes)-1]
 		}
 		return m, nil
-	case "ctrl+c":
+	case m.isAction(scopeGlobal, actionQuit, msg):
 		return m, tea.Quit
 	default:
 		r := msg.String()
@@ -1090,6 +1404,21 @@ func settColumnRow(sec int) (int, int) {
 	return settColLeft, 0
 }
 
+func settingsActiveScope(section int) string {
+	switch section {
+	case settSecCategories:
+		return scopeSettingsActiveCategories
+	case settSecRules:
+		return scopeSettingsActiveRules
+	case settSecChart:
+		return scopeSettingsActiveChart
+	case settSecDBImport:
+		return scopeSettingsActiveDBImport
+	default:
+		return scopeSettingsActiveCategories
+	}
+}
+
 func (m model) updateSettings(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	// Text input modes (always handled first)
 	if m.settMode == settModeAddCat || m.settMode == settModeEditCat {
@@ -1113,29 +1442,30 @@ func (m model) updateSettings(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	}
 
 	// Section navigation mode
-	switch msg.String() {
-	case "ctrl+c", "q":
+	keyName := normalizeKeyName(msg.String())
+	switch {
+	case m.isAction(scopeSettingsNav, actionQuit, msg) || m.isAction(scopeGlobal, actionQuit, msg):
 		return m, tea.Quit
-	case "tab":
+	case m.isAction(scopeSettingsNav, actionNextTab, msg):
 		m.activeTab = (m.activeTab + 1) % tabCount
 		return m, nil
-	case "shift+tab":
+	case m.isAction(scopeSettingsNav, actionPrevTab, msg) || m.isAction(scopeGlobal, actionPrevTab, msg):
 		m.activeTab = (m.activeTab - 1 + tabCount) % tabCount
 		return m, nil
-	case "h", "left":
+	case m.isAction(scopeSettingsNav, actionColumn, msg) && (keyName == "h" || keyName == "left"):
 		if m.settColumn == settColRight {
 			m.settColumn = settColLeft
 			// Default to first row in left column
 			m.settSection = settSecCategories
 		}
 		return m, nil
-	case "l", "right":
+	case m.isAction(scopeSettingsNav, actionColumn, msg):
 		if m.settColumn == settColLeft {
 			m.settColumn = settColRight
 			m.settSection = settSecChart
 		}
 		return m, nil
-	case "j", "down":
+	case m.isAction(scopeSettingsNav, actionSection, msg) && (keyName == "j" || keyName == "down" || keyName == "ctrl+n"):
 		col, row := settColumnRow(m.settSection)
 		row++
 		if row > 1 {
@@ -1143,7 +1473,7 @@ func (m model) updateSettings(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		}
 		m.settSection = settSectionForColumn(col, row)
 		return m, nil
-	case "k", "up":
+	case m.isAction(scopeSettingsNav, actionSection, msg):
 		col, row := settColumnRow(m.settSection)
 		row--
 		if row < 0 {
@@ -1151,11 +1481,11 @@ func (m model) updateSettings(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		}
 		m.settSection = settSectionForColumn(col, row)
 		return m, nil
-	case "enter":
+	case m.isAction(scopeSettingsNav, actionActivate, msg):
 		m.settActive = true
 		m.settItemCursor = 0
 		return m, nil
-	case "i":
+	case m.isAction(scopeSettingsNav, actionImport, msg):
 		m.importPicking = true
 		m.importFiles = nil
 		m.importCursor = 0
@@ -1166,11 +1496,11 @@ func (m model) updateSettings(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 
 // updateSettingsActive handles keys when a section is activated (enter was pressed).
 func (m model) updateSettingsActive(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
-	switch msg.String() {
-	case "esc":
+	switch {
+	case m.isAction(settingsActiveScope(m.settSection), actionBack, msg):
 		m.settActive = false
 		return m, nil
-	case "ctrl+c", "q":
+	case m.isAction(scopeGlobal, actionQuit, msg):
 		return m, tea.Quit
 	}
 
@@ -1188,23 +1518,24 @@ func (m model) updateSettingsActive(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 }
 
 func (m model) updateSettingsCategories(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
-	switch msg.String() {
-	case "j", "down":
+	keyName := normalizeKeyName(msg.String())
+	switch {
+	case m.isAction(scopeSettingsActiveCategories, actionNavigate, msg) && (keyName == "j" || keyName == "down" || keyName == "ctrl+n"):
 		if m.settItemCursor < len(m.categories)-1 {
 			m.settItemCursor++
 		}
 		return m, nil
-	case "k", "up":
+	case m.isAction(scopeSettingsActiveCategories, actionNavigate, msg):
 		if m.settItemCursor > 0 {
 			m.settItemCursor--
 		}
 		return m, nil
-	case "a":
+	case m.isAction(scopeSettingsActiveCategories, actionAdd, msg):
 		m.settMode = settModeAddCat
 		m.settInput = ""
 		m.settColorIdx = 0
 		return m, nil
-	case "e":
+	case m.isAction(scopeSettingsActiveCategories, actionEdit, msg):
 		if m.settItemCursor < len(m.categories) {
 			cat := m.categories[m.settItemCursor]
 			m.settMode = settModeEditCat
@@ -1220,7 +1551,7 @@ func (m model) updateSettingsCategories(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			}
 		}
 		return m, nil
-	case "d":
+	case m.isAction(scopeSettingsActiveCategories, actionDelete, msg):
 		if m.settItemCursor < len(m.categories) {
 			cat := m.categories[m.settItemCursor]
 			if cat.isDefault {
@@ -1229,7 +1560,8 @@ func (m model) updateSettingsCategories(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			}
 			m.confirmAction = "delete_cat"
 			m.confirmID = cat.id
-			m.status = fmt.Sprintf("Press d again to delete %q", cat.name)
+			keyLabel := m.primaryActionKey(scopeSettingsActiveCategories, actionDelete, "d")
+			m.status = fmt.Sprintf("Press %s again to delete %q", keyLabel, cat.name)
 			return m, confirmTimerCmd()
 		}
 		return m, nil
@@ -1238,24 +1570,25 @@ func (m model) updateSettingsCategories(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 }
 
 func (m model) updateSettingsRules(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
-	switch msg.String() {
-	case "j", "down":
+	keyName := normalizeKeyName(msg.String())
+	switch {
+	case m.isAction(scopeSettingsActiveRules, actionNavigate, msg) && (keyName == "j" || keyName == "down" || keyName == "ctrl+n"):
 		if m.settItemCursor < len(m.rules)-1 {
 			m.settItemCursor++
 		}
 		return m, nil
-	case "k", "up":
+	case m.isAction(scopeSettingsActiveRules, actionNavigate, msg):
 		if m.settItemCursor > 0 {
 			m.settItemCursor--
 		}
 		return m, nil
-	case "a":
+	case m.isAction(scopeSettingsActiveRules, actionAdd, msg):
 		m.settMode = settModeAddRule
 		m.settInput = ""
 		m.settRuleCatIdx = 0
 		m.settEditID = 0
 		return m, nil
-	case "e":
+	case m.isAction(scopeSettingsActiveRules, actionEdit, msg):
 		if m.settItemCursor < len(m.rules) {
 			rule := m.rules[m.settItemCursor]
 			m.settMode = settModeEditRule
@@ -1270,16 +1603,17 @@ func (m model) updateSettingsRules(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			}
 		}
 		return m, nil
-	case "d":
+	case m.isAction(scopeSettingsActiveRules, actionDelete, msg):
 		if m.settItemCursor < len(m.rules) {
 			rule := m.rules[m.settItemCursor]
 			m.confirmAction = "delete_rule"
 			m.confirmID = rule.id
-			m.status = fmt.Sprintf("Press d again to delete rule %q", rule.pattern)
+			keyLabel := m.primaryActionKey(scopeSettingsActiveRules, actionDelete, "d")
+			m.status = fmt.Sprintf("Press %s again to delete rule %q", keyLabel, rule.pattern)
 			return m, confirmTimerCmd()
 		}
 		return m, nil
-	case "A":
+	case m.isAction(scopeSettingsActiveRules, actionApplyAll, msg):
 		if m.db == nil {
 			return m, nil
 		}
@@ -1293,17 +1627,30 @@ func (m model) updateSettingsRules(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 }
 
 func (m model) updateSettingsDBImport(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
-	switch msg.String() {
-	case "c":
+	switch {
+	case m.isAction(scopeSettingsActiveDBImport, actionClearDB, msg):
 		m.confirmAction = "clear_db"
-		m.status = "Press c again to clear all data"
+		keyLabel := m.primaryActionKey(scopeSettingsActiveDBImport, actionClearDB, "c")
+		m.status = fmt.Sprintf("Press %s again to clear all data", keyLabel)
 		return m, confirmTimerCmd()
-	case "i":
+	case m.isAction(scopeSettingsActiveDBImport, actionImport, msg):
 		m.importPicking = true
 		m.importFiles = nil
 		m.importCursor = 0
 		return m, loadFilesCmd(m.basePath)
-	case "+", "=":
+	case m.isAction(scopeSettingsActiveDBImport, actionNukeAccount, msg):
+		if len(m.accounts) == 0 {
+			m.status = "No accounts available to nuke."
+			m.statusErr = false
+			return m, nil
+		}
+		items := make([]pickerItem, 0, len(m.accounts))
+		for _, acc := range m.accounts {
+			items = append(items, pickerItem{ID: acc.id, Label: acc.name, Meta: acc.acctType})
+		}
+		m.accountNukePicker = newPicker("Nuke Account", items, false, "")
+		return m, nil
+	case m.isAction(scopeSettingsActiveDBImport, actionRowsPerPage, msg) && (normalizeKeyName(msg.String()) == "+" || normalizeKeyName(msg.String()) == "="):
 		if m.maxVisibleRows < 50 {
 			m.maxVisibleRows++
 			m.status = fmt.Sprintf("Rows per page: %d", m.maxVisibleRows)
@@ -1311,7 +1658,7 @@ func (m model) updateSettingsDBImport(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			return m, saveSettingsCmd(m.currentAppSettings())
 		}
 		return m, nil
-	case "-":
+	case m.isAction(scopeSettingsActiveDBImport, actionRowsPerPage, msg):
 		if m.maxVisibleRows > 5 {
 			m.maxVisibleRows--
 			m.status = fmt.Sprintf("Rows per page: %d", m.maxVisibleRows)
@@ -1323,9 +1670,41 @@ func (m model) updateSettingsDBImport(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	return m, nil
 }
 
+func (m model) updateAccountNukePicker(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
+	if m.accountNukePicker == nil {
+		return m, nil
+	}
+	res := m.accountNukePicker.HandleKey(msg.String())
+	switch res.Action {
+	case pickerActionCancelled:
+		m.accountNukePicker = nil
+		m.status = "Account nuke cancelled."
+		m.statusErr = false
+		return m, nil
+	case pickerActionSelected:
+		if m.db == nil {
+			m.setError("Database not ready.")
+			return m, nil
+		}
+		accountID := res.ItemID
+		accountName := res.ItemLabel
+		db := m.db
+		m.accountNukePicker = nil
+		return m, func() tea.Msg {
+			n, err := nukeAccountWithTransactions(db, accountID)
+			if err == nil {
+				err = removeFormatForAccount(accountName)
+			}
+			return accountNukedMsg{accountName: accountName, deletedTxns: n, err: err}
+		}
+	}
+	return m, nil
+}
+
 func (m model) updateSettingsChart(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
-	switch msg.String() {
-	case "h", "left", "l", "right", "enter":
+	switch {
+	case m.isAction(scopeSettingsActiveChart, actionToggleWeekBoundary, msg),
+		m.isAction(scopeSettingsActiveChart, actionConfirm, msg):
 		if m.spendingWeekAnchor == time.Monday {
 			m.spendingWeekAnchor = time.Sunday
 		} else {
@@ -1339,10 +1718,9 @@ func (m model) updateSettingsChart(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 }
 
 func (m model) updateSettingsConfirm(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
-	key := msg.String()
 	switch m.confirmAction {
 	case "delete_cat":
-		if key == "d" {
+		if m.isAction(scopeSettingsActiveCategories, actionDelete, msg) {
 			if m.db == nil {
 				return m, nil
 			}
@@ -1354,7 +1732,7 @@ func (m model) updateSettingsConfirm(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			}
 		}
 	case "delete_rule":
-		if key == "d" {
+		if m.isAction(scopeSettingsActiveRules, actionDelete, msg) {
 			if m.db == nil {
 				return m, nil
 			}
@@ -1366,7 +1744,7 @@ func (m model) updateSettingsConfirm(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			}
 		}
 	case "clear_db":
-		if key == "c" {
+		if m.isAction(scopeSettingsActiveDBImport, actionClearDB, msg) {
 			if m.db == nil {
 				return m, nil
 			}
@@ -1388,25 +1766,26 @@ func (m model) updateSettingsConfirm(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 
 // updateSettingsTextInput handles text input for add/edit category.
 func (m model) updateSettingsTextInput(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
-	switch msg.String() {
-	case "esc":
+	keyName := normalizeKeyName(msg.String())
+	switch {
+	case m.isAction(scopeSettingsModeCat, actionClose, msg):
 		m.settMode = settModeNone
 		m.settInput = ""
 		m.settInput2 = ""
 		return m, nil
-	case "left", "h":
+	case m.isAction(scopeSettingsModeCat, actionColor, msg) && (keyName == "left" || keyName == "h"):
 		colors := CategoryAccentColors()
 		if len(colors) > 0 {
 			m.settColorIdx = (m.settColorIdx - 1 + len(colors)) % len(colors)
 		}
 		return m, nil
-	case "right", "l":
+	case m.isAction(scopeSettingsModeCat, actionColor, msg):
 		colors := CategoryAccentColors()
 		if len(colors) > 0 {
 			m.settColorIdx = (m.settColorIdx + 1) % len(colors)
 		}
 		return m, nil
-	case "enter":
+	case m.isAction(scopeSettingsModeCat, actionSave, msg):
 		if m.settInput == "" {
 			m.status = "Name cannot be empty."
 			return m, nil
@@ -1430,12 +1809,12 @@ func (m model) updateSettingsTextInput(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			err := updateCategory(db, id, name, color)
 			return categorySavedMsg{err: err}
 		}
-	case "backspace":
+	case keyName == "backspace":
 		if len(m.settInput) > 0 {
 			m.settInput = m.settInput[:len(m.settInput)-1]
 		}
 		return m, nil
-	case "ctrl+c":
+	case m.isAction(scopeGlobal, actionQuit, msg):
 		return m, tea.Quit
 	default:
 		r := msg.String()
@@ -1448,13 +1827,13 @@ func (m model) updateSettingsTextInput(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 
 // updateSettingsRuleInput handles text input for add/edit rule pattern.
 func (m model) updateSettingsRuleInput(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
-	switch msg.String() {
-	case "esc":
+	switch {
+	case m.isAction(scopeSettingsModeRule, actionClose, msg):
 		m.settMode = settModeNone
 		m.settInput = ""
 		m.settEditID = 0
 		return m, nil
-	case "enter":
+	case m.isAction(scopeSettingsModeRule, actionNext, msg):
 		if m.settInput == "" {
 			m.status = "Pattern cannot be empty."
 			return m, nil
@@ -1462,12 +1841,12 @@ func (m model) updateSettingsRuleInput(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		// Move to category picker
 		m.settMode = settModeRuleCat
 		return m, nil
-	case "backspace":
+	case normalizeKeyName(msg.String()) == "backspace":
 		if len(m.settInput) > 0 {
 			m.settInput = m.settInput[:len(m.settInput)-1]
 		}
 		return m, nil
-	case "ctrl+c":
+	case m.isAction(scopeGlobal, actionQuit, msg):
 		return m, tea.Quit
 	default:
 		r := msg.String()
@@ -1480,23 +1859,24 @@ func (m model) updateSettingsRuleInput(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 
 // updateSettingsRuleCatPicker handles category selection for a rule.
 func (m model) updateSettingsRuleCatPicker(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
-	switch msg.String() {
-	case "esc":
+	keyName := normalizeKeyName(msg.String())
+	switch {
+	case m.isAction(scopeSettingsModeRuleCat, actionClose, msg):
 		m.settMode = settModeNone
 		m.settInput = ""
 		m.settEditID = 0
 		return m, nil
-	case "j", "down":
+	case m.isAction(scopeSettingsModeRuleCat, actionSelectItem, msg) && (keyName == "j" || keyName == "down" || keyName == "ctrl+n"):
 		if m.settRuleCatIdx < len(m.categories)-1 {
 			m.settRuleCatIdx++
 		}
 		return m, nil
-	case "k", "up":
+	case m.isAction(scopeSettingsModeRuleCat, actionSelectItem, msg):
 		if m.settRuleCatIdx > 0 {
 			m.settRuleCatIdx--
 		}
 		return m, nil
-	case "enter":
+	case m.isAction(scopeSettingsModeRuleCat, actionSave, msg):
 		if m.db == nil || len(m.categories) == 0 {
 			return m, nil
 		}
@@ -1517,7 +1897,7 @@ func (m model) updateSettingsRuleCatPicker(msg tea.KeyMsg) (tea.Model, tea.Cmd) 
 			_, err := insertCategoryRule(db, pattern, catID)
 			return ruleSavedMsg{err: err}
 		}
-	case "ctrl+c":
+	case m.isAction(scopeGlobal, actionQuit, msg):
 		return m, tea.Quit
 	}
 	return m, nil

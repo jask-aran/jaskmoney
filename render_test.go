@@ -62,8 +62,8 @@ func TestRenderSummaryCardsEmpty(t *testing.T) {
 // ---------------------------------------------------------------------------
 
 func TestRenderCategoryBreakdownEmpty(t *testing.T) {
-	output := renderCategoryBreakdown(nil, 80)
-	if !strings.Contains(output, "No expense data") {
+	output := renderCategoryBreakdown(nil, nil, 80)
+	if !strings.Contains(output, "Uncategorised") {
 		t.Errorf("expected empty message, got %q", output)
 	}
 }
@@ -72,15 +72,15 @@ func TestRenderCategoryBreakdownIncomeOnly(t *testing.T) {
 	rows := []transaction{
 		{amount: 500.00, categoryName: "Income"},
 	}
-	output := renderCategoryBreakdown(rows, 80)
-	if !strings.Contains(output, "No expense data") {
-		t.Error("income-only should show no expense data message")
+	output := renderCategoryBreakdown(rows, nil, 80)
+	if !strings.Contains(output, "Uncategorised") {
+		t.Error("income-only should still show category rows")
 	}
 }
 
 func TestRenderCategoryBreakdownCorrectCategories(t *testing.T) {
 	rows := testDashboardRows()
-	output := renderCategoryBreakdown(rows, 80)
+	output := renderCategoryBreakdown(rows, nil, 80)
 
 	if !strings.Contains(output, "Groceries") {
 		t.Error("missing Groceries")
@@ -114,12 +114,33 @@ func TestRenderCategoryBreakdownShowsAllCategories(t *testing.T) {
 			categoryColor: "#94e2d5",
 		})
 	}
-	output := renderCategoryBreakdown(rows, 80)
+	output := renderCategoryBreakdown(rows, nil, 80)
 
 	for _, c := range cats {
 		if !strings.Contains(output, c) {
 			t.Errorf("expected category %q in output", c)
 		}
+	}
+}
+
+func TestRenderCategoryBreakdownIncludesKnownZeroSpendCategories(t *testing.T) {
+	rows := []transaction{
+		{amount: -25.0, categoryName: "Groceries", categoryColor: "#94e2d5"},
+	}
+	allCats := []category{
+		{id: 1, name: "Groceries", color: "#94e2d5"},
+		{id: 2, name: "Dining", color: "#fab387"},
+		{id: 3, name: "Transport", color: "#89b4fa"},
+	}
+	output := renderCategoryBreakdown(rows, allCats, 80)
+	if !strings.Contains(output, "Groceries") {
+		t.Fatal("expected Groceries in output")
+	}
+	if !strings.Contains(output, "Dining") {
+		t.Fatal("expected zero-spend category Dining in output")
+	}
+	if !strings.Contains(output, "Transport") {
+		t.Fatal("expected zero-spend category Transport in output")
 	}
 }
 
@@ -420,14 +441,14 @@ func TestDashboardViewSpendingTrackerTitle(t *testing.T) {
 // ---------------------------------------------------------------------------
 
 func TestRenderHeaderContainsAppName(t *testing.T) {
-	output := renderHeader("Jaskmoney", 0, 80)
+	output := renderHeader("Jaskmoney", 0, 80, "")
 	if !strings.Contains(output, "Jaskmoney") {
 		t.Error("missing app name in header")
 	}
 }
 
 func TestRenderHeaderContainsAllTabs(t *testing.T) {
-	output := renderHeader("Jaskmoney", 0, 80)
+	output := renderHeader("Jaskmoney", 0, 80, "")
 	for _, tab := range tabNames {
 		if !strings.Contains(output, tab) {
 			t.Errorf("missing tab %q in header", tab)
@@ -437,8 +458,8 @@ func TestRenderHeaderContainsAllTabs(t *testing.T) {
 
 func TestRenderHeaderActiveTabHighlight(t *testing.T) {
 	// Verify that tab 0 active contains "Dashboard" and tab 1 active contains "Transactions"
-	h0 := renderHeader("App", 0, 80)
-	h1 := renderHeader("App", 1, 80)
+	h0 := renderHeader("App", 0, 80, "")
+	h1 := renderHeader("App", 1, 80, "")
 	if !strings.Contains(h0, "Dashboard") {
 		t.Error("tab 0 header missing Dashboard")
 	}
@@ -448,7 +469,7 @@ func TestRenderHeaderActiveTabHighlight(t *testing.T) {
 }
 
 func TestRenderHeaderZeroWidth(t *testing.T) {
-	output := renderHeader("Jaskmoney", 0, 0)
+	output := renderHeader("Jaskmoney", 0, 0, "")
 	if output == "" {
 		t.Error("header should render even with zero width")
 	}
@@ -516,9 +537,9 @@ func TestRenderTransactionTableEmpty(t *testing.T) {
 // ---------------------------------------------------------------------------
 
 func TestRenderCategoryBreakdownEmptyMessage(t *testing.T) {
-	output := renderCategoryBreakdown(nil, 80)
-	if !strings.Contains(output, "No expense data") {
-		t.Error("expected empty message for nil rows")
+	output := renderCategoryBreakdown(nil, nil, 80)
+	if !strings.Contains(output, "Uncategorised") {
+		t.Error("expected uncategorised row for nil rows")
 	}
 }
 

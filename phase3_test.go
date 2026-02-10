@@ -5,6 +5,16 @@ import (
 	"testing"
 )
 
+func testKeyForAction(m model, scope string, action Action, fallback string) string {
+	bs := m.keys.BindingsForScope(scope)
+	for _, b := range bs {
+		if b.Action == action && len(b.Keys) > 0 {
+			return b.Keys[0]
+		}
+	}
+	return fallback
+}
+
 func testPhase3Model() model {
 	m := newModel()
 	m.ready = true
@@ -27,13 +37,14 @@ func TestPhase3ToggleSelectionSpace(t *testing.T) {
 	}
 	selectedID := filtered[m.cursor].id
 
-	m2, _ := m.updateNavigation(keyMsg(" "))
+	toggleKey := testKeyForAction(m, scopeTransactions, actionToggleSelect, "space")
+	m2, _ := m.updateNavigation(keyMsg(toggleKey))
 	got := m2.(model)
 	if !got.selectedRows[selectedID] {
 		t.Fatalf("transaction %d should be selected after space", selectedID)
 	}
 
-	m3, _ := got.updateNavigation(keyMsg(" "))
+	m3, _ := got.updateNavigation(keyMsg(toggleKey))
 	got2 := m3.(model)
 	if got2.selectedRows[selectedID] {
 		t.Fatalf("transaction %d should be unselected after second space", selectedID)
@@ -79,7 +90,8 @@ func TestPhase3SpaceTogglesActiveHighlightRange(t *testing.T) {
 	}
 
 	// First space selects all highlighted rows.
-	m4, _ := got2.updateNavigation(keyMsg(" "))
+	toggleKey := testKeyForAction(got2, scopeTransactions, actionToggleSelect, "space")
+	m4, _ := got2.updateNavigation(keyMsg(toggleKey))
 	got3 := m4.(model)
 	for id := range highlighted {
 		if !got3.selectedRows[id] {
@@ -88,7 +100,7 @@ func TestPhase3SpaceTogglesActiveHighlightRange(t *testing.T) {
 	}
 
 	// Second space deselects them all.
-	m5, _ := got3.updateNavigation(keyMsg(" "))
+	m5, _ := got3.updateNavigation(keyMsg(toggleKey))
 	got4 := m5.(model)
 	for id := range highlighted {
 		if got4.selectedRows[id] {
@@ -115,7 +127,8 @@ func TestPhase3NonShiftMoveClearsHighlight(t *testing.T) {
 func TestPhase3EscClearsHighlightThenSelectionThenSearch(t *testing.T) {
 	m := testPhase3Model()
 	m.searchQuery = "wool"
-	m2, _ := m.updateNavigation(keyMsg(" "))
+	toggleKey := testKeyForAction(m, scopeTransactions, actionToggleSelect, "space")
+	m2, _ := m.updateNavigation(keyMsg(toggleKey))
 	got := m2.(model)
 	m3, _ := got.updateNavigation(keyMsg("shift+down"))
 	got2 := m3.(model)
@@ -161,19 +174,22 @@ func TestPhase3SelectionPersistsAcrossSortAndFilterChanges(t *testing.T) {
 	filtered := m.getFilteredRows()
 	selectedID := filtered[m.cursor].id
 
-	m2, _ := m.updateNavigation(keyMsg(" "))
+	toggleKey := testKeyForAction(m, scopeTransactions, actionToggleSelect, "space")
+	m2, _ := m.updateNavigation(keyMsg(toggleKey))
 	got := m2.(model)
 	if !got.selectedRows[selectedID] {
 		t.Fatalf("id %d should be selected", selectedID)
 	}
 
-	m3, _ := got.updateNavigation(keyMsg("s"))
+	sortKey := testKeyForAction(got, scopeTransactions, actionSort, "s")
+	m3, _ := got.updateNavigation(keyMsg(sortKey))
 	got2 := m3.(model)
 	if !got2.selectedRows[selectedID] {
 		t.Fatalf("id %d selection should persist after sort", selectedID)
 	}
 
-	m4, _ := got2.updateNavigation(keyMsg("f"))
+	filterKey := testKeyForAction(got2, scopeTransactions, actionFilterCategory, "f")
+	m4, _ := got2.updateNavigation(keyMsg(filterKey))
 	got3 := m4.(model)
 	if !got3.selectedRows[selectedID] {
 		t.Fatalf("id %d selection should persist after filter change", selectedID)

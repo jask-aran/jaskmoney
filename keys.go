@@ -1,6 +1,8 @@
 package main
 
 import (
+	"fmt"
+	"sort"
 	"strings"
 
 	"github.com/charmbracelet/bubbles/key"
@@ -22,12 +24,15 @@ type KeyRegistry struct {
 
 const (
 	scopeGlobal                   = "global"
+	scopeManager                  = "manager"
+	scopeManagerModal             = "manager_modal"
 	scopeDashboard                = "dashboard"
 	scopeDashboardTimeframe       = "dashboard_timeframe"
 	scopeDashboardCustomInput     = "dashboard_custom_input"
 	scopeTransactions             = "transactions"
 	scopeDetailModal              = "detail_modal"
 	scopeCategoryPicker           = "category_picker"
+	scopeAccountNukePicker        = "account_nuke_picker"
 	scopeFilePicker               = "file_picker"
 	scopeDupeModal                = "dupe_modal"
 	scopeSearch                   = "search"
@@ -76,6 +81,7 @@ const (
 	actionRowsPerPage        Action = "rows_per_page"
 	actionClearDB            Action = "clear_db"
 	actionImport             Action = "import"
+	actionNukeAccount        Action = "nuke_account"
 	actionColumn             Action = "column"
 	actionSection            Action = "section"
 	actionActivate           Action = "activate"
@@ -96,6 +102,22 @@ func NewKeyRegistry() *KeyRegistry {
 	reg(scopeGlobal, actionQuit, []string{"q", "ctrl+c"}, "quit")
 	reg(scopeGlobal, actionNextTab, []string{"tab"}, "next tab")
 	reg(scopeGlobal, actionPrevTab, []string{"shift+tab"}, "prev tab")
+
+	// Dashboard footer: d, tab, shift+tab, q
+	reg(scopeManager, actionNavigate, []string{"j/k", "j", "k", "up", "down"}, "navigate")
+	reg(scopeManager, actionToggleSelect, []string{"space"}, "toggle active")
+	reg(scopeManager, actionSave, []string{"s"}, "save active")
+	reg(scopeManager, actionAdd, []string{"a"}, "add account")
+	reg(scopeManager, actionEdit, []string{"enter"}, "edit account")
+	reg(scopeManager, actionSelect, []string{"enter"}, "edit account")
+	reg(scopeManager, actionClearDB, []string{"c"}, "clear txns")
+	reg(scopeManager, actionDelete, []string{"d"}, "delete empty")
+	reg(scopeManager, actionNextTab, []string{"tab"}, "next tab")
+	reg(scopeManager, actionQuit, []string{"q", "ctrl+c"}, "quit")
+	reg(scopeManagerModal, actionMove, []string{"j/k", "j", "k", "up", "down"}, "field")
+	reg(scopeManagerModal, actionColor, []string{"h/l", "h", "left", "l", "right", "space"}, "toggle")
+	reg(scopeManagerModal, actionSave, []string{"enter"}, "save")
+	reg(scopeManagerModal, actionClose, []string{"esc"}, "cancel")
 
 	// Dashboard footer: d, tab, shift+tab, q
 	reg(scopeDashboard, actionTimeframe, []string{"d"}, "timeframe")
@@ -128,6 +150,9 @@ func NewKeyRegistry() *KeyRegistry {
 	reg(scopeCategoryPicker, actionNavigate, []string{"j/k", "j", "k", "up", "down"}, "navigate")
 	reg(scopeCategoryPicker, actionSelect, []string{"enter"}, "apply")
 	reg(scopeCategoryPicker, actionClose, []string{"esc"}, "cancel")
+	reg(scopeAccountNukePicker, actionNavigate, []string{"j/k", "j", "k", "up", "down"}, "navigate")
+	reg(scopeAccountNukePicker, actionSelect, []string{"enter"}, "nuke")
+	reg(scopeAccountNukePicker, actionClose, []string{"esc"}, "cancel")
 
 	// Detail / file picker footers: enter, esc, j/k, q
 	reg(scopeDetailModal, actionSelect, []string{"enter"}, "select")
@@ -142,7 +167,7 @@ func NewKeyRegistry() *KeyRegistry {
 	// Dupe modal footer.
 	reg(scopeDupeModal, actionImportAll, []string{"a"}, "import all")
 	reg(scopeDupeModal, actionSkipDupes, []string{"s"}, "skip dupes")
-	reg(scopeDupeModal, actionClose, []string{"esc"}, "cancel")
+	reg(scopeDupeModal, actionClose, []string{"esc", "c"}, "cancel")
 
 	// Search footer.
 	reg(scopeSearch, actionClearSearch, []string{"esc"}, "clear search")
@@ -183,6 +208,7 @@ func NewKeyRegistry() *KeyRegistry {
 	reg(scopeSettingsActiveDBImport, actionRowsPerPage, []string{"+/-", "+", "=", "-"}, "rows/page")
 	reg(scopeSettingsActiveDBImport, actionClearDB, []string{"c"}, "clear db")
 	reg(scopeSettingsActiveDBImport, actionImport, []string{"i"}, "import")
+	reg(scopeSettingsActiveDBImport, actionNukeAccount, []string{"N"}, "nuke account")
 
 	// Settings navigation footer: h/l, j/k, enter, i, tab, q
 	reg(scopeSettingsNav, actionColumn, []string{"h/l", "h", "left", "l", "right"}, "column")
@@ -213,11 +239,16 @@ func (r *KeyRegistry) Register(b Binding) {
 		if _, ok := r.indexByScope[scope]; !ok {
 			r.indexByScope[scope] = make(map[string]*Binding)
 		}
-		if r.scopeHasAnyKey(scope, b.Keys) {
+		normKeys := normalizeKeyList(b.Keys)
+		if len(normKeys) == 0 {
+			continue
+		}
+		if r.scopeHasAnyKey(scope, normKeys) {
 			continue
 		}
 
 		copyBinding := b
+		copyBinding.Keys = normKeys
 		copyBinding.Scopes = []string{scope}
 		r.bindingsByScope[scope] = append(r.bindingsByScope[scope], &copyBinding)
 		for _, k := range copyBinding.Keys {
@@ -242,6 +273,7 @@ func (r *KeyRegistry) Lookup(keyName, scope string) *Binding {
 	if r == nil || keyName == "" {
 		return nil
 	}
+	keyName = normalizeKeyName(keyName)
 	if b := r.lookupInScope(keyName, scope); b != nil {
 		return b
 	}
@@ -285,4 +317,141 @@ func (r *KeyRegistry) scopeHasAnyKey(scope string, keys []string) bool {
 		}
 	}
 	return false
+}
+
+func normalizeKeyList(keys []string) []string {
+	out := make([]string, 0, len(keys))
+	seen := make(map[string]bool)
+	for _, k := range keys {
+		n := normalizeKeyName(k)
+		if n == "" || seen[n] {
+			continue
+		}
+		seen[n] = true
+		out = append(out, n)
+	}
+	return out
+}
+
+func normalizeKeyName(k string) string {
+	if k == " " {
+		return "space"
+	}
+	s := strings.ToLower(strings.TrimSpace(k))
+	if s == "" {
+		return ""
+	}
+	s = strings.ReplaceAll(s, " ", "")
+	s = strings.ReplaceAll(s, "control+", "ctrl+")
+	s = strings.ReplaceAll(s, "ctl+", "ctrl+")
+	s = strings.ReplaceAll(s, "return", "enter")
+	s = strings.ReplaceAll(s, "spacebar", "space")
+	return s
+}
+
+func (r *KeyRegistry) ApplyOverrides(overrides []shortcutOverride) error {
+	items := make([]keybindingConfig, 0, len(overrides))
+	for _, o := range overrides {
+		items = append(items, keybindingConfig{
+			Scope:  o.Scope,
+			Action: o.Action,
+			Keys:   o.Keys,
+		})
+	}
+	return r.ApplyKeybindingConfig(items)
+}
+
+func (r *KeyRegistry) ApplyKeybindingConfig(items []keybindingConfig) error {
+	if r == nil || len(items) == 0 {
+		return nil
+	}
+	type pair struct {
+		scope  string
+		action Action
+	}
+	seenPair := make(map[pair]bool)
+	for _, o := range items {
+		scope := strings.TrimSpace(o.Scope)
+		if scope == "" {
+			return fmt.Errorf("shortcut override: scope is required")
+		}
+		action := Action(strings.TrimSpace(o.Action))
+		if action == "" {
+			return fmt.Errorf("shortcut override scope=%q: action is required", scope)
+		}
+		keys := normalizeKeyList(o.Keys)
+		if len(keys) == 0 {
+			return fmt.Errorf("shortcut override scope=%q action=%q: keys are required", scope, action)
+		}
+
+		bindings := r.bindingsByScope[scope]
+		if len(bindings) == 0 {
+			return fmt.Errorf("shortcut override scope=%q action=%q: unknown scope", scope, action)
+		}
+		var target *Binding
+		for _, b := range bindings {
+			if b.Action == action {
+				target = b
+				break
+			}
+		}
+		if target == nil {
+			return fmt.Errorf("shortcut override scope=%q action=%q: unknown action in scope", scope, action)
+		}
+		p := pair{scope: scope, action: action}
+		if seenPair[p] {
+			return fmt.Errorf("shortcut override scope=%q action=%q: duplicated override entry", scope, action)
+		}
+		seenPair[p] = true
+		target.Keys = keys
+	}
+
+	r.rebuildIndex()
+	for scope, bindings := range r.bindingsByScope {
+		seen := make(map[string]Action)
+		for _, b := range bindings {
+			for _, k := range b.Keys {
+				if prev, ok := seen[k]; ok {
+					return fmt.Errorf("shortcut override conflict in scope=%q: key %q used by both %q and %q", scope, k, prev, b.Action)
+				}
+				seen[k] = b.Action
+			}
+		}
+	}
+	return nil
+}
+
+func (r *KeyRegistry) ExportKeybindingConfig() []keybindingConfig {
+	if r == nil {
+		return nil
+	}
+	var out []keybindingConfig
+	for scope, bindings := range r.bindingsByScope {
+		for _, b := range bindings {
+			out = append(out, keybindingConfig{
+				Scope:  scope,
+				Action: string(b.Action),
+				Keys:   append([]string(nil), b.Keys...),
+			})
+		}
+	}
+	sort.Slice(out, func(i, j int) bool {
+		if out[i].Scope != out[j].Scope {
+			return out[i].Scope < out[j].Scope
+		}
+		return out[i].Action < out[j].Action
+	})
+	return out
+}
+
+func (r *KeyRegistry) rebuildIndex() {
+	r.indexByScope = make(map[string]map[string]*Binding, len(r.bindingsByScope))
+	for scope, bindings := range r.bindingsByScope {
+		r.indexByScope[scope] = make(map[string]*Binding)
+		for _, b := range bindings {
+			for _, k := range b.Keys {
+				r.indexByScope[scope][k] = b
+			}
+		}
+	}
 }
