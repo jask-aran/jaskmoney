@@ -14,6 +14,13 @@ import (
 	tea "github.com/charmbracelet/bubbletea"
 )
 
+type parsedCSVRow struct {
+	dateRaw     string
+	dateISO     string
+	amount      float64
+	description string
+}
+
 // ingestCmd returns a Bubble Tea command that imports a CSV file into the DB,
 // skipping duplicates, recording the import, and auto-applying category rules.
 // When skipDupes is true, duplicate rows are silently skipped; when false,
@@ -112,12 +119,6 @@ func importCSV(db *sql.DB, path string, format csvFormat, skipDupes bool) (inser
 // importCSVForAccount reads a CSV file using the given format and inserts valid rows.
 // When skipDupes is true, rows matching (date_iso, amount, description, account_id) are skipped.
 func importCSVForAccount(db *sql.DB, path string, format csvFormat, accountID *int, skipDupes bool) (inserted int, dupes int, err error) {
-	f, err := os.Open(path)
-	if err != nil {
-		return 0, 0, fmt.Errorf("open csv: %w", err)
-	}
-	defer f.Close()
-
 	tx, err := db.Begin()
 	if err != nil {
 		return 0, 0, fmt.Errorf("begin tx: %w", err)
@@ -132,80 +133,30 @@ func importCSVForAccount(db *sql.DB, path string, format csvFormat, accountID *i
 		}
 	}
 
-	r := csv.NewReader(f)
-	r.FieldsPerRecord = -1
-	if format.Delimiter != "" {
-		r.Comma = rune(format.Delimiter[0])
-	}
-
-	minCols := max(format.DateCol, format.AmountCol, format.DescCol) + 1
-	firstRow := true
-	for {
-		rec, readErr := r.Read()
-		if readErr != nil {
-			if readErr == io.EOF {
-				break
+	walkErr := walkParsedCSVRows(path, format,
+		func(row parsedCSVRow) error {
+			if skipDupes {
+				key := duplicateKeyForAccount(row.dateISO, row.amount, row.description, accountID)
+				if existingSet[key] {
+					dupes++
+					return nil
+				}
+				existingSet[key] = true
 			}
-			return inserted, dupes, fmt.Errorf("read csv row: %w", readErr)
-		}
-		// Skip header row
-		if firstRow && format.HasHeader {
-			firstRow = false
-			continue
-		}
-		firstRow = false
-
-		if len(rec) < minCols {
-			continue
-		}
-
-		dateRaw := strings.TrimSpace(rec[format.DateCol])
-		amountRaw := strings.TrimSpace(rec[format.AmountCol])
-
-		// Build description
-		var description string
-		if format.DescJoin {
-			description = strings.TrimSpace(strings.Join(rec[format.DescCol:], ","))
-		} else {
-			description = strings.TrimSpace(rec[format.DescCol])
-		}
-		if dateRaw == "" || amountRaw == "" {
-			continue
-		}
-
-		// Strip configured characters from amount
-		if format.AmountStrip != "" {
-			for _, ch := range format.AmountStrip {
-				amountRaw = strings.ReplaceAll(amountRaw, string(ch), "")
-			}
-		}
-
-		dateISO, parseErr := parseDateISO(dateRaw, format.DateFormat)
-		if parseErr != nil {
-			return inserted, dupes, fmt.Errorf("parse date %q: %w", dateRaw, parseErr)
-		}
-		amount, parseErr := parseAmount(amountRaw)
-		if parseErr != nil {
-			return inserted, dupes, fmt.Errorf("parse amount %q: %w", amountRaw, parseErr)
-		}
-		// Duplicate check
-		if skipDupes {
-			key := duplicateKeyForAccount(dateISO, amount, description, accountID)
-			if existingSet[key] {
-				dupes++
-				continue
-			}
-			existingSet[key] = true
-		}
-
-		_, execErr := tx.Exec(`
+			_, execErr := tx.Exec(`
 				INSERT INTO transactions (date_raw, date_iso, amount, description, notes, account_id)
 				VALUES (?, ?, ?, ?, '', ?)
-			`, dateRaw, dateISO, amount, description, accountID)
-		if execErr != nil {
-			return inserted, dupes, fmt.Errorf("insert row: %w", execErr)
-		}
-		inserted++
+			`, row.dateRaw, row.dateISO, row.amount, row.description, accountID)
+			if execErr != nil {
+				return fmt.Errorf("insert row: %w", execErr)
+			}
+			inserted++
+			return nil
+		},
+		func(parseErr error) error { return parseErr },
+	)
+	if walkErr != nil {
+		return inserted, dupes, walkErr
 	}
 	if commitErr := tx.Commit(); commitErr != nil {
 		return inserted, dupes, fmt.Errorf("commit tx: %w", commitErr)
@@ -219,16 +170,44 @@ func countDuplicates(db *sql.DB, path string, format csvFormat) (total int, dupe
 }
 
 func countDuplicatesForAccount(db *sql.DB, path string, format csvFormat, accountID *int) (total int, dupes int, err error) {
-	f, err := os.Open(path)
-	if err != nil {
-		return 0, 0, fmt.Errorf("open csv: %w", err)
-	}
-	defer f.Close()
-
 	existingSet, err := loadDuplicateSet(db)
 	if err != nil {
 		return 0, 0, fmt.Errorf("load duplicates: %w", err)
 	}
+
+	seenInFile := make(map[string]bool)
+	walkErr := walkParsedCSVRows(path, format,
+		func(row parsedCSVRow) error {
+			total++
+			key := duplicateKeyForAccount(row.dateISO, row.amount, row.description, accountID)
+			if existingSet[key] || seenInFile[key] {
+				dupes++
+			}
+			seenInFile[key] = true
+			return nil
+		},
+		func(parseErr error) error {
+			// Scans skip bad rows so users can still see likely duplicate counts.
+			return nil
+		},
+	)
+	if walkErr != nil {
+		return total, dupes, walkErr
+	}
+	return total, dupes, nil
+}
+
+func walkParsedCSVRows(
+	path string,
+	format csvFormat,
+	onRow func(parsedCSVRow) error,
+	onParseError func(error) error,
+) error {
+	f, err := os.Open(path)
+	if err != nil {
+		return fmt.Errorf("open csv: %w", err)
+	}
+	defer f.Close()
 
 	r := csv.NewReader(f)
 	r.FieldsPerRecord = -1
@@ -238,14 +217,13 @@ func countDuplicatesForAccount(db *sql.DB, path string, format csvFormat, accoun
 
 	minCols := max(format.DateCol, format.AmountCol, format.DescCol) + 1
 	firstRow := true
-	seenInFile := make(map[string]bool)
 	for {
 		rec, readErr := r.Read()
 		if readErr != nil {
 			if readErr == io.EOF {
 				break
 			}
-			return total, dupes, fmt.Errorf("read csv row: %w", readErr)
+			return fmt.Errorf("read csv row: %w", readErr)
 		}
 		if firstRow && format.HasHeader {
 			firstRow = false
@@ -253,41 +231,64 @@ func countDuplicatesForAccount(db *sql.DB, path string, format csvFormat, accoun
 		}
 		firstRow = false
 
-		if len(rec) < minCols {
+		row, keep, parseErr := parseCSVRecord(rec, format, minCols)
+		if !keep {
 			continue
 		}
-		dateRaw := strings.TrimSpace(rec[format.DateCol])
-		amountRaw := strings.TrimSpace(rec[format.AmountCol])
-		var description string
-		if format.DescJoin {
-			description = strings.TrimSpace(strings.Join(rec[format.DescCol:], ","))
-		} else {
-			description = strings.TrimSpace(rec[format.DescCol])
-		}
-		if dateRaw == "" || amountRaw == "" {
+		if parseErr != nil {
+			if onParseError == nil {
+				return parseErr
+			}
+			if err := onParseError(parseErr); err != nil {
+				return err
+			}
 			continue
 		}
-		if format.AmountStrip != "" {
-			for _, ch := range format.AmountStrip {
-				amountRaw = strings.ReplaceAll(amountRaw, string(ch), "")
+		if onRow != nil {
+			if err := onRow(row); err != nil {
+				return err
 			}
 		}
-		dateISO, parseErr := parseDateISO(dateRaw, format.DateFormat)
-		if parseErr != nil {
-			continue // skip unparseable rows in scan
-		}
-		amount, parseErr := parseAmount(amountRaw)
-		if parseErr != nil {
-			continue
-		}
-		total++
-		key := duplicateKeyForAccount(dateISO, amount, description, accountID)
-		if existingSet[key] || seenInFile[key] {
-			dupes++
-		}
-		seenInFile[key] = true
 	}
-	return total, dupes, nil
+	return nil
+}
+
+func parseCSVRecord(rec []string, format csvFormat, minCols int) (parsedCSVRow, bool, error) {
+	if len(rec) < minCols {
+		return parsedCSVRow{}, false, nil
+	}
+	dateRaw := strings.TrimSpace(rec[format.DateCol])
+	amountRaw := strings.TrimSpace(rec[format.AmountCol])
+	if dateRaw == "" || amountRaw == "" {
+		return parsedCSVRow{}, false, nil
+	}
+
+	description := strings.TrimSpace(rec[format.DescCol])
+	if format.DescJoin {
+		description = strings.TrimSpace(strings.Join(rec[format.DescCol:], ","))
+	}
+
+	if format.AmountStrip != "" {
+		for _, ch := range format.AmountStrip {
+			amountRaw = strings.ReplaceAll(amountRaw, string(ch), "")
+		}
+	}
+
+	dateISO, err := parseDateISO(dateRaw, format.DateFormat)
+	if err != nil {
+		return parsedCSVRow{}, true, fmt.Errorf("parse date %q: %w", dateRaw, err)
+	}
+	amount, err := parseAmount(amountRaw)
+	if err != nil {
+		return parsedCSVRow{}, true, fmt.Errorf("parse amount %q: %w", amountRaw, err)
+	}
+
+	return parsedCSVRow{
+		dateRaw:     dateRaw,
+		dateISO:     dateISO,
+		amount:      amount,
+		description: description,
+	}, true, nil
 }
 
 // duplicateKey builds a composite key for duplicate detection.

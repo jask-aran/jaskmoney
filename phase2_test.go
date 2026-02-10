@@ -76,9 +76,10 @@ func TestRenderDashboardTimeframeChips(t *testing.T) {
 	}
 }
 
-func TestTransactionsTabDateFilterRemoved(t *testing.T) {
+func TestManagerTransactionsDateFilterRemoved(t *testing.T) {
 	m := newModel()
-	m.activeTab = tabTransactions
+	m.activeTab = tabManager
+	m.managerMode = managerModeTransactions
 	m.status = "unchanged"
 
 	m2, _ := m.updateNavigation(keyMsg("d"))

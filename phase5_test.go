@@ -36,7 +36,8 @@ func testPhase5Model(t *testing.T) (model, func()) {
 	m := newModel()
 	m.db = db
 	m.ready = true
-	m.activeTab = tabTransactions
+	m.activeTab = tabManager
+	m.managerMode = managerModeTransactions
 	m.rows = rows
 	m.categories = cats
 	return m, cleanup

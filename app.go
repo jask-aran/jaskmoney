@@ -11,6 +11,7 @@ import (
 	"github.com/charmbracelet/bubbles/key"
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
+	"github.com/charmbracelet/x/ansi"
 )
 
 // ---------------------------------------------------------------------------
@@ -24,9 +25,7 @@ const (
 	tabManager   = 0
 	tabDashboard = 1
 	tabSettings  = 2
-	// Legacy transactions tab constant retained for internal/tests-only flows.
-	tabTransactions = 99
-	tabCount        = 3
+	tabCount     = 3
 )
 
 const (
@@ -216,6 +215,16 @@ const (
 	settModeRuleCat  = "rule_cat" // picking category for a rule
 )
 
+type settingsConfirmAction string
+
+const (
+	confirmActionNone           settingsConfirmAction = ""
+	confirmActionDeleteCategory settingsConfirmAction = "delete_cat"
+	confirmActionDeleteTag      settingsConfirmAction = "delete_tag"
+	confirmActionDeleteRule     settingsConfirmAction = "delete_rule"
+	confirmActionClearDB        settingsConfirmAction = "clear_db"
+)
+
 // ---------------------------------------------------------------------------
 // Model
 // ---------------------------------------------------------------------------
@@ -282,18 +291,17 @@ type model struct {
 	txnTags        map[int][]tag
 	imports        []importRecord
 	dbInfo         dbInfo
-	settSection    int    // which section is focused (settSec*)
-	settColumn     int    // 0 = left column, 1 = right column
-	settActive     bool   // true = interacting inside a section, false = navigating sections
-	settItemCursor int    // cursor within the active section's item list
-	settMode       string // current editing mode (settMode*)
-	settInput      string // text input buffer for add/edit
-	settInput2     string // secondary input (e.g. color for category)
-	settColorIdx   int    // index into CategoryAccentColors() during add/edit
-	settRuleCatIdx int    // category cursor when picking for a rule
-	settEditID     int    // ID of item being edited
-	confirmAction  string // pending confirm action ("clear_db", "delete_cat", "delete_rule")
-	confirmID      int    // ID for pending confirm (category or rule)
+	settSection    int                   // which section is focused (settSec*)
+	settColumn     int                   // 0 = left column, 1 = right column
+	settActive     bool                  // true = interacting inside a section, false = navigating sections
+	settItemCursor int                   // cursor within the active section's item list
+	settMode       string                // current editing mode (settMode*)
+	settInput      string                // text input buffer for add/edit
+	settColorIdx   int                   // index into CategoryAccentColors() during add/edit
+	settRuleCatIdx int                   // category cursor when picking for a rule
+	settEditID     int                   // ID of item being edited
+	confirmAction  settingsConfirmAction // pending settings confirm action
+	confirmID      int                   // ID for pending confirm (category or rule)
 
 	// Manager state
 	managerCursor     int
@@ -302,6 +310,7 @@ type model struct {
 	managerModalOpen  bool
 	managerModalIsNew bool
 	managerEditID     int
+	managerEditSource string
 	managerEditName   string
 	managerEditType   string
 	managerEditPrefix string
@@ -402,40 +411,38 @@ func (m model) View() string {
 		body = m.dashboardView()
 	}
 
-	main := header + "\n\n" + body
-
 	if m.showDetail {
 		txn := m.findDetailTxn()
 		if txn != nil {
-			detail := renderDetail(*txn, m.categories, m.txnTags[txn.id], m.detailCatCursor, m.detailNotes, m.detailEditing)
-			return m.composeOverlay(main, statusLine, footer, detail)
+			detail := renderDetail(*txn, m.categories, m.txnTags[txn.id], m.detailCatCursor, m.detailNotes, m.detailEditing, m.keys)
+			return m.composeOverlay(header, body, statusLine, footer, detail)
 		}
 	}
 	if m.importPicking {
-		picker := renderFilePicker(m.importFiles, m.importCursor)
-		return m.composeOverlay(main, statusLine, footer, picker)
+		picker := renderFilePicker(m.importFiles, m.importCursor, m.keys)
+		return m.composeOverlay(header, body, statusLine, footer, picker)
 	}
 	if m.importDupeModal {
-		dupeModal := renderDupeModal(m.importDupeFile, m.importDupeTotal, m.importDupeCount)
-		return m.composeOverlay(main, statusLine, footer, dupeModal)
+		dupeModal := renderDupeModal(m.importDupeFile, m.importDupeTotal, m.importDupeCount, m.keys)
+		return m.composeOverlay(header, body, statusLine, footer, dupeModal)
 	}
 	if m.catPicker != nil {
-		picker := renderPicker(m.catPicker, min(56, m.width-10))
-		return m.composeOverlay(main, statusLine, footer, picker)
+		picker := renderPicker(m.catPicker, min(56, m.width-10), m.keys, scopeCategoryPicker)
+		return m.composeOverlay(header, body, statusLine, footer, picker)
 	}
 	if m.tagPicker != nil {
-		picker := renderPicker(m.tagPicker, min(56, m.width-10))
-		return m.composeOverlay(main, statusLine, footer, picker)
+		picker := renderPicker(m.tagPicker, min(56, m.width-10), m.keys, scopeTagPicker)
+		return m.composeOverlay(header, body, statusLine, footer, picker)
 	}
 	if m.accountNukePicker != nil {
-		picker := renderPicker(m.accountNukePicker, min(56, m.width-10))
-		return m.composeOverlay(main, statusLine, footer, picker)
+		picker := renderPicker(m.accountNukePicker, min(56, m.width-10), m.keys, scopeAccountNukePicker)
+		return m.composeOverlay(header, body, statusLine, footer, picker)
 	}
 	if m.managerModalOpen {
 		modal := renderManagerAccountModal(m)
-		return m.composeOverlay(main, statusLine, footer, modal)
+		return m.composeOverlay(header, body, statusLine, footer, modal)
 	}
-	return m.placeWithFooter(main, statusLine, footer)
+	return m.composeFrame(header, body, statusLine, footer)
 }
 
 // ---------------------------------------------------------------------------
@@ -444,7 +451,7 @@ func (m model) View() string {
 
 func (m model) dashboardView() string {
 	rows := m.getDashboardRows()
-	w := m.listContentWidth()
+	w := m.sectionBoxContentWidth(m.sectionWidth())
 	chips := renderDashboardControlsLine(
 		renderDashboardTimeframeChips(dashTimeframeLabels, m.dashTimeframe, m.dashTimeframeCursor, m.dashTimeframeFocus),
 		dashboardDateRange(rows),
@@ -455,31 +462,10 @@ func (m model) dashboardView() string {
 	spendRows := dashboardSpendRows(rows, m.txnTags)
 	totalWidth := m.sectionWidth()
 	gap := 2
-	trackerWidth := (totalWidth - gap) * 60 / 100
-	breakdownWidth := totalWidth - gap - trackerWidth
-	if trackerWidth < 24 {
-		trackerWidth = 24
-	}
-	if breakdownWidth < 24 {
-		breakdownWidth = 24
-	}
-	if trackerWidth+gap+breakdownWidth > totalWidth {
-		overflow := trackerWidth + gap + breakdownWidth - totalWidth
-		if breakdownWidth-overflow >= 24 {
-			breakdownWidth -= overflow
-		} else {
-			trackerWidth = max(24, trackerWidth-overflow)
-		}
-	}
+	trackerWidth, breakdownWidth := dashboardChartWidths(totalWidth, gap)
 
-	trackerContentWidth := trackerWidth - listBoxStyle.GetHorizontalFrameSize()
-	if trackerContentWidth < 1 {
-		trackerContentWidth = 1
-	}
-	breakdownContentWidth := breakdownWidth - listBoxStyle.GetHorizontalFrameSize()
-	if breakdownContentWidth < 1 {
-		breakdownContentWidth = 1
-	}
+	trackerContentWidth := m.sectionBoxContentWidth(trackerWidth)
+	breakdownContentWidth := m.sectionBoxContentWidth(breakdownWidth)
 
 	rangeStart, rangeEnd := m.dashboardChartRange(time.Now())
 	trend := renderTitledSectionBox(
@@ -508,6 +494,7 @@ func (m model) managerView() string {
 	accountsCard := renderManagerSectionBox("Accounts", accountsFocused, accountsFocused, m.sectionWidth(), accountsContent)
 	rows := m.getFilteredRows()
 	txVisibleRows := m.managerVisibleRows()
+	total := len(m.rows)
 	var txContent string
 	if m.managerMode == managerModeTransactions {
 		highlighted := m.highlightedRows(rows)
@@ -515,12 +502,7 @@ func (m model) managerView() string {
 		if m.cursor >= 0 && m.cursor < len(rows) {
 			cursorTxnID = rows[m.cursor].id
 		}
-		searchBar := ""
-		if m.searchMode {
-			searchBar = searchPromptStyle.Render("/") + " " + searchInputStyle.Render(m.searchQuery+"_") + "\n"
-		} else if m.searchQuery != "" {
-			searchBar = searchPromptStyle.Render("/") + " " + searchInputStyle.Render(m.searchQuery) + "  " + lipgloss.NewStyle().Foreground(colorOverlay1).Render("(esc clear)") + "\n"
-		}
+		searchBar := m.transactionSearchBar()
 		txContent = searchBar + renderTransactionTable(
 			rows,
 			m.categories,
@@ -549,7 +531,11 @@ func (m model) managerView() string {
 			false,
 		)
 	}
-	transactionsCard := renderManagerSectionBox("Transactions", !accountsFocused, !accountsFocused, m.sectionWidth(), txContent)
+	title := fmt.Sprintf("Transactions (%d/%d)", len(rows), total)
+	if selected := m.selectedCount(); selected > 0 {
+		title = fmt.Sprintf("Transactions (%d selected)", selected)
+	}
+	transactionsCard := renderManagerSectionBox(title, !accountsFocused, !accountsFocused, m.sectionWidth(), txContent)
 	return accountsCard + "\n" + transactionsCard
 }
 
@@ -574,45 +560,6 @@ func (m model) managerFocusedIndex() int {
 	return idx
 }
 
-func (m model) transactionsView() string {
-	filtered := m.getFilteredRows()
-	total := len(m.rows)
-	highlighted := m.highlightedRows(filtered)
-	cursorTxnID := 0
-	if m.cursor >= 0 && m.cursor < len(filtered) {
-		cursorTxnID = filtered[m.cursor].id
-	}
-
-	// Build title with count info
-	title := fmt.Sprintf("Transactions (%d/%d)", len(filtered), total)
-	if selected := m.selectedCount(); selected > 0 {
-		title = fmt.Sprintf("Transactions (%d selected)", selected)
-	}
-
-	// Search bar
-	var searchBar string
-	if m.searchMode {
-		searchBar = searchPromptStyle.Render("/") + " " + searchInputStyle.Render(m.searchQuery+"_") + "\n"
-	} else if m.searchQuery != "" {
-		searchBar = searchPromptStyle.Render("/") + " " + searchInputStyle.Render(m.searchQuery) + "  " + lipgloss.NewStyle().Foreground(colorOverlay1).Render("(esc clear)") + "\n"
-	}
-
-	content := searchBar + renderTransactionTable(
-		filtered,
-		m.categories,
-		m.txnTags,
-		m.selectedRows,
-		highlighted,
-		cursorTxnID,
-		m.topIndex,
-		m.visibleRows(),
-		m.listContentWidth(),
-		m.sortColumn,
-		m.sortAscending,
-	)
-	return m.renderSection(title, content)
-}
-
 func (m model) settingsView() string {
 	content := renderSettingsContent(m)
 	if m.width == 0 {
@@ -621,29 +568,67 @@ func (m model) settingsView() string {
 	return lipgloss.Place(m.width, lipgloss.Height(content), lipgloss.Center, lipgloss.Top, content)
 }
 
-func (m model) placeWithFooter(body, statusLine, footer string) string {
-	if m.height == 0 {
-		return body + "\n\n" + statusLine + "\n" + footer
+func (m model) transactionSearchBar() string {
+	if m.searchMode {
+		return searchPromptStyle.Render("/") + " " + searchInputStyle.Render(m.searchQuery+"_") + "\n"
 	}
-	contentHeight := m.height - 2
-	if contentHeight < 1 {
-		contentHeight = 1
+	if m.searchQuery != "" {
+		return searchPromptStyle.Render("/") + " " + searchInputStyle.Render(m.searchQuery) + "  " + lipgloss.NewStyle().Foreground(colorOverlay1).Render("(esc clear)") + "\n"
 	}
-	if lipgloss.Height(body) >= contentHeight {
-		return body + "\n" + statusLine + "\n" + footer
-	}
-	main := lipgloss.Place(m.width, contentHeight, lipgloss.Left, lipgloss.Top, body)
-	// Ensure every line is full-width to prevent ghosting from previous frames
-	lines := splitLines(main)
-	for i, line := range lines {
-		lines[i] = padRight(line, m.width)
-	}
-	main = strings.Join(lines, "\n")
-	return main + "\n" + statusLine + "\n" + footer
+	return ""
 }
 
-func (m model) composeOverlay(base, statusLine, footer, content string) string {
-	baseView := m.placeWithFooter(base, statusLine, footer)
+func (m model) composeFrame(header, body, statusLine, footer string) string {
+	if m.height <= 0 {
+		return header + "\n\n" + body + "\n" + statusLine + "\n" + footer
+	}
+	if m.height == 1 {
+		return m.normalizeViewportLine(header)
+	}
+	if m.height == 2 {
+		return m.normalizeViewportLine(header) + "\n" + m.normalizeViewportLine(footer)
+	}
+	topHeight := m.height - 2
+	lines := make([]string, 0, m.height)
+	lines = append(lines, m.composeTopAreaLines(header, body, topHeight)...)
+	lines = append(lines, m.normalizeViewportLine(statusLine), m.normalizeViewportLine(footer))
+	return strings.Join(lines, "\n")
+}
+
+func (m model) composeTopAreaLines(header, body string, topHeight int) []string {
+	if topHeight <= 0 {
+		return nil
+	}
+	lines := []string{m.normalizeViewportLine(header)}
+	if topHeight == 1 {
+		return lines
+	}
+	lines = append(lines, m.normalizeViewportLine(""))
+	bodyLines := splitLines(body)
+	bodyCap := topHeight - len(lines)
+	for i := 0; i < bodyCap; i++ {
+		if i < len(bodyLines) {
+			lines = append(lines, m.normalizeBodyLine(bodyLines[i]))
+			continue
+		}
+		lines = append(lines, m.normalizeBodyLine(""))
+	}
+	return lines
+}
+
+func (m model) normalizeViewportLine(line string) string {
+	if m.width <= 0 {
+		return line
+	}
+	return padRight(ansi.Truncate(line, m.width, ""), m.width)
+}
+
+func (m model) normalizeBodyLine(line string) string {
+	return m.normalizeViewportLine(line)
+}
+
+func (m model) composeOverlay(header, body, statusLine, footer, content string) string {
+	baseView := m.composeFrame(header, body, statusLine, footer)
 	if m.height == 0 || m.width == 0 {
 		return baseView + "\n\n" + content
 	}
@@ -665,7 +650,12 @@ func (m model) composeOverlay(base, statusLine, footer, content string) string {
 	if y < 0 {
 		y = 0
 	}
-	return overlayAt(baseView, modal, x, y, m.width, targetHeight)
+	out := overlayAt(baseView, modal, x, y, m.width, targetHeight)
+	lines = splitLines(out)
+	for i := range lines {
+		lines[i] = m.normalizeViewportLine(lines[i])
+	}
+	return strings.Join(lines, "\n")
 }
 
 // ---------------------------------------------------------------------------
@@ -685,24 +675,26 @@ func (m model) settingsFooterBindings() []key.Binding {
 			return m.keys.HelpBindings(scopeSettingsModeRuleCat)
 		}
 	}
-	if m.confirmAction != "" {
-		return m.keys.HelpBindings(scopeSettingsConfirm)
+	if m.confirmAction != confirmActionNone {
+		return m.settingsConfirmBindings()
 	}
 	if m.settActive {
-		switch m.settSection {
-		case settSecCategories:
-			return m.keys.HelpBindings(scopeSettingsActiveCategories)
-		case settSecTags:
-			return m.keys.HelpBindings(scopeSettingsActiveTags)
-		case settSecRules:
-			return m.keys.HelpBindings(scopeSettingsActiveRules)
-		case settSecChart:
-			return m.keys.HelpBindings(scopeSettingsActiveChart)
-		case settSecDBImport:
-			return m.keys.HelpBindings(scopeSettingsActiveDBImport)
-		}
+		return m.keys.HelpBindings(settingsActiveScope(m.settSection))
 	}
 	return m.keys.HelpBindings(scopeSettingsNav)
+}
+
+func (m model) settingsConfirmBindings() []key.Binding {
+	spec, ok := settingsConfirmSpecFor(m.confirmAction)
+	if !ok {
+		return nil
+	}
+	confirmKey := m.primaryActionKey(spec.scope, spec.action, spec.fallback)
+	confirmLabel := prettyHelpKey(confirmKey)
+	return []key.Binding{
+		key.NewBinding(key.WithKeys(confirmKey), key.WithHelp(confirmLabel, "confirm")),
+		key.NewBinding(key.WithKeys("other"), key.WithHelp("other", "cancel")),
+	}
 }
 
 // ---------------------------------------------------------------------------
@@ -819,11 +811,46 @@ func (m *model) sectionWidth() int {
 	if m.width == 0 {
 		return 80
 	}
-	if m.width <= 2 {
-		return m.width
+	return m.width
+}
+
+func (m model) sectionBoxContentWidth(sectionWidth int) int {
+	// renderSectionBox uses 1 char border + 1 char inner padding on each side.
+	contentWidth := sectionWidth - 4
+	if contentWidth < 1 {
+		contentWidth = 1
 	}
-	// Keep a hard right-side margin to avoid border clipping.
-	return m.width - 2
+	return contentWidth
+}
+
+func dashboardChartWidths(totalWidth, gap int) (int, int) {
+	avail := totalWidth - gap
+	if avail < 2 {
+		if totalWidth <= 1 {
+			return 1, 1
+		}
+		return max(1, avail), 1
+	}
+	tracker := avail * 60 / 100
+	if tracker < 1 {
+		tracker = 1
+	}
+	breakdown := avail - tracker
+	if breakdown < 1 {
+		breakdown = 1
+		tracker = avail - breakdown
+	}
+	if avail >= 48 {
+		if tracker < 24 {
+			tracker = 24
+		}
+		breakdown = avail - tracker
+		if breakdown < 24 {
+			breakdown = 24
+			tracker = avail - breakdown
+		}
+	}
+	return tracker, breakdown
 }
 
 func (m *model) ensureCursorInWindow() {
@@ -1071,21 +1098,36 @@ func matchesAccountFilter(t transaction, filterAccounts map[int]bool) bool {
 
 func sortTransactions(rows []transaction, col int, asc bool) {
 	sort.SliceStable(rows, func(i, j int) bool {
-		var less bool
+		var (
+			less bool
+			eq   bool
+		)
 		switch col {
 		case sortByDate:
 			less = rows[i].dateISO < rows[j].dateISO
+			eq = rows[i].dateISO == rows[j].dateISO
 		case sortByAmount:
 			less = rows[i].amount < rows[j].amount
+			eq = rows[i].amount == rows[j].amount
 		case sortByCategory:
-			less = strings.ToLower(rows[i].categoryName) < strings.ToLower(rows[j].categoryName)
+			li := strings.ToLower(rows[i].categoryName)
+			lj := strings.ToLower(rows[j].categoryName)
+			less = li < lj
+			eq = li == lj
 		case sortByDescription:
-			less = strings.ToLower(rows[i].description) < strings.ToLower(rows[j].description)
+			li := strings.ToLower(rows[i].description)
+			lj := strings.ToLower(rows[j].description)
+			less = li < lj
+			eq = li == lj
 		default:
 			less = rows[i].dateISO < rows[j].dateISO
+			eq = rows[i].dateISO == rows[j].dateISO
 		}
 		if asc {
 			return less
+		}
+		if eq {
+			return false
 		}
 		return !less
 	})

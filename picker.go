@@ -210,29 +210,19 @@ func (p *pickerState) HandleKey(keyName string) pickerResult {
 	}
 }
 
-func renderPicker(p *pickerState, width int) string {
+func renderPicker(p *pickerState, width int, keys *KeyRegistry, scope string) string {
 	if p == nil {
 		return ""
 	}
 	var lines []string
-	titleLine := titleStyle.Render(p.title)
-	if width > 0 {
-		titleLine = padStyledLine(titleLine, width)
+	query := strings.TrimSpace(p.query)
+	searchValue := lipgloss.NewStyle().Foreground(colorOverlay1).Render("(type to filter)")
+	if query != "" {
+		searchValue = searchInputStyle.Render(query)
 	}
-	lines = append(lines, titleLine)
-
-	searchPrompt := lipgloss.NewStyle().
-		Foreground(colorAccent).
-		Background(colorCrust).
-		Bold(true).
-		Render("/")
-	searchInput := lipgloss.NewStyle().
-		Foreground(colorText).
-		Background(colorCrust).
-		Render(" " + p.query)
-	searchLine := searchPrompt + searchInput
+	searchLine := infoLabelStyle.Render("Filter: ") + searchValue
 	if width > 0 {
-		searchLine = lipgloss.NewStyle().Background(colorCrust).Render(padStyledLine(searchLine, width))
+		searchLine = padStyledLine(searchLine, width)
 	}
 	lines = append(lines, searchLine)
 
@@ -250,7 +240,7 @@ func renderPicker(p *pickerState, width int) string {
 			continue
 		}
 		if section != "" {
-			header := lipgloss.NewStyle().Foreground(colorSubtext0).Bold(true).Render(section + ":")
+			header := sectionTitleStyle.Render(section + ":")
 			if width > 0 {
 				header = padStyledLine(header, width)
 			}
@@ -269,8 +259,11 @@ func renderPicker(p *pickerState, width int) string {
 				} else {
 					selectMark = "[ ]"
 				}
-				selectMark += " "
+			} else {
+				// Keep label columns aligned between single- and multi-select pickers.
+				selectMark = "   "
 			}
+			selectMark += " "
 
 			labelStyle := lipgloss.NewStyle().Foreground(colorOverlay1)
 			if strings.TrimSpace(it.Color) != "" && it.Color != "#7f849c" {
@@ -292,10 +285,26 @@ func renderPicker(p *pickerState, width int) string {
 	if p.shouldShowCreate() {
 		isCursor := p.cursor == selectableIdx
 		label := lipgloss.NewStyle().Foreground(colorPeach).Render(p.createLabel + ` "` + strings.TrimSpace(p.query) + `"`)
-		row := stylePickerRow("  "+label, false, isCursor, width)
+		row := stylePickerRow("      "+label, false, isCursor, width)
 		lines = append(lines, row)
 	}
-	return strings.Join(lines, "\n")
+
+	selectDesc := "apply"
+	if scope == scopeAccountNukePicker {
+		selectDesc = "nuke"
+	}
+	footerParts := []string{
+		renderActionHint(keys, scope, actionNavigate, "j/k", "navigate"),
+	}
+	if p.multiSelect {
+		footerParts = append(footerParts, renderActionHint(keys, scope, actionToggleSelect, "space", "toggle"))
+	}
+	footerParts = append(footerParts,
+		renderActionHint(keys, scope, actionSelect, "enter", selectDesc),
+		renderActionHint(keys, scope, actionClose, "esc", "cancel"),
+	)
+
+	return renderModalContent(p.title, lines, strings.Join(footerParts, "  "))
 }
 
 func stylePickerRow(content string, selected, isCursor bool, width int) string {

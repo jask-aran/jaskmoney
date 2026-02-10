@@ -2,9 +2,25 @@ package main
 
 import (
 	"fmt"
+	"io"
 	"os"
 	"path/filepath"
 )
+
+func runStartupHarness(out io.Writer) error {
+	m := newModel()
+	if out != nil {
+		fmt.Fprintf(out, "startup_status_err=%t\n", m.statusErr)
+		fmt.Fprintf(out, "startup_status=%s\n", m.status)
+	}
+	if m.statusErr {
+		if m.status == "" {
+			return fmt.Errorf("startup status error")
+		}
+		return fmt.Errorf("%s", m.status)
+	}
+	return nil
+}
 
 // runValidation executes a non-TUI validation path using a temporary DB and CSV.
 func runValidation() error {
@@ -27,6 +43,9 @@ func runValidation() error {
 	}
 	if len(formats) == 0 {
 		return fmt.Errorf("no formats available")
+	}
+	if err := syncAccountsFromFormats(db, formats); err != nil {
+		return fmt.Errorf("sync accounts: %w", err)
 	}
 
 	csvPath := filepath.Join(dir, "ANZ-validate.csv")

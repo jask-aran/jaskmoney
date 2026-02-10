@@ -10,7 +10,18 @@ import (
 
 func main() {
 	validate := flag.Bool("validate", false, "run non-TUI validation")
+	startupCheck := flag.Bool("startup-check", false, "run startup diagnostics harness (prints startup status)")
 	flag.Parse()
+	if *validate && *startupCheck {
+		fmt.Fprintln(os.Stderr, "cannot use -validate and -startup-check together")
+		os.Exit(2)
+	}
+	if *startupCheck {
+		if err := runStartupHarness(os.Stdout); err != nil {
+			os.Exit(1)
+		}
+		return
+	}
 	if *validate {
 		if err := runValidation(); err != nil {
 			fmt.Fprintln(os.Stderr, "validation failed:", err)
