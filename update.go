@@ -93,6 +93,13 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 		m.setStatusf("Applied rules: %d transactions updated.", msg.count)
 		return m, refreshCmd(m.db)
+	case tagRulesAppliedMsg:
+		if msg.err != nil {
+			m.setError(fmt.Sprintf("Apply tag rules failed: %v", msg.err))
+			return m, nil
+		}
+		m.setStatusf("Applied tag rules: %d transactions updated.", msg.count)
+		return m, refreshCmd(m.db)
 	case settingsSavedMsg:
 		if msg.err != nil {
 			m.setError(fmt.Sprintf("Save settings failed: %v", msg.err))
@@ -116,6 +123,9 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.clearSettingsConfirm()
 		return m, nil
 	case tea.KeyMsg:
+		if m.commandOpen {
+			return m.updateCommandUI(msg)
+		}
 		if m.showDetail {
 			return m.updateDetail(msg)
 		}
@@ -139,6 +149,16 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 		if m.searchMode {
 			return m.updateSearch(msg)
+		}
+		if m.canOpenCommandUI() {
+			if m.isAction(scopeGlobal, actionCommandPalette, msg) {
+				m.openCommandUI(commandUIKindPalette)
+				return m, nil
+			}
+			if m.isAction(scopeGlobal, actionCommandMode, msg) {
+				m.openCommandUI(commandUIKindColon)
+				return m, nil
+			}
 		}
 		if m.activeTab == tabSettings {
 			return m.updateSettings(msg)
@@ -336,6 +356,7 @@ func (m model) currentAppSettings() appSettings {
 	out.DashTimeframe = m.dashTimeframe
 	out.DashCustomStart = m.dashCustomStart
 	out.DashCustomEnd = m.dashCustomEnd
+	out.CommandDefaultInterface = m.commandDefault
 	return normalizeSettings(out)
 }
 

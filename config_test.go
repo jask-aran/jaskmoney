@@ -66,6 +66,9 @@ dash_custom_end = "2026-02-10"
 	if settings.DashCustomEnd != "2026-02-10" {
 		t.Fatalf("dash_custom_end = %q, want 2026-02-10", settings.DashCustomEnd)
 	}
+	if settings.CommandDefaultInterface != commandUIKindPalette {
+		t.Fatalf("command_default_interface = %q, want %q", settings.CommandDefaultInterface, commandUIKindPalette)
+	}
 }
 
 func TestLoadAndSaveAppSettings(t *testing.T) {
@@ -84,11 +87,12 @@ func TestLoadAndSaveAppSettings(t *testing.T) {
 	}
 
 	saved := appSettings{
-		RowsPerPage:      33,
-		SpendingWeekFrom: "monday",
-		DashTimeframe:    dashTimeframeCustom,
-		DashCustomStart:  "2026-02-01",
-		DashCustomEnd:    "2026-02-10",
+		RowsPerPage:             33,
+		SpendingWeekFrom:        "monday",
+		DashTimeframe:           dashTimeframeCustom,
+		DashCustomStart:         "2026-02-01",
+		DashCustomEnd:           "2026-02-10",
+		CommandDefaultInterface: commandUIKindColon,
 	}
 	if err := saveAppSettings(saved); err != nil {
 		t.Fatalf("saveAppSettings: %v", err)
@@ -109,6 +113,9 @@ func TestLoadAndSaveAppSettings(t *testing.T) {
 	}
 	if loaded.DashCustomStart != "2026-02-01" || loaded.DashCustomEnd != "2026-02-10" {
 		t.Fatalf("custom range = %q..%q, want 2026-02-01..2026-02-10", loaded.DashCustomStart, loaded.DashCustomEnd)
+	}
+	if loaded.CommandDefaultInterface != commandUIKindColon {
+		t.Fatalf("command_default_interface = %q, want %q", loaded.CommandDefaultInterface, commandUIKindColon)
 	}
 
 	path := filepath.Join(xdg, "jaskmoney", "config.toml")

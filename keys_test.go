@@ -172,3 +172,15 @@ func TestKeyRegistryPreservesUppercaseActionBindings(t *testing.T) {
 		t.Fatalf("transactions S = %+v, want sort_direction", gotUpper)
 	}
 }
+
+func TestKeyRegistryCommandTriggers(t *testing.T) {
+	r := NewKeyRegistry()
+	palette := r.Lookup("ctrl+k", scopeGlobal)
+	if palette == nil || palette.Action != actionCommandPalette {
+		t.Fatalf("ctrl+k = %+v, want command_palette", palette)
+	}
+	colon := r.Lookup(":", scopeGlobal)
+	if colon == nil || colon.Action != actionCommandMode {
+		t.Fatalf(": = %+v, want command_mode", colon)
+	}
+}

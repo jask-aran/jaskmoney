@@ -24,6 +24,8 @@ type KeyRegistry struct {
 
 const (
 	scopeGlobal                   = "global"
+	scopeCommandPalette           = "command_palette"
+	scopeCommandMode              = "command_mode"
 	scopeManagerTransactions      = "manager_transactions"
 	scopeManager                  = "manager"
 	scopeManagerModal             = "manager_modal"
@@ -51,47 +53,58 @@ const (
 )
 
 const (
-	actionQuit               Action = "quit"
-	actionNextTab            Action = "next_tab"
-	actionPrevTab            Action = "prev_tab"
-	actionNavigate           Action = "navigate"
-	actionSelect             Action = "select"
-	actionClose              Action = "close"
-	actionCancel             Action = "cancel"
-	actionSearch             Action = "search"
-	actionSort               Action = "sort"
-	actionSortDirection      Action = "sort_direction"
-	actionFilterCategory     Action = "filter_category"
-	actionToggleSelect       Action = "toggle_select"
-	actionRangeHighlight     Action = "range_highlight"
-	actionQuickCategory      Action = "quick_category"
-	actionQuickTag           Action = "quick_tag"
-	actionTimeframe          Action = "timeframe"
-	actionMove               Action = "move"
-	actionImportAll          Action = "import_all"
-	actionSkipDupes          Action = "skip_dupes"
-	actionClearSearch        Action = "clear_search"
-	actionConfirm            Action = "confirm"
-	actionColor              Action = "color"
-	actionSave               Action = "save"
-	actionNext               Action = "next"
-	actionSelectItem         Action = "select_item"
-	actionAdd                Action = "add"
-	actionEdit               Action = "edit"
-	actionDelete             Action = "delete"
-	actionApplyAll           Action = "apply_all"
-	actionToggleWeekBoundary Action = "toggle_week_boundary"
-	actionRowsPerPage        Action = "rows_per_page"
-	actionClearDB            Action = "clear_db"
-	actionImport             Action = "import"
-	actionNukeAccount        Action = "nuke_account"
-	actionColumn             Action = "column"
-	actionSection            Action = "section"
-	actionActivate           Action = "activate"
-	actionBack               Action = "back"
-	actionFocusAccounts      Action = "focus_accounts"
-	actionJumpTop            Action = "jump_top"
-	actionJumpBottom         Action = "jump_bottom"
+	actionQuit                     Action = "quit"
+	actionNextTab                  Action = "next_tab"
+	actionPrevTab                  Action = "prev_tab"
+	actionNavigate                 Action = "navigate"
+	actionSelect                   Action = "select"
+	actionClose                    Action = "close"
+	actionCancel                   Action = "cancel"
+	actionSearch                   Action = "search"
+	actionSort                     Action = "sort"
+	actionSortDirection            Action = "sort_direction"
+	actionFilterCategory           Action = "filter_category"
+	actionToggleSelect             Action = "toggle_select"
+	actionRangeHighlight           Action = "range_highlight"
+	actionQuickCategory            Action = "quick_category"
+	actionQuickTag                 Action = "quick_tag"
+	actionTimeframe                Action = "timeframe"
+	actionMove                     Action = "move"
+	actionImportAll                Action = "import_all"
+	actionSkipDupes                Action = "skip_dupes"
+	actionClearSearch              Action = "clear_search"
+	actionConfirm                  Action = "confirm"
+	actionColor                    Action = "color"
+	actionSave                     Action = "save"
+	actionNext                     Action = "next"
+	actionSelectItem               Action = "select_item"
+	actionAdd                      Action = "add"
+	actionEdit                     Action = "edit"
+	actionDelete                   Action = "delete"
+	actionApplyAll                 Action = "apply_all"
+	actionToggleWeekBoundary       Action = "toggle_week_boundary"
+	actionRowsPerPage              Action = "rows_per_page"
+	actionClearDB                  Action = "clear_db"
+	actionImport                   Action = "import"
+	actionNukeAccount              Action = "nuke_account"
+	actionColumn                   Action = "column"
+	actionSection                  Action = "section"
+	actionActivate                 Action = "activate"
+	actionBack                     Action = "back"
+	actionFocusAccounts            Action = "focus_accounts"
+	actionJumpTop                  Action = "jump_top"
+	actionJumpBottom               Action = "jump_bottom"
+	actionCommandPalette           Action = "command_palette"
+	actionCommandMode              Action = "command_mode"
+	actionCommandDefault           Action = "command_default"
+	actionCommandGoDashboard       Action = "command_go_dashboard"
+	actionCommandGoTransactions    Action = "command_go_transactions"
+	actionCommandGoSettings        Action = "command_go_settings"
+	actionCommandFocusAccounts     Action = "command_focus_accounts"
+	actionCommandFocusTransactions Action = "command_focus_transactions"
+	actionCommandApplyTagRules     Action = "command_apply_tag_rules"
+	actionCommandClearFilters      Action = "command_clear_filters"
+	actionCommandClearSelection    Action = "command_clear_selection"
 )
 
 func NewKeyRegistry() *KeyRegistry {
@@ -108,6 +121,15 @@ func NewKeyRegistry() *KeyRegistry {
 	reg(scopeGlobal, actionQuit, []string{"q", "ctrl+c"}, "quit")
 	reg(scopeGlobal, actionNextTab, []string{"tab"}, "next tab")
 	reg(scopeGlobal, actionPrevTab, []string{"shift+tab"}, "prev tab")
+	reg(scopeGlobal, actionCommandPalette, []string{"ctrl+k"}, "commands")
+	reg(scopeGlobal, actionCommandMode, []string{":"}, "command")
+
+	reg(scopeCommandPalette, actionNavigate, []string{"j/k", "j", "k", "up", "down", "ctrl+p", "ctrl+n"}, "navigate")
+	reg(scopeCommandPalette, actionSelect, []string{"enter"}, "run")
+	reg(scopeCommandPalette, actionClose, []string{"esc"}, "close")
+	reg(scopeCommandMode, actionNavigate, []string{"j/k", "j", "k", "up", "down", "ctrl+p", "ctrl+n"}, "navigate")
+	reg(scopeCommandMode, actionSelect, []string{"enter"}, "run")
+	reg(scopeCommandMode, actionClose, []string{"esc"}, "close")
 
 	// Manager transactions-primary footer additions.
 	reg(scopeManagerTransactions, actionFocusAccounts, []string{"A"}, "accounts")
@@ -229,6 +251,7 @@ func NewKeyRegistry() *KeyRegistry {
 	reg(scopeSettingsActiveDBImport, actionNavigate, []string{"j/k", "j", "k", "up", "down"}, "navigate")
 	reg(scopeSettingsActiveDBImport, actionBack, []string{"esc"}, "back")
 	reg(scopeSettingsActiveDBImport, actionRowsPerPage, []string{"+/-", "+", "=", "-"}, "rows/page")
+	reg(scopeSettingsActiveDBImport, actionCommandDefault, []string{"o"}, "cmd default")
 	reg(scopeSettingsActiveDBImport, actionClearDB, []string{"c"}, "clear db")
 	reg(scopeSettingsActiveDBImport, actionImport, []string{"i"}, "import")
 	reg(scopeSettingsActiveDBImport, actionNukeAccount, []string{"N"}, "nuke account")
