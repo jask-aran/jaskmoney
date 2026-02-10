@@ -3,11 +3,12 @@ package main
 import (
 	"database/sql"
 	"os"
+	"strings"
 	"testing"
 )
 
 // testDB creates a temporary SQLite database via openDB and returns it along
-// with a cleanup function. The DB has the full v2 schema and default categories.
+// with a cleanup function.
 func testDB(t *testing.T) (*sql.DB, func()) {
 	t.Helper()
 	f, err := os.CreateTemp("", "jaskmoney-test-*.db")
@@ -30,7 +31,7 @@ func testDB(t *testing.T) (*sql.DB, func()) {
 
 // ---- Schema creation tests ----
 
-func TestOpenDBCreatesV2Schema(t *testing.T) {
+func TestOpenDBCreatesV4Schema(t *testing.T) {
 	db, cleanup := testDB(t)
 	defer cleanup()
 
@@ -45,7 +46,10 @@ func TestOpenDBCreatesV2Schema(t *testing.T) {
 	}
 
 	// Verify all tables exist
-	tables := []string{"schema_meta", "categories", "category_rules", "transactions", "imports"}
+	tables := []string{
+		"schema_meta", "categories", "category_rules", "transactions", "imports",
+		"accounts", "account_selection", "tags", "transaction_tags", "tag_rules",
+	}
 	for _, table := range tables {
 		var count int
 		err := db.QueryRow(`SELECT COUNT(*) FROM sqlite_master WHERE type='table' AND name=?`, table).Scan(&count)
@@ -113,11 +117,31 @@ func TestUncategorisedIsDefault(t *testing.T) {
 	}
 }
 
+func TestMandatoryIgnoreTagSeeded(t *testing.T) {
+	db, cleanup := testDB(t)
+	defer cleanup()
+
+	tags, err := loadTags(db)
+	if err != nil {
+		t.Fatalf("loadTags: %v", err)
+	}
+	found := false
+	for _, tg := range tags {
+		if strings.EqualFold(tg.name, mandatoryIgnoreTagName) {
+			found = true
+			break
+		}
+	}
+	if !found {
+		t.Fatalf("mandatory tag %q not found in %+v", mandatoryIgnoreTagName, tags)
+	}
+}
+
 // ---- Schema migration tests ----
 
-func TestMigrationFromV1Schema(t *testing.T) {
-	// Create a v1-style database (just the transactions table, no schema_meta)
-	f, err := os.CreateTemp("", "jaskmoney-v1-*.db")
+func TestOpenDBRecreatesOutdatedSchema(t *testing.T) {
+	// Create an outdated v2-style database; openDB should recreate it fresh.
+	f, err := os.CreateTemp("", "jaskmoney-v2-*.db")
 	if err != nil {
 		t.Fatalf("create temp: %v", err)
 	}
@@ -125,41 +149,44 @@ func TestMigrationFromV1Schema(t *testing.T) {
 	f.Close()
 	defer os.Remove(path)
 
-	// Create v1 schema manually
+	// Create minimal v2-style schema manually
 	db, err := sql.Open("sqlite", path)
 	if err != nil {
 		t.Fatalf("open: %v", err)
 	}
 	_, err = db.Exec(`
+		CREATE TABLE schema_meta (version INTEGER NOT NULL);
+		INSERT INTO schema_meta (version) VALUES (2);
 		CREATE TABLE transactions (
 			id INTEGER PRIMARY KEY AUTOINCREMENT,
 			date_raw TEXT NOT NULL,
 			date_iso TEXT NOT NULL,
 			amount REAL NOT NULL,
-			description TEXT NOT NULL
+			description TEXT NOT NULL,
+			notes TEXT NOT NULL DEFAULT ''
 		)
 	`)
 	if err != nil {
 		db.Close()
-		t.Fatalf("create v1 schema: %v", err)
+		t.Fatalf("create v2 schema: %v", err)
 	}
-	// Insert a v1 row
+	// Insert a legacy row that should be removed by fresh recreate.
 	_, err = db.Exec(`INSERT INTO transactions (date_raw, date_iso, amount, description)
 		VALUES ('03/02/2026', '2026-02-03', -20.00, 'DAN MURPHYS')`)
 	if err != nil {
 		db.Close()
-		t.Fatalf("insert v1 row: %v", err)
+		t.Fatalf("insert legacy row: %v", err)
 	}
 	db.Close()
 
-	// Now open with openDB which should detect v0 and migrate
+	// Now open with openDB; outdated schema is rebuilt from scratch.
 	db2, err := openDB(path)
 	if err != nil {
-		t.Fatalf("openDB on v1 db: %v", err)
+		t.Fatalf("openDB on outdated db: %v", err)
 	}
 	defer db2.Close()
 
-	// Verify version is now v2
+	// Verify version is now latest schema.
 	var ver int
 	if err := db2.QueryRow("SELECT version FROM schema_meta LIMIT 1").Scan(&ver); err != nil {
 		t.Fatalf("query version: %v", err)
@@ -168,31 +195,122 @@ func TestMigrationFromV1Schema(t *testing.T) {
 		t.Errorf("version = %d, want %d", ver, schemaVersion)
 	}
 
-	// Verify categories were seeded
-	cats, err := loadCategories(db2)
+	// Legacy transactions should not be preserved in fresh-schema mode.
+	rows, err := loadRows(db2)
 	if err != nil {
-		t.Fatalf("loadCategories: %v", err)
+		t.Fatalf("loadRows: %v", err)
 	}
-	if len(cats) != len(defaultCategories) {
-		t.Errorf("got %d categories, want %d", len(cats), len(defaultCategories))
+	if len(rows) != 0 {
+		t.Fatalf("expected 0 rows after recreate, got %d", len(rows))
 	}
 
-	// Existing v1 transactions should be preserved with category_id = NULL
+	// ANZ is no longer auto-seeded.
+	anz, err := loadAccountByNameCI(db2, "ANZ")
+	if err != nil {
+		t.Fatalf("loadAccountByNameCI: %v", err)
+	}
+	if anz != nil {
+		t.Fatalf("expected no implicit ANZ seed account, got %+v", *anz)
+	}
+}
+
+func TestMigrationFromV3ToV4PreservesTransactions(t *testing.T) {
+	f, err := os.CreateTemp("", "jaskmoney-v3-*.db")
+	if err != nil {
+		t.Fatalf("create temp: %v", err)
+	}
+	path := f.Name()
+	f.Close()
+	defer os.Remove(path)
+
+	db, err := sql.Open("sqlite", path)
+	if err != nil {
+		t.Fatalf("open: %v", err)
+	}
+	_, err = db.Exec(`
+		CREATE TABLE schema_meta (version INTEGER NOT NULL);
+		INSERT INTO schema_meta (version) VALUES (3);
+
+		CREATE TABLE categories (
+			id INTEGER PRIMARY KEY AUTOINCREMENT,
+			name TEXT NOT NULL UNIQUE,
+			color TEXT NOT NULL,
+			sort_order INTEGER NOT NULL DEFAULT 0,
+			is_default INTEGER NOT NULL DEFAULT 0
+		);
+
+		CREATE TABLE category_rules (
+			id INTEGER PRIMARY KEY AUTOINCREMENT,
+			pattern TEXT NOT NULL,
+			category_id INTEGER NOT NULL REFERENCES categories(id) ON DELETE CASCADE,
+			priority INTEGER NOT NULL DEFAULT 0,
+			UNIQUE(pattern)
+		);
+
+		CREATE TABLE accounts (
+			id INTEGER PRIMARY KEY AUTOINCREMENT,
+			name TEXT NOT NULL UNIQUE,
+			type TEXT NOT NULL CHECK(type IN ('debit','credit')) DEFAULT 'debit',
+			sort_order INTEGER NOT NULL DEFAULT 0,
+			is_active INTEGER NOT NULL DEFAULT 1
+		);
+
+		CREATE TABLE account_selection (
+			account_id INTEGER NOT NULL REFERENCES accounts(id) ON DELETE CASCADE
+		);
+
+		CREATE TABLE transactions (
+			id INTEGER PRIMARY KEY AUTOINCREMENT,
+			date_raw TEXT NOT NULL,
+			date_iso TEXT NOT NULL,
+			amount REAL NOT NULL,
+			description TEXT NOT NULL,
+			category_id INTEGER REFERENCES categories(id) ON DELETE SET NULL,
+			notes TEXT NOT NULL DEFAULT '',
+			import_id INTEGER REFERENCES imports(id),
+			account_id INTEGER REFERENCES accounts(id),
+			created_at TEXT NOT NULL DEFAULT (datetime('now'))
+		);
+
+		CREATE TABLE imports (
+			id INTEGER PRIMARY KEY AUTOINCREMENT,
+			filename TEXT NOT NULL,
+			row_count INTEGER NOT NULL,
+			imported_at TEXT NOT NULL DEFAULT (datetime('now'))
+		);
+
+		INSERT INTO transactions (date_raw, date_iso, amount, description, notes)
+		VALUES ('03/02/2026', '2026-02-03', -20.00, 'PRESERVE-ME', '');
+	`)
+	if err != nil {
+		db.Close()
+		t.Fatalf("create v3 schema: %v", err)
+	}
+	db.Close()
+
+	db2, err := openDB(path)
+	if err != nil {
+		t.Fatalf("openDB on v3 db: %v", err)
+	}
+	defer db2.Close()
+
+	var ver int
+	if err := db2.QueryRow("SELECT version FROM schema_meta LIMIT 1").Scan(&ver); err != nil {
+		t.Fatalf("query version: %v", err)
+	}
+	if ver != schemaVersion {
+		t.Fatalf("version = %d, want %d", ver, schemaVersion)
+	}
+
 	rows, err := loadRows(db2)
 	if err != nil {
 		t.Fatalf("loadRows: %v", err)
 	}
 	if len(rows) != 1 {
-		t.Fatalf("expected 1 preserved row after migration, got %d", len(rows))
+		t.Fatalf("expected preserved transaction row, got %d", len(rows))
 	}
-	if rows[0].description != "DAN MURPHYS" {
-		t.Errorf("preserved row description = %q, want %q", rows[0].description, "DAN MURPHYS")
-	}
-	if rows[0].categoryID != nil {
-		t.Errorf("preserved row should have nil category_id, got %v", rows[0].categoryID)
-	}
-	if rows[0].categoryName != "Uncategorised" {
-		t.Errorf("preserved row categoryName = %q, want %q", rows[0].categoryName, "Uncategorised")
+	if rows[0].description != "PRESERVE-ME" {
+		t.Fatalf("description = %q, want PRESERVE-ME", rows[0].description)
 	}
 }
 
@@ -932,5 +1050,175 @@ func TestTransactionCategoryForeignKey(t *testing.T) {
 	}
 	if !catID.Valid || int(catID.Int64) != cats[0].id {
 		t.Errorf("category_id = %v, want %d", catID, cats[0].id)
+	}
+}
+
+// ---- Account tests (Phase 6) ----
+
+func TestFreshDBHasNoSeedAccounts(t *testing.T) {
+	db, cleanup := testDB(t)
+	defer cleanup()
+
+	accounts, err := loadAccounts(db)
+	if err != nil {
+		t.Fatalf("loadAccounts: %v", err)
+	}
+	if len(accounts) != 0 {
+		t.Fatalf("expected no auto-seeded accounts, got %d", len(accounts))
+	}
+}
+
+func TestAccountCRUDAndDeleteGuards(t *testing.T) {
+	db, cleanup := testDB(t)
+	defer cleanup()
+
+	accountID, err := insertAccount(db, "Primary", "debit", true)
+	if err != nil {
+		t.Fatalf("insertAccount: %v", err)
+	}
+
+	if err := updateAccount(db, accountID, "Primary Updated", "credit", false); err != nil {
+		t.Fatalf("updateAccount: %v", err)
+	}
+
+	loaded, err := loadAccountByNameCI(db, "Primary Updated")
+	if err != nil {
+		t.Fatalf("loadAccountByNameCI: %v", err)
+	}
+	if loaded == nil {
+		t.Fatal("expected updated account to be present")
+	}
+	if loaded.acctType != "credit" {
+		t.Fatalf("acctType = %q, want %q", loaded.acctType, "credit")
+	}
+	if loaded.isActive {
+		t.Fatal("expected account to be inactive after update")
+	}
+
+	_, err = db.Exec(`
+		INSERT INTO transactions (date_raw, date_iso, amount, description, notes, account_id)
+		VALUES ('03/02/2026', '2026-02-03', -20.00, 'ACC-TXN', '', ?)
+	`, loaded.id)
+	if err != nil {
+		t.Fatalf("insert txn with account: %v", err)
+	}
+
+	if err := deleteAccountIfEmpty(db, loaded.id); err == nil {
+		t.Fatal("expected deleteAccountIfEmpty to fail for non-empty account")
+	}
+
+	if n, err := clearTransactionsForAccount(db, loaded.id); err != nil {
+		t.Fatalf("clearTransactionsForAccount: %v", err)
+	} else if n != 1 {
+		t.Fatalf("cleared %d transactions, want 1", n)
+	}
+
+	if err := deleteAccountIfEmpty(db, loaded.id); err != nil {
+		t.Fatalf("deleteAccountIfEmpty after clear: %v", err)
+	}
+}
+
+func TestSelectedAccountsRoundTrip(t *testing.T) {
+	db, cleanup := testDB(t)
+	defer cleanup()
+
+	a1, err := insertAccount(db, "A1", "debit", true)
+	if err != nil {
+		t.Fatalf("insertAccount A1: %v", err)
+	}
+	a2, err := insertAccount(db, "A2", "credit", true)
+	if err != nil {
+		t.Fatalf("insertAccount A2: %v", err)
+	}
+
+	if err := saveSelectedAccounts(db, []int{a1, a2}); err != nil {
+		t.Fatalf("saveSelectedAccounts: %v", err)
+	}
+	selected, err := loadSelectedAccounts(db)
+	if err != nil {
+		t.Fatalf("loadSelectedAccounts: %v", err)
+	}
+	if !selected[a1] || !selected[a2] || len(selected) != 2 {
+		t.Fatalf("selected accounts = %+v, want {%d:true, %d:true}", selected, a1, a2)
+	}
+
+	if err := saveSelectedAccounts(db, nil); err != nil {
+		t.Fatalf("clear selected accounts: %v", err)
+	}
+	selected, err = loadSelectedAccounts(db)
+	if err != nil {
+		t.Fatalf("loadSelectedAccounts after clear: %v", err)
+	}
+	if len(selected) != 0 {
+		t.Fatalf("expected empty selected accounts after clear, got %+v", selected)
+	}
+}
+
+func TestTagCRUDAndRuleApplication(t *testing.T) {
+	db, cleanup := testDB(t)
+	defer cleanup()
+
+	tagID, err := insertTag(db, "groceries", "#94e2d5", nil)
+	if err != nil {
+		t.Fatalf("insertTag: %v", err)
+	}
+	tags, err := loadTags(db)
+	if err != nil {
+		t.Fatalf("loadTags: %v", err)
+	}
+	foundInserted := false
+	for _, tg := range tags {
+		if tg.id == tagID {
+			foundInserted = true
+			break
+		}
+	}
+	if !foundInserted {
+		t.Fatalf("tags = %+v, expected inserted id=%d", tags, tagID)
+	}
+
+	if _, err := insertTagRule(db, "WOOLWORTHS", tagID); err != nil {
+		t.Fatalf("insertTagRule: %v", err)
+	}
+	if _, err := db.Exec(`
+		INSERT INTO transactions (date_raw, date_iso, amount, description, notes)
+		VALUES ('03/02/2026', '2026-02-03', -10.00, 'WOOLWORTHS 123', '')
+	`); err != nil {
+		t.Fatalf("insert transaction: %v", err)
+	}
+
+	if _, err := applyTagRules(db); err != nil {
+		t.Fatalf("applyTagRules: %v", err)
+	}
+	txnTags, err := loadTransactionTags(db)
+	if err != nil {
+		t.Fatalf("loadTransactionTags: %v", err)
+	}
+	if len(txnTags) != 1 {
+		t.Fatalf("expected tags on one transaction, got %+v", txnTags)
+	}
+}
+
+func TestDeleteMandatoryIgnoreTagBlocked(t *testing.T) {
+	db, cleanup := testDB(t)
+	defer cleanup()
+
+	tags, err := loadTags(db)
+	if err != nil {
+		t.Fatalf("loadTags: %v", err)
+	}
+	ignoreID := 0
+	for _, tg := range tags {
+		if strings.EqualFold(tg.name, mandatoryIgnoreTagName) {
+			ignoreID = tg.id
+			break
+		}
+	}
+	if ignoreID == 0 {
+		t.Fatalf("missing mandatory tag %q", mandatoryIgnoreTagName)
+	}
+
+	if err := deleteTag(db, ignoreID); err == nil {
+		t.Fatalf("expected deleting mandatory tag %q to fail", mandatoryIgnoreTagName)
 	}
 }

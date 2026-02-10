@@ -260,6 +260,174 @@ func TestImportCSVFileNotFound(t *testing.T) {
 	}
 }
 
+func TestImportCSVForAccountAssignsAccountID(t *testing.T) {
+	db, cleanup := testDB(t)
+	defer cleanup()
+
+	accountID, err := insertAccount(db, "Spending", "debit", true)
+	if err != nil {
+		t.Fatalf("insertAccount: %v", err)
+	}
+
+	csv := "3/02/2026,-20.00,DAN MURPHYS\n"
+	path := writeTestCSV(t, csv)
+	inserted, dupes, err := importCSVForAccount(db, path, testANZFormat(), &accountID, true)
+	if err != nil {
+		t.Fatalf("importCSVForAccount: %v", err)
+	}
+	if inserted != 1 || dupes != 0 {
+		t.Fatalf("inserted=%d dupes=%d, want 1/0", inserted, dupes)
+	}
+
+	rows, err := loadRows(db)
+	if err != nil {
+		t.Fatalf("loadRows: %v", err)
+	}
+	if len(rows) != 1 {
+		t.Fatalf("expected 1 row, got %d", len(rows))
+	}
+	if rows[0].accountID == nil || *rows[0].accountID != accountID {
+		t.Fatalf("accountID = %v, want %d", rows[0].accountID, accountID)
+	}
+	if rows[0].accountName != "Spending" {
+		t.Fatalf("accountName = %q, want %q", rows[0].accountName, "Spending")
+	}
+}
+
+func TestImportCSVForAccountNoSignFlipByAccountType(t *testing.T) {
+	db, cleanup := testDB(t)
+	defer cleanup()
+
+	accountID, err := insertAccount(db, "Credit Card", "credit", true)
+	if err != nil {
+		t.Fatalf("insertAccount: %v", err)
+	}
+
+	csv := "3/02/2026,203.92,PAYMENT RECEIVED\n4/02/2026,-20.00,DAN MURPHYS\n"
+	path := writeTestCSV(t, csv)
+	if _, _, err := importCSVForAccount(db, path, testANZFormat(), &accountID, true); err != nil {
+		t.Fatalf("importCSVForAccount: %v", err)
+	}
+
+	rows, err := loadRows(db)
+	if err != nil {
+		t.Fatalf("loadRows: %v", err)
+	}
+	if len(rows) != 2 {
+		t.Fatalf("expected 2 rows, got %d", len(rows))
+	}
+
+	foundPositive := false
+	foundNegative := false
+	for _, row := range rows {
+		if row.amount == 203.92 {
+			foundPositive = true
+		}
+		if row.amount == -20.00 {
+			foundNegative = true
+		}
+	}
+	if !foundPositive || !foundNegative {
+		t.Fatalf("expected original amount signs to be preserved, rows=%+v", rows)
+	}
+}
+
+func TestIngestCmdFailsWhenMappedAccountMissing(t *testing.T) {
+	db, cleanup := testDB(t)
+	defer cleanup()
+
+	dir := t.TempDir()
+	file := "anz-test.csv"
+	path := filepath.Join(dir, file)
+	csv := "3/02/2026,-20.00,DAN MURPHYS\n"
+	if err := os.WriteFile(path, []byte(csv), 0644); err != nil {
+		t.Fatalf("write csv: %v", err)
+	}
+
+	formats := []csvFormat{
+		{
+			Name:         "ANZ",
+			Account:      "Missing Account",
+			ImportPrefix: "anz",
+			DateFormat:   "2/01/2006",
+			HasHeader:    false,
+			Delimiter:    ",",
+			DateCol:      0,
+			AmountCol:    1,
+			DescCol:      2,
+			DescJoin:     true,
+			AmountStrip:  ",",
+		},
+	}
+
+	msg := ingestCmd(db, file, dir, formats, true)()
+	done, ok := msg.(ingestDoneMsg)
+	if !ok {
+		t.Fatalf("unexpected message type: %T", msg)
+	}
+	if done.err == nil {
+		t.Fatal("expected ingest error for missing mapped account")
+	}
+}
+
+func TestIngestCmdAppliesTagRules(t *testing.T) {
+	db, cleanup := testDB(t)
+	defer cleanup()
+
+	accountID, err := insertAccount(db, "ANZ", "debit", true)
+	if err != nil {
+		t.Fatalf("insertAccount: %v", err)
+	}
+	tagID, err := insertTag(db, "grocery", "#94e2d5", nil)
+	if err != nil {
+		t.Fatalf("insertTag: %v", err)
+	}
+	if _, err := insertTagRule(db, "WOOLWORTHS", tagID); err != nil {
+		t.Fatalf("insertTagRule: %v", err)
+	}
+
+	dir := t.TempDir()
+	file := "anz-tag.csv"
+	path := filepath.Join(dir, file)
+	csv := "3/02/2026,-20.00,WOOLWORTHS METRO\n"
+	if err := os.WriteFile(path, []byte(csv), 0644); err != nil {
+		t.Fatalf("write csv: %v", err)
+	}
+
+	formats := []csvFormat{
+		{
+			Name:         "ANZ",
+			Account:      "ANZ",
+			ImportPrefix: "anz",
+			DateFormat:   "2/01/2006",
+			HasHeader:    false,
+			Delimiter:    ",",
+			DateCol:      0,
+			AmountCol:    1,
+			DescCol:      2,
+			DescJoin:     true,
+			AmountStrip:  ",",
+		},
+	}
+	_ = accountID
+	msg := ingestCmd(db, file, dir, formats, true)()
+	done, ok := msg.(ingestDoneMsg)
+	if !ok {
+		t.Fatalf("unexpected message type: %T", msg)
+	}
+	if done.err != nil {
+		t.Fatalf("ingestCmd failed: %v", done.err)
+	}
+
+	txnTags, err := loadTransactionTags(db)
+	if err != nil {
+		t.Fatalf("loadTransactionTags: %v", err)
+	}
+	if len(txnTags) != 1 {
+		t.Fatalf("expected tags for 1 transaction, got %+v", txnTags)
+	}
+}
+
 // ---------------------------------------------------------------------------
 // Helper function tests
 // ---------------------------------------------------------------------------

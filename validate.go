@@ -60,7 +60,7 @@ func runValidation() error {
 	if acct == nil {
 		return fmt.Errorf("mapped account not found: %s", format.Account)
 	}
-	total, dupes, err := countDuplicatesForAccount(db, csvPath, *format, &acct.id, acct.acctType)
+	total, dupes, err := countDuplicatesForAccount(db, csvPath, *format, &acct.id)
 	if err != nil {
 		return fmt.Errorf("count duplicates: %w", err)
 	}

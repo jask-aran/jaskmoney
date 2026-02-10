@@ -24,6 +24,8 @@ type KeyRegistry struct {
 
 const (
 	scopeGlobal                   = "global"
+	scopeManagerNav               = "manager_nav"
+	scopeManagerTransactions      = "manager_transactions"
 	scopeManager                  = "manager"
 	scopeManagerModal             = "manager_modal"
 	scopeDashboard                = "dashboard"
@@ -32,16 +34,19 @@ const (
 	scopeTransactions             = "transactions"
 	scopeDetailModal              = "detail_modal"
 	scopeCategoryPicker           = "category_picker"
+	scopeTagPicker                = "tag_picker"
 	scopeAccountNukePicker        = "account_nuke_picker"
 	scopeFilePicker               = "file_picker"
 	scopeDupeModal                = "dupe_modal"
 	scopeSearch                   = "search"
 	scopeSettingsNav              = "settings_nav"
 	scopeSettingsModeCat          = "settings_mode_cat"
+	scopeSettingsModeTag          = "settings_mode_tag"
 	scopeSettingsModeRule         = "settings_mode_rule"
 	scopeSettingsModeRuleCat      = "settings_mode_rule_cat"
 	scopeSettingsConfirm          = "settings_confirm"
 	scopeSettingsActiveCategories = "settings_active_categories"
+	scopeSettingsActiveTags       = "settings_active_tags"
 	scopeSettingsActiveRules      = "settings_active_rules"
 	scopeSettingsActiveChart      = "settings_active_chart"
 	scopeSettingsActiveDBImport   = "settings_active_db_import"
@@ -61,6 +66,7 @@ const (
 	actionToggleSelect       Action = "toggle_select"
 	actionRangeHighlight     Action = "range_highlight"
 	actionQuickCategory      Action = "quick_category"
+	actionQuickTag           Action = "quick_tag"
 	actionTimeframe          Action = "timeframe"
 	actionMove               Action = "move"
 	actionImportAll          Action = "import_all"
@@ -86,6 +92,7 @@ const (
 	actionSection            Action = "section"
 	actionActivate           Action = "activate"
 	actionBack               Action = "back"
+	actionFocusAccounts      Action = "focus_accounts"
 )
 
 func NewKeyRegistry() *KeyRegistry {
@@ -103,18 +110,27 @@ func NewKeyRegistry() *KeyRegistry {
 	reg(scopeGlobal, actionNextTab, []string{"tab"}, "next tab")
 	reg(scopeGlobal, actionPrevTab, []string{"shift+tab"}, "prev tab")
 
-	// Dashboard footer: d, tab, shift+tab, q
+	// Manager transactions-primary footer additions.
+	reg(scopeManagerTransactions, actionFocusAccounts, []string{"A"}, "accounts")
+	// Legacy manager-nav scope retained for migration compatibility.
+	reg(scopeManagerNav, actionSection, []string{"j/k", "j", "k", "up", "down"}, "card")
+	reg(scopeManagerNav, actionActivate, []string{"enter"}, "activate")
+	reg(scopeManagerNav, actionNextTab, []string{"tab"}, "next tab")
+	reg(scopeManagerNav, actionQuit, []string{"q", "ctrl+c"}, "quit")
+
+	// Manager accounts-active footer.
 	reg(scopeManager, actionNavigate, []string{"j/k", "j", "k", "up", "down"}, "navigate")
+	reg(scopeManager, actionBack, []string{"esc"}, "back")
 	reg(scopeManager, actionToggleSelect, []string{"space"}, "toggle active")
 	reg(scopeManager, actionSave, []string{"s"}, "save active")
 	reg(scopeManager, actionAdd, []string{"a"}, "add account")
-	reg(scopeManager, actionEdit, []string{"enter"}, "edit account")
 	reg(scopeManager, actionSelect, []string{"enter"}, "edit account")
+	reg(scopeManager, actionQuickTag, []string{"T"}, "quick tag")
 	reg(scopeManager, actionClearDB, []string{"c"}, "clear txns")
 	reg(scopeManager, actionDelete, []string{"d"}, "delete empty")
 	reg(scopeManager, actionNextTab, []string{"tab"}, "next tab")
 	reg(scopeManager, actionQuit, []string{"q", "ctrl+c"}, "quit")
-	reg(scopeManagerModal, actionMove, []string{"j/k", "j", "k", "up", "down"}, "field")
+	reg(scopeManagerModal, actionNavigate, []string{"j/k", "j", "k", "up", "down"}, "field")
 	reg(scopeManagerModal, actionColor, []string{"h/l", "h", "left", "l", "right", "space"}, "toggle")
 	reg(scopeManagerModal, actionSave, []string{"enter"}, "save")
 	reg(scopeManagerModal, actionClose, []string{"esc"}, "cancel")
@@ -126,7 +142,7 @@ func NewKeyRegistry() *KeyRegistry {
 	reg(scopeDashboard, actionQuit, []string{"q", "ctrl+c"}, "quit")
 
 	// Dashboard timeframe focus footer: h/l, enter, esc
-	reg(scopeDashboardTimeframe, actionMove, []string{"h/l", "h", "left", "l", "right"}, "navigate")
+	reg(scopeDashboardTimeframe, actionColumn, []string{"h/l", "h", "left", "l", "right"}, "navigate")
 	reg(scopeDashboardTimeframe, actionSelect, []string{"enter"}, "select")
 	reg(scopeDashboardTimeframe, actionCancel, []string{"esc"}, "cancel")
 
@@ -139,6 +155,7 @@ func NewKeyRegistry() *KeyRegistry {
 	reg(scopeTransactions, actionSort, []string{"s"}, "sort")
 	reg(scopeTransactions, actionFilterCategory, []string{"f"}, "filter cat")
 	reg(scopeTransactions, actionQuickCategory, []string{"c"}, "quick cat")
+	reg(scopeTransactions, actionQuickTag, []string{"t"}, "quick tag")
 	reg(scopeTransactions, actionToggleSelect, []string{"space", " "}, "toggle sel")
 	reg(scopeTransactions, actionRangeHighlight, []string{"shift+up/down", "shift+up", "shift+down"}, "hl range")
 	reg(scopeTransactions, actionSelect, []string{"enter"}, "select")
@@ -150,6 +167,10 @@ func NewKeyRegistry() *KeyRegistry {
 	reg(scopeCategoryPicker, actionNavigate, []string{"j/k", "j", "k", "up", "down"}, "navigate")
 	reg(scopeCategoryPicker, actionSelect, []string{"enter"}, "apply")
 	reg(scopeCategoryPicker, actionClose, []string{"esc"}, "cancel")
+	reg(scopeTagPicker, actionNavigate, []string{"j/k", "j", "k", "up", "down"}, "navigate")
+	reg(scopeTagPicker, actionToggleSelect, []string{"space"}, "toggle")
+	reg(scopeTagPicker, actionSelect, []string{"enter"}, "apply")
+	reg(scopeTagPicker, actionClose, []string{"esc"}, "cancel")
 	reg(scopeAccountNukePicker, actionNavigate, []string{"j/k", "j", "k", "up", "down"}, "navigate")
 	reg(scopeAccountNukePicker, actionSelect, []string{"enter"}, "nuke")
 	reg(scopeAccountNukePicker, actionClose, []string{"esc"}, "cancel")
@@ -177,6 +198,9 @@ func NewKeyRegistry() *KeyRegistry {
 	reg(scopeSettingsModeCat, actionColor, []string{"h/l", "h", "left", "l", "right"}, "color")
 	reg(scopeSettingsModeCat, actionSave, []string{"enter"}, "save")
 	reg(scopeSettingsModeCat, actionClose, []string{"esc"}, "cancel")
+	reg(scopeSettingsModeTag, actionColor, []string{"h/l", "h", "left", "l", "right"}, "color")
+	reg(scopeSettingsModeTag, actionSave, []string{"enter"}, "save")
+	reg(scopeSettingsModeTag, actionClose, []string{"esc"}, "cancel")
 	reg(scopeSettingsModeRule, actionNext, []string{"enter"}, "next")
 	reg(scopeSettingsModeRule, actionClose, []string{"esc"}, "cancel")
 	reg(scopeSettingsModeRuleCat, actionSelectItem, []string{"j/k", "j", "k", "up", "down"}, "select")
@@ -193,6 +217,11 @@ func NewKeyRegistry() *KeyRegistry {
 	reg(scopeSettingsActiveCategories, actionAdd, []string{"a"}, "add")
 	reg(scopeSettingsActiveCategories, actionEdit, []string{"e"}, "edit")
 	reg(scopeSettingsActiveCategories, actionDelete, []string{"d"}, "delete")
+	reg(scopeSettingsActiveTags, actionNavigate, []string{"j/k", "j", "k", "up", "down"}, "navigate")
+	reg(scopeSettingsActiveTags, actionBack, []string{"esc"}, "back")
+	reg(scopeSettingsActiveTags, actionAdd, []string{"a"}, "add")
+	reg(scopeSettingsActiveTags, actionEdit, []string{"e"}, "edit")
+	reg(scopeSettingsActiveTags, actionDelete, []string{"d"}, "delete")
 	reg(scopeSettingsActiveRules, actionNavigate, []string{"j/k", "j", "k", "up", "down"}, "navigate")
 	reg(scopeSettingsActiveRules, actionBack, []string{"esc"}, "back")
 	reg(scopeSettingsActiveRules, actionAdd, []string{"a"}, "add")

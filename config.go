@@ -78,8 +78,9 @@ type shortcutOverride struct {
 
 type keybindingsFile struct {
 	Version  int                               `toml:"version"`
-	Profiles map[string]map[string][]string    `toml:"profiles"`
-	Scopes   map[string]keybindingsScopeConfig `toml:"scopes"`
+	Bindings map[string][]string               `toml:"bindings"`
+	Profiles map[string]map[string][]string    `toml:"profiles"` // legacy v1
+	Scopes   map[string]keybindingsScopeConfig `toml:"scopes"`   // legacy v1
 }
 
 type keybindingsScopeConfig struct {
@@ -252,7 +253,7 @@ func loadKeybindingsConfig() ([]keybindingConfig, error) {
 		if err != nil {
 			return defaults, fmt.Errorf("read keybindings: %w", err)
 		}
-		parsed, err := parseKeybindingsConfig(data, defaults)
+		parsed, migratedFromLegacy, err := parseKeybindingsConfig(data, defaults)
 		if err != nil {
 			return defaults, err
 		}
@@ -260,7 +261,7 @@ func loadKeybindingsConfig() ([]keybindingConfig, error) {
 		if err != nil {
 			return defaults, err
 		}
-		if changed {
+		if changed || migratedFromLegacy {
 			if err := writeKeybindingsFile(primaryPath, materialized); err != nil {
 				return materialized, fmt.Errorf("write keybindings template: %w", err)
 			}
@@ -318,7 +319,7 @@ func loadLegacyKeybindingOverrides(defaults []keybindingConfig) ([]keybindingCon
 		}
 		switch c.kind {
 		case "keybindings":
-			items, err := parseKeybindingsConfig(data, defaults)
+			items, _, err := parseKeybindingsConfig(data, defaults)
 			if err != nil {
 				return nil, false, err
 			}
@@ -453,18 +454,80 @@ func parseConfig(data []byte) ([]csvFormat, appSettings, []keybindingConfig, err
 	return formats, settings, bindings, nil
 }
 
-func parseKeybindingsConfig(data []byte, defaults []keybindingConfig) ([]keybindingConfig, error) {
+func parseKeybindingsConfig(data []byte, defaults []keybindingConfig) ([]keybindingConfig, bool, error) {
 	var cfg keybindingsFile
 	if err := toml.Unmarshal(data, &cfg); err != nil {
-		return nil, fmt.Errorf("parse keybindings.toml: %w", err)
+		return nil, false, fmt.Errorf("parse keybindings.toml: %w", err)
 	}
 	if cfg.Version == 0 {
-		cfg.Version = 1
+		cfg.Version = 2
 	}
-	if cfg.Version != 1 {
-		return nil, fmt.Errorf("unsupported keybindings version: %d", cfg.Version)
+	if cfg.Version != 1 && cfg.Version != 2 {
+		return nil, false, fmt.Errorf("unsupported keybindings version: %d", cfg.Version)
 	}
 
+	if cfg.Version == 2 {
+		actionKeys, migrated, err := parseActionBindings(cfg.Bindings, defaults)
+		if err != nil {
+			return nil, false, err
+		}
+		return expandActionOverrides(defaults, actionKeys), migrated, nil
+	}
+	items, err := parseKeybindingsConfigV1(cfg, defaults)
+	if err != nil {
+		return nil, false, err
+	}
+	return items, true, nil
+}
+
+func parseActionBindings(bindings map[string][]string, defaults []keybindingConfig) (map[string][]string, bool, error) {
+	knownActions := make(map[string]bool)
+	for _, d := range defaults {
+		knownActions[d.Action] = true
+	}
+	out := make(map[string][]string)
+	migrated := false
+	for rawAction, rawKeys := range bindings {
+		action := strings.TrimSpace(rawAction)
+		keys := normalizeKeyList(rawKeys)
+		if action == string(actionMove) {
+			migrated = true
+			action = migrateLegacyMoveAction(keys)
+		}
+		if !knownActions[action] {
+			return nil, false, fmt.Errorf("keybindings: unknown action %q", action)
+		}
+		if len(keys) == 0 {
+			return nil, false, fmt.Errorf("keybindings action=%q: keys are required", action)
+		}
+		out[action] = keys
+	}
+	return out, migrated, nil
+}
+
+func expandActionOverrides(defaults []keybindingConfig, actionKeys map[string][]string) []keybindingConfig {
+	out := make([]keybindingConfig, 0, len(defaults))
+	for _, d := range defaults {
+		keys := d.Keys
+		if override, ok := actionKeys[d.Action]; ok {
+			keys = override
+		}
+		out = append(out, keybindingConfig{Scope: d.Scope, Action: d.Action, Keys: keys})
+	}
+	return normalizeKeybindings(out)
+}
+
+func migrateLegacyMoveAction(keys []string) string {
+	for _, k := range keys {
+		switch normalizeKeyName(k) {
+		case "h/l", "h", "l", "left", "right":
+			return string(actionColumn)
+		}
+	}
+	return string(actionNavigate)
+}
+
+func parseKeybindingsConfigV1(cfg keybindingsFile, defaults []keybindingConfig) ([]keybindingConfig, error) {
 	knownActions := make(map[string]bool)
 	knownByScope := make(map[string]map[string]bool)
 	for _, d := range defaults {
@@ -503,7 +566,6 @@ func parseKeybindingsConfig(data []byte, defaults []keybindingConfig) ([]keybind
 		if !ok {
 			return nil, fmt.Errorf("keybindings: unknown scope %q", scope)
 		}
-
 		merged := make(map[string][]string)
 		for _, rawUse := range block.Use {
 			use := strings.TrimSpace(rawUse)
@@ -531,12 +593,10 @@ func parseKeybindingsConfig(data []byte, defaults []keybindingConfig) ([]keybind
 			}
 			merged[action] = keys
 		}
-
 		for action, keys := range merged {
 			out = append(out, keybindingConfig{Scope: scope, Action: action, Keys: keys})
 		}
 	}
-
 	out = normalizeKeybindings(out)
 	sort.Slice(out, func(i, j int) bool {
 		if out[i].Scope != out[j].Scope {
@@ -632,11 +692,80 @@ func materializeKeybindings(defaults, fileBindings []keybindingConfig) ([]keybin
 		}
 		return out[i].Action < out[j].Action
 	})
+	if migrated := migrateManagerQuickTagConflict(out, defaults); migrated {
+		changed = true
+	}
 
 	if err := validateKeybindingConflicts(out); err != nil {
 		return nil, false, err
 	}
 	return out, changed, nil
+}
+
+func migrateManagerQuickTagConflict(bindings []keybindingConfig, defaults []keybindingConfig) bool {
+	const (
+		managerScope   = "manager"
+		quickTagAction = "quick_tag"
+	)
+	quickIdx := -1
+	used := make(map[string]bool)
+	for i, b := range bindings {
+		if b.Scope != managerScope {
+			continue
+		}
+		if b.Action == quickTagAction {
+			quickIdx = i
+			continue
+		}
+		for _, k := range normalizeKeyList(b.Keys) {
+			used[k] = true
+		}
+	}
+	if quickIdx < 0 {
+		return false
+	}
+	quickKeys := normalizeKeyList(bindings[quickIdx].Keys)
+	hasConflict := false
+	for _, k := range quickKeys {
+		if used[k] {
+			hasConflict = true
+			break
+		}
+	}
+	if !hasConflict {
+		return false
+	}
+
+	defaultQuickKeys := []string{"T"}
+	for _, d := range defaults {
+		if d.Scope == managerScope && d.Action == quickTagAction {
+			keys := normalizeKeyList(d.Keys)
+			if len(keys) > 0 {
+				defaultQuickKeys = keys
+			}
+			break
+		}
+	}
+	conflictFree := true
+	for _, k := range defaultQuickKeys {
+		if used[k] {
+			conflictFree = false
+			break
+		}
+	}
+	if conflictFree {
+		bindings[quickIdx].Keys = defaultQuickKeys
+		return true
+	}
+
+	for _, candidate := range []string{"T", "ctrl+t", "alt+t"} {
+		c := normalizeKeyName(candidate)
+		if c != "" && !used[c] {
+			bindings[quickIdx].Keys = []string{c}
+			return true
+		}
+	}
+	return false
 }
 
 func validateKeybindingConflicts(bindings []keybindingConfig) error {
@@ -793,166 +922,27 @@ func writeKeybindingsFile(path string, bindings []keybindingConfig) error {
 }
 
 func renderKeybindingsTemplate(bindings []keybindingConfig) string {
-	type profileEntry struct {
-		name    string
-		scopes  []string
-		actions map[string][]string
-	}
-
 	var buf strings.Builder
-	buf.WriteString("version = 1\n\n")
-	buf.WriteString("# Full keybindings catalog.\n")
-	buf.WriteString("# Shared bindings are declared once in profiles; scopes reference them via `use`.\n")
-	buf.WriteString("# Scope-specific bindings live in each scope `bind` map.\n\n")
+	buf.WriteString("version = 2\n\n")
+	buf.WriteString("# Action-level key overrides.\n")
+	buf.WriteString("# Each action applies across all tabs/scopes where that action exists.\n")
+	buf.WriteString("# Display labels and scope routing are defined in code.\n\n")
+	buf.WriteString("[bindings]\n")
 
-	scopeActions := make(map[string]map[string][]string)
+	actionDefaults := make(map[string][]string)
 	for _, b := range bindings {
-		if _, ok := scopeActions[b.Scope]; !ok {
-			scopeActions[b.Scope] = make(map[string][]string)
+		if _, ok := actionDefaults[b.Action]; ok {
+			continue
 		}
-		scopeActions[b.Scope][b.Action] = append([]string(nil), b.Keys...)
+		actionDefaults[b.Action] = append([]string(nil), b.Keys...)
 	}
-
-	type groupKey struct {
-		action string
-		sig    string
+	actions := make([]string, 0, len(actionDefaults))
+	for action := range actionDefaults {
+		actions = append(actions, action)
 	}
-	groups := make(map[groupKey][]string)
-	keysByGroup := make(map[groupKey][]string)
-	for scope, actions := range scopeActions {
-		for action, keys := range actions {
-			sig := strings.Join(keys, "\x1f")
-			k := groupKey{action: action, sig: sig}
-			groups[k] = append(groups[k], scope)
-			keysByGroup[k] = keys
-		}
-	}
-
-	var sharedKeys []groupKey
-	for k, scopes := range groups {
-		if len(scopes) >= 2 {
-			sharedKeys = append(sharedKeys, k)
-		}
-	}
-	sort.Slice(sharedKeys, func(i, j int) bool {
-		if sharedKeys[i].action != sharedKeys[j].action {
-			return sharedKeys[i].action < sharedKeys[j].action
-		}
-		return sharedKeys[i].sig < sharedKeys[j].sig
-	})
-
-	profilesByScopeSig := make(map[string]*profileEntry)
-	scopeSetOrder := make([]string, 0)
-	for _, g := range sharedKeys {
-		scopes := append([]string(nil), groups[g]...)
-		sort.Strings(scopes)
-		scopeSig := strings.Join(scopes, ",")
-		p, ok := profilesByScopeSig[scopeSig]
-		if !ok {
-			p = &profileEntry{
-				name:    "",
-				scopes:  scopes,
-				actions: make(map[string][]string),
-			}
-			profilesByScopeSig[scopeSig] = p
-			scopeSetOrder = append(scopeSetOrder, scopeSig)
-		}
-		p.actions[g.action] = keysByGroup[g]
-	}
-
-	nameCounts := make(map[string]int)
-	profiles := make([]profileEntry, 0, len(scopeSetOrder))
-	for _, sig := range scopeSetOrder {
-		p := profilesByScopeSig[sig]
-		actionNames := make([]string, 0, len(p.actions))
-		for action := range p.actions {
-			actionNames = append(actionNames, action)
-		}
-		sort.Strings(actionNames)
-		base := profileNameFromActions(actionNames)
-		nameCounts[base]++
-		if nameCounts[base] == 1 {
-			p.name = base
-		} else {
-			p.name = fmt.Sprintf("%s_%d", base, nameCounts[base])
-		}
-		profiles = append(profiles, *p)
-	}
-
-	if len(profiles) > 0 {
-		for _, p := range profiles {
-			buf.WriteString(fmt.Sprintf("[profiles.%s]\n", p.name))
-			actionNames := make([]string, 0, len(p.actions))
-			for action := range p.actions {
-				actionNames = append(actionNames, action)
-			}
-			sort.Strings(actionNames)
-			for _, action := range actionNames {
-				buf.WriteString(fmt.Sprintf("%s = %s\n", action, formatTomlStringArray(p.actions[action])))
-			}
-			buf.WriteString("\n")
-		}
-	}
-
-	scopeUse := make(map[string][]string)
-	scopeBound := make(map[string]map[string][]string)
-	for scope, actions := range scopeActions {
-		covered := make(map[string]bool)
-		for _, p := range profiles {
-			if !containsString(p.scopes, scope) {
-				continue
-			}
-			matchedAny := false
-			for action, keys := range p.actions {
-				if equalStringSlices(actions[action], keys) {
-					covered[action] = true
-					matchedAny = true
-				}
-			}
-			if matchedAny {
-				scopeUse[scope] = append(scopeUse[scope], p.name)
-			}
-		}
-		sort.Strings(scopeUse[scope])
-		for action, keys := range actions {
-			if covered[action] {
-				continue
-			}
-			if _, ok := scopeBound[scope]; !ok {
-				scopeBound[scope] = make(map[string][]string)
-			}
-			scopeBound[scope][action] = keys
-		}
-	}
-
-	scopes := make([]string, 0, len(scopeActions))
-	for scope := range scopeActions {
-		scopes = append(scopes, scope)
-	}
-	sort.Strings(scopes)
-
-	for _, scope := range scopes {
-		buf.WriteString(fmt.Sprintf("[scopes.%s]\n", scope))
-		if len(scopeUse[scope]) > 0 {
-			buf.WriteString(fmt.Sprintf("use = %s\n", formatTomlStringArray(scopeUse[scope])))
-		}
-
-		actions := scopeBound[scope]
-		if len(actions) > 0 {
-			actionNames := make([]string, 0, len(actions))
-			for action := range actions {
-				actionNames = append(actionNames, action)
-			}
-			sort.Strings(actionNames)
-			binds := make([]string, 0, len(actionNames))
-			for _, action := range actionNames {
-				binds = append(binds, fmt.Sprintf("%s = %s", action, formatTomlStringArray(actions[action])))
-			}
-			buf.WriteString("bind = { ")
-			buf.WriteString(strings.Join(binds, ", "))
-			buf.WriteString(" }\n")
-		}
-		buf.WriteString("\n")
+	sort.Strings(actions)
+	for _, action := range actions {
+		buf.WriteString(fmt.Sprintf("%s = %s\n", action, formatTomlStringArray(actionDefaults[action])))
 	}
 
 	return buf.String()
