@@ -262,6 +262,14 @@ func (m model) updateSettingsDBImport(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			return m, saveSettingsCmd(m.currentAppSettings())
 		}
 		return m, nil
+	case m.isAction(scopeSettingsActiveDBImport, actionCommandDefault, msg):
+		if m.commandDefault == commandUIKindColon {
+			m.commandDefault = commandUIKindPalette
+		} else {
+			m.commandDefault = commandUIKindColon
+		}
+		m.setStatusf("Command default: %s", commandDefaultLabel(m.commandDefault))
+		return m, saveSettingsCmd(m.currentAppSettings())
 	}
 	return m, nil
 }

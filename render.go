@@ -144,6 +144,11 @@ var (
 	detailLabelStyle  = lipgloss.NewStyle().Foreground(colorSubtext0)
 	detailValueStyle  = lipgloss.NewStyle().Foreground(colorText)
 	detailActiveStyle = lipgloss.NewStyle().Foreground(colorAccent).Bold(true)
+
+	commandLabelStyle        = lipgloss.NewStyle().Foreground(colorText)
+	commandDescStyle         = lipgloss.NewStyle().Foreground(colorOverlay1)
+	commandDisabledStyle     = lipgloss.NewStyle().Foreground(colorOverlay0)
+	commandSelectedLineStyle = lipgloss.NewStyle().Background(colorSurface1)
 )
 
 // ---------------------------------------------------------------------------
@@ -305,6 +310,90 @@ func (m model) renderFooter(bindings []key.Binding) string {
 	}
 	content = ansi.Truncate(content, innerWidth, "")
 	return footerStyle.Width(m.width).Render(content)
+}
+
+func (m model) renderCommandFooter() string {
+	query := m.commandQuery
+	if query == "" {
+		query = ""
+	}
+	content := searchPromptStyle.Render(":") + " " + searchInputStyle.Render(query+"_")
+	if m.width == 0 {
+		return footerStyle.Render(content)
+	}
+	innerWidth := m.width - footerStyle.GetHorizontalFrameSize()
+	if innerWidth < 1 {
+		innerWidth = 1
+	}
+	content = ansi.Truncate(content, innerWidth, "")
+	return footerStyle.Width(m.width).Render(content)
+}
+
+func renderCommandPalette(query string, matches []CommandMatch, cursor, width int, keys *KeyRegistry) string {
+	lines := make([]string, 0, 10)
+	search := searchPromptStyle.Render(">") + " " + searchInputStyle.Render(query+"_")
+	if width > 0 {
+		search = padStyledLine(search, width)
+	}
+	lines = append(lines, search)
+	lines = append(lines, sectionDividerStyle.Render(strings.Repeat("─", max(1, width))))
+	lines = append(lines, renderCommandLines(matches, cursor, width, 8)...)
+	footer := strings.Join([]string{
+		renderActionHint(keys, scopeCommandPalette, actionNavigate, "j/k", "navigate"),
+		renderActionHint(keys, scopeCommandPalette, actionSelect, "enter", "run"),
+		renderActionHint(keys, scopeCommandPalette, actionClose, "esc", "close"),
+	}, "  ")
+	return renderModalContent("Command Palette", lines, footer)
+}
+
+func renderCommandSuggestions(matches []CommandMatch, cursor, width, limit int) string {
+	if limit <= 0 {
+		limit = 5
+	}
+	lines := renderCommandLines(matches, cursor, width, limit)
+	if len(lines) == 0 {
+		return ""
+	}
+	content := strings.Join(lines, "\n")
+	return renderSectionBox("Commands", content, width, false, colorSurface1, sectionTitleStyle)
+}
+
+func renderCommandLines(matches []CommandMatch, cursor, width, limit int) []string {
+	if len(matches) == 0 {
+		line := commandDisabledStyle.Render("No matching commands")
+		if width > 0 {
+			line = padStyledLine(line, width)
+		}
+		return []string{line}
+	}
+	if limit <= 0 || limit > len(matches) {
+		limit = len(matches)
+	}
+	lines := make([]string, 0, limit)
+	for i := 0; i < limit; i++ {
+		match := matches[i]
+		prefix := "  "
+		if i == cursor {
+			prefix = cursorStyle.Render("> ")
+		}
+		label := commandLabelStyle.Render(match.Command.Label)
+		if !match.Enabled {
+			label = commandDisabledStyle.Render(match.Command.Label + " (disabled)")
+		}
+		desc := commandDescStyle.Render(match.Command.Description)
+		line := prefix + label
+		if strings.TrimSpace(match.Command.Description) != "" {
+			line += "  " + desc
+		}
+		if i == cursor {
+			line = commandSelectedLineStyle.Render(line)
+		}
+		if width > 0 {
+			line = padStyledLine(line, width)
+		}
+		lines = append(lines, line)
+	}
+	return lines
 }
 
 func prettyHelpKey(k string) string {
@@ -1948,6 +2037,7 @@ func renderSettingsDBImport(m model, width int) string {
 	lines = append(lines, renderInfoPair("Imports:         ", fmt.Sprintf("%d", info.importCount)))
 	lines = append(lines, renderInfoPair("Accounts:        ", fmt.Sprintf("%d", info.accountCount)))
 	lines = append(lines, renderInfoPair("Rows per page:   ", fmt.Sprintf("%d", m.maxVisibleRows)))
+	lines = append(lines, renderInfoPair("Command default: ", commandDefaultLabel(m.commandDefault)))
 	lines = append(lines, "")
 
 	// Import history

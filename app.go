@@ -127,6 +127,11 @@ type rulesAppliedMsg struct {
 	err   error
 }
 
+type tagRulesAppliedMsg struct {
+	count int
+	err   error
+}
+
 type settingsSavedMsg struct {
 	err error
 }
@@ -237,6 +242,7 @@ type model struct {
 	basePath   string
 	activeTab  int
 	keys       *KeyRegistry
+	commands   *CommandRegistry
 	rows       []transaction
 	categories []category
 	accounts   []account
@@ -258,6 +264,15 @@ type model struct {
 	// Search
 	searchMode  bool
 	searchQuery string
+
+	// Command UI (palette + colon command mode)
+	commandOpen    bool
+	commandUIKind  string // commandUIKind*
+	commandQuery   string
+	commandCursor  int
+	commandMatches []CommandMatch
+	lastCommandID  string
+	commandDefault string // commandUIKind*
 
 	// Sort
 	sortColumn    int
@@ -369,11 +384,13 @@ func newModel() model {
 		dashCustomStart:    appCfg.DashCustomStart,
 		dashCustomEnd:      appCfg.DashCustomEnd,
 		keys:               keys,
+		commands:           NewCommandRegistry(keys),
 		formats:            formats,
 		selectedRows:       make(map[int]bool),
 		txnTags:            make(map[int][]tag),
 		status:             status,
 		statusErr:          statusErr,
+		commandDefault:     appCfg.CommandDefaultInterface,
 	}
 }
 
@@ -398,6 +415,9 @@ func (m model) View() string {
 	header := renderHeader(appName, m.activeTab, m.width, m.accountFilterLabel())
 	statusLine := m.renderStatus(m.status, m.statusErr)
 	footer := m.renderFooter(m.footerBindings())
+	if m.commandOpen && m.commandUIKind == commandUIKindColon {
+		footer = m.renderCommandFooter()
+	}
 
 	var body string
 	switch m.activeTab {
@@ -441,6 +461,16 @@ func (m model) View() string {
 	if m.managerModalOpen {
 		modal := renderManagerAccountModal(m)
 		return m.composeOverlay(header, body, statusLine, footer, modal)
+	}
+	if m.commandOpen && m.commandUIKind == commandUIKindPalette {
+		palette := renderCommandPalette(m.commandQuery, m.commandMatches, m.commandCursor, min(72, m.width-8), m.keys)
+		return m.composeOverlay(header, body, statusLine, footer, palette)
+	}
+	if m.commandOpen && m.commandUIKind == commandUIKindColon {
+		suggestions := renderCommandSuggestions(m.commandMatches, m.commandCursor, min(72, m.width-8), 5)
+		if strings.TrimSpace(suggestions) != "" {
+			return m.composeBottomOverlay(header, body, statusLine, footer, suggestions)
+		}
 	}
 	return m.composeFrame(header, body, statusLine, footer)
 }
@@ -658,6 +688,36 @@ func (m model) composeOverlay(header, body, statusLine, footer, content string) 
 	return strings.Join(lines, "\n")
 }
 
+func (m model) composeBottomOverlay(header, body, statusLine, footer, content string) string {
+	baseView := m.composeFrame(header, body, statusLine, footer)
+	if m.height == 0 || m.width == 0 {
+		return baseView + "\n" + content
+	}
+	overlay := lipgloss.NewStyle().Width(min(72, m.width-4)).Render(content)
+	lines := splitLines(overlay)
+	overlayWidth := maxLineWidth(lines)
+	overlayHeight := len(lines)
+
+	targetHeight := m.height - 2
+	if targetHeight < 1 {
+		targetHeight = 1
+	}
+	x := 2
+	if x+overlayWidth > m.width {
+		x = max(0, m.width-overlayWidth)
+	}
+	y := targetHeight - overlayHeight - 1
+	if y < 0 {
+		y = 0
+	}
+	out := overlayAt(baseView, overlay, x, y, m.width, targetHeight)
+	lines = splitLines(out)
+	for i := range lines {
+		lines[i] = m.normalizeViewportLine(lines[i])
+	}
+	return strings.Join(lines, "\n")
+}
+
 // ---------------------------------------------------------------------------
 // Settings footer bindings
 // ---------------------------------------------------------------------------
@@ -702,6 +762,12 @@ func (m model) settingsConfirmBindings() []key.Binding {
 // ---------------------------------------------------------------------------
 
 func (m model) footerBindings() []key.Binding {
+	if m.commandOpen {
+		if m.commandUIKind == commandUIKindPalette {
+			return m.keys.HelpBindings(scopeCommandPalette)
+		}
+		return m.keys.HelpBindings(scopeCommandMode)
+	}
 	if m.showDetail {
 		return m.keys.HelpBindings(scopeDetailModal)
 	}

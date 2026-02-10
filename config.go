@@ -57,11 +57,12 @@ type accountConfig struct {
 }
 
 type appSettings struct {
-	RowsPerPage      int    `toml:"rows_per_page"`
-	SpendingWeekFrom string `toml:"spending_week_from"` // "sunday" or "monday"
-	DashTimeframe    int    `toml:"dash_timeframe"`
-	DashCustomStart  string `toml:"dash_custom_start"`
-	DashCustomEnd    string `toml:"dash_custom_end"`
+	RowsPerPage             int    `toml:"rows_per_page"`
+	SpendingWeekFrom        string `toml:"spending_week_from"` // "sunday" or "monday"
+	DashTimeframe           int    `toml:"dash_timeframe"`
+	DashCustomStart         string `toml:"dash_custom_start"`
+	DashCustomEnd           string `toml:"dash_custom_end"`
+	CommandDefaultInterface string `toml:"command_default_interface"` // "palette" or "colon"
 }
 
 type keybindingConfig struct {
@@ -112,6 +113,7 @@ spending_week_from = "sunday"
 dash_timeframe = 0
 dash_custom_start = ""
 dash_custom_end = ""
+command_default_interface = "palette"
 `
 
 func configDir() (string, error) {
@@ -177,11 +179,12 @@ func loadFormats() ([]csvFormat, error) {
 
 func defaultSettings() appSettings {
 	return appSettings{
-		RowsPerPage:      20,
-		SpendingWeekFrom: "sunday",
-		DashTimeframe:    dashTimeframeThisMonth,
-		DashCustomStart:  "",
-		DashCustomEnd:    "",
+		RowsPerPage:             20,
+		SpendingWeekFrom:        "sunday",
+		DashTimeframe:           dashTimeframeThisMonth,
+		DashCustomStart:         "",
+		DashCustomEnd:           "",
+		CommandDefaultInterface: commandUIKindPalette,
 	}
 }
 
@@ -858,6 +861,12 @@ func normalizeSettings(s appSettings) appSettings {
 		if _, err := time.Parse("2006-01-02", out.DashCustomEnd); err != nil {
 			out.DashCustomEnd = ""
 		}
+	}
+	switch strings.ToLower(strings.TrimSpace(s.CommandDefaultInterface)) {
+	case commandUIKindColon:
+		out.CommandDefaultInterface = commandUIKindColon
+	default:
+		out.CommandDefaultInterface = commandUIKindPalette
 	}
 	return out
 }
