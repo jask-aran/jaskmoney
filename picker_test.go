@@ -5,6 +5,15 @@ import (
 	"testing"
 )
 
+func lineColumnForNeedle(s, needle string) (int, bool) {
+	for _, line := range strings.Split(s, "\n") {
+		if idx := strings.Index(line, needle); idx >= 0 {
+			return idx, true
+		}
+	}
+	return -1, false
+}
+
 func testPickerItems() []pickerItem {
 	return []pickerItem{
 		{ID: 1, Label: "Groceries", Section: "Scoped", Meta: "Food"},
@@ -90,7 +99,7 @@ func TestPickerSectionOrderPreservedFromInput(t *testing.T) {
 	}, false, "Create")
 
 	p.SetQuery("")
-	view := renderPicker(p, 0)
+	view := renderPicker(p, 0, NewKeyRegistry(), scopeTagPicker)
 
 	idxGlobal := strings.Index(view, "Global:")
 	idxScoped := strings.Index(view, "Scoped:")
@@ -193,16 +202,40 @@ func TestPickerHandleKeyEnterCreateIntent(t *testing.T) {
 func TestRenderPickerIncludesSectionsSearchAndCreate(t *testing.T) {
 	p := newPicker("Tags", testPickerItems(), true, "Create")
 	p.SetQuery("zz")
-	view := renderPicker(p, 0)
+	view := renderPicker(p, 0, NewKeyRegistry(), scopeTagPicker)
 
 	if !strings.Contains(view, "Tags") {
 		t.Fatalf("expected title in view:\n%s", view)
 	}
-	if !strings.Contains(view, "/ zz") {
+	if !strings.Contains(view, "Filter: zz") {
 		t.Fatalf("expected search line in view:\n%s", view)
 	}
 	if !strings.Contains(view, `Create "zz"`) {
 		t.Fatalf("expected create row in view:\n%s", view)
+	}
+	if !strings.Contains(view, "navigate") || !strings.Contains(view, "cancel") {
+		t.Fatalf("expected action footer in view:\n%s", view)
+	}
+}
+
+func TestRenderPickerSingleAndMultiUseAlignedLabelColumn(t *testing.T) {
+	cat := newPicker("Quick Categorize", []pickerItem{
+		{ID: 1, Label: "Groceries"},
+	}, false, "Create")
+	tag := newPicker("Quick Tags", []pickerItem{
+		{ID: 1, Label: "Groceries"},
+	}, true, "Create")
+
+	catView := renderPicker(cat, 56, NewKeyRegistry(), scopeCategoryPicker)
+	tagView := renderPicker(tag, 56, NewKeyRegistry(), scopeTagPicker)
+
+	catLineIdx, catOK := lineColumnForNeedle(catView, "Groceries")
+	tagLineIdx, tagOK := lineColumnForNeedle(tagView, "Groceries")
+	if !catOK || !tagOK {
+		t.Fatalf("expected label in both pickers:\ncat:\n%s\n\ntag:\n%s", catView, tagView)
+	}
+	if catLineIdx != tagLineIdx {
+		t.Fatalf("label columns should align between pickers: cat=%d tag=%d", catLineIdx, tagLineIdx)
 	}
 }
 

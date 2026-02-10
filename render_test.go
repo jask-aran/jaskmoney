@@ -8,6 +8,7 @@ import (
 	"time"
 
 	tslc "github.com/NimbleMarkets/ntcharts/linechart/timeserieslinechart"
+	"github.com/charmbracelet/x/ansi"
 )
 
 // ---------------------------------------------------------------------------
@@ -590,7 +591,7 @@ func TestRenderSpendingTrackerAlwaysRenders(t *testing.T) {
 
 func TestRenderFilePicker(t *testing.T) {
 	files := []string{"ANZ.csv", "CBA.csv", "test.csv"}
-	output := renderFilePicker(files, 1)
+	output := renderFilePicker(files, 1, NewKeyRegistry())
 	if !strings.Contains(output, "Import CSV") {
 		t.Error("missing title")
 	}
@@ -603,14 +604,14 @@ func TestRenderFilePicker(t *testing.T) {
 }
 
 func TestRenderFilePickerEmpty(t *testing.T) {
-	output := renderFilePicker(nil, 0)
+	output := renderFilePicker(nil, 0, NewKeyRegistry())
 	if !strings.Contains(output, "Loading") {
 		t.Error("empty file list should show loading message")
 	}
 }
 
 func TestRenderDupeModal(t *testing.T) {
-	output := renderDupeModal("ANZ.csv", 100, 15)
+	output := renderDupeModal("ANZ.csv", 100, 15, NewKeyRegistry())
 	if !strings.Contains(output, "Duplicates") {
 		t.Error("missing title")
 	}
@@ -622,6 +623,330 @@ func TestRenderDupeModal(t *testing.T) {
 	}
 	if !strings.Contains(output, "15") {
 		t.Error("missing dupe count")
+	}
+}
+
+func TestRenderManagerAccountModalUsesConfiguredBindings(t *testing.T) {
+	m := newModel()
+	m.keys = NewKeyRegistry()
+	if err := m.keys.ApplyKeybindingConfig([]keybindingConfig{
+		{Scope: scopeManagerModal, Action: string(actionSave), Keys: []string{"ctrl+s"}},
+		{Scope: scopeManagerModal, Action: string(actionClose), Keys: []string{"c"}},
+	}); err != nil {
+		t.Fatalf("ApplyKeybindingConfig: %v", err)
+	}
+	m.managerModalIsNew = true
+	m.managerEditName = "Everyday Account"
+	m.managerEditType = "transaction"
+	m.managerEditPrefix = "ANZ"
+	m.managerEditActive = true
+	m.managerEditFocus = 2
+
+	output := renderManagerAccountModal(m)
+	if !strings.Contains(output, "Create Account") {
+		t.Fatal("missing modal title")
+	}
+	if !strings.Contains(output, "Import Prefix") {
+		t.Fatal("missing import prefix field")
+	}
+	if !strings.Contains(output, "ANZ_") {
+		t.Fatal("focused input should include cursor suffix")
+	}
+	if !strings.Contains(output, "ctrl+s") {
+		t.Fatal("missing configured save key")
+	}
+	if !strings.Contains(output, "c cancel") {
+		t.Fatal("missing configured cancel key")
+	}
+}
+
+func TestRenderDetailUsesConfiguredEditKey(t *testing.T) {
+	keys := NewKeyRegistry()
+	if err := keys.ApplyKeybindingConfig([]keybindingConfig{
+		{Scope: scopeDetailModal, Action: string(actionEdit), Keys: []string{"e"}},
+	}); err != nil {
+		t.Fatalf("ApplyKeybindingConfig: %v", err)
+	}
+	txn := transaction{
+		dateISO:      "2026-02-10",
+		amount:       -12.34,
+		description:  "Coffee",
+		categoryName: "Dining",
+	}
+	cats := []category{
+		{id: 1, name: "Dining", color: "#fab387"},
+		{id: 2, name: "Transport", color: "#89b4fa"},
+	}
+
+	output := renderDetail(txn, cats, nil, 0, "", "", keys)
+	if !strings.Contains(output, "press e to edit") {
+		t.Fatal("expected configured edit key in empty-notes hint")
+	}
+	if !strings.Contains(output, "e notes") {
+		t.Fatal("expected configured edit key in modal footer")
+	}
+}
+
+func TestRenderManagerSectionBoxTitleInTopBorder(t *testing.T) {
+	out := renderManagerSectionBox("Accounts", true, true, 56, "row")
+	lines := splitLines(out)
+	if len(lines) < 2 {
+		t.Fatalf("expected multi-line section box, got %q", out)
+	}
+	if !strings.Contains(lines[0], "Accounts") {
+		t.Fatalf("expected title in top border line, got %q", lines[0])
+	}
+	if strings.Contains(lines[1], "Accounts") {
+		t.Fatalf("title should not be on body line, got %q", lines[1])
+	}
+}
+
+func TestViewKeepsHeaderVisibleWhenManagerBodyOverflows(t *testing.T) {
+	m := newModel()
+	m.ready = true
+	m.width = 220
+	m.height = 12
+	m.activeTab = tabManager
+	m.accounts = []account{{id: 1, name: "Main", acctType: "transaction", isActive: true}}
+
+	rows := make([]transaction, 0, 80)
+	for i := 0; i < 80; i++ {
+		rows = append(rows, transaction{
+			id:          i + 1,
+			dateISO:     "2026-02-10",
+			amount:      -10.0 - float64(i),
+			description: "Txn",
+		})
+	}
+	m.rows = rows
+
+	out := m.View()
+	lines := splitLines(out)
+	if len(lines) != m.height {
+		t.Fatalf("view line count = %d, want %d", len(lines), m.height)
+	}
+	if !strings.Contains(lines[0], "Jaskmoney") || !strings.Contains(lines[0], "Manager") {
+		t.Fatalf("expected header line at top of viewport, got %q", lines[0])
+	}
+}
+
+func TestViewKeepsHeaderVisibleWhenManagerModalOpen(t *testing.T) {
+	m := newModel()
+	m.ready = true
+	m.width = 120
+	m.height = 16
+	m.activeTab = tabManager
+	m.accounts = []account{{id: 1, name: "Main", acctType: "transaction", isActive: true}}
+	m.managerModalOpen = true
+	m.managerModalIsNew = true
+	m.managerEditName = "Everyday"
+	m.managerEditType = "debit"
+
+	out := m.View()
+	lines := splitLines(out)
+	if len(lines) != m.height {
+		t.Fatalf("view line count = %d, want %d", len(lines), m.height)
+	}
+	if !strings.Contains(lines[0], "Jaskmoney") || !strings.Contains(lines[0], "Manager") {
+		t.Fatalf("expected header line at top of viewport, got %q", lines[0])
+	}
+}
+
+func TestViewManagerBodyUsesFullViewportWidth(t *testing.T) {
+	m := newModel()
+	m.ready = true
+	m.width = 90
+	m.height = 16
+	m.activeTab = tabManager
+	m.accounts = []account{{id: 1, name: "Main", acctType: "transaction", isActive: true}}
+	m.rows = []transaction{{id: 1, dateISO: "2026-02-10", amount: -10, description: "Txn"}}
+
+	out := m.View()
+	lines := splitLines(out)
+	if len(lines) < 3 {
+		t.Fatalf("expected at least 3 lines, got %d", len(lines))
+	}
+	bodyTop := ansi.Strip(lines[2])
+	if !strings.HasPrefix(bodyTop, "╭") {
+		t.Fatalf("expected box to start at left viewport edge, got %q", bodyTop)
+	}
+	if !strings.HasSuffix(bodyTop, "╮") {
+		t.Fatalf("expected box to end at right viewport edge, got %q", bodyTop)
+	}
+}
+
+func TestViewAllLinesMatchViewportWidth(t *testing.T) {
+	m := newModel()
+	m.ready = true
+	m.width = 100
+	m.height = 14
+	m.activeTab = tabDashboard
+	m.rows = testDashboardRows()
+
+	out := m.View()
+	lines := splitLines(out)
+	if len(lines) != m.height {
+		t.Fatalf("view line count = %d, want %d", len(lines), m.height)
+	}
+	for i, line := range lines {
+		if got := ansi.StringWidth(line); got != m.width {
+			t.Fatalf("line %d width = %d, want %d", i, got, m.width)
+		}
+	}
+}
+
+func TestDashboardChartWidthsUsesExactAvailableWidth(t *testing.T) {
+	for _, total := range []int{40, 60, 96, 120} {
+		gap := 2
+		tracker, breakdown := dashboardChartWidths(total, gap)
+		if tracker+gap+breakdown != total {
+			t.Fatalf("total=%d tracker=%d breakdown=%d gap=%d sum=%d", total, tracker, breakdown, gap, tracker+gap+breakdown)
+		}
+		if tracker < 1 || breakdown < 1 {
+			t.Fatalf("widths must stay positive: tracker=%d breakdown=%d", tracker, breakdown)
+		}
+	}
+}
+
+func TestDashboardOverviewBoxUsesFullViewportWidth(t *testing.T) {
+	m := newModel()
+	m.ready = true
+	m.width = 120
+	m.height = 20
+	m.activeTab = tabDashboard
+	m.rows = testDashboardRows()
+
+	out := m.View()
+	lines := splitLines(out)
+	found := false
+	for _, line := range lines {
+		plain := ansi.Strip(line)
+		if !strings.Contains(plain, "Overview") {
+			continue
+		}
+		found = true
+		if !strings.HasPrefix(plain, "╭") {
+			t.Fatalf("expected overview box to start at left viewport edge, got %q", plain)
+		}
+		if !strings.HasSuffix(plain, "╮") {
+			t.Fatalf("expected overview box to end at right viewport edge, got %q", plain)
+		}
+		break
+	}
+	if !found {
+		t.Fatal("could not find Overview box top border in dashboard view")
+	}
+}
+
+func TestDashboardOverviewRowsDoNotClipAtRightEdge(t *testing.T) {
+	m := newModel()
+	m.ready = true
+	m.width = 140
+	m.height = 20
+	m.activeTab = tabDashboard
+	m.rows = testDashboardRows()
+
+	out := m.View()
+	lines := splitLines(out)
+	for _, line := range lines {
+		plain := ansi.Strip(line)
+		if !(strings.Contains(plain, "Balance") || strings.Contains(plain, "Debits") || strings.Contains(plain, "Credits")) {
+			continue
+		}
+		if strings.Contains(plain, "… │") {
+			t.Fatalf("overview row is clipping before border: %q", plain)
+		}
+	}
+}
+
+func TestDashboardChartRowsDoNotClipAtRightEdge(t *testing.T) {
+	m := newModel()
+	m.ready = true
+	m.width = 160
+	m.height = 24
+	m.activeTab = tabDashboard
+	m.rows = testDashboardRows()
+
+	out := m.View()
+	lines := splitLines(out)
+	for _, line := range lines {
+		plain := ansi.Strip(line)
+		if !(strings.Contains(plain, "│  │") || strings.Contains(plain, "Dining & Drinks")) {
+			continue
+		}
+		if strings.Contains(plain, "… │") {
+			t.Fatalf("chart row is clipping before border: %q", plain)
+		}
+	}
+}
+
+func TestViewManagerTransactionsNeverExceedsViewportWidthWithLongContent(t *testing.T) {
+	catID := 1
+	m := newModel()
+	m.ready = true
+	m.width = 120
+	m.height = 20
+	m.activeTab = tabManager
+	m.managerMode = managerModeTransactions
+	m.accounts = []account{{id: 1, name: "ANZ CREDIT", acctType: "credit", isActive: true}}
+	m.categories = []category{{id: 1, name: "Dining & Drinks", color: "#fab387"}}
+	m.rows = []transaction{
+		{
+			id:           1,
+			dateISO:      "2026-02-03",
+			amount:       -20.00,
+			description:  "DAN MURPHY'S / 580 MELBOURN SPOTSWOOD EXTREMELY LONG DESCRIPTION",
+			categoryID:   &catID,
+			categoryName: "Dining & Drinks",
+			accountName:  "MELBOURNE",
+		},
+	}
+	m.txnTags = map[int][]tag{
+		1: {
+			{id: 1, name: "IGNORE"},
+			{id: 2, name: "CARMAINTAINENCE"},
+			{id: 3, name: "FASTFOOD"},
+		},
+	}
+
+	out := m.View()
+	lines := splitLines(out)
+	if len(lines) != m.height {
+		t.Fatalf("view line count = %d, want %d", len(lines), m.height)
+	}
+	for i, line := range lines {
+		if got := ansi.StringWidth(line); got > m.width {
+			t.Fatalf("line %d width = %d, exceeds viewport width %d: %q", i, got, m.width, ansi.Strip(line))
+		}
+	}
+}
+
+func TestRenderSettingsDBImportIncludesImportHistory(t *testing.T) {
+	m := newModel()
+	m.dbInfo = dbInfo{
+		schemaVersion:    2,
+		transactionCount: 10,
+		categoryCount:    4,
+		ruleCount:        2,
+		tagCount:         3,
+		tagRuleCount:     1,
+		importCount:      1,
+		accountCount:     2,
+	}
+	m.maxVisibleRows = 25
+	m.imports = []importRecord{
+		{filename: "ANZ.csv", rowCount: 120, importedAt: "2026-02-10"},
+	}
+
+	output := renderSettingsDBImport(m, 24)
+	if !strings.Contains(output, "Schema version") {
+		t.Fatal("missing DB summary block")
+	}
+	if !strings.Contains(output, "Import History") {
+		t.Fatal("missing import history heading")
+	}
+	if !strings.Contains(output, "ANZ.csv") {
+		t.Fatal("missing import history row")
 	}
 }
 

@@ -24,7 +24,6 @@ type KeyRegistry struct {
 
 const (
 	scopeGlobal                   = "global"
-	scopeManagerNav               = "manager_nav"
 	scopeManagerTransactions      = "manager_transactions"
 	scopeManager                  = "manager"
 	scopeManagerModal             = "manager_modal"
@@ -44,7 +43,6 @@ const (
 	scopeSettingsModeTag          = "settings_mode_tag"
 	scopeSettingsModeRule         = "settings_mode_rule"
 	scopeSettingsModeRuleCat      = "settings_mode_rule_cat"
-	scopeSettingsConfirm          = "settings_confirm"
 	scopeSettingsActiveCategories = "settings_active_categories"
 	scopeSettingsActiveTags       = "settings_active_tags"
 	scopeSettingsActiveRules      = "settings_active_rules"
@@ -62,6 +60,7 @@ const (
 	actionCancel             Action = "cancel"
 	actionSearch             Action = "search"
 	actionSort               Action = "sort"
+	actionSortDirection      Action = "sort_direction"
 	actionFilterCategory     Action = "filter_category"
 	actionToggleSelect       Action = "toggle_select"
 	actionRangeHighlight     Action = "range_highlight"
@@ -77,8 +76,6 @@ const (
 	actionSave               Action = "save"
 	actionNext               Action = "next"
 	actionSelectItem         Action = "select_item"
-	actionConfirmRepeat      Action = "confirm_repeat"
-	actionCancelAny          Action = "cancel_any"
 	actionAdd                Action = "add"
 	actionEdit               Action = "edit"
 	actionDelete             Action = "delete"
@@ -93,6 +90,8 @@ const (
 	actionActivate           Action = "activate"
 	actionBack               Action = "back"
 	actionFocusAccounts      Action = "focus_accounts"
+	actionJumpTop            Action = "jump_top"
+	actionJumpBottom         Action = "jump_bottom"
 )
 
 func NewKeyRegistry() *KeyRegistry {
@@ -112,12 +111,6 @@ func NewKeyRegistry() *KeyRegistry {
 
 	// Manager transactions-primary footer additions.
 	reg(scopeManagerTransactions, actionFocusAccounts, []string{"A"}, "accounts")
-	// Legacy manager-nav scope retained for migration compatibility.
-	reg(scopeManagerNav, actionSection, []string{"j/k", "j", "k", "up", "down"}, "card")
-	reg(scopeManagerNav, actionActivate, []string{"enter"}, "activate")
-	reg(scopeManagerNav, actionNextTab, []string{"tab"}, "next tab")
-	reg(scopeManagerNav, actionQuit, []string{"q", "ctrl+c"}, "quit")
-
 	// Manager accounts-active footer.
 	reg(scopeManager, actionNavigate, []string{"j/k", "j", "k", "up", "down"}, "navigate")
 	reg(scopeManager, actionBack, []string{"esc"}, "back")
@@ -150,14 +143,18 @@ func NewKeyRegistry() *KeyRegistry {
 	reg(scopeDashboardCustomInput, actionConfirm, []string{"enter"}, "confirm")
 	reg(scopeDashboardCustomInput, actionCancel, []string{"esc"}, "cancel")
 
-	// Transactions footer: /, s, f, enter, j/k, tab, q
+	// Transactions footer.
 	reg(scopeTransactions, actionSearch, []string{"/"}, "search")
 	reg(scopeTransactions, actionSort, []string{"s"}, "sort")
+	reg(scopeTransactions, actionSortDirection, []string{"S"}, "sort dir")
 	reg(scopeTransactions, actionFilterCategory, []string{"f"}, "filter cat")
 	reg(scopeTransactions, actionQuickCategory, []string{"c"}, "quick cat")
 	reg(scopeTransactions, actionQuickTag, []string{"t"}, "quick tag")
 	reg(scopeTransactions, actionToggleSelect, []string{"space", " "}, "toggle sel")
 	reg(scopeTransactions, actionRangeHighlight, []string{"shift+up/down", "shift+up", "shift+down"}, "hl range")
+	reg(scopeTransactions, actionJumpTop, []string{"g"}, "top")
+	reg(scopeTransactions, actionJumpBottom, []string{"G"}, "bottom")
+	reg(scopeTransactions, actionClearSearch, []string{"esc"}, "clear")
 	reg(scopeTransactions, actionSelect, []string{"enter"}, "select")
 	reg(scopeTransactions, actionNavigate, []string{"j/k", "j", "k", "up", "down", "ctrl+p", "ctrl+n"}, "navigate")
 	reg(scopeTransactions, actionNextTab, []string{"tab"}, "next tab")
@@ -177,6 +174,7 @@ func NewKeyRegistry() *KeyRegistry {
 
 	// Detail / file picker footers: enter, esc, j/k, q
 	reg(scopeDetailModal, actionSelect, []string{"enter"}, "select")
+	reg(scopeDetailModal, actionEdit, []string{"n"}, "notes")
 	reg(scopeDetailModal, actionClose, []string{"esc"}, "close")
 	reg(scopeDetailModal, actionNavigate, []string{"j/k", "j", "k", "up", "down"}, "navigate")
 	reg(scopeDetailModal, actionQuit, []string{"q", "ctrl+c"}, "quit")
@@ -206,10 +204,6 @@ func NewKeyRegistry() *KeyRegistry {
 	reg(scopeSettingsModeRuleCat, actionSelectItem, []string{"j/k", "j", "k", "up", "down"}, "select")
 	reg(scopeSettingsModeRuleCat, actionSave, []string{"enter"}, "save")
 	reg(scopeSettingsModeRuleCat, actionClose, []string{"esc"}, "cancel")
-
-	// Settings confirm footer.
-	reg(scopeSettingsConfirm, actionConfirmRepeat, []string{"repeat"}, "confirm")
-	reg(scopeSettingsConfirm, actionCancelAny, []string{"any"}, "cancel")
 
 	// Settings active section footers.
 	reg(scopeSettingsActiveCategories, actionNavigate, []string{"j/k", "j", "k", "up", "down"}, "navigate")
@@ -366,7 +360,19 @@ func normalizeKeyName(k string) string {
 	if k == " " {
 		return "space"
 	}
-	s := strings.ToLower(strings.TrimSpace(k))
+	trimmed := strings.TrimSpace(k)
+	if trimmed == "" {
+		return ""
+	}
+	if len(trimmed) == 1 {
+		ch := trimmed[0]
+		if ch >= 'A' && ch <= 'Z' {
+			// Preserve single uppercase rune so uppercase/lowercase bindings
+			// can be distinct actions within the same scope.
+			return trimmed
+		}
+	}
+	s := strings.ToLower(trimmed)
 	if s == "" {
 		return ""
 	}

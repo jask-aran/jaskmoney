@@ -53,35 +53,41 @@ var (
 	// Loading / status text
 	statusStyle = lipgloss.NewStyle().Foreground(colorSubtext0)
 
+	// Generic informational pairs and section chrome
+	infoLabelStyle      = lipgloss.NewStyle().Foreground(colorSubtext0)
+	infoValueStyle      = lipgloss.NewStyle().Foreground(colorPeach)
+	sectionDividerStyle = lipgloss.NewStyle().Foreground(colorSurface2)
+	sectionTitleStyle   = lipgloss.NewStyle().Foreground(colorSubtext1).Bold(true)
+
 	// Footer bar
 	footerStyle = lipgloss.NewStyle().
 			Foreground(colorSubtext0).
 			Background(colorMantle).
-			Padding(0, 2)
+			Padding(0, 1)
 
 	// Status bar (above footer)
 	statusBarStyle = lipgloss.NewStyle().
 			Foreground(colorSubtext1).
 			Background(colorSurface0).
-			Padding(0, 2)
+			Padding(0, 1)
 
 	// Error status bar
 	statusBarErrStyle = lipgloss.NewStyle().
 				Foreground(colorError).
 				Background(colorSurface0).
-				Padding(0, 2)
+				Padding(0, 1)
 
 	// Section containers
 	listBoxStyle = lipgloss.NewStyle().
 			Border(lipgloss.RoundedBorder()).
 			BorderForeground(colorSurface1).
-			Padding(0, 1)
+			Padding(0, 0)
 
 	// Modal overlay
 	modalStyle = lipgloss.NewStyle().
 			Border(lipgloss.RoundedBorder()).
 			BorderForeground(colorAccent).
-			Padding(0, 1)
+			Padding(0, 0)
 
 	// Help key styling — these inherit footer background via Inherit()
 	helpKeyStyle = lipgloss.NewStyle().
@@ -90,6 +96,13 @@ var (
 
 	helpDescStyle = lipgloss.NewStyle().
 			Foreground(colorSubtext0)
+
+	modalTitleStyle = lipgloss.NewStyle().
+			Foreground(colorAccent).
+			Bold(true)
+
+	modalFooterStyle = lipgloss.NewStyle().
+				Foreground(colorOverlay1)
 
 	// Table styles
 	tableHeaderStyle = lipgloss.NewStyle().
@@ -126,9 +139,6 @@ var (
 	// Search styles
 	searchPromptStyle = lipgloss.NewStyle().Foreground(colorAccent).Bold(true)
 	searchInputStyle  = lipgloss.NewStyle().Foreground(colorText)
-
-	// Category tag
-	categoryTagUncategorised = lipgloss.NewStyle().Foreground(colorOverlay1)
 
 	// Detail modal
 	detailLabelStyle  = lipgloss.NewStyle().Foreground(colorSubtext0)
@@ -170,6 +180,11 @@ func renderHeader(appName string, activeTab, width int, accountLabel string) str
 	if width <= 0 {
 		return headerBarStyle.Render(line1Content)
 	}
+	innerWidth := width - headerBarStyle.GetHorizontalFrameSize()
+	if innerWidth < 1 {
+		innerWidth = 1
+	}
+	line1Content = ansi.Truncate(line1Content, innerWidth, "")
 	style := headerBarStyle.Width(width)
 	return style.Render(line1Content)
 }
@@ -202,6 +217,10 @@ func (m model) renderSectionSizedAligned(title, content string, sectionWidth int
 }
 
 func renderTitledSectionBox(title, content string, sectionWidth int, withSeparator bool) string {
+	return renderSectionBox(title, content, sectionWidth, withSeparator, colorSurface1, titleStyle)
+}
+
+func renderSectionBox(title, content string, sectionWidth int, withSeparator bool, borderColor lipgloss.Color, titleSty lipgloss.Style) string {
 	if sectionWidth < 4 {
 		sectionWidth = 4
 	}
@@ -213,7 +232,7 @@ func renderTitledSectionBox(title, content string, sectionWidth int, withSeparat
 		sectionWidth = innerWidth + 2
 	}
 
-	borderStyle := lipgloss.NewStyle().Foreground(colorSurface1)
+	borderStyle := lipgloss.NewStyle().Foreground(borderColor)
 	sepStyle := lipgloss.NewStyle().Foreground(colorSurface2)
 	v := borderStyle.Render("│")
 	tl := borderStyle.Render("╭")
@@ -225,7 +244,7 @@ func renderTitledSectionBox(title, content string, sectionWidth int, withSeparat
 	if ansi.StringWidth(titleText) > innerWidth {
 		titleText = " " + truncate(strings.TrimSpace(title), max(1, innerWidth-2)) + " "
 	}
-	titleRendered := titleStyle.Render(titleText)
+	titleRendered := titleSty.Render(titleText)
 	titleW := ansi.StringWidth(titleText)
 	dashes := innerWidth - titleW
 	if dashes < 0 {
@@ -280,6 +299,11 @@ func (m model) renderFooter(bindings []key.Binding) string {
 	if m.width == 0 {
 		return footerStyle.Render(content)
 	}
+	innerWidth := m.width - footerStyle.GetHorizontalFrameSize()
+	if innerWidth < 1 {
+		innerWidth = 1
+	}
+	content = ansi.Truncate(content, innerWidth, "")
 	return footerStyle.Width(m.width).Render(content)
 }
 
@@ -315,6 +339,11 @@ func (m model) renderStatus(text string, isErr bool) string {
 	if m.width == 0 {
 		return style.Render(flat)
 	}
+	innerWidth := m.width - style.GetHorizontalFrameSize()
+	if innerWidth < 1 {
+		innerWidth = 1
+	}
+	flat = ansi.Truncate(flat, innerWidth, "")
 	return style.Width(m.width).Render(flat)
 }
 
@@ -342,9 +371,7 @@ func renderDashboardControlsLine(chips, dateRange string, width int) string {
 	if strings.TrimSpace(dateRange) == "" {
 		return chips
 	}
-	labelSty := lipgloss.NewStyle().Foreground(colorSubtext0)
-	valueSty := lipgloss.NewStyle().Foreground(colorPeach)
-	rangeChunk := labelSty.Render("Date Range ") + valueSty.Render(dateRange)
+	rangeChunk := infoLabelStyle.Render("Date Range ") + infoValueStyle.Render(dateRange)
 	if width <= 0 {
 		return chips + "  " + rangeChunk
 	}
@@ -391,14 +418,64 @@ func renderDashboardCustomInput(start, end, input string, editing bool) string {
 	return fields + "\n" + prompt
 }
 
-// renderFilePicker renders a simple list of CSV files with a cursor.
-func renderFilePicker(files []string, cursor int) string {
-	if len(files) == 0 {
-		return lipgloss.NewStyle().Foreground(colorOverlay1).Render("Loading CSV files...")
+func actionKeyLabel(keys *KeyRegistry, scope string, action Action, fallback string) string {
+	if keys == nil {
+		return fallback
 	}
-	var lines []string
-	lines = append(lines, titleStyle.Render("Import CSV File"))
-	lines = append(lines, "")
+	for _, b := range keys.BindingsForScope(scope) {
+		if b.Action == action && len(b.Keys) > 0 {
+			return prettyHelpKey(b.Keys[0])
+		}
+	}
+	return prettyHelpKey(fallback)
+}
+
+func renderActionHint(keys *KeyRegistry, scope string, action Action, fallback, desc string) string {
+	return helpKeyStyle.Render(actionKeyLabel(keys, scope, action, fallback)) + helpDescStyle.Render(" "+desc)
+}
+
+func modalCursor(active bool) string {
+	if active {
+		return cursorStyle.Render("> ")
+	}
+	return "  "
+}
+
+func renderInfoPair(label, value string) string {
+	return infoLabelStyle.Render(label) + infoValueStyle.Render(value)
+}
+
+func renderModalContent(title string, body []string, footer string) string {
+	lines := make([]string, 0, len(body)+4)
+	lines = append(lines, modalTitleStyle.Render(title))
+	if len(body) > 0 {
+		width := 18
+		for _, line := range body {
+			width = max(width, ansi.StringWidth(line))
+		}
+		width = min(width, 56)
+		lines = append(lines, sectionDividerStyle.Render(strings.Repeat("─", width)))
+		lines = append(lines, body...)
+	}
+	if strings.TrimSpace(footer) != "" {
+		lines = append(lines, "")
+		lines = append(lines, modalFooterStyle.Render(footer))
+	}
+	return strings.Join(lines, "\n")
+}
+
+// renderFilePicker renders a simple list of CSV files with a cursor.
+func renderFilePicker(files []string, cursor int, keys *KeyRegistry) string {
+	if len(files) == 0 {
+		return renderModalContent("Import CSV", []string{
+			lipgloss.NewStyle().Foreground(colorOverlay1).Render("Loading CSV files..."),
+		}, fmt.Sprintf(
+			"%s select  %s cancel",
+			actionKeyLabel(keys, scopeFilePicker, actionSelect, "enter"),
+			actionKeyLabel(keys, scopeFilePicker, actionClose, "esc"),
+		))
+	}
+	lines := make([]string, 0, len(files))
 	for i, f := range files {
 		prefix := "  "
 		if i == cursor {
@@ -406,24 +483,26 @@ func renderFilePicker(files []string, cursor int) string {
 		}
 		lines = append(lines, prefix+lipgloss.NewStyle().Foreground(colorText).Render(f))
 	}
-	lines = append(lines, "")
-	lines = append(lines, scrollStyle.Render("enter select  esc cancel"))
-	return strings.Join(lines, "\n")
+	return renderModalContent("Import CSV", lines, fmt.Sprintf(
+		"%s select  %s cancel",
+		actionKeyLabel(keys, scopeFilePicker, actionSelect, "enter"),
+		actionKeyLabel(keys, scopeFilePicker, actionClose, "esc"),
+	))
 }
 
 // renderDupeModal renders the duplicate detection decision modal.
-func renderDupeModal(file string, total, dupes int) string {
-	var lines []string
-	lines = append(lines, titleStyle.Render("Duplicates Detected"))
-	lines = append(lines, "")
-	lines = append(lines, fmt.Sprintf("File: %s", lipgloss.NewStyle().Foreground(colorText).Render(file)))
-	lines = append(lines, fmt.Sprintf("Total rows:  %s", lipgloss.NewStyle().Foreground(colorPeach).Render(fmt.Sprintf("%d", total))))
-	lines = append(lines, fmt.Sprintf("Duplicates:  %s", lipgloss.NewStyle().Foreground(colorWarning).Render(fmt.Sprintf("%d", dupes))))
-	lines = append(lines, "")
-	lines = append(lines, helpKeyStyle.Render("a")+helpDescStyle.Render(" import all (ignore dupes)"))
-	lines = append(lines, helpKeyStyle.Render("s")+helpDescStyle.Render(" skip duplicates"))
-	lines = append(lines, helpKeyStyle.Render("esc")+helpDescStyle.Render(" cancel import"))
-	return strings.Join(lines, "\n")
+func renderDupeModal(file string, total, dupes int, keys *KeyRegistry) string {
+	body := []string{
+		fmt.Sprintf("File: %s", lipgloss.NewStyle().Foreground(colorText).Render(file)),
+		fmt.Sprintf("Rows: %s", lipgloss.NewStyle().Foreground(colorText).Render(fmt.Sprintf("%d", total))),
+		fmt.Sprintf("Duplicates: %s", lipgloss.NewStyle().Foreground(colorWarning).Render(fmt.Sprintf("%d", dupes))),
+	}
+	footer := strings.Join([]string{
+		renderActionHint(keys, scopeDupeModal, actionImportAll, "a", "all"),
+		renderActionHint(keys, scopeDupeModal, actionSkipDupes, "s", "skip"),
+		renderActionHint(keys, scopeDupeModal, actionClose, "esc", "cancel"),
+	}, "  ")
+	return renderModalContent("Duplicate Rows", body, footer)
 }
 
 // ---------------------------------------------------------------------------
@@ -617,15 +696,6 @@ func addSortIndicator(label string, col, activeCol int, asc bool) string {
 	return label + " ▼"
 }
 
-func renderCategoryTag(name, color string, width int) string {
-	display := truncate(name, width-1)
-	if color == "" || color == "#7f849c" {
-		return padRight(categoryTagUncategorised.Render(display), width)
-	}
-	style := lipgloss.NewStyle().Foreground(lipgloss.Color(color))
-	return padRight(style.Render(display), width)
-}
-
 func renderCategoryTagOnBackground(name, color string, width int, bg lipgloss.Color, bold bool) string {
 	display := truncate(name, width-1)
 	style := lipgloss.NewStyle().Background(bg)
@@ -715,8 +785,6 @@ func renderSummaryCards(rows []transaction, categories []category, width int) st
 	balance := income + expenses
 
 	_ = categories
-	labelSty := lipgloss.NewStyle().Foreground(colorSubtext0)
-	valSty := lipgloss.NewStyle().Foreground(colorPeach)
 	greenSty := lipgloss.NewStyle().Foreground(colorSuccess)
 	redSty := lipgloss.NewStyle().Foreground(colorError)
 
@@ -730,13 +798,13 @@ func renderSummaryCards(rows []transaction, categories []category, width int) st
 	debits := math.Abs(expenses)
 	credits := income
 
-	row1 := padRight(labelSty.Render("Balance      ")+balanceStyle(balance, greenSty, redSty), col1W) +
-		padRight(labelSty.Render("Uncat ")+valSty.Render(fmt.Sprintf("%d (%s)", uncatCount, formatMoney(uncatTotal))), col2W)
+	row1 := padRight(infoLabelStyle.Render("Balance      ")+balanceStyle(balance, greenSty, redSty), col1W) +
+		padRight(infoLabelStyle.Render("Uncat ")+infoValueStyle.Render(fmt.Sprintf("%d (%s)", uncatCount, formatMoney(uncatTotal))), col2W)
 
-	row2 := padRight(labelSty.Render("Debits       ")+redSty.Render(formatMoney(debits)), col1W) +
-		padRight(labelSty.Render("Transactions ")+valSty.Render(fmt.Sprintf("%d", len(rows))), col2W)
+	row2 := padRight(infoLabelStyle.Render("Debits       ")+redSty.Render(formatMoney(debits)), col1W) +
+		padRight(infoLabelStyle.Render("Transactions ")+infoValueStyle.Render(fmt.Sprintf("%d", len(rows))), col2W)
 
-	row3 := padRight(labelSty.Render("Credits      ")+greenSty.Render(formatMoney(credits)), col1W) +
+	row3 := padRight(infoLabelStyle.Render("Credits      ")+greenSty.Render(formatMoney(credits)), col1W) +
 		padRight("", col2W)
 
 	return row1 + "\n" + row2 + "\n" + row3
@@ -1016,8 +1084,8 @@ func renderCategoryBreakdown(rows []transaction, categories []category, width in
 		nameSty := lipgloss.NewStyle().Foreground(catColor)
 		barFilled := lipgloss.NewStyle().Foreground(catColor).Render(strings.Repeat("█", filled))
 		barEmpty := lipgloss.NewStyle().Foreground(colorSurface2).Render(strings.Repeat("░", empty))
-		pctStr := lipgloss.NewStyle().Foreground(colorSubtext0).Render(pctText)
-		amtStr := lipgloss.NewStyle().Foreground(colorPeach).Render(amtText)
+		pctStr := infoLabelStyle.Render(pctText)
+		amtStr := infoValueStyle.Render(amtText)
 
 		nameText := ""
 		if rowNameW > 0 {
@@ -1653,19 +1721,16 @@ func renderSettingsSectionBox(title string, sec int, m model, width int, content
 }
 
 func renderManagerSectionBox(title string, isFocused, isActive bool, width int, content string) string {
-	style := settingsInactiveBorderStyle
+	borderColor := colorSurface1
 	titleSty := lipgloss.NewStyle().Foreground(colorSubtext0).Bold(true)
 	if isFocused {
-		style = settingsActiveBorderStyle
+		borderColor = colorAccent
 		titleSty = lipgloss.NewStyle().Foreground(colorAccent).Bold(true)
 	}
-	indicator := ""
 	if isActive {
-		indicator = lipgloss.NewStyle().Foreground(colorAccent).Render(" *")
+		title += " *"
 	}
-	header := titleSty.Render(title) + indicator
-	body := header + "\n" + content
-	return style.Width(width).Render(body)
+	return renderSectionBox(title, content, width, false, borderColor, titleSty)
 }
 
 func renderManagerAccountStrip(m model, showCursor bool, width int) string {
@@ -1826,7 +1891,7 @@ func renderSettingsRules(m model, width int) string {
 		if showCursor && i == m.settItemCursor {
 			prefix = cursorStyle.Render("> ")
 		}
-		pattern := lipgloss.NewStyle().Foreground(colorPeach).Render(fmt.Sprintf("%q", rule.pattern))
+		pattern := infoValueStyle.Render(fmt.Sprintf("%q", rule.pattern))
 		arrow := lipgloss.NewStyle().Foreground(colorOverlay1).Render(" -> ")
 		catName := "?"
 		catColor := colorOverlay1
@@ -1845,8 +1910,6 @@ func renderSettingsRules(m model, width int) string {
 
 func renderSettingsChart(m model, width int) string {
 	var lines []string
-	labelSty := lipgloss.NewStyle().Foreground(colorSubtext0)
-	valSty := lipgloss.NewStyle().Foreground(colorPeach)
 	now := time.Now()
 	start, end := m.dashboardChartRange(now)
 	days := int(end.Sub(start).Hours()/24) + 1
@@ -1859,11 +1922,11 @@ func renderSettingsChart(m model, width int) string {
 		major = "quarterly"
 	}
 
-	lines = append(lines, labelSty.Render("Week boundary:  ")+valSty.Render(spendingWeekAnchorLabel(m.spendingWeekAnchor)))
-	lines = append(lines, labelSty.Render("Timeframe:      ")+valSty.Render(dashTimeframeLabel(m.dashTimeframe)))
-	lines = append(lines, labelSty.Render("History window: ")+valSty.Render(fmt.Sprintf("%d days", days)))
-	lines = append(lines, labelSty.Render("Minor grid:     ")+valSty.Render(fmt.Sprintf("every %d day(s)", minor)))
-	lines = append(lines, labelSty.Render("Major grid:     ")+valSty.Render(major))
+	lines = append(lines, renderInfoPair("Week boundary:  ", spendingWeekAnchorLabel(m.spendingWeekAnchor)))
+	lines = append(lines, renderInfoPair("Timeframe:      ", dashTimeframeLabel(m.dashTimeframe)))
+	lines = append(lines, renderInfoPair("History window: ", fmt.Sprintf("%d days", days)))
+	lines = append(lines, renderInfoPair("Minor grid:     ", fmt.Sprintf("every %d day(s)", minor)))
+	lines = append(lines, renderInfoPair("Major grid:     ", major))
 	lines = append(lines, "")
 	lines = append(lines, scrollStyle.Render("h/l or enter to toggle boundary"))
 
@@ -1874,33 +1937,30 @@ func renderSettingsChart(m model, width int) string {
 func renderSettingsDBImport(m model, width int) string {
 	var lines []string
 	info := m.dbInfo
-	labelSty := lipgloss.NewStyle().Foreground(colorSubtext0)
-	valSty := lipgloss.NewStyle().Foreground(colorPeach)
 
 	// Database info
-	lines = append(lines, labelSty.Render("Schema version:  ")+valSty.Render(fmt.Sprintf("v%d", info.schemaVersion)))
-	lines = append(lines, labelSty.Render("Transactions:    ")+valSty.Render(fmt.Sprintf("%d", info.transactionCount)))
-	lines = append(lines, labelSty.Render("Categories:      ")+valSty.Render(fmt.Sprintf("%d", info.categoryCount)))
-	lines = append(lines, labelSty.Render("Rules:           ")+valSty.Render(fmt.Sprintf("%d", info.ruleCount)))
-	lines = append(lines, labelSty.Render("Tags:            ")+valSty.Render(fmt.Sprintf("%d", info.tagCount)))
-	lines = append(lines, labelSty.Render("Tag Rules:       ")+valSty.Render(fmt.Sprintf("%d", info.tagRuleCount)))
-	lines = append(lines, labelSty.Render("Imports:         ")+valSty.Render(fmt.Sprintf("%d", info.importCount)))
-	lines = append(lines, labelSty.Render("Accounts:        ")+valSty.Render(fmt.Sprintf("%d", info.accountCount)))
-	lines = append(lines, labelSty.Render("Rows per page:   ")+valSty.Render(fmt.Sprintf("%d", m.maxVisibleRows)))
+	lines = append(lines, renderInfoPair("Schema version:  ", fmt.Sprintf("v%d", info.schemaVersion)))
+	lines = append(lines, renderInfoPair("Transactions:    ", fmt.Sprintf("%d", info.transactionCount)))
+	lines = append(lines, renderInfoPair("Categories:      ", fmt.Sprintf("%d", info.categoryCount)))
+	lines = append(lines, renderInfoPair("Rules:           ", fmt.Sprintf("%d", info.ruleCount)))
+	lines = append(lines, renderInfoPair("Tags:            ", fmt.Sprintf("%d", info.tagCount)))
+	lines = append(lines, renderInfoPair("Tag Rules:       ", fmt.Sprintf("%d", info.tagRuleCount)))
+	lines = append(lines, renderInfoPair("Imports:         ", fmt.Sprintf("%d", info.importCount)))
+	lines = append(lines, renderInfoPair("Accounts:        ", fmt.Sprintf("%d", info.accountCount)))
+	lines = append(lines, renderInfoPair("Rows per page:   ", fmt.Sprintf("%d", m.maxVisibleRows)))
 	lines = append(lines, "")
 
 	// Import history
-	sepStyle := lipgloss.NewStyle().Foreground(colorSurface2)
-	lines = append(lines, lipgloss.NewStyle().Foreground(colorSubtext1).Bold(true).Render("Import History"))
-	lines = append(lines, sepStyle.Render(strings.Repeat("─", width)))
+	lines = append(lines, sectionTitleStyle.Render("Import History"))
+	lines = append(lines, sectionDividerStyle.Render(strings.Repeat("─", width)))
 
 	if len(m.imports) == 0 {
 		lines = append(lines, lipgloss.NewStyle().Foreground(colorOverlay1).Render("No imports yet."))
 	} else {
 		for _, imp := range m.imports {
 			fname := lipgloss.NewStyle().Foreground(colorText).Render(imp.filename)
-			count := valSty.Render(fmt.Sprintf("%d rows", imp.rowCount))
-			date := lipgloss.NewStyle().Foreground(colorSubtext0).Render(imp.importedAt)
+			count := infoValueStyle.Render(fmt.Sprintf("%d rows", imp.rowCount))
+			date := infoLabelStyle.Render(imp.importedAt)
 			lines = append(lines, fname+"  "+count+"  "+date)
 		}
 	}
@@ -1908,59 +1968,13 @@ func renderSettingsDBImport(m model, width int) string {
 	return strings.Join(lines, "\n")
 }
 
-func renderManagerContent(m model, showCursor bool) string {
-	if len(m.accounts) == 0 {
-		return lipgloss.NewStyle().Foreground(colorOverlay1).Render("No accounts yet. Press 'a' to create one.")
-	}
-
-	cardStyle := lipgloss.NewStyle().
-		Border(lipgloss.RoundedBorder()).
-		BorderForeground(colorSurface1).
-		Padding(0, 1)
-	activeCardStyle := cardStyle.Copy().BorderForeground(colorAccent)
-	focused := m.managerFocusedIndex()
-
-	var cards []string
-	for i, acc := range m.accounts {
-		style := cardStyle
-		if showCursor && i == focused {
-			style = activeCardStyle
-		}
-		isSelected := len(m.filterAccounts) == 0 || m.filterAccounts[acc.id]
-		sel := "Scope: Off"
-		selColor := colorOverlay1
-		if isSelected {
-			sel = "Scope: On"
-			selColor = colorSuccess
-		}
-		typeColor := colorSubtext1
-		if acc.acctType == "credit" {
-			typeColor = colorPeach
-		}
-		headerPrefix := "  "
-		if showCursor && i == focused {
-			headerPrefix = "> "
-		}
-		header := lipgloss.NewStyle().Bold(true).Foreground(colorText).Render(headerPrefix + acc.name)
-		meta := lipgloss.NewStyle().Foreground(typeColor).Render(strings.ToUpper(acc.acctType))
-		activePill := lipgloss.NewStyle().Foreground(selColor).Render(sel)
-		body := header + "  " + meta + "  " + activePill
-		cards = append(cards, style.Render(body))
-	}
-	return strings.Join(cards, "\n")
-}
-
 func renderManagerAccountModal(m model) string {
-	label := "Edit Account"
+	title := "Edit Account"
 	if m.managerModalIsNew {
-		label = "Create Account"
+		title = "Create Account"
 	}
 
-	var lines []string
-	lines = append(lines, detailActiveStyle.Render(label))
-	if len(m.accounts) == 0 {
-		// keep lint happy for zero-account new flow; modal itself still renders fields
-	}
+	var body []string
 
 	nameVal := m.managerEditName
 	if m.managerEditFocus == 0 {
@@ -1976,90 +1990,89 @@ func renderManagerAccountModal(m model) string {
 		prefixVal += "_"
 	}
 
-	pfx0 := "  "
-	pfx1 := "  "
-	pfx2 := "  "
-	pfx3 := "  "
-	if m.managerEditFocus == 0 {
-		pfx0 = cursorStyle.Render("> ")
-	}
-	if m.managerEditFocus == 1 {
-		pfx1 = cursorStyle.Render("> ")
-	}
-	if m.managerEditFocus == 2 {
-		pfx2 = cursorStyle.Render("> ")
-	}
-	if m.managerEditFocus == 3 {
-		pfx3 = cursorStyle.Render("> ")
-	}
+	body = append(body, modalCursor(m.managerEditFocus == 0)+detailLabelStyle.Render("Name:         ")+detailValueStyle.Render(nameVal))
+	body = append(body, modalCursor(m.managerEditFocus == 1)+detailLabelStyle.Render("Type:         ")+detailValueStyle.Render(typeVal))
+	body = append(body, modalCursor(m.managerEditFocus == 2)+detailLabelStyle.Render("Import Prefix:")+detailValueStyle.Render(" "+prefixVal))
+	body = append(body, modalCursor(m.managerEditFocus == 3)+detailLabelStyle.Render("Is Active:    ")+detailValueStyle.Render(activeVal))
 
-	lines = append(lines, pfx0+detailLabelStyle.Render("Name:         ")+detailValueStyle.Render(nameVal))
-	lines = append(lines, pfx1+detailLabelStyle.Render("Type:         ")+detailValueStyle.Render(typeVal))
-	lines = append(lines, pfx2+detailLabelStyle.Render("Import Prefix:")+detailValueStyle.Render(" "+prefixVal))
-	lines = append(lines, pfx3+detailLabelStyle.Render("Is Active:    ")+detailValueStyle.Render(activeVal))
-	lines = append(lines, "")
-	lines = append(lines, scrollStyle.Render("j/k field  h/l or space toggle  enter save  esc cancel"))
-	return strings.Join(lines, "\n")
+	footer := fmt.Sprintf(
+		"%s field  %s toggle  %s save  %s cancel",
+		actionKeyLabel(m.keys, scopeManagerModal, actionNavigate, "j/k"),
+		actionKeyLabel(m.keys, scopeManagerModal, actionColor, "h/l"),
+		actionKeyLabel(m.keys, scopeManagerModal, actionSave, "enter"),
+		actionKeyLabel(m.keys, scopeManagerModal, actionClose, "esc"),
+	)
+
+	return renderModalContent(title, body, footer)
 }
 
 // renderDetail renders the transaction detail modal content.
-func renderDetail(txn transaction, categories []category, tags []tag, catCursor int, notes string, editing string) string {
+func renderDetail(txn transaction, categories []category, tags []tag, catCursor int, notes string, editing string, keys *KeyRegistry) string {
 	w := 50
-	var lines []string
+	var body []string
 
-	lines = append(lines, detailLabelStyle.Render("Date:       ")+detailValueStyle.Render(txn.dateISO))
+	body = append(body, detailLabelStyle.Render("Date:       ")+detailValueStyle.Render(txn.dateISO))
 	amtStyle := detailValueStyle
 	if txn.amount > 0 {
 		amtStyle = creditStyle
 	} else if txn.amount < 0 {
 		amtStyle = debitStyle
 	}
-	lines = append(lines, detailLabelStyle.Render("Amount:     ")+amtStyle.Render(fmt.Sprintf("%.2f", txn.amount)))
-	lines = append(lines, detailLabelStyle.Render("Description:")+detailValueStyle.Render(" "+truncate(txn.description, w-13)))
-	lines = append(lines, "")
+	body = append(body, detailLabelStyle.Render("Amount:     ")+amtStyle.Render(fmt.Sprintf("%.2f", txn.amount)))
+	body = append(body, detailLabelStyle.Render("Description:")+detailValueStyle.Render(" "+truncate(txn.description, w-13)))
+	body = append(body, "")
 
 	// Category picker
-	lines = append(lines, detailLabelStyle.Render("Category:"))
+	body = append(body, detailLabelStyle.Render("Category:"))
 	for i, c := range categories {
-		prefix := "  "
+		prefix := modalCursor(i == catCursor)
 		style := lipgloss.NewStyle().Foreground(lipgloss.Color(c.color))
 		if i == catCursor {
-			prefix = cursorStyle.Render("> ")
 			style = style.Bold(true)
 		}
-		lines = append(lines, prefix+style.Render(c.name))
+		body = append(body, prefix+style.Render(c.name))
 	}
-	lines = append(lines, "")
+	body = append(body, "")
 
 	if len(tags) > 0 {
 		var names []string
 		for _, tg := range tags {
 			names = append(names, tg.name)
 		}
-		lines = append(lines, detailLabelStyle.Render("Tags:       ")+detailValueStyle.Render(strings.Join(names, " ")))
-		lines = append(lines, "")
+		body = append(body, detailLabelStyle.Render("Tags:       ")+detailValueStyle.Render(strings.Join(names, " ")))
+		body = append(body, "")
 	}
 
 	// Notes
 	notesLabel := detailLabelStyle.Render("Notes: ")
 	if editing == "notes" {
 		notesLabel = detailActiveStyle.Render("Notes: ")
-		lines = append(lines, notesLabel+detailValueStyle.Render(notes+"_"))
+		body = append(body, notesLabel+detailValueStyle.Render(notes+"_"))
 	} else {
 		display := notes
 		if display == "" {
-			display = "(empty — press n to edit)"
+			display = fmt.Sprintf("(empty - press %s to edit)", actionKeyLabel(keys, scopeDetailModal, actionEdit, "n"))
 		}
-		lines = append(lines, notesLabel+detailValueStyle.Render(display))
+		body = append(body, notesLabel+detailValueStyle.Render(display))
 	}
-	lines = append(lines, "")
 
-	// Help
 	if editing == "notes" {
-		lines = append(lines, scrollStyle.Render("esc/enter done"))
+		body = append(body, "")
+		body = append(body, scrollStyle.Render(fmt.Sprintf(
+			"%s/%s done",
+			actionKeyLabel(keys, scopeDetailModal, actionClose, "esc"),
+			actionKeyLabel(keys, scopeDetailModal, actionSelect, "enter"),
+		)))
 	} else {
-		lines = append(lines, scrollStyle.Render("j/k category  n notes  enter save  esc cancel"))
+		body = append(body, "")
+		body = append(body, scrollStyle.Render(fmt.Sprintf(
+			"%s category  %s notes  %s save  %s cancel",
+			actionKeyLabel(keys, scopeDetailModal, actionNavigate, "j/k"),
+			actionKeyLabel(keys, scopeDetailModal, actionEdit, "n"),
+			actionKeyLabel(keys, scopeDetailModal, actionSelect, "enter"),
+			actionKeyLabel(keys, scopeDetailModal, actionClose, "esc"),
+		)))
 	}
 
-	return strings.Join(lines, "\n")
+	return strings.Join(body, "\n")
 }

@@ -108,6 +108,18 @@ func TestSortByAmount(t *testing.T) {
 	}
 }
 
+func TestSortByAmountDescendingStableOnEqualValues(t *testing.T) {
+	rows := []transaction{
+		{id: 10, amount: 42.0, description: "A"},
+		{id: 11, amount: 42.0, description: "B"},
+		{id: 12, amount: 1.0, description: "C"},
+	}
+	sortTransactions(rows, sortByAmount, false)
+	if rows[0].id != 10 || rows[1].id != 11 || rows[2].id != 12 {
+		t.Fatalf("descending amount sort should preserve equal-value order, got ids [%d %d %d]", rows[0].id, rows[1].id, rows[2].id)
+	}
+}
+
 func TestSortByCategory(t *testing.T) {
 	rows := testTransactions()
 	result := filteredRows(rows, "", nil, nil, nil, sortByCategory, true)
@@ -414,7 +426,7 @@ func TestSettingsDeleteDefaultBlocked(t *testing.T) {
 
 	m2, _ := m.updateSettings(keyMsg("d"))
 	m3 := m2.(model)
-	if m3.confirmAction != "" {
+	if m3.confirmAction != confirmActionNone {
 		t.Error("should not start confirm for default category")
 	}
 	if m3.status != "Cannot delete the default category." {
@@ -431,8 +443,8 @@ func TestSettingsDeleteConfirmFlow(t *testing.T) {
 	// First press arms confirm
 	m2, _ := m.updateSettings(keyMsg("d"))
 	m3 := m2.(model)
-	if m3.confirmAction != "delete_cat" {
-		t.Errorf("confirmAction = %q, want %q", m3.confirmAction, "delete_cat")
+	if m3.confirmAction != confirmActionDeleteCategory {
+		t.Errorf("confirmAction = %q, want %q", m3.confirmAction, confirmActionDeleteCategory)
 	}
 	if m3.confirmID != 1 {
 		t.Errorf("confirmID = %d, want 1", m3.confirmID)
@@ -441,7 +453,7 @@ func TestSettingsDeleteConfirmFlow(t *testing.T) {
 	// Any other key cancels
 	m4, _ := m3.updateSettings(keyMsg("x"))
 	m5 := m4.(model)
-	if m5.confirmAction != "" {
+	if m5.confirmAction != confirmActionNone {
 		t.Errorf("confirmAction should be cleared after cancel, got %q", m5.confirmAction)
 	}
 }
@@ -499,8 +511,8 @@ func TestSettingsDBClearConfirm(t *testing.T) {
 
 	m2, _ := m.updateSettings(keyMsg("c"))
 	m3 := m2.(model)
-	if m3.confirmAction != "clear_db" {
-		t.Errorf("confirmAction = %q, want %q", m3.confirmAction, "clear_db")
+	if m3.confirmAction != confirmActionClearDB {
+		t.Errorf("confirmAction = %q, want %q", m3.confirmAction, confirmActionClearDB)
 	}
 }
 
@@ -526,17 +538,106 @@ func TestSettingsChartToggleWeekBoundary(t *testing.T) {
 
 func TestSettingsConfirmExpired(t *testing.T) {
 	m := testSettingsModel()
-	m.confirmAction = "delete_cat"
+	m.confirmAction = confirmActionDeleteCategory
 	m.confirmID = 1
 
 	// Simulate timer expiration
 	m2, _ := m.Update(confirmExpiredMsg{})
 	m3 := m2.(model)
-	if m3.confirmAction != "" {
+	if m3.confirmAction != confirmActionNone {
 		t.Errorf("confirmAction should be cleared after expiry, got %q", m3.confirmAction)
 	}
 	if m3.confirmID != 0 {
 		t.Errorf("confirmID should be 0 after expiry, got %d", m3.confirmID)
+	}
+}
+
+func TestSettingsConfirmCancelAnyOtherKey(t *testing.T) {
+	tests := []struct {
+		name   string
+		action settingsConfirmAction
+	}{
+		{name: "delete category", action: confirmActionDeleteCategory},
+		{name: "delete tag", action: confirmActionDeleteTag},
+		{name: "delete rule", action: confirmActionDeleteRule},
+		{name: "clear db", action: confirmActionClearDB},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			m := testSettingsModel()
+			m.confirmAction = tt.action
+			m.confirmID = 123
+
+			next, _ := m.updateSettings(keyMsg("x"))
+			got := next.(model)
+			if got.confirmAction != confirmActionNone {
+				t.Fatalf("confirmAction = %q, want cleared", got.confirmAction)
+			}
+			if got.confirmID != 0 {
+				t.Fatalf("confirmID = %d, want 0", got.confirmID)
+			}
+			if got.status != "Cancelled." {
+				t.Fatalf("status = %q, want %q", got.status, "Cancelled.")
+			}
+		})
+	}
+}
+
+func TestSettingsConfirmExecuteCommandTypes(t *testing.T) {
+	db, cleanup := testDB(t)
+	defer cleanup()
+
+	tests := []struct {
+		name      string
+		action    settingsConfirmAction
+		confirm   tea.KeyMsg
+		confirmID int
+		wantType  string
+	}{
+		{name: "delete category", action: confirmActionDeleteCategory, confirm: keyMsg("d"), confirmID: 1, wantType: "categoryDeletedMsg"},
+		{name: "delete tag", action: confirmActionDeleteTag, confirm: keyMsg("d"), confirmID: 1, wantType: "tagDeletedMsg"},
+		{name: "delete rule", action: confirmActionDeleteRule, confirm: keyMsg("d"), confirmID: 1, wantType: "ruleDeletedMsg"},
+		{name: "clear db", action: confirmActionClearDB, confirm: keyMsg("c"), confirmID: 0, wantType: "clearDoneMsg"},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			m := testSettingsModel()
+			m.db = db
+			m.confirmAction = tt.action
+			m.confirmID = tt.confirmID
+
+			next, cmd := m.updateSettings(tt.confirm)
+			got := next.(model)
+			if got.confirmAction != confirmActionNone {
+				t.Fatalf("confirmAction = %q, want cleared", got.confirmAction)
+			}
+			if cmd == nil {
+				t.Fatal("expected non-nil command for confirm action")
+			}
+			msg := cmd()
+			switch tt.wantType {
+			case "categoryDeletedMsg":
+				if _, ok := msg.(categoryDeletedMsg); !ok {
+					t.Fatalf("msg type = %T, want categoryDeletedMsg", msg)
+				}
+			case "tagDeletedMsg":
+				if _, ok := msg.(tagDeletedMsg); !ok {
+					t.Fatalf("msg type = %T, want tagDeletedMsg", msg)
+				}
+			case "ruleDeletedMsg":
+				if _, ok := msg.(ruleDeletedMsg); !ok {
+					t.Fatalf("msg type = %T, want ruleDeletedMsg", msg)
+				}
+			case "clearDoneMsg":
+				if _, ok := msg.(clearDoneMsg); !ok {
+					t.Fatalf("msg type = %T, want clearDoneMsg", msg)
+				}
+			default:
+				t.Fatalf("unknown expected type %q", tt.wantType)
+			}
+		})
 	}
 }
 
@@ -624,6 +725,69 @@ func TestSettingsMaxVisibleRows(t *testing.T) {
 	}
 }
 
+func TestSettingsImportEntryParity(t *testing.T) {
+	assertImportEntry := func(t *testing.T, m model, key tea.KeyMsg) {
+		t.Helper()
+		m.importPicking = false
+		m.importFiles = []string{"stale.csv"}
+		m.importCursor = 2
+
+		next, cmd := m.updateSettings(key)
+		got := next.(model)
+		if !got.importPicking {
+			t.Fatal("import picker should be open")
+		}
+		if got.importFiles != nil {
+			t.Fatalf("import files should be reset, got %v", got.importFiles)
+		}
+		if got.importCursor != 0 {
+			t.Fatalf("import cursor = %d, want 0", got.importCursor)
+		}
+		if cmd == nil {
+			t.Fatal("expected loadFiles command")
+		}
+	}
+
+	// Settings nav mode import shortcut
+	m := testSettingsModel()
+	assertImportEntry(t, m, keyMsg("i"))
+
+	// Active DB & Import section import shortcut
+	m2 := testSettingsModel()
+	m2.settSection = settSecDBImport
+	m2.settColumn = settColRight
+	m2.settActive = true
+	assertImportEntry(t, m2, keyMsg("i"))
+}
+
+func TestSettingsRowsPerPageCustomDirectionalOverride(t *testing.T) {
+	reg := NewKeyRegistry()
+	if err := reg.ApplyOverrides([]shortcutOverride{
+		{Scope: scopeSettingsActiveDBImport, Action: string(actionRowsPerPage), Keys: []string{"ctrl+j", "ctrl+k"}},
+	}); err != nil {
+		t.Fatalf("apply overrides: %v", err)
+	}
+
+	m := testSettingsModel()
+	m.keys = reg
+	m.settSection = settSecDBImport
+	m.settColumn = settColRight
+	m.settActive = true
+	m.maxVisibleRows = 20
+
+	next, _ := m.updateSettings(tea.KeyMsg{Type: tea.KeyCtrlJ})
+	got := next.(model)
+	if got.maxVisibleRows != 21 {
+		t.Fatalf("after ctrl+j: maxVisibleRows = %d, want 21", got.maxVisibleRows)
+	}
+
+	next2, _ := got.updateSettings(tea.KeyMsg{Type: tea.KeyCtrlK})
+	got2 := next2.(model)
+	if got2.maxVisibleRows != 20 {
+		t.Fatalf("after ctrl+k: maxVisibleRows = %d, want 20", got2.maxVisibleRows)
+	}
+}
+
 func TestSettingsVisibleRowsUsesMax(t *testing.T) {
 	m := newModel()
 	m.maxVisibleRows = 10
@@ -692,7 +856,8 @@ func TestDupeModalCancel(t *testing.T) {
 	m.importDupeModal = true
 	m.importDupeFile = "test.csv"
 
-	m2, _ := m.Update(keyMsg("c"))
+	closeKey := m.primaryActionKey(scopeDupeModal, actionClose, "esc")
+	m2, _ := m.Update(keyMsg(closeKey))
 	m3 := m2.(model)
 	if m3.importDupeModal {
 		t.Error("dupe modal should be closed after cancel")
@@ -770,17 +935,18 @@ func assertScrollableWindowInvariant(
 func TestTransactionsTableDownNavigationViewportStable(t *testing.T) {
 	m := newModel()
 	m.ready = true
-	m.activeTab = tabTransactions
+	m.activeTab = tabManager
+	m.managerMode = managerModeTransactions
 	m.height = 28
 	m.width = 120
 	m.maxVisibleRows = 20
 	rows := make([]transaction, 0, 80)
 	for i := 0; i < 80; i++ {
 		rows = append(rows, transaction{
-			id:          i + 1,
-			dateISO:     "2026-02-10",
-			amount:      float64(-i - 1),
-			description: "TXN",
+			id:           i + 1,
+			dateISO:      "2026-02-10",
+			amount:       float64(-i - 1),
+			description:  "TXN",
 			categoryName: "Uncategorised",
 		})
 	}
@@ -811,11 +977,11 @@ func TestManagerTransactionsDownNavigationDoesNotShrinkVisibleRows(t *testing.T)
 	rows := make([]transaction, 0, 80)
 	for i := 0; i < 80; i++ {
 		rows = append(rows, transaction{
-			id:          i + 1,
-			dateISO:     "2026-02-10",
-			amount:      float64(-i - 1),
-			description: "TXN",
-			categoryName:"Uncategorised",
+			id:           i + 1,
+			dateISO:      "2026-02-10",
+			amount:       float64(-i - 1),
+			description:  "TXN",
+			categoryName: "Uncategorised",
 		})
 	}
 	m.rows = rows

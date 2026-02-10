@@ -490,12 +490,16 @@ func parseActionBindings(bindings map[string][]string, defaults []keybindingConf
 	for rawAction, rawKeys := range bindings {
 		action := strings.TrimSpace(rawAction)
 		keys := normalizeKeyList(rawKeys)
+		if canonical, ok := canonicalLegacyActionAlias(action); ok {
+			action = canonical
+			migrated = true
+		}
 		if action == string(actionMove) {
 			migrated = true
 			action = migrateLegacyMoveAction(keys)
 		}
 		if !knownActions[action] {
-			return nil, false, fmt.Errorf("keybindings: unknown action %q", action)
+			return nil, false, unknownActionError("keybindings", action, knownActions)
 		}
 		if len(keys) == 0 {
 			return nil, false, fmt.Errorf("keybindings action=%q: keys are required", action)
@@ -527,6 +531,45 @@ func migrateLegacyMoveAction(keys []string) string {
 	return string(actionNavigate)
 }
 
+func canonicalLegacyActionAlias(action string) (string, bool) {
+	switch strings.ToLower(strings.TrimSpace(action)) {
+	case "confirm_repeat":
+		return string(actionConfirm), true
+	case "cancel_any":
+		return string(actionCancel), true
+	default:
+		return "", false
+	}
+}
+
+func unknownActionError(prefix, action string, knownActions map[string]bool) error {
+	if canonical, ok := canonicalLegacyActionAlias(action); ok {
+		return fmt.Errorf("%s: unknown action %q (legacy alias); use %q", prefix, action, canonical)
+	}
+	suggestion := suggestedActionName(action, knownActions)
+	if suggestion != "" {
+		return fmt.Errorf("%s: unknown action %q (did you mean %q?)", prefix, action, suggestion)
+	}
+	return fmt.Errorf("%s: unknown action %q (run `go run . -startup-check` for startup diagnostics)", prefix, action)
+}
+
+func suggestedActionName(action string, knownActions map[string]bool) string {
+	a := strings.ToLower(strings.TrimSpace(action))
+	switch {
+	case strings.Contains(a, "confirm") && knownActions[string(actionConfirm)]:
+		return string(actionConfirm)
+	case strings.Contains(a, "cancel") && knownActions[string(actionCancel)]:
+		return string(actionCancel)
+	case strings.Contains(a, "close") && knownActions[string(actionClose)]:
+		return string(actionClose)
+	case strings.Contains(a, "move") && knownActions[string(actionNavigate)]:
+		return string(actionNavigate)
+	case strings.Contains(a, "sort") && knownActions[string(actionSort)]:
+		return string(actionSort)
+	}
+	return ""
+}
+
 func parseKeybindingsConfigV1(cfg keybindingsFile, defaults []keybindingConfig) ([]keybindingConfig, error) {
 	knownActions := make(map[string]bool)
 	knownByScope := make(map[string]map[string]bool)
@@ -547,8 +590,11 @@ func parseKeybindingsConfigV1(cfg keybindingsFile, defaults []keybindingConfig) 
 		actions := make(map[string][]string)
 		for rawAction, rawKeys := range rawActions {
 			action := strings.TrimSpace(rawAction)
+			if canonical, ok := canonicalLegacyActionAlias(action); ok {
+				action = canonical
+			}
 			if !knownActions[action] {
-				return nil, fmt.Errorf("keybindings profile=%q: unknown action %q", name, action)
+				return nil, unknownActionError(fmt.Sprintf("keybindings profile=%q", name), action, knownActions)
 			}
 			keys := normalizeKeyList(rawKeys)
 			if len(keys) == 0 {
@@ -581,8 +627,11 @@ func parseKeybindingsConfigV1(cfg keybindingsFile, defaults []keybindingConfig) 
 		}
 		for rawAction, rawKeys := range block.Bind {
 			action := strings.TrimSpace(rawAction)
+			if canonical, ok := canonicalLegacyActionAlias(action); ok {
+				action = canonical
+			}
 			if !knownActions[action] {
-				return nil, fmt.Errorf("keybindings scope=%q: unknown action %q", scope, action)
+				return nil, unknownActionError(fmt.Sprintf("keybindings scope=%q", scope), action, knownActions)
 			}
 			if !scopeActions[action] {
 				return nil, fmt.Errorf("keybindings scope=%q: action %q not supported in scope", scope, action)
@@ -1063,33 +1112,4 @@ func equalStringSlices(a, b []string) bool {
 		}
 	}
 	return true
-}
-
-func containsString(items []string, target string) bool {
-	for _, item := range items {
-		if item == target {
-			return true
-		}
-	}
-	return false
-}
-
-func profileNameFromActions(actions []string) string {
-	if len(actions) == 0 {
-		return "shared"
-	}
-	parts := make([]string, 0, min(3, len(actions)))
-	for i, action := range actions {
-		if i >= 3 {
-			break
-		}
-		name := strings.ToLower(strings.TrimSpace(action))
-		name = strings.ReplaceAll(name, "-", "_")
-		name = strings.ReplaceAll(name, " ", "_")
-		parts = append(parts, name)
-	}
-	if len(actions) > 3 {
-		parts = append(parts, "etc")
-	}
-	return strings.Join(parts, "_")
 }

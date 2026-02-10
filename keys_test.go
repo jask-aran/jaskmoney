@@ -81,7 +81,7 @@ func TestKeyRegistryScopeHelpOrder(t *testing.T) {
 	for _, b := range transactions {
 		txnKeys = append(txnKeys, b.Help().Key)
 	}
-	wantTxn := []string{"/", "s", "f", "c", "t", "space", "shift+up/down", "enter", "j/k", "tab", "q"}
+	wantTxn := []string{"/", "s", "S", "f", "c", "t", "space", "shift+up/down", "g", "G", "esc", "enter", "j/k", "tab", "q"}
 	if len(txnKeys) != len(wantTxn) {
 		t.Fatalf("transactions help count = %d, want %d (%v)", len(txnKeys), len(wantTxn), txnKeys)
 	}
@@ -147,5 +147,28 @@ func TestNormalizeKeyNameCombos(t *testing.T) {
 		if got := normalizeKeyName(in); got != want {
 			t.Fatalf("normalizeKeyName(%q) = %q, want %q", in, got, want)
 		}
+	}
+}
+
+func TestDetailModalNotesBinding(t *testing.T) {
+	r := NewKeyRegistry()
+	got := r.Lookup("n", scopeDetailModal)
+	if got == nil {
+		t.Fatal("expected notes binding in detail modal scope")
+	}
+	if got.Action != actionEdit {
+		t.Fatalf("detail modal n action = %q, want %q", got.Action, actionEdit)
+	}
+}
+
+func TestKeyRegistryPreservesUppercaseActionBindings(t *testing.T) {
+	r := NewKeyRegistry()
+	gotLower := r.Lookup("s", scopeTransactions)
+	if gotLower == nil || gotLower.Action != actionSort {
+		t.Fatalf("transactions s = %+v, want sort", gotLower)
+	}
+	gotUpper := r.Lookup("S", scopeTransactions)
+	if gotUpper == nil || gotUpper.Action != actionSortDirection {
+		t.Fatalf("transactions S = %+v, want sort_direction", gotUpper)
 	}
 }

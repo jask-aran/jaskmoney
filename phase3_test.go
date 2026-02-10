@@ -18,7 +18,8 @@ func testKeyForAction(m model, scope string, action Action, fallback string) str
 func testPhase3Model() model {
 	m := newModel()
 	m.ready = true
-	m.activeTab = tabTransactions
+	m.activeTab = tabManager
+	m.managerMode = managerModeTransactions
 	m.rows = testTransactions()
 	m.categories = []category{
 		{id: 2, name: "Groceries", color: "#94e2d5"},
@@ -196,11 +197,11 @@ func TestPhase3SelectionPersistsAcrossSortAndFilterChanges(t *testing.T) {
 	}
 }
 
-func TestPhase3TransactionsTitleShowsSelectionCount(t *testing.T) {
+func TestPhase3ManagerTransactionsTitleShowsSelectionCount(t *testing.T) {
 	m := testPhase3Model()
 	m.selectedRows = map[int]bool{1: true, 3: true}
 
-	view := m.transactionsView()
+	view := m.managerView()
 	if !strings.Contains(view, "Transactions (2 selected)") {
 		t.Fatalf("transactions title should include selection count, got: %q", view)
 	}

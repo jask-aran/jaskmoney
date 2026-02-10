@@ -214,6 +214,62 @@ close = ["esc"]
 	}
 }
 
+func TestParseKeybindingsConfigActionBindingsLegacyAliases(t *testing.T) {
+	defaults := NewKeyRegistry().ExportKeybindingConfig()
+	data := []byte(`
+version = 2
+
+[bindings]
+confirm_repeat = ["ctrl+r"]
+cancel_any = ["ctrl+x"]
+`)
+	items, migrated, err := parseKeybindingsConfig(data, defaults)
+	if err != nil {
+		t.Fatalf("parseKeybindingsConfig: %v", err)
+	}
+	if !migrated {
+		t.Fatal("expected v2 alias migration to set migrated=true")
+	}
+
+	foundConfirm := false
+	foundCancel := false
+	for _, it := range items {
+		if it.Action == string(actionConfirm) && len(it.Keys) == 1 && it.Keys[0] == "ctrl+r" {
+			foundConfirm = true
+		}
+		if it.Action == string(actionCancel) && len(it.Keys) == 1 && it.Keys[0] == "ctrl+x" {
+			foundCancel = true
+		}
+	}
+	if !foundConfirm {
+		t.Fatal("expected confirm alias override to be applied")
+	}
+	if !foundCancel {
+		t.Fatal("expected cancel alias override to be applied")
+	}
+}
+
+func TestParseKeybindingsConfigActionBindingsUnknownActionHasHint(t *testing.T) {
+	defaults := NewKeyRegistry().ExportKeybindingConfig()
+	data := []byte(`
+version = 2
+
+[bindings]
+confirm_repeatz = ["ctrl+r"]
+`)
+	_, _, err := parseKeybindingsConfig(data, defaults)
+	if err == nil {
+		t.Fatal("expected unknown action error")
+	}
+	msg := err.Error()
+	if !strings.Contains(msg, `unknown action "confirm_repeatz"`) {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if !strings.Contains(msg, `did you mean "confirm"`) {
+		t.Fatalf("expected confirm hint, got: %v", err)
+	}
+}
+
 func TestLoadKeybindingsCreatesTemplate(t *testing.T) {
 	xdg := t.TempDir()
 	t.Setenv("XDG_CONFIG_HOME", xdg)
