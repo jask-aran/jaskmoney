@@ -1910,7 +1910,7 @@ func renderSettingsCategories(m model, width int) string {
 		lines = append(lines, detailActiveStyle.Render(label))
 		nameValue := m.settInput
 		if m.settCatFocus == 0 {
-			nameValue += "_"
+			nameValue = renderASCIIInputCursor(m.settInput, m.settInputCursor)
 		}
 		lines = append(lines, modalCursor(m.settCatFocus == 0)+detailLabelStyle.Render("Name: ")+detailValueStyle.Render(nameValue))
 		colors := CategoryAccentColors()
@@ -1959,7 +1959,7 @@ func renderSettingsTags(m model, width int) string {
 		lines = append(lines, detailActiveStyle.Render(label))
 		nameValue := m.settInput
 		if m.settTagFocus == 0 {
-			nameValue += "_"
+			nameValue = renderASCIIInputCursor(m.settInput, m.settInputCursor)
 		}
 		lines = append(lines, modalCursor(m.settTagFocus == 0)+detailLabelStyle.Render("Name: ")+detailValueStyle.Render(nameValue))
 		colors := TagAccentColors()
@@ -1990,6 +1990,11 @@ func categoryNameForID(categories []category, id int) string {
 		}
 	}
 	return fmt.Sprintf("Category %d", id)
+}
+
+func renderASCIIInputCursor(s string, cursor int) string {
+	idx := clampInputCursorASCII(s, cursor)
+	return s[:idx] + "_" + s[idx:]
 }
 
 func renderSettingsRules(m model, width int) string {

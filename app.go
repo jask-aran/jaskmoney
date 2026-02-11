@@ -304,26 +304,27 @@ type model struct {
 	accountNukePicker *pickerState
 
 	// Settings state
-	rules          []categoryRule
-	tags           []tag
-	tagRules       []tagRule
-	txnTags        map[int][]tag
-	imports        []importRecord
-	dbInfo         dbInfo
-	settSection    int                   // which section is focused (settSec*)
-	settColumn     int                   // 0 = left column, 1 = right column
-	settActive     bool                  // true = interacting inside a section, false = navigating sections
-	settItemCursor int                   // cursor within the active section's item list
-	settMode       string                // current editing mode (settMode*)
-	settInput      string                // text input buffer for add/edit
-	settCatFocus   int                   // category editor focus: 0=name, 1=color
-	settColorIdx   int                   // index into CategoryAccentColors() during add/edit
-	settTagFocus   int                   // tag editor focus: 0=name, 1=color, 2=scope
-	settTagScopeID int                   // tag editor scope category id; 0 means global
-	settRuleCatIdx int                   // category cursor when picking for a rule
-	settEditID     int                   // ID of item being edited
-	confirmAction  settingsConfirmAction // pending settings confirm action
-	confirmID      int                   // ID for pending confirm (category or rule)
+	rules           []categoryRule
+	tags            []tag
+	tagRules        []tagRule
+	txnTags         map[int][]tag
+	imports         []importRecord
+	dbInfo          dbInfo
+	settSection     int                   // which section is focused (settSec*)
+	settColumn      int                   // 0 = left column, 1 = right column
+	settActive      bool                  // true = interacting inside a section, false = navigating sections
+	settItemCursor  int                   // cursor within the active section's item list
+	settMode        string                // current editing mode (settMode*)
+	settInput       string                // text input buffer for add/edit
+	settInputCursor int                   // cursor position inside settInput for name editing
+	settCatFocus    int                   // category editor focus: 0=name, 1=color
+	settColorIdx    int                   // index into CategoryAccentColors() during add/edit
+	settTagFocus    int                   // tag editor focus: 0=name, 1=color, 2=scope
+	settTagScopeID  int                   // tag editor scope category id; 0 means global
+	settRuleCatIdx  int                   // category cursor when picking for a rule
+	settEditID      int                   // ID of item being edited
+	confirmAction   settingsConfirmAction // pending settings confirm action
+	confirmID       int                   // ID for pending confirm (category or rule)
 
 	// Manager state
 	managerCursor     int
