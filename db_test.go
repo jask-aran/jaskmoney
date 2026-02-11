@@ -597,6 +597,78 @@ func TestUpdateTransactionNotes(t *testing.T) {
 	}
 }
 
+func TestUpdateTransactionDetailAtomicSuccess(t *testing.T) {
+	db, cleanup := testDB(t)
+	defer cleanup()
+
+	res, err := db.Exec(`
+		INSERT INTO transactions (date_raw, date_iso, amount, description, notes)
+		VALUES ('03/02/2026', '2026-02-03', -20.00, 'TEST', 'seed')
+	`)
+	if err != nil {
+		t.Fatalf("insert txn: %v", err)
+	}
+	txnID, _ := res.LastInsertId()
+
+	cats, err := loadCategories(db)
+	if err != nil {
+		t.Fatalf("loadCategories: %v", err)
+	}
+	catID := cats[1].id
+
+	if err := updateTransactionDetail(db, int(txnID), &catID, "updated"); err != nil {
+		t.Fatalf("updateTransactionDetail: %v", err)
+	}
+
+	rows, err := loadRows(db)
+	if err != nil {
+		t.Fatalf("loadRows: %v", err)
+	}
+	if len(rows) != 1 {
+		t.Fatalf("rows = %d, want 1", len(rows))
+	}
+	if rows[0].notes != "updated" {
+		t.Fatalf("notes = %q, want %q", rows[0].notes, "updated")
+	}
+	if rows[0].categoryID == nil || *rows[0].categoryID != catID {
+		t.Fatalf("categoryID = %v, want %d", rows[0].categoryID, catID)
+	}
+}
+
+func TestUpdateTransactionDetailAtomicRollbackOnInvalidCategory(t *testing.T) {
+	db, cleanup := testDB(t)
+	defer cleanup()
+
+	res, err := db.Exec(`
+		INSERT INTO transactions (date_raw, date_iso, amount, description, notes)
+		VALUES ('03/02/2026', '2026-02-03', -20.00, 'TEST', 'seed')
+	`)
+	if err != nil {
+		t.Fatalf("insert txn: %v", err)
+	}
+	txnID, _ := res.LastInsertId()
+	invalidCatID := 999999
+
+	err = updateTransactionDetail(db, int(txnID), &invalidCatID, "should-not-stick")
+	if err == nil {
+		t.Fatal("expected foreign-key failure for invalid category")
+	}
+
+	rows, loadErr := loadRows(db)
+	if loadErr != nil {
+		t.Fatalf("loadRows: %v", loadErr)
+	}
+	if len(rows) != 1 {
+		t.Fatalf("rows = %d, want 1", len(rows))
+	}
+	if rows[0].notes != "seed" {
+		t.Fatalf("notes changed despite rollback: %q", rows[0].notes)
+	}
+	if rows[0].categoryID != nil {
+		t.Fatalf("categoryID changed despite rollback: %v", rows[0].categoryID)
+	}
+}
+
 // ---- Category CRUD tests (Phase 4) ----
 
 func TestInsertCategory(t *testing.T) {

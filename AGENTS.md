@@ -60,9 +60,11 @@ Use standard Go tooling from the repo root:
 - `go run . -validate` — run non‑TUI validation (temp DB + CSV).
 - `go build .` — compile and verify the binary builds.
 - `go test ./...` — run all tests across packages.
+- `go test -tags flowheavy ./...` — run heavier cross‑mode flow tests.
 - `go test -run TestName ./...` — run a focused test.
 - `go vet ./...` — run static analysis.
 - `gofmt -w .` — format Go source files in place.
+- `./scripts/test.sh fast|heavy|all` — consistent local test entry points.
 
 If you add tooling (lint, make targets), document it here and in the README.
 
@@ -199,6 +201,16 @@ If you add a new format:
 - For import tests, call `importCSV(db, path, format, skipDupes)` explicitly.
 - For command tests, call the returned `tea.Cmd` and assert on the message.
 - Run non‑TUI validation with `go run . -validate` to simulate an import without TTY.
+
+### Testing Quality Bar (Anti‑Theatre)
+
+- For any user-visible behavior change, add at least one `Update(...)`-driven regression test that exercises real key/message routing.
+- Prefer persisted-outcome assertions (DB rows, config files, message effects) over status-text-only assertions.
+- For transactional paths, include at least one rollback/failure test proving no partial writes.
+- Keep direct handler tests (`updateSettings`, `updateNavigation`, etc.) for focused logic only; add top-level dispatcher coverage for precedence and mode gating.
+- When a bug is fixed, add a regression test that fails on the pre-fix behavior.
+- If a test only checks strings from rendered output, also assert a structural invariant (width bounds, row/section count, ordering, or key column presence).
+- Place heavier journey tests behind `flowheavy` when runtime cost is notable; keep default `go test ./...` as the fast loop.
 
 ## Quality & Safety Checks
 

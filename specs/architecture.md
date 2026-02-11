@@ -230,15 +230,76 @@ Harnesses are release gates and must remain reliable in headless CI.
 
 ## 8. Testing Strategy and Release Gates
 
-### 8.1 Coverage Model
+### 8.1 Test Architecture (Three Tiers)
 
-- Pure logic: table-driven unit tests.
-- Update behavior: message/key-flow tests.
-- Rendering: layout and viewport invariants.
-- DB: schema, transactional behavior, migration/hygiene.
-- Harnesses: startup and validation behavior.
+Jaskmoney uses a three-tier test model to avoid "testing theatre" and ensure
+user-facing regression protection.
 
-### 8.2 Regression Priority Matrix
+Tier 1: Unit/pure logic (fast)
+
+- Scope: pure functions and deterministic helpers.
+- Examples: parsing, sorting/filtering, overlay/string helpers, key name
+  normalization.
+- Goal: correctness of isolated logic with minimal setup.
+
+Tier 2: Component/integration (fast-medium)
+
+- Scope: subsystem behavior with real dependencies (temp DB/files), but still
+  focused per component.
+- Examples: DB migrations/CRUD/invariants, ingest duplicate detection,
+  rendering width/layout contracts, config migration/parsing.
+- Goal: verify contracts at concern boundaries.
+
+Tier 3: Cross-mode user flows (high value)
+
+- Scope: realistic user journeys across tabs, overlays, async commands, and
+  persistence.
+- Implemented in `flow_test.go` using an `Update`-driven harness.
+- Goal: protect real interaction surfaces and prevent regressions caused by
+  cross-component coupling.
+
+### 8.2 Tier-3 Flow Harness Contract
+
+Flow tests must follow these rules:
+
+- Drive the app through `model.Update(...)` with real `tea.Msg`/`tea.KeyMsg`.
+- Drain returned `tea.Cmd` chains and assert post-command state.
+- Prefer assertions on persisted outcomes (DB/config state), not only transient
+  status text.
+- Avoid direct calls to internal mode handlers (`updateSettings`,
+  `updateNavigation`, etc.) in flow tests.
+
+Current high-value flow coverage includes:
+
+- settings import flow with duplicate scan + skip path
+- manager quick categorize and quick tag persistence
+- command palette import command flow
+- settings save + reload persistence round-trip
+- detail modal edit/save/reopen persistence
+- mapped-account-missing import failure (no partial writes)
+
+### 8.3 Heavy Flow Gate (`flowheavy`)
+
+Some higher-fidelity flow tests are intentionally optional to keep default
+iteration speed practical.
+
+- Heavy tests are guarded by build tag `flowheavy` (see
+  `flow_heavy_test.go`).
+- Execute heavy suite with: `go test -tags flowheavy ./...`.
+- Default suite (`go test ./...`) remains the primary fast feedback loop.
+
+### 8.4 Local Test Entry Points
+
+Use `scripts/test.sh` for consistent local execution:
+
+- `./scripts/test.sh fast` -> default suite (`go test ./...`)
+- `./scripts/test.sh heavy` -> heavy flow suite (`-tags flowheavy`)
+- `./scripts/test.sh all` -> runs both fast and heavy suites
+
+The script sets `XDG_CONFIG_HOME` to a writable temp-root by default to keep
+tests reliable in sandboxed/headless environments.
+
+### 8.5 Regression Priority Matrix
 
 Protect first:
 
@@ -246,18 +307,22 @@ Protect first:
 - text-input shortcut shielding in settings editors
 - keybinding scope/action routing and footer derivation
 - quick-action target resolution (cursor/selection/highlight)
-- import/dupe decision path
+- import/dupe decision path and account-mapping failures
 - viewport-safe header/body/status/footer rendering
 - tag normalization and duplicate-merge safety
 
-### 8.3 Standard Verification Commands
+### 8.6 Standard Verification Commands
 
 Run before release tags:
 
-- `go test ./...`
+- `./scripts/test.sh fast`
 - `go vet ./...`
 - `go run . -validate`
 - `go run . -startup-check`
+
+Run additionally when touching cross-mode workflows:
+
+- `./scripts/test.sh heavy`
 
 ## 9. v0.295 -> v0.3 Learnings and Decisions
 
