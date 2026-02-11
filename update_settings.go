@@ -101,7 +101,6 @@ func (m model) updateSettings(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	}
 
 	// Section navigation mode
-	keyName := normalizeKeyName(msg.String())
 	switch {
 	case m.isAction(scopeSettingsNav, actionQuit, msg) || m.isAction(scopeGlobal, actionQuit, msg):
 		return m, tea.Quit
@@ -111,8 +110,8 @@ func (m model) updateSettings(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	case m.isAction(scopeSettingsNav, actionPrevTab, msg) || m.isAction(scopeGlobal, actionPrevTab, msg):
 		m.activeTab = (m.activeTab - 1 + tabCount) % tabCount
 		return m, nil
-	case m.isAction(scopeSettingsNav, actionColumn, msg):
-		delta := navDeltaFromKeyName(keyName)
+	case m.horizontalDelta(scopeSettingsNav, msg) != 0:
+		delta := m.horizontalDelta(scopeSettingsNav, msg)
 		if delta < 0 && m.settColumn == settColRight {
 			m.settColumn = settColLeft
 			m.settSection = settSecCategories
@@ -121,8 +120,8 @@ func (m model) updateSettings(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			m.settSection = settSecChart
 		}
 		return m, nil
-	case m.isAction(scopeSettingsNav, actionSection, msg):
-		delta := navDeltaFromKeyName(keyName)
+	case m.verticalDelta(scopeSettingsNav, msg) != 0:
+		delta := m.verticalDelta(scopeSettingsNav, msg)
 		if delta != 0 {
 			m.settSection = moveSettingsSection(m.settSection, delta)
 		}
@@ -166,8 +165,8 @@ func (m model) updateSettingsActive(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 
 func (m model) updateSettingsCategories(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	switch {
-	case m.isAction(scopeSettingsActiveCategories, actionNavigate, msg):
-		m.settItemCursor, _ = m.moveCursorForAction(scopeSettingsActiveCategories, actionNavigate, msg, m.settItemCursor, len(m.categories))
+	case m.verticalDelta(scopeSettingsActiveCategories, msg) != 0:
+		m.settItemCursor = moveBoundedCursor(m.settItemCursor, len(m.categories), m.verticalDelta(scopeSettingsActiveCategories, msg))
 		return m, nil
 	case m.isAction(scopeSettingsActiveCategories, actionAdd, msg):
 		m.beginSettingsCategoryMode(nil)
@@ -185,7 +184,7 @@ func (m model) updateSettingsCategories(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 				m.setStatus("Cannot delete the default category.")
 				return m, nil
 			}
-			keyLabel := m.primaryActionKey(scopeSettingsActiveCategories, actionDelete, "d")
+			keyLabel := m.primaryActionKey(scopeSettingsActiveCategories, actionDelete, "del")
 			return m, m.armSettingsConfirm(confirmActionDeleteCategory, cat.id, fmt.Sprintf("Press %s again to delete %q", keyLabel, cat.name))
 		}
 		return m, nil
@@ -195,8 +194,8 @@ func (m model) updateSettingsCategories(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 
 func (m model) updateSettingsTags(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	switch {
-	case m.isAction(scopeSettingsActiveTags, actionNavigate, msg):
-		m.settItemCursor, _ = m.moveCursorForAction(scopeSettingsActiveTags, actionNavigate, msg, m.settItemCursor, len(m.tags))
+	case m.verticalDelta(scopeSettingsActiveTags, msg) != 0:
+		m.settItemCursor = moveBoundedCursor(m.settItemCursor, len(m.tags), m.verticalDelta(scopeSettingsActiveTags, msg))
 		return m, nil
 	case m.isAction(scopeSettingsActiveTags, actionAdd, msg):
 		m.beginSettingsTagMode(nil)
@@ -210,7 +209,7 @@ func (m model) updateSettingsTags(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	case m.isAction(scopeSettingsActiveTags, actionDelete, msg):
 		if m.settItemCursor < len(m.tags) {
 			tg := m.tags[m.settItemCursor]
-			keyLabel := m.primaryActionKey(scopeSettingsActiveTags, actionDelete, "d")
+			keyLabel := m.primaryActionKey(scopeSettingsActiveTags, actionDelete, "del")
 			return m, m.armSettingsConfirm(confirmActionDeleteTag, tg.id, fmt.Sprintf("Press %s again to delete tag %q", keyLabel, tg.name))
 		}
 		return m, nil
@@ -220,8 +219,8 @@ func (m model) updateSettingsTags(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 
 func (m model) updateSettingsRules(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	switch {
-	case m.isAction(scopeSettingsActiveRules, actionNavigate, msg):
-		m.settItemCursor, _ = m.moveCursorForAction(scopeSettingsActiveRules, actionNavigate, msg, m.settItemCursor, len(m.rules))
+	case m.verticalDelta(scopeSettingsActiveRules, msg) != 0:
+		m.settItemCursor = moveBoundedCursor(m.settItemCursor, len(m.rules), m.verticalDelta(scopeSettingsActiveRules, msg))
 		return m, nil
 	case m.isAction(scopeSettingsActiveRules, actionAdd, msg):
 		m.beginSettingsRuleMode(nil)
@@ -235,7 +234,7 @@ func (m model) updateSettingsRules(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	case m.isAction(scopeSettingsActiveRules, actionDelete, msg):
 		if m.settItemCursor < len(m.rules) {
 			rule := m.rules[m.settItemCursor]
-			keyLabel := m.primaryActionKey(scopeSettingsActiveRules, actionDelete, "d")
+			keyLabel := m.primaryActionKey(scopeSettingsActiveRules, actionDelete, "del")
 			return m, m.armSettingsConfirm(confirmActionDeleteRule, rule.id, fmt.Sprintf("Press %s again to delete rule %q", keyLabel, rule.pattern))
 		}
 		return m, nil
@@ -253,7 +252,6 @@ func (m model) updateSettingsRules(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 }
 
 func (m model) updateSettingsDBImport(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
-	keyName := normalizeKeyName(msg.String())
 	switch {
 	case m.isAction(scopeSettingsActiveDBImport, actionClearDB, msg):
 		keyLabel := m.primaryActionKey(scopeSettingsActiveDBImport, actionClearDB, "c")
@@ -274,7 +272,7 @@ func (m model) updateSettingsDBImport(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		m.accountNukePicker = newPicker("Nuke Account", items, false, "")
 		return m, nil
 	case m.isAction(scopeSettingsActiveDBImport, actionRowsPerPage, msg):
-		delta := rowsPerPageDeltaFromKeyName(keyName)
+		delta := rowsPerPageDeltaFromKeyName(normalizeKeyName(msg.String()))
 		if delta > 0 && m.maxVisibleRows < 50 {
 			m.maxVisibleRows++
 			m.setStatusf("Rows per page: %d", m.maxVisibleRows)
@@ -332,7 +330,7 @@ func (m model) updateAccountNukePicker(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 
 func (m model) updateSettingsChart(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	switch {
-	case m.isAction(scopeSettingsActiveChart, actionToggleWeekBoundary, msg),
+	case m.horizontalDelta(scopeSettingsActiveChart, msg) != 0,
 		m.isAction(scopeSettingsActiveChart, actionConfirm, msg):
 		if m.spendingWeekAnchor == time.Monday {
 			m.spendingWeekAnchor = time.Sunday
@@ -478,24 +476,24 @@ func (m model) updateSettingsTextInput(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		m.settTagFocus = 0
 		m.settTagScopeID = 0
 		return m, nil
-	case isCategoryMode && m.isAction(scopeSettingsModeCat, actionNavigate, msg):
-		delta := navDeltaFromKeyName(keyName)
+	case isCategoryMode && m.verticalDelta(scopeSettingsModeCat, msg) != 0:
+		delta := m.verticalDelta(scopeSettingsModeCat, msg)
 		if delta > 0 {
 			m.settCatFocus = (m.settCatFocus + 1) % 2
 		} else if delta < 0 {
 			m.settCatFocus = (m.settCatFocus - 1 + 2) % 2
 		}
 		return m, nil
-	case isTagMode && m.isAction(scopeSettingsModeTag, actionNavigate, msg):
-		delta := navDeltaFromKeyName(keyName)
+	case isTagMode && m.verticalDelta(scopeSettingsModeTag, msg) != 0:
+		delta := m.verticalDelta(scopeSettingsModeTag, msg)
 		if delta > 0 {
 			m.settTagFocus = (m.settTagFocus + 1) % 3
 		} else if delta < 0 {
 			m.settTagFocus = (m.settTagFocus - 1 + 3) % 3
 		}
 		return m, nil
-	case m.isAction(scope, actionColor, msg):
-		delta := navDeltaFromKeyName(keyName)
+	case m.horizontalDelta(scope, msg) != 0:
+		delta := m.horizontalDelta(scope, msg)
 		if isCategoryMode && m.settCatFocus != 1 {
 			return m, nil
 		}
@@ -601,8 +599,8 @@ func (m model) updateSettingsRuleCatPicker(msg tea.KeyMsg) (tea.Model, tea.Cmd) 
 		m.settInput = ""
 		m.settEditID = 0
 		return m, nil
-	case m.isAction(scopeSettingsModeRuleCat, actionSelectItem, msg):
-		m.settRuleCatIdx, _ = m.moveCursorForAction(scopeSettingsModeRuleCat, actionSelectItem, msg, m.settRuleCatIdx, len(m.categories))
+	case m.verticalDelta(scopeSettingsModeRuleCat, msg) != 0:
+		m.settRuleCatIdx = moveBoundedCursor(m.settRuleCatIdx, len(m.categories), m.verticalDelta(scopeSettingsModeRuleCat, msg))
 		return m, nil
 	case m.isAction(scopeSettingsModeRuleCat, actionSave, msg):
 		if m.db == nil || len(m.categories) == 0 {

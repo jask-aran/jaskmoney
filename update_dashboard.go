@@ -24,10 +24,9 @@ func (m model) updateDashboard(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		return m, nil
 	}
 
-	keyName := normalizeKeyName(msg.String())
 	switch {
-	case m.isAction(scopeDashboardTimeframe, actionColumn, msg):
-		delta := navDeltaFromKeyName(keyName)
+	case m.horizontalDelta(scopeDashboardTimeframe, msg) != 0:
+		delta := m.horizontalDelta(scopeDashboardTimeframe, msg)
 		if delta < 0 {
 			m.dashTimeframeCursor--
 			if m.dashTimeframeCursor < 0 {

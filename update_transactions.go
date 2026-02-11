@@ -14,13 +14,12 @@ func (m model) updateNavigation(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 func (m model) updateNavigationWithVisible(msg tea.KeyMsg, visible int) (tea.Model, tea.Cmd) {
 	filtered := m.getFilteredRows()
 	m.ensureRangeSelectionValid(filtered)
-	keyName := normalizeKeyName(msg.String())
 	if visible <= 0 {
 		visible = 1
 	}
 
-	if m.isAction(scopeTransactions, actionNavigate, msg) {
-		nextCursor, _ := m.moveCursorForAction(scopeTransactions, actionNavigate, msg, m.cursor, len(filtered))
+	if delta := m.verticalDelta(scopeTransactions, msg); delta != 0 {
+		nextCursor := moveBoundedCursor(m.cursor, len(filtered), delta)
 		if m.rangeSelecting {
 			m.clearRangeSelection()
 		}
@@ -58,7 +57,7 @@ func (m model) updateNavigationWithVisible(msg tea.KeyMsg, visible int) (tea.Mod
 	}
 
 	if m.isAction(scopeTransactions, actionRangeHighlight, msg) {
-		delta := navDeltaFromKeyName(keyName)
+		delta := navDeltaFromKeyName(normalizeKeyName(msg.String()))
 		if delta != 0 {
 			m.moveCursorWithShift(delta, filtered, visible)
 		}

@@ -16,7 +16,7 @@ func TestSettingsConfirmSpecFor(t *testing.T) {
 			wantSpec: settingsConfirmSpec{
 				scope:    scopeSettingsActiveCategories,
 				action:   actionDelete,
-				fallback: "d",
+				fallback: "del",
 			},
 		},
 		{
@@ -26,7 +26,7 @@ func TestSettingsConfirmSpecFor(t *testing.T) {
 			wantSpec: settingsConfirmSpec{
 				scope:    scopeSettingsActiveTags,
 				action:   actionDelete,
-				fallback: "d",
+				fallback: "del",
 			},
 		},
 		{
@@ -36,7 +36,7 @@ func TestSettingsConfirmSpecFor(t *testing.T) {
 			wantSpec: settingsConfirmSpec{
 				scope:    scopeSettingsActiveRules,
 				action:   actionDelete,
-				fallback: "d",
+				fallback: "del",
 			},
 		},
 		{

@@ -224,7 +224,7 @@ func TestRenderPickerIncludesSectionsSearchAndCreate(t *testing.T) {
 	if !strings.Contains(view, `Create "zz"`) {
 		t.Fatalf("expected create row in view:\n%s", view)
 	}
-	if !strings.Contains(view, "navigate") || !strings.Contains(view, "cancel") {
+	if !strings.Contains(view, "move") || !strings.Contains(view, "cancel") {
 		t.Fatalf("expected action footer in view:\n%s", view)
 	}
 }

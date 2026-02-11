@@ -344,7 +344,7 @@ func renderCommandPalette(query string, matches []CommandMatch, cursor, width in
 	lines = append(lines, sectionDividerStyle.Render(strings.Repeat("─", max(1, width))))
 	lines = append(lines, renderCommandLines(matches, cursor, width, 8)...)
 	footer := strings.Join([]string{
-		renderActionHint(keys, scopeCommandPalette, actionNavigate, "j/k", "navigate"),
+		renderActionHint(keys, scopeCommandPalette, actionDown, "j", "move"),
 		renderActionHint(keys, scopeCommandPalette, actionSelect, "enter", "run"),
 		renderActionHint(keys, scopeCommandPalette, actionClose, "esc", "close"),
 	}, "  ")
@@ -1923,7 +1923,13 @@ func renderSettingsCategories(m model, width int) string {
 			colorRow += swatch + " "
 		}
 		lines = append(lines, modalCursor(m.settCatFocus == 1)+detailLabelStyle.Render("Color: ")+colorRow)
-		lines = append(lines, scrollStyle.Render("j/k field  h/l adjust  enter save  esc cancel"))
+		lines = append(lines, scrollStyle.Render(fmt.Sprintf(
+			"%s field  %s adjust  %s save  %s cancel",
+			actionKeyLabel(m.keys, scopeSettingsModeCat, actionDown, "j"),
+			actionKeyLabel(m.keys, scopeSettingsModeCat, actionRight, "l"),
+			actionKeyLabel(m.keys, scopeSettingsModeCat, actionSave, "enter"),
+			actionKeyLabel(m.keys, scopeSettingsModeCat, actionClose, "esc"),
+		)))
 	}
 	_ = width
 	return strings.Join(lines, "\n")
@@ -1977,7 +1983,13 @@ func renderSettingsTags(m model, width int) string {
 			scopeName = fmt.Sprintf("Category: %s", categoryNameForID(m.categories, m.settTagScopeID))
 		}
 		lines = append(lines, modalCursor(m.settTagFocus == 2)+detailLabelStyle.Render("Scope: ")+detailValueStyle.Render(scopeName))
-		lines = append(lines, scrollStyle.Render("j/k field  h/l adjust  enter save  esc cancel"))
+		lines = append(lines, scrollStyle.Render(fmt.Sprintf(
+			"%s field  %s adjust  %s save  %s cancel",
+			actionKeyLabel(m.keys, scopeSettingsModeTag, actionDown, "j"),
+			actionKeyLabel(m.keys, scopeSettingsModeTag, actionRight, "l"),
+			actionKeyLabel(m.keys, scopeSettingsModeTag, actionSave, "enter"),
+			actionKeyLabel(m.keys, scopeSettingsModeTag, actionClose, "esc"),
+		)))
 	}
 	_ = width
 	return strings.Join(lines, "\n")
@@ -2072,7 +2084,12 @@ func renderSettingsChart(m model, width int) string {
 	lines = append(lines, renderInfoPair("Minor grid:     ", fmt.Sprintf("every %d day(s)", minor)))
 	lines = append(lines, renderInfoPair("Major grid:     ", major))
 	lines = append(lines, "")
-	lines = append(lines, scrollStyle.Render("h/l or enter to toggle boundary"))
+	lines = append(lines, scrollStyle.Render(fmt.Sprintf(
+		"%s/%s or %s to toggle boundary",
+		actionKeyLabel(m.keys, scopeSettingsActiveChart, actionLeft, "h"),
+		actionKeyLabel(m.keys, scopeSettingsActiveChart, actionRight, "l"),
+		actionKeyLabel(m.keys, scopeSettingsActiveChart, actionConfirm, "enter"),
+	)))
 
 	_ = width
 	return strings.Join(lines, "\n")
@@ -2142,8 +2159,8 @@ func renderManagerAccountModal(m model) string {
 
 	footer := fmt.Sprintf(
 		"%s field  %s toggle  %s save  %s cancel",
-		actionKeyLabel(m.keys, scopeManagerModal, actionNavigate, "j/k"),
-		actionKeyLabel(m.keys, scopeManagerModal, actionColor, "h/l"),
+		actionKeyLabel(m.keys, scopeManagerModal, actionDown, "j"),
+		actionKeyLabel(m.keys, scopeManagerModal, actionRight, "l"),
 		actionKeyLabel(m.keys, scopeManagerModal, actionSave, "enter"),
 		actionKeyLabel(m.keys, scopeManagerModal, actionClose, "esc"),
 	)
