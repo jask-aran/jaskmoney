@@ -99,12 +99,27 @@ This prevents accidental saves/quits or color/scope changes while typing names.
 
 - Key behavior is action/scope driven through `KeyRegistry`.
 - Footer hints derive from registry bindings, not hardcoded strings.
+- Primitive movement actions are canonical:
+  - `up`, `down`, `left`, `right`
+  - legacy names (`navigate`, `column`, `color`, `section`, `select_item`) are
+    compatibility aliases only.
 - Global direct tab shortcuts are first-class:
   - `1` -> Manager (transactions mode)
   - `2` -> Dashboard
   - `3` -> Settings
 - Tab shortcuts must work from settings navigation and active-settings contexts,
   not only from top-level tab routing.
+
+Recommended `keybindings.toml` structure:
+
+- Keep runtime override input as one flat `[bindings]` action map (current
+  implementation) to avoid sparse per-scope table sprawl.
+- Treat primitive actions as universal semantic keys:
+  - `confirm`, `cancel`, `up`, `down`, `left`, `right`, `delete`
+- Keep scope-specific actions only where semantics are context-exclusive
+  (`import`, `apply_all`, `nuke_account`, etc.).
+- Scope routing remains in code (`keys.go`), while the TOML remains a compact
+  action override layer.
 
 ### 3.5 Status Semantics
 
