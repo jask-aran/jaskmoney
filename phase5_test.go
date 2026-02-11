@@ -160,30 +160,30 @@ func TestPhase5QuickCategorizeBulkKeepsSelection(t *testing.T) {
 	}
 }
 
-func TestPhase5QuickCategorizeCreateInline(t *testing.T) {
+func TestPhase5QuickCategorizeCreateDisabled(t *testing.T) {
 	m, cleanup := testPhase5Model(t)
 	defer cleanup()
 
 	m2, _ := m.Update(keyMsg("c"))
 	got := m2.(model)
+	if got.catPicker == nil {
+		t.Fatal("expected picker open")
+	}
 	got.catPicker.SetQuery("Phase5 Created Cat")
+	if got.catPicker.shouldShowCreate() {
+		t.Fatal("quick categorize should not offer create row")
+	}
 
 	m3, cmd := got.Update(keyMsg("enter"))
 	got2 := m3.(model)
-	got3 := runCmdUpdate(t, got2, cmd)
-
-	targetID := got.catPickerFor[0]
-	var found bool
-	for i := range got3.rows {
-		if got3.rows[i].id == targetID {
-			found = true
-			if got3.rows[i].categoryName != "Phase5 Created Cat" {
-				t.Fatalf("category = %q, want created category", got3.rows[i].categoryName)
-			}
-		}
+	if cmd != nil {
+		t.Fatal("enter on unknown category should not schedule a command")
 	}
-	if !found {
-		t.Fatalf("target txn %d not found", targetID)
+	if got2.catPicker == nil {
+		t.Fatal("picker should remain open when no category is selected")
+	}
+	if got2.status != "" {
+		t.Fatalf("status should remain unchanged, got %q", got2.status)
 	}
 }
 
@@ -206,7 +206,7 @@ func TestPhase5QuickCategorizeEscCancels(t *testing.T) {
 
 func TestPhase5FooterBindingsUseCategoryPickerScope(t *testing.T) {
 	m := newModel()
-	m.catPicker = newPicker("Quick Categorize", nil, false, "Create")
+	m.catPicker = newPicker("Quick Categorize", nil, false, "")
 
 	bindings := m.footerBindings()
 	if len(bindings) != 3 {
@@ -299,7 +299,7 @@ func TestPhase5QuickTagEnterTogglesOnAndOffForSingleTxn(t *testing.T) {
 	if got.tagPicker == nil {
 		t.Fatal("expected quick tag picker open")
 	}
-	got.tagPicker.SetQuery("Phase5 Toggle")
+	got.tagPicker.SetQuery("PHASE5 TOGGLE")
 
 	m3, cmd := got.Update(keyMsg("enter"))
 	got2 := m3.(model)
@@ -307,7 +307,7 @@ func TestPhase5QuickTagEnterTogglesOnAndOffForSingleTxn(t *testing.T) {
 	if got3.tagPicker != nil {
 		t.Fatal("tag picker should close after enter toggle")
 	}
-	if got3.status != `Tag "Phase5 Toggle" added to 1 transaction(s).` {
+	if got3.status != `Tag "PHASE5 TOGGLE" added to 1 transaction(s).` {
 		t.Fatalf("unexpected status after add: %q", got3.status)
 	}
 	current, err := loadTransactionTags(m.db)
@@ -327,10 +327,10 @@ func TestPhase5QuickTagEnterTogglesOnAndOffForSingleTxn(t *testing.T) {
 
 	m4, _ := got3.Update(keyMsg("t"))
 	got4 := m4.(model)
-	got4.tagPicker.SetQuery("Phase5 Toggle")
+	got4.tagPicker.SetQuery("PHASE5 TOGGLE")
 	m5, cmd := got4.Update(keyMsg("enter"))
 	got5 := runCmdUpdate(t, m5.(model), cmd)
-	if got5.status != `Tag "Phase5 Toggle" removed from 1 transaction(s).` {
+	if got5.status != `Tag "PHASE5 TOGGLE" removed from 1 transaction(s).` {
 		t.Fatalf("unexpected status after remove: %q", got5.status)
 	}
 	current2, err := loadTransactionTags(m.db)
@@ -374,11 +374,11 @@ func TestPhase5QuickTagEnterToggleMultiTargetMixedNormalizesOn(t *testing.T) {
 	if got.tagPicker == nil {
 		t.Fatal("expected quick tag picker open")
 	}
-	got.tagPicker.SetQuery("Phase5 Multi")
+	got.tagPicker.SetQuery("PHASE5 MULTI")
 
 	m3, cmd := got.Update(keyMsg("enter"))
 	got2 := runCmdUpdate(t, m3.(model), cmd)
-	if got2.status != `Tag "Phase5 Multi" added to 2 transaction(s).` {
+	if got2.status != `Tag "PHASE5 MULTI" added to 2 transaction(s).` {
 		t.Fatalf("unexpected status: %q", got2.status)
 	}
 
@@ -442,10 +442,10 @@ func TestPhase5QuickTagEnterAppliesAllDirtyChanges(t *testing.T) {
 		t.Fatal("expected quick tag picker open")
 	}
 
-	got.tagPicker.SetQuery("Phase5 Patch Add")
+	got.tagPicker.SetQuery("PHASE5 PATCH ADD")
 	m3a, _ := got.Update(keyMsg("space"))
 	got = m3a.(model)
-	got.tagPicker.SetQuery("Phase5 Patch Remove")
+	got.tagPicker.SetQuery("PHASE5 PATCH REMOVE")
 	m3b, _ := got.Update(keyMsg("space"))
 	got = m3b.(model)
 	got.tagPicker.SetQuery("")
@@ -477,5 +477,58 @@ func TestPhase5QuickTagEnterAppliesAllDirtyChanges(t *testing.T) {
 		if hasRemove {
 			t.Fatalf("txn %d should not have remove tag", id)
 		}
+	}
+}
+
+func TestPhase5QuickTagPickerSectionOrderScopedGlobalUnscoped(t *testing.T) {
+	m, cleanup := testPhase5Model(t)
+	defer cleanup()
+
+	cats, err := loadCategories(m.db)
+	if err != nil {
+		t.Fatalf("loadCategories: %v", err)
+	}
+	if len(cats) < 3 {
+		t.Fatal("expected at least three categories")
+	}
+	filtered := m.getFilteredRows()
+	if len(filtered) == 0 {
+		t.Fatal("expected at least one transaction")
+	}
+	targetID := filtered[m.cursor].id
+	scopedCategoryID := cats[1].id
+	otherCategoryID := cats[2].id
+	if err := updateTransactionCategory(m.db, targetID, &scopedCategoryID); err != nil {
+		t.Fatalf("updateTransactionCategory: %v", err)
+	}
+	if _, err := insertTag(m.db, "LOCAL", "#89b4fa", &scopedCategoryID); err != nil {
+		t.Fatalf("insert scoped tag: %v", err)
+	}
+	if _, err := insertTag(m.db, "GLOBALTAG", "#94e2d5", nil); err != nil {
+		t.Fatalf("insert global tag: %v", err)
+	}
+	if _, err := insertTag(m.db, "OUTSIDE", "#fab387", &otherCategoryID); err != nil {
+		t.Fatalf("insert unscoped tag: %v", err)
+	}
+	m.rows, err = loadRows(m.db)
+	if err != nil {
+		t.Fatalf("loadRows: %v", err)
+	}
+	m.tags, err = loadTags(m.db)
+	if err != nil {
+		t.Fatalf("loadTags: %v", err)
+	}
+
+	m2, _ := m.Update(keyMsg("t"))
+	got := m2.(model)
+	if got.tagPicker == nil {
+		t.Fatal("expected quick tag picker open")
+	}
+	order := got.tagPicker.sectionOrder()
+	if len(order) < 3 {
+		t.Fatalf("section order = %v, want scoped/global/unscoped", order)
+	}
+	if order[0] != "Scoped" || order[1] != "Global" || order[2] != "Unscoped" {
+		t.Fatalf("section order = %v, want [Scoped Global Unscoped ...]", order)
 	}
 }

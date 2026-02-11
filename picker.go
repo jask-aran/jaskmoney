@@ -80,9 +80,6 @@ func newPicker(title string, items []pickerItem, multiSelect bool, createLabel s
 		title:       title,
 		createLabel: strings.TrimSpace(createLabel),
 	}
-	if p.createLabel == "" {
-		p.createLabel = "Create"
-	}
 	p.SetItems(items)
 	return p
 }
@@ -548,6 +545,9 @@ func (p *pickerState) sectionOrder() []string {
 
 func (p *pickerState) shouldShowCreate() bool {
 	if p == nil {
+		return false
+	}
+	if strings.TrimSpace(p.createLabel) == "" {
 		return false
 	}
 	q := strings.TrimSpace(p.query)

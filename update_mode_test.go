@@ -165,21 +165,15 @@ func TestDetailAndSearchFlows(t *testing.T) {
 
 	next, _ = got3.updateDetail(keyMsg("esc"))
 	got4 := next.(model)
+	if got4.showDetail {
+		t.Fatal("detail modal should close on esc while notes editor is active")
+	}
 	if got4.detailEditing != "" {
-		t.Fatalf("detailEditing should close, got %q", got4.detailEditing)
+		t.Fatalf("detailEditing should clear when closing modal, got %q", got4.detailEditing)
 	}
 
-	next, cmd := got4.updateDetail(keyMsg("enter"))
-	got5 := next.(model)
-	if cmd != nil {
-		t.Fatal("expected nil cmd when saving detail without db")
-	}
-	if !got5.showDetail {
-		t.Fatal("detail modal should remain open without DB")
-	}
-
-	got5.searchMode = true
-	next, _ = got5.updateSearch(keyMsg("a"))
+	got4.searchMode = true
+	next, _ = got4.updateSearch(keyMsg("a"))
 	got6 := next.(model)
 	if got6.searchQuery != "a" {
 		t.Fatalf("searchQuery = %q, want a", got6.searchQuery)

@@ -1815,9 +1815,12 @@ func renderSettingsContent(m model) string {
 	chartBox := renderSettingsSectionBox("Chart", settSecChart, m, rightWidth, chartContent)
 
 	dbContent := renderSettingsDBImport(m, rightWidth-4)
-	dbBox := renderSettingsSectionBox("Database & Imports", settSecDBImport, m, rightWidth, dbContent)
+	dbBox := renderSettingsSectionBox("Database", settSecDBImport, m, rightWidth, dbContent)
 
-	rightCol := chartBox + "\n" + dbBox
+	importContent := renderSettingsImportHistory(m, rightWidth-4)
+	importBox := renderSettingsSectionBox("Import History", settSecImportHistory, m, rightWidth, importContent)
+
+	rightCol := chartBox + "\n" + dbBox + "\n" + importBox
 
 	return lipgloss.JoinHorizontal(lipgloss.Top, leftCol, strings.Repeat(" ", gap), rightCol)
 }
@@ -1826,29 +1829,7 @@ func renderSettingsContent(m model) string {
 func renderSettingsSectionBox(title string, sec int, m model, width int, content string) string {
 	isFocused := m.settSection == sec
 	isActive := isFocused && m.settActive
-
-	style := settingsInactiveBorderStyle
-	titleSty := lipgloss.NewStyle().Foreground(colorSubtext0).Bold(true)
-	if isFocused {
-		style = settingsActiveBorderStyle
-		titleSty = lipgloss.NewStyle().Foreground(colorAccent).Bold(true)
-	}
-
-	indicator := ""
-	if isActive {
-		indicator = lipgloss.NewStyle().Foreground(colorAccent).Render(" *")
-	}
-
-	header := titleSty.Render(title) + indicator
-	sepStyle := lipgloss.NewStyle().Foreground(colorSurface2)
-	innerWidth := width - style.GetHorizontalFrameSize()
-	if innerWidth < 1 {
-		innerWidth = 1
-	}
-	separator := sepStyle.Render(strings.Repeat("─", innerWidth))
-	body := header + "\n" + separator + "\n" + content
-
-	return style.Width(width).Render(body)
+	return renderManagerSectionBox(title, isFocused, isActive, width, content)
 }
 
 func renderManagerSectionBox(title string, isFocused, isActive bool, width int, content string) string {
@@ -1902,27 +1883,6 @@ func renderManagerAccountStrip(m model, showCursor bool, width int) string {
 func renderSettingsCategories(m model, width int) string {
 	var lines []string
 
-	// Input mode overlays
-	if m.settMode == settModeAddCat || m.settMode == settModeEditCat {
-		label := "Add Category"
-		if m.settMode == settModeEditCat {
-			label = "Edit Category"
-		}
-		lines = append(lines, detailActiveStyle.Render(label))
-		lines = append(lines, detailLabelStyle.Render("Name: ")+detailValueStyle.Render(m.settInput+"_"))
-		colors := CategoryAccentColors()
-		var colorRow string
-		for i, c := range colors {
-			swatch := lipgloss.NewStyle().Foreground(c).Render("■")
-			if i == m.settColorIdx {
-				swatch = lipgloss.NewStyle().Foreground(c).Bold(true).Render("[■]")
-			}
-			colorRow += swatch + " "
-		}
-		lines = append(lines, detailLabelStyle.Render("Color: ")+colorRow)
-		return strings.Join(lines, "\n")
-	}
-
 	showCursor := m.settSection == settSecCategories && m.settActive
 	for i, cat := range m.categories {
 		prefix := "  "
@@ -1940,20 +1900,20 @@ func renderSettingsCategories(m model, width int) string {
 	if len(lines) == 0 {
 		lines = append(lines, lipgloss.NewStyle().Foreground(colorOverlay1).Render("No categories."))
 	}
-	return strings.Join(lines, "\n")
-}
 
-func renderSettingsTags(m model, width int) string {
-	var lines []string
-
-	if m.settMode == settModeAddTag || m.settMode == settModeEditTag {
-		label := "Add Tag"
-		if m.settMode == settModeEditTag {
-			label = "Edit Tag"
+	if m.settMode == settModeAddCat || m.settMode == settModeEditCat {
+		lines = append(lines, "")
+		label := "Add Category"
+		if m.settMode == settModeEditCat {
+			label = "Edit Category"
 		}
 		lines = append(lines, detailActiveStyle.Render(label))
-		lines = append(lines, detailLabelStyle.Render("Name: ")+detailValueStyle.Render(m.settInput+"_"))
-		colors := TagAccentColors()
+		nameValue := m.settInput
+		if m.settCatFocus == 0 {
+			nameValue += "_"
+		}
+		lines = append(lines, modalCursor(m.settCatFocus == 0)+detailLabelStyle.Render("Name: ")+detailValueStyle.Render(nameValue))
+		colors := CategoryAccentColors()
 		var colorRow string
 		for i, c := range colors {
 			swatch := lipgloss.NewStyle().Foreground(c).Render("■")
@@ -1962,10 +1922,15 @@ func renderSettingsTags(m model, width int) string {
 			}
 			colorRow += swatch + " "
 		}
-		lines = append(lines, detailLabelStyle.Render("Color: ")+colorRow)
-		_ = width
-		return strings.Join(lines, "\n")
+		lines = append(lines, modalCursor(m.settCatFocus == 1)+detailLabelStyle.Render("Color: ")+colorRow)
+		lines = append(lines, scrollStyle.Render("j/k field  h/l adjust  enter save  esc cancel"))
 	}
+	_ = width
+	return strings.Join(lines, "\n")
+}
+
+func renderSettingsTags(m model, width int) string {
+	var lines []string
 
 	showCursor := m.settSection == settSecTags && m.settActive
 	for i, tg := range m.tags {
@@ -1975,13 +1940,56 @@ func renderSettingsTags(m model, width int) string {
 		}
 		swatch := lipgloss.NewStyle().Foreground(lipgloss.Color(tg.color)).Render("■")
 		nameStyle := lipgloss.NewStyle().Foreground(colorText)
-		lines = append(lines, prefix+swatch+" "+nameStyle.Render(tg.name))
+		scopeLabel := " (global)"
+		if tg.categoryID != nil {
+			scopeLabel = " (" + categoryNameForID(m.categories, *tg.categoryID) + ")"
+		}
+		lines = append(lines, prefix+swatch+" "+nameStyle.Render(tg.name)+lipgloss.NewStyle().Foreground(colorOverlay1).Render(scopeLabel))
 	}
 	if len(lines) == 0 {
 		lines = append(lines, lipgloss.NewStyle().Foreground(colorOverlay1).Render("No tags. Activate to add."))
 	}
+
+	if m.settMode == settModeAddTag || m.settMode == settModeEditTag {
+		lines = append(lines, "")
+		label := "Add Tag"
+		if m.settMode == settModeEditTag {
+			label = "Edit Tag"
+		}
+		lines = append(lines, detailActiveStyle.Render(label))
+		nameValue := m.settInput
+		if m.settTagFocus == 0 {
+			nameValue += "_"
+		}
+		lines = append(lines, modalCursor(m.settTagFocus == 0)+detailLabelStyle.Render("Name: ")+detailValueStyle.Render(nameValue))
+		colors := TagAccentColors()
+		var colorRow string
+		for i, c := range colors {
+			swatch := lipgloss.NewStyle().Foreground(c).Render("■")
+			if i == m.settColorIdx {
+				swatch = lipgloss.NewStyle().Foreground(c).Bold(true).Render("[■]")
+			}
+			colorRow += swatch + " "
+		}
+		lines = append(lines, modalCursor(m.settTagFocus == 1)+detailLabelStyle.Render("Color: ")+colorRow)
+		scopeName := "Global"
+		if m.settTagScopeID != 0 {
+			scopeName = fmt.Sprintf("Category: %s", categoryNameForID(m.categories, m.settTagScopeID))
+		}
+		lines = append(lines, modalCursor(m.settTagFocus == 2)+detailLabelStyle.Render("Scope: ")+detailValueStyle.Render(scopeName))
+		lines = append(lines, scrollStyle.Render("j/k field  h/l adjust  enter save  esc cancel"))
+	}
 	_ = width
 	return strings.Join(lines, "\n")
+}
+
+func categoryNameForID(categories []category, id int) string {
+	for _, c := range categories {
+		if c.id == id {
+			return c.name
+		}
+	}
+	return fmt.Sprintf("Category %d", id)
 }
 
 func renderSettingsRules(m model, width int) string {
@@ -2080,12 +2088,12 @@ func renderSettingsDBImport(m model, width int) string {
 	lines = append(lines, renderInfoPair("Accounts:        ", fmt.Sprintf("%d", info.accountCount)))
 	lines = append(lines, renderInfoPair("Rows per page:   ", fmt.Sprintf("%d", m.maxVisibleRows)))
 	lines = append(lines, renderInfoPair("Command default: ", commandDefaultLabel(m.commandDefault)))
-	lines = append(lines, "")
+	_ = width
+	return strings.Join(lines, "\n")
+}
 
-	// Import history
-	lines = append(lines, sectionTitleStyle.Render("Import History"))
-	lines = append(lines, sectionDividerStyle.Render(strings.Repeat("─", width)))
-
+func renderSettingsImportHistory(m model, width int) string {
+	var lines []string
 	if len(m.imports) == 0 {
 		lines = append(lines, lipgloss.NewStyle().Foreground(colorOverlay1).Render("No imports yet."))
 	} else {
@@ -2096,7 +2104,7 @@ func renderSettingsDBImport(m model, width int) string {
 			lines = append(lines, fname+"  "+count+"  "+date)
 		}
 	}
-
+	_ = width
 	return strings.Join(lines, "\n")
 }
 

@@ -511,7 +511,7 @@ func moveSettingsSection(section, delta int) int {
 	col, row := settColumnRow(section)
 	rowCount := 3
 	if col == settColRight {
-		rowCount = 2
+		rowCount = 3
 	}
 	if rowCount <= 0 {
 		return section
@@ -553,12 +553,14 @@ func (m *model) beginSettingsCategoryMode(cat *category) {
 		m.settEditID = 0
 		m.settInput = ""
 		m.settColorIdx = 0
+		m.settCatFocus = 0
 		return
 	}
 	m.settMode = settModeEditCat
 	m.settEditID = cat.id
 	m.settInput = cat.name
 	m.settColorIdx = categoryColorIndex(cat.color)
+	m.settCatFocus = 0
 }
 
 func (m *model) beginSettingsTagMode(tg *tag) {
@@ -567,12 +569,20 @@ func (m *model) beginSettingsTagMode(tg *tag) {
 		m.settEditID = 0
 		m.settInput = ""
 		m.settColorIdx = 0
+		m.settTagFocus = 0
+		m.settTagScopeID = 0
 		return
 	}
 	m.settMode = settModeEditTag
 	m.settEditID = tg.id
 	m.settInput = tg.name
 	m.settColorIdx = tagColorIndex(tg.color)
+	m.settTagFocus = 0
+	if tg.categoryID == nil {
+		m.settTagScopeID = 0
+	} else {
+		m.settTagScopeID = *tg.categoryID
+	}
 }
 
 func (m *model) beginSettingsRuleMode(rule *categoryRule) {

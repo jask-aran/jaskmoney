@@ -1176,6 +1176,24 @@ func TestTagCRUDAndRuleApplication(t *testing.T) {
 	if !foundInserted {
 		t.Fatalf("tags = %+v, expected inserted id=%d", tags, tagID)
 	}
+	categories, err := loadCategories(db)
+	if err != nil {
+		t.Fatalf("loadCategories: %v", err)
+	}
+	if len(categories) == 0 {
+		t.Fatal("expected seeded categories")
+	}
+	scopeCatID := categories[0].id
+	if err := updateTag(db, tagID, "groceries", "#94e2d5", &scopeCatID); err != nil {
+		t.Fatalf("updateTag with scope: %v", err)
+	}
+	updatedTag, err := loadTagByNameCI(db, "groceries")
+	if err != nil {
+		t.Fatalf("loadTagByNameCI after update: %v", err)
+	}
+	if updatedTag == nil || updatedTag.categoryID == nil || *updatedTag.categoryID != scopeCatID {
+		t.Fatalf("updated tag scope = %+v, want category_id=%d", updatedTag, scopeCatID)
+	}
 
 	if _, err := insertTagRule(db, "WOOLWORTHS", tagID); err != nil {
 		t.Fatalf("insertTagRule: %v", err)
@@ -1196,6 +1214,131 @@ func TestTagCRUDAndRuleApplication(t *testing.T) {
 	}
 	if len(txnTags) != 1 {
 		t.Fatalf("expected tags on one transaction, got %+v", txnTags)
+	}
+}
+
+func TestTagNamesNormalizeToUppercase(t *testing.T) {
+	db, cleanup := testDB(t)
+	defer cleanup()
+
+	tagID, err := insertTag(db, "groceries", "#94e2d5", nil)
+	if err != nil {
+		t.Fatalf("insertTag: %v", err)
+	}
+	stored, err := loadTagByNameCI(db, "groceries")
+	if err != nil {
+		t.Fatalf("loadTagByNameCI: %v", err)
+	}
+	if stored == nil || stored.id != tagID {
+		t.Fatalf("stored tag = %+v, want id=%d", stored, tagID)
+	}
+	if stored.name != "GROCERIES" {
+		t.Fatalf("stored name = %q, want %q", stored.name, "GROCERIES")
+	}
+
+	if err := updateTag(db, tagID, "weekly spend", "#89b4fa", nil); err != nil {
+		t.Fatalf("updateTag: %v", err)
+	}
+	stored, err = loadTagByNameCI(db, "weekly spend")
+	if err != nil {
+		t.Fatalf("loadTagByNameCI after update: %v", err)
+	}
+	if stored == nil {
+		t.Fatal("expected updated tag")
+	}
+	if stored.name != "WEEKLY SPEND" {
+		t.Fatalf("updated name = %q, want %q", stored.name, "WEEKLY SPEND")
+	}
+}
+
+func TestNormalizeExistingTagNamesMergesCaseDuplicates(t *testing.T) {
+	db, cleanup := testDB(t)
+	defer cleanup()
+
+	res, err := db.Exec(`INSERT INTO tags (name, color, category_id, sort_order) VALUES ('mixed', '#89b4fa', NULL, 100)`)
+	if err != nil {
+		t.Fatalf("insert mixed tag: %v", err)
+	}
+	firstID64, err := res.LastInsertId()
+	if err != nil {
+		t.Fatalf("last id first tag: %v", err)
+	}
+	firstID := int(firstID64)
+
+	res, err = db.Exec(`INSERT INTO tags (name, color, category_id, sort_order) VALUES ('MIXED', '#94e2d5', NULL, 101)`)
+	if err != nil {
+		t.Fatalf("insert duplicate-case tag: %v", err)
+	}
+	secondID64, err := res.LastInsertId()
+	if err != nil {
+		t.Fatalf("last id second tag: %v", err)
+	}
+	secondID := int(secondID64)
+
+	res, err = db.Exec(`
+		INSERT INTO transactions (date_raw, date_iso, amount, description, notes)
+		VALUES ('03/02/2026', '2026-02-03', -10.00, 'MERGE CASE TAGS', '')
+	`)
+	if err != nil {
+		t.Fatalf("insert transaction: %v", err)
+	}
+	txnID64, err := res.LastInsertId()
+	if err != nil {
+		t.Fatalf("last id txn: %v", err)
+	}
+	txnID := int(txnID64)
+
+	if _, err := db.Exec(`INSERT INTO transaction_tags (transaction_id, tag_id) VALUES (?, ?)`, txnID, firstID); err != nil {
+		t.Fatalf("insert transaction tag first: %v", err)
+	}
+	if _, err := db.Exec(`INSERT INTO transaction_tags (transaction_id, tag_id) VALUES (?, ?)`, txnID, secondID); err != nil {
+		t.Fatalf("insert transaction tag second: %v", err)
+	}
+	if _, err := db.Exec(`INSERT INTO tag_rules (pattern, tag_id, priority) VALUES ('MERGECASE', ?, 0)`, secondID); err != nil {
+		t.Fatalf("insert tag rule duplicate: %v", err)
+	}
+
+	if err := normalizeExistingTagNames(db); err != nil {
+		t.Fatalf("normalizeExistingTagNames: %v", err)
+	}
+
+	rows, err := db.Query(`SELECT id, name FROM tags WHERE LOWER(name) = LOWER('MIXED')`)
+	if err != nil {
+		t.Fatalf("query merged tags: %v", err)
+	}
+	defer rows.Close()
+	ids := []int{}
+	names := []string{}
+	for rows.Next() {
+		var id int
+		var name string
+		if err := rows.Scan(&id, &name); err != nil {
+			t.Fatalf("scan merged tag: %v", err)
+		}
+		ids = append(ids, id)
+		names = append(names, name)
+	}
+	if len(ids) != 1 {
+		t.Fatalf("merged tag rows = %v names=%v, want single uppercase tag", ids, names)
+	}
+	if names[0] != "MIXED" {
+		t.Fatalf("merged tag name = %q, want %q", names[0], "MIXED")
+	}
+
+	var txnTagCount int
+	if err := db.QueryRow(`SELECT COUNT(*) FROM transaction_tags WHERE transaction_id = ?`, txnID).Scan(&txnTagCount); err != nil {
+		t.Fatalf("count transaction tags after merge: %v", err)
+	}
+	if txnTagCount != 1 {
+		t.Fatalf("transaction tag count = %d, want 1 after merge", txnTagCount)
+	}
+
+	var mappedRuleTagID int
+	if err := db.QueryRow(`SELECT tag_id FROM tag_rules WHERE pattern = 'MERGECASE'`).Scan(&mappedRuleTagID); err != nil {
+		t.Fatalf("load tag rule after merge: %v", err)
+	}
+	if mappedRuleTagID != ids[0] {
+		t.Fatalf("tag rule mapped to %d, want %d", mappedRuleTagID, ids[0])
 	}
 }
 

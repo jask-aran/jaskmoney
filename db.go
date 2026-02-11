@@ -166,6 +166,10 @@ func openDB(path string) (*sql.DB, error) {
 		_ = db.Close()
 		return nil, fmt.Errorf("ensure mandatory tags: %w", err)
 	}
+	if err := normalizeExistingTagNames(db); err != nil {
+		_ = db.Close()
+		return nil, fmt.Errorf("normalize existing tags: %w", err)
+	}
 
 	return db, nil
 }
@@ -308,6 +312,110 @@ func ensureMandatoryTags(db *sql.DB) error {
 		if _, err := insertTag(db, t.name, t.color, nil); err != nil {
 			return fmt.Errorf("insert mandatory tag %q: %w", t.name, err)
 		}
+	}
+	return nil
+}
+
+func normalizeTagName(name string) string {
+	return strings.ToUpper(strings.TrimSpace(name))
+}
+
+func normalizeExistingTagNames(db *sql.DB) error {
+	tx, err := db.Begin()
+	if err != nil {
+		return fmt.Errorf("begin normalize tags: %w", err)
+	}
+	defer tx.Rollback() //nolint:errcheck
+
+	rows, err := tx.Query(`
+		SELECT id, name
+		FROM tags
+		ORDER BY sort_order ASC, id ASC
+	`)
+	if err != nil {
+		return fmt.Errorf("query tags for normalization: %w", err)
+	}
+	defer rows.Close()
+
+	type rowTag struct {
+		id   int
+		name string
+	}
+	var tags []rowTag
+	for rows.Next() {
+		var t rowTag
+		if err := rows.Scan(&t.id, &t.name); err != nil {
+			return fmt.Errorf("scan tag for normalization: %w", err)
+		}
+		tags = append(tags, t)
+	}
+	if err := rows.Err(); err != nil {
+		return fmt.Errorf("iterate tags for normalization: %w", err)
+	}
+
+	keepers := make(map[string]int)
+	for _, tg := range tags {
+		normalized := normalizeTagName(tg.name)
+		if normalized == "" {
+			continue
+		}
+		if _, ok := keepers[normalized]; ok {
+			continue
+		}
+		keepers[normalized] = tg.id
+	}
+
+	for _, tg := range tags {
+		normalized := normalizeTagName(tg.name)
+		if normalized == "" {
+			continue
+		}
+		keeperID, ok := keepers[normalized]
+		if !ok {
+			continue
+		}
+		if tg.id == keeperID {
+			continue
+		}
+		if _, err := tx.Exec(`
+			INSERT INTO transaction_tags (transaction_id, tag_id)
+			SELECT transaction_id, ?
+			FROM transaction_tags
+			WHERE tag_id = ?
+			ON CONFLICT(transaction_id, tag_id) DO NOTHING
+		`, keeperID, tg.id); err != nil {
+			return fmt.Errorf("merge transaction tags %d->%d: %w", tg.id, keeperID, err)
+		}
+		if _, err := tx.Exec(`DELETE FROM transaction_tags WHERE tag_id = ?`, tg.id); err != nil {
+			return fmt.Errorf("delete duplicate transaction tags for %d: %w", tg.id, err)
+		}
+		if _, err := tx.Exec(`UPDATE tag_rules SET tag_id = ? WHERE tag_id = ?`, keeperID, tg.id); err != nil {
+			return fmt.Errorf("merge tag rules %d->%d: %w", tg.id, keeperID, err)
+		}
+		if _, err := tx.Exec(`DELETE FROM tags WHERE id = ?`, tg.id); err != nil {
+			return fmt.Errorf("delete duplicate tag %d: %w", tg.id, err)
+		}
+	}
+
+	for _, tg := range tags {
+		normalized := normalizeTagName(tg.name)
+		if normalized == "" {
+			continue
+		}
+		keeperID, ok := keepers[normalized]
+		if !ok || tg.id != keeperID {
+			continue
+		}
+		if tg.name == normalized {
+			continue
+		}
+		if _, err := tx.Exec(`UPDATE tags SET name = ? WHERE id = ?`, normalized, tg.id); err != nil {
+			return fmt.Errorf("normalize tag %d name: %w", tg.id, err)
+		}
+	}
+
+	if err := tx.Commit(); err != nil {
+		return fmt.Errorf("commit normalize tags: %w", err)
 	}
 	return nil
 }
@@ -692,6 +800,7 @@ func loadTags(db *sql.DB) ([]tag, error) {
 		if err := rows.Scan(&t.id, &t.name, &t.color, &t.categoryID, &t.sortOrder); err != nil {
 			return nil, fmt.Errorf("scan tag: %w", err)
 		}
+		t.name = normalizeTagName(t.name)
 		out = append(out, t)
 	}
 	return out, rows.Err()
@@ -711,10 +820,15 @@ func loadTagByNameCI(db *sql.DB, name string) (*tag, error) {
 	if err != nil {
 		return nil, fmt.Errorf("query tag by name: %w", err)
 	}
+	t.name = normalizeTagName(t.name)
 	return &t, nil
 }
 
 func insertTag(db *sql.DB, name, color string, categoryID *int) (int, error) {
+	name = normalizeTagName(name)
+	if name == "" {
+		return 0, fmt.Errorf("insert tag: name is required")
+	}
 	var maxOrder int
 	if err := db.QueryRow(`SELECT COALESCE(MAX(sort_order), 0) FROM tags`).Scan(&maxOrder); err != nil {
 		return 0, fmt.Errorf("max tag sort_order: %w", err)
@@ -736,11 +850,15 @@ func insertTag(db *sql.DB, name, color string, categoryID *int) (int, error) {
 	return int(lastID), nil
 }
 
-func updateTag(db *sql.DB, id int, name, color string) error {
+func updateTag(db *sql.DB, id int, name, color string, categoryID *int) error {
+	name = normalizeTagName(name)
+	if name == "" {
+		return fmt.Errorf("update tag: name is required")
+	}
 	if strings.TrimSpace(color) == "" {
 		color = autoTagColor(name)
 	}
-	if _, err := db.Exec(`UPDATE tags SET name = ?, color = ? WHERE id = ?`, name, color, id); err != nil {
+	if _, err := db.Exec(`UPDATE tags SET name = ?, color = ?, category_id = ? WHERE id = ?`, name, color, categoryID, id); err != nil {
 		return fmt.Errorf("update tag: %w", err)
 	}
 	return nil
@@ -814,6 +932,7 @@ func loadTransactionTags(db *sql.DB) (map[int][]tag, error) {
 		if err := rows.Scan(&txnID, &t.id, &t.name, &t.color, &t.categoryID, &t.sortOrder); err != nil {
 			return nil, fmt.Errorf("scan transaction tag: %w", err)
 		}
+		t.name = normalizeTagName(t.name)
 		out[txnID] = append(out[txnID], t)
 	}
 	return out, rows.Err()

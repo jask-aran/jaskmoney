@@ -50,6 +50,7 @@ const (
 	scopeSettingsActiveRules      = "settings_active_rules"
 	scopeSettingsActiveChart      = "settings_active_chart"
 	scopeSettingsActiveDBImport   = "settings_active_db_import"
+	scopeSettingsActiveImportHist = "settings_active_import_history"
 )
 
 const (
@@ -121,6 +122,9 @@ func NewKeyRegistry() *KeyRegistry {
 	reg(scopeGlobal, actionQuit, []string{"q", "ctrl+c"}, "quit")
 	reg(scopeGlobal, actionNextTab, []string{"tab"}, "next tab")
 	reg(scopeGlobal, actionPrevTab, []string{"shift+tab"}, "prev tab")
+	reg(scopeGlobal, actionCommandGoDashboard, []string{"1"}, "dashboard")
+	reg(scopeGlobal, actionCommandGoTransactions, []string{"2"}, "transactions")
+	reg(scopeGlobal, actionCommandGoSettings, []string{"3"}, "settings")
 	reg(scopeGlobal, actionCommandPalette, []string{"ctrl+k"}, "commands")
 	reg(scopeGlobal, actionCommandMode, []string{":"}, "command")
 
@@ -216,9 +220,11 @@ func NewKeyRegistry() *KeyRegistry {
 	reg(scopeSearch, actionConfirm, []string{"enter"}, "confirm")
 
 	// Settings mode footers.
+	reg(scopeSettingsModeCat, actionNavigate, []string{"j/k", "j", "k", "up", "down"}, "field")
 	reg(scopeSettingsModeCat, actionColor, []string{"h/l", "h", "left", "l", "right"}, "color")
 	reg(scopeSettingsModeCat, actionSave, []string{"enter"}, "save")
 	reg(scopeSettingsModeCat, actionClose, []string{"esc"}, "cancel")
+	reg(scopeSettingsModeTag, actionNavigate, []string{"j/k", "j", "k", "up", "down"}, "field")
 	reg(scopeSettingsModeTag, actionColor, []string{"h/l", "h", "left", "l", "right"}, "color")
 	reg(scopeSettingsModeTag, actionSave, []string{"enter"}, "save")
 	reg(scopeSettingsModeTag, actionClose, []string{"esc"}, "cancel")
@@ -232,12 +238,12 @@ func NewKeyRegistry() *KeyRegistry {
 	reg(scopeSettingsActiveCategories, actionNavigate, []string{"j/k", "j", "k", "up", "down"}, "navigate")
 	reg(scopeSettingsActiveCategories, actionBack, []string{"esc"}, "back")
 	reg(scopeSettingsActiveCategories, actionAdd, []string{"a"}, "add")
-	reg(scopeSettingsActiveCategories, actionEdit, []string{"e"}, "edit")
+	reg(scopeSettingsActiveCategories, actionSelect, []string{"enter"}, "edit")
 	reg(scopeSettingsActiveCategories, actionDelete, []string{"d"}, "delete")
 	reg(scopeSettingsActiveTags, actionNavigate, []string{"j/k", "j", "k", "up", "down"}, "navigate")
 	reg(scopeSettingsActiveTags, actionBack, []string{"esc"}, "back")
 	reg(scopeSettingsActiveTags, actionAdd, []string{"a"}, "add")
-	reg(scopeSettingsActiveTags, actionEdit, []string{"e"}, "edit")
+	reg(scopeSettingsActiveTags, actionSelect, []string{"enter"}, "edit")
 	reg(scopeSettingsActiveTags, actionDelete, []string{"d"}, "delete")
 	reg(scopeSettingsActiveRules, actionNavigate, []string{"j/k", "j", "k", "up", "down"}, "navigate")
 	reg(scopeSettingsActiveRules, actionBack, []string{"esc"}, "back")
@@ -256,6 +262,8 @@ func NewKeyRegistry() *KeyRegistry {
 	reg(scopeSettingsActiveDBImport, actionClearDB, []string{"c"}, "clear db")
 	reg(scopeSettingsActiveDBImport, actionImport, []string{"i"}, "import")
 	reg(scopeSettingsActiveDBImport, actionNukeAccount, []string{"N"}, "nuke account")
+	reg(scopeSettingsActiveImportHist, actionBack, []string{"esc"}, "back")
+	reg(scopeSettingsActiveImportHist, actionNavigate, []string{"j/k", "j", "k", "up", "down"}, "navigate")
 
 	// Settings navigation footer: h/l, j/k, enter, i, tab, q
 	reg(scopeSettingsNav, actionColumn, []string{"h/l", "h", "left", "l", "right"}, "column")

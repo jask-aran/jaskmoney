@@ -78,7 +78,11 @@ func (m model) updateDetail(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 
 func (m model) updateDetailNotes(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	switch {
-	case m.isAction(scopeDetailModal, actionClose, msg) || m.isAction(scopeDetailModal, actionSelect, msg):
+	case m.isAction(scopeDetailModal, actionClose, msg):
+		m.showDetail = false
+		m.detailEditing = ""
+		return m, nil
+	case m.isAction(scopeDetailModal, actionSelect, msg):
 		m.detailEditing = ""
 		return m, nil
 	case isBackspaceKey(msg):
