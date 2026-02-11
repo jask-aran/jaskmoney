@@ -288,14 +288,18 @@ func (p *pickerState) HandleMsg(msg tea.KeyMsg, matches func(Action, tea.KeyMsg)
 	if p == nil {
 		return pickerResult{Action: pickerActionNone}
 	}
-	keyName := normalizeKeyName(msg.String())
 
 	if matches(actionClose, msg) {
 		return pickerResult{Action: pickerActionCancelled}
 	}
-	if matches(actionNavigate, msg) {
+	if matches(actionUp, msg) || matches(actionDown, msg) {
 		before := p.cursor
-		delta := navDeltaFromKeyName(keyName)
+		delta := 0
+		if matches(actionUp, msg) {
+			delta = -1
+		} else if matches(actionDown, msg) {
+			delta = 1
+		}
 		if delta < 0 {
 			p.CursorUp()
 		} else if delta > 0 {
@@ -476,8 +480,8 @@ func renderPicker(p *pickerState, width int, keys *KeyRegistry, scope string) st
 	var footer string
 	if scope == scopeCategoryPicker || scope == scopeTagPicker {
 		footer = fmt.Sprintf(
-			"%s navigate  %s toggle  %s %s  %s cancel",
-			actionKeyLabel(keys, scope, actionNavigate, "j/k"),
+			"%s move  %s toggle  %s %s  %s cancel",
+			actionKeyLabel(keys, scope, actionDown, "j"),
 			actionKeyLabel(keys, scope, actionToggleSelect, "space"),
 			actionKeyLabel(keys, scope, actionSelect, "enter"),
 			selectDesc,
@@ -485,8 +489,8 @@ func renderPicker(p *pickerState, width int, keys *KeyRegistry, scope string) st
 		)
 		if !p.multiSelect {
 			footer = fmt.Sprintf(
-				"%s navigate  %s %s  %s cancel",
-				actionKeyLabel(keys, scope, actionNavigate, "j/k"),
+				"%s move  %s %s  %s cancel",
+				actionKeyLabel(keys, scope, actionDown, "j"),
 				actionKeyLabel(keys, scope, actionSelect, "enter"),
 				selectDesc,
 				actionKeyLabel(keys, scope, actionClose, "esc"),
@@ -495,7 +499,7 @@ func renderPicker(p *pickerState, width int, keys *KeyRegistry, scope string) st
 		footer = scrollStyle.Render(footer)
 	} else {
 		footerParts := []string{
-			renderActionHint(keys, scope, actionNavigate, "j/k", "navigate"),
+			renderActionHint(keys, scope, actionDown, "j", "move"),
 		}
 		if p.multiSelect {
 			footerParts = append(footerParts, renderActionHint(keys, scope, actionToggleSelect, "space", "toggle"))

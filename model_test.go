@@ -450,7 +450,8 @@ func TestSettingsDeleteDefaultBlocked(t *testing.T) {
 	m.settSection = settSecCategories
 	m.settItemCursor = 2 // Uncategorised (isDefault)
 
-	m2, _ := m.updateSettings(keyMsg("d"))
+	delKey := m.primaryActionKey(scopeSettingsActiveCategories, actionDelete, "del")
+	m2, _ := m.updateSettings(bindingKeyMsg(delKey))
 	m3 := m2.(model)
 	if m3.confirmAction != confirmActionNone {
 		t.Error("should not start confirm for default category")
@@ -467,7 +468,8 @@ func TestSettingsDeleteConfirmFlow(t *testing.T) {
 	m.settItemCursor = 0 // Income (not default)
 
 	// First press arms confirm
-	m2, _ := m.updateSettings(keyMsg("d"))
+	delKey := m.primaryActionKey(scopeSettingsActiveCategories, actionDelete, "del")
+	m2, _ := m.updateSettings(bindingKeyMsg(delKey))
 	m3 := m2.(model)
 	if m3.confirmAction != confirmActionDeleteCategory {
 		t.Errorf("confirmAction = %q, want %q", m3.confirmAction, confirmActionDeleteCategory)
@@ -621,9 +623,9 @@ func TestSettingsConfirmExecuteCommandTypes(t *testing.T) {
 		confirmID int
 		wantType  string
 	}{
-		{name: "delete category", action: confirmActionDeleteCategory, confirm: keyMsg("d"), confirmID: 1, wantType: "categoryDeletedMsg"},
-		{name: "delete tag", action: confirmActionDeleteTag, confirm: keyMsg("d"), confirmID: 1, wantType: "tagDeletedMsg"},
-		{name: "delete rule", action: confirmActionDeleteRule, confirm: keyMsg("d"), confirmID: 1, wantType: "ruleDeletedMsg"},
+		{name: "delete category", action: confirmActionDeleteCategory, confirm: tea.KeyMsg{}, confirmID: 1, wantType: "categoryDeletedMsg"},
+		{name: "delete tag", action: confirmActionDeleteTag, confirm: tea.KeyMsg{}, confirmID: 1, wantType: "tagDeletedMsg"},
+		{name: "delete rule", action: confirmActionDeleteRule, confirm: tea.KeyMsg{}, confirmID: 1, wantType: "ruleDeletedMsg"},
 		{name: "clear db", action: confirmActionClearDB, confirm: keyMsg("c"), confirmID: 0, wantType: "clearDoneMsg"},
 	}
 
@@ -633,6 +635,17 @@ func TestSettingsConfirmExecuteCommandTypes(t *testing.T) {
 			m.db = db
 			m.confirmAction = tt.action
 			m.confirmID = tt.confirmID
+			if tt.action != confirmActionClearDB {
+				scope := scopeSettingsActiveCategories
+				switch tt.action {
+				case confirmActionDeleteTag:
+					scope = scopeSettingsActiveTags
+				case confirmActionDeleteRule:
+					scope = scopeSettingsActiveRules
+				}
+				delKey := m.primaryActionKey(scope, actionDelete, "del")
+				tt.confirm = bindingKeyMsg(delKey)
+			}
 
 			next, cmd := m.updateSettings(tt.confirm)
 			got := next.(model)
@@ -834,8 +847,8 @@ func TestSettingsResetKeybindingsRewritesDefaultFile(t *testing.T) {
 	if !strings.Contains(out, "[bindings]") {
 		t.Fatalf("missing bindings table in rewritten keybindings:\n%s", out)
 	}
-	if !strings.Contains(out, "navigate") {
-		t.Fatalf("rewritten keybindings missing navigate action:\n%s", out)
+	if !strings.Contains(out, "up") || !strings.Contains(out, "down") {
+		t.Fatalf("rewritten keybindings missing directional actions:\n%s", out)
 	}
 }
 
@@ -1303,6 +1316,15 @@ func TestSettingsTagNameFieldArrowCursorEditsInMiddle(t *testing.T) {
 // keyMsg helper for tests
 func keyMsg(k string) tea.KeyMsg {
 	return tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune(k)}
+}
+
+func bindingKeyMsg(k string) tea.KeyMsg {
+	switch normalizeKeyName(k) {
+	case "del":
+		return tea.KeyMsg{Type: tea.KeyDelete}
+	default:
+		return keyMsg(k)
+	}
 }
 
 func assertScrollableWindowInvariant(

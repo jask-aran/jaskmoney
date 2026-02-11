@@ -58,18 +58,18 @@ func TestKeyRegistryHelpBindings(t *testing.T) {
 		bindingsByScope: make(map[string][]*Binding),
 		indexByScope:    make(map[string]map[string]*Binding),
 	}
-	r.Register(Binding{Action: actionNavigate, Keys: []string{"j/k", "j", "k"}, Help: "navigate", Scopes: []string{"scope_help"}})
+	r.Register(Binding{Action: actionDown, Keys: []string{"j", "down"}, Help: "down", Scopes: []string{"scope_help"}})
 
 	help := r.HelpBindings("scope_help")
 	if len(help) != 1 {
 		t.Fatalf("help binding count = %d, want 1", len(help))
 	}
 	entry := help[0].Help()
-	if entry.Key != "j/k" {
-		t.Fatalf("help key = %q, want %q", entry.Key, "j/k")
+	if entry.Key != "j" {
+		t.Fatalf("help key = %q, want %q", entry.Key, "j")
 	}
-	if entry.Desc != "navigate" {
-		t.Fatalf("help desc = %q, want %q", entry.Desc, "navigate")
+	if entry.Desc != "down" {
+		t.Fatalf("help desc = %q, want %q", entry.Desc, "down")
 	}
 }
 
@@ -81,7 +81,7 @@ func TestKeyRegistryScopeHelpOrder(t *testing.T) {
 	for _, b := range transactions {
 		txnKeys = append(txnKeys, b.Help().Key)
 	}
-	wantTxn := []string{"/", "s", "S", "f", "c", "t", "space", "shift+up/down", "u", "g", "G", "esc", "enter", "j/k", "tab", "q"}
+	wantTxn := []string{"/", "s", "S", "f", "c", "t", "space", "shift+up/down", "u", "g", "G", "esc", "enter", "k", "j", "tab", "q"}
 	if len(txnKeys) != len(wantTxn) {
 		t.Fatalf("transactions help count = %d, want %d (%v)", len(txnKeys), len(wantTxn), txnKeys)
 	}
@@ -96,7 +96,7 @@ func TestKeyRegistryScopeHelpOrder(t *testing.T) {
 	for _, b := range settingsNav {
 		navKeys = append(navKeys, b.Help().Key)
 	}
-	wantNav := []string{"h/l", "j/k", "enter", "i", "tab", "q"}
+	wantNav := []string{"h", "l", "k", "j", "enter", "i", "tab", "q"}
 	if len(navKeys) != len(wantNav) {
 		t.Fatalf("settings nav help count = %d, want %d (%v)", len(navKeys), len(wantNav), navKeys)
 	}

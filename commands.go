@@ -380,7 +380,6 @@ func (m model) canOpenCommandUI() bool {
 }
 
 func (m model) updateCommandUI(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
-	keyName := normalizeKeyName(msg.String())
 	scope := scopeCommandMode
 	if m.commandUIKind == commandUIKindPalette {
 		scope = scopeCommandPalette
@@ -395,8 +394,8 @@ func (m model) updateCommandUI(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		deleteLastASCIIByte(&m.commandQuery)
 		m.rebuildCommandMatches()
 		return m, nil
-	case m.isAction(scope, actionNavigate, msg):
-		delta := navDeltaFromKeyName(keyName)
+	case m.verticalDelta(scope, msg) != 0:
+		delta := m.verticalDelta(scope, msg)
 		if delta < 0 {
 			m.commandCursor = moveBoundedCursor(m.commandCursor, len(m.commandMatches), -1)
 		} else if delta > 0 {

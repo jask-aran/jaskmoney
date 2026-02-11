@@ -85,8 +85,8 @@ func (m model) updateManager(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		return m, nil
 	}
 	switch {
-	case m.isAction(scopeManager, actionNavigate, msg):
-		idx, _ = m.moveCursorForAction(scopeManager, actionNavigate, msg, idx, len(m.accounts))
+	case m.verticalDelta(scopeManager, msg) != 0:
+		idx = moveBoundedCursor(idx, len(m.accounts), m.verticalDelta(scopeManager, msg))
 		m.managerCursor = idx
 		m.managerSelectedID = m.accounts[idx].id
 		return m, nil
@@ -159,7 +159,7 @@ func (m model) updateManager(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			return m, nil
 		}
 		if count > 0 {
-			m.setStatusf("Account %q has %d transactions. Press c to clear, then d to delete.", acc.name, count)
+			m.setStatusf("Account %q has %d transactions. Press c to clear, then del to delete.", acc.name, count)
 			return m, nil
 		}
 		db := m.db
@@ -212,20 +212,19 @@ func (m *model) closeManagerAccountModal() {
 }
 
 func (m model) updateManagerModal(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
-	keyName := normalizeKeyName(msg.String())
 	switch {
 	case m.isAction(scopeManagerModal, actionClose, msg):
 		m.closeManagerAccountModal()
 		return m, nil
-	case m.isAction(scopeManagerModal, actionNavigate, msg):
-		delta := navDeltaFromKeyName(keyName)
+	case m.verticalDelta(scopeManagerModal, msg) != 0:
+		delta := m.verticalDelta(scopeManagerModal, msg)
 		if delta > 0 {
 			m.managerEditFocus = (m.managerEditFocus + 1) % 4
 		} else if delta < 0 {
 			m.managerEditFocus = (m.managerEditFocus - 1 + 4) % 4
 		}
 		return m, nil
-	case m.isAction(scopeManagerModal, actionColor, msg):
+	case m.horizontalDelta(scopeManagerModal, msg) != 0 || m.isAction(scopeManagerModal, actionToggleSelect, msg):
 		if m.managerEditFocus == 1 {
 			if m.managerEditType == "credit" {
 				m.managerEditType = "debit"
@@ -319,8 +318,8 @@ func (m model) updateFilePicker(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		return m, nil
 	case m.isAction(scopeFilePicker, actionQuit, msg) || m.isAction(scopeGlobal, actionQuit, msg):
 		return m, tea.Quit
-	case m.isAction(scopeFilePicker, actionNavigate, msg):
-		m.importCursor, _ = m.moveCursorForAction(scopeFilePicker, actionNavigate, msg, m.importCursor, len(m.importFiles))
+	case m.verticalDelta(scopeFilePicker, msg) != 0:
+		m.importCursor = moveBoundedCursor(m.importCursor, len(m.importFiles), m.verticalDelta(scopeFilePicker, msg))
 		return m, nil
 	case m.isAction(scopeFilePicker, actionSelect, msg):
 		if len(m.importFiles) == 0 || m.importCursor >= len(m.importFiles) {

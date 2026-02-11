@@ -507,9 +507,67 @@ func parseActionBindings(bindings map[string][]string, defaults []keybindingConf
 		if len(keys) == 0 {
 			return nil, false, fmt.Errorf("keybindings action=%q: keys are required", action)
 		}
+		if normalized, changed := normalizePortableSingleRuneActions(action, keys); changed {
+			keys = normalized
+			migrated = true
+		}
+		if normalized, changed := sanitizeDirectionalActionKeys(action, keys); changed {
+			keys = normalized
+			migrated = true
+		}
 		out[action] = keys
 	}
 	return out, migrated, nil
+}
+
+func normalizePortableSingleRuneActions(action string, keys []string) ([]string, bool) {
+	switch action {
+	case string(actionQuickTag), string(actionFocusAccounts), string(actionNukeAccount), string(actionResetKeybindings):
+	default:
+		return keys, false
+	}
+	out := make([]string, len(keys))
+	changed := false
+	for i, key := range keys {
+		out[i] = key
+		if len(key) == 1 {
+			ch := key[0]
+			if ch >= 'A' && ch <= 'Z' {
+				out[i] = strings.ToLower(key)
+				changed = true
+			}
+		}
+	}
+	return out, changed
+}
+
+func sanitizeDirectionalActionKeys(action string, keys []string) ([]string, bool) {
+	allowed := map[string]bool{}
+	switch action {
+	case string(actionUp):
+		allowed = map[string]bool{"k": true, "up": true, "ctrl+p": true}
+	case string(actionDown):
+		allowed = map[string]bool{"j": true, "down": true, "ctrl+n": true}
+	case string(actionLeft):
+		allowed = map[string]bool{"h": true, "left": true}
+	case string(actionRight):
+		allowed = map[string]bool{"l": true, "right": true}
+	default:
+		return keys, false
+	}
+	out := make([]string, 0, len(keys))
+	changed := false
+	for _, key := range keys {
+		if allowed[key] {
+			out = append(out, key)
+			continue
+		}
+		changed = true
+	}
+	if len(out) == 0 {
+		return keys, changed
+	}
+	return out, changed
 }
 
 func expandActionOverrides(defaults []keybindingConfig, actionKeys map[string][]string) []keybindingConfig {
@@ -550,10 +608,20 @@ func canonicalLegacyActionAlias(action string) (string, bool) {
 		return string(actionSelectItem), true
 	case "section":
 		return string(actionSection), true
+	case "navigate":
+		return string(actionDown), true
+	case "column":
+		return string(actionRight), true
+	case "color":
+		return string(actionRight), true
+	case "toggle_week_boundary":
+		return string(actionRight), true
 	case "back":
 		return string(actionBack), true
 	case "clear_search":
 		return string(actionClearSearch), true
+	case "close":
+		return string(actionClose), true
 	default:
 		return "", false
 	}

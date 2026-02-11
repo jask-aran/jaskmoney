@@ -449,11 +449,48 @@ func moveBoundedCursor(cursor, size, delta int) int {
 	return cursor
 }
 
-func (m model) moveCursorForAction(scope string, action Action, msg tea.KeyMsg, cursor, size int) (int, bool) {
-	if !m.isAction(scope, action, msg) {
+func (m model) directionDelta(scope string, msg tea.KeyMsg) int {
+	switch {
+	case m.isAction(scope, actionUp, msg):
+		return -1
+	case m.isAction(scope, actionDown, msg):
+		return 1
+	case m.isAction(scope, actionLeft, msg):
+		return -1
+	case m.isAction(scope, actionRight, msg):
+		return 1
+	default:
+		return 0
+	}
+}
+
+func (m model) verticalDelta(scope string, msg tea.KeyMsg) int {
+	switch {
+	case m.isAction(scope, actionUp, msg):
+		return -1
+	case m.isAction(scope, actionDown, msg):
+		return 1
+	default:
+		return 0
+	}
+}
+
+func (m model) horizontalDelta(scope string, msg tea.KeyMsg) int {
+	switch {
+	case m.isAction(scope, actionLeft, msg):
+		return -1
+	case m.isAction(scope, actionRight, msg):
+		return 1
+	default:
+		return 0
+	}
+}
+
+func (m model) moveCursorForScope(scope string, msg tea.KeyMsg, cursor, size int) (int, bool) {
+	delta := m.verticalDelta(scope, msg)
+	if delta == 0 {
 		return cursor, false
 	}
-	delta := navDeltaFromKeyName(normalizeKeyName(msg.String()))
 	return moveBoundedCursor(cursor, size, delta), true
 }
 
@@ -488,11 +525,11 @@ type settingsConfirmSpec struct {
 func settingsConfirmSpecFor(action settingsConfirmAction) (settingsConfirmSpec, bool) {
 	switch action {
 	case confirmActionDeleteCategory:
-		return settingsConfirmSpec{scope: scopeSettingsActiveCategories, action: actionDelete, fallback: "d"}, true
+		return settingsConfirmSpec{scope: scopeSettingsActiveCategories, action: actionDelete, fallback: "del"}, true
 	case confirmActionDeleteTag:
-		return settingsConfirmSpec{scope: scopeSettingsActiveTags, action: actionDelete, fallback: "d"}, true
+		return settingsConfirmSpec{scope: scopeSettingsActiveTags, action: actionDelete, fallback: "del"}, true
 	case confirmActionDeleteRule:
-		return settingsConfirmSpec{scope: scopeSettingsActiveRules, action: actionDelete, fallback: "d"}, true
+		return settingsConfirmSpec{scope: scopeSettingsActiveRules, action: actionDelete, fallback: "del"}, true
 	case confirmActionClearDB:
 		return settingsConfirmSpec{scope: scopeSettingsActiveDBImport, action: actionClearDB, fallback: "c"}, true
 	default:

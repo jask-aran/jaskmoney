@@ -195,8 +195,8 @@ close = ["esc"]
 	if err != nil {
 		t.Fatalf("parseKeybindingsConfig: %v", err)
 	}
-	if migrated {
-		t.Fatal("did not expect v2 keybindings to be marked migrated")
+	if !migrated {
+		t.Fatal("expected close alias to be normalized to cancel")
 	}
 
 	foundQuick := false
