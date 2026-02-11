@@ -42,6 +42,7 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 		m.settMode = settModeNone
 		m.settInput = ""
+		m.settInputCursor = 0
 		m.setStatus("Category saved.")
 		return m, refreshCmd(m.db)
 	case categoryDeletedMsg:
@@ -59,6 +60,7 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 		m.settMode = settModeNone
 		m.settInput = ""
+		m.settInputCursor = 0
 		m.setStatus("Tag saved.")
 		return m, refreshCmd(m.db)
 	case tagDeletedMsg:
@@ -552,6 +554,7 @@ func (m *model) beginSettingsCategoryMode(cat *category) {
 		m.settMode = settModeAddCat
 		m.settEditID = 0
 		m.settInput = ""
+		m.settInputCursor = 0
 		m.settColorIdx = 0
 		m.settCatFocus = 0
 		return
@@ -559,6 +562,7 @@ func (m *model) beginSettingsCategoryMode(cat *category) {
 	m.settMode = settModeEditCat
 	m.settEditID = cat.id
 	m.settInput = cat.name
+	m.settInputCursor = len(m.settInput)
 	m.settColorIdx = categoryColorIndex(cat.color)
 	m.settCatFocus = 0
 }
@@ -568,6 +572,7 @@ func (m *model) beginSettingsTagMode(tg *tag) {
 		m.settMode = settModeAddTag
 		m.settEditID = 0
 		m.settInput = ""
+		m.settInputCursor = 0
 		m.settColorIdx = 0
 		m.settTagFocus = 0
 		m.settTagScopeID = 0
@@ -576,6 +581,7 @@ func (m *model) beginSettingsTagMode(tg *tag) {
 	m.settMode = settModeEditTag
 	m.settEditID = tg.id
 	m.settInput = tg.name
+	m.settInputCursor = len(m.settInput)
 	m.settColorIdx = tagColorIndex(tg.color)
 	m.settTagFocus = 0
 	if tg.categoryID == nil {
@@ -616,5 +622,51 @@ func appendPrintableASCII(s *string, key string) bool {
 		return false
 	}
 	*s += key
+	return true
+}
+
+func clampInputCursorASCII(s string, cursor int) int {
+	if cursor < 0 {
+		return 0
+	}
+	if cursor > len(s) {
+		return len(s)
+	}
+	return cursor
+}
+
+func moveInputCursorASCII(s string, cursor *int, delta int) bool {
+	if cursor == nil {
+		return false
+	}
+	before := clampInputCursorASCII(s, *cursor)
+	after := clampInputCursorASCII(s, before+delta)
+	*cursor = after
+	return after != before
+}
+
+func insertPrintableASCIIAtCursor(s *string, cursor *int, key string) bool {
+	if s == nil || cursor == nil {
+		return false
+	}
+	if len(key) != 1 || key[0] < 32 || key[0] >= 127 {
+		return false
+	}
+	idx := clampInputCursorASCII(*s, *cursor)
+	*s = (*s)[:idx] + key + (*s)[idx:]
+	*cursor = idx + 1
+	return true
+}
+
+func deleteASCIIByteBeforeCursor(s *string, cursor *int) bool {
+	if s == nil || cursor == nil {
+		return false
+	}
+	idx := clampInputCursorASCII(*s, *cursor)
+	if idx == 0 {
+		return false
+	}
+	*s = (*s)[:idx-1] + (*s)[idx:]
+	*cursor = idx - 1
 	return true
 }

@@ -1159,6 +1159,81 @@ func TestSettingsTagNameFieldConsumesShortcutKeys(t *testing.T) {
 	}
 }
 
+func TestSettingsCategoryNameFieldArrowCursorEditsInMiddle(t *testing.T) {
+	m := testSettingsModel()
+	m.settActive = true
+	m.settSection = settSecCategories
+	addKey := m.primaryActionKey(scopeSettingsActiveCategories, actionAdd, "a")
+	next, _ := m.updateSettings(keyMsg(addKey))
+	got := next.(model)
+
+	for _, ch := range []string{"A", "B", "C"} {
+		next, _ = got.updateSettings(keyMsg(ch))
+		got = next.(model)
+	}
+	if got.settInput != "ABC" || got.settInputCursor != 3 {
+		t.Fatalf("initial input/cursor = %q/%d, want ABC/3", got.settInput, got.settInputCursor)
+	}
+
+	next, _ = got.updateSettings(tea.KeyMsg{Type: tea.KeyLeft})
+	got = next.(model)
+	next, _ = got.updateSettings(tea.KeyMsg{Type: tea.KeyLeft})
+	got = next.(model)
+	if got.settInputCursor != 1 {
+		t.Fatalf("cursor after left,left = %d, want 1", got.settInputCursor)
+	}
+
+	next, _ = got.updateSettings(keyMsg("X"))
+	got = next.(model)
+	if got.settInput != "AXBC" {
+		t.Fatalf("input after middle insert = %q, want %q", got.settInput, "AXBC")
+	}
+	if got.settInputCursor != 2 {
+		t.Fatalf("cursor after insert = %d, want 2", got.settInputCursor)
+	}
+
+	next, _ = got.updateSettings(tea.KeyMsg{Type: tea.KeyBackspace})
+	got = next.(model)
+	if got.settInput != "ABC" {
+		t.Fatalf("input after backspace = %q, want %q", got.settInput, "ABC")
+	}
+	if got.settInputCursor != 1 {
+		t.Fatalf("cursor after backspace = %d, want 1", got.settInputCursor)
+	}
+}
+
+func TestSettingsTagNameFieldArrowCursorEditsInMiddle(t *testing.T) {
+	m := testSettingsModel()
+	m.settActive = true
+	m.settSection = settSecTags
+	addKey := m.primaryActionKey(scopeSettingsActiveTags, actionAdd, "a")
+	next, _ := m.updateSettings(keyMsg(addKey))
+	got := next.(model)
+
+	for _, ch := range []string{"T", "A", "G"} {
+		next, _ = got.updateSettings(keyMsg(ch))
+		got = next.(model)
+	}
+	if got.settInput != "TAG" || got.settInputCursor != 3 {
+		t.Fatalf("initial input/cursor = %q/%d, want TAG/3", got.settInput, got.settInputCursor)
+	}
+
+	next, _ = got.updateSettings(tea.KeyMsg{Type: tea.KeyLeft})
+	got = next.(model)
+	if got.settInputCursor != 2 {
+		t.Fatalf("cursor after left = %d, want 2", got.settInputCursor)
+	}
+
+	next, _ = got.updateSettings(keyMsg("X"))
+	got = next.(model)
+	if got.settInput != "TAXG" {
+		t.Fatalf("input after middle insert = %q, want %q", got.settInput, "TAXG")
+	}
+	if got.settInputCursor != 3 {
+		t.Fatalf("cursor after insert = %d, want 3", got.settInputCursor)
+	}
+}
+
 // keyMsg helper for tests
 func keyMsg(k string) tea.KeyMsg {
 	return tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune(k)}

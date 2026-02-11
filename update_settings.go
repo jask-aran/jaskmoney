@@ -436,17 +436,24 @@ func (m model) updateSettingsTextInput(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		case "esc":
 			m.settMode = settModeNone
 			m.settInput = ""
+			m.settInputCursor = 0
 			m.settCatFocus = 0
 			m.settTagFocus = 0
 			m.settTagScopeID = 0
 			return m, nil
 		case "enter":
 			return saveInput(m)
+		case "left":
+			moveInputCursorASCII(m.settInput, &m.settInputCursor, -1)
+			return m, nil
+		case "right":
+			moveInputCursorASCII(m.settInput, &m.settInputCursor, 1)
+			return m, nil
 		case "backspace":
-			deleteLastASCIIByte(&m.settInput)
+			deleteASCIIByteBeforeCursor(&m.settInput, &m.settInputCursor)
 			return m, nil
 		default:
-			if appendPrintableASCII(&m.settInput, msg.String()) {
+			if insertPrintableASCIIAtCursor(&m.settInput, &m.settInputCursor, msg.String()) {
 				return m, nil
 			}
 		}
@@ -456,6 +463,7 @@ func (m model) updateSettingsTextInput(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	case m.isAction(scope, actionClose, msg) || keyName == "esc":
 		m.settMode = settModeNone
 		m.settInput = ""
+		m.settInputCursor = 0
 		m.settCatFocus = 0
 		m.settTagFocus = 0
 		m.settTagScopeID = 0
