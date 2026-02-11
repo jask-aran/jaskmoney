@@ -487,7 +487,7 @@ func (m model) dashboardView() string {
 	w := m.sectionBoxContentWidth(m.sectionWidth())
 	chips := renderDashboardControlsLine(
 		renderDashboardTimeframeChips(dashTimeframeLabels, m.dashTimeframe, m.dashTimeframeCursor, m.dashTimeframeFocus),
-		dashboardDateRange(rows),
+		dashboardDateRange(rows, m.dashTimeframe, m.dashCustomStart, m.dashCustomEnd, time.Now()),
 		m.sectionWidth(),
 	)
 	customInput := renderDashboardCustomInput(m.dashCustomStart, m.dashCustomEnd, m.dashCustomInput, m.dashCustomEditing)
