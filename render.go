@@ -932,7 +932,16 @@ func renderSummaryCards(rows []transaction, categories []category, width int) st
 	return row1 + "\n" + row2 + "\n" + row3
 }
 
-func dashboardDateRange(rows []transaction) string {
+func dashboardDateRange(rows []transaction, timeframe int, customStart, customEnd string, now time.Time) string {
+	start, endExcl, ok := timeframeBounds(timeframe, customStart, customEnd, now)
+	if ok {
+		end := endExcl.AddDate(0, 0, -1)
+		if end.Before(start) {
+			end = start
+		}
+		return formatMonth(start.Format("2006-01-02")) + " – " + formatMonth(end.Format("2006-01-02"))
+	}
+
 	var minDate, maxDate string
 	for _, r := range rows {
 		if minDate == "" || r.dateISO < minDate {
