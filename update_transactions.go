@@ -277,7 +277,9 @@ func (m model) updateCatPicker(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	if m.catPicker == nil {
 		return m, nil
 	}
-	res := m.catPicker.HandleKey(msg.String())
+	res := m.catPicker.HandleMsg(msg, func(action Action, in tea.KeyMsg) bool {
+		return m.isAction(scopeCategoryPicker, action, in)
+	})
 	switch res.Action {
 	case pickerActionCancelled:
 		m.catPicker = nil
@@ -360,7 +362,9 @@ func (m model) updateTagPicker(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			}
 		}
 	}
-	res := m.tagPicker.HandleKey(msg.String())
+	res := m.tagPicker.HandleMsg(msg, func(action Action, in tea.KeyMsg) bool {
+		return m.isAction(scopeTagPicker, action, in)
+	})
 	switch res.Action {
 	case pickerActionCancelled:
 		m.tagPicker = nil

@@ -540,6 +540,20 @@ func canonicalLegacyActionAlias(action string) (string, bool) {
 		return string(actionConfirm), true
 	case "cancel_any":
 		return string(actionCancel), true
+	case "select":
+		return string(actionSelect), true
+	case "activate":
+		return string(actionActivate), true
+	case "next":
+		return string(actionNext), true
+	case "select_item":
+		return string(actionSelectItem), true
+	case "section":
+		return string(actionSection), true
+	case "back":
+		return string(actionBack), true
+	case "clear_search":
+		return string(actionClearSearch), true
 	default:
 		return "", false
 	}
@@ -975,6 +989,23 @@ func writeKeybindingsFile(path string, bindings []keybindingConfig) error {
 	data := renderKeybindingsTemplate(bindings)
 	if err := os.WriteFile(path, []byte(data), 0o644); err != nil {
 		return fmt.Errorf("write keybindings.toml: %w", err)
+	}
+	return nil
+}
+
+func resetKeybindingsFileToDefaults() error {
+	path, err := keybindingsPath()
+	if err != nil {
+		return err
+	}
+	if fileExists(path) {
+		if err := os.Remove(path); err != nil {
+			return fmt.Errorf("remove keybindings.toml: %w", err)
+		}
+	}
+	defaults := NewKeyRegistry().ExportKeybindingConfig()
+	if err := writeKeybindingsFile(path, defaults); err != nil {
+		return fmt.Errorf("write default keybindings: %w", err)
 	}
 	return nil
 }
