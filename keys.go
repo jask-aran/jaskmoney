@@ -54,48 +54,51 @@ const (
 )
 
 const (
-	actionQuit                     Action = "quit"
-	actionNextTab                  Action = "next_tab"
-	actionPrevTab                  Action = "prev_tab"
-	actionUp                       Action = "up"
-	actionDown                     Action = "down"
-	actionLeft                     Action = "left"
-	actionRight                    Action = "right"
-	actionNavigate                 Action = actionDown
-	actionSection                  Action = actionDown
-	actionSelectItem               Action = actionDown
-	actionConfirm                  Action = "confirm"
-	actionSelect                   Action = actionConfirm
-	actionActivate                 Action = actionConfirm
-	actionNext                     Action = actionConfirm
-	actionClose                    Action = actionCancel
-	actionCancel                   Action = "cancel"
-	actionBack                     Action = actionCancel
-	actionClearSearch              Action = actionCancel
-	actionSearch                   Action = "search"
-	actionSort                     Action = "sort"
-	actionSortDirection            Action = "sort_direction"
-	actionFilterCategory           Action = "filter_category"
-	actionToggleSelect             Action = "toggle_select"
-	actionRangeHighlight           Action = "range_highlight"
-	actionQuickCategory            Action = "quick_category"
-	actionQuickTag                 Action = "quick_tag"
-	actionTimeframe                Action = "timeframe"
-	actionMove                     Action = "move"
-	actionImportAll                Action = "import_all"
-	actionSkipDupes                Action = "skip_dupes"
-	actionColor                    Action = actionRight
-	actionSave                     Action = "save"
-	actionAdd                      Action = "add"
-	actionEdit                     Action = "edit"
-	actionDelete                   Action = "delete"
-	actionApplyAll                 Action = "apply_all"
-	actionToggleWeekBoundary       Action = "toggle_week_boundary"
-	actionRowsPerPage              Action = "rows_per_page"
-	actionClearDB                  Action = "clear_db"
-	actionImport                   Action = "import"
-	actionNukeAccount              Action = "nuke_account"
-	actionResetKeybindings         Action = "reset_keybindings"
+	actionQuit    Action = "quit"
+	actionNextTab Action = "next_tab"
+	actionPrevTab Action = "prev_tab"
+	actionUp      Action = "up"
+	actionDown    Action = "down"
+	actionLeft    Action = "left"
+	actionRight   Action = "right"
+	// Legacy aliases retained for backward-compatible parsing/migration.
+	actionNavigate       Action = actionDown
+	actionSection        Action = actionDown
+	actionSelectItem     Action = actionDown
+	actionConfirm        Action = "confirm"
+	actionSelect         Action = actionConfirm
+	actionActivate       Action = actionConfirm
+	actionNext           Action = actionConfirm
+	actionClose          Action = actionCancel
+	actionCancel         Action = "cancel"
+	actionBack           Action = actionCancel
+	actionClearSearch    Action = actionCancel
+	actionSearch         Action = "search"
+	actionSort           Action = "sort"
+	actionSortDirection  Action = "sort_direction"
+	actionFilterCategory Action = "filter_category"
+	actionToggleSelect   Action = "toggle_select"
+	actionRangeHighlight Action = "range_highlight"
+	actionQuickCategory  Action = "quick_category"
+	actionQuickTag       Action = "quick_tag"
+	actionTimeframe      Action = "timeframe"
+	actionMove           Action = "move"
+	actionImportAll      Action = "import_all"
+	actionSkipDupes      Action = "skip_dupes"
+	// Legacy alias retained for backward-compatible parsing/migration.
+	actionColor              Action = actionRight
+	actionSave               Action = "save"
+	actionAdd                Action = "add"
+	actionEdit               Action = "edit"
+	actionDelete             Action = "delete"
+	actionApplyAll           Action = "apply_all"
+	actionToggleWeekBoundary Action = "toggle_week_boundary"
+	actionRowsPerPage        Action = "rows_per_page"
+	actionClearDB            Action = "clear_db"
+	actionImport             Action = "import"
+	actionNukeAccount        Action = "nuke_account"
+	actionResetKeybindings   Action = "reset_keybindings"
+	// Legacy alias retained for backward-compatible parsing/migration.
 	actionColumn                   Action = actionRight
 	actionFocusAccounts            Action = "focus_accounts"
 	actionJumpTop                  Action = "jump_top"
@@ -171,7 +174,7 @@ func NewKeyRegistry() *KeyRegistry {
 	reg(scopeDashboard, actionPrevTab, []string{"shift+tab"}, "prev tab")
 	reg(scopeDashboard, actionQuit, []string{"q", "ctrl+c"}, "quit")
 
-	// Dashboard timeframe focus footer: h/l, enter, esc
+	// Dashboard timeframe focus footer: left/right, enter, esc
 	reg(scopeDashboardTimeframe, actionLeft, []string{"h", "left"}, "prev")
 	reg(scopeDashboardTimeframe, actionRight, []string{"l", "right"}, "next")
 	reg(scopeDashboardTimeframe, actionSelect, []string{"enter"}, "select")
@@ -215,7 +218,7 @@ func NewKeyRegistry() *KeyRegistry {
 	reg(scopeAccountNukePicker, actionSelect, []string{"enter"}, "nuke")
 	reg(scopeAccountNukePicker, actionClose, []string{"esc"}, "cancel")
 
-	// Detail / file picker footers: enter, esc, j/k, q
+	// Detail / file picker footers: enter, esc, up/down, q
 	reg(scopeDetailModal, actionSelect, []string{"enter"}, "select")
 	reg(scopeDetailModal, actionEdit, []string{"n"}, "notes")
 	reg(scopeDetailModal, actionClose, []string{"esc"}, "close")
@@ -296,7 +299,7 @@ func NewKeyRegistry() *KeyRegistry {
 	reg(scopeSettingsActiveImportHist, actionUp, []string{"k", "up", "ctrl+p"}, "up")
 	reg(scopeSettingsActiveImportHist, actionDown, []string{"j", "down", "ctrl+n"}, "down")
 
-	// Settings navigation footer: h/l, j/k, enter, i, tab, q
+	// Settings navigation footer: left/right, up/down, enter, i, tab, q
 	reg(scopeSettingsNav, actionLeft, []string{"h", "left"}, "column")
 	reg(scopeSettingsNav, actionRight, []string{"l", "right"}, "column")
 	reg(scopeSettingsNav, actionUp, []string{"k", "up", "ctrl+p"}, "section")

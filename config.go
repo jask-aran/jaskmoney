@@ -583,6 +583,9 @@ func expandActionOverrides(defaults []keybindingConfig, actionKeys map[string][]
 }
 
 func migrateLegacyMoveAction(keys []string) string {
+	// v1/v2 legacy "move" action compatibility:
+	// horizontal-ish key sets map to right/left primitive family (canonical right action),
+	// otherwise default to vertical primitive family (canonical down action).
 	for _, k := range keys {
 		switch normalizeKeyName(k) {
 		case "h/l", "h", "l", "left", "right":
@@ -1093,13 +1096,113 @@ func renderKeybindingsTemplate(bindings []keybindingConfig) string {
 		}
 		actionDefaults[b.Action] = append([]string(nil), b.Keys...)
 	}
-	actions := make([]string, 0, len(actionDefaults))
-	for action := range actionDefaults {
-		actions = append(actions, action)
+
+	type actionGroup struct {
+		header  string
+		actions []string
 	}
-	sort.Strings(actions)
-	for _, action := range actions {
-		buf.WriteString(fmt.Sprintf("%s = %s\n", action, formatTomlStringArray(actionDefaults[action])))
+	groups := []actionGroup{
+		{
+			header: "# Universal primitives",
+			actions: []string{
+				string(actionConfirm),
+				string(actionCancel),
+				string(actionUp),
+				string(actionDown),
+				string(actionLeft),
+				string(actionRight),
+				string(actionDelete),
+				string(actionNextTab),
+				string(actionPrevTab),
+				string(actionQuit),
+			},
+		},
+		{
+			header: "# Global app and command interfaces",
+			actions: []string{
+				string(actionCommandGoTransactions),
+				string(actionCommandGoDashboard),
+				string(actionCommandGoSettings),
+				string(actionCommandPalette),
+				string(actionCommandMode),
+				string(actionCommandDefault),
+			},
+		},
+		{
+			header: "# Transactions and manager workflows",
+			actions: []string{
+				string(actionSearch),
+				string(actionSort),
+				string(actionSortDirection),
+				string(actionFilterCategory),
+				string(actionToggleSelect),
+				string(actionRangeHighlight),
+				string(actionQuickCategory),
+				string(actionQuickTag),
+				string(actionCommandClearSelection),
+				string(actionJumpTop),
+				string(actionJumpBottom),
+				string(actionTimeframe),
+				string(actionFocusAccounts),
+			},
+		},
+		{
+			header: "# Settings and import workflows",
+			actions: []string{
+				string(actionAdd),
+				string(actionEdit),
+				string(actionSave),
+				string(actionApplyAll),
+				string(actionImport),
+				string(actionImportAll),
+				string(actionSkipDupes),
+				string(actionClearDB),
+				string(actionRowsPerPage),
+				string(actionResetKeybindings),
+				string(actionNukeAccount),
+			},
+		},
+	}
+
+	printed := make(map[string]bool, len(actionDefaults))
+	writeGroup := func(header string, actions []string) {
+		wroteHeader := false
+		for _, action := range actions {
+			keys, ok := actionDefaults[action]
+			if !ok || printed[action] {
+				continue
+			}
+			if !wroteHeader {
+				if len(printed) > 0 {
+					buf.WriteString("\n")
+				}
+				buf.WriteString(header)
+				buf.WriteString("\n")
+				wroteHeader = true
+			}
+			buf.WriteString(fmt.Sprintf("%s = %s\n", action, formatTomlStringArray(keys)))
+			printed[action] = true
+		}
+	}
+	for _, group := range groups {
+		writeGroup(group.header, group.actions)
+	}
+
+	remaining := make([]string, 0, len(actionDefaults))
+	for action := range actionDefaults {
+		if !printed[action] {
+			remaining = append(remaining, action)
+		}
+	}
+	sort.Strings(remaining)
+	if len(remaining) > 0 {
+		if len(printed) > 0 {
+			buf.WriteString("\n")
+		}
+		buf.WriteString("# Other actions\n")
+		for _, action := range remaining {
+			buf.WriteString(fmt.Sprintf("%s = %s\n", action, formatTomlStringArray(actionDefaults[action])))
+		}
 	}
 
 	return buf.String()

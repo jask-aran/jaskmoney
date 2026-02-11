@@ -362,7 +362,7 @@ func TestSettingsCategoryItemNavigation(t *testing.T) {
 	m.settSection = settSecCategories
 	m.settItemCursor = 0
 
-	// j/k navigate items when active
+	// up/down navigate items when active
 	m2, _ := m.updateSettings(keyMsg("j"))
 	m3 := m2.(model)
 	if m3.settItemCursor != 1 {
