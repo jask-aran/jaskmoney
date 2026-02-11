@@ -81,11 +81,17 @@ func (m model) updateSettings(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	if m.confirmAction != confirmActionNone {
 		return m.updateSettingsConfirm(msg)
 	}
-	if tabIdx, ok := tabShortcutIndex(msg.String()); ok {
-		m.activeTab = tabIdx
-		if m.activeTab == tabManager {
-			m.managerMode = managerModeTransactions
-		}
+	if m.isAction(scopeGlobal, actionCommandGoTransactions, msg) {
+		m.activeTab = tabManager
+		m.managerMode = managerModeTransactions
+		return m, nil
+	}
+	if m.isAction(scopeGlobal, actionCommandGoDashboard, msg) {
+		m.activeTab = tabDashboard
+		return m, nil
+	}
+	if m.isAction(scopeGlobal, actionCommandGoSettings, msg) {
+		m.activeTab = tabSettings
 		return m, nil
 	}
 
@@ -254,6 +260,8 @@ func (m model) updateSettingsDBImport(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		return m, m.armSettingsConfirm(confirmActionClearDB, 0, fmt.Sprintf("Press %s again to clear all data", keyLabel))
 	case m.isAction(scopeSettingsActiveDBImport, actionImport, msg):
 		return m, m.beginImportFlow()
+	case m.isAction(scopeSettingsActiveDBImport, actionResetKeybindings, msg):
+		return m, resetKeybindingsCmd()
 	case m.isAction(scopeSettingsActiveDBImport, actionNukeAccount, msg):
 		if len(m.accounts) == 0 {
 			m.setStatus("No accounts available to nuke.")
@@ -294,7 +302,9 @@ func (m model) updateAccountNukePicker(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	if m.accountNukePicker == nil {
 		return m, nil
 	}
-	res := m.accountNukePicker.HandleKey(msg.String())
+	res := m.accountNukePicker.HandleMsg(msg, func(action Action, in tea.KeyMsg) bool {
+		return m.isAction(scopeAccountNukePicker, action, in)
+	})
 	switch res.Action {
 	case pickerActionCancelled:
 		m.accountNukePicker = nil
@@ -626,4 +636,10 @@ func confirmTimerCmd() tea.Cmd {
 	return tea.Tick(2*time.Second, func(t time.Time) tea.Msg {
 		return confirmExpiredMsg{}
 	})
+}
+
+func resetKeybindingsCmd() tea.Cmd {
+	return func() tea.Msg {
+		return keybindingsResetMsg{err: resetKeybindingsFileToDefaults()}
+	}
 }

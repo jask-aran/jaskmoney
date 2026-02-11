@@ -5,6 +5,7 @@ import (
 	"sort"
 	"strings"
 
+	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
 )
 
@@ -281,6 +282,79 @@ func (p *pickerState) HandleKey(keyName string) pickerResult {
 		}
 		return pickerResult{Action: pickerActionNone}
 	}
+}
+
+func (p *pickerState) HandleMsg(msg tea.KeyMsg, matches func(Action, tea.KeyMsg) bool) pickerResult {
+	if p == nil {
+		return pickerResult{Action: pickerActionNone}
+	}
+	keyName := normalizeKeyName(msg.String())
+
+	if matches(actionClose, msg) {
+		return pickerResult{Action: pickerActionCancelled}
+	}
+	if matches(actionNavigate, msg) {
+		before := p.cursor
+		delta := navDeltaFromKeyName(keyName)
+		if delta < 0 {
+			p.CursorUp()
+		} else if delta > 0 {
+			p.CursorDown()
+		}
+		if p.cursor != before {
+			return pickerResult{Action: pickerActionMoved}
+		}
+		return pickerResult{Action: pickerActionNone}
+	}
+	if matches(actionToggleSelect, msg) {
+		if !p.multiSelect {
+			return pickerResult{Action: pickerActionNone}
+		}
+		row := p.currentRow()
+		if row.item == nil || row.isCreate {
+			return pickerResult{Action: pickerActionNone}
+		}
+		p.Toggle()
+		return pickerResult{
+			Action:      pickerActionToggled,
+			ItemID:      row.item.ID,
+			ItemLabel:   row.item.Label,
+			SelectedIDs: p.Selected(),
+		}
+	}
+	if matches(actionSelect, msg) {
+		row := p.currentRow()
+		if row.isCreate {
+			return pickerResult{
+				Action:       pickerActionCreate,
+				CreatedQuery: strings.TrimSpace(p.query),
+			}
+		}
+		if p.multiSelect {
+			return pickerResult{
+				Action:      pickerActionSubmitted,
+				SelectedIDs: p.Selected(),
+			}
+		}
+		if row.item != nil {
+			return pickerResult{
+				Action:    pickerActionSelected,
+				ItemID:    row.item.ID,
+				ItemLabel: row.item.Label,
+			}
+		}
+		return pickerResult{Action: pickerActionNone}
+	}
+	if isBackspaceKey(msg) {
+		if len(p.query) > 0 {
+			p.SetQuery(p.query[:len(p.query)-1])
+		}
+		return pickerResult{Action: pickerActionNone}
+	}
+	if isPrintableASCIIKey(msg.String()) {
+		p.SetQuery(p.query + msg.String())
+	}
+	return pickerResult{Action: pickerActionNone}
 }
 
 func renderPicker(p *pickerState, width int, keys *KeyRegistry, scope string) string {

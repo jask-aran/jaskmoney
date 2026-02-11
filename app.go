@@ -136,6 +136,10 @@ type settingsSavedMsg struct {
 	err error
 }
 
+type keybindingsResetMsg struct {
+	err error
+}
+
 type quickCategoryAppliedMsg struct {
 	count        int
 	categoryName string

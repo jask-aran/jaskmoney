@@ -58,9 +58,16 @@ const (
 	actionNextTab                  Action = "next_tab"
 	actionPrevTab                  Action = "prev_tab"
 	actionNavigate                 Action = "navigate"
-	actionSelect                   Action = "select"
+	actionSection                  Action = actionNavigate
+	actionSelectItem               Action = actionNavigate
+	actionConfirm                  Action = "confirm"
+	actionSelect                   Action = actionConfirm
+	actionActivate                 Action = actionConfirm
+	actionNext                     Action = actionConfirm
 	actionClose                    Action = "close"
 	actionCancel                   Action = "cancel"
+	actionBack                     Action = actionCancel
+	actionClearSearch              Action = actionCancel
 	actionSearch                   Action = "search"
 	actionSort                     Action = "sort"
 	actionSortDirection            Action = "sort_direction"
@@ -73,12 +80,8 @@ const (
 	actionMove                     Action = "move"
 	actionImportAll                Action = "import_all"
 	actionSkipDupes                Action = "skip_dupes"
-	actionClearSearch              Action = "clear_search"
-	actionConfirm                  Action = "confirm"
 	actionColor                    Action = "color"
 	actionSave                     Action = "save"
-	actionNext                     Action = "next"
-	actionSelectItem               Action = "select_item"
 	actionAdd                      Action = "add"
 	actionEdit                     Action = "edit"
 	actionDelete                   Action = "delete"
@@ -88,10 +91,8 @@ const (
 	actionClearDB                  Action = "clear_db"
 	actionImport                   Action = "import"
 	actionNukeAccount              Action = "nuke_account"
+	actionResetKeybindings         Action = "reset_keybindings"
 	actionColumn                   Action = "column"
-	actionSection                  Action = "section"
-	actionActivate                 Action = "activate"
-	actionBack                     Action = "back"
 	actionFocusAccounts            Action = "focus_accounts"
 	actionJumpTop                  Action = "jump_top"
 	actionJumpBottom               Action = "jump_bottom"
@@ -122,8 +123,8 @@ func NewKeyRegistry() *KeyRegistry {
 	reg(scopeGlobal, actionQuit, []string{"q", "ctrl+c"}, "quit")
 	reg(scopeGlobal, actionNextTab, []string{"tab"}, "next tab")
 	reg(scopeGlobal, actionPrevTab, []string{"shift+tab"}, "prev tab")
-	reg(scopeGlobal, actionCommandGoDashboard, []string{"1"}, "dashboard")
-	reg(scopeGlobal, actionCommandGoTransactions, []string{"2"}, "transactions")
+	reg(scopeGlobal, actionCommandGoTransactions, []string{"1"}, "transactions")
+	reg(scopeGlobal, actionCommandGoDashboard, []string{"2"}, "dashboard")
 	reg(scopeGlobal, actionCommandGoSettings, []string{"3"}, "settings")
 	reg(scopeGlobal, actionCommandPalette, []string{"ctrl+k"}, "commands")
 	reg(scopeGlobal, actionCommandMode, []string{":"}, "command")
@@ -261,6 +262,7 @@ func NewKeyRegistry() *KeyRegistry {
 	reg(scopeSettingsActiveDBImport, actionCommandDefault, []string{"o"}, "cmd default")
 	reg(scopeSettingsActiveDBImport, actionClearDB, []string{"c"}, "clear db")
 	reg(scopeSettingsActiveDBImport, actionImport, []string{"i"}, "import")
+	reg(scopeSettingsActiveDBImport, actionResetKeybindings, []string{"R"}, "reset keys")
 	reg(scopeSettingsActiveDBImport, actionNukeAccount, []string{"N"}, "nuke account")
 	reg(scopeSettingsActiveImportHist, actionBack, []string{"esc"}, "back")
 	reg(scopeSettingsActiveImportHist, actionNavigate, []string{"j/k", "j", "k", "up", "down"}, "navigate")
@@ -361,7 +363,25 @@ func (r *KeyRegistry) lookupInScope(keyName, scope string) *Binding {
 	if !ok {
 		return nil
 	}
-	return lookup[keyName]
+	if b := lookup[keyName]; b != nil {
+		return b
+	}
+	// Terminal/caps-lock behavior can vary across environments for single
+	// alphabetic keys. If exact-case lookup misses, try opposite-case fallback.
+	if len(keyName) == 1 {
+		ch := keyName[0]
+		switch {
+		case ch >= 'a' && ch <= 'z':
+			if b := lookup[strings.ToUpper(keyName)]; b != nil {
+				return b
+			}
+		case ch >= 'A' && ch <= 'Z':
+			if b := lookup[strings.ToLower(keyName)]; b != nil {
+				return b
+			}
+		}
+	}
+	return nil
 }
 
 func (r *KeyRegistry) scopeHasAnyKey(scope string, keys []string) bool {

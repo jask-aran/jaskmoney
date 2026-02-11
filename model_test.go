@@ -1,7 +1,9 @@
 package main
 
 import (
-	"fmt"
+	"os"
+	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 
@@ -788,6 +790,55 @@ func TestSettingsImportEntryParity(t *testing.T) {
 	assertImportEntry(t, m2, keyMsg("i"))
 }
 
+func TestSettingsResetKeybindingsRewritesDefaultFile(t *testing.T) {
+	t.Setenv("XDG_CONFIG_HOME", t.TempDir())
+	m := testSettingsModel()
+	m.settSection = settSecDBImport
+	m.settColumn = settColRight
+	m.settActive = true
+
+	path, err := keybindingsPath()
+	if err != nil {
+		t.Fatalf("keybindingsPath: %v", err)
+	}
+	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+		t.Fatalf("mkdir keybindings dir: %v", err)
+	}
+	if err := os.WriteFile(path, []byte("version = 2\n\n[bindings]\nquick_tag = [\"ctrl+t\"]\n"), 0o644); err != nil {
+		t.Fatalf("seed keybindings file: %v", err)
+	}
+
+	resetKey := m.primaryActionKey(scopeSettingsActiveDBImport, actionResetKeybindings, "R")
+	next, cmd := m.updateSettings(keyMsg(resetKey))
+	got := next.(model)
+	if cmd == nil {
+		t.Fatal("expected reset keybindings command")
+	}
+	msg := cmd()
+	if _, ok := msg.(keybindingsResetMsg); !ok {
+		t.Fatalf("reset command message = %T, want keybindingsResetMsg", msg)
+	}
+	next, _ = got.Update(msg)
+	got2 := next.(model)
+	if got2.statusErr {
+		t.Fatalf("expected reset success status, got error: %q", got2.status)
+	}
+	if got2.status != "Keybindings reset to defaults." {
+		t.Fatalf("status = %q, want reset success", got2.status)
+	}
+	data, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatalf("read rewritten keybindings: %v", err)
+	}
+	out := string(data)
+	if !strings.Contains(out, "[bindings]") {
+		t.Fatalf("missing bindings table in rewritten keybindings:\n%s", out)
+	}
+	if !strings.Contains(out, "navigate") {
+		t.Fatalf("rewritten keybindings missing navigate action:\n%s", out)
+	}
+}
+
 func TestSettingsRowsPerPageCustomDirectionalOverride(t *testing.T) {
 	reg := NewKeyRegistry()
 	if err := reg.ApplyOverrides([]shortcutOverride{
@@ -878,15 +929,26 @@ func TestTabNumberShortcuts(t *testing.T) {
 	m := newModel()
 	m.ready = true
 	m.managerMode = managerModeAccounts
-	for i := range tabNames {
-		key := fmt.Sprintf("%d", i+1)
+	tests := []struct {
+		action Action
+		want   int
+	}{
+		{actionCommandGoTransactions, tabManager},
+		{actionCommandGoDashboard, tabDashboard},
+		{actionCommandGoSettings, tabSettings},
+	}
+	for _, tt := range tests {
+		key := m.primaryActionKey(scopeGlobal, tt.action, "")
+		if key == "" {
+			t.Fatalf("missing key for global action %q", tt.action)
+		}
 		next, _ := m.Update(keyMsg(key))
 		got := next.(model)
-		if got.activeTab != i {
-			t.Fatalf("after %s: activeTab = %d, want %d", key, got.activeTab, i)
+		if got.activeTab != tt.want {
+			t.Fatalf("after action %q key %q: activeTab = %d, want %d", tt.action, key, got.activeTab, tt.want)
 		}
-		if i == tabManager && got.managerMode != managerModeTransactions {
-			t.Fatalf("after %s: managerMode = %d, want transactions", key, got.managerMode)
+		if tt.want == tabManager && got.managerMode != managerModeTransactions {
+			t.Fatalf("after action %q key %q: managerMode = %d, want transactions", tt.action, key, got.managerMode)
 		}
 		m = got
 	}
@@ -899,26 +961,30 @@ func TestTabNumberShortcutsWorkInSettingsMenu(t *testing.T) {
 	m.settActive = true
 	m.settSection = settSecDBImport
 
-	next, _ := m.Update(keyMsg("1"))
+	toManager := m.primaryActionKey(scopeGlobal, actionCommandGoTransactions, "1")
+	toDash := m.primaryActionKey(scopeGlobal, actionCommandGoDashboard, "2")
+	toSettings := m.primaryActionKey(scopeGlobal, actionCommandGoSettings, "3")
+
+	next, _ := m.Update(keyMsg(toManager))
 	got := next.(model)
 	if got.activeTab != tabManager {
-		t.Fatalf("after 1 in settings: activeTab = %d, want %d", got.activeTab, tabManager)
+		t.Fatalf("after manager shortcut in settings: activeTab = %d, want %d", got.activeTab, tabManager)
 	}
 	if got.managerMode != managerModeTransactions {
-		t.Fatalf("after 1 in settings: managerMode = %d, want managerModeTransactions", got.managerMode)
+		t.Fatalf("after manager shortcut in settings: managerMode = %d, want managerModeTransactions", got.managerMode)
 	}
 
-	next, _ = got.Update(keyMsg("2"))
+	next, _ = got.Update(keyMsg(toDash))
 	got = next.(model)
 	if got.activeTab != tabDashboard {
-		t.Fatalf("after 2 in settings flow: activeTab = %d, want %d", got.activeTab, tabDashboard)
+		t.Fatalf("after dashboard shortcut in settings flow: activeTab = %d, want %d", got.activeTab, tabDashboard)
 	}
 
 	got.activeTab = tabSettings
-	next, _ = got.Update(keyMsg("3"))
+	next, _ = got.Update(keyMsg(toSettings))
 	got = next.(model)
 	if got.activeTab != tabSettings {
-		t.Fatalf("after 3 in settings flow: activeTab = %d, want %d", got.activeTab, tabSettings)
+		t.Fatalf("after settings shortcut in settings flow: activeTab = %d, want %d", got.activeTab, tabSettings)
 	}
 }
 

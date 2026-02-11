@@ -381,21 +381,27 @@ func (m model) canOpenCommandUI() bool {
 
 func (m model) updateCommandUI(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	keyName := normalizeKeyName(msg.String())
-	switch keyName {
-	case "esc":
+	scope := scopeCommandMode
+	if m.commandUIKind == commandUIKindPalette {
+		scope = scopeCommandPalette
+	}
+	switch {
+	case m.isAction(scope, actionClose, msg):
 		m.closeCommandUI()
 		return m, nil
-	case "enter":
+	case m.isAction(scope, actionSelect, msg):
 		return m.executeSelectedCommand()
-	case "backspace":
+	case isBackspaceKey(msg):
 		deleteLastASCIIByte(&m.commandQuery)
 		m.rebuildCommandMatches()
 		return m, nil
-	case "up", "k", "ctrl+p":
-		m.commandCursor = moveBoundedCursor(m.commandCursor, len(m.commandMatches), -1)
-		return m, nil
-	case "down", "j", "ctrl+n":
-		m.commandCursor = moveBoundedCursor(m.commandCursor, len(m.commandMatches), 1)
+	case m.isAction(scope, actionNavigate, msg):
+		delta := navDeltaFromKeyName(keyName)
+		if delta < 0 {
+			m.commandCursor = moveBoundedCursor(m.commandCursor, len(m.commandMatches), -1)
+		} else if delta > 0 {
+			m.commandCursor = moveBoundedCursor(m.commandCursor, len(m.commandMatches), 1)
+		}
 		return m, nil
 	}
 	if isPrintableASCIIKey(msg.String()) {

@@ -107,6 +107,24 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.setError(fmt.Sprintf("Save settings failed: %v", msg.err))
 		}
 		return m, nil
+	case keybindingsResetMsg:
+		if msg.err != nil {
+			m.setError(fmt.Sprintf("Reset keybindings failed: %v", msg.err))
+			return m, nil
+		}
+		bindings, err := loadKeybindingsConfig()
+		if err != nil {
+			m.setError(fmt.Sprintf("Reload keybindings failed: %v", err))
+			return m, nil
+		}
+		keys := NewKeyRegistry()
+		if err := keys.ApplyKeybindingConfig(bindings); err != nil {
+			m.setError(fmt.Sprintf("Apply keybindings failed: %v", err))
+			return m, nil
+		}
+		m.keys = keys
+		m.setStatus("Keybindings reset to defaults.")
+		return m, nil
 	case quickCategoryAppliedMsg:
 		return m.handleQuickCategoryApplied(msg)
 	case quickTagsAppliedMsg:
