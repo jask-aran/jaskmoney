@@ -1,6 +1,7 @@
 package main
 
 import (
+	"fmt"
 	"testing"
 	"time"
 
@@ -295,10 +296,16 @@ func TestSettingsRightColumnJK(t *testing.T) {
 		t.Errorf("after j: section = %d, want %d", m3.settSection, settSecDBImport)
 	}
 
-	m4, _ := m3.updateSettings(keyMsg("k"))
+	m4, _ := m3.updateSettings(keyMsg("j"))
 	m5 := m4.(model)
-	if m5.settSection != settSecChart {
-		t.Errorf("after k: section = %d, want %d", m5.settSection, settSecChart)
+	if m5.settSection != settSecImportHistory {
+		t.Errorf("after j j: section = %d, want %d", m5.settSection, settSecImportHistory)
+	}
+
+	m6, _ := m5.updateSettings(keyMsg("k"))
+	m7 := m6.(model)
+	if m7.settSection != settSecDBImport {
+		t.Errorf("after k: section = %d, want %d", m7.settSection, settSecDBImport)
 	}
 }
 
@@ -405,7 +412,7 @@ func TestSettingsCategoryEditMode(t *testing.T) {
 	m.settSection = settSecCategories
 	m.settItemCursor = 0
 
-	m2, _ := m.updateSettings(keyMsg("e"))
+	m2, _ := m.updateSettings(keyMsg("enter"))
 	m3 := m2.(model)
 	if m3.settMode != settModeEditCat {
 		t.Errorf("mode = %q, want %q", m3.settMode, settModeEditCat)
@@ -415,6 +422,23 @@ func TestSettingsCategoryEditMode(t *testing.T) {
 	}
 	if m3.settEditID != 1 {
 		t.Errorf("editID = %d, want 1", m3.settEditID)
+	}
+}
+
+func TestSettingsTagEditModeWithEnter(t *testing.T) {
+	m := testSettingsModel()
+	m.tags = []tag{{id: 1, name: "IGNORE", color: "#f38ba8"}}
+	m.settActive = true
+	m.settSection = settSecTags
+	m.settItemCursor = 0
+
+	m2, _ := m.updateSettings(keyMsg("enter"))
+	m3 := m2.(model)
+	if m3.settMode != settModeEditTag {
+		t.Errorf("mode = %q, want %q", m3.settMode, settModeEditTag)
+	}
+	if m3.settInput != "IGNORE" {
+		t.Errorf("input = %q, want %q", m3.settInput, "IGNORE")
 	}
 }
 
@@ -648,6 +672,10 @@ func TestSettingsColorNavigation(t *testing.T) {
 	m.settMode = settModeAddCat
 	m.settColorIdx = 0
 
+	// Move focus to color field.
+	m1, _ := m.updateSettings(tea.KeyMsg{Type: tea.KeyDown})
+	m = m1.(model)
+
 	// Right moves color forward (l key)
 	m2, _ := m.updateSettings(keyMsg("l"))
 	m3 := m2.(model)
@@ -846,6 +874,54 @@ func TestTabCycleBackward(t *testing.T) {
 	}
 }
 
+func TestTabNumberShortcuts(t *testing.T) {
+	m := newModel()
+	m.ready = true
+	m.managerMode = managerModeAccounts
+	for i := range tabNames {
+		key := fmt.Sprintf("%d", i+1)
+		next, _ := m.Update(keyMsg(key))
+		got := next.(model)
+		if got.activeTab != i {
+			t.Fatalf("after %s: activeTab = %d, want %d", key, got.activeTab, i)
+		}
+		if i == tabManager && got.managerMode != managerModeTransactions {
+			t.Fatalf("after %s: managerMode = %d, want transactions", key, got.managerMode)
+		}
+		m = got
+	}
+}
+
+func TestTabNumberShortcutsWorkInSettingsMenu(t *testing.T) {
+	m := testSettingsModel()
+	m.ready = true
+	m.activeTab = tabSettings
+	m.settActive = true
+	m.settSection = settSecDBImport
+
+	next, _ := m.Update(keyMsg("1"))
+	got := next.(model)
+	if got.activeTab != tabManager {
+		t.Fatalf("after 1 in settings: activeTab = %d, want %d", got.activeTab, tabManager)
+	}
+	if got.managerMode != managerModeTransactions {
+		t.Fatalf("after 1 in settings: managerMode = %d, want managerModeTransactions", got.managerMode)
+	}
+
+	next, _ = got.Update(keyMsg("2"))
+	got = next.(model)
+	if got.activeTab != tabDashboard {
+		t.Fatalf("after 2 in settings flow: activeTab = %d, want %d", got.activeTab, tabDashboard)
+	}
+
+	got.activeTab = tabSettings
+	next, _ = got.Update(keyMsg("3"))
+	got = next.(model)
+	if got.activeTab != tabSettings {
+		t.Fatalf("after 3 in settings flow: activeTab = %d, want %d", got.activeTab, tabSettings)
+	}
+}
+
 // ---------------------------------------------------------------------------
 // Dupe modal key handling tests
 // ---------------------------------------------------------------------------
@@ -897,6 +973,189 @@ func TestFilePickerNavigation(t *testing.T) {
 	m5 := m4.(model)
 	if m5.importCursor != 0 {
 		t.Errorf("after k: importCursor = %d, want 0", m5.importCursor)
+	}
+}
+
+func TestSettingsAddScopedTagSavesCategoryScope(t *testing.T) {
+	m := testSettingsModel()
+	db, cleanup := testDB(t)
+	defer cleanup()
+
+	m.db = db
+	m.settActive = true
+	m.settSection = settSecTags
+
+	addKey := m.primaryActionKey(scopeSettingsActiveTags, actionAdd, "a")
+	next, _ := m.updateSettings(keyMsg(addKey))
+	got := next.(model)
+	if got.settMode != settModeAddTag {
+		t.Fatalf("mode = %q, want %q", got.settMode, settModeAddTag)
+	}
+	if got.settTagScopeID != 0 {
+		t.Fatalf("default tag scope = %d, want global (0)", got.settTagScopeID)
+	}
+
+	for _, ch := range []string{"S", "c", "o", "p", "e", "d"} {
+		next, _ = got.updateSettings(keyMsg(ch))
+		got = next.(model)
+	}
+	next, _ = got.updateSettings(tea.KeyMsg{Type: tea.KeyDown})
+	got = next.(model)
+	next, _ = got.updateSettings(tea.KeyMsg{Type: tea.KeyDown})
+	got = next.(model)
+	next, _ = got.updateSettings(tea.KeyMsg{Type: tea.KeyRight})
+	got = next.(model)
+	if got.settTagScopeID == 0 {
+		t.Fatal("expected non-global scope after h/l adjust on scope field")
+	}
+
+	saveKey := got.primaryActionKey(scopeSettingsModeTag, actionSave, "enter")
+	next, cmd := got.updateSettings(keyMsg(saveKey))
+	got = next.(model)
+	if cmd == nil {
+		t.Fatal("expected save command")
+	}
+	msg := cmd()
+	saved, ok := msg.(tagSavedMsg)
+	if !ok {
+		t.Fatalf("save message type = %T, want tagSavedMsg", msg)
+	}
+	if saved.err != nil {
+		t.Fatalf("tag save error: %v", saved.err)
+	}
+
+	stored, err := loadTagByNameCI(db, "Scoped")
+	if err != nil {
+		t.Fatalf("loadTagByNameCI: %v", err)
+	}
+	if stored == nil {
+		t.Fatal("expected stored tag")
+	}
+	if stored.categoryID == nil {
+		t.Fatal("stored tag should keep selected category scope")
+	}
+	if *stored.categoryID != got.settTagScopeID {
+		t.Fatalf("stored category scope = %d, want %d", *stored.categoryID, got.settTagScopeID)
+	}
+}
+
+func TestSettingsTagNameFieldIgnoresColorScopeAdjustKeys(t *testing.T) {
+	m := testSettingsModel()
+	m.settActive = true
+	m.settSection = settSecTags
+	addKey := m.primaryActionKey(scopeSettingsActiveTags, actionAdd, "a")
+	next, _ := m.updateSettings(keyMsg(addKey))
+	got := next.(model)
+	if got.settMode != settModeAddTag {
+		t.Fatalf("mode = %q, want %q", got.settMode, settModeAddTag)
+	}
+	if got.settTagFocus != 0 {
+		t.Fatalf("tag focus = %d, want name field (0)", got.settTagFocus)
+	}
+
+	initialColor := got.settColorIdx
+	initialScope := got.settTagScopeID
+
+	scopeAdjustKey := "l"
+	for _, b := range got.keys.BindingsForScope(scopeSettingsModeTag) {
+		if b.Action != actionColor {
+			continue
+		}
+		for _, k := range b.Keys {
+			if navDeltaFromKeyName(normalizeKeyName(k)) > 0 {
+				scopeAdjustKey = k
+				break
+			}
+		}
+	}
+
+	next, _ = got.updateSettings(keyMsg(scopeAdjustKey))
+	got = next.(model)
+	if got.settColorIdx != initialColor {
+		t.Fatalf("color index changed on name field: got %d want %d", got.settColorIdx, initialColor)
+	}
+	if got.settTagScopeID != initialScope {
+		t.Fatalf("scope changed on name field: got %d want %d", got.settTagScopeID, initialScope)
+	}
+}
+
+func TestSettingsCategoryNameFieldConsumesShortcutKeys(t *testing.T) {
+	m := testSettingsModel()
+	m.ready = true
+	m.activeTab = tabSettings
+	m.settActive = true
+	m.settSection = settSecCategories
+
+	addKey := m.primaryActionKey(scopeSettingsActiveCategories, actionAdd, "a")
+	next, _ := m.updateSettings(keyMsg(addKey))
+	got := next.(model)
+	if got.settMode != settModeAddCat {
+		t.Fatalf("mode = %q, want %q", got.settMode, settModeAddCat)
+	}
+	if got.settCatFocus != 0 {
+		t.Fatalf("category focus = %d, want 0", got.settCatFocus)
+	}
+
+	var cmd tea.Cmd
+	for _, key := range []string{"q", "h", "j", "k", "l", "s"} {
+		next, cmd = got.updateSettings(keyMsg(key))
+		if cmd != nil {
+			t.Fatalf("key %q should not trigger command while editing category name", key)
+		}
+		got = next.(model)
+	}
+
+	if got.settInput != "qhjkls" {
+		t.Fatalf("category input = %q, want %q", got.settInput, "qhjkls")
+	}
+	if got.settMode != settModeAddCat {
+		t.Fatalf("mode = %q, want %q", got.settMode, settModeAddCat)
+	}
+	if got.settCatFocus != 0 {
+		t.Fatalf("category focus changed = %d, want 0", got.settCatFocus)
+	}
+	if got.activeTab != tabSettings {
+		t.Fatalf("activeTab = %d, want %d", got.activeTab, tabSettings)
+	}
+}
+
+func TestSettingsTagNameFieldConsumesShortcutKeys(t *testing.T) {
+	m := testSettingsModel()
+	m.ready = true
+	m.activeTab = tabSettings
+	m.settActive = true
+	m.settSection = settSecTags
+
+	addKey := m.primaryActionKey(scopeSettingsActiveTags, actionAdd, "a")
+	next, _ := m.updateSettings(keyMsg(addKey))
+	got := next.(model)
+	if got.settMode != settModeAddTag {
+		t.Fatalf("mode = %q, want %q", got.settMode, settModeAddTag)
+	}
+	if got.settTagFocus != 0 {
+		t.Fatalf("tag focus = %d, want 0", got.settTagFocus)
+	}
+
+	var cmd tea.Cmd
+	for _, key := range []string{"q", "h", "j", "k", "l", "s"} {
+		next, cmd = got.updateSettings(keyMsg(key))
+		if cmd != nil {
+			t.Fatalf("key %q should not trigger command while editing tag name", key)
+		}
+		got = next.(model)
+	}
+
+	if got.settInput != "qhjkls" {
+		t.Fatalf("tag input = %q, want %q", got.settInput, "qhjkls")
+	}
+	if got.settMode != settModeAddTag {
+		t.Fatalf("mode = %q, want %q", got.settMode, settModeAddTag)
+	}
+	if got.settTagFocus != 0 {
+		t.Fatalf("tag focus changed = %d, want 0", got.settTagFocus)
+	}
+	if got.activeTab != tabSettings {
+		t.Fatalf("activeTab = %d, want %d", got.activeTab, tabSettings)
 	}
 }
 

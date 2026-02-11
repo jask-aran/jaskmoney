@@ -165,7 +165,7 @@ func (m model) openQuickCategoryPicker(filtered []transaction) (tea.Model, tea.C
 			Color: c.color,
 		})
 	}
-	m.catPicker = newPicker("Quick Categorize", items, false, "Create")
+	m.catPicker = newPicker("Quick Categorize", items, false, "")
 	m.catPicker.cursorOnly = true
 	m.catPickerFor = targetIDs
 	return m, nil
@@ -203,28 +203,42 @@ func (m model) openQuickTagPicker(filtered []transaction) (tea.Model, tea.Cmd) {
 	}
 
 	items := make([]pickerItem, 0, len(m.tags))
-	var txnCategoryID *int
-	if len(targetIDs) == 1 {
-		if txn := m.findTxnByID(targetIDs[0]); txn != nil {
-			txnCategoryID = txn.categoryID
+	targetCategoryIDs := make(map[int]bool)
+	for _, txnID := range targetIDs {
+		if txn := m.findTxnByID(txnID); txn != nil && txn.categoryID != nil {
+			targetCategoryIDs[*txn.categoryID] = true
 		}
 	}
+	scopedItems := make([]pickerItem, 0, len(m.tags))
+	globalItems := make([]pickerItem, 0, len(m.tags))
+	unscopedItems := make([]pickerItem, 0, len(m.tags))
 	for _, tg := range m.tags {
 		section := "Global"
 		if tg.categoryID != nil {
-			if txnCategoryID != nil && *txnCategoryID == *tg.categoryID {
+			if targetCategoryIDs[*tg.categoryID] {
 				section = "Scoped"
 			} else {
-				section = "Other Scoped"
+				section = "Unscoped"
 			}
 		}
-		items = append(items, pickerItem{
+		item := pickerItem{
 			ID:      tg.id,
 			Label:   tg.name,
 			Color:   tg.color,
 			Section: section,
-		})
+		}
+		switch section {
+		case "Scoped":
+			scopedItems = append(scopedItems, item)
+		case "Global":
+			globalItems = append(globalItems, item)
+		default:
+			unscopedItems = append(unscopedItems, item)
+		}
 	}
+	items = append(items, scopedItems...)
+	items = append(items, globalItems...)
+	items = append(items, unscopedItems...)
 	m.tagPicker = newPicker("Quick Tags", items, true, "Create")
 	m.tagPicker.cursorOnly = true
 	m.tagPickerFor = targetIDs
@@ -284,42 +298,8 @@ func (m model) updateCatPicker(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			return quickCategoryAppliedMsg{count: n, categoryName: catName, created: false, err: err}
 		}
 	case pickerActionCreate:
-		if m.db == nil {
-			m.setError("Database not ready.")
-			return m, nil
-		}
-		name := strings.TrimSpace(res.CreatedQuery)
-		if name == "" {
-			m.setError("Category name cannot be empty.")
-			return m, nil
-		}
-		targetIDs := append([]int(nil), m.catPickerFor...)
-		db := m.db
-		return m, func() tea.Msg {
-			colors := CategoryAccentColors()
-			color := "#a6e3a1"
-			if len(colors) > 0 {
-				color = string(colors[0])
-			}
-
-			created := true
-			catID, err := insertCategory(db, name, color)
-			if err != nil {
-				created = false
-				existing, lookupErr := loadCategoryByNameCI(db, name)
-				if lookupErr != nil {
-					return quickCategoryAppliedMsg{err: err}
-				}
-				if existing == nil {
-					return quickCategoryAppliedMsg{err: err}
-				}
-				catID = existing.id
-				name = existing.name
-			}
-
-			n, err := updateTransactionsCategory(db, targetIDs, &catID)
-			return quickCategoryAppliedMsg{count: n, categoryName: name, created: created, err: err}
-		}
+		m.setStatus("Create categories from Settings -> Categories.")
+		return m, nil
 	}
 	return m, nil
 }

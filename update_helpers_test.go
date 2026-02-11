@@ -79,7 +79,7 @@ func TestMoveSettingsSectionByColumn(t *testing.T) {
 		{name: "left wrap forward", start: settSecRules, delta: 1, wantSec: settSecCategories},
 		{name: "left backward", start: settSecCategories, delta: -1, wantSec: settSecRules},
 		{name: "right forward", start: settSecChart, delta: 1, wantSec: settSecDBImport},
-		{name: "right wrap backward", start: settSecChart, delta: -1, wantSec: settSecDBImport},
+		{name: "right wrap backward", start: settSecChart, delta: -1, wantSec: settSecImportHistory},
 	}
 
 	for _, tt := range tests {

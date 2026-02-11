@@ -2,12 +2,20 @@ package main
 
 import (
 	"fmt"
+	"strconv"
 	"strings"
 
 	tea "github.com/charmbracelet/bubbletea"
 )
 
 func (m model) updateMain(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
+	if tabIdx, ok := tabShortcutIndex(msg.String()); ok {
+		m.activeTab = tabIdx
+		if m.activeTab == tabManager {
+			m.managerMode = managerModeTransactions
+		}
+		return m, nil
+	}
 	if m.isAction(scopeGlobal, actionQuit, msg) {
 		return m, tea.Quit
 	}
@@ -25,7 +33,6 @@ func (m model) updateMain(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		}
 		return m, nil
 	}
-
 	// Tab-specific keys
 	if m.activeTab == tabDashboard {
 		return m.updateDashboard(msg)
@@ -34,6 +41,22 @@ func (m model) updateMain(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		return m.updateManager(msg)
 	}
 	return m, nil
+}
+
+func tabShortcutIndex(keyName string) (int, bool) {
+	keyName = normalizeKeyName(keyName)
+	if len(keyName) != 1 || keyName[0] < '1' || keyName[0] > '9' {
+		return 0, false
+	}
+	n, err := strconv.Atoi(keyName)
+	if err != nil || n < 1 {
+		return 0, false
+	}
+	idx := n - 1
+	if idx < 0 || idx >= tabCount || idx >= len(tabNames) {
+		return 0, false
+	}
+	return idx, true
 }
 
 func (m model) updateManager(msg tea.KeyMsg) (tea.Model, tea.Cmd) {

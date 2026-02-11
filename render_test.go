@@ -988,7 +988,7 @@ func TestViewManagerTransactionsNeverExceedsViewportWidthWithLongContent(t *test
 	}
 }
 
-func TestRenderSettingsDBImportIncludesImportHistory(t *testing.T) {
+func TestRenderSettingsDBAndImportHistoryCards(t *testing.T) {
 	m := newModel()
 	m.dbInfo = dbInfo{
 		schemaVersion:    2,
@@ -1009,11 +1009,25 @@ func TestRenderSettingsDBImportIncludesImportHistory(t *testing.T) {
 	if !strings.Contains(output, "Schema version") {
 		t.Fatal("missing DB summary block")
 	}
-	if !strings.Contains(output, "Import History") {
-		t.Fatal("missing import history heading")
+	if strings.Contains(output, "Import History") {
+		t.Fatal("database card should not include import history heading")
 	}
-	if !strings.Contains(output, "ANZ.csv") {
+
+	history := renderSettingsImportHistory(m, 24)
+	if !strings.Contains(history, "ANZ.csv") {
 		t.Fatal("missing import history row")
+	}
+}
+
+func TestRenderSettingsSectionBoxUsesBorderTitleStyle(t *testing.T) {
+	m := newModel()
+	m.settSection = settSecCategories
+	out := renderSettingsSectionBox("Categories", settSecCategories, m, 32, "content")
+	if !strings.Contains(out, "╭") || !strings.Contains(out, "╯") {
+		t.Fatal("settings card should render as a bordered box")
+	}
+	if !strings.Contains(out, "content") {
+		t.Fatal("missing content")
 	}
 }
 

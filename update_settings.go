@@ -12,7 +12,10 @@ func settSectionForColumn(col, row int) int {
 		if row <= 0 {
 			return settSecChart
 		}
-		return settSecDBImport
+		if row == 1 {
+			return settSecDBImport
+		}
+		return settSecImportHistory
 	}
 	// Left column: row 0 = Categories, row 1 = Tags, row 2 = Rules
 	if row <= 0 {
@@ -37,6 +40,8 @@ func settColumnRow(sec int) (int, int) {
 		return settColRight, 0
 	case settSecDBImport:
 		return settColRight, 1
+	case settSecImportHistory:
+		return settColRight, 2
 	}
 	return settColLeft, 0
 }
@@ -53,6 +58,8 @@ func settingsActiveScope(section int) string {
 		return scopeSettingsActiveChart
 	case settSecDBImport:
 		return scopeSettingsActiveDBImport
+	case settSecImportHistory:
+		return scopeSettingsActiveImportHist
 	default:
 		return scopeSettingsActiveCategories
 	}
@@ -73,6 +80,13 @@ func (m model) updateSettings(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	// Two-key confirm check
 	if m.confirmAction != confirmActionNone {
 		return m.updateSettingsConfirm(msg)
+	}
+	if tabIdx, ok := tabShortcutIndex(msg.String()); ok {
+		m.activeTab = tabIdx
+		if m.activeTab == tabManager {
+			m.managerMode = managerModeTransactions
+		}
+		return m, nil
 	}
 
 	// If a section is active, delegate to section-specific handler
@@ -138,6 +152,8 @@ func (m model) updateSettingsActive(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		return m.updateSettingsChart(msg)
 	case settSecDBImport:
 		return m.updateSettingsDBImport(msg)
+	case settSecImportHistory:
+		return m, nil
 	}
 	return m, nil
 }
@@ -150,7 +166,7 @@ func (m model) updateSettingsCategories(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	case m.isAction(scopeSettingsActiveCategories, actionAdd, msg):
 		m.beginSettingsCategoryMode(nil)
 		return m, nil
-	case m.isAction(scopeSettingsActiveCategories, actionEdit, msg):
+	case m.isAction(scopeSettingsActiveCategories, actionSelect, msg), normalizeKeyName(msg.String()) == "enter":
 		if m.settItemCursor < len(m.categories) {
 			cat := m.categories[m.settItemCursor]
 			m.beginSettingsCategoryMode(&cat)
@@ -179,7 +195,7 @@ func (m model) updateSettingsTags(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	case m.isAction(scopeSettingsActiveTags, actionAdd, msg):
 		m.beginSettingsTagMode(nil)
 		return m, nil
-	case m.isAction(scopeSettingsActiveTags, actionEdit, msg):
+	case m.isAction(scopeSettingsActiveTags, actionSelect, msg), normalizeKeyName(msg.String()) == "enter":
 		if m.settItemCursor < len(m.tags) {
 			tg := m.tags[m.settItemCursor]
 			m.beginSettingsTagMode(&tg)
@@ -361,26 +377,13 @@ func (m model) updateSettingsTextInput(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	scope := scopeSettingsModeCat
 	palette := CategoryAccentColors()
 	isTagMode := m.settMode == settModeAddTag || m.settMode == settModeEditTag
+	isCategoryMode := m.settMode == settModeAddCat || m.settMode == settModeEditCat
 	if isTagMode {
 		scope = scopeSettingsModeTag
 		palette = TagAccentColors()
 	}
 
-	keyName := normalizeKeyName(msg.String())
-	switch {
-	case m.isAction(scope, actionClose, msg):
-		m.settMode = settModeNone
-		m.settInput = ""
-		return m, nil
-	case m.isAction(scope, actionColor, msg):
-		delta := navDeltaFromKeyName(keyName)
-		if len(palette) > 0 && delta < 0 {
-			m.settColorIdx = (m.settColorIdx - 1 + len(palette)) % len(palette)
-		} else if len(palette) > 0 && delta > 0 {
-			m.settColorIdx = (m.settColorIdx + 1) % len(palette)
-		}
-		return m, nil
-	case m.isAction(scope, actionSave, msg):
+	saveInput := func(m model) (tea.Model, tea.Cmd) {
 		if m.settInput == "" {
 			m.setStatus("Name cannot be empty.")
 			return m, nil
@@ -395,15 +398,20 @@ func (m model) updateSettingsTextInput(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		name := m.settInput
 		db := m.db
 		if isTagMode {
+			var scopeCategoryID *int
+			if m.settTagScopeID != 0 {
+				id := m.settTagScopeID
+				scopeCategoryID = &id
+			}
 			if m.settMode == settModeAddTag {
 				return m, func() tea.Msg {
-					_, err := insertTag(db, name, color, nil)
+					_, err := insertTag(db, name, color, scopeCategoryID)
 					return tagSavedMsg{err: err}
 				}
 			}
 			id := m.settEditID
 			return m, func() tea.Msg {
-				err := updateTag(db, id, name, color)
+				err := updateTag(db, id, name, color, scopeCategoryID)
 				return tagSavedMsg{err: err}
 			}
 		}
@@ -419,15 +427,125 @@ func (m model) updateSettingsTextInput(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			err := updateCategory(db, id, name, color)
 			return categorySavedMsg{err: err}
 		}
+	}
+
+	keyName := normalizeKeyName(msg.String())
+	isNameFocus := (isCategoryMode && m.settCatFocus == 0) || (isTagMode && m.settTagFocus == 0)
+	if isNameFocus {
+		switch keyName {
+		case "esc":
+			m.settMode = settModeNone
+			m.settInput = ""
+			m.settCatFocus = 0
+			m.settTagFocus = 0
+			m.settTagScopeID = 0
+			return m, nil
+		case "enter":
+			return saveInput(m)
+		case "backspace":
+			deleteLastASCIIByte(&m.settInput)
+			return m, nil
+		default:
+			if appendPrintableASCII(&m.settInput, msg.String()) {
+				return m, nil
+			}
+		}
+	}
+
+	switch {
+	case m.isAction(scope, actionClose, msg) || keyName == "esc":
+		m.settMode = settModeNone
+		m.settInput = ""
+		m.settCatFocus = 0
+		m.settTagFocus = 0
+		m.settTagScopeID = 0
+		return m, nil
+	case isCategoryMode && m.isAction(scopeSettingsModeCat, actionNavigate, msg):
+		delta := navDeltaFromKeyName(keyName)
+		if delta > 0 {
+			m.settCatFocus = (m.settCatFocus + 1) % 2
+		} else if delta < 0 {
+			m.settCatFocus = (m.settCatFocus - 1 + 2) % 2
+		}
+		return m, nil
+	case isTagMode && m.isAction(scopeSettingsModeTag, actionNavigate, msg):
+		delta := navDeltaFromKeyName(keyName)
+		if delta > 0 {
+			m.settTagFocus = (m.settTagFocus + 1) % 3
+		} else if delta < 0 {
+			m.settTagFocus = (m.settTagFocus - 1 + 3) % 3
+		}
+		return m, nil
+	case m.isAction(scope, actionColor, msg):
+		delta := navDeltaFromKeyName(keyName)
+		if isCategoryMode && m.settCatFocus != 1 {
+			return m, nil
+		}
+		if isTagMode {
+			if m.settTagFocus == 2 {
+				scopeOpts := m.tagScopeOptions()
+				if len(scopeOpts) > 0 && delta != 0 {
+					idx := tagScopeIndex(scopeOpts, m.settTagScopeID)
+					if delta < 0 {
+						idx = (idx - 1 + len(scopeOpts)) % len(scopeOpts)
+					} else {
+						idx = (idx + 1) % len(scopeOpts)
+					}
+					m.settTagScopeID = scopeOpts[idx]
+				}
+				return m, nil
+			}
+			if m.settTagFocus != 1 {
+				return m, nil
+			}
+		}
+		if len(palette) > 0 && delta < 0 {
+			m.settColorIdx = (m.settColorIdx - 1 + len(palette)) % len(palette)
+		} else if len(palette) > 0 && delta > 0 {
+			m.settColorIdx = (m.settColorIdx + 1) % len(palette)
+		}
+		return m, nil
+	case m.isAction(scope, actionSave, msg) || keyName == "enter":
+		return saveInput(m)
 	case isBackspaceKey(msg):
+		if isCategoryMode && m.settCatFocus != 0 {
+			return m, nil
+		}
+		if isTagMode && m.settTagFocus != 0 {
+			return m, nil
+		}
 		deleteLastASCIIByte(&m.settInput)
 		return m, nil
 	case m.isAction(scopeGlobal, actionQuit, msg):
 		return m, tea.Quit
 	default:
+		if isCategoryMode && m.settCatFocus != 0 {
+			return m, nil
+		}
+		if isTagMode && m.settTagFocus != 0 {
+			return m, nil
+		}
 		appendPrintableASCII(&m.settInput, msg.String())
 		return m, nil
 	}
+}
+
+func (m model) tagScopeOptions() []int {
+	out := make([]int, 0, len(m.categories)+1)
+	out = append(out, 0) // global
+	for _, c := range m.categories {
+		out = append(out, c.id)
+	}
+	return out
+}
+
+func tagScopeIndex(options []int, scopeID int) int {
+	for i, id := range options {
+		if id == scopeID {
+			return i
+		}
+	}
+	return 0
 }
 
 // updateSettingsRuleInput handles text input for add/edit rule pattern.

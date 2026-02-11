@@ -200,12 +200,13 @@ const (
 	settSecTags
 	settSecRules
 	settSecChart
-	settSecDBImport // combined Database + Import History
+	settSecDBImport
+	settSecImportHistory
 	settSecCount
 )
 
-// Column mapping: left column has Categories (row 0) and Rules (row 1).
-// Right column has Chart (row 0) and DB+Import (row 1).
+// Column mapping: left column has Categories (row 0), Tags (row 1), Rules (row 2).
+// Right column has Chart (row 0), Database (row 1), Import History (row 2).
 const (
 	settColLeft  = 0
 	settColRight = 1
@@ -315,7 +316,10 @@ type model struct {
 	settItemCursor int                   // cursor within the active section's item list
 	settMode       string                // current editing mode (settMode*)
 	settInput      string                // text input buffer for add/edit
+	settCatFocus   int                   // category editor focus: 0=name, 1=color
 	settColorIdx   int                   // index into CategoryAccentColors() during add/edit
+	settTagFocus   int                   // tag editor focus: 0=name, 1=color, 2=scope
+	settTagScopeID int                   // tag editor scope category id; 0 means global
 	settRuleCatIdx int                   // category cursor when picking for a rule
 	settEditID     int                   // ID of item being edited
 	confirmAction  settingsConfirmAction // pending settings confirm action
