@@ -215,6 +215,34 @@ func TestImportCSVBadDateFails(t *testing.T) {
 	}
 }
 
+func TestImportCSVBadRowRollsBackNoPartialWrites(t *testing.T) {
+	db, cleanup := testDB(t)
+	defer cleanup()
+
+	// First row is valid, second row is invalid date. Import should fail and roll
+	// back all writes from this file.
+	csv := "3/02/2026,-20.00,VALID FIRST ROW\nnot-a-date,-12.00,BAD SECOND ROW\n"
+	path := writeTestCSV(t, csv)
+
+	inserted, _, err := importCSV(db, path, testANZFormat(), true)
+	if err == nil {
+		t.Fatal("expected importCSV error for invalid row")
+	}
+	// Implementation tracks inserted rows before parse failure; DB must still be
+	// unchanged due transaction rollback.
+	if inserted != 1 {
+		t.Fatalf("inserted count before rollback = %d, want 1", inserted)
+	}
+
+	rows, loadErr := loadRows(db)
+	if loadErr != nil {
+		t.Fatalf("loadRows: %v", loadErr)
+	}
+	if len(rows) != 0 {
+		t.Fatalf("rows in DB after failed import = %d, want 0", len(rows))
+	}
+}
+
 func TestImportCSVBadAmountFails(t *testing.T) {
 	db, cleanup := testDB(t)
 	defer cleanup()
@@ -332,6 +360,47 @@ func TestImportCSVForAccountNoSignFlipByAccountType(t *testing.T) {
 	}
 }
 
+func TestImportCSVForAccountDuplicateDetectionIsAccountScoped(t *testing.T) {
+	db, cleanup := testDB(t)
+	defer cleanup()
+
+	accountAID, err := insertAccount(db, "ACC_A", "credit", true)
+	if err != nil {
+		t.Fatalf("insert ACC_A: %v", err)
+	}
+	accountBID, err := insertAccount(db, "ACC_B", "debit", true)
+	if err != nil {
+		t.Fatalf("insert ACC_B: %v", err)
+	}
+
+	path := writeTestCSV(t, "3/02/2026,-25.00,SAME ROW\n")
+	format := testANZFormat()
+
+	ins1, dup1, err := importCSVForAccount(db, path, format, &accountAID, true)
+	if err != nil {
+		t.Fatalf("first import ACC_A: %v", err)
+	}
+	if ins1 != 1 || dup1 != 0 {
+		t.Fatalf("ACC_A first import inserted/dupes = %d/%d, want 1/0", ins1, dup1)
+	}
+
+	ins2, dup2, err := importCSVForAccount(db, path, format, &accountAID, true)
+	if err != nil {
+		t.Fatalf("second import ACC_A: %v", err)
+	}
+	if ins2 != 0 || dup2 != 1 {
+		t.Fatalf("ACC_A second import inserted/dupes = %d/%d, want 0/1", ins2, dup2)
+	}
+
+	ins3, dup3, err := importCSVForAccount(db, path, format, &accountBID, true)
+	if err != nil {
+		t.Fatalf("import ACC_B: %v", err)
+	}
+	if ins3 != 1 || dup3 != 0 {
+		t.Fatalf("ACC_B import inserted/dupes = %d/%d, want 1/0", ins3, dup3)
+	}
+}
+
 func TestIngestCmdFailsWhenMappedAccountMissing(t *testing.T) {
 	db, cleanup := testDB(t)
 	defer cleanup()
@@ -425,6 +494,56 @@ func TestIngestCmdAppliesTagRules(t *testing.T) {
 	}
 	if len(txnTags) != 1 {
 		t.Fatalf("expected tags for 1 transaction, got %+v", txnTags)
+	}
+}
+
+func TestScanDupesCmdDoesNotMutateDB(t *testing.T) {
+	db, cleanup := testDB(t)
+	defer cleanup()
+
+	accountID, err := insertAccount(db, "ANZ", "debit", true)
+	if err != nil {
+		t.Fatalf("insertAccount: %v", err)
+	}
+	format := testANZFormat()
+	format.Account = "ANZ"
+	format.ImportPrefix = "anz"
+
+	seedPath := writeTestCSV(t, "3/02/2026,-20.00,SEED\n")
+	if _, _, err := importCSVForAccount(db, seedPath, format, &accountID, true); err != nil {
+		t.Fatalf("seed import: %v", err)
+	}
+
+	dir := t.TempDir()
+	file := "ANZ-scan.csv"
+	scanPath := filepath.Join(dir, file)
+	// One row duplicates existing DB row; one row is an in-file duplicate.
+	csv := "3/02/2026,-20.00,SEED\n3/02/2026,-20.00,SEED\n4/02/2026,-10.00,NEW\n"
+	if err := os.WriteFile(scanPath, []byte(csv), 0o644); err != nil {
+		t.Fatalf("write scan csv: %v", err)
+	}
+
+	msg := scanDupesCmd(db, file, dir, []csvFormat{format})()
+	done, ok := msg.(dupeScanMsg)
+	if !ok {
+		t.Fatalf("unexpected message type: %T", msg)
+	}
+	if done.err != nil {
+		t.Fatalf("scanDupesCmd error: %v", done.err)
+	}
+	if done.total != 3 {
+		t.Fatalf("scan total=%d, want 3", done.total)
+	}
+	if done.dupes != 2 {
+		t.Fatalf("scan dupes=%d, want 2", done.dupes)
+	}
+
+	rows, err := loadRows(db)
+	if err != nil {
+		t.Fatalf("loadRows: %v", err)
+	}
+	if len(rows) != 1 {
+		t.Fatalf("scan should not mutate DB rows, got %d want 1", len(rows))
 	}
 }
 
