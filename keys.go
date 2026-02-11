@@ -174,6 +174,7 @@ func NewKeyRegistry() *KeyRegistry {
 	reg(scopeTransactions, actionQuickTag, []string{"t"}, "quick tag")
 	reg(scopeTransactions, actionToggleSelect, []string{"space", " "}, "toggle sel")
 	reg(scopeTransactions, actionRangeHighlight, []string{"shift+up/down", "shift+up", "shift+down"}, "hl range")
+	reg(scopeTransactions, actionCommandClearSelection, []string{"u"}, "clear sel")
 	reg(scopeTransactions, actionJumpTop, []string{"g"}, "top")
 	reg(scopeTransactions, actionJumpBottom, []string{"G"}, "bottom")
 	reg(scopeTransactions, actionClearSearch, []string{"esc"}, "clear")

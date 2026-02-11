@@ -85,9 +85,14 @@ var (
 
 	// Modal overlay
 	modalStyle = lipgloss.NewStyle().
-			Border(lipgloss.RoundedBorder()).
-			BorderForeground(colorAccent).
+			Foreground(colorRosewater).
 			Padding(0, 0)
+
+	modalBorderStyle = lipgloss.NewStyle().
+				Foreground(colorPink)
+
+	modalBodyStyle = lipgloss.NewStyle().
+			Foreground(colorRosewater)
 
 	// Help key styling — these inherit footer background via Inherit()
 	helpKeyStyle = lipgloss.NewStyle().
@@ -535,22 +540,46 @@ func renderInfoPair(label, value string) string {
 }
 
 func renderModalContent(title string, body []string, footer string) string {
-	lines := make([]string, 0, len(body)+4)
-	lines = append(lines, modalTitleStyle.Render(title))
-	if len(body) > 0 {
-		width := 18
-		for _, line := range body {
-			width = max(width, ansi.StringWidth(line))
-		}
-		width = min(width, 56)
-		lines = append(lines, sectionDividerStyle.Render(strings.Repeat("─", width)))
-		lines = append(lines, body...)
-	}
+	return renderModalContentWithWidth(title, body, footer, 0)
+}
+
+func renderModalContentWithWidth(title string, body []string, footer string, fixedWidth int) string {
+	lines := make([]string, 0, len(body)+3)
+	lines = append(lines, body...)
 	if strings.TrimSpace(footer) != "" {
 		lines = append(lines, "")
 		lines = append(lines, modalFooterStyle.Render(footer))
 	}
-	return strings.Join(lines, "\n")
+
+	contentWidth := fixedWidth
+	if contentWidth <= 0 {
+		contentWidth = max(18, ansi.StringWidth(ansi.Strip(title))+2)
+		for _, line := range lines {
+			contentWidth = max(contentWidth, ansi.StringWidth(line))
+		}
+	}
+	contentWidth = min(contentWidth, 56)
+	contentWidth = max(contentWidth, 18)
+
+	titleText := " " + ansi.Strip(title) + " "
+	titleRunes := []rune(titleText)
+	avail := contentWidth
+	if len(titleRunes) > avail {
+		titleText = string(titleRunes[:avail])
+	}
+	leftPad := max(0, (contentWidth-ansi.StringWidth(titleText))/2)
+	rightPad := max(0, contentWidth-ansi.StringWidth(titleText)-leftPad)
+	top := "╭" + strings.Repeat("─", leftPad) + modalTitleStyle.Render(titleText) + strings.Repeat("─", rightPad) + "╮"
+	bottom := "╰" + strings.Repeat("─", contentWidth) + "╯"
+
+	framed := make([]string, 0, len(lines)+2)
+	framed = append(framed, modalBorderStyle.Render(top))
+	for _, line := range lines {
+		padded := padStyledLine(line, contentWidth)
+		framed = append(framed, modalBorderStyle.Render("│")+modalBodyStyle.Render(padded)+modalBorderStyle.Render("│"))
+	}
+	framed = append(framed, modalBorderStyle.Render(bottom))
+	return strings.Join(framed, "\n")
 }
 
 // renderFilePicker renders a simple list of CSV files with a cursor.
@@ -753,7 +782,11 @@ func renderTransactionTable(
 		if endIdx > total {
 			endIdx = total
 		}
-		indicator := scrollStyle.Render(fmt.Sprintf("── showing %d-%d of %d ──", start, endIdx, total))
+		shown := endIdx - start + 1
+		if shown < 0 {
+			shown = 0
+		}
+		indicator := scrollStyle.Render(fmt.Sprintf("── showing %d-%d of %d (%d) ──", start, endIdx, total, shown))
 		lines = append(lines, indicator)
 	}
 
@@ -2097,72 +2130,156 @@ func renderManagerAccountModal(m model) string {
 }
 
 // renderDetail renders the transaction detail modal content.
-func renderDetail(txn transaction, categories []category, tags []tag, catCursor int, notes string, editing string, keys *KeyRegistry) string {
-	w := 50
+func renderDetail(txn transaction, tags []tag, notes string, editing string, keys *KeyRegistry) string {
+	const detailModalWidth = 52
+	const detailTextWrap = 40
 	var body []string
 
-	body = append(body, detailLabelStyle.Render("Date:       ")+detailValueStyle.Render(txn.dateISO))
 	amtStyle := detailValueStyle
 	if txn.amount > 0 {
 		amtStyle = creditStyle
 	} else if txn.amount < 0 {
 		amtStyle = debitStyle
 	}
-	body = append(body, detailLabelStyle.Render("Amount:     ")+amtStyle.Render(fmt.Sprintf("%.2f", txn.amount)))
-	body = append(body, detailLabelStyle.Render("Description:")+detailValueStyle.Render(" "+truncate(txn.description, w-13)))
-	body = append(body, "")
+	dateAmountLine := detailLabelStyle.Render("Date: ") + detailValueStyle.Render(txn.dateISO) + "  " +
+		detailLabelStyle.Render("Amount: ") + amtStyle.Render(fmt.Sprintf("%.2f", txn.amount))
+	body = append(body, dateAmountLine)
 
-	// Category picker
-	body = append(body, detailLabelStyle.Render("Category:"))
-	for i, c := range categories {
-		prefix := modalCursor(i == catCursor)
-		style := lipgloss.NewStyle().Foreground(lipgloss.Color(c.color))
-		if i == catCursor {
-			style = style.Bold(true)
-		}
-		body = append(body, prefix+style.Render(c.name))
+	catDisplay := "Uncategorised"
+	if strings.TrimSpace(txn.categoryName) != "" {
+		catDisplay = txn.categoryName
 	}
-	body = append(body, "")
+	catStyle := detailValueStyle
+	if strings.TrimSpace(txn.categoryColor) != "" && txn.categoryColor != "#7f849c" {
+		catStyle = lipgloss.NewStyle().Foreground(lipgloss.Color(txn.categoryColor))
+	}
+	body = append(body, detailLabelStyle.Render("Category:    ")+catStyle.Render(catDisplay))
 
+	tagDisplay := "-"
 	if len(tags) > 0 {
 		var names []string
 		for _, tg := range tags {
 			names = append(names, tg.name)
 		}
-		body = append(body, detailLabelStyle.Render("Tags:       ")+detailValueStyle.Render(strings.Join(names, " ")))
-		body = append(body, "")
+		tagDisplay = strings.Join(names, " ")
 	}
+	tagPrefix := "Tags:        "
+	tagLines := splitLines(wrapText(tagDisplay, detailTextWrap))
+	if len(tagLines) == 0 {
+		tagLines = []string{"-"}
+	}
+	body = append(body, detailLabelStyle.Render(tagPrefix)+detailValueStyle.Render(tagLines[0]))
+	tagIndent := strings.Repeat(" ", ansi.StringWidth(tagPrefix))
+	for _, line := range tagLines[1:] {
+		body = append(body, detailValueStyle.Render(tagIndent+line))
+	}
+	body = append(body, "")
+
+	body = append(body, detailLabelStyle.Render("Description"))
+	descLines := splitLines(wrapText(txn.description, detailTextWrap))
+	for _, line := range descLines {
+		body = append(body, detailValueStyle.Render(line))
+	}
+	body = append(body, "")
 
 	// Notes
 	notesLabel := detailLabelStyle.Render("Notes: ")
+	notePrefix := "Notes: "
+	indentPrefix := strings.Repeat(" ", ansi.StringWidth(notePrefix))
+	footer := ""
 	if editing == "notes" {
 		notesLabel = detailActiveStyle.Render("Notes: ")
-		body = append(body, notesLabel+detailValueStyle.Render(notes+"_"))
+		noteLines := splitLines(wrapText(notes+"_", detailTextWrap))
+		if len(noteLines) == 0 {
+			noteLines = []string{""}
+		}
+		body = append(body, notesLabel+detailValueStyle.Render(noteLines[0]))
+		for _, line := range noteLines[1:] {
+			body = append(body, detailValueStyle.Render(indentPrefix+line))
+		}
+		footer = scrollStyle.Render(fmt.Sprintf(
+			"%s/%s done",
+			actionKeyLabel(keys, scopeDetailModal, actionClose, "esc"),
+			actionKeyLabel(keys, scopeDetailModal, actionSelect, "enter"),
+		))
 	} else {
 		display := notes
 		if display == "" {
 			display = fmt.Sprintf("(empty - press %s to edit)", actionKeyLabel(keys, scopeDetailModal, actionEdit, "n"))
 		}
-		body = append(body, notesLabel+detailValueStyle.Render(display))
-	}
-
-	if editing == "notes" {
-		body = append(body, "")
-		body = append(body, scrollStyle.Render(fmt.Sprintf(
-			"%s/%s done",
-			actionKeyLabel(keys, scopeDetailModal, actionClose, "esc"),
-			actionKeyLabel(keys, scopeDetailModal, actionSelect, "enter"),
-		)))
-	} else {
-		body = append(body, "")
-		body = append(body, scrollStyle.Render(fmt.Sprintf(
-			"%s category  %s notes  %s save  %s cancel",
-			actionKeyLabel(keys, scopeDetailModal, actionNavigate, "j/k"),
+		noteLines := splitLines(wrapText(display, detailTextWrap))
+		if len(noteLines) == 0 {
+			noteLines = []string{""}
+		}
+		body = append(body, notesLabel+detailValueStyle.Render(noteLines[0]))
+		for _, line := range noteLines[1:] {
+			body = append(body, detailValueStyle.Render(indentPrefix+line))
+		}
+		footer = scrollStyle.Render(fmt.Sprintf(
+			"%s notes  %s save  %s close",
 			actionKeyLabel(keys, scopeDetailModal, actionEdit, "n"),
 			actionKeyLabel(keys, scopeDetailModal, actionSelect, "enter"),
 			actionKeyLabel(keys, scopeDetailModal, actionClose, "esc"),
-		)))
+		))
 	}
 
-	return strings.Join(body, "\n")
+	return renderModalContentWithWidth("Transaction Details", body, footer, detailModalWidth)
+}
+
+func wrapText(s string, width int) string {
+	if width <= 0 {
+		return s
+	}
+	var lines []string
+	for _, rawLine := range strings.Split(s, "\n") {
+		line := strings.TrimSpace(rawLine)
+		if line == "" {
+			lines = append(lines, "")
+			continue
+		}
+		words := strings.Fields(line)
+		current := ""
+		for _, word := range words {
+			if ansi.StringWidth(word) > width {
+				if current != "" {
+					lines = append(lines, current)
+					current = ""
+				}
+				runes := []rune(word)
+				part := ""
+				for _, r := range runes {
+					next := part + string(r)
+					if ansi.StringWidth(next) > width {
+						if part != "" {
+							lines = append(lines, part)
+						}
+						part = string(r)
+						continue
+					}
+					part = next
+				}
+				if part != "" {
+					current = part
+				}
+				continue
+			}
+			if current == "" {
+				current = word
+				continue
+			}
+			if ansi.StringWidth(current)+1+ansi.StringWidth(word) <= width {
+				current += " " + word
+				continue
+			}
+			lines = append(lines, current)
+			current = word
+		}
+		if current != "" {
+			lines = append(lines, current)
+		}
+	}
+	if len(lines) == 0 {
+		return ""
+	}
+	return strings.Join(lines, "\n")
 }

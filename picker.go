@@ -1,6 +1,7 @@
 package main
 
 import (
+	"fmt"
 	"sort"
 	"strings"
 
@@ -21,10 +22,23 @@ type pickerState struct {
 	query       string
 	cursor      int
 	selected    map[int]bool
+	checkState  map[int]pickerCheckState
+	baseState   map[int]pickerCheckState
+	dirty       map[int]bool
 	multiSelect bool
+	cursorOnly  bool
+	triState    bool
 	title       string
 	createLabel string
 }
+
+type pickerCheckState int
+
+const (
+	pickerStateNone pickerCheckState = iota
+	pickerStateSome
+	pickerStateAll
+)
 
 type pickerAction int
 
@@ -59,6 +73,9 @@ type scoredPickerItem struct {
 func newPicker(title string, items []pickerItem, multiSelect bool, createLabel string) *pickerState {
 	p := &pickerState{
 		selected:    make(map[int]bool),
+		checkState:  make(map[int]pickerCheckState),
+		baseState:   make(map[int]pickerCheckState),
+		dirty:       make(map[int]bool),
 		multiSelect: multiSelect,
 		title:       title,
 		createLabel: strings.TrimSpace(createLabel),
@@ -117,6 +134,26 @@ func (p *pickerState) Toggle() {
 	if row.item == nil || row.isCreate {
 		return
 	}
+	if p.triState {
+		curr := p.checkState[row.item.ID]
+		next := pickerStateAll
+		if curr == pickerStateAll {
+			next = pickerStateNone
+		}
+		p.checkState[row.item.ID] = next
+		if next == pickerStateAll {
+			p.selected[row.item.ID] = true
+		} else {
+			delete(p.selected, row.item.ID)
+		}
+		base := p.baseState[row.item.ID]
+		if next == base {
+			delete(p.dirty, row.item.ID)
+		} else {
+			p.dirty[row.item.ID] = true
+		}
+		return
+	}
 	if p.selected[row.item.ID] {
 		delete(p.selected, row.item.ID)
 	} else {
@@ -136,6 +173,45 @@ func (p *pickerState) Selected() []int {
 	}
 	sort.Ints(out)
 	return out
+}
+
+func (p *pickerState) SetTriState(states map[int]pickerCheckState) {
+	if p == nil {
+		return
+	}
+	p.triState = true
+	p.checkState = make(map[int]pickerCheckState, len(states))
+	p.baseState = make(map[int]pickerCheckState, len(states))
+	p.dirty = make(map[int]bool)
+	p.selected = make(map[int]bool)
+	for id, state := range states {
+		p.checkState[id] = state
+		p.baseState[id] = state
+		if state == pickerStateAll {
+			p.selected[id] = true
+		}
+	}
+}
+
+func (p *pickerState) HasPendingChanges() bool {
+	return p != nil && len(p.dirty) > 0
+}
+
+func (p *pickerState) PendingTagPatch() (addIDs []int, removeIDs []int) {
+	if p == nil {
+		return nil, nil
+	}
+	for id := range p.dirty {
+		switch p.checkState[id] {
+		case pickerStateAll:
+			addIDs = append(addIDs, id)
+		case pickerStateNone:
+			removeIDs = append(removeIDs, id)
+		}
+	}
+	sort.Ints(addIDs)
+	sort.Ints(removeIDs)
+	return addIDs, removeIDs
 }
 
 func (p *pickerState) HandleKey(keyName string) pickerResult {
@@ -254,10 +330,21 @@ func renderPicker(p *pickerState, width int, keys *KeyRegistry, scope string) st
 
 			selectMark := ""
 			if p.multiSelect {
-				if isSelected {
-					selectMark = "[x]"
+				if p.triState {
+					switch p.checkState[it.ID] {
+					case pickerStateAll:
+						selectMark = "[x]"
+					case pickerStateSome:
+						selectMark = "[-]"
+					default:
+						selectMark = "[ ]"
+					}
 				} else {
-					selectMark = "[ ]"
+					if isSelected {
+						selectMark = "[x]"
+					} else {
+						selectMark = "[ ]"
+					}
 				}
 			} else {
 				// Keep label columns aligned between single- and multi-select pickers.
@@ -269,45 +356,101 @@ func renderPicker(p *pickerState, width int, keys *KeyRegistry, scope string) st
 			if strings.TrimSpace(it.Color) != "" && it.Color != "#7f849c" {
 				labelStyle = lipgloss.NewStyle().Foreground(lipgloss.Color(it.Color))
 			}
+			if p.cursorOnly && isCursor {
+				labelStyle = labelStyle.Bold(true)
+			}
 			label := labelStyle.Render(it.Label)
 
 			meta := ""
 			if strings.TrimSpace(it.Meta) != "" {
-				meta = lipgloss.NewStyle().Foreground(colorSubtext0).Render(" - " + strings.TrimSpace(it.Meta))
+				metaStyle := lipgloss.NewStyle().Foreground(colorSubtext0)
+				if p.cursorOnly && isCursor {
+					metaStyle = metaStyle.Bold(true)
+				}
+				meta = metaStyle.Render(" - " + strings.TrimSpace(it.Meta))
 			}
 
-			row := "  " + selectMark + label + meta
-			row = stylePickerRow(row, isSelected, isCursor, width)
+			prefix := "  "
+			if p.cursorOnly {
+				prefix = modalCursor(isCursor)
+			}
+			row := prefix + selectMark + label + meta
+			row = stylePickerRow(row, isSelected, isCursor, width, p.cursorOnly)
 			lines = append(lines, row)
 		}
 	}
 
 	if p.shouldShowCreate() {
 		isCursor := p.cursor == selectableIdx
-		label := lipgloss.NewStyle().Foreground(colorPeach).Render(p.createLabel + ` "` + strings.TrimSpace(p.query) + `"`)
-		row := stylePickerRow("      "+label, false, isCursor, width)
+		createStyle := lipgloss.NewStyle().Foreground(colorPeach)
+		if p.cursorOnly && isCursor {
+			createStyle = createStyle.Bold(true)
+		}
+		label := createStyle.Render(p.createLabel + ` "` + strings.TrimSpace(p.query) + `"`)
+		prefix := "      "
+		if p.cursorOnly {
+			prefix = modalCursor(isCursor) + "    "
+		}
+		row := stylePickerRow(prefix+label, false, isCursor, width, p.cursorOnly)
 		lines = append(lines, row)
 	}
 
 	selectDesc := "apply"
+	if scope == scopeTagPicker && p.triState && !p.HasPendingChanges() {
+		selectDesc = "toggle"
+	}
 	if scope == scopeAccountNukePicker {
 		selectDesc = "nuke"
 	}
-	footerParts := []string{
-		renderActionHint(keys, scope, actionNavigate, "j/k", "navigate"),
+	var footer string
+	if scope == scopeCategoryPicker || scope == scopeTagPicker {
+		footer = fmt.Sprintf(
+			"%s navigate  %s toggle  %s %s  %s cancel",
+			actionKeyLabel(keys, scope, actionNavigate, "j/k"),
+			actionKeyLabel(keys, scope, actionToggleSelect, "space"),
+			actionKeyLabel(keys, scope, actionSelect, "enter"),
+			selectDesc,
+			actionKeyLabel(keys, scope, actionClose, "esc"),
+		)
+		if !p.multiSelect {
+			footer = fmt.Sprintf(
+				"%s navigate  %s %s  %s cancel",
+				actionKeyLabel(keys, scope, actionNavigate, "j/k"),
+				actionKeyLabel(keys, scope, actionSelect, "enter"),
+				selectDesc,
+				actionKeyLabel(keys, scope, actionClose, "esc"),
+			)
+		}
+		footer = scrollStyle.Render(footer)
+	} else {
+		footerParts := []string{
+			renderActionHint(keys, scope, actionNavigate, "j/k", "navigate"),
+		}
+		if p.multiSelect {
+			footerParts = append(footerParts, renderActionHint(keys, scope, actionToggleSelect, "space", "toggle"))
+		}
+		footerParts = append(footerParts,
+			renderActionHint(keys, scope, actionSelect, "enter", selectDesc),
+			renderActionHint(keys, scope, actionClose, "esc", "cancel"),
+		)
+		footer = strings.Join(footerParts, "  ")
 	}
-	if p.multiSelect {
-		footerParts = append(footerParts, renderActionHint(keys, scope, actionToggleSelect, "space", "toggle"))
-	}
-	footerParts = append(footerParts,
-		renderActionHint(keys, scope, actionSelect, "enter", selectDesc),
-		renderActionHint(keys, scope, actionClose, "esc", "cancel"),
-	)
 
-	return renderModalContent(p.title, lines, strings.Join(footerParts, "  "))
+	return renderModalContent(p.title, lines, footer)
 }
 
-func stylePickerRow(content string, selected, isCursor bool, width int) string {
+func stylePickerRow(content string, selected, isCursor bool, width int, cursorOnly bool) string {
+	if cursorOnly {
+		style := lipgloss.NewStyle()
+		if isCursor {
+			style = style.Bold(true)
+		}
+		row := style.Render(content)
+		if width > 0 {
+			row = style.Render(padStyledLine(content, width))
+		}
+		return row
+	}
 	bg, cursorStrong := rowStateBackgroundAndCursor(selected, false, isCursor)
 	style := lipgloss.NewStyle()
 	if bg != "" {

@@ -144,8 +144,11 @@ type quickCategoryAppliedMsg struct {
 }
 
 type quickTagsAppliedMsg struct {
-	count int
-	err   error
+	count     int
+	tagName   string
+	toggled   bool
+	toggledOn bool
+	err       error
 }
 
 type accountNukedMsg struct {
@@ -434,7 +437,7 @@ func (m model) View() string {
 	if m.showDetail {
 		txn := m.findDetailTxn()
 		if txn != nil {
-			detail := renderDetail(*txn, m.categories, m.txnTags[txn.id], m.detailCatCursor, m.detailNotes, m.detailEditing, m.keys)
+			detail := renderDetail(*txn, m.txnTags[txn.id], m.detailNotes, m.detailEditing, m.keys)
 			return m.composeOverlay(header, body, statusLine, footer, detail)
 		}
 	}
@@ -563,7 +566,12 @@ func (m model) managerView() string {
 	}
 	title := fmt.Sprintf("Transactions (%d/%d)", len(rows), total)
 	if selected := m.selectedCount(); selected > 0 {
-		title = fmt.Sprintf("Transactions (%d selected)", selected)
+		visibleSelected, hiddenSelected := m.selectedVisibilityCounts(rows)
+		if hiddenSelected > 0 {
+			title = fmt.Sprintf("Transactions (%d selected, %d hidden)", selected, hiddenSelected)
+		} else {
+			title = fmt.Sprintf("Transactions (%d selected)", visibleSelected)
+		}
 	}
 	transactionsCard := renderManagerSectionBox(title, !accountsFocused, !accountsFocused, m.sectionWidth(), txContent)
 	return accountsCard + "\n" + transactionsCard
@@ -953,11 +961,25 @@ func (m *model) ensureCursorInWindow() {
 }
 
 func (m *model) managerVisibleRows() int {
-	v := m.visibleRows() - 4
-	if v < 3 {
-		v = 3
+	return m.visibleRows()
+}
+
+func (m model) selectedVisibilityCounts(filtered []transaction) (visible int, hidden int) {
+	if len(m.selectedRows) == 0 {
+		return 0, 0
 	}
-	return v
+	visibleSet := make(map[int]bool, len(filtered))
+	for _, txn := range filtered {
+		visibleSet[txn.id] = true
+	}
+	for id := range m.selectedRows {
+		if visibleSet[id] {
+			visible++
+		} else {
+			hidden++
+		}
+	}
+	return visible, hidden
 }
 
 func sectionHeaderLineCount() int {

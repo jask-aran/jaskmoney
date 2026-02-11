@@ -539,6 +539,9 @@ func TestRenderTransactionTableScrollIndicator(t *testing.T) {
 	if !strings.Contains(output, "showing") {
 		t.Error("missing scroll indicator")
 	}
+	if !strings.Contains(output, "(3)") {
+		t.Error("scroll indicator should include rendered row count")
+	}
 }
 
 func TestRenderTransactionTableEmpty(t *testing.T) {
@@ -673,17 +676,81 @@ func TestRenderDetailUsesConfiguredEditKey(t *testing.T) {
 		description:  "Coffee",
 		categoryName: "Dining",
 	}
-	cats := []category{
-		{id: 1, name: "Dining", color: "#fab387"},
-		{id: 2, name: "Transport", color: "#89b4fa"},
-	}
-
-	output := renderDetail(txn, cats, nil, 0, "", "", keys)
+	output := renderDetail(txn, nil, "", "", keys)
 	if !strings.Contains(output, "press e to edit") {
 		t.Fatal("expected configured edit key in empty-notes hint")
 	}
 	if !strings.Contains(output, "e notes") {
 		t.Fatal("expected configured edit key in modal footer")
+	}
+}
+
+func TestRenderDetailUsesFixedWidthAndWrapsLongNotes(t *testing.T) {
+	keys := NewKeyRegistry()
+	txn := transaction{
+		dateISO:      "2026-02-10",
+		amount:       -12.34,
+		description:  "Coffee and breakfast",
+		categoryName: "Dining",
+	}
+	short := renderDetail(txn, nil, "short note", "", keys)
+	long := renderDetail(txn, nil, "this-is-a-very-long-unbroken-note-token-without-spaces-1234567890abcdefghijklmnopqrstuvwxyz", "notes", keys)
+
+	maxWidth := func(s string) int {
+		w := 0
+		for _, line := range splitLines(s) {
+			w = max(w, ansi.StringWidth(line))
+		}
+		return w
+	}
+
+	shortW := maxWidth(short)
+	longW := maxWidth(long)
+	if shortW != longW {
+		t.Fatalf("detail modal width should stay fixed: short=%d long=%d", shortW, longW)
+	}
+	if !strings.Contains(long, "Notes:") {
+		t.Fatal("expected notes label in long output")
+	}
+	if strings.Contains(long, "this-is-a-very-long-unbroken-note-token-without-spaces-1234567890abcdefghijklmnopqrstuvwxyz_") {
+		t.Fatal("long unbroken notes token should be wrapped, not rendered on one line")
+	}
+}
+
+func TestRenderDetailMetadataOrderAndSingleLineDateAmount(t *testing.T) {
+	keys := NewKeyRegistry()
+	txn := transaction{
+		dateISO:      "2026-02-10",
+		amount:       -12.34,
+		description:  "PAYMENT THANKYOU 551646",
+		categoryName: "Transport",
+	}
+	tags := []tag{
+		{name: "CARMAINTAINENCE"},
+		{name: "LONGTAGNAME1234567890"},
+	}
+	out := renderDetail(txn, tags, "note", "", keys)
+	lines := splitLines(out)
+
+	dateAmountFound := false
+	for _, line := range lines {
+		if strings.Contains(line, "Date:") && strings.Contains(line, "Amount:") {
+			dateAmountFound = true
+			break
+		}
+	}
+	if !dateAmountFound {
+		t.Fatal("expected Date and Amount metadata on one line")
+	}
+
+	idxCategory := strings.Index(out, "Category:")
+	idxTags := strings.Index(out, "Tags:")
+	idxDescription := strings.Index(out, "Description")
+	if idxCategory < 0 || idxTags < 0 || idxDescription < 0 {
+		t.Fatalf("missing required metadata blocks in output:\n%s", out)
+	}
+	if !(idxCategory < idxTags && idxTags < idxDescription) {
+		t.Fatalf("expected Category then Tags then Description order, got:\n%s", out)
 	}
 }
 

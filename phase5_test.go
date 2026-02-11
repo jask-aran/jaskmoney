@@ -32,6 +32,16 @@ func testPhase5Model(t *testing.T) (model, func()) {
 		cleanup()
 		t.Fatalf("loadCategories: %v", err)
 	}
+	tags, err := loadTags(db)
+	if err != nil {
+		cleanup()
+		t.Fatalf("loadTags: %v", err)
+	}
+	txnTags, err := loadTransactionTags(db)
+	if err != nil {
+		cleanup()
+		t.Fatalf("loadTransactionTags: %v", err)
+	}
 
 	m := newModel()
 	m.db = db
@@ -40,6 +50,8 @@ func testPhase5Model(t *testing.T) (model, func()) {
 	m.managerMode = managerModeTransactions
 	m.rows = rows
 	m.categories = cats
+	m.tags = tags
+	m.txnTags = txnTags
 	return m, cleanup
 }
 
@@ -259,5 +271,211 @@ func TestUpdateTransactionsCategoryBulk(t *testing.T) {
 	}
 	if seen != 2 {
 		t.Fatalf("found %d updated txns, want 2", seen)
+	}
+}
+
+func TestPhase5QuickTagEnterTogglesOnAndOffForSingleTxn(t *testing.T) {
+	m, cleanup := testPhase5Model(t)
+	defer cleanup()
+
+	tagID, err := insertTag(m.db, "Phase5 Toggle", "#89b4fa", nil)
+	if err != nil {
+		t.Fatalf("insertTag: %v", err)
+	}
+	tags, err := loadTags(m.db)
+	if err != nil {
+		t.Fatalf("loadTags: %v", err)
+	}
+	m.tags = tags
+
+	filtered := m.getFilteredRows()
+	if len(filtered) == 0 {
+		t.Fatal("expected at least one transaction")
+	}
+	targetID := filtered[m.cursor].id
+
+	m2, _ := m.Update(keyMsg("t"))
+	got := m2.(model)
+	if got.tagPicker == nil {
+		t.Fatal("expected quick tag picker open")
+	}
+	got.tagPicker.SetQuery("Phase5 Toggle")
+
+	m3, cmd := got.Update(keyMsg("enter"))
+	got2 := m3.(model)
+	got3 := runCmdUpdate(t, got2, cmd)
+	if got3.tagPicker != nil {
+		t.Fatal("tag picker should close after enter toggle")
+	}
+	if got3.status != `Tag "Phase5 Toggle" added to 1 transaction(s).` {
+		t.Fatalf("unexpected status after add: %q", got3.status)
+	}
+	current, err := loadTransactionTags(m.db)
+	if err != nil {
+		t.Fatalf("loadTransactionTags: %v", err)
+	}
+	hasTag := false
+	for _, tg := range current[targetID] {
+		if tg.id == tagID {
+			hasTag = true
+			break
+		}
+	}
+	if !hasTag {
+		t.Fatal("expected tag to be added")
+	}
+
+	m4, _ := got3.Update(keyMsg("t"))
+	got4 := m4.(model)
+	got4.tagPicker.SetQuery("Phase5 Toggle")
+	m5, cmd := got4.Update(keyMsg("enter"))
+	got5 := runCmdUpdate(t, m5.(model), cmd)
+	if got5.status != `Tag "Phase5 Toggle" removed from 1 transaction(s).` {
+		t.Fatalf("unexpected status after remove: %q", got5.status)
+	}
+	current2, err := loadTransactionTags(m.db)
+	if err != nil {
+		t.Fatalf("loadTransactionTags: %v", err)
+	}
+	for _, tg := range current2[targetID] {
+		if tg.id == tagID {
+			t.Fatal("expected tag to be removed")
+		}
+	}
+}
+
+func TestPhase5QuickTagEnterToggleMultiTargetMixedNormalizesOn(t *testing.T) {
+	m, cleanup := testPhase5Model(t)
+	defer cleanup()
+
+	tagID, err := insertTag(m.db, "Phase5 Multi", "#94e2d5", nil)
+	if err != nil {
+		t.Fatalf("insertTag: %v", err)
+	}
+	tags, err := loadTags(m.db)
+	if err != nil {
+		t.Fatalf("loadTags: %v", err)
+	}
+	m.tags = tags
+
+	filtered := m.getFilteredRows()
+	if len(filtered) < 2 {
+		t.Fatal("expected at least two transactions")
+	}
+	idA := filtered[0].id
+	idB := filtered[1].id
+	m.selectedRows = map[int]bool{idA: true, idB: true}
+	if err := setTransactionTags(m.db, idA, []int{tagID}); err != nil {
+		t.Fatalf("setTransactionTags: %v", err)
+	}
+
+	m2, _ := m.Update(keyMsg("t"))
+	got := m2.(model)
+	if got.tagPicker == nil {
+		t.Fatal("expected quick tag picker open")
+	}
+	got.tagPicker.SetQuery("Phase5 Multi")
+
+	m3, cmd := got.Update(keyMsg("enter"))
+	got2 := runCmdUpdate(t, m3.(model), cmd)
+	if got2.status != `Tag "Phase5 Multi" added to 2 transaction(s).` {
+		t.Fatalf("unexpected status: %q", got2.status)
+	}
+
+	current, err := loadTransactionTags(m.db)
+	if err != nil {
+		t.Fatalf("loadTransactionTags: %v", err)
+	}
+	for _, id := range []int{idA, idB} {
+		hasTag := false
+		for _, tg := range current[id] {
+			if tg.id == tagID {
+				hasTag = true
+				break
+			}
+		}
+		if !hasTag {
+			t.Fatalf("txn %d should have tag %d", id, tagID)
+		}
+	}
+}
+
+func TestPhase5QuickTagEnterAppliesAllDirtyChanges(t *testing.T) {
+	m, cleanup := testPhase5Model(t)
+	defer cleanup()
+
+	addID, err := insertTag(m.db, "Phase5 Patch Add", "#89b4fa", nil)
+	if err != nil {
+		t.Fatalf("insert add tag: %v", err)
+	}
+	removeID, err := insertTag(m.db, "Phase5 Patch Remove", "#94e2d5", nil)
+	if err != nil {
+		t.Fatalf("insert remove tag: %v", err)
+	}
+	tags, err := loadTags(m.db)
+	if err != nil {
+		t.Fatalf("load tags: %v", err)
+	}
+	m.tags = tags
+
+	filtered := m.getFilteredRows()
+	if len(filtered) < 2 {
+		t.Fatal("expected at least two transactions")
+	}
+	idA := filtered[0].id
+	idB := filtered[1].id
+	m.selectedRows = map[int]bool{idA: true, idB: true}
+	if err := setTransactionTags(m.db, idA, []int{removeID}); err != nil {
+		t.Fatalf("seed tags for idA: %v", err)
+	}
+	if err := setTransactionTags(m.db, idB, []int{removeID}); err != nil {
+		t.Fatalf("seed tags for idB: %v", err)
+	}
+	m.txnTags, err = loadTransactionTags(m.db)
+	if err != nil {
+		t.Fatalf("reload txn tags: %v", err)
+	}
+
+	m2, _ := m.Update(keyMsg("t"))
+	got := m2.(model)
+	if got.tagPicker == nil {
+		t.Fatal("expected quick tag picker open")
+	}
+
+	got.tagPicker.SetQuery("Phase5 Patch Add")
+	m3a, _ := got.Update(keyMsg("space"))
+	got = m3a.(model)
+	got.tagPicker.SetQuery("Phase5 Patch Remove")
+	m3b, _ := got.Update(keyMsg("space"))
+	got = m3b.(model)
+	got.tagPicker.SetQuery("")
+
+	m3, cmd := got.Update(keyMsg("enter"))
+	got2 := runCmdUpdate(t, m3.(model), cmd)
+	if got2.status != "Updated tags for 2 transaction(s)." {
+		t.Fatalf("unexpected status: %q", got2.status)
+	}
+
+	current, err := loadTransactionTags(m.db)
+	if err != nil {
+		t.Fatalf("loadTransactionTags: %v", err)
+	}
+	for _, id := range []int{idA, idB} {
+		hasAdd := false
+		hasRemove := false
+		for _, tg := range current[id] {
+			if tg.id == addID {
+				hasAdd = true
+			}
+			if tg.id == removeID {
+				hasRemove = true
+			}
+		}
+		if !hasAdd {
+			t.Fatalf("txn %d should have add tag", id)
+		}
+		if hasRemove {
+			t.Fatalf("txn %d should not have remove tag", id)
+		}
 	}
 }

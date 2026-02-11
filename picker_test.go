@@ -3,6 +3,8 @@ package main
 import (
 	"strings"
 	"testing"
+
+	"github.com/charmbracelet/lipgloss"
 )
 
 func lineColumnForNeedle(s, needle string) (int, bool) {
@@ -12,6 +14,15 @@ func lineColumnForNeedle(s, needle string) (int, bool) {
 		}
 	}
 	return -1, false
+}
+
+func lineForNeedle(s, needle string) (string, bool) {
+	for _, line := range strings.Split(s, "\n") {
+		if strings.Contains(line, needle) {
+			return line, true
+		}
+	}
+	return "", false
 }
 
 func testPickerItems() []pickerItem {
@@ -262,5 +273,73 @@ func TestPickerCursorClampsWithRepeatedNavigation(t *testing.T) {
 	}
 	if p.cursor != 0 {
 		t.Fatalf("cursor after repeated up = %d, want 0", p.cursor)
+	}
+}
+
+func TestRenderPickerCursorOnlyUsesArrowStyle(t *testing.T) {
+	p := newPicker("Quick Tags", []pickerItem{
+		{ID: 1, Label: "Groceries"},
+	}, true, "Create")
+	p.cursorOnly = true
+
+	view := renderPicker(p, 56, NewKeyRegistry(), scopeTagPicker)
+	if !strings.Contains(view, "> [ ] Groceries") {
+		t.Fatalf("expected cursor-only row with arrow and checkbox, got:\n%s", view)
+	}
+}
+
+func TestRenderPickerCursorOnlyActiveRowUsesBoldANSI(t *testing.T) {
+	boldProbe := lipgloss.NewStyle().Bold(true).Render("X")
+	if !strings.Contains(boldProbe, "\x1b[1m") {
+		t.Skip("terminal style renderer in test env does not emit ANSI bold")
+	}
+
+	p := newPicker("Quick Tags", []pickerItem{
+		{ID: 1, Label: "Groceries"},
+		{ID: 2, Label: "Fuel"},
+	}, true, "Create")
+	p.cursorOnly = true
+
+	view := renderPicker(p, 56, NewKeyRegistry(), scopeTagPicker)
+	if len(p.filtered) == 0 {
+		t.Fatalf("expected filtered rows, got none:\n%s", view)
+	}
+	activeLabel := p.filtered[0].Label
+	activeLine, ok := lineForNeedle(view, activeLabel)
+	if !ok {
+		t.Fatalf("expected active row label %q in picker output:\n%s", activeLabel, view)
+	}
+	if !strings.Contains(activeLine, "\x1b[1m") {
+		t.Fatalf("expected active cursor row to contain ANSI bold sequence, line=%q", activeLine)
+	}
+}
+
+func TestPickerTriStateRendersMixedAndTracksDirtyPatch(t *testing.T) {
+	p := newPicker("Quick Tags", []pickerItem{
+		{ID: 1, Label: "A"},
+		{ID: 2, Label: "B"},
+	}, true, "Create")
+	p.cursorOnly = true
+	p.SetTriState(map[int]pickerCheckState{
+		1: pickerStateSome,
+		2: pickerStateAll,
+	})
+
+	view := renderPicker(p, 56, NewKeyRegistry(), scopeTagPicker)
+	if !strings.Contains(view, "[-]") {
+		t.Fatalf("expected mixed tri-state marker, got:\n%s", view)
+	}
+
+	// Cursor starts on first row: Some -> All
+	_ = p.HandleKey("space")
+	addIDs, removeIDs := p.PendingTagPatch()
+	if len(addIDs) != 1 || addIDs[0] != 1 {
+		t.Fatalf("add patch = %v, want [1]", addIDs)
+	}
+	if len(removeIDs) != 0 {
+		t.Fatalf("remove patch = %v, want empty", removeIDs)
+	}
+	if !p.HasPendingChanges() {
+		t.Fatal("expected pending changes after toggle")
 	}
 }
