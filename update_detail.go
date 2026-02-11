@@ -58,27 +58,19 @@ func (m model) updateDetail(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		return m, nil
 	case m.isAction(scopeDetailModal, actionQuit, msg) || m.isAction(scopeGlobal, actionQuit, msg):
 		return m, tea.Quit
-	case m.isAction(scopeDetailModal, actionNavigate, msg):
-		m.detailCatCursor, _ = m.moveCursorForAction(scopeDetailModal, actionNavigate, msg, m.detailCatCursor, len(m.categories))
-		return m, nil
 	case m.isAction(scopeDetailModal, actionEdit, msg):
 		// Switch to notes editing
 		m.detailEditing = "notes"
 		return m, nil
 	case m.isAction(scopeDetailModal, actionSelect, msg):
-		// Save category + notes
+		// Save notes only.
 		if m.db == nil {
 			return m, nil
-		}
-		var catID *int
-		if m.detailCatCursor < len(m.categories) {
-			id := m.categories[m.detailCatCursor].id
-			catID = &id
 		}
 		txnID := m.detailIdx
 		notes := m.detailNotes
 		return m, func() tea.Msg {
-			return txnSavedMsg{err: updateTransactionDetail(m.db, txnID, catID, notes)}
+			return txnSavedMsg{err: updateTransactionNotes(m.db, txnID, notes)}
 		}
 	}
 	return m, nil

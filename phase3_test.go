@@ -125,7 +125,7 @@ func TestPhase3NonShiftMoveClearsHighlight(t *testing.T) {
 	}
 }
 
-func TestPhase3EscClearsHighlightThenSelectionThenSearch(t *testing.T) {
+func TestPhase3EscClearsSearchBeforeSelectionAndHighlight(t *testing.T) {
 	m := testPhase3Model()
 	m.searchQuery = "wool"
 	toggleKey := testKeyForAction(m, scopeTransactions, actionToggleSelect, "space")
@@ -141,31 +141,34 @@ func TestPhase3EscClearsHighlightThenSelectionThenSearch(t *testing.T) {
 		t.Fatal("expected active range highlight")
 	}
 
-	// 1st esc clears highlight only.
+	// 1st esc clears search and keeps selection/highlight intact.
 	m4, _ := got2.updateNavigation(keyMsg("esc"))
 	got3 := m4.(model)
-	if got3.rangeSelecting {
-		t.Fatal("range highlight should be cleared on first esc")
+	if got3.searchQuery != "" {
+		t.Fatalf("search query should clear first, got %q", got3.searchQuery)
 	}
 	if got3.selectedCount() == 0 {
+		t.Fatal("selection should remain when clearing search")
+	}
+	if !got3.rangeSelecting {
+		t.Fatal("range highlight should remain when clearing search")
+	}
+
+	// 2nd esc clears highlight.
+	m5, _ := got3.updateNavigation(keyMsg("esc"))
+	got4 := m5.(model)
+	if got4.rangeSelecting {
+		t.Fatal("range highlight should clear after search is already empty")
+	}
+	if got4.selectedCount() == 0 {
 		t.Fatal("selection should remain after clearing highlight")
 	}
 
-	// 2nd esc clears selected rows.
-	m5, _ := got3.updateNavigation(keyMsg("esc"))
-	got4 := m5.(model)
-	if got4.selectedCount() != 0 {
-		t.Fatalf("expected selections cleared, got %d", got4.selectedCount())
-	}
-	if got4.searchQuery != "wool" {
-		t.Fatalf("search query should remain after second esc, got %q", got4.searchQuery)
-	}
-
-	// 3rd esc clears search query.
+	// 3rd esc clears selected rows.
 	m6, _ := got4.updateNavigation(keyMsg("esc"))
 	got5 := m6.(model)
-	if got5.searchQuery != "" {
-		t.Fatalf("search query should clear on third esc, got %q", got5.searchQuery)
+	if got5.selectedCount() != 0 {
+		t.Fatalf("expected selections cleared, got %d", got5.selectedCount())
 	}
 }
 
@@ -215,5 +218,91 @@ func TestPhase3RenderSelectionPrefixes(t *testing.T) {
 
 	if strings.Contains(out, "*>") || strings.Contains(out, "> ") {
 		t.Fatalf("table should not render prefix cursor markers: %q", out)
+	}
+}
+
+func TestPhase3QuickActionTargetsPreferHighlightOverSelection(t *testing.T) {
+	m := testPhase3Model()
+	filtered := m.getFilteredRows()
+	if len(filtered) < 3 {
+		t.Fatal("expected at least three rows")
+	}
+	m.selectedRows = map[int]bool{filtered[len(filtered)-1].id: true}
+
+	m2, _ := m.updateNavigation(keyMsg("shift+down"))
+	got := m2.(model)
+	highlighted := got.highlightedRows(got.getFilteredRows())
+	if len(highlighted) == 0 {
+		t.Fatal("expected active highlighted rows")
+	}
+
+	m3, _ := got.updateNavigation(keyMsg("c"))
+	got2 := m3.(model)
+	if got2.catPicker == nil {
+		t.Fatal("expected quick category picker open")
+	}
+	if len(got2.catPickerFor) != len(highlighted) {
+		t.Fatalf("cat picker target count = %d, want %d", len(got2.catPickerFor), len(highlighted))
+	}
+	for _, id := range got2.catPickerFor {
+		if !highlighted[id] {
+			t.Fatalf("cat picker target id %d should come from active highlight", id)
+		}
+	}
+}
+
+func TestPhase3ClearSelectionHotkeyUClearsHighlightAndSelection(t *testing.T) {
+	m := testPhase3Model()
+	toggleKey := testKeyForAction(m, scopeTransactions, actionToggleSelect, "space")
+	m2, _ := m.updateNavigation(keyMsg(toggleKey))
+	got := m2.(model)
+	m3, _ := got.updateNavigation(keyMsg("shift+down"))
+	got2 := m3.(model)
+	if got2.selectedCount() == 0 || !got2.rangeSelecting {
+		t.Fatal("expected both selected rows and active highlight")
+	}
+
+	m4, _ := got2.updateNavigation(keyMsg("u"))
+	got3 := m4.(model)
+	if got3.selectedCount() != 0 {
+		t.Fatalf("selected count = %d, want 0", got3.selectedCount())
+	}
+	if got3.rangeSelecting {
+		t.Fatal("range highlight should be cleared by u")
+	}
+}
+
+func TestPhase3ManagerTitleShowsHiddenSelectionCount(t *testing.T) {
+	m := testPhase3Model()
+	filtered := m.getFilteredRows()
+	if len(filtered) < 2 {
+		t.Fatal("expected test data")
+	}
+	selectedID := filtered[0].id
+	m.selectedRows = map[int]bool{selectedID: true}
+	m.searchQuery = "uber"
+
+	view := m.managerView()
+	if !strings.Contains(view, "Transactions (1 selected, 1 hidden)") {
+		t.Fatalf("transactions title should include hidden selection count, got: %q", view)
+	}
+}
+
+func TestPhase3ClearSelectionHotkeyUWorksWhileSearchActive(t *testing.T) {
+	m := testPhase3Model()
+	m.searchQuery = "uber"
+	filtered := m.getFilteredRows()
+	if len(filtered) == 0 {
+		t.Fatal("expected filtered rows")
+	}
+	m.selectedRows = map[int]bool{filtered[0].id: true}
+
+	m2, _ := m.updateNavigation(keyMsg("u"))
+	got := m2.(model)
+	if got.selectedCount() != 0 {
+		t.Fatalf("selected count = %d, want 0", got.selectedCount())
+	}
+	if got.searchQuery != "uber" {
+		t.Fatalf("search query should remain after u, got %q", got.searchQuery)
 	}
 }

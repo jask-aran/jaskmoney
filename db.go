@@ -881,6 +881,37 @@ func addTagsToTransactions(db *sql.DB, txnIDs, tagIDs []int) (int, error) {
 	return affected, nil
 }
 
+func removeTagFromTransactions(db *sql.DB, txnIDs []int, tagID int) (int, error) {
+	if len(txnIDs) == 0 || tagID == 0 {
+		return 0, nil
+	}
+	tx, err := db.Begin()
+	if err != nil {
+		return 0, fmt.Errorf("begin remove tag from transactions: %w", err)
+	}
+	defer tx.Rollback() //nolint:errcheck
+
+	affected := 0
+	for _, txnID := range txnIDs {
+		res, execErr := tx.Exec(`
+			DELETE FROM transaction_tags
+			WHERE transaction_id = ? AND tag_id = ?
+		`, txnID, tagID)
+		if execErr != nil {
+			return 0, fmt.Errorf("delete transaction tag txn=%d tag=%d: %w", txnID, tagID, execErr)
+		}
+		n, rowsErr := res.RowsAffected()
+		if rowsErr != nil {
+			return 0, fmt.Errorf("rows affected delete txn=%d tag=%d: %w", txnID, tagID, rowsErr)
+		}
+		affected += int(n)
+	}
+	if err := tx.Commit(); err != nil {
+		return 0, fmt.Errorf("commit remove tag from transactions: %w", err)
+	}
+	return affected, nil
+}
+
 func applyTagRules(db *sql.DB) (int, error) {
 	rules, err := loadTagRules(db)
 	if err != nil {

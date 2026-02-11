@@ -338,7 +338,15 @@ func (m model) handleQuickTagsApplied(msg quickTagsAppliedMsg) (tea.Model, tea.C
 	}
 	m.tagPicker = nil
 	m.tagPickerFor = nil
-	m.setStatusf("Updated tags for %d transaction(s).", msg.count)
+	if msg.toggled {
+		if msg.toggledOn {
+			m.setStatusf("Tag %q added to %d transaction(s).", msg.tagName, msg.count)
+		} else {
+			m.setStatusf("Tag %q removed from %d transaction(s).", msg.tagName, msg.count)
+		}
+	} else {
+		m.setStatusf("Updated tags for %d transaction(s).", msg.count)
+	}
 	if m.db == nil {
 		return m, nil
 	}

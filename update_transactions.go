@@ -109,7 +109,23 @@ func (m model) updateNavigationWithVisible(msg tea.KeyMsg, visible int) (tea.Mod
 		return m.openQuickCategoryPicker(filtered)
 	case m.isAction(scopeTransactions, actionQuickTag, msg):
 		return m.openQuickTagPicker(filtered)
+	case m.isAction(scopeTransactions, actionCommandClearSelection, msg):
+		if m.rangeSelecting {
+			m.clearRangeSelection()
+		}
+		if m.selectedCount() > 0 {
+			m.clearSelections()
+		}
+		m.setStatus("Selection cleared.")
+		return m, nil
 	case m.isAction(scopeTransactions, actionClearSearch, msg):
+		if m.searchQuery != "" {
+			m.searchQuery = ""
+			m.cursor = 0
+			m.topIndex = 0
+			m.setStatus("Search cleared.")
+			return m, nil
+		}
 		if m.rangeSelecting {
 			m.clearRangeSelection()
 			m.setStatus("Range highlight cleared.")
@@ -119,12 +135,6 @@ func (m model) updateNavigationWithVisible(msg tea.KeyMsg, visible int) (tea.Mod
 			m.clearSelections()
 			m.setStatus("Selection cleared.")
 			return m, nil
-		}
-		if m.searchQuery != "" {
-			m.searchQuery = ""
-			m.cursor = 0
-			m.topIndex = 0
-			m.setStatus("Search cleared.")
 		}
 		return m, nil
 	case m.isAction(scopeTransactions, actionSelect, msg):
@@ -137,7 +147,7 @@ func (m model) updateNavigationWithVisible(msg tea.KeyMsg, visible int) (tea.Mod
 }
 
 func (m model) openQuickCategoryPicker(filtered []transaction) (tea.Model, tea.Cmd) {
-	targetIDs := m.quickCategoryTargets(filtered)
+	targetIDs := m.quickActionTargets(filtered)
 	if len(targetIDs) == 0 {
 		m.setStatus("No transaction selected.")
 		return m, nil
@@ -156,11 +166,21 @@ func (m model) openQuickCategoryPicker(filtered []transaction) (tea.Model, tea.C
 		})
 	}
 	m.catPicker = newPicker("Quick Categorize", items, false, "Create")
+	m.catPicker.cursorOnly = true
 	m.catPickerFor = targetIDs
 	return m, nil
 }
 
-func (m model) quickCategoryTargets(filtered []transaction) []int {
+func (m model) quickActionTargets(filtered []transaction) []int {
+	highlighted := m.highlightedRows(filtered)
+	if len(highlighted) > 0 {
+		out := make([]int, 0, len(highlighted))
+		for id := range highlighted {
+			out = append(out, id)
+		}
+		sort.Ints(out)
+		return out
+	}
 	if len(m.selectedRows) > 0 {
 		out := make([]int, 0, len(m.selectedRows))
 		for id := range m.selectedRows {
@@ -176,7 +196,7 @@ func (m model) quickCategoryTargets(filtered []transaction) []int {
 }
 
 func (m model) openQuickTagPicker(filtered []transaction) (tea.Model, tea.Cmd) {
-	targetIDs := m.quickCategoryTargets(filtered)
+	targetIDs := m.quickActionTargets(filtered)
 	if len(targetIDs) == 0 {
 		m.setStatus("No transaction selected.")
 		return m, nil
@@ -206,12 +226,27 @@ func (m model) openQuickTagPicker(filtered []transaction) (tea.Model, tea.Cmd) {
 		})
 	}
 	m.tagPicker = newPicker("Quick Tags", items, true, "Create")
+	m.tagPicker.cursorOnly = true
 	m.tagPickerFor = targetIDs
-	if len(targetIDs) == 1 {
-		for _, tg := range m.txnTags[targetIDs[0]] {
-			m.tagPicker.selected[tg.id] = true
+	stateByTagID := make(map[int]pickerCheckState, len(items))
+	hitCount := make(map[int]int)
+	for _, txnID := range targetIDs {
+		for _, tg := range m.txnTags[txnID] {
+			hitCount[tg.id]++
 		}
 	}
+	for _, tg := range m.tags {
+		count := hitCount[tg.id]
+		switch {
+		case count == 0:
+			stateByTagID[tg.id] = pickerStateNone
+		case count == len(targetIDs):
+			stateByTagID[tg.id] = pickerStateAll
+		default:
+			stateByTagID[tg.id] = pickerStateSome
+		}
+	}
+	m.tagPicker.SetTriState(stateByTagID)
 	return m, nil
 }
 
@@ -292,6 +327,58 @@ func (m model) updateCatPicker(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 func (m model) updateTagPicker(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	if m.tagPicker == nil {
 		return m, nil
+	}
+	if m.isAction(scopeTagPicker, actionSelect, msg) {
+		row := m.tagPicker.currentRow()
+		if row.item != nil && !row.isCreate {
+			if m.db == nil {
+				m.setError("Database not ready.")
+				return m, nil
+			}
+			targetIDs := append([]int(nil), m.tagPickerFor...)
+			tagID := row.item.ID
+			tagName := row.item.Label
+			db := m.db
+			if !m.tagPicker.HasPendingChanges() {
+				m.tagPicker.Toggle()
+				addIDs, _ := m.tagPicker.PendingTagPatch()
+				toggledOn := len(addIDs) > 0
+				return m, func() tea.Msg {
+					if len(addIDs) > 0 {
+						_, err := addTagsToTransactions(db, targetIDs, addIDs)
+						return quickTagsAppliedMsg{
+							count:     len(targetIDs),
+							tagName:   tagName,
+							toggled:   true,
+							toggledOn: true,
+							err:       err,
+						}
+					}
+					_, err := removeTagFromTransactions(db, targetIDs, tagID)
+					return quickTagsAppliedMsg{
+						count:     len(targetIDs),
+						tagName:   tagName,
+						toggled:   true,
+						toggledOn: toggledOn,
+						err:       err,
+					}
+				}
+			}
+			addIDs, removeIDs := m.tagPicker.PendingTagPatch()
+			return m, func() tea.Msg {
+				if len(addIDs) > 0 {
+					if _, err := addTagsToTransactions(db, targetIDs, addIDs); err != nil {
+						return quickTagsAppliedMsg{err: err}
+					}
+				}
+				for _, removeID := range removeIDs {
+					if _, err := removeTagFromTransactions(db, targetIDs, removeID); err != nil {
+						return quickTagsAppliedMsg{err: err}
+					}
+				}
+				return quickTagsAppliedMsg{count: len(targetIDs), err: nil}
+			}
+		}
 	}
 	res := m.tagPicker.HandleKey(msg.String())
 	switch res.Action {
