@@ -67,10 +67,14 @@ func settingsActiveScope(section int) string {
 
 func settingsFocusSectionForSettSection(section int) int {
 	switch section {
+	case settSecCategories:
+		return sectionSettingsCategories
+	case settSecTags:
+		return sectionSettingsTags
 	case settSecRules:
 		return sectionSettingsRules
 	case settSecImportHistory:
-		return sectionSettingsImports
+		return sectionSettingsImportHistory
 	case settSecDBImport:
 		return sectionSettingsDatabase
 	case settSecChart:
