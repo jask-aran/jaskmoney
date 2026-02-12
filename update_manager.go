@@ -8,35 +8,11 @@ import (
 )
 
 func (m model) updateMain(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
-	if m.isAction(scopeGlobal, actionCommandGoTransactions, msg) {
-		m.activeTab = tabManager
-		m.managerMode = managerModeTransactions
-		return m, nil
-	}
-	if m.isAction(scopeGlobal, actionCommandGoDashboard, msg) {
-		m.activeTab = tabDashboard
-		return m, nil
-	}
-	if m.isAction(scopeGlobal, actionCommandGoSettings, msg) {
-		m.activeTab = tabSettings
-		return m, nil
-	}
 	if m.isAction(scopeGlobal, actionQuit, msg) {
 		return m, tea.Quit
 	}
-	if m.isAction(scopeGlobal, actionNextTab, msg) {
-		m.activeTab = (m.activeTab + 1) % tabCount
-		if m.activeTab == tabManager {
-			m.managerMode = managerModeTransactions
-		}
-		return m, nil
-	}
-	if m.isAction(scopeGlobal, actionPrevTab, msg) {
-		m.activeTab = (m.activeTab - 1 + tabCount) % tabCount
-		if m.activeTab == tabManager {
-			m.managerMode = managerModeTransactions
-		}
-		return m, nil
+	if next, cmd, handled := m.executeBoundCommand(scopeGlobal, msg); handled {
+		return next, cmd
 	}
 	// Tab-specific keys
 	if m.activeTab == tabDashboard {
@@ -50,13 +26,7 @@ func (m model) updateMain(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 
 func (m model) updateManager(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	if m.managerMode == managerModeTransactions {
-		if m.isAction(scopeManagerTransactions, actionFocusAccounts, msg) {
-			if m.rangeSelecting {
-				m.clearRangeSelection()
-			}
-			m.managerMode = managerModeAccounts
-			return m, nil
-		}
+		m.focusedSection = sectionManagerTransactions
 		txnMode := m
 		next, cmd := txnMode.updateNavigationWithVisible(msg, m.managerVisibleRows())
 		out, ok := next.(model)
@@ -64,11 +34,14 @@ func (m model) updateManager(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			return m, cmd
 		}
 		out.managerMode = managerModeTransactions
+		out.focusedSection = sectionManagerTransactions
 		return out, cmd
 	}
+	m.focusedSection = sectionManagerAccounts
 
 	if m.isAction(scopeManager, actionBack, msg) {
 		m.managerMode = managerModeTransactions
+		m.focusedSection = sectionManagerTransactions
 		m.ensureCursorInWindow()
 		return m, nil
 	}
@@ -93,8 +66,6 @@ func (m model) updateManager(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	case m.isAction(scopeManager, actionAdd, msg):
 		m.openManagerAccountModal(true, nil)
 		return m, nil
-	case m.isAction(scopeManager, actionQuickTag, msg):
-		return m.openQuickTagPicker(m.getFilteredRows())
 	case m.isAction(scopeManager, actionToggleSelect, msg):
 		if m.filterAccounts == nil {
 			m.filterAccounts = make(map[int]bool)
@@ -172,6 +143,9 @@ func (m model) updateManager(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			}
 			return refreshCmd(db)()
 		}
+	}
+	if next, cmd, handled := m.executeBoundCommand(scopeManager, msg); handled {
+		return next, cmd
 	}
 	return m, nil
 }

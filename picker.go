@@ -292,24 +292,6 @@ func (p *pickerState) HandleMsg(msg tea.KeyMsg, matches func(Action, tea.KeyMsg)
 	if matches(actionClose, msg) {
 		return pickerResult{Action: pickerActionCancelled}
 	}
-	if matches(actionUp, msg) || matches(actionDown, msg) {
-		before := p.cursor
-		delta := 0
-		if matches(actionUp, msg) {
-			delta = -1
-		} else if matches(actionDown, msg) {
-			delta = 1
-		}
-		if delta < 0 {
-			p.CursorUp()
-		} else if delta > 0 {
-			p.CursorDown()
-		}
-		if p.cursor != before {
-			return pickerResult{Action: pickerActionMoved}
-		}
-		return pickerResult{Action: pickerActionNone}
-	}
 	if matches(actionToggleSelect, msg) {
 		if !p.multiSelect {
 			return pickerResult{Action: pickerActionNone}
@@ -357,6 +339,25 @@ func (p *pickerState) HandleMsg(msg tea.KeyMsg, matches func(Action, tea.KeyMsg)
 	}
 	if isPrintableASCIIKey(msg.String()) {
 		p.SetQuery(p.query + msg.String())
+		return pickerResult{Action: pickerActionNone}
+	}
+	if matches(actionUp, msg) || matches(actionDown, msg) {
+		before := p.cursor
+		delta := 0
+		if matches(actionUp, msg) {
+			delta = -1
+		} else if matches(actionDown, msg) {
+			delta = 1
+		}
+		if delta < 0 {
+			p.CursorUp()
+		} else if delta > 0 {
+			p.CursorDown()
+		}
+		if p.cursor != before {
+			return pickerResult{Action: pickerActionMoved}
+		}
+		return pickerResult{Action: pickerActionNone}
 	}
 	return pickerResult{Action: pickerActionNone}
 }
@@ -550,6 +551,46 @@ func padStyledLine(s string, width int) string {
 		return s
 	}
 	return s + strings.Repeat(" ", width-w)
+}
+
+func pickerWindowBounds(total, cursor, offset, limit int) (start, end int, hasAbove, hasBelow bool) {
+	if total <= 0 {
+		return 0, 0, false, false
+	}
+	if limit <= 0 || limit > total {
+		limit = total
+	}
+	if cursor < 0 {
+		cursor = 0
+	}
+	if cursor >= total {
+		cursor = total - 1
+	}
+	if offset < 0 {
+		offset = 0
+	}
+	maxOffset := max(0, total-limit)
+	if offset > maxOffset {
+		offset = maxOffset
+	}
+	if cursor < offset {
+		offset = cursor
+	}
+	maxVisible := offset + limit - 1
+	if cursor > maxVisible {
+		offset = cursor - limit + 1
+	}
+	if offset > maxOffset {
+		offset = maxOffset
+	}
+	if offset < 0 {
+		offset = 0
+	}
+	end = offset + limit
+	if end > total {
+		end = total
+	}
+	return offset, end, offset > 0, end < total
 }
 
 func (p *pickerState) rebuildFiltered() {

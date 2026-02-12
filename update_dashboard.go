@@ -10,14 +10,13 @@ func (m model) updateDashboard(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	if m.dashCustomEditing {
 		return m.updateDashboardCustomInput(msg)
 	}
-
-	switch {
-	case m.isAction(scopeDashboard, actionTimeframe, msg):
-		m.dashTimeframeFocus = !m.dashTimeframeFocus
-		if m.dashTimeframeFocus {
-			m.dashTimeframeCursor = m.dashTimeframe
-		}
+	if m.focusedSection >= 0 && m.isAction(scopeDashboardFocused, actionCancel, msg) {
+		m.focusedSection = sectionUnfocused
 		return m, nil
+	}
+
+	if next, cmd, handled := m.executeBoundCommand(scopeDashboard, msg); handled {
+		return next, cmd
 	}
 
 	if !m.dashTimeframeFocus {

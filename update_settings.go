@@ -65,6 +65,21 @@ func settingsActiveScope(section int) string {
 	}
 }
 
+func settingsFocusSectionForSettSection(section int) int {
+	switch section {
+	case settSecRules:
+		return sectionSettingsRules
+	case settSecImportHistory:
+		return sectionSettingsImports
+	case settSecDBImport:
+		return sectionSettingsDatabase
+	case settSecChart:
+		return sectionSettingsViews
+	default:
+		return sectionSettingsDatabase
+	}
+}
+
 func (m model) updateSettings(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	// Text input modes (always handled first)
 	if m.settMode == settModeAddCat || m.settMode == settModeEditCat || m.settMode == settModeAddTag || m.settMode == settModeEditTag {
@@ -81,20 +96,6 @@ func (m model) updateSettings(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	if m.confirmAction != confirmActionNone {
 		return m.updateSettingsConfirm(msg)
 	}
-	if m.isAction(scopeGlobal, actionCommandGoTransactions, msg) {
-		m.activeTab = tabManager
-		m.managerMode = managerModeTransactions
-		return m, nil
-	}
-	if m.isAction(scopeGlobal, actionCommandGoDashboard, msg) {
-		m.activeTab = tabDashboard
-		return m, nil
-	}
-	if m.isAction(scopeGlobal, actionCommandGoSettings, msg) {
-		m.activeTab = tabSettings
-		return m, nil
-	}
-
 	// If a section is active, delegate to section-specific handler
 	if m.settActive {
 		return m.updateSettingsActive(msg)
@@ -104,11 +105,10 @@ func (m model) updateSettings(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	switch {
 	case m.isAction(scopeSettingsNav, actionQuit, msg) || m.isAction(scopeGlobal, actionQuit, msg):
 		return m, tea.Quit
-	case m.isAction(scopeSettingsNav, actionNextTab, msg):
-		m.activeTab = (m.activeTab + 1) % tabCount
-		return m, nil
 	case m.isAction(scopeSettingsNav, actionPrevTab, msg) || m.isAction(scopeGlobal, actionPrevTab, msg):
-		m.activeTab = (m.activeTab - 1 + tabCount) % tabCount
+		if next, cmd, handled := m.executeBoundCommand(scopeGlobal, msg); handled {
+			return next, cmd
+		}
 		return m, nil
 	case m.horizontalDelta(scopeSettingsNav, msg) != 0:
 		delta := m.horizontalDelta(scopeSettingsNav, msg)
@@ -119,31 +119,39 @@ func (m model) updateSettings(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			m.settColumn = settColRight
 			m.settSection = settSecChart
 		}
+		m.focusedSection = settingsFocusSectionForSettSection(m.settSection)
 		return m, nil
 	case m.verticalDelta(scopeSettingsNav, msg) != 0:
 		delta := m.verticalDelta(scopeSettingsNav, msg)
 		if delta != 0 {
 			m.settSection = moveSettingsSection(m.settSection, delta)
 		}
+		m.focusedSection = settingsFocusSectionForSettSection(m.settSection)
 		return m, nil
 	case m.isAction(scopeSettingsNav, actionActivate, msg):
 		m.settActive = true
 		m.settItemCursor = 0
+		m.focusedSection = settingsFocusSectionForSettSection(m.settSection)
 		return m, nil
-	case m.isAction(scopeSettingsNav, actionImport, msg):
-		return m, m.beginImportFlow()
+	}
+	if next, cmd, handled := m.executeBoundCommand(scopeSettingsNav, msg); handled {
+		return next, cmd
 	}
 	return m, nil
 }
 
 // updateSettingsActive handles keys when a section is activated (enter was pressed).
 func (m model) updateSettingsActive(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
+	scope := settingsActiveScope(m.settSection)
 	switch {
-	case m.isAction(settingsActiveScope(m.settSection), actionBack, msg):
+	case m.isAction(scope, actionBack, msg):
 		m.settActive = false
 		return m, nil
 	case m.isAction(scopeGlobal, actionQuit, msg):
 		return m, tea.Quit
+	}
+	if next, cmd, handled := m.executeBoundCommand(scope, msg); handled {
+		return next, cmd
 	}
 
 	switch m.settSection {
@@ -238,39 +246,14 @@ func (m model) updateSettingsRules(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			return m, m.armSettingsConfirm(confirmActionDeleteRule, rule.id, fmt.Sprintf("Press %s again to delete rule %q", keyLabel, rule.pattern))
 		}
 		return m, nil
-	case m.isAction(scopeSettingsActiveRules, actionApplyAll, msg):
-		if m.db == nil {
-			return m, nil
-		}
-		db := m.db
-		return m, func() tea.Msg {
-			count, err := applyCategoryRules(db)
-			return rulesAppliedMsg{count: count, err: err}
-		}
 	}
 	return m, nil
 }
 
 func (m model) updateSettingsDBImport(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	switch {
-	case m.isAction(scopeSettingsActiveDBImport, actionClearDB, msg):
-		keyLabel := m.primaryActionKey(scopeSettingsActiveDBImport, actionClearDB, "c")
-		return m, m.armSettingsConfirm(confirmActionClearDB, 0, fmt.Sprintf("Press %s again to clear all data", keyLabel))
-	case m.isAction(scopeSettingsActiveDBImport, actionImport, msg):
-		return m, m.beginImportFlow()
 	case m.isAction(scopeSettingsActiveDBImport, actionResetKeybindings, msg):
 		return m, resetKeybindingsCmd()
-	case m.isAction(scopeSettingsActiveDBImport, actionNukeAccount, msg):
-		if len(m.accounts) == 0 {
-			m.setStatus("No accounts available to nuke.")
-			return m, nil
-		}
-		items := make([]pickerItem, 0, len(m.accounts))
-		for _, acc := range m.accounts {
-			items = append(items, pickerItem{ID: acc.id, Label: acc.name, Meta: acc.acctType})
-		}
-		m.accountNukePicker = newPicker("Nuke Account", items, false, "")
-		return m, nil
 	case m.isAction(scopeSettingsActiveDBImport, actionRowsPerPage, msg):
 		delta := rowsPerPageDeltaFromKeyName(normalizeKeyName(msg.String()))
 		if delta > 0 && m.maxVisibleRows < 50 {
@@ -583,8 +566,6 @@ func (m model) updateSettingsRuleInput(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	case isBackspaceKey(msg):
 		deleteLastASCIIByte(&m.settInput)
 		return m, nil
-	case m.isAction(scopeGlobal, actionQuit, msg):
-		return m, tea.Quit
 	default:
 		appendPrintableASCII(&m.settInput, msg.String())
 		return m, nil

@@ -4,6 +4,7 @@ import (
 	"strings"
 	"testing"
 
+	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
 )
 
@@ -341,5 +342,39 @@ func TestPickerTriStateRendersMixedAndTracksDirtyPatch(t *testing.T) {
 	}
 	if !p.HasPendingChanges() {
 		t.Fatal("expected pending changes after toggle")
+	}
+}
+
+func TestPickerHandleMsgPrintableJKAreLiteralFirst(t *testing.T) {
+	p := newPicker("Quick Tags", testPickerItems(), true, "")
+	keys := NewKeyRegistry()
+	matches := func(action Action, msg tea.KeyMsg) bool {
+		b := keys.Lookup(msg.String(), scopeTagPicker)
+		return b != nil && b.Action == action
+	}
+
+	res := p.HandleMsg(keyMsg("j"), matches)
+	if res.Action != pickerActionNone {
+		t.Fatalf("action = %v, want %v", res.Action, pickerActionNone)
+	}
+	if p.query != "j" {
+		t.Fatalf("query = %q, want %q", p.query, "j")
+	}
+}
+
+func TestPickerHandleMsgArrowDownStillNavigates(t *testing.T) {
+	p := newPicker("Quick Tags", testPickerItems(), true, "")
+	keys := NewKeyRegistry()
+	matches := func(action Action, msg tea.KeyMsg) bool {
+		b := keys.Lookup(msg.String(), scopeTagPicker)
+		return b != nil && b.Action == action
+	}
+
+	res := p.HandleMsg(keyMsg("down"), matches)
+	if res.Action != pickerActionMoved {
+		t.Fatalf("action = %v, want %v", res.Action, pickerActionMoved)
+	}
+	if p.cursor != 1 {
+		t.Fatalf("cursor = %d, want 1", p.cursor)
 	}
 }
