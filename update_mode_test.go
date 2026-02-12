@@ -232,3 +232,98 @@ func TestManagerAndDupeModalActionFlows(t *testing.T) {
 		t.Fatal("expected ingest command for skip-dupes action")
 	}
 }
+
+func TestJumpModeToggleKeyClosesOverlay(t *testing.T) {
+	m := newModel()
+	m.ready = true
+	m.activeTab = tabManager
+	m.focusedSection = sectionManagerTransactions
+
+	next, _ := m.Update(keyMsg("v"))
+	got := next.(model)
+	if !got.jumpModeActive {
+		t.Fatal("expected jump mode to open on first v")
+	}
+
+	next, _ = got.Update(keyMsg("v"))
+	got2 := next.(model)
+	if got2.jumpModeActive {
+		t.Fatal("expected jump mode to close on second v")
+	}
+	if got2.focusedSection != sectionManagerTransactions {
+		t.Fatalf("focusedSection = %d, want %d", got2.focusedSection, sectionManagerTransactions)
+	}
+}
+
+func TestFilterReservedJumpTargetKeysExcludesV(t *testing.T) {
+	in := []jumpTarget{
+		{Key: "v", Label: "Bad Lower", Section: 1},
+		{Key: "V", Label: "Bad Upper", Section: 2},
+		{Key: "a", Label: "Accounts", Section: 3},
+	}
+	got := filterReservedJumpTargetKeys(in)
+	if len(got) != 1 {
+		t.Fatalf("filtered targets = %d, want 1", len(got))
+	}
+	if normalizeKeyName(got[0].Key) != "a" {
+		t.Fatalf("remaining target key = %q, want a", got[0].Key)
+	}
+}
+
+func TestSettingsJumpTargetsIncludeCategoriesAndTags(t *testing.T) {
+	m := newModel()
+	m.ready = true
+	m.activeTab = tabSettings
+
+	targets := m.jumpTargetsForActiveTab()
+	if len(targets) != 5 {
+		t.Fatalf("settings jump target count = %d, want 5", len(targets))
+	}
+
+	byKey := make(map[string]jumpTarget, len(targets))
+	for _, target := range targets {
+		byKey[normalizeKeyName(target.Key)] = target
+	}
+
+	if _, ok := byKey["i"]; ok {
+		t.Fatal("unexpected imports jump target")
+	}
+	if got, ok := byKey["c"]; !ok || got.Section != sectionSettingsCategories {
+		t.Fatalf("c target = %+v, want section %d", got, sectionSettingsCategories)
+	}
+	if got, ok := byKey["t"]; !ok || got.Section != sectionSettingsTags {
+		t.Fatalf("t target = %+v, want section %d", got, sectionSettingsTags)
+	}
+	if got, ok := byKey["r"]; !ok || got.Section != sectionSettingsRules {
+		t.Fatalf("r target = %+v, want section %d", got, sectionSettingsRules)
+	}
+	if got, ok := byKey["d"]; !ok || got.Section != sectionSettingsDatabase {
+		t.Fatalf("d target = %+v, want section %d", got, sectionSettingsDatabase)
+	}
+	if got, ok := byKey["w"]; !ok || got.Section != sectionSettingsViews {
+		t.Fatalf("w target = %+v, want section %d", got, sectionSettingsViews)
+	}
+}
+
+func TestSettingsJumpKeyFocusesCategories(t *testing.T) {
+	m := newModel()
+	m.ready = true
+	m.activeTab = tabSettings
+	m.jumpModeActive = true
+	m.focusedSection = sectionSettingsDatabase
+	m.settColumn = settColRight
+	m.settSection = settSecDBImport
+
+	next, _ := m.updateJumpOverlay(keyMsg("c"))
+	got := next.(model)
+
+	if got.jumpModeActive {
+		t.Fatal("jump mode should close after selecting a settings target")
+	}
+	if got.focusedSection != sectionSettingsCategories {
+		t.Fatalf("focusedSection = %d, want %d", got.focusedSection, sectionSettingsCategories)
+	}
+	if got.settColumn != settColLeft || got.settSection != settSecCategories {
+		t.Fatalf("settings focus = (col=%d, sec=%d), want (col=%d, sec=%d)", got.settColumn, got.settSection, settColLeft, settSecCategories)
+	}
+}

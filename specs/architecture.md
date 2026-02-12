@@ -799,7 +799,7 @@ focusedSection    int   // -1 = unfocused; meaning is tab-specific
 | Dashboard | `n` Net/Cashflow, `c` Composition, `b` Compare, `h` Budget Health | Unfocused |
 | Manager   | `a` Accounts, `t` Transactions                    | Transactions             |
 | Budget    | `t` Budget Table, `p` Planner                     | Budget Table             |
-| Settings  | `r` Rules, `i` Imports, `d` Database, `w` Dashboard Views | Stay (no reset) |
+| Settings  | `c` Categories, `t` Tags, `r` Rules, `d` Database, `w` Dashboard Views | Stay (no reset) |
 
 Target keys can overlap across tabs because only one tab's targets are shown at
 a time.
@@ -1193,7 +1193,7 @@ responsive layout logic to dashboard rendering.
 - Manager: badges at top-left of Accounts card and Transactions table.
 - Budget: badges at top-left of Table view and Planner view (depending on
   active view).
-- Settings: badges at top-left of Rules, Imports, Database, Dashboard Views
+- Settings: badges at top-left of Categories, Tags, Rules, Database, Dashboard Views
   sections.
 
 **v0.3 current state:** No jump overlay. Phase 1 adds jump mode infrastructure

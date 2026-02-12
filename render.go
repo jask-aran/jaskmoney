@@ -382,16 +382,10 @@ func renderCommandSuggestions(matches []CommandMatch, cursor, offset, width, lim
 	if limit <= 0 {
 		limit = 5
 	}
-	contentWidth := commandModalContentWidth(width, 0)
-	lines, hasAbove, hasBelow := renderCommandLinesWindow(matches, cursor, offset, contentWidth, limit)
+	contentWidth := commandModalContentWidth(width-2, 0)
+	lines, _, _ := renderCommandLinesWindow(matches, cursor, offset, contentWidth, limit)
 	if len(lines) == 0 {
 		return ""
-	}
-	if hasAbove {
-		lines = append([]string{modalFooterStyle.Render("↑ more")}, lines...)
-	}
-	if hasBelow {
-		lines = append(lines, modalFooterStyle.Render("↓ more"))
 	}
 	return renderModalContentWithWidth("Commands", lines, "", contentWidth)
 }

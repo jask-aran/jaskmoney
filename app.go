@@ -39,10 +39,12 @@ const (
 	sectionManagerAccounts     = 0
 	sectionManagerTransactions = 1
 
-	sectionSettingsRules    = 0
-	sectionSettingsImports  = 1
-	sectionSettingsDatabase = 2
-	sectionSettingsViews    = 3
+	sectionSettingsCategories    = 0
+	sectionSettingsTags          = 1
+	sectionSettingsRules         = 2
+	sectionSettingsDatabase      = 3
+	sectionSettingsViews         = 4
+	sectionSettingsImportHistory = 5
 )
 
 type transaction struct {
@@ -505,7 +507,7 @@ func (m model) View() string {
 		return m.composeOverlay(header, body, statusLine, footer, palette)
 	}
 	if m.commandOpen && m.commandUIKind == commandUIKindColon {
-		suggestions := renderCommandSuggestions(m.commandMatches, m.commandCursor, m.commandScrollOffset, m.width-4, 5)
+		suggestions := renderCommandSuggestions(m.commandMatches, m.commandCursor, m.commandScrollOffset, m.width, 5)
 		if strings.TrimSpace(suggestions) != "" {
 			return m.composeBottomOverlay(header, body, statusLine, footer, suggestions)
 		}
@@ -745,11 +747,11 @@ func (m model) composeBottomOverlay(header, body, statusLine, footer, content st
 	if targetHeight < 1 {
 		targetHeight = 1
 	}
-	x := 2
+	x := 0
 	if x+overlayWidth > m.width {
 		x = max(0, m.width-overlayWidth)
 	}
-	y := targetHeight - overlayHeight - 1
+	y := targetHeight - overlayHeight
 	if y < 0 {
 		y = 0
 	}

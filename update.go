@@ -566,26 +566,46 @@ type jumpTarget struct {
 	Section int
 }
 
+func filterReservedJumpTargetKeys(targets []jumpTarget) []jumpTarget {
+	if len(targets) == 0 {
+		return nil
+	}
+	out := make([]jumpTarget, 0, len(targets))
+	for _, target := range targets {
+		if strings.EqualFold(strings.TrimSpace(target.Key), "v") {
+			continue
+		}
+		out = append(out, target)
+	}
+	return out
+}
+
 func (m model) jumpTargetsForActiveTab() []jumpTarget {
 	switch m.activeTab {
 	case tabManager:
-		return []jumpTarget{
+		return filterReservedJumpTargetKeys([]jumpTarget{
 			{Key: "a", Label: "Accounts", Section: sectionManagerAccounts},
 			{Key: "t", Label: "Transactions", Section: sectionManagerTransactions},
-		}
+		})
 	case tabSettings:
-		return []jumpTarget{
+		return filterReservedJumpTargetKeys([]jumpTarget{
+			{Key: "c", Label: "Categories", Section: sectionSettingsCategories},
+			{Key: "t", Label: "Tags", Section: sectionSettingsTags},
 			{Key: "r", Label: "Rules", Section: sectionSettingsRules},
-			{Key: "i", Label: "Imports", Section: sectionSettingsImports},
 			{Key: "d", Label: "Database", Section: sectionSettingsDatabase},
 			{Key: "w", Label: "Dashboard Views", Section: sectionSettingsViews},
-		}
+		})
 	default:
 		return nil
 	}
 }
 
 func (m model) updateJumpOverlay(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
+	if m.isAction(scopeGlobal, actionJumpMode, msg) {
+		m.jumpModeActive = false
+		m.focusedSection = m.jumpPreviousFocus
+		return m, nil
+	}
 	if next, cmd, handled := m.executeBoundCommand(scopeJumpOverlay, msg); handled {
 		return next, cmd
 	}
@@ -617,10 +637,16 @@ func (m *model) applyFocusedSection() {
 		}
 	case tabSettings:
 		switch m.focusedSection {
+		case sectionSettingsCategories:
+			m.settColumn = settColLeft
+			m.settSection = settSecCategories
+		case sectionSettingsTags:
+			m.settColumn = settColLeft
+			m.settSection = settSecTags
 		case sectionSettingsRules:
 			m.settColumn = settColLeft
 			m.settSection = settSecRules
-		case sectionSettingsImports:
+		case sectionSettingsImportHistory:
 			m.settColumn = settColRight
 			m.settSection = settSecImportHistory
 		case sectionSettingsDatabase:
