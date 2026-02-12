@@ -143,6 +143,9 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.clearSettingsConfirm()
 		return m, nil
 	case tea.KeyMsg:
+		if m.jumpModeActive {
+			return m.updateJumpOverlay(msg)
+		}
 		if m.commandOpen {
 			return m.updateCommandUI(msg)
 		}
@@ -170,15 +173,8 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		if m.searchMode {
 			return m.updateSearch(msg)
 		}
-		if m.canOpenCommandUI() {
-			if m.isAction(scopeGlobal, actionCommandPalette, msg) {
-				m.openCommandUI(commandUIKindPalette)
-				return m, nil
-			}
-			if m.isAction(scopeGlobal, actionCommandMode, msg) {
-				m.openCommandUI(commandUIKindColon)
-				return m, nil
-			}
+		if next, cmd, handled := m.executeBoundCommand(m.commandContextScope(), msg); handled {
+			return next, cmd
 		}
 		if m.activeTab == tabSettings {
 			return m.updateSettings(msg)
@@ -562,6 +558,98 @@ func (m *model) beginImportFlow() tea.Cmd {
 	m.importFiles = nil
 	m.importCursor = 0
 	return loadFilesCmd(m.basePath)
+}
+
+type jumpTarget struct {
+	Key     string
+	Label   string
+	Section int
+}
+
+func (m model) jumpTargetsForActiveTab() []jumpTarget {
+	switch m.activeTab {
+	case tabManager:
+		return []jumpTarget{
+			{Key: "a", Label: "Accounts", Section: sectionManagerAccounts},
+			{Key: "t", Label: "Transactions", Section: sectionManagerTransactions},
+		}
+	case tabSettings:
+		return []jumpTarget{
+			{Key: "r", Label: "Rules", Section: sectionSettingsRules},
+			{Key: "i", Label: "Imports", Section: sectionSettingsImports},
+			{Key: "d", Label: "Database", Section: sectionSettingsDatabase},
+			{Key: "w", Label: "Dashboard Views", Section: sectionSettingsViews},
+		}
+	default:
+		return nil
+	}
+}
+
+func (m model) updateJumpOverlay(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
+	if next, cmd, handled := m.executeBoundCommand(scopeJumpOverlay, msg); handled {
+		return next, cmd
+	}
+	keyName := normalizeKeyName(msg.String())
+	if keyName == "" {
+		return m, nil
+	}
+	for _, target := range m.jumpTargetsForActiveTab() {
+		if normalizeKeyName(target.Key) != keyName {
+			continue
+		}
+		m.jumpModeActive = false
+		m.focusedSection = target.Section
+		m.applyFocusedSection()
+		return m, nil
+	}
+	return m, nil
+}
+
+func (m *model) applyFocusedSection() {
+	switch m.activeTab {
+	case tabManager:
+		switch m.focusedSection {
+		case sectionManagerAccounts:
+			m.managerMode = managerModeAccounts
+		case sectionManagerTransactions:
+			m.managerMode = managerModeTransactions
+			m.ensureCursorInWindow()
+		}
+	case tabSettings:
+		switch m.focusedSection {
+		case sectionSettingsRules:
+			m.settColumn = settColLeft
+			m.settSection = settSecRules
+		case sectionSettingsImports:
+			m.settColumn = settColRight
+			m.settSection = settSecImportHistory
+		case sectionSettingsDatabase:
+			m.settColumn = settColRight
+			m.settSection = settSecDBImport
+		case sectionSettingsViews:
+			m.settColumn = settColRight
+			m.settSection = settSecChart
+		}
+	}
+}
+
+func (m *model) applyTabDefaultsOnSwitch() {
+	switch m.activeTab {
+	case tabManager:
+		if m.focusedSection == sectionUnfocused {
+			m.focusedSection = sectionManagerTransactions
+		}
+		m.applyFocusedSection()
+	case tabSettings:
+		if m.focusedSection == sectionUnfocused {
+			m.focusedSection = sectionSettingsDatabase
+		}
+		m.applyFocusedSection()
+	case tabDashboard:
+		if m.focusedSection != sectionUnfocused {
+			m.focusedSection = sectionUnfocused
+		}
+	}
 }
 
 func moveSettingsSection(section, delta int) int {

@@ -33,29 +33,6 @@ func (m model) updateNavigationWithVisible(msg tea.KeyMsg, visible int) (tea.Mod
 		return m, nil
 	}
 
-	switch {
-	case m.isAction(scopeTransactions, actionJumpTop, msg):
-		if m.rangeSelecting {
-			m.clearRangeSelection()
-		}
-		m.cursor = 0
-		m.topIndex = 0
-		return m, nil
-	case m.isAction(scopeTransactions, actionJumpBottom, msg):
-		if m.rangeSelecting {
-			m.clearRangeSelection()
-		}
-		m.cursor = len(filtered) - 1
-		if m.cursor < 0 {
-			m.cursor = 0
-		}
-		m.topIndex = m.cursor - visible + 1
-		if m.topIndex < 0 {
-			m.topIndex = 0
-		}
-		return m, nil
-	}
-
 	if m.isAction(scopeTransactions, actionRangeHighlight, msg) {
 		delta := navDeltaFromKeyName(normalizeKeyName(msg.String()))
 		if delta != 0 {
@@ -64,31 +41,7 @@ func (m model) updateNavigationWithVisible(msg tea.KeyMsg, visible int) (tea.Mod
 		return m, nil
 	}
 
-	switch {
-	case m.isAction(scopeTransactions, actionSearch, msg):
-		if m.rangeSelecting {
-			m.clearRangeSelection()
-		}
-		m.searchMode = true
-		m.searchQuery = ""
-		return m, nil
-	case m.isAction(scopeTransactions, actionSort, msg):
-		if m.rangeSelecting {
-			m.clearRangeSelection()
-		}
-		m.sortColumn = (m.sortColumn + 1) % sortColumnCount
-		m.cursor = 0
-		m.topIndex = 0
-		return m, nil
-	case m.isAction(scopeTransactions, actionSortDirection, msg):
-		if m.rangeSelecting {
-			m.clearRangeSelection()
-		}
-		m.sortAscending = !m.sortAscending
-		m.cursor = 0
-		m.topIndex = 0
-		return m, nil
-	case m.isAction(scopeTransactions, actionFilterCategory, msg):
+	if m.isAction(scopeTransactions, actionFilterCategory, msg) {
 		if m.rangeSelecting {
 			m.clearRangeSelection()
 		}
@@ -96,51 +49,10 @@ func (m model) updateNavigationWithVisible(msg tea.KeyMsg, visible int) (tea.Mod
 		m.cursor = 0
 		m.topIndex = 0
 		return m, nil
-	case m.isAction(scopeTransactions, actionToggleSelect, msg):
-		highlighted := m.highlightedRows(filtered)
-		if len(highlighted) > 0 {
-			m.toggleSelectionForHighlighted(highlighted, filtered)
-		} else {
-			m.toggleSelectionAtCursor(filtered)
-		}
-		return m, nil
-	case m.isAction(scopeTransactions, actionQuickCategory, msg):
-		return m.openQuickCategoryPicker(filtered)
-	case m.isAction(scopeTransactions, actionQuickTag, msg):
-		return m.openQuickTagPicker(filtered)
-	case m.isAction(scopeTransactions, actionCommandClearSelection, msg):
-		if m.rangeSelecting {
-			m.clearRangeSelection()
-		}
-		if m.selectedCount() > 0 {
-			m.clearSelections()
-		}
-		m.setStatus("Selection cleared.")
-		return m, nil
-	case m.isAction(scopeTransactions, actionClearSearch, msg):
-		if m.searchQuery != "" {
-			m.searchQuery = ""
-			m.cursor = 0
-			m.topIndex = 0
-			m.setStatus("Search cleared.")
-			return m, nil
-		}
-		if m.rangeSelecting {
-			m.clearRangeSelection()
-			m.setStatus("Range highlight cleared.")
-			return m, nil
-		}
-		if m.selectedCount() > 0 {
-			m.clearSelections()
-			m.setStatus("Selection cleared.")
-			return m, nil
-		}
-		return m, nil
-	case m.isAction(scopeTransactions, actionSelect, msg):
-		if len(filtered) > 0 && m.cursor < len(filtered) {
-			m.openDetail(filtered[m.cursor])
-		}
-		return m, nil
+	}
+
+	if next, cmd, handled := m.executeBoundCommand(scopeTransactions, msg); handled {
+		return next, cmd
 	}
 	return m, nil
 }

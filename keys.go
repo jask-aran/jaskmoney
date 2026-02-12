@@ -11,10 +11,11 @@ import (
 type Action string
 
 type Binding struct {
-	Action Action
-	Keys   []string
-	Help   string
-	Scopes []string
+	Action    Action
+	CommandID string
+	Keys      []string
+	Help      string
+	Scopes    []string
 }
 
 type KeyRegistry struct {
@@ -26,10 +27,12 @@ const (
 	scopeGlobal                   = "global"
 	scopeCommandPalette           = "command_palette"
 	scopeCommandMode              = "command_mode"
+	scopeJumpOverlay              = "jump_overlay"
 	scopeManagerTransactions      = "manager_transactions"
 	scopeManager                  = "manager"
 	scopeManagerModal             = "manager_modal"
 	scopeDashboard                = "dashboard"
+	scopeDashboardFocused         = "dashboard_focused"
 	scopeDashboardTimeframe       = "dashboard_timeframe"
 	scopeDashboardCustomInput     = "dashboard_custom_input"
 	scopeTransactions             = "transactions"
@@ -109,11 +112,17 @@ const (
 	actionCommandGoDashboard       Action = "command_go_dashboard"
 	actionCommandGoTransactions    Action = "command_go_transactions"
 	actionCommandGoSettings        Action = "command_go_settings"
+	actionCommandGoBudget          Action = "command_go_budget"
 	actionCommandFocusAccounts     Action = "command_focus_accounts"
 	actionCommandFocusTransactions Action = "command_focus_transactions"
+	actionJumpMode                 Action = "jump_mode"
+	actionJumpCancel               Action = "jump_cancel"
 	actionCommandApplyTagRules     Action = "command_apply_tag_rules"
 	actionCommandClearFilters      Action = "command_clear_filters"
 	actionCommandClearSelection    Action = "command_clear_selection"
+	actionDashboardModeNext        Action = "dashboard_mode_next"
+	actionDashboardModePrev        Action = "dashboard_mode_prev"
+	actionDashboardDrillDown       Action = "dashboard_drill_down"
 )
 
 func NewKeyRegistry() *KeyRegistry {
@@ -122,192 +131,199 @@ func NewKeyRegistry() *KeyRegistry {
 		indexByScope:    make(map[string]map[string]*Binding),
 	}
 
-	reg := func(scope string, action Action, keys []string, help string) {
-		r.Register(Binding{Action: action, Keys: keys, Help: help, Scopes: []string{scope}})
+	reg := func(scope string, action Action, commandID string, keys []string, help string) {
+		r.Register(Binding{Action: action, CommandID: commandID, Keys: keys, Help: help, Scopes: []string{scope}})
 	}
 
 	// Global fallback lookup.
-	reg(scopeGlobal, actionQuit, []string{"q", "ctrl+c"}, "quit")
-	reg(scopeGlobal, actionNextTab, []string{"tab"}, "next tab")
-	reg(scopeGlobal, actionPrevTab, []string{"shift+tab"}, "prev tab")
-	reg(scopeGlobal, actionCommandGoTransactions, []string{"1"}, "transactions")
-	reg(scopeGlobal, actionCommandGoDashboard, []string{"2"}, "dashboard")
-	reg(scopeGlobal, actionCommandGoSettings, []string{"3"}, "settings")
-	reg(scopeGlobal, actionCommandPalette, []string{"ctrl+k"}, "commands")
-	reg(scopeGlobal, actionCommandMode, []string{":"}, "command")
+	reg(scopeGlobal, actionQuit, "", []string{"q", "ctrl+c"}, "quit")
+	reg(scopeGlobal, actionNextTab, "nav:next-tab", []string{"tab"}, "next tab")
+	reg(scopeGlobal, actionPrevTab, "nav:prev-tab", []string{"shift+tab"}, "prev tab")
+	reg(scopeGlobal, actionCommandGoTransactions, "nav:manager", []string{"1"}, "manager")
+	reg(scopeGlobal, actionCommandGoDashboard, "nav:dashboard", []string{"2"}, "dashboard")
+	reg(scopeGlobal, actionCommandGoSettings, "nav:settings", []string{"3"}, "settings")
+	reg(scopeGlobal, actionJumpMode, "jump:activate", []string{"v"}, "jump")
+	reg(scopeGlobal, actionCommandPalette, "palette:open", []string{"ctrl+k"}, "commands")
+	reg(scopeGlobal, actionCommandMode, "cmd:open", []string{":"}, "command")
 
-	reg(scopeCommandPalette, actionUp, []string{"k", "up", "ctrl+p"}, "up")
-	reg(scopeCommandPalette, actionDown, []string{"j", "down", "ctrl+n"}, "down")
-	reg(scopeCommandPalette, actionSelect, []string{"enter"}, "run")
-	reg(scopeCommandPalette, actionClose, []string{"esc"}, "close")
-	reg(scopeCommandMode, actionUp, []string{"k", "up", "ctrl+p"}, "up")
-	reg(scopeCommandMode, actionDown, []string{"j", "down", "ctrl+n"}, "down")
-	reg(scopeCommandMode, actionSelect, []string{"enter"}, "run")
-	reg(scopeCommandMode, actionClose, []string{"esc"}, "close")
+	reg(scopeCommandPalette, actionUp, "", []string{"up", "ctrl+p", "k"}, "up")
+	reg(scopeCommandPalette, actionDown, "", []string{"down", "ctrl+n", "j"}, "down")
+	reg(scopeCommandPalette, actionSelect, "", []string{"enter"}, "run")
+	reg(scopeCommandPalette, actionClose, "", []string{"esc"}, "close")
+	reg(scopeCommandMode, actionUp, "", []string{"up", "ctrl+p", "k"}, "up")
+	reg(scopeCommandMode, actionDown, "", []string{"down", "ctrl+n", "j"}, "down")
+	reg(scopeCommandMode, actionSelect, "", []string{"enter"}, "run")
+	reg(scopeCommandMode, actionClose, "", []string{"esc"}, "close")
+	reg(scopeJumpOverlay, actionJumpCancel, "jump:cancel", []string{"esc"}, "cancel")
 
 	// Manager transactions-primary footer additions.
-	reg(scopeManagerTransactions, actionFocusAccounts, []string{"a"}, "accounts")
+	reg(scopeManagerTransactions, actionFocusAccounts, "", []string{"a"}, "accounts")
 	// Manager accounts-active footer.
-	reg(scopeManager, actionUp, []string{"k", "up", "ctrl+p"}, "up")
-	reg(scopeManager, actionDown, []string{"j", "down", "ctrl+n"}, "down")
-	reg(scopeManager, actionBack, []string{"esc"}, "back")
-	reg(scopeManager, actionToggleSelect, []string{"space"}, "toggle active")
-	reg(scopeManager, actionSave, []string{"s"}, "save active")
-	reg(scopeManager, actionAdd, []string{"a"}, "add account")
-	reg(scopeManager, actionSelect, []string{"enter"}, "edit account")
-	reg(scopeManager, actionQuickTag, []string{"t"}, "quick tag")
-	reg(scopeManager, actionClearDB, []string{"c"}, "clear txns")
-	reg(scopeManager, actionDelete, []string{"del"}, "delete empty")
-	reg(scopeManager, actionNextTab, []string{"tab"}, "next tab")
-	reg(scopeManager, actionQuit, []string{"q", "ctrl+c"}, "quit")
-	reg(scopeManagerModal, actionUp, []string{"k", "up", "ctrl+p"}, "prev field")
-	reg(scopeManagerModal, actionDown, []string{"j", "down", "ctrl+n"}, "next field")
-	reg(scopeManagerModal, actionLeft, []string{"h", "left"}, "toggle")
-	reg(scopeManagerModal, actionRight, []string{"l", "right"}, "toggle")
-	reg(scopeManagerModal, actionToggleSelect, []string{"space"}, "toggle")
-	reg(scopeManagerModal, actionSave, []string{"enter"}, "save")
-	reg(scopeManagerModal, actionClose, []string{"esc"}, "cancel")
+	reg(scopeManager, actionUp, "", []string{"k", "up", "ctrl+p"}, "up")
+	reg(scopeManager, actionDown, "", []string{"j", "down", "ctrl+n"}, "down")
+	reg(scopeManager, actionBack, "", []string{"esc"}, "back")
+	reg(scopeManager, actionToggleSelect, "", []string{"space"}, "toggle active")
+	reg(scopeManager, actionSave, "", []string{"s"}, "save active")
+	reg(scopeManager, actionAdd, "", []string{"a"}, "add account")
+	reg(scopeManager, actionSelect, "", []string{"enter"}, "edit account")
+	reg(scopeManager, actionQuickTag, "txn:quick-tag", []string{"t"}, "quick tag")
+	reg(scopeManager, actionClearDB, "", []string{"c"}, "clear txns")
+	reg(scopeManager, actionDelete, "", []string{"del"}, "delete empty")
+	reg(scopeManager, actionNextTab, "nav:next-tab", []string{"tab"}, "next tab")
+	reg(scopeManager, actionQuit, "", []string{"q", "ctrl+c"}, "quit")
+	reg(scopeManagerModal, actionUp, "", []string{"k", "up", "ctrl+p"}, "prev field")
+	reg(scopeManagerModal, actionDown, "", []string{"j", "down", "ctrl+n"}, "next field")
+	reg(scopeManagerModal, actionLeft, "", []string{"h", "left"}, "toggle")
+	reg(scopeManagerModal, actionRight, "", []string{"l", "right"}, "toggle")
+	reg(scopeManagerModal, actionToggleSelect, "", []string{"space"}, "toggle")
+	reg(scopeManagerModal, actionSave, "", []string{"enter"}, "save")
+	reg(scopeManagerModal, actionClose, "", []string{"esc"}, "cancel")
 
 	// Dashboard footer: d, tab, shift+tab, q
-	reg(scopeDashboard, actionTimeframe, []string{"d"}, "timeframe")
-	reg(scopeDashboard, actionNextTab, []string{"tab"}, "next tab")
-	reg(scopeDashboard, actionPrevTab, []string{"shift+tab"}, "prev tab")
-	reg(scopeDashboard, actionQuit, []string{"q", "ctrl+c"}, "quit")
+	reg(scopeDashboard, actionTimeframe, "dash:timeframe", []string{"d"}, "timeframe")
+	reg(scopeDashboard, actionNextTab, "nav:next-tab", []string{"tab"}, "next tab")
+	reg(scopeDashboard, actionPrevTab, "nav:prev-tab", []string{"shift+tab"}, "prev tab")
+	reg(scopeDashboard, actionQuit, "", []string{"q", "ctrl+c"}, "quit")
+	reg(scopeDashboardFocused, actionDashboardModeNext, "dash:mode-next", []string{"]"}, "next mode")
+	reg(scopeDashboardFocused, actionDashboardModePrev, "dash:mode-prev", []string{"["}, "prev mode")
+	reg(scopeDashboardFocused, actionDashboardDrillDown, "dash:drill-down", []string{"enter"}, "drill down")
+	reg(scopeDashboardFocused, actionCancel, "", []string{"esc"}, "unfocus")
 
 	// Dashboard timeframe focus footer: left/right, enter, esc
-	reg(scopeDashboardTimeframe, actionLeft, []string{"h", "left"}, "prev")
-	reg(scopeDashboardTimeframe, actionRight, []string{"l", "right"}, "next")
-	reg(scopeDashboardTimeframe, actionSelect, []string{"enter"}, "select")
-	reg(scopeDashboardTimeframe, actionCancel, []string{"esc"}, "cancel")
+	reg(scopeDashboardTimeframe, actionLeft, "", []string{"h", "left"}, "prev")
+	reg(scopeDashboardTimeframe, actionRight, "", []string{"l", "right"}, "next")
+	reg(scopeDashboardTimeframe, actionSelect, "", []string{"enter"}, "select")
+	reg(scopeDashboardTimeframe, actionCancel, "", []string{"esc"}, "cancel")
 
 	// Dashboard custom input footer: enter, esc
-	reg(scopeDashboardCustomInput, actionConfirm, []string{"enter"}, "confirm")
-	reg(scopeDashboardCustomInput, actionCancel, []string{"esc"}, "cancel")
+	reg(scopeDashboardCustomInput, actionConfirm, "", []string{"enter"}, "confirm")
+	reg(scopeDashboardCustomInput, actionCancel, "", []string{"esc"}, "cancel")
 
 	// Transactions footer.
-	reg(scopeTransactions, actionSearch, []string{"/"}, "search")
-	reg(scopeTransactions, actionSort, []string{"s"}, "sort")
-	reg(scopeTransactions, actionSortDirection, []string{"S"}, "sort dir")
-	reg(scopeTransactions, actionFilterCategory, []string{"f"}, "filter cat")
-	reg(scopeTransactions, actionQuickCategory, []string{"c"}, "quick cat")
-	reg(scopeTransactions, actionQuickTag, []string{"t"}, "quick tag")
-	reg(scopeTransactions, actionToggleSelect, []string{"space", " "}, "toggle sel")
-	reg(scopeTransactions, actionRangeHighlight, []string{"shift+up/down", "shift+up", "shift+down"}, "hl range")
-	reg(scopeTransactions, actionCommandClearSelection, []string{"u"}, "clear sel")
-	reg(scopeTransactions, actionJumpTop, []string{"g"}, "top")
-	reg(scopeTransactions, actionJumpBottom, []string{"G"}, "bottom")
-	reg(scopeTransactions, actionClearSearch, []string{"esc"}, "clear")
-	reg(scopeTransactions, actionSelect, []string{"enter"}, "select")
-	reg(scopeTransactions, actionUp, []string{"k", "up", "ctrl+p"}, "up")
-	reg(scopeTransactions, actionDown, []string{"j", "down", "ctrl+n"}, "down")
-	reg(scopeTransactions, actionNextTab, []string{"tab"}, "next tab")
-	reg(scopeTransactions, actionQuit, []string{"q", "ctrl+c"}, "quit")
+	reg(scopeTransactions, actionSearch, "filter:open", []string{"/"}, "search")
+	reg(scopeTransactions, actionSort, "txn:sort", []string{"s"}, "sort")
+	reg(scopeTransactions, actionSortDirection, "txn:sort-dir", []string{"S"}, "sort dir")
+	reg(scopeTransactions, actionFilterCategory, "", []string{"f"}, "filter cat")
+	reg(scopeTransactions, actionQuickCategory, "txn:quick-category", []string{"c"}, "quick cat")
+	reg(scopeTransactions, actionQuickTag, "txn:quick-tag", []string{"t"}, "quick tag")
+	reg(scopeTransactions, actionToggleSelect, "txn:select", []string{"space", " "}, "toggle sel")
+	reg(scopeTransactions, actionRangeHighlight, "", []string{"shift+up/down", "shift+up", "shift+down"}, "hl range")
+	reg(scopeTransactions, actionCommandClearSelection, "txn:clear-selection", []string{"u"}, "clear sel")
+	reg(scopeTransactions, actionJumpTop, "txn:jump-top", []string{"g"}, "top")
+	reg(scopeTransactions, actionJumpBottom, "txn:jump-bottom", []string{"G"}, "bottom")
+	reg(scopeTransactions, actionClearSearch, "filter:clear", []string{"esc"}, "clear")
+	reg(scopeTransactions, actionSelect, "txn:detail", []string{"enter"}, "select")
+	reg(scopeTransactions, actionUp, "", []string{"k", "up", "ctrl+p"}, "up")
+	reg(scopeTransactions, actionDown, "", []string{"j", "down", "ctrl+n"}, "down")
+	reg(scopeTransactions, actionNextTab, "nav:next-tab", []string{"tab"}, "next tab")
+	reg(scopeTransactions, actionQuit, "", []string{"q", "ctrl+c"}, "quit")
 
 	// Category quick picker footer.
-	reg(scopeCategoryPicker, actionUp, []string{"k", "up", "ctrl+p"}, "up")
-	reg(scopeCategoryPicker, actionDown, []string{"j", "down", "ctrl+n"}, "down")
-	reg(scopeCategoryPicker, actionSelect, []string{"enter"}, "apply")
-	reg(scopeCategoryPicker, actionClose, []string{"esc"}, "cancel")
-	reg(scopeTagPicker, actionUp, []string{"k", "up", "ctrl+p"}, "up")
-	reg(scopeTagPicker, actionDown, []string{"j", "down", "ctrl+n"}, "down")
-	reg(scopeTagPicker, actionToggleSelect, []string{"space"}, "toggle")
-	reg(scopeTagPicker, actionSelect, []string{"enter"}, "apply")
-	reg(scopeTagPicker, actionClose, []string{"esc"}, "cancel")
-	reg(scopeAccountNukePicker, actionUp, []string{"k", "up", "ctrl+p"}, "up")
-	reg(scopeAccountNukePicker, actionDown, []string{"j", "down", "ctrl+n"}, "down")
-	reg(scopeAccountNukePicker, actionSelect, []string{"enter"}, "nuke")
-	reg(scopeAccountNukePicker, actionClose, []string{"esc"}, "cancel")
+	reg(scopeCategoryPicker, actionUp, "", []string{"up", "ctrl+p", "k"}, "up")
+	reg(scopeCategoryPicker, actionDown, "", []string{"down", "ctrl+n", "j"}, "down")
+	reg(scopeCategoryPicker, actionSelect, "", []string{"enter"}, "apply")
+	reg(scopeCategoryPicker, actionClose, "", []string{"esc"}, "cancel")
+	reg(scopeTagPicker, actionUp, "", []string{"up", "ctrl+p", "k"}, "up")
+	reg(scopeTagPicker, actionDown, "", []string{"down", "ctrl+n", "j"}, "down")
+	reg(scopeTagPicker, actionToggleSelect, "", []string{"space"}, "toggle")
+	reg(scopeTagPicker, actionSelect, "", []string{"enter"}, "apply")
+	reg(scopeTagPicker, actionClose, "", []string{"esc"}, "cancel")
+	reg(scopeAccountNukePicker, actionUp, "", []string{"up", "ctrl+p", "k"}, "up")
+	reg(scopeAccountNukePicker, actionDown, "", []string{"down", "ctrl+n", "j"}, "down")
+	reg(scopeAccountNukePicker, actionSelect, "", []string{"enter"}, "nuke")
+	reg(scopeAccountNukePicker, actionClose, "", []string{"esc"}, "cancel")
 
 	// Detail / file picker footers: enter, esc, up/down, q
-	reg(scopeDetailModal, actionSelect, []string{"enter"}, "select")
-	reg(scopeDetailModal, actionEdit, []string{"n"}, "notes")
-	reg(scopeDetailModal, actionClose, []string{"esc"}, "close")
-	reg(scopeDetailModal, actionUp, []string{"k", "up", "ctrl+p"}, "up")
-	reg(scopeDetailModal, actionDown, []string{"j", "down", "ctrl+n"}, "down")
-	reg(scopeDetailModal, actionQuit, []string{"q", "ctrl+c"}, "quit")
-	reg(scopeFilePicker, actionSelect, []string{"enter"}, "select")
-	reg(scopeFilePicker, actionClose, []string{"esc"}, "close")
-	reg(scopeFilePicker, actionUp, []string{"k", "up", "ctrl+p"}, "up")
-	reg(scopeFilePicker, actionDown, []string{"j", "down", "ctrl+n"}, "down")
-	reg(scopeFilePicker, actionQuit, []string{"q", "ctrl+c"}, "quit")
+	reg(scopeDetailModal, actionSelect, "", []string{"enter"}, "select")
+	reg(scopeDetailModal, actionEdit, "", []string{"n"}, "notes")
+	reg(scopeDetailModal, actionClose, "", []string{"esc"}, "close")
+	reg(scopeDetailModal, actionUp, "", []string{"k", "up", "ctrl+p"}, "up")
+	reg(scopeDetailModal, actionDown, "", []string{"j", "down", "ctrl+n"}, "down")
+	reg(scopeDetailModal, actionQuit, "", []string{"q", "ctrl+c"}, "quit")
+	reg(scopeFilePicker, actionSelect, "", []string{"enter"}, "select")
+	reg(scopeFilePicker, actionClose, "", []string{"esc"}, "close")
+	reg(scopeFilePicker, actionUp, "", []string{"k", "up", "ctrl+p"}, "up")
+	reg(scopeFilePicker, actionDown, "", []string{"j", "down", "ctrl+n"}, "down")
+	reg(scopeFilePicker, actionQuit, "", []string{"q", "ctrl+c"}, "quit")
 
 	// Dupe modal footer.
-	reg(scopeDupeModal, actionImportAll, []string{"a"}, "import all")
-	reg(scopeDupeModal, actionSkipDupes, []string{"s"}, "skip dupes")
-	reg(scopeDupeModal, actionClose, []string{"esc", "c"}, "cancel")
+	reg(scopeDupeModal, actionImportAll, "", []string{"a"}, "import all")
+	reg(scopeDupeModal, actionSkipDupes, "", []string{"s"}, "skip dupes")
+	reg(scopeDupeModal, actionClose, "", []string{"esc", "c"}, "cancel")
 
 	// Search footer.
-	reg(scopeSearch, actionClearSearch, []string{"esc"}, "clear search")
-	reg(scopeSearch, actionConfirm, []string{"enter"}, "confirm")
+	reg(scopeSearch, actionClearSearch, "", []string{"esc"}, "clear search")
+	reg(scopeSearch, actionConfirm, "", []string{"enter"}, "confirm")
 
 	// Settings mode footers.
-	reg(scopeSettingsModeCat, actionUp, []string{"k", "up", "ctrl+p"}, "prev field")
-	reg(scopeSettingsModeCat, actionDown, []string{"j", "down", "ctrl+n"}, "next field")
-	reg(scopeSettingsModeCat, actionLeft, []string{"h", "left"}, "prev color")
-	reg(scopeSettingsModeCat, actionRight, []string{"l", "right"}, "next color")
-	reg(scopeSettingsModeCat, actionSave, []string{"enter"}, "save")
-	reg(scopeSettingsModeCat, actionClose, []string{"esc"}, "cancel")
-	reg(scopeSettingsModeTag, actionUp, []string{"k", "up", "ctrl+p"}, "prev field")
-	reg(scopeSettingsModeTag, actionDown, []string{"j", "down", "ctrl+n"}, "next field")
-	reg(scopeSettingsModeTag, actionLeft, []string{"h", "left"}, "prev")
-	reg(scopeSettingsModeTag, actionRight, []string{"l", "right"}, "next")
-	reg(scopeSettingsModeTag, actionSave, []string{"enter"}, "save")
-	reg(scopeSettingsModeTag, actionClose, []string{"esc"}, "cancel")
-	reg(scopeSettingsModeRule, actionNext, []string{"enter"}, "next")
-	reg(scopeSettingsModeRule, actionClose, []string{"esc"}, "cancel")
-	reg(scopeSettingsModeRuleCat, actionUp, []string{"k", "up", "ctrl+p"}, "up")
-	reg(scopeSettingsModeRuleCat, actionDown, []string{"j", "down", "ctrl+n"}, "down")
-	reg(scopeSettingsModeRuleCat, actionSave, []string{"enter"}, "save")
-	reg(scopeSettingsModeRuleCat, actionClose, []string{"esc"}, "cancel")
+	reg(scopeSettingsModeCat, actionUp, "", []string{"k", "up", "ctrl+p"}, "prev field")
+	reg(scopeSettingsModeCat, actionDown, "", []string{"j", "down", "ctrl+n"}, "next field")
+	reg(scopeSettingsModeCat, actionLeft, "", []string{"h", "left"}, "prev color")
+	reg(scopeSettingsModeCat, actionRight, "", []string{"l", "right"}, "next color")
+	reg(scopeSettingsModeCat, actionSave, "", []string{"enter"}, "save")
+	reg(scopeSettingsModeCat, actionClose, "", []string{"esc"}, "cancel")
+	reg(scopeSettingsModeTag, actionUp, "", []string{"k", "up", "ctrl+p"}, "prev field")
+	reg(scopeSettingsModeTag, actionDown, "", []string{"j", "down", "ctrl+n"}, "next field")
+	reg(scopeSettingsModeTag, actionLeft, "", []string{"h", "left"}, "prev")
+	reg(scopeSettingsModeTag, actionRight, "", []string{"l", "right"}, "next")
+	reg(scopeSettingsModeTag, actionSave, "", []string{"enter"}, "save")
+	reg(scopeSettingsModeTag, actionClose, "", []string{"esc"}, "cancel")
+	reg(scopeSettingsModeRule, actionNext, "", []string{"enter"}, "next")
+	reg(scopeSettingsModeRule, actionClose, "", []string{"esc"}, "cancel")
+	reg(scopeSettingsModeRuleCat, actionUp, "", []string{"k", "up", "ctrl+p"}, "up")
+	reg(scopeSettingsModeRuleCat, actionDown, "", []string{"j", "down", "ctrl+n"}, "down")
+	reg(scopeSettingsModeRuleCat, actionSave, "", []string{"enter"}, "save")
+	reg(scopeSettingsModeRuleCat, actionClose, "", []string{"esc"}, "cancel")
 
 	// Settings active section footers.
-	reg(scopeSettingsActiveCategories, actionUp, []string{"k", "up", "ctrl+p"}, "up")
-	reg(scopeSettingsActiveCategories, actionDown, []string{"j", "down", "ctrl+n"}, "down")
-	reg(scopeSettingsActiveCategories, actionBack, []string{"esc"}, "back")
-	reg(scopeSettingsActiveCategories, actionAdd, []string{"a"}, "add")
-	reg(scopeSettingsActiveCategories, actionSelect, []string{"enter"}, "edit")
-	reg(scopeSettingsActiveCategories, actionDelete, []string{"del"}, "delete")
-	reg(scopeSettingsActiveTags, actionUp, []string{"k", "up", "ctrl+p"}, "up")
-	reg(scopeSettingsActiveTags, actionDown, []string{"j", "down", "ctrl+n"}, "down")
-	reg(scopeSettingsActiveTags, actionBack, []string{"esc"}, "back")
-	reg(scopeSettingsActiveTags, actionAdd, []string{"a"}, "add")
-	reg(scopeSettingsActiveTags, actionSelect, []string{"enter"}, "edit")
-	reg(scopeSettingsActiveTags, actionDelete, []string{"del"}, "delete")
-	reg(scopeSettingsActiveRules, actionUp, []string{"k", "up", "ctrl+p"}, "up")
-	reg(scopeSettingsActiveRules, actionDown, []string{"j", "down", "ctrl+n"}, "down")
-	reg(scopeSettingsActiveRules, actionBack, []string{"esc"}, "back")
-	reg(scopeSettingsActiveRules, actionAdd, []string{"a"}, "add")
-	reg(scopeSettingsActiveRules, actionEdit, []string{"e"}, "edit")
-	reg(scopeSettingsActiveRules, actionDelete, []string{"del"}, "delete")
-	reg(scopeSettingsActiveRules, actionApplyAll, []string{"A"}, "apply all")
-	reg(scopeSettingsActiveChart, actionUp, []string{"k", "up", "ctrl+p"}, "up")
-	reg(scopeSettingsActiveChart, actionDown, []string{"j", "down", "ctrl+n"}, "down")
-	reg(scopeSettingsActiveChart, actionBack, []string{"esc"}, "back")
-	reg(scopeSettingsActiveChart, actionLeft, []string{"h", "left"}, "toggle week boundary")
-	reg(scopeSettingsActiveChart, actionRight, []string{"l", "right"}, "toggle week boundary")
-	reg(scopeSettingsActiveChart, actionConfirm, []string{"enter"}, "toggle")
-	reg(scopeSettingsActiveDBImport, actionUp, []string{"k", "up", "ctrl+p"}, "up")
-	reg(scopeSettingsActiveDBImport, actionDown, []string{"j", "down", "ctrl+n"}, "down")
-	reg(scopeSettingsActiveDBImport, actionBack, []string{"esc"}, "back")
-	reg(scopeSettingsActiveDBImport, actionRowsPerPage, []string{"+/-", "+", "=", "-"}, "rows/page")
-	reg(scopeSettingsActiveDBImport, actionCommandDefault, []string{"o"}, "cmd default")
-	reg(scopeSettingsActiveDBImport, actionClearDB, []string{"c"}, "clear db")
-	reg(scopeSettingsActiveDBImport, actionImport, []string{"i"}, "import")
-	reg(scopeSettingsActiveDBImport, actionResetKeybindings, []string{"r"}, "reset keys")
-	reg(scopeSettingsActiveDBImport, actionNukeAccount, []string{"n"}, "nuke account")
-	reg(scopeSettingsActiveImportHist, actionBack, []string{"esc"}, "back")
-	reg(scopeSettingsActiveImportHist, actionUp, []string{"k", "up", "ctrl+p"}, "up")
-	reg(scopeSettingsActiveImportHist, actionDown, []string{"j", "down", "ctrl+n"}, "down")
+	reg(scopeSettingsActiveCategories, actionUp, "", []string{"k", "up", "ctrl+p"}, "up")
+	reg(scopeSettingsActiveCategories, actionDown, "", []string{"j", "down", "ctrl+n"}, "down")
+	reg(scopeSettingsActiveCategories, actionBack, "", []string{"esc"}, "back")
+	reg(scopeSettingsActiveCategories, actionAdd, "", []string{"a"}, "add")
+	reg(scopeSettingsActiveCategories, actionSelect, "", []string{"enter"}, "edit")
+	reg(scopeSettingsActiveCategories, actionDelete, "", []string{"del"}, "delete")
+	reg(scopeSettingsActiveTags, actionUp, "", []string{"k", "up", "ctrl+p"}, "up")
+	reg(scopeSettingsActiveTags, actionDown, "", []string{"j", "down", "ctrl+n"}, "down")
+	reg(scopeSettingsActiveTags, actionBack, "", []string{"esc"}, "back")
+	reg(scopeSettingsActiveTags, actionAdd, "", []string{"a"}, "add")
+	reg(scopeSettingsActiveTags, actionSelect, "", []string{"enter"}, "edit")
+	reg(scopeSettingsActiveTags, actionDelete, "", []string{"del"}, "delete")
+	reg(scopeSettingsActiveRules, actionUp, "", []string{"k", "up", "ctrl+p"}, "up")
+	reg(scopeSettingsActiveRules, actionDown, "", []string{"j", "down", "ctrl+n"}, "down")
+	reg(scopeSettingsActiveRules, actionBack, "", []string{"esc"}, "back")
+	reg(scopeSettingsActiveRules, actionAdd, "", []string{"a"}, "add")
+	reg(scopeSettingsActiveRules, actionEdit, "", []string{"e"}, "edit")
+	reg(scopeSettingsActiveRules, actionDelete, "", []string{"del"}, "delete")
+	reg(scopeSettingsActiveRules, actionApplyAll, "rules:apply", []string{"A"}, "apply all")
+	reg(scopeSettingsActiveRules, actionCommandApplyTagRules, "rules:dry-run", []string{"D"}, "dry run")
+	reg(scopeSettingsActiveChart, actionUp, "", []string{"k", "up", "ctrl+p"}, "up")
+	reg(scopeSettingsActiveChart, actionDown, "", []string{"j", "down", "ctrl+n"}, "down")
+	reg(scopeSettingsActiveChart, actionBack, "", []string{"esc"}, "back")
+	reg(scopeSettingsActiveChart, actionLeft, "", []string{"h", "left"}, "toggle week boundary")
+	reg(scopeSettingsActiveChart, actionRight, "", []string{"l", "right"}, "toggle week boundary")
+	reg(scopeSettingsActiveChart, actionConfirm, "", []string{"enter"}, "toggle")
+	reg(scopeSettingsActiveDBImport, actionUp, "", []string{"k", "up", "ctrl+p"}, "up")
+	reg(scopeSettingsActiveDBImport, actionDown, "", []string{"j", "down", "ctrl+n"}, "down")
+	reg(scopeSettingsActiveDBImport, actionBack, "", []string{"esc"}, "back")
+	reg(scopeSettingsActiveDBImport, actionRowsPerPage, "", []string{"+/-", "+", "=", "-"}, "rows/page")
+	reg(scopeSettingsActiveDBImport, actionCommandDefault, "", []string{"o"}, "cmd default")
+	reg(scopeSettingsActiveDBImport, actionClearDB, "settings:clear-db", []string{"c"}, "clear db")
+	reg(scopeSettingsActiveDBImport, actionImport, "import:start", []string{"i"}, "import")
+	reg(scopeSettingsActiveDBImport, actionResetKeybindings, "", []string{"r"}, "reset keys")
+	reg(scopeSettingsActiveDBImport, actionNukeAccount, "settings:nuke-account", []string{"n"}, "nuke account")
+	reg(scopeSettingsActiveImportHist, actionBack, "", []string{"esc"}, "back")
+	reg(scopeSettingsActiveImportHist, actionUp, "", []string{"k", "up", "ctrl+p"}, "up")
+	reg(scopeSettingsActiveImportHist, actionDown, "", []string{"j", "down", "ctrl+n"}, "down")
 
 	// Settings navigation footer: left/right, up/down, enter, i, tab, q
-	reg(scopeSettingsNav, actionLeft, []string{"h", "left"}, "column")
-	reg(scopeSettingsNav, actionRight, []string{"l", "right"}, "column")
-	reg(scopeSettingsNav, actionUp, []string{"k", "up", "ctrl+p"}, "section")
-	reg(scopeSettingsNav, actionDown, []string{"j", "down", "ctrl+n"}, "section")
-	reg(scopeSettingsNav, actionActivate, []string{"enter"}, "activate")
-	reg(scopeSettingsNav, actionImport, []string{"i"}, "import")
-	reg(scopeSettingsNav, actionNextTab, []string{"tab"}, "next tab")
-	reg(scopeSettingsNav, actionQuit, []string{"q", "ctrl+c"}, "quit")
+	reg(scopeSettingsNav, actionLeft, "", []string{"h", "left"}, "column")
+	reg(scopeSettingsNav, actionRight, "", []string{"l", "right"}, "column")
+	reg(scopeSettingsNav, actionUp, "", []string{"k", "up", "ctrl+p"}, "section")
+	reg(scopeSettingsNav, actionDown, "", []string{"j", "down", "ctrl+n"}, "section")
+	reg(scopeSettingsNav, actionActivate, "", []string{"enter"}, "activate")
+	reg(scopeSettingsNav, actionImport, "import:start", []string{"i"}, "import")
+	reg(scopeSettingsNav, actionNextTab, "nav:next-tab", []string{"tab"}, "next tab")
+	reg(scopeSettingsNav, actionQuit, "", []string{"q", "ctrl+c"}, "quit")
 
 	return r
 }

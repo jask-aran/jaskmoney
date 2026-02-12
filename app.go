@@ -33,6 +33,18 @@ const (
 	managerModeAccounts
 )
 
+const (
+	sectionUnfocused = -1
+
+	sectionManagerAccounts     = 0
+	sectionManagerTransactions = 1
+
+	sectionSettingsRules    = 0
+	sectionSettingsImports  = 1
+	sectionSettingsDatabase = 2
+	sectionSettingsViews    = 3
+)
+
 type transaction struct {
 	id            int
 	dateRaw       string
@@ -274,13 +286,16 @@ type model struct {
 	searchQuery string
 
 	// Command UI (palette + colon command mode)
-	commandOpen    bool
-	commandUIKind  string // commandUIKind*
-	commandQuery   string
-	commandCursor  int
-	commandMatches []CommandMatch
-	lastCommandID  string
-	commandDefault string // commandUIKind*
+	commandOpen         bool
+	commandUIKind       string // commandUIKind*
+	commandQuery        string
+	commandCursor       int
+	commandScrollOffset int
+	commandPageSize     int
+	commandMatches      []CommandMatch
+	lastCommandID       string
+	commandDefault      string // commandUIKind*
+	commandSourceScope  string
 
 	// Sort
 	sortColumn    int
@@ -356,6 +371,11 @@ type model struct {
 	// Configurable display
 	maxVisibleRows     int          // max rows shown in transaction table (5-50, default 20)
 	spendingWeekAnchor time.Weekday // week boundary marker for spending tracker (Sunday/Monday)
+
+	// Jump mode
+	jumpModeActive    bool
+	jumpPreviousFocus int
+	focusedSection    int
 }
 
 func newModel() model {
@@ -403,6 +423,8 @@ func newModel() model {
 		status:             status,
 		statusErr:          statusErr,
 		commandDefault:     appCfg.CommandDefaultInterface,
+		jumpPreviousFocus:  sectionUnfocused,
+		focusedSection:     sectionManagerTransactions,
 	}
 }
 
@@ -433,10 +455,10 @@ func (m model) View() string {
 
 	var body string
 	switch m.activeTab {
-	case tabManager:
-		body = m.managerView()
 	case tabDashboard:
 		body = m.dashboardView()
+	case tabManager:
+		body = m.managerView()
 	case tabSettings:
 		body = m.settingsView()
 	default:
@@ -474,12 +496,16 @@ func (m model) View() string {
 		modal := renderManagerAccountModal(m)
 		return m.composeOverlay(header, body, statusLine, footer, modal)
 	}
+	if m.jumpModeActive {
+		overlay := renderJumpOverlay(m.jumpTargetsForActiveTab())
+		return m.composeOverlay(header, body, statusLine, footer, overlay)
+	}
 	if m.commandOpen && m.commandUIKind == commandUIKindPalette {
-		palette := renderCommandPalette(m.commandQuery, m.commandMatches, m.commandCursor, min(72, m.width-8), m.keys)
+		palette := renderCommandPalette(m.commandQuery, m.commandMatches, m.commandCursor, m.commandScrollOffset, m.commandPageSize, min(76, m.width-6), m.keys)
 		return m.composeOverlay(header, body, statusLine, footer, palette)
 	}
 	if m.commandOpen && m.commandUIKind == commandUIKindColon {
-		suggestions := renderCommandSuggestions(m.commandMatches, m.commandCursor, min(72, m.width-8), 5)
+		suggestions := renderCommandSuggestions(m.commandMatches, m.commandCursor, m.commandScrollOffset, m.width-4, 5)
 		if strings.TrimSpace(suggestions) != "" {
 			return m.composeBottomOverlay(header, body, statusLine, footer, suggestions)
 		}
@@ -679,7 +705,7 @@ func (m model) composeOverlay(header, body, statusLine, footer, content string) 
 	if m.height == 0 || m.width == 0 {
 		return baseView + "\n\n" + content
 	}
-	modalContent := lipgloss.NewStyle().Width(min(60, m.width-10)).Render(content)
+	modalContent := lipgloss.NewStyle().Render(content)
 	modal := modalStyle.Render(modalContent)
 	lines := splitLines(modal)
 	modalWidth := maxLineWidth(lines)
@@ -710,7 +736,7 @@ func (m model) composeBottomOverlay(header, body, statusLine, footer, content st
 	if m.height == 0 || m.width == 0 {
 		return baseView + "\n" + content
 	}
-	overlay := lipgloss.NewStyle().Width(min(72, m.width-4)).Render(content)
+	overlay := lipgloss.NewStyle().Render(content)
 	lines := splitLines(overlay)
 	overlayWidth := maxLineWidth(lines)
 	overlayHeight := len(lines)
@@ -779,6 +805,9 @@ func (m model) settingsConfirmBindings() []key.Binding {
 // ---------------------------------------------------------------------------
 
 func (m model) footerBindings() []key.Binding {
+	if m.jumpModeActive {
+		return m.keys.HelpBindings(scopeJumpOverlay)
+	}
 	if m.commandOpen {
 		if m.commandUIKind == commandUIKindPalette {
 			return m.keys.HelpBindings(scopeCommandPalette)
@@ -816,12 +845,14 @@ func (m model) footerBindings() []key.Binding {
 		if m.dashTimeframeFocus {
 			return m.keys.HelpBindings(scopeDashboardTimeframe)
 		}
+		if m.focusedSection >= 0 {
+			return m.keys.HelpBindings(scopeDashboardFocused)
+		}
+		return m.keys.HelpBindings(scopeDashboard)
 	}
 	if m.activeTab == tabManager {
 		if m.managerMode == managerModeTransactions {
-			b := append([]key.Binding{}, m.keys.HelpBindings(scopeTransactions)...)
-			b = append(b, m.keys.HelpBindings(scopeManagerTransactions)...)
-			return b
+			return m.keys.HelpBindings(scopeTransactions)
 		}
 		return m.keys.HelpBindings(scopeManager)
 	}

@@ -334,71 +334,264 @@ func (m model) renderCommandFooter() string {
 	return footerStyle.Width(m.width).Render(content)
 }
 
-func renderCommandPalette(query string, matches []CommandMatch, cursor, width int, keys *KeyRegistry) string {
-	lines := make([]string, 0, 10)
-	search := searchPromptStyle.Render(">") + " " + searchInputStyle.Render(query+"_")
-	if width > 0 {
-		search = padStyledLine(search, width)
+func commandModalContentWidth(width, maxWidth int) int {
+	if width <= 0 {
+		return 0
 	}
-	lines = append(lines, search)
-	lines = append(lines, sectionDividerStyle.Render(strings.Repeat("─", max(1, width))))
-	lines = append(lines, renderCommandLines(matches, cursor, width, 8)...)
-	footer := strings.Join([]string{
-		renderActionHint(keys, scopeCommandPalette, actionDown, "j", "move"),
-		renderActionHint(keys, scopeCommandPalette, actionSelect, "enter", "run"),
-		renderActionHint(keys, scopeCommandPalette, actionClose, "esc", "close"),
-	}, "  ")
-	return renderModalContent("Command Palette", lines, footer)
+	if maxWidth > 0 {
+		width = min(width, maxWidth)
+	}
+	width = max(width, 18)
+	return width
 }
 
-func renderCommandSuggestions(matches []CommandMatch, cursor, width, limit int) string {
+func renderCommandPalette(query string, matches []CommandMatch, cursor, offset, limit, width int, keys *KeyRegistry) string {
+	contentWidth := commandModalContentWidth(width, 76)
+	lines := make([]string, 0, 14)
+	searchValue := lipgloss.NewStyle().Foreground(colorOverlay1).Render("(type to filter)")
+	if strings.TrimSpace(query) != "" {
+		searchValue = searchInputStyle.Render(query)
+	}
+	search := infoLabelStyle.Render("Filter: ") + searchValue
+	if contentWidth > 0 {
+		search = padStyledLine(search, contentWidth)
+	}
+	lines = append(lines, search)
+	visibleRows, hasAbove, hasBelow := renderCommandRowsWindow(matches, cursor, offset, contentWidth, limit)
+	if hasAbove {
+		lines = append(lines, modalFooterStyle.Render("↑ more"))
+	}
+	for i := range visibleRows {
+		lines = append(lines, visibleRows[i]...)
+		if i < len(visibleRows)-1 {
+			lines = append(lines, "")
+		}
+	}
+	if hasBelow {
+		lines = append(lines, modalFooterStyle.Render("↓ more"))
+	}
+	footer := strings.Join([]string{
+		renderActionHint(keys, scopeCommandPalette, actionDown, "j", "move"),
+		renderActionHint(keys, scopeCommandPalette, actionSelect, "enter", "select"),
+		renderActionHint(keys, scopeCommandPalette, actionClose, "esc", "close"),
+	}, "  ")
+	return renderModalContentWithWidth("Commands", lines, footer, contentWidth)
+}
+
+func renderCommandSuggestions(matches []CommandMatch, cursor, offset, width, limit int) string {
 	if limit <= 0 {
 		limit = 5
 	}
-	lines := renderCommandLines(matches, cursor, width, limit)
+	contentWidth := commandModalContentWidth(width, 0)
+	lines, hasAbove, hasBelow := renderCommandLinesWindow(matches, cursor, offset, contentWidth, limit)
 	if len(lines) == 0 {
 		return ""
 	}
-	content := strings.Join(lines, "\n")
-	return renderSectionBox("Commands", content, width, false, colorSurface1, sectionTitleStyle)
+	if hasAbove {
+		lines = append([]string{modalFooterStyle.Render("↑ more")}, lines...)
+	}
+	if hasBelow {
+		lines = append(lines, modalFooterStyle.Render("↓ more"))
+	}
+	return renderModalContentWithWidth("Commands", lines, "", contentWidth)
 }
 
-func renderCommandLines(matches []CommandMatch, cursor, width, limit int) []string {
+func renderJumpOverlay(targets []jumpTarget) string {
+	lines := make([]string, 0, len(targets)+1)
+	lines = append(lines, lipgloss.NewStyle().Foreground(colorSubtext0).Render("Select a target:"))
+	for _, target := range targets {
+		badge := lipgloss.NewStyle().
+			Foreground(colorBase).
+			Background(colorAccent).
+			Bold(true).
+			Render("[" + strings.ToLower(target.Key) + "]")
+		label := lipgloss.NewStyle().Foreground(colorText).Render(target.Label)
+		lines = append(lines, badge+" "+label)
+	}
+	footer := "Jump: press key to focus. ESC cancel."
+	return renderModalContent("Jump Mode", lines, footer)
+}
+
+func renderCommandLinesWindow(matches []CommandMatch, cursor, offset, width, limit int) ([]string, bool, bool) {
+	rows, hasAbove, hasBelow := renderCommandRowsWindow(matches, cursor, offset, width, limit)
+	lines := make([]string, 0, len(rows))
+	for i := range rows {
+		lines = append(lines, rows[i]...)
+	}
+	return lines, hasAbove, hasBelow
+}
+
+func renderCommandRowsWindow(matches []CommandMatch, cursor, offset, width, limit int) ([][]string, bool, bool) {
 	if len(matches) == 0 {
 		line := commandDisabledStyle.Render("No matching commands")
 		if width > 0 {
 			line = padStyledLine(line, width)
 		}
-		return []string{line}
+		return [][]string{{line}}, false, false
 	}
-	if limit <= 0 || limit > len(matches) {
-		limit = len(matches)
-	}
-	lines := make([]string, 0, limit)
-	for i := 0; i < limit; i++ {
+	start, end, hasAbove, hasBelow := pickerWindowBounds(len(matches), cursor, offset, limit)
+	rows := make([][]string, 0, end-start)
+	for i := start; i < end; i++ {
 		match := matches[i]
-		prefix := "  "
-		if i == cursor {
-			prefix = cursorStyle.Render("> ")
-		}
-		label := commandLabelStyle.Render(match.Command.Label)
-		if !match.Enabled {
-			label = commandDisabledStyle.Render(match.Command.Label + " (disabled)")
-		}
-		desc := commandDescStyle.Render(match.Command.Description)
-		line := prefix + label
-		if strings.TrimSpace(match.Command.Description) != "" {
-			line += "  " + desc
-		}
-		if i == cursor {
-			line = commandSelectedLineStyle.Render(line)
-		}
-		if width > 0 {
-			line = padStyledLine(line, width)
-		}
-		lines = append(lines, line)
+		rows = append(rows, renderWrappedCommandMatchLines(match, i == cursor, width))
 	}
-	return lines
+	return rows, hasAbove, hasBelow
+}
+
+func renderWrappedCommandMatchLines(match CommandMatch, isCursor bool, width int) []string {
+	prefix := modalCursor(isCursor)
+	labelText := strings.TrimSpace(match.Command.Label)
+	if !match.Enabled {
+		labelText += " (disabled)"
+	}
+	labelStyle := commandLabelStyle
+	if !match.Enabled {
+		labelStyle = commandDisabledStyle
+	}
+	descStyle := commandDescStyle
+	if isCursor {
+		labelStyle = labelStyle.Bold(true)
+		descStyle = descStyle.Bold(true)
+	}
+	label := labelStyle.Render(labelText)
+	desc := strings.TrimSpace(match.Command.Description)
+
+	rowLines := make([]string, 0, 4)
+	if desc == "" || width <= 0 {
+		row := stylePickerRow(prefix+label, false, isCursor, width, true)
+		return []string{row}
+	}
+
+	sep := " · "
+	firstAvail := width - ansi.StringWidth(prefix) - ansi.StringWidth(labelText) - ansi.StringWidth(sep)
+	contPrefix := strings.Repeat(" ", ansi.StringWidth(prefix))
+	contMarker := "↳ "
+	contAvail := width - ansi.StringWidth(contPrefix) - ansi.StringWidth(contMarker)
+	if contAvail < 1 {
+		contAvail = 1
+	}
+
+	// Render first-line description segment when it fits; otherwise carry the full
+	// description to continuation lines to keep visual boundaries clean.
+	if firstAvail > 0 {
+		firstDesc, contDesc := wrapWordsWithFirstWidth(desc, firstAvail, contAvail)
+		if firstDesc != "" {
+			firstRow := prefix + label + descStyle.Render(sep+firstDesc)
+			rowLines = append(rowLines, stylePickerRow(firstRow, false, isCursor, width, true))
+		} else {
+			firstRow := prefix + label
+			rowLines = append(rowLines, stylePickerRow(firstRow, false, isCursor, width, true))
+		}
+		for i := range contDesc {
+			marker := "  "
+			if i == 0 {
+				marker = contMarker
+			}
+			line := contPrefix + descStyle.Render(marker+contDesc[i])
+			rowLines = append(rowLines, stylePickerRow(line, false, isCursor, width, true))
+		}
+		return rowLines
+	}
+
+	firstRow := prefix + label
+	rowLines = append(rowLines, stylePickerRow(firstRow, false, isCursor, width, true))
+	descLines := splitLines(wrapText(desc, contAvail))
+	for i := range descLines {
+		marker := "  "
+		if i == 0 {
+			marker = contMarker
+		}
+		line := contPrefix + descStyle.Render(marker+descLines[i])
+		rowLines = append(rowLines, stylePickerRow(line, false, isCursor, width, true))
+	}
+	return rowLines
+}
+
+func wrapWordsWithFirstWidth(text string, firstWidth, contWidth int) (first string, cont []string) {
+	text = strings.TrimSpace(text)
+	if text == "" {
+		return "", nil
+	}
+	if firstWidth < 1 {
+		firstWidth = 1
+	}
+	if contWidth < 1 {
+		contWidth = 1
+	}
+
+	words := strings.Fields(text)
+	if len(words) == 0 {
+		return "", nil
+	}
+
+	lines := make([]string, 0, len(words))
+	limit := firstWidth
+	current := ""
+	appendCurrent := func() {
+		if current == "" {
+			return
+		}
+		lines = append(lines, current)
+		current = ""
+	}
+
+	for _, rawWord := range words {
+		word := rawWord
+		for {
+			if current == "" {
+				if ansi.StringWidth(word) <= limit {
+					current = word
+					break
+				}
+				part, rest := splitWordAtWidth(word, limit)
+				if part == "" {
+					break
+				}
+				lines = append(lines, part)
+				word = rest
+				limit = contWidth
+				if strings.TrimSpace(word) == "" {
+					break
+				}
+				continue
+			}
+			candidate := current + " " + word
+			if ansi.StringWidth(candidate) <= limit {
+				current = candidate
+				break
+			}
+			appendCurrent()
+			limit = contWidth
+		}
+		if strings.TrimSpace(word) == "" {
+			limit = contWidth
+		}
+	}
+	appendCurrent()
+	if len(lines) == 0 {
+		return "", nil
+	}
+	return lines[0], lines[1:]
+}
+
+func splitWordAtWidth(word string, width int) (fit string, rest string) {
+	if width < 1 || strings.TrimSpace(word) == "" {
+		return "", word
+	}
+	currentWidth := 0
+	splitAt := -1
+	for idx, r := range word {
+		rw := ansi.StringWidth(string(r))
+		if currentWidth+rw > width {
+			splitAt = idx
+			break
+		}
+		currentWidth += rw
+	}
+	if splitAt == -1 {
+		return word, ""
+	}
+	return word[:splitAt], word[splitAt:]
 }
 
 func prettyHelpKey(k string) string {
@@ -557,8 +750,8 @@ func renderModalContentWithWidth(title string, body []string, footer string, fix
 		for _, line := range lines {
 			contentWidth = max(contentWidth, ansi.StringWidth(line))
 		}
+		contentWidth = min(contentWidth, 56)
 	}
-	contentWidth = min(contentWidth, 56)
 	contentWidth = max(contentWidth, 18)
 
 	titleText := " " + ansi.Strip(title) + " "
@@ -867,9 +1060,9 @@ func rowStateBackgroundAndCursor(selected, highlighted, isCursor bool) (lipgloss
 	case isCursor && selected && highlighted:
 		return colorAccent, true
 	case isCursor && selected:
-		return colorSurface2, true
+		return colorBlue, true
 	case isCursor && highlighted:
-		return colorSurface2, true
+		return colorSapphire, true
 	case isCursor:
 		return colorSurface2, true
 	case selected && highlighted:

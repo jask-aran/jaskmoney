@@ -12,6 +12,9 @@ func TestKeyRegistryLookupByScope(t *testing.T) {
 	if search.Action != actionSearch {
 		t.Fatalf("search action = %q, want %q", search.Action, actionSearch)
 	}
+	if search.CommandID != "filter:open" {
+		t.Fatalf("search commandID = %q, want filter:open", search.CommandID)
+	}
 
 	if got := r.Lookup("/", scopeDashboard); got != nil {
 		t.Fatalf("did not expect search binding in dashboard scope, got %q", got.Action)
@@ -23,6 +26,9 @@ func TestKeyRegistryLookupByScope(t *testing.T) {
 	}
 	if quit.Action != actionQuit {
 		t.Fatalf("quit action = %q, want %q", quit.Action, actionQuit)
+	}
+	if quit.CommandID != "" {
+		t.Fatalf("quit commandID = %q, want empty", quit.CommandID)
 	}
 }
 
@@ -176,11 +182,87 @@ func TestKeyRegistryPreservesUppercaseActionBindings(t *testing.T) {
 func TestKeyRegistryCommandTriggers(t *testing.T) {
 	r := NewKeyRegistry()
 	palette := r.Lookup("ctrl+k", scopeGlobal)
-	if palette == nil || palette.Action != actionCommandPalette {
-		t.Fatalf("ctrl+k = %+v, want command_palette", palette)
+	if palette == nil || palette.Action != actionCommandPalette || palette.CommandID != "palette:open" {
+		t.Fatalf("ctrl+k = %+v, want command_palette/palette:open", palette)
 	}
 	colon := r.Lookup(":", scopeGlobal)
-	if colon == nil || colon.Action != actionCommandMode {
-		t.Fatalf(": = %+v, want command_mode", colon)
+	if colon == nil || colon.Action != actionCommandMode || colon.CommandID != "cmd:open" {
+		t.Fatalf(": = %+v, want command_mode/cmd:open", colon)
+	}
+	jump := r.Lookup("v", scopeGlobal)
+	if jump == nil || jump.CommandID != "jump:activate" {
+		t.Fatalf("v = %+v, want jump:activate", jump)
+	}
+}
+
+func TestBindingsWithCommandIDReferenceRegisteredCommands(t *testing.T) {
+	keys := NewKeyRegistry()
+	reg := NewCommandRegistry(keys)
+	known := map[string]bool{}
+	for _, cmd := range reg.All() {
+		known[cmd.ID] = true
+	}
+	for scope, bindings := range keys.bindingsByScope {
+		for _, b := range bindings {
+			if b.CommandID == "" {
+				continue
+			}
+			if !known[b.CommandID] {
+				t.Fatalf("scope=%s action=%s commandID=%s not registered", scope, b.Action, b.CommandID)
+			}
+		}
+	}
+}
+
+func TestCommandsWithScopesHaveBindings(t *testing.T) {
+	keys := NewKeyRegistry()
+	reg := NewCommandRegistry(keys)
+	for _, cmd := range reg.All() {
+		if len(cmd.Scopes) == 0 {
+			continue
+		}
+		found := false
+		for _, scope := range cmd.Scopes {
+			for _, b := range keys.BindingsForScope(scope) {
+				if b.CommandID == cmd.ID {
+					found = true
+					break
+				}
+			}
+			if found {
+				break
+			}
+		}
+		if !found {
+			t.Fatalf("command %q has scoped availability but no key binding", cmd.ID)
+		}
+	}
+}
+
+func TestGlobalShortcutNonShadowInTabScopes(t *testing.T) {
+	keys := NewKeyRegistry()
+	tabScopes := []string{
+		scopeDashboard,
+		scopeDashboardTimeframe,
+		scopeDashboardCustomInput,
+		scopeDashboardFocused,
+		scopeTransactions,
+		scopeManager,
+		scopeManagerTransactions,
+		scopeSearch,
+		scopeSettingsNav,
+		scopeSettingsActiveCategories,
+		scopeSettingsActiveTags,
+		scopeSettingsActiveRules,
+		scopeSettingsActiveChart,
+		scopeSettingsActiveDBImport,
+		scopeSettingsActiveImportHist,
+	}
+	for _, scope := range tabScopes {
+		for _, forbidden := range []string{"1", "2", "3", "v"} {
+			if got := keys.lookupInScope(forbidden, scope); got != nil {
+				t.Fatalf("scope %q shadows global key %q with action %q", scope, forbidden, got.Action)
+			}
+		}
 	}
 }

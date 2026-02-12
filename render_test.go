@@ -1,6 +1,7 @@
 package main
 
 import (
+	"fmt"
 	"math"
 	"sort"
 	"strings"
@@ -8,6 +9,7 @@ import (
 	"time"
 
 	tslc "github.com/NimbleMarkets/ntcharts/linechart/timeserieslinechart"
+	"github.com/charmbracelet/lipgloss"
 	"github.com/charmbracelet/x/ansi"
 )
 
@@ -259,6 +261,187 @@ func TestSpendingMinorGridStep(t *testing.T) {
 	}
 	if got := spendingMinorGridStep(730, 80); got < 14 {
 		t.Errorf("spendingMinorGridStep(730, 80) = %d, want >=14", got)
+	}
+}
+
+func TestRenderCommandLinesWindowRespectsOffsetAndCursorVisibility(t *testing.T) {
+	matches := make([]CommandMatch, 12)
+	for i := range matches {
+		matches[i] = CommandMatch{
+			Command: Command{
+				Label:       "Cmd",
+				Description: "Desc",
+			},
+			Enabled: true,
+		}
+	}
+	lines, hasAbove, hasBelow := renderCommandLinesWindow(matches, 10, 6, 40, 5)
+	if len(lines) != 5 {
+		t.Fatalf("lines=%d want 5", len(lines))
+	}
+	if !hasAbove || !hasBelow {
+		t.Fatalf("expected both overflow indicators, hasAbove=%v hasBelow=%v", hasAbove, hasBelow)
+	}
+	selectedFound := false
+	for _, line := range lines {
+		if strings.Contains(ansi.Strip(line), "> ") {
+			selectedFound = true
+			break
+		}
+	}
+	if !selectedFound {
+		t.Fatal("selected cursor row not rendered in visible window")
+	}
+}
+
+func TestRenderCommandPaletteHasSpacingBetweenCommands(t *testing.T) {
+	matches := []CommandMatch{
+		{Command: Command{Label: "One", Description: "First"}, Enabled: true},
+		{Command: Command{Label: "Two", Description: "Second"}, Enabled: true},
+		{Command: Command{Label: "Three", Description: "Third"}, Enabled: false},
+	}
+	out := renderCommandPalette("", matches, 1, 0, 10, 48, NewKeyRegistry())
+	plain := ansi.Strip(out)
+	if !strings.Contains(plain, "│                                                │\n│> Two · Second") {
+		t.Fatalf("expected framed blank line separation before next command row:\n%s", plain)
+	}
+}
+
+func TestRenderCommandPaletteRespectsModalWidthCap(t *testing.T) {
+	matches := make([]CommandMatch, 0, 12)
+	for i := 0; i < 12; i++ {
+		matches = append(matches, CommandMatch{
+			Command: Command{
+				Label:       fmt.Sprintf("Command %d", i+1),
+				Description: "Description",
+			},
+			Enabled: true,
+		})
+	}
+	out := renderCommandPalette("", matches, 9, 0, 10, 72, NewKeyRegistry())
+	lines := splitLines(out)
+	if len(lines) == 0 {
+		t.Fatal("expected command palette output")
+	}
+	for i, line := range lines {
+		if got := ansi.StringWidth(line); got > 74 {
+			t.Fatalf("line %d width=%d exceeds modal frame width cap: %q", i, got, ansi.Strip(line))
+		}
+	}
+}
+
+func TestRenderCommandLinesWindowWrapsLongDescriptionsWithContinuation(t *testing.T) {
+	matches := []CommandMatch{
+		{
+			Command: Command{
+				Label:       "Toggle Selection",
+				Description: "Toggle selection for current row or highlighted range and keep clear visual separation from the next command entry.",
+			},
+			Enabled: true,
+		},
+		{
+			Command: Command{
+				Label:       "Go to Budget",
+				Description: "Switch to Budget tab",
+			},
+			Enabled: false,
+		},
+	}
+
+	lines, _, _ := renderCommandLinesWindow(matches, 0, 0, 56, 10)
+	if len(lines) < 3 {
+		t.Fatalf("expected wrapped output lines, got %d", len(lines))
+	}
+
+	joined := strings.Join(lines, "\n")
+	plain := ansi.Strip(joined)
+	if !strings.Contains(plain, "↳ ") {
+		t.Fatalf("expected continuation marker in wrapped command output:\n%s", plain)
+	}
+
+	for i, line := range lines {
+		if got := ansi.StringWidth(line); got > 56 {
+			t.Fatalf("line %d width = %d exceeds content width 56: %q", i, got, ansi.Strip(line))
+		}
+	}
+}
+
+func TestRenderCommandSuggestionsUseAvailableWidthWithoutHardCap(t *testing.T) {
+	matches := []CommandMatch{
+		{
+			Command: Command{
+				Label:       "Long Row",
+				Description: "A description long enough to exceed the old fixed popup width while still fitting comfortably in a wider viewport.",
+			},
+			Enabled: true,
+		},
+	}
+
+	out := renderCommandSuggestions(matches, 0, 0, 120, 5)
+	lines := splitLines(out)
+	if len(lines) == 0 {
+		t.Fatal("expected command suggestions output")
+	}
+	maxW := 0
+	for _, line := range lines {
+		maxW = max(maxW, ansi.StringWidth(line))
+	}
+	if maxW <= 74 {
+		t.Fatalf("expected suggestions popup wider than previous cap, got width %d", maxW)
+	}
+}
+
+func TestRenderWrappedCommandMatchLinesCursorBoldsFirstAndContinuation(t *testing.T) {
+	boldProbe := lipgloss.NewStyle().Bold(true).Render("X")
+	if !strings.Contains(boldProbe, "\x1b[1m") {
+		t.Skip("terminal style renderer in test env does not emit ANSI bold")
+	}
+	match := CommandMatch{
+		Command: Command{
+			Label:       "Toggle Selection",
+			Description: "Toggle selection for current row or highlighted range and keep clear visual separation from the next command entry.",
+		},
+		Enabled: true,
+	}
+	lines := renderWrappedCommandMatchLines(match, true, 56)
+	if len(lines) < 2 {
+		t.Fatalf("expected wrapped lines, got %d", len(lines))
+	}
+	if !strings.Contains(lines[0], "\x1b[1m") {
+		t.Fatalf("expected first cursor line to be bold, got %q", ansi.Strip(lines[0]))
+	}
+	if !strings.Contains(lines[1], "\x1b[1m") {
+		t.Fatalf("expected continuation cursor line to be bold, got %q", ansi.Strip(lines[1]))
+	}
+}
+
+func TestRowStateBackgroundAndCursorKeepsDistinctBaseStates(t *testing.T) {
+	cursorBg, _ := rowStateBackgroundAndCursor(false, false, true)
+	selectedBg, _ := rowStateBackgroundAndCursor(true, false, false)
+	highlightedBg, _ := rowStateBackgroundAndCursor(false, true, false)
+	if cursorBg == selectedBg {
+		t.Fatalf("cursor and selected backgrounds must differ: %q", cursorBg)
+	}
+	if cursorBg == highlightedBg {
+		t.Fatalf("cursor and highlighted backgrounds must differ: %q", cursorBg)
+	}
+	if selectedBg == highlightedBg {
+		t.Fatalf("selected and highlighted backgrounds must differ: %q", selectedBg)
+	}
+}
+
+func TestRowStateBackgroundAndCursorKeepsDistinctCursorOverlays(t *testing.T) {
+	cursorBg, _ := rowStateBackgroundAndCursor(false, false, true)
+	cursorSelectedBg, _ := rowStateBackgroundAndCursor(true, false, true)
+	cursorHighlightedBg, _ := rowStateBackgroundAndCursor(false, true, true)
+	if cursorBg == cursorSelectedBg {
+		t.Fatalf("cursor and cursor+selected backgrounds must differ: %q", cursorBg)
+	}
+	if cursorBg == cursorHighlightedBg {
+		t.Fatalf("cursor and cursor+highlighted backgrounds must differ: %q", cursorBg)
+	}
+	if cursorSelectedBg == cursorHighlightedBg {
+		t.Fatalf("cursor+selected and cursor+highlighted backgrounds must differ: %q", cursorSelectedBg)
 	}
 }
 

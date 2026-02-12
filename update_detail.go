@@ -37,8 +37,6 @@ func (m model) updateSearch(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			m.topIndex = 0
 		}
 		return m, nil
-	case m.isAction(scopeGlobal, actionQuit, msg):
-		return m, tea.Quit
 	default:
 		if appendPrintableASCII(&m.searchQuery, msg.String()) {
 			m.cursor = 0
@@ -88,8 +86,6 @@ func (m model) updateDetailNotes(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	case isBackspaceKey(msg):
 		deleteLastASCIIByte(&m.detailNotes)
 		return m, nil
-	case m.isAction(scopeGlobal, actionQuit, msg):
-		return m, tea.Quit
 	default:
 		appendPrintableASCII(&m.detailNotes, msg.String())
 		return m, nil
