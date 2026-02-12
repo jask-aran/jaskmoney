@@ -4,42 +4,179 @@ This document is the persistent architecture baseline for the project. Keep it
 current. It is the source of truth for structure, invariants, and evolution
 decisions.
 
+## Table of Contents
+
+1. [Purpose and Scope](#1-purpose-and-scope)
+2. [Runtime Topology and Ownership](#2-runtime-topology-and-ownership)
+3. [Core Invariants](#3-core-invariants)
+   - 3.1 [State and Update Invariants](#31-state-and-update-invariants)
+   - 3.2 [Dispatcher Priority and Modal Precedence](#32-dispatcher-priority-and-modal-precedence)
+   - 3.3 [Text Input Safety Contract](#33-text-input-safety-contract)
+   - 3.4 [Keybinding Architecture](#34-keybinding-architecture)
+     - 3.4.1 [Design Principles](#341-design-principles)
+     - 3.4.2 [Scope Categories](#342-scope-categories)
+     - 3.4.3 [Key Resolution Algorithm](#343-key-resolution-algorithm)
+     - 3.4.4 [Key Reuse Safety Rules](#344-key-reuse-safety-rules)
+     - 3.4.5 [Universal Primitives](#345-universal-primitives)
+     - 3.4.6 [Footer Hint Derivation](#346-footer-hint-derivation)
+     - 3.4.7 [keybindings.toml Override Architecture](#347-keybindingstoml-override-architecture)
+     - 3.4.8 [Scope Growth Budget](#348-scope-growth-budget)
+     - 3.4.9 [Tab Shortcut Mapping (v0.4)](#349-tab-shortcut-mapping-v04)
+     - 3.4.10 [v0.4 Scope Map](#3410-v04-scope-map)
+     - 3.4.11 [Key Conflict Testing Contract](#3411-key-conflict-testing-contract)
+   - 3.5 [Status Semantics](#35-status-semantics)
+4. [Interaction Primitives and Conventions](#4-interaction-primitives-and-conventions)
+   - 4.1 [Picker Primitive](#41-picker-primitive-pickerstate)
+   - 4.2 [Quick Category vs Quick Tag](#42-quick-category-vs-quick-tag)
+   - 4.3 [Command System](#43-command-system)
+   - 4.4 [Filter Expression Language](#44-filter-expression-language)
+   - 4.5 [Jump Mode](#45-jump-mode)
+5. [Data Layer Conventions](#5-data-layer-conventions)
+   - 5.1 [Transaction and Import Contracts](#51-transaction-and-import-contracts)
+   - 5.2 [Schema and Migration Rules](#52-schema-and-migration-rules)
+   - 5.3 [Tag Name Normalization](#53-tag-name-normalization-v03)
+   - 5.4 [Schema v5 Migration Policy](#54-schema-v5-migration-policy)
+   - 5.5 [Rules v2 Data Contracts](#55-rules-v2-data-contracts)
+   - 5.6 [Budget Data Contracts](#56-budget-data-contracts)
+   - 5.7 [Credit Offset Integrity](#57-credit-offset-integrity)
+6. [Rendering and Viewport Safety](#6-rendering-and-viewport-safety)
+   - 6.1 [Frame Composition](#61-frame-composition)
+   - 6.2 [Overlay Composition](#62-overlay-composition)
+   - 6.3 [Table and Section Contracts](#63-table-and-section-contracts)
+   - 6.4 [Dashboard Grid Rendering](#64-dashboard-grid-rendering)
+   - 6.5 [Narrow Terminal Fallback](#65-narrow-terminal-fallback)
+   - 6.6 [Jump Overlay Rendering](#66-jump-overlay-rendering)
+   - 6.7 [Drill-Return Filter Pill](#67-drill-return-filter-pill)
+   - 6.8 [Budget View Rendering](#68-budget-view-rendering)
+7. [Runtime Modes and Harnesses](#7-runtime-modes-and-harnesses)
+8. [Testing Strategy and Release Gates](#8-testing-strategy-and-release-gates)
+   - 8.1 [Test Architecture (Three Tiers)](#81-test-architecture-three-tiers)
+   - 8.2 [Tier-3 Flow Harness Contract](#82-tier-3-flow-harness-contract)
+   - 8.3 [Heavy Flow Gate](#83-heavy-flow-gate-flowheavy)
+   - 8.4 [Local Test Entry Points](#84-local-test-entry-points)
+   - 8.5 [Regression Priority Matrix](#85-regression-priority-matrix)
+   - 8.6 [Standard Verification Commands](#86-standard-verification-commands)
+9. [Learnings and Decisions](#9-learnings-and-decisions)
+   - 9.1 [v0.295 → v0.3](#91-v0295--v03)
+   - 9.2 [v0.3 → v0.4](#92-v03--v04)
+10. [Open Backlog](#10-open-backlog)
+11. [Maintenance Rules for This Document](#11-maintenance-rules-for-this-document)
+
+---
+
 ## 1. Purpose and Scope
 
 Jaskmoney is a Bubble Tea-based TUI personal-finance manager focused on:
 
-- account-scoped transaction browsing and editing
-- CSV import with format detection and duplicate handling
-- dashboard analytics (summary, category breakdown, spend tracker)
-- settings/editor workflows for categories, tags, rules, chart options, and DB
-  operations
-- command-first interaction (key bindings + command interfaces)
+- **Account-scoped transaction browsing and editing** — navigate and modify
+  transactions with account filtering, multi-select, and quick actions.
+- **CSV import with format detection and duplicate handling** — flexible format
+  definitions, dupe scanning, preview modal (**v0.4**: with post-rules
+  preview and full-view toggle).
+- **Dashboard analytics** — summary KPIs, category composition, spending
+  tracker (**v0.4**: 4-pane focusable widget grid with drill-down to filtered
+  transaction views and return context).
+- **Budgeting** (**v0.4**) — category budgets with monthly overrides,
+  filter-based spending targets, credit offset tracking for refunds, and budget
+  health analytics.
+- **Filter expression language** (**v0.4**) — unified filtering for search,
+  rules, and budget targets with field predicates (`cat:`, `tag:`, `amt:`,
+  etc.) and boolean operators.
+- **Rules engine** (**v0.4**: rules v2) — ordered, filter-based rules that set
+  categories and add/remove tags, with dry-run preview and enable/disable
+  toggles.
+- **Settings/editor workflows** — categories, tags, rules, chart options,
+  dashboard view customization (**v0.4**), and DB operations.
+- **Command-first interaction** — keybindings map to commands (**v0.4**:
+  command registry with scope-aware availability), command palette (Ctrl+K),
+  and colon mode (`:`).
+- **Jump mode navigation** (**v0.4**) — spatial navigation with `v` key showing
+  labeled badges for focusable sections across all tabs.
 
 This document is about implementation architecture and engineering conventions,
 not end-user feature docs.
+
+**Document purpose:** Describe the v0.4 target architecture while annotating
+what currently exists in v0.3, so implementing agents know both the destination
+and the migration path.
 
 ## 2. Runtime Topology and Ownership
 
 Runtime boundaries and owning files:
 
+**Entrypoints and core framework:**
+
 - `main.go`: CLI mode routing (`TUI`, `-validate`, `-startup-check`).
 - `app.go`: model shape, `Init`, `View`, shared layout/frame helpers.
+  (**v0.4**: adds `buildTransactionFilter`, `buildDashboardScopeFilter`,
+  `buildCustomModeFilter` filter composition functions.)
 - `update.go`: top-level message dispatcher and cross-cutting helpers.
+  (**v0.4**: jump mode dispatch intercepts before tab routing.)
+- `validate.go`: headless validation/startup harnesses.
+
+**Update handlers (per-tab/per-modal):**
+
 - `update_manager.go`: manager tab and account modal behavior.
 - `update_transactions.go`: transaction list navigation/search/sort/filter and
-  quick actions.
-- `update_dashboard.go`: dashboard timeframe interactions.
-- `update_detail.go`: transaction detail modal interaction logic.
+  quick actions. (**v0.4**: replaces search+category filter with unified
+  filter input using filter expressions; drill-return ESC handling.)
+- `update_dashboard.go`: dashboard timeframe interactions. (**v0.4**: pane
+  focus interactions, mode cycling `[`/`]`, drill-down with return context,
+  jump target registration.)
+- `update_budget.go` (**v0.4 new**): Budget tab key handlers for table view,
+  planner view, and inline editing.
+- `update_detail.go`: transaction detail modal interaction logic. (**v0.4**:
+  credit offset linking flow.)
 - `update_settings.go`: settings navigation, editor modes, confirm logic,
-  import entry points.
-- `render.go`: all rendering and style composition.
-- `db.go`: schema lifecycle and transactional DB operations.
+  import entry points. (**v0.4**: rules v2 editor with multi-step form,
+  enable/disable toggle, reorder `K`/`J`, dry-run modal; dashboard views config
+  editor.)
+
+**Data layer:**
+
+- `db.go`: schema lifecycle and transactional DB operations. (**v0.3**: schema
+  v4. **v0.4**: schema v5 migration, rules_v2 CRUD, budget CRUD, credit offset
+  CRUD with integrity validation.)
 - `ingest.go`: import scanning, duplicate scanning, import execution pipeline.
+  (**v0.4**: enhanced `scanDupesCmd` returns parsed rows with dupe flags;
+  simulated rule preview; calls `applyRulesV2ToTxnIDs` for new imports.)
+
+**Configuration and keybindings:**
+
 - `config.go`: format/settings/keybinding parsing, validation, migration.
-- `keys.go`: action/scope key registry and lookup.
-- `picker.go`: reusable fuzzy picker primitive for overlay workflows.
+  (**v0.4**: adds `savedFilter` and `customPaneMode` types; strict validation
+  of filter expressions at load time.)
+- `keys.go`: action/scope key registry and lookup. (**v0.4**: `Binding` gains
+  `CommandID` field; new scopes for budget, jump overlay, import preview,
+  dashboard focus, rule editor, dry-run modal, offset picker.)
+- `commands.go`: command registry and execution. (**v0.3**: 11 commands.
+  **v0.4**: expands to ~30+ commands; adds `ExecuteByID`, scope-aware
+  availability, jump mode commands, filter commands, rules commands, budget
+  commands, dashboard drill-down commands.)
+
+**Primitives and utilities:**
+
+- `filter.go` (**v0.4 new**): Filter expression AST (`filterNode`), parser
+  (permissive and strict variants), evaluator (`evalFilter`), serializer
+  (`filterExprString`).
+- `budget.go` (**v0.4 new**): Budget computation logic (`computeBudgetLines`,
+  `computeTargetLines`), period helpers (month/quarter/annual key resolution),
+  credit offset reduction.
+- `widget.go` (**v0.4 new**): Dashboard widget types, 4-pane domain-first mode
+  definitions, custom mode appending from config, constructors
+  (`newDashboardWidgets`).
+- `picker.go`: reusable fuzzy picker primitive for overlay workflows (category,
+  tag, account nuke, command palette, command-mode suggestions).
 - `overlay.go`: width-aware string utilities and overlay compositing.
-- `validate.go`: headless validation/startup harnesses.
+- `theme.go`: Catppuccin Mocha color constants and semantic aliases.
+
+**Rendering:**
+
+- `render.go`: all rendering and style composition. (**v0.4**: adds filter pill
+  in transaction header, rule list/editor/dry-run modals, import preview
+  compact+full views, budget table/planner/analytics strip, dashboard 2x2 grid,
+  jump overlay with floating badges, drill-return prefix in filter pill, narrow
+  terminal fallback.)
 
 Ownership rule:
 
@@ -62,64 +199,427 @@ Ownership rule:
 
 `update.go` defines authoritative key precedence. Topmost overlay wins.
 
-Current precedence order:
+**v0.4 target precedence order:**
 
-1. command UI
-2. detail modal
-3. duplicate modal
-4. file picker
-5. category picker
-6. tag picker
-7. account nuke picker
-8. manager account modal
-9. search mode
-10. command-open shortcuts
-11. settings or main/tab routing
+1. **jump overlay** [v0.4 new] — `jumpModeActive` → `updateJumpOverlay`
+2. **command UI** — `commandOpen` → `updateCommandUI` (palette or colon mode)
+3. **detail modal** — `showDetail` → `updateDetail`
+4. **offset picker** [v0.4 new] — `offsetLinking` → `updateOffsetPicker`
+5. **import preview** [v0.4 new] — `importPreviewOpen` → `updateImportPreview`
+   (replaces `importDupeModal`)
+6. **file picker** — `importPicking` → `updateFilePicker`
+7. **category picker** — `catPicker != nil` → `updateCatPicker`
+8. **tag picker** — `tagPicker != nil` → `updateTagPicker`
+9. **account nuke picker** — `accountNukePicker != nil` →
+   `updateAccountNukePicker`
+10. **rule editor** [v0.4 new] — `ruleEditorOpen` → `updateRuleEditor`
+11. **dry-run modal** [v0.4 new] — `dryRunOpen` → `updateDryRun`
+12. **budget target editor** [v0.4 new] — `budgetTargetEditing` →
+    `updateBudgetTargetEditor`
+13. **manager account modal** — `managerModalOpen` → `updateManagerModal`
+14. **search/filter mode** — `searchMode` → `updateSearch` (v0.3) / `updateFilterInput` (v0.4)
+15. **command-open shortcuts** — check `canOpenCommandUI()` then dispatch
+    `ctrl+k` or `:`
+16. **tab routing** — `activeTab` determines which tab handler to call
+    - `tabDashboard` → `updateDashboard`
+    - `tabBudget` [v0.4 new] → `updateBudget`
+    - `tabManager` → `updateManager` or `updateTransactions` (mode-dependent)
+    - `tabSettings` → `updateSettings`
+
+**(v0.3 current order for comparison):** command UI, detail modal,
+importDupeModal, file picker, category picker, tag picker, account nuke picker,
+manager modal, search mode, command shortcuts, tab routing. Jump overlay,
+offset picker, import preview, rule editor, dry-run, budget target editor, and
+Budget tab are not yet implemented.
 
 Contract:
 
 - `Esc` closes the topmost active overlay/modal state.
 - No lower-priority state may process a key while a higher-priority state is
   active.
+- Jump overlay must intercept before all other states (it's app-wide and
+  context-sensitive per tab).
 
 ### 3.3 Text Input Safety Contract
 
-For settings add/edit name fields (category and tag):
+Text input contexts where printable keys must be treated as literal text, not
+shortcuts:
 
-- Printable keys are treated as literal text first.
+**Settings add/edit name fields (v0.3, carried forward):**
+
+- Category and tag name fields in settings editor modes.
+- Printable keys are literal text first.
 - While name field is focused, printable keys must not trigger shortcuts.
   Example keys: `q`, `s`, `h`, `j`, `k`, `l`.
 - `enter` = save, `esc` = cancel, `backspace` = delete.
 - Non-printable navigation keys (e.g. arrow keys) may move focus between
   fields.
 
-This prevents accidental saves/quits or color/scope changes while typing names.
+**Filter expression input (`/` line, v0.4):**
 
-### 3.4 Keybinding Contract
+- Filter input modal (`searchMode` / `filterInputMode`).
+- Printable keys append to filter expression string; do not trigger shortcuts
+  like `q` (quit), `c` (categorize), `f` (was: category filter).
+- `enter` = apply filter, `esc` = cancel and clear, `backspace` = delete char.
+- Live parse indicator shows green/red dot for valid/invalid expression.
 
-- Key behavior is action/scope driven through `KeyRegistry`.
-- Footer hints derive from registry bindings, not hardcoded strings.
-- Primitive movement actions are canonical:
-  - `up`, `down`, `left`, `right`
-  - legacy names (`navigate`, `column`, `color`, `section`, `select_item`) are
-    compatibility aliases only.
-- Global direct tab shortcuts are first-class:
-  - `1` -> Manager (transactions mode)
-  - `2` -> Dashboard
-  - `3` -> Settings
-- Tab shortcuts must work from settings navigation and active-settings contexts,
-  not only from top-level tab routing.
+**Rule editor fields (v0.4):**
 
-Recommended `keybindings.toml` structure:
+- Name field (step 0) and filter expression field (step 1) in rule editor
+  modal.
+- Same contract as settings name fields: printable keys are literal text.
+- `tab`/`shift+tab` navigate between editor steps; do not trigger shortcuts.
 
-- Keep runtime override input as one flat `[bindings]` action map (current
-  implementation) to avoid sparse per-scope table sprawl.
-- Treat primitive actions as universal semantic keys:
-  - `confirm`, `cancel`, `up`, `down`, `left`, `right`, `delete`
-- Keep scope-specific actions only where semantics are context-exclusive
-  (`import`, `apply_all`, `nuke_account`, etc.).
-- Scope routing remains in code (`keys.go`), while the TOML remains a compact
-  action override layer.
+**Budget inline edit (v0.4):**
+
+- Amount field in budget table view and planner view.
+- Numeric input (`0-9`, `.`, `-`) is literal; navigation keys (`j`/`k`) are
+  suppressed.
+- `enter` = save, `esc` = cancel.
+
+**Spending target editor fields (v0.4):**
+
+- Name, filter expression, amount, period fields.
+- Same contract as rule editor.
+
+**Dashboard custom date input (v0.3, carried forward):**
+
+- Custom date start/end fields when `dashCustomEditing` is true.
+- Numeric and date separator keys (`0-9`, `-`) are literal.
+- `enter` = apply, `esc` = cancel.
+
+**Jump overlay (v0.4):**
+
+- Single-key target selection consumes the keypress and focuses the target.
+- Keys `n`, `c`, `b`, `h`, `t`, `a`, `r`, `i`, `d`, `w`, `p` are per-tab
+  targets.
+- No text buffer accumulation; immediate action on keypress.
+
+This prevents accidental saves/quits or unintended actions while typing.
+
+### 3.4 Keybinding Architecture
+
+v0.4 significantly expands the number of scopes and commands. This section
+defines the architecture that keeps keybindings manageable, conflict-free, and
+user-overridable as the scope count grows.
+
+#### 3.4.1 Design Principles
+
+1. **Scopes are flat in storage, hierarchical in dispatch.** The `KeyRegistry`
+   stores bindings in a flat scope→binding map. The hierarchy is implicit: each
+   handler in `update.go` knows its scope and `Lookup()` falls back to
+   `scopeGlobal`. This keeps the data structure simple while allowing layered
+   resolution.
+
+2. **Only one leaf scope is active at a time.** The dispatch chain in
+   `update.go` is a priority list of mutually exclusive states. The first
+   truthy condition wins, and its handler queries exactly one scope (plus the
+   global fallback). Two non-modal scopes never compete for the same keypress.
+
+3. **Modal scopes are total barriers.** When a modal overlay is active (pickers,
+   detail modal, jump overlay, import preview, rule editor, etc.), it intercepts
+   all keys. No key leaks to a parent scope. This is enforced by the dispatch
+   chain ordering in `update.go`, not by a scope flag.
+
+4. **Actions are the stable abstraction; keys are the variable.** Users override
+   keys via `keybindings.toml` action mappings. Code never hardcodes key
+   literals in handlers — it always checks `m.isAction(scope, action, msg)`.
+   Actions are semantic names that remain stable across key remaps.
+
+5. **Scopes are an implementation detail, not a user surface.** The
+   `keybindings.toml` v2 format is action-level (`[bindings]` flat map). Scope
+   routing remains in code (`keys.go`). Users think in actions ("what does
+   search do?"), not scopes ("what does / do in `scopeTransactions`?").
+
+#### 3.4.2 Scope Categories
+
+Scopes fall into three categories with different key reuse rules:
+
+**Tab scopes** — mutually exclusive by tab selection:
+
+```
+dashboard, dashboard_timeframe, dashboard_custom_input, dashboard_focused
+budget, budget_table, budget_planner, budget_editing, budget_target_editor
+manager, manager_transactions, transactions, search
+settings_nav, settings_mode_*, settings_active_*
+```
+
+Tab scopes are mutually exclusive: only one tab is active, and within a tab
+only one sub-state scope is queried. The same key can safely mean different
+things across tab scopes (e.g. `a` = add rule in settings, `a` = add target
+in budget).
+
+**Modal scopes** — exclusive overlay states that block everything below:
+
+```
+command_palette, command_mode
+detail_modal, detail_notes
+dupe_modal / import_preview
+file_picker, category_picker, tag_picker, account_nuke_picker
+manager_modal
+rule_editor, dry_run_modal
+budget_target_editor
+offset_picker
+jump_overlay
+```
+
+Modal scopes are the strongest isolation boundary. When active, no other
+scope processes keys. The same key can mean completely different things in
+different modals without any user confusion because the modal context is
+visually obvious. Footer hints show only the modal's bindings.
+
+**Global scope** — universal fallback:
+
+```
+global
+```
+
+Bindings in `scopeGlobal` are available everywhere unless shadowed by a more
+specific scope. Global bindings must use keys that are safe to shadow: tab
+shortcuts (`1`/`2`/`3`/`4`), quit (`q`), command palette (`ctrl+k`), command
+mode (`:`), jump mode (`v`).
+
+#### 3.4.3 Key Resolution Algorithm
+
+For any keypress in any state:
+
+```
+1. update.go dispatch chain finds the active handler (first truthy state wins)
+2. Handler calls m.isAction(scope, action, msg) for candidate actions
+3. isAction calls KeyRegistry.Lookup(keyName, scope):
+   a. Check scope's index for exact key match
+   b. If single letter and miss, try opposite case (case-insensitive fallback)
+   c. If no match in scope, try scopeGlobal (steps a-b)
+   d. Return nil if no match anywhere
+4. Handler acts on the first matching action
+```
+
+**Critical invariant:** step 1 guarantees only one scope is checked per
+keypress. There is no "scope stack" or concurrent resolution. This is why
+adding scopes does not create combinatorial conflicts.
+
+#### 3.4.4 Key Reuse Safety Rules
+
+When assigning a key to an action in a scope, check these rules:
+
+| Scenario | Safe? | Reason |
+|---|---|---|
+| Same key, different tab scopes | Yes | Mutually exclusive; user sees only one context |
+| Same key, different modal scopes | Yes | Only one modal active; visually obvious |
+| Same key in child scope + global | Shadow | Child wins; global handler never fires. Must be intentional |
+| Same key in two simultaneously active scopes | Bug | Should never happen by dispatch chain design |
+
+**Shadow policy:** A scope-specific binding that shadows a global binding
+must be documented in the scope's registration comment. Common intentional
+shadows:
+
+- `j`/`k` in modal scopes shadow global (if global had them)
+- `Enter` in editor scopes shadows `confirm` with scope-specific semantics
+- `Esc` in focused/modal scopes means "unfocus/dismiss" rather than global quit
+
+**Action semantic stability:** When the same action name is used across
+scopes, it must mean the same conceptual thing. Examples:
+
+- `confirm` always means "accept/select the current item"
+- `cancel` always means "dismiss/go back"
+- `add` always means "create a new item of the scope's type"
+- `delete` always means "remove the focused item"
+
+Do not reuse action names with divergent semantics across scopes.
+
+#### 3.4.5 Universal Primitives
+
+These actions have stable meaning everywhere and are handled as direct
+switch cases (not command-routed). They must not be reassigned to different
+semantics in any scope:
+
+- `confirm` (`enter`) — accept/select
+- `cancel` (`esc`) — dismiss/back/unfocus
+- `up` / `down` (`k`/`j`, arrows)  — cursor movement
+- `left` / `right` (`h`/`l`, arrows) — lateral navigation
+- `delete` (`del`, `backspace` in some contexts)
+- `quit` (`q`, `ctrl+c`) — exit application
+- `next_tab` / `prev_tab` (`tab`, `shift+tab`) — cycle tabs
+
+Scopes can add meaning on top of these (e.g. `enter` in dashboard_focused
+triggers drill-down, which is a form of "confirm/select"), but the
+underlying semantic must be compatible.
+
+#### 3.4.6 Footer Hint Derivation
+
+Footer hints are derived from the active scope's registered bindings:
+
+1. `footerBindings()` mirrors the dispatch chain to determine the active scope
+2. `HelpBindings(scope)` returns that scope's ordered binding list
+3. Modal scopes show only their own bindings (no global bleed-through)
+4. Non-modal tab scopes show their bindings; global bindings appear only if
+   the handler explicitly concatenates them (e.g. `scopeManagerTransactions`
+   + `scopeTransactions`)
+
+**v0.4 addition:** When `focusedSection >= 0` (a pane/section is focused via
+jump mode), footer hints show the focused scope's bindings. When unfocused,
+footer shows the tab's base bindings. This is a new state transition that
+`footerBindings()` must handle per-tab.
+
+#### 3.4.7 keybindings.toml Override Architecture
+
+The TOML remains a **flat action-level override** layer (v2 format):
+
+```toml
+version = 2
+
+[bindings]
+confirm = ["enter"]
+cancel = ["esc"]
+up = ["k", "up"]
+down = ["j", "down"]
+search = ["/"]
+```
+
+Overriding an action changes its key in **every scope** where that action is
+registered. This is by design: users think in terms of "I want search to be
+ctrl+f" not "I want search in scopeTransactions to be ctrl+f but keep / in
+scopeSettingsNav."
+
+**Why not per-scope TOML overrides?**
+
+- Scope count is growing (29 in v0.3, ~40+ in v0.4). Per-scope tables would
+  be sprawling and error-prone.
+- Most users want consistent keys: "search is always `/`", "add is always
+  `a`", "delete is always `d`."
+- For the rare power user who wants per-scope overrides, that can be a v0.5+
+  feature. The v2 format's `[bindings]` flat map is forward-compatible with a
+  future `[scopes.budget.bindings]` extension.
+
+**Constraint for action naming:** Because overrides are action-level, actions
+that share a name but have different default keys in different scopes will
+get unified to one key set on override. This is acceptable as long as the
+semantic stability rule (3.4.4) holds — if the action means the same thing,
+it should have the same key.
+
+Actions that need different keys in different scopes must have different
+action names (e.g. `budget:toggle-view` vs `import:full-view`, not both
+called `toggle_view`).
+
+#### 3.4.8 Scope Growth Budget
+
+v0.4 adds approximately 10-12 new scopes. To prevent ungoverned sprawl:
+
+- **New scope checklist:** before adding a scope, verify that an existing
+  scope cannot serve the purpose. Prefer reusing a parent scope with
+  conditional `Enabled` checks on commands over creating a new scope.
+- **Scope naming:** use `{tab}_{section}` for tab scopes,
+  `{feature}_modal` or `{feature}_editor` for modals, `{feature}_picker`
+  for picker overlays.
+- **Registration audit:** `keys_test.go` must enumerate all scope constants
+  and verify each has at least one registered binding and is reachable from
+  the dispatch chain. Orphan scopes are dead code.
+
+#### 3.4.9 Tab Shortcut Mapping (v0.4)
+
+Global direct tab shortcuts are first-class:
+
+- `1` -> Dashboard
+- `2` -> Budget
+- `3` -> Manager (transactions mode)
+- `4` -> Settings
+
+Tab shortcuts must work from settings navigation and active-settings
+contexts, not only from top-level tab routing. Tab shortcut keys must not
+be shadowed by any non-modal tab scope.
+
+#### 3.4.10 v0.4 Scope Map
+
+Canonical scope tree after v0.4. Indentation shows the dispatch chain
+nesting (which handler delegates to which). Scopes at the same indent level
+under a parent are mutually exclusive sub-states.
+
+```
+global
+├── jump_overlay                      (modal)  [v0.4 new]
+├── command_palette                   (modal)
+├── command_mode                      (modal)
+│
+├── tab: dashboard
+│   ├── dashboard                     (base, unfocused)
+│   ├── dashboard_timeframe           (timeframe chip selector)
+│   ├── dashboard_custom_input        (custom date text entry)
+│   └── dashboard_focused             (pane focused via jump)  [v0.4 new]
+│
+├── tab: budget                                                [v0.4 new]
+│   ├── budget_table                  (default view)
+│   │   └── budget_editing            (inline amount edit)
+│   ├── budget_planner                (planner grid view)
+│   │   └── budget_planner_editing    (inline cell edit)
+│   └── budget_target_editor          (modal)
+│
+├── tab: manager
+│   ├── manager                       (accounts sub-view)
+│   │   └── manager_modal             (modal: account add/edit)
+│   └── manager_transactions          (transactions sub-view)
+│       ├── transactions              (table navigation)
+│       ├── search / filter_input     (text entry)
+│       ├── detail_modal              (modal)
+│       │   └── offset_picker         (modal)  [v0.4 new]
+│       ├── category_picker           (modal)
+│       └── tag_picker                (modal)
+│
+├── tab: settings
+│   ├── settings_nav                  (section navigation)
+│   ├── settings_active_categories    (active section)
+│   │   └── settings_mode_cat         (add/edit form)
+│   ├── settings_active_tags
+│   │   └── settings_mode_tag
+│   ├── settings_active_rules
+│   │   ├── rule_editor               (modal)  [v0.4 new]
+│   │   └── dry_run_modal             (modal)  [v0.4 new]
+│   ├── settings_active_chart
+│   ├── settings_active_db_import
+│   │   ├── file_picker               (modal)
+│   │   └── import_preview            (modal)  [v0.4 new]
+│   ├── settings_active_import_history
+│   └── settings_active_dashboard_views               [v0.4 new]
+│       └── view_editor               (modal)  [v0.4 new]
+│
+└── account_nuke_picker               (modal)
+```
+
+New scopes added by v0.4 are marked. Total scope count grows from ~29
+to ~40. All new scopes are either modal (isolated) or tab-exclusive
+(non-overlapping), so the conflict surface does not grow combinatorially.
+
+#### 3.4.11 Key Conflict Testing Contract
+
+As scopes grow, manual conflict tracking becomes unreliable. The following
+test invariants must hold in `keys_test.go`:
+
+1. **Intra-scope uniqueness:** No two bindings in the same scope share a
+   key. (Already enforced by `ApplyKeybindingConfig` validation.)
+
+2. **Global shadow audit:** For every key bound in `scopeGlobal`, enumerate
+   all non-modal scopes that bind the same key. Each shadow must be listed
+   in an explicit allowlist in the test. This catches accidental shadows
+   when adding new scope bindings.
+
+3. **Scope reachability:** Every declared scope constant must appear in at
+   least one `isAction()` call in the dispatch chain. Orphan scopes are
+   flagged as dead code.
+
+4. **Action-command consistency (v0.4):** Every `Binding` with a non-empty
+   `CommandID` must reference a registered `Command.ID` in the registry.
+   Every command with scopes must have a corresponding binding in at least
+   one of those scopes.
+
+5. **Footer-dispatch alignment:** The scope chosen by `footerBindings()`
+   must match the scope used by the corresponding `updateXxx` handler for
+   every reachable model state. A model-state fuzzer or explicit state
+   matrix test verifies this.
+
+6. **Tab shortcut non-shadow:** Keys `1`, `2`, `3`, `4` must not appear
+   in any non-modal tab scope. (They should only be in `scopeGlobal`.)
+
+7. **Jump key non-shadow:** `v` must not appear in any non-modal tab
+   scope. Modal scopes may rebind `v` freely.
 
 ### 3.5 Status Semantics
 
@@ -159,6 +659,168 @@ Implementation guidance:
   2. `Global`
   3. `Unscoped` (scoped tags not matching current target categories)
 
+### 4.3 Command System
+
+**v0.4 Architecture**
+
+Commands are first-class action primitives for user-visible operations. The
+command registry (`CommandRegistry`) holds metadata for all commands and
+dispatches execution.
+
+```go
+type Command struct {
+    ID          string
+    Label       string
+    Description string
+    Category    string          // "Navigation", "Actions", "Filter", "Budget"
+    Scopes      []string        // scopes where available; empty = global
+    Enabled     func(m model) (bool, string)
+    Execute     func(m model) (model, tea.Cmd, error)
+}
+```
+
+**Command dispatch flow:**
+
+`keyMsg` → scope lookup (`keys.Lookup`) → `Binding.CommandID` →
+`CommandRegistry.ExecuteByID(id, m)` → `(model, tea.Cmd, error)`
+
+**Not command-routed:** Universal primitives (`confirm`, `cancel`, arrows,
+`quit`, `next_tab`/`prev_tab`) and cursor/input plumbing remain direct handlers
+for performance. The principle: **anything that would appear in the command
+palette is a command; cursor/input/modal mechanics are not.**
+
+**Scope-aware availability:**
+
+- `Command.Scopes []string` declares where a command is valid.
+- `Command.Enabled` adds runtime conditions (e.g., "DB not ready", "No rules
+  available").
+- Command palette filters by current scope + `Enabled` checks.
+
+**v0.3 current state:** 11 commands exist (`go:dashboard`, `go:transactions`,
+`import`, `apply:category-rules`, etc.) but dispatch is action-switch based,
+not command-routed. Refactoring in Phase 1 unifies all user-visible actions as
+commands.
+
+**Reference:** See `specs/v0.4-spec.md` Phase 1 for full command table and
+refactoring approach.
+
+### 4.4 Filter Expression Language
+
+**v0.4 Architecture**
+
+Unified filter language powering search, rules, and budget targets. Plain text
+searches description by default; power users add field predicates and boolean
+operators.
+
+**Grammar:**
+
+```
+expr     = or_expr
+or_expr  = and_expr ( 'OR' and_expr )*
+and_expr = unary ( 'AND' unary )*
+unary    = 'NOT' unary | term
+term     = field_pred | text_search
+```
+
+**Field predicates:** `desc:`, `cat:`, `tag:`, `acc:`, `amt:`, `type:`,
+`note:`, `date:`
+
+**AST representation:**
+
+```go
+type filterNode struct {
+    kind     filterNodeKind  // text | field | and | or | not
+    field    string
+    op       string          // "contains", "=", ">", "<", ".."
+    value    string
+    children []*filterNode
+}
+```
+
+**Permissive vs strict parsing:**
+
+- **Permissive** (`parseFilter`): used for interactive `/` filter input. Parse
+  errors fall back to treating input as plain text search. Fast typing,
+  backward compatible.
+- **Strict** (`parseFilterStrict`): used for persisted contexts (rules,
+  spending targets, saved filters). Parse errors block save with actionable
+  messages. No fallback.
+
+**Composition functions:**
+
+- `buildTransactionFilter()` — user input + account scope (Manager filter)
+- `buildDashboardScopeFilter()` — timeframe + account scope (no transaction
+  filter inheritance)
+- `buildCustomModeFilter(pane, mode)` — strict-parsed custom mode expression
+
+**Evaluator:** `evalFilter(node, txn, tags) bool` — recursively evaluates AST
+against a transaction.
+
+**Serializer:** `filterExprString(node) string` — converts AST back to text for
+display/storage.
+
+**v0.3 current state:** Ad-hoc `searchQuery` string + `filterCategories
+map[int]bool` + `filterAccounts map[int]bool`. No unified language. Phase 2
+replaces this with the filter expression system.
+
+**Reference:** See `specs/v0.4-spec.md` Phase 2 for full grammar, field
+predicates, and parser contracts.
+
+### 4.5 Jump Mode
+
+**v0.4 Architecture**
+
+App-wide spatial navigation with `v` key. Jump mode shows labeled badges at
+focusable sections in the current tab; pressing a target key focuses that
+section and dismisses the overlay.
+
+**Model fields:**
+
+```go
+jumpModeActive    bool
+jumpPreviousFocus int   // -1 = unfocused; restore target on ESC
+focusedSection    int   // -1 = unfocused; meaning is tab-specific
+```
+
+**Per-tab targets:**
+
+| Tab       | Targets                                           | Default (ESC returns to) |
+|-----------|---------------------------------------------------|--------------------------|
+| Dashboard | `n` Net/Cashflow, `c` Composition, `b` Compare, `h` Budget Health | Unfocused |
+| Manager   | `a` Accounts, `t` Transactions                    | Transactions             |
+| Budget    | `t` Budget Table, `p` Planner                     | Budget Table             |
+| Settings  | `r` Rules, `i` Imports, `d` Database, `w` Dashboard Views | Stay (no reset) |
+
+Target keys can overlap across tabs because only one tab's targets are shown at
+a time.
+
+**Focus lifecycle:**
+
+1. `v` → jump overlay appears with per-tab targets (floating badges)
+2. Press target key → focus moves, overlay dismisses
+3. Section-specific interactions available (e.g. mode cycling, inline edit)
+4. `Esc` → return to tab's default focus (or stay for Settings)
+5. `Esc` from default/unfocused → no-op
+
+**Rendering:**
+
+- Floating badges at section top-left: `[n]`, `[c]`, `[b]`, `[h]`
+- Accent background, muted foreground
+- Status bar: "Jump: press key to focus. ESC cancel."
+- Focused sections get accent border; unfocused use muted border
+
+**Commands:**
+
+- `jump:activate` (global) — enter jump mode
+- `jump:cancel` (jump_overlay scope) — dismiss and restore previous focus
+
+**v0.3 current state:** Direct focus commands `nav:focus-accounts` and
+`nav:focus-transactions` exist but are Manager-specific. Jump mode is Phase 1
+infrastructure, with Dashboard and Budget targets registered in later phases.
+
+**Reference:** See `specs/v0.4-spec.md` Phase 1 for full jump mode spec and
+Bagels reference (`~/bagels-ref/src/bagels/components/jumper.py`).
+
 ## 5. Data Layer Conventions
 
 ### 5.1 Transaction and Import Contracts
@@ -193,6 +855,225 @@ Rationale:
 - Deterministic display/search behavior.
 - Eliminates case-fragmented tag ecosystems.
 
+**v0.4 note:** `tag_rules` table reference here will be dropped when rules v2
+lands (Phase 3). Tag normalization contract remains unchanged.
+
+### 5.4 Schema v5 Migration Policy
+
+**v0.4 introduces schema v5.** Migration happens in a single transactional
+function `migrateFromV4ToV5(db)`.
+
+**What changes:**
+
+- **Rules v1 fresh start:** `category_rules` and `tag_rules` tables are
+  dropped. Users rebuild rules using rules v2.
+- **New tables added:** `rules_v2`, `category_budgets`,
+  `category_budget_overrides`, `spending_targets`, `spending_target_overrides`,
+  `credit_offsets`.
+- **Preserved data:** `transactions`, `categories`, `tags`, `transaction_tags`,
+  `accounts`, `account_selection`, `imports`.
+
+**Migration operational safeguards:**
+
+- Each create/drop/index statement uses defensive `IF EXISTS`/`IF NOT EXISTS`
+  forms.
+- Migration runs in a transaction; any failure rolls back all changes.
+- `schema_meta.version = 5` is written only after all preceding steps succeed.
+- Migration function tolerates partially-upgraded dev DBs (missing old tables,
+  already-created new tables, partially-created indexes).
+
+**Idempotency:** Re-running the migration on a partially-upgraded database must
+not fail or corrupt data. This is critical for development environments and
+migration retry scenarios.
+
+**Zero-seed budgets:** For all existing categories at migration time, insert a
+`category_budgets` row with `amount = 0`.
+
+**Test matrix:**
+
+- Fresh database bootstrap to v5.
+- Existing v4 production-shaped DB migration to v5.
+- Partially-upgraded DB fixture migration retry to v5 (idempotency path).
+
+**Reference:** See `specs/v0.4-spec.md` Schema v5 Migration Plan for full SQL
+and migration timing.
+
+### 5.5 Rules v2 Data Contracts
+
+**v0.4 replaces rules v1 with rules v2.** Unified table for category and tag
+rules.
+
+**Schema:**
+
+```sql
+CREATE TABLE rules_v2 (
+    id              INTEGER PRIMARY KEY AUTOINCREMENT,
+    name            TEXT NOT NULL,
+    filter_expr     TEXT NOT NULL,
+    set_category_id INTEGER REFERENCES categories(id) ON DELETE SET NULL,
+    add_tag_ids     TEXT NOT NULL DEFAULT '[]',
+    remove_tag_ids  TEXT NOT NULL DEFAULT '[]',
+    sort_order      INTEGER NOT NULL DEFAULT 0,
+    enabled         INTEGER NOT NULL DEFAULT 1
+);
+```
+
+**Rule application semantics:**
+
+1. Rules apply in `sort_order` ascending (manual user ordering).
+2. All matching rules fire (not just first match).
+3. For each enabled rule, evaluate `filter_expr` (parsed `filterNode`) against
+   the transaction.
+4. If matched:
+   - If `set_category_id != NULL`, set category (last writer wins).
+   - If `add_tag_ids` non-empty, add tags (accumulative).
+   - If `remove_tag_ids` non-empty, remove tags (accumulative).
+5. After all rules, write final category + tags to DB.
+
+**Target scope:**
+
+- `rules:apply` targets current scope (Manager account filter if active, else
+  all transactions).
+- `rules:dry-run` uses same target set as `rules:apply`.
+- Import-time application targets newly imported row IDs only.
+
+**Disabled rules:** `enabled = 0` rules are skipped in apply and dry-run but
+shown in Settings list as dimmed.
+
+**Go type:**
+
+```go
+type ruleV2 struct {
+    id            int
+    name          string
+    filterExpr    string       // raw text
+    parsedFilter  *filterNode  // parsed at load time
+    setCategoryID *int
+    addTagIDs     []int
+    removeTagIDs  []int
+    sortOrder     int
+    enabled       bool
+}
+```
+
+**Reference:** See `specs/v0.4-spec.md` Phase 3 for full rules v2 spec, dry-run
+command, and Settings UI.
+
+### 5.6 Budget Data Contracts
+
+**v0.4 adds budgeting system.** Category budgets with recurring monthly amounts
++ per-month overrides. Advanced spending targets with filter expressions.
+
+**Category budgets:**
+
+- One `category_budgets` row per category (zero-seeded at migration).
+- `amount` is the recurring monthly default.
+- `category_budget_overrides` stores per-month overrides (`month_key =
+  'YYYY-MM'`).
+- Effective amount for a month: check override first, fall back to recurring
+  default.
+
+**Spending targets:**
+
+- `spending_targets` table: name, filter expression, amount, period type
+  (monthly/quarterly/annual).
+- `spending_target_overrides` stores per-period overrides (`period_key =
+  'YYYY-MM'`, `'YYYY-Q1'`, or `'YYYY'`).
+- Filter expression is strict-validated at save time (same as rules v2).
+
+**Budget calculation:**
+
+For a given month:
+
+1. Get effective budget amount (override or recurring).
+2. Calculate spent: `SUM(ABS(amount))` where `amount < 0` (debits only) and
+   `date_iso LIKE 'YYYY-MM%'` and category matches.
+3. Calculate offsets: `SUM(credit_offsets.amount)` for debits in this category
+   + month.
+4. Net spent = spent − offsets.
+5. Remaining = budgeted − net spent.
+6. Over budget = remaining < 0.
+
+**Account scope toggle:** `budgetScopeGlobal bool` (default: true). When false,
+budget calculations filter by `m.filterAccounts`.
+
+**Go types:**
+
+```go
+type categoryBudget struct {
+    id         int
+    categoryID int
+    amount     float64  // recurring monthly default
+}
+
+type budgetOverride struct {
+    id       int
+    budgetID int
+    monthKey string  // "2025-03"
+    amount   float64
+}
+
+type spendingTarget struct {
+    id           int
+    name         string
+    filterExpr   string
+    parsedFilter *filterNode
+    amount       float64
+    periodType   string  // "monthly", "quarterly", "annual"
+}
+```
+
+**Reference:** See `specs/v0.4-spec.md` Phase 5 for full budget system spec,
+planner view, and analytics strip.
+
+### 5.7 Credit Offset Integrity
+
+**v0.4 adds credit offset tracking** for refunds and reimbursements that reduce
+budget spending.
+
+**Schema:**
+
+```sql
+CREATE TABLE credit_offsets (
+    id             INTEGER PRIMARY KEY AUTOINCREMENT,
+    credit_txn_id  INTEGER NOT NULL REFERENCES transactions(id) ON DELETE CASCADE,
+    debit_txn_id   INTEGER NOT NULL REFERENCES transactions(id) ON DELETE CASCADE,
+    amount         REAL NOT NULL CHECK(amount > 0),
+    CHECK(credit_txn_id != debit_txn_id),
+    UNIQUE(credit_txn_id, debit_txn_id)
+);
+```
+
+**Integrity validation (5 rules):**
+
+`insertCreditOffset` must validate inside one DB transaction:
+
+1. `credit_txn_id` points to a credit transaction (`amount > 0`).
+2. `debit_txn_id` points to a debit transaction (`amount < 0`).
+3. Both transactions are on the same account.
+4. New total linked for credit transaction ≤ available credit amount.
+5. New total linked for debit transaction ≤ `ABS(debit amount)`.
+
+If any check fails, no writes occur and a descriptive error is returned.
+
+**Transactional enforcement:** All 5 checks happen in a single transaction.
+Partial writes are impossible. This is critical for budget integrity.
+
+**UI flow:**
+
+1. Open detail modal on a credit transaction.
+2. Press `o` ("Link Offset").
+3. Picker shows debit transactions (same account, ±30 days).
+4. Select debit, enter offset amount (default: full credit, capped at
+   remaining).
+5. Saved to `credit_offsets` after validation.
+
+**Budget impact:** Credit offsets reduce net spent:
+`netSpent = spent - SUM(offsets)`.
+
+**Reference:** See `specs/v0.4-spec.md` Phase 5 credit offset flow and
+integrity rules.
+
 ## 6. Rendering and Viewport Safety
 
 ### 6.1 Frame Composition
@@ -219,6 +1100,162 @@ breakage.
   (category/account/tags).
 - Manager and settings section cards use shared box contracts.
 - Footer help remains registry-sourced.
+
+### 6.4 Dashboard Grid Rendering
+
+**v0.4 dashboard visual structure:**
+
+Top-to-bottom:
+
+1. **Timeframe controls** — chip selector + date range label (carried forward
+   from v0.3).
+2. **Summary header strip** — non-focusable KPI row showing Balance, Debits,
+   Credits, Transaction count, Uncategorised count + amount. Scoped to
+   dashboard timeframe + account selection. Uses
+   `buildDashboardScopeFilter()`.
+3. **4-pane analytics grid** — focusable widget panes in 2×2 layout.
+
+**Grid layout:**
+
+- 2 columns, 2 rows.
+- 50:50 column split (each pane gets half the terminal width).
+- Panes:
+  1. **Net/Cashflow** (top-left, jump key `n`)
+  2. **Composition** (top-right, jump key `c`)
+  3. **Compare Bars** (bottom-left, jump key `b`)
+  4. **Budget Health** (bottom-right, jump key `h`)
+
+**Pane rendering:**
+
+- Each pane has a title, active mode label, and chart/content area.
+- Pane renderers (`renderNetCashflowPane`, `renderCompositionPane`, etc.) own
+  their internal layout within the allocated width.
+- Focused pane gets accent-colored border; unfocused use muted border.
+
+**Mode cycling:**
+
+- `[` / `]` cycle through curated built-in modes + custom modes from config.
+- Mode label shown in pane header (e.g., "Net Worth", "Spending", "Renovation
+  Spend").
+
+**v0.3 current state:** Dashboard has summary cards and a single spending
+tracker chart. No grid, no focusable panes, no mode cycling. Phase 6 adds the
+grid.
+
+**Reference:** See `specs/v0.4-spec.md` Phase 6 dashboard v2 spec for full pane
+definitions and mode lists.
+
+### 6.5 Narrow Terminal Fallback
+
+**v0.4 responsive layout:** When terminal width < 80 columns, the 2×2 dashboard
+grid degrades to a 1-column, 4-row vertical stack.
+
+**Behavior:**
+
+- Each pane renders at full width (no 50:50 split).
+- Panes stack vertically in order: Net/Cashflow, Composition, Compare Bars,
+  Budget Health.
+- Dashboard becomes vertically scrollable.
+- Jump mode keys remain the same (`n`, `c`, `b`, `h`).
+- Focus model unchanged: jump to a pane, interact, ESC to unfocus.
+
+**v0.3 current state:** No narrow terminal fallback implemented. Phase 6 adds
+responsive layout logic to dashboard rendering.
+
+### 6.6 Jump Overlay Rendering
+
+**v0.4 jump mode overlay visual:**
+
+- Floating badges at each focusable section's top-left corner.
+- Badge format: `[key]` (e.g., `[n]`, `[c]`, `[b]`, `[h]`, `[t]`, `[a]`).
+- Badge style: accent background (`accentBg`), muted foreground (`mutedFg`).
+- Status bar reads: "Jump: press key to focus. ESC cancel."
+- Badges render on top of the base frame; do not alter underlying layout.
+
+**Focus visual feedback:**
+
+- Focused section: accent-colored border.
+- Unfocused sections: default muted border.
+
+**Per-tab badge positioning:**
+
+- Dashboard: badges at top-left of each pane in the 2×2 grid.
+- Manager: badges at top-left of Accounts card and Transactions table.
+- Budget: badges at top-left of Table view and Planner view (depending on
+  active view).
+- Settings: badges at top-left of Rules, Imports, Database, Dashboard Views
+  sections.
+
+**v0.3 current state:** No jump overlay. Phase 1 adds jump mode infrastructure
+and rendering.
+
+### 6.7 Drill-Return Filter Pill
+
+**v0.4 drill-down with return context:**
+
+When a user drills down from a focused dashboard pane to Manager (presses
+`Enter` on a focused pane item like "Groceries" in the category breakdown):
+
+1. Compose filter expression (e.g., `cat:Groceries AND date:2025-01..2025-01`).
+2. Save current dashboard state to `drillReturnState` (focused pane, mode,
+   scroll).
+3. Switch to Manager tab with composed filter applied.
+4. Show filter pill in transaction table header with **`[Dashboard >]`
+   prefix**: `[Dashboard >] cat:Groceries AND date:2025-01..2025-01`.
+
+**Return behavior:**
+
+- While `drillReturn` is set, ESC from Manager filter view returns to dashboard
+  and restores exact state (focused pane, mode, scroll position).
+- Any other navigation (tab switch, jump mode to another tab, etc.) clears
+  `drillReturn`.
+- When `drillReturn` is nil (normal Manager usage), ESC from filter clears the
+  filter and stays on Manager (v0.3 behavior).
+
+**Visual indicator:** The `[Dashboard >]` prefix signals "you can ESC to return
+to dashboard context."
+
+**v0.3 current state:** No drill-down or return context. Phase 6 adds
+drill-down with return.
+
+### 6.8 Budget View Rendering
+
+**v0.4 budget tab rendering:**
+
+Two views toggled with `w` key:
+
+**Table view (default):**
+
+- Month selector in header: `[< Jan >]`.
+- Account scope toggle: `[All Accounts ▾]` or `[2 Accounts ▾]`.
+- **Category Budgets table:** Category | Budgeted | Spent | Offsets | Remaining
+  - Color-coded remaining column: green if positive, red if negative (over
+    budget).
+  - Total row at bottom.
+- **Spending Targets table:** Target | Period | Budgeted | Spent | Remaining
+- **Compact analytics strip** (always visible at bottom): Budget adherence %,
+  Over-budget count, Variance sparkline.
+
+**Planner view:**
+
+- Year selector in header: `Budget Planner - 2025`.
+- 6-month horizontal grid (scrollable).
+- Category rows showing budgeted amounts, spent (in parentheses), and remaining
+  per month.
+- Override marker `*` for months with overrides (differs from recurring
+  default).
+
+**Inline editing:**
+
+- `Enter` on a cell activates inline edit mode.
+- Numeric input buffer shown in place of cell value.
+- `Enter` saves, `Esc` cancels.
+
+**v0.3 current state:** No budget tab. Phase 5 adds budgeting system and all
+budget rendering.
+
+**Reference:** See `specs/v0.4-spec.md` Phase 5 for full budget view
+specifications.
 
 ## 7. Runtime Modes and Harnesses
 
@@ -269,7 +1306,7 @@ Flow tests must follow these rules:
 - Avoid direct calls to internal mode handlers (`updateSettings`,
   `updateNavigation`, etc.) in flow tests.
 
-Current high-value flow coverage includes:
+Current high-value flow coverage (v0.3) includes:
 
 - settings import flow with duplicate scan + skip path
 - manager quick categorize and quick tag persistence
@@ -277,6 +1314,37 @@ Current high-value flow coverage includes:
 - settings save + reload persistence round-trip
 - detail modal edit/save/reopen persistence
 - mapped-account-missing import failure (no partial writes)
+
+**v0.4 additional flow scenarios** (to be added as phases land):
+
+- filter expression: parse → apply → verify filtered rows → clear → verify
+  reset
+- filter expression: permissive parse (invalid fallback to text) vs strict
+  parse (error blocks save)
+- saved filter: create → persist to config → reload → apply → verify rows
+- rule editor: create rule → dry-run → verify sample rows → apply → verify DB
+  changes
+- rule editor: create invalid filter expression (strict mode) → save blocked
+  with error
+- import preview: scan → compact view → toggle full view → raw/post-rules
+  toggle → decision → verify imported rows
+- import preview: post-rules preview output matches persisted outcomes after
+  import (same rule snapshot)
+- budget: set category budget → set month override → verify computation
+  (debits-only, override priority)
+- credit offset: link credit to debit → verify integrity constraints
+  (sign/account/allocation) → verify budget net spent reduction
+- credit offset: attempt invalid link (wrong sign, cross-account,
+  over-allocation) → verify no partial writes, descriptive error returned
+- dashboard drill-down: focus pane → drill to Manager with filter → verify
+  return context set → ESC returns to dashboard → verify exact state restored
+  (focused pane, mode, scroll)
+- dashboard drill-down: drill → tab-switch away → verify return context cleared
+- jump mode: activate with `v` → press target key → verify focus → ESC →
+  verify default focus per tab (Dashboard unfocused, Manager transactions,
+  Settings stays)
+- custom pane mode: load from config with invalid filter expression → verify
+  rejected at load time with actionable error
 
 ### 8.3 Heavy Flow Gate (`flowheavy`)
 
@@ -306,10 +1374,15 @@ Protect first:
 - modal precedence and dismissal ordering
 - text-input shortcut shielding in settings editors
 - keybinding scope/action routing and footer derivation
+- **key conflict invariants (§3.4.11): global shadow audit, scope
+  reachability, footer-dispatch alignment, tab/jump key non-shadow**
+- **jump mode dispatch ordering (must intercept before tab-level handlers)**
 - quick-action target resolution (cursor/selection/highlight)
 - import/dupe decision path and account-mapping failures
 - viewport-safe header/body/status/footer rendering
 - tag normalization and duplicate-merge safety
+- **drill-return context lifecycle (set on dashboard drill-down, cleared on
+  tab switch, ESC returns correctly)**
 
 ### 8.6 Standard Verification Commands
 
@@ -324,7 +1397,9 @@ Run additionally when touching cross-mode workflows:
 
 - `./scripts/test.sh heavy`
 
-## 9. v0.295 -> v0.3 Learnings and Decisions
+## 9. Learnings and Decisions
+
+### 9.1 v0.295 → v0.3
 
 This release surfaced concrete engineering lessons:
 
@@ -344,12 +1419,75 @@ This release surfaced concrete engineering lessons:
 Future changes should preserve these decisions unless deliberately superseded.
 If superseded, update this section with rationale and enforcement tests.
 
+### 9.2 v0.3 → v0.4
+
+**Status:** To be updated as v0.4 phases land.
+
+**Anticipated areas** (from design decisions):
+
+- **Command dispatch complexity:** ~30+ commands with scope-aware availability.
+  How to keep `CommandRegistry` maintainable and testable as it grows. Early
+  signs: action-command consistency test (§3.4.11 invariant #4) will be
+  critical.
+- **Filter parser edge cases:** Permissive vs strict parsing contexts.
+  Fallback-to-text behavior in interactive `/` vs error-on-invalid in
+  rules/targets. Watch for: user confusion when filter works in one context but
+  is rejected in another.
+- **Scope explosion management:** ~40 scopes in v0.4 vs ~29 in v0.3. Key
+  conflict testing contract (§3.4.11) must scale. Shadow audit, reachability,
+  and footer-dispatch alignment tests are the enforcement mechanisms.
+- **Modal precedence additions:** 6 new modals (jump overlay, offset picker,
+  import preview, rule editor, dry-run, budget target editor). Dispatch chain
+  ordering must remain clear. Watch for: ESC key behavior conflicts between
+  nested modals.
+- **Drill-return context lifecycle:** `drillReturnState` must be set on
+  dashboard drill-down, cleared on tab switch, and used correctly on ESC from
+  Manager. Watch for: state leaks if clearing logic is incomplete.
+
+**Update this section** with concrete learnings once v0.4 phases are
+implemented and tested. Document what worked, what was harder than expected,
+and what patterns emerged for handling the increased complexity.
+
 ## 10. Open Backlog
+
+**v0.3 carryforward items:**
 
 - Reduce remaining render duplication where behavior is identical.
 - Expand mixed-modifier keybinding regression coverage.
 - Keep command interfaces and picker interactions aligned as features evolve.
 - Continue tightening startup diagnostics and compatibility alias handling.
+
+**v0.4 critical items (must complete as part of Phase 1):**
+
+- Implement global shadow audit and scope reachability tests (§3.4.11
+  invariants #2, #3) before adding new scopes. This is the enforcement
+  mechanism for preventing accidental key conflicts as scope count grows to
+  ~40.
+- Footer-dispatch alignment test (§3.4.11 invariant #5): build a model-state
+  matrix test or fuzzer to verify `footerBindings()` scope matches `updateXxx`
+  scope for all reachable states. Critical for jump mode and focused section
+  states.
+
+**v0.4 performance items:**
+
+- Filter expression performance benchmarking: target p95 <100ms parse+apply on
+  10k transactions. Add harness tests in Phase 2. If performance degrades,
+  consider memoization or pre-compiled AST caching.
+- Budget computation caching strategy: `computeBudgetLines` runs on every
+  render. If budget tab becomes sluggish with many categories/targets, add
+  memoization keyed on (month, budgets, overrides, transactions hash).
+
+**v0.5+ future considerations:**
+
+- Evaluate per-scope `keybindings.toml` overrides for power users (§3.4.7
+  forward-compatibility note). The v2 format's flat `[bindings]` map is
+  extensible to `[scopes.budget.bindings]` if demand emerges.
+- Dashboard chart primitive abstraction: if adding new panes/modes beyond the 4
+  curated domains, extract shared chart rendering logic (`ntcharts` wrappers,
+  axis formatting, color mapping) into a `chart.go` primitive file.
+- Filter expression parentheses: v0.4 omits parentheses for simplicity. If
+  users need complex precedence (e.g., `(A OR B) AND C`), add parens to the
+  grammar in v0.5.
 
 ## 11. Maintenance Rules for This Document
 
