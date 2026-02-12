@@ -710,16 +710,18 @@ refactoring approach.
 
 Unified filter language powering search, rules, and budget targets. Plain text
 searches description by default; power users add field predicates and boolean
-operators.
+operators. The v0.4 grammar is a Lucene-inspired subset (not full Lucene),
+designed for fast hand-typed queries with strict validation in persisted
+contexts.
 
 **Grammar:**
 
 ```
 expr     = or_expr
 or_expr  = and_expr ( 'OR' and_expr )*
-and_expr = unary ( 'AND' unary )*
+and_expr = unary ( ('AND' unary) | unary )*  // adjacent unary terms imply AND
 unary    = 'NOT' unary | term
-term     = field_pred | text_search
+term     = '(' expr ')' | field_pred | text_search
 ```
 
 **Field predicates:** `desc:`, `cat:`, `tag:`, `acc:`, `amt:`, `type:`,
@@ -746,6 +748,13 @@ type filterNode struct {
   spending targets, saved filters). Parse errors block save with actionable
   messages. No fallback.
 
+**Strict grouping rule (v0.4):**
+
+- In strict contexts, mixed `AND`/`OR` expressions require explicit
+  parentheses (e.g., reject `A OR B AND C`; accept `(A OR B) AND C`).
+- Permissive `/` input remains typing-friendly and does not enforce this
+  requirement.
+
 **Composition functions:**
 
 - `buildTransactionFilter()` — user input + account scope (Manager filter)
@@ -757,7 +766,8 @@ type filterNode struct {
 against a transaction.
 
 **Serializer:** `filterExprString(node) string` — converts AST back to text for
-display/storage.
+display/storage in canonical form (uppercase boolean operators + minimal
+required parentheses for semantics preservation).
 
 **v0.3 current state:** Ad-hoc `searchQuery` string + `filterCategories
 map[int]bool` + `filterAccounts map[int]bool`. No unified language. Phase 2
@@ -1485,9 +1495,10 @@ and what patterns emerged for handling the increased complexity.
 - Dashboard chart primitive abstraction: if adding new panes/modes beyond the 4
   curated domains, extract shared chart rendering logic (`ntcharts` wrappers,
   axis formatting, color mapping) into a `chart.go` primitive file.
-- Filter expression parentheses: v0.4 omits parentheses for simplicity. If
-  users need complex precedence (e.g., `(A OR B) AND C`), add parens to the
-  grammar in v0.5.
+- Filter language remains a deliberately constrained subset in v0.4. Consider
+  additive Lucene-like extensions in v0.5+ (wildcards/prefix, fuzzy,
+  proximity, boosting, unary required/prohibited terms) only after validating
+  clear user demand.
 
 ## 11. Maintenance Rules for This Document
 
