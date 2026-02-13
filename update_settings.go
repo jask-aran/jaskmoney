@@ -283,38 +283,6 @@ func (m model) updateSettingsDBImport(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	return m, nil
 }
 
-func (m model) updateAccountNukePicker(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
-	if m.accountNukePicker == nil {
-		return m, nil
-	}
-	res := m.accountNukePicker.HandleMsg(msg, func(action Action, in tea.KeyMsg) bool {
-		return m.isAction(scopeAccountNukePicker, action, in)
-	})
-	switch res.Action {
-	case pickerActionCancelled:
-		m.accountNukePicker = nil
-		m.setStatus("Account nuke cancelled.")
-		return m, nil
-	case pickerActionSelected:
-		if m.db == nil {
-			m.setError("Database not ready.")
-			return m, nil
-		}
-		accountID := res.ItemID
-		accountName := res.ItemLabel
-		db := m.db
-		m.accountNukePicker = nil
-		return m, func() tea.Msg {
-			n, err := nukeAccountWithTransactions(db, accountID)
-			if err == nil {
-				err = removeFormatForAccount(accountName)
-			}
-			return accountNukedMsg{accountName: accountName, deletedTxns: n, err: err}
-		}
-	}
-	return m, nil
-}
-
 func (m model) updateSettingsChart(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	switch {
 	case m.horizontalDelta(scopeSettingsActiveChart, msg) != 0,

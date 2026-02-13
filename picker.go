@@ -475,9 +475,6 @@ func renderPicker(p *pickerState, width int, keys *KeyRegistry, scope string) st
 	if scope == scopeTagPicker && p.triState && !p.HasPendingChanges() {
 		selectDesc = "toggle"
 	}
-	if scope == scopeAccountNukePicker {
-		selectDesc = "nuke"
-	}
 	var footer string
 	if scope == scopeCategoryPicker || scope == scopeTagPicker {
 		footer = fmt.Sprintf(

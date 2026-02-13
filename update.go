@@ -180,9 +180,6 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		if m.tagPicker != nil {
 			return m.updateTagPicker(msg)
 		}
-		if m.accountNukePicker != nil {
-			return m.updateAccountNukePicker(msg)
-		}
 		if m.managerActionPicker != nil {
 			return m.updateManagerActionPicker(msg)
 		}
