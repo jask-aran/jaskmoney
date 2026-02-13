@@ -302,7 +302,7 @@ func TestRenderKeybindingsTemplateActionBindings(t *testing.T) {
 	}
 }
 
-func TestMaterializeKeybindingsMigratesManagerQuickTagConflict(t *testing.T) {
+func TestMaterializeKeybindingsRejectsManagerQuickTagConflict(t *testing.T) {
 	defaults := []keybindingConfig{
 		{Scope: "manager", Action: "edit", Keys: []string{"t"}},
 		{Scope: "manager", Action: "quick_tag", Keys: []string{"T"}},
@@ -312,26 +312,49 @@ func TestMaterializeKeybindingsMigratesManagerQuickTagConflict(t *testing.T) {
 		{Scope: "manager", Action: "quick_tag", Keys: []string{"t"}},
 	}
 
-	out, changed, err := materializeKeybindings(defaults, fileBindings)
-	if err != nil {
-		t.Fatalf("materializeKeybindings: %v", err)
+	_, _, err := materializeKeybindings(defaults, fileBindings)
+	if err == nil {
+		t.Fatal("expected conflict validation error")
 	}
-	if !changed {
-		t.Fatal("expected changed=true after migration")
+	msg := err.Error()
+	if !strings.Contains(msg, `scope="manager"`) || !strings.Contains(msg, `"edit"`) || !strings.Contains(msg, `"quick_tag"`) {
+		t.Fatalf("expected actionable manager conflict details, got: %v", err)
+	}
+}
+
+func TestLoadKeybindingsConflictFailsExplicitlyAndPreservesFile(t *testing.T) {
+	xdg := t.TempDir()
+	t.Setenv("XDG_CONFIG_HOME", xdg)
+
+	path := filepath.Join(xdg, "jaskmoney", "keybindings.toml")
+	data := []byte(`
+version = 2
+
+[bindings]
+quick_category = ["t"]
+quick_tag = ["t"]
+`)
+	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+		t.Fatalf("mkdir: %v", err)
+	}
+	if err := os.WriteFile(path, data, 0o644); err != nil {
+		t.Fatalf("write keybindings: %v", err)
 	}
 
-	var quick []string
-	for _, b := range out {
-		if b.Scope == "manager" && b.Action == "quick_tag" {
-			quick = b.Keys
-			break
-		}
+	_, err := loadKeybindingsConfig()
+	if err == nil {
+		t.Fatal("expected explicit keybinding validation failure")
 	}
-	if len(quick) == 0 {
-		t.Fatal("expected manager/quick_tag binding")
+	if !strings.Contains(err.Error(), "resolve key conflicts") {
+		t.Fatalf("expected conflict guidance, got: %v", err)
 	}
-	if normalizeKeyName(quick[0]) == "t" {
-		t.Fatalf("expected quick_tag not to conflict with edit key 't', got %+v", quick)
+
+	raw, readErr := os.ReadFile(path)
+	if readErr != nil {
+		t.Fatalf("read keybindings.toml: %v", readErr)
+	}
+	if string(raw) != string(data) {
+		t.Fatalf("expected conflicting keybindings to be preserved for user correction; got:\n%s", string(raw))
 	}
 }
 
