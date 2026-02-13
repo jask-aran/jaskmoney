@@ -35,6 +35,8 @@ type configFile struct {
 	Account          map[string]accountConfig `toml:"account"`
 	Format           []csvFormat              `toml:"format"` // legacy fallback
 	Settings         appSettings              `toml:"settings"`
+	SavedFilter      []savedFilter            `toml:"saved_filter"`
+	DashboardView    []customPaneMode         `toml:"dashboard_view"`
 	Keybinding       []keybindingConfig       `toml:"keybinding"`        // legacy fallback
 	ShortcutOverride []shortcutOverride       `toml:"shortcut_override"` // legacy fallback
 }
@@ -63,6 +65,18 @@ type appSettings struct {
 	DashCustomStart         string `toml:"dash_custom_start"`
 	DashCustomEnd           string `toml:"dash_custom_end"`
 	CommandDefaultInterface string `toml:"command_default_interface"` // "palette" or "colon"
+}
+
+type savedFilter struct {
+	Name string `toml:"name"`
+	Expr string `toml:"expr"`
+}
+
+type customPaneMode struct {
+	Pane     string `toml:"pane"`
+	Name     string `toml:"name"`
+	Expr     string `toml:"expr"`
+	ViewType string `toml:"view_type"`
 }
 
 type keybindingConfig struct {
@@ -195,11 +209,11 @@ func defaultConfigFile() configFile {
 	}
 }
 
-func loadAppConfig() ([]csvFormat, appSettings, error) {
+func loadAppConfigExtended() ([]csvFormat, appSettings, []savedFilter, []customPaneMode, []string, error) {
 	primaryPath, err := configPath()
 	if err != nil {
 		cfg := defaultConfigFile()
-		return defaultFormats(), cfg.Settings, err
+		return defaultFormats(), cfg.Settings, nil, nil, nil, err
 	}
 	legacyPath, _ := legacyConfigPath()
 	appPath, _ := appConfigPath()
@@ -217,31 +231,41 @@ func loadAppConfig() ([]csvFormat, appSettings, error) {
 	if sourcePath == "" {
 		cfg := defaultConfigFile()
 		if wErr := writeConfigFile(primaryPath, cfg); wErr != nil {
-			return defaultFormats(), cfg.Settings, fmt.Errorf("write default config: %w", wErr)
+			return defaultFormats(), cfg.Settings, nil, nil, nil, fmt.Errorf("write default config: %w", wErr)
 		}
-		return defaultFormats(), cfg.Settings, nil
+		return defaultFormats(), cfg.Settings, nil, nil, nil, nil
 	}
 
 	data, err := os.ReadFile(sourcePath)
 	if err != nil {
 		cfg := defaultConfigFile()
-		return defaultFormats(), cfg.Settings, fmt.Errorf("read config: %w", err)
+		return defaultFormats(), cfg.Settings, nil, nil, nil, fmt.Errorf("read config: %w", err)
 	}
 
-	formats, settings, _, parseErr := parseConfig(data)
+	formats, settings, _, saved, customModes, warnings, parseErr := parseConfigExt(data)
 	if parseErr != nil {
 		cfg := defaultConfigFile()
-		return defaultFormats(), cfg.Settings, parseErr
+		return defaultFormats(), cfg.Settings, nil, nil, nil, parseErr
 	}
 
 	if sourcePath != primaryPath {
-		cfg := configFile{Account: formatsToAccountConfigs(formats), Settings: settings}
+		cfg := configFile{
+			Account:       formatsToAccountConfigs(formats),
+			Settings:      settings,
+			SavedFilter:   saved,
+			DashboardView: customModes,
+		}
 		if wErr := writeConfigFile(primaryPath, cfg); wErr != nil {
-			return formats, settings, fmt.Errorf("write migrated config: %w", wErr)
+			return formats, settings, saved, customModes, warnings, fmt.Errorf("write migrated config: %w", wErr)
 		}
 	}
 
-	return formats, settings, nil
+	return formats, settings, saved, customModes, warnings, nil
+}
+
+func loadAppConfig() ([]csvFormat, appSettings, error) {
+	formats, settings, _, _, _, err := loadAppConfigExtended()
+	return formats, settings, err
 }
 
 func loadKeybindingsConfig() ([]keybindingConfig, error) {
@@ -354,14 +378,19 @@ func parseLegacyKeybindingsFromConfig(data []byte) ([]keybindingConfig, error) {
 }
 
 func parseFormats(data []byte) ([]csvFormat, error) {
-	formats, _, _, err := parseConfig(data)
+	formats, _, _, _, _, _, err := parseConfigExt(data)
 	return formats, err
 }
 
 func parseConfig(data []byte) ([]csvFormat, appSettings, []keybindingConfig, error) {
+	formats, settings, bindings, _, _, _, err := parseConfigExt(data)
+	return formats, settings, bindings, err
+}
+
+func parseConfigExt(data []byte) ([]csvFormat, appSettings, []keybindingConfig, []savedFilter, []customPaneMode, []string, error) {
 	var cfg configFile
 	if err := toml.Unmarshal(data, &cfg); err != nil {
-		return nil, defaultSettings(), nil, fmt.Errorf("parse config.toml: %w", err)
+		return nil, defaultSettings(), nil, nil, nil, nil, fmt.Errorf("parse config.toml: %w", err)
 	}
 	formats := make([]csvFormat, 0)
 	if len(cfg.Account) > 0 {
@@ -376,10 +405,10 @@ func parseConfig(data []byte) ([]csvFormat, appSettings, []keybindingConfig, err
 				name = strings.TrimSpace(raw.Name)
 			}
 			if name == "" {
-				return nil, defaultSettings(), nil, fmt.Errorf("account table key is required")
+				return nil, defaultSettings(), nil, nil, nil, nil, fmt.Errorf("account table key is required")
 			}
 			if strings.TrimSpace(raw.DateFormat) == "" {
-				return nil, defaultSettings(), nil, fmt.Errorf("account %q: date_format is required", name)
+				return nil, defaultSettings(), nil, nil, nil, nil, fmt.Errorf("account %q: date_format is required", name)
 			}
 			acctType := normalizeAccountType(raw.Type)
 			importPrefix := strings.TrimSpace(raw.ImportPrefix)
@@ -424,15 +453,15 @@ func parseConfig(data []byte) ([]csvFormat, appSettings, []keybindingConfig, err
 		formats = append(formats, cfg.Format...)
 	}
 	if len(formats) == 0 {
-		return nil, defaultSettings(), nil, fmt.Errorf("no account formats defined in config")
+		return nil, defaultSettings(), nil, nil, nil, nil, fmt.Errorf("no account formats defined in config")
 	}
 	for i := range formats {
 		f := &formats[i]
 		if f.Name == "" {
-			return nil, defaultSettings(), nil, fmt.Errorf("format[%d]: name is required", i)
+			return nil, defaultSettings(), nil, nil, nil, nil, fmt.Errorf("format[%d]: name is required", i)
 		}
 		if f.DateFormat == "" {
-			return nil, defaultSettings(), nil, fmt.Errorf("format[%d] %q: date_format is required", i, f.Name)
+			return nil, defaultSettings(), nil, nil, nil, nil, fmt.Errorf("format[%d] %q: date_format is required", i, f.Name)
 		}
 		if strings.TrimSpace(f.Account) == "" {
 			f.Account = f.Name
@@ -454,7 +483,94 @@ func parseConfig(data []byte) ([]csvFormat, appSettings, []keybindingConfig, err
 	if len(bindings) == 0 && len(cfg.ShortcutOverride) > 0 {
 		bindings = legacyOverridesToKeybindings(normalizeShortcutOverrides(cfg.ShortcutOverride))
 	}
-	return formats, settings, bindings, nil
+	saved, customModes, warnings := normalizeFilterConfigEntries(cfg.SavedFilter, cfg.DashboardView)
+	return formats, settings, bindings, saved, customModes, warnings, nil
+}
+
+func normalizeFilterConfigEntries(savedIn []savedFilter, customIn []customPaneMode) ([]savedFilter, []customPaneMode, []string) {
+	savedOut := make([]savedFilter, 0, len(savedIn))
+	customOut := make([]customPaneMode, 0, len(customIn))
+	warnings := make([]string, 0)
+
+	for i, sf := range savedIn {
+		name := strings.TrimSpace(sf.Name)
+		expr := strings.TrimSpace(sf.Expr)
+		if name == "" {
+			warnings = append(warnings, fmt.Sprintf("saved_filter[%d] skipped: name is required", i))
+			continue
+		}
+		if expr == "" {
+			warnings = append(warnings, fmt.Sprintf("saved_filter %q skipped: expr is required", name))
+			continue
+		}
+		node, err := parseFilterStrict(expr)
+		if err != nil {
+			warnings = append(warnings, fmt.Sprintf("saved_filter %q skipped: %v", name, err))
+			continue
+		}
+		savedOut = append(savedOut, savedFilter{
+			Name: name,
+			Expr: filterExprString(node),
+		})
+	}
+
+	for i, mode := range customIn {
+		pane := strings.ToLower(strings.TrimSpace(mode.Pane))
+		name := strings.TrimSpace(mode.Name)
+		expr := strings.TrimSpace(mode.Expr)
+		viewType := strings.ToLower(strings.TrimSpace(mode.ViewType))
+		if pane == "" {
+			warnings = append(warnings, fmt.Sprintf("dashboard_view[%d] skipped: pane is required", i))
+			continue
+		}
+		if name == "" {
+			warnings = append(warnings, fmt.Sprintf("dashboard_view[%d] skipped: name is required", i))
+			continue
+		}
+		if expr == "" {
+			warnings = append(warnings, fmt.Sprintf("dashboard_view[%d] %q skipped: expr is required", i, name))
+			continue
+		}
+		if !isKnownDashboardPaneID(pane) {
+			warnings = append(warnings, fmt.Sprintf("dashboard_view[%d] %q skipped: unknown pane %q", i, name, pane))
+			continue
+		}
+		if viewType != "" && !isKnownDashboardViewType(viewType) {
+			warnings = append(warnings, fmt.Sprintf("dashboard_view[%d] %q skipped: invalid view_type %q", i, name, viewType))
+			continue
+		}
+		node, err := parseFilterStrict(expr)
+		if err != nil {
+			warnings = append(warnings, fmt.Sprintf("dashboard_view[%d] %q skipped: %v", i, name, err))
+			continue
+		}
+		customOut = append(customOut, customPaneMode{
+			Pane:     pane,
+			Name:     name,
+			Expr:     filterExprString(node),
+			ViewType: viewType,
+		})
+	}
+
+	return savedOut, customOut, warnings
+}
+
+func isKnownDashboardPaneID(v string) bool {
+	switch strings.ToLower(strings.TrimSpace(v)) {
+	case "net_cashflow", "composition", "compare_bars", "budget_health":
+		return true
+	default:
+		return false
+	}
+}
+
+func isKnownDashboardViewType(v string) bool {
+	switch strings.ToLower(strings.TrimSpace(v)) {
+	case "line", "area", "bar", "pie", "table":
+		return true
+	default:
+		return false
+	}
 }
 
 func parseKeybindingsConfig(data []byte, defaults []keybindingConfig) ([]keybindingConfig, bool, error) {
@@ -623,6 +739,8 @@ func canonicalLegacyActionAlias(action string) (string, bool) {
 		return string(actionBack), true
 	case "clear_search":
 		return string(actionClearSearch), true
+	case "filter_category", "filter_cat":
+		return string(actionSearch), true
 	case "close":
 		return string(actionClose), true
 	default:
@@ -961,13 +1079,15 @@ func saveAppSettings(s appSettings) error {
 	if err != nil {
 		return err
 	}
-	formats, _, loadErr := loadAppConfig()
+	formats, _, saved, customModes, _, loadErr := loadAppConfigExtended()
 	if loadErr != nil {
 		return loadErr
 	}
 	cfg := configFile{
-		Account:  formatsToAccountConfigs(formats),
-		Settings: normalizeSettings(s),
+		Account:       formatsToAccountConfigs(formats),
+		Settings:      normalizeSettings(s),
+		SavedFilter:   saved,
+		DashboardView: customModes,
 	}
 	return writeConfigFile(primaryPath, cfg)
 }
@@ -977,13 +1097,33 @@ func saveFormats(formats []csvFormat) error {
 	if err != nil {
 		return err
 	}
-	_, settings, loadErr := loadAppConfig()
+	_, settings, saved, customModes, _, loadErr := loadAppConfigExtended()
 	if loadErr != nil {
 		return loadErr
 	}
 	cfg := configFile{
-		Account:  formatsToAccountConfigs(formats),
-		Settings: normalizeSettings(settings),
+		Account:       formatsToAccountConfigs(formats),
+		Settings:      normalizeSettings(settings),
+		SavedFilter:   saved,
+		DashboardView: customModes,
+	}
+	return writeConfigFile(primaryPath, cfg)
+}
+
+func saveSavedFilters(saved []savedFilter) error {
+	primaryPath, err := configPath()
+	if err != nil {
+		return err
+	}
+	formats, settings, _, customModes, _, loadErr := loadAppConfigExtended()
+	if loadErr != nil {
+		return loadErr
+	}
+	cfg := configFile{
+		Account:       formatsToAccountConfigs(formats),
+		Settings:      normalizeSettings(settings),
+		SavedFilter:   saved,
+		DashboardView: customModes,
 	}
 	return writeConfigFile(primaryPath, cfg)
 }
@@ -1132,9 +1272,10 @@ func renderKeybindingsTemplate(bindings []keybindingConfig) string {
 			header: "# Transactions and manager workflows",
 			actions: []string{
 				string(actionSearch),
+				string(actionFilterSave),
+				string(actionFilterLoad),
 				string(actionSort),
 				string(actionSortDirection),
-				string(actionFilterCategory),
 				string(actionToggleSelect),
 				string(actionRangeHighlight),
 				string(actionQuickCategory),

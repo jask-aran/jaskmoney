@@ -3,6 +3,8 @@ package main
 import (
 	"database/sql"
 	"fmt"
+	"os"
+	"path/filepath"
 	"strings"
 
 	tea "github.com/charmbracelet/bubbletea"
@@ -139,6 +141,12 @@ CREATE INDEX IF NOT EXISTS idx_tag_rules_pattern ON tag_rules(pattern);
 // openDB opens (or creates) the SQLite database and ensures the schema is
 // at the current version. If the schema is outdated, it drops and recreates.
 func openDB(path string) (*sql.DB, error) {
+	if dir := filepath.Dir(path); dir != "." && dir != "" {
+		if err := os.MkdirAll(dir, 0o755); err != nil {
+			return nil, fmt.Errorf("create db directory: %w", err)
+		}
+	}
+
 	db, err := sql.Open("sqlite", path)
 	if err != nil {
 		return nil, fmt.Errorf("open db: %w", err)
@@ -1118,12 +1126,24 @@ type account struct {
 	acctType  string
 	sortOrder int
 	isActive  bool
+	txnCount  int
 }
 
 func loadAccounts(db *sql.DB) ([]account, error) {
 	rows, err := db.Query(`
-		SELECT id, name, type, sort_order, is_active
-		FROM accounts
+		SELECT
+			a.id,
+			a.name,
+			a.type,
+			a.sort_order,
+			a.is_active,
+			COALESCE(tx.txn_count, 0) AS txn_count
+		FROM accounts a
+		LEFT JOIN (
+			SELECT account_id, COUNT(*) AS txn_count
+			FROM transactions
+			GROUP BY account_id
+		) tx ON tx.account_id = a.id
 		ORDER BY sort_order ASC, LOWER(name) ASC, id ASC
 	`)
 	if err != nil {
@@ -1135,7 +1155,7 @@ func loadAccounts(db *sql.DB) ([]account, error) {
 	for rows.Next() {
 		var a account
 		var active int
-		if err := rows.Scan(&a.id, &a.name, &a.acctType, &a.sortOrder, &active); err != nil {
+		if err := rows.Scan(&a.id, &a.name, &a.acctType, &a.sortOrder, &active, &a.txnCount); err != nil {
 			return nil, fmt.Errorf("scan account: %w", err)
 		}
 		a.isActive = active == 1

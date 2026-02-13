@@ -2051,11 +2051,18 @@ func renderManagerAccountStrip(m model, showCursor bool, width int) string {
 			scopeText = "On"
 			scopeColor = colorSuccess
 		}
+		countText := fmt.Sprintf("%d", acc.txnCount)
+		countColor := colorSubtext1
+		if acc.txnCount == 0 {
+			countText = "Empty"
+			countColor = colorOverlay1
+		}
 		chip := lipgloss.NewStyle().
 			Foreground(colorText).
 			Render(name) + " " +
 			lipgloss.NewStyle().Foreground(typeColor).Render(strings.ToUpper(acc.acctType)) + " " +
-			lipgloss.NewStyle().Foreground(scopeColor).Render("Scope:"+scopeText)
+			lipgloss.NewStyle().Foreground(countColor).Render(countText) + " " +
+			lipgloss.NewStyle().Foreground(scopeColor).Render(scopeText)
 		if showCursor && i == focused {
 			chip = cursorStyle.Render("▸ ") + chip
 		} else {
@@ -2344,15 +2351,7 @@ func renderManagerAccountModal(m model) string {
 	body = append(body, modalCursor(m.managerEditFocus == 2)+detailLabelStyle.Render("Import Prefix:")+detailValueStyle.Render(" "+prefixVal))
 	body = append(body, modalCursor(m.managerEditFocus == 3)+detailLabelStyle.Render("Is Active:    ")+detailValueStyle.Render(activeVal))
 
-	footer := fmt.Sprintf(
-		"%s field  %s toggle  %s save  %s cancel",
-		actionKeyLabel(m.keys, scopeManagerModal, actionDown, "j"),
-		actionKeyLabel(m.keys, scopeManagerModal, actionRight, "l"),
-		actionKeyLabel(m.keys, scopeManagerModal, actionSave, "enter"),
-		actionKeyLabel(m.keys, scopeManagerModal, actionClose, "esc"),
-	)
-
-	return renderModalContent(title, body, footer)
+	return renderModalContent(title, body, "")
 }
 
 // renderDetail renders the transaction detail modal content.

@@ -455,6 +455,10 @@ Footer hints are derived from the active scope's registered bindings:
 4. Non-modal tab scopes show their bindings; global bindings appear only if
    the handler explicitly concatenates them (e.g. `scopeManagerTransactions`
    + `scopeTransactions`)
+5. Footer hints are not required to enumerate universal navigation primitives
+   (`hjkl`, arrows, `ctrl+n/p`, `tab`/`shift+tab`) in every scope; these may
+   be intentionally hidden to preserve helper-bar space for task-specific
+   actions.
 
 **v0.4 addition:** When `focusedSection >= 0` (a pane/section is focused via
 jump mode), footer hints show the focused scope's bindings. When unfocused,

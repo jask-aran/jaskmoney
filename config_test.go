@@ -392,3 +392,71 @@ func TestMaterializeKeybindingsMigratesManagerQuickTagConflict(t *testing.T) {
 		t.Fatalf("expected quick_tag not to conflict with edit key 't', got %+v", quick)
 	}
 }
+
+func TestParseConfigExtValidatesSavedFiltersAndDashboardViews(t *testing.T) {
+	data := []byte(`
+[[format]]
+name = "ANZ"
+date_format = "2/01/2006"
+
+[[saved_filter]]
+name = "Groceries"
+expr = "cat:Groceries AND amt:<0"
+
+[[saved_filter]]
+name = "Broken"
+expr = "cat:"
+
+[[dashboard_view]]
+pane = "net_cashflow"
+name = "Renovation"
+expr = "cat:Home AND amt:<0"
+view_type = "line"
+
+[[dashboard_view]]
+pane = "unknown"
+name = "Bad Pane"
+expr = "cat:Home"
+`)
+	_, _, _, saved, custom, warnings, err := parseConfigExt(data)
+	if err != nil {
+		t.Fatalf("parseConfigExt: %v", err)
+	}
+	if len(saved) != 1 {
+		t.Fatalf("saved filters = %d, want 1", len(saved))
+	}
+	if len(custom) != 1 {
+		t.Fatalf("custom pane modes = %d, want 1", len(custom))
+	}
+	if len(warnings) < 2 {
+		t.Fatalf("expected warnings for invalid entries, got %v", warnings)
+	}
+}
+
+func TestSaveSavedFiltersRoundTrip(t *testing.T) {
+	xdg := t.TempDir()
+	t.Setenv("XDG_CONFIG_HOME", xdg)
+
+	if _, _, _, _, _, err := loadAppConfigExtended(); err != nil {
+		t.Fatalf("loadAppConfigExtended: %v", err)
+	}
+
+	in := []savedFilter{
+		{Name: "Groceries", Expr: "cat:Groceries AND amt:<0"},
+		{Name: "Large Debits", Expr: "type:debit AND amt:<-100"},
+	}
+	if err := saveSavedFilters(in); err != nil {
+		t.Fatalf("saveSavedFilters: %v", err)
+	}
+
+	_, _, out, _, _, err := loadAppConfigExtended()
+	if err != nil {
+		t.Fatalf("loadAppConfigExtended reload: %v", err)
+	}
+	if len(out) != len(in) {
+		t.Fatalf("saved filter count = %d, want %d", len(out), len(in))
+	}
+	if out[0].Name != in[0].Name || out[1].Name != in[1].Name {
+		t.Fatalf("saved filters mismatch: %+v", out)
+	}
+}

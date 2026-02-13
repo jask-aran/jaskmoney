@@ -41,16 +41,6 @@ func (m model) updateNavigationWithVisible(msg tea.KeyMsg, visible int) (tea.Mod
 		return m, nil
 	}
 
-	if m.isAction(scopeTransactions, actionFilterCategory, msg) {
-		if m.rangeSelecting {
-			m.clearRangeSelection()
-		}
-		m.cycleCategoryFilter()
-		m.cursor = 0
-		m.topIndex = 0
-		return m, nil
-	}
-
 	if next, cmd, handled := m.executeBoundCommand(scopeTransactions, msg); handled {
 		return next, cmd
 	}
@@ -521,44 +511,4 @@ func (m *model) toggleSelectionForHighlighted(highlighted map[int]bool, filtered
 	if m.cursor >= 0 && m.cursor < len(filtered) {
 		m.selectionAnchor = filtered[m.cursor].id
 	}
-}
-
-func (m *model) cycleCategoryFilter() {
-	if len(m.categories) == 0 {
-		return
-	}
-	order := make([]int, 0, len(m.categories)+1)
-	nameByID := make(map[int]string, len(m.categories)+1)
-	for _, c := range m.categories {
-		order = append(order, c.id)
-		nameByID[c.id] = c.name
-	}
-	// Sentinel for uncategorised transactions
-	order = append(order, 0)
-	nameByID[0] = "Uncategorised"
-
-	if m.filterCategories == nil {
-		// First press: filter to first category only
-		m.filterCategories = map[int]bool{order[0]: true}
-		m.setStatus("Filter: " + nameByID[order[0]])
-		return
-	}
-	// Find which single category is selected and advance to next
-	for i, id := range order {
-		if m.filterCategories[id] {
-			next := (i + 1) % (len(order) + 1)
-			if next == len(order) {
-				// Wrapped around: clear filter
-				m.filterCategories = nil
-				m.setStatus("Filter: all categories")
-				return
-			}
-			m.filterCategories = map[int]bool{order[next]: true}
-			m.setStatus("Filter: " + nameByID[order[next]])
-			return
-		}
-	}
-	// Shouldn't reach here, reset
-	m.filterCategories = nil
-	m.setStatus("Filter: all categories")
 }

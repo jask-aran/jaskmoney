@@ -123,6 +123,7 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			return m, nil
 		}
 		m.keys = keys
+		m.commands = NewCommandRegistry(keys, m.savedFilters)
 		m.setStatus("Keybindings reset to defaults.")
 		return m, nil
 	case quickCategoryAppliedMsg:
@@ -139,6 +140,21 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			return m, nil
 		}
 		return m, refreshCmd(m.db)
+	case accountClearedMsg:
+		if msg.err != nil {
+			m.setError(fmt.Sprintf("Clear account transactions failed: %v", msg.err))
+			return m, nil
+		}
+		m.setStatusf("Cleared %d transactions from %q.", msg.deletedTxns, msg.accountName)
+		if m.db == nil {
+			return m, nil
+		}
+		return m, refreshCmd(m.db)
+	case accountScopeSavedMsg:
+		if msg.err != nil {
+			m.setError(fmt.Sprintf("Save account scope failed: %v", msg.err))
+		}
+		return m, nil
 	case confirmExpiredMsg:
 		m.clearSettingsConfirm()
 		return m, nil
@@ -167,11 +183,14 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		if m.accountNukePicker != nil {
 			return m.updateAccountNukePicker(msg)
 		}
+		if m.managerActionPicker != nil {
+			return m.updateManagerActionPicker(msg)
+		}
 		if m.managerModalOpen {
 			return m.updateManagerModal(msg)
 		}
-		if m.searchMode {
-			return m.updateSearch(msg)
+		if m.filterInputMode {
+			return m.updateFilterInput(msg)
 		}
 		if next, cmd, handled := m.executeBoundCommand(m.commandContextScope(), msg); handled {
 			return next, cmd

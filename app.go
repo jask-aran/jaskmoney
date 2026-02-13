@@ -175,6 +175,16 @@ type accountNukedMsg struct {
 	err         error
 }
 
+type accountClearedMsg struct {
+	accountName string
+	deletedTxns int
+	err         error
+}
+
+type accountScopeSavedMsg struct {
+	err error
+}
+
 type confirmExpiredMsg struct{}
 
 // Sort columns
@@ -283,9 +293,15 @@ type model struct {
 	importDupeTotal int      // total rows in file
 	importDupeCount int      // duplicate count
 
-	// Search
-	searchMode  bool
-	searchQuery string
+	// Filter input state
+	filterInputMode   bool
+	filterInput       string
+	filterInputCursor int
+	filterExpr        *filterNode
+	filterInputErr    string
+	filterLastApplied string
+	savedFilters      []savedFilter
+	customPaneModes   []customPaneMode
 
 	// Command UI (palette + colon command mode)
 	commandOpen         bool
@@ -303,26 +319,28 @@ type model struct {
 	sortColumn    int
 	sortAscending bool
 
-	// Transactions filter
-	filterCategories map[int]bool // category ID -> enabled (nil = show all)
-	filterAccounts   map[int]bool // account ID -> enabled (nil = show all)
-	selectedRows     map[int]bool // transaction ID -> selected
-	selectionAnchor  int          // last toggled/selected transaction ID for range selection
-	rangeSelecting   bool         // true when shift-range highlight is active
-	rangeAnchorID    int          // anchor transaction ID for active highlight range
-	rangeCursorID    int          // cursor transaction ID for active highlight range
+	// Transactions scope
+	filterAccounts  map[int]bool // account ID -> enabled (nil = show all)
+	selectedRows    map[int]bool // transaction ID -> selected
+	selectionAnchor int          // last toggled/selected transaction ID for range selection
+	rangeSelecting  bool         // true when shift-range highlight is active
+	rangeAnchorID   int          // anchor transaction ID for active highlight range
+	rangeCursorID   int          // cursor transaction ID for active highlight range
 
 	// Transaction detail modal
-	showDetail        bool
-	detailIdx         int // transaction ID being edited
-	detailCatCursor   int // cursor in category picker
-	detailNotes       string
-	detailEditing     string // "category" or "notes" or ""
-	catPicker         *pickerState
-	catPickerFor      []int
-	tagPicker         *pickerState
-	tagPickerFor      []int
-	accountNukePicker *pickerState
+	showDetail          bool
+	detailIdx           int // transaction ID being edited
+	detailCatCursor     int // cursor in category picker
+	detailNotes         string
+	detailEditing       string // "category" or "notes" or ""
+	catPicker           *pickerState
+	catPickerFor        []int
+	tagPicker           *pickerState
+	tagPickerFor        []int
+	accountNukePicker   *pickerState
+	managerActionPicker *pickerState
+	managerActionAcctID int
+	managerActionName   string
 
 	// Settings state
 	rules           []categoryRule
@@ -385,11 +403,17 @@ func newModel() model {
 	if cwdErr != nil || cwd == "" {
 		cwd = "."
 	}
-	formats, appCfg, fmtErr := loadAppConfig()
+	formats, appCfg, savedFilters, customPaneModes, cfgWarnings, fmtErr := loadAppConfigExtended()
 	status := ""
 	statusErr := false
 	if fmtErr != nil {
 		status = fmt.Sprintf("Format config error: %v", fmtErr)
+		statusErr = true
+	} else if len(cfgWarnings) > 0 {
+		for _, warning := range cfgWarnings {
+			fmt.Fprintf(os.Stderr, "Config warning: %s\n", warning)
+		}
+		status = "Config warning: " + cfgWarnings[0]
 		statusErr = true
 	}
 	keys := NewKeyRegistry()
@@ -418,8 +442,10 @@ func newModel() model {
 		dashCustomStart:    appCfg.DashCustomStart,
 		dashCustomEnd:      appCfg.DashCustomEnd,
 		keys:               keys,
-		commands:           NewCommandRegistry(keys),
+		commands:           NewCommandRegistry(keys, savedFilters),
 		formats:            formats,
+		savedFilters:       savedFilters,
+		customPaneModes:    customPaneModes,
 		selectedRows:       make(map[int]bool),
 		txnTags:            make(map[int][]tag),
 		status:             status,
@@ -492,6 +518,10 @@ func (m model) View() string {
 	}
 	if m.accountNukePicker != nil {
 		picker := renderPicker(m.accountNukePicker, min(56, m.width-10), m.keys, scopeAccountNukePicker)
+		return m.composeOverlay(header, body, statusLine, footer, picker)
+	}
+	if m.managerActionPicker != nil {
+		picker := renderPicker(m.managerActionPicker, min(56, m.width-10), m.keys, scopeManagerAccountAction)
 		return m.composeOverlay(header, body, statusLine, footer, picker)
 	}
 	if m.managerModalOpen {
@@ -572,7 +602,7 @@ func (m model) managerView() string {
 		if m.cursor >= 0 && m.cursor < len(rows) {
 			cursorTxnID = rows[m.cursor].id
 		}
-		searchBar := m.transactionSearchBar()
+		searchBar := m.transactionFilterBar()
 		txContent = searchBar + renderTransactionTable(
 			rows,
 			m.categories,
@@ -602,6 +632,9 @@ func (m model) managerView() string {
 		)
 	}
 	title := fmt.Sprintf("Transactions (%d/%d)", len(rows), total)
+	if pill := m.activeFilterPill(); pill != "" {
+		title += " " + pill
+	}
 	if selected := m.selectedCount(); selected > 0 {
 		visibleSelected, hiddenSelected := m.selectedVisibilityCounts(rows)
 		if hiddenSelected > 0 {
@@ -643,14 +676,43 @@ func (m model) settingsView() string {
 	return lipgloss.Place(m.width, lipgloss.Height(content), lipgloss.Center, lipgloss.Top, content)
 }
 
-func (m model) transactionSearchBar() string {
-	if m.searchMode {
-		return searchPromptStyle.Render("/") + " " + searchInputStyle.Render(m.searchQuery+"_") + "\n"
+func (m model) transactionFilterBar() string {
+	input := m.filterInput
+	if !m.filterInputMode && strings.TrimSpace(input) == "" {
+		return ""
 	}
-	if m.searchQuery != "" {
-		return searchPromptStyle.Render("/") + " " + searchInputStyle.Render(m.searchQuery) + "  " + lipgloss.NewStyle().Foreground(colorOverlay1).Render("(esc clear)") + "\n"
+	dotColor := colorSuccess
+	dotLabel := "ok"
+	if m.filterInputErr != "" {
+		dotColor = colorError
+		dotLabel = "parse"
 	}
-	return ""
+	dot := lipgloss.NewStyle().Foreground(dotColor).Render("●")
+	if m.filterInputMode {
+		return searchPromptStyle.Render("/") + " " + searchInputStyle.Render(renderASCIIInputCursor(input, m.filterInputCursor)) + "  " + dot + " " + lipgloss.NewStyle().Foreground(dotColor).Render(dotLabel) + "\n"
+	}
+	return searchPromptStyle.Render("/") + " " + searchInputStyle.Render(input) + "  " + dot + " " + lipgloss.NewStyle().Foreground(dotColor).Render(dotLabel) + "  " + lipgloss.NewStyle().Foreground(colorOverlay1).Render("(esc clear)") + "\n"
+}
+
+func (m model) activeFilterPill() string {
+	node := m.currentInputFilterNode()
+	if strings.TrimSpace(m.filterInput) == "" || node == nil {
+		return ""
+	}
+	expr := filterExprString(node)
+	if strings.TrimSpace(expr) == "" {
+		expr = strings.TrimSpace(m.filterInput)
+	}
+	maxWidth := m.sectionWidth() / 2
+	if maxWidth < 24 {
+		maxWidth = 24
+	}
+	expr = truncate(expr, maxWidth)
+	style := lipgloss.NewStyle().Foreground(colorBlue)
+	if m.filterInputErr != "" {
+		style = lipgloss.NewStyle().Foreground(colorError)
+	}
+	return style.Render("[" + expr + "]")
 }
 
 func (m model) composeFrame(header, body, statusLine, footer string) string {
@@ -834,11 +896,14 @@ func (m model) footerBindings() []key.Binding {
 	if m.accountNukePicker != nil {
 		return m.keys.HelpBindings(scopeAccountNukePicker)
 	}
+	if m.managerActionPicker != nil {
+		return m.keys.HelpBindings(scopeManagerAccountAction)
+	}
 	if m.managerModalOpen {
 		return m.keys.HelpBindings(scopeManagerModal)
 	}
-	if m.searchMode {
-		return m.keys.HelpBindings(scopeSearch)
+	if m.filterInputMode {
+		return m.keys.HelpBindings(scopeFilterInput)
 	}
 	if m.activeTab == tabDashboard {
 		if m.dashCustomEditing {
@@ -1074,12 +1139,11 @@ func hasIgnoreTag(tags []tag) bool {
 
 // getFilteredRows returns the current filtered/sorted view of transactions.
 func (m model) getFilteredRows() []transaction {
-	return filteredRows(m.rows, m.searchQuery, m.filterCategories, m.filterAccounts, m.txnTags, m.sortColumn, m.sortAscending)
+	return filteredRows(m.rows, m.buildTransactionFilter(), m.txnTags, m.sortColumn, m.sortAscending)
 }
 
 func (m model) getDashboardRows() []transaction {
-	rows := filteredRows(m.rows, "", nil, m.filterAccounts, m.txnTags, sortByDate, false)
-	return filterByTimeframe(rows, m.dashTimeframe, m.dashCustomStart, m.dashCustomEnd, time.Now())
+	return filteredRows(m.rows, m.buildDashboardScopeFilter(), m.txnTags, sortByDate, false)
 }
 
 func (m model) dashboardChartRange(now time.Time) (time.Time, time.Time) {
@@ -1100,22 +1164,95 @@ func (m model) dashboardChartRange(now time.Time) (time.Time, time.Time) {
 
 // filteredRows returns the subset of m.rows matching active transactions filters,
 // sorted by the current sort column/direction.
-func filteredRows(rows []transaction, searchQuery string, filterCats map[int]bool, filterAccounts map[int]bool, txnTags map[int][]tag, sortCol int, sortAsc bool) []transaction {
+func filteredRows(rows []transaction, filter *filterNode, txnTags map[int][]tag, sortCol int, sortAsc bool) []transaction {
 	var out []transaction
 	for _, r := range rows {
-		if !matchesSearch(r, searchQuery, txnTags[r.id]) {
-			continue
-		}
-		if !matchesCategoryFilter(r, filterCats) {
-			continue
-		}
-		if !matchesAccountFilter(r, filterAccounts) {
+		if !evalFilter(filter, r, txnTags[r.id]) {
 			continue
 		}
 		out = append(out, r)
 	}
 	sortTransactions(out, sortCol, sortAsc)
 	return out
+}
+
+func (m model) buildTransactionFilter() *filterNode {
+	return andFilterNodes(m.currentInputFilterNode(), m.buildAccountScopeFilter())
+}
+
+func (m model) buildDashboardScopeFilter() *filterNode {
+	accountScope := m.buildAccountScopeFilter()
+	start, endExcl, ok := timeframeBounds(m.dashTimeframe, m.dashCustomStart, m.dashCustomEnd, time.Now())
+	if !ok {
+		return accountScope
+	}
+	endIncl := endExcl.AddDate(0, 0, -1)
+	if endIncl.Before(start) {
+		endIncl = start
+	}
+	timeframeNode := &filterNode{
+		kind:    filterNodeField,
+		field:   "date",
+		op:      "..",
+		valueLo: start.Format("2006-01-02"),
+		valueHi: endIncl.Format("2006-01-02"),
+	}
+	return andFilterNodes(timeframeNode, accountScope)
+}
+
+func (m model) buildCustomModeFilter(paneID, modeName string) *filterNode {
+	pane := strings.ToLower(strings.TrimSpace(paneID))
+	name := strings.TrimSpace(modeName)
+	for _, mode := range m.customPaneModes {
+		if !strings.EqualFold(strings.TrimSpace(mode.Pane), pane) {
+			continue
+		}
+		if !strings.EqualFold(strings.TrimSpace(mode.Name), name) {
+			continue
+		}
+		node, err := parseFilterStrict(mode.Expr)
+		if err != nil {
+			return nil
+		}
+		return node
+	}
+	return nil
+}
+
+func (m model) buildAccountScopeFilter() *filterNode {
+	if len(m.filterAccounts) == 0 {
+		return nil
+	}
+	children := make([]*filterNode, 0, len(m.filterAccounts))
+	for _, acc := range m.accounts {
+		if !m.filterAccounts[acc.id] {
+			continue
+		}
+		children = append(children, &filterNode{
+			kind:  filterNodeField,
+			field: "acc",
+			op:    "=",
+			value: strings.TrimSpace(acc.name),
+		})
+	}
+	return orFilterNodes(children...)
+}
+
+func (m model) currentInputFilterNode() *filterNode {
+	if strings.TrimSpace(m.filterInput) == "" {
+		return nil
+	}
+	if m.filterExpr != nil {
+		return m.filterExpr
+	}
+	node, err := parseFilter(m.filterInput)
+	if err != nil {
+		return fallbackPlainTextFilter(m.filterInput)
+	}
+	if !filterContainsFieldPredicate(node) {
+		return markTextNodesAsMetadata(node)
+	}
+	return node
 }
 
 func filterByTimeframe(rows []transaction, timeframe int, customStart, customEnd string, now time.Time) []transaction {
@@ -1184,46 +1321,6 @@ func timeframeBounds(timeframe int, customStart, customEnd string, now time.Time
 	default:
 		return time.Time{}, time.Time{}, false
 	}
-}
-
-func matchesSearch(t transaction, query string, tags []tag) bool {
-	if query == "" {
-		return true
-	}
-	q := strings.ToLower(query)
-	if strings.Contains(strings.ToLower(t.description), q) ||
-		strings.Contains(strings.ToLower(t.categoryName), q) ||
-		strings.Contains(t.dateISO, q) ||
-		strings.Contains(t.dateRaw, q) {
-		return true
-	}
-	for _, tg := range tags {
-		if strings.Contains(strings.ToLower(tg.name), q) {
-			return true
-		}
-	}
-	return false
-}
-
-func matchesCategoryFilter(t transaction, filterCats map[int]bool) bool {
-	if len(filterCats) == 0 {
-		return true // no filter = show all
-	}
-	if t.categoryID == nil {
-		// Uncategorised: check if 0 (sentinel) is in the filter
-		return filterCats[0]
-	}
-	return filterCats[*t.categoryID]
-}
-
-func matchesAccountFilter(t transaction, filterAccounts map[int]bool) bool {
-	if len(filterAccounts) == 0 {
-		return true
-	}
-	if t.accountID == nil {
-		return false
-	}
-	return filterAccounts[*t.accountID]
 }
 
 func sortTransactions(rows []transaction, col int, asc bool) {
