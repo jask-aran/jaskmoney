@@ -276,8 +276,8 @@ func TestSettingsJumpTargetsIncludeCategoriesAndTags(t *testing.T) {
 	m.activeTab = tabSettings
 
 	targets := m.jumpTargetsForActiveTab()
-	if len(targets) != 5 {
-		t.Fatalf("settings jump target count = %d, want 5", len(targets))
+	if len(targets) != 6 {
+		t.Fatalf("settings jump target count = %d, want 6", len(targets))
 	}
 
 	byKey := make(map[string]jumpTarget, len(targets))
@@ -296,6 +296,9 @@ func TestSettingsJumpTargetsIncludeCategoriesAndTags(t *testing.T) {
 	}
 	if got, ok := byKey["r"]; !ok || got.Section != sectionSettingsRules {
 		t.Fatalf("r target = %+v, want section %d", got, sectionSettingsRules)
+	}
+	if got, ok := byKey["f"]; !ok || got.Section != sectionSettingsFilters {
+		t.Fatalf("f target = %+v, want section %d", got, sectionSettingsFilters)
 	}
 	if got, ok := byKey["d"]; !ok || got.Section != sectionSettingsDatabase {
 		t.Fatalf("d target = %+v, want section %d", got, sectionSettingsDatabase)
@@ -489,8 +492,19 @@ func TestFilterSaveRequiresAppliedExpression(t *testing.T) {
 	}
 	next, _ = got2.Update(keyMsg("ctrl+s"))
 	got3 := next.(model)
-	if len(got3.savedFilters) != 1 {
-		t.Fatalf("saved filters = %d, want 1 after apply", len(got3.savedFilters))
+	if !got3.filterEditOpen {
+		t.Fatal("expected filter editor modal to open after ctrl+s")
+	}
+	next, _ = got3.Update(keyMsg("enter"))
+	got4 := next.(model)
+	if got4.filterEditOpen {
+		t.Fatal("expected filter editor to close after save")
+	}
+	if len(got4.savedFilters) != 1 {
+		t.Fatalf("saved filters = %d, want 1 after save", len(got4.savedFilters))
+	}
+	if strings.TrimSpace(got4.savedFilters[0].ID) == "" {
+		t.Fatal("saved filter ID should be set")
 	}
 }
 

@@ -178,6 +178,10 @@ func openDB(path string) (*sql.DB, error) {
 		_ = db.Close()
 		return nil, fmt.Errorf("normalize existing tags: %w", err)
 	}
+	if err := ensureFilterUsageStateTable(db); err != nil {
+		_ = db.Close()
+		return nil, fmt.Errorf("ensure filter usage state table: %w", err)
+	}
 
 	return db, nil
 }
@@ -1388,6 +1392,12 @@ type dbInfo struct {
 	accountCount     int
 }
 
+type filterUsageState struct {
+	filterID     string
+	lastUsedUnix int64
+	useCount     int
+}
+
 // loadDBInfo retrieves summary statistics.
 func loadDBInfo(db *sql.DB) (dbInfo, error) {
 	var info dbInfo
@@ -1417,6 +1427,86 @@ func loadDBInfo(db *sql.DB) (dbInfo, error) {
 		return info, fmt.Errorf("account count: %w", err)
 	}
 	return info, nil
+}
+
+func ensureFilterUsageStateTable(db *sql.DB) error {
+	stmts := []string{
+		`CREATE TABLE IF NOT EXISTS filter_usage_state (
+			filter_id      TEXT PRIMARY KEY,
+			last_used_unix INTEGER NOT NULL DEFAULT (unixepoch()),
+			use_count      INTEGER NOT NULL DEFAULT 0
+		)`,
+		`CREATE INDEX IF NOT EXISTS idx_filter_usage_last_used ON filter_usage_state(last_used_unix DESC)`,
+	}
+	for _, stmt := range stmts {
+		if _, err := db.Exec(stmt); err != nil {
+			return fmt.Errorf("ensure filter usage state table statement failed: %w", err)
+		}
+	}
+	return nil
+}
+
+func loadFilterUsageState(db *sql.DB) (map[string]filterUsageState, error) {
+	if err := ensureFilterUsageStateTable(db); err != nil {
+		return nil, err
+	}
+	rows, err := db.Query(`
+		SELECT filter_id, COALESCE(last_used_unix, 0), COALESCE(use_count, 0)
+		FROM filter_usage_state
+	`)
+	if err != nil {
+		return nil, fmt.Errorf("query filter usage state: %w", err)
+	}
+	defer rows.Close()
+
+	out := make(map[string]filterUsageState)
+	for rows.Next() {
+		var state filterUsageState
+		if err := rows.Scan(&state.filterID, &state.lastUsedUnix, &state.useCount); err != nil {
+			return nil, fmt.Errorf("scan filter usage state: %w", err)
+		}
+		out[state.filterID] = state
+	}
+	return out, rows.Err()
+}
+
+func touchFilterUsageState(db *sql.DB, filterID string, incrementUseCount bool) error {
+	id := strings.TrimSpace(filterID)
+	if id == "" {
+		return fmt.Errorf("filter id is required")
+	}
+	if err := ensureFilterUsageStateTable(db); err != nil {
+		return err
+	}
+	increment := 0
+	if incrementUseCount {
+		increment = 1
+	}
+	_, err := db.Exec(`
+		INSERT INTO filter_usage_state (filter_id, last_used_unix, use_count)
+		VALUES (?, unixepoch(), ?)
+		ON CONFLICT(filter_id) DO UPDATE SET
+			last_used_unix = unixepoch(),
+			use_count = filter_usage_state.use_count + ?
+	`, id, increment, increment)
+	if err != nil {
+		return fmt.Errorf("touch filter usage state %q: %w", id, err)
+	}
+	return nil
+}
+
+func deleteFilterUsageState(db *sql.DB, filterID string) error {
+	id := strings.TrimSpace(filterID)
+	if id == "" {
+		return nil
+	}
+	if err := ensureFilterUsageStateTable(db); err != nil {
+		return err
+	}
+	if _, err := db.Exec(`DELETE FROM filter_usage_state WHERE filter_id = ?`, id); err != nil {
+		return fmt.Errorf("delete filter usage state %q: %w", id, err)
+	}
+	return nil
 }
 
 // clearAllData deletes all transactions and imports, but preserves categories and rules.
@@ -1481,6 +1571,10 @@ func refreshCmd(db *sql.DB) tea.Cmd {
 		if err != nil {
 			return refreshDoneMsg{err: err}
 		}
+		filterUsage, err := loadFilterUsageState(db)
+		if err != nil {
+			return refreshDoneMsg{err: err}
+		}
 		return refreshDoneMsg{
 			rows:             rows,
 			categories:       cats,
@@ -1492,6 +1586,7 @@ func refreshCmd(db *sql.DB) tea.Cmd {
 			accounts:         accounts,
 			selectedAccounts: selectedAccounts,
 			info:             info,
+			filterUsage:      filterUsage,
 		}
 	}
 }

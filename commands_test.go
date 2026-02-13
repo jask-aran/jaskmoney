@@ -30,7 +30,7 @@ func TestCommandRegistryHasExpectedCommands(t *testing.T) {
 		"filter:open":         true,
 		"filter:clear":        true,
 		"filter:save":         true,
-		"filter:load":         true,
+		"filter:apply":        true,
 		"import:start":        true,
 		"rules:apply":         true,
 		"rules:dry-run":       true,
@@ -54,12 +54,12 @@ func TestCommandRegistryHasExpectedCommands(t *testing.T) {
 
 func TestCommandRegistryAddsSavedFilterCommands(t *testing.T) {
 	reg := NewCommandRegistry(NewKeyRegistry(), []savedFilter{
-		{Name: "Groceries", Expr: "cat:Groceries"},
+		{ID: "groceries", Name: "Groceries", Expr: "cat:Groceries"},
 	})
 	all := reg.All()
 	found := false
 	for _, cmd := range all {
-		if cmd.ID == "filter:saved:0" {
+		if cmd.ID == "filter:apply:groceries" {
 			found = true
 			break
 		}

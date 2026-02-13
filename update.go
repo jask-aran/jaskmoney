@@ -180,8 +180,14 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		if m.tagPicker != nil {
 			return m.updateTagPicker(msg)
 		}
+		if m.filterApplyPicker != nil {
+			return m.updateFilterApplyPicker(msg)
+		}
 		if m.managerActionPicker != nil {
 			return m.updateManagerActionPicker(msg)
+		}
+		if m.filterEditOpen {
+			return m.updateFilterEdit(msg)
 		}
 		if m.managerModalOpen {
 			return m.updateManagerModal(msg)
@@ -249,6 +255,10 @@ func (m model) handleRefreshDone(msg refreshDoneMsg) (tea.Model, tea.Cmd) {
 	m.imports = msg.imports
 	m.accounts = msg.accounts
 	m.dbInfo = msg.info
+	m.filterUsage = msg.filterUsage
+	if m.filterUsage == nil {
+		m.filterUsage = make(map[string]filterUsageState)
+	}
 	if len(msg.selectedAccounts) == 0 {
 		m.filterAccounts = nil
 	} else {
@@ -542,6 +552,8 @@ func settingsConfirmSpecFor(action settingsConfirmAction) (settingsConfirmSpec, 
 		return settingsConfirmSpec{scope: scopeSettingsActiveTags, action: actionDelete, fallback: "del"}, true
 	case confirmActionDeleteRule:
 		return settingsConfirmSpec{scope: scopeSettingsActiveRules, action: actionDelete, fallback: "del"}, true
+	case confirmActionDeleteFilter:
+		return settingsConfirmSpec{scope: scopeSettingsActiveFilters, action: actionDelete, fallback: "del"}, true
 	case confirmActionClearDB:
 		return settingsConfirmSpec{scope: scopeSettingsActiveDBImport, action: actionClearDB, fallback: "c"}, true
 	default:
@@ -560,6 +572,15 @@ func (m model) matchesSettingsConfirm(msg tea.KeyMsg) bool {
 func (m *model) armSettingsConfirm(action settingsConfirmAction, id int, prompt string) tea.Cmd {
 	m.confirmAction = action
 	m.confirmID = id
+	m.confirmFilterID = ""
+	m.setStatus(prompt)
+	return confirmTimerCmd()
+}
+
+func (m *model) armSettingsFilterConfirm(filterID, prompt string) tea.Cmd {
+	m.confirmAction = confirmActionDeleteFilter
+	m.confirmID = 0
+	m.confirmFilterID = strings.TrimSpace(filterID)
 	m.setStatus(prompt)
 	return confirmTimerCmd()
 }
@@ -567,6 +588,7 @@ func (m *model) armSettingsConfirm(action settingsConfirmAction, id int, prompt 
 func (m *model) clearSettingsConfirm() {
 	m.confirmAction = confirmActionNone
 	m.confirmID = 0
+	m.confirmFilterID = ""
 }
 
 func (m *model) beginImportFlow() tea.Cmd {
@@ -608,6 +630,7 @@ func (m model) jumpTargetsForActiveTab() []jumpTarget {
 			{Key: "c", Label: "Categories", Section: sectionSettingsCategories},
 			{Key: "t", Label: "Tags", Section: sectionSettingsTags},
 			{Key: "r", Label: "Rules", Section: sectionSettingsRules},
+			{Key: "f", Label: "Filters", Section: sectionSettingsFilters},
 			{Key: "d", Label: "Database", Section: sectionSettingsDatabase},
 			{Key: "w", Label: "Dashboard Views", Section: sectionSettingsViews},
 		})
@@ -662,6 +685,9 @@ func (m *model) applyFocusedSection() {
 		case sectionSettingsRules:
 			m.settColumn = settColLeft
 			m.settSection = settSecRules
+		case sectionSettingsFilters:
+			m.settColumn = settColLeft
+			m.settSection = settSecFilters
 		case sectionSettingsImportHistory:
 			m.settColumn = settColRight
 			m.settSection = settSecImportHistory
@@ -697,8 +723,8 @@ func (m *model) applyTabDefaultsOnSwitch() {
 func moveSettingsSection(section, delta int) int {
 	col, row := settColumnRow(section)
 	rowCount := 3
-	if col == settColRight {
-		rowCount = 3
+	if col == settColLeft {
+		rowCount = 4
 	}
 	if rowCount <= 0 {
 		return section

@@ -1994,8 +1994,10 @@ func renderSettingsContent(m model) string {
 
 	rulesContent := renderSettingsRules(m, leftWidth-4)
 	rulesBox := renderSettingsSectionBox("Rules", settSecRules, m, leftWidth, rulesContent)
+	filtersContent := renderSettingsFilters(m, leftWidth-4)
+	filtersBox := renderSettingsSectionBox("Filters", settSecFilters, m, leftWidth, filtersContent)
 
-	leftCol := catBox + "\n" + tagsBox + "\n" + rulesBox
+	leftCol := catBox + "\n" + tagsBox + "\n" + rulesBox + "\n" + filtersBox
 
 	// Right column: Chart + Database & Imports (stacked)
 	chartContent := renderSettingsChart(m, rightWidth-4)
@@ -2289,6 +2291,32 @@ func renderSettingsChart(m model, width int) string {
 	return strings.Join(lines, "\n")
 }
 
+func renderSettingsFilters(m model, width int) string {
+	ordered := m.orderedSavedFilters()
+	var lines []string
+	showCursor := m.settSection == settSecFilters && m.settActive
+	if len(ordered) == 0 {
+		lines = append(lines, lipgloss.NewStyle().Foreground(colorOverlay1).Render("No saved filters. Activate to add."))
+		_ = width
+		return strings.Join(lines, "\n")
+	}
+	for i, sf := range ordered {
+		prefix := "  "
+		if showCursor && i == m.settItemCursor {
+			prefix = cursorStyle.Render("> ")
+		}
+		label := detailLabelStyle.Render(sf.ID)
+		name := strings.TrimSpace(sf.Name)
+		if name != "" {
+			label += lipgloss.NewStyle().Foreground(colorSubtext0).Render(" (" + name + ")")
+		}
+		expr := lipgloss.NewStyle().Foreground(colorOverlay1).Render(" " + truncate(strings.TrimSpace(sf.Expr), max(16, width/2)))
+		lines = append(lines, prefix+label+expr)
+	}
+	_ = width
+	return strings.Join(lines, "\n")
+}
+
 func renderSettingsDBImport(m model, width int) string {
 	var lines []string
 	info := m.dbInfo
@@ -2352,6 +2380,42 @@ func renderManagerAccountModal(m model) string {
 	body = append(body, modalCursor(m.managerEditFocus == 3)+detailLabelStyle.Render("Is Active:    ")+detailValueStyle.Render(activeVal))
 
 	return renderModalContent(title, body, "")
+}
+
+func renderFilterEditorModal(m model) string {
+	title := "Save Filter"
+	if !m.filterEditIsNew {
+		title = "Edit Filter"
+	}
+	idVal := m.filterEditID
+	if m.filterEditFocus == 0 {
+		idVal = renderASCIIInputCursor(idVal, m.filterEditIDCur)
+	}
+	nameVal := m.filterEditName
+	if m.filterEditFocus == 1 {
+		nameVal = renderASCIIInputCursor(nameVal, m.filterEditNameCur)
+	}
+	exprVal := m.filterEditExpr
+	if m.filterEditFocus == 2 {
+		exprVal = renderASCIIInputCursor(exprVal, m.filterEditExprCur)
+	}
+	body := []string{
+		modalCursor(m.filterEditFocus == 0) + detailLabelStyle.Render("ID:   ") + detailValueStyle.Render(idVal),
+		modalCursor(m.filterEditFocus == 1) + detailLabelStyle.Render("Name: ") + detailValueStyle.Render(nameVal),
+		modalCursor(m.filterEditFocus == 2) + detailLabelStyle.Render("Expr: ") + detailValueStyle.Render(exprVal),
+	}
+	if strings.TrimSpace(m.filterEditErr) != "" {
+		body = append(body, "")
+		body = append(body, lipgloss.NewStyle().Foreground(colorError).Render("Error: "+strings.TrimSpace(m.filterEditErr)))
+	}
+	footer := scrollStyle.Render(fmt.Sprintf(
+		"%s field  %s move  %s save  %s cancel",
+		actionKeyLabel(m.keys, scopeFilterEdit, actionDown, "j"),
+		actionKeyLabel(m.keys, scopeFilterEdit, actionRight, "right"),
+		actionKeyLabel(m.keys, scopeFilterEdit, actionSave, "enter"),
+		actionKeyLabel(m.keys, scopeFilterEdit, actionClose, "esc"),
+	))
+	return renderModalContentWithWidth(title, body, footer, 72)
 }
 
 // renderDetail renders the transaction detail modal content.
