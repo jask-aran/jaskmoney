@@ -393,7 +393,7 @@ func NewCommandRegistry(keys *KeyRegistry, savedFilters []savedFilter) *CommandR
 			Label:       "Save Current Filter",
 			Description: "Persist the current filter expression",
 			Category:    "Filter",
-			Scopes:      []string{scopeFilterInput},
+				Scopes:      []string{scopeFilterInput, scopeTransactions},
 			Enabled: func(m model) (bool, string) {
 				expr := strings.TrimSpace(m.filterInput)
 				if expr == "" {
@@ -434,7 +434,7 @@ func NewCommandRegistry(keys *KeyRegistry, savedFilters []savedFilter) *CommandR
 			Label:       "Load Saved Filter",
 			Description: "Apply the most recently saved filter",
 			Category:    "Filter",
-			Scopes:      []string{scopeFilterInput},
+				Scopes:      []string{scopeFilterInput, scopeTransactions},
 			Enabled: func(m model) (bool, string) {
 				if len(m.savedFilters) == 0 {
 					return false, "No saved filters."
@@ -448,7 +448,7 @@ func NewCommandRegistry(keys *KeyRegistry, savedFilters []savedFilter) *CommandR
 				last := m.savedFilters[len(m.savedFilters)-1]
 				m.filterInput = last.Expr
 				m.reparseFilterInput()
-				m.filterInputMode = true
+					m.filterInputMode = false
 				m.filterInputCursor = len(m.filterInput)
 				m.filterLastApplied = last.Expr
 				m.cursor = 0

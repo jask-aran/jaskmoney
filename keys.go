@@ -64,10 +64,6 @@ const (
 	actionDown    Action = "down"
 	actionLeft    Action = "left"
 	actionRight   Action = "right"
-	// Legacy aliases retained for backward-compatible parsing/migration.
-	actionNavigate       Action = actionDown
-	actionSection        Action = actionDown
-	actionSelectItem     Action = actionDown
 	actionConfirm        Action = "confirm"
 	actionSelect         Action = actionConfirm
 	actionActivate       Action = actionConfirm
@@ -86,11 +82,8 @@ const (
 	actionQuickCategory  Action = "quick_category"
 	actionQuickTag       Action = "quick_tag"
 	actionTimeframe      Action = "timeframe"
-	actionMove           Action = "move"
 	actionImportAll      Action = "import_all"
 	actionSkipDupes      Action = "skip_dupes"
-	// Legacy alias retained for backward-compatible parsing/migration.
-	actionColor              Action = actionRight
 	actionSave               Action = "save"
 	actionAdd                Action = "add"
 	actionEdit               Action = "edit"
@@ -101,8 +94,6 @@ const (
 	actionClearDB            Action = "clear_db"
 	actionImport             Action = "import"
 	actionResetKeybindings   Action = "reset_keybindings"
-	// Legacy alias retained for backward-compatible parsing/migration.
-	actionColumn                   Action = actionRight
 	actionFocusAccounts            Action = "focus_accounts"
 	actionJumpTop                  Action = "jump_top"
 	actionJumpBottom               Action = "jump_bottom"
@@ -203,6 +194,8 @@ func NewKeyRegistry() *KeyRegistry {
 
 	// Transactions footer.
 	reg(scopeTransactions, actionSearch, "filter:open", []string{"/"}, "filter")
+	reg(scopeTransactions, actionFilterSave, "filter:save", []string{"ctrl+s"}, "save filter")
+	reg(scopeTransactions, actionFilterLoad, "filter:load", []string{"ctrl+l"}, "load filter")
 	reg(scopeTransactions, actionSort, "txn:sort", []string{"s"}, "sort")
 	reg(scopeTransactions, actionSortDirection, "txn:sort-dir", []string{"S"}, "sort dir")
 	reg(scopeTransactions, actionQuickCategory, "txn:quick-category", []string{"c"}, "quick cat")

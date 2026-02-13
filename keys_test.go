@@ -87,7 +87,7 @@ func TestKeyRegistryScopeHelpOrder(t *testing.T) {
 	for _, b := range transactions {
 		txnKeys = append(txnKeys, b.Help().Key)
 	}
-	wantTxn := []string{"/", "s", "S", "c", "t", "space", "shift+up/down", "u", "g", "G", "esc", "enter", "q"}
+	wantTxn := []string{"/", "ctrl+s", "ctrl+l", "s", "S", "c", "t", "space", "shift+up/down", "u", "g", "G", "esc", "enter", "q"}
 	if len(txnKeys) != len(wantTxn) {
 		t.Fatalf("transactions help count = %d, want %d (%v)", len(txnKeys), len(wantTxn), txnKeys)
 	}

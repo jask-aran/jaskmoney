@@ -1132,7 +1132,7 @@ func TestSettingsTagNameFieldIgnoresColorScopeAdjustKeys(t *testing.T) {
 
 	scopeAdjustKey := "l"
 	for _, b := range got.keys.BindingsForScope(scopeSettingsModeTag) {
-		if b.Action != actionColor {
+		if b.Action != actionRight {
 			continue
 		}
 		for _, k := range b.Keys {
