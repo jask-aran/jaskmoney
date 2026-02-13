@@ -2,9 +2,15 @@ package main
 
 import (
 	"fmt"
+	"sort"
 	"strings"
 
 	tea "github.com/charmbracelet/bubbletea"
+)
+
+const (
+	managerAccountActionClear = 1
+	managerAccountActionNuke  = 2
 )
 
 func (m model) updateMain(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
@@ -58,10 +64,16 @@ func (m model) updateManager(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		return m, nil
 	}
 	switch {
-	case m.verticalDelta(scopeManager, msg) != 0:
-		idx = moveBoundedCursor(idx, len(m.accounts), m.verticalDelta(scopeManager, msg))
+	case m.horizontalDelta(scopeManager, msg) != 0:
+		idx = moveBoundedCursor(idx, len(m.accounts), m.horizontalDelta(scopeManager, msg))
 		m.managerCursor = idx
 		m.managerSelectedID = m.accounts[idx].id
+		return m, nil
+	case m.isAction(scopeManager, actionSearch, msg):
+		m.managerMode = managerModeTransactions
+		m.focusedSection = sectionManagerTransactions
+		m.filterInputMode = true
+		m.filterInputCursor = len(m.filterInput)
 		return m, nil
 	case m.isAction(scopeManager, actionAdd, msg):
 		m.openManagerAccountModal(true, nil)
@@ -84,70 +96,61 @@ func (m model) updateManager(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		} else {
 			m.filterAccounts[id] = true
 		}
-		return m, nil
-	case m.isAction(scopeManager, actionSave, msg):
-		if m.db == nil {
-			m.setError("Database not ready.")
-			return m, nil
+		if len(m.filterAccounts) == 0 || len(m.filterAccounts) == len(m.accounts) {
+			m.filterAccounts = nil
 		}
-		ids := make([]int, 0, len(m.filterAccounts))
-		for id := range m.filterAccounts {
-			ids = append(ids, id)
-		}
-		db := m.db
-		return m, func() tea.Msg {
-			if err := saveSelectedAccounts(db, ids); err != nil {
-				return refreshDoneMsg{err: err}
-			}
-			return refreshCmd(db)()
-		}
+		return m, m.persistManagerAccountScopeCmd()
 	case m.isAction(scopeManager, actionSelect, msg) || m.isAction(scopeManager, actionEdit, msg):
 		acc := m.accounts[idx]
 		m.openManagerAccountModal(false, &acc)
 		return m, nil
-	case m.isAction(scopeManager, actionClearDB, msg):
-		if m.db == nil {
-			m.setError("Database not ready.")
-			return m, nil
-		}
-		acc := m.accounts[idx]
-		db := m.db
-		return m, func() tea.Msg {
-			if _, err := clearTransactionsForAccount(db, acc.id); err != nil {
-				return refreshDoneMsg{err: err}
-			}
-			return refreshCmd(db)()
-		}
 	case m.isAction(scopeManager, actionDelete, msg):
-		if m.db == nil {
-			m.setError("Database not ready.")
-			return m, nil
-		}
 		acc := m.accounts[idx]
-		count, err := countTransactionsForAccount(m.db, acc.id)
-		if err != nil {
-			m.setError(fmt.Sprintf("Count failed: %v", err))
-			return m, nil
+		meta := fmt.Sprintf("%d transactions", acc.txnCount)
+		if acc.txnCount == 1 {
+			meta = "1 transaction"
 		}
-		if count > 0 {
-			m.setStatusf("Account %q has %d transactions. Press c to clear, then del to delete.", acc.name, count)
-			return m, nil
+		items := []pickerItem{
+			{ID: managerAccountActionClear, Label: "Clear transactions", Meta: meta},
+			{ID: managerAccountActionNuke, Label: "Nuke account", Meta: "Delete account + transactions"},
 		}
-		db := m.db
-		return m, func() tea.Msg {
-			if err := deleteAccountIfEmpty(db, acc.id); err != nil {
-				return refreshDoneMsg{err: err}
-			}
-			if err := removeFormatForAccount(acc.name); err != nil {
-				return refreshDoneMsg{err: err}
-			}
-			return refreshCmd(db)()
-		}
+		m.managerActionPicker = newPicker(fmt.Sprintf("Account Actions: %s", acc.name), items, false, "")
+		m.managerActionAcctID = acc.id
+		m.managerActionName = acc.name
+		return m, nil
 	}
 	if next, cmd, handled := m.executeBoundCommand(scopeManager, msg); handled {
 		return next, cmd
 	}
 	return m, nil
+}
+
+func (m model) persistManagerAccountScopeCmd() tea.Cmd {
+	if m.db == nil {
+		return nil
+	}
+	ids := selectedAccountIDsForPersistence(m.accounts, m.filterAccounts)
+	db := m.db
+	return func() tea.Msg {
+		return accountScopeSavedMsg{err: saveSelectedAccounts(db, ids)}
+	}
+}
+
+func selectedAccountIDsForPersistence(accounts []account, selected map[int]bool) []int {
+	if len(selected) == 0 {
+		return nil
+	}
+	ids := make([]int, 0, len(selected))
+	for _, acc := range accounts {
+		if selected[acc.id] {
+			ids = append(ids, acc.id)
+		}
+	}
+	if len(ids) == 0 || len(ids) == len(accounts) {
+		return nil
+	}
+	sort.Ints(ids)
+	return ids
 }
 
 func (m *model) openManagerAccountModal(isNew bool, acc *account) {
@@ -185,7 +188,47 @@ func (m *model) closeManagerAccountModal() {
 	m.managerEditSource = ""
 }
 
+func (m *model) closeManagerActionPicker() {
+	m.managerActionPicker = nil
+	m.managerActionAcctID = 0
+	m.managerActionName = ""
+}
+
 func (m model) updateManagerModal(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
+	keyName := normalizeKeyName(msg.String())
+	textFocus := m.managerEditFocus == 0 || m.managerEditFocus == 2
+	if textFocus {
+		switch keyName {
+		case "esc":
+			m.closeManagerAccountModal()
+			return m, nil
+		case "enter":
+			// fall through to normal save path below
+		case "backspace":
+			if m.managerEditFocus == 0 {
+				deleteLastASCIIByte(&m.managerEditName)
+			}
+			if m.managerEditFocus == 2 {
+				deleteLastASCIIByte(&m.managerEditPrefix)
+			}
+			return m, nil
+		case "left", "right":
+			// Horizontal arrows do nothing while editing free text.
+			return m, nil
+		default:
+			if m.managerEditFocus == 0 {
+				if appendPrintableASCII(&m.managerEditName, msg.String()) {
+					return m, nil
+				}
+			}
+			if m.managerEditFocus == 2 {
+				if appendPrintableASCII(&m.managerEditPrefix, msg.String()) {
+					return m, nil
+				}
+			}
+		}
+	}
+
 	switch {
 	case m.isAction(scopeManagerModal, actionClose, msg):
 		m.closeManagerAccountModal()
@@ -282,6 +325,49 @@ func (m model) updateManagerModal(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		}
 		return m, nil
 	}
+}
+
+func (m model) updateManagerActionPicker(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
+	if m.managerActionPicker == nil {
+		return m, nil
+	}
+	res := m.managerActionPicker.HandleMsg(msg, func(action Action, in tea.KeyMsg) bool {
+		return m.isAction(scopeManagerAccountAction, action, in)
+	})
+	switch res.Action {
+	case pickerActionCancelled:
+		m.closeManagerActionPicker()
+		m.setStatus("Account action cancelled.")
+		return m, nil
+	case pickerActionSelected:
+		if m.db == nil {
+			m.setError("Database not ready.")
+			return m, nil
+		}
+		accountID := m.managerActionAcctID
+		accountName := m.managerActionName
+		db := m.db
+		m.closeManagerActionPicker()
+		switch res.ItemID {
+		case managerAccountActionClear:
+			return m, func() tea.Msg {
+				n, err := clearTransactionsForAccount(db, accountID)
+				return accountClearedMsg{accountName: accountName, deletedTxns: n, err: err}
+			}
+		case managerAccountActionNuke:
+			return m, func() tea.Msg {
+				n, err := nukeAccountWithTransactions(db, accountID)
+				if err == nil {
+					err = removeFormatForAccount(accountName)
+				}
+				return accountNukedMsg{accountName: accountName, deletedTxns: n, err: err}
+			}
+		default:
+			m.setError("Unknown account action selected.")
+			return m, nil
+		}
+	}
+	return m, nil
 }
 
 // updateFilePicker handles keys in the CSV file picker overlay.

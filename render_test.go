@@ -812,7 +812,7 @@ func TestRenderDupeModal(t *testing.T) {
 	}
 }
 
-func TestRenderManagerAccountModalUsesConfiguredBindings(t *testing.T) {
+func TestRenderManagerAccountModalOmitsInlineHelperText(t *testing.T) {
 	m := newModel()
 	m.keys = NewKeyRegistry()
 	if err := m.keys.ApplyKeybindingConfig([]keybindingConfig{
@@ -838,11 +838,8 @@ func TestRenderManagerAccountModalUsesConfiguredBindings(t *testing.T) {
 	if !strings.Contains(output, "ANZ_") {
 		t.Fatal("focused input should include cursor suffix")
 	}
-	if !strings.Contains(output, "ctrl+s") {
-		t.Fatal("missing configured save key")
-	}
-	if !strings.Contains(output, "c cancel") {
-		t.Fatal("missing configured cancel key")
+	if strings.Contains(output, "ctrl+s") || strings.Contains(output, "save") || strings.Contains(output, "cancel") {
+		t.Fatal("manager modal should not render inline shortcut helper text")
 	}
 }
 

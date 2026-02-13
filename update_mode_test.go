@@ -172,20 +172,20 @@ func TestDetailAndSearchFlows(t *testing.T) {
 		t.Fatalf("detailEditing should clear when closing modal, got %q", got4.detailEditing)
 	}
 
-	got4.searchMode = true
-	next, _ = got4.updateSearch(keyMsg("a"))
+	got4.filterInputMode = true
+	next, _ = got4.updateFilterInput(keyMsg("a"))
 	got6 := next.(model)
-	if got6.searchQuery != "a" {
-		t.Fatalf("searchQuery = %q, want a", got6.searchQuery)
+	if got6.filterInput != "a" {
+		t.Fatalf("filterInput = %q, want a", got6.filterInput)
 	}
-	clearSearchKey := got6.primaryActionKey(scopeSearch, actionClearSearch, "esc")
-	next, _ = got6.updateSearch(keyMsg(clearSearchKey))
+	clearSearchKey := got6.primaryActionKey(scopeFilterInput, actionClearSearch, "esc")
+	next, _ = got6.updateFilterInput(keyMsg(clearSearchKey))
 	got7 := next.(model)
-	if got7.searchMode {
-		t.Fatal("expected search mode to exit on esc")
+	if got7.filterInputMode {
+		t.Fatal("expected filter input mode to exit on esc")
 	}
-	if got7.searchQuery != "" {
-		t.Fatalf("searchQuery should be cleared, got %q", got7.searchQuery)
+	if got7.filterInput != "" {
+		t.Fatalf("filterInput should be cleared, got %q", got7.filterInput)
 	}
 }
 
@@ -325,5 +325,231 @@ func TestSettingsJumpKeyFocusesCategories(t *testing.T) {
 	}
 	if got.settColumn != settColLeft || got.settSection != settSecCategories {
 		t.Fatalf("settings focus = (col=%d, sec=%d), want (col=%d, sec=%d)", got.settColumn, got.settSection, settColLeft, settSecCategories)
+	}
+}
+
+func TestSlashFromManagerAccountsSwitchesToTransactionsAndOpensFilter(t *testing.T) {
+	m := newModel()
+	m.ready = true
+	m.activeTab = tabManager
+	m.managerMode = managerModeAccounts
+	m.focusedSection = sectionManagerAccounts
+	m.accounts = []account{{id: 1, name: "ANZ", acctType: "credit"}}
+
+	next, _ := m.Update(keyMsg("/"))
+	got := next.(model)
+	if got.managerMode != managerModeTransactions {
+		t.Fatalf("managerMode = %d, want %d", got.managerMode, managerModeTransactions)
+	}
+	if got.focusedSection != sectionManagerTransactions {
+		t.Fatalf("focusedSection = %d, want %d", got.focusedSection, sectionManagerTransactions)
+	}
+	if !got.filterInputMode {
+		t.Fatal("expected filter input mode enabled")
+	}
+}
+
+func TestManagerAccountsUseHorizontalNavigationWithoutWrap(t *testing.T) {
+	m := newModel()
+	m.activeTab = tabManager
+	m.managerMode = managerModeAccounts
+	m.accounts = []account{
+		{id: 1, name: "A"},
+		{id: 2, name: "B"},
+		{id: 3, name: "C"},
+	}
+	m.managerCursor = 1
+	m.managerSelectedID = 2
+
+	next, _ := m.updateManager(keyMsg("right"))
+	got := next.(model)
+	if got.managerCursor != 2 || got.managerSelectedID != 3 {
+		t.Fatalf("after right: cursor=%d selected=%d, want 2/3", got.managerCursor, got.managerSelectedID)
+	}
+	next, _ = got.updateManager(keyMsg("right"))
+	got2 := next.(model)
+	if got2.managerCursor != 2 {
+		t.Fatalf("cursor should clamp at end, got %d", got2.managerCursor)
+	}
+	next, _ = got2.updateManager(keyMsg("left"))
+	got3 := next.(model)
+	if got3.managerCursor != 1 || got3.managerSelectedID != 2 {
+		t.Fatalf("after left: cursor=%d selected=%d, want 1/2", got3.managerCursor, got3.managerSelectedID)
+	}
+}
+
+func TestManagerModalTextInputShieldsShortcutKeys(t *testing.T) {
+	m := newModel()
+	m.openManagerAccountModal(true, nil)
+	m.managerEditFocus = 0 // name field
+
+	next, _ := m.updateManagerModal(keyMsg("h"))
+	got := next.(model)
+	if got.managerEditName != "h" {
+		t.Fatalf("managerEditName = %q, want h", got.managerEditName)
+	}
+	if got.managerEditFocus != 0 {
+		t.Fatalf("managerEditFocus = %d, want 0", got.managerEditFocus)
+	}
+
+	next, _ = got.updateManagerModal(keyMsg("j"))
+	got2 := next.(model)
+	if got2.managerEditName != "hj" {
+		t.Fatalf("managerEditName = %q, want hj", got2.managerEditName)
+	}
+	if got2.managerEditFocus != 0 {
+		t.Fatalf("managerEditFocus should remain 0 while typing, got %d", got2.managerEditFocus)
+	}
+
+	next, _ = got2.updateManagerModal(keyMsg("s"))
+	got3 := next.(model)
+	if got3.managerEditName != "hjs" {
+		t.Fatalf("managerEditName = %q, want hjs", got3.managerEditName)
+	}
+
+	next, _ = got3.updateManagerModal(keyMsg("down"))
+	got4 := next.(model)
+	if got4.managerEditFocus != 1 {
+		t.Fatalf("managerEditFocus after down = %d, want 1", got4.managerEditFocus)
+	}
+}
+
+func TestFilterInputCursorUsesArrowKeysAndTreatsHLAsText(t *testing.T) {
+	m := newModel()
+	m.filterInputMode = true
+	m.filterInput = "abc"
+	m.filterInputCursor = 3
+	m.reparseFilterInput()
+
+	next, _ := m.updateFilterInput(keyMsg("left"))
+	got := next.(model)
+	if got.filterInputCursor != 2 {
+		t.Fatalf("cursor after left = %d, want 2", got.filterInputCursor)
+	}
+
+	next, _ = got.updateFilterInput(keyMsg("X"))
+	got2 := next.(model)
+	if got2.filterInput != "abXc" {
+		t.Fatalf("filterInput = %q, want abXc", got2.filterInput)
+	}
+	if got2.filterInputCursor != 3 {
+		t.Fatalf("cursor after insert = %d, want 3", got2.filterInputCursor)
+	}
+
+	next, _ = got2.updateFilterInput(keyMsg("h"))
+	got3 := next.(model)
+	if got3.filterInput != "abXhc" {
+		t.Fatalf("filterInput = %q, want abXhc", got3.filterInput)
+	}
+}
+
+func TestManagerAccountStripScopeLabelSimplified(t *testing.T) {
+	m := newModel()
+	m.accounts = []account{
+		{id: 1, name: "ANZ", acctType: "credit", txnCount: 3},
+		{id: 2, name: "CBA", acctType: "debit", txnCount: 0},
+	}
+	out := renderManagerAccountStrip(m, false, 80)
+	if strings.Contains(out, "Scope:") {
+		t.Fatalf("scope label should not include prefix, got %q", out)
+	}
+	if !strings.Contains(out, "3") {
+		t.Fatalf("expected transaction count in strip, got %q", out)
+	}
+	if !strings.Contains(out, "Empty") {
+		t.Fatalf("expected empty marker in strip, got %q", out)
+	}
+}
+
+func TestFilterSaveRequiresAppliedExpression(t *testing.T) {
+	t.Setenv("XDG_CONFIG_HOME", t.TempDir())
+
+	m := newModel()
+	m.filterInputMode = true
+	m.filterInput = "cat:Groceries"
+	m.filterInputCursor = len(m.filterInput)
+	m.reparseFilterInput()
+
+	next, _ := m.updateFilterInput(keyMsg("ctrl+s"))
+	got := next.(model)
+	if len(got.savedFilters) != 0 {
+		t.Fatalf("saved filters = %d, want 0 before apply", len(got.savedFilters))
+	}
+	if !got.statusErr || !strings.Contains(got.status, "Apply filter with Enter") {
+		t.Fatalf("expected save gating error, got statusErr=%t status=%q", got.statusErr, got.status)
+	}
+
+	next, _ = got.updateFilterInput(keyMsg("enter"))
+	got2 := next.(model)
+	if got2.filterLastApplied == "" {
+		t.Fatal("expected filterLastApplied to be set after enter")
+	}
+	got2.filterInputMode = true
+	next, _ = got2.updateFilterInput(keyMsg("ctrl+s"))
+	got3 := next.(model)
+	if len(got3.savedFilters) != 1 {
+		t.Fatalf("saved filters = %d, want 1 after apply", len(got3.savedFilters))
+	}
+}
+
+func TestEscInTransactionsDoesNotClearAccountScope(t *testing.T) {
+	db, cleanup := testDB(t)
+	defer cleanup()
+
+	accA, err := insertAccount(db, "ANZ", "debit", true)
+	if err != nil {
+		t.Fatalf("insert account A: %v", err)
+	}
+	accB, err := insertAccount(db, "CBA", "debit", true)
+	if err != nil {
+		t.Fatalf("insert account B: %v", err)
+	}
+
+	m := newModel()
+	m.db = db
+	m.ready = true
+	m.activeTab = tabManager
+	m.managerMode = managerModeAccounts
+	m.accounts = []account{
+		{id: accA, name: "ANZ", acctType: "debit"},
+		{id: accB, name: "CBA", acctType: "debit"},
+	}
+	m.managerCursor = 0
+	m.managerSelectedID = accA
+
+	next, cmd := m.updateManager(keyMsg("space"))
+	got := next.(model)
+	if cmd != nil {
+		msg := cmd()
+		next, _ = got.Update(msg)
+		got = next.(model)
+	}
+	if len(got.filterAccounts) == 0 {
+		t.Fatal("expected scoped account selection after toggle")
+	}
+
+	next, _ = got.updateManager(keyMsg("esc"))
+	got2 := next.(model)
+	if got2.managerMode != managerModeTransactions {
+		t.Fatalf("managerMode = %d, want transactions", got2.managerMode)
+	}
+
+	next, _ = got2.Update(keyMsg("esc"))
+	got3 := next.(model)
+	if len(got3.filterAccounts) == 0 {
+		t.Fatal("account scope should remain after esc in transactions")
+	}
+}
+
+func TestDeleteInAccountsOpensActionModal(t *testing.T) {
+	m := newModel()
+	m.activeTab = tabManager
+	m.managerMode = managerModeAccounts
+	m.accounts = []account{{id: 1, name: "ANZ", acctType: "debit", txnCount: 2}}
+
+	next, _ := m.updateManager(keyMsg("del"))
+	got := next.(model)
+	if got.managerActionPicker == nil {
+		t.Fatal("expected manager action picker to open")
 	}
 }

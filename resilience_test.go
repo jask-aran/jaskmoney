@@ -21,9 +21,10 @@ func TestUpdateDispatcherEscClosesOverlaysInPriorityOrder(t *testing.T) {
 	m.catPicker = newPicker("Cat", nil, false, "")
 	m.tagPicker = newPicker("Tag", nil, true, "Create")
 	m.accountNukePicker = newPicker("Nuke", nil, false, "")
+	m.managerActionPicker = newPicker("Account Action", nil, false, "")
 	m.managerModalOpen = true
-	m.searchMode = true
-	m.searchQuery = "keep-me"
+	m.filterInputMode = true
+	m.filterInput = "keep-me"
 
 	// 1) command UI
 	next, _ := m.Update(keyMsg("esc"))
@@ -91,28 +92,38 @@ func TestUpdateDispatcherEscClosesOverlaysInPriorityOrder(t *testing.T) {
 	if s7.accountNukePicker != nil {
 		t.Fatal("expected account nuke picker to close seventh")
 	}
-	if !s7.managerModalOpen {
+	if s7.managerActionPicker == nil {
+		t.Fatal("manager account action picker should still be open")
+	}
+
+	// 8) manager account action picker
+	next, _ = s7.Update(keyMsg("esc"))
+	s8 := next.(model)
+	if s8.managerActionPicker != nil {
+		t.Fatal("expected manager account action picker to close eighth")
+	}
+	if !s8.managerModalOpen {
 		t.Fatal("manager modal should still be open")
 	}
 
-	// 8) manager modal
-	next, _ = s7.Update(keyMsg("esc"))
-	s8 := next.(model)
-	if s8.managerModalOpen {
-		t.Fatal("expected manager modal to close eighth")
-	}
-	if !s8.searchMode {
-		t.Fatal("search mode should still be active")
-	}
-
-	// 9) search mode
+	// 9) manager modal
 	next, _ = s8.Update(keyMsg("esc"))
 	s9 := next.(model)
-	if s9.searchMode {
-		t.Fatal("expected search mode to close last")
+	if s9.managerModalOpen {
+		t.Fatal("expected manager modal to close ninth")
 	}
-	if s9.searchQuery != "" {
-		t.Fatalf("searchQuery should be cleared when closing search, got %q", s9.searchQuery)
+	if !s9.filterInputMode {
+		t.Fatal("filter input mode should still be active")
+	}
+
+	// 10) filter input mode
+	next, _ = s9.Update(keyMsg("esc"))
+	s10 := next.(model)
+	if s10.filterInputMode {
+		t.Fatal("expected filter input mode to close last")
+	}
+	if s10.filterInput != "" {
+		t.Fatalf("filterInput should be cleared when closing filter input, got %q", s10.filterInput)
 	}
 }
 
@@ -157,8 +168,9 @@ func TestCommandUIOpenBlockedByBusyStatesViaTopLevelUpdate(t *testing.T) {
 		{name: "category picker", mut: func(m *model) { m.catPicker = newPicker("Cat", nil, false, "") }},
 		{name: "tag picker", mut: func(m *model) { m.tagPicker = newPicker("Tag", nil, true, "Create") }},
 		{name: "account nuke picker", mut: func(m *model) { m.accountNukePicker = newPicker("Nuke", nil, false, "") }},
+		{name: "manager account action picker", mut: func(m *model) { m.managerActionPicker = newPicker("Account Action", nil, false, "") }},
 		{name: "manager modal", mut: func(m *model) { m.managerModalOpen = true }},
-		{name: "search mode", mut: func(m *model) { m.searchMode = true }},
+		{name: "filter input mode", mut: func(m *model) { m.filterInputMode = true }},
 		{name: "settings edit mode", mut: func(m *model) { m.settMode = settModeAddTag }},
 		{name: "settings confirm armed", mut: func(m *model) { m.confirmAction = confirmActionClearDB }},
 		{name: "dashboard timeframe focus", mut: func(m *model) { m.dashTimeframeFocus = true }},

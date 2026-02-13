@@ -3,6 +3,7 @@ package main
 import (
 	"database/sql"
 	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 )
@@ -351,6 +352,20 @@ func TestOpenDBIdempotent(t *testing.T) {
 	}
 	if len(cats) != len(defaultCategories) {
 		t.Errorf("got %d categories, want %d", len(cats), len(defaultCategories))
+	}
+}
+
+func TestOpenDBCreatesMissingParentDirectory(t *testing.T) {
+	root := t.TempDir()
+	path := filepath.Join(root, "nested", "deeper", "transactions.db")
+	db, err := openDB(path)
+	if err != nil {
+		t.Fatalf("openDB: %v", err)
+	}
+	defer db.Close()
+
+	if _, err := os.Stat(path); err != nil {
+		t.Fatalf("expected db file at %s: %v", path, err)
 	}
 }
 
@@ -1137,6 +1152,43 @@ func TestFreshDBHasNoSeedAccounts(t *testing.T) {
 	}
 	if len(accounts) != 0 {
 		t.Fatalf("expected no auto-seeded accounts, got %d", len(accounts))
+	}
+}
+
+func TestLoadAccountsIncludesTransactionCounts(t *testing.T) {
+	db, cleanup := testDB(t)
+	defer cleanup()
+
+	primaryID, err := insertAccount(db, "Primary", "debit", true)
+	if err != nil {
+		t.Fatalf("insertAccount primary: %v", err)
+	}
+	emptyID, err := insertAccount(db, "Empty", "debit", true)
+	if err != nil {
+		t.Fatalf("insertAccount empty: %v", err)
+	}
+
+	if _, err := db.Exec(`
+		INSERT INTO transactions (date_raw, date_iso, amount, description, notes, account_id)
+		VALUES ('03/02/2026', '2026-02-03', -20.00, 'A', '', ?),
+		       ('04/02/2026', '2026-02-04', -10.00, 'B', '', ?)
+	`, primaryID, primaryID); err != nil {
+		t.Fatalf("insert transactions: %v", err)
+	}
+
+	accounts, err := loadAccounts(db)
+	if err != nil {
+		t.Fatalf("loadAccounts: %v", err)
+	}
+	countByID := make(map[int]int, len(accounts))
+	for _, acc := range accounts {
+		countByID[acc.id] = acc.txnCount
+	}
+	if countByID[primaryID] != 2 {
+		t.Fatalf("primary txnCount = %d, want 2", countByID[primaryID])
+	}
+	if countByID[emptyID] != 0 {
+		t.Fatalf("empty txnCount = %d, want 0", countByID[emptyID])
 	}
 }
 

@@ -125,9 +125,10 @@ func TestPhase3NonShiftMoveClearsHighlight(t *testing.T) {
 	}
 }
 
-func TestPhase3EscClearsSearchBeforeSelectionAndHighlight(t *testing.T) {
+func TestPhase3EscClearsFilterBeforeSelectionAndHighlight(t *testing.T) {
 	m := testPhase3Model()
-	m.searchQuery = "wool"
+	m.filterInput = "wool"
+	m.reparseFilterInput()
 	toggleKey := testKeyForAction(m, scopeTransactions, actionToggleSelect, "space")
 	m2, _ := m.updateNavigation(keyMsg(toggleKey))
 	got := m2.(model)
@@ -141,24 +142,24 @@ func TestPhase3EscClearsSearchBeforeSelectionAndHighlight(t *testing.T) {
 		t.Fatal("expected active range highlight")
 	}
 
-	// 1st esc clears search and keeps selection/highlight intact.
+	// 1st esc clears filter and keeps selection/highlight intact.
 	m4, _ := got2.updateNavigation(keyMsg("esc"))
 	got3 := m4.(model)
-	if got3.searchQuery != "" {
-		t.Fatalf("search query should clear first, got %q", got3.searchQuery)
+	if got3.filterInput != "" {
+		t.Fatalf("filter input should clear first, got %q", got3.filterInput)
 	}
 	if got3.selectedCount() == 0 {
-		t.Fatal("selection should remain when clearing search")
+		t.Fatal("selection should remain when clearing filter")
 	}
 	if !got3.rangeSelecting {
-		t.Fatal("range highlight should remain when clearing search")
+		t.Fatal("range highlight should remain when clearing filter")
 	}
 
 	// 2nd esc clears highlight.
 	m5, _ := got3.updateNavigation(keyMsg("esc"))
 	got4 := m5.(model)
 	if got4.rangeSelecting {
-		t.Fatal("range highlight should clear after search is already empty")
+		t.Fatal("range highlight should clear after filter is already empty")
 	}
 	if got4.selectedCount() == 0 {
 		t.Fatal("selection should remain after clearing highlight")
@@ -192,9 +193,9 @@ func TestPhase3SelectionPersistsAcrossSortAndFilterChanges(t *testing.T) {
 		t.Fatalf("id %d selection should persist after sort", selectedID)
 	}
 
-	filterKey := testKeyForAction(got2, scopeTransactions, actionFilterCategory, "f")
-	m4, _ := got2.updateNavigation(keyMsg(filterKey))
-	got3 := m4.(model)
+	got2.filterInput = "cat:Groceries"
+	got2.reparseFilterInput()
+	got3 := got2
 	if !got3.selectedRows[selectedID] {
 		t.Fatalf("id %d selection should persist after filter change", selectedID)
 	}
@@ -280,7 +281,8 @@ func TestPhase3ManagerTitleShowsHiddenSelectionCount(t *testing.T) {
 	}
 	selectedID := filtered[0].id
 	m.selectedRows = map[int]bool{selectedID: true}
-	m.searchQuery = "uber"
+	m.filterInput = "uber"
+	m.reparseFilterInput()
 
 	view := m.managerView()
 	if !strings.Contains(view, "Transactions (1 selected, 1 hidden)") {
@@ -288,9 +290,10 @@ func TestPhase3ManagerTitleShowsHiddenSelectionCount(t *testing.T) {
 	}
 }
 
-func TestPhase3ClearSelectionHotkeyUWorksWhileSearchActive(t *testing.T) {
+func TestPhase3ClearSelectionHotkeyUWorksWhileFilterActive(t *testing.T) {
 	m := testPhase3Model()
-	m.searchQuery = "uber"
+	m.filterInput = "uber"
+	m.reparseFilterInput()
 	filtered := m.getFilteredRows()
 	if len(filtered) == 0 {
 		t.Fatal("expected filtered rows")
@@ -302,7 +305,7 @@ func TestPhase3ClearSelectionHotkeyUWorksWhileSearchActive(t *testing.T) {
 	if got.selectedCount() != 0 {
 		t.Fatalf("selected count = %d, want 0", got.selectedCount())
 	}
-	if got.searchQuery != "uber" {
-		t.Fatalf("search query should remain after u, got %q", got.searchQuery)
+	if got.filterInput != "uber" {
+		t.Fatalf("filter input should remain after u, got %q", got.filterInput)
 	}
 }

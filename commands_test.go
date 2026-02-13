@@ -7,39 +7,40 @@ import (
 )
 
 func TestCommandRegistryHasExpectedCommands(t *testing.T) {
-	reg := NewCommandRegistry(NewKeyRegistry())
+	reg := NewCommandRegistry(NewKeyRegistry(), nil)
 	all := reg.All()
 	want := map[string]bool{
-		"nav:next-tab":          true,
-		"nav:prev-tab":          true,
-		"nav:dashboard":         true,
-		"nav:manager":           true,
-		"nav:budget":            true,
-		"nav:settings":          true,
-		"jump:activate":         true,
-		"jump:cancel":           true,
-		"txn:sort":              true,
-		"txn:sort-dir":          true,
-		"txn:select":            true,
-		"txn:clear-selection":   true,
-		"txn:quick-category":    true,
-		"txn:quick-tag":         true,
-		"txn:detail":            true,
-		"txn:jump-top":          true,
-		"txn:jump-bottom":       true,
-		"filter:open":           true,
-		"filter:clear":          true,
-		"import:start":          true,
-		"rules:apply":           true,
-		"rules:dry-run":         true,
-		"settings:clear-db":     true,
-		"settings:nuke-account": true,
-		"dash:timeframe":        true,
-		"dash:mode-next":        true,
-		"dash:mode-prev":        true,
-		"dash:drill-down":       true,
-		"palette:open":          true,
-		"cmd:open":              true,
+		"nav:next-tab":        true,
+		"nav:prev-tab":        true,
+		"nav:dashboard":       true,
+		"nav:manager":         true,
+		"nav:budget":          true,
+		"nav:settings":        true,
+		"jump:activate":       true,
+		"jump:cancel":         true,
+		"txn:sort":            true,
+		"txn:sort-dir":        true,
+		"txn:select":          true,
+		"txn:clear-selection": true,
+		"txn:quick-category":  true,
+		"txn:quick-tag":       true,
+		"txn:detail":          true,
+		"txn:jump-top":        true,
+		"txn:jump-bottom":     true,
+		"filter:open":         true,
+		"filter:clear":        true,
+		"filter:save":         true,
+		"filter:load":         true,
+		"import:start":        true,
+		"rules:apply":         true,
+		"rules:dry-run":       true,
+		"settings:clear-db":   true,
+		"dash:timeframe":      true,
+		"dash:mode-next":      true,
+		"dash:mode-prev":      true,
+		"dash:drill-down":     true,
+		"palette:open":        true,
+		"cmd:open":            true,
 	}
 	if len(all) != len(want) {
 		t.Fatalf("command count = %d, want %d", len(all), len(want))
@@ -51,8 +52,25 @@ func TestCommandRegistryHasExpectedCommands(t *testing.T) {
 	}
 }
 
+func TestCommandRegistryAddsSavedFilterCommands(t *testing.T) {
+	reg := NewCommandRegistry(NewKeyRegistry(), []savedFilter{
+		{Name: "Groceries", Expr: "cat:Groceries"},
+	})
+	all := reg.All()
+	found := false
+	for _, cmd := range all {
+		if cmd.ID == "filter:saved:0" {
+			found = true
+			break
+		}
+	}
+	if !found {
+		t.Fatal("expected dynamic saved filter command to be registered")
+	}
+}
+
 func TestCommandSearchIncludesDescriptionAndID(t *testing.T) {
-	reg := NewCommandRegistry(NewKeyRegistry())
+	reg := NewCommandRegistry(NewKeyRegistry(), nil)
 	m := newModel()
 
 	byDesc := reg.Search("transaction", scopeTransactions, m, "")
@@ -74,7 +92,7 @@ func TestCommandSearchIncludesDescriptionAndID(t *testing.T) {
 }
 
 func TestCommandSearchRespectsScope(t *testing.T) {
-	reg := NewCommandRegistry(NewKeyRegistry())
+	reg := NewCommandRegistry(NewKeyRegistry(), nil)
 	m := newModel()
 	results := reg.Search("timeframe", scopeTransactions, m, "")
 	for _, match := range results {
@@ -85,7 +103,7 @@ func TestCommandSearchRespectsScope(t *testing.T) {
 }
 
 func TestCommandSearchPrefersMRUWhenMatched(t *testing.T) {
-	reg := NewCommandRegistry(NewKeyRegistry())
+	reg := NewCommandRegistry(NewKeyRegistry(), nil)
 	m := newModel()
 	got := reg.Search("nav", scopeGlobal, m, "nav:manager")
 	if len(got) == 0 {
@@ -97,7 +115,7 @@ func TestCommandSearchPrefersMRUWhenMatched(t *testing.T) {
 }
 
 func TestExecuteByIDRejectsScopeMismatch(t *testing.T) {
-	reg := NewCommandRegistry(NewKeyRegistry())
+	reg := NewCommandRegistry(NewKeyRegistry(), nil)
 	m := newModel()
 	_, _, err := reg.ExecuteByID("dash:timeframe", scopeTransactions, m)
 	if err == nil {

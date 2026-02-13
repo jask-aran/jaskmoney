@@ -87,13 +87,28 @@ func TestKeyRegistryScopeHelpOrder(t *testing.T) {
 	for _, b := range transactions {
 		txnKeys = append(txnKeys, b.Help().Key)
 	}
-	wantTxn := []string{"/", "s", "S", "f", "c", "t", "space", "shift+up/down", "u", "g", "G", "esc", "enter", "k", "j", "tab", "q"}
+	wantTxn := []string{"/", "s", "S", "c", "t", "space", "shift+up/down", "u", "g", "G", "esc", "enter", "q"}
 	if len(txnKeys) != len(wantTxn) {
 		t.Fatalf("transactions help count = %d, want %d (%v)", len(txnKeys), len(wantTxn), txnKeys)
 	}
 	for i := range wantTxn {
 		if txnKeys[i] != wantTxn[i] {
 			t.Fatalf("transactions help[%d] = %q, want %q", i, txnKeys[i], wantTxn[i])
+		}
+	}
+
+	filterInput := r.HelpBindings(scopeFilterInput)
+	var filterKeys []string
+	for _, b := range filterInput {
+		filterKeys = append(filterKeys, b.Help().Key)
+	}
+	wantFilter := []string{"ctrl+s", "ctrl+l", "esc", "enter"}
+	if len(filterKeys) != len(wantFilter) {
+		t.Fatalf("filter input help count = %d, want %d (%v)", len(filterKeys), len(wantFilter), filterKeys)
+	}
+	for i := range wantFilter {
+		if filterKeys[i] != wantFilter[i] {
+			t.Fatalf("filter input help[%d] = %q, want %q", i, filterKeys[i], wantFilter[i])
 		}
 	}
 
@@ -127,6 +142,22 @@ func TestKeyRegistryApplyOverridesScopedReuse(t *testing.T) {
 	}
 	if got := r.Lookup("ctrl+k", scopeSettingsActiveDBImport); got == nil || got.Action != actionClearDB {
 		t.Fatalf("settings db ctrl+k = %+v, want clear_db", got)
+	}
+}
+
+func TestKeyRegistrySearchOverrideAlwaysRetainsSlash(t *testing.T) {
+	r := NewKeyRegistry()
+	err := r.ApplyOverrides([]shortcutOverride{
+		{Scope: scopeTransactions, Action: string(actionSearch), Keys: []string{"f"}},
+	})
+	if err != nil {
+		t.Fatalf("ApplyOverrides: %v", err)
+	}
+	if got := r.Lookup("/", scopeTransactions); got == nil || got.Action != actionSearch {
+		t.Fatalf("transactions / = %+v, want search action", got)
+	}
+	if got := r.Lookup("f", scopeTransactions); got == nil || got.Action != actionSearch {
+		t.Fatalf("transactions f = %+v, want search action", got)
 	}
 }
 
@@ -197,7 +228,7 @@ func TestKeyRegistryCommandTriggers(t *testing.T) {
 
 func TestBindingsWithCommandIDReferenceRegisteredCommands(t *testing.T) {
 	keys := NewKeyRegistry()
-	reg := NewCommandRegistry(keys)
+	reg := NewCommandRegistry(keys, nil)
 	known := map[string]bool{}
 	for _, cmd := range reg.All() {
 		known[cmd.ID] = true
@@ -216,7 +247,7 @@ func TestBindingsWithCommandIDReferenceRegisteredCommands(t *testing.T) {
 
 func TestCommandsWithScopesHaveBindings(t *testing.T) {
 	keys := NewKeyRegistry()
-	reg := NewCommandRegistry(keys)
+	reg := NewCommandRegistry(keys, nil)
 	for _, cmd := range reg.All() {
 		if len(cmd.Scopes) == 0 {
 			continue

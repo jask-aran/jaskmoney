@@ -1,6 +1,10 @@
 package main
 
-import tea "github.com/charmbracelet/bubbletea"
+import (
+	"strings"
+
+	tea "github.com/charmbracelet/bubbletea"
+)
 
 func (m *model) openDetail(txn transaction) {
 	m.showDetail = true
@@ -19,31 +23,85 @@ func (m *model) openDetail(txn transaction) {
 	}
 }
 
-func (m model) updateSearch(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
+func (m model) updateFilterInput(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
+	keyName := normalizeKeyName(msg.String())
 	switch {
-	case m.isAction(scopeSearch, actionClearSearch, msg):
-		m.searchMode = false
-		m.searchQuery = ""
+	case m.isAction(scopeFilterInput, actionClearSearch, msg):
+		m.filterInputMode = false
+		m.filterInput = ""
+		m.filterInputCursor = 0
+		m.filterExpr = nil
+		m.filterInputErr = ""
+		m.filterLastApplied = ""
 		m.cursor = 0
 		m.topIndex = 0
 		return m, nil
-	case m.isAction(scopeSearch, actionConfirm, msg):
-		m.searchMode = false
+	case m.isAction(scopeFilterInput, actionConfirm, msg):
+		m.filterInputMode = false
+		m.filterInputCursor = clampInputCursorASCII(m.filterInput, m.filterInputCursor)
+		if strings.TrimSpace(m.filterInput) == "" {
+			m.filterLastApplied = ""
+		} else if node, err := parseFilterStrict(strings.TrimSpace(m.filterInput)); err == nil {
+			m.filterLastApplied = filterExprString(node)
+		} else {
+			m.filterLastApplied = ""
+		}
 		// Keep the query active, just exit input mode
 		return m, nil
-	case isBackspaceKey(msg):
-		if deleteLastASCIIByte(&m.searchQuery) {
-			m.cursor = 0
-			m.topIndex = 0
-		}
+	case keyName == "left":
+		moveInputCursorASCII(m.filterInput, &m.filterInputCursor, -1)
 		return m, nil
-	default:
-		if appendPrintableASCII(&m.searchQuery, msg.String()) {
+	case keyName == "right":
+		moveInputCursorASCII(m.filterInput, &m.filterInputCursor, 1)
+		return m, nil
+	}
+
+	if next, cmd, handled := m.executeBoundCommand(scopeFilterInput, msg); handled {
+		return next, cmd
+	}
+
+	if isBackspaceKey(msg) {
+		if deleteASCIIByteBeforeCursor(&m.filterInput, &m.filterInputCursor) {
+			m.filterLastApplied = ""
+			m.reparseFilterInput()
 			m.cursor = 0
 			m.topIndex = 0
 		}
 		return m, nil
 	}
+
+	if insertPrintableASCIIAtCursor(&m.filterInput, &m.filterInputCursor, msg.String()) {
+		m.filterLastApplied = ""
+		m.reparseFilterInput()
+		m.cursor = 0
+		m.topIndex = 0
+	}
+	return m, nil
+}
+
+func (m *model) reparseFilterInput() {
+	if m == nil {
+		return
+	}
+	if strings.TrimSpace(m.filterInput) == "" {
+		m.filterInputCursor = 0
+		m.filterExpr = nil
+		m.filterInputErr = ""
+		m.filterLastApplied = ""
+		return
+	}
+	m.filterInputCursor = clampInputCursorASCII(m.filterInput, m.filterInputCursor)
+	node, err := parseFilter(m.filterInput)
+	if err != nil {
+		m.filterExpr = fallbackPlainTextFilter(m.filterInput)
+		m.filterInputErr = err.Error()
+		return
+	}
+	if !filterContainsFieldPredicate(node) {
+		node = markTextNodesAsMetadata(node)
+	}
+	m.filterExpr = node
+	m.filterInputErr = ""
 }
 
 func (m model) updateDetail(msg tea.KeyMsg) (tea.Model, tea.Cmd) {

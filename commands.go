@@ -42,7 +42,7 @@ var transactionSortCycle = []int{
 	sortByCategory,
 }
 
-func NewCommandRegistry(keys *KeyRegistry) *CommandRegistry {
+func NewCommandRegistry(keys *KeyRegistry, savedFilters []savedFilter) *CommandRegistry {
 	r := &CommandRegistry{}
 	r.commands = []Command{
 		{
@@ -335,38 +335,44 @@ func NewCommandRegistry(keys *KeyRegistry) *CommandRegistry {
 			Label:       "Open Filter",
 			Description: "Open filter input",
 			Category:    "Filter",
-			Scopes:      []string{scopeTransactions},
+			Scopes:      []string{scopeTransactions, scopeManager},
 			Enabled:     commandAlwaysEnabled,
 			Execute: func(m model) (model, tea.Cmd, error) {
 				if m.rangeSelecting {
 					m.clearRangeSelection()
 				}
-				m.searchMode = true
-				m.searchQuery = ""
+				if m.activeTab == tabManager && m.managerMode == managerModeAccounts {
+					m.managerMode = managerModeTransactions
+					m.focusedSection = sectionManagerTransactions
+				}
+				m.filterInputMode = true
+				m.filterInputCursor = len(m.filterInput)
 				return m, nil, nil
 			},
 		},
 		{
 			ID:          "filter:clear",
 			Label:       "Clear All Filters",
-			Description: "Clear transaction filter/search/selection state",
+			Description: "Clear transaction filter/selection state",
 			Category:    "Filter",
 			Scopes:      []string{scopeTransactions},
 			Enabled: func(m model) (bool, string) {
-				hasCat := len(m.filterCategories) > 0
-				hasAcct := len(m.filterAccounts) > 0
-				if m.searchQuery == "" && !m.searchMode && !m.rangeSelecting && m.selectedCount() == 0 && !hasCat && !hasAcct {
+				if strings.TrimSpace(m.filterInput) == "" && !m.filterInputMode && !m.rangeSelecting && m.selectedCount() == 0 {
 					return false, "No active filter state."
 				}
 				return true, ""
 			},
 			Execute: func(m model) (model, tea.Cmd, error) {
-				if m.searchMode || m.searchQuery != "" {
-					m.searchMode = false
-					m.searchQuery = ""
+				if m.filterInputMode || m.filterInput != "" {
+					m.filterInputMode = false
+					m.filterInput = ""
+					m.filterInputCursor = 0
+					m.filterExpr = nil
+					m.filterInputErr = ""
+					m.filterLastApplied = ""
 					m.cursor = 0
 					m.topIndex = 0
-					m.setStatus("Search cleared.")
+					m.setStatus("Filter cleared.")
 					return m, nil, nil
 				}
 				if m.rangeSelecting {
@@ -379,11 +385,75 @@ func NewCommandRegistry(keys *KeyRegistry) *CommandRegistry {
 					m.setStatus("Selection cleared.")
 					return m, nil, nil
 				}
-				if len(m.filterCategories) > 0 || len(m.filterAccounts) > 0 {
-					m.filterCategories = nil
-					m.filterAccounts = nil
-					m.setStatus("Category/account filters cleared.")
+				return m, nil, nil
+			},
+		},
+		{
+			ID:          "filter:save",
+			Label:       "Save Current Filter",
+			Description: "Persist the current filter expression",
+			Category:    "Filter",
+			Scopes:      []string{scopeFilterInput},
+			Enabled: func(m model) (bool, string) {
+				expr := strings.TrimSpace(m.filterInput)
+				if expr == "" {
+					return false, "No active filter expression."
 				}
+				node, err := parseFilterStrict(expr)
+				if err != nil {
+					return false, fmt.Sprintf("Current filter is invalid: %v", err)
+				}
+				if strings.TrimSpace(m.filterLastApplied) == "" {
+					return false, "Apply filter with Enter before saving."
+				}
+				if filterExprString(node) != strings.TrimSpace(m.filterLastApplied) {
+					return false, "Re-apply filter with Enter before saving."
+				}
+				return true, ""
+			},
+			Execute: func(m model) (model, tea.Cmd, error) {
+				node, err := parseFilterStrict(strings.TrimSpace(m.filterInput))
+				if err != nil {
+					return m, nil, err
+				}
+				name := nextSavedFilterName(m.savedFilters)
+				m.savedFilters = append(m.savedFilters, savedFilter{
+					Name: name,
+					Expr: filterExprString(node),
+				})
+				if err := saveSavedFilters(m.savedFilters); err != nil {
+					return m, nil, err
+				}
+				m.commands = NewCommandRegistry(m.keys, m.savedFilters)
+				m.setStatusf("Saved filter %q.", name)
+				return m, nil, nil
+			},
+		},
+		{
+			ID:          "filter:load",
+			Label:       "Load Saved Filter",
+			Description: "Apply the most recently saved filter",
+			Category:    "Filter",
+			Scopes:      []string{scopeFilterInput},
+			Enabled: func(m model) (bool, string) {
+				if len(m.savedFilters) == 0 {
+					return false, "No saved filters."
+				}
+				return true, ""
+			},
+			Execute: func(m model) (model, tea.Cmd, error) {
+				if len(m.savedFilters) == 0 {
+					return m, nil, fmt.Errorf("no saved filters")
+				}
+				last := m.savedFilters[len(m.savedFilters)-1]
+				m.filterInput = last.Expr
+				m.reparseFilterInput()
+				m.filterInputMode = false
+				m.filterInputCursor = len(m.filterInput)
+				m.filterLastApplied = last.Expr
+				m.cursor = 0
+				m.topIndex = 0
+				m.setStatusf("Loaded saved filter %q.", last.Name)
 				return m, nil, nil
 			},
 		},
@@ -453,31 +523,6 @@ func NewCommandRegistry(keys *KeyRegistry) *CommandRegistry {
 				keyLabel := m.primaryActionKey(scopeSettingsActiveDBImport, actionClearDB, "c")
 				cmd := m.armSettingsConfirm(confirmActionClearDB, 0, fmt.Sprintf("Press %s again to clear all data", keyLabel))
 				return m, cmd, nil
-			},
-		},
-		{
-			ID:          "settings:nuke-account",
-			Label:       "Nuke Account",
-			Description: "Delete an account and all its transactions",
-			Category:    "Settings",
-			Scopes:      []string{scopeSettingsActiveDBImport},
-			Enabled: func(m model) (bool, string) {
-				if len(m.accounts) == 0 {
-					return false, "No accounts available to nuke."
-				}
-				return true, ""
-			},
-			Execute: func(m model) (model, tea.Cmd, error) {
-				if len(m.accounts) == 0 {
-					m.setStatus("No accounts available to nuke.")
-					return m, nil, nil
-				}
-				items := make([]pickerItem, 0, len(m.accounts))
-				for _, acc := range m.accounts {
-					items = append(items, pickerItem{ID: acc.id, Label: acc.name, Meta: acc.acctType})
-				}
-				m.accountNukePicker = newPicker("Nuke Account", items, false, "")
-				return m, nil, nil
 			},
 		},
 		{
@@ -573,6 +618,29 @@ func NewCommandRegistry(keys *KeyRegistry) *CommandRegistry {
 			},
 		},
 	}
+	for i, sf := range savedFilters {
+		idx := i
+		saved := sf
+		r.commands = append(r.commands, Command{
+			ID:          fmt.Sprintf("filter:saved:%d", idx),
+			Label:       fmt.Sprintf("Apply: %q", saved.Name),
+			Description: "Apply saved filter expression",
+			Category:    "Filters",
+			Scopes:      []string{scopeTransactions},
+			Enabled:     commandAlwaysEnabled,
+			Execute: func(m model) (model, tea.Cmd, error) {
+				m.filterInput = saved.Expr
+				m.reparseFilterInput()
+				m.filterInputMode = false
+				m.filterInputCursor = len(m.filterInput)
+				m.filterLastApplied = saved.Expr
+				m.cursor = 0
+				m.topIndex = 0
+				m.setStatusf("Applied saved filter %q.", saved.Name)
+				return m, nil, nil
+			},
+		})
+	}
 	r.byID = make(map[string]Command, len(r.commands))
 	for _, cmd := range r.commands {
 		r.byID[cmd.ID] = cmd
@@ -582,6 +650,23 @@ func NewCommandRegistry(keys *KeyRegistry) *CommandRegistry {
 
 func commandAlwaysEnabled(model) (bool, string) {
 	return true, ""
+}
+
+func nextSavedFilterName(existing []savedFilter) string {
+	base := fmt.Sprintf("Saved Filter %d", len(existing)+1)
+	seen := make(map[string]bool, len(existing))
+	for _, sf := range existing {
+		seen[strings.ToLower(strings.TrimSpace(sf.Name))] = true
+	}
+	if !seen[strings.ToLower(base)] {
+		return base
+	}
+	for i := len(existing) + 2; ; i++ {
+		candidate := fmt.Sprintf("Saved Filter %d", i)
+		if !seen[strings.ToLower(candidate)] {
+			return candidate
+		}
+	}
 }
 
 func (r *CommandRegistry) All() []Command {
@@ -763,7 +848,7 @@ func (m model) canOpenCommandUI() bool {
 	if m.commandOpen || m.showDetail || m.importDupeModal || m.importPicking || m.catPicker != nil || m.tagPicker != nil {
 		return false
 	}
-	if m.accountNukePicker != nil || m.managerModalOpen || m.searchMode || m.jumpModeActive {
+	if m.accountNukePicker != nil || m.managerActionPicker != nil || m.managerModalOpen || m.filterInputMode || m.jumpModeActive {
 		return false
 	}
 	if m.settMode != settModeNone || m.confirmAction != confirmActionNone {
@@ -888,8 +973,11 @@ func (m model) executeBoundCommand(scope string, msg tea.KeyMsg) (model, tea.Cmd
 		return m, nil, true
 	}
 	if cmdDef.Enabled != nil {
-		enabled, _ := cmdDef.Enabled(m)
+		enabled, reason := cmdDef.Enabled(m)
 		if !enabled {
+			if (binding.CommandID == "filter:save" || binding.CommandID == "filter:load") && strings.TrimSpace(reason) != "" {
+				m.setError(reason)
+			}
 			return m, nil, true
 		}
 	}
@@ -923,11 +1011,14 @@ func (m model) commandContextScope() string {
 	if m.accountNukePicker != nil {
 		return scopeAccountNukePicker
 	}
+	if m.managerActionPicker != nil {
+		return scopeManagerAccountAction
+	}
 	if m.managerModalOpen {
 		return scopeManagerModal
 	}
-	if m.searchMode {
-		return scopeSearch
+	if m.filterInputMode {
+		return scopeFilterInput
 	}
 	if m.activeTab == tabDashboard {
 		if m.dashCustomEditing {
