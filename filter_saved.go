@@ -52,20 +52,6 @@ func slugifySavedFilterID(raw string) string {
 	return id
 }
 
-func suggestSavedFilterName(expr string) string {
-	expr = strings.TrimSpace(expr)
-	if expr == "" {
-		return "Saved Filter"
-	}
-	if len(expr) > 40 {
-		expr = strings.TrimSpace(expr[:40])
-	}
-	if expr == "" {
-		return "Saved Filter"
-	}
-	return expr
-}
-
 func nextUniqueSavedFilterID(existing []savedFilter, base string) string {
 	candidate := slugifySavedFilterID(base)
 	seen := make(map[string]bool, len(existing))
@@ -189,7 +175,7 @@ func (m *model) openFilterApplyPicker(query string) {
 	for i, sf := range ordered {
 		meta := strings.TrimSpace(sf.Name)
 		if meta == "" {
-			meta = strings.TrimSpace(sf.Expr)
+			meta = truncate(strings.TrimSpace(sf.Expr), 40)
 		}
 		items = append(items, pickerItem{ID: i + 1, Label: sf.ID, Meta: meta})
 		m.filterApplyOrder = append(m.filterApplyOrder, sf.ID)
@@ -263,15 +249,14 @@ func (m *model) openFilterEditor(existing *savedFilter, exprHint string) {
 	if expr == "" {
 		expr = strings.TrimSpace(m.filterInput)
 	}
-	name := suggestSavedFilterName(expr)
-	id := nextUniqueSavedFilterID(m.savedFilters, name)
+	id := nextUniqueSavedFilterID(m.savedFilters, "filter")
 	m.filterEditIsNew = true
 	m.filterEditID = id
 	m.filterEditOrigID = ""
-	m.filterEditName = name
+	m.filterEditName = ""
 	m.filterEditExpr = expr
 	m.filterEditIDCur = len(m.filterEditID)
-	m.filterEditNameCur = len(m.filterEditName)
+	m.filterEditNameCur = 0
 	m.filterEditExprCur = len(m.filterEditExpr)
 }
 
@@ -402,11 +387,11 @@ func (m model) updateFilterEdit(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		m.closeFilterEditor()
 		m.setStatus("Filter edit cancelled.")
 		return m, nil
-	case m.isAction(scope, actionUp, msg):
+	case keyName == "up" || keyName == "ctrl+p":
 		m.filterEditFocus = (m.filterEditFocus - 1 + 3) % 3
 		m.filterEditErr = ""
 		return m, nil
-	case m.isAction(scope, actionDown, msg):
+	case keyName == "down" || keyName == "ctrl+n":
 		m.filterEditFocus = (m.filterEditFocus + 1) % 3
 		m.filterEditErr = ""
 		return m, nil
