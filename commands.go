@@ -848,7 +848,7 @@ func (m model) canOpenCommandUI() bool {
 	if m.commandOpen || m.showDetail || m.importDupeModal || m.importPicking || m.catPicker != nil || m.tagPicker != nil {
 		return false
 	}
-	if m.accountNukePicker != nil || m.managerActionPicker != nil || m.managerModalOpen || m.filterInputMode || m.jumpModeActive {
+	if m.managerActionPicker != nil || m.managerModalOpen || m.filterInputMode || m.jumpModeActive {
 		return false
 	}
 	if m.settMode != settModeNone || m.confirmAction != confirmActionNone {
@@ -1020,9 +1020,6 @@ func (m model) commandContextScope() string {
 	}
 	if m.tagPicker != nil {
 		return scopeTagPicker
-	}
-	if m.accountNukePicker != nil {
-		return scopeAccountNukePicker
 	}
 	if m.managerActionPicker != nil {
 		return scopeManagerAccountAction

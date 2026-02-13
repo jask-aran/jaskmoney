@@ -20,7 +20,6 @@ func TestUpdateDispatcherEscClosesOverlaysInPriorityOrder(t *testing.T) {
 	m.importPicking = true
 	m.catPicker = newPicker("Cat", nil, false, "")
 	m.tagPicker = newPicker("Tag", nil, true, "Create")
-	m.accountNukePicker = newPicker("Nuke", nil, false, "")
 	m.managerActionPicker = newPicker("Account Action", nil, false, "")
 	m.managerModalOpen = true
 	m.filterInputMode = true
@@ -82,48 +81,41 @@ func TestUpdateDispatcherEscClosesOverlaysInPriorityOrder(t *testing.T) {
 	if s6.tagPicker != nil {
 		t.Fatal("expected tag picker to close sixth")
 	}
-	if s6.accountNukePicker == nil {
-		t.Fatal("account nuke picker should still be open")
-	}
-
-	// 7) account nuke picker
-	next, _ = s6.Update(keyMsg("esc"))
-	s7 := next.(model)
-	if s7.accountNukePicker != nil {
-		t.Fatal("expected account nuke picker to close seventh")
-	}
-	if s7.managerActionPicker == nil {
+	if s6.managerActionPicker == nil {
 		t.Fatal("manager account action picker should still be open")
 	}
 
-	// 8) manager account action picker
-	next, _ = s7.Update(keyMsg("esc"))
-	s8 := next.(model)
-	if s8.managerActionPicker != nil {
-		t.Fatal("expected manager account action picker to close eighth")
+	// 7) manager account action picker
+	next, _ = s6.Update(keyMsg("esc"))
+	s7 := next.(model)
+	if s7.managerActionPicker != nil {
+		t.Fatal("expected manager account action picker to close seventh")
 	}
-	if !s8.managerModalOpen {
+	if !s7.managerModalOpen {
 		t.Fatal("manager modal should still be open")
 	}
 
-	// 9) manager modal
-	next, _ = s8.Update(keyMsg("esc"))
-	s9 := next.(model)
-	if s9.managerModalOpen {
-		t.Fatal("expected manager modal to close ninth")
+	// 8) manager modal
+	next, _ = s7.Update(keyMsg("esc"))
+	s8 := next.(model)
+	if s8.managerModalOpen {
+		t.Fatal("expected manager modal to close eighth")
 	}
-	if !s9.filterInputMode {
+	if !s8.filterInputMode {
 		t.Fatal("filter input mode should still be active")
 	}
 
-	// 10) filter input mode
-	next, _ = s9.Update(keyMsg("esc"))
-	s10 := next.(model)
-	if s10.filterInputMode {
+	// 9) filter input mode
+	next, _ = s8.Update(keyMsg("esc"))
+	s9 := next.(model)
+	if s9.managerModalOpen {
+		t.Fatal("manager modal should already be closed")
+	}
+	if s9.filterInputMode {
 		t.Fatal("expected filter input mode to close last")
 	}
-	if s10.filterInput != "" {
-		t.Fatalf("filterInput should be cleared when closing filter input, got %q", s10.filterInput)
+	if s9.filterInput != "" {
+		t.Fatalf("filterInput should be cleared when closing filter input, got %q", s9.filterInput)
 	}
 }
 
@@ -167,8 +159,7 @@ func TestCommandUIOpenBlockedByBusyStatesViaTopLevelUpdate(t *testing.T) {
 		{name: "file picker", mut: func(m *model) { m.importPicking = true }},
 		{name: "category picker", mut: func(m *model) { m.catPicker = newPicker("Cat", nil, false, "") }},
 		{name: "tag picker", mut: func(m *model) { m.tagPicker = newPicker("Tag", nil, true, "Create") }},
-		{name: "account nuke picker", mut: func(m *model) { m.accountNukePicker = newPicker("Nuke", nil, false, "") }},
-		{name: "manager account action picker", mut: func(m *model) { m.managerActionPicker = newPicker("Account Action", nil, false, "") }},
+			{name: "manager account action picker", mut: func(m *model) { m.managerActionPicker = newPicker("Account Action", nil, false, "") }},
 		{name: "manager modal", mut: func(m *model) { m.managerModalOpen = true }},
 		{name: "filter input mode", mut: func(m *model) { m.filterInputMode = true }},
 		{name: "settings edit mode", mut: func(m *model) { m.settMode = settModeAddTag }},

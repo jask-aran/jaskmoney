@@ -40,11 +40,9 @@ const (
 	scopeDetailModal              = "detail_modal"
 	scopeCategoryPicker           = "category_picker"
 	scopeTagPicker                = "tag_picker"
-	scopeAccountNukePicker        = "account_nuke_picker"
 	scopeFilePicker               = "file_picker"
 	scopeDupeModal                = "dupe_modal"
 	scopeFilterInput              = "filter_input"
-	scopeSearch                   = scopeFilterInput // legacy alias
 	scopeSettingsNav              = "settings_nav"
 	scopeSettingsModeCat          = "settings_mode_cat"
 	scopeSettingsModeTag          = "settings_mode_tag"
@@ -83,7 +81,6 @@ const (
 	actionFilterLoad     Action = "filter_load"
 	actionSort           Action = "sort"
 	actionSortDirection  Action = "sort_direction"
-	actionFilterCategory Action = "filter_category" // legacy, no default binding in v0.32
 	actionToggleSelect   Action = "toggle_select"
 	actionRangeHighlight Action = "range_highlight"
 	actionQuickCategory  Action = "quick_category"
@@ -103,7 +100,6 @@ const (
 	actionRowsPerPage        Action = "rows_per_page"
 	actionClearDB            Action = "clear_db"
 	actionImport             Action = "import"
-	actionNukeAccount        Action = "nuke_account"
 	actionResetKeybindings   Action = "reset_keybindings"
 	// Legacy alias retained for backward-compatible parsing/migration.
 	actionColumn                   Action = actionRight
@@ -233,10 +229,6 @@ func NewKeyRegistry() *KeyRegistry {
 	reg(scopeTagPicker, actionToggleSelect, "", []string{"space"}, "toggle")
 	reg(scopeTagPicker, actionSelect, "", []string{"enter"}, "apply")
 	reg(scopeTagPicker, actionClose, "", []string{"esc"}, "cancel")
-	reg(scopeAccountNukePicker, actionUp, "", []string{"up", "ctrl+p", "k"}, "up")
-	reg(scopeAccountNukePicker, actionDown, "", []string{"down", "ctrl+n", "j"}, "down")
-	reg(scopeAccountNukePicker, actionSelect, "", []string{"enter"}, "nuke")
-	reg(scopeAccountNukePicker, actionClose, "", []string{"esc"}, "cancel")
 
 	// Detail / file picker footers: enter, esc, up/down, q
 	reg(scopeDetailModal, actionSelect, "", []string{"enter"}, "select")
@@ -319,9 +311,6 @@ func NewKeyRegistry() *KeyRegistry {
 	reg(scopeSettingsActiveDBImport, actionClearDB, "settings:clear-db", []string{"c"}, "clear db")
 	reg(scopeSettingsActiveDBImport, actionImport, "import:start", []string{"i"}, "import")
 	reg(scopeSettingsActiveDBImport, actionResetKeybindings, "", []string{"r"}, "reset keys")
-	// Legacy no-op binding to keep old keybinding configs valid after
-	// settings nuke-account removal.
-	reg(scopeSettingsActiveDBImport, actionNukeAccount, "", []string{"n"}, "")
 	reg(scopeSettingsActiveImportHist, actionBack, "", []string{"esc"}, "back")
 	reg(scopeSettingsActiveImportHist, actionUp, "", []string{"k", "up", "ctrl+p"}, "up")
 	reg(scopeSettingsActiveImportHist, actionDown, "", []string{"j", "down", "ctrl+n"}, "down")

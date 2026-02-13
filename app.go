@@ -337,7 +337,6 @@ type model struct {
 	catPickerFor        []int
 	tagPicker           *pickerState
 	tagPickerFor        []int
-	accountNukePicker   *pickerState
 	managerActionPicker *pickerState
 	managerActionAcctID int
 	managerActionName   string
@@ -514,10 +513,6 @@ func (m model) View() string {
 	}
 	if m.tagPicker != nil {
 		picker := renderPicker(m.tagPicker, min(56, m.width-10), m.keys, scopeTagPicker)
-		return m.composeOverlay(header, body, statusLine, footer, picker)
-	}
-	if m.accountNukePicker != nil {
-		picker := renderPicker(m.accountNukePicker, min(56, m.width-10), m.keys, scopeAccountNukePicker)
 		return m.composeOverlay(header, body, statusLine, footer, picker)
 	}
 	if m.managerActionPicker != nil {
@@ -892,9 +887,6 @@ func (m model) footerBindings() []key.Binding {
 	}
 	if m.tagPicker != nil {
 		return m.keys.HelpBindings(scopeTagPicker)
-	}
-	if m.accountNukePicker != nil {
-		return m.keys.HelpBindings(scopeAccountNukePicker)
 	}
 	if m.managerActionPicker != nil {
 		return m.keys.HelpBindings(scopeManagerAccountAction)

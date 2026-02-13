@@ -280,7 +280,7 @@ func TestGlobalShortcutNonShadowInTabScopes(t *testing.T) {
 		scopeTransactions,
 		scopeManager,
 		scopeManagerTransactions,
-		scopeSearch,
+			scopeFilterInput,
 		scopeSettingsNav,
 		scopeSettingsActiveCategories,
 		scopeSettingsActiveTags,

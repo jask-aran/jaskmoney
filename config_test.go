@@ -10,8 +10,11 @@ import (
 
 func TestParseFormatsValid(t *testing.T) {
 	data := []byte(`
-[[format]]
-name = "ANZ"
+[account.ANZ]
+type = "credit"
+sort_order = 1
+is_active = true
+import_prefix = "anz"
 description = "ANZ Australia"
 date_format = "2/01/2006"
 has_header = false
@@ -21,7 +24,7 @@ amount_col = 1
 desc_col = 2
 desc_join = true
 amount_strip = ","
-`)
+	`)
 	formats, err := parseFormats(data)
 	if err != nil {
 		t.Fatalf("parseFormats: %v", err)
@@ -36,8 +39,8 @@ amount_strip = ","
 
 func TestParseConfigSettingsDefaultsAndNormalization(t *testing.T) {
 	data := []byte(`
-[[format]]
-name = "ANZ"
+[account.ANZ]
+type = "credit"
 date_format = "2/01/2006"
 
 [settings]
@@ -127,58 +130,41 @@ func TestLoadAndSaveAppSettings(t *testing.T) {
 	}
 }
 
-func TestLoadAppConfigMigratesLegacyFormatsToml(t *testing.T) {
+func TestLoadAppConfigResetsInvalidConfigToDefaults(t *testing.T) {
 	xdg := t.TempDir()
 	t.Setenv("XDG_CONFIG_HOME", xdg)
 
-	legacy := filepath.Join(xdg, "jaskmoney", "formats.toml")
-	data := []byte(`
-[[format]]
-name = "ANZ"
-date_format = "2/01/2006"
-`)
-	if err := os.MkdirAll(filepath.Dir(legacy), 0o755); err != nil {
+	primary := filepath.Join(xdg, "jaskmoney", "config.toml")
+	if err := os.MkdirAll(filepath.Dir(primary), 0o755); err != nil {
 		t.Fatalf("mkdir: %v", err)
 	}
-	if err := os.WriteFile(legacy, data, 0o644); err != nil {
-		t.Fatalf("write legacy config: %v", err)
+	if err := os.WriteFile(primary, []byte("not toml"), 0o644); err != nil {
+		t.Fatalf("write invalid config: %v", err)
 	}
 
-	_, _, err := loadAppConfig()
+	formats, settings, saved, custom, warnings, err := loadAppConfigExtended()
 	if err != nil {
-		t.Fatalf("loadAppConfig: %v", err)
+		t.Fatalf("loadAppConfigExtended: %v", err)
+	}
+	if len(formats) == 0 {
+		t.Fatal("expected regenerated default formats")
+	}
+	if settings.RowsPerPage != 20 {
+		t.Fatalf("rows_per_page = %d, want 20", settings.RowsPerPage)
+	}
+	if len(saved) != 0 || len(custom) != 0 {
+		t.Fatalf("expected no saved/custom modes after reset, got saved=%d custom=%d", len(saved), len(custom))
+	}
+	if len(warnings) == 0 {
+		t.Fatal("expected warning about reset")
 	}
 
-	primary := filepath.Join(xdg, "jaskmoney", "config.toml")
-	if _, err := os.Stat(primary); err != nil {
-		t.Fatalf("expected migrated config.toml: %v", err)
-	}
-}
-
-func TestLoadAppConfigMigratesAppLocalConfig(t *testing.T) {
-	xdg := t.TempDir()
-	app := t.TempDir()
-	t.Setenv("XDG_CONFIG_HOME", xdg)
-	t.Chdir(app)
-
-	local := filepath.Join(app, "config.toml")
-	data := []byte(`
-[[format]]
-name = "ANZ"
-date_format = "2/01/2006"
-`)
-	if err := os.WriteFile(local, data, 0o644); err != nil {
-		t.Fatalf("write local config: %v", err)
-	}
-
-	_, _, err := loadAppConfig()
+	raw, err := os.ReadFile(primary)
 	if err != nil {
-		t.Fatalf("loadAppConfig: %v", err)
+		t.Fatalf("read rewritten config: %v", err)
 	}
-
-	primary := filepath.Join(xdg, "jaskmoney", "config.toml")
-	if _, err := os.Stat(primary); err != nil {
-		t.Fatalf("expected migrated XDG config.toml: %v", err)
+	if !strings.Contains(string(raw), "[account.") {
+		t.Fatalf("rewritten config missing account table:\n%s", string(raw))
 	}
 }
 
@@ -189,70 +175,34 @@ version = 2
 
 [bindings]
 quick_category = ["ctrl+k"]
-close = ["esc"]
-`)
-	items, migrated, err := parseKeybindingsConfig(data, defaults)
+	`)
+	items, err := parseKeybindingsConfig(data, defaults)
 	if err != nil {
 		t.Fatalf("parseKeybindingsConfig: %v", err)
 	}
-	if !migrated {
-		t.Fatal("expected close alias to be normalized to cancel")
-	}
 
 	foundQuick := false
-	foundCloseInDetail := false
-	foundCloseInFile := false
 	for _, it := range items {
 		if it.Scope == scopeTransactions && it.Action == string(actionQuickCategory) {
 			foundQuick = len(it.Keys) == 1 && it.Keys[0] == "ctrl+k"
-		}
-		if it.Scope == scopeDetailModal && it.Action == string(actionClose) {
-			foundCloseInDetail = len(it.Keys) == 1 && it.Keys[0] == "esc"
-		}
-		if it.Scope == scopeFilePicker && it.Action == string(actionClose) {
-			foundCloseInFile = len(it.Keys) == 1 && it.Keys[0] == "esc"
 		}
 	}
 	if !foundQuick {
 		t.Fatal("expected quick_category override from action bindings")
 	}
-	if !foundCloseInDetail || !foundCloseInFile {
-		t.Fatal("expected close override to apply to every scope exposing close")
-	}
 }
 
-func TestParseKeybindingsConfigActionBindingsLegacyAliases(t *testing.T) {
+func TestParseKeybindingsConfigRejectsLegacyAliases(t *testing.T) {
 	defaults := NewKeyRegistry().ExportKeybindingConfig()
 	data := []byte(`
 version = 2
 
 [bindings]
 confirm_repeat = ["ctrl+r"]
-cancel_any = ["ctrl+x"]
-`)
-	items, migrated, err := parseKeybindingsConfig(data, defaults)
-	if err != nil {
-		t.Fatalf("parseKeybindingsConfig: %v", err)
-	}
-	if !migrated {
-		t.Fatal("expected v2 alias migration to set migrated=true")
-	}
-
-	foundConfirm := false
-	foundCancel := false
-	for _, it := range items {
-		if it.Action == string(actionConfirm) && len(it.Keys) == 1 && it.Keys[0] == "ctrl+r" {
-			foundConfirm = true
-		}
-		if it.Action == string(actionCancel) && len(it.Keys) == 1 && it.Keys[0] == "ctrl+x" {
-			foundCancel = true
-		}
-	}
-	if !foundConfirm {
-		t.Fatal("expected confirm alias override to be applied")
-	}
-	if !foundCancel {
-		t.Fatal("expected cancel alias override to be applied")
+	`)
+	_, err := parseKeybindingsConfig(data, defaults)
+	if err == nil {
+		t.Fatal("expected legacy alias parse error")
 	}
 }
 
@@ -264,7 +214,7 @@ version = 2
 [bindings]
 confirm_repeatz = ["ctrl+r"]
 `)
-	_, _, err := parseKeybindingsConfig(data, defaults)
+	_, err := parseKeybindingsConfig(data, defaults)
 	if err == nil {
 		t.Fatal("expected unknown action error")
 	}
@@ -298,46 +248,38 @@ func TestLoadKeybindingsCreatesTemplate(t *testing.T) {
 	}
 }
 
-func TestLoadKeybindingsMigratesLegacyFromConfig(t *testing.T) {
+func TestLoadKeybindingsResetsInvalidFileToDefaults(t *testing.T) {
 	xdg := t.TempDir()
 	t.Setenv("XDG_CONFIG_HOME", xdg)
 
-	cfgPath := filepath.Join(xdg, "jaskmoney", "config.toml")
+	path := filepath.Join(xdg, "jaskmoney", "keybindings.toml")
 	data := []byte(`
-[[format]]
-name = "ANZ"
-date_format = "2/01/2006"
+version = 1
 
-[[shortcut_override]]
-scope = "transactions"
-action = "quick_category"
-keys = ["ctrl+k"]
-`)
-	if err := os.MkdirAll(filepath.Dir(cfgPath), 0o755); err != nil {
+[scopes.transactions.bind]
+confirm_repeat = ["ctrl+r"]
+	`)
+	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
 		t.Fatalf("mkdir: %v", err)
 	}
-	if err := os.WriteFile(cfgPath, data, 0o644); err != nil {
-		t.Fatalf("write config: %v", err)
+	if err := os.WriteFile(path, data, 0o644); err != nil {
+		t.Fatalf("write keybindings: %v", err)
 	}
 
 	items, err := loadKeybindingsConfig()
 	if err != nil {
 		t.Fatalf("loadKeybindingsConfig: %v", err)
 	}
-	found := false
-	for _, it := range items {
-		if it.Scope == scopeTransactions && it.Action == string(actionQuickCategory) && len(it.Keys) > 0 && it.Keys[0] == "ctrl+k" {
-			found = true
-			break
-		}
-	}
-	if !found {
-		t.Fatal("expected migrated quick_category override")
+	if len(items) == 0 {
+		t.Fatal("expected reset defaults")
 	}
 
-	path := filepath.Join(xdg, "jaskmoney", "keybindings.toml")
-	if _, err := os.Stat(path); err != nil {
-		t.Fatalf("expected keybindings.toml to be created: %v", err)
+	raw, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatalf("read keybindings.toml: %v", err)
+	}
+	if strings.Contains(string(raw), "scopes.") {
+		t.Fatalf("expected rewritten v2 action bindings, got:\n%s", string(raw))
 	}
 }
 
@@ -395,8 +337,8 @@ func TestMaterializeKeybindingsMigratesManagerQuickTagConflict(t *testing.T) {
 
 func TestParseConfigExtValidatesSavedFiltersAndDashboardViews(t *testing.T) {
 	data := []byte(`
-[[format]]
-name = "ANZ"
+[account.ANZ]
+type = "credit"
 date_format = "2/01/2006"
 
 [[saved_filter]]
