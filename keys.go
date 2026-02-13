@@ -178,7 +178,7 @@ func NewKeyRegistry() *KeyRegistry {
 	reg(scopeManagerModal, actionLeft, "", []string{"h", "left"}, "")
 	reg(scopeManagerModal, actionRight, "", []string{"l", "right"}, "")
 	reg(scopeManagerModal, actionToggleSelect, "", []string{"space"}, "toggle")
-	reg(scopeManagerModal, actionSave, "", []string{"enter"}, "save")
+	reg(scopeManagerModal, actionConfirm, "", []string{"enter"}, "save")
 	reg(scopeManagerModal, actionClose, "", []string{"esc"}, "cancel")
 	reg(scopeManagerAccountAction, actionUp, "", []string{"k", "up", "ctrl+p"}, "")
 	reg(scopeManagerAccountAction, actionDown, "", []string{"j", "down", "ctrl+n"}, "")

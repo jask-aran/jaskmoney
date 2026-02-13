@@ -816,7 +816,7 @@ func TestRenderManagerAccountModalOmitsInlineHelperText(t *testing.T) {
 	m := newModel()
 	m.keys = NewKeyRegistry()
 	if err := m.keys.ApplyKeybindingConfig([]keybindingConfig{
-		{Scope: scopeManagerModal, Action: string(actionSave), Keys: []string{"ctrl+s"}},
+		{Scope: scopeManagerModal, Action: string(actionConfirm), Keys: []string{"ctrl+s"}},
 		{Scope: scopeManagerModal, Action: string(actionClose), Keys: []string{"c"}},
 	}); err != nil {
 		t.Fatalf("ApplyKeybindingConfig: %v", err)
