@@ -239,10 +239,11 @@ func loadKeybindingsConfig() ([]keybindingConfig, error) {
 	}
 	materialized, changed, err := materializeKeybindings(defaults, parsed)
 	if err != nil {
-		if writeErr := writeKeybindingsFile(primaryPath, defaults); writeErr != nil {
-			return defaults, fmt.Errorf("validate keybindings: %w; write default keybindings: %v", err, writeErr)
-		}
-		return defaults, nil
+		return defaults, fmt.Errorf(
+			"validate keybindings: %w (resolve key conflicts in %s, then rerun `go run . -startup-check`)",
+			err,
+			primaryPath,
+		)
 	}
 	if changed {
 		if err := writeKeybindingsFile(primaryPath, materialized); err != nil {
@@ -321,11 +322,11 @@ func parseConfigExt(data []byte) ([]csvFormat, appSettings, []keybindingConfig, 
 			}
 			return strings.ToLower(items[i].name) < strings.ToLower(items[j].name)
 		})
-			for _, item := range items {
-				formats = append(formats, item.fmt)
-			}
+		for _, item := range items {
+			formats = append(formats, item.fmt)
 		}
-		if len(formats) == 0 {
+	}
+	if len(formats) == 0 {
 		return nil, defaultSettings(), nil, nil, nil, nil, fmt.Errorf("no account formats defined in config")
 	}
 	for i := range formats {
@@ -580,80 +581,10 @@ func materializeKeybindings(defaults, fileBindings []keybindingConfig) ([]keybin
 		}
 		return out[i].Action < out[j].Action
 	})
-	if migrated := migrateManagerQuickTagConflict(out, defaults); migrated {
-		changed = true
-	}
-
 	if err := validateKeybindingConflicts(out); err != nil {
 		return nil, false, err
 	}
 	return out, changed, nil
-}
-
-func migrateManagerQuickTagConflict(bindings []keybindingConfig, defaults []keybindingConfig) bool {
-	const (
-		managerScope   = "manager"
-		quickTagAction = "quick_tag"
-	)
-	quickIdx := -1
-	used := make(map[string]bool)
-	for i, b := range bindings {
-		if b.Scope != managerScope {
-			continue
-		}
-		if b.Action == quickTagAction {
-			quickIdx = i
-			continue
-		}
-		for _, k := range normalizeKeyList(b.Keys) {
-			used[k] = true
-		}
-	}
-	if quickIdx < 0 {
-		return false
-	}
-	quickKeys := normalizeKeyList(bindings[quickIdx].Keys)
-	hasConflict := false
-	for _, k := range quickKeys {
-		if used[k] {
-			hasConflict = true
-			break
-		}
-	}
-	if !hasConflict {
-		return false
-	}
-
-	defaultQuickKeys := []string{"T"}
-	for _, d := range defaults {
-		if d.Scope == managerScope && d.Action == quickTagAction {
-			keys := normalizeKeyList(d.Keys)
-			if len(keys) > 0 {
-				defaultQuickKeys = keys
-			}
-			break
-		}
-	}
-	conflictFree := true
-	for _, k := range defaultQuickKeys {
-		if used[k] {
-			conflictFree = false
-			break
-		}
-	}
-	if conflictFree {
-		bindings[quickIdx].Keys = defaultQuickKeys
-		return true
-	}
-
-	for _, candidate := range []string{"T", "ctrl+t", "alt+t"} {
-		c := normalizeKeyName(candidate)
-		if c != "" && !used[c] {
-			bindings[quickIdx].Keys = []string{c}
-			return true
-		}
-	}
-	return false
 }
 
 func validateKeybindingConflicts(bindings []keybindingConfig) error {
@@ -920,9 +851,9 @@ func renderKeybindingsTemplate(bindings []keybindingConfig) string {
 				string(actionFocusAccounts),
 			},
 		},
-			{
-				header: "# Settings and import workflows",
-				actions: []string{
+		{
+			header: "# Settings and import workflows",
+			actions: []string{
 				string(actionAdd),
 				string(actionEdit),
 				string(actionSave),
@@ -930,11 +861,11 @@ func renderKeybindingsTemplate(bindings []keybindingConfig) string {
 				string(actionImport),
 				string(actionImportAll),
 				string(actionSkipDupes),
-					string(actionClearDB),
-					string(actionRowsPerPage),
-					string(actionResetKeybindings),
-				},
+				string(actionClearDB),
+				string(actionRowsPerPage),
+				string(actionResetKeybindings),
 			},
+		},
 	}
 
 	printed := make(map[string]bool, len(actionDefaults))
