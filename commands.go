@@ -448,7 +448,7 @@ func NewCommandRegistry(keys *KeyRegistry, savedFilters []savedFilter) *CommandR
 				last := m.savedFilters[len(m.savedFilters)-1]
 				m.filterInput = last.Expr
 				m.reparseFilterInput()
-				m.filterInputMode = false
+				m.filterInputMode = true
 				m.filterInputCursor = len(m.filterInput)
 				m.filterLastApplied = last.Expr
 				m.cursor = 0
@@ -957,10 +957,23 @@ func (m model) executeSelectedCommand() (tea.Model, tea.Cmd) {
 }
 
 func (m model) executeBoundCommand(scope string, msg tea.KeyMsg) (model, tea.Cmd, bool) {
+	return m.executeBoundCommandInternal(scope, msg, false)
+}
+
+func (m model) executeBoundCommandLocal(scope string, msg tea.KeyMsg) (model, tea.Cmd, bool) {
+	return m.executeBoundCommandInternal(scope, msg, true)
+}
+
+func (m model) executeBoundCommandInternal(scope string, msg tea.KeyMsg, localOnly bool) (model, tea.Cmd, bool) {
 	if m.keys == nil || m.commands == nil {
 		return m, nil, false
 	}
-	binding := m.keys.Lookup(msg.String(), scope)
+	var binding *Binding
+	if localOnly {
+		binding = m.keys.lookupInScope(normalizeKeyName(msg.String()), scope)
+	} else {
+		binding = m.keys.Lookup(msg.String(), scope)
+	}
 	if binding == nil || strings.TrimSpace(binding.CommandID) == "" {
 		return m, nil, false
 	}

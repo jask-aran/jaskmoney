@@ -37,7 +37,6 @@ func (m model) updateFilterInput(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		m.topIndex = 0
 		return m, nil
 	case m.isAction(scopeFilterInput, actionConfirm, msg):
-		m.filterInputMode = false
 		m.filterInputCursor = clampInputCursorASCII(m.filterInput, m.filterInputCursor)
 		if strings.TrimSpace(m.filterInput) == "" {
 			m.filterLastApplied = ""
@@ -56,7 +55,7 @@ func (m model) updateFilterInput(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		return m, nil
 	}
 
-	if next, cmd, handled := m.executeBoundCommand(scopeFilterInput, msg); handled {
+	if next, cmd, handled := m.executeBoundCommandLocal(scopeFilterInput, msg); handled {
 		return next, cmd
 	}
 

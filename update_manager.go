@@ -260,7 +260,7 @@ func (m model) updateManagerModal(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			deleteLastASCIIByte(&m.managerEditPrefix)
 		}
 		return m, nil
-	case m.isAction(scopeManagerModal, actionSave, msg):
+	case m.isAction(scopeManagerModal, actionConfirm, msg):
 		name := strings.TrimSpace(m.managerEditName)
 		if name == "" {
 			m.setError("Account name cannot be empty.")

@@ -481,14 +481,46 @@ func TestFilterSaveRequiresAppliedExpression(t *testing.T) {
 
 	next, _ = got.updateFilterInput(keyMsg("enter"))
 	got2 := next.(model)
+	if !got2.filterInputMode {
+		t.Fatal("filter input mode should remain active after enter apply")
+	}
 	if got2.filterLastApplied == "" {
 		t.Fatal("expected filterLastApplied to be set after enter")
 	}
-	got2.filterInputMode = true
 	next, _ = got2.updateFilterInput(keyMsg("ctrl+s"))
 	got3 := next.(model)
 	if len(got3.savedFilters) != 1 {
 		t.Fatalf("saved filters = %d, want 1 after apply", len(got3.savedFilters))
+	}
+}
+
+func TestFilterInputAllowsColonAndPreventsGlobalShortcutLeak(t *testing.T) {
+	m := newModel()
+	m.filterInputMode = true
+	m.activeTab = tabManager
+
+	next, _ := m.Update(keyMsg(":"))
+	got := next.(model)
+	if got.filterInput != ":" {
+		t.Fatalf("filterInput = %q, want :", got.filterInput)
+	}
+	if got.commandOpen {
+		t.Fatal("command mode should not open while typing in filter input")
+	}
+
+	next, _ = got.Update(keyMsg("v"))
+	got2 := next.(model)
+	if got2.filterInput != ":v" {
+		t.Fatalf("filterInput = %q, want :v", got2.filterInput)
+	}
+	if got2.jumpModeActive {
+		t.Fatal("jump mode should not activate while typing in filter input")
+	}
+
+	next, _ = got2.Update(keyMsg("1"))
+	got3 := next.(model)
+	if got3.activeTab != tabManager {
+		t.Fatalf("activeTab changed during filter typing: got %d", got3.activeTab)
 	}
 }
 
