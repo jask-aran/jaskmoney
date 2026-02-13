@@ -7,6 +7,7 @@ import (
 
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
+	"github.com/charmbracelet/x/ansi"
 )
 
 type pickerItem struct {
@@ -69,6 +70,7 @@ type pickerSelectableRow struct {
 type scoredPickerItem struct {
 	item  pickerItem
 	score int
+	index int
 }
 
 func newPicker(title string, items []pickerItem, multiSelect bool, createLabel string) *pickerState {
@@ -513,16 +515,15 @@ func renderPicker(p *pickerState, width int, keys *KeyRegistry, scope string) st
 }
 
 func stylePickerRow(content string, selected, isCursor bool, width int, cursorOnly bool) string {
+	if width > 0 {
+		content = padStyledLine(content, width)
+	}
 	if cursorOnly {
 		style := lipgloss.NewStyle()
 		if isCursor {
 			style = style.Bold(true)
 		}
-		row := style.Render(content)
-		if width > 0 {
-			row = style.Render(padStyledLine(content, width))
-		}
-		return row
+		return style.Render(content)
 	}
 	bg, cursorStrong := rowStateBackgroundAndCursor(selected, false, isCursor)
 	style := lipgloss.NewStyle()
@@ -532,17 +533,14 @@ func stylePickerRow(content string, selected, isCursor bool, width int, cursorOn
 	if cursorStrong {
 		style = style.Bold(true)
 	}
-	row := style.Render(content)
-	if width > 0 {
-		row = style.Render(padStyledLine(content, width))
-	}
-	return row
+	return style.Render(content)
 }
 
 func padStyledLine(s string, width int) string {
 	if width <= 0 {
 		return s
 	}
+	s = ansi.Truncate(s, width, "")
 	w := lipgloss.Width(s)
 	if w >= width {
 		return s
@@ -597,7 +595,7 @@ func (p *pickerState) rebuildFiltered() {
 	q := strings.TrimSpace(p.query)
 	bySection := make(map[string][]scoredPickerItem)
 	orderedSections := p.sectionOrder()
-	for _, it := range p.items {
+	for idx, it := range p.items {
 		matched, score := fuzzyMatchScore(it.Label, q)
 		if !matched {
 			continue
@@ -605,6 +603,7 @@ func (p *pickerState) rebuildFiltered() {
 		bySection[it.Section] = append(bySection[it.Section], scoredPickerItem{
 			item:  it,
 			score: score,
+			index: idx,
 		})
 	}
 
@@ -618,12 +617,7 @@ func (p *pickerState) rebuildFiltered() {
 			if scored[i].score != scored[j].score {
 				return scored[i].score > scored[j].score
 			}
-			li := strings.ToLower(scored[i].item.Label)
-			lj := strings.ToLower(scored[j].item.Label)
-			if li != lj {
-				return li < lj
-			}
-			return scored[i].item.ID < scored[j].item.ID
+			return scored[i].index < scored[j].index
 		})
 		for i := range scored {
 			out = append(out, scored[i].item)

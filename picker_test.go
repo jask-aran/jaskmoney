@@ -378,3 +378,22 @@ func TestPickerHandleMsgArrowDownStillNavigates(t *testing.T) {
 		t.Fatalf("cursor = %d, want 1", p.cursor)
 	}
 }
+
+func TestRenderPickerTruncatesLongRowsToWidth(t *testing.T) {
+	p := newPicker("Apply Saved Filter", []pickerItem{
+		{
+			ID:    1,
+			Label: "very_long_filter_id_that_would_otherwise_overflow",
+			Meta:  strings.Repeat("x", 120),
+		},
+	}, false, "")
+	p.cursorOnly = true
+
+	width := 42
+	view := renderPicker(p, width, NewKeyRegistry(), scopeFilterApplyPicker)
+	for _, line := range strings.Split(view, "\n") {
+		if lipgloss.Width(line) > width+6 {
+			t.Fatalf("line width overflow: got %d, want <= %d, line=%q", lipgloss.Width(line), width+6, line)
+		}
+	}
+}

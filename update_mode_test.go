@@ -495,6 +495,8 @@ func TestFilterSaveRequiresAppliedExpression(t *testing.T) {
 	if !got3.filterEditOpen {
 		t.Fatal("expected filter editor modal to open after ctrl+s")
 	}
+	got3.filterEditName = "Groceries"
+	got3.filterEditNameCur = len(got3.filterEditName)
 	next, _ = got3.Update(keyMsg("enter"))
 	got4 := next.(model)
 	if got4.filterEditOpen {
