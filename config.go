@@ -65,6 +65,7 @@ type appSettings struct {
 }
 
 type savedFilter struct {
+	ID   string `toml:"id"`
 	Name string `toml:"name"`
 	Expr string `toml:"expr"`
 }
@@ -361,24 +362,36 @@ func normalizeFilterConfigEntries(savedIn []savedFilter, customIn []customPaneMo
 	savedOut := make([]savedFilter, 0, len(savedIn))
 	customOut := make([]customPaneMode, 0, len(customIn))
 	warnings := make([]string, 0)
+	seenSavedIDs := make(map[string]bool)
 
 	for i, sf := range savedIn {
+		id, idErr := normalizeSavedFilterID(sf.ID)
 		name := strings.TrimSpace(sf.Name)
 		expr := strings.TrimSpace(sf.Expr)
+		if idErr != nil {
+			warnings = append(warnings, fmt.Sprintf("saved_filter[%d] skipped: %v", i, idErr))
+			continue
+		}
+		if seenSavedIDs[id] {
+			warnings = append(warnings, fmt.Sprintf("saved_filter[%d] skipped: duplicate id %q", i, id))
+			continue
+		}
 		if name == "" {
-			warnings = append(warnings, fmt.Sprintf("saved_filter[%d] skipped: name is required", i))
+			warnings = append(warnings, fmt.Sprintf("saved_filter %q skipped: name is required", id))
 			continue
 		}
 		if expr == "" {
-			warnings = append(warnings, fmt.Sprintf("saved_filter %q skipped: expr is required", name))
+			warnings = append(warnings, fmt.Sprintf("saved_filter %q skipped: expr is required", id))
 			continue
 		}
 		node, err := parseFilterStrict(expr)
 		if err != nil {
-			warnings = append(warnings, fmt.Sprintf("saved_filter %q skipped: %v", name, err))
+			warnings = append(warnings, fmt.Sprintf("saved_filter %q skipped: %v", id, err))
 			continue
 		}
+		seenSavedIDs[id] = true
 		savedOut = append(savedOut, savedFilter{
+			ID:   id,
 			Name: name,
 			Expr: filterExprString(node),
 		})
@@ -423,6 +436,29 @@ func normalizeFilterConfigEntries(savedIn []savedFilter, customIn []customPaneMo
 	}
 
 	return savedOut, customOut, warnings
+}
+
+func normalizeSavedFilterID(raw string) (string, error) {
+	id := strings.ToLower(strings.TrimSpace(raw))
+	if id == "" {
+		return "", fmt.Errorf("id is required")
+	}
+	if len(id) > 63 {
+		return "", fmt.Errorf("id %q is too long (max 63)", id)
+	}
+	for i := 0; i < len(id); i++ {
+		ch := id[i]
+		isAlphaNum := (ch >= 'a' && ch <= 'z') || (ch >= '0' && ch <= '9')
+		if isAlphaNum || ch == '_' || ch == '-' {
+			continue
+		}
+		return "", fmt.Errorf("id %q has invalid character %q (allowed: a-z, 0-9, _, -)", id, string(ch))
+	}
+	first := id[0]
+	if !((first >= 'a' && first <= 'z') || (first >= '0' && first <= '9')) {
+		return "", fmt.Errorf("id %q must start with a-z or 0-9", id)
+	}
+	return id, nil
 }
 
 func isKnownDashboardPaneID(v string) bool {
@@ -679,6 +715,32 @@ func saveSavedFilters(saved []savedFilter) error {
 	if err != nil {
 		return err
 	}
+	normalized := make([]savedFilter, 0, len(saved))
+	seenIDs := make(map[string]bool, len(saved))
+	for i, sf := range saved {
+		id, idErr := normalizeSavedFilterID(sf.ID)
+		if idErr != nil {
+			return fmt.Errorf("saved_filter[%d]: %w", i, idErr)
+		}
+		if seenIDs[id] {
+			return fmt.Errorf("saved_filter[%d]: duplicate id %q", i, id)
+		}
+		seenIDs[id] = true
+		name := strings.TrimSpace(sf.Name)
+		if name == "" {
+			return fmt.Errorf("saved_filter[%d] %q: name is required", i, id)
+		}
+		expr := strings.TrimSpace(sf.Expr)
+		node, parseErr := parseFilterStrict(expr)
+		if parseErr != nil {
+			return fmt.Errorf("saved_filter[%d] %q: %w", i, id, parseErr)
+		}
+		normalized = append(normalized, savedFilter{
+			ID:   id,
+			Name: name,
+			Expr: filterExprString(node),
+		})
+	}
 	formats, settings, _, customModes, _, loadErr := loadAppConfigExtended()
 	if loadErr != nil {
 		return loadErr
@@ -686,7 +748,7 @@ func saveSavedFilters(saved []savedFilter) error {
 	cfg := configFile{
 		Account:       formatsToAccountConfigs(formats),
 		Settings:      normalizeSettings(settings),
-		SavedFilter:   saved,
+		SavedFilter:   normalized,
 		DashboardView: customModes,
 	}
 	return writeConfigFile(primaryPath, cfg)

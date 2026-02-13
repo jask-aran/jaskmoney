@@ -40,6 +40,8 @@ const (
 	scopeDetailModal              = "detail_modal"
 	scopeCategoryPicker           = "category_picker"
 	scopeTagPicker                = "tag_picker"
+	scopeFilterApplyPicker        = "filter_apply_picker"
+	scopeFilterEdit               = "filter_edit"
 	scopeFilePicker               = "file_picker"
 	scopeDupeModal                = "dupe_modal"
 	scopeFilterInput              = "filter_input"
@@ -51,49 +53,50 @@ const (
 	scopeSettingsActiveCategories = "settings_active_categories"
 	scopeSettingsActiveTags       = "settings_active_tags"
 	scopeSettingsActiveRules      = "settings_active_rules"
+	scopeSettingsActiveFilters    = "settings_active_filters"
 	scopeSettingsActiveChart      = "settings_active_chart"
 	scopeSettingsActiveDBImport   = "settings_active_db_import"
 	scopeSettingsActiveImportHist = "settings_active_import_history"
 )
 
 const (
-	actionQuit    Action = "quit"
-	actionNextTab Action = "next_tab"
-	actionPrevTab Action = "prev_tab"
-	actionUp      Action = "up"
-	actionDown    Action = "down"
-	actionLeft    Action = "left"
-	actionRight   Action = "right"
-	actionConfirm        Action = "confirm"
-	actionSelect         Action = actionConfirm
-	actionActivate       Action = actionConfirm
-	actionNext           Action = actionConfirm
-	actionClose          Action = actionCancel
-	actionCancel         Action = "cancel"
-	actionBack           Action = actionCancel
-	actionClearSearch    Action = actionCancel
-	actionSearch         Action = "search"
-	actionFilterSave     Action = "filter_save"
-	actionFilterLoad     Action = "filter_load"
-	actionSort           Action = "sort"
-	actionSortDirection  Action = "sort_direction"
-	actionToggleSelect   Action = "toggle_select"
-	actionRangeHighlight Action = "range_highlight"
-	actionQuickCategory  Action = "quick_category"
-	actionQuickTag       Action = "quick_tag"
-	actionTimeframe      Action = "timeframe"
-	actionImportAll      Action = "import_all"
-	actionSkipDupes      Action = "skip_dupes"
-	actionSave               Action = "save"
-	actionAdd                Action = "add"
-	actionEdit               Action = "edit"
-	actionDelete             Action = "delete"
-	actionApplyAll           Action = "apply_all"
-	actionToggleWeekBoundary Action = "toggle_week_boundary"
-	actionRowsPerPage        Action = "rows_per_page"
-	actionClearDB            Action = "clear_db"
-	actionImport             Action = "import"
-	actionResetKeybindings   Action = "reset_keybindings"
+	actionQuit                     Action = "quit"
+	actionNextTab                  Action = "next_tab"
+	actionPrevTab                  Action = "prev_tab"
+	actionUp                       Action = "up"
+	actionDown                     Action = "down"
+	actionLeft                     Action = "left"
+	actionRight                    Action = "right"
+	actionConfirm                  Action = "confirm"
+	actionSelect                   Action = actionConfirm
+	actionActivate                 Action = actionConfirm
+	actionNext                     Action = actionConfirm
+	actionClose                    Action = actionCancel
+	actionCancel                   Action = "cancel"
+	actionBack                     Action = actionCancel
+	actionClearSearch              Action = actionCancel
+	actionSearch                   Action = "search"
+	actionFilterSave               Action = "filter_save"
+	actionFilterLoad               Action = "filter_load"
+	actionSort                     Action = "sort"
+	actionSortDirection            Action = "sort_direction"
+	actionToggleSelect             Action = "toggle_select"
+	actionRangeHighlight           Action = "range_highlight"
+	actionQuickCategory            Action = "quick_category"
+	actionQuickTag                 Action = "quick_tag"
+	actionTimeframe                Action = "timeframe"
+	actionImportAll                Action = "import_all"
+	actionSkipDupes                Action = "skip_dupes"
+	actionSave                     Action = "save"
+	actionAdd                      Action = "add"
+	actionEdit                     Action = "edit"
+	actionDelete                   Action = "delete"
+	actionApplyAll                 Action = "apply_all"
+	actionToggleWeekBoundary       Action = "toggle_week_boundary"
+	actionRowsPerPage              Action = "rows_per_page"
+	actionClearDB                  Action = "clear_db"
+	actionImport                   Action = "import"
+	actionResetKeybindings         Action = "reset_keybindings"
 	actionFocusAccounts            Action = "focus_accounts"
 	actionJumpTop                  Action = "jump_top"
 	actionJumpBottom               Action = "jump_bottom"
@@ -195,7 +198,7 @@ func NewKeyRegistry() *KeyRegistry {
 	// Transactions footer.
 	reg(scopeTransactions, actionSearch, "filter:open", []string{"/"}, "filter")
 	reg(scopeTransactions, actionFilterSave, "filter:save", []string{"ctrl+s"}, "save filter")
-	reg(scopeTransactions, actionFilterLoad, "filter:load", []string{"ctrl+l"}, "load filter")
+	reg(scopeTransactions, actionFilterLoad, "filter:apply", []string{"ctrl+l"}, "apply filter")
 	reg(scopeTransactions, actionSort, "txn:sort", []string{"s"}, "sort")
 	reg(scopeTransactions, actionSortDirection, "txn:sort-dir", []string{"S"}, "sort dir")
 	reg(scopeTransactions, actionQuickCategory, "txn:quick-category", []string{"c"}, "quick cat")
@@ -222,6 +225,10 @@ func NewKeyRegistry() *KeyRegistry {
 	reg(scopeTagPicker, actionToggleSelect, "", []string{"space"}, "toggle")
 	reg(scopeTagPicker, actionSelect, "", []string{"enter"}, "apply")
 	reg(scopeTagPicker, actionClose, "", []string{"esc"}, "cancel")
+	reg(scopeFilterApplyPicker, actionUp, "", []string{"up", "ctrl+p", "k"}, "up")
+	reg(scopeFilterApplyPicker, actionDown, "", []string{"down", "ctrl+n", "j"}, "down")
+	reg(scopeFilterApplyPicker, actionSelect, "", []string{"enter"}, "apply")
+	reg(scopeFilterApplyPicker, actionClose, "", []string{"esc"}, "cancel")
 
 	// Detail / file picker footers: enter, esc, up/down, q
 	reg(scopeDetailModal, actionSelect, "", []string{"enter"}, "select")
@@ -243,7 +250,7 @@ func NewKeyRegistry() *KeyRegistry {
 
 	// Filter input footer.
 	reg(scopeFilterInput, actionFilterSave, "filter:save", []string{"ctrl+s"}, "save filter")
-	reg(scopeFilterInput, actionFilterLoad, "filter:load", []string{"ctrl+l"}, "load filter")
+	reg(scopeFilterInput, actionFilterLoad, "filter:apply", []string{"ctrl+l"}, "apply filter")
 	reg(scopeFilterInput, actionLeft, "", []string{"left"}, "")
 	reg(scopeFilterInput, actionRight, "", []string{"right"}, "")
 	reg(scopeFilterInput, actionClearSearch, "", []string{"esc"}, "clear")
@@ -290,6 +297,12 @@ func NewKeyRegistry() *KeyRegistry {
 	reg(scopeSettingsActiveRules, actionDelete, "", []string{"del"}, "delete")
 	reg(scopeSettingsActiveRules, actionApplyAll, "rules:apply", []string{"A"}, "apply all")
 	reg(scopeSettingsActiveRules, actionCommandApplyTagRules, "rules:dry-run", []string{"D"}, "dry run")
+	reg(scopeSettingsActiveFilters, actionUp, "", []string{"k", "up", "ctrl+p"}, "up")
+	reg(scopeSettingsActiveFilters, actionDown, "", []string{"j", "down", "ctrl+n"}, "down")
+	reg(scopeSettingsActiveFilters, actionBack, "", []string{"esc"}, "back")
+	reg(scopeSettingsActiveFilters, actionAdd, "", []string{"a"}, "add")
+	reg(scopeSettingsActiveFilters, actionSelect, "", []string{"enter"}, "edit")
+	reg(scopeSettingsActiveFilters, actionDelete, "", []string{"del"}, "delete")
 	reg(scopeSettingsActiveChart, actionUp, "", []string{"k", "up", "ctrl+p"}, "up")
 	reg(scopeSettingsActiveChart, actionDown, "", []string{"j", "down", "ctrl+n"}, "down")
 	reg(scopeSettingsActiveChart, actionBack, "", []string{"esc"}, "back")
@@ -307,6 +320,12 @@ func NewKeyRegistry() *KeyRegistry {
 	reg(scopeSettingsActiveImportHist, actionBack, "", []string{"esc"}, "back")
 	reg(scopeSettingsActiveImportHist, actionUp, "", []string{"k", "up", "ctrl+p"}, "up")
 	reg(scopeSettingsActiveImportHist, actionDown, "", []string{"j", "down", "ctrl+n"}, "down")
+	reg(scopeFilterEdit, actionUp, "", []string{"k", "up", "ctrl+p"}, "prev field")
+	reg(scopeFilterEdit, actionDown, "", []string{"j", "down", "ctrl+n"}, "next field")
+	reg(scopeFilterEdit, actionLeft, "", []string{"left", "h"}, "left")
+	reg(scopeFilterEdit, actionRight, "", []string{"right", "l"}, "right")
+	reg(scopeFilterEdit, actionSave, "", []string{"enter"}, "save")
+	reg(scopeFilterEdit, actionClose, "", []string{"esc"}, "cancel")
 
 	// Settings navigation footer: left/right, up/down, enter, i, tab, q
 	reg(scopeSettingsNav, actionLeft, "", []string{"h", "left"}, "column")

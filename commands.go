@@ -18,6 +18,7 @@ type Command struct {
 	Label       string
 	Description string
 	Category    string
+	Hidden      bool
 	Scopes      []string
 	Enabled     func(m model) (bool, string)
 	Execute     func(m model) (model, tea.Cmd, error)
@@ -391,9 +392,9 @@ func NewCommandRegistry(keys *KeyRegistry, savedFilters []savedFilter) *CommandR
 		{
 			ID:          "filter:save",
 			Label:       "Save Current Filter",
-			Description: "Persist the current filter expression",
+			Description: "Open save modal for current filter expression",
 			Category:    "Filter",
-				Scopes:      []string{scopeFilterInput, scopeTransactions},
+			Scopes:      []string{scopeFilterInput, scopeTransactions},
 			Enabled: func(m model) (bool, string) {
 				expr := strings.TrimSpace(m.filterInput)
 				if expr == "" {
@@ -412,29 +413,16 @@ func NewCommandRegistry(keys *KeyRegistry, savedFilters []savedFilter) *CommandR
 				return true, ""
 			},
 			Execute: func(m model) (model, tea.Cmd, error) {
-				node, err := parseFilterStrict(strings.TrimSpace(m.filterInput))
-				if err != nil {
-					return m, nil, err
-				}
-				name := nextSavedFilterName(m.savedFilters)
-				m.savedFilters = append(m.savedFilters, savedFilter{
-					Name: name,
-					Expr: filterExprString(node),
-				})
-				if err := saveSavedFilters(m.savedFilters); err != nil {
-					return m, nil, err
-				}
-				m.commands = NewCommandRegistry(m.keys, m.savedFilters)
-				m.setStatusf("Saved filter %q.", name)
+				m.openFilterEditor(nil, strings.TrimSpace(m.filterInput))
 				return m, nil, nil
 			},
 		},
 		{
-			ID:          "filter:load",
-			Label:       "Load Saved Filter",
-			Description: "Apply the most recently saved filter",
+			ID:          "filter:apply",
+			Label:       "Apply Saved Filter",
+			Description: "Open saved filter picker",
 			Category:    "Filter",
-				Scopes:      []string{scopeFilterInput, scopeTransactions},
+			Scopes:      []string{scopeFilterInput, scopeTransactions, scopeManager},
 			Enabled: func(m model) (bool, string) {
 				if len(m.savedFilters) == 0 {
 					return false, "No saved filters."
@@ -442,18 +430,7 @@ func NewCommandRegistry(keys *KeyRegistry, savedFilters []savedFilter) *CommandR
 				return true, ""
 			},
 			Execute: func(m model) (model, tea.Cmd, error) {
-				if len(m.savedFilters) == 0 {
-					return m, nil, fmt.Errorf("no saved filters")
-				}
-				last := m.savedFilters[len(m.savedFilters)-1]
-				m.filterInput = last.Expr
-				m.reparseFilterInput()
-					m.filterInputMode = false
-				m.filterInputCursor = len(m.filterInput)
-				m.filterLastApplied = last.Expr
-				m.cursor = 0
-				m.topIndex = 0
-				m.setStatusf("Loaded saved filter %q.", last.Name)
+				m.openFilterApplyPicker("")
 				return m, nil, nil
 			},
 		},
@@ -618,26 +595,22 @@ func NewCommandRegistry(keys *KeyRegistry, savedFilters []savedFilter) *CommandR
 			},
 		},
 	}
-	for i, sf := range savedFilters {
-		idx := i
+	for _, sf := range savedFilters {
 		saved := sf
 		r.commands = append(r.commands, Command{
-			ID:          fmt.Sprintf("filter:saved:%d", idx),
-			Label:       fmt.Sprintf("Apply: %q", saved.Name),
-			Description: "Apply saved filter expression",
+			ID:          fmt.Sprintf("filter:apply:%s", strings.TrimSpace(saved.ID)),
+			Label:       fmt.Sprintf("Apply %q", strings.TrimSpace(saved.ID)),
+			Description: "Apply saved filter expression by ID",
 			Category:    "Filters",
-			Scopes:      []string{scopeTransactions},
+			Hidden:      true,
+			Scopes:      []string{scopeTransactions, scopeManager, scopeFilterInput},
 			Enabled:     commandAlwaysEnabled,
 			Execute: func(m model) (model, tea.Cmd, error) {
-				m.filterInput = saved.Expr
-				m.reparseFilterInput()
-				m.filterInputMode = false
-				m.filterInputCursor = len(m.filterInput)
-				m.filterLastApplied = saved.Expr
-				m.cursor = 0
-				m.topIndex = 0
-				m.setStatusf("Applied saved filter %q.", saved.Name)
-				return m, nil, nil
+				next, err := m.applySavedFilter(saved, true)
+				if err != nil {
+					return m, nil, err
+				}
+				return next, nil, nil
 			},
 		})
 	}
@@ -650,23 +623,6 @@ func NewCommandRegistry(keys *KeyRegistry, savedFilters []savedFilter) *CommandR
 
 func commandAlwaysEnabled(model) (bool, string) {
 	return true, ""
-}
-
-func nextSavedFilterName(existing []savedFilter) string {
-	base := fmt.Sprintf("Saved Filter %d", len(existing)+1)
-	seen := make(map[string]bool, len(existing))
-	for _, sf := range existing {
-		seen[strings.ToLower(strings.TrimSpace(sf.Name))] = true
-	}
-	if !seen[strings.ToLower(base)] {
-		return base
-	}
-	for i := len(existing) + 2; ; i++ {
-		candidate := fmt.Sprintf("Saved Filter %d", i)
-		if !seen[strings.ToLower(candidate)] {
-			return candidate
-		}
-	}
 }
 
 func (r *CommandRegistry) All() []Command {
@@ -685,6 +641,9 @@ func (r *CommandRegistry) Search(query, scope string, m model, lastCommandID str
 	q := strings.TrimSpace(query)
 	out := make([]CommandMatch, 0, len(r.commands))
 	for _, cmd := range r.commands {
+		if cmd.Hidden {
+			continue
+		}
 		if !commandInScope(cmd, scope) {
 			continue
 		}
@@ -848,6 +807,9 @@ func (m model) canOpenCommandUI() bool {
 	if m.commandOpen || m.showDetail || m.importDupeModal || m.importPicking || m.catPicker != nil || m.tagPicker != nil {
 		return false
 	}
+	if m.filterApplyPicker != nil || m.filterEditOpen {
+		return false
+	}
 	if m.managerActionPicker != nil || m.managerModalOpen || m.filterInputMode || m.jumpModeActive {
 		return false
 	}
@@ -870,6 +832,9 @@ func (m model) updateCommandUI(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		m.closeCommandUI()
 		return m, nil
 	case m.isAction(scope, actionSelect, msg):
+		if m.commandUIKind == commandUIKindColon && strings.TrimSpace(m.commandQuery) != "" {
+			return m.executeTypedColonCommand()
+		}
 		return m.executeSelectedCommand()
 	case isBackspaceKey(msg):
 		deleteLastASCIIByte(&m.commandQuery)
@@ -890,6 +855,32 @@ func (m model) updateCommandUI(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		return m, nil
 	}
 	return m, nil
+}
+
+func (m model) executeTypedColonCommand() (tea.Model, tea.Cmd) {
+	raw := strings.TrimSpace(m.commandQuery)
+	if raw == "" {
+		return m.executeSelectedCommand()
+	}
+	lower := strings.ToLower(raw)
+	if strings.HasPrefix(lower, "apply:") {
+		id := strings.TrimSpace(raw[len("apply:"):])
+		normID, err := normalizeSavedFilterID(id)
+		if err != nil {
+			m.setError(fmt.Sprintf("Command failed: %v", err))
+			return m, nil
+		}
+		targetID := "filter:apply:" + normID
+		next, cmd, execErr := m.commands.ExecuteByID(targetID, m.commandSourceScope, m)
+		if execErr != nil {
+			m.setError(fmt.Sprintf("Command failed: %v", execErr))
+			return m, nil
+		}
+		next.lastCommandID = targetID
+		next.closeCommandUI()
+		return next, cmd
+	}
+	return m.executeSelectedCommand()
 }
 
 func (m *model) ensureCommandCursorVisible() {
@@ -988,7 +979,7 @@ func (m model) executeBoundCommandInternal(scope string, msg tea.KeyMsg, localOn
 	if cmdDef.Enabled != nil {
 		enabled, reason := cmdDef.Enabled(m)
 		if !enabled {
-			if (binding.CommandID == "filter:save" || binding.CommandID == "filter:load") && strings.TrimSpace(reason) != "" {
+			if (binding.CommandID == "filter:save" || binding.CommandID == "filter:apply") && strings.TrimSpace(reason) != "" {
 				m.setError(reason)
 			}
 			return m, nil, true
@@ -1021,8 +1012,14 @@ func (m model) commandContextScope() string {
 	if m.tagPicker != nil {
 		return scopeTagPicker
 	}
+	if m.filterApplyPicker != nil {
+		return scopeFilterApplyPicker
+	}
 	if m.managerActionPicker != nil {
 		return scopeManagerAccountAction
+	}
+	if m.filterEditOpen {
+		return scopeFilterEdit
 	}
 	if m.managerModalOpen {
 		return scopeManagerModal

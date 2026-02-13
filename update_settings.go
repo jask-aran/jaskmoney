@@ -2,6 +2,7 @@ package main
 
 import (
 	"fmt"
+	"strings"
 	"time"
 
 	tea "github.com/charmbracelet/bubbletea"
@@ -17,14 +18,17 @@ func settSectionForColumn(col, row int) int {
 		}
 		return settSecImportHistory
 	}
-	// Left column: row 0 = Categories, row 1 = Tags, row 2 = Rules
+	// Left column: row 0 = Categories, row 1 = Tags, row 2 = Rules, row 3 = Filters.
 	if row <= 0 {
 		return settSecCategories
 	}
 	if row == 1 {
 		return settSecTags
 	}
-	return settSecRules
+	if row == 2 {
+		return settSecRules
+	}
+	return settSecFilters
 }
 
 // settColumnRow returns (column, row) for a given settSection.
@@ -36,6 +40,8 @@ func settColumnRow(sec int) (int, int) {
 		return settColLeft, 1
 	case settSecRules:
 		return settColLeft, 2
+	case settSecFilters:
+		return settColLeft, 3
 	case settSecChart:
 		return settColRight, 0
 	case settSecDBImport:
@@ -56,6 +62,8 @@ func settingsActiveScope(section int) string {
 		return scopeSettingsActiveRules
 	case settSecChart:
 		return scopeSettingsActiveChart
+	case settSecFilters:
+		return scopeSettingsActiveFilters
 	case settSecDBImport:
 		return scopeSettingsActiveDBImport
 	case settSecImportHistory:
@@ -75,6 +83,8 @@ func settingsFocusSectionForSettSection(section int) int {
 		return sectionSettingsRules
 	case settSecImportHistory:
 		return sectionSettingsImportHistory
+	case settSecFilters:
+		return sectionSettingsFilters
 	case settSecDBImport:
 		return sectionSettingsDatabase
 	case settSecChart:
@@ -167,6 +177,8 @@ func (m model) updateSettingsActive(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		return m.updateSettingsRules(msg)
 	case settSecChart:
 		return m.updateSettingsChart(msg)
+	case settSecFilters:
+		return m.updateSettingsFilters(msg)
 	case settSecDBImport:
 		return m.updateSettingsDBImport(msg)
 	case settSecImportHistory:
@@ -254,6 +266,32 @@ func (m model) updateSettingsRules(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	return m, nil
 }
 
+func (m model) updateSettingsFilters(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
+	ordered := m.orderedSavedFilters()
+	switch {
+	case m.verticalDelta(scopeSettingsActiveFilters, msg) != 0:
+		m.settItemCursor = moveBoundedCursor(m.settItemCursor, len(ordered), m.verticalDelta(scopeSettingsActiveFilters, msg))
+		return m, nil
+	case m.isAction(scopeSettingsActiveFilters, actionAdd, msg):
+		m.openFilterEditor(nil, "")
+		return m, nil
+	case m.isAction(scopeSettingsActiveFilters, actionSelect, msg), normalizeKeyName(msg.String()) == "enter":
+		if m.settItemCursor < len(ordered) {
+			selected := ordered[m.settItemCursor]
+			m.openFilterEditor(&selected, "")
+		}
+		return m, nil
+	case m.isAction(scopeSettingsActiveFilters, actionDelete, msg):
+		if m.settItemCursor >= len(ordered) {
+			return m, nil
+		}
+		selected := ordered[m.settItemCursor]
+		keyLabel := m.primaryActionKey(scopeSettingsActiveFilters, actionDelete, "del")
+		return m, m.armSettingsFilterConfirm(selected.ID, fmt.Sprintf("Press %s again to delete filter %q", keyLabel, selected.ID))
+	}
+	return m, nil
+}
+
 func (m model) updateSettingsDBImport(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	switch {
 	case m.isAction(scopeSettingsActiveDBImport, actionResetKeybindings, msg):
@@ -309,6 +347,7 @@ func (m model) updateSettingsConfirm(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	}
 	db := m.db
 	id := m.confirmID
+	filterID := strings.TrimSpace(m.confirmFilterID)
 	confirmAction := m.confirmAction
 	m.clearSettingsConfirm()
 	switch confirmAction {
@@ -324,6 +363,18 @@ func (m model) updateSettingsConfirm(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		return m, func() tea.Msg {
 			return tagDeletedMsg{err: deleteTag(db, id)}
 		}
+	case confirmActionDeleteFilter:
+		if filterID == "" {
+			m.setError("Delete filter failed: missing filter ID.")
+			return m, nil
+		}
+		next, err := m.deleteSavedFilterByID(filterID)
+		if err != nil {
+			m.setError(fmt.Sprintf("Delete filter failed: %v", err))
+			return next, nil
+		}
+		next.setStatusf("Deleted filter %q.", filterID)
+		return next, nil
 	case confirmActionClearDB:
 		m.setStatus("Clearing database...")
 		return m, func() tea.Msg {

@@ -365,10 +365,12 @@ type = "credit"
 date_format = "2/01/2006"
 
 [[saved_filter]]
+id = "groceries"
 name = "Groceries"
 expr = "cat:Groceries AND amt:<0"
 
 [[saved_filter]]
+id = "broken"
 name = "Broken"
 expr = "cat:"
 
@@ -407,8 +409,8 @@ func TestSaveSavedFiltersRoundTrip(t *testing.T) {
 	}
 
 	in := []savedFilter{
-		{Name: "Groceries", Expr: "cat:Groceries AND amt:<0"},
-		{Name: "Large Debits", Expr: "type:debit AND amt:<-100"},
+		{ID: "groceries", Name: "Groceries", Expr: "cat:Groceries AND amt:<0"},
+		{ID: "large_debits", Name: "Large Debits", Expr: "type:debit AND amt:<-100"},
 	}
 	if err := saveSavedFilters(in); err != nil {
 		t.Fatalf("saveSavedFilters: %v", err)
@@ -421,7 +423,7 @@ func TestSaveSavedFiltersRoundTrip(t *testing.T) {
 	if len(out) != len(in) {
 		t.Fatalf("saved filter count = %d, want %d", len(out), len(in))
 	}
-	if out[0].Name != in[0].Name || out[1].Name != in[1].Name {
+	if out[0].ID != in[0].ID || out[1].ID != in[1].ID || out[0].Name != in[0].Name || out[1].Name != in[1].Name {
 		t.Fatalf("saved filters mismatch: %+v", out)
 	}
 }

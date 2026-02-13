@@ -45,6 +45,7 @@ const (
 	sectionSettingsDatabase      = 3
 	sectionSettingsViews         = 4
 	sectionSettingsImportHistory = 5
+	sectionSettingsFilters       = 6
 )
 
 type transaction struct {
@@ -89,6 +90,7 @@ type refreshDoneMsg struct {
 	accounts         []account
 	selectedAccounts map[int]bool
 	info             dbInfo
+	filterUsage      map[string]filterUsageState
 	err              error
 }
 
@@ -227,6 +229,7 @@ const (
 	settSecCategories = iota
 	settSecTags
 	settSecRules
+	settSecFilters
 	settSecChart
 	settSecDBImport
 	settSecImportHistory
@@ -259,6 +262,7 @@ const (
 	confirmActionDeleteCategory settingsConfirmAction = "delete_cat"
 	confirmActionDeleteTag      settingsConfirmAction = "delete_tag"
 	confirmActionDeleteRule     settingsConfirmAction = "delete_rule"
+	confirmActionDeleteFilter   settingsConfirmAction = "delete_filter"
 	confirmActionClearDB        settingsConfirmAction = "clear_db"
 )
 
@@ -301,7 +305,21 @@ type model struct {
 	filterInputErr    string
 	filterLastApplied string
 	savedFilters      []savedFilter
+	filterUsage       map[string]filterUsageState
 	customPaneModes   []customPaneMode
+	filterApplyPicker *pickerState
+	filterApplyOrder  []string
+	filterEditOpen    bool
+	filterEditID      string
+	filterEditOrigID  string
+	filterEditName    string
+	filterEditExpr    string
+	filterEditIDCur   int
+	filterEditNameCur int
+	filterEditExprCur int
+	filterEditFocus   int
+	filterEditIsNew   bool
+	filterEditErr     string
 
 	// Command UI (palette + colon command mode)
 	commandOpen         bool
@@ -363,6 +381,7 @@ type model struct {
 	settEditID      int                   // ID of item being edited
 	confirmAction   settingsConfirmAction // pending settings confirm action
 	confirmID       int                   // ID for pending confirm (category or rule)
+	confirmFilterID string                // filter ID for pending filter delete confirm
 
 	// Manager state
 	managerCursor     int
@@ -412,8 +431,6 @@ func newModel() model {
 		for _, warning := range cfgWarnings {
 			fmt.Fprintf(os.Stderr, "Config warning: %s\n", warning)
 		}
-		status = "Config warning: " + cfgWarnings[0]
-		statusErr = true
 	}
 	keys := NewKeyRegistry()
 	if fmtErr == nil {
@@ -444,6 +461,7 @@ func newModel() model {
 		commands:           NewCommandRegistry(keys, savedFilters),
 		formats:            formats,
 		savedFilters:       savedFilters,
+		filterUsage:        make(map[string]filterUsageState),
 		customPaneModes:    customPaneModes,
 		selectedRows:       make(map[int]bool),
 		txnTags:            make(map[int][]tag),
@@ -515,9 +533,17 @@ func (m model) View() string {
 		picker := renderPicker(m.tagPicker, min(56, m.width-10), m.keys, scopeTagPicker)
 		return m.composeOverlay(header, body, statusLine, footer, picker)
 	}
+	if m.filterApplyPicker != nil {
+		picker := renderPicker(m.filterApplyPicker, min(64, m.width-10), m.keys, scopeFilterApplyPicker)
+		return m.composeOverlay(header, body, statusLine, footer, picker)
+	}
 	if m.managerActionPicker != nil {
 		picker := renderPicker(m.managerActionPicker, min(56, m.width-10), m.keys, scopeManagerAccountAction)
 		return m.composeOverlay(header, body, statusLine, footer, picker)
+	}
+	if m.filterEditOpen {
+		modal := renderFilterEditorModal(m)
+		return m.composeOverlay(header, body, statusLine, footer, modal)
 	}
 	if m.managerModalOpen {
 		modal := renderManagerAccountModal(m)
@@ -888,8 +914,14 @@ func (m model) footerBindings() []key.Binding {
 	if m.tagPicker != nil {
 		return m.keys.HelpBindings(scopeTagPicker)
 	}
+	if m.filterApplyPicker != nil {
+		return m.keys.HelpBindings(scopeFilterApplyPicker)
+	}
 	if m.managerActionPicker != nil {
 		return m.keys.HelpBindings(scopeManagerAccountAction)
+	}
+	if m.filterEditOpen {
+		return m.keys.HelpBindings(scopeFilterEdit)
 	}
 	if m.managerModalOpen {
 		return m.keys.HelpBindings(scopeManagerModal)
