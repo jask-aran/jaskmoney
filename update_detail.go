@@ -45,7 +45,8 @@ func (m model) updateFilterInput(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		} else {
 			m.filterLastApplied = ""
 		}
-		// Keep the query active, just exit input mode
+		// Apply expression and return focus to table navigation.
+		m.filterInputMode = false
 		return m, nil
 	case keyName == "left":
 		moveInputCursorASCII(m.filterInput, &m.filterInputCursor, -1)

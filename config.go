@@ -509,8 +509,8 @@ func suggestedActionName(action string, knownActions map[string]bool) string {
 		return string(actionCancel)
 	case strings.Contains(a, "close") && knownActions[string(actionClose)]:
 		return string(actionClose)
-	case strings.Contains(a, "move") && knownActions[string(actionNavigate)]:
-		return string(actionNavigate)
+	case strings.Contains(a, "move") && knownActions[string(actionDown)]:
+		return string(actionDown)
 	case strings.Contains(a, "sort") && knownActions[string(actionSort)]:
 		return string(actionSort)
 	}

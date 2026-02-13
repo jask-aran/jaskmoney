@@ -143,7 +143,8 @@ Runtime boundaries and owning files:
 
 **Configuration and keybindings:**
 
-- `config.go`: format/settings/keybinding parsing, validation, migration.
+- `config.go`: format/settings/keybinding parsing, validation, and default
+  regeneration for invalid startup config.
   (**v0.4**: adds `savedFilter` and `customPaneMode` types; strict validation
   of filter expressions at load time.)
 - `keys.go`: action/scope key registry and lookup. (**v0.4**: `Binding` gains
@@ -1469,7 +1470,7 @@ and what patterns emerged for handling the increased complexity.
 - Reduce remaining render duplication where behavior is identical.
 - Expand mixed-modifier keybinding regression coverage.
 - Keep command interfaces and picker interactions aligned as features evolve.
-- Continue tightening startup diagnostics and compatibility alias handling.
+- Continue tightening startup diagnostics and reset/recovery visibility for invalid config/keybinding files.
 
 **v0.4 critical items (must complete as part of Phase 1):**
 

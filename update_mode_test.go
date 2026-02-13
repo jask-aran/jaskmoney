@@ -481,16 +481,40 @@ func TestFilterSaveRequiresAppliedExpression(t *testing.T) {
 
 	next, _ = got.updateFilterInput(keyMsg("enter"))
 	got2 := next.(model)
-	if !got2.filterInputMode {
-		t.Fatal("filter input mode should remain active after enter apply")
+	if got2.filterInputMode {
+		t.Fatal("filter input mode should exit after enter apply")
 	}
 	if got2.filterLastApplied == "" {
 		t.Fatal("expected filterLastApplied to be set after enter")
 	}
-	next, _ = got2.updateFilterInput(keyMsg("ctrl+s"))
+	next, _ = got2.Update(keyMsg("ctrl+s"))
 	got3 := next.(model)
 	if len(got3.savedFilters) != 1 {
 		t.Fatalf("saved filters = %d, want 1 after apply", len(got3.savedFilters))
+	}
+}
+
+func TestFilterEnterReturnsToTransactionsNavigation(t *testing.T) {
+	m := newModel()
+	m.activeTab = tabManager
+	m.managerMode = managerModeTransactions
+	m.rows = testTransactions()
+	m.filterInputMode = true
+	m.filterInput = "cat:Groceries"
+	m.filterInputCursor = len(m.filterInput)
+	m.reparseFilterInput()
+
+	next, _ := m.updateFilterInput(keyMsg("enter"))
+	got := next.(model)
+	if got.filterInputMode {
+		t.Fatal("expected filter input mode to close on Enter")
+	}
+
+	startCursor := got.cursor
+	next, _ = got.Update(keyMsg("j"))
+	got2 := next.(model)
+	if len(got2.getFilteredRows()) > 1 && got2.cursor == startCursor {
+		t.Fatalf("cursor did not move after Enter closed filter input: start=%d end=%d", startCursor, got2.cursor)
 	}
 }
 
