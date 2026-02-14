@@ -157,6 +157,7 @@ func NewKeyRegistry() *KeyRegistry {
 	reg(scopeManager, actionRight, "", []string{"l", "right"}, "")
 	reg(scopeManager, actionBack, "", []string{"esc"}, "back")
 	reg(scopeManager, actionSearch, "", []string{"/"}, "filter")
+	reg(scopeManager, actionFilterLoad, "filter:apply", []string{"ctrl+l"}, "apply filter")
 	reg(scopeManager, actionToggleSelect, "", []string{"space"}, "toggle active")
 	reg(scopeManager, actionAdd, "", []string{"a"}, "add account")
 	reg(scopeManager, actionSelect, "", []string{"enter"}, "edit account")
