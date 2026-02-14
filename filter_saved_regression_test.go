@@ -74,7 +74,7 @@ func TestSaveFilterEditorAllowsRenamingFilterID(t *testing.T) {
 
 func TestOpenFilterEditorNewUsesAutoIDAndBlankName(t *testing.T) {
 	m := newModel()
-	m.savedFilters = []savedFilter{{ID: "filter", Name: "Existing", Expr: "cat:Groceries"}}
+	m.savedFilters = []savedFilter{{ID: "filter-2", Name: "Existing", Expr: "cat:Groceries"}}
 	m.filterInput = "cat:Food AND amt:<0"
 
 	m.openFilterEditor(nil, "")
@@ -82,14 +82,48 @@ func TestOpenFilterEditorNewUsesAutoIDAndBlankName(t *testing.T) {
 	if !m.filterEditIsNew {
 		t.Fatal("expected new filter editor mode")
 	}
-	if m.filterEditID != "filter-2" {
-		t.Fatalf("new filter ID = %q, want %q", m.filterEditID, "filter-2")
+	if m.filterEditID != "filter-1" {
+		t.Fatalf("new filter ID = %q, want %q", m.filterEditID, "filter-1")
 	}
 	if m.filterEditName != "" {
 		t.Fatalf("new filter name = %q, want empty", m.filterEditName)
 	}
 	if m.filterEditExpr != "cat:Food AND amt:<0" {
 		t.Fatalf("new filter expr = %q, want current filter input", m.filterEditExpr)
+	}
+}
+
+func TestApplyPickerSearchMatchesFilterName(t *testing.T) {
+	m := newModel()
+	m.savedFilters = []savedFilter{
+		{ID: "groceries", Name: "Groceries Monthly", Expr: "cat:Groceries"},
+		{ID: "utilities", Name: "Utilities", Expr: "cat:Bills"},
+	}
+
+	m.openFilterApplyPicker("month")
+	if m.filterApplyPicker == nil {
+		t.Fatal("expected filter apply picker")
+	}
+	if len(m.filterApplyPicker.filtered) != 1 {
+		t.Fatalf("filtered count = %d, want 1", len(m.filterApplyPicker.filtered))
+	}
+	if got := m.filterApplyPicker.filtered[0].Label; got != "groceries" {
+		t.Fatalf("matched label = %q, want %q", got, "groceries")
+	}
+}
+
+func TestCtrlLFromManagerAccountsOpensApplyPicker(t *testing.T) {
+	m := newModel()
+	m.ready = true
+	m.activeTab = tabManager
+	m.managerMode = managerModeAccounts
+	m.savedFilters = []savedFilter{{ID: "groceries", Name: "Groceries", Expr: "cat:Groceries"}}
+	m.commands = NewCommandRegistry(m.keys, m.savedFilters)
+
+	next, _ := m.Update(keyMsg("ctrl+l"))
+	got := next.(model)
+	if got.filterApplyPicker == nil {
+		t.Fatal("expected apply picker to open from manager accounts ctrl+l")
 	}
 }
 

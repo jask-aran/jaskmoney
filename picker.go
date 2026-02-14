@@ -16,6 +16,7 @@ type pickerItem struct {
 	Color   string
 	Section string
 	Meta    string
+	Search  string
 }
 
 type pickerState struct {
@@ -596,7 +597,11 @@ func (p *pickerState) rebuildFiltered() {
 	bySection := make(map[string][]scoredPickerItem)
 	orderedSections := p.sectionOrder()
 	for idx, it := range p.items {
-		matched, score := fuzzyMatchScore(it.Label, q)
+		search := strings.TrimSpace(it.Search)
+		if search == "" {
+			search = it.Label
+		}
+		matched, score := fuzzyMatchScore(search, q)
 		if !matched {
 			continue
 		}

@@ -131,6 +131,9 @@ Runtime boundaries and owning files:
   import entry points. (**v0.4**: rules v2 editor with multi-step form,
   enable/disable toggle, reorder `K`/`J`, dry-run modal; dashboard views config
   editor.)
+- `filter_saved.go` (**v0.32.2f**): saved-filter CRUD/apply workflows,
+  filter-save modal state handling, apply picker orchestration, recency
+  ordering, and ID/name/expr validation flow.
 
 **Data layer:**
 
@@ -167,7 +170,8 @@ Runtime boundaries and owning files:
   definitions, custom mode appending from config, constructors
   (`newDashboardWidgets`).
 - `picker.go`: reusable fuzzy picker primitive for overlay workflows (category,
-  tag, account nuke, command palette, command-mode suggestions).
+  tag, account nuke, command palette, command-mode suggestions, saved-filter
+  apply picker).
 - `overlay.go`: width-aware string utilities and overlay compositing.
 - `theme.go`: Catppuccin Mocha color constants and semantic aliases.
 
@@ -227,11 +231,12 @@ Ownership rule:
     - `tabManager` → `updateManager` or `updateTransactions` (mode-dependent)
     - `tabSettings` → `updateSettings`
 
-**(v0.3 current order for comparison):** command UI, detail modal,
-importDupeModal, file picker, category picker, tag picker, account nuke picker,
-manager modal, search mode, command shortcuts, tab routing. Jump overlay,
-offset picker, import preview, rule editor, dry-run, budget target editor, and
-Budget tab are not yet implemented.
+**(v0.32.2f current order for comparison):** jump overlay, command UI, detail
+modal, importDupeModal, file picker, category picker, tag picker, saved-filter
+apply picker, manager account-action picker, saved-filter edit modal, manager
+modal, filter input mode, command shortcuts, tab routing. Offset picker,
+import preview, rule editor, dry-run, budget target editor, and Budget tab are
+not yet implemented.
 
 Contract:
 
@@ -564,6 +569,8 @@ global
 │   └── manager_transactions          (transactions sub-view)
 │       ├── transactions              (table navigation)
 │       ├── search / filter_input     (text entry)
+│       ├── filter_apply_picker       (modal)
+│       ├── filter_edit               (modal: save/edit current filter)
 │       ├── detail_modal              (modal)
 │       │   └── offset_picker         (modal)  [v0.4 new]
 │       ├── category_picker           (modal)
@@ -578,6 +585,7 @@ global
 │   ├── settings_active_rules
 │   │   ├── rule_editor               (modal)  [v0.4 new]
 │   │   └── dry_run_modal             (modal)  [v0.4 new]
+│   ├── settings_active_filters
 │   ├── settings_active_chart
 │   ├── settings_active_db_import
 │   │   ├── file_picker               (modal)
@@ -642,7 +650,13 @@ command-mode suggestions are all picker-driven interaction patterns.
 Picker behavior contracts:
 
 - Query filtering uses fuzzy subsequence scoring.
+- Picker items may provide explicit `Search` text; when present, matching is
+  performed against `Search` rather than only `Label`.
 - Section order follows input item order.
+- Score ties preserve original input order (stable tie-break), which is
+  required for recency-first lists.
+- Width-constrained rows are ANSI-aware truncated before padding to prevent
+  border overflow in fixed-width modals.
 - Create row is optional and controlled by `createLabel`.
   - Empty `createLabel` disables create behavior.
 - Multi-select uses toggle semantics.
@@ -678,6 +692,7 @@ type Command struct {
     Label       string
     Description string
     Category    string          // "Navigation", "Actions", "Filter", "Budget"
+    Hidden      bool            // excluded from command-palette search/render
     Scopes      []string        // scopes where available; empty = global
     Enabled     func(m model) (bool, string)
     Execute     func(m model) (model, tea.Cmd, error)
@@ -700,6 +715,9 @@ palette is a command; cursor/input/modal mechanics are not.**
 - `Command.Enabled` adds runtime conditions (e.g., "DB not ready", "No rules
   available").
 - Command palette filters by current scope + `Enabled` checks.
+- Hidden commands are executable targets but intentionally excluded from palette
+  results. Phase 2 uses this for `filter:apply:<id>` so palette UX stays
+  compact while command IDs remain stable.
 
 **v0.3 current state:** 11 commands exist (`go:dashboard`, `go:transactions`,
 `import`, `apply:category-rules`, etc.) but dispatch is action-switch based,
@@ -804,7 +822,7 @@ focusedSection    int   // -1 = unfocused; meaning is tab-specific
 | Dashboard | `n` Net/Cashflow, `c` Composition, `b` Compare, `h` Budget Health | Unfocused |
 | Manager   | `a` Accounts, `t` Transactions                    | Transactions             |
 | Budget    | `t` Budget Table, `p` Planner                     | Budget Table             |
-| Settings  | `c` Categories, `t` Tags, `r` Rules, `d` Database, `w` Dashboard Views | Stay (no reset) |
+| Settings  | `c` Categories, `t` Tags, `r` Rules, `f` Filters, `d` Database, `w` Dashboard Views | Stay (no reset) |
 
 Target keys can overlap across tabs because only one tab's targets are shown at
 a time.
@@ -1436,32 +1454,26 @@ If superseded, update this section with rationale and enforcement tests.
 
 ### 9.2 v0.3 → v0.4
 
-**Status:** To be updated as v0.4 phases land.
+**Status:** Phase 1 and Phase 2 are complete as of `v0.32.2f`.
 
-**Anticipated areas** (from design decisions):
+Concrete learnings from shipped work:
 
-- **Command dispatch complexity:** ~30+ commands with scope-aware availability.
-  How to keep `CommandRegistry` maintainable and testable as it grows. Early
-  signs: action-command consistency test (§3.4.11 invariant #4) will be
-  critical.
-- **Filter parser edge cases:** Permissive vs strict parsing contexts.
-  Fallback-to-text behavior in interactive `/` vs error-on-invalid in
-  rules/targets. Watch for: user confusion when filter works in one context but
-  is rejected in another.
-- **Scope explosion management:** ~40 scopes in v0.4 vs ~29 in v0.3. Key
-  conflict testing contract (§3.4.11) must scale. Shadow audit, reachability,
-  and footer-dispatch alignment tests are the enforcement mechanisms.
-- **Modal precedence additions:** 6 new modals (jump overlay, offset picker,
-  import preview, rule editor, dry-run, budget target editor). Dispatch chain
-  ordering must remain clear. Watch for: ESC key behavior conflicts between
-  nested modals.
-- **Drill-return context lifecycle:** `drillReturnState` must be set on
-  dashboard drill-down, cleared on tab switch, and used correctly on ESC from
-  Manager. Watch for: state leaks if clearing logic is incomplete.
-
-**Update this section** with concrete learnings once v0.4 phases are
-implemented and tested. Document what worked, what was harder than expected,
-and what patterns emerged for handling the increased complexity.
+- **Hidden command targets are the right compromise for scalability.**
+  `filter:apply:<id>` remains command-addressable while the visible palette
+  stays compact (`filter:apply` picker), avoiding command-list explosion.
+- **Text-input shielding must be explicit per modal/editor.**
+  Printable-first handling in filter input and filter-save editor prevents
+  shortcut leakage (`:`, `v`, `j`, `k`) and eliminates accidental focus jumps.
+- **Picker primitives need stable ordering semantics, not just fuzzy scoring.**
+  Recency-first UIs require score-tie preservation of input order; alphabetical
+  tie-breaks caused UX regressions until corrected.
+- **Width safety belongs in primitives, not callers.**
+  ANSI-aware truncation in picker row rendering fixed border overflow for long
+  metadata across all picker consumers.
+- **Persist mutable UX state separately from declarative config.**
+  Saved-filter definitions stay in config, while recency metadata lives in DB
+  app-state tables; this avoids high-churn config rewrites and keeps ordering
+  stable across sessions.
 
 ## 10. Open Backlog
 

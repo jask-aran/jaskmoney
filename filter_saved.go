@@ -78,6 +78,20 @@ func nextUniqueSavedFilterID(existing []savedFilter, base string) string {
 	return candidate
 }
 
+func nextAutoSavedFilterID(existing []savedFilter) string {
+	seen := make(map[string]bool, len(existing))
+	for _, sf := range existing {
+		seen[strings.ToLower(strings.TrimSpace(sf.ID))] = true
+	}
+	for i := 1; i < 10000; i++ {
+		id := fmt.Sprintf("filter-%d", i)
+		if !seen[id] {
+			return id
+		}
+	}
+	return nextUniqueSavedFilterID(existing, "filter")
+}
+
 func (m model) orderedSavedFilters() []savedFilter {
 	out := make([]savedFilter, 0, len(m.savedFilters))
 	out = append(out, m.savedFilters...)
@@ -177,7 +191,11 @@ func (m *model) openFilterApplyPicker(query string) {
 		if meta == "" {
 			meta = truncate(strings.TrimSpace(sf.Expr), 40)
 		}
-		items = append(items, pickerItem{ID: i + 1, Label: sf.ID, Meta: meta})
+		search := strings.TrimSpace(sf.ID)
+		if name := strings.TrimSpace(sf.Name); name != "" {
+			search += " " + name
+		}
+		items = append(items, pickerItem{ID: i + 1, Label: sf.ID, Meta: meta, Search: search})
 		m.filterApplyOrder = append(m.filterApplyOrder, sf.ID)
 	}
 	p := newPicker("Apply Saved Filter", items, false, "")
@@ -249,7 +267,7 @@ func (m *model) openFilterEditor(existing *savedFilter, exprHint string) {
 	if expr == "" {
 		expr = strings.TrimSpace(m.filterInput)
 	}
-	id := nextUniqueSavedFilterID(m.savedFilters, "filter")
+	id := nextAutoSavedFilterID(m.savedFilters)
 	m.filterEditIsNew = true
 	m.filterEditID = id
 	m.filterEditOrigID = ""
