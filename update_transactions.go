@@ -181,6 +181,27 @@ func (m model) updateCatPicker(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	res := m.catPicker.HandleMsg(msg, func(action Action, in tea.KeyMsg) bool {
 		return m.isAction(scopeCategoryPicker, action, in)
 	})
+	if m.ruleEditorPickingCategory {
+		switch res.Action {
+		case pickerActionCancelled:
+			m.catPicker = nil
+			m.ruleEditorPickingCategory = false
+			return m, nil
+		case pickerActionSelected:
+			if res.ItemID <= 0 {
+				m.ruleEditorCatID = nil
+			} else {
+				catID := res.ItemID
+				m.ruleEditorCatID = &catID
+			}
+			m.catPicker = nil
+			m.ruleEditorPickingCategory = false
+			m.ruleEditorStep = 3
+			m.ruleEditorErr = ""
+			return m, nil
+		}
+		return m, nil
+	}
 	switch res.Action {
 	case pickerActionCancelled:
 		m.catPicker = nil
@@ -209,6 +230,26 @@ func (m model) updateCatPicker(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 
 func (m model) updateTagPicker(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	if m.tagPicker == nil {
+		return m, nil
+	}
+	if m.ruleEditorPickingTags {
+		res := m.tagPicker.HandleMsg(msg, func(action Action, in tea.KeyMsg) bool {
+			return m.isAction(scopeTagPicker, action, in)
+		})
+		switch res.Action {
+		case pickerActionCancelled:
+			m.tagPicker = nil
+			m.ruleEditorPickingTags = false
+			return m, nil
+		case pickerActionSubmitted:
+			m.ruleEditorAddTags = append([]int(nil), res.SelectedIDs...)
+			m.normalizeRuleEditorSelections()
+			m.tagPicker = nil
+			m.ruleEditorPickingTags = false
+			m.ruleEditorStep = 4
+			m.ruleEditorErr = ""
+			return m, nil
+		}
 		return m, nil
 	}
 	if m.isAction(scopeTagPicker, actionSelect, msg) {

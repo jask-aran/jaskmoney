@@ -429,7 +429,7 @@ func TestIngestCmdFailsWhenMappedAccountMissing(t *testing.T) {
 		},
 	}
 
-	msg := ingestCmd(db, file, dir, formats, true)()
+	msg := ingestCmd(db, file, dir, formats, nil, true)()
 	done, ok := msg.(ingestDoneMsg)
 	if !ok {
 		t.Fatalf("unexpected message type: %T", msg)
@@ -479,7 +479,7 @@ func TestIngestCmdAppliesTagRules(t *testing.T) {
 		},
 	}
 	_ = accountID
-	msg := ingestCmd(db, file, dir, formats, true)()
+	msg := ingestCmd(db, file, dir, formats, nil, true)()
 	done, ok := msg.(ingestDoneMsg)
 	if !ok {
 		t.Fatalf("unexpected message type: %T", msg)

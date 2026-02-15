@@ -33,7 +33,7 @@ func TestIngestCmdRulesV2TargetsImportedRowsOnly(t *testing.T) {
 
 	_, err = insertRuleV2(db, ruleV2{
 		name:          "Groceries",
-		filterExpr:    `desc:woolworths`,
+		savedFilterID: "filter-grocery",
 		setCategoryID: &groceries,
 		addTagIDs:     []int{tagID},
 		enabled:       true,
@@ -53,14 +53,20 @@ func TestIngestCmdRulesV2TargetsImportedRowsOnly(t *testing.T) {
 	formats := []csvFormat{testANZFormat()}
 	formats[0].Account = "ANZ"
 	formats[0].ImportPrefix = "anz"
+	savedFilters := []savedFilter{
+		{ID: "filter-grocery", Name: "Groceries", Expr: `desc:woolworths`},
+	}
 
-	msg := ingestCmd(db, file, dir, formats, true)()
+	msg := ingestCmd(db, file, dir, formats, savedFilters, true)()
 	done, ok := msg.(ingestDoneMsg)
 	if !ok {
 		t.Fatalf("unexpected message type: %T", msg)
 	}
 	if done.err != nil {
 		t.Fatalf("ingest failed: %v", done.err)
+	}
+	if !done.rulesApplied {
+		t.Fatal("expected rulesApplied true for import with inserted rows")
 	}
 
 	rows, err := loadRows(db)

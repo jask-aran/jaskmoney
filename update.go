@@ -6,6 +6,7 @@ import (
 	"time"
 
 	tea "github.com/charmbracelet/bubbletea"
+	"github.com/charmbracelet/lipgloss"
 )
 
 func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
@@ -97,7 +98,7 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		if scope == "" {
 			scope = "All Accounts"
 		}
-		m.setStatusf("Applied rules (%s): %d category changes, %d tag changes.", scope, msg.catChanges, msg.tagChanges)
+		m.setStatus(formatRulesSummary(scope, msg.updatedTxns, msg.catChanges, msg.tagChanges, msg.failedRules))
 		return m, refreshCmd(m.db)
 	case rulesDryRunMsg:
 		if msg.err != nil {
@@ -107,6 +108,7 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.dryRunOpen = true
 		m.dryRunResults = msg.results
 		m.dryRunSummary = msg.summary
+		m.dryRunSummary.failedRules = msg.failedRules
 		m.dryRunScopeLabel = msg.scope
 		m.dryRunScroll = 0
 		if strings.TrimSpace(m.dryRunScopeLabel) == "" {
@@ -334,7 +336,7 @@ func (m model) handleDupeScan(msg dupeScanMsg) (tea.Model, tea.Cmd) {
 	if msg.dupes == 0 {
 		// No dupes — import directly (skip dupes mode doesn't matter)
 		m.setStatus("Importing...")
-		return m, ingestCmd(m.db, msg.file, m.basePath, m.formats, true)
+		return m, ingestCmd(m.db, msg.file, m.basePath, m.formats, m.savedFilters, true)
 	}
 	// Show dupe modal
 	m.importDupeModal = true
@@ -361,15 +363,39 @@ func (m model) handleIngestDone(msg ingestDoneMsg) (tea.Model, tea.Cmd) {
 		m.setError(fmt.Sprintf("Import failed: %v", msg.err))
 		return m, nil
 	}
+	base := ""
 	if msg.dupes > 0 {
-		m.setStatusf("Imported %d transactions from %s (%d duplicates skipped)", msg.count, msg.file, msg.dupes)
+		base = fmt.Sprintf("Imported %d transactions from %s (%d duplicates skipped)", msg.count, msg.file, msg.dupes)
 	} else {
-		m.setStatusf("Imported %d transactions from %s", msg.count, msg.file)
+		base = fmt.Sprintf("Imported %d transactions from %s", msg.count, msg.file)
 	}
+	if msg.rulesApplied {
+		base += " | " + formatRulesSummary("Import scope", msg.rulesTxnUpdated, msg.rulesCatChanges, msg.rulesTagChanges, msg.rulesFailed)
+	}
+	m.setStatus(base)
 	if m.db == nil {
 		return m, nil
 	}
 	return m, refreshCmd(m.db)
+}
+
+func formatRulesSummary(scope string, updatedTxns, catChanges, tagChanges, failedRules int) string {
+	label := strings.TrimSpace(scope)
+	if label == "" {
+		label = "All Accounts"
+	}
+	failedPart := fmt.Sprintf("%d failed rules", failedRules)
+	if failedRules > 0 {
+		failedPart = lipgloss.NewStyle().Foreground(colorError).Render(failedPart)
+	}
+	return fmt.Sprintf(
+		"Applied rules (%s): %d transactions updated, %d category changes, %d tag changes, %s.",
+		label,
+		updatedTxns,
+		catChanges,
+		tagChanges,
+		failedPart,
+	)
 }
 
 func (m model) handleQuickCategoryApplied(msg quickCategoryAppliedMsg) (tea.Model, tea.Cmd) {

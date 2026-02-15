@@ -177,12 +177,12 @@ func TestBeginSettingsRuleMode(t *testing.T) {
 	if !m.ruleEditorOpen {
 		t.Fatal("rule editor should open for new rule")
 	}
-	if m.ruleEditorID != 0 || m.ruleEditorName != "" || m.ruleEditorCatCur != 0 {
-		t.Fatalf("rule add state unexpected: id=%d name=%q catCur=%d", m.ruleEditorID, m.ruleEditorName, m.ruleEditorCatCur)
+	if m.ruleEditorID != 0 || m.ruleEditorName != "" || m.ruleEditorCatID != nil {
+		t.Fatalf("rule add state unexpected: id=%d name=%q catID=%v", m.ruleEditorID, m.ruleEditorName, m.ruleEditorCatID)
 	}
 
 	catID := 2
-	rule := ruleV2{id: 3, name: "WOOLIES", filterExpr: "desc:WOOLIES", setCategoryID: &catID, enabled: true}
+	rule := ruleV2{id: 3, name: "WOOLIES", savedFilterID: "filter-woolies", setCategoryID: &catID, enabled: true}
 	m.beginSettingsRuleMode(&rule)
 	if !m.ruleEditorOpen {
 		t.Fatal("rule editor should remain open for edit")
@@ -190,8 +190,8 @@ func TestBeginSettingsRuleMode(t *testing.T) {
 	if m.ruleEditorID != 3 || m.ruleEditorName != "WOOLIES" {
 		t.Fatalf("rule edit state unexpected: id=%d name=%q", m.ruleEditorID, m.ruleEditorName)
 	}
-	if m.ruleEditorCatCur != 2 {
-		t.Fatalf("rule category cursor = %d, want 2", m.ruleEditorCatCur)
+	if m.ruleEditorCatID == nil || *m.ruleEditorCatID != 2 {
+		t.Fatalf("rule category id = %v, want 2", m.ruleEditorCatID)
 	}
 }
 

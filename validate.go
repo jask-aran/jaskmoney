@@ -55,7 +55,7 @@ func runValidation() error {
 	}
 
 	base := filepath.Dir(csvPath)
-	cmd := ingestCmd(db, filepath.Base(csvPath), base, formats, true)
+	cmd := ingestCmd(db, filepath.Base(csvPath), base, formats, nil, true)
 	msg := cmd()
 	res, ok := msg.(ingestDoneMsg)
 	if !ok {

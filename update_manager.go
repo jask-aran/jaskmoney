@@ -406,12 +406,12 @@ func (m model) updateDupeModal(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		// Force import all (including dupes)
 		m.importDupeModal = false
 		m.setStatus("Importing all (including duplicates)...")
-		return m, ingestCmd(m.db, m.importDupeFile, m.basePath, m.formats, false)
+		return m, ingestCmd(m.db, m.importDupeFile, m.basePath, m.formats, m.savedFilters, false)
 	case m.isAction(scopeDupeModal, actionSkipDupes, msg):
 		// Skip duplicates
 		m.importDupeModal = false
 		m.setStatus("Importing (skipping duplicates)...")
-		return m, ingestCmd(m.db, m.importDupeFile, m.basePath, m.formats, true)
+		return m, ingestCmd(m.db, m.importDupeFile, m.basePath, m.formats, m.savedFilters, true)
 	case m.isAction(scopeDupeModal, actionClose, msg):
 		m.importDupeModal = false
 		m.setStatus("Import cancelled.")

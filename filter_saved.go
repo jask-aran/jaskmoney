@@ -217,6 +217,10 @@ func (m model) updateFilterApplyPicker(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	case pickerActionCancelled:
 		m.filterApplyPicker = nil
 		m.filterApplyOrder = nil
+		if m.ruleEditorPickingFilter {
+			m.ruleEditorPickingFilter = false
+			return m, nil
+		}
 		m.setStatus("Apply filter cancelled.")
 		return m, nil
 	case pickerActionSelected:
@@ -229,6 +233,15 @@ func (m model) updateFilterApplyPicker(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			if row := m.filterApplyPicker.currentRow(); row.item != nil {
 				id = row.item.Label
 			}
+		}
+		if m.ruleEditorPickingFilter {
+			m.ruleEditorFilterID = strings.TrimSpace(id)
+			m.ruleEditorPickingFilter = false
+			m.filterApplyPicker = nil
+			m.filterApplyOrder = nil
+			m.ruleEditorStep = 2
+			m.ruleEditorErr = ""
+			return m, nil
 		}
 		next, err := m.applySavedFilterByID(id)
 		next.filterApplyPicker = nil
