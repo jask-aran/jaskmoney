@@ -401,7 +401,7 @@ Scopes fall into three categories with different key reuse rules:
 
 ```
 dashboard, dashboard_timeframe, dashboard_custom_input, dashboard_focused
-budget, budget_table, budget_planner, budget_editing, budget_target_editor
+budget, budget_editing
 manager, manager_transactions, transactions, search
 settings_nav, settings_mode_*, settings_active_*
 ```
@@ -1138,7 +1138,8 @@ Reference detailed rules rollout notes in `specs/v0.4-spec.md`.
 
 ### 5.6 Budget Data Contracts
 
-Current enforced budget contract is schema-level:
+Current enforced budget contract is schema-level, with v0.4 target behavior
+defined below:
 
 - Budget tables exist in schema v6:
   - `category_budgets`
@@ -1149,9 +1150,18 @@ Current enforced budget contract is schema-level:
   `amount = 0`.
 - Foreign keys and uniqueness constraints are the current integrity layer.
 
-Application-level budget computation and budget-tab interaction contracts are
-not part of the current runtime baseline in this repository. Those behaviors
-are tracked in `specs/v0.4-spec.md`.
+**v0.4 target behavior contracts:**
+- Budget account scope is sourced from Manager account selection
+  (`filterAccounts`) with shared semantics: empty selection means
+  `All Accounts`.
+- Spending targets resolve by saved-filter reference (`saved_filter_id`), not
+  inline filter expressions.
+- Budget and Dashboard consume a shared spend source mode:
+  - default: `effective` debit spend (debits reduced by offsets)
+  - optional: `raw` debit spend
+  - mode is session-only and toggled through a shared command.
+- Budget compute paths should use aggregated/indexed queries and in-memory
+  maps (avoid per-row DB lookups in update/render paths).
 
 ### 5.7 Credit Offset Integrity
 
@@ -1175,8 +1185,14 @@ CREATE TABLE credit_offsets (
 - uniqueness on `(credit_txn_id, debit_txn_id)`
 - FK constraints to `transactions` for both linked IDs
 
-Application-level linking workflows and additional transactional validation
-rules are tracked in `specs/v0.4-spec.md`.
+**v0.4 target behavior contracts:**
+- Offset linking is initiated from the Manager transaction detail flow
+  (`txn:link-offset`), not from Budget tab-local workflows.
+- Application-level insertion validates sign/account/allocation constraints
+  atomically in one DB transaction.
+- Runtime offset indexes should support both orientations:
+  - by debit transaction ID (budget/effective spend math)
+  - by credit transaction ID (remaining-link capacity and detail flow)
 
 ## 6. Rendering and Viewport Safety
 
@@ -1259,9 +1275,16 @@ state-lifecycle and dismissal invariants, and enforced tests.
 
 ### 6.8 Budget View Rendering
 
-Budget tables and integrity rules exist in the data layer (see §5.6, §5.7),
-but a user-facing budget tab is not currently enabled. Budget UI design and
-rollout live in `specs/v0.4-spec.md`.
+Budget rendering contracts for v0.4:
+
+- Budget header shows month and effective Manager scope label.
+- Two views are supported: table (default) and planner.
+- Table and planner editing should reuse existing input primitives
+  (`textField`, action-based key handling) and avoid bespoke modal stacks.
+- Any new Budget modal with text input must register `modalTextContracts` and
+  participate in `overlayPrecedence()` dispatch.
+- Analytics strip values and Budget Health surfaces should consume the shared
+  spend source mode (`effective` by default; `raw` when toggled).
 
 ## 7. Runtime Modes and Harnesses
 
