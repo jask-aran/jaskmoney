@@ -85,6 +85,55 @@ type ingestDoneMsg struct {
 	rulesFailed     int
 }
 
+type importPreviewParseError struct {
+	rowIndex   int
+	sourceLine int
+	field      string
+	message    string
+}
+
+type importPreviewRow struct {
+	index       int
+	sourceLine  int
+	dateRaw     string
+	dateISO     string
+	amount      float64
+	description string
+	isDupe      bool
+
+	previewCat  string
+	previewTags []string
+}
+
+type importPreviewLockedRules struct {
+	ruleIDs    []int
+	rules      []ruleV2
+	lockReason string
+
+	// Materialized resolved rules to guarantee preview/import parity.
+	resolved []resolvedRuleV2
+}
+
+type importPreviewSnapshot struct {
+	fileName    string
+	createdAt   time.Time
+	totalRows   int
+	newCount    int
+	dupeCount   int
+	errorCount  int
+	rows        []importPreviewRow
+	parseErrors []importPreviewParseError
+	lockedRules importPreviewLockedRules
+
+	// Internal import context captured at preview-open.
+	accountID int
+}
+
+type importPreviewMsg struct {
+	snapshot *importPreviewSnapshot
+	err      error
+}
+
 type refreshDoneMsg struct {
 	rows             []transaction
 	categories       []category
@@ -101,13 +150,6 @@ type refreshDoneMsg struct {
 
 type filesLoadedMsg struct {
 	files []string
-	err   error
-}
-
-type dupeScanMsg struct {
-	total int
-	dupes int
-	file  string
 	err   error
 }
 
@@ -300,14 +342,18 @@ type model struct {
 	width      int
 	height     int
 
-	// Import flow (file picker + dupe modal)
-	importPicking   bool     // showing file picker
-	importFiles     []string // CSV files in basePath
-	importCursor    int      // cursor in file picker
-	importDupeModal bool     // showing duplicate decision modal
-	importDupeFile  string   // file being imported
-	importDupeTotal int      // total rows in file
-	importDupeCount int      // duplicate count
+	// Import flow (file picker + preview modal)
+	importPicking bool     // showing file picker
+	importFiles   []string // CSV files in basePath
+	importCursor  int      // cursor in file picker
+
+	// Import preview overlay state
+	importPreviewOpen      bool
+	importPreviewViewFull  bool // false=compact, true=full
+	importPreviewPostRules bool // false=raw, true=post-rules
+	importPreviewShowAll   bool // false=dupes-only compact, true=all rows compact
+	importPreviewScroll    int
+	importPreviewSnapshot  *importPreviewSnapshot
 
 	// Filter input state
 	filterInputMode   bool
@@ -556,9 +602,19 @@ func (m model) View() string {
 		picker := renderFilePicker(m.importFiles, m.importCursor, m.keys)
 		return m.composeOverlay(header, body, statusLine, footer, picker)
 	}
-	if m.importDupeModal {
-		dupeModal := renderDupeModal(m.importDupeFile, m.importDupeTotal, m.importDupeCount, m.keys)
-		return m.composeOverlay(header, body, statusLine, footer, dupeModal)
+	if m.importPreviewOpen {
+		preview := renderImportPreview(
+			m.importPreviewSnapshot,
+			m.importPreviewViewFull,
+			m.importPreviewPostRules,
+			m.importPreviewShowAll,
+			m.importPreviewScroll,
+			m.compactImportPreviewRows(),
+			m.fullImportPreviewRows(),
+			m.width,
+			m.keys,
+		)
+		return m.composeOverlay(header, body, statusLine, footer, preview)
 	}
 	if m.catPicker != nil {
 		picker := renderPicker(m.catPicker, min(56, m.width-10), m.keys, scopeCategoryPicker)
@@ -969,6 +1025,14 @@ func (m *model) visibleRows() int {
 		available = maxRows
 	}
 	return available
+}
+
+func (m model) compactImportPreviewRows() int {
+	return 20
+}
+
+func (m model) fullImportPreviewRows() int {
+	return max(1, m.visibleRows())
 }
 
 func (m *model) listContentWidth() int {

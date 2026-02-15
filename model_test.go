@@ -998,23 +998,50 @@ func TestTabNumberShortcutsWorkInSettingsMenu(t *testing.T) {
 }
 
 // ---------------------------------------------------------------------------
-// Dupe modal key handling tests
+// Import preview modal key handling tests
 // ---------------------------------------------------------------------------
 
-func TestDupeModalCancel(t *testing.T) {
+func TestImportPreviewCancelFromCompact(t *testing.T) {
 	m := newModel()
 	m.ready = true
-	m.importDupeModal = true
-	m.importDupeFile = "test.csv"
+	m.importPreviewOpen = true
+	m.importPreviewSnapshot = &importPreviewSnapshot{
+		fileName: "test.csv",
+		rows: []importPreviewRow{
+			{index: 1, sourceLine: 1, dateRaw: "3/02/2026", dateISO: "2026-02-03", amount: -10, description: "row"},
+		},
+	}
 
-	closeKey := m.primaryActionKey(scopeDupeModal, actionClose, "esc")
+	closeKey := m.primaryActionKey(scopeImportPreview, actionClose, "esc")
 	m2, _ := m.Update(keyMsg(closeKey))
 	m3 := m2.(model)
-	if m3.importDupeModal {
-		t.Error("dupe modal should be closed after cancel")
+	if m3.importPreviewOpen {
+		t.Error("import preview should be closed after cancel")
 	}
 	if m3.status != "Import cancelled." {
 		t.Errorf("status = %q, want cancelled message", m3.status)
+	}
+}
+
+func TestImportPreviewEscStepsDownFromFullView(t *testing.T) {
+	m := newModel()
+	m.ready = true
+	m.importPreviewOpen = true
+	m.importPreviewViewFull = true
+	m.importPreviewSnapshot = &importPreviewSnapshot{
+		fileName: "test.csv",
+		rows: []importPreviewRow{
+			{index: 1, sourceLine: 1, dateRaw: "3/02/2026", dateISO: "2026-02-03", amount: -10, description: "row"},
+		},
+	}
+
+	m2, _ := m.Update(keyMsg("esc"))
+	got := m2.(model)
+	if !got.importPreviewOpen {
+		t.Fatal("preview should stay open while exiting full view")
+	}
+	if got.importPreviewViewFull {
+		t.Fatal("esc in full view should return to compact mode")
 	}
 }
 

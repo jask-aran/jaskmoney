@@ -15,6 +15,10 @@ func TestFlowHeavySettingsImportWithDupesForceAll(t *testing.T) {
 
 	m = flowPress(t, m, "i")
 	m = flowPress(t, m, "enter")
+	if !m.importPreviewOpen {
+		t.Fatal("expected import preview before first import")
+	}
+	m = flowPress(t, m, "s")
 
 	rows, err := loadRows(m.db)
 	if err != nil {
@@ -26,8 +30,8 @@ func TestFlowHeavySettingsImportWithDupesForceAll(t *testing.T) {
 
 	m = flowPress(t, m, "i")
 	m = flowPress(t, m, "enter")
-	if !m.importDupeModal {
-		t.Fatal("expected duplicate modal before force-all import")
+	if !m.importPreviewOpen {
+		t.Fatal("expected import preview before force-all import")
 	}
 	m = flowPress(t, m, "a")
 	if m.statusErr {

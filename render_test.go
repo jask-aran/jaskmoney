@@ -772,7 +772,7 @@ func TestRenderSpendingTrackerAlwaysRenders(t *testing.T) {
 }
 
 // ---------------------------------------------------------------------------
-// File picker and dupe modal rendering tests
+// File picker and import preview rendering tests
 // ---------------------------------------------------------------------------
 
 func TestRenderFilePicker(t *testing.T) {
@@ -796,19 +796,105 @@ func TestRenderFilePickerEmpty(t *testing.T) {
 	}
 }
 
-func TestRenderDupeModal(t *testing.T) {
-	output := renderDupeModal("ANZ.csv", 100, 15, NewKeyRegistry())
-	if !strings.Contains(output, "Duplicates") {
-		t.Error("missing title")
+func TestRenderImportPreviewCompact(t *testing.T) {
+	snapshot := &importPreviewSnapshot{
+		fileName:   "ANZ.csv",
+		totalRows:  3,
+		newCount:   1,
+		dupeCount:  2,
+		errorCount: 0,
+		rows: []importPreviewRow{
+			{index: 1, sourceLine: 1, dateISO: "2026-02-03", amount: -10, description: "FIRST", isDupe: true},
+			{index: 2, sourceLine: 2, dateISO: "2026-02-04", amount: -11, description: "SECOND", isDupe: true},
+			{index: 3, sourceLine: 3, dateISO: "2026-02-05", amount: -12, description: "THIRD", isDupe: false},
+		},
+	}
+	output := renderImportPreview(snapshot, false, true, false, 0, 20, 20, 140, NewKeyRegistry())
+	if !strings.Contains(output, "Import Preview") {
+		t.Error("missing compact title")
 	}
 	if !strings.Contains(output, "ANZ.csv") {
 		t.Error("missing filename")
 	}
-	if !strings.Contains(output, "100") {
-		t.Error("missing total count")
+	if !strings.Contains(output, "Dupes:") {
+		t.Error("missing summary section")
 	}
-	if !strings.Contains(output, "15") {
-		t.Error("missing dupe count")
+	if !strings.Contains(output, "FIRST") || !strings.Contains(output, "SECOND") {
+		t.Error("missing duplicate rows in compact view")
+	}
+}
+
+func TestRenderImportPreviewFullPostRulesShowsStatusCategoryAndTags(t *testing.T) {
+	snapshot := &importPreviewSnapshot{
+		fileName:   "ANZ.csv",
+		totalRows:  2,
+		newCount:   1,
+		dupeCount:  1,
+		errorCount: 0,
+		rows: []importPreviewRow{
+			{index: 1, sourceLine: 1, dateISO: "2026-02-03", amount: -10, description: "GROCERY", isDupe: false, previewCat: "Groceries", previewTags: []string{"essentials", "weekly"}},
+			{index: 2, sourceLine: 2, dateISO: "2026-02-04", amount: -11, description: "DUPLICATE", isDupe: true, previewCat: "Dining", previewTags: []string{"takeaway"}},
+		},
+	}
+	output := renderImportPreview(snapshot, true, true, true, 0, 20, 20, 140, NewKeyRegistry())
+	if !strings.Contains(output, "Import Full View") {
+		t.Error("missing full-view title")
+	}
+	if !strings.Contains(output, "[NEW]") || !strings.Contains(output, "[DUPE]") {
+		t.Error("missing row status in full view")
+	}
+	if !strings.Contains(output, "Groceries") || !strings.Contains(output, "essentials,weekly") {
+		t.Error("missing post-rules category/tags")
+	}
+}
+
+func TestRenderImportPreviewCompactUsesConfiguredPageSize(t *testing.T) {
+	rows := make([]importPreviewRow, 0, 120)
+	for i := 0; i < 120; i++ {
+		rows = append(rows, importPreviewRow{
+			index:       i + 1,
+			sourceLine:  i + 1,
+			dateISO:     "2026-02-03",
+			amount:      -1,
+			description: "ROW",
+			isDupe:      true,
+		})
+	}
+	snapshot := &importPreviewSnapshot{
+		fileName:   "ANZ.csv",
+		totalRows:  120,
+		dupeCount:  120,
+		errorCount: 0,
+		rows:       rows,
+	}
+	output := renderImportPreview(snapshot, false, true, true, 0, 20, 20, 140, NewKeyRegistry())
+	if !strings.Contains(output, "showing 20 rows/page") {
+		t.Fatal("missing compact page-size hint")
+	}
+}
+
+func TestRenderImportPreviewShowsParseErrorBannerAndBlockedHint(t *testing.T) {
+	snapshot := &importPreviewSnapshot{
+		fileName:   "ANZ.csv",
+		totalRows:  2,
+		newCount:   1,
+		errorCount: 1,
+		parseErrors: []importPreviewParseError{
+			{rowIndex: 2, sourceLine: 2, field: "date", message: "invalid date"},
+		},
+		rows: []importPreviewRow{
+			{index: 1, sourceLine: 1, dateISO: "2026-02-03", amount: -10, description: "VALID"},
+		},
+	}
+	output := renderImportPreview(snapshot, false, true, false, 0, 20, 20, 140, NewKeyRegistry())
+	if !strings.Contains(output, "Errors:") {
+		t.Fatal("missing parse error summary")
+	}
+	if !strings.Contains(output, "Import blocked") {
+		t.Fatal("missing blocked import hint")
+	}
+	if !strings.Contains(output, "line 2") {
+		t.Fatal("missing row-level parse error reference")
 	}
 }
 

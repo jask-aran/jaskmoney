@@ -85,10 +85,60 @@ func ingestCmd(db *sql.DB, filename, basePath string, formats []csvFormat, saved
 	}
 }
 
-// scanDupesCmd scans a CSV file for duplicates without importing.
-// Returns a dupeScanMsg with the count of duplicates found.
-func scanDupesCmd(db *sql.DB, filename, basePath string, formats []csvFormat) tea.Cmd {
+// ingestSnapshotCmd imports a previously scanned immutable preview snapshot.
+// Decisions always apply to the full snapshot, not only displayed rows.
+func ingestSnapshotCmd(db *sql.DB, snapshot *importPreviewSnapshot, skipDupes bool) tea.Cmd {
 	return func() tea.Msg {
+		if db == nil {
+			return ingestDoneMsg{err: fmt.Errorf("database not ready")}
+		}
+		if snapshot == nil {
+			return ingestDoneMsg{err: fmt.Errorf("missing import preview snapshot")}
+		}
+		if snapshot.errorCount > 0 || len(snapshot.parseErrors) > 0 {
+			return ingestDoneMsg{
+				file: snapshot.fileName,
+				err:  fmt.Errorf("snapshot has %d parse/normalize errors", max(snapshot.errorCount, len(snapshot.parseErrors))),
+			}
+		}
+
+		count, dupes, txnIDs, err := importSnapshotRows(db, snapshot, skipDupes)
+		if err != nil {
+			return ingestDoneMsg{count: count, dupes: dupes, err: err, file: snapshot.fileName}
+		}
+		if _, err := insertImportRecord(db, snapshot.fileName, count); err != nil {
+			return ingestDoneMsg{count: count, dupes: dupes, err: err, file: snapshot.fileName}
+		}
+
+		done := ingestDoneMsg{count: count, dupes: dupes, file: snapshot.fileName}
+		if len(txnIDs) == 0 {
+			return done
+		}
+		txnTags, err := loadTransactionTags(db)
+		if err != nil {
+			done.err = err
+			return done
+		}
+		updatedTxns, catChanges, tagChanges, err := applyResolvedRulesV2ToTxnIDs(db, snapshot.lockedRules.resolved, txnTags, txnIDs)
+		if err != nil {
+			done.err = err
+			return done
+		}
+		done.rulesApplied = true
+		done.rulesTxnUpdated = updatedTxns
+		done.rulesCatChanges = catChanges
+		done.rulesTagChanges = tagChanges
+		return done
+	}
+}
+
+// scanDupesCmd scans a CSV file and builds an immutable preview snapshot
+// without importing or writing to the database.
+func scanDupesCmd(db *sql.DB, filename, basePath string, formats []csvFormat, savedFilters []savedFilter) tea.Cmd {
+	return func() tea.Msg {
+		if db == nil {
+			return importPreviewMsg{err: fmt.Errorf("database not ready")}
+		}
 		path := filename
 		if !filepath.IsAbs(path) {
 			path = filepath.Join(basePath, path)
@@ -96,21 +146,296 @@ func scanDupesCmd(db *sql.DB, filename, basePath string, formats []csvFormat) te
 		base := filepath.Base(path)
 		format := detectFormat(formats, base)
 		if format == nil {
-			return dupeScanMsg{err: fmt.Errorf("no matching format for %q", base), file: base}
+			return importPreviewMsg{err: fmt.Errorf("no matching format for %q", base)}
 		}
 		acct, err := loadAccountByNameCI(db, format.Account)
 		if err != nil {
-			return dupeScanMsg{err: fmt.Errorf("resolve account %q: %w", format.Account, err), file: base}
+			return importPreviewMsg{err: fmt.Errorf("resolve account %q: %w", format.Account, err)}
 		}
 		if acct == nil {
-			return dupeScanMsg{err: fmt.Errorf("account %q not found; create or sync it in Manager", format.Account), file: base}
+			return importPreviewMsg{err: fmt.Errorf("account %q not found; create or sync it in Manager", format.Account)}
 		}
-		total, dupes, err := countDuplicatesForAccount(db, path, *format, &acct.id)
+		snapshot, err := buildImportPreviewSnapshot(db, path, base, *format, *acct, savedFilters)
 		if err != nil {
-			return dupeScanMsg{err: err, file: base}
+			return importPreviewMsg{err: err}
 		}
-		return dupeScanMsg{total: total, dupes: dupes, file: base}
+		return importPreviewMsg{snapshot: snapshot}
 	}
+}
+
+func importSnapshotRows(db *sql.DB, snapshot *importPreviewSnapshot, skipDupes bool) (inserted int, dupes int, txnIDs []int, err error) {
+	tx, err := db.Begin()
+	if err != nil {
+		return 0, 0, nil, fmt.Errorf("begin tx: %w", err)
+	}
+	defer tx.Rollback() //nolint:errcheck // rollback is a no-op after commit
+
+	insertedIDs := make([]int, 0, len(snapshot.rows))
+	for _, row := range snapshot.rows {
+		if skipDupes && row.isDupe {
+			dupes++
+			continue
+		}
+		res, execErr := tx.Exec(`
+			INSERT INTO transactions (date_raw, date_iso, amount, description, notes, account_id)
+			VALUES (?, ?, ?, ?, '', ?)
+		`, row.dateRaw, row.dateISO, row.amount, row.description, snapshot.accountID)
+		if execErr != nil {
+			return inserted, dupes, insertedIDs, fmt.Errorf("insert row: %w", execErr)
+		}
+		lastID, idErr := res.LastInsertId()
+		if idErr != nil {
+			return inserted, dupes, insertedIDs, fmt.Errorf("last insert id: %w", idErr)
+		}
+		inserted++
+		insertedIDs = append(insertedIDs, int(lastID))
+	}
+	if err := tx.Commit(); err != nil {
+		return inserted, dupes, insertedIDs, fmt.Errorf("commit tx: %w", err)
+	}
+	return inserted, dupes, insertedIDs, nil
+}
+
+func applyResolvedRulesV2ToTxnIDs(db *sql.DB, resolved []resolvedRuleV2, txnTags map[int][]tag, txnIDs []int) (updatedTxns, catChanges, tagChanges int, err error) {
+	if len(txnIDs) == 0 || len(resolved) == 0 {
+		return 0, 0, 0, nil
+	}
+	rows, err := loadRowsByTxnIDs(db, txnIDs)
+	if err != nil {
+		return 0, 0, 0, err
+	}
+	return applyResolvedRulesV2ToRows(db, resolved, txnTags, rows)
+}
+
+func buildImportPreviewSnapshot(db *sql.DB, path, fileName string, format csvFormat, account account, savedFilters []savedFilter) (*importPreviewSnapshot, error) {
+	existingSet, err := loadDuplicateSet(db)
+	if err != nil {
+		return nil, fmt.Errorf("load duplicates: %w", err)
+	}
+	rows, parseErrors, totalRows, err := parseImportPreviewRows(path, format, account.id, existingSet)
+	if err != nil {
+		return nil, err
+	}
+
+	snapshot := &importPreviewSnapshot{
+		fileName:    fileName,
+		createdAt:   time.Now(),
+		totalRows:   totalRows,
+		rows:        rows,
+		parseErrors: parseErrors,
+		errorCount:  len(parseErrors),
+		accountID:   account.id,
+	}
+	for _, row := range rows {
+		if row.isDupe {
+			snapshot.dupeCount++
+		} else {
+			snapshot.newCount++
+		}
+	}
+
+	rules, err := loadRulesV2(db)
+	if err != nil {
+		return nil, err
+	}
+	ruleIDs := make([]int, 0, len(rules))
+	for _, rule := range rules {
+		ruleIDs = append(ruleIDs, rule.id)
+	}
+	resolved, _ := resolveRulesV2(rules, savedFilters)
+	snapshot.lockedRules = importPreviewLockedRules{
+		ruleIDs:    ruleIDs,
+		rules:      append([]ruleV2(nil), rules...),
+		lockReason: "preview-open",
+		resolved:   resolved,
+	}
+	snapshot.rows, err = projectImportPreviewRows(db, snapshot.rows, account.name, account.id, resolved)
+	if err != nil {
+		return nil, err
+	}
+
+	return snapshot, nil
+}
+
+func parseImportPreviewRows(path string, format csvFormat, accountID int, existingSet map[string]bool) (rows []importPreviewRow, parseErrors []importPreviewParseError, totalRows int, err error) {
+	f, err := os.Open(path)
+	if err != nil {
+		return nil, nil, 0, fmt.Errorf("open csv: %w", err)
+	}
+	defer f.Close()
+
+	r := csv.NewReader(f)
+	r.FieldsPerRecord = -1
+	if format.Delimiter != "" {
+		r.Comma = rune(format.Delimiter[0])
+	}
+	minCols := max(format.DateCol, format.AmountCol, format.DescCol) + 1
+
+	firstRow := true
+	sourceLine := 0
+	rowIndex := 0
+	for {
+		rec, readErr := r.Read()
+		if readErr != nil {
+			if readErr == io.EOF {
+				break
+			}
+			return nil, nil, totalRows, fmt.Errorf("read csv row: %w", readErr)
+		}
+		sourceLine++
+		if firstRow && format.HasHeader {
+			firstRow = false
+			continue
+		}
+		firstRow = false
+
+		if csvRecordIsBlank(rec) {
+			// Preserve historical behavior: ignore trailing/blank rows.
+			continue
+		}
+
+		rowIndex++
+		totalRows++
+
+		parsed, issue := parseCSVRecordForPreview(rec, format, minCols)
+		if issue != nil {
+			parseErrors = append(parseErrors, importPreviewParseError{
+				rowIndex:   rowIndex,
+				sourceLine: sourceLine,
+				field:      issue.field,
+				message:    issue.message,
+			})
+			continue
+		}
+
+		key := duplicateKeyForAccount(parsed.dateISO, parsed.amount, parsed.description, &accountID)
+		// Import preview duplicate detection is DB-scoped only.
+		// Repeated rows within the same file are treated as unique first-import rows.
+		isDupe := existingSet[key]
+		rows = append(rows, importPreviewRow{
+			index:       rowIndex,
+			sourceLine:  sourceLine,
+			dateRaw:     parsed.dateRaw,
+			dateISO:     parsed.dateISO,
+			amount:      parsed.amount,
+			description: parsed.description,
+			isDupe:      isDupe,
+		})
+	}
+	return rows, parseErrors, totalRows, nil
+}
+
+func csvRecordIsBlank(rec []string) bool {
+	if len(rec) == 0 {
+		return true
+	}
+	for _, field := range rec {
+		if strings.TrimSpace(field) != "" {
+			return false
+		}
+	}
+	return true
+}
+
+type previewParseIssue struct {
+	field   string
+	message string
+}
+
+func parseCSVRecordForPreview(rec []string, format csvFormat, minCols int) (parsedCSVRow, *previewParseIssue) {
+	if len(rec) < minCols {
+		return parsedCSVRow{}, &previewParseIssue{field: "row", message: fmt.Sprintf("expected at least %d columns", minCols)}
+	}
+	dateRaw := strings.TrimSpace(rec[format.DateCol])
+	amountRaw := strings.TrimSpace(rec[format.AmountCol])
+	if dateRaw == "" {
+		return parsedCSVRow{}, &previewParseIssue{field: "date", message: "date is required"}
+	}
+	if amountRaw == "" {
+		return parsedCSVRow{}, &previewParseIssue{field: "amount", message: "amount is required"}
+	}
+
+	description := strings.TrimSpace(rec[format.DescCol])
+	if format.DescJoin {
+		description = strings.TrimSpace(strings.Join(rec[format.DescCol:], ","))
+	}
+
+	if format.AmountStrip != "" {
+		for _, ch := range format.AmountStrip {
+			amountRaw = strings.ReplaceAll(amountRaw, string(ch), "")
+		}
+	}
+
+	dateISO, err := parseDateISO(dateRaw, format.DateFormat)
+	if err != nil {
+		return parsedCSVRow{}, &previewParseIssue{field: "date", message: err.Error()}
+	}
+	amount, err := parseAmount(amountRaw)
+	if err != nil {
+		return parsedCSVRow{}, &previewParseIssue{field: "amount", message: err.Error()}
+	}
+	return parsedCSVRow{
+		dateRaw:     dateRaw,
+		dateISO:     dateISO,
+		amount:      amount,
+		description: description,
+	}, nil
+}
+
+func projectImportPreviewRows(db *sql.DB, rows []importPreviewRow, accountName string, accountID int, resolved []resolvedRuleV2) ([]importPreviewRow, error) {
+	if len(rows) == 0 {
+		return rows, nil
+	}
+	categories, err := loadCategories(db)
+	if err != nil {
+		return nil, err
+	}
+	tags, err := loadTags(db)
+	if err != nil {
+		return nil, err
+	}
+	catNames := categoryNameByID(categories)
+	tagByID := tagByIDMap(tags)
+	accountIDCopy := accountID
+
+	out := make([]importPreviewRow, 0, len(rows))
+	for _, row := range rows {
+		workCat := (*int)(nil)
+		workTagSet := make(map[int]bool)
+		workTxn := transaction{
+			dateRaw:      row.dateRaw,
+			dateISO:      row.dateISO,
+			amount:       row.amount,
+			description:  row.description,
+			categoryID:   nil,
+			categoryName: categoryNameForPtr(nil, catNames),
+			accountID:    &accountIDCopy,
+			accountName:  accountName,
+		}
+		for _, rule := range resolved {
+			if rule.parsed == nil || !evalFilter(rule.parsed, workTxn, tagStateToSlice(workTagSet, tagByID)) {
+				continue
+			}
+			if rule.rule.setCategoryID != nil {
+				workCat = copyIntPtr(rule.rule.setCategoryID)
+				workTxn.categoryID = copyIntPtr(workCat)
+				workTxn.categoryName = categoryNameForPtr(workCat, catNames)
+			}
+			for _, id := range rule.rule.addTagIDs {
+				if id > 0 {
+					workTagSet[id] = true
+				}
+			}
+		}
+		row.previewCat = categoryNameForPtr(workCat, catNames)
+		previewTags := tagStateToSlice(workTagSet, tagByID)
+		row.previewTags = make([]string, 0, len(previewTags))
+		for _, tg := range previewTags {
+			row.previewTags = append(row.previewTags, tg.name)
+		}
+		out = append(out, row)
+	}
+	return out, nil
 }
 
 // detectFormat picks the first format whose name appears as a prefix (case-insensitive)

@@ -523,19 +523,34 @@ func TestScanDupesCmdDoesNotMutateDB(t *testing.T) {
 		t.Fatalf("write scan csv: %v", err)
 	}
 
-	msg := scanDupesCmd(db, file, dir, []csvFormat{format})()
-	done, ok := msg.(dupeScanMsg)
+	msg := scanDupesCmd(db, file, dir, []csvFormat{format}, nil)()
+	done, ok := msg.(importPreviewMsg)
 	if !ok {
 		t.Fatalf("unexpected message type: %T", msg)
 	}
 	if done.err != nil {
 		t.Fatalf("scanDupesCmd error: %v", done.err)
 	}
-	if done.total != 3 {
-		t.Fatalf("scan total=%d, want 3", done.total)
+	if done.snapshot == nil {
+		t.Fatal("expected non-nil snapshot")
 	}
-	if done.dupes != 2 {
-		t.Fatalf("scan dupes=%d, want 2", done.dupes)
+	if done.snapshot.totalRows != 3 {
+		t.Fatalf("scan total=%d, want 3", done.snapshot.totalRows)
+	}
+	if done.snapshot.dupeCount != 2 {
+		t.Fatalf("scan dupes=%d, want 2", done.snapshot.dupeCount)
+	}
+	if done.snapshot.newCount != 1 {
+		t.Fatalf("newCount=%d, want 1", done.snapshot.newCount)
+	}
+	if done.snapshot.errorCount != 0 {
+		t.Fatalf("errorCount=%d, want 0", done.snapshot.errorCount)
+	}
+	if len(done.snapshot.rows) != 3 {
+		t.Fatalf("rows len=%d, want 3", len(done.snapshot.rows))
+	}
+	if !done.snapshot.rows[0].isDupe || !done.snapshot.rows[1].isDupe || done.snapshot.rows[2].isDupe {
+		t.Fatalf("unexpected dupe flags: [%v %v %v]", done.snapshot.rows[0].isDupe, done.snapshot.rows[1].isDupe, done.snapshot.rows[2].isDupe)
 	}
 
 	rows, err := loadRows(db)
@@ -544,6 +559,342 @@ func TestScanDupesCmdDoesNotMutateDB(t *testing.T) {
 	}
 	if len(rows) != 1 {
 		t.Fatalf("scan should not mutate DB rows, got %d want 1", len(rows))
+	}
+}
+
+func TestScanDupesCmdCollectsParseErrors(t *testing.T) {
+	db, cleanup := testDB(t)
+	defer cleanup()
+
+	accountID, err := insertAccount(db, "ANZ", "debit", true)
+	if err != nil {
+		t.Fatalf("insertAccount: %v", err)
+	}
+	_ = accountID
+
+	format := testANZFormat()
+	format.Account = "ANZ"
+	format.ImportPrefix = "anz"
+
+	dir := t.TempDir()
+	file := "ANZ-errors.csv"
+	path := filepath.Join(dir, file)
+	csv := "3/02/2026,-20.00,VALID\nnot-a-date,-11.00,BAD DATE\n4/02/2026,,MISSING AMOUNT\n"
+	if err := os.WriteFile(path, []byte(csv), 0o644); err != nil {
+		t.Fatalf("write csv: %v", err)
+	}
+
+	msg := scanDupesCmd(db, file, dir, []csvFormat{format}, nil)()
+	done, ok := msg.(importPreviewMsg)
+	if !ok {
+		t.Fatalf("unexpected message type: %T", msg)
+	}
+	if done.err != nil {
+		t.Fatalf("scanDupesCmd error: %v", done.err)
+	}
+	if done.snapshot == nil {
+		t.Fatal("expected non-nil snapshot")
+	}
+	if done.snapshot.totalRows != 3 {
+		t.Fatalf("totalRows=%d, want 3", done.snapshot.totalRows)
+	}
+	if done.snapshot.errorCount != 2 {
+		t.Fatalf("errorCount=%d, want 2", done.snapshot.errorCount)
+	}
+	if len(done.snapshot.parseErrors) != 2 {
+		t.Fatalf("parseErrors len=%d, want 2", len(done.snapshot.parseErrors))
+	}
+	if done.snapshot.parseErrors[0].sourceLine != 2 {
+		t.Fatalf("first parse error sourceLine=%d, want 2", done.snapshot.parseErrors[0].sourceLine)
+	}
+	if done.snapshot.parseErrors[1].sourceLine != 3 {
+		t.Fatalf("second parse error sourceLine=%d, want 3", done.snapshot.parseErrors[1].sourceLine)
+	}
+}
+
+func TestScanDupesCmdIgnoresBlankTrailingRows(t *testing.T) {
+	db, cleanup := testDB(t)
+	defer cleanup()
+
+	if _, err := insertAccount(db, "ANZ", "debit", true); err != nil {
+		t.Fatalf("insertAccount: %v", err)
+	}
+
+	format := testANZFormat()
+	format.Account = "ANZ"
+	format.ImportPrefix = "anz"
+
+	dir := t.TempDir()
+	file := "ANZ-blank-lines.csv"
+	path := filepath.Join(dir, file)
+	csv := "3/02/2026,-20.00,VALID\n\n"
+	if err := os.WriteFile(path, []byte(csv), 0o644); err != nil {
+		t.Fatalf("write csv: %v", err)
+	}
+
+	msg := scanDupesCmd(db, file, dir, []csvFormat{format}, nil)()
+	done, ok := msg.(importPreviewMsg)
+	if !ok {
+		t.Fatalf("unexpected message type: %T", msg)
+	}
+	if done.err != nil {
+		t.Fatalf("scanDupesCmd error: %v", done.err)
+	}
+	if done.snapshot == nil {
+		t.Fatal("expected non-nil snapshot")
+	}
+	if done.snapshot.errorCount != 0 {
+		t.Fatalf("errorCount=%d, want 0", done.snapshot.errorCount)
+	}
+	if done.snapshot.totalRows != 1 {
+		t.Fatalf("totalRows=%d, want 1", done.snapshot.totalRows)
+	}
+}
+
+func TestScanDupesCmdDoesNotMarkWithinFileRepeatsAsDupesOnEmptyDB(t *testing.T) {
+	db, cleanup := testDB(t)
+	defer cleanup()
+
+	if _, err := insertAccount(db, "ANZ", "debit", true); err != nil {
+		t.Fatalf("insertAccount: %v", err)
+	}
+
+	format := testANZFormat()
+	format.Account = "ANZ"
+	format.ImportPrefix = "anz"
+
+	dir := t.TempDir()
+	file := "ANZ-repeat.csv"
+	path := filepath.Join(dir, file)
+	csv := "3/02/2026,-20.00,SAME\n3/02/2026,-20.00,SAME\n"
+	if err := os.WriteFile(path, []byte(csv), 0o644); err != nil {
+		t.Fatalf("write csv: %v", err)
+	}
+
+	msg := scanDupesCmd(db, file, dir, []csvFormat{format}, nil)()
+	done, ok := msg.(importPreviewMsg)
+	if !ok {
+		t.Fatalf("unexpected message type: %T", msg)
+	}
+	if done.err != nil {
+		t.Fatalf("scanDupesCmd error: %v", done.err)
+	}
+	if done.snapshot == nil {
+		t.Fatal("expected non-nil snapshot")
+	}
+	if done.snapshot.dupeCount != 0 {
+		t.Fatalf("dupeCount=%d, want 0 for within-file repeats on empty DB", done.snapshot.dupeCount)
+	}
+}
+
+func TestIngestSnapshotCmdSkipDupesUsesSnapshotRows(t *testing.T) {
+	db, cleanup := testDB(t)
+	defer cleanup()
+
+	accountID, err := insertAccount(db, "ANZ", "debit", true)
+	if err != nil {
+		t.Fatalf("insertAccount: %v", err)
+	}
+	format := testANZFormat()
+	format.Account = "ANZ"
+	format.ImportPrefix = "anz"
+
+	seedPath := writeTestCSV(t, "3/02/2026,-20.00,SEED\n")
+	if _, _, err := importCSVForAccount(db, seedPath, format, &accountID, true); err != nil {
+		t.Fatalf("seed import: %v", err)
+	}
+
+	dir := t.TempDir()
+	file := "ANZ-snapshot.csv"
+	path := filepath.Join(dir, file)
+	csv := "3/02/2026,-20.00,SEED\n3/02/2026,-20.00,SEED\n4/02/2026,-10.00,NEW\n"
+	if err := os.WriteFile(path, []byte(csv), 0o644); err != nil {
+		t.Fatalf("write csv: %v", err)
+	}
+
+	previewMsg := scanDupesCmd(db, file, dir, []csvFormat{format}, nil)()
+	preview, ok := previewMsg.(importPreviewMsg)
+	if !ok {
+		t.Fatalf("unexpected message type: %T", previewMsg)
+	}
+	if preview.err != nil {
+		t.Fatalf("scanDupesCmd error: %v", preview.err)
+	}
+	if preview.snapshot == nil {
+		t.Fatal("expected snapshot")
+	}
+
+	doneMsg := ingestSnapshotCmd(db, preview.snapshot, true)()
+	done, ok := doneMsg.(ingestDoneMsg)
+	if !ok {
+		t.Fatalf("unexpected ingest message type: %T", doneMsg)
+	}
+	if done.err != nil {
+		t.Fatalf("ingestSnapshotCmd error: %v", done.err)
+	}
+	if done.count != 1 {
+		t.Fatalf("count=%d, want 1", done.count)
+	}
+	if done.dupes != 2 {
+		t.Fatalf("dupes=%d, want 2", done.dupes)
+	}
+
+	rows, err := loadRows(db)
+	if err != nil {
+		t.Fatalf("loadRows: %v", err)
+	}
+	if len(rows) != 2 {
+		t.Fatalf("rows len=%d, want 2", len(rows))
+	}
+}
+
+func TestIngestSnapshotCmdUsesLockedRules(t *testing.T) {
+	db, cleanup := testDB(t)
+	defer cleanup()
+
+	_, err := insertAccount(db, "ANZ", "debit", true)
+	if err != nil {
+		t.Fatalf("insertAccount: %v", err)
+	}
+	cats, err := loadCategories(db)
+	if err != nil {
+		t.Fatalf("loadCategories: %v", err)
+	}
+	var groceriesID int
+	for _, cat := range cats {
+		if cat.name == "Groceries" {
+			groceriesID = cat.id
+			break
+		}
+	}
+	if groceriesID == 0 {
+		t.Fatal("expected Groceries category")
+	}
+
+	ruleID, err := insertRuleV2(db, ruleV2{
+		name:          "Groceries rule",
+		savedFilterID: "filter-grocery",
+		setCategoryID: &groceriesID,
+		enabled:       true,
+	})
+	if err != nil {
+		t.Fatalf("insertRuleV2: %v", err)
+	}
+
+	format := testANZFormat()
+	format.Account = "ANZ"
+	format.ImportPrefix = "anz"
+
+	dir := t.TempDir()
+	file := "ANZ-locked-rules.csv"
+	path := filepath.Join(dir, file)
+	csv := "3/02/2026,-20.00,WOOLWORTHS LOCK TEST\n"
+	if err := os.WriteFile(path, []byte(csv), 0o644); err != nil {
+		t.Fatalf("write csv: %v", err)
+	}
+
+	savedFilters := []savedFilter{
+		{ID: "filter-grocery", Name: "Groceries", Expr: `desc:woolworths`},
+	}
+	previewMsg := scanDupesCmd(db, file, dir, []csvFormat{format}, savedFilters)()
+	preview, ok := previewMsg.(importPreviewMsg)
+	if !ok {
+		t.Fatalf("unexpected message type: %T", previewMsg)
+	}
+	if preview.err != nil {
+		t.Fatalf("scanDupesCmd error: %v", preview.err)
+	}
+	if preview.snapshot == nil {
+		t.Fatal("expected snapshot")
+	}
+	if len(preview.snapshot.rows) != 1 {
+		t.Fatalf("snapshot rows len=%d, want 1", len(preview.snapshot.rows))
+	}
+	if preview.snapshot.rows[0].previewCat != "Groceries" {
+		t.Fatalf("preview category=%q, want Groceries", preview.snapshot.rows[0].previewCat)
+	}
+
+	rules, err := loadRulesV2(db)
+	if err != nil {
+		t.Fatalf("loadRulesV2: %v", err)
+	}
+	for _, r := range rules {
+		if r.id != ruleID {
+			continue
+		}
+		r.enabled = false
+		if err := updateRuleV2(db, r); err != nil {
+			t.Fatalf("disable rule: %v", err)
+		}
+	}
+
+	doneMsg := ingestSnapshotCmd(db, preview.snapshot, true)()
+	done, ok := doneMsg.(ingestDoneMsg)
+	if !ok {
+		t.Fatalf("unexpected ingest message type: %T", doneMsg)
+	}
+	if done.err != nil {
+		t.Fatalf("ingestSnapshotCmd error: %v", done.err)
+	}
+
+	rows, err := loadRows(db)
+	if err != nil {
+		t.Fatalf("loadRows: %v", err)
+	}
+	if len(rows) != 1 {
+		t.Fatalf("rows len=%d, want 1", len(rows))
+	}
+	if rows[0].categoryName != "Groceries" {
+		t.Fatalf("imported category=%q, want Groceries (locked preview parity)", rows[0].categoryName)
+	}
+}
+
+func TestIngestSnapshotCmdBlocksOnParseErrorsWithoutWrites(t *testing.T) {
+	db, cleanup := testDB(t)
+	defer cleanup()
+
+	if _, err := insertAccount(db, "ANZ", "debit", true); err != nil {
+		t.Fatalf("insertAccount: %v", err)
+	}
+	format := testANZFormat()
+	format.Account = "ANZ"
+	format.ImportPrefix = "anz"
+
+	dir := t.TempDir()
+	file := "ANZ-blocked.csv"
+	path := filepath.Join(dir, file)
+	csv := "3/02/2026,-20.00,VALID\nnot-a-date,-10.00,BAD\n"
+	if err := os.WriteFile(path, []byte(csv), 0o644); err != nil {
+		t.Fatalf("write csv: %v", err)
+	}
+
+	previewMsg := scanDupesCmd(db, file, dir, []csvFormat{format}, nil)()
+	preview, ok := previewMsg.(importPreviewMsg)
+	if !ok {
+		t.Fatalf("unexpected message type: %T", previewMsg)
+	}
+	if preview.err != nil {
+		t.Fatalf("scanDupesCmd error: %v", preview.err)
+	}
+	if preview.snapshot == nil || preview.snapshot.errorCount == 0 {
+		t.Fatalf("expected parse errors in snapshot, got %+v", preview.snapshot)
+	}
+
+	doneMsg := ingestSnapshotCmd(db, preview.snapshot, true)()
+	done, ok := doneMsg.(ingestDoneMsg)
+	if !ok {
+		t.Fatalf("unexpected ingest message type: %T", doneMsg)
+	}
+	if done.err == nil {
+		t.Fatal("expected import failure when snapshot contains parse errors")
+	}
+
+	rows, err := loadRows(db)
+	if err != nil {
+		t.Fatalf("loadRows: %v", err)
+	}
+	if len(rows) != 0 {
+		t.Fatalf("rows len=%d, want 0", len(rows))
 	}
 }
 

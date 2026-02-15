@@ -229,6 +229,17 @@ func TestKeyRegistryCommandTriggers(t *testing.T) {
 	}
 }
 
+func TestImportPreviewCancelBoundToEscOnly(t *testing.T) {
+	r := NewKeyRegistry()
+	cancelEsc := r.Lookup("esc", scopeImportPreview)
+	if cancelEsc == nil || cancelEsc.Action != actionClose {
+		t.Fatalf("esc binding = %+v, want cancel action", cancelEsc)
+	}
+	if got := r.Lookup("c", scopeImportPreview); got != nil && got.Action == actionClose {
+		t.Fatalf("unexpected c cancel binding in import preview: %+v", got)
+	}
+}
+
 func TestBindingsWithCommandIDReferenceRegisteredCommands(t *testing.T) {
 	keys := NewKeyRegistry()
 	reg := NewCommandRegistry(keys, nil)
@@ -388,7 +399,7 @@ func TestDispatchTableOverlayGuardsAreMutuallyExclusiveWithTabs(t *testing.T) {
 		{"command_palette", func(m *model) { m.commandOpen = true; m.commandUIKind = commandUIKindPalette }, scopeCommandPalette},
 		{"command_colon", func(m *model) { m.commandOpen = true; m.commandUIKind = commandUIKindColon }, scopeCommandMode},
 		{"detail", func(m *model) { m.showDetail = true }, scopeDetailModal},
-		{"importDupe", func(m *model) { m.importDupeModal = true }, scopeDupeModal},
+		{"importPreview", func(m *model) { m.importPreviewOpen = true }, scopeImportPreview},
 		{"filePicker", func(m *model) { m.importPicking = true }, scopeFilePicker},
 		{"catPicker", func(m *model) { m.catPicker = &pickerState{} }, scopeCategoryPicker},
 		{"tagPicker", func(m *model) { m.tagPicker = &pickerState{} }, scopeTagPicker},

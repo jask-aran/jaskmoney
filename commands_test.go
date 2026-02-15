@@ -10,37 +10,43 @@ func TestCommandRegistryHasExpectedCommands(t *testing.T) {
 	reg := NewCommandRegistry(NewKeyRegistry(), nil)
 	all := reg.All()
 	want := map[string]bool{
-		"nav:next-tab":        true,
-		"nav:prev-tab":        true,
-		"nav:dashboard":       true,
-		"nav:manager":         true,
-		"nav:budget":          true,
-		"nav:settings":        true,
-		"jump:activate":       true,
-		"jump:cancel":         true,
-		"txn:sort":            true,
-		"txn:sort-dir":        true,
-		"txn:select":          true,
-		"txn:clear-selection": true,
-		"txn:quick-category":  true,
-		"txn:quick-tag":       true,
-		"txn:detail":          true,
-		"txn:jump-top":        true,
-		"txn:jump-bottom":     true,
-		"filter:open":         true,
-		"filter:clear":        true,
-		"filter:save":         true,
-		"filter:apply":        true,
-		"import:start":        true,
-		"rules:apply":         true,
-		"rules:dry-run":       true,
-		"settings:clear-db":   true,
-		"dash:timeframe":      true,
-		"dash:mode-next":      true,
-		"dash:mode-prev":      true,
-		"dash:drill-down":     true,
-		"palette:open":        true,
-		"cmd:open":            true,
+		"nav:next-tab":          true,
+		"nav:prev-tab":          true,
+		"nav:dashboard":         true,
+		"nav:manager":           true,
+		"nav:budget":            true,
+		"nav:settings":          true,
+		"jump:activate":         true,
+		"jump:cancel":           true,
+		"txn:sort":              true,
+		"txn:sort-dir":          true,
+		"txn:select":            true,
+		"txn:clear-selection":   true,
+		"txn:quick-category":    true,
+		"txn:quick-tag":         true,
+		"txn:detail":            true,
+		"txn:jump-top":          true,
+		"txn:jump-bottom":       true,
+		"filter:open":           true,
+		"filter:clear":          true,
+		"filter:save":           true,
+		"filter:apply":          true,
+		"import:start":          true,
+		"import:all":            true,
+		"import:skip-dupes":     true,
+		"import:full-view":      true,
+		"import:raw-view":       true,
+		"import:preview-toggle": true,
+		"import:cancel":         true,
+		"rules:apply":           true,
+		"rules:dry-run":         true,
+		"settings:clear-db":     true,
+		"dash:timeframe":        true,
+		"dash:mode-next":        true,
+		"dash:mode-prev":        true,
+		"dash:drill-down":       true,
+		"palette:open":          true,
+		"cmd:open":              true,
 	}
 	if len(all) != len(want) {
 		t.Fatalf("command count = %d, want %d", len(all), len(want))
@@ -223,6 +229,25 @@ func TestCommandOpenBlockedByModal(t *testing.T) {
 	got := next.(model)
 	if got.commandOpen {
 		t.Fatal("palette should not open while detail modal is active")
+	}
+}
+
+func TestCommandOpenBlockedByImportPreviewOverlay(t *testing.T) {
+	m := newModel()
+	m.ready = true
+	m.importPreviewOpen = true
+	m.importPreviewSnapshot = &importPreviewSnapshot{
+		fileName:  "ANZ.csv",
+		totalRows: 1,
+		rows: []importPreviewRow{
+			{index: 1, sourceLine: 1, dateRaw: "3/02/2026", dateISO: "2026-02-03", amount: -1, description: "row"},
+		},
+	}
+
+	next, _ := m.Update(tea.KeyMsg{Type: tea.KeyCtrlK})
+	got := next.(model)
+	if got.commandOpen {
+		t.Fatal("palette should not open while import preview is active")
 	}
 }
 

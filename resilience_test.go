@@ -16,7 +16,7 @@ func TestUpdateDispatcherEscClosesOverlaysInPriorityOrder(t *testing.T) {
 	m.commandOpen = true
 	m.commandUIKind = commandUIKindPalette
 	m.showDetail = true
-	m.importDupeModal = true
+	m.importPreviewOpen = true
 	m.importPicking = true
 	m.catPicker = newPicker("Cat", nil, false, "")
 	m.tagPicker = newPicker("Tag", nil, true, "Create")
@@ -41,15 +41,15 @@ func TestUpdateDispatcherEscClosesOverlaysInPriorityOrder(t *testing.T) {
 	if s2.showDetail {
 		t.Fatal("expected detail modal to close second")
 	}
-	if !s2.importDupeModal {
-		t.Fatal("dupe modal should still be open")
+	if !s2.importPreviewOpen {
+		t.Fatal("import preview should still be open")
 	}
 
-	// 3) dupe modal
+	// 3) import preview
 	next, _ = s2.Update(keyMsg("esc"))
 	s3 := next.(model)
-	if s3.importDupeModal {
-		t.Fatal("expected dupe modal to close third")
+	if s3.importPreviewOpen {
+		t.Fatal("expected import preview to close third")
 	}
 	if !s3.importPicking {
 		t.Fatal("file picker should still be open")
@@ -155,7 +155,7 @@ func TestCommandUIOpenBlockedByBusyStatesViaTopLevelUpdate(t *testing.T) {
 		mut  func(*model)
 	}{
 		{name: "detail modal", mut: func(m *model) { m.showDetail = true }},
-		{name: "dupe modal", mut: func(m *model) { m.importDupeModal = true }},
+		{name: "import preview", mut: func(m *model) { m.importPreviewOpen = true }},
 		{name: "file picker", mut: func(m *model) { m.importPicking = true }},
 		{name: "category picker", mut: func(m *model) { m.catPicker = newPicker("Cat", nil, false, "") }},
 		{name: "tag picker", mut: func(m *model) { m.tagPicker = newPicker("Tag", nil, true, "Create") }},
