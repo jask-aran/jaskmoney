@@ -416,31 +416,95 @@ func (m model) updateFilePicker(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		file := m.importFiles[m.importCursor]
 		m.importPicking = false
 		m.setStatus("Scanning for duplicates...")
-		return m, scanDupesCmd(m.db, file, m.basePath, m.formats)
+		return m, scanDupesCmd(m.db, file, m.basePath, m.formats, m.savedFilters)
 	}
 	return m, nil
 }
 
-// updateDupeModal handles keys in the duplicate decision modal.
-// a = force import all, s = skip duplicates, esc/c = cancel.
-func (m model) updateDupeModal(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
+// updateImportPreview handles keys in the import preview modal.
+func (m model) updateImportPreview(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
+	snapshot := m.importPreviewSnapshot
+	if snapshot == nil {
+		m.importPreviewOpen = false
+		return m, nil
+	}
+
 	switch {
-	case m.isAction(scopeDupeModal, actionImportAll, msg):
-		// Force import all (including dupes)
-		m.importDupeModal = false
-		m.setStatus("Importing all (including duplicates)...")
-		return m, ingestCmd(m.db, m.importDupeFile, m.basePath, m.formats, m.savedFilters, false)
-	case m.isAction(scopeDupeModal, actionSkipDupes, msg):
-		// Skip duplicates
-		m.importDupeModal = false
-		m.setStatus("Importing (skipping duplicates)...")
-		return m, ingestCmd(m.db, m.importDupeFile, m.basePath, m.formats, m.savedFilters, true)
-	case m.isAction(scopeDupeModal, actionClose, msg):
-		m.importDupeModal = false
+	case m.isAction(scopeImportPreview, actionImportFullView, msg):
+		m.importPreviewViewFull = !m.importPreviewViewFull
+		m.importPreviewScroll = 0
+		return m, nil
+	case m.isAction(scopeImportPreview, actionImportRawView, msg):
+		m.importPreviewPostRules = !m.importPreviewPostRules
+		return m, nil
+	case m.isAction(scopeImportPreview, actionImportPreviewToggle, msg):
+		m.importPreviewShowAll = !m.importPreviewShowAll
+		m.importPreviewViewFull = false
+		m.importPreviewScroll = 0
+		return m, nil
+	case m.verticalDelta(scopeImportPreview, msg) != 0:
+		total := importPreviewDisplayedCount(snapshot, m.importPreviewViewFull, m.importPreviewShowAll)
+		m.importPreviewScroll = moveBoundedCursor(m.importPreviewScroll, total, m.verticalDelta(scopeImportPreview, msg))
+		return m, nil
+	case m.isAction(scopeImportPreview, actionImportAll, msg):
+		if snapshot.errorCount > 0 {
+			m.setError("Import blocked: preview has parse/normalize errors.")
+			return m, nil
+		}
+		m.importPreviewOpen = false
+		m.importPreviewViewFull = false
+		m.importPreviewPostRules = true
+		m.importPreviewShowAll = false
+		m.importPreviewScroll = 0
+		m.setStatus("Importing all snapshot rows...")
+		return m, ingestSnapshotCmd(m.db, snapshot, false)
+	case m.isAction(scopeImportPreview, actionSkipDupes, msg):
+		if snapshot.errorCount > 0 {
+			m.setError("Import blocked: preview has parse/normalize errors.")
+			return m, nil
+		}
+		m.importPreviewOpen = false
+		m.importPreviewViewFull = false
+		m.importPreviewPostRules = true
+		m.importPreviewShowAll = false
+		m.importPreviewScroll = 0
+		m.setStatus("Importing snapshot (skipping duplicates)...")
+		return m, ingestSnapshotCmd(m.db, snapshot, true)
+	case m.isAction(scopeImportPreview, actionClose, msg):
+		if m.importPreviewViewFull {
+			m.importPreviewViewFull = false
+			m.importPreviewScroll = 0
+			return m, nil
+		}
+		m.importPreviewOpen = false
+		m.importPreviewViewFull = false
+		m.importPreviewPostRules = true
+		m.importPreviewShowAll = false
+		m.importPreviewScroll = 0
+		m.importPreviewSnapshot = nil
 		m.setStatus("Import cancelled.")
 		return m, nil
 	case m.isAction(scopeGlobal, actionQuit, msg):
 		return m, tea.Quit
 	}
 	return m, nil
+}
+
+func importPreviewDisplayedCount(snapshot *importPreviewSnapshot, fullView bool, showAll bool) int {
+	if snapshot == nil {
+		return 0
+	}
+	if fullView {
+		return len(snapshot.rows)
+	}
+	if showAll {
+		return len(snapshot.rows)
+	}
+	dupeCount := 0
+	for _, row := range snapshot.rows {
+		if row.isDupe {
+			dupeCount++
+		}
+	}
+	return dupeCount
 }

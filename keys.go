@@ -43,7 +43,7 @@ const (
 	scopeFilterApplyPicker        = "filter_apply_picker"
 	scopeFilterEdit               = "filter_edit"
 	scopeFilePicker               = "file_picker"
-	scopeDupeModal                = "dupe_modal"
+	scopeImportPreview            = "import_preview"
 	scopeFilterInput              = "filter_input"
 	scopeSettingsNav              = "settings_nav"
 	scopeSettingsModeCat          = "settings_mode_cat"
@@ -89,6 +89,9 @@ const (
 	actionTimeframe                Action = "timeframe"
 	actionImportAll                Action = "import_all"
 	actionSkipDupes                Action = "skip_dupes"
+	actionImportFullView           Action = "import_full_view"
+	actionImportRawView            Action = "import_raw_view"
+	actionImportPreviewToggle      Action = "import_preview_toggle"
 	actionSave                     Action = "save"
 	actionAdd                      Action = "add"
 	actionEdit                     Action = "edit"
@@ -250,10 +253,15 @@ func NewKeyRegistry() *KeyRegistry {
 	reg(scopeFilePicker, actionDown, "", []string{"j", "down", "ctrl+n"}, "")
 	reg(scopeFilePicker, actionQuit, "", []string{"q", "ctrl+c"}, "")
 
-	// Dupe modal footer.
-	reg(scopeDupeModal, actionImportAll, "", []string{"a"}, "import all")
-	reg(scopeDupeModal, actionSkipDupes, "", []string{"s"}, "skip")
-	reg(scopeDupeModal, actionClose, "", []string{"esc", "c"}, "")
+	// Import preview footer.
+	reg(scopeImportPreview, actionUp, "", []string{"k", "up", "ctrl+p"}, "")
+	reg(scopeImportPreview, actionDown, "", []string{"j", "down", "ctrl+n"}, "")
+	reg(scopeImportPreview, actionImportAll, "import:all", []string{"a"}, "all")
+	reg(scopeImportPreview, actionSkipDupes, "import:skip-dupes", []string{"s"}, "skip")
+	reg(scopeImportPreview, actionImportFullView, "import:full-view", []string{"f"}, "full")
+	reg(scopeImportPreview, actionImportRawView, "import:raw-view", []string{"r"}, "raw")
+	reg(scopeImportPreview, actionImportPreviewToggle, "import:preview-toggle", []string{"p"}, "preview")
+	reg(scopeImportPreview, actionClose, "import:cancel", []string{"esc"}, "")
 
 	// Filter input footer.
 	reg(scopeFilterInput, actionFilterSave, "filter:save", []string{"ctrl+s"}, "save")

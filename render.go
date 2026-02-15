@@ -801,19 +801,172 @@ func renderFilePicker(files []string, cursor int, keys *KeyRegistry) string {
 	))
 }
 
-// renderDupeModal renders the duplicate detection decision modal.
-func renderDupeModal(file string, total, dupes int, keys *KeyRegistry) string {
+func renderImportPreview(
+	snapshot *importPreviewSnapshot,
+	viewFull,
+	postRules,
+	showAll bool,
+	scroll,
+	compactRows,
+	fullRows,
+	terminalWidth int,
+	keys *KeyRegistry,
+) string {
+	if snapshot == nil {
+		return renderModalContent("Import Preview", []string{
+			lipgloss.NewStyle().Foreground(colorOverlay1).Render("No import snapshot loaded."),
+		}, renderActionHint(keys, scopeImportPreview, actionClose, "esc", "cancel"))
+	}
+	if viewFull {
+		return renderImportPreviewFull(snapshot, postRules, scroll, fullRows, terminalWidth, keys)
+	}
+	return renderImportPreviewCompact(snapshot, postRules, showAll, scroll, compactRows, terminalWidth, keys)
+}
+
+func renderImportPreviewCompact(snapshot *importPreviewSnapshot, postRules, showAll bool, scroll, compactRows, terminalWidth int, keys *KeyRegistry) string {
 	body := []string{
-		fmt.Sprintf("File: %s", lipgloss.NewStyle().Foreground(colorText).Render(file)),
-		fmt.Sprintf("Rows: %s", lipgloss.NewStyle().Foreground(colorText).Render(fmt.Sprintf("%d", total))),
-		fmt.Sprintf("Duplicates: %s", lipgloss.NewStyle().Foreground(colorWarning).Render(fmt.Sprintf("%d", dupes))),
+		detailLabelStyle.Render("Summary"),
+		detailLabelStyle.Render("  File:    ") + detailValueStyle.Render(snapshot.fileName),
+		detailLabelStyle.Render("  Rows:    ") + detailValueStyle.Render(fmt.Sprintf("%d total", snapshot.totalRows)),
+		detailLabelStyle.Render("  New:     ") + detailValueStyle.Render(fmt.Sprintf("%d", snapshot.newCount)),
+		detailLabelStyle.Render("  Dupes:   ") + detailValueStyle.Render(fmt.Sprintf("%d", snapshot.dupeCount)),
+		detailLabelStyle.Render("  Errors:  ") + detailValueStyle.Render(fmt.Sprintf("%d", snapshot.errorCount)),
+		"",
+	}
+
+	if snapshot.errorCount > 0 {
+		body = append(body, lipgloss.NewStyle().Foreground(colorError).Render("Import blocked: fix parse/normalize errors before confirming."))
+		for i := 0; i < min(5, len(snapshot.parseErrors)); i++ {
+			pe := snapshot.parseErrors[i]
+			body = append(body, fmt.Sprintf("  line %d (row %d, %s): %s", pe.sourceLine, pe.rowIndex, pe.field, pe.message))
+		}
+		if len(snapshot.parseErrors) > 5 {
+			body = append(body, fmt.Sprintf("  +%d more errors not shown", len(snapshot.parseErrors)-5))
+		}
+		body = append(body, "")
+	}
+
+	rows := compactImportRows(snapshot, showAll)
+	modeLabel := "Duplicate Rows"
+	if showAll {
+		modeLabel = "Preview Rows"
+	}
+	body = append(body, detailLabelStyle.Render(fmt.Sprintf("%s (%d)", modeLabel, len(rows))))
+
+	if len(rows) == 0 {
+		body = append(body, "  No rows in this view.")
+	} else {
+		table := renderImportPreviewTable(rows, postRules, scroll, compactRows, terminalWidth, false)
+		body = append(body, splitLines(table)...)
+		body = append(body, detailLabelStyle.Render(fmt.Sprintf("  showing %d rows/page", compactRows)))
+	}
+
+	rawLabel := "rules*"
+	if !postRules {
+		rawLabel = "raw*"
+	}
+	previewLabel := "preview"
+	if showAll {
+		previewLabel = "dupes"
 	}
 	footer := strings.Join([]string{
-		renderActionHint(keys, scopeDupeModal, actionImportAll, "a", "all"),
-		renderActionHint(keys, scopeDupeModal, actionSkipDupes, "s", "skip"),
-		renderActionHint(keys, scopeDupeModal, actionClose, "esc", "cancel"),
+		renderActionHint(keys, scopeImportPreview, actionImportAll, "a", "import all"),
+		renderActionHint(keys, scopeImportPreview, actionSkipDupes, "s", "skip"),
+		renderActionHint(keys, scopeImportPreview, actionImportPreviewToggle, "p", previewLabel),
+		renderActionHint(keys, scopeImportPreview, actionImportRawView, "r", rawLabel),
+		renderActionHint(keys, scopeImportPreview, actionImportFullView, "f", "full"),
+		renderActionHint(keys, scopeImportPreview, actionClose, "esc", "cancel"),
 	}, "  ")
-	return renderModalContent("Duplicate Rows", body, footer)
+	width := max(96, min(136, terminalWidth-8))
+	return renderModalContentWithWidth("Import Preview", body, footer, width)
+}
+
+func renderImportPreviewFull(snapshot *importPreviewSnapshot, postRules bool, scroll, fullRows, terminalWidth int, keys *KeyRegistry) string {
+	body := []string{detailLabelStyle.Render(fmt.Sprintf("Full Preview (%d rows)", len(snapshot.rows)))}
+	table := renderImportPreviewTable(snapshot.rows, postRules, scroll, fullRows, terminalWidth, true)
+	body = append(body, splitLines(table)...)
+	body = append(body, detailLabelStyle.Render(fmt.Sprintf("  showing %d rows/page", fullRows)))
+	if snapshot.errorCount > 0 {
+		body = append(body, "")
+		body = append(body, lipgloss.NewStyle().Foreground(colorError).Render("Import blocked: preview has parse/normalize errors."))
+	}
+
+	rawDesc := "rules*"
+	if postRules {
+		rawDesc = "rules*"
+	} else {
+		rawDesc = "raw*"
+	}
+	footer := strings.Join([]string{
+		renderActionHint(keys, scopeImportPreview, actionImportRawView, "r", rawDesc),
+		renderActionHint(keys, scopeImportPreview, actionImportAll, "a", "all"),
+		renderActionHint(keys, scopeImportPreview, actionSkipDupes, "s", "skip"),
+		renderActionHint(keys, scopeImportPreview, actionClose, "esc", "back"),
+	}, "  ")
+	width := max(104, min(148, terminalWidth-4))
+	return renderModalContentWithWidth("Import Full View", body, footer, width)
+}
+
+func compactImportRows(snapshot *importPreviewSnapshot, showAll bool) []importPreviewRow {
+	if snapshot == nil {
+		return nil
+	}
+	if showAll {
+		return snapshot.rows
+	}
+	out := make([]importPreviewRow, 0, snapshot.dupeCount)
+	for _, row := range snapshot.rows {
+		if row.isDupe {
+			out = append(out, row)
+		}
+	}
+	return out
+}
+
+func renderImportPreviewTable(rows []importPreviewRow, postRules bool, topIndex, visibleRows, terminalWidth int, annotateStatus bool) string {
+	if visibleRows <= 0 {
+		visibleRows = 10
+	}
+	txns := make([]transaction, 0, len(rows))
+	txnTags := make(map[int][]tag)
+	categories := []category(nil)
+	if postRules {
+		categories = []category{{id: 1, name: "Uncategorised"}}
+	}
+	for i, row := range rows {
+		txnID := i + 1
+		desc := row.description
+		if annotateStatus {
+			if row.isDupe {
+				desc = "[DUPE] " + desc
+			} else {
+				desc = "[NEW] " + desc
+			}
+		}
+		txn := transaction{
+			id:          txnID,
+			dateRaw:     row.dateRaw,
+			dateISO:     row.dateISO,
+			amount:      row.amount,
+			description: desc,
+		}
+		if postRules {
+			cat := strings.TrimSpace(row.previewCat)
+			if cat == "" {
+				cat = "Uncategorised"
+			}
+			txn.categoryName = cat
+			for j, name := range row.previewTags {
+				if strings.TrimSpace(name) == "" {
+					continue
+				}
+				txnTags[txnID] = append(txnTags[txnID], tag{id: j + 1, name: name})
+			}
+		}
+		txns = append(txns, txn)
+	}
+	contentWidth := max(88, min(124, terminalWidth-12))
+	return renderTransactionTable(txns, categories, txnTags, nil, nil, 0, topIndex, visibleRows, contentWidth, sortByDate, true)
 }
 
 // ---------------------------------------------------------------------------

@@ -451,6 +451,132 @@ func NewCommandRegistry(keys *KeyRegistry, savedFilters []savedFilter) *CommandR
 			},
 		},
 		{
+			ID:          "import:all",
+			Label:       "Import All",
+			Description: "Import all rows from the current preview snapshot",
+			Category:    "Import",
+			Scopes:      []string{scopeImportPreview},
+			Enabled: func(m model) (bool, string) {
+				if m.importPreviewSnapshot == nil {
+					return false, "No import preview snapshot."
+				}
+				if m.importPreviewSnapshot.errorCount > 0 {
+					return false, "Preview has parse/normalize errors."
+				}
+				return true, ""
+			},
+			Execute: func(m model) (model, tea.Cmd, error) {
+				if m.importPreviewSnapshot == nil {
+					return m, nil, fmt.Errorf("missing import preview snapshot")
+				}
+				if m.importPreviewSnapshot.errorCount > 0 {
+					return m, nil, fmt.Errorf("preview has parse/normalize errors")
+				}
+				snapshot := m.importPreviewSnapshot
+				m.importPreviewOpen = false
+				m.importPreviewViewFull = false
+				m.importPreviewPostRules = true
+				m.importPreviewShowAll = false
+				m.importPreviewScroll = 0
+				m.setStatus("Importing all snapshot rows...")
+				return m, ingestSnapshotCmd(m.db, snapshot, false), nil
+			},
+		},
+		{
+			ID:          "import:skip-dupes",
+			Label:       "Import Skip Dupes",
+			Description: "Import only non-duplicate rows from the preview snapshot",
+			Category:    "Import",
+			Scopes:      []string{scopeImportPreview},
+			Enabled: func(m model) (bool, string) {
+				if m.importPreviewSnapshot == nil {
+					return false, "No import preview snapshot."
+				}
+				if m.importPreviewSnapshot.errorCount > 0 {
+					return false, "Preview has parse/normalize errors."
+				}
+				return true, ""
+			},
+			Execute: func(m model) (model, tea.Cmd, error) {
+				if m.importPreviewSnapshot == nil {
+					return m, nil, fmt.Errorf("missing import preview snapshot")
+				}
+				if m.importPreviewSnapshot.errorCount > 0 {
+					return m, nil, fmt.Errorf("preview has parse/normalize errors")
+				}
+				snapshot := m.importPreviewSnapshot
+				m.importPreviewOpen = false
+				m.importPreviewViewFull = false
+				m.importPreviewPostRules = true
+				m.importPreviewShowAll = false
+				m.importPreviewScroll = 0
+				m.setStatus("Importing snapshot (skipping duplicates)...")
+				return m, ingestSnapshotCmd(m.db, snapshot, true), nil
+			},
+		},
+		{
+			ID:          "import:full-view",
+			Label:       "Toggle Full View",
+			Description: "Toggle compact/full import preview mode",
+			Category:    "Import",
+			Scopes:      []string{scopeImportPreview},
+			Enabled:     commandAlwaysEnabled,
+			Execute: func(m model) (model, tea.Cmd, error) {
+				m.importPreviewViewFull = !m.importPreviewViewFull
+				m.importPreviewScroll = 0
+				return m, nil, nil
+			},
+		},
+		{
+			ID:          "import:raw-view",
+			Label:       "Raw View",
+			Description: "Toggle raw/post-rules rendering",
+			Category:    "Import",
+			Scopes:      []string{scopeImportPreview},
+			Enabled:     commandAlwaysEnabled,
+			Execute: func(m model) (model, tea.Cmd, error) {
+				m.importPreviewPostRules = !m.importPreviewPostRules
+				return m, nil, nil
+			},
+		},
+		{
+			ID:          "import:preview-toggle",
+			Label:       "Toggle Compact Preview Mode",
+			Description: "Toggle duplicate-only vs all-rows compact table",
+			Category:    "Import",
+			Scopes:      []string{scopeImportPreview},
+			Enabled:     commandAlwaysEnabled,
+			Execute: func(m model) (model, tea.Cmd, error) {
+				m.importPreviewShowAll = !m.importPreviewShowAll
+				m.importPreviewViewFull = false
+				m.importPreviewScroll = 0
+				return m, nil, nil
+			},
+		},
+		{
+			ID:          "import:cancel",
+			Label:       "Cancel Import",
+			Description: "Close import preview (Esc in full view returns to compact)",
+			Category:    "Import",
+			Scopes:      []string{scopeImportPreview},
+			Enabled:     commandAlwaysEnabled,
+			Execute: func(m model) (model, tea.Cmd, error) {
+				if m.importPreviewViewFull {
+					m.importPreviewViewFull = false
+					m.importPreviewScroll = 0
+					return m, nil, nil
+				}
+				m.importPreviewOpen = false
+				m.importPreviewViewFull = false
+				m.importPreviewPostRules = true
+				m.importPreviewShowAll = false
+				m.importPreviewScroll = 0
+				m.importPreviewSnapshot = nil
+				m.setStatus("Import cancelled.")
+				return m, nil, nil
+			},
+		},
+		{
 			ID:          "rules:apply",
 			Label:       "Apply All Rules",
 			Description: "Apply all enabled rules",
@@ -871,13 +997,7 @@ func (m *model) rebuildCommandMatches() {
 }
 
 func (m model) canOpenCommandUI() bool {
-	if m.commandOpen || m.showDetail || m.importDupeModal || m.importPicking || m.catPicker != nil || m.tagPicker != nil {
-		return false
-	}
-	if m.filterApplyPicker != nil || m.filterEditOpen {
-		return false
-	}
-	if m.managerActionPicker != nil || m.managerModalOpen || m.filterInputMode || m.jumpModeActive || m.ruleEditorOpen || m.dryRunOpen {
+	if m.activeOverlayScope(true) != "" {
 		return false
 	}
 	if m.settMode != settModeNone || m.confirmAction != confirmActionNone {

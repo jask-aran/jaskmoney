@@ -199,21 +199,6 @@ This project follows the Elm Architecture as implemented by Bubble Tea.
 - Set errors with `setError(...)` so `statusErr` is true
 - Always set `statusErr = false` when writing non-error status text
 
-## Key Workflows
-
-### Import Flow (Settings-Only)
-
-**v0.3 current:** Import is only accessible from Settings (Database & Imports section).
-
-Flow:
-1. User presses `i` in Settings → `loadFilesCmd` scans for `.csv`
-2. `importPicking` opens file picker overlay
-3. Selecting a file runs `scanDupesCmd`
-4. If dupes exist, `importDupeModal` opens
-5. User chooses: `a` (import all), `s` (skip dupes), `esc`/`c` (cancel)
-6. `ingestCmd` imports, records import, applies category rules
-
-**v0.4 changes:** `importDupeModal` is replaced by `importPreviewModal` with compact/full view toggle and post-rules preview. See `specs/v0.4-spec.md` Phase 4.
 
 ### CSV Formats & Config
 
@@ -223,18 +208,6 @@ Flow:
 - `findFormat` is case-insensitive
 - `detectFormat` uses filename prefix, falls back to first format
 
-**v0.4 additions:** Config file also stores `[[saved_filter]]` and `[[dashboard_view]]` blocks. See `specs/v0.4-spec.md` Phase 2 and Phase 6.
-
-### Database & Migrations
-
-**v0.3 current:** Schema v4 (categories, category_rules, tags, tag_rules, transactions, accounts, imports)
-
-**v0.4 target:** Schema v5 migration drops rules v1 tables (fresh start), adds `rules_v2`, budget tables, `credit_offsets`. See `specs/architecture.md` §5.4 for migration policy.
-
-- Schema version tracked in `schema_meta`
-- `clearAllData` deletes transactions/imports but preserves categories/rules
-- Use `updateTransactionDetail` for atomic updates to category + notes
-- Multi-step DB mutations must run in a transaction
 
 ## External Reference
 

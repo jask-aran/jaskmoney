@@ -17,8 +17,8 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m.handleRefreshDone(msg)
 	case filesLoadedMsg:
 		return m.handleFilesLoaded(msg)
-	case dupeScanMsg:
-		return m.handleDupeScan(msg)
+	case importPreviewMsg:
+		return m.handleImportPreview(msg)
 	case clearDoneMsg:
 		return m.handleClearDone(msg)
 	case ingestDoneMsg:
@@ -292,21 +292,21 @@ func (m model) handleFilesLoaded(msg filesLoadedMsg) (tea.Model, tea.Cmd) {
 	return m, nil
 }
 
-func (m model) handleDupeScan(msg dupeScanMsg) (tea.Model, tea.Cmd) {
+func (m model) handleImportPreview(msg importPreviewMsg) (tea.Model, tea.Cmd) {
 	if msg.err != nil {
 		m.setError(fmt.Sprintf("Scan failed: %v", msg.err))
 		return m, nil
 	}
-	if msg.dupes == 0 {
-		// No dupes — import directly (skip dupes mode doesn't matter)
-		m.setStatus("Importing...")
-		return m, ingestCmd(m.db, msg.file, m.basePath, m.formats, m.savedFilters, true)
+	if msg.snapshot == nil {
+		m.setError("Scan failed: missing import preview snapshot.")
+		return m, nil
 	}
-	// Show dupe modal
-	m.importDupeModal = true
-	m.importDupeFile = msg.file
-	m.importDupeTotal = msg.total
-	m.importDupeCount = msg.dupes
+	m.importPreviewOpen = true
+	m.importPreviewViewFull = false
+	m.importPreviewPostRules = true
+	m.importPreviewShowAll = false
+	m.importPreviewScroll = 0
+	m.importPreviewSnapshot = msg.snapshot
 	return m, nil
 }
 
@@ -627,6 +627,12 @@ func (m *model) beginImportFlow() tea.Cmd {
 	m.importPicking = true
 	m.importFiles = nil
 	m.importCursor = 0
+	m.importPreviewOpen = false
+	m.importPreviewSnapshot = nil
+	m.importPreviewViewFull = false
+	m.importPreviewPostRules = true
+	m.importPreviewShowAll = false
+	m.importPreviewScroll = 0
 	return loadFilesCmd(m.basePath)
 }
 

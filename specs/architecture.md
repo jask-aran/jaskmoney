@@ -71,8 +71,9 @@ Jaskmoney is a Bubble Tea-based TUI personal-finance manager focused on:
 
 - **Account-scoped transaction browsing and editing** — navigate and modify
   transactions with account filtering, multi-select, and quick actions.
-- **CSV import with format detection and duplicate handling** — flexible format
-  definitions, dupe scanning, and duplicate-review modal workflow.
+- **CSV import with format detection and preview-first decisions** — flexible
+  format definitions, snapshot scanning, parse diagnostics, and import-preview
+  decision workflow.
 - **Dashboard analytics** — summary KPIs, category composition, and spending
   tracker.
 - **Filter expression language** — unified filtering for search,
@@ -127,9 +128,10 @@ Runtime boundaries and owning files:
 - `db.go`: schema lifecycle and transactional DB operations (current schema:
   v6), including rules_v2 CRUD, budget-table CRUD, and credit offset
   integrity validation.
-- `ingest.go`: import scanning, duplicate scanning, import execution pipeline.
-  `scanDupesCmd` returns parsed rows with dupe flags and import applies rules
-  to new transaction IDs.
+- `ingest.go`: import scanning, preview snapshot building, and import execution
+  pipeline. `scanDupesCmd` returns an immutable `importPreviewSnapshot`
+  (rows + dupe flags + parse diagnostics + locked rules metadata), and
+  confirm import consumes that snapshot directly.
 
 **Configuration and keybindings:**
 
@@ -212,7 +214,7 @@ the overlay table finds no match.
 1. **jump overlay** — `jumpModeActive` → `updateJumpOverlay`
 2. **command UI** — `commandOpen` → `updateCommandUI` (palette or colon mode)
 3. **detail modal** — `showDetail` → `updateDetail`
-4. **import dupe modal** — `importDupeModal` → `updateDupeModal`
+4. **import preview modal** — `importPreviewOpen` → `updateImportPreview`
 5. **file picker** — `importPicking` → `updateFilePicker`
 6. **category picker** — `catPicker != nil` → `updateCatPicker`
 7. **tag picker** — `tagPicker != nil` → `updateTagPicker`
@@ -414,7 +416,7 @@ in budget).
 ```
 command_palette, command_mode
 detail_modal, detail_notes
-dupe_modal / import_preview
+import_preview
 file_picker, category_picker, tag_picker, account_nuke_picker
 manager_modal
 rule_editor, dry_run_modal
@@ -616,7 +618,7 @@ global
 ├── command_palette                   (modal)
 ├── command_mode                      (modal)
 ├── detail_modal                      (modal)
-├── dupe_modal                        (modal)
+├── import_preview                    (modal)
 ├── file_picker                       (modal)
 ├── category_picker                   (modal)
 ├── tag_picker                        (modal)
@@ -650,7 +652,7 @@ global
 │   ├── settings_active_chart
 │   ├── settings_active_db_import
 │   │   ├── file_picker               (modal)
-│   │   └── dupe_modal                (modal)
+│   │   └── import_preview            (modal)
 │   ├── settings_active_import_history
 │
 └── (reserved scopes may exist in `keys.go` for staged features; keep these
@@ -1300,7 +1302,7 @@ Flow tests must follow these rules:
 
 Current high-value flow coverage includes:
 
-- settings import flow with duplicate scan + skip path
+- settings import flow with snapshot preview + skip/all/cancel paths
 - manager quick categorize and quick tag persistence
 - command palette import command flow
 - settings save + reload persistence round-trip
@@ -1311,7 +1313,7 @@ Add flow tests when changing:
 - filter parse/apply/clear behavior (both permissive and strict contexts)
 - saved-filter persistence and reload behavior
 - rule editor + dry-run + apply persistence paths
-- import duplicate decision paths (including no-partial-write failures)
+- import preview decision paths (including parse-error blocked no-write paths)
 - jump-mode activation/focus/cancel behavior
 - dispatch table precedence and modal text-contract completeness
 
@@ -1413,7 +1415,7 @@ Concrete learnings from shipped work:
 - **Three consumers of overlay priority must share one data source.**
   `Update()`, `footerBindings()`, and `commandContextScope()` each had their
   own if-chain encoding the same overlay precedence. These drifted silently
-  (e.g., `importDupeModal`/`importPicking` order was swapped between two
+  (e.g., `importPreviewOpen`/`importPicking` order was swapped between two
   consumers). The shared `overlayPrecedence()` table in `dispatch.go` is the
   fix: one table, all consumers read from it.
 - **Text input contracts need a data table, not a manual switch.**

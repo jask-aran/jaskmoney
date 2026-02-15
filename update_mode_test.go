@@ -189,7 +189,7 @@ func TestDetailAndSearchFlows(t *testing.T) {
 	}
 }
 
-func TestManagerAndDupeModalActionFlows(t *testing.T) {
+func TestManagerAndImportPreviewActionFlows(t *testing.T) {
 	m := newModel()
 	m.ready = true
 	m.activeTab = tabManager
@@ -203,33 +203,124 @@ func TestManagerAndDupeModalActionFlows(t *testing.T) {
 		t.Fatalf("managerMode = %d, want transactions mode", got.managerMode)
 	}
 
-	got.importDupeModal = true
-	got.importDupeFile = "sample.csv"
-	got.basePath = t.TempDir()
-	got.formats = defaultFormats()
-	next, cmd := got.updateDupeModal(keyMsg("a"))
-	got2 := next.(model)
-	if got2.importDupeModal {
-		t.Fatal("dupe modal should close on import-all action")
+	got.importPreviewOpen = true
+	got.importPreviewSnapshot = &importPreviewSnapshot{
+		fileName:  "sample.csv",
+		totalRows: 1,
+		newCount:  1,
+		rows: []importPreviewRow{
+			{index: 1, sourceLine: 1, dateRaw: "3/02/2026", dateISO: "2026-02-03", amount: -12.34, description: "sample"},
+		},
 	}
-	if got2.status != "Importing all (including duplicates)..." {
+	next, cmd := got.updateImportPreview(keyMsg("a"))
+	got2 := next.(model)
+	if got2.importPreviewOpen {
+		t.Fatal("import preview should close on import-all action")
+	}
+	if got2.status != "Importing all snapshot rows..." {
 		t.Fatalf("unexpected status: %q", got2.status)
 	}
 	if cmd == nil {
 		t.Fatal("expected ingest command for import-all action")
 	}
 
-	got2.importDupeModal = true
-	next, cmd = got2.updateDupeModal(keyMsg("s"))
+	got2.importPreviewOpen = true
+	next, cmd = got2.updateImportPreview(keyMsg("s"))
 	got3 := next.(model)
-	if got3.importDupeModal {
-		t.Fatal("dupe modal should close on skip-dupes action")
+	if got3.importPreviewOpen {
+		t.Fatal("import preview should close on skip-dupes action")
 	}
-	if got3.status != "Importing (skipping duplicates)..." {
+	if got3.status != "Importing snapshot (skipping duplicates)..." {
 		t.Fatalf("unexpected status: %q", got3.status)
 	}
 	if cmd == nil {
 		t.Fatal("expected ingest command for skip-dupes action")
+	}
+}
+
+func TestImportPreviewMsgOpensForZeroDupes(t *testing.T) {
+	m := newModel()
+	m.ready = true
+
+	next, _ := m.Update(importPreviewMsg{
+		snapshot: &importPreviewSnapshot{
+			fileName:  "ANZ-zero.csv",
+			totalRows: 1,
+			newCount:  1,
+			dupeCount: 0,
+			rows: []importPreviewRow{
+				{index: 1, sourceLine: 1, dateRaw: "3/02/2026", dateISO: "2026-02-03", amount: -20, description: "ZERO"},
+			},
+		},
+	})
+	got := next.(model)
+	if !got.importPreviewOpen {
+		t.Fatal("expected import preview to open even with zero dupes")
+	}
+	if got.importPreviewSnapshot == nil {
+		t.Fatal("expected snapshot to be stored")
+	}
+	if got.importPreviewSnapshot.dupeCount != 0 {
+		t.Fatalf("dupeCount=%d, want 0", got.importPreviewSnapshot.dupeCount)
+	}
+}
+
+func TestImportPreviewEscLifecycleFullToCompactThenCancel(t *testing.T) {
+	m := newModel()
+	m.ready = true
+	m.importPreviewOpen = true
+	m.importPreviewViewFull = true
+	m.importPreviewSnapshot = &importPreviewSnapshot{
+		fileName:  "ANZ-esc.csv",
+		totalRows: 1,
+		rows: []importPreviewRow{
+			{index: 1, sourceLine: 1, dateRaw: "3/02/2026", dateISO: "2026-02-03", amount: -20, description: "ESC"},
+		},
+	}
+
+	next, _ := m.updateImportPreview(keyMsg("esc"))
+	got := next.(model)
+	if !got.importPreviewOpen {
+		t.Fatal("preview should remain open when leaving full view")
+	}
+	if got.importPreviewViewFull {
+		t.Fatal("expected esc in full view to return to compact")
+	}
+
+	next, _ = got.updateImportPreview(keyMsg("esc"))
+	got2 := next.(model)
+	if got2.importPreviewOpen {
+		t.Fatal("expected esc in compact view to close preview")
+	}
+	if got2.status != "Import cancelled." {
+		t.Fatalf("unexpected status: %q", got2.status)
+	}
+}
+
+func TestImportPreviewBlocksDecisionsWhenParseErrorsExist(t *testing.T) {
+	m := newModel()
+	m.ready = true
+	m.importPreviewOpen = true
+	m.importPreviewSnapshot = &importPreviewSnapshot{
+		fileName:    "ANZ-errors.csv",
+		totalRows:   2,
+		errorCount:  1,
+		parseErrors: []importPreviewParseError{{rowIndex: 2, sourceLine: 2, field: "date", message: "invalid date"}},
+		rows: []importPreviewRow{
+			{index: 1, sourceLine: 1, dateRaw: "3/02/2026", dateISO: "2026-02-03", amount: -20, description: "VALID"},
+		},
+	}
+
+	next, cmd := m.updateImportPreview(keyMsg("a"))
+	got := next.(model)
+	if cmd != nil {
+		t.Fatal("import command should be blocked when parse errors exist")
+	}
+	if !got.importPreviewOpen {
+		t.Fatal("preview should stay open on blocked decision")
+	}
+	if !got.statusErr {
+		t.Fatalf("statusErr should be true, status=%q", got.status)
 	}
 }
 

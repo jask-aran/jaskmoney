@@ -140,6 +140,16 @@ func TestFlowSettingsImportWithDupesSkipPersistsAndRecordsImport(t *testing.T) {
 	}
 
 	m = flowPress(t, m, "enter")
+	if !m.importPreviewOpen {
+		t.Fatal("expected import preview open on first scan")
+	}
+	if m.importPreviewSnapshot == nil {
+		t.Fatal("expected preview snapshot on first scan")
+	}
+	if m.importPreviewSnapshot.dupeCount != 0 {
+		t.Fatalf("first scan dupeCount=%d, want 0", m.importPreviewSnapshot.dupeCount)
+	}
+	m = flowPress(t, m, "s")
 	if m.statusErr {
 		t.Fatalf("import status error: %q", m.status)
 	}
@@ -160,11 +170,14 @@ func TestFlowSettingsImportWithDupesSkipPersistsAndRecordsImport(t *testing.T) {
 
 	m = flowPress(t, m, "i")
 	m = flowPress(t, m, "enter")
-	if !m.importDupeModal {
-		t.Fatal("expected duplicate modal on second import")
+	if !m.importPreviewOpen {
+		t.Fatal("expected import preview on second import")
 	}
-	if m.importDupeCount != 2 || m.importDupeTotal != 2 {
-		t.Fatalf("dupe counts = %d/%d, want 2/2", m.importDupeCount, m.importDupeTotal)
+	if m.importPreviewSnapshot == nil {
+		t.Fatal("expected preview snapshot on second import")
+	}
+	if m.importPreviewSnapshot.dupeCount != 2 || m.importPreviewSnapshot.totalRows != 2 {
+		t.Fatalf("dupe counts = %d/%d, want 2/2", m.importPreviewSnapshot.dupeCount, m.importPreviewSnapshot.totalRows)
 	}
 
 	m = flowPress(t, m, "s")
@@ -184,6 +197,92 @@ func TestFlowSettingsImportWithDupesSkipPersistsAndRecordsImport(t *testing.T) {
 	}
 	if len(imports) != 2 {
 		t.Fatalf("imports after skip-dupes import = %d, want 2", len(imports))
+	}
+}
+
+func TestFlowImportPreviewParseErrorsBlockDecisionWithoutWrites(t *testing.T) {
+	m, cleanup := newFlowModelWithDB(t)
+	defer cleanup()
+
+	base := t.TempDir()
+	m.basePath = base
+	m.activeTab = tabSettings
+	writeFlowCSV(t, base, "ANZ-parse-errors.csv", "3/02/2026,-20.00,VALID\nnot-a-date,-11.00,BAD DATE\n")
+
+	m = flowPress(t, m, "i")
+	m = flowPress(t, m, "enter")
+	if !m.importPreviewOpen {
+		t.Fatal("expected import preview to open")
+	}
+	if m.importPreviewSnapshot == nil {
+		t.Fatal("expected preview snapshot")
+	}
+	if m.importPreviewSnapshot.errorCount == 0 {
+		t.Fatal("expected parse errors in preview snapshot")
+	}
+
+	m = flowPress(t, m, "a")
+	if !m.importPreviewOpen {
+		t.Fatal("preview should remain open when import is blocked")
+	}
+	if !m.statusErr {
+		t.Fatalf("expected error status when blocked, got %q", m.status)
+	}
+
+	rows, err := loadRows(m.db)
+	if err != nil {
+		t.Fatalf("loadRows after blocked import: %v", err)
+	}
+	if len(rows) != 0 {
+		t.Fatalf("rows after blocked import = %d, want 0", len(rows))
+	}
+	imports, err := loadImports(m.db)
+	if err != nil {
+		t.Fatalf("loadImports after blocked import: %v", err)
+	}
+	if len(imports) != 0 {
+		t.Fatalf("imports after blocked import = %d, want 0", len(imports))
+	}
+}
+
+func TestFlowImportPreviewEscCancelsAndBlocksCommandOpen(t *testing.T) {
+	m, cleanup := newFlowModelWithDB(t)
+	defer cleanup()
+
+	base := t.TempDir()
+	m.basePath = base
+	m.activeTab = tabSettings
+	writeFlowCSV(t, base, "ANZ-cancel.csv", "3/02/2026,-20.00,CANCEL FLOW\n")
+
+	m = flowPress(t, m, "i")
+	m = flowPress(t, m, "enter")
+	if !m.importPreviewOpen {
+		t.Fatal("expected import preview to open")
+	}
+
+	m = flowApplyMsg(t, m, tea.KeyMsg{Type: tea.KeyCtrlK})
+	if m.commandOpen {
+		t.Fatal("command palette should not open while preview modal is active")
+	}
+	m = flowPress(t, m, ":")
+	if m.commandOpen {
+		t.Fatal("colon command mode should not open while preview modal is active")
+	}
+
+	m = flowPress(t, m, "esc")
+	if m.importPreviewOpen {
+		t.Fatal("preview should close on esc from compact view")
+	}
+	if m.status != "Import cancelled." {
+		t.Fatalf("unexpected status: %q", m.status)
+	}
+
+	rows, err := loadRows(m.db)
+	if err != nil {
+		t.Fatalf("loadRows after cancel: %v", err)
+	}
+	if len(rows) != 0 {
+		t.Fatalf("rows after cancel = %d, want 0", len(rows))
 	}
 }
 
@@ -281,6 +380,10 @@ func TestFlowCommandPaletteImportCommandCompletesImport(t *testing.T) {
 	}
 
 	m = flowPress(t, m, "enter")
+	if !m.importPreviewOpen {
+		t.Fatal("expected import preview open after selecting file")
+	}
+	m = flowPress(t, m, "s")
 	if m.statusErr {
 		t.Fatalf("import via command failed: %q", m.status)
 	}
