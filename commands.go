@@ -453,7 +453,7 @@ func NewCommandRegistry(keys *KeyRegistry, savedFilters []savedFilter) *CommandR
 		{
 			ID:          "rules:apply",
 			Label:       "Apply All Rules",
-			Description: "Apply all category rules",
+			Description: "Apply all enabled rules",
 			Category:    "Rules",
 			Scopes:      []string{scopeSettingsActiveRules, scopeGlobal},
 			Enabled: func(m model) (bool, string) {
@@ -461,7 +461,7 @@ func NewCommandRegistry(keys *KeyRegistry, savedFilters []savedFilter) *CommandR
 					return false, "Database not ready."
 				}
 				if len(m.rules) == 0 {
-					return false, "No category rules available."
+					return false, "No rules available."
 				}
 				return true, ""
 			},
@@ -470,23 +470,76 @@ func NewCommandRegistry(keys *KeyRegistry, savedFilters []savedFilter) *CommandR
 					return m, nil, fmt.Errorf("database not ready")
 				}
 				db := m.db
+				scope := m.rulesScopeLabel()
+				accountFilter := map[int]bool(nil)
+				if len(m.filterAccounts) > 0 {
+					accountFilter = make(map[int]bool, len(m.filterAccounts))
+					for id, on := range m.filterAccounts {
+						if on {
+							accountFilter[id] = true
+						}
+					}
+				}
 				return m, func() tea.Msg {
-					count, err := applyCategoryRules(db)
-					return rulesAppliedMsg{count: count, err: err}
+					rules, err := loadRulesV2(db)
+					if err != nil {
+						return rulesAppliedMsg{scope: scope, err: err}
+					}
+					txnTags, err := loadTransactionTags(db)
+					if err != nil {
+						return rulesAppliedMsg{scope: scope, err: err}
+					}
+					catChanges, tagChanges, err := applyRulesV2ToScope(db, rules, txnTags, accountFilter)
+					return rulesAppliedMsg{catChanges: catChanges, tagChanges: tagChanges, scope: scope, err: err}
 				}, nil
 			},
 		},
 		{
 			ID:          "rules:dry-run",
 			Label:       "Dry-Run Rules",
-			Description: "Preview rules without applying changes",
+			Description: "Preview rules without writing changes",
 			Category:    "Rules",
 			Scopes:      []string{scopeSettingsActiveRules, scopeGlobal},
 			Enabled: func(m model) (bool, string) {
-				return false, "Dry-run rules ships in a later phase."
+				if m.db == nil {
+					return false, "Database not ready."
+				}
+				if len(m.rules) == 0 {
+					return false, "No rules available."
+				}
+				return true, ""
 			},
 			Execute: func(m model) (model, tea.Cmd, error) {
-				return m, nil, fmt.Errorf("dry-run rules not implemented")
+				if m.db == nil {
+					return m, nil, fmt.Errorf("database not ready")
+				}
+				db := m.db
+				scope := m.rulesScopeLabel()
+				accountFilter := map[int]bool(nil)
+				if len(m.filterAccounts) > 0 {
+					accountFilter = make(map[int]bool, len(m.filterAccounts))
+					for id, on := range m.filterAccounts {
+						if on {
+							accountFilter[id] = true
+						}
+					}
+				}
+				return m, func() tea.Msg {
+					rules, err := loadRulesV2(db)
+					if err != nil {
+						return rulesDryRunMsg{scope: scope, err: err}
+					}
+					rows, err := loadRowsForAccountScope(db, accountFilter)
+					if err != nil {
+						return rulesDryRunMsg{scope: scope, err: err}
+					}
+					txnTags, err := loadTransactionTags(db)
+					if err != nil {
+						return rulesDryRunMsg{scope: scope, err: err}
+					}
+					results, summary := dryRunRulesV2(db, rules, rows, txnTags)
+					return rulesDryRunMsg{results: results, summary: summary, scope: scope}
+				}, nil
 			},
 		},
 		{
@@ -810,7 +863,7 @@ func (m model) canOpenCommandUI() bool {
 	if m.filterApplyPicker != nil || m.filterEditOpen {
 		return false
 	}
-	if m.managerActionPicker != nil || m.managerModalOpen || m.filterInputMode || m.jumpModeActive {
+	if m.managerActionPicker != nil || m.managerModalOpen || m.filterInputMode || m.jumpModeActive || m.ruleEditorOpen || m.dryRunOpen {
 		return false
 	}
 	if m.settMode != settModeNone || m.confirmAction != confirmActionNone {
@@ -1024,6 +1077,12 @@ func (m model) commandContextScope() string {
 	if m.managerModalOpen {
 		return scopeManagerModal
 	}
+	if m.ruleEditorOpen {
+		return scopeRuleEditor
+	}
+	if m.dryRunOpen {
+		return scopeDryRunModal
+	}
 	if m.filterInputMode {
 		return scopeFilterInput
 	}
@@ -1046,16 +1105,18 @@ func (m model) commandContextScope() string {
 		return scopeTransactions
 	}
 	if m.activeTab == tabSettings {
+		if m.ruleEditorOpen {
+			return scopeRuleEditor
+		}
+		if m.dryRunOpen {
+			return scopeDryRunModal
+		}
 		if m.settMode != settModeNone {
 			switch m.settMode {
 			case settModeAddCat, settModeEditCat:
 				return scopeSettingsModeCat
 			case settModeAddTag, settModeEditTag:
 				return scopeSettingsModeTag
-			case settModeAddRule, settModeEditRule:
-				return scopeSettingsModeRule
-			case settModeRuleCat:
-				return scopeSettingsModeRuleCat
 			}
 		}
 		if m.confirmAction != confirmActionNone {

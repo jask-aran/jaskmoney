@@ -50,6 +50,8 @@ const (
 	scopeSettingsModeTag          = "settings_mode_tag"
 	scopeSettingsModeRule         = "settings_mode_rule"
 	scopeSettingsModeRuleCat      = "settings_mode_rule_cat"
+	scopeRuleEditor               = "rule_editor"
+	scopeDryRunModal              = "dry_run_modal"
 	scopeSettingsActiveCategories = "settings_active_categories"
 	scopeSettingsActiveTags       = "settings_active_tags"
 	scopeSettingsActiveRules      = "settings_active_rules"
@@ -117,6 +119,10 @@ const (
 	actionDashboardModeNext        Action = "dashboard_mode_next"
 	actionDashboardModePrev        Action = "dashboard_mode_prev"
 	actionDashboardDrillDown       Action = "dashboard_drill_down"
+	actionRuleToggleEnabled        Action = "rule_toggle_enabled"
+	actionRuleMoveUp               Action = "rule_move_up"
+	actionRuleMoveDown             Action = "rule_move_down"
+	actionRuleDryRun               Action = "rule_dry_run"
 )
 
 func NewKeyRegistry() *KeyRegistry {
@@ -270,12 +276,16 @@ func NewKeyRegistry() *KeyRegistry {
 	reg(scopeSettingsModeTag, actionRight, "", []string{"l", "right"}, "next")
 	reg(scopeSettingsModeTag, actionSave, "", []string{"enter"}, "save")
 	reg(scopeSettingsModeTag, actionClose, "", []string{"esc"}, "cancel")
-	reg(scopeSettingsModeRule, actionNext, "", []string{"enter"}, "next")
-	reg(scopeSettingsModeRule, actionClose, "", []string{"esc"}, "cancel")
-	reg(scopeSettingsModeRuleCat, actionUp, "", []string{"k", "up", "ctrl+p"}, "up")
-	reg(scopeSettingsModeRuleCat, actionDown, "", []string{"j", "down", "ctrl+n"}, "down")
-	reg(scopeSettingsModeRuleCat, actionSave, "", []string{"enter"}, "save")
-	reg(scopeSettingsModeRuleCat, actionClose, "", []string{"esc"}, "cancel")
+	reg(scopeRuleEditor, actionUp, "", []string{"k", "up", "ctrl+p"}, "up")
+	reg(scopeRuleEditor, actionDown, "", []string{"j", "down", "ctrl+n"}, "down")
+	reg(scopeRuleEditor, actionLeft, "", []string{"h", "left"}, "prev")
+	reg(scopeRuleEditor, actionRight, "", []string{"l", "right"}, "next")
+	reg(scopeRuleEditor, actionToggleSelect, "", []string{"space"}, "toggle")
+	reg(scopeRuleEditor, actionSelect, "", []string{"enter"}, "save/next")
+	reg(scopeRuleEditor, actionClose, "", []string{"esc"}, "cancel")
+	reg(scopeDryRunModal, actionUp, "", []string{"k", "up", "ctrl+p"}, "up")
+	reg(scopeDryRunModal, actionDown, "", []string{"j", "down", "ctrl+n"}, "down")
+	reg(scopeDryRunModal, actionClose, "", []string{"esc"}, "close")
 
 	// Settings active section footers.
 	reg(scopeSettingsActiveCategories, actionUp, "", []string{"k", "up", "ctrl+p"}, "up")
@@ -294,10 +304,13 @@ func NewKeyRegistry() *KeyRegistry {
 	reg(scopeSettingsActiveRules, actionDown, "", []string{"j", "down", "ctrl+n"}, "down")
 	reg(scopeSettingsActiveRules, actionBack, "", []string{"esc"}, "back")
 	reg(scopeSettingsActiveRules, actionAdd, "", []string{"a"}, "add")
-	reg(scopeSettingsActiveRules, actionEdit, "", []string{"e"}, "edit")
+	reg(scopeSettingsActiveRules, actionSelect, "", []string{"enter"}, "edit")
+	reg(scopeSettingsActiveRules, actionRuleToggleEnabled, "", []string{"e"}, "toggle")
 	reg(scopeSettingsActiveRules, actionDelete, "", []string{"del"}, "delete")
+	reg(scopeSettingsActiveRules, actionRuleMoveUp, "", []string{"K"}, "move up")
+	reg(scopeSettingsActiveRules, actionRuleMoveDown, "", []string{"J"}, "move down")
 	reg(scopeSettingsActiveRules, actionApplyAll, "rules:apply", []string{"A"}, "apply all")
-	reg(scopeSettingsActiveRules, actionCommandApplyTagRules, "rules:dry-run", []string{"D"}, "dry run")
+	reg(scopeSettingsActiveRules, actionRuleDryRun, "rules:dry-run", []string{"D"}, "dry run")
 	reg(scopeSettingsActiveFilters, actionUp, "", []string{"k", "up", "ctrl+p"}, "up")
 	reg(scopeSettingsActiveFilters, actionDown, "", []string{"j", "down", "ctrl+n"}, "down")
 	reg(scopeSettingsActiveFilters, actionBack, "", []string{"esc"}, "back")

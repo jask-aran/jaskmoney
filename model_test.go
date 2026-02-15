@@ -241,8 +241,9 @@ func testSettingsModel() model {
 		{id: 2, name: "Groceries", color: "#94e2d5", sortOrder: 2, isDefault: false},
 		{id: 10, name: "Uncategorised", color: "#7f849c", sortOrder: 10, isDefault: true},
 	}
-	m.rules = []categoryRule{
-		{id: 1, pattern: "WOOLWORTHS", categoryID: 2, priority: 0},
+	catID := 2
+	m.rules = []ruleV2{
+		{id: 1, name: "Groceries", filterExpr: "desc:WOOLWORTHS", setCategoryID: &catID, sortOrder: 0, enabled: true},
 	}
 	m.imports = []importRecord{
 		{id: 1, filename: "test.csv", rowCount: 42, importedAt: "2026-02-06"},
@@ -486,7 +487,8 @@ func TestSettingsRuleItemNavigation(t *testing.T) {
 	m.settSection = settSecRules
 	m.settColumn = settColLeft
 	m.settActive = true
-	m.rules = append(m.rules, categoryRule{id: 2, pattern: "DAN", categoryID: 1})
+	catID := 1
+	m.rules = append(m.rules, ruleV2{id: 2, name: "Dining", filterExpr: "desc:DAN", setCategoryID: &catID, sortOrder: 1, enabled: true})
 	m.settItemCursor = 0
 
 	m2, _ := m.updateSettings(keyMsg("j"))
@@ -503,26 +505,25 @@ func TestSettingsRuleAddMode(t *testing.T) {
 
 	m2, _ := m.updateSettings(keyMsg("a"))
 	m3 := m2.(model)
-	if m3.settMode != settModeAddRule {
-		t.Errorf("mode = %q, want %q", m3.settMode, settModeAddRule)
+	if !m3.ruleEditorOpen {
+		t.Fatal("rule editor should open in add mode")
+	}
+	if m3.ruleEditorID != 0 {
+		t.Fatalf("ruleEditorID = %d, want 0", m3.ruleEditorID)
 	}
 }
 
-func TestSettingsRuleInputToCatPicker(t *testing.T) {
+func TestRuleEditorEnterAdvancesSteps(t *testing.T) {
 	m := testSettingsModel()
-	m.settSection = settSecRules
-	m.settActive = true
-	m.settMode = settModeAddRule
-	m.settInput = "COLES"
+	m.ruleEditorOpen = true
+	m.ruleEditorStep = 0
+	m.ruleEditorName = "Groceries"
+	m.ruleEditorNameCur = len(m.ruleEditorName)
 
-	// Enter transitions to category picker
-	m2, _ := m.updateSettings(keyMsg("enter"))
+	m2, _ := m.updateRuleEditor(keyMsg("enter"))
 	m3 := m2.(model)
-	if m3.settMode != settModeRuleCat {
-		t.Errorf("mode = %q, want %q", m3.settMode, settModeRuleCat)
-	}
-	if m3.settInput != "COLES" {
-		t.Errorf("input should be preserved, got %q", m3.settInput)
+	if m3.ruleEditorStep != 1 {
+		t.Fatalf("step after enter = %d, want 1", m3.ruleEditorStep)
 	}
 }
 
