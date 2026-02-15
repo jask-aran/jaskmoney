@@ -471,6 +471,7 @@ func NewCommandRegistry(keys *KeyRegistry, savedFilters []savedFilter) *CommandR
 				}
 				db := m.db
 				scope := m.rulesScopeLabel()
+				savedFilters := append([]savedFilter(nil), m.savedFilters...)
 				accountFilter := map[int]bool(nil)
 				if len(m.filterAccounts) > 0 {
 					accountFilter = make(map[int]bool, len(m.filterAccounts))
@@ -489,8 +490,15 @@ func NewCommandRegistry(keys *KeyRegistry, savedFilters []savedFilter) *CommandR
 					if err != nil {
 						return rulesAppliedMsg{scope: scope, err: err}
 					}
-					catChanges, tagChanges, err := applyRulesV2ToScope(db, rules, txnTags, accountFilter)
-					return rulesAppliedMsg{catChanges: catChanges, tagChanges: tagChanges, scope: scope, err: err}
+					updatedTxns, catChanges, tagChanges, failedRules, err := applyRulesV2ToScope(db, rules, txnTags, accountFilter, savedFilters)
+					return rulesAppliedMsg{
+						updatedTxns: updatedTxns,
+						catChanges:  catChanges,
+						tagChanges:  tagChanges,
+						failedRules: failedRules,
+						scope:       scope,
+						err:         err,
+					}
 				}, nil
 			},
 		},
@@ -515,6 +523,7 @@ func NewCommandRegistry(keys *KeyRegistry, savedFilters []savedFilter) *CommandR
 				}
 				db := m.db
 				scope := m.rulesScopeLabel()
+				savedFilters := append([]savedFilter(nil), m.savedFilters...)
 				accountFilter := map[int]bool(nil)
 				if len(m.filterAccounts) > 0 {
 					accountFilter = make(map[int]bool, len(m.filterAccounts))
@@ -537,8 +546,13 @@ func NewCommandRegistry(keys *KeyRegistry, savedFilters []savedFilter) *CommandR
 					if err != nil {
 						return rulesDryRunMsg{scope: scope, err: err}
 					}
-					results, summary := dryRunRulesV2(db, rules, rows, txnTags)
-					return rulesDryRunMsg{results: results, summary: summary, scope: scope}
+					results, summary := dryRunRulesV2(db, rules, rows, txnTags, savedFilters)
+					return rulesDryRunMsg{
+						results:     results,
+						summary:     summary,
+						failedRules: summary.failedRules,
+						scope:       scope,
+					}
 				}, nil
 			},
 		},

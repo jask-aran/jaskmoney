@@ -17,8 +17,9 @@ import (
 // Schema version
 // ---------------------------------------------------------------------------
 
-const schemaVersion = 5
+const schemaVersion = 6
 const mandatoryIgnoreTagName = "IGNORE"
+const legacyRuleExprPrefix = "__legacy_expr__:"
 
 // ---------------------------------------------------------------------------
 // Default categories seeded on fresh DB
@@ -53,7 +54,7 @@ var mandatoryTags = []struct {
 // Schema DDL
 // ---------------------------------------------------------------------------
 
-const schemaV5 = `
+const schemaV6 = `
 CREATE TABLE IF NOT EXISTS schema_meta (
 	version INTEGER NOT NULL
 );
@@ -83,10 +84,9 @@ CREATE TABLE IF NOT EXISTS transaction_tags (
 CREATE TABLE IF NOT EXISTS rules_v2 (
 	id              INTEGER PRIMARY KEY AUTOINCREMENT,
 	name            TEXT NOT NULL,
-	filter_expr     TEXT NOT NULL,
+	saved_filter_id TEXT NOT NULL,
 	set_category_id INTEGER REFERENCES categories(id) ON DELETE SET NULL,
 	add_tag_ids     TEXT NOT NULL DEFAULT '[]',
-	remove_tag_ids  TEXT NOT NULL DEFAULT '[]',
 	sort_order      INTEGER NOT NULL DEFAULT 0,
 	enabled         INTEGER NOT NULL DEFAULT 1,
 	created_at      TEXT NOT NULL DEFAULT (datetime('now'))
@@ -256,14 +256,23 @@ func currentSchemaVersion(db *sql.DB) (int, error) {
 
 // migrateSchema upgrades the schema to the current version.
 func migrateSchema(db *sql.DB, fromVersion int) error {
+	if fromVersion == 5 {
+		return migrateFromV5ToV6(db)
+	}
 	if fromVersion == 4 {
-		return migrateFromV4ToV5(db)
+		if err := migrateFromV4ToV5(db); err != nil {
+			return err
+		}
+		return migrateFromV5ToV6(db)
 	}
 	if fromVersion == 3 {
 		if err := migrateFromV3ToV4(db); err != nil {
 			return err
 		}
-		return migrateFromV4ToV5(db)
+		if err := migrateFromV4ToV5(db); err != nil {
+			return err
+		}
+		return migrateFromV5ToV6(db)
 	}
 	return migrateClean(db)
 }
@@ -321,10 +330,9 @@ func migrateFromV4ToV5(db *sql.DB) error {
 		`CREATE TABLE IF NOT EXISTS rules_v2 (
 			id              INTEGER PRIMARY KEY AUTOINCREMENT,
 			name            TEXT NOT NULL,
-			filter_expr     TEXT NOT NULL,
+			saved_filter_id TEXT NOT NULL,
 			set_category_id INTEGER REFERENCES categories(id) ON DELETE SET NULL,
 			add_tag_ids     TEXT NOT NULL DEFAULT '[]',
-			remove_tag_ids  TEXT NOT NULL DEFAULT '[]',
 			sort_order      INTEGER NOT NULL DEFAULT 0,
 			enabled         INTEGER NOT NULL DEFAULT 1,
 			created_at      TEXT NOT NULL DEFAULT (datetime('now'))
@@ -391,7 +399,41 @@ func migrateFromV4ToV5(db *sql.DB) error {
 	return nil
 }
 
-// migrateClean drops everything and starts fresh at schema v5.
+func migrateFromV5ToV6(db *sql.DB) error {
+	tx, err := db.Begin()
+	if err != nil {
+		return fmt.Errorf("begin v5->v6 migration: %w", err)
+	}
+	defer tx.Rollback() //nolint:errcheck
+
+	stmts := []string{
+		"DROP TABLE IF EXISTS rules_v2",
+		`CREATE TABLE IF NOT EXISTS rules_v2 (
+			id              INTEGER PRIMARY KEY AUTOINCREMENT,
+			name            TEXT NOT NULL,
+			saved_filter_id TEXT NOT NULL,
+			set_category_id INTEGER REFERENCES categories(id) ON DELETE SET NULL,
+			add_tag_ids     TEXT NOT NULL DEFAULT '[]',
+			sort_order      INTEGER NOT NULL DEFAULT 0,
+			enabled         INTEGER NOT NULL DEFAULT 1,
+			created_at      TEXT NOT NULL DEFAULT (datetime('now'))
+		)`,
+		`CREATE INDEX IF NOT EXISTS idx_rules_v2_sort ON rules_v2(sort_order)`,
+		`DELETE FROM schema_meta`,
+		`INSERT INTO schema_meta (version) VALUES (6)`,
+	}
+	for _, stmt := range stmts {
+		if _, err := tx.Exec(stmt); err != nil {
+			return fmt.Errorf("migrate v5->v6 statement failed: %w", err)
+		}
+	}
+	if err := tx.Commit(); err != nil {
+		return fmt.Errorf("commit v5->v6 migration: %w", err)
+	}
+	return nil
+}
+
+// migrateClean drops everything and starts fresh at schema v6.
 func migrateClean(db *sql.DB) error {
 	drops := []string{
 		"DROP TABLE IF EXISTS credit_offsets",
@@ -416,8 +458,8 @@ func migrateClean(db *sql.DB) error {
 			return fmt.Errorf("drop table: %w", err)
 		}
 	}
-	if _, err := db.Exec(schemaV5); err != nil {
-		return fmt.Errorf("create v5 schema: %w", err)
+	if _, err := db.Exec(schemaV6); err != nil {
+		return fmt.Errorf("create v6 schema: %w", err)
 	}
 	if err := seedDefaultCategories(db); err != nil {
 		return fmt.Errorf("seed categories: %w", err)
@@ -596,7 +638,7 @@ func rewriteRulesV2TagIDsTx(tx *sql.Tx, oldID, newID int) error {
 	if oldID <= 0 || newID <= 0 || oldID == newID {
 		return nil
 	}
-	rows, err := tx.Query(`SELECT id, add_tag_ids, remove_tag_ids FROM rules_v2`)
+	rows, err := tx.Query(`SELECT id, add_tag_ids FROM rules_v2`)
 	if err != nil {
 		// rules_v2 may not exist in legacy migration paths.
 		return nil
@@ -606,12 +648,11 @@ func rewriteRulesV2TagIDsTx(tx *sql.Tx, oldID, newID int) error {
 	type ruleRow struct {
 		id      int
 		addJSON string
-		remJSON string
 	}
 	var all []ruleRow
 	for rows.Next() {
 		var rr ruleRow
-		if err := rows.Scan(&rr.id, &rr.addJSON, &rr.remJSON); err != nil {
+		if err := rows.Scan(&rr.id, &rr.addJSON); err != nil {
 			return fmt.Errorf("scan rules_v2 for tag rewrite: %w", err)
 		}
 		all = append(all, rr)
@@ -624,10 +665,6 @@ func rewriteRulesV2TagIDsTx(tx *sql.Tx, oldID, newID int) error {
 		if err != nil {
 			return err
 		}
-		rem, err := decodeRuleTagIDs(rr.remJSON)
-		if err != nil {
-			return err
-		}
 		changed := false
 		for i, id := range add {
 			if id == oldID {
@@ -635,16 +672,10 @@ func rewriteRulesV2TagIDsTx(tx *sql.Tx, oldID, newID int) error {
 				changed = true
 			}
 		}
-		for i, id := range rem {
-			if id == oldID {
-				rem[i] = newID
-				changed = true
-			}
-		}
 		if !changed {
 			continue
 		}
-		if _, err := tx.Exec(`UPDATE rules_v2 SET add_tag_ids = ?, remove_tag_ids = ? WHERE id = ?`, encodeRuleTagIDs(add), encodeRuleTagIDs(rem), rr.id); err != nil {
+		if _, err := tx.Exec(`UPDATE rules_v2 SET add_tag_ids = ? WHERE id = ?`, encodeRuleTagIDs(add), rr.id); err != nil {
 			return fmt.Errorf("rewrite rules_v2 tags for rule %d: %w", rr.id, err)
 		}
 	}
@@ -715,17 +746,17 @@ func loadCategoryByNameCI(db *sql.DB, name string) (*category, error) {
 type ruleV2 struct {
 	id            int
 	name          string
-	filterExpr    string
-	parsedFilter  *filterNode
+	savedFilterID string
 	setCategoryID *int
 	addTagIDs     []int
-	removeTagIDs  []int
 	sortOrder     int
 	enabled       bool
 }
 
 type dryRunRuleResult struct {
 	rule       ruleV2
+	filterExpr string
+	filterName string
 	matchCount int
 	catChanges int
 	tagChanges int
@@ -733,17 +764,29 @@ type dryRunRuleResult struct {
 }
 
 type dryRunSample struct {
-	txn         transaction
-	currentCat  string
-	newCat      string
-	addedTags   []string
-	removedTags []string
+	txn        transaction
+	currentCat string
+	newCat     string
+	addedTags  []string
 }
 
 type dryRunSummary struct {
 	totalModified  int
 	totalCatChange int
 	totalTagChange int
+	failedRules    int
+}
+
+type resolvedRuleV2 struct {
+	rule       ruleV2
+	filterExpr string
+	filterName string
+	parsed     *filterNode
+}
+
+type ruleResolutionFailure struct {
+	rule   ruleV2
+	reason string
 }
 
 func decodeRuleTagIDs(raw string) ([]int, error) {
@@ -790,9 +833,85 @@ func parseRuleNode(expr string) (*filterNode, error) {
 	return parsed, nil
 }
 
+func normalizeRuleFilterID(id string) string {
+	return strings.ToLower(strings.TrimSpace(id))
+}
+
+func savedFilterMapByID(savedFilters []savedFilter) map[string]savedFilter {
+	out := make(map[string]savedFilter, len(savedFilters))
+	for _, sf := range savedFilters {
+		id := normalizeRuleFilterID(sf.ID)
+		if id == "" {
+			continue
+		}
+		out[id] = sf
+	}
+	return out
+}
+
+func resolveRuleV2Filter(rule ruleV2, filterMap map[string]savedFilter) (expr string, name string, parsed *filterNode, err error) {
+	filterID := strings.TrimSpace(rule.savedFilterID)
+	if strings.HasPrefix(filterID, legacyRuleExprPrefix) {
+		expr = strings.TrimSpace(strings.TrimPrefix(filterID, legacyRuleExprPrefix))
+		if expr == "" {
+			return "", "", nil, fmt.Errorf("legacy filter expression is empty")
+		}
+		parsed, err = parseRuleNode(expr)
+		if err != nil {
+			return "", "", nil, err
+		}
+		return filterExprString(parsed), "", parsed, nil
+	}
+
+	key := normalizeRuleFilterID(filterID)
+	if key == "" {
+		return "", "", nil, fmt.Errorf("saved filter id is required")
+	}
+	sf, ok := filterMap[key]
+	if !ok {
+		return "", "", nil, fmt.Errorf("saved filter %q not found", filterID)
+	}
+	parsed, err = parseRuleNode(strings.TrimSpace(sf.Expr))
+	if err != nil {
+		return "", "", nil, fmt.Errorf("saved filter %q invalid: %w", strings.TrimSpace(sf.ID), err)
+	}
+	return filterExprString(parsed), strings.TrimSpace(sf.Name), parsed, nil
+}
+
+func resolveRulesV2(rules []ruleV2, savedFilters []savedFilter) ([]resolvedRuleV2, []ruleResolutionFailure) {
+	ordered := append([]ruleV2(nil), rules...)
+	sort.SliceStable(ordered, func(i, j int) bool {
+		if ordered[i].sortOrder != ordered[j].sortOrder {
+			return ordered[i].sortOrder < ordered[j].sortOrder
+		}
+		return ordered[i].id < ordered[j].id
+	})
+
+	filterMap := savedFilterMapByID(savedFilters)
+	resolved := make([]resolvedRuleV2, 0, len(ordered))
+	failed := make([]ruleResolutionFailure, 0)
+	for _, rule := range ordered {
+		if !rule.enabled {
+			continue
+		}
+		expr, name, parsed, err := resolveRuleV2Filter(rule, filterMap)
+		if err != nil {
+			failed = append(failed, ruleResolutionFailure{rule: rule, reason: err.Error()})
+			continue
+		}
+		resolved = append(resolved, resolvedRuleV2{
+			rule:       rule,
+			filterExpr: expr,
+			filterName: name,
+			parsed:     parsed,
+		})
+	}
+	return resolved, failed
+}
+
 func loadRulesV2(db *sql.DB) ([]ruleV2, error) {
 	rows, err := db.Query(`
-		SELECT id, name, filter_expr, set_category_id, add_tag_ids, remove_tag_ids, sort_order, enabled
+		SELECT id, name, saved_filter_id, set_category_id, add_tag_ids, sort_order, enabled
 		FROM rules_v2
 		ORDER BY sort_order ASC, id ASC
 	`)
@@ -804,23 +923,15 @@ func loadRulesV2(db *sql.DB) ([]ruleV2, error) {
 	out := make([]ruleV2, 0)
 	for rows.Next() {
 		var r ruleV2
-		var addJSON, remJSON string
+		var addJSON string
 		var enabledInt int
-		if err := rows.Scan(&r.id, &r.name, &r.filterExpr, &r.setCategoryID, &addJSON, &remJSON, &r.sortOrder, &enabledInt); err != nil {
+		if err := rows.Scan(&r.id, &r.name, &r.savedFilterID, &r.setCategoryID, &addJSON, &r.sortOrder, &enabledInt); err != nil {
 			return nil, fmt.Errorf("scan rules_v2: %w", err)
 		}
 		r.enabled = enabledInt == 1
 		r.addTagIDs, err = decodeRuleTagIDs(addJSON)
 		if err != nil {
 			return nil, err
-		}
-		r.removeTagIDs, err = decodeRuleTagIDs(remJSON)
-		if err != nil {
-			return nil, err
-		}
-		r.parsedFilter, err = parseRuleNode(r.filterExpr)
-		if err != nil {
-			return nil, fmt.Errorf("rule %q: %w", r.name, err)
 		}
 		out = append(out, r)
 	}
@@ -842,12 +953,11 @@ func insertRuleV2(db *sql.DB, r ruleV2) (int, error) {
 	if strings.TrimSpace(r.name) == "" {
 		return 0, fmt.Errorf("rule name is required")
 	}
-	parsed, err := parseRuleNode(r.filterExpr)
-	if err != nil {
-		return 0, err
+	if strings.TrimSpace(r.savedFilterID) == "" {
+		return 0, fmt.Errorf("saved filter id is required")
 	}
-	r.parsedFilter = parsed
 	sortOrder := r.sortOrder
+	var err error
 	if sortOrder < 0 {
 		sortOrder = 0
 	}
@@ -862,9 +972,9 @@ func insertRuleV2(db *sql.DB, r ruleV2) (int, error) {
 		enabled = 1
 	}
 	res, err := db.Exec(`
-		INSERT INTO rules_v2 (name, filter_expr, set_category_id, add_tag_ids, remove_tag_ids, sort_order, enabled)
-		VALUES (?, ?, ?, ?, ?, ?, ?)
-	`, strings.TrimSpace(r.name), strings.TrimSpace(r.filterExpr), r.setCategoryID, encodeRuleTagIDs(r.addTagIDs), encodeRuleTagIDs(r.removeTagIDs), sortOrder, enabled)
+		INSERT INTO rules_v2 (name, saved_filter_id, set_category_id, add_tag_ids, sort_order, enabled)
+		VALUES (?, ?, ?, ?, ?, ?)
+	`, strings.TrimSpace(r.name), strings.TrimSpace(r.savedFilterID), r.setCategoryID, encodeRuleTagIDs(r.addTagIDs), sortOrder, enabled)
 	if err != nil {
 		return 0, fmt.Errorf("insert rule_v2: %w", err)
 	}
@@ -882,8 +992,8 @@ func updateRuleV2(db *sql.DB, r ruleV2) error {
 	if strings.TrimSpace(r.name) == "" {
 		return fmt.Errorf("rule name is required")
 	}
-	if _, err := parseRuleNode(r.filterExpr); err != nil {
-		return err
+	if strings.TrimSpace(r.savedFilterID) == "" {
+		return fmt.Errorf("saved filter id is required")
 	}
 	enabled := 0
 	if r.enabled {
@@ -891,9 +1001,9 @@ func updateRuleV2(db *sql.DB, r ruleV2) error {
 	}
 	_, err := db.Exec(`
 		UPDATE rules_v2
-		SET name = ?, filter_expr = ?, set_category_id = ?, add_tag_ids = ?, remove_tag_ids = ?, sort_order = ?, enabled = ?
+		SET name = ?, saved_filter_id = ?, set_category_id = ?, add_tag_ids = ?, sort_order = ?, enabled = ?
 		WHERE id = ?
-	`, strings.TrimSpace(r.name), strings.TrimSpace(r.filterExpr), r.setCategoryID, encodeRuleTagIDs(r.addTagIDs), encodeRuleTagIDs(r.removeTagIDs), r.sortOrder, enabled, r.id)
+	`, strings.TrimSpace(r.name), strings.TrimSpace(r.savedFilterID), r.setCategoryID, encodeRuleTagIDs(r.addTagIDs), r.sortOrder, enabled, r.id)
 	if err != nil {
 		return fmt.Errorf("update rule_v2: %w", err)
 	}
@@ -1053,12 +1163,15 @@ func loadCategoryRules(db *sql.DB) ([]categoryRule, error) {
 		if r.setCategoryID == nil {
 			continue
 		}
-		if len(r.addTagIDs) > 0 || len(r.removeTagIDs) > 0 {
+		if len(r.addTagIDs) > 0 {
+			continue
+		}
+		if !strings.HasPrefix(strings.TrimSpace(r.savedFilterID), legacyRuleExprPrefix) {
 			continue
 		}
 		out = append(out, categoryRule{
 			id:         r.id,
-			pattern:    legacyPatternFromExpr(strings.TrimSpace(r.filterExpr)),
+			pattern:    legacyPatternFromExpr(strings.TrimSpace(strings.TrimPrefix(r.savedFilterID, legacyRuleExprPrefix))),
 			categoryID: *r.setCategoryID,
 			priority:   r.sortOrder,
 		})
@@ -1291,28 +1404,6 @@ func diffTagSets(before, after map[int]bool) (added []int, removed []int) {
 	return added, removed
 }
 
-func ensureRulesParsed(rules []ruleV2) ([]ruleV2, error) {
-	out := make([]ruleV2, len(rules))
-	for i := range rules {
-		out[i] = rules[i]
-		if out[i].parsedFilter != nil {
-			continue
-		}
-		parsed, err := parseRuleNode(out[i].filterExpr)
-		if err != nil {
-			return nil, fmt.Errorf("rule %q: %w", out[i].name, err)
-		}
-		out[i].parsedFilter = parsed
-	}
-	sort.SliceStable(out, func(i, j int) bool {
-		if out[i].sortOrder != out[j].sortOrder {
-			return out[i].sortOrder < out[j].sortOrder
-		}
-		return out[i].id < out[j].id
-	})
-	return out, nil
-}
-
 func categoryNameByID(categories []category) map[int]string {
 	out := make(map[int]string, len(categories))
 	for _, cat := range categories {
@@ -1339,28 +1430,24 @@ func categoryNameForPtr(id *int, names map[int]string) string {
 	return fmt.Sprintf("Category %d", *id)
 }
 
-func applyRulesV2ToRows(db *sql.DB, rules []ruleV2, txnTags map[int][]tag, rows []transaction) (catChanges, tagChanges int, err error) {
+func applyResolvedRulesV2ToRows(db *sql.DB, rules []resolvedRuleV2, txnTags map[int][]tag, rows []transaction) (updatedTxns, catChanges, tagChanges int, err error) {
 	if len(rows) == 0 || len(rules) == 0 {
-		return 0, 0, nil
-	}
-	rules, err = ensureRulesParsed(rules)
-	if err != nil {
-		return 0, 0, err
+		return 0, 0, 0, nil
 	}
 	categories, err := loadCategories(db)
 	if err != nil {
-		return 0, 0, err
+		return 0, 0, 0, err
 	}
 	tags, err := loadTags(db)
 	if err != nil {
-		return 0, 0, err
+		return 0, 0, 0, err
 	}
 	catNames := categoryNameByID(categories)
 	tagByID := tagByIDMap(tags)
 
 	tx, err := db.Begin()
 	if err != nil {
-		return 0, 0, fmt.Errorf("begin apply rules_v2: %w", err)
+		return 0, 0, 0, fmt.Errorf("begin apply rules_v2: %w", err)
 	}
 	defer tx.Rollback() //nolint:errcheck
 
@@ -1378,32 +1465,31 @@ func applyRulesV2ToRows(db *sql.DB, rules []ruleV2, txnTags map[int][]tag, rows 
 		workTxn.categoryName = categoryNameForPtr(workCat, catNames)
 
 		for _, rule := range rules {
-			if !rule.enabled || rule.parsedFilter == nil {
+			if rule.parsed == nil {
 				continue
 			}
-			if !evalFilter(rule.parsedFilter, workTxn, tagStateToSlice(workTagSet, tagByID)) {
+			if !evalFilter(rule.parsed, workTxn, tagStateToSlice(workTagSet, tagByID)) {
 				continue
 			}
-			if rule.setCategoryID != nil {
-				workCat = copyIntPtr(rule.setCategoryID)
+			if rule.rule.setCategoryID != nil {
+				workCat = copyIntPtr(rule.rule.setCategoryID)
 				workTxn.categoryID = copyIntPtr(workCat)
 				workTxn.categoryName = categoryNameForPtr(workCat, catNames)
 			}
-			for _, id := range rule.addTagIDs {
+			for _, id := range rule.rule.addTagIDs {
 				if id > 0 {
 					workTagSet[id] = true
 				}
 			}
-			for _, id := range rule.removeTagIDs {
-				delete(workTagSet, id)
-			}
 		}
 
+		rowUpdated := false
 		if !intPtrEqual(currentCat, workCat) {
 			if _, err := tx.Exec(`UPDATE transactions SET category_id = ? WHERE id = ?`, workCat, row.id); err != nil {
-				return 0, 0, fmt.Errorf("update txn %d category: %w", row.id, err)
+				return 0, 0, 0, fmt.Errorf("update txn %d category: %w", row.id, err)
 			}
 			catChanges++
+			rowUpdated = true
 		}
 		added, removed := diffTagSets(currentTagSet, workTagSet)
 		for _, tagID := range added {
@@ -1413,10 +1499,13 @@ func applyRulesV2ToRows(db *sql.DB, rules []ruleV2, txnTags map[int][]tag, rows 
 				ON CONFLICT(transaction_id, tag_id) DO NOTHING
 			`, row.id, tagID)
 			if execErr != nil {
-				return 0, 0, fmt.Errorf("add tag %d to txn %d: %w", tagID, row.id, execErr)
+				return 0, 0, 0, fmt.Errorf("add tag %d to txn %d: %w", tagID, row.id, execErr)
 			}
 			n, _ := res.RowsAffected()
-			tagChanges += int(n)
+			if n > 0 {
+				tagChanges += int(n)
+				rowUpdated = true
+			}
 		}
 		for _, tagID := range removed {
 			res, execErr := tx.Exec(`
@@ -1424,60 +1513,69 @@ func applyRulesV2ToRows(db *sql.DB, rules []ruleV2, txnTags map[int][]tag, rows 
 				WHERE transaction_id = ? AND tag_id = ?
 			`, row.id, tagID)
 			if execErr != nil {
-				return 0, 0, fmt.Errorf("remove tag %d from txn %d: %w", tagID, row.id, execErr)
+				return 0, 0, 0, fmt.Errorf("remove tag %d from txn %d: %w", tagID, row.id, execErr)
 			}
 			n, _ := res.RowsAffected()
-			tagChanges += int(n)
+			if n > 0 {
+				tagChanges += int(n)
+				rowUpdated = true
+			}
+		}
+		if rowUpdated {
+			updatedTxns++
 		}
 	}
 
 	if err := tx.Commit(); err != nil {
-		return 0, 0, fmt.Errorf("commit apply rules_v2: %w", err)
+		return 0, 0, 0, fmt.Errorf("commit apply rules_v2: %w", err)
 	}
-	return catChanges, tagChanges, nil
+	return updatedTxns, catChanges, tagChanges, nil
 }
 
-func applyRulesV2ToScope(db *sql.DB, rules []ruleV2, txnTags map[int][]tag, accountFilter map[int]bool) (catChanges, tagChanges int, err error) {
+func applyRulesV2ToScope(db *sql.DB, rules []ruleV2, txnTags map[int][]tag, accountFilter map[int]bool, savedFilters []savedFilter) (updatedTxns, catChanges, tagChanges, failedRules int, err error) {
 	rows, err := loadRowsForAccountScope(db, accountFilter)
 	if err != nil {
-		return 0, 0, err
+		return 0, 0, 0, 0, err
 	}
-	return applyRulesV2ToRows(db, rules, txnTags, rows)
+	resolvedRules, failed := resolveRulesV2(rules, savedFilters)
+	updatedTxns, catChanges, tagChanges, err = applyResolvedRulesV2ToRows(db, resolvedRules, txnTags, rows)
+	if err != nil {
+		return 0, 0, 0, len(failed), err
+	}
+	return updatedTxns, catChanges, tagChanges, len(failed), nil
 }
 
-func applyRulesV2ToTxnIDs(db *sql.DB, rules []ruleV2, txnTags map[int][]tag, txnIDs []int) (catChanges, tagChanges int, err error) {
+func applyRulesV2ToTxnIDs(db *sql.DB, rules []ruleV2, txnTags map[int][]tag, txnIDs []int, savedFilters []savedFilter) (updatedTxns, catChanges, tagChanges, failedRules int, err error) {
 	rows, err := loadRowsByTxnIDs(db, txnIDs)
 	if err != nil {
-		return 0, 0, err
+		return 0, 0, 0, 0, err
 	}
-	return applyRulesV2ToRows(db, rules, txnTags, rows)
+	resolvedRules, failed := resolveRulesV2(rules, savedFilters)
+	updatedTxns, catChanges, tagChanges, err = applyResolvedRulesV2ToRows(db, resolvedRules, txnTags, rows)
+	if err != nil {
+		return 0, 0, 0, len(failed), err
+	}
+	return updatedTxns, catChanges, tagChanges, len(failed), nil
 }
 
-func dryRunRulesV2(db *sql.DB, rules []ruleV2, rows []transaction, txnTags map[int][]tag) ([]dryRunRuleResult, dryRunSummary) {
+func dryRunRulesV2(db *sql.DB, rules []ruleV2, rows []transaction, txnTags map[int][]tag, savedFilters []savedFilter) ([]dryRunRuleResult, dryRunSummary) {
 	if len(rows) == 0 || len(rules) == 0 {
 		return nil, dryRunSummary{}
 	}
-	rules, err := ensureRulesParsed(rules)
-	if err != nil {
-		return nil, dryRunSummary{}
-	}
+	resolvedRules, failed := resolveRulesV2(rules, savedFilters)
 	categories, _ := loadCategories(db)
 	tags, _ := loadTags(db)
 	catNames := categoryNameByID(categories)
 	tagByID := tagByIDMap(tags)
 
-	enabledRules := make([]ruleV2, 0, len(rules))
-	for _, r := range rules {
-		if r.enabled {
-			enabledRules = append(enabledRules, r)
-		}
-	}
-	results := make([]dryRunRuleResult, len(enabledRules))
-	for i, r := range enabledRules {
-		results[i].rule = r
+	results := make([]dryRunRuleResult, len(resolvedRules))
+	for i, r := range resolvedRules {
+		results[i].rule = r.rule
+		results[i].filterExpr = r.filterExpr
+		results[i].filterName = r.filterName
 	}
 
-	summary := dryRunSummary{}
+	summary := dryRunSummary{failedRules: len(failed)}
 	for _, row := range rows {
 		currentCat := copyIntPtr(row.categoryID)
 		currentTagSet := tagIDSet(txnTags[row.id])
@@ -1491,8 +1589,8 @@ func dryRunRulesV2(db *sql.DB, rules []ruleV2, rows []transaction, txnTags map[i
 		workTxn.categoryID = copyIntPtr(workCat)
 		workTxn.categoryName = categoryNameForPtr(workCat, catNames)
 
-		for i, rule := range enabledRules {
-			if rule.parsedFilter == nil || !evalFilter(rule.parsedFilter, workTxn, tagStateToSlice(workTagSet, tagByID)) {
+		for i, rule := range resolvedRules {
+			if rule.parsed == nil || !evalFilter(rule.parsed, workTxn, tagStateToSlice(workTagSet, tagByID)) {
 				continue
 			}
 			results[i].matchCount++
@@ -1503,59 +1601,49 @@ func dryRunRulesV2(db *sql.DB, rules []ruleV2, rows []transaction, txnTags map[i
 				beforeTags[id] = on
 			}
 
-			if rule.setCategoryID != nil {
-				workCat = copyIntPtr(rule.setCategoryID)
+			if rule.rule.setCategoryID != nil {
+				workCat = copyIntPtr(rule.rule.setCategoryID)
 				workTxn.categoryID = copyIntPtr(workCat)
 				workTxn.categoryName = categoryNameForPtr(workCat, catNames)
 			}
-			for _, id := range rule.addTagIDs {
+			for _, id := range rule.rule.addTagIDs {
 				if id > 0 {
 					workTagSet[id] = true
 				}
-			}
-			for _, id := range rule.removeTagIDs {
-				delete(workTagSet, id)
 			}
 
 			catChanged := !intPtrEqual(beforeCat, workCat)
 			if catChanged {
 				results[i].catChanges++
 			}
-			added, removed := diffTagSets(beforeTags, workTagSet)
-			results[i].tagChanges += len(added) + len(removed)
+			added, _ := diffTagSets(beforeTags, workTagSet)
+			results[i].tagChanges += len(added)
 
-			if len(results[i].samples) < 3 && (catChanged || len(added) > 0 || len(removed) > 0) {
+			if len(results[i].samples) < 3 && (catChanged || len(added) > 0) {
 				addedNames := make([]string, 0, len(added))
 				for _, id := range added {
 					if tg, ok := tagByID[id]; ok {
 						addedNames = append(addedNames, tg.name)
 					}
 				}
-				removedNames := make([]string, 0, len(removed))
-				for _, id := range removed {
-					if tg, ok := tagByID[id]; ok {
-						removedNames = append(removedNames, tg.name)
-					}
-				}
 				results[i].samples = append(results[i].samples, dryRunSample{
-					txn:         row,
-					currentCat:  categoryNameForPtr(beforeCat, catNames),
-					newCat:      categoryNameForPtr(workCat, catNames),
-					addedTags:   addedNames,
-					removedTags: removedNames,
+					txn:        row,
+					currentCat: categoryNameForPtr(beforeCat, catNames),
+					newCat:     categoryNameForPtr(workCat, catNames),
+					addedTags:  addedNames,
 				})
 			}
 		}
 
 		catChanged := !intPtrEqual(currentCat, workCat)
-		addedFinal, removedFinal := diffTagSets(currentTagSet, workTagSet)
-		if catChanged || len(addedFinal) > 0 || len(removedFinal) > 0 {
+		addedFinal, _ := diffTagSets(currentTagSet, workTagSet)
+		if catChanged || len(addedFinal) > 0 {
 			summary.totalModified++
 		}
 		if catChanged {
 			summary.totalCatChange++
 		}
-		summary.totalTagChange += len(addedFinal) + len(removedFinal)
+		summary.totalTagChange += len(addedFinal)
 	}
 	return results, summary
 }
@@ -1694,7 +1782,7 @@ func insertCategoryRule(db *sql.DB, pattern string, categoryID int) (int, error)
 	catID := categoryID
 	return insertRuleV2(db, ruleV2{
 		name:          fmt.Sprintf("Legacy category rule: %s", strings.TrimSpace(pattern)),
-		filterExpr:    legacyPatternExpr(pattern),
+		savedFilterID: legacyRuleExprPrefix + legacyPatternExpr(pattern),
 		setCategoryID: &catID,
 		enabled:       true,
 	})
@@ -1712,11 +1800,9 @@ func updateCategoryRule(db *sql.DB, id int, pattern string, categoryID int) erro
 		}
 		catID := categoryID
 		r.name = fmt.Sprintf("Legacy category rule: %s", strings.TrimSpace(pattern))
-		r.filterExpr = legacyPatternExpr(pattern)
-		r.parsedFilter = nil
+		r.savedFilterID = legacyRuleExprPrefix + legacyPatternExpr(pattern)
 		r.setCategoryID = &catID
 		r.addTagIDs = nil
-		r.removeTagIDs = nil
 		return updateRuleV2(db, r)
 	}
 	return fmt.Errorf("rule %d not found", id)
@@ -1736,7 +1822,7 @@ func applyCategoryRules(db *sql.DB) (int, error) {
 	}
 	legacy := make([]ruleV2, 0)
 	for _, r := range rules {
-		if r.setCategoryID == nil || len(r.addTagIDs) > 0 || len(r.removeTagIDs) > 0 {
+		if r.setCategoryID == nil || len(r.addTagIDs) > 0 {
 			continue
 		}
 		legacy = append(legacy, r)
@@ -1751,7 +1837,8 @@ func applyCategoryRules(db *sql.DB) (int, error) {
 			uncategorized = append(uncategorized, row)
 		}
 	}
-	catChanges, _, err := applyRulesV2ToRows(db, legacy, loadTransactionTagsOrEmpty(db), uncategorized)
+	resolved, _ := resolveRulesV2(legacy, nil)
+	_, catChanges, _, err := applyResolvedRulesV2ToRows(db, resolved, loadTransactionTagsOrEmpty(db), uncategorized)
 	if err != nil {
 		return 0, err
 	}
@@ -1881,12 +1968,12 @@ func loadTagRules(db *sql.DB) ([]tagRule, error) {
 		if r.setCategoryID != nil {
 			continue
 		}
-		if len(r.addTagIDs) != 1 || len(r.removeTagIDs) != 0 {
+		if len(r.addTagIDs) != 1 || !strings.HasPrefix(strings.TrimSpace(r.savedFilterID), legacyRuleExprPrefix) {
 			continue
 		}
 		out = append(out, tagRule{
 			id:       r.id,
-			pattern:  legacyPatternFromExpr(strings.TrimSpace(r.filterExpr)),
+			pattern:  legacyPatternFromExpr(strings.TrimSpace(strings.TrimPrefix(r.savedFilterID, legacyRuleExprPrefix))),
 			tagID:    r.addTagIDs[0],
 			priority: r.sortOrder,
 		})
@@ -1896,10 +1983,10 @@ func loadTagRules(db *sql.DB) ([]tagRule, error) {
 
 func insertTagRule(db *sql.DB, pattern string, tagID int) (int, error) {
 	return insertRuleV2(db, ruleV2{
-		name:       fmt.Sprintf("Legacy tag rule: %s", strings.TrimSpace(pattern)),
-		filterExpr: legacyPatternExpr(pattern),
-		addTagIDs:  []int{tagID},
-		enabled:    true,
+		name:          fmt.Sprintf("Legacy tag rule: %s", strings.TrimSpace(pattern)),
+		savedFilterID: legacyRuleExprPrefix + legacyPatternExpr(pattern),
+		addTagIDs:     []int{tagID},
+		enabled:       true,
 	})
 }
 
@@ -2038,12 +2125,12 @@ func applyTagRules(db *sql.DB) (int, error) {
 		if r.setCategoryID != nil {
 			continue
 		}
-		if len(r.addTagIDs) == 0 && len(r.removeTagIDs) == 0 {
+		if len(r.addTagIDs) == 0 {
 			continue
 		}
 		legacy = append(legacy, r)
 	}
-	_, tagChanges, err := applyRulesV2ToScope(db, legacy, loadTransactionTagsOrEmpty(db), nil)
+	_, _, tagChanges, _, err := applyRulesV2ToScope(db, legacy, loadTransactionTagsOrEmpty(db), nil, nil)
 	if err != nil {
 		return 0, err
 	}
@@ -2382,7 +2469,7 @@ func loadDBInfo(db *sql.DB) (dbInfo, error) {
 		SELECT COUNT(*)
 		FROM rules_v2
 		WHERE set_category_id IS NULL
-		  AND (add_tag_ids <> '[]' OR remove_tag_ids <> '[]')
+		  AND add_tag_ids <> '[]'
 	`).Scan(&info.tagRuleCount); err != nil {
 		return info, fmt.Errorf("tag rule count: %w", err)
 	}

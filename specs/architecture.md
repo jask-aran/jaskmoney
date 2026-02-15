@@ -891,15 +891,19 @@ Rationale:
 **v0.4 note:** `tag_rules` table reference here will be dropped when rules v2
 lands (Phase 3). Tag normalization contract remains unchanged.
 
-### 5.4 Schema v5 Migration Policy
+### 5.4 Schema v6 Migration Policy
 
-**v0.4 introduces schema v5.** Migration happens in a single transactional
-function `migrateFromV4ToV5(db)`.
+**v0.4 now targets schema v6.** Migration runs transactionally through:
+- `migrateFromV4ToV5(db)` for base v0.4 tables/budgets
+- `migrateFromV5ToV6(db)` for rules v2 contract update (`saved_filter_id`,
+  add-only tags)
 
 **What changes:**
 
 - **Rules v1 fresh start:** `category_rules` and `tag_rules` tables are
-  dropped. Users rebuild rules using rules v2.
+  dropped.
+- **Rules v2 reset at v6:** existing `rules_v2` rows are dropped/recreated so
+  users rebuild rules with saved-filter links.
 - **New tables added:** `rules_v2`, `category_budgets`,
   `category_budget_overrides`, `spending_targets`, `spending_target_overrides`,
   `credit_offsets`.
@@ -911,7 +915,7 @@ function `migrateFromV4ToV5(db)`.
 - Each create/drop/index statement uses defensive `IF EXISTS`/`IF NOT EXISTS`
   forms.
 - Migration runs in a transaction; any failure rolls back all changes.
-- `schema_meta.version = 5` is written only after all preceding steps succeed.
+- `schema_meta.version = 6` is written only after all preceding steps succeed.
 - Migration function tolerates partially-upgraded dev DBs (missing old tables,
   already-created new tables, partially-created indexes).
 
@@ -924,9 +928,9 @@ migration retry scenarios.
 
 **Test matrix:**
 
-- Fresh database bootstrap to v5.
-- Existing v4 production-shaped DB migration to v5.
-- Partially-upgraded DB fixture migration retry to v5 (idempotency path).
+- Fresh database bootstrap to v6.
+- Existing v4 production-shaped DB migration to v6.
+- Partially-upgraded DB fixture migration retry to v6 (idempotency path).
 
 **Reference:** See `specs/v0.4-spec.md` Schema v5 Migration Plan for full SQL
 and migration timing.
@@ -942,10 +946,9 @@ rules.
 CREATE TABLE rules_v2 (
     id              INTEGER PRIMARY KEY AUTOINCREMENT,
     name            TEXT NOT NULL,
-    filter_expr     TEXT NOT NULL,
+    saved_filter_id TEXT NOT NULL,
     set_category_id INTEGER REFERENCES categories(id) ON DELETE SET NULL,
     add_tag_ids     TEXT NOT NULL DEFAULT '[]',
-    remove_tag_ids  TEXT NOT NULL DEFAULT '[]',
     sort_order      INTEGER NOT NULL DEFAULT 0,
     enabled         INTEGER NOT NULL DEFAULT 1
 );
@@ -955,12 +958,11 @@ CREATE TABLE rules_v2 (
 
 1. Rules apply in `sort_order` ascending (manual user ordering).
 2. All matching rules fire (not just first match).
-3. For each enabled rule, evaluate `filter_expr` (parsed `filterNode`) against
-   the transaction.
+3. For each enabled rule, resolve `saved_filter_id` to a saved filter
+   expression and evaluate against the transaction.
 4. If matched:
    - If `set_category_id != NULL`, set category (last writer wins).
-   - If `add_tag_ids` non-empty, add tags (accumulative).
-   - If `remove_tag_ids` non-empty, remove tags (accumulative).
+   - If `add_tag_ids` non-empty, add tags (accumulative; add-only policy).
 5. After all rules, write final category + tags to DB.
 
 **Target scope:**
@@ -973,17 +975,19 @@ CREATE TABLE rules_v2 (
 **Disabled rules:** `enabled = 0` rules are skipped in apply and dry-run but
 shown in Settings list as dimmed.
 
+**Broken references:** if `saved_filter_id` points to a missing/invalid saved
+filter, the rule is skipped in apply/dry-run/import and counted as a failed
+rule in summaries. Rules list renders these rows in red.
+
 **Go type:**
 
 ```go
 type ruleV2 struct {
     id            int
     name          string
-    filterExpr    string       // raw text
-    parsedFilter  *filterNode  // parsed at load time
+    savedFilterID string
     setCategoryID *int
     addTagIDs     []int
-    removeTagIDs  []int
     sortOrder     int
     enabled       bool
 }

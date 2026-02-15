@@ -77,6 +77,12 @@ type ingestDoneMsg struct {
 	dupes int
 	err   error
 	file  string
+
+	rulesApplied    bool
+	rulesTxnUpdated int
+	rulesCatChanges int
+	rulesTagChanges int
+	rulesFailed     int
 }
 
 type refreshDoneMsg struct {
@@ -138,17 +144,20 @@ type ruleDeletedMsg struct {
 }
 
 type rulesAppliedMsg struct {
-	catChanges int
-	tagChanges int
-	scope      string
-	err        error
+	updatedTxns int
+	catChanges  int
+	tagChanges  int
+	failedRules int
+	scope       string
+	err         error
 }
 
 type rulesDryRunMsg struct {
-	results []dryRunRuleResult
-	summary dryRunSummary
-	scope   string
-	err     error
+	results     []dryRunRuleResult
+	summary     dryRunSummary
+	failedRules int
+	scope       string
+	err         error
 }
 
 type settingsSavedMsg struct {
@@ -385,20 +394,19 @@ type model struct {
 	confirmFilterID string                // filter ID for pending filter delete confirm
 
 	// Rule editor modal (rules v2)
-	ruleEditorOpen    bool
-	ruleEditorStep    int
-	ruleEditorID      int
-	ruleEditorName    string
-	ruleEditorFilter  string
-	ruleEditorCatID   *int
-	ruleEditorAddTags []int
-	ruleEditorRemTags []int
-	ruleEditorEnabled bool
-	ruleEditorNameCur int
-	ruleEditorExprCur int
-	ruleEditorCatCur  int
-	ruleEditorTagCur  int
-	ruleEditorErr     string
+	ruleEditorOpen            bool
+	ruleEditorStep            int
+	ruleEditorID              int
+	ruleEditorName            string
+	ruleEditorFilterID        string
+	ruleEditorCatID           *int
+	ruleEditorAddTags         []int
+	ruleEditorEnabled         bool
+	ruleEditorNameCur         int
+	ruleEditorErr             string
+	ruleEditorPickingFilter   bool
+	ruleEditorPickingCategory bool
+	ruleEditorPickingTags     bool
 
 	// Dry-run modal
 	dryRunOpen       bool

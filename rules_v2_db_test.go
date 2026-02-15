@@ -7,7 +7,7 @@ import (
 	"testing"
 )
 
-func TestOpenDBCreatesV5SchemaRulesV2(t *testing.T) {
+func TestOpenDBCreatesV6SchemaRulesV2(t *testing.T) {
 	db, cleanup := testDB(t)
 	defer cleanup()
 
@@ -15,8 +15,8 @@ func TestOpenDBCreatesV5SchemaRulesV2(t *testing.T) {
 	if err := db.QueryRow("SELECT version FROM schema_meta LIMIT 1").Scan(&ver); err != nil {
 		t.Fatalf("query schema version: %v", err)
 	}
-	if ver != 5 {
-		t.Fatalf("schema version = %d, want 5", ver)
+	if ver != 6 {
+		t.Fatalf("schema version = %d, want 6", ver)
 	}
 
 	tables := []string{
@@ -56,7 +56,7 @@ func TestOpenDBCreatesV5SchemaRulesV2(t *testing.T) {
 	}
 }
 
-func TestMigrateFromV4ToV5PreservesDataAndDropsLegacyRules(t *testing.T) {
+func TestMigrateFromV4ToV6PreservesDataAndDropsLegacyRules(t *testing.T) {
 	f, err := os.CreateTemp("", "jaskmoney-v4-*.db")
 	if err != nil {
 		t.Fatalf("create temp: %v", err)
@@ -169,8 +169,8 @@ func TestMigrateFromV4ToV5PreservesDataAndDropsLegacyRules(t *testing.T) {
 	if err := upgraded.QueryRow("SELECT version FROM schema_meta LIMIT 1").Scan(&ver); err != nil {
 		t.Fatalf("query version after migrate: %v", err)
 	}
-	if ver != 5 {
-		t.Fatalf("schema version after migrate = %d, want 5", ver)
+	if ver != 6 {
+		t.Fatalf("schema version after migrate = %d, want 6", ver)
 	}
 
 	var txnCount, tagCount, accountCount, importCount int
@@ -211,8 +211,8 @@ func TestRulesV2CRUDReorderToggle(t *testing.T) {
 	}
 	groceries := cats[1].id
 
-	r1 := ruleV2{name: "grocery", filterExpr: `desc:grocery`, setCategoryID: &groceries, enabled: true}
-	r2 := ruleV2{name: "transfer", filterExpr: `desc:transfer`, enabled: true}
+	r1 := ruleV2{name: "grocery", savedFilterID: "filter-grocery", setCategoryID: &groceries, enabled: true}
+	r2 := ruleV2{name: "transfer", savedFilterID: "filter-transfer", enabled: true}
 
 	id1, err := insertRuleV2(db, r1)
 	if err != nil {
@@ -331,25 +331,35 @@ func TestApplyRulesV2ToScope_OrderCategoryAndTagSemantics(t *testing.T) {
 	txnB := insertTxn(acctB, "GROCERY STORE")
 	txnTransfer := insertTxn(acctA, "TRANSFER SAV")
 
+	savedFilters := []savedFilter{
+		{ID: "filter-grocery", Name: "Grocery", Expr: `desc:grocery`},
+		{ID: "filter-transfer", Name: "Transfer", Expr: `desc:transfer`},
+	}
 	rules := []ruleV2{
-		{name: "r1", filterExpr: `desc:grocery`, parsedFilter: mustParseStrict(t, `desc:grocery`), setCategoryID: &groceries, addTagIDs: []int{oneTagID}, sortOrder: 0, enabled: true},
-		{name: "r2", filterExpr: `desc:grocery`, parsedFilter: mustParseStrict(t, `desc:grocery`), setCategoryID: &dining, addTagIDs: []int{twoTagID}, removeTagIDs: []int{oneTagID}, sortOrder: 1, enabled: true},
-		{name: "r3", filterExpr: `desc:transfer`, parsedFilter: mustParseStrict(t, `desc:transfer`), setCategoryID: &transfers, sortOrder: 2, enabled: false},
+		{name: "r1", savedFilterID: "filter-grocery", setCategoryID: &groceries, addTagIDs: []int{oneTagID}, sortOrder: 0, enabled: true},
+		{name: "r2", savedFilterID: "filter-grocery", setCategoryID: &dining, addTagIDs: []int{twoTagID}, sortOrder: 1, enabled: true},
+		{name: "r3", savedFilterID: "filter-transfer", setCategoryID: &transfers, sortOrder: 2, enabled: false},
 	}
 
 	txnTags, err := loadTransactionTags(db)
 	if err != nil {
 		t.Fatalf("load txn tags: %v", err)
 	}
-	catChanges, tagChanges, err := applyRulesV2ToScope(db, rules, txnTags, map[int]bool{acctA: true})
+	updatedTxns, catChanges, tagChanges, failedRules, err := applyRulesV2ToScope(db, rules, txnTags, map[int]bool{acctA: true}, savedFilters)
 	if err != nil {
 		t.Fatalf("apply rules: %v", err)
+	}
+	if updatedTxns != 1 {
+		t.Fatalf("updatedTxns = %d, want 1", updatedTxns)
 	}
 	if catChanges != 1 {
 		t.Fatalf("catChanges = %d, want 1", catChanges)
 	}
-	if tagChanges != 1 {
-		t.Fatalf("tagChanges = %d, want 1", tagChanges)
+	if tagChanges != 2 {
+		t.Fatalf("tagChanges = %d, want 2", tagChanges)
+	}
+	if failedRules != 0 {
+		t.Fatalf("failedRules = %d, want 0", failedRules)
 	}
 
 	rows, err := loadRows(db)
@@ -375,8 +385,8 @@ func TestApplyRulesV2ToScope_OrderCategoryAndTagSemantics(t *testing.T) {
 	if err != nil {
 		t.Fatalf("load txn tags after apply: %v", err)
 	}
-	if len(tagsAfter[txnA]) != 1 || tagsAfter[txnA][0].id != twoTagID {
-		t.Fatalf("txnA tags = %+v, want only tag TWO", tagsAfter[txnA])
+	if len(tagsAfter[txnA]) != 2 {
+		t.Fatalf("txnA tags = %+v, want TWO tags", tagsAfter[txnA])
 	}
 }
 
@@ -411,12 +421,14 @@ func TestDryRunRulesV2MatchesApplyAndDoesNotWrite(t *testing.T) {
 	rules := []ruleV2{
 		{
 			name:          "Groceries",
-			filterExpr:    `desc:grocery`,
-			parsedFilter:  mustParseStrict(t, `desc:grocery`),
+			savedFilterID: "filter-grocery",
 			setCategoryID: &groceries,
 			addTagIDs:     []int{weeklyTagID},
 			enabled:       true,
 		},
+	}
+	savedFilters := []savedFilter{
+		{ID: "filter-grocery", Name: "Groceries", Expr: `desc:grocery`},
 	}
 
 	beforeRows, err := loadRows(db)
@@ -428,7 +440,7 @@ func TestDryRunRulesV2MatchesApplyAndDoesNotWrite(t *testing.T) {
 		t.Fatalf("load tags before dry-run: %v", err)
 	}
 
-	dryResults, drySummary := dryRunRulesV2(db, rules, beforeRows, beforeTags)
+	dryResults, drySummary := dryRunRulesV2(db, rules, beforeRows, beforeTags, savedFilters)
 	if len(dryResults) != 1 {
 		t.Fatalf("dry-run results len = %d, want 1", len(dryResults))
 	}
@@ -446,9 +458,12 @@ func TestDryRunRulesV2MatchesApplyAndDoesNotWrite(t *testing.T) {
 		}
 	}
 
-	catChanges, tagChanges, err := applyRulesV2ToScope(db, rules, beforeTags, map[int]bool{acctID: true})
+	updatedTxns, catChanges, tagChanges, failedRules, err := applyRulesV2ToScope(db, rules, beforeTags, map[int]bool{acctID: true}, savedFilters)
 	if err != nil {
 		t.Fatalf("apply rules: %v", err)
+	}
+	if updatedTxns != drySummary.totalModified {
+		t.Fatalf("updated txns mismatch apply=%d dry=%d", updatedTxns, drySummary.totalModified)
 	}
 	if catChanges != drySummary.totalCatChange {
 		t.Fatalf("cat changes mismatch apply=%d dry=%d", catChanges, drySummary.totalCatChange)
@@ -456,13 +471,46 @@ func TestDryRunRulesV2MatchesApplyAndDoesNotWrite(t *testing.T) {
 	if tagChanges != drySummary.totalTagChange {
 		t.Fatalf("tag changes mismatch apply=%d dry=%d", tagChanges, drySummary.totalTagChange)
 	}
+	if failedRules != 0 {
+		t.Fatalf("failedRules = %d, want 0", failedRules)
+	}
 }
 
-func mustParseStrict(t *testing.T, expr string) *filterNode {
-	t.Helper()
-	node, err := parseFilterStrict(expr)
+func TestApplyRulesV2ToScopeSkipsMissingSavedFilters(t *testing.T) {
+	db, cleanup := testDB(t)
+	defer cleanup()
+
+	acctID, err := insertAccount(db, "A", "debit", true)
 	if err != nil {
-		t.Fatalf("parseFilterStrict(%q): %v", expr, err)
+		t.Fatalf("insert account: %v", err)
 	}
-	return node
+	cats, err := loadCategories(db)
+	if err != nil {
+		t.Fatalf("load categories: %v", err)
+	}
+	groceries := cats[1].id
+	if _, err := db.Exec(`
+		INSERT INTO transactions (date_raw, date_iso, amount, description, notes, account_id)
+		VALUES ('1/01/2026', '2026-01-01', -9.99, 'WOOLWORTHS', '', ?)
+	`, acctID); err != nil {
+		t.Fatalf("insert txn: %v", err)
+	}
+	txnTags, err := loadTransactionTags(db)
+	if err != nil {
+		t.Fatalf("load txn tags: %v", err)
+	}
+	rules := []ruleV2{
+		{name: "Missing", savedFilterID: "missing-filter", setCategoryID: &groceries, enabled: true},
+	}
+
+	updatedTxns, catChanges, tagChanges, failedRules, err := applyRulesV2ToScope(db, rules, txnTags, nil, nil)
+	if err != nil {
+		t.Fatalf("apply rules: %v", err)
+	}
+	if updatedTxns != 0 || catChanges != 0 || tagChanges != 0 {
+		t.Fatalf("unexpected changes updated=%d cat=%d tag=%d", updatedTxns, catChanges, tagChanges)
+	}
+	if failedRules != 1 {
+		t.Fatalf("failedRules = %d, want 1", failedRules)
+	}
 }

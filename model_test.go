@@ -243,7 +243,7 @@ func testSettingsModel() model {
 	}
 	catID := 2
 	m.rules = []ruleV2{
-		{id: 1, name: "Groceries", filterExpr: "desc:WOOLWORTHS", setCategoryID: &catID, sortOrder: 0, enabled: true},
+		{id: 1, name: "Groceries", savedFilterID: "filter-grocery", setCategoryID: &catID, sortOrder: 0, enabled: true},
 	}
 	m.imports = []importRecord{
 		{id: 1, filename: "test.csv", rowCount: 42, importedAt: "2026-02-06"},
@@ -488,7 +488,7 @@ func TestSettingsRuleItemNavigation(t *testing.T) {
 	m.settColumn = settColLeft
 	m.settActive = true
 	catID := 1
-	m.rules = append(m.rules, ruleV2{id: 2, name: "Dining", filterExpr: "desc:DAN", setCategoryID: &catID, sortOrder: 1, enabled: true})
+	m.rules = append(m.rules, ruleV2{id: 2, name: "Dining", savedFilterID: "filter-dining", setCategoryID: &catID, sortOrder: 1, enabled: true})
 	m.settItemCursor = 0
 
 	m2, _ := m.updateSettings(keyMsg("j"))

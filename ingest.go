@@ -25,7 +25,7 @@ type parsedCSVRow struct {
 // skipping duplicates, recording the import, and auto-applying category rules.
 // When skipDupes is true, duplicate rows are silently skipped; when false,
 // duplicates are imported anyway (force mode).
-func ingestCmd(db *sql.DB, filename, basePath string, formats []csvFormat, skipDupes bool) tea.Cmd {
+func ingestCmd(db *sql.DB, filename, basePath string, formats []csvFormat, savedFilters []savedFilter, skipDupes bool) tea.Cmd {
 	return func() tea.Msg {
 		path := filename
 		if !filepath.IsAbs(path) {
@@ -63,10 +63,23 @@ func ingestCmd(db *sql.DB, filename, basePath string, formats []csvFormat, skipD
 				if err != nil {
 					return ingestDoneMsg{count: count, dupes: dupes, err: err, file: base}
 				}
-				if _, _, err := applyRulesV2ToTxnIDs(db, rules, txnTags, txnIDs); err != nil {
+				updatedTxns, catChanges, tagChanges, failedRules, err := applyRulesV2ToTxnIDs(db, rules, txnTags, txnIDs, savedFilters)
+				if err != nil {
 					return ingestDoneMsg{count: count, dupes: dupes, err: err, file: base}
 				}
+				return ingestDoneMsg{
+					count:           count,
+					dupes:           dupes,
+					err:             nil,
+					file:            base,
+					rulesApplied:    true,
+					rulesTxnUpdated: updatedTxns,
+					rulesCatChanges: catChanges,
+					rulesTagChanges: tagChanges,
+					rulesFailed:     failedRules,
+				}
 			}
+			return ingestDoneMsg{count: count, dupes: dupes, err: nil, file: base, rulesApplied: true}
 		}
 		return ingestDoneMsg{count: count, dupes: dupes, err: nil, file: base}
 	}

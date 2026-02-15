@@ -598,38 +598,90 @@ func (m *model) openRuleEditor(rule *ruleV2) {
 	m.ruleEditorOpen = true
 	m.ruleEditorErr = ""
 	m.ruleEditorStep = 0
-	m.ruleEditorTagCur = 0
+	m.ruleEditorPickingFilter = false
+	m.ruleEditorPickingCategory = false
+	m.ruleEditorPickingTags = false
 	if rule == nil {
 		m.ruleEditorID = 0
 		m.ruleEditorName = ""
-		m.ruleEditorFilter = ""
+		m.ruleEditorFilterID = ""
 		m.ruleEditorCatID = nil
 		m.ruleEditorAddTags = nil
-		m.ruleEditorRemTags = nil
 		m.ruleEditorEnabled = true
 		m.ruleEditorNameCur = 0
-		m.ruleEditorExprCur = 0
-		m.ruleEditorCatCur = 0
 		return
 	}
 	m.ruleEditorID = rule.id
 	m.ruleEditorName = rule.name
-	m.ruleEditorFilter = rule.filterExpr
+	m.ruleEditorFilterID = rule.savedFilterID
 	m.ruleEditorCatID = copyIntPtr(rule.setCategoryID)
 	m.ruleEditorAddTags = append([]int(nil), rule.addTagIDs...)
-	m.ruleEditorRemTags = append([]int(nil), rule.removeTagIDs...)
 	m.ruleEditorEnabled = rule.enabled
 	m.ruleEditorNameCur = len(m.ruleEditorName)
-	m.ruleEditorExprCur = len(m.ruleEditorFilter)
-	m.ruleEditorCatCur = 0
+}
+
+func (m *model) openRuleFilterPicker() {
+	if m == nil {
+		return
+	}
+	m.openFilterApplyPicker("")
+	if m.filterApplyPicker != nil {
+		m.filterApplyPicker.title = "Select Saved Filter"
+	}
+	m.ruleEditorPickingFilter = true
+}
+
+func (m *model) openRuleCategoryPicker() {
+	if m == nil {
+		return
+	}
+	items := make([]pickerItem, 0, len(m.categories)+1)
+	items = append(items, pickerItem{ID: 0, Label: "No category change"})
+	for _, c := range m.categories {
+		items = append(items, pickerItem{ID: c.id, Label: c.name, Color: c.color})
+	}
+	p := newPicker("Rule Category", items, false, "")
+	p.cursorOnly = true
 	if m.ruleEditorCatID != nil {
-		for i, cat := range m.categories {
-			if cat.id == *m.ruleEditorCatID {
-				m.ruleEditorCatCur = i + 1
+		for i, item := range p.filtered {
+			if item.ID == *m.ruleEditorCatID {
+				p.cursor = i
 				break
 			}
 		}
 	}
+	m.catPicker = p
+	m.ruleEditorPickingCategory = true
+}
+
+func (m *model) openRuleTagPicker() {
+	if m == nil {
+		return
+	}
+	items := make([]pickerItem, 0, len(m.tags))
+	for _, tg := range m.tags {
+		section := "Global"
+		if tg.categoryID != nil {
+			if m.ruleEditorCatID != nil && *tg.categoryID == *m.ruleEditorCatID {
+				section = "Scoped"
+			} else {
+				section = "Unscoped"
+			}
+		}
+		items = append(items, pickerItem{
+			ID:      tg.id,
+			Label:   tg.name,
+			Color:   tg.color,
+			Section: section,
+		})
+	}
+	p := newPicker("Rule Tags", items, true, "")
+	p.cursorOnly = true
+	for _, id := range m.ruleEditorAddTags {
+		p.selected[id] = true
+	}
+	m.tagPicker = p
+	m.ruleEditorPickingTags = true
 }
 
 func toggleIntSelection(ids *[]int, value int) {
@@ -659,42 +711,31 @@ func (m model) normalizeRuleEditorSelections() {
 	}
 	sort.Ints(outAdd)
 	m.ruleEditorAddTags = outAdd
-
-	uniqRem := make(map[int]bool)
-	outRem := make([]int, 0, len(m.ruleEditorRemTags))
-	for _, id := range m.ruleEditorRemTags {
-		if id <= 0 || uniqRem[id] {
-			continue
-		}
-		uniqRem[id] = true
-		outRem = append(outRem, id)
-	}
-	sort.Ints(outRem)
-	m.ruleEditorRemTags = outRem
 }
 
 func (m model) updateRuleEditor(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	keyName := normalizeKeyName(msg.String())
+	const totalSteps = 5
 	switch {
 	case m.isAction(scopeRuleEditor, actionClose, msg):
 		m.ruleEditorOpen = false
 		m.ruleEditorErr = ""
+		m.ruleEditorPickingFilter = false
+		m.ruleEditorPickingCategory = false
+		m.ruleEditorPickingTags = false
 		return m, nil
 	case keyName == "tab":
-		m.ruleEditorStep = (m.ruleEditorStep + 1) % 6
+		m.ruleEditorStep = (m.ruleEditorStep + 1) % totalSteps
 		m.ruleEditorErr = ""
 		return m, nil
 	case keyName == "shift+tab":
-		m.ruleEditorStep = (m.ruleEditorStep - 1 + 6) % 6
+		m.ruleEditorStep = (m.ruleEditorStep - 1 + totalSteps) % totalSteps
 		m.ruleEditorErr = ""
 		return m, nil
-	}
-
-	advanceStep := func() {
-		if m.ruleEditorStep < 5 {
-			m.ruleEditorStep++
-			m.ruleEditorErr = ""
-		}
+	case m.verticalDelta(scopeRuleEditor, msg) != 0:
+		m.ruleEditorStep = (m.ruleEditorStep + m.verticalDelta(scopeRuleEditor, msg) + totalSteps) % totalSteps
+		m.ruleEditorErr = ""
+		return m, nil
 	}
 
 	saveRule := func() (tea.Model, tea.Cmd) {
@@ -706,19 +747,32 @@ func (m model) updateRuleEditor(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			m.ruleEditorStep = 0
 			return m, nil
 		}
-		if _, err := parseFilterStrict(strings.TrimSpace(m.ruleEditorFilter)); err != nil {
-			m.ruleEditorErr = fmt.Sprintf("Invalid filter: %v", err)
+		filterID := strings.TrimSpace(m.ruleEditorFilterID)
+		if filterID == "" {
+			m.ruleEditorErr = "Saved filter is required."
 			m.ruleEditorStep = 1
 			return m, nil
+		}
+		if !strings.HasPrefix(filterID, legacyRuleExprPrefix) {
+			sf, ok := m.findSavedFilterByID(filterID)
+			if !ok {
+				m.ruleEditorErr = fmt.Sprintf("Saved filter %q not found.", filterID)
+				m.ruleEditorStep = 1
+				return m, nil
+			}
+			if _, err := parseFilterStrict(strings.TrimSpace(sf.Expr)); err != nil {
+				m.ruleEditorErr = fmt.Sprintf("Saved filter %q is invalid: %v", sf.ID, err)
+				m.ruleEditorStep = 1
+				return m, nil
+			}
 		}
 		m.normalizeRuleEditorSelections()
 		rule := ruleV2{
 			id:            m.ruleEditorID,
 			name:          strings.TrimSpace(m.ruleEditorName),
-			filterExpr:    strings.TrimSpace(m.ruleEditorFilter),
+			savedFilterID: filterID,
 			setCategoryID: copyIntPtr(m.ruleEditorCatID),
 			addTagIDs:     append([]int(nil), m.ruleEditorAddTags...),
-			removeTagIDs:  append([]int(nil), m.ruleEditorRemTags...),
 			enabled:       m.ruleEditorEnabled,
 		}
 		if rule.id > 0 {
@@ -747,7 +801,7 @@ func (m model) updateRuleEditor(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	case 0:
 		switch keyName {
 		case "enter":
-			advanceStep()
+			m.ruleEditorStep = 1
 			return m, nil
 		case "left":
 			moveInputCursorASCII(m.ruleEditorName, &m.ruleEditorNameCur, -1)
@@ -764,62 +818,21 @@ func (m model) updateRuleEditor(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			}
 		}
 	case 1:
-		switch keyName {
-		case "enter":
-			advanceStep()
+		if keyName == "enter" {
+			m.openRuleFilterPicker()
 			return m, nil
-		case "left":
-			moveInputCursorASCII(m.ruleEditorFilter, &m.ruleEditorExprCur, -1)
-			return m, nil
-		case "right":
-			moveInputCursorASCII(m.ruleEditorFilter, &m.ruleEditorExprCur, 1)
-			return m, nil
-		case "backspace":
-			deleteASCIIByteBeforeCursor(&m.ruleEditorFilter, &m.ruleEditorExprCur)
-			return m, nil
-		default:
-			if insertPrintableASCIIAtCursor(&m.ruleEditorFilter, &m.ruleEditorExprCur, msg.String()) {
-				return m, nil
-			}
 		}
 	case 2:
-		maxItems := len(m.categories) + 1 // includes "no category"
-		if maxItems < 1 {
-			maxItems = 1
-		}
-		if m.verticalDelta(scopeRuleEditor, msg) != 0 {
-			m.ruleEditorCatCur = moveBoundedCursor(m.ruleEditorCatCur, maxItems, m.verticalDelta(scopeRuleEditor, msg))
-			if m.ruleEditorCatCur == 0 {
-				m.ruleEditorCatID = nil
-			} else if m.ruleEditorCatCur-1 < len(m.categories) {
-				id := m.categories[m.ruleEditorCatCur-1].id
-				m.ruleEditorCatID = &id
-			}
-			return m, nil
-		}
 		if keyName == "enter" {
-			advanceStep()
+			m.openRuleCategoryPicker()
 			return m, nil
 		}
-	case 3, 4:
-		if len(m.tags) > 0 && m.verticalDelta(scopeRuleEditor, msg) != 0 {
-			m.ruleEditorTagCur = moveBoundedCursor(m.ruleEditorTagCur, len(m.tags), m.verticalDelta(scopeRuleEditor, msg))
-			return m, nil
-		}
-		if m.isAction(scopeRuleEditor, actionToggleSelect, msg) && len(m.tags) > 0 && m.ruleEditorTagCur < len(m.tags) {
-			tagID := m.tags[m.ruleEditorTagCur].id
-			if m.ruleEditorStep == 3 {
-				toggleIntSelection(&m.ruleEditorAddTags, tagID)
-			} else {
-				toggleIntSelection(&m.ruleEditorRemTags, tagID)
-			}
-			return m, nil
-		}
+	case 3:
 		if keyName == "enter" {
-			advanceStep()
+			m.openRuleTagPicker()
 			return m, nil
 		}
-	case 5:
+	case 4:
 		if m.horizontalDelta(scopeRuleEditor, msg) != 0 || m.isAction(scopeRuleEditor, actionToggleSelect, msg) {
 			m.ruleEditorEnabled = !m.ruleEditorEnabled
 			return m, nil
