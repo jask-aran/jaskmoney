@@ -1672,6 +1672,18 @@ Concrete learnings from shipped work:
   msg)`, bypassing the keybinding registry. This meant user-configured key
   overrides had no effect on navigation in that one editor. Consistency rule:
   all handlers should resolve keys through actions, not check raw key names.
+- **Footer bloat hides context-specific actions.** Initial v0.32.4 pass
+  attempted to show paired shift-key variants (s/S-s, g/G-g) in combined hints,
+  but this was incompatible with `key.HelpBindings()` — each binding renders as
+  `prettyKey + helpText`, causing doubling (e.g., "S-k S-k/S-j reorder").
+  Reverted to discrete bindings and fought bloat by hiding generic/implied
+  actions: navigation (up/down), modal close (esc), confirm (enter), tab
+  switches. Shortened verbose help: "quick cat" → "cat", "toggle sel" → "",
+  "apply filter" → "load". Result: transactions footer reduced from 12 items to
+  10, settings nav from 4 to 1 (only "i import" shown). Shift-key actions (S,
+  G, K, J) show independently with short labels ("reverse", "bottom", "move
+  up", "move down"). Phase 7's contract-driven footer system will enable
+  combined display hints without HelpBindings limitations.
 
 ## 10. Open Backlog
 

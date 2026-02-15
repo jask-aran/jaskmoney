@@ -87,8 +87,8 @@ func TestKeyRegistryScopeHelpOrder(t *testing.T) {
 	for _, b := range transactions {
 		txnKeys = append(txnKeys, b.Help().Key)
 	}
-	// Hidden entries (empty help): S (sort dir), G (bottom), up/down, tab, q
-	wantTxn := []string{"/", "ctrl+s", "ctrl+l", "s", "c", "t", "space", "shift+up/down", "u", "g", "esc", "enter"}
+	// Hidden entries (empty help): S (sort dir), G (bottom), space, shift+up/down, esc, enter, up/down, tab, q
+	wantTxn := []string{"/", "ctrl+s", "ctrl+l", "s", "S", "c", "t", "u", "g", "G"}
 	if len(txnKeys) != len(wantTxn) {
 		t.Fatalf("transactions help count = %d, want %d (%v)", len(txnKeys), len(wantTxn), txnKeys)
 	}
@@ -103,7 +103,8 @@ func TestKeyRegistryScopeHelpOrder(t *testing.T) {
 	for _, b := range filterInput {
 		filterKeys = append(filterKeys, b.Help().Key)
 	}
-	wantFilter := []string{"ctrl+s", "ctrl+l", "esc", "enter"}
+	// Hidden: esc, enter
+	wantFilter := []string{"ctrl+s", "ctrl+l"}
 	if len(filterKeys) != len(wantFilter) {
 		t.Fatalf("filter input help count = %d, want %d (%v)", len(filterKeys), len(wantFilter), filterKeys)
 	}
@@ -118,8 +119,8 @@ func TestKeyRegistryScopeHelpOrder(t *testing.T) {
 	for _, b := range settingsNav {
 		navKeys = append(navKeys, b.Help().Key)
 	}
-	// Navigation keys (h/l/k/j) have empty help (hidden from footer), only actions shown
-	wantNav := []string{"enter", "i", "tab", "q"}
+	// Navigation keys (h/l/k/j/enter/tab/q) all hidden, only unique action shown
+	wantNav := []string{"i"}
 	if len(navKeys) != len(wantNav) {
 		t.Fatalf("settings nav help count = %d, want %d (%v)", len(navKeys), len(wantNav), navKeys)
 	}
