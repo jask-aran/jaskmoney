@@ -292,6 +292,8 @@ For PRs, include:
 
 11. **Single uppercase letters in keybindings need S- prefix.** If registering a shifted letter (e.g., `"K"`, `"J"`, `"A"`), the footer will show it as `S-k`, `S-j`, `S-a` to distinguish from lowercase bindings. This is automatic via `prettyHelpKey`.
 
+12. **Fight footer bloat by hiding generic/implied actions.** Navigation (up/down/left/right/j/k/h/l), modal close (esc), confirm (enter), and tab switches should have empty help text. Show only context-specific or unique actions. Keep help text short ("cat" not "quick cat", "load" not "apply filter"). Phase 7's contract system will enable smarter display grouping.
+
 ## Agent Best Practices
 
 1. **Always check specifications first** before asking clarifying questions. The answer is usually in `specs/architecture.md` or `specs/v0.4-spec.md`.
