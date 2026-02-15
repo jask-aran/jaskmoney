@@ -250,6 +250,12 @@ func (m model) updateManagerModal(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	case m.isAction(scopeManagerModal, actionClose, msg):
 		m.closeManagerAccountModal()
 		return m, nil
+	case keyName == "tab":
+		m.managerEditFocus = (m.managerEditFocus + 1) % 4
+		return m, nil
+	case keyName == "shift+tab":
+		m.managerEditFocus = (m.managerEditFocus - 1 + 4) % 4
+		return m, nil
 	case m.verticalDelta(scopeManagerModal, msg) != 0:
 		delta := m.verticalDelta(scopeManagerModal, msg)
 		if delta > 0 {

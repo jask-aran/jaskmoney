@@ -209,20 +209,15 @@ func TestPhase5FooterBindingsUseCategoryPickerScope(t *testing.T) {
 	m.catPicker = newPicker("Quick Categorize", nil, false, "")
 
 	bindings := m.footerBindings()
-	if len(bindings) != 4 {
-		t.Fatalf("footer bindings count = %d, want 4", len(bindings))
+	// Category picker: up/down have empty help (hidden), only apply+cancel shown
+	if len(bindings) != 2 {
+		t.Fatalf("footer bindings count = %d, want 2", len(bindings))
 	}
-	if bindings[0].Help().Key != "k" {
-		t.Fatalf("footer[0] key = %q, want %q", bindings[0].Help().Key, "k")
+	if bindings[0].Help().Key != "enter" {
+		t.Fatalf("footer[0] key = %q, want %q", bindings[0].Help().Key, "enter")
 	}
-	if bindings[1].Help().Key != "j" {
-		t.Fatalf("footer[1] key = %q, want %q", bindings[1].Help().Key, "j")
-	}
-	if bindings[2].Help().Key != "enter" {
-		t.Fatalf("footer[2] key = %q, want %q", bindings[2].Help().Key, "enter")
-	}
-	if bindings[3].Help().Key != "esc" {
-		t.Fatalf("footer[3] key = %q, want %q", bindings[3].Help().Key, "esc")
+	if bindings[1].Help().Key != "esc" {
+		t.Fatalf("footer[1] key = %q, want %q", bindings[1].Help().Key, "esc")
 	}
 }
 

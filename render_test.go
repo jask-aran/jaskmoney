@@ -1237,3 +1237,39 @@ func TestRenderStatusError(t *testing.T) {
 		t.Error("error status should look different from normal status")
 	}
 }
+
+func TestPrettyHelpKeyShiftPreservation(t *testing.T) {
+	cases := []struct {
+		in, want string
+	}{
+		{"K", "S-k"},
+		{"J", "S-j"},
+		{"A", "S-a"},
+		{"D", "S-d"},
+		{"S", "S-s"},
+		{"G", "S-g"},
+		// Lowercase should NOT get S- prefix
+		{"k", "k"},
+		{"j", "j"},
+		{"a", "a"},
+		// Arrow keys should still get symbols
+		{"up", "↑"},
+		{"down", "↓"},
+		{"left", "←"},
+		{"right", "→"},
+		// Multi-char combos
+		{"ctrl+p", "↑/↓"},
+		{"shift+up/down", "⇧↑/⇧↓"},
+		{"enter", "enter"},
+		{"esc", "esc"},
+		{"space", "space"},
+		{"tab", "tab"},
+		{"del", "del"},
+	}
+	for _, tc := range cases {
+		got := prettyHelpKey(tc.in)
+		if got != tc.want {
+			t.Errorf("prettyHelpKey(%q) = %q, want %q", tc.in, got, tc.want)
+		}
+	}
+}
