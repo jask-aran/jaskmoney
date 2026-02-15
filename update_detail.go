@@ -115,8 +115,9 @@ func (m model) updateDetail(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	case m.isAction(scopeDetailModal, actionQuit, msg) || m.isAction(scopeGlobal, actionQuit, msg):
 		return m, tea.Quit
 	case m.isAction(scopeDetailModal, actionEdit, msg):
-		// Switch to notes editing
+		// Switch to notes editing; place cursor at end.
 		m.detailEditing = "notes"
+		m.detailNotesCursor = len(m.detailNotes)
 		return m, nil
 	case m.isAction(scopeDetailModal, actionSelect, msg):
 		// Save notes only.
@@ -133,6 +134,7 @@ func (m model) updateDetail(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 }
 
 func (m model) updateDetailNotes(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
+	keyName := normalizeKeyName(msg.String())
 	switch {
 	case m.isAction(scopeDetailModal, actionClose, msg):
 		m.showDetail = false
@@ -142,10 +144,16 @@ func (m model) updateDetailNotes(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		m.detailEditing = ""
 		return m, nil
 	case isBackspaceKey(msg):
-		deleteLastASCIIByte(&m.detailNotes)
+		deleteASCIIByteBeforeCursor(&m.detailNotes, &m.detailNotesCursor)
+		return m, nil
+	case keyName == "left":
+		moveInputCursorASCII(m.detailNotes, &m.detailNotesCursor, -1)
+		return m, nil
+	case keyName == "right":
+		moveInputCursorASCII(m.detailNotes, &m.detailNotesCursor, 1)
 		return m, nil
 	default:
-		appendPrintableASCII(&m.detailNotes, msg.String())
+		insertPrintableASCIIAtCursor(&m.detailNotes, &m.detailNotesCursor, msg.String())
 		return m, nil
 	}
 }

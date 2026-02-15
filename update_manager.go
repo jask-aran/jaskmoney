@@ -164,6 +164,8 @@ func (m *model) openManagerAccountModal(isNew bool, acc *account) {
 		m.managerEditType = "debit"
 		m.managerEditPrefix = ""
 		m.managerEditActive = true
+		m.managerEditNameCur = 0
+		m.managerEditPrefixCur = 0
 		return
 	}
 	m.managerEditID = acc.id
@@ -180,6 +182,8 @@ func (m *model) openManagerAccountModal(isNew bool, acc *account) {
 		}
 	}
 	m.managerEditActive = acc.isActive
+	m.managerEditNameCur = len(m.managerEditName)
+	m.managerEditPrefixCur = len(m.managerEditPrefix)
 }
 
 func (m *model) closeManagerAccountModal() {
@@ -206,23 +210,36 @@ func (m model) updateManagerModal(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			// fall through to normal save path below
 		case "backspace":
 			if m.managerEditFocus == 0 {
-				deleteLastASCIIByte(&m.managerEditName)
+				deleteASCIIByteBeforeCursor(&m.managerEditName, &m.managerEditNameCur)
 			}
 			if m.managerEditFocus == 2 {
-				deleteLastASCIIByte(&m.managerEditPrefix)
+				deleteASCIIByteBeforeCursor(&m.managerEditPrefix, &m.managerEditPrefixCur)
 			}
 			return m, nil
-		case "left", "right":
-			// Horizontal arrows do nothing while editing free text.
+		case "left":
+			if m.managerEditFocus == 0 {
+				moveInputCursorASCII(m.managerEditName, &m.managerEditNameCur, -1)
+			}
+			if m.managerEditFocus == 2 {
+				moveInputCursorASCII(m.managerEditPrefix, &m.managerEditPrefixCur, -1)
+			}
+			return m, nil
+		case "right":
+			if m.managerEditFocus == 0 {
+				moveInputCursorASCII(m.managerEditName, &m.managerEditNameCur, 1)
+			}
+			if m.managerEditFocus == 2 {
+				moveInputCursorASCII(m.managerEditPrefix, &m.managerEditPrefixCur, 1)
+			}
 			return m, nil
 		default:
 			if m.managerEditFocus == 0 {
-				if appendPrintableASCII(&m.managerEditName, msg.String()) {
+				if insertPrintableASCIIAtCursor(&m.managerEditName, &m.managerEditNameCur, msg.String()) {
 					return m, nil
 				}
 			}
 			if m.managerEditFocus == 2 {
-				if appendPrintableASCII(&m.managerEditPrefix, msg.String()) {
+				if insertPrintableASCIIAtCursor(&m.managerEditPrefix, &m.managerEditPrefixCur, msg.String()) {
 					return m, nil
 				}
 			}
@@ -254,10 +271,10 @@ func (m model) updateManagerModal(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		return m, nil
 	case isBackspaceKey(msg):
 		if m.managerEditFocus == 0 {
-			deleteLastASCIIByte(&m.managerEditName)
+			deleteASCIIByteBeforeCursor(&m.managerEditName, &m.managerEditNameCur)
 		}
 		if m.managerEditFocus == 2 {
-			deleteLastASCIIByte(&m.managerEditPrefix)
+			deleteASCIIByteBeforeCursor(&m.managerEditPrefix, &m.managerEditPrefixCur)
 		}
 		return m, nil
 	case m.isAction(scopeManagerModal, actionConfirm, msg):

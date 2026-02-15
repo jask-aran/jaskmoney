@@ -202,41 +202,68 @@ Ownership rule:
 
 ### 3.2 Dispatcher Priority and Modal Precedence
 
-`update.go` defines authoritative key precedence. Topmost overlay wins.
+Overlay precedence is the single most critical architectural invariant.
+Three consumers must agree on the same priority order:
 
-**v0.4 target precedence order:**
+1. `Update()` in `update.go` — finds the active handler for a `tea.KeyMsg`
+2. `footerBindings()` in `app.go` — finds the active scope for footer hints
+3. `commandContextScope()` in `commands.go` — finds the active scope for
+   command availability
+
+**Shared dispatch table (v0.32.3+):** These three consumers now read from a
+single shared data structure defined in `dispatch.go`:
+
+- `overlayEntry` struct — declares guard, scope, handler, and which consumers
+  use each entry (`forFooter`, `forCommandScope`).
+- `overlayPrecedence()` — returns the authoritative ordered table. This is a
+  function (not a `var`) to avoid Go initialization cycles from handler
+  closures.
+- `dispatchOverlayKey()` — used by `Update()` to find and call the first
+  matching overlay handler.
+- `activeOverlayScope()` — used by `footerBindings()` and
+  `commandContextScope()` to find the first matching overlay scope.
+
+**Adding a new overlay/modal:** Add one `overlayEntry` in the correct priority
+position in `overlayPrecedence()`. All three consumers automatically stay in
+sync. Then add a `modalTextContracts` entry if the modal has text fields
+(see §3.3).
+
+**Two-tier dispatch:** The table covers overlay/modal precedence (primary
+tier). Tab-level sub-state routing (secondary tier) uses `tabScope()` and
+`settingsTabScope()` helpers in `dispatch.go`, called by each consumer after
+the overlay table finds no match.
+
+**v0.4 target precedence order (primary tier):**
 
 1. **jump overlay** [v0.4 new] — `jumpModeActive` → `updateJumpOverlay`
 2. **command UI** — `commandOpen` → `updateCommandUI` (palette or colon mode)
 3. **detail modal** — `showDetail` → `updateDetail`
 4. **offset picker** [v0.4 new] — `offsetLinking` → `updateOffsetPicker`
-5. **import preview** [v0.4 new] — `importPreviewOpen` → `updateImportPreview`
-   (replaces `importDupeModal`)
+5. **import dupe modal** — `importDupeModal` → `updateDupeModal`
+   (v0.4: replaced by **import preview** — `importPreviewOpen` →
+   `updateImportPreview`)
 6. **file picker** — `importPicking` → `updateFilePicker`
 7. **category picker** — `catPicker != nil` → `updateCatPicker`
 8. **tag picker** — `tagPicker != nil` → `updateTagPicker`
-9. **account nuke picker** — `accountNukePicker != nil` →
-   `updateAccountNukePicker`
-10. **rule editor** [v0.4 new] — `ruleEditorOpen` → `updateRuleEditor`
-11. **dry-run modal** [v0.4 new] — `dryRunOpen` → `updateDryRun`
-12. **budget target editor** [v0.4 new] — `budgetTargetEditing` →
+9. **filter apply picker** — `filterApplyPicker != nil` →
+   `updateFilterApplyPicker`
+10. **manager action picker** — `managerActionPicker != nil` →
+    `updateManagerActionPicker`
+11. **saved-filter edit modal** — `filterEditOpen` → `updateFilterEdit`
+12. **manager account modal** — `managerModalOpen` → `updateManagerModal`
+13. **dry-run modal** — `dryRunOpen` → `updateDryRunModal`
+14. **rule editor** — `ruleEditorOpen` → `updateRuleEditor`
+15. **budget target editor** [v0.4 new] — `budgetTargetEditing` →
     `updateBudgetTargetEditor`
-13. **manager account modal** — `managerModalOpen` → `updateManagerModal`
-14. **search/filter mode** — `searchMode` → `updateSearch` (v0.3) / `updateFilterInput` (v0.4)
-15. **command-open shortcuts** — check `canOpenCommandUI()` then dispatch
-    `ctrl+k` or `:`
-16. **tab routing** — `activeTab` determines which tab handler to call
+16. **filter input mode** — `filterInputMode` → `updateFilterInput`
+17. **command-open shortcuts** — check `canOpenCommandUI()` then dispatch
+    `ctrl+k` or `:` (handled in `update.go` after overlay table, not in table)
+18. **tab routing** (secondary tier) — `activeTab` determines which tab
+    handler to call via `tabScope()`:
     - `tabDashboard` → `updateDashboard`
     - `tabBudget` [v0.4 new] → `updateBudget`
     - `tabManager` → `updateManager` or `updateTransactions` (mode-dependent)
     - `tabSettings` → `updateSettings`
-
-**(v0.32.2f current order for comparison):** jump overlay, command UI, detail
-modal, importDupeModal, file picker, category picker, tag picker, saved-filter
-apply picker, manager account-action picker, saved-filter edit modal, manager
-modal, filter input mode, command shortcuts, tab routing. Offset picker,
-import preview, rule editor, dry-run, budget target editor, and Budget tab are
-not yet implemented.
 
 Contract:
 
@@ -245,38 +272,117 @@ Contract:
   active.
 - Jump overlay must intercept before all other states (it's app-wide and
   context-sensitive per tab).
+- The dispatch table has tests enforcing unique names and mutual exclusivity
+  with tab-level scopes (`TestDispatchTableOverlayPrecedenceHasUniqueNames`,
+  `TestDispatchTableOverlayGuardsAreMutuallyExclusiveWithTabs`).
 
 ### 3.3 Text Input Safety Contract
 
 Text input contexts where printable keys must be treated as literal text, not
-shortcuts:
+shortcuts.
 
-**Universal modal key rule (v0.32.3):**
+**Modal text contracts (v0.32.3+):** The authoritative source of truth for
+text input behavior is the `modalTextContracts` map in `dispatch.go`. Every
+modal scope that contains text-editable fields must have an entry declaring:
 
-- Any modal that has at least one text-editable field must not interpret
-  `h`/`j`/`k`/`l` as navigation.
+- `cursorAware` — `true` = uses `insertPrintableASCIIAtCursor` and related
+  cursor helpers; `false` = uses `appendPrintableASCII` (legacy).
+- `printableFirst` — `true` = printable keys are literal text, never shortcuts.
+- `vimNavSuppressed` — `true` = `h`/`j`/`k`/`l` are NOT navigation keys in
+  this scope.
+
+The function `isTextInputModalScopeFromContract()` replaces the old manual
+switch, driving runtime vim-nav suppression from the contract data.
+
+Tests enforce:
+- Every scope in `modalTextContracts` exists in `KeyRegistry` scopes
+  (`TestModalTextContractCompleteness`).
+- Every vim-suppressed scope has `printableFirst` and `cursorAware` set
+  (`TestModalTextContractConsistency`).
+
+**Current contracts (v0.32.3):**
+
+| Scope | cursorAware | printableFirst | vimNavSuppressed |
+|---|---|---|---|
+| `scopeRuleEditor` | yes | yes | yes |
+| `scopeFilterEdit` | yes | yes | yes |
+| `scopeSettingsModeCat` | yes | yes | yes |
+| `scopeSettingsModeTag` | yes | yes | yes |
+| `scopeManagerModal` | yes | yes | yes |
+| `scopeDetailModal` | yes | yes | no* |
+| `scopeFilterInput` | yes | yes | no* |
+| `scopeDashboardCustomInput` | no | yes | no |
+
+*`scopeDetailModal` uses a dedicated `updateDetailNotes` handler when editing
+notes; j/k are needed for non-editing scroll. `scopeFilterInput` is a
+non-modal scope (inline bar) where vim-nav keys are handled contextually.*
+
+**v0.4 entries to add as phases land:**
+
+| Scope (v0.4) | cursorAware | printableFirst | vimNavSuppressed | Phase |
+|---|---|---|---|---|
+| `scopeBudgetTargetEditor` | yes | yes | yes | 5 |
+| `scopeOffsetPicker` (amount field) | yes | yes | yes | 5 |
+| `scopeBudgetInlineEdit` | yes | yes | no | 5 |
+
+The import preview modal (Phase 4) has no text fields and needs no entry.
+Dashboard custom date input (`scopeDashboardCustomInput`) already has an entry.
+Each phase's keybinding note specifies which entries to add.
+
+**Universal modal key rule:**
+
+- Any modal with text-editable fields must not interpret `h`/`j`/`k`/`l` as
+  navigation (enforced by `vimNavSuppressed = true` in its contract entry).
 - Allowed navigation keys in text-input modals are arrows, `tab`/`shift+tab`,
   and `ctrl+p`/`ctrl+n`.
-- Enforce this with both keybinding defaults and runtime guards so user
-  keybinding overrides cannot reintroduce alphanumeric navigation in these
-  modals.
 - Non-text modals/pickers may continue using vim-style navigation keys.
+
+**Reusable form helpers (v0.32.3+):** `dispatch.go` also provides lightweight
+building blocks for new modals:
+
+- `textField` — bundles a string value with cursor position; provides
+  `handleKey()`, `render()`, and `set()` methods for cursor-aware editing.
+- `modalFormNav` — provides `handleNav()` for focus cycling across fields in
+  a modal form (up/down/tab/shift-tab).
+
+These helpers are available for Phase 3-6 work. Existing forms still use their
+current patterns but new modals should compose from these helpers.
+
+**Adding a new modal with text input (checklist):**
+
+1. Add an `overlayEntry` in `overlayPrecedence()` at the correct priority
+   position (see §3.2).
+2. Add a `modalTextContracts` entry with the correct behavior flags.
+3. Use `textField` and `modalFormNav` helpers where applicable.
+4. Add a footer to the modal render function with accurate key hints that
+   match the handler's actual behavior. Structure footer hints as discrete
+   key-label pairs (not prose sentences) to facilitate Phase 7 migration to
+   `renderFooterFromContract()`.
+5. Run `TestModalTextContractCompleteness` and
+   `TestModalTextContractConsistency` to verify.
+
+**Phase 7 forward-compatibility:** Phase 7 (`v0.4-spec.md`) will migrate all
+footer rendering to contract-driven output via `InteractionContract` and
+`renderFooterFromContract()`. During Phases 3-6, footer hints should be
+structured as key-label pairs in render functions (e.g., `"enter save  esc
+cancel  tab next field"`) rather than embedded in prose or complex conditional
+logic. This makes the Phase 7 migration incremental — each context can be
+moved to contract-driven rendering independently.
+
+**Per-context details:**
 
 **Settings add/edit name fields (v0.3, carried forward):**
 
 - Category and tag name fields in settings editor modes.
 - Printable keys are literal text first.
-- While name field is focused, printable keys must not trigger shortcuts.
-  Example keys: `q`, `s`, `h`, `j`, `k`, `l`.
 - `enter` = save, `esc` = cancel, `backspace` = delete.
 - Non-printable navigation keys (e.g. arrow keys) may move focus between
   fields.
 
 **Filter expression input (`/` line, v0.4):**
 
-- Filter input modal (`searchMode` / `filterInputMode`).
-- Printable keys append to filter expression string; do not trigger shortcuts
-  like `q` (quit), `c` (categorize), `f` (was: category filter).
+- Filter input mode (`filterInputMode`).
+- Printable keys append to filter expression string; do not trigger shortcuts.
 - `enter` = apply filter, `esc` = cancel and clear, `backspace` = delete char.
 - Live parse indicator shows green/red dot for valid/invalid expression.
 
@@ -1149,13 +1255,19 @@ breakage.
 - Overlays render on top of the same base frame.
 - Overlay mechanics should not bypass viewport normalization.
 - Modal rendering must remain deterministic across terminal widths.
+- Overlay precedence is governed by `overlayPrecedence()` in `dispatch.go`
+  (see §3.2). The render layer does not determine priority — it only
+  renders the topmost active overlay as determined by the dispatch table.
 
 ### 6.3 Table and Section Contracts
 
 - Transaction table supports optional columns based on available data
   (category/account/tags).
 - Manager and settings section cards use shared box contracts.
-- Footer help remains registry-sourced.
+- Footer help is currently registry-sourced via `footerBindings()` →
+  `HelpBindings()`. The scope is determined by `activeOverlayScope()` /
+  `tabScope()` in `dispatch.go` (see §3.2). Phase 7 will migrate to
+  contract-driven footer rendering via `renderFooterFromContract()`.
 
 ### 6.4 Dashboard Grid Rendering
 
@@ -1401,6 +1513,15 @@ Current high-value flow coverage (v0.3) includes:
   Settings stays)
 - custom pane mode: load from config with invalid filter expression → verify
   rejected at load time with actionable error
+- dispatch table: new modal has `overlayEntry` at correct priority → verify
+  overlay blocks lower-priority scopes and `activeOverlayScope()` returns
+  expected scope
+- modal text contract: new text-input modal has `modalTextContracts` entry →
+  verify `TestModalTextContractCompleteness` and
+  `TestModalTextContractConsistency` pass
+- contract alignment (Phase 7): `activeInteractionContract()` returns correct
+  contract for each reachable state → footer hints match declared intents →
+  handler behavior matches declared intents
 
 ### 8.3 Heavy Flow Gate (`flowheavy`)
 
@@ -1427,9 +1548,13 @@ tests reliable in sandboxed/headless environments.
 
 Protect first:
 
-- modal precedence and dismissal ordering
-- text-input shortcut shielding in settings editors
-- keybinding scope/action routing and footer derivation
+- modal precedence and dismissal ordering — enforced by `overlayPrecedence()`
+  in `dispatch.go`; test with `TestDispatchTableOverlayPrecedenceHasUniqueNames`
+- text-input shortcut shielding in all editors — enforced by
+  `modalTextContracts` in `dispatch.go`; test with
+  `TestModalTextContractCompleteness` and `TestModalTextContractConsistency`
+- keybinding scope/action routing and footer derivation — footer scope now
+  derives from shared dispatch table via `activeOverlayScope()` / `tabScope()`
 - **key conflict invariants (§3.4.11): global shadow audit, scope
   reachability, footer-dispatch alignment, tab/jump key non-shadow**
 - **jump mode dispatch ordering (must intercept before tab-level handlers)**
@@ -1439,6 +1564,9 @@ Protect first:
 - tag normalization and duplicate-merge safety
 - **drill-return context lifecycle (set on dashboard drill-down, cleared on
   tab switch, ESC returns correctly)**
+- **interaction contract completeness (Phase 7): every scope has a registered
+  contract, footer hints are contract-driven, intent-handler alignment tests
+  pass**
 
 ### 8.6 Standard Verification Commands
 
@@ -1477,7 +1605,8 @@ If superseded, update this section with rationale and enforcement tests.
 
 ### 9.2 v0.3 → v0.4
 
-**Status:** Phase 1 and Phase 2 are complete as of `v0.32.2f`.
+**Status:** Phase 1 and Phase 2 are complete. Phase 3 accepted. Dispatch table
+and modal text contracts shipped in `v0.32.3`.
 
 Concrete learnings from shipped work:
 
@@ -1497,6 +1626,28 @@ Concrete learnings from shipped work:
   Saved-filter definitions stay in config, while recency metadata lives in DB
   app-state tables; this avoids high-churn config rewrites and keeps ordering
   stable across sessions.
+- **Three consumers of overlay priority must share one data source.**
+  `Update()`, `footerBindings()`, and `commandContextScope()` each had their
+  own if-chain encoding the same overlay precedence. These drifted silently
+  (e.g., `importDupeModal`/`importPicking` order was swapped between two
+  consumers). The shared `overlayPrecedence()` table in `dispatch.go` is the
+  fix: one table, all consumers read from it.
+- **Text input contracts need a data table, not a manual switch.**
+  The old `isTextInputModalScope()` switch in `update.go` was easy to forget
+  when adding new modals. `modalTextContracts` in `dispatch.go` is the
+  replacement: a map keyed by scope with behavior flags (`cursorAware`,
+  `printableFirst`, `vimNavSuppressed`). Tests enforce completeness and
+  consistency.
+- **Form helpers should be composable building blocks, not a framework.**
+  `textField` and `modalFormNav` provide cursor-aware text editing and focus
+  cycling without imposing a form lifecycle. Modal forms and inline forms have
+  different enough lifecycles that a single `FormContext` controller would
+  over-constrain the design.
+- **Footer bugs are silent regressions.** Three footer bugs (swapped rule
+  editor labels, misleading detail modal footer, missing manager modal footer)
+  survived multiple releases because no test verified footer content against
+  handler behavior. Phase 7's contract-driven footer rendering addresses this
+  structurally.
 
 ## 10. Open Backlog
 
@@ -1516,7 +1667,26 @@ Concrete learnings from shipped work:
 - Footer-dispatch alignment test (§3.4.11 invariant #5): build a model-state
   matrix test or fuzzer to verify `footerBindings()` scope matches `updateXxx`
   scope for all reachable states. Critical for jump mode and focused section
-  states.
+  states. **(v0.32.3 update:** the shared dispatch table in `dispatch.go`
+  structurally prevents scope divergence for overlays; the remaining alignment
+  risk is in tab sub-states. Phase 7 extends this to full contract-driven
+  footer rendering.)
+
+**v0.4 Phase 7 hardening items (v0.39):**
+
+- Implement `InteractionContract` types and `activeInteractionContract()`
+  resolver in `dispatch.go` — see `v0.4-spec.md` Phase 7.
+- Migrate all footer rendering to `renderFooterFromContract()`.
+- Validate intent-handler alignment for all reachable states in flow tests.
+- Ensure all Phase 3-6 modals/editors have `overlayEntry` +
+  `modalTextContracts` entries before starting Phase 7 contract migration.
+
+**v0.4 Phase 3-6 contract alignment items (ongoing):**
+
+- Every new modal added in Phases 3-6 must follow the checklist in §3.3
+  ("Adding a new modal with text input").
+- Structure footer hints as key-label pairs to facilitate Phase 7 migration.
+- Use `textField` and `modalFormNav` helpers for new form contexts.
 
 **v0.4 performance items:**
 

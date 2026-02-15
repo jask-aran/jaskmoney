@@ -301,15 +301,12 @@ func TestGlobalShortcutNonShadowInTabScopes(t *testing.T) {
 
 func TestTextInputModalScopesDoNotBindVimNavKeys(t *testing.T) {
 	r := NewKeyRegistry()
-	textModalScopes := []string{
-		scopeRuleEditor,
-		scopeFilterEdit,
-		scopeSettingsModeCat,
-		scopeSettingsModeTag,
-		scopeManagerModal,
-	}
+	// Use the contract-driven list of vim-nav-suppressed scopes.
 	vimKeys := []string{"h", "j", "k", "l"}
-	for _, scope := range textModalScopes {
+	for scope, behavior := range modalTextContracts {
+		if !behavior.vimNavSuppressed {
+			continue
+		}
 		for _, keyName := range vimKeys {
 			b := r.Lookup(keyName, scope)
 			if b == nil {
@@ -317,8 +314,96 @@ func TestTextInputModalScopesDoNotBindVimNavKeys(t *testing.T) {
 			}
 			switch b.Action {
 			case actionUp, actionDown, actionLeft, actionRight:
-				t.Fatalf("scope=%s should not bind %q to navigation action=%s", scope, keyName, b.Action)
+				t.Fatalf("scope=%s should not bind %q to navigation action=%s (vimNavSuppressed=true in contract)", scope, keyName, b.Action)
 			}
+		}
+	}
+}
+
+func TestModalTextContractCompleteness(t *testing.T) {
+	// Every overlay entry whose scope is a modal with text input should have
+	// a text contract. This test verifies the known text-input modal scopes
+	// are all registered.
+	requiredScopes := []string{
+		scopeRuleEditor,
+		scopeFilterEdit,
+		scopeSettingsModeCat,
+		scopeSettingsModeTag,
+		scopeManagerModal,
+		scopeDetailModal,
+		scopeFilterInput,
+	}
+	for _, scope := range requiredScopes {
+		if !scopeHasTextContract(scope) {
+			t.Errorf("scope %s should have a modalTextBehavior entry in modalTextContracts", scope)
+		}
+	}
+}
+
+func TestModalTextContractConsistency(t *testing.T) {
+	// Verify that isTextInputModalScope (used by suppressTextModalVimNav)
+	// returns true for exactly the scopes with vimNavSuppressed=true.
+	for scope, behavior := range modalTextContracts {
+		got := isTextInputModalScope(scope)
+		if got != behavior.vimNavSuppressed {
+			t.Errorf("scope %s: isTextInputModalScope=%v but contract.vimNavSuppressed=%v",
+				scope, got, behavior.vimNavSuppressed)
+		}
+	}
+}
+
+func TestDispatchTableOverlayPrecedenceHasUniqueNames(t *testing.T) {
+	// Verify that overlay names are unique in the dispatch table.
+	seen := map[string]bool{}
+	for _, entry := range overlayPrecedence() {
+		if seen[entry.name] {
+			t.Errorf("duplicate overlay name %q in overlayPrecedence", entry.name)
+		}
+		seen[entry.name] = true
+	}
+}
+
+func TestDispatchTableOverlayGuardsAreMutuallyExclusiveWithTabs(t *testing.T) {
+	// Verify that the overlay table produces a scope for every known
+	// overlay boolean combination on a fresh model, and returns "" when
+	// no overlay is active.
+	m := newModel()
+	m.keys = NewKeyRegistry()
+
+	// No overlay active — should return empty.
+	if scope := m.activeOverlayScope(true); scope != "" {
+		t.Errorf("expected empty overlay scope on fresh model, got %q", scope)
+	}
+
+	// Each overlay guard should produce a scope when set.
+	tests := []struct {
+		name  string
+		setup func(m *model)
+		scope string
+	}{
+		{"jump", func(m *model) { m.jumpModeActive = true }, scopeJumpOverlay},
+		{"command_palette", func(m *model) { m.commandOpen = true; m.commandUIKind = commandUIKindPalette }, scopeCommandPalette},
+		{"command_colon", func(m *model) { m.commandOpen = true; m.commandUIKind = commandUIKindColon }, scopeCommandMode},
+		{"detail", func(m *model) { m.showDetail = true }, scopeDetailModal},
+		{"importDupe", func(m *model) { m.importDupeModal = true }, scopeDupeModal},
+		{"filePicker", func(m *model) { m.importPicking = true }, scopeFilePicker},
+		{"catPicker", func(m *model) { m.catPicker = &pickerState{} }, scopeCategoryPicker},
+		{"tagPicker", func(m *model) { m.tagPicker = &pickerState{} }, scopeTagPicker},
+		{"filterApplyPicker", func(m *model) { m.filterApplyPicker = &pickerState{} }, scopeFilterApplyPicker},
+		{"managerActionPicker", func(m *model) { m.managerActionPicker = &pickerState{} }, scopeManagerAccountAction},
+		{"filterEdit", func(m *model) { m.filterEditOpen = true }, scopeFilterEdit},
+		{"managerModal", func(m *model) { m.managerModalOpen = true }, scopeManagerModal},
+		{"dryRun", func(m *model) { m.dryRunOpen = true }, scopeDryRunModal},
+		{"ruleEditor", func(m *model) { m.ruleEditorOpen = true }, scopeRuleEditor},
+		{"filterInput", func(m *model) { m.filterInputMode = true }, scopeFilterInput},
+	}
+	for _, tt := range tests {
+		fresh := newModel()
+		fresh.keys = NewKeyRegistry()
+		tt.setup(&fresh)
+		got := fresh.activeOverlayScope(true)
+		if got != tt.scope {
+			t.Errorf("overlay %s: activeOverlayScope(true)=%q, want %q", tt.name, got, tt.scope)
 		}
 	}
 }

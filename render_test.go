@@ -812,7 +812,7 @@ func TestRenderDupeModal(t *testing.T) {
 	}
 }
 
-func TestRenderManagerAccountModalOmitsInlineHelperText(t *testing.T) {
+func TestRenderManagerAccountModalShowsFooter(t *testing.T) {
 	m := newModel()
 	m.keys = NewKeyRegistry()
 	if err := m.keys.ApplyKeybindingConfig([]keybindingConfig{
@@ -825,6 +825,7 @@ func TestRenderManagerAccountModalOmitsInlineHelperText(t *testing.T) {
 	m.managerEditName = "Everyday Account"
 	m.managerEditType = "transaction"
 	m.managerEditPrefix = "ANZ"
+	m.managerEditPrefixCur = 3 // cursor at end of "ANZ"
 	m.managerEditActive = true
 	m.managerEditFocus = 2
 
@@ -838,8 +839,16 @@ func TestRenderManagerAccountModalOmitsInlineHelperText(t *testing.T) {
 	if !strings.Contains(output, "ANZ_") {
 		t.Fatal("focused input should include cursor suffix")
 	}
-	if strings.Contains(output, "ctrl+s") || strings.Contains(output, "save") || strings.Contains(output, "cancel") {
-		t.Fatal("manager modal should not render inline shortcut helper text")
+	// Footer should render key hints for save and cancel using configured keys.
+	if !strings.Contains(output, "save") {
+		t.Fatal("manager modal footer should show save hint")
+	}
+	if !strings.Contains(output, "cancel") {
+		t.Fatal("manager modal footer should show cancel hint")
+	}
+	// The configured keys (ctrl+s, c) should appear in the footer.
+	if !strings.Contains(output, "ctrl+s") {
+		t.Fatal("manager modal footer should reflect configured save key (ctrl+s)")
 	}
 }
 
@@ -856,7 +865,7 @@ func TestRenderDetailUsesConfiguredEditKey(t *testing.T) {
 		description:  "Coffee",
 		categoryName: "Dining",
 	}
-	output := renderDetail(txn, nil, "", "", keys)
+	output := renderDetail(txn, nil, "", 0, "", keys)
 	if !strings.Contains(output, "press e to edit") {
 		t.Fatal("expected configured edit key in empty-notes hint")
 	}
@@ -873,8 +882,8 @@ func TestRenderDetailUsesFixedWidthAndWrapsLongNotes(t *testing.T) {
 		description:  "Coffee and breakfast",
 		categoryName: "Dining",
 	}
-	short := renderDetail(txn, nil, "short note", "", keys)
-	long := renderDetail(txn, nil, "this-is-a-very-long-unbroken-note-token-without-spaces-1234567890abcdefghijklmnopqrstuvwxyz", "notes", keys)
+	short := renderDetail(txn, nil, "short note", 0, "", keys)
+	long := renderDetail(txn, nil, "this-is-a-very-long-unbroken-note-token-without-spaces-1234567890abcdefghijklmnopqrstuvwxyz", 0, "notes", keys)
 
 	maxWidth := func(s string) int {
 		w := 0
@@ -909,7 +918,7 @@ func TestRenderDetailMetadataOrderAndSingleLineDateAmount(t *testing.T) {
 		{name: "CARMAINTAINENCE"},
 		{name: "LONGTAGNAME1234567890"},
 	}
-	out := renderDetail(txn, tags, "note", "", keys)
+	out := renderDetail(txn, tags, "note", 0, "", keys)
 	lines := splitLines(out)
 
 	dateAmountFound := false
