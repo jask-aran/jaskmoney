@@ -564,6 +564,16 @@ semantics in any scope:
 - `quit` (`q`, `ctrl+c`) — exit application
 - `next_tab` / `prev_tab` (`tab`, `shift+tab`) — cycle tabs
 
+**Generic action consistency (UX principle — same key across similar contexts):**
+
+- `space` → toggle (account active, rule enabled, tag selection)
+- `a` → add (new item in list contexts)
+- `del` → delete (remove item from lists)
+
+These bindings maintain muscle memory and reduce cognitive load. If a context
+has a toggle action, it should use `space`. If it adds items, it should use
+`a`. Deviations break user expectations.
+
 Scopes can add meaning on top of these (e.g. `enter` in dashboard_focused
 triggers drill-down, which is a form of "confirm/select"), but the
 underlying semantic must be compatible.
