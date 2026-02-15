@@ -305,7 +305,7 @@ func NewKeyRegistry() *KeyRegistry {
 	reg(scopeSettingsActiveRules, actionBack, "", []string{"esc"}, "")
 	reg(scopeSettingsActiveRules, actionAdd, "", []string{"a"}, "add")
 	reg(scopeSettingsActiveRules, actionSelect, "", []string{"enter"}, "")
-	reg(scopeSettingsActiveRules, actionRuleToggleEnabled, "", []string{"e"}, "toggle")
+	reg(scopeSettingsActiveRules, actionRuleToggleEnabled, "", []string{"space"}, "")
 	reg(scopeSettingsActiveRules, actionDelete, "", []string{"del"}, "delete")
 	reg(scopeSettingsActiveRules, actionRuleMoveUp, "", []string{"K"}, "move up")
 	reg(scopeSettingsActiveRules, actionRuleMoveDown, "", []string{"J"}, "move down")
