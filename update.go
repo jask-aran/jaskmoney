@@ -515,6 +515,9 @@ func moveBoundedCursor(cursor, size, delta int) int {
 }
 
 func (m model) directionDelta(scope string, msg tea.KeyMsg) int {
+	if suppressTextModalVimNav(scope, msg) {
+		return 0
+	}
 	switch {
 	case m.isAction(scope, actionUp, msg):
 		return -1
@@ -530,6 +533,9 @@ func (m model) directionDelta(scope string, msg tea.KeyMsg) int {
 }
 
 func (m model) verticalDelta(scope string, msg tea.KeyMsg) int {
+	if suppressTextModalVimNav(scope, msg) {
+		return 0
+	}
 	switch {
 	case m.isAction(scope, actionUp, msg):
 		return -1
@@ -541,6 +547,9 @@ func (m model) verticalDelta(scope string, msg tea.KeyMsg) int {
 }
 
 func (m model) horizontalDelta(scope string, msg tea.KeyMsg) int {
+	if suppressTextModalVimNav(scope, msg) {
+		return 0
+	}
 	switch {
 	case m.isAction(scope, actionLeft, msg):
 		return -1
@@ -548,6 +557,27 @@ func (m model) horizontalDelta(scope string, msg tea.KeyMsg) int {
 		return 1
 	default:
 		return 0
+	}
+}
+
+func suppressTextModalVimNav(scope string, msg tea.KeyMsg) bool {
+	if !isTextInputModalScope(scope) {
+		return false
+	}
+	switch normalizeKeyName(msg.String()) {
+	case "h", "j", "k", "l":
+		return true
+	default:
+		return false
+	}
+}
+
+func isTextInputModalScope(scope string) bool {
+	switch scope {
+	case scopeRuleEditor, scopeFilterEdit, scopeSettingsModeCat, scopeSettingsModeTag, scopeManagerModal, scopeDetailModal:
+		return true
+	default:
+		return false
 	}
 }
 
@@ -642,9 +672,10 @@ func (m *model) beginImportFlow() tea.Cmd {
 }
 
 type jumpTarget struct {
-	Key     string
-	Label   string
-	Section int
+	Key      string
+	Label    string
+	Section  int
+	Activate bool
 }
 
 func filterReservedJumpTargetKeys(targets []jumpTarget) []jumpTarget {
@@ -665,17 +696,17 @@ func (m model) jumpTargetsForActiveTab() []jumpTarget {
 	switch m.activeTab {
 	case tabManager:
 		return filterReservedJumpTargetKeys([]jumpTarget{
-			{Key: "a", Label: "Accounts", Section: sectionManagerAccounts},
-			{Key: "t", Label: "Transactions", Section: sectionManagerTransactions},
+			{Key: "a", Label: "Accounts", Section: sectionManagerAccounts, Activate: true},
+			{Key: "t", Label: "Transactions", Section: sectionManagerTransactions, Activate: true},
 		})
 	case tabSettings:
 		return filterReservedJumpTargetKeys([]jumpTarget{
-			{Key: "c", Label: "Categories", Section: sectionSettingsCategories},
-			{Key: "t", Label: "Tags", Section: sectionSettingsTags},
-			{Key: "r", Label: "Rules", Section: sectionSettingsRules},
-			{Key: "f", Label: "Filters", Section: sectionSettingsFilters},
-			{Key: "d", Label: "Database", Section: sectionSettingsDatabase},
-			{Key: "w", Label: "Dashboard Views", Section: sectionSettingsViews},
+			{Key: "c", Label: "Categories", Section: sectionSettingsCategories, Activate: true},
+			{Key: "t", Label: "Tags", Section: sectionSettingsTags, Activate: true},
+			{Key: "r", Label: "Rules", Section: sectionSettingsRules, Activate: true},
+			{Key: "f", Label: "Filters", Section: sectionSettingsFilters, Activate: true},
+			{Key: "d", Label: "Database", Section: sectionSettingsDatabase, Activate: true},
+			{Key: "w", Label: "Dashboard Views", Section: sectionSettingsViews, Activate: true},
 		})
 	default:
 		return nil
@@ -701,13 +732,13 @@ func (m model) updateJumpOverlay(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		}
 		m.jumpModeActive = false
 		m.focusedSection = target.Section
-		m.applyFocusedSection()
+		m.applyFocusedSection(target.Activate)
 		return m, nil
 	}
 	return m, nil
 }
 
-func (m *model) applyFocusedSection() {
+func (m *model) applyFocusedSection(activate bool) {
 	switch m.activeTab {
 	case tabManager:
 		switch m.focusedSection {
@@ -741,6 +772,10 @@ func (m *model) applyFocusedSection() {
 			m.settColumn = settColRight
 			m.settSection = settSecChart
 		}
+		if activate {
+			m.settActive = true
+			m.settItemCursor = 0
+		}
 	}
 }
 
@@ -750,12 +785,12 @@ func (m *model) applyTabDefaultsOnSwitch() {
 		if m.focusedSection == sectionUnfocused {
 			m.focusedSection = sectionManagerTransactions
 		}
-		m.applyFocusedSection()
+		m.applyFocusedSection(false)
 	case tabSettings:
 		if m.focusedSection == sectionUnfocused {
 			m.focusedSection = sectionSettingsDatabase
 		}
-		m.applyFocusedSection()
+		m.applyFocusedSection(false)
 	case tabDashboard:
 		if m.focusedSection != sectionUnfocused {
 			m.focusedSection = sectionUnfocused

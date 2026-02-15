@@ -687,26 +687,26 @@ func TestSettingsColorNavigation(t *testing.T) {
 	m1, _ := m.updateSettings(tea.KeyMsg{Type: tea.KeyDown})
 	m = m1.(model)
 
-	// Right moves color forward (l key)
-	m2, _ := m.updateSettings(keyMsg("l"))
+	// Right arrow moves color forward.
+	m2, _ := m.updateSettings(tea.KeyMsg{Type: tea.KeyRight})
 	m3 := m2.(model)
 	if m3.settColorIdx != 1 {
-		t.Errorf("after l: colorIdx = %d, want 1", m3.settColorIdx)
+		t.Errorf("after right: colorIdx = %d, want 1", m3.settColorIdx)
 	}
 
-	// Left wraps back
-	m4, _ := m3.updateSettings(keyMsg("h"))
+	// Left arrow wraps back.
+	m4, _ := m3.updateSettings(tea.KeyMsg{Type: tea.KeyLeft})
 	m5 := m4.(model)
 	if m5.settColorIdx != 0 {
-		t.Errorf("after h: colorIdx = %d, want 0", m5.settColorIdx)
+		t.Errorf("after left: colorIdx = %d, want 0", m5.settColorIdx)
 	}
 
-	// Left from 0 wraps to last
-	m6, _ := m5.updateSettings(keyMsg("h"))
+	// Left from 0 wraps to last.
+	m6, _ := m5.updateSettings(tea.KeyMsg{Type: tea.KeyLeft})
 	m7 := m6.(model)
 	colors := CategoryAccentColors()
 	if m7.settColorIdx != len(colors)-1 {
-		t.Errorf("after h from 0: colorIdx = %d, want %d", m7.settColorIdx, len(colors)-1)
+		t.Errorf("after left from 0: colorIdx = %d, want %d", m7.settColorIdx, len(colors)-1)
 	}
 }
 

@@ -251,6 +251,17 @@ Contract:
 Text input contexts where printable keys must be treated as literal text, not
 shortcuts:
 
+**Universal modal key rule (v0.32.3):**
+
+- Any modal that has at least one text-editable field must not interpret
+  `h`/`j`/`k`/`l` as navigation.
+- Allowed navigation keys in text-input modals are arrows, `tab`/`shift+tab`,
+  and `ctrl+p`/`ctrl+n`.
+- Enforce this with both keybinding defaults and runtime guards so user
+  keybinding overrides cannot reintroduce alphanumeric navigation in these
+  modals.
+- Non-text modals/pickers may continue using vim-style navigation keys.
+
 **Settings add/edit name fields (v0.3, carried forward):**
 
 - Category and tag name fields in settings editor modes.
@@ -804,8 +815,8 @@ predicates, and parser contracts.
 **v0.4 Architecture**
 
 App-wide spatial navigation with `v` key. Jump mode shows labeled badges at
-focusable sections in the current tab; pressing a target key focuses that
-section and dismisses the overlay.
+focusable sections in the current tab; pressing a target key focuses and
+activates that section, then dismisses the overlay.
 
 **Model fields:**
 
@@ -830,7 +841,7 @@ a time.
 **Focus lifecycle:**
 
 1. `v` → jump overlay appears with per-tab targets (floating badges)
-2. Press target key → focus moves, overlay dismisses
+2. Press target key → focus + activation move to target, overlay dismisses
 3. Section-specific interactions available (e.g. mode cycling, inline edit)
 4. `Esc` → return to tab's default focus (or stay for Settings)
 5. `Esc` from default/unfocused → no-op
@@ -846,6 +857,14 @@ a time.
 
 - `jump:activate` (global) — enter jump mode
 - `jump:cancel` (jump_overlay scope) — dismiss and restore previous focus
+
+**Activation contract (v0.32.4):**
+
+- Jump target definitions must declare activation behavior separately from
+  focus destination (two-axis contract: `Section` + `Activate`).
+- Current default policy is `Activate=true` for all shipped jump targets.
+- Tab default focus application (on tab switch/ESC reset) may set focus without
+  activation (`Activate=false`) where appropriate.
 
 **v0.3 current state:** Direct focus commands `nav:focus-accounts` and
 `nav:focus-transactions` exist but are Manager-specific. Jump mode is Phase 1

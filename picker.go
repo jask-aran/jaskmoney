@@ -20,19 +20,20 @@ type pickerItem struct {
 }
 
 type pickerState struct {
-	items       []pickerItem
-	filtered    []pickerItem
-	query       string
-	cursor      int
-	selected    map[int]bool
-	checkState  map[int]pickerCheckState
-	baseState   map[int]pickerCheckState
-	dirty       map[int]bool
-	multiSelect bool
-	cursorOnly  bool
-	triState    bool
-	title       string
-	createLabel string
+	items        []pickerItem
+	filtered     []pickerItem
+	query        string
+	cursor       int
+	selected     map[int]bool
+	baseSelected map[int]bool
+	checkState   map[int]pickerCheckState
+	baseState    map[int]pickerCheckState
+	dirty        map[int]bool
+	multiSelect  bool
+	cursorOnly   bool
+	triState     bool
+	title        string
+	createLabel  string
 }
 
 type pickerCheckState int
@@ -76,13 +77,14 @@ type scoredPickerItem struct {
 
 func newPicker(title string, items []pickerItem, multiSelect bool, createLabel string) *pickerState {
 	p := &pickerState{
-		selected:    make(map[int]bool),
-		checkState:  make(map[int]pickerCheckState),
-		baseState:   make(map[int]pickerCheckState),
-		dirty:       make(map[int]bool),
-		multiSelect: multiSelect,
-		title:       title,
-		createLabel: strings.TrimSpace(createLabel),
+		selected:     make(map[int]bool),
+		baseSelected: make(map[int]bool),
+		checkState:   make(map[int]pickerCheckState),
+		baseState:    make(map[int]pickerCheckState),
+		dirty:        make(map[int]bool),
+		multiSelect:  multiSelect,
+		title:        title,
+		createLabel:  strings.TrimSpace(createLabel),
 	}
 	p.SetItems(items)
 	return p
@@ -176,6 +178,21 @@ func (p *pickerState) Selected() []int {
 	return out
 }
 
+func (p *pickerState) SetSelectedIDs(ids []int) {
+	if p == nil {
+		return
+	}
+	p.selected = make(map[int]bool, len(ids))
+	p.baseSelected = make(map[int]bool, len(ids))
+	for _, id := range ids {
+		if id <= 0 {
+			continue
+		}
+		p.selected[id] = true
+		p.baseSelected[id] = true
+	}
+}
+
 func (p *pickerState) SetTriState(states map[int]pickerCheckState) {
 	if p == nil {
 		return
@@ -195,7 +212,21 @@ func (p *pickerState) SetTriState(states map[int]pickerCheckState) {
 }
 
 func (p *pickerState) HasPendingChanges() bool {
-	return p != nil && len(p.dirty) > 0
+	if p == nil {
+		return false
+	}
+	if p.triState {
+		return len(p.dirty) > 0
+	}
+	if len(p.selected) != len(p.baseSelected) {
+		return true
+	}
+	for id := range p.selected {
+		if !p.baseSelected[id] {
+			return true
+		}
+	}
+	return false
 }
 
 func (p *pickerState) PendingTagPatch() (addIDs []int, removeIDs []int) {

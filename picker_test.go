@@ -345,6 +345,25 @@ func TestPickerTriStateRendersMixedAndTracksDirtyPatch(t *testing.T) {
 	}
 }
 
+func TestPickerNonTriStatePendingChangesTracksBaseSelection(t *testing.T) {
+	p := newPicker("Rule Tags", []pickerItem{
+		{ID: 1, Label: "A"},
+		{ID: 2, Label: "B"},
+	}, true, "")
+	p.cursorOnly = true
+	p.SetSelectedIDs([]int{1})
+	if p.HasPendingChanges() {
+		t.Fatal("expected no pending changes immediately after base selection")
+	}
+
+	// Move to second row and toggle it on.
+	_ = p.HandleKey("down")
+	_ = p.HandleKey("space")
+	if !p.HasPendingChanges() {
+		t.Fatal("expected pending changes after non-tri-state selection edit")
+	}
+}
+
 func TestPickerHandleMsgPrintableJKAreLiteralFirst(t *testing.T) {
 	p := newPicker("Quick Tags", testPickerItems(), true, "")
 	keys := NewKeyRegistry()
