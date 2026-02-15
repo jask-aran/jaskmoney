@@ -233,6 +233,19 @@ func (m model) updateTagPicker(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		return m, nil
 	}
 	if m.ruleEditorPickingTags {
+		if m.isAction(scopeTagPicker, actionSelect, msg) {
+			row := m.tagPicker.currentRow()
+			if row.item != nil && !row.isCreate && !m.tagPicker.HasPendingChanges() {
+				m.tagPicker.Toggle()
+				m.ruleEditorAddTags = m.tagPicker.Selected()
+				m.normalizeRuleEditorSelections()
+				m.tagPicker = nil
+				m.ruleEditorPickingTags = false
+				m.ruleEditorStep = 4
+				m.ruleEditorErr = ""
+				return m, nil
+			}
+		}
 		res := m.tagPicker.HandleMsg(msg, func(action Action, in tea.KeyMsg) bool {
 			return m.isAction(scopeTagPicker, action, in)
 		})

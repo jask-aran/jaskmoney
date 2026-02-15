@@ -76,6 +76,24 @@ func TestFilterStrictAllowsGroupedMixedExpression(t *testing.T) {
 	}
 }
 
+func TestFilterStrictExpressionsAlsoParsePermissive(t *testing.T) {
+	cases := []string{
+		"cat:Food",
+		"cat:Food AND tag:weekly",
+		"(cat:Food OR cat:Transport) AND amt:>50",
+		`desc:"coffee shop"`,
+		"NOT tag:ignore",
+	}
+	for _, input := range cases {
+		if _, err := parseFilterStrict(input); err != nil {
+			t.Fatalf("strict parse failed unexpectedly for %q: %v", input, err)
+		}
+		if _, err := parseFilter(input); err != nil {
+			t.Fatalf("permissive parse failed for strict-valid expression %q: %v", input, err)
+		}
+	}
+}
+
 func TestFilterParserQuotedValues(t *testing.T) {
 	n := mustParseFilterExpr(t, `desc:"coffee shop" AND cat:"Dining & Drinks"`)
 	txn := transaction{description: "best coffee shop", categoryName: "Dining & Drinks"}

@@ -298,3 +298,27 @@ func TestGlobalShortcutNonShadowInTabScopes(t *testing.T) {
 		}
 	}
 }
+
+func TestTextInputModalScopesDoNotBindVimNavKeys(t *testing.T) {
+	r := NewKeyRegistry()
+	textModalScopes := []string{
+		scopeRuleEditor,
+		scopeFilterEdit,
+		scopeSettingsModeCat,
+		scopeSettingsModeTag,
+		scopeManagerModal,
+	}
+	vimKeys := []string{"h", "j", "k", "l"}
+	for _, scope := range textModalScopes {
+		for _, keyName := range vimKeys {
+			b := r.Lookup(keyName, scope)
+			if b == nil {
+				continue
+			}
+			switch b.Action {
+			case actionUp, actionDown, actionLeft, actionRight:
+				t.Fatalf("scope=%s should not bind %q to navigation action=%s", scope, keyName, b.Action)
+			}
+		}
+	}
+}

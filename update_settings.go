@@ -284,6 +284,7 @@ func (m model) reorderActiveRule(delta int) (tea.Model, tea.Cmd) {
 		return m, nil
 	}
 	rule := m.rules[m.settItemCursor]
+	m.settItemCursor = target
 	db := m.db
 	return m, func() tea.Msg {
 		return ruleSavedMsg{err: reorderRuleV2(db, rule.id, target)}
@@ -677,9 +678,7 @@ func (m *model) openRuleTagPicker() {
 	}
 	p := newPicker("Rule Tags", items, true, "")
 	p.cursorOnly = true
-	for _, id := range m.ruleEditorAddTags {
-		p.selected[id] = true
-	}
+	p.SetSelectedIDs(m.ruleEditorAddTags)
 	m.tagPicker = p
 	m.ruleEditorPickingTags = true
 }

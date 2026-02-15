@@ -2437,15 +2437,18 @@ func renderFilterEditorModal(m model) string {
 		exprVal = renderASCIIInputCursor(exprVal, m.filterEditExprCur)
 	}
 	exprState := lipgloss.NewStyle().Foreground(colorSuccess).Render("ok")
+	exprCount := ""
 	if strings.TrimSpace(m.filterEditExpr) == "" {
 		exprState = lipgloss.NewStyle().Foreground(colorOverlay1).Render("pending")
-	} else if _, err := parseFilterStrict(strings.TrimSpace(m.filterEditExpr)); err != nil {
+	} else if node, err := parseFilterStrict(strings.TrimSpace(m.filterEditExpr)); err != nil {
 		exprState = lipgloss.NewStyle().Foreground(colorError).Render("invalid")
+	} else {
+		exprCount = detailLabelStyle.Render(fmt.Sprintf(" · %d txns", m.countFilterMatchesInRulesScope(node)))
 	}
 	body := []string{
 		modalCursor(m.filterEditFocus == 0) + detailLabelStyle.Render("ID:   ") + detailValueStyle.Render(idVal),
 		modalCursor(m.filterEditFocus == 1) + detailLabelStyle.Render("Name: ") + detailValueStyle.Render(nameVal),
-		modalCursor(m.filterEditFocus == 2) + detailLabelStyle.Render("Expr: ") + detailValueStyle.Render(exprVal) + "  " + exprState,
+		modalCursor(m.filterEditFocus == 2) + detailLabelStyle.Render("Expr: ") + detailValueStyle.Render(exprVal) + "  " + exprState + exprCount,
 	}
 	if strings.TrimSpace(m.filterEditErr) != "" {
 		body = append(body, "")
@@ -2492,13 +2495,15 @@ func renderRuleEditorModal(m model) string {
 	}
 	filterVal := strings.TrimSpace(m.ruleEditorFilterID)
 	filterState := lipgloss.NewStyle().Foreground(colorOverlay1).Render("pending")
+	filterCount := ""
 	if filterVal != "" {
 		filterState = lipgloss.NewStyle().Foreground(colorSuccess).Render("ok")
 		if sf, ok := m.findSavedFilterByID(filterVal); ok {
-			if _, err := parseFilterStrict(strings.TrimSpace(sf.Expr)); err != nil {
+			if node, err := parseFilterStrict(strings.TrimSpace(sf.Expr)); err != nil {
 				filterState = lipgloss.NewStyle().Foreground(colorError).Render("invalid")
 				filterVal = sf.ID
 			} else {
+				filterCount = detailLabelStyle.Render(fmt.Sprintf(" · %d txns", m.countFilterMatchesInRulesScope(node)))
 				filterVal = sf.ID
 				if strings.TrimSpace(sf.Name) != "" {
 					filterVal += " (" + strings.TrimSpace(sf.Name) + ")"
@@ -2506,8 +2511,10 @@ func renderRuleEditorModal(m model) string {
 			}
 		} else if strings.HasPrefix(filterVal, legacyRuleExprPrefix) {
 			expr := strings.TrimSpace(strings.TrimPrefix(filterVal, legacyRuleExprPrefix))
-			if _, err := parseFilterStrict(expr); err != nil {
+			if node, err := parseFilterStrict(expr); err != nil {
 				filterState = lipgloss.NewStyle().Foreground(colorError).Render("invalid")
+			} else {
+				filterCount = detailLabelStyle.Render(fmt.Sprintf(" · %d txns", m.countFilterMatchesInRulesScope(node)))
 			}
 			filterVal = truncate(expr, 48)
 		} else {
@@ -2527,7 +2534,7 @@ func renderRuleEditorModal(m model) string {
 
 	body := []string{
 		modalCursor(m.ruleEditorStep == 0) + detailLabelStyle.Render("1 Name:      ") + detailValueStyle.Render(nameVal),
-		modalCursor(m.ruleEditorStep == 1) + detailLabelStyle.Render("2 Filter:    ") + detailValueStyle.Render(filterVal) + "  " + filterState,
+		modalCursor(m.ruleEditorStep == 1) + detailLabelStyle.Render("2 Filter:    ") + detailValueStyle.Render(filterVal) + "  " + filterState + filterCount,
 		modalCursor(m.ruleEditorStep == 2) + detailLabelStyle.Render("3 Category:  ") + detailValueStyle.Render(catName),
 		modalCursor(m.ruleEditorStep == 3) + detailLabelStyle.Render("4 Add tags:  ") + detailValueStyle.Render(addTags),
 		modalCursor(m.ruleEditorStep == 4) + detailLabelStyle.Render("5 Enabled:   ") + detailValueStyle.Render(enabledVal),
@@ -2546,6 +2553,24 @@ func renderRuleEditorModal(m model) string {
 		actionKeyLabel(m.keys, scopeRuleEditor, actionClose, "esc"),
 	))
 	return renderModalContentWithWidth(title, body, footer, 92)
+}
+
+func (m model) countFilterMatchesInRulesScope(node *filterNode) int {
+	if node == nil {
+		return 0
+	}
+	scope := m.buildAccountScopeFilter()
+	count := 0
+	for _, row := range m.rows {
+		rowTags := m.txnTags[row.id]
+		if scope != nil && !evalFilter(scope, row, rowTags) {
+			continue
+		}
+		if evalFilter(node, row, rowTags) {
+			count++
+		}
+	}
+	return count
 }
 
 func renderDryRunResultsModal(m model) string {

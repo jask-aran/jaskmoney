@@ -290,21 +290,33 @@ func TestSettingsJumpTargetsIncludeCategoriesAndTags(t *testing.T) {
 	}
 	if got, ok := byKey["c"]; !ok || got.Section != sectionSettingsCategories {
 		t.Fatalf("c target = %+v, want section %d", got, sectionSettingsCategories)
+	} else if !got.Activate {
+		t.Fatal("c target should activate settings pane")
 	}
 	if got, ok := byKey["t"]; !ok || got.Section != sectionSettingsTags {
 		t.Fatalf("t target = %+v, want section %d", got, sectionSettingsTags)
+	} else if !got.Activate {
+		t.Fatal("t target should activate settings pane")
 	}
 	if got, ok := byKey["r"]; !ok || got.Section != sectionSettingsRules {
 		t.Fatalf("r target = %+v, want section %d", got, sectionSettingsRules)
+	} else if !got.Activate {
+		t.Fatal("r target should activate settings pane")
 	}
 	if got, ok := byKey["f"]; !ok || got.Section != sectionSettingsFilters {
 		t.Fatalf("f target = %+v, want section %d", got, sectionSettingsFilters)
+	} else if !got.Activate {
+		t.Fatal("f target should activate settings pane")
 	}
 	if got, ok := byKey["d"]; !ok || got.Section != sectionSettingsDatabase {
 		t.Fatalf("d target = %+v, want section %d", got, sectionSettingsDatabase)
+	} else if !got.Activate {
+		t.Fatal("d target should activate settings pane")
 	}
 	if got, ok := byKey["w"]; !ok || got.Section != sectionSettingsViews {
 		t.Fatalf("w target = %+v, want section %d", got, sectionSettingsViews)
+	} else if !got.Activate {
+		t.Fatal("w target should activate settings pane")
 	}
 }
 
@@ -328,6 +340,28 @@ func TestSettingsJumpKeyFocusesCategories(t *testing.T) {
 	}
 	if got.settColumn != settColLeft || got.settSection != settSecCategories {
 		t.Fatalf("settings focus = (col=%d, sec=%d), want (col=%d, sec=%d)", got.settColumn, got.settSection, settColLeft, settSecCategories)
+	}
+	if !got.settActive {
+		t.Fatal("settings jump target should activate section")
+	}
+	if got.settItemCursor != 0 {
+		t.Fatalf("settings jump activation should reset item cursor, got %d", got.settItemCursor)
+	}
+}
+
+func TestManagerJumpTargetsActivateSections(t *testing.T) {
+	m := newModel()
+	m.ready = true
+	m.activeTab = tabManager
+
+	targets := m.jumpTargetsForActiveTab()
+	if len(targets) == 0 {
+		t.Fatal("expected manager jump targets")
+	}
+	for _, target := range targets {
+		if !target.Activate {
+			t.Fatalf("manager target %q should activate section", target.Key)
+		}
 	}
 }
 
