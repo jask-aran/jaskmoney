@@ -2206,58 +2206,77 @@ func renderASCIIInputCursor(s string, cursor int) string {
 }
 
 func renderSettingsRules(m model, width int) string {
-	var lines []string
-
-	// Input mode overlays
-	if m.settMode == settModeAddRule || m.settMode == settModeEditRule {
-		label := "Add Rule"
-		if m.settMode == settModeEditRule {
-			label = "Edit Rule"
-		}
-		lines = append(lines, detailActiveStyle.Render(label))
-		lines = append(lines, detailLabelStyle.Render("Pattern: ")+detailValueStyle.Render(m.settInput+"_"))
-		lines = append(lines, scrollStyle.Render("Enter to pick category, Esc to cancel"))
-		return strings.Join(lines, "\n")
-	}
-
-	if m.settMode == settModeRuleCat {
-		lines = append(lines, detailActiveStyle.Render("Select Category for: ")+detailValueStyle.Render(m.settInput))
-		for i, cat := range m.categories {
-			prefix := "  "
-			if i == m.settRuleCatIdx {
-				prefix = cursorStyle.Render("> ")
-			}
-			style := lipgloss.NewStyle().Foreground(lipgloss.Color(cat.color))
-			lines = append(lines, prefix+style.Render(cat.name))
-		}
-		return strings.Join(lines, "\n")
-	}
-
 	if len(m.rules) == 0 {
 		return lipgloss.NewStyle().Foreground(colorOverlay1).Render("No rules. Activate to add.")
 	}
 
+	catNames := make(map[int]string, len(m.categories))
+	for _, cat := range m.categories {
+		catNames[cat.id] = cat.name
+	}
+	tagNames := make(map[int]string, len(m.tags))
+	for _, tg := range m.tags {
+		tagNames[tg.id] = tg.name
+	}
+
+	var lines []string
 	showCursor := m.settSection == settSecRules && m.settActive
 	for i, rule := range m.rules {
 		prefix := "  "
 		if showCursor && i == m.settItemCursor {
 			prefix = cursorStyle.Render("> ")
 		}
-		pattern := infoValueStyle.Render(fmt.Sprintf("%q", rule.pattern))
-		arrow := lipgloss.NewStyle().Foreground(colorOverlay1).Render(" -> ")
-		catName := "?"
-		catColor := colorOverlay1
-		for _, c := range m.categories {
-			if c.id == rule.categoryID {
-				catName = c.name
-				catColor = lipgloss.Color(c.color)
-				break
-			}
+		state := "✓"
+		if !rule.enabled {
+			state = "✗"
 		}
-		target := lipgloss.NewStyle().Foreground(catColor).Render(catName)
-		lines = append(lines, prefix+pattern+arrow+target)
+		name := truncate(strings.TrimSpace(rule.name), max(8, width/3))
+		expr := truncate(strings.TrimSpace(rule.filterExpr), max(8, width/2))
+		actions := renderRuleActionSummary(rule, catNames, tagNames)
+		line := fmt.Sprintf("%s %s  %s  %s", state, name, expr, actions)
+		if !rule.enabled {
+			line = lipgloss.NewStyle().Foreground(colorOverlay1).Render(line)
+		}
+		lines = append(lines, prefix+line)
 	}
 	return strings.Join(lines, "\n")
+}
+
+func renderRuleActionSummary(rule ruleV2, catNames map[int]string, tagNames map[int]string) string {
+	parts := make([]string, 0, 3)
+	if rule.setCategoryID != nil {
+		if name, ok := catNames[*rule.setCategoryID]; ok {
+			parts = append(parts, "→ "+name)
+		} else {
+			parts = append(parts, fmt.Sprintf("→ #%d", *rule.setCategoryID))
+		}
+	}
+	if len(rule.addTagIDs) > 0 {
+		add := make([]string, 0, len(rule.addTagIDs))
+		for _, id := range rule.addTagIDs {
+			if name, ok := tagNames[id]; ok {
+				add = append(add, "+"+name)
+			}
+		}
+		if len(add) > 0 {
+			parts = append(parts, strings.Join(add, ","))
+		}
+	}
+	if len(rule.removeTagIDs) > 0 {
+		rem := make([]string, 0, len(rule.removeTagIDs))
+		for _, id := range rule.removeTagIDs {
+			if name, ok := tagNames[id]; ok {
+				rem = append(rem, "-"+name)
+			}
+		}
+		if len(rem) > 0 {
+			parts = append(parts, strings.Join(rem, ","))
+		}
+	}
+	if len(parts) == 0 {
+		return "—"
+	}
+	return strings.Join(parts, " ")
 }
 
 func renderSettingsChart(m model, width int) string {
@@ -2416,6 +2435,141 @@ func renderFilterEditorModal(m model) string {
 		actionKeyLabel(m.keys, scopeFilterEdit, actionClose, "esc"),
 	))
 	return renderModalContentWithWidth(title, body, footer, 72)
+}
+
+func selectedTagNames(ids []int, tags []tag) string {
+	if len(ids) == 0 {
+		return "(none)"
+	}
+	names := make([]string, 0, len(ids))
+	for _, id := range ids {
+		for _, tg := range tags {
+			if tg.id == id {
+				names = append(names, tg.name)
+				break
+			}
+		}
+	}
+	if len(names) == 0 {
+		return "(none)"
+	}
+	return strings.Join(names, ", ")
+}
+
+func renderRuleEditorModal(m model) string {
+	title := "Add Rule"
+	if m.ruleEditorID > 0 {
+		title = "Edit Rule"
+	}
+
+	nameVal := m.ruleEditorName
+	if m.ruleEditorStep == 0 {
+		nameVal = renderASCIIInputCursor(nameVal, m.ruleEditorNameCur)
+	}
+	filterVal := m.ruleEditorFilter
+	if m.ruleEditorStep == 1 {
+		filterVal = renderASCIIInputCursor(filterVal, m.ruleEditorExprCur)
+	}
+
+	filterState := lipgloss.NewStyle().Foreground(colorSuccess).Render("ok")
+	if strings.TrimSpace(m.ruleEditorFilter) == "" {
+		filterState = lipgloss.NewStyle().Foreground(colorOverlay1).Render("pending")
+	} else if _, err := parseFilterStrict(m.ruleEditorFilter); err != nil {
+		filterState = lipgloss.NewStyle().Foreground(colorError).Render("invalid")
+	}
+
+	catName := "No category change"
+	if m.ruleEditorCatCur > 0 && m.ruleEditorCatCur-1 < len(m.categories) {
+		cat := m.categories[m.ruleEditorCatCur-1]
+		catName = cat.name
+	}
+
+	addTags := selectedTagNames(m.ruleEditorAddTags, m.tags)
+	remTags := selectedTagNames(m.ruleEditorRemTags, m.tags)
+	enabledVal := "Yes"
+	if !m.ruleEditorEnabled {
+		enabledVal = "No"
+	}
+	tagCursor := "-"
+	if len(m.tags) > 0 && m.ruleEditorTagCur >= 0 && m.ruleEditorTagCur < len(m.tags) {
+		tagCursor = m.tags[m.ruleEditorTagCur].name
+	}
+
+	body := []string{
+		modalCursor(m.ruleEditorStep == 0) + detailLabelStyle.Render("1 Name:      ") + detailValueStyle.Render(nameVal),
+		modalCursor(m.ruleEditorStep == 1) + detailLabelStyle.Render("2 Filter:    ") + detailValueStyle.Render(filterVal) + "  " + filterState,
+		modalCursor(m.ruleEditorStep == 2) + detailLabelStyle.Render("3 Category:  ") + detailValueStyle.Render(catName),
+		modalCursor(m.ruleEditorStep == 3) + detailLabelStyle.Render("4 Add tags:  ") + detailValueStyle.Render(addTags),
+		modalCursor(m.ruleEditorStep == 4) + detailLabelStyle.Render("5 Remove:    ") + detailValueStyle.Render(remTags),
+		modalCursor(m.ruleEditorStep == 5) + detailLabelStyle.Render("6 Enabled:   ") + detailValueStyle.Render(enabledVal),
+	}
+	if m.ruleEditorStep == 3 || m.ruleEditorStep == 4 {
+		body = append(body, detailLabelStyle.Render("Tag cursor:  ")+detailValueStyle.Render(tagCursor))
+	}
+	if strings.TrimSpace(m.ruleEditorErr) != "" {
+		body = append(body, "")
+		body = append(body, lipgloss.NewStyle().Foreground(colorError).Render(strings.TrimSpace(m.ruleEditorErr)))
+	}
+
+	footer := scrollStyle.Render(fmt.Sprintf(
+		"%s/%s step  tab nav  %s toggle  %s save  %s cancel",
+		actionKeyLabel(m.keys, scopeRuleEditor, actionUp, "k"),
+		actionKeyLabel(m.keys, scopeRuleEditor, actionDown, "j"),
+		actionKeyLabel(m.keys, scopeRuleEditor, actionToggleSelect, "space"),
+		actionKeyLabel(m.keys, scopeRuleEditor, actionSelect, "enter"),
+		actionKeyLabel(m.keys, scopeRuleEditor, actionClose, "esc"),
+	))
+	return renderModalContentWithWidth(title, body, footer, 92)
+}
+
+func renderDryRunResultsModal(m model) string {
+	body := []string{
+		detailLabelStyle.Render("Scope: ") + detailValueStyle.Render(m.dryRunScopeLabel),
+		detailLabelStyle.Render("Summary: ") + detailValueStyle.Render(fmt.Sprintf(
+			"%d modified, %d category changes, %d tag changes",
+			m.dryRunSummary.totalModified,
+			m.dryRunSummary.totalCatChange,
+			m.dryRunSummary.totalTagChange,
+		)),
+		"",
+	}
+
+	start := m.dryRunScroll
+	if start < 0 {
+		start = 0
+	}
+	if start >= len(m.dryRunResults) {
+		start = max(0, len(m.dryRunResults)-1)
+	}
+	end := start + 3
+	if end > len(m.dryRunResults) {
+		end = len(m.dryRunResults)
+	}
+	for i := start; i < end; i++ {
+		res := m.dryRunResults[i]
+		state := "enabled"
+		if !res.rule.enabled {
+			state = "disabled"
+		}
+		body = append(body, detailActiveStyle.Render(fmt.Sprintf("Rule %d: %q (%s)", i+1, res.rule.name, state)))
+		body = append(body, detailLabelStyle.Render("  Filter: ")+detailValueStyle.Render(strings.TrimSpace(res.rule.filterExpr)))
+		body = append(body, detailLabelStyle.Render("  Matches: ")+detailValueStyle.Render(fmt.Sprintf("%d", res.matchCount)))
+		body = append(body, detailLabelStyle.Render("  Changes: ")+detailValueStyle.Render(fmt.Sprintf("%d category, %d tags", res.catChanges, res.tagChanges)))
+		for _, sample := range res.samples {
+			body = append(body, detailValueStyle.Render(fmt.Sprintf("    %s  %s  %s", sample.txn.dateISO, formatMoney(sample.txn.amount), truncate(sample.txn.description, 32))))
+		}
+		body = append(body, "")
+	}
+	if len(m.dryRunResults) == 0 {
+		body = append(body, lipgloss.NewStyle().Foreground(colorOverlay1).Render("No enabled rules to evaluate."))
+	}
+	footer := scrollStyle.Render(fmt.Sprintf(
+		"%s/%s scroll  %s close",
+		actionKeyLabel(m.keys, scopeDryRunModal, actionUp, "k"),
+		actionKeyLabel(m.keys, scopeDryRunModal, actionDown, "j"),
+		actionKeyLabel(m.keys, scopeDryRunModal, actionClose, "esc"),
+	))
+	return renderModalContentWithWidth("Dry-Run Results", body, footer, 96)
 }
 
 // renderDetail renders the transaction detail modal content.

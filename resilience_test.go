@@ -159,7 +159,7 @@ func TestCommandUIOpenBlockedByBusyStatesViaTopLevelUpdate(t *testing.T) {
 		{name: "file picker", mut: func(m *model) { m.importPicking = true }},
 		{name: "category picker", mut: func(m *model) { m.catPicker = newPicker("Cat", nil, false, "") }},
 		{name: "tag picker", mut: func(m *model) { m.tagPicker = newPicker("Tag", nil, true, "Create") }},
-			{name: "manager account action picker", mut: func(m *model) { m.managerActionPicker = newPicker("Account Action", nil, false, "") }},
+		{name: "manager account action picker", mut: func(m *model) { m.managerActionPicker = newPicker("Account Action", nil, false, "") }},
 		{name: "manager modal", mut: func(m *model) { m.managerModalOpen = true }},
 		{name: "filter input mode", mut: func(m *model) { m.filterInputMode = true }},
 		{name: "settings edit mode", mut: func(m *model) { m.settMode = settModeAddTag }},

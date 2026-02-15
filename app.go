@@ -82,9 +82,8 @@ type ingestDoneMsg struct {
 type refreshDoneMsg struct {
 	rows             []transaction
 	categories       []category
-	rules            []categoryRule
+	rules            []ruleV2
 	tags             []tag
-	tagRules         []tagRule
 	txnTags          map[int][]tag
 	imports          []importRecord
 	accounts         []account
@@ -139,13 +138,17 @@ type ruleDeletedMsg struct {
 }
 
 type rulesAppliedMsg struct {
-	count int
-	err   error
+	catChanges int
+	tagChanges int
+	scope      string
+	err        error
 }
 
-type tagRulesAppliedMsg struct {
-	count int
-	err   error
+type rulesDryRunMsg struct {
+	results []dryRunRuleResult
+	summary dryRunSummary
+	scope   string
+	err     error
 }
 
 type settingsSavedMsg struct {
@@ -360,9 +363,8 @@ type model struct {
 	managerActionName   string
 
 	// Settings state
-	rules           []categoryRule
+	rules           []ruleV2
 	tags            []tag
-	tagRules        []tagRule
 	txnTags         map[int][]tag
 	imports         []importRecord
 	dbInfo          dbInfo
@@ -377,11 +379,33 @@ type model struct {
 	settColorIdx    int                   // index into CategoryAccentColors() during add/edit
 	settTagFocus    int                   // tag editor focus: 0=name, 1=color, 2=scope
 	settTagScopeID  int                   // tag editor scope category id; 0 means global
-	settRuleCatIdx  int                   // category cursor when picking for a rule
 	settEditID      int                   // ID of item being edited
 	confirmAction   settingsConfirmAction // pending settings confirm action
 	confirmID       int                   // ID for pending confirm (category or rule)
 	confirmFilterID string                // filter ID for pending filter delete confirm
+
+	// Rule editor modal (rules v2)
+	ruleEditorOpen    bool
+	ruleEditorStep    int
+	ruleEditorID      int
+	ruleEditorName    string
+	ruleEditorFilter  string
+	ruleEditorCatID   *int
+	ruleEditorAddTags []int
+	ruleEditorRemTags []int
+	ruleEditorEnabled bool
+	ruleEditorNameCur int
+	ruleEditorExprCur int
+	ruleEditorCatCur  int
+	ruleEditorTagCur  int
+	ruleEditorErr     string
+
+	// Dry-run modal
+	dryRunOpen       bool
+	dryRunResults    []dryRunRuleResult
+	dryRunSummary    dryRunSummary
+	dryRunScopeLabel string
+	dryRunScroll     int
 
 	// Manager state
 	managerCursor     int
@@ -547,6 +571,14 @@ func (m model) View() string {
 	}
 	if m.managerModalOpen {
 		modal := renderManagerAccountModal(m)
+		return m.composeOverlay(header, body, statusLine, footer, modal)
+	}
+	if m.ruleEditorOpen {
+		modal := renderRuleEditorModal(m)
+		return m.composeOverlay(header, body, statusLine, footer, modal)
+	}
+	if m.dryRunOpen {
+		modal := renderDryRunResultsModal(m)
 		return m.composeOverlay(header, body, statusLine, footer, modal)
 	}
 	if m.jumpModeActive {
@@ -851,16 +883,18 @@ func (m model) composeBottomOverlay(header, body, statusLine, footer, content st
 // ---------------------------------------------------------------------------
 
 func (m model) settingsFooterBindings() []key.Binding {
+	if m.dryRunOpen {
+		return m.keys.HelpBindings(scopeDryRunModal)
+	}
+	if m.ruleEditorOpen {
+		return m.keys.HelpBindings(scopeRuleEditor)
+	}
 	if m.settMode != settModeNone {
 		switch m.settMode {
 		case settModeAddCat, settModeEditCat:
 			return m.keys.HelpBindings(scopeSettingsModeCat)
 		case settModeAddTag, settModeEditTag:
 			return m.keys.HelpBindings(scopeSettingsModeTag)
-		case settModeAddRule, settModeEditRule:
-			return m.keys.HelpBindings(scopeSettingsModeRule)
-		case settModeRuleCat:
-			return m.keys.HelpBindings(scopeSettingsModeRuleCat)
 		}
 	}
 	if m.confirmAction != confirmActionNone {
@@ -925,6 +959,12 @@ func (m model) footerBindings() []key.Binding {
 	}
 	if m.managerModalOpen {
 		return m.keys.HelpBindings(scopeManagerModal)
+	}
+	if m.ruleEditorOpen {
+		return m.keys.HelpBindings(scopeRuleEditor)
+	}
+	if m.dryRunOpen {
+		return m.keys.HelpBindings(scopeDryRunModal)
 	}
 	if m.filterInputMode {
 		return m.keys.HelpBindings(scopeFilterInput)
@@ -1136,6 +1176,13 @@ func (m model) accountFilterLabel() string {
 		}
 	}
 	return fmt.Sprintf("%d Accounts", len(m.filterAccounts))
+}
+
+func (m model) rulesScopeLabel() string {
+	if len(m.filterAccounts) == 0 {
+		return "All Accounts"
+	}
+	return fmt.Sprintf("%d selected accounts", len(m.filterAccounts))
 }
 
 func dashboardSpendRows(rows []transaction, txnTags map[int][]tag) []transaction {

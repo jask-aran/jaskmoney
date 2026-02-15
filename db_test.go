@@ -32,7 +32,7 @@ func testDB(t *testing.T) (*sql.DB, func()) {
 
 // ---- Schema creation tests ----
 
-func TestOpenDBCreatesV4Schema(t *testing.T) {
+func TestOpenDBCreatesV5Schema(t *testing.T) {
 	db, cleanup := testDB(t)
 	defer cleanup()
 
@@ -48,8 +48,10 @@ func TestOpenDBCreatesV4Schema(t *testing.T) {
 
 	// Verify all tables exist
 	tables := []string{
-		"schema_meta", "categories", "category_rules", "transactions", "imports",
-		"accounts", "account_selection", "tags", "transaction_tags", "tag_rules",
+		"schema_meta", "categories", "transactions", "imports",
+		"accounts", "account_selection", "tags", "transaction_tags", "rules_v2",
+		"category_budgets", "category_budget_overrides", "spending_targets",
+		"spending_target_overrides", "credit_offsets",
 	}
 	for _, table := range tables {
 		var count int
@@ -415,8 +417,7 @@ func TestInsertAndLoadCategoryRule(t *testing.T) {
 	groceryID := cats[1].id // "Groceries" is second
 
 	// Insert a rule
-	_, err = db.Exec(`INSERT INTO category_rules (pattern, category_id, priority)
-		VALUES ('WOOLWORTHS', ?, 10)`, groceryID)
+	_, err = insertCategoryRule(db, "WOOLWORTHS", groceryID)
 	if err != nil {
 		t.Fatalf("insert rule: %v", err)
 	}
@@ -897,7 +898,7 @@ func TestDeleteCategoryRule(t *testing.T) {
 	}
 }
 
-func TestDuplicateRulePatternFails(t *testing.T) {
+func TestDuplicateRulePatternAllowed(t *testing.T) {
 	db, cleanup := testDB(t)
 	defer cleanup()
 
@@ -907,8 +908,15 @@ func TestDuplicateRulePatternFails(t *testing.T) {
 		t.Fatalf("first insert: %v", err)
 	}
 	_, err = insertCategoryRule(db, "DUP", cats[1].id)
-	if err == nil {
-		t.Error("expected error for duplicate pattern")
+	if err != nil {
+		t.Fatalf("second insert duplicate pattern: %v", err)
+	}
+	rules, err := loadCategoryRules(db)
+	if err != nil {
+		t.Fatalf("loadCategoryRules: %v", err)
+	}
+	if len(rules) != 2 {
+		t.Fatalf("rules len = %d, want 2", len(rules))
 	}
 }
 
@@ -1418,7 +1426,7 @@ func TestNormalizeExistingTagNamesMergesCaseDuplicates(t *testing.T) {
 	if _, err := db.Exec(`INSERT INTO transaction_tags (transaction_id, tag_id) VALUES (?, ?)`, txnID, secondID); err != nil {
 		t.Fatalf("insert transaction tag second: %v", err)
 	}
-	if _, err := db.Exec(`INSERT INTO tag_rules (pattern, tag_id, priority) VALUES ('MERGECASE', ?, 0)`, secondID); err != nil {
+	if _, err := insertTagRule(db, "MERGECASE", secondID); err != nil {
 		t.Fatalf("insert tag rule duplicate: %v", err)
 	}
 
@@ -1457,9 +1465,18 @@ func TestNormalizeExistingTagNamesMergesCaseDuplicates(t *testing.T) {
 		t.Fatalf("transaction tag count = %d, want 1 after merge", txnTagCount)
 	}
 
-	var mappedRuleTagID int
-	if err := db.QueryRow(`SELECT tag_id FROM tag_rules WHERE pattern = 'MERGECASE'`).Scan(&mappedRuleTagID); err != nil {
-		t.Fatalf("load tag rule after merge: %v", err)
+	tagRules, err := loadTagRules(db)
+	if err != nil {
+		t.Fatalf("load tag rules after merge: %v", err)
+	}
+	mappedRuleTagID := 0
+	for _, rule := range tagRules {
+		if rule.pattern == "MERGECASE" {
+			mappedRuleTagID = rule.tagID
+		}
+	}
+	if mappedRuleTagID == 0 {
+		t.Fatalf("expected MERGECASE tag rule after merge, got %+v", tagRules)
 	}
 	if mappedRuleTagID != ids[0] {
 		t.Fatalf("tag rule mapped to %d, want %d", mappedRuleTagID, ids[0])

@@ -76,8 +76,8 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.setError(fmt.Sprintf("Rule save failed: %v", msg.err))
 			return m, nil
 		}
-		m.settMode = settModeNone
-		m.settInput = ""
+		m.ruleEditorOpen = false
+		m.ruleEditorErr = ""
 		m.setStatus("Rule saved.")
 		return m, refreshCmd(m.db)
 	case ruleDeletedMsg:
@@ -93,15 +93,27 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.setError(fmt.Sprintf("Apply rules failed: %v", msg.err))
 			return m, nil
 		}
-		m.setStatusf("Applied rules: %d transactions updated.", msg.count)
+		scope := strings.TrimSpace(msg.scope)
+		if scope == "" {
+			scope = "All Accounts"
+		}
+		m.setStatusf("Applied rules (%s): %d category changes, %d tag changes.", scope, msg.catChanges, msg.tagChanges)
 		return m, refreshCmd(m.db)
-	case tagRulesAppliedMsg:
+	case rulesDryRunMsg:
 		if msg.err != nil {
-			m.setError(fmt.Sprintf("Apply tag rules failed: %v", msg.err))
+			m.setError(fmt.Sprintf("Dry-run failed: %v", msg.err))
 			return m, nil
 		}
-		m.setStatusf("Applied tag rules: %d transactions updated.", msg.count)
-		return m, refreshCmd(m.db)
+		m.dryRunOpen = true
+		m.dryRunResults = msg.results
+		m.dryRunSummary = msg.summary
+		m.dryRunScopeLabel = msg.scope
+		m.dryRunScroll = 0
+		if strings.TrimSpace(m.dryRunScopeLabel) == "" {
+			m.dryRunScopeLabel = "All Accounts"
+		}
+		m.setStatusf("Dry-run ready (%s).", m.dryRunScopeLabel)
+		return m, nil
 	case settingsSavedMsg:
 		if msg.err != nil {
 			m.setError(fmt.Sprintf("Save settings failed: %v", msg.err))
@@ -192,6 +204,12 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		if m.managerModalOpen {
 			return m.updateManagerModal(msg)
 		}
+		if m.dryRunOpen {
+			return m.updateDryRunModal(msg)
+		}
+		if m.ruleEditorOpen {
+			return m.updateRuleEditor(msg)
+		}
 		if m.filterInputMode {
 			return m.updateFilterInput(msg)
 		}
@@ -247,7 +265,6 @@ func (m model) handleRefreshDone(msg refreshDoneMsg) (tea.Model, tea.Cmd) {
 	m.categories = msg.categories
 	m.rules = msg.rules
 	m.tags = msg.tags
-	m.tagRules = msg.tagRules
 	m.txnTags = msg.txnTags
 	if m.txnTags == nil {
 		m.txnTags = make(map[int][]tag)
@@ -802,18 +819,8 @@ func (m *model) beginSettingsTagMode(tg *tag) {
 	}
 }
 
-func (m *model) beginSettingsRuleMode(rule *categoryRule) {
-	if rule == nil {
-		m.settMode = settModeAddRule
-		m.settEditID = 0
-		m.settInput = ""
-		m.settRuleCatIdx = 0
-		return
-	}
-	m.settMode = settModeEditRule
-	m.settEditID = rule.id
-	m.settInput = rule.pattern
-	m.settRuleCatIdx = categoryIndexByID(m.categories, rule.categoryID)
+func (m *model) beginSettingsRuleMode(rule *ruleV2) {
+	m.openRuleEditor(rule)
 }
 
 func isBackspaceKey(msg tea.KeyMsg) bool {

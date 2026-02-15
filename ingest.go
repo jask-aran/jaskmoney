@@ -46,18 +46,27 @@ func ingestCmd(db *sql.DB, filename, basePath string, formats []csvFormat, skipD
 				file: base,
 			}
 		}
-		count, dupes, err := importCSVForAccount(db, path, *format, &acct.id, skipDupes)
+		count, dupes, txnIDs, err := importCSVForAccountWithTxnIDs(db, path, *format, &acct.id, skipDupes)
 		if err != nil {
 			return ingestDoneMsg{count: count, dupes: dupes, err: err, file: base}
 		}
 		if _, err := insertImportRecord(db, base, count); err != nil {
 			return ingestDoneMsg{count: count, dupes: dupes, err: err, file: base}
 		}
-		if _, err := applyCategoryRules(db); err != nil {
-			return ingestDoneMsg{count: count, dupes: dupes, err: err, file: base}
-		}
-		if _, err := applyTagRules(db); err != nil {
-			return ingestDoneMsg{count: count, dupes: dupes, err: err, file: base}
+		if len(txnIDs) > 0 {
+			rules, err := loadRulesV2(db)
+			if err != nil {
+				return ingestDoneMsg{count: count, dupes: dupes, err: err, file: base}
+			}
+			if len(rules) > 0 {
+				txnTags, err := loadTransactionTags(db)
+				if err != nil {
+					return ingestDoneMsg{count: count, dupes: dupes, err: err, file: base}
+				}
+				if _, _, err := applyRulesV2ToTxnIDs(db, rules, txnTags, txnIDs); err != nil {
+					return ingestDoneMsg{count: count, dupes: dupes, err: err, file: base}
+				}
+			}
 		}
 		return ingestDoneMsg{count: count, dupes: dupes, err: nil, file: base}
 	}
@@ -119,9 +128,14 @@ func importCSV(db *sql.DB, path string, format csvFormat, skipDupes bool) (inser
 // importCSVForAccount reads a CSV file using the given format and inserts valid rows.
 // When skipDupes is true, rows matching (date_iso, amount, description, account_id) are skipped.
 func importCSVForAccount(db *sql.DB, path string, format csvFormat, accountID *int, skipDupes bool) (inserted int, dupes int, err error) {
+	inserted, dupes, _, err = importCSVForAccountWithTxnIDs(db, path, format, accountID, skipDupes)
+	return inserted, dupes, err
+}
+
+func importCSVForAccountWithTxnIDs(db *sql.DB, path string, format csvFormat, accountID *int, skipDupes bool) (inserted int, dupes int, txnIDs []int, err error) {
 	tx, err := db.Begin()
 	if err != nil {
-		return 0, 0, fmt.Errorf("begin tx: %w", err)
+		return 0, 0, nil, fmt.Errorf("begin tx: %w", err)
 	}
 	defer tx.Rollback() //nolint:errcheck // rollback is a no-op after commit
 
@@ -129,9 +143,10 @@ func importCSVForAccount(db *sql.DB, path string, format csvFormat, accountID *i
 	if skipDupes {
 		existingSet, err = loadDuplicateSet(db)
 		if err != nil {
-			return 0, 0, fmt.Errorf("load duplicates: %w", err)
+			return 0, 0, nil, fmt.Errorf("load duplicates: %w", err)
 		}
 	}
+	insertedIDs := make([]int, 0)
 
 	walkErr := walkParsedCSVRows(path, format,
 		func(row parsedCSVRow) error {
@@ -143,25 +158,30 @@ func importCSVForAccount(db *sql.DB, path string, format csvFormat, accountID *i
 				}
 				existingSet[key] = true
 			}
-			_, execErr := tx.Exec(`
+			res, execErr := tx.Exec(`
 				INSERT INTO transactions (date_raw, date_iso, amount, description, notes, account_id)
 				VALUES (?, ?, ?, ?, '', ?)
 			`, row.dateRaw, row.dateISO, row.amount, row.description, accountID)
 			if execErr != nil {
 				return fmt.Errorf("insert row: %w", execErr)
 			}
+			lastID, idErr := res.LastInsertId()
+			if idErr != nil {
+				return fmt.Errorf("last insert id: %w", idErr)
+			}
 			inserted++
+			insertedIDs = append(insertedIDs, int(lastID))
 			return nil
 		},
 		func(parseErr error) error { return parseErr },
 	)
 	if walkErr != nil {
-		return inserted, dupes, walkErr
+		return inserted, dupes, insertedIDs, walkErr
 	}
 	if commitErr := tx.Commit(); commitErr != nil {
-		return inserted, dupes, fmt.Errorf("commit tx: %w", commitErr)
+		return inserted, dupes, insertedIDs, fmt.Errorf("commit tx: %w", commitErr)
 	}
-	return inserted, dupes, nil
+	return inserted, dupes, insertedIDs, nil
 }
 
 // countDuplicates scans a CSV file and counts how many rows would be duplicates.

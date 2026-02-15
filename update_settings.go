@@ -2,6 +2,7 @@ package main
 
 import (
 	"fmt"
+	"sort"
 	"strings"
 	"time"
 
@@ -98,12 +99,6 @@ func (m model) updateSettings(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	// Text input modes (always handled first)
 	if m.settMode == settModeAddCat || m.settMode == settModeEditCat || m.settMode == settModeAddTag || m.settMode == settModeEditTag {
 		return m.updateSettingsTextInput(msg)
-	}
-	if m.settMode == settModeAddRule || m.settMode == settModeEditRule {
-		return m.updateSettingsRuleInput(msg)
-	}
-	if m.settMode == settModeRuleCat {
-		return m.updateSettingsRuleCatPicker(msg)
 	}
 
 	// Two-key confirm check
@@ -247,23 +242,52 @@ func (m model) updateSettingsRules(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		m.settItemCursor = moveBoundedCursor(m.settItemCursor, len(m.rules), m.verticalDelta(scopeSettingsActiveRules, msg))
 		return m, nil
 	case m.isAction(scopeSettingsActiveRules, actionAdd, msg):
-		m.beginSettingsRuleMode(nil)
+		m.openRuleEditor(nil)
 		return m, nil
-	case m.isAction(scopeSettingsActiveRules, actionEdit, msg):
+	case m.isAction(scopeSettingsActiveRules, actionSelect, msg), normalizeKeyName(msg.String()) == "enter":
 		if m.settItemCursor < len(m.rules) {
 			rule := m.rules[m.settItemCursor]
-			m.beginSettingsRuleMode(&rule)
+			m.openRuleEditor(&rule)
 		}
 		return m, nil
+	case m.isAction(scopeSettingsActiveRules, actionRuleToggleEnabled, msg):
+		if m.db == nil || m.settItemCursor < 0 || m.settItemCursor >= len(m.rules) {
+			return m, nil
+		}
+		rule := m.rules[m.settItemCursor]
+		db := m.db
+		nextEnabled := !rule.enabled
+		return m, func() tea.Msg {
+			return ruleSavedMsg{err: toggleRuleV2Enabled(db, rule.id, nextEnabled)}
+		}
+	case m.isAction(scopeSettingsActiveRules, actionRuleMoveUp, msg):
+		return m.reorderActiveRule(-1)
+	case m.isAction(scopeSettingsActiveRules, actionRuleMoveDown, msg):
+		return m.reorderActiveRule(1)
 	case m.isAction(scopeSettingsActiveRules, actionDelete, msg):
 		if m.settItemCursor < len(m.rules) {
 			rule := m.rules[m.settItemCursor]
 			keyLabel := m.primaryActionKey(scopeSettingsActiveRules, actionDelete, "del")
-			return m, m.armSettingsConfirm(confirmActionDeleteRule, rule.id, fmt.Sprintf("Press %s again to delete rule %q", keyLabel, rule.pattern))
+			return m, m.armSettingsConfirm(confirmActionDeleteRule, rule.id, fmt.Sprintf("Press %s again to delete rule %q", keyLabel, rule.name))
 		}
 		return m, nil
 	}
 	return m, nil
+}
+
+func (m model) reorderActiveRule(delta int) (tea.Model, tea.Cmd) {
+	if m.db == nil || delta == 0 || m.settItemCursor < 0 || m.settItemCursor >= len(m.rules) {
+		return m, nil
+	}
+	target := m.settItemCursor + delta
+	if target < 0 || target >= len(m.rules) {
+		return m, nil
+	}
+	rule := m.rules[m.settItemCursor]
+	db := m.db
+	return m, func() tea.Msg {
+		return ruleSavedMsg{err: reorderRuleV2(db, rule.id, target)}
+	}
 }
 
 func (m model) updateSettingsFilters(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
@@ -357,7 +381,7 @@ func (m model) updateSettingsConfirm(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		}
 	case confirmActionDeleteRule:
 		return m, func() tea.Msg {
-			return ruleDeletedMsg{err: deleteCategoryRule(db, id)}
+			return ruleDeletedMsg{err: deleteRuleV2(db, id)}
 		}
 	case confirmActionDeleteTag:
 		return m, func() tea.Msg {
@@ -570,65 +594,252 @@ func tagScopeIndex(options []int, scopeID int) int {
 	return 0
 }
 
-// updateSettingsRuleInput handles text input for add/edit rule pattern.
-func (m model) updateSettingsRuleInput(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
-	switch {
-	case m.isAction(scopeSettingsModeRule, actionClose, msg):
-		m.settMode = settModeNone
-		m.settInput = ""
-		m.settEditID = 0
-		return m, nil
-	case m.isAction(scopeSettingsModeRule, actionNext, msg):
-		if m.settInput == "" {
-			m.setStatus("Pattern cannot be empty.")
-			return m, nil
+func (m *model) openRuleEditor(rule *ruleV2) {
+	m.ruleEditorOpen = true
+	m.ruleEditorErr = ""
+	m.ruleEditorStep = 0
+	m.ruleEditorTagCur = 0
+	if rule == nil {
+		m.ruleEditorID = 0
+		m.ruleEditorName = ""
+		m.ruleEditorFilter = ""
+		m.ruleEditorCatID = nil
+		m.ruleEditorAddTags = nil
+		m.ruleEditorRemTags = nil
+		m.ruleEditorEnabled = true
+		m.ruleEditorNameCur = 0
+		m.ruleEditorExprCur = 0
+		m.ruleEditorCatCur = 0
+		return
+	}
+	m.ruleEditorID = rule.id
+	m.ruleEditorName = rule.name
+	m.ruleEditorFilter = rule.filterExpr
+	m.ruleEditorCatID = copyIntPtr(rule.setCategoryID)
+	m.ruleEditorAddTags = append([]int(nil), rule.addTagIDs...)
+	m.ruleEditorRemTags = append([]int(nil), rule.removeTagIDs...)
+	m.ruleEditorEnabled = rule.enabled
+	m.ruleEditorNameCur = len(m.ruleEditorName)
+	m.ruleEditorExprCur = len(m.ruleEditorFilter)
+	m.ruleEditorCatCur = 0
+	if m.ruleEditorCatID != nil {
+		for i, cat := range m.categories {
+			if cat.id == *m.ruleEditorCatID {
+				m.ruleEditorCatCur = i + 1
+				break
+			}
 		}
-		// Move to category picker
-		m.settMode = settModeRuleCat
-		return m, nil
-	case isBackspaceKey(msg):
-		deleteLastASCIIByte(&m.settInput)
-		return m, nil
-	default:
-		appendPrintableASCII(&m.settInput, msg.String())
-		return m, nil
 	}
 }
 
-// updateSettingsRuleCatPicker handles category selection for a rule.
-func (m model) updateSettingsRuleCatPicker(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
+func toggleIntSelection(ids *[]int, value int) {
+	if ids == nil || value <= 0 {
+		return
+	}
+	for i, id := range *ids {
+		if id != value {
+			continue
+		}
+		*ids = append((*ids)[:i], (*ids)[i+1:]...)
+		return
+	}
+	*ids = append(*ids, value)
+	sort.Ints(*ids)
+}
+
+func (m model) normalizeRuleEditorSelections() {
+	uniqAdd := make(map[int]bool)
+	outAdd := make([]int, 0, len(m.ruleEditorAddTags))
+	for _, id := range m.ruleEditorAddTags {
+		if id <= 0 || uniqAdd[id] {
+			continue
+		}
+		uniqAdd[id] = true
+		outAdd = append(outAdd, id)
+	}
+	sort.Ints(outAdd)
+	m.ruleEditorAddTags = outAdd
+
+	uniqRem := make(map[int]bool)
+	outRem := make([]int, 0, len(m.ruleEditorRemTags))
+	for _, id := range m.ruleEditorRemTags {
+		if id <= 0 || uniqRem[id] {
+			continue
+		}
+		uniqRem[id] = true
+		outRem = append(outRem, id)
+	}
+	sort.Ints(outRem)
+	m.ruleEditorRemTags = outRem
+}
+
+func (m model) updateRuleEditor(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
+	keyName := normalizeKeyName(msg.String())
 	switch {
-	case m.isAction(scopeSettingsModeRuleCat, actionClose, msg):
-		m.settMode = settModeNone
-		m.settInput = ""
-		m.settEditID = 0
+	case m.isAction(scopeRuleEditor, actionClose, msg):
+		m.ruleEditorOpen = false
+		m.ruleEditorErr = ""
 		return m, nil
-	case m.verticalDelta(scopeSettingsModeRuleCat, msg) != 0:
-		m.settRuleCatIdx = moveBoundedCursor(m.settRuleCatIdx, len(m.categories), m.verticalDelta(scopeSettingsModeRuleCat, msg))
+	case keyName == "tab":
+		m.ruleEditorStep = (m.ruleEditorStep + 1) % 6
+		m.ruleEditorErr = ""
 		return m, nil
-	case m.isAction(scopeSettingsModeRuleCat, actionSave, msg):
-		if m.db == nil || len(m.categories) == 0 {
+	case keyName == "shift+tab":
+		m.ruleEditorStep = (m.ruleEditorStep - 1 + 6) % 6
+		m.ruleEditorErr = ""
+		return m, nil
+	}
+
+	advanceStep := func() {
+		if m.ruleEditorStep < 5 {
+			m.ruleEditorStep++
+			m.ruleEditorErr = ""
+		}
+	}
+
+	saveRule := func() (tea.Model, tea.Cmd) {
+		if m.db == nil {
 			return m, nil
 		}
-		pattern := m.settInput
-		catID := m.categories[m.settRuleCatIdx].id
+		if strings.TrimSpace(m.ruleEditorName) == "" {
+			m.ruleEditorErr = "Name is required."
+			m.ruleEditorStep = 0
+			return m, nil
+		}
+		if _, err := parseFilterStrict(strings.TrimSpace(m.ruleEditorFilter)); err != nil {
+			m.ruleEditorErr = fmt.Sprintf("Invalid filter: %v", err)
+			m.ruleEditorStep = 1
+			return m, nil
+		}
+		m.normalizeRuleEditorSelections()
+		rule := ruleV2{
+			id:            m.ruleEditorID,
+			name:          strings.TrimSpace(m.ruleEditorName),
+			filterExpr:    strings.TrimSpace(m.ruleEditorFilter),
+			setCategoryID: copyIntPtr(m.ruleEditorCatID),
+			addTagIDs:     append([]int(nil), m.ruleEditorAddTags...),
+			removeTagIDs:  append([]int(nil), m.ruleEditorRemTags...),
+			enabled:       m.ruleEditorEnabled,
+		}
+		if rule.id > 0 {
+			for _, existing := range m.rules {
+				if existing.id == rule.id {
+					rule.sortOrder = existing.sortOrder
+					break
+				}
+			}
+		} else {
+			rule.sortOrder = len(m.rules)
+		}
 		db := m.db
-
-		if m.settMode == settModeRuleCat && m.settEditID > 0 {
-			// We were editing
-			editID := m.settEditID
+		if rule.id > 0 {
 			return m, func() tea.Msg {
-				err := updateCategoryRule(db, editID, pattern, catID)
-				return ruleSavedMsg{err: err}
+				return ruleSavedMsg{err: updateRuleV2(db, rule)}
 			}
 		}
-		// New rule
 		return m, func() tea.Msg {
-			_, err := insertCategoryRule(db, pattern, catID)
+			_, err := insertRuleV2(db, rule)
 			return ruleSavedMsg{err: err}
 		}
-	case m.isAction(scopeGlobal, actionQuit, msg):
-		return m, tea.Quit
+	}
+
+	switch m.ruleEditorStep {
+	case 0:
+		switch keyName {
+		case "enter":
+			advanceStep()
+			return m, nil
+		case "left":
+			moveInputCursorASCII(m.ruleEditorName, &m.ruleEditorNameCur, -1)
+			return m, nil
+		case "right":
+			moveInputCursorASCII(m.ruleEditorName, &m.ruleEditorNameCur, 1)
+			return m, nil
+		case "backspace":
+			deleteASCIIByteBeforeCursor(&m.ruleEditorName, &m.ruleEditorNameCur)
+			return m, nil
+		default:
+			if insertPrintableASCIIAtCursor(&m.ruleEditorName, &m.ruleEditorNameCur, msg.String()) {
+				return m, nil
+			}
+		}
+	case 1:
+		switch keyName {
+		case "enter":
+			advanceStep()
+			return m, nil
+		case "left":
+			moveInputCursorASCII(m.ruleEditorFilter, &m.ruleEditorExprCur, -1)
+			return m, nil
+		case "right":
+			moveInputCursorASCII(m.ruleEditorFilter, &m.ruleEditorExprCur, 1)
+			return m, nil
+		case "backspace":
+			deleteASCIIByteBeforeCursor(&m.ruleEditorFilter, &m.ruleEditorExprCur)
+			return m, nil
+		default:
+			if insertPrintableASCIIAtCursor(&m.ruleEditorFilter, &m.ruleEditorExprCur, msg.String()) {
+				return m, nil
+			}
+		}
+	case 2:
+		maxItems := len(m.categories) + 1 // includes "no category"
+		if maxItems < 1 {
+			maxItems = 1
+		}
+		if m.verticalDelta(scopeRuleEditor, msg) != 0 {
+			m.ruleEditorCatCur = moveBoundedCursor(m.ruleEditorCatCur, maxItems, m.verticalDelta(scopeRuleEditor, msg))
+			if m.ruleEditorCatCur == 0 {
+				m.ruleEditorCatID = nil
+			} else if m.ruleEditorCatCur-1 < len(m.categories) {
+				id := m.categories[m.ruleEditorCatCur-1].id
+				m.ruleEditorCatID = &id
+			}
+			return m, nil
+		}
+		if keyName == "enter" {
+			advanceStep()
+			return m, nil
+		}
+	case 3, 4:
+		if len(m.tags) > 0 && m.verticalDelta(scopeRuleEditor, msg) != 0 {
+			m.ruleEditorTagCur = moveBoundedCursor(m.ruleEditorTagCur, len(m.tags), m.verticalDelta(scopeRuleEditor, msg))
+			return m, nil
+		}
+		if m.isAction(scopeRuleEditor, actionToggleSelect, msg) && len(m.tags) > 0 && m.ruleEditorTagCur < len(m.tags) {
+			tagID := m.tags[m.ruleEditorTagCur].id
+			if m.ruleEditorStep == 3 {
+				toggleIntSelection(&m.ruleEditorAddTags, tagID)
+			} else {
+				toggleIntSelection(&m.ruleEditorRemTags, tagID)
+			}
+			return m, nil
+		}
+		if keyName == "enter" {
+			advanceStep()
+			return m, nil
+		}
+	case 5:
+		if m.horizontalDelta(scopeRuleEditor, msg) != 0 || m.isAction(scopeRuleEditor, actionToggleSelect, msg) {
+			m.ruleEditorEnabled = !m.ruleEditorEnabled
+			return m, nil
+		}
+		if keyName == "enter" {
+			return saveRule()
+		}
+	}
+
+	return m, nil
+}
+
+func (m model) updateDryRunModal(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
+	switch {
+	case m.isAction(scopeDryRunModal, actionClose, msg):
+		m.dryRunOpen = false
+		return m, nil
+	case m.verticalDelta(scopeDryRunModal, msg) != 0:
+		m.dryRunScroll = moveBoundedCursor(m.dryRunScroll, len(m.dryRunResults), m.verticalDelta(scopeDryRunModal, msg))
+		return m, nil
 	}
 	return m, nil
 }
