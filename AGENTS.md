@@ -16,7 +16,7 @@ This repository uses a two-tier specification system to guide development:
    - **Purpose:** Describes *what* to build, phase-by-phase implementation order, breaking changes, and acceptance criteria
    - **When to read:** Before starting work on a v0.4 feature; to understand dependencies between phases; to see the full scope of v0.4 changes
    - **Navigation:** Use the Table of Contents. Each phase is self-contained with schema changes, model changes, files changed, tests, and acceptance criteria
-   - **Phase structure:** 6 phases with explicit dependencies (Phase 1 → Phase 2 → Phases 3/5 parallel → Phase 6)
+   - **Phase structure:** 7 phases with explicit dependencies (Phase 1 → Phase 2 → Phases 3/5 parallel → Phase 6 → Phase 7 hardening)
 
 ### How to Use These Documents Efficiently
 
@@ -85,8 +85,8 @@ internal/budget/          — budget computation
 1. **Single mutable state root:** `model` is the only source of truth. Mutate only in `Update` paths.
 2. **Pure rendering:** `View()` is read-only. No I/O, no side effects.
 3. **Message-driven async:** All I/O happens via `tea.Cmd`. Commands return `tea.Msg`.
-4. **Modal precedence:** Topmost overlay wins. See `architecture.md` §3.2 for dispatch chain.
-5. **Text input safety:** Printable keys are literal text in input contexts, not shortcuts. See `architecture.md` §3.3.
+4. **Modal precedence:** Topmost overlay wins. A shared dispatch table in `dispatch.go` keeps `Update()`, `footerBindings()`, and `commandContextScope()` in sync. See `architecture.md` §3.2.
+5. **Text input safety:** Printable keys are literal text in input contexts, not shortcuts. `modalTextContracts` in `dispatch.go` is the single source of truth for text input behavior per scope. See `architecture.md` §3.3.
 6. **Keybinding architecture:** Scopes are flat in storage, hierarchical in dispatch. Actions are stable; keys are variable. See `architecture.md` §3.4.
 
 ## Testing Strategy
@@ -272,9 +272,9 @@ For PRs, include:
 
 1. **Keybinding conflicts:** Use `specs/architecture.md` §3.4.11 testing contract to catch shadow conflicts. Run scope reachability and global shadow audit tests before adding new scopes.
 
-2. **Text input safety:** When adding new text input contexts, ensure printable keys don't trigger shortcuts. See `specs/architecture.md` §3.3.
+2. **Text input safety:** When adding new text input contexts, add an entry in `modalTextContracts` (`dispatch.go`) and ensure printable keys don't trigger shortcuts. See `specs/architecture.md` §3.3.
 
-3. **Modal precedence:** New modals must be inserted at correct precedence in `update.go` dispatch chain. See `specs/architecture.md` §3.2.
+3. **Modal precedence:** New modals must be added as an `overlayEntry` in `overlayPrecedence()` (`dispatch.go`) at the correct priority position. All three consumers (Update, footerBindings, commandContextScope) automatically stay in sync. See `specs/architecture.md` §3.2.
 
 4. **Filter expression contexts:** Use permissive parser (`parseFilter`) for interactive `/` input; use strict parser (`parseFilterStrict`) for rules/targets/saved filters. See `specs/architecture.md` §4.4.
 
@@ -304,6 +304,9 @@ For PRs, include:
 
 | Need to understand... | Check... |
 |---|---|
+| Overlay dispatch table | `dispatch.go` + `specs/architecture.md` §3.2 |
+| Modal text input contracts | `dispatch.go` `modalTextContracts` + `specs/architecture.md` §3.3 |
+| Adding a new modal (checklist) | `specs/architecture.md` §3.3 "Adding a new modal" |
 | Keybinding architecture | `specs/architecture.md` §3.4 |
 | Command system | `specs/architecture.md` §4.3 |
 | Filter expression language | `specs/architecture.md` §4.4 |
@@ -313,6 +316,7 @@ For PRs, include:
 | Credit offsets | `specs/architecture.md` §5.7 |
 | Dashboard grid rendering | `specs/architecture.md` §6.4 |
 | Testing strategy | `specs/architecture.md` §8 |
+| Interaction contract layer | `specs/v0.4-spec.md` Phase 7 |
 | What's in v0.4 Phase X | `specs/v0.4-spec.md` Phase X |
 | Breaking changes in v0.4 | `specs/v0.4-spec.md` Behavioral Breaking Changes |
 | Phase dependencies | `specs/v0.4-spec.md` Phase Summary & Dependencies |

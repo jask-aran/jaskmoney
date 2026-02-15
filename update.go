@@ -173,51 +173,15 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.clearSettingsConfirm()
 		return m, nil
 	case tea.KeyMsg:
-		if m.jumpModeActive {
-			return m.updateJumpOverlay(msg)
+		// Primary tier: overlay/modal dispatch via shared precedence table.
+		if next, cmd, handled := m.dispatchOverlayKey(msg); handled {
+			return next, cmd
 		}
-		if m.commandOpen {
-			return m.updateCommandUI(msg)
-		}
-		if m.showDetail {
-			return m.updateDetail(msg)
-		}
-		if m.importDupeModal {
-			return m.updateDupeModal(msg)
-		}
-		if m.importPicking {
-			return m.updateFilePicker(msg)
-		}
-		if m.catPicker != nil {
-			return m.updateCatPicker(msg)
-		}
-		if m.tagPicker != nil {
-			return m.updateTagPicker(msg)
-		}
-		if m.filterApplyPicker != nil {
-			return m.updateFilterApplyPicker(msg)
-		}
-		if m.managerActionPicker != nil {
-			return m.updateManagerActionPicker(msg)
-		}
-		if m.filterEditOpen {
-			return m.updateFilterEdit(msg)
-		}
-		if m.managerModalOpen {
-			return m.updateManagerModal(msg)
-		}
-		if m.dryRunOpen {
-			return m.updateDryRunModal(msg)
-		}
-		if m.ruleEditorOpen {
-			return m.updateRuleEditor(msg)
-		}
-		if m.filterInputMode {
-			return m.updateFilterInput(msg)
-		}
+		// No overlay active — try keybinding-to-command dispatch.
 		if next, cmd, handled := m.executeBoundCommand(m.commandContextScope(), msg); handled {
 			return next, cmd
 		}
+		// Tab-level dispatch.
 		if m.activeTab == tabSettings {
 			return m.updateSettings(msg)
 		}
@@ -573,12 +537,7 @@ func suppressTextModalVimNav(scope string, msg tea.KeyMsg) bool {
 }
 
 func isTextInputModalScope(scope string) bool {
-	switch scope {
-	case scopeRuleEditor, scopeFilterEdit, scopeSettingsModeCat, scopeSettingsModeTag, scopeManagerModal, scopeDetailModal:
-		return true
-	default:
-		return false
-	}
+	return isTextInputModalScopeFromContract(scope)
 }
 
 func (m model) moveCursorForScope(scope string, msg tea.KeyMsg, cursor, size int) (int, bool) {

@@ -2399,7 +2399,7 @@ func renderManagerAccountModal(m model) string {
 
 	nameVal := m.managerEditName
 	if m.managerEditFocus == 0 {
-		nameVal += "_"
+		nameVal = renderASCIIInputCursor(m.managerEditName, m.managerEditNameCur)
 	}
 	typeVal := strings.ToUpper(m.managerEditType)
 	activeVal := "false"
@@ -2408,7 +2408,7 @@ func renderManagerAccountModal(m model) string {
 	}
 	prefixVal := m.managerEditPrefix
 	if m.managerEditFocus == 2 {
-		prefixVal += "_"
+		prefixVal = renderASCIIInputCursor(m.managerEditPrefix, m.managerEditPrefixCur)
 	}
 
 	body = append(body, modalCursor(m.managerEditFocus == 0)+detailLabelStyle.Render("Name:         ")+detailValueStyle.Render(nameVal))
@@ -2416,7 +2416,15 @@ func renderManagerAccountModal(m model) string {
 	body = append(body, modalCursor(m.managerEditFocus == 2)+detailLabelStyle.Render("Import Prefix:")+detailValueStyle.Render(" "+prefixVal))
 	body = append(body, modalCursor(m.managerEditFocus == 3)+detailLabelStyle.Render("Is Active:    ")+detailValueStyle.Render(activeVal))
 
-	return renderModalContent(title, body, "")
+	footer := scrollStyle.Render(fmt.Sprintf(
+		"%s/%s field  %s toggle  %s save  %s cancel",
+		actionKeyLabel(m.keys, scopeManagerModal, actionUp, "up"),
+		actionKeyLabel(m.keys, scopeManagerModal, actionDown, "down"),
+		actionKeyLabel(m.keys, scopeManagerModal, actionToggleSelect, "space"),
+		actionKeyLabel(m.keys, scopeManagerModal, actionConfirm, "enter"),
+		actionKeyLabel(m.keys, scopeManagerModal, actionClose, "esc"),
+	))
+	return renderModalContent(title, body, footer)
 }
 
 func renderFilterEditorModal(m model) string {
@@ -2545,7 +2553,7 @@ func renderRuleEditorModal(m model) string {
 	}
 
 	footer := scrollStyle.Render(fmt.Sprintf(
-		"%s/%s step  tab nav  %s pick/save  %s toggle  %s cancel",
+		"%s/%s step  tab nav  %s toggle  %s pick/save  %s cancel",
 		actionKeyLabel(m.keys, scopeRuleEditor, actionUp, "up"),
 		actionKeyLabel(m.keys, scopeRuleEditor, actionDown, "down"),
 		actionKeyLabel(m.keys, scopeRuleEditor, actionToggleSelect, "space"),
@@ -2625,7 +2633,7 @@ func renderDryRunResultsModal(m model) string {
 }
 
 // renderDetail renders the transaction detail modal content.
-func renderDetail(txn transaction, tags []tag, notes string, editing string, keys *KeyRegistry) string {
+func renderDetail(txn transaction, tags []tag, notes string, notesCursor int, editing string, keys *KeyRegistry) string {
 	const detailModalWidth = 52
 	const detailTextWrap = 40
 	var body []string
@@ -2684,7 +2692,7 @@ func renderDetail(txn transaction, tags []tag, notes string, editing string, key
 	footer := ""
 	if editing == "notes" {
 		notesLabel = detailActiveStyle.Render("Notes: ")
-		noteLines := splitLines(wrapText(notes+"_", detailTextWrap))
+		noteLines := splitLines(wrapText(renderASCIIInputCursor(notes, notesCursor), detailTextWrap))
 		if len(noteLines) == 0 {
 			noteLines = []string{""}
 		}
@@ -2693,9 +2701,9 @@ func renderDetail(txn transaction, tags []tag, notes string, editing string, key
 			body = append(body, detailValueStyle.Render(indentPrefix+line))
 		}
 		footer = scrollStyle.Render(fmt.Sprintf(
-			"%s/%s done",
-			actionKeyLabel(keys, scopeDetailModal, actionClose, "esc"),
+			"%s done  %s close",
 			actionKeyLabel(keys, scopeDetailModal, actionSelect, "enter"),
+			actionKeyLabel(keys, scopeDetailModal, actionClose, "esc"),
 		))
 	} else {
 		display := notes

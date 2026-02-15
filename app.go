@@ -362,6 +362,7 @@ type model struct {
 	detailIdx           int // transaction ID being edited
 	detailCatCursor     int // cursor in category picker
 	detailNotes         string
+	detailNotesCursor   int    // cursor position inside detailNotes when editing
 	detailEditing       string // "category" or "notes" or ""
 	catPicker           *pickerState
 	catPickerFor        []int
@@ -416,18 +417,20 @@ type model struct {
 	dryRunScroll     int
 
 	// Manager state
-	managerCursor     int
-	managerSelectedID int
-	managerMode       int
-	managerModalOpen  bool
-	managerModalIsNew bool
-	managerEditID     int
-	managerEditSource string
-	managerEditName   string
-	managerEditType   string
-	managerEditPrefix string
-	managerEditActive bool
-	managerEditFocus  int // 0=name,1=type,2=prefix,3=active
+	managerCursor        int
+	managerSelectedID    int
+	managerMode          int
+	managerModalOpen     bool
+	managerModalIsNew    bool
+	managerEditID        int
+	managerEditSource    string
+	managerEditName      string
+	managerEditType      string
+	managerEditPrefix    string
+	managerEditActive    bool
+	managerEditFocus     int // 0=name,1=type,2=prefix,3=active
+	managerEditNameCur   int // cursor position inside managerEditName
+	managerEditPrefixCur int // cursor position inside managerEditPrefix
 
 	// Dashboard timeframe
 	dashTimeframe       int
@@ -545,7 +548,7 @@ func (m model) View() string {
 	if m.showDetail {
 		txn := m.findDetailTxn()
 		if txn != nil {
-			detail := renderDetail(*txn, m.txnTags[txn.id], m.detailNotes, m.detailEditing, m.keys)
+			detail := renderDetail(*txn, m.txnTags[txn.id], m.detailNotes, m.detailNotesCursor, m.detailEditing, m.keys)
 			return m.composeOverlay(header, body, statusLine, footer, detail)
 		}
 	}
@@ -932,73 +935,16 @@ func (m model) settingsConfirmBindings() []key.Binding {
 // ---------------------------------------------------------------------------
 
 func (m model) footerBindings() []key.Binding {
-	if m.jumpModeActive {
-		return m.keys.HelpBindings(scopeJumpOverlay)
+	// Primary tier: overlay/modal scope via shared precedence table.
+	if scope := m.activeOverlayScope(true); scope != "" {
+		return m.keys.HelpBindings(scope)
 	}
-	if m.commandOpen {
-		if m.commandUIKind == commandUIKindPalette {
-			return m.keys.HelpBindings(scopeCommandPalette)
-		}
-		return m.keys.HelpBindings(scopeCommandMode)
-	}
-	if m.showDetail {
-		return m.keys.HelpBindings(scopeDetailModal)
-	}
-	if m.importPicking {
-		return m.keys.HelpBindings(scopeFilePicker)
-	}
-	if m.importDupeModal {
-		return m.keys.HelpBindings(scopeDupeModal)
-	}
-	if m.catPicker != nil {
-		return m.keys.HelpBindings(scopeCategoryPicker)
-	}
-	if m.tagPicker != nil {
-		return m.keys.HelpBindings(scopeTagPicker)
-	}
-	if m.filterApplyPicker != nil {
-		return m.keys.HelpBindings(scopeFilterApplyPicker)
-	}
-	if m.managerActionPicker != nil {
-		return m.keys.HelpBindings(scopeManagerAccountAction)
-	}
-	if m.filterEditOpen {
-		return m.keys.HelpBindings(scopeFilterEdit)
-	}
-	if m.managerModalOpen {
-		return m.keys.HelpBindings(scopeManagerModal)
-	}
-	if m.ruleEditorOpen {
-		return m.keys.HelpBindings(scopeRuleEditor)
-	}
-	if m.dryRunOpen {
-		return m.keys.HelpBindings(scopeDryRunModal)
-	}
-	if m.filterInputMode {
-		return m.keys.HelpBindings(scopeFilterInput)
-	}
-	if m.activeTab == tabDashboard {
-		if m.dashCustomEditing {
-			return m.keys.HelpBindings(scopeDashboardCustomInput)
-		}
-		if m.dashTimeframeFocus {
-			return m.keys.HelpBindings(scopeDashboardTimeframe)
-		}
-		if m.focusedSection >= 0 {
-			return m.keys.HelpBindings(scopeDashboardFocused)
-		}
-		return m.keys.HelpBindings(scopeDashboard)
-	}
-	if m.activeTab == tabManager {
-		if m.managerMode == managerModeTransactions {
-			return m.keys.HelpBindings(scopeTransactions)
-		}
-		return m.keys.HelpBindings(scopeManager)
-	}
+	// Secondary tier: tab-level scope resolution.
+	// Settings tab has special footer logic for confirm bindings.
 	if m.activeTab == tabSettings {
 		return m.settingsFooterBindings()
 	}
-	return m.keys.HelpBindings(scopeDashboard)
+	return m.keys.HelpBindings(m.tabScope())
 }
 
 func (m *model) visibleRows() int {

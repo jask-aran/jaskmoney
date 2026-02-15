@@ -1061,89 +1061,18 @@ func (m model) executeBoundCommandInternal(scope string, msg tea.KeyMsg, localOn
 }
 
 func (m model) commandContextScope() string {
-	if m.jumpModeActive {
-		return scopeJumpOverlay
+	// Primary tier: overlay/modal scope via shared precedence table.
+	if scope := m.activeOverlayScope(false); scope != "" {
+		return scope
 	}
-	if m.showDetail {
-		return scopeDetailModal
+	// Secondary tier: tab-level scope resolution.
+	scope := m.tabScope()
+	// tabScope defaults to scopeDashboard for unknown tabs; commandContextScope
+	// should fall back to scopeGlobal when no specific tab scope applies.
+	if scope == "" {
+		return scopeGlobal
 	}
-	if m.importDupeModal {
-		return scopeDupeModal
-	}
-	if m.importPicking {
-		return scopeFilePicker
-	}
-	if m.catPicker != nil {
-		return scopeCategoryPicker
-	}
-	if m.tagPicker != nil {
-		return scopeTagPicker
-	}
-	if m.filterApplyPicker != nil {
-		return scopeFilterApplyPicker
-	}
-	if m.managerActionPicker != nil {
-		return scopeManagerAccountAction
-	}
-	if m.filterEditOpen {
-		return scopeFilterEdit
-	}
-	if m.managerModalOpen {
-		return scopeManagerModal
-	}
-	if m.ruleEditorOpen {
-		return scopeRuleEditor
-	}
-	if m.dryRunOpen {
-		return scopeDryRunModal
-	}
-	if m.filterInputMode {
-		return scopeFilterInput
-	}
-	if m.activeTab == tabDashboard {
-		if m.dashCustomEditing {
-			return scopeDashboardCustomInput
-		}
-		if m.dashTimeframeFocus {
-			return scopeDashboardTimeframe
-		}
-		if m.focusedSection >= 0 {
-			return scopeDashboardFocused
-		}
-		return scopeDashboard
-	}
-	if m.activeTab == tabManager {
-		if m.managerMode == managerModeAccounts {
-			return scopeManager
-		}
-		return scopeTransactions
-	}
-	if m.activeTab == tabSettings {
-		if m.ruleEditorOpen {
-			return scopeRuleEditor
-		}
-		if m.dryRunOpen {
-			return scopeDryRunModal
-		}
-		if m.settMode != settModeNone {
-			switch m.settMode {
-			case settModeAddCat, settModeEditCat:
-				return scopeSettingsModeCat
-			case settModeAddTag, settModeEditTag:
-				return scopeSettingsModeTag
-			}
-		}
-		if m.confirmAction != confirmActionNone {
-			if spec, ok := settingsConfirmSpecFor(m.confirmAction); ok {
-				return spec.scope
-			}
-		}
-		if m.settActive {
-			return settingsActiveScope(m.settSection)
-		}
-		return scopeSettingsNav
-	}
-	return scopeGlobal
+	return scope
 }
 
 func commandDefaultLabel(value string) string {
