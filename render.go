@@ -589,7 +589,13 @@ func splitWordAtWidth(word string, width int) (fit string, rest string) {
 }
 
 func prettyHelpKey(k string) string {
-	s := strings.TrimSpace(strings.ToLower(k))
+	s := strings.TrimSpace(k)
+	// Single uppercase letter = Shift+letter (e.g. "K" means Shift+K).
+	// Display as "S-k" to distinguish from lowercase.
+	if len(s) == 1 && s[0] >= 'A' && s[0] <= 'Z' {
+		return "S-" + strings.ToLower(s)
+	}
+	s = strings.ToLower(s)
 	switch s {
 	case "j/k":
 		return "↑/↓"
@@ -2120,9 +2126,9 @@ func renderSettingsCategories(m model, width int) string {
 		}
 		lines = append(lines, modalCursor(m.settCatFocus == 1)+detailLabelStyle.Render("Color: ")+colorRow)
 		lines = append(lines, scrollStyle.Render(fmt.Sprintf(
-			"%s field  %s adjust  %s save  %s cancel",
-			actionKeyLabel(m.keys, scopeSettingsModeCat, actionDown, "j"),
-			actionKeyLabel(m.keys, scopeSettingsModeCat, actionRight, "l"),
+			"tab field  %s/%s color  %s save  %s cancel",
+			actionKeyLabel(m.keys, scopeSettingsModeCat, actionLeft, "left"),
+			actionKeyLabel(m.keys, scopeSettingsModeCat, actionRight, "right"),
 			actionKeyLabel(m.keys, scopeSettingsModeCat, actionSave, "enter"),
 			actionKeyLabel(m.keys, scopeSettingsModeCat, actionClose, "esc"),
 		)))
@@ -2180,9 +2186,9 @@ func renderSettingsTags(m model, width int) string {
 		}
 		lines = append(lines, modalCursor(m.settTagFocus == 2)+detailLabelStyle.Render("Scope: ")+detailValueStyle.Render(scopeName))
 		lines = append(lines, scrollStyle.Render(fmt.Sprintf(
-			"%s field  %s adjust  %s save  %s cancel",
-			actionKeyLabel(m.keys, scopeSettingsModeTag, actionDown, "j"),
-			actionKeyLabel(m.keys, scopeSettingsModeTag, actionRight, "l"),
+			"tab field  %s/%s adjust  %s save  %s cancel",
+			actionKeyLabel(m.keys, scopeSettingsModeTag, actionLeft, "left"),
+			actionKeyLabel(m.keys, scopeSettingsModeTag, actionRight, "right"),
 			actionKeyLabel(m.keys, scopeSettingsModeTag, actionSave, "enter"),
 			actionKeyLabel(m.keys, scopeSettingsModeTag, actionClose, "esc"),
 		)))
@@ -2417,9 +2423,7 @@ func renderManagerAccountModal(m model) string {
 	body = append(body, modalCursor(m.managerEditFocus == 3)+detailLabelStyle.Render("Is Active:    ")+detailValueStyle.Render(activeVal))
 
 	footer := scrollStyle.Render(fmt.Sprintf(
-		"%s/%s field  %s toggle  %s save  %s cancel",
-		actionKeyLabel(m.keys, scopeManagerModal, actionUp, "up"),
-		actionKeyLabel(m.keys, scopeManagerModal, actionDown, "down"),
+		"tab field  %s toggle  %s save  %s cancel",
 		actionKeyLabel(m.keys, scopeManagerModal, actionToggleSelect, "space"),
 		actionKeyLabel(m.keys, scopeManagerModal, actionConfirm, "enter"),
 		actionKeyLabel(m.keys, scopeManagerModal, actionClose, "esc"),
@@ -2463,9 +2467,7 @@ func renderFilterEditorModal(m model) string {
 		body = append(body, lipgloss.NewStyle().Foreground(colorError).Render("Error: "+strings.TrimSpace(m.filterEditErr)))
 	}
 	footer := scrollStyle.Render(fmt.Sprintf(
-		"%s field  %s move  %s save  %s cancel",
-		actionKeyLabel(m.keys, scopeFilterEdit, actionDown, "down"),
-		actionKeyLabel(m.keys, scopeFilterEdit, actionRight, "right"),
+		"tab field  %s save  %s cancel",
 		actionKeyLabel(m.keys, scopeFilterEdit, actionSave, "enter"),
 		actionKeyLabel(m.keys, scopeFilterEdit, actionClose, "esc"),
 	))
@@ -2553,9 +2555,7 @@ func renderRuleEditorModal(m model) string {
 	}
 
 	footer := scrollStyle.Render(fmt.Sprintf(
-		"%s/%s step  tab nav  %s toggle  %s pick/save  %s cancel",
-		actionKeyLabel(m.keys, scopeRuleEditor, actionUp, "up"),
-		actionKeyLabel(m.keys, scopeRuleEditor, actionDown, "down"),
+		"tab step  %s toggle  %s pick/save  %s cancel",
 		actionKeyLabel(m.keys, scopeRuleEditor, actionToggleSelect, "space"),
 		actionKeyLabel(m.keys, scopeRuleEditor, actionSelect, "enter"),
 		actionKeyLabel(m.keys, scopeRuleEditor, actionClose, "esc"),

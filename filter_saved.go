@@ -418,12 +418,21 @@ func (m model) updateFilterEdit(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		m.closeFilterEditor()
 		m.setStatus("Filter edit cancelled.")
 		return m, nil
-	case keyName == "up" || keyName == "ctrl+p":
+	case keyName == "tab":
+		m.filterEditFocus = (m.filterEditFocus + 1) % 3
+		m.filterEditErr = ""
+		return m, nil
+	case keyName == "shift+tab":
 		m.filterEditFocus = (m.filterEditFocus - 1 + 3) % 3
 		m.filterEditErr = ""
 		return m, nil
-	case keyName == "down" || keyName == "ctrl+n":
-		m.filterEditFocus = (m.filterEditFocus + 1) % 3
+	case m.verticalDelta(scope, msg) != 0:
+		delta := m.verticalDelta(scope, msg)
+		if delta > 0 {
+			m.filterEditFocus = (m.filterEditFocus + 1) % 3
+		} else {
+			m.filterEditFocus = (m.filterEditFocus - 1 + 3) % 3
+		}
 		m.filterEditErr = ""
 		return m, nil
 	case m.isAction(scope, actionSave, msg):

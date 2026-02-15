@@ -507,6 +507,18 @@ func (m model) updateSettingsTextInput(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		m.settTagFocus = 0
 		m.settTagScopeID = 0
 		return m, nil
+	case isCategoryMode && keyName == "tab":
+		m.settCatFocus = (m.settCatFocus + 1) % 2
+		return m, nil
+	case isCategoryMode && keyName == "shift+tab":
+		m.settCatFocus = (m.settCatFocus - 1 + 2) % 2
+		return m, nil
+	case isTagMode && keyName == "tab":
+		m.settTagFocus = (m.settTagFocus + 1) % 3
+		return m, nil
+	case isTagMode && keyName == "shift+tab":
+		m.settTagFocus = (m.settTagFocus - 1 + 3) % 3
+		return m, nil
 	case isCategoryMode && m.verticalDelta(scopeSettingsModeCat, msg) != 0:
 		delta := m.verticalDelta(scopeSettingsModeCat, msg)
 		if delta > 0 {
