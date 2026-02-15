@@ -49,7 +49,7 @@ func TestRulesDryRunMsgOpensModal(t *testing.T) {
 	}
 }
 
-func TestUpdateSettingsRulesToggleEnableUsesKeyE(t *testing.T) {
+func TestUpdateSettingsRulesToggleEnableUsesSpace(t *testing.T) {
 	db, cleanup := testDB(t)
 	defer cleanup()
 
@@ -71,7 +71,8 @@ func TestUpdateSettingsRulesToggleEnableUsesKeyE(t *testing.T) {
 	m.rules = rules
 	m.settItemCursor = 0
 
-	next, cmd := m.updateSettings(keyMsg("e"))
+	toggleKey := m.primaryActionKey(scopeSettingsActiveRules, actionRuleToggleEnabled, "space")
+	next, cmd := m.updateSettings(keyMsg(toggleKey))
 	if cmd == nil {
 		t.Fatal("expected toggle command")
 	}
@@ -90,7 +91,7 @@ func TestUpdateSettingsRulesToggleEnableUsesKeyE(t *testing.T) {
 		t.Fatalf("unexpected rules after toggle: %+v", rulesAfter)
 	}
 	if rulesAfter[0].enabled {
-		t.Fatal("rule should be disabled after pressing e")
+		t.Fatal("rule should be disabled after pressing space")
 	}
 }
 
