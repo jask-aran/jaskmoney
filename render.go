@@ -803,12 +803,11 @@ func renderFilePicker(files []string, cursor int, keys *KeyRegistry) string {
 
 func renderImportPreview(
 	snapshot *importPreviewSnapshot,
-	viewFull,
 	postRules,
 	showAll bool,
-	scroll,
+	cursor,
+	topIndex,
 	compactRows,
-	fullRows,
 	terminalWidth int,
 	keys *KeyRegistry,
 ) string {
@@ -817,13 +816,10 @@ func renderImportPreview(
 			lipgloss.NewStyle().Foreground(colorOverlay1).Render("No import snapshot loaded."),
 		}, renderActionHint(keys, scopeImportPreview, actionClose, "esc", "cancel"))
 	}
-	if viewFull {
-		return renderImportPreviewFull(snapshot, postRules, scroll, fullRows, terminalWidth, keys)
-	}
-	return renderImportPreviewCompact(snapshot, postRules, showAll, scroll, compactRows, terminalWidth, keys)
+	return renderImportPreviewCompact(snapshot, postRules, showAll, cursor, topIndex, compactRows, terminalWidth, keys)
 }
 
-func renderImportPreviewCompact(snapshot *importPreviewSnapshot, postRules, showAll bool, scroll, compactRows, terminalWidth int, keys *KeyRegistry) string {
+func renderImportPreviewCompact(snapshot *importPreviewSnapshot, postRules, showAll bool, cursor, topIndex, compactRows, terminalWidth int, keys *KeyRegistry) string {
 	body := []string{
 		detailLabelStyle.Render("Summary"),
 		detailLabelStyle.Render("  File:    ") + detailValueStyle.Render(snapshot.fileName),
@@ -831,6 +827,7 @@ func renderImportPreviewCompact(snapshot *importPreviewSnapshot, postRules, show
 		detailLabelStyle.Render("  New:     ") + detailValueStyle.Render(fmt.Sprintf("%d", snapshot.newCount)),
 		detailLabelStyle.Render("  Dupes:   ") + detailValueStyle.Render(fmt.Sprintf("%d", snapshot.dupeCount)),
 		detailLabelStyle.Render("  Errors:  ") + detailValueStyle.Render(fmt.Sprintf("%d", snapshot.errorCount)),
+		detailLabelStyle.Render("  Rules:   ") + detailValueStyle.Render(map[bool]string{true: "ON", false: "OFF"}[postRules]),
 		"",
 	}
 
@@ -856,15 +853,11 @@ func renderImportPreviewCompact(snapshot *importPreviewSnapshot, postRules, show
 	if len(rows) == 0 {
 		body = append(body, "  No rows in this view.")
 	} else {
-		table := renderImportPreviewTable(rows, postRules, scroll, compactRows, terminalWidth, false)
+		table := renderImportPreviewTable(rows, postRules, cursor, topIndex, compactRows, terminalWidth)
 		body = append(body, splitLines(table)...)
 		body = append(body, detailLabelStyle.Render(fmt.Sprintf("  showing %d rows/page", compactRows)))
 	}
 
-	rawLabel := "rules*"
-	if !postRules {
-		rawLabel = "raw*"
-	}
 	previewLabel := "preview"
 	if showAll {
 		previewLabel = "dupes"
@@ -873,38 +866,11 @@ func renderImportPreviewCompact(snapshot *importPreviewSnapshot, postRules, show
 		renderActionHint(keys, scopeImportPreview, actionImportAll, "a", "import all"),
 		renderActionHint(keys, scopeImportPreview, actionSkipDupes, "s", "skip"),
 		renderActionHint(keys, scopeImportPreview, actionImportPreviewToggle, "p", previewLabel),
-		renderActionHint(keys, scopeImportPreview, actionImportRawView, "r", rawLabel),
-		renderActionHint(keys, scopeImportPreview, actionImportFullView, "f", "full"),
+		renderActionHint(keys, scopeImportPreview, actionImportRawView, "r", "rules"),
 		renderActionHint(keys, scopeImportPreview, actionClose, "esc", "cancel"),
 	}, "  ")
 	width := max(96, min(136, terminalWidth-8))
 	return renderModalContentWithWidth("Import Preview", body, footer, width)
-}
-
-func renderImportPreviewFull(snapshot *importPreviewSnapshot, postRules bool, scroll, fullRows, terminalWidth int, keys *KeyRegistry) string {
-	body := []string{detailLabelStyle.Render(fmt.Sprintf("Full Preview (%d rows)", len(snapshot.rows)))}
-	table := renderImportPreviewTable(snapshot.rows, postRules, scroll, fullRows, terminalWidth, true)
-	body = append(body, splitLines(table)...)
-	body = append(body, detailLabelStyle.Render(fmt.Sprintf("  showing %d rows/page", fullRows)))
-	if snapshot.errorCount > 0 {
-		body = append(body, "")
-		body = append(body, lipgloss.NewStyle().Foreground(colorError).Render("Import blocked: preview has parse/normalize errors."))
-	}
-
-	rawDesc := "rules*"
-	if postRules {
-		rawDesc = "rules*"
-	} else {
-		rawDesc = "raw*"
-	}
-	footer := strings.Join([]string{
-		renderActionHint(keys, scopeImportPreview, actionImportRawView, "r", rawDesc),
-		renderActionHint(keys, scopeImportPreview, actionImportAll, "a", "all"),
-		renderActionHint(keys, scopeImportPreview, actionSkipDupes, "s", "skip"),
-		renderActionHint(keys, scopeImportPreview, actionClose, "esc", "back"),
-	}, "  ")
-	width := max(104, min(148, terminalWidth-4))
-	return renderModalContentWithWidth("Import Full View", body, footer, width)
 }
 
 func compactImportRows(snapshot *importPreviewSnapshot, showAll bool) []importPreviewRow {
@@ -923,32 +889,26 @@ func compactImportRows(snapshot *importPreviewSnapshot, showAll bool) []importPr
 	return out
 }
 
-func renderImportPreviewTable(rows []importPreviewRow, postRules bool, topIndex, visibleRows, terminalWidth int, annotateStatus bool) string {
+func renderImportPreviewTable(rows []importPreviewRow, postRules bool, cursor, topIndex, visibleRows, terminalWidth int) string {
 	if visibleRows <= 0 {
 		visibleRows = 10
 	}
 	txns := make([]transaction, 0, len(rows))
 	txnTags := make(map[int][]tag)
-	categories := []category(nil)
+	categories := make([]category, 0)
+	catSeen := make(map[string]bool)
 	if postRules {
-		categories = []category{{id: 1, name: "Uncategorised"}}
+		categories = append(categories, category{id: 1, name: "Uncategorised"})
+		catSeen["Uncategorised"] = true
 	}
 	for i, row := range rows {
 		txnID := i + 1
-		desc := row.description
-		if annotateStatus {
-			if row.isDupe {
-				desc = "[DUPE] " + desc
-			} else {
-				desc = "[NEW] " + desc
-			}
-		}
 		txn := transaction{
 			id:          txnID,
 			dateRaw:     row.dateRaw,
 			dateISO:     row.dateISO,
 			amount:      row.amount,
-			description: desc,
+			description: row.description,
 		}
 		if postRules {
 			cat := strings.TrimSpace(row.previewCat)
@@ -956,17 +916,30 @@ func renderImportPreviewTable(rows []importPreviewRow, postRules bool, topIndex,
 				cat = "Uncategorised"
 			}
 			txn.categoryName = cat
-			for j, name := range row.previewTags {
-				if strings.TrimSpace(name) == "" {
-					continue
+			txn.categoryColor = strings.TrimSpace(row.previewCatColor)
+			if !catSeen[cat] {
+				categories = append(categories, category{name: cat, color: txn.categoryColor})
+				catSeen[cat] = true
+			}
+			if len(row.previewTagObjs) > 0 {
+				txnTags[txnID] = append(txnTags[txnID], row.previewTagObjs...)
+			} else if len(row.previewTags) > 0 {
+				for j, name := range row.previewTags {
+					if strings.TrimSpace(name) == "" {
+						continue
+					}
+					txnTags[txnID] = append(txnTags[txnID], tag{id: j + 1, name: name})
 				}
-				txnTags[txnID] = append(txnTags[txnID], tag{id: j + 1, name: name})
 			}
 		}
 		txns = append(txns, txn)
 	}
 	contentWidth := max(88, min(124, terminalWidth-12))
-	return renderTransactionTable(txns, categories, txnTags, nil, nil, 0, topIndex, visibleRows, contentWidth, sortByDate, true)
+	cursorTxnID := 0
+	if cursor >= 0 && cursor < len(txns) {
+		cursorTxnID = txns[cursor].id
+	}
+	return renderTransactionTable(txns, categories, txnTags, nil, nil, cursorTxnID, topIndex, visibleRows, contentWidth, sortByDate, true)
 }
 
 // ---------------------------------------------------------------------------

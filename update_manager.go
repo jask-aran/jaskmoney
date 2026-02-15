@@ -430,56 +430,54 @@ func (m model) updateImportPreview(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	}
 
 	switch {
-	case m.isAction(scopeImportPreview, actionImportFullView, msg):
-		m.importPreviewViewFull = !m.importPreviewViewFull
-		m.importPreviewScroll = 0
-		return m, nil
 	case m.isAction(scopeImportPreview, actionImportRawView, msg):
 		m.importPreviewPostRules = !m.importPreviewPostRules
 		return m, nil
 	case m.isAction(scopeImportPreview, actionImportPreviewToggle, msg):
 		m.importPreviewShowAll = !m.importPreviewShowAll
-		m.importPreviewViewFull = false
+		m.importPreviewCursor = 0
 		m.importPreviewScroll = 0
 		return m, nil
 	case m.verticalDelta(scopeImportPreview, msg) != 0:
-		total := importPreviewDisplayedCount(snapshot, m.importPreviewViewFull, m.importPreviewShowAll)
-		m.importPreviewScroll = moveBoundedCursor(m.importPreviewScroll, total, m.verticalDelta(scopeImportPreview, msg))
+		total := importPreviewDisplayedCount(snapshot, m.importPreviewShowAll)
+		if total > 0 {
+			visible := m.compactImportPreviewRows()
+			delta := m.verticalDelta(scopeImportPreview, msg)
+			m.importPreviewCursor = moveBoundedCursor(m.importPreviewCursor, total, delta)
+			m.importPreviewScroll = previewTopIndexForCursor(m.importPreviewCursor, total, visible)
+		}
 		return m, nil
 	case m.isAction(scopeImportPreview, actionImportAll, msg):
 		if snapshot.errorCount > 0 {
 			m.setError("Import blocked: preview has parse/normalize errors.")
 			return m, nil
 		}
+		applyRules := m.importPreviewPostRules
 		m.importPreviewOpen = false
-		m.importPreviewViewFull = false
 		m.importPreviewPostRules = true
 		m.importPreviewShowAll = false
+		m.importPreviewCursor = 0
 		m.importPreviewScroll = 0
 		m.setStatus("Importing all snapshot rows...")
-		return m, ingestSnapshotCmd(m.db, snapshot, false)
+		return m, ingestSnapshotCmd(m.db, snapshot, false, applyRules)
 	case m.isAction(scopeImportPreview, actionSkipDupes, msg):
 		if snapshot.errorCount > 0 {
 			m.setError("Import blocked: preview has parse/normalize errors.")
 			return m, nil
 		}
+		applyRules := m.importPreviewPostRules
 		m.importPreviewOpen = false
-		m.importPreviewViewFull = false
 		m.importPreviewPostRules = true
 		m.importPreviewShowAll = false
+		m.importPreviewCursor = 0
 		m.importPreviewScroll = 0
 		m.setStatus("Importing snapshot (skipping duplicates)...")
-		return m, ingestSnapshotCmd(m.db, snapshot, true)
+		return m, ingestSnapshotCmd(m.db, snapshot, true, applyRules)
 	case m.isAction(scopeImportPreview, actionClose, msg):
-		if m.importPreviewViewFull {
-			m.importPreviewViewFull = false
-			m.importPreviewScroll = 0
-			return m, nil
-		}
 		m.importPreviewOpen = false
-		m.importPreviewViewFull = false
 		m.importPreviewPostRules = true
 		m.importPreviewShowAll = false
+		m.importPreviewCursor = 0
 		m.importPreviewScroll = 0
 		m.importPreviewSnapshot = nil
 		m.setStatus("Import cancelled.")
@@ -490,12 +488,9 @@ func (m model) updateImportPreview(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	return m, nil
 }
 
-func importPreviewDisplayedCount(snapshot *importPreviewSnapshot, fullView bool, showAll bool) int {
+func importPreviewDisplayedCount(snapshot *importPreviewSnapshot, showAll bool) int {
 	if snapshot == nil {
 		return 0
-	}
-	if fullView {
-		return len(snapshot.rows)
 	}
 	if showAll {
 		return len(snapshot.rows)
@@ -507,4 +502,19 @@ func importPreviewDisplayedCount(snapshot *importPreviewSnapshot, fullView bool,
 		}
 	}
 	return dupeCount
+}
+
+func previewTopIndexForCursor(cursor, total, visible int) int {
+	if total <= 0 || visible <= 0 {
+		return 0
+	}
+	maxTop := max(0, total-visible)
+	top := cursor - (visible / 2)
+	if top < 0 {
+		top = 0
+	}
+	if top > maxTop {
+		top = maxTop
+	}
+	return top
 }

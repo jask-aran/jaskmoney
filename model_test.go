@@ -1023,11 +1023,10 @@ func TestImportPreviewCancelFromCompact(t *testing.T) {
 	}
 }
 
-func TestImportPreviewEscStepsDownFromFullView(t *testing.T) {
+func TestImportPreviewEscCancels(t *testing.T) {
 	m := newModel()
 	m.ready = true
 	m.importPreviewOpen = true
-	m.importPreviewViewFull = true
 	m.importPreviewSnapshot = &importPreviewSnapshot{
 		fileName: "test.csv",
 		rows: []importPreviewRow{
@@ -1037,11 +1036,8 @@ func TestImportPreviewEscStepsDownFromFullView(t *testing.T) {
 
 	m2, _ := m.Update(keyMsg("esc"))
 	got := m2.(model)
-	if !got.importPreviewOpen {
-		t.Fatal("preview should stay open while exiting full view")
-	}
-	if got.importPreviewViewFull {
-		t.Fatal("esc in full view should return to compact mode")
+	if got.importPreviewOpen {
+		t.Fatal("esc should cancel preview")
 	}
 }
 

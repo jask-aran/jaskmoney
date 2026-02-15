@@ -89,7 +89,6 @@ const (
 	actionTimeframe                Action = "timeframe"
 	actionImportAll                Action = "import_all"
 	actionSkipDupes                Action = "skip_dupes"
-	actionImportFullView           Action = "import_full_view"
 	actionImportRawView            Action = "import_raw_view"
 	actionImportPreviewToggle      Action = "import_preview_toggle"
 	actionSave                     Action = "save"
@@ -258,8 +257,7 @@ func NewKeyRegistry() *KeyRegistry {
 	reg(scopeImportPreview, actionDown, "", []string{"j", "down", "ctrl+n"}, "")
 	reg(scopeImportPreview, actionImportAll, "import:all", []string{"a"}, "all")
 	reg(scopeImportPreview, actionSkipDupes, "import:skip-dupes", []string{"s"}, "skip")
-	reg(scopeImportPreview, actionImportFullView, "import:full-view", []string{"f"}, "full")
-	reg(scopeImportPreview, actionImportRawView, "import:raw-view", []string{"r"}, "raw")
+	reg(scopeImportPreview, actionImportRawView, "import:raw-view", []string{"r"}, "rules")
 	reg(scopeImportPreview, actionImportPreviewToggle, "import:preview-toggle", []string{"p"}, "preview")
 	reg(scopeImportPreview, actionClose, "import:cancel", []string{"esc"}, "")
 

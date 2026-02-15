@@ -809,7 +809,7 @@ func TestRenderImportPreviewCompact(t *testing.T) {
 			{index: 3, sourceLine: 3, dateISO: "2026-02-05", amount: -12, description: "THIRD", isDupe: false},
 		},
 	}
-	output := renderImportPreview(snapshot, false, true, false, 0, 20, 20, 140, NewKeyRegistry())
+	output := renderImportPreview(snapshot, true, false, 0, 0, 20, 140, NewKeyRegistry())
 	if !strings.Contains(output, "Import Preview") {
 		t.Error("missing compact title")
 	}
@@ -824,7 +824,7 @@ func TestRenderImportPreviewCompact(t *testing.T) {
 	}
 }
 
-func TestRenderImportPreviewFullPostRulesShowsStatusCategoryAndTags(t *testing.T) {
+func TestRenderImportPreviewPostRulesShowsCategoryAndTags(t *testing.T) {
 	snapshot := &importPreviewSnapshot{
 		fileName:   "ANZ.csv",
 		totalRows:  2,
@@ -836,12 +836,9 @@ func TestRenderImportPreviewFullPostRulesShowsStatusCategoryAndTags(t *testing.T
 			{index: 2, sourceLine: 2, dateISO: "2026-02-04", amount: -11, description: "DUPLICATE", isDupe: true, previewCat: "Dining", previewTags: []string{"takeaway"}},
 		},
 	}
-	output := renderImportPreview(snapshot, true, true, true, 0, 20, 20, 140, NewKeyRegistry())
-	if !strings.Contains(output, "Import Full View") {
-		t.Error("missing full-view title")
-	}
-	if !strings.Contains(output, "[NEW]") || !strings.Contains(output, "[DUPE]") {
-		t.Error("missing row status in full view")
+	output := renderImportPreview(snapshot, true, true, 0, 0, 20, 140, NewKeyRegistry())
+	if !strings.Contains(output, "Import Preview") {
+		t.Error("missing preview title")
 	}
 	if !strings.Contains(output, "Groceries") || !strings.Contains(output, "essentials,weekly") {
 		t.Error("missing post-rules category/tags")
@@ -867,7 +864,7 @@ func TestRenderImportPreviewCompactUsesConfiguredPageSize(t *testing.T) {
 		errorCount: 0,
 		rows:       rows,
 	}
-	output := renderImportPreview(snapshot, false, true, true, 0, 20, 20, 140, NewKeyRegistry())
+	output := renderImportPreview(snapshot, true, true, 0, 0, 20, 140, NewKeyRegistry())
 	if !strings.Contains(output, "showing 20 rows/page") {
 		t.Fatal("missing compact page-size hint")
 	}
@@ -886,7 +883,7 @@ func TestRenderImportPreviewShowsParseErrorBannerAndBlockedHint(t *testing.T) {
 			{index: 1, sourceLine: 1, dateISO: "2026-02-03", amount: -10, description: "VALID"},
 		},
 	}
-	output := renderImportPreview(snapshot, false, true, false, 0, 20, 20, 140, NewKeyRegistry())
+	output := renderImportPreview(snapshot, true, false, 0, 0, 20, 140, NewKeyRegistry())
 	if !strings.Contains(output, "Errors:") {
 		t.Fatal("missing parse error summary")
 	}

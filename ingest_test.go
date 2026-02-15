@@ -724,7 +724,7 @@ func TestIngestSnapshotCmdSkipDupesUsesSnapshotRows(t *testing.T) {
 		t.Fatal("expected snapshot")
 	}
 
-	doneMsg := ingestSnapshotCmd(db, preview.snapshot, true)()
+	doneMsg := ingestSnapshotCmd(db, preview.snapshot, true, true)()
 	done, ok := doneMsg.(ingestDoneMsg)
 	if !ok {
 		t.Fatalf("unexpected ingest message type: %T", doneMsg)
@@ -828,7 +828,7 @@ func TestIngestSnapshotCmdUsesLockedRules(t *testing.T) {
 		}
 	}
 
-	doneMsg := ingestSnapshotCmd(db, preview.snapshot, true)()
+	doneMsg := ingestSnapshotCmd(db, preview.snapshot, true, true)()
 	done, ok := doneMsg.(ingestDoneMsg)
 	if !ok {
 		t.Fatalf("unexpected ingest message type: %T", doneMsg)
@@ -880,7 +880,7 @@ func TestIngestSnapshotCmdBlocksOnParseErrorsWithoutWrites(t *testing.T) {
 		t.Fatalf("expected parse errors in snapshot, got %+v", preview.snapshot)
 	}
 
-	doneMsg := ingestSnapshotCmd(db, preview.snapshot, true)()
+	doneMsg := ingestSnapshotCmd(db, preview.snapshot, true, true)()
 	done, ok := doneMsg.(ingestDoneMsg)
 	if !ok {
 		t.Fatalf("unexpected ingest message type: %T", doneMsg)

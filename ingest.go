@@ -87,7 +87,7 @@ func ingestCmd(db *sql.DB, filename, basePath string, formats []csvFormat, saved
 
 // ingestSnapshotCmd imports a previously scanned immutable preview snapshot.
 // Decisions always apply to the full snapshot, not only displayed rows.
-func ingestSnapshotCmd(db *sql.DB, snapshot *importPreviewSnapshot, skipDupes bool) tea.Cmd {
+func ingestSnapshotCmd(db *sql.DB, snapshot *importPreviewSnapshot, skipDupes, applyRules bool) tea.Cmd {
 	return func() tea.Msg {
 		if db == nil {
 			return ingestDoneMsg{err: fmt.Errorf("database not ready")}
@@ -114,20 +114,22 @@ func ingestSnapshotCmd(db *sql.DB, snapshot *importPreviewSnapshot, skipDupes bo
 		if len(txnIDs) == 0 {
 			return done
 		}
-		txnTags, err := loadTransactionTags(db)
-		if err != nil {
-			done.err = err
-			return done
+		if applyRules {
+			txnTags, err := loadTransactionTags(db)
+			if err != nil {
+				done.err = err
+				return done
+			}
+			updatedTxns, catChanges, tagChanges, err := applyResolvedRulesV2ToTxnIDs(db, snapshot.lockedRules.resolved, txnTags, txnIDs)
+			if err != nil {
+				done.err = err
+				return done
+			}
+			done.rulesApplied = true
+			done.rulesTxnUpdated = updatedTxns
+			done.rulesCatChanges = catChanges
+			done.rulesTagChanges = tagChanges
 		}
-		updatedTxns, catChanges, tagChanges, err := applyResolvedRulesV2ToTxnIDs(db, snapshot.lockedRules.resolved, txnTags, txnIDs)
-		if err != nil {
-			done.err = err
-			return done
-		}
-		done.rulesApplied = true
-		done.rulesTxnUpdated = updatedTxns
-		done.rulesCatChanges = catChanges
-		done.rulesTagChanges = tagChanges
 		return done
 	}
 }
@@ -395,6 +397,10 @@ func projectImportPreviewRows(db *sql.DB, rows []importPreviewRow, accountName s
 		return nil, err
 	}
 	catNames := categoryNameByID(categories)
+	catByName := make(map[string]category, len(categories))
+	for _, c := range categories {
+		catByName[strings.ToLower(strings.TrimSpace(c.name))] = c
+	}
 	tagByID := tagByIDMap(tags)
 	accountIDCopy := accountID
 
@@ -430,8 +436,15 @@ func projectImportPreviewRows(db *sql.DB, rows []importPreviewRow, accountName s
 		row.previewCat = categoryNameForPtr(workCat, catNames)
 		previewTags := tagStateToSlice(workTagSet, tagByID)
 		row.previewTags = make([]string, 0, len(previewTags))
+		row.previewTagObjs = make([]tag, 0, len(previewTags))
 		for _, tg := range previewTags {
 			row.previewTags = append(row.previewTags, tg.name)
+			row.previewTagObjs = append(row.previewTagObjs, tg)
+		}
+		if key := strings.ToLower(strings.TrimSpace(row.previewCat)); key != "" {
+			if c, ok := catByName[key]; ok {
+				row.previewCatColor = c.color
+			}
 		}
 		out = append(out, row)
 	}
