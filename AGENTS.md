@@ -272,7 +272,9 @@ For PRs, include:
 
 1. **Keybinding conflicts:** Use `specs/architecture.md` §3.4.11 testing contract to catch shadow conflicts. Run scope reachability and global shadow audit tests before adding new scopes.
 
-2. **Text input safety:** When adding new text input contexts, add an entry in `modalTextContracts` (`dispatch.go`) and ensure printable keys don't trigger shortcuts. See `specs/architecture.md` §3.3.
+2. **Generic action consistency (UX principle):** Use the same keys for similar actions across contexts: `space` = toggle, `a` = add, `del` = delete, `enter` = select/edit, `esc` = cancel/back. This maintains muscle memory. If a context has a toggle action, use `space`, not a different key. See `specs/architecture.md` §3.4.5.
+
+3. **Text input safety:** When adding new text input contexts, add an entry in `modalTextContracts` (`dispatch.go`) and ensure printable keys don't trigger shortcuts. See `specs/architecture.md` §3.3.
 
 3. **Modal precedence:** New modals must be added as an `overlayEntry` in `overlayPrecedence()` (`dispatch.go`) at the correct priority position. All three consumers (Update, footerBindings, commandContextScope) automatically stay in sync. See `specs/architecture.md` §3.2.
 
