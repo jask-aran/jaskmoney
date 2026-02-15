@@ -1606,7 +1606,8 @@ If superseded, update this section with rationale and enforcement tests.
 ### 9.2 v0.3 → v0.4
 
 **Status:** Phase 1 and Phase 2 are complete. Phase 3 accepted. Dispatch table
-and modal text contracts shipped in `v0.32.3`.
+and modal text contracts shipped in `v0.32.3`. Keybinding pass completed in
+`v0.32.4`.
 
 Concrete learnings from shipped work:
 
@@ -1648,6 +1649,29 @@ Concrete learnings from shipped work:
   survived multiple releases because no test verified footer content against
   handler behavior. Phase 7's contract-driven footer rendering addresses this
   structurally.
+- **Tab navigation is a UX baseline, not an enhancement.** Only the rule editor
+  had tab/shift-tab field cycling; all other multi-field modals (manager modal,
+  category/tag editors, filter editor) only supported up/down/ctrl+p/ctrl+n.
+  Users expect tab in forms. After adding tab support to all modals (v0.32.4),
+  the pattern is: tab before action-based dispatch, so it works even when not
+  registered in the scope.
+- **Single uppercase letters need visual distinction in footers.** The
+  `prettyHelpKey` function lowercased all input, making `K` (Shift+k, reorder
+  up) visually identical to `k` (up navigation). Five ambiguous pairs existed:
+  K/k, J/j, A/a, S/s, G/g. Rendering single uppercase letters as `S-k` (meaning
+  Shift+k) fixes the ambiguity without breaking the footer's visual flow.
+- **Footer clutter hides important actions.** Navigation keys (j/k/up/down)
+  appearing in footer bars consumed space without adding value — navigation is
+  implied in list/modal contexts. Hiding navigation entries from `HelpBindings`
+  (via empty help text) and showing only actionable commands (add, edit,
+  delete, save, cancel) reduced transaction scope footer from 14 items to 12,
+  and rules scope from 11 to 7. Combined shift+key pairs where the shifted
+  variant is adjacent (e.g., `S-k`/`S-j` both shown as one "reorder" hint).
+- **Action-based dispatch prevents user key override breakage.** The filter
+  editor used raw `keyName == "up"` checks instead of `verticalDelta(scope,
+  msg)`, bypassing the keybinding registry. This meant user-configured key
+  overrides had no effect on navigation in that one editor. Consistency rule:
+  all handlers should resolve keys through actions, not check raw key names.
 
 ## 10. Open Backlog
 

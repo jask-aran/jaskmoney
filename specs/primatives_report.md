@@ -687,3 +687,65 @@ suppression. This is incorrect: the detail modal uses a dedicated
 `updateDetailNotes` handler when editing notes, and j/k are needed for
 non-editing scroll mode. The `modalTextContracts` entry correctly sets
 `vimNavSuppressed = false` for this scope.
+
+---
+
+## Keybinding Pass (v0.32.4)
+
+A follow-up keybinding alignment pass fixed inconsistencies and improved
+usability across all modals and scopes.
+
+### Issues Fixed
+
+**Tab/shift-tab gaps:** Only the rule editor had tab navigation. Manager modal
+(4 fields), category editor (2 fields), tag editor (3 fields), and filter
+editor (3 fields) all lacked tab support. Users expect tab in forms —
+it's a baseline UX expectation, not an enhancement. Added tab/shift-tab to all
+multi-field modals.
+
+**Shifted key display ambiguity:** `prettyHelpKey` lowercased all input,
+making `K` (Shift+k, reorder up) visually identical to `k` (up navigation).
+Five ambiguous pairs existed: K/k, J/j, A/a, S/s, G/g. Now single uppercase
+letters render as `S-k` (meaning Shift+k), making the distinction clear.
+
+**Action-based dispatch bypass:** Filter editor used raw `keyName == "up"`
+checks instead of `verticalDelta(scope, msg)`, bypassing the keybinding
+registry. User key overrides had no effect on navigation in that one editor.
+Fixed to use action-based dispatch consistently.
+
+**Footer clutter:** Navigation keys (j/k/up/down) consumed footer space
+without adding value — navigation is implied in list/modal contexts.
+Transaction scope footer had 14 items; rules scope had 11. After hiding
+navigation entries (empty help text) and combining shift+key pairs, these
+reduced to 12 and 7 respectively.
+
+### Patterns Established
+
+1. **Tab before action dispatch:** All multi-field modal handlers now check
+   `keyName == "tab"` and `keyName == "shift+tab"` before action-based
+   dispatch, so tab works even if not registered in the scope.
+
+2. **Hide navigation keys from HelpBindings:** Use empty help text for
+   up/down/left/right/j/k/h/l in scopes where modals render their own inline
+   footers (pickers, editors, settings active scopes). Only show actionable
+   commands (add, edit, delete, save, cancel).
+
+3. **Combine shift+key pairs in footers:** When both shifted and unshifted
+   variants exist for adjacent meanings (e.g., `K`/`J` for reorder, `g`/`G`
+   for top/bottom), show only one hint and hide the other (empty help text).
+
+4. **Inline modal footers show tab:** Modal footer format: `tab field
+   [context keys] enter save esc cancel`. Consistent across all modals.
+
+5. **Action-based key resolution only:** Never check `keyName == "up"`
+   directly. Always use `m.verticalDelta(scope, msg)`, `m.horizontalDelta()`,
+   `m.isAction()`, etc., so user key overrides work everywhere.
+
+### Impact
+
+- **Consistency:** All modals now have tab navigation, all use action-based
+  dispatch, all have clean footers following the same pattern.
+- **Clarity:** Shifted keys are visually distinct (S-k vs k).
+- **Usability:** Footer hints focus on what you can *do*, not how to navigate.
+- **Maintainability:** Patterns are documented (architecture.md §9.2, AGENTS.md
+  pitfalls #8-11), so new modals follow the same conventions.
