@@ -265,11 +265,10 @@ func TestImportPreviewMsgOpensForZeroDupes(t *testing.T) {
 	}
 }
 
-func TestImportPreviewEscLifecycleFullToCompactThenCancel(t *testing.T) {
+func TestImportPreviewEscCancelsFromCompact(t *testing.T) {
 	m := newModel()
 	m.ready = true
 	m.importPreviewOpen = true
-	m.importPreviewViewFull = true
 	m.importPreviewSnapshot = &importPreviewSnapshot{
 		fileName:  "ANZ-esc.csv",
 		totalRows: 1,
@@ -280,20 +279,11 @@ func TestImportPreviewEscLifecycleFullToCompactThenCancel(t *testing.T) {
 
 	next, _ := m.updateImportPreview(keyMsg("esc"))
 	got := next.(model)
-	if !got.importPreviewOpen {
-		t.Fatal("preview should remain open when leaving full view")
-	}
-	if got.importPreviewViewFull {
-		t.Fatal("expected esc in full view to return to compact")
-	}
-
-	next, _ = got.updateImportPreview(keyMsg("esc"))
-	got2 := next.(model)
-	if got2.importPreviewOpen {
+	if got.importPreviewOpen {
 		t.Fatal("expected esc in compact view to close preview")
 	}
-	if got2.status != "Import cancelled." {
-		t.Fatalf("unexpected status: %q", got2.status)
+	if got.status != "Import cancelled." {
+		t.Fatalf("unexpected status: %q", got.status)
 	}
 }
 

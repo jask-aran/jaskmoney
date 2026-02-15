@@ -473,13 +473,14 @@ func NewCommandRegistry(keys *KeyRegistry, savedFilters []savedFilter) *CommandR
 					return m, nil, fmt.Errorf("preview has parse/normalize errors")
 				}
 				snapshot := m.importPreviewSnapshot
+				applyRules := m.importPreviewPostRules
 				m.importPreviewOpen = false
-				m.importPreviewViewFull = false
 				m.importPreviewPostRules = true
 				m.importPreviewShowAll = false
+				m.importPreviewCursor = 0
 				m.importPreviewScroll = 0
 				m.setStatus("Importing all snapshot rows...")
-				return m, ingestSnapshotCmd(m.db, snapshot, false), nil
+				return m, ingestSnapshotCmd(m.db, snapshot, false, applyRules), nil
 			},
 		},
 		{
@@ -505,32 +506,20 @@ func NewCommandRegistry(keys *KeyRegistry, savedFilters []savedFilter) *CommandR
 					return m, nil, fmt.Errorf("preview has parse/normalize errors")
 				}
 				snapshot := m.importPreviewSnapshot
+				applyRules := m.importPreviewPostRules
 				m.importPreviewOpen = false
-				m.importPreviewViewFull = false
 				m.importPreviewPostRules = true
 				m.importPreviewShowAll = false
+				m.importPreviewCursor = 0
 				m.importPreviewScroll = 0
 				m.setStatus("Importing snapshot (skipping duplicates)...")
-				return m, ingestSnapshotCmd(m.db, snapshot, true), nil
-			},
-		},
-		{
-			ID:          "import:full-view",
-			Label:       "Toggle Full View",
-			Description: "Toggle compact/full import preview mode",
-			Category:    "Import",
-			Scopes:      []string{scopeImportPreview},
-			Enabled:     commandAlwaysEnabled,
-			Execute: func(m model) (model, tea.Cmd, error) {
-				m.importPreviewViewFull = !m.importPreviewViewFull
-				m.importPreviewScroll = 0
-				return m, nil, nil
+				return m, ingestSnapshotCmd(m.db, snapshot, true, applyRules), nil
 			},
 		},
 		{
 			ID:          "import:raw-view",
-			Label:       "Raw View",
-			Description: "Toggle raw/post-rules rendering",
+			Label:       "Toggle Rules",
+			Description: "Toggle rules ON/OFF for preview and import",
 			Category:    "Import",
 			Scopes:      []string{scopeImportPreview},
 			Enabled:     commandAlwaysEnabled,
@@ -548,7 +537,7 @@ func NewCommandRegistry(keys *KeyRegistry, savedFilters []savedFilter) *CommandR
 			Enabled:     commandAlwaysEnabled,
 			Execute: func(m model) (model, tea.Cmd, error) {
 				m.importPreviewShowAll = !m.importPreviewShowAll
-				m.importPreviewViewFull = false
+				m.importPreviewCursor = 0
 				m.importPreviewScroll = 0
 				return m, nil, nil
 			},
@@ -556,20 +545,15 @@ func NewCommandRegistry(keys *KeyRegistry, savedFilters []savedFilter) *CommandR
 		{
 			ID:          "import:cancel",
 			Label:       "Cancel Import",
-			Description: "Close import preview (Esc in full view returns to compact)",
+			Description: "Close import preview",
 			Category:    "Import",
 			Scopes:      []string{scopeImportPreview},
 			Enabled:     commandAlwaysEnabled,
 			Execute: func(m model) (model, tea.Cmd, error) {
-				if m.importPreviewViewFull {
-					m.importPreviewViewFull = false
-					m.importPreviewScroll = 0
-					return m, nil, nil
-				}
 				m.importPreviewOpen = false
-				m.importPreviewViewFull = false
 				m.importPreviewPostRules = true
 				m.importPreviewShowAll = false
+				m.importPreviewCursor = 0
 				m.importPreviewScroll = 0
 				m.importPreviewSnapshot = nil
 				m.setStatus("Import cancelled.")

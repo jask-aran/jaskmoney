@@ -302,9 +302,9 @@ func (m model) handleImportPreview(msg importPreviewMsg) (tea.Model, tea.Cmd) {
 		return m, nil
 	}
 	m.importPreviewOpen = true
-	m.importPreviewViewFull = false
 	m.importPreviewPostRules = true
 	m.importPreviewShowAll = false
+	m.importPreviewCursor = 0
 	m.importPreviewScroll = 0
 	m.importPreviewSnapshot = msg.snapshot
 	return m, nil
@@ -629,9 +629,9 @@ func (m *model) beginImportFlow() tea.Cmd {
 	m.importCursor = 0
 	m.importPreviewOpen = false
 	m.importPreviewSnapshot = nil
-	m.importPreviewViewFull = false
 	m.importPreviewPostRules = true
 	m.importPreviewShowAll = false
+	m.importPreviewCursor = 0
 	m.importPreviewScroll = 0
 	return loadFilesCmd(m.basePath)
 }

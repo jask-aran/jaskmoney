@@ -101,8 +101,10 @@ type importPreviewRow struct {
 	description string
 	isDupe      bool
 
-	previewCat  string
-	previewTags []string
+	previewCat      string
+	previewTags     []string
+	previewCatColor string
+	previewTagObjs  []tag
 }
 
 type importPreviewLockedRules struct {
@@ -349,9 +351,9 @@ type model struct {
 
 	// Import preview overlay state
 	importPreviewOpen      bool
-	importPreviewViewFull  bool // false=compact, true=full
-	importPreviewPostRules bool // false=raw, true=post-rules
+	importPreviewPostRules bool // false=raw, true=rules-active
 	importPreviewShowAll   bool // false=dupes-only compact, true=all rows compact
+	importPreviewCursor    int
 	importPreviewScroll    int
 	importPreviewSnapshot  *importPreviewSnapshot
 
@@ -605,12 +607,11 @@ func (m model) View() string {
 	if m.importPreviewOpen {
 		preview := renderImportPreview(
 			m.importPreviewSnapshot,
-			m.importPreviewViewFull,
 			m.importPreviewPostRules,
 			m.importPreviewShowAll,
+			m.importPreviewCursor,
 			m.importPreviewScroll,
 			m.compactImportPreviewRows(),
-			m.fullImportPreviewRows(),
 			m.width,
 			m.keys,
 		)
@@ -1029,10 +1030,6 @@ func (m *model) visibleRows() int {
 
 func (m model) compactImportPreviewRows() int {
 	return 20
-}
-
-func (m model) fullImportPreviewRows() int {
-	return max(1, m.visibleRows())
 }
 
 func (m *model) listContentWidth() int {

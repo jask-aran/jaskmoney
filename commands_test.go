@@ -34,7 +34,6 @@ func TestCommandRegistryHasExpectedCommands(t *testing.T) {
 		"import:start":          true,
 		"import:all":            true,
 		"import:skip-dupes":     true,
-		"import:full-view":      true,
 		"import:raw-view":       true,
 		"import:preview-toggle": true,
 		"import:cancel":         true,
