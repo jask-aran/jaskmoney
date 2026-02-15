@@ -284,6 +284,14 @@ For PRs, include:
 
 7. **Drill-return context lifecycle:** `drillReturnState` must be cleared on any navigation away from Manager (tab switch, jump mode). See `specs/architecture.md` §6.7.
 
+8. **Multi-field modal forms must support tab/shift-tab.** All modals with 2+ fields must handle `tab`/`shift-tab` for field cycling. Add the check before action-based dispatch so it works even if not registered in the scope. Users expect tab navigation in forms.
+
+9. **Use action-based key dispatch, not raw keyName checks.** Handlers should resolve keys via `m.isAction(scope, action, msg)`, `m.verticalDelta(scope, msg)`, `m.horizontalDelta(scope, msg)` instead of `keyName == "up"`. Raw checks bypass user key overrides.
+
+10. **Footer hints should show actions, not navigation.** Hide navigation keys (up/down/left/right/j/k/h/l) from `HelpBindings` by using empty help text. Footer space is limited — show only actionable commands (add, edit, delete, save, cancel).
+
+11. **Single uppercase letters in keybindings need S- prefix.** If registering a shifted letter (e.g., `"K"`, `"J"`, `"A"`), the footer will show it as `S-k`, `S-j`, `S-a` to distinguish from lowercase bindings. This is automatic via `prettyHelpKey`.
+
 ## Agent Best Practices
 
 1. **Always check specifications first** before asking clarifying questions. The answer is usually in `specs/architecture.md` or `specs/v0.4-spec.md`.
