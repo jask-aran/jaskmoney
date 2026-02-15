@@ -745,6 +745,10 @@ func (m *model) applyFocusedSection(activate bool) {
 }
 
 func (m *model) applyTabDefaultsOnSwitch() {
+	// Leaving Settings always defocuses pane interaction state.
+	if m.activeTab != tabSettings {
+		m.settActive = false
+	}
 	switch m.activeTab {
 	case tabManager:
 		if m.focusedSection == sectionUnfocused {
@@ -752,10 +756,14 @@ func (m *model) applyTabDefaultsOnSwitch() {
 		}
 		m.applyFocusedSection(false)
 	case tabSettings:
-		if m.focusedSection == sectionUnfocused {
-			m.focusedSection = sectionSettingsDatabase
+		// Entering Settings should never auto-activate a pane; keep last selected pane.
+		m.settActive = false
+		if m.settSection < 0 || m.settSection >= settSecCount {
+			m.settSection = settSecCategories
 		}
-		m.applyFocusedSection(false)
+		col, _ := settColumnRow(m.settSection)
+		m.settColumn = col
+		m.focusedSection = settingsFocusSectionForSettSection(m.settSection)
 	case tabDashboard:
 		if m.focusedSection != sectionUnfocused {
 			m.focusedSection = sectionUnfocused

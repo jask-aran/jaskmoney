@@ -269,6 +269,8 @@ For PRs, include:
 
 12. **Fight footer bloat by hiding generic/implied actions.** Navigation (up/down/left/right/j/k/h/l), modal close (esc), confirm (enter), and tab switches should have empty help text. Show only context-specific or unique actions. Keep help text short ("cat" not "quick cat", "load" not "apply filter"). Phase 7's contract system will enable smarter display grouping.
 
+13. **Pane selection and pane focus are separate; tab switches must not auto-focus panes.** Across tabs, preserve last selected pane, but always clear active/focused pane-interaction mode when leaving a tab. On return, the pane remains selected but unfocused until explicit activation (`enter`). For Settings specifically, first entry defaults to Categories selected (not focused), and returning must not force Database selection.
+
 ## Agent Best Practices
 
 1. **Always check specifications first** before asking clarifying questions. The answer is usually in `specs/architecture.md` or `specs/v0.4-spec.md`.

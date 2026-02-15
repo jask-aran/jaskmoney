@@ -868,7 +868,7 @@ focusedSection    int   // -1 = unfocused; meaning is tab-specific
 |-----------|---------------------------------------------------|-----------------------------|
 | Dashboard | none                                              | Unfocused                   |
 | Manager   | `a` Accounts, `t` Transactions                    | Transactions                |
-| Settings  | `c` Categories, `t` Tags, `r` Rules, `f` Filters, `d` Database, `w` Dashboard Views | Database |
+| Settings  | `c` Categories, `t` Tags, `r` Rules, `f` Filters, `d` Database, `w` Dashboard Views | Unfocused (selection preserved) |
 
 Target keys can overlap across tabs because only one tab's targets are shown at
 a time.
@@ -900,6 +900,18 @@ a time.
 - Current default policy is `Activate=true` for all shipped jump targets.
 - Tab default focus application (on tab switch/ESC reset) may set focus without
   activation (`Activate=false`) where appropriate.
+
+**Pane interaction contract (cross-tab):**
+
+- Pane selection and pane activation are distinct state:
+  - selection = which pane would activate on `Enter` (e.g. `settSection`)
+  - activation = whether pane-local controls are currently active (e.g. `settActive`)
+- Leaving a tab must clear activation state for that tab's panes.
+- Returning to a tab must restore last selected pane but keep panes unfocused.
+- Settings-specific defaults:
+  - If no prior valid selection exists, select Categories on first entry.
+  - Do not auto-activate a Settings pane on tab entry.
+  - Do not force Database selection on tab entry.
 
 Expansion plans for dashboard/budget jump targets are tracked in
 `specs/v0.4-spec.md`.

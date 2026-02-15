@@ -934,6 +934,64 @@ func TestTabCycleBackward(t *testing.T) {
 	}
 }
 
+func TestSettingsFirstEnterDefaultsToCategoriesUnfocused(t *testing.T) {
+	m := newModel()
+	m.ready = true
+	m.activeTab = tabManager
+	m.settSection = -1
+	m.settColumn = settColRight
+	m.settActive = true
+
+	toSettings := m.primaryActionKey(scopeGlobal, actionCommandGoSettings, "3")
+	next, _ := m.Update(keyMsg(toSettings))
+	got := next.(model)
+
+	if got.activeTab != tabSettings {
+		t.Fatalf("activeTab = %d, want %d", got.activeTab, tabSettings)
+	}
+	if got.settSection != settSecCategories {
+		t.Fatalf("settSection = %d, want default %d", got.settSection, settSecCategories)
+	}
+	if got.settColumn != settColLeft {
+		t.Fatalf("settColumn = %d, want %d", got.settColumn, settColLeft)
+	}
+	if got.settActive {
+		t.Fatal("settings should be unfocused on tab entry")
+	}
+}
+
+func TestSettingsReturnPreservesSelectionAndDefocuses(t *testing.T) {
+	m := newModel()
+	m.ready = true
+	m.activeTab = tabSettings
+	m.settSection = settSecTags
+	m.settColumn = settColLeft
+	m.settActive = true
+
+	toManager := m.primaryActionKey(scopeGlobal, actionCommandGoTransactions, "1")
+	next, _ := m.Update(keyMsg(toManager))
+	got := next.(model)
+	if got.activeTab != tabManager {
+		t.Fatalf("activeTab = %d, want %d", got.activeTab, tabManager)
+	}
+
+	toSettings := got.primaryActionKey(scopeGlobal, actionCommandGoSettings, "3")
+	next, _ = got.Update(keyMsg(toSettings))
+	got2 := next.(model)
+	if got2.activeTab != tabSettings {
+		t.Fatalf("activeTab = %d, want %d", got2.activeTab, tabSettings)
+	}
+	if got2.settSection != settSecTags {
+		t.Fatalf("settSection = %d, want %d", got2.settSection, settSecTags)
+	}
+	if got2.settColumn != settColLeft {
+		t.Fatalf("settColumn = %d, want %d", got2.settColumn, settColLeft)
+	}
+	if got2.settActive {
+		t.Fatal("settings should remain unfocused after returning to tab")
+	}
+}
+
 func TestTabNumberShortcuts(t *testing.T) {
 	m := newModel()
 	m.ready = true
