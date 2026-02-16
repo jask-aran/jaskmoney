@@ -31,6 +31,10 @@ type SetScopeStatusMsg struct {
 	Text string
 }
 
+type JumpTargetSelectedMsg struct {
+	Key string
+}
+
 func StatusCmd(text string) tea.Cmd {
 	return func() tea.Msg { return StatusMsg{Text: text} }
 }

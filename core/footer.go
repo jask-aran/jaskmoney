@@ -1,26 +1,38 @@
 package core
 
 import (
-	"fmt"
 	"strings"
 
+	"github.com/charmbracelet/bubbles/key"
 	"github.com/charmbracelet/lipgloss"
+	"github.com/charmbracelet/x/ansi"
 )
 
 func RenderFooter(m Model) string {
 	bindings := m.keys.BindingsForScope(m.ActiveScope())
+	bg := colorMantle
+	keyStyle := lipgloss.NewStyle().Foreground(colorAccent).Bold(true).Background(bg)
+	descStyle := lipgloss.NewStyle().Foreground(colorMuted).Background(bg)
+	space := lipgloss.NewStyle().Background(bg).Render(" ")
+	sep := lipgloss.NewStyle().Background(bg).Render("  ")
+
 	parts := make([]string, 0, len(bindings))
 	for _, b := range bindings {
 		if len(b.Keys) == 0 {
 			continue
 		}
-		parts = append(parts, fmt.Sprintf("%s %s", strings.ToUpper(b.Keys[0]), b.Description))
+		kb := key.NewBinding(key.WithKeys(b.Keys...), key.WithHelp(b.Keys[0], b.Description))
+		h := kb.Help()
+		if h.Key == "" && h.Desc == "" {
+			continue
+		}
+		parts = append(parts, keyStyle.Render(h.Key)+space+descStyle.Render(h.Desc))
 	}
-	line := strings.Join(parts, "  ")
+	line := strings.Join(parts, sep)
 	if line == "" {
-		line = "No shortcuts"
+		line = lipgloss.NewStyle().Foreground(colorMuted).Background(bg).Render("No shortcuts")
 	}
-	return renderBar(footerStyle, max(1, m.width), line)
+	return renderBar(footerStyle, max(1, m.width), line, bg)
 }
 
 func RenderStatusBar(m Model) string {
@@ -29,17 +41,21 @@ func RenderStatusBar(m Model) string {
 		msg = "Ready"
 	}
 	if m.statusErr {
-		return renderBar(statusErrBarStyle, max(1, m.width), msg)
+		return renderBar(statusErrBarStyle, max(1, m.width), msg, colorSurface0)
 	}
-	return renderBar(statusBarStyle, max(1, m.width), msg)
+	return renderBar(statusBarStyle, max(1, m.width), msg, colorSurface0)
 }
 
-func renderBar(style lipgloss.Style, width int, text string) string {
+func renderBar(style lipgloss.Style, width int, text string, bg lipgloss.TerminalColor) string {
 	line := strings.ReplaceAll(text, "\n", " ")
-	line = trimToWidth(strings.TrimSpace(line), width)
-	r := []rune(line)
-	if len(r) < width {
-		line += strings.Repeat(" ", width-len(r))
+	line = ansi.Truncate(line, width, "")
+	lineW := ansi.StringWidth(line)
+	if lineW < width {
+		line += strings.Repeat(" ", width-lineW)
 	}
-	return style.Width(width).MaxWidth(width).Render(line)
+	return style.
+		Background(bg).
+		Width(width).
+		MaxWidth(width).
+		Render(line)
 }

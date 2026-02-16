@@ -1,51 +1,30 @@
 package core
 
-import (
-	"strings"
-	"unicode"
+import tea "github.com/charmbracelet/bubbletea"
 
-	tea "github.com/charmbracelet/bubbletea"
-)
-
-type JumpMode struct {
-	Active bool
+func (m *Model) jumpTargetsForActiveTab() []JumpTarget {
+	if len(m.tabs) == 0 {
+		return nil
+	}
+	provider, ok := m.tabs[m.activeTab].(JumpTargetProvider)
+	if !ok {
+		return nil
+	}
+	return provider.JumpTargets()
 }
 
-func (m *Model) toggleJumpMode() {
-	m.jump.Active = !m.jump.Active
-	if m.jump.Active {
-		m.SetStatus("Jump mode: press tab letter")
-	} else {
-		m.SetStatus("Ready")
+func (m *Model) activateJumpPicker() tea.Cmd {
+	targets := m.jumpTargetsForActiveTab()
+	if len(targets) == 0 {
+		m.SetStatus("No jump targets for active tab")
+		return nil
 	}
-}
-
-func (m *Model) jumpHandleKey(msg tea.KeyMsg) (handled bool) {
-	if !m.jump.Active {
-		return false
+	if top := m.screens.Top(); top != nil && top.Scope() == "screen:jump-picker" {
+		m.screens.Pop()
+		m.SetStatus("Jump picker closed")
+		return nil
 	}
-	r := []rune(strings.ToLower(msg.String()))
-	if len(r) != 1 || !unicode.IsLetter(r[0]) {
-		m.jump.Active = false
-		m.SetStatus("Jump mode cancelled")
-		return true
-	}
-	idx := m.tabIndexByJumpKey(byte(r[0]))
-	m.jump.Active = false
-	if idx < 0 {
-		m.SetStatus("No tab mapped to that key")
-		return true
-	}
-	m.SwitchTab(idx)
-	m.SetStatus("Jumped to " + m.tabs[idx].Title())
-	return true
-}
-
-func (m *Model) tabIndexByJumpKey(k byte) int {
-	for i, t := range m.tabs {
-		if jt, ok := t.(JumpTarget); ok && jt.JumpKey() == k {
-			return i
-		}
-	}
-	return -1
+	m.screens.Push(newJumpPickerScreen(targets))
+	m.SetStatus("Jump mode: press pane key")
+	return nil
 }

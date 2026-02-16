@@ -3,8 +3,6 @@ package screens
 import (
 	"strings"
 
-	"github.com/charmbracelet/bubbles/list"
-	"github.com/charmbracelet/bubbles/textinput"
 	tea "github.com/charmbracelet/bubbletea"
 
 	"jaskmoney-v2/core"
@@ -16,77 +14,97 @@ type PickerItem struct {
 	Desc  string
 }
 
-func (i PickerItem) Title() string       { return i.Label }
-func (i PickerItem) Description() string { return i.Desc }
-func (i PickerItem) FilterValue() string { return i.Label + " " + i.Desc }
-
 type PickerScreen struct {
 	title      string
 	scope      string
-	input      textinput.Model
-	list       list.Model
-	allItems   []PickerItem
+	picker     *core.Picker
+	allItems   map[string]PickerItem
 	onSelected func(PickerItem) tea.Msg
 }
 
 func NewPickerScreen(title, scope string, items []PickerItem, onSelected func(PickerItem) tea.Msg) *PickerScreen {
-	inp := textinput.New()
-	inp.Placeholder = "filter"
-	inp.Focus()
-	inp.Prompt = "> "
-	litems := make([]list.Item, 0, len(items))
+	listItems := make([]core.PickerItem, 0, len(items))
+	all := make(map[string]PickerItem, len(items))
 	for _, it := range items {
-		litems = append(litems, it)
+		all[it.ID] = it
+		listItems = append(listItems, core.PickerItem{
+			ID:     it.ID,
+			Label:  it.Label,
+			Meta:   it.Desc,
+			Search: it.Label + " " + it.Desc,
+		})
 	}
-	lst := list.New(litems, list.NewDefaultDelegate(), 40, 12)
-	lst.SetShowStatusBar(false)
-	lst.SetFilteringEnabled(false)
-	lst.SetShowHelp(false)
-	return &PickerScreen{title: title, scope: scope, input: inp, list: lst, allItems: items, onSelected: onSelected}
+	return &PickerScreen{
+		title:      title,
+		scope:      scope,
+		picker:     core.NewPicker(title, listItems),
+		allItems:   all,
+		onSelected: onSelected,
+	}
 }
 
 func (s *PickerScreen) Title() string { return s.title }
 func (s *PickerScreen) Scope() string { return s.scope }
 
 func (s *PickerScreen) Update(msg tea.Msg) (core.Screen, tea.Cmd, bool) {
-	switch msg := msg.(type) {
-	case tea.KeyMsg:
-		switch msg.String() {
-		case "esc":
-			return s, nil, true
-		case "enter":
-			if it, ok := s.list.SelectedItem().(PickerItem); ok {
-				if s.onSelected != nil {
-					return s, func() tea.Msg { return s.onSelected(it) }, true
-				}
-			}
+	keyMsg, ok := msg.(tea.KeyMsg)
+	if !ok {
+		return s, nil, false
+	}
+	result := s.picker.HandleKey(keyMsg.String())
+	switch result.Action {
+	case core.PickerActionCancelled:
+		return s, nil, true
+	case core.PickerActionSelected:
+		item, exists := s.allItems[result.Item.ID]
+		if !exists {
 			return s, nil, true
 		}
-	}
-	var cmd1 tea.Cmd
-	s.input, cmd1 = s.input.Update(msg)
-	s.refreshFiltered()
-	var cmd2 tea.Cmd
-	s.list, cmd2 = s.list.Update(msg)
-	return s, tea.Batch(cmd1, cmd2), false
-}
-
-func (s *PickerScreen) refreshFiltered() {
-	q := strings.ToLower(strings.TrimSpace(s.input.Value()))
-	items := make([]list.Item, 0, len(s.allItems))
-	for _, it := range s.allItems {
-		h := strings.ToLower(it.Label + " " + it.Desc)
-		if q == "" || strings.Contains(h, q) {
-			items = append(items, it)
+		if s.onSelected != nil {
+			return s, func() tea.Msg { return s.onSelected(item) }, true
 		}
+		return s, nil, true
+	default:
+		return s, nil, false
 	}
-	_ = s.list.SetItems(items)
 }
 
 func (s *PickerScreen) View(width, height int) string {
-	s.list.SetWidth(width)
-	s.list.SetHeight(max(6, height-4))
-	return s.title + "\n" + s.input.View() + "\n" + s.list.View()
+	lines := []string{s.title}
+	filter := s.picker.Query()
+	if filter == "" {
+		filter = "(type to filter)"
+	}
+	lines = append(lines, "Filter: "+filter, "")
+	items := s.picker.Items()
+	if len(items) == 0 {
+		lines = append(lines, "  No items")
+	} else {
+		for idx, item := range items {
+			prefix := "  "
+			if idx == s.picker.Cursor() {
+				prefix = "> "
+			}
+			label := item.Label
+			if item.Meta != "" {
+				label += " - " + item.Meta
+			}
+			lines = append(lines, prefix+label)
+		}
+	}
+	lines = append(lines, "", "Enter select. Esc cancel.")
+	return clipHeight(strings.Join(lines, "\n"), max(6, height))
+}
+
+func clipHeight(s string, h int) string {
+	if h <= 0 {
+		return ""
+	}
+	lines := strings.Split(s, "\n")
+	if len(lines) > h {
+		lines = lines[:h]
+	}
+	return strings.Join(lines, "\n")
 }
 
 func max(a, b int) int {
