@@ -481,7 +481,7 @@ func RenderStatusBar(m Model) string { ... }
 ## Phase 0 File Structure
 
 ```
-greenfield/                     (this folder - already exists)
+jaskmoney-v2/                     (this folder - already exists)
 ├── phase-0.md                  (this doc)
 ├── phase-1-N.md                (port strategy)
 │
@@ -526,10 +526,8 @@ greenfield/                     (this folder - already exists)
     ├── queries.go              (600 LOC)  - Basic CRUD operations
     └── seed.go                 (200 LOC)  - Mock data for testing
 
-**Total: ~4,200 LOC**
+**Total: ~4,200 LOC MAX, warn if exceeding or approaching ahead of schedule**
 ```
-
-**Note:** The v2 app is entirely self-contained in `greenfield/`. The v1 app (parent directory) is never touched.
 
 ---
 
@@ -538,7 +536,6 @@ greenfield/                     (this folder - already exists)
 **After building Phase 0:**
 
 ```bash
-cd greenfield
 go run .
 ```
 

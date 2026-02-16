@@ -1,0 +1,9 @@
+.venv/
+.uv-cache/
+__pycache__/
+*.pyc
+transactions.db
+*.csv
+.gitattributes
+ANZ.csv:Zone.Identifier
+jaskmoney
