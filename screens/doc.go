@@ -1,7 +1,7 @@
 // Package screens contains concrete overlay flows rendered on top of tabs.
 //
 // Allowed here:
-// - screen implementations that satisfy core.Screen (picker modal, command modal, editors)
+// - screen implementations that satisfy core.Screen (picker modal, command modal, jump picker modal, editors)
 // - modal-specific presentation and interaction wiring
 //
 // Not allowed here:

@@ -1,12 +1,10 @@
-package tabs
+package core
 
 import (
 	"database/sql"
 	"testing"
 
 	tea "github.com/charmbracelet/bubbletea"
-
-	"jaskmoney-v2/core"
 )
 
 func TestPaneHostScopeTracksSelectionAndFocus(t *testing.T) {
@@ -17,11 +15,11 @@ func TestPaneHostScopeTracksSelectionAndFocus(t *testing.T) {
 	if got := host.Scope(); got != "pane:x:1" {
 		t.Fatalf("scope mismatch: %s", got)
 	}
-	_, _ = host.HandlePaneKey(&core.Model{}, tea.KeyMsg{Type: tea.KeyRight})
+	_, _ = host.HandlePaneKey(&Model{}, tea.KeyMsg{Type: tea.KeyRight})
 	if got := host.Scope(); got != "pane:x:2" {
 		t.Fatalf("scope should follow selection: %s", got)
 	}
-	_, _ = host.HandlePaneKey(&core.Model{}, tea.KeyMsg{Type: tea.KeyEnter})
+	_, _ = host.HandlePaneKey(&Model{}, tea.KeyMsg{Type: tea.KeyEnter})
 	if got := host.Scope(); got != "pane:x:2" {
 		t.Fatalf("scope should follow focused pane: %s", got)
 	}
@@ -32,11 +30,11 @@ func TestPaneHostEscDefocuses(t *testing.T) {
 		NewStaticPane("p1", "Pane One", "pane:x:1", 'o', true, "one", 10),
 		NewStaticPane("p2", "Pane Two", "pane:x:2", 't', true, "two", 10),
 	)
-	_, _ = host.HandlePaneKey(&core.Model{}, tea.KeyMsg{Type: tea.KeyEnter})
+	_, _ = host.HandlePaneKey(&Model{}, tea.KeyMsg{Type: tea.KeyEnter})
 	if got := host.ActivePaneTitle(); got != "Pane One" {
 		t.Fatalf("expected pane one focused")
 	}
-	handled, _ := host.HandlePaneKey(&core.Model{}, tea.KeyMsg{Type: tea.KeyEsc})
+	handled, _ := host.HandlePaneKey(&Model{}, tea.KeyMsg{Type: tea.KeyEsc})
 	if !handled {
 		t.Fatalf("expected esc to be handled by pane host")
 	}
@@ -50,8 +48,8 @@ func TestPaneHostNavigationClearsFocus(t *testing.T) {
 		NewStaticPane("p1", "Pane One", "pane:x:1", 'o', true, "one", 10),
 		NewStaticPane("p2", "Pane Two", "pane:x:2", 't', true, "two", 10),
 	)
-	_, _ = host.HandlePaneKey(&core.Model{}, tea.KeyMsg{Type: tea.KeyEnter})
-	_, _ = host.HandlePaneKey(&core.Model{}, tea.KeyMsg{Type: tea.KeyRight})
+	_, _ = host.HandlePaneKey(&Model{}, tea.KeyMsg{Type: tea.KeyEnter})
+	_, _ = host.HandlePaneKey(&Model{}, tea.KeyMsg{Type: tea.KeyRight})
 	if got := host.Scope(); got != "pane:x:1" {
 		t.Fatalf("expected focus retained on pane one; got %s", got)
 	}
@@ -62,8 +60,8 @@ func TestPaneHostFocusedDoesNotCaptureArrowKeys(t *testing.T) {
 		NewStaticPane("p1", "Pane One", "pane:x:1", 'o', true, "one", 10),
 		NewStaticPane("p2", "Pane Two", "pane:x:2", 't', true, "two", 10),
 	)
-	_, _ = host.HandlePaneKey(&core.Model{}, tea.KeyMsg{Type: tea.KeyEnter})
-	handled, _ := host.HandlePaneKey(&core.Model{}, tea.KeyMsg{Type: tea.KeyDown})
+	_, _ = host.HandlePaneKey(&Model{}, tea.KeyMsg{Type: tea.KeyEnter})
+	handled, _ := host.HandlePaneKey(&Model{}, tea.KeyMsg{Type: tea.KeyDown})
 	if handled {
 		t.Fatalf("expected down key to pass through when pane is focused")
 	}
@@ -74,8 +72,8 @@ func TestPaneHostBuildPaneIncludesFocusIndicators(t *testing.T) {
 		NewStaticPane("p1", "Pane One", "pane:x:1", 'o', true, "one", 10),
 		NewStaticPane("p2", "Pane Two", "pane:x:2", 't', true, "two", 10),
 	)
-	_, _ = host.HandlePaneKey(&core.Model{}, tea.KeyMsg{Type: tea.KeyEnter})
-	if host.BuildPane("p1", &core.Model{}) == nil {
+	_, _ = host.HandlePaneKey(&Model{}, tea.KeyMsg{Type: tea.KeyEnter})
+	if host.BuildPane("p1", &Model{}) == nil {
 		t.Fatalf("expected pane widget")
 	}
 }
@@ -90,7 +88,7 @@ func TestPaneHostJumpTargetsAndFocus(t *testing.T) {
 	if len(targets) != 2 {
 		t.Fatalf("jump target count = %d, want 2", len(targets))
 	}
-	handled, _ := host.JumpToTarget(&core.Model{}, "h")
+	handled, _ := host.JumpToTarget(&Model{}, "h")
 	if !handled {
 		t.Fatalf("expected jump target to be handled")
 	}
@@ -100,8 +98,8 @@ func TestPaneHostJumpTargetsAndFocus(t *testing.T) {
 }
 
 func TestTabsImplementCoreInterfaces(t *testing.T) {
-	all := []core.Tab{NewDashboardTab(), NewManagerTab(), NewBudgetTab(), NewSettingsTab()}
-	m := core.NewModel(all, core.NewKeyRegistry(nil), core.NewCommandRegistry(nil), &sql.DB{}, core.AppData{})
+	all := []Tab{NewDashboardTab(), NewManagerTab(), NewBudgetTab(), NewSettingsTab()}
+	m := NewModel(all, NewKeyRegistry(nil), NewCommandRegistry(nil), &sql.DB{}, AppData{})
 	for _, tab := range all {
 		if tab.ID() == "" || tab.Title() == "" || tab.Scope() == "" {
 			t.Fatalf("tab metadata should not be empty")
@@ -109,7 +107,7 @@ func TestTabsImplementCoreInterfaces(t *testing.T) {
 		if tab.Build(&m) == nil {
 			t.Fatalf("tab build should return widget")
 		}
-		if _, ok := tab.(core.PaneKeyHandler); !ok {
+		if _, ok := tab.(PaneKeyHandler); !ok {
 			t.Fatalf("tab should implement pane key handler")
 		}
 	}

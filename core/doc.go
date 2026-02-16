@@ -2,9 +2,10 @@
 //
 // Allowed here:
 // - model routing, message contracts, command and key registries
-// - shared state machines used across tabs/screens (for example picker logic)
+// - shared state machines used across screens (for example picker logic)
+// - tab and pane policy (tab definitions, pane host focus/jump behavior, tab layouts)
 //
 // Not allowed here:
 // - concrete screen/modal rendering implementations
-// - tab-specific layout policy
+// - low-level widget rendering primitives
 package core

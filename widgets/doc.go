@@ -1,7 +1,8 @@
-// Package widgets contains dumb render primitives.
+// Package widgets contains reusable UI components and render primitives.
 //
 // Allowed here:
-// - stateless drawing/composition helpers (pane chrome, stacks, popup overlay compositor)
+//   - app-agnostic UI components and drawing/composition helpers
+//     (pane chrome, stacks, popup overlay compositor, transaction pane component)
 //
 // Not allowed here:
 // - key handling, app state transitions, scope logic, or tab policy

@@ -24,7 +24,7 @@ func (i CommandOption) DisplayName() string {
 	return i.Name
 }
 
-type CommandScreen struct {
+type CommandModal struct {
 	scope    string
 	search   func(query string) []CommandOption
 	onSelect func(id string) tea.Msg
@@ -32,8 +32,8 @@ type CommandScreen struct {
 	byID     map[string]CommandOption
 }
 
-func NewCommandScreen(scope string, search func(query string) []CommandOption, onSelect func(id string) tea.Msg) *CommandScreen {
-	s := &CommandScreen{
+func NewCommandModal(scope string, search func(query string) []CommandOption, onSelect func(id string) tea.Msg) *CommandModal {
+	s := &CommandModal{
 		scope:    scope,
 		search:   search,
 		onSelect: onSelect,
@@ -44,10 +44,10 @@ func NewCommandScreen(scope string, search func(query string) []CommandOption, o
 	return s
 }
 
-func (s *CommandScreen) Title() string { return "Command Palette" }
-func (s *CommandScreen) Scope() string { return "screen:command" }
+func (s *CommandModal) Title() string { return "Command Palette" }
+func (s *CommandModal) Scope() string { return "screen:command" }
 
-func (s *CommandScreen) Update(msg tea.Msg) (core.Screen, tea.Cmd, bool) {
+func (s *CommandModal) Update(msg tea.Msg) (core.Screen, tea.Cmd, bool) {
 	keyMsg, ok := msg.(tea.KeyMsg)
 	if !ok {
 		return s, nil, false
@@ -79,7 +79,7 @@ func (s *CommandScreen) Update(msg tea.Msg) (core.Screen, tea.Cmd, bool) {
 	return s, nil, true
 }
 
-func (s *CommandScreen) refresh() {
+func (s *CommandModal) refresh() {
 	query := strings.TrimSpace(s.picker.Query())
 	items := s.search(query)
 	listItems := make([]core.PickerItem, 0, len(items))
@@ -105,7 +105,7 @@ func (s *CommandScreen) refresh() {
 	s.picker.SetItems(listItems)
 }
 
-func (s *CommandScreen) View(width, height int) string {
+func (s *CommandModal) View(width, height int) string {
 	lines := []string{"Command Palette (scope: " + s.scope + ")"}
 	query := s.picker.Query()
 	if strings.TrimSpace(query) == "" {

@@ -10,14 +10,14 @@ import (
 	"jaskmoney-v2/core"
 )
 
-type JumpPickerScreen struct {
+type JumpPickerModal struct {
 	scope     string
 	title     string
 	targetByK map[string]core.JumpTarget
 	picker    *core.Picker
 }
 
-func NewJumpPickerScreen(targets []core.JumpTarget) *JumpPickerScreen {
+func NewJumpPickerModal(targets []core.JumpTarget) *JumpPickerModal {
 	items := make([]core.PickerItem, 0, len(targets))
 	targetByK := make(map[string]core.JumpTarget, len(targets))
 	for _, target := range targets {
@@ -34,7 +34,7 @@ func NewJumpPickerScreen(targets []core.JumpTarget) *JumpPickerScreen {
 			Search: key + " " + target.Label,
 		})
 	}
-	return &JumpPickerScreen{
+	return &JumpPickerModal{
 		scope:     "screen:jump-picker",
 		title:     "Jump Picker",
 		targetByK: targetByK,
@@ -42,10 +42,10 @@ func NewJumpPickerScreen(targets []core.JumpTarget) *JumpPickerScreen {
 	}
 }
 
-func (s *JumpPickerScreen) Title() string { return s.title }
-func (s *JumpPickerScreen) Scope() string { return s.scope }
+func (s *JumpPickerModal) Title() string { return s.title }
+func (s *JumpPickerModal) Scope() string { return s.scope }
 
-func (s *JumpPickerScreen) Update(msg tea.Msg) (core.Screen, tea.Cmd, bool) {
+func (s *JumpPickerModal) Update(msg tea.Msg) (core.Screen, tea.Cmd, bool) {
 	keyMsg, ok := msg.(tea.KeyMsg)
 	if !ok {
 		return s, nil, false
@@ -73,7 +73,7 @@ func (s *JumpPickerScreen) Update(msg tea.Msg) (core.Screen, tea.Cmd, bool) {
 	}
 }
 
-func (s *JumpPickerScreen) View(width, height int) string {
+func (s *JumpPickerModal) View(width, height int) string {
 	lines := make([]string, 0, len(s.picker.Items())+3)
 	q := strings.TrimSpace(s.picker.Query())
 	if q == "" {

@@ -29,7 +29,7 @@ func (m *Model) activateJumpPicker() tea.Cmd {
 		m.SetStatus("No jump targets for active tab")
 		return nil
 	}
-	if m.OpenJumpPicker == nil {
+	if m.OpenJumpPickerModal == nil {
 		m.SetStatus("Jump picker unavailable")
 		return nil
 	}
@@ -38,7 +38,7 @@ func (m *Model) activateJumpPicker() tea.Cmd {
 		m.SetStatus("Jump picker closed")
 		return nil
 	}
-	m.screens.Push(m.OpenJumpPicker(m, targets))
+	m.screens.Push(m.OpenJumpPickerModal(m, targets))
 	m.SetStatus("Jump mode: press pane key")
 	return nil
 }

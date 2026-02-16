@@ -80,12 +80,12 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				}
 			}
 		}
-		if m.keys.IsAction(msg, "open-command-palette", scope) && m.OpenCmd != nil {
-			m.screens.Push(m.OpenCmd(&m, scope))
+		if m.keys.IsAction(msg, "open-command-palette", scope) && m.OpenCommandModal != nil {
+			m.screens.Push(m.OpenCommandModal(&m, scope))
 			return m, nil
 		}
-		if m.keys.IsAction(msg, "open-category-picker", scope) && m.OpenPicker != nil {
-			m.screens.Push(m.OpenPicker(&m))
+		if m.keys.IsAction(msg, "open-category-picker", scope) && m.OpenPickerModal != nil {
+			m.screens.Push(m.OpenPickerModal(&m))
 			return m, nil
 		}
 		for i := range m.tabs {

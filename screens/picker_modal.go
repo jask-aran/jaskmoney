@@ -43,10 +43,6 @@ func NewPickerModal(title, scope string, items []PickerItem, onSelected func(Pic
 	}
 }
 
-func NewPickerScreen(title, scope string, items []PickerItem, onSelected func(PickerItem) tea.Msg) *PickerModal {
-	return NewPickerModal(title, scope, items, onSelected)
-}
-
 func (s *PickerModal) Title() string { return s.title }
 func (s *PickerModal) Scope() string { return s.scope }
 

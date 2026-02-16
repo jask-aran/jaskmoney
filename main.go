@@ -10,7 +10,6 @@ import (
 	"jaskmoney-v2/core"
 	"jaskmoney-v2/db"
 	"jaskmoney-v2/screens"
-	"jaskmoney-v2/tabs"
 )
 
 func main() {
@@ -28,21 +27,21 @@ func main() {
 	cmdReg := core.NewCommandRegistry(nil)
 
 	app := core.NewModel([]core.Tab{
-		tabs.NewDashboardTab(),
-		tabs.NewManagerTab(),
-		tabs.NewBudgetTab(),
-		tabs.NewSettingsTab(),
+		core.NewDashboardTab(),
+		core.NewManagerTab(),
+		core.NewBudgetTab(),
+		core.NewSettingsTab(),
 	}, keyReg, cmdReg, database, core.AppData{})
 
-	app.OpenPicker = func(m *core.Model) core.Screen {
+	app.OpenPickerModal = func(m *core.Model) core.Screen {
 		items := []screens.PickerItem{}
 		return screens.NewPickerModal("Category Picker", "screen:picker", items, func(it screens.PickerItem) tea.Msg {
 			return core.StatusMsg{Text: "Picked category: " + it.Label}
 		})
 	}
 
-	app.OpenCmd = func(m *core.Model, scope string) core.Screen {
-		return screens.NewCommandScreen(scope,
+	app.OpenCommandModal = func(m *core.Model, scope string) core.Screen {
+		return screens.NewCommandModal(scope,
 			func(query string) []screens.CommandOption {
 				results := m.CommandRegistry().Search(query, scope, m)
 				out := make([]screens.CommandOption, 0, len(results))
@@ -55,8 +54,8 @@ func main() {
 		)
 	}
 
-	app.OpenJumpPicker = func(m *core.Model, targets []core.JumpTarget) core.Screen {
-		return screens.NewJumpPickerScreen(targets)
+	app.OpenJumpPickerModal = func(m *core.Model, targets []core.JumpTarget) core.Screen {
+		return screens.NewJumpPickerModal(targets)
 	}
 
 	registerCommands(app.CommandRegistry())
@@ -96,8 +95,8 @@ func registerCommands(reg *core.CommandRegistry) {
 		Description: "Push category picker screen",
 		Scopes:      []string{"*"},
 		Execute: func(m *core.Model) tea.Cmd {
-			if m.OpenPicker != nil {
-				m.PushScreen(m.OpenPicker(m))
+			if m.OpenPickerModal != nil {
+				m.PushScreen(m.OpenPickerModal(m))
 			}
 			return core.StatusCmd("Category picker opened")
 		},

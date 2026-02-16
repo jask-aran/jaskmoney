@@ -40,21 +40,21 @@ type AppData struct {
 }
 
 type Model struct {
-	width          int
-	height         int
-	tabs           []Tab
-	activeTab      int
-	screens        ScreenStack
-	keys           *KeyRegistry
-	commands       *CommandRegistry
-	status         string
-	statusErr      bool
-	quitting       bool
-	Data           AppData
-	DB             *sql.DB
-	OpenPicker     func(m *Model) Screen
-	OpenCmd        func(m *Model, scope string) Screen
-	OpenJumpPicker func(m *Model, targets []JumpTarget) Screen
+	width               int
+	height              int
+	tabs                []Tab
+	activeTab           int
+	screens             ScreenStack
+	keys                *KeyRegistry
+	commands            *CommandRegistry
+	status              string
+	statusErr           bool
+	quitting            bool
+	Data                AppData
+	DB                  *sql.DB
+	OpenPickerModal     func(m *Model) Screen
+	OpenCommandModal    func(m *Model, scope string) Screen
+	OpenJumpPickerModal func(m *Model, targets []JumpTarget) Screen
 }
 
 func NewModel(tabs []Tab, keys *KeyRegistry, commands *CommandRegistry, db *sql.DB, data AppData) Model {
