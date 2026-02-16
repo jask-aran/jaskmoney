@@ -36,7 +36,7 @@ func main() {
 
 	app.OpenPicker = func(m *core.Model) core.Screen {
 		items := []screens.PickerItem{}
-		return screens.NewPickerScreen("Category Picker", "screen:picker", items, func(it screens.PickerItem) tea.Msg {
+		return screens.NewPickerModal("Category Picker", "screen:picker", items, func(it screens.PickerItem) tea.Msg {
 			return core.StatusMsg{Text: "Picked category: " + it.Label}
 		})
 	}
@@ -53,6 +53,10 @@ func main() {
 			},
 			func(id string) tea.Msg { return core.CommandExecuteMsg{CommandID: id} },
 		)
+	}
+
+	app.OpenJumpPicker = func(m *core.Model, targets []core.JumpTarget) core.Screen {
+		return screens.NewJumpPickerScreen(targets)
 	}
 
 	registerCommands(app.CommandRegistry())

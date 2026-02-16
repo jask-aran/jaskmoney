@@ -13,6 +13,18 @@ type jumpPaneTab struct {
 	jumped string
 }
 
+type stubJumpScreen struct{}
+
+func (s *stubJumpScreen) Title() string        { return "Jump Picker" }
+func (s *stubJumpScreen) Scope() string        { return "screen:jump-picker" }
+func (s *stubJumpScreen) View(int, int) string { return "jump" }
+func (s *stubJumpScreen) Update(msg tea.Msg) (Screen, tea.Cmd, bool) {
+	if key, ok := msg.(tea.KeyMsg); ok && key.String() == "t" {
+		return s, func() tea.Msg { return JumpTargetSelectedMsg{Key: "t"} }, true
+	}
+	return s, nil, false
+}
+
 func (t *jumpPaneTab) ID() string                           { return "jump-tab" }
 func (t *jumpPaneTab) Title() string                        { return "JumpTab" }
 func (t *jumpPaneTab) Scope() string                        { return "pane:jump:one" }
@@ -37,6 +49,7 @@ func TestJumpModeOpensPickerAndSelectsTarget(t *testing.T) {
 	})
 	tab := &jumpPaneTab{}
 	m := NewModel([]Tab{tab}, keys, NewCommandRegistry(nil), &sql.DB{}, AppData{})
+	m.OpenJumpPicker = func(_ *Model, _ []JumpTarget) Screen { return &stubJumpScreen{} }
 
 	next, _ := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'v'}})
 	updated := next.(Model)

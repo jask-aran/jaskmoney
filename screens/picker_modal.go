@@ -14,7 +14,7 @@ type PickerItem struct {
 	Desc  string
 }
 
-type PickerScreen struct {
+type PickerModal struct {
 	title      string
 	scope      string
 	picker     *core.Picker
@@ -22,7 +22,7 @@ type PickerScreen struct {
 	onSelected func(PickerItem) tea.Msg
 }
 
-func NewPickerScreen(title, scope string, items []PickerItem, onSelected func(PickerItem) tea.Msg) *PickerScreen {
+func NewPickerModal(title, scope string, items []PickerItem, onSelected func(PickerItem) tea.Msg) *PickerModal {
 	listItems := make([]core.PickerItem, 0, len(items))
 	all := make(map[string]PickerItem, len(items))
 	for _, it := range items {
@@ -34,7 +34,7 @@ func NewPickerScreen(title, scope string, items []PickerItem, onSelected func(Pi
 			Search: it.Label + " " + it.Desc,
 		})
 	}
-	return &PickerScreen{
+	return &PickerModal{
 		title:      title,
 		scope:      scope,
 		picker:     core.NewPicker(title, listItems),
@@ -43,10 +43,14 @@ func NewPickerScreen(title, scope string, items []PickerItem, onSelected func(Pi
 	}
 }
 
-func (s *PickerScreen) Title() string { return s.title }
-func (s *PickerScreen) Scope() string { return s.scope }
+func NewPickerScreen(title, scope string, items []PickerItem, onSelected func(PickerItem) tea.Msg) *PickerModal {
+	return NewPickerModal(title, scope, items, onSelected)
+}
 
-func (s *PickerScreen) Update(msg tea.Msg) (core.Screen, tea.Cmd, bool) {
+func (s *PickerModal) Title() string { return s.title }
+func (s *PickerModal) Scope() string { return s.scope }
+
+func (s *PickerModal) Update(msg tea.Msg) (core.Screen, tea.Cmd, bool) {
 	keyMsg, ok := msg.(tea.KeyMsg)
 	if !ok {
 		return s, nil, false
@@ -69,7 +73,7 @@ func (s *PickerScreen) Update(msg tea.Msg) (core.Screen, tea.Cmd, bool) {
 	}
 }
 
-func (s *PickerScreen) View(width, height int) string {
+func (s *PickerModal) View(width, height int) string {
 	lines := []string{s.title}
 	filter := s.picker.Query()
 	if filter == "" {
@@ -93,23 +97,5 @@ func (s *PickerScreen) View(width, height int) string {
 		}
 	}
 	lines = append(lines, "", "Enter select. Esc cancel.")
-	return clipHeight(strings.Join(lines, "\n"), max(6, height))
-}
-
-func clipHeight(s string, h int) string {
-	if h <= 0 {
-		return ""
-	}
-	lines := strings.Split(s, "\n")
-	if len(lines) > h {
-		lines = lines[:h]
-	}
-	return strings.Join(lines, "\n")
-}
-
-func max(a, b int) int {
-	if a > b {
-		return a
-	}
-	return b
+	return core.ClipHeight(strings.Join(lines, "\n"), core.MaxInt(6, height))
 }

@@ -59,3 +59,28 @@ func renderBar(style lipgloss.Style, width int, text string, bg lipgloss.Termina
 		MaxWidth(width).
 		Render(line)
 }
+
+func ClipHeight(s string, height int) string {
+	if height <= 0 {
+		return ""
+	}
+	lines := strings.Split(s, "\n")
+	if len(lines) > height {
+		lines = lines[:height]
+	}
+	return strings.Join(lines, "\n")
+}
+
+func TrimToWidth(s string, width int) string {
+	if width <= 0 {
+		return ""
+	}
+	return ansi.Truncate(s, width, "")
+}
+
+func MaxInt(a, b int) int {
+	if a > b {
+		return a
+	}
+	return b
+}

@@ -4,8 +4,6 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/charmbracelet/bubbles/list"
-	"github.com/charmbracelet/bubbles/textinput"
 	tea "github.com/charmbracelet/bubbletea"
 
 	"jaskmoney-v2/core"
@@ -19,33 +17,29 @@ type CommandOption struct {
 	Reason   string
 }
 
-func (i CommandOption) Title() string {
+func (i CommandOption) DisplayName() string {
 	if i.Disabled && i.Reason != "" {
 		return fmt.Sprintf("%s (%s)", i.Name, i.Reason)
 	}
 	return i.Name
 }
-func (i CommandOption) Description() string { return i.Desc }
-func (i CommandOption) FilterValue() string { return i.Name + " " + i.Desc + " " + i.ID }
 
 type CommandScreen struct {
 	scope    string
 	search   func(query string) []CommandOption
 	onSelect func(id string) tea.Msg
-	input    textinput.Model
-	list     list.Model
+	picker   *core.Picker
+	byID     map[string]CommandOption
 }
 
 func NewCommandScreen(scope string, search func(query string) []CommandOption, onSelect func(id string) tea.Msg) *CommandScreen {
-	inp := textinput.New()
-	inp.Placeholder = "Search commands"
-	inp.Prompt = "cmd> "
-	inp.Focus()
-	lst := list.New(nil, list.NewDefaultDelegate(), 64, 14)
-	lst.SetShowStatusBar(false)
-	lst.SetFilteringEnabled(false)
-	lst.SetShowHelp(false)
-	s := &CommandScreen{scope: scope, search: search, onSelect: onSelect, input: inp, list: lst}
+	s := &CommandScreen{
+		scope:    scope,
+		search:   search,
+		onSelect: onSelect,
+		picker:   core.NewPicker("Command Palette", nil),
+		byID:     map[string]CommandOption{},
+	}
 	s.refresh()
 	return s
 }
@@ -54,43 +48,88 @@ func (s *CommandScreen) Title() string { return "Command Palette" }
 func (s *CommandScreen) Scope() string { return "screen:command" }
 
 func (s *CommandScreen) Update(msg tea.Msg) (core.Screen, tea.Cmd, bool) {
-	switch msg := msg.(type) {
-	case tea.KeyMsg:
-		switch msg.String() {
-		case "esc":
-			return s, nil, true
-		case "enter":
-			if it, ok := s.list.SelectedItem().(CommandOption); ok {
-				if it.Disabled {
-					return s, core.StatusCmd(it.Reason), true
-				}
-				if s.onSelect != nil {
-					return s, func() tea.Msg { return s.onSelect(it.ID) }, true
-				}
-				return s, nil, true
-			}
-		}
+	keyMsg, ok := msg.(tea.KeyMsg)
+	if !ok {
+		return s, nil, false
 	}
-	var cmd1 tea.Cmd
-	s.input, cmd1 = s.input.Update(msg)
+
+	result := s.picker.HandleKey(keyMsg.String())
 	s.refresh()
-	var cmd2 tea.Cmd
-	s.list, cmd2 = s.list.Update(msg)
-	return s, tea.Batch(cmd1, cmd2), false
+	if result.Action != core.PickerActionSelected {
+		if result.Action == core.PickerActionCancelled {
+			return s, nil, true
+		}
+		return s, nil, false
+	}
+
+	option, exists := s.byID[result.Item.ID]
+	if !exists {
+		return s, nil, true
+	}
+	if option.Disabled {
+		reason := strings.TrimSpace(option.Reason)
+		if reason == "" {
+			reason = "command is disabled"
+		}
+		return s, core.StatusCmd(reason), true
+	}
+	if s.onSelect != nil {
+		return s, func() tea.Msg { return s.onSelect(option.ID) }, true
+	}
+	return s, nil, true
 }
 
 func (s *CommandScreen) refresh() {
-	query := strings.TrimSpace(s.input.Value())
+	query := strings.TrimSpace(s.picker.Query())
 	items := s.search(query)
-	ls := make([]list.Item, 0, len(items))
+	listItems := make([]core.PickerItem, 0, len(items))
+	byID := make(map[string]CommandOption, len(items))
 	for _, it := range items {
-		ls = append(ls, it)
+		byID[it.ID] = it
+		meta := it.Desc
+		if it.Disabled && strings.TrimSpace(it.Reason) != "" {
+			if strings.TrimSpace(meta) == "" {
+				meta = "disabled: " + strings.TrimSpace(it.Reason)
+			} else {
+				meta = meta + " | disabled: " + strings.TrimSpace(it.Reason)
+			}
+		}
+		listItems = append(listItems, core.PickerItem{
+			ID:     it.ID,
+			Label:  it.DisplayName(),
+			Meta:   meta,
+			Search: it.ID + " " + it.Name + " " + it.Desc + " " + it.Reason,
+		})
 	}
-	_ = s.list.SetItems(ls)
+	s.byID = byID
+	s.picker.SetItems(listItems)
 }
 
 func (s *CommandScreen) View(width, height int) string {
-	s.list.SetWidth(width)
-	s.list.SetHeight(max(6, height-4))
-	return "Command Palette (scope: " + s.scope + ")\n" + s.input.View() + "\n" + s.list.View()
+	lines := []string{"Command Palette (scope: " + s.scope + ")"}
+	query := s.picker.Query()
+	if strings.TrimSpace(query) == "" {
+		query = "(type to filter)"
+	}
+	lines = append(lines, "Filter: "+query, "")
+
+	items := s.picker.Items()
+	if len(items) == 0 {
+		lines = append(lines, "  No matching commands")
+	} else {
+		cursor := s.picker.Cursor()
+		for i, item := range items {
+			prefix := "  "
+			if i == cursor {
+				prefix = "> "
+			}
+			row := item.Label
+			if strings.TrimSpace(item.Meta) != "" {
+				row += " - " + item.Meta
+			}
+			lines = append(lines, prefix+row)
+		}
+	}
+	lines = append(lines, "", "Enter run. Esc close.")
+	return core.ClipHeight(strings.Join(lines, "\n"), core.MaxInt(6, height))
 }

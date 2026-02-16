@@ -2,6 +2,16 @@ package core
 
 import tea "github.com/charmbracelet/bubbletea"
 
+type JumpTarget struct {
+	Key   string
+	Label string
+}
+
+type JumpTargetProvider interface {
+	JumpTargets() []JumpTarget
+	JumpToTarget(m *Model, key string) (bool, tea.Cmd)
+}
+
 func (m *Model) jumpTargetsForActiveTab() []JumpTarget {
 	if len(m.tabs) == 0 {
 		return nil
@@ -19,12 +29,16 @@ func (m *Model) activateJumpPicker() tea.Cmd {
 		m.SetStatus("No jump targets for active tab")
 		return nil
 	}
+	if m.OpenJumpPicker == nil {
+		m.SetStatus("Jump picker unavailable")
+		return nil
+	}
 	if top := m.screens.Top(); top != nil && top.Scope() == "screen:jump-picker" {
 		m.screens.Pop()
 		m.SetStatus("Jump picker closed")
 		return nil
 	}
-	m.screens.Push(newJumpPickerScreen(targets))
+	m.screens.Push(m.OpenJumpPicker(m, targets))
 	m.SetStatus("Jump mode: press pane key")
 	return nil
 }
