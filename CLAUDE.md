@@ -1,226 +1,259 @@
-# Repository Guidelines
+# Repository Guidelines for Agents
+
+## Document Navigation & Specification System
+
+This repository uses one primary implementation spec plus this agent guide.
+
+### Primary Specification
+
+1. **`specs/v0.4-spec.md`** — v0.4 implementation plan and feature specifications
+   - **Purpose:** Describes what to build, phase-by-phase implementation order, breaking changes, and acceptance criteria
+   - **When to read:** Before starting work on any v0.4 feature; to understand dependencies between phases; to verify acceptance gates
+   - **Navigation:** Use the Table of Contents. Each phase is self-contained with schema changes, model changes, files changed, tests, and acceptance criteria
+   - **Phase structure:** 7 phases with explicit dependencies (Phase 1 -> Phase 2 -> Phases 3/5 parallel -> Phase 6 -> Phase 7 hardening)
+
+### How to Use These Documents Efficiently
+
+**Starting a new task:**
+1. Read the user request to identify behavior change scope
+2. Jump to the relevant phase in `specs/v0.4-spec.md`
+3. Read the exact subsection tied to the work (schema/model/commands/tests/acceptance)
+4. Implement and verify against the phase acceptance checklist
+
+**Don’t read linearly:** Use the TOC to jump directly to relevant sections.
 
 ## Project Structure & Module Organization
 
-This is a Go TUI application built with the Bubble Tea framework. All source files live in a single `package main`, organized by concern:
+This is a Go TUI application built with Bubble Tea. All source files live in a single `package main`, organized by concern.
 
-| File | Responsibility |
-|---|---|
-| `main.go` | Entry point only. Parses flags and launches the TUI or non‑TUI validation path. |
-| `validate.go` | Non‑TUI validation path using a temporary DB and CSV file. |
-| `model.go` | Bubble Tea model: types, messages, `Init`/`Update`/`View`, key handling, layout helpers, import flow state. |
-| `db.go` | SQLite schema, migrations, queries, and DB helpers (including atomic transaction updates). |
-| `ingest.go` | CSV import pipeline: format‑driven parsing, duplicate detection, transactional insert, file scanning, and import commands. |
-| `render.go` | All visual output: styles, sections, tables, charts, modals, status bar rendering. |
-| `overlay.go` | String/layout utilities: overlay compositing, padding, truncation, line splitting. |
-| `theme.go` | Catppuccin Mocha color constants, semantic aliases, and category accent palette. |
-| `config.go` | TOML CSV format configuration: load, parse, validate, default creation. |
+**Current structure (v0.3 baseline):**
+- ~35 files, ~19,500 LOC
+- 3 tabs: Manager (accounts + transactions), Dashboard, Settings
+- Schema v4: categories, tags, rules v1, accounts, transactions, imports
 
-Supporting files:
-- `go.mod`, `go.sum` — module definition and dependencies.
-- `ANZ.csv` — sample import data.
-- `transactions.db` — local runtime artifact (do not commit).
-- `v0.2-spec.md` — design specification document.
-- `/home/jask/bagels-ref` — local reference clone of Bagels for chart/style parity checks.
+**v0.4 target structure:**
+- ~39 files (adds `filter.go`, `budget.go`, `widget.go`, `update_budget.go`)
+- 4 tabs: Dashboard, Budget, Manager, Settings (tab order changes)
+- Schema v5+: rules v2 (unified), budget tables, credit offsets
 
-### Where new code should go
+### Where New Code Should Go
 
-- **New data sources or import formats** — `ingest.go` (or a new file like `import_ofx.go` for a distinct format). Add format definitions in `config.go` and update tests.
-- **New database queries or migrations** — `db.go`.
-- **New UI views, sections, or visual components** — `render.go`.
-- **New Bubble Tea messages, commands, or model fields** — `model.go`.
-- **New string/layout utilities** — `overlay.go`.
-- **New color constants or theme changes** — `theme.go`.
-- **New CLI flags or non‑TUI flows** — `main.go` and `validate.go`.
+Quick reference:
+- **New filter logic** -> `filter.go`
+- **New budget calculations** -> `budget.go`
+- **New dashboard widgets/modes** -> `widget.go`
+- **New database queries or migrations** -> `db.go`
+- **New UI rendering** -> `render.go`
+- **New Bubble Tea messages/commands/model fields** -> `app.go`
+- **New keybindings/scopes/dispatch contracts** -> `keys.go`, `dispatch.go`
+- **New commands** -> `commands.go`
 
-When the project outgrows a flat structure, migrate to:
-```
-cmd/jaskmoney/main.go    — entrypoint
-internal/tui/             — model, render, overlay
-internal/db/              — database access
-internal/ingest/          — CSV/file import
+When the project outgrows flat structure (~25k LOC or 50+ files), migrate to:
+```text
+cmd/jaskmoney/main.go    - entrypoint
+internal/tui/            - app, update handlers, render
+internal/db/             - database access
+internal/ingest/         - CSV/file import
+internal/filter/         - filter expression system
+internal/budget/         - budget computation
 ```
 
-## Runtime Modes
+## Core Architectural Principles
 
-This app has two runtime modes:
+1. **Single mutable state root:** `model` is the only source of truth. Mutate state in `Update` paths only.
+2. **Pure rendering:** `View()` is read-only. No I/O, no side effects.
+3. **Message-driven async:** All I/O happens via `tea.Cmd`; async results return typed `xxxMsg`.
+4. **Modal precedence:** Topmost overlay wins. Add overlays through `overlayPrecedence()` in `dispatch.go` so update/footer/command-scope stay aligned.
+5. **Text input safety:** Printable keys are literal text in text-input contexts. `modalTextContracts` in `dispatch.go` is the source of truth.
+6. **Action-first key handling:** Resolve keys by action (`m.isAction`, `m.verticalDelta`, `m.horizontalDelta`), not raw key string checks.
+7. **Keybinding model:** Scopes are flat in storage, hierarchical in dispatch; actions are stable, keys are overrideable.
 
-- **TUI mode** (default): `go run .`
-- **Non‑TUI validation**: `go run . -validate`
-  - Uses a temporary DB and a temporary CSV file.
-  - Does not touch `transactions.db` or user data.
-  - Validates import + duplicate detection end‑to‑end.
+## Testing Strategy
 
-Note: TUI mode requires a TTY. In headless environments, use `-validate` or tests.
+### Three-Tier Test Model
+
+1. **Unit/pure logic (fast):** Parsing, sorting, helpers
+2. **Component/integration (fast-medium):** DB CRUD, CSV parsing, rendering contracts
+3. **Cross-mode flows (high value):** Realistic `Update(...)`-driven user journeys via flow tests
+
+### Quality Bar
+
+- **For user-visible behavior changes:** Add at least one `Update(...)`-driven regression test
+- **Prefer persisted outcomes:** DB rows, config writes, and message effects over status-text-only checks
+- **For transactional paths:** Add rollback/failure tests proving no partial writes
+- **For bug fixes:** Add a regression test that fails pre-fix
+- **Use `flowheavy` tag** for expensive flows
+
+### Test Commands
+
+```bash
+go test ./...                      # Fast default suite
+go test -tags flowheavy ./...     # Heavy flow suite
+./scripts/test.sh fast|heavy|all  # Consistent local entry points
+go run . -validate                # Non-TUI validation harness
+go run . -startup-check           # Config/keybinding health check
+```
 
 ## Build, Test, and Development Commands
 
-Use standard Go tooling from the repo root:
-- `go run .` — run the TUI app locally.
-- `go run . -validate` — run non‑TUI validation (temp DB + CSV).
-- `go build .` — compile and verify the binary builds.
-- `go test ./...` — run all tests across packages.
-- `go test -run TestName ./...` — run a focused test.
-- `go vet ./...` — run static analysis.
-- `gofmt -w .` — format Go source files in place.
-
-If you add tooling (lint, make targets), document it here and in the README.
+```bash
+go run .
+go run . -validate
+go run . -startup-check
+go build .
+go test ./...
+go test -tags flowheavy ./...
+go test -run TestName ./...
+go vet ./...
+gofmt -w .
+./scripts/test.sh fast|heavy|all
+```
 
 ## Coding Style & Naming Conventions
 
-- Follow idiomatic Go and keep code `gofmt`‑clean.
-- Use tabs (Go default); do not manually align with spaces.
-- Exported identifiers: `PascalCase`; unexported: `camelCase`.
-- Keep functions small and single‑purpose; prefer early returns for errors.
-- Wrap errors with context: `fmt.Errorf("load CSV: %w", err)`.
-- Use Go builtins (`min`, `max`) instead of custom versions (Go 1.21+).
-- Use ASCII unless the file already uses non‑ASCII (only `truncate` uses “…” by design).
+- Follow idiomatic Go and keep code `gofmt`-clean
+- Use tabs (Go default); do not manually align with spaces
+- Exported identifiers: `PascalCase`; unexported: `camelCase`
+- Keep functions small and single-purpose; use early returns for errors
+- Wrap errors with context: `fmt.Errorf("load CSV: %w", err)`
+- Use Go builtins (`min`, `max`) instead of custom versions (Go 1.21+)
+- Use ASCII unless file-local conventions require otherwise
 
 ## Bubble Tea Conventions
 
-This project follows the Elm Architecture as implemented by Bubble Tea.
-
 ### Model
+- `model` in `app.go` is the source of truth for UI state
+- Keep model fields grouped and explicit
+- Never mutate model state outside `Update`
 
-- `model` in `model.go` is the single source of truth for all state.
-- Keep the model flat; group related fields with comments.
-- Never mutate the model outside of `Update`.
-- `View()` is read‑only and must be pure.
+### Messages (`Msg`)
+- Async result types are `xxxMsg` (lowercase, unexported)
+- Include `err` in async result messages when relevant
+- Handlers check `err` first
 
-### Messages (Msg)
-
-- Every async result is a message type (e.g. `dbReadyMsg`, `refreshDoneMsg`).
-- Name messages `xxxMsg` (lowercase, unexported).
-- Messages carry data and an `err` field. Handlers must check `err` first.
-- Never perform I/O directly inside `Update`. Use `tea.Cmd`.
-
-### Commands (Cmd)
-
-- Command constructors are `xxxCmd` and return `tea.Msg`.
-- Keep commands in the file that owns the concern:
-  - DB commands in `db.go`
-  - Import commands in `ingest.go`
-- Commands must not capture mutable model state; pass the needed values only.
-
-### Update & Key Handling
-
-- `Update` dispatches on message type, then delegates to focused handlers.
-- Key handling is split by mode:
-  - `updateMain` (default view)
-  - `updateNavigation` (transactions table)
-  - `updateSearch` (search input)
-  - `updateDetail` (transaction detail modal)
-  - `updateSettings` (settings sections)
-  - `updateFilePicker` (import file picker overlay)
-  - `updateDupeModal` (duplicate decision modal)
+### Commands (`Cmd`)
+- Command constructors are `xxxCmd` and return `tea.Msg`
+- Keep command code in owning concern file (`db.go`, `ingest.go`, etc.)
+- Pass required values explicitly; avoid closing over mutable model state
 
 ### View
+- `View()` composes from pure render functions in `render.go`
+- Layout math belongs on `model`
+- Styles are package-level vars, not inline styles
 
-- `View()` composes the full screen from discrete render functions.
-- Render functions are pure and live in `render.go`.
-- Layout math (visible rows, content width, section width) lives on `model`.
-- Styles are package‑level `var` blocks in `render.go` (no inline styles).
+## Implementation Inventory
+
+Use this as the concise source of available primitives and reusable function surfaces.
+
+### Interaction primitives
+
+| Component | Key APIs | Capabilities | Primary use-cases |
+|---|---|---|---|
+| Overlay dispatch table (`dispatch.go`) | `overlayPrecedence`, `dispatchOverlayKey`, `activeOverlayScope`, `tabScope`, `settingsTabScope` | Single source of truth for modal precedence and scope routing | Add/modify modal priority, keep update/footer/command scope aligned |
+| Modal text contracts (`dispatch.go`) | `modalTextContracts`, `isTextInputModalScopeFromContract` | Per-scope text safety (`printableFirst`, cursor-aware editing, vim-nav suppression) | Any modal or inline editor with text input |
+| Cursor-aware text field (`dispatch.go`) | `textField.handleKey`, `textField.render`, `textField.set` | Cursor-positioned ASCII insertion/deletion and rendering | Rule/filter/settings/modal text fields |
+| Modal form navigator (`dispatch.go`) | `modalFormNav.handleNav` | Standard `up/down/tab/shift+tab` field focus cycling | Multi-field modal forms |
+| Generic picker (`picker.go`) | `newPicker`, `pickerState.HandleMsg`, `SetTriState`, `PendingTagPatch`, `HasPendingChanges`, `renderPicker` | Fuzzy filtering, sectioned lists, single/multi-select, tri-state patching, inline create row | Category/tag pickers, saved-filter apply picker, manager account action picker, offset debit picker |
+| Command system (`commands.go`) | `CommandRegistry.Search`, `ExecuteByID` | Scope-aware command discovery/execution; disabled reason handling | Command palette, colon mode, action routing |
+| Jump targeting (`update.go`, `update_manager.go`, `update_dashboard.go`) | `jumpTarget` model + jump overlay dispatch/render path | Cross-tab section focus via single-key overlay targets | Fast section navigation and focus-mode entry |
+
+### Rendering functions
+
+| Surface | Key functions | Capabilities | Primary use-cases |
+|---|---|---|---|
+| Shared frame/sections (`render.go`) | `renderHeader`, `renderSectionBox`, `renderTitledSectionBox`, `renderModalContent` | Consistent top-level frame and boxed sections | Tab shells, modal containers, reusable boxed UI |
+| Command UI (`render.go`) | `renderCommandPalette`, `renderCommandSuggestions`, `renderCommandLinesWindow`, `renderWrappedCommandMatchLines` | Palette/modal rendering with wrapped descriptions and scrolling windows | `ctrl+k` palette and `:` command mode |
+| Jump UI (`render.go`) | `renderJumpOverlay` | Floating key badges and jump status surface | App-wide jump mode |
+| Import preview (`render.go`) | `renderImportPreview`, `renderImportPreviewCompact`, `renderImportPreviewTable` | Snapshot summary, parse diagnostics, post-rules preview table | Import decision flow |
+| Transactions + tags (`render.go`) | `renderTransactionTable`, `renderCategoryTagOnBackground`, `renderTagsOnBackground` | Table layout with optional columns and tag/category styling | Manager transactions, preview parity surfaces |
+| Dashboard analytics (`render.go`) | `renderSummaryCards`, `renderCategoryBreakdown`, `renderSpendingTrackerWithRange`, timeframe controls helpers | KPI cards, category composition, trend charts, timeframe controls | Dashboard tab |
+| Settings/manager/detail modals (`render.go`) | `renderSettingsContent`, `renderSettingsCategories`, `renderSettingsTags`, `renderSettingsRules`, `renderManagerAccountModal`, `renderFilterEditorModal`, `renderRuleEditorModal`, `renderDryRunResultsModal`, `renderDetailWithOffsets` | Section-specific editors and detail workflows | Settings forms, rule workflows, transaction detail/offset UX |
+| Budget surfaces (`render.go`) | `renderBudgetTable`, `renderBudgetCategoryTable`, `renderBudgetTargetTable`, `renderBudgetPlanner`, `renderBudgetAnalyticsStrip`, `renderBudgetVarianceSparkline` | Budget table/planner views, target rows, analytics strip and variance sparkline | Budget tab |
+
+### Logical/data functions
+
+| Domain | Key functions | Capabilities | Primary use-cases |
+|---|---|---|---|
+| Filter language (`filter.go`) | `parseFilter`, `parseFilterStrict`, `evalFilter`, `renderFilterNode` | AST parsing (permissive/strict), row evaluation, canonical filter string rendering | Interactive filter input, saved filters, rules/targets validation |
+| Budget compute (`budget.go`) | `parseMonthKey`, `computeBudgetLines`, `computeTargetLines` | Scoped month/period math, debit/offset aggregation, raw vs effective spend projections | Budget tab metrics and target evaluation |
+| Budget + offset storage (`db.go`) | `loadCategoryBudgets`, `upsertCategoryBudget`, `loadBudgetOverrides`, `upsertBudgetOverride`, `loadSpendingTargets`, `upsertTargetOverride`, `loadCreditOffsets`, `indexCreditOffsets`, `insertCreditOffset` | Persistent budget/override/target CRUD and validated offset linking | Budget editing, target maintenance, offset integrity |
+| Rules v2 (`db.go`) | `loadRulesV2`, `insertRuleV2`, `updateRuleV2`, `deleteRuleV2`, `applyRulesV2ToScope`, `applyRulesV2ToTxnIDs`, `dryRunRulesV2` | Saved-filter referenced rule CRUD and deterministic apply/dry-run behavior | Settings rules editor, import-time rule application |
+| Import ingest + preview (`ingest.go`) | `scanDupesCmd`, `buildImportPreviewSnapshot`, `parseImportPreviewRows`, `ingestSnapshotCmd`, `parseDateISO`, `parseAmount` | Parse/normalize CSV rows, duplicate detection, snapshot-driven import path | Import preview and commit flow |
+| Core transaction/category/tag/account CRUD (`db.go`) | `loadRows`, `loadRowsForAccountScope`, `loadRowsByTxnIDs`, `updateTransactionCategory`, `updateTransactionDetail`, `loadCategories`, `insertCategory`, `loadTags`, `insertTag`, `loadAccounts`, `insertAccount` | Main data access layer for manager/settings flows | Manager operations, settings CRUD, scoped data refresh |
 
 ## Status Handling
 
-- All status text is rendered via `renderStatus(text, isErr)`.
-- Set errors with `setError(...)` so `statusErr` is true.
-- Always set `statusErr = false` when writing non‑error status text.
-
-## Import Flow (Settings‑Only)
-
-Import is **only accessible from Settings** (Database & Imports section).
-
-Flow:
-1) User presses `i` in Settings → `loadFilesCmd` scans for `.csv`.
-2) `importPicking` opens the file picker overlay (`renderFilePicker`).
-3) Selecting a file runs `scanDupesCmd`.
-4) If dupes exist, `importDupeModal` opens (`renderDupeModal`).
-5) User chooses:
-   - `a` → import all (force dupes)
-   - `s` → import skipping dupes
-   - `esc`/`c` → cancel
-6) `ingestCmd` imports, records import, and applies category rules.
-
-Details:
-- Duplicate detection uses `(date_iso, amount, description)` keys via `duplicateKey`.
-- Format detection uses filename prefix via `detectFormat` (case‑insensitive).
-- If no format matches, `detectFormat` falls back to the first format.
-- Default formats include **only ANZ** (single format).
+- Render status through `renderStatus(text, isErr)`
+- Use `setError(...)` for errors (`statusErr=true`)
+- Set `statusErr=false` for informational status
 
 ## CSV Formats & Config
 
-- Formats are defined in `formats.toml` under `~/.config/jaskmoney`.
-- `loadFormats` creates the default config if missing.
-- `parseFormats` validates required fields (`name`, `date_format`).
-- `findFormat` is case‑insensitive (`strings.EqualFold`).
-- `detectFormat` uses filename prefix and falls back to the first format.
-
-If you add a new format:
-- Update `defaultConfigTOML`.
-- Add tests to `config_test.go` and `ingest_test.go`.
-- Ensure the filename prefix detection remains correct.
-
-## Database & Migrations
-
-- Schema version is tracked in `schema_meta`.
-- Migration from v1 preserves transactions by copying into v2 with `category_id = NULL`.
-- `clearAllData` deletes transactions/imports but preserves categories and rules.
-- Use `updateTransactionDetail` for atomic updates to category + notes.
-
-## Rendering & UI Rules
-
-- Spending tracker is a 60-day daily spend chart (debits only; uncategorised excluded).
-- Spending tracker uses `ntcharts` time-series with braille/dotted data stroke.
-- Vertical guides are Bagels-inspired:
-  - Minor guides every 2 days.
-  - Weekly boundary guides are color-emphasized, not thicker glyphs.
-  - Guides render behind data (skip cells already occupied by plotted data).
-  - Guides stop at the plot area (do not enter tick-label rows).
-- X labels are intentionally close to the bottom plot edge.
-- Dashboard section title separators are intentionally disabled.
-- On Dashboard, `Spending by Category` and `Spending Tracker` render at 60% width and are left-aligned.
-- Transaction table supports optional category column (nil categories hides it).
-- `formatMonth` must handle invalid dates safely (no slicing panic).
+- Formats live in `~/.config/jaskmoney/formats.toml`
+- `loadFormats` creates defaults if missing
+- `parseFormats` validates required fields (`name`, `date_format`)
+- `findFormat` is case-insensitive
+- `detectFormat` prefers filename prefix, falls back to first format
 
 ## External Reference
 
-- Bagels reference repo is kept locally at `/home/jask/bagels-ref`.
-- For spending tracker parity, inspect:
-  - `src/bagels/components/modules/spending/__init__.py`
-  - `src/bagels/components/modules/spending/plots.py`
-- Treat `/tmp/bagels` as disposable; use `/home/jask/bagels-ref` as the durable reference path.
-
-## Testing Guidelines
-
-- Prefer table‑driven unit tests with `TestXxxBehavior` names.
-- Keep tests deterministic (no uncontrolled clock/network dependencies).
-- Use temp files and temp DBs for CSV/DB tests.
-- For import tests, call `importCSV(db, path, format, skipDupes)` explicitly.
-- For command tests, call the returned `tea.Cmd` and assert on the message.
-- Run non‑TUI validation with `go run . -validate` to simulate an import without TTY.
+- Bagels reference repo: `/home/jask/bagels-ref`
+- Spending tracker parity: `src/bagels/components/modules/spending/`
+- Jump mode reference: `src/bagels/components/jumper.py`
 
 ## Quality & Safety Checks
 
-- Avoid silent error drops in I/O and DB code.
-- Keep comments aligned with behavior.
-- Remove dead code promptly (unused helpers, structs, or render functions).
-- Always update tests and docstrings when behavior changes.
-
-## Commit & Pull Request Guidelines
-
-History mixes short version tags (`v0.12`) and imperative messages (`Add ...`, `Fix ...`). Prefer:
-- Concise, imperative subject lines (`Fix CSV date parsing`).
-- Optional scoped prefixes (`feat:`, `fix:`).
-- One logical change per commit.
-
-For PRs, include:
-- What changed and why.
-- How to validate (`go test ./...`, `go run . -validate`, manual run notes).
-- Screenshots or terminal captures for TUI-visible changes.
+- Avoid silent error drops in I/O and DB paths
+- Keep comments aligned with behavior
+- Remove dead code promptly
+- Update tests and docs when behavior changes
 
 ## Security & Configuration Tips
 
-- Never commit API keys, personal financial data, or local DB files.
-- Treat CSV inputs as untrusted; validate and handle parse failures explicitly.
-- Use database transactions for multi‑row mutations to prevent partial state.
+- Never commit API keys, personal financial data, or local DB files
+- Treat CSV input as untrusted; validate parse failures explicitly
+- Use DB transactions for multi-row mutations
+
+## Common Pitfalls & Gotchas
+
+1. **Keybinding conflicts:** Keep shadowing intentional. Maintain global-shadow and scope-reachability tests when adding scopes.
+2. **Generic action consistency:** Use `space` for toggle, `a` for add, `del` for delete, `enter` for select/edit, `esc` for cancel/back.
+3. **Text input safety:** Any new text-input scope must be represented in `modalTextContracts`.
+4. **Modal precedence:** New modal states must be inserted into `overlayPrecedence()` at the correct priority.
+5. **Filter contexts:** Use permissive parsing for interactive `/` input and strict parsing for persisted surfaces (rules/targets/saved filters).
+6. **Transactional integrity:** Credit offset insertions must validate sign/account/allocation atomically.
+7. **Dashboard scope isolation:** Dashboard default panes use timeframe + account scope only; no transaction filter inheritance.
+8. **Drill-return lifecycle:** `drillReturnState` is cleared on navigation away from Manager.
+9. **Multi-field modal forms:** Support `tab`/`shift-tab` field cycling.
+10. **Action-based dispatch:** Avoid raw key-name branching in handlers.
+11. **Footer hints:** Show actionable commands, not generic navigation keys.
+12. **Shifted single-letter bindings:** Uppercase letters surface as `S-<key>` in footer help.
+13. **Pane selection vs focus:** Preserve selected pane on tab return, but do not auto-focus pane interactions.
+
+## Agent Best Practices
+
+1. Check `specs/v0.4-spec.md` before asking clarifying questions.
+2. Use TOC-driven navigation.
+3. Follow phase acceptance criteria exactly.
+4. For new behavior, update docs in the same change (`AGENTS.md` and any affected `specs/v0.4-spec.md` section).
+5. Keep changes scoped and test-backed.
+
+## Quick Reference: Where to Look
+
+| Need to understand... | Check... |
+|---|---|
+| Overlay dispatch table | `dispatch.go` (`overlayPrecedence`, `dispatchOverlayKey`, `activeOverlayScope`) |
+| Modal text input contracts | `dispatch.go` (`modalTextContracts`) |
+| Command system | `commands.go` + `specs/v0.4-spec.md` Phase 1 |
+| Filter expression language | `filter.go` + `specs/v0.4-spec.md` Phase 2 |
+| Rules v2 | `db.go`, `update_settings.go` + `specs/v0.4-spec.md` Phase 3 |
+| Import preview flow | `ingest.go`, `update_manager.go` + `specs/v0.4-spec.md` Phase 4 |
+| Budget system | `budget.go`, `update_budget.go` + `specs/v0.4-spec.md` Phase 5 |
+| Credit offsets | `db.go`, `update_detail.go` + `specs/v0.4-spec.md` Phase 5 |
+| Dashboard drill-return/focus | `update_dashboard.go`, `render.go` + `specs/v0.4-spec.md` Phase 6 |
+| Interaction contract layer | `dispatch.go` + `specs/v0.4-spec.md` Phase 7 |
+| Testing strategy and verification | `specs/v0.4-spec.md` Verification + repository test commands |
+
+---
+
+When in doubt, implement to the relevant phase contract and acceptance checklist.
