@@ -5,7 +5,7 @@ import (
 
 	tea "github.com/charmbracelet/bubbletea"
 
-	"jaskmoney-v2/widgets"
+	"jaskmoney-v2/core/widgets"
 )
 
 type Screen interface {

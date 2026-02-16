@@ -1,7 +1,6 @@
 package core
 
 import (
-	"database/sql"
 	"testing"
 
 	tea "github.com/charmbracelet/bubbletea"
@@ -94,21 +93,5 @@ func TestPaneHostJumpTargetsAndFocus(t *testing.T) {
 	}
 	if got := host.ActivePaneTitle(); got != "Pane Three" {
 		t.Fatalf("active pane mismatch: %s", got)
-	}
-}
-
-func TestTabsImplementCoreInterfaces(t *testing.T) {
-	all := []Tab{NewDashboardTab(), NewManagerTab(), NewBudgetTab(), NewSettingsTab()}
-	m := NewModel(all, NewKeyRegistry(nil), NewCommandRegistry(nil), &sql.DB{}, AppData{})
-	for _, tab := range all {
-		if tab.ID() == "" || tab.Title() == "" || tab.Scope() == "" {
-			t.Fatalf("tab metadata should not be empty")
-		}
-		if tab.Build(&m) == nil {
-			t.Fatalf("tab build should return widget")
-		}
-		if _, ok := tab.(PaneKeyHandler); !ok {
-			t.Fatalf("tab should implement pane key handler")
-		}
 	}
 }

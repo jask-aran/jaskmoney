@@ -1,0 +1,18 @@
+version = 1
+
+[account]
+  [account.ANZ]
+    name = ""
+    type = "credit"
+    sort_order = 1
+    is_active = true
+    import_prefix = "anz"
+    description = "ANZ Australia bank export"
+    date_format = "2/01/2006"
+    has_header = false
+    delimiter = ","
+    date_col = 0
+    amount_col = 1
+    desc_col = 2
+    desc_join = true
+    amount_strip = ","

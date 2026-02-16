@@ -7,7 +7,7 @@ import (
 	"github.com/charmbracelet/lipgloss"
 	"github.com/charmbracelet/x/ansi"
 
-	"jaskmoney-v2/widgets"
+	"jaskmoney-v2/core/widgets"
 )
 
 func (m Model) View() string {

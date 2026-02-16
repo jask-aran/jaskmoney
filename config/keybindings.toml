@@ -1,0 +1,17 @@
+version = 1
+
+[bindings]
+close = ["esc"]
+jump = ["v"]
+open-category-picker = ["p"]
+open-command-palette = ["ctrl+k"]
+pane-focus = ["enter"]
+pane-nav = ["left"]
+quit = ["q"]
+select = ["enter"]
+switch-tab-1 = ["1"]
+switch-tab-2 = ["2"]
+switch-tab-3 = ["3"]
+switch-tab-4 = ["4"]
+table-down = ["j", "down"]
+table-up = ["k", "up"]
