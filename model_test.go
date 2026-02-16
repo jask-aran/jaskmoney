@@ -228,6 +228,29 @@ func TestDashboardSpendRowsExcludesIgnoreTag(t *testing.T) {
 	}
 }
 
+func TestDashboardSpendRowsWithModeAppliesOffsetsInEffectiveMode(t *testing.T) {
+	m := newModel()
+	m.rows = []transaction{
+		{id: 1, amount: -50, description: "A"},
+		{id: 2, amount: +20, description: "B"},
+	}
+	m.creditOffsetsByDebit = map[int][]creditOffset{
+		1: {{id: 10, creditTxnID: 2, debitTxnID: 1, amount: 15}},
+	}
+
+	m.spendModeRaw = true
+	raw := m.dashboardSpendRowsWithMode(m.rows)
+	if raw[0].amount != -50 {
+		t.Fatalf("raw debit amount = %.2f, want -50", raw[0].amount)
+	}
+
+	m.spendModeRaw = false
+	effective := m.dashboardSpendRowsWithMode(m.rows)
+	if effective[0].amount != -35 {
+		t.Fatalf("effective debit amount = %.2f, want -35", effective[0].amount)
+	}
+}
+
 // ---------------------------------------------------------------------------
 // Settings tests (Phase 4 — 2-column layout, enter/esc activate)
 // ---------------------------------------------------------------------------
@@ -898,8 +921,8 @@ func TestTabCycleForward(t *testing.T) {
 
 	m2, _ := m.Update(tea.KeyMsg{Type: tea.KeyTab})
 	m3 := m2.(model)
-	if m3.activeTab != tabSettings {
-		t.Errorf("after tab: activeTab = %d, want %d", m3.activeTab, tabSettings)
+	if m3.activeTab != tabBudget {
+		t.Errorf("after tab: activeTab = %d, want %d", m3.activeTab, tabBudget)
 	}
 
 	m4, _ := m3.Update(tea.KeyMsg{Type: tea.KeyTab})
@@ -908,11 +931,17 @@ func TestTabCycleForward(t *testing.T) {
 		t.Errorf("after tab tab: activeTab = %d, want %d", m5.activeTab, tabManager)
 	}
 
-	// Wrap around
 	m6, _ := m5.Update(tea.KeyMsg{Type: tea.KeyTab})
 	m7 := m6.(model)
-	if m7.activeTab != tabDashboard {
-		t.Errorf("after tab tab tab: activeTab = %d, want %d (wrap)", m7.activeTab, tabDashboard)
+	if m7.activeTab != tabSettings {
+		t.Errorf("after tab tab tab: activeTab = %d, want %d", m7.activeTab, tabSettings)
+	}
+
+	// Wrap around
+	m8, _ := m7.Update(tea.KeyMsg{Type: tea.KeyTab})
+	m9 := m8.(model)
+	if m9.activeTab != tabDashboard {
+		t.Errorf("after tab tab tab tab: activeTab = %d, want %d (wrap)", m9.activeTab, tabDashboard)
 	}
 }
 
@@ -923,14 +952,14 @@ func TestTabCycleBackward(t *testing.T) {
 
 	m2, _ := m.Update(tea.KeyMsg{Type: tea.KeyShiftTab})
 	m3 := m2.(model)
-	if m3.activeTab != tabManager {
-		t.Errorf("after shift+tab from 0: activeTab = %d, want %d (wrap)", m3.activeTab, tabManager)
+	if m3.activeTab != tabSettings {
+		t.Errorf("after shift+tab from 0: activeTab = %d, want %d (wrap)", m3.activeTab, tabSettings)
 	}
 
 	m4, _ := m3.Update(tea.KeyMsg{Type: tea.KeyShiftTab})
 	m5 := m4.(model)
-	if m5.activeTab != tabSettings {
-		t.Errorf("after shift+tab: activeTab = %d, want %d", m5.activeTab, tabSettings)
+	if m5.activeTab != tabManager {
+		t.Errorf("after shift+tab: activeTab = %d, want %d", m5.activeTab, tabManager)
 	}
 }
 
@@ -942,7 +971,7 @@ func TestSettingsFirstEnterDefaultsToCategoriesUnfocused(t *testing.T) {
 	m.settColumn = settColRight
 	m.settActive = true
 
-	toSettings := m.primaryActionKey(scopeGlobal, actionCommandGoSettings, "3")
+	toSettings := m.primaryActionKey(scopeGlobal, actionCommandGoSettings, "4")
 	next, _ := m.Update(keyMsg(toSettings))
 	got := next.(model)
 
@@ -968,14 +997,14 @@ func TestSettingsReturnPreservesSelectionAndDefocuses(t *testing.T) {
 	m.settColumn = settColLeft
 	m.settActive = true
 
-	toManager := m.primaryActionKey(scopeGlobal, actionCommandGoTransactions, "1")
+	toManager := m.primaryActionKey(scopeGlobal, actionCommandGoTransactions, "3")
 	next, _ := m.Update(keyMsg(toManager))
 	got := next.(model)
 	if got.activeTab != tabManager {
 		t.Fatalf("activeTab = %d, want %d", got.activeTab, tabManager)
 	}
 
-	toSettings := got.primaryActionKey(scopeGlobal, actionCommandGoSettings, "3")
+	toSettings := got.primaryActionKey(scopeGlobal, actionCommandGoSettings, "4")
 	next, _ = got.Update(keyMsg(toSettings))
 	got2 := next.(model)
 	if got2.activeTab != tabSettings {
@@ -1000,6 +1029,7 @@ func TestTabNumberShortcuts(t *testing.T) {
 		action Action
 		want   int
 	}{
+		{actionCommandGoBudget, tabBudget},
 		{actionCommandGoTransactions, tabManager},
 		{actionCommandGoDashboard, tabDashboard},
 		{actionCommandGoSettings, tabSettings},
@@ -1028,9 +1058,9 @@ func TestTabNumberShortcutsWorkInSettingsMenu(t *testing.T) {
 	m.settActive = true
 	m.settSection = settSecDBImport
 
-	toManager := m.primaryActionKey(scopeGlobal, actionCommandGoTransactions, "1")
-	toDash := m.primaryActionKey(scopeGlobal, actionCommandGoDashboard, "2")
-	toSettings := m.primaryActionKey(scopeGlobal, actionCommandGoSettings, "3")
+	toManager := m.primaryActionKey(scopeGlobal, actionCommandGoTransactions, "3")
+	toDash := m.primaryActionKey(scopeGlobal, actionCommandGoDashboard, "1")
+	toSettings := m.primaryActionKey(scopeGlobal, actionCommandGoSettings, "4")
 
 	next, _ := m.Update(keyMsg(toManager))
 	got := next.(model)

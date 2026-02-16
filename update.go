@@ -34,7 +34,7 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			return m, nil
 		}
 		m.setStatus("Transaction updated.")
-		m.showDetail = false
+		m.closeDetail()
 		return m, refreshCmd(m.db)
 	case categorySavedMsg:
 		if msg.err != nil {
@@ -172,6 +172,9 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case confirmExpiredMsg:
 		m.clearSettingsConfirm()
 		return m, nil
+	case budgetDeleteConfirmExpiredMsg:
+		m.budgetDeleteArmedTarget = 0
+		return m, nil
 	case tea.KeyMsg:
 		// Primary tier: overlay/modal dispatch via shared precedence table.
 		if next, cmd, handled := m.dispatchOverlayKey(msg); handled {
@@ -247,8 +250,56 @@ func (m model) handleRefreshDone(msg refreshDoneMsg) (tea.Model, tea.Cmd) {
 	} else {
 		m.filterAccounts = msg.selectedAccounts
 	}
+	if m.db != nil {
+		if budgets, err := loadCategoryBudgets(m.db); err == nil {
+			m.categoryBudgets = budgets
+		}
+		if overrides, err := loadBudgetOverrides(m.db); err == nil {
+			m.budgetOverrides = overrides
+		}
+		if targets, err := loadSpendingTargets(m.db); err == nil {
+			m.spendingTargets = targets
+		}
+		if targetOverrides, err := loadTargetOverrides(m.db); err == nil {
+			m.targetOverrides = targetOverrides
+		}
+		if offsets, err := loadCreditOffsets(m.db); err == nil {
+			m.creditOffsetsByDebit, m.creditOffsetsByCredit = indexCreditOffsets(offsets)
+		}
+		if lines, err := computeBudgetLines(m.db, m.categoryBudgets, m.budgetOverrides, m.creditOffsetsByDebit, m.budgetMonth, m.filterAccounts, m.spendModeRaw); err == nil {
+			m.budgetLines = lines
+			m.budgetOverCount = 0
+			if len(lines) > 0 {
+				within := 0
+				for _, line := range lines {
+					if line.overBudget {
+						m.budgetOverCount++
+					} else {
+						within++
+					}
+				}
+				m.budgetAdherencePct = (float64(within) / float64(len(lines))) * 100
+			}
+			m.budgetVarSparkline = m.computeBudgetVarianceSeries(6)
+		}
+		if targetLines, err := computeTargetLines(m.db, m.spendingTargets, m.targetOverrides, m.creditOffsetsByDebit, m.txnTags, m.savedFilters, m.filterAccounts, m.spendModeRaw); err == nil {
+			m.targetLines = targetLines
+		}
+	}
 	m.ready = true
 	m.pruneSelections()
+	// Clamp budget cursor to valid range after data refresh.
+	budgetSize := len(m.budgetLines)
+	if m.budgetView == 0 {
+		budgetSize += len(m.targetLines)
+	}
+	if budgetSize > 0 {
+		if m.budgetCursor >= budgetSize {
+			m.budgetCursor = budgetSize - 1
+		}
+	} else {
+		m.budgetCursor = 0
+	}
 	if m.managerCursor >= len(m.accounts) {
 		m.managerCursor = len(m.accounts) - 1
 	}
@@ -637,10 +688,11 @@ func (m *model) beginImportFlow() tea.Cmd {
 }
 
 type jumpTarget struct {
-	Key      string
-	Label    string
-	Section  int
-	Activate bool
+	Key        string
+	Label      string
+	Section    int
+	Activate   bool
+	BudgetView int
 }
 
 func filterReservedJumpTargetKeys(targets []jumpTarget) []jumpTarget {
@@ -659,19 +711,24 @@ func filterReservedJumpTargetKeys(targets []jumpTarget) []jumpTarget {
 
 func (m model) jumpTargetsForActiveTab() []jumpTarget {
 	switch m.activeTab {
+	case tabBudget:
+		return filterReservedJumpTargetKeys([]jumpTarget{
+			{Key: "t", Label: "Budget Table", Section: sectionUnfocused, Activate: false, BudgetView: 0},
+			{Key: "p", Label: "Planner", Section: sectionUnfocused, Activate: false, BudgetView: 1},
+		})
 	case tabManager:
 		return filterReservedJumpTargetKeys([]jumpTarget{
-			{Key: "a", Label: "Accounts", Section: sectionManagerAccounts, Activate: true},
-			{Key: "t", Label: "Transactions", Section: sectionManagerTransactions, Activate: true},
+			{Key: "a", Label: "Accounts", Section: sectionManagerAccounts, Activate: true, BudgetView: -1},
+			{Key: "t", Label: "Transactions", Section: sectionManagerTransactions, Activate: true, BudgetView: -1},
 		})
 	case tabSettings:
 		return filterReservedJumpTargetKeys([]jumpTarget{
-			{Key: "c", Label: "Categories", Section: sectionSettingsCategories, Activate: true},
-			{Key: "t", Label: "Tags", Section: sectionSettingsTags, Activate: true},
-			{Key: "r", Label: "Rules", Section: sectionSettingsRules, Activate: true},
-			{Key: "f", Label: "Filters", Section: sectionSettingsFilters, Activate: true},
-			{Key: "d", Label: "Database", Section: sectionSettingsDatabase, Activate: true},
-			{Key: "w", Label: "Dashboard Views", Section: sectionSettingsViews, Activate: true},
+			{Key: "c", Label: "Categories", Section: sectionSettingsCategories, Activate: true, BudgetView: -1},
+			{Key: "t", Label: "Tags", Section: sectionSettingsTags, Activate: true, BudgetView: -1},
+			{Key: "r", Label: "Rules", Section: sectionSettingsRules, Activate: true, BudgetView: -1},
+			{Key: "f", Label: "Filters", Section: sectionSettingsFilters, Activate: true, BudgetView: -1},
+			{Key: "d", Label: "Database", Section: sectionSettingsDatabase, Activate: true, BudgetView: -1},
+			{Key: "w", Label: "Dashboard Views", Section: sectionSettingsViews, Activate: true, BudgetView: -1},
 		})
 	default:
 		return nil
@@ -697,6 +754,10 @@ func (m model) updateJumpOverlay(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		}
 		m.jumpModeActive = false
 		m.focusedSection = target.Section
+		if m.activeTab == tabBudget && target.BudgetView >= 0 {
+			m.budgetView = target.BudgetView
+			m.budgetEditing = false
+		}
 		m.applyFocusedSection(target.Activate)
 		return m, nil
 	}
@@ -768,6 +829,15 @@ func (m *model) applyTabDefaultsOnSwitch() {
 		if m.focusedSection != sectionUnfocused {
 			m.focusedSection = sectionUnfocused
 		}
+	case tabBudget:
+		if m.focusedSection != sectionUnfocused {
+			m.focusedSection = sectionUnfocused
+		}
+		// Clear any in-progress budget editing when switching to/from Budget tab.
+		m.budgetEditing = false
+		m.budgetEditValue = ""
+		m.budgetEditCursor = 0
+		m.budgetDeleteArmedTarget = 0
 	}
 }
 
@@ -800,6 +870,30 @@ func tagColorIndex(color string) int {
 		}
 	}
 	return 0
+}
+
+func (m model) computeBudgetVarianceSeries(points int) []float64 {
+	if m.db == nil || points <= 0 {
+		return nil
+	}
+	start, _, err := parseMonthKey(m.budgetMonth)
+	if err != nil {
+		start = time.Now()
+	}
+	series := make([]float64, 0, points)
+	for i := points - 1; i >= 0; i-- {
+		month := start.AddDate(0, -i, 0).Format("2006-01")
+		lines, err := computeBudgetLines(m.db, m.categoryBudgets, m.budgetOverrides, m.creditOffsetsByDebit, month, m.filterAccounts, m.spendModeRaw)
+		if err != nil {
+			continue
+		}
+		total := 0.0
+		for _, line := range lines {
+			total += line.remaining
+		}
+		series = append(series, total)
+	}
+	return series
 }
 
 func categoryIndexByID(categories []category, id int) int {

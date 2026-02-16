@@ -59,6 +59,14 @@ func overlayPrecedence() []overlayEntry {
 			forCommandScope: false, // unreachable from executeBoundCommand
 		},
 		{
+			name:            "offsetDebitPicker",
+			guard:           func(m model) bool { return m.offsetDebitPicker != nil },
+			scope:           func(m model) string { return scopeOffsetDebitPicker },
+			handler:         func(m model, msg tea.KeyMsg) (tea.Model, tea.Cmd) { return m.updateOffsetDebitPicker(msg) },
+			forFooter:       true,
+			forCommandScope: true,
+		},
+		{
 			name:            "detail",
 			guard:           func(m model) bool { return m.showDetail },
 			scope:           func(m model) string { return scopeDetailModal },
@@ -337,6 +345,8 @@ func (m model) tabScope() string {
 			return scopeManager
 		}
 		return scopeTransactions
+	case tabBudget:
+		return scopeBudget
 	case tabSettings:
 		return m.settingsTabScope()
 	default:

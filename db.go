@@ -8,6 +8,7 @@ import (
 	"path/filepath"
 	"sort"
 	"strings"
+	"time"
 
 	tea "github.com/charmbracelet/bubbletea"
 	_ "modernc.org/sqlite"
@@ -142,7 +143,7 @@ CREATE TABLE IF NOT EXISTS category_budget_overrides (
 CREATE TABLE IF NOT EXISTS spending_targets (
 	id          INTEGER PRIMARY KEY AUTOINCREMENT,
 	name        TEXT NOT NULL,
-	filter_expr TEXT NOT NULL,
+	saved_filter_id TEXT NOT NULL,
 	amount      REAL NOT NULL DEFAULT 0,
 	period_type TEXT NOT NULL DEFAULT 'monthly'
 	            CHECK(period_type IN ('monthly','quarterly','annual')),
@@ -353,7 +354,7 @@ func migrateFromV4ToV5(db *sql.DB) error {
 		`CREATE TABLE IF NOT EXISTS spending_targets (
 			id          INTEGER PRIMARY KEY AUTOINCREMENT,
 			name        TEXT NOT NULL,
-			filter_expr TEXT NOT NULL,
+			saved_filter_id TEXT NOT NULL,
 			amount      REAL NOT NULL DEFAULT 0,
 			period_type TEXT NOT NULL DEFAULT 'monthly'
 			            CHECK(period_type IN ('monthly','quarterly','annual')),
@@ -427,10 +428,45 @@ func migrateFromV5ToV6(db *sql.DB) error {
 			return fmt.Errorf("migrate v5->v6 statement failed: %w", err)
 		}
 	}
+	hasFilterExpr, err := tableHasColumnTx(tx, "spending_targets", "filter_expr")
+	if err != nil {
+		return fmt.Errorf("inspect spending_targets schema: %w", err)
+	}
+	hasSavedFilterID, err := tableHasColumnTx(tx, "spending_targets", "saved_filter_id")
+	if err != nil {
+		return fmt.Errorf("inspect spending_targets schema: %w", err)
+	}
+	if hasFilterExpr && !hasSavedFilterID {
+		if _, err := tx.Exec(`ALTER TABLE spending_targets RENAME COLUMN filter_expr TO saved_filter_id`); err != nil {
+			return fmt.Errorf("rename spending_targets.filter_expr: %w", err)
+		}
+	}
 	if err := tx.Commit(); err != nil {
 		return fmt.Errorf("commit v5->v6 migration: %w", err)
 	}
 	return nil
+}
+
+func tableHasColumnTx(tx *sql.Tx, tableName, columnName string) (bool, error) {
+	query := fmt.Sprintf(`PRAGMA table_info(%s)`, tableName)
+	rows, err := tx.Query(query)
+	if err != nil {
+		return false, err
+	}
+	defer rows.Close()
+	for rows.Next() {
+		var cid int
+		var name, typ string
+		var notNull, pk int
+		var dflt sql.NullString
+		if err := rows.Scan(&cid, &name, &typ, &notNull, &dflt, &pk); err != nil {
+			return false, err
+		}
+		if strings.EqualFold(name, columnName) {
+			return true, nil
+		}
+	}
+	return false, rows.Err()
 }
 
 // migrateClean drops everything and starts fresh at schema v6.
@@ -1135,6 +1171,334 @@ func toggleRuleV2Enabled(db *sql.DB, id int, enabled bool) error {
 	return nil
 }
 
+func normalizePeriodType(periodType string) (string, error) {
+	norm := strings.ToLower(strings.TrimSpace(periodType))
+	switch norm {
+	case "monthly", "quarterly", "annual":
+		return norm, nil
+	default:
+		return "", fmt.Errorf("invalid period type %q", periodType)
+	}
+}
+
+func loadCategoryBudgets(db *sql.DB) ([]categoryBudget, error) {
+	rows, err := db.Query(`
+		SELECT id, category_id, amount
+		FROM category_budgets
+		ORDER BY category_id ASC
+	`)
+	if err != nil {
+		return nil, fmt.Errorf("query category budgets: %w", err)
+	}
+	defer rows.Close()
+
+	out := make([]categoryBudget, 0)
+	for rows.Next() {
+		var b categoryBudget
+		if err := rows.Scan(&b.id, &b.categoryID, &b.amount); err != nil {
+			return nil, fmt.Errorf("scan category budget: %w", err)
+		}
+		out = append(out, b)
+	}
+	return out, rows.Err()
+}
+
+func upsertCategoryBudget(db *sql.DB, categoryID int, amount float64) error {
+	if categoryID <= 0 {
+		return fmt.Errorf("category id is required")
+	}
+	_, err := db.Exec(`
+		INSERT INTO category_budgets (category_id, amount)
+		VALUES (?, ?)
+		ON CONFLICT(category_id) DO UPDATE SET amount = excluded.amount
+	`, categoryID, amount)
+	if err != nil {
+		return fmt.Errorf("upsert category budget: %w", err)
+	}
+	return nil
+}
+
+func loadBudgetOverrides(db *sql.DB) (map[int][]budgetOverride, error) {
+	rows, err := db.Query(`
+		SELECT id, budget_id, month_key, amount
+		FROM category_budget_overrides
+		ORDER BY budget_id ASC, month_key ASC, id ASC
+	`)
+	if err != nil {
+		return nil, fmt.Errorf("query budget overrides: %w", err)
+	}
+	defer rows.Close()
+
+	out := make(map[int][]budgetOverride)
+	for rows.Next() {
+		var ov budgetOverride
+		if err := rows.Scan(&ov.id, &ov.budgetID, &ov.monthKey, &ov.amount); err != nil {
+			return nil, fmt.Errorf("scan budget override: %w", err)
+		}
+		out[ov.budgetID] = append(out[ov.budgetID], ov)
+	}
+	return out, rows.Err()
+}
+
+func upsertBudgetOverride(db *sql.DB, budgetID int, monthKey string, amount float64) error {
+	if budgetID <= 0 {
+		return fmt.Errorf("budget id is required")
+	}
+	key := strings.TrimSpace(monthKey)
+	if _, _, err := parseMonthKey(key); err != nil {
+		return err
+	}
+	_, err := db.Exec(`
+		INSERT INTO category_budget_overrides (budget_id, month_key, amount)
+		VALUES (?, ?, ?)
+		ON CONFLICT(budget_id, month_key) DO UPDATE SET amount = excluded.amount
+	`, budgetID, key, amount)
+	if err != nil {
+		return fmt.Errorf("upsert budget override: %w", err)
+	}
+	return nil
+}
+
+func deleteBudgetOverride(db *sql.DB, budgetID int, monthKey string) error {
+	if budgetID <= 0 {
+		return fmt.Errorf("budget id is required")
+	}
+	key := strings.TrimSpace(monthKey)
+	if key == "" {
+		return fmt.Errorf("month key is required")
+	}
+	if _, err := db.Exec(`DELETE FROM category_budget_overrides WHERE budget_id = ? AND month_key = ?`, budgetID, key); err != nil {
+		return fmt.Errorf("delete budget override: %w", err)
+	}
+	return nil
+}
+
+func loadSpendingTargets(db *sql.DB) ([]spendingTarget, error) {
+	rows, err := db.Query(`
+		SELECT id, name, saved_filter_id, amount, period_type
+		FROM spending_targets
+		ORDER BY id ASC
+	`)
+	if err != nil {
+		return nil, fmt.Errorf("query spending targets: %w", err)
+	}
+	defer rows.Close()
+
+	out := make([]spendingTarget, 0)
+	for rows.Next() {
+		var t spendingTarget
+		if err := rows.Scan(&t.id, &t.name, &t.savedFilterID, &t.amount, &t.periodType); err != nil {
+			return nil, fmt.Errorf("scan spending target: %w", err)
+		}
+		out = append(out, t)
+	}
+	return out, rows.Err()
+}
+
+func insertSpendingTarget(db *sql.DB, t spendingTarget) (int, error) {
+	name := strings.TrimSpace(t.name)
+	if name == "" {
+		return 0, fmt.Errorf("target name is required")
+	}
+	filterID := strings.TrimSpace(t.savedFilterID)
+	if filterID == "" {
+		return 0, fmt.Errorf("saved filter id is required")
+	}
+	periodType, err := normalizePeriodType(t.periodType)
+	if err != nil {
+		return 0, err
+	}
+	res, err := db.Exec(`
+		INSERT INTO spending_targets (name, saved_filter_id, amount, period_type)
+		VALUES (?, ?, ?, ?)
+	`, name, filterID, t.amount, periodType)
+	if err != nil {
+		return 0, fmt.Errorf("insert spending target: %w", err)
+	}
+	id, err := res.LastInsertId()
+	if err != nil {
+		return 0, fmt.Errorf("spending target last insert id: %w", err)
+	}
+	return int(id), nil
+}
+
+func updateSpendingTarget(db *sql.DB, t spendingTarget) error {
+	if t.id <= 0 {
+		return fmt.Errorf("target id is required")
+	}
+	name := strings.TrimSpace(t.name)
+	if name == "" {
+		return fmt.Errorf("target name is required")
+	}
+	filterID := strings.TrimSpace(t.savedFilterID)
+	if filterID == "" {
+		return fmt.Errorf("saved filter id is required")
+	}
+	periodType, err := normalizePeriodType(t.periodType)
+	if err != nil {
+		return err
+	}
+	if _, err := db.Exec(`
+		UPDATE spending_targets
+		SET name = ?, saved_filter_id = ?, amount = ?, period_type = ?
+		WHERE id = ?
+	`, name, filterID, t.amount, periodType, t.id); err != nil {
+		return fmt.Errorf("update spending target: %w", err)
+	}
+	return nil
+}
+
+func deleteSpendingTarget(db *sql.DB, id int) error {
+	if id <= 0 {
+		return fmt.Errorf("target id is required")
+	}
+	if _, err := db.Exec(`DELETE FROM spending_targets WHERE id = ?`, id); err != nil {
+		return fmt.Errorf("delete spending target: %w", err)
+	}
+	return nil
+}
+
+func loadTargetOverrides(db *sql.DB) (map[int][]targetOverride, error) {
+	rows, err := db.Query(`
+		SELECT id, target_id, period_key, amount
+		FROM spending_target_overrides
+		ORDER BY target_id ASC, period_key ASC, id ASC
+	`)
+	if err != nil {
+		return nil, fmt.Errorf("query target overrides: %w", err)
+	}
+	defer rows.Close()
+
+	out := make(map[int][]targetOverride)
+	for rows.Next() {
+		var ov targetOverride
+		if err := rows.Scan(&ov.id, &ov.targetID, &ov.periodKey, &ov.amount); err != nil {
+			return nil, fmt.Errorf("scan target override: %w", err)
+		}
+		out[ov.targetID] = append(out[ov.targetID], ov)
+	}
+	return out, rows.Err()
+}
+
+func upsertTargetOverride(db *sql.DB, targetID int, periodKey string, amount float64) error {
+	if targetID <= 0 {
+		return fmt.Errorf("target id is required")
+	}
+	key := strings.TrimSpace(periodKey)
+	if key == "" {
+		return fmt.Errorf("period key is required")
+	}
+	_, err := db.Exec(`
+		INSERT INTO spending_target_overrides (target_id, period_key, amount)
+		VALUES (?, ?, ?)
+		ON CONFLICT(target_id, period_key) DO UPDATE SET amount = excluded.amount
+	`, targetID, key, amount)
+	if err != nil {
+		return fmt.Errorf("upsert target override: %w", err)
+	}
+	return nil
+}
+
+func loadCreditOffsets(db *sql.DB) ([]creditOffset, error) {
+	rows, err := db.Query(`
+		SELECT id, credit_txn_id, debit_txn_id, amount
+		FROM credit_offsets
+		ORDER BY id ASC
+	`)
+	if err != nil {
+		return nil, fmt.Errorf("query credit offsets: %w", err)
+	}
+	defer rows.Close()
+
+	out := make([]creditOffset, 0)
+	for rows.Next() {
+		var c creditOffset
+		if err := rows.Scan(&c.id, &c.creditTxnID, &c.debitTxnID, &c.amount); err != nil {
+			return nil, fmt.Errorf("scan credit offset: %w", err)
+		}
+		out = append(out, c)
+	}
+	return out, rows.Err()
+}
+
+func indexCreditOffsets(rows []creditOffset) (map[int][]creditOffset, map[int][]creditOffset) {
+	byDebit := make(map[int][]creditOffset)
+	byCredit := make(map[int][]creditOffset)
+	for _, row := range rows {
+		byDebit[row.debitTxnID] = append(byDebit[row.debitTxnID], row)
+		byCredit[row.creditTxnID] = append(byCredit[row.creditTxnID], row)
+	}
+	return byDebit, byCredit
+}
+
+func insertCreditOffset(db *sql.DB, creditTxnID, debitTxnID int, amount float64) error {
+	if amount <= 0 {
+		return fmt.Errorf("offset amount must be positive")
+	}
+	tx, err := db.Begin()
+	if err != nil {
+		return fmt.Errorf("begin credit offset tx: %w", err)
+	}
+	defer tx.Rollback() //nolint:errcheck
+
+	type txRow struct {
+		accountID sql.NullInt64
+		amount    float64
+	}
+	var credit txRow
+	if err := tx.QueryRow(`SELECT account_id, amount FROM transactions WHERE id = ?`, creditTxnID).Scan(&credit.accountID, &credit.amount); err != nil {
+		return fmt.Errorf("load credit transaction: %w", err)
+	}
+	var debit txRow
+	if err := tx.QueryRow(`SELECT account_id, amount FROM transactions WHERE id = ?`, debitTxnID).Scan(&debit.accountID, &debit.amount); err != nil {
+		return fmt.Errorf("load debit transaction: %w", err)
+	}
+	if credit.amount <= 0 {
+		return fmt.Errorf("selected source transaction is not a credit")
+	}
+	if debit.amount >= 0 {
+		return fmt.Errorf("selected target transaction is not a debit")
+	}
+	if !credit.accountID.Valid || !debit.accountID.Valid || credit.accountID.Int64 != debit.accountID.Int64 {
+		return fmt.Errorf("credit and debit must belong to the same account")
+	}
+
+	var linkedCredit float64
+	if err := tx.QueryRow(`SELECT COALESCE(SUM(amount), 0) FROM credit_offsets WHERE credit_txn_id = ?`, creditTxnID).Scan(&linkedCredit); err != nil {
+		return fmt.Errorf("sum linked credit offsets: %w", err)
+	}
+	var linkedDebit float64
+	if err := tx.QueryRow(`SELECT COALESCE(SUM(amount), 0) FROM credit_offsets WHERE debit_txn_id = ?`, debitTxnID).Scan(&linkedDebit); err != nil {
+		return fmt.Errorf("sum linked debit offsets: %w", err)
+	}
+	if linkedCredit+amount > credit.amount+1e-9 {
+		return fmt.Errorf("offset exceeds remaining credit capacity")
+	}
+	if linkedDebit+amount > -debit.amount+1e-9 {
+		return fmt.Errorf("offset exceeds remaining debit capacity")
+	}
+	if _, err := tx.Exec(`
+		INSERT INTO credit_offsets (credit_txn_id, debit_txn_id, amount)
+		VALUES (?, ?, ?)
+	`, creditTxnID, debitTxnID, amount); err != nil {
+		return fmt.Errorf("insert credit offset: %w", err)
+	}
+	if err := tx.Commit(); err != nil {
+		return fmt.Errorf("commit credit offset tx: %w", err)
+	}
+	return nil
+}
+
+func deleteCreditOffset(db *sql.DB, id int) error {
+	if id <= 0 {
+		return fmt.Errorf("offset id is required")
+	}
+	if _, err := db.Exec(`DELETE FROM credit_offsets WHERE id = ?`, id); err != nil {
+		return fmt.Errorf("delete credit offset: %w", err)
+	}
+	return nil
+}
+
 // Compatibility type for legacy tests and helpers.
 type categoryRule struct {
 	id         int
@@ -1340,6 +1704,78 @@ func loadRowsByTxnIDs(db *sql.DB, txnIDs []int) ([]transaction, error) {
 		out = append(out, t)
 	}
 	return out, rows.Err()
+}
+
+func loadOffsetDebitCandidates(db *sql.DB, creditTxnID int) ([]transaction, error) {
+	var creditAccountID sql.NullInt64
+	var creditDate string
+	if err := db.QueryRow(`SELECT account_id, date_iso FROM transactions WHERE id = ?`, creditTxnID).Scan(&creditAccountID, &creditDate); err != nil {
+		return nil, fmt.Errorf("load credit transaction for offset candidates: %w", err)
+	}
+	if !creditAccountID.Valid {
+		return nil, fmt.Errorf("credit transaction has no account")
+	}
+	creditTime, err := time.Parse("2006-01-02", creditDate)
+	if err != nil {
+		return nil, fmt.Errorf("parse credit date: %w", err)
+	}
+	start := creditTime.AddDate(0, 0, -30).Format("2006-01-02")
+	end := creditTime.AddDate(0, 0, 31).Format("2006-01-02")
+
+	rows, err := db.Query(`
+		SELECT t.id, t.date_raw, t.date_iso, t.amount, t.description,
+		       t.category_id, COALESCE(c.name, 'Uncategorised'), COALESCE(c.color, '#7f849c'),
+		       t.notes, t.account_id, COALESCE(a.name, ''), COALESCE(a.type, '')
+		FROM transactions t
+		LEFT JOIN categories c ON c.id = t.category_id
+		LEFT JOIN accounts a ON a.id = t.account_id
+		WHERE t.amount < 0
+		  AND t.account_id = ?
+		  AND t.date_iso >= ?
+		  AND t.date_iso < ?
+		ORDER BY ABS(julianday(t.date_iso) - julianday(?)) ASC,
+		         t.date_iso DESC,
+		         ABS(t.amount) DESC
+	`, creditAccountID.Int64, start, end, creditDate)
+	if err != nil {
+		return nil, fmt.Errorf("query offset debit candidates: %w", err)
+	}
+	defer rows.Close()
+
+	out := make([]transaction, 0)
+	for rows.Next() {
+		var t transaction
+		if err := rows.Scan(&t.id, &t.dateRaw, &t.dateISO, &t.amount, &t.description,
+			&t.categoryID, &t.categoryName, &t.categoryColor, &t.notes, &t.accountID, &t.accountName, &t.accountType); err != nil {
+			return nil, fmt.Errorf("scan offset debit candidate: %w", err)
+		}
+		out = append(out, t)
+	}
+	return out, rows.Err()
+}
+
+func remainingCreditCapacity(db *sql.DB, creditTxnID int) (float64, error) {
+	var creditAmount float64
+	if err := db.QueryRow(`SELECT amount FROM transactions WHERE id = ?`, creditTxnID).Scan(&creditAmount); err != nil {
+		return 0, fmt.Errorf("load credit amount: %w", err)
+	}
+	var linked float64
+	if err := db.QueryRow(`SELECT COALESCE(SUM(amount), 0) FROM credit_offsets WHERE credit_txn_id = ?`, creditTxnID).Scan(&linked); err != nil {
+		return 0, fmt.Errorf("sum credit offsets: %w", err)
+	}
+	return creditAmount - linked, nil
+}
+
+func remainingDebitCapacity(db *sql.DB, debitTxnID int) (float64, error) {
+	var debitAmount float64
+	if err := db.QueryRow(`SELECT amount FROM transactions WHERE id = ?`, debitTxnID).Scan(&debitAmount); err != nil {
+		return 0, fmt.Errorf("load debit amount: %w", err)
+	}
+	var linked float64
+	if err := db.QueryRow(`SELECT COALESCE(SUM(amount), 0) FROM credit_offsets WHERE debit_txn_id = ?`, debitTxnID).Scan(&linked); err != nil {
+		return 0, fmt.Errorf("sum debit offsets: %w", err)
+	}
+	return -debitAmount - linked, nil
 }
 
 func intPtrEqual(a, b *int) bool {
@@ -1743,7 +2179,11 @@ func insertCategory(db *sql.DB, name, color string) (int, error) {
 	if err != nil {
 		return 0, fmt.Errorf("last insert id: %w", err)
 	}
-	return int(id), nil
+	categoryID := int(id)
+	if err := upsertCategoryBudget(db, categoryID, 0); err != nil {
+		return 0, fmt.Errorf("seed category budget row: %w", err)
+	}
+	return categoryID, nil
 }
 
 // updateCategory modifies an existing category's name and color.

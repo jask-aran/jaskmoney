@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"sort"
 	"strings"
+	"time"
 
 	tea "github.com/charmbracelet/bubbletea"
 )
@@ -102,11 +103,11 @@ func NewCommandRegistry(keys *KeyRegistry, savedFilters []savedFilter) *CommandR
 			Label:       "Go to Budget",
 			Description: "Switch to Budget tab",
 			Category:    "Navigation",
-			Enabled: func(m model) (bool, string) {
-				return false, "Budget tab is not available yet."
-			},
+			Enabled:     commandAlwaysEnabled,
 			Execute: func(m model) (model, tea.Cmd, error) {
-				return m, nil, fmt.Errorf("budget tab is not available yet")
+				m.activeTab = tabBudget
+				m.applyTabDefaultsOnSwitch()
+				return m, nil, nil
 			},
 		},
 		{
@@ -161,6 +162,292 @@ func NewCommandRegistry(keys *KeyRegistry, savedFilters []savedFilter) *CommandR
 				m.jumpModeActive = false
 				m.focusedSection = m.jumpPreviousFocus
 				return m, nil, nil
+			},
+		},
+		{
+			ID:          "spend:toggle-mode",
+			Label:       "Toggle Effective/Raw Spend Mode",
+			Description: "Toggle shared spend mode used by Budget and Dashboard",
+			Category:    "Budget",
+			Scopes:      []string{scopeGlobal, scopeBudget, scopeDashboard, scopeDashboardFocused},
+			Enabled:     commandAlwaysEnabled,
+			Execute: func(m model) (model, tea.Cmd, error) {
+				m.spendModeRaw = !m.spendModeRaw
+				if m.spendModeRaw {
+					m.setStatus("Spend mode: raw debits.")
+				} else {
+					m.setStatus("Spend mode: effective debits.")
+				}
+				if m.db == nil {
+					return m, nil, nil
+				}
+				return m, refreshCmd(m.db), nil
+			},
+		},
+		{
+			ID:          "budget:prev-month",
+			Label:       "Previous Month",
+			Description: "Move budget scope to previous month",
+			Category:    "Budget",
+			Hidden:      true,
+			Scopes:      []string{scopeBudget},
+			Enabled:     commandAlwaysEnabled,
+			Execute: func(m model) (model, tea.Cmd, error) {
+				start, _, err := parseMonthKey(m.budgetMonth)
+				if err != nil {
+					start = time.Now()
+				}
+				m.budgetMonth = start.AddDate(0, -1, 0).Format("2006-01")
+				m.budgetYear = start.AddDate(0, -1, 0).Year()
+				if m.db != nil {
+					return m, refreshCmd(m.db), nil
+				}
+				return m, nil, nil
+			},
+		},
+		{
+			ID:          "budget:next-month",
+			Label:       "Next Month",
+			Description: "Move budget scope to next month",
+			Category:    "Budget",
+			Hidden:      true,
+			Scopes:      []string{scopeBudget},
+			Enabled:     commandAlwaysEnabled,
+			Execute: func(m model) (model, tea.Cmd, error) {
+				start, _, err := parseMonthKey(m.budgetMonth)
+				if err != nil {
+					start = time.Now()
+				}
+				m.budgetMonth = start.AddDate(0, 1, 0).Format("2006-01")
+				m.budgetYear = start.AddDate(0, 1, 0).Year()
+				if m.db != nil {
+					return m, refreshCmd(m.db), nil
+				}
+				return m, nil, nil
+			},
+		},
+		{
+			ID:          "budget:prev-year",
+			Label:       "Previous Year",
+			Description: "Move budget planner to previous year",
+			Category:    "Budget",
+			Hidden:      true,
+			Scopes:      []string{scopeBudget},
+			Enabled:     commandAlwaysEnabled,
+			Execute: func(m model) (model, tea.Cmd, error) {
+				m.budgetYear--
+				// Also shift the table-view month to January of that year.
+				m.budgetMonth = fmt.Sprintf("%04d-01", m.budgetYear)
+				if m.db != nil {
+					return m, refreshCmd(m.db), nil
+				}
+				return m, nil, nil
+			},
+		},
+		{
+			ID:          "budget:next-year",
+			Label:       "Next Year",
+			Description: "Move budget planner to next year",
+			Category:    "Budget",
+			Hidden:      true,
+			Scopes:      []string{scopeBudget},
+			Enabled:     commandAlwaysEnabled,
+			Execute: func(m model) (model, tea.Cmd, error) {
+				m.budgetYear++
+				m.budgetMonth = fmt.Sprintf("%04d-01", m.budgetYear)
+				if m.db != nil {
+					return m, refreshCmd(m.db), nil
+				}
+				return m, nil, nil
+			},
+		},
+		{
+			ID:          "budget:toggle-view",
+			Label:       "Toggle Budget View",
+			Description: "Toggle between budget table and planner",
+			Category:    "Budget",
+			Hidden:      true,
+			Scopes:      []string{scopeBudget},
+			Enabled:     commandAlwaysEnabled,
+			Execute: func(m model) (model, tea.Cmd, error) {
+				m.budgetView = (m.budgetView + 1) % 2
+				m.budgetEditing = false
+				m.budgetEditValue = ""
+				m.budgetEditCursor = 0
+				return m, nil, nil
+			},
+		},
+		{
+			ID:          "budget:edit",
+			Label:       "Edit Budget Amount",
+			Description: "Edit selected budget amount",
+			Category:    "Budget",
+			Hidden:      true,
+			Scopes:      []string{scopeBudget},
+			Enabled: func(m model) (bool, string) {
+				if len(m.budgetLines) == 0 {
+					return false, "No budget rows."
+				}
+				if m.budgetCursor < 0 || m.budgetCursor >= len(m.budgetLines) {
+					return false, "No budget row selected."
+				}
+				return true, ""
+			},
+			Execute: func(m model) (model, tea.Cmd, error) {
+				if m.budgetCursor < 0 || m.budgetCursor >= len(m.budgetLines) {
+					return m, nil, fmt.Errorf("no budget row selected")
+				}
+				line := m.budgetLines[m.budgetCursor]
+				m.budgetEditing = true
+				// In planner view, seed from the specific cell's override or recurring default.
+				if m.budgetView == 1 {
+					cellAmount := line.budgeted // recurring default
+					if id := budgetIDForCategory(m.categoryBudgets, line.categoryID); id != 0 {
+						key := fmt.Sprintf("%04d-%02d", m.budgetYear, m.budgetPlannerCol+1)
+						if ov, ok := budgetOverrideAmount(m.budgetOverrides[id], key); ok {
+							cellAmount = ov
+						}
+					}
+					m.budgetEditValue = fmt.Sprintf("%.2f", cellAmount)
+				} else {
+					m.budgetEditValue = fmt.Sprintf("%.2f", line.budgeted)
+				}
+				m.budgetEditCursor = len(m.budgetEditValue)
+				return m, nil, nil
+			},
+		},
+		{
+			ID:          "budget:add-target",
+			Label:       "Add Spending Target",
+			Description: "Add a saved-filter-based spending target",
+			Category:    "Budget",
+			Scopes:      []string{scopeGlobal, scopeBudget},
+			Enabled: func(m model) (bool, string) {
+				if len(m.savedFilters) == 0 {
+					return false, "No saved filters."
+				}
+				if m.db == nil {
+					return false, "Database not ready."
+				}
+				return true, ""
+			},
+			Execute: func(m model) (model, tea.Cmd, error) {
+				if m.db == nil || len(m.savedFilters) == 0 {
+					return m, nil, fmt.Errorf("cannot add spending target")
+				}
+				// Find first saved filter with a strict-valid expression.
+				var filterID string
+				for _, sf := range m.savedFilters {
+					if _, err := parseFilterStrict(strings.TrimSpace(sf.Expr)); err == nil {
+						filterID = sf.ID
+						break
+					}
+				}
+				if filterID == "" {
+					return m, nil, fmt.Errorf("no saved filters with valid strict expressions")
+				}
+				target := spendingTarget{
+					name:          "New target",
+					savedFilterID: filterID,
+					amount:        0,
+					periodType:    "monthly",
+				}
+				if _, err := insertSpendingTarget(m.db, target); err != nil {
+					return m, nil, err
+				}
+				return m, refreshCmd(m.db), nil
+			},
+		},
+		{
+			ID:          "budget:delete-target",
+			Label:       "Delete Spending Target",
+			Description: "Delete selected spending target",
+			Category:    "Budget",
+			Hidden:      true,
+			Scopes:      []string{scopeBudget},
+			Enabled: func(m model) (bool, string) {
+				if len(m.targetLines) == 0 {
+					return false, "No spending targets."
+				}
+				targetStart := len(m.budgetLines)
+				if m.budgetCursor < targetStart || m.budgetCursor >= targetStart+len(m.targetLines) {
+					return false, "No spending target selected."
+				}
+				if m.db == nil {
+					return false, "Database not ready."
+				}
+				return true, ""
+			},
+			Execute: func(m model) (model, tea.Cmd, error) {
+				if m.db == nil {
+					return m, nil, fmt.Errorf("database not ready")
+				}
+				targetStart := len(m.budgetLines)
+				idx := m.budgetCursor - targetStart
+				if idx < 0 || idx >= len(m.targetLines) {
+					return m, nil, fmt.Errorf("no spending target selected")
+				}
+				targetID := m.targetLines[idx].targetID
+				if m.budgetDeleteArmedTarget != targetID {
+					m.budgetDeleteArmedTarget = targetID
+					m.setStatus("Press delete again to confirm target removal.")
+					return m, budgetDeleteConfirmTimerCmd(), nil
+				}
+				m.budgetDeleteArmedTarget = 0
+				if err := deleteSpendingTarget(m.db, targetID); err != nil {
+					return m, nil, err
+				}
+				return m, refreshCmd(m.db), nil
+			},
+		},
+		{
+			ID:          "budget:reset-override",
+			Label:       "Reset Override",
+			Description: "Revert planner cell to recurring default",
+			Category:    "Budget",
+			Hidden:      true,
+			Scopes:      []string{scopeBudget},
+			Enabled: func(m model) (bool, string) {
+				if m.budgetView != 1 {
+					return false, "Only available in planner view."
+				}
+				if len(m.budgetLines) == 0 {
+					return false, "No budget rows."
+				}
+				if m.budgetCursor < 0 || m.budgetCursor >= len(m.budgetLines) {
+					return false, "No budget row selected."
+				}
+				line := m.budgetLines[m.budgetCursor]
+				id := budgetIDForCategory(m.categoryBudgets, line.categoryID)
+				if id == 0 {
+					return false, "No budget found for category."
+				}
+				key := fmt.Sprintf("%04d-%02d", m.budgetYear, m.budgetPlannerCol+1)
+				if _, ok := budgetOverrideAmount(m.budgetOverrides[id], key); !ok {
+					return false, "No override to reset."
+				}
+				if m.db == nil {
+					return false, "Database not ready."
+				}
+				return true, ""
+			},
+			Execute: func(m model) (model, tea.Cmd, error) {
+				if m.db == nil {
+					return m, nil, fmt.Errorf("database not ready")
+				}
+				if m.budgetCursor < 0 || m.budgetCursor >= len(m.budgetLines) {
+					return m, nil, fmt.Errorf("no budget row selected")
+				}
+				line := m.budgetLines[m.budgetCursor]
+				budgetID := budgetIDForCategory(m.categoryBudgets, line.categoryID)
+				if budgetID == 0 {
+					return m, nil, fmt.Errorf("no budget found for category")
+				}
+				key := fmt.Sprintf("%04d-%02d", m.budgetYear, m.budgetPlannerCol+1)
+				if err := deleteBudgetOverride(m.db, budgetID, key); err != nil {
+					return m, nil, err
+				}
+				return m, refreshCmd(m.db), nil
 			},
 		},
 		{
@@ -292,6 +579,36 @@ func NewCommandRegistry(keys *KeyRegistry, savedFilters []savedFilter) *CommandR
 			},
 		},
 		{
+			ID:          "txn:link-offset",
+			Label:       "Link Credit Offset",
+			Description: "Link credit transaction to a debit offset",
+			Category:    "Transactions",
+			Scopes:      []string{scopeDetailModal},
+			Enabled: func(m model) (bool, string) {
+				txn := m.findDetailTxn()
+				if txn == nil {
+					return false, "No transaction selected."
+				}
+				if txn.amount <= 0 {
+					return false, "Offsets can only be linked from credit transactions."
+				}
+				if txn.accountID == nil {
+					return false, "Transaction has no account."
+				}
+				if m.db == nil {
+					return false, "Database not ready."
+				}
+				return true, ""
+			},
+			Execute: func(m model) (model, tea.Cmd, error) {
+				next, err := m.openOffsetDebitPicker()
+				if err != nil {
+					return m, nil, err
+				}
+				return next, nil, nil
+			},
+		},
+		{
 			ID:          "txn:jump-top",
 			Label:       "Jump to Top",
 			Description: "Move transaction cursor to top",
@@ -400,15 +717,11 @@ func NewCommandRegistry(keys *KeyRegistry, savedFilters []savedFilter) *CommandR
 				if expr == "" {
 					return false, "No active filter expression."
 				}
-				node, err := parseFilterStrict(expr)
-				if err != nil {
+				if _, err := parseFilterStrict(expr); err != nil {
 					return false, fmt.Sprintf("Current filter is invalid: %v", err)
 				}
 				if strings.TrimSpace(m.filterLastApplied) == "" {
 					return false, "Apply filter with Enter before saving."
-				}
-				if filterExprString(node) != strings.TrimSpace(m.filterLastApplied) {
-					return false, "Re-apply filter with Enter before saving."
 				}
 				return true, ""
 			},

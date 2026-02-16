@@ -22,10 +22,11 @@ const appName = "Jaskmoney"
 
 // Tab indices
 const (
-	tabManager   = 0
-	tabDashboard = 1
-	tabSettings  = 2
-	tabCount     = 3
+	tabDashboard = 0
+	tabBudget    = 1
+	tabManager   = 2
+	tabSettings  = 3
+	tabCount     = 4
 )
 
 const (
@@ -244,6 +245,7 @@ type accountScopeSavedMsg struct {
 }
 
 type confirmExpiredMsg struct{}
+type budgetDeleteConfirmExpiredMsg struct{}
 
 // Sort columns
 const (
@@ -416,6 +418,11 @@ type model struct {
 	catPickerFor        []int
 	tagPicker           *pickerState
 	tagPickerFor        []int
+	offsetCreditTxnID   int
+	offsetDebitPicker   *pickerState
+	offsetDebitTxnID    int
+	offsetAmount        string
+	offsetAmountCursor  int
 	managerActionPicker *pickerState
 	managerActionAcctID int
 	managerActionName   string
@@ -489,6 +496,31 @@ type model struct {
 	dashCustomInput     string
 	dashCustomEditing   bool
 
+	// Budget tab state
+	budgetMonth             string
+	budgetYear              int
+	budgetView              int
+	budgetCursor            int
+	budgetPlannerCol        int
+	budgetEditing           bool
+	budgetEditValue         string
+	budgetEditCursor        int
+	budgetDeleteArmedTarget int
+	spendModeRaw            bool
+
+	// Budget data
+	categoryBudgets       []categoryBudget
+	budgetOverrides       map[int][]budgetOverride
+	spendingTargets       []spendingTarget
+	targetOverrides       map[int][]targetOverride
+	creditOffsetsByDebit  map[int][]creditOffset
+	creditOffsetsByCredit map[int][]creditOffset
+	budgetLines           []budgetLine
+	targetLines           []targetLine
+	budgetAdherencePct    float64
+	budgetOverCount       int
+	budgetVarSparkline    []float64
+
 	// Configurable display
 	maxVisibleRows     int          // max rows shown in transaction table (5-50, default 20)
 	spendingWeekAnchor time.Weekday // week boundary marker for spending tracker (Sunday/Monday)
@@ -521,9 +553,11 @@ func newModel() model {
 		if keyLoadErr != nil {
 			status = fmt.Sprintf("Shortcut config error: %v", keyLoadErr)
 			statusErr = true
-		}
-		if keyErr := keys.ApplyKeybindingConfig(keybindings); keyErr != nil {
-			status = fmt.Sprintf("Shortcut config error: %v", keyErr)
+		} else if keyErr := keys.ApplyKeybindingConfig(keybindings); keyErr != nil {
+			// User config may conflict with new scope map (e.g. tab reorder).
+			// Fall back to defaults and report.
+			keys = NewKeyRegistry()
+			status = fmt.Sprintf("Key config conflict (using defaults): %v", keyErr)
 			statusErr = true
 		}
 	}
@@ -532,27 +566,33 @@ func newModel() model {
 		weekAnchor = time.Monday
 	}
 	return model{
-		basePath:           cwd,
-		activeTab:          tabManager,
-		managerMode:        managerModeTransactions,
-		maxVisibleRows:     appCfg.RowsPerPage,
-		spendingWeekAnchor: weekAnchor,
-		dashTimeframe:      appCfg.DashTimeframe,
-		dashCustomStart:    appCfg.DashCustomStart,
-		dashCustomEnd:      appCfg.DashCustomEnd,
-		keys:               keys,
-		commands:           NewCommandRegistry(keys, savedFilters),
-		formats:            formats,
-		savedFilters:       savedFilters,
-		filterUsage:        make(map[string]filterUsageState),
-		customPaneModes:    customPaneModes,
-		selectedRows:       make(map[int]bool),
-		txnTags:            make(map[int][]tag),
-		status:             status,
-		statusErr:          statusErr,
-		commandDefault:     appCfg.CommandDefaultInterface,
-		jumpPreviousFocus:  sectionUnfocused,
-		focusedSection:     sectionManagerTransactions,
+		basePath:              cwd,
+		activeTab:             tabDashboard,
+		managerMode:           managerModeTransactions,
+		maxVisibleRows:        appCfg.RowsPerPage,
+		spendingWeekAnchor:    weekAnchor,
+		dashTimeframe:         appCfg.DashTimeframe,
+		dashCustomStart:       appCfg.DashCustomStart,
+		dashCustomEnd:         appCfg.DashCustomEnd,
+		budgetMonth:           time.Now().Format("2006-01"),
+		budgetYear:            time.Now().Year(),
+		keys:                  keys,
+		commands:              NewCommandRegistry(keys, savedFilters),
+		formats:               formats,
+		savedFilters:          savedFilters,
+		filterUsage:           make(map[string]filterUsageState),
+		customPaneModes:       customPaneModes,
+		selectedRows:          make(map[int]bool),
+		txnTags:               make(map[int][]tag),
+		budgetOverrides:       make(map[int][]budgetOverride),
+		targetOverrides:       make(map[int][]targetOverride),
+		creditOffsetsByDebit:  make(map[int][]creditOffset),
+		creditOffsetsByCredit: make(map[int][]creditOffset),
+		status:                status,
+		statusErr:             statusErr,
+		commandDefault:        appCfg.CommandDefaultInterface,
+		jumpPreviousFocus:     sectionUnfocused,
+		focusedSection:        sectionManagerTransactions,
 	}
 }
 
@@ -585,6 +625,8 @@ func (m model) View() string {
 	switch m.activeTab {
 	case tabDashboard:
 		body = m.dashboardView()
+	case tabBudget:
+		body = m.budgetTabView()
 	case tabManager:
 		body = m.managerView()
 	case tabSettings:
@@ -593,10 +635,14 @@ func (m model) View() string {
 		body = m.dashboardView()
 	}
 
+	if m.offsetDebitPicker != nil {
+		picker := renderPicker(m.offsetDebitPicker, min(64, m.width-10), m.keys, scopeOffsetDebitPicker)
+		return m.composeOverlay(header, body, statusLine, footer, picker)
+	}
 	if m.showDetail {
 		txn := m.findDetailTxn()
 		if txn != nil {
-			detail := renderDetail(*txn, m.txnTags[txn.id], m.detailNotes, m.detailNotesCursor, m.detailEditing, m.keys)
+			detail := renderDetailWithOffsets(*txn, m.txnTags[txn.id], m.detailNotes, m.detailNotesCursor, m.detailEditing, m.offsetAmount, m.offsetAmountCursor, m.creditOffsetsByCredit, m.rows, m.keys)
 			return m.composeOverlay(header, body, statusLine, footer, detail)
 		}
 	}
@@ -679,8 +725,8 @@ func (m model) dashboardView() string {
 		m.sectionWidth(),
 	)
 	customInput := renderDashboardCustomInput(m.dashCustomStart, m.dashCustomEnd, m.dashCustomInput, m.dashCustomEditing)
-	summary := m.renderSectionSizedLeft("Overview", renderSummaryCards(rows, m.categories, w), m.sectionWidth(), false)
-	spendRows := dashboardSpendRows(rows, m.txnTags)
+	spendRows := m.dashboardSpendRowsWithMode(rows)
+	summary := m.renderSectionSizedLeft("Overview", renderSummaryCards(spendRows, m.categories, w), m.sectionWidth(), false)
 	totalWidth := m.sectionWidth()
 	gap := 2
 	trackerWidth, breakdownWidth := dashboardChartWidths(totalWidth, gap)
@@ -707,6 +753,33 @@ func (m model) dashboardView() string {
 		out += "\n" + customInput
 	}
 	return out + "\n" + summary + "\n" + chartsRow
+}
+
+func (m model) budgetTabView() string {
+	// Budget scope header: month label + account scope
+	scope := m.accountFilterLabel()
+	monthLabel := m.budgetMonth
+	if t, _, err := parseMonthKey(m.budgetMonth); err == nil {
+		monthLabel = t.Format("January 2006")
+	}
+	modeLabel := "effective"
+	if m.spendModeRaw {
+		modeLabel = "raw"
+	}
+	scopeLine := infoLabelStyle.Render("  ") +
+		lipgloss.NewStyle().Foreground(colorAccent).Bold(true).Render(monthLabel) +
+		infoLabelStyle.Render("  ·  ") +
+		infoValueStyle.Render(scope) +
+		infoLabelStyle.Render("  ·  mode: ") +
+		lipgloss.NewStyle().Foreground(colorSubtext1).Render(modeLabel)
+
+	var body string
+	if m.budgetView == 1 {
+		body = renderBudgetPlanner(m)
+	} else {
+		body = renderBudgetTable(m)
+	}
+	return scopeLine + "\n" + body
 }
 
 func (m model) managerView() string {
@@ -1212,6 +1285,25 @@ func dashboardSpendRows(rows []transaction, txnTags map[int][]tag) []transaction
 		out = append(out, r)
 	}
 	return out
+}
+
+func (m model) dashboardSpendRowsWithMode(rows []transaction) []transaction {
+	out := dashboardSpendRows(rows, m.txnTags)
+	if m.spendModeRaw || len(out) == 0 {
+		return out
+	}
+	adjusted := make([]transaction, 0, len(out))
+	for _, row := range out {
+		if row.amount < 0 {
+			offsets := 0.0
+			for _, off := range m.creditOffsetsByDebit[row.id] {
+				offsets += off.amount
+			}
+			row.amount = row.amount + offsets
+		}
+		adjusted = append(adjusted, row)
+	}
+	return adjusted
 }
 
 func hasIgnoreTag(tags []tag) bool {

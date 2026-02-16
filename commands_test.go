@@ -16,6 +16,16 @@ func TestCommandRegistryHasExpectedCommands(t *testing.T) {
 		"nav:manager":           true,
 		"nav:budget":            true,
 		"nav:settings":          true,
+		"spend:toggle-mode":     true,
+		"budget:prev-month":     true,
+		"budget:next-month":     true,
+		"budget:toggle-view":    true,
+		"budget:edit":           true,
+		"budget:add-target":     true,
+		"budget:delete-target":  true,
+		"budget:reset-override": true,
+		"budget:prev-year":      true,
+		"budget:next-year":      true,
 		"jump:activate":         true,
 		"jump:cancel":           true,
 		"txn:sort":              true,
@@ -25,6 +35,7 @@ func TestCommandRegistryHasExpectedCommands(t *testing.T) {
 		"txn:quick-category":    true,
 		"txn:quick-tag":         true,
 		"txn:detail":            true,
+		"txn:link-offset":       true,
 		"txn:jump-top":          true,
 		"txn:jump-bottom":       true,
 		"filter:open":           true,
@@ -135,9 +146,9 @@ func TestExecuteSelectedCommandShowsDisabledReasonAtCursor(t *testing.T) {
 	m.commandCursor = 0
 	m.commandMatches = []CommandMatch{
 		{
-			Command:        Command{ID: "nav:budget"},
+			Command:        Command{ID: "dash:mode-next"},
 			Enabled:        false,
-			DisabledReason: "Budget tab is not available in this build.",
+			DisabledReason: "Dashboard focused widget modes ship in a later phase.",
 		},
 		{
 			Command: Command{ID: "nav:settings"},
@@ -156,7 +167,7 @@ func TestExecuteSelectedCommandShowsDisabledReasonAtCursor(t *testing.T) {
 	if !got.commandOpen {
 		t.Fatal("command UI should remain open when selected command is disabled")
 	}
-	if got.status != "Budget tab is not available in this build." {
+	if got.status != "Dashboard focused widget modes ship in a later phase." {
 		t.Fatalf("status = %q, want disabled reason", got.status)
 	}
 	if !got.statusErr {
@@ -193,9 +204,9 @@ func TestCommandModeEnterOnDisabledCommandDoesNotExecute(t *testing.T) {
 	m.commandCursor = 0
 	m.commandMatches = []CommandMatch{
 		{
-			Command:        Command{ID: "nav:budget", Label: "Go to Budget"},
+			Command:        Command{ID: "dash:mode-next", Label: "Next Widget Mode"},
 			Enabled:        false,
-			DisabledReason: "Budget tab is not available in this build.",
+			DisabledReason: "Dashboard focused widget modes ship in a later phase.",
 		},
 		{
 			Command: Command{ID: "nav:settings"},
@@ -211,7 +222,7 @@ func TestCommandModeEnterOnDisabledCommandDoesNotExecute(t *testing.T) {
 	if !got.commandOpen {
 		t.Fatal("command UI should remain open when selected command is disabled")
 	}
-	if got.status != "Budget tab is not available in this build." {
+	if got.status != "Dashboard focused widget modes ship in a later phase." {
 		t.Fatalf("status = %q, want disabled reason", got.status)
 	}
 	if !got.statusErr {

@@ -534,6 +534,7 @@ func TestManagerModalTextInputShieldsShortcutKeys(t *testing.T) {
 
 func TestFilterInputCursorUsesArrowKeysAndTreatsHLAsText(t *testing.T) {
 	m := newModel()
+	m.activeTab = tabManager
 	m.filterInputMode = true
 	m.filterInput = "abc"
 	m.filterInputCursor = 3
@@ -605,8 +606,12 @@ func TestFilterSaveRequiresAppliedExpression(t *testing.T) {
 	if got2.filterLastApplied == "" {
 		t.Fatal("expected filterLastApplied to be set after enter")
 	}
-	next, _ = got2.Update(keyMsg("ctrl+s"))
-	got3 := next.(model)
+	got2.activeTab = tabManager
+	got2.managerMode = managerModeTransactions
+	got3, _, handled := got2.executeBoundCommand(scopeTransactions, keyMsg("ctrl+s"))
+	if !handled {
+		t.Fatal("expected ctrl+s to resolve to filter:save in transactions scope")
+	}
 	if !got3.filterEditOpen {
 		t.Fatal("expected filter editor modal to open after ctrl+s")
 	}
