@@ -52,6 +52,9 @@ func testPhase5Model(t *testing.T) (model, func()) {
 	m.categories = cats
 	m.tags = tags
 	m.txnTags = txnTags
+	// Clear any config-load status so tests focus on behaviour, not config state.
+	m.status = ""
+	m.statusErr = false
 	return m, cleanup
 }
 

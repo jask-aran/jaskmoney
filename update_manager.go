@@ -24,6 +24,9 @@ func (m model) updateMain(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	if m.activeTab == tabDashboard {
 		return m.updateDashboard(msg)
 	}
+	if m.activeTab == tabBudget {
+		return m.updateBudget(msg)
+	}
 	if m.activeTab == tabManager {
 		return m.updateManager(msg)
 	}

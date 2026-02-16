@@ -160,7 +160,7 @@ var (
 // Tab names
 // ---------------------------------------------------------------------------
 
-var tabNames = []string{"Manager", "Dashboard", "Settings"}
+var tabNames = []string{"Dashboard", "Budget", "Manager", "Settings"}
 
 // ---------------------------------------------------------------------------
 // Section & chrome rendering
@@ -2758,8 +2758,364 @@ func renderDryRunResultsModal(m model) string {
 	return renderModalContentWithWidth("Dry-Run Results", body, footer, 96)
 }
 
+func renderBudgetTable(m model) string {
+	w := m.sectionBoxContentWidth(m.sectionWidth())
+
+	// -- Category Budgets pane --
+	catBudgetFocused := m.budgetCursor < len(m.budgetLines)
+	catContent := renderBudgetCategoryTable(m, w)
+	catTitle := fmt.Sprintf("Category Budgets (%d)", len(m.budgetLines))
+	catPane := renderManagerSectionBox(catTitle, catBudgetFocused, m.budgetEditing && catBudgetFocused, m.sectionWidth(), catContent)
+
+	// -- Spending Targets pane --
+	targetFocused := !catBudgetFocused && len(m.targetLines) > 0
+	targetContent := renderBudgetTargetTable(m, w)
+	targetTitle := fmt.Sprintf("Spending Targets (%d)", len(m.targetLines))
+	targetPane := renderManagerSectionBox(targetTitle, targetFocused, m.budgetEditing && targetFocused, m.sectionWidth(), targetContent)
+
+	// -- Analytics strip --
+	analyticsContent := renderBudgetAnalyticsStrip(m, w)
+	analyticsPane := renderTitledSectionBox("Analytics", analyticsContent, m.sectionWidth(), false)
+
+	return catPane + "\n" + targetPane + "\n" + analyticsPane
+}
+
+func renderBudgetCategoryTable(m model, width int) string {
+	if len(m.budgetLines) == 0 {
+		return lipgloss.NewStyle().Foreground(colorOverlay1).Render("No category budgets. Categories auto-seed budget rows.")
+	}
+
+	// Column widths
+	swatchW := 2 // "● "
+	catW := 18
+	budgetedW := 11
+	spentW := 11
+	offsetsW := 10
+	remainW := 11
+	overW := 5
+	sep := " "
+
+	header := fmt.Sprintf("  %-*s %*s %*s %*s %*s",
+		swatchW+catW, "Category",
+		budgetedW, "Budgeted",
+		spentW, "Spent",
+		offsetsW, "Offsets",
+		remainW, "Remaining",
+	)
+	lines := []string{tableHeaderStyle.Render(header)}
+
+	for i, line := range m.budgetLines {
+		isCursor := i == m.budgetCursor
+		rowBg := lipgloss.Color("")
+		bold := false
+		if isCursor {
+			rowBg = colorSurface2
+			bold = true
+		}
+		cellStyle := lipgloss.NewStyle().Background(rowBg)
+		if bold {
+			cellStyle = cellStyle.Bold(true)
+		}
+		sepField := cellStyle.Render(sep)
+
+		// Category swatch + name
+		swatchColor := colorOverlay1
+		if line.categoryColor != "" && line.categoryColor != "#7f849c" {
+			swatchColor = lipgloss.Color(line.categoryColor)
+		}
+		swatch := lipgloss.NewStyle().Foreground(swatchColor).Background(rowBg).Render("● ")
+		catField := cellStyle.Render(padRight(truncate(line.categoryName, catW), catW))
+
+		// Amounts
+		budgetedText := padRight(formatMoney(line.budgeted), budgetedW)
+		budgetedField := lipgloss.NewStyle().Foreground(colorSubtext0).Background(rowBg).Bold(bold).Render(budgetedText)
+
+		spent := line.netSpent
+		if m.spendModeRaw {
+			spent = line.spent
+		}
+		spentText := padRight(formatMoney(spent), spentW)
+		spentField := lipgloss.NewStyle().Foreground(colorError).Background(rowBg).Bold(bold).Render(spentText)
+
+		offsetsText := padRight(formatMoney(line.offsets), offsetsW)
+		offsetsField := lipgloss.NewStyle().Foreground(colorSuccess).Background(rowBg).Bold(bold).Render(offsetsText)
+
+		remainColor := colorSuccess
+		if line.overBudget {
+			remainColor = colorError
+		}
+		remainText := padRight(formatMoney(line.remaining), remainW)
+		remainField := lipgloss.NewStyle().Foreground(remainColor).Background(rowBg).Bold(bold).Render(remainText)
+
+		overField := ""
+		if line.overBudget {
+			overField = lipgloss.NewStyle().Foreground(colorError).Background(rowBg).Bold(true).Render(" OVER")
+		} else {
+			overField = cellStyle.Render(strings.Repeat(" ", overW))
+		}
+
+		row := swatch + catField + sepField + budgetedField + sepField + spentField + sepField + offsetsField + sepField + remainField + overField
+
+		// Inline edit indicator
+		if m.budgetEditing && isCursor {
+			editStyle := lipgloss.NewStyle().Foreground(colorAccent).Background(rowBg).Bold(true)
+			row += editStyle.Render("  [") + editStyle.Render(renderASCIIInputCursor(m.budgetEditValue, m.budgetEditCursor)) + editStyle.Render("]")
+		}
+
+		// Ensure row spans full width
+		row = ansi.Truncate(row, width, "")
+		row += cellStyle.Render(strings.Repeat(" ", max(0, width-ansi.StringWidth(row))))
+		lines = append(lines, row)
+	}
+
+	return strings.Join(lines, "\n")
+}
+
+func renderBudgetTargetTable(m model, width int) string {
+	if len(m.targetLines) == 0 {
+		return lipgloss.NewStyle().Foreground(colorOverlay1).Render("No spending targets. Press 'a' to add one.")
+	}
+
+	nameW := 22
+	periodW := 10
+	budgetedW := 11
+	spentW := 11
+	remainW := 11
+	sep := " "
+
+	header := fmt.Sprintf("  %-*s %-*s %*s %*s %*s",
+		nameW, "Target",
+		periodW, "Period",
+		budgetedW, "Budgeted",
+		spentW, "Spent",
+		remainW, "Remaining",
+	)
+	lines := []string{tableHeaderStyle.Render(header)}
+
+	for i, t := range m.targetLines {
+		rowIdx := len(m.budgetLines) + i
+		isCursor := rowIdx == m.budgetCursor
+		rowBg := lipgloss.Color("")
+		bold := false
+		if isCursor {
+			rowBg = colorSurface2
+			bold = true
+		}
+		cellStyle := lipgloss.NewStyle().Background(rowBg)
+		if bold {
+			cellStyle = cellStyle.Bold(true)
+		}
+		sepField := cellStyle.Render(sep)
+
+		nameField := cellStyle.Render(padRight(truncate(t.name, nameW), nameW))
+		periodField := lipgloss.NewStyle().Foreground(colorSubtext1).Background(rowBg).Bold(bold).Render(padRight(t.periodType, periodW))
+
+		budgetedField := lipgloss.NewStyle().Foreground(colorSubtext0).Background(rowBg).Bold(bold).Render(padRight(formatMoney(t.budgeted), budgetedW))
+
+		spent := t.netSpent
+		if m.spendModeRaw {
+			spent = t.spent
+		}
+		spentField := lipgloss.NewStyle().Foreground(colorError).Background(rowBg).Bold(bold).Render(padRight(formatMoney(spent), spentW))
+
+		remainColor := colorSuccess
+		if t.overBudget {
+			remainColor = colorError
+		}
+		remainField := lipgloss.NewStyle().Foreground(remainColor).Background(rowBg).Bold(bold).Render(padRight(formatMoney(t.remaining), remainW))
+
+		row := cellStyle.Render("  ") + nameField + sepField + periodField + sepField + budgetedField + sepField + spentField + sepField + remainField
+
+		row = ansi.Truncate(row, width, "")
+		row += cellStyle.Render(strings.Repeat(" ", max(0, width-ansi.StringWidth(row))))
+		lines = append(lines, row)
+	}
+
+	return strings.Join(lines, "\n")
+}
+
+func renderBudgetAnalyticsStrip(m model, width int) string {
+	greenSty := lipgloss.NewStyle().Foreground(colorSuccess)
+	redSty := lipgloss.NewStyle().Foreground(colorError)
+	warnSty := lipgloss.NewStyle().Foreground(colorWarning)
+
+	adherenceColor := greenSty
+	if m.budgetAdherencePct < 50 {
+		adherenceColor = redSty
+	} else if m.budgetAdherencePct < 80 {
+		adherenceColor = warnSty
+	}
+
+	overColor := greenSty
+	if m.budgetOverCount > 0 {
+		overColor = redSty
+	}
+
+	modeSty := lipgloss.NewStyle().Foreground(colorSubtext1)
+	modeLabel := "effective"
+	if m.spendModeRaw {
+		modeLabel = "raw"
+	}
+
+	col1W := 24
+	col2W := 20
+	col3W := width - col1W - col2W
+	if col3W < 10 {
+		col3W = 10
+	}
+
+	row := padRight(infoLabelStyle.Render("Adherence  ")+adherenceColor.Render(fmt.Sprintf("%.0f%%", m.budgetAdherencePct)), col1W) +
+		padRight(infoLabelStyle.Render("Over  ")+overColor.Render(fmt.Sprintf("%d", m.budgetOverCount)), col2W) +
+		padRight(infoLabelStyle.Render("Mode  ")+modeSty.Render(modeLabel), col3W)
+
+	sparkLabel := infoLabelStyle.Render("Variance  ")
+	sparkline := renderBudgetVarianceSparkline(m.budgetVarSparkline)
+
+	return row + "\n" + sparkLabel + sparkline
+}
+
+func renderBudgetPlanner(m model) string {
+	w := m.sectionBoxContentWidth(m.sectionWidth())
+
+	plannerContent := renderBudgetPlannerGrid(m, w)
+	plannerTitle := fmt.Sprintf("Budget Planner - %d", m.budgetYear)
+	plannerPane := renderManagerSectionBox(plannerTitle, true, m.budgetEditing, m.sectionWidth(), plannerContent)
+
+	return plannerPane
+}
+
+func renderBudgetPlannerGrid(m model, width int) string {
+	if len(m.budgetLines) == 0 {
+		return lipgloss.NewStyle().Foreground(colorOverlay1).Render("No category budgets.")
+	}
+
+	catW := 16
+	monthW := 7
+	months := []string{"Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"}
+	sep := " "
+
+	// Header
+	headerParts := fmt.Sprintf("  %-*s", catW, "Category")
+	for _, mon := range months {
+		headerParts += sep + fmt.Sprintf("%*s", monthW, mon)
+	}
+	lines := []string{tableHeaderStyle.Render(headerParts)}
+
+	for i, line := range m.budgetLines {
+		isCursor := i == m.budgetCursor
+		rowBg := lipgloss.Color("")
+		bold := false
+		if isCursor {
+			rowBg = colorSurface2
+			bold = true
+		}
+		cellStyle := lipgloss.NewStyle().Background(rowBg)
+		if bold {
+			cellStyle = cellStyle.Bold(true)
+		}
+
+		// Category swatch + name
+		swatchColor := colorOverlay1
+		if line.categoryColor != "" && line.categoryColor != "#7f849c" {
+			swatchColor = lipgloss.Color(line.categoryColor)
+		}
+		swatch := lipgloss.NewStyle().Foreground(swatchColor).Background(rowBg).Render("● ")
+		catName := cellStyle.Render(padRight(truncate(line.categoryName, catW-2), catW-2))
+		row := swatch + catName
+
+		for month := 1; month <= 12; month++ {
+			amount := line.budgeted
+			isOverride := false
+			if id := budgetIDForCategory(m.categoryBudgets, line.categoryID); id != 0 {
+				key := fmt.Sprintf("%04d-%02d", m.budgetYear, month)
+				if ov, ok := budgetOverrideAmount(m.budgetOverrides[id], key); ok {
+					amount = ov
+					isOverride = true
+				}
+			}
+			isCursorCell := isCursor && (month-1 == m.budgetPlannerCol)
+
+			amtStyle := lipgloss.NewStyle().Background(rowBg)
+			if bold {
+				amtStyle = amtStyle.Bold(true)
+			}
+			if isCursorCell {
+				amtStyle = amtStyle.Foreground(colorAccent).Bold(true)
+			} else if isOverride {
+				amtStyle = amtStyle.Foreground(colorWarning)
+			} else {
+				amtStyle = amtStyle.Foreground(colorSubtext0)
+			}
+
+			amtText := fmt.Sprintf("%*.0f", monthW, amount)
+			if isOverride && !isCursorCell {
+				amtText = fmt.Sprintf("%*.0f", monthW-1, amount) + "*"
+			}
+			row += cellStyle.Render(sep) + amtStyle.Render(amtText)
+		}
+
+		// Inline edit indicator
+		if m.budgetEditing && isCursor {
+			editStyle := lipgloss.NewStyle().Foreground(colorAccent).Background(rowBg).Bold(true)
+			row += editStyle.Render(" [") + editStyle.Render(renderASCIIInputCursor(m.budgetEditValue, m.budgetEditCursor)) + editStyle.Render("]")
+		}
+
+		row = ansi.Truncate(row, width, "")
+		row += cellStyle.Render(strings.Repeat(" ", max(0, width-ansi.StringWidth(row))))
+		lines = append(lines, row)
+	}
+
+	return strings.Join(lines, "\n")
+}
+
+func renderBudgetVarianceSparkline(series []float64) string {
+	if len(series) == 0 {
+		return "-"
+	}
+	var b strings.Builder
+	for _, v := range series {
+		switch {
+		case v < -100:
+			b.WriteString("▁")
+		case v < -10:
+			b.WriteString("▂")
+		case v < 0:
+			b.WriteString("▃")
+		case v < 10:
+			b.WriteString("▄")
+		case v < 100:
+			b.WriteString("▆")
+		default:
+			b.WriteString("█")
+		}
+	}
+	return b.String()
+}
+
+func budgetIDForCategory(budgets []categoryBudget, categoryID int) int {
+	for _, b := range budgets {
+		if b.categoryID == categoryID {
+			return b.id
+		}
+	}
+	return 0
+}
+
+func budgetOverrideAmount(overrides []budgetOverride, monthKey string) (float64, bool) {
+	for _, ov := range overrides {
+		if ov.monthKey == monthKey {
+			return ov.amount, true
+		}
+	}
+	return 0, false
+}
+
 // renderDetail renders the transaction detail modal content.
 func renderDetail(txn transaction, tags []tag, notes string, notesCursor int, editing string, keys *KeyRegistry) string {
+	return renderDetailWithOffsets(txn, tags, notes, notesCursor, editing, "", 0, nil, nil, keys)
+}
+
+func renderDetailWithOffsets(txn transaction, tags []tag, notes string, notesCursor int, editing string, offsetAmount string, offsetAmountCursor int, offsetsByCredit map[int][]creditOffset, allRows []transaction, keys *KeyRegistry) string {
 	const detailModalWidth = 52
 	const detailTextWrap = 40
 	var body []string
@@ -2811,12 +3167,56 @@ func renderDetail(txn transaction, tags []tag, notes string, notesCursor int, ed
 	}
 	body = append(body, "")
 
+	if txn.amount > 0 {
+		offsets := offsetsByCredit[txn.id]
+		if len(offsets) > 0 {
+			totalOffsets := 0.0
+			for _, off := range offsets {
+				totalOffsets += off.amount
+			}
+			body = append(body, detailLabelStyle.Render("Offsets:     ")+creditStyle.Render(formatMoney(totalOffsets)))
+			// Per-offset debit details
+			indent := "  └─ "
+			for _, off := range offsets {
+				debitDesc := "unknown"
+				debitDate := ""
+				debitAmt := 0.0
+				for _, r := range allRows {
+					if r.id == off.debitTxnID {
+						debitDesc = truncate(r.description, 24)
+						debitDate = r.dateISO
+						debitAmt = r.amount
+						break
+					}
+				}
+				line := detailLabelStyle.Render(indent) +
+					debitStyle.Render(formatMoney(off.amount)) +
+					detailLabelStyle.Render(" → ") +
+					detailValueStyle.Render(debitDesc)
+				if debitDate != "" {
+					line += detailLabelStyle.Render(fmt.Sprintf(" (%s, %s)", debitDate, formatMoney(debitAmt)))
+				}
+				body = append(body, line)
+			}
+		} else {
+			body = append(body, detailLabelStyle.Render("Offsets:     ")+lipgloss.NewStyle().Foreground(colorOverlay1).Render("none"))
+		}
+		body = append(body, "")
+	}
+
 	// Notes
 	notesLabel := detailLabelStyle.Render("Notes: ")
 	notePrefix := "Notes: "
 	indentPrefix := strings.Repeat(" ", ansi.StringWidth(notePrefix))
 	footer := ""
-	if editing == "notes" {
+	if editing == "offset_amount" {
+		body = append(body, detailActiveStyle.Render("Offset amount: ")+detailValueStyle.Render(renderASCIIInputCursor(offsetAmount, offsetAmountCursor)))
+		footer = scrollStyle.Render(fmt.Sprintf(
+			"%s link  %s cancel",
+			actionKeyLabel(keys, scopeDetailModal, actionSelect, "enter"),
+			actionKeyLabel(keys, scopeDetailModal, actionClose, "esc"),
+		))
+	} else if editing == "notes" {
 		notesLabel = detailActiveStyle.Render("Notes: ")
 		noteLines := splitLines(wrapText(renderASCIIInputCursor(notes, notesCursor), detailTextWrap))
 		if len(noteLines) == 0 {
@@ -2844,12 +3244,15 @@ func renderDetail(txn transaction, tags []tag, notes string, notesCursor int, ed
 		for _, line := range noteLines[1:] {
 			body = append(body, detailValueStyle.Render(indentPrefix+line))
 		}
-		footer = scrollStyle.Render(fmt.Sprintf(
-			"%s notes  %s save  %s close",
-			actionKeyLabel(keys, scopeDetailModal, actionEdit, "n"),
+		footerParts := fmt.Sprintf("%s notes", actionKeyLabel(keys, scopeDetailModal, actionEdit, "n"))
+		if txn.amount > 0 {
+			footerParts += fmt.Sprintf("  %s offset", actionKeyLabel(keys, scopeDetailModal, actionTxnLinkOffset, "o"))
+		}
+		footerParts += fmt.Sprintf("  %s save  %s close",
 			actionKeyLabel(keys, scopeDetailModal, actionSelect, "enter"),
 			actionKeyLabel(keys, scopeDetailModal, actionClose, "esc"),
-		))
+		)
+		footer = scrollStyle.Render(footerParts)
 	}
 
 	return renderModalContentWithWidth("Transaction Details", body, footer, detailModalWidth)

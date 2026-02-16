@@ -36,10 +36,12 @@ const (
 	scopeDashboardFocused         = "dashboard_focused"
 	scopeDashboardTimeframe       = "dashboard_timeframe"
 	scopeDashboardCustomInput     = "dashboard_custom_input"
+	scopeBudget                   = "budget"
 	scopeTransactions             = "transactions"
 	scopeDetailModal              = "detail_modal"
 	scopeCategoryPicker           = "category_picker"
 	scopeTagPicker                = "tag_picker"
+	scopeOffsetDebitPicker        = "offset_debit_picker"
 	scopeFilterApplyPicker        = "filter_apply_picker"
 	scopeFilterEdit               = "filter_edit"
 	scopeFilePicker               = "file_picker"
@@ -125,6 +127,17 @@ const (
 	actionRuleMoveUp               Action = "rule_move_up"
 	actionRuleMoveDown             Action = "rule_move_down"
 	actionRuleDryRun               Action = "rule_dry_run"
+	actionTxnLinkOffset            Action = "txn_link_offset"
+	actionBudgetPrevMonth          Action = "budget_prev_month"
+	actionBudgetNextMonth          Action = "budget_next_month"
+	actionBudgetToggleView         Action = "budget_toggle_view"
+	actionBudgetEdit               Action = "budget_edit"
+	actionBudgetAddTarget          Action = "budget_add_target"
+	actionBudgetDeleteTarget       Action = "budget_delete_target"
+	actionBudgetResetOverride      Action = "budget_reset_override"
+	actionBudgetPrevYear           Action = "budget_prev_year"
+	actionBudgetNextYear           Action = "budget_next_year"
+	actionSpendToggleMode          Action = "spend_toggle_mode"
 )
 
 func NewKeyRegistry() *KeyRegistry {
@@ -141,9 +154,10 @@ func NewKeyRegistry() *KeyRegistry {
 	reg(scopeGlobal, actionQuit, "", []string{"q", "ctrl+c"}, "quit")
 	reg(scopeGlobal, actionNextTab, "nav:next-tab", []string{"tab"}, "next tab")
 	reg(scopeGlobal, actionPrevTab, "nav:prev-tab", []string{"shift+tab"}, "prev tab")
-	reg(scopeGlobal, actionCommandGoTransactions, "nav:manager", []string{"1"}, "manager")
-	reg(scopeGlobal, actionCommandGoDashboard, "nav:dashboard", []string{"2"}, "dashboard")
-	reg(scopeGlobal, actionCommandGoSettings, "nav:settings", []string{"3"}, "settings")
+	reg(scopeGlobal, actionCommandGoDashboard, "nav:dashboard", []string{"1"}, "dashboard")
+	reg(scopeGlobal, actionCommandGoBudget, "nav:budget", []string{"2"}, "budget")
+	reg(scopeGlobal, actionCommandGoTransactions, "nav:manager", []string{"3"}, "manager")
+	reg(scopeGlobal, actionCommandGoSettings, "nav:settings", []string{"4"}, "settings")
 	reg(scopeGlobal, actionJumpMode, "jump:activate", []string{"v"}, "jump")
 	reg(scopeGlobal, actionCommandPalette, "palette:open", []string{"ctrl+k"}, "commands")
 	reg(scopeGlobal, actionCommandMode, "cmd:open", []string{":"}, "command")
@@ -186,6 +200,7 @@ func NewKeyRegistry() *KeyRegistry {
 
 	// Dashboard footer: d, tab, shift+tab, q
 	reg(scopeDashboard, actionTimeframe, "dash:timeframe", []string{"d"}, "timeframe")
+	reg(scopeDashboard, actionSpendToggleMode, "spend:toggle-mode", []string{"m"}, "mode")
 	reg(scopeDashboard, actionNextTab, "nav:next-tab", []string{"tab"}, "")
 	reg(scopeDashboard, actionPrevTab, "nav:prev-tab", []string{"shift+tab"}, "")
 	reg(scopeDashboard, actionQuit, "", []string{"q", "ctrl+c"}, "")
@@ -193,6 +208,24 @@ func NewKeyRegistry() *KeyRegistry {
 	reg(scopeDashboardFocused, actionDashboardModePrev, "dash:mode-prev", []string{"["}, "prev")
 	reg(scopeDashboardFocused, actionDashboardDrillDown, "dash:drill-down", []string{"enter"}, "drill")
 	reg(scopeDashboardFocused, actionCancel, "", []string{"esc"}, "")
+	reg(scopeDashboardFocused, actionSpendToggleMode, "spend:toggle-mode", []string{"m"}, "mode")
+
+	reg(scopeBudget, actionBudgetPrevMonth, "budget:prev-month", []string{"h", "left"}, "")
+	reg(scopeBudget, actionBudgetNextMonth, "budget:next-month", []string{"l", "right"}, "")
+	reg(scopeBudget, actionBudgetToggleView, "budget:toggle-view", []string{"w"}, "view")
+	reg(scopeBudget, actionBudgetEdit, "budget:edit", []string{"enter"}, "edit")
+	reg(scopeBudget, actionBudgetAddTarget, "budget:add-target", []string{"a"}, "add")
+	reg(scopeBudget, actionBudgetDeleteTarget, "budget:delete-target", []string{"del"}, "delete")
+	reg(scopeBudget, actionBudgetResetOverride, "budget:reset-override", []string{"r"}, "reset")
+	reg(scopeBudget, actionBudgetPrevYear, "budget:prev-year", []string{"["}, "")
+	reg(scopeBudget, actionBudgetNextYear, "budget:next-year", []string{"]"}, "")
+	reg(scopeBudget, actionSpendToggleMode, "spend:toggle-mode", []string{"m"}, "mode")
+	reg(scopeBudget, actionUp, "", []string{"k", "up", "ctrl+p"}, "")
+	reg(scopeBudget, actionDown, "", []string{"j", "down", "ctrl+n"}, "")
+	reg(scopeBudget, actionNextTab, "nav:next-tab", []string{"tab"}, "")
+	reg(scopeBudget, actionPrevTab, "nav:prev-tab", []string{"shift+tab"}, "")
+	reg(scopeBudget, actionQuit, "", []string{"q", "ctrl+c"}, "")
+	reg(scopeBudget, actionCancel, "", []string{"esc"}, "")
 
 	// Dashboard timeframe focus footer: left/right, enter, esc
 	reg(scopeDashboardTimeframe, actionLeft, "", []string{"h", "left"}, "")
@@ -238,10 +271,15 @@ func NewKeyRegistry() *KeyRegistry {
 	reg(scopeFilterApplyPicker, actionDown, "", []string{"down", "ctrl+n", "j"}, "")
 	reg(scopeFilterApplyPicker, actionSelect, "", []string{"enter"}, "")
 	reg(scopeFilterApplyPicker, actionClose, "", []string{"esc"}, "")
+	reg(scopeOffsetDebitPicker, actionUp, "", []string{"up", "ctrl+p", "k"}, "")
+	reg(scopeOffsetDebitPicker, actionDown, "", []string{"down", "ctrl+n", "j"}, "")
+	reg(scopeOffsetDebitPicker, actionSelect, "", []string{"enter"}, "")
+	reg(scopeOffsetDebitPicker, actionClose, "", []string{"esc"}, "")
 
 	// Detail / file picker footers: enter, esc, up/down, q
 	reg(scopeDetailModal, actionSelect, "", []string{"enter"}, "")
 	reg(scopeDetailModal, actionEdit, "", []string{"n"}, "notes")
+	reg(scopeDetailModal, actionTxnLinkOffset, "txn:link-offset", []string{"o"}, "offset")
 	reg(scopeDetailModal, actionClose, "", []string{"esc"}, "")
 	reg(scopeDetailModal, actionUp, "", []string{"k", "up", "ctrl+p"}, "")
 	reg(scopeDetailModal, actionDown, "", []string{"j", "down", "ctrl+n"}, "")
