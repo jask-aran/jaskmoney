@@ -54,6 +54,7 @@ func TestCommandRegistryHasExpectedCommands(t *testing.T) {
 		"dash:mode-next":        true,
 		"dash:mode-prev":        true,
 		"dash:drill-down":       true,
+		"dash:custom-mode-edit": true,
 		"palette:open":          true,
 		"cmd:open":              true,
 	}

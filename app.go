@@ -37,7 +37,9 @@ const (
 const (
 	sectionUnfocused = -1
 
-	sectionDashboardDateRange = 0
+	sectionDashboardNetCashflow = 0
+	sectionDashboardComposition = 1
+	sectionDashboardDateRange   = 2
 
 	sectionManagerAccounts     = 0
 	sectionManagerTransactions = 1
@@ -332,6 +334,17 @@ const (
 	confirmActionClearDB        settingsConfirmAction = "clear_db"
 )
 
+type drillReturnState struct {
+	returnTab             int
+	focusedWidget         int
+	activeMode            int
+	scroll                int
+	prevFilterInput       string
+	prevFilterExpr        *filterNode
+	prevFilterLastApplied string
+	prevFilterInputErr    string
+}
+
 // ---------------------------------------------------------------------------
 // Model
 // ---------------------------------------------------------------------------
@@ -509,6 +522,11 @@ type model struct {
 	dashCustomEnd       string
 	dashCustomInput     string
 	dashCustomEditing   bool
+	dashWidgets         []widget
+	dashCustomModeEdit  bool
+
+	// Dashboard -> Manager drill-return context.
+	drillReturn *drillReturnState
 
 	// Budget tab state
 	budgetMonth             string
@@ -588,6 +606,7 @@ func newModel() model {
 		dashAnchorMonth:       time.Now().Format("2006-01"),
 		dashCustomStart:       appCfg.DashCustomStart,
 		dashCustomEnd:         appCfg.DashCustomEnd,
+		dashWidgets:           newDashboardWidgets(customPaneModes),
 		budgetMonth:           time.Now().Format("2006-01"),
 		budgetYear:            time.Now().Year(),
 		keys:                  keys,
@@ -733,13 +752,16 @@ func (m model) View() string {
 // ---------------------------------------------------------------------------
 
 func (m model) dashboardView() string {
+	if len(m.dashWidgets) != dashboardPaneCount {
+		m.dashWidgets = newDashboardWidgets(m.customPaneModes)
+	}
 	rows := m.getDashboardRows()
 	w := m.sectionBoxContentWidth(m.sectionWidth())
 	datePane := renderDashboardDatePane(m, rows, m.sectionWidth())
 	spendRows := dashboardSpendRows(rows, m.txnTags)
-	summary := m.renderSectionSizedLeft("Overview", renderSummaryCards(spendRows, m.categories, w), m.sectionWidth(), false)
+	summary := m.renderSectionSizedLeft("Overview", renderSummaryCards(rows, m.categories, w), m.sectionWidth(), false)
 	totalWidth := m.sectionWidth()
-	gap := 2
+	gap := 1
 	trackerWidth, breakdownWidth := dashboardChartWidths(totalWidth, gap)
 
 	trackerContentWidth := m.sectionBoxContentWidth(trackerWidth)
@@ -760,7 +782,8 @@ func (m model) dashboardView() string {
 	)
 	chartsRow := lipgloss.JoinHorizontal(lipgloss.Top, trend, strings.Repeat(" ", gap), breakdown)
 	out := datePane
-	return out + "\n" + summary + "\n" + chartsRow
+	analytics := renderDashboardAnalyticsRegion(m)
+	return out + "\n" + summary + "\n" + chartsRow + "\n" + analytics
 }
 
 func (m model) budgetTabView() string {
@@ -907,7 +930,12 @@ func (m model) activeFilterPill() string {
 	if m.filterInputErr != "" {
 		style = lipgloss.NewStyle().Foreground(colorError)
 	}
-	return style.Render("[" + expr + "]")
+	pill := style.Render("[" + expr + "]")
+	if m.activeTab == tabManager && m.drillReturn != nil {
+		prefix := lipgloss.NewStyle().Foreground(colorAccent).Render("[Dashboard >]")
+		return prefix + " " + pill
+	}
+	return pill
 }
 
 func (m model) composeFrame(header, body, statusLine, footer string) string {
@@ -1401,6 +1429,30 @@ func (m model) buildDashboardScopeFilter() *filterNode {
 		valueHi: endIncl.Format("2006-01-02"),
 	}
 	return andFilterNodes(timeframeNode, accountScope)
+}
+
+func (m model) buildDashboardModeFilter(mode widgetMode) *filterNode {
+	scope := m.buildDashboardScopeFilter()
+	if strings.TrimSpace(mode.filterExpr) == "" {
+		return scope
+	}
+	custom, err := parseFilterStrict(mode.filterExpr)
+	if err != nil {
+		return scope
+	}
+	return andFilterNodes(scope, custom)
+}
+
+func (m model) dashboardRowsForMode(mode widgetMode) []transaction {
+	return filteredRows(m.rows, m.buildDashboardModeFilter(mode), m.txnTags, sortByDate, false)
+}
+
+func (m model) dashboardFocusedWidgetIndex() int {
+	idx := dashboardWidgetIndexFromSection(m.focusedSection)
+	if idx < 0 || idx >= len(m.dashWidgets) {
+		return -1
+	}
+	return idx
 }
 
 func (m model) buildCustomModeFilter(paneID, modeName string) *filterNode {

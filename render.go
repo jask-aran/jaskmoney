@@ -1341,12 +1341,321 @@ func rowStateBackgroundAndCursor(selected, highlighted, isCursor bool) (lipgloss
 // Dashboard widgets
 // ---------------------------------------------------------------------------
 
+func renderDashboardAnalyticsRegion(m model) string {
+	if len(m.dashWidgets) != dashboardPaneCount {
+		m.dashWidgets = newDashboardWidgets(m.customPaneModes)
+	}
+	totalWidth := m.sectionWidth()
+	if totalWidth <= 0 {
+		totalWidth = 80
+	}
+	gap := 1
+	narrow := totalWidth < 80
+	if narrow {
+		panes := make([]string, 0, len(m.dashWidgets))
+		for i := 0; i < len(m.dashWidgets); i++ {
+			spec := dashboardPaneLayoutSpecFor(m, m.dashWidgets[i].kind)
+			panes = append(panes, renderDashboardWidgetPane(m, i, totalWidth, spec))
+		}
+		return strings.Join(panes, "\n")
+	}
+	avail := totalWidth - gap
+	if avail < 2 {
+		avail = 2
+	}
+	leftW := avail * 60 / 100
+	rightW := avail - leftW
+	if leftW < 24 {
+		leftW = 24
+		rightW = max(20, avail-leftW)
+	}
+	netPane := renderDashboardWidgetPane(m, 0, leftW, dashboardPaneLayoutSpecFor(m, widgetNetCashflow))
+	compPane := renderDashboardWidgetPane(m, 1, rightW, dashboardPaneLayoutSpecFor(m, widgetComposition))
+	return lipgloss.JoinHorizontal(lipgloss.Top, netPane, strings.Repeat(" ", gap), compPane)
+}
+
+type dashboardPaneLayoutSpec struct {
+	minLines    int
+	chartHeight int
+}
+
+func dashboardPaneLayoutSpecFor(m model, kind widgetKind) dashboardPaneLayoutSpec {
+	paneRows := max(spendingTrackerHeight, (m.height*40)/100)
+	switch kind {
+	case widgetNetCashflow:
+		return dashboardPaneLayoutSpec{minLines: paneRows, chartHeight: paneRows}
+	default:
+		return dashboardPaneLayoutSpec{minLines: paneRows, chartHeight: paneRows}
+	}
+}
+
+func renderDashboardWidgetPane(m model, idx int, width int, spec dashboardPaneLayoutSpec) string {
+	if idx < 0 || idx >= len(m.dashWidgets) {
+		return renderManagerSectionBox("Dashboard Pane", false, false, width, "")
+	}
+	w := m.dashWidgets[idx]
+	if len(w.modes) == 0 {
+		return renderManagerSectionBox(w.title, m.focusedSection == idx, m.focusedSection == idx, width, "No modes configured.")
+	}
+	modeIdx := w.activeMode
+	if modeIdx < 0 || modeIdx >= len(w.modes) {
+		modeIdx = 0
+	}
+	mode := w.modes[modeIdx]
+	title := w.title + " [" + strings.ToUpper(w.jumpKey) + "] · " + mode.label
+	contentW := max(1, width-4)
+	rows := m.dashboardRowsForMode(mode)
+	content := renderDashboardWidgetModeContent(m, w, mode, rows, contentW, spec)
+	content = ensureMinLines(content, spec.minLines)
+	isFocused := m.activeTab == tabDashboard && m.focusedSection == idx
+	return renderManagerSectionBox(title, isFocused, isFocused, width, content)
+}
+
+func ensureMinLines(content string, minLines int) string {
+	if minLines <= 0 {
+		return content
+	}
+	lines := splitLines(content)
+	if len(lines) >= minLines {
+		return content
+	}
+	for len(lines) < minLines {
+		lines = append(lines, "")
+	}
+	return strings.Join(lines, "\n")
+}
+
+func renderDashboardWidgetModeContent(m model, w widget, mode widgetMode, rows []transaction, width int, spec dashboardPaneLayoutSpec) string {
+	switch w.kind {
+	case widgetNetCashflow:
+		return renderDashboardNetCashflowMode(m, mode, rows, width, spec.chartHeight)
+	case widgetComposition:
+		return renderDashboardCompositionMode(m, mode, rows, width)
+	default:
+		return "Unsupported widget kind."
+	}
+}
+
+func renderDashboardNetCashflowMode(m model, mode widgetMode, rows []transaction, width int, chartHeight int) string {
+	start, end := m.dashboardChartRange(time.Now())
+	switch mode.id {
+	case "spending":
+		spendRows := dashboardSpendRows(rows, m.txnTags)
+		return renderSpendingTrackerWithRangeSized(spendRows, width, m.spendingWeekAnchor, start, end, chartHeight)
+	default: // net_worth + custom
+		return renderNetWorthTrackerWithRange(rows, width, m.spendingWeekAnchor, start, end, chartHeight)
+	}
+}
+
+func renderDashboardCompositionMode(m model, mode widgetMode, rows []transaction, width int) string {
+	spendRows := dashboardSpendRows(rows, m.txnTags)
+	switch mode.id {
+	case "top_merchants":
+		return renderDashboardTopMerchants(spendRows, width)
+	default:
+		return renderCategoryBreakdown(spendRows, m.categories, width)
+	}
+}
+
+func renderDashboardCompareBarsMode(m model, mode widgetMode, rows []transaction, width int) string {
+	switch mode.id {
+	case "budget_vs_actual":
+		budgetTotal := 0.0
+		for _, line := range m.budgetLines {
+			budgetTotal += line.budgeted
+		}
+		actual := 0.0
+		for _, row := range rows {
+			if row.amount < 0 {
+				actual += -row.amount
+			}
+		}
+		scale := max(budgetTotal, actual)
+		barBudget := renderMiniMeter("Budget", budgetTotal, scale, max(1, width/2))
+		barActual := renderMiniMeter("Actual", actual, scale, max(1, width/2))
+		return barBudget + "\n" + barActual
+	case "income_vs_expense":
+		income := 0.0
+		expense := 0.0
+		for _, row := range rows {
+			if row.amount > 0 {
+				income += row.amount
+			} else {
+				expense += -row.amount
+			}
+		}
+		scale := max(income, expense)
+		return renderMiniMeter("Income", income, scale, max(1, width/2)) + "\n" + renderMiniMeter("Expense", expense, scale, max(1, width/2))
+	case "month_over_month":
+		curMonth := latestDebitMonthKey(rows)
+		prevMonth := previousMonthKey(curMonth)
+		curSpend := 0.0
+		prevSpend := 0.0
+		for _, row := range rows {
+			if row.amount >= 0 {
+				continue
+			}
+			month, ok := monthKeyFromDateISO(row.dateISO)
+			if !ok {
+				continue
+			}
+			if month == curMonth {
+				curSpend += -row.amount
+			} else if month == prevMonth {
+				prevSpend += -row.amount
+			}
+		}
+		scale := max(curSpend, prevSpend)
+		return renderMiniMeter("Current", curSpend, scale, max(1, width/2)) + "\n" + renderMiniMeter("Previous", prevSpend, scale, max(1, width/2))
+	default:
+		return "No compare mode configured."
+	}
+}
+
+func monthKeyFromDateISO(dateISO string) (string, bool) {
+	if len(dateISO) < 7 {
+		return "", false
+	}
+	month := dateISO[:7]
+	if _, err := time.Parse("2006-01", month); err != nil {
+		return "", false
+	}
+	return month, true
+}
+
+func latestDebitMonthKey(rows []transaction) string {
+	latest := ""
+	for _, row := range rows {
+		if row.amount >= 0 {
+			continue
+		}
+		month, ok := monthKeyFromDateISO(row.dateISO)
+		if !ok {
+			continue
+		}
+		if month > latest {
+			latest = month
+		}
+	}
+	return latest
+}
+
+func previousMonthKey(monthKey string) string {
+	if monthKey == "" {
+		return ""
+	}
+	t, err := time.Parse("2006-01", monthKey)
+	if err != nil {
+		return ""
+	}
+	return t.AddDate(0, -1, 0).Format("2006-01")
+}
+
+func renderMiniMeter(label string, value float64, maxValue float64, barWidth int) string {
+	if barWidth < 1 {
+		barWidth = 1
+	}
+	amount := math.Abs(value)
+	scale := math.Abs(maxValue)
+	filled := 0
+	if scale > 0 {
+		filled = int(math.Round((amount / scale) * float64(barWidth)))
+	}
+	if filled < 0 {
+		filled = 0
+	}
+	if filled > barWidth {
+		filled = barWidth
+	}
+	bar := strings.Repeat("█", filled) + strings.Repeat("░", barWidth-filled)
+	return fmt.Sprintf("%-10s %s %s", label+":", bar, formatMoney(amount))
+}
+
+func renderDashboardTopTransactions(rows []transaction, width int) string {
+	if len(rows) == 0 {
+		return "No rows in scope."
+	}
+	limit := min(6, len(rows))
+	lines := make([]string, 0, limit)
+	for i := 0; i < limit; i++ {
+		row := rows[i]
+		lines = append(lines, fmt.Sprintf("%s  %7s  %s", formatDateShort(row.dateISO), formatMoney(row.amount), truncate(row.description, max(8, width-24))))
+	}
+	return strings.Join(lines, "\n")
+}
+
+func renderDashboardTopMerchants(rows []transaction, width int) string {
+	if len(rows) == 0 {
+		return "No merchant spend in scope."
+	}
+	spendByMerchant := make(map[string]float64)
+	for _, row := range rows {
+		if row.amount >= 0 {
+			continue
+		}
+		name := strings.TrimSpace(row.description)
+		if name == "" {
+			name = "Unknown"
+		}
+		spendByMerchant[name] += -row.amount
+	}
+	type merchantSpend struct {
+		name  string
+		spend float64
+	}
+	sorted := make([]merchantSpend, 0, len(spendByMerchant))
+	maxSpend := 0.0
+	for name, spend := range spendByMerchant {
+		sorted = append(sorted, merchantSpend{name: name, spend: spend})
+		if spend > maxSpend {
+			maxSpend = spend
+		}
+	}
+	sort.SliceStable(sorted, func(i, j int) bool {
+		if sorted[i].spend != sorted[j].spend {
+			return sorted[i].spend > sorted[j].spend
+		}
+		return sorted[i].name < sorted[j].name
+	})
+	limit := min(6, len(sorted))
+	lines := make([]string, 0, limit)
+	barWidth := max(1, width-28)
+	if maxSpend <= 0 {
+		maxSpend = 1
+	}
+	for i := 0; i < limit; i++ {
+		item := sorted[i]
+		ratio := item.spend / maxSpend
+		fill := int(math.Round(ratio * float64(barWidth)))
+		if fill < 1 {
+			fill = 1
+		}
+		if fill > barWidth {
+			fill = barWidth
+		}
+		bar := strings.Repeat("█", fill) + strings.Repeat("░", barWidth-fill)
+		lines = append(lines, fmt.Sprintf("%s %s %s", truncate(item.name, 14), bar, formatMoney(item.spend)))
+	}
+	return strings.Join(lines, "\n")
+}
+
+func hasRecurringTag(tags []tag) bool {
+	for _, tg := range tags {
+		if strings.EqualFold(strings.TrimSpace(tg.name), "recurring") {
+			return true
+		}
+	}
+	return false
+}
+
 // renderSummaryCards renders the summary cards: balance, income, expenses,
 // transaction count, uncategorised count/amount.
 func renderSummaryCards(rows []transaction, categories []category, width int) string {
 	var income, expenses float64
 	var uncatCount int
 	var uncatTotal float64
+	minDate := ""
+	maxDate := ""
 	for _, r := range rows {
 		if r.amount > 0 {
 			income += r.amount
@@ -1357,15 +1666,22 @@ func renderSummaryCards(rows []transaction, categories []category, width int) st
 			uncatCount++
 			uncatTotal += math.Abs(r.amount)
 		}
+		if minDate == "" || r.dateISO < minDate {
+			minDate = r.dateISO
+		}
+		if maxDate == "" || r.dateISO > maxDate {
+			maxDate = r.dateISO
+		}
 	}
 	balance := income + expenses
 
 	_ = categories
 	greenSty := lipgloss.NewStyle().Foreground(colorSuccess)
 	redSty := lipgloss.NewStyle().Foreground(colorError)
+	warnSty := lipgloss.NewStyle().Foreground(colorWarning)
 
-	// 3 rows, 2 columns
-	col1W := 32
+	// 4 rows, 2 columns
+	col1W := 34
 	col2W := width - col1W
 	if col2W < 16 {
 		col2W = 16
@@ -1373,6 +1689,29 @@ func renderSummaryCards(rows []transaction, categories []category, width int) st
 
 	debits := math.Abs(expenses)
 	credits := income
+	days := 1.0
+	if minDate != "" && maxDate != "" {
+		start, startErr := time.Parse("2006-01-02", minDate)
+		end, endErr := time.Parse("2006-01-02", maxDate)
+		if startErr == nil && endErr == nil {
+			span := end.Sub(start).Hours()/24 + 1
+			if span > 1 {
+				days = span
+			}
+		}
+	}
+	dailyBurn := 0.0
+	if debits > 0 {
+		dailyBurn = debits / days
+	}
+	savingsRate := 0.0
+	if credits > 0 {
+		savingsRate = ((credits - debits) / credits) * 100
+	}
+	runway := "∞"
+	if dailyBurn > 0 {
+		runway = fmt.Sprintf("%.1f days", balance/dailyBurn)
+	}
 
 	row1 := padRight(infoLabelStyle.Render("Balance      ")+balanceStyle(balance, greenSty, redSty), col1W) +
 		padRight(infoLabelStyle.Render("Uncat ")+infoValueStyle.Render(fmt.Sprintf("%d (%s)", uncatCount, formatMoney(uncatTotal))), col2W)
@@ -1381,9 +1720,12 @@ func renderSummaryCards(rows []transaction, categories []category, width int) st
 		padRight(infoLabelStyle.Render("Transactions ")+infoValueStyle.Render(fmt.Sprintf("%d", len(rows))), col2W)
 
 	row3 := padRight(infoLabelStyle.Render("Credits      ")+greenSty.Render(formatMoney(credits)), col1W) +
-		padRight("", col2W)
+		padRight(infoLabelStyle.Render("Daily Burn ")+warnSty.Render(formatMoney(dailyBurn)), col2W)
 
-	return row1 + "\n" + row2 + "\n" + row3
+	row4 := padRight(infoLabelStyle.Render("Savings Rate ")+infoValueStyle.Render(fmt.Sprintf("%.1f%%", savingsRate)), col1W) +
+		padRight(infoLabelStyle.Render("Runway ")+infoValueStyle.Render(runway), col2W)
+
+	return row1 + "\n" + row2 + "\n" + row3 + "\n" + row4
 }
 
 func dashboardDateRange(rows []transaction, timeframe int, customStart, customEnd string, now time.Time) string {
@@ -1772,6 +2114,46 @@ func aggregateDailySpendForRange(rows []transaction, start, end time.Time) ([]fl
 	return values, dates
 }
 
+func aggregateDailyNetForRange(rows []transaction, start, end time.Time) ([]float64, []time.Time) {
+	if end.Before(start) {
+		return nil, nil
+	}
+	start = time.Date(start.Year(), start.Month(), start.Day(), 0, 0, 0, 0, time.Local)
+	end = time.Date(end.Year(), end.Month(), end.Day(), 0, 0, 0, 0, time.Local)
+	startISO := start.Format("2006-01-02")
+	endISO := end.Format("2006-01-02")
+	days := int(end.Sub(start).Hours()/24) + 1
+	if days <= 0 {
+		return nil, nil
+	}
+	byDay := make(map[string]float64)
+	for _, r := range rows {
+		if r.dateISO < startISO || r.dateISO > endISO {
+			continue
+		}
+		byDay[r.dateISO] += r.amount
+	}
+
+	values := make([]float64, 0, days)
+	dates := make([]time.Time, 0, days)
+	for d := start; !d.After(end); d = d.AddDate(0, 0, 1) {
+		key := d.Format("2006-01-02")
+		values = append(values, byDay[key])
+		dates = append(dates, d)
+	}
+	return values, dates
+}
+
+func cumulativeSeries(in []float64) []float64 {
+	out := make([]float64, len(in))
+	total := 0.0
+	for i, v := range in {
+		total += v
+		out[i] = total
+	}
+	return out
+}
+
 func isUncategorised(r transaction) bool {
 	if r.categoryName != "" {
 		return r.categoryName == "Uncategorised"
@@ -1795,27 +2177,45 @@ func renderSpendingTrackerWithWeekAnchor(rows []transaction, width int, weekAnch
 }
 
 func renderSpendingTrackerWithRange(rows []transaction, width int, weekAnchor time.Weekday, start, end time.Time) string {
+	return renderSpendingTrackerWithRangeSized(rows, width, weekAnchor, start, end, spendingTrackerHeight)
+}
+
+func renderSpendingTrackerWithRangeSized(rows []transaction, width int, weekAnchor time.Weekday, start, end time.Time, height int) string {
+	values, dates := aggregateDailySpendForRange(rows, start, end)
+	return renderTimeSeriesWithRange(values, dates, width, weekAnchor, height, false)
+}
+
+func renderNetWorthTrackerWithRange(rows []transaction, width int, weekAnchor time.Weekday, start, end time.Time, height int) string {
+	netDaily, dates := aggregateDailyNetForRange(rows, start, end)
+	balance := cumulativeSeries(netDaily)
+	return renderTimeSeriesWithRange(balance, dates, width, weekAnchor, height, true)
+}
+
+func renderTimeSeriesWithRange(values []float64, dates []time.Time, width int, weekAnchor time.Weekday, height int, signed bool) string {
 	if width <= 0 {
 		width = 20
 	}
-	values, dates := aggregateDailySpendForRange(rows, start, end)
+	if height <= 0 {
+		height = spendingTrackerHeight
+	}
 	if len(dates) == 0 {
 		return lipgloss.NewStyle().Foreground(colorOverlay1).Render("No data for spending tracker.")
 	}
 
-	start = dates[0]
-	end = dates[len(dates)-1]
+	start := dates[0]
+	end := dates[len(dates)-1]
 	maxVal := 0.0
+	minVal := 0.0
 	for _, v := range values {
 		if v > maxVal {
 			maxVal = v
 		}
-	}
-	if maxVal == 0 {
-		maxVal = 1
+		if v < minVal {
+			minVal = v
+		}
 	}
 
-	chart := tslc.New(width, spendingTrackerHeight)
+	chart := tslc.New(width, height)
 	chart.SetXStep(1)
 	chart.SetYStep(spendingTrackerYStep)
 	chart.SetStyle(lipgloss.NewStyle().Foreground(colorPeach))
@@ -1824,12 +2224,25 @@ func renderSpendingTrackerWithRange(rows []transaction, width int, weekAnchor ti
 	chart.SetTimeRange(start, end)
 	chart.SetViewTimeRange(start, end)
 
-	plan := planSpendingAxes(&chart, dates, maxVal)
-	minVal := -(plan.yMax * 0.08)
-	chart.SetYRange(minVal, plan.yMax)
-	chart.SetViewYRange(minVal, plan.yMax)
+	plan := planSpendingAxes(&chart, dates, max(maxVal, math.Abs(minVal)))
+	yMin := 0.0
+	yMax := 0.0
+	if signed {
+		step, minScaled, maxScaled := signedYScale(minVal, maxVal, chart.GraphHeight())
+		plan.yStep = step
+		yMin = minScaled
+		yMax = maxScaled
+	} else {
+		step, maxScaled := spendingYScale(max(0, maxVal), chart.GraphHeight())
+		plan.yStep = step
+		plan.yMax = maxScaled
+		yMin = -(maxScaled * 0.08)
+		yMax = maxScaled
+	}
+	chart.SetYRange(yMin, yMax)
+	chart.SetViewYRange(yMin, yMax)
 	chart.Model.XLabelFormatter = spendingXLabelFormatter(plan.xLabels)
-	chart.Model.YLabelFormatter = spendingYLabelFormatter(plan.yStep, plan.yMax)
+	chart.Model.YLabelFormatter = spendingYLabelFormatter(plan.yStep, yMin, yMax)
 
 	for i, d := range dates {
 		chart.Push(tslc.TimePoint{Time: d, Value: values[i]})
@@ -1839,6 +2252,9 @@ func renderSpendingTrackerWithRange(rows []transaction, width int, weekAnchor ti
 	clearAxes(&chart)
 	raiseXAxisLabels(&chart)
 	drawVerticalGridlines(&chart, dates, plan, weekAnchor)
+	if signed {
+		drawHorizontalValueLine(&chart, 0, lipgloss.NewStyle().Foreground(colorSurface2))
+	}
 
 	return chart.View()
 }
@@ -2037,6 +2453,33 @@ func spendingYScale(maxVal float64, graphHeight int) (float64, float64) {
 	return step, yMax
 }
 
+func signedYScale(minVal, maxVal float64, graphHeight int) (step, yMin, yMax float64) {
+	if minVal > 0 {
+		minVal = 0
+	}
+	if maxVal < 0 {
+		maxVal = 0
+	}
+	span := maxVal - minVal
+	if span <= 0 {
+		span = 1
+	}
+	targetTicks := max(4, min(8, graphHeight/2))
+	if targetTicks <= 1 {
+		targetTicks = 4
+	}
+	step = niceCeil(span / float64(targetTicks-1))
+	if step < 1 {
+		step = 1
+	}
+	yMin = math.Floor(minVal/step) * step
+	yMax = math.Ceil(maxVal/step) * step
+	if yMin == yMax {
+		yMax = yMin + step
+	}
+	return step, yMin, yMax
+}
+
 func niceCeil(v float64) float64 {
 	if v <= 0 {
 		return 1
@@ -2055,26 +2498,31 @@ func niceCeil(v float64) float64 {
 	}
 }
 
-func spendingYLabelFormatter(step, yMax float64) linechart.LabelFormatter {
+const chartYAxisLabelWidth = 6
+
+func spendingYLabelFormatter(step, yMin, yMax float64) linechart.LabelFormatter {
 	tolerance := step * 0.2
 	return func(_ int, v float64) string {
-		if v < 0 {
+		nearest := math.Round(v/step) * step
+		if nearest < yMin-step*0.01 || nearest > yMax+step*0.01 {
 			return ""
 		}
-		if v < tolerance {
-			return "0"
-		}
-		nearest := math.Round(v/step) * step
-		if nearest < 0 || nearest > yMax+step*0.01 {
+		// Keep the bottom-most row free so raised x-axis labels don't collide
+		// with the minimum y tick in signed ranges.
+		if nearest <= yMin+step*0.01 {
 			return ""
 		}
 		if math.Abs(v-nearest) > tolerance {
 			return ""
 		}
-		if nearest < 0.5 {
-			return "0"
+		if math.Abs(nearest) < 0.5 {
+			return fmt.Sprintf("%*s", chartYAxisLabelWidth, "0")
 		}
-		return formatAxisTick(nearest)
+		label := formatAxisTick(nearest)
+		if nearest < 0 {
+			label = "-" + label
+		}
+		return fmt.Sprintf("%*s", chartYAxisLabelWidth, label)
 	}
 }
 
@@ -2228,6 +2676,36 @@ func chartColumnX(chart *tslc.Model, ts time.Time) int {
 		p.Y--
 	}
 	return p.X
+}
+
+func chartRowY(chart *tslc.Model, v float64) int {
+	point := canvas.Float64Point{X: chart.ViewMinX(), Y: v}
+	scaled := chart.ScaleFloat64Point(point)
+	p := canvas.CanvasPointFromFloat64Point(chart.Origin(), scaled)
+	if chart.YStep() > 0 {
+		p.X++
+	}
+	if chart.XStep() > 0 {
+		p.Y--
+	}
+	return p.Y
+}
+
+func drawHorizontalValueLine(chart *tslc.Model, v float64, style lipgloss.Style) {
+	origin := chart.Origin()
+	topY := origin.Y - chart.GraphHeight()
+	bottomY := origin.Y - 1
+	y := chartRowY(chart, v)
+	if y < topY || y > bottomY {
+		return
+	}
+	for x := origin.X + 1; x < chart.Width(); x++ {
+		p := canvas.Point{X: x, Y: y}
+		if chart.Canvas.Cell(p).Rune != 0 {
+			continue
+		}
+		chart.Canvas.SetRuneWithStyle(p, '─', style)
+	}
 }
 
 // ---------------------------------------------------------------------------
@@ -2915,11 +3393,15 @@ func renderBudgetTable(m model) string {
 	targetTitle := fmt.Sprintf("Spending Targets (%d)", len(m.targetLines))
 	targetPane := renderManagerSectionBox(targetTitle, targetFocused, m.budgetEditing && targetFocused, m.sectionWidth(), targetContent)
 
+	// -- Compare bars (wide strip) --
+	compareContent := renderBudgetCompareBarsWide(m, w)
+	comparePane := renderTitledSectionBox("Compare Bars", compareContent, m.sectionWidth(), false)
+
 	// -- Analytics strip --
 	analyticsContent := renderBudgetAnalyticsStrip(m, w)
 	analyticsPane := renderTitledSectionBox("Analytics", analyticsContent, m.sectionWidth(), false)
 
-	return catPane + "\n" + targetPane + "\n" + analyticsPane
+	return catPane + "\n" + targetPane + "\n" + comparePane + "\n" + analyticsPane
 }
 
 func renderBudgetCategoryTable(m model, width int) string {
@@ -3068,6 +3550,17 @@ func renderBudgetTargetTable(m model, width int) string {
 	return strings.Join(lines, "\n")
 }
 
+func renderBudgetCompareBarsWide(m model, width int) string {
+	rows := rowsForBudgetMonthAndScope(m, m.budgetMonth)
+	allScopedRows := rowsForBudgetScopeAllMonths(m)
+	lines := []string{
+		renderDashboardCompareBarsMode(m, widgetMode{id: "budget_vs_actual"}, rows, width),
+		renderDashboardCompareBarsMode(m, widgetMode{id: "income_vs_expense"}, rows, width),
+		renderDashboardCompareBarsMode(m, widgetMode{id: "month_over_month"}, allScopedRows, width),
+	}
+	return strings.Join(lines, "\n")
+}
+
 func renderBudgetAnalyticsStrip(m model, width int) string {
 	greenSty := lipgloss.NewStyle().Foreground(colorSuccess)
 	redSty := lipgloss.NewStyle().Foreground(colorError)
@@ -3101,10 +3594,84 @@ func renderBudgetAnalyticsStrip(m model, width int) string {
 		padRight(infoLabelStyle.Render("Over  ")+overColor.Render(fmt.Sprintf("%d", m.budgetOverCount)), col2W) +
 		padRight(infoLabelStyle.Render("Offsets  ")+greenSty.Render(formatMoney(totalOffsets)), col3W)
 
+	currentSpend := budgetMonthSpendForScope(m, m.budgetMonth)
+	prevMonth := previousMonthKey(m.budgetMonth)
+	prevSpend := budgetMonthSpendForScope(m, prevMonth)
+	momDelta := currentSpend - prevSpend
+	momPctText := "n/a"
+	if prevSpend > 0 {
+		momPctText = fmt.Sprintf("%+.1f%%", (momDelta/prevSpend)*100)
+	}
+	momColor := greenSty
+	if momDelta > 0 {
+		momColor = redSty
+	}
+	momLine := infoLabelStyle.Render("MoM Spend  ") +
+		infoValueStyle.Render(formatMoney(currentSpend)) +
+		infoLabelStyle.Render(" vs ") +
+		infoValueStyle.Render(formatMoney(prevSpend)) +
+		infoLabelStyle.Render(" (") +
+		momColor.Render(momPctText) +
+		infoLabelStyle.Render(")")
+
 	sparkLabel := infoLabelStyle.Render("Variance  ")
 	sparkline := renderBudgetVarianceSparkline(m.budgetVarSparkline)
 
-	return row + "\n" + sparkLabel + sparkline
+	return row + "\n" + momLine + "\n" + sparkLabel + sparkline
+}
+
+func budgetMonthSpendForScope(m model, monthKey string) float64 {
+	rows := rowsForBudgetMonthAndScope(m, monthKey)
+	total := 0.0
+	for _, row := range rows {
+		if row.amount >= 0 {
+			continue
+		}
+		total += -row.amount
+	}
+	return total
+}
+
+func rowsForBudgetMonthAndScope(m model, monthKey string) []transaction {
+	if strings.TrimSpace(monthKey) == "" {
+		return nil
+	}
+	allRows := rowsForBudgetScopeAllMonths(m)
+	out := make([]transaction, 0)
+	for _, row := range allRows {
+		if !strings.HasPrefix(row.dateISO, monthKey+"-") {
+			continue
+		}
+		out = append(out, row)
+	}
+	return out
+}
+
+func rowsForBudgetScopeAllMonths(m model) []transaction {
+	var allowedAccounts map[string]bool
+	if len(m.filterAccounts) > 0 {
+		allowedAccounts = make(map[string]bool, len(m.filterAccounts))
+		for _, acc := range m.accounts {
+			if !m.filterAccounts[acc.id] {
+				continue
+			}
+			name := strings.ToLower(strings.TrimSpace(acc.name))
+			if name != "" {
+				allowedAccounts[name] = true
+			}
+		}
+	}
+	out := make([]transaction, 0)
+	for _, row := range m.rows {
+		if allowedAccounts != nil {
+			name := strings.ToLower(strings.TrimSpace(row.accountName))
+			if !allowedAccounts[name] {
+				continue
+			}
+		}
+		out = append(out, row)
+	}
+	return out
 }
 
 func renderBudgetPlanner(m model) string {

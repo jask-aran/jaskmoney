@@ -735,6 +735,8 @@ func (m model) jumpTargetsForActiveTab() []jumpTarget {
 	case tabDashboard:
 		return filterReservedJumpTargetKeys([]jumpTarget{
 			{Key: "d", Label: "Date Range", Section: sectionDashboardDateRange, Activate: true, BudgetView: -1},
+			{Key: "n", Label: "Net/Cashflow", Section: sectionDashboardNetCashflow, Activate: true, BudgetView: -1},
+			{Key: "c", Label: "Composition", Section: sectionDashboardComposition, Activate: true, BudgetView: -1},
 		})
 	case tabBudget:
 		return filterReservedJumpTargetKeys([]jumpTarget{
@@ -777,6 +779,9 @@ func (m model) updateJumpOverlay(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		if normalizeKeyName(target.Key) != keyName {
 			continue
 		}
+		if m.activeTab == tabManager && m.drillReturn != nil {
+			m.drillReturn = nil
+		}
 		m.jumpModeActive = false
 		m.focusedSection = target.Section
 		if m.activeTab == tabBudget && target.BudgetView >= 0 {
@@ -795,6 +800,13 @@ func (m *model) applyFocusedSection(activate bool) {
 		if m.focusedSection == sectionDashboardDateRange {
 			m.dashTimeframeCursor = m.dashTimeframe
 			m.dashTimeframeFocus = true
+			return
+		}
+		if isDashboardAnalyticsSection(m.focusedSection) {
+			m.dashTimeframeFocus = false
+			if len(m.dashWidgets) != dashboardPaneCount {
+				m.dashWidgets = newDashboardWidgets(m.customPaneModes)
+			}
 		}
 	case tabManager:
 		switch m.focusedSection {
@@ -836,6 +848,9 @@ func (m *model) applyFocusedSection(activate bool) {
 }
 
 func (m *model) applyTabDefaultsOnSwitch() {
+	if m.activeTab != tabManager {
+		m.drillReturn = nil
+	}
 	// Leaving Settings always defocuses pane interaction state.
 	if m.activeTab != tabSettings {
 		m.settActive = false
@@ -844,6 +859,7 @@ func (m *model) applyTabDefaultsOnSwitch() {
 		m.dashTimeframeFocus = false
 		m.dashCustomEditing = false
 		m.dashCustomInput = ""
+		m.dashCustomModeEdit = false
 	}
 	switch m.activeTab {
 	case tabManager:

@@ -159,6 +159,9 @@ func (m model) applySavedFilterByID(id string) (model, error) {
 }
 
 func (m model) applySavedFilter(saved savedFilter, trackUsage bool) (model, error) {
+	if m.drillReturn != nil {
+		m.drillReturn = nil
+	}
 	if m.activeTab == tabManager && m.managerMode == managerModeAccounts {
 		m.managerMode = managerModeTransactions
 		m.focusedSection = sectionManagerTransactions
@@ -221,6 +224,11 @@ func (m model) updateFilterApplyPicker(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			m.ruleEditorPickingFilter = false
 			return m, nil
 		}
+		if m.dashCustomModeEdit {
+			m.dashCustomModeEdit = false
+			m.setStatus("Custom mode edit cancelled.")
+			return m, nil
+		}
 		m.setStatus("Apply filter cancelled.")
 		return m, nil
 	case pickerActionSelected:
@@ -242,6 +250,17 @@ func (m model) updateFilterApplyPicker(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			m.ruleEditorStep = 2
 			m.ruleEditorErr = ""
 			return m, nil
+		}
+		if m.dashCustomModeEdit {
+			next, err := m.dashboardApplyCustomModeFromSavedFilterID(id)
+			next.filterApplyPicker = nil
+			next.filterApplyOrder = nil
+			next.dashCustomModeEdit = false
+			if err != nil {
+				next.setError(fmt.Sprintf("Custom mode update failed: %v", err))
+				return next, nil
+			}
+			return next, saveCustomPaneModesCmd(next.customPaneModes)
 		}
 		next, err := m.applySavedFilterByID(id)
 		next.filterApplyPicker = nil

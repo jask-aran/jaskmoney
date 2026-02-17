@@ -109,6 +109,45 @@ gofmt -w .
 ./scripts/test.sh fast|heavy|all
 ```
 
+## Agent-TUI Quick Guide
+
+Use `agent-tui` to drive `jaskmoney` in an automated terminal session.
+
+- Start with help and discoverability first:
+  - `agent-tui -h`
+  - `agent-tui <subcommand> --help` (for example `agent-tui press --help`)
+- Typical flow:
+  - `go build .`
+  - `agent-tui run $(pwd)/jaskmoney`
+  - `agent-tui sessions`
+  - If multiple sessions exist, pick one and set it active: `agent-tui sessions switch <session-id>`
+  - `agent-tui resize -s <session-id> --cols 140 --rows 44`
+  - `agent-tui screenshot -s <session-id>`
+- Interaction primitives:
+  - `agent-tui press -s <session-id> <KEY...>` for navigation/actions
+  - You can send multiple keys in one call, for example: `agent-tui press ArrowDown ArrowDown Enter`
+  - `agent-tui type -s <session-id> "<text>"` for literal input
+  - `agent-tui live -s <session-id>` for live endpoint info
+
+What was successfully tested and observed:
+- Build completed with `go build .`.
+- App launched under `agent-tui run`.
+- Screenshot capture worked and showed full rendered tab content.
+- `120x40` could clip the lower Dashboard area in screenshots.
+- `140x44` captured full Dashboard panels and footer consistently (recommended baseline for docs/screenshots).
+- `Tab` navigation moved through Dashboard -> Budget -> Manager -> Settings.
+- Footer hints changed with tab/scope as expected.
+- `Ctrl+K` opened the command palette; `Enter` executed the selected command and returned to the tab view.
+- `agent-tui sessions switch <id>` correctly changed the active session when multiple sessions were running.
+- A single `agent-tui press ArrowDown ArrowDown Enter` command executed all keys in sequence.
+
+Known screenshot caveats:
+- Dashboard sparkline/chart regions use braille characters; terminal screenshots may not render these perfectly even when layout is correct.
+- For documentation captures, prefer checking section borders/labels/footer state over exact braille glyph fidelity.
+
+Daemon connectivity fallback:
+- If you hit `Error: Failed to connect to daemon: Connection refused (os error 111)`, immediately ask the human to start it manually with `agent-tui daemon start`, then continue.
+
 ## Coding Style & Naming Conventions
 
 - Follow idiomatic Go and keep code `gofmt`-clean
