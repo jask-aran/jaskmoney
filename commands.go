@@ -170,7 +170,7 @@ func NewCommandRegistry(keys *KeyRegistry, savedFilters []savedFilter) *CommandR
 			Description: "Move budget scope to previous month",
 			Category:    "Budget",
 			Hidden:      true,
-			Scopes:      []string{scopeBudget},
+			Scopes:      []string{scopeBudget, scopeDashboard, scopeDashboardTimeframe},
 			Enabled:     commandAlwaysEnabled,
 			Execute: func(m model) (model, tea.Cmd, error) {
 				start, _, err := parseMonthKey(m.budgetMonth)
@@ -180,6 +180,7 @@ func NewCommandRegistry(keys *KeyRegistry, savedFilters []savedFilter) *CommandR
 				m.budgetMonth = start.AddDate(0, -1, 0).Format("2006-01")
 				m.budgetYear = start.AddDate(0, -1, 0).Year()
 				m.dashAnchorMonth = m.budgetMonth
+				m.dashMonthMode = true
 				if m.db != nil {
 					return m, refreshCmd(m.db), nil
 				}
@@ -192,7 +193,7 @@ func NewCommandRegistry(keys *KeyRegistry, savedFilters []savedFilter) *CommandR
 			Description: "Move budget scope to next month",
 			Category:    "Budget",
 			Hidden:      true,
-			Scopes:      []string{scopeBudget},
+			Scopes:      []string{scopeBudget, scopeDashboard, scopeDashboardTimeframe},
 			Enabled:     commandAlwaysEnabled,
 			Execute: func(m model) (model, tea.Cmd, error) {
 				start, _, err := parseMonthKey(m.budgetMonth)
@@ -202,10 +203,35 @@ func NewCommandRegistry(keys *KeyRegistry, savedFilters []savedFilter) *CommandR
 				m.budgetMonth = start.AddDate(0, 1, 0).Format("2006-01")
 				m.budgetYear = start.AddDate(0, 1, 0).Year()
 				m.dashAnchorMonth = m.budgetMonth
+				m.dashMonthMode = true
 				if m.db != nil {
 					return m, refreshCmd(m.db), nil
 				}
 				return m, nil, nil
+			},
+		},
+		{
+			ID:          "timeframe:this-month",
+			Label:       "This Month",
+			Description: "Reset timeframe to this month",
+			Category:    "Budget",
+			Hidden:      true,
+			Scopes:      []string{scopeBudget, scopeDashboard, scopeDashboardTimeframe},
+			Enabled:     commandAlwaysEnabled,
+			Execute: func(m model) (model, tea.Cmd, error) {
+				now := time.Now()
+				thisMonth := now.Format("2006-01")
+				m.dashMonthMode = false
+				m.dashTimeframe = dashTimeframeThisMonth
+				m.dashTimeframeCursor = dashTimeframeThisMonth
+				m.dashAnchorMonth = thisMonth
+				m.budgetMonth = thisMonth
+				m.budgetYear = now.Year()
+				saveCmd := saveSettingsCmd(m.currentAppSettings())
+				if m.db != nil {
+					return m, tea.Batch(saveCmd, refreshCmd(m.db)), nil
+				}
+				return m, saveCmd, nil
 			},
 		},
 		{
@@ -221,6 +247,7 @@ func NewCommandRegistry(keys *KeyRegistry, savedFilters []savedFilter) *CommandR
 				// Also shift the table-view month to January of that year.
 				m.budgetMonth = fmt.Sprintf("%04d-01", m.budgetYear)
 				m.dashAnchorMonth = m.budgetMonth
+				m.dashMonthMode = true
 				if m.db != nil {
 					return m, refreshCmd(m.db), nil
 				}
@@ -239,6 +266,7 @@ func NewCommandRegistry(keys *KeyRegistry, savedFilters []savedFilter) *CommandR
 				m.budgetYear++
 				m.budgetMonth = fmt.Sprintf("%04d-01", m.budgetYear)
 				m.dashAnchorMonth = m.budgetMonth
+				m.dashMonthMode = true
 				if m.db != nil {
 					return m, refreshCmd(m.db), nil
 				}

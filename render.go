@@ -654,67 +654,59 @@ func renderDatePresetChips(labels []string, active, cursor int, focused bool) st
 	return strings.Join(parts, " ")
 }
 
-func renderDashboardDatePane(m model, rows []transaction, width int) string {
-	boundsStart, boundsEndExcl, ok := m.dashboardTimeframeBounds(time.Now())
-	dateRange := dashboardDateRangeFromBounds(rows, boundsStart, boundsEndExcl, ok)
-	monthLabel := m.dashboardBudgetMonth()
-	if start, _, err := parseMonthKey(monthLabel); err == nil {
-		monthLabel = start.Format("January 2006")
+func renderDashboardTimeframeValue(m model, rows []transaction, now time.Time) string {
+	if m.dashMonthMode {
+		month := m.dashboardBudgetMonth()
+		if start, _, err := parseMonthKey(month); err == nil {
+			return start.Format("January 2006")
+		}
+		return month
 	}
-	header := renderDatePaneHeader(monthLabel, dateRange, width-4)
-	presets := infoLabelStyle.Render("Presets  ") + renderDatePresetChips(dashTimeframeLabels, m.dashTimeframe, m.dashTimeframeCursor, m.dashTimeframeFocus)
-	lines := []string{header, presets}
+	start, endExcl, ok := m.dashboardTimeframeBounds(now)
+	return dashboardDateRangeFromBounds(rows, start, endExcl, ok)
+}
+
+func renderDashboardDatePane(m model, rows []transaction, width int) string {
+	now := time.Now()
+	activePreset := m.dashTimeframe
+	if m.dashMonthMode {
+		activePreset = -1
+	}
+	presets := infoLabelStyle.Render("Presets  ") + renderDatePresetChips(dashTimeframeLabels, activePreset, m.dashTimeframeCursor, m.dashTimeframeFocus)
+	timeframe := infoLabelStyle.Render("Timeframe  ") + infoValueStyle.Render(renderDashboardTimeframeValue(m, rows, now))
+	lines := []string{renderDatePaneInline(presets, timeframe, width-4)}
 	if custom := renderDashboardCustomInputInline(m.dashCustomStart, m.dashCustomEnd, m.dashCustomInput, m.dashCustomEditing); custom != "" {
 		lines = append(lines, custom)
-	}
-	hintStyle := lipgloss.NewStyle().Foreground(colorOverlay1)
-	if m.dashTimeframeFocus || m.dashCustomEditing {
-		lines = append(lines, hintStyle.Render(
-			fmt.Sprintf(
-				"%s/%s month  %s/%s preset  %s apply  %s done",
-				actionKeyLabel(m.keys, scopeDashboardTimeframe, actionLeft, "h"),
-				actionKeyLabel(m.keys, scopeDashboardTimeframe, actionRight, "l"),
-				actionKeyLabel(m.keys, scopeDashboardTimeframe, actionUp, "k"),
-				actionKeyLabel(m.keys, scopeDashboardTimeframe, actionDown, "j"),
-				actionKeyLabel(m.keys, scopeDashboardTimeframe, actionSelect, "enter"),
-				actionKeyLabel(m.keys, scopeDashboardTimeframe, actionCancel, "esc"),
-			),
-		))
-	} else {
-		lines = append(lines, hintStyle.Render("Use jump mode to focus: press v then d."))
 	}
 	return renderManagerSectionBox("Date Range", m.dashTimeframeFocus, m.dashCustomEditing, width, strings.Join(lines, "\n"))
 }
 
 func renderBudgetDatePane(m model, width int) string {
-	monthLabel := m.budgetMonth
+	timeframeValue := m.budgetMonth
 	if start, _, err := parseMonthKey(m.budgetMonth); err == nil {
-		monthLabel = start.Format("January 2006")
+		timeframeValue = start.Format("January 2006")
 	}
-	header := renderDatePaneHeader(monthLabel, "", width-4)
-	hint := lipgloss.NewStyle().Foreground(colorOverlay1).Render("Use left/right to move month.")
-	return renderManagerSectionBox("Date Range", false, false, width, header+"\n"+hint)
+	line := infoLabelStyle.Render("Timeframe  ") + infoValueStyle.Render(timeframeValue)
+	return renderManagerSectionBox("Date Range", false, false, width, line)
 }
 
-func renderDatePaneHeader(monthLabel, dateRange string, width int) string {
-	monthChunk := infoLabelStyle.Render("Month  ") + infoValueStyle.Render("◀ "+monthLabel+" ▶")
-	if strings.TrimSpace(dateRange) == "" {
-		return monthChunk
+func renderDatePaneInline(left, right string, width int) string {
+	if strings.TrimSpace(right) == "" {
+		return left
 	}
-	rangeChunk := infoLabelStyle.Render("Range  ") + infoValueStyle.Render(dateRange)
 	if width <= 0 {
-		return monthChunk + "  " + rangeChunk
+		return left + "  " + right
 	}
-	monthW := ansi.StringWidth(monthChunk)
-	rangeW := ansi.StringWidth(rangeChunk)
-	if monthW+2+rangeW <= width {
-		gap := width - monthW - rangeW
+	leftW := ansi.StringWidth(left)
+	rightW := ansi.StringWidth(right)
+	if leftW+2+rightW <= width {
+		gap := width - leftW - rightW
 		if gap < 2 {
 			gap = 2
 		}
-		return monthChunk + strings.Repeat(" ", gap) + rangeChunk
+		return left + strings.Repeat(" ", gap) + right
 	}
-	return monthChunk + "  " + rangeChunk
+	return left + "  " + right
 }
 
 func renderDashboardCustomInputInline(start, end, input string, editing bool) string {
@@ -1404,6 +1396,9 @@ func dashboardDateRangeFromBounds(rows []transaction, start, endExcl time.Time, 
 		end := endExcl.AddDate(0, 0, -1)
 		if end.Before(start) {
 			end = start
+		}
+		if start.Format("2006-01") == end.Format("2006-01") {
+			return formatMonth(start.Format("2006-01-02"))
 		}
 		return formatMonth(start.Format("2006-01-02")) + " – " + formatMonth(end.Format("2006-01-02"))
 	}

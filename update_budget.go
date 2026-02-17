@@ -13,23 +13,24 @@ func (m model) updateBudget(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	if m.budgetEditing {
 		return m.updateBudgetEdit(msg)
 	}
-	// In planner view, intercept h/l/left/right for column navigation
-	// BEFORE executeBoundCommand can route them to month-change commands.
-	if m.budgetView == 1 {
-		if m.isAction(scopeBudget, actionBudgetPrevMonth, msg) {
-			m.budgetPlannerCol--
-			if m.budgetPlannerCol < 0 {
-				m.budgetPlannerCol = 0
-			}
-			return m, nil
+	// In planner view, keep h/l/left/right for column navigation.
+	if m.budgetView == 1 && m.horizontalDelta(scopeBudget, msg) != 0 {
+		m.budgetPlannerCol = moveBoundedCursor(m.budgetPlannerCol, 12, m.horizontalDelta(scopeBudget, msg))
+		return m, nil
+	}
+	if m.isAction(scopeBudget, actionTimeframeThisMonth, msg) {
+		now := time.Now()
+		m.dashMonthMode = false
+		m.dashTimeframe = dashTimeframeThisMonth
+		m.dashTimeframeCursor = dashTimeframeThisMonth
+		m.dashAnchorMonth = now.Format("2006-01")
+		m.budgetMonth = now.Format("2006-01")
+		m.budgetYear = now.Year()
+		saveCmd := saveSettingsCmd(m.currentAppSettings())
+		if m.db != nil {
+			return m, tea.Batch(saveCmd, refreshCmd(m.db))
 		}
-		if m.isAction(scopeBudget, actionBudgetNextMonth, msg) {
-			m.budgetPlannerCol++
-			if m.budgetPlannerCol > 11 {
-				m.budgetPlannerCol = 11
-			}
-			return m, nil
-		}
+		return m, saveCmd
 	}
 	if next, cmd, handled := m.executeBoundCommand(scopeBudget, msg); handled {
 		return next, cmd

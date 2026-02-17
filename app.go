@@ -279,8 +279,8 @@ const (
 )
 
 var dashTimeframeLabels = []string{
-	"This Month",
-	"Last Month",
+	"This",
+	"Last",
 	"1M",
 	"2M",
 	"3M",
@@ -501,6 +501,7 @@ type model struct {
 
 	// Dashboard timeframe
 	dashTimeframe       int
+	dashMonthMode       bool
 	dashTimeframeFocus  bool
 	dashTimeframeCursor int
 	dashAnchorMonth     string
@@ -583,7 +584,7 @@ func newModel() model {
 		managerMode:           managerModeTransactions,
 		maxVisibleRows:        appCfg.RowsPerPage,
 		spendingWeekAnchor:    weekAnchor,
-		dashTimeframe:         appCfg.DashTimeframe,
+		dashTimeframe:         dashTimeframeThisMonth,
 		dashAnchorMonth:       time.Now().Format("2006-01"),
 		dashCustomStart:       appCfg.DashCustomStart,
 		dashCustomEnd:         appCfg.DashCustomEnd,
@@ -605,7 +606,7 @@ func newModel() model {
 		statusErr:             statusErr,
 		commandDefault:        appCfg.CommandDefaultInterface,
 		jumpPreviousFocus:     sectionUnfocused,
-		focusedSection:        sectionManagerTransactions,
+		focusedSection:        sectionUnfocused,
 	}
 	m.syncBudgetMonthFromDashboard()
 	return m
@@ -1287,35 +1288,25 @@ func dashboardSpendRows(rows []transaction, txnTags map[int][]tag) []transaction
 	return out
 }
 
-func daysInMonth(year int, month time.Month) int {
-	return time.Date(year, month+1, 0, 0, 0, 0, 0, time.Local).Day()
-}
-
-func (m model) dashboardAnchorTime(now time.Time) time.Time {
-	if start, _, err := parseMonthKey(m.dashAnchorMonth); err == nil {
-		day := now.Day()
-		if day < 1 {
-			day = 1
-		}
-		maxDay := daysInMonth(start.Year(), start.Month())
-		if day > maxDay {
-			day = maxDay
-		}
-		return time.Date(start.Year(), start.Month(), day, 12, 0, 0, 0, time.Local)
-	}
-	return now
-}
-
 func (m model) dashboardTimeframeBounds(now time.Time) (time.Time, time.Time, bool) {
-	return timeframeBounds(
-		m.dashTimeframe,
-		m.dashCustomStart,
-		m.dashCustomEnd,
-		m.dashboardAnchorTime(now),
-	)
+	if m.dashMonthMode {
+		month, _, err := parseMonthKey(m.dashAnchorMonth)
+		if err != nil {
+			month = time.Date(now.Year(), now.Month(), 1, 0, 0, 0, 0, time.Local)
+		} else {
+			month = time.Date(month.Year(), month.Month(), 1, 0, 0, 0, 0, time.Local)
+		}
+		return month, month.AddDate(0, 1, 0), true
+	}
+	return timeframeBounds(m.dashTimeframe, m.dashCustomStart, m.dashCustomEnd, now)
 }
 
 func (m model) dashboardBudgetMonth() string {
+	if m.dashMonthMode {
+		if _, _, err := parseMonthKey(m.dashAnchorMonth); err == nil {
+			return m.dashAnchorMonth
+		}
+	}
 	start, endExcl, ok := m.dashboardTimeframeBounds(time.Now())
 	if !ok {
 		if _, _, err := parseMonthKey(m.dashAnchorMonth); err == nil {
