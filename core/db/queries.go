@@ -13,6 +13,7 @@ type Account struct {
 type Transaction struct {
 	ID          int
 	AccountID   int
+	ImportIndex int
 	DateISO     string
 	Amount      float64
 	Description string
@@ -33,7 +34,7 @@ type Tag struct {
 }
 
 func GetTransactions(db *sql.DB) ([]Transaction, error) {
-	rows, err := db.Query(`SELECT id, account_id, date_iso, amount, description, category_id, notes FROM transactions ORDER BY date_iso DESC, id DESC`)
+	rows, err := db.Query(`SELECT id, account_id, import_index, date_iso, amount, description, category_id, notes FROM transactions ORDER BY import_index ASC, id ASC`)
 	if err != nil {
 		return nil, err
 	}
@@ -41,7 +42,7 @@ func GetTransactions(db *sql.DB) ([]Transaction, error) {
 	var out []Transaction
 	for rows.Next() {
 		var t Transaction
-		if err := rows.Scan(&t.ID, &t.AccountID, &t.DateISO, &t.Amount, &t.Description, &t.CategoryID, &t.Notes); err != nil {
+		if err := rows.Scan(&t.ID, &t.AccountID, &t.ImportIndex, &t.DateISO, &t.Amount, &t.Description, &t.CategoryID, &t.Notes); err != nil {
 			return nil, err
 		}
 		out = append(out, t)
@@ -50,7 +51,7 @@ func GetTransactions(db *sql.DB) ([]Transaction, error) {
 }
 
 func GetTransactionsByAccount(db *sql.DB, accountID int) ([]Transaction, error) {
-	rows, err := db.Query(`SELECT id, account_id, date_iso, amount, description, category_id, notes FROM transactions WHERE account_id = ? ORDER BY date_iso DESC, id DESC`, accountID)
+	rows, err := db.Query(`SELECT id, account_id, import_index, date_iso, amount, description, category_id, notes FROM transactions WHERE account_id = ? ORDER BY import_index ASC, id ASC`, accountID)
 	if err != nil {
 		return nil, err
 	}
@@ -58,7 +59,7 @@ func GetTransactionsByAccount(db *sql.DB, accountID int) ([]Transaction, error) 
 	var out []Transaction
 	for rows.Next() {
 		var t Transaction
-		if err := rows.Scan(&t.ID, &t.AccountID, &t.DateISO, &t.Amount, &t.Description, &t.CategoryID, &t.Notes); err != nil {
+		if err := rows.Scan(&t.ID, &t.AccountID, &t.ImportIndex, &t.DateISO, &t.Amount, &t.Description, &t.CategoryID, &t.Notes); err != nil {
 			return nil, err
 		}
 		out = append(out, t)

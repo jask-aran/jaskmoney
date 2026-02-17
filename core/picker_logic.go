@@ -13,18 +13,37 @@ type PickerItem struct {
 	Search  string
 }
 
+type PickerCheckState int
+
+const (
+	PickerCheckStateNone PickerCheckState = iota
+	PickerCheckStateSome
+	PickerCheckStateAll
+)
+
 type PickerAction int
 
 const (
 	PickerActionNone PickerAction = iota
 	PickerActionMoved
+	PickerActionToggled
 	PickerActionSelected
+	PickerActionSubmitted
+	PickerActionCreate
 	PickerActionCancelled
 )
 
 type PickerResult struct {
-	Action PickerAction
-	Item   PickerItem
+	Action       PickerAction
+	Item         PickerItem
+	SelectedIDs  []string
+	CreatedQuery string
+}
+
+type PickerRow struct {
+	Item     PickerItem
+	HasItem  bool
+	IsCreate bool
 }
 
 type Picker struct {
@@ -33,12 +52,32 @@ type Picker struct {
 	filtered []PickerItem
 	query    string
 	cursor   int
+
+	multiSelect bool
+	createLabel string
+
+	selected     map[string]bool
+	baseSelected map[string]bool
+
+	triState   bool
+	checkState map[string]PickerCheckState
+	baseState  map[string]PickerCheckState
+	dirty      map[string]bool
 }
 
 func NewPicker(title string, items []PickerItem) *Picker {
 	p := &Picker{title: strings.TrimSpace(title)}
+	p.resetSelectionState()
 	p.SetItems(items)
 	return p
+}
+
+func (p *Picker) resetSelectionState() {
+	p.selected = map[string]bool{}
+	p.baseSelected = map[string]bool{}
+	p.checkState = map[string]PickerCheckState{}
+	p.baseState = map[string]PickerCheckState{}
+	p.dirty = map[string]bool{}
 }
 
 func (p *Picker) Title() string {
@@ -98,7 +137,7 @@ func (p *Picker) CursorDown() {
 	if p == nil {
 		return
 	}
-	maxIdx := len(p.filtered) - 1
+	maxIdx := p.maxCursorIndex()
 	if maxIdx < 0 {
 		p.cursor = 0
 		return
@@ -109,17 +148,238 @@ func (p *Picker) CursorDown() {
 }
 
 func (p *Picker) CurrentItem() (PickerItem, bool) {
-	if p == nil || len(p.filtered) == 0 {
+	if p == nil {
 		return PickerItem{}, false
+	}
+	row := p.CurrentRow()
+	if !row.HasItem || row.IsCreate {
+		return PickerItem{}, false
+	}
+	return row.Item, true
+}
+
+func (p *Picker) CurrentRow() PickerRow {
+	if p == nil {
+		return PickerRow{}
+	}
+	rows := p.selectableRows()
+	if len(rows) == 0 {
+		return PickerRow{}
 	}
 	idx := p.cursor
 	if idx < 0 {
 		idx = 0
 	}
-	if idx >= len(p.filtered) {
-		idx = len(p.filtered) - 1
+	if idx >= len(rows) {
+		idx = len(rows) - 1
 	}
-	return p.filtered[idx], true
+	return rows[idx]
+}
+
+func (p *Picker) SetMultiSelect(enabled bool) {
+	if p == nil {
+		return
+	}
+	p.multiSelect = enabled
+}
+
+func (p *Picker) MultiSelect() bool {
+	if p == nil {
+		return false
+	}
+	return p.multiSelect
+}
+
+func (p *Picker) SetCreateLabel(label string) {
+	if p == nil {
+		return
+	}
+	p.createLabel = strings.TrimSpace(label)
+	p.rebuildFiltered()
+}
+
+func (p *Picker) ShouldShowCreate() bool {
+	if p == nil {
+		return false
+	}
+	if strings.TrimSpace(p.createLabel) == "" {
+		return false
+	}
+	q := strings.TrimSpace(p.query)
+	if q == "" {
+		return false
+	}
+	for i := range p.items {
+		if strings.EqualFold(strings.TrimSpace(p.items[i].Label), q) {
+			return false
+		}
+	}
+	return true
+}
+
+func (p *Picker) SetSelectedIDs(ids []string) {
+	if p == nil {
+		return
+	}
+	p.triState = false
+	p.selected = map[string]bool{}
+	p.baseSelected = map[string]bool{}
+	p.checkState = map[string]PickerCheckState{}
+	p.baseState = map[string]PickerCheckState{}
+	p.dirty = map[string]bool{}
+	for _, id := range ids {
+		key := strings.TrimSpace(id)
+		if key == "" {
+			continue
+		}
+		p.selected[key] = true
+		p.baseSelected[key] = true
+	}
+}
+
+func (p *Picker) SelectedIDs() []string {
+	if p == nil || len(p.selected) == 0 {
+		return nil
+	}
+	out := make([]string, 0, len(p.selected))
+	for id := range p.selected {
+		if p.selected[id] {
+			out = append(out, id)
+		}
+	}
+	sort.Strings(out)
+	return out
+}
+
+func (p *Picker) SetTriState(states map[string]PickerCheckState) {
+	if p == nil {
+		return
+	}
+	p.triState = true
+	p.checkState = make(map[string]PickerCheckState, len(states))
+	p.baseState = make(map[string]PickerCheckState, len(states))
+	p.dirty = map[string]bool{}
+	p.selected = map[string]bool{}
+	p.baseSelected = map[string]bool{}
+	for id, state := range states {
+		key := strings.TrimSpace(id)
+		if key == "" {
+			continue
+		}
+		p.checkState[key] = state
+		p.baseState[key] = state
+		if state == PickerCheckStateAll {
+			p.selected[key] = true
+			p.baseSelected[key] = true
+		}
+	}
+}
+
+func (p *Picker) StateForID(id string) PickerCheckState {
+	if p == nil {
+		return PickerCheckStateNone
+	}
+	key := strings.TrimSpace(id)
+	if key == "" {
+		return PickerCheckStateNone
+	}
+	if p.triState {
+		if state, ok := p.checkState[key]; ok {
+			return state
+		}
+		return PickerCheckStateNone
+	}
+	if p.selected[key] {
+		return PickerCheckStateAll
+	}
+	return PickerCheckStateNone
+}
+
+func (p *Picker) Toggle() {
+	if p == nil || !p.multiSelect {
+		return
+	}
+	row := p.CurrentRow()
+	if !row.HasItem || row.IsCreate {
+		return
+	}
+	id := row.Item.ID
+	if p.triState {
+		curr := p.checkState[id]
+		next := PickerCheckStateAll
+		if curr == PickerCheckStateAll {
+			next = PickerCheckStateNone
+		}
+		p.checkState[id] = next
+		if next == PickerCheckStateAll {
+			p.selected[id] = true
+		} else {
+			delete(p.selected, id)
+		}
+		base := p.baseState[id]
+		if next == base {
+			delete(p.dirty, id)
+		} else {
+			p.dirty[id] = true
+		}
+		return
+	}
+	if p.selected[id] {
+		delete(p.selected, id)
+	} else {
+		p.selected[id] = true
+	}
+}
+
+func (p *Picker) HasPendingChanges() bool {
+	if p == nil {
+		return false
+	}
+	if p.triState {
+		return len(p.dirty) > 0
+	}
+	if len(p.selected) != len(p.baseSelected) {
+		return true
+	}
+	for id := range p.selected {
+		if !p.baseSelected[id] {
+			return true
+		}
+	}
+	return false
+}
+
+func (p *Picker) PendingPatch() (addIDs []string, removeIDs []string) {
+	if p == nil {
+		return nil, nil
+	}
+	if p.triState {
+		for id := range p.dirty {
+			switch p.checkState[id] {
+			case PickerCheckStateAll:
+				addIDs = append(addIDs, id)
+			case PickerCheckStateNone:
+				removeIDs = append(removeIDs, id)
+			}
+		}
+		sort.Strings(addIDs)
+		sort.Strings(removeIDs)
+		return addIDs, removeIDs
+	}
+
+	for id := range p.selected {
+		if !p.baseSelected[id] {
+			addIDs = append(addIDs, id)
+		}
+	}
+	for id := range p.baseSelected {
+		if !p.selected[id] {
+			removeIDs = append(removeIDs, id)
+		}
+	}
+	sort.Strings(addIDs)
+	sort.Strings(removeIDs)
+	return addIDs, removeIDs
 }
 
 func (p *Picker) HandleKey(keyName string) PickerResult {
@@ -141,12 +401,32 @@ func (p *Picker) HandleKey(keyName string) PickerResult {
 			return PickerResult{Action: PickerActionMoved}
 		}
 		return PickerResult{Action: PickerActionNone}
-	case "enter":
-		item, ok := p.CurrentItem()
-		if !ok {
+	case "space", " ":
+		if !p.multiSelect {
 			return PickerResult{Action: PickerActionNone}
 		}
-		return PickerResult{Action: PickerActionSelected, Item: item}
+		row := p.CurrentRow()
+		if !row.HasItem || row.IsCreate {
+			return PickerResult{Action: PickerActionNone}
+		}
+		p.Toggle()
+		return PickerResult{
+			Action:      PickerActionToggled,
+			Item:        row.Item,
+			SelectedIDs: p.SelectedIDs(),
+		}
+	case "enter":
+		row := p.CurrentRow()
+		if !row.HasItem && !row.IsCreate {
+			return PickerResult{Action: PickerActionNone}
+		}
+		if row.IsCreate {
+			return PickerResult{Action: PickerActionCreate, CreatedQuery: strings.TrimSpace(p.query)}
+		}
+		if p.multiSelect {
+			return PickerResult{Action: PickerActionSubmitted, SelectedIDs: p.SelectedIDs()}
+		}
+		return PickerResult{Action: PickerActionSelected, Item: row.Item}
 	case "esc":
 		return PickerResult{Action: PickerActionCancelled}
 	case "backspace":
@@ -225,7 +505,7 @@ func (p *Picker) rebuildFiltered() {
 	}
 	p.filtered = out
 
-	maxIdx := len(p.filtered) - 1
+	maxIdx := p.maxCursorIndex()
 	if maxIdx < 0 {
 		p.cursor = 0
 	} else if p.cursor > maxIdx {
@@ -234,6 +514,31 @@ func (p *Picker) rebuildFiltered() {
 	if p.cursor < 0 {
 		p.cursor = 0
 	}
+}
+
+func (p *Picker) maxCursorIndex() int {
+	if p == nil {
+		return -1
+	}
+	count := len(p.filtered)
+	if p.ShouldShowCreate() {
+		count++
+	}
+	return count - 1
+}
+
+func (p *Picker) selectableRows() []PickerRow {
+	if p == nil {
+		return nil
+	}
+	rows := make([]PickerRow, 0, len(p.filtered)+1)
+	for _, item := range p.filtered {
+		rows = append(rows, PickerRow{Item: item, HasItem: true})
+	}
+	if p.ShouldShowCreate() {
+		rows = append(rows, PickerRow{IsCreate: true})
+	}
+	return rows
 }
 
 func fuzzyMatchScore(label, query string) (bool, int) {

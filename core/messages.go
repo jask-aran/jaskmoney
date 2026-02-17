@@ -5,6 +5,7 @@ import tea "github.com/charmbracelet/bubbletea"
 type StatusMsg struct {
 	Text  string
 	IsErr bool
+	Code  string
 }
 
 type DataLoadedMsg struct {
@@ -37,6 +38,10 @@ type JumpTargetSelectedMsg struct {
 
 func StatusCmd(text string) tea.Cmd {
 	return func() tea.Msg { return StatusMsg{Text: text} }
+}
+
+func StatusCodeCmd(code, text string) tea.Cmd {
+	return func() tea.Msg { return StatusMsg{Text: text, Code: code} }
 }
 
 func ErrorCmd(err error) tea.Cmd {

@@ -201,6 +201,10 @@ func importCSVFile(db *sql.DB, path, fileName string, accountID int, cfg Account
 	rowNum := 0
 	inserted := 0
 	dupes := 0
+	nextImportIndex, err := nextTransactionImportIndex(db)
+	if err != nil {
+		return 0, 0, err
+	}
 	indexRows := make([]txnIndexRow, 0, 128)
 	for {
 		rec, err := r.Read()
@@ -240,11 +244,12 @@ func importCSVFile(db *sql.DB, path, fileName string, accountID int, cfg Account
 			continue
 		}
 		if _, err := db.Exec(
-			`INSERT INTO transactions(account_id, date_iso, amount, description, category_id, notes) VALUES(?, ?, ?, ?, NULL, '')`,
-			accountID, dateISO, amount, desc,
+			`INSERT INTO transactions(account_id, import_index, date_iso, amount, description, category_id, notes) VALUES(?, ?, ?, ?, ?, NULL, '')`,
+			accountID, nextImportIndex, dateISO, amount, desc,
 		); err != nil {
 			return inserted, dupes, fmt.Errorf("insert transaction from %s row %d: %w", fileName, rowNum, err)
 		}
+		nextImportIndex++
 		indexRows = append(indexRows, txnIndexRow{
 			AccountID:   accountID,
 			DateISO:     dateISO,
@@ -257,6 +262,17 @@ func importCSVFile(db *sql.DB, path, fileName string, accountID int, cfg Account
 		return inserted, dupes, err
 	}
 	return inserted, dupes, nil
+}
+
+func nextTransactionImportIndex(db *sql.DB) (int, error) {
+	var next int
+	if err := db.QueryRow(`SELECT COALESCE(MAX(import_index), 0) + 1 FROM transactions`).Scan(&next); err != nil {
+		return 0, fmt.Errorf("load next import index: %w", err)
+	}
+	if next < 1 {
+		next = 1
+	}
+	return next, nil
 }
 
 type txnIndexRow struct {

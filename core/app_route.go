@@ -2,8 +2,11 @@ package core
 
 import (
 	"fmt"
+	"strings"
 
 	tea "github.com/charmbracelet/bubbletea"
+
+	"jaskmoney-v2/core/widgets"
 )
 
 func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
@@ -14,6 +17,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case StatusMsg:
 		m.status = msg.Text
 		m.statusErr = msg.IsErr
+		m.statusCode = strings.TrimSpace(msg.Code)
 		return m, nil
 	case DataLoadedMsg:
 		if msg.Err != nil {
@@ -45,6 +49,43 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		if handled {
 			return m, cmd
 		}
+		return m, nil
+	case widgets.OpenTransactionQuickCategoryMsg:
+		if m.OpenQuickCategory != nil && len(msg.TransactionIDs) > 0 {
+			m.screens.Push(m.OpenQuickCategory(&m, append([]int(nil), msg.TransactionIDs...)))
+			m.status = fmt.Sprintf("Quick category for %d txn(s)", len(msg.TransactionIDs))
+			m.statusErr = false
+			m.statusCode = "QUICK_CATEGORY"
+		}
+		return m, nil
+	case widgets.OpenTransactionFilterMsg:
+		if m.OpenTransactionFilter != nil {
+			m.screens.Push(m.OpenTransactionFilter(&m, msg.Expr))
+			m.status = "Edit transaction filter"
+			m.statusErr = false
+			m.statusCode = "TXN_FILTER"
+		}
+		return m, nil
+	case widgets.OpenTransactionDetailMsg:
+		if m.OpenTransactionDetail != nil && msg.TransactionID > 0 {
+			m.screens.Push(m.OpenTransactionDetail(&m, msg.TransactionID))
+			m.status = fmt.Sprintf("Transaction detail: #%d", msg.TransactionID)
+			m.statusErr = false
+			m.statusCode = "TXN_DETAIL"
+		}
+		return m, nil
+	case widgets.OpenTransactionQuickTagMsg:
+		if m.OpenQuickTag != nil && len(msg.TransactionIDs) > 0 {
+			m.screens.Push(m.OpenQuickTag(&m, append([]int(nil), msg.TransactionIDs...)))
+			m.status = fmt.Sprintf("Quick tags for %d txn(s)", len(msg.TransactionIDs))
+			m.statusErr = false
+			m.statusCode = "QUICK_TAG"
+		}
+		return m, nil
+	case widgets.TransactionPaneStatusMsg:
+		m.status = msg.Text
+		m.statusErr = msg.IsErr
+		m.statusCode = strings.TrimSpace(msg.Code)
 		return m, nil
 	case tea.KeyMsg:
 		if msg.String() == "ctrl+c" {

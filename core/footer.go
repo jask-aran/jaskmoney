@@ -40,6 +40,9 @@ func RenderStatusBar(m Model) string {
 	if msg == "" {
 		msg = "Ready"
 	}
+	if strings.TrimSpace(m.statusCode) != "" {
+		msg = "[" + m.statusCode + "] " + msg
+	}
 	if m.statusErr {
 		return renderBar(statusErrBarStyle, max(1, m.width), msg, colorSurface0)
 	}

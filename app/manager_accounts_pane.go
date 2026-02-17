@@ -1,57 +1,33 @@
 package app
 
 import (
-	"database/sql"
 	"fmt"
-	"os"
 	"sort"
+	"strconv"
 	"strings"
 
-	"github.com/BurntSushi/toml"
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
 	"github.com/charmbracelet/x/ansi"
-	_ "modernc.org/sqlite"
 
+	"jaskmoney-v2/core"
+	coredb "jaskmoney-v2/core/db"
+	"jaskmoney-v2/core/screens"
 	"jaskmoney-v2/core/widgets"
 )
 
 type ManagerAccountsPane struct {
-	id    string
-	title string
-	scope string
-	jump  byte
-	focus bool
-}
+	id      string
+	title   string
+	scope   string
+	jump    byte
+	focus   bool
+	focused bool
 
-type rawAccountsTOML struct {
-	Version int                          `toml:"version"`
-	Account map[string]rawAccountSection `toml:"account"`
-}
-
-type rawAccountSection struct {
-	Name         string `toml:"name"`
-	Type         string `toml:"type"`
-	ImportPrefix string `toml:"import_prefix"`
-	SortOrder    int    `toml:"sort_order"`
-	Active       *bool  `toml:"active"`
-	IsActive     *bool  `toml:"is_active"`
-}
-
-type paneAccount struct {
-	key         string
-	name        string
-	accountType string
-	prefix      string
-	active      bool
-	sortOrder   int
-}
-
-type dbAccountInfo struct {
-	name     string
-	prefix   string
-	accounts int
-	active   bool
+	cursor    int
+	accounts  []coredb.ManagedAccount
+	selection map[int]bool
+	errMsg    string
 }
 
 func NewManagerAccountsPane(id, title, scope string, jumpKey byte, focusable bool) *ManagerAccountsPane {
@@ -64,49 +40,103 @@ func (p *ManagerAccountsPane) Scope() string   { return p.scope }
 func (p *ManagerAccountsPane) JumpKey() byte   { return p.jump }
 func (p *ManagerAccountsPane) Focusable() bool { return p.focus }
 func (p *ManagerAccountsPane) Init() tea.Cmd   { return nil }
-func (p *ManagerAccountsPane) Update(msg tea.Msg) tea.Cmd {
-	_ = msg
+func (p *ManagerAccountsPane) OnSelect() tea.Cmd {
 	return nil
 }
-func (p *ManagerAccountsPane) OnSelect() tea.Cmd   { return nil }
-func (p *ManagerAccountsPane) OnDeselect() tea.Cmd { return nil }
-func (p *ManagerAccountsPane) OnFocus() tea.Cmd    { return nil }
-func (p *ManagerAccountsPane) OnBlur() tea.Cmd     { return nil }
+func (p *ManagerAccountsPane) OnDeselect() tea.Cmd {
+	return nil
+}
+func (p *ManagerAccountsPane) OnFocus() tea.Cmd {
+	p.focused = true
+	p.reload()
+	return nil
+}
+func (p *ManagerAccountsPane) OnBlur() tea.Cmd {
+	p.focused = false
+	return nil
+}
+
+func (p *ManagerAccountsPane) Update(msg tea.Msg) tea.Cmd {
+	keyMsg, ok := msg.(tea.KeyMsg)
+	if !ok || !p.focused {
+		return nil
+	}
+	p.reload()
+	key := strings.ToLower(keyMsg.String())
+	switch key {
+	case "left", "h", "up", "k":
+		p.cursor = boundedStep(p.cursor, len(p.accounts), -1)
+		return nil
+	case "right", "l", "down", "j":
+		p.cursor = boundedStep(p.cursor, len(p.accounts), 1)
+		return nil
+	case "a":
+		return p.openAccountEditor(nil)
+	case "e", "enter":
+		acc := p.selectedAccount()
+		if acc == nil {
+			return nil
+		}
+		return p.openAccountEditor(acc)
+	case " ":
+		return p.toggleAccountScope()
+	case "delete", "del":
+		acc := p.selectedAccount()
+		if acc == nil {
+			return nil
+		}
+		return p.openAccountActionPicker(*acc)
+	case "r":
+		p.reload()
+		if p.errMsg != "" {
+			return core.ErrorCmd(fmt.Errorf("MANAGER_ACCOUNTS_REFRESH_FAILED: %s", p.errMsg))
+		}
+		return core.StatusCodeCmd("MANAGER_ACCOUNTS_REFRESH", "Accounts refreshed.")
+	}
+	return nil
+}
 
 func (p *ManagerAccountsPane) View(width, height int, selected, focused bool) string {
+	p.reload()
 	contentWidth := width - 4
 	if contentWidth < 1 {
 		contentWidth = 1
 	}
-	content := p.renderAccountsLine(contentWidth)
+	lines := make([]string, 0, 8)
+	if p.errMsg != "" {
+		lines = append(lines, lipgloss.NewStyle().Foreground(lipgloss.Color("#f38ba8")).Render(p.errMsg))
+	}
+	if len(p.accounts) == 0 {
+		lines = append(lines, "No accounts yet. Press 'a' to add one.")
+	} else {
+		lines = append(lines, p.renderAccountsLine(contentWidth))
+		if acc := p.selectedAccount(); acc != nil {
+			lines = append(lines, fmt.Sprintf(
+				"Selected: %s (%s) txns:%d prefix:%s",
+				acc.Name, strings.ToUpper(acc.Type), acc.TxnCount, valueOrDash(acc.Prefix),
+			))
+		}
+	}
+	lines = append(lines, "h/l move  a add  e edit  space scope  del actions")
 	return widgets.Pane{
 		Title:    p.title,
-		Height:   height,
-		Content:  content,
+		Height:   4,
+		Content:  core.ClipHeight(strings.Join(lines, "\n"), core.MaxInt(2, height)),
 		Selected: selected,
 		Focused:  focused,
 	}.Render(width, height)
 }
 
 func (p *ManagerAccountsPane) renderAccountsLine(width int) string {
-	accounts, err := loadPaneAccountsConfig("config/accounts.toml")
-	if err != nil {
-		return ansi.Truncate("Failed to load accounts.toml: "+err.Error(), width, "")
-	}
-	if len(accounts) == 0 {
-		return ansi.Truncate("No accounts yet. Press 'a' to create one.", width, "")
-	}
-	counts := loadTransactionCountsByAccount("transactions.db")
-	parts := make([]string, 0, len(accounts))
-	for _, acc := range accounts {
-		info := findDBAccountInfo(acc, counts)
-		countText := fmt.Sprintf("%d", info.accounts)
+	parts := make([]string, 0, len(p.accounts))
+	for i, acc := range p.accounts {
+		countText := fmt.Sprintf("%d", acc.TxnCount)
 		countColor := lipgloss.Color("#bac2de")
-		if info.accounts == 0 {
+		if acc.TxnCount == 0 {
 			countText = "Empty"
 			countColor = lipgloss.Color("#7f849c")
 		}
-		scopeOn := acc.active
+		scopeOn := p.isAccountSelected(acc.ID)
 		scopeText := "Off"
 		scopeColor := lipgloss.Color("#7f849c")
 		if scopeOn {
@@ -114,13 +144,16 @@ func (p *ManagerAccountsPane) renderAccountsLine(width int) string {
 			scopeColor = lipgloss.Color("#a6e3a1")
 		}
 		typeColor := lipgloss.Color("#bac2de")
-		if acc.accountType == "credit" {
+		if strings.EqualFold(acc.Type, "credit") {
 			typeColor = lipgloss.Color("#fab387")
 		}
-
+		nameStyle := lipgloss.NewStyle().Foreground(lipgloss.Color("#cdd6f4"))
+		if i == p.cursor && p.focused {
+			nameStyle = nameStyle.Bold(true).Underline(true)
+		}
 		chip := "  " +
-			lipgloss.NewStyle().Foreground(lipgloss.Color("#cdd6f4")).Render(truncateAccountName(acc.name, 18)) + " " +
-			lipgloss.NewStyle().Foreground(typeColor).Render(strings.ToUpper(acc.accountType)) + " " +
+			nameStyle.Render(ansi.Truncate(acc.Name, 18, "")) + " " +
+			lipgloss.NewStyle().Foreground(typeColor).Render(strings.ToUpper(acc.Type)) + " " +
 			lipgloss.NewStyle().Foreground(countColor).Render(countText) + " " +
 			lipgloss.NewStyle().Foreground(scopeColor).Render(scopeText)
 		parts = append(parts, chip)
@@ -128,104 +161,181 @@ func (p *ManagerAccountsPane) renderAccountsLine(width int) string {
 	return ansi.Truncate(strings.Join(parts, "   "), width, "")
 }
 
-func loadPaneAccountsConfig(path string) ([]paneAccount, error) {
-	var raw rawAccountsTOML
-	if _, err := toml.DecodeFile(path, &raw); err != nil {
-		return nil, err
+func (p *ManagerAccountsPane) reload() {
+	dbConn := activeDB()
+	if dbConn == nil {
+		p.accounts = nil
+		p.selection = nil
+		p.errMsg = "database not ready"
+		return
 	}
-	out := make([]paneAccount, 0, len(raw.Account))
-	for key, section := range raw.Account {
-		name := strings.TrimSpace(section.Name)
-		if name == "" {
-			name = strings.TrimSpace(key)
-		}
-		accountType := strings.ToLower(strings.TrimSpace(section.Type))
-		if accountType == "" {
-			accountType = "debit"
-		}
-		active := true
-		if section.Active != nil {
-			active = *section.Active
-		}
-		if section.IsActive != nil {
-			active = *section.IsActive
-		}
-		out = append(out, paneAccount{
-			key:         strings.TrimSpace(key),
-			name:        name,
-			accountType: accountType,
-			prefix:      strings.ToLower(strings.TrimSpace(section.ImportPrefix)),
-			active:      active,
-			sortOrder:   section.SortOrder,
-		})
-	}
-	sort.SliceStable(out, func(i, j int) bool {
-		if out[i].sortOrder != out[j].sortOrder {
-			return out[i].sortOrder < out[j].sortOrder
-		}
-		return strings.ToLower(out[i].name) < strings.ToLower(out[j].name)
-	})
-	return out, nil
-}
-
-func loadTransactionCountsByAccount(path string) []dbAccountInfo {
-	if _, err := os.Stat(path); err != nil {
-		return nil
-	}
-	db, err := sql.Open("sqlite", "file:"+path+"?cache=shared")
+	accounts, err := coredb.LoadManagedAccounts(dbConn)
 	if err != nil {
-		return nil
+		p.accounts = nil
+		p.selection = nil
+		p.errMsg = "load accounts failed: " + err.Error()
+		return
 	}
-	defer db.Close()
-
-	rows, err := db.Query(`
-		SELECT
-			lower(name),
-			lower(COALESCE(prefix, '')),
-			COALESCE(active, 1),
-			COUNT(t.id)
-		FROM accounts a
-		LEFT JOIN transactions t ON t.account_id = a.id
-		GROUP BY a.id
-		ORDER BY a.id
-	`)
+	selection, err := coredb.LoadSelectedAccounts(dbConn)
 	if err != nil {
+		p.accounts = nil
+		p.selection = nil
+		p.errMsg = "load account scope failed: " + err.Error()
+		return
+	}
+	p.accounts = accounts
+	p.selection = selection
+	p.errMsg = ""
+	p.cursor = clampCursor(p.cursor, len(p.accounts))
+}
+
+func (p *ManagerAccountsPane) selectedAccount() *coredb.ManagedAccount {
+	if p.cursor < 0 || p.cursor >= len(p.accounts) {
 		return nil
 	}
-	defer rows.Close()
-
-	out := make([]dbAccountInfo, 0, 8)
-	for rows.Next() {
-		var info dbAccountInfo
-		var active int
-		if err := rows.Scan(&info.name, &info.prefix, &active, &info.accounts); err != nil {
-			continue
-		}
-		info.active = active == 1
-		out = append(out, info)
-	}
-	return out
+	return &p.accounts[p.cursor]
 }
 
-func findDBAccountInfo(acc paneAccount, infos []dbAccountInfo) dbAccountInfo {
-	name := strings.ToLower(strings.TrimSpace(acc.name))
-	prefix := strings.ToLower(strings.TrimSpace(acc.prefix))
-	for _, info := range infos {
-		if info.name == name {
-			return info
-		}
+func (p *ManagerAccountsPane) isAccountSelected(accountID int) bool {
+	if len(p.selection) == 0 {
+		return true
 	}
-	if prefix == "" {
-		return dbAccountInfo{}
-	}
-	for _, info := range infos {
-		if info.prefix == prefix {
-			return info
-		}
-	}
-	return dbAccountInfo{}
+	return p.selection[accountID]
 }
 
-func truncateAccountName(name string, width int) string {
-	return ansi.Truncate(name, width, "")
+func (p *ManagerAccountsPane) toggleAccountScope() tea.Cmd {
+	dbConn := activeDB()
+	if dbConn == nil {
+		return core.ErrorCmd(fmt.Errorf("MANAGER_SCOPE_DB_NIL: database not ready"))
+	}
+	acc := p.selectedAccount()
+	if acc == nil {
+		return nil
+	}
+	if len(p.selection) == 0 {
+		p.selection = make(map[int]bool, len(p.accounts))
+		for _, account := range p.accounts {
+			p.selection[account.ID] = true
+		}
+	}
+	if p.selection[acc.ID] {
+		delete(p.selection, acc.ID)
+	} else {
+		p.selection[acc.ID] = true
+	}
+	if len(p.selection) == len(p.accounts) || len(p.selection) == 0 {
+		p.selection = nil
+	}
+	selectedIDs := p.selectedScopeIDs()
+	if err := coredb.SaveSelectedAccounts(dbConn, selectedIDs); err != nil {
+		return core.ErrorCmd(fmt.Errorf("MANAGER_SCOPE_SAVE_FAILED: %w", err))
+	}
+	if p.isAccountSelected(acc.ID) {
+		return core.StatusCodeCmd("MANAGER_SCOPE", "Scope enabled for "+acc.Name)
+	}
+	return core.StatusCodeCmd("MANAGER_SCOPE", "Scope disabled for "+acc.Name)
+}
+
+func (p *ManagerAccountsPane) selectedScopeIDs() []int {
+	if len(p.selection) == 0 {
+		return nil
+	}
+	ids := make([]int, 0, len(p.selection))
+	for _, acc := range p.accounts {
+		if p.selection[acc.ID] {
+			ids = append(ids, acc.ID)
+		}
+	}
+	sort.Ints(ids)
+	if len(ids) == len(p.accounts) {
+		return nil
+	}
+	return ids
+}
+
+func (p *ManagerAccountsPane) openAccountEditor(existing *coredb.ManagedAccount) tea.Cmd {
+	initial := coredb.ManagedAccount{Type: "debit", Active: true}
+	title := "Add Account"
+	if existing != nil {
+		initial = *existing
+		title = "Edit Account"
+	}
+	screen := screens.NewEditorScreen(
+		title,
+		"screen:manager-account-edit",
+		[]screens.EditorField{
+			{Key: "name", Label: "Name", Value: initial.Name},
+			{Key: "type", Label: "Type (debit|credit)", Value: initial.Type},
+			{Key: "prefix", Label: "Import prefix", Value: initial.Prefix},
+			{Key: "active", Label: "Active (true|false)", Value: strconv.FormatBool(initial.Active)},
+		},
+		func(values map[string]string) tea.Msg {
+			dbConn := activeDB()
+			if dbConn == nil {
+				return core.StatusMsg{Text: "MANAGER_ACCOUNT_DB_NIL: database not ready", IsErr: true}
+			}
+			active := strings.EqualFold(strings.TrimSpace(values["active"]), "true") || strings.TrimSpace(values["active"]) == "1"
+			account := coredb.ManagedAccount{
+				ID:     initial.ID,
+				Name:   strings.TrimSpace(values["name"]),
+				Type:   strings.TrimSpace(values["type"]),
+				Prefix: strings.TrimSpace(values["prefix"]),
+				Active: active,
+			}
+			id, err := coredb.UpsertManagedAccount(dbConn, account)
+			if err != nil {
+				return core.StatusMsg{Text: "MANAGER_ACCOUNT_SAVE_FAILED: " + err.Error(), IsErr: true}
+			}
+			return core.StatusMsg{Text: fmt.Sprintf("Account saved: %s (id=%d)", account.Name, id), Code: "MANAGER_ACCOUNT_SAVE"}
+		},
+	)
+	return func() tea.Msg { return core.PushScreenMsg{Screen: screen} }
+}
+
+func (p *ManagerAccountsPane) openAccountActionPicker(account coredb.ManagedAccount) tea.Cmd {
+	items := []screens.PickerItem{
+		{ID: "clear", Label: "Clear Transactions", Desc: fmt.Sprintf("%d txn(s)", account.TxnCount)},
+		{ID: "nuke", Label: "Nuke Account", Desc: "Delete account + all txns"},
+		{ID: "delete", Label: "Delete If Empty", Desc: "Delete account only when no txns"},
+	}
+	screen := screens.NewPickerModal(
+		"Account Actions: "+account.Name,
+		"screen:manager-account-actions",
+		items,
+		func(item screens.PickerItem) tea.Msg {
+			dbConn := activeDB()
+			if dbConn == nil {
+				return core.StatusMsg{Text: "MANAGER_ACTION_DB_NIL: database not ready", IsErr: true}
+			}
+			switch item.ID {
+			case "clear":
+				n, err := coredb.ClearTransactionsForAccount(dbConn, account.ID)
+				if err != nil {
+					return core.StatusMsg{Text: "MANAGER_CLEAR_FAILED: " + err.Error(), IsErr: true}
+				}
+				return core.StatusMsg{Text: fmt.Sprintf("Cleared %d transaction(s) from %s", n, account.Name), Code: "MANAGER_CLEAR"}
+			case "nuke":
+				n, err := coredb.NukeManagedAccount(dbConn, account.ID)
+				if err != nil {
+					return core.StatusMsg{Text: "MANAGER_NUKE_FAILED: " + err.Error(), IsErr: true}
+				}
+				return core.StatusMsg{Text: fmt.Sprintf("Nuked %s (%d txn removed)", account.Name, n), Code: "MANAGER_NUKE"}
+			case "delete":
+				if err := coredb.DeleteManagedAccountIfEmpty(dbConn, account.ID); err != nil {
+					return core.StatusMsg{Text: "MANAGER_DELETE_FAILED: " + err.Error(), IsErr: true}
+				}
+				return core.StatusMsg{Text: "Deleted account " + account.Name, Code: "MANAGER_DELETE"}
+			default:
+				return core.StatusMsg{Text: "No account action selected."}
+			}
+		},
+	)
+	return func() tea.Msg { return core.PushScreenMsg{Screen: screen} }
+}
+
+func valueOrDash(v string) string {
+	if strings.TrimSpace(v) == "" {
+		return "-"
+	}
+	return v
 }

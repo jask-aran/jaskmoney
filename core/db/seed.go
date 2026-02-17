@@ -32,8 +32,19 @@ func seedAccounts(db *sql.DB) error {
 		{"Rewards Card", "credit", "AMEX"},
 	}
 	for _, a := range items {
-		if _, err := db.Exec(`INSERT OR IGNORE INTO accounts(name, type, prefix, active) VALUES(?, ?, ?, 1)`, a.name, a.typ, a.prefix); err != nil {
+		var id int
+		err := db.QueryRow(`SELECT id FROM accounts WHERE lower(name) = lower(?) ORDER BY id LIMIT 1`, a.name).Scan(&id)
+		if err == nil {
+			if _, updateErr := db.Exec(`UPDATE accounts SET type = ?, prefix = ?, active = 1 WHERE id = ?`, a.typ, a.prefix, id); updateErr != nil {
+				return updateErr
+			}
+			continue
+		}
+		if err != sql.ErrNoRows {
 			return err
+		}
+		if _, insertErr := db.Exec(`INSERT INTO accounts(name, type, prefix, active) VALUES(?, ?, ?, 1)`, a.name, a.typ, a.prefix); insertErr != nil {
+			return insertErr
 		}
 	}
 	return nil

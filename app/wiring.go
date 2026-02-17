@@ -20,6 +20,7 @@ func ConfigureModel(m *core.Model) {
 	if m == nil {
 		return
 	}
+	bindRuntimeDB(m.DB)
 
 	m.OpenPickerModal = func(model *core.Model) core.Screen {
 		items := []screens.PickerItem{}
@@ -50,18 +51,6 @@ func ConfigureModel(m *core.Model) {
 }
 
 func RegisterCommands(reg *core.CommandRegistry) {
-	reg.Register(core.Command{
-		ID:          "open-category-picker",
-		Name:        "Open category picker",
-		Description: "Push category picker screen",
-		Scopes:      []string{"*"},
-		Execute: func(m *core.Model) tea.Cmd {
-			if m.OpenPickerModal != nil {
-				m.PushScreen(m.OpenPickerModal(m))
-			}
-			return core.StatusCmd("Category picker opened")
-		},
-	})
 	reg.Register(core.Command{
 		ID:          "switch-dashboard",
 		Name:        "Switch to dashboard",
@@ -100,21 +89,6 @@ func RegisterCommands(reg *core.CommandRegistry) {
 		Execute: func(m *core.Model) tea.Cmd {
 			m.SwitchTab(3)
 			return core.StatusCmd("Settings")
-		},
-	})
-	reg.Register(core.Command{
-		ID:          "save-data",
-		Name:        "Save data",
-		Description: "Placeholder save command",
-		Scopes:      []string{"*"},
-		Disabled: func(m *core.Model) (bool, string) {
-			if m.Data.Transactions == 0 {
-				return true, "no transactions loaded"
-			}
-			return false, ""
-		},
-		Execute: func(m *core.Model) tea.Cmd {
-			return core.StatusCmd("Saved")
 		},
 	})
 }

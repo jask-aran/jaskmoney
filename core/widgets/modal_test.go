@@ -1,8 +1,12 @@
 package widgets
 
 import (
+	"fmt"
 	"strings"
 	"testing"
+
+	"github.com/charmbracelet/lipgloss"
+	"github.com/charmbracelet/x/ansi"
 )
 
 func TestRenderPopupOverlaysWithoutDroppingBase(t *testing.T) {
@@ -30,5 +34,44 @@ func TestRenderPopupOverlaysWithoutDroppingBase(t *testing.T) {
 	}
 	if !strings.Contains(lines[8], "row-8") {
 		t.Fatalf("expected bottom base row preserved, got %q", lines[8])
+	}
+}
+
+func TestRenderPopupMasksBaseWithinModalBounds(t *testing.T) {
+	baseRows := make([]string, 0, 9)
+	for i := 0; i < 9; i++ {
+		baseRows = append(baseRows, fmt.Sprintf("r%d-%s", i, strings.Repeat("x", 24)))
+	}
+	base := strings.Join(baseRows, "\n")
+
+	width := 30
+	height := 9
+	out := RenderPopup(base, "", width, height)
+	outLines := strings.Split(out, "\n")
+	if len(outLines) != height {
+		t.Fatalf("line count = %d, want %d", len(outLines), height)
+	}
+
+	card := lipgloss.NewStyle().
+		Border(lipgloss.RoundedBorder()).
+		Padding(1, 2).
+		Render("")
+	cardLines := splitToLines(card, 0)
+	cardWidth := maxLineWidth(cardLines)
+	cardHeight := len(cardLines)
+	x := (width - cardWidth) / 2
+	y := (height - cardHeight) / 2
+	if x < 0 {
+		x = 0
+	}
+	if y < 0 {
+		y = 0
+	}
+
+	for row := y + 1; row < y+cardHeight-1 && row < len(outLines); row++ {
+		segment := ansi.Truncate(dropColumns(outLines[row], x), cardWidth, "")
+		if strings.Contains(ansi.Strip(segment), "x") {
+			t.Fatalf("base content leaked into popup row %d: %q", row, ansi.Strip(segment))
+		}
 	}
 }

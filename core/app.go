@@ -40,21 +40,26 @@ type AppData struct {
 }
 
 type Model struct {
-	width               int
-	height              int
-	tabs                []Tab
-	activeTab           int
-	screens             ScreenStack
-	keys                *KeyRegistry
-	commands            *CommandRegistry
-	status              string
-	statusErr           bool
-	quitting            bool
-	Data                AppData
-	DB                  *sql.DB
-	OpenPickerModal     func(m *Model) Screen
-	OpenCommandModal    func(m *Model, scope string) Screen
-	OpenJumpPickerModal func(m *Model, targets []JumpTarget) Screen
+	width                 int
+	height                int
+	tabs                  []Tab
+	activeTab             int
+	screens               ScreenStack
+	keys                  *KeyRegistry
+	commands              *CommandRegistry
+	status                string
+	statusErr             bool
+	statusCode            string
+	quitting              bool
+	Data                  AppData
+	DB                    *sql.DB
+	OpenPickerModal       func(m *Model) Screen
+	OpenCommandModal      func(m *Model, scope string) Screen
+	OpenJumpPickerModal   func(m *Model, targets []JumpTarget) Screen
+	OpenTransactionFilter func(m *Model, currentExpr string) Screen
+	OpenTransactionDetail func(m *Model, transactionID int) Screen
+	OpenQuickCategory     func(m *Model, txnIDs []int) Screen
+	OpenQuickTag          func(m *Model, txnIDs []int) Screen
 }
 
 func NewModel(tabs []Tab, keys *KeyRegistry, commands *CommandRegistry, db *sql.DB, data AppData) Model {
@@ -87,16 +92,19 @@ func (m Model) Init() tea.Cmd {
 func (m *Model) SetStatus(msg string) {
 	m.status = msg
 	m.statusErr = false
+	m.statusCode = ""
 }
 
 func (m *Model) SetError(err error) {
 	if err == nil {
 		m.status = ""
 		m.statusErr = false
+		m.statusCode = ""
 		return
 	}
 	m.status = err.Error()
 	m.statusErr = true
+	m.statusCode = ""
 }
 
 func (m Model) ActiveScope() string {

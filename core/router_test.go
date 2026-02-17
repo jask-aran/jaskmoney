@@ -2,6 +2,7 @@ package core
 
 import (
 	"database/sql"
+	"reflect"
 	"testing"
 
 	tea "github.com/charmbracelet/bubbletea"
@@ -65,5 +66,40 @@ func TestScreenCanPopItself(t *testing.T) {
 	updated := next.(Model)
 	if updated.screens.Len() != 0 {
 		t.Fatalf("expected screen to pop on esc")
+	}
+}
+
+func TestQuickPickerMessagesPushScreens(t *testing.T) {
+	tab := &routerTab{}
+	m := NewModel([]Tab{tab}, NewKeyRegistry(nil), NewCommandRegistry(nil), &sql.DB{}, AppData{})
+
+	var gotCategoryIDs []int
+	m.OpenQuickCategory = func(_ *Model, txnIDs []int) Screen {
+		gotCategoryIDs = append([]int(nil), txnIDs...)
+		return &fakeScreen{}
+	}
+
+	var gotTagIDs []int
+	m.OpenQuickTag = func(_ *Model, txnIDs []int) Screen {
+		gotTagIDs = append([]int(nil), txnIDs...)
+		return &fakeScreen{}
+	}
+
+	next, _ := m.Update(widgets.OpenTransactionQuickCategoryMsg{TransactionIDs: []int{7}})
+	updated := next.(Model)
+	if !reflect.DeepEqual(gotCategoryIDs, []int{7}) {
+		t.Fatalf("category ids = %v, want [7]", gotCategoryIDs)
+	}
+	if updated.screens.Len() != 1 {
+		t.Fatalf("expected category screen pushed")
+	}
+
+	next2, _ := updated.Update(widgets.OpenTransactionQuickTagMsg{TransactionIDs: []int{9}})
+	updated2 := next2.(Model)
+	if !reflect.DeepEqual(gotTagIDs, []int{9}) {
+		t.Fatalf("tag ids = %v, want [9]", gotTagIDs)
+	}
+	if updated2.screens.Len() != 2 {
+		t.Fatalf("expected tag screen pushed on top")
 	}
 }

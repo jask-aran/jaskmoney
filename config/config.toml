@@ -2,3 +2,62 @@ version = 1
 
 [app]
 jump_key = "v"
+
+[category]
+  [category.income]
+    name = "Income"
+    color = "#a6e3a1"
+    sort_order = 1
+    is_default = false
+  [category.groceries]
+    name = "Groceries"
+    color = "#94e2d5"
+    sort_order = 2
+    is_default = false
+  [category.dining_drinks]
+    name = "Dining & Drinks"
+    color = "#fab387"
+    sort_order = 3
+    is_default = false
+  [category.transport]
+    name = "Transport"
+    color = "#89b4fa"
+    sort_order = 4
+    is_default = false
+  [category.bills_utilities]
+    name = "Bills & Utilities"
+    color = "#cba6f7"
+    sort_order = 5
+    is_default = false
+  [category.entertainment]
+    name = "Entertainment"
+    color = "#f5c2e7"
+    sort_order = 6
+    is_default = false
+  [category.shopping]
+    name = "Shopping"
+    color = "#f2cdcd"
+    sort_order = 7
+    is_default = false
+  [category.health]
+    name = "Health"
+    color = "#74c7ec"
+    sort_order = 8
+    is_default = false
+  [category.transfers]
+    name = "Transfers"
+    color = "#b4befe"
+    sort_order = 9
+    is_default = false
+  [category.uncategorised]
+    name = "Uncategorised"
+    color = "#7f849c"
+    sort_order = 10
+    is_default = true
+
+[tag]
+  [tag.ignore]
+    name = "IGNORE"
+    color = "#f38ba8"
+    sort_order = 1
+    scope_category = ""
