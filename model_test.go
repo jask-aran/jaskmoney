@@ -228,26 +228,14 @@ func TestDashboardSpendRowsExcludesIgnoreTag(t *testing.T) {
 	}
 }
 
-func TestDashboardSpendRowsWithModeAppliesOffsetsInEffectiveMode(t *testing.T) {
-	m := newModel()
-	m.rows = []transaction{
+func TestDashboardSpendRowsKeepsRawDebitAmounts(t *testing.T) {
+	rows := []transaction{
 		{id: 1, amount: -50, description: "A"},
 		{id: 2, amount: +20, description: "B"},
 	}
-	m.creditOffsetsByDebit = map[int][]creditOffset{
-		1: {{id: 10, creditTxnID: 2, debitTxnID: 1, amount: 15}},
-	}
-
-	m.spendModeRaw = true
-	raw := m.dashboardSpendRowsWithMode(m.rows)
-	if raw[0].amount != -50 {
-		t.Fatalf("raw debit amount = %.2f, want -50", raw[0].amount)
-	}
-
-	m.spendModeRaw = false
-	effective := m.dashboardSpendRowsWithMode(m.rows)
-	if effective[0].amount != -35 {
-		t.Fatalf("effective debit amount = %.2f, want -35", effective[0].amount)
+	out := dashboardSpendRows(rows, nil)
+	if out[0].amount != -50 {
+		t.Fatalf("debit amount = %.2f, want -50", out[0].amount)
 	}
 }
 

@@ -34,6 +34,7 @@ func TestOpenDBCreatesV6SchemaRulesV2(t *testing.T) {
 		"spending_targets",
 		"spending_target_overrides",
 		"credit_offsets",
+		"manual_offsets",
 	}
 	for _, table := range tables {
 		var count int

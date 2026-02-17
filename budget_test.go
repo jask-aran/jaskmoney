@@ -91,7 +91,7 @@ func TestComputeBudgetLinesUsesDebitsAndOffsetsWithOverride(t *testing.T) {
 		t.Fatalf("loadBudgetOverrides: %v", err)
 	}
 
-	lines, err := computeBudgetLines(db, budgets, overrides, byDebit, monthKey, nil, false)
+	lines, err := computeBudgetLines(db, budgets, overrides, byDebit, monthKey, nil)
 	if err != nil {
 		t.Fatalf("computeBudgetLines: %v", err)
 	}
@@ -124,20 +124,6 @@ func TestComputeBudgetLinesUsesDebitsAndOffsetsWithOverride(t *testing.T) {
 		t.Fatal("overBudget = true, want false")
 	}
 
-	rawLines, err := computeBudgetLines(db, budgets, overrides, byDebit, monthKey, nil, true)
-	if err != nil {
-		t.Fatalf("computeBudgetLines(raw): %v", err)
-	}
-	for i := range rawLines {
-		if rawLines[i].categoryID != groceries.id {
-			continue
-		}
-		if !almostEqual(rawLines[i].remaining, 20) {
-			t.Fatalf("raw remaining = %.2f, want 20", rawLines[i].remaining)
-		}
-		return
-	}
-	t.Fatal("missing groceries line in raw")
 }
 
 func TestComputeTargetLinesUsesSavedFilterIDAndPeriodKeys(t *testing.T) {
@@ -200,7 +186,7 @@ func TestComputeTargetLinesUsesSavedFilterIDAndPeriodKeys(t *testing.T) {
 	saved := []savedFilter{
 		{ID: "grocery", Name: "Grocery", Expr: "cat:Groceries"},
 	}
-	targetLines, err := computeTargetLines(db, targets, nil, byDebit, nil, saved, nil, false)
+	targetLines, err := computeTargetLines(db, targets, nil, byDebit, nil, saved, nil)
 	if err != nil {
 		t.Fatalf("computeTargetLines: %v", err)
 	}

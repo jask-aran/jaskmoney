@@ -61,7 +61,7 @@ func TestFilterByTimeframeCustom(t *testing.T) {
 }
 
 func TestRenderDashboardTimeframeChips(t *testing.T) {
-	output := renderDashboardTimeframeChips(dashTimeframeLabels, dashTimeframeThisMonth, dashTimeframe3Months, true)
+	output := renderDatePresetChips(dashTimeframeLabels, dashTimeframeThisMonth, dashTimeframe3Months, true)
 	if !strings.Contains(output, "[This Month]") {
 		t.Fatal("chips should include This Month")
 	}

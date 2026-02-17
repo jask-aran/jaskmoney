@@ -681,12 +681,18 @@ func TestRenderHeaderZeroWidth(t *testing.T) {
 func TestRenderTransactionTableBasic(t *testing.T) {
 	rows := testDashboardRows()
 	cats := []category{{id: 1, name: "Groceries"}}
-	output := renderTransactionTable(rows, cats, nil, nil, nil, 0, 0, 5, 80, sortByDate, false)
+	offsets := map[int][]creditOffset{
+		rows[0].id: {{debitTxnID: rows[0].id, amount: 5}},
+	}
+	output := renderTransactionTable(rows, cats, nil, offsets, nil, nil, 0, 0, 5, 80, sortByDate, false)
 	if !strings.Contains(output, "Date") {
 		t.Error("missing Date column header")
 	}
 	if !strings.Contains(output, "Amount") {
 		t.Error("missing Amount column header")
+	}
+	if !strings.Contains(output, "Offset") {
+		t.Error("missing Offset column header")
 	}
 	if !strings.Contains(output, "Category") {
 		t.Error("missing Category column header")
@@ -698,7 +704,7 @@ func TestRenderTransactionTableBasic(t *testing.T) {
 
 func TestRenderTransactionTableNilCategoriesHidesColumn(t *testing.T) {
 	rows := testDashboardRows()
-	output := renderTransactionTable(rows, nil, nil, nil, nil, 0, 0, 5, 80, sortByDate, false)
+	output := renderTransactionTable(rows, nil, nil, nil, nil, nil, 0, 0, 5, 80, sortByDate, false)
 	if strings.Contains(output, "Category") {
 		t.Error("Category column should be hidden when categories is nil")
 	}
@@ -706,11 +712,11 @@ func TestRenderTransactionTableNilCategoriesHidesColumn(t *testing.T) {
 
 func TestRenderTransactionTableSortIndicator(t *testing.T) {
 	rows := testDashboardRows()
-	output := renderTransactionTable(rows, nil, nil, nil, nil, 0, 0, 5, 80, sortByDate, true)
+	output := renderTransactionTable(rows, nil, nil, nil, nil, nil, 0, 0, 5, 80, sortByDate, true)
 	if !strings.Contains(output, "▲") {
 		t.Error("missing ascending sort indicator")
 	}
-	output2 := renderTransactionTable(rows, nil, nil, nil, nil, 0, 0, 5, 80, sortByDate, false)
+	output2 := renderTransactionTable(rows, nil, nil, nil, nil, nil, 0, 0, 5, 80, sortByDate, false)
 	if !strings.Contains(output2, "▼") {
 		t.Error("missing descending sort indicator")
 	}
@@ -718,7 +724,7 @@ func TestRenderTransactionTableSortIndicator(t *testing.T) {
 
 func TestRenderTransactionTableScrollIndicator(t *testing.T) {
 	rows := testDashboardRows()
-	output := renderTransactionTable(rows, nil, nil, nil, nil, 0, 0, 3, 80, sortByDate, false)
+	output := renderTransactionTable(rows, nil, nil, nil, nil, nil, 0, 0, 3, 80, sortByDate, false)
 	if !strings.Contains(output, "showing") {
 		t.Error("missing scroll indicator")
 	}
@@ -728,7 +734,7 @@ func TestRenderTransactionTableScrollIndicator(t *testing.T) {
 }
 
 func TestRenderTransactionTableEmpty(t *testing.T) {
-	output := renderTransactionTable(nil, nil, nil, nil, nil, 0, 0, 10, 80, sortByDate, false)
+	output := renderTransactionTable(nil, nil, nil, nil, nil, nil, 0, 0, 10, 80, sortByDate, false)
 	if !strings.Contains(output, "Date") {
 		t.Error("empty table should still show column headers")
 	}
@@ -744,7 +750,7 @@ func TestRenderTransactionTableDescriptionDisplayLimit40(t *testing.T) {
 		},
 	}
 
-	output := renderTransactionTable(rows, nil, nil, nil, nil, 1, 0, 5, 120, sortByDate, false)
+	output := renderTransactionTable(rows, nil, nil, nil, nil, nil, 1, 0, 5, 120, sortByDate, false)
 	if strings.Contains(output, "12345678901234567890123456789012345678901") {
 		t.Fatal("description should not render past 40 chars in table")
 	}

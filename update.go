@@ -144,6 +144,8 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m.handleQuickCategoryApplied(msg)
 	case quickTagsAppliedMsg:
 		return m.handleQuickTagsApplied(msg)
+	case quickOffsetsAppliedMsg:
+		return m.handleQuickOffsetsApplied(msg)
 	case accountNukedMsg:
 		if msg.err != nil {
 			m.setError(fmt.Sprintf("Account nuke failed: %v", msg.err))
@@ -251,6 +253,9 @@ func (m model) handleRefreshDone(msg refreshDoneMsg) (tea.Model, tea.Cmd) {
 		m.filterAccounts = msg.selectedAccounts
 	}
 	if m.db != nil {
+		if err := ensureCategoryBudgetRows(m.db); err != nil {
+			m.setError(fmt.Sprintf("Load budget rows failed: %v", err))
+		}
 		if budgets, err := loadCategoryBudgets(m.db); err == nil {
 			m.categoryBudgets = budgets
 		}
@@ -266,7 +271,7 @@ func (m model) handleRefreshDone(msg refreshDoneMsg) (tea.Model, tea.Cmd) {
 		if offsets, err := loadCreditOffsets(m.db); err == nil {
 			m.creditOffsetsByDebit, m.creditOffsetsByCredit = indexCreditOffsets(offsets)
 		}
-		if lines, err := computeBudgetLines(m.db, m.categoryBudgets, m.budgetOverrides, m.creditOffsetsByDebit, m.budgetMonth, m.filterAccounts, m.spendModeRaw); err == nil {
+		if lines, err := computeBudgetLines(m.db, m.categoryBudgets, m.budgetOverrides, m.creditOffsetsByDebit, m.budgetMonth, m.filterAccounts); err == nil {
 			m.budgetLines = lines
 			m.budgetOverCount = 0
 			if len(lines) > 0 {
@@ -282,7 +287,7 @@ func (m model) handleRefreshDone(msg refreshDoneMsg) (tea.Model, tea.Cmd) {
 			}
 			m.budgetVarSparkline = m.computeBudgetVarianceSeries(6)
 		}
-		if targetLines, err := computeTargetLines(m.db, m.spendingTargets, m.targetOverrides, m.creditOffsetsByDebit, m.txnTags, m.savedFilters, m.filterAccounts, m.spendModeRaw); err == nil {
+		if targetLines, err := computeTargetLines(m.db, m.spendingTargets, m.targetOverrides, m.creditOffsetsByDebit, m.txnTags, m.savedFilters, m.filterAccounts); err == nil {
 			m.targetLines = targetLines
 		}
 	}
@@ -447,6 +452,22 @@ func (m model) handleQuickTagsApplied(msg quickTagsAppliedMsg) (tea.Model, tea.C
 	} else {
 		m.setStatusf("Updated tags for %d transaction(s).", msg.count)
 	}
+	if m.db == nil {
+		return m, nil
+	}
+	return m, refreshCmd(m.db)
+}
+
+func (m model) handleQuickOffsetsApplied(msg quickOffsetsAppliedMsg) (tea.Model, tea.Cmd) {
+	if msg.err != nil {
+		m.setError(fmt.Sprintf("Quick offset failed: %v", msg.err))
+		return m, nil
+	}
+	m.quickOffsetOpen = false
+	m.quickOffsetFor = nil
+	m.quickOffsetAmount = ""
+	m.quickOffsetCursor = 0
+	m.setStatusf("Applied offset %.2f to %d transaction(s).", msg.amount, msg.count)
 	if m.db == nil {
 		return m, nil
 	}
@@ -711,6 +732,10 @@ func filterReservedJumpTargetKeys(targets []jumpTarget) []jumpTarget {
 
 func (m model) jumpTargetsForActiveTab() []jumpTarget {
 	switch m.activeTab {
+	case tabDashboard:
+		return filterReservedJumpTargetKeys([]jumpTarget{
+			{Key: "d", Label: "Date Range", Section: sectionDashboardDateRange, Activate: true, BudgetView: -1},
+		})
 	case tabBudget:
 		return filterReservedJumpTargetKeys([]jumpTarget{
 			{Key: "t", Label: "Budget Table", Section: sectionUnfocused, Activate: false, BudgetView: 0},
@@ -766,6 +791,11 @@ func (m model) updateJumpOverlay(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 
 func (m *model) applyFocusedSection(activate bool) {
 	switch m.activeTab {
+	case tabDashboard:
+		if m.focusedSection == sectionDashboardDateRange {
+			m.dashTimeframeCursor = m.dashTimeframe
+			m.dashTimeframeFocus = true
+		}
 	case tabManager:
 		switch m.focusedSection {
 		case sectionManagerAccounts:
@@ -810,6 +840,11 @@ func (m *model) applyTabDefaultsOnSwitch() {
 	if m.activeTab != tabSettings {
 		m.settActive = false
 	}
+	if m.activeTab != tabDashboard {
+		m.dashTimeframeFocus = false
+		m.dashCustomEditing = false
+		m.dashCustomInput = ""
+	}
 	switch m.activeTab {
 	case tabManager:
 		if m.focusedSection == sectionUnfocused {
@@ -829,6 +864,9 @@ func (m *model) applyTabDefaultsOnSwitch() {
 		if m.focusedSection != sectionUnfocused {
 			m.focusedSection = sectionUnfocused
 		}
+		m.dashTimeframeFocus = false
+		m.dashCustomEditing = false
+		m.dashCustomInput = ""
 	case tabBudget:
 		if m.focusedSection != sectionUnfocused {
 			m.focusedSection = sectionUnfocused
@@ -883,7 +921,7 @@ func (m model) computeBudgetVarianceSeries(points int) []float64 {
 	series := make([]float64, 0, points)
 	for i := points - 1; i >= 0; i-- {
 		month := start.AddDate(0, -i, 0).Format("2006-01")
-		lines, err := computeBudgetLines(m.db, m.categoryBudgets, m.budgetOverrides, m.creditOffsetsByDebit, month, m.filterAccounts, m.spendModeRaw)
+		lines, err := computeBudgetLines(m.db, m.categoryBudgets, m.budgetOverrides, m.creditOffsetsByDebit, month, m.filterAccounts)
 		if err != nil {
 			continue
 		}

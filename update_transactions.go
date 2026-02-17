@@ -1,7 +1,10 @@
 package main
 
 import (
+	"database/sql"
+	"fmt"
 	"sort"
+	"strconv"
 	"strings"
 
 	tea "github.com/charmbracelet/bubbletea"
@@ -162,6 +165,30 @@ func (m model) openQuickTagPicker(filtered []transaction) (tea.Model, tea.Cmd) {
 		}
 	}
 	m.tagPicker.SetTriState(stateByTagID)
+	return m, nil
+}
+
+func (m model) openQuickOffsetModal(filtered []transaction) (tea.Model, tea.Cmd) {
+	targetIDs := m.quickActionTargets(filtered)
+	if len(targetIDs) == 0 {
+		m.setStatus("No transaction selected.")
+		return m, nil
+	}
+	for _, txnID := range targetIDs {
+		txn := m.findTxnByID(txnID)
+		if txn == nil {
+			m.setStatus("No transaction selected.")
+			return m, nil
+		}
+		if txn.amount >= 0 {
+			m.setStatus("Quick offset applies to debit transactions only.")
+			return m, nil
+		}
+	}
+	m.quickOffsetOpen = true
+	m.quickOffsetFor = targetIDs
+	m.quickOffsetAmount = ""
+	m.quickOffsetCursor = 0
 	return m, nil
 }
 
@@ -387,6 +414,72 @@ func (m model) updateTagPicker(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		}
 	}
 	return m, nil
+}
+
+func (m model) updateQuickOffsetModal(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
+	if !m.quickOffsetOpen {
+		return m, nil
+	}
+	keyName := normalizeKeyName(msg.String())
+	switch keyName {
+	case "esc":
+		m.quickOffsetOpen = false
+		m.quickOffsetFor = nil
+		m.quickOffsetAmount = ""
+		m.quickOffsetCursor = 0
+		m.setStatus("Quick offset cancelled.")
+		return m, nil
+	case "enter":
+		if m.db == nil {
+			m.setError("Database not ready.")
+			return m, nil
+		}
+		amount, err := strconv.ParseFloat(strings.TrimSpace(m.quickOffsetAmount), 64)
+		if err != nil || amount <= 0 {
+			m.setError("Invalid offset amount.")
+			return m, nil
+		}
+		targetIDs := append([]int(nil), m.quickOffsetFor...)
+		db := m.db
+		return m, func() tea.Msg {
+			n, applyErr := applyManualOffsets(db, targetIDs, amount)
+			return quickOffsetsAppliedMsg{count: n, amount: amount, err: applyErr}
+		}
+	case "backspace":
+		deleteASCIIByteBeforeCursor(&m.quickOffsetAmount, &m.quickOffsetCursor)
+		return m, nil
+	case "left":
+		moveInputCursorASCII(m.quickOffsetAmount, &m.quickOffsetCursor, -1)
+		return m, nil
+	case "right":
+		moveInputCursorASCII(m.quickOffsetAmount, &m.quickOffsetCursor, 1)
+		return m, nil
+	}
+	if isPrintableASCIIKey(msg.String()) {
+		insertPrintableASCIIAtCursor(&m.quickOffsetAmount, &m.quickOffsetCursor, msg.String())
+	}
+	return m, nil
+}
+
+func applyManualOffsets(db *sql.DB, txnIDs []int, amount float64) (int, error) {
+	targets := make([]int, 0, len(txnIDs))
+	seen := make(map[int]bool, len(txnIDs))
+	for _, id := range txnIDs {
+		if id <= 0 || seen[id] {
+			continue
+		}
+		seen[id] = true
+		targets = append(targets, id)
+	}
+	if len(targets) == 0 {
+		return 0, fmt.Errorf("no transactions selected")
+	}
+	for _, id := range targets {
+		if err := insertManualOffset(db, id, amount); err != nil {
+			return 0, err
+		}
+	}
+	return len(targets), nil
 }
 
 func (m *model) selectedCount() int {

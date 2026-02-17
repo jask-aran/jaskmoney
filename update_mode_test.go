@@ -24,14 +24,26 @@ func TestDashboardSelectPresetFlow(t *testing.T) {
 
 	next, _ := m.updateDashboard(keyMsg("d"))
 	got := next.(model)
+	if got.dashTimeframeFocus {
+		t.Fatal("dashboard date pane should not focus without jump mode")
+	}
+
+	next, _ = got.Update(keyMsg("v"))
+	got = next.(model)
+	if !got.jumpModeActive {
+		t.Fatal("expected jump mode to open")
+	}
+
+	next, _ = got.Update(keyMsg("d"))
+	got = next.(model)
 	if !got.dashTimeframeFocus {
-		t.Fatal("expected timeframe focus to be enabled")
+		t.Fatal("expected date pane focus after jump target selection")
 	}
 	if got.dashTimeframeCursor != dashTimeframeThisMonth {
 		t.Fatalf("timeframe cursor = %d, want %d", got.dashTimeframeCursor, dashTimeframeThisMonth)
 	}
 
-	next, _ = got.updateDashboard(keyMsg("l"))
+	next, _ = got.updateDashboard(keyMsg("j"))
 	got2 := next.(model)
 	if got2.dashTimeframeCursor != (dashTimeframeThisMonth+1)%dashTimeframeCount {
 		t.Fatalf("timeframe cursor = %d, want %d", got2.dashTimeframeCursor, (dashTimeframeThisMonth+1)%dashTimeframeCount)
@@ -39,8 +51,8 @@ func TestDashboardSelectPresetFlow(t *testing.T) {
 
 	next, cmd := got2.updateDashboard(keyMsg("enter"))
 	got3 := next.(model)
-	if got3.dashTimeframeFocus {
-		t.Fatal("expected timeframe focus to be disabled after select")
+	if !got3.dashTimeframeFocus {
+		t.Fatal("expected date pane to remain focused after select")
 	}
 	if got3.statusErr {
 		t.Fatalf("statusErr should be false, status=%q", got3.status)
@@ -90,8 +102,8 @@ func TestDashboardCustomTimeframeFlow(t *testing.T) {
 	if got3.dashTimeframe != dashTimeframeCustom {
 		t.Fatalf("dashTimeframe = %d, want custom", got3.dashTimeframe)
 	}
-	if got3.dashCustomEditing || got3.dashTimeframeFocus {
-		t.Fatal("expected custom editing and focus to be disabled")
+	if got3.dashCustomEditing || !got3.dashTimeframeFocus {
+		t.Fatal("expected custom editing to stop while pane focus remains active")
 	}
 	if got3.statusErr {
 		t.Fatalf("statusErr should be false, status=%q", got3.status)

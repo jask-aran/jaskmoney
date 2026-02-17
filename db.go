@@ -168,6 +168,13 @@ CREATE TABLE IF NOT EXISTS credit_offsets (
 	UNIQUE(credit_txn_id, debit_txn_id)
 );
 
+CREATE TABLE IF NOT EXISTS manual_offsets (
+	id           INTEGER PRIMARY KEY AUTOINCREMENT,
+	debit_txn_id INTEGER NOT NULL REFERENCES transactions(id) ON DELETE CASCADE,
+	amount       REAL NOT NULL CHECK(amount > 0),
+	created_at   TEXT NOT NULL DEFAULT (datetime('now'))
+);
+
 CREATE INDEX IF NOT EXISTS idx_transactions_date ON transactions(date_iso);
 CREATE INDEX IF NOT EXISTS idx_transactions_category ON transactions(category_id);
 CREATE INDEX IF NOT EXISTS idx_transactions_account ON transactions(account_id);
@@ -177,6 +184,7 @@ CREATE INDEX IF NOT EXISTS idx_rules_v2_sort ON rules_v2(sort_order);
 CREATE INDEX IF NOT EXISTS idx_category_budgets_cat ON category_budgets(category_id);
 CREATE INDEX IF NOT EXISTS idx_credit_offsets_debit ON credit_offsets(debit_txn_id);
 CREATE INDEX IF NOT EXISTS idx_credit_offsets_credit ON credit_offsets(credit_txn_id);
+CREATE INDEX IF NOT EXISTS idx_manual_offsets_debit ON manual_offsets(debit_txn_id);
 `
 
 // ---------------------------------------------------------------------------
@@ -214,6 +222,10 @@ func openDB(path string) (*sql.DB, error) {
 			_ = db.Close()
 			return nil, fmt.Errorf("migrate schema: %w", err)
 		}
+	}
+	if err := ensureRuntimeSchemaCompatibility(db); err != nil {
+		_ = db.Close()
+		return nil, fmt.Errorf("ensure runtime schema compatibility: %w", err)
 	}
 	if err := ensureMandatoryTags(db); err != nil {
 		_ = db.Close()
@@ -376,6 +388,12 @@ func migrateFromV4ToV5(db *sql.DB) error {
 			CHECK(credit_txn_id != debit_txn_id),
 			UNIQUE(credit_txn_id, debit_txn_id)
 		)`,
+		`CREATE TABLE IF NOT EXISTS manual_offsets (
+			id           INTEGER PRIMARY KEY AUTOINCREMENT,
+			debit_txn_id INTEGER NOT NULL REFERENCES transactions(id) ON DELETE CASCADE,
+			amount       REAL NOT NULL CHECK(amount > 0),
+			created_at   TEXT NOT NULL DEFAULT (datetime('now'))
+		)`,
 		`INSERT INTO category_budgets (category_id, amount)
 		 SELECT c.id, 0
 		 FROM categories c
@@ -386,6 +404,7 @@ func migrateFromV4ToV5(db *sql.DB) error {
 		`CREATE INDEX IF NOT EXISTS idx_category_budgets_cat ON category_budgets(category_id)`,
 		`CREATE INDEX IF NOT EXISTS idx_credit_offsets_debit ON credit_offsets(debit_txn_id)`,
 		`CREATE INDEX IF NOT EXISTS idx_credit_offsets_credit ON credit_offsets(credit_txn_id)`,
+		`CREATE INDEX IF NOT EXISTS idx_manual_offsets_debit ON manual_offsets(debit_txn_id)`,
 		`DELETE FROM schema_meta`,
 		`INSERT INTO schema_meta (version) VALUES (5)`,
 	}
@@ -469,9 +488,60 @@ func tableHasColumnTx(tx *sql.Tx, tableName, columnName string) (bool, error) {
 	return false, rows.Err()
 }
 
+func ensureRuntimeSchemaCompatibility(db *sql.DB) error {
+	tx, err := db.Begin()
+	if err != nil {
+		return fmt.Errorf("begin schema compatibility transaction: %w", err)
+	}
+	defer tx.Rollback() //nolint:errcheck
+
+	hasFilterExpr, err := tableHasColumnTx(tx, "spending_targets", "filter_expr")
+	if err != nil {
+		return fmt.Errorf("inspect spending_targets.filter_expr: %w", err)
+	}
+	hasSavedFilterID, err := tableHasColumnTx(tx, "spending_targets", "saved_filter_id")
+	if err != nil {
+		return fmt.Errorf("inspect spending_targets.saved_filter_id: %w", err)
+	}
+	if hasFilterExpr && !hasSavedFilterID {
+		if _, err := tx.Exec(`ALTER TABLE spending_targets RENAME COLUMN filter_expr TO saved_filter_id`); err != nil {
+			return fmt.Errorf("rename spending_targets.filter_expr: %w", err)
+		}
+	}
+
+	requiredBudgetColumns := []string{"id", "category_id", "amount"}
+	for _, col := range requiredBudgetColumns {
+		ok, err := tableHasColumnTx(tx, "category_budgets", col)
+		if err != nil {
+			return fmt.Errorf("inspect category_budgets.%s: %w", col, err)
+		}
+		if !ok {
+			return fmt.Errorf("category_budgets missing required column %q", col)
+		}
+	}
+
+	if _, err := tx.Exec(`CREATE TABLE IF NOT EXISTS manual_offsets (
+		id           INTEGER PRIMARY KEY AUTOINCREMENT,
+		debit_txn_id INTEGER NOT NULL REFERENCES transactions(id) ON DELETE CASCADE,
+		amount       REAL NOT NULL CHECK(amount > 0),
+		created_at   TEXT NOT NULL DEFAULT (datetime('now'))
+	)`); err != nil {
+		return fmt.Errorf("ensure manual_offsets table: %w", err)
+	}
+	if _, err := tx.Exec(`CREATE INDEX IF NOT EXISTS idx_manual_offsets_debit ON manual_offsets(debit_txn_id)`); err != nil {
+		return fmt.Errorf("ensure manual_offsets index: %w", err)
+	}
+
+	if err := tx.Commit(); err != nil {
+		return fmt.Errorf("commit schema compatibility transaction: %w", err)
+	}
+	return nil
+}
+
 // migrateClean drops everything and starts fresh at schema v6.
 func migrateClean(db *sql.DB) error {
 	drops := []string{
+		"DROP TABLE IF EXISTS manual_offsets",
 		"DROP TABLE IF EXISTS credit_offsets",
 		"DROP TABLE IF EXISTS spending_target_overrides",
 		"DROP TABLE IF EXISTS spending_targets",
@@ -1203,6 +1273,21 @@ func loadCategoryBudgets(db *sql.DB) ([]categoryBudget, error) {
 	return out, rows.Err()
 }
 
+func ensureCategoryBudgetRows(db *sql.DB) error {
+	_, err := db.Exec(`
+		INSERT INTO category_budgets (category_id, amount)
+		SELECT c.id, 0
+		FROM categories c
+		WHERE NOT EXISTS (
+			SELECT 1 FROM category_budgets b WHERE b.category_id = c.id
+		)
+	`)
+	if err != nil {
+		return fmt.Errorf("ensure category budget rows: %w", err)
+	}
+	return nil
+}
+
 func upsertCategoryBudget(db *sql.DB, categoryID int, amount float64) error {
 	if categoryID <= 0 {
 		return fmt.Errorf("category id is required")
@@ -1402,7 +1487,11 @@ func upsertTargetOverride(db *sql.DB, targetID int, periodKey string, amount flo
 func loadCreditOffsets(db *sql.DB) ([]creditOffset, error) {
 	rows, err := db.Query(`
 		SELECT id, credit_txn_id, debit_txn_id, amount
-		FROM credit_offsets
+		FROM (
+			SELECT id, credit_txn_id, debit_txn_id, amount FROM credit_offsets
+			UNION ALL
+			SELECT -id, 0 AS credit_txn_id, debit_txn_id, amount FROM manual_offsets
+		)
 		ORDER BY id ASC
 	`)
 	if err != nil {
@@ -1485,6 +1574,23 @@ func insertCreditOffset(db *sql.DB, creditTxnID, debitTxnID int, amount float64)
 	}
 	if err := tx.Commit(); err != nil {
 		return fmt.Errorf("commit credit offset tx: %w", err)
+	}
+	return nil
+}
+
+func insertManualOffset(db *sql.DB, debitTxnID int, amount float64) error {
+	if amount <= 0 {
+		return fmt.Errorf("offset amount must be positive")
+	}
+	var debitAmount float64
+	if err := db.QueryRow(`SELECT amount FROM transactions WHERE id = ?`, debitTxnID).Scan(&debitAmount); err != nil {
+		return fmt.Errorf("load debit transaction: %w", err)
+	}
+	if debitAmount >= 0 {
+		return fmt.Errorf("selected transaction is not a debit")
+	}
+	if _, err := db.Exec(`INSERT INTO manual_offsets (debit_txn_id, amount) VALUES (?, ?)`, debitTxnID, amount); err != nil {
+		return fmt.Errorf("insert manual offset: %w", err)
 	}
 	return nil
 }

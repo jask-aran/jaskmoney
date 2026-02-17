@@ -51,7 +51,7 @@ func TestOpenDBCreatesV5Schema(t *testing.T) {
 		"schema_meta", "categories", "transactions", "imports",
 		"accounts", "account_selection", "tags", "transaction_tags", "rules_v2",
 		"category_budgets", "category_budget_overrides", "spending_targets",
-		"spending_target_overrides", "credit_offsets",
+		"spending_target_overrides", "credit_offsets", "manual_offsets",
 	}
 	for _, table := range tables {
 		var count int
@@ -357,6 +357,69 @@ func TestOpenDBIdempotent(t *testing.T) {
 	}
 }
 
+func TestOpenDBReconcilesLegacySpendingTargetsAndBudgetColumns(t *testing.T) {
+	f, err := os.CreateTemp("", "jaskmoney-v6-legacy-targets-*.db")
+	if err != nil {
+		t.Fatalf("create temp: %v", err)
+	}
+	path := f.Name()
+	f.Close()
+	defer os.Remove(path)
+
+	db, err := openDB(path)
+	if err != nil {
+		t.Fatalf("seed v6 db with openDB: %v", err)
+	}
+	db.Close()
+
+	raw, err := sql.Open("sqlite", path)
+	if err != nil {
+		t.Fatalf("open raw sqlite db: %v", err)
+	}
+	if _, err := raw.Exec(`ALTER TABLE spending_targets RENAME COLUMN saved_filter_id TO filter_expr`); err != nil {
+		raw.Close()
+		t.Fatalf("rename spending_targets column to legacy name: %v", err)
+	}
+	raw.Close()
+
+	db2, err := openDB(path)
+	if err != nil {
+		t.Fatalf("openDB should reconcile legacy spending_targets schema: %v", err)
+	}
+	defer db2.Close()
+
+	spendingColumns, err := tableColumns(db2, "spending_targets")
+	if err != nil {
+		t.Fatalf("tableColumns(spending_targets): %v", err)
+	}
+	if !spendingColumns["saved_filter_id"] {
+		t.Fatalf("expected spending_targets.saved_filter_id after reconciliation; got columns: %+v", spendingColumns)
+	}
+	if spendingColumns["filter_expr"] {
+		t.Fatalf("unexpected legacy spending_targets.filter_expr after reconciliation; got columns: %+v", spendingColumns)
+	}
+
+	categoryBudgetColumns, err := tableColumns(db2, "category_budgets")
+	if err != nil {
+		t.Fatalf("tableColumns(category_budgets): %v", err)
+	}
+	for _, col := range []string{"id", "category_id", "amount"} {
+		if !categoryBudgetColumns[col] {
+			t.Fatalf("category_budgets missing required column %q; got columns: %+v", col, categoryBudgetColumns)
+		}
+	}
+
+	_, err = insertSpendingTarget(db2, spendingTarget{
+		name:          "Smoke test target",
+		savedFilterID: "filter-1",
+		amount:        100,
+		periodType:    "monthly",
+	})
+	if err != nil {
+		t.Fatalf("insertSpendingTarget after reconciliation: %v", err)
+	}
+}
+
 func TestOpenDBCreatesMissingParentDirectory(t *testing.T) {
 	root := t.TempDir()
 	path := filepath.Join(root, "nested", "deeper", "transactions.db")
@@ -369,6 +432,52 @@ func TestOpenDBCreatesMissingParentDirectory(t *testing.T) {
 	if _, err := os.Stat(path); err != nil {
 		t.Fatalf("expected db file at %s: %v", path, err)
 	}
+}
+
+func TestEnsureCategoryBudgetRowsBackfillsMissingRows(t *testing.T) {
+	db, cleanup := testDB(t)
+	defer cleanup()
+
+	catID, err := insertCategory(db, "Misc Test", "#123456")
+	if err != nil {
+		t.Fatalf("insertCategory: %v", err)
+	}
+	if _, err := db.Exec(`DELETE FROM category_budgets WHERE category_id = ?`, catID); err != nil {
+		t.Fatalf("delete category budget row: %v", err)
+	}
+
+	if err := ensureCategoryBudgetRows(db); err != nil {
+		t.Fatalf("ensureCategoryBudgetRows: %v", err)
+	}
+
+	var count int
+	if err := db.QueryRow(`SELECT COUNT(*) FROM category_budgets WHERE category_id = ?`, catID).Scan(&count); err != nil {
+		t.Fatalf("count category budget row: %v", err)
+	}
+	if count != 1 {
+		t.Fatalf("category budget row count = %d, want 1", count)
+	}
+}
+
+func tableColumns(db *sql.DB, table string) (map[string]bool, error) {
+	rows, err := db.Query("PRAGMA table_info(" + table + ")")
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	cols := make(map[string]bool)
+	for rows.Next() {
+		var cid int
+		var name, typ string
+		var notNull, pk int
+		var dflt sql.NullString
+		if err := rows.Scan(&cid, &name, &typ, &notNull, &dflt, &pk); err != nil {
+			return nil, err
+		}
+		cols[name] = true
+	}
+	return cols, rows.Err()
 }
 
 // ---- Category CRUD tests ----
