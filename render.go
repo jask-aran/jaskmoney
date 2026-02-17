@@ -231,14 +231,24 @@ func renderTitledSectionBox(title, content string, sectionWidth int, withSeparat
 }
 
 func renderSectionBox(title, content string, sectionWidth int, withSeparator bool, borderColor lipgloss.Color, titleSty lipgloss.Style) string {
+	return renderSectionBoxWithPadding(title, content, sectionWidth, withSeparator, borderColor, titleSty, 1, 1)
+}
+
+func renderSectionBoxWithPadding(title, content string, sectionWidth int, withSeparator bool, borderColor lipgloss.Color, titleSty lipgloss.Style, leftPad, rightPad int) string {
 	if sectionWidth < 4 {
 		sectionWidth = 4
 	}
+	if leftPad < 0 {
+		leftPad = 0
+	}
+	if rightPad < 0 {
+		rightPad = 0
+	}
 	innerWidth := sectionWidth - 2 // excludes vertical borders
-	contentWidth := innerWidth - 2 // excludes horizontal padding inside borders
+	contentWidth := innerWidth - leftPad - rightPad
 	if contentWidth < 1 {          // guard small terminals
 		contentWidth = 1
-		innerWidth = contentWidth + 2
+		innerWidth = contentWidth + leftPad + rightPad
 		sectionWidth = innerWidth + 2
 	}
 
@@ -276,11 +286,11 @@ func renderSectionBox(title, content string, sectionWidth int, withSeparator boo
 
 	out := []string{top}
 	if withSeparator {
-		sep := v + " " + sepStyle.Render(strings.Repeat("─", contentWidth)) + " " + v
+		sep := v + strings.Repeat(" ", leftPad) + sepStyle.Render(strings.Repeat("─", contentWidth)) + strings.Repeat(" ", rightPad) + v
 		out = append(out, sep)
 	}
 	for _, line := range lines {
-		row := v + " " + padRight(truncate(line, contentWidth), contentWidth) + " " + v
+		row := v + strings.Repeat(" ", leftPad) + padRight(truncate(line, contentWidth), contentWidth) + strings.Repeat(" ", rightPad) + v
 		out = append(out, row)
 	}
 	bottom := bl + borderStyle.Render(strings.Repeat("─", innerWidth)) + br
@@ -1363,15 +1373,33 @@ func renderDashboardAnalyticsRegion(m model) string {
 	if avail < 2 {
 		avail = 2
 	}
-	leftW := avail * 60 / 100
-	rightW := avail - leftW
-	if leftW < 24 {
-		leftW = 24
-		rightW = max(20, avail-leftW)
-	}
+	leftW, rightW := dashboardAnalyticsPaneWidths(avail)
 	netPane := renderDashboardWidgetPane(m, 0, leftW, dashboardPaneLayoutSpecFor(m, widgetNetCashflow))
 	compPane := renderDashboardWidgetPane(m, 1, rightW, dashboardPaneLayoutSpecFor(m, widgetComposition))
 	return lipgloss.JoinHorizontal(lipgloss.Top, netPane, strings.Repeat(" ", gap), compPane)
+}
+
+func dashboardAnalyticsPaneWidths(avail int) (int, int) {
+	if avail <= 2 {
+		return 1, 1
+	}
+	// Net/Cashflow + Composition row uses a dedicated 70:30 split.
+	left := avail * 70 / 100
+	if left < 28 {
+		left = 28
+	}
+	if left > avail-16 {
+		left = avail - 16
+	}
+	if left < 1 {
+		left = 1
+	}
+	right := avail - left
+	if right < 1 {
+		right = 1
+		left = avail - right
+	}
+	return left, right
 }
 
 type dashboardPaneLayoutSpec struct {
@@ -1403,12 +1431,16 @@ func renderDashboardWidgetPane(m model, idx int, width int, spec dashboardPaneLa
 	}
 	mode := w.modes[modeIdx]
 	title := w.title + " [" + strings.ToUpper(w.jumpKey) + "] · " + mode.label
-	contentW := max(1, width-4)
+	leftPad, rightPad := 1, 1
+	if w.kind == widgetNetCashflow {
+		leftPad, rightPad = 0, 1
+	}
+	contentW := max(1, width-2-leftPad-rightPad)
 	rows := m.dashboardRowsForMode(mode)
 	content := renderDashboardWidgetModeContent(m, w, mode, rows, contentW, spec)
 	content = ensureMinLines(content, spec.minLines)
 	isFocused := m.activeTab == tabDashboard && m.focusedSection == idx
-	return renderManagerSectionBox(title, isFocused, isFocused, width, content)
+	return renderDashboardWidgetSectionBox(title, isFocused, isFocused, width, content, leftPad, rightPad)
 }
 
 func ensureMinLines(content string, minLines int) string {
@@ -1438,13 +1470,67 @@ func renderDashboardWidgetModeContent(m model, w widget, mode widgetMode, rows [
 
 func renderDashboardNetCashflowMode(m model, mode widgetMode, rows []transaction, width int, chartHeight int) string {
 	start, end := m.dashboardChartRange(time.Now())
+	const rightGutter = 2
+	chartWidth := max(1, width-rightGutter) // Keep right-side whitespace for balance with left y-label area.
+	rendered := ""
 	switch mode.id {
 	case "spending":
 		spendRows := dashboardSpendRows(rows, m.txnTags)
-		return renderSpendingTrackerWithRangeSized(spendRows, width, m.spendingWeekAnchor, start, end, chartHeight)
+		rendered = renderSpendingTrackerWithRangeSized(spendRows, chartWidth, m.spendingWeekAnchor, start, end, chartHeight)
 	default: // net_worth + custom
-		return renderNetWorthTrackerWithRange(rows, width, m.spendingWeekAnchor, start, end, chartHeight)
+		rendered = renderNetWorthTrackerWithRange(rows, chartWidth, m.spendingWeekAnchor, start, end, chartHeight)
 	}
+	rendered = trimTrailingBlankChartLine(rendered)
+	rendered = shiftChartLeft(rendered, chartYAxisLabelWidth+1)
+	return lipgloss.NewStyle().PaddingRight(rightGutter).Render(rendered)
+}
+
+func trimTrailingBlankChartLine(chart string) string {
+	lines := splitLines(chart)
+	if len(lines) < 2 {
+		return chart
+	}
+	last := strings.TrimSpace(ansi.Strip(lines[len(lines)-1]))
+	if last == "" {
+		lines = lines[:len(lines)-1]
+	}
+	return strings.Join(lines, "\n")
+}
+
+func shiftChartLeft(chart string, maxShift int) string {
+	if maxShift <= 0 {
+		return chart
+	}
+	lines := splitLines(chart)
+	if len(lines) == 0 {
+		return chart
+	}
+	shift := maxShift
+	seen := false
+	for _, line := range lines {
+		if strings.TrimSpace(ansi.Strip(line)) == "" {
+			continue
+		}
+		seen = true
+		lead := 0
+		for lead < len(line) && line[lead] == ' ' {
+			lead++
+		}
+		if lead < shift {
+			shift = lead
+		}
+	}
+	if !seen || shift <= 0 {
+		return chart
+	}
+	for i, line := range lines {
+		if len(line) >= shift {
+			lines[i] = line[shift:]
+			continue
+		}
+		lines[i] = ""
+	}
+	return strings.Join(lines, "\n")
 }
 
 func renderDashboardCompositionMode(m model, mode widgetMode, rows []transaction, width int) string {
@@ -2227,22 +2313,27 @@ func renderTimeSeriesWithRange(values []float64, dates []time.Time, width int, w
 	plan := planSpendingAxes(&chart, dates, max(maxVal, math.Abs(minVal)))
 	yMin := 0.0
 	yMax := 0.0
+	yStep := 0.0
 	if signed {
 		step, minScaled, maxScaled := signedYScale(minVal, maxVal, chart.GraphHeight())
-		plan.yStep = step
+		yStep = step
 		yMin = minScaled
 		yMax = maxScaled
 	} else {
 		step, maxScaled := spendingYScale(max(0, maxVal), chart.GraphHeight())
-		plan.yStep = step
-		plan.yMax = maxScaled
+		yStep = step
 		yMin = -(maxScaled * 0.08)
 		yMax = maxScaled
 	}
+	chart.Model.YLabelFormatter = spendingYLabelFormatter(yStep, yMin, yMax)
 	chart.SetYRange(yMin, yMax)
 	chart.SetViewYRange(yMin, yMax)
+	plan = planSpendingAxes(&chart, dates, max(maxVal, math.Abs(minVal)))
+	plan.yStep = yStep
+	if !signed {
+		plan.yMax = yMax
+	}
 	chart.Model.XLabelFormatter = spendingXLabelFormatter(plan.xLabels)
-	chart.Model.YLabelFormatter = spendingYLabelFormatter(plan.yStep, yMin, yMax)
 
 	for i, d := range dates {
 		chart.Push(tslc.TimePoint{Time: d, Value: values[i]})
@@ -2498,7 +2589,7 @@ func niceCeil(v float64) float64 {
 	}
 }
 
-const chartYAxisLabelWidth = 6
+const chartYAxisLabelWidth = 5
 
 func spendingYLabelFormatter(step, yMin, yMax float64) linechart.LabelFormatter {
 	tolerance := step * 0.2
@@ -2516,13 +2607,13 @@ func spendingYLabelFormatter(step, yMin, yMax float64) linechart.LabelFormatter 
 			return ""
 		}
 		if math.Abs(nearest) < 0.5 {
-			return fmt.Sprintf("%*s", chartYAxisLabelWidth, "0")
+			return fmt.Sprintf("%-*s", chartYAxisLabelWidth, "0")
 		}
 		label := formatAxisTick(nearest)
 		if nearest < 0 {
 			label = "-" + label
 		}
-		return fmt.Sprintf("%*s", chartYAxisLabelWidth, label)
+		return fmt.Sprintf("%-*s", chartYAxisLabelWidth, label)
 	}
 }
 
@@ -2784,6 +2875,19 @@ func renderManagerSectionBox(title string, isFocused, isActive bool, width int, 
 		title += " *"
 	}
 	return renderSectionBox(title, content, width, false, borderColor, titleSty)
+}
+
+func renderDashboardWidgetSectionBox(title string, isFocused, isActive bool, width int, content string, leftPad, rightPad int) string {
+	borderColor := colorSurface1
+	titleSty := lipgloss.NewStyle().Foreground(colorSubtext0).Bold(true)
+	if isFocused {
+		borderColor = colorAccent
+		titleSty = lipgloss.NewStyle().Foreground(colorAccent).Bold(true)
+	}
+	if isActive {
+		title += " *"
+	}
+	return renderSectionBoxWithPadding(title, content, width, false, borderColor, titleSty, leftPad, rightPad)
 }
 
 func renderManagerAccountStrip(m model, showCursor bool, width int) string {
