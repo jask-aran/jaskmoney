@@ -140,6 +140,9 @@ func NewCommandRegistry(keys *KeyRegistry, savedFilters []savedFilter) *CommandR
 				if len(m.jumpTargetsForActiveTab()) == 0 {
 					return m, nil, fmt.Errorf("no jump targets for active tab")
 				}
+				if m.activeTab == tabManager && m.drillReturn != nil {
+					m.drillReturn = nil
+				}
 				m.jumpModeActive = true
 				m.jumpPreviousFocus = m.focusedSection
 				m.setStatus("Jump: press key to focus. ESC cancel.")
@@ -994,10 +997,21 @@ func NewCommandRegistry(keys *KeyRegistry, savedFilters []savedFilter) *CommandR
 			Category:    "Dashboard",
 			Scopes:      []string{scopeDashboardFocused},
 			Enabled: func(m model) (bool, string) {
-				return false, "Dashboard focused widget modes ship in a later phase."
+				if m.activeTab != tabDashboard {
+					return false, "Dashboard pane is not focused."
+				}
+				if idx := m.dashboardFocusedWidgetIndex(); idx < 0 {
+					return false, "Dashboard pane is not focused."
+				}
+				w := m.dashWidgets[m.dashboardFocusedWidgetIndex()]
+				if len(w.modes) <= 1 {
+					return false, "No alternate modes for the focused pane."
+				}
+				return true, ""
 			},
 			Execute: func(m model) (model, tea.Cmd, error) {
-				return m, nil, fmt.Errorf("dashboard focused modes not implemented")
+				next, err := m.dashboardCycleFocusedMode(1)
+				return next, nil, err
 			},
 		},
 		{
@@ -1007,10 +1021,21 @@ func NewCommandRegistry(keys *KeyRegistry, savedFilters []savedFilter) *CommandR
 			Category:    "Dashboard",
 			Scopes:      []string{scopeDashboardFocused},
 			Enabled: func(m model) (bool, string) {
-				return false, "Dashboard focused widget modes ship in a later phase."
+				if m.activeTab != tabDashboard {
+					return false, "Dashboard pane is not focused."
+				}
+				if idx := m.dashboardFocusedWidgetIndex(); idx < 0 {
+					return false, "Dashboard pane is not focused."
+				}
+				w := m.dashWidgets[m.dashboardFocusedWidgetIndex()]
+				if len(w.modes) <= 1 {
+					return false, "No alternate modes for the focused pane."
+				}
+				return true, ""
 			},
 			Execute: func(m model) (model, tea.Cmd, error) {
-				return m, nil, fmt.Errorf("dashboard focused modes not implemented")
+				next, err := m.dashboardCycleFocusedMode(-1)
+				return next, nil, err
 			},
 		},
 		{
@@ -1020,10 +1045,44 @@ func NewCommandRegistry(keys *KeyRegistry, savedFilters []savedFilter) *CommandR
 			Category:    "Dashboard",
 			Scopes:      []string{scopeDashboardFocused},
 			Enabled: func(m model) (bool, string) {
-				return false, "Dashboard drill-down ships in a later phase."
+				if m.activeTab != tabDashboard {
+					return false, "Dashboard pane is not focused."
+				}
+				mode, ok := m.dashboardFocusedMode()
+				if !ok {
+					return false, "Dashboard pane is not focused."
+				}
+				if m.dashboardDrillPredicate(mode) == nil {
+					return false, "Focused mode has no drill-down predicate."
+				}
+				return true, ""
 			},
 			Execute: func(m model) (model, tea.Cmd, error) {
-				return m, nil, fmt.Errorf("dashboard drill-down not implemented")
+				next, err := m.dashboardDrillDown()
+				return next, nil, err
+			},
+		},
+		{
+			ID:          "dash:custom-mode-edit",
+			Label:       "Edit Custom Mode Slot",
+			Description: "Assign a saved filter to the focused pane custom slot",
+			Category:    "Dashboard",
+			Scopes:      []string{scopeDashboardFocused},
+			Enabled: func(m model) (bool, string) {
+				if m.activeTab != tabDashboard {
+					return false, "Dashboard pane is not focused."
+				}
+				if idx := m.dashboardFocusedWidgetIndex(); idx != sectionDashboardNetCashflow {
+					return false, "Custom slot is active on Net/Cashflow only."
+				}
+				if len(m.savedFilters) == 0 {
+					return false, "No saved filters."
+				}
+				return true, ""
+			},
+			Execute: func(m model) (model, tea.Cmd, error) {
+				next, err := m.dashboardOpenCustomModeEdit()
+				return next, nil, err
 			},
 		},
 		{

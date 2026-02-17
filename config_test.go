@@ -192,6 +192,35 @@ quick_category = ["ctrl+k"]
 	}
 }
 
+func TestParseKeybindingsConfigMigratesLegacyDashboardModeCycleKeys(t *testing.T) {
+	defaults := NewKeyRegistry().ExportKeybindingConfig()
+	data := []byte(`
+version = 2
+
+[bindings]
+dashboard_mode_next = ["]"]
+dashboard_mode_prev = ["["]
+`)
+	items, err := parseKeybindingsConfig(data, defaults)
+	if err != nil {
+		t.Fatalf("parseKeybindingsConfig: %v", err)
+	}
+
+	nextOK := false
+	prevOK := false
+	for _, it := range items {
+		if it.Scope == scopeDashboardFocused && it.Action == string(actionDashboardModeNext) {
+			nextOK = len(it.Keys) == 1 && it.Keys[0] == "."
+		}
+		if it.Scope == scopeDashboardFocused && it.Action == string(actionDashboardModePrev) {
+			prevOK = len(it.Keys) == 1 && it.Keys[0] == ","
+		}
+	}
+	if !nextOK || !prevOK {
+		t.Fatalf("expected dashboard mode bindings to migrate to ,/.; next=%v prev=%v", nextOK, prevOK)
+	}
+}
+
 func TestParseKeybindingsConfigRejectsLegacyAliases(t *testing.T) {
 	defaults := NewKeyRegistry().ExportKeybindingConfig()
 	data := []byte(`
@@ -425,5 +454,85 @@ func TestSaveSavedFiltersRoundTrip(t *testing.T) {
 	}
 	if out[0].ID != in[0].ID || out[1].ID != in[1].ID || out[0].Name != in[0].Name || out[1].Name != in[1].Name {
 		t.Fatalf("saved filters mismatch: %+v", out)
+	}
+}
+
+func TestSaveCustomPaneModesRoundTripDedupesPerPane(t *testing.T) {
+	xdg := t.TempDir()
+	t.Setenv("XDG_CONFIG_HOME", xdg)
+
+	if _, _, _, _, _, err := loadAppConfigExtended(); err != nil {
+		t.Fatalf("loadAppConfigExtended: %v", err)
+	}
+
+	in := []customPaneMode{
+		{Pane: "net_cashflow", Name: "Renovation A", Expr: "cat:Home AND amt:<0", ViewType: ""},
+		{Pane: "net_cashflow", Name: "Renovation B", Expr: "cat:Home", ViewType: "line"},
+		{Pane: "composition", Name: "Dining", Expr: "cat:Dining AND amt:<0", ViewType: "pie"},
+	}
+	if err := saveCustomPaneModes(in); err != nil {
+		t.Fatalf("saveCustomPaneModes: %v", err)
+	}
+
+	_, _, _, out, warnings, err := loadAppConfigExtended()
+	if err != nil {
+		t.Fatalf("loadAppConfigExtended reload: %v", err)
+	}
+	if len(warnings) != 0 {
+		t.Fatalf("expected no warnings after save, got %v", warnings)
+	}
+	if len(out) != 2 {
+		t.Fatalf("custom pane mode count = %d, want 2 (deduped by pane)", len(out))
+	}
+
+	net := customPaneMode{}
+	comp := customPaneMode{}
+	for _, mode := range out {
+		switch mode.Pane {
+		case "net_cashflow":
+			net = mode
+		case "composition":
+			comp = mode
+		}
+	}
+
+	if net.Pane != "net_cashflow" {
+		t.Fatalf("expected net_cashflow mode after round-trip, got %+v", out)
+	}
+	if net.Name != "Renovation A" {
+		t.Fatalf("net mode name = %q, want first entry preserved", net.Name)
+	}
+	if net.Expr == "" {
+		t.Fatalf("net mode expr should be normalized non-empty")
+	}
+	if comp.Pane != "composition" || comp.Name != "Dining" {
+		t.Fatalf("composition mode mismatch: %+v", comp)
+	}
+}
+
+func TestSaveCustomPaneModesRejectsInvalidEntry(t *testing.T) {
+	xdg := t.TempDir()
+	t.Setenv("XDG_CONFIG_HOME", xdg)
+
+	if _, _, _, _, _, err := loadAppConfigExtended(); err != nil {
+		t.Fatalf("loadAppConfigExtended: %v", err)
+	}
+
+	err := saveCustomPaneModes([]customPaneMode{
+		{Pane: "net_cashflow", Name: "Broken", Expr: "cat:", ViewType: "line"},
+	})
+	if err == nil {
+		t.Fatal("expected saveCustomPaneModes validation error")
+	}
+	if !strings.Contains(err.Error(), "dashboard_view invalid") {
+		t.Fatalf("expected dashboard_view invalid prefix, got %v", err)
+	}
+
+	_, _, _, custom, _, reloadErr := loadAppConfigExtended()
+	if reloadErr != nil {
+		t.Fatalf("reload config: %v", reloadErr)
+	}
+	if len(custom) != 0 {
+		t.Fatalf("expected invalid save to keep persisted custom modes unchanged, got %+v", custom)
 	}
 }

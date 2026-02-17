@@ -463,7 +463,7 @@ func normalizeSavedFilterID(raw string) (string, error) {
 
 func isKnownDashboardPaneID(v string) bool {
 	switch strings.ToLower(strings.TrimSpace(v)) {
-	case "net_cashflow", "composition", "compare_bars", "budget_health":
+	case "net_cashflow", "composition":
 		return true
 	default:
 		return false
@@ -514,7 +514,38 @@ func parseActionBindings(bindings map[string][]string, defaults []keybindingConf
 		}
 		out[action] = keys
 	}
+	normalizeDashboardModeActionBindings(out)
 	return out, nil
+}
+
+func normalizeDashboardModeActionBindings(actionKeys map[string][]string) {
+	if len(actionKeys) == 0 {
+		return
+	}
+	nextAction := string(actionDashboardModeNext)
+	prevAction := string(actionDashboardModePrev)
+	if keys, ok := actionKeys[nextAction]; ok {
+		rewritten := make([]string, len(keys))
+		for i, k := range keys {
+			if k == "]" || k == ">" {
+				rewritten[i] = "."
+				continue
+			}
+			rewritten[i] = k
+		}
+		actionKeys[nextAction] = normalizeKeyList(rewritten)
+	}
+	if keys, ok := actionKeys[prevAction]; ok {
+		rewritten := make([]string, len(keys))
+		for i, k := range keys {
+			if k == "[" || k == "<" {
+				rewritten[i] = ","
+				continue
+			}
+			rewritten[i] = k
+		}
+		actionKeys[prevAction] = normalizeKeyList(rewritten)
+	}
 }
 
 func expandActionOverrides(defaults []keybindingConfig, actionKeys map[string][]string) []keybindingConfig {
@@ -750,6 +781,38 @@ func saveSavedFilters(saved []savedFilter) error {
 		Settings:      normalizeSettings(settings),
 		SavedFilter:   normalized,
 		DashboardView: customModes,
+	}
+	return writeConfigFile(primaryPath, cfg)
+}
+
+func saveCustomPaneModes(modes []customPaneMode) error {
+	primaryPath, err := configPath()
+	if err != nil {
+		return err
+	}
+	_, normalized, warnings := normalizeFilterConfigEntries(nil, modes)
+	if len(warnings) > 0 {
+		return fmt.Errorf("dashboard_view invalid: %s", warnings[0])
+	}
+	seenPane := make(map[string]bool, len(normalized))
+	deduped := make([]customPaneMode, 0, len(normalized))
+	for _, mode := range normalized {
+		pane := strings.ToLower(strings.TrimSpace(mode.Pane))
+		if seenPane[pane] {
+			continue
+		}
+		seenPane[pane] = true
+		deduped = append(deduped, mode)
+	}
+	formats, settings, saved, _, _, loadErr := loadAppConfigExtended()
+	if loadErr != nil {
+		return loadErr
+	}
+	cfg := configFile{
+		Account:       formatsToAccountConfigs(formats),
+		Settings:      normalizeSettings(settings),
+		SavedFilter:   saved,
+		DashboardView: deduped,
 	}
 	return writeConfigFile(primaryPath, cfg)
 }

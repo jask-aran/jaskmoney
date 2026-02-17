@@ -45,6 +45,11 @@ func (m model) updateFilterInput(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	keyName := normalizeKeyName(msg.String())
 	switch {
 	case m.isAction(scopeFilterInput, actionClearSearch, msg):
+		if m.drillReturn != nil {
+			if m.restoreDrillReturnToDashboard() {
+				return m, nil
+			}
+		}
 		m.filterInputMode = false
 		m.filterInput = ""
 		m.filterInputCursor = 0
@@ -65,6 +70,9 @@ func (m model) updateFilterInput(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		}
 		// Apply expression and return focus to table navigation.
 		m.filterInputMode = false
+		if m.drillReturn != nil {
+			m.drillReturn = nil
+		}
 		return m, nil
 	case keyName == "left":
 		moveInputCursorASCII(m.filterInput, &m.filterInputCursor, -1)

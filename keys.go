@@ -124,6 +124,7 @@ const (
 	actionDashboardModeNext        Action = "dashboard_mode_next"
 	actionDashboardModePrev        Action = "dashboard_mode_prev"
 	actionDashboardDrillDown       Action = "dashboard_drill_down"
+	actionDashboardCustomModeEdit  Action = "dashboard_custom_mode_edit"
 	actionRuleToggleEnabled        Action = "rule_toggle_enabled"
 	actionRuleMoveUp               Action = "rule_move_up"
 	actionRuleMoveDown             Action = "rule_move_down"
@@ -205,9 +206,10 @@ func NewKeyRegistry() *KeyRegistry {
 	reg(scopeDashboard, actionNextTab, "nav:next-tab", []string{"tab"}, "")
 	reg(scopeDashboard, actionPrevTab, "nav:prev-tab", []string{"shift+tab"}, "")
 	reg(scopeDashboard, actionQuit, "", []string{"q", "ctrl+c"}, "")
-	reg(scopeDashboardFocused, actionDashboardModeNext, "dash:mode-next", []string{"]"}, "next")
-	reg(scopeDashboardFocused, actionDashboardModePrev, "dash:mode-prev", []string{"["}, "prev")
+	reg(scopeDashboardFocused, actionDashboardModeNext, "dash:mode-next", []string{"."}, "next")
+	reg(scopeDashboardFocused, actionDashboardModePrev, "dash:mode-prev", []string{","}, "prev")
 	reg(scopeDashboardFocused, actionDashboardDrillDown, "dash:drill-down", []string{"enter"}, "drill")
+	reg(scopeDashboardFocused, actionDashboardCustomModeEdit, "dash:custom-mode-edit", []string{"e"}, "custom")
 	reg(scopeDashboardFocused, actionCancel, "", []string{"esc"}, "")
 
 	reg(scopeBudget, actionBudgetPrevMonth, "budget:prev-month", []string{"["}, "prev month")
@@ -560,6 +562,13 @@ func normalizeKeyName(k string) string {
 	s = strings.ReplaceAll(s, "ctl+", "ctrl+")
 	s = strings.ReplaceAll(s, "return", "enter")
 	s = strings.ReplaceAll(s, "spacebar", "space")
+	// Terminals often encode shifted punctuation as shift+<key>.
+	switch s {
+	case "shift+,":
+		return ","
+	case "shift+.":
+		return "."
+	}
 	if s == "delete" {
 		s = "del"
 	}

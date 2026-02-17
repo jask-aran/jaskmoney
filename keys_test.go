@@ -182,6 +182,8 @@ func TestNormalizeKeyNameCombos(t *testing.T) {
 		"Return":      "enter",
 		"SPACEBAR":    "space",
 		" ":           "space",
+		"shift+,":     ",",
+		"shift+.":     ".",
 	}
 	for in, want := range tests {
 		if got := normalizeKeyName(in); got != want {
@@ -226,6 +228,18 @@ func TestKeyRegistryCommandTriggers(t *testing.T) {
 	jump := r.Lookup("v", scopeGlobal)
 	if jump == nil || jump.CommandID != "jump:activate" {
 		t.Fatalf("v = %+v, want jump:activate", jump)
+	}
+}
+
+func TestDashboardModeKeysAcceptShiftedPunctuationEvents(t *testing.T) {
+	r := NewKeyRegistry()
+	next := r.Lookup("shift+.", scopeDashboardFocused)
+	if next == nil || next.Action != actionDashboardModeNext {
+		t.Fatalf("shift+. = %+v, want dashboard_mode_next", next)
+	}
+	prev := r.Lookup("shift+,", scopeDashboardFocused)
+	if prev == nil || prev.Action != actionDashboardModePrev {
+		t.Fatalf("shift+, = %+v, want dashboard_mode_prev", prev)
 	}
 }
 

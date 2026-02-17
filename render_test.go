@@ -162,6 +162,86 @@ func TestRenderCategoryBreakdownStableOrderOnTies(t *testing.T) {
 	}
 }
 
+func TestRenderDashboardCompareBarsBudgetVsActualScalesBars(t *testing.T) {
+	m := model{
+		budgetLines: []budgetLine{
+			{categoryName: "Total", budgeted: 1000},
+		},
+	}
+	rows := []transaction{
+		{dateISO: "2026-02-03", amount: -500},
+	}
+
+	out := renderDashboardCompareBarsMode(m, widgetMode{id: "budget_vs_actual"}, rows, 20)
+	lines := strings.Split(out, "\n")
+	if len(lines) != 2 {
+		t.Fatalf("expected 2 lines, got %d", len(lines))
+	}
+
+	if got := strings.Count(lines[0], "█"); got != 10 {
+		t.Fatalf("budget filled bars=%d want 10; line=%q", got, lines[0])
+	}
+	if got := strings.Count(lines[1], "█"); got != 5 {
+		t.Fatalf("actual filled bars=%d want 5; line=%q", got, lines[1])
+	}
+}
+
+func TestRenderBudgetAnalyticsStripIncludesMonthOverMonthSpend(t *testing.T) {
+	m := model{
+		budgetMonth: "2026-03",
+		rows: []transaction{
+			{dateISO: "2026-01-12", amount: -500, accountName: "ANZ"},
+			{dateISO: "2026-03-05", amount: -100, accountName: "ANZ"},
+			{dateISO: "2026-02-18", amount: -40, accountName: "ANZ"},
+			{dateISO: "2026-03-10", amount: -50, accountName: "ANZ"},
+			{dateISO: "2026-03-11", amount: 250, accountName: "ANZ"},
+		},
+	}
+	out := renderBudgetAnalyticsStrip(m, 80)
+	if !strings.Contains(out, "MoM Spend") {
+		t.Fatalf("missing MoM spend line in budget analytics: %q", out)
+	}
+	if !strings.Contains(out, "$150.00") {
+		t.Fatalf("current month spend should be $150.00, got: %q", out)
+	}
+	if !strings.Contains(out, "$40.00") {
+		t.Fatalf("previous month spend should be $40.00, got: %q", out)
+	}
+}
+
+func TestRenderBudgetTableIncludesCompareBarsSection(t *testing.T) {
+	m := model{
+		budgetMonth: "2026-03",
+		budgetLines: []budgetLine{{categoryName: "Groceries", budgeted: 500}},
+		rows: []transaction{
+			{dateISO: "2026-03-05", amount: -100, accountName: "ANZ"},
+			{dateISO: "2026-03-06", amount: 200, accountName: "ANZ"},
+			{dateISO: "2026-02-10", amount: -40, accountName: "ANZ"},
+		},
+	}
+	out := renderBudgetTable(m)
+	if !strings.Contains(out, "Compare Bars") {
+		t.Fatalf("budget table should include compare bars section: %q", out)
+	}
+	if !strings.Contains(out, "Budget:") || !strings.Contains(out, "Income:") {
+		t.Fatalf("expected compare bar meter labels in budget table: %q", out)
+	}
+}
+
+func TestSpendingYLabelFormatterFixedWidthAcrossPositiveAndSignedRanges(t *testing.T) {
+	pos := spendingYLabelFormatter(100, 0, 500)
+	signed := spendingYLabelFormatter(100, -500, 500)
+	if got := pos(0, 100); len(got) != chartYAxisLabelWidth {
+		t.Fatalf("positive y-label width = %d, want %d", len(got), chartYAxisLabelWidth)
+	}
+	if got := signed(0, -100); len(got) != chartYAxisLabelWidth {
+		t.Fatalf("signed y-label width = %d, want %d", len(got), chartYAxisLabelWidth)
+	}
+	if got := signed(0, 0); strings.TrimSpace(got) != "0" {
+		t.Fatalf("zero tick label = %q, want 0", got)
+	}
+}
+
 // ---------------------------------------------------------------------------
 // Daily spend aggregation tests
 // ---------------------------------------------------------------------------
