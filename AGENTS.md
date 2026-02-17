@@ -116,13 +116,29 @@ Use `agent-tui` to drive `jaskmoney` in an automated terminal session.
 - Start with help and discoverability first:
   - `agent-tui -h`
   - `agent-tui <subcommand> --help` (for example `agent-tui press --help`)
-- Typical flow:
-  - `go build .`
-  - `agent-tui run $(pwd)/jaskmoney`
+- Recommended flow (default): no-rebuild loop (`go run`)
+  - Initial launch:
+  - `agent-tui run -d $(pwd) go run .`
+  - Iteration after code changes:
+  - `agent-tui restart` (or relaunch with a fresh `agent-tui run -d $(pwd) go run .` session)
+  - `agent-tui restart` creates a new session ID each time. It also makes the new session active, so follow-up commands can omit `-s` unless you intentionally target a different session.
+  - Optional explicit targeting when needed:
   - `agent-tui sessions`
-  - If multiple sessions exist, pick one and set it active: `agent-tui sessions switch <session-id>`
+  - `agent-tui sessions switch <session-id>`
   - `agent-tui resize -s <session-id> --cols 140 --rows 44`
   - `agent-tui screenshot -s <session-id>`
+- Required fallback when no-rebuild is unstable: rebuild loop
+  - Initial launch:
+  - `go build .` (critical)
+  - `agent-tui run $(pwd)/jaskmoney`
+  - Iteration after code changes:
+  - `go build .` (critical, every change cycle)
+  - `agent-tui restart`
+- Switch from no-rebuild to rebuild flow immediately when any of these happen:
+  - `agent-tui restart` returns a new session that is `stopped`.
+  - The app does not reflect a code change after restart/relaunch.
+  - Session churn/confusion makes it unclear which process is active.
+  - You need consistent, repeatable screenshots or interaction automation.
 - Interaction primitives:
   - `agent-tui press -s <session-id> <KEY...>` for navigation/actions
   - You can send multiple keys in one call, for example: `agent-tui press ArrowDown ArrowDown Enter`
@@ -131,6 +147,7 @@ Use `agent-tui` to drive `jaskmoney` in an automated terminal session.
 
 What was successfully tested and observed:
 - Build completed with `go build .`.
+- `agent-tui run -d $(pwd) go run .` can start a live session for no-rebuild iteration.
 - App launched under `agent-tui run`.
 - Screenshot capture worked and showed full rendered tab content.
 - `120x40` could clip the lower Dashboard area in screenshots.

@@ -240,6 +240,9 @@ func TestSpendingYLabelFormatterFixedWidthAcrossPositiveAndSignedRanges(t *testi
 	if got := signed(0, 0); strings.TrimSpace(got) != "0" {
 		t.Fatalf("zero tick label = %q, want 0", got)
 	}
+	if got := signed(0, -100); got[0] == ' ' {
+		t.Fatalf("signed y-label should start at first column, got %q", got)
+	}
 }
 
 // ---------------------------------------------------------------------------
@@ -316,6 +319,143 @@ func TestRenderSpendingTrackerShowsYAxisLabels(t *testing.T) {
 	if strings.Contains(output, "$") {
 		t.Error("did not expect currency symbol in Y-axis labels")
 	}
+}
+
+func TestNetCashflowModesKeepYAxisColumnAligned(t *testing.T) {
+	start := time.Date(2026, time.January, 1, 0, 0, 0, 0, time.Local)
+	end := start.AddDate(0, 0, 29)
+	rows := []transaction{
+		{dateISO: "2026-01-02", amount: -80},
+		{dateISO: "2026-01-05", amount: -20},
+		{dateISO: "2026-01-10", amount: 200},
+		{dateISO: "2026-01-14", amount: -40},
+		{dateISO: "2026-01-20", amount: 150},
+	}
+
+	spending := renderSpendingTrackerWithRangeSized(rows, 84, time.Monday, start, end, 16)
+	netWorth := renderNetWorthTrackerWithRange(rows, 84, time.Monday, start, end, 16)
+	spendingCol := firstChartVerticalColumn(spending)
+	netWorthCol := firstChartVerticalColumn(netWorth)
+	if spendingCol < 0 || netWorthCol < 0 {
+		t.Fatalf("expected y-axis columns in both charts (spending=%d networth=%d)", spendingCol, netWorthCol)
+	}
+	if spendingCol != netWorthCol {
+		t.Fatalf("y-axis column mismatch: spending=%d networth=%d\nspending:\n%s\nnetworth:\n%s", spendingCol, netWorthCol, spending, netWorth)
+	}
+}
+
+func TestNetCashflowModesKeepYAxisColumnAlignedWithEmptyRows(t *testing.T) {
+	start := time.Date(2026, time.January, 1, 0, 0, 0, 0, time.Local)
+	end := start.AddDate(0, 0, 29)
+	spending := renderSpendingTrackerWithRangeSized(nil, 84, time.Monday, start, end, 16)
+	netWorth := renderNetWorthTrackerWithRange(nil, 84, time.Monday, start, end, 16)
+	spendingCol := firstChartVerticalColumn(spending)
+	netWorthCol := firstChartVerticalColumn(netWorth)
+	if spendingCol != netWorthCol {
+		t.Fatalf("empty-data y-axis mismatch: spending=%d networth=%d\nspending:\n%s\nnetworth:\n%s", spendingCol, netWorthCol, spending, netWorth)
+	}
+}
+
+func TestDashboardNetCashflowPaneModesKeepYAxisColumnAligned(t *testing.T) {
+	m := newModel()
+	rows := []transaction(nil)
+	modeSpending := widgetMode{id: "spending", label: "Spending", viewType: "line"}
+	modeNetWorth := widgetMode{id: "net_worth", label: "Net Worth", viewType: "line"}
+
+	spending := renderDashboardNetCashflowMode(m, modeSpending, rows, 81, 16)
+	netWorth := renderDashboardNetCashflowMode(m, modeNetWorth, rows, 81, 16)
+	spendingCol := firstChartVerticalColumn(spending)
+	netWorthCol := firstChartVerticalColumn(netWorth)
+	if spendingCol != netWorthCol {
+		t.Fatalf("dashboard pane y-axis mismatch: spending=%d networth=%d\nspending:\n%s\nnetworth:\n%s", spendingCol, netWorthCol, spending, netWorth)
+	}
+}
+
+func TestDashboardNetCashflowModeTrimsTrailingBlankLine(t *testing.T) {
+	m := newModel()
+	mode := widgetMode{id: "net_worth", label: "Net Worth", viewType: "line"}
+	out := renderDashboardNetCashflowMode(m, mode, nil, 81, 16)
+	lines := splitLines(ansi.Strip(out))
+	if len(lines) == 0 {
+		t.Fatal("expected chart output lines")
+	}
+	if strings.TrimSpace(lines[len(lines)-1]) == "" {
+		t.Fatalf("expected last chart line to be non-empty, got trailing blank line:\n%s", ansi.Strip(out))
+	}
+}
+
+func TestShiftChartLeftRemovesCommonLeadingWhitespace(t *testing.T) {
+	in := "    1 │ a\n    │ b\n"
+	got := shiftChartLeft(in, 4)
+	if !strings.HasPrefix(got, "1 │ a\n│ b") {
+		t.Fatalf("shiftChartLeft did not shift as expected:\n%q", got)
+	}
+}
+
+func TestDashboardAnalyticsPaneWidthsUsesDedicated7030Split(t *testing.T) {
+	left, right := dashboardAnalyticsPaneWidths(139)
+	if left != 97 || right != 42 {
+		t.Fatalf("dashboardAnalyticsPaneWidths(139) = (%d,%d), want (97,42)", left, right)
+	}
+}
+
+func TestDashboardAnalyticsPaneWidthsHonorsMinimums(t *testing.T) {
+	left, right := dashboardAnalyticsPaneWidths(50)
+	if left != 34 || right != 16 {
+		t.Fatalf("dashboardAnalyticsPaneWidths(50) = (%d,%d), want (34,16)", left, right)
+	}
+}
+
+func TestDashboardAnalyticsRegionUsesDedicated7030Split(t *testing.T) {
+	m := newModel()
+	m.ready = true
+	m.width = 140
+	m.height = 44
+	m.activeTab = tabDashboard
+	m.rows = testDashboardRows()
+	if len(m.dashWidgets) != dashboardPaneCount {
+		m.dashWidgets = newDashboardWidgets(m.customPaneModes)
+	}
+
+	out := renderDashboardAnalyticsRegion(m)
+	var line string
+	for _, ln := range splitLines(out) {
+		if strings.Contains(ln, "Net/Cashflow [N]") {
+			line = ln
+			break
+		}
+	}
+	if line == "" {
+		t.Fatalf("could not find Net/Cashflow title line in analytics region:\n%s", out)
+	}
+	parts := strings.SplitN(line, "╮ ╭", 2)
+	if len(parts) != 2 {
+		t.Fatalf("analytics title line missing pane separator: %q", ansi.Strip(line))
+	}
+	leftPane := parts[0] + "╮"
+	rightPane := "╭" + parts[1]
+	wantLeft, wantRight := dashboardAnalyticsPaneWidths(m.sectionWidth() - 1)
+	if got := ansi.StringWidth(leftPane); got != wantLeft {
+		t.Fatalf("left pane width = %d, want %d\nline=%q", got, wantLeft, ansi.Strip(line))
+	}
+	if got := ansi.StringWidth(rightPane); got != wantRight {
+		t.Fatalf("right pane width = %d, want %d\nline=%q", got, wantRight, ansi.Strip(line))
+	}
+}
+
+func firstChartVerticalColumn(chart string) int {
+	lines := splitLines(ansi.Strip(chart))
+	minCol := -1
+	for _, line := range lines {
+		col := strings.IndexRune(line, '│')
+		if col < 0 {
+			continue
+		}
+		if minCol < 0 || col < minCol {
+			minCol = col
+		}
+	}
+	return minCol
 }
 
 func TestRenderSpendingTrackerShowsGridlines(t *testing.T) {
