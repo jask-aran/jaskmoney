@@ -266,6 +266,9 @@ func TestCommandsWithScopesHaveBindings(t *testing.T) {
 		if len(cmd.Scopes) == 0 {
 			continue
 		}
+		if cmd.Hidden {
+			continue
+		}
 		found := false
 		for _, scope := range cmd.Scopes {
 			for _, b := range keys.BindingsForScope(scope) {

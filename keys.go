@@ -137,6 +137,7 @@ const (
 	actionBudgetResetOverride      Action = "budget_reset_override"
 	actionBudgetPrevYear           Action = "budget_prev_year"
 	actionBudgetNextYear           Action = "budget_next_year"
+	actionTimeframeThisMonth       Action = "timeframe_this_month"
 )
 
 func NewKeyRegistry() *KeyRegistry {
@@ -198,6 +199,9 @@ func NewKeyRegistry() *KeyRegistry {
 	reg(scopeManagerAccountAction, actionClose, "", []string{"esc"}, "")
 
 	// Dashboard footer: tab, shift+tab, q
+	reg(scopeDashboard, actionBudgetPrevMonth, "budget:prev-month", []string{"["}, "prev month")
+	reg(scopeDashboard, actionBudgetNextMonth, "budget:next-month", []string{"]"}, "next month")
+	reg(scopeDashboard, actionTimeframeThisMonth, "timeframe:this-month", []string{"0"}, "this month")
 	reg(scopeDashboard, actionNextTab, "nav:next-tab", []string{"tab"}, "")
 	reg(scopeDashboard, actionPrevTab, "nav:prev-tab", []string{"shift+tab"}, "")
 	reg(scopeDashboard, actionQuit, "", []string{"q", "ctrl+c"}, "")
@@ -206,15 +210,16 @@ func NewKeyRegistry() *KeyRegistry {
 	reg(scopeDashboardFocused, actionDashboardDrillDown, "dash:drill-down", []string{"enter"}, "drill")
 	reg(scopeDashboardFocused, actionCancel, "", []string{"esc"}, "")
 
-	reg(scopeBudget, actionBudgetPrevMonth, "budget:prev-month", []string{"h", "left"}, "")
-	reg(scopeBudget, actionBudgetNextMonth, "budget:next-month", []string{"l", "right"}, "")
+	reg(scopeBudget, actionBudgetPrevMonth, "budget:prev-month", []string{"["}, "prev month")
+	reg(scopeBudget, actionBudgetNextMonth, "budget:next-month", []string{"]"}, "next month")
+	reg(scopeBudget, actionTimeframeThisMonth, "timeframe:this-month", []string{"0"}, "this month")
 	reg(scopeBudget, actionBudgetToggleView, "budget:toggle-view", []string{"w"}, "view")
 	reg(scopeBudget, actionBudgetEdit, "budget:edit", []string{"enter"}, "edit")
 	reg(scopeBudget, actionBudgetAddTarget, "budget:add-target", []string{"a"}, "add")
 	reg(scopeBudget, actionBudgetDeleteTarget, "budget:delete-target", []string{"del"}, "delete")
 	reg(scopeBudget, actionBudgetResetOverride, "budget:reset-override", []string{"r"}, "reset")
-	reg(scopeBudget, actionBudgetPrevYear, "budget:prev-year", []string{"["}, "")
-	reg(scopeBudget, actionBudgetNextYear, "budget:next-year", []string{"]"}, "")
+	reg(scopeBudget, actionLeft, "", []string{"h", "left"}, "")
+	reg(scopeBudget, actionRight, "", []string{"l", "right"}, "")
 	reg(scopeBudget, actionUp, "", []string{"k", "up", "ctrl+p"}, "")
 	reg(scopeBudget, actionDown, "", []string{"j", "down", "ctrl+n"}, "")
 	reg(scopeBudget, actionNextTab, "nav:next-tab", []string{"tab"}, "")
@@ -222,13 +227,14 @@ func NewKeyRegistry() *KeyRegistry {
 	reg(scopeBudget, actionQuit, "", []string{"q", "ctrl+c"}, "")
 	reg(scopeBudget, actionCancel, "", []string{"esc"}, "")
 
-	// Dashboard timeframe focus footer: left/right, enter, esc
-	reg(scopeDashboardTimeframe, actionUp, "", []string{"k", "up"}, "")
-	reg(scopeDashboardTimeframe, actionDown, "", []string{"j", "down"}, "")
+	// Dashboard timeframe focus footer: preset nav, month step, apply, reset, esc
 	reg(scopeDashboardTimeframe, actionLeft, "", []string{"h", "left"}, "")
 	reg(scopeDashboardTimeframe, actionRight, "", []string{"l", "right"}, "")
-	reg(scopeDashboardTimeframe, actionSelect, "", []string{"enter"}, "")
-	reg(scopeDashboardTimeframe, actionCancel, "", []string{"esc"}, "")
+	reg(scopeDashboardTimeframe, actionBudgetPrevMonth, "budget:prev-month", []string{"["}, "prev month")
+	reg(scopeDashboardTimeframe, actionBudgetNextMonth, "budget:next-month", []string{"]"}, "next month")
+	reg(scopeDashboardTimeframe, actionTimeframeThisMonth, "timeframe:this-month", []string{"0"}, "this month")
+	reg(scopeDashboardTimeframe, actionSelect, "", []string{"enter"}, "apply")
+	reg(scopeDashboardTimeframe, actionCancel, "", []string{"esc"}, "done")
 
 	// Dashboard custom input footer: enter, esc
 	reg(scopeDashboardCustomInput, actionConfirm, "", []string{"enter"}, "")

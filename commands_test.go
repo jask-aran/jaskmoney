@@ -18,6 +18,7 @@ func TestCommandRegistryHasExpectedCommands(t *testing.T) {
 		"nav:settings":          true,
 		"budget:prev-month":     true,
 		"budget:next-month":     true,
+		"timeframe:this-month":  true,
 		"budget:toggle-view":    true,
 		"budget:edit":           true,
 		"budget:add-target":     true,

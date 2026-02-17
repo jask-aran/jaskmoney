@@ -3,6 +3,7 @@ package main
 import (
 	"strings"
 	"testing"
+	"time"
 )
 
 func typeDashboardInput(t *testing.T, m model, s string) model {
@@ -43,7 +44,7 @@ func TestDashboardSelectPresetFlow(t *testing.T) {
 		t.Fatalf("timeframe cursor = %d, want %d", got.dashTimeframeCursor, dashTimeframeThisMonth)
 	}
 
-	next, _ = got.updateDashboard(keyMsg("j"))
+	next, _ = got.updateDashboard(keyMsg("l"))
 	got2 := next.(model)
 	if got2.dashTimeframeCursor != (dashTimeframeThisMonth+1)%dashTimeframeCount {
 		t.Fatalf("timeframe cursor = %d, want %d", got2.dashTimeframeCursor, (dashTimeframeThisMonth+1)%dashTimeframeCount)
@@ -132,6 +133,55 @@ func TestDashboardCustomTimeframeRejectsInvalidRange(t *testing.T) {
 	}
 	if got.dashCustomEnd != "" {
 		t.Fatalf("dashCustomEnd should be cleared, got %q", got.dashCustomEnd)
+	}
+}
+
+func TestDashboardMonthJumpSnapsAndEnablesMonthMode(t *testing.T) {
+	m := newModel()
+	m.activeTab = tabDashboard
+	m.ready = true
+	m.dashTimeframeFocus = true
+	m.dashTimeframe = dashTimeframe3Months
+	m.dashTimeframeCursor = dashTimeframe3Months
+	m.dashMonthMode = false
+	m.syncBudgetMonthFromDashboard()
+
+	next, _ := m.Update(keyMsg("["))
+	got := next.(model)
+
+	if !got.dashMonthMode {
+		t.Fatal("expected month mode after month jump")
+	}
+	wantMonth := time.Now().AddDate(0, -1, 0).Format("2006-01")
+	if got.budgetMonth != wantMonth {
+		t.Fatalf("budgetMonth = %q, want %q", got.budgetMonth, wantMonth)
+	}
+	if got.dashAnchorMonth != wantMonth {
+		t.Fatalf("dashAnchorMonth = %q, want %q", got.dashAnchorMonth, wantMonth)
+	}
+}
+
+func TestDashboardDatePaneResetToThisMonth(t *testing.T) {
+	m := newModel()
+	m.activeTab = tabDashboard
+	m.ready = true
+	m.dashTimeframeFocus = true
+	m.dashMonthMode = true
+	m.dashAnchorMonth = "2024-01"
+	m.budgetMonth = "2024-01"
+
+	next, _ := m.Update(keyMsg("0"))
+	got := next.(model)
+
+	if got.dashMonthMode {
+		t.Fatal("expected reset to leave month mode")
+	}
+	if got.dashTimeframe != dashTimeframeThisMonth {
+		t.Fatalf("dashTimeframe = %d, want this-month preset", got.dashTimeframe)
+	}
+	wantMonth := time.Now().Format("2006-01")
+	if got.budgetMonth != wantMonth {
+		t.Fatalf("budgetMonth = %q, want %q", got.budgetMonth, wantMonth)
 	}
 }
 
