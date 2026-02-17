@@ -140,13 +140,6 @@ func (m model) updateDetail(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		m.detailEditing = "notes"
 		m.detailNotesCursor = len(m.detailNotes)
 		return m, nil
-	case m.isAction(scopeDetailModal, actionTxnLinkOffset, msg):
-		next, err := m.openOffsetDebitPicker()
-		if err != nil {
-			m.setError(err.Error())
-			return m, nil
-		}
-		return next, nil
 	case m.isAction(scopeDetailModal, actionSelect, msg):
 		// Save notes only.
 		if m.db == nil {

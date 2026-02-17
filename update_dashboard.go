@@ -10,10 +10,6 @@ func (m model) updateDashboard(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	if m.dashCustomEditing {
 		return m.updateDashboardCustomInput(msg)
 	}
-	if m.focusedSection >= 0 && m.isAction(scopeDashboardFocused, actionCancel, msg) {
-		m.focusedSection = sectionUnfocused
-		return m, nil
-	}
 
 	if next, cmd, handled := m.executeBoundCommand(scopeDashboard, msg); handled {
 		return next, cmd
@@ -26,6 +22,18 @@ func (m model) updateDashboard(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	switch {
 	case m.horizontalDelta(scopeDashboardTimeframe, msg) != 0:
 		delta := m.horizontalDelta(scopeDashboardTimeframe, msg)
+		anchor, _, err := parseMonthKey(m.dashAnchorMonth)
+		if err != nil {
+			anchor = time.Now()
+		}
+		m.dashAnchorMonth = anchor.AddDate(0, delta, 0).Format("2006-01")
+		budgetChanged := m.syncBudgetMonthFromDashboard()
+		if budgetChanged && m.db != nil {
+			return m, refreshCmd(m.db)
+		}
+		return m, nil
+	case m.verticalDelta(scopeDashboardTimeframe, msg) != 0:
+		delta := m.verticalDelta(scopeDashboardTimeframe, msg)
 		if delta < 0 {
 			m.dashTimeframeCursor--
 			if m.dashTimeframeCursor < 0 {
@@ -34,7 +42,6 @@ func (m model) updateDashboard(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		} else if delta > 0 {
 			m.dashTimeframeCursor = (m.dashTimeframeCursor + 1) % dashTimeframeCount
 		}
-		return m, nil
 	case m.isAction(scopeDashboardTimeframe, actionSelect, msg):
 		if m.dashTimeframeCursor == dashTimeframeCustom {
 			m.dashCustomEditing = true
@@ -45,12 +52,17 @@ func (m model) updateDashboard(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			return m, nil
 		}
 		m.dashTimeframe = m.dashTimeframeCursor
-		m.dashTimeframeFocus = false
+		budgetChanged := m.syncBudgetMonthFromDashboard()
 		m.setStatusf("Dashboard timeframe: %s", dashTimeframeLabel(m.dashTimeframe))
-		return m, saveSettingsCmd(m.currentAppSettings())
+		saveCmd := saveSettingsCmd(m.currentAppSettings())
+		if budgetChanged && m.db != nil {
+			return m, tea.Batch(saveCmd, refreshCmd(m.db))
+		}
+		return m, saveCmd
 	case m.isAction(scopeDashboardTimeframe, actionCancel, msg):
 		m.dashTimeframeFocus = false
-		m.setStatus("Timeframe selection cancelled.")
+		m.focusedSection = sectionUnfocused
+		m.setStatus("Date range pane unfocused.")
 		return m, nil
 	}
 	return m, nil
@@ -60,7 +72,6 @@ func (m model) updateDashboardCustomInput(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	switch {
 	case m.isAction(scopeDashboardCustomInput, actionCancel, msg):
 		m.dashCustomEditing = false
-		m.dashTimeframeFocus = false
 		m.dashCustomInput = ""
 		m.dashCustomStart = ""
 		m.dashCustomEnd = ""
@@ -92,9 +103,13 @@ func (m model) updateDashboardCustomInput(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		m.dashTimeframe = dashTimeframeCustom
 		m.dashTimeframeCursor = dashTimeframeCustom
 		m.dashCustomEditing = false
-		m.dashTimeframeFocus = false
+		budgetChanged := m.syncBudgetMonthFromDashboard()
 		m.setStatusf("Dashboard timeframe: %s to %s", m.dashCustomStart, m.dashCustomEnd)
-		return m, saveSettingsCmd(m.currentAppSettings())
+		saveCmd := saveSettingsCmd(m.currentAppSettings())
+		if budgetChanged && m.db != nil {
+			return m, tea.Batch(saveCmd, refreshCmd(m.db))
+		}
+		return m, saveCmd
 	default:
 		appendPrintableASCII(&m.dashCustomInput, msg.String())
 		return m, nil

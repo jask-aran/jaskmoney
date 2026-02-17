@@ -16,7 +16,6 @@ func TestCommandRegistryHasExpectedCommands(t *testing.T) {
 		"nav:manager":           true,
 		"nav:budget":            true,
 		"nav:settings":          true,
-		"spend:toggle-mode":     true,
 		"budget:prev-month":     true,
 		"budget:next-month":     true,
 		"budget:toggle-view":    true,
@@ -34,8 +33,8 @@ func TestCommandRegistryHasExpectedCommands(t *testing.T) {
 		"txn:clear-selection":   true,
 		"txn:quick-category":    true,
 		"txn:quick-tag":         true,
+		"txn:quick-offset":      true,
 		"txn:detail":            true,
-		"txn:link-offset":       true,
 		"txn:jump-top":          true,
 		"txn:jump-bottom":       true,
 		"filter:open":           true,
@@ -51,7 +50,6 @@ func TestCommandRegistryHasExpectedCommands(t *testing.T) {
 		"rules:apply":           true,
 		"rules:dry-run":         true,
 		"settings:clear-db":     true,
-		"dash:timeframe":        true,
 		"dash:mode-next":        true,
 		"dash:mode-prev":        true,
 		"dash:drill-down":       true,
@@ -110,9 +108,9 @@ func TestCommandSearchIncludesDescriptionAndID(t *testing.T) {
 func TestCommandSearchRespectsScope(t *testing.T) {
 	reg := NewCommandRegistry(NewKeyRegistry(), nil)
 	m := newModel()
-	results := reg.Search("timeframe", scopeTransactions, m, "")
+	results := reg.Search("widget", scopeTransactions, m, "")
 	for _, match := range results {
-		if match.Command.ID == "dash:timeframe" {
+		if match.Command.ID == "dash:mode-next" || match.Command.ID == "dash:mode-prev" {
 			t.Fatalf("dashboard command leaked into transactions scope: %+v", match)
 		}
 	}
@@ -133,7 +131,7 @@ func TestCommandSearchPrefersMRUWhenMatched(t *testing.T) {
 func TestExecuteByIDRejectsScopeMismatch(t *testing.T) {
 	reg := NewCommandRegistry(NewKeyRegistry(), nil)
 	m := newModel()
-	_, _, err := reg.ExecuteByID("dash:timeframe", scopeTransactions, m)
+	_, _, err := reg.ExecuteByID("budget:prev-month", scopeTransactions, m)
 	if err == nil {
 		t.Fatal("expected scope mismatch error")
 	}

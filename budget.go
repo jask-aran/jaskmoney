@@ -157,9 +157,13 @@ func queryOffsetSpendByCategory(db *sql.DB, startISO, endISO string, accountFilt
 	ids := accountFilterIDs(accountFilter)
 	args := []any{startISO, endISO}
 	query := `
-		SELECT d.category_id, COALESCE(SUM(co.amount), 0)
-		FROM credit_offsets co
-		JOIN transactions d ON d.id = co.debit_txn_id
+		SELECT d.category_id, COALESCE(SUM(off.amount), 0)
+		FROM (
+			SELECT debit_txn_id, amount FROM credit_offsets
+			UNION ALL
+			SELECT debit_txn_id, amount FROM manual_offsets
+		) off
+		JOIN transactions d ON d.id = off.debit_txn_id
 		WHERE d.amount < 0
 		  AND d.date_iso >= ?
 		  AND d.date_iso < ?
@@ -194,7 +198,7 @@ func queryOffsetSpendByCategory(db *sql.DB, startISO, endISO string, accountFilt
 	return out, rows.Err()
 }
 
-func computeBudgetLines(db *sql.DB, budgets []categoryBudget, overrides map[int][]budgetOverride, offsetsByDebit map[int][]creditOffset, month string, accountFilter map[int]bool, useRaw bool) ([]budgetLine, error) {
+func computeBudgetLines(db *sql.DB, budgets []categoryBudget, overrides map[int][]budgetOverride, offsetsByDebit map[int][]creditOffset, month string, accountFilter map[int]bool) ([]budgetLine, error) {
 	_ = offsetsByDebit // offsets are aggregated in one query by category for scoped month.
 	start, end, err := parseMonthKey(month)
 	if err != nil {
@@ -248,11 +252,7 @@ func computeBudgetLines(db *sql.DB, budgets []categoryBudget, overrides map[int]
 		spent := debitByCategory[b.categoryID]
 		offsets := offsetByCategory[b.categoryID]
 		net := spent - offsets
-		display := net
-		if useRaw {
-			display = spent
-		}
-		remaining := effective - display
+		remaining := effective - net
 		lines = append(lines, budgetLine{
 			categoryID:    b.categoryID,
 			categoryName:  cat.name,
@@ -268,7 +268,7 @@ func computeBudgetLines(db *sql.DB, budgets []categoryBudget, overrides map[int]
 	return lines, nil
 }
 
-func computeTargetLines(db *sql.DB, targets []spendingTarget, overrides map[int][]targetOverride, offsetsByDebit map[int][]creditOffset, txnTags map[int][]tag, savedFilters []savedFilter, accountFilter map[int]bool, useRaw bool) ([]targetLine, error) {
+func computeTargetLines(db *sql.DB, targets []spendingTarget, overrides map[int][]targetOverride, offsetsByDebit map[int][]creditOffset, txnTags map[int][]tag, savedFilters []savedFilter, accountFilter map[int]bool) ([]targetLine, error) {
 	byFilterID := make(map[string]savedFilter, len(savedFilters))
 	for _, sf := range savedFilters {
 		byFilterID[strings.ToLower(strings.TrimSpace(sf.ID))] = sf
@@ -343,11 +343,7 @@ func computeTargetLines(db *sql.DB, targets []spendingTarget, overrides map[int]
 			return nil, err
 		}
 		net := spent - offsets
-		display := net
-		if useRaw {
-			display = spent
-		}
-		remaining := effectiveBudget - display
+		remaining := effectiveBudget - net
 		lines = append(lines, targetLine{
 			targetID:   t.id,
 			name:       t.name,

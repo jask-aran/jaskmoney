@@ -634,7 +634,7 @@ func (m model) renderStatus(text string, isErr bool) string {
 	return style.Width(m.width).Render(flat)
 }
 
-func renderDashboardTimeframeChips(labels []string, active, cursor int, focused bool) string {
+func renderDatePresetChips(labels []string, active, cursor int, focused bool) string {
 	baseStyle := lipgloss.NewStyle().Foreground(colorSubtext0)
 	activeStyle := lipgloss.NewStyle().Foreground(colorAccent).Bold(true)
 
@@ -654,27 +654,70 @@ func renderDashboardTimeframeChips(labels []string, active, cursor int, focused 
 	return strings.Join(parts, " ")
 }
 
-func renderDashboardControlsLine(chips, dateRange string, width int) string {
+func renderDashboardDatePane(m model, rows []transaction, width int) string {
+	boundsStart, boundsEndExcl, ok := m.dashboardTimeframeBounds(time.Now())
+	dateRange := dashboardDateRangeFromBounds(rows, boundsStart, boundsEndExcl, ok)
+	monthLabel := m.dashboardBudgetMonth()
+	if start, _, err := parseMonthKey(monthLabel); err == nil {
+		monthLabel = start.Format("January 2006")
+	}
+	header := renderDatePaneHeader(monthLabel, dateRange, width-4)
+	presets := infoLabelStyle.Render("Presets  ") + renderDatePresetChips(dashTimeframeLabels, m.dashTimeframe, m.dashTimeframeCursor, m.dashTimeframeFocus)
+	lines := []string{header, presets}
+	if custom := renderDashboardCustomInputInline(m.dashCustomStart, m.dashCustomEnd, m.dashCustomInput, m.dashCustomEditing); custom != "" {
+		lines = append(lines, custom)
+	}
+	hintStyle := lipgloss.NewStyle().Foreground(colorOverlay1)
+	if m.dashTimeframeFocus || m.dashCustomEditing {
+		lines = append(lines, hintStyle.Render(
+			fmt.Sprintf(
+				"%s/%s month  %s/%s preset  %s apply  %s done",
+				actionKeyLabel(m.keys, scopeDashboardTimeframe, actionLeft, "h"),
+				actionKeyLabel(m.keys, scopeDashboardTimeframe, actionRight, "l"),
+				actionKeyLabel(m.keys, scopeDashboardTimeframe, actionUp, "k"),
+				actionKeyLabel(m.keys, scopeDashboardTimeframe, actionDown, "j"),
+				actionKeyLabel(m.keys, scopeDashboardTimeframe, actionSelect, "enter"),
+				actionKeyLabel(m.keys, scopeDashboardTimeframe, actionCancel, "esc"),
+			),
+		))
+	} else {
+		lines = append(lines, hintStyle.Render("Use jump mode to focus: press v then d."))
+	}
+	return renderManagerSectionBox("Date Range", m.dashTimeframeFocus, m.dashCustomEditing, width, strings.Join(lines, "\n"))
+}
+
+func renderBudgetDatePane(m model, width int) string {
+	monthLabel := m.budgetMonth
+	if start, _, err := parseMonthKey(m.budgetMonth); err == nil {
+		monthLabel = start.Format("January 2006")
+	}
+	header := renderDatePaneHeader(monthLabel, "", width-4)
+	hint := lipgloss.NewStyle().Foreground(colorOverlay1).Render("Use left/right to move month.")
+	return renderManagerSectionBox("Date Range", false, false, width, header+"\n"+hint)
+}
+
+func renderDatePaneHeader(monthLabel, dateRange string, width int) string {
+	monthChunk := infoLabelStyle.Render("Month  ") + infoValueStyle.Render("◀ "+monthLabel+" ▶")
 	if strings.TrimSpace(dateRange) == "" {
-		return chips
+		return monthChunk
 	}
-	rangeChunk := infoLabelStyle.Render("Date Range ") + infoValueStyle.Render(dateRange)
+	rangeChunk := infoLabelStyle.Render("Range  ") + infoValueStyle.Render(dateRange)
 	if width <= 0 {
-		return chips + "  " + rangeChunk
+		return monthChunk + "  " + rangeChunk
 	}
-	chipsW := ansi.StringWidth(chips)
+	monthW := ansi.StringWidth(monthChunk)
 	rangeW := ansi.StringWidth(rangeChunk)
-	if chipsW+2+rangeW <= width {
-		gap := width - chipsW - rangeW
+	if monthW+2+rangeW <= width {
+		gap := width - monthW - rangeW
 		if gap < 2 {
 			gap = 2
 		}
-		return chips + strings.Repeat(" ", gap) + rangeChunk
+		return monthChunk + strings.Repeat(" ", gap) + rangeChunk
 	}
-	return chips + "  " + rangeChunk
+	return monthChunk + "  " + rangeChunk
 }
 
-func renderDashboardCustomInput(start, end, input string, editing bool) string {
+func renderDashboardCustomInputInline(start, end, input string, editing bool) string {
 	if !editing {
 		return ""
 	}
@@ -696,13 +739,10 @@ func renderDashboardCustomInput(start, end, input string, editing bool) string {
 
 	labelStyle := lipgloss.NewStyle().Foreground(colorOverlay1)
 	valueStyle := lipgloss.NewStyle().Foreground(colorAccent)
-	promptStyle := lipgloss.NewStyle().Foreground(colorSubtext0)
-
 	fields := labelStyle.Render("Custom Range: ") +
 		valueStyle.Render("Start ") + valueStyle.Render(startText) + "  " +
 		valueStyle.Render("End ") + valueStyle.Render(endText)
-	prompt := promptStyle.Render("Enter confirms each field, Esc cancels.")
-	return fields + "\n" + prompt
+	return fields
 }
 
 func actionKeyLabel(keys *KeyRegistry, scope string, action Action, fallback string) string {
@@ -773,6 +813,23 @@ func renderModalContentWithWidth(title string, body []string, footer string, fix
 	}
 	framed = append(framed, modalBorderStyle.Render(bottom))
 	return strings.Join(framed, "\n")
+}
+
+func renderQuickOffsetModal(m model) string {
+	targetCount := len(m.quickOffsetFor)
+	targetLabel := fmt.Sprintf("%d transaction(s)", targetCount)
+	if targetCount == 1 {
+		targetLabel = "1 transaction"
+	}
+	body := []string{
+		detailLabelStyle.Render("Apply offset to: ") + detailValueStyle.Render(targetLabel),
+		detailActiveStyle.Render("Offset amount: ") + detailValueStyle.Render(renderASCIIInputCursor(m.quickOffsetAmount, m.quickOffsetCursor)),
+	}
+	footer := strings.Join([]string{
+		renderActionHint(m.keys, scopeQuickOffset, actionConfirm, "enter", "apply"),
+		renderActionHint(m.keys, scopeQuickOffset, actionClose, "esc", "cancel"),
+	}, "  ")
+	return renderModalContentWithWidth("Quick Offset", body, footer, 56)
 }
 
 // renderFilePicker renders a simple list of CSV files with a cursor.
@@ -939,7 +996,7 @@ func renderImportPreviewTable(rows []importPreviewRow, postRules bool, cursor, t
 	if cursor >= 0 && cursor < len(txns) {
 		cursorTxnID = txns[cursor].id
 	}
-	return renderTransactionTable(txns, categories, txnTags, nil, nil, cursorTxnID, topIndex, visibleRows, contentWidth, sortByDate, true)
+	return renderTransactionTable(txns, categories, txnTags, nil, nil, nil, cursorTxnID, topIndex, visibleRows, contentWidth, sortByDate, true)
 }
 
 // ---------------------------------------------------------------------------
@@ -952,6 +1009,7 @@ func renderTransactionTable(
 	rows []transaction,
 	categories []category,
 	txnTags map[int][]tag,
+	offsetsByDebit map[int][]creditOffset,
 	selectedRows map[int]bool,
 	highlightedRows map[int]bool,
 	cursorTxnID int,
@@ -963,6 +1021,7 @@ func renderTransactionTable(
 ) string {
 	dateW := 9 // dd-mm-yy = 8 chars + 1 pad
 	amountW := 11
+	offsetW := 11
 	catW := 0
 	accountW := 0
 	tagsW := 0
@@ -970,6 +1029,7 @@ func renderTransactionTable(
 	showCats := categories != nil
 	showTags := categories != nil
 	showAccounts := hasMultipleAccountNames(rows)
+	showOffset := offsetsByDebit != nil
 	if showCats {
 		catW = 14
 	}
@@ -978,6 +1038,9 @@ func renderTransactionTable(
 	}
 	sep := " "   // single-space column separator
 	numCols := 3 // date amount desc
+	if showOffset {
+		numCols++
+	}
 	if showAccounts {
 		numCols++
 	}
@@ -989,6 +1052,9 @@ func renderTransactionTable(
 	}
 	numSeps := max(0, numCols-1)
 	fixedWithoutTags := dateW + amountW + catW + accountW + numSeps
+	if showOffset {
+		fixedWithoutTags += offsetW
+	}
 	avail := width - fixedWithoutTags
 	descW := min(descTargetW, avail)
 	if descW < 5 {
@@ -1004,25 +1070,50 @@ func renderTransactionTable(
 	// Build header with sort indicator
 	dateLbl := addSortIndicator("Date", sortByDate, sortCol, sortAsc)
 	amtLbl := addSortIndicator("Amount", sortByAmount, sortCol, sortAsc)
+	offsetLbl := "Offset"
 	descLbl := addSortIndicator("Description", sortByDescription, sortCol, sortAsc)
 
 	var header string
 	if showCats && showTags && showAccounts {
 		catLbl := addSortIndicator("Category", sortByCategory, sortCol, sortAsc)
-		header = fmt.Sprintf("%-*s"+sep+"%-*s"+sep+"%-*s"+sep+"%-*s"+sep+"%-*s"+sep+"%-*s", dateW, dateLbl, amountW, amtLbl, accountW, "Account", descW, descLbl, catW, catLbl, tagsW, "Tags")
+		if showOffset {
+			header = fmt.Sprintf("%-*s"+sep+"%-*s"+sep+"%-*s"+sep+"%-*s"+sep+"%-*s"+sep+"%-*s"+sep+"%-*s", dateW, dateLbl, amountW, amtLbl, offsetW, offsetLbl, descW, descLbl, accountW, "Account", catW, catLbl, tagsW, "Tags")
+		} else {
+			header = fmt.Sprintf("%-*s"+sep+"%-*s"+sep+"%-*s"+sep+"%-*s"+sep+"%-*s"+sep+"%-*s", dateW, dateLbl, amountW, amtLbl, descW, descLbl, accountW, "Account", catW, catLbl, tagsW, "Tags")
+		}
 	} else if showCats && showTags {
 		catLbl := addSortIndicator("Category", sortByCategory, sortCol, sortAsc)
-		header = fmt.Sprintf("%-*s"+sep+"%-*s"+sep+"%-*s"+sep+"%-*s"+sep+"%-*s", dateW, dateLbl, amountW, amtLbl, descW, descLbl, catW, catLbl, tagsW, "Tags")
+		if showOffset {
+			header = fmt.Sprintf("%-*s"+sep+"%-*s"+sep+"%-*s"+sep+"%-*s"+sep+"%-*s"+sep+"%-*s", dateW, dateLbl, amountW, amtLbl, offsetW, offsetLbl, descW, descLbl, catW, catLbl, tagsW, "Tags")
+		} else {
+			header = fmt.Sprintf("%-*s"+sep+"%-*s"+sep+"%-*s"+sep+"%-*s"+sep+"%-*s", dateW, dateLbl, amountW, amtLbl, descW, descLbl, catW, catLbl, tagsW, "Tags")
+		}
 	} else if showCats && showAccounts {
 		catLbl := addSortIndicator("Category", sortByCategory, sortCol, sortAsc)
-		header = fmt.Sprintf("%-*s"+sep+"%-*s"+sep+"%-*s"+sep+"%-*s"+sep+"%-*s", dateW, dateLbl, amountW, amtLbl, accountW, "Account", descW, descLbl, catW, catLbl)
+		if showOffset {
+			header = fmt.Sprintf("%-*s"+sep+"%-*s"+sep+"%-*s"+sep+"%-*s"+sep+"%-*s"+sep+"%-*s", dateW, dateLbl, amountW, amtLbl, offsetW, offsetLbl, descW, descLbl, accountW, "Account", catW, catLbl)
+		} else {
+			header = fmt.Sprintf("%-*s"+sep+"%-*s"+sep+"%-*s"+sep+"%-*s"+sep+"%-*s", dateW, dateLbl, amountW, amtLbl, descW, descLbl, accountW, "Account", catW, catLbl)
+		}
 	} else if showCats {
 		catLbl := addSortIndicator("Category", sortByCategory, sortCol, sortAsc)
-		header = fmt.Sprintf("%-*s"+sep+"%-*s"+sep+"%-*s"+sep+"%-*s", dateW, dateLbl, amountW, amtLbl, descW, descLbl, catW, catLbl)
+		if showOffset {
+			header = fmt.Sprintf("%-*s"+sep+"%-*s"+sep+"%-*s"+sep+"%-*s"+sep+"%-*s", dateW, dateLbl, amountW, amtLbl, offsetW, offsetLbl, descW, descLbl, catW, catLbl)
+		} else {
+			header = fmt.Sprintf("%-*s"+sep+"%-*s"+sep+"%-*s"+sep+"%-*s", dateW, dateLbl, amountW, amtLbl, descW, descLbl, catW, catLbl)
+		}
 	} else if showAccounts {
-		header = fmt.Sprintf("%-*s"+sep+"%-*s"+sep+"%-*s"+sep+"%-*s", dateW, dateLbl, amountW, amtLbl, accountW, "Account", descW, descLbl)
+		if showOffset {
+			header = fmt.Sprintf("%-*s"+sep+"%-*s"+sep+"%-*s"+sep+"%-*s"+sep+"%-*s", dateW, dateLbl, amountW, amtLbl, offsetW, offsetLbl, descW, descLbl, accountW, "Account")
+		} else {
+			header = fmt.Sprintf("%-*s"+sep+"%-*s"+sep+"%-*s"+sep+"%-*s", dateW, dateLbl, amountW, amtLbl, descW, descLbl, accountW, "Account")
+		}
 	} else {
-		header = fmt.Sprintf("%-*s"+sep+"%-*s"+sep+"%-*s", dateW, dateLbl, amountW, amtLbl, descW, descLbl)
+		if showOffset {
+			header = fmt.Sprintf("%-*s"+sep+"%-*s"+sep+"%-*s"+sep+"%-*s", dateW, dateLbl, amountW, amtLbl, offsetW, offsetLbl, descW, descLbl)
+		} else {
+			header = fmt.Sprintf("%-*s"+sep+"%-*s"+sep+"%-*s", dateW, dateLbl, amountW, amtLbl, descW, descLbl)
+		}
 	}
 	headerLine := tableHeaderStyle.Render(header)
 	lines := []string{headerLine}
@@ -1037,6 +1128,12 @@ func renderTransactionTable(
 		// Amount with color
 		amountText := fmt.Sprintf("%.2f", row.amount)
 		amountField := padRight(amountText, amountW)
+		offsetField := ""
+		if showOffset {
+			offsetValue := totalOffsetForTxn(row.id, offsetsByDebit)
+			offsetText := fmt.Sprintf("%.2f", offsetValue)
+			offsetField = padRight(offsetText, offsetW)
+		}
 
 		// Row state style with separate cursor overlay.
 		selected := selectedRows != nil && selectedRows[row.id]
@@ -1064,28 +1161,59 @@ func renderTransactionTable(
 			amountStyle = amountStyle.Foreground(colorError)
 		}
 		amountField = amountStyle.Render(amountField)
+		if showOffset {
+			offsetStyle := lipgloss.NewStyle().Foreground(colorSuccess).Background(rowBg)
+			if cursorStrong {
+				offsetStyle = offsetStyle.Bold(true)
+			}
+			offsetField = offsetStyle.Render(offsetField)
+		}
 
 		if showCats && showTags && showAccounts {
 			catField := renderCategoryTagOnBackground(row.categoryName, row.categoryColor, catW, rowBg, cursorStrong)
 			tagField := renderTagsOnBackground(txnTags[row.id], tagsW, rowBg, cursorStrong)
 			accountField := cellStyle.Render(padRight(truncate(row.accountName, accountW), accountW))
-			line = cellStyle.Render(dateField) + sepField + amountField + sepField + accountField + sepField + cellStyle.Render(descField) + sepField + catField + sepField + tagField
+			if showOffset {
+				line = cellStyle.Render(dateField) + sepField + amountField + sepField + offsetField + sepField + cellStyle.Render(descField) + sepField + accountField + sepField + catField + sepField + tagField
+			} else {
+				line = cellStyle.Render(dateField) + sepField + amountField + sepField + accountField + sepField + cellStyle.Render(descField) + sepField + catField + sepField + tagField
+			}
 		} else if showCats && showTags {
 			catField := renderCategoryTagOnBackground(row.categoryName, row.categoryColor, catW, rowBg, cursorStrong)
 			tagField := renderTagsOnBackground(txnTags[row.id], tagsW, rowBg, cursorStrong)
-			line = cellStyle.Render(dateField) + sepField + amountField + sepField + cellStyle.Render(descField) + sepField + catField + sepField + tagField
+			if showOffset {
+				line = cellStyle.Render(dateField) + sepField + amountField + sepField + offsetField + sepField + cellStyle.Render(descField) + sepField + catField + sepField + tagField
+			} else {
+				line = cellStyle.Render(dateField) + sepField + amountField + sepField + cellStyle.Render(descField) + sepField + catField + sepField + tagField
+			}
 		} else if showCats && showAccounts {
 			catField := renderCategoryTagOnBackground(row.categoryName, row.categoryColor, catW, rowBg, cursorStrong)
 			accountField := cellStyle.Render(padRight(truncate(row.accountName, accountW), accountW))
-			line = cellStyle.Render(dateField) + sepField + amountField + sepField + accountField + sepField + cellStyle.Render(descField) + sepField + catField
+			if showOffset {
+				line = cellStyle.Render(dateField) + sepField + amountField + sepField + offsetField + sepField + cellStyle.Render(descField) + sepField + accountField + sepField + catField
+			} else {
+				line = cellStyle.Render(dateField) + sepField + amountField + sepField + accountField + sepField + cellStyle.Render(descField) + sepField + catField
+			}
 		} else if showCats {
 			catField := renderCategoryTagOnBackground(row.categoryName, row.categoryColor, catW, rowBg, cursorStrong)
-			line = cellStyle.Render(dateField) + sepField + amountField + sepField + cellStyle.Render(descField) + sepField + catField
+			if showOffset {
+				line = cellStyle.Render(dateField) + sepField + amountField + sepField + offsetField + sepField + cellStyle.Render(descField) + sepField + catField
+			} else {
+				line = cellStyle.Render(dateField) + sepField + amountField + sepField + cellStyle.Render(descField) + sepField + catField
+			}
 		} else if showAccounts {
 			accountField := cellStyle.Render(padRight(truncate(row.accountName, accountW), accountW))
-			line = cellStyle.Render(dateField) + sepField + amountField + sepField + accountField + sepField + cellStyle.Render(descField)
+			if showOffset {
+				line = cellStyle.Render(dateField) + sepField + amountField + sepField + offsetField + sepField + cellStyle.Render(descField) + sepField + accountField
+			} else {
+				line = cellStyle.Render(dateField) + sepField + amountField + sepField + accountField + sepField + cellStyle.Render(descField)
+			}
 		} else {
-			line = cellStyle.Render(dateField) + sepField + amountField + sepField + cellStyle.Render(descField)
+			if showOffset {
+				line = cellStyle.Render(dateField) + sepField + amountField + sepField + offsetField + sepField + cellStyle.Render(descField)
+			} else {
+				line = cellStyle.Render(dateField) + sepField + amountField + sepField + cellStyle.Render(descField)
+			}
 		}
 		line = ansi.Truncate(line, width, "")
 		// Ensure row backgrounds span the full table width.
@@ -1110,6 +1238,21 @@ func renderTransactionTable(
 	}
 
 	return strings.Join(lines, "\n")
+}
+
+func totalOffsetForTxn(txnID int, offsetsByDebit map[int][]creditOffset) float64 {
+	if txnID <= 0 || len(offsetsByDebit) == 0 {
+		return 0
+	}
+	offsets := offsetsByDebit[txnID]
+	if len(offsets) == 0 {
+		return 0
+	}
+	total := 0.0
+	for _, off := range offsets {
+		total += off.amount
+	}
+	return total
 }
 
 func hasMultipleAccountNames(rows []transaction) bool {
@@ -1253,6 +1396,10 @@ func renderSummaryCards(rows []transaction, categories []category, width int) st
 
 func dashboardDateRange(rows []transaction, timeframe int, customStart, customEnd string, now time.Time) string {
 	start, endExcl, ok := timeframeBounds(timeframe, customStart, customEnd, now)
+	return dashboardDateRangeFromBounds(rows, start, endExcl, ok)
+}
+
+func dashboardDateRangeFromBounds(rows []transaction, start, endExcl time.Time, ok bool) string {
 	if ok {
 		end := endExcl.AddDate(0, 0, -1)
 		if end.Before(start) {
@@ -2827,24 +2974,20 @@ func renderBudgetCategoryTable(m model, width int) string {
 		catField := cellStyle.Render(padRight(truncate(line.categoryName, catW), catW))
 
 		// Amounts
-		budgetedText := padRight(formatMoney(line.budgeted), budgetedW)
+		budgetedText := fmt.Sprintf("%*s", budgetedW, formatMoney(line.budgeted))
 		budgetedField := lipgloss.NewStyle().Foreground(colorSubtext0).Background(rowBg).Bold(bold).Render(budgetedText)
 
-		spent := line.netSpent
-		if m.spendModeRaw {
-			spent = line.spent
-		}
-		spentText := padRight(formatMoney(spent), spentW)
+		spentText := fmt.Sprintf("%*s", spentW, formatMoney(line.spent))
 		spentField := lipgloss.NewStyle().Foreground(colorError).Background(rowBg).Bold(bold).Render(spentText)
 
-		offsetsText := padRight(formatMoney(line.offsets), offsetsW)
+		offsetsText := fmt.Sprintf("%*s", offsetsW, formatMoney(line.offsets))
 		offsetsField := lipgloss.NewStyle().Foreground(colorSuccess).Background(rowBg).Bold(bold).Render(offsetsText)
 
 		remainColor := colorSuccess
 		if line.overBudget {
 			remainColor = colorError
 		}
-		remainText := padRight(formatMoney(line.remaining), remainW)
+		remainText := fmt.Sprintf("%*s", remainW, formatMoney(line.remaining))
 		remainField := lipgloss.NewStyle().Foreground(remainColor).Background(rowBg).Bold(bold).Render(remainText)
 
 		overField := ""
@@ -2854,7 +2997,7 @@ func renderBudgetCategoryTable(m model, width int) string {
 			overField = cellStyle.Render(strings.Repeat(" ", overW))
 		}
 
-		row := swatch + catField + sepField + budgetedField + sepField + spentField + sepField + offsetsField + sepField + remainField + overField
+		row := cellStyle.Render("  ") + swatch + catField + sepField + budgetedField + sepField + spentField + sepField + offsetsField + sepField + remainField + overField
 
 		// Inline edit indicator
 		if m.budgetEditing && isCursor {
@@ -2910,19 +3053,15 @@ func renderBudgetTargetTable(m model, width int) string {
 		nameField := cellStyle.Render(padRight(truncate(t.name, nameW), nameW))
 		periodField := lipgloss.NewStyle().Foreground(colorSubtext1).Background(rowBg).Bold(bold).Render(padRight(t.periodType, periodW))
 
-		budgetedField := lipgloss.NewStyle().Foreground(colorSubtext0).Background(rowBg).Bold(bold).Render(padRight(formatMoney(t.budgeted), budgetedW))
+		budgetedField := lipgloss.NewStyle().Foreground(colorSubtext0).Background(rowBg).Bold(bold).Render(fmt.Sprintf("%*s", budgetedW, formatMoney(t.budgeted)))
 
-		spent := t.netSpent
-		if m.spendModeRaw {
-			spent = t.spent
-		}
-		spentField := lipgloss.NewStyle().Foreground(colorError).Background(rowBg).Bold(bold).Render(padRight(formatMoney(spent), spentW))
+		spentField := lipgloss.NewStyle().Foreground(colorError).Background(rowBg).Bold(bold).Render(fmt.Sprintf("%*s", spentW, formatMoney(t.spent)))
 
 		remainColor := colorSuccess
 		if t.overBudget {
 			remainColor = colorError
 		}
-		remainField := lipgloss.NewStyle().Foreground(remainColor).Background(rowBg).Bold(bold).Render(padRight(formatMoney(t.remaining), remainW))
+		remainField := lipgloss.NewStyle().Foreground(remainColor).Background(rowBg).Bold(bold).Render(fmt.Sprintf("%*s", remainW, formatMoney(t.remaining)))
 
 		row := cellStyle.Render("  ") + nameField + sepField + periodField + sepField + budgetedField + sepField + spentField + sepField + remainField
 
@@ -2951,10 +3090,9 @@ func renderBudgetAnalyticsStrip(m model, width int) string {
 		overColor = redSty
 	}
 
-	modeSty := lipgloss.NewStyle().Foreground(colorSubtext1)
-	modeLabel := "effective"
-	if m.spendModeRaw {
-		modeLabel = "raw"
+	totalOffsets := 0.0
+	for _, line := range m.budgetLines {
+		totalOffsets += line.offsets
 	}
 
 	col1W := 24
@@ -2966,7 +3104,7 @@ func renderBudgetAnalyticsStrip(m model, width int) string {
 
 	row := padRight(infoLabelStyle.Render("Adherence  ")+adherenceColor.Render(fmt.Sprintf("%.0f%%", m.budgetAdherencePct)), col1W) +
 		padRight(infoLabelStyle.Render("Over  ")+overColor.Render(fmt.Sprintf("%d", m.budgetOverCount)), col2W) +
-		padRight(infoLabelStyle.Render("Mode  ")+modeSty.Render(modeLabel), col3W)
+		padRight(infoLabelStyle.Render("Offsets  ")+greenSty.Render(formatMoney(totalOffsets)), col3W)
 
 	sparkLabel := infoLabelStyle.Render("Variance  ")
 	sparkline := renderBudgetVarianceSparkline(m.budgetVarSparkline)
@@ -3245,9 +3383,6 @@ func renderDetailWithOffsets(txn transaction, tags []tag, notes string, notesCur
 			body = append(body, detailValueStyle.Render(indentPrefix+line))
 		}
 		footerParts := fmt.Sprintf("%s notes", actionKeyLabel(keys, scopeDetailModal, actionEdit, "n"))
-		if txn.amount > 0 {
-			footerParts += fmt.Sprintf("  %s offset", actionKeyLabel(keys, scopeDetailModal, actionTxnLinkOffset, "o"))
-		}
 		footerParts += fmt.Sprintf("  %s save  %s close",
 			actionKeyLabel(keys, scopeDetailModal, actionSelect, "enter"),
 			actionKeyLabel(keys, scopeDetailModal, actionClose, "esc"),

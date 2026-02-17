@@ -59,14 +59,6 @@ func overlayPrecedence() []overlayEntry {
 			forCommandScope: false, // unreachable from executeBoundCommand
 		},
 		{
-			name:            "offsetDebitPicker",
-			guard:           func(m model) bool { return m.offsetDebitPicker != nil },
-			scope:           func(m model) string { return scopeOffsetDebitPicker },
-			handler:         func(m model, msg tea.KeyMsg) (tea.Model, tea.Cmd) { return m.updateOffsetDebitPicker(msg) },
-			forFooter:       true,
-			forCommandScope: true,
-		},
-		{
 			name:            "detail",
 			guard:           func(m model) bool { return m.showDetail },
 			scope:           func(m model) string { return scopeDetailModal },
@@ -103,6 +95,14 @@ func overlayPrecedence() []overlayEntry {
 			guard:           func(m model) bool { return m.tagPicker != nil },
 			scope:           func(m model) string { return scopeTagPicker },
 			handler:         func(m model, msg tea.KeyMsg) (tea.Model, tea.Cmd) { return m.updateTagPicker(msg) },
+			forFooter:       true,
+			forCommandScope: true,
+		},
+		{
+			name:            "quickOffset",
+			guard:           func(m model) bool { return m.quickOffsetOpen },
+			scope:           func(m model) string { return scopeQuickOffset },
+			handler:         func(m model, msg tea.KeyMsg) (tea.Model, tea.Cmd) { return m.updateQuickOffsetModal(msg) },
 			forFooter:       true,
 			forCommandScope: true,
 		},
@@ -221,6 +221,7 @@ var modalTextContracts = map[string]modalTextBehavior{
 	scopeFilterEdit:           {cursorAware: true, printableFirst: true, vimNavSuppressed: true},
 	scopeSettingsModeCat:      {cursorAware: true, printableFirst: true, vimNavSuppressed: true},
 	scopeSettingsModeTag:      {cursorAware: true, printableFirst: true, vimNavSuppressed: true},
+	scopeQuickOffset:          {cursorAware: true, printableFirst: true, vimNavSuppressed: true},
 	scopeManagerModal:         {cursorAware: true, printableFirst: true, vimNavSuppressed: true},
 	scopeDetailModal:          {cursorAware: true, printableFirst: true, vimNavSuppressed: false}, // detail modal uses dedicated updateDetailNotes handler when editing; j/k needed for non-editing scroll
 	scopeFilterInput:          {cursorAware: true, printableFirst: true, vimNavSuppressed: false},

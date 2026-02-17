@@ -165,26 +165,6 @@ func NewCommandRegistry(keys *KeyRegistry, savedFilters []savedFilter) *CommandR
 			},
 		},
 		{
-			ID:          "spend:toggle-mode",
-			Label:       "Toggle Effective/Raw Spend Mode",
-			Description: "Toggle shared spend mode used by Budget and Dashboard",
-			Category:    "Budget",
-			Scopes:      []string{scopeGlobal, scopeBudget, scopeDashboard, scopeDashboardFocused},
-			Enabled:     commandAlwaysEnabled,
-			Execute: func(m model) (model, tea.Cmd, error) {
-				m.spendModeRaw = !m.spendModeRaw
-				if m.spendModeRaw {
-					m.setStatus("Spend mode: raw debits.")
-				} else {
-					m.setStatus("Spend mode: effective debits.")
-				}
-				if m.db == nil {
-					return m, nil, nil
-				}
-				return m, refreshCmd(m.db), nil
-			},
-		},
-		{
 			ID:          "budget:prev-month",
 			Label:       "Previous Month",
 			Description: "Move budget scope to previous month",
@@ -199,6 +179,7 @@ func NewCommandRegistry(keys *KeyRegistry, savedFilters []savedFilter) *CommandR
 				}
 				m.budgetMonth = start.AddDate(0, -1, 0).Format("2006-01")
 				m.budgetYear = start.AddDate(0, -1, 0).Year()
+				m.dashAnchorMonth = m.budgetMonth
 				if m.db != nil {
 					return m, refreshCmd(m.db), nil
 				}
@@ -220,6 +201,7 @@ func NewCommandRegistry(keys *KeyRegistry, savedFilters []savedFilter) *CommandR
 				}
 				m.budgetMonth = start.AddDate(0, 1, 0).Format("2006-01")
 				m.budgetYear = start.AddDate(0, 1, 0).Year()
+				m.dashAnchorMonth = m.budgetMonth
 				if m.db != nil {
 					return m, refreshCmd(m.db), nil
 				}
@@ -238,6 +220,7 @@ func NewCommandRegistry(keys *KeyRegistry, savedFilters []savedFilter) *CommandR
 				m.budgetYear--
 				// Also shift the table-view month to January of that year.
 				m.budgetMonth = fmt.Sprintf("%04d-01", m.budgetYear)
+				m.dashAnchorMonth = m.budgetMonth
 				if m.db != nil {
 					return m, refreshCmd(m.db), nil
 				}
@@ -255,6 +238,7 @@ func NewCommandRegistry(keys *KeyRegistry, savedFilters []savedFilter) *CommandR
 			Execute: func(m model) (model, tea.Cmd, error) {
 				m.budgetYear++
 				m.budgetMonth = fmt.Sprintf("%04d-01", m.budgetYear)
+				m.dashAnchorMonth = m.budgetMonth
 				if m.db != nil {
 					return m, refreshCmd(m.db), nil
 				}
@@ -557,6 +541,19 @@ func NewCommandRegistry(keys *KeyRegistry, savedFilters []savedFilter) *CommandR
 			},
 		},
 		{
+			ID:          "txn:quick-offset",
+			Label:       "Quick Offset",
+			Description: "Open quick offset input",
+			Category:    "Transactions",
+			Scopes:      []string{scopeTransactions},
+			Enabled:     commandAlwaysEnabled,
+			Execute: func(m model) (model, tea.Cmd, error) {
+				next, cmd := m.openQuickOffsetModal(m.getFilteredRows())
+				out, _ := next.(model)
+				return out, cmd, nil
+			},
+		},
+		{
 			ID:          "txn:detail",
 			Label:       "Open Detail",
 			Description: "Open transaction detail modal",
@@ -576,36 +573,6 @@ func NewCommandRegistry(keys *KeyRegistry, savedFilters []savedFilter) *CommandR
 				}
 				m.openDetail(filtered[m.cursor])
 				return m, nil, nil
-			},
-		},
-		{
-			ID:          "txn:link-offset",
-			Label:       "Link Credit Offset",
-			Description: "Link credit transaction to a debit offset",
-			Category:    "Transactions",
-			Scopes:      []string{scopeDetailModal},
-			Enabled: func(m model) (bool, string) {
-				txn := m.findDetailTxn()
-				if txn == nil {
-					return false, "No transaction selected."
-				}
-				if txn.amount <= 0 {
-					return false, "Offsets can only be linked from credit transactions."
-				}
-				if txn.accountID == nil {
-					return false, "Transaction has no account."
-				}
-				if m.db == nil {
-					return false, "Database not ready."
-				}
-				return true, ""
-			},
-			Execute: func(m model) (model, tea.Cmd, error) {
-				next, err := m.openOffsetDebitPicker()
-				if err != nil {
-					return m, nil, err
-				}
-				return next, nil, nil
 			},
 		},
 		{
@@ -990,21 +957,6 @@ func NewCommandRegistry(keys *KeyRegistry, savedFilters []savedFilter) *CommandR
 				keyLabel := m.primaryActionKey(scopeSettingsActiveDBImport, actionClearDB, "c")
 				cmd := m.armSettingsConfirm(confirmActionClearDB, 0, fmt.Sprintf("Press %s again to clear all data", keyLabel))
 				return m, cmd, nil
-			},
-		},
-		{
-			ID:          "dash:timeframe",
-			Label:       "Focus Timeframe",
-			Description: "Focus dashboard timeframe chips",
-			Category:    "Dashboard",
-			Scopes:      []string{scopeDashboard},
-			Enabled:     commandAlwaysEnabled,
-			Execute: func(m model) (model, tea.Cmd, error) {
-				m.dashTimeframeFocus = !m.dashTimeframeFocus
-				if m.dashTimeframeFocus {
-					m.dashTimeframeCursor = m.dashTimeframe
-				}
-				return m, nil, nil
 			},
 		},
 		{

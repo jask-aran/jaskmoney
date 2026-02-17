@@ -2,7 +2,7 @@ package main
 
 import "testing"
 
-func TestDetailOffsetLinkFlow(t *testing.T) {
+func TestDetailDoesNotOpenOffsetLinkFlow(t *testing.T) {
 	db, cleanup := testDB(t)
 	defer cleanup()
 
@@ -42,29 +42,10 @@ func TestDetailOffsetLinkFlow(t *testing.T) {
 
 	next, _ := m.updateDetail(keyMsg("o"))
 	got := next.(model)
-	if got.offsetDebitPicker == nil {
-		t.Fatal("offset debit picker should open")
+	if got.offsetDebitPicker != nil {
+		t.Fatal("offset debit picker should remain closed")
 	}
-
-	next, _ = got.updateOffsetDebitPicker(keyMsg("enter"))
-	got2 := next.(model)
-	if got2.detailEditing != "offset_amount" {
-		t.Fatalf("detailEditing = %q, want offset_amount", got2.detailEditing)
-	}
-	if got2.offsetDebitTxnID == 0 {
-		t.Fatal("offset debit txn should be selected")
-	}
-
-	next, _ = got2.updateDetailOffsetAmount(keyMsg("enter"))
-	got3 := next.(model)
-	if got3.statusErr {
-		t.Fatalf("expected successful insert, got status=%q", got3.status)
-	}
-	offsets, err := loadCreditOffsets(db)
-	if err != nil {
-		t.Fatalf("loadCreditOffsets: %v", err)
-	}
-	if len(offsets) != 1 {
-		t.Fatalf("offset rows = %d, want 1", len(offsets))
+	if got.detailEditing != "" {
+		t.Fatalf("detailEditing = %q, want empty", got.detailEditing)
 	}
 }

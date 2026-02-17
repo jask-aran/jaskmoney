@@ -37,6 +37,8 @@ const (
 const (
 	sectionUnfocused = -1
 
+	sectionDashboardDateRange = 0
+
 	sectionManagerAccounts     = 0
 	sectionManagerTransactions = 1
 
@@ -226,6 +228,12 @@ type quickTagsAppliedMsg struct {
 	toggled   bool
 	toggledOn bool
 	err       error
+}
+
+type quickOffsetsAppliedMsg struct {
+	count  int
+	amount float64
+	err    error
 }
 
 type accountNukedMsg struct {
@@ -418,6 +426,10 @@ type model struct {
 	catPickerFor        []int
 	tagPicker           *pickerState
 	tagPickerFor        []int
+	quickOffsetOpen     bool
+	quickOffsetFor      []int
+	quickOffsetAmount   string
+	quickOffsetCursor   int
 	offsetCreditTxnID   int
 	offsetDebitPicker   *pickerState
 	offsetDebitTxnID    int
@@ -491,6 +503,7 @@ type model struct {
 	dashTimeframe       int
 	dashTimeframeFocus  bool
 	dashTimeframeCursor int
+	dashAnchorMonth     string
 	dashCustomStart     string
 	dashCustomEnd       string
 	dashCustomInput     string
@@ -506,7 +519,6 @@ type model struct {
 	budgetEditValue         string
 	budgetEditCursor        int
 	budgetDeleteArmedTarget int
-	spendModeRaw            bool
 
 	// Budget data
 	categoryBudgets       []categoryBudget
@@ -565,13 +577,14 @@ func newModel() model {
 	if appCfg.SpendingWeekFrom == "monday" {
 		weekAnchor = time.Monday
 	}
-	return model{
+	m := model{
 		basePath:              cwd,
 		activeTab:             tabDashboard,
 		managerMode:           managerModeTransactions,
 		maxVisibleRows:        appCfg.RowsPerPage,
 		spendingWeekAnchor:    weekAnchor,
 		dashTimeframe:         appCfg.DashTimeframe,
+		dashAnchorMonth:       time.Now().Format("2006-01"),
 		dashCustomStart:       appCfg.DashCustomStart,
 		dashCustomEnd:         appCfg.DashCustomEnd,
 		budgetMonth:           time.Now().Format("2006-01"),
@@ -594,6 +607,8 @@ func newModel() model {
 		jumpPreviousFocus:     sectionUnfocused,
 		focusedSection:        sectionManagerTransactions,
 	}
+	m.syncBudgetMonthFromDashboard()
+	return m
 }
 
 // ---------------------------------------------------------------------------
@@ -635,10 +650,6 @@ func (m model) View() string {
 		body = m.dashboardView()
 	}
 
-	if m.offsetDebitPicker != nil {
-		picker := renderPicker(m.offsetDebitPicker, min(64, m.width-10), m.keys, scopeOffsetDebitPicker)
-		return m.composeOverlay(header, body, statusLine, footer, picker)
-	}
 	if m.showDetail {
 		txn := m.findDetailTxn()
 		if txn != nil {
@@ -670,6 +681,10 @@ func (m model) View() string {
 	if m.tagPicker != nil {
 		picker := renderPicker(m.tagPicker, min(56, m.width-10), m.keys, scopeTagPicker)
 		return m.composeOverlay(header, body, statusLine, footer, picker)
+	}
+	if m.quickOffsetOpen {
+		modal := renderQuickOffsetModal(m)
+		return m.composeOverlay(header, body, statusLine, footer, modal)
 	}
 	if m.filterApplyPicker != nil {
 		picker := renderPicker(m.filterApplyPicker, min(64, m.width-10), m.keys, scopeFilterApplyPicker)
@@ -719,13 +734,8 @@ func (m model) View() string {
 func (m model) dashboardView() string {
 	rows := m.getDashboardRows()
 	w := m.sectionBoxContentWidth(m.sectionWidth())
-	chips := renderDashboardControlsLine(
-		renderDashboardTimeframeChips(dashTimeframeLabels, m.dashTimeframe, m.dashTimeframeCursor, m.dashTimeframeFocus),
-		dashboardDateRange(rows, m.dashTimeframe, m.dashCustomStart, m.dashCustomEnd, time.Now()),
-		m.sectionWidth(),
-	)
-	customInput := renderDashboardCustomInput(m.dashCustomStart, m.dashCustomEnd, m.dashCustomInput, m.dashCustomEditing)
-	spendRows := m.dashboardSpendRowsWithMode(rows)
+	datePane := renderDashboardDatePane(m, rows, m.sectionWidth())
+	spendRows := dashboardSpendRows(rows, m.txnTags)
 	summary := m.renderSectionSizedLeft("Overview", renderSummaryCards(spendRows, m.categories, w), m.sectionWidth(), false)
 	totalWidth := m.sectionWidth()
 	gap := 2
@@ -748,30 +758,14 @@ func (m model) dashboardView() string {
 		false,
 	)
 	chartsRow := lipgloss.JoinHorizontal(lipgloss.Top, trend, strings.Repeat(" ", gap), breakdown)
-	out := chips
-	if customInput != "" {
-		out += "\n" + customInput
-	}
+	out := datePane
 	return out + "\n" + summary + "\n" + chartsRow
 }
 
 func (m model) budgetTabView() string {
-	// Budget scope header: month label + account scope
+	datePane := renderBudgetDatePane(m, m.sectionWidth())
 	scope := m.accountFilterLabel()
-	monthLabel := m.budgetMonth
-	if t, _, err := parseMonthKey(m.budgetMonth); err == nil {
-		monthLabel = t.Format("January 2006")
-	}
-	modeLabel := "effective"
-	if m.spendModeRaw {
-		modeLabel = "raw"
-	}
-	scopeLine := infoLabelStyle.Render("  ") +
-		lipgloss.NewStyle().Foreground(colorAccent).Bold(true).Render(monthLabel) +
-		infoLabelStyle.Render("  ·  ") +
-		infoValueStyle.Render(scope) +
-		infoLabelStyle.Render("  ·  mode: ") +
-		lipgloss.NewStyle().Foreground(colorSubtext1).Render(modeLabel)
+	scopeLine := infoLabelStyle.Render("  Accounts: ") + infoValueStyle.Render(scope)
 
 	var body string
 	if m.budgetView == 1 {
@@ -779,7 +773,7 @@ func (m model) budgetTabView() string {
 	} else {
 		body = renderBudgetTable(m)
 	}
-	return scopeLine + "\n" + body
+	return datePane + "\n" + scopeLine + "\n" + body
 }
 
 func (m model) managerView() string {
@@ -789,6 +783,10 @@ func (m model) managerView() string {
 	rows := m.getFilteredRows()
 	txVisibleRows := m.managerVisibleRows()
 	total := len(m.rows)
+	offsetsByDebit := m.creditOffsetsByDebit
+	if offsetsByDebit == nil {
+		offsetsByDebit = make(map[int][]creditOffset)
+	}
 	var txContent string
 	if m.managerMode == managerModeTransactions {
 		highlighted := m.highlightedRows(rows)
@@ -801,6 +799,7 @@ func (m model) managerView() string {
 			rows,
 			m.categories,
 			m.txnTags,
+			offsetsByDebit,
 			m.selectedRows,
 			highlighted,
 			cursorTxnID,
@@ -815,6 +814,7 @@ func (m model) managerView() string {
 			rows,
 			m.categories,
 			m.txnTags,
+			offsetsByDebit,
 			nil,
 			nil,
 			0,
@@ -1287,23 +1287,57 @@ func dashboardSpendRows(rows []transaction, txnTags map[int][]tag) []transaction
 	return out
 }
 
-func (m model) dashboardSpendRowsWithMode(rows []transaction) []transaction {
-	out := dashboardSpendRows(rows, m.txnTags)
-	if m.spendModeRaw || len(out) == 0 {
-		return out
-	}
-	adjusted := make([]transaction, 0, len(out))
-	for _, row := range out {
-		if row.amount < 0 {
-			offsets := 0.0
-			for _, off := range m.creditOffsetsByDebit[row.id] {
-				offsets += off.amount
-			}
-			row.amount = row.amount + offsets
+func daysInMonth(year int, month time.Month) int {
+	return time.Date(year, month+1, 0, 0, 0, 0, 0, time.Local).Day()
+}
+
+func (m model) dashboardAnchorTime(now time.Time) time.Time {
+	if start, _, err := parseMonthKey(m.dashAnchorMonth); err == nil {
+		day := now.Day()
+		if day < 1 {
+			day = 1
 		}
-		adjusted = append(adjusted, row)
+		maxDay := daysInMonth(start.Year(), start.Month())
+		if day > maxDay {
+			day = maxDay
+		}
+		return time.Date(start.Year(), start.Month(), day, 12, 0, 0, 0, time.Local)
 	}
-	return adjusted
+	return now
+}
+
+func (m model) dashboardTimeframeBounds(now time.Time) (time.Time, time.Time, bool) {
+	return timeframeBounds(
+		m.dashTimeframe,
+		m.dashCustomStart,
+		m.dashCustomEnd,
+		m.dashboardAnchorTime(now),
+	)
+}
+
+func (m model) dashboardBudgetMonth() string {
+	start, endExcl, ok := m.dashboardTimeframeBounds(time.Now())
+	if !ok {
+		if _, _, err := parseMonthKey(m.dashAnchorMonth); err == nil {
+			return m.dashAnchorMonth
+		}
+		return time.Now().Format("2006-01")
+	}
+	monthRef := endExcl.AddDate(0, 0, -1)
+	if monthRef.Before(start) {
+		monthRef = start
+	}
+	return monthRef.Format("2006-01")
+}
+
+func (m *model) syncBudgetMonthFromDashboard() bool {
+	month := m.dashboardBudgetMonth()
+	changed := month != m.budgetMonth
+	m.budgetMonth = month
+	if start, _, err := parseMonthKey(month); err == nil {
+		m.budgetYear = start.Year()
+	}
+	return changed
 }
 
 func hasIgnoreTag(tags []tag) bool {
@@ -1325,7 +1359,7 @@ func (m model) getDashboardRows() []transaction {
 }
 
 func (m model) dashboardChartRange(now time.Time) (time.Time, time.Time) {
-	start, endExcl, ok := timeframeBounds(m.dashTimeframe, m.dashCustomStart, m.dashCustomEnd, now)
+	start, endExcl, ok := m.dashboardTimeframeBounds(now)
 	if ok {
 		end := endExcl.AddDate(0, 0, -1)
 		if end.Before(start) {
@@ -1360,7 +1394,7 @@ func (m model) buildTransactionFilter() *filterNode {
 
 func (m model) buildDashboardScopeFilter() *filterNode {
 	accountScope := m.buildAccountScopeFilter()
-	start, endExcl, ok := timeframeBounds(m.dashTimeframe, m.dashCustomStart, m.dashCustomEnd, time.Now())
+	start, endExcl, ok := m.dashboardTimeframeBounds(time.Now())
 	if !ok {
 		return accountScope
 	}

@@ -207,6 +207,57 @@ func TestPhase5QuickCategorizeEscCancels(t *testing.T) {
 	}
 }
 
+func TestPhase5OpenQuickOffsetModalOnCursorRow(t *testing.T) {
+	m, cleanup := testPhase5Model(t)
+	defer cleanup()
+
+	filtered := m.getFilteredRows()
+	cursorID := filtered[m.cursor].id
+
+	m2, _ := m.Update(keyMsg("o"))
+	got := m2.(model)
+	if !got.quickOffsetOpen {
+		t.Fatal("expected quick offset modal to open")
+	}
+	if len(got.quickOffsetFor) != 1 || got.quickOffsetFor[0] != cursorID {
+		t.Fatalf("quick offset targets = %v, want [%d]", got.quickOffsetFor, cursorID)
+	}
+}
+
+func TestPhase5QuickOffsetApplySingleRow(t *testing.T) {
+	m, cleanup := testPhase5Model(t)
+	defer cleanup()
+
+	filtered := m.getFilteredRows()
+	targetID := filtered[m.cursor].id
+
+	m2, _ := m.Update(keyMsg("o"))
+	got := m2.(model)
+	if !got.quickOffsetOpen {
+		t.Fatal("expected quick offset modal open")
+	}
+	for _, k := range []string{"1", "2", ".", "5", "0"} {
+		m3, _ := got.Update(keyMsg(k))
+		got = m3.(model)
+	}
+	m4, cmd := got.Update(keyMsg("enter"))
+	got2 := m4.(model)
+	got3 := runCmdUpdate(t, got2, cmd)
+
+	var count int
+	var amount float64
+	err := got3.db.QueryRow(`SELECT COUNT(*), COALESCE(SUM(amount), 0) FROM manual_offsets WHERE debit_txn_id = ?`, targetID).Scan(&count, &amount)
+	if err != nil {
+		t.Fatalf("query manual_offsets: %v", err)
+	}
+	if count != 1 {
+		t.Fatalf("manual offset rows = %d, want 1", count)
+	}
+	if amount != 12.50 {
+		t.Fatalf("manual offset sum = %.2f, want 12.50", amount)
+	}
+}
+
 func TestPhase5FooterBindingsUseCategoryPickerScope(t *testing.T) {
 	m := newModel()
 	m.catPicker = newPicker("Quick Categorize", nil, false, "")

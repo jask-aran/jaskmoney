@@ -41,6 +41,7 @@ const (
 	scopeDetailModal              = "detail_modal"
 	scopeCategoryPicker           = "category_picker"
 	scopeTagPicker                = "tag_picker"
+	scopeQuickOffset              = "quick_offset"
 	scopeOffsetDebitPicker        = "offset_debit_picker"
 	scopeFilterApplyPicker        = "filter_apply_picker"
 	scopeFilterEdit               = "filter_edit"
@@ -88,7 +89,7 @@ const (
 	actionRangeHighlight           Action = "range_highlight"
 	actionQuickCategory            Action = "quick_category"
 	actionQuickTag                 Action = "quick_tag"
-	actionTimeframe                Action = "timeframe"
+	actionQuickOffset              Action = "quick_offset"
 	actionImportAll                Action = "import_all"
 	actionSkipDupes                Action = "skip_dupes"
 	actionImportRawView            Action = "import_raw_view"
@@ -127,7 +128,6 @@ const (
 	actionRuleMoveUp               Action = "rule_move_up"
 	actionRuleMoveDown             Action = "rule_move_down"
 	actionRuleDryRun               Action = "rule_dry_run"
-	actionTxnLinkOffset            Action = "txn_link_offset"
 	actionBudgetPrevMonth          Action = "budget_prev_month"
 	actionBudgetNextMonth          Action = "budget_next_month"
 	actionBudgetToggleView         Action = "budget_toggle_view"
@@ -137,7 +137,6 @@ const (
 	actionBudgetResetOverride      Action = "budget_reset_override"
 	actionBudgetPrevYear           Action = "budget_prev_year"
 	actionBudgetNextYear           Action = "budget_next_year"
-	actionSpendToggleMode          Action = "spend_toggle_mode"
 )
 
 func NewKeyRegistry() *KeyRegistry {
@@ -198,9 +197,7 @@ func NewKeyRegistry() *KeyRegistry {
 	reg(scopeManagerAccountAction, actionSelect, "", []string{"enter"}, "")
 	reg(scopeManagerAccountAction, actionClose, "", []string{"esc"}, "")
 
-	// Dashboard footer: d, tab, shift+tab, q
-	reg(scopeDashboard, actionTimeframe, "dash:timeframe", []string{"d"}, "timeframe")
-	reg(scopeDashboard, actionSpendToggleMode, "spend:toggle-mode", []string{"m"}, "mode")
+	// Dashboard footer: tab, shift+tab, q
 	reg(scopeDashboard, actionNextTab, "nav:next-tab", []string{"tab"}, "")
 	reg(scopeDashboard, actionPrevTab, "nav:prev-tab", []string{"shift+tab"}, "")
 	reg(scopeDashboard, actionQuit, "", []string{"q", "ctrl+c"}, "")
@@ -208,7 +205,6 @@ func NewKeyRegistry() *KeyRegistry {
 	reg(scopeDashboardFocused, actionDashboardModePrev, "dash:mode-prev", []string{"["}, "prev")
 	reg(scopeDashboardFocused, actionDashboardDrillDown, "dash:drill-down", []string{"enter"}, "drill")
 	reg(scopeDashboardFocused, actionCancel, "", []string{"esc"}, "")
-	reg(scopeDashboardFocused, actionSpendToggleMode, "spend:toggle-mode", []string{"m"}, "mode")
 
 	reg(scopeBudget, actionBudgetPrevMonth, "budget:prev-month", []string{"h", "left"}, "")
 	reg(scopeBudget, actionBudgetNextMonth, "budget:next-month", []string{"l", "right"}, "")
@@ -219,7 +215,6 @@ func NewKeyRegistry() *KeyRegistry {
 	reg(scopeBudget, actionBudgetResetOverride, "budget:reset-override", []string{"r"}, "reset")
 	reg(scopeBudget, actionBudgetPrevYear, "budget:prev-year", []string{"["}, "")
 	reg(scopeBudget, actionBudgetNextYear, "budget:next-year", []string{"]"}, "")
-	reg(scopeBudget, actionSpendToggleMode, "spend:toggle-mode", []string{"m"}, "mode")
 	reg(scopeBudget, actionUp, "", []string{"k", "up", "ctrl+p"}, "")
 	reg(scopeBudget, actionDown, "", []string{"j", "down", "ctrl+n"}, "")
 	reg(scopeBudget, actionNextTab, "nav:next-tab", []string{"tab"}, "")
@@ -228,6 +223,8 @@ func NewKeyRegistry() *KeyRegistry {
 	reg(scopeBudget, actionCancel, "", []string{"esc"}, "")
 
 	// Dashboard timeframe focus footer: left/right, enter, esc
+	reg(scopeDashboardTimeframe, actionUp, "", []string{"k", "up"}, "")
+	reg(scopeDashboardTimeframe, actionDown, "", []string{"j", "down"}, "")
 	reg(scopeDashboardTimeframe, actionLeft, "", []string{"h", "left"}, "")
 	reg(scopeDashboardTimeframe, actionRight, "", []string{"l", "right"}, "")
 	reg(scopeDashboardTimeframe, actionSelect, "", []string{"enter"}, "")
@@ -245,6 +242,7 @@ func NewKeyRegistry() *KeyRegistry {
 	reg(scopeTransactions, actionSortDirection, "txn:sort-dir", []string{"S"}, "reverse")
 	reg(scopeTransactions, actionQuickCategory, "txn:quick-category", []string{"c"}, "cat")
 	reg(scopeTransactions, actionQuickTag, "txn:quick-tag", []string{"t"}, "tag")
+	reg(scopeTransactions, actionQuickOffset, "txn:quick-offset", []string{"o"}, "offset")
 	reg(scopeTransactions, actionToggleSelect, "txn:select", []string{"space", " "}, "")
 	reg(scopeTransactions, actionRangeHighlight, "", []string{"shift+up/down", "shift+up", "shift+down"}, "")
 	reg(scopeTransactions, actionCommandClearSelection, "txn:clear-selection", []string{"u"}, "clear")
@@ -267,6 +265,10 @@ func NewKeyRegistry() *KeyRegistry {
 	reg(scopeTagPicker, actionToggleSelect, "", []string{"space"}, "")
 	reg(scopeTagPicker, actionSelect, "", []string{"enter"}, "")
 	reg(scopeTagPicker, actionClose, "", []string{"esc"}, "")
+	reg(scopeQuickOffset, actionConfirm, "", []string{"enter"}, "apply")
+	reg(scopeQuickOffset, actionClose, "", []string{"esc"}, "cancel")
+	reg(scopeQuickOffset, actionLeft, "", []string{"left"}, "")
+	reg(scopeQuickOffset, actionRight, "", []string{"right"}, "")
 	reg(scopeFilterApplyPicker, actionUp, "", []string{"up", "ctrl+p", "k"}, "")
 	reg(scopeFilterApplyPicker, actionDown, "", []string{"down", "ctrl+n", "j"}, "")
 	reg(scopeFilterApplyPicker, actionSelect, "", []string{"enter"}, "")
@@ -279,7 +281,6 @@ func NewKeyRegistry() *KeyRegistry {
 	// Detail / file picker footers: enter, esc, up/down, q
 	reg(scopeDetailModal, actionSelect, "", []string{"enter"}, "")
 	reg(scopeDetailModal, actionEdit, "", []string{"n"}, "notes")
-	reg(scopeDetailModal, actionTxnLinkOffset, "txn:link-offset", []string{"o"}, "offset")
 	reg(scopeDetailModal, actionClose, "", []string{"esc"}, "")
 	reg(scopeDetailModal, actionUp, "", []string{"k", "up", "ctrl+p"}, "")
 	reg(scopeDetailModal, actionDown, "", []string{"j", "down", "ctrl+n"}, "")
