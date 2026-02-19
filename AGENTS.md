@@ -211,6 +211,7 @@ Use this as the concise source of available primitives and reusable function sur
 | Component | Key APIs | Capabilities | Primary use-cases |
 |---|---|---|---|
 | Overlay dispatch table (`dispatch.go`) | `overlayPrecedence`, `dispatchOverlayKey`, `activeOverlayScope`, `tabScope`, `settingsTabScope` | Single source of truth for modal precedence and scope routing | Add/modify modal priority, keep update/footer/command scope aligned |
+| Interaction contracts (`dispatch.go`) | `interactionContracts`, `activeInteractionContract`, `renderFooterFromContract` | Scope-level intent contracts powering footer hints and intent/key validation | Keep footer/help semantics aligned with handler behavior and key registry bindings |
 | Modal text contracts (`dispatch.go`) | `modalTextContracts`, `isTextInputModalScopeFromContract` | Per-scope text safety (`printableFirst`, cursor-aware editing, vim-nav suppression) | Any modal or inline editor with text input |
 | Cursor-aware text field (`dispatch.go`) | `textField.handleKey`, `textField.render`, `textField.set` | Cursor-positioned ASCII insertion/deletion and rendering | Rule/filter/settings/modal text fields |
 | Modal form navigator (`dispatch.go`) | `modalFormNav.handleNav` | Standard `up/down/tab/shift+tab` field focus cycling | Multi-field modal forms |
