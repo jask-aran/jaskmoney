@@ -4,11 +4,11 @@ import (
 	"database/sql"
 	"encoding/json"
 	"fmt"
+	"math"
 	"os"
 	"path/filepath"
 	"sort"
 	"strings"
-	"time"
 
 	tea "github.com/charmbracelet/bubbletea"
 	_ "modernc.org/sqlite"
@@ -18,7 +18,7 @@ import (
 // Schema version
 // ---------------------------------------------------------------------------
 
-const schemaVersion = 6
+const schemaVersion = 7
 const mandatoryIgnoreTagName = "IGNORE"
 const legacyRuleExprPrefix = "__legacy_expr__:"
 
@@ -55,7 +55,7 @@ var mandatoryTags = []struct {
 // Schema DDL
 // ---------------------------------------------------------------------------
 
-const schemaV6 = `
+const schemaV7 = `
 CREATE TABLE IF NOT EXISTS schema_meta (
 	version INTEGER NOT NULL
 );
@@ -158,21 +158,20 @@ CREATE TABLE IF NOT EXISTS spending_target_overrides (
 	UNIQUE(target_id, period_key)
 );
 
-CREATE TABLE IF NOT EXISTS credit_offsets (
+CREATE TABLE IF NOT EXISTS transaction_allocations (
 	id            INTEGER PRIMARY KEY AUTOINCREMENT,
-	credit_txn_id INTEGER NOT NULL REFERENCES transactions(id) ON DELETE CASCADE,
-	debit_txn_id  INTEGER NOT NULL REFERENCES transactions(id) ON DELETE CASCADE,
-	amount        REAL NOT NULL CHECK(amount > 0),
+	parent_txn_id INTEGER NOT NULL REFERENCES transactions(id) ON DELETE CASCADE,
+	amount        REAL NOT NULL CHECK(amount != 0),
+	category_id   INTEGER REFERENCES categories(id) ON DELETE SET NULL,
+	note          TEXT NOT NULL DEFAULT '',
 	created_at    TEXT NOT NULL DEFAULT (datetime('now')),
-	CHECK(credit_txn_id != debit_txn_id),
-	UNIQUE(credit_txn_id, debit_txn_id)
+	updated_at    TEXT NOT NULL DEFAULT (datetime('now'))
 );
 
-CREATE TABLE IF NOT EXISTS manual_offsets (
-	id           INTEGER PRIMARY KEY AUTOINCREMENT,
-	debit_txn_id INTEGER NOT NULL REFERENCES transactions(id) ON DELETE CASCADE,
-	amount       REAL NOT NULL CHECK(amount > 0),
-	created_at   TEXT NOT NULL DEFAULT (datetime('now'))
+CREATE TABLE IF NOT EXISTS transaction_allocation_tags (
+	allocation_id INTEGER NOT NULL REFERENCES transaction_allocations(id) ON DELETE CASCADE,
+	tag_id        INTEGER NOT NULL REFERENCES tags(id) ON DELETE CASCADE,
+	PRIMARY KEY (allocation_id, tag_id)
 );
 
 CREATE INDEX IF NOT EXISTS idx_transactions_date ON transactions(date_iso);
@@ -182,9 +181,8 @@ CREATE INDEX IF NOT EXISTS idx_accounts_sort_order ON accounts(sort_order);
 CREATE INDEX IF NOT EXISTS idx_tags_sort_order ON tags(sort_order);
 CREATE INDEX IF NOT EXISTS idx_rules_v2_sort ON rules_v2(sort_order);
 CREATE INDEX IF NOT EXISTS idx_category_budgets_cat ON category_budgets(category_id);
-CREATE INDEX IF NOT EXISTS idx_credit_offsets_debit ON credit_offsets(debit_txn_id);
-CREATE INDEX IF NOT EXISTS idx_credit_offsets_credit ON credit_offsets(credit_txn_id);
-CREATE INDEX IF NOT EXISTS idx_manual_offsets_debit ON manual_offsets(debit_txn_id);
+CREATE INDEX IF NOT EXISTS idx_txn_alloc_parent ON transaction_allocations(parent_txn_id);
+CREATE INDEX IF NOT EXISTS idx_txn_alloc_category ON transaction_allocations(category_id);
 `
 
 // ---------------------------------------------------------------------------
@@ -269,14 +267,23 @@ func currentSchemaVersion(db *sql.DB) (int, error) {
 
 // migrateSchema upgrades the schema to the current version.
 func migrateSchema(db *sql.DB, fromVersion int) error {
+	if fromVersion == 6 {
+		return migrateFromV6ToV7(db)
+	}
 	if fromVersion == 5 {
-		return migrateFromV5ToV6(db)
+		if err := migrateFromV5ToV6(db); err != nil {
+			return err
+		}
+		return migrateFromV6ToV7(db)
 	}
 	if fromVersion == 4 {
 		if err := migrateFromV4ToV5(db); err != nil {
 			return err
 		}
-		return migrateFromV5ToV6(db)
+		if err := migrateFromV5ToV6(db); err != nil {
+			return err
+		}
+		return migrateFromV6ToV7(db)
 	}
 	if fromVersion == 3 {
 		if err := migrateFromV3ToV4(db); err != nil {
@@ -285,7 +292,10 @@ func migrateSchema(db *sql.DB, fromVersion int) error {
 		if err := migrateFromV4ToV5(db); err != nil {
 			return err
 		}
-		return migrateFromV5ToV6(db)
+		if err := migrateFromV5ToV6(db); err != nil {
+			return err
+		}
+		return migrateFromV6ToV7(db)
 	}
 	return migrateClean(db)
 }
@@ -466,6 +476,46 @@ func migrateFromV5ToV6(db *sql.DB) error {
 	return nil
 }
 
+func migrateFromV6ToV7(db *sql.DB) error {
+	tx, err := db.Begin()
+	if err != nil {
+		return fmt.Errorf("begin v6->v7 migration: %w", err)
+	}
+	defer tx.Rollback() //nolint:errcheck
+
+	stmts := []string{
+		"DROP TABLE IF EXISTS manual_offsets",
+		"DROP TABLE IF EXISTS credit_offsets",
+		`CREATE TABLE IF NOT EXISTS transaction_allocations (
+			id            INTEGER PRIMARY KEY AUTOINCREMENT,
+			parent_txn_id INTEGER NOT NULL REFERENCES transactions(id) ON DELETE CASCADE,
+			amount        REAL NOT NULL CHECK(amount != 0),
+			category_id   INTEGER REFERENCES categories(id) ON DELETE SET NULL,
+			note          TEXT NOT NULL DEFAULT '',
+			created_at    TEXT NOT NULL DEFAULT (datetime('now')),
+			updated_at    TEXT NOT NULL DEFAULT (datetime('now'))
+		)`,
+		`CREATE TABLE IF NOT EXISTS transaction_allocation_tags (
+			allocation_id INTEGER NOT NULL REFERENCES transaction_allocations(id) ON DELETE CASCADE,
+			tag_id        INTEGER NOT NULL REFERENCES tags(id) ON DELETE CASCADE,
+			PRIMARY KEY (allocation_id, tag_id)
+		)`,
+		`CREATE INDEX IF NOT EXISTS idx_txn_alloc_parent ON transaction_allocations(parent_txn_id)`,
+		`CREATE INDEX IF NOT EXISTS idx_txn_alloc_category ON transaction_allocations(category_id)`,
+		`DELETE FROM schema_meta`,
+		`INSERT INTO schema_meta (version) VALUES (7)`,
+	}
+	for _, stmt := range stmts {
+		if _, err := tx.Exec(stmt); err != nil {
+			return fmt.Errorf("migrate v6->v7 statement failed: %w", err)
+		}
+	}
+	if err := tx.Commit(); err != nil {
+		return fmt.Errorf("commit v6->v7 migration: %w", err)
+	}
+	return nil
+}
+
 func tableHasColumnTx(tx *sql.Tx, tableName, columnName string) (bool, error) {
 	query := fmt.Sprintf(`PRAGMA table_info(%s)`, tableName)
 	rows, err := tx.Query(query)
@@ -520,16 +570,35 @@ func ensureRuntimeSchemaCompatibility(db *sql.DB) error {
 		}
 	}
 
-	if _, err := tx.Exec(`CREATE TABLE IF NOT EXISTS manual_offsets (
-		id           INTEGER PRIMARY KEY AUTOINCREMENT,
-		debit_txn_id INTEGER NOT NULL REFERENCES transactions(id) ON DELETE CASCADE,
-		amount       REAL NOT NULL CHECK(amount > 0),
-		created_at   TEXT NOT NULL DEFAULT (datetime('now'))
-	)`); err != nil {
-		return fmt.Errorf("ensure manual_offsets table: %w", err)
+	if _, err := tx.Exec(`DROP TABLE IF EXISTS manual_offsets`); err != nil {
+		return fmt.Errorf("drop legacy manual_offsets table: %w", err)
 	}
-	if _, err := tx.Exec(`CREATE INDEX IF NOT EXISTS idx_manual_offsets_debit ON manual_offsets(debit_txn_id)`); err != nil {
-		return fmt.Errorf("ensure manual_offsets index: %w", err)
+	if _, err := tx.Exec(`DROP TABLE IF EXISTS credit_offsets`); err != nil {
+		return fmt.Errorf("drop legacy credit_offsets table: %w", err)
+	}
+	if _, err := tx.Exec(`CREATE TABLE IF NOT EXISTS transaction_allocations (
+		id            INTEGER PRIMARY KEY AUTOINCREMENT,
+		parent_txn_id INTEGER NOT NULL REFERENCES transactions(id) ON DELETE CASCADE,
+		amount        REAL NOT NULL CHECK(amount != 0),
+		category_id   INTEGER REFERENCES categories(id) ON DELETE SET NULL,
+		note          TEXT NOT NULL DEFAULT '',
+		created_at    TEXT NOT NULL DEFAULT (datetime('now')),
+		updated_at    TEXT NOT NULL DEFAULT (datetime('now'))
+	)`); err != nil {
+		return fmt.Errorf("ensure transaction_allocations table: %w", err)
+	}
+	if _, err := tx.Exec(`CREATE TABLE IF NOT EXISTS transaction_allocation_tags (
+		allocation_id INTEGER NOT NULL REFERENCES transaction_allocations(id) ON DELETE CASCADE,
+		tag_id        INTEGER NOT NULL REFERENCES tags(id) ON DELETE CASCADE,
+		PRIMARY KEY (allocation_id, tag_id)
+	)`); err != nil {
+		return fmt.Errorf("ensure transaction_allocation_tags table: %w", err)
+	}
+	if _, err := tx.Exec(`CREATE INDEX IF NOT EXISTS idx_txn_alloc_parent ON transaction_allocations(parent_txn_id)`); err != nil {
+		return fmt.Errorf("ensure transaction_allocations parent index: %w", err)
+	}
+	if _, err := tx.Exec(`CREATE INDEX IF NOT EXISTS idx_txn_alloc_category ON transaction_allocations(category_id)`); err != nil {
+		return fmt.Errorf("ensure transaction_allocations category index: %w", err)
 	}
 
 	if err := tx.Commit(); err != nil {
@@ -538,9 +607,11 @@ func ensureRuntimeSchemaCompatibility(db *sql.DB) error {
 	return nil
 }
 
-// migrateClean drops everything and starts fresh at schema v6.
+// migrateClean drops everything and starts fresh at schema v7.
 func migrateClean(db *sql.DB) error {
 	drops := []string{
+		"DROP TABLE IF EXISTS transaction_allocation_tags",
+		"DROP TABLE IF EXISTS transaction_allocations",
 		"DROP TABLE IF EXISTS manual_offsets",
 		"DROP TABLE IF EXISTS credit_offsets",
 		"DROP TABLE IF EXISTS spending_target_overrides",
@@ -564,8 +635,8 @@ func migrateClean(db *sql.DB) error {
 			return fmt.Errorf("drop table: %w", err)
 		}
 	}
-	if _, err := db.Exec(schemaV6); err != nil {
-		return fmt.Errorf("create v6 schema: %w", err)
+	if _, err := db.Exec(schemaV7); err != nil {
+		return fmt.Errorf("create v7 schema: %w", err)
 	}
 	if err := seedDefaultCategories(db); err != nil {
 		return fmt.Errorf("seed categories: %w", err)
@@ -1484,127 +1555,6 @@ func upsertTargetOverride(db *sql.DB, targetID int, periodKey string, amount flo
 	return nil
 }
 
-func loadCreditOffsets(db *sql.DB) ([]creditOffset, error) {
-	rows, err := db.Query(`
-		SELECT id, credit_txn_id, debit_txn_id, amount
-		FROM (
-			SELECT id, credit_txn_id, debit_txn_id, amount FROM credit_offsets
-			UNION ALL
-			SELECT -id, 0 AS credit_txn_id, debit_txn_id, amount FROM manual_offsets
-		)
-		ORDER BY id ASC
-	`)
-	if err != nil {
-		return nil, fmt.Errorf("query credit offsets: %w", err)
-	}
-	defer rows.Close()
-
-	out := make([]creditOffset, 0)
-	for rows.Next() {
-		var c creditOffset
-		if err := rows.Scan(&c.id, &c.creditTxnID, &c.debitTxnID, &c.amount); err != nil {
-			return nil, fmt.Errorf("scan credit offset: %w", err)
-		}
-		out = append(out, c)
-	}
-	return out, rows.Err()
-}
-
-func indexCreditOffsets(rows []creditOffset) (map[int][]creditOffset, map[int][]creditOffset) {
-	byDebit := make(map[int][]creditOffset)
-	byCredit := make(map[int][]creditOffset)
-	for _, row := range rows {
-		byDebit[row.debitTxnID] = append(byDebit[row.debitTxnID], row)
-		byCredit[row.creditTxnID] = append(byCredit[row.creditTxnID], row)
-	}
-	return byDebit, byCredit
-}
-
-func insertCreditOffset(db *sql.DB, creditTxnID, debitTxnID int, amount float64) error {
-	if amount <= 0 {
-		return fmt.Errorf("offset amount must be positive")
-	}
-	tx, err := db.Begin()
-	if err != nil {
-		return fmt.Errorf("begin credit offset tx: %w", err)
-	}
-	defer tx.Rollback() //nolint:errcheck
-
-	type txRow struct {
-		accountID sql.NullInt64
-		amount    float64
-	}
-	var credit txRow
-	if err := tx.QueryRow(`SELECT account_id, amount FROM transactions WHERE id = ?`, creditTxnID).Scan(&credit.accountID, &credit.amount); err != nil {
-		return fmt.Errorf("load credit transaction: %w", err)
-	}
-	var debit txRow
-	if err := tx.QueryRow(`SELECT account_id, amount FROM transactions WHERE id = ?`, debitTxnID).Scan(&debit.accountID, &debit.amount); err != nil {
-		return fmt.Errorf("load debit transaction: %w", err)
-	}
-	if credit.amount <= 0 {
-		return fmt.Errorf("selected source transaction is not a credit")
-	}
-	if debit.amount >= 0 {
-		return fmt.Errorf("selected target transaction is not a debit")
-	}
-	if !credit.accountID.Valid || !debit.accountID.Valid || credit.accountID.Int64 != debit.accountID.Int64 {
-		return fmt.Errorf("credit and debit must belong to the same account")
-	}
-
-	var linkedCredit float64
-	if err := tx.QueryRow(`SELECT COALESCE(SUM(amount), 0) FROM credit_offsets WHERE credit_txn_id = ?`, creditTxnID).Scan(&linkedCredit); err != nil {
-		return fmt.Errorf("sum linked credit offsets: %w", err)
-	}
-	var linkedDebit float64
-	if err := tx.QueryRow(`SELECT COALESCE(SUM(amount), 0) FROM credit_offsets WHERE debit_txn_id = ?`, debitTxnID).Scan(&linkedDebit); err != nil {
-		return fmt.Errorf("sum linked debit offsets: %w", err)
-	}
-	if linkedCredit+amount > credit.amount+1e-9 {
-		return fmt.Errorf("offset exceeds remaining credit capacity")
-	}
-	if linkedDebit+amount > -debit.amount+1e-9 {
-		return fmt.Errorf("offset exceeds remaining debit capacity")
-	}
-	if _, err := tx.Exec(`
-		INSERT INTO credit_offsets (credit_txn_id, debit_txn_id, amount)
-		VALUES (?, ?, ?)
-	`, creditTxnID, debitTxnID, amount); err != nil {
-		return fmt.Errorf("insert credit offset: %w", err)
-	}
-	if err := tx.Commit(); err != nil {
-		return fmt.Errorf("commit credit offset tx: %w", err)
-	}
-	return nil
-}
-
-func insertManualOffset(db *sql.DB, debitTxnID int, amount float64) error {
-	if amount <= 0 {
-		return fmt.Errorf("offset amount must be positive")
-	}
-	var debitAmount float64
-	if err := db.QueryRow(`SELECT amount FROM transactions WHERE id = ?`, debitTxnID).Scan(&debitAmount); err != nil {
-		return fmt.Errorf("load debit transaction: %w", err)
-	}
-	if debitAmount >= 0 {
-		return fmt.Errorf("selected transaction is not a debit")
-	}
-	if _, err := db.Exec(`INSERT INTO manual_offsets (debit_txn_id, amount) VALUES (?, ?)`, debitTxnID, amount); err != nil {
-		return fmt.Errorf("insert manual offset: %w", err)
-	}
-	return nil
-}
-
-func deleteCreditOffset(db *sql.DB, id int) error {
-	if id <= 0 {
-		return fmt.Errorf("offset id is required")
-	}
-	if _, err := db.Exec(`DELETE FROM credit_offsets WHERE id = ?`, id); err != nil {
-		return fmt.Errorf("delete credit offset: %w", err)
-	}
-	return nil
-}
-
 // Compatibility type for legacy tests and helpers.
 type categoryRule struct {
 	id         int
@@ -1812,76 +1762,481 @@ func loadRowsByTxnIDs(db *sql.DB, txnIDs []int) ([]transaction, error) {
 	return out, rows.Err()
 }
 
-func loadOffsetDebitCandidates(db *sql.DB, creditTxnID int) ([]transaction, error) {
-	var creditAccountID sql.NullInt64
-	var creditDate string
-	if err := db.QueryRow(`SELECT account_id, date_iso FROM transactions WHERE id = ?`, creditTxnID).Scan(&creditAccountID, &creditDate); err != nil {
-		return nil, fmt.Errorf("load credit transaction for offset candidates: %w", err)
-	}
-	if !creditAccountID.Valid {
-		return nil, fmt.Errorf("credit transaction has no account")
-	}
-	creditTime, err := time.Parse("2006-01-02", creditDate)
-	if err != nil {
-		return nil, fmt.Errorf("parse credit date: %w", err)
-	}
-	start := creditTime.AddDate(0, 0, -30).Format("2006-01-02")
-	end := creditTime.AddDate(0, 0, 31).Format("2006-01-02")
+type transactionAllocation struct {
+	id            int
+	parentTxnID   int
+	amount        float64
+	categoryID    *int
+	categoryName  string
+	categoryColor string
+	note          string
+	createdAt     string
+	updatedAt     string
+}
 
+func loadTransactionAllocations(db *sql.DB) ([]transactionAllocation, error) {
 	rows, err := db.Query(`
-		SELECT t.id, t.date_raw, t.date_iso, t.amount, t.description,
-		       t.category_id, COALESCE(c.name, 'Uncategorised'), COALESCE(c.color, '#7f849c'),
-		       t.notes, t.account_id, COALESCE(a.name, ''), COALESCE(a.type, '')
-		FROM transactions t
-		LEFT JOIN categories c ON c.id = t.category_id
-		LEFT JOIN accounts a ON a.id = t.account_id
-		WHERE t.amount < 0
-		  AND t.account_id = ?
-		  AND t.date_iso >= ?
-		  AND t.date_iso < ?
-		ORDER BY ABS(julianday(t.date_iso) - julianday(?)) ASC,
-		         t.date_iso DESC,
-		         ABS(t.amount) DESC
-	`, creditAccountID.Int64, start, end, creditDate)
+		SELECT a.id, a.parent_txn_id, a.amount, a.category_id,
+		       COALESCE(c.name, 'Uncategorised'), COALESCE(c.color, '#7f849c'),
+		       a.note, a.created_at, a.updated_at
+		FROM transaction_allocations a
+		LEFT JOIN categories c ON c.id = a.category_id
+		ORDER BY a.parent_txn_id ASC, a.id ASC
+	`)
 	if err != nil {
-		return nil, fmt.Errorf("query offset debit candidates: %w", err)
+		return nil, fmt.Errorf("query transaction allocations: %w", err)
 	}
 	defer rows.Close()
 
-	out := make([]transaction, 0)
+	out := make([]transactionAllocation, 0)
 	for rows.Next() {
-		var t transaction
-		if err := rows.Scan(&t.id, &t.dateRaw, &t.dateISO, &t.amount, &t.description,
-			&t.categoryID, &t.categoryName, &t.categoryColor, &t.notes, &t.accountID, &t.accountName, &t.accountType); err != nil {
-			return nil, fmt.Errorf("scan offset debit candidate: %w", err)
+		var a transactionAllocation
+		if err := rows.Scan(&a.id, &a.parentTxnID, &a.amount, &a.categoryID, &a.categoryName, &a.categoryColor, &a.note, &a.createdAt, &a.updatedAt); err != nil {
+			return nil, fmt.Errorf("scan transaction allocation: %w", err)
 		}
-		out = append(out, t)
+		out = append(out, a)
 	}
 	return out, rows.Err()
 }
 
-func remainingCreditCapacity(db *sql.DB, creditTxnID int) (float64, error) {
-	var creditAmount float64
-	if err := db.QueryRow(`SELECT amount FROM transactions WHERE id = ?`, creditTxnID).Scan(&creditAmount); err != nil {
-		return 0, fmt.Errorf("load credit amount: %w", err)
+func loadTransactionAllocationsForParents(db *sql.DB, parentTxnIDs []int) ([]transactionAllocation, error) {
+	if len(parentTxnIDs) == 0 {
+		return nil, nil
 	}
-	var linked float64
-	if err := db.QueryRow(`SELECT COALESCE(SUM(amount), 0) FROM credit_offsets WHERE credit_txn_id = ?`, creditTxnID).Scan(&linked); err != nil {
-		return 0, fmt.Errorf("sum credit offsets: %w", err)
+	ids := append([]int(nil), parentTxnIDs...)
+	sort.Ints(ids)
+	placeholders := make([]string, 0, len(ids))
+	args := make([]any, 0, len(ids))
+	for _, id := range ids {
+		placeholders = append(placeholders, "?")
+		args = append(args, id)
 	}
-	return creditAmount - linked, nil
+
+	query := fmt.Sprintf(`
+		SELECT a.id, a.parent_txn_id, a.amount, a.category_id,
+		       COALESCE(c.name, 'Uncategorised'), COALESCE(c.color, '#7f849c'),
+		       a.note, a.created_at, a.updated_at
+		FROM transaction_allocations a
+		LEFT JOIN categories c ON c.id = a.category_id
+		WHERE a.parent_txn_id IN (%s)
+		ORDER BY a.parent_txn_id ASC, a.id ASC
+	`, strings.Join(placeholders, ","))
+
+	rows, err := db.Query(query, args...)
+	if err != nil {
+		return nil, fmt.Errorf("query transaction allocations by parents: %w", err)
+	}
+	defer rows.Close()
+
+	out := make([]transactionAllocation, 0)
+	for rows.Next() {
+		var a transactionAllocation
+		if err := rows.Scan(&a.id, &a.parentTxnID, &a.amount, &a.categoryID, &a.categoryName, &a.categoryColor, &a.note, &a.createdAt, &a.updatedAt); err != nil {
+			return nil, fmt.Errorf("scan transaction allocation by parent: %w", err)
+		}
+		out = append(out, a)
+	}
+	return out, rows.Err()
 }
 
-func remainingDebitCapacity(db *sql.DB, debitTxnID int) (float64, error) {
-	var debitAmount float64
-	if err := db.QueryRow(`SELECT amount FROM transactions WHERE id = ?`, debitTxnID).Scan(&debitAmount); err != nil {
-		return 0, fmt.Errorf("load debit amount: %w", err)
+func indexTransactionAllocations(rows []transactionAllocation) (map[int][]transactionAllocation, map[int]transactionAllocation) {
+	byParent := make(map[int][]transactionAllocation)
+	byID := make(map[int]transactionAllocation, len(rows))
+	for _, row := range rows {
+		byParent[row.parentTxnID] = append(byParent[row.parentTxnID], row)
+		byID[row.id] = row
 	}
-	var linked float64
-	if err := db.QueryRow(`SELECT COALESCE(SUM(amount), 0) FROM credit_offsets WHERE debit_txn_id = ?`, debitTxnID).Scan(&linked); err != nil {
-		return 0, fmt.Errorf("sum debit offsets: %w", err)
+	return byParent, byID
+}
+
+func loadTransactionAllocationTags(db *sql.DB) (map[int][]tag, error) {
+	rows, err := db.Query(`
+		SELECT at.allocation_id, t.id, t.name, t.color, t.category_id, t.sort_order
+		FROM transaction_allocation_tags at
+		JOIN tags t ON t.id = at.tag_id
+		ORDER BY at.allocation_id ASC, t.sort_order ASC, LOWER(t.name) ASC, t.id ASC
+	`)
+	if err != nil {
+		return nil, fmt.Errorf("query transaction allocation tags: %w", err)
 	}
-	return -debitAmount - linked, nil
+	defer rows.Close()
+
+	out := make(map[int][]tag)
+	for rows.Next() {
+		var allocationID int
+		var t tag
+		if err := rows.Scan(&allocationID, &t.id, &t.name, &t.color, &t.categoryID, &t.sortOrder); err != nil {
+			return nil, fmt.Errorf("scan transaction allocation tag: %w", err)
+		}
+		t.name = normalizeTagName(t.name)
+		out[allocationID] = append(out[allocationID], t)
+	}
+	return out, rows.Err()
+}
+
+func loadTransactionAllocationTagsByAllocationIDs(db *sql.DB, allocationIDs []int) (map[int][]tag, error) {
+	if len(allocationIDs) == 0 {
+		return nil, nil
+	}
+	ids := append([]int(nil), allocationIDs...)
+	sort.Ints(ids)
+	placeholders := make([]string, 0, len(ids))
+	args := make([]any, 0, len(ids))
+	for _, id := range ids {
+		placeholders = append(placeholders, "?")
+		args = append(args, id)
+	}
+	query := fmt.Sprintf(`
+		SELECT at.allocation_id, t.id, t.name, t.color, t.category_id, t.sort_order
+		FROM transaction_allocation_tags at
+		JOIN tags t ON t.id = at.tag_id
+		WHERE at.allocation_id IN (%s)
+		ORDER BY at.allocation_id ASC, t.sort_order ASC, LOWER(t.name) ASC, t.id ASC
+	`, strings.Join(placeholders, ","))
+	rows, err := db.Query(query, args...)
+	if err != nil {
+		return nil, fmt.Errorf("query allocation tags by ids: %w", err)
+	}
+	defer rows.Close()
+
+	out := make(map[int][]tag)
+	for rows.Next() {
+		var allocationID int
+		var t tag
+		if err := rows.Scan(&allocationID, &t.id, &t.name, &t.color, &t.categoryID, &t.sortOrder); err != nil {
+			return nil, fmt.Errorf("scan allocation tag by ids: %w", err)
+		}
+		t.name = normalizeTagName(t.name)
+		out[allocationID] = append(out[allocationID], t)
+	}
+	return out, rows.Err()
+}
+
+func normalizeIDList(ids []int) []int {
+	if len(ids) == 0 {
+		return nil
+	}
+	seen := make(map[int]bool, len(ids))
+	out := make([]int, 0, len(ids))
+	for _, id := range ids {
+		if id <= 0 || seen[id] {
+			continue
+		}
+		seen[id] = true
+		out = append(out, id)
+	}
+	sort.Ints(out)
+	return out
+}
+
+func loadTransactionAmountTx(tx *sql.Tx, txnID int) (float64, error) {
+	var amount float64
+	if err := tx.QueryRow(`SELECT amount FROM transactions WHERE id = ?`, txnID).Scan(&amount); err != nil {
+		return 0, fmt.Errorf("load parent transaction amount: %w", err)
+	}
+	return amount, nil
+}
+
+func remainingAllocationCapacityTx(tx *sql.Tx, parentTxnID, excludeAllocationID int) (float64, float64, error) {
+	parentAmount, err := loadTransactionAmountTx(tx, parentTxnID)
+	if err != nil {
+		return 0, 0, err
+	}
+	if math.Abs(parentAmount) <= 1e-9 {
+		return 0, 0, fmt.Errorf("parent transaction amount is zero")
+	}
+	var allocatedAbs float64
+	if excludeAllocationID > 0 {
+		if err := tx.QueryRow(`
+			SELECT COALESCE(SUM(ABS(amount)), 0)
+			FROM transaction_allocations
+			WHERE parent_txn_id = ?
+			  AND id != ?
+		`, parentTxnID, excludeAllocationID).Scan(&allocatedAbs); err != nil {
+			return 0, 0, fmt.Errorf("sum transaction allocations (excluding current): %w", err)
+		}
+	} else {
+		if err := tx.QueryRow(`
+			SELECT COALESCE(SUM(ABS(amount)), 0)
+			FROM transaction_allocations
+			WHERE parent_txn_id = ?
+		`, parentTxnID).Scan(&allocatedAbs); err != nil {
+			return 0, 0, fmt.Errorf("sum transaction allocations: %w", err)
+		}
+	}
+	remaining := math.Abs(parentAmount) - allocatedAbs
+	if remaining < 0 {
+		remaining = 0
+	}
+	return remaining, parentAmount, nil
+}
+
+func normalizeAllocationAmount(parentAmount, enteredAmount float64) (float64, error) {
+	if math.Abs(enteredAmount) <= 1e-9 {
+		return 0, fmt.Errorf("allocation amount must be non-zero")
+	}
+	absAmt := math.Abs(enteredAmount)
+	if parentAmount > 0 {
+		return absAmt, nil
+	}
+	if parentAmount < 0 {
+		return -absAmt, nil
+	}
+	return 0, fmt.Errorf("parent transaction amount is zero")
+}
+
+func insertTransactionAllocation(db *sql.DB, parentTxnID int, enteredAmount float64, categoryID *int, note string, tagIDs []int) (int, error) {
+	if parentTxnID <= 0 {
+		return 0, fmt.Errorf("parent transaction id is required")
+	}
+	tx, err := db.Begin()
+	if err != nil {
+		return 0, fmt.Errorf("begin insert transaction allocation: %w", err)
+	}
+	defer tx.Rollback() //nolint:errcheck
+
+	remainingAbs, parentAmount, err := remainingAllocationCapacityTx(tx, parentTxnID, 0)
+	if err != nil {
+		return 0, err
+	}
+	amount, err := normalizeAllocationAmount(parentAmount, enteredAmount)
+	if err != nil {
+		return 0, err
+	}
+	if math.Abs(amount)-remainingAbs > 1e-9 {
+		return 0, fmt.Errorf("allocation exceeds remaining parent capacity")
+	}
+
+	res, err := tx.Exec(`
+		INSERT INTO transaction_allocations (parent_txn_id, amount, category_id, note)
+		VALUES (?, ?, ?, ?)
+	`, parentTxnID, amount, categoryID, strings.TrimSpace(note))
+	if err != nil {
+		return 0, fmt.Errorf("insert transaction allocation: %w", err)
+	}
+	id64, err := res.LastInsertId()
+	if err != nil {
+		return 0, fmt.Errorf("transaction allocation last insert id: %w", err)
+	}
+	allocationID := int(id64)
+	if err := setTransactionAllocationTagsTx(tx, allocationID, tagIDs); err != nil {
+		return 0, err
+	}
+	if err := tx.Commit(); err != nil {
+		return 0, fmt.Errorf("commit insert transaction allocation: %w", err)
+	}
+	return allocationID, nil
+}
+
+func updateTransactionAllocationAmount(db *sql.DB, allocationID int, enteredAmount float64) error {
+	if allocationID <= 0 {
+		return fmt.Errorf("allocation id is required")
+	}
+	tx, err := db.Begin()
+	if err != nil {
+		return fmt.Errorf("begin update allocation amount: %w", err)
+	}
+	defer tx.Rollback() //nolint:errcheck
+
+	var parentTxnID int
+	if err := tx.QueryRow(`SELECT parent_txn_id FROM transaction_allocations WHERE id = ?`, allocationID).Scan(&parentTxnID); err != nil {
+		return fmt.Errorf("load allocation parent: %w", err)
+	}
+	remainingAbs, parentAmount, err := remainingAllocationCapacityTx(tx, parentTxnID, allocationID)
+	if err != nil {
+		return err
+	}
+	amount, err := normalizeAllocationAmount(parentAmount, enteredAmount)
+	if err != nil {
+		return err
+	}
+	if math.Abs(amount)-remainingAbs > 1e-9 {
+		return fmt.Errorf("allocation exceeds remaining parent capacity")
+	}
+	if _, err := tx.Exec(`
+		UPDATE transaction_allocations
+		SET amount = ?, updated_at = datetime('now')
+		WHERE id = ?
+	`, amount, allocationID); err != nil {
+		return fmt.Errorf("update allocation amount: %w", err)
+	}
+	if err := tx.Commit(); err != nil {
+		return fmt.Errorf("commit update allocation amount: %w", err)
+	}
+	return nil
+}
+
+func updateTransactionAllocationAmountAndNote(db *sql.DB, allocationID int, enteredAmount float64, note string) error {
+	if allocationID <= 0 {
+		return fmt.Errorf("allocation id is required")
+	}
+	tx, err := db.Begin()
+	if err != nil {
+		return fmt.Errorf("begin update allocation amount+note: %w", err)
+	}
+	defer tx.Rollback() //nolint:errcheck
+
+	var parentTxnID int
+	if err := tx.QueryRow(`SELECT parent_txn_id FROM transaction_allocations WHERE id = ?`, allocationID).Scan(&parentTxnID); err != nil {
+		return fmt.Errorf("load allocation parent: %w", err)
+	}
+	remainingAbs, parentAmount, err := remainingAllocationCapacityTx(tx, parentTxnID, allocationID)
+	if err != nil {
+		return err
+	}
+	amount, err := normalizeAllocationAmount(parentAmount, enteredAmount)
+	if err != nil {
+		return err
+	}
+	if math.Abs(amount)-remainingAbs > 1e-9 {
+		return fmt.Errorf("allocation exceeds remaining parent capacity")
+	}
+	if _, err := tx.Exec(`
+		UPDATE transaction_allocations
+		SET amount = ?, note = ?, updated_at = datetime('now')
+		WHERE id = ?
+	`, amount, strings.TrimSpace(note), allocationID); err != nil {
+		return fmt.Errorf("update allocation amount+note: %w", err)
+	}
+	if err := tx.Commit(); err != nil {
+		return fmt.Errorf("commit update allocation amount+note: %w", err)
+	}
+	return nil
+}
+
+func updateTransactionAllocationCategory(db *sql.DB, allocationID int, categoryID *int) error {
+	if allocationID <= 0 {
+		return fmt.Errorf("allocation id is required")
+	}
+	if _, err := db.Exec(`
+		UPDATE transaction_allocations
+		SET category_id = ?, updated_at = datetime('now')
+		WHERE id = ?
+	`, categoryID, allocationID); err != nil {
+		return fmt.Errorf("update transaction allocation category: %w", err)
+	}
+	return nil
+}
+
+func updateTransactionAllocationNote(db *sql.DB, allocationID int, note string) error {
+	if allocationID <= 0 {
+		return fmt.Errorf("allocation id is required")
+	}
+	if _, err := db.Exec(`
+		UPDATE transaction_allocations
+		SET note = ?, updated_at = datetime('now')
+		WHERE id = ?
+	`, note, allocationID); err != nil {
+		return fmt.Errorf("update transaction allocation note: %w", err)
+	}
+	return nil
+}
+
+func deleteTransactionAllocation(db *sql.DB, allocationID int) error {
+	if allocationID <= 0 {
+		return fmt.Errorf("allocation id is required")
+	}
+	if _, err := db.Exec(`DELETE FROM transaction_allocations WHERE id = ?`, allocationID); err != nil {
+		return fmt.Errorf("delete transaction allocation: %w", err)
+	}
+	return nil
+}
+
+func setTransactionAllocationTagsTx(tx *sql.Tx, allocationID int, tagIDs []int) error {
+	if allocationID <= 0 {
+		return fmt.Errorf("allocation id is required")
+	}
+	if _, err := tx.Exec(`DELETE FROM transaction_allocation_tags WHERE allocation_id = ?`, allocationID); err != nil {
+		return fmt.Errorf("clear allocation tags: %w", err)
+	}
+	normalized := normalizeIDList(tagIDs)
+	for _, tagID := range normalized {
+		if _, err := tx.Exec(`INSERT INTO transaction_allocation_tags (allocation_id, tag_id) VALUES (?, ?)`, allocationID, tagID); err != nil {
+			return fmt.Errorf("insert allocation tag: %w", err)
+		}
+	}
+	return nil
+}
+
+func setTransactionAllocationTags(db *sql.DB, allocationID int, tagIDs []int) error {
+	tx, err := db.Begin()
+	if err != nil {
+		return fmt.Errorf("begin set allocation tags: %w", err)
+	}
+	defer tx.Rollback() //nolint:errcheck
+
+	if err := setTransactionAllocationTagsTx(tx, allocationID, tagIDs); err != nil {
+		return err
+	}
+	if err := tx.Commit(); err != nil {
+		return fmt.Errorf("commit set allocation tags: %w", err)
+	}
+	return nil
+}
+
+func addTagsToAllocations(db *sql.DB, allocationIDs, tagIDs []int) (int, error) {
+	allocs := normalizeIDList(allocationIDs)
+	tags := normalizeIDList(tagIDs)
+	if len(allocs) == 0 || len(tags) == 0 {
+		return 0, nil
+	}
+	tx, err := db.Begin()
+	if err != nil {
+		return 0, fmt.Errorf("begin add tags to allocations: %w", err)
+	}
+	defer tx.Rollback() //nolint:errcheck
+
+	affected := 0
+	for _, allocationID := range allocs {
+		for _, tagID := range tags {
+			res, err := tx.Exec(`
+				INSERT INTO transaction_allocation_tags (allocation_id, tag_id)
+				VALUES (?, ?)
+				ON CONFLICT(allocation_id, tag_id) DO NOTHING
+			`, allocationID, tagID)
+			if err != nil {
+				return 0, fmt.Errorf("insert allocation tag allocation=%d tag=%d: %w", allocationID, tagID, err)
+			}
+			n, _ := res.RowsAffected()
+			affected += int(n)
+		}
+	}
+	if err := tx.Commit(); err != nil {
+		return 0, fmt.Errorf("commit add tags to allocations: %w", err)
+	}
+	return affected, nil
+}
+
+func removeTagFromAllocations(db *sql.DB, allocationIDs []int, tagID int) (int, error) {
+	allocs := normalizeIDList(allocationIDs)
+	if len(allocs) == 0 || tagID <= 0 {
+		return 0, nil
+	}
+	tx, err := db.Begin()
+	if err != nil {
+		return 0, fmt.Errorf("begin remove tag from allocations: %w", err)
+	}
+	defer tx.Rollback() //nolint:errcheck
+
+	affected := 0
+	for _, allocationID := range allocs {
+		res, execErr := tx.Exec(`
+			DELETE FROM transaction_allocation_tags
+			WHERE allocation_id = ? AND tag_id = ?
+		`, allocationID, tagID)
+		if execErr != nil {
+			return 0, fmt.Errorf("delete allocation tag allocation=%d tag=%d: %w", allocationID, tagID, execErr)
+		}
+		n, rowsErr := res.RowsAffected()
+		if rowsErr != nil {
+			return 0, fmt.Errorf("rows affected delete allocation=%d tag=%d: %w", allocationID, tagID, rowsErr)
+		}
+		affected += int(n)
+	}
+	if err := tx.Commit(); err != nil {
+		return 0, fmt.Errorf("commit remove tag from allocations: %w", err)
+	}
+	return affected, nil
 }
 
 func intPtrEqual(a, b *int) bool {

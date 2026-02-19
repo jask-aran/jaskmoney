@@ -384,6 +384,24 @@ func TestDashboardNetCashflowModeTrimsTrailingBlankLine(t *testing.T) {
 	}
 }
 
+func TestDashboardNetCashflowModeSpendingUsesRawTrackerOutput(t *testing.T) {
+	m := newModel()
+	mode := widgetMode{id: "spending", label: "Spending", viewType: "line"}
+	start, end := m.dashboardChartRange(time.Now())
+	rows := []transaction{
+		{dateISO: start.AddDate(0, 0, 1).Format("2006-01-02"), amount: -80},
+		{dateISO: start.AddDate(0, 0, 6).Format("2006-01-02"), amount: -20},
+		{dateISO: start.AddDate(0, 0, 10).Format("2006-01-02"), amount: -40},
+	}
+	width := 84
+	height := 16
+	got := renderDashboardNetCashflowMode(m, mode, rows, width, height)
+	want := trimTrailingBlankChartLine(renderSpendingTrackerWithRangeSized(rows, width, m.spendingWeekAnchor, start, end, height))
+	if got != want {
+		t.Fatalf("spending mode output diverged from raw tracker renderer\n--- got ---\n%s\n--- want ---\n%s", got, want)
+	}
+}
+
 func TestShiftChartLeftRemovesCommonLeadingWhitespace(t *testing.T) {
 	in := "    1 │ a\n    │ b\n"
 	got := shiftChartLeft(in, 4)
@@ -728,6 +746,73 @@ func TestSpendingXLabelsRespectSpacing(t *testing.T) {
 	}
 }
 
+func TestBuildGridlineColumnsIncludesTodayMarker(t *testing.T) {
+	start := time.Now().In(time.Local).AddDate(0, 0, -10)
+	start = time.Date(start.Year(), start.Month(), start.Day(), 0, 0, 0, 0, time.Local)
+	end := start.AddDate(0, 0, 20)
+	var dates []time.Time
+	for d := start; !d.After(end); d = d.AddDate(0, 0, 1) {
+		dates = append(dates, d)
+	}
+
+	chart := tslc.New(80, spendingTrackerHeight)
+	chart.SetTimeRange(start, end)
+	chart.SetViewTimeRange(start, end)
+	chart.SetYRange(0, 100)
+	chart.SetViewYRange(0, 100)
+	chart.SetXStep(1)
+	chart.SetYStep(1)
+
+	graphCols := chart.Width() - chart.Origin().X - 1
+	plan := planSpendingAxes(&chart, dates, 100)
+	plan.minorStepDays = spendingMinorGridStep(len(dates), graphCols)
+	columns := buildGridlineColumns(&chart, dates, plan, time.Monday, time.Now().In(time.Local))
+
+	hasToday := false
+	for _, kind := range columns {
+		if kind == chartGridlineToday {
+			hasToday = true
+			break
+		}
+	}
+	if !hasToday {
+		t.Fatal("expected today gridline marker within in-range dates")
+	}
+}
+
+func TestBuildGridlineColumnsTodayOverridesMajor(t *testing.T) {
+	today := time.Now().In(time.Local)
+	today = time.Date(today.Year(), today.Month(), today.Day(), 0, 0, 0, 0, time.Local)
+	start := today.AddDate(0, 0, -5)
+	end := today.AddDate(0, 0, 5)
+	var dates []time.Time
+	for d := start; !d.After(end); d = d.AddDate(0, 0, 1) {
+		dates = append(dates, d)
+	}
+
+	chart := tslc.New(80, spendingTrackerHeight)
+	chart.SetTimeRange(start, end)
+	chart.SetViewTimeRange(start, end)
+	chart.SetYRange(0, 100)
+	chart.SetViewYRange(0, 100)
+	chart.SetXStep(1)
+	chart.SetYStep(1)
+
+	plan := spendingAxisPlan{
+		minorStepDays: 1,
+		majorMode:     spendingMajorWeek,
+	}
+	columns := buildGridlineColumns(&chart, dates, plan, today.Weekday(), today)
+	todayX := chartColumnX(&chart, today)
+	kind, ok := columns[todayX]
+	if !ok {
+		t.Fatalf("expected column for today x=%d", todayX)
+	}
+	if kind != chartGridlineToday {
+		t.Fatalf("today column kind = %v, want chartGridlineToday", kind)
+	}
+}
+
 // ---------------------------------------------------------------------------
 // Formatting tests
 // ---------------------------------------------------------------------------
@@ -901,18 +986,12 @@ func TestRenderHeaderZeroWidth(t *testing.T) {
 func TestRenderTransactionTableBasic(t *testing.T) {
 	rows := testDashboardRows()
 	cats := []category{{id: 1, name: "Groceries"}}
-	offsets := map[int][]creditOffset{
-		rows[0].id: {{debitTxnID: rows[0].id, amount: 5}},
-	}
-	output := renderTransactionTable(rows, cats, nil, offsets, nil, nil, 0, 0, 5, 80, sortByDate, false)
+	output := renderTransactionTable(rows, cats, nil, nil, nil, 0, 0, 5, 80, sortByDate, false)
 	if !strings.Contains(output, "Date") {
 		t.Error("missing Date column header")
 	}
 	if !strings.Contains(output, "Amount") {
 		t.Error("missing Amount column header")
-	}
-	if !strings.Contains(output, "Offset") {
-		t.Error("missing Offset column header")
 	}
 	if !strings.Contains(output, "Category") {
 		t.Error("missing Category column header")
@@ -924,7 +1003,7 @@ func TestRenderTransactionTableBasic(t *testing.T) {
 
 func TestRenderTransactionTableNilCategoriesHidesColumn(t *testing.T) {
 	rows := testDashboardRows()
-	output := renderTransactionTable(rows, nil, nil, nil, nil, nil, 0, 0, 5, 80, sortByDate, false)
+	output := renderTransactionTable(rows, nil, nil, nil, nil, 0, 0, 5, 80, sortByDate, false)
 	if strings.Contains(output, "Category") {
 		t.Error("Category column should be hidden when categories is nil")
 	}
@@ -932,11 +1011,11 @@ func TestRenderTransactionTableNilCategoriesHidesColumn(t *testing.T) {
 
 func TestRenderTransactionTableSortIndicator(t *testing.T) {
 	rows := testDashboardRows()
-	output := renderTransactionTable(rows, nil, nil, nil, nil, nil, 0, 0, 5, 80, sortByDate, true)
+	output := renderTransactionTable(rows, nil, nil, nil, nil, 0, 0, 5, 80, sortByDate, true)
 	if !strings.Contains(output, "▲") {
 		t.Error("missing ascending sort indicator")
 	}
-	output2 := renderTransactionTable(rows, nil, nil, nil, nil, nil, 0, 0, 5, 80, sortByDate, false)
+	output2 := renderTransactionTable(rows, nil, nil, nil, nil, 0, 0, 5, 80, sortByDate, false)
 	if !strings.Contains(output2, "▼") {
 		t.Error("missing descending sort indicator")
 	}
@@ -944,7 +1023,7 @@ func TestRenderTransactionTableSortIndicator(t *testing.T) {
 
 func TestRenderTransactionTableScrollIndicator(t *testing.T) {
 	rows := testDashboardRows()
-	output := renderTransactionTable(rows, nil, nil, nil, nil, nil, 0, 0, 3, 80, sortByDate, false)
+	output := renderTransactionTable(rows, nil, nil, nil, nil, 0, 0, 3, 80, sortByDate, false)
 	if !strings.Contains(output, "showing") {
 		t.Error("missing scroll indicator")
 	}
@@ -954,7 +1033,7 @@ func TestRenderTransactionTableScrollIndicator(t *testing.T) {
 }
 
 func TestRenderTransactionTableEmpty(t *testing.T) {
-	output := renderTransactionTable(nil, nil, nil, nil, nil, nil, 0, 0, 10, 80, sortByDate, false)
+	output := renderTransactionTable(nil, nil, nil, nil, nil, 0, 0, 10, 80, sortByDate, false)
 	if !strings.Contains(output, "Date") {
 		t.Error("empty table should still show column headers")
 	}
@@ -970,12 +1049,93 @@ func TestRenderTransactionTableDescriptionDisplayLimit40(t *testing.T) {
 		},
 	}
 
-	output := renderTransactionTable(rows, nil, nil, nil, nil, nil, 1, 0, 5, 120, sortByDate, false)
+	output := renderTransactionTable(rows, nil, nil, nil, nil, 1, 0, 5, 120, sortByDate, false)
 	if strings.Contains(output, "12345678901234567890123456789012345678901") {
 		t.Fatal("description should not render past 40 chars in table")
 	}
 	if !strings.Contains(output, "123456789012345678901234567890123456789…") {
 		t.Fatal("expected 40-char capped description with ellipsis")
+	}
+}
+
+func TestRenderTransactionTableAccountColumnAfterDescription(t *testing.T) {
+	catID := 1
+	rows := []transaction{
+		{
+			id:            1,
+			dateISO:       "2026-02-10",
+			amount:        -12.34,
+			description:   "DESC_TOKEN",
+			categoryID:    &catID,
+			categoryName:  "Groceries",
+			categoryColor: "#94e2d5",
+			accountName:   "ACC_TOKEN",
+		},
+		{
+			id:            2,
+			dateISO:       "2026-02-11",
+			amount:        -56.78,
+			description:   "Other row",
+			categoryID:    &catID,
+			categoryName:  "Groceries",
+			categoryColor: "#94e2d5",
+			accountName:   "Other account",
+		},
+	}
+	cats := []category{{id: 1, name: "Groceries", color: "#94e2d5"}}
+	out := renderTransactionTable(rows, cats, nil, nil, nil, rows[0].id, 0, 5, 140, sortByDate, false)
+	lines := strings.Split(out, "\n")
+	if len(lines) < 2 {
+		t.Fatalf("expected at least 2 lines, got %d", len(lines))
+	}
+	rowLine := lines[1]
+	descIdx := strings.Index(rowLine, "DESC_TOKEN")
+	accIdx := strings.Index(rowLine, "ACC_TOKEN")
+	if descIdx < 0 || accIdx < 0 {
+		t.Fatalf("missing expected tokens in row: %q", rowLine)
+	}
+	if accIdx < descIdx {
+		t.Fatalf("account column rendered before description: row=%q", rowLine)
+	}
+}
+
+func TestRenderTransactionTableAllocationRowUsesRowPrefix(t *testing.T) {
+	catID := 1
+	rows := []transaction{
+		{
+			id:            1,
+			dateISO:       "2026-02-10",
+			amount:        -100.00,
+			fullAmount:    -100.00,
+			description:   "Parent",
+			categoryID:    &catID,
+			categoryName:  "Groceries",
+			categoryColor: "#94e2d5",
+			accountName:   "ACC1",
+		},
+		{
+			id:            -42,
+			isAllocation:  true,
+			parentTxnID:   1,
+			allocationID:  42,
+			dateISO:       "2026-02-10",
+			amount:        -25.00,
+			description:   "Child split",
+			categoryID:    &catID,
+			categoryName:  "Groceries",
+			categoryColor: "#94e2d5",
+			accountName:   "ACC1",
+		},
+	}
+	cats := []category{{id: 1, name: "Groceries", color: "#94e2d5"}}
+	out := renderTransactionTable(rows, cats, nil, nil, nil, 0, 0, 5, 140, sortByDate, false)
+	lines := strings.Split(ansi.Strip(out), "\n")
+	if len(lines) < 3 {
+		t.Fatalf("expected header + 2 rows, got %d lines", len(lines))
+	}
+	child := lines[2]
+	if !strings.HasPrefix(child, "↳   ") {
+		t.Fatalf("expected allocation row prefix, got: %q", child)
 	}
 }
 

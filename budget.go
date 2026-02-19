@@ -36,21 +36,12 @@ type targetOverride struct {
 	amount    float64
 }
 
-type creditOffset struct {
-	id          int
-	creditTxnID int
-	debitTxnID  int
-	amount      float64
-}
-
 type budgetLine struct {
 	categoryID    int
 	categoryName  string
 	categoryColor string
 	budgeted      float64
 	spent         float64
-	offsets       float64
-	netSpent      float64
 	remaining     float64
 	overBudget    bool
 }
@@ -60,8 +51,6 @@ type targetLine struct {
 	name       string
 	budgeted   float64
 	spent      float64
-	offsets    float64
-	netSpent   float64
 	remaining  float64
 	overBudget bool
 	periodType string
@@ -113,15 +102,15 @@ func accountFilterIDs(accountFilter map[int]bool) []int {
 	return ids
 }
 
-func queryDebitSpendByCategory(db *sql.DB, startISO, endISO string, accountFilter map[int]bool) (map[int]float64, error) {
+func queryEffectiveSpendByCategory(db *sql.DB, startISO, endISO string, accountFilter map[int]bool) (map[int]float64, error) {
 	ids := accountFilterIDs(accountFilter)
 	args := []any{startISO, endISO}
 	query := `
-		SELECT t.category_id, COALESCE(SUM(-t.amount), 0)
-		FROM transactions t
-		WHERE t.amount < 0
-		  AND t.date_iso >= ?
-		  AND t.date_iso < ?
+		WITH scoped_txn AS (
+			SELECT id, category_id, amount
+			FROM transactions
+			WHERE date_iso >= ?
+			  AND date_iso < ?
 	`
 	if len(ids) > 0 {
 		placeholders := make([]string, len(ids))
@@ -129,87 +118,63 @@ func queryDebitSpendByCategory(db *sql.DB, startISO, endISO string, accountFilte
 			placeholders[i] = "?"
 			args = append(args, id)
 		}
-		query += " AND t.account_id IN (" + strings.Join(placeholders, ",") + ")"
+		query += "  AND account_id IN (" + strings.Join(placeholders, ",") + ")\n"
 	}
-	query += " GROUP BY t.category_id"
-
-	rows, err := db.Query(query, args...)
-	if err != nil {
-		return nil, fmt.Errorf("query budget debit aggregates: %w", err)
-	}
-	defer rows.Close()
-
-	out := make(map[int]float64)
-	for rows.Next() {
-		var categoryID sql.NullInt64
-		var spend float64
-		if err := rows.Scan(&categoryID, &spend); err != nil {
-			return nil, fmt.Errorf("scan budget debit aggregate: %w", err)
-		}
-		if categoryID.Valid {
-			out[int(categoryID.Int64)] = spend
-		}
-	}
-	return out, rows.Err()
-}
-
-func queryOffsetSpendByCategory(db *sql.DB, startISO, endISO string, accountFilter map[int]bool) (map[int]float64, error) {
-	ids := accountFilterIDs(accountFilter)
-	args := []any{startISO, endISO}
-	query := `
-		SELECT d.category_id, COALESCE(SUM(off.amount), 0)
-		FROM (
-			SELECT debit_txn_id, amount FROM credit_offsets
+	query += `
+		),
+		scoped_alloc AS (
+			SELECT a.parent_txn_id, a.category_id, a.amount
+			FROM transaction_allocations a
+			JOIN scoped_txn s ON s.id = a.parent_txn_id
+		),
+		alloc_sum AS (
+			SELECT parent_txn_id, COALESCE(SUM(amount), 0) AS allocated
+			FROM scoped_alloc
+			GROUP BY parent_txn_id
+		),
+		parent_remainder AS (
+			SELECT s.category_id, (s.amount - COALESCE(a.allocated, 0)) AS amount
+			FROM scoped_txn s
+			LEFT JOIN alloc_sum a ON a.parent_txn_id = s.id
+		),
+		effective_rows AS (
+			SELECT category_id, amount FROM scoped_alloc
 			UNION ALL
-			SELECT debit_txn_id, amount FROM manual_offsets
-		) off
-		JOIN transactions d ON d.id = off.debit_txn_id
-		WHERE d.amount < 0
-		  AND d.date_iso >= ?
-		  AND d.date_iso < ?
+			SELECT category_id, amount FROM parent_remainder
+		)
+		SELECT category_id, COALESCE(SUM(-amount), 0)
+		FROM effective_rows
+		WHERE amount < 0
+		GROUP BY category_id
 	`
-	if len(ids) > 0 {
-		placeholders := make([]string, len(ids))
-		for i, id := range ids {
-			placeholders[i] = "?"
-			args = append(args, id)
-		}
-		query += " AND d.account_id IN (" + strings.Join(placeholders, ",") + ")"
-	}
-	query += " GROUP BY d.category_id"
 
 	rows, err := db.Query(query, args...)
 	if err != nil {
-		return nil, fmt.Errorf("query budget offset aggregates: %w", err)
+		return nil, fmt.Errorf("query budget effective aggregates: %w", err)
 	}
 	defer rows.Close()
 
 	out := make(map[int]float64)
 	for rows.Next() {
 		var categoryID sql.NullInt64
-		var offsets float64
-		if err := rows.Scan(&categoryID, &offsets); err != nil {
-			return nil, fmt.Errorf("scan budget offset aggregate: %w", err)
+		var spent float64
+		if err := rows.Scan(&categoryID, &spent); err != nil {
+			return nil, fmt.Errorf("scan budget effective aggregate: %w", err)
 		}
 		if categoryID.Valid {
-			out[int(categoryID.Int64)] = offsets
+			out[int(categoryID.Int64)] = spent
 		}
 	}
 	return out, rows.Err()
 }
 
-func computeBudgetLines(db *sql.DB, budgets []categoryBudget, overrides map[int][]budgetOverride, offsetsByDebit map[int][]creditOffset, month string, accountFilter map[int]bool) ([]budgetLine, error) {
-	_ = offsetsByDebit // offsets are aggregated in one query by category for scoped month.
+func computeBudgetLines(db *sql.DB, budgets []categoryBudget, overrides map[int][]budgetOverride, month string, accountFilter map[int]bool) ([]budgetLine, error) {
 	start, end, err := parseMonthKey(month)
 	if err != nil {
 		return nil, err
 	}
 
-	debitByCategory, err := queryDebitSpendByCategory(db, start.Format("2006-01-02"), end.Format("2006-01-02"), accountFilter)
-	if err != nil {
-		return nil, err
-	}
-	offsetByCategory, err := queryOffsetSpendByCategory(db, start.Format("2006-01-02"), end.Format("2006-01-02"), accountFilter)
+	spendByCategory, err := queryEffectiveSpendByCategory(db, start.Format("2006-01-02"), end.Format("2006-01-02"), accountFilter)
 	if err != nil {
 		return nil, err
 	}
@@ -249,18 +214,14 @@ func computeBudgetLines(db *sql.DB, budgets []categoryBudget, overrides map[int]
 			}
 		}
 		cat := catByID[b.categoryID]
-		spent := debitByCategory[b.categoryID]
-		offsets := offsetByCategory[b.categoryID]
-		net := spent - offsets
-		remaining := effective - net
+		spent := spendByCategory[b.categoryID]
+		remaining := effective - spent
 		lines = append(lines, budgetLine{
 			categoryID:    b.categoryID,
 			categoryName:  cat.name,
 			categoryColor: cat.color,
 			budgeted:      effective,
 			spent:         spent,
-			offsets:       offsets,
-			netSpent:      net,
 			remaining:     remaining,
 			overBudget:    remaining < 0,
 		})
@@ -268,7 +229,7 @@ func computeBudgetLines(db *sql.DB, budgets []categoryBudget, overrides map[int]
 	return lines, nil
 }
 
-func computeTargetLines(db *sql.DB, targets []spendingTarget, overrides map[int][]targetOverride, offsetsByDebit map[int][]creditOffset, txnTags map[int][]tag, savedFilters []savedFilter, accountFilter map[int]bool) ([]targetLine, error) {
+func computeTargetLines(db *sql.DB, targets []spendingTarget, overrides map[int][]targetOverride, txnTags map[int][]tag, savedFilters []savedFilter, accountFilter map[int]bool) ([]targetLine, error) {
 	byFilterID := make(map[string]savedFilter, len(savedFilters))
 	for _, sf := range savedFilters {
 		byFilterID[strings.ToLower(strings.TrimSpace(sf.ID))] = sf
@@ -320,37 +281,87 @@ func computeTargetLines(db *sql.DB, targets []spendingTarget, overrides map[int]
 			return nil, fmt.Errorf("query target candidates: %w", err)
 		}
 
-		spent := 0.0
-		offsets := 0.0
+		parentRows := make([]transaction, 0)
 		for rows.Next() {
 			var txn transaction
 			if err := rows.Scan(&txn.id, &txn.accountID, &txn.categoryID, &txn.categoryName, &txn.categoryColor, &txn.dateISO, &txn.amount, &txn.description, &txn.notes); err != nil {
 				rows.Close()
 				return nil, fmt.Errorf("scan target candidate: %w", err)
 			}
-			if !evalFilter(node, txn, txnTags[txn.id]) {
-				continue
-			}
-			if txn.amount >= 0 {
-				continue
-			}
-			spent += -txn.amount
-			for _, off := range offsetsByDebit[txn.id] {
-				offsets += off.amount
-			}
+			parentRows = append(parentRows, txn)
 		}
 		if err := rows.Close(); err != nil {
 			return nil, err
 		}
-		net := spent - offsets
-		remaining := effectiveBudget - net
+		parentIDs := make([]int, 0, len(parentRows))
+		for _, row := range parentRows {
+			parentIDs = append(parentIDs, row.id)
+		}
+		allocationRows, err := loadTransactionAllocationsForParents(db, parentIDs)
+		if err != nil {
+			return nil, err
+		}
+		allocByParent, allocByID := indexTransactionAllocations(allocationRows)
+		allocationIDs := make([]int, 0, len(allocByID))
+		for id := range allocByID {
+			allocationIDs = append(allocationIDs, id)
+		}
+		allocationTags, err := loadTransactionAllocationTagsByAllocationIDs(db, allocationIDs)
+		if err != nil {
+			return nil, err
+		}
+
+		effectiveRows := make([]transaction, 0, len(parentRows)+len(allocationRows))
+		effectiveTags := make(map[int][]tag, len(parentRows)+len(allocationRows))
+		for _, parent := range parentRows {
+			parent.fullAmount = parent.amount
+			parent.parentTxnID = parent.id
+			allocated := 0.0
+			for _, alloc := range allocByParent[parent.id] {
+				allocated += alloc.amount
+			}
+			parent.amount = parent.fullAmount - allocated
+			effectiveRows = append(effectiveRows, parent)
+			effectiveTags[parent.id] = txnTags[parent.id]
+
+			for _, alloc := range allocByParent[parent.id] {
+				child := parent
+				child.id = -alloc.id
+				child.amount = alloc.amount
+				child.fullAmount = 0
+				child.isAllocation = true
+				child.parentTxnID = parent.id
+				child.allocationID = alloc.id
+				child.notes = alloc.note
+				if strings.TrimSpace(alloc.note) != "" {
+					child.description = alloc.note
+				} else {
+					child.description = "Allocation"
+				}
+				child.categoryID = copyIntPtr(alloc.categoryID)
+				child.categoryName = alloc.categoryName
+				child.categoryColor = alloc.categoryColor
+				effectiveRows = append(effectiveRows, child)
+				effectiveTags[child.id] = allocationTags[alloc.id]
+			}
+		}
+
+		spent := 0.0
+		for _, row := range effectiveRows {
+			if !evalFilter(node, row, effectiveTags[row.id]) {
+				continue
+			}
+			if row.amount >= 0 {
+				continue
+			}
+			spent += -row.amount
+		}
+		remaining := effectiveBudget - spent
 		lines = append(lines, targetLine{
 			targetID:   t.id,
 			name:       t.name,
 			budgeted:   effectiveBudget,
 			spent:      spent,
-			offsets:    offsets,
-			netSpent:   net,
 			remaining:  remaining,
 			overBudget: remaining < 0,
 			periodType: strings.ToLower(strings.TrimSpace(t.periodType)),

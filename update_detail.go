@@ -1,9 +1,6 @@
 package main
 
 import (
-	"fmt"
-	"math"
-	"strconv"
 	"strings"
 
 	tea "github.com/charmbracelet/bubbletea"
@@ -11,25 +8,29 @@ import (
 
 func (m *model) closeDetail() {
 	m.showDetail = false
+	m.detailIdx = 0
+	m.detailAllocationID = 0
+	m.detailRow = transaction{}
+	m.detailRowValid = false
 	m.detailEditing = ""
-	m.offsetCreditTxnID = 0
-	m.offsetDebitPicker = nil
-	m.offsetDebitTxnID = 0
-	m.offsetAmount = ""
-	m.offsetAmountCursor = 0
+	m.detailNotes = ""
+	m.detailNotesCursor = 0
 }
 
 func (m *model) openDetail(txn transaction) {
 	m.showDetail = true
-	m.detailIdx = txn.id
+	if txn.isAllocation {
+		m.detailIdx = txn.parentTxnID
+		m.detailAllocationID = txn.allocationID
+	} else {
+		m.detailIdx = txn.id
+		m.detailAllocationID = 0
+	}
+	m.detailRow = txn
+	m.detailRowValid = true
 	m.detailNotes = txn.notes
 	m.detailEditing = ""
 	m.detailCatCursor = 0
-	m.offsetCreditTxnID = 0
-	m.offsetDebitPicker = nil
-	m.offsetDebitTxnID = 0
-	m.offsetAmount = ""
-	m.offsetAmountCursor = 0
 	// Position category cursor at current category
 	if txn.categoryID != nil {
 		for i, c := range m.categories {
@@ -134,9 +135,6 @@ func (m model) updateDetail(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	if m.detailEditing == "notes" {
 		return m.updateDetailNotes(msg)
 	}
-	if m.detailEditing == "offset_amount" {
-		return m.updateDetailOffsetAmount(msg)
-	}
 	switch {
 	case m.isAction(scopeDetailModal, actionClose, msg):
 		m.closeDetail()
@@ -149,138 +147,20 @@ func (m model) updateDetail(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		m.detailNotesCursor = len(m.detailNotes)
 		return m, nil
 	case m.isAction(scopeDetailModal, actionSelect, msg):
-		// Save notes only.
 		if m.db == nil {
 			return m, nil
 		}
-		txnID := m.detailIdx
 		notes := m.detailNotes
+		if m.detailAllocationID > 0 {
+			return m, func() tea.Msg {
+				return txnSavedMsg{err: updateTransactionAllocationNote(m.db, m.detailAllocationID, notes)}
+			}
+		}
 		return m, func() tea.Msg {
-			return txnSavedMsg{err: updateTransactionNotes(m.db, txnID, notes)}
+			return txnSavedMsg{err: updateTransactionNotes(m.db, m.detailIdx, notes)}
 		}
 	}
 	return m, nil
-}
-
-func (m model) openOffsetDebitPicker() (model, error) {
-	txn := m.findDetailTxn()
-	if txn == nil {
-		return m, fmt.Errorf("no transaction selected")
-	}
-	if txn.amount <= 0 {
-		return m, fmt.Errorf("selected source transaction is not a credit")
-	}
-	if m.db == nil {
-		return m, fmt.Errorf("database not ready")
-	}
-	candidates, err := loadOffsetDebitCandidates(m.db, txn.id)
-	if err != nil {
-		return m, err
-	}
-	if len(candidates) == 0 {
-		return m, fmt.Errorf("no candidate debits in ±30 day window")
-	}
-	items := make([]pickerItem, 0, len(candidates))
-	for _, c := range candidates {
-		items = append(items, pickerItem{
-			ID:    c.id,
-			Label: fmt.Sprintf("%s  %s", c.dateISO, truncate(c.description, 28)),
-			Meta:  fmt.Sprintf("$%.2f", -c.amount),
-		})
-	}
-	m.offsetCreditTxnID = txn.id
-	m.offsetDebitPicker = newPicker("Link Credit Offset", items, false, "")
-	m.offsetDebitPicker.cursorOnly = true
-	return m, nil
-}
-
-func (m model) updateOffsetDebitPicker(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
-	if m.offsetDebitPicker == nil {
-		return m, nil
-	}
-	res := m.offsetDebitPicker.HandleMsg(msg, func(action Action, in tea.KeyMsg) bool {
-		return m.isAction(scopeOffsetDebitPicker, action, in)
-	})
-	switch res.Action {
-	case pickerActionCancelled:
-		m.offsetDebitPicker = nil
-		m.offsetDebitTxnID = 0
-		m.offsetAmount = ""
-		m.offsetAmountCursor = 0
-		return m, nil
-	case pickerActionSelected:
-		if m.db == nil {
-			m.setError("Database not ready.")
-			return m, nil
-		}
-		m.offsetDebitTxnID = res.ItemID
-		creditCap, err := remainingCreditCapacity(m.db, m.offsetCreditTxnID)
-		if err != nil {
-			m.setError(fmt.Sprintf("compute credit capacity: %v", err))
-			return m, nil
-		}
-		debitCap, err := remainingDebitCapacity(m.db, m.offsetDebitTxnID)
-		if err != nil {
-			m.setError(fmt.Sprintf("compute debit capacity: %v", err))
-			return m, nil
-		}
-		defaultAmt := math.Min(creditCap, debitCap)
-		if defaultAmt <= 0 {
-			m.setError("No remaining offset capacity for selected transactions.")
-			return m, nil
-		}
-		m.offsetDebitPicker = nil
-		m.offsetAmount = fmt.Sprintf("%.2f", defaultAmt)
-		m.offsetAmountCursor = len(m.offsetAmount)
-		m.detailEditing = "offset_amount"
-		m.setStatus("Enter offset amount, then press Enter to link.")
-		return m, nil
-	}
-	return m, nil
-}
-
-func (m model) updateDetailOffsetAmount(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
-	keyName := normalizeKeyName(msg.String())
-	switch {
-	case m.isAction(scopeDetailModal, actionClose, msg):
-		m.detailEditing = ""
-		m.offsetAmount = ""
-		m.offsetAmountCursor = 0
-		m.offsetDebitTxnID = 0
-		return m, nil
-	case m.isAction(scopeDetailModal, actionSelect, msg):
-		if m.db == nil {
-			m.setError("Database not ready.")
-			return m, nil
-		}
-		amount, err := strconv.ParseFloat(strings.TrimSpace(m.offsetAmount), 64)
-		if err != nil || amount <= 0 {
-			m.setError("Invalid offset amount.")
-			return m, nil
-		}
-		if err := insertCreditOffset(m.db, m.offsetCreditTxnID, m.offsetDebitTxnID, amount); err != nil {
-			m.setError(fmt.Sprintf("Link offset failed: %v", err))
-			return m, nil
-		}
-		m.detailEditing = ""
-		m.offsetAmount = ""
-		m.offsetAmountCursor = 0
-		m.offsetDebitTxnID = 0
-		m.setStatus("Offset linked.")
-		return m, refreshCmd(m.db)
-	case isBackspaceKey(msg):
-		deleteASCIIByteBeforeCursor(&m.offsetAmount, &m.offsetAmountCursor)
-		return m, nil
-	case keyName == "left":
-		moveInputCursorASCII(m.offsetAmount, &m.offsetAmountCursor, -1)
-		return m, nil
-	case keyName == "right":
-		moveInputCursorASCII(m.offsetAmount, &m.offsetAmountCursor, 1)
-		return m, nil
-	default:
-		insertPrintableASCIIAtCursor(&m.offsetAmount, &m.offsetAmountCursor, msg.String())
-		return m, nil
-	}
 }
 
 func (m model) updateDetailNotes(msg tea.KeyMsg) (tea.Model, tea.Cmd) {

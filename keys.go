@@ -42,7 +42,6 @@ const (
 	scopeCategoryPicker           = "category_picker"
 	scopeTagPicker                = "tag_picker"
 	scopeQuickOffset              = "quick_offset"
-	scopeOffsetDebitPicker        = "offset_debit_picker"
 	scopeFilterApplyPicker        = "filter_apply_picker"
 	scopeFilterEdit               = "filter_edit"
 	scopeFilePicker               = "file_picker"
@@ -250,7 +249,8 @@ func NewKeyRegistry() *KeyRegistry {
 	reg(scopeTransactions, actionSortDirection, "txn:sort-dir", []string{"S"}, "reverse")
 	reg(scopeTransactions, actionQuickCategory, "txn:quick-category", []string{"c"}, "cat")
 	reg(scopeTransactions, actionQuickTag, "txn:quick-tag", []string{"t"}, "tag")
-	reg(scopeTransactions, actionQuickOffset, "txn:quick-offset", []string{"o"}, "offset")
+	reg(scopeTransactions, actionQuickOffset, "txn:edit-allocations", []string{"o"}, "split")
+	reg(scopeTransactions, actionDelete, "txn:delete-allocation", []string{"del"}, "delete")
 	reg(scopeTransactions, actionToggleSelect, "txn:select", []string{"space", " "}, "")
 	reg(scopeTransactions, actionRangeHighlight, "", []string{"shift+up/down", "shift+up", "shift+down"}, "")
 	reg(scopeTransactions, actionCommandClearSelection, "txn:clear-selection", []string{"u"}, "clear")
@@ -281,10 +281,6 @@ func NewKeyRegistry() *KeyRegistry {
 	reg(scopeFilterApplyPicker, actionDown, "", []string{"down", "ctrl+n", "j"}, "")
 	reg(scopeFilterApplyPicker, actionSelect, "", []string{"enter"}, "")
 	reg(scopeFilterApplyPicker, actionClose, "", []string{"esc"}, "")
-	reg(scopeOffsetDebitPicker, actionUp, "", []string{"up", "ctrl+p", "k"}, "")
-	reg(scopeOffsetDebitPicker, actionDown, "", []string{"down", "ctrl+n", "j"}, "")
-	reg(scopeOffsetDebitPicker, actionSelect, "", []string{"enter"}, "")
-	reg(scopeOffsetDebitPicker, actionClose, "", []string{"esc"}, "")
 
 	// Detail / file picker footers: enter, esc, up/down, q
 	reg(scopeDetailModal, actionSelect, "", []string{"enter"}, "")

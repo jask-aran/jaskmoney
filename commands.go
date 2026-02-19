@@ -572,16 +572,51 @@ func NewCommandRegistry(keys *KeyRegistry, savedFilters []savedFilter) *CommandR
 			},
 		},
 		{
-			ID:          "txn:quick-offset",
-			Label:       "Quick Offset",
-			Description: "Open quick offset input",
+			ID:          "txn:edit-allocations",
+			Label:       "Split Transaction",
+			Description: "Add or edit a transaction allocation",
 			Category:    "Transactions",
 			Scopes:      []string{scopeTransactions},
 			Enabled:     commandAlwaysEnabled,
 			Execute: func(m model) (model, tea.Cmd, error) {
-				next, cmd := m.openQuickOffsetModal(m.getFilteredRows())
+				next, cmd := m.openAllocationAmountModal(m.getFilteredRows())
 				out, _ := next.(model)
 				return out, cmd, nil
+			},
+		},
+		{
+			ID:          "txn:delete-allocation",
+			Label:       "Delete Allocation",
+			Description: "Delete selected allocation row",
+			Category:    "Transactions",
+			Scopes:      []string{scopeTransactions},
+			Enabled: func(m model) (bool, string) {
+				filtered := m.getFilteredRows()
+				if len(filtered) == 0 || m.cursor < 0 || m.cursor >= len(filtered) {
+					return false, "No row selected."
+				}
+				if !filtered[m.cursor].isAllocation {
+					return false, "Selected row is not an allocation."
+				}
+				return true, ""
+			},
+			Execute: func(m model) (model, tea.Cmd, error) {
+				if m.db == nil {
+					return m, nil, fmt.Errorf("database not ready")
+				}
+				filtered := m.getFilteredRows()
+				if len(filtered) == 0 || m.cursor < 0 || m.cursor >= len(filtered) {
+					return m, nil, fmt.Errorf("no row selected")
+				}
+				row := filtered[m.cursor]
+				if !row.isAllocation || row.allocationID <= 0 {
+					return m, nil, fmt.Errorf("selected row is not an allocation")
+				}
+				if err := deleteTransactionAllocation(m.db, row.allocationID); err != nil {
+					return m, nil, err
+				}
+				m.setStatus("Allocation deleted.")
+				return m, refreshCmd(m.db), nil
 			},
 		},
 		{

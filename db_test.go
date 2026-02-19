@@ -32,7 +32,7 @@ func testDB(t *testing.T) (*sql.DB, func()) {
 
 // ---- Schema creation tests ----
 
-func TestOpenDBCreatesV5Schema(t *testing.T) {
+func TestOpenDBCreatesCurrentSchema(t *testing.T) {
 	db, cleanup := testDB(t)
 	defer cleanup()
 
@@ -51,7 +51,7 @@ func TestOpenDBCreatesV5Schema(t *testing.T) {
 		"schema_meta", "categories", "transactions", "imports",
 		"accounts", "account_selection", "tags", "transaction_tags", "rules_v2",
 		"category_budgets", "category_budget_overrides", "spending_targets",
-		"spending_target_overrides", "credit_offsets", "manual_offsets",
+		"spending_target_overrides", "transaction_allocations", "transaction_allocation_tags",
 	}
 	for _, table := range tables {
 		var count int
@@ -1613,5 +1613,43 @@ func TestDeleteMandatoryIgnoreTagBlocked(t *testing.T) {
 
 	if err := deleteTag(db, ignoreID); err == nil {
 		t.Fatalf("expected deleting mandatory tag %q to fail", mandatoryIgnoreTagName)
+	}
+}
+
+func TestTransactionAllocationCapacityValidation(t *testing.T) {
+	db, cleanup := testDB(t)
+	defer cleanup()
+
+	accountID, err := insertAccount(db, "Alloc Test", "debit", true)
+	if err != nil {
+		t.Fatalf("insertAccount: %v", err)
+	}
+	res, err := db.Exec(`
+		INSERT INTO transactions (date_raw, date_iso, amount, description, notes, account_id)
+		VALUES ('01/02/2026', '2026-02-01', -50, 'ALLOC PARENT', '', ?)
+	`, accountID)
+	if err != nil {
+		t.Fatalf("insert parent txn: %v", err)
+	}
+	parentID64, err := res.LastInsertId()
+	if err != nil {
+		t.Fatalf("last insert id: %v", err)
+	}
+	parentID := int(parentID64)
+
+	allocationID, err := insertTransactionAllocation(db, parentID, 20, nil, "split", nil)
+	if err != nil {
+		t.Fatalf("insertTransactionAllocation: %v", err)
+	}
+	var amount float64
+	if err := db.QueryRow(`SELECT amount FROM transaction_allocations WHERE id = ?`, allocationID).Scan(&amount); err != nil {
+		t.Fatalf("load allocation amount: %v", err)
+	}
+	if amount != -20 {
+		t.Fatalf("allocation amount = %.2f, want -20", amount)
+	}
+
+	if _, err := insertTransactionAllocation(db, parentID, 40, nil, "too much", nil); err == nil {
+		t.Fatal("expected over-capacity allocation to fail")
 	}
 }

@@ -144,8 +144,6 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m.handleQuickCategoryApplied(msg)
 	case quickTagsAppliedMsg:
 		return m.handleQuickTagsApplied(msg)
-	case quickOffsetsAppliedMsg:
-		return m.handleQuickOffsetsApplied(msg)
 	case accountNukedMsg:
 		if msg.err != nil {
 			m.setError(fmt.Sprintf("Account nuke failed: %v", msg.err))
@@ -268,10 +266,18 @@ func (m model) handleRefreshDone(msg refreshDoneMsg) (tea.Model, tea.Cmd) {
 		if targetOverrides, err := loadTargetOverrides(m.db); err == nil {
 			m.targetOverrides = targetOverrides
 		}
-		if offsets, err := loadCreditOffsets(m.db); err == nil {
-			m.creditOffsetsByDebit, m.creditOffsetsByCredit = indexCreditOffsets(offsets)
+		if allocations, err := loadTransactionAllocations(m.db); err == nil {
+			m.allocationsByParent, m.allocationsByID = indexTransactionAllocations(allocations)
+		} else {
+			m.allocationsByParent = make(map[int][]transactionAllocation)
+			m.allocationsByID = make(map[int]transactionAllocation)
 		}
-		if lines, err := computeBudgetLines(m.db, m.categoryBudgets, m.budgetOverrides, m.creditOffsetsByDebit, m.budgetMonth, m.filterAccounts); err == nil {
+		if allocationTags, err := loadTransactionAllocationTags(m.db); err == nil {
+			m.allocationTagsByID = allocationTags
+		} else {
+			m.allocationTagsByID = make(map[int][]tag)
+		}
+		if lines, err := computeBudgetLines(m.db, m.categoryBudgets, m.budgetOverrides, m.budgetMonth, m.filterAccounts); err == nil {
 			m.budgetLines = lines
 			m.budgetOverCount = 0
 			if len(lines) > 0 {
@@ -287,7 +293,7 @@ func (m model) handleRefreshDone(msg refreshDoneMsg) (tea.Model, tea.Cmd) {
 			}
 			m.budgetVarSparkline = m.computeBudgetVarianceSeries(6)
 		}
-		if targetLines, err := computeTargetLines(m.db, m.spendingTargets, m.targetOverrides, m.creditOffsetsByDebit, m.txnTags, m.savedFilters, m.filterAccounts); err == nil {
+		if targetLines, err := computeTargetLines(m.db, m.spendingTargets, m.targetOverrides, m.txnTags, m.savedFilters, m.filterAccounts); err == nil {
 			m.targetLines = targetLines
 		}
 	}
@@ -452,22 +458,6 @@ func (m model) handleQuickTagsApplied(msg quickTagsAppliedMsg) (tea.Model, tea.C
 	} else {
 		m.setStatusf("Updated tags for %d transaction(s).", msg.count)
 	}
-	if m.db == nil {
-		return m, nil
-	}
-	return m, refreshCmd(m.db)
-}
-
-func (m model) handleQuickOffsetsApplied(msg quickOffsetsAppliedMsg) (tea.Model, tea.Cmd) {
-	if msg.err != nil {
-		m.setError(fmt.Sprintf("Quick offset failed: %v", msg.err))
-		return m, nil
-	}
-	m.quickOffsetOpen = false
-	m.quickOffsetFor = nil
-	m.quickOffsetAmount = ""
-	m.quickOffsetCursor = 0
-	m.setStatusf("Applied offset %.2f to %d transaction(s).", msg.amount, msg.count)
 	if m.db == nil {
 		return m, nil
 	}
@@ -937,7 +927,7 @@ func (m model) computeBudgetVarianceSeries(points int) []float64 {
 	series := make([]float64, 0, points)
 	for i := points - 1; i >= 0; i-- {
 		month := start.AddDate(0, -i, 0).Format("2006-01")
-		lines, err := computeBudgetLines(m.db, m.categoryBudgets, m.budgetOverrides, m.creditOffsetsByDebit, month, m.filterAccounts)
+		lines, err := computeBudgetLines(m.db, m.categoryBudgets, m.budgetOverrides, month, m.filterAccounts)
 		if err != nil {
 			continue
 		}

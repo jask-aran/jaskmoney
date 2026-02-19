@@ -100,9 +100,9 @@ func overlayPrecedence() []overlayEntry {
 		},
 		{
 			name:            "quickOffset",
-			guard:           func(m model) bool { return m.quickOffsetOpen },
+			guard:           func(m model) bool { return m.allocationModalOpen },
 			scope:           func(m model) string { return scopeQuickOffset },
-			handler:         func(m model, msg tea.KeyMsg) (tea.Model, tea.Cmd) { return m.updateQuickOffsetModal(msg) },
+			handler:         func(m model, msg tea.KeyMsg) (tea.Model, tea.Cmd) { return m.updateAllocationAmountModal(msg) },
 			forFooter:       true,
 			forCommandScope: true,
 		},

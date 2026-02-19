@@ -207,7 +207,7 @@ func TestPhase5QuickCategorizeEscCancels(t *testing.T) {
 	}
 }
 
-func TestPhase5OpenQuickOffsetModalOnCursorRow(t *testing.T) {
+func TestPhase5OpenAllocationModalOnCursorRow(t *testing.T) {
 	m, cleanup := testPhase5Model(t)
 	defer cleanup()
 
@@ -216,15 +216,15 @@ func TestPhase5OpenQuickOffsetModalOnCursorRow(t *testing.T) {
 
 	m2, _ := m.Update(keyMsg("o"))
 	got := m2.(model)
-	if !got.quickOffsetOpen {
-		t.Fatal("expected quick offset modal to open")
+	if !got.allocationModalOpen {
+		t.Fatal("expected allocation modal to open")
 	}
-	if len(got.quickOffsetFor) != 1 || got.quickOffsetFor[0] != cursorID {
-		t.Fatalf("quick offset targets = %v, want [%d]", got.quickOffsetFor, cursorID)
+	if got.allocationParentID != cursorID {
+		t.Fatalf("allocation parent = %d, want %d", got.allocationParentID, cursorID)
 	}
 }
 
-func TestPhase5QuickOffsetApplySingleRow(t *testing.T) {
+func TestPhase5AddAllocationSingleRow(t *testing.T) {
 	m, cleanup := testPhase5Model(t)
 	defer cleanup()
 
@@ -233,12 +233,20 @@ func TestPhase5QuickOffsetApplySingleRow(t *testing.T) {
 
 	m2, _ := m.Update(keyMsg("o"))
 	got := m2.(model)
-	if !got.quickOffsetOpen {
-		t.Fatal("expected quick offset modal open")
+	if !got.allocationModalOpen {
+		t.Fatal("expected allocation modal open")
 	}
+	got.allocationAmount = ""
+	got.allocationAmountCur = 0
 	for _, k := range []string{"1", "2", ".", "5", "0"} {
 		m3, _ := got.Update(keyMsg(k))
 		got = m3.(model)
+	}
+	m3, _ := got.Update(tea.KeyMsg{Type: tea.KeyTab})
+	got = m3.(model)
+	for _, k := range []string{"R", "e", "f", "u", "n", "d"} {
+		m4, _ := got.Update(keyMsg(k))
+		got = m4.(model)
 	}
 	m4, cmd := got.Update(keyMsg("enter"))
 	got2 := m4.(model)
@@ -246,15 +254,48 @@ func TestPhase5QuickOffsetApplySingleRow(t *testing.T) {
 
 	var count int
 	var amount float64
-	err := got3.db.QueryRow(`SELECT COUNT(*), COALESCE(SUM(amount), 0) FROM manual_offsets WHERE debit_txn_id = ?`, targetID).Scan(&count, &amount)
+	var note string
+	err := got3.db.QueryRow(`SELECT COUNT(*), COALESCE(SUM(amount), 0), COALESCE(MAX(note), '') FROM transaction_allocations WHERE parent_txn_id = ?`, targetID).Scan(&count, &amount, &note)
 	if err != nil {
-		t.Fatalf("query manual_offsets: %v", err)
+		t.Fatalf("query transaction_allocations: %v", err)
 	}
 	if count != 1 {
-		t.Fatalf("manual offset rows = %d, want 1", count)
+		t.Fatalf("allocation rows = %d, want 1", count)
 	}
-	if amount != 12.50 {
-		t.Fatalf("manual offset sum = %.2f, want 12.50", amount)
+	if amount != -12.50 {
+		t.Fatalf("allocation sum = %.2f, want -12.50", amount)
+	}
+	if note != "Refund" {
+		t.Fatalf("allocation note = %q, want %q", note, "Refund")
+	}
+}
+
+func TestPhase5DeleteAllocationFromChildRow(t *testing.T) {
+	m, cleanup := testPhase5Model(t)
+	defer cleanup()
+
+	parentID := m.getFilteredRows()[m.cursor].id
+	if _, err := insertTransactionAllocation(m.db, parentID, 5, nil, "", nil); err != nil {
+		t.Fatalf("insertTransactionAllocation: %v", err)
+	}
+	m2, _ := m.Update(refreshCmd(m.db)())
+	got := m2.(model)
+	filtered := got.getFilteredRows()
+	if len(filtered) < 2 || !filtered[1].isAllocation {
+		t.Fatalf("expected child allocation row at index 1, got %#v", filtered)
+	}
+	got.cursor = 1
+
+	m3, cmd := got.Update(keyMsg("del"))
+	got2 := m3.(model)
+	got3 := runCmdUpdate(t, got2, cmd)
+
+	var count int
+	if err := got3.db.QueryRow(`SELECT COUNT(*) FROM transaction_allocations WHERE parent_txn_id = ?`, parentID).Scan(&count); err != nil {
+		t.Fatalf("count allocations: %v", err)
+	}
+	if count != 0 {
+		t.Fatalf("allocation rows after delete = %d, want 0", count)
 	}
 }
 

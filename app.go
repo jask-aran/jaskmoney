@@ -58,6 +58,7 @@ type transaction struct {
 	dateRaw       string
 	dateISO       string
 	amount        float64
+	fullAmount    float64 // non-zero for parent rows when amount is remainder after allocations
 	description   string
 	categoryID    *int
 	categoryName  string // denormalized from JOIN
@@ -66,6 +67,9 @@ type transaction struct {
 	accountID     *int
 	accountName   string
 	accountType   string
+	isAllocation  bool
+	parentTxnID   int
+	allocationID  int
 }
 
 // ---------------------------------------------------------------------------
@@ -230,12 +234,6 @@ type quickTagsAppliedMsg struct {
 	toggled   bool
 	toggledOn bool
 	err       error
-}
-
-type quickOffsetsAppliedMsg struct {
-	count  int
-	amount float64
-	err    error
 }
 
 type accountNukedMsg struct {
@@ -422,35 +420,37 @@ type model struct {
 
 	// Transactions scope
 	filterAccounts  map[int]bool // account ID -> enabled (nil = show all)
-	selectedRows    map[int]bool // transaction ID -> selected
-	selectionAnchor int          // last toggled/selected transaction ID for range selection
+	selectedRows    map[int]bool // manager row ID (transaction or allocation) -> selected
+	selectionAnchor int          // last toggled/selected row ID for range selection
 	rangeSelecting  bool         // true when shift-range highlight is active
-	rangeAnchorID   int          // anchor transaction ID for active highlight range
-	rangeCursorID   int          // cursor transaction ID for active highlight range
+	rangeAnchorID   int          // anchor row ID for active highlight range
+	rangeCursorID   int          // cursor row ID for active highlight range
 
 	// Transaction detail modal
-	showDetail          bool
-	detailIdx           int // transaction ID being edited
-	detailCatCursor     int // cursor in category picker
-	detailNotes         string
-	detailNotesCursor   int    // cursor position inside detailNotes when editing
-	detailEditing       string // "category" or "notes" or ""
-	catPicker           *pickerState
-	catPickerFor        []int
-	tagPicker           *pickerState
-	tagPickerFor        []int
-	quickOffsetOpen     bool
-	quickOffsetFor      []int
-	quickOffsetAmount   string
-	quickOffsetCursor   int
-	offsetCreditTxnID   int
-	offsetDebitPicker   *pickerState
-	offsetDebitTxnID    int
-	offsetAmount        string
-	offsetAmountCursor  int
-	managerActionPicker *pickerState
-	managerActionAcctID int
-	managerActionName   string
+	showDetail           bool
+	detailIdx            int // transaction ID being edited
+	detailAllocationID   int
+	detailRow            transaction
+	detailRowValid       bool
+	detailCatCursor      int // cursor in category picker
+	detailNotes          string
+	detailNotesCursor    int    // cursor position inside detailNotes when editing
+	detailEditing        string // "category" or "notes" or ""
+	catPicker            *pickerState
+	catPickerFor         []int
+	tagPicker            *pickerState
+	tagPickerFor         []int
+	allocationModalOpen  bool
+	allocationParentID   int
+	allocationEditID     int
+	allocationAmount     string
+	allocationAmountCur  int
+	allocationNote       string
+	allocationNoteCur    int
+	allocationModalFocus int
+	managerActionPicker  *pickerState
+	managerActionAcctID  int
+	managerActionName    string
 
 	// Settings state
 	rules           []ruleV2
@@ -540,17 +540,18 @@ type model struct {
 	budgetDeleteArmedTarget int
 
 	// Budget data
-	categoryBudgets       []categoryBudget
-	budgetOverrides       map[int][]budgetOverride
-	spendingTargets       []spendingTarget
-	targetOverrides       map[int][]targetOverride
-	creditOffsetsByDebit  map[int][]creditOffset
-	creditOffsetsByCredit map[int][]creditOffset
-	budgetLines           []budgetLine
-	targetLines           []targetLine
-	budgetAdherencePct    float64
-	budgetOverCount       int
-	budgetVarSparkline    []float64
+	categoryBudgets     []categoryBudget
+	budgetOverrides     map[int][]budgetOverride
+	spendingTargets     []spendingTarget
+	targetOverrides     map[int][]targetOverride
+	budgetLines         []budgetLine
+	targetLines         []targetLine
+	budgetAdherencePct  float64
+	budgetOverCount     int
+	budgetVarSparkline  []float64
+	allocationsByParent map[int][]transactionAllocation
+	allocationsByID     map[int]transactionAllocation
+	allocationTagsByID  map[int][]tag
 
 	// Configurable display
 	maxVisibleRows     int          // max rows shown in transaction table (5-50, default 20)
@@ -597,35 +598,36 @@ func newModel() model {
 		weekAnchor = time.Monday
 	}
 	m := model{
-		basePath:              cwd,
-		activeTab:             tabDashboard,
-		managerMode:           managerModeTransactions,
-		maxVisibleRows:        appCfg.RowsPerPage,
-		spendingWeekAnchor:    weekAnchor,
-		dashTimeframe:         dashTimeframeThisMonth,
-		dashAnchorMonth:       time.Now().Format("2006-01"),
-		dashCustomStart:       appCfg.DashCustomStart,
-		dashCustomEnd:         appCfg.DashCustomEnd,
-		dashWidgets:           newDashboardWidgets(customPaneModes),
-		budgetMonth:           time.Now().Format("2006-01"),
-		budgetYear:            time.Now().Year(),
-		keys:                  keys,
-		commands:              NewCommandRegistry(keys, savedFilters),
-		formats:               formats,
-		savedFilters:          savedFilters,
-		filterUsage:           make(map[string]filterUsageState),
-		customPaneModes:       customPaneModes,
-		selectedRows:          make(map[int]bool),
-		txnTags:               make(map[int][]tag),
-		budgetOverrides:       make(map[int][]budgetOverride),
-		targetOverrides:       make(map[int][]targetOverride),
-		creditOffsetsByDebit:  make(map[int][]creditOffset),
-		creditOffsetsByCredit: make(map[int][]creditOffset),
-		status:                status,
-		statusErr:             statusErr,
-		commandDefault:        appCfg.CommandDefaultInterface,
-		jumpPreviousFocus:     sectionUnfocused,
-		focusedSection:        sectionUnfocused,
+		basePath:            cwd,
+		activeTab:           tabDashboard,
+		managerMode:         managerModeTransactions,
+		maxVisibleRows:      appCfg.RowsPerPage,
+		spendingWeekAnchor:  weekAnchor,
+		dashTimeframe:       dashTimeframeThisMonth,
+		dashAnchorMonth:     time.Now().Format("2006-01"),
+		dashCustomStart:     appCfg.DashCustomStart,
+		dashCustomEnd:       appCfg.DashCustomEnd,
+		dashWidgets:         newDashboardWidgets(customPaneModes),
+		budgetMonth:         time.Now().Format("2006-01"),
+		budgetYear:          time.Now().Year(),
+		keys:                keys,
+		commands:            NewCommandRegistry(keys, savedFilters),
+		formats:             formats,
+		savedFilters:        savedFilters,
+		filterUsage:         make(map[string]filterUsageState),
+		customPaneModes:     customPaneModes,
+		selectedRows:        make(map[int]bool),
+		txnTags:             make(map[int][]tag),
+		budgetOverrides:     make(map[int][]budgetOverride),
+		targetOverrides:     make(map[int][]targetOverride),
+		allocationsByParent: make(map[int][]transactionAllocation),
+		allocationsByID:     make(map[int]transactionAllocation),
+		allocationTagsByID:  make(map[int][]tag),
+		status:              status,
+		statusErr:           statusErr,
+		commandDefault:      appCfg.CommandDefaultInterface,
+		jumpPreviousFocus:   sectionUnfocused,
+		focusedSection:      sectionUnfocused,
 	}
 	m.syncBudgetMonthFromDashboard()
 	return m
@@ -671,9 +673,8 @@ func (m model) View() string {
 	}
 
 	if m.showDetail {
-		txn := m.findDetailTxn()
-		if txn != nil {
-			detail := renderDetailWithOffsets(*txn, m.txnTags[txn.id], m.detailNotes, m.detailNotesCursor, m.detailEditing, m.offsetAmount, m.offsetAmountCursor, m.creditOffsetsByCredit, m.rows, m.keys)
+		if m.detailRowValid {
+			detail := renderDetailWithAllocations(m, m.keys)
 			return m.composeOverlay(header, body, statusLine, footer, detail)
 		}
 	}
@@ -702,8 +703,8 @@ func (m model) View() string {
 		picker := renderPicker(m.tagPicker, min(56, m.width-10), m.keys, scopeTagPicker)
 		return m.composeOverlay(header, body, statusLine, footer, picker)
 	}
-	if m.quickOffsetOpen {
-		modal := renderQuickOffsetModal(m)
+	if m.allocationModalOpen {
+		modal := renderAllocationAmountModal(m)
 		return m.composeOverlay(header, body, statusLine, footer, modal)
 	}
 	if m.filterApplyPicker != nil {
@@ -804,13 +805,11 @@ func (m model) managerView() string {
 	accountsFocused := m.managerMode == managerModeAccounts
 	accountsContent := renderManagerAccountStrip(m, accountsFocused, m.managerSectionContentWidth())
 	accountsCard := renderManagerSectionBox("Accounts", accountsFocused, accountsFocused, m.sectionWidth(), accountsContent)
+	allRows := m.managerRowsUnfiltered()
 	rows := m.getFilteredRows()
+	effectiveTags := m.effectiveTxnTags()
 	txVisibleRows := m.managerVisibleRows()
-	total := len(m.rows)
-	offsetsByDebit := m.creditOffsetsByDebit
-	if offsetsByDebit == nil {
-		offsetsByDebit = make(map[int][]creditOffset)
-	}
+	total := len(allRows)
 	var txContent string
 	if m.managerMode == managerModeTransactions {
 		highlighted := m.highlightedRows(rows)
@@ -822,8 +821,7 @@ func (m model) managerView() string {
 		txContent = searchBar + renderTransactionTable(
 			rows,
 			m.categories,
-			m.txnTags,
-			offsetsByDebit,
+			effectiveTags,
 			m.selectedRows,
 			highlighted,
 			cursorTxnID,
@@ -837,8 +835,7 @@ func (m model) managerView() string {
 		txContent = renderTransactionTable(
 			rows,
 			m.categories,
-			m.txnTags,
-			offsetsByDebit,
+			effectiveTags,
 			nil,
 			nil,
 			0,
@@ -1368,9 +1365,83 @@ func hasIgnoreTag(tags []tag) bool {
 	return false
 }
 
-// getFilteredRows returns the current filtered/sorted view of transactions.
+func (m model) managerRowsUnfiltered() []transaction {
+	parents := make([]transaction, len(m.rows))
+	copy(parents, m.rows)
+	for i := range parents {
+		parents[i].fullAmount = parents[i].amount
+		parents[i].isAllocation = false
+		parents[i].parentTxnID = parents[i].id
+		parents[i].allocationID = 0
+		allocatedSum := 0.0
+		for _, alloc := range m.allocationsByParent[parents[i].id] {
+			allocatedSum += alloc.amount
+		}
+		parents[i].amount = parents[i].fullAmount - allocatedSum
+	}
+	sortTransactions(parents, m.sortColumn, m.sortAscending)
+
+	totalChildren := 0
+	for _, allocs := range m.allocationsByParent {
+		totalChildren += len(allocs)
+	}
+	out := make([]transaction, 0, len(parents)+totalChildren)
+	for _, parent := range parents {
+		allocs := m.allocationsByParent[parent.id]
+		out = append(out, parent)
+
+		for _, alloc := range allocs {
+			child := parent
+			child.id = -alloc.id
+			child.amount = alloc.amount
+			child.fullAmount = 0
+			child.isAllocation = true
+			child.parentTxnID = parent.id
+			child.allocationID = alloc.id
+			child.notes = alloc.note
+			if strings.TrimSpace(alloc.note) != "" {
+				child.description = alloc.note
+			} else {
+				child.description = "Allocation"
+			}
+			child.categoryID = copyIntPtr(alloc.categoryID)
+			child.categoryName = alloc.categoryName
+			child.categoryColor = alloc.categoryColor
+			if strings.TrimSpace(child.categoryName) == "" {
+				child.categoryName = "Uncategorised"
+			}
+			if strings.TrimSpace(child.categoryColor) == "" {
+				child.categoryColor = "#7f849c"
+			}
+			out = append(out, child)
+		}
+	}
+	return out
+}
+
+func (m model) effectiveTxnTags() map[int][]tag {
+	out := make(map[int][]tag, len(m.txnTags)+len(m.allocationTagsByID))
+	for txnID, tags := range m.txnTags {
+		out[txnID] = tags
+	}
+	for allocationID, tags := range m.allocationTagsByID {
+		out[-allocationID] = tags
+	}
+	return out
+}
+
+// getFilteredRows returns the current filtered view of manager transaction rows.
 func (m model) getFilteredRows() []transaction {
-	return filteredRows(m.rows, m.buildTransactionFilter(), m.txnTags, m.sortColumn, m.sortAscending)
+	rows := m.managerRowsUnfiltered()
+	filter := m.buildTransactionFilter()
+	tags := m.effectiveTxnTags()
+	out := make([]transaction, 0, len(rows))
+	for _, row := range rows {
+		if evalFilter(filter, row, tags[row.id]) {
+			out = append(out, row)
+		}
+	}
+	return out
 }
 
 func (m model) getDashboardRows() []transaction {

@@ -2,7 +2,7 @@ package main
 
 import "testing"
 
-func TestDetailDoesNotOpenOffsetLinkFlow(t *testing.T) {
+func TestDetailIgnoresAllocationShortcut(t *testing.T) {
 	db, cleanup := testDB(t)
 	defer cleanup()
 
@@ -42,8 +42,8 @@ func TestDetailDoesNotOpenOffsetLinkFlow(t *testing.T) {
 
 	next, _ := m.updateDetail(keyMsg("o"))
 	got := next.(model)
-	if got.offsetDebitPicker != nil {
-		t.Fatal("offset debit picker should remain closed")
+	if got.allocationModalOpen {
+		t.Fatal("allocation modal should remain closed from detail scope")
 	}
 	if got.detailEditing != "" {
 		t.Fatalf("detailEditing = %q, want empty", got.detailEditing)
