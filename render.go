@@ -2785,7 +2785,7 @@ func drawHorizontalValueLine(chart *tslc.Model, v float64, style lipgloss.Style)
 // settingsActiveBorderStyle is used for the focused section.
 var settingsActiveBorderStyle = lipgloss.NewStyle().
 	Border(lipgloss.RoundedBorder()).
-	BorderForeground(colorAccent).
+	BorderForeground(colorFocus).
 	Padding(0, 1)
 
 // settingsInactiveBorderStyle is used for unfocused sections.
@@ -2845,10 +2845,10 @@ func renderSettingsSectionBox(title string, sec int, m model, width int, content
 
 func renderManagerSectionBox(title string, isFocused, isActive bool, width int, content string) string {
 	borderColor := colorSurface1
-	titleSty := lipgloss.NewStyle().Foreground(colorSubtext0).Bold(true)
+	titleSty := titleStyle
 	if isFocused {
-		borderColor = colorAccent
-		titleSty = lipgloss.NewStyle().Foreground(colorAccent).Bold(true)
+		borderColor = colorFocus
+		titleSty = lipgloss.NewStyle().Foreground(colorFocus).Bold(true)
 	}
 	if isActive {
 		title += " *"
@@ -2858,10 +2858,10 @@ func renderManagerSectionBox(title string, isFocused, isActive bool, width int, 
 
 func renderDashboardWidgetSectionBox(title string, isFocused, isActive bool, width int, content string, leftPad, rightPad int) string {
 	borderColor := colorSurface1
-	titleSty := lipgloss.NewStyle().Foreground(colorSubtext0).Bold(true)
+	titleSty := titleStyle
 	if isFocused {
-		borderColor = colorAccent
-		titleSty = lipgloss.NewStyle().Foreground(colorAccent).Bold(true)
+		borderColor = colorFocus
+		titleSty = lipgloss.NewStyle().Foreground(colorFocus).Bold(true)
 	}
 	if isActive {
 		title += " *"
