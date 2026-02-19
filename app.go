@@ -1046,61 +1046,11 @@ func (m model) composeBottomOverlay(header, body, statusLine, footer, content st
 }
 
 // ---------------------------------------------------------------------------
-// Settings footer bindings
-// ---------------------------------------------------------------------------
-
-func (m model) settingsFooterBindings() []key.Binding {
-	if m.dryRunOpen {
-		return m.keys.HelpBindings(scopeDryRunModal)
-	}
-	if m.ruleEditorOpen {
-		return m.keys.HelpBindings(scopeRuleEditor)
-	}
-	if m.settMode != settModeNone {
-		switch m.settMode {
-		case settModeAddCat, settModeEditCat:
-			return m.keys.HelpBindings(scopeSettingsModeCat)
-		case settModeAddTag, settModeEditTag:
-			return m.keys.HelpBindings(scopeSettingsModeTag)
-		}
-	}
-	if m.confirmAction != confirmActionNone {
-		return m.settingsConfirmBindings()
-	}
-	if m.settActive {
-		return m.keys.HelpBindings(settingsActiveScope(m.settSection))
-	}
-	return m.keys.HelpBindings(scopeSettingsNav)
-}
-
-func (m model) settingsConfirmBindings() []key.Binding {
-	spec, ok := settingsConfirmSpecFor(m.confirmAction)
-	if !ok {
-		return nil
-	}
-	confirmKey := m.primaryActionKey(spec.scope, spec.action, spec.fallback)
-	confirmLabel := prettyHelpKey(confirmKey)
-	return []key.Binding{
-		key.NewBinding(key.WithKeys(confirmKey), key.WithHelp(confirmLabel, "confirm")),
-		key.NewBinding(key.WithKeys("other"), key.WithHelp("other", "cancel")),
-	}
-}
-
-// ---------------------------------------------------------------------------
 // Layout helpers
 // ---------------------------------------------------------------------------
 
 func (m model) footerBindings() []key.Binding {
-	// Primary tier: overlay/modal scope via shared precedence table.
-	if scope := m.activeOverlayScope(true); scope != "" {
-		return m.keys.HelpBindings(scope)
-	}
-	// Secondary tier: tab-level scope resolution.
-	// Settings tab has special footer logic for confirm bindings.
-	if m.activeTab == tabSettings {
-		return m.settingsFooterBindings()
-	}
-	return m.keys.HelpBindings(m.tabScope())
+	return renderFooterFromContract(m.activeInteractionContract(), m.keys)
 }
 
 func (m *model) visibleRows() int {

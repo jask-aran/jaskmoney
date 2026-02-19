@@ -39,6 +39,24 @@ func flowType(t *testing.T, m model, input string) model {
 	return m
 }
 
+func flowKeyForIntent(t *testing.T, keys *KeyRegistry, contract InteractionContract, intent InteractionIntent) string {
+	t.Helper()
+	for _, hint := range contract.Hints {
+		if hint.Intent != intent {
+			continue
+		}
+		action, ok := interactionActionForHint(hint)
+		if !ok {
+			continue
+		}
+		if keyName, ok := primaryKeyForScopeAction(keys, contract.Scope, action); ok {
+			return keyName
+		}
+	}
+	t.Fatalf("scope=%q has no key for intent %q", contract.Scope, intent)
+	return ""
+}
+
 func flowDrainCmd(t *testing.T, m model, cmd tea.Cmd) model {
 	t.Helper()
 	for i := 0; cmd != nil && i < 32; i++ {
@@ -526,5 +544,121 @@ func TestFlowImportMissingMappedAccountShowsErrorAndNoPartialState(t *testing.T)
 	}
 	if len(imports) != 0 {
 		t.Fatalf("imports should remain 0, got %d", len(imports))
+	}
+}
+
+func TestFlowPhase7IntentCancelClosesCommandPalette(t *testing.T) {
+	m, cleanup := newFlowModelWithDB(t)
+	defer cleanup()
+
+	m = flowApplyMsg(t, m, tea.KeyMsg{Type: tea.KeyCtrlK})
+	if !m.commandOpen {
+		t.Fatal("expected command palette open")
+	}
+
+	contract := m.activeInteractionContract()
+	if contract.Scope != scopeCommandPalette {
+		t.Fatalf("active scope=%q, want %q", contract.Scope, scopeCommandPalette)
+	}
+	cancelKey := flowKeyForIntent(t, m.keys, contract, IntentCancel)
+	m = flowPress(t, m, cancelKey)
+	if m.commandOpen {
+		t.Fatal("command palette should close on cancel intent")
+	}
+}
+
+func TestFlowPhase7ManagerModalSaveIntentPersistsAccount(t *testing.T) {
+	m, cleanup := newFlowModelWithDB(t)
+	defer cleanup()
+
+	m.activeTab = tabManager
+	m.managerMode = managerModeAccounts
+	m.openManagerAccountModal(true, nil)
+	m.managerEditName = "phase7 cash"
+	m.managerEditNameCur = len(m.managerEditName)
+	m.managerEditPrefix = "phase7-cash"
+	m.managerEditPrefixCur = len(m.managerEditPrefix)
+
+	contract := m.activeInteractionContract()
+	if contract.Scope != scopeManagerModal {
+		t.Fatalf("active scope=%q, want %q", contract.Scope, scopeManagerModal)
+	}
+	if !contractHasIntent(contract, IntentSave) {
+		t.Fatal("manager modal contract should declare save intent")
+	}
+
+	saveKey := flowKeyForIntent(t, m.keys, contract, IntentSave)
+	m = flowPress(t, m, saveKey)
+	if m.managerModalOpen {
+		t.Fatal("manager modal should close after save")
+	}
+	if m.statusErr {
+		t.Fatalf("manager modal save status error: %q", m.status)
+	}
+
+	accounts, err := loadAccounts(m.db)
+	if err != nil {
+		t.Fatalf("loadAccounts: %v", err)
+	}
+	found := false
+	for _, acc := range accounts {
+		if strings.EqualFold(acc.name, "phase7 cash") {
+			found = true
+			break
+		}
+	}
+	if !found {
+		t.Fatal("saved account not found after save intent")
+	}
+}
+
+func TestFlowPhase7SettingsTagFormUsesSaveIntentAndPersistsTag(t *testing.T) {
+	m, cleanup := newFlowModelWithDB(t)
+	defer cleanup()
+
+	m.activeTab = tabSettings
+	m.settActive = true
+	m.settSection = settSecTags
+
+	addKey := m.primaryActionKey(scopeSettingsActiveTags, actionAdd, "a")
+	m = flowPress(t, m, addKey)
+	if m.settMode != settModeAddTag {
+		t.Fatalf("mode=%q, want %q", m.settMode, settModeAddTag)
+	}
+
+	contract := m.activeInteractionContract()
+	if contract.Scope != scopeSettingsModeTag {
+		t.Fatalf("active scope=%q, want %q", contract.Scope, scopeSettingsModeTag)
+	}
+	if !contractHasIntent(contract, IntentSave) {
+		t.Fatal("settings tag form contract should declare save intent")
+	}
+	if contractHasIntent(contract, IntentConfirm) {
+		t.Fatal("settings tag form should use save semantics, not confirm semantics")
+	}
+
+	m = flowType(t, m, "phase7tag")
+	saveKey := flowKeyForIntent(t, m.keys, contract, IntentSave)
+	m = flowPress(t, m, saveKey)
+	if m.settMode != settModeNone {
+		t.Fatalf("mode=%q, want %q after save", m.settMode, settModeNone)
+	}
+	if m.statusErr {
+		t.Fatalf("settings tag save status error: %q", m.status)
+	}
+
+	tags, err := loadTags(m.db)
+	if err != nil {
+		t.Fatalf("loadTags: %v", err)
+	}
+	found := false
+	for _, tg := range tags {
+		if strings.EqualFold(tg.name, "phase7tag") {
+			found = true
+			break
+		}
+	}
+	if !found {
+		t.Fatal("saved tag not found after save intent")
 	}
 }

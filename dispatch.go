@@ -12,7 +12,12 @@ package main
 // Adding a new overlay/modal: add one entry in the correct priority position.
 // All three consumers automatically stay in sync.
 
-import tea "github.com/charmbracelet/bubbletea"
+import (
+	"strings"
+
+	"github.com/charmbracelet/bubbles/key"
+	tea "github.com/charmbracelet/bubbletea"
+)
 
 // overlayEntry defines one level in the overlay precedence chain.
 // Guard returns true when this overlay is active.
@@ -194,6 +199,596 @@ func (m model) activeOverlayScope(forFooter bool) string {
 		}
 	}
 	return ""
+}
+
+// ---------------------------------------------------------------------------
+// Interaction contracts (Phase 7 hardening)
+// ---------------------------------------------------------------------------
+// Contracts declare semantic intent per scope so footer hints, key lookup,
+// and handler-behavior tests can all derive from shared data.
+
+type InteractionIntent string
+
+const (
+	IntentMovePrev InteractionIntent = "move_prev"
+	IntentMoveNext InteractionIntent = "move_next"
+	IntentSelect   InteractionIntent = "select"
+	IntentToggle   InteractionIntent = "toggle"
+	IntentEdit     InteractionIntent = "edit"
+	IntentConfirm  InteractionIntent = "confirm"
+	IntentSave     InteractionIntent = "save"
+	IntentCancel   InteractionIntent = "cancel"
+	IntentDelete   InteractionIntent = "delete"
+	IntentApply    InteractionIntent = "apply"
+)
+
+type ContextKind string
+
+const (
+	ContextList       ContextKind = "list"
+	ContextForm       ContextKind = "form"
+	ContextViewer     ContextKind = "viewer"
+	ContextWorkflow   ContextKind = "workflow"
+	ContextInlineEdit ContextKind = "inline_edit"
+)
+
+type InteractionHint struct {
+	Intent InteractionIntent
+	Label  string
+	Omit   bool
+	Action Action
+}
+
+type InteractionContract struct {
+	Scope string
+	Kind  ContextKind
+	Hints []InteractionHint
+}
+
+func showHint(intent InteractionIntent, action Action, label string) InteractionHint {
+	return InteractionHint{Intent: intent, Action: action, Label: label}
+}
+
+func hideHint(intent InteractionIntent, action Action) InteractionHint {
+	return InteractionHint{Intent: intent, Action: action, Omit: true}
+}
+
+// interactionContracts is the contract registry for all reachable overlay/tab
+// scopes used by footer rendering.
+var interactionContracts = map[string]InteractionContract{
+	scopeJumpOverlay: {
+		Scope: scopeJumpOverlay,
+		Kind:  ContextWorkflow,
+		Hints: []InteractionHint{
+			showHint(IntentCancel, actionJumpCancel, "cancel"),
+		},
+	},
+	scopeCommandPalette: {
+		Scope: scopeCommandPalette,
+		Kind:  ContextList,
+		Hints: []InteractionHint{
+			hideHint(IntentMovePrev, actionUp),
+			hideHint(IntentMoveNext, actionDown),
+			showHint(IntentSelect, actionSelect, "run"),
+			showHint(IntentCancel, actionClose, "close"),
+		},
+	},
+	scopeCommandMode: {
+		Scope: scopeCommandMode,
+		Kind:  ContextList,
+		Hints: []InteractionHint{
+			hideHint(IntentMovePrev, actionUp),
+			hideHint(IntentMoveNext, actionDown),
+			showHint(IntentSelect, actionSelect, "run"),
+			showHint(IntentCancel, actionClose, "close"),
+		},
+	},
+	scopeDetailModal: {
+		Scope: scopeDetailModal,
+		Kind:  ContextViewer,
+		Hints: []InteractionHint{
+			hideHint(IntentMovePrev, actionUp),
+			hideHint(IntentMoveNext, actionDown),
+			hideHint(IntentSelect, actionSelect),
+			showHint(IntentEdit, actionEdit, "notes"),
+			showHint(IntentCancel, actionQuit, "quit"),
+		},
+	},
+	scopeImportPreview: {
+		Scope: scopeImportPreview,
+		Kind:  ContextWorkflow,
+		Hints: []InteractionHint{
+			hideHint(IntentMovePrev, actionUp),
+			hideHint(IntentMoveNext, actionDown),
+			hideHint(IntentCancel, actionClose),
+			showHint(IntentApply, actionImportAll, "all"),
+			showHint(IntentApply, actionSkipDupes, "skip"),
+			showHint(IntentToggle, actionImportPreviewToggle, "preview"),
+			showHint(IntentApply, actionImportRawView, "rules"),
+		},
+	},
+	scopeFilePicker: {
+		Scope: scopeFilePicker,
+		Kind:  ContextList,
+		Hints: []InteractionHint{
+			hideHint(IntentMovePrev, actionUp),
+			hideHint(IntentMoveNext, actionDown),
+			hideHint(IntentSelect, actionSelect),
+			hideHint(IntentCancel, actionClose),
+			showHint(IntentCancel, actionQuit, "quit"),
+		},
+	},
+	scopeCategoryPicker: {
+		Scope: scopeCategoryPicker,
+		Kind:  ContextList,
+		Hints: []InteractionHint{
+			hideHint(IntentMovePrev, actionUp),
+			hideHint(IntentMoveNext, actionDown),
+			hideHint(IntentSelect, actionSelect),
+			hideHint(IntentCancel, actionClose),
+			hideHint(IntentApply, actionSelect),
+		},
+	},
+	scopeTagPicker: {
+		Scope: scopeTagPicker,
+		Kind:  ContextList,
+		Hints: []InteractionHint{
+			hideHint(IntentMovePrev, actionUp),
+			hideHint(IntentMoveNext, actionDown),
+			hideHint(IntentToggle, actionToggleSelect),
+			hideHint(IntentSelect, actionSelect),
+			hideHint(IntentCancel, actionClose),
+			hideHint(IntentApply, actionSelect),
+		},
+	},
+	scopeQuickOffset: {
+		Scope: scopeQuickOffset,
+		Kind:  ContextInlineEdit,
+		Hints: []InteractionHint{
+			hideHint(IntentEdit, actionLeft),
+			hideHint(IntentEdit, actionRight),
+			showHint(IntentApply, actionConfirm, "apply"),
+			showHint(IntentCancel, actionClose, "cancel"),
+		},
+	},
+	scopeFilterApplyPicker: {
+		Scope: scopeFilterApplyPicker,
+		Kind:  ContextList,
+		Hints: []InteractionHint{
+			hideHint(IntentMovePrev, actionUp),
+			hideHint(IntentMoveNext, actionDown),
+			hideHint(IntentSelect, actionSelect),
+			hideHint(IntentCancel, actionClose),
+			hideHint(IntentApply, actionSelect),
+		},
+	},
+	scopeManagerAccountAction: {
+		Scope: scopeManagerAccountAction,
+		Kind:  ContextList,
+		Hints: []InteractionHint{
+			hideHint(IntentMovePrev, actionUp),
+			hideHint(IntentMoveNext, actionDown),
+			hideHint(IntentSelect, actionSelect),
+			hideHint(IntentCancel, actionClose),
+		},
+	},
+	scopeFilterEdit: {
+		Scope: scopeFilterEdit,
+		Kind:  ContextForm,
+		Hints: []InteractionHint{
+			hideHint(IntentMovePrev, actionUp),
+			hideHint(IntentMoveNext, actionDown),
+			hideHint(IntentEdit, actionLeft),
+			hideHint(IntentEdit, actionRight),
+			hideHint(IntentSave, actionSave),
+			hideHint(IntentCancel, actionClose),
+		},
+	},
+	scopeManagerModal: {
+		Scope: scopeManagerModal,
+		Kind:  ContextForm,
+		Hints: []InteractionHint{
+			hideHint(IntentMovePrev, actionUp),
+			hideHint(IntentMoveNext, actionDown),
+			hideHint(IntentToggle, actionToggleSelect),
+			hideHint(IntentSave, actionConfirm),
+			hideHint(IntentCancel, actionClose),
+		},
+	},
+	scopeDryRunModal: {
+		Scope: scopeDryRunModal,
+		Kind:  ContextViewer,
+		Hints: []InteractionHint{
+			hideHint(IntentMovePrev, actionUp),
+			hideHint(IntentMoveNext, actionDown),
+			hideHint(IntentCancel, actionClose),
+		},
+	},
+	scopeRuleEditor: {
+		Scope: scopeRuleEditor,
+		Kind:  ContextForm,
+		Hints: []InteractionHint{
+			hideHint(IntentMovePrev, actionUp),
+			hideHint(IntentMoveNext, actionDown),
+			hideHint(IntentToggle, actionToggleSelect),
+			hideHint(IntentConfirm, actionSelect),
+			hideHint(IntentSave, actionSelect),
+			hideHint(IntentCancel, actionClose),
+		},
+	},
+	scopeFilterInput: {
+		Scope: scopeFilterInput,
+		Kind:  ContextInlineEdit,
+		Hints: []InteractionHint{
+			hideHint(IntentEdit, actionLeft),
+			hideHint(IntentEdit, actionRight),
+			hideHint(IntentCancel, actionClearSearch),
+			showHint(IntentSave, actionFilterSave, "save"),
+			showHint(IntentApply, actionFilterLoad, "load"),
+		},
+	},
+	scopeDashboard: {
+		Scope: scopeDashboard,
+		Kind:  ContextWorkflow,
+		Hints: []InteractionHint{
+			showHint(IntentMovePrev, actionBudgetPrevMonth, "prev month"),
+			showHint(IntentMoveNext, actionBudgetNextMonth, "next month"),
+			showHint(IntentApply, actionTimeframeThisMonth, "this month"),
+		},
+	},
+	scopeDashboardTimeframe: {
+		Scope: scopeDashboardTimeframe,
+		Kind:  ContextForm,
+		Hints: []InteractionHint{
+			hideHint(IntentMovePrev, actionLeft),
+			hideHint(IntentMoveNext, actionRight),
+			showHint(IntentMovePrev, actionBudgetPrevMonth, "prev month"),
+			showHint(IntentMoveNext, actionBudgetNextMonth, "next month"),
+			showHint(IntentApply, actionTimeframeThisMonth, "this month"),
+			showHint(IntentConfirm, actionSelect, "apply"),
+			showHint(IntentCancel, actionCancel, "done"),
+		},
+	},
+	scopeDashboardCustomInput: {
+		Scope: scopeDashboardCustomInput,
+		Kind:  ContextInlineEdit,
+		Hints: []InteractionHint{
+			hideHint(IntentApply, actionConfirm),
+			hideHint(IntentCancel, actionCancel),
+		},
+	},
+	scopeDashboardFocused: {
+		Scope: scopeDashboardFocused,
+		Kind:  ContextWorkflow,
+		Hints: []InteractionHint{
+			showHint(IntentMoveNext, actionDashboardModeNext, "next"),
+			showHint(IntentMovePrev, actionDashboardModePrev, "prev"),
+			showHint(IntentSelect, actionDashboardDrillDown, "drill"),
+			showHint(IntentEdit, actionDashboardCustomModeEdit, "custom"),
+			hideHint(IntentCancel, actionCancel),
+		},
+	},
+	scopeTransactions: {
+		Scope: scopeTransactions,
+		Kind:  ContextList,
+		Hints: []InteractionHint{
+			hideHint(IntentMovePrev, actionUp),
+			hideHint(IntentMoveNext, actionDown),
+			hideHint(IntentSelect, actionSelect),
+			hideHint(IntentCancel, actionClearSearch),
+			showHint(IntentEdit, actionSearch, "filter"),
+			showHint(IntentSave, actionFilterSave, "save"),
+			showHint(IntentApply, actionFilterLoad, "load"),
+			showHint(IntentEdit, actionSort, "sort"),
+			showHint(IntentToggle, actionSortDirection, "reverse"),
+			showHint(IntentApply, actionQuickCategory, "cat"),
+			showHint(IntentApply, actionQuickTag, "tag"),
+			showHint(IntentEdit, actionQuickOffset, "split"),
+			showHint(IntentDelete, actionDelete, "delete"),
+			showHint(IntentCancel, actionCommandClearSelection, "clear"),
+			showHint(IntentMovePrev, actionJumpTop, "top"),
+			showHint(IntentMoveNext, actionJumpBottom, "bottom"),
+		},
+	},
+	scopeManager: {
+		Scope: scopeManager,
+		Kind:  ContextWorkflow,
+		Hints: []InteractionHint{
+			showHint(IntentEdit, actionSearch, "filter"),
+			showHint(IntentApply, actionFilterLoad, "load"),
+			showHint(IntentEdit, actionAdd, "add"),
+			showHint(IntentDelete, actionDelete, "actions"),
+			showHint(IntentCancel, actionQuit, "quit"),
+		},
+	},
+	scopeManagerTransactions: {
+		Scope: scopeManagerTransactions,
+		Kind:  ContextWorkflow,
+		Hints: []InteractionHint{
+			showHint(IntentApply, actionFocusAccounts, "accounts"),
+		},
+	},
+	scopeBudget: {
+		Scope: scopeBudget,
+		Kind:  ContextWorkflow,
+		Hints: []InteractionHint{
+			showHint(IntentMovePrev, actionBudgetPrevMonth, "prev month"),
+			showHint(IntentMoveNext, actionBudgetNextMonth, "next month"),
+			showHint(IntentApply, actionTimeframeThisMonth, "this month"),
+			showHint(IntentToggle, actionBudgetToggleView, "view"),
+			showHint(IntentEdit, actionBudgetEdit, "edit"),
+			showHint(IntentEdit, actionBudgetAddTarget, "add"),
+			showHint(IntentDelete, actionBudgetDeleteTarget, "delete"),
+			showHint(IntentApply, actionBudgetResetOverride, "reset"),
+		},
+	},
+	scopeSettingsNav: {
+		Scope: scopeSettingsNav,
+		Kind:  ContextList,
+		Hints: []InteractionHint{
+			hideHint(IntentMovePrev, actionUp),
+			hideHint(IntentMoveNext, actionDown),
+			hideHint(IntentSelect, actionActivate),
+			hideHint(IntentCancel, actionQuit),
+			showHint(IntentApply, actionImport, "import"),
+		},
+	},
+	scopeSettingsModeCat: {
+		Scope: scopeSettingsModeCat,
+		Kind:  ContextForm,
+		Hints: []InteractionHint{
+			hideHint(IntentMovePrev, actionUp),
+			hideHint(IntentMoveNext, actionDown),
+			hideHint(IntentSave, actionSave),
+			hideHint(IntentCancel, actionClose),
+		},
+	},
+	scopeSettingsModeTag: {
+		Scope: scopeSettingsModeTag,
+		Kind:  ContextForm,
+		Hints: []InteractionHint{
+			hideHint(IntentMovePrev, actionUp),
+			hideHint(IntentMoveNext, actionDown),
+			hideHint(IntentSave, actionSave),
+			hideHint(IntentCancel, actionClose),
+		},
+	},
+	scopeSettingsModeRule: {
+		Scope: scopeSettingsModeRule,
+		Kind:  ContextForm,
+		Hints: []InteractionHint{
+			hideHint(IntentConfirm, actionSelect),
+			hideHint(IntentCancel, actionClose),
+		},
+	},
+	scopeSettingsModeRuleCat: {
+		Scope: scopeSettingsModeRuleCat,
+		Kind:  ContextForm,
+		Hints: []InteractionHint{
+			hideHint(IntentConfirm, actionSelect),
+			hideHint(IntentCancel, actionClose),
+		},
+	},
+	scopeSettingsActiveCategories: {
+		Scope: scopeSettingsActiveCategories,
+		Kind:  ContextList,
+		Hints: []InteractionHint{
+			hideHint(IntentMovePrev, actionUp),
+			hideHint(IntentMoveNext, actionDown),
+			hideHint(IntentSelect, actionSelect),
+			hideHint(IntentCancel, actionBack),
+			showHint(IntentEdit, actionAdd, "add"),
+			showHint(IntentDelete, actionDelete, "delete"),
+		},
+	},
+	scopeSettingsActiveTags: {
+		Scope: scopeSettingsActiveTags,
+		Kind:  ContextList,
+		Hints: []InteractionHint{
+			hideHint(IntentMovePrev, actionUp),
+			hideHint(IntentMoveNext, actionDown),
+			hideHint(IntentSelect, actionSelect),
+			hideHint(IntentCancel, actionBack),
+			showHint(IntentEdit, actionAdd, "add"),
+			showHint(IntentDelete, actionDelete, "delete"),
+		},
+	},
+	scopeSettingsActiveRules: {
+		Scope: scopeSettingsActiveRules,
+		Kind:  ContextList,
+		Hints: []InteractionHint{
+			hideHint(IntentMovePrev, actionUp),
+			hideHint(IntentMoveNext, actionDown),
+			hideHint(IntentSelect, actionSelect),
+			hideHint(IntentCancel, actionBack),
+			showHint(IntentEdit, actionAdd, "add"),
+			showHint(IntentDelete, actionDelete, "delete"),
+			showHint(IntentMovePrev, actionRuleMoveUp, "move up"),
+			showHint(IntentMoveNext, actionRuleMoveDown, "move down"),
+			showHint(IntentApply, actionApplyAll, "apply all"),
+			showHint(IntentApply, actionRuleDryRun, "dry run"),
+		},
+	},
+	scopeSettingsActiveFilters: {
+		Scope: scopeSettingsActiveFilters,
+		Kind:  ContextList,
+		Hints: []InteractionHint{
+			hideHint(IntentMovePrev, actionUp),
+			hideHint(IntentMoveNext, actionDown),
+			hideHint(IntentSelect, actionSelect),
+			hideHint(IntentCancel, actionBack),
+			showHint(IntentEdit, actionAdd, "add"),
+			showHint(IntentDelete, actionDelete, "delete"),
+		},
+	},
+	scopeSettingsActiveChart: {
+		Scope: scopeSettingsActiveChart,
+		Kind:  ContextWorkflow,
+		Hints: []InteractionHint{
+			showHint(IntentMovePrev, actionLeft, "week"),
+			showHint(IntentMoveNext, actionRight, "week"),
+			hideHint(IntentConfirm, actionConfirm),
+			hideHint(IntentCancel, actionBack),
+		},
+	},
+	scopeSettingsActiveDBImport: {
+		Scope: scopeSettingsActiveDBImport,
+		Kind:  ContextWorkflow,
+		Hints: []InteractionHint{
+			hideHint(IntentMovePrev, actionUp),
+			hideHint(IntentMoveNext, actionDown),
+			hideHint(IntentCancel, actionBack),
+			showHint(IntentEdit, actionRowsPerPage, "rows"),
+			showHint(IntentApply, actionCommandDefault, "default"),
+			showHint(IntentDelete, actionClearDB, "clear"),
+			showHint(IntentApply, actionImport, "import"),
+			showHint(IntentApply, actionResetKeybindings, "reset"),
+		},
+	},
+	scopeSettingsActiveImportHist: {
+		Scope: scopeSettingsActiveImportHist,
+		Kind:  ContextList,
+		Hints: []InteractionHint{
+			hideHint(IntentMovePrev, actionUp),
+			hideHint(IntentMoveNext, actionDown),
+			hideHint(IntentCancel, actionBack),
+			hideHint(IntentSelect, actionSelect),
+		},
+	},
+	scopeGlobal: {
+		Scope: scopeGlobal,
+		Kind:  ContextWorkflow,
+		Hints: []InteractionHint{
+			showHint(IntentApply, actionCommandGoDashboard, "dashboard"),
+			showHint(IntentApply, actionCommandGoBudget, "budget"),
+			showHint(IntentApply, actionCommandGoTransactions, "manager"),
+			showHint(IntentApply, actionCommandGoSettings, "settings"),
+			showHint(IntentApply, actionJumpMode, "jump"),
+			showHint(IntentApply, actionCommandPalette, "commands"),
+			showHint(IntentApply, actionCommandMode, "command"),
+			showHint(IntentCancel, actionQuit, "quit"),
+		},
+	},
+}
+
+func scopeHasInteractionContract(scope string) bool {
+	_, ok := interactionContracts[scope]
+	return ok
+}
+
+func interactionContractForScope(scope string) InteractionContract {
+	if c, ok := interactionContracts[scope]; ok {
+		return c
+	}
+	return InteractionContract{Scope: scope, Kind: ContextWorkflow}
+}
+
+func settingsConfirmInteractionContract(spec settingsConfirmSpec) InteractionContract {
+	return InteractionContract{
+		Scope: spec.scope,
+		Kind:  ContextWorkflow,
+		Hints: []InteractionHint{
+			showHint(IntentConfirm, spec.action, "confirm"),
+			showHint(IntentCancel, actionBack, "cancel"),
+		},
+	}
+}
+
+// activeInteractionContract resolves the current scope using the existing
+// dispatch-table logic, then returns the registered interaction contract.
+func (m model) activeInteractionContract() InteractionContract {
+	if scope := m.activeOverlayScope(true); scope != "" {
+		return interactionContractForScope(scope)
+	}
+	if m.activeTab == tabSettings && m.confirmAction != confirmActionNone {
+		if spec, ok := settingsConfirmSpecFor(m.confirmAction); ok {
+			return settingsConfirmInteractionContract(spec)
+		}
+	}
+	scope := m.tabScope()
+	if strings.TrimSpace(scope) == "" {
+		scope = scopeGlobal
+	}
+	return interactionContractForScope(scope)
+}
+
+func interactionActionForHint(h InteractionHint) (Action, bool) {
+	if h.Action != "" {
+		return h.Action, true
+	}
+	switch h.Intent {
+	case IntentMovePrev:
+		return actionUp, true
+	case IntentMoveNext:
+		return actionDown, true
+	case IntentSelect:
+		return actionSelect, true
+	case IntentToggle:
+		return actionToggleSelect, true
+	case IntentEdit:
+		return actionEdit, true
+	case IntentConfirm:
+		return actionConfirm, true
+	case IntentSave:
+		return actionSave, true
+	case IntentCancel:
+		return actionCancel, true
+	case IntentDelete:
+		return actionDelete, true
+	case IntentApply:
+		return actionApplyAll, true
+	default:
+		return "", false
+	}
+}
+
+func primaryKeyForScopeAction(keys *KeyRegistry, scope string, action Action) (string, bool) {
+	if keys == nil {
+		return "", false
+	}
+	for _, b := range keys.BindingsForScope(scope) {
+		if b.Action == action && len(b.Keys) > 0 {
+			return b.Keys[0], true
+		}
+	}
+	return "", false
+}
+
+func renderFooterFromContract(contract InteractionContract, keys *KeyRegistry) []key.Binding {
+	if strings.TrimSpace(contract.Scope) == "" {
+		return nil
+	}
+	if keys == nil {
+		keys = NewKeyRegistry()
+	}
+	out := make([]key.Binding, 0, len(contract.Hints))
+	for _, hint := range contract.Hints {
+		if hint.Omit || strings.TrimSpace(hint.Label) == "" {
+			continue
+		}
+		action, ok := interactionActionForHint(hint)
+		if !ok {
+			continue
+		}
+		keyName, ok := primaryKeyForScopeAction(keys, contract.Scope, action)
+		if !ok || strings.TrimSpace(keyName) == "" {
+			continue
+		}
+		out = append(out, key.NewBinding(
+			key.WithKeys(keyName),
+			key.WithHelp(keyName, hint.Label),
+		))
+	}
+	return out
+}
+
+func contractHasIntent(contract InteractionContract, intent InteractionIntent) bool {
+	for _, hint := range contract.Hints {
+		if hint.Intent == intent {
+			return true
+		}
+	}
+	return false
 }
 
 // ---------------------------------------------------------------------------
