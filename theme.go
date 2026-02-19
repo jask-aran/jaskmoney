@@ -44,6 +44,7 @@ const (
 const (
 	colorAccent  = colorPink
 	colorBrand   = colorPink
+	colorFocus   = colorLavender
 	colorSuccess = colorGreen
 	colorError   = colorRed
 	colorWarning = colorYellow
