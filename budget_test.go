@@ -10,7 +10,7 @@ func almostEqual(a, b float64) bool {
 	return math.Abs(a-b) < 0.0001
 }
 
-func TestComputeBudgetLinesUsesDebitsAndOffsetsWithOverride(t *testing.T) {
+func TestComputeBudgetLinesUsesAllocationsWithOverride(t *testing.T) {
 	db, cleanup := testDB(t)
 	defer cleanup()
 	now := time.Now().UTC()
@@ -19,6 +19,7 @@ func TestComputeBudgetLinesUsesDebitsAndOffsetsWithOverride(t *testing.T) {
 	nextMonthStart := monthStart.AddDate(0, 1, 0)
 
 	var groceries category
+	var transport category
 	cats, err := loadCategories(db)
 	if err != nil {
 		t.Fatalf("loadCategories: %v", err)
@@ -26,11 +27,16 @@ func TestComputeBudgetLinesUsesDebitsAndOffsetsWithOverride(t *testing.T) {
 	for _, c := range cats {
 		if c.name == "Groceries" {
 			groceries = c
-			break
+		}
+		if c.name == "Transport" {
+			transport = c
 		}
 	}
 	if groceries.id == 0 {
 		t.Fatal("missing groceries category")
+	}
+	if transport.id == 0 {
+		t.Fatal("missing transport category")
 	}
 
 	budgets, err := loadCategoryBudgets(db)
@@ -62,28 +68,22 @@ func TestComputeBudgetLinesUsesDebitsAndOffsetsWithOverride(t *testing.T) {
 		INSERT INTO transactions (date_raw, date_iso, amount, description, notes, category_id, account_id)
 		VALUES
 			(?,?,?,?,?,?,?),
-			(?,?,?,?,?,?,?),
 			(?,?,?,?,?,?,?)
 	`,
 		monthStart.Format("02/01/2006"), monthStart.Format("2006-01-02"), -50, "A", "", groceries.id, accountID,
-		nextMonthStart.AddDate(0, 0, -2).Format("02/01/2006"), nextMonthStart.AddDate(0, 0, -2).Format("2006-01-02"), 20, "refund", "", groceries.id, accountID,
 		nextMonthStart.AddDate(0, 0, -1).Format("02/01/2006"), nextMonthStart.AddDate(0, 0, -1).Format("2006-01-02"), -10, "B", "", groceries.id, accountID,
 	)
 	if err != nil {
 		t.Fatalf("insert transactions: %v", err)
 	}
-	lastID, _ := res.LastInsertId()
-	debit1 := int(lastID - 2)
-	credit := int(lastID - 1)
-	if err := insertCreditOffset(db, credit, debit1, 20); err != nil {
-		t.Fatalf("insertCreditOffset: %v", err)
-	}
-
-	offsets, err := loadCreditOffsets(db)
+	lastID, err := res.LastInsertId()
 	if err != nil {
-		t.Fatalf("loadCreditOffsets: %v", err)
+		t.Fatalf("last insert id: %v", err)
 	}
-	byDebit, _ := indexCreditOffsets(offsets)
+	debit1 := int(lastID - 1)
+	if _, err := insertTransactionAllocation(db, debit1, 20, &transport.id, "split", nil); err != nil {
+		t.Fatalf("insertTransactionAllocation: %v", err)
+	}
 
 	budgets, _ = loadCategoryBudgets(db)
 	overrides, err := loadBudgetOverrides(db)
@@ -91,7 +91,7 @@ func TestComputeBudgetLinesUsesDebitsAndOffsetsWithOverride(t *testing.T) {
 		t.Fatalf("loadBudgetOverrides: %v", err)
 	}
 
-	lines, err := computeBudgetLines(db, budgets, overrides, byDebit, monthKey, nil)
+	lines, err := computeBudgetLines(db, budgets, overrides, monthKey, nil)
 	if err != nil {
 		t.Fatalf("computeBudgetLines: %v", err)
 	}
@@ -108,14 +108,8 @@ func TestComputeBudgetLinesUsesDebitsAndOffsetsWithOverride(t *testing.T) {
 	if !almostEqual(got.budgeted, 80) {
 		t.Fatalf("budgeted = %.2f, want 80", got.budgeted)
 	}
-	if !almostEqual(got.spent, 60) {
-		t.Fatalf("spent = %.2f, want 60", got.spent)
-	}
-	if !almostEqual(got.offsets, 20) {
-		t.Fatalf("offsets = %.2f, want 20", got.offsets)
-	}
-	if !almostEqual(got.netSpent, 40) {
-		t.Fatalf("netSpent = %.2f, want 40", got.netSpent)
+	if !almostEqual(got.spent, 40) {
+		t.Fatalf("spent = %.2f, want 40", got.spent)
 	}
 	if !almostEqual(got.remaining, 40) {
 		t.Fatalf("remaining = %.2f, want 40", got.remaining)
@@ -123,7 +117,6 @@ func TestComputeBudgetLinesUsesDebitsAndOffsetsWithOverride(t *testing.T) {
 	if got.overBudget {
 		t.Fatal("overBudget = true, want false")
 	}
-
 }
 
 func TestComputeTargetLinesUsesSavedFilterIDAndPeriodKeys(t *testing.T) {
@@ -143,6 +136,7 @@ func TestComputeTargetLinesUsesSavedFilterIDAndPeriodKeys(t *testing.T) {
 		t.Fatalf("loadCategories: %v", err)
 	}
 	groceries := cats[1]
+	transport := cats[3]
 
 	if _, err := db.Exec(`
 		INSERT INTO transactions (date_raw, date_iso, amount, description, notes, category_id, account_id)
@@ -162,23 +156,18 @@ func TestComputeTargetLinesUsesSavedFilterIDAndPeriodKeys(t *testing.T) {
 	if err != nil {
 		t.Fatalf("loadRows: %v", err)
 	}
-	var febDebitID, febCreditID int
+	var febDebitID int
 	for _, r := range rows {
 		if r.dateISO == monthStart.AddDate(0, 0, 9).Format("2006-01-02") {
 			febDebitID = r.id
 		}
-		if r.dateISO == monthStart.AddDate(0, 0, 10).Format("2006-01-02") {
-			febCreditID = r.id
-		}
 	}
-	if febDebitID == 0 || febCreditID == 0 {
+	if febDebitID == 0 {
 		t.Fatal("missing feb txn ids")
 	}
-	if err := insertCreditOffset(db, febCreditID, febDebitID, 10); err != nil {
-		t.Fatalf("insertCreditOffset: %v", err)
+	if _, err := insertTransactionAllocation(db, febDebitID, 10, &transport.id, "split", nil); err != nil {
+		t.Fatalf("insertTransactionAllocation: %v", err)
 	}
-	offsets, _ := loadCreditOffsets(db)
-	byDebit, _ := indexCreditOffsets(offsets)
 
 	targets := []spendingTarget{
 		{id: 1, name: "Grocery Q1", savedFilterID: "grocery", amount: 200, periodType: "quarterly"},
@@ -186,7 +175,7 @@ func TestComputeTargetLinesUsesSavedFilterIDAndPeriodKeys(t *testing.T) {
 	saved := []savedFilter{
 		{ID: "grocery", Name: "Grocery", Expr: "cat:Groceries"},
 	}
-	targetLines, err := computeTargetLines(db, targets, nil, byDebit, nil, saved, nil)
+	targetLines, err := computeTargetLines(db, targets, nil, nil, saved, nil)
 	if err != nil {
 		t.Fatalf("computeTargetLines: %v", err)
 	}
@@ -198,13 +187,10 @@ func TestComputeTargetLinesUsesSavedFilterIDAndPeriodKeys(t *testing.T) {
 	if line.periodKey != wantPeriod {
 		t.Fatalf("periodKey=%q want %s", line.periodKey, wantPeriod)
 	}
-	if !almostEqual(line.spent, 70) {
-		t.Fatalf("spent=%.2f want 70", line.spent)
+	if !almostEqual(line.spent, 60) {
+		t.Fatalf("spent=%.2f want 60", line.spent)
 	}
-	if !almostEqual(line.offsets, 10) {
-		t.Fatalf("offsets=%.2f want 10", line.offsets)
-	}
-	if !almostEqual(line.netSpent, 60) {
-		t.Fatalf("netSpent=%.2f want 60", line.netSpent)
+	if !almostEqual(line.spent, 60) {
+		t.Fatalf("spent=%.2f want 60", line.spent)
 	}
 }

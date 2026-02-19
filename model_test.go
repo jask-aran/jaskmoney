@@ -111,6 +111,40 @@ func TestSortByAmount(t *testing.T) {
 	}
 }
 
+func TestManagerRowsUnfilteredSortByAmountUsesRemainder(t *testing.T) {
+	catGroceries := 2
+	m := model{
+		rows: []transaction{
+			{id: 1, dateISO: "2026-02-01", amount: -100, description: "A", categoryID: &catGroceries, categoryName: "Groceries"},
+			{id: 2, dateISO: "2026-02-01", amount: -60, description: "B", categoryID: &catGroceries, categoryName: "Groceries"},
+		},
+		sortColumn:    sortByAmount,
+		sortAscending: false, // descending
+		allocationsByParent: map[int][]transactionAllocation{
+			1: {
+				{id: 101, parentTxnID: 1, amount: -90, note: "split"},
+			},
+		},
+	}
+
+	rows := m.managerRowsUnfiltered()
+	if len(rows) != 3 {
+		t.Fatalf("row count = %d, want 3", len(rows))
+	}
+	if rows[0].id != 1 || rows[0].isAllocation {
+		t.Fatalf("first row = %#v, want parent txn id 1", rows[0])
+	}
+	if rows[0].amount != -10 {
+		t.Fatalf("parent remainder amount = %.2f, want -10", rows[0].amount)
+	}
+	if rows[1].id != -101 || !rows[1].isAllocation || rows[1].parentTxnID != 1 {
+		t.Fatalf("second row = %#v, want allocation child for txn 1", rows[1])
+	}
+	if rows[2].id != 2 || rows[2].isAllocation {
+		t.Fatalf("third row = %#v, want parent txn id 2", rows[2])
+	}
+}
+
 func TestSortByAmountDescendingStableOnEqualValues(t *testing.T) {
 	rows := []transaction{
 		{id: 10, amount: 42.0, description: "A"},

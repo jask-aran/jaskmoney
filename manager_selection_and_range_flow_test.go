@@ -215,7 +215,7 @@ func TestPhase3RenderSelectionPrefixes(t *testing.T) {
 	rows := testTransactions()
 	selected := map[int]bool{rows[0].id: true, rows[1].id: true}
 	highlighted := map[int]bool{rows[1].id: true}
-	out := renderTransactionTable(rows, nil, nil, nil, selected, highlighted, rows[0].id, 0, 5, 80, sortByDate, false)
+	out := renderTransactionTable(rows, nil, nil, selected, highlighted, rows[0].id, 0, 5, 80, sortByDate, false)
 
 	if strings.Contains(out, "*>") || strings.Contains(out, "> ") {
 		t.Fatalf("table should not render prefix cursor markers: %q", out)

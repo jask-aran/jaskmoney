@@ -7,7 +7,7 @@ import (
 	"testing"
 )
 
-func TestOpenDBCreatesV6SchemaRulesV2(t *testing.T) {
+func TestOpenDBCreatesV7SchemaRulesV2(t *testing.T) {
 	db, cleanup := testDB(t)
 	defer cleanup()
 
@@ -15,8 +15,8 @@ func TestOpenDBCreatesV6SchemaRulesV2(t *testing.T) {
 	if err := db.QueryRow("SELECT version FROM schema_meta LIMIT 1").Scan(&ver); err != nil {
 		t.Fatalf("query schema version: %v", err)
 	}
-	if ver != 6 {
-		t.Fatalf("schema version = %d, want 6", ver)
+	if ver != 7 {
+		t.Fatalf("schema version = %d, want 7", ver)
 	}
 
 	tables := []string{
@@ -33,8 +33,8 @@ func TestOpenDBCreatesV6SchemaRulesV2(t *testing.T) {
 		"category_budget_overrides",
 		"spending_targets",
 		"spending_target_overrides",
-		"credit_offsets",
-		"manual_offsets",
+		"transaction_allocations",
+		"transaction_allocation_tags",
 	}
 	for _, table := range tables {
 		var count int
@@ -57,7 +57,7 @@ func TestOpenDBCreatesV6SchemaRulesV2(t *testing.T) {
 	}
 }
 
-func TestMigrateFromV4ToV6PreservesDataAndDropsLegacyRules(t *testing.T) {
+func TestMigrateFromV4ToV7PreservesDataAndDropsLegacyRules(t *testing.T) {
 	f, err := os.CreateTemp("", "jaskmoney-v4-*.db")
 	if err != nil {
 		t.Fatalf("create temp: %v", err)
@@ -170,8 +170,8 @@ func TestMigrateFromV4ToV6PreservesDataAndDropsLegacyRules(t *testing.T) {
 	if err := upgraded.QueryRow("SELECT version FROM schema_meta LIMIT 1").Scan(&ver); err != nil {
 		t.Fatalf("query version after migrate: %v", err)
 	}
-	if ver != 6 {
-		t.Fatalf("schema version after migrate = %d, want 6", ver)
+	if ver != 7 {
+		t.Fatalf("schema version after migrate = %d, want 7", ver)
 	}
 
 	var txnCount, tagCount, accountCount, importCount int

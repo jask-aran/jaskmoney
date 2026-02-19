@@ -3,6 +3,7 @@ package main
 import (
 	"database/sql"
 	"fmt"
+	"math"
 	"sort"
 	"strconv"
 	"strings"
@@ -105,12 +106,23 @@ func (m model) openQuickTagPicker(filtered []transaction) (tea.Model, tea.Cmd) {
 		m.setStatus("No transaction selected.")
 		return m, nil
 	}
+	hasChild := false
+	for _, id := range targetIDs {
+		if id < 0 {
+			hasChild = true
+			break
+		}
+	}
+	if hasChild && len(targetIDs) != 1 {
+		m.setStatus("Quick tagging supports one allocation row at a time.")
+		return m, nil
+	}
 
 	items := make([]pickerItem, 0, len(m.tags))
 	targetCategoryIDs := make(map[int]bool)
-	for _, txnID := range targetIDs {
-		if txn := m.findTxnByID(txnID); txn != nil && txn.categoryID != nil {
-			targetCategoryIDs[*txn.categoryID] = true
+	for _, rowID := range targetIDs {
+		if row := findRowByID(filtered, rowID); row != nil && row.categoryID != nil {
+			targetCategoryIDs[*row.categoryID] = true
 		}
 	}
 	scopedItems := make([]pickerItem, 0, len(m.tags))
@@ -148,8 +160,9 @@ func (m model) openQuickTagPicker(filtered []transaction) (tea.Model, tea.Cmd) {
 	m.tagPickerFor = targetIDs
 	stateByTagID := make(map[int]pickerCheckState, len(items))
 	hitCount := make(map[int]int)
-	for _, txnID := range targetIDs {
-		for _, tg := range m.txnTags[txnID] {
+	effectiveTags := m.effectiveTxnTags()
+	for _, rowID := range targetIDs {
+		for _, tg := range effectiveTags[rowID] {
 			hitCount[tg.id]++
 		}
 	}
@@ -168,27 +181,50 @@ func (m model) openQuickTagPicker(filtered []transaction) (tea.Model, tea.Cmd) {
 	return m, nil
 }
 
-func (m model) openQuickOffsetModal(filtered []transaction) (tea.Model, tea.Cmd) {
-	targetIDs := m.quickActionTargets(filtered)
-	if len(targetIDs) == 0 {
+func (m model) openAllocationAmountModal(filtered []transaction) (tea.Model, tea.Cmd) {
+	if len(filtered) == 0 || m.cursor < 0 || m.cursor >= len(filtered) {
 		m.setStatus("No transaction selected.")
 		return m, nil
 	}
-	for _, txnID := range targetIDs {
-		txn := m.findTxnByID(txnID)
-		if txn == nil {
-			m.setStatus("No transaction selected.")
-			return m, nil
-		}
-		if txn.amount >= 0 {
-			m.setStatus("Quick offset applies to debit transactions only.")
-			return m, nil
-		}
+	row := filtered[m.cursor]
+	parentID := row.id
+	editID := 0
+	defaultAmount := math.Abs(row.amount)
+	if row.isAllocation {
+		parentID = row.parentTxnID
+		editID = row.allocationID
 	}
-	m.quickOffsetOpen = true
-	m.quickOffsetFor = targetIDs
-	m.quickOffsetAmount = ""
-	m.quickOffsetCursor = 0
+	if parentID <= 0 {
+		m.setStatus("No transaction selected.")
+		return m, nil
+	}
+	if defaultAmount <= 0 && editID == 0 {
+		m.setStatus("No remaining amount available to allocate.")
+		return m, nil
+	}
+
+	m.allocationModalOpen = true
+	m.allocationParentID = parentID
+	m.allocationEditID = editID
+	m.allocationModalFocus = 0
+	if defaultAmount > 0 {
+		m.allocationAmount = fmt.Sprintf("%.2f", defaultAmount)
+		m.allocationAmountCur = len(m.allocationAmount)
+	} else {
+		m.allocationAmount = ""
+		m.allocationAmountCur = 0
+	}
+	if editID > 0 {
+		m.allocationNote = row.notes
+	} else {
+		m.allocationNote = ""
+	}
+	m.allocationNoteCur = len(m.allocationNote)
+	if editID > 0 {
+		m.setStatus("Edit allocation amount/note, then press Enter to save.")
+	} else {
+		m.setStatus("Enter allocation amount and note, then press Enter to add.")
+	}
 	return m, nil
 }
 
@@ -196,6 +232,15 @@ func (m model) findTxnByID(id int) *transaction {
 	for i := range m.rows {
 		if m.rows[i].id == id {
 			return &m.rows[i]
+		}
+	}
+	return nil
+}
+
+func findRowByID(rows []transaction, id int) *transaction {
+	for i := range rows {
+		if rows[i].id == id {
+			return &rows[i]
 		}
 	}
 	return nil
@@ -245,7 +290,7 @@ func (m model) updateCatPicker(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		catName := res.ItemLabel
 		db := m.db
 		return m, func() tea.Msg {
-			n, err := updateTransactionsCategory(db, targetIDs, &catID)
+			n, err := applyCategoryToRowTargets(db, targetIDs, &catID)
 			return quickCategoryAppliedMsg{count: n, categoryName: catName, created: false, err: err}
 		}
 	case pickerActionCreate:
@@ -309,7 +354,7 @@ func (m model) updateTagPicker(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 				toggledOn := len(addIDs) > 0
 				return m, func() tea.Msg {
 					if len(addIDs) > 0 {
-						_, err := addTagsToTransactions(db, targetIDs, addIDs)
+						_, err := addTagsToRowTargets(db, targetIDs, addIDs)
 						return quickTagsAppliedMsg{
 							count:     len(targetIDs),
 							tagName:   tagName,
@@ -318,7 +363,7 @@ func (m model) updateTagPicker(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 							err:       err,
 						}
 					}
-					_, err := removeTagFromTransactions(db, targetIDs, tagID)
+					_, err := removeTagFromRowTargets(db, targetIDs, tagID)
 					return quickTagsAppliedMsg{
 						count:     len(targetIDs),
 						tagName:   tagName,
@@ -331,12 +376,12 @@ func (m model) updateTagPicker(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			addIDs, removeIDs := m.tagPicker.PendingTagPatch()
 			return m, func() tea.Msg {
 				if len(addIDs) > 0 {
-					if _, err := addTagsToTransactions(db, targetIDs, addIDs); err != nil {
+					if _, err := addTagsToRowTargets(db, targetIDs, addIDs); err != nil {
 						return quickTagsAppliedMsg{err: err}
 					}
 				}
 				for _, removeID := range removeIDs {
-					if _, err := removeTagFromTransactions(db, targetIDs, removeID); err != nil {
+					if _, err := removeTagFromRowTargets(db, targetIDs, removeID); err != nil {
 						return quickTagsAppliedMsg{err: err}
 					}
 				}
@@ -363,10 +408,10 @@ func (m model) updateTagPicker(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		db := m.db
 		return m, func() tea.Msg {
 			if len(targetIDs) == 1 {
-				err := setTransactionTags(db, targetIDs[0], selected)
+				err := setTagsForRowTarget(db, targetIDs[0], selected)
 				return quickTagsAppliedMsg{count: len(targetIDs), err: err}
 			}
-			_, err := addTagsToTransactions(db, targetIDs, selected)
+			_, err := addTagsToRowTargets(db, targetIDs, selected)
 			return quickTagsAppliedMsg{count: len(targetIDs), err: err}
 		}
 	case pickerActionCreate:
@@ -397,89 +442,216 @@ func (m model) updateTagPicker(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 				tagID = created
 			}
 			if len(targetIDs) == 1 {
-				current, loadErr := loadTransactionTags(db)
+				current, loadErr := currentTagsForRowTarget(db, targetIDs[0])
 				if loadErr != nil {
 					return quickTagsAppliedMsg{err: loadErr}
 				}
 				desired := []int{tagID}
-				for _, tg := range current[targetIDs[0]] {
+				for _, tg := range current {
 					if tg.id != tagID {
 						desired = append(desired, tg.id)
 					}
 				}
-				return quickTagsAppliedMsg{count: 1, err: setTransactionTags(db, targetIDs[0], desired)}
+				return quickTagsAppliedMsg{count: 1, err: setTagsForRowTarget(db, targetIDs[0], desired)}
 			}
-			_, err = addTagsToTransactions(db, targetIDs, []int{tagID})
+			_, err = addTagsToRowTargets(db, targetIDs, []int{tagID})
 			return quickTagsAppliedMsg{count: len(targetIDs), err: err}
 		}
 	}
 	return m, nil
 }
 
-func (m model) updateQuickOffsetModal(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
-	if !m.quickOffsetOpen {
+func splitRowTargets(rowIDs []int) (txnIDs []int, allocationIDs []int) {
+	seenTxn := make(map[int]bool)
+	seenAlloc := make(map[int]bool)
+	for _, rowID := range rowIDs {
+		if rowID > 0 {
+			if seenTxn[rowID] {
+				continue
+			}
+			seenTxn[rowID] = true
+			txnIDs = append(txnIDs, rowID)
+			continue
+		}
+		allocID := -rowID
+		if allocID <= 0 || seenAlloc[allocID] {
+			continue
+		}
+		seenAlloc[allocID] = true
+		allocationIDs = append(allocationIDs, allocID)
+	}
+	sort.Ints(txnIDs)
+	sort.Ints(allocationIDs)
+	return txnIDs, allocationIDs
+}
+
+func applyCategoryToRowTargets(db *sql.DB, rowIDs []int, categoryID *int) (int, error) {
+	txnIDs, allocationIDs := splitRowTargets(rowIDs)
+	affected := 0
+	if len(txnIDs) > 0 {
+		n, err := updateTransactionsCategory(db, txnIDs, categoryID)
+		if err != nil {
+			return 0, err
+		}
+		affected += n
+	}
+	for _, allocationID := range allocationIDs {
+		if err := updateTransactionAllocationCategory(db, allocationID, categoryID); err != nil {
+			return 0, err
+		}
+		affected++
+	}
+	return affected, nil
+}
+
+func addTagsToRowTargets(db *sql.DB, rowIDs, tagIDs []int) (int, error) {
+	txnIDs, allocationIDs := splitRowTargets(rowIDs)
+	affected := 0
+	if len(txnIDs) > 0 {
+		n, err := addTagsToTransactions(db, txnIDs, tagIDs)
+		if err != nil {
+			return 0, err
+		}
+		affected += n
+	}
+	if len(allocationIDs) > 0 {
+		n, err := addTagsToAllocations(db, allocationIDs, tagIDs)
+		if err != nil {
+			return 0, err
+		}
+		affected += n
+	}
+	return affected, nil
+}
+
+func removeTagFromRowTargets(db *sql.DB, rowIDs []int, tagID int) (int, error) {
+	txnIDs, allocationIDs := splitRowTargets(rowIDs)
+	affected := 0
+	if len(txnIDs) > 0 {
+		n, err := removeTagFromTransactions(db, txnIDs, tagID)
+		if err != nil {
+			return 0, err
+		}
+		affected += n
+	}
+	if len(allocationIDs) > 0 {
+		n, err := removeTagFromAllocations(db, allocationIDs, tagID)
+		if err != nil {
+			return 0, err
+		}
+		affected += n
+	}
+	return affected, nil
+}
+
+func setTagsForRowTarget(db *sql.DB, rowID int, tagIDs []int) error {
+	if rowID > 0 {
+		return setTransactionTags(db, rowID, tagIDs)
+	}
+	return setTransactionAllocationTags(db, -rowID, tagIDs)
+}
+
+func currentTagsForRowTarget(db *sql.DB, rowID int) ([]tag, error) {
+	if rowID > 0 {
+		all, err := loadTransactionTags(db)
+		if err != nil {
+			return nil, err
+		}
+		return all[rowID], nil
+	}
+	allocationID := -rowID
+	all, err := loadTransactionAllocationTagsByAllocationIDs(db, []int{allocationID})
+	if err != nil {
+		return nil, err
+	}
+	return all[allocationID], nil
+}
+
+func (m *model) closeAllocationAmountModal() {
+	m.allocationModalOpen = false
+	m.allocationParentID = 0
+	m.allocationEditID = 0
+	m.allocationAmount = ""
+	m.allocationAmountCur = 0
+	m.allocationNote = ""
+	m.allocationNoteCur = 0
+	m.allocationModalFocus = 0
+}
+
+func (m model) updateAllocationAmountModal(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
+	if !m.allocationModalOpen {
 		return m, nil
 	}
 	keyName := normalizeKeyName(msg.String())
 	switch keyName {
 	case "esc":
-		m.quickOffsetOpen = false
-		m.quickOffsetFor = nil
-		m.quickOffsetAmount = ""
-		m.quickOffsetCursor = 0
-		m.setStatus("Quick offset cancelled.")
+		m.closeAllocationAmountModal()
+		m.setStatus("Allocation edit cancelled.")
+		return m, nil
+	case "tab", "shift+tab", "up", "down":
+		if m.allocationModalFocus == 0 {
+			m.allocationModalFocus = 1
+		} else {
+			m.allocationModalFocus = 0
+		}
 		return m, nil
 	case "enter":
 		if m.db == nil {
 			m.setError("Database not ready.")
 			return m, nil
 		}
-		amount, err := strconv.ParseFloat(strings.TrimSpace(m.quickOffsetAmount), 64)
+		amount, err := strconv.ParseFloat(strings.TrimSpace(m.allocationAmount), 64)
 		if err != nil || amount <= 0 {
-			m.setError("Invalid offset amount.")
+			m.setError("Invalid allocation amount.")
 			return m, nil
 		}
-		targetIDs := append([]int(nil), m.quickOffsetFor...)
-		db := m.db
-		return m, func() tea.Msg {
-			n, applyErr := applyManualOffsets(db, targetIDs, amount)
-			return quickOffsetsAppliedMsg{count: n, amount: amount, err: applyErr}
+		note := m.allocationNote
+		if m.allocationEditID > 0 {
+			if err := updateTransactionAllocationAmountAndNote(m.db, m.allocationEditID, amount, note); err != nil {
+				m.setError(fmt.Sprintf("Update allocation failed: %v", err))
+				return m, nil
+			}
+			m.closeAllocationAmountModal()
+			m.setStatus("Allocation updated.")
+			return m, refreshCmd(m.db)
 		}
+		if _, err := insertTransactionAllocation(m.db, m.allocationParentID, amount, nil, note, nil); err != nil {
+			m.setError(fmt.Sprintf("Add allocation failed: %v", err))
+			return m, nil
+		}
+		m.closeAllocationAmountModal()
+		m.setStatus("Allocation added.")
+		return m, refreshCmd(m.db)
 	case "backspace":
-		deleteASCIIByteBeforeCursor(&m.quickOffsetAmount, &m.quickOffsetCursor)
+		if m.allocationModalFocus == 0 {
+			deleteASCIIByteBeforeCursor(&m.allocationAmount, &m.allocationAmountCur)
+		} else {
+			deleteASCIIByteBeforeCursor(&m.allocationNote, &m.allocationNoteCur)
+		}
 		return m, nil
 	case "left":
-		moveInputCursorASCII(m.quickOffsetAmount, &m.quickOffsetCursor, -1)
+		if m.allocationModalFocus == 0 {
+			moveInputCursorASCII(m.allocationAmount, &m.allocationAmountCur, -1)
+		} else {
+			moveInputCursorASCII(m.allocationNote, &m.allocationNoteCur, -1)
+		}
 		return m, nil
 	case "right":
-		moveInputCursorASCII(m.quickOffsetAmount, &m.quickOffsetCursor, 1)
+		if m.allocationModalFocus == 0 {
+			moveInputCursorASCII(m.allocationAmount, &m.allocationAmountCur, 1)
+		} else {
+			moveInputCursorASCII(m.allocationNote, &m.allocationNoteCur, 1)
+		}
 		return m, nil
 	}
 	if isPrintableASCIIKey(msg.String()) {
-		insertPrintableASCIIAtCursor(&m.quickOffsetAmount, &m.quickOffsetCursor, msg.String())
+		if m.allocationModalFocus == 0 {
+			insertPrintableASCIIAtCursor(&m.allocationAmount, &m.allocationAmountCur, msg.String())
+		} else {
+			insertPrintableASCIIAtCursor(&m.allocationNote, &m.allocationNoteCur, msg.String())
+		}
 	}
 	return m, nil
-}
-
-func applyManualOffsets(db *sql.DB, txnIDs []int, amount float64) (int, error) {
-	targets := make([]int, 0, len(txnIDs))
-	seen := make(map[int]bool, len(txnIDs))
-	for _, id := range txnIDs {
-		if id <= 0 || seen[id] {
-			continue
-		}
-		seen[id] = true
-		targets = append(targets, id)
-	}
-	if len(targets) == 0 {
-		return 0, fmt.Errorf("no transactions selected")
-	}
-	for _, id := range targets {
-		if err := insertManualOffset(db, id, amount); err != nil {
-			return 0, err
-		}
-	}
-	return len(targets), nil
 }
 
 func (m *model) selectedCount() int {
@@ -517,8 +689,9 @@ func (m *model) pruneSelections() {
 		return
 	}
 
-	keep := make(map[int]bool, len(m.rows))
-	for _, r := range m.rows {
+	allRows := m.managerRowsUnfiltered()
+	keep := make(map[int]bool, len(allRows))
+	for _, r := range allRows {
 		keep[r.id] = true
 	}
 	for id := range m.selectedRows {

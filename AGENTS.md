@@ -34,7 +34,7 @@ This is a Go TUI application built with Bubble Tea. All source files live in a s
 **v0.4 target structure:**
 - ~39 files (adds `filter.go`, `budget.go`, `widget.go`, `update_budget.go`)
 - 4 tabs: Dashboard, Budget, Manager, Settings (tab order changes)
-- Schema v5+: rules v2 (unified), budget tables, credit offsets
+- Schema v7+: rules v2 (unified), budget tables, transaction allocations
 
 ### Where New Code Should Go
 
@@ -214,7 +214,7 @@ Use this as the concise source of available primitives and reusable function sur
 | Modal text contracts (`dispatch.go`) | `modalTextContracts`, `isTextInputModalScopeFromContract` | Per-scope text safety (`printableFirst`, cursor-aware editing, vim-nav suppression) | Any modal or inline editor with text input |
 | Cursor-aware text field (`dispatch.go`) | `textField.handleKey`, `textField.render`, `textField.set` | Cursor-positioned ASCII insertion/deletion and rendering | Rule/filter/settings/modal text fields |
 | Modal form navigator (`dispatch.go`) | `modalFormNav.handleNav` | Standard `up/down/tab/shift+tab` field focus cycling | Multi-field modal forms |
-| Generic picker (`picker.go`) | `newPicker`, `pickerState.HandleMsg`, `SetTriState`, `PendingTagPatch`, `HasPendingChanges`, `renderPicker` | Fuzzy filtering, sectioned lists, single/multi-select, tri-state patching, inline create row | Category/tag pickers, saved-filter apply picker, manager account action picker, offset debit picker |
+| Generic picker (`picker.go`) | `newPicker`, `pickerState.HandleMsg`, `SetTriState`, `PendingTagPatch`, `HasPendingChanges`, `renderPicker` | Fuzzy filtering, sectioned lists, single/multi-select, tri-state patching, inline create row | Category/tag pickers, saved-filter apply picker, manager account action picker |
 | Command system (`commands.go`) | `CommandRegistry.Search`, `ExecuteByID` | Scope-aware command discovery/execution; disabled reason handling | Command palette, colon mode, action routing |
 | Jump targeting (`update.go`, `update_manager.go`, `update_dashboard.go`) | `jumpTarget` model + jump overlay dispatch/render path | Cross-tab section focus via single-key overlay targets | Fast section navigation and focus-mode entry |
 
@@ -228,7 +228,7 @@ Use this as the concise source of available primitives and reusable function sur
 | Import preview (`render.go`) | `renderImportPreview`, `renderImportPreviewCompact`, `renderImportPreviewTable` | Snapshot summary, parse diagnostics, post-rules preview table | Import decision flow |
 | Transactions + tags (`render.go`) | `renderTransactionTable`, `renderCategoryTagOnBackground`, `renderTagsOnBackground` | Table layout with optional columns and tag/category styling | Manager transactions, preview parity surfaces |
 | Dashboard analytics (`render.go`) | `renderSummaryCards`, `renderCategoryBreakdown`, `renderSpendingTrackerWithRange`, timeframe controls helpers | KPI cards, category composition, trend charts, timeframe controls | Dashboard tab |
-| Settings/manager/detail modals (`render.go`) | `renderSettingsContent`, `renderSettingsCategories`, `renderSettingsTags`, `renderSettingsRules`, `renderManagerAccountModal`, `renderFilterEditorModal`, `renderRuleEditorModal`, `renderDryRunResultsModal`, `renderDetailWithOffsets` | Section-specific editors and detail workflows | Settings forms, rule workflows, transaction detail/offset UX |
+| Settings/manager/detail modals (`render.go`) | `renderSettingsContent`, `renderSettingsCategories`, `renderSettingsTags`, `renderSettingsRules`, `renderManagerAccountModal`, `renderFilterEditorModal`, `renderRuleEditorModal`, `renderDryRunResultsModal`, `renderDetailWithAllocations` | Section-specific editors and detail workflows | Settings forms, rule workflows, transaction detail/allocation UX |
 | Budget surfaces (`render.go`) | `renderBudgetTable`, `renderBudgetCategoryTable`, `renderBudgetTargetTable`, `renderBudgetPlanner`, `renderBudgetAnalyticsStrip`, `renderBudgetVarianceSparkline` | Budget table/planner views, target rows, analytics strip and variance sparkline | Budget tab |
 
 ### Logical/data functions
@@ -236,8 +236,8 @@ Use this as the concise source of available primitives and reusable function sur
 | Domain | Key functions | Capabilities | Primary use-cases |
 |---|---|---|---|
 | Filter language (`filter.go`) | `parseFilter`, `parseFilterStrict`, `evalFilter`, `renderFilterNode` | AST parsing (permissive/strict), row evaluation, canonical filter string rendering | Interactive filter input, saved filters, rules/targets validation |
-| Budget compute (`budget.go`) | `parseMonthKey`, `computeBudgetLines`, `computeTargetLines` | Scoped month/period math, debit/offset aggregation, raw vs effective spend projections | Budget tab metrics and target evaluation |
-| Budget + offset storage (`db.go`) | `loadCategoryBudgets`, `upsertCategoryBudget`, `loadBudgetOverrides`, `upsertBudgetOverride`, `loadSpendingTargets`, `upsertTargetOverride`, `loadCreditOffsets`, `indexCreditOffsets`, `insertCreditOffset` | Persistent budget/override/target CRUD and validated offset linking | Budget editing, target maintenance, offset integrity |
+| Budget compute (`budget.go`) | `parseMonthKey`, `computeBudgetLines`, `computeTargetLines` | Scoped month/period math, allocation-aware effective spend projections | Budget tab metrics and target evaluation |
+| Budget + allocation storage (`db.go`) | `loadCategoryBudgets`, `upsertCategoryBudget`, `loadBudgetOverrides`, `upsertBudgetOverride`, `loadSpendingTargets`, `upsertTargetOverride`, `loadTransactionAllocations`, `insertTransactionAllocation`, `updateTransactionAllocationAmount` | Persistent budget/override/target CRUD and validated transaction allocations | Budget editing, target maintenance, allocation integrity |
 | Rules v2 (`db.go`) | `loadRulesV2`, `insertRuleV2`, `updateRuleV2`, `deleteRuleV2`, `applyRulesV2ToScope`, `applyRulesV2ToTxnIDs`, `dryRunRulesV2` | Saved-filter referenced rule CRUD and deterministic apply/dry-run behavior | Settings rules editor, import-time rule application |
 | Import ingest + preview (`ingest.go`) | `scanDupesCmd`, `buildImportPreviewSnapshot`, `parseImportPreviewRows`, `ingestSnapshotCmd`, `parseDateISO`, `parseAmount` | Parse/normalize CSV rows, duplicate detection, snapshot-driven import path | Import preview and commit flow |
 | Core transaction/category/tag/account CRUD (`db.go`) | `loadRows`, `loadRowsForAccountScope`, `loadRowsByTxnIDs`, `updateTransactionCategory`, `updateTransactionDetail`, `loadCategories`, `insertCategory`, `loadTags`, `insertTag`, `loadAccounts`, `insertAccount` | Main data access layer for manager/settings flows | Manager operations, settings CRUD, scoped data refresh |
@@ -282,7 +282,7 @@ Use this as the concise source of available primitives and reusable function sur
 3. **Text input safety:** Any new text-input scope must be represented in `modalTextContracts`.
 4. **Modal precedence:** New modal states must be inserted into `overlayPrecedence()` at the correct priority.
 5. **Filter contexts:** Use permissive parsing for interactive `/` input and strict parsing for persisted surfaces (rules/targets/saved filters).
-6. **Transactional integrity:** Credit offset insertions must validate sign/account/allocation atomically.
+6. **Transactional integrity:** Allocation inserts/updates must validate sign and parent capacity atomically.
 7. **Dashboard scope isolation:** Dashboard default panes use timeframe + account scope only; no transaction filter inheritance.
 8. **Drill-return lifecycle:** `drillReturnState` is cleared on navigation away from Manager.
 9. **Multi-field modal forms:** Support `tab`/`shift-tab` field cycling.
@@ -310,7 +310,7 @@ Use this as the concise source of available primitives and reusable function sur
 | Rules v2 | `db.go`, `update_settings.go` + `specs/v0.4-spec.md` Phase 3 |
 | Import preview flow | `ingest.go`, `update_manager.go` + `specs/v0.4-spec.md` Phase 4 |
 | Budget system | `budget.go`, `update_budget.go` + `specs/v0.4-spec.md` Phase 5 |
-| Credit offsets | `db.go`, `update_detail.go` + `specs/v0.4-spec.md` Phase 5 |
+| Transaction allocations | `db.go`, `update_transactions.go`, `update_detail.go` + `specs/v0.4-spec.md` Phase 5 |
 | Dashboard drill-return/focus | `update_dashboard.go`, `render.go` + `specs/v0.4-spec.md` Phase 6 |
 | Interaction contract layer | `dispatch.go` + `specs/v0.4-spec.md` Phase 7 |
 | Testing strategy and verification | `specs/v0.4-spec.md` Verification + repository test commands |
