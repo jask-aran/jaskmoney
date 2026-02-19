@@ -402,6 +402,55 @@ func TestDashboardNetCashflowModeSpendingUsesRawTrackerOutput(t *testing.T) {
 	}
 }
 
+func TestCumulativeBudgetPaceSeriesUsesMonthLengthAndOverrides(t *testing.T) {
+	m := newModel()
+	m.categoryBudgets = []categoryBudget{
+		{id: 1, categoryID: 10, amount: 620}, // 20/day in Jan (31 days)
+	}
+	m.budgetOverrides = map[int][]budgetOverride{
+		1: {
+			{budgetID: 1, monthKey: "2026-02", amount: 280}, // 10/day in Feb (28 days)
+		},
+	}
+	dates := []time.Time{
+		time.Date(2026, time.January, 30, 0, 0, 0, 0, time.Local),
+		time.Date(2026, time.January, 31, 0, 0, 0, 0, time.Local),
+		time.Date(2026, time.February, 1, 0, 0, 0, 0, time.Local),
+		time.Date(2026, time.February, 2, 0, 0, 0, 0, time.Local),
+	}
+	got := cumulativeBudgetPaceSeries(m, dates)
+	want := []float64{20, 40, 50, 60}
+	if len(got) != len(want) {
+		t.Fatalf("len(cumulativeBudgetPaceSeries) = %d, want %d", len(got), len(want))
+	}
+	for i := range want {
+		if math.Abs(got[i]-want[i]) > 1e-6 {
+			t.Fatalf("pace[%d] = %.6f, want %.6f", i, got[i], want[i])
+		}
+	}
+}
+
+func TestRenderDashboardNetCashflowModeSpendVsBudgetPaceRendersChart(t *testing.T) {
+	m := newModel()
+	m.categoryBudgets = []categoryBudget{
+		{id: 1, categoryID: 10, amount: 310},
+	}
+	mode := widgetMode{id: "spend_vs_budget_pace", label: "Spend vs Budget Pace", viewType: "line"}
+	start, _ := m.dashboardChartRange(time.Now())
+	rows := []transaction{
+		{dateISO: start.AddDate(0, 0, 1).Format("2006-01-02"), amount: -50},
+		{dateISO: start.AddDate(0, 0, 2).Format("2006-01-02"), amount: -25},
+		{dateISO: start.AddDate(0, 0, 4).Format("2006-01-02"), amount: -75},
+	}
+	out := renderDashboardNetCashflowMode(m, mode, rows, 84, 16)
+	if strings.TrimSpace(ansi.Strip(out)) == "" {
+		t.Fatal("expected chart output for spend_vs_budget_pace mode")
+	}
+	if col := firstChartVerticalColumn(out); col < 0 {
+		t.Fatalf("expected y-axis column in spend_vs_budget_pace chart:\n%s", out)
+	}
+}
+
 func TestShiftChartLeftRemovesCommonLeadingWhitespace(t *testing.T) {
 	in := "    1 │ a\n    │ b\n"
 	got := shiftChartLeft(in, 4)
@@ -410,21 +459,21 @@ func TestShiftChartLeftRemovesCommonLeadingWhitespace(t *testing.T) {
 	}
 }
 
-func TestDashboardAnalyticsPaneWidthsUsesDedicated7030Split(t *testing.T) {
+func TestDashboardAnalyticsPaneWidthsUsesDedicated6040Split(t *testing.T) {
 	left, right := dashboardAnalyticsPaneWidths(139)
-	if left != 97 || right != 42 {
-		t.Fatalf("dashboardAnalyticsPaneWidths(139) = (%d,%d), want (97,42)", left, right)
+	if left != 83 || right != 56 {
+		t.Fatalf("dashboardAnalyticsPaneWidths(139) = (%d,%d), want (83,56)", left, right)
 	}
 }
 
 func TestDashboardAnalyticsPaneWidthsHonorsMinimums(t *testing.T) {
 	left, right := dashboardAnalyticsPaneWidths(50)
-	if left != 34 || right != 16 {
-		t.Fatalf("dashboardAnalyticsPaneWidths(50) = (%d,%d), want (34,16)", left, right)
+	if left != 30 || right != 20 {
+		t.Fatalf("dashboardAnalyticsPaneWidths(50) = (%d,%d), want (30,20)", left, right)
 	}
 }
 
-func TestDashboardAnalyticsRegionUsesDedicated7030Split(t *testing.T) {
+func TestDashboardAnalyticsRegionUsesDedicated6040Split(t *testing.T) {
 	m := newModel()
 	m.ready = true
 	m.width = 140
@@ -438,13 +487,13 @@ func TestDashboardAnalyticsRegionUsesDedicated7030Split(t *testing.T) {
 	out := renderDashboardAnalyticsRegion(m)
 	var line string
 	for _, ln := range splitLines(out) {
-		if strings.Contains(ln, "Net/Cashflow [N]") {
+		if strings.Contains(ln, "Cashflow [N]") {
 			line = ln
 			break
 		}
 	}
 	if line == "" {
-		t.Fatalf("could not find Net/Cashflow title line in analytics region:\n%s", out)
+		t.Fatalf("could not find Cashflow title line in analytics region:\n%s", out)
 	}
 	parts := strings.SplitN(line, "╮ ╭", 2)
 	if len(parts) != 2 {
@@ -739,8 +788,9 @@ func TestSpendingXLabelsRespectSpacing(t *testing.T) {
 		xs = append(xs, chartColumnX(&chart, d))
 	}
 	sort.Ints(xs)
+	minGap := minXLabelGapForDays(len(dates))
 	for i := 1; i < len(xs); i++ {
-		if xs[i]-xs[i-1] < 6 {
+		if xs[i]-xs[i-1] < minGap {
 			t.Fatalf("label columns too close: %d and %d", xs[i-1], xs[i])
 		}
 	}

@@ -325,11 +325,11 @@ func (m model) dashboardOpenCustomModeEdit() (model, error) {
 	}
 	idx := m.dashboardFocusedWidgetIndex()
 	if idx != sectionDashboardNetCashflow {
-		return m, fmt.Errorf("custom slot is active on Net/Cashflow only")
+		return m, fmt.Errorf("custom slot is active on Cashflow only")
 	}
 	m.openFilterApplyPicker("")
 	if m.filterApplyPicker != nil {
-		m.filterApplyPicker.title = "Select Saved Filter for Net/Cashflow"
+		m.filterApplyPicker.title = "Select Saved Filter for Cashflow"
 	}
 	m.dashCustomModeEdit = true
 	return m, nil
@@ -370,7 +370,7 @@ func (m model) dashboardApplyCustomModeFromSavedFilterID(id string) (model, erro
 	}
 	m.focusedSection = sectionDashboardNetCashflow
 	m.dashCustomModeEdit = false
-	m.setStatusf("Net/Cashflow custom mode: %s.", name)
+	m.setStatusf("Cashflow custom mode: %s.", name)
 	return m, nil
 }
 

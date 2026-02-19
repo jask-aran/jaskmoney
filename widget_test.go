@@ -33,6 +33,9 @@ func TestNewDashboardWidgetsIncludesCanonicalPanes(t *testing.T) {
 	if idx := findWidgetModeIndexByID(widgets[0], "savings_rate"); idx >= 0 {
 		t.Fatalf("savings_rate mode should be removed, got index %d", idx)
 	}
+	if idx := findWidgetModeIndexByID(widgets[0], "spend_vs_budget_pace"); idx < 0 {
+		t.Fatal("spend_vs_budget_pace mode should be present in net/cashflow pane")
+	}
 	if idx := findWidgetModeIndexByID(widgets[1], "recurring_share"); idx >= 0 {
 		t.Fatalf("recurring_share mode should be removed, got index %d", idx)
 	}
@@ -49,8 +52,8 @@ func TestNewDashboardWidgetsCustomSlotActivationNetOnly(t *testing.T) {
 	}
 
 	net := widgets[0]
-	if len(net.modes) != 3 {
-		t.Fatalf("net mode count = %d, want 3 (2 curated + 1 custom)", len(net.modes))
+	if len(net.modes) != 4 {
+		t.Fatalf("net mode count = %d, want 4 (3 curated + 1 custom)", len(net.modes))
 	}
 	last := net.modes[len(net.modes)-1]
 	if !last.custom {
