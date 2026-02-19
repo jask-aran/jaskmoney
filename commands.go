@@ -1108,7 +1108,7 @@ func NewCommandRegistry(keys *KeyRegistry, savedFilters []savedFilter) *CommandR
 					return false, "Dashboard pane is not focused."
 				}
 				if idx := m.dashboardFocusedWidgetIndex(); idx != sectionDashboardNetCashflow {
-					return false, "Custom slot is active on Net/Cashflow only."
+					return false, "Custom slot is active on Cashflow only."
 				}
 				if len(m.savedFilters) == 0 {
 					return false, "No saved filters."

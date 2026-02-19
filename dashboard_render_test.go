@@ -16,8 +16,8 @@ func TestDashboardViewRendersLowerAnalyticsGridPanes(t *testing.T) {
 	m.dashWidgets = newDashboardWidgets(nil)
 
 	out := m.dashboardView()
-	if !strings.Contains(out, "Net/Cashflow") {
-		t.Fatal("missing Net/Cashflow pane")
+	if !strings.Contains(out, "Cashflow") {
+		t.Fatal("missing Cashflow pane")
 	}
 	if !strings.Contains(out, "Composition") {
 		t.Fatal("missing Composition pane")
@@ -40,8 +40,8 @@ func TestDashboardAnalyticsLayoutWideUsesSixtyFortySplitWithOneGap(t *testing.T)
 	found := false
 	for _, line := range lines {
 		plain := ansi.Strip(line)
-		if strings.Contains(plain, "Net/Cashflow") && strings.Contains(plain, "Composition") {
-			netAt := strings.Index(plain, "Net/Cashflow")
+		if strings.Contains(plain, "Cashflow") && strings.Contains(plain, "Composition") {
+			netAt := strings.Index(plain, "Cashflow")
 			compAt := strings.Index(plain, "Composition")
 			if netAt < 0 || compAt < 0 {
 				continue
@@ -54,7 +54,7 @@ func TestDashboardAnalyticsLayoutWideUsesSixtyFortySplitWithOneGap(t *testing.T)
 		}
 	}
 	if !found {
-		t.Fatal("expected Net/Cashflow and Composition side-by-side in wide layout")
+		t.Fatal("expected Cashflow and Composition side-by-side in wide layout")
 	}
 }
 
@@ -70,7 +70,7 @@ func TestDashboardAnalyticsGridNarrowFallbackStacksPanes(t *testing.T) {
 	lines := strings.Split(out, "\n")
 	for _, line := range lines {
 		plain := ansi.Strip(line)
-		if strings.Contains(plain, "Net/Cashflow") && strings.Contains(plain, "Composition") {
+		if strings.Contains(plain, "Cashflow") && strings.Contains(plain, "Composition") {
 			t.Fatalf("unexpected side-by-side pane titles in narrow fallback: %q", plain)
 		}
 	}
@@ -89,7 +89,7 @@ func TestDashboardFocusedPaneShowsActiveTitleMarker(t *testing.T) {
 	lines := strings.Split(ansi.Strip(out), "\n")
 	found := false
 	for _, line := range lines {
-		if !strings.Contains(line, "Net/Cashflow [N] ·") {
+		if !strings.Contains(line, "Cashflow [N] ·") {
 			continue
 		}
 		found = true

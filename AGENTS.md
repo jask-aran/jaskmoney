@@ -125,7 +125,7 @@ Use `agent-tui` to drive `jaskmoney` in an automated terminal session.
   - Optional explicit targeting when needed:
   - `agent-tui sessions`
   - `agent-tui sessions switch <session-id>`
-  - `agent-tui resize -s <session-id> --cols 140 --rows 44`
+  - `agent-tui resize -s <session-id> --cols 140 --rows 60`
   - `agent-tui screenshot -s <session-id>`
 - Required fallback when no-rebuild is unstable: rebuild loop
   - Initial launch:
@@ -228,7 +228,7 @@ Use this as the concise source of available primitives and reusable function sur
 | Jump UI (`render.go`) | `renderJumpOverlay` | Floating key badges and jump status surface | App-wide jump mode |
 | Import preview (`render.go`) | `renderImportPreview`, `renderImportPreviewCompact`, `renderImportPreviewTable` | Snapshot summary, parse diagnostics, post-rules preview table | Import decision flow |
 | Transactions + tags (`render.go`) | `renderTransactionTable`, `renderCategoryTagOnBackground`, `renderTagsOnBackground` | Table layout with optional columns and tag/category styling | Manager transactions, preview parity surfaces |
-| Dashboard analytics (`render.go`) | `renderSummaryCards`, `renderCategoryBreakdown`, `renderSpendingTrackerWithRange`, timeframe controls helpers | KPI cards, category composition, trend charts, timeframe controls | Dashboard tab |
+| Dashboard analytics (`render.go`) | `renderSummaryCards`, `renderCategoryBreakdown`, `renderSpendingTrackerWithRange`, `renderCumulativeSpendVsBudgetPace`, timeframe controls helpers | KPI cards, category composition, trend charts (including cumulative spend vs budget pace), timeframe controls | Dashboard tab |
 | Settings/manager/detail modals (`render.go`) | `renderSettingsContent`, `renderSettingsCategories`, `renderSettingsTags`, `renderSettingsRules`, `renderManagerAccountModal`, `renderFilterEditorModal`, `renderRuleEditorModal`, `renderDryRunResultsModal`, `renderDetailWithAllocations` | Section-specific editors and detail workflows | Settings forms, rule workflows, transaction detail/allocation UX |
 | Budget surfaces (`render.go`) | `renderBudgetTable`, `renderBudgetCategoryTable`, `renderBudgetTargetTable`, `renderBudgetPlanner`, `renderBudgetAnalyticsStrip`, `renderBudgetVarianceSparkline` | Budget table/planner views, target rows, analytics strip and variance sparkline | Budget tab |
 

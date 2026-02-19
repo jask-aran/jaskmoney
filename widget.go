@@ -31,11 +31,12 @@ func newDashboardWidgets(customModes []customPaneMode) []widget {
 	widgets := []widget{
 		{
 			kind:    widgetNetCashflow,
-			title:   "Net/Cashflow",
+			title:   "Cashflow",
 			jumpKey: "n",
 			modes: []widgetMode{
 				{id: "net_worth", label: "Net Worth", viewType: "line"},
 				{id: "spending", label: "Spending", viewType: "line"},
+				{id: "spend_vs_budget_pace", label: "Spend vs Budget Pace", viewType: "line"},
 			},
 		},
 		{

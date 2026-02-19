@@ -1334,8 +1334,8 @@ func dashboardAnalyticsPaneWidths(avail int) (int, int) {
 	if avail <= 2 {
 		return 1, 1
 	}
-	// Net/Cashflow + Composition row uses a dedicated 70:30 split.
-	left := avail * 70 / 100
+	// Cashflow + Composition row uses a dedicated 60:40 split.
+	left := avail * 60 / 100
 	if left < 28 {
 		left = 28
 	}
@@ -1382,14 +1382,16 @@ func renderDashboardWidgetPane(m model, idx int, width int, spec dashboardPaneLa
 	}
 	mode := w.modes[modeIdx]
 	title := w.title + " [" + strings.ToUpper(w.jumpKey) + "] · " + mode.label
-	leftPad, rightPad := 1, 1
+	leftPad, rightPad := 1, 2
 	if w.kind == widgetNetCashflow {
-		leftPad, rightPad = 0, 1
+		leftPad, rightPad = 0, 2
 	}
 	contentW := max(1, width-2-leftPad-rightPad)
 	rows := m.dashboardRowsForMode(mode)
 	content := renderDashboardWidgetModeContent(m, w, mode, rows, contentW, spec)
-	content = ensureMinLines(content, spec.minLines)
+	if w.kind != widgetNetCashflow {
+		content = ensureMinLines(content, spec.minLines)
+	}
 	isFocused := m.activeTab == tabDashboard && m.focusedSection == idx
 	return renderDashboardWidgetSectionBox(title, isFocused, isFocused, width, content, leftPad, rightPad)
 }
@@ -1427,10 +1429,13 @@ func renderDashboardNetCashflowMode(m model, mode widgetMode, rows []transaction
 	case "spending":
 		spendRows := dashboardSpendRows(rows, m.txnTags)
 		rendered = renderSpendingTrackerWithRangeSized(spendRows, chartWidth, m.spendingWeekAnchor, start, end, chartHeight)
+	case "spend_vs_budget_pace":
+		spendRows := dashboardSpendRows(rows, m.txnTags)
+		rendered = renderCumulativeSpendVsBudgetPace(m, spendRows, chartWidth, m.spendingWeekAnchor, start, end, chartHeight)
 	default: // net_worth + custom
 		rendered = renderNetWorthTrackerWithRange(rows, chartWidth, m.spendingWeekAnchor, start, end, chartHeight)
 	}
-	rendered = trimTrailingBlankChartLine(rendered)
+	rendered = trimTrailingBlankLines(rendered)
 	return rendered
 }
 
@@ -1441,6 +1446,18 @@ func trimTrailingBlankChartLine(chart string) string {
 	}
 	last := strings.TrimSpace(ansi.Strip(lines[len(lines)-1]))
 	if last == "" {
+		lines = lines[:len(lines)-1]
+	}
+	return strings.Join(lines, "\n")
+}
+
+func trimTrailingBlankLines(chart string) string {
+	lines := splitLines(chart)
+	for len(lines) > 1 {
+		last := strings.TrimSpace(ansi.Strip(lines[len(lines)-1]))
+		if last != "" {
+			break
+		}
 		lines = lines[:len(lines)-1]
 	}
 	return strings.Join(lines, "\n")
@@ -2109,8 +2126,9 @@ type spendingAxisPlan struct {
 type chartGridlineKind int
 
 const (
-	chartGridlineMinor chartGridlineKind = iota
-	chartGridlineMajor
+	chartGridlineWeek chartGridlineKind = iota
+	chartGridlineMonth
+	chartGridlineYear
 	chartGridlineToday
 )
 
@@ -2197,6 +2215,46 @@ func cumulativeSeries(in []float64) []float64 {
 	return out
 }
 
+func cumulativeBudgetPaceSeries(m model, dates []time.Time) []float64 {
+	out := make([]float64, len(dates))
+	if len(dates) == 0 {
+		return out
+	}
+	monthTotals := make(map[string]float64)
+	total := 0.0
+	for i, d := range dates {
+		monthKey := d.Format("2006-01")
+		monthTotal, ok := monthTotals[monthKey]
+		if !ok {
+			monthTotal = dashboardBudgetTotalForMonth(m, monthKey)
+			monthTotals[monthKey] = monthTotal
+		}
+		days := daysInMonth(d)
+		if days <= 0 {
+			days = 1
+		}
+		total += monthTotal / float64(days)
+		out[i] = total
+	}
+	return out
+}
+
+func dashboardBudgetTotalForMonth(m model, monthKey string) float64 {
+	total := 0.0
+	for _, budget := range m.categoryBudgets {
+		amount := budget.amount
+		if ov, ok := budgetOverrideAmount(m.budgetOverrides[budget.id], monthKey); ok {
+			amount = ov
+		}
+		total += amount
+	}
+	return total
+}
+
+func daysInMonth(d time.Time) int {
+	return time.Date(d.Year(), d.Month()+1, 0, 0, 0, 0, 0, d.Location()).Day()
+}
+
 func isUncategorised(r transaction) bool {
 	if r.categoryName != "" {
 		return r.categoryName == "Uncategorised"
@@ -2232,6 +2290,16 @@ func renderNetWorthTrackerWithRange(rows []transaction, width int, weekAnchor ti
 	netDaily, dates := aggregateDailyNetForRange(rows, start, end)
 	balance := cumulativeSeries(netDaily)
 	return renderTimeSeriesWithRange(balance, dates, width, weekAnchor, height, true)
+}
+
+func renderCumulativeSpendVsBudgetPace(m model, rows []transaction, width int, weekAnchor time.Weekday, start, end time.Time, height int) string {
+	spendDaily, dates := aggregateDailySpendForRange(rows, start, end)
+	if len(dates) == 0 {
+		return lipgloss.NewStyle().Foreground(colorOverlay1).Render("No data for spending tracker.")
+	}
+	actual := cumulativeSeries(spendDaily)
+	budgetPace := cumulativeBudgetPaceSeries(m, dates)
+	return renderDualTimeSeriesWithRange(actual, budgetPace, dates, width, weekAnchor, height)
 }
 
 func renderTimeSeriesWithRange(values []float64, dates []time.Time, width int, weekAnchor time.Weekday, height int, signed bool) string {
@@ -2304,7 +2372,72 @@ func renderTimeSeriesWithRange(values []float64, dates []time.Time, width int, w
 		drawHorizontalValueLine(&chart, 0, lipgloss.NewStyle().Foreground(colorSurface2))
 	}
 
-	return chart.View()
+	return trimTrailingBlankLines(chart.View())
+}
+
+func renderDualTimeSeriesWithRange(actual []float64, budget []float64, dates []time.Time, width int, weekAnchor time.Weekday, height int) string {
+	if width <= 0 {
+		width = 20
+	}
+	if height <= 0 {
+		height = spendingTrackerHeight
+	}
+	if len(dates) == 0 {
+		return lipgloss.NewStyle().Foreground(colorOverlay1).Render("No data for spending tracker.")
+	}
+
+	start := dates[0]
+	end := dates[len(dates)-1]
+	yMaxInput := 0.0
+	for _, v := range actual {
+		if v > yMaxInput {
+			yMaxInput = v
+		}
+	}
+	for _, v := range budget {
+		if v > yMaxInput {
+			yMaxInput = v
+		}
+	}
+
+	chart := tslc.New(width, height)
+	chart.SetXStep(1)
+	chart.SetYStep(spendingTrackerYStep)
+	chart.SetStyle(lipgloss.NewStyle().Foreground(colorError))
+	chart.SetDataSetStyle("budget", lipgloss.NewStyle().Foreground(colorBlue))
+	chart.AxisStyle = lipgloss.NewStyle().Foreground(colorSurface2)
+	chart.LabelStyle = lipgloss.NewStyle().Foreground(colorOverlay1)
+	chart.SetTimeRange(start, end)
+	chart.SetViewTimeRange(start, end)
+
+	plan := planSpendingAxes(&chart, dates, yMaxInput)
+	yStep, yMax := spendingYScale(max(0, yMaxInput), chart.GraphHeight())
+	yMin := -(yMax * 0.08)
+	chart.Model.YLabelFormatter = spendingYLabelFormatter(yStep, yMin, yMax)
+	chart.SetYRange(yMin, yMax)
+	chart.SetViewYRange(yMin, yMax)
+	plan = planSpendingAxes(&chart, dates, yMaxInput)
+	plan.yStep = yStep
+	plan.yMax = yMax
+	chart.Model.XLabelFormatter = spendingXLabelFormatter(plan.xLabels)
+
+	for i, d := range dates {
+		chart.Push(tslc.TimePoint{Time: d, Value: seriesValueAt(actual, i)})
+		chart.PushDataSet("budget", tslc.TimePoint{Time: d, Value: seriesValueAt(budget, i)})
+	}
+
+	chart.DrawBrailleAll()
+	clearAxes(&chart)
+	raiseXAxisLabels(&chart)
+	drawVerticalGridlines(&chart, dates, plan, weekAnchor, time.Now().In(time.Local))
+	return trimTrailingBlankLines(chart.View())
+}
+
+func seriesValueAt(values []float64, idx int) float64 {
+	if idx < 0 || idx >= len(values) {
+		return 0
+	}
+	return values[idx]
 }
 
 func planSpendingAxes(chart *tslc.Model, dates []time.Time, maxVal float64) spendingAxisPlan {
@@ -2395,42 +2528,26 @@ func spendingXLabels(chart *tslc.Model, dates []time.Time, minorStep int, majorM
 
 	start := dates[0]
 	end := dates[len(dates)-1]
-	startLabel := start.Format("2 Jan")
-	endLabel := end.Format("2 Jan")
-	if start.Year() != end.Year() {
-		startLabel = start.Format("2 Jan 06")
-		endLabel = end.Format("2 Jan 06")
-	}
-	add(start, startLabel, 0)
-	add(end, endLabel, 0)
+	add(start, boundaryLabel(start, end), 0)
+	add(end, boundaryLabel(end, start), 0)
 
 	for i, d := range dates {
-		if d.Day() == 1 {
-			switch majorMode {
-			case spendingMajorQuarter:
-				if isQuarterStart(d) {
-					label := d.Format("Jan")
-					if d.Month() == time.January {
-						label = d.Format("Jan 06")
-					}
-					add(d, label, 1)
-				}
-			default:
-				label := d.Format("Jan")
-				if d.Month() == time.January {
-					label = d.Format("Jan 06")
-				}
-				add(d, label, 1)
-			}
+		if isYearEnd(d) {
+			add(d, d.Format("2006"), 1)
+			continue
 		}
-		if len(dates) <= 90 && minorStep > 0 && i%minorStep == 0 {
-			add(d, fmt.Sprintf("%d", d.Day()), 2)
+		if isMonthEnd(d) {
+			add(d, monthBoundaryLabel(d), 2)
+			continue
+		}
+		if isWeekEnd(d) && minorStep > 0 && i%minorStep == 0 {
+			add(d, fmt.Sprintf("%d", d.Day()), 3)
 		}
 	}
 
-	minGap := 6
+	minGap := minXLabelGapForDays(len(dates))
 	// Place higher-priority labels first, then fill remaining space.
-	for prio := 0; prio <= 2; prio++ {
+	for prio := 0; prio <= 3; prio++ {
 		var tier []candidate
 		for _, c := range cands {
 			if c.prio == prio {
@@ -2445,6 +2562,36 @@ func spendingXLabels(chart *tslc.Model, dates []time.Time, minorStep int, majorM
 		}
 	}
 	return labels
+}
+
+func boundaryLabel(d, other time.Time) string {
+	if d.Year() != other.Year() {
+		return d.Format("2 Jan 06")
+	}
+	return d.Format("2 Jan")
+}
+
+func monthBoundaryLabel(d time.Time) string {
+	label := d.Format("Jan")
+	if d.Month() == time.December {
+		label = d.Format("Jan 06")
+	}
+	return label
+}
+
+func minXLabelGapForDays(days int) int {
+	switch {
+	case days <= 62:
+		return 6
+	case days <= 120:
+		return 5
+	case days <= 240:
+		return 4
+	case days <= 540:
+		return 3
+	default:
+		return 3
+	}
 }
 
 func canPlaceXLabel(c struct {
@@ -2618,17 +2765,21 @@ func clearAxes(chart *tslc.Model) {
 
 func raiseXAxisLabels(chart *tslc.Model) {
 	origin := chart.Origin()
-	labelY := origin.Y + 1
-	if labelY < 0 || labelY >= chart.Canvas.Height() {
+	fromY := origin.Y + 1
+	toY := origin.Y
+	if fromY < 0 || fromY >= chart.Canvas.Height() {
+		return
+	}
+	if toY < 0 || toY >= chart.Canvas.Height() {
 		return
 	}
 	for x := 0; x < chart.Width(); x++ {
-		from := canvas.Point{X: x, Y: labelY}
+		from := canvas.Point{X: x, Y: fromY}
 		cell := chart.Canvas.Cell(from)
 		if cell.Rune == 0 {
 			continue
 		}
-		to := canvas.Point{X: x, Y: origin.Y}
+		to := canvas.Point{X: x, Y: toY}
 		if chart.Canvas.Cell(to).Rune != 0 {
 			continue
 		}
@@ -2649,15 +2800,18 @@ func drawVerticalGridlines(chart *tslc.Model, dates []time.Time, plan spendingAx
 	if topY < 0 || bottomY < 0 {
 		return
 	}
-	minorStyle := lipgloss.NewStyle().Foreground(colorSurface1)
-	majorStyle := lipgloss.NewStyle().Foreground(colorBlue)
+	weekStyle := lipgloss.NewStyle().Foreground(colorSurface1)
+	monthStyle := lipgloss.NewStyle().Foreground(colorBlue)
+	yearStyle := lipgloss.NewStyle().Foreground(colorAccent)
 	todayStyle := lipgloss.NewStyle().Foreground(colorSuccess)
 	columns := buildGridlineColumns(chart, dates, plan, weekAnchor, today)
 	for x, kind := range columns {
-		style := minorStyle
+		style := weekStyle
 		switch kind {
-		case chartGridlineMajor:
-			style = majorStyle
+		case chartGridlineMonth:
+			style = monthStyle
+		case chartGridlineYear:
+			style = yearStyle
 		case chartGridlineToday:
 			style = todayStyle
 		}
@@ -2675,20 +2829,21 @@ func buildGridlineColumns(chart *tslc.Model, dates []time.Time, plan spendingAxi
 	origin := chart.Origin()
 	columns := make(map[int]chartGridlineKind)
 	for i, d := range dates {
-		isMajor := isMajorBoundary(d, plan.majorMode, weekAnchor)
-		if !isMajor && i%plan.minorStepDays != 0 {
-			continue
-		}
 		x := chartColumnX(chart, d)
 		if x <= origin.X || x >= chart.Width() {
 			continue
 		}
-		if isMajor {
-			columns[x] = chartGridlineMajor
-			continue
-		}
-		if _, exists := columns[x]; !exists {
-			columns[x] = chartGridlineMinor
+		switch {
+		case isYearEnd(d):
+			columns[x] = chartGridlineYear
+		case isMonthEnd(d):
+			if _, exists := columns[x]; !exists {
+				columns[x] = chartGridlineMonth
+			}
+		case isWeekEnd(d) && plan.minorStepDays > 0 && i%plan.minorStepDays == 0:
+			if _, exists := columns[x]; !exists {
+				columns[x] = chartGridlineWeek
+			}
 		}
 	}
 
@@ -2704,6 +2859,18 @@ func buildGridlineColumns(chart *tslc.Model, dates []time.Time, plan spendingAxi
 		columns[x] = chartGridlineToday
 	}
 	return columns
+}
+
+func isMonthEnd(d time.Time) bool {
+	return d.Day() == daysInMonth(d)
+}
+
+func isYearEnd(d time.Time) bool {
+	return d.Month() == time.December && d.Day() == 31
+}
+
+func isWeekEnd(d time.Time) bool {
+	return d.Weekday() == time.Sunday
 }
 
 func isMajorBoundary(d time.Time, mode spendingMajorMode, weekAnchor time.Weekday) bool {
