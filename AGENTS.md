@@ -144,6 +144,11 @@ Use `agent-tui` to drive `jaskmoney` in an automated terminal session.
   - You can send multiple keys in one call, for example: `agent-tui press ArrowDown ArrowDown Enter`
   - `agent-tui type -s <session-id> "<text>"` for literal input
   - `agent-tui live -s <session-id>` for live endpoint info
+  - If text does not appear in a modal/input, prefer per-key entry via `agent-tui press ...` (for example `w o o l w o r t h s`); `agent-tui type` still works in many contexts
+- Navigation reliability tips:
+  - Screenshot often (`agent-tui screenshot`) after tab/scope/modal changes to confirm actual state before the next action
+  - Prefer direct jumps over sequential tabbing: use numeric tab shortcuts (`1`..`4`) and jump mode (`v` then target key such as `a` for Accounts)
+  - Use footer hints as the source of truth for active-scope actions before sending keys
 
 What was successfully tested and observed:
 - Build completed with `go build .`.
