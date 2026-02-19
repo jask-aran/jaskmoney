@@ -39,8 +39,8 @@ func TestSemanticAliasesMatchPalette(t *testing.T) {
 		alias string
 		want  string
 	}{
-		{"accent", string(colorAccent), string(colorLavender)},
-		{"brand", string(colorBrand), string(colorMauve)},
+		{"accent", string(colorAccent), string(colorPink)},
+		{"brand", string(colorBrand), string(colorPink)},
 		{"success", string(colorSuccess), string(colorGreen)},
 		{"error", string(colorError), string(colorRed)},
 		{"warning", string(colorWarning), string(colorYellow)},
