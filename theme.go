@@ -42,8 +42,8 @@ const (
 // ---------------------------------------------------------------------------
 
 const (
-	colorAccent  = colorLavender
-	colorBrand   = colorMauve
+	colorAccent  = colorPink
+	colorBrand   = colorPink
 	colorSuccess = colorGreen
 	colorError   = colorRed
 	colorWarning = colorYellow
