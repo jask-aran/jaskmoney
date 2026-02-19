@@ -1023,7 +1023,7 @@ func renderTransactionTable(
 ) string {
 	dateW := 9 // dd-mm-yy = 8 chars + 1 pad
 	amountW := 11
-	offsetW := 11
+	offsetW := 9
 	catW := 0
 	accountW := 0
 	tagsW := 0
@@ -1036,7 +1036,7 @@ func renderTransactionTable(
 		catW = 14
 	}
 	if showAccounts {
-		accountW = 14
+		accountW = 10
 	}
 	sep := " "   // single-space column separator
 	numCols := 3 // date amount desc
