@@ -185,6 +185,66 @@ func TestDashboardDatePaneResetToThisMonth(t *testing.T) {
 	}
 }
 
+func TestBudgetEditingTreatsDigitKeysAsInputNotGlobalTabSwitch(t *testing.T) {
+	m := newModel()
+	m.ready = true
+	m.activeTab = tabBudget
+	m.budgetEditing = true
+	m.budgetEditValue = "0.00"
+	m.budgetEditCursor = len(m.budgetEditValue)
+	m.budgetEditReplaceOnType = true
+
+	next, _ := m.Update(keyMsg("2"))
+	got := next.(model)
+	if got.activeTab != tabBudget {
+		t.Fatalf("activeTab after digit input = %d, want tabBudget", got.activeTab)
+	}
+	if got.budgetEditValue != "2" {
+		t.Fatalf("budgetEditValue after '2' = %q, want %q", got.budgetEditValue, "2")
+	}
+
+	next, _ = got.Update(keyMsg("0"))
+	got2 := next.(model)
+	if got2.activeTab != tabBudget {
+		t.Fatalf("activeTab after second digit input = %d, want tabBudget", got2.activeTab)
+	}
+	if got2.budgetEditValue != "20" {
+		t.Fatalf("budgetEditValue after '0' = %q, want %q", got2.budgetEditValue, "20")
+	}
+}
+
+func TestBudgetEditingEnterAppliesValue(t *testing.T) {
+	db, cleanup := testDB(t)
+	defer cleanup()
+
+	cats, err := loadCategories(db)
+	if err != nil {
+		t.Fatalf("loadCategories: %v", err)
+	}
+	if len(cats) == 0 {
+		t.Fatal("expected seeded categories")
+	}
+
+	m := newModel()
+	m.ready = true
+	m.activeTab = tabBudget
+	m.db = db
+	m.budgetCursor = 0
+	m.budgetLines = []budgetLine{{categoryID: cats[0].id, budgeted: 0}}
+	m.budgetEditing = true
+	m.budgetEditValue = "20"
+	m.budgetEditCursor = len(m.budgetEditValue)
+
+	next, cmd := m.Update(keyMsg("enter"))
+	got := next.(model)
+	if got.budgetEditing {
+		t.Fatal("budget editing should end after enter apply")
+	}
+	if cmd == nil {
+		t.Fatal("expected refresh command after saving budget edit")
+	}
+}
+
 func TestDetailAndSearchFlows(t *testing.T) {
 	t.Setenv("XDG_CONFIG_HOME", t.TempDir())
 

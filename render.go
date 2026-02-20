@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"math"
 	"sort"
+	"strconv"
 	"strings"
 	"time"
 
@@ -2119,6 +2120,7 @@ type spendingAxisPlan struct {
 	minorStepDays int
 	majorMode     spendingMajorMode
 	xLabels       map[string]string // YYYY-MM-DD -> label
+	xLabelCols    map[string]int    // YYYY-MM-DD -> preferred x column
 	yStep         float64
 	yMax          float64
 }
@@ -2358,7 +2360,7 @@ func renderTimeSeriesWithRange(values []float64, dates []time.Time, width int, w
 	if !signed {
 		plan.yMax = yMax
 	}
-	chart.Model.XLabelFormatter = spendingXLabelFormatter(plan.xLabels)
+	chart.Model.XLabelFormatter = func(_ int, _ float64) string { return "" }
 
 	for i, d := range dates {
 		chart.Push(tslc.TimePoint{Time: d, Value: values[i]})
@@ -2368,6 +2370,7 @@ func renderTimeSeriesWithRange(values []float64, dates []time.Time, width int, w
 	clearAxes(&chart)
 	raiseXAxisLabels(&chart)
 	drawVerticalGridlines(&chart, dates, plan, weekAnchor, time.Now().In(time.Local))
+	drawCustomXAxisLabels(&chart, plan.xLabels, plan.xLabelCols)
 	if signed {
 		drawHorizontalValueLine(&chart, 0, lipgloss.NewStyle().Foreground(colorSurface2))
 	}
@@ -2403,7 +2406,7 @@ func renderDualTimeSeriesWithRange(actual []float64, budget []float64, dates []t
 	chart := tslc.New(width, height)
 	chart.SetXStep(1)
 	chart.SetYStep(spendingTrackerYStep)
-	chart.SetStyle(lipgloss.NewStyle().Foreground(colorError))
+	chart.SetStyle(lipgloss.NewStyle().Foreground(colorPeach))
 	chart.SetDataSetStyle("budget", lipgloss.NewStyle().Foreground(colorBlue))
 	chart.AxisStyle = lipgloss.NewStyle().Foreground(colorSurface2)
 	chart.LabelStyle = lipgloss.NewStyle().Foreground(colorOverlay1)
@@ -2419,7 +2422,7 @@ func renderDualTimeSeriesWithRange(actual []float64, budget []float64, dates []t
 	plan = planSpendingAxes(&chart, dates, yMaxInput)
 	plan.yStep = yStep
 	plan.yMax = yMax
-	chart.Model.XLabelFormatter = spendingXLabelFormatter(plan.xLabels)
+	chart.Model.XLabelFormatter = func(_ int, _ float64) string { return "" }
 
 	for i, d := range dates {
 		chart.Push(tslc.TimePoint{Time: d, Value: seriesValueAt(actual, i)})
@@ -2430,6 +2433,7 @@ func renderDualTimeSeriesWithRange(actual []float64, budget []float64, dates []t
 	clearAxes(&chart)
 	raiseXAxisLabels(&chart)
 	drawVerticalGridlines(&chart, dates, plan, weekAnchor, time.Now().In(time.Local))
+	drawCustomXAxisLabels(&chart, plan.xLabels, plan.xLabelCols)
 	return trimTrailingBlankLines(chart.View())
 }
 
@@ -2448,10 +2452,12 @@ func planSpendingAxes(chart *tslc.Model, dates []time.Time, maxVal float64) spen
 	minor := spendingMinorGridStep(len(dates), graphCols)
 	mode := spendingMajorModeForDays(len(dates))
 	yStep, yMax := spendingYScale(maxVal, chart.GraphHeight())
+	labels, labelCols := spendingXLabelsWithColumns(chart, dates, minor, mode)
 	return spendingAxisPlan{
 		minorStepDays: minor,
 		majorMode:     mode,
-		xLabels:       spendingXLabels(chart, dates, minor, mode),
+		xLabels:       labels,
+		xLabelCols:    labelCols,
 		yStep:         yStep,
 		yMax:          yMax,
 	}
@@ -2500,10 +2506,17 @@ func spendingMajorModeForDays(days int) spendingMajorMode {
 }
 
 func spendingXLabels(chart *tslc.Model, dates []time.Time, minorStep int, majorMode spendingMajorMode) map[string]string {
+	labels, _ := spendingXLabelsWithColumns(chart, dates, minorStep, majorMode)
+	return labels
+}
+
+func spendingXLabelsWithColumns(chart *tslc.Model, dates []time.Time, minorStep int, majorMode spendingMajorMode) (map[string]string, map[string]int) {
 	labels := make(map[string]string)
+	labelCols := make(map[string]int)
 	if len(dates) == 0 {
-		return labels
+		return labels, labelCols
 	}
+	_ = majorMode
 
 	type candidate struct {
 		x     int
@@ -2513,8 +2526,7 @@ func spendingXLabels(chart *tslc.Model, dates []time.Time, minorStep int, majorM
 	}
 
 	var cands []candidate
-	add := func(d time.Time, label string, prio int) {
-		x := chartColumnX(chart, d)
+	addAt := func(d time.Time, label string, prio int, x int) {
 		if x <= chart.Origin().X || x >= chart.Width() {
 			return
 		}
@@ -2525,23 +2537,30 @@ func spendingXLabels(chart *tslc.Model, dates []time.Time, minorStep int, majorM
 			prio:  prio,
 		})
 	}
+	add := func(d time.Time, label string, prio int) {
+		addAt(d, label, prio, chartColumnX(chart, d))
+	}
 
 	start := dates[0]
 	end := dates[len(dates)-1]
-	add(start, boundaryLabel(start, end), 0)
-	add(end, boundaryLabel(end, start), 0)
+	add(start, boundaryLabel(start, end), 3)
+	add(end, boundaryLabel(end, start), 3)
+	graphCols := chart.Width() - chart.Origin().X - 1
+	monthCount := monthCountInDates(dates)
+	weekDensity := monthWeekDensityForRange(len(dates), graphCols, monthCount)
+	showWeekLabels := len(dates) <= 240
 
-	for i, d := range dates {
+	for _, d := range dates {
 		if isYearEnd(d) {
-			add(d, d.Format("2006"), 1)
+			add(d, yearBoundaryLabel(d), 0)
 			continue
 		}
 		if isMonthEnd(d) {
-			add(d, monthBoundaryLabel(d), 2)
+			add(d, monthBoundaryLabel(d), 1)
 			continue
 		}
-		if isWeekEnd(d) && minorStep > 0 && i%minorStep == 0 {
-			add(d, fmt.Sprintf("%d", d.Day()), 3)
+		if showWeekLabels && minorStep > 0 && isMonthWeekMajorMarker(d, weekDensity) {
+			addAt(d, fmt.Sprintf("%d", d.Day()), 2, monthWeekMarkerColumnX(chart, d))
 		}
 	}
 
@@ -2556,12 +2575,13 @@ func spendingXLabels(chart *tslc.Model, dates []time.Time, minorStep int, majorM
 		}
 		sort.Slice(tier, func(i, j int) bool { return tier[i].x < tier[j].x })
 		for _, c := range tier {
-			if canPlaceXLabel(c, labels, dates, chart, minGap) {
+			if canPlaceXLabel(c, labelCols, minGap) {
 				labels[c.iso] = c.label
+				labelCols[c.iso] = c.x
 			}
 		}
 	}
-	return labels
+	return labels, labelCols
 }
 
 func boundaryLabel(d, other time.Time) string {
@@ -2572,25 +2592,30 @@ func boundaryLabel(d, other time.Time) string {
 }
 
 func monthBoundaryLabel(d time.Time) string {
-	label := d.Format("Jan")
-	if d.Month() == time.December {
-		label = d.Format("Jan 06")
+	next := d.AddDate(0, 0, 1)
+	label := next.Format("Jan")
+	if next.Month() == time.January {
+		label = next.Format("Jan 06")
 	}
 	return label
+}
+
+func yearBoundaryLabel(d time.Time) string {
+	return strconv.Itoa(d.Year() + 1)
 }
 
 func minXLabelGapForDays(days int) int {
 	switch {
 	case days <= 62:
-		return 6
+		return 3
 	case days <= 120:
-		return 5
+		return 3
 	case days <= 240:
-		return 4
+		return 3
 	case days <= 540:
-		return 3
+		return 2
 	default:
-		return 3
+		return 2
 	}
 }
 
@@ -2599,13 +2624,8 @@ func canPlaceXLabel(c struct {
 	iso   string
 	label string
 	prio  int
-}, placed map[string]string, dates []time.Time, chart *tslc.Model, minGap int) bool {
-	for iso := range placed {
-		t, err := time.ParseInLocation("2006-01-02", iso, time.Local)
-		if err != nil {
-			continue
-		}
-		x := chartColumnX(chart, t)
+}, placedCols map[string]int, minGap int) bool {
+	for _, x := range placedCols {
 		if intAbs(x-c.x) < minGap {
 			return false
 		}
@@ -2625,6 +2645,77 @@ func spendingXLabelFormatter(labels map[string]string) linechart.LabelFormatter 
 		t := time.Unix(int64(v), 0).In(time.Local)
 		iso := t.Format("2006-01-02")
 		return labels[iso]
+	}
+}
+
+func drawCustomXAxisLabels(chart *tslc.Model, labels map[string]string, labelCols map[string]int) {
+	if len(labels) == 0 {
+		return
+	}
+	type placement struct {
+		x     int
+		label string
+	}
+	placements := make([]placement, 0, len(labels))
+	for iso, label := range labels {
+		x, ok := labelCols[iso]
+		if !ok {
+			d, err := time.ParseInLocation("2006-01-02", iso, time.Local)
+			if err != nil {
+				continue
+			}
+			x = chartColumnX(chart, d)
+		}
+		placements = append(placements, placement{x: x, label: label})
+	}
+	sort.Slice(placements, func(i, j int) bool { return placements[i].x < placements[j].x })
+	y := chart.Origin().Y
+	if y < 0 || y >= chart.Canvas.Height() {
+		return
+	}
+	minX := chart.Origin().X + 1
+	maxX := chart.Width() - 1
+	occupied := make(map[int]struct{}, chart.Width())
+	labelStyle := lipgloss.NewStyle().Foreground(colorOverlay1)
+	for _, p := range placements {
+		runes := []rune(p.label)
+		if len(runes) == 0 {
+			continue
+		}
+		start := p.x - len(runes)/2
+		if start < minX {
+			start = minX
+		}
+		if start+len(runes)-1 > maxX {
+			start = maxX - len(runes) + 1
+		}
+		if start < minX {
+			continue
+		}
+		overlap := false
+		for i := 0; i < len(runes); i++ {
+			x := start + i
+			if _, exists := occupied[x]; exists {
+				overlap = true
+				break
+			}
+			if _, exists := occupied[x-1]; exists {
+				overlap = true
+				break
+			}
+			if _, exists := occupied[x+1]; exists {
+				overlap = true
+				break
+			}
+		}
+		if overlap {
+			continue
+		}
+		for i, r := range runes {
+			x := start + i
+			occupied[x] = struct{}{}
+			chart.Canvas.SetRuneWithStyle(canvas.Point{X: x, Y: y}, r, labelStyle)
+		}
 	}
 }
 
@@ -2826,9 +2917,13 @@ func drawVerticalGridlines(chart *tslc.Model, dates []time.Time, plan spendingAx
 }
 
 func buildGridlineColumns(chart *tslc.Model, dates []time.Time, plan spendingAxisPlan, weekAnchor time.Weekday, today time.Time) map[int]chartGridlineKind {
+	_ = weekAnchor
 	origin := chart.Origin()
 	columns := make(map[int]chartGridlineKind)
-	for i, d := range dates {
+	graphCols := chart.Width() - origin.X - 1
+	monthCount := monthCountInDates(dates)
+	weekDensity := monthWeekDensityForRange(len(dates), graphCols, monthCount)
+	for _, d := range dates {
 		x := chartColumnX(chart, d)
 		if x <= origin.X || x >= chart.Width() {
 			continue
@@ -2840,15 +2935,31 @@ func buildGridlineColumns(chart *tslc.Model, dates []time.Time, plan spendingAxi
 			if _, exists := columns[x]; !exists {
 				columns[x] = chartGridlineMonth
 			}
-		case isWeekEnd(d) && plan.minorStepDays > 0 && i%plan.minorStepDays == 0:
-			if _, exists := columns[x]; !exists {
-				columns[x] = chartGridlineWeek
+		case plan.minorStepDays > 0 && isMonthWeekMajorMarker(d, weekDensity):
+			wx := monthWeekMarkerColumnX(chart, d)
+			if wx > origin.X && wx < chart.Width() {
+				if _, exists := columns[wx]; !exists {
+					columns[wx] = chartGridlineWeek
+				}
 			}
 		}
 	}
 
 	if len(dates) == 0 {
 		return columns
+	}
+	start := dates[0]
+	if start.Day() == 1 {
+		startX := chartColumnX(chart, start)
+		if startX > origin.X && startX < chart.Width() {
+			if start.Month() == time.January {
+				columns[startX] = chartGridlineYear
+			} else {
+				if existing, ok := columns[startX]; !ok || existing != chartGridlineYear {
+					columns[startX] = chartGridlineMonth
+				}
+			}
+		}
 	}
 	todayLocal := time.Date(today.Year(), today.Month(), today.Day(), 0, 0, 0, 0, time.Local)
 	if todayLocal.Before(dates[0]) || todayLocal.After(dates[len(dates)-1]) {
@@ -2869,8 +2980,93 @@ func isYearEnd(d time.Time) bool {
 	return d.Month() == time.December && d.Day() == 31
 }
 
-func isWeekEnd(d time.Time) bool {
-	return d.Weekday() == time.Sunday
+type monthWeekDensity int
+
+const (
+	monthWeekDensityFortnight monthWeekDensity = iota // 14
+	monthWeekDensityShoulder                           // 7 + 21
+	monthWeekDensityWeekly                             // 7 + 14 + 21
+)
+
+func monthCountInDates(dates []time.Time) int {
+	if len(dates) == 0 {
+		return 0
+	}
+	count := 0
+	prev := ""
+	for _, d := range dates {
+		key := d.Format("2006-01")
+		if key == prev {
+			continue
+		}
+		prev = key
+		count++
+	}
+	return count
+}
+
+func monthWeekDensityForRange(days, graphCols, monthCount int) monthWeekDensity {
+	if monthCount <= 0 {
+		return monthWeekDensityFortnight
+	}
+	if graphCols <= 0 {
+		graphCols = days
+	}
+	colsPerMonth := float64(graphCols) / float64(monthCount)
+	if colsPerMonth >= 14 {
+		return monthWeekDensityWeekly
+	}
+	if colsPerMonth >= 9 {
+		return monthWeekDensityShoulder
+	}
+	return monthWeekDensityFortnight
+}
+
+func isMonthWeekMajorMarker(d time.Time, density monthWeekDensity) bool {
+	if isMonthEnd(d) {
+		return false
+	}
+	switch density {
+	case monthWeekDensityWeekly:
+		return d.Day() == 7 || d.Day() == 14 || d.Day() == 21
+	case monthWeekDensityShoulder:
+		return d.Day() == 7 || d.Day() == 21
+	default:
+		return d.Day() == 14
+	}
+}
+
+func isMonthWeekMarker(d time.Time, density monthWeekDensity) bool {
+	if isMonthWeekMajorMarker(d, density) {
+		return true
+	}
+	return false
+}
+
+func monthWeekMarkerColumnX(chart *tslc.Model, d time.Time) int {
+	exact := chartColumnX(chart, d)
+	monthStart := time.Date(d.Year(), d.Month(), 1, 0, 0, 0, 0, d.Location())
+	monthEnd := time.Date(d.Year(), d.Month()+1, 0, 0, 0, 0, 0, d.Location())
+	startX := chartColumnX(chart, monthStart)
+	endX := chartColumnX(chart, monthEnd)
+	if endX <= startX {
+		return exact
+	}
+	span := endX - startX
+	// Normalize month-week markers to a 31-day scale so 14/21 don't jump as
+	// much between 28/30/31-day months while preserving exact start/end lines.
+	pos := float64(d.Day()-1) / 30.0
+	x := startX + int(math.Round(pos*float64(span)))
+	if x <= startX {
+		x = startX + 1
+	}
+	if x >= endX {
+		x = endX - 1
+	}
+	if x <= chart.Origin().X || x >= chart.Width() {
+		return exact
+	}
+	return x
 }
 
 func isMajorBoundary(d time.Time, mode spendingMajorMode, weekAnchor time.Weekday) bool {

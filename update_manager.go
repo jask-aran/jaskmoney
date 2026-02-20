@@ -14,6 +14,12 @@ const (
 )
 
 func (m model) updateMain(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
+	// When editing inline numeric budget values, route keys directly to the
+	// budget editor before global commands so digit bindings (e.g. tab jumps)
+	// don't steal text input.
+	if m.activeTab == tabBudget && m.budgetEditing {
+		return m.updateBudget(msg)
+	}
 	if m.isAction(scopeGlobal, actionQuit, msg) {
 		return m, tea.Quit
 	}
