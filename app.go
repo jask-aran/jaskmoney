@@ -537,6 +537,7 @@ type model struct {
 	budgetEditing           bool
 	budgetEditValue         string
 	budgetEditCursor        int
+	budgetEditReplaceOnType bool
 	budgetDeleteArmedTarget int
 
 	// Budget data

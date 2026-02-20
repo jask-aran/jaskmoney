@@ -180,6 +180,16 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		if next, cmd, handled := m.dispatchOverlayKey(msg); handled {
 			return next, cmd
 		}
+		// Inline text editors must receive printable keys before any command
+		// dispatch, otherwise global digit bindings can steal input.
+		if (m.activeTab == tabBudget && m.budgetEditing) ||
+			(m.activeTab == tabDashboard && m.dashCustomEditing) ||
+			m.filterInputMode {
+			if m.activeTab == tabSettings {
+				return m.updateSettings(msg)
+			}
+			return m.updateMain(msg)
+		}
 		// No overlay active — try keybinding-to-command dispatch.
 		if next, cmd, handled := m.executeBoundCommand(m.commandContextScope(), msg); handled {
 			return next, cmd
@@ -777,6 +787,9 @@ func (m model) updateJumpOverlay(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		if m.activeTab == tabBudget && target.BudgetView >= 0 {
 			m.budgetView = target.BudgetView
 			m.budgetEditing = false
+			m.budgetEditValue = ""
+			m.budgetEditCursor = 0
+			m.budgetEditReplaceOnType = false
 		}
 		m.applyFocusedSection(target.Activate)
 		return m, nil
@@ -881,6 +894,7 @@ func (m *model) applyTabDefaultsOnSwitch() {
 		m.budgetEditing = false
 		m.budgetEditValue = ""
 		m.budgetEditCursor = 0
+		m.budgetEditReplaceOnType = false
 		m.budgetDeleteArmedTarget = 0
 	}
 }

@@ -289,6 +289,7 @@ func NewCommandRegistry(keys *KeyRegistry, savedFilters []savedFilter) *CommandR
 				m.budgetEditing = false
 				m.budgetEditValue = ""
 				m.budgetEditCursor = 0
+				m.budgetEditReplaceOnType = false
 				return m, nil, nil
 			},
 		},
@@ -328,6 +329,7 @@ func NewCommandRegistry(keys *KeyRegistry, savedFilters []savedFilter) *CommandR
 					m.budgetEditValue = fmt.Sprintf("%.2f", line.budgeted)
 				}
 				m.budgetEditCursor = len(m.budgetEditValue)
+				m.budgetEditReplaceOnType = true
 				return m, nil, nil
 			},
 		},

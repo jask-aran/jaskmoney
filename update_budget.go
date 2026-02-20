@@ -67,12 +67,14 @@ func (m model) updateBudgetEdit(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		m.budgetEditing = false
 		m.budgetEditValue = ""
 		m.budgetEditCursor = 0
+		m.budgetEditReplaceOnType = false
 		return m, nil
-	case m.isAction(scopeBudget, actionConfirm, msg):
+	case m.isAction(scopeBudget, actionConfirm, msg) || m.isAction(scopeBudget, actionBudgetEdit, msg):
 		if m.budgetCursor < 0 || m.budgetCursor >= len(m.budgetLines) {
 			m.budgetEditing = false
 			m.budgetEditValue = ""
 			m.budgetEditCursor = 0
+			m.budgetEditReplaceOnType = false
 			return m, nil
 		}
 		value, err := strconv.ParseFloat(strings.TrimSpace(m.budgetEditValue), 64)
@@ -111,17 +113,26 @@ func (m model) updateBudgetEdit(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		m.budgetEditing = false
 		m.budgetEditValue = ""
 		m.budgetEditCursor = 0
+		m.budgetEditReplaceOnType = false
 		return m, refreshCmd(m.db)
 	case isBackspaceKey(msg):
+		m.budgetEditReplaceOnType = false
 		deleteASCIIByteBeforeCursor(&m.budgetEditValue, &m.budgetEditCursor)
 		return m, nil
 	case keyName == "left":
+		m.budgetEditReplaceOnType = false
 		moveInputCursorASCII(m.budgetEditValue, &m.budgetEditCursor, -1)
 		return m, nil
 	case keyName == "right":
+		m.budgetEditReplaceOnType = false
 		moveInputCursorASCII(m.budgetEditValue, &m.budgetEditCursor, 1)
 		return m, nil
 	default:
+		if m.budgetEditReplaceOnType && isPrintableASCIIKey(msg.String()) {
+			m.budgetEditValue = ""
+			m.budgetEditCursor = 0
+			m.budgetEditReplaceOnType = false
+		}
 		insertPrintableASCIIAtCursor(&m.budgetEditValue, &m.budgetEditCursor, msg.String())
 		return m, nil
 	}

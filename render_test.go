@@ -551,6 +551,108 @@ func TestSpendingMinorGridStep(t *testing.T) {
 	}
 }
 
+func TestMonthWeekDensityForRangeWeeklyWhenRoom(t *testing.T) {
+	got := monthWeekDensityForRange(62, 84, 3)
+	if got != monthWeekDensityWeekly {
+		t.Fatalf("monthWeekDensityForRange(62,84,3)=%v, want weekly", got)
+	}
+}
+
+func TestMonthWeekDensityForRangeFortnightWhenDense(t *testing.T) {
+	got := monthWeekDensityForRange(365, 72, 13)
+	if got != monthWeekDensityFortnight {
+		t.Fatalf("monthWeekDensityForRange(365,72,13)=%v, want fortnight", got)
+	}
+}
+
+func TestMonthWeekDensityForRangeShoulderAtMidDensity(t *testing.T) {
+	got := monthWeekDensityForRange(120, 48, 5) // ~9.6 cols/month
+	if got != monthWeekDensityShoulder {
+		t.Fatalf("monthWeekDensityForRange(120,48,5)=%v, want shoulder", got)
+	}
+}
+
+func TestMonthWeekDensityForRangeWeeklyForWideOneMonth(t *testing.T) {
+	got := monthWeekDensityForRange(31, 100, 1)
+	if got != monthWeekDensityWeekly {
+		t.Fatalf("monthWeekDensityForRange(31,100,1)=%v, want weekly", got)
+	}
+}
+
+func TestIsMonthWeekMarkerWeeklyAnchors(t *testing.T) {
+	if !isMonthWeekMarker(time.Date(2026, time.January, 7, 0, 0, 0, 0, time.Local), monthWeekDensityWeekly) {
+		t.Fatal("expected 7th to be weekly marker")
+	}
+	if !isMonthWeekMarker(time.Date(2026, time.January, 14, 0, 0, 0, 0, time.Local), monthWeekDensityWeekly) {
+		t.Fatal("expected 14th to be weekly marker")
+	}
+	if !isMonthWeekMarker(time.Date(2026, time.January, 21, 0, 0, 0, 0, time.Local), monthWeekDensityWeekly) {
+		t.Fatal("expected 21st to be weekly marker")
+	}
+	if isMonthWeekMarker(time.Date(2026, time.January, 31, 0, 0, 0, 0, time.Local), monthWeekDensityWeekly) {
+		t.Fatal("month-end should not be treated as week marker")
+	}
+}
+
+func TestIsMonthWeekMarkerFortnightAnchors(t *testing.T) {
+	if !isMonthWeekMarker(time.Date(2026, time.January, 14, 0, 0, 0, 0, time.Local), monthWeekDensityFortnight) {
+		t.Fatal("expected 14th to be fortnight marker")
+	}
+	if isMonthWeekMarker(time.Date(2026, time.January, 7, 0, 0, 0, 0, time.Local), monthWeekDensityFortnight) {
+		t.Fatal("7th should not be fortnight marker")
+	}
+	if isMonthWeekMarker(time.Date(2026, time.January, 21, 0, 0, 0, 0, time.Local), monthWeekDensityFortnight) {
+		t.Fatal("21st should not be fortnight marker")
+	}
+}
+
+func TestIsMonthWeekMajorMarkerShoulderAnchors(t *testing.T) {
+	if !isMonthWeekMajorMarker(time.Date(2026, time.January, 7, 0, 0, 0, 0, time.Local), monthWeekDensityShoulder) {
+		t.Fatal("expected 7th to be shoulder major marker")
+	}
+	if !isMonthWeekMajorMarker(time.Date(2026, time.January, 21, 0, 0, 0, 0, time.Local), monthWeekDensityShoulder) {
+		t.Fatal("expected 21st to be shoulder major marker")
+	}
+	if isMonthWeekMajorMarker(time.Date(2026, time.January, 14, 0, 0, 0, 0, time.Local), monthWeekDensityShoulder) {
+		t.Fatal("14th should not be shoulder major marker")
+	}
+}
+
+func TestMonthWeekMarkerColumnXStabilizesAcrossMonthLengths(t *testing.T) {
+	janStart := time.Date(2026, time.January, 1, 0, 0, 0, 0, time.Local)
+	janEnd := time.Date(2026, time.January, 31, 0, 0, 0, 0, time.Local)
+	febStart := time.Date(2026, time.February, 1, 0, 0, 0, 0, time.Local)
+	febEnd := time.Date(2026, time.February, 28, 0, 0, 0, 0, time.Local)
+
+	janChart := tslc.New(100, spendingTrackerHeight)
+	janChart.SetTimeRange(janStart, janEnd)
+	janChart.SetViewTimeRange(janStart, janEnd)
+	janChart.SetYRange(0, 100)
+	janChart.SetViewYRange(0, 100)
+	janChart.SetXStep(1)
+	janChart.SetYStep(1)
+
+	febChart := tslc.New(100, spendingTrackerHeight)
+	febChart.SetTimeRange(febStart, febEnd)
+	febChart.SetViewTimeRange(febStart, febEnd)
+	febChart.SetYRange(0, 100)
+	febChart.SetViewYRange(0, 100)
+	febChart.SetXStep(1)
+	febChart.SetYStep(1)
+
+	jan14 := monthWeekMarkerColumnX(&janChart, time.Date(2026, time.January, 14, 0, 0, 0, 0, time.Local))
+	feb14 := monthWeekMarkerColumnX(&febChart, time.Date(2026, time.February, 14, 0, 0, 0, 0, time.Local))
+	if d := intAbs(jan14 - feb14); d > 1 {
+		t.Fatalf("14th marker shifted too far across months: |%d-%d|=%d, want <=1", jan14, feb14, d)
+	}
+
+	jan21 := monthWeekMarkerColumnX(&janChart, time.Date(2026, time.January, 21, 0, 0, 0, 0, time.Local))
+	feb21 := monthWeekMarkerColumnX(&febChart, time.Date(2026, time.February, 21, 0, 0, 0, 0, time.Local))
+	if d := intAbs(jan21 - feb21); d > 1 {
+		t.Fatalf("21st marker shifted too far across months: |%d-%d|=%d, want <=1", jan21, feb21, d)
+	}
+}
+
 func TestRenderCommandLinesWindowRespectsOffsetAndCursorVisibility(t *testing.T) {
 	matches := make([]CommandMatch, 12)
 	for i := range matches {
@@ -796,6 +898,38 @@ func TestSpendingXLabelsRespectSpacing(t *testing.T) {
 	}
 }
 
+func TestSpendingXLabelsYearBoundaryUsesNextYear(t *testing.T) {
+	start := time.Date(2025, time.December, 20, 0, 0, 0, 0, time.Local)
+	end := time.Date(2026, time.January, 15, 0, 0, 0, 0, time.Local)
+	var dates []time.Time
+	for d := start; !d.After(end); d = d.AddDate(0, 0, 1) {
+		dates = append(dates, d)
+	}
+
+	chart := tslc.New(100, spendingTrackerHeight)
+	chart.SetTimeRange(start, end)
+	chart.SetViewTimeRange(start, end)
+	chart.SetYRange(0, 100)
+	chart.SetViewYRange(0, 100)
+	chart.SetXStep(1)
+	chart.SetYStep(1)
+
+	graphCols := chart.Width() - chart.Origin().X - 1
+	labels := spendingXLabels(&chart, dates, spendingMinorGridStep(len(dates), graphCols), spendingMajorModeForDays(len(dates)))
+	if got := labels["2025-12-31"]; got != "2026" {
+		t.Fatalf("year-end label = %q, want %q", got, "2026")
+	}
+}
+
+func TestMonthBoundaryLabelUsesNextMonth(t *testing.T) {
+	if got := monthBoundaryLabel(time.Date(2026, time.January, 31, 0, 0, 0, 0, time.Local)); got != "Feb" {
+		t.Fatalf("monthBoundaryLabel(Jan 31, 2026) = %q, want %q", got, "Feb")
+	}
+	if got := monthBoundaryLabel(time.Date(2025, time.December, 31, 0, 0, 0, 0, time.Local)); got != "Jan 26" {
+		t.Fatalf("monthBoundaryLabel(Dec 31, 2025) = %q, want %q", got, "Jan 26")
+	}
+}
+
 func TestBuildGridlineColumnsIncludesTodayMarker(t *testing.T) {
 	start := time.Now().In(time.Local).AddDate(0, 0, -10)
 	start = time.Date(start.Year(), start.Month(), start.Day(), 0, 0, 0, 0, time.Local)
@@ -860,6 +994,50 @@ func TestBuildGridlineColumnsTodayOverridesMajor(t *testing.T) {
 	}
 	if kind != chartGridlineToday {
 		t.Fatalf("today column kind = %v, want chartGridlineToday", kind)
+	}
+}
+
+func TestBuildGridlineColumnsIncludesMonthStartAtRangeStart(t *testing.T) {
+	start := time.Date(2026, time.February, 1, 0, 0, 0, 0, time.Local)
+	end := time.Date(2026, time.February, 28, 0, 0, 0, 0, time.Local)
+	var dates []time.Time
+	for d := start; !d.After(end); d = d.AddDate(0, 0, 1) {
+		dates = append(dates, d)
+	}
+	chart := tslc.New(100, spendingTrackerHeight)
+	chart.SetTimeRange(start, end)
+	chart.SetViewTimeRange(start, end)
+	chart.SetYRange(0, 100)
+	chart.SetViewYRange(0, 100)
+	chart.SetXStep(1)
+	chart.SetYStep(1)
+	plan := spendingAxisPlan{minorStepDays: 1, majorMode: spendingMajorMonth}
+	columns := buildGridlineColumns(&chart, dates, plan, time.Sunday, time.Now().In(time.Local))
+	x := chartColumnX(&chart, start)
+	if kind, ok := columns[x]; !ok || kind != chartGridlineMonth {
+		t.Fatalf("start-of-month column kind = %v (ok=%v), want chartGridlineMonth", kind, ok)
+	}
+}
+
+func TestBuildGridlineColumnsIncludesYearStartAtRangeStart(t *testing.T) {
+	start := time.Date(2026, time.January, 1, 0, 0, 0, 0, time.Local)
+	end := time.Date(2026, time.February, 10, 0, 0, 0, 0, time.Local)
+	var dates []time.Time
+	for d := start; !d.After(end); d = d.AddDate(0, 0, 1) {
+		dates = append(dates, d)
+	}
+	chart := tslc.New(100, spendingTrackerHeight)
+	chart.SetTimeRange(start, end)
+	chart.SetViewTimeRange(start, end)
+	chart.SetYRange(0, 100)
+	chart.SetViewYRange(0, 100)
+	chart.SetXStep(1)
+	chart.SetYStep(1)
+	plan := spendingAxisPlan{minorStepDays: 1, majorMode: spendingMajorMonth}
+	columns := buildGridlineColumns(&chart, dates, plan, time.Sunday, time.Now().In(time.Local))
+	x := chartColumnX(&chart, start)
+	if kind, ok := columns[x]; !ok || kind != chartGridlineYear {
+		t.Fatalf("start-of-year column kind = %v (ok=%v), want chartGridlineYear", kind, ok)
 	}
 }
 
