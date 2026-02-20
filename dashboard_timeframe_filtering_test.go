@@ -1,7 +1,6 @@
 package main
 
 import (
-	"strings"
 	"testing"
 	"time"
 )
@@ -57,22 +56,6 @@ func TestFilterByTimeframeCustom(t *testing.T) {
 	custom := filterByTimeframe(rows, dashTimeframeCustom, "2026-02-01", "2026-02-05", now)
 	if got := txnIDs(custom); !equalIntSlices(got, []int{1}) {
 		t.Fatalf("custom ids = %v, want [1]", got)
-	}
-}
-
-func TestRenderDashboardTimeframeChips(t *testing.T) {
-	output := renderDatePresetChips(dashTimeframeLabels, dashTimeframeThisMonth, dashTimeframe3Months, true)
-	if !strings.Contains(output, "[This]") {
-		t.Fatal("chips should include This")
-	}
-	if !strings.Contains(output, "[1M]") || !strings.Contains(output, "[2M]") {
-		t.Fatal("chips should include 1M and 2M")
-	}
-	if !strings.Contains(output, "[Custom]") {
-		t.Fatal("chips should include Custom")
-	}
-	if !strings.Contains(output, ">") {
-		t.Fatal("focused chips should include cursor marker")
 	}
 }
 

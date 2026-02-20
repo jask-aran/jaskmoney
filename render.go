@@ -645,26 +645,6 @@ func (m model) renderStatus(text string, isErr bool) string {
 	return style.Width(m.width).Render(flat)
 }
 
-func renderDatePresetChips(labels []string, active, cursor int, focused bool) string {
-	baseStyle := lipgloss.NewStyle().Foreground(colorSubtext0)
-	activeStyle := lipgloss.NewStyle().Foreground(colorAccent).Bold(true)
-
-	parts := make([]string, 0, len(labels))
-	for i, label := range labels {
-		chip := "[" + label + "]"
-		style := baseStyle
-		if i == active {
-			style = activeStyle
-		}
-		text := style.Render(chip)
-		if focused && i == cursor {
-			text = cursorStyle.Render(">") + text
-		}
-		parts = append(parts, text)
-	}
-	return strings.Join(parts, " ")
-}
-
 func renderDashboardTimeframeValue(m model, rows []transaction, now time.Time) string {
 	start, endExcl, ok := m.dashboardTimeframeBounds(now)
 	return dashboardDateRangeFromBounds(rows, start, endExcl, ok)
