@@ -176,6 +176,23 @@ func NewCommandRegistry(keys *KeyRegistry, savedFilters []savedFilter) *CommandR
 			Scopes:      []string{scopeBudget, scopeDashboard, scopeDashboardTimeframe},
 			Enabled:     commandAlwaysEnabled,
 			Execute: func(m model) (model, tea.Cmd, error) {
+				if m.activeTab == tabDashboard {
+					if m.dashPresetActive != dashPresetPeriod {
+						return m, nil, nil
+					}
+					base, err := time.ParseInLocation("2006-01-02", strings.TrimSpace(m.dashPeriodAnchor), time.Local)
+					if err != nil {
+						base = currentPeriodStart(time.Now(), m.dashPeriodActive)
+					}
+					next := periodStep(dayStartLocal(base), m.dashPeriodActive, -1)
+					m.dashPeriodAnchor = next.Format("2006-01-02")
+					m.dashAnchorMonth = next.Format("2006-01")
+					budgetChanged := m.syncBudgetMonthFromDashboard()
+					if m.db != nil && budgetChanged {
+						return m, refreshCmd(m.db), nil
+					}
+					return m, nil, nil
+				}
 				start, _, err := parseMonthKey(m.budgetMonth)
 				if err != nil {
 					start = time.Now()
@@ -199,6 +216,23 @@ func NewCommandRegistry(keys *KeyRegistry, savedFilters []savedFilter) *CommandR
 			Scopes:      []string{scopeBudget, scopeDashboard, scopeDashboardTimeframe},
 			Enabled:     commandAlwaysEnabled,
 			Execute: func(m model) (model, tea.Cmd, error) {
+				if m.activeTab == tabDashboard {
+					if m.dashPresetActive != dashPresetPeriod {
+						return m, nil, nil
+					}
+					base, err := time.ParseInLocation("2006-01-02", strings.TrimSpace(m.dashPeriodAnchor), time.Local)
+					if err != nil {
+						base = currentPeriodStart(time.Now(), m.dashPeriodActive)
+					}
+					next := periodStep(dayStartLocal(base), m.dashPeriodActive, 1)
+					m.dashPeriodAnchor = next.Format("2006-01-02")
+					m.dashAnchorMonth = next.Format("2006-01")
+					budgetChanged := m.syncBudgetMonthFromDashboard()
+					if m.db != nil && budgetChanged {
+						return m, refreshCmd(m.db), nil
+					}
+					return m, nil, nil
+				}
 				start, _, err := parseMonthKey(m.budgetMonth)
 				if err != nil {
 					start = time.Now()
@@ -224,9 +258,13 @@ func NewCommandRegistry(keys *KeyRegistry, savedFilters []savedFilter) *CommandR
 			Execute: func(m model) (model, tea.Cmd, error) {
 				now := time.Now()
 				thisMonth := now.Format("2006-01")
+				m.dashPresetActive = dashPresetPeriod
+				m.dashPeriodActive = dashPeriodMonth
+				start := currentPeriodStart(now, dashPeriodMonth)
+				m.dashPeriodAnchor = start.Format("2006-01-02")
+				m.dashPresetCursor = dashCursorForActiveSelection(m.dashPresetActive, m.dashTimeframe, m.dashPeriodActive)
+				m.dashTimeframeCursor = m.dashPresetCursor
 				m.dashMonthMode = false
-				m.dashTimeframe = dashTimeframeThisMonth
-				m.dashTimeframeCursor = dashTimeframeThisMonth
 				m.dashAnchorMonth = thisMonth
 				m.budgetMonth = thisMonth
 				m.budgetYear = now.Year()

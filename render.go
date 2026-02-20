@@ -666,24 +666,52 @@ func renderDatePresetChips(labels []string, active, cursor int, focused bool) st
 }
 
 func renderDashboardTimeframeValue(m model, rows []transaction, now time.Time) string {
-	if m.dashMonthMode {
-		month := m.dashboardBudgetMonth()
-		if start, _, err := parseMonthKey(month); err == nil {
-			return start.Format("January 2006")
-		}
-		return month
-	}
 	start, endExcl, ok := m.dashboardTimeframeBounds(now)
 	return dashboardDateRangeFromBounds(rows, start, endExcl, ok)
 }
 
+func renderDashboardPresetChips(m model) string {
+	baseStyle := lipgloss.NewStyle().Foreground(colorSubtext0)
+	activeStyle := lipgloss.NewStyle().Foreground(colorAccent).Bold(true)
+	withCursor := func(text string, idx int) string {
+		if m.dashTimeframeFocus && idx == m.dashPresetCursor {
+			return cursorStyle.Render(">") + text
+		}
+		return text
+	}
+	lookbacks := make([]string, 0, len(dashLookbackPresets))
+	for i, preset := range dashLookbackPresets {
+		style := baseStyle
+		if m.dashPresetActive == dashPresetLookback && m.dashTimeframe == preset.timeframe {
+			style = activeStyle
+		}
+		chip := style.Render("[" + preset.label + "]")
+		lookbacks = append(lookbacks, withCursor(chip, i))
+	}
+	periods := make([]string, 0, len(dashPeriodLabels))
+	for i, label := range dashPeriodLabels {
+		style := baseStyle
+		if m.dashPresetActive == dashPresetPeriod && m.dashPeriodActive == dashPeriodType(i) {
+			style = activeStyle
+		}
+		chip := style.Render("[" + label + "]")
+		periods = append(periods, withCursor(chip, len(dashLookbackPresets)+i))
+	}
+	customStyle := baseStyle
+	if m.dashPresetActive == dashPresetCustom {
+		customStyle = activeStyle
+	}
+	custom := withCursor(customStyle.Render("[Custom]"), dashCustomCursorIndex())
+	return strings.Join([]string{
+		strings.Join(lookbacks, " "),
+		strings.Join(periods, " "),
+		custom,
+	}, " "+baseStyle.Render("|")+" ")
+}
+
 func renderDashboardDatePane(m model, rows []transaction, width int) string {
 	now := time.Now()
-	activePreset := m.dashTimeframe
-	if m.dashMonthMode {
-		activePreset = -1
-	}
-	presets := infoLabelStyle.Render("Presets  ") + renderDatePresetChips(dashTimeframeLabels, activePreset, m.dashTimeframeCursor, m.dashTimeframeFocus)
+	presets := infoLabelStyle.Render("Presets  ") + renderDashboardPresetChips(m)
 	timeframe := infoLabelStyle.Render("Timeframe  ") + infoValueStyle.Render(renderDashboardTimeframeValue(m, rows, now))
 	lines := []string{renderDatePaneInline(presets, timeframe, width-4)}
 	if custom := renderDashboardCustomInputInline(m.dashCustomStart, m.dashCustomEnd, m.dashCustomInput, m.dashCustomEditing); custom != "" {
@@ -2984,8 +3012,8 @@ type monthWeekDensity int
 
 const (
 	monthWeekDensityFortnight monthWeekDensity = iota // 14
-	monthWeekDensityShoulder                           // 7 + 21
-	monthWeekDensityWeekly                             // 7 + 14 + 21
+	monthWeekDensityShoulder                          // 7 + 21
+	monthWeekDensityWeekly                            // 7 + 14 + 21
 )
 
 func monthCountInDates(dates []time.Time) int {

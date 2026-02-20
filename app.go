@@ -290,6 +290,45 @@ var dashTimeframeLabels = []string{
 	"Custom",
 }
 
+type dashPresetFamily int
+
+const (
+	dashPresetLookback dashPresetFamily = iota
+	dashPresetPeriod
+	dashPresetCustom
+)
+
+type dashPeriodType int
+
+const (
+	dashPeriodMonth dashPeriodType = iota
+	dashPeriodQuarter
+	dashPeriodHalf
+	dashPeriodFY
+	dashPeriodYear
+)
+
+type dashLookbackPreset struct {
+	label     string
+	timeframe int
+}
+
+var dashLookbackPresets = []dashLookbackPreset{
+	{label: "1M", timeframe: dashTimeframe1Month},
+	{label: "2M", timeframe: dashTimeframe2Months},
+	{label: "3M", timeframe: dashTimeframe3Months},
+	{label: "6M", timeframe: dashTimeframe6Months},
+	{label: "1Y", timeframe: dashTimeframe1Year},
+}
+
+var dashPeriodLabels = []string{
+	"Month",
+	"QTR",
+	"Half",
+	"FY",
+	"Year",
+}
+
 // Settings sections — flat index for navigation
 const (
 	settSecCategories = iota
@@ -518,6 +557,10 @@ type model struct {
 	dashTimeframeFocus  bool
 	dashTimeframeCursor int
 	dashAnchorMonth     string
+	dashPresetCursor    int
+	dashPresetActive    dashPresetFamily
+	dashPeriodActive    dashPeriodType
+	dashPeriodAnchor    string // YYYY-MM-DD start of active period instance
 	dashCustomStart     string
 	dashCustomEnd       string
 	dashCustomInput     string
@@ -606,6 +649,10 @@ func newModel() model {
 		spendingWeekAnchor:  weekAnchor,
 		dashTimeframe:       dashTimeframeThisMonth,
 		dashAnchorMonth:     time.Now().Format("2006-01"),
+		dashPresetCursor:    0,
+		dashPresetActive:    dashPresetLookback,
+		dashPeriodActive:    dashPeriodMonth,
+		dashPeriodAnchor:    time.Date(time.Now().Year(), time.Now().Month(), 1, 0, 0, 0, 0, time.Local).Format("2006-01-02"),
 		dashCustomStart:     appCfg.DashCustomStart,
 		dashCustomEnd:       appCfg.DashCustomEnd,
 		dashWidgets:         newDashboardWidgets(customPaneModes),
@@ -1229,6 +1276,122 @@ func dashTimeframeLabel(timeframe int) string {
 	return dashTimeframeLabels[dashTimeframeThisMonth]
 }
 
+func dashPresetCount() int {
+	return len(dashLookbackPresets) + len(dashPeriodLabels) + 1
+}
+
+func dashPresetFamilyForCursor(cursor int) dashPresetFamily {
+	lookbacks := len(dashLookbackPresets)
+	periods := len(dashPeriodLabels)
+	switch {
+	case cursor < lookbacks:
+		return dashPresetLookback
+	case cursor < lookbacks+periods:
+		return dashPresetPeriod
+	default:
+		return dashPresetCustom
+	}
+}
+
+func dashLookbackIndexForCursor(cursor int) int {
+	if dashPresetFamilyForCursor(cursor) != dashPresetLookback {
+		return -1
+	}
+	return cursor
+}
+
+func dashPeriodIndexForCursor(cursor int) int {
+	if dashPresetFamilyForCursor(cursor) != dashPresetPeriod {
+		return -1
+	}
+	return cursor - len(dashLookbackPresets)
+}
+
+func dashCustomCursorIndex() int {
+	return len(dashLookbackPresets) + len(dashPeriodLabels)
+}
+
+func dashCursorForActiveSelection(family dashPresetFamily, timeframe int, period dashPeriodType) int {
+	switch family {
+	case dashPresetLookback:
+		for i, p := range dashLookbackPresets {
+			if p.timeframe == timeframe {
+				return i
+			}
+		}
+		return 0
+	case dashPresetPeriod:
+		idx := int(period)
+		if idx < 0 || idx >= len(dashPeriodLabels) {
+			idx = 0
+		}
+		return len(dashLookbackPresets) + idx
+	default:
+		return dashCustomCursorIndex()
+	}
+}
+
+func dayStartLocal(t time.Time) time.Time {
+	return time.Date(t.Year(), t.Month(), t.Day(), 0, 0, 0, 0, time.Local)
+}
+
+func currentPeriodStart(now time.Time, period dashPeriodType) time.Time {
+	d := dayStartLocal(now)
+	switch period {
+	case dashPeriodMonth:
+		return time.Date(d.Year(), d.Month(), 1, 0, 0, 0, 0, time.Local)
+	case dashPeriodQuarter:
+		m := ((int(d.Month())-1)/3)*3 + 1
+		return time.Date(d.Year(), time.Month(m), 1, 0, 0, 0, 0, time.Local)
+	case dashPeriodHalf:
+		m := 1
+		if d.Month() >= time.July {
+			m = 7
+		}
+		return time.Date(d.Year(), time.Month(m), 1, 0, 0, 0, 0, time.Local)
+	case dashPeriodFY:
+		year := d.Year()
+		if d.Month() < time.July {
+			year--
+		}
+		return time.Date(year, time.July, 1, 0, 0, 0, 0, time.Local)
+	case dashPeriodYear:
+		return time.Date(d.Year(), time.January, 1, 0, 0, 0, 0, time.Local)
+	default:
+		return time.Date(d.Year(), d.Month(), 1, 0, 0, 0, 0, time.Local)
+	}
+}
+
+func periodEndExclusive(start time.Time, period dashPeriodType) time.Time {
+	switch period {
+	case dashPeriodMonth:
+		return start.AddDate(0, 1, 0)
+	case dashPeriodQuarter:
+		return start.AddDate(0, 3, 0)
+	case dashPeriodHalf:
+		return start.AddDate(0, 6, 0)
+	case dashPeriodFY, dashPeriodYear:
+		return start.AddDate(1, 0, 0)
+	default:
+		return start.AddDate(0, 1, 0)
+	}
+}
+
+func periodStep(start time.Time, period dashPeriodType, delta int) time.Time {
+	switch period {
+	case dashPeriodMonth:
+		return start.AddDate(0, delta, 0)
+	case dashPeriodQuarter:
+		return start.AddDate(0, 3*delta, 0)
+	case dashPeriodHalf:
+		return start.AddDate(0, 6*delta, 0)
+	case dashPeriodFY, dashPeriodYear:
+		return start.AddDate(delta, 0, 0)
+	default:
+		return start.AddDate(0, delta, 0)
+	}
+}
+
 func (m model) accountFilterLabel() string {
 	if len(m.filterAccounts) == 0 {
 		return "All Accounts"
@@ -1274,20 +1437,24 @@ func (m model) dashboardTimeframeBounds(now time.Time) (time.Time, time.Time, bo
 		}
 		return month, month.AddDate(0, 1, 0), true
 	}
-	return timeframeBounds(m.dashTimeframe, m.dashCustomStart, m.dashCustomEnd, now)
+	switch m.dashPresetActive {
+	case dashPresetPeriod:
+		start, err := time.ParseInLocation("2006-01-02", strings.TrimSpace(m.dashPeriodAnchor), time.Local)
+		if err != nil {
+			start = currentPeriodStart(now, m.dashPeriodActive)
+		}
+		start = dayStartLocal(start)
+		return start, periodEndExclusive(start, m.dashPeriodActive), true
+	case dashPresetCustom:
+		return timeframeBounds(dashTimeframeCustom, m.dashCustomStart, m.dashCustomEnd, now)
+	default:
+		return timeframeBounds(m.dashTimeframe, m.dashCustomStart, m.dashCustomEnd, now)
+	}
 }
 
 func (m model) dashboardBudgetMonth() string {
-	if m.dashMonthMode {
-		if _, _, err := parseMonthKey(m.dashAnchorMonth); err == nil {
-			return m.dashAnchorMonth
-		}
-	}
 	start, endExcl, ok := m.dashboardTimeframeBounds(time.Now())
 	if !ok {
-		if _, _, err := parseMonthKey(m.dashAnchorMonth); err == nil {
-			return m.dashAnchorMonth
-		}
 		return time.Now().Format("2006-01")
 	}
 	monthRef := endExcl.AddDate(0, 0, -1)

@@ -201,6 +201,24 @@ func TestManagerTransactionsDateFilterRemoved(t *testing.T) {
 	}
 }
 
+func TestCurrentPeriodStartFYUsesJulyBoundary(t *testing.T) {
+	feb := time.Date(2026, time.February, 20, 9, 0, 0, 0, time.Local)
+	start := currentPeriodStart(feb, dashPeriodFY)
+	if got := start.Format("2006-01-02"); got != "2025-07-01" {
+		t.Fatalf("FY start for Feb 2026 = %s, want 2025-07-01", got)
+	}
+	end := periodEndExclusive(start, dashPeriodFY).AddDate(0, 0, -1)
+	if got := end.Format("2006-01-02"); got != "2026-06-30" {
+		t.Fatalf("FY end for Feb 2026 = %s, want 2026-06-30", got)
+	}
+
+	aug := time.Date(2026, time.August, 2, 9, 0, 0, 0, time.Local)
+	start = currentPeriodStart(aug, dashPeriodFY)
+	if got := start.Format("2006-01-02"); got != "2026-07-01" {
+		t.Fatalf("FY start for Aug 2026 = %s, want 2026-07-01", got)
+	}
+}
+
 func txnIDs(rows []transaction) []int {
 	ids := make([]int, 0, len(rows))
 	for _, r := range rows {

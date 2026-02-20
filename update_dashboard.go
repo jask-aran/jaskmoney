@@ -33,26 +33,34 @@ func (m model) updateDashboard(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 
 	switch {
 	case m.isAction(scopeDashboardTimeframe, actionBudgetPrevMonth, msg):
-		base, _, err := parseMonthKey(m.dashboardBudgetMonth())
-		if err != nil {
-			now := time.Now()
-			base = time.Date(now.Year(), now.Month(), 1, 0, 0, 0, 0, time.Local)
+		if m.dashPresetActive != dashPresetPeriod {
+			return m, nil
 		}
-		m.dashAnchorMonth = base.AddDate(0, -1, 0).Format("2006-01")
-		m.dashMonthMode = true
+		now := time.Now()
+		start, err := time.ParseInLocation("2006-01-02", strings.TrimSpace(m.dashPeriodAnchor), time.Local)
+		if err != nil {
+			start = currentPeriodStart(now, m.dashPeriodActive)
+		}
+		start = periodStep(dayStartLocal(start), m.dashPeriodActive, -1)
+		m.dashPeriodAnchor = start.Format("2006-01-02")
+		m.dashAnchorMonth = start.Format("2006-01")
 		budgetChanged := m.syncBudgetMonthFromDashboard()
 		if budgetChanged && m.db != nil {
 			return m, refreshCmd(m.db)
 		}
 		return m, nil
 	case m.isAction(scopeDashboardTimeframe, actionBudgetNextMonth, msg):
-		base, _, err := parseMonthKey(m.dashboardBudgetMonth())
-		if err != nil {
-			now := time.Now()
-			base = time.Date(now.Year(), now.Month(), 1, 0, 0, 0, 0, time.Local)
+		if m.dashPresetActive != dashPresetPeriod {
+			return m, nil
 		}
-		m.dashAnchorMonth = base.AddDate(0, 1, 0).Format("2006-01")
-		m.dashMonthMode = true
+		now := time.Now()
+		start, err := time.ParseInLocation("2006-01-02", strings.TrimSpace(m.dashPeriodAnchor), time.Local)
+		if err != nil {
+			start = currentPeriodStart(now, m.dashPeriodActive)
+		}
+		start = periodStep(dayStartLocal(start), m.dashPeriodActive, 1)
+		m.dashPeriodAnchor = start.Format("2006-01-02")
+		m.dashAnchorMonth = start.Format("2006-01")
 		budgetChanged := m.syncBudgetMonthFromDashboard()
 		if budgetChanged && m.db != nil {
 			return m, refreshCmd(m.db)
@@ -60,10 +68,13 @@ func (m model) updateDashboard(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		return m, nil
 	case m.isAction(scopeDashboardTimeframe, actionTimeframeThisMonth, msg):
 		now := time.Now()
-		m.dashMonthMode = false
-		m.dashTimeframe = dashTimeframeThisMonth
-		m.dashTimeframeCursor = dashTimeframeThisMonth
-		m.dashAnchorMonth = now.Format("2006-01")
+		start := currentPeriodStart(now, dashPeriodMonth)
+		m.dashPresetActive = dashPresetPeriod
+		m.dashPeriodActive = dashPeriodMonth
+		m.dashPeriodAnchor = start.Format("2006-01-02")
+		m.dashPresetCursor = dashCursorForActiveSelection(m.dashPresetActive, m.dashTimeframe, m.dashPeriodActive)
+		m.dashTimeframeCursor = m.dashPresetCursor
+		m.dashAnchorMonth = start.Format("2006-01")
 		budgetChanged := m.syncBudgetMonthFromDashboard()
 		saveCmd := saveSettingsCmd(m.currentAppSettings())
 		if budgetChanged && m.db != nil {
@@ -73,32 +84,59 @@ func (m model) updateDashboard(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	case m.horizontalDelta(scopeDashboardTimeframe, msg) != 0:
 		delta := m.horizontalDelta(scopeDashboardTimeframe, msg)
 		if delta < 0 {
-			m.dashTimeframeCursor--
-			if m.dashTimeframeCursor < 0 {
-				m.dashTimeframeCursor = dashTimeframeCount - 1
+			m.dashPresetCursor--
+			if m.dashPresetCursor < 0 {
+				m.dashPresetCursor = dashPresetCount() - 1
 			}
 		} else if delta > 0 {
-			m.dashTimeframeCursor = (m.dashTimeframeCursor + 1) % dashTimeframeCount
+			m.dashPresetCursor = (m.dashPresetCursor + 1) % dashPresetCount()
 		}
+		m.dashTimeframeCursor = m.dashPresetCursor
 	case m.isAction(scopeDashboardTimeframe, actionSelect, msg):
-		if m.dashTimeframeCursor == dashTimeframeCustom {
+		switch dashPresetFamilyForCursor(m.dashPresetCursor) {
+		case dashPresetCustom:
 			m.dashCustomEditing = true
-			m.dashMonthMode = false
 			m.dashCustomStart = ""
 			m.dashCustomEnd = ""
 			m.dashCustomInput = ""
+			m.dashTimeframeCursor = m.dashPresetCursor
 			m.setStatus("Custom timeframe: enter start date (YYYY-MM-DD).")
 			return m, nil
+		case dashPresetLookback:
+			idx := dashLookbackIndexForCursor(m.dashPresetCursor)
+			if idx < 0 || idx >= len(dashLookbackPresets) {
+				return m, nil
+			}
+			m.dashPresetActive = dashPresetLookback
+			m.dashTimeframe = dashLookbackPresets[idx].timeframe
+			m.dashTimeframeCursor = m.dashPresetCursor
+			m.dashMonthMode = false
+			budgetChanged := m.syncBudgetMonthFromDashboard()
+			m.setStatusf("Dashboard timeframe: %s", dashLookbackPresets[idx].label)
+			saveCmd := saveSettingsCmd(m.currentAppSettings())
+			if budgetChanged && m.db != nil {
+				return m, tea.Batch(saveCmd, refreshCmd(m.db))
+			}
+			return m, saveCmd
+		case dashPresetPeriod:
+			idx := dashPeriodIndexForCursor(m.dashPresetCursor)
+			if idx < 0 || idx >= len(dashPeriodLabels) {
+				return m, nil
+			}
+			m.dashPresetActive = dashPresetPeriod
+			m.dashPeriodActive = dashPeriodType(idx)
+			m.dashTimeframeCursor = m.dashPresetCursor
+			start := currentPeriodStart(time.Now(), m.dashPeriodActive)
+			m.dashPeriodAnchor = start.Format("2006-01-02")
+			m.dashAnchorMonth = start.Format("2006-01")
+			budgetChanged := m.syncBudgetMonthFromDashboard()
+			m.setStatusf("Dashboard period: %s", dashPeriodLabels[idx])
+			saveCmd := saveSettingsCmd(m.currentAppSettings())
+			if budgetChanged && m.db != nil {
+				return m, tea.Batch(saveCmd, refreshCmd(m.db))
+			}
+			return m, saveCmd
 		}
-		m.dashMonthMode = false
-		m.dashTimeframe = m.dashTimeframeCursor
-		budgetChanged := m.syncBudgetMonthFromDashboard()
-		m.setStatusf("Dashboard timeframe: %s", dashTimeframeLabel(m.dashTimeframe))
-		saveCmd := saveSettingsCmd(m.currentAppSettings())
-		if budgetChanged && m.db != nil {
-			return m, tea.Batch(saveCmd, refreshCmd(m.db))
-		}
-		return m, saveCmd
 	case m.isAction(scopeDashboardTimeframe, actionCancel, msg):
 		m.dashTimeframeFocus = false
 		m.focusedSection = sectionUnfocused
@@ -141,8 +179,10 @@ func (m model) updateDashboardCustomInput(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			return m, nil
 		}
 		m.dashTimeframe = dashTimeframeCustom
+		m.dashPresetActive = dashPresetCustom
 		m.dashMonthMode = false
-		m.dashTimeframeCursor = dashTimeframeCustom
+		m.dashPresetCursor = dashCustomCursorIndex()
+		m.dashTimeframeCursor = m.dashPresetCursor
 		m.dashCustomEditing = false
 		budgetChanged := m.syncBudgetMonthFromDashboard()
 		m.setStatusf("Dashboard timeframe: %s to %s", m.dashCustomStart, m.dashCustomEnd)
