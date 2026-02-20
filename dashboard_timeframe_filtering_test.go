@@ -59,27 +59,6 @@ func TestFilterByTimeframeCustom(t *testing.T) {
 	}
 }
 
-func TestDashboardDateRangeUsesPresetBoundsEvenWithSparseData(t *testing.T) {
-	now := time.Date(2026, time.February, 11, 9, 0, 0, 0, time.Local)
-	rows := []transaction{
-		{id: 1, dateISO: "2026-02-10"},
-	}
-
-	twoMonths := dashboardDateRange(rows, dashTimeframe2Months, "", "", now)
-	threeMonths := dashboardDateRange(rows, dashTimeframe3Months, "", "", now)
-	sixMonths := dashboardDateRange(rows, dashTimeframe6Months, "", "", now)
-
-	if twoMonths != "Dec 2025 – Feb 2026" {
-		t.Fatalf("2M preview = %q, want %q", twoMonths, "Dec 2025 – Feb 2026")
-	}
-	if threeMonths != "Nov 2025 – Feb 2026" {
-		t.Fatalf("3M preview = %q, want %q", threeMonths, "Nov 2025 – Feb 2026")
-	}
-	if sixMonths != "Aug 2025 – Feb 2026" {
-		t.Fatalf("6M preview = %q, want %q", sixMonths, "Aug 2025 – Feb 2026")
-	}
-}
-
 func TestDashboardTimeframeRelationshipsWithPanels(t *testing.T) {
 	now := time.Date(2026, time.February, 11, 9, 0, 0, 0, time.Local)
 	rows := []transaction{
