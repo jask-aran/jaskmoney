@@ -119,7 +119,7 @@ func TestDashboardFocusedPaneBracketsDoNotCycleModes(t *testing.T) {
 	}
 }
 
-func TestDashboardMonthStepWorksAtTopLevelWithoutFocusBootstrap(t *testing.T) {
+func TestDashboardMonthStepTopLevelNoopsForLookbackPreset(t *testing.T) {
 	m := newModel()
 	m.keys = NewKeyRegistry()
 	m.commands = NewCommandRegistry(m.keys, m.savedFilters)
@@ -127,7 +127,8 @@ func TestDashboardMonthStepWorksAtTopLevelWithoutFocusBootstrap(t *testing.T) {
 	m.activeTab = tabDashboard
 	m.focusedSection = sectionUnfocused
 	m.dashTimeframeFocus = false
-	m.dashMonthMode = false
+	m.dashPresetActive = dashPresetLookback
+	m.dashTimeframe = dashTimeframe3Months
 	base, _, err := parseMonthKey(m.budgetMonth)
 	if err != nil {
 		t.Fatalf("parseMonthKey(%q): %v", m.budgetMonth, err)
@@ -138,12 +139,9 @@ func TestDashboardMonthStepWorksAtTopLevelWithoutFocusBootstrap(t *testing.T) {
 	prevKey := m.primaryActionKey(scopeDashboard, actionBudgetPrevMonth, "[")
 	next, _ := m.Update(keyMsg(prevKey))
 	got := next.(model)
-	if !got.dashMonthMode {
-		t.Fatal("expected month-step to activate month mode at dashboard top-level")
-	}
-	want := base.AddDate(0, -1, 0).Format("2006-01")
+	want := base.Format("2006-01")
 	if got.budgetMonth != want {
-		t.Fatalf("budgetMonth after top-level month-step = %q, want %q", got.budgetMonth, want)
+		t.Fatalf("budgetMonth should not move for lookback preset: got %q, want %q", got.budgetMonth, want)
 	}
 }
 
@@ -164,17 +162,40 @@ func TestDashboardResetThisMonthWorksAtTopLevelWithoutFocusBootstrap(t *testing.
 	next, _ := m.Update(keyMsg(resetKey))
 	after := time.Now().Format("2006-01")
 	got := next.(model)
-	if got.dashMonthMode {
-		t.Fatal("expected top-level reset to leave month mode")
-	}
-	if got.dashTimeframe != dashTimeframeThisMonth {
-		t.Fatalf("dashTimeframe = %d, want this month", got.dashTimeframe)
+	if got.dashPresetActive != dashPresetPeriod || got.dashPeriodActive != dashPeriodMonth {
+		t.Fatalf("reset should activate Month period preset, got family=%v period=%v", got.dashPresetActive, got.dashPeriodActive)
 	}
 	if got.budgetMonth != before && got.budgetMonth != after {
 		t.Fatalf("budgetMonth = %q, want %q or %q", got.budgetMonth, before, after)
 	}
 	if got.budgetMonth != got.dashAnchorMonth {
 		t.Fatalf("budgetMonth/dashAnchorMonth mismatch: %q vs %q", got.budgetMonth, got.dashAnchorMonth)
+	}
+}
+
+func TestDashboardMonthStepTopLevelMovesWhenPeriodPresetActive(t *testing.T) {
+	m := newModel()
+	m.keys = NewKeyRegistry()
+	m.commands = NewCommandRegistry(m.keys, m.savedFilters)
+	m.ready = true
+	m.activeTab = tabDashboard
+	m.focusedSection = sectionUnfocused
+	m.dashTimeframeFocus = false
+	m.dashPresetActive = dashPresetPeriod
+	m.dashPeriodActive = dashPeriodMonth
+	start := time.Date(2026, time.February, 1, 0, 0, 0, 0, time.Local)
+	m.dashPeriodAnchor = start.Format("2006-01-02")
+	m.dashAnchorMonth = start.Format("2006-01")
+	m.budgetMonth = start.Format("2006-01")
+
+	prevKey := m.primaryActionKey(scopeDashboard, actionBudgetPrevMonth, "[")
+	next, _ := m.Update(keyMsg(prevKey))
+	got := next.(model)
+	if got.budgetMonth != "2026-01" {
+		t.Fatalf("budgetMonth after period step = %q, want 2026-01", got.budgetMonth)
+	}
+	if got.dashPeriodAnchor != "2026-01-01" {
+		t.Fatalf("dashPeriodAnchor after period step = %q, want 2026-01-01", got.dashPeriodAnchor)
 	}
 }
 

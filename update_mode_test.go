@@ -76,7 +76,8 @@ func TestDashboardCustomTimeframeFlow(t *testing.T) {
 	m.activeTab = tabDashboard
 	m.ready = true
 	m.dashTimeframeFocus = true
-	m.dashTimeframeCursor = dashTimeframeCustom
+	m.dashPresetCursor = dashCustomCursorIndex()
+	m.dashTimeframeCursor = m.dashPresetCursor
 
 	next, _ := m.updateDashboard(keyMsg("enter"))
 	got := next.(model)
@@ -114,6 +115,53 @@ func TestDashboardCustomTimeframeFlow(t *testing.T) {
 	}
 }
 
+func TestDashboardCustomInputTreatsDigitsAsTextNotTabSwitch(t *testing.T) {
+	m := newModel()
+	m.activeTab = tabDashboard
+	m.ready = true
+	m.dashCustomEditing = true
+	m.dashCustomInput = ""
+
+	next, _ := m.Update(keyMsg("2"))
+	got := next.(model)
+	if got.activeTab != tabDashboard {
+		t.Fatalf("activeTab after custom digit input = %d, want dashboard", got.activeTab)
+	}
+	if got.dashCustomInput != "2" {
+		t.Fatalf("dashCustomInput after first digit = %q, want %q", got.dashCustomInput, "2")
+	}
+	next, _ = got.Update(keyMsg("0"))
+	got2 := next.(model)
+	if got2.dashCustomInput != "20" {
+		t.Fatalf("dashCustomInput after second digit = %q, want %q", got2.dashCustomInput, "20")
+	}
+}
+
+func TestDashboardSelectFYPresetUsesJulyJuneWindow(t *testing.T) {
+	m := newModel()
+	m.activeTab = tabDashboard
+	m.ready = true
+	m.dashTimeframeFocus = true
+	m.dashPresetCursor = len(dashLookbackPresets) + int(dashPeriodFY)
+
+	next, _ := m.updateDashboard(keyMsg("enter"))
+	got := next.(model)
+	if got.dashPresetActive != dashPresetPeriod || got.dashPeriodActive != dashPeriodFY {
+		t.Fatalf("expected active preset FY, got family=%v period=%v", got.dashPresetActive, got.dashPeriodActive)
+	}
+	now := time.Date(2026, time.February, 20, 9, 0, 0, 0, time.Local)
+	start, endExcl, ok := got.dashboardTimeframeBounds(now)
+	if !ok {
+		t.Fatal("expected timeframe bounds for FY")
+	}
+	if gotStart := start.Format("2006-01-02"); gotStart != "2025-07-01" {
+		t.Fatalf("FY start = %s, want 2025-07-01", gotStart)
+	}
+	if gotEnd := endExcl.AddDate(0, 0, -1).Format("2006-01-02"); gotEnd != "2026-06-30" {
+		t.Fatalf("FY end = %s, want 2026-06-30", gotEnd)
+	}
+}
+
 func TestDashboardCustomTimeframeRejectsInvalidRange(t *testing.T) {
 	m := newModel()
 	m.activeTab = tabDashboard
@@ -136,28 +184,27 @@ func TestDashboardCustomTimeframeRejectsInvalidRange(t *testing.T) {
 	}
 }
 
-func TestDashboardMonthJumpSnapsAndEnablesMonthMode(t *testing.T) {
+func TestDashboardMonthJumpNoopsForLookbackPreset(t *testing.T) {
 	m := newModel()
 	m.activeTab = tabDashboard
 	m.ready = true
 	m.dashTimeframeFocus = true
 	m.dashTimeframe = dashTimeframe3Months
 	m.dashTimeframeCursor = dashTimeframe3Months
-	m.dashMonthMode = false
+	m.dashPresetActive = dashPresetLookback
+	m.dashPresetCursor = dashCursorForActiveSelection(dashPresetLookback, m.dashTimeframe, m.dashPeriodActive)
+	beforeMonth := m.budgetMonth
+	beforeAnchor := m.dashAnchorMonth
 	m.syncBudgetMonthFromDashboard()
 
 	next, _ := m.Update(keyMsg("["))
 	got := next.(model)
 
-	if !got.dashMonthMode {
-		t.Fatal("expected month mode after month jump")
+	if got.budgetMonth != beforeMonth {
+		t.Fatalf("budgetMonth changed for lookback preset: got %q want %q", got.budgetMonth, beforeMonth)
 	}
-	wantMonth := time.Now().AddDate(0, -1, 0).Format("2006-01")
-	if got.budgetMonth != wantMonth {
-		t.Fatalf("budgetMonth = %q, want %q", got.budgetMonth, wantMonth)
-	}
-	if got.dashAnchorMonth != wantMonth {
-		t.Fatalf("dashAnchorMonth = %q, want %q", got.dashAnchorMonth, wantMonth)
+	if got.dashAnchorMonth != beforeAnchor {
+		t.Fatalf("dashAnchorMonth changed for lookback preset: got %q want %q", got.dashAnchorMonth, beforeAnchor)
 	}
 }
 
@@ -173,11 +220,8 @@ func TestDashboardDatePaneResetToThisMonth(t *testing.T) {
 	next, _ := m.Update(keyMsg("0"))
 	got := next.(model)
 
-	if got.dashMonthMode {
-		t.Fatal("expected reset to leave month mode")
-	}
-	if got.dashTimeframe != dashTimeframeThisMonth {
-		t.Fatalf("dashTimeframe = %d, want this-month preset", got.dashTimeframe)
+	if got.dashPresetActive != dashPresetPeriod || got.dashPeriodActive != dashPeriodMonth {
+		t.Fatalf("reset should activate Month period preset, got family=%v period=%v", got.dashPresetActive, got.dashPeriodActive)
 	}
 	wantMonth := time.Now().Format("2006-01")
 	if got.budgetMonth != wantMonth {

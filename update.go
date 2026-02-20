@@ -185,10 +185,19 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		if (m.activeTab == tabBudget && m.budgetEditing) ||
 			(m.activeTab == tabDashboard && m.dashCustomEditing) ||
 			m.filterInputMode {
+			if m.activeTab == tabDashboard {
+				return m.updateDashboard(msg)
+			}
+			if m.activeTab == tabBudget {
+				return m.updateBudget(msg)
+			}
 			if m.activeTab == tabSettings {
 				return m.updateSettings(msg)
 			}
-			return m.updateMain(msg)
+			if m.activeTab == tabManager {
+				return m.updateManager(msg)
+			}
+			return m, nil
 		}
 		// No overlay active — try keybinding-to-command dispatch.
 		if next, cmd, handled := m.executeBoundCommand(m.commandContextScope(), msg); handled {
@@ -801,7 +810,8 @@ func (m *model) applyFocusedSection(activate bool) {
 	switch m.activeTab {
 	case tabDashboard:
 		if m.focusedSection == sectionDashboardDateRange {
-			m.dashTimeframeCursor = m.dashTimeframe
+			m.dashPresetCursor = dashCursorForActiveSelection(m.dashPresetActive, m.dashTimeframe, m.dashPeriodActive)
+			m.dashTimeframeCursor = m.dashPresetCursor
 			m.dashTimeframeFocus = true
 			return
 		}
