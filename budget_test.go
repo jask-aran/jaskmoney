@@ -190,7 +190,4 @@ func TestComputeTargetLinesUsesSavedFilterIDAndPeriodKeys(t *testing.T) {
 	if !almostEqual(line.spent, 60) {
 		t.Fatalf("spent=%.2f want 60", line.spent)
 	}
-	if !almostEqual(line.spent, 60) {
-		t.Fatalf("spent=%.2f want 60", line.spent)
-	}
 }
