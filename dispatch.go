@@ -237,6 +237,7 @@ type InteractionHint struct {
 	Label  string
 	Omit   bool
 	Action Action
+	Key    string // optional literal footer key label for non-action hints (e.g. "other")
 }
 
 type InteractionContract struct {
@@ -251,6 +252,10 @@ func showHint(intent InteractionIntent, action Action, label string) Interaction
 
 func hideHint(intent InteractionIntent, action Action) InteractionHint {
 	return InteractionHint{Intent: intent, Action: action, Omit: true}
+}
+
+func showLiteralHint(intent InteractionIntent, keyName, label string) InteractionHint {
+	return InteractionHint{Intent: intent, Key: strings.TrimSpace(keyName), Label: label}
 }
 
 // interactionContracts is the contract registry for all reachable overlay/tab
@@ -689,7 +694,7 @@ func settingsConfirmInteractionContract(spec settingsConfirmSpec) InteractionCon
 		Kind:  ContextWorkflow,
 		Hints: []InteractionHint{
 			showHint(IntentConfirm, spec.action, "confirm"),
-			showHint(IntentCancel, actionBack, "cancel"),
+			showLiteralHint(IntentCancel, "other", "cancel"),
 		},
 	}
 }
@@ -764,6 +769,13 @@ func renderFooterFromContract(contract InteractionContract, keys *KeyRegistry) [
 	out := make([]key.Binding, 0, len(contract.Hints))
 	for _, hint := range contract.Hints {
 		if hint.Omit || strings.TrimSpace(hint.Label) == "" {
+			continue
+		}
+		if strings.TrimSpace(hint.Key) != "" {
+			out = append(out, key.NewBinding(
+				key.WithKeys(hint.Key),
+				key.WithHelp(hint.Key, hint.Label),
+			))
 			continue
 		}
 		action, ok := interactionActionForHint(hint)

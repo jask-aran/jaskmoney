@@ -76,6 +76,9 @@ func TestPhase7InteractionContractVisibleHintsMapToBoundKeys(t *testing.T) {
 			if hint.Omit {
 				continue
 			}
+			if strings.TrimSpace(hint.Key) != "" {
+				continue
+			}
 			action, ok := interactionActionForHint(hint)
 			if !ok {
 				t.Fatalf("scope=%q intent=%q has no action mapping", scope, hint.Intent)
@@ -101,6 +104,9 @@ func TestPhase7InteractionContractVisibleHintsMapToBoundKeys(t *testing.T) {
 		contract := settingsConfirmInteractionContract(spec)
 		for _, hint := range contract.Hints {
 			if hint.Omit {
+				continue
+			}
+			if strings.TrimSpace(hint.Key) != "" {
 				continue
 			}
 			mapped, ok := interactionActionForHint(hint)
@@ -182,5 +188,25 @@ func TestPhase7RenderFooterFromContractOmitsHiddenHints(t *testing.T) {
 	bindings := renderFooterFromContract(interactionContractForScope(scopeCategoryPicker), keys)
 	if len(bindings) != 0 {
 		t.Fatalf("category picker footer hints = %d, want 0", len(bindings))
+	}
+}
+
+func TestPhase7SettingsConfirmFooterShowsOtherCancel(t *testing.T) {
+	m := newModel()
+	m.keys = NewKeyRegistry()
+	m.activeTab = tabSettings
+	m.confirmAction = confirmActionDeleteCategory
+
+	bindings := m.footerBindings()
+	var hasOther bool
+	for _, b := range bindings {
+		help := b.Help()
+		if help.Key == "other" && help.Desc == "cancel" {
+			hasOther = true
+			break
+		}
+	}
+	if !hasOther {
+		t.Fatal("settings confirm footer should include 'other cancel'")
 	}
 }
