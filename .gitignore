@@ -2,8 +2,11 @@
 .uv-cache/
 __pycache__/
 *.pyc
-transactions.db
+transactions.db*
+*.db-wal
+*.db-shm
+*.db-journal
 *.csv
 .gitattributes
-ANZ.csv:Zone.Identifier
+*:Zone.Identifier
 jaskmoney
