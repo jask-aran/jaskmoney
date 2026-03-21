@@ -19,6 +19,17 @@ jobs:
         with:
           go-version-file: go.mod
 
+      - name: Guard Against Runtime Artifacts In Git
+        run: |
+          set -euo pipefail
+          forbidden='(\.db($|[-.])|\.sqlite3?$|\.db-(wal|shm|journal)$|:Zone\.Identifier$|^jaskmoney$)'
+          tracked="$(git ls-files | grep -E "${forbidden}" || true)"
+          if [ -n "${tracked}" ]; then
+            echo "Forbidden runtime/generated artifacts are tracked:"
+            echo "${tracked}"
+            exit 1
+          fi
+
       - name: Run Tests
         run: go test ./...
 
