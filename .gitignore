@@ -1,18 +1,30 @@
+# Local data and runtime artifacts
 .venv/
 .uv-cache/
 __pycache__/
 *.pyc
-transactions.db*
+*.db
 *.db-wal
 *.db-shm
 *.db-journal
 *.csv
-.gitattributes
+*.Zone.Identifier
 *:Zone.Identifier
 jaskmoney
 
-# OpenTUI / Solid (opentui/)
-opentui/node_modules/
-opentui/dist/
-opentui/.turbo/
-opentui/*.local
+# Bun / TypeScript
+node_modules/
+out/
+dist/
+coverage/
+*.tgz
+*.lcov
+logs/
+*.log
+.env
+.env.*.local
+.eslintcache
+.cache/
+*.tsbuildinfo
+.idea/
+.DS_Store

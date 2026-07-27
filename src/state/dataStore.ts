@@ -258,8 +258,7 @@ function createDataStore() {
   function findDefaultAnzPath(): string | null {
     const candidates = [
       resolve(process.cwd(), "ANZ.csv"),
-      resolve(process.cwd(), "../ANZ.csv"),
-      resolve(import.meta.dir, "../../../ANZ.csv"),
+      resolve(import.meta.dir, "../../ANZ.csv"),
       join(process.env.HOME ?? "", "jaskmoney", "ANZ.csv"),
     ]
     for (const p of candidates) {

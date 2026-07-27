@@ -8,9 +8,6 @@ on:
 jobs:
   opentui:
     runs-on: ubuntu-latest
-    defaults:
-      run:
-        working-directory: opentui
     steps:
       - uses: actions/checkout@v4
       - uses: oven-sh/setup-bun@v2
