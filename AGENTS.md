@@ -1,11 +1,10 @@
 # Jaskmoney OpenTUI Rebuild
 
-`opentui/` is the active product. `legacy/go/` is a read-only behavioural reference. `docs/` holds the port contract, frozen captures, and legacy specifications.
+The repository root is the active OpenTUI product. `legacy/go/` is a read-only behavioural reference. `docs/` holds the port contract, frozen captures, and legacy specifications.
 
 ## Work in the active product
 
 ```bash
-cd opentui
 bun start
 bun run typecheck
 bun run test
