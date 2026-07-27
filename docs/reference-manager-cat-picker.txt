@@ -1,0 +1,44 @@
+  Jaskmoney    Dashboard │ Budget │ Manager │ Settings   All Accounts                                                                       
+                                                                                                                                            
+╭─ Accounts ───────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────╮
+│   ANZ CREDIT CREDIT Empty On     UP DEBIT DEBIT Empty On                                                                                 │
+╰──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────╯
+╭─ Transactions (56/56) * ─────────────────────────────────────────────────────────────────────────────────────────────────────────────────╮
+│ Date ▼    Amount             Description                              Account    Category       Tags                                     │
+│ 17-02-26  -24.23             UBER *TRIP, Sydney                       UP DEBIT   Transport      CAR                                      │
+│ 17-02-26  -102.50            WOOLWORTHS 3391, SPOTSWOOD               UP DEBIT   Groceries      FUEL                                     │
+│ 16-02-26  -66.46             Antipasti                                UP DEBIT   Dining & Dri…  FAST FOOD                                │
+│ 15-02-26  -204.00            FINES VIC                                UP DEBIT   Bills & Util…  -                                        │
+│ 14-02-26  -12.99             NETFLIX.COM                              ANZ CREDIT Entertainment  -                                        │
+│ 14-02-26  1500.00            SALARY FEB                               ANZ CREDIT Income         REIMBURSABLE                             │
+│ 13-02-26  -55.30             DAN MURPHY╭─────────────────── Quick Categorize ───────────────────╮                                        │
+│ 12-02-26  -34.50             7-ELEVEN F│Filter: (type to filter)                                │AR,FUEL                                 │
+│ 11-02-26  -89.00             CHEMIST WA│>     Income                                            │                                        │
+│ 10-02-26  -26.93             WOOLWORTHS│      Groceries                                         │                                        │
+│ 10-02-26  -120.00            ELECTRICIT│      Dining & Drinks                                   │                                        │
+│ 09-02-26  -42.50             UBER EATS,│      Transport                                         │                                        │
+│ 08-02-26  -15.00             SPOTIFY PR│      Bills & Utilities                                 │                                        │
+│ 07-02-26  2500.00            SALARY JAN│      Entertainment                                     │                                        │
+│ 06-02-26  -65.00             GAS BILL  │      Shopping                                          │                                        │
+│ 05-02-26  -78.30             KMART, SPO│      Health                                            │                                        │
+│ 04-02-26  -200.00            TRANSFER T│      Transfers                                         │                                        │
+│ 03-02-26  -8.50              COFFEE, LO│      Uncategorised                                     │                                        │
+│ 02-02-26  -95.00             OPTUS BILL│                                                        │                                        │
+│ 01-02-26  -22.10             MYKI TOP U│j move  enter apply  esc cancel                         │                                        │
+│ ── showing 1-20 of 56 (20) ──          ╰────────────────────────────────────────────────────────╯                                        │
+╰──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────╯
+                                                                                                                                            
+                                                                                                                                            
+                                                                                                                                            
+                                                                                                                                            
+                                                                                                                                            
+                                                                                                                                            
+                                                                                                                                            
+                                                                                                                                            
+                                                                                                                                            
+                                                                                                                                            
+                                                                                                                                            
+                                                                                                                                            
+                                                                                                                                            
+ Quick categorize · Antipasti                                                                                                               
+                                                                                                                                            

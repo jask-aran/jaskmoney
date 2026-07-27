@@ -1,0 +1,44 @@
+  Jaskmoney    Dashboard │ Budget │ Manager │ Settings   All Accounts                                                                       
+                                                                                                                                            
+╭─ Accounts ───────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────╮
+│   ANZ CREDIT CREDIT Empty On     UP DEBIT DEBIT Empty On                                                                                 │
+╰──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────╯
+╭─ Transactions (4/4) * ───────────────────────────────────────────────────────────────────────────────────────────────────────────────────╮
+│ Date ▼    Amount             Description                              Category       Tags                                                │
+│ 17-02-26  -24.23             UBER *TRIP, Sydney                       Uncategorised  -                                                   │
+│ 15-02-26  -102.50            WOOLWORTHS 3391, SPOTSWOOD               Uncategorised  -                                                   │
+│ 13-02-26  -66.46             Antipasti                                Uncategorised  -                                                   │
+│ 12-02-26  -204.00            FINES VIC                                Uncategorised  -                                                   │
+│ ── showing 1-4 of 4╭─────────────────────────────────────── Dry-Run Results ────────────────────────────────────────╮                    │
+╰────────────────────│Scope: All transactions (4)                                                                     │────────────────────╯
+                     │Summary: 3 modified, 3 category changes, 2 tag changes, 0 failed rules                          │                     
+                     │                                                                                                │                     
+                     │Rule 1: "Transport → Ubers" (enabled)                                                           │                     
+                     │  Filter: description contains 'UBER'                                                           │                     
+                     │  Matches: 2                                                                                    │                     
+                     │  Changes: 2 category, 0 tags                                                                   │                     
+                     │    2026-02-17  -$24.23  UBER *TRIP, Sydney                                                     │                     
+                     │    2026-02-12  -$204.00  FINES VIC                                                             │                     
+                     │                                                                                                │                     
+                     │Rule 2: "Groceries → Woolies" (enabled)                                                         │                     
+                     │  Filter: description contains 'WOOLWORTHS'                                                     │                     
+                     │  Matches: 1                                                                                    │                     
+                     │  Changes: 1 category, 2 tags                                                                   │                     
+                     │    2026-02-15  -$102.50  WOOLWORTHS 3391, SPOTSWOOD                                            │                     
+                     │                                                                                                │                     
+                     │                                                                                                │                     
+                     │k/j scroll  esc close                                                                           │                     
+                     ╰────────────────────────────────────────────────────────────────────────────────────────────────╯                     
+                                                                                                                                            
+                                                                                                                                            
+                                                                                                                                            
+                                                                                                                                            
+                                                                                                                                            
+                                                                                                                                            
+                                                                                                                                            
+                                                                                                                                            
+                                                                                                                                            
+                                                                                                                                            
+                                                                                                                                            
+ Dry-run complete: 3 modified.                                                                                                              
+                                                                                                                                            

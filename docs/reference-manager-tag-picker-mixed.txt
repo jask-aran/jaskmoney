@@ -1,0 +1,44 @@
+  Jaskmoney    Dashboard │ Budget │ Manager │ Settings   All Accounts                                                                       
+                                                                                                                                            
+╭─ Accounts ───────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────╮
+│   ANZ CREDIT CREDIT Empty On     UP DEBIT DEBIT Empty On                                                                                 │
+╰──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────╯
+╭─ Transactions (56/56) * ─────────────────────────────────────────────────────────────────────────────────────────────────────────────────╮
+│ Date ▼    Amount             Description                              Account    Category       Tags                                     │
+│ 17-02-26  -24.23             UBER *TRIP, Sydney                       UP DEBIT   Transport      CAR                                      │
+│ 17-02-26  -102.50            WOOLWORTHS 3391, SPOTSWOOD               UP DEBIT   Groceries      FUEL                                     │
+│ 16-02-26  -66.46             Antipasti                                UP DEBIT   Dining & Dri…  FAST FOOD                                │
+│ 15-02-26  -204.00            FINES VIC                                UP DEBIT   Bills & Util…  -                                        │
+│ 14-02-26  -12.99             NETFLIX.COM                              ANZ CREDIT Entertainment  -                                        │
+│ 14-02-26  1500.00            SALARY FEB╭────────────────────── Quick Tags ──────────────────────╮EIMBURSABLE                             │
+│ 13-02-26  -55.30             DAN MURPHY│Filter: (type to filter)                                │                                        │
+│ 12-02-26  -34.50             7-ELEVEN F│Global:                                                 │AR,FUEL                                 │
+│ 11-02-26  -89.00             CHEMIST WA│> [x] IGNORE                                            │                                        │
+│ 10-02-26  -26.93             WOOLWORTHS│  [ ] WORKDAY                                           │                                        │
+│ 10-02-26  -120.00            ELECTRICIT│  [ ] PT                                                │                                        │
+│ 09-02-26  -42.50             UBER EATS,│  [-] CAR                                               │                                        │
+│ 08-02-26  -15.00             SPOTIFY PR│  [x] REIMBURSABLE                                      │                                        │
+│ 07-02-26  2500.00            SALARY JAN│  [ ] GIFTS                                             │                                        │
+│ 06-02-26  -65.00             GAS BILL  │  [x] FUEL                                              │                                        │
+│ 05-02-26  -78.30             KMART, SPO│  [ ] GEORGIA                                           │                                        │
+│ 04-02-26  -200.00            TRANSFER T│  [ ] TRAVEL                                            │                                        │
+│ 03-02-26  -8.50              COFFEE, LO│Scoped:                                                 │                                        │
+│ 02-02-26  -95.00             OPTUS BILL│  [-] FAST FOOD                                         │                                        │
+│ 01-02-26  -22.10             MYKI TOP U│                                                        │                                        │
+│ ── showing 1-20 of 56 (20) ──          │↓ move  space toggle  enter apply  esc cancel           │                                        │
+╰────────────────────────────────────────╰────────────────────────────────────────────────────────╯────────────────────────────────────────╯
+                                                                                                                                            
+                                                                                                                                            
+                                                                                                                                            
+                                                                                                                                            
+                                                                                                                                            
+                                                                                                                                            
+                                                                                                                                            
+                                                                                                                                            
+                                                                                                                                            
+                                                                                                                                            
+                                                                                                                                            
+                                                                                                                                            
+                                                                                                                                            
+ Quick tags · mixed selection (multi-row)                                                                                                   
+                                                                                                                                            

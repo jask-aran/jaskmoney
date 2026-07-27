@@ -1,0 +1,44 @@
+  Jaskmoney    Dashboard │ Budget │ Manager │ Settings   All Accounts                                                                       
+                                                                                                                                            
+ ╭─ Categories ───────────────────────────────────────────────────────────╮  ╭─ Chart ────────────────────────────────────────────────────╮ 
+ │   ■ Income                                                             │  │ Week boundary:  Sunday                                     │ 
+ │   ■ Groceries                                                          │  │ Timeframe:      This                                       │ 
+ │   ■ Dining & Drinks                                                    │  │ History window: 28 days                                    │ 
+ │   ■ Transport                                                          │  │ Minor grid:     every 1 day(s)                             │ 
+ │   ■ Bills & Utilities                                                  │  │ Major grid:     weekly                                     │ 
+ │   ■ Entertainment                                                      │  │                                                            │ 
+ │   ■ Shopping                                                           │  │ h/l or enter to toggle boundary                            │ 
+ │   ■ Health                                                             │  ╰────────────────────────────────────────────────────────────╯ 
+ │   ■ Transfers                                                          │  ╭─ Database ─────────────────────────────────────────────────╮ 
+ │   ■ Uncategorised                                                      │  │ Schema version:  v7                                        │ 
+ ╰────────────────────────────────────────────────────────────────────────╯  │ Transactions:    56                                        │ 
+ ╭─ Tags ─────────────────────────────────────────────────────────────────╮  │ Categories:      10                                        │ 
+ │   ■ IGNORE (global)                                                    │  │ Rules:           0                                         │ 
+ │   ■ WORKDAY (global)                                                   │  │ Tags:            10                                        │ 
+ │   ■ PT (global)                                                        │  │ Tag Rules:       0                                         │ 
+ │   ■ CAR (global)                                                       │  │ Imports:         3                                         │ 
+ │   ■ REIMBURSABLE (global)                                              │  │ Accounts:        2                                         │ 
+ │   ■ GIFTS (global)                                                     │  │ Rows per page:   20                                        │ 
+ │   ■ FUEL (global)                                                      │  │ Command default: Palette                                   │ 
+ │   ■ GEORGIA (global)                                                   │  ╰────────────────────────────────────────────────────────────╯ 
+ │   ■ FAST FOOD (Dining & Drinks)                                        │  ╭─ Import History ───────────────────────────────────────────╮ 
+ │   ■ TRAVEL (global)                                                    │  │ UP 2025-2026.csv  365 rows  2026-02-18 11:41:19            │ 
+ ╰────────────────────────────────────────────────────────────────────────╯  │ ANZ.csv  112 rows  2026-02-17 00:39:38                     │ 
+ ╭─ Rules * ──────────────────────────────────────────────────────────────╮  │ ANZ DUPE.csv  47 rows  2026-02-15 21:31:34                 │ 
+ │ No rules. Activate to add.                                             │  ╰────────────────────────────────────────────────────────────╯ 
+ ╰────────────────────────────────────────────────────────────────────────╯                                                                 
+ ╭─ Filters ──────────────────────────────────────────────────────────────╮                                                                 
+ │ No saved filters. Activate to add.                                     │                                                                 
+ ╰────────────────────────────────────────────────────────────────────────╯                                                                 
+                                                                                                                                            
+                                                                                                                                            
+                                                                                                                                            
+                                                                                                                                            
+                                                                                                                                            
+                                                                                                                                            
+                                                                                                                                            
+                                                                                                                                            
+                                                                                                                                            
+                                                                                                                                            
+ Rules active · empty                                                                                                                       
+ a add  del delete  S-k move up  S-j move down  S-a apply all  S-d dry run                                                                  

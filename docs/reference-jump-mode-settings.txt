@@ -1,0 +1,44 @@
+  Jaskmoney    Dashboard │ Budget │ Manager │ Settings   All Accounts                                                                       
+                                                                                                                                            
+ ╭─ Categories ───────────────────────────────────────────────────────────╮  ╭─ Chart ────────────────────────────────────────────────────╮ 
+ │   ■ Income                                                             │  │ Week boundary:  Sunday                                     │ 
+ │   ■ Groceries                                                          │  │ Timeframe:      This                                       │ 
+ │   ■ Dining & Drinks                                                    │  │ History window: 28 days                                    │ 
+ │   ■ Transport                                                          │  │ Minor grid:     every 1 day(s)                             │ 
+ │   ■ Bills & Utilities                                                  │  │ Major grid:     weekly                                     │ 
+ │   ■ Entertainment                                                      │  │                                                            │ 
+ │   ■ Shopping                                                           │  │ h/l or enter to toggle boundary                            │ 
+ │   ■ Health                                                             │  ╰────────────────────────────────────────────────────────────╯ 
+ │   ■ Transfers                                                          │  ╭─ Database ─────────────────────────────────────────────────╮ 
+ │   ■ Uncategorised                                                      │  │ Schema version:  v7                                        │ 
+ ╰────────────────────────────────────────────────────────────────────────╯  │ Transactions:    56                                        │ 
+ ╭─ Tags ─────────────────────────────────────────────────────────────────╮  │ Categories:      10                                        │ 
+ │   ■ IGNORE (global)                            ╭───────────── Jump Mode ─────────────╮       0                                         │ 
+ │   ■ WORKDAY (global)                           │Select a target:                     │       10                                        │ 
+ │   ■ PT (global)                                │[c] Categories                       │       0                                         │ 
+ │   ■ CAR (global)                               │[t] Tags                             │       3                                         │ 
+ │   ■ REIMBURSABLE (global)                      │[r] Rules                            │       2                                         │ 
+ │   ■ GIFTS (global)                             │[f] Filters                          │age:   20                                        │ 
+ │   ■ FUEL (global)                              │[d] Database                         │fault: Palette                                   │ 
+ │   ■ GEORGIA (global)                           │[w] Dashboard Views                  │─────────────────────────────────────────────────╯ 
+ │   ■ FAST FOOD (Dining & Drinks)                │                                     │story ───────────────────────────────────────────╮ 
+ │   ■ TRAVEL (global)                            │Jump: press key to focus. ESC cancel.│26.csv  365 rows  2026-02-18 11:41:19            │ 
+ ╰────────────────────────────────────────────────╰─────────────────────────────────────╯12 rows  2026-02-17 00:39:38                     │ 
+ ╭─ Rules ────────────────────────────────────────────────────────────────╮  │ ANZ DUPE.csv  47 rows  2026-02-15 21:31:34                 │ 
+ │ No rules. Activate to add.                                             │  ╰────────────────────────────────────────────────────────────╯ 
+ ╰────────────────────────────────────────────────────────────────────────╯                                                                 
+ ╭─ Filters ──────────────────────────────────────────────────────────────╮                                                                 
+ │ No saved filters. Activate to add.                                     │                                                                 
+ ╰────────────────────────────────────────────────────────────────────────╯                                                                 
+                                                                                                                                            
+                                                                                                                                            
+                                                                                                                                            
+                                                                                                                                            
+                                                                                                                                            
+                                                                                                                                            
+                                                                                                                                            
+                                                                                                                                            
+                                                                                                                                            
+                                                                                                                                            
+ Jump mode · Settings                                                                                                                       
+ esc cancel                                                                                                                                 

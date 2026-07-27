@@ -1,0 +1,44 @@
+  Jaskmoney    Dashboard │ Budget │ Manager │ Settings   All Accounts                                                                       
+                                                                                                                                            
+╭─ Accounts ───────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────╮
+│   ANZ CREDIT CREDIT Empty On     UP DEBIT DEBIT Empty On                                                                                 │
+╰──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────╯
+╭─ Transactions (56/56) * ─────────────────────────────────────────────────────────────────────────────────────────────────────────────────╮
+│ Date ▼    Amount             Description                              Account    Category       Tags                                     │
+│ 17-02-26  -24.23             UBER *TRIP, Sydney                       UP DEBIT   Transport      CAR                                      │
+│ 17-02-26  -102.50            WOOLWORTHS 3391, SPOTSWOOD               UP DEBIT   Groceries      FUEL                                     │
+│ 16-02-26  -66.46             Antipasti                                UP DEBIT   Dining & Dri…  FAST FOOD                                │
+│ 15-02-26  -204.00            FINES VIC                                UP DEBIT   Bills & Util…  -                                        │
+│ 14-02-26  -12.99             NETFLIX.COM                              ANZ CREDIT Entertainment  -                                        │
+│ 14-02-26  1500.00            SALARY FEB                               ANZ CREDIT Income         REIMBURSABLE                             │
+│ 13-02-26  -55.30             DAN MURPHYS, MELBOURNE                   UP DEBIT   Dining & Dri…  -                                        │
+│ 12-02-26  -34.50             7-ELEVEN FUEL, RICHMOND                  UP DEBIT   Transport      CAR,FUEL                                 │
+│ 11-02-26  -89.00             CHEMIST WARE╭─────────────── Transaction Details ────────────────╮ -                                        │
+│ 10-02-26  -26.93             WOOLWORTHS 3│Date: 2026-02-16  Amount: -66.46                    │ -                                        │
+│ 10-02-26  -120.00            ELECTRICITY │Category:    Dining & Drinks                        │ -                                        │
+│ 09-02-26  -42.50             UBER EATS, M│Tags:        FAST FOOD                              │ -                                        │
+│ 08-02-26  -15.00             SPOTIFY PREM│                                                    │ -                                        │
+│ 07-02-26  2500.00            SALARY JAN  │Description                                         │ -                                        │
+│ 06-02-26  -65.00             GAS BILL    │Antipasti                                           │ -                                        │
+│ 05-02-26  -78.30             KMART, SPOTS│                                                    │ -                                        │
+│ 04-02-26  -200.00            TRANSFER TO │Notes: (empty - press n to edit)                    │ -                                        │
+│ 03-02-26  -8.50              COFFEE, LOCA│                                                    │ -                                        │
+│ 02-02-26  -95.00             OPTUS BILL  │n notes  enter save  esc close                      │ -                                        │
+│ 01-02-26  -22.10             MYKI TOP UP ╰────────────────────────────────────────────────────╯ -                                        │
+│ ── showing 1-20 of 56 (20) ──                                                                                                            │
+╰──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────╯
+                                                                                                                                            
+                                                                                                                                            
+                                                                                                                                            
+                                                                                                                                            
+                                                                                                                                            
+                                                                                                                                            
+                                                                                                                                            
+                                                                                                                                            
+                                                                                                                                            
+                                                                                                                                            
+                                                                                                                                            
+                                                                                                                                            
+                                                                                                                                            
+ Transaction detail.                                                                                                                        
+ n notes  q quit                                                                                                                            

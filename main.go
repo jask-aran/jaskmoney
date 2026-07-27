@@ -1,3 +1,5 @@
+//go:build !reference_gen
+
 package main
 
 import (

@@ -690,7 +690,7 @@ func renderDashboardPresetChips(m model) string {
 }
 
 func renderDashboardDatePane(m model, rows []transaction, width int) string {
-	now := time.Now()
+	now := appNow()
 	presets := infoLabelStyle.Render("Presets  ") + renderDashboardPresetChips(m)
 	timeframe := infoLabelStyle.Render("Timeframe  ") + infoValueStyle.Render(renderDashboardTimeframeValue(m, rows, now))
 	lines := []string{renderDatePaneInline(presets, timeframe, width-4)}
@@ -1431,7 +1431,7 @@ func renderDashboardWidgetModeContent(m model, w widget, mode widgetMode, rows [
 }
 
 func renderDashboardNetCashflowMode(m model, mode widgetMode, rows []transaction, width int, chartHeight int) string {
-	start, end := m.dashboardChartRange(time.Now())
+	start, end := m.dashboardChartRange(appNow())
 	chartWidth := max(1, width)
 	rendered := ""
 	switch mode.id {
@@ -2146,7 +2146,7 @@ func aggregateDailySpend(rows []transaction, days int) ([]float64, []time.Time) 
 	if days <= 0 {
 		return nil, nil
 	}
-	now := time.Now()
+	now := appNow()
 	end := time.Date(now.Year(), now.Month(), now.Day(), 0, 0, 0, 0, time.Local)
 	start := end.AddDate(0, 0, -(days - 1))
 	return aggregateDailySpendForRange(rows, start, end)
@@ -2281,7 +2281,7 @@ func renderSpendingTracker(rows []transaction, width int) string {
 }
 
 func renderSpendingTrackerWithWeekAnchor(rows []transaction, width int, weekAnchor time.Weekday) string {
-	now := time.Now()
+	now := appNow()
 	end := time.Date(now.Year(), now.Month(), now.Day(), 0, 0, 0, 0, time.Local)
 	start := end.AddDate(0, 0, -(spendingTrackerDays - 1))
 	return renderSpendingTrackerWithRange(rows, width, weekAnchor, start, end)
@@ -2377,7 +2377,7 @@ func renderTimeSeriesWithRange(values []float64, dates []time.Time, width int, w
 	chart.DrawBraille()
 	clearAxes(&chart)
 	raiseXAxisLabels(&chart)
-	drawVerticalGridlines(&chart, dates, plan, weekAnchor, time.Now().In(time.Local))
+	drawVerticalGridlines(&chart, dates, plan, weekAnchor, appNow().In(time.Local))
 	drawCustomXAxisLabels(&chart, plan.xLabels, plan.xLabelCols)
 	if signed {
 		drawHorizontalValueLine(&chart, 0, lipgloss.NewStyle().Foreground(colorSurface2))
@@ -2440,7 +2440,7 @@ func renderDualTimeSeriesWithRange(actual []float64, budget []float64, dates []t
 	chart.DrawBrailleAll()
 	clearAxes(&chart)
 	raiseXAxisLabels(&chart)
-	drawVerticalGridlines(&chart, dates, plan, weekAnchor, time.Now().In(time.Local))
+	drawVerticalGridlines(&chart, dates, plan, weekAnchor, appNow().In(time.Local))
 	drawCustomXAxisLabels(&chart, plan.xLabels, plan.xLabelCols)
 	return trimTrailingBlankLines(chart.View())
 }
@@ -3505,7 +3505,7 @@ func renderRuleActionSummary(rule ruleV2, catNames map[int]string, tagNames map[
 
 func renderSettingsChart(m model, width int) string {
 	var lines []string
-	now := time.Now()
+	now := appNow()
 	start, end := m.dashboardChartRange(now)
 	days := int(end.Sub(start).Hours()/24) + 1
 	minor := spendingMinorGridStep(days, 80)

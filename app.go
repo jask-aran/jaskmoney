@@ -800,6 +800,21 @@ func (m model) View() string {
 // Per-tab views
 // ---------------------------------------------------------------------------
 
+// appNow is the wall clock used by dashboard bounds/date panes.
+// reference_gen freezes it for deterministic captures; production uses time.Now.
+var appNowFn = time.Now
+
+func appNow() time.Time { return appNowFn() }
+
+func setAppNow(t time.Time) {
+	if t.IsZero() {
+		appNowFn = time.Now
+		return
+	}
+	fixed := t
+	appNowFn = func() time.Time { return fixed }
+}
+
 func (m model) dashboardView() string {
 	if len(m.dashWidgets) != dashboardPaneCount {
 		m.dashWidgets = newDashboardWidgets(m.customPaneModes)
@@ -816,7 +831,7 @@ func (m model) dashboardView() string {
 	trackerContentWidth := m.sectionBoxContentWidth(trackerWidth)
 	breakdownContentWidth := m.sectionBoxContentWidth(breakdownWidth)
 
-	rangeStart, rangeEnd := m.dashboardChartRange(time.Now())
+	rangeStart, rangeEnd := m.dashboardChartRange(appNow())
 	trend := renderTitledSectionBox(
 		"Spending Tracker",
 		renderSpendingTrackerWithRange(spendRows, trackerContentWidth, m.spendingWeekAnchor, rangeStart, rangeEnd),
@@ -1453,9 +1468,9 @@ func (m model) dashboardTimeframeBounds(now time.Time) (time.Time, time.Time, bo
 }
 
 func (m model) dashboardBudgetMonth() string {
-	start, endExcl, ok := m.dashboardTimeframeBounds(time.Now())
+	start, endExcl, ok := m.dashboardTimeframeBounds(appNow())
 	if !ok {
-		return time.Now().Format("2006-01")
+		return appNow().Format("2006-01")
 	}
 	monthRef := endExcl.AddDate(0, 0, -1)
 	if monthRef.Before(start) {
@@ -1602,7 +1617,7 @@ func (m model) buildTransactionFilter() *filterNode {
 
 func (m model) buildDashboardScopeFilter() *filterNode {
 	accountScope := m.buildAccountScopeFilter()
-	start, endExcl, ok := m.dashboardTimeframeBounds(time.Now())
+	start, endExcl, ok := m.dashboardTimeframeBounds(appNow())
 	if !ok {
 		return accountScope
 	}

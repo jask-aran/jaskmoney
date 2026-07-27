@@ -10,3 +10,9 @@ transactions.db*
 .gitattributes
 *:Zone.Identifier
 jaskmoney
+
+# OpenTUI / Solid (opentui/)
+opentui/node_modules/
+opentui/dist/
+opentui/.turbo/
+opentui/*.local

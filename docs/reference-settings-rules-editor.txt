@@ -1,0 +1,44 @@
+  Jaskmoney    Dashboard │ Budget │ Manager │ Settings   All Accounts                                                                       
+                                                                                                                                            
+ ╭─ Categories ───────────────────────────────────────────────────────────╮  ╭─ Chart ────────────────────────────────────────────────────╮ 
+ │   ■ Income                                                             │  │ Week boundary:  Sunday                                     │ 
+ │   ■ Groceries                                                          │  │ Timeframe:      This                                       │ 
+ │   ■ Dining & Drinks                                                    │  │ History window: 28 days                                    │ 
+ │   ■ Transport                                                          │  │ Minor grid:     every 1 day(s)                             │ 
+ │   ■ Bills & Utilities                                                  │  │ Major grid:     weekly                                     │ 
+ │   ■ Entertainment                                                      │  │                                                            │ 
+ │   ■ Shopping                                                           │  │ h/l or enter to toggle boundary                            │ 
+ │   ■ Health                                                             │  ╰────────────────────────────────────────────────────────────╯ 
+ │   ■ Transfers                                                          │  ╭─ Database ─────────────────────────────────────────────────╮ 
+ │   ■ Uncategorised                                                      │  │ Schema version:  v7                                        │ 
+ ╰────────────────────────────────────────────────────────────────────────╯  │ Transactions:    56                                        │ 
+ ╭─ Tags ─────────────────────────────────────────────────────────────────╮  │ Categories:      10                                        │ 
+ │   ■ IGNORE (global)                                                    │  │ Rules:           0                                         │ 
+ │   ■ WORKDAY (global)╭───────────────────────────────────────── Add Rule ─────────────────────────────────────────╮                     │ 
+ │   ■ PT (global)     │  1 Name:                                                                                   │                     │ 
+ │   ■ CAR (global)    │> 2 Filter:      pending                                                                    │                     │ 
+ │   ■ REIMBURSABLE (gl│  3 Category:  No category change                                                           │                     │ 
+ │   ■ GIFTS (global)  │  4 Add tags:  (none)                                                                       │                     │ 
+ │   ■ FUEL (global)   │  5 Enabled:   Yes                                                                          │                     │ 
+ │   ■ GEORGIA (global)│                                                                                            │─────────────────────╯ 
+ │   ■ FAST FOOD (Dinin│tab step  space toggle  enter pick/save  esc cancel                                         │─────────────────────╮ 
+ │   ■ TRAVEL (global) ╰────────────────────────────────────────────────────────────────────────────────────────────╯ 11:41:19            │ 
+ ╰────────────────────────────────────────────────────────────────────────╯  │ ANZ.csv  112 rows  2026-02-17 00:39:38                     │ 
+ ╭─ Rules ────────────────────────────────────────────────────────────────╮  │ ANZ DUPE.csv  47 rows  2026-02-15 21:31:34                 │ 
+ │ No rules. Activate to add.                                             │  ╰────────────────────────────────────────────────────────────╯ 
+ ╰────────────────────────────────────────────────────────────────────────╯                                                                 
+ ╭─ Filters ──────────────────────────────────────────────────────────────╮                                                                 
+ │ No saved filters. Activate to add.                                     │                                                                 
+ ╰────────────────────────────────────────────────────────────────────────╯                                                                 
+                                                                                                                                            
+                                                                                                                                            
+                                                                                                                                            
+                                                                                                                                            
+                                                                                                                                            
+                                                                                                                                            
+                                                                                                                                            
+                                                                                                                                            
+                                                                                                                                            
+                                                                                                                                            
+ New rule · step 1/…                                                                                                                        
+                                                                                                                                            

@@ -1,0 +1,44 @@
+  Jaskmoney    Dashboard │ Budget │ Manager │ Settings   All Accounts                                                                       
+                                                                                                                                            
+╭─ Accounts ───────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────╮
+│   ANZ CREDIT CREDIT Empty On     UP DEBIT DEBIT Empty On                                                                                 │
+╰──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────╯
+╭─ Transactions (5 selected) * ────────────────────────────────────────────────────────────────────────────────────────────────────────────╮
+│ Date ▼    Amount             Description                              Account    Category       Tags                                     │
+│ 17-02-26  -24.23             UBER *TRIP, Sydney                       UP DEBIT   Transport      CAR                                      │
+│ 17-02-26  -102.50            WOOLWORTHS 3391, SPOTSWOOD               UP DEBIT   Groceries      FUEL                                     │
+│ 16-02-26  -66.46             Antipasti                                UP DEBIT   Dining & Dri…  FAST FOOD                                │
+│ 15-02-26  -204.00            FINES VIC                                UP DEBIT   Bills & Util…  -                                        │
+│ 14-02-26  -12.99             NETFLIX.COM                              ANZ CREDIT Entertainment  -                                        │
+│ 14-02-26  1500.00            SALARY FEB                               ANZ CREDIT Income         REIMBURSABLE                             │
+│ 13-02-26  -55.30             DAN MURPHYS, MELBOURNE                   UP DEBIT   Dining & Dri…  -                                        │
+│ 12-02-26  -34.50             7-ELEVEN FUEL, RICHMOND                  UP DEBIT   Transport      CAR,FUEL                                 │
+│ 11-02-26  -89.00             CHEMIST WAREHOUSE                        UP DEBIT   Health         -                                        │
+│ 10-02-26  -26.93             WOOLWORTHS 3391, SPOTSWOOD               UP DEBIT   Groceries      -                                        │
+│ 10-02-26  -120.00            ELECTRICITY BILL                         ANZ CREDIT Bills & Util…  -                                        │
+│ 09-02-26  -42.50             UBER EATS, MACCAS                        UP DEBIT   Dining & Dri…  -                                        │
+│ 08-02-26  -15.00             SPOTIFY PREMIUM                          ANZ CREDIT Entertainment  -                                        │
+│ 07-02-26  2500.00            SALARY JAN                               ANZ CREDIT Income         -                                        │
+│ 06-02-26  -65.00             GAS BILL                                 ANZ CREDIT Bills & Util…  -                                        │
+│ 05-02-26  -78.30             KMART, SPOTSWOOD                         UP DEBIT   Shopping       -                                        │
+│ 04-02-26  -200.00            TRANSFER TO SAVINGS                      UP DEBIT   Transfers      -                                        │
+│ 03-02-26  -8.50              COFFEE, LOCAL                            UP DEBIT   Dining & Dri…  -                                        │
+│ 02-02-26  -95.00             OPTUS BILL                               ANZ CREDIT Bills & Util…  -                                        │
+│ 01-02-26  -22.10             MYKI TOP UP                              UP DEBIT   Transport      -                                        │
+│ ── showing 1-20 of 56 (20) ──                                                                                                            │
+╰──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────╯
+                                                                                                                                            
+                                                                                                                                            
+                                                                                                                                            
+                                                                                                                                            
+                                                                                                                                            
+                                                                                                                                            
+                                                                                                                                            
+                                                                                                                                            
+                                                                                                                                            
+                                                                                                                                            
+                                                                                                                                            
+                                                                                                                                            
+                                                                                                                                            
+ Range select: 5 rows                                                                                                                       
+ / filter  ctrl+s save  ctrl+l load  s sort  S-s reverse  c cat  t tag  o split  del delete  u clear  g top  S-g bottom                     
