@@ -1,6 +1,8 @@
 # Jaskmoney OpenTUI Reconstruction Contract
 
-> User-visible behavioural invariants derived from current source code and DeepWiki queries (v0.4 codebase). Not a specification document. Evidence hierarchy: source > tests > DeepWiki findings > specs.
+> User-visible behavioural invariants derived from the legacy Go source under `legacy/go/`, its tests, and DeepWiki queries. Not a specification document. Evidence hierarchy: source > tests > DeepWiki findings > specs.
+>
+> Source file names in this document are relative to `legacy/go/`.
 
 ---
 
