@@ -1,0 +1,5 @@
+preload = ["@opentui/solid/preload"]
+
+# Solid must resolve the browser/dev build, not solid-js/server (orphan text crashes).
+[test]
+preload = ["@opentui/solid/preload"]

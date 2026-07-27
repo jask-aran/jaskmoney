@@ -1,0 +1,44 @@
+  Jaskmoney    Dashboard │ Budget │ Manager │ Settings   All Accounts                                                                       
+   ╭────────────────────────────────────────────────────────── Import Preview ──────────────────────────────────────────────────────────╮   
+╭─ │Summary                                                                                                                             │──╮
+│  │  File:    ANZ.csv                                                                                                                  │  │
+╰──│  Rows:    112 total                                                                                                                │──╯
+╭─ │  New:     65                                                                                                                       │──╮
+│ D│  Dupes:   45                                                                                                                       │  │
+│ 1│  Errors:  2                                                                                                                        │  │
+│ 1│  Rules:   ON                                                                                                                       │  │
+│ 1│                                                                                                                                    │  │
+│ 1│Import blocked: fix parse/normalize errors before confirming.                                                                       │  │
+│ 1│  line 89 (row 87, date): unrecognised date format 'Feb 15 26'                                                                      │  │
+│ 1│  line 95 (row 93, amount): missing value                                                                                           │  │
+│ 1│                                                                                                                                    │  │
+│ 1│Duplicate Rows (23)                                                                                                                 │  │
+│ 1│Date ▲    Amount             Description                              Category       Tags                                           │  │
+│ 1│01-02-26  -2.50              Row 1 transaction                        Groceries      WORKDAY                                        │  │
+│ 1│03-02-26  -7.50              Row 3 transaction                        Groceries      WORKDAY                                        │  │
+│ 0│05-02-26  -12.50             Row 5 transaction                        Groceries      WORKDAY                                        │  │
+│ 0│07-02-26  -17.50             Row 7 transaction                        Groceries      WORKDAY                                        │  │
+│ 0│09-02-26  -22.50             Row 9 transaction                        Groceries      WORKDAY                                        │  │
+│ 0│11-02-26  -27.50             Row 11 transaction                       Groceries      WORKDAY                                        │  │
+│ 0│13-02-26  -32.50             Row 13 transaction                       Groceries      WORKDAY                                        │  │
+│ 0│15-02-26  -37.50             Row 15 transaction                       Groceries      WORKDAY                                        │  │
+│ 0│17-02-26  -42.50             Row 17 transaction                       Groceries      WORKDAY                                        │  │
+│ 0│19-02-26  -47.50             Row 19 transaction                       Groceries      WORKDAY                                        │  │
+│ 0│21-02-26  -52.50             Row 21 transaction                       Groceries      WORKDAY                                        │  │
+│ ─│23-02-26  -57.50             Row 23 transaction                       Groceries      WORKDAY                                        │  │
+╰──│25-02-26  -62.50             Row 25 transaction                       Groceries      WORKDAY                                        │──╯
+   │27-02-26  -67.50             Row 27 transaction                       Groceries      WORKDAY                                        │   
+   │01-02-26  -72.50             Row 29 transaction                       Groceries      WORKDAY                                        │   
+   │03-02-26  -77.50             Row 31 transaction                       Groceries      WORKDAY                                        │   
+   │05-02-26  -82.50             Row 33 transaction                       Groceries      WORKDAY                                        │   
+   │07-02-26  -87.50             Row 35 transaction                       Groceries      WORKDAY                                        │   
+   │09-02-26  -92.50             Row 37 transaction                       Groceries      WORKDAY                                        │   
+   │11-02-26  -97.50             Row 39 transaction                       Groceries      WORKDAY                                        │   
+   │── showing 1-20 of 23 (20) ──                                                                                                       │   
+   │  showing 20 rows/page                                                                                                              │   
+   │                                                                                                                                    │   
+   │a import all  s skip  p preview  r rules  esc cancel                                                                                │   
+   ╰────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────╯   
+                                                                                                                                            
+ Import preview · 2 parse errors block import                                                                                               
+ a all  s skip  p preview  r rules                                                                                                          
