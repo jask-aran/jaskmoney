@@ -681,7 +681,8 @@ func main() {
 		},
 	}
 
-	outDir := "docs"
+	// The Go module now lives under legacy/go; captures remain repository docs.
+	outDir := "../../docs"
 	if err := os.MkdirAll(outDir, 0o755); err != nil {
 		fmt.Fprintf(os.Stderr, "ERROR creating %s: %v\n", outDir, err)
 		os.Exit(1)
