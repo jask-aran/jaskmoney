@@ -286,7 +286,7 @@ export function EditorOverlay() {
                   query={picker().query}
                   mark={field().multi ? (value) => (ui.state.settingsDraft.addTagIds.includes(Number(value)) ? "[x]" : "[ ]") : undefined}
                   iconFor={field().key === "categoryId" || field().key === "setCategoryId" ? (value) => (value == null ? undefined : categoryMark(Number(value))) : undefined}
-                  hints={field().multi ? "j/k move · enter toggle · esc done" : "j/k move · enter choose · esc back"}
+                  hints={field().multi ? "↑↓ move · enter toggle · esc done" : "↑↓ move · enter choose · esc back"}
                 />
               )}
             </Show>

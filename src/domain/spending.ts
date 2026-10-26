@@ -1,4 +1,4 @@
-import { addDays, daysBetween, weekdayIndex } from "./days"
+import { addDays, dayOfWeek, daysBetween, type WeekStart } from "./days"
 import { isSpending } from "./moneyRules"
 import type { Transaction } from "./types"
 
@@ -22,7 +22,7 @@ export interface CalendarDay {
  * columns of seven days. Days outside the range are null (padding in the first
  * and last week). Weeks are oldest first.
  */
-export function spendingCalendar(transactions: Transaction[], startISO: string, endISO: string, weekStart: "monday" | "sunday" = "monday"): Array<Array<CalendarDay | null>> {
+export function spendingCalendar(transactions: Transaction[], startISO: string, endISO: string, weekStart: WeekStart = "monday"): Array<Array<CalendarDay | null>> {
   const days = daysBetween(startISO, endISO) + 1
   const totals = new Map<string, number>()
   for (const row of transactions) {
@@ -38,7 +38,7 @@ export function spendingCalendar(transactions: Transaction[], startISO: string, 
     const level = quartile <= 1 ? 1 : quartile <= 2 ? 2 : quartile <= 3 ? 3 : 4
     levels.set(spent, level)
   })
-  const padding = (weekdayIndex(startISO) + (weekStart === "sunday" ? 0 : 6)) % 7
+  const padding = dayOfWeek(startISO, weekStart)
   const weeks: Array<Array<CalendarDay | null>> = []
   for (let offset = -padding; offset < days; offset += 7) {
     const week: Array<CalendarDay | null> = []

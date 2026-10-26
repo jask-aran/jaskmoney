@@ -1,4 +1,4 @@
-import { addDays, addMonthsClamped, daysBetween, MONTHS, weekdayIndex } from "./days"
+import { addDays, addMonthsClamped, dayOfWeek, daysBetween, MONTHS } from "./days"
 import { isSpending } from "./moneyRules"
 import { accountRole, type Account, type Category, type Transaction } from "./types"
 
@@ -75,7 +75,7 @@ export function cycleFor(config: CycleConfig, dateISO: string): Cycle {
 }
 
 function nearestMonday(iso: string): string {
-  const weekday = (weekdayIndex(iso) + 6) % 7
+  const weekday = dayOfWeek(iso, "monday")
   return addDays(iso, weekday <= 3 ? -weekday : 7 - weekday)
 }
 

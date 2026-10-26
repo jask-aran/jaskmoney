@@ -20,7 +20,7 @@ export function CatPicker() {
         cursor={ui.state.catPickerCursor}
         query={ui.state.catPickerQuery}
         iconFor={(value) => categoryMark(Number(value))}
-        hints="j/k move · enter apply · esc cancel"
+        hints="↑↓ move · enter apply · esc cancel"
       />
     </Show>
   )

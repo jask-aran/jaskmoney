@@ -85,11 +85,11 @@ test("create row is last, cursor reaches it, and enter also applies the existing
   const { add, remove } = fixture()
   press("space")
   ui.setState({ tagPickerQuery: "WO", tagPickerCursor: 0 })
-  press("j")
+  press("down")
   expect(ui.state.tagPickerCursor).toBe(1)
-  press("k")
+  press("up")
   expect(ui.state.tagPickerCursor).toBe(0)
-  press("j")
+  press("down")
   press("enter")
   await Promise.resolve()
   const created = data.state.tags.find((t) => t.name === "WO")!
@@ -123,7 +123,7 @@ test("tag rows group by target category, omit empty sections and rank fuzzy matc
   expect(rows.find((r) => r.kind === "item" && r.value === add)?.label).toBe("COFFEE")
   expect(tagPickerItems(data.state.tags, data.state.transactions, [1], "zz").map((r) => r.label)).toEqual(['Create "zz"'])
   expect(footerHints("tagPicker")).toEqual([
-    { key: "j/k", desc: "move" }, { key: "space", desc: "stage" },
+    { key: "↑/↓", desc: "move" }, { key: "space", desc: "stage" },
     { key: "enter", desc: "apply" }, { key: "esc", desc: "cancel" },
   ])
 })

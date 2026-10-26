@@ -4,7 +4,7 @@ import { theme } from "../../theme"
 import { cumulative, dailySpendSeries, formatWholeMoney, signedWholeMoney, weeklyTotals } from "../../domain/dashboard"
 import { balanceHistory, computePeriodFlows } from "../../domain/position"
 import type { Account, Transaction } from "../../domain/types"
-import { addDays } from "../../domain/days"
+import { MONTHS, addDays, dayOfWeek, type WeekStart } from "../../domain/days"
 import { shortDate, shortMoney } from "../text"
 import { barTopRow, columnBars } from "../charts/bars"
 import { muted } from "../primitives/spans"
@@ -66,7 +66,7 @@ export function spendingChart(
   /** Cumulative only: a spending limit drawn as a rule and named in the legend. */
   budget?: number,
   names: PeriodNames = DEFAULT_NAMES,
-  weekStart: "monday" | "sunday" = "monday",
+  weekStart: WeekStart = "monday",
 ): ChartModel {
   const { dates, values } = series
   const n = dates.length
@@ -210,7 +210,7 @@ export function balancesChart(
   todayISO: string,
   accounts: Account[],
   transactions: Transaction[],
-  weekStart: "monday" | "sunday" = "monday",
+  weekStart: WeekStart = "monday",
   zeroAxis = false,
 ): ChartModel {
   const last = dates.filter((d) => d <= todayISO).at(-1)
@@ -268,13 +268,13 @@ export function cashFlowChart(
   accounts: Account[],
   transactions: Transaction[],
   scopeIds: ReadonlySet<number>,
-  weekStart: "monday" | "sunday" = "monday",
+  weekStart: WeekStart = "monday",
 ): ChartModel {
   if (!dates.length) return { rows: [], ticks: new Map(), labels: "", legend: [muted("No days in range")] }
   const monthly = dates.length > 92
   const buckets: Array<{ start: string; end: string }> = []
   for (const iso of dates) {
-    const startsWeek = new Date(iso + "T12:00:00Z").getUTCDay() === (weekStart === "sunday" ? 0 : 1)
+    const startsWeek = dayOfWeek(iso, weekStart) === 0
     const newBucket = !buckets.length || (monthly ? iso.slice(8, 10) === "01" : startsWeek)
     if (newBucket) buckets.push({ start: iso, end: iso })
     else buckets[buckets.length - 1]!.end = iso
@@ -294,7 +294,7 @@ export function cashFlowChart(
   buckets.forEach((b, i) => {
     const slot = slots[i * 2]
     if (!slot) return
-    const label = monthly ? MONTH_NAMES[Number(b.start.slice(5, 7)) - 1]! : shortDate(b.start)
+    const label = monthly ? MONTHS[Number(b.start.slice(5, 7)) - 1]! : shortDate(b.start)
     if (slot.col < free || slot.col + label.length > width) return
     for (let c = 0; c < label.length; c++) line[slot.col + c] = label[c]!
     free = slot.col + label.length + 1
@@ -316,5 +316,3 @@ export function cashFlowChart(
     ],
   }
 }
-
-const MONTH_NAMES = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"]

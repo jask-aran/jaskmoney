@@ -1,4 +1,4 @@
-import { addDays, daysBetween, dayTime, weekdayIndex } from "./days"
+import { addDays, dayOfWeek, daysBetween, dayTime, type WeekStart } from "./days"
 import { isSpending } from "./moneyRules"
 import type { Category, Transaction } from "./types"
 
@@ -145,10 +145,10 @@ export function cumulative(values: number[]): number[] {
 
 /** Totals per configured week; the first and last weeks may be partial
  * (their `days` say how many of `dates` they cover). */
-export function weeklyTotals(dates: string[], values: number[], weekStart: "monday" | "sunday" = "monday"): Array<{ startISO: string; total: number; days: number }> {
+export function weeklyTotals(dates: string[], values: number[], weekStart: WeekStart = "monday"): Array<{ startISO: string; total: number; days: number }> {
   const weeks: Array<{ startISO: string; total: number; days: number }> = []
   dates.forEach((iso, i) => {
-    const startsWeek = weekdayIndex(iso) === (weekStart === "sunday" ? 0 : 1)
+    const startsWeek = dayOfWeek(iso, weekStart) === 0
     if (startsWeek || weeks.length === 0) weeks.push({ startISO: iso, total: 0, days: 0 })
     const week = weeks[weeks.length - 1]!
     week.total += values[i] ?? 0

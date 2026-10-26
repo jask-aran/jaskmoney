@@ -46,6 +46,7 @@ import type { Budget, BudgetScope, CycleConfig } from "../domain/budget"
 import { buildImportPreview, commitImportPreview, matchingProfiles } from "../domain/profileImport"
 import { createUpClient, readUpToken } from "../up/client"
 import { pushTransactions } from "../up/push"
+import type { WeekStart } from "../domain/days"
 import { addTagLink } from "../db/tagLinks"
 import { syncUp as runUpSync } from "../up/sync"
 import { dryRunRules as evaluateRules } from "../domain/rules"
@@ -74,7 +75,7 @@ export interface DataState {
   rules: Rule[]
   savedFilters: SavedFilter[]
   uiPrefs: UiPrefs
-  weekStart: "monday" | "sunday"
+  weekStart: WeekStart
   /** Show Nerd Font category icons (settings config). */
   icons: boolean
   importProfiles: ImportProfile[]

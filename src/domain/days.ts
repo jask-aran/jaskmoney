@@ -57,6 +57,14 @@ export function weekdayIndex(iso: string): number {
   return new Date(dayTime(iso)).getUTCDay()
 }
 
+/** The day weeks start on in displays (budget weeks always start Monday). */
+export type WeekStart = "monday" | "sunday"
+
+/** Days since the week began: 0 on its first day. */
+export function dayOfWeek(iso: string, weekStart: WeekStart): number {
+  return (weekdayIndex(iso) + (weekStart === "sunday" ? 0 : 6)) % 7
+}
+
 /** Shift calendar months with Date's overflow rule, used by lookbacks. */
 export function addMonths(iso: string, months: number): string {
   const date = new Date(dayTime(iso))

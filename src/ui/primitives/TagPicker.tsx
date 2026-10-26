@@ -24,7 +24,7 @@ export function TagPicker() {
         cursor={ui.state.tagPickerCursor}
         query={ui.state.tagPickerQuery}
         mark={mark}
-        hints="j/k move · space stage · enter apply · esc cancel"
+        hints="↑↓ move · space stage · enter apply · esc cancel"
       />
     </Show>
   )

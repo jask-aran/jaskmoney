@@ -5,7 +5,7 @@
  * colours.
  */
 
-import { MONTHS, addDays } from "../../domain/days"
+import { MONTHS, addDays, dayOfWeek, type WeekStart } from "../../domain/days"
 
 export interface LineSeries {
   /** One value per x position; null leaves a gap (e.g. days after today). */
@@ -193,7 +193,7 @@ export function dateAxis(
   width: number,
   todayISO: string,
   colOf: (index: number) => number = (i) => cellColumn(i, dates.length, width),
-  weekStart: "monday" | "sunday" = "monday",
+  weekStart: WeekStart = "monday",
 ): { markers: Marker[]; labels: string } {
   const n = dates.length
   const markers: Marker[] = []
@@ -202,7 +202,7 @@ export function dateAxis(
   const weekCells = (7 * width) / Math.max(1, n)
   const day = (iso: string) => Number(iso.slice(8, 10))
   const month = (iso: string) => MONTHS[Number(iso.slice(5, 7)) - 1] ?? ""
-  const weekday = (iso: string) => (new Date(iso + "T12:00:00Z").getUTCDay() + (weekStart === "sunday" ? 0 : 6)) % 7
+  const weekday = (iso: string) => dayOfWeek(iso, weekStart)
   const cross = dates[0]!.slice(0, 4) !== dates[n - 1]!.slice(0, 4)
   const dayLabel = (iso: string) => `${day(iso)} ${month(iso)}${cross ? ` ${iso.slice(2, 4)}` : ""}`
   labelAt.push({ col: 0, text: dayLabel(dates[0]!), align: "left" })

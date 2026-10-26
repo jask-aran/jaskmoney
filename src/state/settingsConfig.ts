@@ -4,13 +4,14 @@ import { filterExprString, parseFilterStrict } from "../domain/filter"
 import type { AccountSelection } from "../domain/accountTree"
 import { customRange, LOOKBACKS, PERIODS, type TimeframeState } from "../domain/timeframe"
 import type { ImportProfile, SavedFilter } from "../domain/types"
+import type { WeekStart } from "../domain/days"
 
 export interface UiPrefs {
   filterUsage?: Record<string, string>
   timeframe?: Pick<TimeframeState, "family" | "lookback" | "period" | "custom">
   accountSelection?: AccountSelection
   chartViews?: [number, number]
-  weekStart?: "monday" | "sunday"
+  weekStart?: WeekStart
   /** Charts draw an x-axis line under the plot (default off). */
   xAxis?: boolean
   /** Balance charts' y-axis runs from $0 rather than fitting the balances

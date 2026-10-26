@@ -65,7 +65,10 @@ function moveTxnCursor(
   }
 }
 
-/** Query pickers reserve movement keys; g/G and other printable keys are text. */
+/** A list filtered by typing (saved filters, categories, tags, a form's
+ * picker field): every printable key types into the query, so arrows and
+ * ctrl+n/ctrl+p move. Approved deviation from the Go app, whose pickers
+ * moved on j/k: a search must take any letter. */
 function queryPickerKey(
   key: KeyEvent,
   picker: { query: string; cursor: number },
@@ -79,10 +82,8 @@ function queryPickerKey(
 ): void {
   if (key.name === "escape") { actions.close(); return }
   if (actions.space && (key.name === "space" || key.sequence === " ")) { actions.space(); return }
-  const movement = key.ctrl && key.name === "n" ? { ...key, name: "down" }
-    : key.ctrl && key.name === "p" ? { ...key, name: "up" } : key
-  const cursor = movement.name === "g" || movement.sequence === "G" ? null : listMove(movement, picker.cursor, count)
-  if (cursor != null) { actions.update({ ...picker, cursor }); return }
+  const step = key.name === "down" || (key.ctrl && key.name === "n") ? 1 : key.name === "up" || (key.ctrl && key.name === "p") ? -1 : 0
+  if (step) { actions.update({ ...picker, cursor: Math.max(0, Math.min(count - 1, picker.cursor + step)) }); return }
   if (key.name === "return" || key.name === "enter") { actions.apply(); return }
   if (key.name === "backspace") { actions.update({ query: picker.query.slice(0, -1), cursor: 0 }); return }
   if (isPrintable(key)) actions.update({ query: picker.query + key.sequence, cursor: 0 })
@@ -414,7 +415,7 @@ function handleSettingsEditor(ui: UiStore, key: KeyEvent, data?: DataStore): voi
   const field = fields[fieldIndex]!
 
   // A picker field's list owns input until it closes (like the category
-  // picker: j/k and arrows move, other printable keys filter).
+  // picker: arrows move, printable keys filter).
   const picker = ui.state.formPicker
   if (picker) {
     const choices = pickerChoices(pickerItems(kind, field.key, ctx, picker.query))
@@ -1108,7 +1109,7 @@ const scopes: Record<ScopeId, ScopeEntry> = {
   "filterPicker": {
     handle: handleFilterPicker,
     quits: false,
-    hints: () => [{ key: "j/k", desc: "move" }, { key: "enter", desc: "apply" }, { key: "esc", desc: "close" }, { key: "type", desc: "filter" }],
+    hints: () => [{ key: "↑/↓", desc: "move" }, { key: "enter", desc: "apply" }, { key: "esc", desc: "close" }, { key: "type", desc: "filter" }],
   },
   "dryRun": {
     handle: handleDryRun,
@@ -1119,38 +1120,38 @@ const scopes: Record<ScopeId, ScopeEntry> = {
     handle: handleJump,
     quits: false,
     hints: () => [
-        { key: "letter", desc: "jump" },
-        { key: "esc", desc: "cancel" },
-      ],
+      { key: "letter", desc: "jump" },
+      { key: "esc", desc: "cancel" },
+    ],
   },
   "tagPicker": {
     handle: handleTagPicker,
     quits: false,
     hints: () => [
-        { key: "j/k", desc: "move" },
-        { key: "space", desc: "stage" },
-        { key: "enter", desc: "apply" },
-        { key: "esc", desc: "cancel" },
-      ],
+      { key: "↑/↓", desc: "move" },
+      { key: "space", desc: "stage" },
+      { key: "enter", desc: "apply" },
+      { key: "esc", desc: "cancel" },
+    ],
   },
   "catPicker": {
     handle: handleCatPicker,
     quits: false,
     hints: () => [
-        { key: "j/k", desc: "move" },
-        { key: "enter", desc: "apply" },
-        { key: "esc", desc: "cancel" },
-        { key: "type", desc: "filter" },
-      ],
+      { key: "↑/↓", desc: "move" },
+      { key: "enter", desc: "apply" },
+      { key: "esc", desc: "cancel" },
+      { key: "type", desc: "filter" },
+    ],
   },
   "filter": {
     handle: handleFilter,
     quits: false,
     hints: () => [
-        { key: "enter", desc: "apply" },
-        { key: "esc", desc: "clear" },
-        { key: "type", desc: "expr" },
-      ],
+      { key: "enter", desc: "apply" },
+      { key: "esc", desc: "clear" },
+      { key: "type", desc: "expr" },
+    ],
   },
   "manager.detail": {
     handle: handleManagerDetail,
@@ -1161,10 +1162,10 @@ const scopes: Record<ScopeId, ScopeEntry> = {
     handle: handleOverviewCustom,
     quits: false,
     hints: () => [
-        { key: "tab", desc: "field" },
-        { key: "enter", desc: "apply" },
-        { key: "esc", desc: "cancel" },
-      ],
+      { key: "tab", desc: "field" },
+      { key: "enter", desc: "apply" },
+      { key: "esc", desc: "cancel" },
+    ],
   },
   "settings.factoryReset": {
     handle: handleSettingsFactoryReset,
@@ -1215,30 +1216,30 @@ const scopes: Record<ScopeId, ScopeEntry> = {
     handle: handleSettings,
     quits: true,
     hints: () => [
-        { key: "j/k", desc: "section" },
-        { key: "h/l", desc: "column" },
-        { key: "enter", desc: "activate" },
-        { key: "v", desc: "jump" },
-        { key: "1-3", desc: "tab" },
-      ],
+      { key: "j/k", desc: "section" },
+      { key: "h/l", desc: "column" },
+      { key: "enter", desc: "activate" },
+      { key: "v", desc: "jump" },
+      { key: "1-3", desc: "tab" },
+    ],
   },
   "settings.taxonomy": {
     handle: handleSettingsTaxonomy,
     quits: true,
     hints: () => [
-        { key: "h/l", desc: "list" }, { key: "j/k", desc: "move" },
-        { key: "a", desc: "add" }, { key: "enter", desc: "edit" },
-        { key: "del", desc: "delete" }, { key: "esc", desc: "done" },
-      ],
+      { key: "h/l", desc: "list" }, { key: "j/k", desc: "move" },
+      { key: "a", desc: "add" }, { key: "enter", desc: "edit" },
+      { key: "del", desc: "delete" }, { key: "esc", desc: "done" },
+    ],
   },
   "settings.rules": {
     handle: handleSettingsRules,
     quits: true,
     hints: () => [
-        { key: "j/k", desc: "move" }, { key: "space", desc: "toggle" },
-        { key: "a", desc: "add" }, { key: "S-j/k", desc: "reorder" },
-        { key: "S-a", desc: "apply" }, { key: "S-d", desc: "dry run" }, { key: "esc", desc: "done" },
-      ],
+      { key: "j/k", desc: "move" }, { key: "space", desc: "toggle" },
+      { key: "a", desc: "add" }, { key: "S-j/k", desc: "reorder" },
+      { key: "S-a", desc: "apply" }, { key: "S-d", desc: "dry run" }, { key: "esc", desc: "done" },
+    ],
   },
   "settings.filters": {
     handle: handleSettingsFilters,
@@ -1280,11 +1281,11 @@ const scopes: Record<ScopeId, ScopeEntry> = {
     handle: handleManagerAccounts,
     quits: true,
     hints: () => [
-        { key: "j/k", desc: "account" },
-        { key: "enter", desc: "transactions" },
-        { key: "d", desc: "data actions" },
-        { key: "v", desc: "jump" },
-      ],
+      { key: "j/k", desc: "account" },
+      { key: "enter", desc: "transactions" },
+      { key: "d", desc: "data actions" },
+      { key: "v", desc: "jump" },
+    ],
   },
   "settings.budgets": {
     handle: handleSettingsBudgets,
@@ -1295,17 +1296,17 @@ const scopes: Record<ScopeId, ScopeEntry> = {
     handle: handleManagerMerchants,
     quits: true,
     hints: () => [
-        { key: "ctrl+s", desc: "save filter" },
-        { key: "ctrl+l", desc: "saved filters" },
-        { key: "enter", desc: "its transactions" },
-        { key: "j/k", desc: "move" },
-        { key: "c", desc: "category" },
-        { key: "t", desc: "tags" },
-        { key: "s", desc: "sort" },
-        { key: "/", desc: "filter" },
-        { key: "m", desc: "rows" },
-        { key: "a", desc: "account" },
-      ],
+      { key: "ctrl+s", desc: "save filter" },
+      { key: "ctrl+l", desc: "saved filters" },
+      { key: "enter", desc: "its transactions" },
+      { key: "j/k", desc: "move" },
+      { key: "c", desc: "category" },
+      { key: "t", desc: "tags" },
+      { key: "s", desc: "sort" },
+      { key: "/", desc: "filter" },
+      { key: "m", desc: "rows" },
+      { key: "a", desc: "account" },
+    ],
   },
   "overview": {
     handle: handleOverview,
@@ -1337,11 +1338,11 @@ const scopes: Record<ScopeId, ScopeEntry> = {
     handle: handleOverviewRange,
     quits: true,
     hints: () => [
-        { key: "h/l", desc: "chip" },
-        { key: "enter", desc: "apply" },
-        { key: "[ ]", desc: "prev/next range" },
-        { key: "esc", desc: "done" },
-      ],
+      { key: "h/l", desc: "chip" },
+      { key: "enter", desc: "apply" },
+      { key: "[ ]", desc: "prev/next range" },
+      { key: "esc", desc: "done" },
+    ],
   },
   "manager.detail.notes": {
     handle: handleManagerDetailNotes,

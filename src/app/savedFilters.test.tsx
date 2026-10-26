@@ -240,7 +240,7 @@ test("dry-run samples keep amount and actions visible after a long description",
   expect(frame).toContain("matched 1 · category 1 · tags 1")
 })
 
-test("saved-filter input keeps command letters and space literal; j/k and arrows move; backspace edits", () => {
+test("saved-filter input keeps command letters and space literal; arrows move and backspace edits", () => {
   data.saveSavedFilter({ id: "a", name: "Alpha", expr: "desc:a" })
   data.saveSavedFilter({ id: "b", name: "Beta", expr: "desc:b" })
   handleKey(ui, key("l", true), data)
@@ -248,17 +248,17 @@ test("saved-filter input keeps command letters and space literal; j/k and arrows
   expect(ui.state.filterPicker?.cursor).toBe(1)
   handleKey(ui, key("up"), data)
   expect(ui.state.filterPicker?.cursor).toBe(0)
-  // As in every picker (Go app): j/k move, other printable keys type.
-  handleKey(ui, key("j"), data)
+  handleKey(ui, key("n", true), data)
   expect(ui.state.filterPicker?.cursor).toBe(1)
-  handleKey(ui, key("k"), data)
-  expect(ui.state.filterPicker).toMatchObject({ cursor: 0, query: "" })
-  for (const name of ["h", "l", "g", "2"]) handleKey(ui, key(name), data)
+  handleKey(ui, key("p", true), data)
+  expect(ui.state.filterPicker?.cursor).toBe(0)
+  // Every printable key types, j and k included (a search takes any letter).
+  for (const name of ["h", "l", "j", "k", "g", "2"]) handleKey(ui, key(name), data)
   handleKey(ui, key("space"), data)
-  expect(ui.state.filterPicker?.query).toBe("hlg2 ")
+  expect(ui.state.filterPicker?.query).toBe("hljkg2 ")
   expect(ui.state.activeTab).toBe("manager")
   handleKey(ui, key("backspace"), data)
-  expect(ui.state.filterPicker?.query).toBe("hlg2")
+  expect(ui.state.filterPicker?.query).toBe("hljkg2")
   handleKey(ui, key("enter"), data)
   expect(ui.state.filterPicker).not.toBeNull()
   handleKey(ui, key("escape"), data)
