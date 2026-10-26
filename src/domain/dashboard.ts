@@ -102,6 +102,45 @@ export function computeCategorySpend(
   return list
 }
 
+export interface CategoryGroupSpend {
+  name: string
+  color: string
+  amount: number
+  pct: number
+  /** Subcategories with spending, largest first; empty for a category that
+   * has no group (e.g. Uncategorised). */
+  children: CategorySpend[]
+}
+
+/** Roll category spend up into top-level groups (a category's parent, or the
+ * category itself when it has none), largest group first. */
+export function groupCategorySpend(list: CategorySpend[], categories: Category[]): CategoryGroupSpend[] {
+  const byId = new Map(categories.map((c) => [c.id, c]))
+  const groups = new Map<string, CategoryGroupSpend>()
+  const total = list.reduce((sum, item) => sum + item.amount, 0)
+  for (const item of list) {
+    const category = item.categoryId != null ? byId.get(item.categoryId) : undefined
+    const parent = category?.parentId != null ? byId.get(category.parentId) : undefined
+    const key = parent ? `p${parent.id}` : `c${item.categoryId ?? item.name}`
+    const group = groups.get(key) ?? { name: parent?.name ?? item.name, color: parent?.color ?? item.color, amount: 0, pct: 0, children: [] }
+    group.amount += item.amount
+    if (parent) group.children.push(item)
+    groups.set(key, group)
+  }
+  const out = [...groups.values()].sort((a, b) => b.amount - a.amount)
+  for (const group of out) {
+    group.pct = total > 0 ? (group.amount / total) * 100 : 0
+    group.children.sort((a, b) => b.amount - a.amount)
+  }
+  return out
+}
+
+/** Whole dollars: "$1,478", "-$20". */
+export function formatWholeMoney(n: number): string {
+  const sign = n < 0 ? "-" : ""
+  return `${sign}$${Math.round(Math.abs(n)).toLocaleString("en-AU")}`
+}
+
 /** Daily debit totals between start/end inclusive. */
 export function dailySpendSeries(
   rows: Transaction[],

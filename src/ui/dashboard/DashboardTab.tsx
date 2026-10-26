@@ -5,7 +5,7 @@ import { S } from "../primitives/S"
 import { ui, type SectionId } from "../../state/uiStore"
 import { data } from "../../state/dataStore"
 import { theme } from "../../theme"
-import { barFill, computeCategorySpend, dailySpendSeries, formatMoney, formatPct } from "../../domain/dashboard"
+import { computeCategorySpend, dailySpendSeries, formatMoney, formatPct, formatWholeMoney, groupCategorySpend } from "../../domain/dashboard"
 import { computePeriodFlows, computePosition } from "../../domain/position"
 import {
   LOOKBACKS,
@@ -34,7 +34,7 @@ export function DashboardTab(props: { focused: SectionId }) {
   const scoped = createMemo(() => filterByTimeframe(data.spendingTransactions(), ui.state.timeframe, clock()))
   const flows = createMemo(() => computePeriodFlows(data.state.accounts, inPeriod()))
   const position = createMemo(() => computePosition(data.state.accounts, data.state.transactions, localTodayISO()))
-  const cats = createMemo(() => computeCategorySpend(scoped(), data.state.categories).slice(0, 12))
+  const groups = createMemo(() => groupCategorySpend(computeCategorySpend(scoped(), data.state.categories), data.state.categories))
   const series = createMemo(() => dailySpendSeries(scoped(), bounds().start, bounds().end))
   const saversPeriodChange = () => flows().saverChanges.reduce((sum, c) => sum + c.change, 0)
   const saverChange = (accountId: number) => flows().saverChanges.find((c) => c.accountId === accountId)?.change ?? 0
@@ -81,8 +81,21 @@ export function DashboardTab(props: { focused: SectionId }) {
   const netChart = createMemo(() =>
     levelChart(position().history.map((h) => h.value), Math.max(1, dims().width - 4 - AXIS), 5),
   )
-  // name (15) + "  NN%" (5) + " $12,345.67" (13) beside the bar.
-  const catBarWidth = () => Math.max(4, rightInner() - 15 - 5 - 13)
+  // Every group gets a line; the remaining lines go to the largest
+  // subcategories overall, shown under their group.
+  const categoryLines = createMemo(() => {
+    const budget = Math.max(1, middleHeight() - 2)
+    const shownGroups = groups().slice(0, budget)
+    const spare = budget - shownGroups.length
+    const children = shownGroups.flatMap((g) => g.children).sort((a, b) => b.amount - a.amount).slice(0, Math.max(0, spare))
+    const keep = new Set(children)
+    return shownGroups.flatMap((g) => [
+      { label: g.name, color: g.color, amount: g.amount, pct: g.pct as number | null, child: false },
+      ...g.children.filter((c) => keep.has(c)).map((c) => ({ label: c.name, color: g.color, amount: c.amount, pct: null, child: true })),
+    ])
+  })
+  // Category lines: name, then amount (9) and share (5) right-aligned.
+  const catNameWidth = () => Math.max(8, rightInner() - 14)
 
   return (
     <box width="100%" height="100%" flexDirection="column" gap={0} backgroundColor={theme.canvas}>
@@ -216,15 +229,15 @@ export function DashboardTab(props: { focused: SectionId }) {
         </SectionCard>
         <box flexGrow={1} flexBasis={0} minWidth={0} height={middleHeight()} overflow="hidden">
         <SectionCard title="Spending by Category" height={middleHeight()} focused={props.focused === "dash.composition"}>
-          {cats().length === 0 ? (
+          {groups().length === 0 ? (
             <text fg={theme.overlay1}>No spending in range</text>
           ) : (
-            <For each={cats().slice(0, Math.max(1, middleHeight() - 2))}>
-              {(c) => (
+            <For each={categoryLines()}>
+              {(line) => (
                 <text wrapMode="none">
-                  <S fg={c.color}>{fit(c.name, 15)}</S>
-                  <S fg={c.color}>{barFill(c.pct, catBarWidth())}</S>
-                  <S fg={theme.subtext0}>{`${Math.round(c.pct).toString().padStart(4)}% ${formatMoney(c.amount).padStart(12)}`}</S>
+                  <S fg={line.child ? theme.subtext0 : line.color} bold={!line.child}>{fit(line.child ? `  ${line.label}` : line.label, catNameWidth())}</S>
+                  <S fg={line.child ? theme.subtext0 : theme.text} bold={!line.child}>{formatWholeMoney(line.amount).padStart(9)}</S>
+                  <S fg={theme.overlay1}>{(line.pct != null ? `${Math.round(line.pct)}%` : "").padStart(5)}</S>
                 </text>
               )}
             </For>

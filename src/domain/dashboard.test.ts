@@ -5,6 +5,8 @@ import {
   computeOverview,
   dailySpendSeries,
   sparkline,
+  formatWholeMoney,
+  groupCategorySpend,
 } from "./dashboard"
 import type { Category, Transaction } from "./types"
 
@@ -96,5 +98,27 @@ describe("dashboard aggregates", () => {
       { ...debit, dateISO: "2026-01-31" },
       { ...debit, dateISO: "2026-02-03" },
     ], "2026-02-01", "2026-02-02")).toEqual({ dates: ["2026-02-01", "2026-02-02"], values: [50, 0] })
+  })
+})
+
+describe("category groups", () => {
+  test("subcategories roll up into their group; ungrouped categories stand alone; whole-dollar format", () => {
+    const tree = [
+      { id: 1, name: "Uncategorised", color: "#7f849c", sortOrder: 1, isDefault: true, parentId: null, extId: null },
+      { id: 10, name: "Good Life", color: "#fab387", sortOrder: 2, isDefault: false, parentId: null, extId: "good-life" },
+      { id: 11, name: "Takeaway", color: "#fab387", sortOrder: 3, isDefault: false, parentId: 10, extId: "takeaway" },
+      { id: 12, name: "Pubs & Bars", color: "#fab387", sortOrder: 4, isDefault: false, parentId: 10, extId: "pubs-and-bars" },
+    ]
+    const groups = groupCategorySpend([
+      { categoryId: 1, name: "Uncategorised", color: "#7f849c", amount: 50, pct: 0 },
+      { categoryId: 11, name: "Takeaway", color: "#fab387", amount: 30, pct: 0 },
+      { categoryId: 12, name: "Pubs & Bars", color: "#fab387", amount: 40, pct: 0 },
+    ], tree)
+    expect(groups.map((g) => [g.name, g.amount, Math.round(g.pct), g.children.map((c) => c.name)])).toEqual([
+      ["Good Life", 70, 58, ["Pubs & Bars", "Takeaway"]],
+      ["Uncategorised", 50, 42, []],
+    ])
+    expect(formatWholeMoney(1477.6)).toBe("$1,478")
+    expect(formatWholeMoney(-20.2)).toBe("-$20")
   })
 })
