@@ -69,6 +69,8 @@ export interface DataState {
   tags: Tag[]
   rules: Rule[]
   savedFilters: SavedFilter[]
+  /** Show Nerd Font category icons (settings config). */
+  icons: boolean
   importProfiles: ImportProfile[]
   imports: ImportRecord[]
   transactions: Transaction[]
@@ -108,6 +110,7 @@ function createDataStore() {
     tags: [],
     rules: [],
     savedFilters: [],
+    icons: true,
     importProfiles: [],
     imports: [],
     transactions: [],
@@ -155,7 +158,7 @@ function createDataStore() {
     db = openDb(actualDbPath)
     const config = loadSettingsConfig()
     setState({ dbPath: actualDbPath === ":memory:" ? ":memory:" : actualDbPath })
-    setState({ savedFilters: config.savedFilters, importProfiles: config.importProfiles })
+    setState({ savedFilters: config.savedFilters, importProfiles: config.importProfiles, icons: config.icons !== false })
     refresh()
   }
 
@@ -435,26 +438,31 @@ function createDataStore() {
     const others = state.savedFilters.filter((f) => f.id !== originalId)
     const normalized = validateSavedFilter(filter, others)
     const next = originalId ? state.savedFilters.map((f) => f.id === originalId ? normalized : f) : [...state.savedFilters, normalized]
-    saveSettingsConfig({ version: 2, savedFilters: next, importProfiles: state.importProfiles })
+    saveSettingsConfig({ version: 2, icons: state.icons, savedFilters: next, importProfiles: state.importProfiles })
     setState({ savedFilters: next })
+  }
+
+  function setIcons(on: boolean) {
+    saveSettingsConfig({ version: 2, icons: on, savedFilters: state.savedFilters, importProfiles: state.importProfiles })
+    setState({ icons: on })
   }
 
   function deleteSavedFilter(id: string) {
     const next = state.savedFilters.filter((f) => f.id !== id)
-    saveSettingsConfig({ version: 2, savedFilters: next, importProfiles: state.importProfiles })
+    saveSettingsConfig({ version: 2, icons: state.icons, savedFilters: next, importProfiles: state.importProfiles })
     setState({ savedFilters: next })
   }
 
   function saveImportProfile(profile: ImportProfile) {
     const normalized = validateImportProfile(profile)
     const next = [...state.importProfiles.filter((p) => p.id !== normalized.id), normalized].sort((a, b) => a.id.localeCompare(b.id))
-    saveSettingsConfig({ version: 2, savedFilters: state.savedFilters, importProfiles: next })
+    saveSettingsConfig({ version: 2, icons: state.icons, savedFilters: state.savedFilters, importProfiles: next })
     setState({ importProfiles: next })
   }
 
   function deleteImportProfile(id: string) {
     const next = state.importProfiles.filter((p) => p.id !== id)
-    saveSettingsConfig({ version: 2, savedFilters: state.savedFilters, importProfiles: next })
+    saveSettingsConfig({ version: 2, icons: state.icons, savedFilters: state.savedFilters, importProfiles: next })
     setState({ importProfiles: next })
   }
 
@@ -619,6 +627,7 @@ function createDataStore() {
     reorderSettingsRule,
     toggleSettingsRule,
     saveSavedFilter,
+    setIcons,
     deleteSavedFilter,
     saveImportProfile,
     deleteImportProfile,

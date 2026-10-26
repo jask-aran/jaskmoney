@@ -229,6 +229,8 @@ describe("shell render M0", () => {
     process.env.JASKMONEY_NO_BOOTSTRAP = "1"
     const t = await testRender(() => <App />, { width: 140, height: 30 })
     await t.renderOnce()
+    // Dot markers (icons need a Nerd Font and are a separate setting).
+    data.setState({ icons: false })
     await t.flush()
     const row = (id: number, accountId: number, accountName: string) => ({
       id, dateRaw: "x", dateISO: "2026-10-01", amount: -1, description: `ROW ${id}`,
@@ -312,6 +314,8 @@ describe("shell render M0", () => {
     process.env.JASKMONEY_NO_BOOTSTRAP = "1"
     const t = await testRender(() => <App />, { width: 140, height: 30 })
     await t.renderOnce()
+    // Dot markers (icons need a Nerd Font and are a separate setting).
+    data.setState({ icons: false })
     await t.flush()
 
     data.setState({

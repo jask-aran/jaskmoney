@@ -21,6 +21,8 @@ export function ListPicker(props: {
   hints: string
   width?: number
   mark?: (value: string | number | null) => string
+  /** A marker (e.g. a category icon) before each item's label. */
+  iconFor?: (value: string | number | null) => string | undefined
 }) {
   const dims = useTerminalDimensions()
   const width = () => Math.max(20, Math.min(props.width ?? 52, dims().width - 4))
@@ -51,7 +53,10 @@ export function ListPicker(props: {
               <Show when={props.mark}>
                 <S fg={theme.subtext0} bg={bg()}>{`${props.mark!(item.value)} `}</S>
               </Show>
-              <S fg={item.color ?? theme.text} bg={bg()} bold={selected()}>{fit(item.label, width() - 10)}</S>
+              <Show when={props.iconFor?.(item.value)}>
+                {(icon: () => string) => <S fg={item.color ?? theme.text} bg={bg()}>{`${icon()} `}</S>}
+              </Show>
+              <S fg={item.color ?? theme.text} bg={bg()} bold={selected()}>{fit(item.label, width() - 12)}</S>
             </text>
           )
         }}

@@ -1,4 +1,5 @@
 import { Show, createMemo, type JSX } from "solid-js"
+import { categoryMark } from "../icons"
 import { S } from "../primitives/S"
 import { ui } from "../../state/uiStore"
 import { data } from "../../state/dataStore"
@@ -58,7 +59,7 @@ export function TransactionDetail() {
         <Show when={detail()!.transferAccountName}>
           {field("Transfer", <S fg={theme.text}>{`${row()!.amount < 0 ? "to" : "from"} ${detail()!.transferAccountName}`}</S>)}
         </Show>
-        {field("Category", <S fg={categoryColor(row()!.categoryColor)}>{`● ${row()!.categoryName}`}</S>)}
+        {field("Category", <S fg={categoryColor(row()!.categoryColor)}>{`${categoryMark(row()!.categoryId)} ${row()!.categoryName}`}</S>)}
         {field("Tags", <S fg={theme.text}>{row()!.tagNames.length ? row()!.tagNames.join(", ") : "—"}</S>)}
         <Show when={detail()!.transactionType || detail()!.cardMethod}>
           {field("Method", <S fg={theme.text}>{[detail()!.transactionType, cardText(detail()!.cardMethod, detail()!.cardSuffix)].filter(Boolean).join(" · ")}</S>)}

@@ -14,6 +14,7 @@ import { selectableEntries, selectedAccounts, selectionLabel, sidebarEntries } f
 import { computeAccountStats } from "../../domain/accountStats"
 import { toISODate } from "../../domain/timeframe"
 import { AccountDetails } from "./AccountDetails"
+import { categoryMark } from "../icons"
 import { TransactionDetail } from "./TransactionDetail"
 
 const columns = {
@@ -56,6 +57,7 @@ function catFg(color: string | undefined): string {
 }
 
 function formatCategory(
+  categoryId: number | null,
   name: string,
   color: string | undefined,
   width: number,
@@ -63,7 +65,7 @@ function formatCategory(
   const muted = !name || name === "Uncategorised" || !color || color === "#7f849c"
   const text = name || "Uncategorised"
   return {
-    marker: muted ? "○ " : "● ",
+    marker: `${categoryMark(categoryId, muted)} `,
     markerColor: catFg(color),
     text: fit(text, width - 2),
     textColor: catFg(color),
@@ -289,7 +291,7 @@ export function ManagerTab(props: { focused: SectionId }) {
                 const held = () => r.status === "HELD"
                 const tags = () => formatTags(r.tagNames, r.tagColors, layout().tags)
                 const category = () =>
-                  formatCategory(r.categoryName, r.categoryColor, columns.category)
+                  formatCategory(r.categoryId, r.categoryName, r.categoryColor, columns.category)
                 const strong = () => look().bold
                 return (
                   <text width="100%" bg={rowBg()}>

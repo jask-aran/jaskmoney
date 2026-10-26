@@ -12,6 +12,7 @@ import { accountRole } from "../../domain/types"
 import { budgetLabel, budgetScopeOptions } from "../../domain/budgetScopes"
 import { describeCycle } from "../../domain/budget"
 import { Modal } from "../primitives/Modal"
+import { categoryMark } from "../icons"
 import { Form } from "../primitives/Form"
 import { ListPicker } from "../primitives/ListPicker"
 import { EDITOR_TITLE, editorFields, editorNote, pickerItems } from "../../state/settingsForm"
@@ -58,7 +59,7 @@ function TaxonomyList(props: { kind: SettingsList; narrow?: boolean; split?: boo
           }
           return <text width="100%" bg={bg()}>
             <S fg={selected() ? theme.focus : theme.canvas} bg={bg()} bold>{selected() ? "> " : "  "}</S>
-            <S fg={row.color} bg={bg()}>● </S>
+            <S fg={row.color} bg={bg()}>{`${isCategory() ? categoryMark(row.id) : "●"} `}</S>
             <S fg={theme.text} bg={bg()} bold={selected()}>{truncate(row.name, props.narrow ? 28 : 20)}</S>
             <Show when={scope()}><S fg={theme.overlay1} bg={bg()}>{` (${scope()})`}</S></Show>
           </text>
@@ -130,7 +131,7 @@ function DatabasePane(props: { focused: boolean; height?: number | "auto" | `${n
     {/* Gaps are expressions: Solid collapses runs of literal JSX spaces. */}
     <text fg={theme.subtext0}>{"Schema "}<S fg={theme.text}>v{info()?.schemaVersion ?? "—"}</S>{"   Transactions "}<S fg={theme.text}>{info()?.transactionCount ?? 0}</S>{"   Accounts "}<S fg={theme.text}>{info()?.accountCount ?? 0}</S></text>
     <text fg={theme.subtext0}>{"Categories "}<S fg={theme.text}>{info()?.categoryCount ?? 0}</S>{"   Tags "}<S fg={theme.text}>{info()?.tagCount ?? 0}</S>{"   Rules "}<S fg={theme.text}>{info()?.ruleCount ?? 0}</S></text>
-    <text fg={theme.overlay1}>i import CSV · p manage profiles</text>
+    <text fg={theme.overlay1}>{`i import CSV · p manage profiles · n icons ${data.state.icons ? "on" : "off"}`}</text>
     <text fg={theme.overlay1}>c clear transactions/imports · x factory-reset database</text>
     <text fg={theme.overlay1}>Profiles {data.state.importProfiles.length} · imports {info()?.importCount ?? 0} · reset keeps filters and config</text>
   </SectionCard>
@@ -225,6 +226,7 @@ function EditorOverlay() {
                   cursor={picker().cursor}
                   query={picker().query}
                   mark={field().multi ? (value) => (ui.state.settingsDraft.addTagIds.includes(Number(value)) ? "[x]" : "[ ]") : undefined}
+                  iconFor={field().key === "categoryId" || field().key === "setCategoryId" ? (value) => (value == null ? undefined : categoryMark(Number(value))) : undefined}
                   hints={field().multi ? "j/k move · enter toggle · esc done" : "j/k move · enter choose · esc back"}
                 />
               )}

@@ -4,6 +4,7 @@ import { data } from "../../state/dataStore"
 import { categoryPickerRows } from "../../domain/categoryOptions"
 import type { PickerItem } from "../../state/settingsForm"
 import { ListPicker } from "./ListPicker"
+import { categoryMark } from "../icons"
 
 /** Choose a category for the target transactions, grouped and filterable. */
 export function CatPicker() {
@@ -18,6 +19,7 @@ export function CatPicker() {
         items={items()}
         cursor={ui.state.catPickerCursor}
         query={ui.state.catPickerQuery}
+        iconFor={(value) => categoryMark(Number(value))}
         hints="j/k move · enter apply · esc cancel"
       />
     </Show>

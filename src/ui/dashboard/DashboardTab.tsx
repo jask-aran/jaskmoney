@@ -1,4 +1,5 @@
 import { For, Show, createMemo } from "solid-js"
+import { categoryMark } from "../icons"
 import { useTerminalDimensions } from "@opentui/solid"
 import { SectionCard } from "../primitives/SectionCard"
 import { S } from "../primitives/S"
@@ -264,7 +265,7 @@ export function DashboardTab(_props: { focused: SectionId }) {
             <S fg={theme.overlay1}>{shortDate(t.dateISO).padEnd(7)}</S>
             <S fg={theme.text}>{fit(t.description, recentDescWidth())}</S>
             <Show when={recentCategory()}>
-              <S fg={t.categoryColor || theme.overlay1}>{fit(` ${t.categoryName}`, recentCategory())}</S>
+              <S fg={t.categoryColor || theme.overlay1}>{fit(` ${categoryMark(t.categoryId)} ${t.categoryName}`, recentCategory())}</S>
             </Show>
             <S fg={t.amount < 0 ? theme.error : theme.success}>{formatMoney(t.amount).padStart(12)}</S>
           </text>
@@ -279,7 +280,8 @@ export function DashboardTab(_props: { focused: SectionId }) {
         <For each={categoryLines()}>
           {(line) => (
             <text wrapMode="none">
-              <S fg={line.child ? theme.subtext0 : line.color} bold={!line.child}>{fit(line.child ? `  ${line.label}` : line.label, Math.max(8, rightInner() - 14))}</S>
+              <S fg={line.color}>{line.child ? "  " : ""}{`${categoryMark(line.categoryId)} `}</S>
+                  <S fg={line.child ? theme.subtext0 : line.color} bold={!line.child}>{fit(line.label, -(line.child ? 4 : 2) + Math.max(8, rightInner() - 14))}</S>
               <S fg={line.child ? theme.subtext0 : theme.text} bold={!line.child}>{formatWholeMoney(line.amount).padStart(9)}</S>
               <S fg={theme.overlay1}>{(line.pct != null ? `${Math.round(line.pct)}%` : "").padStart(5)}</S>
             </text>

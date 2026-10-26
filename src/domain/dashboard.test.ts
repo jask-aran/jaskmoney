@@ -122,8 +122,8 @@ describe("tracker series", () => {
 describe("fitCategoryLines", () => {
   const child = (name: string, amount: number) => ({ categoryId: null, name, color: "", amount, pct: 0 })
   const groups = [
-    { name: "Good Life", color: "a", amount: 30, pct: 60, children: [child("Cafes", 20), child("Pubs", 10)] },
-    { name: "Home", color: "b", amount: 20, pct: 40, children: [child("Groceries", 15), child("Pets", 5)] },
+    { categoryId: 10, name: "Good Life", color: "a", amount: 30, pct: 60, children: [child("Cafes", 20), child("Pubs", 10)] },
+    { categoryId: 20, name: "Home", color: "b", amount: 20, pct: 40, children: [child("Groceries", 15), child("Pets", 5)] },
   ]
 
   test("groups first, then the largest subcategories under their group", () => {

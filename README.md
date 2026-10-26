@@ -68,3 +68,5 @@ The Dashboard is as of today and ignores the Date Range: balances, pending holds
 ### CSV import
 
 In Settings, activate Database & Import and press `i` to choose a CSV, map or select an import profile, preview duplicates, then import.
+
+Category icons use Nerd Font glyphs (a "Nerd Font Mono" face keeps them one cell wide). Settings › Database & Import `n` turns them off, falling back to coloured dots; the choice is stored in the settings config, not the database.

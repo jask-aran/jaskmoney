@@ -1,4 +1,5 @@
 import { For, Show, createEffect, createMemo } from "solid-js"
+import { categoryMark } from "../icons"
 import { useTerminalDimensions } from "@opentui/solid"
 import { SectionCard } from "../primitives/SectionCard"
 import { S } from "../primitives/S"
@@ -116,7 +117,8 @@ export function SpendingTab(props: { focused: SectionId }) {
         <For each={fitCategoryLines(groups(), categoriesHeight() - 2)}>
           {(line) => (
             <text wrapMode="none">
-              <S fg={line.child ? theme.subtext0 : line.color} bold={!line.child}>{fit(line.child ? `  ${line.label}` : line.label, categoryNameWidth())}</S>
+              <S fg={line.color}>{line.child ? "  " : ""}{`${categoryMark(line.categoryId)} `}</S>
+                  <S fg={line.child ? theme.subtext0 : line.color} bold={!line.child}>{fit(line.label, -(line.child ? 4 : 2) + categoryNameWidth())}</S>
               <S fg={line.child ? theme.subtext0 : theme.text} bold={!line.child}>{formatWholeMoney(line.amount).padStart(9)}</S>
               <S fg={theme.overlay1}>{(line.pct != null ? `${Math.round(line.pct)}%` : "").padStart(5)}</S>
             </text>

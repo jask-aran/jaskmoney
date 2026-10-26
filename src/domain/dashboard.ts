@@ -42,6 +42,8 @@ export function computeCategorySpend(
 }
 
 export interface CategoryGroupSpend {
+  /** The group's category (the parent, or the category itself). */
+  categoryId: number | null
   name: string
   color: string
   amount: number
@@ -61,7 +63,7 @@ export function groupCategorySpend(list: CategorySpend[], categories: Category[]
     const category = item.categoryId != null ? byId.get(item.categoryId) : undefined
     const parent = category?.parentId != null ? byId.get(category.parentId) : undefined
     const key = parent ? `p${parent.id}` : `c${item.categoryId ?? item.name}`
-    const group = groups.get(key) ?? { name: parent?.name ?? item.name, color: parent?.color ?? item.color, amount: 0, pct: 0, children: [] }
+    const group = groups.get(key) ?? { categoryId: parent?.id ?? item.categoryId, name: parent?.name ?? item.name, color: parent?.color ?? item.color, amount: 0, pct: 0, children: [] }
     group.amount += item.amount
     if (parent) group.children.push(item)
     groups.set(key, group)
@@ -75,6 +77,7 @@ export function groupCategorySpend(list: CategorySpend[], categories: Category[]
 }
 
 export interface CategoryLine {
+  categoryId: number | null
   label: string
   color: string
   amount: number
@@ -91,8 +94,8 @@ export function fitCategoryLines(groups: CategoryGroupSpend[], maxLines: number)
   const spare = Math.max(0, maxLines - shown.length)
   const keep = new Set(shown.flatMap((g) => g.children).sort((a, b) => b.amount - a.amount).slice(0, spare))
   return shown.flatMap((g) => [
-    { label: g.name, color: g.color, amount: g.amount, pct: g.pct, child: false },
-    ...g.children.filter((c) => keep.has(c)).map((c) => ({ label: c.name, color: g.color, amount: c.amount, pct: null, child: true })),
+    { categoryId: g.categoryId, label: g.name, color: g.color, amount: g.amount, pct: g.pct, child: false },
+    ...g.children.filter((c) => keep.has(c)).map((c) => ({ categoryId: c.categoryId, label: c.name, color: g.color, amount: c.amount, pct: null, child: true })),
   ])
 }
 

@@ -7,6 +7,9 @@ export interface SettingsConfig {
   version: 2
   savedFilters: SavedFilter[]
   importProfiles: ImportProfile[]
+  /** Nerd Font category icons (off: coloured dots). A per-machine display
+   * choice, so it lives here rather than in the database. Default on. */
+  icons?: boolean
 }
 
 /** The former hard-coded importer is now an ordinary editable profile. It is
@@ -78,7 +81,7 @@ export function loadSettingsConfig(path = defaultSettingsConfigPath()): Settings
   const importProfiles = Array.isArray(raw.importProfiles)
     ? raw.importProfiles.map((p) => validateImportProfile({ dateFormat: "DMY", ...(p as Omit<ImportProfile, "dateFormat">) }))
     : []
-  return { version: 2, savedFilters, importProfiles: importProfiles.length ? importProfiles : defaultProfiles() }
+  return { version: 2, savedFilters, importProfiles: importProfiles.length ? importProfiles : defaultProfiles(), icons: raw.icons !== false }
 }
 
 /** Rename is atomic on the same filesystem; a config write can therefore
@@ -90,6 +93,7 @@ export function saveSettingsConfig(config: SettingsConfig, path = defaultSetting
     version: 2,
     savedFilters: config.savedFilters.map((f, i, all) => validateSavedFilter(f, all.filter((_, j) => j !== i))),
     importProfiles: config.importProfiles.map(validateImportProfile),
+    icons: config.icons !== false,
   }
   const temp = `${path}.tmp-${process.pid}-${Date.now()}`
   try {
