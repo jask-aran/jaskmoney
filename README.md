@@ -47,11 +47,15 @@ Up uses a Personal Access Token; there is no in-app login. Create one at <https:
 export JASKMONEY_UP_TOKEN=up:yeah:…
 ```
 
-In Settings, activate Up Bank (`v` then `u`) and press `s` to sync. The first sync of each account pulls its full history; later syncs fetch a recent window per account, update pending (held) transactions in place when they settle, and drop holds that Up reversed. Sync never changes a category, tag or note you set. Up's own categories and tags are stored on each transaction but are not mapped to local categories.
+The app syncs at startup and every 5 minutes; `ctrl+r` syncs from anywhere, and the header shows when it last synced. In Settings, Up Bank (`v` then `u`) also has `s` to sync. The first sync of each account pulls its full history; later syncs fetch a recent window per account, update pending (held) transactions in place when they settle, and drop holds that Up reversed. Sync never changes a category, tag or note you set.
+
+Categories are Up's: its 4 groups and their subcategories, plus local-only ones (Income, Transfers, People, Uncategorised). Transactions follow Up's category until you or a rule change it. Changing a category in the app updates your Up account too when Up allows it (Up subcategories on transactions Up can categorise; choosing Uncategorised clears it in Up). Local-only categories and transfers stay local.
 
 Each Up account has a sync switch (`space`). Switching an account off removes its transactions and hides it; money you move to it then counts as spending (useful for a joint account that pays shared bills). Savers are tracked by balance: transfers between Spending and a saver are never spending or income.
 
 The Manager's account sidebar lists All spending, each spending account, and its savers (as a group and singly). The selected entry decides which transactions the table shows, and the card beneath it shows that entry's balance, money in and out, monthly flows, balance history, interest and top outflows.
+
+Tabs: `1` Dashboard, `2` Spending, `3` Manager, `4` Settings. In the Manager, `enter` opens a transaction's details (`c` category, `t` tags, `n` notes). The Spending tab breaks the Date Range period down by category, calendar day and merchant; `enter` on a merchant lists its transactions.
 
 The Dashboard's **Now** and **Savers** cards are point-in-time (balances, pending holds, runway at the 90-day average spend) and ignore the date range; **Date Range** drives the period figures and the spending charts.
 
