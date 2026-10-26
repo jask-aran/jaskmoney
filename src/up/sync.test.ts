@@ -488,9 +488,14 @@ test("store sync locks concurrent calls, refreshes, applies rules only to insert
     fetchMock.mockImplementation(Object.assign(async (input: Parameters<typeof fetch>[0]) => new URL(String(input)).pathname.endsWith("/categories") ? response([]) : new URL(String(input)).pathname.endsWith("/accounts") ? response([account()]) : response([txn("t", "SETTLED")]), { preconnect: globalThis.fetch.preconnect }))
     expect(await data.syncUp()).toBe("Up sync: 0 new, 1 updated, 0 pending removed")
     expect(data.state.transactions[0]?.categoryName).toBe("Uncategorised")
+    const lastSyncedAt = data.state.dbInfo?.upLastSyncedAt
+    expect(lastSyncedAt).toBeTruthy()
+    expect(data.state.dbInfo?.upLastError).toBeNull()
     fetchMock.mockRejectedValue(new Error("Offline"))
     await expect(data.syncUp()).rejects.toThrow("Offline")
     expect(data.state.upSyncing).toBe(false)
+    expect(data.state.dbInfo?.upLastError).toBe("Offline")
+    expect(data.state.dbInfo?.upLastSyncedAt).toBe(lastSyncedAt)
     delete process.env.JASKMONEY_UP_TOKEN
     await expect(data.syncUp()).rejects.toThrow("Set JASKMONEY_UP_TOKEN")
     expect(data.state.upSyncing).toBe(false)

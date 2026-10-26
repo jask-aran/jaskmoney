@@ -1,5 +1,6 @@
 import type { Db } from "../db/client"
 import type { createUpClient } from "./client"
+import { resolveUpName } from "./names"
 
 type CategoryTree = Awaited<ReturnType<ReturnType<typeof createUpClient>["listCategories"]>>
 const palette = ["#fab387", "#cba6f7", "#94e2d5", "#89b4fa", "#f5c2e7", "#a6e3a1"]
@@ -26,16 +27,9 @@ export function syncCategoryTree(db: Db, tree: CategoryTree): void {
     if (visited.has(category.id)) throw new Error("Invalid Up category tree")
     visited.add(category.id)
     const existing = db.query<{ id: number; color: string }, [string]>("SELECT id, color FROM categories WHERE ext_id = ?").get(category.id)
-    const conflicts = (name: string) => {
-      const row = db.query<{ id: number }, [string]>("SELECT id FROM categories WHERE name = ?").get(name)
-      return row !== null && row.id !== existing?.id
-    }
-    let name = category.name
-    if (conflicts(name)) {
-      const qualified = `${name} (Up)`
-      name = qualified
-      for (let n = 2; conflicts(name); n++) name = `${qualified} ${n}`
-    }
+    const name = resolveUpName(category.name,
+      name => db.query<{ id: number }, [string]>("SELECT id FROM categories WHERE name = ?").get(name)?.id,
+      existing?.id)
     let local: { id: number; color: string }
     if (existing) {
       db.query("UPDATE categories SET name = ?, parent_id = ? WHERE id = ?").run(name, parent?.id ?? null, existing.id)

@@ -45,6 +45,8 @@ import { selectedAccounts, type AccountSelection } from "../domain/accountTree"
 import type { Budget, BudgetScope, CycleConfig } from "../domain/budget"
 import { buildImportPreview, commitImportPreview, matchingProfiles } from "../domain/profileImport"
 import { createUpClient, readUpToken } from "../up/client"
+import { pushTransactions } from "../up/push"
+import { addTagLink } from "../db/tagLinks"
 import { syncUp as runUpSync } from "../up/sync"
 import { dryRunRules as evaluateRules } from "../domain/rules"
 import { pushTagChange } from "../up/tags"
@@ -81,12 +83,10 @@ export interface DataState {
   /** Which accounts the Manager shows. Approved deviation from Go's per-account
    * on/off scope (2026-10-26): one selection from the account sidebar. */
   accountSelection: AccountSelection
-  lastIngestSummary: string
   dbInfo: DbInfo | null
   filterQuery: string
   filterExpr: FilterNode | null
   filterErr: string
-  filterLastApplied: string
   sortColumn: SortColumn
   sortAscending: boolean
 }
@@ -121,12 +121,10 @@ function createDataStore() {
     imports: [],
     transactions: [],
     accountSelection: "all",
-    lastIngestSummary: "",
     dbInfo: null,
     filterQuery: "",
     filterExpr: null,
     filterErr: "",
-    filterLastApplied: "",
     sortColumn: "date",
     sortAscending: false, // date desc default like Go
   })
@@ -158,6 +156,17 @@ function createDataStore() {
       dbInfo,
     })
   }
+
+  /** A write to the open database, then a reload of the store from it. */
+  function mutate<T>(write: (db: Db) => T): T {
+    if (!db) throw new Error("db not open")
+    const result = write(db)
+    refresh()
+    return result
+  }
+
+  /** An Up client for the token in the environment now. */
+  const upClient = () => createUpClient({ token: readUpToken() })
 
   function init(dbPath?: string) {
     actualDbPath = dbPath ?? defaultDbPath()
@@ -228,7 +237,6 @@ function createDataStore() {
       filterQuery: q,
       filterExpr: expr,
       filterErr: err,
-      filterLastApplied: "",
     })
   }
 
@@ -245,16 +253,13 @@ function createDataStore() {
         filterQuery: trimmed,
         filterExpr: live.expr,
         filterErr: error ?? live.err,
-        filterLastApplied: "",
       })
       return { ok: false, err: error ?? "invalid filter" }
     }
-    const canonical = filterExprString(node) || trimmed
     setState({
       filterQuery: trimmed,
       filterExpr: live.expr ?? node,
       filterErr: "",
-      filterLastApplied: canonical,
     })
     return { ok: true, err: "" }
   }
@@ -264,12 +269,7 @@ function createDataStore() {
       filterQuery: "",
       filterExpr: null,
       filterErr: "",
-      filterLastApplied: "",
     })
-  }
-
-  function setFilterQuery(q: string) {
-    setFilterLive(q)
   }
 
   function cycleSortColumn(): string {
@@ -289,23 +289,12 @@ function createDataStore() {
     setState({ accountSelection: typeof selection === "number" && !state.accounts.some((a) => a.id === selection) ? "all" : selection })
   }
 
-  /** Local-only categorisation (no provider push); see categorizeTransactions. */
-  function categorizeTransaction(txnId: number, categoryId: number): string {
-    if (!db) throw new Error("db not open")
-    setTransactionCategory(db, txnId, categoryId, "user")
-    refresh()
-    const cat = state.categories.find((c) => c.id === categoryId)
-    return `Categorized #${txnId} → ${cat?.name ?? categoryId}`
-  }
-
   function transactionDetail(id: number): TransactionDetail | null {
     return db ? loadTransactionDetail(db, id) : null
   }
 
   function updateTransactionNotes(id: number, notes: string): void {
-    if (!db) throw new Error("db not open")
-    setTransactionNotes(db, id, notes)
-    refresh()
+    mutate((db) => setTransactionNotes(db, id, notes))
   }
 
   /**
@@ -323,29 +312,24 @@ function createDataStore() {
     const parentExt = category.parentId != null ? state.categories.find((c) => c.id === category.parentId)?.extId ?? null : null
     // undefined: the provider cannot represent this category.
     const providerId: string | null | undefined = category.extId && category.parentId != null ? category.extId : category.isDefault ? null : undefined
-    let client: ReturnType<typeof createUpClient> | null = null
-    let pushed = 0, local = 0
-    const failures: string[] = []
-    for (const id of txnIds) {
-      const row = db.query(`SELECT source, external_id AS externalId, ext_categorizable AS categorizable FROM transactions WHERE id = ?`)
+    const database = db
+    let local = 0
+    const { pushed, failures } = await pushTransactions(txnIds, (id) => {
+      const row = database.query(`SELECT source, external_id AS externalId, ext_categorizable AS categorizable FROM transactions WHERE id = ?`)
         .get(id) as { source: string; externalId: string | null; categorizable: number | null } | null
-      if (!row) continue
+      if (!row) return null
       const pushable = row.source === "up" && row.externalId != null && row.categorizable === 1 && providerId !== undefined
       if (!pushable) {
-        setTransactionCategory(db, id, categoryId, "user")
+        setTransactionCategory(database, id, categoryId, "user")
         local++
-        continue
+        return null
       }
-      try {
-        client ??= createUpClient({ token: readUpToken() })
-        await client.setTransactionCategory(row.externalId!, providerId ?? null)
-        setTransactionCategory(db, id, categoryId, providerId ? "provider" : null, { extCategory: providerId ?? null, extParentCategory: providerId ? parentExt : null })
-        pushed++
-      } catch (error) {
-        failures.push(error instanceof Error ? error.message : String(error))
+      return async () => {
+        await upClient().setTransactionCategory(row.externalId!, providerId ?? null)
+        setTransactionCategory(database, id, categoryId, providerId ? "provider" : null, { extCategory: providerId ?? null, extParentCategory: providerId ? parentExt : null })
+        return 1
       }
-    }
-    refresh()
+    }, refresh)
     const done = pushed + local
     const parts = [`Categorized ${done} → ${category.name}`]
     if (pushed) parts.push(`${pushed} updated in Up`)
@@ -357,10 +341,9 @@ function createDataStore() {
     if (!db) throw new Error("db not open")
     const database = db
     if (!Object.keys(patch).length) return "Tags unchanged"
-    let up: ReturnType<typeof createUpClient> | null = null
     const client = {
-      addTransactionTags: (id: string, tags: string[]) => (up ??= createUpClient({ token: readUpToken() })).addTransactionTags(id, tags),
-      removeTransactionTags: (id: string, tags: string[]) => (up ??= createUpClient({ token: readUpToken() })).removeTransactionTags(id, tags),
+      addTransactionTags: (id: string, tags: string[]) => upClient().addTransactionTags(id, tags),
+      removeTransactionTags: (id: string, tags: string[]) => upClient().removeTransactionTags(id, tags),
     }
     const labels: string[] = []
     const updated = new Set<number>(), pushed = new Set<number>()
@@ -398,54 +381,37 @@ function createDataStore() {
   }
 
   function createSettingsCategory(input: Pick<Category, "name" | "color"> & { notSpending?: boolean }): number {
-    if (!db) throw new Error("db not open")
-    const id = createCategory(db, input)
-    refresh()
-    return id
+    return mutate((db) => createCategory(db, input))
   }
 
   function updateSettingsCategory(id: number, input: Pick<Category, "name" | "color"> & { notSpending?: boolean }) {
-    if (!db) throw new Error("db not open")
-    updateCategory(db, id, input)
-    refresh()
+    mutate((db) => updateCategory(db, id, input))
   }
 
   function deleteSettingsCategory(id: number) {
-    if (!db) throw new Error("db not open")
-    deleteCategory(db, id)
-    refresh()
+    mutate((db) => deleteCategory(db, id))
   }
 
   function createSettingsTag(input: Pick<Tag, "name" | "color" | "categoryId">): number {
-    if (!db) throw new Error("db not open")
-    const id = createTag(db, input)
-    refresh()
-    return id
+    return mutate((db) => createTag(db, input))
   }
 
   function updateSettingsTag(id: number, input: Pick<Tag, "name" | "color" | "categoryId">) {
-    if (!db) throw new Error("db not open")
-    updateTag(db, id, input)
-    refresh()
+    mutate((db) => updateTag(db, id, input))
   }
 
   function deleteSettingsTag(id: number) {
-    if (!db) throw new Error("db not open")
-    deleteTag(db, id)
-    refresh()
+    mutate((db) => deleteTag(db, id))
   }
 
   function createSettingsRule(input: Omit<Rule, "id" | "sortOrder">): number {
-    if (!db) throw new Error("db not open")
-    const id = createRule(db, input)
-    refresh()
-    return id
+    return mutate((db) => createRule(db, input))
   }
 
-  function updateSettingsRule(rule: Rule) { if (!db) throw new Error("db not open"); updateRule(db, rule); refresh() }
-  function deleteSettingsRule(id: number) { if (!db) throw new Error("db not open"); deleteRule(db, id); refresh() }
-  function reorderSettingsRule(id: number, index: number) { if (!db) throw new Error("db not open"); reorderRule(db, id, index); refresh() }
-  function toggleSettingsRule(id: number, enabled: boolean) { if (!db) throw new Error("db not open"); toggleRule(db, id, enabled); refresh() }
+  function updateSettingsRule(rule: Rule) { mutate((db) => updateRule(db, rule)) }
+  function deleteSettingsRule(id: number) { mutate((db) => deleteRule(db, id)) }
+  function reorderSettingsRule(id: number, index: number) { mutate((db) => reorderRule(db, id, index)) }
+  function toggleSettingsRule(id: number, enabled: boolean) { mutate((db) => toggleRule(db, id, enabled)) }
 
   function persistConfig(patch: Partial<SettingsConfig>) {
     saveSettingsConfig({ version: 2, icons: state.icons, savedFilters: state.savedFilters, importProfiles: state.importProfiles, ui: state.uiPrefs, ...patch })
@@ -505,15 +471,13 @@ function createDataStore() {
   function applyRules(transactionIds?: number[], dryRun = false): RuleRunResult {
     if (!db) throw new Error("db not open")
     const report = dryRunRules(transactionIds)
-    if (!dryRun) {
+    if (!dryRun) mutate((database) => database.transaction(() => {
       for (const change of report.changes) {
         // 'rule' keeps sync from replacing a rule's category with the provider's.
-        if (change.categorySet) db.query(`UPDATE transactions SET category_id = ?, category_source = 'rule' WHERE id = ?`).run(change.categoryId, change.id)
-        const insert = db.query(`INSERT OR IGNORE INTO transaction_tags (transaction_id, tag_id) VALUES (?, ?)`)
-        for (const tagId of change.tagIds) insert.run(change.id, tagId)
+        if (change.categorySet) database.query(`UPDATE transactions SET category_id = ?, category_source = 'rule' WHERE id = ?`).run(change.categoryId, change.id)
+        for (const tagId of change.tagIds) addTagLink(database, change.id, tagId)
       }
-      refresh()
-    }
+    })())
     return { updatedTransactions: report.updatedTransactions, categoryChanges: report.categoryChanges, tagChanges: report.tagChanges, failedRules: report.failedRules }
   }
 
@@ -536,11 +500,9 @@ function createDataStore() {
 
   function commitPreview(preview: ImportPreview, skipDuplicates: boolean): string {
     if (!db) throw new Error("db not open")
-    const result = commitImportPreview(db, preview, skipDuplicates)
-    refresh()
+    const result = mutate((db) => commitImportPreview(db, preview, skipDuplicates))
     const applied = preview.rulesEnabled && result.transactionIds.length ? applyRules(result.transactionIds) : null
     const summary = `Imported ${result.inserted} rows from ${result.accountName}${result.skippedDupes ? ` (${result.skippedDupes} duplicates ${skipDuplicates ? "skipped" : "forced"})` : ""}${applied?.updatedTransactions ? ` · ${applied.updatedTransactions} rules applied` : ""}`
-    setState({ lastIngestSummary: summary })
     return summary
   }
 
@@ -549,7 +511,10 @@ function createDataStore() {
     if (!db) throw new Error("db not open")
     setState({ upSyncing: true })
     try {
-      const result = await runUpSync(db, createUpClient({ token: readUpToken() }))
+      const result = await runUpSync(db, upClient()).catch((error: unknown) => {
+        try { refresh() } catch { /* Preserve the sync error if reloading also fails. */ }
+        throw error
+      })
       refresh()
       const applied = result.insertedIds.length ? applyRules(result.insertedIds) : null
       return `Up sync: ${result.inserted} new, ${result.updated} updated, ${result.removedHeld} pending removed${applied?.updatedTransactions ? ` · ${applied.updatedTransactions} rules applied` : ""}`
@@ -559,33 +524,24 @@ function createDataStore() {
   }
 
   function setBudget(scope: BudgetScope, amount: number): void {
-    if (!db) throw new Error("db not open")
-    saveBudget(db, scope, amount)
-    refresh()
+    mutate((db) => saveBudget(db, scope, amount))
   }
 
   function removeBudget(id: number): void {
-    if (!db) throw new Error("db not open")
-    deleteBudget(db, id)
-    refresh()
+    mutate((db) => deleteBudget(db, id))
   }
 
   function setBudgetCycle(config: CycleConfig): void {
-    if (!db) throw new Error("db not open")
-    saveBudgetCycle(db, config)
-    refresh()
+    mutate((db) => saveBudgetCycle(db, config))
   }
 
   /** Returns the number of transactions removed when switching sync off. */
   function setAccountSync(accountId: number, enabled: boolean): number {
-    if (!db) throw new Error("db not open")
-    const removed = setAccountSyncEnabled(db, accountId, enabled)
-    refresh()
-    return removed
+    return mutate((db) => setAccountSyncEnabled(db, accountId, enabled))
   }
 
-  function clearDatabaseData(): void { if (!db) throw new Error("db not open"); clearAllData(db); refresh() }
-  function clearAccountData(accountId: number): number { if (!db) throw new Error("db not open"); const n = clearAccountTransactions(db, accountId); refresh(); return n }
+  function clearDatabaseData(): void { mutate((db) => clearAllData(db)) }
+  function clearAccountData(accountId: number): number { return mutate((db) => clearAccountTransactions(db, accountId)) }
   function removeAccountData(accountId: number): number {
     if (!db) throw new Error("db not open")
     const n = removeAccountWithTransactions(db, accountId)
@@ -622,11 +578,9 @@ function createDataStore() {
     setFilterLive,
     commitFilter,
     clearFilter,
-    setFilterQuery,
     cycleSortColumn,
     toggleSortDirection,
     setAccountSelection,
-    categorizeTransaction,
     categorizeTransactions,
     applyTagPatch,
     transactionDetail,

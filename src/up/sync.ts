@@ -1,6 +1,7 @@
 import { uncategorisedCategoryId, type Db } from "../db/client"
 import type { createUpClient } from "./client"
 import { assignProviderCategories, syncCategoryTree } from "./categories"
+import { resolveUpName } from "./names"
 import { syncTagLinks } from "./tags"
 
 type LocalTransaction = { id: number; external_id: string | null; status: string | null; external_created_at: string | null; ext_categorizable: number | null }
@@ -34,15 +35,9 @@ export async function syncUp(db: Db, client: Pick<ReturnType<typeof createUpClie
       for (const account of accounts) {
         const existing = db.query<{ id: number }, [string]>("SELECT id FROM accounts WHERE source = 'up' AND external_id = ?").get(account.id)
         // Up's display name as-is; a clash with another account adds " (Up)".
-        const base = account.attributes.displayName
-        let name = base
-        const occupied = (candidate: string) => db.query<{ id: number }, [string]>("SELECT id FROM accounts WHERE name = ?").get(candidate)?.id
-        const conflicts = (candidate: string) => { const id = occupied(candidate); return id !== undefined && id !== existing?.id }
-        if (conflicts(name)) {
-          const qualified = `${base} (Up)`
-          name = qualified
-          for (let n = 2; conflicts(name); n++) name = `${qualified} ${n}`
-        }
+        const name = resolveUpName(account.attributes.displayName,
+          name => db.query<{ id: number }, [string]>("SELECT id FROM accounts WHERE name = ?").get(name)?.id,
+          existing?.id)
         const a = account.attributes
         if (existing) {
           db.query("UPDATE accounts SET name = ?, type = 'debit', external_kind = ?, balance = ?, balance_at = ? WHERE id = ?")

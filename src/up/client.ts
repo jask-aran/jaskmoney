@@ -83,6 +83,10 @@ export function createUpClient({ token, fetch = globalThis.fetch, baseUrl = "htt
     if (object(value)) return Object.fromEntries(Object.entries(value).map(([key, item]) => [redact(key), redactValue(item)]))
     return value
   }
+  function normalizeError(error: unknown): Error {
+    const message = redact(error instanceof Error ? error.message : String(error))
+    return error instanceof UpApiError ? new UpApiError(error.status, message) : new Error(message)
+  }
   let origin: string
   try { origin = new URL(baseUrl).origin } catch { throw new Error("Invalid Up API base URL") }
   async function request(url: URL, options: { method?: "PATCH" | "POST" | "DELETE"; body?: string } = {}): Promise<unknown> {
@@ -118,8 +122,7 @@ export function createUpClient({ token, fetch = globalThis.fetch, baseUrl = "htt
         return body
       }
     } catch (error) {
-      if (error instanceof UpApiError) throw new UpApiError(error.status, redact(error.message))
-      throw new Error(redact(error instanceof Error ? error.message : String(error)))
+      throw normalizeError(error)
     }
   }
   async function list<T>(path: string, valid: (value: unknown) => value is T, since?: string, paginated = true): Promise<T[]> {
@@ -142,8 +145,7 @@ export function createUpClient({ token, fetch = globalThis.fetch, baseUrl = "htt
       }
       return items
     } catch (error) {
-      if (error instanceof UpApiError) throw new UpApiError(error.status, redact(error.message))
-      throw new Error(redact(error instanceof Error ? error.message : String(error)))
+      throw normalizeError(error)
     }
   }
   async function changeTransactionTags(transactionId: string, tags: string[], method: "POST" | "DELETE"): Promise<void> {

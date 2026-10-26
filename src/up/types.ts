@@ -70,8 +70,3 @@ export interface UpPage<T> {
   data: T[]
   links: { prev: string | null; next: string | null }
 }
-
-/** Error body for non-2xx responses. */
-export interface UpErrorBody {
-  errors: Array<{ status: string; title: string; detail: string }>
-}

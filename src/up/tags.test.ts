@@ -33,6 +33,15 @@ function mockClient() {
 }
 
 describe("syncTagLinks", () => {
+  test.each(["123", "null", '["ok", 1]', "invalid"])("rejects malformed stored tags before writing: %s", json => {
+    const db = database(), id = row(db)
+    db.query("UPDATE transactions SET ext_tags = ? WHERE id = ?").run(json, id)
+    const before = db.query("SELECT * FROM tags").all()
+    expect(() => syncTagLinks(db)).toThrow()
+    expect(db.query("SELECT * FROM tags").all()).toEqual(before)
+    expect(links(db, id)).toEqual([])
+  })
+
   test("creates tags, links names without changing style, follows ext_id, removes extras, and is idempotent", () => {
     const db = database()
     const matched = tag(db, "HOLIDAY"), existing = tag(db, "Renamed", "Food"), extra = tag(db, "Old", "Old")
@@ -108,6 +117,21 @@ describe("pushTagChange", () => {
     expect(links(db, id)).toEqual(add ? [local] : [])
     expect(stored(db, id)).toMatchObject({ ext_tags: add ? '["Food","Local"]' : '["Food"]' })
     expect(db.query("SELECT ext_id FROM tags WHERE id = ?").get(local)).toEqual({ ext_id: "Local" })
+  })
+
+  test("acknowledgement rolls back the link and stored tags if provider identity conflicts", async () => {
+    const db = database(), local = tag(db, "Local"), id = row(db, ["Food"])
+    tag(db, "Other", "Local")
+    const before = stored(db, id), beforeTag = db.query("SELECT * FROM tags WHERE id = ?").get(local)
+    const { client, calls } = mockClient()
+    const result = await pushTagChange(db, client, [id, id], local, true)
+    expect(result).toMatchObject({ changed: 0, pushed: 0 })
+    expect(result.failures).toHaveLength(1)
+    expect(result.failures[0]).toContain("UNIQUE constraint failed")
+    expect(calls).toHaveLength(1)
+    expect(stored(db, id)).toEqual(before)
+    expect(links(db, id)).toEqual([])
+    expect(db.query("SELECT * FROM tags WHERE id = ?").get(local)).toEqual(beforeTag)
   })
 
   test("add and remove update Up, local links, stored tags, and provider identity", async () => {

@@ -1,6 +1,7 @@
 import { Database } from "bun:sqlite"
 import { mkdirSync } from "node:fs"
 import { dirname, join } from "node:path"
+import { addTagLink, decodeStoredTags, removeTagLink } from "./tagLinks"
 import {
   ACCOUNT_SYNC_COLUMNS_LIST,
   BUDGET_SQL,
@@ -446,10 +447,9 @@ export function addTagToTransactions(
   txnIds: number[],
   tagId: number,
 ): void {
-  const ins = db.query(
-    `INSERT OR IGNORE INTO transaction_tags (transaction_id, tag_id) VALUES (?, ?)`,
-  )
-  for (const id of txnIds) ins.run(id, tagId)
+  db.transaction(() => {
+    for (const id of txnIds) addTagLink(db, id, tagId)
+  })()
 }
 
 export function removeTagFromTransactions(
@@ -457,10 +457,9 @@ export function removeTagFromTransactions(
   txnIds: number[],
   tagId: number,
 ): void {
-  const del = db.query(
-    `DELETE FROM transaction_tags WHERE transaction_id = ? AND tag_id = ?`,
-  )
-  for (const id of txnIds) del.run(id, tagId)
+  db.transaction(() => {
+    for (const id of txnIds) removeTagLink(db, id, tagId)
+  })()
 }
 
 export interface DbInfo {
@@ -574,7 +573,7 @@ export function loadTransactionDetail(db: Db, id: number): TransactionDetail | n
     WHERE t.id = ?`).get(id) as (Omit<TransactionDetail, "extTags" | "extCategorizable"> & { extTags: string; extCategorizable: number | null }) | null
   if (!row) return null
   let extTags: string[] = []
-  try { extTags = JSON.parse(row.extTags || "[]") } catch { /* malformed provider data: show none */ }
+  try { extTags = decodeStoredTags(row.extTags || "[]") } catch { /* malformed provider data: show none */ }
   return { ...row, extTags, extCategorizable: row.extCategorizable == null ? null : row.extCategorizable === 1 }
 }
 
