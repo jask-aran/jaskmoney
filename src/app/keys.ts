@@ -978,6 +978,13 @@ export function handleKey(ui: UiStore, key: KeyEvent, data?: DataStore): boolean
       ui.setState({ chartViews: views })
       return true
     }
+    // / searches: the Transactions filter, opened from here (the Overview
+    // itself is not filtered).
+    if ((name === "/" || seq === "/") && scope === "overview") {
+      ui.switchTab("manager")
+      ui.openFilter(data?.state.filterQuery ?? "")
+      return true
+    }
     // Which spending account the period covers: all, or one of them.
     if (name === "a" && data) {
       const choices: AccountSelection[] = ["all", ...data.state.accounts.filter((a) => accountRole(a) === "spending").map((a) => a.id)]
@@ -1102,6 +1109,7 @@ export function footerHints(scope: ScopeId, state?: Pick<UiState, "focusedSectio
         { key: "a", desc: "account" },
         { key: "[/]", desc: "period" },
         { key: "0", desc: "this cycle" },
+        { key: "/", desc: "search" },
         { key: "v", desc: "jump" },
         { key: "1-3", desc: "tab" },
       ]

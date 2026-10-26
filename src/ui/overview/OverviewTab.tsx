@@ -105,16 +105,18 @@ export function OverviewTab(props: { focused: SectionId }) {
   const bodyHeight = () => Math.max(8, dims().height - 7)
   const sideWidth = () => (wide() ? Math.min(SIDE_MAX, Math.floor((dims().width - 1) * 0.4)) : Math.floor((dims().width - 1) / 2))
   const mainWidth = () => (wide() ? dims().width - 1 - sideWidth() : dims().width)
-  const topChartHeight = () => (wide() ? Math.ceil(bodyHeight() / 2) : Math.max(8, Math.floor(bodyHeight() * 0.45)))
-  const bottomChartHeight = () => bodyHeight() - topChartHeight()
+  // Wide: the two charts split the column with a blank line between them.
+  const topChartHeight = () => (wide() ? Math.ceil((bodyHeight() - 1) / 2) : Math.max(8, Math.floor(bodyHeight() * 0.45)))
+  const bottomChartHeight = () => bodyHeight() - 1 - topChartHeight()
   const lowerHeight = () => bodyHeight() - topChartHeight()
 
   // The stacks: label, value (VALUE) and a note or comparison (NOTE).
   const nowRows = () => 4 + (position().pendingCount > 0 ? 1 : 0)
-  const totalsRows = () => 8 + (budget() ? (budget()!.remaining > 0 ? 2 : 1) : 0)
+  // Column headings sit in the top border, so no row of their own.
+  const totalsRows = () => 7 + (budget() ? (budget()!.remaining > 0 ? 2 : 1) : 0)
   // Savers fold to their total when Categories would get under
   // MIN_CATEGORIES rows.
-  const saverRows = (full: boolean) => (full ? 2 + position().savers.length : 1)
+  const saverRows = (full: boolean) => (full ? 1 + position().savers.length : 1)
   const stackSpace = () => (wide() ? bodyHeight() : lowerHeight())
   const saversFull = () =>
     wide()
@@ -176,6 +178,9 @@ export function OverviewTab(props: { focused: SectionId }) {
       <S fg={colors.note ?? theme.overlay1}>{note.padStart(NOTE)}</S>
     </text>
   )
+  // Value and note column headings for a stack's top border, right-aligned
+  // over their columns.
+  const headings = (value: string, note: string): Span[] => [muted(value), muted(" ".repeat(Math.max(1, NOTE - note.length))), muted(note)]
   const signColor = (n: number) => (n > 0.005 ? theme.success : n < -0.005 ? theme.error : theme.overlay1)
 
   const nowCard = () => (
@@ -193,9 +198,8 @@ export function OverviewTab(props: { focused: SectionId }) {
   const saverChange = (accountId: number) => saverChanges().find((c) => c.accountId === accountId)?.change ?? 0
   const saversTotalChange = () => saverChanges().reduce((sum, c) => sum + c.change, 0)
   const saversCard = () => (
-    <SectionCard title="Savers" width={sideWidth()} height={saverRows(saversFull()) + 2}>
+    <SectionCard title="Savers" titleRight={headings("Balance", "30 days")} titleRightFlush width={sideWidth()} height={saverRows(saversFull()) + 2}>
       <Show when={saversFull()}>
-        <text wrapMode="none" fg={theme.overlay1}>{" ".repeat(labelWidth()) + "Balance".padStart(VALUE) + "30 days".padStart(NOTE)}</text>
         <For each={position().savers}>
           {(saver) => stat(saver.name, formatWholeMoney(saver.balance), signedWholeMoney(saverChange(saver.accountId)), { note: signColor(saverChange(saver.accountId)) })}
         </For>
@@ -207,8 +211,7 @@ export function OverviewTab(props: { focused: SectionId }) {
   // Totals: the range against the same days of the previous period.
   const daily = (spent: number) => formatWholeMoney(windows().days ? spent / windows().days : 0)
   const totalsCard = () => (
-    <SectionCard title="Totals" width={sideWidth()} height={totalsRows() + 2}>
-      <text wrapMode="none" fg={theme.overlay1}>{" ".repeat(labelWidth()) + "Range".padStart(VALUE) + "Before".padStart(NOTE)}</text>
+    <SectionCard title="Totals" titleRight={headings("Range", "Before")} titleRightFlush width={sideWidth()} height={totalsRows() + 2}>
       {stat("Spent", formatWholeMoney(flows().spent), formatWholeMoney(previousFlows().spent), { value: changeColor(flows().spent, previousFlows().spent) })}
       {stat("Income", formatWholeMoney(flows().income), formatWholeMoney(previousFlows().income))}
       {stat("Net", signedWholeMoney(flows().net), signedWholeMoney(previousFlows().net), { value: signColor(flows().net) })}
@@ -327,7 +330,7 @@ export function OverviewTab(props: { focused: SectionId }) {
         }
       >
         <box flexDirection="row" gap={1} width="100%" height={bodyHeight()}>
-          <box flexDirection="column" width={mainWidth()} height={bodyHeight()}>
+          <box flexDirection="column" gap={1} width={mainWidth()} height={bodyHeight()}>
             <ChartPane pane={0} height={topChartHeight()} />
             <ChartPane pane={1} height={bottomChartHeight()} />
           </box>

@@ -22,6 +22,9 @@ export function SectionCard(props: {
   width?: number | "auto" | `${number}%`
   /** Coloured spans at the right of the top border. */
   titleRight?: Span[]
+  /** End the right spans on the content's last column (column headings over
+   * right-aligned figures) instead of a space before the corner. */
+  titleRightFlush?: boolean
   /** Coloured spans in the bottom border. */
   bottomSpans?: Span[]
   children?: JSX.Element
@@ -45,7 +48,7 @@ export function SectionCard(props: {
   }
   const right = () => {
     const spans = width() > 0 && props.titleRight ? fitSpans(props.titleRight, Math.max(0, width() - 8 - spansWidth(title()))) : []
-    return spans.length ? [space(), ...spans, space()] : []
+    return spans.length ? [space(), ...spans, ...(props.titleRightFlush ? [] : [space()])] : []
   }
   const bottom = () => {
     const spans = width() > 0 && height() > 1 && props.bottomSpans ? fitSpans(props.bottomSpans, Math.max(0, width() - 6)) : []

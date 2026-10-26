@@ -289,6 +289,14 @@ describe("key router", () => {
     data.clearFilter()
   })
 
+  test("/ on the Overview opens the Transactions filter", () => {
+    ui.setState({ focusedSection: "none" })
+    handleKey(ui, key({ name: "/", sequence: "/" }), data)
+    expect(ui.state.activeTab).toBe("manager")
+    expect(ui.state.filterMode).toBe(true)
+    handleKey(ui, key({ name: "escape" }), data)
+  })
+
   test("the Custom chip asks for dates and applies a valid range", () => {
     ui.setTimeframe({ ...ui.state.timeframe, family: "custom", custom: { start: "2026-10-01", end: "2026-10-31" } })
     ui.setState({ focusedSection: "ov.range", dashChipCursor: CUSTOM_CHIP })
