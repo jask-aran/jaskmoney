@@ -6,7 +6,7 @@
  * version fallback with an additive migration registry. v7 was the initial
  * partial OpenTUI port. */
 
-export const SCHEMA_VERSION = 17
+export const SCHEMA_VERSION = 18
 
 /** Columns shared by the fresh schema and the v9 migration. Rows imported from
  * CSV keep source = 'csv' and NULL external fields. */
@@ -115,6 +115,16 @@ CREATE TABLE IF NOT EXISTS budget_cycle (
 INSERT OR IGNORE INTO budget_cycle (id, unit, anchor, anchor_date) VALUES (1, 'month', 'calendar', NULL);
 `
 
+export const CATEGORY_SUGGESTIONS_SQL = `
+CREATE TABLE IF NOT EXISTS category_suggestions (
+  transaction_id INTEGER PRIMARY KEY REFERENCES transactions(id) ON DELETE CASCADE,
+  category_id    INTEGER NOT NULL REFERENCES categories(id) ON DELETE CASCADE,
+  confidence     REAL NOT NULL,
+  source         TEXT NOT NULL CHECK(source IN ('history','clef')),
+  created_at     TEXT NOT NULL DEFAULT (datetime('now'))
+);
+`
+
 export const SYNC_SQL = `
 CREATE UNIQUE INDEX IF NOT EXISTS idx_accounts_external ON accounts(source, external_id) WHERE external_id IS NOT NULL;
 CREATE UNIQUE INDEX IF NOT EXISTS idx_transactions_external ON transactions(source, external_id) WHERE external_id IS NOT NULL;
@@ -210,6 +220,7 @@ ${SYNC_SQL}
 CREATE UNIQUE INDEX IF NOT EXISTS idx_categories_ext ON categories(ext_id) WHERE ext_id IS NOT NULL;
 CREATE UNIQUE INDEX IF NOT EXISTS idx_tags_ext ON tags(ext_id) WHERE ext_id IS NOT NULL;
 ${BUDGET_SQL}
+${CATEGORY_SUGGESTIONS_SQL}
 ALTER TABLE budget_cycle ADD COLUMN ${BUDGET_PAY_EARLY_COLUMN};
 `
 

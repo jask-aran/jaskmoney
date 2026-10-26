@@ -6,6 +6,7 @@ import {
   ACCOUNT_SYNC_COLUMNS_LIST,
   BUDGET_PAY_EARLY_COLUMN,
   BUDGET_SQL,
+  CATEGORY_SUGGESTIONS_SQL,
   CATEGORY_SOURCE_COLUMN,
   CATEGORY_INCOME_COLUMN,
   CATEGORY_NOT_SPENDING_COLUMN,
@@ -20,7 +21,7 @@ import {
   TRANSACTION_DETAIL_COLUMNS_LIST,
   TRANSACTION_SYNC_COLUMNS_LIST,
 } from "./schema"
-import type { Account, Category, ImportRecord, Rule, Tag, Transaction } from "../domain/types"
+import type { Account, Category, CategorySuggestion, ImportRecord, Rule, Tag, Transaction } from "../domain/types"
 import { assignTypeCategories } from "../up/categories"
 import type { Budget, BudgetScope, CycleConfig } from "../domain/budget"
 
@@ -102,6 +103,7 @@ const MIGRATIONS: Record<number, (db: Db) => void> = {
     assignTypeCategories(db)
   },
   17: (db) => db.exec(`ALTER TABLE budget_cycle ADD COLUMN ${BUDGET_PAY_EARLY_COLUMN}`),
+  18: (db) => db.exec(CATEGORY_SUGGESTIONS_SQL),
 }
 
 /**
@@ -383,6 +385,7 @@ export function loadTransactions(db: Db): Transaction[] {
          COALESCE(a.name, '') AS accountName,
          t.source,
          t.status,
+         t.transaction_type AS transactionType,
          t.transfer_account_id AS transferAccountId,
          -- Internal: money moved to or from another tracked account. A transfer
          -- to an untracked account (e.g. a desynced joint account) is spending.
@@ -432,6 +435,32 @@ export function loadTransactions(db: Db): Transaction[] {
     tagColors: tagColorMap.get(r.id) ?? [],
     tagIds: tagIdMap.get(r.id) ?? [],
   }))
+}
+
+export function loadSuggestions(db: Db): CategorySuggestion[] {
+  return db.query<CategorySuggestion, []>(`SELECT s.transaction_id AS transactionId,
+    s.category_id AS categoryId, s.confidence, s.source
+    FROM category_suggestions s
+    JOIN transactions t ON t.id = s.transaction_id
+    LEFT JOIN categories c ON c.id = t.category_id
+    WHERE t.category_id IS NULL OR c.is_default = 1`).all()
+}
+
+export function saveSuggestions(db: Db, list: CategorySuggestion[]): void {
+  const save = db.query(`INSERT INTO category_suggestions (transaction_id, category_id, confidence, source)
+    VALUES (?, ?, ?, ?) ON CONFLICT(transaction_id) DO UPDATE SET
+    category_id = excluded.category_id, confidence = excluded.confidence,
+    source = excluded.source, created_at = datetime('now')`)
+  db.transaction(() => {
+    for (const s of list) save.run(s.transactionId, s.categoryId, s.confidence, s.source)
+  })()
+}
+
+export function deleteSuggestions(db: Db, transactionIds: number[]): void {
+  const remove = db.query(`DELETE FROM category_suggestions WHERE transaction_id = ?`)
+  db.transaction(() => {
+    for (const id of transactionIds) remove.run(id)
+  })()
 }
 
 export function loadImports(db: Db, limit = 12): ImportRecord[] {

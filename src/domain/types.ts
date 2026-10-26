@@ -150,6 +150,8 @@ export interface Transaction {
   source: DataSource
   /** "HELD" (pending) or "SETTLED" for synced rows; null for CSV rows. */
   status: "HELD" | "SETTLED" | null
+  /** Up's transaction type ("Purchase", "Salary", "Osko Payment Received"...); null for CSV rows. */
+  transactionType: string | null
   /** Own-account transfer counterpart, when the provider reports one. */
   transferAccountId: number | null
   /** Transfer to or from another tracked account. */
@@ -159,6 +161,14 @@ export interface Transaction {
   excluded: boolean
   /** In an income category (one marked income, or under one). */
   income: boolean
+}
+
+export interface CategorySuggestion {
+  transactionId: number
+  categoryId: number
+  /** 0–1. history: the share of matching rows in that category. clef: Clef's `confidence`. */
+  confidence: number
+  source: "history" | "clef"
 }
 
 export type SortColumn = "date" | "amount" | "description" | "category" | "account"

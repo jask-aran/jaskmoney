@@ -11,6 +11,9 @@ import {
   loadRules,
   loadTags,
   loadTransactions,
+  loadSuggestions,
+  saveSuggestions,
+  deleteSuggestions,
   openDb,
   removeTagFromTransactions,
   setTransactionCategory,
@@ -45,6 +48,9 @@ import {
 import { normaliseSelection, selectedAccounts, type AccountSelection } from "../domain/accountTree"
 import { paydays, type Budget, type BudgetScope, type CycleConfig } from "../domain/budget"
 import { buildImportPreview, commitImportPreview, matchingProfiles } from "../domain/profileImport"
+import { createWorkersAiClient, hasWorkersAi, readWorkersAiCredentials, type WorkersAiClient } from "../ai/workersAi"
+import { historySuggestions, clefSuggestions } from "../domain/suggest"
+import { isOrdinaryFlow, isUncategorised } from "../domain/moneyRules"
 import { createUpClient, readUpToken } from "../up/client"
 import { pushTransactions } from "../up/push"
 import type { WeekStart } from "../domain/days"
@@ -59,12 +65,14 @@ import {
   reparseFilterInput,
   type FilterNode,
 } from "../domain/filter"
-import { type Account, type Category, type ImportPreview, type ImportProfile, type ImportRecord, type Rule, type RuleRunResult, type SavedFilter, type SortColumn, type Tag, type Transaction } from "../domain/types"
+import { type Account, type Category, type CategorySuggestion, type ImportPreview, type ImportProfile, type ImportRecord, type Rule, type RuleRunResult, type SavedFilter, type SortColumn, type Tag, type Transaction } from "../domain/types"
 import { loadSettingsConfig, saveSettingsConfig, validateImportProfile, validateSavedFilter, type SettingsConfig, type UiPrefs } from "./settingsConfig"
 
 export interface DataState {
   ready: boolean
   upSyncing: boolean
+  suggesting: boolean
+  suggestions: Record<number, CategorySuggestion>
   dbPath: string
   accounts: Account[]
   /** Every provider-synced account, including ones whose sync is off. */
@@ -124,6 +132,8 @@ function createDataStore() {
   const [state, setState] = createStore<DataState>({
     ready: false,
     upSyncing: false,
+    suggesting: false,
+    suggestions: {},
     dbPath: "",
     accounts: [],
     syncAccounts: [],
@@ -159,6 +169,7 @@ function createDataStore() {
     const accountSelection = normaliseSelection(accounts, state.accountSelection)
     const syncAccounts = loadAccounts(db, { includeUnsynced: true }).filter((a) => a.source !== "csv")
     const dbInfo = loadDbInfo(db, state.dbPath || "default")
+    setState("suggestions", reconcile(Object.fromEntries(loadSuggestions(db).map((s) => [s.transactionId, s]))))
     setState({
       ready: true,
       accounts,
@@ -185,6 +196,8 @@ function createDataStore() {
 
   /** An Up client for the token in the environment now. */
   const upClient = () => createUpClient({ token: readUpToken() })
+  /** A Workers AI client for the credentials in the environment now. */
+  const aiClient = () => createWorkersAiClient(readWorkersAiCredentials())
 
   function init(dbPath?: string) {
     actualDbPath = dbPath ?? defaultDbPath()
@@ -329,6 +342,75 @@ function createDataStore() {
     if (pushed) parts.push(`${pushed} updated in Up`)
     if (failures.length) parts.push(`${failures.length} failed: ${failures[0]}`)
     return parts.join(" · ")
+  }
+
+  /**
+   * Suggest categories for ordinary uncategorised rows (`ids` narrows them)
+   * that have none yet: history first, then Clef when Workers AI is set up,
+   * each saved as it arrives. `ai` replaces the Workers AI client (tests).
+   */
+  async function suggestCategories(ids?: number[], ai?: Pick<WorkersAiClient, "clef">): Promise<string> {
+    if (state.suggesting) throw new Error("Category suggestions are already running")
+    if (!db) throw new Error("db not open")
+    const database = db
+    setState({ suggesting: true })
+    try {
+      const selected = ids ? new Set(ids) : null
+      const targets = transactions().filter((t) => isOrdinaryFlow(t) && isUncategorised(t) && !state.suggestions[t.id] && (!selected || selected.has(t.id)))
+      const history = historySuggestions(transactions(), state.categories, new Set(targets.map((t) => t.id)))
+      saveSuggestions(database, history)
+      refresh()
+      const failures: string[] = []
+      let clef = 0
+      const enabled = !!ai || hasWorkersAi()
+      if (enabled) {
+        const targetIds = new Set(targets.map((t) => t.id))
+        const remaining = transactions().filter((t) => targetIds.has(t.id) && !state.suggestions[t.id] && isOrdinaryFlow(t) && isUncategorised(t))
+        if (remaining.length) await clefSuggestions(ai ?? aiClient(), remaining, state.categories, {
+          onSuggestion: (s) => {
+            const current = transactions().find((t) => t.id === s.transactionId)
+            if (!current || !isOrdinaryFlow(current) || !isUncategorised(current) || state.suggestions[s.transactionId]) return
+            saveSuggestions(database, [s])
+            setState("suggestions", s.transactionId, s)
+            clef++
+          },
+          onError: (_id, error) => failures.push(error instanceof Error ? error.message : String(error)),
+        })
+      }
+      const parts = [`Suggested ${history.length + clef}: ${history.length} from history, ${clef} from Clef`]
+      if (!enabled) parts.push("Workers AI is not set up")
+      if (failures.length) parts.push(`${failures.length} failed: ${failures[0]}`)
+      return parts.join(" · ")
+    } finally {
+      try { refresh() } finally { setState({ suggesting: false }) }
+    }
+  }
+
+  /** Categorise the rows among `ids` that have a suggestion as suggested
+   * (pushing to Up where it allows, as any categorisation does), then clear
+   * those suggestions. */
+  async function acceptSuggestions(ids: number[]): Promise<string> {
+    if (!db) throw new Error("db not open")
+    refresh()
+    const groups = new Map<number, number[]>()
+    for (const id of new Set(ids)) {
+      const suggestion = state.suggestions[id]
+      if (!suggestion) continue
+      const group = groups.get(suggestion.categoryId) ?? []
+      group.push(id)
+      groups.set(suggestion.categoryId, group)
+    }
+    const results: string[] = []
+    for (const [categoryId, groupIds] of groups) {
+      results.push(await categorizeTransactions(groupIds, categoryId))
+      const accepted = groupIds.filter((id) => transactions().some((t) => t.id === id && t.categoryId === categoryId))
+      mutate((db) => deleteSuggestions(db, accepted))
+    }
+    return results.length ? results.join(" · ") : "No suggestions accepted"
+  }
+
+  function dismissSuggestions(ids: number[]): void {
+    mutate((db) => deleteSuggestions(db, ids))
   }
 
   async function applyTagPatch(txnIds: number[], patch: Record<number, "add" | "remove">): Promise<string> {
@@ -580,6 +662,9 @@ function createDataStore() {
     toggleSortDirection,
     setAccountSelection,
     categorizeTransactions,
+    suggestCategories,
+    acceptSuggestions,
+    dismissSuggestions,
     applyTagPatch,
     transactionDetail,
     updateTransactionNotes,
