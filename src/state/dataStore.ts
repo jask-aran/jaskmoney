@@ -82,7 +82,7 @@ export interface DataState {
   imports: ImportRecord[]
   transactions: Transaction[]
   /** Which accounts the Transactions tab shows. Approved deviation from Go's per-account
-   * on/off scope (2026-10-26): one selection from the accounts strip. */
+   * on/off scope (2026-10-26): one selection from the accounts pane. */
   accountSelection: AccountSelection
   dbInfo: DbInfo | null
   filterQuery: string

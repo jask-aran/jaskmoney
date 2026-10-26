@@ -1,5 +1,5 @@
 import { describe, expect, test, beforeEach } from "bun:test"
-import { accountTiles, spendingScope } from "../domain/accountTree"
+import { accountRows, accountStacks, spendingScope } from "../domain/accountTree"
 import { CUSTOM_CHIP, LOOKBACKS, PERIODS, applyChip } from "../domain/timeframe"
 import { handleKey, footerHints } from "./keys"
 import { ui } from "../state/uiStore"
@@ -52,7 +52,7 @@ describe("key router", () => {
     expect(ui.state.jumpMode).toBe(false)
   })
 
-  test("the accounts strip drives the Transactions table, not the Overview", () => {
+  test("the accounts pane drives the Transactions table, not the Overview", () => {
     const txn = (id: number, accountId: number) => transaction({
       id, accountId, dateISO: `2026-02-0${id}`, amount: -id, description: `T${id}`, categoryId: 1, categoryName: "U", accountName: "",
     })
@@ -61,8 +61,9 @@ describe("key router", () => {
         account({ id: 1, name: "Spending", balance: 100 }),
         account({ id: 2, name: "Holiday", externalKind: "SAVER", balance: 200 }),
         account({ id: 3, name: "General", externalKind: "SAVER", balance: 300 }),
+        account({ id: 4, name: "Bills", source: "csv", externalKind: null, balance: -50 }),
       ],
-      transactions: [txn(1, 1), txn(2, 2), txn(3, 3)],
+      transactions: [txn(1, 1), txn(2, 2), txn(3, 3), txn(4, 4)],
       accountSelection: "all",
       ready: true,
     })
@@ -70,36 +71,60 @@ describe("key router", () => {
     ui.setState({ focusedSection: "mgr.accounts" })
     const shown = () => data.scopedTransactions().map((t) => t.id).sort()
 
-    // Tiles: All spending, Spending, Savers (one tile for every saver).
-    expect(accountTiles(data.state.accounts).map((t) => t.label)).toEqual(["All spending", "Spending", "Savers"])
-    expect(shown()).toEqual([1])
-    handleKey(ui, key("h"), data)
-    expect(data.state.accountSelection).toBe("all")
-    handleKey(ui, key("l"), data)
+    // A stack per bank, after one for all spending; savers are one row.
+    expect(accountStacks(data.state.accounts).map((s) => [s.label, s.net, s.rows.map((r) => r.label)])).toEqual([
+      ["All accounts", 550, ["All spending"]],
+      ["Up (API)", 600, ["Spending", "Savers"]],
+      ["CSV import", -50, ["Bills"]],
+    ])
+    expect(shown()).toEqual([1, 4])
+    handleKey(ui, key("j"), data)
     expect(data.state.accountSelection).toBe(1)
-    handleKey(ui, key("right"), data)
+    handleKey(ui, key("j"), data)
     expect(data.state.accountSelection).toBe("savers")
     expect(shown()).toEqual([2, 3])
+    // h/l: the first row of the stack beside.
     handleKey(ui, key("l"), data)
-    expect(data.state.accountSelection).toBe("savers")
+    expect(data.state.accountSelection).toBe(4)
+    handleKey(ui, key("l"), data)
+    expect(data.state.accountSelection).toBe(4)
+    handleKey(ui, key("h"), data)
+    expect(data.state.accountSelection).toBe(1)
+    handleKey(ui, key("k"), data)
+    expect(data.state.accountSelection).toBe("all")
     // Savers selected: the Overview covers every spending account.
-    expect(spendingScope(data.state.accounts, data.state.accountSelection).accounts.map((a) => a.id)).toEqual([1])
-    // Data actions only for a single account.
+    data.setAccountSelection("savers")
+    expect(spendingScope(data.state.accounts, data.state.accountSelection).accounts.map((a) => a.id)).toEqual([1, 4])
+    // Data actions only for a row with one account behind it.
     handleKey(ui, key("d"), data)
     expect(ui.state.accountActionId).toBeNull()
-    handleKey(ui, key("left"), data)
+    handleKey(ui, key("k"), data)
     handleKey(ui, key("d"), data)
     expect(ui.state.accountActionId).toBe(1)
     ui.setState({ accountActionId: null })
-    // Nothing is above the strip; j drops into the table below.
-    handleKey(ui, key("k"), data)
-    expect(ui.state.focusedSection).toBe("mgr.accounts")
-    handleKey(ui, key("j"), data)
+    handleKey(ui, key("return"), data)
     expect(ui.state.focusedSection).toBe("mgr.transactions")
     // A saver chosen elsewhere (a stored selection) shows as Savers.
     data.setAccountSelection(2)
     expect(data.state.accountSelection).toBe("savers")
     data.setState({ accountSelection: "all" })
+  })
+
+  test("with one spending account, its row is all spending", () => {
+    data.setState({
+      accounts: [account({ id: 1, name: "Spending" }), account({ id: 2, name: "Holiday", externalKind: "SAVER" })],
+      accountSelection: "all",
+      ready: true,
+    })
+    expect(accountStacks(data.state.accounts).map((s) => s.label)).toEqual(["Up (API)"])
+    expect(accountRows(data.state.accounts).map((r) => [r.selection, r.accountId])).toEqual([["all", 1], ["savers", null]])
+    data.setAccountSelection(1)
+    expect(data.state.accountSelection).toBe("all")
+    ui.switchTab("manager")
+    ui.setState({ focusedSection: "mgr.accounts" })
+    handleKey(ui, key("d"), data)
+    expect(ui.state.accountActionId).toBe(1)
+    ui.setState({ accountActionId: null })
   })
 
   test("transaction detail opens on enter, owns input, and targets its own row", () => {

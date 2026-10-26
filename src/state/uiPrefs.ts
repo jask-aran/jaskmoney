@@ -1,4 +1,4 @@
-import type { AccountSelection } from "../domain/accountTree"
+import { normaliseSelection } from "../domain/accountTree"
 import type { CycleConfig } from "../domain/budget"
 import { activeChipIndex, applyChip, customRange, defaultTimeframe } from "../domain/timeframe"
 import type { Account } from "../domain/types"
@@ -16,8 +16,7 @@ export function restoreUiPrefs(prefs: UiPrefs, accounts: Account[], now: Date, c
     if (saved.family === "custom" && !custom) timeframe = { ...timeframe, family: "period" }
     timeframe = applyChip(timeframe, activeChipIndex(timeframe), now, cycle)
   }
-  const selection = prefs.accountSelection ?? "all"
-  const accountSelection: AccountSelection = typeof selection === "number" && !accounts.some((a) => a.id === selection) ? "all" : selection
+  const accountSelection = normaliseSelection(accounts, prefs.accountSelection ?? "all")
   const chartViews = prefs.chartViews?.every((i) => Number.isInteger(i) && i >= 0 && i < CHART_VIEWS.length) && prefs.chartViews.length === 2 ? prefs.chartViews : undefined
   return { timeframe, accountSelection, chartViews }
 }

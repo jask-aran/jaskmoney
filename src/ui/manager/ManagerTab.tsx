@@ -10,8 +10,8 @@ import { theme } from "../../theme"
 import { filterExprString } from "../../domain/filter"
 import type { Account } from "../../domain/types"
 import { truncate } from "../text"
-import { selectedAccounts } from "../../domain/accountTree"
-import { AccountStrip, STRIP_HEIGHT } from "./AccountStrip"
+import { accountStacks, selectedAccounts } from "../../domain/accountTree"
+import { AccountsPane, accountsPaneHeight } from "./AccountsPane"
 import { TransactionTable } from "./TransactionTable"
 import { MerchantTable } from "./MerchantTable"
 import { groupByMerchant, sortMerchantGroups } from "../../domain/merchants"
@@ -25,9 +25,9 @@ export function ManagerTab(props: { focused: SectionId }) {
   const showAccount = () => selectedAccounts(data.state.accounts, data.state.accountSelection).length > 1
 
   createEffect(() => {
-    // App chrome (4), the accounts strip, transaction borders (2), and the
+    // App chrome (4), the accounts pane, transaction borders (2), and the
     // table header (1) are fixed. The viewport consumes every remaining row.
-    const vis = Math.max(1, dims().height - 7 - STRIP_HEIGHT - (filterBar() ? 1 : 0))
+    const vis = Math.max(1, dims().height - 7 - accountsPaneHeight(accountStacks(data.state.accounts)) - (filterBar() ? 1 : 0))
     if (vis !== ui.state.managerVisible) {
       ui.setState({ managerVisible: vis })
     }
@@ -115,7 +115,7 @@ export function ManagerTab(props: { focused: SectionId }) {
 
   return (
     <box width="100%" height="100%" flexDirection="column" backgroundColor={theme.canvas}>
-      <AccountStrip focused={acctFocused()} width={dims().width} />
+      <AccountsPane focused={acctFocused()} width={dims().width} />
       <SectionCard
         title={merchants() ? "Transactions · by merchant" : "Transactions"}
         titleSuffix={filterTitle()}

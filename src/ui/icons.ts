@@ -29,3 +29,11 @@ export function viewMark(view: string, current: boolean): string {
   if (data.state.icons && VIEW_ICONS[view]) return VIEW_ICONS[view]!
   return current ? "●" : "○"
 }
+
+/** Marks for the Transactions accounts pane, shared with the chart views
+ * that show the same figures: a bank's net position, a spending account,
+ * savers. Empty when icons are off. */
+export function accountMark(kind: "net" | "spending" | "savers"): string {
+  if (!data.state.icons) return ""
+  return VIEW_ICONS[kind === "net" ? "Net position" : kind === "spending" ? "Available" : "Savers"]!
+}

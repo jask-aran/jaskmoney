@@ -1,5 +1,4 @@
 import { describe, expect, test } from "bun:test"
-import { computeAccountStats } from "./accountStats"
 import { balanceHistory, computePeriodFlows, computePosition } from "./position"
 import type { Transaction } from "./types"
 import { account, transaction } from "../testing/fixtures"
@@ -227,7 +226,6 @@ test("all history consumers retain holds, exclusions, future rows and null-balan
     { dateISO: "2026-10-05", value: 605 },
   ]
   expect(computePosition(scope, rows, "2026-10-05", { historyDays: 3 }).history).toEqual(expected)
-  expect(computeAccountStats(scope, rows, "2026-10-05", { historyDays: 3 }).history).toEqual(expected)
   expect(balanceHistory(scope, rows, "2026-10-03", "2026-10-05")).toEqual([
     { dateISO: "2026-10-03", net: 585, spending: 185, savers: 400 },
     { dateISO: "2026-10-04", net: 555, spending: 155, savers: 400 },
@@ -239,8 +237,6 @@ test("history consolidation preserves each caller's future-amount subtraction or
   const scope = [account({ id: 1, balance: 1 })]
   const rows = [row(0.1), row(0.1), row(0.1)]
   const sequential = 1 - 0.1 - 0.1 - 0.1
-  const grouped = 1 - (0.1 + 0.1 + 0.1)
   expect(computePosition(scope, rows, "2026-10-04", { historyDays: 1 }).history[0]!.value).toBe(sequential)
   expect(balanceHistory(scope, rows, "2026-10-04", "2026-10-04")[0]!.net).toBe(sequential)
-  expect(computeAccountStats(scope, rows, "2026-10-04", { historyDays: 1 }).history[0]!.value).toBe(grouped)
 })

@@ -1,5 +1,5 @@
 import { expect, test } from "bun:test"
-import { stripWindow } from "./AccountStrip"
+import { stripWindow } from "./AccountsPane"
 
 test("stripWindow shows every tile when they fit", () => {
   // 10 + 3 + 10 + 3 + 10 = 36 cells.
