@@ -7,6 +7,7 @@ import {
   filterByTimeframe,
   timeframeBounds,
   customRange,
+  stepCustom,
   CUSTOM_CHIP,
   activeChipIndex,
 } from "./timeframe"
@@ -107,5 +108,10 @@ describe("custom range", () => {
     expect(custom.family).toBe("custom")
     expect(activeChipIndex(custom)).toBe(CUSTOM_CHIP)
     expect(timeframeBounds(custom, now)).toEqual({ start: "2026-09-03", end: "2026-10-09", label: "3 Sep – 9 Oct 2026" })
+  })
+  test("[ and ] move a custom range by its own length", () => {
+    const tf = { ...defaultTimeframe(new Date(2026, 9, 26)), family: "custom" as const, custom: { start: "2026-10-01", end: "2026-10-10" } }
+    expect(stepCustom(tf, 1).custom).toEqual({ start: "2026-10-11", end: "2026-10-20" })
+    expect(stepCustom(tf, -1).custom).toEqual({ start: "2026-09-21", end: "2026-09-30" })
   })
 })

@@ -191,7 +191,7 @@ export function ManagerTab(props: { focused: SectionId }) {
               <S fg={theme.text}>{"  "}</S>
               <S fg={fb().dotColor}>●</S>
               <S fg={fb().dotColor}> {fb().dotLabel}</S>
-              {!fb().editing ? <S fg={theme.overlay1}>{"  (esc clear)"}</S> : null}
+              {!fb().editing ? <S fg={theme.overlay1}>{ui.state.drillReturn ? "  (esc back · u clear)" : "  (esc clear)"}</S> : null}
             </text>
           )}
         </Show>

@@ -2,19 +2,21 @@ import { For, Show, createMemo } from "solid-js"
 import { categoryMark, viewMark } from "../icons"
 import { useTerminalDimensions } from "@opentui/solid"
 import { SectionCard } from "../primitives/SectionCard"
+import { Modal } from "../primitives/Modal"
+import { TextInput } from "../primitives/TextInput"
 import { chipLook } from "../primitives/chip"
 import { muted, type Span } from "../primitives/spans"
 import { S } from "../primitives/S"
 import { CHART_VIEWS, ui, type SectionId } from "../../state/uiStore"
 import { data } from "../../state/dataStore"
 import { theme } from "../../theme"
-import { computeCategorySpend, dailySpendSeries, fitCategoryLines, formatMoney, formatPct, formatWholeMoney, groupCategorySpend, signedWholeMoney } from "../../domain/dashboard"
+import { dailySpendSeries, fitCategoryLines, formatMoney, formatPct, formatWholeMoney, signedWholeMoney } from "../../domain/dashboard"
 import { computePeriodFlows, computePosition } from "../../domain/position"
 import { budgetProgress, cycleFor, type BudgetProgress } from "../../domain/budget"
 import { spendingCalendar, type CalendarDay } from "../../domain/spending"
-import { LOOKBACKS, PERIODS, PERIOD_LABEL, comparisonWindows, dataClock, filterByTimeframe, timeframeBounds, toISODate } from "../../domain/timeframe"
+import { CUSTOM_CHIP, LOOKBACKS, PERIODS, PERIOD_LABEL, comparisonWindows, filterByTimeframe, toISODate } from "../../domain/timeframe"
 import { fit } from "../text"
-import { spendingScope } from "../../domain/accountTree"
+import { allCategoryLines, overviewRange } from "../../state/overviewRange"
 import { AXIS_GUESS, ChartBody, axisWidth, type ChartModel } from "../charts/ChartBody"
 import { INKS, addDays, balancesChart, cashFlowChart, spendingChart, type PeriodNames } from "./periodCharts"
 
@@ -46,23 +48,25 @@ const MIN_CATEGORIES = 8
 export function OverviewTab(props: { focused: SectionId }) {
   const dims = useTerminalDimensions()
   const today = () => toISODate(new Date())
-  const clock = createMemo(() => dataClock(data.state.transactions))
   const cycleConfig = () => data.state.budgetCycle
-  const bounds = createMemo(() => timeframeBounds(ui.state.timeframe, clock(), cycleConfig()))
-  const scope = createMemo(() => spendingScope(data.state.accounts, data.state.accountSelection))
-  const scopeIds = createMemo(() => new Set(scope().accounts.map((a) => a.id)))
+  // The range, scope and category spending, shared with the tab's keys.
+  const range = createMemo(() => overviewRange(data.state, ui.state))
+  const clock = () => range().clock
+  const bounds = () => range().bounds
+  const scope = () => range().scope
+  const scopeIds = () => range().scopeIds
   // Compare like with like: the period so far against the same days of the
   // previous period.
   const windows = createMemo(() => comparisonWindows(bounds().start, bounds().end, today()))
   const previous = () => windows().previous
-  const spending = createMemo(() => data.state.transactions.filter((t) => t.accountId != null && scopeIds().has(t.accountId)))
-  const inPeriod = createMemo(() => filterByTimeframe(spending(), ui.state.timeframe, clock(), cycleConfig()))
+  const spending = () => range().spending
+  const inPeriod = () => range().inPeriod
   const inPrevious = createMemo(() => data.state.transactions.filter((t) => t.dateISO >= previous().start && t.dateISO <= previous().end))
   // Flows see every tracked account (money moved to savers), narrowed to the
   // scope for spending and income.
   const flows = createMemo(() => computePeriodFlows(data.state.accounts, filterByTimeframe(data.state.transactions, ui.state.timeframe, clock(), cycleConfig()), scopeIds()))
   const previousFlows = createMemo(() => computePeriodFlows(data.state.accounts, inPrevious(), scopeIds()))
-  const groups = createMemo(() => groupCategorySpend(computeCategorySpend(inPeriod(), data.state.categories), data.state.categories))
+  const groups = () => range().groups
   const calendar = createMemo(() => spendingCalendar(inPeriod(), bounds().start, bounds().end))
   const series = createMemo(() => dailySpendSeries(inPeriod(), bounds().start, bounds().end))
 
@@ -87,7 +91,7 @@ export function OverviewTab(props: { focused: SectionId }) {
   // What the range and the one before it are called in chart labels.
   const periodNames = (): PeriodNames => {
     const tf = ui.state.timeframe
-    if (tf.family === "lookback") return { current: "Range", previous: "Before" }
+    if (tf.family !== "period") return { current: "Range", previous: "Before" }
     const unit = PERIOD_UNIT[tf.period]
     return { current: `This ${unit}`, previous: `Last ${unit}` }
   }
@@ -152,7 +156,8 @@ export function OverviewTab(props: { focused: SectionId }) {
   const presetsWidth =
     LOOKBACKS.reduce((n, lb) => n + lb.length + 3, 0) - 1 +
     " │ ".length +
-    PERIODS.reduce((n, p) => n + PERIOD_LABEL[p].length + 3, 0) - 1
+    PERIODS.reduce((n, p) => n + PERIOD_LABEL[p].length + 3, 0) - 1 +
+    " │ ".length + " Custom ".length
   const showTimeframe = () => dims().width - 4 >= presetsWidth + 2 + bounds().label.length
   const dateFocused = () => props.focused === "ov.range"
   // Chips are padded labels on a pill (chipLook); the cursor shows only
@@ -224,18 +229,33 @@ export function OverviewTab(props: { focused: SectionId }) {
     </SectionCard>
   )
 
+  // Unfocused, the lines that fit (every group, then the largest
+  // subcategories). Focused, every line, scrolled to keep the cursor in view,
+  // with the cursor's row highlighted (enter opens it in Transactions).
+  const categoriesFocused = () => props.focused === "ov.categories"
+  const categoryRows = createMemo(() => {
+    const rows = categoriesHeight() - 2
+    if (!categoriesFocused()) return fitCategoryLines(groups(), rows).map((line) => ({ line, cursor: false }))
+    const lines = allCategoryLines(range())
+    const cursor = Math.min(ui.state.overviewCategoryCursor, lines.length - 1)
+    const top = Math.max(0, Math.min(lines.length - rows, cursor - Math.floor(rows / 2)))
+    return lines.slice(top, top + rows).map((line, i) => ({ line, cursor: top + i === cursor }))
+  })
   const categoriesCard = () => (
-    <SectionCard title="Categories" width={sideWidth()} height={categoriesHeight()} focused={props.focused === "ov.categories"}>
+    <SectionCard title="Categories" titleSuffix={categoriesFocused() ? "· enter to open" : undefined} titleSuffixColor={theme.overlay1} width={sideWidth()} height={categoriesHeight()} focused={categoriesFocused()}>
       <Show when={groups().length} fallback={<text fg={theme.overlay1}>No spending in this period</text>}>
-        <For each={fitCategoryLines(groups(), categoriesHeight() - 2)}>
-          {(line) => (
-            <text wrapMode="none">
-              <S fg={line.color}>{line.child ? "  " : ""}{`${categoryMark(line.categoryId)} `}</S>
-              <S fg={line.child ? theme.subtext0 : line.color} bold={!line.child}>{fit(line.label, -(line.child ? 4 : 2) + categoryNameWidth())}</S>
-              <S fg={line.child ? theme.subtext0 : theme.text} bold={!line.child}>{formatWholeMoney(line.amount).padStart(9)}</S>
-              <S fg={theme.overlay1}>{(line.pct != null ? `${Math.round(line.pct)}%` : "").padStart(5)}</S>
-            </text>
-          )}
+        <For each={categoryRows()}>
+          {({ line, cursor }) => {
+            const bg = cursor ? theme.surface0 : undefined
+            return (
+              <text wrapMode="none" bg={bg}>
+                <S fg={line.color} bg={bg}>{line.child ? "  " : ""}{`${categoryMark(line.categoryId)} `}</S>
+                <S fg={line.child && !cursor ? theme.subtext0 : line.color} bg={bg} bold={!line.child || cursor}>{fit(line.label, -(line.child ? 4 : 2) + categoryNameWidth())}</S>
+                <S fg={line.child ? theme.subtext0 : theme.text} bg={bg} bold={!line.child}>{formatWholeMoney(line.amount).padStart(9)}</S>
+                <S fg={theme.overlay1} bg={bg}>{(line.pct != null ? `${Math.round(line.pct)}%` : "").padStart(5)}</S>
+              </text>
+            )
+          }}
         </For>
       </Show>
     </SectionCard>
@@ -278,6 +298,8 @@ export function OverviewTab(props: { focused: SectionId }) {
             <For each={PERIODS}>
               {(p, i) => <>{i() > 0 ? " " : ""}{chip(PERIOD_LABEL[p], LOOKBACKS.length + i(), () => ui.state.timeframe.family === "period" && ui.state.timeframe.period === p)}</>}
             </For>
+            <S fg={theme.surface2}>{" │ "}</S>
+            {chip("Custom", CUSTOM_CHIP, () => ui.state.timeframe.family === "custom")}
           </text>
           <Show when={showTimeframe()}>
             <text fg={theme.peach} flexShrink={0}>{bounds().label}</text>
@@ -314,6 +336,21 @@ export function OverviewTab(props: { focused: SectionId }) {
             {categoriesCard()}
           </box>
         </box>
+      </Show>
+      <Show when={ui.state.customEdit}>
+        {(edit: () => NonNullable<typeof ui.state.customEdit>) => (
+          <Modal title="Custom range" width={40} hints="tab field · enter apply · esc cancel">
+            <text wrapMode="none">
+              <S fg={edit().field === 0 ? theme.text : theme.subtext0} bold={edit().field === 0}>{"Start  "}</S>
+              <TextInput field={edit().start} focused={edit().field === 0} />
+            </text>
+            <text wrapMode="none">
+              <S fg={edit().field === 1 ? theme.text : theme.subtext0} bold={edit().field === 1}>{"End    "}</S>
+              <TextInput field={edit().end} focused={edit().field === 1} />
+            </text>
+            <text fg={edit().error ? theme.error : theme.overlay1} wrapMode="none">{edit().error || "YYYY-MM-DD, both days included"}</text>
+          </Modal>
+        )}
       </Show>
     </box>
   )

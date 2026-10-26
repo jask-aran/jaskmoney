@@ -6,6 +6,7 @@ import {
   type TimeframeState,
 } from "../domain/timeframe"
 import type { ImportPreview, ImportProfile } from "../domain/types"
+import type { TextField } from "../domain/textField"
 import { editorFields } from "./settingsForm"
 
 export type TabId = "overview" | "manager" | "settings"
@@ -34,6 +35,7 @@ export type ScopeId =
   | "tagPicker"
   | "overview"
   | "overview.range"
+  | "overview.custom"
   | "manager"
   | "manager.accounts"
   | "manager.txns"
@@ -88,6 +90,16 @@ export interface UiState {
   accountCursor: number
   timeframe: TimeframeState
   dashChipCursor: number
+  /** The Custom range dialog: two dates being typed, the focused one and
+   * the last validation error. */
+  customEdit: { start: TextField; end: TextField; field: 0 | 1; error: string } | null
+  /** The Overview Categories card's cursor (an index into every category
+   * line, groups and subcategories). */
+  overviewCategoryCursor: number
+  /** Set by a drill-down from the Overview: esc in Transactions restores the
+   * filter it replaced and returns to the section it came from. Cleared on
+   * leaving Transactions any other way. */
+  drillReturn: { filter: string; focus: SectionId } | null
   /** Each chart pane's view: indexes into CHART_VIEWS, top pane first. */
   chartViews: [number, number]
   filterMode: boolean
@@ -235,6 +247,9 @@ function createUiStore() {
     accountCursor: 0,
     timeframe: defaultTimeframe(),
     dashChipCursor: 5,
+    customEdit: null,
+    overviewCategoryCursor: 0,
+    drillReturn: null,
     chartViews: [0, 4],
     filterMode: false,
     filterDraft: "",
@@ -310,6 +325,8 @@ function createUiStore() {
   function switchTab(tab: TabId) {
     setState({
       activeTab: tab,
+      drillReturn: null,
+      customEdit: null,
       focusedSection: TAB_DEFAULT_FOCUS[tab],
       jumpMode: false,
       filterMode: false,
@@ -555,6 +572,7 @@ function createUiStore() {
     if (state.importStage === "preview") return "settings.import.preview"
     if (state.accountActionId != null) return "manager.accountAction"
     if (state.factoryResetOpen) return "settings.factoryReset"
+    if (state.customEdit) return "overview.custom"
     if (state.activeTab === "overview") return state.focusedSection === "ov.range" ? "overview.range" : "overview"
     if (state.activeTab === "manager") {
       if (state.focusedSection === "mgr.accounts") return "manager.accounts"

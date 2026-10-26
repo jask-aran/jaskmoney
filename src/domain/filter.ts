@@ -565,6 +565,16 @@ function eqFold(a: string, b: string): boolean {
 }
 
 /** Canonical expression string for pills / preview (Go filterExprString). */
+/** One field term with its value quoted: `cat:"Pubs & Bars"`. */
+export function filterTerm(field: string, value: string): string {
+  return `${field}:"${value.replace(/\\/g, "\\\\").replace(/"/g, '\\"')}"`
+}
+
+/** Terms joined with OR, bracketed when there are several. */
+export function anyOf(terms: string[]): string {
+  return terms.length > 1 ? `(${terms.join(" OR ")})` : terms[0] ?? ""
+}
+
 export function filterExprString(node: FilterNode | null): string {
   if (!node) return ""
   return renderNode(node, 0)

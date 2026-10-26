@@ -1,6 +1,7 @@
 import { describe, expect, test, beforeEach } from "bun:test"
 import type { KeyEvent } from "@opentui/core"
 import { spendingScope } from "../domain/accountTree"
+import { CUSTOM_CHIP } from "../domain/timeframe"
 import { handleKey, footerHints } from "./keys"
 import { ui } from "../state/uiStore"
 import { data } from "../state/dataStore"
@@ -254,6 +255,63 @@ describe("key router", () => {
     ui.setState({ focusedSection: "ov.chart2" })
     handleKey(ui, key({ name: "h" }), data)
     expect(ui.state.chartViews).toEqual([7, 4])
+  })
+
+  test("drill-down: enter on a category line opens its transactions; esc comes back", () => {
+    const category = (id: number, name: string, parentId: number | null = null) => ({ id, name, color: "#fff", sortOrder: id, isDefault: false, parentId, extId: null, notSpending: false })
+    const txn = (id: number, categoryId: number, categoryName: string, amount: number) => ({
+      id, dateRaw: "x", dateISO: "2026-10-10", amount, description: `T${id}`, categoryId, categoryName,
+      categoryColor: "#fff", notes: "", importId: null, accountId: 1, accountName: "Spending", tagNames: [], tagColors: [], tagIds: [],
+      source: "up" as const, status: null, transferAccountId: null, internal: false, excluded: false,
+    })
+    data.setState({
+      accounts: [{ id: 1, name: "Spending", type: "debit", sortOrder: 1, isActive: true, source: "up", externalKind: "TRANSACTIONAL", balance: 1, syncEnabled: true }],
+      categories: [category(1, "Good Life"), category(2, "Pubs & Bars", 1), category(3, "Groceries")],
+      transactions: [txn(1, 2, "Pubs & Bars", -10), txn(2, 3, "Groceries", -20), txn(3, 3, "Groceries", 100)],
+      accountSelection: "all",
+      ready: true,
+    })
+    data.commitFilter("desc:T")
+    ui.setTimeframe({ ...ui.state.timeframe, family: "custom", custom: { start: "2026-10-01", end: "2026-10-31" } })
+    ui.setState({ focusedSection: "ov.categories", overviewCategoryCursor: 0 })
+    // Lines: Groceries, Good Life, Pubs & Bars (largest group first).
+    handleKey(ui, key({ name: "j" }), data)
+    handleKey(ui, key({ name: "return" }), data)
+    expect(ui.state.activeTab).toBe("manager")
+    expect(data.state.filterQuery).toContain('(cat:"Good Life" OR cat:"Pubs & Bars")')
+    expect(data.scopedTransactions().map((t) => t.id)).toEqual([1])
+    expect(footerHints("manager.txns", ui.state).some((h) => h.key === "esc" && h.desc === "back")).toBe(true)
+    handleKey(ui, key({ name: "escape" }), data)
+    expect(ui.state.activeTab).toBe("overview")
+    expect(ui.state.focusedSection).toBe("ov.categories")
+    expect(data.state.filterQuery).toBe("desc:T")
+    expect(ui.state.drillReturn).toBeNull()
+    data.clearFilter()
+  })
+
+  test("the Custom chip asks for dates and applies a valid range", () => {
+    ui.setTimeframe({ ...ui.state.timeframe, family: "custom", custom: { start: "2026-10-01", end: "2026-10-31" } })
+    ui.setState({ focusedSection: "ov.range", dashChipCursor: CUSTOM_CHIP })
+    handleKey(ui, key({ name: "return" }), data)
+    expect(ui.activeScope()).toBe("overview.custom")
+    expect(ui.state.customEdit?.start.value).toBe("2026-10-01")
+    handleKey(ui, key({ name: "tab" }), data)
+    handleKey(ui, key({ name: "backspace" }), data)
+    handleKey(ui, key({ name: "backspace" }), data)
+    handleKey(ui, key({ name: "1" }), data)
+    handleKey(ui, key({ name: "5" }), data)
+    handleKey(ui, key({ name: "return" }), data)
+    expect(ui.state.customEdit).toBeNull()
+    expect(ui.state.timeframe).toMatchObject({ family: "custom", custom: { start: "2026-10-01", end: "2026-10-15" } })
+    // An end before the start is refused with a message.
+    handleKey(ui, key({ name: "return" }), data)
+    handleKey(ui, key({ name: "tab" }), data)
+    handleKey(ui, key({ name: "u", ctrl: true }), data)
+    for (const ch of "2026-09-01") handleKey(ui, key({ name: ch, sequence: ch }), data)
+    handleKey(ui, key({ name: "return" }), data)
+    expect(ui.state.customEdit?.error).toBe("End is before start")
+    handleKey(ui, key({ name: "escape" }), data)
+    expect(ui.state.timeframe.custom).toEqual({ start: "2026-10-01", end: "2026-10-15" })
   })
 
   test("overview date chip apply sets timeframe", () => {

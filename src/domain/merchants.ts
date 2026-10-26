@@ -1,4 +1,5 @@
 import type { Transaction } from "./types"
+import { filterTerm } from "./filter"
 
 /**
  * The Transactions table summarised by merchant: the rows it is given (already
@@ -74,6 +75,6 @@ export function sortMerchantGroups(groups: MerchantGroup[], sort: MerchantSort, 
 
 /** The filter that narrows `current` to one merchant (the table's drill-in). */
 export function merchantFilter(current: string, merchant: string): string {
-  const term = `desc:"${merchant.replace(/\\/g, "\\\\").replace(/"/g, '\\"')}"`
+  const term = filterTerm("desc", merchant)
   return current.trim() ? `(${current.trim()}) AND ${term}` : term
 }

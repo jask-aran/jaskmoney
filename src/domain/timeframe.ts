@@ -228,6 +228,16 @@ export function applyChip(tf: TimeframeState, index: number, now: Date, cycle: C
   return { ...tmp, periodAnchor: b.start }
 }
 
+/** A custom range moved by its own length: `delta` ranges back or forward. */
+export function stepCustom(tf: TimeframeState, delta: number): TimeframeState {
+  if (tf.family !== "custom" || !tf.custom) return tf
+  const day = (iso: string) => Date.parse(iso + "T12:00:00Z")
+  const iso = (t: number) => new Date(t).toISOString().slice(0, 10)
+  const length = Math.round((day(tf.custom.end) - day(tf.custom.start)) / 86400000) + 1
+  const shift = delta * length * 86400000
+  return { ...tf, custom: { start: iso(day(tf.custom.start) + shift), end: iso(day(tf.custom.end) + shift) } }
+}
+
 export function activeChipIndex(tf: TimeframeState): number {
   if (tf.family === "custom") return CUSTOM_CHIP
   if (tf.family === "lookback") return LOOKBACKS.indexOf(tf.lookback)

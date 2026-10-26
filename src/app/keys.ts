@@ -8,19 +8,26 @@ import type { CycleConfig } from "../domain/budget"
 import { MERCHANT_SORTS, groupByMerchant, merchantFilter, sortMerchantGroups } from "../domain/merchants"
 import { anchorDraft, cycleFromDraft, editorFields, normaliseCycleDraft, pickerChoices, pickerItems, stepChoice } from "../state/settingsForm"
 import { runSync } from "./sync"
-import { CHART_VIEWS, JUMP_TARGETS, SETTINGS_SECTIONS, TABS, settingsSectionFocus, type ScopeId, type UiStore } from "../state/uiStore"
+import { CHART_VIEWS, JUMP_TARGETS, SETTINGS_SECTIONS, TABS, settingsSectionFocus, type ScopeId, type UiState, type UiStore } from "../state/uiStore"
 import type { DataStore } from "../state/dataStore"
 import {
+  CUSTOM_CHIP,
   LOOKBACKS,
   PERIOD_LABEL,
   activeChipIndex,
   applyChip,
   chipCount,
+  customRange,
   dataClock,
+  stepCustom,
   stepPeriod,
   timeframeBounds,
+  type TimeframeState,
 } from "../domain/timeframe"
-import { editText, isPrintable } from "../domain/textField"
+import { editText, isPrintable, textField } from "../domain/textField"
+import { drillFilter } from "../domain/drill"
+import type { CategoryLine } from "../domain/dashboard"
+import { allCategoryLines, overviewRange } from "../state/overviewRange"
 import { tagPickerItems, tagPickerState } from "../state/tagPicker"
 import { theme } from "../theme"
 
@@ -295,6 +302,31 @@ export function handleKey(ui: UiStore, key: KeyEvent, data?: DataStore): boolean
   }
 
   // ── Import and account-data modals own all input ───────────────────
+  // ── Custom date range (a modal: owns input until closed) ───────────
+  if (ui.state.customEdit) {
+    const edit = ui.state.customEdit
+    if (name === "escape") { ui.setState({ customEdit: null }); ui.setStatus("Range unchanged"); return true }
+    if (name === "tab" || name === "up" || name === "down") {
+      const field: 0 | 1 = edit.field === 0 ? 1 : 0
+      ui.setState({ customEdit: { ...edit, field, [field === 0 ? "start" : "end"]: textField((field === 0 ? edit.start : edit.end).value) } })
+      return true
+    }
+    if (name === "return" || name === "enter") {
+      const range = customRange(edit.start.value.trim(), edit.end.value.trim())
+      if (typeof range === "string") { ui.setState({ customEdit: { ...edit, error: range } }); return true }
+      const tf: TimeframeState = { ...ui.state.timeframe, family: "custom", custom: range }
+      ui.setTimeframe(tf)
+      ui.setState({ customEdit: null })
+      ui.setDashChipCursor(CUSTOM_CHIP)
+      ui.setStatus(`Custom · ${timeframeBounds(tf, new Date()).label}`)
+      return true
+    }
+    const key2 = edit.field === 0 ? "start" : "end"
+    const next = editText(edit[key2], key)
+    if (next) ui.setState({ customEdit: { ...edit, [key2]: next, error: "" } })
+    return true
+  }
+
   if (ui.state.factoryResetOpen) {
     if (name === "escape") { ui.setState({ factoryResetOpen: false, factoryResetDraft: "", factoryResetCaret: 0 }); ui.setStatus("Factory reset cancelled"); return true }
     if (name === "return" || name === "enter") {
@@ -778,6 +810,16 @@ export function handleKey(ui: UiStore, key: KeyEvent, data?: DataStore): boolean
       ui.openFilter(data?.state.filterQuery ?? "")
       return true
     }
+    if (name === "escape" && ui.state.drillReturn && data && !Object.keys(ui.state.selectedIds).length && !ui.state.rangeSelecting) {
+      // Back from a drill-down: the filter it replaced, the section it left.
+      const back = ui.state.drillReturn
+      if (back.filter) data.commitFilter(back.filter)
+      else data.clearFilter()
+      ui.switchTab("overview")
+      ui.setState({ focusedSection: back.focus })
+      ui.setStatus("Overview")
+      return true
+    }
     if (name === "u" || name === "escape") {
       // Approved OpenTUI deviation from legacy: Esc mirrors u, clearing the
       // current selection/range before an applied filter.
@@ -900,6 +942,13 @@ export function handleKey(ui: UiStore, key: KeyEvent, data?: DataStore): boolean
       ui.setDashChipCursor((ui.state.dashChipCursor + 1) % n)
       return true
     }
+    if ((name === "return" || name === "enter") && ui.state.dashChipCursor === CUSTOM_CHIP) {
+      // Custom asks for dates, starting from the last custom range or the
+      // range on screen.
+      const from = ui.state.timeframe.custom ?? timeframeBounds(ui.state.timeframe, clock, cycle)
+      ui.setState({ customEdit: { start: textField(from.start), end: textField(from.end), field: 0, error: "" } })
+      return true
+    }
     if (name === "return" || name === "enter") {
       const tf = applyChip(ui.state.timeframe, ui.state.dashChipCursor, clock, cycle)
       ui.setTimeframe(tf)
@@ -933,13 +982,33 @@ export function handleKey(ui: UiStore, key: KeyEvent, data?: DataStore): boolean
       return true
     }
     if (name === "[" || seq === "[" || name === "]" || seq === "]") {
+      const delta = name === "[" || seq === "[" ? -1 : 1
       if (ui.state.timeframe.family === "period") {
-        const tf = stepPeriod(ui.state.timeframe, name === "[" || seq === "[" ? -1 : 1, cycle)
+        const tf = stepPeriod(ui.state.timeframe, delta, cycle)
         ui.setTimeframe(tf)
         ui.setStatus(`${PERIOD_LABEL[tf.period]} · ${timeframeBounds(tf, clock, cycle).label}`)
+      } else if (ui.state.timeframe.family === "custom") {
+        const tf = stepCustom(ui.state.timeframe, delta)
+        ui.setTimeframe(tf)
+        ui.setStatus(`Custom · ${timeframeBounds(tf, clock, cycle).label}`)
       }
       return true
     }
+    // Drill-down (Go app): enter opens Transactions filtered to the focused
+    // category line, or to all the range's spending from a chart; esc there
+    // comes back. With Categories focused, j/k move over every line.
+    const focus = ui.state.focusedSection
+    if (data && focus === "ov.categories") {
+      const lines = allCategoryLines(overviewRange(data.state, ui.state))
+      const moveTo = (i: number) => ui.setState({ overviewCategoryCursor: Math.max(0, Math.min(lines.length - 1, i)) })
+      if (name === "j" || name === "down") { moveTo(ui.state.overviewCategoryCursor + 1); return true }
+      if (name === "k" || name === "up") { moveTo(ui.state.overviewCategoryCursor - 1); return true }
+      if (name === "g" && !key.shift) { moveTo(0); return true }
+      if ((name === "g" && key.shift) || name === "G") { moveTo(lines.length - 1); return true }
+      const line = lines[Math.min(ui.state.overviewCategoryCursor, lines.length - 1)]
+      if ((name === "return" || name === "enter") && line) { drillDown(ui, data, line); return true }
+    }
+    if (data && (focus === "ov.chart" || focus === "ov.chart2") && (name === "return" || name === "enter")) { drillDown(ui, data); return true }
     if (name === "0") {
       // Back to the default view: the current budget cycle.
       const tf = applyChip({ ...ui.state.timeframe, family: "period", period: "cycle" }, LOOKBACKS.length, clock, cycle)
@@ -959,8 +1028,35 @@ export function handleKey(ui: UiStore, key: KeyEvent, data?: DataStore): boolean
 }
 
 
-export function footerHints(scope: ScopeId): { key: string; desc: string }[] {
+/** Open Transactions on the Overview range's spending, narrowed to one
+ * category line when given, remembering where to come back to. */
+function drillDown(ui: UiStore, data: DataStore, line?: CategoryLine) {
+  const range = overviewRange(data.state, ui.state)
+  const query = drillFilter({
+    start: range.bounds.start,
+    end: range.bounds.end,
+    accounts: range.scope.accounts.map((a) => a.name),
+    category: line ? { id: line.categoryId, name: line.label } : undefined,
+    categories: data.state.categories,
+  })
+  const back = { filter: data.state.filterQuery, focus: ui.state.focusedSection }
+  ui.switchTab("manager")
+  const result = data.commitFilter(query)
+  if (!result.ok) { ui.setStatus(result.err, true); return }
+  ui.setState({ drillReturn: back, txnView: "rows", focusedSection: "mgr.transactions" })
+  const n = data.scopedTransactions().length
+  ui.jumpManagerCursor(0, n)
+  ui.setStatus(`${line?.label ?? "Spending"} · ${range.bounds.label} · ${n} transaction${n === 1 ? "" : "s"} · esc back`)
+}
+
+export function footerHints(scope: ScopeId, state?: Pick<UiState, "focusedSection" | "drillReturn">): { key: string; desc: string }[] {
   switch (scope) {
+    case "overview.custom":
+      return [
+        { key: "tab", desc: "field" },
+        { key: "enter", desc: "apply" },
+        { key: "esc", desc: "cancel" },
+      ]
     case "jump":
       return [
         { key: "letter", desc: "jump" },
@@ -987,7 +1083,14 @@ export function footerHints(scope: ScopeId): { key: string; desc: string }[] {
         { key: "esc", desc: "cancel" },
       ]
     case "overview":
+      if (state?.focusedSection === "ov.categories") return [
+        { key: "j/k", desc: "move" },
+        { key: "enter", desc: "transactions" },
+        { key: "[/]", desc: "period" },
+        { key: "esc", desc: "done" },
+      ]
       return [
+        ...(state?.focusedSection === "ov.chart" || state?.focusedSection === "ov.chart2" ? [{ key: "enter", desc: "transactions" }] : []),
         { key: "h/l", desc: "chart" },
         { key: "H/L", desc: "bottom chart" },
         { key: "a", desc: "account" },
@@ -1030,7 +1133,7 @@ export function footerHints(scope: ScopeId): { key: string; desc: string }[] {
         { key: "t", desc: "tag" },
         { key: "s", desc: "sort" },
         { key: "S-s", desc: "reverse" },
-        { key: "esc/u", desc: "clear" },
+        ...(state?.drillReturn ? [{ key: "esc", desc: "back" }, { key: "u", desc: "clear" }] : [{ key: "esc/u", desc: "clear" }]),
         { key: "/", desc: "filter" },
         { key: "v", desc: "jump" },
       ]
