@@ -9,6 +9,7 @@ import type { FilterTxn } from "./filter"
 
 const base: FilterTxn = {
   description: "UBER *TRIP Sydney",
+  categoryId: 4,
   categoryName: "Transport",
   accountName: "UP DEBIT",
   notes: "",
@@ -74,12 +75,21 @@ test("filter dates reject impossible days in single values and range endpoints",
   expect(evalFilter(node, { ...base, dateISO: "2024-02-29" })).toBe(true)
 })
 
-test("type:spending applies ordinary-flow exclusions while debit and credit keep their meanings", () => {
+test("type:spending and type:income follow the money rules while debit and credit keep their meanings", () => {
   const spending = parseFilterStrict("type:spending")
   expect(spending.error).toBeUndefined()
   expect(evalFilter(spending.node, base)).toBe(true)
-  for (const row of [{ ...base, excluded: true }, { ...base, tagNames: ["iGnOrE"] }, { ...base, amount: 0 }, { ...base, amount: 10 }]) {
+  // A refund into a spending category counts against it.
+  expect(evalFilter(spending.node, { ...base, amount: 10 })).toBe(true)
+  const uncategorisedIn = { ...base, amount: 10, categoryId: null, categoryName: "Uncategorised" }
+  for (const row of [{ ...base, excluded: true }, { ...base, tagNames: ["iGnOrE"] }, { ...base, amount: 0 }, uncategorisedIn, { ...base, income: true }]) {
     expect(evalFilter(spending.node, row)).toBe(false)
+  }
+  const income = parseFilterStrict("type:income")
+  expect(income.error).toBeUndefined()
+  expect(evalFilter(income.node, { ...base, amount: 100, income: true })).toBe(true)
+  for (const row of [{ ...base, amount: 100 }, uncategorisedIn, { ...base, amount: 100, income: true, excluded: true }]) {
+    expect(evalFilter(income.node, row)).toBe(false)
   }
   expect(evalFilter(parseFilterStrict("type:debit").node, { ...base, excluded: true, tagNames: ["IGNORE"] })).toBe(true)
   expect(evalFilter(parseFilterStrict("type:credit").node, { ...base, amount: 10, excluded: true, tagNames: ["IGNORE"] })).toBe(true)

@@ -18,7 +18,7 @@ import { budgetProgress, cycleFor, type BudgetProgress } from "../../domain/budg
 import { spendingCalendar, type CalendarDay } from "../../domain/spending"
 import { accountRole } from "../../domain/types"
 import { MONTHS, addDays, appNow, appToday } from "../../domain/days"
-import { isSpending } from "../../domain/moneyRules"
+import { isSpending, isUncategorised, isUnsortedIn } from "../../domain/moneyRules"
 import { CUSTOM_CHIP, LOOKBACKS, PERIODS, PERIOD_LABEL, comparisonWindows, filterByTimeframe, offsetLabel, periodOffset } from "../../domain/timeframe"
 import { fit } from "../text"
 import { allCategoryLines, overviewRange } from "../../state/overviewRange"
@@ -253,7 +253,8 @@ export function OverviewTab(props: { focused: SectionId }) {
   // with the cursor's row highlighted (enter opens it in Transactions).
   const categoriesFocused = () => props.focused === "ov.categories"
   // Spending in the range still to categorise (Go app's "Uncat N").
-  const uncategorised = createMemo(() => inPeriod().filter((t) => isSpending(t) && (t.categoryId == null || t.categoryName === "Uncategorised")).length)
+  // Spending and money in alike wait for a category.
+  const uncategorised = createMemo(() => inPeriod().filter((t) => isUncategorised(t) && (isSpending(t) || isUnsortedIn(t))).length)
   const categoryRows = createMemo(() => {
     const rows = categoriesHeight() - 2
     if (!categoriesFocused()) return fitCategoryLines(groups(), rows).map((line) => ({ line, cursor: false }))

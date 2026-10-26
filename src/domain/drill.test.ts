@@ -18,10 +18,12 @@ describe("drillFilter", () => {
     expect(q).toBe('date:2026-10-15..2026-11-14 AND type:spending AND (acc:"Spending" OR acc:"2Up") AND (cat:"Good Life" OR cat:"Pubs & Bars" OR cat:"Takeaway")')
     const { node, error } = parseFilterStrict(q)
     expect(error).toBeFalsy()
-    const row = { description: "Pub", notes: "", categoryName: "Pubs & Bars", accountName: "Spending", tagNames: [], amount: -12, dateISO: "2026-10-20" }
+    const row = { description: "Pub", notes: "", categoryId: 5, categoryName: "Pubs & Bars", accountName: "Spending", tagNames: [], amount: -12, dateISO: "2026-10-20" }
     expect(evalFilter(node!, row)).toBe(true)
     expect(evalFilter(node!, { ...row, categoryName: "Groceries" })).toBe(false)
-    expect(evalFilter(node!, { ...row, amount: 12 })).toBe(false)
+    // A refund into the group counts against it (it is in the total).
+    expect(evalFilter(node!, { ...row, amount: 12 })).toBe(true)
+    expect(evalFilter(node!, { ...row, amount: 12, income: true })).toBe(false)
     expect(evalFilter(node!, { ...row, excluded: true })).toBe(false)
     expect(evalFilter(node!, { ...row, tagNames: ["iGnOrE"] })).toBe(false)
   })

@@ -1,7 +1,8 @@
 import { describe, expect, test } from "bun:test"
 import { addDays } from "../../domain/days"
-import type { Account, Transaction } from "../../domain/types"
+import type { Account } from "../../domain/types"
 import { cashFlowChart, spendingChart } from "./periodCharts"
+import { transaction } from "../../testing/fixtures"
 
 const dates = Array.from({ length: 10 }, (_, i) => addDays("2026-10-01", i))
 const legendText = (model: ReturnType<typeof spendingChart>) => model.legend.map((s) => s.text).join("")
@@ -36,11 +37,7 @@ test("spending dated after today waits for its day in Weekly and Cash flow", () 
   const weekly = spendingChart("Weekly", { dates, values: [1, 2, 40] }, 60, 8, "2026-10-06", [])
   expect(legendText(weekly)).toContain("This week $3 so far")
   const account = { id: 1, name: "Spending", type: "debit", sortOrder: 1, isActive: true, source: "up", externalKind: "TRANSACTIONAL", balance: 0, syncEnabled: true } as Account
-  const row = (id: number, dateISO: string, amount: number) => ({
-    id, dateRaw: dateISO, dateISO, amount, description: "x", categoryId: null, categoryName: "Uncategorised", categoryColor: "#fff", notes: "",
-    importId: null, accountId: 1, accountName: "Spending", tagNames: [], tagColors: [], tagIds: [], source: "up", status: null,
-    transferAccountId: null, internal: false, excluded: false,
-  }) as Transaction
+  const row = (id: number, dateISO: string, amount: number) => transaction({ id, dateISO, amount, accountName: "Spending", status: null })
   const cashFlow = cashFlowChart(dates, 60, 8, "2026-10-06", [account], [row(1, "2026-10-05", -10), row(2, "2026-10-07", -40)], new Set([1]))
   expect(legendText(cashFlow)).toContain("Out $10")
 })

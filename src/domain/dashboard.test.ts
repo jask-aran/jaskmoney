@@ -18,19 +18,19 @@ const cats = [
 ]
 
 describe("dashboard aggregates", () => {
-  test("category spend ignores credits and IGNORE", () => {
+  test("category spend nets refunds and ignores income, uncategorised money in and IGNORE", () => {
     const list = computeCategorySpend(
       [
         transaction({ amount: -30, dateISO: "2026-02-01", categoryName: "Groceries", categoryId: 1 }),
+        transaction({ amount: 5, dateISO: "2026-02-01", categoryName: "Groceries", categoryId: 1 }),
         transaction({ amount: -20, dateISO: "2026-02-01", categoryName: "Transport", categoryId: 2 }),
         transaction({ amount: -50, dateISO: "2026-02-01", categoryName: "Groceries", categoryId: 1, tagNames: ["IGNORE"] }),
-        transaction({ amount: 100, dateISO: "2026-02-01", categoryName: "Income", categoryId: 9 }),
+        transaction({ amount: 100, dateISO: "2026-02-01", categoryName: "Salary", categoryId: 9, income: true }),
+        transaction({ amount: 40, dateISO: "2026-02-01" }),
       ],
       cats,
     )
-    expect(list[0]!.name).toBe("Groceries")
-    expect(list[0]!.amount).toBe(30)
-    expect(list).toHaveLength(2)
+    expect(list.map((c) => [c.name, c.amount])).toEqual([["Groceries", 25], ["Transport", 20]])
   })
 
   test("category spend excludes internal transfers but retains untracked transfers", () => {

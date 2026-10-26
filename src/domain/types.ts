@@ -38,6 +38,8 @@ export interface Category {
   extId: string | null
   /** Money in this category is neither spending nor income. */
   notSpending: boolean
+  /** Money in this category, or in one under it, is income. */
+  income: boolean
 }
 
 export interface Tag {
@@ -155,6 +157,8 @@ export interface Transaction {
   /** Not spending or income: `internal`, or its category is marked not-spending.
    * Spending, income and merchant figures skip these rows. */
   excluded: boolean
+  /** In an income category (one marked income, or under one). */
+  income: boolean
 }
 
 export type SortColumn = "date" | "amount" | "description" | "category" | "account"

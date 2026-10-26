@@ -4,7 +4,7 @@
  */
 
 import { addDays, addMonths, dayTime, parseDay } from "./days"
-import { isSpending } from "./moneyRules"
+import { isIncome, isSpending } from "./moneyRules"
 
 export type FilterNodeKind = "text" | "field" | "and" | "or" | "not"
 
@@ -38,12 +38,14 @@ interface Tok {
 
 export interface FilterTxn {
   description: string
+  categoryId: number | null
   categoryName: string
   accountName: string
   notes: string
   amount: number
   dateISO: string
   excluded?: boolean
+  income?: boolean
   tagNames: string[]
 }
 
@@ -165,6 +167,7 @@ function evalField(node: FilterNode, t: FilterTxn): boolean {
       if (want === "debit") return t.amount < 0
       if (want === "credit") return t.amount > 0
       if (want === "spending") return isSpending(t)
+      if (want === "income") return isIncome(t)
       return false
     }
     case "amt":
@@ -402,8 +405,8 @@ class Parser {
     }
     if (field === "type") {
       const raw = this.collectValue(field, false).toLowerCase().trim()
-      if (raw !== "debit" && raw !== "credit" && raw !== "spending") {
-        throw new Error(`type expects debit|credit|spending at ${fieldTok.pos + 1}`)
+      if (raw !== "debit" && raw !== "credit" && raw !== "spending" && raw !== "income") {
+        throw new Error(`type expects debit|credit|spending|income at ${fieldTok.pos + 1}`)
       }
       return { kind: "field", field, op: "=", value: raw }
     }

@@ -68,3 +68,25 @@ export function assignProviderCategories(db: Db): number {
       )`).run(fallback, fallback)
   return Number(result.changes)
 }
+
+/** Up transaction types that say what money in is, by income category. */
+const TYPE_CATEGORIES: Record<string, string> = { Salary: "Salary", Interest: "Interest" }
+
+/**
+ * Put Up rows whose transaction type says what they are (Salary, Interest)
+ * into that income category, marked 'type' so sync keeps it. Only rows with
+ * no category of their own: never set by the user, a rule or Up. Local only:
+ * Up has no income categories, so nothing is pushed. Returns the rows changed.
+ */
+export function assignTypeCategories(db: Db): number {
+  let changed = 0
+  for (const [type, name] of Object.entries(TYPE_CATEGORIES)) {
+    const category = db.query<{ id: number }, [string]>(`SELECT c.id FROM categories c JOIN categories g ON g.id = c.parent_id
+      WHERE g.income = 1 AND c.name = ?`).get(name)
+    if (!category) continue
+    changed += Number(db.query(`UPDATE transactions SET category_id = ?, category_source = 'type'
+      WHERE source = 'up' AND transaction_type = ? AND category_source IS NULL
+        AND (category_id IS NULL OR category_id IN (SELECT id FROM categories WHERE is_default = 1))`).run(category.id, type).changes)
+  }
+  return changed
+}

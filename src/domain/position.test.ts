@@ -136,7 +136,7 @@ describe("computePosition", () => {
 
 describe("computePeriodFlows", () => {
   const rows = [
-    row(1000), row(-100, { status: "HELD" }),
+    row(1000, { income: true }), row(-100, { status: "HELD" }),
     row(-200, { transferAccountId: 99 }), // Untracked rent account is spending.
     row(-500, { internal: true, excluded: true, transferAccountId: 3 }),
     row(500, { accountId: 3, internal: true, excluded: true, transferAccountId: 1 }),
@@ -145,16 +145,19 @@ describe("computePeriodFlows", () => {
     row(-50, { internal: true, excluded: true, transferAccountId: 2 }),
     row(50, { accountId: 2, internal: true, excluded: true, transferAccountId: 1 }),
     row(-999, { tagNames: ["iGnOrE"] }), row(999, { tagNames: ["IGNORE"] }),
-    row(5, { accountId: 3 }), // Interest belongs to saver changes only.
+    // Interest: a saver change, and income when all spending is in scope.
+    row(5, { accountId: 3, income: true }),
     row(-2, { accountId: 4, tagNames: ["IGNORE"] }),
+    // Uncategorised money in (and $0) is neither spending nor income.
     row(-10, { accountId: 2 }), row(20, { accountId: 2 }), row(0),
+    row(30, { categoryId: 7, categoryName: "Groceries" }), // A refund reduces spending.
     row(999, { accountId: null }), row(-999, { accountId: 99 }),
   ]
 
   test("ordinary flows exclude internal and IGNORE rows, but include untracked transfers", () => {
     expect(computePeriodFlows(accounts, rows)).toEqual({
-      spent: 310, income: 1020, net: 710, savedToSavers: 400,
-      savingsRate: 710 / 1020 * 100, txnCount: 6,
+      spent: 280, income: 1005, net: 725, savedToSavers: 400,
+      savingsRate: 725 / 1005 * 100, txnCount: 7,
       saverChanges: [{ accountId: 4, change: -2 }, { accountId: 3, change: 405 }, { accountId: 5, change: 0 }],
     })
   })
@@ -162,7 +165,7 @@ describe("computePeriodFlows", () => {
   test("account scope narrows spending, income, count, and saving transfers only", () => {
     const p = computePeriodFlows(accounts, rows, new Set([2, 3, 99]))
     expect(p).toEqual({
-      spent: 10, income: 20, net: 10, savedToSavers: 0, savingsRate: 50, txnCount: 2,
+      spent: 10, income: 0, net: -10, savedToSavers: 0, savingsRate: null, txnCount: 2,
       saverChanges: [{ accountId: 4, change: -2 }, { accountId: 3, change: 405 }, { accountId: 5, change: 0 }],
     })
     const empty = computePeriodFlows(accounts, rows, new Set())

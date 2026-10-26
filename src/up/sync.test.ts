@@ -37,6 +37,31 @@ function client(transactions: UpTransaction[], accounts = [account(), account("s
 
 describe("Up sync", () => {
 
+  test("Salary and Interest go to their income categories unless the row has a category of its own", async () => {
+    const db = testDb()
+    const typed = (id: string, transactionType: string, accountId = "daily") => {
+      const row = txn(id, "SETTLED", "2026-04-05T00:00:00Z", accountId)
+      row.attributes.transactionType = transactionType
+      row.attributes.amount = money(500000)
+      return row
+    }
+    const rows = [typed("pay", "Salary"), typed("interest", "Interest", "saver"), typed("mine", "Salary"), typed("osko", "Osko Payment Received")]
+    await syncUp(db, client(rows), { now })
+    const category = (id: string) => db.query<{ name: string; source: string | null }, [string]>(`SELECT c.name, t.category_source AS source
+      FROM transactions t JOIN categories c ON c.id = t.category_id WHERE t.external_id = ?`).get(id)
+    expect(category("pay")).toEqual({ name: "Salary", source: "type" })
+    expect(category("interest")).toEqual({ name: "Interest", source: "type" })
+    expect(category("osko")).toEqual({ name: "Uncategorised", source: null })
+    // Rows under the Income group load as income.
+    const loaded = loadTransactions(db)
+    expect(loaded.filter((t) => t.income).map((t) => t.categoryName).sort()).toEqual(["Interest", "Salary", "Salary"])
+    // A category you chose stays through later syncs, and so does Salary.
+    db.query("UPDATE transactions SET category_id = (SELECT id FROM categories WHERE name = 'Other income'), category_source = 'user' WHERE external_id = 'mine'").run()
+    await syncUp(db, client(rows), { now })
+    expect(category("mine")).toEqual({ name: "Other income", source: "user" })
+    expect(category("pay")).toEqual({ name: "Salary", source: "type" })
+  })
+
   test("missing details force one full-history fetch per affected account, then restore incremental windows", async () => {
     const db = testDb()
     const rows = [txn("old", "SETTLED", "2020-01-01T00:00:00Z"),

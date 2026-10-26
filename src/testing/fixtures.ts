@@ -14,7 +14,7 @@ export function transaction(overrides: Partial<Transaction> = {}): Transaction {
     categoryId: null, categoryName: "Uncategorised", categoryColor: "#7f849c",
     notes: "", importId: null, accountId: 1, accountName: "A",
     tagNames: [], tagColors: [], tagIds: [], source: "up", status: "SETTLED",
-    transferAccountId: null, internal: false, excluded: false,
+    transferAccountId: null, internal: false, excluded: false, income: false,
     ...overrides,
   }
 }
@@ -36,7 +36,7 @@ export function category(overrides: Partial<Category> = {}): Category {
   const id = overrides.id ?? 1
   return {
     id, name: `Category ${id}`, color: "#fff", sortOrder: id, isDefault: false,
-    parentId: null, extId: null, notSpending: false,
+    parentId: null, extId: null, notSpending: false, income: false,
     ...overrides,
   }
 }

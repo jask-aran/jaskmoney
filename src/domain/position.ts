@@ -17,7 +17,11 @@ import { accountRole, type Account, type Transaction } from "./types"
  * - Rows tagged IGNORE (case-insensitive) are excluded from spending and
  *   income, matching computeCategorySpend.
  * - Spending and income come from spending-role accounts only
- *   (`accountRole(account) === "spending"`).
+ *   (`accountRole(account) === "spending"`), except that a saver's income
+ *   (interest) counts when every spending account is in scope.
+ * - Income is the income categories; spending is money out plus refunds
+ *   into spending categories; uncategorised money in is neither (see
+ *   moneyRules).
  */
 
 export interface SaverBalance {
@@ -144,7 +148,10 @@ export function computePeriodFlows(
   transactions: Transaction[],
   spendingAccountIds?: ReadonlySet<number>,
 ): PeriodFlows {
-  const spendingIds = new Set(accounts.filter((a) => accountRole(a) === "spending" && (spendingAccountIds === undefined || spendingAccountIds.has(a.id))).map((a) => a.id))
+  const spending = accounts.filter((a) => accountRole(a) === "spending")
+  const spendingIds = new Set(spending.filter((a) => spendingAccountIds === undefined || spendingAccountIds.has(a.id)).map((a) => a.id))
+  // Savers' income (interest) belongs to all spending together, not to one account.
+  const saverIncome = spendingIds.size === spending.length
   const saverAmounts = new Map(accounts.filter((a) => accountRole(a) === "saver").map((a) => [a.id, 0]))
   let spent = 0
   let income = 0
@@ -154,6 +161,8 @@ export function computePeriodFlows(
     if (row.accountId === null) continue
     if (saverAmounts.has(row.accountId)) {
       saverAmounts.set(row.accountId, (saverAmounts.get(row.accountId) ?? 0) + row.amount)
+      if (saverIncome && isIncome(row)) income += row.amount
+      continue
     }
     if (!spendingIds.has(row.accountId)) continue
     if (row.internal && row.transferAccountId !== null && saverAmounts.has(row.transferAccountId)) {

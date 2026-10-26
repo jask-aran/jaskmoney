@@ -101,7 +101,7 @@ describe("Up category tree", () => {
     db.query(`INSERT INTO tags (name, category_id) SELECT 'keep', id FROM categories WHERE name = 'Transport'`).run()
     const before = rows(db)
     syncCategoryTree(db, tree)
-    expect(rows(db).filter(c => !c.ext_id).map(c => c.name)).toEqual(["Income", "Groceries", "Dining & Drinks", "Transport", "Transfers", "Uncategorised", "People"])
+    expect(rows(db).filter(c => !c.ext_id).map(c => c.name)).toEqual(["Income", "Groceries", "Dining & Drinks", "Transport", "Transfers", "Uncategorised", "Salary", "Interest", "Other income", "People"])
     for (const name of ["Income", "Groceries", "Dining & Drinks", "Transport", "Transfers", "Uncategorised"]) {
       expect(rows(db).find(c => c.name === name)).toEqual(before.find(c => c.name === name))
     }

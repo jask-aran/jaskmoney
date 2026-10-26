@@ -6,8 +6,10 @@ import {
   ACCOUNT_SYNC_COLUMNS_LIST,
   BUDGET_SQL,
   CATEGORY_SOURCE_COLUMN,
+  CATEGORY_INCOME_COLUMN,
   CATEGORY_NOT_SPENDING_COLUMN,
   CATEGORY_TREE_COLUMNS_LIST,
+  INCOME_CATEGORIES,
   TAG_EXT_COLUMN,
   DEFAULT_CATEGORIES,
   MANDATORY_TAGS,
@@ -18,6 +20,7 @@ import {
   TRANSACTION_SYNC_COLUMNS_LIST,
 } from "./schema"
 import type { Account, Category, ImportRecord, Rule, Tag, Transaction } from "../domain/types"
+import { assignTypeCategories } from "../up/categories"
 import type { Budget, BudgetScope, CycleConfig } from "../domain/budget"
 
 export type Db = Database
@@ -84,6 +87,40 @@ const MIGRATIONS: Record<number, (db: Db) => void> = {
     db.exec(`UPDATE categories SET not_spending = 1 WHERE name = 'Transfers' AND ext_id IS NULL`)
   },
   15: (db) => db.exec(BUDGET_SQL),
+  16: (db) => {
+    db.exec(`ALTER TABLE categories ADD COLUMN ${CATEGORY_INCOME_COLUMN}`)
+    const group = ensureIncomeCategories(db)
+    // Income is a group now, which nothing is assigned to directly: its rows
+    // go to Salary when Up says so, else Other income, and rules and tags
+    // that set it follow.
+    const id = (name: string) => db.query<{ id: number }, [string, number]>("SELECT id FROM categories WHERE name = ? AND parent_id = ?").get(name, group)!.id
+    const salary = id("Salary"), other = id("Other income")
+    db.query("UPDATE transactions SET category_id = CASE WHEN transaction_type = 'Salary' THEN ? ELSE ? END WHERE category_id = ?").run(salary, other, group)
+    db.query("UPDATE rules_v2 SET set_category_id = ? WHERE set_category_id = ?").run(other, group)
+    db.query("UPDATE tags SET category_id = ? WHERE category_id = ?").run(other, group)
+    assignTypeCategories(db)
+  },
+}
+
+/**
+ * The income group: the local top-level Income category, marked income, with
+ * INCOME_CATEGORIES under it. Adds what is missing (a local category of the
+ * same name moves under the group); renames nothing. Returns the group's id.
+ */
+export function ensureIncomeCategories(db: Db): number {
+  const local = (where: string) => db.query<{ id: number }, []>(`SELECT id FROM categories WHERE ext_id IS NULL AND parent_id IS NULL AND ${where} ORDER BY id LIMIT 1`).get()?.id
+  let group = local("income = 1") ?? local("name = 'Income'")
+  if (group === undefined) {
+    group = Number(db.query(`INSERT INTO categories (name, color, sort_order, income)
+      VALUES ('Income', '#a6e3a1', (SELECT COALESCE(MAX(sort_order), -1) + 1 FROM categories), 1)`).run().lastInsertRowid)
+  }
+  db.query("UPDATE categories SET income = 1 WHERE id = ?").run(group)
+  for (const category of INCOME_CATEGORIES) {
+    db.query(`INSERT OR IGNORE INTO categories (name, color, sort_order, parent_id)
+      VALUES (?, ?, (SELECT COALESCE(MAX(sort_order), -1) + 1 FROM categories), ?)`).run(category.name, category.color, group)
+    db.query("UPDATE categories SET parent_id = ? WHERE name = ? AND ext_id IS NULL AND parent_id IS NULL AND id != ?").run(group, category.name, group)
+  }
+  return group
 }
 
 export function ensureSchema(db: Db) {
@@ -130,6 +167,7 @@ function seedDefaults(db: Db) {
       // Transfers start as not-spending, as the v14 migration sets them.
       ins.run(c.name, c.color, c.sortOrder, c.isDefault, c.name === "Transfers" ? 1 : 0)
     }
+    ensureIncomeCategories(db)
   }
 
   const tagCount = (db.query("SELECT COUNT(*) AS c FROM tags").get() as { c: number }).c
@@ -180,7 +218,7 @@ export function loadCategories(db: Db): Category[] {
   const rows = db
     .query(
       `SELECT id, name, color, sort_order AS sortOrder, is_default AS isDefault,
-              parent_id AS parentId, ext_id AS extId, not_spending AS notSpending
+              parent_id AS parentId, ext_id AS extId, not_spending AS notSpending, income
        FROM categories ORDER BY sort_order, id`,
     )
     .all() as Array<{
@@ -192,11 +230,13 @@ export function loadCategories(db: Db): Category[] {
     parentId: number | null
     extId: string | null
     notSpending: number
+    income: number
   }>
   return rows.map((r) => ({
     ...r,
     isDefault: r.isDefault === 1,
     notSpending: r.notSpending === 1,
+    income: r.income === 1,
   }))
 }
 
@@ -345,9 +385,11 @@ export function loadTransactions(db: Db): Transaction[] {
          -- Internal: money moved to or from another tracked account. A transfer
          -- to an untracked account (e.g. a desynced joint account) is spending.
          (t.transfer_account_id IS NOT NULL AND COALESCE(ta.sync_enabled, 0) = 1) AS internal,
-         COALESCE(c.not_spending, 0) AS notSpendingCategory
+         COALESCE(c.not_spending, 0) AS notSpendingCategory,
+         (COALESCE(c.income, 0) = 1 OR COALESCE(pc.income, 0) = 1) AS income
        FROM transactions t
        LEFT JOIN categories c ON c.id = t.category_id
+       LEFT JOIN categories pc ON pc.id = c.parent_id
        LEFT JOIN accounts a ON a.id = t.account_id
        LEFT JOIN accounts ta ON ta.id = t.transfer_account_id
        WHERE a.id IS NULL OR a.sync_enabled = 1
@@ -383,6 +425,7 @@ export function loadTransactions(db: Db): Transaction[] {
     ...r,
     internal: !!r.internal,
     excluded: !!r.internal || !!(r as { notSpendingCategory?: number }).notSpendingCategory,
+    income: !!r.income,
     tagNames: tagNameMap.get(r.id) ?? [],
     tagColors: tagColorMap.get(r.id) ?? [],
     tagIds: tagIdMap.get(r.id) ?? [],

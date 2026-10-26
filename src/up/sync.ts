@@ -1,6 +1,6 @@
 import { uncategorisedCategoryId, type Db } from "../db/client"
 import type { createUpClient } from "./client"
-import { assignProviderCategories, syncCategoryTree } from "./categories"
+import { assignProviderCategories, assignTypeCategories, syncCategoryTree } from "./categories"
 import { resolveUpName } from "./names"
 import { syncTagLinks } from "./tags"
 
@@ -106,6 +106,7 @@ export async function syncUp(db: Db, client: Pick<ReturnType<typeof createUpClie
       }
       // Rows outside the fetch window still follow Up's (stored) category.
       updated += assignProviderCategories(db)
+      updated += assignTypeCategories(db)
       const tags = syncTagLinks(db)
       updated += tags.linksAdded + tags.linksRemoved
       db.query(`INSERT INTO sync_state (source, last_synced_at, last_error) VALUES ('up', ?, NULL)

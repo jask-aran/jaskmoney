@@ -257,7 +257,8 @@ describe("key router", () => {
     data.setState({
       accounts: [account({ name: "Spending", balance: 1 })],
       categories: [category({ id: 1, name: "Good Life" }), category({ id: 2, name: "Pubs & Bars", parentId: 1 }), category({ id: 3, name: "Groceries" })],
-      transactions: [txn(1, 2, "Pubs & Bars", -10), txn(2, 3, "Groceries", -20), txn(3, 3, "Groceries", 100)],
+      // A $5 Groceries refund: Groceries nets $15, still the largest.
+      transactions: [txn(1, 2, "Pubs & Bars", -10), txn(2, 3, "Groceries", -20), txn(3, 3, "Groceries", 5)],
       accountSelection: "all",
       ready: true,
     })

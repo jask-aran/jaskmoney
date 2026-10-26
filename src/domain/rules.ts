@@ -1,4 +1,5 @@
 import { evalFilter, parseFilterStrict } from "./filter"
+import { incomeCategoryIds } from "./moneyRules"
 import type { Category, Rule, RuleRunResult, SavedFilter, Tag, Transaction } from "./types"
 
 export interface RuleSample {
@@ -26,9 +27,13 @@ export interface DryRunReport extends RuleRunResult {
 export function filterRowNames(categories: Category[], tags: Tag[]) {
   const categoryNames = new Map(categories.map((category) => [category.id, category.name]))
   const tagNames = new Map(tags.map((tag) => [tag.id, tag.name]))
+  const income = incomeCategoryIds(categories)
   return {
+    // The row as a filter sees it once `categoryId` is set.
     row: (transaction: Transaction, categoryId: number | null, tagIds: Iterable<number>) => ({
       ...transaction,
+      categoryId,
+      income: categoryId != null && income.has(categoryId),
       categoryName: categoryNames.get(categoryId ?? -1) ?? "Uncategorised",
       tagNames: [...tagIds].map((id) => tagNames.get(id)).filter((name): name is string => !!name),
     }),
