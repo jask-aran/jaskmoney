@@ -9,8 +9,8 @@ import {
 import type { Category, Transaction } from "./types"
 
 const cats: Category[] = [
-  { id: 1, name: "Groceries", color: "#94e2d5", sortOrder: 1, isDefault: false },
-  { id: 2, name: "Transport", color: "#89b4fa", sortOrder: 2, isDefault: false },
+  { id: 1, name: "Groceries", color: "#94e2d5", sortOrder: 1, isDefault: false, parentId: null, extId: null },
+  { id: 2, name: "Transport", color: "#89b4fa", sortOrder: 2, isDefault: false, parentId: null, extId: null },
 ]
 
 function t(

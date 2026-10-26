@@ -75,9 +75,9 @@ describe("MVP slice: filter + categorize", () => {
         { id: 1, name: "ANZ CREDIT", type: "credit", sortOrder: 1, isActive: true, source: "csv" as const, externalKind: null, balance: null, syncEnabled: true },
       ],
       categories: [
-        { id: 4, name: "Transport", color: "#89b4fa", sortOrder: 4, isDefault: false },
-        { id: 3, name: "Dining & Drinks", color: "#fab387", sortOrder: 3, isDefault: false },
-        { id: 10, name: "Uncategorised", color: "#7f849c", sortOrder: 10, isDefault: true },
+        { id: 4, name: "Transport", color: "#89b4fa", sortOrder: 4, isDefault: false, parentId: null, extId: null },
+        { id: 3, name: "Dining & Drinks", color: "#fab387", sortOrder: 3, isDefault: false, parentId: null, extId: null },
+        { id: 10, name: "Uncategorised", color: "#7f849c", sortOrder: 10, isDefault: true, parentId: null, extId: null },
       ],
       filterQuery: "",
       ready: true,

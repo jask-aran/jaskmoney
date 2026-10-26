@@ -1,11 +1,12 @@
-/** OpenTUI schema. v11 adds provider transaction details (categorisable flag,
+/** OpenTUI schema. v12 adds the category tree (parent, provider category id)
+ * and who set each transaction's category. v11 added provider transaction details (categorisable flag,
  * method, card, foreign amount, round-up, cashback). v10 added a per-account
  * sync switch. v9 added synced sources (Up Bank): external identity,
  * settlement status and raw provider fields. v8 replaced the old destructive
  * version fallback with an additive migration registry. v7 was the initial
  * partial OpenTUI port. */
 
-export const SCHEMA_VERSION = 11
+export const SCHEMA_VERSION = 12
 
 /** Columns shared by the fresh schema and the v9 migration. Rows imported from
  * CSV keep source = 'csv' and NULL external fields. */
@@ -42,6 +43,19 @@ export const TRANSACTION_SYNC_COLUMNS_LIST = [
   "ext_tags TEXT NOT NULL DEFAULT '[]'",
 ] as const
 
+/** v12: category tree. A provider category (Up: one of its 4 parents or 40
+ * children) has ext_id; local-only categories have NULL ext_id. */
+export const CATEGORY_TREE_COLUMNS_LIST = [
+  "parent_id INTEGER REFERENCES categories(id) ON DELETE SET NULL",
+  "ext_id TEXT",
+] as const
+
+/** v12: who set transactions.category_id. NULL = never set (falls back to the
+ * provider's category on sync); 'provider' = mirrors the provider category
+ * (sync keeps it in step); 'user' = chosen locally and not pushable (a local-only
+ * category); 'rule' = set by a rule. Sync overwrites only NULL and 'provider'. */
+export const CATEGORY_SOURCE_COLUMN = "category_source TEXT"
+
 /** v11: provider transaction details shown in the transaction detail view.
  * All NULL for CSV rows. */
 export const TRANSACTION_DETAIL_COLUMNS_LIST = [
@@ -61,7 +75,8 @@ export const TRANSACTION_DETAIL_COLUMNS_LIST = [
 ] as const
 
 const ACCOUNT_SYNC_COLUMNS = ACCOUNT_SYNC_COLUMNS_LIST.join(",\n  ")
-const TRANSACTION_SYNC_COLUMNS = [...TRANSACTION_SYNC_COLUMNS_LIST, ...TRANSACTION_DETAIL_COLUMNS_LIST].join(",\n  ")
+const TRANSACTION_SYNC_COLUMNS = [...TRANSACTION_SYNC_COLUMNS_LIST, ...TRANSACTION_DETAIL_COLUMNS_LIST, CATEGORY_SOURCE_COLUMN].join(",\n  ")
+const CATEGORY_TREE_COLUMNS = CATEGORY_TREE_COLUMNS_LIST.join(",\n  ")
 
 export const SYNC_SQL = `
 CREATE UNIQUE INDEX IF NOT EXISTS idx_accounts_external ON accounts(source, external_id) WHERE external_id IS NOT NULL;
@@ -84,7 +99,8 @@ CREATE TABLE IF NOT EXISTS categories (
   name        TEXT NOT NULL UNIQUE,
   color       TEXT NOT NULL,
   sort_order  INTEGER NOT NULL DEFAULT 0,
-  is_default  INTEGER NOT NULL DEFAULT 0
+  is_default  INTEGER NOT NULL DEFAULT 0,
+  ${CATEGORY_TREE_COLUMNS}
 );
 
 CREATE TABLE IF NOT EXISTS tags (
@@ -153,6 +169,7 @@ CREATE INDEX IF NOT EXISTS idx_accounts_sort_order ON accounts(sort_order);
 CREATE INDEX IF NOT EXISTS idx_tags_sort_order ON tags(sort_order);
 CREATE INDEX IF NOT EXISTS idx_rules_v2_sort ON rules_v2(sort_order);
 ${SYNC_SQL}
+CREATE UNIQUE INDEX IF NOT EXISTS idx_categories_ext ON categories(ext_id) WHERE ext_id IS NOT NULL;
 `
 
 export const DEFAULT_CATEGORIES: { name: string; color: string; sortOrder: number; isDefault: number }[] = [

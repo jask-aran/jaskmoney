@@ -3,6 +3,8 @@ import { mkdirSync } from "node:fs"
 import { dirname, join } from "node:path"
 import {
   ACCOUNT_SYNC_COLUMNS_LIST,
+  CATEGORY_SOURCE_COLUMN,
+  CATEGORY_TREE_COLUMNS_LIST,
   DEFAULT_CATEGORIES,
   MANDATORY_TAGS,
   SCHEMA_SQL,
@@ -62,6 +64,11 @@ const MIGRATIONS: Record<number, (db: Db) => void> = {
   10: (db) => db.exec(`ALTER TABLE accounts ADD COLUMN sync_enabled INTEGER NOT NULL DEFAULT 1`),
   11: (db) => {
     for (const column of TRANSACTION_DETAIL_COLUMNS_LIST) db.exec(`ALTER TABLE transactions ADD COLUMN ${column}`)
+  },
+  12: (db) => {
+    for (const column of CATEGORY_TREE_COLUMNS_LIST) db.exec(`ALTER TABLE categories ADD COLUMN ${column}`)
+    db.exec(`ALTER TABLE transactions ADD COLUMN ${CATEGORY_SOURCE_COLUMN}`)
+    db.exec(`CREATE UNIQUE INDEX IF NOT EXISTS idx_categories_ext ON categories(ext_id) WHERE ext_id IS NOT NULL`)
   },
 }
 
@@ -157,7 +164,8 @@ export function loadAccounts(db: Db, { includeUnsynced = false }: { includeUnsyn
 export function loadCategories(db: Db): Category[] {
   const rows = db
     .query(
-      `SELECT id, name, color, sort_order AS sortOrder, is_default AS isDefault
+      `SELECT id, name, color, sort_order AS sortOrder, is_default AS isDefault,
+              parent_id AS parentId, ext_id AS extId
        FROM categories ORDER BY sort_order, id`,
     )
     .all() as Array<{
@@ -166,6 +174,8 @@ export function loadCategories(db: Db): Category[] {
     color: string
     sortOrder: number
     isDefault: number
+    parentId: number | null
+    extId: string | null
   }>
   return rows.map((r) => ({
     ...r,

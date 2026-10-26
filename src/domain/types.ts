@@ -32,6 +32,10 @@ export interface Category {
   color: string
   sortOrder: number
   isDefault: boolean
+  /** Parent category (two-level tree); null for top-level categories. */
+  parentId: number | null
+  /** Provider category id (Up: e.g. "restaurants-and-cafes"); null = local-only. */
+  extId: string | null
 }
 
 export interface Tag {
