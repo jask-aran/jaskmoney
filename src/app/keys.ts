@@ -1099,7 +1099,7 @@ export function footerHints(scope: ScopeId, state?: Pick<UiState, "focusedSectio
       if (state?.focusedSection === "ov.categories") return [
         { key: "j/k", desc: "move" },
         { key: "enter", desc: "transactions" },
-        { key: "[/]", desc: "period" },
+        { key: "[ ]", desc: "prev/next range" },
         { key: "esc", desc: "done" },
       ]
       return [
@@ -1107,7 +1107,7 @@ export function footerHints(scope: ScopeId, state?: Pick<UiState, "focusedSectio
         { key: "h/l", desc: "chart" },
         { key: "H/L", desc: "bottom chart" },
         { key: "a", desc: "account" },
-        { key: "[/]", desc: "period" },
+        { key: "[ ]", desc: "prev/next range" },
         { key: "0", desc: "this cycle" },
         { key: "/", desc: "search" },
         { key: "v", desc: "jump" },
@@ -1117,7 +1117,7 @@ export function footerHints(scope: ScopeId, state?: Pick<UiState, "focusedSectio
       return [
         { key: "h/l", desc: "chip" },
         { key: "enter", desc: "apply" },
-        { key: "[/]", desc: "shift period" },
+        { key: "[ ]", desc: "prev/next range" },
         { key: "esc", desc: "done" },
       ]
     case "manager.detail":
