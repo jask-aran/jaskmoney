@@ -1,6 +1,6 @@
 import type { BoxRenderable } from "@opentui/core"
 import type { JSX } from "@opentui/solid"
-import { createSignal } from "solid-js"
+import { Index, Show, createSignal } from "solid-js"
 import { theme } from "../../theme"
 import { S } from "./S"
 
@@ -63,8 +63,9 @@ export function SectionCard(props: {
   bottomSpans?: Span[]
   children?: JSX.Element
 }) {
-  const [width, setWidth] = createSignal(0)
-  const [height, setHeight] = createSignal(0)
+  // Until the first layout reports a size, start from the given one.
+  const [width, setWidth] = createSignal(typeof props.width === "number" ? props.width : 0)
+  const [height, setHeight] = createSignal(typeof props.height === "number" ? props.height : 0)
   const borderColor = () => (props.focused ? theme.focus : theme.surface1)
   const titleColor = () => (props.focused ? theme.focus : theme.brand)
   // `╭─` before the title and `─╮` after it leave width - 4 cells, one of
@@ -79,6 +80,9 @@ export function SectionCard(props: {
     const fitted = width() > 0 ? fitTitle(segments, Math.max(0, width() - 5)) : segments
     return [fitted[0]!, fitted[1]!, `${fitted[2]!} `]
   }
+  const rightSpans = () => (width() > 0 && props.titleRight ? fitSpans(props.titleRight, Math.max(0, width() - 8 - Bun.stringWidth(parts().join("")))) : [])
+  const rightWidth = () => rightSpans().reduce((n, sp) => n + Bun.stringWidth(sp.text), 0)
+  const bottomSpans = () => (width() > 0 && height() > 1 && props.bottomSpans ? fitSpans(props.bottomSpans, Math.max(0, width() - 6)) : [])
   const nativeTitleGap = () => parts().join("").replace(/[^\n]/g, " ")
 
   return (
@@ -118,25 +122,23 @@ export function SectionCard(props: {
       </text>
       {props.children}
       {/* Border spans: a space either side, over the border line. Every span
-          paints the canvas background, or its spaces would show the border. */}
-      {props.titleRight?.length && width() > 0 ? (() => {
-        const spans = fitSpans(props.titleRight!, Math.max(0, width() - 8 - Bun.stringWidth(parts().join(""))))
-        const w = spans.reduce((n, sp) => n + Bun.stringWidth(sp.text), 0)
-        return w > 0 ? (
-          <text position="absolute" top={-1} left={width() - 5 - w} zIndex={1} height={1} wrapMode="none">
-            <S fg={borderColor()} bg={theme.canvas}>{" "}</S>
-            {spans.map((sp) => <S fg={sp.fg} bg={theme.canvas} bold={sp.bold}>{sp.text}</S>)}
-            <S fg={borderColor()} bg={theme.canvas}>{" "}</S>
-          </text>
-        ) : null
-      })() : null}
-      {props.bottomSpans?.length && height() > 1 ? (
-        <text position="absolute" top={height() - 2} left={1} zIndex={1} height={1} wrapMode="none">
-          <S fg={borderColor()} bg={theme.canvas}>{" "}</S>
-          {fitSpans(props.bottomSpans!, Math.max(0, width() - 6)).map((sp) => <S fg={sp.fg} bg={theme.canvas} bold={sp.bold}>{sp.text}</S>)}
-          <S fg={borderColor()} bg={theme.canvas}>{" "}</S>
+          paints the canvas background, or its spaces would show the border.
+          The text elements stay mounted and their spans update in place (Index), so a
+          change never shows a frame of bare border. */}
+      <Show when={props.titleRight}>
+        <text position="absolute" top={-1} left={Math.max(0, width() - 5 - rightWidth())} zIndex={1} height={1} wrapMode="none">
+          <S fg={borderColor()} bg={theme.canvas}>{rightWidth() > 0 ? " " : ""}</S>
+          <Index each={rightSpans()}>{(sp) => <S fg={sp().fg} bg={theme.canvas} bold={sp().bold}>{sp().text}</S>}</Index>
+          <S fg={borderColor()} bg={theme.canvas}>{rightWidth() > 0 ? " " : ""}</S>
         </text>
-      ) : null}
+      </Show>
+      <Show when={props.bottomSpans}>
+        <text position="absolute" top={Math.max(0, height() - 2)} left={1} zIndex={1} height={1} wrapMode="none">
+          <S fg={borderColor()} bg={theme.canvas}>{bottomSpans().length ? " " : ""}</S>
+          <Index each={bottomSpans()}>{(sp) => <S fg={sp().fg} bg={theme.canvas} bold={sp().bold}>{sp().text}</S>}</Index>
+          <S fg={borderColor()} bg={theme.canvas}>{bottomSpans().length ? " " : ""}</S>
+        </text>
+      </Show>
     </box>
   )
 }

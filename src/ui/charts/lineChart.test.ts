@@ -51,6 +51,18 @@ describe("valueRow", () => {
   })
 })
 
+describe("lineChart shared cells", () => {
+  test("a cell two lines share shows one line's dots in its colour", () => {
+    // Both lines run through the one cell: the bottom line (2 dots) and the
+    // top line (2 dots); the tie goes to the later series, alone.
+    const rows = lineChart({ series: [{ values: [0, 0], ink: "a" }, { values: [1, 1], ink: "b" }], length: 2, width: 1, height: 1, min: 0, max: 1 })
+    expect(rows).toEqual([[{ text: "⠉", ink: "b" }]])
+    // The line with more dots there wins.
+    const more = lineChart({ series: [{ values: [0, 1], ink: "a" }, { values: [1, 1], ink: "b" }], length: 2, width: 1, height: 1, min: 0, max: 1 })
+    expect(more[0]![0]!.ink).toBe("a")
+  })
+})
+
 describe("dateAxis", () => {
   test("labels the ends and month starts and marks today", () => {
     const dates = Array.from({ length: 40 }, (_, i) => new Date(Date.UTC(2026, 8, 15 + i)).toISOString().slice(0, 10))

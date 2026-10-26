@@ -242,21 +242,25 @@ export function OverviewTab(props: { focused: SectionId }) {
     </SectionCard>
   )
 
-  const chartPane = (pane: 0 | 1, height: number, chart: ChartModel | null) => {
-    const index = ui.state.chartViews[pane]
-    const view = CHART_VIEWS[index] ?? CHART_VIEWS[0]
+  // A component, not a function call in JSX: its card stays mounted while
+  // the view changes (a remounted card has no measured width for a frame or
+  // two, so its border picker and legend would blink out).
+  const ChartPane = (p: { pane: 0 | 1; height: number }) => {
+    const index = () => ui.state.chartViews[p.pane]
+    const view = () => CHART_VIEWS[index()] ?? CHART_VIEWS[0]
+    const chart = () => (p.pane === 0 ? topModel() : bottomModel())
     return (
       <SectionCard
-        title={view.group}
-        titleSuffix={view.group === view.view ? undefined : `· ${view.view}`}
+        title={view().group}
+        titleSuffix={view().group === view().view ? undefined : `· ${view().view}`}
         titleSuffixColor={theme.subtext0}
-        titleRight={viewPicker(index)}
-        bottomSpans={chart ? chart.legend : calendarLegend(calendar(), today())}
+        titleRight={viewPicker(index())}
+        bottomSpans={chart()?.legend ?? calendarLegend(calendar(), today())}
         width={mainWidth()}
-        height={height}
-        focused={props.focused === (pane === 0 ? "ov.chart" : "ov.chart2")}
+        height={p.height}
+        focused={props.focused === (p.pane === 0 ? "ov.chart" : "ov.chart2")}
       >
-        <Show when={chart} fallback={<CalendarView weeks={calendar()} width={mainWidth() - 4} rows={height - 2} today={today()} />}>
+        <Show when={chart()} fallback={<CalendarView weeks={calendar()} width={mainWidth() - 4} rows={p.height - 2} today={today()} />}>
           {(m: () => ChartModel) => <ChartBody model={m()} inks={INKS} />}
         </Show>
       </SectionCard>
@@ -285,7 +289,7 @@ export function OverviewTab(props: { focused: SectionId }) {
         when={wide()}
         fallback={
           <>
-            {chartPane(0, topChartHeight(), topModel())}
+            <ChartPane pane={0} height={topChartHeight()} />
             <box flexDirection="row" gap={1} width="100%" height={lowerHeight()}>
               <box flexDirection="column" width={sideWidth()}>
                 {nowCard()}
@@ -301,8 +305,8 @@ export function OverviewTab(props: { focused: SectionId }) {
       >
         <box flexDirection="row" gap={1} width="100%" height={bodyHeight()}>
           <box flexDirection="column" width={mainWidth()} height={bodyHeight()}>
-            {chartPane(0, topChartHeight(), topModel())}
-            {chartPane(1, bottomChartHeight(), bottomModel())}
+            <ChartPane pane={0} height={topChartHeight()} />
+            <ChartPane pane={1} height={bottomChartHeight()} />
           </box>
           <box flexDirection="column" flexGrow={1} flexBasis={0} minWidth={0} height={bodyHeight()} overflow="hidden">
             {nowCard()}

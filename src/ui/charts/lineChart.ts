@@ -42,9 +42,10 @@ export function cellColumn(index: number, length: number, width: number): number
 }
 
 /**
- * Draw `series` (in order; a later series owns a cell it shares with an
- * earlier one) between `min` (bottom) and `max` (top), connecting consecutive
- * non-null points. Markers draw a vertical rule in cells without dots.
+ * Draw `series` between `min` (bottom) and `max` (top), connecting consecutive
+ * non-null points. A cell shared by two lines shows the one with more dots
+ * there (the later on a tie). Markers draw a vertical rule in cells without
+ * dots.
  * Returns rows top first, each a list of runs.
  */
 export function lineChart(opts: {
@@ -60,13 +61,19 @@ export function lineChart(opts: {
   if (width <= 0 || height <= 0) return []
   const span = opts.max - min || 1
   const dotsHigh = 4 * height
-  const masks = new Array<number>(width * height).fill(0)
-  const inks = new Array<string | null>(width * height).fill(null)
-  const plot = (x: number, y: number, ink: string) => {
+  // A cell has one colour, so each series (and each fill) draws on its own
+  // layer, and a cell shows only one layer's dots: the line with the most
+  // dots there (ties to the later series), else a fill. Another line's dots
+  // in that cell are dropped rather than drawn in the wrong colour.
+  const layers: Array<{ ink: string; fill: boolean; masks: number[] }> = []
+  const layer = (ink: string, fill: boolean) => {
+    const l = { ink, fill, masks: new Array<number>(width * height).fill(0) }
+    layers.push(l)
+    return l
+  }
+  const plot = (l: (typeof layers)[number], x: number, y: number) => {
     if (x < 0 || x >= 2 * width || y < 0 || y >= dotsHigh) return
-    const cell = Math.floor(y / 4) * width + Math.floor(x / 2)
-    masks[cell]! |= DOT_BITS[x % 2]![y % 4]!
-    inks[cell] = ink
+    l.masks[Math.floor(y / 4) * width + Math.floor(x / 2)]! |= DOT_BITS[x % 2]![y % 4]!
   }
   const dotRow = (v: number) => {
     const level = Math.round(((v - min) / span) * (dotsHigh - 1))
@@ -86,11 +93,25 @@ export function lineChart(opts: {
     if (s.fill) {
       // From the cell row below the line's lowest dot in each dot column down
       // to the floor, so the line's own cells hold only the line.
+      const f = layer(s.fill, true)
       const lowest = new Map<number, number>()
       for (const [x, y] of dots) lowest.set(x, Math.max(lowest.get(x) ?? -1, y))
-      for (const [x, y] of lowest) for (let yy = (Math.floor(y / 4) + 1) * 4; yy < dotsHigh; yy++) plot(x, yy, s.fill)
+      for (const [x, y] of lowest) for (let yy = (Math.floor(y / 4) + 1) * 4; yy < dotsHigh; yy++) plot(f, x, yy)
     }
-    for (const [x, y] of dots) plot(x, y, s.ink)
+    const l = layer(s.ink, false)
+    for (const [x, y] of dots) plot(l, x, y)
+  }
+  const bits = (mask: number) => { let n = 0; for (let m = mask; m; m &= m - 1) n++; return n }
+  const masks = new Array<number>(width * height).fill(0)
+  const inks = new Array<string | null>(width * height).fill(null)
+  for (let cell = 0; cell < width * height; cell++) {
+    let best: (typeof layers)[number] | null = null
+    for (const l of layers) {
+      const m = l.masks[cell]!
+      if (!m) continue
+      if (!best || (best.fill && !l.fill) || (best.fill === l.fill && bits(m) >= bits(best.masks[cell]!))) best = l
+    }
+    if (best) { masks[cell] = best.masks[cell]!; inks[cell] = best.ink }
   }
   const markerInk = new Map<number, string>()
   for (const m of opts.markers ?? []) {
