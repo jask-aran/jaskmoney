@@ -50,7 +50,7 @@ export function ManagerTab(props: { focused: SectionId }) {
 
   // Merchant view: the same rows grouped, with its own cursor kept in view.
   const merchants = () => ui.state.txnView === "merchants"
-  const groups = createMemo(() => sortMerchantGroups(groupByMerchant(rows()), ui.state.merchantSort, ui.state.merchantReverse))
+  const groups = createMemo(() => (merchants() ? sortMerchantGroups(groupByMerchant(rows()), ui.state.merchantSort, ui.state.merchantReverse) : []))
   createEffect(() => {
     if (!merchants()) return
     const n = ui.state.managerVisible

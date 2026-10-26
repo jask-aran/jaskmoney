@@ -1,4 +1,4 @@
-import { For, Show, createMemo } from "solid-js"
+import { Index, Show, createMemo } from "solid-js"
 import { S } from "../primitives/S"
 import { fitSpans, spansWidth, type Span } from "../primitives/spans"
 import { categoryColor, isUncategorisedColor, theme } from "../../theme"
@@ -143,22 +143,24 @@ export function TransactionTable(props: {
       </text>
       <Show when={props.rows.length} fallback={<text fg={theme.overlay1}>{props.empty}</text>}>
         <box flexGrow={1} flexDirection="column">
-          <For each={windowRows()}>
+          {/* Index keeps each screen row and updates it in place: a filter
+              that changes every row would otherwise rebuild them all. */}
+          <Index each={windowRows()}>
             {(r, i) => {
-              const absIndex = () => props.top + i()
+              const absIndex = () => props.top + i
               const isCursor = () => props.cursor === absIndex()
-              const selected = () => !!props.selectedIds?.[r.id]
-              const hl = () => !!props.highlighted?.[r.id]
+              const selected = () => !!props.selectedIds?.[r().id]
+              const hl = () => !!props.highlighted?.[r().id]
               // OpenTUI cannot repaint a previous cell to transparency: it must
               // receive the table canvas colour when a row loses its state bg.
               // This is visually identical to the unstyled table background.
-              const look = () => rowAppearance(selected(), hl(), isCursor())
+              const look = createMemo(() => rowAppearance(selected(), hl(), isCursor()))
               const rowBg = () => look().bg ?? theme.canvas
               const fg = (column: string) => look().fg ?? column
               // Up holds (pending) render italic, with a clock, until they settle.
-              const held = () => r.status === "HELD"
-              const tags = () => formatTags(r.tagNames, r.tagColors, layout().tags)
-              const category = () => formatCategory(r.categoryId, r.categoryName, r.categoryColor, layout().category)
+              const held = () => r().status === "HELD"
+              const tags = createMemo(() => formatTags(r().tagNames, r().tagColors, layout().tags))
+              const category = createMemo(() => formatCategory(r().categoryId, r().categoryName, r().categoryColor, layout().category))
               const strong = () => look().bold
               return (
                 <text width="100%" bg={rowBg()}>
@@ -166,13 +168,13 @@ export function TransactionTable(props: {
                     {isCursor() ? ">" : selected() ? "*" : " "}
                   </S>
                   <S fg={fg(theme.mutedText)} bg={rowBg()} bold={strong()}>
-                    {fmtDate(r.dateISO).padEnd(columns.date)}
+                    {fmtDate(r().dateISO).padEnd(columns.date)}
                   </S>
                   <S fg={fg(theme.text)} bg={rowBg()} bold={strong()}>
                     {" ".repeat(columns.gap)}
                   </S>
-                  <S fg={fg(amountColor(r.amount))} bg={rowBg()} bold={strong()} italic={held()}>
-                    {formatMoney(r.amount).padEnd(columns.amount - 2)}
+                  <S fg={fg(amountColor(r().amount))} bg={rowBg()} bold={strong()} italic={held()}>
+                    {formatMoney(r().amount).padEnd(columns.amount - 2)}
                   </S>
                   <S fg={fg(theme.overlay1)} bg={rowBg()}>
                     {held() ? `${pendingMark()} ` : "  "}
@@ -181,10 +183,10 @@ export function TransactionTable(props: {
                     {" ".repeat(columns.gap)}
                   </S>
                   <S fg={fg(theme.brightText)} bg={rowBg()} bold={strong()} italic={held()}>
-                    {fit(r.description, layout().description)}
+                    {fit(r().description, layout().description)}
                   </S>
                   <S fg={fg(theme.dimText)} bg={rowBg()} bold={strong()}>
-                    {layout().showAccount ? " ".repeat(columns.gap) + fit(r.accountName, columns.account) : ""}
+                    {layout().showAccount ? " ".repeat(columns.gap) + fit(r().accountName, columns.account) : ""}
                   </S>
                   <S fg={fg(theme.text)} bg={rowBg()} bold={strong()}>
                     {" ".repeat(columns.gap)}
@@ -204,12 +206,12 @@ export function TransactionTable(props: {
                     <S fg={fg(theme.text)} bg={rowBg()} bold={strong()}>
                       {" ".repeat(columns.gap)}
                     </S>
-                    <For each={tags()}>{(span) => <S fg={fg(span.fg)} bg={rowBg()} bold={strong()}>{span.text}</S>}</For>
+                    <Index each={tags()}>{(span) => <S fg={fg(span().fg)} bg={rowBg()} bold={strong()}>{span().text}</S>}</Index>
                   </Show>
                 </text>
               )
             }}
-          </For>
+          </Index>
         </box>
       </Show>
     </>

@@ -1,5 +1,6 @@
 import type { KeyEvent } from "@opentui/core"
 import { resolve } from "node:path"
+import { batch } from "solid-js"
 import { accountRole } from "../domain/types"
 import { accountRows, accountStacks, spendingScope, type AccountSelection } from "../domain/accountTree"
 import { assignableCategories } from "../domain/categoryOptions"
@@ -130,7 +131,9 @@ export function handleKey(ui: UiStore, key: KeyEvent, data?: DataStore): boolean
     }
     if (name === "tab") { ui.cycleTab(key.shift ? -1 : 1); return true }
   }
-  entry.handle(ui, key, data)
+  // One batch per key: a handler's several store writes update the screen
+  // once, not once per write.
+  batch(() => entry.handle(ui, key, data))
   return true
 }
 

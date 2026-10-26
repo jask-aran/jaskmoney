@@ -1,3 +1,4 @@
+import { createMemo, createRoot } from "solid-js"
 import { createStore, reconcile, unwrap } from "solid-js/store"
 import { isDeepStrictEqual } from "node:util"
 import { existsSync, readFileSync, readdirSync, unlinkSync } from "node:fs"
@@ -100,6 +101,23 @@ const SORT_CYCLE: SortColumn[] = [
   "account",
 ]
 
+/** Text order as `localeCompare` gives it, without building a collator per call. */
+const textOrder = new Intl.Collator().compare
+
+/** Rows in a column's order; dates tie-break on id so the order is stable. */
+function sortRows(rows: Transaction[], col: SortColumn, asc: boolean): Transaction[] {
+  const compare = (a: Transaction, b: Transaction): number => {
+    switch (col) {
+      case "date": return a.dateISO < b.dateISO ? -1 : a.dateISO > b.dateISO ? 1 : a.id - b.id
+      case "amount": return a.amount - b.amount
+      case "description": return textOrder(a.description, b.description)
+      case "category": return textOrder(a.categoryName, b.categoryName)
+      case "account": return textOrder(a.accountName, b.accountName)
+    }
+  }
+  return rows.slice().sort((a, b) => (asc ? compare(a, b) : -compare(a, b)))
+}
+
 function createDataStore() {
   let db: Db | null = null
   let actualDbPath = ""
@@ -178,58 +196,26 @@ function createDataStore() {
     refresh()
   }
 
+  // The Transactions tab's rows, recomputed once per change and shared by
+  // every reader. They work on the plain arrays behind the store: reading
+  // 1,000+ rows through its proxies made each pass several times slower.
+  // `transactions` and `filterExpr` are only ever replaced whole, so
+  // tracking the properties is enough.
+
   /** Transactions of the Transactions tab's selected account(s). */
-  function accountScoped(): Transaction[] {
+  const accountScoped = createRoot(() => createMemo(() => {
     const ids = new Set(selectedAccounts(state.accounts, state.accountSelection).map((a) => a.id))
-    return state.transactions.filter((t) => t.accountId != null && ids.has(t.accountId))
-  }
+    return unwrap(state.transactions).filter((t) => t.accountId != null && ids.has(t.accountId))
+  }))
 
-  function sortRows(rows: Transaction[]): Transaction[] {
-    const col = state.sortColumn
-    const asc = state.sortAscending
-    const out = rows.slice()
-    out.sort((a, b) => {
-      let cmp = 0
-      switch (col) {
-        case "date":
-          cmp = a.dateISO.localeCompare(b.dateISO) || a.id - b.id
-          break
-        case "amount":
-          cmp = a.amount - b.amount
-          break
-        case "description":
-          cmp = a.description.localeCompare(b.description)
-          break
-        case "category":
-          cmp = a.categoryName.localeCompare(b.categoryName)
-          break
-        case "account":
-          cmp = a.accountName.localeCompare(b.accountName)
-          break
-      }
-      return asc ? cmp : -cmp
-    })
-    return out
-  }
+  const filtered = createRoot(() => createMemo(() => {
+    const expr = state.filterExpr ? unwrap(state.filterExpr) : null
+    const rows = accountScoped()
+    return expr ? rows.filter((t) => evalFilter(expr, t)) : rows
+  }))
 
-  function scopedTransactions(): Transaction[] {
-    let rows = accountScoped()
-    const expr = state.filterExpr
-    if (expr) {
-      rows = rows.filter((t) =>
-        evalFilter(expr, {
-          description: t.description,
-          categoryName: t.categoryName,
-          accountName: t.accountName,
-          notes: t.notes,
-          amount: t.amount,
-          dateISO: t.dateISO,
-          tagNames: t.tagNames,
-        }),
-      )
-    }
-    return sortRows(rows)
-  }
+  /** The account's rows through the filter, in the table's sort. */
+  const scopedTransactions = createRoot(() => createMemo(() => sortRows(filtered(), state.sortColumn, state.sortAscending)))
 
   function setFilterLive(q: string) {
     const { expr, err } = reparseFilterInput(q)

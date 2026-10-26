@@ -157,11 +157,10 @@ export function weeklyTotals(dates: string[], values: number[], weekStart: WeekS
   return weeks
 }
 
+const dollars = new Intl.NumberFormat("en-AU", { minimumFractionDigits: 2, maximumFractionDigits: 2 })
+
 export function formatMoney(n: number): string {
-  const abs = Math.abs(n).toLocaleString("en-AU", {
-    minimumFractionDigits: 2,
-    maximumFractionDigits: 2,
-  })
+  const abs = dollars.format(Math.abs(n))
   const sign = n < 0 && abs !== "0.00" ? "-" : ""
   return `${sign}$${abs}`
 }
