@@ -346,42 +346,48 @@ function createDataStore() {
     return parts.join(" · ")
   }
 
-  /**
-   * Add the tag to all targets, or remove it when every target already has it.
-   * Up transactions also change in Up (two-way tags); IGNORE and CSV rows stay
-   * local. Without a provider push this completes synchronously.
-   */
-  function toggleTagOnTransactions(txnIds: number[], tagId: number): Promise<string> {
+  async function applyTagPatch(txnIds: number[], patch: Record<number, "add" | "remove">): Promise<string> {
     if (!db) throw new Error("db not open")
     const database = db
-    const allHave = txnIds.every((id) => state.transactions.find((x) => x.id === id)?.tagIds.includes(tagId))
-    const tag = state.tags.find((t) => t.id === tagId)
-    const verb = allHave ? `Removed tag ${tag?.name ?? tagId} from` : `Added tag ${tag?.name ?? tagId} to`
-    const providerRow = (id: number) => {
-      const t = state.transactions.find((x) => x.id === id)
-      return t?.source === "up"
-    }
-    const localOnly = tag?.name.toUpperCase() === "IGNORE" || !txnIds.some(providerRow)
-    if (localOnly) {
-      if (allHave) removeTagFromTransactions(database, txnIds, tagId)
-      else addTagToTransactions(database, txnIds, tagId)
-      refresh()
-      return Promise.resolve(`${verb} ${txnIds.length}`)
-    }
-    // The client is created on first use, so a missing token only fails rows
-    // that actually need Up.
+    if (!Object.keys(patch).length) return "Tags unchanged"
     let up: ReturnType<typeof createUpClient> | null = null
     const client = {
       addTransactionTags: (id: string, tags: string[]) => (up ??= createUpClient({ token: readUpToken() })).addTransactionTags(id, tags),
       removeTransactionTags: (id: string, tags: string[]) => (up ??= createUpClient({ token: readUpToken() })).removeTransactionTags(id, tags),
     }
-    return pushTagChange(database, client, txnIds, tagId, !allHave).then((result) => {
+    const labels: string[] = []
+    const updated = new Set<number>(), pushed = new Set<number>()
+    const failures: string[] = []
+    try {
+      for (const [key, action] of Object.entries(patch)) {
+        const tagId = Number(key)
+        const tag = state.tags.find((t) => t.id === tagId)
+        if (!tag) throw new Error("tag not found")
+        const add = action === "add"
+        labels.push(`${add ? "+" : "-"}${tag.name}`)
+        const targets = [...new Set(txnIds)].filter((id) => {
+          const t = state.transactions.find((t) => t.id === id)
+          return t && t.tagIds.includes(tagId) !== add
+        })
+        const local = targets.filter((id) => tag.name.toUpperCase() === "IGNORE"
+          || state.transactions.find((t) => t.id === id)?.source !== "up")
+        if (add) addTagToTransactions(database, local, tagId)
+        else removeTagFromTransactions(database, local, tagId)
+        for (const id of local) updated.add(id)
+        for (const id of targets.filter((id) => !local.includes(id))) {
+          const result = await pushTagChange(database, client, [id], tagId, add)
+          if (result.changed) updated.add(id)
+          if (result.pushed) pushed.add(id)
+          failures.push(...result.failures)
+        }
+      }
+    } finally {
       refresh()
-      const parts = [`${verb} ${result.changed}`]
-      if (result.pushed) parts.push(`${result.pushed} updated in Up`)
-      if (result.failures.length) parts.push(`${result.failures.length} failed: ${result.failures[0]}`)
-      return parts.join(" · ")
-    })
+    }
+    const parts = [`Tags: ${labels.join(", ")} on ${updated.size}`]
+    if (pushed.size) parts.push(`${pushed.size} updated in Up`)
+    if (failures.length) parts.push(`${failures.length} failed: ${failures[0]}`)
+    return parts.join(" · ")
   }
 
   function createSettingsCategory(input: Pick<Category, "name" | "color"> & { notSpending?: boolean }): number {
@@ -612,7 +618,7 @@ function createDataStore() {
     setAccountSelection,
     categorizeTransaction,
     categorizeTransactions,
-    toggleTagOnTransactions,
+    applyTagPatch,
     transactionDetail,
     updateTransactionNotes,
     createSettingsCategory,

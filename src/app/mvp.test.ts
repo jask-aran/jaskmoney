@@ -158,7 +158,7 @@ describe("MVP slice: filter + categorize", () => {
     expect(data.state.filterQuery).toBe("")
   })
 
-  test("tag picker toggles the focused tag and sort keys change ordering", () => {
+  test("tag picker stages and applies the focused tag and sort keys change ordering", async () => {
     data.init(":memory:")
     data.commitPreview(buildImportPreview(data.getDb()!, '01/02/2026,"-5.00",TEST COFFEE\n', "anz.csv", DEFAULT_IMPORT_PROFILES[0]!), true)
     ui.switchTab("manager")
@@ -173,9 +173,12 @@ describe("MVP slice: filter + categorize", () => {
 
     handleKey(ui, key({ name: "t", sequence: "t" }), data)
     expect(ui.state.tagPickerOpen).toBe(true)
+    const originalTags = [...data.state.transactions.find((row) => row.id === targetId)!.tagIds]
     handleKey(ui, key({ name: "space", sequence: " " }), data)
-    expect(data.state.transactions.find((row) => row.id === targetId)?.tagNames).toContain("IGNORE")
+    expect(data.state.transactions.find((row) => row.id === targetId)?.tagIds).toEqual(originalTags)
     handleKey(ui, key({ name: "return" }), data)
+    await Promise.resolve()
+    expect(data.state.transactions.find((row) => row.id === targetId)?.tagNames).toContain("IGNORE")
     expect(ui.state.tagPickerOpen).toBe(false)
 
     handleKey(ui, key({ name: "s", sequence: "s" }), data)

@@ -21,6 +21,8 @@ import {
   timeframeBounds,
 } from "../domain/timeframe"
 import { editText, isPrintable } from "../domain/textField"
+import { tagPickerItems, tagPickerState } from "../state/tagPicker"
+import { theme } from "../theme"
 
 
 function defaultProfile(id: string, path: string) {
@@ -91,19 +93,17 @@ export function handleKey(ui: UiStore, key: KeyEvent, data?: DataStore): boolean
 
   // ── Tag picker ──────────────────────────────────────────────────────
   if (ui.state.tagPickerOpen) {
-    const q = ui.state.tagPickerQuery.trim().toLowerCase()
-    const tags = (data?.state.tags ?? []).filter(
-      (tg) => !q || tg.name.toLowerCase().includes(q),
-    )
+    if (ui.state.tagPickerApplying) return true
+    const items = pickerChoices(tagPickerItems(data?.state.tags ?? [], data?.state.transactions ?? [], ui.state.pickerTargets, ui.state.tagPickerQuery))
     if (name === "escape") {
       ui.closeTagPicker()
-      ui.setStatus("Tags cancelled")
+      ui.setStatus("Tags unchanged")
       return true
     }
     if (name === "j" || name === "down") {
-      if (tags.length)
+      if (items.length)
         ui.setState({
-          tagPickerCursor: Math.min(tags.length - 1, ui.state.tagPickerCursor + 1),
+          tagPickerCursor: Math.min(items.length - 1, ui.state.tagPickerCursor + 1),
         })
       return true
     }
@@ -112,19 +112,47 @@ export function handleKey(ui: UiStore, key: KeyEvent, data?: DataStore): boolean
       return true
     }
     if (name === "space" || seq === " ") {
-      const tag = tags[ui.state.tagPickerCursor]
+      const item = items[ui.state.tagPickerCursor]
       const targets = ui.state.pickerTargets
-      if (tag && data && targets.length) {
-        data.toggleTagOnTransactions(targets, tag.id).then(
-          (summary) => ui.setStatus(summary, summary.includes(" failed: ")),
-          (error) => ui.setStatus(error instanceof Error ? error.message : String(error), true),
-        )
+      if (item && typeof item.value === "number" && data && targets.length) {
+        const id = item.value
+        const base = tagPickerState(data.state.transactions, targets, id)
+        const patch = { ...ui.state.tagPickerPatch }
+        const current = patch[id]
+        // Approved deviation from Go: mixed tags cycle back to their original state.
+        if (base === "some") {
+          if (!current) patch[id] = "add"
+          else if (current === "add") patch[id] = "remove"
+          else delete patch[id]
+        } else if (current) delete patch[id]
+        else patch[id] = base === "all" ? "remove" : "add"
+        ui.setState({ tagPickerPatch: patch })
       }
       return true
     }
     if (name === "return" || name === "enter") {
-      ui.closeTagPicker()
-      ui.setStatus("Tags applied")
+      const targets = [...ui.state.pickerTargets]
+      const patch = { ...ui.state.tagPickerPatch }
+      try {
+        if (items[ui.state.tagPickerCursor]?.value === null && data) {
+          const id = data.createSettingsTag({ name: ui.state.tagPickerQuery.trim(), color: theme.blue, categoryId: null })
+          patch[id] = "add"
+          ui.setState({ tagPickerPatch: patch })
+        }
+        // Approved deviation from Go: enter without staged changes makes no edit.
+        if (!data || !Object.keys(patch).length) {
+          ui.closeTagPicker()
+          ui.setStatus("Tags unchanged")
+        } else {
+          ui.setState({ tagPickerApplying: true })
+          data.applyTagPatch(targets, patch).then(
+            (summary) => { ui.closeTagPicker(); ui.setStatus(summary, summary.includes(" failed: ")) },
+            (error) => { ui.closeTagPicker(); ui.setStatus(error instanceof Error ? error.message : String(error), true) },
+          )
+        }
+      } catch (error) {
+        ui.setStatus(error instanceof Error ? error.message : String(error), true)
+      }
       return true
     }
     if (name === "backspace") {
@@ -954,8 +982,8 @@ export function footerHints(scope: ScopeId): { key: string; desc: string }[] {
     case "tagPicker":
       return [
         { key: "j/k", desc: "move" },
-        { key: "space", desc: "toggle" },
-        { key: "enter", desc: "done" },
+        { key: "space", desc: "stage" },
+        { key: "enter", desc: "apply" },
         { key: "esc", desc: "cancel" },
       ]
     case "overview":

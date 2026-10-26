@@ -1,5 +1,6 @@
 import { describeCycle, type CycleAnchor, type CycleConfig, type CycleUnit } from "../domain/budget"
 import { budgetScopeOptions } from "../domain/budgetScopes"
+import { fuzzyScore } from "../domain/fuzzy"
 import { categoryPickerRows } from "../domain/categoryOptions"
 import type { Account, Category, SavedFilter, Tag } from "../domain/types"
 import type { SettingsEditorKind, UiState } from "./uiStore"
@@ -188,7 +189,7 @@ export function editorNote(kind: SettingsEditorKind, draft: Draft): string | nul
 /** The rows a picker field offers, filtered by `query` (case-insensitive). */
 export function pickerItems(kind: SettingsEditorKind, key: keyof Draft, ctx: FormContext, query: string): PickerItem[] {
   const q = query.trim().toLowerCase()
-  const match = (...texts: string[]) => !q || texts.some((t) => t.toLowerCase().includes(q))
+  const match = (...texts: string[]) => !q || texts.some((t) => fuzzyScore(q, t) !== null)
   if (key === "scopeKey") {
     // Overall and accounts first; then each category group as a heading
     // with the whole group as its first item, and ungrouped categories
@@ -219,7 +220,7 @@ export function pickerItems(kind: SettingsEditorKind, key: keyof Draft, ctx: For
     const none: PickerItem[] = match(kind === "tag" ? "global" : "none") ? [{ kind: "item", label: kind === "tag" ? "Global (every category)" : "None", value: null }] : []
     return [
       ...none,
-      ...categoryPickerRows(ctx.categories, query).map((r): PickerItem =>
+      ...categoryPickerRows(ctx.categories, query, false).map((r): PickerItem =>
         r.kind === "heading" ? r : { kind: "item", label: r.category.name, value: r.category.id, color: r.category.color }),
     ]
   }

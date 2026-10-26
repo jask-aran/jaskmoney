@@ -1,45 +1,30 @@
 import { Show, createMemo } from "solid-js"
 import { ui } from "../../state/uiStore"
 import { data } from "../../state/dataStore"
+import { tagPickerItems, tagPickerState } from "../../state/tagPicker"
 import { ListPicker } from "./ListPicker"
 
-
 export function TagPicker() {
-  const filtered = createMemo(() => {
-    const q = ui.state.tagPickerQuery.trim().toLowerCase()
-    const tags = data.state.tags
-    if (!q) return tags
-    return tags.filter((t) => t.name.toLowerCase().includes(q))
-  })
-
-  const targets = () => ui.state.pickerTargets
-
-  const stateFor = (tagId: number): "all" | "some" | "none" => {
-    const ids = targets()
-    if (!ids.length) return "none"
-    let hits = 0
-    for (const id of ids) {
-      const t = data.state.transactions.find((x) => x.id === id)
-      if (t?.tagIds.includes(tagId)) hits++
-    }
-    if (hits === 0) return "none"
-    if (hits === ids.length) return "all"
-    return "some"
+  const items = createMemo(() => tagPickerItems(data.state.tags, data.state.transactions, ui.state.pickerTargets, ui.state.tagPickerQuery))
+  const mark = (value: string | number | null) => {
+    // The create row: a plus in the checkbox column.
+    if (value === null) return " + "
+    const id = Number(value)
+    const patch = ui.state.tagPickerPatch[id]
+    const state = patch === "add" ? "all" : patch === "remove" ? "none"
+      : tagPickerState(data.state.transactions, ui.state.pickerTargets, id)
+    return state === "all" ? "[x]" : state === "some" ? "[-]" : "[ ]"
   }
-
-  const mark = (s: "all" | "some" | "none") =>
-    s === "all" ? "[x]" : s === "some" ? "[-]" : "[ ]"
-
   return (
     <Show when={ui.state.tagPickerOpen}>
       <ListPicker
         title="Tags"
-        subtitle={`${targets().length} transaction${targets().length === 1 ? "" : "s"}`}
-        items={filtered().map((t) => ({ kind: "item" as const, label: t.name, value: t.id, color: t.color }))}
+        subtitle={`${ui.state.pickerTargets.length} transaction${ui.state.pickerTargets.length === 1 ? "" : "s"}`}
+        items={items()}
         cursor={ui.state.tagPickerCursor}
         query={ui.state.tagPickerQuery}
-        mark={(value) => mark(stateFor(Number(value)))}
-        hints="j/k move · space toggle · enter done · esc cancel"
+        mark={mark}
+        hints="j/k move · space stage · enter apply · esc cancel"
       />
     </Show>
   )

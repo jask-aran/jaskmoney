@@ -97,7 +97,9 @@ export interface UiState {
   catPickerCursor: number
   catPickerQuery: string
   tagPickerOpen: boolean
+  tagPickerApplying: boolean
   tagPickerCursor: number
+  tagPickerPatch: Record<number, "add" | "remove">
   tagPickerQuery: string
   /** Transactions the open category or tag picker applies to. */
   pickerTargets: number[]
@@ -240,7 +242,7 @@ function createUiStore() {
     catPickerOpen: false,
     catPickerCursor: 0,
     catPickerQuery: "",
-    tagPickerOpen: false,
+    tagPickerOpen: false, tagPickerApplying: false, tagPickerPatch: {},
     tagPickerCursor: 0,
     tagPickerQuery: "",
     pickerTargets: [],
@@ -312,7 +314,7 @@ function createUiStore() {
       jumpMode: false,
       filterMode: false,
       catPickerOpen: false,
-      tagPickerOpen: false,
+      tagPickerOpen: false, tagPickerApplying: false, tagPickerPatch: {},
       rangeSelecting: false,
       settingsActive: false,
       settingsEditor: null,
@@ -340,7 +342,7 @@ function createUiStore() {
       jumpPreviousFocus: state.focusedSection,
       filterMode: false,
       catPickerOpen: false,
-      tagPickerOpen: false,
+      tagPickerOpen: false, tagPickerApplying: false, tagPickerPatch: {},
     })
   }
 
@@ -402,7 +404,7 @@ function createUiStore() {
       filterDraft: seed,
       filterCaret: seed.length,
       catPickerOpen: false,
-      tagPickerOpen: false,
+      tagPickerOpen: false, tagPickerApplying: false, tagPickerPatch: {},
       jumpMode: false,
       status: "Filter · type expr · enter apply · esc clear",
     })
@@ -419,7 +421,7 @@ function createUiStore() {
       catPickerOpen: true,
       catPickerCursor: 0,
       catPickerQuery: "",
-      tagPickerOpen: false,
+      tagPickerOpen: false, tagPickerApplying: false, tagPickerPatch: {},
       filterMode: false,
       jumpMode: false,
       rangeSelecting: false,
@@ -435,18 +437,20 @@ function createUiStore() {
     setState({
       pickerTargets: targets,
       tagPickerOpen: true,
+      tagPickerApplying: false,
+      tagPickerPatch: {},
       tagPickerCursor: 0,
       tagPickerQuery: "",
       catPickerOpen: false,
       filterMode: false,
       jumpMode: false,
       rangeSelecting: false,
-      status: "Quick tags · space toggle · enter done · esc",
+      status: "Quick tags · space stage · enter apply · esc cancel",
     })
   }
 
   function closeTagPicker() {
-    setState({ tagPickerOpen: false, tagPickerQuery: "", tagPickerCursor: 0 })
+    setState({ tagPickerOpen: false, tagPickerApplying: false, tagPickerPatch: {}, tagPickerQuery: "", tagPickerCursor: 0 })
   }
 
   function clearSelection() {

@@ -25,7 +25,8 @@ export function ListPicker(props: {
   iconFor?: (value: string | number | null) => string | undefined
 }) {
   const dims = useTerminalDimensions()
-  const width = () => Math.max(20, Math.min(props.width ?? 52, dims().width - 4))
+  // Wide enough for the hint line (border and padding: 4).
+  const width = () => Math.max(20, Math.min(Math.max(props.width ?? 52, props.hints.length + 4), dims().width - 4))
   // Modal chrome: border (2, the title in it), filter + blank, blank +
   // hints, and a margin of 4.
   const visible = () => Math.max(4, Math.min(props.items.length, dims().height - 10))
