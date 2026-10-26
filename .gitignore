@@ -28,3 +28,6 @@ logs/
 *.tsbuildinfo
 .idea/
 .DS_Store
+
+# Tool metadata
+.conduit/

@@ -1,4 +1,5 @@
 import type { KeyEvent } from "@opentui/core"
+import { resolve } from "node:path"
 import { JUMP_TARGETS, TABS, type ScopeId, type UiStore } from "../state/uiStore"
 import type { DataStore } from "../state/dataStore"
 import {
@@ -18,6 +19,11 @@ function isPrintable(key: KeyEvent): boolean {
   if (!s || s.length !== 1) return false
   const code = s.charCodeAt(0)
   return code >= 32 && code !== 127
+}
+
+function defaultProfile(id: string, path: string) {
+  const name = path.split(/[\\/]/).pop()?.replace(/\.csv$/i, "") || "CSV import"
+  return { id, name, account: "", accountType: "debit" as const, importPrefix: name.toLowerCase(), hasHeader: true, delimiter: ",", dateColumn: 0, amountColumn: 1, descriptionColumns: [2], descriptionJoin: false, amountStrip: "$", dateFormat: "DMY" as const }
 }
 
 function moveTxnCursor(
@@ -59,6 +65,14 @@ export function handleKey(ui: UiStore, key: KeyEvent, data?: DataStore): boolean
       (t) => t.key === name || t.key === seq,
     )
     if (hit) {
+      if (ui.state.activeTab === "settings") {
+        if (hit.section === "set.categories") ui.activateSettings("taxonomy", "categories", true)
+        else if (hit.section === "set.tags") ui.activateSettings("taxonomy", "tags", true)
+        else if (hit.section === "set.rules") ui.activateSettings("rules")
+        else if (hit.section === "set.filters") ui.activateSettings("filters")
+        else if (hit.section === "set.database") ui.activateSettings("database")
+        return true
+      }
       ui.applyJump(hit.section)
       return true
     }
@@ -225,6 +239,192 @@ export function handleKey(ui: UiStore, key: KeyEvent, data?: DataStore): boolean
     return true
   }
 
+  // ── Import and account-data modals own all input ───────────────────
+  if (ui.state.factoryResetOpen) {
+    if (name === "escape") { ui.setState({ factoryResetOpen: false, factoryResetDraft: "" }); ui.setStatus("Factory reset cancelled"); return true }
+    if (name === "backspace") { ui.setState({ factoryResetDraft: ui.state.factoryResetDraft.slice(0, -1) }); return true }
+    if (name === "return" || name === "enter") {
+      if (ui.state.factoryResetDraft !== "RESET") { ui.setStatus("Type RESET exactly to erase this database", true); return true }
+      try { data?.factoryResetDatabase(); ui.setState({ factoryResetOpen: false, factoryResetDraft: "" }); ui.setStatus("Database reset · OpenTUI settings retained") } catch (e) { ui.setStatus(e instanceof Error ? e.message : String(e), true) }
+      return true
+    }
+    if (isPrintable(key)) ui.setState({ factoryResetDraft: ui.state.factoryResetDraft + seq })
+    return true
+  }
+
+  if (ui.state.accountActionId != null) {
+    if (name === "escape") { ui.setState({ accountActionId: null }); ui.setStatus("Account actions cancelled"); return true }
+    const account = data?.state.accounts.find((a) => a.id === ui.state.accountActionId)
+    if (name === "c" && account) { ui.setState({ accountActionId: null }); ui.armSettingsConfirm({ kind: "clearAccount", id: account.id, label: account.name }); ui.setStatus(`Press del to clear ${account.name}`); return true }
+    if ((name === "x" || name === "delete") && account) { ui.setState({ accountActionId: null }); ui.armSettingsConfirm({ kind: "deleteAccount", id: account.id, label: account.name }); ui.setStatus(`Press del to remove ${account.name} and its transactions`); return true }
+    return true
+  }
+
+  if (ui.state.importStage === "files") {
+    const files = ui.state.importFiles
+    if (name === "escape") { ui.cancelImport(); ui.setStatus("Import cancelled"); return true }
+    if (name === "j" || name === "down") { ui.setState({ importCursor: Math.min(files.length - 1, ui.state.importCursor + 1) }); return true }
+    if (name === "k" || name === "up") { ui.setState({ importCursor: Math.max(0, ui.state.importCursor - 1) }); return true }
+    if (name === "/" || name === "p") { ui.setState({ importStage: "path", importPath: "" }); return true }
+    if ((name === "return" || name === "enter") && files[ui.state.importCursor]) {
+      const path = files[ui.state.importCursor]!
+      const matches = data?.profileMatches(path) ?? []
+      if (matches.length === 1) { try { const preview = data?.previewImport(path, matches[0]!); ui.setState({ importStage: "preview", importPath: path, importPreview: preview ?? null }) } catch (e) { ui.setStatus(e instanceof Error ? e.message : String(e), true) } }
+      else ui.setState({ importStage: "profile", importPath: path, importProfileCursor: 0 })
+      return true
+    }
+    return true
+  }
+
+  if (ui.state.importStage === "path") {
+    if (name === "escape") { ui.setState({ importStage: "files", importPath: "" }); return true }
+    if (name === "backspace") { ui.setState({ importPath: ui.state.importPath.slice(0, -1) }); return true }
+    if (name === "return" || name === "enter") {
+      const raw = ui.state.importPath.trim()
+      if (!raw) { ui.setStatus("Enter a CSV path", true); return true }
+      const path = resolve(ui.state.importDirectory, raw)
+      try {
+        const matches = data?.profileMatches(path) ?? []
+        if (matches.length === 1) ui.setState({ importStage: "preview", importPath: path, importPreview: data?.previewImport(path, matches[0]!) ?? null })
+        else ui.setState({ importStage: "profile", importPath: path, importProfileCursor: 0 })
+      } catch (e) { ui.setStatus(e instanceof Error ? e.message : String(e), true) }
+      return true
+    }
+    if (isPrintable(key)) ui.setState({ importPath: ui.state.importPath + seq })
+    return true
+  }
+
+  if (ui.state.importStage === "profile") {
+    const profiles = data?.state.importProfiles ?? []
+    if (name === "escape") { ui.setState({ importStage: ui.state.importProfileManaging ? "none" : "files", importProfileManaging: false }); return true }
+    if (name === "j" || name === "down") { ui.setState({ importProfileCursor: Math.min(profiles.length, ui.state.importProfileCursor + 1) }); return true }
+    if (name === "k" || name === "up") { ui.setState({ importProfileCursor: Math.max(0, ui.state.importProfileCursor - 1) }); return true }
+    if (name === "a" || name === "n" || (name === "return" || name === "enter") && ui.state.importProfileCursor === profiles.length) { ui.openProfileEditor(defaultProfile(`profile-${profiles.length + 1}`, ui.state.importPath), null); return true }
+    if (name === "e" && profiles[ui.state.importProfileCursor]) { ui.openProfileEditor(profiles[ui.state.importProfileCursor]!, profiles[ui.state.importProfileCursor]!.id); return true }
+    if (name === "delete" && profiles[ui.state.importProfileCursor]) { const selected = profiles[ui.state.importProfileCursor]!; ui.armSettingsConfirm({ kind: "profile", id: selected.id, label: selected.name }); ui.setStatus(`Press del again to delete profile ${selected.name}`); return true }
+    if ((name === "return" || name === "enter") && profiles[ui.state.importProfileCursor]) {
+      if (ui.state.importProfileManaging) { ui.openProfileEditor(profiles[ui.state.importProfileCursor]!, profiles[ui.state.importProfileCursor]!.id); return true }
+      try { ui.setState({ importStage: "preview", importPreview: data?.previewImport(ui.state.importPath, profiles[ui.state.importProfileCursor]!) ?? null }) } catch (e) { ui.setStatus(e instanceof Error ? e.message : String(e), true) }
+      return true
+    }
+    return true
+  }
+
+  if (ui.state.importStage === "profileEditor") {
+    const draft = ui.state.importProfileDraft, field = ui.state.importProfileField
+    const fields = ["id", "name", "account", "accountType", "importPrefix", "hasHeader", "delimiter", "dateColumn", "amountColumn", "descriptionColumns", "descriptionJoin", "amountStrip", "dateFormat"] as const
+    const selected = fields[field]!
+    if (name === "escape") { ui.setState({ importStage: "profile" }); return true }
+    if (name === "tab") { ui.setState({ importProfileField: (field + (key.shift ? -1 : 1) + fields.length) % fields.length }); return true }
+    if (name === "return" || name === "enter") {
+      try {
+        data?.saveImportProfile(draft)
+        const preview = ui.state.importPath ? data?.previewImport(ui.state.importPath, draft) : null
+        ui.setState({ importStage: preview ? "preview" : "profile", importPreview: preview ?? null, importProfileEditId: null })
+        ui.setStatus(`Saved profile ${draft.name}`)
+      } catch (e) { ui.setStatus(e instanceof Error ? e.message : String(e), true) }
+      return true
+    }
+    if (selected === "accountType" && (name === "h" || name === "left" || name === "l" || name === "right" || name === "space")) { ui.setState("importProfileDraft", "accountType", draft.accountType === "debit" ? "credit" : "debit"); return true }
+    if ((selected === "hasHeader" || selected === "descriptionJoin") && (name === "h" || name === "left" || name === "l" || name === "right" || name === "space")) { ui.setState("importProfileDraft", selected, !draft[selected]); return true }
+    if (selected === "dateFormat" && (name === "h" || name === "left" || name === "l" || name === "right" || name === "space")) { const values = ["DMY", "MDY", "YMD"] as const; ui.setState("importProfileDraft", "dateFormat", values[(values.indexOf(draft.dateFormat) + 1) % values.length]!); return true }
+    const text = selected === "descriptionColumns" ? draft.descriptionColumns.join(",") : String(draft[selected])
+    if (name === "backspace") {
+      const next = text.slice(0, -1)
+      if (selected === "descriptionColumns") ui.setState("importProfileDraft", "descriptionColumns", next ? next.split(",").map(Number).filter(Number.isInteger) : [])
+      else if (["dateColumn", "amountColumn"].includes(selected)) ui.setState("importProfileDraft", selected as "dateColumn", Number(next || 0))
+      else ui.setState("importProfileDraft", selected as "id", next as never)
+      return true
+    }
+    if (isPrintable(key) && !["accountType", "hasHeader", "descriptionJoin", "dateFormat"].includes(selected)) {
+      const next = text + seq
+      if (selected === "descriptionColumns") ui.setState("importProfileDraft", "descriptionColumns", next.split(",").map(Number).filter(Number.isInteger))
+      else if (["dateColumn", "amountColumn"].includes(selected)) ui.setState("importProfileDraft", selected as "dateColumn", Number(next || 0))
+      else ui.setState("importProfileDraft", selected as "id", next as never)
+    }
+    return true
+  }
+
+  if (ui.state.importStage === "preview") {
+    const preview = ui.state.importPreview
+    const rows = preview ? (ui.state.importPreviewShowAll ? preview.rows : preview.rows.filter((row) => row.duplicate)) : []
+    if (name === "escape") { ui.cancelImport(); ui.setStatus("Import cancelled"); return true }
+    if (name === "j" || name === "down") { ui.setState({ importPreviewCursor: Math.min(Math.max(0, rows.length - 1), ui.state.importPreviewCursor + 1) }); return true }
+    if (name === "k" || name === "up") { ui.setState({ importPreviewCursor: Math.max(0, ui.state.importPreviewCursor - 1) }); return true }
+    if (name === "p") { ui.setState({ importPreviewShowAll: !ui.state.importPreviewShowAll, importPreviewCursor: 0, importPreviewTop: 0 }); return true }
+    if (name === "r") { ui.setState({ importPreviewRules: !ui.state.importPreviewRules }); return true }
+    if ((name === "s" || name === "a") && preview) {
+      try { const summary = data?.commitPreview({ ...preview, rulesEnabled: ui.state.importPreviewRules }, name === "s") ?? "Import unavailable"; ui.cancelImport(); ui.setStatus(summary) } catch (e) { ui.setStatus(e instanceof Error ? e.message : String(e), true) }
+      return true
+    }
+    return true
+  }
+
+  // ── Settings editors and confirmations own every printable key ─────
+  if (ui.state.settingsConfirm) {
+    if (name === "escape") { ui.clearSettingsConfirm(); ui.setStatus("Action cancelled"); return true }
+    const confirm = ui.state.settingsConfirm
+    const matches = name === "delete" || name === "backspace"
+    if (matches) {
+      try {
+        if (confirm.kind === "category") data?.deleteSettingsCategory(Number(confirm.id))
+        if (confirm.kind === "tag") data?.deleteSettingsTag(Number(confirm.id))
+        if (confirm.kind === "rule") data?.deleteSettingsRule(Number(confirm.id))
+        if (confirm.kind === "filter") data?.deleteSavedFilter(String(confirm.id))
+        if (confirm.kind === "profile") data?.deleteImportProfile(String(confirm.id))
+        if (confirm.kind === "clearData") data?.clearDatabaseData()
+        if (confirm.kind === "clearAccount") data?.clearAccountData(Number(confirm.id))
+        if (confirm.kind === "deleteAccount") data?.removeAccountData(Number(confirm.id))
+        ui.clearSettingsConfirm(); ui.setStatus(confirm.kind === "clearData" ? "Transaction and import data cleared" : confirm.kind === "clearAccount" ? `Cleared ${confirm.label}` : confirm.kind === "deleteAccount" ? `Removed ${confirm.label}` : `Deleted ${confirm.label}`)
+      } catch (e) { ui.clearSettingsConfirm(); ui.setStatus(e instanceof Error ? e.message : String(e), true) }
+      return true
+    }
+    return true
+  }
+
+  if (ui.state.settingsEditor) {
+    const kind = ui.state.settingsEditor
+    const fieldCount = kind === "category" ? 2 : kind === "tag" ? 3 : kind === "filter" ? 3 : 4
+    const draft = ui.state.settingsDraft
+    const field = ui.state.settingsEditField
+    if (name === "escape") { ui.closeSettingsEditor(); ui.setStatus("Edit cancelled"); return true }
+    if (name === "tab") { ui.setState({ settingsEditField: (field + (key.shift ? -1 : 1) + fieldCount) % fieldCount }); return true }
+    if (name === "return" || name === "enter") {
+      try {
+        if (kind === "category") {
+          if (ui.state.settingsEditId == null) data?.createSettingsCategory({ name: draft.name, color: draft.color })
+          else data?.updateSettingsCategory(Number(ui.state.settingsEditId), { name: draft.name, color: draft.color })
+        } else if (kind === "tag") {
+          if (ui.state.settingsEditId == null) data?.createSettingsTag({ name: draft.name, color: draft.color, categoryId: draft.categoryId })
+          else data?.updateSettingsTag(Number(ui.state.settingsEditId), { name: draft.name, color: draft.color, categoryId: draft.categoryId })
+        } else if (kind === "filter") {
+          data?.saveSavedFilter({ id: draft.id, name: draft.name, expr: draft.expr }, typeof ui.state.settingsEditId === "string" ? ui.state.settingsEditId : undefined)
+        } else {
+          const existing = data?.state.rules.find((r) => r.id === ui.state.settingsEditId)
+          const rule = { id: Number(ui.state.settingsEditId ?? 0), name: draft.name, savedFilterId: draft.savedFilterId, setCategoryId: draft.setCategoryId, addTagIds: draft.addTagIds, enabled: existing?.enabled ?? true, sortOrder: existing?.sortOrder ?? 0 }
+          if (ui.state.settingsEditId == null) data?.createSettingsRule(rule)
+          else data?.updateSettingsRule(rule)
+        }
+        ui.closeSettingsEditor(); ui.setStatus("Saved")
+      } catch (e) { ui.setStatus(e instanceof Error ? e.message : String(e), true) }
+      return true
+    }
+    const textKey = kind === "filter" ? (field === 0 ? "id" : field === 1 ? "name" : "expr") : kind === "rule" ? (field === 0 ? "name" : field === 1 ? "savedFilterId" : null) : (field === 0 ? "name" : field === 1 ? "color" : null)
+    if (name === "backspace" && textKey) { ui.setState("settingsDraft", textKey as "name", draft[textKey as "name"].slice(0, -1)); return true }
+    if (isPrintable(key) && textKey) { ui.setState("settingsDraft", textKey as "name", draft[textKey as "name"] + seq); return true }
+    if ((name === "h" || name === "left" || name === "l" || name === "right") && ((kind === "tag" && field === 2) || (kind === "rule" && field === 2))) {
+      const categories = data?.state.categories ?? []
+      const current = draft.categoryId ?? draft.setCategoryId
+      const index = categories.findIndex((c) => c.id === current)
+      const delta = name === "h" || name === "left" ? -1 : 1
+      const next = categories[(index + delta + 1 + categories.length) % (categories.length + 1)]?.id ?? null
+      if (kind === "tag") ui.setState("settingsDraft", "categoryId", next)
+      else ui.setState("settingsDraft", "setCategoryId", next)
+      return true
+    }
+    return true
+  }
+
   // ── Global ──────────────────────────────────────────────────────────
   if (name === "v") {
     ui.enterJump()
@@ -248,13 +448,103 @@ export function handleKey(ui: UiStore, key: KeyEvent, data?: DataStore): boolean
   const accounts = data?.state.accounts ?? []
   const clock = dataClock(data?.state.transactions ?? [])
 
+  // ── Settings ───────────────────────────────────────────────────────
+  if (scope === "settings") {
+    if (name === "i") {
+      try {
+        const directory = data?.importDirectory() ?? process.cwd()
+        ui.activateSettings("database")
+        ui.beginImport(directory, data?.csvFiles(directory) ?? [])
+      } catch (e) { ui.setStatus(e instanceof Error ? e.message : String(e), true) }
+      return true
+    }
+    const sections: Array<"taxonomy" | "rules" | "filters" | "database"> = ["taxonomy", "rules", "filters", "database"]
+    const current = ui.state.settingsSection
+    if (name === "h" || name === "left") { ui.setState({ settingsSection: "taxonomy", focusedSection: "set.categories" }); return true }
+    if (name === "l" || name === "right") { ui.setState({ settingsSection: "database", focusedSection: "set.database" }); return true }
+    if (name === "j" || name === "down" || name === "k" || name === "up") {
+      const delta = name === "j" || name === "down" ? 1 : -1
+      const next = sections[(sections.indexOf(current) + delta + sections.length) % sections.length]!
+      ui.setState({ settingsSection: next, focusedSection: next === "taxonomy" ? "set.categories" : next === "rules" ? "set.rules" : next === "filters" ? "set.filters" : "set.database" })
+      return true
+    }
+    if (name === "return" || name === "enter") { ui.activateSettings(current); return true }
+    return true
+  }
+
+  if (scope === "settings.taxonomy") {
+    const list = ui.state.taxonomyList
+    const items = list === "categories" ? data?.state.categories ?? [] : data?.state.tags ?? []
+    const cursor = list === "categories" ? ui.state.categoryCursor : ui.state.tagCursor
+    if (name === "escape") { ui.leaveSettings(); return true }
+    if (name === "h" || name === "left" || name === "l" || name === "right") { ui.activateSettings("taxonomy", list === "categories" ? "tags" : "categories"); return true }
+    if (name === "j" || name === "down") { ui.moveSettingsList(list, 1, items.length); return true }
+    if (name === "k" || name === "up") { ui.moveSettingsList(list, -1, items.length); return true }
+    if (name === "g") { ui.moveSettingsList(list, -items.length, items.length); return true }
+    if (seq === "G" || (name === "g" && key.shift)) { ui.moveSettingsList(list, items.length, items.length); return true }
+    if (name === "pageup") { ui.moveSettingsList(list, -10, items.length); return true }
+    if (name === "pagedown") { ui.moveSettingsList(list, 10, items.length); return true }
+    if (name === "a") {
+      ui.openSettingsEditor(list === "categories" ? "category" : "tag", null, { ...ui.state.settingsDraft, name: "", color: list === "categories" ? "#94e2d5" : "#89b4fa", categoryId: null })
+      return true
+    }
+    if ((name === "return" || name === "enter") && items[cursor]) {
+      const item = items[cursor]!
+      ui.openSettingsEditor(list === "categories" ? "category" : "tag", item.id, { ...ui.state.settingsDraft, name: item.name, color: item.color, categoryId: list === "tags" ? ("categoryId" in item ? item.categoryId : null) : null })
+      return true
+    }
+    if (name === "delete" && items[cursor]) { ui.armSettingsConfirm({ kind: list === "categories" ? "category" : "tag", id: items[cursor]!.id, label: items[cursor]!.name }); ui.setStatus(`Press del again to delete ${items[cursor]!.name}`); return true }
+    return true
+  }
+
+  if (scope === "settings.rules") {
+    const rules = data?.state.rules ?? []; const cursor = ui.state.ruleCursor; const rule = rules[cursor]
+    if (name === "escape") { ui.leaveSettings(); return true }
+    if (((seq === "J") || (name === "j" && key.shift)) && rule) { data?.reorderSettingsRule(rule.id, cursor + 1); ui.setState({ ruleCursor: Math.min(rules.length - 1, cursor + 1) }); return true }
+    if (((seq === "K") || (name === "k" && key.shift)) && rule) { data?.reorderSettingsRule(rule.id, cursor - 1); ui.setState({ ruleCursor: Math.max(0, cursor - 1) }); return true }
+    if ((seq === "A" || (name === "a" && key.shift))) { const r = data?.applyRules(); ui.setStatus(r ? `Rules applied · ${r.updatedTransactions} transactions` : "No database"); return true }
+    if ((seq === "D" || (name === "d" && key.shift))) { const r = data?.applyRules(undefined, true); ui.setStatus(r ? `Dry run · ${r.updatedTransactions} transactions` : "No database"); return true }
+    if (name === "j" || name === "down") { ui.setState({ ruleCursor: Math.min(rules.length - 1, cursor + 1) }); return true }
+    if (name === "k" || name === "up") { ui.setState({ ruleCursor: Math.max(0, cursor - 1) }); return true }
+    if (name === "a") { ui.openSettingsEditor("rule", null, { ...ui.state.settingsDraft, name: "", savedFilterId: data?.state.savedFilters[0]?.id ?? "", setCategoryId: null, addTagIds: [] }); return true }
+    if ((name === "return" || name === "enter") && rule) { ui.openSettingsEditor("rule", rule.id, { ...ui.state.settingsDraft, name: rule.name, savedFilterId: rule.savedFilterId, setCategoryId: rule.setCategoryId, addTagIds: rule.addTagIds }); return true }
+    if (name === "space" && rule) { data?.toggleSettingsRule(rule.id, !rule.enabled); return true }
+    if (name === "delete" && rule) { ui.armSettingsConfirm({ kind: "rule", id: rule.id, label: rule.name }); ui.setStatus(`Press del again to delete ${rule.name}`); return true }
+    return true
+  }
+
+  if (scope === "settings.filters") {
+    const filters = data?.state.savedFilters ?? []; const cursor = ui.state.filterCursor; const filter = filters[cursor]
+    if (name === "escape") { ui.leaveSettings(); return true }
+    if (name === "j" || name === "down") { ui.setState({ filterCursor: Math.min(filters.length - 1, cursor + 1) }); return true }
+    if (name === "k" || name === "up") { ui.setState({ filterCursor: Math.max(0, cursor - 1) }); return true }
+    if (name === "a") { const id = `filter-${filters.length + 1}`; ui.openSettingsEditor("filter", null, { ...ui.state.settingsDraft, id, name: "", expr: "" }); return true }
+    if ((name === "return" || name === "enter") && filter) { ui.openSettingsEditor("filter", filter.id, { ...ui.state.settingsDraft, id: filter.id, name: filter.name, expr: filter.expr }); return true }
+    if (name === "delete" && filter) { ui.armSettingsConfirm({ kind: "filter", id: filter.id, label: filter.name }); ui.setStatus(`Press del again to delete ${filter.name}`); return true }
+    return true
+  }
+
+  if (scope === "settings.database") {
+    if (name === "escape") { ui.leaveSettings(); return true }
+    if (name === "i") {
+      try { const directory = data?.importDirectory() ?? process.cwd(); ui.beginImport(directory, data?.csvFiles(directory) ?? []) } catch (e) { ui.setStatus(e instanceof Error ? e.message : String(e), true) }
+      return true
+    }
+    if (name === "p") { ui.setState({ importStage: "profile", importPath: "", importProfileCursor: 0, importProfileManaging: true }); return true }
+    if (name === "c") { ui.armSettingsConfirm({ kind: "clearData", id: 0, label: "all transaction and import data" }); ui.setStatus("Press del to clear all transaction and import data"); return true }
+    if (name === "x") { ui.setState({ factoryResetOpen: true, factoryResetDraft: "" }); ui.setStatus("Type RESET then enter to remove this SQLite database"); return true }
+    return true
+  }
+
   // ── Manager txns ────────────────────────────────────────────────────
   if (scope === "manager.txns") {
     if (name === "/" || seq === "/") {
       ui.openFilter(data?.state.filterQuery ?? "")
       return true
     }
-    if (name === "u") {
+    if (name === "u" || name === "escape") {
+      // Approved OpenTUI deviation from legacy: Esc mirrors u, clearing the
+      // current selection/range before an applied filter.
       const nSel = Object.keys(ui.state.selectedIds).length
       if (nSel > 0 || ui.state.rangeSelecting) {
         ui.clearSelection()
@@ -293,9 +583,6 @@ export function handleKey(ui: UiStore, key: KeyEvent, data?: DataStore): boolean
       ui.openTagPicker()
       return true
     }
-    // Go's transaction scope deliberately leaves Esc unbound. Selections,
-    // range state, and an applied filter therefore remain untouched.
-    if (name === "escape") return true
     if (name === "space" || seq === " ") {
       const hl = ui.highlightedIds(rows)
       const hlIds = Object.keys(hl).map(Number)
@@ -367,6 +654,7 @@ export function handleKey(ui: UiStore, key: KeyEvent, data?: DataStore): boolean
       }
       return true
     }
+    if ((name === "d" || name === "delete") && accounts[ui.state.accountCursor]) { ui.setState({ accountActionId: accounts[ui.state.accountCursor]!.id }); ui.setStatus("Account data · c clear transactions · x remove account · esc cancel"); return true }
   }
 
   // ── Dashboard date ──────────────────────────────────────────────────
@@ -507,6 +795,7 @@ export function footerHints(scope: ScopeId): { key: string; desc: string }[] {
         { key: "t", desc: "tag" },
         { key: "s", desc: "sort" },
         { key: "S-s", desc: "reverse" },
+        { key: "esc/u", desc: "clear" },
         { key: "/", desc: "filter" },
         { key: "v", desc: "jump" },
       ]
@@ -514,13 +803,51 @@ export function footerHints(scope: ScopeId): { key: string; desc: string }[] {
       return [
         { key: "h/l", desc: "move" },
         { key: "space", desc: "toggle" },
+        { key: "d", desc: "data actions" },
         { key: "v", desc: "jump" },
       ]
     case "settings":
       return [
+        { key: "j/k", desc: "section" },
+        { key: "h/l", desc: "column" },
+        { key: "enter", desc: "activate" },
         { key: "v", desc: "jump" },
         { key: "1-3", desc: "tab" },
       ]
+    case "settings.taxonomy":
+      return [
+        { key: "h/l", desc: "list" }, { key: "j/k", desc: "move" },
+        { key: "a", desc: "add" }, { key: "enter", desc: "edit" },
+        { key: "del", desc: "delete" }, { key: "esc", desc: "done" },
+      ]
+    case "settings.rules":
+      return [
+        { key: "j/k", desc: "move" }, { key: "space", desc: "toggle" },
+        { key: "a", desc: "add" }, { key: "S-j/k", desc: "reorder" },
+        { key: "S-a", desc: "apply" }, { key: "S-d", desc: "dry run" }, { key: "esc", desc: "done" },
+      ]
+    case "settings.filters":
+      return [{ key: "j/k", desc: "move" }, { key: "a", desc: "add" }, { key: "enter", desc: "edit" }, { key: "del", desc: "delete" }, { key: "esc", desc: "done" }]
+    case "settings.database":
+      return [{ key: "i", desc: "import" }, { key: "p", desc: "profiles" }, { key: "c", desc: "clear data" }, { key: "x", desc: "reset DB" }, { key: "esc", desc: "done" }]
+    case "settings.import.files":
+      return [{ key: "j/k", desc: "file" }, { key: "enter", desc: "select" }, { key: "p", desc: "path" }, { key: "esc", desc: "cancel" }]
+    case "settings.import.path":
+      return [{ key: "enter", desc: "open" }, { key: "esc", desc: "back" }, { key: "type", desc: "path" }]
+    case "settings.import.profile":
+      return [{ key: "j/k", desc: "profile" }, { key: "enter", desc: "select" }, { key: "a/e", desc: "new/edit" }, { key: "del", desc: "delete" }, { key: "esc", desc: "back" }]
+    case "settings.import.profileEditor":
+      return [{ key: "tab", desc: "field" }, { key: "h/l", desc: "choice" }, { key: "enter", desc: "save" }, { key: "esc", desc: "back" }]
+    case "settings.import.preview":
+      return [{ key: "s", desc: "skip dupes" }, { key: "a", desc: "force import" }, { key: "p", desc: "all/dupes" }, { key: "r", desc: "rules" }, { key: "esc", desc: "cancel" }]
+    case "manager.accountAction":
+      return [{ key: "c", desc: "clear txns" }, { key: "x", desc: "remove account" }, { key: "esc", desc: "cancel" }]
+    case "settings.factoryReset":
+      return [{ key: "type RESET", desc: "confirm" }, { key: "enter", desc: "erase DB" }, { key: "esc", desc: "cancel" }]
+    case "settings.editor":
+      return [{ key: "tab", desc: "field" }, { key: "enter", desc: "save" }, { key: "esc", desc: "cancel" }, { key: "type", desc: "edit" }]
+    case "settings.confirm":
+      return [{ key: "del", desc: "confirm" }, { key: "esc", desc: "cancel" }]
     default:
       return [{ key: "v", desc: "jump" }]
   }

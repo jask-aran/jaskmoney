@@ -36,6 +36,8 @@ describe("key router", () => {
       focusedSection: "none",
       managerCursor: 0,
       managerTop: 0,
+      selectedIds: {},
+      rangeSelecting: false,
       status: "reset",
     })
   })
@@ -104,6 +106,27 @@ describe("key router", () => {
     expect(ui.state.managerCursor).toBe(0)
   })
 
+  test("Escape mirrors u when clearing transaction selection and filters", () => {
+    ui.switchTab("manager")
+    ui.setState({
+      focusedSection: "mgr.transactions",
+      selectedIds: { 1: true },
+      rangeSelecting: true,
+      rangeAnchorId: 1,
+      rangeCursorId: 2,
+    })
+
+    handleKey(ui, key({ name: "escape" }), data)
+    expect(ui.state.selectedIds).toEqual({})
+    expect(ui.state.rangeSelecting).toBe(false)
+    expect(ui.state.status).toBe("Selection cleared")
+
+    data.setFilterLive("coffee")
+    handleKey(ui, key({ name: "escape" }), data)
+    expect(data.state.filterQuery).toBe("")
+    expect(ui.state.status).toBe("Filter cleared")
+  })
+
   test("dashboard date chip apply sets timeframe", () => {
     ui.switchTab("dashboard")
     ui.setState({ focusedSection: "dash.date", dashChipCursor: 0 })
@@ -138,5 +161,20 @@ describe("key router", () => {
     expect(footerHints("jump").some((h) => h.desc === "cancel")).toBe(true)
     expect(footerHints("manager.txns").some((h) => h.key === "j/k")).toBe(true)
     expect(footerHints("dashboard.date").some((h) => h.desc === "apply")).toBe(true)
+  })
+
+  test("settings database owns i and clear confirmation requires del", () => {
+    data.init(":memory:")
+    ui.switchTab("settings")
+    ui.activateSettings("database")
+    handleKey(ui, key({ name: "i" }), data)
+    expect(ui.state.importStage).toBe("files")
+    handleKey(ui, key({ name: "escape" }), data)
+    handleKey(ui, key({ name: "c" }), data)
+    expect(ui.state.settingsConfirm?.kind).toBe("clearData")
+    handleKey(ui, key({ name: "c" }), data)
+    expect(ui.state.settingsConfirm?.kind).toBe("clearData")
+    handleKey(ui, key({ name: "delete" }), data)
+    expect(ui.state.settingsConfirm).toBeNull()
   })
 })

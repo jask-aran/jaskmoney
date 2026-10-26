@@ -7,7 +7,7 @@ import {
   SCHEMA_SQL,
   SCHEMA_VERSION,
 } from "./schema"
-import type { Account, Category, Tag, Transaction } from "../domain/types"
+import type { Account, Category, ImportRecord, Rule, Tag, Transaction } from "../domain/types"
 
 export type Db = Database
 
@@ -27,31 +27,58 @@ export function openDb(path: string = defaultDbPath()): Db {
   return db
 }
 
-function ensureSchema(db: Db) {
-  db.exec(SCHEMA_SQL)
+function tableExists(db: Db, name: string): boolean {
+  return !!db.query(`SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = ?`).get(name)
+}
 
-  const row = db.query("SELECT version FROM schema_meta LIMIT 1").get() as
-    | { version: number }
-    | null
-  if (!row) {
-    db.query("INSERT INTO schema_meta (version) VALUES (?)").run(SCHEMA_VERSION)
-  } else if (row.version !== SCHEMA_VERSION) {
-    // MVP: recreate is acceptable for the rewrite DB path
-    db.exec(`
-      DROP TABLE IF EXISTS transaction_tags;
-      DROP TABLE IF EXISTS transactions;
-      DROP TABLE IF EXISTS imports;
-      DROP TABLE IF EXISTS account_selection;
-      DROP TABLE IF EXISTS accounts;
-      DROP TABLE IF EXISTS tags;
-      DROP TABLE IF EXISTS categories;
-      DROP TABLE IF EXISTS schema_meta;
-    `)
-    db.exec(SCHEMA_SQL)
-    db.query("INSERT INTO schema_meta (version) VALUES (?)").run(SCHEMA_VERSION)
+/** Migration bodies are deliberately additive. A failed migration rolls back
+ * before the database is touched, instead of silently recreating a profile. */
+const MIGRATIONS: Record<number, (db: Db) => void> = {
+  8: (db) => db.exec(`
+    CREATE TABLE IF NOT EXISTS rules_v2 (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      name TEXT NOT NULL,
+      saved_filter_id TEXT NOT NULL,
+      set_category_id INTEGER REFERENCES categories(id) ON DELETE SET NULL,
+      add_tag_ids TEXT NOT NULL DEFAULT '[]',
+      sort_order INTEGER NOT NULL DEFAULT 0,
+      enabled INTEGER NOT NULL DEFAULT 1,
+      created_at TEXT NOT NULL DEFAULT (datetime('now'))
+    );
+    CREATE INDEX IF NOT EXISTS idx_rules_v2_sort ON rules_v2(sort_order);
+  `),
+}
+
+export function ensureSchema(db: Db) {
+  db.exec("BEGIN IMMEDIATE")
+  try {
+    if (!tableExists(db, "schema_meta")) {
+      db.exec(SCHEMA_SQL)
+      db.query("INSERT INTO schema_meta (version) VALUES (?)").run(SCHEMA_VERSION)
+    } else {
+      const row = db.query("SELECT version FROM schema_meta LIMIT 1").get() as { version: number } | null
+      if (!row) throw new Error("schema_meta has no version; database was left untouched")
+      if (row.version > SCHEMA_VERSION) {
+        throw new Error(`database schema v${row.version} is newer than OpenTUI v${SCHEMA_VERSION}`)
+      }
+      for (let version = row.version + 1; version <= SCHEMA_VERSION; version++) {
+        const migrate = MIGRATIONS[version]
+        if (!migrate) throw new Error(`no additive migration from v${version - 1} to v${version}`)
+        migrate(db)
+        db.query("UPDATE schema_meta SET version = ?").run(version)
+      }
+      // v7 OpenTUI profiles already contain the base tables. Do not recreate
+      // them: it would mask an incompatible hand-edited profile.
+      if (!tableExists(db, "categories") || !tableExists(db, "transactions") || !tableExists(db, "tags")) {
+        throw new Error("database schema is incomplete; database was left untouched")
+      }
+    }
+    seedDefaults(db)
+    db.exec("COMMIT")
+  } catch (error) {
+    try { db.exec("ROLLBACK") } catch { /* transaction did not start */ }
+    throw error
   }
-
-  seedDefaults(db)
 }
 
 function seedDefaults(db: Db) {
@@ -135,6 +162,109 @@ export function loadTags(db: Db): Tag[] {
   return rows
 }
 
+export function loadRules(db: Db): Rule[] {
+  if (!tableExists(db, "rules_v2")) return []
+  const rows = db.query(`
+    SELECT id, name, saved_filter_id AS savedFilterId, set_category_id AS setCategoryId,
+           add_tag_ids AS addTagIds, sort_order AS sortOrder, enabled
+    FROM rules_v2 ORDER BY sort_order, id
+  `).all() as Array<Omit<Rule, "addTagIds" | "enabled"> & { addTagIds: string; enabled: number }>
+  return rows.map((r) => {
+    let addTagIds: number[] = []
+    try {
+      const parsed: unknown = JSON.parse(r.addTagIds)
+      if (Array.isArray(parsed)) addTagIds = parsed.filter(Number.isInteger).map(Number)
+    } catch { /* corrupt legacy list is displayed as empty rather than crashing settings */ }
+    return { ...r, addTagIds, enabled: r.enabled === 1 }
+  })
+}
+
+function nextOrder(db: Db, table: "categories" | "tags" | "rules_v2"): number {
+  return Number((db.query(`SELECT COALESCE(MAX(sort_order), -1) AS n FROM ${table}`).get() as { n: number }).n) + 1
+}
+
+export function createCategory(db: Db, input: Pick<Category, "name" | "color">): number {
+  const name = input.name.trim()
+  if (!name) throw new Error("category name is required")
+  return Number(db.query(`INSERT INTO categories (name, color, sort_order) VALUES (?, ?, ?)`).run(name, input.color, nextOrder(db, "categories")).lastInsertRowid)
+}
+
+export function updateCategory(db: Db, id: number, input: Pick<Category, "name" | "color">): void {
+  const name = input.name.trim()
+  if (!name) throw new Error("category name is required")
+  db.query(`UPDATE categories SET name = ?, color = ? WHERE id = ?`).run(name, input.color, id)
+}
+
+export function deleteCategory(db: Db, id: number): void {
+  const row = db.query(`SELECT is_default AS isDefault FROM categories WHERE id = ?`).get(id) as { isDefault: number } | null
+  if (!row) throw new Error("category not found")
+  if (row.isDefault) throw new Error("cannot delete the default category")
+  db.query(`DELETE FROM categories WHERE id = ?`).run(id)
+}
+
+export function createTag(db: Db, input: Pick<Tag, "name" | "color" | "categoryId">): number {
+  const name = input.name.trim().toUpperCase()
+  if (!name) throw new Error("tag name is required")
+  return Number(db.query(`INSERT INTO tags (name, color, category_id, sort_order) VALUES (?, ?, ?, ?)`).run(name, input.color, input.categoryId, nextOrder(db, "tags")).lastInsertRowid)
+}
+
+export function updateTag(db: Db, id: number, input: Pick<Tag, "name" | "color" | "categoryId">): void {
+  const name = input.name.trim().toUpperCase()
+  if (!name) throw new Error("tag name is required")
+  db.query(`UPDATE tags SET name = ?, color = ?, category_id = ? WHERE id = ?`).run(name, input.color, input.categoryId, id)
+}
+
+export function deleteTag(db: Db, id: number): void {
+  const row = db.query(`SELECT name FROM tags WHERE id = ?`).get(id) as { name: string } | null
+  if (!row) throw new Error("tag not found")
+  if (row.name.toUpperCase() === "IGNORE") throw new Error("cannot delete mandatory IGNORE tag")
+  db.query(`DELETE FROM tags WHERE id = ?`).run(id)
+}
+
+export function createRule(db: Db, input: Omit<Rule, "id" | "sortOrder">): number {
+  if (!input.name.trim()) throw new Error("rule name is required")
+  if (!input.savedFilterId.trim()) throw new Error("saved filter id is required")
+  return Number(db.query(`INSERT INTO rules_v2 (name, saved_filter_id, set_category_id, add_tag_ids, sort_order, enabled) VALUES (?, ?, ?, ?, ?, ?)`).run(
+    input.name.trim(), input.savedFilterId.trim(), input.setCategoryId, JSON.stringify(input.addTagIds), nextOrder(db, "rules_v2"), input.enabled ? 1 : 0,
+  ).lastInsertRowid)
+}
+
+export function updateRule(db: Db, rule: Rule): void {
+  if (!rule.name.trim() || !rule.savedFilterId.trim()) throw new Error("rule name and saved filter are required")
+  db.query(`UPDATE rules_v2 SET name = ?, saved_filter_id = ?, set_category_id = ?, add_tag_ids = ?, sort_order = ?, enabled = ? WHERE id = ?`).run(
+    rule.name.trim(), rule.savedFilterId.trim(), rule.setCategoryId, JSON.stringify(rule.addTagIds), rule.sortOrder, rule.enabled ? 1 : 0, rule.id,
+  )
+}
+
+export function deleteRule(db: Db, id: number): void {
+  db.exec("BEGIN")
+  try {
+    db.query(`DELETE FROM rules_v2 WHERE id = ?`).run(id)
+    normalizeRuleOrder(db)
+    db.exec("COMMIT")
+  } catch (error) { db.exec("ROLLBACK"); throw error }
+}
+
+function normalizeRuleOrder(db: Db): void {
+  const ids = db.query(`SELECT id FROM rules_v2 ORDER BY sort_order, id`).all() as { id: number }[]
+  const update = db.query(`UPDATE rules_v2 SET sort_order = ? WHERE id = ?`)
+  ids.forEach((r, i) => update.run(i, r.id))
+}
+
+export function reorderRule(db: Db, id: number, index: number): void {
+  const ids = (db.query(`SELECT id FROM rules_v2 ORDER BY sort_order, id`).all() as { id: number }[]).map((r) => r.id)
+  const old = ids.indexOf(id)
+  if (old < 0) throw new Error(`rule ${id} not found`)
+  ids.splice(old, 1)
+  ids.splice(Math.max(0, Math.min(index, ids.length)), 0, id)
+  db.exec("BEGIN")
+  try { const update = db.query(`UPDATE rules_v2 SET sort_order = ? WHERE id = ?`); ids.forEach((ruleId, i) => update.run(i, ruleId)); db.exec("COMMIT") } catch (error) { db.exec("ROLLBACK"); throw error }
+}
+
+export function toggleRule(db: Db, id: number, enabled: boolean): void {
+  db.query(`UPDATE rules_v2 SET enabled = ? WHERE id = ?`).run(enabled ? 1 : 0, id)
+}
+
 export function loadTransactions(db: Db): Transaction[] {
   const rows = db
     .query(
@@ -190,6 +320,34 @@ export function loadTransactions(db: Db): Transaction[] {
   }))
 }
 
+export function loadImports(db: Db, limit = 12): ImportRecord[] {
+  return db.query(`SELECT id, filename, row_count AS rowCount, imported_at AS importedAt FROM imports ORDER BY imported_at DESC, id DESC LIMIT ?`).all(limit) as ImportRecord[]
+}
+
+/** Legacy-compatible: classification data and accounts survive a clear. */
+export function clearAllData(db: Db): void {
+  db.transaction(() => {
+    db.exec(`DELETE FROM transactions; DELETE FROM imports;`)
+  })()
+}
+
+export function clearAccountTransactions(db: Db, accountId: number): number {
+  const row = db.query(`DELETE FROM transactions WHERE account_id = ?`).run(accountId)
+  return Number(row.changes)
+}
+
+export function removeAccountWithTransactions(db: Db, accountId: number): number {
+  const count = db.query(`SELECT COUNT(*) AS count FROM accounts`).get() as { count: number }
+  if (count.count <= 1) throw new Error("cannot delete the last account")
+  return Number(db.transaction(() => {
+    const removed = db.query(`DELETE FROM transactions WHERE account_id = ?`).run(accountId)
+    db.query(`DELETE FROM account_selection WHERE account_id = ?`).run(accountId)
+    const account = db.query(`DELETE FROM accounts WHERE id = ?`).run(accountId)
+    if (!account.changes) throw new Error("account not found")
+    return removed.changes
+  })())
+}
+
 export function uncategorisedCategoryId(db: Db): number {
   const row = db
     .query(`SELECT id FROM categories WHERE is_default = 1 LIMIT 1`)
@@ -238,6 +396,7 @@ export interface DbInfo {
   tagCount: number
   accountCount: number
   importCount: number
+  ruleCount: number
   path: string
 }
 
@@ -256,6 +415,7 @@ export function loadDbInfo(db: Db, path: string): DbInfo {
     tagCount: count("tags"),
     accountCount: count("accounts"),
     importCount: count("imports"),
+    ruleCount: tableExists(db, "rules_v2") ? count("rules_v2") : 0,
     path,
   }
 }

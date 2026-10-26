@@ -8,6 +8,18 @@ import { theme, uncategorisedColor } from "../../theme"
 import { formatMoney } from "../../domain/dashboard"
 import { rowBackground } from "../../domain/rowStyle"
 import { filterExprString } from "../../domain/filter"
+import type { Account } from "../../domain/types"
+
+const columns = {
+  marker: 1,
+  gap: 1,
+  date: 9,
+  amount: 12,
+  description: 40,
+  account: 12,
+  category: 16,
+  tags: 12,
+} as const
 
 function fmtDate(iso: string): string {
   const [y, m, d] = iso.split("-")
@@ -23,6 +35,22 @@ function truncate(s: string, n: number): string {
 function catFg(color: string | undefined): string {
   if (!color || color === "" || color === "#7f849c") return uncategorisedColor
   return color
+}
+
+function formatCategory(
+  name: string,
+  color: string | undefined,
+  width: number,
+): { marker: string; markerColor: string; text: string; textColor: string; muted: boolean } {
+  const muted = !name || name === "Uncategorised" || !color || color === "#7f849c"
+  const text = name || "Uncategorised"
+  return {
+    marker: muted ? "○ " : "● ",
+    markerColor: catFg(color),
+    text: truncate(text, width - 2).padEnd(width - 2),
+    textColor: catFg(color),
+    muted,
+  }
 }
 
 function formatTags(
@@ -47,8 +75,9 @@ export function ManagerTab(props: { focused: SectionId }) {
   const highlighted = createMemo(() => ui.highlightedIds(rows()))
 
   createEffect(() => {
-    const h = dims().height
-    const vis = Math.max(8, h - 16)
+    // App chrome (4), Accounts (3), transaction borders (2), and the table
+    // header (1) are fixed. The viewport consumes every remaining row.
+    const vis = Math.max(1, dims().height - 10 - (filterBar() ? 1 : 0))
     if (vis !== ui.state.managerVisible) {
       ui.setState({ managerVisible: vis })
     }
@@ -61,6 +90,11 @@ export function ManagerTab(props: { focused: SectionId }) {
     } else if (n > 0 && ui.state.managerCursor >= n) {
       ui.jumpManagerCursor(n - 1, n)
     }
+  })
+
+  createEffect(() => {
+    const maxTop = Math.max(0, rows().length - ui.state.managerVisible)
+    if (ui.state.managerTop > maxTop) ui.setState({ managerTop: maxTop })
   })
 
   const windowRows = createMemo(() => {
@@ -78,7 +112,19 @@ export function ManagerTab(props: { focused: SectionId }) {
     return data.state.sortAscending ? " ▲" : " ▼"
   }
 
-  // Go-style filter bar: / input  ● ok|parse  [canonical]
+  const scrollIndicator = () => {
+    if (rows().length === 0) return undefined
+    const start = ui.state.managerTop + 1
+    const end = Math.min(ui.state.managerTop + ui.state.managerVisible, rows().length)
+    return `─ showing ${start}-${end} of ${rows().length}${
+      selCount() > 0 ? ` · ${selCount()} selected` : ""
+    }${ui.state.rangeSelecting ? " · range" : ""} · sort ${data.state.sortColumn}${
+      data.state.sortAscending ? "↑" : "↓"
+    } ─`
+  }
+
+  // Go-style filter bar: the input stays in the pane; its canonical form is
+  // rendered next to the title.
   const filterBar = () => {
     const editing = ui.state.filterMode
     const raw = editing ? ui.state.filterDraft : data.state.filterQuery
@@ -92,8 +138,16 @@ export function ManagerTab(props: { focused: SectionId }) {
     return { editing, raw, err, dotColor, dotLabel, preview }
   }
 
+  const filterTitle = () => {
+    const fb = filterBar()
+    if (!fb?.preview) return undefined
+    return `[${truncate(fb.preview, 48)}]`
+  }
+
+  const accountAction = () => data.state.accounts.find((account) => account.id === ui.state.accountActionId)
+
   return (
-    <box width="100%" height="100%" flexDirection="column" gap={0} backgroundColor={theme.base}>
+    <box width="100%" height="100%" flexDirection="column" gap={0} backgroundColor={theme.canvas}>
       <SectionCard title="Accounts" focused={acctFocused()} active={acctFocused()} height={3}>
         {accounts().length === 0 ? (
           <text fg={theme.overlay1}>No accounts · waiting for ingest</text>
@@ -132,51 +186,44 @@ export function ManagerTab(props: { focused: SectionId }) {
         )}
       </SectionCard>
 
-      <Show when={filterBar()}>
-        {(fb: () => NonNullable<ReturnType<typeof filterBar>>) => (
-          <box width="100%" height={1} paddingLeft={1} backgroundColor={theme.base}>
+      <SectionCard
+        title="Transactions"
+        titleSuffix={filterTitle()}
+        titleSuffixColor={data.state.filterErr ? theme.error : theme.blue}
+        focused={txFocused()}
+        active={txFocused()}
+        flexGrow={1}
+        height="100%"
+        bottomTitle={scrollIndicator()}
+      >
+        <Show when={filterBar()}>
+          {(fb: () => NonNullable<ReturnType<typeof filterBar>>) => (
             <text>
               <S fg={theme.accent} bold>
                 /
               </S>
               <S fg={theme.text}> {fb().raw}</S>
               {fb().editing ? <S fg={theme.accent}>▌</S> : null}
-              <S fg={theme.text}>  </S>
+              <S fg={theme.text}>{"  "}</S>
               <S fg={fb().dotColor}>●</S>
               <S fg={fb().dotColor}> {fb().dotLabel}</S>
-              {fb().preview ? (
-                <S fg={theme.blue}>  → [{truncate(fb().preview, 40)}]</S>
-              ) : null}
-              {!fb().editing ? (
-                <S fg={theme.overlay1}>  (esc clear)</S>
-              ) : fb().err ? (
-                <S fg={theme.error}>  {truncate(fb().err, 36)}</S>
-              ) : null}
+              {!fb().editing ? <S fg={theme.overlay1}>  (esc clear)</S> : null}
             </text>
-          </box>
-        )}
-      </Show>
-
-      <SectionCard
-        title={
-          selCount() > 0
-            ? `Transactions (${rows().length}/${data.state.transactions.length}) · ${selCount()} selected`
-            : `Transactions (${rows().length}/${data.state.transactions.length})`
-        }
-        focused={txFocused()}
-        active={txFocused()}
-        flexGrow={1}
-        height="100%"
-      >
+          )}
+        </Show>
         <text fg={theme.subtext0}>
           <b>
-            {"  "}
-            {`Date${sortMark("date")}`.padEnd(9)}
-            {`Amount${sortMark("amount")}`.padStart(11)}
-            {"  "}
-            {`Description${sortMark("description")}`.padEnd(32)}
-            {`Account${sortMark("account")}`.padEnd(12)}
-            {`Category${sortMark("category")}`.padEnd(14)}
+            {" ".repeat(columns.marker)}
+            {`Date${sortMark("date")}`.padEnd(columns.date)}
+            {" ".repeat(columns.gap)}
+            {`Amount${sortMark("amount")}`.padEnd(columns.amount)}
+            {" ".repeat(columns.gap)}
+            {`Description${sortMark("description")}`.padEnd(columns.description)}
+            {" ".repeat(columns.gap)}
+            {`Account${sortMark("account")}`.padEnd(columns.account)}
+            {" ".repeat(columns.gap)}
+            {`Category${sortMark("category")}`.padEnd(columns.category)}
+            {" ".repeat(columns.gap)}
             {"Tags"}
           </b>
         </text>
@@ -196,36 +243,64 @@ export function ManagerTab(props: { focused: SectionId }) {
                 const selected = () => !!ui.state.selectedIds[r.id]
                 const hl = () => !!highlighted()[r.id]
                 // OpenTUI cannot repaint a previous cell to transparency: it must
-                // receive the table's base colour when a row loses its state bg.
+                // receive the table canvas colour when a row loses its state bg.
                 // This is visually identical to the unstyled table background.
                 const rowBg = () =>
-                  rowBackground(selected(), hl(), isCursor()) ?? theme.base
-                const tags = () => formatTags(r.tagNames, r.tagColors, 12)
+                  rowBackground(selected(), hl(), isCursor()) ?? theme.canvas
+                const tags = () => formatTags(r.tagNames, r.tagColors, columns.tags)
+                const category = () =>
+                  formatCategory(r.categoryName, r.categoryColor, columns.category)
                 const strong = () => isCursor()
                 return (
-                  <text bg={rowBg()}>
+                  <text width="100%" bg={rowBg()}>
                     <S fg={theme.accent} bg={rowBg()} bold={strong()}>
                       {isCursor() ? ">" : selected() ? "*" : " "}
                     </S>
+                    <S fg={theme.mutedText} bg={rowBg()} bold={strong()}>
+                      {fmtDate(r.dateISO).padEnd(columns.date)}
+                    </S>
                     <S fg={theme.text} bg={rowBg()} bold={strong()}>
-                      {fmtDate(r.dateISO).padEnd(8)}
+                      {" ".repeat(columns.gap)}
                     </S>
                     <S
                       fg={r.amount < 0 ? theme.error : theme.success}
                       bg={rowBg()}
                       bold={strong()}
                     >
-                      {formatMoney(r.amount).padStart(11)}
+                      {formatMoney(r.amount).padEnd(columns.amount)}
                     </S>
                     <S fg={theme.text} bg={rowBg()} bold={strong()}>
-                      {"  "}
-                      {truncate(r.description, 30).padEnd(32)}
+                      {" ".repeat(columns.gap)}
                     </S>
-                    <S fg={theme.subtext1} bg={rowBg()} bold={strong()}>
-                      {truncate(r.accountName, 11).padEnd(12)}
+                    <S fg={theme.brightText} bg={rowBg()} bold={strong()}>
+                      {truncate(r.description, columns.description).padEnd(columns.description)}
                     </S>
-                    <S fg={catFg(r.categoryColor)} bg={rowBg()} bold={strong()}>
-                      {truncate(r.categoryName, 13).padEnd(14)}
+                    <S fg={theme.text} bg={rowBg()} bold={strong()}>
+                      {" ".repeat(columns.gap)}
+                    </S>
+                    <S fg={theme.dimText} bg={rowBg()} bold={strong()}>
+                      {truncate(r.accountName, columns.account).padEnd(columns.account)}
+                    </S>
+                    <S fg={theme.text} bg={rowBg()} bold={strong()}>
+                      {" ".repeat(columns.gap)}
+                    </S>
+                    <S
+                      fg={category().markerColor}
+                      bg={rowBg()}
+                      bold={strong() && !category().muted}
+                    >
+                      {category().marker}
+                    </S>
+                    <S
+                      fg={category().textColor}
+                      bg={rowBg()}
+                      bold={strong() && !category().muted}
+                      dim={category().muted}
+                    >
+                      {category().text}
+                    </S>
+                    <S fg={theme.text} bg={rowBg()} bold={strong()}>
+                      {" ".repeat(columns.gap)}
                     </S>
                     <S fg={tags().color} bg={rowBg()} bold={strong()}>
                       {tags().text}
@@ -234,17 +309,15 @@ export function ManagerTab(props: { focused: SectionId }) {
                 )
               }}
             </For>
-            <text fg={theme.overlay1}>
-              {"  "}— showing {ui.state.managerTop + 1}-
-              {Math.min(ui.state.managerTop + ui.state.managerVisible, rows().length)} of{" "}
-              {rows().length}
-              {selCount() > 0 ? ` · ${selCount()} selected` : ""}
-              {ui.state.rangeSelecting ? " · range" : ""}
-              {` · sort ${data.state.sortColumn}${data.state.sortAscending ? "↑" : "↓"}`} —
-            </text>
           </box>
         )}
       </SectionCard>
+      <Show when={accountAction()}>{(account: () => Account) => <box position="absolute" zIndex={20} left="22%" top="35%" width="56%" border borderStyle="rounded" borderColor={theme.warning} paddingLeft={1} paddingRight={1} backgroundColor={theme.base} flexDirection="column">
+        <text fg={theme.warning}><b>Account data · {account().name}</b></text>
+        <text fg={theme.text}>c clear this account’s transactions</text>
+        <text fg={theme.error}>x remove this account and its transactions</text>
+        <text fg={theme.overlay1}>Press del to confirm either action · esc cancel</text>
+      </box>}</Show>
     </box>
   )
 }

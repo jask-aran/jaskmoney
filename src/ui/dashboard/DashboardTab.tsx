@@ -46,7 +46,7 @@ export function DashboardTab(props: { focused: SectionId }) {
     dateFocused() ? ui.state.dashChipCursor : activeChipIndex(ui.state.timeframe)
 
   return (
-    <box width="100%" height="100%" flexDirection="column" gap={0} backgroundColor={theme.base}>
+    <box width="100%" height="100%" flexDirection="column" gap={0} backgroundColor={theme.canvas}>
       <SectionCard title="Date Range" focused={dateFocused()} height={3}>
         <box flexDirection="row" justifyContent="space-between" width="100%">
           <text fg={theme.subtext0}>

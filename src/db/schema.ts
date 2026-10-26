@@ -1,6 +1,7 @@
-/** Schema v7 subset for MVP (from db.go schemaV7). */
+/** OpenTUI schema. v8 replaces the old destructive version fallback with an
+ * additive migration registry. v7 was the initial partial OpenTUI port. */
 
-export const SCHEMA_VERSION = 7
+export const SCHEMA_VERSION = 8
 
 export const SCHEMA_SQL = `
 CREATE TABLE IF NOT EXISTS schema_meta (
@@ -27,6 +28,17 @@ CREATE TABLE IF NOT EXISTS transaction_tags (
   transaction_id INTEGER NOT NULL REFERENCES transactions(id) ON DELETE CASCADE,
   tag_id         INTEGER NOT NULL REFERENCES tags(id) ON DELETE CASCADE,
   PRIMARY KEY (transaction_id, tag_id)
+);
+
+CREATE TABLE IF NOT EXISTS rules_v2 (
+  id              INTEGER PRIMARY KEY AUTOINCREMENT,
+  name            TEXT NOT NULL,
+  saved_filter_id TEXT NOT NULL,
+  set_category_id INTEGER REFERENCES categories(id) ON DELETE SET NULL,
+  add_tag_ids     TEXT NOT NULL DEFAULT '[]',
+  sort_order      INTEGER NOT NULL DEFAULT 0,
+  enabled         INTEGER NOT NULL DEFAULT 1,
+  created_at      TEXT NOT NULL DEFAULT (datetime('now'))
 );
 
 CREATE TABLE IF NOT EXISTS accounts (
@@ -66,6 +78,7 @@ CREATE INDEX IF NOT EXISTS idx_transactions_category ON transactions(category_id
 CREATE INDEX IF NOT EXISTS idx_transactions_account ON transactions(account_id);
 CREATE INDEX IF NOT EXISTS idx_accounts_sort_order ON accounts(sort_order);
 CREATE INDEX IF NOT EXISTS idx_tags_sort_order ON tags(sort_order);
+CREATE INDEX IF NOT EXISTS idx_rules_v2_sort ON rules_v2(sort_order);
 `
 
 export const DEFAULT_CATEGORIES: { name: string; color: string; sortOrder: number; isDefault: number }[] = [

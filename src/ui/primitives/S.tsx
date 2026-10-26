@@ -12,13 +12,16 @@ export function S(props: {
   fg?: string
   bg?: string
   bold?: boolean
+  dim?: boolean
   children?: JSX.Element
 }) {
   return (
     <span
       ref={(node: TextNodeRenderable) => {
         createEffect(() => {
-          node.attributes = props.bold ? TextAttributes.BOLD : 0
+          node.attributes =
+            (props.bold ? TextAttributes.BOLD : 0) |
+            (props.dim ? TextAttributes.DIM : 0)
           node.fg = props.fg
           node.bg = props.bg
         })

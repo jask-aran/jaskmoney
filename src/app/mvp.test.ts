@@ -147,14 +147,17 @@ describe("MVP slice: filter + categorize", () => {
     expect(row?.categoryName).toBe("Dining & Drinks")
   })
 
-  test("escape leaves transaction selection and applied filter intact", () => {
+  test("escape clears transaction selection before an applied filter", () => {
     ui.setState({ selectedIds: { 1: true } })
     data.commitFilter("uber")
 
     handleKey(ui, key({ name: "escape" }), data)
 
-    expect(ui.state.selectedIds).toEqual({ 1: true })
+    expect(ui.state.selectedIds).toEqual({})
     expect(data.state.filterQuery).toBe("uber")
+
+    handleKey(ui, key({ name: "escape" }), data)
+    expect(data.state.filterQuery).toBe("")
   })
 
   test("tag picker toggles the focused tag and sort keys change ordering", () => {

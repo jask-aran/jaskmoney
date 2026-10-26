@@ -59,26 +59,6 @@ export function App() {
       renderer.destroy()
       return
     }
-    if (
-      key.name === "i" &&
-      !key.ctrl &&
-      !ui.state.jumpMode &&
-      !ui.state.filterMode &&
-      !ui.state.catPickerOpen &&
-      !ui.state.tagPickerOpen
-    ) {
-      try {
-        const path = data.findDefaultAnzPath()
-        if (!path) {
-          ui.setStatus("ANZ.csv not found", true)
-          return
-        }
-        ui.setStatus(data.ingestFile(path))
-      } catch (e) {
-        ui.setStatus(`Ingest failed: ${e instanceof Error ? e.message : String(e)}`, true)
-      }
-      return
-    }
     handleKey(ui, key, data)
   })
 
@@ -92,10 +72,10 @@ export function App() {
   }
 
   return (
-    <box width="100%" height="100%" flexDirection="column" backgroundColor={theme.base}>
+    <box width="100%" height="100%" flexDirection="column" backgroundColor={theme.canvas}>
       <TabBar active={ui.state.activeTab} accountLabel={accountLabel()} />
-      <box height={1} width="100%" backgroundColor={theme.base} />
-      <box flexGrow={1} width="100%" flexDirection="column" backgroundColor={theme.base}>
+      <box height={1} width="100%" backgroundColor={theme.canvas} />
+      <box flexGrow={1} width="100%" flexDirection="column" backgroundColor={theme.canvas}>
         <Switch>
           <Match when={ui.state.activeTab === "dashboard"}>
             <DashboardTab focused={ui.state.focusedSection} />

@@ -51,6 +51,7 @@ export function ingestAnzCsv(
 
   let inserted = 0
   let skippedDupes = 0
+  const transactionIds: number[] = []
 
   const insertTxn = db.query(
     `INSERT INTO transactions
@@ -78,7 +79,7 @@ export function ingestAnzCsv(
     const importId = Number(imp.lastInsertRowid)
 
     for (const r of toInsert) {
-      insertTxn.run(
+      const insertedTxn = insertTxn.run(
         r.dateRaw,
         r.dateISO,
         r.amount,
@@ -87,6 +88,7 @@ export function ingestAnzCsv(
         importId,
         account.id,
       )
+      transactionIds.push(Number(insertedTxn.lastInsertRowid))
       inserted++
     }
 
@@ -101,5 +103,6 @@ export function ingestAnzCsv(
     accountId: account.id,
     accountName: account.name,
     importId,
+    transactionIds,
   }
 }

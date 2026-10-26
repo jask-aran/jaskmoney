@@ -37,4 +37,4 @@ legacy/go/   frozen Go reference implementation
 
 ## Data
 
-SQLite defaults to `~/.local/share/jaskmoney-opentui/transactions.db`; set `JASKMONEY_DB` to override it. On an empty database, the app looks for a local `ANZ.csv`; press `i` to ingest it.
+SQLite defaults to `~/.local/share/jaskmoney-opentui/transactions.db`; set `JASKMONEY_DB` to override it. In Settings, activate Database & Import and press `i` to choose a CSV, map or select an import profile, preview duplicates, then import.

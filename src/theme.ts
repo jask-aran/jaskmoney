@@ -32,12 +32,25 @@ export const theme = {
   mantle: "#181825",
   crust: "#11111b",
 
+  // Legacy leaves the terminal background exposed; use its darker equivalent
+  // for the OpenTUI canvas rather than filling every empty cell with base.
+  canvas: "#11111b",
+
   // Semantic (Go aliases)
   /** Active tab text, help keys, brand title default */
   accent: "#f5c2e7", // pink
   brand: "#f5c2e7",
   /** Focused section border + title */
   focus: "#b4befe", // lavender
+
+  // Custom neutral overrides — Catppuccin Mocha's light colours all skew
+  // blue/purple, so these provide a warm-neutral hierarchy for table text.
+  /** White-ish for descriptions (most prominent). */
+  brightText: "#e6e6e6",
+  /** Neutral light grey for dates (de-emphasised). */
+  mutedText: "#c0c0c0",
+  /** Neutral mid-grey for accounts (between mutedText and uncategorised). */
+  dimText: "#9e9e9e",
   success: "#a6e3a1",
   error: "#f38ba8",
   warning: "#f9e2af",
