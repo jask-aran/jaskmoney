@@ -31,7 +31,7 @@ function key(partial: Partial<KeyEvent> & { name: string }): KeyEvent {
 describe("key router", () => {
   beforeEach(() => {
     data.clearFilter()
-    ui.switchTab("dashboard")
+    ui.switchTab("overview")
     ui.setState({
       jumpMode: false,
       focusedSection: "none",
@@ -45,29 +45,26 @@ describe("key router", () => {
 
   test("number keys switch tabs", () => {
     handleKey(ui, key({ name: "2" }), data)
-    expect(ui.state.activeTab).toBe("spending")
-    handleKey(ui, key({ name: "3" }), data)
     expect(ui.state.activeTab).toBe("manager")
-    handleKey(ui, key({ name: "4" }), data)
+    handleKey(ui, key({ name: "3" }), data)
     expect(ui.state.activeTab).toBe("settings")
     handleKey(ui, key({ name: "1" }), data)
-    expect(ui.state.activeTab).toBe("dashboard")
+    expect(ui.state.activeTab).toBe("overview")
   })
 
   test("tab cycles", () => {
     handleKey(ui, key({ name: "tab" }), data)
-    expect(ui.state.activeTab).toBe("spending")
+    expect(ui.state.activeTab).toBe("manager")
     handleKey(ui, key({ name: "tab", shift: true }), data)
-    expect(ui.state.activeTab).toBe("dashboard")
+    expect(ui.state.activeTab).toBe("overview")
   })
 
   test("jump mode open, target, cancel", () => {
-    ui.switchTab("spending")
     handleKey(ui, key({ name: "v" }), data)
     expect(ui.state.jumpMode).toBe(true)
     handleKey(ui, key({ name: "d" }), data)
     expect(ui.state.jumpMode).toBe(false)
-    expect(ui.state.focusedSection).toBe("spend.date")
+    expect(ui.state.focusedSection).toBe("ov.range")
 
     handleKey(ui, key({ name: "v" }), data)
     handleKey(ui, key({ name: "escape" }), data)
@@ -244,9 +241,8 @@ describe("key router", () => {
     expect(ui.state.status).toBe("Filter cleared")
   })
 
-  test("spending date chip apply sets timeframe", () => {
-    ui.switchTab("spending")
-    ui.setState({ focusedSection: "spend.date", dashChipCursor: 0 })
+  test("overview date chip apply sets timeframe", () => {
+    ui.setState({ focusedSection: "ov.range", dashChipCursor: 0 })
     data.setState({
       transactions: [
         {
@@ -277,7 +273,7 @@ describe("key router", () => {
   test("footer hints change with scope", () => {
     expect(footerHints("jump").some((h) => h.desc === "cancel")).toBe(true)
     expect(footerHints("manager.txns").some((h) => h.key === "j/k")).toBe(true)
-    expect(footerHints("spending.date").some((h) => h.desc === "apply")).toBe(true)
+    expect(footerHints("overview.range").some((h) => h.desc === "apply")).toBe(true)
   })
 
   test("settings database owns i and clear confirmation requires del", () => {

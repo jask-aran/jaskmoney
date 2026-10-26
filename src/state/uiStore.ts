@@ -7,14 +7,13 @@ import {
 } from "../domain/timeframe"
 import type { ImportPreview, ImportProfile } from "../domain/types"
 
-export type TabId = "dashboard" | "spending" | "manager" | "settings"
+export type TabId = "overview" | "manager" | "settings"
 
 export type SectionId =
   | "none"
-  | "dash.cycle"
-  | "spend.date"
-  | "spend.chart"
-  | "spend.categories"
+  | "ov.range"
+  | "ov.chart"
+  | "ov.categories"
   | "mgr.accounts"
   | "mgr.transactions"
   | "set.categories"
@@ -31,9 +30,8 @@ export type ScopeId =
   | "filter"
   | "catPicker"
   | "tagPicker"
-  | "dashboard"
-  | "spending.date"
-  | "spending"
+  | "overview"
+  | "overview.range"
   | "manager"
   | "manager.accounts"
   | "manager.txns"
@@ -100,8 +98,6 @@ export interface UiState {
   tagPickerQuery: string
   /** Transactions the open category or tag picker applies to. */
   pickerTargets: number[]
-  /** Index into CYCLE_VIEWS (the Dashboard's This Cycle chart). */
-  cycleView: number
   selectedIds: Record<number, boolean>
   rangeSelecting: boolean
   rangeAnchorId: number
@@ -166,36 +162,31 @@ export interface UiState {
 }
 
 const TAB_DEFAULT_FOCUS: Record<TabId, SectionId> = {
-  dashboard: "none",
-  spending: "none",
+  overview: "none",
   manager: "mgr.transactions",
   settings: "none",
 }
 
-/** The Spending tab's chart pane views, in h/l order, with the group each
+/** The Overview's chart pane views, in h/l order, with the group each
  * belongs to (the pane's title and the strip's separators). */
 export const CHART_VIEWS = [
-  { view: "Daily", group: "Spending" },
   { view: "Cumulative", group: "Spending" },
+  { view: "Daily", group: "Spending" },
   { view: "Weekly", group: "Spending" },
+  { view: "Cash flow", group: "Cash flow" },
   { view: "Net position", group: "Balances" },
   { view: "Available", group: "Balances" },
   { view: "Savers", group: "Balances" },
   { view: "Calendar", group: "Calendar" },
 ] as const
-/** Views of the Dashboard's This Cycle chart, cycled with h/l. */
-export const CYCLE_VIEWS = ["Cumulative", "Daily", "Weekly"] as const
 
 export type ChartView = (typeof CHART_VIEWS)[number]["view"]
 
 export const JUMP_TARGETS: Record<TabId, JumpTarget[]> = {
-  dashboard: [
-    { key: "c", section: "dash.cycle", label: "This Cycle" },
-  ],
-  spending: [
-    { key: "d", section: "spend.date", label: "Date Range" },
-    { key: "t", section: "spend.chart", label: "Charts" },
-    { key: "c", section: "spend.categories", label: "Categories" },
+  overview: [
+    { key: "d", section: "ov.range", label: "Date Range" },
+    { key: "t", section: "ov.chart", label: "Charts" },
+    { key: "c", section: "ov.categories", label: "Categories" },
   ],
   manager: [
     { key: "a", section: "mgr.accounts", label: "Accounts" },
@@ -213,15 +204,14 @@ export const JUMP_TARGETS: Record<TabId, JumpTarget[]> = {
 }
 
 export const TABS: { id: TabId; label: string; hotkey: string }[] = [
-  { id: "dashboard", label: "Dashboard", hotkey: "1" },
-  { id: "spending", label: "Spending", hotkey: "2" },
-  { id: "manager", label: "Transactions", hotkey: "3" },
-  { id: "settings", label: "Settings", hotkey: "4" },
+  { id: "overview", label: "Overview", hotkey: "1" },
+  { id: "manager", label: "Transactions", hotkey: "2" },
+  { id: "settings", label: "Settings", hotkey: "3" },
 ]
 
 function createUiStore() {
   const [state, setState] = createStore<UiState>({
-    activeTab: "dashboard",
+    activeTab: "overview",
     focusedSection: "none",
     jumpMode: false,
     jumpPreviousFocus: "none",
@@ -243,7 +233,6 @@ function createUiStore() {
     tagPickerCursor: 0,
     tagPickerQuery: "",
     pickerTargets: [],
-    cycleView: 0,
 
     selectedIds: {},
     rangeSelecting: false,
@@ -542,11 +531,7 @@ function createUiStore() {
     if (state.importStage === "preview") return "settings.import.preview"
     if (state.accountActionId != null) return "manager.accountAction"
     if (state.factoryResetOpen) return "settings.factoryReset"
-    if (state.activeTab === "dashboard") return "dashboard"
-    if (state.activeTab === "spending") {
-      if (state.focusedSection === "spend.date") return "spending.date"
-      return "spending"
-    }
+    if (state.activeTab === "overview") return state.focusedSection === "ov.range" ? "overview.range" : "overview"
     if (state.activeTab === "manager") {
       if (state.focusedSection === "mgr.accounts") return "manager.accounts"
       return state.txnView === "merchants" ? "manager.merchants" : "manager.txns"

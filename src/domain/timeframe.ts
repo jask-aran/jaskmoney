@@ -1,7 +1,8 @@
 import type { Transaction } from "./types"
+import { cycleFor, type CycleConfig } from "./budget"
 
 export type LookbackId = "1M" | "2M" | "3M" | "6M" | "1Y"
-export type PeriodId = "month" | "qtr" | "half" | "fy" | "year"
+export type PeriodId = "cycle" | "month" | "qtr" | "half" | "fy" | "year"
 export type TimeframeFamily = "lookback" | "period"
 
 export interface TimeframeState {
@@ -13,9 +14,10 @@ export interface TimeframeState {
 }
 
 export const LOOKBACKS: LookbackId[] = ["1M", "2M", "3M", "6M", "1Y"]
-export const PERIODS: PeriodId[] = ["month", "qtr", "half", "fy", "year"]
+export const PERIODS: PeriodId[] = ["cycle", "month", "qtr", "half", "fy", "year"]
 
 export const PERIOD_LABEL: Record<PeriodId, string> = {
+  cycle: "Cycle",
   month: "Month",
   qtr: "QTR",
   half: "Half",
@@ -23,13 +25,16 @@ export const PERIOD_LABEL: Record<PeriodId, string> = {
   year: "Year",
 }
 
-export function defaultTimeframe(now: Date = new Date()): TimeframeState {
-  const anchor = new Date(now.getFullYear(), now.getMonth(), 1)
+/** Calendar months: the budget cycle when none is configured. */
+export const MONTHLY_CYCLE: CycleConfig = { unit: "month", anchor: "calendar", anchorDate: null }
+
+/** The budget cycle containing `now`. */
+export function defaultTimeframe(now: Date = new Date(), cycle: CycleConfig = MONTHLY_CYCLE): TimeframeState {
   return {
     family: "period",
     lookback: "1M",
-    period: "month",
-    periodAnchor: toISODate(anchor),
+    period: "cycle",
+    periodAnchor: cycleFor(cycle, toISODate(now)).start,
   }
 }
 
@@ -61,7 +66,7 @@ export interface DateBounds {
   label: string
 }
 
-export function timeframeBounds(tf: TimeframeState, now: Date): DateBounds {
+export function timeframeBounds(tf: TimeframeState, now: Date, cycle: CycleConfig = MONTHLY_CYCLE): DateBounds {
   const day = new Date(now.getFullYear(), now.getMonth(), now.getDate())
 
   if (tf.family === "lookback") {
@@ -92,6 +97,10 @@ export function timeframeBounds(tf: TimeframeState, now: Date): DateBounds {
   }
 
   // period family
+  if (tf.period === "cycle") {
+    const c = cycleFor(cycle, tf.periodAnchor)
+    return { start: c.start, end: c.end, label: formatDays(c.start, c.end) }
+  }
   let start = parseISODate(tf.periodAnchor)
   start = new Date(start.getFullYear(), start.getMonth(), start.getDate())
   let endExcl: Date
@@ -120,6 +129,7 @@ export function timeframeBounds(tf: TimeframeState, now: Date): DateBounds {
       break
     }
     case "year":
+    default:
       start = new Date(start.getFullYear(), 0, 1)
       endExcl = new Date(start.getFullYear() + 1, 0, 1)
       break
@@ -131,6 +141,15 @@ export function timeframeBounds(tf: TimeframeState, now: Date): DateBounds {
     end: toISODate(endIncl),
     label: formatRange(toISODate(start), toISODate(endIncl)),
   }
+}
+
+/** "1 Oct – 31 Oct 2026", or "16 Dec 2026 – 15 Jan 2027" across years. */
+function formatDays(start: string, end: string): string {
+  const months = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"]
+  const day = (iso: string) => `${Number(iso.slice(8, 10))} ${months[Number(iso.slice(5, 7)) - 1]}`
+  return start.slice(0, 4) === end.slice(0, 4)
+    ? `${day(start)} – ${day(end)} ${end.slice(0, 4)}`
+    : `${day(start)} ${start.slice(0, 4)} – ${day(end)} ${end.slice(0, 4)}`
 }
 
 function formatRange(start: string, end: string): string {
@@ -148,8 +167,9 @@ export function filterByTimeframe(
   rows: Transaction[],
   tf: TimeframeState,
   now: Date,
+  cycle: CycleConfig = MONTHLY_CYCLE,
 ): Transaction[] {
-  const b = timeframeBounds(tf, now)
+  const b = timeframeBounds(tf, now, cycle)
   return rows.filter((r) => r.dateISO >= b.start && r.dateISO <= b.end)
 }
 
@@ -163,7 +183,7 @@ export function chipLabel(index: number): string {
   return PERIOD_LABEL[PERIODS[index - LOOKBACKS.length]!]
 }
 
-export function applyChip(tf: TimeframeState, index: number, now: Date): TimeframeState {
+export function applyChip(tf: TimeframeState, index: number, now: Date, cycle: CycleConfig = MONTHLY_CYCLE): TimeframeState {
   if (index < 0) index = 0
   const n = chipCount()
   if (index >= n) index = n - 1
@@ -178,7 +198,7 @@ export function applyChip(tf: TimeframeState, index: number, now: Date): Timefra
     period,
     periodAnchor: toISODate(now),
   }
-  const b = timeframeBounds(tmp, now)
+  const b = timeframeBounds(tmp, now, cycle)
   return { ...tmp, periodAnchor: b.start }
 }
 
@@ -187,8 +207,18 @@ export function activeChipIndex(tf: TimeframeState): number {
   return LOOKBACKS.length + PERIODS.indexOf(tf.period)
 }
 
-export function stepPeriod(tf: TimeframeState, delta: number): TimeframeState {
+export function stepPeriod(tf: TimeframeState, delta: number, cycle: CycleConfig = MONTHLY_CYCLE): TimeframeState {
   if (tf.family !== "period") return tf
+  if (tf.period === "cycle") {
+    // Step a cycle at a time: the cycle containing the day before this one's
+    // start, or the day after its end.
+    let current = cycleFor(cycle, tf.periodAnchor)
+    for (let i = 0; i < Math.abs(delta); i++) {
+      const edge = Date.parse((delta < 0 ? current.start : current.end) + "T12:00:00Z") + (delta < 0 ? -1 : 1) * 86400000
+      current = cycleFor(cycle, new Date(edge).toISOString().slice(0, 10))
+    }
+    return { ...tf, periodAnchor: current.start }
+  }
   const start = parseISODate(tf.periodAnchor)
   switch (tf.period) {
     case "month":
@@ -208,7 +238,7 @@ export function stepPeriod(tf: TimeframeState, delta: number): TimeframeState {
       break
   }
   const next = { ...tf, periodAnchor: toISODate(start) }
-  const b = timeframeBounds(next, start)
+  const b = timeframeBounds(next, start, cycle)
   return { ...next, periodAnchor: b.start }
 }
 

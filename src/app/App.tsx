@@ -10,8 +10,7 @@ import { Footer } from "../ui/primitives/Footer"
 import { JumpOverlay } from "../ui/primitives/JumpOverlay"
 import { CatPicker } from "../ui/primitives/CatPicker"
 import { TagPicker } from "../ui/primitives/TagPicker"
-import { DashboardTab } from "../ui/dashboard/DashboardTab"
-import { SpendingTab } from "../ui/spending/SpendingTab"
+import { OverviewTab } from "../ui/overview/OverviewTab"
 import { ManagerTab } from "../ui/manager/ManagerTab"
 import { SettingsTab } from "../ui/settings/SettingsTab"
 import { theme } from "../theme"
@@ -36,10 +35,12 @@ export function App() {
         return
       }
       const clock = dataClock(data.state.transactions)
+      // Open on the current budget cycle.
       const tf = applyChip(
-        { ...ui.state.timeframe, family: "period", period: "month" },
+        { ...ui.state.timeframe, family: "period", period: "cycle" },
         LOOKBACKS.length,
         clock,
+        data.state.budgetCycle,
       )
       ui.setTimeframe(tf)
       ui.setDashChipCursor(activeChipIndex(tf))
@@ -91,11 +92,8 @@ export function App() {
             switching, quit) keeps working. Switching tabs retries. */}
         <ErrorBoundary fallback={(error: unknown, reset: () => void) => <TabError error={error} reset={reset} />}>
         <Switch>
-          <Match when={ui.state.activeTab === "dashboard"}>
-            <DashboardTab focused={ui.state.focusedSection} />
-          </Match>
-          <Match when={ui.state.activeTab === "spending"}>
-            <SpendingTab focused={ui.state.focusedSection} />
+          <Match when={ui.state.activeTab === "overview"}>
+            <OverviewTab focused={ui.state.focusedSection} />
           </Match>
           <Match when={ui.state.activeTab === "manager"}>
             <ManagerTab focused={ui.state.focusedSection} />

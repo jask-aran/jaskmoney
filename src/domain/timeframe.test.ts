@@ -2,6 +2,7 @@ import { describe, expect, test } from "bun:test"
 import {
   applyChip,
   comparisonWindows,
+  stepPeriod,
   defaultTimeframe,
   filterByTimeframe,
   timeframeBounds,
@@ -69,5 +70,21 @@ describe("comparisonWindows", () => {
     expect(comparisonWindows("2026-09-01", "2026-09-30", "2026-10-26")).toEqual({
       days: 30, partial: false, previous: { start: "2026-08-02", end: "2026-08-31" },
     })
+  })
+})
+
+describe("cycle period", () => {
+  const payday = { unit: "fortnight" as const, anchor: "date" as const, anchorDate: "2026-10-16" }
+
+  test("defaults to the budget cycle containing today", () => {
+    const tf = defaultTimeframe(new Date(2026, 9, 26), payday)
+    expect(tf).toMatchObject({ family: "period", period: "cycle", periodAnchor: "2026-10-16" })
+    expect(timeframeBounds(tf, new Date(2026, 9, 26), payday)).toEqual({ start: "2026-10-16", end: "2026-10-29", label: "16 Oct – 29 Oct 2026" })
+  })
+
+  test("steps a whole cycle at a time", () => {
+    const tf = defaultTimeframe(new Date(2026, 9, 26), payday)
+    expect(stepPeriod(tf, -1, payday).periodAnchor).toBe("2026-10-02")
+    expect(stepPeriod(tf, 2, payday).periodAnchor).toBe("2026-11-13")
   })
 })

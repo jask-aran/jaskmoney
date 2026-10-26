@@ -24,7 +24,7 @@ describe("shell render M0", () => {
   test("renders header tabs status footer", async () => {
     process.env.JASKMONEY_DB = ":memory:"
     process.env.JASKMONEY_NO_BOOTSTRAP = "1"
-    ui.switchTab("dashboard")
+    ui.switchTab("overview")
 
     const t = await testRender(() => <App />, { width: 140, height: 44 })
     await t.renderOnce()
@@ -32,23 +32,17 @@ describe("shell render M0", () => {
     const frame = t.captureCharFrame()
 
     expect(frame).toContain("Jaskmoney")
-    expect(frame).toContain("Dashboard")
+    expect(frame).toContain("Overview")
     expect(frame).toContain("Transactions")
     expect(frame).toContain("Settings")
+    // Point-in-time figures, then everything over the Date Range.
     expect(frame).toContain("Now")
     expect(frame).toContain("Savers")
-    expect(frame).toContain("This Cycle")
-    expect(frame).not.toContain("Date Range")
-    expect(frame).toMatch(/status|shell|bootstrap|Tab:|jump|v /i)
-
-    // The Spending tab holds everything over the Date Range.
-    t.mockInput.pressKey("2")
-    await t.renderOnce()
-    const spending = t.captureCharFrame()
-    expect(spending).toContain("Date Range")
+    expect(frame).toContain("Date Range")
     // One chart pane; its strip lists every view.
-    expect(spending).toContain("Spending · Daily")
-    expect(spending).toContain("Net position  Available  Savers │ Calendar")
+    expect(frame).toContain("Spending · Cumulative")
+    expect(frame).toContain("Cash flow │ Net position Available Savers │ Calendar")
+    expect(frame).toMatch(/status|shell|bootstrap|Tab:|jump|v /i)
     const dateRangeTitle = t
       .captureSpans()
       .lines.flatMap((line) => line.spans)
@@ -63,10 +57,10 @@ describe("shell render M0", () => {
 
     t.mockInput.pressKey("d")
     await t.renderOnce()
-    expect(ui.state.focusedSection).toBe("spend.date")
+    expect(ui.state.focusedSection).toBe("ov.range")
 
-    // tab to manager
-    t.mockInput.pressKey("3")
+    // tab to Transactions
+    t.mockInput.pressKey("2")
     await t.renderOnce()
     const mgr = t.captureCharFrame()
     expect(mgr).toContain("Accounts")
@@ -463,14 +457,14 @@ describe("render errors", () => {
     const original = data.scopedTransactions
     try {
       ;(data as { scopedTransactions: () => unknown }).scopedTransactions = () => { throw new Error("boom") }
-      ui.switchTab("dashboard"); await t.renderOnce()
+      ui.switchTab("overview"); await t.renderOnce()
       ui.switchTab("manager"); await t.renderOnce()
       expect(t.captureCharFrame()).toContain("This tab failed to render")
-      expect(t.captureCharFrame()).toContain("Dashboard")
+      expect(t.captureCharFrame()).toContain("Overview")
     } finally {
       ;(data as { scopedTransactions: typeof original }).scopedTransactions = original
     }
-    ui.switchTab("dashboard"); await t.renderOnce()
+    ui.switchTab("overview"); await t.renderOnce()
     ui.switchTab("manager"); await t.renderOnce()
     expect(t.captureCharFrame()).toContain("Transactions")
   })

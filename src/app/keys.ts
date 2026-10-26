@@ -8,7 +8,7 @@ import type { CycleConfig } from "../domain/budget"
 import { MERCHANT_SORTS, groupByMerchant, merchantFilter, sortMerchantGroups } from "../domain/merchants"
 import { editorFields, pickerChoices, pickerItems, stepChoice } from "../state/settingsForm"
 import { runSync } from "./sync"
-import { CHART_VIEWS, CYCLE_VIEWS, JUMP_TARGETS, SETTINGS_SECTIONS, TABS, settingsSectionFocus, type ScopeId, type UiStore } from "../state/uiStore"
+import { CHART_VIEWS, JUMP_TARGETS, SETTINGS_SECTIONS, TABS, settingsSectionFocus, type ScopeId, type UiStore } from "../state/uiStore"
 import type { DataStore } from "../state/dataStore"
 import {
   LOOKBACKS,
@@ -857,19 +857,9 @@ export function handleKey(ui: UiStore, key: KeyEvent, data?: DataStore): boolean
     return true
   }
 
-  // ── Dashboard ───────────────────────────────────────────────────────
-  if (scope === "dashboard") {
-    // h/l (or ,/.) step the This Cycle chart's views.
-    const step = name === "h" || name === "left" || seq === "," ? -1 : name === "l" || name === "right" || seq === "." ? 1 : 0
-    if (step !== 0) {
-      const n = CYCLE_VIEWS.length
-      ui.setState({ cycleView: (ui.state.cycleView + step + n) % n })
-      return true
-    }
-  }
-
-  // ── Spending date range ─────────────────────────────────────────────
-  if (scope === "spending.date") {
+  // ── Overview: date range chips ──────────────────────────────────────
+  const cycle = data?.state.budgetCycle
+  if (scope === "overview.range") {
     if (name === "h" || name === "left") {
       const n = chipCount()
       ui.setDashChipCursor((ui.state.dashChipCursor - 1 + n) % n)
@@ -881,37 +871,18 @@ export function handleKey(ui: UiStore, key: KeyEvent, data?: DataStore): boolean
       return true
     }
     if (name === "return" || name === "enter") {
-      const tf = applyChip(ui.state.timeframe, ui.state.dashChipCursor, clock)
+      const tf = applyChip(ui.state.timeframe, ui.state.dashChipCursor, clock, cycle)
       ui.setTimeframe(tf)
-      const b = timeframeBounds(tf, clock)
-      const label =
-        tf.family === "lookback" ? tf.lookback : PERIOD_LABEL[tf.period]
-      ui.setStatus(
-        `${tf.family === "lookback" ? "Timeframe" : "Period"}: ${label} · ${b.label}`,
-      )
-      return true
-    }
-    if (name === "[" || seq === "[") {
-      if (ui.state.timeframe.family === "period") {
-        const tf = stepPeriod(ui.state.timeframe, -1)
-        ui.setTimeframe(tf)
-        ui.setStatus(`Period ← ${timeframeBounds(tf, clock).label}`)
-      }
-      return true
-    }
-    if (name === "]" || seq === "]") {
-      if (ui.state.timeframe.family === "period") {
-        const tf = stepPeriod(ui.state.timeframe, 1)
-        ui.setTimeframe(tf)
-        ui.setStatus(`Period → ${timeframeBounds(tf, clock).label}`)
-      }
+      const label = tf.family === "lookback" ? tf.lookback : PERIOD_LABEL[tf.period]
+      ui.setStatus(`${tf.family === "lookback" ? "Timeframe" : "Period"}: ${label} · ${timeframeBounds(tf, clock, cycle).label}`)
       return true
     }
   }
 
-  if (scope === "spending") {
+  // ── Overview ────────────────────────────────────────────────────────
+  if (scope === "overview" || scope === "overview.range") {
     // h/l (or ,/.) step through the chart pane's views.
-    const step = name === "h" || name === "left" || seq === "," ? -1 : name === "l" || name === "right" || seq === "." ? 1 : 0
+    const step = scope === "overview" ? (name === "h" || name === "left" || seq === "," ? -1 : name === "l" || name === "right" || seq === "." ? 1 : 0) : 0
     if (step !== 0) {
       const n = CHART_VIEWS.length
       ui.setState({ chartView: (ui.state.chartView + step + n) % n })
@@ -923,30 +894,23 @@ export function handleKey(ui: UiStore, key: KeyEvent, data?: DataStore): boolean
       const at = choices.indexOf(data.state.accountSelection)
       const next = choices[(at + 1) % choices.length]!
       data.setAccountSelection(next)
-      ui.setStatus(`Spending · ${spendingScope(data.state.accounts, next).label}`)
+      ui.setStatus(`Overview · ${spendingScope(data.state.accounts, next).label}`)
       return true
     }
-    if (name === "[" || seq === "[") {
+    if (name === "[" || seq === "[" || name === "]" || seq === "]") {
       if (ui.state.timeframe.family === "period") {
-        ui.setTimeframe(stepPeriod(ui.state.timeframe, -1))
-      }
-      return true
-    }
-    if (name === "]" || seq === "]") {
-      if (ui.state.timeframe.family === "period") {
-        ui.setTimeframe(stepPeriod(ui.state.timeframe, 1))
+        const tf = stepPeriod(ui.state.timeframe, name === "[" || seq === "[" ? -1 : 1, cycle)
+        ui.setTimeframe(tf)
+        ui.setStatus(`${PERIOD_LABEL[tf.period]} · ${timeframeBounds(tf, clock, cycle).label}`)
       }
       return true
     }
     if (name === "0") {
-      const tf = applyChip(
-        { ...ui.state.timeframe, family: "period", period: "month" },
-        LOOKBACKS.length,
-        clock,
-      )
+      // Back to the default view: the current budget cycle.
+      const tf = applyChip({ ...ui.state.timeframe, family: "period", period: "cycle" }, LOOKBACKS.length, clock, cycle)
       ui.setTimeframe(tf)
       ui.setDashChipCursor(activeChipIndex(tf))
-      ui.setStatus(`This month · ${timeframeBounds(tf, clock).label}`)
+      ui.setStatus(`This cycle · ${timeframeBounds(tf, clock, cycle).label}`)
       return true
     }
   }
@@ -987,23 +951,16 @@ export function footerHints(scope: ScopeId): { key: string; desc: string }[] {
         { key: "enter", desc: "done" },
         { key: "esc", desc: "cancel" },
       ]
-    case "dashboard":
+    case "overview":
       return [
-        { key: "h/l", desc: "chart view" },
-        { key: "v", desc: "jump" },
-        { key: "ctrl+r", desc: "sync" },
-        { key: "1-4", desc: "tab" },
-      ]
-    case "spending":
-      return [
-        { key: "h/l", desc: "view" },
+        { key: "h/l", desc: "chart" },
         { key: "a", desc: "account" },
         { key: "[/]", desc: "period" },
-        { key: "0", desc: "this month" },
+        { key: "0", desc: "this cycle" },
         { key: "v", desc: "jump" },
-        { key: "1-4", desc: "tab" },
+        { key: "1-3", desc: "tab" },
       ]
-    case "spending.date":
+    case "overview.range":
       return [
         { key: "h/l", desc: "chip" },
         { key: "enter", desc: "apply" },
@@ -1054,7 +1011,7 @@ export function footerHints(scope: ScopeId): { key: string; desc: string }[] {
         { key: "h/l", desc: "column" },
         { key: "enter", desc: "activate" },
         { key: "v", desc: "jump" },
-        { key: "1-4", desc: "tab" },
+        { key: "1-3", desc: "tab" },
       ]
     case "settings.taxonomy":
       return [

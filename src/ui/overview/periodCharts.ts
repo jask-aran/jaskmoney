@@ -1,8 +1,8 @@
-/** Chart models for the Spending tab's period charts (and the Dashboard's
- * budget-cycle chart). Pure: each returns a ChartModel for ChartBody. */
+/** Chart models for the Overview's chart pane. Pure: each returns a
+ * ChartModel for ChartBody. */
 import { theme } from "../../theme"
 import { cumulative, dailySpendSeries, formatWholeMoney, weeklyTotals } from "../../domain/dashboard"
-import { balanceHistory } from "../../domain/position"
+import { balanceHistory, computePeriodFlows } from "../../domain/position"
 import type { Account, Transaction } from "../../domain/types"
 import { shortDate, shortMoney } from "../text"
 import { columnBars } from "../charts/bars"
@@ -14,6 +14,8 @@ export const INKS: Record<string, string> = {
   partial: theme.overlay1,
   prev: theme.overlay0,
   ref: theme.surface2,
+  in: theme.success,
+  out: theme.error,
   limit: theme.yellow,
   balance: theme.lavender,
   savers: theme.green,
@@ -175,3 +177,66 @@ export function balancesChart(
   }
 }
 
+
+/**
+ * Cash flow over the period's `dates`: money in (green) beside money out (red)
+ * per Monday-start week, or per calendar month when the period is longer than
+ * about three months, by the same rules as the Date Range flows (internal
+ * transfers and not-spending categories excluded; `scopeIds` narrows to the
+ * selected spending accounts). Buckets after today are empty.
+ */
+export function cashFlowChart(
+  dates: string[],
+  width: number,
+  height: number,
+  todayISO: string,
+  accounts: Account[],
+  transactions: Transaction[],
+  scopeIds: ReadonlySet<number>,
+): ChartModel {
+  const muted = (text: string) => ({ text, fg: theme.overlay1 })
+  if (!dates.length) return { rows: [], ticks: new Map(), labels: "", summary: [muted("No days in range")] }
+  const monthly = dates.length > 92
+  const buckets: Array<{ start: string; end: string }> = []
+  for (const iso of dates) {
+    const monday = (new Date(iso + "T12:00:00Z").getUTCDay() + 6) % 7 === 0
+    const newBucket = !buckets.length || (monthly ? iso.slice(8, 10) === "01" : monday)
+    if (newBucket) buckets.push({ start: iso, end: iso })
+    else buckets[buckets.length - 1]!.end = iso
+  }
+  const first = dates[0]!, last = dates[dates.length - 1]!
+  const inRange = transactions.filter((t) => t.dateISO >= first && t.dateISO <= last)
+  const flows = buckets.map((b) => computePeriodFlows(accounts, inRange.filter((t) => t.dateISO >= b.start && t.dateISO <= b.end), scopeIds))
+  const scale = niceScale(Math.max(0, ...flows.flatMap((f) => [f.income, f.spent])))
+  const bars = flows.flatMap((f, i) => {
+    const future = buckets[i]!.start > todayISO
+    return [{ value: future ? 0 : f.income, ink: "in" }, { value: future ? 0 : f.spent, ink: "out" }]
+  })
+  const { rows, slots } = columnBars(bars, width, height, scale.max)
+  // A label under each pair: the month, or the week's start.
+  const line = new Array<string>(width).fill(" ")
+  let free = 0
+  buckets.forEach((b, i) => {
+    const slot = slots[i * 2]
+    if (!slot) return
+    const label = monthly ? MONTH_NAMES[Number(b.start.slice(5, 7)) - 1]! : shortDate(b.start)
+    if (slot.col < free || slot.col + label.length > width) return
+    for (let c = 0; c < label.length; c++) line[slot.col + c] = label[c]!
+    free = slot.col + label.length + 1
+  })
+  const income = sum(flows.map((f) => f.income)), spent = sum(flows.map((f) => f.spent))
+  const net = income - spent
+  return {
+    rows,
+    ticks: tickRows(0, scale.max, scale.step, height, shortMoney),
+    labels: line.join(""),
+    summary: [
+      { text: `in ${formatWholeMoney(income)}`, fg: theme.success },
+      muted(" · "),
+      { text: `out ${formatWholeMoney(spent)}`, fg: theme.error },
+      muted(` · net ${net >= 0 ? "+" : "-"}${formatWholeMoney(Math.abs(net))} · ${monthly ? "monthly" : "weekly"}`),
+    ],
+  }
+}
+
+const MONTH_NAMES = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"]
