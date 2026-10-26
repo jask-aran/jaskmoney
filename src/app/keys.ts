@@ -670,6 +670,19 @@ export function handleKey(ui: UiStore, key: KeyEvent, data?: DataStore): boolean
 
   // ── Manager txns ────────────────────────────────────────────────────
   if (scope === "manager.txns") {
+    // Step through the account sidebar's entries (the narrow layout hides it).
+    if (name === "a" && !key.shift && data) {
+      const entries = selectableEntries(data.state.accounts)
+      if (entries.length) {
+        const at = entries.findIndex((e) => e.selection === data.state.accountSelection)
+        const next = (at + 1) % entries.length
+        ui.setState({ accountCursor: next })
+        data.setAccountSelection(entries[next]!.selection)
+        ui.jumpManagerCursor(0, data.scopedTransactions().length)
+        ui.setStatus(`Showing ${entries[next]!.label}`)
+      }
+      return true
+    }
     if (name === "return" || name === "enter") {
       const row = (data?.scopedTransactions() ?? [])[ui.state.managerCursor]
       if (row) ui.setState({ detailId: row.id, detailNotesEditing: false })
@@ -958,6 +971,7 @@ export function footerHints(scope: ScopeId): { key: string; desc: string }[] {
       return [
         { key: "enter", desc: "detail" },
         { key: "j/k", desc: "move" },
+        { key: "a", desc: "account" },
         { key: "S-j/k", desc: "range" },
         { key: "space", desc: "select" },
         { key: "c", desc: "cat" },

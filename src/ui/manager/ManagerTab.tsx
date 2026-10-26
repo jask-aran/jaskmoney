@@ -10,7 +10,9 @@ import { rowAppearance } from "../../domain/rowStyle"
 import { filterExprString } from "../../domain/filter"
 import type { Account } from "../../domain/types"
 import { fit, truncate } from "../text"
-import { selectableEntries, selectedAccounts, sidebarEntries } from "../../domain/accountTree"
+import { selectableEntries, selectedAccounts, selectionLabel, sidebarEntries } from "../../domain/accountTree"
+import { computeAccountStats } from "../../domain/accountStats"
+import { toISODate } from "../../domain/timeframe"
 import { AccountDetails } from "./AccountDetails"
 import { TransactionDetail } from "./TransactionDetail"
 
@@ -26,6 +28,8 @@ const columns = {
 const DESCRIPTION_TARGET = 40
 /** Sidebar width, borders included. */
 export const SIDEBAR_WIDTH = 36
+/** Below this width the sidebar folds into a one-line account header. */
+const WIDE = 110
 
 /** Go renderTransactionTable: description takes up to its target width, tags
  * take the remainder so row state backgrounds span the whole table. As in Go
@@ -88,14 +92,17 @@ export function ManagerTab(props: { focused: SectionId }) {
   const highlighted = createMemo(() => ui.highlightedIds(rows()))
   const entries = createMemo(() => sidebarEntries(data.state.accounts))
   const showAccount = () => selectedAccounts(data.state.accounts, data.state.accountSelection).length > 1
-  // The table sits right of the sidebar and a 1-cell gap; its card spends 4
-  // cells on border + padding.
-  const layout = createMemo(() => tableLayout(dims().width - SIDEBAR_WIDTH - 1 - 4, showAccount()))
+  const wide = () => dims().width >= WIDE
+  const stats = createMemo(() => computeAccountStats(selectedAccounts(data.state.accounts, data.state.accountSelection), data.state.transactions, toISODate(new Date())))
+  // Wide: the table sits right of the sidebar and a 1-cell gap. Narrow: it
+  // spans the tab under the account header (3 rows). Its card spends 4 cells
+  // on border + padding.
+  const layout = createMemo(() => tableLayout(dims().width - (wide() ? SIDEBAR_WIDTH + 1 : 0) - 4, showAccount()))
 
   createEffect(() => {
     // App chrome (4), transaction borders (2), and the table header (1) are
     // fixed. The viewport consumes every remaining row.
-    const vis = Math.max(1, dims().height - 7 - (filterBar() ? 1 : 0))
+    const vis = Math.max(1, dims().height - 7 - (filterBar() ? 1 : 0) - (wide() ? 0 : 3))
     if (vis !== ui.state.managerVisible) {
       ui.setState({ managerVisible: vis })
     }
@@ -165,7 +172,29 @@ export function ManagerTab(props: { focused: SectionId }) {
   const accountAction = () => data.state.accounts.find((account) => account.id === ui.state.accountActionId)
 
   return (
-    <box width="100%" height="100%" flexDirection="row" gap={1} backgroundColor={theme.canvas}>
+    <box width="100%" height="100%" flexDirection={wide() ? "row" : "column"} gap={wide() ? 1 : 0} backgroundColor={theme.canvas}>
+      <Show when={!wide()}>
+        <SectionCard
+          title={`Account · ${selectionLabel(data.state.accounts, data.state.accountSelection)}`}
+          titleSuffix={acctFocused() ? "· j/k to switch" : "· a to switch"}
+          titleSuffixColor={theme.overlay1}
+          focused={acctFocused()}
+          height={3}
+        >
+          <text wrapMode="none">
+            <S fg={theme.subtext0}>{"Balance "}</S>
+            <S fg={theme.text}>{stats().balance != null ? formatMoney(stats().balance!) : "—"}</S>
+            <Show when={stats().held.count > 0}>
+              <S fg={theme.overlay1}>{` · ${formatMoney(Math.abs(stats().held.amount))} pending, ${stats().held.count} txn`}</S>
+            </Show>
+            <S fg={theme.subtext0}>{" · 30 days in "}</S>
+            <S fg={theme.success}>{formatMoney(stats().windows[0]?.moneyIn ?? 0)}</S>
+            <S fg={theme.subtext0}>{" out "}</S>
+            <S fg={theme.error}>{formatMoney(stats().windows[0]?.moneyOut ?? 0)}</S>
+          </text>
+        </SectionCard>
+      </Show>
+      <Show when={wide()}>
       <box width={SIDEBAR_WIDTH} flexShrink={0} height="100%" flexDirection="column">
         <SectionCard title="Accounts" focused={acctFocused()} active={acctFocused()} height={entries().length + 2}>
           <Show when={data.state.accounts.length} fallback={<text fg={theme.overlay1}>No accounts yet</text>}>
@@ -193,6 +222,7 @@ export function ManagerTab(props: { focused: SectionId }) {
         </SectionCard>
         <AccountDetails />
       </box>
+      </Show>
 
       <SectionCard
         title="Transactions"
@@ -201,7 +231,7 @@ export function ManagerTab(props: { focused: SectionId }) {
         focused={txFocused()}
         active={txFocused()}
         flexGrow={1}
-        height="100%"
+        height={wide() ? "100%" : undefined}
         bottomTitle={scrollIndicator()}
       >
         <Show when={filterBar()}>

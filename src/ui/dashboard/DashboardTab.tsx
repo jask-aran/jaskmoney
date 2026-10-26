@@ -57,23 +57,32 @@ export function DashboardTab(_props: { focused: SectionId }) {
     return groupCategorySpend(computeCategorySpend(rows, data.state.categories), data.state.categories)
   })
 
-  // Fixed rows: tab bar + gap (2), status + footer (2), Now (7), and on
-  // taller terminals the Net Position strip (8). The lower row takes the
-  // rest: this cycle above recent transactions on the left (recent dropped
-  // when short), pending holds above the cycle's categories on the right.
-  const showNetStrip = () => dims().height >= 36
-  const lowerHeight = () => Math.max(6, dims().height - 11 - (showNetStrip() ? 8 : 0))
+  // Wide (120+ cols): Now beside Savers, the Net Position strip, then this
+  // cycle above recent transactions on the left (60%) with pending holds
+  // above the cycle's categories on the right. Narrow: everything stacks,
+  // Savers two to a line, and pending sits beside recent at the bottom.
+  const wide = () => dims().width >= WIDE
+  // Fixed rows: tab bar + gap (2), status + footer (2), Now (7).
+  const saversHeight = () => (wide() ? 0 : Math.ceil((position().savers.length + 1) / 2) + 2)
+  const showNetStrip = () => dims().height >= (wide() ? 36 : 44)
+  const lowerHeight = () => Math.max(6, dims().height - 11 - saversHeight() - (showNetStrip() ? 8 : 0))
   const budgetLines = () => Math.max(1, budgets().length)
-  // Border (2), budget lines, a blank line, a 14-row chart, labels + summary.
-  const showRecent = () => lowerHeight() >= 2 + budgetLines() + 1 + 14 + 2 + 6
-  const cycleHeight = () => (showRecent() ? 2 + budgetLines() + 1 + 14 + 2 : lowerHeight())
-  // Left column is 60% of the width; the card spends 4 cells on border + padding.
-  const leftInner = () => Math.floor((dims().width - 1) * 0.6) - 4
-  // Right column: what the 60% column and the 1-cell gap leave, minus the
-  // card's border + padding (4) and one cell of rounding slack.
-  const rightInner = () => dims().width - 1 - Math.floor((dims().width - 1) * 0.6) - 5
-  const pendingHeight = () => Math.min(Math.max(1, pending().length), 8) + 2
-  const recentRows = () => Math.max(1, lowerHeight() - cycleHeight() - 2)
+  // Wide cycle card: border (2), budget lines, a blank line, a 14-row chart,
+  // labels + summary; recent takes what is left when at least 6 rows.
+  const showRecent = () => (wide() ? lowerHeight() >= 2 + budgetLines() + 1 + 14 + 2 + 6 : lowerHeight() >= 2 + budgetLines() + 1 + 4 + 2 + 5)
+  const cycleHeight = () => {
+    if (!showRecent()) return lowerHeight()
+    if (wide()) return 2 + budgetLines() + 1 + 14 + 2
+    return Math.max(2 + budgetLines() + 1 + 4 + 2, Math.floor(lowerHeight() * 0.6))
+  }
+  const bottomHeight = () => lowerHeight() - cycleHeight()
+  // Column inner widths (border + padding 4, one cell of rounding slack on
+  // the right-hand cards).
+  const leftWidth = () => (wide() ? Math.floor((dims().width - 1) * 0.6) : dims().width)
+  const leftInner = () => leftWidth() - 4
+  const rightInner = () => (wide() ? dims().width - 1 - leftWidth() - 5 : Math.floor((dims().width - 1) / 2) - 4)
+  const pendingHeight = () => (wide() ? Math.min(Math.max(1, pending().length), 8) + 2 : bottomHeight())
+  const recentRows = () => Math.max(1, (wide() ? lowerHeight() - cycleHeight() : bottomHeight()) - 2)
 
   // Cycle card: budget rows (or a hint), a blank line, then the chart with
   // its labels and summary.
@@ -86,153 +95,235 @@ export function DashboardTab(_props: { focused: SectionId }) {
   const netStrip = createMemo(() => levelChart(position().history.map((h) => h.value), Math.max(1, dims().width - 4 - AXIS), 5))
   const netStripLabels = createMemo(() => dateAxis(position().history.map((h) => h.dateISO), Math.max(1, dims().width - 4 - AXIS), today()).labels)
 
-  // Recent rows: date (7), description, category (24), amount (12).
-  const recentDescWidth = () => Math.max(8, leftInner() - 7 - 24 - 12)
+  // Recent rows: date (7), description, category (24 wide, 0 narrow), amount (12).
+  const recentCategory = () => (wide() ? 24 : 0)
+  const recentWidth = () => (wide() ? leftInner() : dims().width - 1 - Math.floor((dims().width - 1) / 2) - 5)
+  const recentDescWidth = () => Math.max(8, recentWidth() - 7 - recentCategory() - 12)
   const categoryLines = createMemo(() => fitCategoryLines(cycleGroups(), lowerHeight() - pendingHeight() - 2))
+  // Narrow Savers: two "name balance change" cells per line.
+  const saverPairs = createMemo(() => {
+    const cells = [
+      ...position().savers.map((s) => ({ name: s.name, balance: s.balance, change: saverChange(s.accountId), total: false })),
+      { name: "Total", balance: position().saversTotal, change: saversChange(), total: true },
+    ]
+    const pairs: Array<typeof cells> = []
+    for (let i = 0; i < cells.length; i += 2) pairs.push(cells.slice(i, i + 2))
+    return pairs
+  })
+  const saverCellWidth = () => Math.floor((dims().width - 4) / 2)
 
-  return (
-    <box width="100%" height="100%" flexDirection="column" gap={0} backgroundColor={theme.canvas}>
-      <box flexDirection="row" gap={1} width="100%" height={7}>
-        <SectionCard title="Now" width="60%" height={7}>
-          {/* Label | value | note columns, so every row lines up. */}
-          <text wrapMode="none">
-            <S fg={theme.subtext0}>{"Net position".padEnd(LABEL)}</S>
-            <S fg={theme.text} bold>{money(position().netPosition).padEnd(VALUE)}</S>
-          </text>
-          <text wrapMode="none">
-            <S fg={theme.subtext0}>{"Available".padEnd(LABEL)}</S>
-            <S fg={theme.text}>{money(position().spendingBalance).padEnd(VALUE)}</S>
-            <Show when={position().pendingCount > 0}>
-              <S fg={theme.overlay1}>{`${formatMoney(Math.abs(position().pendingAmount))} pending, ${position().pendingCount} txn`}</S>
-            </Show>
-          </text>
-          <text wrapMode="none">
-            <S fg={theme.subtext0}>{"Runway".padEnd(LABEL)}</S>
-            <S fg={theme.peach}>{(position().runwayDays != null ? `${Math.round(position().runwayDays!)} days` : "—").padEnd(VALUE)}</S>
-            <Show when={position().dailySpend != null}>
-              <S fg={theme.overlay1}>{`${formatMoney(position().dailySpend!)}/day, 90 day avg`}</S>
-            </Show>
-          </text>
-          <text wrapMode="none">
-            <S fg={theme.subtext0}>{"30-day change".padEnd(LABEL)}</S>
-            <S fg={change30() >= 0 ? theme.success : theme.error}>{signedMoney(change30()).padEnd(VALUE)}</S>
-          </text>
-        </SectionCard>
-        <box flexGrow={1} flexBasis={0} minWidth={0} height={7} overflow="hidden">
-          <SectionCard title="Savers" titleSuffix="· 30-day change" titleSuffixColor={theme.subtext0} height={7}>
-            <Show when={position().savers.length} fallback={<text fg={theme.overlay1}>No savers synced</text>}>
-              <For each={position().savers.slice(0, 4)}>
-                {(saver) => (
-                  <text wrapMode="none">
-                    <S fg={theme.text}>{fit(saver.name, 14)}</S>
-                    <S fg={theme.subtext1}>{formatMoney(saver.balance).padStart(12)}</S>
-                    <S fg={changeColor(saverChange(saver.accountId))}>{`  ${changeText(saverChange(saver.accountId))}`}</S>
-                  </text>
-                )}
-              </For>
-              <text wrapMode="none">
-                <S fg={theme.subtext0}>{fit("Total", 14)}</S>
-                <S fg={theme.text} bold>{formatMoney(position().saversTotal).padStart(12)}</S>
-                <S fg={changeColor(saversChange())}>{`  ${changeText(saversChange())}`}</S>
-              </text>
-            </Show>
-          </SectionCard>
-        </box>
-      </box>
+  const nowCard = () => (
+    <SectionCard title="Now" width={wide() ? "60%" : "100%"} height={7}>
+      {/* Label | value | note columns, so every row lines up. */}
+      <text wrapMode="none">
+        <S fg={theme.subtext0}>{"Net position".padEnd(LABEL)}</S>
+        <S fg={theme.text} bold>{money(position().netPosition).padEnd(VALUE)}</S>
+      </text>
+      <text wrapMode="none">
+        <S fg={theme.subtext0}>{"Available".padEnd(LABEL)}</S>
+        <S fg={theme.text}>{money(position().spendingBalance).padEnd(VALUE)}</S>
+        <Show when={position().pendingCount > 0}>
+          <S fg={theme.overlay1}>{`${formatMoney(Math.abs(position().pendingAmount))} pending, ${position().pendingCount} txn`}</S>
+        </Show>
+      </text>
+      <text wrapMode="none">
+        <S fg={theme.subtext0}>{"Runway".padEnd(LABEL)}</S>
+        <S fg={theme.peach}>{(position().runwayDays != null ? `${Math.round(position().runwayDays!)} days` : "—").padEnd(VALUE)}</S>
+        <Show when={position().dailySpend != null}>
+          <S fg={theme.overlay1}>{`${formatMoney(position().dailySpend!)}/day, 90 day avg`}</S>
+        </Show>
+      </text>
+      <text wrapMode="none">
+        <S fg={theme.subtext0}>{"30-day change".padEnd(LABEL)}</S>
+        <S fg={change30() >= 0 ? theme.success : theme.error}>{signedMoney(change30()).padEnd(VALUE)}</S>
+      </text>
+    </SectionCard>
+  )
 
-      <Show when={showNetStrip()}>
-        <SectionCard title="Net Position" titleSuffix="· 1 year" titleSuffixColor={theme.subtext0} height={8}>
-          <For each={netStrip().rows}>
-            {(row, i) => (
-              <text wrapMode="none">
-                <S fg={theme.overlay1}>{(i() === 0 ? shortMoney(netStrip().max) : i() === netStrip().rows.length - 1 ? shortMoney(netStrip().min) : "").padStart(AXIS - 2) + " ┤"}</S>
-                <S fg={theme.lavender}>{row}</S>
-              </text>
-            )}
-          </For>
-          <text wrapMode="none" fg={theme.overlay1}>{" ".repeat(AXIS) + netStripLabels()}</text>
-        </SectionCard>
-      </Show>
-
-      <box flexDirection="row" gap={1} width="100%" height={lowerHeight()}>
-        <box flexDirection="column" width="60%" height={lowerHeight()}>
-        <SectionCard
-          title="This Cycle"
-          titleSuffix={`· ${shortDate(cycle().start)} – ${shortDate(cycle().end)} · ${cycleDaysLeft()} ${cycleDaysLeft() === 1 ? "day" : "days"} left`}
-          titleSuffixColor={theme.subtext0}
-          height={cycleHeight()}
-        >
-          <Show when={budgets().length} fallback={<text fg={theme.overlay1}>No budgets · add them in Settings › Budgets</text>}>
-            <For each={budgets()}>
-              {(p) => {
-                const over = () => p.remaining < 0
-                const pctColor = () => (p.usedPct > 100 ? theme.error : p.usedPct >= 80 ? theme.warning : theme.success)
-                return (
-                  <text wrapMode="none">
-                    <S fg={theme.text}>{fit(budgetLabel(p.budget, data.state.accounts, data.state.categories), Math.max(10, leftInner() - 44))}</S>
-                    <S fg={theme.text}>{formatWholeMoney(p.spent).padStart(8)}</S>
-                    <S fg={theme.overlay1}>{` of ${formatWholeMoney(p.budget.amount)}`.padEnd(10)}</S>
-                    <S fg={pctColor()} bold>{(Number.isFinite(p.usedPct) ? `${Math.round(p.usedPct)}%` : "—").padStart(5)}</S>
-                    <S fg={over() ? theme.error : theme.subtext0}>
-                      {over() ? `  ${formatWholeMoney(-p.remaining)} over` : `  ${formatWholeMoney(p.dailyAllowance)}/day left`}
-                    </S>
-                    <Show when={!over() && p.projected > p.budget.amount}>
-                      <S fg={theme.warning}>{"  ▲ pace"}</S>
-                    </Show>
-                  </text>
-                )
-              }}
-            </For>
-          </Show>
-          <Show when={cycleChartRows() >= 3}>
-            <text> </text>
-            <ChartBody model={cycleChart()} inks={INKS} />
-          </Show>
-        </SectionCard>
-        <Show when={showRecent()}>
-          <SectionCard title="Recent" flexGrow={1}>
-            <For each={recent().slice(0, recentRows())}>
-              {(t) => (
+  const saversCard = () => (
+    <Show
+      when={wide()}
+      fallback={
+        <SectionCard title="Savers" titleSuffix="· 30-day change" titleSuffixColor={theme.subtext0} height={saversHeight()}>
+          <Show when={position().savers.length} fallback={<text fg={theme.overlay1}>No savers synced</text>}>
+            <For each={saverPairs()}>
+              {(pair) => (
                 <text wrapMode="none">
-                  <S fg={theme.overlay1}>{shortDate(t.dateISO).padEnd(7)}</S>
-                  <S fg={theme.text}>{fit(t.description, recentDescWidth())}</S>
-                  <S fg={t.categoryColor || theme.overlay1}>{fit(` ${t.categoryName}`, 24)}</S>
-                  <S fg={t.amount < 0 ? theme.error : theme.success}>{formatMoney(t.amount).padStart(12)}</S>
+                  <For each={pair}>
+                    {(cell) => (
+                      <>
+                        <S fg={cell.total ? theme.subtext0 : theme.text}>{fit(cell.name, Math.max(6, saverCellWidth() - 25))}</S>
+                        <S fg={cell.total ? theme.text : theme.subtext1} bold={cell.total}>{formatWholeMoney(cell.balance).padStart(9)}</S>
+                        <S fg={changeColor(cell.change)}>{` ${changeText(cell.change)}`.padEnd(16)}</S>
+                      </>
+                    )}
+                  </For>
                 </text>
               )}
             </For>
-          </SectionCard>
-        </Show>
-        </box>
-        <box flexGrow={1} flexBasis={0} minWidth={0} height={lowerHeight()} flexDirection="column" overflow="hidden">
-          <SectionCard title="Pending" titleSuffix={pending().length ? `· ${pending().length}` : undefined} titleSuffixColor={theme.subtext0} height={pendingHeight()}>
-            <Show when={pending().length} fallback={<text fg={theme.overlay1}>Nothing pending</text>}>
-              <For each={pending().slice(0, 8)}>
-                {(t) => (
-                  <text wrapMode="none">
-                    <S fg={theme.overlay1}>{shortDate(t.dateISO).padEnd(7)}</S>
-                    <S fg={theme.text}>{fit(t.description, rightInner() - 7 - 12)}</S>
-                    <S fg={t.amount < 0 ? theme.error : theme.success}>{formatMoney(t.amount).padStart(12)}</S>
-                  </text>
-                )}
-              </For>
-            </Show>
-          </SectionCard>
-          <SectionCard title="Spending by Category" titleSuffix="· this cycle" titleSuffixColor={theme.subtext0} flexGrow={1}>
-            <Show when={cycleGroups().length} fallback={<text fg={theme.overlay1}>No spending this cycle</text>}>
-              <For each={categoryLines()}>
-                {(line) => (
-                  <text wrapMode="none">
-                    <S fg={line.child ? theme.subtext0 : line.color} bold={!line.child}>{fit(line.child ? `  ${line.label}` : line.label, Math.max(8, rightInner() - 14))}</S>
-                    <S fg={line.child ? theme.subtext0 : theme.text} bold={!line.child}>{formatWholeMoney(line.amount).padStart(9)}</S>
-                    <S fg={theme.overlay1}>{(line.pct != null ? `${Math.round(line.pct)}%` : "").padStart(5)}</S>
-                  </text>
-                )}
-              </For>
-            </Show>
-          </SectionCard>
-        </box>
+          </Show>
+        </SectionCard>
+      }
+    >
+      <box flexGrow={1} flexBasis={0} minWidth={0} height={7} overflow="hidden">
+        <SectionCard title="Savers" titleSuffix="· 30-day change" titleSuffixColor={theme.subtext0} height={7}>
+          <Show when={position().savers.length} fallback={<text fg={theme.overlay1}>No savers synced</text>}>
+            <For each={position().savers.slice(0, 4)}>
+              {(saver) => (
+                <text wrapMode="none">
+                  <S fg={theme.text}>{fit(saver.name, 14)}</S>
+                  <S fg={theme.subtext1}>{formatMoney(saver.balance).padStart(12)}</S>
+                  <S fg={changeColor(saverChange(saver.accountId))}>{`  ${changeText(saverChange(saver.accountId))}`}</S>
+                </text>
+              )}
+            </For>
+            <text wrapMode="none">
+              <S fg={theme.subtext0}>{fit("Total", 14)}</S>
+              <S fg={theme.text} bold>{formatMoney(position().saversTotal).padStart(12)}</S>
+              <S fg={changeColor(saversChange())}>{`  ${changeText(saversChange())}`}</S>
+            </text>
+          </Show>
+        </SectionCard>
       </box>
+    </Show>
+  )
+
+  const netCard = () => (
+    <Show when={showNetStrip()}>
+      <SectionCard title="Net Position" titleSuffix="· 1 year" titleSuffixColor={theme.subtext0} height={8}>
+        <For each={netStrip().rows}>
+          {(row, i) => (
+            <text wrapMode="none">
+              <S fg={theme.overlay1}>{(i() === 0 ? shortMoney(netStrip().max) : i() === netStrip().rows.length - 1 ? shortMoney(netStrip().min) : "").padStart(AXIS - 2) + " ┤"}</S>
+              <S fg={theme.lavender}>{row}</S>
+            </text>
+          )}
+        </For>
+        <text wrapMode="none" fg={theme.overlay1}>{" ".repeat(AXIS) + netStripLabels()}</text>
+      </SectionCard>
+    </Show>
+  )
+
+  const cycleCard = () => (
+    <SectionCard
+      title="This Cycle"
+      titleSuffix={`· ${shortDate(cycle().start)} – ${shortDate(cycle().end)} · ${cycleDaysLeft()} ${cycleDaysLeft() === 1 ? "day" : "days"} left`}
+      titleSuffixColor={theme.subtext0}
+      height={cycleHeight()}
+    >
+      <Show when={budgets().length} fallback={<text fg={theme.overlay1}>No budgets · add them in Settings › Budgets</text>}>
+        <For each={budgets()}>
+          {(p) => {
+            const over = () => p.remaining < 0
+            const pctColor = () => (p.usedPct > 100 ? theme.error : p.usedPct >= 80 ? theme.warning : theme.success)
+            return (
+              <text wrapMode="none">
+                <S fg={theme.text}>{fit(budgetLabel(p.budget, data.state.accounts, data.state.categories), Math.max(10, leftInner() - 44))}</S>
+                <S fg={theme.text}>{formatWholeMoney(p.spent).padStart(8)}</S>
+                <S fg={theme.overlay1}>{` of ${formatWholeMoney(p.budget.amount)}`.padEnd(10)}</S>
+                <S fg={pctColor()} bold>{(Number.isFinite(p.usedPct) ? `${Math.round(p.usedPct)}%` : "—").padStart(5)}</S>
+                <S fg={over() ? theme.error : theme.subtext0}>
+                  {over() ? `  ${formatWholeMoney(-p.remaining)} over` : `  ${formatWholeMoney(p.dailyAllowance)}/day left`}
+                </S>
+                <Show when={!over() && p.projected > p.budget.amount}>
+                  <S fg={theme.warning}>{"  ▲ pace"}</S>
+                </Show>
+              </text>
+            )
+          }}
+        </For>
+      </Show>
+      <Show when={cycleChartRows() >= 3}>
+        <text> </text>
+        <ChartBody model={cycleChart()} inks={INKS} />
+      </Show>
+    </SectionCard>
+  )
+
+  const pendingCard = () => (
+    <SectionCard title="Pending" titleSuffix={pending().length ? `· ${pending().length}` : undefined} titleSuffixColor={theme.subtext0} height={pendingHeight()}>
+      <Show when={pending().length} fallback={<text fg={theme.overlay1}>Nothing pending</text>}>
+        <For each={pending().slice(0, Math.max(1, pendingHeight() - 2))}>
+          {(t) => (
+            <text wrapMode="none">
+              <S fg={theme.overlay1}>{shortDate(t.dateISO).padEnd(7)}</S>
+              <S fg={theme.text}>{fit(t.description, rightInner() - 7 - 12)}</S>
+              <S fg={t.amount < 0 ? theme.error : theme.success}>{formatMoney(t.amount).padStart(12)}</S>
+            </text>
+          )}
+        </For>
+      </Show>
+    </SectionCard>
+  )
+
+  const recentCard = () => (
+    <SectionCard title="Recent" flexGrow={1}>
+      <For each={recent().slice(0, recentRows())}>
+        {(t) => (
+          <text wrapMode="none">
+            <S fg={theme.overlay1}>{shortDate(t.dateISO).padEnd(7)}</S>
+            <S fg={theme.text}>{fit(t.description, recentDescWidth())}</S>
+            <Show when={recentCategory()}>
+              <S fg={t.categoryColor || theme.overlay1}>{fit(` ${t.categoryName}`, recentCategory())}</S>
+            </Show>
+            <S fg={t.amount < 0 ? theme.error : theme.success}>{formatMoney(t.amount).padStart(12)}</S>
+          </text>
+        )}
+      </For>
+    </SectionCard>
+  )
+
+  const categoriesCard = () => (
+    <SectionCard title="Spending by Category" titleSuffix="· this cycle" titleSuffixColor={theme.subtext0} flexGrow={1}>
+      <Show when={cycleGroups().length} fallback={<text fg={theme.overlay1}>No spending this cycle</text>}>
+        <For each={categoryLines()}>
+          {(line) => (
+            <text wrapMode="none">
+              <S fg={line.child ? theme.subtext0 : line.color} bold={!line.child}>{fit(line.child ? `  ${line.label}` : line.label, Math.max(8, rightInner() - 14))}</S>
+              <S fg={line.child ? theme.subtext0 : theme.text} bold={!line.child}>{formatWholeMoney(line.amount).padStart(9)}</S>
+              <S fg={theme.overlay1}>{(line.pct != null ? `${Math.round(line.pct)}%` : "").padStart(5)}</S>
+            </text>
+          )}
+        </For>
+      </Show>
+    </SectionCard>
+  )
+
+  return (
+    <box width="100%" height="100%" flexDirection="column" gap={0} backgroundColor={theme.canvas}>
+      <Show
+        when={wide()}
+        fallback={
+          <>
+            {nowCard()}
+            {saversCard()}
+            {netCard()}
+            {cycleCard()}
+            <Show when={showRecent()}>
+              <box flexDirection="row" gap={1} width="100%" height={bottomHeight()}>
+                <box width={Math.floor((dims().width - 1) / 2)} height={bottomHeight()}>{pendingCard()}</box>
+                <box flexGrow={1} flexBasis={0} minWidth={0} height={bottomHeight()} flexDirection="column" overflow="hidden">{recentCard()}</box>
+              </box>
+            </Show>
+          </>
+        }
+      >
+        <box flexDirection="row" gap={1} width="100%" height={7}>
+          {nowCard()}
+          {saversCard()}
+        </box>
+        {netCard()}
+        <box flexDirection="row" gap={1} width="100%" height={lowerHeight()}>
+          <box flexDirection="column" width={leftWidth()} height={lowerHeight()}>
+            {cycleCard()}
+            <Show when={showRecent()}>{recentCard()}</Show>
+          </box>
+          <box flexGrow={1} flexBasis={0} minWidth={0} height={lowerHeight()} flexDirection="column" overflow="hidden">
+            {pendingCard()}
+            {categoriesCard()}
+          </box>
+        </box>
+      </Show>
     </box>
   )
 
@@ -243,6 +334,8 @@ export function DashboardTab(_props: { focused: SectionId }) {
   }
 }
 
+/** Below this width the Dashboard stacks its cards. */
+const WIDE = 120
 const LABEL = 15
 const VALUE = 14
 
