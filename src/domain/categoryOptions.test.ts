@@ -1,18 +1,15 @@
 import { describe, expect, test } from "bun:test"
 import { assignableCategories, categoryPickerRows } from "./categoryOptions"
-import type { Category } from "./types"
+import { category } from "../testing/fixtures"
 
-const cat = (id: number, name: string, parentId: number | null, extId: string | null, isDefault = false): Category =>
-  ({ id, name, color: "#fff", sortOrder: id, isDefault, parentId, extId, notSpending: false })
-
-const tree: Category[] = [
-  cat(1, "Uncategorised", null, null, true),
-  cat(2, "Income", null, null),
-  cat(10, "Good Life", null, "good-life"),
-  cat(11, "Restaurants & Cafes", 10, "restaurants-and-cafes"),
-  cat(12, "Takeaway", 10, "takeaway"),
-  cat(20, "Home", null, "home"),
-  cat(21, "Groceries", 20, "groceries"),
+const tree = [
+  category({ id: 1, name: "Uncategorised", isDefault: true }),
+  category({ id: 2, name: "Income" }),
+  category({ id: 10, name: "Good Life", extId: "good-life" }),
+  category({ id: 11, name: "Restaurants & Cafes", parentId: 10, extId: "restaurants-and-cafes" }),
+  category({ id: 12, name: "Takeaway", parentId: 10, extId: "takeaway" }),
+  category({ id: 20, name: "Home", extId: "home" }),
+  category({ id: 21, name: "Groceries", parentId: 20, extId: "groceries" }),
 ]
 
 describe("category picker rows", () => {
@@ -32,6 +29,6 @@ describe("category picker rows", () => {
   })
 
   test("without groups there is no Other heading", () => {
-    expect(categoryPickerRows([cat(1, "Uncategorised", null, null, true), cat(2, "Food", null, null)], "").map((r) => r.kind)).toEqual(["category", "category"])
+    expect(categoryPickerRows([category({ id: 1, name: "Uncategorised", isDefault: true }), category({ id: 2, name: "Food" })], "").map((r) => r.kind)).toEqual(["category", "category"])
   })
 })

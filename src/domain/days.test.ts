@@ -3,7 +3,7 @@ import { overviewRange } from "../state/overviewRange"
 import { defaultAnchorDraft } from "../state/settingsForm"
 import { addDays, addMonths, addMonthsClamped, appNow, appToday, daysBetween, parseDay, setAppClock, toISODay, weekdayIndex } from "./days"
 import { defaultTimeframe, timeframeBounds } from "./timeframe"
-import type { Transaction } from "./types"
+import { transaction } from "../testing/fixtures"
 
 afterEach(() => setAppClock(null))
 
@@ -70,15 +70,9 @@ test("Sydney morning anchors use the app's local day rather than the UTC day", (
 // Approved change: Overview lookbacks end on real today, not the latest row.
 test("Overview uses the app clock when transactions end on a different date", () => {
   setAppClock(new Date(2026, 9, 27, 8))
-  const transaction: Transaction = {
-    id: 1, dateRaw: "2020-01-01", dateISO: "2020-01-01", amount: -10,
-    description: "x", categoryId: null, categoryName: "Uncategorised", categoryColor: "",
-    notes: "", importId: null, accountId: null, accountName: "",
-    tagNames: [], tagColors: [], tagIds: [], source: "csv", status: null,
-    transferAccountId: null, internal: false, excluded: false,
-  }
+  const row = transaction({ dateISO: "2020-01-01", accountId: null, accountName: "", source: "csv", status: null })
   const range = overviewRange({
-    transactions: [transaction], accounts: [], accountSelection: "all",
+    transactions: [row], accounts: [], accountSelection: "all",
     budgetCycle: { unit: "month", anchor: "calendar", anchorDate: null }, categories: [],
   }, { timeframe: { ...defaultTimeframe(), family: "lookback" } })
   expect(toISODay(range.clock)).toBe("2026-10-27")

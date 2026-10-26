@@ -1,15 +1,16 @@
 import { expect, test } from "bun:test"
 import { dryRunRules } from "./rules"
-import type { Category, Rule, Tag, Transaction } from "./types"
+import type { Rule, Tag } from "./types"
 import { editorNote, type FormContext } from "../state/settingsForm"
 import { ui } from "../state/uiStore"
 import { savedFilterOptions } from "../state/savedFilters"
+import { category as makeCategory, transaction as makeTransaction } from "../testing/fixtures"
 
-const category: Category = { id: 10, name: "Food", color: "#ffffff", sortOrder: 0, isDefault: false, parentId: null, extId: null, notSpending: false }
+const category = makeCategory({ id: 10, name: "Food", color: "#ffffff", sortOrder: 0 })
 const tag: Tag = { id: 20, name: "Weekly", color: "#ffffff", categoryId: null, sortOrder: 0, extId: null }
-const transaction: Transaction = {
-  id: 1, description: "Coffee", amount: -5, dateRaw: "2026-01-01", dateISO: "2026-01-01", categoryId: null, categoryName: "Uncategorised", categoryColor: "", notes: "", importId: null, accountId: null, accountName: "Local", tagNames: [], tagColors: [], tagIds: [], source: "csv", status: null, transferAccountId: null, internal: false, excluded: false,
-}
+const transaction = makeTransaction({
+  description: "Coffee", amount: -5, dateISO: "2026-01-01", accountId: null, accountName: "Local", source: "csv", status: null,
+})
 const rule: Rule = { id: 1, name: "Food rule", savedFilterId: "coffee", setCategoryId: category.id, addTagIds: [tag.id], enabled: true, sortOrder: 0 }
 const filters = [{ id: "coffee", name: "Coffee", expr: "desc:Coffee" }, { id: "follow", name: "Follow", expr: "cat:Food AND tag:Weekly" }]
 

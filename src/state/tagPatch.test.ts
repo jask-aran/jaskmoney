@@ -1,5 +1,4 @@
 import { afterEach, expect, test } from "bun:test"
-import type { KeyEvent } from "@opentui/core"
 import { TextAttributes } from "@opentui/core"
 import { createComponent } from "solid-js"
 import { testRender } from "@opentui/solid"
@@ -9,9 +8,10 @@ import { tagPickerItems } from "./tagPicker"
 import { data } from "./dataStore"
 import { ui } from "./uiStore"
 import { theme } from "../theme"
+import { key } from "../testing/keys"
 
 function press(name: string) {
-  handleKey(ui, { name, sequence: name === "space" ? " " : name, ctrl: false } as KeyEvent, data)
+  handleKey(ui, key(name), data)
 }
 function fixture() {
   ui.switchTab("manager")

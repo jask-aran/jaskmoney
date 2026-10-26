@@ -1,6 +1,7 @@
 import { describe, expect, test } from "bun:test"
 import { budgetProgress, cycleFor, type Budget, type CycleConfig } from "./budget"
-import type { Account, Category, Transaction } from "./types"
+import type { Transaction } from "./types"
+import { account, category, transaction } from "../testing/fixtures"
 
 interface CycleCase {
   config: CycleConfig
@@ -113,31 +114,13 @@ describe("cycleFor", () => {
   }
 })
 
-function account(id: number, overrides: Partial<Account> = {}): Account {
-  return {
-    id, name: `Account ${id}`, type: "debit", sortOrder: id, isActive: true,
-    source: "up", externalKind: "TRANSACTIONAL", balance: 100, syncEnabled: true,
-    ...overrides,
-  }
-}
-
-function category(id: number, parentId: number | null = null): Category {
-  return { id, name: `Category ${id}`, parentId, color: "", sortOrder: id, isDefault: false, extId: null, notSpending: false }
-}
-
-function row(amount: number, overrides: Partial<Transaction> = {}): Transaction {
-  return {
-    id: 1, dateRaw: "2026-10-07", dateISO: "2026-10-07", amount,
-    description: "x", categoryId: 10, categoryName: "Group", categoryColor: "",
-    notes: "", importId: null, accountId: 1, accountName: "A", tagNames: [],
-    tagColors: [], tagIds: [], source: "up", status: "SETTLED",
-    transferAccountId: null, internal: false, excluded: false, ...overrides,
-  }
-}
+// Rows default to today (2026-10-07) in the group category 10.
+const row = (amount: number, overrides: Partial<Transaction> = {}) =>
+  transaction({ dateISO: "2026-10-07", categoryId: 10, amount, ...overrides })
 
 const config: CycleConfig = { unit: "week", anchor: "calendar", anchorDate: null }
-const accounts = [account(1), account(2, { source: "csv", externalKind: null }), account(3, { externalKind: "SAVER" })]
-const categories = [category(10), category(11, 10), category(12, 10), category(20)]
+const accounts = [account({ id: 1 }), account({ id: 2, source: "csv", externalKind: null }), account({ id: 3, externalKind: "SAVER" })]
+const categories = [category({ id: 10 }), category({ id: 11, parentId: 10 }), category({ id: 12, parentId: 10 }), category({ id: 20 })]
 const budgets: Budget[] = [
   { id: 9, scope: { kind: "overall" }, amount: 100 },
   { id: 4, scope: { kind: "category", categoryId: 10 }, amount: 100 },

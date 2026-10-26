@@ -1,5 +1,6 @@
 import { describe, expect, test } from "bun:test"
-import { loadTransactions, openDb } from "../db/client"
+import { loadTransactions } from "../db/client"
+import { testDb } from "../testing/scoped"
 import { buildImportPreview, commitImportPreview, matchingProfiles } from "./profileImport"
 import type { ImportProfile } from "./types"
 
@@ -10,7 +11,7 @@ const profile: ImportProfile = {
 
 describe("profile import", () => {
   test("maps a manually configured CSV without writing during preview", () => {
-    const db = openDb(":memory:")
+    const db = testDb()
     const preview = buildImportPreview(db, 'memo;date;amount;detail\n"Coffee, corner";3/02/2026;"$-12.50";morning\n', "/tmp/bank.csv", profile)
     expect(preview.errors).toEqual([])
     expect(preview.rows[0]).toMatchObject({ dateISO: "2026-02-03", amount: -12.5, description: "Coffee, corner,morning" })
@@ -21,7 +22,7 @@ describe("profile import", () => {
   })
 
   test("parse errors block writes and duplicates can be skipped or forced", () => {
-    const db = openDb(":memory:")
+    const db = testDb()
     const clean = buildImportPreview(db, "memo;date;amount;detail\nA;3/02/2026;$-5;one\n", "/tmp/bank.csv", profile)
     commitImportPreview(db, clean, true)
     const repeat = buildImportPreview(db, "memo;date;amount;detail\nA;3/02/2026;$-5;one\n", "/tmp/bank.csv", profile)
@@ -40,7 +41,7 @@ describe("profile import", () => {
   })
 
   test("ANZ-style profiles join every trailing description column", () => {
-    const db = openDb(":memory:")
+    const db = testDb()
     const preview = buildImportPreview(db, '3/02/2026,"-5.00",PAYMENT,REFERENCE\n', "/tmp/anz.csv", { ...profile, hasHeader: false, delimiter: ",", dateColumn: 0, amountColumn: 1, descriptionColumns: [2], descriptionJoin: true })
     expect(preview.rows[0]?.description).toBe("PAYMENT,REFERENCE")
   })

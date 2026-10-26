@@ -1,14 +1,14 @@
 import { expect, spyOn, test } from "bun:test"
 import { data } from "./dataStore"
 import { syncCategoryTree, assignProviderCategories } from "../up/categories"
+import { testEnv } from "../testing/scoped"
 
 test("categorising pushes Up subcategories and decategorisation, keeps local-only choices local, and survives sync", async () => {
-  const previousToken = process.env.JASKMONEY_UP_TOKEN
   const fetchMock = spyOn(globalThis, "fetch")
   data.init(":memory:")
   const db = data.getDb()!
   try {
-    process.env.JASKMONEY_UP_TOKEN = "test-pat"
+    testEnv("JASKMONEY_UP_TOKEN", "test-pat")
     db.transaction(() => syncCategoryTree(db, [
       { id: "home", name: "Home", parentId: null },
       { id: "groceries", name: "Groceries", parentId: "home" },
@@ -58,8 +58,6 @@ test("categorising pushes Up subcategories and decategorisation, keeps local-onl
     expect(assignProviderCategories(db)).toBe(0)
   } finally {
     fetchMock.mockRestore()
-    if (previousToken === undefined) delete process.env.JASKMONEY_UP_TOKEN
-    else process.env.JASKMONEY_UP_TOKEN = previousToken
     db.close()
   }
 })

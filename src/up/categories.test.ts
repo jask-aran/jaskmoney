@@ -1,10 +1,8 @@
-import { afterEach, describe, expect, test } from "bun:test"
-import { createCategory, openDb, type Db } from "../db/client"
+import { describe, expect, test } from "bun:test"
+import { createCategory, type Db } from "../db/client"
 import { assignProviderCategories, syncCategoryTree } from "./categories"
+import { testDb } from "../testing/scoped"
 
-const databases: Db[] = []
-function database() { const db = openDb(":memory:"); databases.push(db); return db }
-afterEach(() => { for (const db of databases.splice(0)) db.close() })
 function rows(db: Db) {
   return db.query<{ id: number; name: string; color: string; sort_order: number; parent_id: number | null; ext_id: string | null }, []>(
     "SELECT id, name, color, sort_order, parent_id, ext_id FROM categories ORDER BY sort_order, id").all()
@@ -18,7 +16,7 @@ const tree = [
 
 describe("Up category tree", () => {
   test("imports parents in provider order, children alphabetically, after locals, with inherited colours", () => {
-    const db = database()
+    const db = testDb()
     createCategory(db, { name: "Local", color: "#ffffff" })
     db.transaction(() => syncCategoryTree(db, tree))()
     const all = rows(db), imported = all.filter(c => c.ext_id !== null)
@@ -31,7 +29,7 @@ describe("Up category tree", () => {
   })
 
   test("renames and reparents without changing identity, colour or order; absent categories remain", () => {
-    const db = database()
+    const db = testDb()
     syncCategoryTree(db, tree)
     const before = rows(db), apple = before.find(c => c.ext_id === "a")!, life = before.find(c => c.ext_id === "life")!
     db.query("UPDATE categories SET color = '#123456' WHERE id = ?").run(apple.id)
@@ -43,7 +41,7 @@ describe("Up category tree", () => {
   })
 
   test("clashes use numbered Up suffixes and remain stable on repeat imports", () => {
-    const db = database()
+    const db = testDb()
     for (const name of ["Food", "Food (Up)", "Food (Up) 2"]) createCategory(db, { name, color: "#ffffff" })
     syncCategoryTree(db, tree)
     expect(rows(db).find(c => c.ext_id === "food")?.name).toBe("Food (Up) 3")
@@ -53,7 +51,7 @@ describe("Up category tree", () => {
   })
 
   test("Up rename to a local name keeps identity and uses a stable numbered suffix", () => {
-    const db = database()
+    const db = testDb()
     syncCategoryTree(db, tree)
     const before = rows(db).find(c => c.ext_id === "a")!
     for (const name of ["Clash", "Clash (Up)"]) createCategory(db, { name, color: "#ffffff" })
@@ -66,7 +64,7 @@ describe("Up category tree", () => {
   })
 
   test("renamed defaults remain on first import", () => {
-    const db = database()
+    const db = testDb()
     db.query("UPDATE categories SET name = 'My groceries' WHERE name = 'Groceries'").run()
     const before = rows(db).find(c => c.name === "My groceries")!
     syncCategoryTree(db, tree)
@@ -74,7 +72,7 @@ describe("Up category tree", () => {
   })
 
   test("unknown parents, cycles and duplicate IDs reject the tree and roll back cleanup", () => {
-    const db = database(), before = rows(db)
+    const db = testDb(), before = rows(db)
     const invalidTrees = [
       [...tree, { id: "orphan", name: "Orphan", parentId: "missing" }],
       [{ id: "a", name: "A", parentId: "b" }, { id: "b", name: "B", parentId: "a" }],
@@ -87,7 +85,7 @@ describe("Up category tree", () => {
   })
 
   test("parent palette continues on later imports and wraps after six parents", () => {
-    const db = database()
+    const db = testDb()
     const parents = Array.from({ length: 7 }, (_, i) => ({ id: `p${i}`, name: `Parent ${i}`, parentId: null }))
     syncCategoryTree(db, parents.slice(0, 2))
     syncCategoryTree(db, parents)
@@ -95,7 +93,7 @@ describe("Up category tree", () => {
   })
 
   test("first cleanup checks transactions, rules and tags and always keeps the three required defaults", () => {
-    const db = database()
+    const db = testDb()
     db.query(`INSERT INTO transactions (date_raw, date_iso, amount, description, category_id)
       SELECT '2026-01-01', '2026-01-01', -1, 'keep', id FROM categories WHERE name = 'Groceries'`).run()
     db.query(`INSERT INTO rules_v2 (name, saved_filter_id, set_category_id)
@@ -117,7 +115,7 @@ describe("Up category tree", () => {
   })
 
   test("existing People stays local with its original colour and order", () => {
-    const db = database()
+    const db = testDb()
     const id = createCategory(db, { name: "People", color: "#ffffff" })
     const before = rows(db).find(c => c.id === id)
     syncCategoryTree(db, tree)
@@ -127,7 +125,7 @@ describe("Up category tree", () => {
 
 describe("provider category backfill", () => {
   test("rows following the provider take its stored category; user and rule rows and CSV rows do not", () => {
-    const db = database()
+    const db = testDb()
     db.transaction(() => syncCategoryTree(db, tree))()
     const id = (ext: string) => db.query<{ id: number }, [string]>("SELECT id FROM categories WHERE ext_id = ?").get(ext)!.id
     const uncat = db.query<{ id: number }, []>("SELECT id FROM categories WHERE is_default = 1").get()!.id

@@ -1,13 +1,10 @@
 import { describe, expect, test } from "bun:test"
 import { groupByMerchant, merchantFilter, sortMerchantGroups } from "./merchants"
 import { parseFilterStrict } from "./filter"
-import type { Transaction } from "./types"
+import { transaction } from "../testing/fixtures"
 
-const row = (id: number, description: string, amount: number, dateISO: string, categoryName = "Groceries", categoryId: number | null = 1): Transaction => ({
-  id, dateRaw: dateISO, dateISO, amount, description, categoryId, categoryName, categoryColor: "#fff", notes: "",
-  importId: null, accountId: 1, accountName: "Spending", tagNames: [], tagColors: [], tagIds: [], source: "up",
-  status: "SETTLED", transferAccountId: null, internal: false, excluded: false,
-})
+const row = (id: number, description: string, amount: number, dateISO: string, categoryName = "Groceries", categoryId: number | null = 1) =>
+  transaction({ id, description, amount, dateISO, categoryName, categoryId })
 
 describe("groupByMerchant", () => {
   const rows = [

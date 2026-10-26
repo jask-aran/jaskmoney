@@ -1,17 +1,14 @@
 import { expect, test } from "bun:test"
-import { testRender } from "@opentui/solid"
 import { mkdtempSync, readFileSync } from "node:fs"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
-import { App } from "./App"
+import { renderApp } from "../testing/app"
 import { ui, CHART_VIEWS } from "../state/uiStore"
 import { data } from "../state/dataStore"
 import { saveSettingsConfig } from "../state/settingsConfig"
 import { defaultTimeframe } from "../domain/timeframe"
 
 test("bootstrap-off preserves UI defaults; scoped w updates the hint and calendar cells", async () => {
-  process.env.JASKMONEY_DB = ":memory:"
-  process.env.JASKMONEY_NO_BOOTSTRAP = "1"
   const previousPath = process.env.JASKMONEY_CONFIG
   const path = join(mkdtempSync(join(tmpdir(), "jaskmoney-ui-render-")), "settings.json")
   process.env.JASKMONEY_CONFIG = path
@@ -24,7 +21,7 @@ test("bootstrap-off preserves UI defaults; scoped w updates the hint and calenda
   ui.setTimeframe(timeframe)
   ui.setState({ chartViews: [0, 4] })
   data.setAccountSelection("all")
-  const t = await testRender(() => <App />, { width: 180, height: 50 })
+  const t = await renderApp({ width: 180, height: 50 })
   try {
     await t.renderOnce()
     expect(ui.state.timeframe).toEqual(timeframe)

@@ -1,13 +1,13 @@
 import { describe, expect, test } from "bun:test"
 import { categoryIcon } from "./categoryIcons"
-import type { Category } from "./types"
-
-const cat = (id: number, name: string, extId: string | null, parentId: number | null = null) =>
-  ({ id, name, extId, parentId, color: "#fff", sortOrder: id, isDefault: false, notSpending: false }) as Category
+import { category } from "../testing/fixtures"
 
 describe("categoryIcon", () => {
-  const home = cat(1, "Home", "home")
-  const categories = [home, cat(2, "Groceries", "groceries", 1), cat(3, "Spa days", null, 1), cat(4, "Income", null), cat(5, "Misc", null)]
+  const home = category({ id: 1, name: "Home", extId: "home" })
+  const categories = [
+    home, category({ id: 2, name: "Groceries", extId: "groceries", parentId: 1 }), category({ id: 3, name: "Spa days", parentId: 1 }),
+    category({ id: 4, name: "Income" }), category({ id: 5, name: "Misc" }),
+  ]
 
   test("Up ids, then local names, then the group's icon", () => {
     expect(categoryIcon(categories[1], categories)).toBe("")

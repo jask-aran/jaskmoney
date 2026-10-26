@@ -1,14 +1,14 @@
 import { expect, spyOn, test } from "bun:test"
 import { data } from "../state/dataStore"
 import { syncCategoryTree } from "./categories"
+import { testEnv } from "../testing/scoped"
 
 test("category pushes deduplicate provider and local IDs", async () => {
-  const previousToken = process.env.JASKMONEY_UP_TOKEN
   const fetchMock = spyOn(globalThis, "fetch")
   data.init(":memory:")
   const db = data.getDb()!
   try {
-    process.env.JASKMONEY_UP_TOKEN = "test-pat"
+    testEnv("JASKMONEY_UP_TOKEN", "test-pat")
     syncCategoryTree(db, [
       { id: "home", name: "Home", parentId: null },
       { id: "food", name: "Food", parentId: "home" },
@@ -32,8 +32,6 @@ test("category pushes deduplicate provider and local IDs", async () => {
     expect(fetchMock).toHaveBeenCalledTimes(1)
   } finally {
     fetchMock.mockRestore()
-    if (previousToken === undefined) delete process.env.JASKMONEY_UP_TOKEN
-    else process.env.JASKMONEY_UP_TOKEN = previousToken
     db.close()
   }
 })
@@ -68,7 +66,6 @@ test("rule application rolls back earlier rows and links when a later link fails
 
 
 test("sync keeps its error and clears the lock when failure refresh also throws", async () => {
-  const previousToken = process.env.JASKMONEY_UP_TOKEN
   const fetchMock = spyOn(globalThis, "fetch")
   data.init(":memory:")
   const db = data.getDb()!
@@ -77,7 +74,7 @@ test("sync keeps its error and clears the lock when failure refresh also throws"
     .mockImplementationOnce(query)
     .mockImplementationOnce(() => { throw new Error("Refresh failed") })
   try {
-    process.env.JASKMONEY_UP_TOKEN = "test-pat"
+    testEnv("JASKMONEY_UP_TOKEN", "test-pat")
     fetchMock.mockRejectedValue(new Error("Offline"))
     await expect(data.syncUp()).rejects.toThrow("Offline")
     expect(queryMock).toHaveBeenCalledTimes(2)
@@ -87,8 +84,6 @@ test("sync keeps its error and clears the lock when failure refresh also throws"
   } finally {
     queryMock.mockRestore()
     fetchMock.mockRestore()
-    if (previousToken === undefined) delete process.env.JASKMONEY_UP_TOKEN
-    else process.env.JASKMONEY_UP_TOKEN = previousToken
     db.close()
   }
 })

@@ -1,32 +1,17 @@
 import { describe, expect, test } from "bun:test"
 import { computeAccountStats } from "./accountStats"
 import { balanceHistory, computePeriodFlows, computePosition } from "./position"
-import type { Account, Transaction } from "./types"
+import type { Transaction } from "./types"
+import { account, transaction } from "../testing/fixtures"
 
-function account(id: number, overrides: Partial<Account> = {}): Account {
-  return {
-    id, name: `Account ${id}`, type: "debit", sortOrder: id, isActive: true,
-    source: "up", externalKind: "TRANSACTIONAL", balance: 100, syncEnabled: true,
-    ...overrides,
-  }
-}
-
-function row(amount: number, overrides: Partial<Transaction> = {}): Transaction {
-  return {
-    id: 1, dateRaw: "2026-10-05", dateISO: "2026-10-05", amount,
-    description: "x", categoryId: null, categoryName: "Uncategorised",
-    categoryColor: "", notes: "", importId: null, accountId: 1, accountName: "A",
-    tagNames: [], tagColors: [], tagIds: [], source: "up", status: "SETTLED",
-    transferAccountId: null, internal: false, excluded: false, ...overrides,
-  }
-}
+const row = (amount: number, overrides: Partial<Transaction> = {}) => transaction({ amount, ...overrides })
 
 const accounts = [
-  account(1, { balance: 200 }),
-  account(2, { source: "csv", externalKind: null, balance: null }),
-  account(4, { externalKind: "SAVER", balance: 500 }),
-  account(3, { externalKind: "SAVER", balance: 300 }),
-  account(5, { externalKind: "SAVER", balance: null }),
+  account({ id: 1, balance: 200 }),
+  account({ id: 2, source: "csv", externalKind: null, balance: null }),
+  account({ id: 4, externalKind: "SAVER", balance: 500 }),
+  account({ id: 3, externalKind: "SAVER", balance: 300 }),
+  account({ id: 5, externalKind: "SAVER", balance: null }),
 ]
 
 describe("computePosition", () => {
@@ -85,7 +70,7 @@ describe("computePosition", () => {
   })
 
   test("null and zero balances stay distinct; runway allows zero and negative position", () => {
-    const csv = account(1, { source: "csv", balance: null })
+    const csv = account({ id: 1, source: "csv", balance: null })
     const p = computePosition([csv], [row(-10)], "2026-10-05", { historyDays: 1 })
     expect(p.netPosition).toBeNull()
     expect(p.spendingBalance).toBeNull()
@@ -94,8 +79,8 @@ describe("computePosition", () => {
     expect(p.dailySpend).toBe(10)
     expect(p.runwayDays).toBeNull()
     expect(p.history).toEqual([{ dateISO: "2026-10-05", value: 0 }])
-    expect(computePosition([account(1, { balance: 0 })], [row(-10)], "2026-10-05").runwayDays).toBe(0)
-    expect(computePosition([account(1, { balance: -20 })], [row(-10)], "2026-10-05").runwayDays).toBe(-2)
+    expect(computePosition([account({ id: 1, balance: 0 })], [row(-10)], "2026-10-05").runwayDays).toBe(0)
+    expect(computePosition([account({ id: 1, balance: -20 })], [row(-10)], "2026-10-05").runwayDays).toBe(-2)
     expect(computePosition([accounts[2]!], [], "2026-10-05").spendingBalance).toBeNull()
     expect(computePosition([], [], "2026-10-05").netPosition).toBeNull()
     expect(computePosition(accounts, [row(10), row(0)], "2026-10-05").dailySpend).toBeNull()
@@ -207,8 +192,8 @@ describe("computePeriodFlows", () => {
 describe("balanceHistory", () => {
   test("reconstructs end-of-day balances per role, ignoring rows after the end", () => {
     const accounts = [
-      account(1, { balance: 100 }),
-      account(2, { balance: 50, externalKind: "SAVER" }),
+      account({ id: 1, balance: 100 }),
+      account({ id: 2, balance: 50, externalKind: "SAVER" }),
     ]
     const txns = [
       row(-30, { accountId: 1, dateISO: "2026-10-02" }),
@@ -225,7 +210,7 @@ describe("balanceHistory", () => {
 })
 
 test("all history consumers retain holds, exclusions, future rows and null-balance account rules", () => {
-  const scope = [account(1, { balance: 200 }), account(2, { externalKind: "SAVER", balance: 500 }), account(3, { balance: null })]
+  const scope = [account({ id: 1, balance: 200 }), account({ id: 2, externalKind: "SAVER", balance: 500 }), account({ id: 3, balance: null })]
   const rows = [
     row(-20, { dateISO: "2026-10-04", status: "HELD" }),
     row(-10, { dateISO: "2026-10-04", excluded: true, tagNames: ["IGNORE"] }),
@@ -251,7 +236,7 @@ test("all history consumers retain holds, exclusions, future rows and null-balan
 })
 
 test("history consolidation preserves each caller's future-amount subtraction order", () => {
-  const scope = [account(1, { balance: 1 })]
+  const scope = [account({ id: 1, balance: 1 })]
   const rows = [row(0.1), row(0.1), row(0.1)]
   const sequential = 1 - 0.1 - 0.1 - 0.1
   const grouped = 1 - (0.1 + 0.1 + 0.1)

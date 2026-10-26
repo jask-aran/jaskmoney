@@ -2,37 +2,30 @@ import { afterEach, beforeEach, expect, test } from "bun:test"
 import { mkdtempSync, writeFileSync } from "node:fs"
 import { join } from "node:path"
 import { tmpdir } from "node:os"
-import { TextAttributes, type KeyEvent } from "@opentui/core"
-import { testRender } from "@opentui/solid"
+import { TextAttributes } from "@opentui/core"
 import { handleKey, footerHints } from "./keys"
-import { App } from "./App"
 import { data } from "../state/dataStore"
 import { ui } from "../state/uiStore"
 import { loadSettingsConfig } from "../state/settingsConfig"
 import { ensureAccount } from "../db/client"
+import { renderApp } from "../testing/app"
+import { key } from "../testing/keys"
+import { testEnv } from "../testing/scoped"
 
-const previousEnv = { config: process.env.JASKMONEY_CONFIG, db: process.env.JASKMONEY_DB, bootstrap: process.env.JASKMONEY_NO_BOOTSTRAP }
-let rendered: Awaited<ReturnType<typeof testRender>> | undefined
-function key(name: string, ctrl = false, shift = false): KeyEvent {
-  return { name, ctrl, shift, meta: false, option: false, sequence: name === "space" ? " " : name, number: false, raw: name, eventType: "press", source: "raw", preventDefault() {}, stopPropagation() {}, defaultPrevented: false, propagationStopped: false } as KeyEvent
-}
+let rendered: Awaited<ReturnType<typeof renderApp>> | undefined
 
 beforeEach(() => {
-  process.env.JASKMONEY_CONFIG = join(mkdtempSync(join(tmpdir(), "jaskmoney-filter-job-")), "settings.json")
-  process.env.JASKMONEY_DB = ":memory:"
-  process.env.JASKMONEY_NO_BOOTSTRAP = "1"
+  testEnv("JASKMONEY_CONFIG", join(mkdtempSync(join(tmpdir(), "jaskmoney-filter-job-")), "settings.json"))
   data.init(":memory:")
   data.clearFilter()
   ui.switchTab("manager")
   ui.setState({ detailId: null, formPicker: null, txnView: "rows" })
 })
 afterEach(() => {
+  // Unmount before switching tabs, so the switch runs no App effects.
   rendered?.renderer.destroy()
   rendered = undefined
   ui.switchTab("overview")
-  process.env.JASKMONEY_CONFIG = previousEnv.config
-  process.env.JASKMONEY_DB = previousEnv.db
-  process.env.JASKMONEY_NO_BOOTSTRAP = previousEnv.bootstrap
 })
 
 test("ctrl+s pre-fills a new filter on Name in both transaction views; empty filter stays closed", () => {
@@ -40,11 +33,11 @@ test("ctrl+s pre-fills a new filter on Name in both transaction views; empty fil
   for (const txnView of ["rows", "merchants"] as const) {
     ui.setState({ txnView })
     data.clearFilter()
-    handleKey(ui, key("s", true), data)
+    handleKey(ui, key("s", { ctrl: true }), data)
     expect(ui.state.settingsEditor).toBeNull()
     expect(ui.state.status).toBe("No filter to save")
     data.commitFilter("desc:Coffee")
-    handleKey(ui, key("s", true), data)
+    handleKey(ui, key("s", { ctrl: true }), data)
     expect(ui.state.settingsDraft).toMatchObject({ id: "filter-2", name: "", expr: "desc:Coffee" })
     expect(ui.state.settingsEditField).toBe(1)
     expect(ui.activeScope()).toBe("settings.editor")
@@ -52,7 +45,7 @@ test("ctrl+s pre-fills a new filter on Name in both transaction views; empty fil
     expect(ui.state.settingsDraft.name).toBe("j")
     handleKey(ui, key("escape"), data)
     expect(data.state.savedFilters).toHaveLength(1)
-    handleKey(ui, key("s", true), data)
+    handleKey(ui, key("s", { ctrl: true }), data)
     handleKey(ui, key("N"), data)
     handleKey(ui, key("enter"), data)
     expect(ui.state.settingsEditor).toBeNull()
@@ -66,7 +59,7 @@ test("ctrl+l applies a saved filter, resets cursors, and persists usage; printab
   data.saveSavedFilter({ id: "other", name: "Other", expr: "desc:Other" })
   for (const txnView of ["rows", "merchants"] as const) {
     ui.setState({ txnView, managerCursor: 8, managerTop: 5, merchantCursor: 4, merchantTop: 2 })
-    handleKey(ui, key("l", true), data)
+    handleKey(ui, key("l", { ctrl: true }), data)
     expect(ui.activeScope()).toBe("filterPicker")
     handleKey(ui, key("v"), data)
     expect(ui.state.filterPicker?.query).toBe("v")
@@ -79,7 +72,7 @@ test("ctrl+l applies a saved filter, resets cursors, and persists usage; printab
     expect(Number.isFinite(Date.parse(data.state.uiPrefs.filterUsage?.coffee ?? ""))).toBe(true)
     expect(loadSettingsConfig().ui?.filterUsage?.coffee).toBe(data.state.uiPrefs.filterUsage?.coffee)
   }
-  handleKey(ui, key("l", true), data)
+  handleKey(ui, key("l", { ctrl: true }), data)
   handleKey(ui, key("escape"), data)
   expect(ui.state.filterPicker).toBeNull()
   expect(data.state.filterQuery).toBe("desc:Coffee")
@@ -110,7 +103,7 @@ test("Shift+D opens a report without writes; Shift+A writes the same category an
   data.createSettingsRule({ name: "Later", savedFilterId: "later", setCategoryId: null, addTagIds: [tag], enabled: true })
   ui.switchTab("settings")
   ui.activateSettings("rules")
-  handleKey(ui, key("d", false, true), data)
+  handleKey(ui, key("d", { shift: true }), data)
   expect(ui.activeScope()).toBe("dryRun")
   expect(ui.state.dryRunReport).toMatchObject({ transactionCount: 1, updatedTransactions: 1, categoryChanges: 1, tagChanges: 1 })
   expect(data.state.transactions[0]?.categoryId).not.toBe(category)
@@ -118,18 +111,18 @@ test("Shift+D opens a report without writes; Shift+A writes the same category an
   handleKey(ui, key("2"), data)
   expect(ui.state.activeTab).toBe("settings")
   handleKey(ui, key("escape"), data)
-  handleKey(ui, key("a", false, true), data)
+  handleKey(ui, key("a", { shift: true }), data)
   expect(data.state.transactions[0]?.categoryId).toBe(category)
   expect([...data.state.transactions[0]!.tagIds]).toEqual([tag])
   expect(db.query("SELECT category_source FROM transactions").get()).toEqual({ category_source: "rule" })
-  handleKey(ui, key("d", false, true), data)
+  handleKey(ui, key("d", { shift: true }), data)
   expect(ui.state.dryRunReport?.updatedTransactions).toBe(0)
   ui.switchTab("manager")
   expect(ui.state.dryRunReport).toBeNull()
 })
 
 test("App shows the filter editor on Transactions, updates status colours, and retains the Name cursor", async () => {
-  rendered = await testRender(() => <App />, { width: 140, height: 42 })
+  rendered = await renderApp({ width: 140, height: 42 })
   ui.switchTab("manager")
   data.getDb()!.query("INSERT INTO transactions (date_raw, date_iso, amount, description) VALUES ('x', '2026-01-01', -5, 'Coffee')").run()
   data.refresh()
@@ -138,7 +131,7 @@ test("App shows the filter editor on Transactions, updates status colours, and r
   Object.defineProperty(transaction, "description", { enumerable: true, get() { reads++; return "Coffee" } })
   data.setState({ transactions: [transaction] })
   data.commitFilter("desc:Coffee")
-  handleKey(ui, key("s", true), data)
+  handleKey(ui, key("s", { ctrl: true }), data)
   const draw = async () => { await rendered!.renderOnce(); await rendered!.flush() }
   await draw()
   expect(rendered.captureCharFrame()).toContain("New saved filter")
@@ -162,7 +155,7 @@ test("App shows the filter editor on Transactions, updates status colours, and r
 })
 
 test("rule health and selection colours use captured cells; dry-run body scrolls and owns input", async () => {
-  rendered = await testRender(() => <App />, { width: 160, height: 32 })
+  rendered = await renderApp({ width: 160, height: 32 })
   ui.switchTab("settings")
   ui.activateSettings("rules")
   data.setState({
@@ -207,10 +200,10 @@ test("rule health and selection colours use captured cells; dry-run body scrolls
 })
 
 test("saved-filter rows show muted expressions and picker reset on tab switch", async () => {
-  rendered = await testRender(() => <App />, { width: 140, height: 28 })
+  rendered = await renderApp({ width: 140, height: 28 })
   data.setState({ savedFilters: [{ id: "coffee", name: "Java", expr: "desc:Coffee" }] })
   ui.switchTab("manager")
-  handleKey(ui, key("l", true), data)
+  handleKey(ui, key("l", { ctrl: true }), data)
   await rendered.renderOnce()
   await rendered.flush()
   const expression = rendered.captureSpans().lines.flatMap((line) => line.spans).find((span) => span.text.includes("desc:Coffee"))!
@@ -221,7 +214,7 @@ test("saved-filter rows show muted expressions and picker reset on tab switch", 
 })
 
 test("dry-run samples keep amount and actions visible after a long description", async () => {
-  rendered = await testRender(() => <App />, { width: 140, height: 28 })
+  rendered = await renderApp({ width: 140, height: 28 })
   const db = data.getDb()!
   db.query("INSERT INTO transactions (date_raw, date_iso, amount, description) VALUES ('x', '2026-01-01', -5, ?)").run("Coffee ".repeat(30))
   data.refresh()
@@ -231,7 +224,7 @@ test("dry-run samples keep amount and actions visible after a long description",
   data.createSettingsRule({ name: "Coffee rule", savedFilterId: "coffee", setCategoryId: category, addTagIds: [tag], enabled: true })
   ui.switchTab("settings")
   ui.activateSettings("rules")
-  handleKey(ui, key("d", false, true), data)
+  handleKey(ui, key("d", { shift: true }), data)
   await rendered.renderOnce()
   await rendered.flush()
   const frame = rendered.captureCharFrame()
@@ -243,14 +236,14 @@ test("dry-run samples keep amount and actions visible after a long description",
 test("saved-filter input keeps command letters and space literal; arrows move and backspace edits", () => {
   data.saveSavedFilter({ id: "a", name: "Alpha", expr: "desc:a" })
   data.saveSavedFilter({ id: "b", name: "Beta", expr: "desc:b" })
-  handleKey(ui, key("l", true), data)
+  handleKey(ui, key("l", { ctrl: true }), data)
   handleKey(ui, key("down"), data)
   expect(ui.state.filterPicker?.cursor).toBe(1)
   handleKey(ui, key("up"), data)
   expect(ui.state.filterPicker?.cursor).toBe(0)
-  handleKey(ui, key("n", true), data)
+  handleKey(ui, key("n", { ctrl: true }), data)
   expect(ui.state.filterPicker?.cursor).toBe(1)
-  handleKey(ui, key("p", true), data)
+  handleKey(ui, key("p", { ctrl: true }), data)
   expect(ui.state.filterPicker?.cursor).toBe(0)
   // Every printable key types, j and k included (a search takes any letter).
   for (const name of ["h", "l", "j", "k", "g", "2"]) handleKey(ui, key(name), data)

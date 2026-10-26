@@ -2,7 +2,7 @@ import { expect, test } from "bun:test"
 import { fuzzyFilter, fuzzyScore } from "./fuzzy"
 import { categoryPickerRows } from "./categoryOptions"
 import { pickerItems } from "../state/settingsForm"
-import type { Category } from "./types"
+import { category } from "../testing/fixtures"
 
 test("fuzzy matching uses ordered characters and ranks exact, prefix, runs, boundaries and length", () => {
   expect(fuzzyScore("CF", "Coffee")).not.toBeNull()
@@ -20,10 +20,10 @@ test("fuzzy matching uses ordered characters and ranks exact, prefix, runs, boun
 })
 
 test("category fuzzy matching keeps groups and ranks children; Settings only filters", () => {
-  const cat = (id: number, name: string, parentId: number | null): Category => ({
-    id, name, parentId, color: "#fff", isDefault: false, sortOrder: id, extId: null, notSpending: false,
-  })
-  const categories = [cat(1, "Good Life", null), cat(2, "Gas Bill", 1), cat(3, "Gas", 1), cat(4, "Home", null), cat(5, "Gas heating", 4)]
+  const categories = [
+    category({ id: 1, name: "Good Life" }), category({ id: 2, name: "Gas Bill", parentId: 1 }), category({ id: 3, name: "Gas", parentId: 1 }),
+    category({ id: 4, name: "Home" }), category({ id: 5, name: "Gas heating", parentId: 4 }),
+  ]
   const names = (q: string) => categoryPickerRows(categories, q).map((r) => r.kind === "heading" ? r.label : r.category.name)
   expect(names("gas")).toEqual(["Good Life", "Gas", "Gas Bill", "Home", "Gas heating"])
   expect(names("gl")).toEqual(["Good Life", "Gas Bill", "Gas"])

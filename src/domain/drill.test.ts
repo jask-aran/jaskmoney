@@ -1,10 +1,12 @@
 import { describe, expect, test } from "bun:test"
 import { drillFilter } from "./drill"
 import { evalFilter, parseFilterStrict } from "./filter"
-import type { Category } from "./types"
+import { category } from "../testing/fixtures"
 
-const category = (id: number, name: string, parentId: number | null = null) => ({ id, name, parentId }) as Category
-const categories = [category(1, "Good Life"), category(2, "Pubs & Bars", 1), category(3, "Takeaway", 1), category(4, "Groceries")]
+const categories = [
+  category({ id: 1, name: "Good Life" }), category({ id: 2, name: "Pubs & Bars", parentId: 1 }),
+  category({ id: 3, name: "Takeaway", parentId: 1 }), category({ id: 4, name: "Groceries" }),
+]
 
 describe("drillFilter", () => {
   test("a category line: range, spending, accounts and the category", () => {

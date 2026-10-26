@@ -1,16 +1,15 @@
-import { afterEach, describe, expect, test } from "bun:test"
-import { openDb, type Db } from "../db/client"
+import { describe, expect, test } from "bun:test"
+import type { Db } from "../db/client"
 import { pushTagChange, syncTagLinks } from "./tags"
 import { createUpClient } from "./client"
+import { testDb } from "../testing/scoped"
 
-const databases: Db[] = []
+/** A test database with one synced Up account. */
 function database() {
-  const db = openDb(":memory:")
-  databases.push(db)
+  const db = testDb()
   db.query("INSERT INTO accounts (name, type, source, sync_enabled) VALUES ('Up', 'debit', 'up', 1)").run()
   return db
 }
-afterEach(() => { for (const db of databases.splice(0)) db.close() })
 function tag(db: Db, name: string, extId: string | null = null) {
   return Number(db.query("INSERT INTO tags (name, ext_id, color, sort_order) VALUES (?, ?, '#ffffff', 8)").run(name, extId).lastInsertRowid)
 }

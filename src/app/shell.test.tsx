@@ -1,32 +1,20 @@
-import { afterEach, describe, expect, test } from "bun:test"
-import { testRender as openTestRender } from "@opentui/solid"
+import { describe, expect, test } from "bun:test"
 import { TextAttributes } from "@opentui/core"
-import { App } from "./App"
 import { ui } from "../state/uiStore"
 import { data } from "../state/dataStore"
+import { renderApp } from "../testing/app"
+import { account, transaction } from "../testing/fixtures"
 
-
-// A test that fails before its own destroy() would leave the App mounted on
-// the shared stores, and the next file's store writes then drive its effects
-// into a loop. Destroy every renderer after each test regardless.
-let live: Array<{ renderer: { destroy(): void } }> = []
-const testRender: typeof openTestRender = async (...args) => {
-  const instance = await openTestRender(...args)
-  live.push(instance)
-  return instance
-}
-afterEach(() => {
-  for (const instance of live) try { instance.renderer.destroy() } catch { /* already destroyed */ }
-  live = []
-})
+// The CSV credit account and its rows the manager tests render.
+const anzAccount = () => account({ name: "ANZ CREDIT", type: "credit", source: "csv", externalKind: null, balance: null })
+const anzRow = (overrides: Parameters<typeof transaction>[0]) =>
+  transaction({ categoryId: 10, accountName: "ANZ CREDIT", source: "csv", status: null, ...overrides })
 
 describe("shell render M0", () => {
   test("renders header tabs status footer", async () => {
-    process.env.JASKMONEY_DB = ":memory:"
-    process.env.JASKMONEY_NO_BOOTSTRAP = "1"
     ui.switchTab("overview")
 
-    const t = await testRender(() => <App />, { width: 140, height: 44 })
+    const t = await renderApp({ width: 140, height: 44 })
     // After mount, which loads the settings config.
     data.setState({ icons: false })
     await t.renderOnce()
@@ -85,35 +73,13 @@ describe("shell render M0", () => {
   })
 
   test("manager filter keeps its input in the pane and canonical form in the title", async () => {
-    process.env.JASKMONEY_DB = ":memory:"
-    process.env.JASKMONEY_NO_BOOTSTRAP = "1"
-    const t = await testRender(() => <App />, { width: 140, height: 30 })
+    const t = await renderApp({ width: 140, height: 30 })
     await t.renderOnce()
     await t.flush()
 
     data.setState({
-      transactions: [
-        {
-          id: 1,
-          dateRaw: "03/02/2026",
-          dateISO: "2026-02-03",
-          amount: -10,
-          description: "FILTER TARGET",
-          categoryId: 10,
-          categoryName: "Uncategorised",
-          categoryColor: "#7f849c",
-          notes: "",
-          importId: null,
-          accountId: 1,
-          accountName: "ANZ CREDIT",
-          tagNames: [],
-          tagColors: [],
-          tagIds: [], source: "csv" as const, status: null, transferAccountId: null, internal: false, excluded: false,
-        },
-      ],
-      accounts: [
-        { id: 1, name: "ANZ CREDIT", type: "credit", sortOrder: 1, isActive: true, source: "csv" as const, externalKind: null, balance: null, syncEnabled: true },
-      ],
+      transactions: [anzRow({ dateISO: "2026-02-03", amount: -10, description: "FILTER TARGET" })],
+      accounts: [anzAccount()],
       filterQuery: "",
       filterExpr: null,
       filterErr: "",
@@ -146,52 +112,16 @@ describe("shell render M0", () => {
   })
 
   test("only the current transaction row carries the bold attribute", async () => {
-    process.env.JASKMONEY_DB = ":memory:"
-    process.env.JASKMONEY_NO_BOOTSTRAP = "1"
-    const t = await testRender(() => <App />, { width: 140, height: 30 })
+    const t = await renderApp({ width: 140, height: 30 })
     await t.renderOnce()
     await t.flush()
 
     data.setState({
       transactions: [
-        {
-          id: 1,
-          dateRaw: "03/02/2026",
-          dateISO: "2026-02-03",
-          amount: -20,
-          description: "CURSOR FIRST",
-          categoryId: 10,
-          categoryName: "Uncategorised",
-          categoryColor: "#7f849c",
-          notes: "",
-          importId: null,
-          accountId: 1,
-          accountName: "ANZ CREDIT",
-          tagNames: [],
-          tagColors: [],
-          tagIds: [], source: "csv" as const, status: null, transferAccountId: null, internal: false, excluded: false,
-        },
-        {
-          id: 2,
-          dateRaw: "02/02/2026",
-          dateISO: "2026-02-02",
-          amount: -10,
-          description: "CURSOR SECOND",
-          categoryId: 10,
-          categoryName: "Uncategorised",
-          categoryColor: "#7f849c",
-          notes: "",
-          importId: null,
-          accountId: 1,
-          accountName: "ANZ CREDIT",
-          tagNames: [],
-          tagColors: [],
-          tagIds: [], source: "csv" as const, status: null, transferAccountId: null, internal: false, excluded: false,
-        },
+        anzRow({ id: 1, dateISO: "2026-02-03", amount: -20, description: "CURSOR FIRST" }),
+        anzRow({ id: 2, dateISO: "2026-02-02", amount: -10, description: "CURSOR SECOND" }),
       ],
-      accounts: [
-        { id: 1, name: "ANZ CREDIT", type: "credit", sortOrder: 1, isActive: true, source: "csv" as const, externalKind: null, balance: null, syncEnabled: true },
-      ],
+      accounts: [anzAccount()],
       filterQuery: "",
       filterExpr: null,
       filterErr: "",
@@ -233,23 +163,18 @@ describe("shell render M0", () => {
   })
 
   test("emoji account names keep table columns aligned", async () => {
-    process.env.JASKMONEY_DB = ":memory:"
-    process.env.JASKMONEY_NO_BOOTSTRAP = "1"
-    const t = await testRender(() => <App />, { width: 140, height: 30 })
+    const t = await renderApp({ width: 140, height: 30 })
     await t.renderOnce()
     // Dot markers (icons need a Nerd Font and are a separate setting).
     data.setState({ icons: false })
     await t.flush()
-    const row = (id: number, accountId: number, accountName: string) => ({
-      id, dateRaw: "x", dateISO: "2026-10-01", amount: -1, description: `ROW ${id}`,
-      categoryId: 10, categoryName: "Uncategorised", categoryColor: "#7f849c", notes: "",
-      importId: null, accountId, accountName, tagNames: [], tagColors: [], tagIds: [],
-      source: "up" as const, status: "SETTLED" as const, transferAccountId: null, internal: false, excluded: false,
+    const row = (id: number, accountId: number, accountName: string) => transaction({
+      id, accountId, accountName, dateISO: "2026-10-01", amount: -1, description: `ROW ${id}`, categoryId: 10,
     })
     data.setState({
       // "🏖️" is three UTF-16 units but two terminal cells.
       transactions: [row(1, 1, "Spending"), row(2, 2, "🏖️ Holiday"), row(3, 3, "🚨 Emergency fund")],
-      accounts: [1, 2, 3].map((id) => ({ id, name: `a${id}`, type: "debit" as const, sortOrder: id, isActive: true, source: "up" as const, externalKind: "TRANSACTIONAL", balance: 0, syncEnabled: true })), filterQuery: "", filterExpr: null, filterErr: "",
+      accounts: [1, 2, 3].map((id) => account({ id, name: `a${id}`, balance: 0 })), filterQuery: "", filterExpr: null, filterErr: "",
       sortColumn: "date", sortAscending: false, ready: true,
     })
     ui.switchTab("manager")
@@ -268,21 +193,16 @@ describe("shell render M0", () => {
   })
 
   test("row states paint independent range, selection and cursor appearances", async () => {
-    process.env.JASKMONEY_DB = ":memory:"
-    process.env.JASKMONEY_NO_BOOTSTRAP = "1"
-    const t = await testRender(() => <App />, { width: 140, height: 30 })
+    const t = await renderApp({ width: 140, height: 30 })
     await t.renderOnce()
     await t.flush()
 
-    const row = (id: number, description: string, status: "HELD" | "SETTLED" | null) => ({
-      id, dateRaw: "x", dateISO: `2026-02-0${4 - id}`, amount: -id, description,
-      categoryId: 10, categoryName: "Uncategorised", categoryColor: "#7f849c", notes: "",
-      importId: null, accountId: 1, accountName: "UP SPENDING", tagNames: [], tagColors: [], tagIds: [],
-      source: "up" as const, status, transferAccountId: null, internal: false, excluded: false,
+    const row = (id: number, description: string, status: "HELD" | "SETTLED" | null) => transaction({
+      id, description, status, dateISO: `2026-02-0${4 - id}`, amount: -id, categoryId: 10, accountName: "UP SPENDING",
     })
     data.setState({
       transactions: [row(1, "RANGE ONLY", "SETTLED"), row(2, "RANGE SELECTED", "SETTLED"), row(3, "RANGE CURSOR", "HELD")],
-      accounts: [{ id: 1, name: "UP SPENDING", type: "debit", sortOrder: 1, isActive: true, source: "up" as const, externalKind: "TRANSACTIONAL", balance: 10, syncEnabled: true }], filterQuery: "", filterExpr: null, filterErr: "",
+      accounts: [account({ name: "UP SPENDING", balance: 10 })], filterQuery: "", filterExpr: null, filterErr: "",
       sortColumn: "date", sortAscending: false, ready: true,
     })
     ui.switchTab("manager")
@@ -318,35 +238,23 @@ describe("shell render M0", () => {
   })
 
   test("manager columns share row geometry and fill the transaction viewport", async () => {
-    process.env.JASKMONEY_DB = ":memory:"
-    process.env.JASKMONEY_NO_BOOTSTRAP = "1"
-    const t = await testRender(() => <App />, { width: 140, height: 30 })
+    const t = await renderApp({ width: 140, height: 30 })
     await t.renderOnce()
     // Dot markers (icons need a Nerd Font and are a separate setting).
     data.setState({ icons: false })
     await t.flush()
 
     data.setState({
-      transactions: Array.from({ length: 30 }, (_, i) => ({
+      transactions: Array.from({ length: 30 }, (_, i) => anzRow({
         id: i + 1,
-        dateRaw: "03/02/2026",
         dateISO: `2026-02-${String(30 - i).padStart(2, "0")}`,
         amount: -123.45,
         description: `DESCRIPTION ROW ${String(i).padStart(2, "0")}`,
         categoryId: i === 1 ? 11 : 10,
         categoryName: i === 1 ? "Transfers" : "Uncategorised",
         categoryColor: i === 1 ? "#b4befe" : "#7f849c",
-        notes: "",
-        importId: null,
-        accountId: 1,
-        accountName: "ANZ CREDIT",
-        tagNames: [],
-        tagColors: [],
-        tagIds: [], source: "csv" as const, status: null, transferAccountId: null, internal: false, excluded: false,
       })),
-      accounts: [
-        { id: 1, name: "ANZ CREDIT", type: "credit", sortOrder: 1, isActive: true, source: "csv" as const, externalKind: null, balance: null, syncEnabled: true },
-      ],
+      accounts: [anzAccount()],
       filterQuery: "",
       filterExpr: null,
       filterErr: "",
@@ -403,12 +311,10 @@ describe("shell render M0", () => {
   })
 
   test("settings taxonomy stays split until the narrow stacked fallback", async () => {
-    process.env.JASKMONEY_DB = ":memory:"
-    process.env.JASKMONEY_NO_BOOTSTRAP = "1"
     for (const width of [140, 96, 70]) {
       ui.switchTab("settings")
       ui.setState({ settingsActive: false, settingsEditor: null, settingsConfirm: null })
-      const t = await testRender(() => <App />, { width, height: 36 })
+      const t = await renderApp({ width, height: 36 })
       await t.renderOnce()
       await t.flush()
       t.mockInput.pressKey("v")
@@ -427,9 +333,7 @@ describe("shell render M0", () => {
   })
 
   test("settings import opens a focused CSV picker", async () => {
-    process.env.JASKMONEY_DB = ":memory:"
-    process.env.JASKMONEY_NO_BOOTSTRAP = "1"
-    const t = await testRender(() => <App />, { width: 110, height: 34 })
+    const t = await renderApp({ width: 110, height: 34 })
     await t.renderOnce()
     await t.flush()
     ui.switchTab("settings")
@@ -445,9 +349,7 @@ describe("shell render M0", () => {
   })
 
   test("clear-data confirmation names its destructive key", async () => {
-    process.env.JASKMONEY_DB = ":memory:"
-    process.env.JASKMONEY_NO_BOOTSTRAP = "1"
-    const t = await testRender(() => <App />, { width: 110, height: 34 })
+    const t = await renderApp({ width: 110, height: 34 })
     await t.renderOnce()
     await t.flush()
     ui.switchTab("settings")
@@ -457,16 +359,13 @@ describe("shell render M0", () => {
     const frame = t.captureCharFrame()
     expect(frame).toContain("Clear all transaction and import data?")
     expect(frame).toContain("del confirm")
-    expect(frame).toContain("del confirm")
     t.renderer.destroy()
   })
 })
 
 describe("render errors", () => {
   test("a tab that throws shows an error card, and switching tabs recovers", async () => {
-    process.env.JASKMONEY_DB = ":memory:"
-    process.env.JASKMONEY_NO_BOOTSTRAP = "1"
-    const t = await testRender(() => <App />, { width: 120, height: 30 })
+    const t = await renderApp({ width: 120, height: 30 })
     await t.renderOnce()
     const original = data.scopedTransactions
     try {
@@ -484,11 +383,9 @@ describe("render errors", () => {
   })
 
   test("all six text contexts paint the caret character and restore the end bar", async () => {
-    process.env.JASKMONEY_DB = ":memory:"
-    process.env.JASKMONEY_NO_BOOTSTRAP = "1"
     ui.switchTab("manager")
     ui.setState({ detailId: null, detailNotesEditing: false })
-    const t = await testRender(() => <App />, { width: 140, height: 55 })
+    const t = await renderApp({ width: 140, height: 55 })
     await t.renderOnce()
     const profile = { ...ui.state.importProfileDraft, id: "abZcd", account: "Caret test", accountType: "debit" as const }
     data.commitPreview({

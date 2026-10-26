@@ -1,16 +1,9 @@
 import { describe, expect, test } from "bun:test"
 import { spendingCalendar, type CalendarDay } from "./spending"
 import type { Transaction } from "./types"
+import { transaction } from "../testing/fixtures"
 
-function row(amount: number, overrides: Partial<Transaction> = {}): Transaction {
-  return {
-    id: 1, dateRaw: "2026-10-05", dateISO: "2026-10-05", amount,
-    description: "Shop", categoryId: null, categoryName: "Food",
-    categoryColor: "", notes: "", importId: null, accountId: 1, accountName: "A",
-    tagNames: [], tagColors: [], tagIds: [], source: "up", status: "SETTLED",
-    transferAccountId: null, internal: false, excluded: false, ...overrides,
-  }
-}
+const row = (amount: number, overrides: Partial<Transaction> = {}) => transaction({ amount, ...overrides })
 
 const excluded = [row(100), row(0), row(-100, { internal: true, excluded: true }), row(-100, { tagNames: ["other", "iGnOrE"] })]
 

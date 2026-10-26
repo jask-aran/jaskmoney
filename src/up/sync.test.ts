@@ -1,5 +1,6 @@
-import { afterEach, describe, expect, spyOn, test } from "bun:test"
-import { createCategory, createTag, loadAccounts, loadTransactions, openDb, setAccountSyncEnabled, type Db } from "../db/client"
+import { describe, expect, spyOn, test } from "bun:test"
+import { createCategory, createTag, loadAccounts, loadTransactions, setAccountSyncEnabled } from "../db/client"
+import { testDb, testEnv } from "../testing/scoped"
 import { createUpClient } from "./client"
 import { syncUp } from "./sync"
 import { data } from "../state/dataStore"
@@ -33,14 +34,11 @@ function client(transactions: UpTransaction[], accounts = [account(), account("s
     return response(transactions.filter(t => t.relationships.account.data.id === accountId))
   } })
 }
-const databases: Db[] = []
-function database() { const db = openDb(":memory:"); databases.push(db); return db }
-afterEach(() => { for (const db of databases.splice(0)) db.close() })
 
 describe("Up sync", () => {
 
   test("missing details force one full-history fetch per affected account, then restore incremental windows", async () => {
-    const db = database()
+    const db = testDb()
     const rows = [txn("old", "SETTLED", "2020-01-01T00:00:00Z"),
       txn("new", "SETTLED", "2026-04-05T00:00:00Z"),
       txn("saver", "SETTLED", "2026-04-01T00:00:00Z", "saver")]
@@ -58,7 +56,7 @@ describe("Up sync", () => {
   })
 
   test("a detail-less settled row Up no longer returns is marked once, so full fetches do not repeat", async () => {
-    const db = database()
+    const db = testDb()
     const rows = [txn("kept", "SETTLED", "2026-04-05T00:00:00Z"), txn("vanished", "SETTLED", "2026-04-01T00:00:00Z")]
     await syncUp(db, client(rows), { now })
     db.query("UPDATE transactions SET ext_categorizable = NULL WHERE external_id = 'vanished'").run()
@@ -73,7 +71,7 @@ describe("Up sync", () => {
   })
 
   test("stored tag links outside the fetch window reconcile and count additions and removals", async () => {
-    const db = database()
+    const db = testDb()
     const first = await syncUp(db, client([txn("old", "SETTLED")]), { now })
     const id = first.insertedIds[0]!
     db.query("UPDATE transactions SET ext_tags = '[\"New\",\"IGNORE\"]' WHERE id = ?").run(id)
@@ -83,7 +81,7 @@ describe("Up sync", () => {
   })
 
   test("backfill clears the NULL marker even when Up omits isCategorizable", async () => {
-    const db = database(), row = txn("old", "SETTLED")
+    const db = testDb(), row = txn("old", "SETTLED")
     await syncUp(db, client([row], [account()]), { now })
     db.query("UPDATE transactions SET ext_categorizable = NULL WHERE external_id = 'old'").run()
     const attributes = Object.fromEntries(Object.entries(row.attributes).filter(([key]) => key !== "isCategorizable"))
@@ -102,7 +100,7 @@ describe("Up sync", () => {
   })
 
   test("insert maps child categories; missing, unknown and parent categories use the default with NULL source", async () => {
-    const db = database()
+    const db = testDb()
     const rows = [txn("known"), txn("missing"), txn("unknown"), txn("parent")]
     rows[1]!.relationships.category.data = null
     rows[2]!.relationships.category.data = { type: "categories", id: "unknown" }
@@ -118,7 +116,7 @@ describe("Up sync", () => {
   })
 
   test.each([null, "provider", "user", "rule"])("update respects category source %s and counts category-only changes", async source => {
-    const db = database(), row = txn()
+    const db = testDb(), row = txn()
     const withTree = { ...client([row]), listCategories: async () => categoryTree }
     const first = await syncUp(db, withTree, { now })
     const local = createCategory(db, { name: "Local choice", color: "#ffffff" })
@@ -151,7 +149,7 @@ describe("Up sync", () => {
   })
 
   test("provider reassignment follows a different child and an unknown category clears it", async () => {
-    const db = database(), row = txn()
+    const db = testDb(), row = txn()
     const withTree = { ...client([row]), listCategories: async () => [...categoryTree, { id: "cafes", name: "Cafes", parentId: "good-life" }] }
     await syncUp(db, withTree, { now })
     row.relationships.category.data = { type: "categories", id: "cafes" }
@@ -165,7 +163,7 @@ describe("Up sync", () => {
   })
 
   test("listCategories failure writes only last_error", async () => {
-    const db = database()
+    const db = testDb()
     await syncUp(db, client([txn()]), { now })
     const snapshot = () => ["categories", "accounts", "transactions", "transaction_tags"].map(table => db.query(`SELECT * FROM ${table}`).all())
     const before = snapshot()
@@ -179,7 +177,7 @@ describe("Up sync", () => {
   })
 
   test("first sync maps accounts, balances, local date, cents, transfer, and external fields", async () => {
-    const db = database(), since: Array<string | undefined> = []
+    const db = testDb(), since: Array<string | undefined> = []
     const result = await syncUp(db, client([txn()], undefined, since), { now })
     expect(result).toEqual({ accounts: 2, inserted: 1, updated: 1, removedHeld: 0, insertedIds: [expect.any(Number)] })
     expect(since).toEqual([undefined, undefined])
@@ -195,7 +193,7 @@ describe("Up sync", () => {
   })
 
   test("detail columns map every combination of optional objects on insert", async () => {
-    const db = database()
+    const db = testDb()
     const rows = Array.from({ length: 16 }, (_, mask) => {
       const row = txn(`details-${mask}`)
       Object.assign(row.attributes, {
@@ -219,7 +217,7 @@ describe("Up sync", () => {
   })
 
   test("missing new attributes default to categorizable and null details", async () => {
-    const db = database(), row = txn()
+    const db = testDb(), row = txn()
     const attributes = Object.fromEntries(Object.entries(row.attributes).filter(([key]) => !["isCategorizable", "roundUp", "cashback", "cardPurchaseMethod"].includes(key)))
     const missing = createUpClient({ token: "test-pat", fetch: async input =>
       new URL(String(input)).pathname.endsWith("/categories") ? response([]) : new URL(String(input)).pathname.endsWith("/accounts") ? response([account()]) : response([{ ...row, attributes }]) })
@@ -230,7 +228,7 @@ describe("Up sync", () => {
   })
 
   test("each detail column alone triggers an update and clearing preserves user data", async () => {
-    const db = database(), row = txn()
+    const db = testDb(), row = txn()
     row.attributes.cardPurchaseMethod = { method: "CONTACTLESS", cardNumberSuffix: "0123" }
     const first = await syncUp(db, client([row]), { now })
     const category = createCategory(db, { name: "User", color: "#ffffff" })
@@ -264,7 +262,7 @@ describe("Up sync", () => {
   })
 
   test("HELD becomes SETTLED in place and preserves user category, note, and tag", async () => {
-    const db = database()
+    const db = testDb()
     const first = await syncUp(db, client([txn()]), { now })
     const category = createCategory(db, { name: "User", color: "#ffffff" })
     const tag = createTag(db, { name: "User", color: "#ffffff", categoryId: null })
@@ -286,7 +284,7 @@ describe("Up sync", () => {
   })
 
   test("vanished HELD is removed with tags; vanished SETTLED and CSV rows survive", async () => {
-    const db = database()
+    const db = testDb()
     const first = await syncUp(db, client([txn("hold"), txn("settled", "SETTLED")]), { now })
     db.query("INSERT INTO transaction_tags SELECT ?, id FROM tags LIMIT 1").run(first.insertedIds[0]!)
     db.query("INSERT INTO transactions (date_raw, date_iso, amount, description, status) VALUES ('2026-01-01', '2026-01-01', 1, 'CSV', 'HELD')").run()
@@ -298,7 +296,7 @@ describe("Up sync", () => {
   })
 
   test("incremental window uses instants for newest and oldest HELD across offsets", async () => {
-    const db = database(), since: Array<string | undefined> = []
+    const db = testDb(), since: Array<string | undefined> = []
     const rows = [txn("a", "SETTLED", "2026-04-05T02:50:00+11:00"), txn("b", "SETTLED", "2026-04-05T02:10:00+10:00")]
     await syncUp(db, client(rows), { now })
     await syncUp(db, client(rows, undefined, since), { now })
@@ -310,7 +308,7 @@ describe("Up sync", () => {
   })
 
   test("mid-pagination failure writes only last_error and preserves last successful timestamp", async () => {
-    const db = database()
+    const db = testDb()
     await syncUp(db, client([txn()]), { now })
     const beforeAccounts = db.query("SELECT * FROM accounts").all()
     const beforeTransactions = db.query("SELECT * FROM transactions").all()
@@ -330,7 +328,7 @@ describe("Up sync", () => {
   })
 
   test("disabled account skips requests and preserves rows and flag while metadata and transfer links update", async () => {
-    const db = database()
+    const db = testDb()
     await syncUp(db, client([txn("disabled-held", "HELD", undefined, "saver"), txn("disabled-settled", "SETTLED", undefined, "saver")]), { now })
     // Retain rows deliberately to prove sync does not alter disabled account data.
     db.query("UPDATE accounts SET sync_enabled = 0 WHERE external_id = 'saver'").run()
@@ -359,7 +357,7 @@ describe("Up sync", () => {
   })
 
   test("re-enabled empty account gets full history while another account gets its own incremental window", async () => {
-    const db = database()
+    const db = testDb()
     const rows = [txn("daily-new", "SETTLED", "2026-04-05T02:10:00+10:00"), txn("saver-old", "HELD", "2025-01-01T00:00:00Z", "saver")]
     await syncUp(db, client(rows), { now })
     const saver = loadAccounts(db).find(a => a.name === "Savings")!
@@ -374,7 +372,7 @@ describe("Up sync", () => {
   })
 
   test("switching off during fetch prevents restored rows and skips later disabled account requests", async () => {
-    const db = database()
+    const db = testDb()
     await syncUp(db, client([txn()]), { now })
     const accounts = loadAccounts(db)
     const requests: string[] = []
@@ -393,7 +391,7 @@ describe("Up sync", () => {
   })
 
   test("HELD reconciliation uses each account window and preserves returned HELD and all SETTLED rows", async () => {
-    const db = database()
+    const db = testDb()
     const daily = [txn("daily-held", "HELD", "2026-01-01T00:00:00Z"), txn("daily-settled", "SETTLED", "2026-04-01T00:00:00Z")]
     const saver = [txn("saver-held", "HELD", "2026-03-25T00:00:00Z", "saver"), txn("saver-missing", "HELD", "2026-03-26T00:00:00Z", "saver"), txn("saver-settled", "SETTLED", "2026-04-05T00:00:00Z", "saver")]
     await syncUp(db, client([...daily, ...saver]), { now })
@@ -406,7 +404,7 @@ describe("Up sync", () => {
   })
 
   test("failure on a later account discards earlier account fetches and metadata changes", async () => {
-    const db = database()
+    const db = testDb()
     await syncUp(db, client([txn()]), { now })
     const beforeAccounts = db.query("SELECT * FROM accounts").all()
     const beforeTransactions = db.query("SELECT * FROM transactions").all()
@@ -427,7 +425,7 @@ describe("Up sync", () => {
   })
 
   test("write failure rolls back accounts and transactions, then records error", async () => {
-    const db = database(), broken = txn()
+    const db = testDb(), broken = txn()
     const beforeCategories = db.query("SELECT * FROM categories").all()
     broken.relationships.account.data.id = "missing"
     const brokenClient = createUpClient({ token: "test-pat", fetch: async input =>
@@ -440,7 +438,7 @@ describe("Up sync", () => {
   })
 
   test("JSON-escaped API errors cannot put the PAT in sync_state.last_error", async () => {
-    const db = database(), token = "secret-test-pat"
+    const db = testDb(), token = "secret-test-pat"
     const escaped = Array.from(token, c => `\\u${c.charCodeAt(0).toString(16).padStart(4, "0")}`).join("")
     const failing = createUpClient({ token, fetch: async input => new URL(String(input)).pathname.endsWith("/categories") ? response([]) : new Response(JSON.stringify({ errors: [{ title: `Denied ${token}`, detail: token }] }).replaceAll(token, escaped), { status: 403 }) })
     await expect(syncUp(db, failing, { now })).rejects.toThrow("Denied [redacted]")
@@ -450,7 +448,7 @@ describe("Up sync", () => {
   })
 
   test("account collision suffixes and rename preserve local identity, sort order, active flag", async () => {
-    const db = database()
+    const db = testDb()
     for (const name of ["Daily", "Daily (Up)", "Daily (Up) 2"]) db.query("INSERT INTO accounts (name, sort_order) VALUES (?, 20)").run(name)
     await syncUp(db, client([], [account()]), { now })
     const first = loadAccounts(db).find(a => a.source === "up")
@@ -466,13 +464,12 @@ describe("Up sync", () => {
 
 
 test("store sync locks concurrent calls, refreshes, applies rules only to inserts, and resets after errors", async () => {
-  const previousToken = process.env.JASKMONEY_UP_TOKEN
   const fetchMock = spyOn(globalThis, "fetch")
   data.init(":memory:")
   const db = data.getDb()
   if (!db) throw new Error("db not open")
   try {
-    process.env.JASKMONEY_UP_TOKEN = "test-pat"
+    testEnv("JASKMONEY_UP_TOKEN", "test-pat")
     const category = createCategory(db, { name: "Rule category", color: "#ffffff" })
     data.setState({ savedFilters: [{ id: "merchant", name: "Merchant", expr: "desc:Merchant" }] })
     data.createSettingsRule({ name: "Merchant", savedFilterId: "merchant", setCategoryId: category, addTagIds: [], enabled: true })
@@ -501,8 +498,6 @@ test("store sync locks concurrent calls, refreshes, applies rules only to insert
     expect(data.state.upSyncing).toBe(false)
   } finally {
     fetchMock.mockRestore()
-    if (previousToken === undefined) delete process.env.JASKMONEY_UP_TOKEN
-    else process.env.JASKMONEY_UP_TOKEN = previousToken
     data.setState({ savedFilters: [] })
     db.close()
   }

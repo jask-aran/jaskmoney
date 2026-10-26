@@ -1,14 +1,14 @@
 import { describe, expect, test } from "bun:test"
 import { cycleFor } from "../domain/budget"
 import { editorFields, pickerChoices, pickerItems, stepChoice, anchorChoices, anchorDraft, cycleFromDraft, normaliseCycleDraft, type Draft } from "./settingsForm"
-import type { Account, Category } from "../domain/types"
 import { ui } from "./uiStore"
+import { account, category } from "../testing/fixtures"
 
-const category = (id: number, name: string, parentId: number | null = null): Category => ({
-  id, name, color: "#fff", sortOrder: id, isDefault: false, parentId, extId: null, notSpending: false,
-} as Category)
-const account = { id: 1, name: "Spending", type: "debit", sortOrder: 1, isActive: true, source: "up", externalKind: "TRANSACTIONAL", balance: 1, syncEnabled: true } as Account
-const ctx = { accounts: [account], categories: [category(1, "Home"), category(2, "Groceries", 1), category(3, "People")], tags: [], savedFilters: [] }
+const ctx = {
+  accounts: [account({ name: "Spending", balance: 1 })],
+  categories: [category({ id: 1, name: "Home" }), category({ id: 2, name: "Groceries", parentId: 1 }), category({ id: 3, name: "People" })],
+  tags: [], savedFilters: [],
+}
 const draft: Draft = { ...ui.state.settingsDraft, scopeKey: "overall", amount: "2000", unit: "month", anchor: "calendar", anchorDate: "" }
 
 describe("settings form", () => {

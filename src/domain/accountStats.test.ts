@@ -1,27 +1,13 @@
 import { describe, expect, test } from "bun:test"
 import { computeAccountStats } from "./accountStats"
-import type { Account, Transaction } from "./types"
+import type { Transaction } from "./types"
+import { account, transaction } from "../testing/fixtures"
 
-function account(id: number, balance: number | null = 100): Account {
-  return {
-    id, name: `Account ${id}`, type: "debit", sortOrder: id, isActive: true,
-    source: "up", externalKind: "TRANSACTIONAL", balance, syncEnabled: true,
-  }
-}
-
-function row(amount: number, overrides: Partial<Transaction> = {}): Transaction {
-  return {
-    id: 1, dateRaw: "2026-10-05", dateISO: "2026-10-05", amount,
-    description: "x", categoryId: null, categoryName: "Uncategorised",
-    categoryColor: "", notes: "", importId: null, accountId: 1, accountName: "A",
-    tagNames: [], tagColors: [], tagIds: [], source: "up", status: "SETTLED",
-    transferAccountId: null, internal: false, excluded: false, ...overrides,
-  }
-}
+const row = (amount: number, overrides: Partial<Transaction> = {}) => transaction({ amount, ...overrides })
 
 describe("computeAccountStats", () => {
   test("balances sum reported values; holds include null-balance accounts and internal rows", () => {
-    const stats = computeAccountStats([account(1, 200), account(2, null), account(3, -50)], [
+    const stats = computeAccountStats([account({ id: 1, balance: 200 }), account({ id: 2, balance: null }), account({ id: 3, balance: -50 })], [
       row(-20, { status: "HELD", internal: true, excluded: true, tagNames: ["IGNORE"] }),
       row(-5, { status: "HELD", accountId: 2 }),
       row(2, { status: "HELD", accountId: 3 }),
@@ -32,12 +18,12 @@ describe("computeAccountStats", () => {
     expect(stats.balance).toBe(150)
     expect(stats.held).toEqual({ count: 3, amount: -23 })
     expect(stats.settledBalance).toBe(173)
-    expect(computeAccountStats([account(1, 0)], [], "2026-10-05").balance).toBe(0)
-    expect(computeAccountStats([account(1, 0)], [], "2026-10-05").settledBalance).toBe(0)
+    expect(computeAccountStats([account({ id: 1, balance: 0 })], [], "2026-10-05").balance).toBe(0)
+    expect(computeAccountStats([account({ id: 1, balance: 0 })], [], "2026-10-05").settledBalance).toBe(0)
   })
 
   test("missing balances preserve nulls and empty history but still count activity and flows", () => {
-    const stats = computeAccountStats([account(1, null)], [row(-5, { status: "HELD" })], "2026-10-05")
+    const stats = computeAccountStats([account({ id: 1, balance: null })], [row(-5, { status: "HELD" })], "2026-10-05")
     expect(stats.balance).toBeNull()
     expect(stats.settledBalance).toBeNull()
     expect(stats.history).toEqual([])
@@ -62,7 +48,7 @@ describe("computeAccountStats", () => {
   })
 
   test("first and last activity use all scoped rows, including future dates, regardless of input order", () => {
-    const stats = computeAccountStats([account(1)], [
+    const stats = computeAccountStats([account({ id: 1 })], [
       row(1, { dateISO: "2027-01-01" }), row(1),
       row(1, { dateISO: "2025-01-01", internal: true, excluded: true }),
       row(1, { dateISO: "2020-01-01", accountId: 99 }),
@@ -70,7 +56,7 @@ describe("computeAccountStats", () => {
     ], "2026-10-05")
     expect(stats.firstActivityISO).toBe("2025-01-01")
     expect(stats.lastActivityISO).toBe("2027-01-01")
-    expect(computeAccountStats([account(1)], [], "2026-10-05").lastActivityISO).toBeNull()
+    expect(computeAccountStats([account({ id: 1 })], [], "2026-10-05").lastActivityISO).toBeNull()
   })
 
   for (const [days, included, excluded] of [
@@ -79,7 +65,7 @@ describe("computeAccountStats", () => {
     [365, "2025-10-06", "2025-10-05"],
   ] satisfies Array<[number, string, string]>) {
     test(`${days}-day window includes day ${days}, excludes day ${days + 1} and future rows`, () => {
-      const stats = computeAccountStats([account(1)], [
+      const stats = computeAccountStats([account({ id: 1 })], [
         row(10, { dateISO: included, internal: true, excluded: true }),
         row(-3, { dateISO: included, status: "HELD", tagNames: ["IGNORE"] }),
         row(2), row(-1), row(0),
@@ -93,7 +79,7 @@ describe("computeAccountStats", () => {
   }
 
   test("monthly calendar list crosses years, fills empty months, and stops the current month at today", () => {
-    const stats = computeAccountStats([account(1)], [
+    const stats = computeAccountStats([account({ id: 1 })], [
       row(10, { dateISO: "2025-11-30" }),
       row(20, { dateISO: "2025-12-01", internal: true, excluded: true }),
       row(-5, { dateISO: "2025-12-31" }),
@@ -105,14 +91,14 @@ describe("computeAccountStats", () => {
       { month: "2026-01", moneyIn: 0, moneyOut: 0 },
       { month: "2026-02", moneyIn: 7, moneyOut: 2 },
     ])
-    const defaults = computeAccountStats([account(1)], [], "2026-02-03").monthly
+    const defaults = computeAccountStats([account({ id: 1 })], [], "2026-02-03").monthly
     expect(defaults).toHaveLength(12)
     expect(defaults[0]?.month).toBe("2025-03")
     expect(defaults.at(-1)?.month).toBe("2026-02")
   })
 
   test("history reverses dated balanced-account amounts, including holds, internal, IGNORE, and future rows", () => {
-    const stats = computeAccountStats([account(1, 100), account(2, null)], [
+    const stats = computeAccountStats([account({ id: 1, balance: 100 }), account({ id: 2, balance: null })], [
       row(50), row(-20, { dateISO: "2026-10-04", status: "HELD" }),
       row(-10, { dateISO: "2026-10-04", internal: true, excluded: true, tagNames: ["IGNORE"] }),
       row(-7, { dateISO: "2026-10-06" }), row(2, { dateISO: "2027-01-01" }),
@@ -124,7 +110,7 @@ describe("computeAccountStats", () => {
       { dateISO: "2026-10-04", value: 55 },
       { dateISO: "2026-10-05", value: 105 },
     ])
-    const defaults = computeAccountStats([account(1)], [], "2026-10-05").history
+    const defaults = computeAccountStats([account({ id: 1 })], [], "2026-10-05").history
     expect(defaults).toHaveLength(365)
     expect(defaults[0]).toEqual({ dateISO: "2025-10-06", value: 100 })
     expect(defaults.at(-1)).toEqual({ dateISO: "2026-10-05", value: 100 })
@@ -144,7 +130,7 @@ describe("computeAccountStats", () => {
   ]) {
     test(`months and all window boundaries stay exact on the first day ${fixture.today}`, () => {
       const rows = fixture.boundaries.map((dateISO, index) => row(10 ** index, { dateISO }))
-      const stats = computeAccountStats([account(1)], [
+      const stats = computeAccountStats([account({ id: 1 })], [
         ...rows, row(2, { dateISO: fixture.today }), row(1000000, { dateISO: fixture.future }),
       ], fixture.today, { months: 3 })
       expect(stats.windows).toEqual([
@@ -166,12 +152,12 @@ describe("computeAccountStats", () => {
   ]) {
     const todayISO = dates[2]!
     test(`history uses UTC calendar days across ${todayISO}`, () => {
-      expect(computeAccountStats([account(1)], [], todayISO, { historyDays: 3 }).history.map((day) => day.dateISO)).toEqual(dates)
+      expect(computeAccountStats([account({ id: 1 })], [], todayISO, { historyDays: 3 }).history.map((day) => day.dateISO)).toEqual(dates)
     })
   }
 
   test("interest matches only positive exact trimmed case-insensitive descriptions; year and 365-day totals differ", () => {
-    const stats = computeAccountStats([account(1)], [
+    const stats = computeAccountStats([account({ id: 1 })], [
       row(1, { dateISO: "2025-10-05", description: "Interest" }),
       row(2, { dateISO: "2025-10-06", description: "Interest" }),
       row(3, { dateISO: "2025-12-31", description: "Interest" }),
@@ -187,7 +173,7 @@ describe("computeAccountStats", () => {
   })
 
   test("future interest remains latest and in its calendar year, but is outside trailing totals", () => {
-    const stats = computeAccountStats([account(1, 1000)], [
+    const stats = computeAccountStats([account({ id: 1, balance: 1000 })], [
       row(4, { dateISO: "2026-10-06", description: "Interest" }),
       row(3, { description: "Interest" }),
     ], "2026-10-05")
@@ -198,14 +184,14 @@ describe("computeAccountStats", () => {
   })
 
   test("implied rate reconstructs 30 prior end-of-day balances beyond the displayed history", () => {
-    const stats = computeAccountStats([account(1, 1003.29)], [
+    const stats = computeAccountStats([account({ id: 1, balance: 1003.29 })], [
       row(3.29, { dateISO: "2026-08-01", description: "Interest" }),
     ], "2026-10-05", { historyDays: 1 })
     expect(stats.history).toEqual([{ dateISO: "2026-10-05", value: 1003.29 }])
     expect(stats.interest.impliedAnnualRatePct).toBeCloseTo(3.948, 8)
 
     // June 1-15 end at 1000; June 16-30 end at 2000. July 1 is excluded.
-    const varied = computeAccountStats([account(1, 2503)], [
+    const varied = computeAccountStats([account({ id: 1, balance: 2503 })], [
       row(1000, { dateISO: "2026-06-16" }),
       row(500, { dateISO: "2026-07-01" }),
       row(3, { dateISO: "2026-07-01", description: "Interest" }),
@@ -215,14 +201,14 @@ describe("computeAccountStats", () => {
   })
 
   test("implied rate is null without interest, a reported balance, or a positive prior average", () => {
-    expect(computeAccountStats([account(1)], [], "2026-10-05").interest.impliedAnnualRatePct).toBeNull()
+    expect(computeAccountStats([account({ id: 1 })], [], "2026-10-05").interest.impliedAnnualRatePct).toBeNull()
     for (const balance of [null, 3, -10]) {
-      expect(computeAccountStats([account(1, balance)], [row(3, { description: "Interest" })], "2026-10-05").interest.impliedAnnualRatePct).toBeNull()
+      expect(computeAccountStats([account({ id: 1, balance })], [row(3, { description: "Interest" })], "2026-10-05").interest.impliedAnnualRatePct).toBeNull()
     }
   })
 
   test("implied rate skips zero-balance days before an opening deposit within the 30-day span", () => {
-    const stats = computeAccountStats([account(1, 1003)], [
+    const stats = computeAccountStats([account({ id: 1, balance: 1003 })], [
       row(1000, { dateISO: "2026-06-16" }),
       row(3, { dateISO: "2026-07-01", description: "Interest" }),
     ], "2026-10-05", { historyDays: 1 })
@@ -231,7 +217,7 @@ describe("computeAccountStats", () => {
     expect(stats.interest.impliedAnnualRatePct).toBeCloseTo(3 / 1000 * 1200)
     expect(stats.history).toHaveLength(1)
 
-    const openedOnInterestDay = computeAccountStats([account(1, 1003)], [
+    const openedOnInterestDay = computeAccountStats([account({ id: 1, balance: 1003 })], [
       row(1000, { dateISO: "2026-07-01" }),
       row(3, { dateISO: "2026-07-01", description: "Interest" }),
     ], "2026-10-05", { historyDays: 1 })
@@ -239,7 +225,7 @@ describe("computeAccountStats", () => {
   })
 
   test("top outflows group exact descriptions, rank positive totals, cap at five, and use 90 inclusive days", () => {
-    const stats = computeAccountStats([account(1)], [
+    const stats = computeAccountStats([account({ id: 1 })], [
       row(-20, { description: "Rent", dateISO: "2026-07-08" }), row(-80, { description: "Rent" }),
       row(-70, { description: "Food", status: "HELD", tagNames: ["IGNORE"] }),
       row(-60, { description: "Travel" }), row(-50, { description: "Bills" }),
@@ -260,7 +246,7 @@ describe("computeAccountStats", () => {
   })
 
   test("two-account groups sum balances and merge flows while internal transfer sides cancel in history", () => {
-    const stats = computeAccountStats([account(1, 100), account(2, 200)], [
+    const stats = computeAccountStats([account({ id: 1, balance: 100 }), account({ id: 2, balance: 200 })], [
       row(-50, { internal: true, excluded: true }), row(50, { accountId: 2, internal: true, excluded: true }),
       row(20, { accountId: 2 }), row(-10, { description: "Food" }),
       row(-5, { accountId: 2, description: "Food" }),
@@ -273,7 +259,7 @@ describe("computeAccountStats", () => {
   })
 
   test("explicit zero options keep monthly and history lists empty", () => {
-    const stats = computeAccountStats([account(1)], [], "2026-10-05", { months: 0, historyDays: 0 })
+    const stats = computeAccountStats([account({ id: 1 })], [], "2026-10-05", { months: 0, historyDays: 0 })
     expect(stats.monthly).toEqual([])
     expect(stats.history).toEqual([])
   })

@@ -10,43 +10,21 @@ import {
   groupCategorySpend,
   weeklyTotals,
 } from "./dashboard"
-import type { Category, Transaction } from "./types"
+import { category, transaction } from "../testing/fixtures"
 
-const cats: Category[] = [
-  { id: 1, name: "Groceries", color: "#94e2d5", sortOrder: 1, isDefault: false, parentId: null, extId: null , notSpending: false},
-  { id: 2, name: "Transport", color: "#89b4fa", sortOrder: 2, isDefault: false, parentId: null, extId: null , notSpending: false},
+const cats = [
+  category({ id: 1, name: "Groceries", color: "#94e2d5" }),
+  category({ id: 2, name: "Transport", color: "#89b4fa" }),
 ]
-
-function t(
-  partial: Partial<Transaction> & Pick<Transaction, "amount" | "dateISO" | "categoryName">,
-): Transaction {
-  return {
-    id: 1,
-    dateRaw: partial.dateISO,
-    dateISO: partial.dateISO,
-    amount: partial.amount,
-    description: "x",
-    categoryId: partial.categoryId ?? null,
-    categoryName: partial.categoryName,
-    categoryColor: partial.categoryColor ?? "#7f849c",
-    notes: "",
-    importId: null,
-    accountId: 1,
-    accountName: "A",
-    tagNames: partial.tagNames ?? [],
-    tagColors: partial.tagColors ?? [],
-    tagIds: partial.tagIds ?? [], source: "csv" as const, status: null, transferAccountId: null, internal: false, excluded: false,
-  }
-}
 
 describe("dashboard aggregates", () => {
   test("category spend ignores credits and IGNORE", () => {
     const list = computeCategorySpend(
       [
-        t({ amount: -30, dateISO: "2026-02-01", categoryName: "Groceries", categoryId: 1 }),
-        t({ amount: -20, dateISO: "2026-02-01", categoryName: "Transport", categoryId: 2 }),
-        t({ amount: -50, dateISO: "2026-02-01", categoryName: "Groceries", categoryId: 1, tagNames: ["IGNORE"] }),
-        t({ amount: 100, dateISO: "2026-02-01", categoryName: "Income", categoryId: 9 }),
+        transaction({ amount: -30, dateISO: "2026-02-01", categoryName: "Groceries", categoryId: 1 }),
+        transaction({ amount: -20, dateISO: "2026-02-01", categoryName: "Transport", categoryId: 2 }),
+        transaction({ amount: -50, dateISO: "2026-02-01", categoryName: "Groceries", categoryId: 1, tagNames: ["IGNORE"] }),
+        transaction({ amount: 100, dateISO: "2026-02-01", categoryName: "Income", categoryId: 9 }),
       ],
       cats,
     )
@@ -56,7 +34,7 @@ describe("dashboard aggregates", () => {
   })
 
   test("category spend excludes internal transfers but retains untracked transfers", () => {
-    const debit = t({ amount: -30, dateISO: "2026-02-01", categoryName: "Groceries", categoryId: 1 })
+    const debit = transaction({ amount: -30, dateISO: "2026-02-01", categoryName: "Groceries", categoryId: 1 })
     expect(computeCategorySpend([
       debit,
       { ...debit, amount: -100, internal: true, excluded: true, transferAccountId: 2 },
@@ -65,7 +43,7 @@ describe("dashboard aggregates", () => {
   })
 
   test("daily spending excludes internal transfers and keeps existing filters", () => {
-    const debit = t({ amount: -30, dateISO: "2026-02-01", categoryName: "Groceries" })
+    const debit = transaction({ amount: -30, dateISO: "2026-02-01", categoryName: "Groceries" })
     expect(dailySpendSeries([
       debit,
       { ...debit, amount: -100, internal: true, excluded: true, transferAccountId: 2 },
@@ -81,10 +59,10 @@ describe("dashboard aggregates", () => {
 describe("category groups", () => {
   test("subcategories roll up into their group; ungrouped categories stand alone; whole-dollar format", () => {
     const tree = [
-      { id: 1, name: "Uncategorised", color: "#7f849c", sortOrder: 1, isDefault: true, parentId: null, extId: null , notSpending: false},
-      { id: 10, name: "Good Life", color: "#fab387", sortOrder: 2, isDefault: false, parentId: null, extId: "good-life" , notSpending: false},
-      { id: 11, name: "Takeaway", color: "#fab387", sortOrder: 3, isDefault: false, parentId: 10, extId: "takeaway" , notSpending: false},
-      { id: 12, name: "Pubs & Bars", color: "#fab387", sortOrder: 4, isDefault: false, parentId: 10, extId: "pubs-and-bars" , notSpending: false},
+      category({ id: 1, name: "Uncategorised", color: "#7f849c", sortOrder: 1, isDefault: true }),
+      category({ id: 10, name: "Good Life", color: "#fab387", sortOrder: 2, extId: "good-life" }),
+      category({ id: 11, name: "Takeaway", color: "#fab387", sortOrder: 3, parentId: 10, extId: "takeaway" }),
+      category({ id: 12, name: "Pubs & Bars", color: "#fab387", sortOrder: 4, parentId: 10, extId: "pubs-and-bars" }),
     ]
     const groups = groupCategorySpend([
       { categoryId: 1, name: "Uncategorised", color: "#7f849c", amount: 50, pct: 0 },

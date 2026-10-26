@@ -1,7 +1,7 @@
 import { describe, expect, test } from "bun:test"
 import { editText, textField, type TextKey } from "./textField"
+import { key } from "../testing/keys"
 
-const key = (name: string, opts: Partial<TextKey> = {}): TextKey => ({ name, sequence: opts.sequence ?? (name.length === 1 ? name : ""), ctrl: false, meta: false, ...opts })
 const type = (field: ReturnType<typeof textField>, ...keys: TextKey[]) => keys.reduce((f, k) => editText(f, k) ?? f, field)
 
 describe("editText", () => {

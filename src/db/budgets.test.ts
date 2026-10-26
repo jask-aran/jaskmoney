@@ -1,8 +1,9 @@
 import { expect, test } from "bun:test"
-import { deleteBudget, loadBudgetCycle, loadBudgets, openDb, saveBudget, saveBudgetCycle } from "./client"
+import { deleteBudget, loadBudgetCycle, loadBudgets, saveBudget, saveBudgetCycle } from "./client"
+import { testDb } from "../testing/scoped"
 
 test("one budget per scope (saving again replaces the amount); cycle defaults to calendar months and validates dates", () => {
-  const db = openDb(":memory:")
+  const db = testDb()
   expect(loadBudgetCycle(db)).toEqual({ unit: "month", anchor: "calendar", anchorDate: null })
   const overall = saveBudget(db, { kind: "overall" }, 3000)
   expect(saveBudget(db, { kind: "overall" }, 3200)).toBe(overall)
@@ -21,5 +22,4 @@ test("one budget per scope (saving again replaces the amount); cycle defaults to
   expect(loadBudgetCycle(db)).toEqual({ unit: "fortnight", anchor: "date", anchorDate: "2026-10-16" })
   saveBudgetCycle(db, { unit: "week", anchor: "calendar", anchorDate: "2026-10-16" })
   expect(loadBudgetCycle(db)).toEqual({ unit: "week", anchor: "calendar", anchorDate: null })
-  db.close()
 })
