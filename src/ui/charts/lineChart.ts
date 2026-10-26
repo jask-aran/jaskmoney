@@ -151,9 +151,15 @@ export function valueRow(value: number, min: number, max: number, height: number
 
 const MONTHS = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"]
 
+/** The day after `iso`. */
+const addDay = (iso: string) => new Date(Date.parse(iso + "T12:00:00Z") + 86400000).toISOString().slice(0, 10)
+
 /**
- * Gridlines and the x-axis label line for a daily series over `dates`:
- * month starts, Mondays when weeks are at least 6 cells apart, and today.
+ * Gridlines and the x-axis label line for a daily series over `dates`, as in
+ * the Go app: month starts ("year" on 1 Jan) and the range's closing month
+ * end; week rules on Mondays when weeks are at least 6 cells apart, else on
+ * days 7, 14 and 21 of each month, thinning to 7 and 21, then 14, as months
+ * narrow (unlabelled); and today, which replaces a rule on its day.
  * Labels are placed greedily by priority (start and end, then months, then
  * Mondays' day numbers) with at least two blank cells between them. `colOf`
  * places date index i (default: the line chart's spread over `width`).
@@ -176,24 +182,31 @@ export function dateAxis(
   const dayLabel = (iso: string) => `${day(iso)} ${month(iso)}${cross ? ` ${iso.slice(2, 4)}` : ""}`
   labelAt.push({ col: 0, text: dayLabel(dates[0]!), align: "left" })
   labelAt.push({ col: width - 1, text: dayLabel(dates[n - 1]!), align: "right" })
+  const colsPerMonth = width / new Set(dates.map((iso) => iso.slice(0, 7))).size
+  const weekDays = weekCells >= 6 ? [] : colsPerMonth >= 14 ? [7, 14, 21] : colsPerMonth >= 9 ? [7, 21] : colsPerMonth >= 5 ? [14] : []
   const months: number[] = []
   const mondays: number[] = []
   dates.forEach((iso, i) => {
     if (i === 0) return
     if (day(iso) === 1) months.push(i)
     else if (weekCells >= 6 && weekday(iso) === 0) mondays.push(i)
+    else if (weekDays.includes(day(iso))) markers.push({ index: i, ink: "week" })
   })
+  const yearInk = (iso: string) => (iso.slice(5, 7) === "01" ? "year" : "month")
   for (const i of months) {
-    markers.push({ index: i, ink: "month" })
     const iso = dates[i]!
+    markers.push({ index: i, ink: yearInk(iso) })
     labelAt.push({ col: colOf(i), text: iso.slice(5, 7) === "01" ? iso.slice(0, 4) : month(iso), align: "left" })
   }
+  // The closing month end, when the range ends on one.
+  const lastISO = dates[n - 1]!
+  if (n > 1 && day(addDay(lastISO)) === 1) markers.push({ index: n - 1, ink: yearInk(addDay(lastISO)) })
   for (const i of mondays) {
     markers.push({ index: i, ink: "week" })
     labelAt.push({ col: colOf(i), text: String(day(dates[i]!)), align: "left" })
   }
   const today = dates.indexOf(todayISO)
-  if (today > 0 && today < n - 1) {
+  if (today > 0 && today <= n - 1) {
     // Today's rule replaces a week or month rule on the same day.
     for (let i = markers.length - 1; i >= 0; i--) if (markers[i]!.index === today) markers.splice(i, 1)
     markers.push({ index: today, ink: "today" })

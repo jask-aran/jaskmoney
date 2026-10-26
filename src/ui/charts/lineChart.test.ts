@@ -63,6 +63,24 @@ describe("dateAxis", () => {
   })
 })
 
+describe("dateAxis gridlines", () => {
+  const days = (from: number, count: number) => Array.from({ length: count }, (_, i) => new Date(Date.UTC(2026, 6, from + i)).toISOString().slice(0, 10))
+  test("narrow months get unlabelled week rules on days 7, 14 and 21, and the range closes on a month end", () => {
+    const dates = days(1, 184) // 1 Jul – 31 Dec
+    const axis = dateAxis(dates, 100, "2026-10-26")
+    const weeks = axis.markers.filter((m) => m.ink === "week").map((m) => dates[m.index]!)
+    expect(weeks.slice(0, 3)).toEqual(["2026-07-07", "2026-07-14", "2026-07-21"])
+    expect(axis.markers).toContainEqual({ index: dates.indexOf("2026-08-01"), ink: "month" })
+    expect(axis.markers).toContainEqual({ index: dates.length - 1, ink: "year" })
+    expect(axis.labels).not.toContain(" 14 ")
+  })
+  test("today on the last day replaces the closing rule", () => {
+    const dates = days(1, 31)
+    const axis = dateAxis(dates, 60, "2026-07-31")
+    expect(axis.markers.filter((m) => m.index === 30)).toEqual([{ index: 30, ink: "today" }])
+  })
+})
+
 describe("niceRange", () => {
   test("snaps level bounds to the step", () => {
     expect(niceRange(6500, 14200)).toEqual({ min: 6000, max: 16000, step: 2000 })

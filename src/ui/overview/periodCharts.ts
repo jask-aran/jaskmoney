@@ -19,8 +19,10 @@ export const INKS: Record<string, string> = {
   limit: theme.yellow,
   balance: theme.lavender,
   savers: theme.green,
-  month: theme.surface2,
-  week: theme.surface0,
+  // Gridlines, as in the Go app.
+  week: theme.surface1,
+  month: theme.blue,
+  year: theme.accent,
   today: theme.green,
 }
 
@@ -118,7 +120,8 @@ export function spendingChart(
   let used: number
   if (n <= width) {
     const slot = Math.floor(width / n)
-    markerCol = (i, ink) => (ink === "today" || slot === 1 ? i * slot : i * slot - 1)
+    // The closing month end sits in the gap after the last bar.
+    markerCol = (i, ink) => (ink === "today" || slot === 1 ? i * slot : i === n - 1 ? i * slot + slot - 1 : i * slot - 1)
     bars = dates.map((d, i) => ({ value: i < elapsed ? values[i]! : 0, ink: d === todayISO ? "partial" : "spend" }))
     colOf = (i) => i * slot
     used = (n - 1) * slot + (slot > 1 ? slot - 1 : 1)

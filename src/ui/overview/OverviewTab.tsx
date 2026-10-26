@@ -13,7 +13,7 @@ import { spendingCalendar, type CalendarDay } from "../../domain/spending"
 import { LOOKBACKS, PERIODS, PERIOD_LABEL, activeChipIndex, comparisonWindows, dataClock, filterByTimeframe, timeframeBounds, toISODate } from "../../domain/timeframe"
 import { fit } from "../text"
 import { spendingScope } from "../../domain/accountTree"
-import { AXIS, ChartBody, type ChartModel } from "../charts/ChartBody"
+import { AXIS_GUESS, ChartBody, axisWidth, type ChartModel } from "../charts/ChartBody"
 import { INKS, addDays, balancesChart, cashFlowChart, spendingChart } from "./periodCharts"
 
 /** Calendar cell colours by spending level (0 = none). */
@@ -115,14 +115,21 @@ export function OverviewTab(props: { focused: SectionId }) {
 
   // Chart panes: border + padding (4) across; border (2), the view strip and
   // a blank line, then the x labels and summary down.
-  const plotWidth = () => Math.max(1, mainWidth() - 4 - AXIS)
+  // The y-axis is as wide as its labels: build once with a guessed width,
+  // then again if the labels need a different one.
   const model = (index: number, height: number): ChartModel | null => {
     const v = (CHART_VIEWS[index] ?? CHART_VIEWS[0]).view
     const rows = Math.max(1, height - 6)
-    if (v === "Daily" || v === "Cumulative" || v === "Weekly") return spendingChart(v, series(), plotWidth(), rows, today(), spending(), budget()?.budget.amount)
-    if (v === "Cash flow") return cashFlowChart(series().dates, plotWidth(), rows, today(), data.state.accounts, data.state.transactions, scopeIds())
-    if (v === "Calendar") return null
-    return balancesChart(v, series().dates, plotWidth(), rows, today(), data.state.accounts, data.state.transactions)
+    const build = (axis: number): ChartModel | null => {
+      const width = Math.max(1, mainWidth() - 4 - axis)
+      if (v === "Daily" || v === "Cumulative" || v === "Weekly") return spendingChart(v, series(), width, rows, today(), spending(), budget()?.budget.amount)
+      if (v === "Cash flow") return cashFlowChart(series().dates, width, rows, today(), data.state.accounts, data.state.transactions, scopeIds())
+      if (v === "Calendar") return null
+      return balancesChart(v, series().dates, width, rows, today(), data.state.accounts, data.state.transactions)
+    }
+    const first = build(AXIS_GUESS)
+    if (!first || first.ticks.size === 0 || axisWidth(first.ticks) === AXIS_GUESS) return first
+    return build(axisWidth(first.ticks))
   }
   const topModel = createMemo(() => model(ui.state.chartViews[0], topChartHeight()))
   const bottomModel = createMemo(() => (wide() ? model(ui.state.chartViews[1], bottomChartHeight()) : null))
@@ -139,10 +146,12 @@ export function OverviewTab(props: { focused: SectionId }) {
   const showTimeframe = () => dims().width - 4 >= presetsWidth + 2 + bounds().label.length
   const dateFocused = () => props.focused === "ov.range"
   const chipCursor = () => (dateFocused() ? ui.state.dashChipCursor : activeChipIndex(ui.state.timeframe))
-  const chip = (label: string, idx: number, active: boolean) => {
+  // `active` is a function: For runs its callback once per chip, so a plain
+  // boolean would keep the first render's value.
+  const chip = (label: string, idx: number, active: () => boolean) => {
     const cur = () => chipCursor() === idx && dateFocused()
     return (
-      <S fg={active ? theme.accent : theme.overlay1} bg={cur() ? theme.surface0 : undefined} bold={active}>
+      <S fg={active() ? theme.accent : theme.overlay1} bg={cur() ? theme.surface0 : undefined} bold={active()}>
         {cur() ? ">" : " "}[{label}]
       </S>
     )
@@ -245,11 +254,11 @@ export function OverviewTab(props: { focused: SectionId }) {
         <box flexDirection="row" justifyContent="space-between" width="100%">
           <text fg={theme.subtext0} wrapMode="none">
             <For each={LOOKBACKS}>
-              {(lb, i) => chip(lb, i(), ui.state.timeframe.family === "lookback" && ui.state.timeframe.lookback === lb)}
+              {(lb, i) => chip(lb, i(), () => ui.state.timeframe.family === "lookback" && ui.state.timeframe.lookback === lb)}
             </For>
             <S fg={theme.surface2}>{" │"}</S>
             <For each={PERIODS}>
-              {(p, i) => chip(PERIOD_LABEL[p], LOOKBACKS.length + i(), ui.state.timeframe.family === "period" && ui.state.timeframe.period === p)}
+              {(p, i) => chip(PERIOD_LABEL[p], LOOKBACKS.length + i(), () => ui.state.timeframe.family === "period" && ui.state.timeframe.period === p)}
             </For>
           </text>
           <Show when={showTimeframe()}>
