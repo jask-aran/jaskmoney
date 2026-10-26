@@ -113,7 +113,7 @@ export function handleKey(ui: UiStore, key: KeyEvent, data?: DataStore): boolean
     if (name === "space" || seq === " ") {
       const tag = tags[ui.state.tagPickerCursor]
       const trows = data?.scopedTransactions() ?? []
-      const targets = selectedOrCursorIds(ui, trows)
+      const targets = ui.targetIds(trows)
       if (tag && data && targets.length) {
         ui.setStatus(data.toggleTagOnTransactions(targets, tag.id))
       }
@@ -172,7 +172,7 @@ export function handleKey(ui: UiStore, key: KeyEvent, data?: DataStore): boolean
       const rows = data?.scopedTransactions() ?? []
       const row = rows[ui.state.managerCursor]
       // Prefer selection targets
-      const targets = selectedOrCursorIds(ui, rows)
+      const targets = ui.targetIds(rows)
       if (cat && data && targets.length) {
         let last = ""
         for (const id of targets) {
@@ -242,6 +242,38 @@ export function handleKey(ui: UiStore, key: KeyEvent, data?: DataStore): boolean
       ui.setState({ filterDraft: next })
       data?.setFilterLive(next)
       ui.jumpManagerCursor(0, data?.scopedTransactions().length ?? 0)
+      return true
+    }
+    return true
+  }
+
+  // ── Transaction detail (a modal: owns input until closed) ──────────
+  if (ui.state.detailId != null) {
+    if (ui.state.detailNotesEditing) {
+      if (name === "escape") { ui.setState({ detailNotesEditing: false, detailNotesDraft: "" }); ui.setStatus("Notes unchanged"); return true }
+      if (name === "return" || name === "enter") {
+        try { data?.updateTransactionNotes(ui.state.detailId, ui.state.detailNotesDraft.trim()); ui.setStatus("Notes saved") } catch (e) { ui.setStatus(e instanceof Error ? e.message : String(e), true) }
+        ui.setState({ detailNotesEditing: false, detailNotesDraft: "" })
+        return true
+      }
+      if (name === "backspace") { ui.setState({ detailNotesDraft: ui.state.detailNotesDraft.slice(0, -1) }); return true }
+      if (isPrintable(key)) { ui.setState({ detailNotesDraft: ui.state.detailNotesDraft + seq }); return true }
+      return true
+    }
+    if (name === "escape" || name === "return" || name === "enter") { ui.setState({ detailId: null }); return true }
+    if (name === "c") { ui.openCatPicker(); return true }
+    if (name === "t") { ui.openTagPicker(); return true }
+    if (name === "n") {
+      const notes = data?.state.transactions.find((t) => t.id === ui.state.detailId)?.notes ?? ""
+      ui.setState({ detailNotesEditing: true, detailNotesDraft: notes })
+      return true
+    }
+    // j/k browse neighbouring transactions without closing the view.
+    if (name === "j" || name === "down" || name === "k" || name === "up") {
+      const rows = data?.scopedTransactions() ?? []
+      moveTxnCursor(ui, data, name === "j" || name === "down" ? 1 : -1, false)
+      const row = rows[ui.state.managerCursor]
+      if (row) ui.setState({ detailId: row.id })
       return true
     }
     return true
@@ -575,6 +607,11 @@ export function handleKey(ui: UiStore, key: KeyEvent, data?: DataStore): boolean
 
   // ── Manager txns ────────────────────────────────────────────────────
   if (scope === "manager.txns") {
+    if (name === "return" || name === "enter") {
+      const row = (data?.scopedTransactions() ?? [])[ui.state.managerCursor]
+      if (row) ui.setState({ detailId: row.id, detailNotesEditing: false })
+      return true
+    }
     if (name === "/" || seq === "/") {
       ui.openFilter(data?.state.filterQuery ?? "")
       return true
@@ -763,18 +800,6 @@ export function handleKey(ui: UiStore, key: KeyEvent, data?: DataStore): boolean
   return false
 }
 
-function selectedOrCursorIds(
-  ui: UiStore,
-  rows: { id: number }[],
-): number[] {
-  const hl = ui.highlightedIds(rows)
-  const hlIds = Object.keys(hl).map(Number)
-  if (hlIds.length) return hlIds
-  const sel = Object.keys(ui.state.selectedIds).map(Number)
-  if (sel.length) return sel
-  const row = rows[ui.state.managerCursor]
-  return row ? [row.id] : []
-}
 
 export function footerHints(scope: ScopeId): { key: string; desc: string }[] {
   switch (scope) {
@@ -817,8 +842,13 @@ export function footerHints(scope: ScopeId): { key: string; desc: string }[] {
         { key: "[/]", desc: "shift period" },
         { key: "esc", desc: "done" },
       ]
+    case "manager.detail":
+      return [{ key: "j/k", desc: "prev/next" }, { key: "c", desc: "category" }, { key: "t", desc: "tags" }, { key: "n", desc: "notes" }, { key: "esc", desc: "close" }]
+    case "manager.detail.notes":
+      return [{ key: "type", desc: "notes" }, { key: "enter", desc: "save" }, { key: "esc", desc: "cancel" }]
     case "manager.txns":
       return [
+        { key: "enter", desc: "detail" },
         { key: "j/k", desc: "move" },
         { key: "S-j/k", desc: "range" },
         { key: "space", desc: "select" },

@@ -527,6 +527,10 @@ export interface TransactionDetail {
   importFilename: string | null
 }
 
+export function setTransactionNotes(db: Db, id: number, notes: string): void {
+  db.query(`UPDATE transactions SET notes = ? WHERE id = ?`).run(notes, id)
+}
+
 export function loadTransactionDetail(db: Db, id: number): TransactionDetail | null {
   const row = db.query(`
     SELECT t.id, t.source, t.external_id AS externalId, t.status, t.external_created_at AS createdAt,

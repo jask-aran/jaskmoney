@@ -113,6 +113,45 @@ describe("key router", () => {
     data.setState({ accountSelection: "all" })
   })
 
+  test("transaction detail opens on enter, owns input, and targets its own row", () => {
+    const txn = (id: number) => ({
+      id, dateRaw: "x", dateISO: `2026-02-0${id}`, amount: -id, description: `T${id}`, categoryId: 1, categoryName: "U",
+      categoryColor: "#7f849c", notes: id === 2 ? "kept" : "", importId: null, accountId: 1, accountName: "A", tagNames: [],
+      tagColors: [], tagIds: [], source: "up" as const, status: null, transferAccountId: null, internal: false,
+    })
+    data.setState({
+      accounts: [{ id: 1, name: "A", type: "debit" as const, sortOrder: 1, isActive: true, source: "up" as const, externalKind: "TRANSACTIONAL", balance: 1, syncEnabled: true }],
+      transactions: [txn(3), txn(2), txn(1)],
+      accountSelection: "all",
+      ready: true,
+    })
+    ui.switchTab("manager")
+    ui.setState({ focusedSection: "mgr.transactions", managerCursor: 0, managerTop: 0, selectedIds: { 1: true } })
+    handleKey(ui, key({ name: "return" }), data)
+    expect(ui.state.detailId).toBe(3)
+    expect(ui.activeScope()).toBe("manager.detail")
+    // The detail row wins over the selection for pickers.
+    expect(ui.targetIds(data.scopedTransactions())).toEqual([3])
+    // j browses to the next row without closing.
+    handleKey(ui, key({ name: "j" }), data)
+    expect(ui.state.detailId).toBe(2)
+    // Tab keys are swallowed while the modal is open.
+    handleKey(ui, key({ name: "1" }), data)
+    expect(ui.state.activeTab).toBe("manager")
+    // n edits notes starting from the current value; printable keys are text.
+    handleKey(ui, key({ name: "n" }), data)
+    expect(ui.activeScope()).toBe("manager.detail.notes")
+    expect(ui.state.detailNotesDraft).toBe("kept")
+    handleKey(ui, key({ name: "j", sequence: "j" }), data)
+    expect(ui.state.detailNotesDraft).toBe("keptj")
+    handleKey(ui, key({ name: "escape" }), data)
+    expect(ui.state.detailNotesEditing).toBe(false)
+    handleKey(ui, key({ name: "escape" }), data)
+    expect(ui.state.detailId).toBeNull()
+    expect(ui.targetIds(data.scopedTransactions())).toEqual([1])
+    ui.setState({ selectedIds: {} })
+  })
+
   test("manager cursor moves with j/k", () => {
     data.setState({
       transactions: [1, 2, 3].map((id) => ({

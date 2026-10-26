@@ -31,6 +31,9 @@ import {
   loadImports,
   removeAccountWithTransactions,
   setAccountSyncEnabled,
+  loadTransactionDetail,
+  setTransactionNotes,
+  type TransactionDetail,
 } from "../db/client"
 import { selectedAccounts, type AccountSelection } from "../domain/accountTree"
 import { buildImportPreview, commitImportPreview, matchingProfiles } from "../domain/profileImport"
@@ -277,6 +280,16 @@ function createDataStore() {
     return `Categorized #${txnId} → ${cat?.name ?? categoryId}`
   }
 
+  function transactionDetail(id: number): TransactionDetail | null {
+    return db ? loadTransactionDetail(db, id) : null
+  }
+
+  function updateTransactionNotes(id: number, notes: string): void {
+    if (!db) throw new Error("db not open")
+    setTransactionNotes(db, id, notes)
+    refresh()
+  }
+
   function toggleTagOnTransactions(txnIds: number[], tagId: number): string {
     if (!db) throw new Error("db not open")
     // If all have tag → remove; else add
@@ -497,6 +510,8 @@ function createDataStore() {
     setAccountSelection,
     categorizeTransaction,
     toggleTagOnTransactions,
+    transactionDetail,
+    updateTransactionNotes,
     createSettingsCategory,
     updateSettingsCategory,
     deleteSettingsCategory,

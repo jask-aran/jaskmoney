@@ -4,16 +4,6 @@ import { data } from "../../state/dataStore"
 import { theme } from "../../theme"
 import { S } from "./S"
 
-function selectedOrCursorIds(): number[] {
-  const rows = data.scopedTransactions()
-  const hl = ui.highlightedIds(rows)
-  const hlIds = Object.keys(hl).map(Number)
-  if (hlIds.length) return hlIds
-  const sel = Object.keys(ui.state.selectedIds).map(Number)
-  if (sel.length) return sel
-  const row = rows[ui.state.managerCursor]
-  return row ? [row.id] : []
-}
 
 export function TagPicker() {
   const filtered = createMemo(() => {
@@ -23,7 +13,7 @@ export function TagPicker() {
     return tags.filter((t) => t.name.toLowerCase().includes(q))
   })
 
-  const targets = createMemo(() => selectedOrCursorIds())
+  const targets = createMemo(() => ui.targetIds(data.scopedTransactions()))
 
   const stateFor = (tagId: number): "all" | "some" | "none" => {
     const ids = targets()

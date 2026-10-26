@@ -38,6 +38,8 @@ export type ScopeId =
   | "settings.filters"
   | "settings.database"
   | "settings.up"
+  | "manager.detail"
+  | "manager.detail.notes"
   | "settings.editor"
   | "settings.confirm"
   | "settings.import.files"
@@ -104,6 +106,10 @@ export interface UiState {
   filterCursor: number
   /** Cursor in the Up Bank sync account list. */
   upCursor: number
+  /** Transaction shown in the detail view; null when closed. */
+  detailId: number | null
+  detailNotesEditing: boolean
+  detailNotesDraft: string
   settingsEditor: SettingsEditorKind | null
   settingsEditId: number | string | null
   settingsEditField: number
@@ -199,6 +205,9 @@ function createUiStore() {
     ruleCursor: 0,
     filterCursor: 0,
     upCursor: 0,
+    detailId: null,
+    detailNotesEditing: false,
+    detailNotesDraft: "",
     settingsEditor: null,
     settingsEditId: null,
     settingsEditField: 0,
@@ -441,11 +450,24 @@ function createUiStore() {
     setState({ dashChipCursor: i })
   }
 
+  /** Rows an action applies to: the open detail transaction, else the
+   * highlighted range, else the selection, else the cursor row. */
+  function targetIds(rows: { id: number }[]): number[] {
+    if (state.detailId != null) return [state.detailId]
+    const hl = Object.keys(highlightedIds(rows)).map(Number)
+    if (hl.length) return hl
+    const sel = Object.keys(state.selectedIds).map(Number)
+    if (sel.length) return sel
+    const row = rows[state.managerCursor]
+    return row ? [row.id] : []
+  }
+
   function activeScope(): ScopeId {
     if (state.jumpMode) return "jump"
     if (state.catPickerOpen) return "catPicker"
     if (state.tagPickerOpen) return "tagPicker"
     if (state.filterMode) return "filter"
+    if (state.detailId != null) return state.detailNotesEditing ? "manager.detail.notes" : "manager.detail"
     if (state.settingsEditor) return "settings.editor"
     if (state.settingsConfirm) return "settings.confirm"
     if (state.importStage === "files") return "settings.import.files"
@@ -506,6 +528,7 @@ function createUiStore() {
     setTimeframe,
     setDashChipCursor,
     activeScope,
+    targetIds,
   }
 }
 

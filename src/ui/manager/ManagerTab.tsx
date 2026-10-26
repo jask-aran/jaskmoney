@@ -12,6 +12,7 @@ import type { Account } from "../../domain/types"
 import { fit, truncate } from "../text"
 import { selectableEntries, selectedAccounts, sidebarEntries } from "../../domain/accountTree"
 import { AccountDetails } from "./AccountDetails"
+import { TransactionDetail } from "./TransactionDetail"
 
 const columns = {
   marker: 1,
@@ -319,6 +320,7 @@ export function ManagerTab(props: { focused: SectionId }) {
           </box>
         )}
       </SectionCard>
+      <TransactionDetail />
       <Show when={accountAction()}>{(account: () => Account) => <box position="absolute" zIndex={20} left="22%" top="35%" width="56%" border borderStyle="rounded" borderColor={theme.warning} paddingLeft={1} paddingRight={1} backgroundColor={theme.base} flexDirection="column">
         <text fg={theme.warning}><b>Account data · {account().name}</b></text>
         <text fg={theme.text}>c clear this account’s transactions</text>
