@@ -1,5 +1,4 @@
 import { For, Show, createEffect, createMemo } from "solid-js"
-import { categoryMark } from "../icons"
 import { useTerminalDimensions } from "@opentui/solid"
 import { SectionCard } from "../primitives/SectionCard"
 import { S } from "../primitives/S"
@@ -7,7 +6,7 @@ import { CYCLE_VIEWS, ui, type SectionId } from "../../state/uiStore"
 import { TransactionTable } from "../manager/TransactionTable"
 import { data } from "../../state/dataStore"
 import { theme } from "../../theme"
-import { computeCategorySpend, dailySpendSeries, fitCategoryLines, formatMoney, formatWholeMoney, groupCategorySpend } from "../../domain/dashboard"
+import { dailySpendSeries, formatMoney, formatWholeMoney } from "../../domain/dashboard"
 import { computePeriodFlows, computePosition } from "../../domain/position"
 import { budgetProgress, cycleFor } from "../../domain/budget"
 import { budgetLabel } from "../../domain/budgetScopes"
@@ -21,8 +20,8 @@ import { INKS, addDays, spendingChart } from "../spending/periodCharts"
 
 /**
  * Dashboard: how things stand today. Balances and runway, savers, a year of
- * net position, the current budget cycle (budgets, a chart with views,
- * categories), and the latest transactions (pending marked), which take
+ * net position, the current budget cycle (budgets and a chart with views),
+ * and the latest transactions (pending marked), which take
  * category and tag edits. Nothing here follows the Date Range (that is the Spending
  * tab's job).
  */
@@ -46,17 +45,12 @@ export function DashboardTab(props: { focused: SectionId }) {
   const cycleDaysLeft = () => Math.round((Date.parse(cycle().end) - Date.parse(today())) / 86400000) + 1
 
   const spendingIds = createMemo(() => new Set(data.state.accounts.filter((a) => accountRole(a) === "spending").map((a) => a.id)))
-  // Spending by category in the cycle so far.
-  const cycleGroups = createMemo(() => {
-    const rows = data.state.transactions.filter((t) => t.accountId != null && spendingIds().has(t.accountId) && t.dateISO >= cycle().start && t.dateISO <= today())
-    return groupCategorySpend(computeCategorySpend(rows, data.state.categories), data.state.categories)
-  })
 
-  // Wide (120+ cols): Now beside Savers, the Net Position strip, then this
-  // cycle (60% of the height) above Recent on the left, the cycle's
-  // categories on the right. The right column stops growing at
-  // SIDE_MAX (category names fit), so a wider terminal widens the chart.
-  // Narrow: everything stacks, Savers two to a line, Recent last.
+
+  // Wide (120+ cols): Now beside Savers (up to SIDE_MAX wide), then the Net
+  // Position strip, This Cycle (60% of the rest) and Recent, each full width.
+  // Narrow: Now and Savers stack too, Savers two to a line. Category
+  // breakdowns live on the Spending tab.
   const wide = () => dims().width >= WIDE
   // Fixed rows: tab bar + gap (2), status + footer (2), Now (7).
   const saversHeight = () => (wide() ? 0 : Math.ceil((position().savers.length + 1) / 2) + 2)
@@ -69,11 +63,10 @@ export function DashboardTab(props: { focused: SectionId }) {
   const showRecent = () => lowerHeight() >= cycleMin() + 6
   const cycleHeight = () => (showRecent() ? Math.max(cycleMin(), Math.floor(lowerHeight() * 0.6)) : lowerHeight())
   const recentHeight = () => lowerHeight() - cycleHeight()
-  const sideWidth = () => Math.min(SIDE_MAX, Math.floor((dims().width - 1) * 0.4))
-  const leftWidth = () => (wide() ? dims().width - 1 - sideWidth() : dims().width)
-  const leftInner = () => leftWidth() - 4
-  // Right column inner width: border + padding (4), one cell of slack.
-  const rightInner = () => sideWidth() - 5
+  const saversWidth = () => Math.min(SIDE_MAX, Math.floor((dims().width - 1) * 0.4))
+  const nowWidth = () => (wide() ? dims().width - 1 - saversWidth() : dims().width)
+  // Full-width cards spend 4 cells on border + padding.
+  const inner = () => dims().width - 4
   // Recent: border (2) and the table header.
   const recentVisible = () => Math.max(1, recentHeight() - 3)
   createEffect(() => {
@@ -91,12 +84,11 @@ export function DashboardTab(props: { focused: SectionId }) {
   const cycleChartRows = () => cycleHeight() - 2 - budgetLines() - 1 - 1 - 2
   const cycleChart = createMemo(() => {
     const spending = data.state.transactions.filter((t) => t.accountId != null && spendingIds().has(t.accountId))
-    return spendingChart(cycleView(), dailySpendSeries(spending, cycle().start, cycle().end), Math.max(1, leftInner() - AXIS), Math.max(1, cycleChartRows()), today(), spending, overall()?.amount)
+    return spendingChart(cycleView(), dailySpendSeries(spending, cycle().start, cycle().end), Math.max(1, inner() - AXIS), Math.max(1, cycleChartRows()), today(), spending, overall()?.amount)
   })
 
   const netStrip = createMemo(() => levelChart(position().history.map((h) => h.value), Math.max(1, dims().width - 4 - AXIS), 5))
   const netStripLabels = createMemo(() => dateAxis(position().history.map((h) => h.dateISO), Math.max(1, dims().width - 4 - AXIS), today()).labels)
-  const categoryLines = createMemo(() => fitCategoryLines(cycleGroups(), lowerHeight() - 2))
   // Narrow Savers: two "name balance change" cells per line.
   const saverPairs = createMemo(() => {
     const cells = [
@@ -110,7 +102,7 @@ export function DashboardTab(props: { focused: SectionId }) {
   const saverCellWidth = () => Math.floor((dims().width - 4) / 2)
 
   const nowCard = () => (
-    <SectionCard title="Now" width={leftWidth()} height={7}>
+    <SectionCard title="Now" width={nowWidth()} height={7}>
       {/* Label | value | note columns, so every row lines up. */}
       <text wrapMode="none">
         <S fg={theme.subtext0}>{"Net position".padEnd(LABEL)}</S>
@@ -216,7 +208,7 @@ export function DashboardTab(props: { focused: SectionId }) {
             const pctColor = () => (p.usedPct > 100 ? theme.error : p.usedPct >= 80 ? theme.warning : theme.success)
             return (
               <text wrapMode="none">
-                <S fg={theme.text}>{fit(budgetLabel(p.budget, data.state.accounts, data.state.categories), Math.max(10, leftInner() - 44))}</S>
+                <S fg={theme.text}>{fit(budgetLabel(p.budget, data.state.accounts, data.state.categories), Math.max(10, inner() - 44))}</S>
                 <S fg={theme.text}>{formatWholeMoney(p.spent).padStart(8)}</S>
                 <S fg={theme.overlay1}>{` of ${formatWholeMoney(p.budget.amount)}`.padEnd(10)}</S>
                 <S fg={pctColor()} bold>{(Number.isFinite(p.usedPct) ? `${Math.round(p.usedPct)}%` : "—").padStart(5)}</S>
@@ -255,28 +247,11 @@ export function DashboardTab(props: { focused: SectionId }) {
         top={ui.state.recentTop}
         visible={recentVisible()}
         cursor={props.focused === "dash.recent" ? ui.state.recentCursor : null}
-        width={leftInner()}
+        width={inner()}
         showAccount={false}
         showTags={false}
         empty="No transactions yet"
       />
-    </SectionCard>
-  )
-
-  const categoriesCard = () => (
-    <SectionCard title="Spending by Category" titleSuffix="· this cycle" titleSuffixColor={theme.subtext0} height={lowerHeight()}>
-      <Show when={cycleGroups().length} fallback={<text fg={theme.overlay1}>No spending this cycle</text>}>
-        <For each={categoryLines()}>
-          {(line) => (
-            <text wrapMode="none">
-              <S fg={line.color}>{line.child ? "  " : ""}{`${categoryMark(line.categoryId)} `}</S>
-                  <S fg={line.child ? theme.subtext0 : line.color} bold={!line.child}>{fit(line.label, Math.max(6, rightInner() - 14 - (line.child ? 4 : 2)))}</S>
-              <S fg={line.child ? theme.subtext0 : theme.text} bold={!line.child}>{formatWholeMoney(line.amount).padStart(9)}</S>
-              <S fg={theme.overlay1}>{(line.pct != null ? `${Math.round(line.pct)}%` : "").padStart(5)}</S>
-            </text>
-          )}
-        </For>
-      </Show>
     </SectionCard>
   )
 
@@ -299,15 +274,8 @@ export function DashboardTab(props: { focused: SectionId }) {
           {saversCard()}
         </box>
         {netCard()}
-        <box flexDirection="row" gap={1} width="100%" height={lowerHeight()}>
-          <box flexDirection="column" width={leftWidth()} height={lowerHeight()}>
-            {cycleCard()}
-            <Show when={showRecent()}>{recentCard()}</Show>
-          </box>
-          <box flexGrow={1} flexBasis={0} minWidth={0} height={lowerHeight()} flexDirection="column" overflow="hidden">
-            {categoriesCard()}
-          </box>
-        </box>
+        {cycleCard()}
+        <Show when={showRecent()}>{recentCard()}</Show>
       </Show>
     </box>
   )
@@ -321,7 +289,7 @@ export function DashboardTab(props: { focused: SectionId }) {
 
 /** Below this width the Dashboard stacks its cards. */
 const WIDE = 120
-/** The right column's widest useful size: Up's longest category names fit. */
+/** Savers' widest useful size. */
 const SIDE_MAX = 48
 const LABEL = 15
 const VALUE = 14
