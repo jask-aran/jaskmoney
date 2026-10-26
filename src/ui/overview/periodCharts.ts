@@ -227,15 +227,16 @@ export function balancesChart(
   const low = values.indexOf(lo)
   // The latest value in the line's colour, placed first so it gets the best
   // spot; the high and the low in grey where they happened (not at the
-  // ends: the start is on the axis, the end is the latest).
+  // ends: the start is on the axis, the end is the latest; nor when they
+  // read the same as the latest).
   const high = values.indexOf(hi)
   const latest = values.length - 1
   const ink = view === "Savers" ? "savers" : "balance"
   const at = (i: number) => pointCell(i, values[i]!, dates.length, width, height, range.min, range.max)
   const marks: ChartLabel[] = [
     { ...at(latest), text: shortMoney(values[latest]!), ink },
-    ...(high > 0 && high < latest && hi > lo ? [{ ...at(high), text: `high ${shortMoney(hi)}`, ink: "note" }] : []),
-    ...(low > 0 && low < latest && hi > lo ? [{ ...at(low), text: `low ${shortMoney(lo)}`, ink: "note" }] : []),
+    ...(high > 0 && high < latest && hi > lo && shortMoney(hi) !== shortMoney(values[latest]!) ? [{ ...at(high), text: `high ${shortMoney(hi)}`, ink: "note" }] : []),
+    ...(low > 0 && low < latest && hi > lo && shortMoney(lo) !== shortMoney(values[latest]!) ? [{ ...at(low), text: `low ${shortMoney(lo)}`, ink: "note" }] : []),
   ]
   return {
     rows: annotate(lineChart({ series: [{ values, ink }], length: dates.length, width, height, min: range.min, max: range.max, markers: axis.markers }), marks),

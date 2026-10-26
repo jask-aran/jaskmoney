@@ -1,7 +1,7 @@
 import { describe, expect, test, beforeEach } from "bun:test"
 import type { KeyEvent } from "@opentui/core"
 import { spendingScope } from "../domain/accountTree"
-import { CUSTOM_CHIP } from "../domain/timeframe"
+import { CUSTOM_CHIP, LOOKBACKS, PERIODS, applyChip } from "../domain/timeframe"
 import { handleKey, footerHints } from "./keys"
 import { ui } from "../state/uiStore"
 import { data } from "../state/dataStore"
@@ -287,6 +287,19 @@ describe("key router", () => {
     expect(data.state.filterQuery).toBe("desc:T")
     expect(ui.state.drillReturn).toBeNull()
     data.clearFilter()
+  })
+
+  test("0 returns to now for the range's kind; c to this cycle", () => {
+    ui.setState({ focusedSection: "none" })
+    const now = new Date()
+    ui.setTimeframe(applyChip(ui.state.timeframe, LOOKBACKS.length + PERIODS.indexOf("month"), now))
+    const thisMonth = ui.state.timeframe.periodAnchor
+    handleKey(ui, key({ name: "[", sequence: "[" }), data)
+    expect(ui.state.timeframe.periodAnchor).not.toBe(thisMonth)
+    handleKey(ui, key({ name: "0", sequence: "0" }), data)
+    expect(ui.state.timeframe).toMatchObject({ family: "period", period: "month", periodAnchor: thisMonth })
+    handleKey(ui, key({ name: "c", sequence: "c" }), data)
+    expect(ui.state.timeframe).toMatchObject({ family: "period", period: "cycle" })
   })
 
   test("/ on the Overview opens the Transactions filter", () => {

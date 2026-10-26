@@ -24,6 +24,7 @@ import {
   stepCustom,
   stepPeriod,
   timeframeBounds,
+  timeframeNow,
   type TimeframeState,
 } from "../domain/timeframe"
 import { editText, isPrintable, textField } from "../domain/textField"
@@ -1076,8 +1077,15 @@ export function handleKey(ui: UiStore, key: KeyEvent, data?: DataStore): boolean
     }
     if (data && (focus === "ov.chart" || focus === "ov.chart2") && (name === "return" || name === "enter")) { drillDown(ui, data); return true }
     if (name === "0") {
-      // Back to the default view: the current budget cycle.
-      const tf = applyChip({ ...ui.state.timeframe, family: "period", period: "cycle" }, LOOKBACKS.length, clock, cycle)
+      // The same kind of range, now (this month, this quarter…).
+      const tf = timeframeNow(ui.state.timeframe, new Date(), cycle)
+      ui.setTimeframe(tf)
+      ui.setStatus(`Now · ${timeframeBounds(tf, clock, cycle).label}`)
+      return true
+    }
+    if (name === "c" && !key.ctrl && !key.meta) {
+      // Home: the current budget cycle, whatever the range was.
+      const tf = applyChip({ ...ui.state.timeframe, family: "period", period: "cycle" }, LOOKBACKS.length, new Date(), cycle)
       ui.setTimeframe(tf)
       ui.setDashChipCursor(activeChipIndex(tf))
       ui.setStatus(`This cycle · ${timeframeBounds(tf, clock, cycle).label}`)
@@ -1181,7 +1189,8 @@ export function footerHints(scope: ScopeId, state?: Pick<UiState, "focusedSectio
         { key: "a", desc: "account" },
         { key: "d/D", desc: "range" },
         { key: "[ ]", desc: "prev/next" },
-        { key: "0", desc: "this cycle" },
+        { key: "0", desc: "now" },
+        { key: "c", desc: "this cycle" },
         { key: "/", desc: "search" },
         { key: "v", desc: "jump" },
         { key: "1-3", desc: "tab" },

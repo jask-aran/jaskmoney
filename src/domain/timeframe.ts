@@ -299,6 +299,17 @@ export function periodOffset(tf: TimeframeState, now: Date, cycle: CycleConfig =
   return 0
 }
 
+/** The same kind of range, now: a period's current instance, a custom range
+ * moved to end today (same length); a lookback already ends today. */
+export function timeframeNow(tf: TimeframeState, now: Date, cycle: CycleConfig = MONTHLY_CYCLE): TimeframeState {
+  if (tf.family === "period") return applyChip(tf, LOOKBACKS.length + PERIODS.indexOf(tf.period), now, cycle)
+  if (tf.family !== "custom" || !tf.custom) return tf
+  const day = (iso: string) => Date.parse(iso + "T12:00:00Z")
+  const shift = day(toISODate(now)) - day(tf.custom.end)
+  const iso = (t: number) => new Date(t).toISOString().slice(0, 10)
+  return { ...tf, custom: { start: iso(day(tf.custom.start) + shift), end: toISODate(now) } }
+}
+
 /** "2 cycles back", "1 quarter ahead"; "" for the current period. */
 export function offsetLabel(period: PeriodId, offset: number): string {
   if (!offset) return ""

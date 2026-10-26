@@ -129,13 +129,14 @@ export function OverviewTab(props: { focused: SectionId }) {
   const stackWidth = () => sideWidth() - 4
   const labelWidth = () => Math.max(6, stackWidth() - VALUE - NOTE)
 
-  // Chart panes: border + padding (4) across; border (2) and the x labels
-  // down. The view picker and the legend sit in the borders.
+  // Chart panes: border + padding (4) across; border (2), the x-axis line
+  // and the x labels down. The view picker and the legend sit in the borders.
   // The y-axis is as wide as its labels: build once with a guessed width,
   // then again if the labels need a different one.
   const model = (index: number, height: number): ChartModel | null => {
     const v = (CHART_VIEWS[index] ?? CHART_VIEWS[0]).view
-    const rows = Math.max(1, height - 3)
+    // Border (2), the x-axis line and the x labels.
+    const rows = Math.max(1, height - 4)
     const build = (axis: number): ChartModel | null => {
       const width = Math.max(1, mainWidth() - 4 - axis)
       if (v === "Daily" || v === "Cumulative" || v === "Weekly") return spendingChart(v, series(), width, rows, today(), spending(), budget()?.budget.amount, periodNames(), data.state.weekStart)

@@ -15,6 +15,7 @@ import {
   stepChip,
   LOOKBACKS,
   PERIODS,
+  timeframeNow,
 } from "./timeframe"
 import type { Transaction } from "./types"
 
@@ -144,4 +145,12 @@ test("a single month's label names it once", () => {
   const now = new Date(2026, 9, 27)
   const month = applyChip(defaultTimeframe(now), LOOKBACKS.length + PERIODS.indexOf("month"), now)
   expect(timeframeBounds(month, now).label).toBe("Oct 2026")
+})
+
+test("timeframeNow: the same kind of range, now", () => {
+  const now = new Date(2026, 9, 27)
+  const month = applyChip(defaultTimeframe(now), LOOKBACKS.length + PERIODS.indexOf("month"), now)
+  expect(timeframeNow(stepPeriod(stepPeriod(month, -1), -1), now)).toEqual(month)
+  const custom = { ...month, family: "custom" as const, custom: { start: "2026-09-01", end: "2026-09-10" } }
+  expect(timeframeNow(custom, now).custom).toEqual({ start: "2026-10-18", end: "2026-10-27" })
 })

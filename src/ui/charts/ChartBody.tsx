@@ -1,4 +1,4 @@
-import { For } from "solid-js"
+import { For, Show } from "solid-js"
 import { S } from "../primitives/S"
 import { theme } from "../../theme"
 import type { Run } from "./lineChart"
@@ -23,8 +23,20 @@ export interface ChartModel {
   legend: Span[]
 }
 
-/** A y-axis, the plot rows, then the x labels. `inks` maps each run's ink
- * to a colour. */
+/** The x-axis line under the plot: a corner under the y-axis, then a rule
+ * with a tick wherever a gridline comes down to it. */
+export function xAxisLine(rows: Run[][]): string {
+  const gridlines = new Set<number>()
+  for (const runs of rows) {
+    let col = 0
+    for (const run of runs) for (const ch of run.text) { if (ch === "│") gridlines.add(col); col++ }
+  }
+  const width = rows[0]?.reduce((n, run) => n + [...run.text].length, 0) ?? 0
+  return "└" + Array.from({ length: width }, (_, c) => (gridlines.has(c) ? "┴" : "─")).join("")
+}
+
+/** A y-axis, the plot rows, the x-axis line, then the x labels. `inks` maps
+ * each run's ink to a colour. */
 export function ChartBody(props: { model: ChartModel; inks: Record<string, string> }) {
   const axis = () => axisWidth(props.model.ticks)
   return (
@@ -37,6 +49,9 @@ export function ChartBody(props: { model: ChartModel; inks: Record<string, strin
           </text>
         )}
       </For>
+      <Show when={props.model.rows.length}>
+        <text wrapMode="none" fg={theme.overlay1}>{" ".repeat(axis() - 1) + xAxisLine(props.model.rows)}</text>
+      </Show>
       <text wrapMode="none" fg={theme.overlay1}>{" ".repeat(axis()) + props.model.labels}</text>
     </>
   )

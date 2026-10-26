@@ -106,3 +106,10 @@ test("Sunday-start axis marks and labels Sundays instead of Mondays", () => {
   expect(axis.markers.filter((m) => m.ink === "week").map((m) => dates[m.index])).toEqual(["2026-10-04", "2026-10-11", "2026-10-18"])
   expect(axis.labels.slice(cellColumn(9, dates.length, 100))).toMatch(/^11/)
 })
+
+describe("xAxisLine", () => {
+  test("a corner, then a rule ticked where gridlines come down", async () => {
+    const { xAxisLine } = await import("./ChartBody")
+    expect(xAxisLine([[{ text: "  │ ", ink: null }, { text: "⣀│", ink: "a" }]])).toBe("└──┴──┴")
+  })
+})
