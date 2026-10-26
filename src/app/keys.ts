@@ -172,15 +172,11 @@ export function handleKey(ui: UiStore, key: KeyEvent, data?: DataStore): boolean
       // Prefer selection targets
       const targets = ui.targetIds(rows)
       if (cat && data && targets.length) {
-        let last = ""
-        for (const id of targets) {
-          last = data.categorizeTransaction(id, cat.id)
-        }
         ui.closeCatPicker()
-        ui.setStatus(
-          targets.length > 1
-            ? `Categorized ${targets.length} → ${cat.name}`
-            : last,
+        ui.setStatus(`Categorizing ${targets.length} → ${cat.name}…`)
+        data.categorizeTransactions(targets, cat.id).then(
+          (summary) => ui.setStatus(summary, summary.includes(" failed: ")),
+          (error) => ui.setStatus(error instanceof Error ? error.message : String(error), true),
         )
       } else {
         ui.closeCatPicker()

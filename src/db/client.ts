@@ -402,15 +402,21 @@ export function uncategorisedCategoryId(db: Db): number {
   return row.id
 }
 
+/** Set a transaction's category and who set it (see CATEGORY_SOURCE_COLUMN).
+ * `provider` also records the provider's category ids after a push. */
 export function setTransactionCategory(
   db: Db,
   txnId: number,
   categoryId: number,
+  source: "user" | "rule" | "provider" | null,
+  provider?: { extCategory: string | null; extParentCategory: string | null },
 ): void {
-  db.query(`UPDATE transactions SET category_id = ? WHERE id = ?`).run(
-    categoryId,
-    txnId,
-  )
+  if (provider) {
+    db.query(`UPDATE transactions SET category_id = ?, category_source = ?, ext_category = ?, ext_parent_category = ? WHERE id = ?`)
+      .run(categoryId, source, provider.extCategory, provider.extParentCategory, txnId)
+  } else {
+    db.query(`UPDATE transactions SET category_id = ?, category_source = ? WHERE id = ?`).run(categoryId, source, txnId)
+  }
 }
 
 export function addTagToTransactions(

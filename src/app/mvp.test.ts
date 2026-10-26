@@ -113,7 +113,7 @@ describe("MVP slice: filter + categorize", () => {
     const transport = db
       .query(`SELECT id FROM categories WHERE name = 'Transport'`)
       .get() as { id: number }
-    setTransactionCategory(db, before[0]!.id, transport.id)
+    setTransactionCategory(db, before[0]!.id, transport.id, "user")
     const after = loadTransactions(db)
     expect(after[0]!.categoryName).toBe("Transport")
   })

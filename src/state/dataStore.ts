@@ -272,9 +272,10 @@ function createDataStore() {
     setState({ accountSelection: selection })
   }
 
+  /** Local-only categorisation (no provider push); see categorizeTransactions. */
   function categorizeTransaction(txnId: number, categoryId: number): string {
     if (!db) throw new Error("db not open")
-    setTransactionCategory(db, txnId, categoryId)
+    setTransactionCategory(db, txnId, categoryId, "user")
     refresh()
     const cat = state.categories.find((c) => c.id === categoryId)
     return `Categorized #${txnId} → ${cat?.name ?? categoryId}`
@@ -288,6 +289,51 @@ function createDataStore() {
     if (!db) throw new Error("db not open")
     setTransactionNotes(db, id, notes)
     refresh()
+  }
+
+  /**
+   * Categorise transactions, pushing to the provider where it can hold the
+   * choice: an Up transaction it marks categorisable takes an Up subcategory,
+   * or "no category" for the default (Uncategorised). Pushed rows then follow
+   * the provider (source 'provider'). Anything else (a local-only category,
+   * a transfer, a CSV row) is saved locally as the user's choice ('user').
+   * A failed push leaves that transaction unchanged. Pushes run one at a time.
+   */
+  async function categorizeTransactions(txnIds: number[], categoryId: number): Promise<string> {
+    if (!db) throw new Error("db not open")
+    const category = state.categories.find((c) => c.id === categoryId)
+    if (!category) throw new Error("category not found")
+    const parentExt = category.parentId != null ? state.categories.find((c) => c.id === category.parentId)?.extId ?? null : null
+    // undefined: the provider cannot represent this category.
+    const providerId: string | null | undefined = category.extId && category.parentId != null ? category.extId : category.isDefault ? null : undefined
+    let client: ReturnType<typeof createUpClient> | null = null
+    let pushed = 0, local = 0
+    const failures: string[] = []
+    for (const id of txnIds) {
+      const row = db.query(`SELECT source, external_id AS externalId, ext_categorizable AS categorizable FROM transactions WHERE id = ?`)
+        .get(id) as { source: string; externalId: string | null; categorizable: number | null } | null
+      if (!row) continue
+      const pushable = row.source === "up" && row.externalId != null && row.categorizable === 1 && providerId !== undefined
+      if (!pushable) {
+        setTransactionCategory(db, id, categoryId, "user")
+        local++
+        continue
+      }
+      try {
+        client ??= createUpClient({ token: readUpToken() })
+        await client.setTransactionCategory(row.externalId!, providerId ?? null)
+        setTransactionCategory(db, id, categoryId, providerId ? "provider" : null, { extCategory: providerId ?? null, extParentCategory: providerId ? parentExt : null })
+        pushed++
+      } catch (error) {
+        failures.push(error instanceof Error ? error.message : String(error))
+      }
+    }
+    refresh()
+    const done = pushed + local
+    const parts = [`Categorized ${done} → ${category.name}`]
+    if (pushed) parts.push(`${pushed} updated in Up`)
+    if (failures.length) parts.push(`${failures.length} failed: ${failures[0]}`)
+    return parts.join(" · ")
   }
 
   function toggleTagOnTransactions(txnIds: number[], tagId: number): string {
@@ -395,19 +441,21 @@ function createDataStore() {
       let categoryId = txn.categoryId
       const tagIds = new Set(txn.tagIds)
       let changed = false
+      let categorySet = false
       for (const rule of enabled) {
         const expression = filters.get(rule.savedFilterId)
         if (!expression) { if (!failures.includes(rule.savedFilterId)) failures.push(rule.savedFilterId); continue }
         const categoryName = state.categories.find((c) => c.id === categoryId)?.name ?? "Uncategorised"
         const tagNames = [...tagIds].map((id) => state.tags.find((t) => t.id === id)?.name).filter((x): x is string => !!x)
         if (!evalFilter(expression, { ...txn, categoryName, tagNames })) continue
-        if (rule.setCategoryId != null && rule.setCategoryId !== categoryId) { categoryId = rule.setCategoryId; categoryChanges++; changed = true }
+        if (rule.setCategoryId != null && rule.setCategoryId !== categoryId) { categoryId = rule.setCategoryId; categoryChanges++; changed = true; categorySet = true }
         for (const tagId of rule.addTagIds) if (!tagIds.has(tagId)) { tagIds.add(tagId); tagChanges++; changed = true }
       }
       if (!changed) continue
       updatedTransactions++
       if (!dryRun) {
-        db.query(`UPDATE transactions SET category_id = ? WHERE id = ?`).run(categoryId, txn.id)
+        // 'rule' keeps sync from replacing a rule's category with the provider's.
+        if (categorySet) db.query(`UPDATE transactions SET category_id = ?, category_source = 'rule' WHERE id = ?`).run(categoryId, txn.id)
         const insert = db.query(`INSERT OR IGNORE INTO transaction_tags (transaction_id, tag_id) VALUES (?, ?)`)
         for (const tagId of tagIds) insert.run(txn.id, tagId)
       }
@@ -509,6 +557,7 @@ function createDataStore() {
     toggleSortDirection,
     setAccountSelection,
     categorizeTransaction,
+    categorizeTransactions,
     toggleTagOnTransactions,
     transactionDetail,
     updateTransactionNotes,
