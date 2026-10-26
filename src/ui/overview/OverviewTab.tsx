@@ -5,6 +5,7 @@ import { SectionCard } from "../primitives/SectionCard"
 import { Modal } from "../primitives/Modal"
 import { TextInput } from "../primitives/TextInput"
 import { chipLook } from "../primitives/chip"
+import { centredTop } from "../primitives/ListRow"
 import { muted, type Span } from "../primitives/spans"
 import { S } from "../primitives/S"
 import { CHART_VIEWS, ui, type SectionId } from "../../state/uiStore"
@@ -256,7 +257,7 @@ export function OverviewTab(props: { focused: SectionId }) {
     if (!categoriesFocused()) return fitCategoryLines(groups(), rows).map((line) => ({ line, cursor: false }))
     const lines = allCategoryLines(range())
     const cursor = Math.min(ui.state.overviewCategoryCursor, lines.length - 1)
-    const top = Math.max(0, Math.min(lines.length - rows, cursor - Math.floor(rows / 2)))
+    const top = centredTop(cursor, lines.length, rows)
     return lines.slice(top, top + rows).map((line, i) => ({ line, cursor: top + i === cursor }))
   })
   const categoriesCard = () => (

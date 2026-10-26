@@ -9,7 +9,7 @@ import { ui } from "../../state/uiStore"
 import { data } from "../../state/dataStore"
 import { parseFilterStrict } from "../../domain/filter"
 import { theme } from "../../theme"
-import { fit } from "../text"
+import { fit, truncate } from "../text"
 import { formatMoney } from "../../domain/dashboard"
 import { accountRole } from "../../domain/types"
 import { budgetLabel } from "../../domain/budgetScopes"
@@ -18,12 +18,11 @@ import { Modal } from "../primitives/Modal"
 import { categoryMark } from "../icons"
 import { Form } from "../primitives/Form"
 import { ListPicker } from "../primitives/ListPicker"
+import { ListRow, centredTop, windowLabel } from "../primitives/ListRow"
 import { EDITOR_TITLE, editorFields, editorNote, editorWidth, pickerItems, type FormField } from "../../state/settingsForm"
 
-function truncate(value: string, width: number) { return value.length <= width ? value : `${value.slice(0, Math.max(0, width - 1))}…` }
-
 function ListFooter(props: { top: number; visible: number; count: number }) {
-  return <text fg={theme.overlay1}>{props.count ? `─ ${props.top + 1}–${Math.min(props.top + props.visible, props.count)} of ${props.count} ─` : "─ empty ─"}</text>
+  return <text fg={theme.overlay1}>{`─ ${windowLabel(props.top, props.visible, props.count)} ─`}</text>
 }
 
 function TaxonomyList(props: { kind: SettingsList; narrow?: boolean; split?: boolean }) {
@@ -53,19 +52,17 @@ function TaxonomyList(props: { kind: SettingsList; narrow?: boolean; split?: boo
         <For each={windowRows()}>{(row, index) => {
           const absolute = () => top() + index()
           const selected = () => active() && absolute() === cursor()
-          const bg = () => selected() ? theme.surface0 : theme.canvas
           const isCategory = () => props.kind === "categories"
           const scope = () => {
             if (!isCategory()) return categoryName((row as typeof data.state.tags[number]).categoryId)
             const category = row as typeof data.state.categories[number]
             return [category.isDefault ? "default" : "", category.notSpending ? "not spending" : ""].filter(Boolean).join(", ")
           }
-          return <text width="100%" bg={bg()}>
-            <S fg={selected() ? theme.focus : theme.canvas} bg={bg()} bold>{selected() ? "> " : "  "}</S>
-            <S fg={row.color} bg={bg()}>{`${isCategory() ? categoryMark(row.id) : "●"} `}</S>
-            <S fg={theme.text} bg={bg()} bold={selected()}>{truncate(row.name, props.narrow ? 28 : 20)}</S>
-            <Show when={scope()}><S fg={theme.overlay1} bg={bg()}>{` (${scope()})`}</S></Show>
-          </text>
+          return <ListRow cursor={selected()} bg={theme.canvas} spans={[
+            { text: `${isCategory() ? categoryMark(row.id) : "●"} `, fg: row.color },
+            { text: truncate(row.name, props.narrow ? 28 : 20), fg: theme.text, bold: selected() },
+            ...(scope() ? [{ text: ` (${scope()})`, fg: theme.overlay1 }] : []),
+          ]} />
         }}</For>
       </Show></box>
       <box height={1}><ListFooter top={top()} visible={visible()} count={rows().length} /></box>
@@ -79,15 +76,12 @@ function BudgetsPane(props: { focused: boolean }) {
   return <SectionCard title="Budgets" focused={props.focused} active={active()} height={Math.max(1, budgets().length) + 4}>
     <text wrapMode="none"><S fg={theme.subtext0}>{"Cycle  "}</S><S fg={theme.text}>{describeCycle(data.state.budgetCycle)}</S></text>
     <Show when={budgets().length} fallback={<text fg={theme.overlay1}>{active() ? "No budgets. Press a to add." : "No budgets. Activate to add."}</text>}>
-      <For each={budgets()}>{(budget, i) => {
-        const selected = () => active() && ui.state.budgetCursor === i()
-        const bg = () => (selected() ? theme.surface0 : theme.canvas)
-        return <text bg={bg()} wrapMode="none">
-          <S fg={theme.focus} bg={bg()} bold>{selected() ? "> " : "  "}</S>
-          <S fg={theme.text} bg={bg()}>{fit(budgetLabel(budget, data.state.accounts, data.state.categories), 34)}</S>
-          <S fg={theme.subtext1} bg={bg()}>{formatMoney(budget.amount).padStart(12)}</S>
-        </text>
-      }}</For>
+      <For each={budgets()}>{(budget, i) => (
+        <ListRow cursor={active() && ui.state.budgetCursor === i()} bg={theme.canvas} spans={[
+          { text: fit(budgetLabel(budget, data.state.accounts, data.state.categories), 34), fg: theme.text },
+          { text: formatMoney(budget.amount).padStart(12), fg: theme.subtext1 },
+        ]} />
+      )}</For>
     </Show>
   </SectionCard>
 }
@@ -107,14 +101,17 @@ function RulesPane(props: { focused: boolean; height?: number | "auto" | `${numb
   return <SectionCard title="Rules" focused={props.focused} active={active()} height={props.height} flexGrow={props.height ? 0 : 1} bottomSpans={[muted(rows().length ? `${rows().length} ordered rule${rows().length === 1 ? "" : "s"}` : "empty")]}>
     <Show when={rows().length} fallback={<text fg={theme.overlay1}>{active() ? "No rules. Press a to add." : "No rules. Activate to add."}</text>}>
       <For each={rows()}>{(rule, i) => {
-        const selected = () => active() && ui.state.ruleCursor === i()
-        const bg = () => selected() ? theme.surface0 : theme.canvas
         const cat = () => data.state.categories.find((c) => c.id === rule.setCategoryId)?.name
         const tags = () => rule.addTagIds.map((id) => data.state.tags.find((t) => t.id === id)?.name).filter(Boolean).join(", ")
         const filter = () => data.state.savedFilters.find((filter) => filter.id === rule.savedFilterId)
         const healthy = createMemo(() => { const parsed = parseFilterStrict(filter()?.expr ?? ""); return !!parsed.node && !parsed.error })
         const appearance = () => ({ name: rule.enabled ? theme.text : theme.overlay1, filter: !rule.enabled ? theme.overlay1 : healthy() ? theme.subtext0 : theme.error, detail: !rule.enabled ? theme.overlay1 : healthy() ? theme.overlay1 : theme.error })
-        return <box width="100%" height={1} overflow="hidden"><text bg={bg()} wrapMode="none"><S fg={!rule.enabled ? theme.overlay1 : selected() ? theme.focus : theme.canvas} bg={bg()} bold>{selected() ? "> " : "  "}</S><S fg={appearance().name} bg={bg()}>{`${i() + 1}. ${rule.name}  `}</S><S fg={appearance().filter} bg={bg()}>{`filter:${rule.savedFilterId}`}</S><S fg={appearance().detail} bg={bg()}>{filter() ? ` (${filter()!.name})` : " (missing)"}</S><S fg={theme.overlay1} bg={bg()}>{` → ${cat() ?? "—"}${tags() ? ` +${tags()}` : ""}`}</S></text></box>
+        return <ListRow cursor={active() && ui.state.ruleCursor === i()} bg={theme.canvas} spans={[
+          { text: `${i() + 1}. ${rule.name}  `, fg: appearance().name },
+          { text: `filter:${rule.savedFilterId}`, fg: appearance().filter },
+          { text: filter() ? ` (${filter()!.name})` : " (missing)", fg: appearance().detail },
+          { text: ` → ${cat() ?? "—"}${tags() ? ` +${tags()}` : ""}`, fg: theme.overlay1 },
+        ]} />
       }}</For>
     </Show>
   </SectionCard>
@@ -125,7 +122,13 @@ function FiltersPane(props: { focused: boolean; height?: number | "auto" | `${nu
   const rows = () => data.state.savedFilters
   return <SectionCard title="Saved Filters" focused={props.focused} active={active()} height={props.height} flexGrow={props.height ? 0 : 1}>
     <Show when={rows().length} fallback={<text fg={theme.overlay1}>{active() ? "No saved filters. Press a to add." : "No saved filters. Activate to add."}</text>}>
-      <For each={rows()}>{(filter, i) => { const selected = () => active() && ui.state.filterCursor === i(); const bg = () => selected() ? theme.surface0 : theme.canvas; return <text bg={bg()}><S fg={selected() ? theme.focus : theme.canvas} bg={bg()} bold>{selected() ? "> " : "  "}</S><S fg={theme.teal} bg={bg()}>{filter.id}</S><S fg={theme.text} bg={bg()}>{`  ${truncate(filter.name, 16)}`}</S><S fg={theme.overlay1} bg={bg()}>{`  ${truncate(filter.expr, 20)}`}</S></text> }}</For>
+      <For each={rows()}>{(filter, i) => (
+        <ListRow cursor={active() && ui.state.filterCursor === i()} bg={theme.canvas} spans={[
+          { text: filter.id, fg: theme.teal },
+          { text: `  ${truncate(filter.name, 16)}`, fg: theme.text },
+          { text: `  ${truncate(filter.expr, 20)}`, fg: theme.overlay1 },
+        ]} />
+      )}</For>
     </Show>
   </SectionCard>
 }
@@ -164,16 +167,13 @@ function UpPane(props: { focused: boolean }) {
     <Show when={info()?.upLastError}>{(error: () => string) => <text fg={theme.error} wrapMode="none">{error()}</text>}</Show>
     <Show when={accounts().length} fallback={<text fg={theme.overlay1}>No accounts synced yet</text>}>
       <For each={accounts()}>{(account, i) => {
-        const selected = () => active() && ui.state.upCursor === i()
-        const bg = () => selected() ? theme.surface0 : theme.canvas
         const on = () => account.syncEnabled
-        return <text bg={bg()} wrapMode="none">
-          <S fg={theme.focus} bg={bg()} bold>{selected() ? "> " : "  "}</S>
-          <S fg={on() ? theme.text : theme.overlay1} bg={bg()}>{fit(account.name, 16)}</S>
-          <S fg={theme.overlay1} bg={bg()}>{fit(accountRole(account) === "saver" ? "saver" : "spending", 10)}</S>
-          <S fg={on() ? theme.subtext1 : theme.overlay1} bg={bg()}>{fit(account.balance != null ? formatMoney(account.balance) : "—", 12)}</S>
-          <S fg={on() ? theme.success : theme.overlay1} bg={bg()}>{on() ? "● sync on" : "○ sync off"}</S>
-        </text>
+        return <ListRow cursor={active() && ui.state.upCursor === i()} bg={theme.canvas} spans={[
+          { text: fit(account.name, 16), fg: on() ? theme.text : theme.overlay1 },
+          { text: fit(accountRole(account) === "saver" ? "saver" : "spending", 10), fg: theme.overlay1 },
+          { text: fit(account.balance != null ? formatMoney(account.balance) : "—", 12), fg: on() ? theme.subtext1 : theme.overlay1 },
+          { text: on() ? "● sync on" : "○ sync off", fg: on() ? theme.success : theme.overlay1 },
+        ]} />
       }}</For>
     </Show>
   </SectionCard>
@@ -188,19 +188,66 @@ function ImportHistory(props: { height?: number | "auto" | `${number}%` }) {
 }
 
 
+const PREVIEW_ROWS = 8
+
 function ImportOverlay() {
   const stage = () => ui.state.importStage
   const previewRows = () => { const p = ui.state.importPreview; return p ? (ui.state.importPreviewShowAll ? p.rows : p.rows.filter((row) => row.duplicate)) : [] }
+  // The preview shows PREVIEW_ROWS rows at a time around the cursor.
+  const previewTop = () => centredTop(ui.state.importPreviewCursor, previewRows().length, PREVIEW_ROWS)
+  const previewWindow = () => previewRows().slice(previewTop(), previewTop() + PREVIEW_ROWS)
   const profile = () => ui.state.importProfileDraft
   const profileFields = () => [
     ["ID", profile().id], ["Name", profile().name], ["Account", profile().account], ["Type", profile().accountType], ["Prefix", profile().importPrefix], ["Header", profile().hasHeader ? "yes" : "no"], ["Delimiter", profile().delimiter], ["Date column", String(profile().dateColumn)], ["Amount column", String(profile().amountColumn)], ["Description columns", profile().descriptionColumns.join(",")], ["Join description tail", profile().descriptionJoin ? "yes" : "no"], ["Amount strip", profile().amountStrip], ["Date order", profile().dateFormat],
   ]
   return <>
-    <Show when={stage() === "files"}><Modal title="Import CSV" hints="enter select · p path · esc cancel"><text fg={theme.overlay1}>{ui.state.importDirectory}</text><Show when={ui.state.importFiles.length} fallback={<text fg={theme.overlay1}>No CSV files here. Press p to enter a path.</text>}><For each={ui.state.importFiles}>{(path, i) => <text bg={i() === ui.state.importCursor ? theme.surface0 : theme.base}><S fg={i() === ui.state.importCursor ? theme.focus : theme.base} bg={i() === ui.state.importCursor ? theme.surface0 : theme.base} bold>{i() === ui.state.importCursor ? "> " : "  "}</S><S fg={theme.text} bg={i() === ui.state.importCursor ? theme.surface0 : theme.base}>{path.split(/[\\/]/).pop()}</S></text>}</For></Show></Modal></Show>
+    <Show when={stage() === "files"}>
+      <Modal title="Import CSV" hints="enter select · p path · esc cancel">
+        <text fg={theme.overlay1}>{ui.state.importDirectory}</text>
+        <Show when={ui.state.importFiles.length} fallback={<text fg={theme.overlay1}>No CSV files here. Press p to enter a path.</text>}>
+          <For each={ui.state.importFiles}>{(path, i) => (
+            <ListRow cursor={i() === ui.state.importCursor} bg={theme.mantle} spans={[{ text: path.split(/[\\/]/).pop() ?? path, fg: theme.text }]} />
+          )}</For>
+        </Show>
+      </Modal>
+    </Show>
     <Show when={stage() === "path"}><Modal title="Import CSV path"><text fg={theme.text}><TextInput field={{ value: ui.state.importPath, caret: ui.state.importPathCaret }} focused /></text><text fg={theme.overlay1}>Enter an absolute path or one relative to the listed folder.</text></Modal></Show>
-    <Show when={stage() === "profile"}><Modal title={ui.state.importProfileManaging ? "Import profiles" : "Choose import profile"} hints="a new · e edit · del delete · enter select · esc back"><Show when={data.state.importProfiles.length} fallback={<text fg={theme.overlay1}>No profiles yet. Press a to map this CSV.</text>}><For each={data.state.importProfiles}>{(item, i) => <text bg={i() === ui.state.importProfileCursor ? theme.surface0 : theme.base}><S fg={i() === ui.state.importProfileCursor ? theme.focus : theme.base} bg={i() === ui.state.importProfileCursor ? theme.surface0 : theme.base}>{i() === ui.state.importProfileCursor ? "> " : "  "}</S><S fg={theme.text} bg={i() === ui.state.importProfileCursor ? theme.surface0 : theme.base}>{item.name}</S><S fg={theme.overlay1} bg={i() === ui.state.importProfileCursor ? theme.surface0 : theme.base}>{`  ${item.account} · ${item.importPrefix || "no prefix"}`}</S></text>}</For></Show><text fg={theme.teal}>{ui.state.importProfileCursor === data.state.importProfiles.length ? "> New mapped profile" : "  New mapped profile"}</text></Modal></Show>
+    <Show when={stage() === "profile"}>
+      <Modal title={ui.state.importProfileManaging ? "Import profiles" : "Choose import profile"} hints="a new · e edit · del delete · enter select · esc back">
+        <Show when={data.state.importProfiles.length} fallback={<text fg={theme.overlay1}>No profiles yet. Press a to map this CSV.</text>}>
+          <For each={data.state.importProfiles}>{(item, i) => (
+            <ListRow cursor={i() === ui.state.importProfileCursor} bg={theme.mantle} spans={[
+              { text: item.name, fg: theme.text },
+              { text: `  ${item.account} · ${item.importPrefix || "no prefix"}`, fg: theme.overlay1 },
+            ]} />
+          )}</For>
+        </Show>
+        <ListRow cursor={ui.state.importProfileCursor === data.state.importProfiles.length} bg={theme.mantle} spans={[{ text: "New mapped profile", fg: theme.teal }]} />
+      </Modal>
+    </Show>
     <Show when={stage() === "profileEditor"}><Modal title="Map CSV profile" hints={`tab field · h/l choices · enter ${ui.state.importPath ? "save and scan" : "save"} · esc back`}><For each={profileFields()}>{(entry, i) => <text><S fg={i() === ui.state.importProfileField ? theme.focus : theme.subtext0} bold={i() === ui.state.importProfileField}>{i() === ui.state.importProfileField ? "> " : "  "}{entry[0]}: </S><TextInput field={{ value: entry[1] ?? "", caret: ui.state.importProfileCaret }} focused={i() === ui.state.importProfileField && ![3, 5, 10, 12].includes(i())} /></text>}</For></Modal></Show>
-    <Show when={stage() === "preview" && ui.state.importPreview}>{(p: () => NonNullable<typeof ui.state.importPreview>) => <Modal title="Import preview" hints="s skip duplicates · a force import · p all/dupes · r rules · esc cancel"><text fg={theme.subtext0}>{p().filename} · {p().accountName} · {p().profile.name}</text><text fg={theme.text}>Rows {p().rows.length} · <S fg={theme.success}>{p().newCount} new</S> · <S fg={theme.warning}>{p().duplicateCount} duplicates</S> · <S fg={p().errors.length ? theme.error : theme.success}>{p().errors.length} errors</S></text><Show when={p().errors.length}><For each={p().errors.slice(0, 4)}>{(err) => <text fg={theme.error}>{`line ${err.sourceLine}: ${err.message}`}</text>}</For><text fg={theme.error}>Import blocked until parsing errors are fixed.</text></Show><text fg={theme.subtext0}>{ui.state.importPreviewShowAll ? "All rows" : "Duplicate rows"} · rules {ui.state.importPreviewRules ? "ON" : "OFF"}</text><Show when={previewRows().length} fallback={<text fg={theme.overlay1}>No rows in this view.</text>}><For each={previewRows().slice(0, 8)}>{(row, i) => <text bg={i() === ui.state.importPreviewCursor ? theme.surface0 : theme.base}><S fg={row.duplicate ? theme.warning : theme.success} bg={i() === ui.state.importPreviewCursor ? theme.surface0 : theme.base}>{row.duplicate ? "! " : "· "}</S><S fg={theme.overlay1} bg={i() === ui.state.importPreviewCursor ? theme.surface0 : theme.base}>{row.dateISO} </S><S fg={theme.text} bg={i() === ui.state.importPreviewCursor ? theme.surface0 : theme.base}>{truncate(row.description, 38)}</S><S fg={theme.overlay1} bg={i() === ui.state.importPreviewCursor ? theme.surface0 : theme.base}>{`  ${row.amount.toFixed(2)}`}</S></text>}</For></Show></Modal>}</Show>
+    <Show when={stage() === "preview" && ui.state.importPreview}>{(p: () => NonNullable<typeof ui.state.importPreview>) => (
+      <Modal title="Import preview" hints="s skip duplicates · a force import · p all/dupes · r rules · esc cancel">
+        <text fg={theme.subtext0}>{p().filename} · {p().accountName} · {p().profile.name}</text>
+        <text fg={theme.text}>Rows {p().rows.length} · <S fg={theme.success}>{p().newCount} new</S> · <S fg={theme.warning}>{p().duplicateCount} duplicates</S> · <S fg={p().errors.length ? theme.error : theme.success}>{p().errors.length} errors</S></text>
+        <Show when={p().errors.length}>
+          <For each={p().errors.slice(0, 4)}>{(err) => <text fg={theme.error}>{`line ${err.sourceLine}: ${err.message}`}</text>}</For>
+          <text fg={theme.error}>Import blocked until parsing errors are fixed.</text>
+        </Show>
+        <text fg={theme.subtext0}>{ui.state.importPreviewShowAll ? "All rows" : "Duplicate rows"} · rules {ui.state.importPreviewRules ? "ON" : "OFF"}</text>
+        <Show when={previewRows().length} fallback={<text fg={theme.overlay1}>No rows in this view.</text>}>
+          <For each={previewWindow()}>{(row, i) => (
+            <ListRow cursor={previewTop() + i() === ui.state.importPreviewCursor} bg={theme.mantle} spans={[
+              row.duplicate ? { text: "! ", fg: theme.warning } : { text: "· ", fg: theme.success },
+              { text: `${row.dateISO} `, fg: theme.overlay1 },
+              { text: fit(row.description, 38), fg: theme.text },
+              { text: formatMoney(row.amount).padStart(12), fg: theme.overlay1 },
+            ]} />
+          )}</For>
+          <Show when={previewRows().length > PREVIEW_ROWS}><text fg={theme.overlay1}>{`─ ${windowLabel(previewTop(), PREVIEW_ROWS, previewRows().length)} ─`}</text></Show>
+        </Show>
+      </Modal>
+    )}</Show>
   </>
 }
 

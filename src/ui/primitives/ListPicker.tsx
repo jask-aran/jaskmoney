@@ -5,12 +5,13 @@ import type { PickerItem } from "../../state/settingsForm"
 import { fit } from "../text"
 import { Modal } from "./Modal"
 import { S } from "./S"
+import { ListRow, centredTop } from "./ListRow"
 
 /**
  * A filterable list in a Modal: the filter line, then group headings and
  * items, scrolled so the cursor (an index into the items, headings skipped)
- * stays in view. An item's `detail` follows its label, muted. `mark` adds a checkbox ("[x]", "[-]", "[ ]") per item for
- * multi-choice lists.
+ * stays in view. An item's `detail` follows its label, muted. `mark` adds a
+ * checkbox ("[x]", "[-]", "[ ]") per item for multi-choice lists.
  */
 export function ListPicker(props: {
   title: string
@@ -34,7 +35,7 @@ export function ListPicker(props: {
     let seen = -1
     return props.items.findIndex((item) => item.kind === "item" && ++seen === props.cursor)
   })
-  const top = createMemo(() => Math.max(0, Math.min(props.items.length - visible(), Math.max(0, cursorRow()) - Math.floor(visible() / 2))))
+  const top = createMemo(() => centredTop(Math.max(0, cursorRow()), props.items.length, visible()))
   const rows = () => props.items.slice(top(), top() + visible()).map((item, i) => ({ item, row: top() + i }))
   return (
     <Modal title={props.title} subtitle={props.subtitle} width={width()} hints={props.hints}>
@@ -47,21 +48,14 @@ export function ListPicker(props: {
         {({ item, row }) => {
           if (item.kind === "heading") return <text fg={theme.overlay1} wrapMode="none"><b>{item.label}</b></text>
           const selected = () => row === cursorRow()
-          const bg = () => (selected() ? theme.surface0 : theme.mantle)
+          const icon = () => props.iconFor?.(item.value)
           return (
-            <text bg={bg()} wrapMode="none">
-              <S fg={theme.accent} bg={bg()} bold>{selected() ? "› " : "  "}</S>
-              <Show when={props.mark}>
-                <S fg={theme.subtext0} bg={bg()}>{`${props.mark!(item.value)} `}</S>
-              </Show>
-              <Show when={props.iconFor?.(item.value)}>
-                {(icon: () => string) => <S fg={item.color ?? theme.text} bg={bg()}>{`${icon()} `}</S>}
-              </Show>
-              <S fg={item.color ?? theme.text} bg={bg()} bold={selected()}>{item.detail ? item.label : fit(item.label, width() - 12)}</S>
-              <Show when={item.detail}>
-                <S fg={theme.overlay1} bg={bg()}>{fit(`  ${item.detail}`, Math.max(0, width() - 12 - item.label.length))}</S>
-              </Show>
-            </text>
+            <ListRow cursor={selected()} bg={theme.mantle} spans={[
+              ...(props.mark ? [{ text: `${props.mark(item.value)} `, fg: theme.subtext0 }] : []),
+              ...(icon() ? [{ text: `${icon()} `, fg: item.color ?? theme.text }] : []),
+              { text: item.detail ? item.label : fit(item.label, width() - 12), fg: item.color ?? theme.text, bold: selected() },
+              ...(item.detail ? [{ text: fit(`  ${item.detail}`, Math.max(0, width() - 12 - item.label.length)), fg: theme.overlay1 }] : []),
+            ]} />
           )
         }}
       </For>
