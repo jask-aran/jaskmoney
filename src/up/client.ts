@@ -85,7 +85,7 @@ export function createUpClient({ token, fetch = globalThis.fetch, baseUrl = "htt
   }
   let origin: string
   try { origin = new URL(baseUrl).origin } catch { throw new Error("Invalid Up API base URL") }
-  async function request(url: URL, options: { method?: "PATCH"; body?: string } = {}): Promise<unknown> {
+  async function request(url: URL, options: { method?: "PATCH" | "POST" | "DELETE"; body?: string } = {}): Promise<unknown> {
     try {
       if (url.origin !== origin) throw new Error("Up pagination URL has a foreign origin")
       for (let retry = 0; ; retry++) {
@@ -110,7 +110,7 @@ export function createUpClient({ token, fetch = globalThis.fetch, baseUrl = "htt
           if (response.status === 401) message = "Up token is invalid or expired; create one at https://api.up.com.au"
           throw new UpApiError(response.status, redact(message))
         }
-        if (options.method === "PATCH") {
+        if (options.method !== undefined) {
           if (response.status !== 204) throw new Error(`Unexpected Up API response status (${response.status}); expected 204`)
           return
         }
@@ -146,7 +146,15 @@ export function createUpClient({ token, fetch = globalThis.fetch, baseUrl = "htt
       throw new Error(redact(error instanceof Error ? error.message : String(error)))
     }
   }
+  async function changeTransactionTags(transactionId: string, tags: string[], method: "POST" | "DELETE"): Promise<void> {
+    if (transactionId === "." || transactionId === "..") throw new Error("Invalid Up transaction ID")
+    await request(new URL(`${baseUrl.replace(/\/$/, "")}/transactions/${encodeURIComponent(transactionId)}/relationships/tags`), {
+      method, body: JSON.stringify({ data: tags.map(id => ({ type: "tags", id })) }),
+    })
+  }
   return {
+    addTransactionTags: (transactionId: string, tags: string[]) => changeTransactionTags(transactionId, tags, "POST"),
+    removeTransactionTags: (transactionId: string, tags: string[]) => changeTransactionTags(transactionId, tags, "DELETE"),
     async ping(): Promise<void> { await request(new URL(`${baseUrl.replace(/\/$/, "")}/util/ping`)) },
     async setTransactionCategory(transactionId: string, categoryId: string | null): Promise<void> {
       if (transactionId === "." || transactionId === "..") throw new Error("Invalid Up transaction ID")

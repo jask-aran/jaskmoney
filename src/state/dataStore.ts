@@ -39,6 +39,7 @@ import { selectedAccounts, type AccountSelection } from "../domain/accountTree"
 import { buildImportPreview, commitImportPreview, matchingProfiles } from "../domain/profileImport"
 import { createUpClient, readUpToken } from "../up/client"
 import { syncUp as runUpSync } from "../up/sync"
+import { pushTagChange } from "../up/tags"
 import {
   evalFilter,
   filterExprString,
@@ -336,20 +337,42 @@ function createDataStore() {
     return parts.join(" · ")
   }
 
-  function toggleTagOnTransactions(txnIds: number[], tagId: number): string {
+  /**
+   * Add the tag to all targets, or remove it when every target already has it.
+   * Up transactions also change in Up (two-way tags); IGNORE and CSV rows stay
+   * local. Without a provider push this completes synchronously.
+   */
+  function toggleTagOnTransactions(txnIds: number[], tagId: number): Promise<string> {
     if (!db) throw new Error("db not open")
-    // If all have tag → remove; else add
-    const allHave = txnIds.every((id) => {
-      const t = state.transactions.find((x) => x.id === id)
-      return t?.tagIds.includes(tagId)
-    })
-    if (allHave) removeTagFromTransactions(db, txnIds, tagId)
-    else addTagToTransactions(db, txnIds, tagId)
-    refresh()
+    const database = db
+    const allHave = txnIds.every((id) => state.transactions.find((x) => x.id === id)?.tagIds.includes(tagId))
     const tag = state.tags.find((t) => t.id === tagId)
-    return allHave
-      ? `Removed tag ${tag?.name ?? tagId} from ${txnIds.length}`
-      : `Added tag ${tag?.name ?? tagId} to ${txnIds.length}`
+    const verb = allHave ? `Removed tag ${tag?.name ?? tagId} from` : `Added tag ${tag?.name ?? tagId} to`
+    const providerRow = (id: number) => {
+      const t = state.transactions.find((x) => x.id === id)
+      return t?.source === "up"
+    }
+    const localOnly = tag?.name.toUpperCase() === "IGNORE" || !txnIds.some(providerRow)
+    if (localOnly) {
+      if (allHave) removeTagFromTransactions(database, txnIds, tagId)
+      else addTagToTransactions(database, txnIds, tagId)
+      refresh()
+      return Promise.resolve(`${verb} ${txnIds.length}`)
+    }
+    // The client is created on first use, so a missing token only fails rows
+    // that actually need Up.
+    let up: ReturnType<typeof createUpClient> | null = null
+    const client = {
+      addTransactionTags: (id: string, tags: string[]) => (up ??= createUpClient({ token: readUpToken() })).addTransactionTags(id, tags),
+      removeTransactionTags: (id: string, tags: string[]) => (up ??= createUpClient({ token: readUpToken() })).removeTransactionTags(id, tags),
+    }
+    return pushTagChange(database, client, txnIds, tagId, !allHave).then((result) => {
+      refresh()
+      const parts = [`${verb} ${result.changed}`]
+      if (result.pushed) parts.push(`${result.pushed} updated in Up`)
+      if (result.failures.length) parts.push(`${result.failures.length} failed: ${result.failures[0]}`)
+      return parts.join(" · ")
+    })
   }
 
   function createSettingsCategory(input: Pick<Category, "name" | "color">): number {

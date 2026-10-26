@@ -278,3 +278,48 @@ describe("Up client", () => {
     for (const env of [{}, { JASKMONEY_UP_TOKEN: "  " }]) expect(() => readUpToken(env)).toThrow("Set JASKMONEY_UP_TOKEN to an Up Personal Access Token (create one at https://api.up.com.au)")
   })
 })
+
+describe("Up tag requests", () => {
+  test.each(["addTransactionTags", "removeTransactionTags"] as const)("%s sends encoded JSON, retries unchanged, and accepts 204", async method => {
+    const calls: Array<{ url: string; init?: RequestInit }> = [], delays: number[] = []
+    const client = createUpClient({ token, sleep: async ms => { delays.push(ms) }, fetch: async (input, init) => {
+      calls.push({ url: String(input), init })
+      return calls.length === 1 ? new Response(null, { status: 429, headers: { "Retry-After": "2" } }) : new Response(null, { status: 204 })
+    } })
+    for (const id of [".", ".."]) await expect(client[method](id, ["Food"])).rejects.toThrow("Invalid Up transaction ID")
+    expect(calls).toEqual([])
+    expect(await client[method]("a/../b ?#%", ["Food", "Holiday & fun"])).toBeUndefined()
+    expect(calls).toHaveLength(2)
+    expect(calls[0]).toEqual(calls[1])
+    expect(delays).toEqual([2000])
+    expect(new URL(calls[0]!.url).pathname).toBe("/api/v1/transactions/a%2F..%2Fb%20%3F%23%25/relationships/tags")
+    expect(calls[0]?.init?.method).toBe(method === "addTransactionTags" ? "POST" : "DELETE")
+    expect(calls[0]?.init?.redirect).toBe("manual")
+    const headers = new Headers(calls[0]?.init?.headers)
+    expect(headers.get("Authorization")).toBe(`Bearer ${token}`)
+    expect(headers.get("Content-Type")).toBe("application/json")
+    expect(calls[0]?.init?.body).toBe(JSON.stringify({ data: [{ type: "tags", id: "Food" }, { type: "tags", id: "Holiday & fun" }] }))
+    const unexpected = createUpClient({ token, fetch: async () => Response.json({}) })
+    await expect(unexpected[method]("a", [])).rejects.toThrow("Unexpected Up API response status (200); expected 204")
+  })
+
+  test.each(["addTransactionTags", "removeTransactionTags"] as const)("%s preserves status, redacts errors, refuses redirects, and caps retries", async method => {
+    for (const status of [401, 403, 422, 302]) {
+      const client = createUpClient({ token, fetch: async () => Response.json({ errors: [{ title: `Denied ${token}`, detail: `Detail ${token}` }] }, { status }) })
+      try { await client[method]("a", ["Food"]); throw new Error("Expected failure") } catch (error) {
+        expect(error).toBeInstanceOf(UpApiError)
+        if (!(error instanceof UpApiError)) throw error
+        expect(error.status).toBe(status)
+        expect(error.message).toContain(status === 401 ? "invalid or expired" : "Denied [redacted]: Detail [redacted]")
+        expect(error.message).not.toContain(token)
+      }
+    }
+    const failing = createUpClient({ token, fetch: async () => { throw new Error(`Network ${token}`) } })
+    await expect(failing[method]("a", [])).rejects.toThrow("Network [redacted]")
+    let calls = 0
+    const limited = createUpClient({ token, sleep: async () => {}, fetch: async () => { calls++; return new Response(null, { status: 429 }) } })
+    await expect(limited[method]("a", [])).rejects.toThrow("429")
+    expect(calls).toBe(4)
+
+  })
+})

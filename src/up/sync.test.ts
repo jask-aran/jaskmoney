@@ -39,6 +39,68 @@ afterEach(() => { for (const db of databases.splice(0)) db.close() })
 
 describe("Up sync", () => {
 
+  test("missing details force one full-history fetch per affected account, then restore incremental windows", async () => {
+    const db = database()
+    const rows = [txn("old", "SETTLED", "2020-01-01T00:00:00Z"),
+      txn("new", "SETTLED", "2026-04-05T00:00:00Z"),
+      txn("saver", "SETTLED", "2026-04-01T00:00:00Z", "saver")]
+    await syncUp(db, client(rows), { now })
+    db.query("UPDATE transactions SET ext_categorizable = NULL, card_suffix = NULL WHERE external_id = 'old'").run()
+    rows[0]!.attributes.cardPurchaseMethod = { method: "CONTACTLESS", cardNumberSuffix: "1234" }
+    const since: Array<string | undefined> = []
+    expect((await syncUp(db, client(rows, undefined, since), { now })).updated).toBe(1)
+    expect(since).toEqual([undefined, "2026-03-18T00:00:00.000Z"])
+    expect(db.query("SELECT ext_categorizable, card_suffix FROM transactions WHERE external_id = 'old'").get())
+      .toEqual({ ext_categorizable: 1, card_suffix: "1234" })
+    since.length = 0
+    expect((await syncUp(db, client(rows, undefined, since), { now })).updated).toBe(0)
+    expect(since).toEqual(["2026-03-22T00:00:00.000Z", "2026-03-18T00:00:00.000Z"])
+  })
+
+  test("a detail-less settled row Up no longer returns is marked once, so full fetches do not repeat", async () => {
+    const db = database()
+    const rows = [txn("kept", "SETTLED", "2026-04-05T00:00:00Z"), txn("vanished", "SETTLED", "2026-04-01T00:00:00Z")]
+    await syncUp(db, client(rows), { now })
+    db.query("UPDATE transactions SET ext_categorizable = NULL WHERE external_id = 'vanished'").run()
+    const since: Array<string | undefined> = []
+    await syncUp(db, client([rows[0]!], [account()], since), { now })
+    expect(since).toEqual([undefined])
+    expect(db.query("SELECT status, ext_categorizable FROM transactions WHERE external_id = 'vanished'").get())
+      .toEqual({ status: "SETTLED", ext_categorizable: 0 })
+    since.length = 0
+    await syncUp(db, client([rows[0]!], [account()], since), { now })
+    expect(since[0]).not.toBeUndefined()
+  })
+
+  test("stored tag links outside the fetch window reconcile and count additions and removals", async () => {
+    const db = database()
+    const first = await syncUp(db, client([txn("old", "SETTLED")]), { now })
+    const id = first.insertedIds[0]!
+    db.query("UPDATE transactions SET ext_tags = '[\"New\",\"IGNORE\"]' WHERE id = ?").run(id)
+    expect((await syncUp(db, client([]), { now })).updated).toBe(2)
+    expect(loadTransactions(db)[0]?.tagNames).toEqual(["New"])
+    expect((await syncUp(db, client([]), { now })).updated).toBe(0)
+  })
+
+  test("backfill clears the NULL marker even when Up omits isCategorizable", async () => {
+    const db = database(), row = txn("old", "SETTLED")
+    await syncUp(db, client([row], [account()]), { now })
+    db.query("UPDATE transactions SET ext_categorizable = NULL WHERE external_id = 'old'").run()
+    const attributes = Object.fromEntries(Object.entries(row.attributes).filter(([key]) => key !== "isCategorizable"))
+    const since: Array<string | undefined> = []
+    const missing = createUpClient({ token: "test-pat", fetch: async input => {
+      const url = new URL(String(input))
+      if (url.pathname.endsWith("/categories")) return response([])
+      if (url.pathname.endsWith("/accounts")) return response([account()])
+      since.push(url.searchParams.get("filter[since]") ?? undefined)
+      return response([{ ...row, attributes }])
+    } })
+    expect((await syncUp(db, missing, { now })).updated).toBe(1)
+    expect(db.query("SELECT ext_categorizable FROM transactions WHERE external_id = 'old'").get()).toEqual({ ext_categorizable: 1 })
+    expect((await syncUp(db, missing, { now })).updated).toBe(0)
+    expect(since).toEqual([undefined, "2026-01-18T12:30:00.000Z"])
+  })
+
   test("insert maps child categories; missing, unknown and parent categories use the default with NULL source", async () => {
     const db = database()
     const rows = [txn("known"), txn("missing"), txn("unknown"), txn("parent")]
@@ -76,7 +138,10 @@ describe("Up sync", () => {
     expect(db.query("SELECT category_id, category_source, notes FROM transactions").get()).toEqual({
       category_id: protectedChoice ? local : fallback.id, category_source: protectedChoice ? source : null, notes: "keep",
     })
-    expect(db.query("SELECT * FROM transaction_tags").all()).toEqual([{ transaction_id: first.insertedIds[0], tag_id: tag }])
+    const providerTag = db.query<{ id: number }, []>("SELECT id FROM tags WHERE ext_id = 'up-tag'").get()!.id
+    expect(db.query("SELECT * FROM transaction_tags ORDER BY tag_id").all()).toEqual([
+      { transaction_id: first.insertedIds[0], tag_id: providerTag }, { transaction_id: first.insertedIds[0], tag_id: tag },
+    ])
     expect((await syncUp(db, withTree, { now })).updated).toBe(0)
     row.relationships.category.data = { type: "categories", id: "groceries" }
     expect((await syncUp(db, withTree, { now })).updated).toBe(1)
@@ -116,7 +181,7 @@ describe("Up sync", () => {
   test("first sync maps accounts, balances, local date, cents, transfer, and external fields", async () => {
     const db = database(), since: Array<string | undefined> = []
     const result = await syncUp(db, client([txn()], undefined, since), { now })
-    expect(result).toEqual({ accounts: 2, inserted: 1, updated: 0, removedHeld: 0, insertedIds: [expect.any(Number)] })
+    expect(result).toEqual({ accounts: 2, inserted: 1, updated: 1, removedHeld: 0, insertedIds: [expect.any(Number)] })
     expect(since).toEqual([undefined, undefined])
     const daily = loadAccounts(db).find(a => a.name === "Daily")
     const saver = loadAccounts(db).find(a => a.name === "Savings")
@@ -193,7 +258,9 @@ describe("Up sync", () => {
     expect(db.query("SELECT ext_categorizable, transaction_type, card_method, card_suffix, foreign_amount, round_up, cashback FROM transactions").get()).toEqual({
       ext_categorizable: 1, transaction_type: null, card_method: null, card_suffix: null, foreign_amount: null, round_up: null, cashback: null,
     })
-    expect(loadTransactions(db)[0]).toMatchObject({ id: first.insertedIds[0], categoryId: category, notes: "keep", tagIds: [tag] })
+    expect(loadTransactions(db)[0]).toMatchObject({ id: first.insertedIds[0], categoryId: category, notes: "keep", tagIds: [
+      db.query<{ id: number }, []>("SELECT id FROM tags WHERE ext_id = 'up-tag'").get()!.id, tag,
+    ] })
   })
 
   test("HELD becomes SETTLED in place and preserves user category, note, and tag", async () => {
@@ -212,7 +279,7 @@ describe("Up sync", () => {
     settled.relationships.category.data = null
     settled.relationships.parentCategory.data = null
     settled.relationships.tags.data = []
-    expect(await syncUp(db, client([settled]), { now })).toMatchObject({ inserted: 0, updated: 1, insertedIds: [] })
+    expect(await syncUp(db, client([settled]), { now })).toMatchObject({ inserted: 0, updated: 2, insertedIds: [] })
     expect(loadTransactions(db)[0]).toMatchObject({ id: first.insertedIds[0], status: "SETTLED", categoryId: category, notes: "keep", tagIds: [tag], amount: -12, description: "Final merchant", transferAccountId: null, internal: false, excluded: false })
     expect(db.query("SELECT settled_at, raw_text, message, ext_category, ext_parent_category, ext_tags FROM transactions").get()).toEqual({ settled_at: settled.attributes.settledAt, raw_text: null, message: null, ext_category: null, ext_parent_category: null, ext_tags: "[]" })
     expect((await syncUp(db, client([settled]), { now })).updated).toBe(0)
@@ -225,7 +292,9 @@ describe("Up sync", () => {
     db.query("INSERT INTO transactions (date_raw, date_iso, amount, description, status) VALUES ('2026-01-01', '2026-01-01', 1, 'CSV', 'HELD')").run()
     expect((await syncUp(db, client([]), { now })).removedHeld).toBe(1)
     expect(db.query("SELECT external_id, source FROM transactions ORDER BY id").all()).toEqual([{ external_id: "settled", source: "up" }, { external_id: null, source: "csv" }])
-    expect(db.query("SELECT * FROM transaction_tags").all()).toEqual([])
+    expect(db.query("SELECT * FROM transaction_tags").all()).toEqual([{
+      transaction_id: first.insertedIds[1], tag_id: db.query<{ id: number }, []>("SELECT id FROM tags WHERE ext_id = 'up-tag'").get()!.id,
+    }])
   })
 
   test("incremental window uses instants for newest and oldest HELD across offsets", async () => {
@@ -278,7 +347,7 @@ describe("Up sync", () => {
       // Include both a new disabled side and an existing disabled side defensively.
       return response([txn("enabled"), txn("disabled-new", "HELD", undefined, "saver"), txn("disabled-held", "SETTLED", undefined, "saver")])
     } })
-    expect(await syncUp(db, defensive, { now })).toMatchObject({ accounts: 2, inserted: 1, updated: 0, removedHeld: 0 })
+    expect(await syncUp(db, defensive, { now })).toMatchObject({ accounts: 2, inserted: 1, updated: 1, removedHeld: 0 })
     expect(requests).toEqual(["/api/v1/accounts/daily/transactions"])
     expect(db.query("SELECT * FROM transactions WHERE account_id = ?").all(saver.id)).toEqual(before)
     expect(db.query("SELECT name, external_kind, balance, sync_enabled FROM accounts WHERE id = ?").get(saver.id))
@@ -294,7 +363,8 @@ describe("Up sync", () => {
     const rows = [txn("daily-new", "SETTLED", "2026-04-05T02:10:00+10:00"), txn("saver-old", "HELD", "2025-01-01T00:00:00Z", "saver")]
     await syncUp(db, client(rows), { now })
     const saver = loadAccounts(db).find(a => a.name === "Savings")!
-    expect(setAccountSyncEnabled(db, saver.id, false)).toBe(1)
+    // SQLite reports the transaction plus its cascaded tag link.
+    expect(setAccountSyncEnabled(db, saver.id, false)).toBe(2)
     setAccountSyncEnabled(db, saver.id, true)
     const since: Array<string | undefined> = [], requests: URL[] = []
     expect((await syncUp(db, client(rows, undefined, since, requests), { now })).inserted).toBe(1)
@@ -410,7 +480,7 @@ test("store sync locks concurrent calls, refreshes, applies rules only to insert
     const pending = data.syncUp()
     expect(data.state.upSyncing).toBe(true)
     await expect(data.syncUp()).rejects.toThrow("Up sync is already running")
-    expect(await pending).toBe("Up sync: 1 new, 0 updated, 0 pending removed · 1 rules applied")
+    expect(await pending).toBe("Up sync: 1 new, 1 updated, 0 pending removed · 1 rules applied")
     expect(data.state.upSyncing).toBe(false)
     const inserted = data.state.transactions[0]
     expect(inserted?.categoryId).toBe(category)

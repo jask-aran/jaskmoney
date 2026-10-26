@@ -117,7 +117,10 @@ export function handleKey(ui: UiStore, key: KeyEvent, data?: DataStore): boolean
       const trows = data?.scopedTransactions() ?? []
       const targets = ui.targetIds(trows)
       if (tag && data && targets.length) {
-        ui.setStatus(data.toggleTagOnTransactions(targets, tag.id))
+        data.toggleTagOnTransactions(targets, tag.id).then(
+          (summary) => ui.setStatus(summary, summary.includes(" failed: ")),
+          (error) => ui.setStatus(error instanceof Error ? error.message : String(error), true),
+        )
       }
       return true
     }
