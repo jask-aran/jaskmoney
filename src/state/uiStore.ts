@@ -11,8 +11,7 @@ export type TabId = "dashboard" | "spending" | "manager" | "settings"
 export type SectionId =
   | "none"
   | "spend.date"
-  | "spend.tracker"
-  | "spend.balances"
+  | "spend.chart"
   | "spend.categories"
   | "spend.merchants"
   | "mgr.accounts"
@@ -33,7 +32,6 @@ export type ScopeId =
   | "tagPicker"
   | "dashboard"
   | "spending.date"
-  | "spending.chart"
   | "spending"
   | "manager"
   | "manager.accounts"
@@ -88,9 +86,8 @@ export interface UiState {
   accountCursor: number
   timeframe: TimeframeState
   dashChipCursor: number
-  /** Index into TRACKER_VIEWS / BALANCE_VIEWS. */
-  trackerView: number
-  balanceView: number
+  /** Index into CHART_VIEWS. */
+  chartView: number
   filterMode: boolean
   filterDraft: string
   catPickerOpen: boolean
@@ -163,17 +160,25 @@ const TAB_DEFAULT_FOCUS: Record<TabId, SectionId> = {
   settings: "none",
 }
 
-/** Views of the Spending tab's chart cards, cycled with h/l when focused. */
-export const TRACKER_VIEWS = ["Daily", "Cumulative", "Weekly"] as const
-export const BALANCE_VIEWS = ["Net position", "Available", "Savers"] as const
+/** The Spending tab's chart pane views, in h/l order, with the group each
+ * belongs to (the pane's title and the strip's separators). */
+export const CHART_VIEWS = [
+  { view: "Daily", group: "Spending" },
+  { view: "Cumulative", group: "Spending" },
+  { view: "Weekly", group: "Spending" },
+  { view: "Net position", group: "Balances" },
+  { view: "Available", group: "Balances" },
+  { view: "Savers", group: "Balances" },
+  { view: "Calendar", group: "Calendar" },
+] as const
+export type ChartView = (typeof CHART_VIEWS)[number]["view"]
 
 export const JUMP_TARGETS: Record<TabId, JumpTarget[]> = {
   dashboard: [
   ],
   spending: [
     { key: "d", section: "spend.date", label: "Date Range" },
-    { key: "t", section: "spend.tracker", label: "Spending Tracker" },
-    { key: "b", section: "spend.balances", label: "Balances" },
+    { key: "t", section: "spend.chart", label: "Charts" },
     { key: "c", section: "spend.categories", label: "Categories" },
     { key: "m", section: "spend.merchants", label: "Merchants" },
   ],
@@ -213,8 +218,7 @@ function createUiStore() {
     accountCursor: 0,
     timeframe: defaultTimeframe(),
     dashChipCursor: 5,
-    trackerView: 0,
-    balanceView: 0,
+    chartView: 0,
     filterMode: false,
     filterDraft: "",
     catPickerOpen: false,
@@ -517,7 +521,6 @@ function createUiStore() {
     if (state.activeTab === "dashboard") return "dashboard"
     if (state.activeTab === "spending") {
       if (state.focusedSection === "spend.date") return "spending.date"
-      if (state.focusedSection === "spend.tracker" || state.focusedSection === "spend.balances") return "spending.chart"
       return "spending"
     }
     if (state.activeTab === "manager") {

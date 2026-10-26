@@ -1,6 +1,5 @@
 /** Chart models for the Spending tab's period charts (and the Dashboard's
  * budget-cycle chart). Pure: each returns a ChartModel for ChartBody. */
-import type { BALANCE_VIEWS, TRACKER_VIEWS } from "../../state/uiStore"
 import { theme } from "../../theme"
 import { cumulative, dailySpendSeries, formatWholeMoney, weeklyTotals } from "../../domain/dashboard"
 import { balanceHistory } from "../../domain/position"
@@ -39,7 +38,7 @@ export function addDays(iso: string, days: number): string {
  * Days after today are not drawn.
  */
 export function spendingChart(
-  view: (typeof TRACKER_VIEWS)[number],
+  view: "Daily" | "Cumulative" | "Weekly",
   series: { dates: string[]; values: number[] },
   width: number,
   height: number,
@@ -146,7 +145,7 @@ export function spendingChart(
 /** End-of-day balances over the period's `dates` (up to today) for one view:
  * everything, spending accounts, or savers. */
 export function balancesChart(
-  view: (typeof BALANCE_VIEWS)[number],
+  view: "Net position" | "Available" | "Savers",
   dates: string[],
   width: number,
   height: number,

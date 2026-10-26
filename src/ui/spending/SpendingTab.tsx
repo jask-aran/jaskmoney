@@ -2,7 +2,7 @@ import { For, Show, createEffect, createMemo } from "solid-js"
 import { useTerminalDimensions } from "@opentui/solid"
 import { SectionCard } from "../primitives/SectionCard"
 import { S } from "../primitives/S"
-import { BALANCE_VIEWS, TRACKER_VIEWS, ui, type SectionId } from "../../state/uiStore"
+import { CHART_VIEWS, ui, type SectionId } from "../../state/uiStore"
 import { data } from "../../state/dataStore"
 import { theme } from "../../theme"
 import { computeCategorySpend, dailySpendSeries, fitCategoryLines, formatPct, formatWholeMoney, groupCategorySpend } from "../../domain/dashboard"
@@ -11,17 +11,21 @@ import { merchantSummaries, spendingCalendar, type CalendarDay } from "../../dom
 import { LOOKBACKS, PERIODS, PERIOD_LABEL, activeChipIndex, comparisonWindows, dataClock, filterByTimeframe, timeframeBounds, toISODate } from "../../domain/timeframe"
 import { fit, shortDate } from "../text"
 import { spendingScope } from "../../domain/accountTree"
-import { AXIS, ChartBody } from "../charts/ChartBody"
+import { AXIS, ChartBody, type ChartModel } from "../charts/ChartBody"
 import { INKS, balancesChart, spendingChart } from "./periodCharts"
 
 /** Calendar cell colours by spending level (0 = none). */
 const LEVEL_BG = [theme.surface0, "#5b4636", "#8c6146", "#c47f55", theme.peach] as const
-const WEEKDAYS = ["Mon", "", "Wed", "", "Fri", "", "Sun"]
+const WEEKDAYS = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"]
+
+/** Below this width the chart pane spans the tab and categories sit beside
+ * merchants; at or above it, categories take a right-hand column. */
+const WIDE = 120
 
 /**
- * Everything over a chosen period: the Date Range with its flows, the spending
- * tracker and balances charts (each with views), categories, a calendar of
- * daily spending, and merchants. Spending figures cover the selected spending
+ * Everything over a chosen period: the Date Range with its flows, one chart
+ * pane cycling through spending, balance and calendar views (h/l),
+ * categories, and merchants. Spending figures cover the selected spending
  * account (see spendingScope); internal transfers and not-spending categories
  * are excluded.
  */
@@ -48,31 +52,32 @@ export function SpendingTab(props: { focused: SectionId }) {
   const calendar = createMemo(() => spendingCalendar(inPeriod(), bounds().start, bounds().end))
   const series = createMemo(() => dailySpendSeries(inPeriod(), bounds().start, bounds().end))
 
-  // Fixed rows: tab bar + gap (2), status + footer (2), Date Range (4). The
-  // charts row takes 40% of the rest (12–20 rows; dropped when short), then
-  // categories beside the calendar and merchants.
+  // Fixed rows: tab bar + gap (2), status + footer (2), Date Range (4).
+  // Wide: the chart pane (55%) above merchants in a 2/3 column, categories in
+  // the right third. Narrow: the chart pane (50%) spans the tab, categories
+  // and merchants share the row below.
+  const wide = () => dims().width >= WIDE
   const bodyHeight = () => Math.max(8, dims().height - 8)
-  const showCharts = () => bodyHeight() >= 30
-  const chartsHeight = () => (showCharts() ? Math.max(12, Math.min(20, Math.floor(bodyHeight() * 0.4))) : 0)
-  const lowerHeight = () => bodyHeight() - chartsHeight()
-  // Chart cards split the width; each spends 4 cells on border + padding.
-  const trackerWidth = () => Math.floor((dims().width - 1) / 2)
-  const trackerPlot = () => Math.max(1, trackerWidth() - 4 - AXIS)
-  const balancesPlot = () => Math.max(1, dims().width - 1 - trackerWidth() - 5 - AXIS)
-  const trackerView = () => TRACKER_VIEWS[ui.state.trackerView] ?? TRACKER_VIEWS[0]
-  const balanceView = () => BALANCE_VIEWS[ui.state.balanceView] ?? BALANCE_VIEWS[0]
-  // Card rows less border (2), x labels and summary.
-  const trackerModel = createMemo(() => spendingChart(trackerView(), series(), trackerPlot(), Math.max(1, chartsHeight() - 4), today(), spending()))
-  const balancesModel = createMemo(() => balancesChart(balanceView(), series().dates, balancesPlot(), Math.max(1, chartsHeight() - 4), today(), data.state.accounts, data.state.transactions))
+  const chartHeight = () => Math.max(8, Math.floor(bodyHeight() * (wide() ? 0.55 : 0.5)))
+  const lowerHeight = () => bodyHeight() - chartHeight()
+  const mainWidth = () => (wide() ? Math.floor(((dims().width - 1) * 2) / 3) : dims().width)
+  const sideWidth = () => (wide() ? dims().width - 1 - mainWidth() : Math.floor((dims().width - 1) * 0.4))
+  const merchantsWidth = () => (wide() ? mainWidth() : dims().width - 1 - sideWidth())
+  const merchantsHeight = () => lowerHeight()
+  const categoriesHeight = () => (wide() ? bodyHeight() : lowerHeight())
+  // Chart pane: border + padding (4) across; border (2), the view strip and
+  // a blank line, then the x labels and summary down.
+  const plotWidth = () => Math.max(1, mainWidth() - 4 - AXIS)
+  const plotRows = () => Math.max(1, chartHeight() - 6)
+  const view = () => CHART_VIEWS[ui.state.chartView] ?? CHART_VIEWS[0]
+  const chartModel = createMemo(() => {
+    const v = view().view
+    if (v === "Daily" || v === "Cumulative" || v === "Weekly") return spendingChart(v, series(), plotWidth(), plotRows(), today(), spending())
+    if (v === "Calendar") return null
+    return balancesChart(v, series().dates, plotWidth(), plotRows(), today(), data.state.accounts, data.state.transactions)
+  })
 
-  const leftWidth = () => Math.floor((dims().width - 1) * 0.42)
-  // Right column inner width: border + padding (4) and a cell of rounding slack.
-  const rightInner = () => dims().width - 1 - leftWidth() - 5
-  // Calendar: label column (4) then one column per week, 2–6 cells wide;
-  // long periods show the latest weeks that fit at the minimum width.
-  const calendarWeeks = createMemo(() => calendar().slice(-Math.max(1, Math.floor((rightInner() - 4) / 2))))
-  const cellWidth = () => Math.max(2, Math.min(6, Math.floor((rightInner() - 4) / Math.max(1, calendarWeeks().length))))
-  const merchantRows = () => Math.max(1, lowerHeight() - 11 - 3)
+  const merchantRows = () => Math.max(1, merchantsHeight() - 3)
   createEffect(() => {
     const n = merchantRows()
     const cur = ui.state.merchantCursor
@@ -80,8 +85,11 @@ export function SpendingTab(props: { focused: SectionId }) {
     if (cur < ui.state.merchantTop) ui.setState({ merchantTop: cur })
     else if (cur >= ui.state.merchantTop + n) ui.setState({ merchantTop: cur - n + 1 })
   })
-  // Total (9), count (4), average (9), change (8), last seen (7).
-  const merchantNameWidth = () => Math.max(10, rightInner() - 9 - 4 - 9 - 8 - 7)
+  // Total (9), count (4), average (9), change (8), last seen (7); border +
+  // padding (4) and a cell of rounding slack.
+  const merchantNameWidth = () => Math.max(10, merchantsWidth() - 5 - 9 - 4 - 9 - 8 - 7)
+  // Category lines: name, then amount (9) and share (5).
+  const categoryNameWidth = () => Math.max(8, sideWidth() - 5 - 14)
 
   // Go narrow fallback: the preset chips keep priority and the timeframe
   // label is shown only when both fit on the card's single content line.
@@ -101,6 +109,32 @@ export function SpendingTab(props: { focused: SectionId }) {
       </S>
     )
   }
+
+  const categoriesCard = () => (
+    <SectionCard title="Categories" width={sideWidth()} height={categoriesHeight()} focused={props.focused === "spend.categories"}>
+      <Show when={groups().length} fallback={<text fg={theme.overlay1}>No spending in this period</text>}>
+        <For each={fitCategoryLines(groups(), categoriesHeight() - 2)}>
+          {(line) => (
+            <text wrapMode="none">
+              <S fg={line.child ? theme.subtext0 : line.color} bold={!line.child}>{fit(line.child ? `  ${line.label}` : line.label, categoryNameWidth())}</S>
+              <S fg={line.child ? theme.subtext0 : theme.text} bold={!line.child}>{formatWholeMoney(line.amount).padStart(9)}</S>
+              <S fg={theme.overlay1}>{(line.pct != null ? `${Math.round(line.pct)}%` : "").padStart(5)}</S>
+            </text>
+          )}
+        </For>
+      </Show>
+    </SectionCard>
+  )
+
+  const chartPane = () => (
+    <SectionCard title={view().group} titleSuffix={view().group === "Calendar" ? undefined : `· ${view().view}`} titleSuffixColor={theme.subtext0} width={mainWidth()} height={chartHeight()} focused={props.focused === "spend.chart"}>
+      <ViewStrip />
+      <text> </text>
+      <Show when={chartModel()} fallback={<CalendarView weeks={calendar()} width={mainWidth() - 4} rows={chartHeight() - 4} today={today()} />}>
+        {(model: () => ChartModel) => <ChartBody model={model()} inks={INKS} />}
+      </Show>
+    </SectionCard>
+  )
 
   return (
     <box width="100%" height="100%" flexDirection="column" backgroundColor={theme.canvas}>
@@ -140,52 +174,15 @@ export function SpendingTab(props: { focused: SectionId }) {
           <S fg={theme.overlay1}>{`   ${flows().txnCount} txns`}</S>
         </text>
       </SectionCard>
-      <Show when={showCharts()}>
-        <box flexDirection="row" gap={1} width="100%" height={chartsHeight()}>
-          <SectionCard title="Spending Tracker" titleSuffix={`· ${trackerView()}`} titleSuffixColor={theme.subtext0} width={trackerWidth()} height={chartsHeight()} focused={props.focused === "spend.tracker"}>
-            <ChartBody model={trackerModel()} inks={INKS} />
-          </SectionCard>
-          <box flexGrow={1} flexBasis={0} minWidth={0} height={chartsHeight()} overflow="hidden">
-            <SectionCard title="Balances" titleSuffix={`· ${balanceView()}`} titleSuffixColor={theme.subtext0} height={chartsHeight()} focused={props.focused === "spend.balances"}>
-              <ChartBody model={balancesModel()} inks={INKS} />
-            </SectionCard>
-          </box>
-        </box>
-      </Show>
-      <box flexDirection="row" gap={1} width="100%" height={lowerHeight()}>
-        <SectionCard title="Categories" width={leftWidth()} height={lowerHeight()} focused={props.focused === "spend.categories"}>
-          <Show when={groups().length} fallback={<text fg={theme.overlay1}>No spending in this period</text>}>
-            <For each={fitCategoryLines(groups(), lowerHeight() - 2)}>
-              {(line) => (
-                <text wrapMode="none">
-                  <S fg={line.child ? theme.subtext0 : line.color} bold={!line.child}>{fit(line.child ? `  ${line.label}` : line.label, leftWidth() - 4 - 14)}</S>
-                  <S fg={line.child ? theme.subtext0 : theme.text} bold={!line.child}>{formatWholeMoney(line.amount).padStart(9)}</S>
-                  <S fg={theme.overlay1}>{(line.pct != null ? `${Math.round(line.pct)}%` : "").padStart(5)}</S>
-                </text>
-              )}
-            </For>
-          </Show>
-        </SectionCard>
-        <box flexGrow={1} flexBasis={0} minWidth={0} height={lowerHeight()} flexDirection="column" overflow="hidden">
-          <SectionCard title="Calendar" height={11}>
-            <text wrapMode="none" fg={theme.overlay1}>{"    " + monthLabels(calendarWeeks(), cellWidth())}</text>
-            <For each={WEEKDAYS}>
-              {(label, row) => (
-                <text wrapMode="none">
-                  <S fg={theme.overlay1}>{label.padEnd(4)}</S>
-                  <For each={calendarWeeks()}>
-                    {(week) => <Cell day={week[row()] ?? null} width={cellWidth()} today={today()} />}
-                  </For>
-                </text>
-              )}
-            </For>
-            <text wrapMode="none">
-              <S fg={theme.overlay1}>{"    less "}</S>
-              <For each={[0, 1, 2, 3, 4]}>{(level) => <S bg={LEVEL_BG[level]}>{"  "}</S>}</For>
-              <S fg={theme.overlay1}>{" more"}</S>
-            </text>
-          </SectionCard>
-          <SectionCard title="Merchants" focused={props.focused === "spend.merchants"} active={props.focused === "spend.merchants"} flexGrow={1}>
+      <Show
+        when={wide()}
+        fallback={
+          <>
+            {chartPane()}
+            <box flexDirection="row" gap={1} width="100%" height={lowerHeight()}>
+              {categoriesCard()}
+              <box flexGrow={1} flexBasis={0} minWidth={0} height={lowerHeight()} flexDirection="column" overflow="hidden">
+          <SectionCard title="Merchants" focused={props.focused === "spend.merchants"} active={props.focused === "spend.merchants"} height={merchantsHeight()}>
             <text wrapMode="none" fg={theme.overlay1}>
               {fit("Merchant", merchantNameWidth()) + "Total".padStart(9) + "#".padStart(4) + "Avg".padStart(9) + "vs prev".padStart(8) + "Last".padStart(7)}
             </text>
@@ -208,18 +205,131 @@ export function SpendingTab(props: { focused: SectionId }) {
               </For>
             </Show>
           </SectionCard>
+              </box>
+            </box>
+          </>
+        }
+      >
+        <box flexDirection="row" gap={1} width="100%" height={bodyHeight()}>
+          <box flexDirection="column" width={mainWidth()} height={bodyHeight()}>
+            {chartPane()}
+            <SectionCard title="Merchants" focused={props.focused === "spend.merchants"} active={props.focused === "spend.merchants"} height={merchantsHeight()}>
+              <text wrapMode="none" fg={theme.overlay1}>
+                {fit("Merchant", merchantNameWidth()) + "Total".padStart(9) + "#".padStart(4) + "Avg".padStart(9) + "vs prev".padStart(8) + "Last".padStart(7)}
+              </text>
+              <Show when={merchants().length} fallback={<text fg={theme.overlay1}>No spending in this period</text>}>
+                <For each={merchants().slice(ui.state.merchantTop, ui.state.merchantTop + merchantRows())}>
+                  {(m, i) => {
+                    const selected = () => props.focused === "spend.merchants" && ui.state.merchantTop + i() === ui.state.merchantCursor
+                    const bg = () => (selected() ? theme.surface0 : theme.canvas)
+                    return (
+                      <text wrapMode="none" bg={bg()}>
+                        <S fg={theme.text} bg={bg()} bold={selected()}>{fit(m.merchant, merchantNameWidth())}</S>
+                        <S fg={theme.text} bg={bg()}>{formatWholeMoney(m.total).padStart(9)}</S>
+                        <S fg={theme.subtext0} bg={bg()}>{String(m.count).padStart(4)}</S>
+                        <S fg={theme.subtext0} bg={bg()}>{formatWholeMoney(m.average).padStart(9)}</S>
+                        <S fg={changeColor(m.total, m.previousTotal)} bg={bg()}>{changePct(m.total, m.previousTotal).padStart(8)}</S>
+                        <S fg={theme.overlay1} bg={bg()}>{shortDate(m.lastISO).padStart(7)}</S>
+                      </text>
+                    )
+                  }}
+                </For>
+              </Show>
+            </SectionCard>
+          </box>
+          <box flexGrow={1} flexBasis={0} minWidth={0} height={bodyHeight()} overflow="hidden">
+            {categoriesCard()}
+          </box>
         </box>
-      </box>
+      </Show>
     </box>
   )
 }
 
-/** One day; a gap column keeps wide cells apart. Days after today are blank. */
-function Cell(props: { day: CalendarDay | null; width: number; today: string }) {
-  const filled = () => props.day != null && props.day.dateISO <= props.today
+/** The chart pane's views in h/l order, the current one highlighted; groups
+ * are separated by a rule. */
+function ViewStrip() {
+  return (
+    <text wrapMode="none">
+      <For each={CHART_VIEWS}>
+        {(v, i) => {
+          const current = () => ui.state.chartView === i()
+          const rule = () => i() > 0 && CHART_VIEWS[i() - 1]!.group !== v.group
+          return (
+            <>
+              <S fg={theme.surface2}>{i() === 0 ? "" : rule() ? " │ " : "  "}</S>
+              <S fg={current() ? theme.accent : theme.overlay1} bg={current() ? theme.surface0 : undefined} bold={current()}>{v.view}</S>
+            </>
+          )
+        }}
+      </For>
+    </text>
+  )
+}
+
+/**
+ * The period's days as a month grid: a column per week, a row band per
+ * weekday (up to three rows each), cells as wide as fit (2–10). Wide cells
+ * carry the day of the month; days after today are blank. Below: month
+ * labels, the legend, and a summary.
+ */
+function CalendarView(props: { weeks: Array<Array<CalendarDay | null>>; width: number; rows: number; today: string }) {
+  // Rows: month labels, 7 weekday bands, legend, summary.
+  const band = () => Math.max(1, Math.min(3, Math.floor((props.rows - 3) / 7)))
+  const shown = () => props.weeks.slice(-Math.max(1, Math.floor((props.width - 4) / 2)))
+  const cellWidth = () => Math.max(2, Math.min(10, Math.floor((props.width - 4) / Math.max(1, shown().length))))
+  const days = () => props.weeks.flat().filter((d): d is CalendarDay => d != null && d.dateISO <= props.today)
+  const noSpend = () => days().filter((d) => d.spent === 0).length
+  const busiest = () => {
+    const totals = [0, 0, 0, 0, 0, 0, 0], counts = [0, 0, 0, 0, 0, 0, 0]
+    for (const week of props.weeks) week.forEach((d, i) => { if (d && d.dateISO <= props.today) { totals[i]! += d.spent; counts[i]!++ } })
+    const avg = totals.map((t, i) => (counts[i] ? t / counts[i]! : 0))
+    return avg.indexOf(Math.max(...avg))
+  }
   return (
     <>
-      <S bg={filled() ? LEVEL_BG[props.day!.level] : theme.canvas}>{" ".repeat(props.width > 2 ? props.width - 1 : props.width)}</S>
+      <text wrapMode="none" fg={theme.overlay1}>{"    " + monthLabels(shown(), cellWidth())}</text>
+      <For each={WEEKDAYS}>
+        {(label, row) => (
+          <For each={Array.from({ length: band() }, (_, k) => k)}>
+            {(line) => (
+              <text wrapMode="none">
+                <S fg={theme.overlay1}>{(line === 0 ? label : "").padEnd(4)}</S>
+                <For each={shown()}>
+                  {(week) => <Cell day={week[row()] ?? null} width={cellWidth()} today={props.today} label={line === 0} />}
+                </For>
+              </text>
+            )}
+          </For>
+        )}
+      </For>
+      <text wrapMode="none">
+        <S fg={theme.overlay1}>{"    less "}</S>
+        <For each={[0, 1, 2, 3, 4]}>{(level) => <S bg={LEVEL_BG[level]}>{"  "}</S>}</For>
+        <S fg={theme.overlay1}>{" more"}</S>
+      </text>
+      <text wrapMode="none" fg={theme.overlay1}>
+        {days().length ? `${noSpend()} no-spend ${noSpend() === 1 ? "day" : "days"} · busiest day ${WEEKDAYS[busiest()]}` : "No days yet"}
+      </text>
+    </>
+  )
+}
+
+/** One day (one line of its band); a gap column keeps wide cells apart. The
+ * band's first line carries the day of the month when the cell is wide
+ * enough. Days after today are blank. */
+function Cell(props: { day: CalendarDay | null; width: number; today: string; label: boolean }) {
+  const filled = () => props.day != null && props.day.dateISO <= props.today
+  const inner = () => (props.width > 2 ? props.width - 1 : props.width)
+  const text = () => {
+    if (!props.label || props.day == null || inner() < 3) return " ".repeat(inner())
+    return (" " + Number(props.day.dateISO.slice(8, 10))).padEnd(inner())
+  }
+  // Day numbers: dark on the brighter levels, muted on empty and future days.
+  const fg = () => (!filled() ? theme.surface1 : props.day!.level >= 3 ? theme.crust : theme.subtext0)
+  return (
+    <>
+      <S fg={fg()} bg={filled() ? LEVEL_BG[props.day!.level] : theme.canvas}>{text()}</S>
       {props.width > 2 ? <S bg={theme.canvas}>{" "}</S> : null}
     </>
   )

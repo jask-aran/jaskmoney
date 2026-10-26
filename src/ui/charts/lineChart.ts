@@ -181,7 +181,11 @@ export function dateAxis(
     labelAt.push({ col: colOf(i), text: String(day(dates[i]!)), align: "left" })
   }
   const today = dates.indexOf(todayISO)
-  if (today > 0 && today < n - 1) markers.push({ index: today, ink: "today" })
+  if (today > 0 && today < n - 1) {
+    // Today's rule replaces a week or month rule on the same day.
+    for (let i = markers.length - 1; i >= 0; i--) if (markers[i]!.index === today) markers.splice(i, 1)
+    markers.push({ index: today, ink: "today" })
+  }
   const line = new Array<string>(width).fill(" ")
   const taken = new Array<boolean>(width).fill(false)
   for (const label of labelAt) {

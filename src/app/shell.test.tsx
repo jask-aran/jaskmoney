@@ -46,8 +46,9 @@ describe("shell render M0", () => {
     await t.renderOnce()
     const spending = t.captureCharFrame()
     expect(spending).toContain("Date Range")
-    expect(spending).toContain("Spending Tracker")
-    expect(spending).toContain("Balances")
+    // One chart pane; its strip lists every view.
+    expect(spending).toContain("Spending · Daily")
+    expect(spending).toContain("Net position  Available  Savers │ Calendar")
     const dateRangeTitle = t
       .captureSpans()
       .lines.flatMap((line) => line.spans)

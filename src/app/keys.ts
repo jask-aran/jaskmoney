@@ -7,7 +7,7 @@ import { merchantSummaries } from "../domain/spending"
 import { budgetLabel, budgetScopeOptions, scopeKey } from "../domain/budgetScopes"
 import type { CycleAnchor, CycleUnit } from "../domain/budget"
 import { runSync } from "./sync"
-import { BALANCE_VIEWS, JUMP_TARGETS, TRACKER_VIEWS, SETTINGS_SECTIONS, TABS, settingsSectionFocus, type ScopeId, type UiStore } from "../state/uiStore"
+import { CHART_VIEWS, JUMP_TARGETS, SETTINGS_SECTIONS, TABS, settingsSectionFocus, type ScopeId, type UiStore } from "../state/uiStore"
 import type { DataStore } from "../state/dataStore"
 import {
   LOOKBACKS,
@@ -788,21 +788,6 @@ export function handleKey(ui: UiStore, key: KeyEvent, data?: DataStore): boolean
     return true
   }
 
-  // ── Spending charts ─────────────────────────────────────────────────
-  if (scope === "spending.chart") {
-    const step = name === "h" || name === "left" || seq === "," ? -1 : name === "l" || name === "right" || seq === "." ? 1 : 0
-    if (step !== 0) {
-      if (ui.state.focusedSection === "spend.tracker") {
-        const n = TRACKER_VIEWS.length
-        ui.setState({ trackerView: (ui.state.trackerView + step + n) % n })
-      } else {
-        const n = BALANCE_VIEWS.length
-        ui.setState({ balanceView: (ui.state.balanceView + step + n) % n })
-      }
-      return true
-    }
-  }
-
   // ── Spending date range ─────────────────────────────────────────────
   if (scope === "spending.date") {
     if (name === "h" || name === "left") {
@@ -864,7 +849,14 @@ export function handleKey(ui: UiStore, key: KeyEvent, data?: DataStore): boolean
     }
   }
 
-  if (scope === "spending" || scope === "spending.chart") {
+  if (scope === "spending") {
+    // h/l (or ,/.) step through the chart pane's views.
+    const step = name === "h" || name === "left" || seq === "," ? -1 : name === "l" || name === "right" || seq === "." ? 1 : 0
+    if (step !== 0) {
+      const n = CHART_VIEWS.length
+      ui.setState({ chartView: (ui.state.chartView + step + n) % n })
+      return true
+    }
     // Which spending account the period covers: all, or one of them.
     if (name === "a" && data) {
       const choices: AccountSelection[] = ["all", ...data.state.accounts.filter((a) => accountRole(a) === "spending").map((a) => a.id)]
@@ -942,6 +934,7 @@ export function footerHints(scope: ScopeId): { key: string; desc: string }[] {
       ]
     case "spending":
       return [
+        { key: "h/l", desc: "view" },
         { key: "j/k", desc: "merchant" },
         { key: "enter", desc: "transactions" },
         { key: "a", desc: "account" },
@@ -949,13 +942,6 @@ export function footerHints(scope: ScopeId): { key: string; desc: string }[] {
         { key: "0", desc: "this month" },
         { key: "v", desc: "jump" },
         { key: "1-4", desc: "tab" },
-      ]
-    case "spending.chart":
-      return [
-        { key: "h/l", desc: "view" },
-        { key: "[/]", desc: "period" },
-        { key: "0", desc: "this month" },
-        { key: "esc", desc: "done" },
       ]
     case "spending.date":
       return [
