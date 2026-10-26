@@ -179,7 +179,6 @@ export interface UiState {
   importProfileCaret: number
   importPreview: ImportPreview | null
   importPreviewCursor: number
-  importPreviewTop: number
   importPreviewShowAll: boolean
   importPreviewRules: boolean
   accountActionId: number | null
@@ -207,8 +206,6 @@ export const CHART_VIEWS = [
   { view: "Savers", group: "Balances" },
   { view: "Calendar", group: "Calendar" },
 ] as const
-
-export type ChartView = (typeof CHART_VIEWS)[number]["view"]
 
 export const JUMP_TARGETS: Record<TabId, JumpTarget[]> = {
   overview: [
@@ -315,7 +312,6 @@ function createUiStore() {
     importProfileCaret: 0,
     importPreview: null,
     importPreviewCursor: 0,
-    importPreviewTop: 0,
     importPreviewShowAll: false,
     importPreviewRules: true,
     accountActionId: null,
@@ -401,7 +397,7 @@ function createUiStore() {
   function clearSettingsConfirm() { setState({ settingsConfirm: null }) }
 
   function beginImport(directory: string, files: string[]) {
-    setState({ importStage: "files", importDirectory: directory, importFiles: files, importCursor: 0, importPath: "", importPathCaret: 0, importProfileCursor: 0, importProfileManaging: false, importPreview: null, importPreviewCursor: 0, importPreviewTop: 0, importPreviewShowAll: false, importPreviewRules: true, jumpMode: false })
+    setState({ importStage: "files", importDirectory: directory, importFiles: files, importCursor: 0, importPath: "", importPathCaret: 0, importProfileCursor: 0, importProfileManaging: false, importPreview: null, importPreviewCursor: 0, importPreviewShowAll: false, importPreviewRules: true, jumpMode: false })
   }
   function cancelImport() { setState({ importStage: "none", importPreview: null, importPath: "", importPathCaret: 0, importProfileEditId: null, importProfileManaging: false }) }
   function openProfileEditor(draft: ImportProfile, id: string | null) { setState({ importStage: "profileEditor", importProfileDraft: draft, importProfileEditId: id, importProfileField: 0, importProfileCaret: draft.id.length }) }

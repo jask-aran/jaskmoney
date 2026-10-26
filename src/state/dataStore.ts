@@ -81,7 +81,7 @@ export interface DataState {
   importProfiles: ImportProfile[]
   imports: ImportRecord[]
   transactions: Transaction[]
-  /** Which accounts the Manager shows. Approved deviation from Go's per-account
+  /** Which accounts the Transactions tab shows. Approved deviation from Go's per-account
    * on/off scope (2026-10-26): one selection from the account sidebar. */
   accountSelection: AccountSelection
   dbInfo: DbInfo | null
@@ -179,7 +179,7 @@ function createDataStore() {
     refresh()
   }
 
-  /** Transactions of the Manager's selected account(s). */
+  /** Transactions of the Transactions tab's selected account(s). */
   function accountScoped(): Transaction[] {
     const ids = new Set(selectedAccounts(state.accounts, state.accountSelection).map((a) => a.id))
     return state.transactions.filter((t) => t.accountId != null && ids.has(t.accountId))
@@ -451,9 +451,11 @@ function createDataStore() {
     setState({ savedFilters: next, uiPrefs: prefs })
   }
 
-  function saveImportProfile(profile: ImportProfile) {
+  /** Save a profile; `originalId` is the id it had when editing began, so
+   * renaming one replaces it instead of leaving the old one behind. */
+  function saveImportProfile(profile: ImportProfile, originalId?: string | null) {
     const normalized = validateImportProfile(profile)
-    const next = [...state.importProfiles.filter((p) => p.id !== normalized.id), normalized].sort((a, b) => a.id.localeCompare(b.id))
+    const next = [...state.importProfiles.filter((p) => p.id !== normalized.id && p.id !== originalId), normalized].sort((a, b) => a.id.localeCompare(b.id))
     persistConfig({ importProfiles: next })
     setState({ importProfiles: next })
   }

@@ -247,8 +247,8 @@ function handleCatPicker(ui: UiStore, key: KeyEvent, data?: DataStore): void {
     update: (next) => { ui.setState({ catPickerQuery: next.query, catPickerCursor: next.cursor }) },
     apply: () => {
       const cat = cats[ui.state.catPickerCursor]
-      // Targets were fixed when the picker opened (Manager selection, the
-      // open detail row, or the Recent cursor).
+      // Targets were fixed when the picker opened (the Transactions
+      // selection or cursor row, the open detail row, or a merchant group).
       const targets = ui.state.pickerTargets
       if (cat && data && targets.length) {
         ui.closeCatPicker()
@@ -580,7 +580,7 @@ function handleSettingsImportProfileEditor(ui: UiStore, key: KeyEvent, data?: Da
   }
   if (name === "return" || name === "enter") {
     try {
-      data?.saveImportProfile(draft)
+      data?.saveImportProfile(draft, ui.state.importProfileEditId)
       const preview = ui.state.importPath ? data?.previewImport(ui.state.importPath, draft) : null
       ui.setState({ importStage: preview ? "preview" : "profile", importPreview: preview ?? null, importProfileEditId: null })
       ui.setStatus(`Saved profile ${draft.name}`)
@@ -608,7 +608,7 @@ function handleSettingsImportPreview(ui: UiStore, key: KeyEvent, data?: DataStor
   if (name === "escape") { ui.cancelImport(); ui.setStatus("Import cancelled"); return }
   const moved = listMove(key, ui.state.importPreviewCursor, rows.length)
   if (moved != null) { ui.setState({ importPreviewCursor: moved }); return }
-  if (name === "p") { ui.setState({ importPreviewShowAll: !ui.state.importPreviewShowAll, importPreviewCursor: 0, importPreviewTop: 0 }); return }
+  if (name === "p") { ui.setState({ importPreviewShowAll: !ui.state.importPreviewShowAll, importPreviewCursor: 0 }); return }
   if (name === "r") { ui.setState({ importPreviewRules: !ui.state.importPreviewRules }); return }
   if ((name === "s" || name === "a") && preview) {
     try { const summary = data?.commitPreview({ ...preview, rulesEnabled: ui.state.importPreviewRules }, name === "s") ?? "Import unavailable"; ui.cancelImport(); ui.setStatus(summary) } catch (e) { reportError(ui, e) }

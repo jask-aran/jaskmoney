@@ -57,8 +57,6 @@ export const theme = {
   info: "#94e2d5",
 } as const
 
-export type ThemeColor = (typeof theme)[keyof typeof theme]
-
 /** Uncategorised / muted category label (Go overlay1). */
 export const uncategorisedColor = theme.overlay1
 

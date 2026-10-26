@@ -1,6 +1,6 @@
 import { accountRole, type Account } from "./types"
 
-/** What the Manager shows: all spending accounts, all savers, or one account. */
+/** What the Transactions tab shows: all spending accounts, all savers, or one account. */
 export type AccountSelection = "all" | "savers" | number
 
 export type SidebarEntry =

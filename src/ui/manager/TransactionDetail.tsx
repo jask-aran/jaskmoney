@@ -12,7 +12,7 @@ import { amountColor } from "../colors"
 
 const LABEL = 12
 
-/** Detail view for one transaction (enter in the Manager table). Rows with no
+/** Detail view for one transaction (enter in the Transactions table). Rows with no
  * value are left out. */
 export function TransactionDetail() {
   const dims = useTerminalDimensions()

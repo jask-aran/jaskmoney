@@ -56,7 +56,7 @@ export interface PeriodNames {
 const DEFAULT_NAMES: PeriodNames = { current: "This period", previous: "Last period" }
 
 /**
- * The Spending Tracker in one of its views, over the period's `dates`:
+ * The Spending chart in one of its views, over the period's `dates`:
  * - Daily: spend per day as bars, with the period's daily average so far.
  * - Cumulative: running total against the previous period of equal length
  *   (and `budget`, when given, as a pace line rising from nothing at the

@@ -56,3 +56,13 @@ test("config writers preserve other fields, prefs merge, and unchanged prefs do 
     data.init(":memory:")
   }
 })
+
+test("renaming an import profile replaces it", () => {
+  data.init(":memory:")
+  const before = data.state.importProfiles.map((p) => p.id)
+  const profile = { id: "bank", name: "Bank", account: "A", accountType: "debit" as const, importPrefix: "bank", hasHeader: true, delimiter: ",", dateColumn: 0, amountColumn: 1, descriptionColumns: [2], descriptionJoin: false, amountStrip: "$", dateFormat: "DMY" as const }
+  data.saveImportProfile(profile)
+  data.saveImportProfile({ ...profile, id: "bank-2" }, "bank")
+  expect(data.state.importProfiles.map((p) => p.id).sort()).toEqual([...before, "bank-2"].sort())
+  data.deleteImportProfile("bank-2")
+})

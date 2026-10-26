@@ -4,10 +4,10 @@ import { isHeld, isIncome, isOrdinaryFlow, isSpending } from "./moneyRules"
 import { accountRole, type Account, type Transaction } from "./types"
 
 /**
- * Dashboard analytics for synced accounts.
+ * Overview analytics for synced accounts.
  *
- * Position is point-in-time ("now") and ignores the dashboard timeframe.
- * Period flows describe the selected timeframe. Both share these rules:
+ * Position is point-in-time ("now") and ignores the Date Range. Period
+ * flows describe the selected range. Both share these rules:
  * - Only tracked accounts are passed in (sync-disabled accounts never are).
  * - `excluded` transactions (internal transfers between tracked accounts, or a
  *   category marked not-spending) are never spending or income.

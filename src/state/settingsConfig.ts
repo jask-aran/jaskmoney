@@ -40,8 +40,6 @@ export const DEFAULT_IMPORT_PROFILES: ImportProfile[] = [{
 
 function defaultProfiles(): ImportProfile[] { return DEFAULT_IMPORT_PROFILES.map((profile) => ({ ...profile, descriptionColumns: [...profile.descriptionColumns] })) }
 
-const EMPTY: SettingsConfig = { version: 2, savedFilters: [], importProfiles: defaultProfiles() }
-
 /** JASKMONEY_CONFIG overrides the path (tests point it at a scratch file). */
 export function defaultSettingsConfigPath(): string {
   if (process.env.JASKMONEY_CONFIG) return process.env.JASKMONEY_CONFIG
@@ -118,7 +116,7 @@ function parseUiPrefs(raw: unknown): UiPrefs | undefined {
 }
 
 export function loadSettingsConfig(path = defaultSettingsConfigPath()): SettingsConfig {
-  if (!existsSync(path)) return { ...EMPTY, savedFilters: [], importProfiles: defaultProfiles() }
+  if (!existsSync(path)) return { version: 2, savedFilters: [], importProfiles: defaultProfiles() }
   const parsed: unknown = JSON.parse(readFileSync(path, "utf8"))
   if (!parsed || typeof parsed !== "object") throw new Error("settings config must be an object")
   const raw = parsed as Omit<Partial<SettingsConfig>, "version"> & { version?: number; importProfiles?: unknown[] }
