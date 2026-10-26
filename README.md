@@ -55,6 +55,12 @@ Each Up account has a sync switch (`space`). Switching an account off removes it
 
 The Manager's account sidebar lists All spending, each spending account, and its savers (as a group and singly). The selected entry decides which transactions the table shows, and the card beneath it shows that entry's balance, money in and out, monthly flows, balance history, interest and top outflows.
 
+A category can be marked not-spending (Settings, category editor): its transactions are left out of spending, income and merchant figures. Transfers starts that way, for money moved to your own accounts at other banks.
+
+Tags sync both ways with Up (adding or removing a tag on an Up transaction changes it in Up); IGNORE stays local.
+
+Budgets (Settings, `v` then `b`): an overall limit, optional limits per spending account or category (a group covers its subcategories), and one cycle for all of them — weekly, fortnightly or monthly, from calendar starts, a date (e.g. payday), or the Monday nearest that date (`c`). The Spending tab shows the current cycle's progress; the Dashboard shows the overall budget's remainder.
+
 Tabs: `1` Dashboard, `2` Spending, `3` Manager, `4` Settings. In the Manager, `enter` opens a transaction's details (`c` category, `t` tags, `n` notes). The Spending tab breaks the Date Range period down by category, calendar day and merchant; `enter` on a merchant lists its transactions.
 
 The Dashboard's **Now** and **Savers** cards are point-in-time (balances, pending holds, runway at the 90-day average spend) and ignore the date range; **Date Range** drives the period figures and the spending charts.
