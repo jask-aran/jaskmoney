@@ -20,14 +20,15 @@ import {
   toISODate,
 } from "../../domain/timeframe"
 import { fit, shortDate, shortMoney } from "../text"
-import { columnBars } from "./charts"
+import { columnBars, levelChart } from "./charts"
 import { AXIS, ChartBody, type ChartModel } from "./ChartBody"
 import { dateAxis, lineChart, niceRange, niceScale, tickRows } from "./lineChart"
 
 /**
- * Dashboard: "now" (balances, pending, runway; ignores the timeframe) above
- * the period chosen in Date Range: flows, the spending tracker and balances
- * charts (each with views), and spending by category.
+ * Dashboard: "now" (balances, pending, runway, and a year of net position;
+ * ignores the timeframe) above the period chosen in Date Range: flows, the
+ * spending tracker and balances charts (each with views), and spending by
+ * category.
  */
 export function DashboardTab(props: { focused: SectionId }) {
   const dims = useTerminalDimensions()
@@ -38,7 +39,8 @@ export function DashboardTab(props: { focused: SectionId }) {
   // selection does not apply here.
   const scoped = createMemo(() => filterByTimeframe(data.spendingTransactions(), ui.state.timeframe, clock()))
   const flows = createMemo(() => computePeriodFlows(data.state.accounts, inPeriod()))
-  const position = createMemo(() => computePosition(data.state.accounts, data.state.transactions, toISODate(new Date())))
+  // A year of history feeds the Net Position strip (and the 30-day change).
+  const position = createMemo(() => computePosition(data.state.accounts, data.state.transactions, toISODate(new Date()), { historyDays: 365 }))
   const groups = createMemo(() => groupCategorySpend(computeCategorySpend(scoped(), data.state.categories), data.state.categories))
   const series = createMemo(() => dailySpendSeries(scoped(), bounds().start, bounds().end))
   // The overall budget for the current cycle, when one is set.
@@ -64,10 +66,13 @@ export function DashboardTab(props: { focused: SectionId }) {
   const chipCursor = () =>
     dateFocused() ? ui.state.dashChipCursor : activeChipIndex(ui.state.timeframe)
 
-  // Fixed rows: tab bar + gap (2), status + footer (2), Now (7), Date Range (4).
-  // The chart row takes the rest: the tracker above Balances on the left
-  // (Balances dropped on short terminals), categories on the right.
-  const middleHeight = () => Math.max(5, dims().height - 15)
+  // Fixed rows: tab bar + gap (2), status + footer (2), Now (7), Date Range (4),
+  // and on taller terminals the Net Position strip (8) plus a blank line
+  // separating "as of today" from the Date Range. The chart row takes the
+  // rest: the tracker above Balances on the left (Balances dropped on short
+  // terminals), categories on the right.
+  const showNetStrip = () => dims().height >= 44
+  const middleHeight = () => Math.max(5, dims().height - 15 - (showNetStrip() ? 9 : 0))
   const showBalances = () => middleHeight() >= 20
   const trackerHeight = () => (showBalances() ? Math.ceil(middleHeight() / 2) : middleHeight())
   const balancesHeight = () => middleHeight() - trackerHeight()
@@ -81,6 +86,8 @@ export function DashboardTab(props: { focused: SectionId }) {
   const balanceView = () => BALANCE_VIEWS[ui.state.balanceView] ?? BALANCE_VIEWS[0]
   // Card rows less border (2), x labels and summary.
   const trackerModel = createMemo(() => spendingChart(trackerView(), series(), plotWidth(), Math.max(1, trackerHeight() - 4), toISODate(new Date()), data.spendingTransactions()))
+  const netStrip = createMemo(() => levelChart(position().history.map((h) => h.value), Math.max(1, dims().width - 4 - AXIS), 5))
+  const netStripLabels = createMemo(() => dateAxis(position().history.map((h) => h.dateISO), Math.max(1, dims().width - 4 - AXIS), toISODate(new Date())).labels)
   const balancesModel = createMemo(() => balancesChart(balanceView(), series().dates, plotWidth(), Math.max(1, balancesHeight() - 4), toISODate(new Date()), data.state.accounts, data.state.transactions))
   // Every group gets a line; the remaining lines go to the largest
   // subcategories overall, shown under their group.
@@ -156,6 +163,21 @@ export function DashboardTab(props: { focused: SectionId }) {
         </SectionCard>
         </box>
       </box>
+
+      <Show when={showNetStrip()}>
+        <SectionCard title="Net Position" titleSuffix="· 1 year" titleSuffixColor={theme.subtext0} height={8}>
+          <For each={netStrip().rows}>
+            {(row, i) => (
+              <text wrapMode="none">
+                <S fg={theme.overlay1}>{(i() === 0 ? shortMoney(netStrip().max) : i() === netStrip().rows.length - 1 ? shortMoney(netStrip().min) : "").padStart(AXIS - 2) + " ┤"}</S>
+                <S fg={theme.lavender}>{row}</S>
+              </text>
+            )}
+          </For>
+          <text wrapMode="none" fg={theme.overlay1}>{" ".repeat(AXIS) + netStripLabels()}</text>
+        </SectionCard>
+        <box height={1} />
+      </Show>
 
       <SectionCard title="Date Range" focused={dateFocused()} height={4}>
         <box flexDirection="row" justifyContent="space-between" width="100%">
