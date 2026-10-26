@@ -57,7 +57,7 @@ describe("shell render M0", () => {
     expect(ui.state.focusedSection).toBe("dash.date")
 
     // tab to manager
-    t.mockInput.pressKey("2")
+    t.mockInput.pressKey("3")
     await t.renderOnce()
     const mgr = t.captureCharFrame()
     expect(mgr).toContain("Accounts")

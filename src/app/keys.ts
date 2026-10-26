@@ -2,6 +2,7 @@ import type { KeyEvent } from "@opentui/core"
 import { resolve } from "node:path"
 import { selectableEntries } from "../domain/accountTree"
 import { assignableCategories } from "../domain/categoryOptions"
+import { merchantSummaries } from "../domain/spending"
 import { runSync } from "./sync"
 import { JUMP_TARGETS, SETTINGS_SECTIONS, TABS, settingsSectionFocus, type ScopeId, type UiStore } from "../state/uiStore"
 import type { DataStore } from "../state/dataStore"
@@ -760,7 +761,24 @@ export function handleKey(ui: UiStore, key: KeyEvent, data?: DataStore): boolean
     }
   }
 
-  if (scope === "dashboard") {
+  // ── Spending ────────────────────────────────────────────────────────
+  if (scope === "spending" && data) {
+    const merchants = merchantSummaries(data.spendingTransactions(), ...periodBounds(ui, data))
+    if (name === "j" || name === "down") { ui.setState({ focusedSection: "spend.merchants", merchantCursor: Math.min(Math.max(0, merchants.length - 1), ui.state.merchantCursor + 1) }); return true }
+    if (name === "k" || name === "up") { ui.setState({ focusedSection: "spend.merchants", merchantCursor: Math.max(0, ui.state.merchantCursor - 1) }); return true }
+    if ((name === "return" || name === "enter") && merchants[ui.state.merchantCursor]) {
+      // Drill into the Manager: all spending, filtered to this merchant.
+      const merchant = merchants[ui.state.merchantCursor]!.merchant
+      data.setAccountSelection("all")
+      data.commitFilter(`desc:"${merchant.replace(/\\/g, "\\\\").replace(/"/g, '\\"')}"`)
+      ui.switchTab("manager")
+      ui.setState({ focusedSection: "mgr.transactions", managerCursor: 0, managerTop: 0 })
+      ui.setStatus(`Transactions at ${merchant}`)
+      return true
+    }
+  }
+
+  if (scope === "dashboard" || scope === "spending") {
     if (name === "[" || seq === "[") {
       if (ui.state.timeframe.family === "period") {
         ui.setTimeframe(stepPeriod(ui.state.timeframe, -1))
@@ -827,7 +845,15 @@ export function footerHints(scope: ScopeId): { key: string; desc: string }[] {
         { key: "v", desc: "jump" },
         { key: "[/]", desc: "period" },
         { key: "0", desc: "this month" },
-        { key: "1-3", desc: "tab" },
+        { key: "1-4", desc: "tab" },
+      ]
+    case "spending":
+      return [
+        { key: "j/k", desc: "merchant" },
+        { key: "enter", desc: "transactions" },
+        { key: "[/]", desc: "period" },
+        { key: "0", desc: "this month" },
+        { key: "1-4", desc: "tab" },
       ]
     case "dashboard.date":
       return [
@@ -867,7 +893,7 @@ export function footerHints(scope: ScopeId): { key: string; desc: string }[] {
         { key: "h/l", desc: "column" },
         { key: "enter", desc: "activate" },
         { key: "v", desc: "jump" },
-        { key: "1-3", desc: "tab" },
+        { key: "1-4", desc: "tab" },
       ]
     case "settings.taxonomy":
       return [
@@ -908,4 +934,10 @@ export function footerHints(scope: ScopeId): { key: string; desc: string }[] {
     default:
       return [{ key: "v", desc: "jump" }]
   }
+}
+
+/** The Date Range period as [start, end] ISO dates. */
+function periodBounds(ui: UiStore, data: DataStore): [string, string] {
+  const b = timeframeBounds(ui.state.timeframe, dataClock(data.state.transactions))
+  return [b.start, b.end]
 }

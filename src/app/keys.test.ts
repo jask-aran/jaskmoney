@@ -44,8 +44,10 @@ describe("key router", () => {
 
   test("number keys switch tabs", () => {
     handleKey(ui, key({ name: "2" }), data)
-    expect(ui.state.activeTab).toBe("manager")
+    expect(ui.state.activeTab).toBe("spending")
     handleKey(ui, key({ name: "3" }), data)
+    expect(ui.state.activeTab).toBe("manager")
+    handleKey(ui, key({ name: "4" }), data)
     expect(ui.state.activeTab).toBe("settings")
     handleKey(ui, key({ name: "1" }), data)
     expect(ui.state.activeTab).toBe("dashboard")
@@ -53,7 +55,7 @@ describe("key router", () => {
 
   test("tab cycles", () => {
     handleKey(ui, key({ name: "tab" }), data)
-    expect(ui.state.activeTab).toBe("manager")
+    expect(ui.state.activeTab).toBe("spending")
     handleKey(ui, key({ name: "tab", shift: true }), data)
     expect(ui.state.activeTab).toBe("dashboard")
   })
@@ -150,6 +152,35 @@ describe("key router", () => {
     expect(ui.state.detailId).toBeNull()
     expect(ui.targetIds(data.scopedTransactions())).toEqual([1])
     ui.setState({ selectedIds: {} })
+  })
+
+  test("spending tab: j/k pick a merchant, enter opens its transactions in the Manager", () => {
+    const today = new Date()
+    const iso = `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, "0")}-01`
+    const txn = (id: number, description: string, amount: number) => ({
+      id, dateRaw: "x", dateISO: iso, amount, description, categoryId: 1, categoryName: "U", categoryColor: "#7f849c",
+      notes: "", importId: null, accountId: 1, accountName: "Spending", tagNames: [], tagColors: [], tagIds: [],
+      source: "up" as const, status: null, transferAccountId: null, internal: false,
+    })
+    data.setState({
+      accounts: [{ id: 1, name: "Spending", type: "debit" as const, sortOrder: 1, isActive: true, source: "up" as const, externalKind: "TRANSACTIONAL", balance: 1, syncEnabled: true }],
+      transactions: [txn(1, "Big Shop", -90), txn(2, 'Cafe "Ripple"', -10)],
+      accountSelection: 1,
+      ready: true,
+    })
+    ui.setTimeframe({ ...ui.state.timeframe, family: "period", period: "month", periodAnchor: iso })
+    ui.switchTab("spending")
+    ui.setState({ merchantCursor: 0 })
+    handleKey(ui, key({ name: "j" }), data)
+    expect(ui.state.merchantCursor).toBe(1)
+    handleKey(ui, key({ name: "j" }), data)
+    expect(ui.state.merchantCursor).toBe(1)
+    handleKey(ui, key({ name: "return" }), data)
+    expect(ui.state.activeTab).toBe("manager")
+    expect(data.state.accountSelection).toBe("all")
+    expect(data.state.filterQuery).toBe('desc:"Cafe \\"Ripple\\""')
+    expect(data.scopedTransactions().map((t) => t.id)).toEqual([2])
+    data.clearFilter()
   })
 
   test("manager cursor moves with j/k", () => {

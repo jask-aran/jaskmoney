@@ -5,13 +5,15 @@ import {
 } from "../domain/timeframe"
 import type { ImportPreview, ImportProfile } from "../domain/types"
 
-export type TabId = "dashboard" | "manager" | "settings"
+export type TabId = "dashboard" | "spending" | "manager" | "settings"
 
 export type SectionId =
   | "none"
   | "dash.date"
   | "dash.cashflow"
   | "dash.composition"
+  | "spend.categories"
+  | "spend.merchants"
   | "mgr.accounts"
   | "mgr.transactions"
   | "set.categories"
@@ -29,6 +31,7 @@ export type ScopeId =
   | "tagPicker"
   | "dashboard"
   | "dashboard.date"
+  | "spending"
   | "manager"
   | "manager.accounts"
   | "manager.txns"
@@ -104,6 +107,9 @@ export interface UiState {
   tagVisible: number
   ruleCursor: number
   filterCursor: number
+  /** Spending tab merchant list cursor and scroll offset. */
+  merchantCursor: number
+  merchantTop: number
   /** Cursor in the Up Bank sync account list. */
   upCursor: number
   /** Transaction shown in the detail view; null when closed. */
@@ -137,6 +143,7 @@ export interface UiState {
 
 const TAB_DEFAULT_FOCUS: Record<TabId, SectionId> = {
   dashboard: "none",
+  spending: "spend.merchants",
   manager: "mgr.transactions",
   settings: "none",
 }
@@ -146,6 +153,10 @@ export const JUMP_TARGETS: Record<TabId, JumpTarget[]> = {
     { key: "d", section: "dash.date", label: "Date Range" },
     { key: "n", section: "dash.cashflow", label: "Net Position" },
     { key: "c", section: "dash.composition", label: "Spending by Category" },
+  ],
+  spending: [
+    { key: "c", section: "spend.categories", label: "Categories" },
+    { key: "m", section: "spend.merchants", label: "Merchants" },
   ],
   manager: [
     { key: "a", section: "mgr.accounts", label: "Accounts" },
@@ -163,8 +174,9 @@ export const JUMP_TARGETS: Record<TabId, JumpTarget[]> = {
 
 export const TABS: { id: TabId; label: string; hotkey: string }[] = [
   { id: "dashboard", label: "Dashboard", hotkey: "1" },
-  { id: "manager", label: "Manager", hotkey: "2" },
-  { id: "settings", label: "Settings", hotkey: "3" },
+  { id: "spending", label: "Spending", hotkey: "2" },
+  { id: "manager", label: "Manager", hotkey: "3" },
+  { id: "settings", label: "Settings", hotkey: "4" },
 ]
 
 function createUiStore() {
@@ -205,6 +217,8 @@ function createUiStore() {
     ruleCursor: 0,
     filterCursor: 0,
     upCursor: 0,
+    merchantCursor: 0,
+    merchantTop: 0,
     detailId: null,
     detailNotesEditing: false,
     detailNotesDraft: "",
@@ -481,6 +495,7 @@ function createUiStore() {
       if (state.focusedSection === "dash.date") return "dashboard.date"
       return "dashboard"
     }
+    if (state.activeTab === "spending") return "spending"
     if (state.activeTab === "manager") {
       if (state.focusedSection === "mgr.accounts") return "manager.accounts"
       return "manager.txns"

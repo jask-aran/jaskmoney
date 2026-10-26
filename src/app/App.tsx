@@ -11,6 +11,7 @@ import { JumpOverlay } from "../ui/primitives/JumpOverlay"
 import { CatPicker } from "../ui/primitives/CatPicker"
 import { TagPicker } from "../ui/primitives/TagPicker"
 import { DashboardTab } from "../ui/dashboard/DashboardTab"
+import { SpendingTab } from "../ui/spending/SpendingTab"
 import { ManagerTab } from "../ui/manager/ManagerTab"
 import { SettingsTab } from "../ui/settings/SettingsTab"
 import { theme } from "../theme"
@@ -92,6 +93,9 @@ export function App() {
         <Switch>
           <Match when={ui.state.activeTab === "dashboard"}>
             <DashboardTab focused={ui.state.focusedSection} />
+          </Match>
+          <Match when={ui.state.activeTab === "spending"}>
+            <SpendingTab focused={ui.state.focusedSection} />
           </Match>
           <Match when={ui.state.activeTab === "manager"}>
             <ManagerTab focused={ui.state.focusedSection} />
