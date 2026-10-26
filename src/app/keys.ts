@@ -881,11 +881,16 @@ export function handleKey(ui: UiStore, key: KeyEvent, data?: DataStore): boolean
 
   // ── Overview ────────────────────────────────────────────────────────
   if (scope === "overview" || scope === "overview.range") {
-    // h/l (or ,/.) step through the chart pane's views.
-    const step = scope === "overview" ? (name === "h" || name === "left" || seq === "," ? -1 : name === "l" || name === "right" || seq === "." ? 1 : 0) : 0
-    if (step !== 0) {
+    // h/l (or ,/.) step the focused chart pane's views, the top pane when
+    // neither is focused; H/L always step the bottom pane.
+    const back = seq === "H" || ((name === "h" || name === "left" || seq === ",") && scope === "overview")
+    const forward = seq === "L" || ((name === "l" || name === "right" || seq === ".") && scope === "overview")
+    if (back || forward) {
+      const pane = seq === "H" || seq === "L" || key.shift || ui.state.focusedSection === "ov.chart2" ? 1 : 0
       const n = CHART_VIEWS.length
-      ui.setState({ chartView: (ui.state.chartView + step + n) % n })
+      const views: [number, number] = [...ui.state.chartViews]
+      views[pane] = (views[pane] + (back ? -1 : 1) + n) % n
+      ui.setState({ chartViews: views })
       return true
     }
     // Which spending account the period covers: all, or one of them.
@@ -954,6 +959,7 @@ export function footerHints(scope: ScopeId): { key: string; desc: string }[] {
     case "overview":
       return [
         { key: "h/l", desc: "chart" },
+        { key: "H/L", desc: "bottom chart" },
         { key: "a", desc: "account" },
         { key: "[/]", desc: "period" },
         { key: "0", desc: "this cycle" },

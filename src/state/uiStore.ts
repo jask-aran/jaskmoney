@@ -13,6 +13,7 @@ export type SectionId =
   | "none"
   | "ov.range"
   | "ov.chart"
+  | "ov.chart2"
   | "ov.categories"
   | "mgr.accounts"
   | "mgr.transactions"
@@ -86,8 +87,8 @@ export interface UiState {
   accountCursor: number
   timeframe: TimeframeState
   dashChipCursor: number
-  /** Index into CHART_VIEWS. */
-  chartView: number
+  /** Each chart pane's view: indexes into CHART_VIEWS, top pane first. */
+  chartViews: [number, number]
   filterMode: boolean
   filterDraft: string
   catPickerOpen: boolean
@@ -168,7 +169,8 @@ const TAB_DEFAULT_FOCUS: Record<TabId, SectionId> = {
 }
 
 /** The Overview's chart pane views, in h/l order, with the group each
- * belongs to (the pane's title and the strip's separators). */
+ * belongs to (the pane's title and the strip's separators). Both panes offer
+ * every view. */
 export const CHART_VIEWS = [
   { view: "Cumulative", group: "Spending" },
   { view: "Daily", group: "Spending" },
@@ -185,7 +187,8 @@ export type ChartView = (typeof CHART_VIEWS)[number]["view"]
 export const JUMP_TARGETS: Record<TabId, JumpTarget[]> = {
   overview: [
     { key: "d", section: "ov.range", label: "Date Range" },
-    { key: "t", section: "ov.chart", label: "Charts" },
+    { key: "t", section: "ov.chart", label: "Top chart" },
+    { key: "b", section: "ov.chart2", label: "Bottom chart" },
     { key: "c", section: "ov.categories", label: "Categories" },
   ],
   manager: [
@@ -223,7 +226,7 @@ function createUiStore() {
     accountCursor: 0,
     timeframe: defaultTimeframe(),
     dashChipCursor: 5,
-    chartView: 0,
+    chartViews: [0, 4],
     filterMode: false,
     filterDraft: "",
     catPickerOpen: false,

@@ -11,7 +11,7 @@ import { computePeriodFlows, computePosition } from "../../domain/position"
 import { budgetProgress, cycleFor, type BudgetProgress } from "../../domain/budget"
 import { spendingCalendar, type CalendarDay } from "../../domain/spending"
 import { LOOKBACKS, PERIODS, PERIOD_LABEL, activeChipIndex, comparisonWindows, dataClock, filterByTimeframe, timeframeBounds, toISODate } from "../../domain/timeframe"
-import { fit, shortDate } from "../text"
+import { fit } from "../text"
 import { spendingScope } from "../../domain/accountTree"
 import { AXIS, ChartBody, type ChartModel } from "../charts/ChartBody"
 import { INKS, addDays, balancesChart, cashFlowChart, spendingChart } from "./periodCharts"
@@ -25,15 +25,21 @@ const WEEKDAYS = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"]
 const WIDE = 120
 /** The categories column's widest useful size: Up's longest names fit. */
 const SIDE_MAX = 48
+/** Stack columns: value and note widths; the label takes the rest. */
+const VALUE = 12
+const NOTE = 11
+/** Savers fold to their total before Categories drop under this many rows. */
+const MIN_CATEGORIES = 8
 
 /**
- * The overview: a Now strip of figures with no range (balances, pending,
- * runway, savers), then everything over the Date Range, which opens on the
- * current budget cycle: the flows (with the overall budget when the range is
- * the current cycle), one chart pane cycling through spending, cash flow,
- * balance and calendar views (h/l), and categories. Spending figures cover the
- * selected spending account (see spendingScope); internal transfers and
- * not-spending categories are excluded.
+ * The overview: the Date Range (opens on the current budget cycle), two chart
+ * panes cycling through spending, cash flow, balance and calendar views (h/l
+ * the top or focused pane, H/L the bottom), and a column of stacks: Now
+ * (figures with no range), Savers, Totals (the range against the same days of
+ * the previous period, with the overall budget when the range is the current
+ * cycle) and Categories. Spending figures cover the selected spending account
+ * (see spendingScope); internal transfers and not-spending categories are
+ * excluded.
  */
 export function OverviewTab(props: { focused: SectionId }) {
   const dims = useTerminalDimensions()
@@ -49,7 +55,7 @@ export function OverviewTab(props: { focused: SectionId }) {
   const previous = () => windows().previous
   const spending = createMemo(() => data.state.transactions.filter((t) => t.accountId != null && scopeIds().has(t.accountId)))
   const inPeriod = createMemo(() => filterByTimeframe(spending(), ui.state.timeframe, clock(), cycleConfig()))
-  const inPrevious = createMemo(() => spending().filter((t) => t.dateISO >= previous().start && t.dateISO <= previous().end))
+  const inPrevious = createMemo(() => data.state.transactions.filter((t) => t.dateISO >= previous().start && t.dateISO <= previous().end))
   // Flows see every tracked account (money moved to savers), narrowed to the
   // scope for spending and income.
   const flows = createMemo(() => computePeriodFlows(data.state.accounts, filterByTimeframe(data.state.transactions, ui.state.timeframe, clock(), cycleConfig()), scopeIds()))
@@ -76,30 +82,50 @@ export function OverviewTab(props: { focused: SectionId }) {
     return budgetProgress([overall], cycleConfig(), today(), data.state.accounts, data.state.categories, data.state.transactions)[0] ?? null
   })
 
-  // Fixed rows: tab bar + gap (2), status + footer (2), Now (4), Date Range (4).
-  // Wide: the chart pane fills the left column, categories in a right column
-  // up to SIDE_MAX wide. Narrow: the chart pane (55%) spans the tab with
-  // categories below. Merchants are a view of the Transactions tab.
+  // Fixed rows: tab bar + gap (2), status + footer (2), Date Range (3).
+  // Wide: two chart panes share the left column; the right column (up to
+  // SIDE_MAX wide) stacks Now, Savers, Totals and Categories. Narrow: the
+  // top chart spans the tab, with Now and Savers beside Totals and
+  // Categories below it.
   const wide = () => dims().width >= WIDE
-  const bodyHeight = () => Math.max(8, dims().height - 12)
-  const chartHeight = () => (wide() ? bodyHeight() : Math.max(8, Math.floor(bodyHeight() * 0.55)))
-  const lowerHeight = () => bodyHeight() - chartHeight()
-  // Categories stop growing at SIDE_MAX (names fit); the chart takes the rest.
-  const sideWidth = () => (wide() ? Math.min(SIDE_MAX, Math.floor((dims().width - 1) * 0.4)) : dims().width)
+  const bodyHeight = () => Math.max(8, dims().height - 7)
+  const sideWidth = () => (wide() ? Math.min(SIDE_MAX, Math.floor((dims().width - 1) * 0.4)) : Math.floor((dims().width - 1) / 2))
   const mainWidth = () => (wide() ? dims().width - 1 - sideWidth() : dims().width)
-  const categoriesHeight = () => (wide() ? bodyHeight() : lowerHeight())
-  // Chart pane: border + padding (4) across; border (2), the view strip and
+  const topChartHeight = () => (wide() ? Math.ceil(bodyHeight() / 2) : Math.max(8, Math.floor(bodyHeight() * 0.45)))
+  const bottomChartHeight = () => bodyHeight() - topChartHeight()
+  const lowerHeight = () => bodyHeight() - topChartHeight()
+
+  // The stacks: label, value (VALUE) and a note or comparison (NOTE).
+  const nowRows = () => 4 + (position().pendingCount > 0 ? 1 : 0)
+  const totalsRows = () => 8 + (budget() ? (budget()!.remaining > 0 ? 2 : 1) : 0)
+  // Savers fold to their total when Categories would get under
+  // MIN_CATEGORIES rows.
+  const saverRows = (full: boolean) => (full ? 2 + position().savers.length : 1)
+  const stackSpace = () => (wide() ? bodyHeight() : lowerHeight())
+  const saversFull = () =>
+    wide()
+      ? stackSpace() - (nowRows() + 2) - (totalsRows() + 2) - (saverRows(true) + 2) >= MIN_CATEGORIES + 2
+      : stackSpace() - (nowRows() + 2) >= saverRows(true) + 2
+  const categoriesHeight = () =>
+    wide()
+      ? Math.max(3, bodyHeight() - (nowRows() + 2) - (saverRows(saversFull()) + 2) - (totalsRows() + 2))
+      : Math.max(3, lowerHeight() - (totalsRows() + 2))
+  const stackWidth = () => sideWidth() - 4
+  const labelWidth = () => Math.max(6, stackWidth() - VALUE - NOTE)
+
+  // Chart panes: border + padding (4) across; border (2), the view strip and
   // a blank line, then the x labels and summary down.
   const plotWidth = () => Math.max(1, mainWidth() - 4 - AXIS)
-  const plotRows = () => Math.max(1, chartHeight() - 6)
-  const view = () => CHART_VIEWS[ui.state.chartView] ?? CHART_VIEWS[0]
-  const chartModel = createMemo(() => {
-    const v = view().view
-    if (v === "Daily" || v === "Cumulative" || v === "Weekly") return spendingChart(v, series(), plotWidth(), plotRows(), today(), spending(), budget()?.budget.amount)
-    if (v === "Cash flow") return cashFlowChart(series().dates, plotWidth(), plotRows(), today(), data.state.accounts, data.state.transactions, scopeIds())
+  const model = (index: number, height: number): ChartModel | null => {
+    const v = (CHART_VIEWS[index] ?? CHART_VIEWS[0]).view
+    const rows = Math.max(1, height - 6)
+    if (v === "Daily" || v === "Cumulative" || v === "Weekly") return spendingChart(v, series(), plotWidth(), rows, today(), spending(), budget()?.budget.amount)
+    if (v === "Cash flow") return cashFlowChart(series().dates, plotWidth(), rows, today(), data.state.accounts, data.state.transactions, scopeIds())
     if (v === "Calendar") return null
-    return balancesChart(v, series().dates, plotWidth(), plotRows(), today(), data.state.accounts, data.state.transactions)
-  })
+    return balancesChart(v, series().dates, plotWidth(), rows, today(), data.state.accounts, data.state.transactions)
+  }
+  const topModel = createMemo(() => model(ui.state.chartViews[0], topChartHeight()))
+  const bottomModel = createMemo(() => (wide() ? model(ui.state.chartViews[1], bottomChartHeight()) : null))
 
   // Category lines: name, then amount (9) and share (5).
   const categoryNameWidth = () => Math.max(8, sideWidth() - 5 - 14)
@@ -107,11 +133,10 @@ export function OverviewTab(props: { focused: SectionId }) {
   // Go narrow fallback: the preset chips keep priority and the timeframe
   // label is shown only when both fit on the card's single content line.
   const presetsWidth =
-    "Presets ".length +
     LOOKBACKS.reduce((n, lb) => n + lb.length + 3, 0) +
-    " | ".length +
+    " │".length +
     PERIODS.reduce((n, p) => n + PERIOD_LABEL[p].length + 3, 0)
-  const showTimeframe = () => dims().width - 4 >= presetsWidth + 2 + `Timeframe ${bounds().label}`.length
+  const showTimeframe = () => dims().width - 4 >= presetsWidth + 2 + bounds().label.length
   const dateFocused = () => props.focused === "ov.range"
   const chipCursor = () => (dateFocused() ? ui.state.dashChipCursor : activeChipIndex(ui.state.timeframe))
   const chip = (label: string, idx: number, active: boolean) => {
@@ -123,6 +148,66 @@ export function OverviewTab(props: { focused: SectionId }) {
     )
   }
 
+  const stat = (label: string, value: string, note = "", colors: { value?: string; note?: string; bold?: boolean } = {}) => (
+    <text wrapMode="none">
+      <S fg={theme.subtext0} bold={colors.bold}>{fit(label, labelWidth())}</S>
+      <S fg={colors.value ?? theme.text} bold={colors.bold}>{value.padStart(VALUE)}</S>
+      <S fg={colors.note ?? theme.overlay1}>{note.padStart(NOTE)}</S>
+    </text>
+  )
+  const signColor = (n: number) => (n > 0.005 ? theme.success : n < -0.005 ? theme.error : theme.overlay1)
+
+  const nowCard = () => (
+    <SectionCard title="Now" width={sideWidth()} height={nowRows() + 2}>
+      {stat("Net position", position().netPosition != null ? formatMoney(position().netPosition!) : "—", "", { bold: true })}
+      {stat("Available", position().spendingBalance != null ? formatMoney(position().spendingBalance!) : "—")}
+      <Show when={position().pendingCount > 0}>
+        {stat("  pending", formatMoney(Math.abs(position().pendingAmount)), `${position().pendingCount} txn`, { value: theme.overlay1 })}
+      </Show>
+      {stat("Runway", position().runwayDays != null ? `${Math.round(position().runwayDays!)} days` : "—", position().dailySpend != null ? `${formatWholeMoney(position().dailySpend!)}/day` : "", { value: theme.peach })}
+      {stat("30 day change", signedWhole(change30()), "", { value: signColor(change30()) })}
+    </SectionCard>
+  )
+
+  const saverChange = (accountId: number) => saverChanges().find((c) => c.accountId === accountId)?.change ?? 0
+  const saversTotalChange = () => saverChanges().reduce((sum, c) => sum + c.change, 0)
+  const saversCard = () => (
+    <SectionCard title="Savers" width={sideWidth()} height={saverRows(saversFull()) + 2}>
+      <Show when={saversFull()}>
+        <text wrapMode="none" fg={theme.overlay1}>{" ".repeat(labelWidth()) + "Balance".padStart(VALUE) + "30 days".padStart(NOTE)}</text>
+        <For each={position().savers}>
+          {(saver) => stat(saver.name, formatWholeMoney(saver.balance), signedWhole(saverChange(saver.accountId)), { note: signColor(saverChange(saver.accountId)) })}
+        </For>
+      </Show>
+      {stat("Total", formatWholeMoney(position().saversTotal), signedWhole(saversTotalChange()), { bold: true, note: signColor(saversTotalChange()) })}
+    </SectionCard>
+  )
+
+  // Totals: the range against the same days of the previous period.
+  const daily = (spent: number) => formatWholeMoney(windows().days ? spent / windows().days : 0)
+  const totalsCard = () => (
+    <SectionCard title="Totals" width={sideWidth()} height={totalsRows() + 2}>
+      <text wrapMode="none" fg={theme.overlay1}>{" ".repeat(labelWidth()) + "Range".padStart(VALUE) + "Before".padStart(NOTE)}</text>
+      {stat("Spent", formatWholeMoney(flows().spent), formatWholeMoney(previousFlows().spent), { value: changeColor(flows().spent, previousFlows().spent) })}
+      {stat("Income", formatWholeMoney(flows().income), formatWholeMoney(previousFlows().income))}
+      {stat("Net", signedWhole(flows().net), signedWhole(previousFlows().net), { value: signColor(flows().net) })}
+      {stat("To savers", signedWhole(flows().savedToSavers), signedWhole(previousFlows().savedToSavers), { value: signColor(flows().savedToSavers) })}
+      {stat("Savings rate", formatPct(flows().savingsRate), formatPct(previousFlows().savingsRate))}
+      {stat("Daily", daily(flows().spent), daily(previousFlows().spent))}
+      {stat("Transactions", String(flows().txnCount), String(previousFlows().txnCount))}
+      <Show when={budget()}>
+        {(p: () => BudgetProgress) => (
+          <>
+            {stat("Budget", formatWholeMoney(p().budget.amount), `${Number.isFinite(p().usedPct) ? Math.round(p().usedPct) : "—"}% used`, {
+              note: p().usedPct > 100 ? theme.error : p().usedPct >= 80 ? theme.warning : theme.success,
+            })}
+            <Show when={p().remaining > 0}>{stat("  left", formatWholeMoney(p().remaining), `${formatWholeMoney(p().dailyAllowance)}/day`)}</Show>
+          </>
+        )}
+      </Show>
+    </SectionCard>
+  )
+
   const categoriesCard = () => (
     <SectionCard title="Categories" width={sideWidth()} height={categoriesHeight()} focused={props.focused === "ov.categories"}>
       <Show when={groups().length} fallback={<text fg={theme.overlay1}>No spending in this period</text>}>
@@ -130,7 +215,7 @@ export function OverviewTab(props: { focused: SectionId }) {
           {(line) => (
             <text wrapMode="none">
               <S fg={line.color}>{line.child ? "  " : ""}{`${categoryMark(line.categoryId)} `}</S>
-                  <S fg={line.child ? theme.subtext0 : line.color} bold={!line.child}>{fit(line.label, -(line.child ? 4 : 2) + categoryNameWidth())}</S>
+              <S fg={line.child ? theme.subtext0 : line.color} bold={!line.child}>{fit(line.label, -(line.child ? 4 : 2) + categoryNameWidth())}</S>
               <S fg={line.child ? theme.subtext0 : theme.text} bold={!line.child}>{formatWholeMoney(line.amount).padStart(9)}</S>
               <S fg={theme.overlay1}>{(line.pct != null ? `${Math.round(line.pct)}%` : "").padStart(5)}</S>
             </text>
@@ -140,105 +225,65 @@ export function OverviewTab(props: { focused: SectionId }) {
     </SectionCard>
   )
 
-  const chartPane = () => (
-    <SectionCard title={view().group} titleSuffix={view().group === view().view ? undefined : `· ${view().view}`} titleSuffixColor={theme.subtext0} width={mainWidth()} height={chartHeight()} focused={props.focused === "ov.chart"}>
-      <ViewStrip width={mainWidth() - 4} />
-      <text> </text>
-      <Show when={chartModel()} fallback={<CalendarView weeks={calendar()} width={mainWidth() - 4} rows={chartHeight() - 4} today={today()} />}>
-        {(model: () => ChartModel) => <ChartBody model={model()} inks={INKS} />}
-      </Show>
-    </SectionCard>
-  )
+  const chartPane = (pane: 0 | 1, height: number, chart: ChartModel | null) => {
+    const index = ui.state.chartViews[pane]
+    const view = CHART_VIEWS[index] ?? CHART_VIEWS[0]
+    return (
+      <SectionCard title={view.group} titleSuffix={view.group === view.view ? undefined : `· ${view.view}`} titleSuffixColor={theme.subtext0} width={mainWidth()} height={height} focused={props.focused === (pane === 0 ? "ov.chart" : "ov.chart2")}>
+        <ViewStrip width={mainWidth() - 4} current={index} />
+        <text> </text>
+        <Show when={chart} fallback={<CalendarView weeks={calendar()} width={mainWidth() - 4} rows={height - 4} today={today()} />}>
+          {(m: () => ChartModel) => <ChartBody model={m()} inks={INKS} />}
+        </Show>
+      </SectionCard>
+    )
+  }
 
   return (
     <box width="100%" height="100%" flexDirection="column" backgroundColor={theme.canvas}>
-      <SectionCard title="Now" height={4}>
-        <text wrapMode="none">
-          <S fg={theme.subtext0}>{"Net position "}</S>
-          <S fg={theme.text} bold>{position().netPosition != null ? formatMoney(position().netPosition!) : "—"}</S>
-          <S fg={theme.subtext0}>{"   Available "}</S>
-          <S fg={theme.text}>{position().spendingBalance != null ? formatMoney(position().spendingBalance!) : "—"}</S>
-          <Show when={position().pendingCount > 0}>
-            <S fg={theme.overlay1}>{` (${formatMoney(Math.abs(position().pendingAmount))} pending, ${position().pendingCount} txn)`}</S>
-          </Show>
-          <S fg={theme.subtext0}>{"   Runway "}</S>
-          <S fg={theme.peach}>{position().runwayDays != null ? `${Math.round(position().runwayDays!)} days` : "—"}</S>
-          <Show when={position().dailySpend != null}>
-            <S fg={theme.overlay1}>{` (${formatWholeMoney(position().dailySpend!)}/day)`}</S>
-          </Show>
-          <S fg={theme.subtext0}>{"   30 days "}</S>
-          <S fg={change30() >= 0 ? theme.success : theme.error}>{signedWhole(change30())}</S>
-        </text>
-        <text wrapMode="none">
-          <S fg={theme.subtext0}>{"Savers "}</S>
-          <S fg={theme.text} bold>{formatMoney(position().saversTotal)}</S>
-          <S fg={theme.overlay1}>{` (${signedWhole(saverChanges().reduce((sum, c) => sum + c.change, 0))} in 30 days)`}</S>
-          <For each={position().savers}>
-            {(saver) => (
-              <>
-                <S fg={theme.surface2}>{"   "}</S>
-                <S fg={theme.subtext1}>{`${saver.name} `}</S>
-                <S fg={theme.text}>{formatWholeMoney(saver.balance)}</S>
-              </>
-            )}
-          </For>
-        </text>
-      </SectionCard>
-      <SectionCard title="Date Range" titleSuffix={`· ${scope().label}`} titleSuffixColor={theme.subtext0} focused={dateFocused()} height={4}>
+      <SectionCard title="Date Range" titleSuffix={`· ${scope().label}`} titleSuffixColor={theme.subtext0} focused={dateFocused()} height={3}>
         <box flexDirection="row" justifyContent="space-between" width="100%">
           <text fg={theme.subtext0} wrapMode="none">
-            Presets{" "}
             <For each={LOOKBACKS}>
               {(lb, i) => chip(lb, i(), ui.state.timeframe.family === "lookback" && ui.state.timeframe.lookback === lb)}
             </For>
-            <S fg={theme.overlay1}> | </S>
+            <S fg={theme.surface2}>{" │"}</S>
             <For each={PERIODS}>
               {(p, i) => chip(PERIOD_LABEL[p], LOOKBACKS.length + i(), ui.state.timeframe.family === "period" && ui.state.timeframe.period === p)}
             </For>
           </text>
           <Show when={showTimeframe()}>
-            <text fg={theme.subtext0} flexShrink={0}>
-              Timeframe <S fg={theme.peach}>{bounds().label}</S>
-            </text>
+            <text fg={theme.peach} flexShrink={0}>{bounds().label}</text>
           </Show>
         </box>
-        <text wrapMode="none">
-          <S fg={theme.subtext0}>{"Spent "}</S>
-          <S fg={theme.text} bold>{formatWholeMoney(flows().spent)}</S>
-          <Show when={budget()}>
-            {(p: () => BudgetProgress) => (
-              <S fg={p().usedPct > 100 ? theme.error : p().usedPct >= 80 ? theme.warning : theme.success}>
-                {` of ${formatWholeMoney(p().budget.amount)} (${Number.isFinite(p().usedPct) ? Math.round(p().usedPct) : "—"}%${p().remaining > 0 ? `, ${formatWholeMoney(p().dailyAllowance)}/day left` : ""})`}
-              </S>
-            )}
-          </Show>
-          <S fg={changeColor(flows().spent, previousFlows().spent)}>{` ${changePct(flows().spent, previousFlows().spent)}`}</S>
-          <S fg={theme.overlay1}>{` vs ${formatWholeMoney(previousFlows().spent)}`}</S>
-          <S fg={theme.subtext0}>{"   Income "}</S>
-          <S fg={theme.success}>{formatWholeMoney(flows().income)}</S>
-          <S fg={theme.subtext0}>{"   Net "}</S>
-          <S fg={flows().net >= 0 ? theme.success : theme.error}>{signedWhole(flows().net)}</S>
-          <S fg={theme.subtext0}>{"   To savers "}</S>
-          <S fg={flows().savedToSavers >= 0 ? theme.peach : theme.error}>{signedWhole(flows().savedToSavers)}</S>
-          <S fg={theme.subtext0}>{"   Savings rate "}</S>
-          <S fg={theme.peach}>{formatPct(flows().savingsRate)}</S>
-          <S fg={theme.subtext0}>{"   Daily "}</S>
-          <S fg={theme.text}>{formatWholeMoney(windows().days ? flows().spent / windows().days : 0)}</S>
-          <S fg={theme.overlay1}>{`   ${flows().txnCount} txns`}</S>
-        </text>
       </SectionCard>
       <Show
         when={wide()}
         fallback={
           <>
-            {chartPane()}
-            {categoriesCard()}
+            {chartPane(0, topChartHeight(), topModel())}
+            <box flexDirection="row" gap={1} width="100%" height={lowerHeight()}>
+              <box flexDirection="column" width={sideWidth()}>
+                {nowCard()}
+                <Show when={stackSpace() - (nowRows() + 2) >= 3}>{saversCard()}</Show>
+              </box>
+              <box flexDirection="column" flexGrow={1} minWidth={0}>
+                {totalsCard()}
+                {categoriesCard()}
+              </box>
+            </box>
           </>
         }
       >
         <box flexDirection="row" gap={1} width="100%" height={bodyHeight()}>
-          {chartPane()}
-          <box flexGrow={1} flexBasis={0} minWidth={0} height={bodyHeight()} overflow="hidden">
+          <box flexDirection="column" width={mainWidth()} height={bodyHeight()}>
+            {chartPane(0, topChartHeight(), topModel())}
+            {chartPane(1, bottomChartHeight(), bottomModel())}
+          </box>
+          <box flexDirection="column" flexGrow={1} flexBasis={0} minWidth={0} height={bodyHeight()} overflow="hidden">
+            {nowCard()}
+            {saversCard()}
+            {totalsCard()}
             {categoriesCard()}
           </box>
         </box>
@@ -249,14 +294,14 @@ export function OverviewTab(props: { focused: SectionId }) {
 
 /** The chart pane's views in h/l order, the current one highlighted; groups
  * are separated by a rule. Short names when the full ones do not fit. */
-function ViewStrip(props: { width: number }) {
+function ViewStrip(props: { width: number; current: number }) {
   const full = CHART_VIEWS.reduce((n, v, i) => n + v.view.length + (i === 0 ? 0 : CHART_VIEWS[i - 1]!.group !== v.group ? 3 : 1), 0)
   const label = (view: string) => (full <= props.width ? view : SHORT_VIEW[view] ?? view)
   return (
     <text wrapMode="none">
       <For each={CHART_VIEWS}>
         {(v, i) => {
-          const current = () => ui.state.chartView === i()
+          const current = () => props.current === i()
           const rule = () => i() > 0 && CHART_VIEWS[i() - 1]!.group !== v.group
           return (
             <>
@@ -363,13 +408,6 @@ function monthLabels(weeks: Array<Array<CalendarDay | null>>, width: number): st
 }
 
 const MONTHS = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"]
-
-/** "+12%", "-8%", "new" (nothing before), "—" (nothing now or before). */
-function changePct(now: number, before: number): string {
-  if (before <= 0) return now > 0 ? "new" : "—"
-  const pct = Math.round(((now - before) / before) * 100)
-  return `${pct > 0 ? "+" : ""}${pct}%`
-}
 
 /** More spending than before is red, less is green. */
 function changeColor(now: number, before: number): string {

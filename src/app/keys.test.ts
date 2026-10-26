@@ -241,6 +241,20 @@ describe("key router", () => {
     expect(ui.state.status).toBe("Filter cleared")
   })
 
+  test("overview h/l step the top or focused chart; H/L the bottom one", () => {
+    ui.setState({ focusedSection: "none", chartViews: [0, 4] })
+    handleKey(ui, key({ name: "l" }), data)
+    expect(ui.state.chartViews).toEqual([1, 4])
+    handleKey(ui, key({ name: "h" }), data)
+    handleKey(ui, key({ name: "h" }), data)
+    expect(ui.state.chartViews).toEqual([7, 4])
+    handleKey(ui, key({ name: "l", shift: true, sequence: "L" }), data)
+    expect(ui.state.chartViews).toEqual([7, 5])
+    ui.setState({ focusedSection: "ov.chart2" })
+    handleKey(ui, key({ name: "h" }), data)
+    expect(ui.state.chartViews).toEqual([7, 4])
+  })
+
   test("overview date chip apply sets timeframe", () => {
     ui.setState({ focusedSection: "ov.range", dashChipCursor: 0 })
     data.setState({
