@@ -25,12 +25,15 @@ const columns = {
   category: 16,
 } as const
 
+/** Widest the description goes: longer ones (a rare few in Up's data run to
+ * 54) are cut rather than pushing the category across. */
+const DESCRIPTION_MAX = 36
 /** Narrowest the category and tags go before the description gives way. */
 const CATEGORY_MIN = 16
 const TAGS_MIN = 8
 
-/** Column widths. No bank documents a limit on descriptions, so the data
- * sets it: the description gets its longest text, then the category its
+/** Column widths. The description gets its longest text up to
+ * DESCRIPTION_MAX, then the category its
  * longest name, while both fit beside the minimums; tags, or without them
  * the category, take the rest so row backgrounds span the table. As in Go
  * (hasMultipleAccountNames), the Account column only shows for several
@@ -45,7 +48,7 @@ export function tableLayout(
     (showTags ? columns.gap : 0) + (showAccount ? columns.account + columns.gap : 0)
   const avail = contentWidth - fixed
   const tagsMin = showTags ? TAGS_MIN : 0
-  const description = Math.max(5, Math.min(longest.description, avail - CATEGORY_MIN - tagsMin))
+  const description = Math.max(5, Math.min(longest.description, DESCRIPTION_MAX, avail - CATEGORY_MIN - tagsMin))
   const category = Math.max(CATEGORY_MIN, Math.min(longest.category, avail - description - tagsMin))
   const rest = Math.max(0, avail - description - category)
   return showTags
