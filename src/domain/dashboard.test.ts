@@ -4,6 +4,7 @@ import {
   cumulative,
   dailySpendSeries,
   formatWholeMoney,
+  fitCategoryLines,
   groupCategorySpend,
   weeklyTotals,
 } from "./dashboard"
@@ -115,5 +116,22 @@ describe("tracker series", () => {
     // Sydney DST ends 2027-04-04 (a 25-hour day) in local time.
     const { dates } = dailySpendSeries([], "2027-04-03", "2027-04-06")
     expect(dates).toEqual(["2027-04-03", "2027-04-04", "2027-04-05", "2027-04-06"])
+  })
+})
+
+describe("fitCategoryLines", () => {
+  const child = (name: string, amount: number) => ({ categoryId: null, name, color: "", amount, pct: 0 })
+  const groups = [
+    { name: "Good Life", color: "a", amount: 30, pct: 60, children: [child("Cafes", 20), child("Pubs", 10)] },
+    { name: "Home", color: "b", amount: 20, pct: 40, children: [child("Groceries", 15), child("Pets", 5)] },
+  ]
+
+  test("groups first, then the largest subcategories under their group", () => {
+    expect(fitCategoryLines(groups, 4).map((l) => l.label)).toEqual(["Good Life", "Cafes", "Home", "Groceries"])
+  })
+
+  test("never more lines than allowed", () => {
+    expect(fitCategoryLines(groups, 1).map((l) => l.label)).toEqual(["Good Life"])
+    expect(fitCategoryLines(groups, 0)).toEqual([])
   })
 })

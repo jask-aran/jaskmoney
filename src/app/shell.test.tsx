@@ -35,11 +35,19 @@ describe("shell render M0", () => {
     expect(frame).toContain("Dashboard")
     expect(frame).toContain("Manager")
     expect(frame).toContain("Settings")
-    expect(frame).toContain("Date Range")
     expect(frame).toContain("Now")
     expect(frame).toContain("Savers")
-    expect(frame).toContain("Spending Tracker")
+    expect(frame).toContain("This Cycle")
+    expect(frame).not.toContain("Date Range")
     expect(frame).toMatch(/status|shell|bootstrap|Tab:|jump|v /i)
+
+    // The Spending tab holds everything over the Date Range.
+    t.mockInput.pressKey("2")
+    await t.renderOnce()
+    const spending = t.captureCharFrame()
+    expect(spending).toContain("Date Range")
+    expect(spending).toContain("Spending Tracker")
+    expect(spending).toContain("Balances")
     const dateRangeTitle = t
       .captureSpans()
       .lines.flatMap((line) => line.spans)
@@ -54,7 +62,7 @@ describe("shell render M0", () => {
 
     t.mockInput.pressKey("d")
     await t.renderOnce()
-    expect(ui.state.focusedSection).toBe("dash.date")
+    expect(ui.state.focusedSection).toBe("spend.date")
 
     // tab to manager
     t.mockInput.pressKey("3")
@@ -447,18 +455,18 @@ describe("render errors", () => {
     process.env.JASKMONEY_NO_BOOTSTRAP = "1"
     const t = await testRender(() => <App />, { width: 120, height: 30 })
     await t.renderOnce()
-    const original = data.spendingTransactions
+    const original = data.scopedTransactions
     try {
-      ;(data as { spendingTransactions: () => unknown }).spendingTransactions = () => { throw new Error("boom") }
-      ui.switchTab("manager"); await t.renderOnce()
+      ;(data as { scopedTransactions: () => unknown }).scopedTransactions = () => { throw new Error("boom") }
       ui.switchTab("dashboard"); await t.renderOnce()
+      ui.switchTab("manager"); await t.renderOnce()
       expect(t.captureCharFrame()).toContain("This tab failed to render")
-      expect(t.captureCharFrame()).toContain("Manager")
+      expect(t.captureCharFrame()).toContain("Dashboard")
     } finally {
-      ;(data as { spendingTransactions: typeof original }).spendingTransactions = original
+      ;(data as { scopedTransactions: typeof original }).scopedTransactions = original
     }
-    ui.switchTab("manager"); await t.renderOnce()
     ui.switchTab("dashboard"); await t.renderOnce()
-    expect(t.captureCharFrame()).toContain("Savers")
+    ui.switchTab("manager"); await t.renderOnce()
+    expect(t.captureCharFrame()).toContain("Transactions")
   })
 })

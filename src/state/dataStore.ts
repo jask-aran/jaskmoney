@@ -53,7 +53,7 @@ import {
   reparseFilterInput,
   type FilterNode,
 } from "../domain/filter"
-import { accountRole, type Account, type Category, type ImportPreview, type ImportProfile, type ImportRecord, type Rule, type RuleRunResult, type SavedFilter, type SortColumn, type Tag, type Transaction } from "../domain/types"
+import { type Account, type Category, type ImportPreview, type ImportProfile, type ImportRecord, type Rule, type RuleRunResult, type SavedFilter, type SortColumn, type Tag, type Transaction } from "../domain/types"
 import { loadSettingsConfig, saveSettingsConfig, validateImportProfile, validateSavedFilter } from "./settingsConfig"
 
 export interface DataState {
@@ -162,12 +162,6 @@ function createDataStore() {
   /** Transactions of the Manager's selected account(s). */
   function accountScoped(): Transaction[] {
     const ids = new Set(selectedAccounts(state.accounts, state.accountSelection).map((a) => a.id))
-    return state.transactions.filter((t) => t.accountId != null && ids.has(t.accountId))
-  }
-
-  /** Transactions of every spending account, independent of the Manager. */
-  function spendingTransactions(): Transaction[] {
-    const ids = new Set(state.accounts.filter((a) => accountRole(a) === "spending").map((a) => a.id))
     return state.transactions.filter((t) => t.accountId != null && ids.has(t.accountId))
   }
 
@@ -600,7 +594,6 @@ function createDataStore() {
     init,
     refresh,
     accountScoped,
-    spendingTransactions,
     scopedTransactions,
     setFilterLive,
     commitFilter,

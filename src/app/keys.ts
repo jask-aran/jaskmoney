@@ -1,6 +1,7 @@
 import type { KeyEvent } from "@opentui/core"
 import { resolve } from "node:path"
-import { selectableEntries } from "../domain/accountTree"
+import { accountRole } from "../domain/types"
+import { selectableEntries, spendingScope, type AccountSelection } from "../domain/accountTree"
 import { assignableCategories } from "../domain/categoryOptions"
 import { merchantSummaries } from "../domain/spending"
 import { budgetLabel, budgetScopeOptions, scopeKey } from "../domain/budgetScopes"
@@ -505,7 +506,7 @@ export function handleKey(ui: UiStore, key: KeyEvent, data?: DataStore): boolean
 
   // ── Global ──────────────────────────────────────────────────────────
   if (name === "v") {
-    ui.enterJump()
+    if (JUMP_TARGETS[ui.state.activeTab].length) ui.enterJump()
     return true
   }
 
@@ -787,11 +788,11 @@ export function handleKey(ui: UiStore, key: KeyEvent, data?: DataStore): boolean
     return true
   }
 
-  // ── Dashboard charts ────────────────────────────────────────────────
-  if (scope === "dashboard.chart") {
+  // ── Spending charts ─────────────────────────────────────────────────
+  if (scope === "spending.chart") {
     const step = name === "h" || name === "left" || seq === "," ? -1 : name === "l" || name === "right" || seq === "." ? 1 : 0
     if (step !== 0) {
-      if (ui.state.focusedSection === "dash.tracker") {
+      if (ui.state.focusedSection === "spend.tracker") {
         const n = TRACKER_VIEWS.length
         ui.setState({ trackerView: (ui.state.trackerView + step + n) % n })
       } else {
@@ -802,8 +803,8 @@ export function handleKey(ui: UiStore, key: KeyEvent, data?: DataStore): boolean
     }
   }
 
-  // ── Dashboard date ──────────────────────────────────────────────────
-  if (scope === "dashboard.date") {
+  // ── Spending date range ─────────────────────────────────────────────
+  if (scope === "spending.date") {
     if (name === "h" || name === "left") {
       const n = chipCount()
       ui.setDashChipCursor((ui.state.dashChipCursor - 1 + n) % n)
@@ -821,7 +822,7 @@ export function handleKey(ui: UiStore, key: KeyEvent, data?: DataStore): boolean
       const label =
         tf.family === "lookback" ? tf.lookback : PERIOD_LABEL[tf.period]
       ui.setStatus(
-        `Dashboard ${tf.family === "lookback" ? "timeframe" : "period"}: ${label} · ${b.label}`,
+        `${tf.family === "lookback" ? "Timeframe" : "Period"}: ${label} · ${b.label}`,
       )
       return true
     }
@@ -845,13 +846,16 @@ export function handleKey(ui: UiStore, key: KeyEvent, data?: DataStore): boolean
 
   // ── Spending ────────────────────────────────────────────────────────
   if (scope === "spending" && data) {
-    const merchants = merchantSummaries(data.spendingTransactions(), ...periodBounds(ui, data))
+    // Same rows as the tab: the selected spending account, or all of them.
+    const scope = spendingScope(data.state.accounts, data.state.accountSelection)
+    const ids = new Set(scope.accounts.map((acc) => acc.id))
+    const merchants = merchantSummaries(data.state.transactions.filter((t) => t.accountId != null && ids.has(t.accountId)), ...periodBounds(ui, data))
     if (name === "j" || name === "down") { ui.setState({ focusedSection: "spend.merchants", merchantCursor: Math.min(Math.max(0, merchants.length - 1), ui.state.merchantCursor + 1) }); return true }
     if (name === "k" || name === "up") { ui.setState({ focusedSection: "spend.merchants", merchantCursor: Math.max(0, ui.state.merchantCursor - 1) }); return true }
     if ((name === "return" || name === "enter") && merchants[ui.state.merchantCursor]) {
-      // Drill into the Manager: all spending, filtered to this merchant.
+      // Drill into the Manager: the same accounts, filtered to this merchant.
       const merchant = merchants[ui.state.merchantCursor]!.merchant
-      data.setAccountSelection("all")
+      data.setAccountSelection(scope.accounts.length === 1 && scope.label !== "All spending" ? scope.accounts[0]!.id : "all")
       data.commitFilter(`desc:"${merchant.replace(/\\/g, "\\\\").replace(/"/g, '\\"')}"`)
       ui.switchTab("manager")
       ui.setState({ focusedSection: "mgr.transactions", managerCursor: 0, managerTop: 0 })
@@ -860,7 +864,16 @@ export function handleKey(ui: UiStore, key: KeyEvent, data?: DataStore): boolean
     }
   }
 
-  if (scope === "dashboard" || scope === "dashboard.chart" || scope === "spending") {
+  if (scope === "spending" || scope === "spending.chart") {
+    // Which spending account the period covers: all, or one of them.
+    if (name === "a" && data) {
+      const choices: AccountSelection[] = ["all", ...data.state.accounts.filter((a) => accountRole(a) === "spending").map((a) => a.id)]
+      const at = choices.indexOf(data.state.accountSelection)
+      const next = choices[(at + 1) % choices.length]!
+      data.setAccountSelection(next)
+      ui.setStatus(`Spending · ${spendingScope(data.state.accounts, next).label}`)
+      return true
+    }
     if (name === "[" || seq === "[") {
       if (ui.state.timeframe.family === "period") {
         ui.setTimeframe(stepPeriod(ui.state.timeframe, -1))
@@ -924,27 +937,27 @@ export function footerHints(scope: ScopeId): { key: string; desc: string }[] {
       ]
     case "dashboard":
       return [
-        { key: "v", desc: "jump" },
-        { key: "[/]", desc: "period" },
-        { key: "0", desc: "this month" },
+        { key: "ctrl+r", desc: "sync" },
         { key: "1-4", desc: "tab" },
       ]
     case "spending":
       return [
         { key: "j/k", desc: "merchant" },
         { key: "enter", desc: "transactions" },
+        { key: "a", desc: "account" },
         { key: "[/]", desc: "period" },
         { key: "0", desc: "this month" },
+        { key: "v", desc: "jump" },
         { key: "1-4", desc: "tab" },
       ]
-    case "dashboard.chart":
+    case "spending.chart":
       return [
         { key: "h/l", desc: "view" },
         { key: "[/]", desc: "period" },
         { key: "0", desc: "this month" },
         { key: "esc", desc: "done" },
       ]
-    case "dashboard.date":
+    case "spending.date":
       return [
         { key: "h/l", desc: "chip" },
         { key: "enter", desc: "apply" },

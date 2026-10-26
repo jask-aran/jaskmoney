@@ -52,3 +52,12 @@ function sumBalances(accounts: Account[]): number | null {
   const known = accounts.filter((a) => a.balance != null)
   return known.length ? known.reduce((sum, a) => sum + a.balance!, 0) : null
 }
+
+/** The spending accounts a period analysis covers: the selected account when
+ * it is a spending account, otherwise every spending account (savers have
+ * no spending of their own; their story is their balance). */
+export function spendingScope(accounts: Account[], selection: AccountSelection): { accounts: Account[]; label: string } {
+  const one = typeof selection === "number" ? accounts.find((a) => a.id === selection && accountRole(a) === "spending") : undefined
+  if (one) return { accounts: [one], label: one.name }
+  return { accounts: accounts.filter((a) => accountRole(a) === "spending"), label: "All spending" }
+}

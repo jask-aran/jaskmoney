@@ -74,6 +74,28 @@ export function groupCategorySpend(list: CategorySpend[], categories: Category[]
   return out
 }
 
+export interface CategoryLine {
+  label: string
+  color: string
+  amount: number
+  /** Share of total spending; null for a subcategory line. */
+  pct: number | null
+  child: boolean
+}
+
+/** Up to `maxLines` display lines: every group (largest first) gets one,
+ * and the spare lines go to the largest subcategories overall, each shown
+ * under its group. */
+export function fitCategoryLines(groups: CategoryGroupSpend[], maxLines: number): CategoryLine[] {
+  const shown = groups.slice(0, Math.max(0, maxLines))
+  const spare = Math.max(0, maxLines - shown.length)
+  const keep = new Set(shown.flatMap((g) => g.children).sort((a, b) => b.amount - a.amount).slice(0, spare))
+  return shown.flatMap((g) => [
+    { label: g.name, color: g.color, amount: g.amount, pct: g.pct, child: false },
+    ...g.children.filter((c) => keep.has(c)).map((c) => ({ label: c.name, color: g.color, amount: c.amount, pct: null, child: true })),
+  ])
+}
+
 /** Whole dollars: "$1,478", "-$20". */
 export function formatWholeMoney(n: number): string {
   const sign = n < 0 ? "-" : ""

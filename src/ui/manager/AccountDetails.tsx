@@ -8,8 +8,8 @@ import { computeAccountStats } from "../../domain/accountStats"
 import { selectedAccounts, selectionLabel } from "../../domain/accountTree"
 import { fit, shortMoney } from "../text"
 import { toISODate } from "../../domain/timeframe"
-import { columnBars } from "../dashboard/charts"
-import { lineChart, type Run } from "../dashboard/lineChart"
+import { columnBars } from "../charts/bars"
+import { lineChart, type Run } from "../charts/lineChart"
 
 /** Inner width of the sidebar cards (SIDEBAR_WIDTH − border − padding). */
 const WIDTH = 32

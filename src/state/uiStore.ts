@@ -10,10 +10,9 @@ export type TabId = "dashboard" | "spending" | "manager" | "settings"
 
 export type SectionId =
   | "none"
-  | "dash.date"
-  | "dash.tracker"
-  | "dash.cashflow"
-  | "dash.composition"
+  | "spend.date"
+  | "spend.tracker"
+  | "spend.balances"
   | "spend.categories"
   | "spend.merchants"
   | "mgr.accounts"
@@ -33,8 +32,8 @@ export type ScopeId =
   | "catPicker"
   | "tagPicker"
   | "dashboard"
-  | "dashboard.date"
-  | "dashboard.chart"
+  | "spending.date"
+  | "spending.chart"
   | "spending"
   | "manager"
   | "manager.accounts"
@@ -164,18 +163,17 @@ const TAB_DEFAULT_FOCUS: Record<TabId, SectionId> = {
   settings: "none",
 }
 
-/** Views of the Dashboard's chart cards, cycled with h/l when focused. */
+/** Views of the Spending tab's chart cards, cycled with h/l when focused. */
 export const TRACKER_VIEWS = ["Daily", "Cumulative", "Weekly"] as const
 export const BALANCE_VIEWS = ["Net position", "Available", "Savers"] as const
 
 export const JUMP_TARGETS: Record<TabId, JumpTarget[]> = {
   dashboard: [
-    { key: "d", section: "dash.date", label: "Date Range" },
-    { key: "t", section: "dash.tracker", label: "Spending Tracker" },
-    { key: "b", section: "dash.cashflow", label: "Balances" },
-    { key: "c", section: "dash.composition", label: "Spending by Category" },
   ],
   spending: [
+    { key: "d", section: "spend.date", label: "Date Range" },
+    { key: "t", section: "spend.tracker", label: "Spending Tracker" },
+    { key: "b", section: "spend.balances", label: "Balances" },
     { key: "c", section: "spend.categories", label: "Categories" },
     { key: "m", section: "spend.merchants", label: "Merchants" },
   ],
@@ -516,12 +514,12 @@ function createUiStore() {
     if (state.importStage === "preview") return "settings.import.preview"
     if (state.accountActionId != null) return "manager.accountAction"
     if (state.factoryResetOpen) return "settings.factoryReset"
-    if (state.activeTab === "dashboard") {
-      if (state.focusedSection === "dash.date") return "dashboard.date"
-      if (state.focusedSection === "dash.tracker" || state.focusedSection === "dash.cashflow") return "dashboard.chart"
-      return "dashboard"
+    if (state.activeTab === "dashboard") return "dashboard"
+    if (state.activeTab === "spending") {
+      if (state.focusedSection === "spend.date") return "spending.date"
+      if (state.focusedSection === "spend.tracker" || state.focusedSection === "spend.balances") return "spending.chart"
+      return "spending"
     }
-    if (state.activeTab === "spending") return "spending"
     if (state.activeTab === "manager") {
       if (state.focusedSection === "mgr.accounts") return "manager.accounts"
       return "manager.txns"

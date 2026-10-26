@@ -1,5 +1,6 @@
 import { describe, expect, test, beforeEach } from "bun:test"
 import type { KeyEvent } from "@opentui/core"
+import { spendingScope } from "../domain/accountTree"
 import { handleKey, footerHints } from "./keys"
 import { ui } from "../state/uiStore"
 import { data } from "../state/dataStore"
@@ -61,11 +62,12 @@ describe("key router", () => {
   })
 
   test("jump mode open, target, cancel", () => {
+    ui.switchTab("spending")
     handleKey(ui, key({ name: "v" }), data)
     expect(ui.state.jumpMode).toBe(true)
     handleKey(ui, key({ name: "d" }), data)
     expect(ui.state.jumpMode).toBe(false)
-    expect(ui.state.focusedSection).toBe("dash.date")
+    expect(ui.state.focusedSection).toBe("spend.date")
 
     handleKey(ui, key({ name: "v" }), data)
     handleKey(ui, key({ name: "escape" }), data)
@@ -101,8 +103,8 @@ describe("key router", () => {
     handleKey(ui, key({ name: "j" }), data)
     expect(data.state.accountSelection).toBe(2)
     expect(shown()).toEqual([2])
-    // The dashboard's spending set ignores the manager selection.
-    expect(data.spendingTransactions().map((t) => t.id)).toEqual([1])
+    // A saver selected: the Spending tab covers every spending account.
+    expect(spendingScope(data.state.accounts, data.state.accountSelection).accounts.map((a) => a.id)).toEqual([1])
     // Data actions only for a single account.
     handleKey(ui, key({ name: "d" }), data)
     expect(ui.state.accountActionId).toBe(2)
@@ -177,7 +179,8 @@ describe("key router", () => {
     expect(ui.state.merchantCursor).toBe(1)
     handleKey(ui, key({ name: "return" }), data)
     expect(ui.state.activeTab).toBe("manager")
-    expect(data.state.accountSelection).toBe("all")
+    // The drill keeps the account the Spending tab was showing.
+    expect(data.state.accountSelection).toBe(1)
     expect(data.state.filterQuery).toBe('desc:"Cafe \\"Ripple\\""')
     expect(data.scopedTransactions().map((t) => t.id)).toEqual([2])
     data.clearFilter()
@@ -239,9 +242,9 @@ describe("key router", () => {
     expect(ui.state.status).toBe("Filter cleared")
   })
 
-  test("dashboard date chip apply sets timeframe", () => {
-    ui.switchTab("dashboard")
-    ui.setState({ focusedSection: "dash.date", dashChipCursor: 0 })
+  test("spending date chip apply sets timeframe", () => {
+    ui.switchTab("spending")
+    ui.setState({ focusedSection: "spend.date", dashChipCursor: 0 })
     data.setState({
       transactions: [
         {
@@ -272,7 +275,7 @@ describe("key router", () => {
   test("footer hints change with scope", () => {
     expect(footerHints("jump").some((h) => h.desc === "cancel")).toBe(true)
     expect(footerHints("manager.txns").some((h) => h.key === "j/k")).toBe(true)
-    expect(footerHints("dashboard.date").some((h) => h.desc === "apply")).toBe(true)
+    expect(footerHints("spending.date").some((h) => h.desc === "apply")).toBe(true)
   })
 
   test("settings database owns i and clear confirmation requires del", () => {

@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test"
-import { columnBars, levelChart } from "./charts"
+import { columnBars, levelChart } from "./bars"
 
 describe("columnBars", () => {
   test("bars fill slots less a gap, scaled to max, tagged with their ink", () => {

@@ -1,4 +1,4 @@
-/** Block bar charts for the dashboard. Line charts live in lineChart.ts. */
+/** Block bar and filled level charts. Line charts live in lineChart.ts. */
 import type { Run } from "./lineChart"
 
 const EIGHTHS = ["", "▁", "▂", "▃", "▄", "▅", "▆", "▇", "█"]
