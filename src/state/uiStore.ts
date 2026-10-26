@@ -1,3 +1,4 @@
+import type { CycleAnchor, CycleUnit } from "../domain/budget"
 import { createStore } from "solid-js/store"
 import {
   defaultTimeframe,
@@ -22,6 +23,7 @@ export type SectionId =
   | "set.filters"
   | "set.database"
   | "set.up"
+  | "set.budgets"
 
 export type ScopeId =
   | "global"
@@ -41,6 +43,7 @@ export type ScopeId =
   | "settings.filters"
   | "settings.database"
   | "settings.up"
+  | "settings.budgets"
   | "manager.detail"
   | "manager.detail.notes"
   | "settings.editor"
@@ -54,15 +57,15 @@ export type ScopeId =
   | "settings.factoryReset"
 
 export type SettingsList = "categories" | "tags"
-export type SettingsSection = "taxonomy" | "rules" | "filters" | "up" | "database"
+export type SettingsSection = "taxonomy" | "budgets" | "rules" | "filters" | "up" | "database"
 /** j/k order of Settings sections (wide layout: left column, then right). */
-export const SETTINGS_SECTIONS: SettingsSection[] = ["taxonomy", "rules", "filters", "up", "database"]
+export const SETTINGS_SECTIONS: SettingsSection[] = ["taxonomy", "budgets", "rules", "filters", "up", "database"]
 
 export function settingsSectionFocus(section: SettingsSection, list: SettingsList = "categories"): SectionId {
   if (section === "taxonomy") return list === "categories" ? "set.categories" : "set.tags"
-  return section === "rules" ? "set.rules" : section === "filters" ? "set.filters" : section === "up" ? "set.up" : "set.database"
+  return section === "rules" ? "set.rules" : section === "filters" ? "set.filters" : section === "up" ? "set.up" : section === "budgets" ? "set.budgets" : "set.database"
 }
-export type SettingsEditorKind = "category" | "tag" | "filter" | "rule"
+export type SettingsEditorKind = "category" | "tag" | "filter" | "rule" | "budget" | "cycle"
 export type ImportStage = "none" | "files" | "path" | "profile" | "profileEditor" | "preview"
 
 export interface JumpTarget {
@@ -110,6 +113,8 @@ export interface UiState {
   /** Spending tab merchant list cursor and scroll offset. */
   merchantCursor: number
   merchantTop: number
+  /** Cursor in the Settings budget list. */
+  budgetCursor: number
   /** Cursor in the Up Bank sync account list. */
   upCursor: number
   /** Transaction shown in the detail view; null when closed. */
@@ -119,8 +124,14 @@ export interface UiState {
   settingsEditor: SettingsEditorKind | null
   settingsEditId: number | string | null
   settingsEditField: number
-  settingsDraft: { name: string; color: string; categoryId: number | null; id: string; expr: string; savedFilterId: string; setCategoryId: number | null; addTagIds: number[]; notSpending: boolean }
-  settingsConfirm: { kind: "category" | "tag" | "rule" | "filter" | "profile" | "clearData" | "clearAccount" | "deleteAccount" | "desyncAccount"; id: number | string; label: string } | null
+  settingsDraft: {
+    name: string; color: string; categoryId: number | null; id: string; expr: string; savedFilterId: string; setCategoryId: number | null; addTagIds: number[]; notSpending: boolean
+    /** Budget editor: scope key (see budgetScopes.scopeKey) and amount text. */
+    scopeKey: string; amount: string
+    /** Cycle editor. */
+    unit: CycleUnit; anchor: CycleAnchor; anchorDate: string
+  }
+  settingsConfirm: { kind: "category" | "tag" | "rule" | "filter" | "profile" | "clearData" | "clearAccount" | "deleteAccount" | "desyncAccount" | "budget"; id: number | string; label: string } | null
   importStage: ImportStage
   importDirectory: string
   importFiles: string[]
@@ -167,6 +178,7 @@ export const JUMP_TARGETS: Record<TabId, JumpTarget[]> = {
     { key: "t", section: "set.tags", label: "Tags" },
     { key: "r", section: "set.rules", label: "Rules" },
     { key: "f", section: "set.filters", label: "Filters" },
+    { key: "b", section: "set.budgets", label: "Budgets" },
     { key: "u", section: "set.up", label: "Up Bank" },
     { key: "d", section: "set.database", label: "Database & Import" },
   ],
@@ -217,6 +229,7 @@ function createUiStore() {
     ruleCursor: 0,
     filterCursor: 0,
     upCursor: 0,
+    budgetCursor: 0,
     merchantCursor: 0,
     merchantTop: 0,
     detailId: null,
@@ -225,7 +238,7 @@ function createUiStore() {
     settingsEditor: null,
     settingsEditId: null,
     settingsEditField: 0,
-    settingsDraft: { name: "", color: "#94e2d5", categoryId: null, id: "", expr: "", savedFilterId: "", setCategoryId: null, addTagIds: [], notSpending: false },
+    settingsDraft: { name: "", color: "#94e2d5", categoryId: null, id: "", expr: "", savedFilterId: "", setCategoryId: null, addTagIds: [], notSpending: false, scopeKey: "overall", amount: "", unit: "month", anchor: "calendar", anchorDate: "" },
     settingsConfirm: null,
     importStage: "none",
     importDirectory: "",
@@ -505,6 +518,7 @@ function createUiStore() {
     if (state.settingsSection === "rules") return "settings.rules"
     if (state.settingsSection === "filters") return "settings.filters"
     if (state.settingsSection === "up") return "settings.up"
+    if (state.settingsSection === "budgets") return "settings.budgets"
     return "settings.database"
   }
 

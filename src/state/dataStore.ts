@@ -31,11 +31,17 @@ import {
   loadImports,
   removeAccountWithTransactions,
   setAccountSyncEnabled,
+  deleteBudget,
+  loadBudgetCycle,
+  loadBudgets,
+  saveBudget,
+  saveBudgetCycle,
   loadTransactionDetail,
   setTransactionNotes,
   type TransactionDetail,
 } from "../db/client"
 import { selectedAccounts, type AccountSelection } from "../domain/accountTree"
+import type { Budget, BudgetScope, CycleConfig } from "../domain/budget"
 import { buildImportPreview, commitImportPreview, matchingProfiles } from "../domain/profileImport"
 import { createUpClient, readUpToken } from "../up/client"
 import { syncUp as runUpSync } from "../up/sync"
@@ -57,6 +63,8 @@ export interface DataState {
   accounts: Account[]
   /** Every provider-synced account, including ones whose sync is off. */
   syncAccounts: Account[]
+  budgets: Budget[]
+  budgetCycle: CycleConfig
   categories: Category[]
   tags: Tag[]
   rules: Rule[]
@@ -94,6 +102,8 @@ function createDataStore() {
     dbPath: "",
     accounts: [],
     syncAccounts: [],
+    budgets: [],
+    budgetCycle: { unit: "month", anchor: "calendar", anchorDate: null },
     categories: [],
     tags: [],
     rules: [],
@@ -128,6 +138,8 @@ function createDataStore() {
       ready: true,
       accounts,
       syncAccounts,
+      budgets: loadBudgets(db),
+      budgetCycle: loadBudgetCycle(db),
       categories,
       tags,
       rules,
@@ -528,6 +540,24 @@ function createDataStore() {
     }
   }
 
+  function setBudget(scope: BudgetScope, amount: number): void {
+    if (!db) throw new Error("db not open")
+    saveBudget(db, scope, amount)
+    refresh()
+  }
+
+  function removeBudget(id: number): void {
+    if (!db) throw new Error("db not open")
+    deleteBudget(db, id)
+    refresh()
+  }
+
+  function setBudgetCycle(config: CycleConfig): void {
+    if (!db) throw new Error("db not open")
+    saveBudgetCycle(db, config)
+    refresh()
+  }
+
   /** Returns the number of transactions removed when switching sync off. */
   function setAccountSync(accountId: number, enabled: boolean): number {
     if (!db) throw new Error("db not open")
@@ -607,6 +637,9 @@ function createDataStore() {
     commitPreview,
     syncUp,
     setAccountSync,
+    setBudget,
+    removeBudget,
+    setBudgetCycle,
     clearDatabaseData,
     clearAccountData,
     removeAccountData,

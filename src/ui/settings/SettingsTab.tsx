@@ -9,6 +9,8 @@ import { theme } from "../../theme"
 import { fit } from "../text"
 import { formatMoney } from "../../domain/dashboard"
 import { accountRole } from "../../domain/types"
+import { budgetLabel, budgetScopeOptions } from "../../domain/budgetScopes"
+import type { CycleAnchor, CycleConfig } from "../../domain/budget"
 
 function truncate(value: string, width: number) { return value.length <= width ? value : `${value.slice(0, Math.max(0, width - 1))}…` }
 
@@ -61,6 +63,49 @@ function TaxonomyList(props: { kind: SettingsList; narrow?: boolean; split?: boo
       <box height={1}><ListFooter top={top()} visible={visible()} count={rows().length} /></box>
     </box>
   )
+}
+
+const ANCHOR_LABEL: Record<CycleAnchor, string> = {
+  calendar: "calendar (week from Monday, month from the 1st)",
+  date: "on a date",
+  weekStartNearDate: "on the Monday nearest a date",
+}
+
+/** "Monthly from the 1st", "Fortnightly from 16 Oct 2026", "Monthly from the Monday nearest the 15th". */
+export function describeCycle(config: CycleConfig): string {
+  const every = config.unit === "week" ? "Weekly" : config.unit === "fortnight" ? "Fortnightly" : "Monthly"
+  if (config.anchor === "calendar") return config.unit === "month" ? `${every} from the 1st` : `${every} from Monday`
+  const date = config.anchorDate ?? ""
+  const day = Number(date.slice(8, 10))
+  const months = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"]
+  const pretty = /^\d{4}-\d{2}-\d{2}$/.test(date) ? `${day} ${months[Number(date.slice(5, 7)) - 1]} ${date.slice(0, 4)}` : date || "?"
+  const when = config.unit === "month" ? `the ${ordinal(day)}` : pretty
+  return config.anchor === "date" ? `${every} from ${when}` : `${every} from the Monday nearest ${when}`
+}
+
+function ordinal(n: number): string {
+  if (!n) return "?"
+  const s = n % 100 >= 11 && n % 100 <= 13 ? "th" : (["th", "st", "nd", "rd"][n % 10] ?? "th")
+  return `${n}${s}`
+}
+
+function BudgetsPane(props: { focused: boolean }) {
+  const active = () => ui.state.settingsActive && ui.state.settingsSection === "budgets"
+  const budgets = () => data.state.budgets
+  return <SectionCard title="Budgets" focused={props.focused} active={active()} height={Math.max(1, budgets().length) + 4}>
+    <text wrapMode="none"><S fg={theme.subtext0}>{"Cycle  "}</S><S fg={theme.text}>{describeCycle(data.state.budgetCycle)}</S></text>
+    <Show when={budgets().length} fallback={<text fg={theme.overlay1}>{active() ? "No budgets. Press a to add." : "No budgets. Activate to add."}</text>}>
+      <For each={budgets()}>{(budget, i) => {
+        const selected = () => active() && ui.state.budgetCursor === i()
+        const bg = () => (selected() ? theme.surface0 : theme.canvas)
+        return <text bg={bg()} wrapMode="none">
+          <S fg={theme.focus} bg={bg()} bold>{selected() ? "> " : "  "}</S>
+          <S fg={theme.text} bg={bg()}>{fit(budgetLabel(budget, data.state.accounts, data.state.categories), 34)}</S>
+          <S fg={theme.subtext1} bg={bg()}>{formatMoney(budget.amount).padStart(12)}</S>
+        </text>
+      }}</For>
+    </Show>
+  </SectionCard>
 }
 
 function TaxonomyPane(props: { focused: boolean; narrow: boolean; height?: number | "auto" | `${number}%` }) {
@@ -183,7 +228,9 @@ function EditorOverlay() {
   const field = () => ui.state.settingsEditField
   const fieldRow = (index: number, label: string, value: string) => <text><S fg={field() === index ? theme.focus : theme.subtext0} bold={field() === index}>{field() === index ? "> " : "  "}{label}: </S><S fg={theme.text}>{value}{field() === index ? "▌" : ""}</S></text>
   return <Show when={kind()}>{(editor: () => NonNullable<ReturnType<typeof kind>>) => <box position="absolute" zIndex={10} left="20%" top="25%" width="60%" border borderStyle="rounded" borderColor={theme.focus} paddingLeft={1} paddingRight={1} backgroundColor={theme.base} flexDirection="column">
-    <text fg={theme.focus}><b>{editor() === "category" ? "Category" : editor() === "tag" ? "Tag" : editor() === "filter" ? "Saved Filter" : "Rule"} editor</b></text>
+    <text fg={theme.focus}><b>{editor() === "category" ? "Category" : editor() === "tag" ? "Tag" : editor() === "filter" ? "Saved Filter" : editor() === "budget" ? "Budget" : editor() === "cycle" ? "Budget cycle" : "Rule"} editor</b></text>
+    <Show when={editor() === "budget"}>{fieldRow(0, "Covers", budgetScopeOptions(data.state.accounts, data.state.categories).find((o) => o.key === draft().scopeKey)?.label ?? "—")}{fieldRow(1, "Amount", draft().amount)}<text fg={theme.overlay1}>{`  per cycle · ${describeCycle(data.state.budgetCycle)}`}</text></Show>
+    <Show when={editor() === "cycle"}>{fieldRow(0, "Every", draft().unit)}{fieldRow(1, "Starting", ANCHOR_LABEL[draft().anchor])}<Show when={draft().anchor !== "calendar"}>{fieldRow(2, "Date", draft().anchorDate || "YYYY-MM-DD")}</Show><text fg={theme.overlay1}>{`  ${describeCycle({ unit: draft().unit, anchor: draft().anchor, anchorDate: draft().anchorDate || null })}`}</text></Show>
     <Show when={editor() === "category" || editor() === "tag"}>{fieldRow(0, "Name", draft().name)}{fieldRow(1, "Colour", draft().color)}{editor() === "tag" ? fieldRow(2, "Scope", data.state.categories.find((c) => c.id === draft().categoryId)?.name ?? "global") : null}{editor() === "category" ? fieldRow(2, "Spending", draft().notSpending ? "no — excluded from spending and income" : "yes") : null}</Show>
     <Show when={editor() === "filter"}>{fieldRow(0, "ID", draft().id)}{fieldRow(1, "Name", draft().name)}{fieldRow(2, "Expr", draft().expr)}</Show>
     <Show when={editor() === "rule"}>{fieldRow(0, "Name", draft().name)}{fieldRow(1, "Filter", draft().savedFilterId)}{fieldRow(2, "Category", data.state.categories.find((c) => c.id === draft().setCategoryId)?.name ?? "—")}{fieldRow(3, "Tags", draft().addTagIds.map((id) => data.state.tags.find((t) => t.id === id)?.name).filter(Boolean).join(", ") || "—")}</Show>
@@ -192,7 +239,7 @@ function EditorOverlay() {
 }
 
 function ConfirmOverlay() {
-  const prompt = (confirm: NonNullable<typeof ui.state.settingsConfirm>) => confirm.kind === "clearData" ? "Clear all transaction and import data?" : confirm.kind === "clearAccount" ? `Clear transactions for ${confirm.label}?` : confirm.kind === "deleteAccount" ? `Remove ${confirm.label} and its transactions?` : confirm.kind === "desyncAccount" ? `Stop syncing ${confirm.label}? Its transactions are removed; switch sync back on to re-fetch them.` : `Delete ${confirm.label}?`
+  const prompt = (confirm: NonNullable<typeof ui.state.settingsConfirm>) => confirm.kind === "clearData" ? "Clear all transaction and import data?" : confirm.kind === "clearAccount" ? `Clear transactions for ${confirm.label}?` : confirm.kind === "deleteAccount" ? `Remove ${confirm.label} and its transactions?` : confirm.kind === "budget" ? `Delete ${confirm.label}?` : confirm.kind === "desyncAccount" ? `Stop syncing ${confirm.label}? Its transactions are removed; switch sync back on to re-fetch them.` : `Delete ${confirm.label}?`
   return <Show when={ui.state.settingsConfirm}>{(confirm: () => NonNullable<typeof ui.state.settingsConfirm>) => <box position="absolute" zIndex={11} left="25%" top="40%" width="50%" border borderStyle="rounded" borderColor={theme.error} paddingLeft={1} paddingRight={1} backgroundColor={theme.base} flexDirection="column"><text fg={theme.error}><b>{prompt(confirm())}</b></text><text fg={theme.overlay1}>Press del to confirm · esc cancel</text></box>}</Show>
 }
 
@@ -206,7 +253,7 @@ export function SettingsTab(props: { focused: SectionId }) {
   const taxonomyFocused = () => props.focused === "set.categories" || props.focused === "set.tags"
   const databaseFocused = () => props.focused === "set.database"
   return <box width="100%" height="100%" flexDirection={layout() === "wide" ? "row" : "column"} gap={1} backgroundColor={theme.canvas}>
-    <box width={layout() === "wide" ? "55%" : "100%"} flexShrink={layout() === "wide" ? 0 : 1} height="100%" flexDirection="column" gap={1}><TaxonomyPane focused={taxonomyFocused()} narrow={layout() === "narrow"} height={layout() === "wide" ? undefined : "45%"} /><Show when={layout() !== "wide"}><RulesPane focused={props.focused === "set.rules"} /></Show><Show when={layout() === "narrow"}><FiltersPane focused={props.focused === "set.filters"} /></Show></box>
+    <box width={layout() === "wide" ? "55%" : "100%"} flexShrink={layout() === "wide" ? 0 : 1} height="100%" flexDirection="column" gap={1}><TaxonomyPane focused={taxonomyFocused()} narrow={layout() === "narrow"} height={layout() === "wide" ? undefined : "45%"} /><BudgetsPane focused={props.focused === "set.budgets"} /><Show when={layout() !== "wide"}><RulesPane focused={props.focused === "set.rules"} /></Show><Show when={layout() === "narrow"}><FiltersPane focused={props.focused === "set.filters"} /></Show></box>
     <box flexGrow={1} flexShrink={1} minWidth={0} height="100%" flexDirection="column" gap={1}><Show when={layout() === "wide"}><RulesPane focused={props.focused === "set.rules"} /></Show><Show when={layout() !== "narrow"}><FiltersPane focused={props.focused === "set.filters"} /></Show><UpPane focused={props.focused === "set.up"} /><DatabasePane focused={databaseFocused()} /><ImportHistory /></box>
     <EditorOverlay />
     <ConfirmOverlay />

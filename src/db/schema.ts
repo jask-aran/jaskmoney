@@ -1,4 +1,4 @@
-/** OpenTUI schema. v14 lets a category be excluded from spending. v13 linked local tags to provider tags. v12 added the category tree (parent, provider category id)
+/** OpenTUI schema. v15 adds budgets and the budget cycle. v14 let a category be excluded from spending. v13 linked local tags to provider tags. v12 added the category tree (parent, provider category id)
  * and who set each transaction's category. v11 added provider transaction details (categorisable flag,
  * method, card, foreign amount, round-up, cashback). v10 added a per-account
  * sync switch. v9 added synced sources (Up Bank): external identity,
@@ -6,7 +6,7 @@
  * version fallback with an additive migration registry. v7 was the initial
  * partial OpenTUI port. */
 
-export const SCHEMA_VERSION = 14
+export const SCHEMA_VERSION = 15
 
 /** Columns shared by the fresh schema and the v9 migration. Rows imported from
  * CSV keep source = 'csv' and NULL external fields. */
@@ -85,6 +85,26 @@ export const TRANSACTION_DETAIL_COLUMNS_LIST = [
 const ACCOUNT_SYNC_COLUMNS = ACCOUNT_SYNC_COLUMNS_LIST.join(",\n  ")
 const TRANSACTION_SYNC_COLUMNS = [...TRANSACTION_SYNC_COLUMNS_LIST, ...TRANSACTION_DETAIL_COLUMNS_LIST, CATEGORY_SOURCE_COLUMN].join(",\n  ")
 const CATEGORY_TREE_COLUMNS = [...CATEGORY_TREE_COLUMNS_LIST, CATEGORY_NOT_SPENDING_COLUMN].join(",\n  ")
+
+/** v15: budgets (one per scope: overall, an account, or a category) and the
+ * single budget cycle definition shared by all of them. */
+export const BUDGET_SQL = `
+CREATE TABLE IF NOT EXISTS budgets (
+  id         INTEGER PRIMARY KEY AUTOINCREMENT,
+  scope_kind TEXT NOT NULL CHECK(scope_kind IN ('overall','account','category')),
+  target_id  INTEGER,
+  amount     REAL NOT NULL CHECK(amount >= 0),
+  sort_order INTEGER NOT NULL DEFAULT 0
+);
+CREATE UNIQUE INDEX IF NOT EXISTS idx_budgets_scope ON budgets(scope_kind, COALESCE(target_id, 0));
+CREATE TABLE IF NOT EXISTS budget_cycle (
+  id          INTEGER PRIMARY KEY CHECK(id = 1),
+  unit        TEXT NOT NULL CHECK(unit IN ('week','fortnight','month')),
+  anchor      TEXT NOT NULL CHECK(anchor IN ('calendar','date','weekStartNearDate')),
+  anchor_date TEXT
+);
+INSERT OR IGNORE INTO budget_cycle (id, unit, anchor, anchor_date) VALUES (1, 'month', 'calendar', NULL);
+`
 
 export const SYNC_SQL = `
 CREATE UNIQUE INDEX IF NOT EXISTS idx_accounts_external ON accounts(source, external_id) WHERE external_id IS NOT NULL;
@@ -180,6 +200,7 @@ CREATE INDEX IF NOT EXISTS idx_rules_v2_sort ON rules_v2(sort_order);
 ${SYNC_SQL}
 CREATE UNIQUE INDEX IF NOT EXISTS idx_categories_ext ON categories(ext_id) WHERE ext_id IS NOT NULL;
 CREATE UNIQUE INDEX IF NOT EXISTS idx_tags_ext ON tags(ext_id) WHERE ext_id IS NOT NULL;
+${BUDGET_SQL}
 `
 
 export const DEFAULT_CATEGORIES: { name: string; color: string; sortOrder: number; isDefault: number }[] = [

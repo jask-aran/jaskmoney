@@ -3,6 +3,7 @@ import { mkdirSync } from "node:fs"
 import { dirname, join } from "node:path"
 import {
   ACCOUNT_SYNC_COLUMNS_LIST,
+  BUDGET_SQL,
   CATEGORY_SOURCE_COLUMN,
   CATEGORY_NOT_SPENDING_COLUMN,
   CATEGORY_TREE_COLUMNS_LIST,
@@ -16,6 +17,7 @@ import {
   TRANSACTION_SYNC_COLUMNS_LIST,
 } from "./schema"
 import type { Account, Category, ImportRecord, Rule, Tag, Transaction } from "../domain/types"
+import type { Budget, BudgetScope, CycleConfig } from "../domain/budget"
 
 export type Db = Database
 
@@ -80,6 +82,7 @@ const MIGRATIONS: Record<number, (db: Db) => void> = {
     db.exec(`ALTER TABLE categories ADD COLUMN ${CATEGORY_NOT_SPENDING_COLUMN}`)
     db.exec(`UPDATE categories SET not_spending = 1 WHERE name = 'Transfers' AND ext_id IS NULL`)
   },
+  15: (db) => db.exec(BUDGET_SQL),
 }
 
 export function ensureSchema(db: Db) {
@@ -573,4 +576,43 @@ export function loadTransactionDetail(db: Db, id: number): TransactionDetail | n
   let extTags: string[] = []
   try { extTags = JSON.parse(row.extTags || "[]") } catch { /* malformed provider data: show none */ }
   return { ...row, extTags, extCategorizable: row.extCategorizable == null ? null : row.extCategorizable === 1 }
+}
+
+export function loadBudgets(db: Db): Budget[] {
+  const rows = db.query(`SELECT id, scope_kind AS kind, target_id AS targetId, amount FROM budgets ORDER BY sort_order, id`)
+    .all() as Array<{ id: number; kind: "overall" | "account" | "category"; targetId: number | null; amount: number }>
+  return rows.map((r) => ({
+    id: r.id,
+    amount: r.amount,
+    scope: r.kind === "overall" ? { kind: "overall" } : r.kind === "account" ? { kind: "account", accountId: r.targetId! } : { kind: "category", categoryId: r.targetId! },
+  }))
+}
+
+/** Insert or replace the budget for a scope; returns its id. */
+export function saveBudget(db: Db, scope: BudgetScope, amount: number): number {
+  if (!Number.isFinite(amount) || amount < 0) throw new Error("budget amount must be a positive number")
+  const target = scope.kind === "overall" ? null : scope.kind === "account" ? scope.accountId : scope.categoryId
+  const existing = db.query(`SELECT id FROM budgets WHERE scope_kind = ? AND COALESCE(target_id, 0) = COALESCE(?, 0)`).get(scope.kind, target) as { id: number } | null
+  if (existing) {
+    db.query(`UPDATE budgets SET amount = ? WHERE id = ?`).run(amount, existing.id)
+    return existing.id
+  }
+  const order = (db.query(`SELECT COALESCE(MAX(sort_order), 0) + 1 AS n FROM budgets`).get() as { n: number }).n
+  return Number(db.query(`INSERT INTO budgets (scope_kind, target_id, amount, sort_order) VALUES (?, ?, ?, ?)`).run(scope.kind, target, amount, order).lastInsertRowid)
+}
+
+export function deleteBudget(db: Db, id: number): void {
+  db.query(`DELETE FROM budgets WHERE id = ?`).run(id)
+}
+
+export function loadBudgetCycle(db: Db): CycleConfig {
+  const row = db.query(`SELECT unit, anchor, anchor_date AS anchorDate FROM budget_cycle WHERE id = 1`).get() as CycleConfig | null
+  return row ?? { unit: "month", anchor: "calendar", anchorDate: null }
+}
+
+export function saveBudgetCycle(db: Db, config: CycleConfig): void {
+  if (config.anchor !== "calendar" && !/^\d{4}-\d{2}-\d{2}$/.test(config.anchorDate ?? "")) throw new Error("enter the cycle date as YYYY-MM-DD")
+  db.query(`INSERT INTO budget_cycle (id, unit, anchor, anchor_date) VALUES (1, ?, ?, ?)
+    ON CONFLICT(id) DO UPDATE SET unit = excluded.unit, anchor = excluded.anchor, anchor_date = excluded.anchor_date`)
+    .run(config.unit, config.anchor, config.anchor === "calendar" ? null : config.anchorDate)
 }
