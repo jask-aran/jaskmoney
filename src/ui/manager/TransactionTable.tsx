@@ -1,5 +1,6 @@
 import { For, Show, createMemo } from "solid-js"
 import { S } from "../primitives/S"
+import { fitSpans, spansWidth, type Span } from "../primitives/spans"
 import { categoryColor, isUncategorisedColor, theme } from "../../theme"
 import { data } from "../../state/dataStore"
 import { formatMoney } from "../../domain/dashboard"
@@ -9,8 +10,7 @@ import { fit } from "../text"
 import { categoryMark } from "../icons"
 
 /**
- * The transaction table shared by the Manager and the Dashboard's Recent
- * list: header, then the rows in view. Cursor, selection and range are
+ * The Transactions tab's table: header, then the rows in view. Cursor, selection and range are
  * independent states styled by rowAppearance. Pending (held) rows are
  * italic with a grey clock after the amount.
  */
@@ -67,19 +67,16 @@ function formatCategory(
   }
 }
 
-function formatTags(
-  names: string[],
-  colors: string[],
-  width: number,
-): { text: string; color: string } {
-  if (!names.length) return { text: "-".padEnd(width), color: theme.overlay1 }
-  const head = names[0]!
-  const extra = names.length > 1 ? `+${names.length - 1}` : ""
-  const raw = extra ? `${head},${extra}` : head
-  return {
-    text: fit(raw, width),
-    color: colors[0] || theme.teal,
-  }
+/** Every tag in its own colour, comma-joined and cut to `width` (Go app). */
+function formatTags(names: string[], colors: string[], width: number): Span[] {
+  if (!names.length) return [{ text: "-".padEnd(width), fg: theme.overlay1 }]
+  const spans = names.flatMap((name, i): Span[] => [
+    ...(i > 0 ? [{ text: ", ", fg: theme.overlay1 }] : []),
+    { text: name, fg: colors[i] || theme.teal },
+  ])
+  const fitted = fitSpans(spans, width)
+  const used = spansWidth(fitted)
+  return used < width ? [...fitted, { text: " ".repeat(width - used), fg: theme.overlay1 }] : fitted
 }
 
 /** The marker after a pending amount: a clock icon, or ◷ without icons. */
@@ -185,9 +182,7 @@ export function TransactionTable(props: {
                     <S fg={fg(theme.text)} bg={rowBg()} bold={strong()}>
                       {" ".repeat(columns.gap)}
                     </S>
-                    <S fg={fg(tags().color)} bg={rowBg()} bold={strong()}>
-                      {tags().text}
-                    </S>
+                    <For each={tags()}>{(span) => <S fg={fg(span.fg)} bg={rowBg()} bold={strong()}>{span.text}</S>}</For>
                   </Show>
                 </text>
               )

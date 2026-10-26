@@ -233,6 +233,8 @@ export function OverviewTab(props: { focused: SectionId }) {
   // subcategories). Focused, every line, scrolled to keep the cursor in view,
   // with the cursor's row highlighted (enter opens it in Transactions).
   const categoriesFocused = () => props.focused === "ov.categories"
+  // Spending in the range still to categorise (Go app's "Uncat N").
+  const uncategorised = createMemo(() => inPeriod().filter((t) => t.amount < 0 && !t.internal && !t.excluded && (t.categoryId == null || t.categoryName === "Uncategorised")).length)
   const categoryRows = createMemo(() => {
     const rows = categoriesHeight() - 2
     if (!categoriesFocused()) return fitCategoryLines(groups(), rows).map((line) => ({ line, cursor: false }))
@@ -242,7 +244,7 @@ export function OverviewTab(props: { focused: SectionId }) {
     return lines.slice(top, top + rows).map((line, i) => ({ line, cursor: top + i === cursor }))
   })
   const categoriesCard = () => (
-    <SectionCard title="Categories" titleSuffix={categoriesFocused() ? "· enter to open" : undefined} titleSuffixColor={theme.overlay1} width={sideWidth()} height={categoriesHeight()} focused={categoriesFocused()}>
+    <SectionCard title="Categories" titleSuffix={categoriesFocused() ? "· enter to open" : undefined} titleSuffixColor={theme.overlay1} bottomSpans={uncategorised() ? [{ text: `${uncategorised()} uncategorised`, fg: theme.warning }] : undefined} width={sideWidth()} height={categoriesHeight()} focused={categoriesFocused()}>
       <Show when={groups().length} fallback={<text fg={theme.overlay1}>No spending in this period</text>}>
         <For each={categoryRows()}>
           {({ line, cursor }) => {

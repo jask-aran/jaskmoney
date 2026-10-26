@@ -88,8 +88,13 @@ export function ManagerTab(props: { focused: SectionId }) {
     if (rows().length === 0) return undefined
     const start = ui.state.managerTop + 1
     const end = Math.min(ui.state.managerTop + ui.state.managerVisible, rows().length)
-    return `showing ${start}-${end} of ${rows().length}${
-      selCount() > 0 ? ` · ${selCount()} selected` : ""
+    // With a filter: how many the account has in all, and selected rows the
+    // filter hides (Go app).
+    const total = data.state.filterQuery ? data.accountScoped().length : rows().length
+    const shown = new Set(rows().map((r) => r.id))
+    const hidden = Object.keys(ui.state.selectedIds).filter((id) => !shown.has(Number(id))).length
+    return `showing ${start}-${end} of ${rows().length}${total !== rows().length ? ` (${total.toLocaleString("en-AU")} in all)` : ""}${
+      selCount() > 0 ? ` · ${selCount()} selected${hidden ? `, ${hidden} hidden` : ""}` : ""
     }${ui.state.rangeSelecting ? " · range" : ""} · sort ${data.state.sortColumn}${
       data.state.sortAscending ? "↑" : "↓"
     }`
