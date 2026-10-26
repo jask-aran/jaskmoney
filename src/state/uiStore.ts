@@ -1,3 +1,4 @@
+import type { DryRunReport } from "../domain/rules"
 import type { CycleAnchor, CycleUnit } from "../domain/budget"
 import type { MerchantSort } from "../domain/merchants"
 import { createStore } from "solid-js/store"
@@ -28,6 +29,8 @@ export type SectionId =
   | "set.budgets"
 
 export type ScopeId =
+  | "filterPicker"
+  | "dryRun"
   | "global"
   | "jump"
   | "filter"
@@ -78,6 +81,10 @@ export interface JumpTarget {
 }
 
 export interface UiState {
+  filterPicker: { query: string; cursor: number } | null
+  dryRunReport: DryRunReport | null
+  dryRunScroll: number
+  dryRunVisible: number
   activeTab: TabId
   focusedSection: SectionId
   jumpMode: boolean
@@ -288,6 +295,7 @@ function createUiStore() {
     detailNotesEditing: false,
     detailNotesDraft: "",
     detailNotesCaret: 0,
+    filterPicker: null, dryRunReport: null, dryRunScroll: 0, dryRunVisible: 10,
     settingsEditor: null,
     settingsEditId: null,
     settingsEditField: 0,
@@ -334,6 +342,7 @@ function createUiStore() {
       tagPickerOpen: false, tagPickerApplying: false, tagPickerPatch: {},
       rangeSelecting: false,
       settingsActive: false,
+      filterPicker: null, dryRunReport: null, dryRunScroll: 0, dryRunVisible: 10,
       settingsEditor: null,
       settingsConfirm: null,
       importStage: "none",
@@ -558,6 +567,8 @@ function createUiStore() {
   }
 
   function activeScope(): ScopeId {
+    if (state.filterPicker) return "filterPicker"
+    if (state.dryRunReport) return "dryRun"
     if (state.jumpMode) return "jump"
     if (state.catPickerOpen) return "catPicker"
     if (state.tagPickerOpen) return "tagPicker"

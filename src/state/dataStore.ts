@@ -46,6 +46,7 @@ import type { Budget, BudgetScope, CycleConfig } from "../domain/budget"
 import { buildImportPreview, commitImportPreview, matchingProfiles } from "../domain/profileImport"
 import { createUpClient, readUpToken } from "../up/client"
 import { syncUp as runUpSync } from "../up/sync"
+import { dryRunRules as evaluateRules } from "../domain/rules"
 import { pushTagChange } from "../up/tags"
 import {
   evalFilter,
@@ -450,8 +451,13 @@ function createDataStore() {
     saveSettingsConfig({ version: 2, icons: state.icons, savedFilters: state.savedFilters, importProfiles: state.importProfiles, ui: state.uiPrefs, ...patch })
   }
 
+  function recordFilterUsage(id: string) {
+    saveUiPrefs({ filterUsage: { ...state.uiPrefs.filterUsage, [id]: new Date().toISOString() } })
+  }
+
   function saveUiPrefs(patch: Partial<UiPrefs>) {
     const next = { ...state.uiPrefs, ...patch }
+    if (next.filterUsage) next.filterUsage = Object.fromEntries(Object.entries(next.filterUsage).filter(([id]) => state.savedFilters.some((filter) => filter.id === id)))
     if (isDeepStrictEqual(unwrap(next), unwrap(state.uiPrefs))) return
     persistConfig({ ui: next })
     setState({ uiPrefs: next, weekStart: next.weekStart ?? "monday" })
@@ -472,8 +478,10 @@ function createDataStore() {
 
   function deleteSavedFilter(id: string) {
     const next = state.savedFilters.filter((f) => f.id !== id)
-    persistConfig({ savedFilters: next })
-    setState({ savedFilters: next })
+    const filterUsage = state.uiPrefs.filterUsage ? Object.fromEntries(Object.entries(state.uiPrefs.filterUsage).filter(([filterId]) => filterId !== id)) : undefined
+    const prefs = { ...state.uiPrefs, ...(filterUsage ? { filterUsage } : {}) }
+    persistConfig({ savedFilters: next, ui: prefs })
+    setState({ savedFilters: next, uiPrefs: prefs })
   }
 
   function saveImportProfile(profile: ImportProfile) {
@@ -489,39 +497,24 @@ function createDataStore() {
     setState({ importProfiles: next })
   }
 
+  function dryRunRules(transactionIds?: number[]) {
+    const ids = transactionIds ? new Set(transactionIds) : null
+    return evaluateRules(ids ? state.transactions.filter((txn) => ids.has(txn.id)) : state.transactions, state.rules, state.savedFilters, state.categories, state.tags)
+  }
+
   function applyRules(transactionIds?: number[], dryRun = false): RuleRunResult {
     if (!db) throw new Error("db not open")
-    const scoped = transactionIds ? new Set(transactionIds) : null
-    const filters = new Map(state.savedFilters.map((f) => [f.id, parseFilterStrict(f.expr).node]))
-    const failures: string[] = []
-    let updatedTransactions = 0, categoryChanges = 0, tagChanges = 0
-    const enabled = state.rules.filter((r) => r.enabled)
-    for (const txn of state.transactions) {
-      if (scoped && !scoped.has(txn.id)) continue
-      let categoryId = txn.categoryId
-      const tagIds = new Set(txn.tagIds)
-      let changed = false
-      let categorySet = false
-      for (const rule of enabled) {
-        const expression = filters.get(rule.savedFilterId)
-        if (!expression) { if (!failures.includes(rule.savedFilterId)) failures.push(rule.savedFilterId); continue }
-        const categoryName = state.categories.find((c) => c.id === categoryId)?.name ?? "Uncategorised"
-        const tagNames = [...tagIds].map((id) => state.tags.find((t) => t.id === id)?.name).filter((x): x is string => !!x)
-        if (!evalFilter(expression, { ...txn, categoryName, tagNames })) continue
-        if (rule.setCategoryId != null && rule.setCategoryId !== categoryId) { categoryId = rule.setCategoryId; categoryChanges++; changed = true; categorySet = true }
-        for (const tagId of rule.addTagIds) if (!tagIds.has(tagId)) { tagIds.add(tagId); tagChanges++; changed = true }
-      }
-      if (!changed) continue
-      updatedTransactions++
-      if (!dryRun) {
+    const report = dryRunRules(transactionIds)
+    if (!dryRun) {
+      for (const change of report.changes) {
         // 'rule' keeps sync from replacing a rule's category with the provider's.
-        if (categorySet) db.query(`UPDATE transactions SET category_id = ?, category_source = 'rule' WHERE id = ?`).run(categoryId, txn.id)
+        if (change.categorySet) db.query(`UPDATE transactions SET category_id = ?, category_source = 'rule' WHERE id = ?`).run(change.categoryId, change.id)
         const insert = db.query(`INSERT OR IGNORE INTO transaction_tags (transaction_id, tag_id) VALUES (?, ?)`)
-        for (const tagId of tagIds) insert.run(txn.id, tagId)
+        for (const tagId of change.tagIds) insert.run(change.id, tagId)
       }
+      refresh()
     }
-    if (!dryRun) refresh()
-    return { updatedTransactions, categoryChanges, tagChanges, failedRules: failures }
+    return { updatedTransactions: report.updatedTransactions, categoryChanges: report.categoryChanges, tagChanges: report.tagChanges, failedRules: report.failedRules }
   }
 
   function csvFiles(directory: string): string[] {
@@ -656,6 +649,8 @@ function createDataStore() {
     saveImportProfile,
     deleteImportProfile,
     applyRules,
+    dryRunRules,
+    recordFilterUsage,
     csvFiles,
     importDirectory,
     profileMatches,

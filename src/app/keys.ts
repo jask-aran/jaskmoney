@@ -31,6 +31,8 @@ import { drillFilter } from "../domain/drill"
 import type { CategoryLine } from "../domain/dashboard"
 import { allCategoryLines, overviewRange } from "../state/overviewRange"
 import { tagPickerItems, tagPickerState } from "../state/tagPicker"
+import { savedFilterOptions } from "../state/savedFilters"
+import { nextSavedFilterId } from "../state/settingsConfig"
 import { theme } from "../theme"
 
 
@@ -70,6 +72,39 @@ export function handleKey(ui: UiStore, key: KeyEvent, data?: DataStore): boolean
   // Sync from anywhere, including over overlays: it changes no UI state.
   if (key.ctrl && name === "r") {
     if (data) void runSync(ui, data, { manual: true })
+    return true
+  }
+
+  if (ui.state.filterPicker) {
+    const picker = ui.state.filterPicker
+    const items = savedFilterOptions(data?.state.savedFilters ?? [], data?.state.uiPrefs.filterUsage, picker.query)
+    if (name === "escape") { ui.setState({ filterPicker: null }); return true }
+    if (name === "down" || (key.ctrl && name === "n")) { ui.setState({ filterPicker: { ...picker, cursor: Math.min(Math.max(0, items.length - 1), picker.cursor + 1) } }); return true }
+    if (name === "up" || (key.ctrl && name === "p")) { ui.setState({ filterPicker: { ...picker, cursor: Math.max(0, picker.cursor - 1) } }); return true }
+    if (name === "return" || name === "enter") {
+      const filter = items[picker.cursor]
+      if (filter && data) {
+        const result = data.commitFilter(filter.expr)
+        if (!result.ok) { ui.setStatus(result.err, true); return true }
+        ui.jumpManagerCursor(0, data.scopedTransactions().length)
+        ui.setState({ merchantCursor: 0, merchantTop: 0, filterPicker: null })
+        try { data.recordFilterUsage(filter.id); ui.setStatus(`Filter: ${filter.name}`) }
+        catch (error) { ui.setStatus(error instanceof Error ? error.message : String(error), true) }
+      }
+      return true
+    }
+    if (name === "backspace") { ui.setState({ filterPicker: { query: picker.query.slice(0, -1), cursor: 0 } }); return true }
+    if (isPrintable(key)) ui.setState({ filterPicker: { query: picker.query + seq, cursor: 0 } })
+    return true
+  }
+
+  if (ui.state.dryRunReport) {
+    if (name === "escape") ui.setState({ dryRunReport: null, dryRunScroll: 0 })
+    if (name === "j" || name === "down") {
+      const count = ui.state.dryRunReport?.rules.reduce((count, result) => count + 4 + result.samples.length, 0) ?? 0
+      ui.setState({ dryRunScroll: Math.min(Math.max(0, count - ui.state.dryRunVisible), ui.state.dryRunScroll + 1) })
+    }
+    if (name === "k" || name === "up") ui.setState({ dryRunScroll: Math.max(0, ui.state.dryRunScroll - 1) })
     return true
   }
 
@@ -668,7 +703,7 @@ export function handleKey(ui: UiStore, key: KeyEvent, data?: DataStore): boolean
     if (((seq === "J") || (name === "j" && key.shift)) && rule) { data?.reorderSettingsRule(rule.id, cursor + 1); ui.setState({ ruleCursor: Math.min(rules.length - 1, cursor + 1) }); return true }
     if (((seq === "K") || (name === "k" && key.shift)) && rule) { data?.reorderSettingsRule(rule.id, cursor - 1); ui.setState({ ruleCursor: Math.max(0, cursor - 1) }); return true }
     if ((seq === "A" || (name === "a" && key.shift))) { const r = data?.applyRules(); ui.setStatus(r ? `Rules applied · ${r.updatedTransactions} transactions` : "No database"); return true }
-    if ((seq === "D" || (name === "d" && key.shift))) { const r = data?.applyRules(undefined, true); ui.setStatus(r ? `Dry run · ${r.updatedTransactions} transactions` : "No database"); return true }
+    if ((seq === "D" || (name === "d" && key.shift))) { const r = data?.dryRunRules(); if (r) ui.setState({ dryRunReport: r, dryRunScroll: 0 }); else ui.setStatus("No database"); return true }
     if (name === "j" || name === "down") { ui.setState({ ruleCursor: Math.min(rules.length - 1, cursor + 1) }); return true }
     if (name === "k" || name === "up") { ui.setState({ ruleCursor: Math.max(0, cursor - 1) }); return true }
     if (name === "a") { ui.openSettingsEditor("rule", null, { ...ui.state.settingsDraft, name: "", savedFilterId: data?.state.savedFilters[0]?.id ?? "", setCategoryId: null, addTagIds: [] }); return true }
@@ -767,6 +802,8 @@ export function handleKey(ui: UiStore, key: KeyEvent, data?: DataStore): boolean
   // ── Manager txns ────────────────────────────────────────────────────
   // ── Transactions: grouped by merchant ───────────────────────────────
   if (scope === "manager.merchants" && data) {
+    if (savedFilterKeys(ui, data, key)) return true
+
     // The same filtered, scoped rows as the table, summarised per merchant.
     const groups = sortMerchantGroups(groupByMerchant(data.scopedTransactions()), ui.state.merchantSort, ui.state.merchantReverse)
     const group = groups[ui.state.merchantCursor]
@@ -806,6 +843,8 @@ export function handleKey(ui: UiStore, key: KeyEvent, data?: DataStore): boolean
   }
 
   if (scope === "manager.txns") {
+    if (savedFilterKeys(ui, data, key)) return true
+
     // Step through the account sidebar's entries (the narrow layout hides it).
     if (name === "a" && !key.shift && data) { stepAccount(ui, data); return true }
     if (name === "m") { ui.setState({ txnView: "merchants", merchantCursor: 0, merchantTop: 0 }); ui.setStatus("Grouped by merchant · m for rows"); return true }
@@ -1055,6 +1094,21 @@ export function handleKey(ui: UiStore, key: KeyEvent, data?: DataStore): boolean
 }
 
 
+/** ctrl+s saves the current filter (the editor opens on its name); ctrl+l
+ * opens the saved filters to apply one (Go app). Both Transactions views. */
+function savedFilterKeys(ui: UiStore, data: DataStore | undefined, key: KeyEvent): boolean {
+  if (!key.ctrl) return false
+  if (key.name === "s") {
+    const expr = data?.state.filterQuery ?? ""
+    if (!expr) { ui.setStatus("No filter to save"); return true }
+    ui.openSettingsEditor("filter", null, { ...ui.state.settingsDraft, id: nextSavedFilterId(data?.state.savedFilters ?? []), name: "", expr })
+    ui.setState({ settingsEditField: 1, settingsCaret: 0 })
+    return true
+  }
+  if (key.name === "l") { ui.setState({ filterPicker: { query: "", cursor: 0 } }); return true }
+  return false
+}
+
 /** Open Transactions on the Overview range's spending, narrowed to one
  * category line when given, remembering where to come back to. */
 function drillDown(ui: UiStore, data: DataStore, line?: CategoryLine) {
@@ -1078,6 +1132,10 @@ function drillDown(ui: UiStore, data: DataStore, line?: CategoryLine) {
 
 export function footerHints(scope: ScopeId, state?: Pick<UiState, "focusedSection" | "drillReturn">): { key: string; desc: string }[] {
   switch (scope) {
+    case "filterPicker":
+      return [{ key: "↑/↓", desc: "move" }, { key: "enter", desc: "apply" }, { key: "esc", desc: "close" }, { key: "type", desc: "filter" }]
+    case "dryRun":
+      return [{ key: "j/k", desc: "scroll" }, { key: "esc", desc: "close" }]
     case "overview.custom":
       return [
         { key: "tab", desc: "field" },
@@ -1141,6 +1199,8 @@ export function footerHints(scope: ScopeId, state?: Pick<UiState, "focusedSectio
       return [{ key: "type", desc: "notes" }, { key: "enter", desc: "save" }, { key: "esc", desc: "cancel" }]
     case "manager.merchants":
       return [
+        { key: "ctrl+s", desc: "save filter" },
+        { key: "ctrl+l", desc: "saved filters" },
         { key: "enter", desc: "its transactions" },
         { key: "j/k", desc: "move" },
         { key: "c", desc: "category" },
@@ -1152,6 +1212,8 @@ export function footerHints(scope: ScopeId, state?: Pick<UiState, "focusedSectio
       ]
     case "manager.txns":
       return [
+        { key: "ctrl+s", desc: "save filter" },
+        { key: "ctrl+l", desc: "saved filters" },
         { key: "enter", desc: "detail" },
         { key: "j/k", desc: "move" },
         { key: "m", desc: "merchants" },

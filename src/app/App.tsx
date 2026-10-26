@@ -12,7 +12,8 @@ import { CatPicker } from "../ui/primitives/CatPicker"
 import { TagPicker } from "../ui/primitives/TagPicker"
 import { OverviewTab } from "../ui/overview/OverviewTab"
 import { ManagerTab } from "../ui/manager/ManagerTab"
-import { SettingsTab } from "../ui/settings/SettingsTab"
+import { SavedFilterPicker } from "../ui/manager/SavedFilterPicker"
+import { SettingsTab, EditorOverlay, DryRunOverlay } from "../ui/settings/SettingsTab"
 import { theme } from "../theme"
 import { selectionLabel } from "../domain/accountTree"
 import { SYNC_INTERVAL_MS, runSync, syncAgo } from "./sync"
@@ -128,6 +129,9 @@ export function App() {
       <JumpOverlay active={ui.state.jumpMode} tab={ui.state.activeTab} />
       <CatPicker />
       <TagPicker />
+      <EditorOverlay />
+      <SavedFilterPicker />
+      <DryRunOverlay />
     </box>
   )
 }

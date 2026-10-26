@@ -9,7 +9,7 @@ import { S } from "./S"
 /**
  * A filterable list in a Modal: the filter line, then group headings and
  * items, scrolled so the cursor (an index into the items, headings skipped)
- * stays in view. `mark` adds a checkbox ("[x]", "[-]", "[ ]") per item for
+ * stays in view. An item's `detail` follows its label, muted. `mark` adds a checkbox ("[x]", "[-]", "[ ]") per item for
  * multi-choice lists.
  */
 export function ListPicker(props: {
@@ -57,7 +57,10 @@ export function ListPicker(props: {
               <Show when={props.iconFor?.(item.value)}>
                 {(icon: () => string) => <S fg={item.color ?? theme.text} bg={bg()}>{`${icon()} `}</S>}
               </Show>
-              <S fg={item.color ?? theme.text} bg={bg()} bold={selected()}>{fit(item.label, width() - 12)}</S>
+              <S fg={item.color ?? theme.text} bg={bg()} bold={selected()}>{item.detail ? item.label : fit(item.label, width() - 12)}</S>
+              <Show when={item.detail}>
+                <S fg={theme.overlay1} bg={bg()}>{fit(`  ${item.detail}`, Math.max(0, width() - 12 - item.label.length))}</S>
+              </Show>
             </text>
           )
         }}

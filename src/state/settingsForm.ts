@@ -2,7 +2,9 @@ import { describeCycle, type CycleAnchor, type CycleConfig, type CycleUnit } fro
 import { budgetScopeOptions } from "../domain/budgetScopes"
 import { fuzzyScore } from "../domain/fuzzy"
 import { categoryPickerRows } from "../domain/categoryOptions"
-import type { Account, Category, SavedFilter, Tag } from "../domain/types"
+import { evalFilter, parseFilterStrict } from "../domain/filter"
+import { filterRowNames } from "../domain/rules"
+import type { Account, Category, SavedFilter, Tag, Transaction } from "../domain/types"
 import type { SettingsEditorKind, UiState } from "./uiStore"
 
 /**
@@ -33,13 +35,14 @@ export interface FormField {
 /** A row of a picker list: a group heading or a choosable item. */
 export type PickerItem =
   | { kind: "heading"; label: string }
-  | { kind: "item"; label: string; value: string | number | null; color?: string }
+  | { kind: "item"; label: string; value: string | number | null; color?: string; detail?: string }
 
 export interface FormContext {
   accounts: Account[]
   categories: Category[]
   tags: Tag[]
   savedFilters: SavedFilter[]
+  transactions: Transaction[]
 }
 
 export const CYCLE_UNITS: readonly CycleUnit[] = ["week", "fortnight", "month"]
@@ -126,7 +129,7 @@ function cycleFields(draft: Draft): FormField[] {
   ]
 }
 
-export function editorFields(kind: SettingsEditorKind, draft: Draft, ctx: FormContext): FormField[] {
+export function editorFields(kind: SettingsEditorKind, draft: Draft, ctx: Omit<FormContext, "transactions">): FormField[] {
   const categoryName = (id: number | null, none: string) => ctx.categories.find((c) => c.id === id)?.name ?? none
   switch (kind) {
     case "category":
@@ -171,23 +174,45 @@ export function editorFields(kind: SettingsEditorKind, draft: Draft, ctx: FormCo
  * picker's "enter to choose"), the note and the hint line. Fields whose value
  * is typed get room to grow, so the dialog does not resize on every key.
  */
-export function editorWidth(fields: FormField[], note: string | null, hints: string): number {
+export function editorWidth(fields: FormField[], note: FormNote | null, hints: string): number {
   const label = Math.max(...fields.map((f) => f.label.length)) + 2
   const line = (f: FormField) =>
     2 + label + Math.max(f.display.length, f.kind === "text" ? 24 : 0) + (f.kind === "picker" ? 17 : f.kind === "text" ? 1 : 4)
-  return Math.max(...fields.map(line), (note ?? "").length, hints.length)
+  return Math.max(...fields.map(line), (note?.text ?? "").length + (note?.dot ? 2 : 0), hints.length)
 }
 
-/** A line under the fields that explains the result, when there is one. */
-export function editorNote(kind: SettingsEditorKind, draft: Draft): string | null {
+/** A line under an editor's fields: a muted explanation, or (filters and
+ * rules) a coloured status with a dot. */
+export interface FormNote {
+  text: string
+  tone: "muted" | "ok" | "error"
+  dot?: boolean
+}
+
+/** The note for an editor, when it has one: a filter's or rule's live
+ * status with its match count, or the budget cycle described. */
+export function editorNote(kind: SettingsEditorKind, draft: Draft, ctx: FormContext): FormNote | null {
+  if (kind === "filter" || kind === "rule") {
+    const filterId = kind === "rule" ? draft.savedFilterId : ""
+    if (kind === "rule" && !filterId) return { text: "pending", tone: "muted", dot: true }
+    const filter = kind === "rule" ? ctx.savedFilters.find((filter) => filter.id === filterId) : null
+    if (kind === "rule" && !filter) return { text: `missing: ${filterId}`, tone: "error", dot: true }
+    const expr = kind === "filter" ? draft.expr : filter?.expr ?? ""
+    if (!expr.trim() && kind === "filter") return { text: "empty", tone: "muted", dot: true }
+    const { node, error } = parseFilterStrict(expr)
+    if (error || !node) return { text: kind === "filter" ? `invalid: ${error ?? "empty expression"}` : "invalid", tone: "error", dot: true }
+    const names = filterRowNames(ctx.categories, ctx.tags)
+    const count = ctx.transactions.filter((txn) => evalFilter(node, names.row(txn, txn.categoryId, txn.tagIds))).length
+    return { text: `ok · ${count} txns`, tone: "ok", dot: true }
+  }
   if (kind !== "budget" && kind !== "cycle") return null
   const cycle = cycleFromDraft(draft)
   const text = typeof cycle === "string" ? cycle : describeCycle(cycle)
-  return kind === "budget" ? `${text} · one cycle for every budget` : text
+  return { text: kind === "budget" ? `${text} · one cycle for every budget` : text, tone: "muted" }
 }
 
 /** The rows a picker field offers, filtered by `query` (case-insensitive). */
-export function pickerItems(kind: SettingsEditorKind, key: keyof Draft, ctx: FormContext, query: string): PickerItem[] {
+export function pickerItems(kind: SettingsEditorKind, key: keyof Draft, ctx: Omit<FormContext, "transactions">, query: string): PickerItem[] {
   const q = query.trim().toLowerCase()
   const match = (...texts: string[]) => !q || texts.some((t) => fuzzyScore(q, t) !== null)
   if (key === "scopeKey") {

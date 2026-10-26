@@ -7,6 +7,7 @@ import { TextInput } from "../primitives/TextInput"
 import type { SectionId, SettingsList } from "../../state/uiStore"
 import { ui } from "../../state/uiStore"
 import { data } from "../../state/dataStore"
+import { parseFilterStrict } from "../../domain/filter"
 import { theme } from "../../theme"
 import { fit } from "../text"
 import { formatMoney } from "../../domain/dashboard"
@@ -110,7 +111,10 @@ function RulesPane(props: { focused: boolean; height?: number | "auto" | `${numb
         const bg = () => selected() ? theme.surface0 : theme.canvas
         const cat = () => data.state.categories.find((c) => c.id === rule.setCategoryId)?.name
         const tags = () => rule.addTagIds.map((id) => data.state.tags.find((t) => t.id === id)?.name).filter(Boolean).join(", ")
-        return <text bg={bg()}><S fg={selected() ? theme.focus : theme.canvas} bg={bg()} bold>{selected() ? "> " : "  "}</S><S fg={rule.enabled ? theme.success : theme.overlay1} bg={bg()}>{rule.enabled ? "✓ " : "✗ "}</S><S fg={theme.text} bg={bg()}>{truncate(rule.name, 22)}</S><S fg={theme.overlay1} bg={bg()}>{` → ${cat() ?? "—"}${tags() ? ` +${tags()}` : ""}`}</S></text>
+        const filter = () => data.state.savedFilters.find((filter) => filter.id === rule.savedFilterId)
+        const healthy = createMemo(() => { const parsed = parseFilterStrict(filter()?.expr ?? ""); return !!parsed.node && !parsed.error })
+        const appearance = () => ({ name: rule.enabled ? theme.text : theme.overlay1, filter: !rule.enabled ? theme.overlay1 : healthy() ? theme.subtext0 : theme.error, detail: !rule.enabled ? theme.overlay1 : healthy() ? theme.overlay1 : theme.error })
+        return <box width="100%" height={1} overflow="hidden"><text bg={bg()} wrapMode="none"><S fg={!rule.enabled ? theme.overlay1 : selected() ? theme.focus : theme.canvas} bg={bg()} bold>{selected() ? "> " : "  "}</S><S fg={appearance().name} bg={bg()}>{`${i() + 1}. ${rule.name}  `}</S><S fg={appearance().filter} bg={bg()}>{`filter:${rule.savedFilterId}`}</S><S fg={appearance().detail} bg={bg()}>{filter() ? ` (${filter()!.name})` : " (missing)"}</S><S fg={theme.overlay1} bg={bg()}>{` → ${cat() ?? "—"}${tags() ? ` +${tags()}` : ""}`}</S></text></box>
       }}</For>
     </Show>
   </SectionCard>
@@ -202,8 +206,8 @@ function ImportOverlay() {
 
 function FactoryResetOverlay() { return <Show when={ui.state.factoryResetOpen}><Modal title="Factory-reset database" tone="error" hints="enter erase · esc cancel"><text fg={theme.error}>Removes the SQLite database and its transaction, account, taxonomy, and rule data.</text><text fg={theme.overlay1}>Saved filters and import profiles remain in OpenTUI config.</text><text fg={theme.text}>Type RESET: <TextInput field={{ value: ui.state.factoryResetDraft, caret: ui.state.factoryResetCaret }} focused /></text></Modal></Show> }
 
-function EditorOverlay() {
-  const ctx = () => ({ accounts: data.state.accounts, categories: data.state.categories, tags: data.state.tags, savedFilters: data.state.savedFilters })
+export function EditorOverlay() {
+  const ctx = () => ({ accounts: data.state.accounts, categories: data.state.categories, tags: data.state.tags, savedFilters: data.state.savedFilters, transactions: data.state.transactions })
   return (
     <Show when={ui.state.settingsEditor}>
       {(kind: () => NonNullable<typeof ui.state.settingsEditor>) => {
@@ -213,7 +217,9 @@ function EditorOverlay() {
         // Sized to its content (border and padding: 4), and steady while
         // moving between fields: every kind's hint line counts.
         const hints = () => fields().map((f) => EDITOR_HINTS[f.kind]).reduce((a, b) => (b.length > a.length ? b : a), "")
-        const width = () => 4 + editorWidth(fields(), editorNote(kind(), ui.state.settingsDraft), hints())
+        // Solid tracks only the expression/filter and evaluation data, not the name or caret.
+        const note = createMemo(() => editorNote(kind(), ui.state.settingsDraft, ctx()))
+        const width = () => 4 + editorWidth(fields(), note(), hints())
         return (
           <>
             <Modal
@@ -221,7 +227,7 @@ function EditorOverlay() {
               width={width()}
               hints={EDITOR_HINTS[field().kind]}
             >
-              <Form fields={fields()} cursor={cursor()} caret={ui.state.settingsCaret} note={editorNote(kind(), ui.state.settingsDraft)} />
+              <Form fields={fields()} cursor={cursor()} caret={ui.state.settingsCaret} note={note()} />
             </Modal>
             <Show when={ui.state.formPicker}>
               {(picker: () => NonNullable<typeof ui.state.formPicker>) => (
@@ -269,9 +275,41 @@ export function SettingsTab(props: { focused: SectionId }) {
   return <box width="100%" height="100%" flexDirection={layout() === "wide" ? "row" : "column"} gap={1} backgroundColor={theme.canvas}>
     <box width={layout() === "wide" ? "55%" : "100%"} flexShrink={layout() === "wide" ? 0 : 1} height="100%" flexDirection="column" gap={1}><TaxonomyPane focused={taxonomyFocused()} narrow={layout() === "narrow"} height={layout() === "wide" ? undefined : "45%"} /><BudgetsPane focused={props.focused === "set.budgets"} /><Show when={layout() !== "wide"}><RulesPane focused={props.focused === "set.rules"} /></Show><Show when={layout() === "narrow"}><FiltersPane focused={props.focused === "set.filters"} /></Show></box>
     <box flexGrow={1} flexShrink={1} minWidth={0} height="100%" flexDirection="column" gap={1}><Show when={layout() === "wide"}><RulesPane focused={props.focused === "set.rules"} /></Show><Show when={layout() !== "narrow"}><FiltersPane focused={props.focused === "set.filters"} /></Show><UpPane focused={props.focused === "set.up"} /><DatabasePane focused={databaseFocused()} /><ImportHistory /></box>
-    <EditorOverlay />
     <ConfirmOverlay />
     <ImportOverlay />
     <FactoryResetOverlay />
   </box>
+}
+
+export function DryRunOverlay() {
+  const dims = useTerminalDimensions()
+  const lines = createMemo(() => {
+    const report = ui.state.dryRunReport
+    if (!report) return []
+    const rows: { text: string; error?: boolean }[] = []
+    for (const [index, result] of report.rules.entries()) {
+      rows.push({ text: `${index + 1}. ${result.rule.name}` }, { text: `  filter:${result.rule.savedFilterId}${result.error ? ` · ${result.error}` : ""}`, error: !!result.error }, { text: `  matched ${result.matched} · category ${result.categoryChanges} · tags ${result.tagChanges}` })
+      for (const sample of result.samples) {
+        const category = sample.categoryId == null ? "" : ` → ${data.state.categories.find((category) => category.id === sample.categoryId)?.name ?? sample.categoryId}`
+        const tags = sample.addedTagIds.map((id) => ` +${data.state.tags.find((tag) => tag.id === id)?.name ?? id}`).join("")
+        const prefix = `    ${sample.transaction.dateISO} `
+        const suffix = ` ${formatMoney(sample.transaction.amount)}${category}${tags}`
+        const width = Math.min(96, dims().width - 4) - 4
+        const description = fit(sample.transaction.description, Math.max(1, Math.min(32, width - Bun.stringWidth(prefix + suffix))))
+        rows.push({ text: `${prefix}${description}${suffix}` })
+      }
+      rows.push({ text: "" })
+    }
+    if (!report.rules.length) rows.push({ text: "No enabled rules to evaluate." })
+    return rows
+  })
+  const visible = () => Math.max(1, dims().height - 10)
+  createEffect(() => { if (ui.state.dryRunReport && ui.state.dryRunVisible !== visible()) ui.setState({ dryRunVisible: visible() }) })
+  const top = () => Math.min(ui.state.dryRunScroll, Math.max(0, lines().length - visible()))
+  return <Show when={ui.state.dryRunReport}>{(report: () => NonNullable<typeof ui.state.dryRunReport>) => <Modal title="Dry run" width={96} hints="j/k scroll · esc close">
+    <text fg={theme.subtext0} wrapMode="none">{`All ${report().transactionCount} transactions`}</text>
+    <text fg={theme.text} wrapMode="none">{`${report().updatedTransactions} transactions would change · ${report().categoryChanges} categories · ${report().tagChanges} tags${report().failedRules.length ? ` · failed rules: ${report().failedRules.join(", ")}` : ""}`}</text>
+    <text> </text>
+    <box flexDirection="column" height={Math.min(visible(), lines().length)} overflow="hidden"><For each={lines().slice(top(), top() + visible())}>{(line) => <text fg={line.error ? theme.error : theme.text} wrapMode="none">{line.text || " "}</text>}</For></box>
+  </Modal>}</Show>
 }

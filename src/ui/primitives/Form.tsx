@@ -1,6 +1,6 @@
 import { For, Show } from "solid-js"
 import { theme } from "../../theme"
-import type { FormField } from "../../state/settingsForm"
+import type { FormField, FormNote } from "../../state/settingsForm"
 import { S } from "./S"
 import { TextInput } from "./TextInput"
 
@@ -9,7 +9,7 @@ import { TextInput } from "./TextInput"
  * to one column, then the value. A focused text field shows a caret; a
  * focused choice or toggle is wrapped in ‹ ›; a picker says enter opens it.
  */
-export function Form(props: { fields: FormField[]; cursor: number; caret: number; note?: string | null }) {
+export function Form(props: { fields: FormField[]; cursor: number; caret: number; note?: FormNote | null }) {
   const labelWidth = () => Math.max(...props.fields.map((f) => f.label.length)) + 2
   return (
     <>
@@ -38,7 +38,7 @@ export function Form(props: { fields: FormField[]; cursor: number; caret: number
       </For>
       <Show when={props.note}>
         <text> </text>
-        <text fg={theme.overlay1} wrapMode="none">{props.note}</text>
+        <text fg={props.note?.tone === "ok" ? theme.success : props.note?.tone === "error" ? theme.error : theme.overlay1} wrapMode="none">{`${props.note?.dot ? "● " : ""}${props.note?.text ?? ""}`}</text>
       </Show>
     </>
   )

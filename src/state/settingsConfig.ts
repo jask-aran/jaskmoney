@@ -6,6 +6,7 @@ import { customRange, LOOKBACKS, PERIODS, type TimeframeState } from "../domain/
 import type { ImportProfile, SavedFilter } from "../domain/types"
 
 export interface UiPrefs {
+  filterUsage?: Record<string, string>
   timeframe?: Pick<TimeframeState, "family" | "lookback" | "period" | "custom">
   accountSelection?: AccountSelection
   chartViews?: [number, number]
@@ -79,6 +80,9 @@ export function validateImportProfile(profile: ImportProfile): ImportProfile {
 function parseUiPrefs(raw: unknown): UiPrefs | undefined {
   if (!raw || typeof raw !== "object" || Array.isArray(raw)) return undefined
   const ui: UiPrefs = {}
+  if ("filterUsage" in raw && raw.filterUsage && typeof raw.filterUsage === "object" && !Array.isArray(raw.filterUsage)) {
+    ui.filterUsage = Object.fromEntries(Object.entries(raw.filterUsage).filter((entry): entry is [string, string] => typeof entry[1] === "string" && Number.isFinite(Date.parse(entry[1]))))
+  }
   if ("weekStart" in raw && (raw.weekStart === "monday" || raw.weekStart === "sunday")) ui.weekStart = raw.weekStart
   if ("accountSelection" in raw) {
     const sel = raw.accountSelection
@@ -137,6 +141,7 @@ export function saveSettingsConfig(config: SettingsConfig, path = defaultSetting
     icons: config.icons !== false,
     ui: parseUiPrefs(config.ui),
   }
+  if (normalized.ui?.filterUsage) normalized.ui.filterUsage = Object.fromEntries(Object.entries(normalized.ui.filterUsage).filter(([id]) => normalized.savedFilters.some((filter) => filter.id === id)))
   const temp = `${path}.tmp-${process.pid}-${Date.now()}`
   try {
     writeFileSync(temp, `${JSON.stringify(normalized, null, 2)}\n`, { mode: 0o600 })
