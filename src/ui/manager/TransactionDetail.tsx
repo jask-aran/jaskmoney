@@ -8,6 +8,7 @@ import { ui } from "../../state/uiStore"
 import { data } from "../../state/dataStore"
 import { categoryColor, theme } from "../../theme"
 import { formatMoney } from "../../domain/dashboard"
+import { amountColor } from "../colors"
 
 const LABEL = 12
 
@@ -32,7 +33,7 @@ export function TransactionDetail() {
   return (
     <Show when={row() && detail()}>
       <Modal title={row()!.description} tone="focus" width={Math.floor(dims().width * 0.76)}>
-        {field("Amount", <S fg={row()!.amount < 0 ? theme.error : theme.success} bold>{formatMoney(row()!.amount)}</S>)}
+        {field("Amount", <S fg={amountColor(row()!.amount)} bold>{formatMoney(row()!.amount)}</S>)}
         {field("Date", <S fg={theme.text}>{formatWhen(detail()!.createdAt) ?? row()!.dateISO}</S>)}
         <Show when={detail()!.status}>
           {field(

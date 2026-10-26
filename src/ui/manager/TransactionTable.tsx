@@ -8,6 +8,7 @@ import { rowAppearance } from "../../domain/rowStyle"
 import type { Transaction } from "../../domain/types"
 import { fit } from "../text"
 import { categoryMark } from "../icons"
+import { amountColor } from "../colors"
 
 /**
  * The Transactions tab's table: header, then the rows in view. Cursor, selection and range are
@@ -149,7 +150,7 @@ export function TransactionTable(props: {
                   <S fg={fg(theme.text)} bg={rowBg()} bold={strong()}>
                     {" ".repeat(columns.gap)}
                   </S>
-                  <S fg={fg(r.amount < 0 ? theme.error : theme.success)} bg={rowBg()} bold={strong()} italic={held()}>
+                  <S fg={fg(amountColor(r.amount))} bg={rowBg()} bold={strong()} italic={held()}>
                     {formatMoney(r.amount).padEnd(columns.amount - 2)}
                   </S>
                   <S fg={fg(theme.overlay1)} bg={rowBg()}>

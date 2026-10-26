@@ -5,6 +5,7 @@ import { formatMoney } from "../../domain/dashboard"
 import { rowAppearance } from "../../domain/rowStyle"
 import type { MerchantGroup, MerchantSort } from "../../domain/merchants"
 import { fit, shortDate } from "../text"
+import { amountColor } from "../colors"
 import { appToday } from "../../domain/days"
 import { categoryMark } from "../icons"
 
@@ -55,7 +56,6 @@ export function MerchantTable(props: {
               const look = () => rowAppearance(false, false, isCursor())
               const bg = () => look().bg ?? theme.canvas
               const fg = (color: string) => look().fg ?? color
-              const amountColor = (n: number) => (n < 0 ? theme.error : theme.success)
               const muted = () => !g.categoryName || g.categoryName === "Uncategorised"
               const catColor = () => categoryColor(muted() ? null : g.categoryColor)
               return (

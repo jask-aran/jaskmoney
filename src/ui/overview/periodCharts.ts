@@ -7,7 +7,8 @@ import type { Account, Transaction } from "../../domain/types"
 import { MONTHS, addDays, dayOfWeek, type WeekStart } from "../../domain/days"
 import { shortDate, shortMoney } from "../text"
 import { barTopRow, columnBars } from "../charts/bars"
-import { muted } from "../primitives/spans"
+import { muted, type Span } from "../primitives/spans"
+import { changeColor, spendChangeColor } from "../colors"
 import type { ChartModel } from "../charts/ChartBody"
 import { annotate, type ChartLabel } from "../charts/annotate"
 import { dateAxis, fitRange, lineChart, niceScale, pointCell, tickRows } from "../charts/lineChart"
@@ -34,11 +35,18 @@ export const INKS: Record<string, string> = {
 
 const sum = (values: number[]) => values.reduce((a, b) => a + b, 0)
 
-/** Legend marks: a line series, a bar, a rule. */
+/** Legend marks: a line series, a bar, a rule, each in its series' ink. */
 const LINE = "⠒⠒ "
 const BAR = "▆ "
 const RULE = "┈┈ "
+const mark = (shape: string, ink: keyof typeof INKS): Span => ({ text: shape, fg: INKS[ink]! })
 const GAP = muted("   ")
+
+/** A chart with nothing to draw, saying why in its legend. */
+const emptyChart = (why: string): ChartModel => ({ rows: [], ticks: new Map(), labels: "", legend: [muted(why)] })
+
+/** Money labels down the y-axis for ticks every `step` from `min` to `max`. */
+const moneyTicks = (min: number, max: number, step: number, height: number) => tickRows(min, max, step, height, shortMoney)
 
 /** What the range and the one before it are called in legends and labels. */
 export interface PeriodNames {
@@ -73,10 +81,11 @@ export function spendingChart(
   const elapsed = dates.filter((d) => d <= todayISO).length
   const upToToday = (vs: number[]) => vs.map((v, i) => (i < elapsed ? v : null))
   const axis = dateAxis(dates, width, todayISO, undefined, weekStart)
-  if (n === 0) return { rows: [], ticks: new Map(), labels: "", legend: [muted("No days in range")] }
+  if (n === 0) return emptyChart("No days in range")
 
   if (view === "Weekly") {
-    const weeks = weeklyTotals(dates, values, weekStart)
+    // Spending dated after today waits for its day, as in the other views.
+    const weeks = weeklyTotals(dates, upToToday(values).map((v) => v ?? 0), weekStart)
     const scale = niceScale(Math.max(0, ...weeks.map((w) => w.total)))
     const bars = weeks.map((w) => ({ value: w.startISO <= todayISO ? w.total : 0, ink: w.days < 7 || addDays(w.startISO, 6) >= todayISO ? "partial" : "spend" }))
     const { rows: plain, slots } = columnBars(bars, width, height, scale.max)
@@ -94,12 +103,12 @@ export function spendingChart(
     const current = weeks.findLast((w) => w.startISO <= todayISO && addDays(w.startISO, 6) >= todayISO)
     return {
       rows,
-      ticks: tickRows(0, scale.max, scale.step, height, shortMoney),
+      ticks: moneyTicks(0, scale.max, scale.step, height),
       labels: line.join(""),
       legend: [
-        { text: BAR, fg: theme.peach },
+        mark(BAR, "spend"),
         muted(full.length ? `Weeks, avg ${formatWholeMoney(sum(full.map((w) => w.total)) / full.length)}` : "No full weeks yet"),
-        ...(current ? [GAP, { text: BAR, fg: theme.overlay1 }, muted(`This week ${formatWholeMoney(current.total)} so far`)] : []),
+        ...(current ? [GAP, mark(BAR, "partial"), muted(`This week ${formatWholeMoney(current.total)} so far`)] : []),
       ],
     }
   }
@@ -126,24 +135,24 @@ export function spendingChart(
     ]
     return {
       rows: annotate(lineChart({ series: [...limit, { values: prev, ink: "prev" }, { values: upToToday(total), ink: "spend" }], length: n, width, height, min: 0, max: scale.max, markers: axis.markers }), marks),
-      ticks: tickRows(0, scale.max, scale.step, height, shortMoney),
+      ticks: moneyTicks(0, scale.max, scale.step, height),
       labels: axis.labels,
       legend: [
-        { text: LINE, fg: theme.peach },
+        mark(LINE, "spend"),
         muted(`${names.current} ${formatWholeMoney(now)}`),
         ...(budget != null ? [
           GAP,
-          { text: LINE, fg: theme.yellow },
+          mark(LINE, "limit"),
           muted(`Budget ${formatWholeMoney(budget)}`),
           ...(overPace != null ? [
             muted(", "),
-            { text: `${formatWholeMoney(Math.abs(overPace))} ${overPace > 0 ? "over" : "under"} pace`, fg: overPace > 0 ? theme.error : theme.success },
+            { text: `${formatWholeMoney(Math.abs(overPace))} ${overPace > 0 ? "over" : "under"} pace`, fg: spendChangeColor(overPace) },
           ] : []),
         ] : []),
         GAP,
-        { text: LINE, fg: theme.overlay0 },
+        mark(LINE, "prev"),
         muted(`${names.previous} ${formatWholeMoney(then)}${elapsed < n ? " by now" : ""}`),
-        ...(diff != null ? [GAP, { text: `${diff > 0 ? "+" : ""}${diff}%`, fg: diff > 0 ? theme.error : theme.success }] : []),
+        ...(diff != null ? [GAP, { text: `${diff > 0 ? "+" : ""}${diff}%`, fg: spendChangeColor(diff) }] : []),
       ],
     }
   }
@@ -186,14 +195,14 @@ export function spendingChart(
   ]
   return {
     rows: annotate(plain, marks),
-    ticks: tickRows(0, scale.max, scale.step, height, shortMoney),
+    ticks: moneyTicks(0, scale.max, scale.step, height),
     labels: dateAxis(dates, used, todayISO, colOf, weekStart).labels,
     legend: [
-      { text: BAR, fg: theme.peach },
+      mark(BAR, "spend"),
       muted(n > width ? "Spent per day (averaged)" : "Spent per day"),
       ...(shown[peak] ? [muted(`, peak ${formatWholeMoney(shown[peak]!)} on ${shortDate(dates[peak]!)}`)] : []),
       GAP,
-      { text: RULE, fg: theme.surface2 },
+      mark(RULE, "ref"),
       muted(`Average ${formatWholeMoney(avg)}`),
     ],
   }
@@ -214,7 +223,7 @@ export function balancesChart(
   zeroAxis = false,
 ): ChartModel {
   const last = dates.filter((d) => d <= todayISO).at(-1)
-  if (!dates.length || !last) return { rows: [], ticks: new Map(), labels: "", legend: [muted("No balances in range")] }
+  if (!dates.length || !last) return emptyChart("No balances in range")
   const history = balanceHistory(accounts, transactions, dates[0]!, last)
   const pick = (p: (typeof history)[number]) => (view === "Available" ? p.spending : view === "Savers" ? p.savers : p.net)
   const values = history.map(pick)
@@ -238,13 +247,13 @@ export function balancesChart(
   ]
   return {
     rows: annotate(lineChart({ series: [{ values, ink }], length: dates.length, width, height, min: range.min, max: range.max, markers: axis.markers }), marks),
-    ticks: tickRows(range.min, range.max, range.step, height, shortMoney),
+    ticks: moneyTicks(range.min, range.max, range.step, height),
     labels: axis.labels,
     legend: [
-      { text: LINE, fg: view === "Savers" ? theme.green : theme.lavender },
+      mark(LINE, ink),
       muted(`${view} ${formatWholeMoney(values[values.length - 1]!)}`),
       GAP,
-      { text: signedWholeMoney(change), fg: Math.abs(change) < 0.5 ? theme.overlay1 : change > 0 ? theme.success : theme.error },
+      { text: signedWholeMoney(change), fg: changeColor(change) },
       muted(` since ${shortDate(dates[0]!)}`),
       GAP,
       muted(`low ${formatWholeMoney(lo)} on ${shortDate(history[low]!.dateISO)}`),
@@ -270,7 +279,7 @@ export function cashFlowChart(
   scopeIds: ReadonlySet<number>,
   weekStart: WeekStart = "monday",
 ): ChartModel {
-  if (!dates.length) return { rows: [], ticks: new Map(), labels: "", legend: [muted("No days in range")] }
+  if (!dates.length) return emptyChart("No days in range")
   const monthly = dates.length > 92
   const buckets: Array<{ start: string; end: string }> = []
   for (const iso of dates) {
@@ -280,7 +289,8 @@ export function cashFlowChart(
     else buckets[buckets.length - 1]!.end = iso
   }
   const first = dates[0]!, last = dates[dates.length - 1]!
-  const inRange = transactions.filter((t) => t.dateISO >= first && t.dateISO <= last)
+  // Up to today: rows dated later wait for their day, as in the budget.
+  const inRange = transactions.filter((t) => t.dateISO >= first && t.dateISO <= last && t.dateISO <= todayISO)
   const flows = buckets.map((b) => computePeriodFlows(accounts, inRange.filter((t) => t.dateISO >= b.start && t.dateISO <= b.end), scopeIds))
   const scale = niceScale(Math.max(0, ...flows.flatMap((f) => [f.income, f.spent])))
   const bars = flows.flatMap((f, i) => {
@@ -303,13 +313,13 @@ export function cashFlowChart(
   const net = income - spent
   return {
     rows,
-    ticks: tickRows(0, scale.max, scale.step, height, shortMoney),
+    ticks: moneyTicks(0, scale.max, scale.step, height),
     labels: line.join(""),
     legend: [
-      { text: BAR, fg: theme.success },
+      mark(BAR, "in"),
       muted(`In ${formatWholeMoney(income)}`),
       GAP,
-      { text: BAR, fg: theme.error },
+      mark(BAR, "out"),
       muted(`Out ${formatWholeMoney(spent)}`),
       GAP,
       muted(`Net ${signedWholeMoney(net)} · ${monthly ? "monthly" : "weekly"}`),

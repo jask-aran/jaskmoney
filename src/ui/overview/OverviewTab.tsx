@@ -6,6 +6,7 @@ import { Modal } from "../primitives/Modal"
 import { TextInput } from "../primitives/TextInput"
 import { chipLook } from "../primitives/chip"
 import { centredTop } from "../primitives/ListRow"
+import { changeColor, spendChangeColor } from "../colors"
 import { muted, type Span } from "../primitives/spans"
 import { S } from "../primitives/S"
 import { CHART_VIEWS, ui, type SectionId } from "../../state/uiStore"
@@ -197,7 +198,6 @@ export function OverviewTab(props: { focused: SectionId }) {
   // Value and note column headings for a stack's top border, right-aligned
   // over their columns.
   const headings = (value: string, note: string): Span[] => [muted(value), muted(" ".repeat(Math.max(1, NOTE - note.length))), muted(note)]
-  const signColor = (n: number) => (n > 0.005 ? theme.success : n < -0.005 ? theme.error : theme.overlay1)
 
   const nowCard = () => (
     <SectionCard title="Now" width={sideWidth()} height={nowRows() + 2}>
@@ -207,7 +207,7 @@ export function OverviewTab(props: { focused: SectionId }) {
         {stat("  pending", formatMoney(Math.abs(position().pendingAmount)), `${position().pendingCount} txn`, { value: theme.overlay1 })}
       </Show>
       {stat("Runway", position().runwayDays != null ? `${Math.round(position().runwayDays!)} days` : "—", position().dailySpend != null ? `${formatWholeMoney(position().dailySpend!)}/day` : "", { value: theme.peach })}
-      {stat("30 day change", signedWholeMoney(change30()), "", { value: signColor(change30()) })}
+      {stat("30 day change", signedWholeMoney(change30()), "", { value: changeColor(change30()) })}
     </SectionCard>
   )
 
@@ -217,10 +217,10 @@ export function OverviewTab(props: { focused: SectionId }) {
     <SectionCard title="Savers" titleRight={headings("Balance", "30 days")} titleRightFlush width={sideWidth()} height={saverRows(saversFull()) + 2}>
       <Show when={saversFull()}>
         <For each={position().savers}>
-          {(saver) => stat(saver.name, formatWholeMoney(saver.balance), signedWholeMoney(saverChange(saver.accountId)), { note: signColor(saverChange(saver.accountId)) })}
+          {(saver) => stat(saver.name, formatWholeMoney(saver.balance), signedWholeMoney(saverChange(saver.accountId)), { note: changeColor(saverChange(saver.accountId)) })}
         </For>
       </Show>
-      {stat("Total", formatWholeMoney(position().saversTotal), signedWholeMoney(saversTotalChange()), { bold: true, note: signColor(saversTotalChange()) })}
+      {stat("Total", formatWholeMoney(position().saversTotal), signedWholeMoney(saversTotalChange()), { bold: true, note: changeColor(saversTotalChange()) })}
     </SectionCard>
   )
 
@@ -228,10 +228,10 @@ export function OverviewTab(props: { focused: SectionId }) {
   const daily = (spent: number) => formatWholeMoney(windows().days ? spent / windows().days : 0)
   const totalsCard = () => (
     <SectionCard title="Totals" titleRight={headings("Range", "Before")} titleRightFlush width={sideWidth()} height={totalsRows() + 2}>
-      {stat("Spent", formatWholeMoney(flows().spent), formatWholeMoney(previousFlows().spent), { value: changeColor(flows().spent, previousFlows().spent) })}
+      {stat("Spent", formatWholeMoney(flows().spent), formatWholeMoney(previousFlows().spent), { value: previousFlows().spent > 0 ? spendChangeColor(flows().spent - previousFlows().spent) : theme.overlay1 })}
       {stat("Income", formatWholeMoney(flows().income), formatWholeMoney(previousFlows().income))}
-      {stat("Net", signedWholeMoney(flows().net), signedWholeMoney(previousFlows().net), { value: signColor(flows().net) })}
-      {stat("To savers", signedWholeMoney(flows().savedToSavers), signedWholeMoney(previousFlows().savedToSavers), { value: signColor(flows().savedToSavers) })}
+      {stat("Net", signedWholeMoney(flows().net), signedWholeMoney(previousFlows().net), { value: changeColor(flows().net) })}
+      {stat("To savers", signedWholeMoney(flows().savedToSavers), signedWholeMoney(previousFlows().savedToSavers), { value: changeColor(flows().savedToSavers) })}
       {stat("Savings rate", formatPct(flows().savingsRate), formatPct(previousFlows().savingsRate))}
       {stat("Daily", daily(flows().spent), daily(previousFlows().spent))}
       {stat("Transactions", String(flows().txnCount), String(previousFlows().txnCount))}
@@ -487,11 +487,4 @@ function monthLabels(weeks: Array<Array<CalendarDay | null>>, width: number): st
     last = month || last
   })
   return out.join("")
-}
-
-
-/** More spending than before is red, less is green. */
-function changeColor(now: number, before: number): string {
-  if (before <= 0 || Math.abs(now - before) < 0.005) return theme.overlay1
-  return now > before ? theme.error : theme.success
 }
