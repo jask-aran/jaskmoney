@@ -13,7 +13,7 @@ export function transaction(overrides: Partial<Transaction> = {}): Transaction {
     id: 1, dateRaw: dateISO, dateISO, amount: -10, description: "x",
     categoryId: null, categoryName: "Uncategorised", categoryColor: "#7f849c",
     notes: "", importId: null, accountId: 1, accountName: "A",
-    tagNames: [], tagColors: [], tagIds: [], source: "up", status: "SETTLED", transactionType: null,
+    tagNames: [], tagColors: [], tagIds: [], source: "up", status: "SETTLED", transactionType: null, message: null, rawText: null,
     transferAccountId: null, internal: false, excluded: false, income: false,
     ...overrides,
   }

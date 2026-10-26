@@ -152,6 +152,10 @@ export interface Transaction {
   status: "HELD" | "SETTLED" | null
   /** Up's transaction type ("Purchase", "Salary", "Osko Payment Received"...); null for CSV rows. */
   transactionType: string | null
+  /** The payment's message ("Kestrel ram"), and the bank's raw text (often the
+   * payer's full name); null when the provider has none. */
+  message: string | null
+  rawText: string | null
   /** Own-account transfer counterpart, when the provider reports one. */
   transferAccountId: number | null
   /** Transfer to or from another tracked account. */

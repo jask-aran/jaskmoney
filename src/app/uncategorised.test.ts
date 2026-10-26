@@ -23,6 +23,9 @@ function setup() {
   add(2, "Shop", -12)
   add(3, "Mystery", -5)
   add(4, "Shop", -3)
+  add(5, "Shop", -7, 100)
+  add(6, "Shop", -8, 100)
+  add(7, "Shop", -9, 100)
   data.refresh()
   data.clearFilter()
   ui.switchTab("manager")
@@ -40,8 +43,9 @@ test("i shows only rows to categorise, with suggestions; y accepts, x dismisses,
   expect(data.state.uncategorisedOnly).toBe(true)
   expect(shown()).toEqual(["Shop4", "Mystery3", "Shop2"])
   await settle()
-  // History: both uncategorised Shops follow the categorised one.
-  expect(Object.values(data.state.suggestions).map((s) => [s.transactionId, s.categoryId, s.confidence]).sort()).toEqual([[2, 100, 1], [4, 100, 1]])
+  // History: four earlier Shops, all Test food, settle both uncategorised Shops (4/5 = 80%).
+  expect(Object.values(data.state.suggestions).map((s) => [s.transactionId, s.categoryId, s.confidence]).sort()).toEqual([[2, 100, 0.8], [4, 100, 0.8]])
+
   expect(footerHints("manager.txns", { focusedSection: "mgr.transactions", drillReturn: null, chartViews: [0, 4], uncategorisedOnly: true }).map((h) => h.key)).toContain("Y")
 
   // y on the cursor row (Shop4) accepts its suggestion; the row leaves the view.
@@ -61,7 +65,7 @@ test("i shows only rows to categorise, with suggestions; y accepts, x dismisses,
 
   handleKey(ui, key("i"), data)
   expect(data.state.uncategorisedOnly).toBe(false)
-  expect(shown()).toHaveLength(4)
+  expect(shown()).toHaveLength(7)
 })
 
 test("x dismisses the selected rows' suggestions without categorising them", async () => {

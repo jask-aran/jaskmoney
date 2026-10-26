@@ -372,6 +372,7 @@ function createDataStore() {
         const targetIds = new Set(targets.map((t) => t.id))
         const remaining = transactions().filter((t) => targetIds.has(t.id) && !state.suggestions[t.id] && isOrdinaryFlow(t) && isUncategorised(t))
         if (remaining.length) await clefSuggestions(ai ?? aiClient(), remaining, state.categories, {
+          history: transactions(),
           onSuggestion: (s) => {
             const current = transactions().find((t) => t.id === s.transactionId)
             if (!current || !isOrdinaryFlow(current) || !isUncategorised(current) || state.suggestions[s.transactionId]) return

@@ -39,6 +39,8 @@ test("suggestions use history before Clef and never categorise or resend ineligi
   add({ id: 1, description: "Shop", categoryId: 100 })
   add({ id: 2, description: " SHOP " })
   add({ id: 3, description: "Unknown", transactionType: "Purchase" })
+  add({ id: 10, description: "Shop", categoryId: 100 })
+  add({ id: 11, description: "Shop", categoryId: 100 })
   add({ id: 4, description: "Categorised", categoryId: 101 })
   add({ id: 5, description: "Excluded", categoryId: data.state.categories.find((c) => c.name === "Transfers")!.id })
   add({ id: 6, description: "Ignored" })
@@ -99,7 +101,7 @@ test("suggestions persist progressively, reject a second run, and report AI fail
 
 test("history works without Workers AI and reports missing setup", async () => {
   const { add } = setup()
-  add({ id: 1, description: "Shop", categoryId: 100 })
+  for (const id of [1, 4, 5]) add({ id, description: "Shop", categoryId: 100 })
   add({ id: 2, description: "Shop" })
   add({ id: 3, description: "Unknown" })
   data.refresh()

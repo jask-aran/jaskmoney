@@ -386,6 +386,8 @@ export function loadTransactions(db: Db): Transaction[] {
          t.source,
          t.status,
          t.transaction_type AS transactionType,
+         NULLIF(TRIM(t.message), '') AS message,
+         NULLIF(TRIM(t.raw_text), '') AS rawText,
          t.transfer_account_id AS transferAccountId,
          -- Internal: money moved to or from another tracked account. A transfer
          -- to an untracked account (e.g. a desynced joint account) is spending.
