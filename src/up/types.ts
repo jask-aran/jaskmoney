@@ -49,6 +49,11 @@ export interface UpTransaction {
     createdAt: string
     settledAt: string | null
     transactionType: string | null
+    /** False for transactions Up will not categorise (e.g. transfers). */
+    isCategorizable: boolean
+    roundUp: { amount: UpMoney; boostPortion: UpMoney | null } | null
+    cashback: { description: string; amount: UpMoney } | null
+    cardPurchaseMethod: { method: string; cardNumberSuffix: string | null } | null
   }
   relationships: {
     account: { data: { type: "accounts"; id: string } }

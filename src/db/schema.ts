@@ -1,9 +1,11 @@
-/** OpenTUI schema. v10 adds a per-account sync switch. v9 added synced sources (Up Bank): external identity,
+/** OpenTUI schema. v11 adds provider transaction details (categorisable flag,
+ * method, card, foreign amount, round-up, cashback). v10 added a per-account
+ * sync switch. v9 added synced sources (Up Bank): external identity,
  * settlement status and raw provider fields. v8 replaced the old destructive
  * version fallback with an additive migration registry. v7 was the initial
  * partial OpenTUI port. */
 
-export const SCHEMA_VERSION = 10
+export const SCHEMA_VERSION = 11
 
 /** Columns shared by the fresh schema and the v9 migration. Rows imported from
  * CSV keep source = 'csv' and NULL external fields. */
@@ -40,8 +42,26 @@ export const TRANSACTION_SYNC_COLUMNS_LIST = [
   "ext_tags TEXT NOT NULL DEFAULT '[]'",
 ] as const
 
+/** v11: provider transaction details shown in the transaction detail view.
+ * All NULL for CSV rows. */
+export const TRANSACTION_DETAIL_COLUMNS_LIST = [
+  // 1/0: the provider accepts a category for this transaction (Up:
+  // isCategorizable; transfers and some payments are not).
+  "ext_categorizable INTEGER",
+  // e.g. "Purchase", "BPAY Payment", "Transfer".
+  "transaction_type TEXT",
+  // Card purchase method (e.g. "CARD_ON_FILE", "CONTACTLESS") and last 4 digits.
+  "card_method TEXT",
+  "card_suffix TEXT",
+  // Foreign currency amount as "<currency> <value>", e.g. "USD -12.00".
+  "foreign_amount TEXT",
+  // Dollars: round-up taken with this purchase (negative) and cashback (positive).
+  "round_up REAL",
+  "cashback REAL",
+] as const
+
 const ACCOUNT_SYNC_COLUMNS = ACCOUNT_SYNC_COLUMNS_LIST.join(",\n  ")
-const TRANSACTION_SYNC_COLUMNS = TRANSACTION_SYNC_COLUMNS_LIST.join(",\n  ")
+const TRANSACTION_SYNC_COLUMNS = [...TRANSACTION_SYNC_COLUMNS_LIST, ...TRANSACTION_DETAIL_COLUMNS_LIST].join(",\n  ")
 
 export const SYNC_SQL = `
 CREATE UNIQUE INDEX IF NOT EXISTS idx_accounts_external ON accounts(source, external_id) WHERE external_id IS NOT NULL;

@@ -8,6 +8,7 @@ import {
   SCHEMA_SQL,
   SCHEMA_VERSION,
   SYNC_SQL,
+  TRANSACTION_DETAIL_COLUMNS_LIST,
   TRANSACTION_SYNC_COLUMNS_LIST,
 } from "./schema"
 import type { Account, Category, ImportRecord, Rule, Tag, Transaction } from "../domain/types"
@@ -59,6 +60,9 @@ const MIGRATIONS: Record<number, (db: Db) => void> = {
     db.exec(SYNC_SQL)
   },
   10: (db) => db.exec(`ALTER TABLE accounts ADD COLUMN sync_enabled INTEGER NOT NULL DEFAULT 1`),
+  11: (db) => {
+    for (const column of TRANSACTION_DETAIL_COLUMNS_LIST) db.exec(`ALTER TABLE transactions ADD COLUMN ${column}`)
+  },
 }
 
 export function ensureSchema(db: Db) {
@@ -486,4 +490,48 @@ export function setAccountSyncEnabled(db: Db, accountId: number, enabled: boolea
     db.query(`DELETE FROM account_selection WHERE account_id = ?`).run(accountId)
     return Number(db.query(`DELETE FROM transactions WHERE account_id = ?`).run(accountId).changes)
   })()
+}
+
+/** Everything the transaction detail view shows beyond the table row. */
+export interface TransactionDetail {
+  id: number
+  source: string
+  externalId: string | null
+  status: string | null
+  createdAt: string | null
+  settledAt: string | null
+  rawText: string | null
+  message: string | null
+  notes: string
+  transferAccountName: string | null
+  extCategory: string | null
+  extParentCategory: string | null
+  extTags: string[]
+  extCategorizable: boolean | null
+  transactionType: string | null
+  cardMethod: string | null
+  cardSuffix: string | null
+  foreignAmount: string | null
+  roundUp: number | null
+  cashback: number | null
+  importFilename: string | null
+}
+
+export function loadTransactionDetail(db: Db, id: number): TransactionDetail | null {
+  const row = db.query(`
+    SELECT t.id, t.source, t.external_id AS externalId, t.status, t.external_created_at AS createdAt,
+           t.settled_at AS settledAt, t.raw_text AS rawText, t.message, t.notes,
+           ta.name AS transferAccountName, t.ext_category AS extCategory,
+           t.ext_parent_category AS extParentCategory, t.ext_tags AS extTags,
+           t.ext_categorizable AS extCategorizable, t.transaction_type AS transactionType,
+           t.card_method AS cardMethod, t.card_suffix AS cardSuffix, t.foreign_amount AS foreignAmount,
+           t.round_up AS roundUp, t.cashback, i.filename AS importFilename
+    FROM transactions t
+    LEFT JOIN accounts ta ON ta.id = t.transfer_account_id
+    LEFT JOIN imports i ON i.id = t.import_id
+    WHERE t.id = ?`).get(id) as (Omit<TransactionDetail, "extTags" | "extCategorizable"> & { extTags: string; extCategorizable: number | null }) | null
+  if (!row) return null
+  let extTags: string[] = []
+  try { extTags = JSON.parse(row.extTags || "[]") } catch { /* malformed provider data: show none */ }
+  return { ...row, extTags, extCategorizable: row.extCategorizable == null ? null : row.extCategorizable === 1 }
 }
