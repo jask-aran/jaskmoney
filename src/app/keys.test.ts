@@ -1,5 +1,5 @@
 import { describe, expect, test, beforeEach } from "bun:test"
-import { spendingScope } from "../domain/accountTree"
+import { accountTiles, spendingScope } from "../domain/accountTree"
 import { CUSTOM_CHIP, LOOKBACKS, PERIODS, applyChip } from "../domain/timeframe"
 import { handleKey, footerHints } from "./keys"
 import { ui } from "../state/uiStore"
@@ -52,7 +52,7 @@ describe("key router", () => {
     expect(ui.state.jumpMode).toBe(false)
   })
 
-  test("account sidebar selection drives the manager table, not the dashboard", () => {
+  test("the accounts strip drives the Transactions table, not the Overview", () => {
     const txn = (id: number, accountId: number) => transaction({
       id, accountId, dateISO: `2026-02-0${id}`, amount: -id, description: `T${id}`, categoryId: 1, categoryName: "U", accountName: "",
     })
@@ -67,30 +67,38 @@ describe("key router", () => {
       ready: true,
     })
     ui.switchTab("manager")
-    ui.setState({ focusedSection: "mgr.accounts", accountCursor: 0 })
+    ui.setState({ focusedSection: "mgr.accounts" })
     const shown = () => data.scopedTransactions().map((t) => t.id).sort()
 
-    // Entries: All spending, Spending, Savers, Holiday, General.
+    // Tiles: All spending, Spending, Savers (one tile for every saver).
+    expect(accountTiles(data.state.accounts).map((t) => t.label)).toEqual(["All spending", "Spending", "Savers"])
     expect(shown()).toEqual([1])
-    handleKey(ui, key("j"), data)
+    handleKey(ui, key("h"), data)
+    expect(data.state.accountSelection).toBe("all")
+    handleKey(ui, key("l"), data)
     expect(data.state.accountSelection).toBe(1)
-    handleKey(ui, key("j"), data)
+    handleKey(ui, key("right"), data)
     expect(data.state.accountSelection).toBe("savers")
     expect(shown()).toEqual([2, 3])
-    handleKey(ui, key("j"), data)
-    expect(data.state.accountSelection).toBe(2)
-    expect(shown()).toEqual([2])
-    // A saver selected: the Spending tab covers every spending account.
+    handleKey(ui, key("l"), data)
+    expect(data.state.accountSelection).toBe("savers")
+    // Savers selected: the Overview covers every spending account.
     expect(spendingScope(data.state.accounts, data.state.accountSelection).accounts.map((a) => a.id)).toEqual([1])
     // Data actions only for a single account.
     handleKey(ui, key("d"), data)
-    expect(ui.state.accountActionId).toBe(2)
-    ui.setState({ accountActionId: null })
-    handleKey(ui, key("k"), data)
-    handleKey(ui, key("d"), data)
     expect(ui.state.accountActionId).toBeNull()
-    handleKey(ui, key("return"), data)
+    handleKey(ui, key("left"), data)
+    handleKey(ui, key("d"), data)
+    expect(ui.state.accountActionId).toBe(1)
+    ui.setState({ accountActionId: null })
+    // Nothing is above the strip; j drops into the table below.
+    handleKey(ui, key("k"), data)
+    expect(ui.state.focusedSection).toBe("mgr.accounts")
+    handleKey(ui, key("j"), data)
     expect(ui.state.focusedSection).toBe("mgr.transactions")
+    // A saver chosen elsewhere (a stored selection) shows as Savers.
+    data.setAccountSelection(2)
+    expect(data.state.accountSelection).toBe("savers")
     data.setState({ accountSelection: "all" })
   })
 

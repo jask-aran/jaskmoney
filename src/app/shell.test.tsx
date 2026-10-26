@@ -144,7 +144,7 @@ describe("shell render M0", () => {
         .captureSpans()
         .lines.find((row) => row.spans.some((span) => span.text.includes(needle)))
       expect(line).toBeDefined()
-      // Only the table's spans: the sidebar shares the screen line.
+      // Only the description and the spans just before it.
       const start = line!.spans.findIndex((span) => span.text.includes(needle))
       return line!.spans.slice(start - 3, start + 1).some(
         (span) => (span.attributes & TextAttributes.BOLD) !== 0,
@@ -159,6 +159,41 @@ describe("shell render M0", () => {
     expect(isBold("CURSOR FIRST")).toBe(false)
     expect(isBold("CURSOR SECOND")).toBe(true)
 
+    t.renderer.destroy()
+  })
+
+  test("the accounts strip marks the selection and highlights it only while focused", async () => {
+    const t = await renderApp({ width: 140, height: 30 })
+    await t.renderOnce()
+    data.setState({
+      accounts: [
+        account({ id: 1, name: "Spending", balance: 1104.36 }),
+        account({ id: 4, name: "Bills", balance: 10 }),
+        account({ id: 2, name: "🏖️ Holiday", externalKind: "SAVER", balance: 3400 }),
+        account({ id: 3, name: "General", externalKind: "SAVER", balance: 5548.01 }),
+      ],
+      transactions: [], accountSelection: 1, ready: true,
+    })
+    ui.switchTab("manager")
+    ui.setState({ focusedSection: "mgr.transactions" })
+    await t.renderOnce()
+    await t.flush()
+    const frame = t.captureCharFrame()
+    // One Savers tile for both savers, with their combined balance.
+    expect(frame).toContain("▸ Spending")
+    expect(frame).toContain("$8,948.01")
+    expect(frame).not.toContain("Holiday")
+    const span = (needle: string) => t.captureSpans().lines.flatMap((line) => line.spans).find((s) => s.text.includes(needle))!
+    expect(span("▸ Spending").attributes & TextAttributes.BOLD).toBe(TextAttributes.BOLD)
+    expect(span("All spending").attributes & TextAttributes.BOLD).toBe(0)
+    // Unfocused, the selected tile sits on the canvas like the others.
+    expect(span("▸ Spending").bg.toInts()).toEqual(span("All spending").bg.toInts())
+
+    ui.setState({ focusedSection: "mgr.accounts" })
+    await t.renderOnce()
+    await t.flush()
+    expect(span("▸ Spending").bg.toInts()).not.toEqual(span("All spending").bg.toInts())
+    expect(span("$1,104.36").bg.toInts()).toEqual(span("▸ Spending").bg.toInts())
     t.renderer.destroy()
   })
 
@@ -181,8 +216,7 @@ describe("shell render M0", () => {
     ui.setState({ focusedSection: "mgr.transactions", managerCursor: 0, managerTop: 0, filterMode: false })
     await t.renderOnce()
     await t.flush()
-    // Table rows only (they carry the category marker); the sidebar's top
-    // outflows list repeats the descriptions.
+    // Table rows only (they carry the category marker).
     const lines = t.captureCharFrame().split("\n").filter((line) => /ROW [123]/.test(line) && line.includes("○"))
     expect(lines).toHaveLength(3)
     const column = (line: string, needle: string) => Bun.stringWidth(line.slice(0, line.indexOf(needle)))
@@ -274,8 +308,9 @@ describe("shell render M0", () => {
     await t.renderOnce()
     await t.flush()
 
-    // 30 rows − app chrome (4) − card borders (2) − table header (1).
-    expect(ui.state.managerVisible).toBe(23)
+    // 30 rows − app chrome (4) − accounts strip (4) − card borders (2) −
+    // table header (1).
+    expect(ui.state.managerVisible).toBe(19)
     const lines = t.captureCharFrame().split("\n")
     const header = lines.find(
       (line) => line.includes("Amount") && line.includes("Description"),
@@ -285,11 +320,11 @@ describe("shell render M0", () => {
     expect(header.indexOf("Amount")).toBe(first.indexOf("-$123.45"))
     expect(header.indexOf("Description")).toBe(first.indexOf("DESCRIPTION ROW 00"))
     expect(first).toContain("DESCRIPTION ROW 00".padEnd(40))
-    expect(lines.some((line) => line.includes("DESCRIPTION ROW 22"))).toBe(true)
-    expect(lines.some((line) => line.includes("DESCRIPTION ROW 23"))).toBe(false)
+    expect(lines.some((line) => line.includes("DESCRIPTION ROW 18"))).toBe(true)
+    expect(lines.some((line) => line.includes("DESCRIPTION ROW 19"))).toBe(false)
 
-    const bottom = lines.find((line) => line.includes("showing 1-23 of 30"))!
-    expect(bottom).toContain("╰─ showing 1-23 of 30")
+    const bottom = lines.find((line) => line.includes("showing 1-19 of 30"))!
+    expect(bottom).toContain("╰─ showing 1-19 of 30")
     expect(bottom.trimEnd()).toEndWith("╯")
 
     const normalRow = t

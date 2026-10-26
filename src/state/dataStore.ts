@@ -41,7 +41,7 @@ import {
   setTransactionNotes,
   type TransactionDetail,
 } from "../db/client"
-import { selectedAccounts, type AccountSelection } from "../domain/accountTree"
+import { normaliseSelection, selectedAccounts, type AccountSelection } from "../domain/accountTree"
 import type { Budget, BudgetScope, CycleConfig } from "../domain/budget"
 import { buildImportPreview, commitImportPreview, matchingProfiles } from "../domain/profileImport"
 import { createUpClient, readUpToken } from "../up/client"
@@ -82,7 +82,7 @@ export interface DataState {
   imports: ImportRecord[]
   transactions: Transaction[]
   /** Which accounts the Transactions tab shows. Approved deviation from Go's per-account
-   * on/off scope (2026-10-26): one selection from the account sidebar. */
+   * on/off scope (2026-10-26): one selection from the accounts strip. */
   accountSelection: AccountSelection
   dbInfo: DbInfo | null
   filterQuery: string
@@ -138,8 +138,7 @@ function createDataStore() {
     const rules = loadRules(db)
     const transactions = loadTransactions(db)
     const imports = loadImports(db)
-    const sel = state.accountSelection
-    const accountSelection: AccountSelection = typeof sel === "number" && !accounts.some((a) => a.id === sel) ? "all" : sel
+    const accountSelection = normaliseSelection(accounts, state.accountSelection)
     const syncAccounts = loadAccounts(db, { includeUnsynced: true }).filter((a) => a.source !== "csv")
     const dbInfo = loadDbInfo(db, state.dbPath || "default")
     setState({
@@ -287,7 +286,7 @@ function createDataStore() {
   }
 
   function setAccountSelection(selection: AccountSelection) {
-    setState({ accountSelection: typeof selection === "number" && !state.accounts.some((a) => a.id === selection) ? "all" : selection })
+    setState({ accountSelection: normaliseSelection(state.accounts, selection) })
   }
 
   function transactionDetail(id: number): TransactionDetail | null {

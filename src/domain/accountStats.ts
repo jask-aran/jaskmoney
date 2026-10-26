@@ -4,8 +4,8 @@ import { isHeld } from "./moneyRules"
 import type { Account, Transaction } from "./types"
 
 /**
- * Detail statistics for one Manager sidebar entry: a single account (e.g.
- * Spending, or one saver) or a group (e.g. "All spending").
+ * Detail statistics for the Transactions accounts strip's selection: a
+ * single account (e.g. Spending) or a group ("All spending", "Savers").
  *
  * Unlike the dashboard's spending figures, every row of the given accounts
  * counts here, internal transfers included: for a saver the transfers ARE

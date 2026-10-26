@@ -92,7 +92,6 @@ export interface UiState {
   managerCursor: number
   managerTop: number
   managerVisible: number
-  accountCursor: number
   timeframe: TimeframeState
   dashChipCursor: number
   /** The Custom range dialog: two dates being typed, the focused one and
@@ -246,7 +245,6 @@ function createUiStore() {
     managerCursor: 0,
     managerTop: 0,
     managerVisible: 24,
-    accountCursor: 0,
     timeframe: defaultTimeframe(),
     dashChipCursor: 5,
     customEdit: null,

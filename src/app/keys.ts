@@ -1,7 +1,7 @@
 import type { KeyEvent } from "@opentui/core"
 import { resolve } from "node:path"
 import { accountRole } from "../domain/types"
-import { selectableEntries, spendingScope, type AccountSelection } from "../domain/accountTree"
+import { accountTiles, spendingScope, type AccountSelection } from "../domain/accountTree"
 import { assignableCategories } from "../domain/categoryOptions"
 import { budgetLabel, budgetScopeOptions, scopeKey } from "../domain/budgetScopes"
 import type { CycleConfig } from "../domain/budget"
@@ -747,7 +747,7 @@ function handleManagerTxns(ui: UiStore, key: KeyEvent, data?: DataStore): void {
   const rows = data?.scopedTransactions() ?? []
   if (savedFilterKeys(ui, data, key)) return
 
-  // Step through the account sidebar's entries (the narrow layout hides it).
+  // Step through the accounts strip from the table.
   if (name === "a" && !key.shift && data) { stepAccount(ui, data); return }
   if (name === "m") { ui.setState({ txnView: "merchants", merchantCursor: 0, merchantTop: 0 }); ui.setStatus("Grouped by merchant · m for rows"); return }
   if (name === "return" || name === "enter") {
@@ -851,18 +851,20 @@ function handleManagerTxns(ui: UiStore, key: KeyEvent, data?: DataStore): void {
 
 function handleManagerAccounts(ui: UiStore, key: KeyEvent, data?: DataStore): void {
   const { name } = key
-  const accounts = data?.state.accounts ?? []
-  const entries = selectableEntries(accounts)
-  const select = (index: number) => {
-    const entry = entries[index]
-    if (!entry || !data) return
-    ui.setState({ accountCursor: index, managerCursor: 0, managerTop: 0, selectedIds: {}, rangeSelecting: false })
-    data.setAccountSelection(entry.selection)
+  if (!data) return
+  // The strip runs sideways; the table is below it.
+  const step = name === "h" || name === "left" ? -1 : name === "l" || name === "right" ? 1 : 0
+  if (step) {
+    const tiles = accountTiles(data.state.accounts)
+    const at = tiles.findIndex((t) => t.selection === data.state.accountSelection)
+    const next = tiles[Math.max(0, Math.min(tiles.length - 1, at + step))]
+    if (!next || next.selection === data.state.accountSelection) return
+    ui.setState({ managerCursor: 0, managerTop: 0, selectedIds: {}, rangeSelecting: false })
+    data.setAccountSelection(next.selection)
+    return
   }
-  const moved = listMove(key, ui.state.accountCursor, entries.length)
-  if (moved != null) { select(moved); return }
-  if (name === "return" || name === "enter" || name === "l" || name === "right") { ui.setState({ focusedSection: "mgr.transactions" }); return }
-  const selection = data?.state.accountSelection
+  if (name === "j" || name === "down" || name === "return" || name === "enter") { ui.setState({ focusedSection: "mgr.transactions" }); return }
+  const selection = data.state.accountSelection
   if ((name === "d" || name === "delete") && typeof selection === "number") { ui.setState({ accountActionId: selection }); ui.setStatus("Account data · c clear transactions · x remove account · esc cancel"); return }
 }
 
@@ -1282,8 +1284,8 @@ const scopes: Record<ScopeId, ScopeEntry> = {
     handle: handleManagerAccounts,
     quits: true,
     hints: () => [
-      { key: "j/k", desc: "account" },
-      { key: "enter", desc: "transactions" },
+      { key: "h/l", desc: "account" },
+      { key: "j/enter", desc: "transactions" },
       { key: "d", desc: "data actions" },
       { key: "v", desc: "jump" },
     ],
@@ -1363,14 +1365,13 @@ function cycleDraft(cycle: CycleConfig): { unit: CycleConfig["unit"]; anchor: Cy
   return { unit: cycle.unit, anchor: cycle.anchor, anchorDate: anchorDraft(cycle) }
 }
 
-/** Show the next account sidebar entry (the Transactions tab's `a`). */
+/** Show the next account in the strip (the Transactions tab's `a`). */
 function stepAccount(ui: UiStore, data: DataStore): void {
-  const entries = selectableEntries(data.state.accounts)
-  if (!entries.length) return
-  const at = entries.findIndex((e) => e.selection === data.state.accountSelection)
-  const next = (at + 1) % entries.length
-  ui.setState({ accountCursor: next })
-  data.setAccountSelection(entries[next]!.selection)
+  const tiles = accountTiles(data.state.accounts)
+  if (!tiles.length) return
+  const at = tiles.findIndex((t) => t.selection === data.state.accountSelection)
+  const next = tiles[(at + 1) % tiles.length]!
+  data.setAccountSelection(next.selection)
   ui.jumpManagerCursor(0, data.scopedTransactions().length)
-  ui.setStatus(`Showing ${entries[next]!.label}`)
+  ui.setStatus(`Showing ${next.label}`)
 }

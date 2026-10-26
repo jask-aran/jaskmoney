@@ -1,39 +1,42 @@
 import { accountRole, type Account } from "./types"
 
-/** What the Transactions tab shows: all spending accounts, all savers, or one account. */
+/** What the Transactions tab shows: all spending accounts, all savers, or
+ * one spending account. */
 export type AccountSelection = "all" | "savers" | number
 
-export type SidebarEntry =
-  | { kind: "heading"; label: string }
-  | { kind: "select"; selection: AccountSelection; label: string; depth: number; balance: number | null }
-
-const SOURCE_LABEL: Record<Account["source"], string> = { up: "Up", csv: "Imported" }
-
-/** Sidebar rows: "All spending", then each source with its spending accounts
- * and, nested under them, its savers (selectable as a group and singly). */
-export function sidebarEntries(accounts: Account[]): SidebarEntry[] {
-  const spending = accounts.filter((a) => accountRole(a) === "spending")
-  const entries: SidebarEntry[] = [
-    { kind: "select", selection: "all", label: "All spending", depth: 0, balance: sumBalances(spending) },
-  ]
-  const sources = [...new Set(accounts.map((a) => a.source))]
-  for (const source of sources) {
-    const own = accounts.filter((a) => a.source === source)
-    entries.push({ kind: "heading", label: SOURCE_LABEL[source] })
-    for (const a of own.filter((a) => accountRole(a) === "spending")) {
-      entries.push({ kind: "select", selection: a.id, label: a.name, depth: 1, balance: a.balance })
-    }
-    const savers = own.filter((a) => accountRole(a) === "saver")
-    if (savers.length) {
-      entries.push({ kind: "select", selection: "savers", label: "Savers", depth: 1, balance: sumBalances(savers) })
-      for (const a of savers) entries.push({ kind: "select", selection: a.id, label: a.name, depth: 2, balance: a.balance })
-    }
-  }
-  return entries
+/** One tile in the Transactions tab's accounts strip. */
+export interface AccountTile {
+  selection: AccountSelection
+  label: string
+  balance: number | null
 }
 
-export function selectableEntries(accounts: Account[]) {
-  return sidebarEntries(accounts).filter((e): e is Extract<SidebarEntry, { kind: "select" }> => e.kind === "select")
+/** The strip's tiles in groups: "All spending" alone, each source's
+ * spending accounts, then one "Savers" tile for every saver. Savers are not
+ * listed one by one: their only rows are transfers and interest. */
+export function accountStrip(accounts: Account[]): AccountTile[][] {
+  const spending = accounts.filter((a) => accountRole(a) === "spending")
+  const savers = accounts.filter((a) => accountRole(a) === "saver")
+  const groups: AccountTile[][] = [[{ selection: "all", label: "All spending", balance: sumBalances(spending) }]]
+  for (const source of new Set(spending.map((a) => a.source))) {
+    groups.push(spending.filter((a) => a.source === source).map((a) => ({ selection: a.id, label: a.name, balance: a.balance })))
+  }
+  if (savers.length) groups.push([{ selection: "savers", label: "Savers", balance: sumBalances(savers) }])
+  return groups
+}
+
+/** The strip's tiles in order. */
+export function accountTiles(accounts: Account[]): AccountTile[] {
+  return accountStrip(accounts).flat()
+}
+
+/** A selection the strip can show: a saver stands for all savers, and an
+ * account that no longer exists for all spending. */
+export function normaliseSelection(accounts: Account[], selection: AccountSelection): AccountSelection {
+  if (typeof selection !== "number") return selection
+  const account = accounts.find((a) => a.id === selection)
+  if (!account) return "all"
+  return accountRole(account) === "saver" ? "savers" : selection
 }
 
 export function selectedAccounts(accounts: Account[], selection: AccountSelection): Account[] {
