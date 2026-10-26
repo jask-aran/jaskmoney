@@ -156,9 +156,8 @@ describe("key router", () => {
     ui.setState({ selectedIds: {} })
   })
 
-  test("spending tab: j/k pick a merchant, enter opens its transactions in the Manager", () => {
-    const today = new Date()
-    const iso = `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, "0")}-01`
+  test("transactions: m groups the filtered rows by merchant; enter narrows the filter to one", () => {
+    const iso = "2026-10-01"
     const txn = (id: number, description: string, amount: number) => ({
       id, dateRaw: "x", dateISO: iso, amount, description, categoryId: 1, categoryName: "U", categoryColor: "#7f849c",
       notes: "", importId: null, accountId: 1, accountName: "Spending", tagNames: [], tagColors: [], tagIds: [],
@@ -166,25 +165,28 @@ describe("key router", () => {
     })
     data.setState({
       accounts: [{ id: 1, name: "Spending", type: "debit" as const, sortOrder: 1, isActive: true, source: "up" as const, externalKind: "TRANSACTIONAL", balance: 1, syncEnabled: true }],
-      transactions: [txn(1, "Big Shop", -90), txn(2, 'Cafe "Ripple"', -10)],
-      accountSelection: 1,
+      transactions: [txn(1, "Big Shop", -90), txn(2, 'Cafe "Ripple"', -10), txn(3, 'Cafe "Ripple"', -5)],
+      accountSelection: "all",
       ready: true,
     })
-    ui.setTimeframe({ ...ui.state.timeframe, family: "period", period: "month", periodAnchor: iso })
-    ui.switchTab("spending")
-    ui.setState({ merchantCursor: 0 })
+    data.clearFilter()
+    ui.switchTab("manager")
+    ui.setState({ focusedSection: "mgr.transactions", txnView: "rows" })
+    handleKey(ui, key({ name: "m" }), data)
+    expect(ui.activeScope()).toBe("manager.merchants")
+    // Biggest spend first: Big Shop, then the cafe.
     handleKey(ui, key({ name: "j" }), data)
     expect(ui.state.merchantCursor).toBe(1)
-    handleKey(ui, key({ name: "j" }), data)
-    expect(ui.state.merchantCursor).toBe(1)
+    handleKey(ui, key({ name: "c" }), data)
+    expect([...ui.state.pickerTargets].sort()).toEqual([2, 3])
+    handleKey(ui, key({ name: "escape" }), data)
     handleKey(ui, key({ name: "return" }), data)
-    expect(ui.state.activeTab).toBe("manager")
-    // The drill keeps the account the Spending tab was showing.
-    expect(data.state.accountSelection).toBe(1)
+    expect(ui.state.txnView).toBe("rows")
     expect(data.state.filterQuery).toBe('desc:"Cafe \\"Ripple\\""')
-    expect(data.scopedTransactions().map((t) => t.id)).toEqual([2])
+    expect(data.scopedTransactions().map((t) => t.id).sort()).toEqual([2, 3])
     data.clearFilter()
   })
+
 
   test("manager cursor moves with j/k", () => {
     data.setState({

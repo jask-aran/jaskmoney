@@ -8,7 +8,7 @@ import { data } from "../../state/dataStore"
 import { theme } from "../../theme"
 import { computeCategorySpend, dailySpendSeries, fitCategoryLines, formatPct, formatWholeMoney, groupCategorySpend } from "../../domain/dashboard"
 import { computePeriodFlows } from "../../domain/position"
-import { merchantSummaries, spendingCalendar, type CalendarDay } from "../../domain/spending"
+import { spendingCalendar, type CalendarDay } from "../../domain/spending"
 import { LOOKBACKS, PERIODS, PERIOD_LABEL, activeChipIndex, comparisonWindows, dataClock, filterByTimeframe, timeframeBounds, toISODate } from "../../domain/timeframe"
 import { fit, shortDate } from "../text"
 import { spendingScope } from "../../domain/accountTree"
@@ -19,16 +19,16 @@ import { INKS, balancesChart, spendingChart } from "./periodCharts"
 const LEVEL_BG = [theme.surface0, "#5b4636", "#8c6146", "#c47f55", theme.peach] as const
 const WEEKDAYS = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"]
 
-/** Below this width the chart pane spans the tab and categories sit beside
- * merchants; at or above it, categories take a right-hand column. */
+/** Below this width the chart pane spans the tab with categories below it;
+ * at or above it, categories take a right-hand column. */
 const WIDE = 120
 /** The categories column's widest useful size: Up's longest names fit. */
 const SIDE_MAX = 48
 
 /**
  * Everything over a chosen period: the Date Range with its flows, one chart
- * pane cycling through spending, balance and calendar views (h/l),
- * categories, and merchants. Spending figures cover the selected spending
+ * pane cycling through spending, balance and calendar views (h/l), and
+ * categories. Spending figures cover the selected spending
  * account (see spendingScope); internal transfers and not-spending categories
  * are excluded.
  */
@@ -51,24 +51,20 @@ export function SpendingTab(props: { focused: SectionId }) {
   const flows = createMemo(() => computePeriodFlows(data.state.accounts, filterByTimeframe(data.state.transactions, ui.state.timeframe, clock()), scopeIds()))
   const previousFlows = createMemo(() => computePeriodFlows(data.state.accounts, inPrevious(), scopeIds()))
   const groups = createMemo(() => groupCategorySpend(computeCategorySpend(inPeriod(), data.state.categories), data.state.categories))
-  const merchants = createMemo(() => merchantSummaries(spending(), bounds().start, bounds().end, previous()))
   const calendar = createMemo(() => spendingCalendar(inPeriod(), bounds().start, bounds().end))
   const series = createMemo(() => dailySpendSeries(inPeriod(), bounds().start, bounds().end))
 
   // Fixed rows: tab bar + gap (2), status + footer (2), Date Range (4).
-  // Wide: the chart pane (55%) above merchants, categories in a right column
-  // up to SIDE_MAX wide. Narrow: the chart pane (50%) spans the tab, categories
-  // and merchants share the row below.
+  // Wide: the chart pane fills the left column, categories in a right column
+  // up to SIDE_MAX wide. Narrow: the chart pane (55%) spans the tab with
+  // categories below. Merchants are a view of the Transactions tab.
   const wide = () => dims().width >= WIDE
   const bodyHeight = () => Math.max(8, dims().height - 8)
-  const chartHeight = () => Math.max(8, Math.floor(bodyHeight() * (wide() ? 0.55 : 0.5)))
+  const chartHeight = () => (wide() ? bodyHeight() : Math.max(8, Math.floor(bodyHeight() * 0.55)))
   const lowerHeight = () => bodyHeight() - chartHeight()
-  // Categories stop growing at SIDE_MAX (names fit); the chart and merchants
-  // take the rest.
-  const sideWidth = () => Math.min(SIDE_MAX, Math.floor((dims().width - 1) * 0.4))
+  // Categories stop growing at SIDE_MAX (names fit); the chart takes the rest.
+  const sideWidth = () => (wide() ? Math.min(SIDE_MAX, Math.floor((dims().width - 1) * 0.4)) : dims().width)
   const mainWidth = () => (wide() ? dims().width - 1 - sideWidth() : dims().width)
-  const merchantsWidth = () => (wide() ? mainWidth() : dims().width - 1 - sideWidth())
-  const merchantsHeight = () => lowerHeight()
   const categoriesHeight = () => (wide() ? bodyHeight() : lowerHeight())
   // Chart pane: border + padding (4) across; border (2), the view strip and
   // a blank line, then the x labels and summary down.
@@ -82,17 +78,6 @@ export function SpendingTab(props: { focused: SectionId }) {
     return balancesChart(v, series().dates, plotWidth(), plotRows(), today(), data.state.accounts, data.state.transactions)
   })
 
-  const merchantRows = () => Math.max(1, merchantsHeight() - 3)
-  createEffect(() => {
-    const n = merchantRows()
-    const cur = ui.state.merchantCursor
-    if (cur >= merchants().length && merchants().length) ui.setState({ merchantCursor: merchants().length - 1 })
-    if (cur < ui.state.merchantTop) ui.setState({ merchantTop: cur })
-    else if (cur >= ui.state.merchantTop + n) ui.setState({ merchantTop: cur - n + 1 })
-  })
-  // Total (9), count (4), average (9), change (8), last seen (7); border +
-  // padding (4) and a cell of rounding slack.
-  const merchantNameWidth = () => Math.max(10, merchantsWidth() - 5 - 9 - 4 - 9 - 8 - 7)
   // Category lines: name, then amount (9) and share (5).
   const categoryNameWidth = () => Math.max(8, sideWidth() - 5 - 14)
 
@@ -185,64 +170,12 @@ export function SpendingTab(props: { focused: SectionId }) {
         fallback={
           <>
             {chartPane()}
-            <box flexDirection="row" gap={1} width="100%" height={lowerHeight()}>
-              {categoriesCard()}
-              <box flexGrow={1} flexBasis={0} minWidth={0} height={lowerHeight()} flexDirection="column" overflow="hidden">
-          <SectionCard title="Merchants" focused={props.focused === "spend.merchants"} active={props.focused === "spend.merchants"} height={merchantsHeight()}>
-            <text wrapMode="none" fg={theme.overlay1}>
-              {fit("Merchant", merchantNameWidth()) + "Total".padStart(9) + "#".padStart(4) + "Avg".padStart(9) + "vs prev".padStart(8) + "Last".padStart(7)}
-            </text>
-            <Show when={merchants().length} fallback={<text fg={theme.overlay1}>No spending in this period</text>}>
-              <For each={merchants().slice(ui.state.merchantTop, ui.state.merchantTop + merchantRows())}>
-                {(m, i) => {
-                  const selected = () => props.focused === "spend.merchants" && ui.state.merchantTop + i() === ui.state.merchantCursor
-                  const bg = () => (selected() ? theme.surface0 : theme.canvas)
-                  return (
-                    <text wrapMode="none" bg={bg()}>
-                      <S fg={theme.text} bg={bg()} bold={selected()}>{fit(m.merchant, merchantNameWidth())}</S>
-                      <S fg={theme.text} bg={bg()}>{formatWholeMoney(m.total).padStart(9)}</S>
-                      <S fg={theme.subtext0} bg={bg()}>{String(m.count).padStart(4)}</S>
-                      <S fg={theme.subtext0} bg={bg()}>{formatWholeMoney(m.average).padStart(9)}</S>
-                      <S fg={changeColor(m.total, m.previousTotal)} bg={bg()}>{changePct(m.total, m.previousTotal).padStart(8)}</S>
-                      <S fg={theme.overlay1} bg={bg()}>{shortDate(m.lastISO).padStart(7)}</S>
-                    </text>
-                  )
-                }}
-              </For>
-            </Show>
-          </SectionCard>
-              </box>
-            </box>
+            {categoriesCard()}
           </>
         }
       >
         <box flexDirection="row" gap={1} width="100%" height={bodyHeight()}>
-          <box flexDirection="column" width={mainWidth()} height={bodyHeight()}>
-            {chartPane()}
-            <SectionCard title="Merchants" focused={props.focused === "spend.merchants"} active={props.focused === "spend.merchants"} height={merchantsHeight()}>
-              <text wrapMode="none" fg={theme.overlay1}>
-                {fit("Merchant", merchantNameWidth()) + "Total".padStart(9) + "#".padStart(4) + "Avg".padStart(9) + "vs prev".padStart(8) + "Last".padStart(7)}
-              </text>
-              <Show when={merchants().length} fallback={<text fg={theme.overlay1}>No spending in this period</text>}>
-                <For each={merchants().slice(ui.state.merchantTop, ui.state.merchantTop + merchantRows())}>
-                  {(m, i) => {
-                    const selected = () => props.focused === "spend.merchants" && ui.state.merchantTop + i() === ui.state.merchantCursor
-                    const bg = () => (selected() ? theme.surface0 : theme.canvas)
-                    return (
-                      <text wrapMode="none" bg={bg()}>
-                        <S fg={theme.text} bg={bg()} bold={selected()}>{fit(m.merchant, merchantNameWidth())}</S>
-                        <S fg={theme.text} bg={bg()}>{formatWholeMoney(m.total).padStart(9)}</S>
-                        <S fg={theme.subtext0} bg={bg()}>{String(m.count).padStart(4)}</S>
-                        <S fg={theme.subtext0} bg={bg()}>{formatWholeMoney(m.average).padStart(9)}</S>
-                        <S fg={changeColor(m.total, m.previousTotal)} bg={bg()}>{changePct(m.total, m.previousTotal).padStart(8)}</S>
-                        <S fg={theme.overlay1} bg={bg()}>{shortDate(m.lastISO).padStart(7)}</S>
-                      </text>
-                    )
-                  }}
-                </For>
-              </Show>
-            </SectionCard>
-          </box>
+          {chartPane()}
           <box flexGrow={1} flexBasis={0} minWidth={0} height={bodyHeight()} overflow="hidden">
             {categoriesCard()}
           </box>

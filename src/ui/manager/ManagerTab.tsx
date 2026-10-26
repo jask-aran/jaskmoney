@@ -15,6 +15,8 @@ import { computeAccountStats } from "../../domain/accountStats"
 import { toISODate } from "../../domain/timeframe"
 import { AccountDetails } from "./AccountDetails"
 import { TransactionTable } from "./TransactionTable"
+import { MerchantTable } from "./MerchantTable"
+import { groupByMerchant, sortMerchantGroups } from "../../domain/merchants"
 import { categoryMark } from "../icons"
 import { TransactionDetail } from "./TransactionDetail"
 
@@ -56,6 +58,18 @@ export function ManagerTab(props: { focused: SectionId }) {
   })
 
 
+  // Merchant view: the same rows grouped, with its own cursor kept in view.
+  const merchants = () => ui.state.txnView === "merchants"
+  const groups = createMemo(() => sortMerchantGroups(groupByMerchant(rows()), ui.state.merchantSort, ui.state.merchantReverse))
+  createEffect(() => {
+    if (!merchants()) return
+    const n = ui.state.managerVisible
+    const cur = Math.min(ui.state.merchantCursor, Math.max(0, groups().length - 1))
+    if (cur !== ui.state.merchantCursor) ui.setState({ merchantCursor: cur })
+    if (cur < ui.state.merchantTop) ui.setState({ merchantTop: cur })
+    else if (cur >= ui.state.merchantTop + n) ui.setState({ merchantTop: cur - n + 1 })
+  })
+
   const txFocused = () =>
     props.focused === "mgr.transactions" || props.focused === "none"
   const acctFocused = () => props.focused === "mgr.accounts"
@@ -67,6 +81,10 @@ export function ManagerTab(props: { focused: SectionId }) {
   }
 
   const scrollIndicator = () => {
+    if (merchants()) {
+      if (groups().length === 0) return undefined
+      return `─ ${groups().length} merchants · ${rows().length} transactions · by ${ui.state.merchantSort}${ui.state.merchantReverse ? "↑" : "↓"} ─`
+    }
     if (rows().length === 0) return undefined
     const start = ui.state.managerTop + 1
     const end = Math.min(ui.state.managerTop + ui.state.managerVisible, rows().length)
@@ -154,7 +172,7 @@ export function ManagerTab(props: { focused: SectionId }) {
       </Show>
 
       <SectionCard
-        title="Transactions"
+        title={merchants() ? "Transactions · by merchant" : "Transactions"}
         titleSuffix={filterTitle()}
         titleSuffixColor={data.state.filterErr ? theme.error : theme.blue}
         focused={txFocused()}
@@ -178,6 +196,19 @@ export function ManagerTab(props: { focused: SectionId }) {
             </text>
           )}
         </Show>
+        <Show when={merchants()}>
+          <MerchantTable
+            groups={groups()}
+            top={ui.state.merchantTop}
+            visible={ui.state.managerVisible}
+            cursor={txFocused() && !ui.state.filterMode ? ui.state.merchantCursor : null}
+            width={dims().width - (wide() ? SIDEBAR_WIDTH + 1 : 0) - 4}
+            sort={ui.state.merchantSort}
+            reverse={ui.state.merchantReverse}
+            empty={data.state.filterQuery ? "No matches" : "Empty · no transactions loaded"}
+          />
+        </Show>
+        <Show when={!merchants()}>
         <TransactionTable
           rows={rows()}
           top={ui.state.managerTop}
@@ -191,6 +222,7 @@ export function ManagerTab(props: { focused: SectionId }) {
           sortMark={sortMark}
           empty={data.state.filterQuery ? "No matches" : "Empty · no transactions loaded"}
         />
+        </Show>
       </SectionCard>
       <TransactionDetail />
       <Show when={accountAction()}>{(account: () => Account) => <box position="absolute" zIndex={20} left="22%" top="35%" width="56%" border borderStyle="rounded" borderColor={theme.warning} paddingLeft={1} paddingRight={1} backgroundColor={theme.base} flexDirection="column">

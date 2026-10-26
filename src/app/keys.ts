@@ -3,9 +3,9 @@ import { resolve } from "node:path"
 import { accountRole } from "../domain/types"
 import { selectableEntries, spendingScope, type AccountSelection } from "../domain/accountTree"
 import { assignableCategories } from "../domain/categoryOptions"
-import { merchantSummaries } from "../domain/spending"
 import { budgetLabel, budgetScopeOptions, scopeKey } from "../domain/budgetScopes"
 import type { CycleConfig } from "../domain/budget"
+import { MERCHANT_SORTS, groupByMerchant, merchantFilter, sortMerchantGroups } from "../domain/merchants"
 import { editorFields, pickerChoices, pickerItems, stepChoice } from "../state/settingsForm"
 import { runSync } from "./sync"
 import { CHART_VIEWS, CYCLE_VIEWS, JUMP_TARGETS, SETTINGS_SECTIONS, TABS, settingsSectionFocus, type ScopeId, type UiStore } from "../state/uiStore"
@@ -695,20 +695,50 @@ export function handleKey(ui: UiStore, key: KeyEvent, data?: DataStore): boolean
   }
 
   // ── Manager txns ────────────────────────────────────────────────────
-  if (scope === "manager.txns") {
-    // Step through the account sidebar's entries (the narrow layout hides it).
-    if (name === "a" && !key.shift && data) {
-      const entries = selectableEntries(data.state.accounts)
-      if (entries.length) {
-        const at = entries.findIndex((e) => e.selection === data.state.accountSelection)
-        const next = (at + 1) % entries.length
-        ui.setState({ accountCursor: next })
-        data.setAccountSelection(entries[next]!.selection)
-        ui.jumpManagerCursor(0, data.scopedTransactions().length)
-        ui.setStatus(`Showing ${entries[next]!.label}`)
-      }
+  // ── Transactions: grouped by merchant ───────────────────────────────
+  if (scope === "manager.merchants" && data) {
+    // The same filtered, scoped rows as the table, summarised per merchant.
+    const groups = sortMerchantGroups(groupByMerchant(data.scopedTransactions()), ui.state.merchantSort, ui.state.merchantReverse)
+    const group = groups[ui.state.merchantCursor]
+    const moveTo = (i: number) => ui.setState({ merchantCursor: Math.max(0, Math.min(groups.length - 1, i)) })
+    if (name === "a" && !key.shift) { stepAccount(ui, data); ui.setState({ merchantCursor: 0 }); return true }
+    if (name === "m") { ui.setState({ txnView: "rows" }); ui.setStatus("Transactions"); return true }
+    if (name === "j" || name === "down") { moveTo(ui.state.merchantCursor + 1); return true }
+    if (name === "k" || name === "up") { moveTo(ui.state.merchantCursor - 1); return true }
+    if (name === "g" && !key.shift) { moveTo(0); return true }
+    if ((name === "g" && key.shift) || name === "G") { moveTo(groups.length - 1); return true }
+    if (name === "pagedown") { moveTo(ui.state.merchantCursor + ui.state.managerVisible); return true }
+    if (name === "pageup") { moveTo(ui.state.merchantCursor - ui.state.managerVisible); return true }
+    if (name === "s" && !key.shift) {
+      const next = MERCHANT_SORTS[(MERCHANT_SORTS.indexOf(ui.state.merchantSort) + 1) % MERCHANT_SORTS.length]!
+      ui.setState({ merchantSort: next, merchantReverse: false, merchantCursor: 0 })
+      ui.setStatus(`Merchants by ${next}`)
       return true
     }
+    if ((name === "s" && key.shift) || name === "S") { ui.setState({ merchantReverse: !ui.state.merchantReverse, merchantCursor: 0 }); return true }
+    if (name === "/" || seq === "/") { ui.openFilter(data.state.filterQuery); return true }
+    if ((name === "return" || name === "enter") && group) {
+      // Drill in: narrow the filter to this merchant and show its rows.
+      const result = data.commitFilter(merchantFilter(data.state.filterQuery, group.merchant))
+      if (!result.ok) { ui.setStatus(result.err, true); return true }
+      ui.setState({ txnView: "rows" })
+      ui.jumpManagerCursor(0, data.scopedTransactions().length)
+      ui.setStatus(`${group.merchant} · ${group.count} transaction${group.count === 1 ? "" : "s"} · u to widen`)
+      return true
+    }
+    if (name === "c" && group) { ui.openCatPicker(group.ids); return true }
+    if (name === "t" && group) { ui.openTagPicker(group.ids); return true }
+    if (name === "u" || name === "escape") {
+      if (data.state.filterQuery) { data.clearFilter(); ui.setState({ merchantCursor: 0 }); ui.setStatus("Filter cleared") }
+      else { ui.setState({ txnView: "rows" }); ui.setStatus("Transactions") }
+      return true
+    }
+  }
+
+  if (scope === "manager.txns") {
+    // Step through the account sidebar's entries (the narrow layout hides it).
+    if (name === "a" && !key.shift && data) { stepAccount(ui, data); return true }
+    if (name === "m") { ui.setState({ txnView: "merchants", merchantCursor: 0, merchantTop: 0 }); ui.setStatus("Grouped by merchant · m for rows"); return true }
     if (name === "return" || name === "enter") {
       const row = (data?.scopedTransactions() ?? [])[ui.state.managerCursor]
       if (row) ui.setState({ detailId: row.id, detailNotesEditing: false })
@@ -879,26 +909,6 @@ export function handleKey(ui: UiStore, key: KeyEvent, data?: DataStore): boolean
     }
   }
 
-  // ── Spending ────────────────────────────────────────────────────────
-  if (scope === "spending" && data) {
-    // Same rows as the tab: the selected spending account, or all of them.
-    const scope = spendingScope(data.state.accounts, data.state.accountSelection)
-    const ids = new Set(scope.accounts.map((acc) => acc.id))
-    const merchants = merchantSummaries(data.state.transactions.filter((t) => t.accountId != null && ids.has(t.accountId)), ...periodBounds(ui, data))
-    if (name === "j" || name === "down") { ui.setState({ focusedSection: "spend.merchants", merchantCursor: Math.min(Math.max(0, merchants.length - 1), ui.state.merchantCursor + 1) }); return true }
-    if (name === "k" || name === "up") { ui.setState({ focusedSection: "spend.merchants", merchantCursor: Math.max(0, ui.state.merchantCursor - 1) }); return true }
-    if ((name === "return" || name === "enter") && merchants[ui.state.merchantCursor]) {
-      // Drill into the Manager: the same accounts, filtered to this merchant.
-      const merchant = merchants[ui.state.merchantCursor]!.merchant
-      data.setAccountSelection(scope.accounts.length === 1 && scope.label !== "All spending" ? scope.accounts[0]!.id : "all")
-      data.commitFilter(`desc:"${merchant.replace(/\\/g, "\\\\").replace(/"/g, '\\"')}"`)
-      ui.switchTab("manager")
-      ui.setState({ focusedSection: "mgr.transactions", managerCursor: 0, managerTop: 0 })
-      ui.setStatus(`Transactions at ${merchant}`)
-      return true
-    }
-  }
-
   if (scope === "spending") {
     // h/l (or ,/.) step through the chart pane's views.
     const step = name === "h" || name === "left" || seq === "," ? -1 : name === "l" || name === "right" || seq === "." ? 1 : 0
@@ -987,8 +997,6 @@ export function footerHints(scope: ScopeId): { key: string; desc: string }[] {
     case "spending":
       return [
         { key: "h/l", desc: "view" },
-        { key: "j/k", desc: "merchant" },
-        { key: "enter", desc: "transactions" },
         { key: "a", desc: "account" },
         { key: "[/]", desc: "period" },
         { key: "0", desc: "this month" },
@@ -1006,10 +1014,22 @@ export function footerHints(scope: ScopeId): { key: string; desc: string }[] {
       return [{ key: "j/k", desc: "prev/next" }, { key: "c", desc: "category" }, { key: "t", desc: "tags" }, { key: "n", desc: "notes" }, { key: "esc", desc: "close" }]
     case "manager.detail.notes":
       return [{ key: "type", desc: "notes" }, { key: "enter", desc: "save" }, { key: "esc", desc: "cancel" }]
+    case "manager.merchants":
+      return [
+        { key: "enter", desc: "its transactions" },
+        { key: "j/k", desc: "move" },
+        { key: "c", desc: "category" },
+        { key: "t", desc: "tags" },
+        { key: "s", desc: "sort" },
+        { key: "/", desc: "filter" },
+        { key: "m", desc: "rows" },
+        { key: "a", desc: "account" },
+      ]
     case "manager.txns":
       return [
         { key: "enter", desc: "detail" },
         { key: "j/k", desc: "move" },
+        { key: "m", desc: "merchants" },
         { key: "a", desc: "account" },
         { key: "S-j/k", desc: "range" },
         { key: "space", desc: "select" },
@@ -1080,12 +1100,19 @@ export function footerHints(scope: ScopeId): { key: string; desc: string }[] {
 }
 
 /** The Date Range period as [start, end] ISO dates. */
-function periodBounds(ui: UiStore, data: DataStore): [string, string] {
-  const b = timeframeBounds(ui.state.timeframe, dataClock(data.state.transactions))
-  return [b.start, b.end]
-}
-
 /** The budget cycle as editor draft fields. */
 function cycleDraft(cycle: CycleConfig): { unit: CycleConfig["unit"]; anchor: CycleConfig["anchor"]; anchorDate: string } {
   return { unit: cycle.unit, anchor: cycle.anchor, anchorDate: cycle.anchorDate ?? "" }
+}
+
+/** Show the next account sidebar entry (the Transactions tab's `a`). */
+function stepAccount(ui: UiStore, data: DataStore): void {
+  const entries = selectableEntries(data.state.accounts)
+  if (!entries.length) return
+  const at = entries.findIndex((e) => e.selection === data.state.accountSelection)
+  const next = (at + 1) % entries.length
+  ui.setState({ accountCursor: next })
+  data.setAccountSelection(entries[next]!.selection)
+  ui.jumpManagerCursor(0, data.scopedTransactions().length)
+  ui.setStatus(`Showing ${entries[next]!.label}`)
 }

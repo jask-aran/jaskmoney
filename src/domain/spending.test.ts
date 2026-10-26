@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test"
-import { merchantSummaries, spendingCalendar, type CalendarDay } from "./spending"
+import { spendingCalendar, type CalendarDay } from "./spending"
 import type { Transaction } from "./types"
 
 function row(amount: number, overrides: Partial<Transaction> = {}): Transaction {
@@ -13,57 +13,6 @@ function row(amount: number, overrides: Partial<Transaction> = {}): Transaction 
 }
 
 const excluded = [row(100), row(0), row(-100, { internal: true, excluded: true }), row(-100, { tagNames: ["other", "iGnOrE"] })]
-
-describe("merchantSummaries", () => {
-  test("groups exact descriptions, computes totals and average, and finds latest unsorted date", () => {
-    // Unlike the legacy dashboard, the spending-tab spec preserves stored names.
-    expect(merchantSummaries([
-      row(-12, { dateISO: "2026-10-07" }), row(-6),
-      row(-3, { description: " Shop" }), row(-2, { description: "" }),
-      ...excluded,
-    ], "2026-10-05", "2026-10-07")).toEqual([
-      { merchant: "Shop", count: 2, total: 18, average: 9, lastISO: "2026-10-07", previousTotal: 0, categoryName: "Food" },
-      { merchant: " Shop", count: 1, total: 3, average: 3, lastISO: "2026-10-05", previousTotal: 0, categoryName: "Food" },
-      { merchant: "", count: 1, total: 2, average: 2, lastISO: "2026-10-05", previousTotal: 0, categoryName: "Food" },
-    ])
-  })
-
-  test("previous window has equal inclusive length across DST and excludes both outer dates", () => {
-    const result = merchantSummaries([
-      row(-900, { dateISO: "2026-09-27" }),
-      row(-10, { dateISO: "2026-09-28" }), row(-20, { dateISO: "2026-10-01" }),
-      row(-4, { dateISO: "2026-10-02" }), row(-6),
-      row(-900, { dateISO: "2026-10-06" }),
-      row(-99, { dateISO: "2026-09-30", description: "Previous only" }),
-      ...excluded.map((r) => ({ ...r, dateISO: "2026-10-01" })),
-    ], "2026-10-02", "2026-10-05")
-    expect(result).toEqual([
-      { merchant: "Shop", count: 2, total: 10, average: 5, lastISO: "2026-10-05", previousTotal: 30, categoryName: "Food" },
-    ])
-    expect(merchantSummaries([row(-2, { dateISO: "2025-12-31" }), row(-3, { dateISO: "2026-01-01" })], "2026-01-01", "2026-01-01")[0]?.previousTotal).toBe(2)
-  })
-
-  test("category precedence is count, total, then alphabetical, independent of input order", () => {
-    const rows = [
-      row(-1, { categoryName: "Frequent" }), row(-1, { categoryName: "Frequent" }), row(-100, { categoryName: "Rare" }),
-      row(-10, { description: "Totals", categoryName: "A" }), row(-20, { description: "Totals", categoryName: "Z" }),
-      row(-5, { description: "Alphabet", categoryName: "Z" }), row(-5, { description: "Alphabet", categoryName: "A" }),
-    ]
-    for (const input of [rows, [...rows].reverse()]) {
-      expect(merchantSummaries(input, "2026-10-05", "2026-10-05").map((r) => r.categoryName)).toEqual(["Frequent", "Z", "A"])
-    }
-  })
-
-  test("orders equal totals by count then merchant name", () => {
-    const rows = [row(-20, { description: "Z" }), row(-20, { description: "A" }), row(-10, { description: "Many" }), row(-10, { description: "Many" })]
-    expect(merchantSummaries(rows, "2026-10-05", "2026-10-05").map((r) => r.merchant)).toEqual(["Many", "A", "Z"])
-  })
-
-  test("empty or excluded input yields no merchants", () => {
-    expect(merchantSummaries([], "2026-10-05", "2026-10-05")).toEqual([])
-    expect(merchantSummaries(excluded, "2026-10-05", "2026-10-05")).toEqual([])
-  })
-})
 
 describe("spendingCalendar", () => {
   test("pads both ends with Monday at row zero", () => {

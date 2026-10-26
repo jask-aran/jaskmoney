@@ -1,7 +1,6 @@
 import { expect, test } from "bun:test"
 import { computeCategorySpend } from "./dashboard"
 import { computePeriodFlows } from "./position"
-import { merchantSummaries } from "./spending"
 import { loadTransactions, openDb } from "../db/client"
 import type { Account, Transaction } from "./types"
 
@@ -12,12 +11,11 @@ const row = (id: number, description: string, amount: number, excluded: boolean)
   source: "up", status: null, transferAccountId: null, internal: false, excluded,
 })
 
-test("a not-spending category is left out of spending, income, categories and merchants", () => {
+test("a not-spending category is left out of spending, income and categories", () => {
   const rows = [row(1, "Cafe", -10, false), row(2, "Wise Account", -1000, true), row(3, "Refund to me", 40, true)]
   const flows = computePeriodFlows([account], rows)
   expect([flows.spent, flows.income, flows.txnCount, flows.savedToSavers]).toEqual([10, 0, 1, 0])
   expect(computeCategorySpend(rows, []).map((c) => c.name)).toEqual(["Food"])
-  expect(merchantSummaries(rows, "2026-10-01", "2026-10-31").map((m) => m.merchant)).toEqual(["Cafe"])
 })
 
 test("the loader marks rows in a not-spending category as excluded; Transfers starts as not-spending", () => {

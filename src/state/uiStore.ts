@@ -1,4 +1,5 @@
 import type { CycleAnchor, CycleUnit } from "../domain/budget"
+import type { MerchantSort } from "../domain/merchants"
 import { createStore } from "solid-js/store"
 import {
   defaultTimeframe,
@@ -14,7 +15,6 @@ export type SectionId =
   | "spend.date"
   | "spend.chart"
   | "spend.categories"
-  | "spend.merchants"
   | "mgr.accounts"
   | "mgr.transactions"
   | "set.categories"
@@ -37,6 +37,7 @@ export type ScopeId =
   | "manager"
   | "manager.accounts"
   | "manager.txns"
+  | "manager.merchants"
   | "settings"
   | "settings.taxonomy"
   | "settings.rules"
@@ -116,9 +117,13 @@ export interface UiState {
   tagVisible: number
   ruleCursor: number
   filterCursor: number
-  /** Spending tab merchant list cursor and scroll offset. */
+  /** Transactions table: rows, or the same rows grouped by merchant. */
+  txnView: "rows" | "merchants"
+  /** Merchant view cursor, scroll offset and order. */
   merchantCursor: number
   merchantTop: number
+  merchantSort: MerchantSort
+  merchantReverse: boolean
   /** Cursor in the Settings budget list. */
   budgetCursor: number
   /** Cursor in the Up Bank sync account list. */
@@ -162,7 +167,7 @@ export interface UiState {
 
 const TAB_DEFAULT_FOCUS: Record<TabId, SectionId> = {
   dashboard: "none",
-  spending: "spend.merchants",
+  spending: "none",
   manager: "mgr.transactions",
   settings: "none",
 }
@@ -191,7 +196,6 @@ export const JUMP_TARGETS: Record<TabId, JumpTarget[]> = {
     { key: "d", section: "spend.date", label: "Date Range" },
     { key: "t", section: "spend.chart", label: "Charts" },
     { key: "c", section: "spend.categories", label: "Categories" },
-    { key: "m", section: "spend.merchants", label: "Merchants" },
   ],
   manager: [
     { key: "a", section: "mgr.accounts", label: "Accounts" },
@@ -260,6 +264,9 @@ function createUiStore() {
     budgetCursor: 0,
     merchantCursor: 0,
     merchantTop: 0,
+    txnView: "rows",
+    merchantSort: "total",
+    merchantReverse: false,
     detailId: null,
     detailNotesEditing: false,
     detailNotesDraft: "",
@@ -542,7 +549,7 @@ function createUiStore() {
     }
     if (state.activeTab === "manager") {
       if (state.focusedSection === "mgr.accounts") return "manager.accounts"
-      return "manager.txns"
+      return state.txnView === "merchants" ? "manager.merchants" : "manager.txns"
     }
     if (!state.settingsActive) return "settings"
     if (state.settingsSection === "taxonomy") return "settings.taxonomy"
