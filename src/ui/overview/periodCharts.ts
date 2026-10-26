@@ -26,6 +26,9 @@ export const INKS: Record<string, string> = {
   month: theme.blue,
   year: theme.accent,
   today: theme.green,
+  // In-chart notes (highs, lows, totals): grey, so the coloured label is
+  // always the latest value.
+  note: theme.overlay1,
 }
 
 const sum = (values: number[]) => values.reduce((a, b) => a + b, 0)
@@ -82,7 +85,7 @@ export function spendingChart(
     const bars = weeks.map((w) => ({ value: w.startISO <= todayISO ? w.total : 0, ink: w.days < 7 || addDays(w.startISO, 6) >= todayISO ? "partial" : "spend" }))
     const { rows: plain, slots } = columnBars(bars, width, height, scale.max)
     // Each week's total over its bar, where it fits.
-    const rows = annotate(plain, slots.map((slot, i) => ({ row: barTopRow(bars[i]!.value, scale.max, height), col: slot.col + Math.floor((slot.width - 1) / 2), text: bars[i]!.value > 0 ? shortMoney(bars[i]!.value) : "", ink: bars[i]!.ink, above: true })).filter((l) => l.text && l.row > 0))
+    const rows = annotate(plain, slots.map((slot, i) => ({ row: barTopRow(bars[i]!.value, scale.max, height), col: slot.col + Math.floor((slot.width - 1) / 2), text: bars[i]!.value > 0 ? shortMoney(bars[i]!.value) : "", ink: "note", above: true })).filter((l) => l.text && l.row > 0))
     const line = new Array<string>(width).fill(" ")
     slots.forEach((slot, i) => {
       const iso = weeks[i]!.startISO
@@ -121,7 +124,7 @@ export function spendingChart(
     // Each line named at its end.
     const at = (index: number, value: number) => pointCell(index, value, n, width, height, 0, scale.max)
     const marks: ChartLabel[] = [
-      ...(elapsed > 0 ? [{ ...at(elapsed - 1, now), text: names.current, ink: "spend" }] : []),
+      ...(elapsed > 0 ? [{ ...at(elapsed - 1, now), text: `${names.current} ${shortMoney(now)}`, ink: "spend" }] : []),
       ...(prev.length ? [{ ...at(n - 1, prev[n - 1]!), text: names.previous, ink: "prev" }] : []),
       ...(budget != null ? [{ ...at(n - 1, budget), text: "Budget", ink: "limit" }] : []),
     ]
@@ -182,7 +185,7 @@ export function spendingChart(
   const tallest = bars.reduce((best, b, i) => (b.value > bars[best]!.value ? i : best), 0)
   const avgRow = avg > 0 ? height - 1 - Math.min(height - 1, Math.floor((avg / scale.max) * height)) : -1
   const marks: ChartLabel[] = [
-    ...(bars[tallest]!.value > 0 && slots[tallest] ? [{ row: barTopRow(bars[tallest]!.value, scale.max, height), col: slots[tallest]!.col, text: shortMoney(bars[tallest]!.value), ink: "spend", above: true }] : []),
+    ...(bars[tallest]!.value > 0 && slots[tallest] ? [{ row: barTopRow(bars[tallest]!.value, scale.max, height), col: slots[tallest]!.col, text: shortMoney(bars[tallest]!.value), ink: "note", above: true }] : []),
     ...(avgRow >= 0 ? [{ row: avgRow, col: width - 1 - "avg".length - 2, text: "avg", ink: "partial" }] : []),
   ]
   return {
@@ -222,14 +225,17 @@ export function balancesChart(
   const axis = dateAxis(dates, width, todayISO, undefined, weekStart)
   const change = values[values.length - 1]! - values[0]!
   const low = values.indexOf(lo)
-  // The low and the high marked where they happened (not at the ends,
-  // which the legend and the axis already give).
+  // The latest value in the line's colour, placed first so it gets the best
+  // spot; the high and the low in grey where they happened (not at the
+  // ends: the start is on the axis, the end is the latest).
   const high = values.indexOf(hi)
+  const latest = values.length - 1
   const ink = view === "Savers" ? "savers" : "balance"
   const at = (i: number) => pointCell(i, values[i]!, dates.length, width, height, range.min, range.max)
   const marks: ChartLabel[] = [
-    ...(high > 0 && high < values.length - 1 && hi > lo ? [{ ...at(high), text: shortMoney(hi), ink }] : []),
-    ...(low > 0 && low < values.length - 1 && hi > lo ? [{ ...at(low), text: shortMoney(lo), ink }] : []),
+    { ...at(latest), text: shortMoney(values[latest]!), ink },
+    ...(high > 0 && high < latest && hi > lo ? [{ ...at(high), text: `high ${shortMoney(hi)}`, ink: "note" }] : []),
+    ...(low > 0 && low < latest && hi > lo ? [{ ...at(low), text: `low ${shortMoney(lo)}`, ink: "note" }] : []),
   ]
   return {
     rows: annotate(lineChart({ series: [{ values, ink }], length: dates.length, width, height, min: range.min, max: range.max, markers: axis.markers }), marks),
