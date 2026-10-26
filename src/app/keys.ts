@@ -6,7 +6,7 @@ import { assignableCategories } from "../domain/categoryOptions"
 import { budgetLabel, budgetScopeOptions, scopeKey } from "../domain/budgetScopes"
 import type { CycleConfig } from "../domain/budget"
 import { MERCHANT_SORTS, groupByMerchant, merchantFilter, sortMerchantGroups } from "../domain/merchants"
-import { editorFields, pickerChoices, pickerItems, stepChoice } from "../state/settingsForm"
+import { anchorDraft, cycleFromDraft, editorFields, normaliseCycleDraft, pickerChoices, pickerItems, stepChoice } from "../state/settingsForm"
 import { runSync } from "./sync"
 import { CHART_VIEWS, JUMP_TARGETS, SETTINGS_SECTIONS, TABS, settingsSectionFocus, type ScopeId, type UiStore } from "../state/uiStore"
 import type { DataStore } from "../state/dataStore"
@@ -483,7 +483,8 @@ export function handleKey(ui: UiStore, key: KeyEvent, data?: DataStore): boolean
           const amount = Number(draft.amount.replace(/[$,\s]/g, ""))
           if (!option) throw new Error("choose what the budget covers")
           if (!draft.amount.trim() || !Number.isFinite(amount)) throw new Error("enter the budget amount")
-          const cycle = { unit: draft.unit, anchor: draft.anchor, anchorDate: draft.anchor === "calendar" ? null : draft.anchorDate.trim() }
+          const cycle = cycleFromDraft(draft)
+          if (typeof cycle === "string") throw new Error(cycle)
           const current = data?.state.budgetCycle
           // The cycle is shared by every budget; save it first so a bad date
           // stops the whole edit.
@@ -492,7 +493,9 @@ export function handleKey(ui: UiStore, key: KeyEvent, data?: DataStore): boolean
           if (editing && scopeKey(editing.scope) !== option.key) data?.removeBudget(editing.id)
           data?.setBudget(option.scope, amount)
         } else if (kind === "cycle") {
-          data?.setBudgetCycle({ unit: draft.unit, anchor: draft.anchor, anchorDate: draft.anchor === "calendar" ? null : draft.anchorDate.trim() })
+          const cycle = cycleFromDraft(draft)
+          if (typeof cycle === "string") throw new Error(cycle)
+          data?.setBudgetCycle(cycle)
         } else if (kind === "filter") {
           data?.saveSavedFilter({ id: draft.id, name: draft.name, expr: draft.expr }, typeof ui.state.settingsEditId === "string" ? ui.state.settingsEditId : undefined)
         } else {
@@ -508,7 +511,10 @@ export function handleKey(ui: UiStore, key: KeyEvent, data?: DataStore): boolean
     const left = name === "left" || (!isText && name === "h")
     const right = name === "right" || (!isText && (name === "l" || name === "space"))
     if ((left || right) && field.kind === "choice" && field.choices) {
+      const previousUnit = draft.unit
       ui.setState("settingsDraft", field.key as "unit", stepChoice(field.choices, draft[field.key] as string, left ? -1 : 1) as never)
+      // A new unit or start asks for the start in its own form.
+      if (field.key === "unit" || field.key === "anchor") ui.setState("settingsDraft", normaliseCycleDraft(ui.state.settingsDraft, previousUnit))
       return true
     }
     if ((left || right) && field.kind === "toggle") {
@@ -1059,7 +1065,7 @@ export function footerHints(scope: ScopeId): { key: string; desc: string }[] {
 /** The Date Range period as [start, end] ISO dates. */
 /** The budget cycle as editor draft fields. */
 function cycleDraft(cycle: CycleConfig): { unit: CycleConfig["unit"]; anchor: CycleConfig["anchor"]; anchorDate: string } {
-  return { unit: cycle.unit, anchor: cycle.anchor, anchorDate: cycle.anchorDate ?? "" }
+  return { unit: cycle.unit, anchor: cycle.anchor, anchorDate: anchorDraft(cycle) }
 }
 
 /** Show the next account sidebar entry (the Transactions tab's `a`). */

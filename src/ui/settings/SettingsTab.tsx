@@ -16,7 +16,7 @@ import { Modal } from "../primitives/Modal"
 import { categoryMark } from "../icons"
 import { Form } from "../primitives/Form"
 import { ListPicker } from "../primitives/ListPicker"
-import { EDITOR_TITLE, editorFields, editorNote, pickerItems } from "../../state/settingsForm"
+import { EDITOR_TITLE, editorFields, editorNote, editorWidth, pickerItems, type FormField } from "../../state/settingsForm"
 
 function truncate(value: string, width: number) { return value.length <= width ? value : `${value.slice(0, Math.max(0, width - 1))}…` }
 
@@ -209,12 +209,16 @@ function EditorOverlay() {
         const fields = () => editorFields(kind(), ui.state.settingsDraft, ctx())
         const cursor = () => Math.min(ui.state.settingsEditField, fields().length - 1)
         const field = () => fields()[cursor()]!
+        // Sized to its content (border and padding: 4), and steady while
+        // moving between fields: every kind's hint line counts.
+        const hints = () => fields().map((f) => EDITOR_HINTS[f.kind]).reduce((a, b) => (b.length > a.length ? b : a), "")
+        const width = () => 4 + editorWidth(fields(), editorNote(kind(), ui.state.settingsDraft), hints())
         return (
           <>
             <Modal
-              title={`${ui.state.settingsEditId == null ? "New" : "Edit"} ${EDITOR_TITLE[kind()].toLowerCase()}`}
-              width={72}
-              hints={field().kind === "picker" ? "↑/↓ field · enter choose · esc cancel" : field().kind === "text" ? "↑/↓ field · type to edit · enter save · esc cancel" : "↑/↓ field · ←/→ change · enter save · esc cancel"}
+              title={kind() === "cycle" ? EDITOR_TITLE.cycle : `${ui.state.settingsEditId == null ? "New" : "Edit"} ${EDITOR_TITLE[kind()].toLowerCase()}`}
+              width={width()}
+              hints={EDITOR_HINTS[field().kind]}
             >
               <Form fields={fields()} cursor={cursor()} note={editorNote(kind(), ui.state.settingsDraft)} />
             </Modal>
@@ -237,6 +241,14 @@ function EditorOverlay() {
       }}
     </Show>
   )
+}
+
+/** The settings editor's hint line for the focused field's kind. */
+const EDITOR_HINTS: Record<FormField["kind"], string> = {
+  text: "↑↓ field · enter save · esc cancel",
+  choice: "↑↓ field · ←→ change · enter save · esc cancel",
+  toggle: "↑↓ field · ←→ change · enter save · esc cancel",
+  picker: "↑↓ field · enter choose · esc cancel",
 }
 
 function ConfirmOverlay() {

@@ -1,4 +1,4 @@
-import { ANCHOR_LABEL, describeCycle, type CycleAnchor, type CycleConfig, type CycleUnit } from "../domain/budget"
+import { describeCycle, type CycleAnchor, type CycleConfig, type CycleUnit } from "../domain/budget"
 import { budgetScopeOptions } from "../domain/budgetScopes"
 import { categoryPickerRows } from "../domain/categoryOptions"
 import type { Account, Category, SavedFilter, Tag } from "../domain/types"
@@ -42,8 +42,67 @@ export interface FormContext {
 }
 
 export const CYCLE_UNITS: readonly CycleUnit[] = ["week", "fortnight", "month"]
-export const CYCLE_ANCHORS: readonly CycleAnchor[] = ["calendar", "date", "weekStartNearDate"]
 const UNIT_LABEL: Record<CycleUnit, string> = { week: "Week", fortnight: "Fortnight", month: "Month" }
+export const WEEKDAYS = ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"] as const
+
+/**
+ * The budget cycle's start, asked the way each unit needs it: a month by the
+ * day of the month (the 15th), a week by its weekday, a fortnight by a date
+ * (only a date says which week it starts in). The draft's `anchorDate` holds
+ * that answer as typed ("15", "Thursday", "2026-10-16"); `cycleFromDraft`
+ * turns it into the stored anchor date. "Monday nearest" makes no sense for
+ * weeks, so weeks offer only the first two starts.
+ */
+export function anchorChoices(unit: CycleUnit): readonly CycleAnchor[] {
+  return unit === "week" ? ["calendar", "date"] : ["calendar", "date", "weekStartNearDate"]
+}
+
+const START_LABEL: Record<CycleUnit, Record<CycleAnchor, string>> = {
+  month: { calendar: "the 1st", date: "a day of the month", weekStartNearDate: "the Monday nearest a day" },
+  week: { calendar: "Monday", date: "another weekday", weekStartNearDate: "Monday" },
+  fortnight: { calendar: "every other Monday", date: "a date", weekStartNearDate: "the Monday nearest a date" },
+}
+
+/** The start field's draft text for a stored cycle. */
+export function anchorDraft(cycle: CycleConfig): string {
+  if (cycle.anchor === "calendar" || !cycle.anchorDate) return defaultAnchorDraft(cycle.unit)
+  if (cycle.unit === "month") return String(Number(cycle.anchorDate.slice(8, 10)))
+  if (cycle.unit === "week") return WEEKDAYS[(new Date(cycle.anchorDate + "T12:00:00Z").getUTCDay() + 6) % 7]!
+  return cycle.anchorDate
+}
+
+/** What the start field holds for a unit before anything is typed. */
+export function defaultAnchorDraft(unit: CycleUnit, today = new Date().toISOString().slice(0, 10)): string {
+  return unit === "month" ? "1" : unit === "week" ? "Monday" : today
+}
+
+/** After the unit or start changes: a start the unit offers, and a draft in
+ * the unit's form. */
+export function normaliseCycleDraft(draft: Draft, previousUnit: CycleUnit): Pick<Draft, "anchor" | "anchorDate"> {
+  const anchor = anchorChoices(draft.unit).includes(draft.anchor) ? draft.anchor : "calendar"
+  return { anchor, anchorDate: draft.unit === previousUnit ? draft.anchorDate : defaultAnchorDraft(draft.unit) }
+}
+
+/** The cycle the draft describes, or an error message. Months store the day
+ * in a 31-day January (any year), weeks the weekday's date in the week of
+ * Monday 5 Jan 1970; fortnights the date itself. */
+export function cycleFromDraft(draft: Pick<Draft, "unit" | "anchor" | "anchorDate">): CycleConfig | string {
+  const { unit, anchor } = draft
+  if (anchor === "calendar") return { unit, anchor, anchorDate: null }
+  const text = draft.anchorDate.trim()
+  if (unit === "month") {
+    const day = Number(text.match(/^(\d{1,2})(st|nd|rd|th)?$/i)?.[1])
+    if (!(day >= 1 && day <= 31)) return "Day must be 1–31"
+    return { unit, anchor, anchorDate: `2000-01-${String(day).padStart(2, "0")}` }
+  }
+  if (unit === "week") {
+    const index = WEEKDAYS.indexOf(text as (typeof WEEKDAYS)[number])
+    if (index < 0) return "Choose a weekday"
+    return { unit, anchor, anchorDate: `1970-01-${String(5 + index).padStart(2, "0")}` }
+  }
+  const real = /^\d{4}-\d{2}-\d{2}$/.test(text) && new Date(text + "T12:00:00Z").toISOString().slice(0, 10) === text
+  return real ? { unit, anchor, anchorDate: text } : "Date must be YYYY-MM-DD"
+}
 
 export const EDITOR_TITLE: Record<SettingsEditorKind, string> = {
   category: "Category",
@@ -55,10 +114,14 @@ export const EDITOR_TITLE: Record<SettingsEditorKind, string> = {
 }
 
 function cycleFields(draft: Draft): FormField[] {
+  const start: FormField[] =
+    draft.anchor === "calendar" ? []
+      : draft.unit === "week" ? [{ key: "anchorDate", label: "Weekday", kind: "choice", display: draft.anchorDate, choices: WEEKDAYS }]
+      : [{ key: "anchorDate", label: draft.unit === "month" ? "Day" : "Date", kind: "text", display: draft.anchorDate }]
   return [
     { key: "unit", label: "Every", kind: "choice", display: UNIT_LABEL[draft.unit], choices: CYCLE_UNITS },
-    { key: "anchor", label: "Starting", kind: "choice", display: ANCHOR_LABEL[draft.anchor], choices: CYCLE_ANCHORS },
-    ...(draft.anchor === "calendar" ? [] : [{ key: "anchorDate", label: "Date", kind: "text", display: draft.anchorDate } as FormField]),
+    { key: "anchor", label: "Starting", kind: "choice", display: START_LABEL[draft.unit][draft.anchor], choices: anchorChoices(draft.unit) },
+    ...start,
   ]
 }
 
@@ -101,11 +164,25 @@ export function editorFields(kind: SettingsEditorKind, draft: Draft, ctx: FormCo
   }
 }
 
+/**
+ * Columns an editor needs: the widest field line as Form draws it (marker,
+ * padded label, value, then the focused decoration: "‹ ›", a caret, or the
+ * picker's "enter to choose"), the note and the hint line. Fields whose value
+ * is typed get room to grow, so the dialog does not resize on every key.
+ */
+export function editorWidth(fields: FormField[], note: string | null, hints: string): number {
+  const label = Math.max(...fields.map((f) => f.label.length)) + 2
+  const line = (f: FormField) =>
+    2 + label + Math.max(f.display.length, f.kind === "text" ? 24 : 0) + (f.kind === "picker" ? 17 : f.kind === "text" ? 1 : 4)
+  return Math.max(...fields.map(line), (note ?? "").length, hints.length)
+}
+
 /** A line under the fields that explains the result, when there is one. */
 export function editorNote(kind: SettingsEditorKind, draft: Draft): string | null {
   if (kind !== "budget" && kind !== "cycle") return null
-  const cycle: CycleConfig = { unit: draft.unit, anchor: draft.anchor, anchorDate: draft.anchorDate || null }
-  return kind === "budget" ? `${describeCycle(cycle)} · one cycle for every budget` : describeCycle(cycle)
+  const cycle = cycleFromDraft(draft)
+  const text = typeof cycle === "string" ? cycle : describeCycle(cycle)
+  return kind === "budget" ? `${text} · one cycle for every budget` : text
 }
 
 /** The rows a picker field offers, filtered by `query` (case-insensitive). */

@@ -165,12 +165,6 @@ export function budgetProgress(
   })
 }
 
-export const ANCHOR_LABEL: Record<CycleAnchor, string> = {
-  calendar: "calendar (week from Monday, month from the 1st)",
-  date: "on a date",
-  weekStartNearDate: "on the Monday nearest a date",
-}
-
 /** "Monthly from the 1st", "Fortnightly from 16 Oct 2026", "Monthly from the Monday nearest the 15th". */
 export function describeCycle(config: CycleConfig): string {
   const every = config.unit === "week" ? "Weekly" : config.unit === "fortnight" ? "Fortnightly" : "Monthly"

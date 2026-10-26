@@ -52,7 +52,8 @@ export function addDays(iso: string, days: number): string {
  * The Spending Tracker in one of its views, over the period's `dates`:
  * - Daily: spend per day as bars, with the period's daily average so far.
  * - Cumulative: running total against the previous period of equal length
- *   (and `budget`, when given).
+ *   (and `budget`, when given, as a pace line rising from nothing at the
+ *   start to the whole budget at the end).
  * - Weekly: totals per Monday-start week; partial weeks in grey.
  * Days after today are not drawn.
  */
@@ -111,8 +112,12 @@ export function spendingChart(
     const then = elapsed > 0 ? prev[elapsed - 1] ?? 0 : 0
     const scale = niceScale(Math.max(now, budget ?? 0, ...prev))
     const diff = then > 0 ? Math.round(((now - then) / then) * 100) : null
-    const limit = budget != null ? [{ values: dates.map(() => budget), ink: "limit" }] : []
-    // Each line named at its end, the budget on its rule.
+    // The budget as a pace line: nothing at the start of the period, the
+    // whole budget by the end of its last day.
+    const pace = (i: number) => (budget ?? 0) * ((i + 1) / n)
+    const limit = budget != null ? [{ values: dates.map((_, i) => pace(i)), ink: "limit" }] : []
+    const overPace = budget != null && elapsed > 0 ? now - pace(elapsed - 1) : null
+    // Each line named at its end.
     const at = (index: number, value: number) => pointCell(index, value, n, width, height, 0, scale.max)
     const marks: ChartLabel[] = [
       ...(elapsed > 0 ? [{ ...at(elapsed - 1, now), text: names.current, ink: "spend" }] : []),
@@ -126,7 +131,15 @@ export function spendingChart(
       legend: [
         { text: LINE, fg: theme.peach },
         muted(`${names.current} ${formatWholeMoney(now)}`),
-        ...(budget != null ? [muted(` of ${formatWholeMoney(budget)}`)] : []),
+        ...(budget != null ? [
+          GAP,
+          { text: LINE, fg: theme.yellow },
+          muted(`Budget ${formatWholeMoney(budget)}`),
+          ...(overPace != null ? [
+            muted(", "),
+            { text: `${formatWholeMoney(Math.abs(overPace))} ${overPace > 0 ? "over" : "under"} pace`, fg: overPace > 0 ? theme.error : theme.success },
+          ] : []),
+        ] : []),
         GAP,
         { text: LINE, fg: theme.overlay0 },
         muted(`${names.previous} ${formatWholeMoney(then)}${elapsed < n ? " by now" : ""}`),
