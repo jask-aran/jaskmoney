@@ -9,7 +9,7 @@ import { ui } from "../../state/uiStore"
 import { data } from "../../state/dataStore"
 import { parseFilterStrict } from "../../domain/filter"
 import { theme } from "../../theme"
-import { fit, truncate } from "../text"
+import { count, fit, truncate } from "../text"
 import { formatMoney } from "../../domain/dashboard"
 import { accountRole } from "../../domain/types"
 import { budgetLabel } from "../../domain/budgetScopes"
@@ -98,7 +98,7 @@ function TaxonomyPane(props: { focused: boolean; narrow: boolean; height?: numbe
 function RulesPane(props: { focused: boolean; height?: number | "auto" | `${number}%` }) {
   const active = () => ui.state.settingsActive && ui.state.settingsSection === "rules"
   const rows = () => data.state.rules
-  return <SectionCard title="Rules" focused={props.focused} active={active()} height={props.height} flexGrow={props.height ? 0 : 1} bottomSpans={[muted(rows().length ? `${rows().length} ordered rule${rows().length === 1 ? "" : "s"}` : "empty")]}>
+  return <SectionCard title="Rules" focused={props.focused} active={active()} height={props.height} flexGrow={props.height ? 0 : 1} bottomSpans={[muted(rows().length ? count(rows().length, "ordered rule") : "empty")]}>
     <Show when={rows().length} fallback={<text fg={theme.overlay1}>{active() ? "No rules. Press a to add." : "No rules. Activate to add."}</text>}>
       <For each={rows()}>{(rule, i) => {
         const cat = () => data.state.categories.find((c) => c.id === rule.setCategoryId)?.name

@@ -3,6 +3,7 @@ import { ui } from "../../state/uiStore"
 import { data } from "../../state/dataStore"
 import { tagPickerItems, tagPickerState } from "../../state/tagPicker"
 import { ListPicker } from "./ListPicker"
+import { count } from "../text"
 
 export function TagPicker() {
   const items = createMemo(() => tagPickerItems(data.state.tags, data.state.transactions, ui.state.pickerTargets, ui.state.tagPickerQuery))
@@ -19,7 +20,7 @@ export function TagPicker() {
     <Show when={ui.state.tagPickerOpen}>
       <ListPicker
         title="Tags"
-        subtitle={`${ui.state.pickerTargets.length} transaction${ui.state.pickerTargets.length === 1 ? "" : "s"}`}
+        subtitle={count(ui.state.pickerTargets.length, "transaction")}
         items={items()}
         cursor={ui.state.tagPickerCursor}
         query={ui.state.tagPickerQuery}

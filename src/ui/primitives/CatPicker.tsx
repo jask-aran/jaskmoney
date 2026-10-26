@@ -5,6 +5,7 @@ import { categoryPickerRows } from "../../domain/categoryOptions"
 import type { PickerItem } from "../../state/settingsForm"
 import { ListPicker } from "./ListPicker"
 import { categoryMark } from "../icons"
+import { count } from "../text"
 
 /** Choose a category for the target transactions, grouped and filterable. */
 export function CatPicker() {
@@ -15,7 +16,7 @@ export function CatPicker() {
     <Show when={ui.state.catPickerOpen}>
       <ListPicker
         title="Category"
-        subtitle={`${targets()} transaction${targets() === 1 ? "" : "s"}`}
+        subtitle={count(targets(), "transaction")}
         items={items()}
         cursor={ui.state.catPickerCursor}
         query={ui.state.catPickerQuery}

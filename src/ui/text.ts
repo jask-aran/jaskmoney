@@ -25,6 +25,11 @@ export function fit(s: string, n: number): string {
   return t + " ".repeat(Math.max(0, n - Bun.stringWidth(t)))
 }
 
+/** "1 transaction", "3 transactions". */
+export function count(n: number, noun: string): string {
+  return `${n} ${noun}${n === 1 ? "" : "s"}`
+}
+
 /** Compact money for axes and tight columns: $950, $4.5k, $5k, $12k. */
 export function shortMoney(n: number): string {
   const a = Math.abs(n)

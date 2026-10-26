@@ -35,6 +35,7 @@ import { tagPickerItems, tagPickerState } from "../state/tagPicker"
 import { savedFilterOptions } from "../state/savedFilters"
 import { nextSavedFilterId } from "../state/settingsConfig"
 import { theme } from "../theme"
+import { count } from "../ui/text"
 
 
 function defaultProfile(id: string, path: string) {
@@ -72,7 +73,7 @@ function moveTxnCursor(
 function queryPickerKey(
   key: KeyEvent,
   picker: { query: string; cursor: number },
-  count: number,
+  length: number,
   actions: {
     close: () => void
     update: (next: { query: string; cursor: number }) => void
@@ -83,15 +84,15 @@ function queryPickerKey(
   if (key.name === "escape") { actions.close(); return }
   if (actions.space && (key.name === "space" || key.sequence === " ")) { actions.space(); return }
   const step = key.name === "down" || (key.ctrl && key.name === "n") ? 1 : key.name === "up" || (key.ctrl && key.name === "p") ? -1 : 0
-  if (step) { actions.update({ ...picker, cursor: Math.max(0, Math.min(count - 1, picker.cursor + step)) }); return }
+  if (step) { actions.update({ ...picker, cursor: Math.max(0, Math.min(length - 1, picker.cursor + step)) }); return }
   if (key.name === "return" || key.name === "enter") { actions.apply(); return }
   if (key.name === "backspace") { actions.update({ query: picker.query.slice(0, -1), cursor: 0 }); return }
   if (isPrintable(key)) actions.update({ query: picker.query + key.sequence, cursor: 0 })
 }
 
 /** List indices remain zero for empty lists. Callers include any extra create row. */
-export function listMove(key: Pick<KeyEvent, "name" | "sequence" | "shift">, cursor: number, count: number): number | null {
-  const last = Math.max(0, count - 1)
+export function listMove(key: Pick<KeyEvent, "name" | "sequence" | "shift">, cursor: number, length: number): number | null {
+  const last = Math.max(0, length - 1)
   let next: number
   if (key.sequence === "G" || (key.name === "g" && key.shift)) next = last
   else if (key.name === "g") next = 0
@@ -158,8 +159,8 @@ function handleDryRun(ui: UiStore, key: KeyEvent, data?: DataStore): void {
   const { name } = key
   if (name === "escape") ui.setState({ dryRunReport: null, dryRunScroll: 0 })
   if (name === "j" || name === "down") {
-    const count = ui.state.dryRunReport?.rules.reduce((count, result) => count + 4 + result.samples.length, 0) ?? 0
-    ui.setState({ dryRunScroll: Math.min(Math.max(0, count - ui.state.dryRunVisible), ui.state.dryRunScroll + 1) })
+    const lines = ui.state.dryRunReport?.rules.reduce((n, result) => n + 4 + result.samples.length, 0) ?? 0
+    ui.setState({ dryRunScroll: Math.min(Math.max(0, lines - ui.state.dryRunVisible), ui.state.dryRunScroll + 1) })
   }
   if (name === "k" || name === "up") ui.setState({ dryRunScroll: Math.max(0, ui.state.dryRunScroll - 1) })
 }
@@ -923,7 +924,7 @@ function handleManagerMerchants(ui: UiStore, key: KeyEvent, data?: DataStore): v
     if (!result.ok) { ui.setStatus(result.err, true); return }
     ui.setState({ txnView: "rows" })
     ui.jumpManagerCursor(0, data.scopedTransactions().length)
-    ui.setStatus(`${group.merchant} · ${group.count} transaction${group.count === 1 ? "" : "s"} · u to widen`)
+    ui.setStatus(`${group.merchant} · ${count(group.count, "transaction")} · u to widen`)
     return
   }
   if (name === "c" && group) { ui.openCatPicker(group.ids); return }
@@ -1095,7 +1096,7 @@ function drillDown(ui: UiStore, data: DataStore, line?: CategoryLine) {
   ui.setState({ drillReturn: back, txnView: "rows", focusedSection: "mgr.transactions" })
   const n = data.scopedTransactions().length
   ui.jumpManagerCursor(0, n)
-  ui.setStatus(`${line?.label ?? "Spending"} · ${range.bounds.label} · ${n} transaction${n === 1 ? "" : "s"} · esc back`)
+  ui.setStatus(`${line?.label ?? "Spending"} · ${range.bounds.label} · ${count(n, "transaction")} · esc back`)
 }
 
 type HintState = Pick<UiState, "focusedSection" | "drillReturn" | "chartViews">
