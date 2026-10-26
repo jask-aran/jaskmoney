@@ -6,6 +6,7 @@ import {
   type TimeframeState,
 } from "../domain/timeframe"
 import type { ImportPreview, ImportProfile } from "../domain/types"
+import { editorFields } from "./settingsForm"
 
 export type TabId = "overview" | "manager" | "settings"
 
@@ -91,6 +92,7 @@ export interface UiState {
   chartViews: [number, number]
   filterMode: boolean
   filterDraft: string
+  filterCaret: number
   catPickerOpen: boolean
   catPickerCursor: number
   catPickerQuery: string
@@ -129,9 +131,11 @@ export interface UiState {
   detailId: number | null
   detailNotesEditing: boolean
   detailNotesDraft: string
+  detailNotesCaret: number
   settingsEditor: SettingsEditorKind | null
   settingsEditId: number | string | null
   settingsEditField: number
+  settingsCaret: number
   /** The open list for a picker field of the settings editor. */
   formPicker: { query: string; cursor: number } | null
   settingsDraft: {
@@ -147,11 +151,13 @@ export interface UiState {
   importFiles: string[]
   importCursor: number
   importPath: string
+  importPathCaret: number
   importProfileCursor: number
   importProfileManaging: boolean
   importProfileDraft: ImportProfile
   importProfileEditId: string | null
   importProfileField: number
+  importProfileCaret: number
   importPreview: ImportPreview | null
   importPreviewCursor: number
   importPreviewTop: number
@@ -160,6 +166,7 @@ export interface UiState {
   accountActionId: number | null
   factoryResetOpen: boolean
   factoryResetDraft: string
+  factoryResetCaret: number
 }
 
 const TAB_DEFAULT_FOCUS: Record<TabId, SectionId> = {
@@ -229,6 +236,7 @@ function createUiStore() {
     chartViews: [0, 4],
     filterMode: false,
     filterDraft: "",
+    filterCaret: 0,
     catPickerOpen: false,
     catPickerCursor: 0,
     catPickerQuery: "",
@@ -262,9 +270,11 @@ function createUiStore() {
     detailId: null,
     detailNotesEditing: false,
     detailNotesDraft: "",
+    detailNotesCaret: 0,
     settingsEditor: null,
     settingsEditId: null,
     settingsEditField: 0,
+    settingsCaret: 0,
     formPicker: null,
     settingsDraft: { name: "", color: "#94e2d5", categoryId: null, id: "", expr: "", savedFilterId: "", setCategoryId: null, addTagIds: [], notSpending: false, scopeKey: "overall", amount: "", unit: "month", anchor: "calendar", anchorDate: "" },
     settingsConfirm: null,
@@ -273,11 +283,13 @@ function createUiStore() {
     importFiles: [],
     importCursor: 0,
     importPath: "",
+    importPathCaret: 0,
     importProfileCursor: 0,
     importProfileManaging: false,
     importProfileDraft: { id: "", name: "", account: "", accountType: "debit", importPrefix: "", hasHeader: true, delimiter: ",", dateColumn: 0, amountColumn: 1, descriptionColumns: [2], descriptionJoin: false, amountStrip: "$", dateFormat: "DMY" },
     importProfileEditId: null,
     importProfileField: 0,
+    importProfileCaret: 0,
     importPreview: null,
     importPreviewCursor: 0,
     importPreviewTop: 0,
@@ -286,6 +298,7 @@ function createUiStore() {
     accountActionId: null,
     factoryResetOpen: false,
     factoryResetDraft: "",
+    factoryResetCaret: 0,
   })
 
   function setStatus(text: string, isErr = false) {
@@ -307,7 +320,7 @@ function createUiStore() {
       importStage: "none",
       accountActionId: null,
       factoryResetOpen: false,
-      factoryResetDraft: "",
+      factoryResetDraft: "", factoryResetCaret: 0,
     })
   }
 
@@ -353,16 +366,19 @@ function createUiStore() {
   }
 
   function leaveSettings() { setState({ settingsActive: false, settingsEditor: null, settingsConfirm: null, importStage: "none", status: "Settings · navigate sections", statusErr: false }) }
-  function openSettingsEditor(kind: SettingsEditorKind, id: number | string | null, draft: UiState["settingsDraft"]) { setState({ settingsEditor: kind, settingsEditId: id, settingsEditField: 0, formPicker: null, settingsDraft: draft, settingsConfirm: null, jumpMode: false }) }
-  function closeSettingsEditor() { setState({ settingsEditor: null, settingsEditId: null, settingsEditField: 0, formPicker: null }) }
+  function openSettingsEditor(kind: SettingsEditorKind, id: number | string | null, draft: UiState["settingsDraft"]) {
+    const field = editorFields(kind, draft, { accounts: [], categories: [], tags: [], savedFilters: [] })[0]
+    setState({ settingsEditor: kind, settingsEditId: id, settingsEditField: 0, formPicker: null, settingsDraft: draft, settingsCaret: field?.kind === "text" ? field.display.length : 0, settingsConfirm: null, jumpMode: false })
+  }
+  function closeSettingsEditor() { setState({ settingsEditor: null, settingsEditId: null, settingsEditField: 0, settingsCaret: 0, formPicker: null }) }
   function armSettingsConfirm(confirm: NonNullable<UiState["settingsConfirm"]>) { setState({ settingsConfirm: confirm }) }
   function clearSettingsConfirm() { setState({ settingsConfirm: null }) }
 
   function beginImport(directory: string, files: string[]) {
-    setState({ importStage: "files", importDirectory: directory, importFiles: files, importCursor: 0, importPath: "", importProfileCursor: 0, importProfileManaging: false, importPreview: null, importPreviewCursor: 0, importPreviewTop: 0, importPreviewShowAll: false, importPreviewRules: true, jumpMode: false })
+    setState({ importStage: "files", importDirectory: directory, importFiles: files, importCursor: 0, importPath: "", importPathCaret: 0, importProfileCursor: 0, importProfileManaging: false, importPreview: null, importPreviewCursor: 0, importPreviewTop: 0, importPreviewShowAll: false, importPreviewRules: true, jumpMode: false })
   }
-  function cancelImport() { setState({ importStage: "none", importPreview: null, importPath: "", importProfileEditId: null, importProfileManaging: false }) }
-  function openProfileEditor(draft: ImportProfile, id: string | null) { setState({ importStage: "profileEditor", importProfileDraft: draft, importProfileEditId: id, importProfileField: 0 }) }
+  function cancelImport() { setState({ importStage: "none", importPreview: null, importPath: "", importPathCaret: 0, importProfileEditId: null, importProfileManaging: false }) }
+  function openProfileEditor(draft: ImportProfile, id: string | null) { setState({ importStage: "profileEditor", importProfileDraft: draft, importProfileEditId: id, importProfileField: 0, importProfileCaret: draft.id.length }) }
 
   function moveSettingsList(list: SettingsList, delta: number, count: number) {
     if (!count) { setState(list === "categories" ? { categoryCursor: 0, categoryTop: 0 } : { tagCursor: 0, tagTop: 0 }); return }
@@ -384,6 +400,7 @@ function createUiStore() {
     setState({
       filterMode: true,
       filterDraft: seed,
+      filterCaret: seed.length,
       catPickerOpen: false,
       tagPickerOpen: false,
       jumpMode: false,

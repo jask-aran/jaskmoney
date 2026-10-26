@@ -482,4 +482,61 @@ describe("render errors", () => {
     ui.switchTab("manager"); await t.renderOnce()
     expect(t.captureCharFrame()).toContain("Transactions")
   })
+
+  test("all six text contexts paint the caret character and restore the end bar", async () => {
+    process.env.JASKMONEY_DB = ":memory:"
+    process.env.JASKMONEY_NO_BOOTSTRAP = "1"
+    ui.switchTab("manager")
+    ui.setState({ detailId: null, detailNotesEditing: false })
+    const t = await testRender(() => <App />, { width: 140, height: 55 })
+    await t.renderOnce()
+    const profile = { ...ui.state.importProfileDraft, id: "abZcd", account: "Caret test", accountType: "debit" as const }
+    data.commitPreview({
+      path: "caret.csv", filename: "caret.csv", profile, accountId: 0, accountName: profile.account,
+      rows: [{ sourceLine: 1, dateRaw: "2026-01-01", dateISO: "2026-01-01", amount: -1, description: "LOCAL CARET", duplicate: false, categoryName: "", tagNames: [] }],
+      errors: [], newCount: 1, duplicateCount: 0, rulesEnabled: false,
+    }, true)
+    const id = data.state.transactions[0]!.id
+    data.updateTransactionNotes(id, "abZcd")
+    const contexts = [
+      { accent: true, open: () => { ui.switchTab("manager"); ui.openFilter("abZcd") } },
+      { accent: false, open: () => { ui.switchTab("manager"); ui.setState({ detailId: id }); t.mockInput.pressKey("n") } },
+      { accent: true, open: () => { ui.switchTab("settings"); ui.openSettingsEditor("category", null, { ...ui.state.settingsDraft, name: "abZcd" }) } },
+      { accent: false, open: () => { ui.switchTab("settings"); ui.setState({ importStage: "path", importPath: "abZcd", importPathCaret: 5 }) } },
+      { accent: false, open: () => { ui.switchTab("settings"); ui.openProfileEditor(profile, null) } },
+      { accent: false, open: () => { ui.switchTab("settings"); ui.setState({ factoryResetOpen: true, factoryResetDraft: "abZcd", factoryResetCaret: 5 }) } },
+    ]
+    // Seed: end bar. Left: reverse character. End: normal text and end bar.
+    for (const context of contexts) {
+      ui.setState({ detailId: null, detailNotesEditing: false })
+      context.open()
+      await t.renderOnce()
+      await t.flush()
+      expect(t.captureCharFrame()).toContain("abZcd▌")
+      t.mockInput.pressArrow("left")
+      t.mockInput.pressArrow("left")
+      t.mockInput.pressArrow("left")
+      await t.renderOnce()
+      await t.flush()
+      const caret = t.captureSpans().lines.flatMap((line) => line.spans).find((span) => span.text === "Z")!
+      expect(caret).toBeDefined()
+      expect(caret.fg.toInts()).toEqual([17, 17, 27, 255])
+      expect(caret.bg.toInts()).toEqual(context.accent ? [245, 194, 231, 255] : [180, 190, 254, 255])
+      expect(caret.attributes).toBe(0)
+      expect(t.captureCharFrame()).not.toContain("abZcd▌")
+      t.mockInput.pressKey("e", { ctrl: true })
+      await t.renderOnce()
+      await t.flush()
+      expect(t.captureCharFrame()).toContain("abZcd▌")
+      const restored = t.captureSpans().lines.find((line) => line.spans.some((span) => span.text.includes("▌")))!.spans.find((span) => span.text.includes("abZcd"))!
+      expect(restored.fg.toInts()).toEqual([205, 214, 244, 255])
+      expect(restored.attributes).toBe(0)
+      ui.closeFilter(false)
+    }
+    ui.setState({ detailId: null, detailNotesEditing: false })
+    ui.switchTab("overview")
+    data.clearFilter()
+    t.renderer.destroy()
+  })
+
 })

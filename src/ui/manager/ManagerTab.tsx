@@ -3,6 +3,7 @@ import { useTerminalDimensions } from "@opentui/solid"
 import { SectionCard } from "../primitives/SectionCard"
 import { muted } from "../primitives/spans"
 import { S } from "../primitives/S"
+import { TextInput } from "../primitives/TextInput"
 import { ui, type SectionId } from "../../state/uiStore"
 import { data } from "../../state/dataStore"
 import { theme } from "../../theme"
@@ -185,8 +186,8 @@ export function ManagerTab(props: { focused: SectionId }) {
               <S fg={theme.accent} bold>
                 /
               </S>
-              <S fg={theme.text}> {fb().raw}</S>
-              {fb().editing ? <S fg={theme.accent}>▌</S> : null}
+              <S fg={theme.text}>{" "}</S>
+              <TextInput field={{ value: fb().raw, caret: ui.state.filterCaret }} focused={fb().editing} caretColor={theme.accent} />
               <S fg={theme.text}>{"  "}</S>
               <S fg={fb().dotColor}>●</S>
               <S fg={fb().dotColor}> {fb().dotLabel}</S>

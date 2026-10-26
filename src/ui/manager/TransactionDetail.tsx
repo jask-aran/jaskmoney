@@ -3,6 +3,7 @@ import { categoryMark } from "../icons"
 import { useTerminalDimensions } from "@opentui/solid"
 import { Modal } from "../primitives/Modal"
 import { S } from "../primitives/S"
+import { TextInput } from "../primitives/TextInput"
 import { ui } from "../../state/uiStore"
 import { data } from "../../state/dataStore"
 import { categoryColor, theme } from "../../theme"
@@ -62,7 +63,7 @@ export function TransactionDetail() {
           when={ui.state.detailNotesEditing}
           fallback={field("Notes", <S fg={row()!.notes ? theme.text : theme.overlay1}>{row()!.notes || "—"}</S>)}
         >
-          {field("Notes", <><S fg={theme.text}>{ui.state.detailNotesDraft}</S><S fg={theme.focus}>▌</S></>)}
+          {field("Notes", <TextInput field={{ value: ui.state.detailNotesDraft, caret: ui.state.detailNotesCaret }} focused />)}
         </Show>
       </Modal>
     </Show>

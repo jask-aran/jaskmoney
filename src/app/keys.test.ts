@@ -4,6 +4,7 @@ import { spendingScope } from "../domain/accountTree"
 import { handleKey, footerHints } from "./keys"
 import { ui } from "../state/uiStore"
 import { data } from "../state/dataStore"
+import { openDb, loadTransactions, loadTransactionDetail, setTransactionNotes } from "../db/client"
 
 function key(partial: Partial<KeyEvent> & { name: string }): KeyEvent {
   return {
@@ -304,4 +305,182 @@ describe("key router", () => {
     handleKey(ui, key({ name: "delete" }), data)
     expect(ui.state.settingsConfirm).toBeNull()
   })
+
+  test("filter edits at the caret keep live preview, parse status and rows in sync", () => {
+    ui.switchTab("manager")
+    const txn = (id: number, amount: number) => ({
+      id, amount, dateRaw: "x", dateISO: "2026-01-01", description: "filter row", categoryId: null, categoryName: "U", categoryColor: "#7f849c",
+      notes: "", importId: null, accountId: 1, accountName: "A", tagNames: [], tagColors: [], tagIds: [],
+      source: "csv" as const, status: null, transferAccountId: null, internal: false, excluded: false,
+    })
+    data.setState({ transactions: [txn(1, -120), txn(2, -10)], accountSelection: "all", accounts: [
+      { id: 1, name: "A", type: "debit", sortOrder: 0, isActive: true, source: "csv", externalKind: null, balance: null, syncEnabled: true },
+    ] })
+    ui.openFilter("amt:-10")
+    expect(ui.state.filterCaret).toBe(7)
+    handleKey(ui, key({ name: "left" }), data)
+    handleKey(ui, key({ name: "2" }), data)
+    expect(ui.state.filterDraft).toBe("amt:-120")
+    expect(ui.state.filterCaret).toBe(7)
+    expect(data.state.filterQuery).toBe("amt:-120")
+    expect(data.filterPreview()).toBe("amt:=-120")
+    expect(data.state.filterErr).toBe("")
+    expect(data.scopedTransactions().map((row) => row.id)).toEqual([1])
+    expect(ui.state.managerCursor).toBe(0)
+    handleKey(ui, key({ name: "delete" }), data)
+    expect(data.state.filterQuery).toBe("amt:-12")
+    handleKey(ui, key({ name: "home" }), data)
+    handleKey(ui, key({ name: "k", ctrl: true }), data)
+    expect(data.state.filterQuery).toBe("")
+    ui.closeFilter(false)
+    ui.openFilter("desc:seed")
+    expect(ui.state.filterCaret).toBe(9)
+    handleKey(ui, key({ name: "escape" }), data)
+  })
+
+  test("notes seed at the end, edit in the middle, save locally and clear the caret", () => {
+    const db = openDb(":memory:")
+    try {
+      db.query("INSERT INTO transactions (id, date_raw, date_iso, amount, description, notes, source) VALUES (901, 'x', '2026-01-01', -1, 'local', 'cofee', 'csv')").run()
+      data.setState({ transactions: loadTransactions(db) })
+      const local = { ...data, updateTransactionNotes: (id: number, notes: string) => setTransactionNotes(db, id, notes) }
+      ui.switchTab("manager")
+      ui.setState({ detailId: 901, detailNotesCaret: 0 })
+      handleKey(ui, key({ name: "n" }), local)
+      expect(ui.state.detailNotesCaret).toBe(5)
+      handleKey(ui, key({ name: "left" }), local)
+      handleKey(ui, key({ name: "left" }), local)
+      handleKey(ui, key({ name: "f" }), local)
+      expect(ui.state.detailNotesDraft).toBe("coffee")
+      handleKey(ui, key({ name: "return" }), local)
+      expect(loadTransactionDetail(db, 901)?.notes).toBe("coffee")
+      expect(ui.state.detailNotesCaret).toBe(0)
+      expect(ui.state.detailNotesEditing).toBe(false)
+    } finally {
+      ui.setState({ detailId: null, detailNotesEditing: false })
+      db.close()
+    }
+  })
+
+  test("settings text arrows move the caret; choices and toggles still change values", () => {
+    ui.switchTab("settings")
+    ui.openSettingsEditor("category", null, { ...ui.state.settingsDraft, name: "cofee", color: "#123456" })
+    expect(ui.state.settingsCaret).toBe(5)
+    handleKey(ui, key({ name: "left" }), data)
+    handleKey(ui, key({ name: "left" }), data)
+    handleKey(ui, key({ name: "f" }), data)
+    expect(ui.state.settingsDraft.name).toBe("coffee")
+    expect(ui.state.settingsEditField).toBe(0)
+    handleKey(ui, key({ name: "right" }), data)
+    expect(ui.state.settingsCaret).toBe(5)
+    handleKey(ui, key({ name: "tab" }), data)
+    expect(ui.state.settingsCaret).toBe(7)
+    handleKey(ui, key({ name: "down" }), data)
+    const before = ui.state.settingsDraft.notSpending
+    handleKey(ui, key({ name: "left" }), data)
+    expect(ui.state.settingsDraft.notSpending).toBe(!before)
+    handleKey(ui, key({ name: "right" }), data)
+    expect(ui.state.settingsDraft.notSpending).toBe(before)
+    handleKey(ui, key({ name: "up" }), data)
+    expect(ui.state.settingsCaret).toBe(7)
+    handleKey(ui, key({ name: "tab", shift: true }), data)
+    expect(ui.state.settingsCaret).toBe(6)
+    ui.openSettingsEditor("cycle", null, { ...ui.state.settingsDraft, unit: "month", anchor: "calendar" })
+    handleKey(ui, key({ name: "left" }), data)
+    expect(ui.state.settingsDraft.unit).toBe("fortnight")
+    handleKey(ui, key({ name: "right" }), data)
+    expect(ui.state.settingsDraft.unit).toBe("month")
+    ui.openSettingsEditor("filter", null, { ...ui.state.settingsDraft, id: "seed-id" })
+    expect(ui.state.settingsCaret).toBe(7)
+    handleKey(ui, key({ name: "escape" }), data)
+  })
+
+  test("profile text fields reset the caret on focus; all four choice fields keep their bindings", () => {
+    ui.switchTab("settings")
+    ui.openProfileEditor({ ...ui.state.importProfileDraft, id: "cofee", name: "profile", accountType: "debit", hasHeader: true, descriptionJoin: false, dateFormat: "DMY" }, null)
+    expect(ui.state.importProfileCaret).toBe(5)
+    handleKey(ui, key({ name: "up" }), data)
+    handleKey(ui, key({ name: "down" }), data)
+    expect(ui.state.importProfileField).toBe(0)
+    expect(ui.state.importProfileCaret).toBe(5)
+    handleKey(ui, key({ name: "left" }), data)
+    handleKey(ui, key({ name: "left" }), data)
+    handleKey(ui, key({ name: "f" }), data)
+    expect(ui.state.importProfileDraft.id).toBe("coffee")
+    expect(ui.state.importProfileField).toBe(0)
+    handleKey(ui, key({ name: "tab" }), data)
+    expect(ui.state.importProfileCaret).toBe(7)
+    handleKey(ui, key({ name: "tab", shift: true }), data)
+    expect(ui.state.importProfileCaret).toBe(6)
+    for (const field of [3, 5, 10, 12]) {
+      ui.setState({ importProfileField: field })
+      const before = { ...ui.state.importProfileDraft }
+      handleKey(ui, key({ name: "backspace" }), data)
+      handleKey(ui, key({ name: "x" }), data)
+      expect({ ...ui.state.importProfileDraft }).toEqual(before)
+      handleKey(ui, key({ name: "left" }), data)
+      expect({ ...ui.state.importProfileDraft }).not.toEqual(before)
+      handleKey(ui, key({ name: "right" }), data)
+      for (const name of ["h", "l", "space"]) {
+        const before = { ...ui.state.importProfileDraft }
+        handleKey(ui, key({ name, sequence: name === "space" ? " " : name }), data)
+        expect({ ...ui.state.importProfileDraft }).not.toEqual(before)
+      }
+    }
+    ui.cancelImport()
+  })
+
+  test("import path and reset confirmation edit at the caret and reset on open or cancel", () => {
+    ui.switchTab("settings")
+    ui.beginImport("/csv", [])
+    handleKey(ui, key({ name: "p" }), data)
+    expect(ui.state.importPathCaret).toBe(0)
+    for (const name of "ab.csv") handleKey(ui, key({ name }), data)
+    handleKey(ui, key({ name: "home" }), data)
+    handleKey(ui, key({ name: "right" }), data)
+    handleKey(ui, key({ name: "x" }), data)
+    expect(ui.state.importPath).toBe("axb.csv")
+    handleKey(ui, key({ name: "delete" }), data)
+    expect(ui.state.importPath).toBe("ax.csv")
+    handleKey(ui, key({ name: "return" }))
+    expect(ui.state.importPath).toBe("/csv/ax.csv")
+    expect(ui.state.importPathCaret).toBe(ui.state.importPath.length)
+    ui.cancelImport()
+    expect(ui.state.importPathCaret).toBe(0)
+    ui.activateSettings("database")
+    handleKey(ui, key({ name: "x" }), data)
+    expect(ui.state.factoryResetCaret).toBe(0)
+    for (const name of "REST") handleKey(ui, key({ name }), data)
+    handleKey(ui, key({ name: "left" }), data)
+    handleKey(ui, key({ name: "e", sequence: "E" }), data)
+    expect(ui.state.factoryResetDraft).toBe("RESET")
+    handleKey(ui, key({ name: "escape" }), data)
+    expect(ui.state.factoryResetCaret).toBe(0)
+    expect(ui.state.factoryResetDraft).toBe("")
+  })
+
+  test("command letters and space stay literal in all six text contexts", () => {
+    const contexts = [
+      { open: () => ui.openFilter(), value: () => ui.state.filterDraft },
+      { open: () => ui.setState({ detailId: 901, detailNotesEditing: true, detailNotesDraft: "", detailNotesCaret: 0 }), value: () => ui.state.detailNotesDraft },
+      { open: () => ui.openSettingsEditor("category", null, { ...ui.state.settingsDraft, name: "" }), value: () => ui.state.settingsDraft.name },
+      { open: () => { ui.beginImport("/csv", []); handleKey(ui, key({ name: "p" })) }, value: () => ui.state.importPath },
+      { open: () => ui.openProfileEditor({ ...ui.state.importProfileDraft, id: "" }, null), value: () => ui.state.importProfileDraft.id },
+      { open: () => { ui.activateSettings("database"); handleKey(ui, key({ name: "x" })) }, value: () => ui.state.factoryResetDraft },
+    ]
+    for (const context of contexts) {
+      ui.switchTab("settings")
+      ui.setState({ detailId: null, detailNotesEditing: false })
+      context.open()
+      for (const name of "hljknx123") handleKey(ui, key({ name }))
+      handleKey(ui, key({ name: "space", sequence: " " }))
+      expect(context.value()).toBe("hljknx123 ")
+      handleKey(ui, key({ name: "backspace" }))
+      expect(context.value()).toBe("hljknx123")
+      handleKey(ui, key({ name: "escape" }))
+    }
+    ui.setState({ detailId: null, detailNotesEditing: false })
+    ui.switchTab("overview")
+  })
+
 })

@@ -20,7 +20,7 @@ import {
   stepPeriod,
   timeframeBounds,
 } from "../domain/timeframe"
-import { isPrintable } from "../domain/textField"
+import { editText, isPrintable } from "../domain/textField"
 
 
 function defaultProfile(id: string, path: string) {
@@ -225,19 +225,11 @@ export function handleKey(ui: UiStore, key: KeyEvent, data?: DataStore): boolean
       }
       return true
     }
-    if (name === "backspace") {
-      const next = ui.state.filterDraft.slice(0, -1)
-      ui.setState({ filterDraft: next })
-      data?.setFilterLive(next)
+    const next = editText({ value: ui.state.filterDraft, caret: ui.state.filterCaret }, key)
+    if (next) {
+      ui.setState({ filterDraft: next.value, filterCaret: next.caret })
+      data?.setFilterLive(next.value)
       ui.jumpManagerCursor(0, data?.scopedTransactions().length ?? 0)
-      return true
-    }
-    if (isPrintable(key)) {
-      const next = ui.state.filterDraft + seq
-      ui.setState({ filterDraft: next })
-      data?.setFilterLive(next)
-      ui.jumpManagerCursor(0, data?.scopedTransactions().length ?? 0)
-      return true
     }
     return true
   }
@@ -245,14 +237,14 @@ export function handleKey(ui: UiStore, key: KeyEvent, data?: DataStore): boolean
   // ── Transaction detail (a modal: owns input until closed) ──────────
   if (ui.state.detailId != null) {
     if (ui.state.detailNotesEditing) {
-      if (name === "escape") { ui.setState({ detailNotesEditing: false, detailNotesDraft: "" }); ui.setStatus("Notes unchanged"); return true }
+      if (name === "escape") { ui.setState({ detailNotesEditing: false, detailNotesDraft: "", detailNotesCaret: 0 }); ui.setStatus("Notes unchanged"); return true }
       if (name === "return" || name === "enter") {
         try { data?.updateTransactionNotes(ui.state.detailId, ui.state.detailNotesDraft.trim()); ui.setStatus("Notes saved") } catch (e) { ui.setStatus(e instanceof Error ? e.message : String(e), true) }
-        ui.setState({ detailNotesEditing: false, detailNotesDraft: "" })
+        ui.setState({ detailNotesEditing: false, detailNotesDraft: "", detailNotesCaret: 0 })
         return true
       }
-      if (name === "backspace") { ui.setState({ detailNotesDraft: ui.state.detailNotesDraft.slice(0, -1) }); return true }
-      if (isPrintable(key)) { ui.setState({ detailNotesDraft: ui.state.detailNotesDraft + seq }); return true }
+      const next = editText({ value: ui.state.detailNotesDraft, caret: ui.state.detailNotesCaret }, key)
+      if (next) ui.setState({ detailNotesDraft: next.value, detailNotesCaret: next.caret })
       return true
     }
     if (name === "escape" || name === "return" || name === "enter") { ui.setState({ detailId: null }); return true }
@@ -260,7 +252,7 @@ export function handleKey(ui: UiStore, key: KeyEvent, data?: DataStore): boolean
     if (name === "t") { ui.openTagPicker(ui.targetIds(data?.scopedTransactions() ?? [])); return true }
     if (name === "n") {
       const notes = data?.state.transactions.find((t) => t.id === ui.state.detailId)?.notes ?? ""
-      ui.setState({ detailNotesEditing: true, detailNotesDraft: notes })
+      ui.setState({ detailNotesEditing: true, detailNotesDraft: notes, detailNotesCaret: notes.length })
       return true
     }
     // j/k browse neighbouring transactions without closing the view.
@@ -276,14 +268,14 @@ export function handleKey(ui: UiStore, key: KeyEvent, data?: DataStore): boolean
 
   // ── Import and account-data modals own all input ───────────────────
   if (ui.state.factoryResetOpen) {
-    if (name === "escape") { ui.setState({ factoryResetOpen: false, factoryResetDraft: "" }); ui.setStatus("Factory reset cancelled"); return true }
-    if (name === "backspace") { ui.setState({ factoryResetDraft: ui.state.factoryResetDraft.slice(0, -1) }); return true }
+    if (name === "escape") { ui.setState({ factoryResetOpen: false, factoryResetDraft: "", factoryResetCaret: 0 }); ui.setStatus("Factory reset cancelled"); return true }
     if (name === "return" || name === "enter") {
       if (ui.state.factoryResetDraft !== "RESET") { ui.setStatus("Type RESET exactly to erase this database", true); return true }
-      try { data?.factoryResetDatabase(); ui.setState({ factoryResetOpen: false, factoryResetDraft: "" }); ui.setStatus("Database reset · OpenTUI settings retained") } catch (e) { ui.setStatus(e instanceof Error ? e.message : String(e), true) }
+      try { data?.factoryResetDatabase(); ui.setState({ factoryResetOpen: false, factoryResetDraft: "", factoryResetCaret: 0 }); ui.setStatus("Database reset · OpenTUI settings retained") } catch (e) { ui.setStatus(e instanceof Error ? e.message : String(e), true) }
       return true
     }
-    if (isPrintable(key)) ui.setState({ factoryResetDraft: ui.state.factoryResetDraft + seq })
+    const next = editText({ value: ui.state.factoryResetDraft, caret: ui.state.factoryResetCaret }, key)
+    if (next) ui.setState({ factoryResetDraft: next.value, factoryResetCaret: next.caret })
     return true
   }
 
@@ -300,32 +292,32 @@ export function handleKey(ui: UiStore, key: KeyEvent, data?: DataStore): boolean
     if (name === "escape") { ui.cancelImport(); ui.setStatus("Import cancelled"); return true }
     if (name === "j" || name === "down") { ui.setState({ importCursor: Math.min(files.length - 1, ui.state.importCursor + 1) }); return true }
     if (name === "k" || name === "up") { ui.setState({ importCursor: Math.max(0, ui.state.importCursor - 1) }); return true }
-    if (name === "/" || name === "p") { ui.setState({ importStage: "path", importPath: "" }); return true }
+    if (name === "/" || name === "p") { ui.setState({ importStage: "path", importPath: "", importPathCaret: 0 }); return true }
     if ((name === "return" || name === "enter") && files[ui.state.importCursor]) {
       const path = files[ui.state.importCursor]!
       const matches = data?.profileMatches(path) ?? []
-      if (matches.length === 1) { try { const preview = data?.previewImport(path, matches[0]!); ui.setState({ importStage: "preview", importPath: path, importPreview: preview ?? null }) } catch (e) { ui.setStatus(e instanceof Error ? e.message : String(e), true) } }
-      else ui.setState({ importStage: "profile", importPath: path, importProfileCursor: 0 })
+      if (matches.length === 1) { try { const preview = data?.previewImport(path, matches[0]!); ui.setState({ importStage: "preview", importPath: path, importPathCaret: path.length, importPreview: preview ?? null }) } catch (e) { ui.setStatus(e instanceof Error ? e.message : String(e), true) } }
+      else ui.setState({ importStage: "profile", importPath: path, importPathCaret: path.length, importProfileCursor: 0 })
       return true
     }
     return true
   }
 
   if (ui.state.importStage === "path") {
-    if (name === "escape") { ui.setState({ importStage: "files", importPath: "" }); return true }
-    if (name === "backspace") { ui.setState({ importPath: ui.state.importPath.slice(0, -1) }); return true }
+    if (name === "escape") { ui.setState({ importStage: "files", importPath: "", importPathCaret: 0 }); return true }
     if (name === "return" || name === "enter") {
       const raw = ui.state.importPath.trim()
       if (!raw) { ui.setStatus("Enter a CSV path", true); return true }
       const path = resolve(ui.state.importDirectory, raw)
       try {
         const matches = data?.profileMatches(path) ?? []
-        if (matches.length === 1) ui.setState({ importStage: "preview", importPath: path, importPreview: data?.previewImport(path, matches[0]!) ?? null })
-        else ui.setState({ importStage: "profile", importPath: path, importProfileCursor: 0 })
+        if (matches.length === 1) ui.setState({ importStage: "preview", importPath: path, importPathCaret: path.length, importPreview: data?.previewImport(path, matches[0]!) ?? null })
+        else ui.setState({ importStage: "profile", importPath: path, importPathCaret: path.length, importProfileCursor: 0 })
       } catch (e) { ui.setStatus(e instanceof Error ? e.message : String(e), true) }
       return true
     }
-    if (isPrintable(key)) ui.setState({ importPath: ui.state.importPath + seq })
+    const next = editText({ value: ui.state.importPath, caret: ui.state.importPathCaret }, key)
+    if (next) ui.setState({ importPath: next.value, importPathCaret: next.caret })
     return true
   }
 
@@ -350,7 +342,13 @@ export function handleKey(ui: UiStore, key: KeyEvent, data?: DataStore): boolean
     const fields = ["id", "name", "account", "accountType", "importPrefix", "hasHeader", "delimiter", "dateColumn", "amountColumn", "descriptionColumns", "descriptionJoin", "amountStrip", "dateFormat"] as const
     const selected = fields[field]!
     if (name === "escape") { ui.setState({ importStage: "profile" }); return true }
-    if (name === "tab") { ui.setState({ importProfileField: (field + (key.shift ? -1 : 1) + fields.length) % fields.length }); return true }
+    if (name === "tab") {
+      const next = (field + (key.shift ? -1 : 1) + fields.length) % fields.length
+      const selected = fields[next]!
+      const value = selected === "descriptionColumns" ? draft.descriptionColumns.join(",") : String(draft[selected])
+      ui.setState({ importProfileField: next, importProfileCaret: value.length })
+      return true
+    }
     if (name === "return" || name === "enter") {
       try {
         data?.saveImportProfile(draft)
@@ -363,19 +361,14 @@ export function handleKey(ui: UiStore, key: KeyEvent, data?: DataStore): boolean
     if (selected === "accountType" && (name === "h" || name === "left" || name === "l" || name === "right" || name === "space")) { ui.setState("importProfileDraft", "accountType", draft.accountType === "debit" ? "credit" : "debit"); return true }
     if ((selected === "hasHeader" || selected === "descriptionJoin") && (name === "h" || name === "left" || name === "l" || name === "right" || name === "space")) { ui.setState("importProfileDraft", selected, !draft[selected]); return true }
     if (selected === "dateFormat" && (name === "h" || name === "left" || name === "l" || name === "right" || name === "space")) { const values = ["DMY", "MDY", "YMD"] as const; ui.setState("importProfileDraft", "dateFormat", values[(values.indexOf(draft.dateFormat) + 1) % values.length]!); return true }
+    if (selected === "accountType" || selected === "hasHeader" || selected === "descriptionJoin" || selected === "dateFormat") return true
     const text = selected === "descriptionColumns" ? draft.descriptionColumns.join(",") : String(draft[selected])
-    if (name === "backspace") {
-      const next = text.slice(0, -1)
-      if (selected === "descriptionColumns") ui.setState("importProfileDraft", "descriptionColumns", next ? next.split(",").map(Number).filter(Number.isInteger) : [])
-      else if (["dateColumn", "amountColumn"].includes(selected)) ui.setState("importProfileDraft", selected as "dateColumn", Number(next || 0))
-      else ui.setState("importProfileDraft", selected as "id", next as never)
-      return true
-    }
-    if (isPrintable(key) && !["accountType", "hasHeader", "descriptionJoin", "dateFormat"].includes(selected)) {
-      const next = text + seq
-      if (selected === "descriptionColumns") ui.setState("importProfileDraft", "descriptionColumns", next.split(",").map(Number).filter(Number.isInteger))
-      else if (["dateColumn", "amountColumn"].includes(selected)) ui.setState("importProfileDraft", selected as "dateColumn", Number(next || 0))
-      else ui.setState("importProfileDraft", selected as "id", next as never)
+    const next = editText({ value: text, caret: ui.state.importProfileCaret }, key)
+    if (next) {
+      ui.setState({ importProfileCaret: next.caret })
+      if (selected === "descriptionColumns") ui.setState("importProfileDraft", selected, next.value ? next.value.split(",").map(Number).filter(Number.isInteger) : [])
+      else if (selected === "dateColumn" || selected === "amountColumn") ui.setState("importProfileDraft", selected, Number(next.value || 0))
+      else ui.setState("importProfileDraft", selected, next.value)
     }
     return true
   }
@@ -458,7 +451,11 @@ export function handleKey(ui: UiStore, key: KeyEvent, data?: DataStore): boolean
     }
 
     const isText = field.kind === "text"
-    const move = (step: number) => ui.setState({ settingsEditField: (fieldIndex + step + fields.length) % fields.length })
+    const move = (step: number) => {
+      const next = (fieldIndex + step + fields.length) % fields.length
+      const field = fields[next]!
+      ui.setState({ settingsEditField: next, settingsCaret: field.kind === "text" ? field.display.length : 0 })
+    }
     if (name === "escape") { ui.closeSettingsEditor(); ui.setStatus("Edit cancelled"); return true }
     if (name === "tab") { move(key.shift ? -1 : 1); return true }
     if (name === "down" || (!isText && name === "j")) { move(1); return true }
@@ -521,8 +518,13 @@ export function handleKey(ui: UiStore, key: KeyEvent, data?: DataStore): boolean
       ui.setState("settingsDraft", field.key as "notSpending", !draft[field.key])
       return true
     }
-    if (isText && name === "backspace") { ui.setState("settingsDraft", field.key as "name", (draft[field.key] as string).slice(0, -1)); return true }
-    if (isText && isPrintable(key)) { ui.setState("settingsDraft", field.key as "name", (draft[field.key] as string) + seq); return true }
+    if (isText) {
+      const next = editText({ value: field.display, caret: ui.state.settingsCaret }, key)
+      if (next) {
+        ui.setState("settingsDraft", field.key as "name", next.value)
+        ui.setState({ settingsCaret: next.caret })
+      }
+    }
     return true
   }
 
@@ -683,14 +685,14 @@ export function handleKey(ui: UiStore, key: KeyEvent, data?: DataStore): boolean
       try { const directory = data?.importDirectory() ?? process.cwd(); ui.beginImport(directory, data?.csvFiles(directory) ?? []) } catch (e) { ui.setStatus(e instanceof Error ? e.message : String(e), true) }
       return true
     }
-    if (name === "p") { ui.setState({ importStage: "profile", importPath: "", importProfileCursor: 0, importProfileManaging: true }); return true }
+    if (name === "p") { ui.setState({ importStage: "profile", importPath: "", importPathCaret: 0, importProfileCursor: 0, importProfileManaging: true }); return true }
     if (name === "n" && data) {
       data.setIcons(!data.state.icons)
       ui.setStatus(data.state.icons ? "Category icons on (needs a Nerd Font)" : "Category icons off")
       return true
     }
     if (name === "c") { ui.armSettingsConfirm({ kind: "clearData", id: 0, label: "all transaction and import data" }); ui.setStatus("Press del to clear all transaction and import data"); return true }
-    if (name === "x") { ui.setState({ factoryResetOpen: true, factoryResetDraft: "" }); ui.setStatus("Type RESET then enter to remove this SQLite database"); return true }
+    if (name === "x") { ui.setState({ factoryResetOpen: true, factoryResetDraft: "", factoryResetCaret: 0 }); ui.setStatus("Type RESET then enter to remove this SQLite database"); return true }
     return true
   }
 
