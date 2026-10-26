@@ -143,9 +143,15 @@ const MONTHS = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "
  * Gridlines and the x-axis label line for a daily series over `dates`:
  * month starts, Mondays when weeks are at least 6 cells apart, and today.
  * Labels are placed greedily by priority (start and end, then months, then
- * Mondays' day numbers) with at least one blank cell between them.
+ * Mondays' day numbers) with at least two blank cells between them. `colOf`
+ * places date index i (default: the line chart's spread over `width`).
  */
-export function dateAxis(dates: string[], width: number, todayISO: string): { markers: Marker[]; labels: string } {
+export function dateAxis(
+  dates: string[],
+  width: number,
+  todayISO: string,
+  colOf: (index: number) => number = (i) => cellColumn(i, dates.length, width),
+): { markers: Marker[]; labels: string } {
   const n = dates.length
   const markers: Marker[] = []
   const labelAt: Array<{ col: number; text: string; align: "left" | "right" | "center" }> = []
@@ -168,11 +174,11 @@ export function dateAxis(dates: string[], width: number, todayISO: string): { ma
   for (const i of months) {
     markers.push({ index: i, ink: "month" })
     const iso = dates[i]!
-    labelAt.push({ col: cellColumn(i, n, width), text: iso.slice(5, 7) === "01" ? iso.slice(0, 4) : month(iso), align: "left" })
+    labelAt.push({ col: colOf(i), text: iso.slice(5, 7) === "01" ? iso.slice(0, 4) : month(iso), align: "left" })
   }
   for (const i of mondays) {
     markers.push({ index: i, ink: "week" })
-    labelAt.push({ col: cellColumn(i, n, width), text: String(day(dates[i]!)), align: "left" })
+    labelAt.push({ col: colOf(i), text: String(day(dates[i]!)), align: "left" })
   }
   const today = dates.indexOf(todayISO)
   if (today > 0 && today < n - 1) markers.push({ index: today, ink: "today" })
@@ -183,7 +189,7 @@ export function dateAxis(dates: string[], width: number, todayISO: string): { ma
     const end = start + label.text.length
     if (start < 0 || end > width) continue
     let free = true
-    for (let c = Math.max(0, start - 1); c < Math.min(width, end + 1); c++) if (taken[c]) free = false
+    for (let c = Math.max(0, start - 2); c < Math.min(width, end + 2); c++) if (taken[c]) free = false
     if (!free) continue
     for (let c = start; c < end; c++) { line[c] = label.text[c - start]!; taken[c] = true }
   }

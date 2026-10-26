@@ -49,8 +49,15 @@ export function DashboardTab(props: { focused: SectionId }) {
     if (!budget) return null
     return budgetProgress([budget], data.state.budgetCycle, toISODate(new Date()), data.state.accounts, data.state.categories, data.state.transactions)[0] ?? null
   })
-  const saversPeriodChange = () => flows().saverChanges.reduce((sum, c) => sum + c.change, 0)
-  const saverChange = (accountId: number) => flows().saverChanges.find((c) => c.accountId === accountId)?.change ?? 0
+  // Savers sit with "now", so their change is over the last 30 days (like
+  // Now's 30-day change), not the Date Range.
+  const saverChanges = createMemo(() => {
+    const today = toISODate(new Date())
+    const since = addDays(today, -30)
+    return computePeriodFlows(data.state.accounts, data.state.transactions.filter((t) => t.dateISO > since && t.dateISO <= today)).saverChanges
+  })
+  const saversChange = () => saverChanges().reduce((sum, c) => sum + c.change, 0)
+  const saverChange = (accountId: number) => saverChanges().find((c) => c.accountId === accountId)?.change ?? 0
 
   // Go narrow fallback: the preset chips keep priority and the timeframe
   // label is shown only when both fit on the card's single content line.
@@ -143,7 +150,7 @@ export function DashboardTab(props: { focused: SectionId }) {
           </text>
         </SectionCard>
         <box flexGrow={1} flexBasis={0} minWidth={0} height={7} overflow="hidden">
-        <SectionCard title="Savers" height={7}>
+        <SectionCard title="Savers" titleSuffix="· 30-day change" titleSuffixColor={theme.subtext0} height={7}>
           <Show when={position().savers.length} fallback={<text fg={theme.overlay1}>No savers synced</text>}>
             <For each={position().savers.slice(0, 4)}>
               {(saver) => (
@@ -157,7 +164,7 @@ export function DashboardTab(props: { focused: SectionId }) {
             <text wrapMode="none">
               <S fg={theme.subtext0}>{fit("Total", 14)}</S>
               <S fg={theme.text} bold>{formatMoney(position().saversTotal).padStart(12)}</S>
-              <S fg={changeColor(saversPeriodChange())}>{`  ${changeText(saversPeriodChange())}`}</S>
+              <S fg={changeColor(saversChange())}>{`  ${changeText(saversChange())}`}</S>
             </text>
           </Show>
         </SectionCard>
@@ -320,7 +327,7 @@ function addDays(iso: string, days: number): string {
 
 /**
  * The Spending Tracker in one of its views, over the period's `dates`:
- * - Daily: spend per day, with the period's daily average so far.
+ * - Daily: spend per day as bars, with the period's daily average so far.
  * - Cumulative: running total against the previous period of equal length.
  * - Weekly: totals per Monday-start week; partial weeks in grey.
  * Days after today are not drawn.
@@ -387,19 +394,35 @@ function spendingChart(
     }
   }
 
+  // Daily: a bar per day (today's in grey, as the day isn't over); a long
+  // period averages its days into one bar per column.
   const shown = values.slice(0, elapsed)
   const avg = elapsed ? sum(shown) / elapsed : 0
   const peak = shown.reduce((best, v, i) => (v > shown[best]! ? i : best), 0)
-  const scale = niceScale(Math.max(0, ...shown))
+  let bars: Array<{ value: number; ink: string }>
+  let colOf: (i: number) => number
+  let used: number
+  if (n <= width) {
+    const slot = Math.floor(width / n)
+    bars = dates.map((d, i) => ({ value: i < elapsed ? values[i]! : 0, ink: d === todayISO ? "partial" : "spend" }))
+    colOf = (i) => i * slot
+    used = (n - 1) * slot + (slot > 1 ? slot - 1 : 1)
+  } else {
+    const bucketOf = (i: number) => Math.floor((i * width) / n)
+    const sums = new Array<number>(width).fill(0), counts = new Array<number>(width).fill(0)
+    shown.forEach((v, i) => { sums[bucketOf(i)]! += v; counts[bucketOf(i)]!++ })
+    bars = sums.map((total, b) => ({ value: counts[b] ? total / counts[b]! : 0, ink: "spend" }))
+    colOf = bucketOf
+    used = width
+  }
+  const scale = niceScale(Math.max(0, ...bars.map((b) => b.value)))
   return {
-    rows: lineChart({
-      series: [{ values: upToToday(values.map(() => avg)), ink: "ref" }, { values: upToToday(values), ink: "spend" }],
-      length: n, width, height, min: 0, max: scale.max, markers: axis.markers,
-    }),
+    rows: columnBars(bars, width, height, scale.max, { value: avg, ink: "ref" }).rows,
     ticks: tickRows(0, scale.max, scale.step, height, shortMoney),
-    labels: axis.labels,
+    labels: dateAxis(dates, used, todayISO, colOf).labels,
     summary: [
       muted(`avg ${formatWholeMoney(avg)}/day`),
+      ...(n > width ? [muted(" · bars average days")] : []),
       ...(shown[peak] ? [muted(` · peak ${formatWholeMoney(shown[peak]!)} on ${shortDate(dates[peak]!)}`)] : []),
     ],
   }

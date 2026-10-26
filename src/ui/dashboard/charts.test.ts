@@ -9,6 +9,12 @@ describe("columnBars", () => {
   })
 })
 
+test("a reference rule runs through blank cells of its row", () => {
+  const { rows } = columnBars([{ value: 10, ink: "a" }, { value: 0, ink: "a" }], 4, 2, 10, { value: 6, ink: "ref" })
+  expect(rows[0]).toEqual([{ text: "█", ink: "a" }, { text: "┈┈┈", ink: "ref" }])
+  expect(rows[1]).toEqual([{ text: "█", ink: "a" }, { text: "   ", ink: null }])
+})
+
 describe("levelChart", () => {
   test("fills up to each column's latest value above a margin under the minimum", () => {
     const chart = levelChart([10, 20, 30, 40], 4, 1)
