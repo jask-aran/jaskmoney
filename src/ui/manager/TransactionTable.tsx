@@ -60,7 +60,7 @@ export function tableLayout(
  * their headings with a sort mark. Every transaction counts, not just the
  * rows shown, so a filter or account switch never moves the columns. */
 const longest = () => ({
-  description: Math.max("Description ▼".length, ...data.state.transactions.map((t) => Bun.stringWidth(t.description.trimEnd()))),
+  description: Math.max("Description ▼".length, ...data.transactions().map((t) => Bun.stringWidth(t.description.trimEnd()))),
   category: 2 + Math.max("Category ▼".length - 2, ...data.state.categories.map((c) => Bun.stringWidth(c.name))),
 })
 

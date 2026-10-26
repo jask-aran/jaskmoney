@@ -16,10 +16,10 @@ const LABEL = 12
  * value are left out. */
 export function TransactionDetail() {
   const dims = useTerminalDimensions()
-  const row = createMemo(() => data.state.transactions.find((t) => t.id === ui.state.detailId) ?? null)
+  const row = createMemo(() => data.transactions().find((t) => t.id === ui.state.detailId) ?? null)
   // Re-read provider details whenever the transaction list refreshes.
   const detail = createMemo(() => {
-    void data.state.transactions
+    void data.transactions()
     const id = ui.state.detailId
     return id == null ? null : data.transactionDetail(id)
   })

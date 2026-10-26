@@ -196,16 +196,20 @@ function createDataStore() {
     refresh()
   }
 
-  // The Transactions tab's rows, recomputed once per change and shared by
-  // every reader. They work on the plain arrays behind the store: reading
-  // 1,000+ rows through its proxies made each pass several times slower.
+  // Rows derived from the transactions, recomputed once per change and
+  // shared by every reader. They work on the plain arrays behind the store:
   // `transactions` and `filterExpr` are only ever replaced whole, so
-  // tracking the properties is enough.
+  // tracking those properties is enough.
+
+  /** Every transaction, as the plain array behind the store. Readers that
+   * walk all of them use this: through the store each field read would be
+   * a tracked dependency, tens of thousands per pass. */
+  const transactions = createRoot(() => createMemo(() => unwrap(state.transactions)))
 
   /** Transactions of the Transactions tab's selected account(s). */
   const accountScoped = createRoot(() => createMemo(() => {
     const ids = new Set(selectedAccounts(state.accounts, state.accountSelection).map((a) => a.id))
-    return unwrap(state.transactions).filter((t) => t.accountId != null && ids.has(t.accountId))
+    return transactions().filter((t) => t.accountId != null && ids.has(t.accountId))
   }))
 
   const filtered = createRoot(() => createMemo(() => {
@@ -342,11 +346,11 @@ function createDataStore() {
         const add = action === "add"
         labels.push(`${add ? "+" : "-"}${tag.name}`)
         const targets = [...new Set(txnIds)].filter((id) => {
-          const t = state.transactions.find((t) => t.id === id)
+          const t = transactions().find((t) => t.id === id)
           return t && t.tagIds.includes(tagId) !== add
         })
         const local = targets.filter((id) => tag.name.toUpperCase() === "IGNORE"
-          || state.transactions.find((t) => t.id === id)?.source !== "up")
+          || transactions().find((t) => t.id === id)?.source !== "up")
         if (add) addTagToTransactions(database, local, tagId)
         else removeTagFromTransactions(database, local, tagId)
         for (const id of local) updated.add(id)
@@ -453,7 +457,7 @@ function createDataStore() {
 
   function dryRunRules(transactionIds?: number[]) {
     const ids = transactionIds ? new Set(transactionIds) : null
-    return evaluateRules(ids ? state.transactions.filter((txn) => ids.has(txn.id)) : state.transactions, state.rules, state.savedFilters, state.categories, state.tags)
+    return evaluateRules(ids ? transactions().filter((txn) => ids.has(txn.id)) : transactions(), state.rules, state.savedFilters, state.categories, state.tags)
   }
 
   function applyRules(transactionIds?: number[], dryRun = false): RuleRunResult {
@@ -561,6 +565,7 @@ function createDataStore() {
     setState,
     init,
     refresh,
+    transactions,
     accountScoped,
     scopedTransactions,
     setFilterLive,

@@ -195,7 +195,7 @@ function handleJump(ui: UiStore, key: KeyEvent, data?: DataStore): void {
 
 function handleTagPicker(ui: UiStore, key: KeyEvent, data?: DataStore): void {
   if (ui.state.tagPickerApplying) return
-  const items = pickerChoices(tagPickerItems(data?.state.tags ?? [], data?.state.transactions ?? [], ui.state.pickerTargets, ui.state.tagPickerQuery))
+  const items = pickerChoices(tagPickerItems(data?.state.tags ?? [], data?.transactions() ?? [], ui.state.pickerTargets, ui.state.tagPickerQuery))
   queryPickerKey(key, { query: ui.state.tagPickerQuery, cursor: ui.state.tagPickerCursor }, items.length, {
     close: () => { ui.closeTagPicker(); ui.setStatus("Tags unchanged") },
     update: (next) => { ui.setState({ tagPickerQuery: next.query, tagPickerCursor: next.cursor }) },
@@ -228,7 +228,7 @@ function handleTagPicker(ui: UiStore, key: KeyEvent, data?: DataStore): void {
       const targets = ui.state.pickerTargets
       if (item && typeof item.value === "number" && data && targets.length) {
         const id = item.value
-        const base = tagPickerState(data.state.transactions, targets, id)
+        const base = tagPickerState(data.transactions(), targets, id)
         const patch = { ...ui.state.tagPickerPatch }
         const current = patch[id]
         // Approved deviation from Go: mixed tags cycle back to their original state.
@@ -320,7 +320,7 @@ function handleManagerDetail(ui: UiStore, key: KeyEvent, data?: DataStore): void
   if (name === "c") { ui.openCatPicker(ui.targetIds(data?.scopedTransactions() ?? [])); return }
   if (name === "t") { ui.openTagPicker(ui.targetIds(data?.scopedTransactions() ?? [])); return }
   if (name === "n") {
-    const notes = data?.state.transactions.find((t) => t.id === ui.state.detailId)?.notes ?? ""
+    const notes = data?.transactions().find((t) => t.id === ui.state.detailId)?.notes ?? ""
     ui.setState({ detailNotesEditing: true, detailNotesDraft: notes, detailNotesCaret: notes.length })
     return
   }
@@ -1016,7 +1016,7 @@ function handleOverview(ui: UiStore, key: KeyEvent, data?: DataStore): void {
   // comes back. With Categories focused, j/k move over every line.
   const focus = ui.state.focusedSection
   if (data && focus === "ov.categories") {
-    const lines = allCategoryLines(overviewRange(data.state, ui.state))
+    const lines = allCategoryLines(overviewRange(data, ui.state))
     const moveTo = (i: number) => ui.setState({ overviewCategoryCursor: Math.max(0, Math.min(lines.length - 1, i)) })
     const moved = listMove(key, ui.state.overviewCategoryCursor, lines.length)
     if (moved != null) { moveTo(moved); return }
@@ -1098,7 +1098,7 @@ function savedFilterKeys(ui: UiStore, data: DataStore | undefined, key: KeyEvent
 /** Open Transactions on the Overview range's spending, narrowed to one
  * category line when given, remembering where to come back to. */
 function drillDown(ui: UiStore, data: DataStore, line?: CategoryLine) {
-  const range = overviewRange(data.state, ui.state)
+  const range = overviewRange(data, ui.state)
   const query = drillFilter({
     start: range.bounds.start,
     end: range.bounds.end,

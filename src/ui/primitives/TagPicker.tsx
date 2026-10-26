@@ -6,14 +6,14 @@ import { ListPicker } from "./ListPicker"
 import { count } from "../text"
 
 export function TagPicker() {
-  const items = createMemo(() => tagPickerItems(data.state.tags, data.state.transactions, ui.state.pickerTargets, ui.state.tagPickerQuery))
+  const items = createMemo(() => tagPickerItems(data.state.tags, data.transactions(), ui.state.pickerTargets, ui.state.tagPickerQuery))
   const mark = (value: string | number | null) => {
     // The create row: a plus in the checkbox column.
     if (value === null) return " + "
     const id = Number(value)
     const patch = ui.state.tagPickerPatch[id]
     const state = patch === "add" ? "all" : patch === "remove" ? "none"
-      : tagPickerState(data.state.transactions, ui.state.pickerTargets, id)
+      : tagPickerState(data.transactions(), ui.state.pickerTargets, id)
     return state === "all" ? "[x]" : state === "some" ? "[-]" : "[ ]"
   }
   return (

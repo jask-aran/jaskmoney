@@ -55,7 +55,7 @@ export function OverviewTab(props: { focused: SectionId }) {
   const today = () => appToday()
   const cycleConfig = () => data.state.budgetCycle
   // The range, scope and category spending, shared with the tab's keys.
-  const range = createMemo(() => overviewRange(data.state, ui.state))
+  const range = createMemo(() => overviewRange(data, ui.state))
   const clock = () => range().clock
   const bounds = () => range().bounds
   const scope = () => range().scope
@@ -66,20 +66,20 @@ export function OverviewTab(props: { focused: SectionId }) {
   const previous = () => windows().previous
   const spending = () => range().spending
   const inPeriod = () => range().inPeriod
-  const inPrevious = createMemo(() => data.state.transactions.filter((t) => t.dateISO >= previous().start && t.dateISO <= previous().end))
+  const inPrevious = createMemo(() => data.transactions().filter((t) => t.dateISO >= previous().start && t.dateISO <= previous().end))
   // Flows see every tracked account (money moved to savers), narrowed to the
   // scope for spending and income.
-  const flows = createMemo(() => computePeriodFlows(data.state.accounts, filterByTimeframe(data.state.transactions, ui.state.timeframe, clock(), cycleConfig()), scopeIds()))
+  const flows = createMemo(() => computePeriodFlows(data.state.accounts, filterByTimeframe(data.transactions(), ui.state.timeframe, clock(), cycleConfig()), scopeIds()))
   const previousFlows = createMemo(() => computePeriodFlows(data.state.accounts, inPrevious(), scopeIds()))
   const groups = () => range().groups
   const calendar = createMemo(() => spendingCalendar(inPeriod(), bounds().start, bounds().end, data.state.weekStart))
   const series = createMemo(() => dailySpendSeries(inPeriod(), bounds().start, bounds().end))
 
   // Now: point-in-time figures, whatever the range.
-  const position = createMemo(() => computePosition(data.state.accounts, data.state.transactions, today()))
+  const position = createMemo(() => computePosition(data.state.accounts, data.transactions(), today()))
   const saverChanges = createMemo(() => {
     const since = addDays(today(), -30)
-    return computePeriodFlows(data.state.accounts, data.state.transactions.filter((t) => t.dateISO > since && t.dateISO <= today())).saverChanges
+    return computePeriodFlows(data.state.accounts, data.transactions().filter((t) => t.dateISO > since && t.dateISO <= today())).saverChanges
   })
   const change30 = () => {
     const h = position().history
@@ -94,7 +94,7 @@ export function OverviewTab(props: { focused: SectionId }) {
     const match = data.state.budgets.find((b) => (all ? b.scope.kind === "overall" : b.scope.kind === "account" && ids.length === 1 && b.scope.accountId === ids[0]))
     const current = cycleFor(cycleConfig(), today())
     if (!match || bounds().start !== current.start || bounds().end !== current.end) return null
-    return budgetProgress([match], cycleConfig(), today(), data.state.accounts, data.state.categories, data.state.transactions)[0] ?? null
+    return budgetProgress([match], cycleConfig(), today(), data.state.accounts, data.state.categories, data.transactions())[0] ?? null
   })
 
   // What the range and the one before it are called in chart labels.
@@ -151,9 +151,9 @@ export function OverviewTab(props: { focused: SectionId }) {
     const build = (axis: number): ChartModel | null => {
       const width = Math.max(1, mainWidth() - 4 - axis)
       if (v === "Daily" || v === "Cumulative" || v === "Weekly") return spendingChart(v, series(), width, rows, today(), spending(), budget()?.budget.amount, periodNames(), data.state.weekStart)
-      if (v === "Cash flow") return cashFlowChart(series().dates, width, rows, today(), data.state.accounts, data.state.transactions, scopeIds(), data.state.weekStart)
+      if (v === "Cash flow") return cashFlowChart(series().dates, width, rows, today(), data.state.accounts, data.transactions(), scopeIds(), data.state.weekStart)
       if (v === "Calendar") return null
-      return balancesChart(v, series().dates, width, rows, today(), data.state.accounts, data.state.transactions, data.state.weekStart, data.state.uiPrefs.zeroAxis === true)
+      return balancesChart(v, series().dates, width, rows, today(), data.state.accounts, data.transactions(), data.state.weekStart, data.state.uiPrefs.zeroAxis === true)
     }
     const first = build(AXIS_GUESS)
     if (!first || first.ticks.size === 0 || axisWidth(first.ticks) === AXIS_GUESS) return first

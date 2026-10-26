@@ -72,8 +72,8 @@ test("Overview uses the app clock when transactions end on a different date", ()
   setAppClock(new Date(2026, 9, 27, 8))
   const row = transaction({ dateISO: "2020-01-01", accountId: null, accountName: "", source: "csv", status: null })
   const range = overviewRange({
-    transactions: [row], accounts: [], accountSelection: "all",
-    budgetCycle: { unit: "month", anchor: "calendar", anchorDate: null }, categories: [],
+    transactions: () => [row],
+    state: { accounts: [], accountSelection: "all", budgetCycle: { unit: "month", anchor: "calendar", anchorDate: null }, categories: [] },
   }, { timeframe: { ...defaultTimeframe(), family: "lookback" } })
   expect(toISODay(range.clock)).toBe("2026-10-27")
   expect(range.bounds).toMatchObject({ start: "2026-09-27", end: "2026-10-27" })
