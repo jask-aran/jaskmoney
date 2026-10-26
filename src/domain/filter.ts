@@ -3,6 +3,9 @@
  * Permissive parse for live `/` input; strict for committed/save surfaces.
  */
 
+import { addDays, addMonths, dayTime, parseDay } from "./days"
+import { isSpending } from "./moneyRules"
+
 export type FilterNodeKind = "text" | "field" | "and" | "or" | "not"
 
 export interface FilterNode {
@@ -40,6 +43,7 @@ export interface FilterTxn {
   notes: string
   amount: number
   dateISO: string
+  excluded?: boolean
   tagNames: string[]
 }
 
@@ -160,6 +164,7 @@ function evalField(node: FilterNode, t: FilterTxn): boolean {
       const want = (node.value ?? "").toLowerCase()
       if (want === "debit") return t.amount < 0
       if (want === "credit") return t.amount > 0
+      if (want === "spending") return isSpending(t)
       return false
     }
     case "amt":
@@ -197,8 +202,8 @@ function evalAmount(node: FilterNode, amt: number): boolean {
 }
 
 function evalDate(node: FilterNode, dateISO: string): boolean {
-  const txn = parseDay(dateISO)
-  if (!txn) return false
+  if (!parseDay(dateISO)) return false
+  const txn = dayTime(dateISO)
   if (node.op === "=") {
     const [lo, hi] = dateTokenBounds(node.value ?? "")
     return txn >= lo && txn <= hi
@@ -397,8 +402,8 @@ class Parser {
     }
     if (field === "type") {
       const raw = this.collectValue(field, false).toLowerCase().trim()
-      if (raw !== "debit" && raw !== "credit") {
-        throw new Error(`type expects debit|credit at ${fieldTok.pos + 1}`)
+      if (raw !== "debit" && raw !== "credit" && raw !== "spending") {
+        throw new Error(`type expects debit|credit|spending at ${fieldTok.pos + 1}`)
       }
       return { kind: "field", field, op: "=", value: raw }
     }
@@ -542,22 +547,11 @@ function canonicalDateToken(v: string): string {
 
 function dateTokenBounds(v: string): [number, number] {
   if (/^\d{4}-\d{2}-\d{2}$/.test(v)) {
-    const d = parseDay(v)!
+    const d = dayTime(v)
     return [d, d]
   }
-  const [ys, ms] = v.split("-")
-  const y = Number(ys)
-  const m = Number(ms)
-  const start = Date.UTC(y, m - 1, 1)
-  const end = Date.UTC(y, m, 0) // last day of month
-  return [start, end]
-}
-
-function parseDay(iso: string): number | null {
-  const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(iso)
-  if (!m) return null
-  const t = Date.UTC(Number(m[1]), Number(m[2]) - 1, Number(m[3]))
-  return Number.isFinite(t) ? t : null
+  const first = v + "-01"
+  return [dayTime(first), dayTime(addDays(addMonths(first, 1), -1))]
 }
 
 function eqFold(a: string, b: string): boolean {

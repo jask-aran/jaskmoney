@@ -4,6 +4,8 @@ import {
   cumulative,
   dailySpendSeries,
   formatWholeMoney,
+  formatMoney,
+  signedWholeMoney,
   fitCategoryLines,
   groupCategorySpend,
   weeklyTotals,
@@ -142,4 +144,19 @@ test("weekly totals split on Sunday when configured", () => {
     { startISO: "2026-10-03", total: 1, days: 1 },
     { startISO: "2026-10-04", total: 9, days: 3 },
   ])
+})
+
+// Approved change: rounded zero never has a negative sign.
+test("money formatting suppresses minus signs only when the displayed value is zero", () => {
+  expect(formatWholeMoney(-0.4)).toBe("$0")
+  expect(formatWholeMoney(-0)).toBe("$0")
+  expect(formatWholeMoney(-0.5)).toBe("-$1")
+  expect(formatMoney(-0.001)).toBe("$0.00")
+  expect(formatMoney(-0)).toBe("$0.00")
+  expect(formatMoney(-0.005)).toBe("-$0.01")
+  expect(signedWholeMoney(-0.4)).toBe("$0")
+  expect(signedWholeMoney(-0.5)).toBe("-$1")
+  expect(signedWholeMoney(0.4)).toBe("$0")
+  expect(signedWholeMoney(0.5)).toBe("$1")
+  expect(signedWholeMoney(0.6)).toBe("+$1")
 })

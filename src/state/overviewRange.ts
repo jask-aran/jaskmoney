@@ -1,6 +1,7 @@
 import { spendingScope } from "../domain/accountTree"
 import { computeCategorySpend, fitCategoryLines, groupCategorySpend, type CategoryLine } from "../domain/dashboard"
-import { dataClock, timeframeBounds } from "../domain/timeframe"
+import { appNow } from "../domain/days"
+import { timeframeBounds } from "../domain/timeframe"
 import type { DataState } from "./dataStore"
 import type { UiState } from "./uiStore"
 
@@ -11,7 +12,7 @@ import type { UiState } from "./uiStore"
  * spending by category group.
  */
 export function overviewRange(d: Pick<DataState, "transactions" | "accounts" | "accountSelection" | "budgetCycle" | "categories">, u: Pick<UiState, "timeframe">) {
-  const clock = dataClock(d.transactions)
+  const clock = appNow()
   const bounds = timeframeBounds(u.timeframe, clock, d.budgetCycle)
   const scope = spendingScope(d.accounts, d.accountSelection)
   const scopeIds = new Set(scope.accounts.map((a) => a.id))

@@ -1,3 +1,5 @@
+import { addDays, daysBetween, weekdayIndex } from "./days"
+import { isSpending } from "./moneyRules"
 import type { Transaction } from "./types"
 
 /**
@@ -21,8 +23,7 @@ export interface CalendarDay {
  * and last week). Weeks are oldest first.
  */
 export function spendingCalendar(transactions: Transaction[], startISO: string, endISO: string, weekStart: "monday" | "sunday" = "monday"): Array<Array<CalendarDay | null>> {
-  const start = Date.parse(startISO + "T12:00:00Z")
-  const days = (Date.parse(endISO + "T12:00:00Z") - start) / 86400000 + 1
+  const days = daysBetween(startISO, endISO) + 1
   const totals = new Map<string, number>()
   for (const row of transactions) {
     if (isSpending(row) && row.dateISO >= startISO && row.dateISO <= endISO) {
@@ -37,7 +38,7 @@ export function spendingCalendar(transactions: Transaction[], startISO: string, 
     const level = quartile <= 1 ? 1 : quartile <= 2 ? 2 : quartile <= 3 ? 3 : 4
     levels.set(spent, level)
   })
-  const padding = (new Date(start).getUTCDay() + (weekStart === "sunday" ? 0 : 6)) % 7
+  const padding = (weekdayIndex(startISO) + (weekStart === "sunday" ? 0 : 6)) % 7
   const weeks: Array<Array<CalendarDay | null>> = []
   for (let offset = -padding; offset < days; offset += 7) {
     const week: Array<CalendarDay | null> = []
@@ -46,7 +47,7 @@ export function spendingCalendar(transactions: Transaction[], startISO: string, 
       if (day < 0 || day >= days) {
         week.push(null)
       } else {
-        const dateISO = dayISO(start, day)
+        const dateISO = addDays(startISO, day)
         const spent = totals.get(dateISO) ?? 0
         week.push({ dateISO, spent, level: levels.get(spent) ?? 0 })
       }
@@ -54,12 +55,4 @@ export function spendingCalendar(transactions: Transaction[], startISO: string, 
     weeks.push(week)
   }
   return weeks
-}
-
-function isSpending(row: Transaction): boolean {
-  return row.amount < 0 && !row.excluded && !row.tagNames.some((tag) => tag.toUpperCase() === "IGNORE")
-}
-
-function dayISO(today: number, offset: number): string {
-  return new Date(today + offset * 86400000).toISOString().slice(0, 10)
 }

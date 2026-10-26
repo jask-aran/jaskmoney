@@ -1,3 +1,5 @@
+import { addDays, daysBetween, dayTime, weekdayIndex } from "./days"
+import { isSpending } from "./moneyRules"
 import type { Category, Transaction } from "./types"
 
 export interface CategorySpend {
@@ -17,9 +19,7 @@ export function computeCategorySpend(
   const byKey = new Map<string, CategorySpend>()
 
   for (const r of rows) {
-    if (r.excluded) continue
-    if (r.tagNames.some((t) => t.toUpperCase() === "IGNORE")) continue
-    if (r.amount >= 0) continue
+    if (!isSpending(r)) continue
     const name = r.categoryName || "Uncategorised"
     const key = `${r.categoryId ?? "null"}:${name}`
     const cur = byKey.get(key) ?? {
@@ -101,8 +101,9 @@ export function fitCategoryLines(groups: CategoryGroupSpend[], maxLines: number)
 
 /** Whole dollars: "$1,478", "-$20". */
 export function formatWholeMoney(n: number): string {
-  const sign = n < 0 ? "-" : ""
-  return `${sign}$${Math.round(Math.abs(n)).toLocaleString("en-AU")}`
+  const rounded = Math.round(Math.abs(n))
+  const sign = n < 0 && rounded !== 0 ? "-" : ""
+  return `${sign}$${rounded.toLocaleString("en-AU")}`
 }
 
 /** Whole dollars with an explicit sign for gains: "+$1,680", "-$40", "$0". */
@@ -116,27 +117,20 @@ export function dailySpendSeries(
   startISO: string,
   endISO: string,
 ): { dates: string[]; values: number[] } {
-  const start = Date.parse(startISO + "T00:00:00")
-  const end = Date.parse(endISO + "T00:00:00")
-  if (!Number.isFinite(start) || !Number.isFinite(end) || end < start) {
+  if (!Number.isFinite(dayTime(startISO)) || !Number.isFinite(dayTime(endISO)) || dayTime(endISO) < dayTime(startISO)) {
     return { dates: [], values: [] }
   }
-  const days = Math.round((end - start) / 86400000) + 1
+  const days = daysBetween(startISO, endISO) + 1
   const dates: string[] = []
   const values: number[] = []
   const map = new Map<string, number>()
   for (const r of rows) {
-    if (r.excluded) continue
-    if (r.tagNames.some((t) => t.toUpperCase() === "IGNORE")) continue
-    if (r.amount >= 0) continue
+    if (!isSpending(r)) continue
     if (r.dateISO < startISO || r.dateISO > endISO) continue
     map.set(r.dateISO, (map.get(r.dateISO) ?? 0) + -r.amount)
   }
   for (let i = 0; i < days; i++) {
-    // Step by calendar day, not 24h: a 25-hour DST day would repeat a date.
-    const d = new Date(start)
-    d.setDate(d.getDate() + i)
-    const iso = toISO(d)
+    const iso = addDays(startISO, i)
     dates.push(iso)
     values.push(map.get(iso) ?? 0)
   }
@@ -154,7 +148,7 @@ export function cumulative(values: number[]): number[] {
 export function weeklyTotals(dates: string[], values: number[], weekStart: "monday" | "sunday" = "monday"): Array<{ startISO: string; total: number; days: number }> {
   const weeks: Array<{ startISO: string; total: number; days: number }> = []
   dates.forEach((iso, i) => {
-    const startsWeek = new Date(iso + "T12:00:00Z").getUTCDay() === (weekStart === "sunday" ? 0 : 1)
+    const startsWeek = weekdayIndex(iso) === (weekStart === "sunday" ? 0 : 1)
     if (startsWeek || weeks.length === 0) weeks.push({ startISO: iso, total: 0, days: 0 })
     const week = weeks[weeks.length - 1]!
     week.total += values[i] ?? 0
@@ -163,17 +157,13 @@ export function weeklyTotals(dates: string[], values: number[], weekStart: "mond
   return weeks
 }
 
-function toISO(d: Date): string {
-  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`
-}
-
 export function formatMoney(n: number): string {
-  const sign = n < 0 ? "-" : ""
-  const abs = Math.abs(n)
-  return `${sign}$${abs.toLocaleString("en-AU", {
+  const abs = Math.abs(n).toLocaleString("en-AU", {
     minimumFractionDigits: 2,
     maximumFractionDigits: 2,
-  })}`
+  })
+  const sign = n < 0 && abs !== "0.00" ? "-" : ""
+  return `${sign}$${abs}`
 }
 
 export function formatPct(n: number | null): string {

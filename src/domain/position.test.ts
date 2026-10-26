@@ -1,4 +1,5 @@
 import { describe, expect, test } from "bun:test"
+import { computeAccountStats } from "./accountStats"
 import { balanceHistory, computePeriodFlows, computePosition } from "./position"
 import type { Account, Transaction } from "./types"
 
@@ -221,4 +222,40 @@ describe("balanceHistory", () => {
       { dateISO: "2026-10-04", net: 155, spending: 105, savers: 50 },
     ])
   })
+})
+
+test("all history consumers retain holds, exclusions, future rows and null-balance account rules", () => {
+  const scope = [account(1, { balance: 200 }), account(2, { externalKind: "SAVER", balance: 500 }), account(3, { balance: null })]
+  const rows = [
+    row(-20, { dateISO: "2026-10-04", status: "HELD" }),
+    row(-10, { dateISO: "2026-10-04", excluded: true, tagNames: ["IGNORE"] }),
+    row(50),
+    row(100, { accountId: 2, dateISO: "2026-10-06", internal: true, excluded: true }),
+    row(-5, { dateISO: "2026-10-07" }),
+    row(-900, { accountId: 3 }),
+    row(-900, { accountId: null }),
+    row(-900, { accountId: 99 }),
+  ]
+  const expected = [
+    { dateISO: "2026-10-03", value: 585 },
+    { dateISO: "2026-10-04", value: 555 },
+    { dateISO: "2026-10-05", value: 605 },
+  ]
+  expect(computePosition(scope, rows, "2026-10-05", { historyDays: 3 }).history).toEqual(expected)
+  expect(computeAccountStats(scope, rows, "2026-10-05", { historyDays: 3 }).history).toEqual(expected)
+  expect(balanceHistory(scope, rows, "2026-10-03", "2026-10-05")).toEqual([
+    { dateISO: "2026-10-03", net: 585, spending: 185, savers: 400 },
+    { dateISO: "2026-10-04", net: 555, spending: 155, savers: 400 },
+    { dateISO: "2026-10-05", net: 605, spending: 205, savers: 400 },
+  ])
+})
+
+test("history consolidation preserves each caller's future-amount subtraction order", () => {
+  const scope = [account(1, { balance: 1 })]
+  const rows = [row(0.1), row(0.1), row(0.1)]
+  const sequential = 1 - 0.1 - 0.1 - 0.1
+  const grouped = 1 - (0.1 + 0.1 + 0.1)
+  expect(computePosition(scope, rows, "2026-10-04", { historyDays: 1 }).history[0]!.value).toBe(sequential)
+  expect(balanceHistory(scope, rows, "2026-10-04", "2026-10-04")[0]!.net).toBe(sequential)
+  expect(computeAccountStats(scope, rows, "2026-10-04", { historyDays: 1 }).history[0]!.value).toBe(grouped)
 })

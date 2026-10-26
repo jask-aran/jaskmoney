@@ -1,3 +1,6 @@
+import { addDays } from "./days"
+import { reconstructHistory } from "./balanceHistory"
+import { isHeld } from "./moneyRules"
 import type { Account, Transaction } from "./types"
 
 /**
@@ -72,7 +75,6 @@ export function computeAccountStats(
 ): AccountStats {
   const months = opts.months ?? 12
   const historyDays = opts.historyDays ?? 365
-  const today = Date.parse(todayISO + "T12:00:00Z")
   const accountIds = new Set(accounts.map((account) => account.id))
   const balancedIds = new Set(accounts.filter((account) => account.balance !== null).map((account) => account.id))
   let balance: number | null = null
@@ -84,7 +86,7 @@ export function computeAccountStats(
   let firstActivityISO: string | null = null
   let lastActivityISO: string | null = null
   const windows = [30, 90, 365].map((days) => ({ days, moneyIn: 0, moneyOut: 0, net: 0 }))
-  const windowStarts = windows.map((window) => ({ window, startISO: dayISO(today, 1 - window.days) }))
+  const windowStarts = windows.map((window) => ({ window, startISO: addDays(todayISO, 1 - window.days) }))
   const monthly: MonthFlow[] = []
   const monthNumber = Number(todayISO.slice(0, 4)) * 12 + Number(todayISO.slice(5, 7)) - 1
   for (let i = months - 1; i >= 0; i--) {
@@ -97,16 +99,16 @@ export function computeAccountStats(
   const flowsByMonth = new Map(monthly.map((flow) => [flow.month, flow]))
   const amountsByDate = new Map<string, number>()
   const outflows = new Map<string, AccountStats["topOutflows"][number]>()
-  const outflowStartISO = dayISO(today, 1 - 90)
+  const outflowStartISO = addDays(todayISO, 1 - 90)
   const interest: AccountStats["interest"] = { thisYear: 0, last365: 0, latest: null, impliedAnnualRatePct: null }
   const year = todayISO.slice(0, 4)
-  const interestStartISO = dayISO(today, 1 - 365)
+  const interestStartISO = addDays(todayISO, 1 - 365)
 
   for (const row of transactions) {
     if (row.accountId === null || !accountIds.has(row.accountId)) continue
     if (firstActivityISO === null || row.dateISO < firstActivityISO) firstActivityISO = row.dateISO
     if (lastActivityISO === null || row.dateISO > lastActivityISO) lastActivityISO = row.dateISO
-    if (row.status === "HELD") {
+    if (isHeld(row)) {
       held.count++
       held.amount += row.amount
     }
@@ -143,7 +145,7 @@ export function computeAccountStats(
   }
   const history = balance === null ? [] : reconstructHistory(balance, amountsByDate, todayISO, historyDays)
   if (balance !== null && interest.latest !== null) {
-    const endISO = dayISO(Date.parse(interest.latest.dateISO + "T12:00:00Z"), -1)
+    const endISO = addDays(interest.latest.dateISO, -1)
     // Leading days with nothing in the account (before an opening deposit)
     // earn nothing; averaging them in would overstate a new account's rate.
     // Only leading days: incomplete history still reconstructs a positive
@@ -159,28 +161,4 @@ export function computeAccountStats(
     firstActivityISO, lastActivityISO, windows, monthly, history, interest,
     topOutflows: [...outflows.values()].sort((a, b) => b.amount - a.amount).slice(0, 5),
   }
-}
-
-function reconstructHistory(
-  balance: number,
-  amountsByDate: ReadonlyMap<string, number>,
-  endISO: string,
-  days: number,
-): AccountStats["history"] {
-  const end = Date.parse(endISO + "T12:00:00Z")
-  let value = balance
-  for (const [dateISO, amount] of amountsByDate) {
-    if (dateISO > endISO) value -= amount
-  }
-  const history: AccountStats["history"] = []
-  for (let i = 0; i < days; i++) {
-    const dateISO = dayISO(end, -i)
-    history.push({ dateISO, value })
-    value -= amountsByDate.get(dateISO) ?? 0
-  }
-  return history.reverse()
-}
-
-function dayISO(today: number, offset: number): string {
-  return new Date(today + offset * 86400000).toISOString().slice(0, 10)
 }

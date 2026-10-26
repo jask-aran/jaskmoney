@@ -1,3 +1,6 @@
+import { addDays, daysBetween, dayTime } from "./days"
+import { reconstructHistory } from "./balanceHistory"
+import { isHeld, isIncome, isOrdinaryFlow, isSpending } from "./moneyRules"
 import { accountRole, type Account, type Transaction } from "./types"
 
 /**
@@ -58,8 +61,7 @@ export function computePosition(
 ): Position {
   const burnDays = opts.burnDays ?? 90
   const historyDays = opts.historyDays ?? 90
-  const today = Date.parse(todayISO + "T12:00:00Z")
-  const burnStartISO = dayISO(today, 1 - burnDays)
+  const burnStartISO = addDays(todayISO, 1 - burnDays)
   const spendingIds = new Set(accounts.filter((a) => accountRole(a) === "spending").map((a) => a.id))
   const balancedAccounts = accounts.filter((a) => a.balance !== null)
   const balancedIds = new Set(balancedAccounts.map((a) => a.id))
@@ -80,32 +82,24 @@ export function computePosition(
   let pendingAmount = 0
   let spent = 0
   let firstISO = todayISO
-  let historyValue = netPosition ?? 0
-  const amountsByDate = new Map<string, number>()
+  const historyAmounts: Array<[string, number]> = []
   for (const row of transactions) {
     if (row.dateISO < firstISO) firstISO = row.dateISO
     if (row.accountId !== null && balancedIds.has(row.accountId)) {
-      amountsByDate.set(row.dateISO, (amountsByDate.get(row.dateISO) ?? 0) + row.amount)
-      if (row.dateISO > todayISO) historyValue -= row.amount
+      historyAmounts.push([row.dateISO, row.amount])
     }
     if (row.accountId === null || !spendingIds.has(row.accountId)) continue
-    if (row.status === "HELD") {
+    if (isHeld(row)) {
       pendingCount++
       pendingAmount += row.amount
     }
-    if (isOrdinaryFlow(row) && row.amount < 0 && row.dateISO >= burnStartISO && row.dateISO <= todayISO) {
+    if (isSpending(row) && row.dateISO >= burnStartISO && row.dateISO <= todayISO) {
       spent -= row.amount
     }
   }
-  const coveredDays = (today - Date.parse(firstISO + "T12:00:00Z")) / 86400000 + 1
+  const coveredDays = daysBetween(firstISO, todayISO) + 1
   const dailySpend = spent > 0 ? spent / Math.min(burnDays, coveredDays) : null
-  const history: Position["history"] = []
-  for (let i = 0; i < historyDays; i++) {
-    const dateISO = dayISO(today, -i)
-    history.push({ dateISO, value: historyValue })
-    historyValue -= amountsByDate.get(dateISO) ?? 0
-  }
-  history.reverse()
+  const history = reconstructHistory(netPosition ?? 0, historyAmounts, todayISO, historyDays)
   return {
     netPosition,
     spendingBalance,
@@ -167,8 +161,8 @@ export function computePeriodFlows(
     }
     if (!isOrdinaryFlow(row)) continue
     txnCount++
-    if (row.amount < 0) spent -= row.amount
-    if (row.amount > 0) income += row.amount
+    if (isSpending(row)) spent -= row.amount
+    if (isIncome(row)) income += row.amount
   }
   return {
     spent,
@@ -179,14 +173,6 @@ export function computePeriodFlows(
     txnCount,
     saverChanges: [...saverAmounts].map(([accountId, change]) => ({ accountId, change })),
   }
-}
-
-function isOrdinaryFlow(row: Transaction): boolean {
-  return !row.excluded && !row.tagNames.some((tag) => tag.toUpperCase() === "IGNORE")
-}
-
-function dayISO(today: number, offset: number): string {
-  return new Date(today + offset * 86400000).toISOString().slice(0, 10)
 }
 
 export interface BalancePoint {
@@ -205,9 +191,7 @@ export interface BalancePoint {
  * value(D) = balance − Σ amounts dated after D, per balance-reporting account.
  */
 export function balanceHistory(accounts: Account[], transactions: Transaction[], startISO: string, endISO: string): BalancePoint[] {
-  const start = Date.parse(startISO + "T12:00:00Z")
-  const end = Date.parse(endISO + "T12:00:00Z")
-  if (!Number.isFinite(start) || !Number.isFinite(end) || end < start) return []
+  if (!Number.isFinite(dayTime(startISO)) || !Number.isFinite(dayTime(endISO)) || dayTime(endISO) < dayTime(startISO)) return []
   const role = new Map(accounts.filter((a) => a.balance !== null).map((a) => [a.id, accountRole(a)]))
   let spending = 0
   let savers = 0
@@ -216,23 +200,18 @@ export function balanceHistory(accounts: Account[], transactions: Transaction[],
     if (role.get(a.id) === "spending") spending += a.balance
     else savers += a.balance
   }
-  const after = new Map<string, { spending: number; savers: number }>()
+  const spendingAmounts: Array<[string, number]> = []
+  const saverAmounts: Array<[string, number]> = []
   for (const row of transactions) {
     if (row.accountId === null || !role.has(row.accountId)) continue
-    if (row.dateISO <= endISO) {
-      const day = after.get(row.dateISO) ?? { spending: 0, savers: 0 }
-      if (role.get(row.accountId) === "spending") day.spending += row.amount
-      else day.savers += row.amount
-      after.set(row.dateISO, day)
-    } else if (role.get(row.accountId) === "spending") spending -= row.amount
-    else savers -= row.amount
+    const amounts = role.get(row.accountId) === "spending" ? spendingAmounts : saverAmounts
+    amounts.push([row.dateISO, row.amount])
   }
-  const points: BalancePoint[] = []
-  for (let t = end; t >= start; t -= 86400000) {
-    const dateISO = new Date(t).toISOString().slice(0, 10)
-    points.push({ dateISO, net: spending + savers, spending, savers })
-    const day = after.get(dateISO)
-    if (day) { spending -= day.spending; savers -= day.savers }
-  }
-  return points.reverse()
+  const days = daysBetween(startISO, endISO) + 1
+  const spendingHistory = reconstructHistory(spending, spendingAmounts, endISO, days)
+  const saverHistory = reconstructHistory(savers, saverAmounts, endISO, days)
+  return spendingHistory.map((point, index) => {
+    const savers = saverHistory[index]!.value
+    return { dateISO: point.dateISO, net: point.value + savers, spending: point.value, savers }
+  })
 }

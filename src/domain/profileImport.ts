@@ -2,6 +2,7 @@ import { basename } from "node:path"
 import type { Db } from "../db/client"
 import { ensureAccount, uncategorisedCategoryId } from "../db/client"
 import type { ImportPreview, ImportPreviewError, ImportPreviewRow, ImportProfile, IngestResult } from "./types"
+import { parseDay } from "./days"
 
 interface CsvRecord { fields: string[]; line: number }
 
@@ -36,9 +37,8 @@ function isoDate(raw: string, format: ImportProfile["dateFormat"]): string | nul
   if (!values) return null
   const a = Number(values[1]), b = Number(values[2]), c = Number(values[3])
   const [year, month, day] = format === "YMD" ? [a, b, c] : format === "MDY" ? [c, a, b] : [c, b, a]
-  const date = new Date(year, month - 1, day)
-  if (year < 1000 || date.getFullYear() !== year || date.getMonth() !== month - 1 || date.getDate() !== day) return null
-  return `${year}-${String(month).padStart(2, "0")}-${String(day).padStart(2, "0")}`
+  if (year < 1000) return null
+  return parseDay(`${year}-${String(month).padStart(2, "0")}-${String(day).padStart(2, "0")}`)
 }
 
 function parseAmount(raw: string, strip: string): number | null {

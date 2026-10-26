@@ -1,3 +1,5 @@
+import { addDays, addMonthsClamped, daysBetween, MONTHS, weekdayIndex } from "./days"
+import { isSpending } from "./moneyRules"
 import { accountRole, type Account, type Category, type Transaction } from "./types"
 
 /**
@@ -46,49 +48,35 @@ export function cycleFor(config: CycleConfig, dateISO: string): Cycle {
   if (config.anchor !== "calendar" && config.anchorDate === null) {
     throw new Error("budget cycle needs an anchor date")
   }
-  const date = dayTime(dateISO)
-  const anchor = dayTime(config.anchorDate ?? "1970-01-05")
-  let start: number
-  let next: number
+  const anchor = config.anchorDate ?? "1970-01-05"
+  let start: string
+  let next: string
   if (config.unit === "month") {
-    const current = new Date(date)
-    const anchorDay = config.anchor === "calendar" ? 1 : new Date(anchor).getUTCDate()
-    const monthStart = (offset: number): number => {
-      const month = new Date(date)
-      month.setUTCDate(1)
-      month.setUTCMonth(current.getUTCMonth() + offset)
-      const last = new Date(month)
-      last.setUTCMonth(last.getUTCMonth() + 1)
-      last.setUTCDate(0)
-      month.setUTCDate(Math.min(anchorDay, last.getUTCDate()))
-      return config.anchor === "weekStartNearDate" ? nearestMonday(month.getTime()) : month.getTime()
+    const anchorDay = config.anchor === "calendar" ? "01" : anchor.slice(8, 10)
+    const monthStart = (offset: number): string => {
+      // Start in January so an anchor on the 31st survives short months.
+      const month = Number(dateISO.slice(5, 7)) - 1 + offset
+      const day = addMonthsClamped(`${dateISO.slice(0, 4)}-01-${anchorDay}`, month)
+      return config.anchor === "weekStartNearDate" ? nearestMonday(day) : day
     }
     let offset = 0
-    while (monthStart(offset) > date) offset--
-    while (monthStart(offset + 1) <= date) offset++
+    while (monthStart(offset) > dateISO) offset--
+    while (monthStart(offset + 1) <= dateISO) offset++
     start = monthStart(offset)
     next = monthStart(offset + 1)
   } else {
     const days = config.unit === "week" ? 7 : 14
-    const base = config.anchor === "calendar" ? dayTime("1970-01-05")
+    const base = config.anchor === "calendar" ? "1970-01-05"
       : config.anchor === "weekStartNearDate" ? nearestMonday(anchor) : anchor
-    start = base + Math.floor((date - base) / (days * 86400000)) * days * 86400000
-    next = start + days * 86400000
+    start = addDays(base, Math.floor(daysBetween(base, dateISO) / days) * days)
+    next = addDays(start, days)
   }
-  return { start: dayISO(start), end: dayISO(next - 86400000), days: (next - start) / 86400000 }
+  return { start, end: addDays(next, -1), days: daysBetween(start, next) }
 }
 
-function dayTime(dateISO: string): number {
-  return Date.parse(dateISO + "T12:00:00Z")
-}
-
-function dayISO(time: number): string {
-  return new Date(time).toISOString().slice(0, 10)
-}
-
-function nearestMonday(time: number): number {
-  const weekday = (new Date(time).getUTCDay() + 6) % 7
-  return time + (weekday <= 3 ? -weekday : 7 - weekday) * 86400000
+function nearestMonday(iso: string): string {
+  const weekday = (weekdayIndex(iso) + 6) % 7
+  return addDays(iso, weekday <= 3 ? -weekday : 7 - weekday)
 }
 
 /** What a budget limits. A category budget on a group covers its children. */
@@ -141,12 +129,11 @@ export function budgetProgress(
   const cycle = cycleFor(config, todayISO)
   const spendingIds = new Set(accounts.filter((a) => accountRole(a) === "spending").map((a) => a.id))
   const parents = new Map(categories.map((category) => [category.id, category.parentId]))
-  const rows = transactions.filter((row) => row.amount < 0
+  const rows = transactions.filter((row) => isSpending(row)
     && row.accountId !== null && spendingIds.has(row.accountId)
-    && !row.excluded && !row.tagNames.some((tag) => tag.toUpperCase() === "IGNORE")
     && row.dateISO >= cycle.start && row.dateISO <= todayISO)
-  const daysLeft = (dayTime(cycle.end) - dayTime(todayISO)) / 86400000 + 1
-  const elapsed = (dayTime(todayISO) - dayTime(cycle.start)) / 86400000 + 1
+  const daysLeft = daysBetween(todayISO, cycle.end) + 1
+  const elapsed = daysBetween(cycle.start, todayISO) + 1
   return budgets.map((budget) => {
     const scope = budget.scope
     const spent = rows.reduce((sum, row) => {
@@ -171,8 +158,7 @@ export function describeCycle(config: CycleConfig): string {
   if (config.anchor === "calendar") return config.unit === "month" ? `${every} from the 1st` : `${every} from Monday`
   const date = config.anchorDate ?? ""
   const day = Number(date.slice(8, 10))
-  const months = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"]
-  const pretty = /^\d{4}-\d{2}-\d{2}$/.test(date) ? `${day} ${months[Number(date.slice(5, 7)) - 1]} ${date.slice(0, 4)}` : date || "?"
+  const pretty = /^\d{4}-\d{2}-\d{2}$/.test(date) ? `${day} ${MONTHS[Number(date.slice(5, 7)) - 1]} ${date.slice(0, 4)}` : date || "?"
   const when = config.unit === "month" ? `the ${ordinal(day)}` : pretty
   return config.anchor === "date" ? `${every} from ${when}` : `${every} from the Monday nearest ${when}`
 }

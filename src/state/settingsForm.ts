@@ -1,5 +1,6 @@
 import { describeCycle, type CycleAnchor, type CycleConfig, type CycleUnit } from "../domain/budget"
 import { budgetScopeOptions } from "../domain/budgetScopes"
+import { appToday } from "../domain/days"
 import { fuzzyScore } from "../domain/fuzzy"
 import { categoryPickerRows } from "../domain/categoryOptions"
 import { evalFilter, parseFilterStrict } from "../domain/filter"
@@ -76,7 +77,7 @@ export function anchorDraft(cycle: CycleConfig): string {
 }
 
 /** What the start field holds for a unit before anything is typed. */
-export function defaultAnchorDraft(unit: CycleUnit, today = new Date().toISOString().slice(0, 10)): string {
+export function defaultAnchorDraft(unit: CycleUnit, today = appToday()): string {
   return unit === "month" ? "1" : unit === "week" ? "Monday" : today
 }
 

@@ -16,6 +16,7 @@ import {
   LOOKBACKS,
   PERIODS,
   timeframeNow,
+  toISODate,
 } from "./timeframe"
 import type { Transaction } from "./types"
 
@@ -153,4 +154,15 @@ test("timeframeNow: the same kind of range, now", () => {
   expect(timeframeNow(stepPeriod(stepPeriod(month, -1), -1), now)).toEqual(month)
   const custom = { ...month, family: "custom" as const, custom: { start: "2026-09-01", end: "2026-09-10" } }
   expect(timeframeNow(custom, now).custom).toEqual({ start: "2026-10-18", end: "2026-10-27" })
+})
+
+test("calendar consolidation preserves early-year formatting and custom-range rejection", () => {
+  for (const iso of ["0099-01-01", "0100-01-01", "0999-01-01"]) {
+    expect(customRange(iso, "2026-10-27")).toBe("Start must be a date: YYYY-MM-DD")
+    expect(customRange("2026-10-27", iso)).toBe("End must be a date: YYYY-MM-DD")
+  }
+  const early = new Date(1000, 0, 1)
+  early.setFullYear(999)
+  expect(toISODate(early)).toBe("999-01-01")
+  expect(customRange("1000-01-01", "1000-01-02")).toEqual({ start: "1000-01-01", end: "1000-01-02" })
 })

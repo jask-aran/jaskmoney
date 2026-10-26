@@ -1,3 +1,4 @@
+import { addDays, addMonths, appNow, daysBetween, MONTHS, parseDay, parseISODate, toISODay } from "./days"
 import type { Transaction } from "./types"
 import { cycleFor, type CycleConfig } from "./budget"
 
@@ -32,30 +33,24 @@ export const PERIOD_LABEL: Record<PeriodId, string> = {
 export const MONTHLY_CYCLE: CycleConfig = { unit: "month", anchor: "calendar", anchorDate: null }
 
 /** The budget cycle containing `now`. */
-export function defaultTimeframe(now: Date = new Date(), cycle: CycleConfig = MONTHLY_CYCLE): TimeframeState {
+export function defaultTimeframe(now: Date = appNow(), cycle: CycleConfig = MONTHLY_CYCLE): TimeframeState {
   return {
     family: "period",
     lookback: "1M",
     period: "cycle",
-    periodAnchor: cycleFor(cycle, toISODate(now)).start,
+    periodAnchor: cycleFor(cycle, toISODay(now)).start,
     custom: null,
   }
 }
 
-export function toISODate(d: Date): string {
-  const y = d.getFullYear()
-  const m = String(d.getMonth() + 1).padStart(2, "0")
-  const day = String(d.getDate()).padStart(2, "0")
-  return `${y}-${m}-${day}`
-}
+/** Compatibility export for the local calendar date formatter. */
+export { toISODay as toISODate } from "./days"
 
-export function parseISODate(iso: string): Date {
-  const [y, m, d] = iso.split("-").map(Number)
-  return new Date(y!, (m ?? 1) - 1, d ?? 1)
-}
+/** Compatibility export for callers that need a local Date. */
+export { parseISODate } from "./days"
 
 /** Data clock: prefer latest txn day so lookbacks hit fixture/ANZ ranges. */
-export function dataClock(rows: Transaction[], fallback: Date = new Date()): Date {
+export function dataClock(rows: Transaction[], fallback: Date = appNow()): Date {
   let max = ""
   for (const r of rows) {
     if (r.dateISO > max) max = r.dateISO
@@ -71,89 +66,55 @@ export interface DateBounds {
 }
 
 export function timeframeBounds(tf: TimeframeState, now: Date, cycle: CycleConfig = MONTHLY_CYCLE): DateBounds {
-  const day = new Date(now.getFullYear(), now.getMonth(), now.getDate())
+  const day = toISODay(now)
 
   if (tf.family === "custom" && tf.custom) {
     return { start: tf.custom.start, end: tf.custom.end, label: formatDays(tf.custom.start, tf.custom.end) }
   }
   if (tf.family === "lookback") {
-    const end = day
-    const start = new Date(day)
-    switch (tf.lookback) {
-      case "1M":
-        start.setMonth(start.getMonth() - 1)
-        break
-      case "2M":
-        start.setMonth(start.getMonth() - 2)
-        break
-      case "3M":
-        start.setMonth(start.getMonth() - 3)
-        break
-      case "6M":
-        start.setMonth(start.getMonth() - 6)
-        break
-      case "1Y":
-        start.setFullYear(start.getFullYear() - 1)
-        break
-    }
-    return {
-      start: toISODate(start),
-      end: toISODate(end),
-      label: formatRange(toISODate(start), toISODate(end)),
-    }
+    const months = { "1M": 1, "2M": 2, "3M": 3, "6M": 6, "1Y": 12 }[tf.lookback]
+    const start = addMonths(day, -months)
+    return { start, end: day, label: formatRange(start, day) }
   }
 
-  // period family
   if (tf.period === "cycle") {
     const c = cycleFor(cycle, tf.periodAnchor)
     return { start: c.start, end: c.end, label: formatDays(c.start, c.end) }
   }
-  let start = parseISODate(tf.periodAnchor)
-  start = new Date(start.getFullYear(), start.getMonth(), start.getDate())
-  let endExcl: Date
+  const year = Number(tf.periodAnchor.slice(0, 4))
+  const month = Number(tf.periodAnchor.slice(5, 7)) - 1
+  let start: string
+  let months: number
   switch (tf.period) {
     case "month":
-      start = new Date(start.getFullYear(), start.getMonth(), 1)
-      endExcl = new Date(start.getFullYear(), start.getMonth() + 1, 1)
+      start = tf.periodAnchor.slice(0, 8) + "01"
+      months = 1
       break
-    case "qtr": {
-      const q = Math.floor(start.getMonth() / 3) * 3
-      start = new Date(start.getFullYear(), q, 1)
-      endExcl = new Date(start.getFullYear(), start.getMonth() + 3, 1)
+    case "qtr":
+      start = `${year}-${String(Math.floor(month / 3) * 3 + 1).padStart(2, "0")}-01`
+      months = 3
       break
-    }
-    case "half": {
-      const h = start.getMonth() < 6 ? 0 : 6
-      start = new Date(start.getFullYear(), h, 1)
-      endExcl = new Date(start.getFullYear(), start.getMonth() + 6, 1)
+    case "half":
+      start = `${year}-${month < 6 ? "01" : "07"}-01`
+      months = 6
       break
-    }
-    case "fy": {
-      // AU FY Jul–Jun
-      const y = start.getMonth() >= 6 ? start.getFullYear() : start.getFullYear() - 1
-      start = new Date(y, 6, 1)
-      endExcl = new Date(y + 1, 6, 1)
+    case "fy":
+      start = `${month >= 6 ? year : year - 1}-07-01`
+      months = 12
       break
-    }
     case "year":
-    default:
-      start = new Date(start.getFullYear(), 0, 1)
-      endExcl = new Date(start.getFullYear() + 1, 0, 1)
+      start = `${year}-01-01`
+      months = 12
       break
   }
-  const endIncl = new Date(endExcl)
-  endIncl.setDate(endIncl.getDate() - 1)
-  return {
-    start: toISODate(start),
-    end: toISODate(endIncl),
-    label: formatRange(toISODate(start), toISODate(endIncl)),
-  }
+  // Convert the internal exclusive end to the inclusive public bound.
+  const end = addDays(addMonths(start, months), -1)
+  return { start, end, label: formatRange(start, end) }
 }
 
 /** "1 Oct – 31 Oct 2026", or "16 Dec 2026 – 15 Jan 2027" across years. */
 function formatDays(start: string, end: string): string {
-  const months = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"]
-  const day = (iso: string) => `${Number(iso.slice(8, 10))} ${months[Number(iso.slice(5, 7)) - 1]}`
+  const day = (iso: string) => `${Number(iso.slice(8, 10))} ${MONTHS[Number(iso.slice(5, 7)) - 1]}`
   return start.slice(0, 4) === end.slice(0, 4)
     ? `${day(start)} – ${day(end)} ${end.slice(0, 4)}`
     : `${day(start)} ${start.slice(0, 4)} – ${day(end)} ${end.slice(0, 4)}`
@@ -166,9 +127,7 @@ function formatRange(start: string, end: string): string {
 }
 
 function pretty(iso: string): string {
-  const d = parseISODate(iso)
-  const months = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"]
-  return `${months[d.getMonth()]} ${d.getFullYear()}`
+  return `${MONTHS[Number(iso.slice(5, 7)) - 1]} ${Number(iso.slice(0, 4))}`
 }
 
 export function filterByTimeframe(
@@ -200,9 +159,9 @@ export function chipLabel(index: number): string {
  * both must be real dates and the end not before the start (Go app).
  */
 export function customRange(start: string, end: string): { start: string; end: string } | string {
-  const valid = (iso: string) => /^\d{4}-\d{2}-\d{2}$/.test(iso) && toISODate(parseISODate(iso)) === iso
-  if (!valid(start)) return "Start must be a date: YYYY-MM-DD"
-  if (!valid(end)) return "End must be a date: YYYY-MM-DD"
+  // Preserve the original local-Date round trip: years need four digits.
+  if (!parseDay(start) || Number(start.slice(0, 4)) < 1000) return "Start must be a date: YYYY-MM-DD"
+  if (!parseDay(end) || Number(end.slice(0, 4)) < 1000) return "End must be a date: YYYY-MM-DD"
   if (end < start) return "End is before start"
   return { start, end }
 }
@@ -223,7 +182,7 @@ export function applyChip(tf: TimeframeState, index: number, now: Date, cycle: C
     ...tf,
     family: "period",
     period,
-    periodAnchor: toISODate(now),
+    periodAnchor: toISODay(now),
   }
   const b = timeframeBounds(tmp, now, cycle)
   return { ...tmp, periodAnchor: b.start }
@@ -232,11 +191,8 @@ export function applyChip(tf: TimeframeState, index: number, now: Date, cycle: C
 /** A custom range moved by its own length: `delta` ranges back or forward. */
 export function stepCustom(tf: TimeframeState, delta: number): TimeframeState {
   if (tf.family !== "custom" || !tf.custom) return tf
-  const day = (iso: string) => Date.parse(iso + "T12:00:00Z")
-  const iso = (t: number) => new Date(t).toISOString().slice(0, 10)
-  const length = Math.round((day(tf.custom.end) - day(tf.custom.start)) / 86400000) + 1
-  const shift = delta * length * 86400000
-  return { ...tf, custom: { start: iso(day(tf.custom.start) + shift), end: iso(day(tf.custom.end) + shift) } }
+  const shift = delta * (daysBetween(tf.custom.start, tf.custom.end) + 1)
+  return { ...tf, custom: { start: addDays(tf.custom.start, shift), end: addDays(tf.custom.end, shift) } }
 }
 
 export function activeChipIndex(tf: TimeframeState): number {
@@ -252,31 +208,16 @@ export function stepPeriod(tf: TimeframeState, delta: number, cycle: CycleConfig
     // start, or the day after its end.
     let current = cycleFor(cycle, tf.periodAnchor)
     for (let i = 0; i < Math.abs(delta); i++) {
-      const edge = Date.parse((delta < 0 ? current.start : current.end) + "T12:00:00Z") + (delta < 0 ? -1 : 1) * 86400000
-      current = cycleFor(cycle, new Date(edge).toISOString().slice(0, 10))
+      const edge = addDays(delta < 0 ? current.start : current.end, delta < 0 ? -1 : 1)
+      current = cycleFor(cycle, edge)
     }
     return { ...tf, periodAnchor: current.start }
   }
-  const start = parseISODate(tf.periodAnchor)
-  switch (tf.period) {
-    case "month":
-      start.setMonth(start.getMonth() + delta)
-      break
-    case "qtr":
-      start.setMonth(start.getMonth() + delta * 3)
-      break
-    case "half":
-      start.setMonth(start.getMonth() + delta * 6)
-      break
-    case "fy":
-      start.setFullYear(start.getFullYear() + delta)
-      break
-    case "year":
-      start.setFullYear(start.getFullYear() + delta)
-      break
-  }
-  const next = { ...tf, periodAnchor: toISODate(start) }
-  const b = timeframeBounds(next, start, cycle)
+  const months = { month: 1, qtr: 3, half: 6, fy: 12, year: 12 }[tf.period]
+  const anchor = addMonths(tf.periodAnchor, delta * months)
+  const next = { ...tf, periodAnchor: anchor }
+  // Period bounds use the anchor, not the clock, for the period family.
+  const b = timeframeBounds(next, parseISODate(anchor), cycle)
   return { ...next, periodAnchor: b.start }
 }
 
@@ -304,10 +245,9 @@ export function periodOffset(tf: TimeframeState, now: Date, cycle: CycleConfig =
 export function timeframeNow(tf: TimeframeState, now: Date, cycle: CycleConfig = MONTHLY_CYCLE): TimeframeState {
   if (tf.family === "period") return applyChip(tf, LOOKBACKS.length + PERIODS.indexOf(tf.period), now, cycle)
   if (tf.family !== "custom" || !tf.custom) return tf
-  const day = (iso: string) => Date.parse(iso + "T12:00:00Z")
-  const shift = day(toISODate(now)) - day(tf.custom.end)
-  const iso = (t: number) => new Date(t).toISOString().slice(0, 10)
-  return { ...tf, custom: { start: iso(day(tf.custom.start) + shift), end: toISODate(now) } }
+  const today = toISODay(now)
+  const shift = daysBetween(tf.custom.end, today)
+  return { ...tf, custom: { start: addDays(tf.custom.start, shift), end: today } }
 }
 
 /** "2 cycles back", "1 quarter ahead"; "" for the current period. */
@@ -339,11 +279,9 @@ export function comparisonWindows(startISO: string, endISO: string, todayISO: st
   partial: boolean
   previous: { start: string; end: string }
 } {
-  const day = (iso: string) => Date.parse(iso + "T12:00:00Z")
-  const iso = (t: number) => new Date(t).toISOString().slice(0, 10)
-  const length = Math.round((day(endISO) - day(startISO)) / 86400000) + 1
+  const length = daysBetween(startISO, endISO) + 1
   const lastISO = todayISO < endISO ? todayISO : endISO
-  const days = Math.max(0, Math.round((day(lastISO) - day(startISO)) / 86400000) + 1)
-  const previousStart = day(startISO) - length * 86400000
-  return { days, partial: days < length, previous: { start: iso(previousStart), end: iso(previousStart + (days - 1) * 86400000) } }
+  const days = Math.max(0, daysBetween(startISO, lastISO) + 1)
+  const previousStart = addDays(startISO, -length)
+  return { days, partial: days < length, previous: { start: previousStart, end: addDays(previousStart, days - 1) } }
 }

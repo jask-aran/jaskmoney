@@ -61,3 +61,26 @@ describe("filter parser", () => {
     expect(expr).toBeTruthy()
   })
 })
+
+// Approved change: impossible days must fail rather than overflow into March.
+test("filter dates reject impossible days in single values and range endpoints", () => {
+  for (const query of ["date:2026-02-31", "date:2026-02-31..2026-03-05", "date:2026-02-01..2026-02-31", "date:2025-02-29", "date:2026-13-01"]) {
+    for (const parse of [parseFilter, parseFilterStrict]) {
+      expect(parse(query).error).toBe("invalid date")
+    }
+  }
+  const { node, error } = parseFilterStrict("date:2024-02-29")
+  expect(error).toBeUndefined()
+  expect(evalFilter(node, { ...base, dateISO: "2024-02-29" })).toBe(true)
+})
+
+test("type:spending applies ordinary-flow exclusions while debit and credit keep their meanings", () => {
+  const spending = parseFilterStrict("type:spending")
+  expect(spending.error).toBeUndefined()
+  expect(evalFilter(spending.node, base)).toBe(true)
+  for (const row of [{ ...base, excluded: true }, { ...base, tagNames: ["iGnOrE"] }, { ...base, amount: 0 }, { ...base, amount: 10 }]) {
+    expect(evalFilter(spending.node, row)).toBe(false)
+  }
+  expect(evalFilter(parseFilterStrict("type:debit").node, { ...base, excluded: true, tagNames: ["IGNORE"] })).toBe(true)
+  expect(evalFilter(parseFilterStrict("type:credit").node, { ...base, amount: 10, excluded: true, tagNames: ["IGNORE"] })).toBe(true)
+})
