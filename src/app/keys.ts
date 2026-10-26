@@ -8,7 +8,7 @@ import { budgetLabel, budgetScopeOptions, scopeKey } from "../domain/budgetScope
 import type { CycleConfig } from "../domain/budget"
 import { editorFields, pickerChoices, pickerItems, stepChoice } from "../state/settingsForm"
 import { runSync } from "./sync"
-import { CHART_VIEWS, JUMP_TARGETS, SETTINGS_SECTIONS, TABS, settingsSectionFocus, type ScopeId, type UiStore } from "../state/uiStore"
+import { CHART_VIEWS, CYCLE_VIEWS, JUMP_TARGETS, SETTINGS_SECTIONS, TABS, settingsSectionFocus, type ScopeId, type UiStore } from "../state/uiStore"
 import type { DataStore } from "../state/dataStore"
 import {
   LOOKBACKS,
@@ -119,8 +119,7 @@ export function handleKey(ui: UiStore, key: KeyEvent, data?: DataStore): boolean
     }
     if (name === "space" || seq === " ") {
       const tag = tags[ui.state.tagPickerCursor]
-      const trows = data?.scopedTransactions() ?? []
-      const targets = ui.targetIds(trows)
+      const targets = ui.state.pickerTargets
       if (tag && data && targets.length) {
         data.toggleTagOnTransactions(targets, tag.id).then(
           (summary) => ui.setStatus(summary, summary.includes(" failed: ")),
@@ -176,10 +175,9 @@ export function handleKey(ui: UiStore, key: KeyEvent, data?: DataStore): boolean
     }
     if (name === "return" || name === "enter") {
       const cat = cats[ui.state.catPickerCursor]
-      const rows = data?.scopedTransactions() ?? []
-      const row = rows[ui.state.managerCursor]
-      // Prefer selection targets
-      const targets = ui.targetIds(rows)
+      // Targets were fixed when the picker opened (Manager selection, the
+      // open detail row, or the Recent cursor).
+      const targets = ui.state.pickerTargets
       if (cat && data && targets.length) {
         ui.closeCatPicker()
         ui.setStatus(`Categorizing ${targets.length} → ${cat.name}…`)
@@ -264,8 +262,8 @@ export function handleKey(ui: UiStore, key: KeyEvent, data?: DataStore): boolean
       return true
     }
     if (name === "escape" || name === "return" || name === "enter") { ui.setState({ detailId: null }); return true }
-    if (name === "c") { ui.openCatPicker(); return true }
-    if (name === "t") { ui.openTagPicker(); return true }
+    if (name === "c") { ui.openCatPicker(ui.targetIds(data?.scopedTransactions() ?? [])); return true }
+    if (name === "t") { ui.openTagPicker(ui.targetIds(data?.scopedTransactions() ?? [])); return true }
     if (name === "n") {
       const notes = data?.state.transactions.find((t) => t.id === ui.state.detailId)?.notes ?? ""
       ui.setState({ detailNotesEditing: true, detailNotesDraft: notes })
@@ -750,7 +748,7 @@ export function handleKey(ui: UiStore, key: KeyEvent, data?: DataStore): boolean
         ui.setStatus("No row to categorize", true)
         return true
       }
-      ui.openCatPicker()
+      ui.openCatPicker(ui.targetIds(rows))
       return true
     }
     if (name === "t") {
@@ -758,7 +756,7 @@ export function handleKey(ui: UiStore, key: KeyEvent, data?: DataStore): boolean
         ui.setStatus("No row to tag", true)
         return true
       }
-      ui.openTagPicker()
+      ui.openTagPicker(ui.targetIds(rows))
       return true
     }
     if (name === "space" || seq === " ") {
@@ -827,6 +825,29 @@ export function handleKey(ui: UiStore, key: KeyEvent, data?: DataStore): boolean
     const selection = data?.state.accountSelection
     if ((name === "d" || name === "delete") && typeof selection === "number") { ui.setState({ accountActionId: selection }); ui.setStatus("Account data · c clear transactions · x remove account · esc cancel"); return true }
     return true
+  }
+
+  // ── Dashboard ───────────────────────────────────────────────────────
+  if (scope === "dashboard") {
+    // h/l (or ,/.) step the This Cycle chart's views.
+    const step = name === "h" || name === "left" || seq === "," ? -1 : name === "l" || name === "right" || seq === "." ? 1 : 0
+    if (step !== 0) {
+      const n = CYCLE_VIEWS.length
+      ui.setState({ cycleView: (ui.state.cycleView + step + n) % n })
+      return true
+    }
+  }
+
+  // ── Dashboard Recent ────────────────────────────────────────────────
+  if (scope === "dashboard.recent" && data) {
+    const rows = data.recentTransactions()
+    const row = rows[ui.state.recentCursor]
+    if (name === "j" || name === "down") { ui.setState({ recentCursor: Math.min(Math.max(0, rows.length - 1), ui.state.recentCursor + 1) }); return true }
+    if (name === "k" || name === "up") { ui.setState({ recentCursor: Math.max(0, ui.state.recentCursor - 1) }); return true }
+    if (name === "g") { ui.setState({ recentCursor: 0 }); return true }
+    if (seq === "G") { ui.setState({ recentCursor: Math.max(0, rows.length - 1) }); return true }
+    if (name === "c" && row) { ui.openCatPicker([row.id]); return true }
+    if (name === "t" && row) { ui.openTagPicker([row.id]); return true }
   }
 
   // ── Spending date range ─────────────────────────────────────────────
@@ -970,8 +991,17 @@ export function footerHints(scope: ScopeId): { key: string; desc: string }[] {
       ]
     case "dashboard":
       return [
+        { key: "h/l", desc: "chart view" },
+        { key: "v", desc: "jump" },
         { key: "ctrl+r", desc: "sync" },
         { key: "1-4", desc: "tab" },
+      ]
+    case "dashboard.recent":
+      return [
+        { key: "j/k", desc: "move" },
+        { key: "c", desc: "category" },
+        { key: "t", desc: "tags" },
+        { key: "esc", desc: "done" },
       ]
     case "spending":
       return [

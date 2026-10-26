@@ -53,7 +53,7 @@ import {
   reparseFilterInput,
   type FilterNode,
 } from "../domain/filter"
-import { type Account, type Category, type ImportPreview, type ImportProfile, type ImportRecord, type Rule, type RuleRunResult, type SavedFilter, type SortColumn, type Tag, type Transaction } from "../domain/types"
+import { accountRole, type Account, type Category, type ImportPreview, type ImportProfile, type ImportRecord, type Rule, type RuleRunResult, type SavedFilter, type SortColumn, type Tag, type Transaction } from "../domain/types"
 import { loadSettingsConfig, saveSettingsConfig, validateImportProfile, validateSavedFilter } from "./settingsConfig"
 
 export interface DataState {
@@ -166,6 +166,15 @@ function createDataStore() {
   function accountScoped(): Transaction[] {
     const ids = new Set(selectedAccounts(state.accounts, state.accountSelection).map((a) => a.id))
     return state.transactions.filter((t) => t.accountId != null && ids.has(t.accountId))
+  }
+
+  /** The Dashboard's Recent list: every spending-account row (pending
+   * included), newest first. */
+  function recentTransactions(): Transaction[] {
+    const ids = new Set(state.accounts.filter((a) => accountRole(a) === "spending").map((a) => a.id))
+    return state.transactions
+      .filter((t) => t.accountId != null && ids.has(t.accountId))
+      .sort((a, b) => b.dateISO.localeCompare(a.dateISO) || b.id - a.id)
   }
 
   function sortRows(rows: Transaction[]): Transaction[] {
@@ -602,6 +611,7 @@ function createDataStore() {
     init,
     refresh,
     accountScoped,
+    recentTransactions,
     scopedTransactions,
     setFilterLive,
     commitFilter,

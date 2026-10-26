@@ -12,7 +12,7 @@ export function TagPicker() {
     return tags.filter((t) => t.name.toLowerCase().includes(q))
   })
 
-  const targets = createMemo(() => ui.targetIds(data.scopedTransactions()))
+  const targets = () => ui.state.pickerTargets
 
   const stateFor = (tagId: number): "all" | "some" | "none" => {
     const ids = targets()

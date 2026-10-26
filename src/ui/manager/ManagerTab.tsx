@@ -14,79 +14,14 @@ import { selectableEntries, selectedAccounts, selectionLabel, sidebarEntries } f
 import { computeAccountStats } from "../../domain/accountStats"
 import { toISODate } from "../../domain/timeframe"
 import { AccountDetails } from "./AccountDetails"
+import { TransactionTable } from "./TransactionTable"
 import { categoryMark } from "../icons"
 import { TransactionDetail } from "./TransactionDetail"
 
-const columns = {
-  marker: 1,
-  gap: 1,
-  date: 9,
-  amount: 12,
-  account: 12,
-  category: 16,
-} as const
-
-const DESCRIPTION_TARGET = 40
 /** Sidebar width, borders included. */
 export const SIDEBAR_WIDTH = 36
 /** Below this width the sidebar folds into a one-line account header. */
 const WIDE = 110
-
-/** Go renderTransactionTable: description takes up to its target width, tags
- * take the remainder so row state backgrounds span the whole table. As in Go
- * (hasMultipleAccountNames), the Account column only shows for several accounts. */
-export function tableLayout(contentWidth: number, showAccount: boolean): { description: number; tags: number; showAccount: boolean } {
-  const fixed = columns.marker + columns.date + columns.amount + columns.category + 4 * columns.gap +
-    (showAccount ? columns.account + columns.gap : 0)
-  const avail = contentWidth - fixed
-  let description = Math.min(DESCRIPTION_TARGET, avail)
-  if (description < 5) description = Math.max(5, avail)
-  return { description, tags: Math.max(1, contentWidth - fixed - description), showAccount }
-}
-
-function fmtDate(iso: string): string {
-  const [y, m, d] = iso.split("-")
-  if (!y || !m || !d) return iso
-  return `${d}-${m}-${y.slice(2)}`
-}
-
-
-function catFg(color: string | undefined): string {
-  if (!color || color === "" || color === "#7f849c") return uncategorisedColor
-  return color
-}
-
-function formatCategory(
-  categoryId: number | null,
-  name: string,
-  color: string | undefined,
-  width: number,
-): { marker: string; markerColor: string; text: string; textColor: string; muted: boolean } {
-  const muted = !name || name === "Uncategorised" || !color || color === "#7f849c"
-  const text = name || "Uncategorised"
-  return {
-    marker: `${categoryMark(categoryId, muted)} `,
-    markerColor: catFg(color),
-    text: fit(text, width - 2),
-    textColor: catFg(color),
-    muted,
-  }
-}
-
-function formatTags(
-  names: string[],
-  colors: string[],
-  width: number,
-): { text: string; color: string } {
-  if (!names.length) return { text: "-".padEnd(width), color: theme.overlay1 }
-  const head = names[0]!
-  const extra = names.length > 1 ? `+${names.length - 1}` : ""
-  const raw = extra ? `${head},${extra}` : head
-  return {
-    text: fit(raw, width),
-    color: colors[0] || theme.teal,
-  }
-}
 
 export function ManagerTab(props: { focused: SectionId }) {
   const dims = useTerminalDimensions()
@@ -96,10 +31,6 @@ export function ManagerTab(props: { focused: SectionId }) {
   const showAccount = () => selectedAccounts(data.state.accounts, data.state.accountSelection).length > 1
   const wide = () => dims().width >= WIDE
   const stats = createMemo(() => computeAccountStats(selectedAccounts(data.state.accounts, data.state.accountSelection), data.state.transactions, toISODate(new Date())))
-  // Wide: the table sits right of the sidebar and a 1-cell gap. Narrow: it
-  // spans the tab under the account header (3 rows). Its card spends 4 cells
-  // on border + padding.
-  const layout = createMemo(() => tableLayout(dims().width - (wide() ? SIDEBAR_WIDTH + 1 : 0) - 4, showAccount()))
 
   createEffect(() => {
     // App chrome (4), transaction borders (2), and the table header (1) are
@@ -124,10 +55,6 @@ export function ManagerTab(props: { focused: SectionId }) {
     if (ui.state.managerTop > maxTop) ui.setState({ managerTop: maxTop })
   })
 
-  const windowRows = createMemo(() => {
-    const all = rows()
-    return all.slice(ui.state.managerTop, ui.state.managerTop + ui.state.managerVisible)
-  })
 
   const txFocused = () =>
     props.focused === "mgr.transactions" || props.focused === "none"
@@ -251,106 +178,19 @@ export function ManagerTab(props: { focused: SectionId }) {
             </text>
           )}
         </Show>
-        <text fg={theme.subtext0}>
-          <b>
-            {" ".repeat(columns.marker)}
-            {`Date${sortMark("date")}`.padEnd(columns.date)}
-            {" ".repeat(columns.gap)}
-            {`Amount${sortMark("amount")}`.padEnd(columns.amount)}
-            {" ".repeat(columns.gap)}
-            {fit(`Description${sortMark("description")}`, layout().description)}
-            {layout().showAccount ? " ".repeat(columns.gap) + `Account${sortMark("account")}`.padEnd(columns.account) : ""}
-            {" ".repeat(columns.gap)}
-            {`Category${sortMark("category")}`.padEnd(columns.category)}
-            {" ".repeat(columns.gap)}
-            {fit("Tags", layout().tags)}
-          </b>
-        </text>
-        {rows().length === 0 ? (
-          <text fg={theme.overlay1}>
-            {data.state.filterQuery ? "No matches" : "Empty · no transactions loaded"}
-          </text>
-        ) : (
-          <box flexGrow={1} flexDirection="column">
-            <For each={windowRows()}>
-              {(r, i) => {
-                const absIndex = () => ui.state.managerTop + i()
-                const isCursor = () =>
-                  txFocused() &&
-                  !ui.state.filterMode &&
-                  absIndex() === ui.state.managerCursor
-                const selected = () => !!ui.state.selectedIds[r.id]
-                const hl = () => !!highlighted()[r.id]
-                // OpenTUI cannot repaint a previous cell to transparency: it must
-                // receive the table canvas colour when a row loses its state bg.
-                // This is visually identical to the unstyled table background.
-                const look = () => rowAppearance(selected(), hl(), isCursor())
-                const rowBg = () => look().bg ?? theme.canvas
-                const fg = (column: string) => look().fg ?? column
-                // Up holds (pending) render italic until they settle.
-                const held = () => r.status === "HELD"
-                const tags = () => formatTags(r.tagNames, r.tagColors, layout().tags)
-                const category = () =>
-                  formatCategory(r.categoryId, r.categoryName, r.categoryColor, columns.category)
-                const strong = () => look().bold
-                return (
-                  <text width="100%" bg={rowBg()}>
-                    <S fg={fg(theme.accent)} bg={rowBg()} bold={strong()}>
-                      {isCursor() ? ">" : selected() ? "*" : " "}
-                    </S>
-                    <S fg={fg(theme.mutedText)} bg={rowBg()} bold={strong()}>
-                      {fmtDate(r.dateISO).padEnd(columns.date)}
-                    </S>
-                    <S fg={fg(theme.text)} bg={rowBg()} bold={strong()}>
-                      {" ".repeat(columns.gap)}
-                    </S>
-                    <S
-                      fg={fg(r.amount < 0 ? theme.error : theme.success)}
-                      bg={rowBg()}
-                      bold={strong()}
-                      italic={held()}
-                    >
-                      {formatMoney(r.amount).padEnd(columns.amount)}
-                    </S>
-                    <S fg={fg(theme.text)} bg={rowBg()} bold={strong()}>
-                      {" ".repeat(columns.gap)}
-                    </S>
-                    <S fg={fg(theme.brightText)} bg={rowBg()} bold={strong()} italic={held()}>
-                      {fit(r.description, layout().description)}
-                    </S>
-                    <S fg={fg(theme.dimText)} bg={rowBg()} bold={strong()}>
-                      {layout().showAccount ? " ".repeat(columns.gap) + fit(r.accountName, columns.account) : ""}
-                    </S>
-                    <S fg={fg(theme.text)} bg={rowBg()} bold={strong()}>
-                      {" ".repeat(columns.gap)}
-                    </S>
-                    <S
-                      fg={fg(category().markerColor)}
-                      bg={rowBg()}
-                      bold={strong() && (!category().muted || !!look().fg)}
-                    >
-                      {category().marker}
-                    </S>
-                    <S
-                      fg={fg(category().textColor)}
-                      bg={rowBg()}
-                      bold={strong() && (!category().muted || !!look().fg)}
-                      dim={category().muted && !look().fg}
-                    >
-                      {category().text}
-                    </S>
-                    <S fg={fg(theme.text)} bg={rowBg()} bold={strong()}>
-                      {" ".repeat(columns.gap)}
-                    </S>
-                    <S fg={fg(tags().color)} bg={rowBg()} bold={strong()}>
-                      {tags().text}
-                    </S>
-                  </text>
-                )
-              }}
-            </For>
-          </box>
-        )}
+        <TransactionTable
+          rows={rows()}
+          top={ui.state.managerTop}
+          visible={ui.state.managerVisible}
+          cursor={txFocused() && !ui.state.filterMode ? ui.state.managerCursor : null}
+          width={dims().width - (wide() ? SIDEBAR_WIDTH + 1 : 0) - 4}
+          showAccount={showAccount()}
+          showTags
+          selectedIds={ui.state.selectedIds}
+          highlighted={highlighted()}
+          sortMark={sortMark}
+          empty={data.state.filterQuery ? "No matches" : "Empty · no transactions loaded"}
+        />
       </SectionCard>
       <TransactionDetail />
       <Show when={accountAction()}>{(account: () => Account) => <box position="absolute" zIndex={20} left="22%" top="35%" width="56%" border borderStyle="rounded" borderColor={theme.warning} paddingLeft={1} paddingRight={1} backgroundColor={theme.base} flexDirection="column">

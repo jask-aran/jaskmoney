@@ -10,7 +10,7 @@ import { categoryMark } from "../icons"
 export function CatPicker() {
   const items = createMemo((): PickerItem[] => categoryPickerRows(data.state.categories, ui.state.catPickerQuery).map((r) =>
     r.kind === "heading" ? r : { kind: "item", label: r.category.name, value: r.category.id, color: r.category.color }))
-  const targets = () => ui.targetIds(data.scopedTransactions()).length
+  const targets = () => ui.state.pickerTargets.length
   return (
     <Show when={ui.state.catPickerOpen}>
       <ListPicker

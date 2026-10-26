@@ -22,6 +22,8 @@ const WEEKDAYS = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"]
 /** Below this width the chart pane spans the tab and categories sit beside
  * merchants; at or above it, categories take a right-hand column. */
 const WIDE = 120
+/** The categories column's widest useful size: Up's longest names fit. */
+const SIDE_MAX = 48
 
 /**
  * Everything over a chosen period: the Date Range with its flows, one chart
@@ -54,15 +56,17 @@ export function SpendingTab(props: { focused: SectionId }) {
   const series = createMemo(() => dailySpendSeries(inPeriod(), bounds().start, bounds().end))
 
   // Fixed rows: tab bar + gap (2), status + footer (2), Date Range (4).
-  // Wide: the chart pane (55%) above merchants in a 2/3 column, categories in
-  // the right third. Narrow: the chart pane (50%) spans the tab, categories
+  // Wide: the chart pane (55%) above merchants, categories in a right column
+  // up to SIDE_MAX wide. Narrow: the chart pane (50%) spans the tab, categories
   // and merchants share the row below.
   const wide = () => dims().width >= WIDE
   const bodyHeight = () => Math.max(8, dims().height - 8)
   const chartHeight = () => Math.max(8, Math.floor(bodyHeight() * (wide() ? 0.55 : 0.5)))
   const lowerHeight = () => bodyHeight() - chartHeight()
-  const mainWidth = () => (wide() ? Math.floor(((dims().width - 1) * 2) / 3) : dims().width)
-  const sideWidth = () => (wide() ? dims().width - 1 - mainWidth() : Math.floor((dims().width - 1) * 0.4))
+  // Categories stop growing at SIDE_MAX (names fit); the chart and merchants
+  // take the rest.
+  const sideWidth = () => Math.min(SIDE_MAX, Math.floor((dims().width - 1) * 0.4))
+  const mainWidth = () => (wide() ? dims().width - 1 - sideWidth() : dims().width)
   const merchantsWidth = () => (wide() ? mainWidth() : dims().width - 1 - sideWidth())
   const merchantsHeight = () => lowerHeight()
   const categoriesHeight = () => (wide() ? bodyHeight() : lowerHeight())
