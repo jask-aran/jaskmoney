@@ -35,9 +35,9 @@ export function xAxisLine(rows: Run[][]): string {
   return "└" + Array.from({ length: width }, (_, c) => (gridlines.has(c) ? "┴" : "─")).join("")
 }
 
-/** A y-axis, the plot rows, the x-axis line, then the x labels. `inks` maps
- * each run's ink to a colour. */
-export function ChartBody(props: { model: ChartModel; inks: Record<string, string> }) {
+/** A y-axis, the plot rows, the x-axis line (with `baseline`), then the x
+ * labels. `inks` maps each run's ink to a colour. */
+export function ChartBody(props: { model: ChartModel; inks: Record<string, string>; baseline?: boolean }) {
   const axis = () => axisWidth(props.model.ticks)
   return (
     <>
@@ -49,7 +49,7 @@ export function ChartBody(props: { model: ChartModel; inks: Record<string, strin
           </text>
         )}
       </For>
-      <Show when={props.model.rows.length}>
+      <Show when={props.baseline && props.model.rows.length}>
         <text wrapMode="none" fg={theme.overlay1}>{" ".repeat(axis() - 1) + xAxisLine(props.model.rows)}</text>
       </Show>
       <text wrapMode="none" fg={theme.overlay1}>{" ".repeat(axis()) + props.model.labels}</text>

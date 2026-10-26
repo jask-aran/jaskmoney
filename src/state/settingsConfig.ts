@@ -11,6 +11,8 @@ export interface UiPrefs {
   accountSelection?: AccountSelection
   chartViews?: [number, number]
   weekStart?: "monday" | "sunday"
+  /** Charts draw an x-axis line under the plot (default off). */
+  xAxis?: boolean
 }
 
 export interface SettingsConfig {
@@ -84,6 +86,7 @@ function parseUiPrefs(raw: unknown): UiPrefs | undefined {
     ui.filterUsage = Object.fromEntries(Object.entries(raw.filterUsage).filter((entry): entry is [string, string] => typeof entry[1] === "string" && Number.isFinite(Date.parse(entry[1]))))
   }
   if ("weekStart" in raw && (raw.weekStart === "monday" || raw.weekStart === "sunday")) ui.weekStart = raw.weekStart
+  if ("xAxis" in raw && typeof raw.xAxis === "boolean") ui.xAxis = raw.xAxis
   if ("accountSelection" in raw) {
     const sel = raw.accountSelection
     if (sel === "all" || sel === "savers" || (typeof sel === "number" && Number.isSafeInteger(sel) && sel > 0)) ui.accountSelection = sel

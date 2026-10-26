@@ -130,13 +130,15 @@ export function OverviewTab(props: { focused: SectionId }) {
   const labelWidth = () => Math.max(6, stackWidth() - VALUE - NOTE)
 
   // Chart panes: border + padding (4) across; border (2), the x-axis line
-  // and the x labels down. The view picker and the legend sit in the borders.
+  // (Settings › Database b, default off) and the x labels down. The view
+  // picker and the legend sit in the borders.
+  const baseline = () => data.state.uiPrefs.xAxis === true
   // The y-axis is as wide as its labels: build once with a guessed width,
   // then again if the labels need a different one.
   const model = (index: number, height: number): ChartModel | null => {
     const v = (CHART_VIEWS[index] ?? CHART_VIEWS[0]).view
-    // Border (2), the x-axis line and the x labels.
-    const rows = Math.max(1, height - 4)
+    // Border (2), the x-axis line (a setting) and the x labels.
+    const rows = Math.max(1, height - (baseline() ? 4 : 3))
     const build = (axis: number): ChartModel | null => {
       const width = Math.max(1, mainWidth() - 4 - axis)
       if (v === "Daily" || v === "Cumulative" || v === "Weekly") return spendingChart(v, series(), width, rows, today(), spending(), budget()?.budget.amount, periodNames(), data.state.weekStart)
@@ -291,7 +293,7 @@ export function OverviewTab(props: { focused: SectionId }) {
         focused={props.focused === (p.pane === 0 ? "ov.chart" : "ov.chart2")}
       >
         <Show when={chart()} fallback={<CalendarView weeks={calendar()} width={mainWidth() - 4} rows={p.height - 2} today={today()} />}>
-          {(m: () => ChartModel) => <ChartBody model={m()} inks={INKS} />}
+          {(m: () => ChartModel) => <ChartBody model={m()} inks={INKS} baseline={baseline()} />}
         </Show>
       </SectionCard>
     )
