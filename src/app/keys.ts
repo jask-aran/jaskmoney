@@ -838,18 +838,6 @@ export function handleKey(ui: UiStore, key: KeyEvent, data?: DataStore): boolean
     }
   }
 
-  // ── Dashboard Recent ────────────────────────────────────────────────
-  if (scope === "dashboard.recent" && data) {
-    const rows = data.recentTransactions()
-    const row = rows[ui.state.recentCursor]
-    if (name === "j" || name === "down") { ui.setState({ recentCursor: Math.min(Math.max(0, rows.length - 1), ui.state.recentCursor + 1) }); return true }
-    if (name === "k" || name === "up") { ui.setState({ recentCursor: Math.max(0, ui.state.recentCursor - 1) }); return true }
-    if (name === "g") { ui.setState({ recentCursor: 0 }); return true }
-    if (seq === "G") { ui.setState({ recentCursor: Math.max(0, rows.length - 1) }); return true }
-    if (name === "c" && row) { ui.openCatPicker([row.id]); return true }
-    if (name === "t" && row) { ui.openTagPicker([row.id]); return true }
-  }
-
   // ── Spending date range ─────────────────────────────────────────────
   if (scope === "spending.date") {
     if (name === "h" || name === "left") {
@@ -995,13 +983,6 @@ export function footerHints(scope: ScopeId): { key: string; desc: string }[] {
         { key: "v", desc: "jump" },
         { key: "ctrl+r", desc: "sync" },
         { key: "1-4", desc: "tab" },
-      ]
-    case "dashboard.recent":
-      return [
-        { key: "j/k", desc: "move" },
-        { key: "c", desc: "category" },
-        { key: "t", desc: "tags" },
-        { key: "esc", desc: "done" },
       ]
     case "spending":
       return [

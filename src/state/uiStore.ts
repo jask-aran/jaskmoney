@@ -11,7 +11,6 @@ export type TabId = "dashboard" | "spending" | "manager" | "settings"
 export type SectionId =
   | "none"
   | "dash.cycle"
-  | "dash.recent"
   | "spend.date"
   | "spend.chart"
   | "spend.categories"
@@ -33,7 +32,6 @@ export type ScopeId =
   | "catPicker"
   | "tagPicker"
   | "dashboard"
-  | "dashboard.recent"
   | "spending.date"
   | "spending"
   | "manager"
@@ -103,9 +101,6 @@ export interface UiState {
   pickerTargets: number[]
   /** Index into CYCLE_VIEWS (the Dashboard's This Cycle chart). */
   cycleView: number
-  /** Dashboard Recent list cursor and scroll offset. */
-  recentCursor: number
-  recentTop: number
   selectedIds: Record<number, boolean>
   rangeSelecting: boolean
   rangeAnchorId: number
@@ -191,7 +186,6 @@ export type ChartView = (typeof CHART_VIEWS)[number]["view"]
 export const JUMP_TARGETS: Record<TabId, JumpTarget[]> = {
   dashboard: [
     { key: "c", section: "dash.cycle", label: "This Cycle" },
-    { key: "r", section: "dash.recent", label: "Recent" },
   ],
   spending: [
     { key: "d", section: "spend.date", label: "Date Range" },
@@ -246,8 +240,7 @@ function createUiStore() {
     tagPickerQuery: "",
     pickerTargets: [],
     cycleView: 0,
-    recentCursor: 0,
-    recentTop: 0,
+
     selectedIds: {},
     rangeSelecting: false,
     rangeAnchorId: 0,
@@ -542,7 +535,7 @@ function createUiStore() {
     if (state.importStage === "preview") return "settings.import.preview"
     if (state.accountActionId != null) return "manager.accountAction"
     if (state.factoryResetOpen) return "settings.factoryReset"
-    if (state.activeTab === "dashboard") return state.focusedSection === "dash.recent" ? "dashboard.recent" : "dashboard"
+    if (state.activeTab === "dashboard") return "dashboard"
     if (state.activeTab === "spending") {
       if (state.focusedSection === "spend.date") return "spending.date"
       return "spending"

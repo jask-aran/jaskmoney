@@ -1,9 +1,8 @@
-import { For, Show, createEffect, createMemo } from "solid-js"
+import { For, Show, createMemo } from "solid-js"
 import { useTerminalDimensions } from "@opentui/solid"
 import { SectionCard } from "../primitives/SectionCard"
 import { S } from "../primitives/S"
 import { CYCLE_VIEWS, ui, type SectionId } from "../../state/uiStore"
-import { TransactionTable } from "../manager/TransactionTable"
 import { data } from "../../state/dataStore"
 import { theme } from "../../theme"
 import { dailySpendSeries, formatMoney, formatWholeMoney } from "../../domain/dashboard"
@@ -20,10 +19,9 @@ import { INKS, addDays, spendingChart } from "../spending/periodCharts"
 
 /**
  * Dashboard: how things stand today. Balances and runway, savers, a year of
- * net position, the current budget cycle (budgets and a chart with views),
- * and the latest transactions (pending marked), which take
- * category and tag edits. Nothing here follows the Date Range (that is the Spending
- * tab's job).
+ * net position, and the current budget cycle (budgets and a chart with
+ * views). Nothing here follows the Date Range (that is the Spending tab's
+ * job).
  */
 export function DashboardTab(props: { focused: SectionId }) {
   const dims = useTerminalDimensions()
@@ -48,7 +46,7 @@ export function DashboardTab(props: { focused: SectionId }) {
 
 
   // Wide (120+ cols): Now beside Savers (up to SIDE_MAX wide), then the Net
-  // Position strip, This Cycle (60% of the rest) and Recent, each full width.
+  // Position strip and This Cycle, each full width.
   // Narrow: Now and Savers stack too, Savers two to a line. Category
   // breakdowns live on the Spending tab.
   const wide = () => dims().width >= WIDE
@@ -57,26 +55,13 @@ export function DashboardTab(props: { focused: SectionId }) {
   const showNetStrip = () => dims().height >= (wide() ? 36 : 44)
   const lowerHeight = () => Math.max(6, dims().height - 11 - saversHeight() - (showNetStrip() ? 8 : 0))
   const budgetLines = () => Math.max(1, budgets().length)
-  // Cycle card: border (2), budget lines, a blank line, the view strip, the
-  // chart (at least 6 rows), labels + summary. Recent needs 6 rows.
-  const cycleMin = () => 2 + budgetLines() + 1 + 1 + 6 + 2
-  const showRecent = () => lowerHeight() >= cycleMin() + 6
-  const cycleHeight = () => (showRecent() ? Math.max(cycleMin(), Math.floor(lowerHeight() * 0.6)) : lowerHeight())
-  const recentHeight = () => lowerHeight() - cycleHeight()
+  // This Cycle takes the rest.
+  const cycleHeight = () => lowerHeight()
   const saversWidth = () => Math.min(SIDE_MAX, Math.floor((dims().width - 1) * 0.4))
   const nowWidth = () => (wide() ? dims().width - 1 - saversWidth() : dims().width)
   // Full-width cards spend 4 cells on border + padding.
   const inner = () => dims().width - 4
-  // Recent: border (2) and the table header.
-  const recentVisible = () => Math.max(1, recentHeight() - 3)
-  createEffect(() => {
-    const n = recentVisible()
-    const rows = data.recentTransactions().length
-    const cur = Math.min(ui.state.recentCursor, Math.max(0, rows - 1))
-    if (cur !== ui.state.recentCursor) ui.setState({ recentCursor: cur })
-    if (cur < ui.state.recentTop) ui.setState({ recentTop: cur })
-    else if (cur >= ui.state.recentTop + n) ui.setState({ recentTop: cur - n + 1 })
-  })
+
 
   // The cycle chart in its current view (h/l), with the overall budget as a
   // rule on the cumulative view.
@@ -240,20 +225,6 @@ export function DashboardTab(props: { focused: SectionId }) {
     </SectionCard>
   )
 
-  const recentCard = () => (
-    <SectionCard title="Recent" height={recentHeight()} focused={props.focused === "dash.recent"}>
-      <TransactionTable
-        rows={data.recentTransactions()}
-        top={ui.state.recentTop}
-        visible={recentVisible()}
-        cursor={props.focused === "dash.recent" ? ui.state.recentCursor : null}
-        width={inner()}
-        showAccount={false}
-        showTags={false}
-        empty="No transactions yet"
-      />
-    </SectionCard>
-  )
 
   return (
     <box width="100%" height="100%" flexDirection="column" gap={0} backgroundColor={theme.canvas}>
@@ -265,7 +236,6 @@ export function DashboardTab(props: { focused: SectionId }) {
             {saversCard()}
             {netCard()}
             {cycleCard()}
-            <Show when={showRecent()}>{recentCard()}</Show>
           </>
         }
       >
@@ -275,7 +245,6 @@ export function DashboardTab(props: { focused: SectionId }) {
         </box>
         {netCard()}
         {cycleCard()}
-        <Show when={showRecent()}>{recentCard()}</Show>
       </Show>
     </box>
   )
