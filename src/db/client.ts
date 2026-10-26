@@ -234,16 +234,19 @@ function nextOrder(db: Db, table: "categories" | "tags" | "rules_v2"): number {
   return Number((db.query(`SELECT COALESCE(MAX(sort_order), -1) AS n FROM ${table}`).get() as { n: number }).n) + 1
 }
 
-export function createCategory(db: Db, input: Pick<Category, "name" | "color">): number {
+export function createCategory(db: Db, input: Pick<Category, "name" | "color"> & { notSpending?: boolean }): number {
   const name = input.name.trim()
   if (!name) throw new Error("category name is required")
-  return Number(db.query(`INSERT INTO categories (name, color, sort_order) VALUES (?, ?, ?)`).run(name, input.color, nextOrder(db, "categories")).lastInsertRowid)
+  return Number(db.query(`INSERT INTO categories (name, color, sort_order, not_spending) VALUES (?, ?, ?, ?)`)
+    .run(name, input.color, nextOrder(db, "categories"), input.notSpending ? 1 : 0).lastInsertRowid)
 }
 
-export function updateCategory(db: Db, id: number, input: Pick<Category, "name" | "color">): void {
+/** `notSpending` is left unchanged when omitted. */
+export function updateCategory(db: Db, id: number, input: Pick<Category, "name" | "color"> & { notSpending?: boolean }): void {
   const name = input.name.trim()
   if (!name) throw new Error("category name is required")
-  db.query(`UPDATE categories SET name = ?, color = ? WHERE id = ?`).run(name, input.color, id)
+  if (input.notSpending === undefined) db.query(`UPDATE categories SET name = ?, color = ? WHERE id = ?`).run(name, input.color, id)
+  else db.query(`UPDATE categories SET name = ?, color = ?, not_spending = ? WHERE id = ?`).run(name, input.color, input.notSpending ? 1 : 0, id)
 }
 
 export function deleteCategory(db: Db, id: number): void {

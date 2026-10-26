@@ -427,7 +427,7 @@ export function handleKey(ui: UiStore, key: KeyEvent, data?: DataStore): boolean
 
   if (ui.state.settingsEditor) {
     const kind = ui.state.settingsEditor
-    const fieldCount = kind === "category" ? 2 : kind === "tag" ? 3 : kind === "filter" ? 3 : 4
+    const fieldCount = kind === "category" ? 3 : kind === "tag" ? 3 : kind === "filter" ? 3 : 4
     const draft = ui.state.settingsDraft
     const field = ui.state.settingsEditField
     if (name === "escape") { ui.closeSettingsEditor(); ui.setStatus("Edit cancelled"); return true }
@@ -435,8 +435,8 @@ export function handleKey(ui: UiStore, key: KeyEvent, data?: DataStore): boolean
     if (name === "return" || name === "enter") {
       try {
         if (kind === "category") {
-          if (ui.state.settingsEditId == null) data?.createSettingsCategory({ name: draft.name, color: draft.color })
-          else data?.updateSettingsCategory(Number(ui.state.settingsEditId), { name: draft.name, color: draft.color })
+          if (ui.state.settingsEditId == null) data?.createSettingsCategory({ name: draft.name, color: draft.color, notSpending: draft.notSpending })
+          else data?.updateSettingsCategory(Number(ui.state.settingsEditId), { name: draft.name, color: draft.color, notSpending: draft.notSpending })
         } else if (kind === "tag") {
           if (ui.state.settingsEditId == null) data?.createSettingsTag({ name: draft.name, color: draft.color, categoryId: draft.categoryId })
           else data?.updateSettingsTag(Number(ui.state.settingsEditId), { name: draft.name, color: draft.color, categoryId: draft.categoryId })
@@ -455,6 +455,10 @@ export function handleKey(ui: UiStore, key: KeyEvent, data?: DataStore): boolean
     const textKey = kind === "filter" ? (field === 0 ? "id" : field === 1 ? "name" : "expr") : kind === "rule" ? (field === 0 ? "name" : field === 1 ? "savedFilterId" : null) : (field === 0 ? "name" : field === 1 ? "color" : null)
     if (name === "backspace" && textKey) { ui.setState("settingsDraft", textKey as "name", draft[textKey as "name"].slice(0, -1)); return true }
     if (isPrintable(key) && textKey) { ui.setState("settingsDraft", textKey as "name", draft[textKey as "name"] + seq); return true }
+    if (kind === "category" && field === 2 && (name === "h" || name === "left" || name === "l" || name === "right" || name === "space")) {
+      ui.setState("settingsDraft", "notSpending", !draft.notSpending)
+      return true
+    }
     if ((name === "h" || name === "left" || name === "l" || name === "right") && ((kind === "tag" && field === 2) || (kind === "rule" && field === 2))) {
       const categories = data?.state.categories ?? []
       const current = draft.categoryId ?? draft.setCategoryId
@@ -528,12 +532,12 @@ export function handleKey(ui: UiStore, key: KeyEvent, data?: DataStore): boolean
     if (name === "pageup") { ui.moveSettingsList(list, -10, items.length); return true }
     if (name === "pagedown") { ui.moveSettingsList(list, 10, items.length); return true }
     if (name === "a") {
-      ui.openSettingsEditor(list === "categories" ? "category" : "tag", null, { ...ui.state.settingsDraft, name: "", color: list === "categories" ? "#94e2d5" : "#89b4fa", categoryId: null })
+      ui.openSettingsEditor(list === "categories" ? "category" : "tag", null, { ...ui.state.settingsDraft, name: "", color: list === "categories" ? "#94e2d5" : "#89b4fa", categoryId: null, notSpending: false })
       return true
     }
     if ((name === "return" || name === "enter") && items[cursor]) {
       const item = items[cursor]!
-      ui.openSettingsEditor(list === "categories" ? "category" : "tag", item.id, { ...ui.state.settingsDraft, name: item.name, color: item.color, categoryId: list === "tags" ? ("categoryId" in item ? item.categoryId : null) : null })
+      ui.openSettingsEditor(list === "categories" ? "category" : "tag", item.id, { ...ui.state.settingsDraft, name: item.name, color: item.color, categoryId: list === "tags" ? ("categoryId" in item ? item.categoryId : null) : null, notSpending: "notSpending" in item ? item.notSpending : false })
       return true
     }
     if (name === "delete" && items[cursor]) { ui.armSettingsConfirm({ kind: list === "categories" ? "category" : "tag", id: items[cursor]!.id, label: items[cursor]!.name }); ui.setStatus(`Press del again to delete ${items[cursor]!.name}`); return true }

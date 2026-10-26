@@ -45,7 +45,11 @@ function TaxonomyList(props: { kind: SettingsList; narrow?: boolean; split?: boo
           const selected = () => active() && absolute() === cursor()
           const bg = () => selected() ? theme.surface0 : theme.canvas
           const isCategory = () => props.kind === "categories"
-          const scope = () => isCategory() ? ((row as typeof data.state.categories[number]).isDefault ? "default" : "") : categoryName((row as typeof data.state.tags[number]).categoryId)
+          const scope = () => {
+            if (!isCategory()) return categoryName((row as typeof data.state.tags[number]).categoryId)
+            const category = row as typeof data.state.categories[number]
+            return [category.isDefault ? "default" : "", category.notSpending ? "not spending" : ""].filter(Boolean).join(", ")
+          }
           return <text width="100%" bg={bg()}>
             <S fg={selected() ? theme.focus : theme.canvas} bg={bg()} bold>{selected() ? "> " : "  "}</S>
             <S fg={row.color} bg={bg()}>● </S>
@@ -180,7 +184,7 @@ function EditorOverlay() {
   const fieldRow = (index: number, label: string, value: string) => <text><S fg={field() === index ? theme.focus : theme.subtext0} bold={field() === index}>{field() === index ? "> " : "  "}{label}: </S><S fg={theme.text}>{value}{field() === index ? "▌" : ""}</S></text>
   return <Show when={kind()}>{(editor: () => NonNullable<ReturnType<typeof kind>>) => <box position="absolute" zIndex={10} left="20%" top="25%" width="60%" border borderStyle="rounded" borderColor={theme.focus} paddingLeft={1} paddingRight={1} backgroundColor={theme.base} flexDirection="column">
     <text fg={theme.focus}><b>{editor() === "category" ? "Category" : editor() === "tag" ? "Tag" : editor() === "filter" ? "Saved Filter" : "Rule"} editor</b></text>
-    <Show when={editor() === "category" || editor() === "tag"}>{fieldRow(0, "Name", draft().name)}{fieldRow(1, "Colour", draft().color)}{editor() === "tag" ? fieldRow(2, "Scope", data.state.categories.find((c) => c.id === draft().categoryId)?.name ?? "global") : null}</Show>
+    <Show when={editor() === "category" || editor() === "tag"}>{fieldRow(0, "Name", draft().name)}{fieldRow(1, "Colour", draft().color)}{editor() === "tag" ? fieldRow(2, "Scope", data.state.categories.find((c) => c.id === draft().categoryId)?.name ?? "global") : null}{editor() === "category" ? fieldRow(2, "Spending", draft().notSpending ? "no — excluded from spending and income" : "yes") : null}</Show>
     <Show when={editor() === "filter"}>{fieldRow(0, "ID", draft().id)}{fieldRow(1, "Name", draft().name)}{fieldRow(2, "Expr", draft().expr)}</Show>
     <Show when={editor() === "rule"}>{fieldRow(0, "Name", draft().name)}{fieldRow(1, "Filter", draft().savedFilterId)}{fieldRow(2, "Category", data.state.categories.find((c) => c.id === draft().setCategoryId)?.name ?? "—")}{fieldRow(3, "Tags", draft().addTagIds.map((id) => data.state.tags.find((t) => t.id === id)?.name).filter(Boolean).join(", ") || "—")}</Show>
     <text fg={theme.overlay1}>tab field · enter save · esc cancel</text>

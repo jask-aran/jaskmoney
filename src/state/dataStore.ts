@@ -375,14 +375,14 @@ function createDataStore() {
     })
   }
 
-  function createSettingsCategory(input: Pick<Category, "name" | "color">): number {
+  function createSettingsCategory(input: Pick<Category, "name" | "color"> & { notSpending?: boolean }): number {
     if (!db) throw new Error("db not open")
     const id = createCategory(db, input)
     refresh()
     return id
   }
 
-  function updateSettingsCategory(id: number, input: Pick<Category, "name" | "color">) {
+  function updateSettingsCategory(id: number, input: Pick<Category, "name" | "color"> & { notSpending?: boolean }) {
     if (!db) throw new Error("db not open")
     updateCategory(db, id, input)
     refresh()

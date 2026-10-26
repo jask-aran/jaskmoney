@@ -119,7 +119,7 @@ export interface UiState {
   settingsEditor: SettingsEditorKind | null
   settingsEditId: number | string | null
   settingsEditField: number
-  settingsDraft: { name: string; color: string; categoryId: number | null; id: string; expr: string; savedFilterId: string; setCategoryId: number | null; addTagIds: number[] }
+  settingsDraft: { name: string; color: string; categoryId: number | null; id: string; expr: string; savedFilterId: string; setCategoryId: number | null; addTagIds: number[]; notSpending: boolean }
   settingsConfirm: { kind: "category" | "tag" | "rule" | "filter" | "profile" | "clearData" | "clearAccount" | "deleteAccount" | "desyncAccount"; id: number | string; label: string } | null
   importStage: ImportStage
   importDirectory: string
@@ -225,7 +225,7 @@ function createUiStore() {
     settingsEditor: null,
     settingsEditId: null,
     settingsEditField: 0,
-    settingsDraft: { name: "", color: "#94e2d5", categoryId: null, id: "", expr: "", savedFilterId: "", setCategoryId: null, addTagIds: [] },
+    settingsDraft: { name: "", color: "#94e2d5", categoryId: null, id: "", expr: "", savedFilterId: "", setCategoryId: null, addTagIds: [], notSpending: false },
     settingsConfirm: null,
     importStage: "none",
     importDirectory: "",
