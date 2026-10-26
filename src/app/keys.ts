@@ -10,6 +10,8 @@ import { MERCHANT_SORTS, groupByMerchant, merchantFilter, sortMerchantGroups } f
 import { anchorDraft, cycleFromDraft, editorFields, normaliseCycleDraft, pickerChoices, pickerItems, stepChoice } from "../state/settingsForm"
 import { runSync } from "./sync"
 import { runSmartSearch } from "./smartSearch"
+import { runAccept, toggleUncategorised } from "./suggest"
+import { ACCEPT_ALL_AT } from "../domain/suggest"
 import { CHART_VIEWS, JUMP_TARGETS, SETTINGS_SECTIONS, TABS, settingsSectionFocus, type ScopeId, type UiState, type UiStore } from "../state/uiStore"
 import type { DataStore } from "../state/dataStore"
 import {
@@ -761,6 +763,23 @@ function handleManagerTxns(ui: UiStore, key: KeyEvent, data?: DataStore): void {
   // Step through the accounts pane from the table.
   if (name === "a" && !key.shift && data) { stepAccount(ui, data); return }
   if (name === "m") { ui.setState({ txnView: "merchants", merchantCursor: 0, merchantTop: 0 }); ui.setStatus("Grouped by merchant · m for rows"); return }
+  // The Uncategorised view: rows waiting for a category, with suggestions
+  // to accept (y: these rows, Y: every confident one) or dismiss (x).
+  if (name === "i" && !key.shift && data) { toggleUncategorised(ui, data); return }
+  if (data?.state.uncategorisedOnly) {
+    if (name === "y" && !key.shift) { void runAccept(ui, data, ui.targetIds(rows)); return }
+    if (name === "y" && key.shift) {
+      void runAccept(ui, data, rows.filter((r) => (data.state.suggestions[r.id]?.confidence ?? 0) >= ACCEPT_ALL_AT).map((r) => r.id))
+      return
+    }
+    if (name === "x" && !key.shift) {
+      const ids = ui.targetIds(rows).filter((id) => data.state.suggestions[id])
+      data.dismissSuggestions(ids)
+      ui.clearSelection()
+      ui.setStatus(ids.length ? `Dismissed ${count(ids.length, "suggestion")}` : "No suggestion to dismiss")
+      return
+    }
+  }
   if (name === "return" || name === "enter") {
     const row = (data?.scopedTransactions() ?? [])[ui.state.managerCursor]
     if (row) ui.setState({ detailId: row.id, detailNotesEditing: false })
@@ -1124,7 +1143,10 @@ function drillDown(ui: UiStore, data: DataStore, line?: CategoryLine) {
   ui.setStatus(`${line?.label ?? "Spending"} · ${range.bounds.label} · ${count(n, "transaction")} · esc back`)
 }
 
-type HintState = Pick<UiState, "focusedSection" | "drillReturn" | "chartViews">
+type HintState = Pick<UiState, "focusedSection" | "drillReturn" | "chartViews"> & {
+  /** From the data store: the Transactions table is the Uncategorised view. */
+  uncategorisedOnly?: boolean
+}
 type ScopeEntry = {
   handle: (ui: UiStore, key: KeyEvent, data?: DataStore) => void
   hints: (state?: HintState) => { key: string; desc: string }[]
@@ -1286,11 +1308,25 @@ const scopes: Record<ScopeId, ScopeEntry> = {
   "manager.txns": {
     handle: handleManagerTxns,
     quits: true,
-    hints: (state) => [
+    hints: (state) => state?.uncategorisedOnly ? [
+      { key: "y", desc: "accept" },
+      { key: "Y", desc: `accept all ≥${ACCEPT_ALL_AT * 100}%` },
+      { key: "x", desc: "dismiss" },
+      { key: "c", desc: "choose" },
+      { key: "space", desc: "select" },
+      { key: "S-j/k", desc: "range" },
+      { key: "j/k", desc: "move" },
+      { key: "enter", desc: "detail" },
+      { key: "m", desc: "merchants" },
+      { key: "i", desc: "all rows" },
+      { key: "/", desc: "filter" },
+      { key: "v", desc: "jump" },
+    ] : [
       { key: "ctrl+s", desc: "save filter" },
       { key: "ctrl+l", desc: "saved filters" },
       { key: "enter", desc: "detail" },
       { key: "j/k", desc: "move" },
+      { key: "i", desc: "uncategorised" },
       { key: "m", desc: "merchants" },
       { key: "a", desc: "account" },
       { key: "S-j/k", desc: "range" },

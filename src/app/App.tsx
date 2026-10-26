@@ -120,7 +120,7 @@ export function App() {
         text={ui.state.jumpMode ? "Jump mode · press target letter" : ui.state.status}
         isErr={!ui.state.jumpMode && ui.state.statusErr}
       />
-      <Footer hints={footerHints(ui.activeScope(), ui.state)} />
+      <Footer hints={footerHints(ui.activeScope(), { focusedSection: ui.state.focusedSection, drillReturn: ui.state.drillReturn, chartViews: ui.state.chartViews, uncategorisedOnly: data.state.uncategorisedOnly })} />
       <JumpOverlay active={ui.state.jumpMode} tab={ui.state.activeTab} />
       <CatPicker />
       <TagPicker />

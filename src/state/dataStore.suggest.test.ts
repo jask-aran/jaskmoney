@@ -9,7 +9,6 @@ import { data } from "./dataStore"
 function setup() {
   testEnv("JASKMONEY_CF_TOKEN", "")
   testEnv("JASKMONEY_CF_ACCOUNT_ID", "")
-  testEnv("JASKMONEY_CONFIG", `${process.cwd()}/src/testing/no-suggestions-config.json`)
   const network = spyOn(globalThis, "fetch").mockImplementation(Object.assign(() => { throw new Error("network is forbidden") }, { preconnect: globalThis.fetch.preconnect }))
   onTestFinished(() => {
     try { expect(network).not.toHaveBeenCalled() } finally { network.mockRestore() }

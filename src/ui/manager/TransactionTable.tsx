@@ -71,12 +71,14 @@ function fmtDate(iso: string): string {
 }
 
 
+interface CategoryCell { marker: string; markerColor: string; text: string; textColor: string; muted: boolean; italic?: boolean; note?: string }
+
 function formatCategory(
   categoryId: number | null,
   name: string,
   color: string | undefined,
   width: number,
-): { marker: string; markerColor: string; text: string; textColor: string; muted: boolean } {
+): CategoryCell {
   const muted = !name || name === "Uncategorised" || isUncategorisedColor(color)
   const text = name || "Uncategorised"
   return {
@@ -87,6 +89,27 @@ function formatCategory(
     muted,
   }
 }
+
+/** A suggested category, in italics with its confidence; or why there is none yet. */
+function formatSuggestion(suggestion: TableSuggestion | undefined, width: number): CategoryCell {
+  const category = suggestion && data.state.categories.find((c) => c.id === suggestion.categoryId)
+  if (!suggestion || !category) {
+    return { marker: `${categoryMark(null, true)} `, markerColor: theme.overlay1, text: fit(data.state.suggesting ? "suggesting…" : "no suggestion", width - 2), textColor: theme.overlay1, muted: true }
+  }
+  const note = `${Math.round(suggestion.confidence * 100)}%`.padStart(5)
+  return {
+    marker: `${categoryMark(category.id)} `,
+    markerColor: categoryColor(category.color),
+    text: fit(category.name, width - 2 - note.length),
+    textColor: categoryColor(category.color),
+    muted: false,
+    italic: true,
+    note,
+  }
+}
+
+/** What the table needs of a category suggestion. */
+export interface TableSuggestion { categoryId: number; confidence: number }
 
 /** Every tag in its own colour, comma-joined and cut to `width` (Go app). */
 function formatTags(names: string[], colors: string[], width: number): Span[] {
@@ -120,6 +143,8 @@ export function TransactionTable(props: {
   highlighted?: Record<number, boolean>
   sortMark?: (column: string) => string
   empty: string
+  /** Given (the Uncategorised view): the Category column shows these instead. */
+  suggestions?: Record<number, TableSuggestion>
 }) {
   const widest = createMemo(longest)
   const layout = createMemo(() => tableLayout(props.width, props.showAccount, props.showTags, widest()))
@@ -160,7 +185,9 @@ export function TransactionTable(props: {
               // Up holds (pending) render italic, with a clock, until they settle.
               const held = () => r().status === "HELD"
               const tags = createMemo(() => formatTags(r().tagNames, r().tagColors, layout().tags))
-              const category = createMemo(() => formatCategory(r().categoryId, r().categoryName, r().categoryColor, layout().category))
+              const category = createMemo(() => props.suggestions
+                ? formatSuggestion(props.suggestions[r().id], layout().category)
+                : formatCategory(r().categoryId, r().categoryName, r().categoryColor, layout().category))
               const strong = () => look().bold
               return (
                 <text width="100%" bg={rowBg()}>
@@ -199,9 +226,11 @@ export function TransactionTable(props: {
                     bg={rowBg()}
                     bold={strong() && (!category().muted || !!look().fg)}
                     dim={category().muted && !look().fg}
+                    italic={category().italic}
                   >
                     {category().text}
                   </S>
+                  <S fg={fg(theme.overlay1)} bg={rowBg()}>{category().note ?? ""}</S>
                   <Show when={layout().showTags}>
                     <S fg={fg(theme.text)} bg={rowBg()} bold={strong()}>
                       {" ".repeat(columns.gap)}

@@ -10,6 +10,7 @@ import { theme } from "../../theme"
 import { filterExprString } from "../../domain/filter"
 import type { Account } from "../../domain/types"
 import { truncate } from "../text"
+import { ACCEPT_ALL_AT } from "../../domain/suggest"
 import { accountStacks, selectedAccounts } from "../../domain/accountTree"
 import { AccountsPane, accountsPaneHeight } from "./AccountsPane"
 import { TransactionTable } from "./TransactionTable"
@@ -76,6 +77,12 @@ export function ManagerTab(props: { focused: SectionId }) {
       return `${groups().length} merchants · ${rows().length} transactions · by ${ui.state.merchantSort}${ui.state.merchantReverse ? "↑" : "↓"}`
     }
     if (rows().length === 0) return undefined
+    if (data.state.uncategorisedOnly) {
+      const suggested = rows().filter((r) => data.state.suggestions[r.id]).length
+      const confident = rows().filter((r) => (data.state.suggestions[r.id]?.confidence ?? 0) >= ACCEPT_ALL_AT).length
+      return `${rows().length} to categorise · ${suggested} suggested, ${confident} ≥${ACCEPT_ALL_AT * 100}%${data.state.suggesting ? " · suggesting…" : ""}${
+        selCount() > 0 ? ` · ${selCount()} selected` : ""}`
+    }
     const start = ui.state.managerTop + 1
     const end = Math.min(ui.state.managerTop + ui.state.managerVisible, rows().length)
     // With a filter: how many the account has in all, and selected rows the
@@ -117,7 +124,7 @@ export function ManagerTab(props: { focused: SectionId }) {
     <box width="100%" height="100%" flexDirection="column" backgroundColor={theme.canvas}>
       <AccountsPane focused={acctFocused()} width={dims().width} />
       <SectionCard
-        title={merchants() ? "Transactions · by merchant" : "Transactions"}
+        title={`Transactions${data.state.uncategorisedOnly ? " · uncategorised" : ""}${merchants() ? " · by merchant" : ""}`}
         titleSuffix={filterTitle()}
         titleSuffixColor={data.state.filterErr ? theme.error : theme.blue}
         focused={txFocused()}
@@ -164,7 +171,8 @@ export function ManagerTab(props: { focused: SectionId }) {
           selectedIds={ui.state.selectedIds}
           highlighted={highlighted()}
           sortMark={sortMark}
-          empty={data.state.filterQuery ? "No matches" : "Empty · no transactions loaded"}
+          empty={data.state.uncategorisedOnly ? "Nothing to categorise" : data.state.filterQuery ? "No matches" : "Empty · no transactions loaded"}
+          suggestions={data.state.uncategorisedOnly ? data.state.suggestions : undefined}
         />
         </Show>
       </SectionCard>

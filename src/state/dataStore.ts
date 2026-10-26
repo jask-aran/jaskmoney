@@ -73,6 +73,8 @@ export interface DataState {
   upSyncing: boolean
   suggesting: boolean
   suggestions: Record<number, CategorySuggestion>
+  /** The Transactions table shows only ordinary uncategorised rows. */
+  uncategorisedOnly: boolean
   dbPath: string
   accounts: Account[]
   /** Every provider-synced account, including ones whose sync is off. */
@@ -134,6 +136,7 @@ function createDataStore() {
     upSyncing: false,
     suggesting: false,
     suggestions: {},
+    uncategorisedOnly: false,
     dbPath: "",
     accounts: [],
     syncAccounts: [],
@@ -231,8 +234,10 @@ function createDataStore() {
 
   const filtered = createRoot(() => createMemo(() => {
     const expr = state.filterExpr ? unwrap(state.filterExpr) : null
+    const unsorted = state.uncategorisedOnly
     const rows = accountScoped()
-    return expr ? rows.filter((t) => evalFilter(expr, t)) : rows
+    if (!expr && !unsorted) return rows
+    return rows.filter((t) => (!unsorted || (isOrdinaryFlow(t) && isUncategorised(t))) && (!expr || evalFilter(expr, t)))
   }))
 
   /** The account's rows through the filter, in the table's sort. */
@@ -662,6 +667,7 @@ function createDataStore() {
     toggleSortDirection,
     setAccountSelection,
     categorizeTransactions,
+    setUncategorisedOnly: (on: boolean) => setState({ uncategorisedOnly: on }),
     suggestCategories,
     acceptSuggestions,
     dismissSuggestions,

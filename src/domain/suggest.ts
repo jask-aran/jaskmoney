@@ -11,6 +11,9 @@ import type { Category, CategorySuggestion, Transaction } from "./types"
  * user's categories.
  */
 
+/** Confidence at which accept-all (`Y`) takes a suggestion unseen. */
+export const ACCEPT_ALL_AT = 0.8
+
 /** Categories a suggestion may name: assignable ones, not Uncategorised. */
 function suggestionCategories(categories: Category[]): Category[] {
   return assignableCategories(categories, "").filter((c) => !c.isDefault)
