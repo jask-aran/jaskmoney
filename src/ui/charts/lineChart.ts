@@ -9,6 +9,9 @@ export interface LineSeries {
   /** One value per x position; null leaves a gap (e.g. days after today). */
   values: Array<number | null>
   ink: string
+  /** Fill the cells below the line with this ink; the line's own cells hold
+   * only the line. */
+  fill?: string
 }
 
 export interface Marker {
@@ -70,15 +73,24 @@ export function lineChart(opts: {
     return dotsHigh - 1 - Math.max(0, Math.min(dotsHigh - 1, level))
   }
   for (const s of opts.series) {
+    const dots: Array<[number, number]> = []
     let prev: [number, number] | null = null
     for (let i = 0; i < length; i++) {
       const v = s.values[i]
       if (v == null) { prev = null; continue }
       const point: [number, number] = [dotColumn(i, length, width), dotRow(v)]
-      if (prev) line(prev, point, (x, y) => plot(x, y, s.ink))
-      else plot(point[0], point[1], s.ink)
+      if (prev) line(prev, point, (x, y) => dots.push([x, y]))
+      else dots.push(point)
       prev = point
     }
+    if (s.fill) {
+      // From the cell row below the line's lowest dot in each dot column down
+      // to the floor, so the line's own cells hold only the line.
+      const lowest = new Map<number, number>()
+      for (const [x, y] of dots) lowest.set(x, Math.max(lowest.get(x) ?? -1, y))
+      for (const [x, y] of lowest) for (let yy = (Math.floor(y / 4) + 1) * 4; yy < dotsHigh; yy++) plot(x, yy, s.fill)
+    }
+    for (const [x, y] of dots) plot(x, y, s.ink)
   }
   const markerInk = new Map<number, string>()
   for (const m of opts.markers ?? []) {

@@ -12,9 +12,8 @@ import { budgetLabel } from "../../domain/budgetScopes"
 import { accountRole } from "../../domain/types"
 import { toISODate } from "../../domain/timeframe"
 import { fit, shortDate, shortMoney } from "../text"
-import { areaChart } from "../charts/bars"
 import { AXIS, ChartBody } from "../charts/ChartBody"
-import { dateAxis, niceRange } from "../charts/lineChart"
+import { dateAxis, lineChart, niceRange } from "../charts/lineChart"
 import { INKS, addDays, spendingChart } from "../spending/periodCharts"
 import { SpendingPane } from "./SpendingPane"
 
@@ -75,9 +74,9 @@ export function DashboardTab(props: { focused: SectionId }) {
     return spendingChart(cycleView(), dailySpendSeries(spending, cycle().start, cycle().end), Math.max(1, inner() - AXIS), Math.max(1, cycleChartRows()), today(), spending, overall()?.amount)
   })
 
-  // Net position: an area shaded from bright (top) to dim (bottom) on round
-  // axis bounds, month rules, and the year's change, high and low in the
-  // title.
+  // Net position: a braille line over a faint dotted fill on round axis
+  // bounds, month rules above the line, and the year's change, high and low
+  // in the title.
   const netWidth = () => Math.max(1, dims().width - 4 - AXIS)
   const netStrip = createMemo(() => {
     const history = position().history
@@ -87,13 +86,12 @@ export function DashboardTab(props: { focused: SectionId }) {
     const lo = Math.min(...values), hi = Math.max(...values)
     const range = niceRange(lo, hi, 3)
     const axis = dateAxis(history.map((h) => h.dateISO), width, today())
-    const months = axis.markers.filter((m) => m.ink === "month").map((m) => Math.floor((m.index * width) / values.length))
+    const months = axis.markers.filter((m) => m.ink === "month")
     const change = values[values.length - 1]! - values[0]!
     const when = (v: number) => shortDate(history[values.indexOf(v)]!.dateISO)
     return {
-      rows: areaChart(values, width, NET_ROWS, range.min, range.max, months),
-      // Top, middle and bottom rows: five rows cannot space more ticks evenly.
-      ticks: new Map([[0, shortMoney(range.max)], [Math.floor(NET_ROWS / 2), shortMoney((range.min + range.max) / 2)], [NET_ROWS - 1, shortMoney(range.min)]]),
+      rows: lineChart({ series: [{ values, ink: "line", fill: "area" }], length: values.length, width, height: NET_ROWS, min: range.min, max: range.max, markers: months }),
+      ticks: new Map([[0, shortMoney(range.max)], [NET_ROWS - 1, shortMoney(range.min)]]),
       labels: axis.labels,
       note: `· 1 year · ${change >= 0 ? "+" : "-"}${formatWholeMoney(Math.abs(change))} · high ${shortMoney(hi)} ${when(hi)} · low ${shortMoney(lo)} ${when(lo)}`,
     }
@@ -193,7 +191,7 @@ export function DashboardTab(props: { focused: SectionId }) {
           {(runs, i) => (
             <text wrapMode="none">
               <S fg={theme.overlay1}>{(netStrip().ticks.get(i()) ?? "").padStart(AXIS - 2) + (netStrip().ticks.has(i()) ? " ┤" : " │")}</S>
-              <For each={runs}>{(run) => <S fg={run.ink === "area" ? NET_SHADES[i()] : run.ink === "grid" ? theme.surface0 : undefined}>{run.text}</S>}</For>
+              <For each={runs}>{(run) => <S fg={run.ink ? NET_INKS[run.ink] : undefined}>{run.text}</S>}</For>
             </text>
           )}
         </For>
@@ -293,9 +291,9 @@ const WIDE = 120
 const SIDE_MAX = 48
 const LABEL = 15
 /** Net position chart rows. */
-const NET_ROWS = 5
-/** Net position shades by row, top first: lavender fading towards the canvas. */
-const NET_SHADES = ["#b4befe", "#9da5dc", "#868cba", "#6f7398", "#585a76"]
+const NET_ROWS = 4
+/** Net position inks: the line, its faint fill, and month rules. */
+const NET_INKS: Record<string, string> = { line: theme.lavender, area: "#3d4060", month: theme.surface0, week: theme.surface0, today: theme.green }
 const VALUE = 14
 
 function money(n: number | null): string {

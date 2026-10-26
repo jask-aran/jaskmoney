@@ -27,6 +27,15 @@ describe("lineChart", () => {
   })
 })
 
+describe("lineChart fill", () => {
+  test("cells below the line take the fill ink; the line's cells hold only the line", () => {
+    const rows = lineChart({ series: [{ values: [1, 1], ink: "line", fill: "area" }], length: 2, width: 1, height: 2, min: 0, max: 1 })
+    // Line on the top dot row of the top cell; the cell below is filled.
+    expect(rows[0]).toEqual([{ text: "\u2809", ink: "line" }])
+    expect(rows[1]).toEqual([{ text: "\u28ff", ink: "area" }])
+  })
+})
+
 describe("niceScale", () => {
   test("rounds up to a 1/2/2.5/5 step", () => {
     expect(niceScale(1200)).toEqual({ max: 1500, step: 500 })
