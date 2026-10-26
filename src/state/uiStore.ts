@@ -31,7 +31,6 @@ export type SectionId =
 export type ScopeId =
   | "filterPicker"
   | "dryRun"
-  | "global"
   | "jump"
   | "filter"
   | "catPicker"
@@ -39,7 +38,6 @@ export type ScopeId =
   | "overview"
   | "overview.range"
   | "overview.custom"
-  | "manager"
   | "manager.accounts"
   | "manager.txns"
   | "manager.merchants"

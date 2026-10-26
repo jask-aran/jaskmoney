@@ -397,6 +397,46 @@ describe("key router", () => {
     expect(ui.state.settingsConfirm).toBeNull()
   })
 
+  test("an import profile deletes on a second del; esc disarms and stays on the list", () => {
+    data.init(":memory:")
+    data.saveImportProfile({ id: "bank", name: "Bank", account: "A", accountType: "debit", importPrefix: "bank", hasHeader: true, delimiter: ",", dateColumn: 0, amountColumn: 1, descriptionColumns: [2], descriptionJoin: false, amountStrip: "$", dateFormat: "DMY" })
+    ui.switchTab("settings")
+    ui.activateSettings("database")
+    handleKey(ui, key({ name: "p" }), data)
+    expect(ui.state.importStage).toBe("profile")
+    const others = data.state.importProfiles.filter((p) => p.id !== "bank").map((p) => p.id)
+    ui.setState({ importProfileCursor: data.state.importProfiles.findIndex((p) => p.id === "bank") })
+    handleKey(ui, key({ name: "delete" }), data)
+    expect(ui.state.settingsConfirm).toMatchObject({ kind: "profile", id: "bank" })
+    handleKey(ui, key({ name: "escape" }), data)
+    expect(ui.state.settingsConfirm).toBeNull()
+    expect(ui.state.importStage).toBe("profile")
+    handleKey(ui, key({ name: "delete" }), data)
+    handleKey(ui, key({ name: "delete" }), data)
+    expect(ui.state.settingsConfirm).toBeNull()
+    expect(data.state.importProfiles.map((p) => p.id)).toEqual(others)
+    expect(ui.state.importStage).toBe("profile")
+    ui.cancelImport()
+  })
+
+  test("lists: G goes to the bottom, g to the top; an empty list's cursor stays at 0", () => {
+    data.init(":memory:")
+    ui.switchTab("settings")
+    ui.activateSettings("taxonomy", "categories", true)
+    const n = data.state.categories.length
+    handleKey(ui, key({ name: "g", shift: true, sequence: "G" }), data)
+    expect(ui.state.categoryCursor).toBe(n - 1)
+    handleKey(ui, key({ name: "g" }), data)
+    expect(ui.state.categoryCursor).toBe(0)
+    ui.activateSettings("database")
+    ui.beginImport("/nowhere", [])
+    for (const k of [key({ name: "j" }), key({ name: "g", shift: true, sequence: "G" }), key({ name: "k" })]) {
+      handleKey(ui, k, data)
+      expect(ui.state.importCursor).toBe(0)
+    }
+    ui.cancelImport()
+  })
+
   test("filter edits at the caret keep live preview, parse status and rows in sync", () => {
     ui.switchTab("manager")
     const txn = (id: number, amount: number) => ({

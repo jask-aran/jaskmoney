@@ -322,9 +322,10 @@ export function SettingsTab(props: { focused: SectionId }) {
   return <box width="100%" height="100%" flexDirection={layout() === "wide" ? "row" : "column"} gap={1} backgroundColor={theme.canvas}>
     <box width={layout() === "wide" ? "55%" : "100%"} flexShrink={layout() === "wide" ? 0 : 1} height="100%" flexDirection="column" gap={1}><TaxonomyPane focused={taxonomyFocused()} narrow={layout() === "narrow"} height={layout() === "wide" ? undefined : "45%"} /><BudgetsPane focused={props.focused === "set.budgets"} /><Show when={layout() !== "wide"}><RulesPane focused={props.focused === "set.rules"} /></Show><Show when={layout() === "narrow"}><FiltersPane focused={props.focused === "set.filters"} /></Show></box>
     <box flexGrow={1} flexShrink={1} minWidth={0} height="100%" flexDirection="column" gap={1}><Show when={layout() === "wide"}><RulesPane focused={props.focused === "set.rules"} /></Show><Show when={layout() !== "narrow"}><FiltersPane focused={props.focused === "set.filters"} /></Show><UpPane focused={props.focused === "set.up"} /><DatabasePane focused={databaseFocused()} /><ImportHistory /></box>
-    <ConfirmOverlay />
     <ImportOverlay />
     <FactoryResetOverlay />
+    {/* Last, so a confirmation armed from a dialog shows over it. */}
+    <ConfirmOverlay />
   </box>
 }
 

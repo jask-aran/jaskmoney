@@ -1,9 +1,9 @@
 import { ErrorBoundary, Match, Switch, createEffect, createSignal, untrack, on, onCleanup, onMount } from "solid-js"
 import { useKeyboard, useRenderer } from "@opentui/solid"
 import type { KeyEvent } from "@opentui/core"
-import { ui, type ScopeId } from "../state/uiStore"
+import { ui } from "../state/uiStore"
 import { data } from "../state/dataStore"
-import { footerHints, handleKey } from "./keys"
+import { footerHints, handleKey, scopeQuits } from "./keys"
 import { TabBar } from "../ui/primitives/TabBar"
 import { StatusBar } from "../ui/primitives/StatusBar"
 import { Footer } from "../ui/primitives/Footer"
@@ -21,12 +21,6 @@ import { activeChipIndex } from "../domain/timeframe"
 import type { UiPrefs } from "../state/settingsConfig"
 import { restoreUiPrefs } from "../state/uiPrefs"
 
-/** Browsing scopes, where q quits: no dialog or text entry is open. */
-const QUIT_SCOPES = new Set<ScopeId>([
-  "overview", "overview.range",
-  "manager", "manager.accounts", "manager.txns", "manager.merchants",
-  "settings", "settings.taxonomy", "settings.rules", "settings.filters", "settings.database", "settings.up", "settings.budgets",
-])
 
 export function App() {
   const renderer = useRenderer()
@@ -85,7 +79,7 @@ export function App() {
 
   useKeyboard((key: KeyEvent) => {
     // ctrl+c quits anywhere; q quits where it cannot be text (Go app).
-    if ((key.ctrl && key.name === "c") || (key.name === "q" && !key.ctrl && !key.meta && !key.shift && QUIT_SCOPES.has(ui.activeScope()))) {
+    if ((key.ctrl && key.name === "c") || (key.name === "q" && !key.ctrl && !key.meta && !key.shift && scopeQuits(ui.activeScope()))) {
       renderer.destroy()
       return
     }

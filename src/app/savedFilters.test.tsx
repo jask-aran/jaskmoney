@@ -61,15 +61,15 @@ test("ctrl+s pre-fills a new filter on Name in both transaction views; empty fil
   }
 })
 
-test("ctrl+l applies a saved filter, resets cursors, and persists usage; printable j filters", () => {
+test("ctrl+l applies a saved filter, resets cursors, and persists usage; printable letters filter", () => {
   data.saveSavedFilter({ id: "coffee", name: "Java", expr: "desc:Coffee" })
   data.saveSavedFilter({ id: "other", name: "Other", expr: "desc:Other" })
   for (const txnView of ["rows", "merchants"] as const) {
     ui.setState({ txnView, managerCursor: 8, managerTop: 5, merchantCursor: 4, merchantTop: 2 })
     handleKey(ui, key("l", true), data)
     expect(ui.activeScope()).toBe("filterPicker")
-    handleKey(ui, key("j"), data)
-    expect(ui.state.filterPicker?.query).toBe("j")
+    handleKey(ui, key("v"), data)
+    expect(ui.state.filterPicker?.query).toBe("v")
     handleKey(ui, key("enter"), data)
     expect(ui.state.filterPicker).toBeNull()
     expect(data.state.filterQuery).toBe("desc:Coffee")
@@ -240,7 +240,7 @@ test("dry-run samples keep amount and actions visible after a long description",
   expect(frame).toContain("matched 1 · category 1 · tags 1")
 })
 
-test("saved-filter input keeps command letters and space literal; arrows move and backspace edits", () => {
+test("saved-filter input keeps command letters and space literal; j/k and arrows move; backspace edits", () => {
   data.saveSavedFilter({ id: "a", name: "Alpha", expr: "desc:a" })
   data.saveSavedFilter({ id: "b", name: "Beta", expr: "desc:b" })
   handleKey(ui, key("l", true), data)
@@ -248,12 +248,17 @@ test("saved-filter input keeps command letters and space literal; arrows move an
   expect(ui.state.filterPicker?.cursor).toBe(1)
   handleKey(ui, key("up"), data)
   expect(ui.state.filterPicker?.cursor).toBe(0)
-  for (const name of ["h", "l", "j", "k", "2"]) handleKey(ui, key(name), data)
+  // As in every picker (Go app): j/k move, other printable keys type.
+  handleKey(ui, key("j"), data)
+  expect(ui.state.filterPicker?.cursor).toBe(1)
+  handleKey(ui, key("k"), data)
+  expect(ui.state.filterPicker).toMatchObject({ cursor: 0, query: "" })
+  for (const name of ["h", "l", "g", "2"]) handleKey(ui, key(name), data)
   handleKey(ui, key("space"), data)
-  expect(ui.state.filterPicker?.query).toBe("hljk2 ")
+  expect(ui.state.filterPicker?.query).toBe("hlg2 ")
   expect(ui.state.activeTab).toBe("manager")
   handleKey(ui, key("backspace"), data)
-  expect(ui.state.filterPicker?.query).toBe("hljk2")
+  expect(ui.state.filterPicker?.query).toBe("hlg2")
   handleKey(ui, key("enter"), data)
   expect(ui.state.filterPicker).not.toBeNull()
   handleKey(ui, key("escape"), data)

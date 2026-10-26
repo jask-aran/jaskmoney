@@ -49,7 +49,7 @@ function moveTxnCursor(
   withRange: boolean,
 ) {
   const rows = data?.scopedTransactions() ?? []
-  if (rows.length === 0) return
+  if (rows.length === 0) { ui.jumpManagerCursor(0, 0); return }
   const prev = rows[ui.state.managerCursor]
   ui.moveManagerCursor(delta, rows.length)
   const cur = rows[ui.state.managerCursor]
@@ -65,117 +65,136 @@ function moveTxnCursor(
   }
 }
 
-export function handleKey(ui: UiStore, key: KeyEvent, data?: DataStore): boolean {
-  const name = key.name
-  const seq = key.sequence
+/** Query pickers reserve movement keys; g/G and other printable keys are text. */
+function queryPickerKey(
+  key: KeyEvent,
+  picker: { query: string; cursor: number },
+  count: number,
+  actions: {
+    close: () => void
+    update: (next: { query: string; cursor: number }) => void
+    apply: () => void
+    space?: () => void
+  },
+): void {
+  if (key.name === "escape") { actions.close(); return }
+  if (actions.space && (key.name === "space" || key.sequence === " ")) { actions.space(); return }
+  const movement = key.ctrl && key.name === "n" ? { ...key, name: "down" }
+    : key.ctrl && key.name === "p" ? { ...key, name: "up" } : key
+  const cursor = movement.name === "g" || movement.sequence === "G" ? null : listMove(movement, picker.cursor, count)
+  if (cursor != null) { actions.update({ ...picker, cursor }); return }
+  if (key.name === "return" || key.name === "enter") { actions.apply(); return }
+  if (key.name === "backspace") { actions.update({ query: picker.query.slice(0, -1), cursor: 0 }); return }
+  if (isPrintable(key)) actions.update({ query: picker.query + key.sequence, cursor: 0 })
+}
 
+/** List indices remain zero for empty lists. Callers include any extra create row. */
+export function listMove(key: Pick<KeyEvent, "name" | "sequence" | "shift">, cursor: number, count: number): number | null {
+  const last = Math.max(0, count - 1)
+  let next: number
+  if (key.sequence === "G" || (key.name === "g" && key.shift)) next = last
+  else if (key.name === "g") next = 0
+  else if (key.name === "j" || key.name === "down") next = cursor + 1
+  else if (key.name === "k" || key.name === "up") next = cursor - 1
+  else return null
+  return Math.max(0, Math.min(last, next))
+}
+
+function reportError(ui: UiStore, error: unknown): void {
+  ui.setStatus(error instanceof Error ? error.message : String(error), true)
+}
+
+function resetTransactionCursors(ui: UiStore, data?: DataStore): void {
+  ui.jumpManagerCursor(0, data?.scopedTransactions().length ?? 0)
+  ui.setState({ merchantCursor: 0, merchantTop: 0 })
+}
+
+export function handleKey(ui: UiStore, key: KeyEvent, data?: DataStore): boolean {
+  const { name, sequence: seq } = key
   if (key.ctrl && name === "c") return false
   // Sync from anywhere, including over overlays: it changes no UI state.
   if (key.ctrl && name === "r") {
     if (data) void runSync(ui, data, { manual: true })
     return true
   }
+  const entry = scopes[ui.activeScope()]
+  if (entry.quits) {
+    if (name === "v") {
+      if (JUMP_TARGETS[ui.state.activeTab].length) ui.enterJump()
+      return true
+    }
+    for (const tab of TABS) {
+      if (name === tab.hotkey || seq === tab.hotkey) { ui.switchTab(tab.id); return true }
+    }
+    if (name === "tab") { ui.cycleTab(key.shift ? -1 : 1); return true }
+  }
+  entry.handle(ui, key, data)
+  return true
+}
 
-  if (ui.state.filterPicker) {
-    const picker = ui.state.filterPicker
-    const items = savedFilterOptions(data?.state.savedFilters ?? [], data?.state.uiPrefs.filterUsage, picker.query)
-    if (name === "escape") { ui.setState({ filterPicker: null }); return true }
-    if (name === "down" || (key.ctrl && name === "n")) { ui.setState({ filterPicker: { ...picker, cursor: Math.min(Math.max(0, items.length - 1), picker.cursor + 1) } }); return true }
-    if (name === "up" || (key.ctrl && name === "p")) { ui.setState({ filterPicker: { ...picker, cursor: Math.max(0, picker.cursor - 1) } }); return true }
-    if (name === "return" || name === "enter") {
+function handleFilterPicker(ui: UiStore, key: KeyEvent, data?: DataStore): void {
+  const picker = ui.state.filterPicker
+  if (!picker) return
+  const items = savedFilterOptions(data?.state.savedFilters ?? [], data?.state.uiPrefs.filterUsage, picker.query)
+  queryPickerKey(key, picker, items.length, {
+    close: () => { ui.setState({ filterPicker: null }) },
+    update: (next) => { ui.setState({ filterPicker: next }) },
+    apply: () => {
       const filter = items[picker.cursor]
       if (filter && data) {
         const result = data.commitFilter(filter.expr)
-        if (!result.ok) { ui.setStatus(result.err, true); return true }
-        ui.jumpManagerCursor(0, data.scopedTransactions().length)
-        ui.setState({ merchantCursor: 0, merchantTop: 0, filterPicker: null })
+        if (!result.ok) { ui.setStatus(result.err, true); return }
+        resetTransactionCursors(ui, data)
+        ui.setState({ filterPicker: null })
         try { data.recordFilterUsage(filter.id); ui.setStatus(`Filter: ${filter.name}`) }
-        catch (error) { ui.setStatus(error instanceof Error ? error.message : String(error), true) }
+        catch (error) { reportError(ui, error) }
       }
-      return true
-    }
-    if (name === "backspace") { ui.setState({ filterPicker: { query: picker.query.slice(0, -1), cursor: 0 } }); return true }
-    if (isPrintable(key)) ui.setState({ filterPicker: { query: picker.query + seq, cursor: 0 } })
-    return true
+    },
+  })
+}
+
+function handleDryRun(ui: UiStore, key: KeyEvent, data?: DataStore): void {
+  const { name } = key
+  if (name === "escape") ui.setState({ dryRunReport: null, dryRunScroll: 0 })
+  if (name === "j" || name === "down") {
+    const count = ui.state.dryRunReport?.rules.reduce((count, result) => count + 4 + result.samples.length, 0) ?? 0
+    ui.setState({ dryRunScroll: Math.min(Math.max(0, count - ui.state.dryRunVisible), ui.state.dryRunScroll + 1) })
   }
+  if (name === "k" || name === "up") ui.setState({ dryRunScroll: Math.max(0, ui.state.dryRunScroll - 1) })
+}
 
-  if (ui.state.dryRunReport) {
-    if (name === "escape") ui.setState({ dryRunReport: null, dryRunScroll: 0 })
-    if (name === "j" || name === "down") {
-      const count = ui.state.dryRunReport?.rules.reduce((count, result) => count + 4 + result.samples.length, 0) ?? 0
-      ui.setState({ dryRunScroll: Math.min(Math.max(0, count - ui.state.dryRunVisible), ui.state.dryRunScroll + 1) })
-    }
-    if (name === "k" || name === "up") ui.setState({ dryRunScroll: Math.max(0, ui.state.dryRunScroll - 1) })
-    return true
+function handleJump(ui: UiStore, key: KeyEvent, data?: DataStore): void {
+  const { name, sequence: seq } = key
+  if (name === "escape" || name === "v") {
+    ui.cancelJump()
+    return
   }
-
-  // ── Jump ────────────────────────────────────────────────────────────
-  if (ui.state.jumpMode) {
-    if (name === "escape" || name === "v") {
-      ui.cancelJump()
-      return true
+  const hit = JUMP_TARGETS[ui.state.activeTab].find(
+    (t) => t.key === name || t.key === seq,
+  )
+  if (hit) {
+    if (ui.state.activeTab === "settings") {
+      if (hit.section === "set.categories") ui.activateSettings("taxonomy", "categories", true)
+      else if (hit.section === "set.tags") ui.activateSettings("taxonomy", "tags", true)
+      else if (hit.section === "set.rules") ui.activateSettings("rules")
+      else if (hit.section === "set.filters") ui.activateSettings("filters")
+      else if (hit.section === "set.database") ui.activateSettings("database")
+      else if (hit.section === "set.up") ui.activateSettings("up")
+      else if (hit.section === "set.budgets") ui.activateSettings("budgets")
+      return
     }
-    const hit = JUMP_TARGETS[ui.state.activeTab].find(
-      (t) => t.key === name || t.key === seq,
-    )
-    if (hit) {
-      if (ui.state.activeTab === "settings") {
-        if (hit.section === "set.categories") ui.activateSettings("taxonomy", "categories", true)
-        else if (hit.section === "set.tags") ui.activateSettings("taxonomy", "tags", true)
-        else if (hit.section === "set.rules") ui.activateSettings("rules")
-        else if (hit.section === "set.filters") ui.activateSettings("filters")
-        else if (hit.section === "set.database") ui.activateSettings("database")
-        else if (hit.section === "set.up") ui.activateSettings("up")
-        else if (hit.section === "set.budgets") ui.activateSettings("budgets")
-        return true
-      }
-      ui.applyJump(hit.section)
-      return true
-    }
-    return true
+    ui.applyJump(hit.section)
+    return
   }
+}
 
-
-  // ── Tag picker ──────────────────────────────────────────────────────
-  if (ui.state.tagPickerOpen) {
-    if (ui.state.tagPickerApplying) return true
-    const items = pickerChoices(tagPickerItems(data?.state.tags ?? [], data?.state.transactions ?? [], ui.state.pickerTargets, ui.state.tagPickerQuery))
-    if (name === "escape") {
-      ui.closeTagPicker()
-      ui.setStatus("Tags unchanged")
-      return true
-    }
-    if (name === "j" || name === "down") {
-      if (items.length)
-        ui.setState({
-          tagPickerCursor: Math.min(items.length - 1, ui.state.tagPickerCursor + 1),
-        })
-      return true
-    }
-    if (name === "k" || name === "up") {
-      ui.setState({ tagPickerCursor: Math.max(0, ui.state.tagPickerCursor - 1) })
-      return true
-    }
-    if (name === "space" || seq === " ") {
-      const item = items[ui.state.tagPickerCursor]
-      const targets = ui.state.pickerTargets
-      if (item && typeof item.value === "number" && data && targets.length) {
-        const id = item.value
-        const base = tagPickerState(data.state.transactions, targets, id)
-        const patch = { ...ui.state.tagPickerPatch }
-        const current = patch[id]
-        // Approved deviation from Go: mixed tags cycle back to their original state.
-        if (base === "some") {
-          if (!current) patch[id] = "add"
-          else if (current === "add") patch[id] = "remove"
-          else delete patch[id]
-        } else if (current) delete patch[id]
-        else patch[id] = base === "all" ? "remove" : "add"
-        ui.setState({ tagPickerPatch: patch })
-      }
-      return true
-    }
-    if (name === "return" || name === "enter") {
+function handleTagPicker(ui: UiStore, key: KeyEvent, data?: DataStore): void {
+  if (ui.state.tagPickerApplying) return
+  const items = pickerChoices(tagPickerItems(data?.state.tags ?? [], data?.state.transactions ?? [], ui.state.pickerTargets, ui.state.tagPickerQuery))
+  queryPickerKey(key, { query: ui.state.tagPickerQuery, cursor: ui.state.tagPickerCursor }, items.length, {
+    close: () => { ui.closeTagPicker(); ui.setStatus("Tags unchanged") },
+    update: (next) => { ui.setState({ tagPickerQuery: next.query, tagPickerCursor: next.cursor }) },
+    apply: () => {
       const targets = [...ui.state.pickerTargets]
       const patch = { ...ui.state.tagPickerPatch }
       try {
@@ -192,55 +211,40 @@ export function handleKey(ui: UiStore, key: KeyEvent, data?: DataStore): boolean
           ui.setState({ tagPickerApplying: true })
           data.applyTagPatch(targets, patch).then(
             (summary) => { ui.closeTagPicker(); ui.setStatus(summary, summary.includes(" failed: ")) },
-            (error) => { ui.closeTagPicker(); ui.setStatus(error instanceof Error ? error.message : String(error), true) },
+            (error) => { ui.closeTagPicker(); reportError(ui, error) },
           )
         }
       } catch (error) {
-        ui.setStatus(error instanceof Error ? error.message : String(error), true)
+        reportError(ui, error)
       }
-      return true
-    }
-    if (name === "backspace") {
-      ui.setState({
-        tagPickerQuery: ui.state.tagPickerQuery.slice(0, -1),
-        tagPickerCursor: 0,
-      })
-      return true
-    }
-    if (isPrintable(key)) {
-      ui.setState({
-        tagPickerQuery: ui.state.tagPickerQuery + seq,
-        tagPickerCursor: 0,
-      })
-      return true
-    }
-    return true
-  }
+    },
+    space: () => {
+      const item = items[ui.state.tagPickerCursor]
+      const targets = ui.state.pickerTargets
+      if (item && typeof item.value === "number" && data && targets.length) {
+        const id = item.value
+        const base = tagPickerState(data.state.transactions, targets, id)
+        const patch = { ...ui.state.tagPickerPatch }
+        const current = patch[id]
+        // Approved deviation from Go: mixed tags cycle back to their original state.
+        if (base === "some") {
+          if (!current) patch[id] = "add"
+          else if (current === "add") patch[id] = "remove"
+          else delete patch[id]
+        } else if (current) delete patch[id]
+        else patch[id] = base === "all" ? "remove" : "add"
+        ui.setState({ tagPickerPatch: patch })
+      }
+    },
+  })
+}
 
-  // ── Cat picker ──────────────────────────────────────────────────────
-  if (ui.state.catPickerOpen) {
-    const cats = assignableCategories(data?.state.categories ?? [], ui.state.catPickerQuery)
-    if (name === "escape") {
-      ui.closeCatPicker()
-      ui.setStatus("Categorize cancelled")
-      return true
-    }
-    if (name === "j" || name === "down") {
-      const n = cats.length
-      if (n > 0) {
-        ui.setState({
-          catPickerCursor: Math.min(n - 1, ui.state.catPickerCursor + 1),
-        })
-      }
-      return true
-    }
-    if (name === "k" || name === "up") {
-      ui.setState({
-        catPickerCursor: Math.max(0, ui.state.catPickerCursor - 1),
-      })
-      return true
-    }
-    if (name === "return" || name === "enter") {
+function handleCatPicker(ui: UiStore, key: KeyEvent, data?: DataStore): void {
+  const cats = assignableCategories(data?.state.categories ?? [], ui.state.catPickerQuery)
+  queryPickerKey(key, { query: ui.state.catPickerQuery, cursor: ui.state.catPickerCursor }, cats.length, {
+    close: () => { ui.closeCatPicker(); ui.setStatus("Categorize cancelled") },
+    update: (next) => { ui.setState({ catPickerQuery: next.query, catPickerCursor: next.cursor }) },
+    apply: () => {
       const cat = cats[ui.state.catPickerCursor]
       // Targets were fixed when the picker opened (Manager selection, the
       // open detail row, or the Recent cursor).
@@ -250,866 +254,810 @@ export function handleKey(ui: UiStore, key: KeyEvent, data?: DataStore): boolean
         ui.setStatus(`Categorizing ${targets.length} → ${cat.name}…`)
         data.categorizeTransactions(targets, cat.id).then(
           (summary) => ui.setStatus(summary, summary.includes(" failed: ")),
-          (error) => ui.setStatus(error instanceof Error ? error.message : String(error), true),
+          (error) => reportError(ui, error),
         )
       } else {
         ui.closeCatPicker()
         ui.setStatus("Nothing to categorize", true)
       }
-      return true
-    }
-    if (name === "backspace") {
-      ui.setState({
-        catPickerQuery: ui.state.catPickerQuery.slice(0, -1),
-        catPickerCursor: 0,
-      })
-      return true
-    }
-    if (isPrintable(key)) {
-      ui.setState({
-        catPickerQuery: ui.state.catPickerQuery + seq,
-        catPickerCursor: 0,
-      })
-      return true
-    }
-    return true
-  }
+    },
+  })
+}
 
-  // ── Filter input (live parse every keystroke) ───────────────────────
-  if (ui.state.filterMode) {
-    if (name === "escape") {
-      ui.closeFilter(false)
-      data?.clearFilter()
-      ui.jumpManagerCursor(0, data?.scopedTransactions().length ?? 0)
+function handleFilter(ui: UiStore, key: KeyEvent, data?: DataStore): void {
+  const { name } = key
+  if (name === "escape") {
+    ui.closeFilter(false)
+    data?.clearFilter()
+    resetTransactionCursors(ui, data)
+    ui.setStatus("Filter cleared")
+    return
+  }
+  if (name === "return" || name === "enter") {
+    const draft = ui.state.filterDraft
+    ui.closeFilter(true)
+    const r = data?.commitFilter(draft) ?? { ok: true, err: "" }
+    resetTransactionCursors(ui, data)
+    if (!draft.trim()) {
       ui.setStatus("Filter cleared")
-      return true
+    } else if (r.ok) {
+      ui.setStatus(`Filter ok · ${data?.scopedTransactions().length ?? 0} rows`)
+    } else {
+      ui.setStatus(`Filter live (not strict): ${r.err}`, true)
     }
-    if (name === "return" || name === "enter") {
-      const draft = ui.state.filterDraft
-      ui.closeFilter(true)
-      const r = data?.commitFilter(draft) ?? { ok: true, err: "" }
-      ui.jumpManagerCursor(0, data?.scopedTransactions().length ?? 0)
-      if (!draft.trim()) {
-        ui.setStatus("Filter cleared")
-      } else if (r.ok) {
-        ui.setStatus(`Filter ok · ${data?.scopedTransactions().length ?? 0} rows`)
-      } else {
-        ui.setStatus(`Filter live (not strict): ${r.err}`, true)
-      }
-      return true
-    }
-    const next = editText({ value: ui.state.filterDraft, caret: ui.state.filterCaret }, key)
-    if (next) {
-      ui.setState({ filterDraft: next.value, filterCaret: next.caret })
-      data?.setFilterLive(next.value)
-      ui.jumpManagerCursor(0, data?.scopedTransactions().length ?? 0)
-    }
-    return true
+    return
   }
-
-  // ── Transaction detail (a modal: owns input until closed) ──────────
-  if (ui.state.detailId != null) {
-    if (ui.state.detailNotesEditing) {
-      if (name === "escape") { ui.setState({ detailNotesEditing: false, detailNotesDraft: "", detailNotesCaret: 0 }); ui.setStatus("Notes unchanged"); return true }
-      if (name === "return" || name === "enter") {
-        try { data?.updateTransactionNotes(ui.state.detailId, ui.state.detailNotesDraft.trim()); ui.setStatus("Notes saved") } catch (e) { ui.setStatus(e instanceof Error ? e.message : String(e), true) }
-        ui.setState({ detailNotesEditing: false, detailNotesDraft: "", detailNotesCaret: 0 })
-        return true
-      }
-      const next = editText({ value: ui.state.detailNotesDraft, caret: ui.state.detailNotesCaret }, key)
-      if (next) ui.setState({ detailNotesDraft: next.value, detailNotesCaret: next.caret })
-      return true
-    }
-    if (name === "escape" || name === "return" || name === "enter") { ui.setState({ detailId: null }); return true }
-    if (name === "c") { ui.openCatPicker(ui.targetIds(data?.scopedTransactions() ?? [])); return true }
-    if (name === "t") { ui.openTagPicker(ui.targetIds(data?.scopedTransactions() ?? [])); return true }
-    if (name === "n") {
-      const notes = data?.state.transactions.find((t) => t.id === ui.state.detailId)?.notes ?? ""
-      ui.setState({ detailNotesEditing: true, detailNotesDraft: notes, detailNotesCaret: notes.length })
-      return true
-    }
-    // j/k browse neighbouring transactions without closing the view.
-    if (name === "j" || name === "down" || name === "k" || name === "up") {
-      const rows = data?.scopedTransactions() ?? []
-      moveTxnCursor(ui, data, name === "j" || name === "down" ? 1 : -1, false)
-      const row = rows[ui.state.managerCursor]
-      if (row) ui.setState({ detailId: row.id })
-      return true
-    }
-    return true
+  const next = editText({ value: ui.state.filterDraft, caret: ui.state.filterCaret }, key)
+  if (next) {
+    ui.setState({ filterDraft: next.value, filterCaret: next.caret })
+    data?.setFilterLive(next.value)
+    resetTransactionCursors(ui, data)
   }
+}
 
-  // ── Import and account-data modals own all input ───────────────────
-  // ── Custom date range (a modal: owns input until closed) ───────────
-  if (ui.state.customEdit) {
-    const edit = ui.state.customEdit
-    if (name === "escape") { ui.setState({ customEdit: null }); ui.setStatus("Range unchanged"); return true }
-    if (name === "tab" || name === "up" || name === "down") {
-      const field: 0 | 1 = edit.field === 0 ? 1 : 0
-      ui.setState({ customEdit: { ...edit, field, [field === 0 ? "start" : "end"]: textField((field === 0 ? edit.start : edit.end).value) } })
-      return true
-    }
-    if (name === "return" || name === "enter") {
-      const range = customRange(edit.start.value.trim(), edit.end.value.trim())
-      if (typeof range === "string") { ui.setState({ customEdit: { ...edit, error: range } }); return true }
-      const tf: TimeframeState = { ...ui.state.timeframe, family: "custom", custom: range }
-      ui.setTimeframe(tf)
-      ui.setState({ customEdit: null })
-      ui.setDashChipCursor(CUSTOM_CHIP)
-      ui.setStatus(`Custom · ${timeframeBounds(tf, new Date()).label}`)
-      return true
-    }
-    const key2 = edit.field === 0 ? "start" : "end"
-    const next = editText(edit[key2], key)
-    if (next) ui.setState({ customEdit: { ...edit, [key2]: next, error: "" } })
-    return true
+function handleManagerDetailNotes(ui: UiStore, key: KeyEvent, data?: DataStore): void {
+  if (ui.state.detailId == null) return
+  const { name } = key
+  if (name === "escape") { ui.setState({ detailNotesEditing: false, detailNotesDraft: "", detailNotesCaret: 0 }); ui.setStatus("Notes unchanged"); return }
+  if (name === "return" || name === "enter") {
+    try { data?.updateTransactionNotes(ui.state.detailId, ui.state.detailNotesDraft.trim()); ui.setStatus("Notes saved") } catch (e) { reportError(ui, e) }
+    ui.setState({ detailNotesEditing: false, detailNotesDraft: "", detailNotesCaret: 0 })
+    return
   }
+  const next = editText({ value: ui.state.detailNotesDraft, caret: ui.state.detailNotesCaret }, key)
+  if (next) ui.setState({ detailNotesDraft: next.value, detailNotesCaret: next.caret })
+}
 
-  if (ui.state.factoryResetOpen) {
-    if (name === "escape") { ui.setState({ factoryResetOpen: false, factoryResetDraft: "", factoryResetCaret: 0 }); ui.setStatus("Factory reset cancelled"); return true }
-    if (name === "return" || name === "enter") {
-      if (ui.state.factoryResetDraft !== "RESET") { ui.setStatus("Type RESET exactly to erase this database", true); return true }
-      try { data?.factoryResetDatabase(); ui.setState({ factoryResetOpen: false, factoryResetDraft: "", factoryResetCaret: 0 }); ui.setStatus("Database reset · OpenTUI settings retained") } catch (e) { ui.setStatus(e instanceof Error ? e.message : String(e), true) }
-      return true
-    }
-    const next = editText({ value: ui.state.factoryResetDraft, caret: ui.state.factoryResetCaret }, key)
-    if (next) ui.setState({ factoryResetDraft: next.value, factoryResetCaret: next.caret })
-    return true
+function handleManagerDetail(ui: UiStore, key: KeyEvent, data?: DataStore): void {
+  const { name } = key
+
+  if (name === "escape" || name === "return" || name === "enter") { ui.setState({ detailId: null }); return }
+  if (name === "c") { ui.openCatPicker(ui.targetIds(data?.scopedTransactions() ?? [])); return }
+  if (name === "t") { ui.openTagPicker(ui.targetIds(data?.scopedTransactions() ?? [])); return }
+  if (name === "n") {
+    const notes = data?.state.transactions.find((t) => t.id === ui.state.detailId)?.notes ?? ""
+    ui.setState({ detailNotesEditing: true, detailNotesDraft: notes, detailNotesCaret: notes.length })
+    return
   }
-
-  if (ui.state.accountActionId != null) {
-    if (name === "escape") { ui.setState({ accountActionId: null }); ui.setStatus("Account actions cancelled"); return true }
-    const account = data?.state.accounts.find((a) => a.id === ui.state.accountActionId)
-    if (name === "c" && account) { ui.setState({ accountActionId: null }); ui.armSettingsConfirm({ kind: "clearAccount", id: account.id, label: account.name }); ui.setStatus(`Press del to clear ${account.name}`); return true }
-    if ((name === "x" || name === "delete") && account) { ui.setState({ accountActionId: null }); ui.armSettingsConfirm({ kind: "deleteAccount", id: account.id, label: account.name }); ui.setStatus(`Press del to remove ${account.name} and its transactions`); return true }
-    return true
+  // j/k browse neighbouring transactions without closing the view.
+  if (name === "j" || name === "down" || name === "k" || name === "up") {
+    const rows = data?.scopedTransactions() ?? []
+    moveTxnCursor(ui, data, name === "j" || name === "down" ? 1 : -1, false)
+    const row = rows[ui.state.managerCursor]
+    if (row) ui.setState({ detailId: row.id })
+    return
   }
+}
 
-  if (ui.state.importStage === "files") {
-    const files = ui.state.importFiles
-    if (name === "escape") { ui.cancelImport(); ui.setStatus("Import cancelled"); return true }
-    if (name === "j" || name === "down") { ui.setState({ importCursor: Math.min(files.length - 1, ui.state.importCursor + 1) }); return true }
-    if (name === "k" || name === "up") { ui.setState({ importCursor: Math.max(0, ui.state.importCursor - 1) }); return true }
-    if (name === "/" || name === "p") { ui.setState({ importStage: "path", importPath: "", importPathCaret: 0 }); return true }
-    if ((name === "return" || name === "enter") && files[ui.state.importCursor]) {
-      const path = files[ui.state.importCursor]!
-      const matches = data?.profileMatches(path) ?? []
-      if (matches.length === 1) { try { const preview = data?.previewImport(path, matches[0]!); ui.setState({ importStage: "preview", importPath: path, importPathCaret: path.length, importPreview: preview ?? null }) } catch (e) { ui.setStatus(e instanceof Error ? e.message : String(e), true) } }
-      else ui.setState({ importStage: "profile", importPath: path, importPathCaret: path.length, importProfileCursor: 0 })
-      return true
-    }
-    return true
+function handleOverviewCustom(ui: UiStore, key: KeyEvent, data?: DataStore): void {
+  const { name } = key
+  const edit = ui.state.customEdit
+  if (!edit) return
+  if (name === "escape") { ui.setState({ customEdit: null }); ui.setStatus("Range unchanged"); return }
+  if (name === "tab" || name === "up" || name === "down") {
+    const field: 0 | 1 = edit.field === 0 ? 1 : 0
+    ui.setState({ customEdit: { ...edit, field, [field === 0 ? "start" : "end"]: textField((field === 0 ? edit.start : edit.end).value) } })
+    return
   }
-
-  if (ui.state.importStage === "path") {
-    if (name === "escape") { ui.setState({ importStage: "files", importPath: "", importPathCaret: 0 }); return true }
-    if (name === "return" || name === "enter") {
-      const raw = ui.state.importPath.trim()
-      if (!raw) { ui.setStatus("Enter a CSV path", true); return true }
-      const path = resolve(ui.state.importDirectory, raw)
-      try {
-        const matches = data?.profileMatches(path) ?? []
-        if (matches.length === 1) ui.setState({ importStage: "preview", importPath: path, importPathCaret: path.length, importPreview: data?.previewImport(path, matches[0]!) ?? null })
-        else ui.setState({ importStage: "profile", importPath: path, importPathCaret: path.length, importProfileCursor: 0 })
-      } catch (e) { ui.setStatus(e instanceof Error ? e.message : String(e), true) }
-      return true
-    }
-    const next = editText({ value: ui.state.importPath, caret: ui.state.importPathCaret }, key)
-    if (next) ui.setState({ importPath: next.value, importPathCaret: next.caret })
-    return true
+  if (name === "return" || name === "enter") {
+    const range = customRange(edit.start.value.trim(), edit.end.value.trim())
+    if (typeof range === "string") { ui.setState({ customEdit: { ...edit, error: range } }); return }
+    const tf: TimeframeState = { ...ui.state.timeframe, family: "custom", custom: range }
+    ui.setTimeframe(tf)
+    ui.setState({ customEdit: null })
+    ui.setDashChipCursor(CUSTOM_CHIP)
+    ui.setStatus(`Custom · ${timeframeBounds(tf, new Date()).label}`)
+    return
   }
+  const key2 = edit.field === 0 ? "start" : "end"
+  const next = editText(edit[key2], key)
+  if (next) ui.setState({ customEdit: { ...edit, [key2]: next, error: "" } })
+}
 
-  if (ui.state.importStage === "profile") {
-    const profiles = data?.state.importProfiles ?? []
-    if (name === "escape") { ui.setState({ importStage: ui.state.importProfileManaging ? "none" : "files", importProfileManaging: false }); return true }
-    if (name === "j" || name === "down") { ui.setState({ importProfileCursor: Math.min(profiles.length, ui.state.importProfileCursor + 1) }); return true }
-    if (name === "k" || name === "up") { ui.setState({ importProfileCursor: Math.max(0, ui.state.importProfileCursor - 1) }); return true }
-    if (name === "a" || name === "n" || (name === "return" || name === "enter") && ui.state.importProfileCursor === profiles.length) { ui.openProfileEditor(defaultProfile(`profile-${profiles.length + 1}`, ui.state.importPath), null); return true }
-    if (name === "e" && profiles[ui.state.importProfileCursor]) { ui.openProfileEditor(profiles[ui.state.importProfileCursor]!, profiles[ui.state.importProfileCursor]!.id); return true }
-    if (name === "delete" && profiles[ui.state.importProfileCursor]) { const selected = profiles[ui.state.importProfileCursor]!; ui.armSettingsConfirm({ kind: "profile", id: selected.id, label: selected.name }); ui.setStatus(`Press del again to delete profile ${selected.name}`); return true }
-    if ((name === "return" || name === "enter") && profiles[ui.state.importProfileCursor]) {
-      if (ui.state.importProfileManaging) { ui.openProfileEditor(profiles[ui.state.importProfileCursor]!, profiles[ui.state.importProfileCursor]!.id); return true }
-      try { ui.setState({ importStage: "preview", importPreview: data?.previewImport(ui.state.importPath, profiles[ui.state.importProfileCursor]!) ?? null }) } catch (e) { ui.setStatus(e instanceof Error ? e.message : String(e), true) }
-      return true
-    }
-    return true
+function handleSettingsFactoryReset(ui: UiStore, key: KeyEvent, data?: DataStore): void {
+  const { name } = key
+  if (name === "escape") { ui.setState({ factoryResetOpen: false, factoryResetDraft: "", factoryResetCaret: 0 }); ui.setStatus("Factory reset cancelled"); return }
+  if (name === "return" || name === "enter") {
+    if (ui.state.factoryResetDraft !== "RESET") { ui.setStatus("Type RESET exactly to erase this database", true); return }
+    try { data?.factoryResetDatabase(); ui.setState({ factoryResetOpen: false, factoryResetDraft: "", factoryResetCaret: 0 }); ui.setStatus("Database reset · OpenTUI settings retained") } catch (e) { reportError(ui, e) }
+    return
   }
+  const next = editText({ value: ui.state.factoryResetDraft, caret: ui.state.factoryResetCaret }, key)
+  if (next) ui.setState({ factoryResetDraft: next.value, factoryResetCaret: next.caret })
+}
 
-  if (ui.state.importStage === "profileEditor") {
-    const draft = ui.state.importProfileDraft, field = ui.state.importProfileField
-    const fields = ["id", "name", "account", "accountType", "importPrefix", "hasHeader", "delimiter", "dateColumn", "amountColumn", "descriptionColumns", "descriptionJoin", "amountStrip", "dateFormat"] as const
-    const selected = fields[field]!
-    if (name === "escape") { ui.setState({ importStage: "profile" }); return true }
-    if (name === "tab") {
-      const next = (field + (key.shift ? -1 : 1) + fields.length) % fields.length
-      const selected = fields[next]!
-      const value = selected === "descriptionColumns" ? draft.descriptionColumns.join(",") : String(draft[selected])
-      ui.setState({ importProfileField: next, importProfileCaret: value.length })
-      return true
-    }
-    if (name === "return" || name === "enter") {
-      try {
-        data?.saveImportProfile(draft)
-        const preview = ui.state.importPath ? data?.previewImport(ui.state.importPath, draft) : null
-        ui.setState({ importStage: preview ? "preview" : "profile", importPreview: preview ?? null, importProfileEditId: null })
-        ui.setStatus(`Saved profile ${draft.name}`)
-      } catch (e) { ui.setStatus(e instanceof Error ? e.message : String(e), true) }
-      return true
-    }
-    if (selected === "accountType" && (name === "h" || name === "left" || name === "l" || name === "right" || name === "space")) { ui.setState("importProfileDraft", "accountType", draft.accountType === "debit" ? "credit" : "debit"); return true }
-    if ((selected === "hasHeader" || selected === "descriptionJoin") && (name === "h" || name === "left" || name === "l" || name === "right" || name === "space")) { ui.setState("importProfileDraft", selected, !draft[selected]); return true }
-    if (selected === "dateFormat" && (name === "h" || name === "left" || name === "l" || name === "right" || name === "space")) { const values = ["DMY", "MDY", "YMD"] as const; ui.setState("importProfileDraft", "dateFormat", values[(values.indexOf(draft.dateFormat) + 1) % values.length]!); return true }
-    if (selected === "accountType" || selected === "hasHeader" || selected === "descriptionJoin" || selected === "dateFormat") return true
-    const text = selected === "descriptionColumns" ? draft.descriptionColumns.join(",") : String(draft[selected])
-    const next = editText({ value: text, caret: ui.state.importProfileCaret }, key)
-    if (next) {
-      ui.setState({ importProfileCaret: next.caret })
-      if (selected === "descriptionColumns") ui.setState("importProfileDraft", selected, next.value ? next.value.split(",").map(Number).filter(Number.isInteger) : [])
-      else if (selected === "dateColumn" || selected === "amountColumn") ui.setState("importProfileDraft", selected, Number(next.value || 0))
-      else ui.setState("importProfileDraft", selected, next.value)
-    }
-    return true
-  }
+function handleManagerAccountAction(ui: UiStore, key: KeyEvent, data?: DataStore): void {
+  const { name } = key
+  if (name === "escape") { ui.setState({ accountActionId: null }); ui.setStatus("Account actions cancelled"); return }
+  const account = data?.state.accounts.find((a) => a.id === ui.state.accountActionId)
+  if (name === "c" && account) { ui.setState({ accountActionId: null }); ui.armSettingsConfirm({ kind: "clearAccount", id: account.id, label: account.name }); ui.setStatus(`Press del to clear ${account.name}`); return }
+  if ((name === "x" || name === "delete") && account) { ui.setState({ accountActionId: null }); ui.armSettingsConfirm({ kind: "deleteAccount", id: account.id, label: account.name }); ui.setStatus(`Press del to remove ${account.name} and its transactions`); return }
+}
 
-  if (ui.state.importStage === "preview") {
-    const preview = ui.state.importPreview
-    const rows = preview ? (ui.state.importPreviewShowAll ? preview.rows : preview.rows.filter((row) => row.duplicate)) : []
-    if (name === "escape") { ui.cancelImport(); ui.setStatus("Import cancelled"); return true }
-    if (name === "j" || name === "down") { ui.setState({ importPreviewCursor: Math.min(Math.max(0, rows.length - 1), ui.state.importPreviewCursor + 1) }); return true }
-    if (name === "k" || name === "up") { ui.setState({ importPreviewCursor: Math.max(0, ui.state.importPreviewCursor - 1) }); return true }
-    if (name === "p") { ui.setState({ importPreviewShowAll: !ui.state.importPreviewShowAll, importPreviewCursor: 0, importPreviewTop: 0 }); return true }
-    if (name === "r") { ui.setState({ importPreviewRules: !ui.state.importPreviewRules }); return true }
-    if ((name === "s" || name === "a") && preview) {
-      try { const summary = data?.commitPreview({ ...preview, rulesEnabled: ui.state.importPreviewRules }, name === "s") ?? "Import unavailable"; ui.cancelImport(); ui.setStatus(summary) } catch (e) { ui.setStatus(e instanceof Error ? e.message : String(e), true) }
-      return true
-    }
-    return true
-  }
+function handleSettingsConfirm(ui: UiStore, key: KeyEvent, data?: DataStore): void {
+  const { name } = key
+  if (name === "escape") { ui.clearSettingsConfirm(); ui.setStatus("Action cancelled"); return }
+  const confirm = ui.state.settingsConfirm
+  if (!confirm) return
+  if (name !== "delete" && name !== "backspace") return
+  try {
+    const done = CONFIRMED[confirm.kind](data, confirm)
+    ui.clearSettingsConfirm()
+    ui.setStatus(done)
+  } catch (e) { ui.clearSettingsConfirm(); reportError(ui, e) }
+}
 
-  // ── Settings editors and confirmations own every printable key ─────
-  if (ui.state.settingsConfirm) {
-    if (name === "escape") { ui.clearSettingsConfirm(); ui.setStatus("Action cancelled"); return true }
-    const confirm = ui.state.settingsConfirm
-    const matches = name === "delete" || name === "backspace"
-    if (matches) {
-      try {
-        if (confirm.kind === "category") data?.deleteSettingsCategory(Number(confirm.id))
-        if (confirm.kind === "tag") data?.deleteSettingsTag(Number(confirm.id))
-        if (confirm.kind === "rule") data?.deleteSettingsRule(Number(confirm.id))
-        if (confirm.kind === "filter") data?.deleteSavedFilter(String(confirm.id))
-        if (confirm.kind === "profile") data?.deleteImportProfile(String(confirm.id))
-        if (confirm.kind === "clearData") data?.clearDatabaseData()
-        if (confirm.kind === "clearAccount") data?.clearAccountData(Number(confirm.id))
-        if (confirm.kind === "deleteAccount") data?.removeAccountData(Number(confirm.id))
-        if (confirm.kind === "budget") data?.removeBudget(Number(confirm.id))
-        if (confirm.kind === "desyncAccount") {
-          const removed = data?.setAccountSync(Number(confirm.id), false) ?? 0
-          ui.clearSettingsConfirm(); ui.setStatus(`Sync off for ${confirm.label} · ${removed} transactions removed`)
-          return true
-        }
-        ui.clearSettingsConfirm(); ui.setStatus(confirm.kind === "clearData" ? "Transaction and import data cleared" : confirm.kind === "clearAccount" ? `Cleared ${confirm.label}` : confirm.kind === "deleteAccount" ? `Removed ${confirm.label}` : `Deleted ${confirm.label}`)
-      } catch (e) { ui.clearSettingsConfirm(); ui.setStatus(e instanceof Error ? e.message : String(e), true) }
-      return true
-    }
-    return true
-  }
+type Confirm = NonNullable<UiState["settingsConfirm"]>
 
-  if (ui.state.settingsEditor) {
-    const kind = ui.state.settingsEditor
-    const draft = ui.state.settingsDraft
-    const ctx = { accounts: data?.state.accounts ?? [], categories: data?.state.categories ?? [], tags: data?.state.tags ?? [], savedFilters: data?.state.savedFilters ?? [] }
-    const fields = editorFields(kind, draft, ctx)
-    const fieldIndex = Math.min(ui.state.settingsEditField, fields.length - 1)
-    const field = fields[fieldIndex]!
+/** What each armed confirmation does on del, and the status it leaves. */
+const CONFIRMED: Record<Confirm["kind"], (data: DataStore | undefined, c: Confirm) => string> = {
+  category: (data, c) => { data?.deleteSettingsCategory(Number(c.id)); return `Deleted ${c.label}` },
+  tag: (data, c) => { data?.deleteSettingsTag(Number(c.id)); return `Deleted ${c.label}` },
+  rule: (data, c) => { data?.deleteSettingsRule(Number(c.id)); return `Deleted ${c.label}` },
+  filter: (data, c) => { data?.deleteSavedFilter(String(c.id)); return `Deleted ${c.label}` },
+  profile: (data, c) => { data?.deleteImportProfile(String(c.id)); return `Deleted ${c.label}` },
+  budget: (data, c) => { data?.removeBudget(Number(c.id)); return `Deleted ${c.label}` },
+  clearData: (data) => { data?.clearDatabaseData(); return "Transaction and import data cleared" },
+  clearAccount: (data, c) => { data?.clearAccountData(Number(c.id)); return `Cleared ${c.label}` },
+  deleteAccount: (data, c) => { data?.removeAccountData(Number(c.id)); return `Removed ${c.label}` },
+  desyncAccount: (data, c) => `Sync off for ${c.label} · ${data?.setAccountSync(Number(c.id), false) ?? 0} transactions removed`,
+}
 
-    // A picker field's list owns input until it closes (like the category
-    // picker: j/k and arrows move, other printable keys filter).
-    const picker = ui.state.formPicker
-    if (picker) {
-      const choices = pickerChoices(pickerItems(kind, field.key, ctx, picker.query))
-      if (name === "escape") { ui.setState({ formPicker: null }); return true }
-      if (name === "j" || name === "down") { ui.setState("formPicker", "cursor", Math.min(Math.max(0, choices.length - 1), picker.cursor + 1)); return true }
-      if (name === "k" || name === "up") { ui.setState("formPicker", "cursor", Math.max(0, picker.cursor - 1)); return true }
-      if (name === "return" || name === "enter") {
+function handleSettingsEditor(ui: UiStore, key: KeyEvent, data?: DataStore): void {
+  const { name } = key
+  const kind = ui.state.settingsEditor
+  if (!kind) return
+  const draft = ui.state.settingsDraft
+  const ctx = { accounts: data?.state.accounts ?? [], categories: data?.state.categories ?? [], tags: data?.state.tags ?? [], savedFilters: data?.state.savedFilters ?? [] }
+  const fields = editorFields(kind, draft, ctx)
+  const fieldIndex = Math.min(ui.state.settingsEditField, fields.length - 1)
+  const field = fields[fieldIndex]!
+
+  // A picker field's list owns input until it closes (like the category
+  // picker: j/k and arrows move, other printable keys filter).
+  const picker = ui.state.formPicker
+  if (picker) {
+    const choices = pickerChoices(pickerItems(kind, field.key, ctx, picker.query))
+    queryPickerKey(key, picker, choices.length, {
+      close: () => ui.setState({ formPicker: null }),
+      update: (next) => ui.setState({ formPicker: next }),
+      apply: () => {
         const choice = choices[picker.cursor]
-        if (!choice) return true
+        if (!choice) return
         if (field.multi) {
           // Multi-choice (rule tags): enter toggles; esc closes.
           const id = Number(choice.value)
           ui.setState("settingsDraft", "addTagIds", draft.addTagIds.includes(id) ? draft.addTagIds.filter((t) => t !== id) : [...draft.addTagIds, id])
-          return true
+          return
         }
         ui.setState("settingsDraft", field.key as "scopeKey", choice.value as never)
         ui.setState({ formPicker: null })
-        return true
+      },
+    })
+    return
+  }
+
+  const isText = field.kind === "text"
+  const move = (step: number) => {
+    const next = (fieldIndex + step + fields.length) % fields.length
+    const field = fields[next]!
+    ui.setState({ settingsEditField: next, settingsCaret: field.kind === "text" ? field.display.length : 0 })
+  }
+  if (name === "escape") { ui.closeSettingsEditor(); ui.setStatus("Edit cancelled"); return }
+  if (name === "tab") { move(key.shift ? -1 : 1); return }
+  if (name === "down" || (!isText && name === "j")) { move(1); return }
+  if (name === "up" || (!isText && name === "k")) { move(-1); return }
+  if ((name === "return" || name === "enter") && field.kind === "picker") {
+    // Open the list on the current value.
+    const current = draft[field.key]
+    const at = field.multi ? 0 : pickerChoices(pickerItems(kind, field.key, ctx, "")).findIndex((c) => c.value === current)
+    ui.setState({ formPicker: { query: "", cursor: Math.max(0, at) } })
+    return
+  }
+  if (name === "return" || name === "enter") {
+    try {
+      if (kind === "category") {
+        if (ui.state.settingsEditId == null) data?.createSettingsCategory({ name: draft.name, color: draft.color, notSpending: draft.notSpending })
+        else data?.updateSettingsCategory(Number(ui.state.settingsEditId), { name: draft.name, color: draft.color, notSpending: draft.notSpending })
+      } else if (kind === "tag") {
+        if (ui.state.settingsEditId == null) data?.createSettingsTag({ name: draft.name, color: draft.color, categoryId: draft.categoryId })
+        else data?.updateSettingsTag(Number(ui.state.settingsEditId), { name: draft.name, color: draft.color, categoryId: draft.categoryId })
+      } else if (kind === "budget") {
+        const option = budgetScopeOptions(ctx.accounts, ctx.categories).find((o) => o.key === draft.scopeKey)
+        const amount = Number(draft.amount.replace(/[$,\s]/g, ""))
+        if (!option) throw new Error("choose what the budget covers")
+        if (!draft.amount.trim() || !Number.isFinite(amount)) throw new Error("enter the budget amount")
+        const cycle = cycleFromDraft(draft)
+        if (typeof cycle === "string") throw new Error(cycle)
+        const current = data?.state.budgetCycle
+        // The cycle is shared by every budget; save it first so a bad date
+        // stops the whole edit.
+        if (current && (current.unit !== cycle.unit || current.anchor !== cycle.anchor || current.anchorDate !== cycle.anchorDate)) data?.setBudgetCycle(cycle)
+        const editing = data?.state.budgets.find((b) => b.id === ui.state.settingsEditId)
+        if (editing && scopeKey(editing.scope) !== option.key) data?.removeBudget(editing.id)
+        data?.setBudget(option.scope, amount)
+      } else if (kind === "cycle") {
+        const cycle = cycleFromDraft(draft)
+        if (typeof cycle === "string") throw new Error(cycle)
+        data?.setBudgetCycle(cycle)
+      } else if (kind === "filter") {
+        data?.saveSavedFilter({ id: draft.id, name: draft.name, expr: draft.expr }, typeof ui.state.settingsEditId === "string" ? ui.state.settingsEditId : undefined)
+      } else {
+        const existing = data?.state.rules.find((r) => r.id === ui.state.settingsEditId)
+        const rule = { id: Number(ui.state.settingsEditId ?? 0), name: draft.name, savedFilterId: draft.savedFilterId, setCategoryId: draft.setCategoryId, addTagIds: draft.addTagIds, enabled: existing?.enabled ?? true, sortOrder: existing?.sortOrder ?? 0 }
+        if (ui.state.settingsEditId == null) data?.createSettingsRule(rule)
+        else data?.updateSettingsRule(rule)
       }
-      if (name === "backspace") { ui.setState({ formPicker: { query: picker.query.slice(0, -1), cursor: 0 } }); return true }
-      if (isPrintable(key)) { ui.setState({ formPicker: { query: picker.query + seq, cursor: 0 } }); return true }
-      return true
-    }
-
-    const isText = field.kind === "text"
-    const move = (step: number) => {
-      const next = (fieldIndex + step + fields.length) % fields.length
-      const field = fields[next]!
-      ui.setState({ settingsEditField: next, settingsCaret: field.kind === "text" ? field.display.length : 0 })
-    }
-    if (name === "escape") { ui.closeSettingsEditor(); ui.setStatus("Edit cancelled"); return true }
-    if (name === "tab") { move(key.shift ? -1 : 1); return true }
-    if (name === "down" || (!isText && name === "j")) { move(1); return true }
-    if (name === "up" || (!isText && name === "k")) { move(-1); return true }
-    if ((name === "return" || name === "enter") && field.kind === "picker") {
-      // Open the list on the current value.
-      const current = draft[field.key]
-      const at = field.multi ? 0 : pickerChoices(pickerItems(kind, field.key, ctx, "")).findIndex((c) => c.value === current)
-      ui.setState({ formPicker: { query: "", cursor: Math.max(0, at) } })
-      return true
-    }
-    if (name === "return" || name === "enter") {
-      try {
-        if (kind === "category") {
-          if (ui.state.settingsEditId == null) data?.createSettingsCategory({ name: draft.name, color: draft.color, notSpending: draft.notSpending })
-          else data?.updateSettingsCategory(Number(ui.state.settingsEditId), { name: draft.name, color: draft.color, notSpending: draft.notSpending })
-        } else if (kind === "tag") {
-          if (ui.state.settingsEditId == null) data?.createSettingsTag({ name: draft.name, color: draft.color, categoryId: draft.categoryId })
-          else data?.updateSettingsTag(Number(ui.state.settingsEditId), { name: draft.name, color: draft.color, categoryId: draft.categoryId })
-        } else if (kind === "budget") {
-          const option = budgetScopeOptions(ctx.accounts, ctx.categories).find((o) => o.key === draft.scopeKey)
-          const amount = Number(draft.amount.replace(/[$,\s]/g, ""))
-          if (!option) throw new Error("choose what the budget covers")
-          if (!draft.amount.trim() || !Number.isFinite(amount)) throw new Error("enter the budget amount")
-          const cycle = cycleFromDraft(draft)
-          if (typeof cycle === "string") throw new Error(cycle)
-          const current = data?.state.budgetCycle
-          // The cycle is shared by every budget; save it first so a bad date
-          // stops the whole edit.
-          if (current && (current.unit !== cycle.unit || current.anchor !== cycle.anchor || current.anchorDate !== cycle.anchorDate)) data?.setBudgetCycle(cycle)
-          const editing = data?.state.budgets.find((b) => b.id === ui.state.settingsEditId)
-          if (editing && scopeKey(editing.scope) !== option.key) data?.removeBudget(editing.id)
-          data?.setBudget(option.scope, amount)
-        } else if (kind === "cycle") {
-          const cycle = cycleFromDraft(draft)
-          if (typeof cycle === "string") throw new Error(cycle)
-          data?.setBudgetCycle(cycle)
-        } else if (kind === "filter") {
-          data?.saveSavedFilter({ id: draft.id, name: draft.name, expr: draft.expr }, typeof ui.state.settingsEditId === "string" ? ui.state.settingsEditId : undefined)
-        } else {
-          const existing = data?.state.rules.find((r) => r.id === ui.state.settingsEditId)
-          const rule = { id: Number(ui.state.settingsEditId ?? 0), name: draft.name, savedFilterId: draft.savedFilterId, setCategoryId: draft.setCategoryId, addTagIds: draft.addTagIds, enabled: existing?.enabled ?? true, sortOrder: existing?.sortOrder ?? 0 }
-          if (ui.state.settingsEditId == null) data?.createSettingsRule(rule)
-          else data?.updateSettingsRule(rule)
-        }
-        ui.closeSettingsEditor(); ui.setStatus("Saved")
-      } catch (e) { ui.setStatus(e instanceof Error ? e.message : String(e), true) }
-      return true
-    }
-    const left = name === "left" || (!isText && name === "h")
-    const right = name === "right" || (!isText && (name === "l" || name === "space"))
-    if ((left || right) && field.kind === "choice" && field.choices) {
-      const previousUnit = draft.unit
-      ui.setState("settingsDraft", field.key as "unit", stepChoice(field.choices, draft[field.key] as string, left ? -1 : 1) as never)
-      // A new unit or start asks for the start in its own form.
-      if (field.key === "unit" || field.key === "anchor") ui.setState("settingsDraft", normaliseCycleDraft(ui.state.settingsDraft, previousUnit))
-      return true
-    }
-    if ((left || right) && field.kind === "toggle") {
-      ui.setState("settingsDraft", field.key as "notSpending", !draft[field.key])
-      return true
-    }
-    if (isText) {
-      const next = editText({ value: field.display, caret: ui.state.settingsCaret }, key)
-      if (next) {
-        ui.setState("settingsDraft", field.key as "name", next.value)
-        ui.setState({ settingsCaret: next.caret })
-      }
-    }
-    return true
+      ui.closeSettingsEditor(); ui.setStatus("Saved")
+    } catch (e) { reportError(ui, e) }
+    return
   }
-
-  // ── Global ──────────────────────────────────────────────────────────
-  if (name === "v") {
-    if (JUMP_TARGETS[ui.state.activeTab].length) ui.enterJump()
-    return true
+  const left = name === "left" || (!isText && name === "h")
+  const right = name === "right" || (!isText && (name === "l" || name === "space"))
+  if ((left || right) && field.kind === "choice" && field.choices) {
+    const previousUnit = draft.unit
+    ui.setState("settingsDraft", field.key as "unit", stepChoice(field.choices, draft[field.key] as string, left ? -1 : 1) as never)
+    // A new unit or start asks for the start in its own form.
+    if (field.key === "unit" || field.key === "anchor") ui.setState("settingsDraft", normaliseCycleDraft(ui.state.settingsDraft, previousUnit))
+    return
   }
-
-  for (const t of TABS) {
-    if (name === t.hotkey || seq === t.hotkey) {
-      ui.switchTab(t.id)
-      return true
+  if ((left || right) && field.kind === "toggle") {
+    ui.setState("settingsDraft", field.key as "notSpending", !draft[field.key])
+    return
+  }
+  if (isText) {
+    const next = editText({ value: field.display, caret: ui.state.settingsCaret }, key)
+    if (next) {
+      ui.setState("settingsDraft", field.key as "name", next.value)
+      ui.setState({ settingsCaret: next.caret })
     }
   }
+}
 
+function handleSettingsImportFiles(ui: UiStore, key: KeyEvent, data?: DataStore): void {
+  const { name } = key
+  const files = ui.state.importFiles
+  if (name === "escape") { ui.cancelImport(); ui.setStatus("Import cancelled"); return }
+  const moved = listMove(key, ui.state.importCursor, files.length)
+  if (moved != null) { ui.setState({ importCursor: moved }); return }
+  if (name === "/" || name === "p") { ui.setState({ importStage: "path", importPath: "", importPathCaret: 0 }); return }
+  if ((name === "return" || name === "enter") && files[ui.state.importCursor]) {
+    const path = files[ui.state.importCursor]!
+    const matches = data?.profileMatches(path) ?? []
+    if (matches.length === 1) { try { const preview = data?.previewImport(path, matches[0]!); ui.setState({ importStage: "preview", importPath: path, importPathCaret: path.length, importPreview: preview ?? null }) } catch (e) { reportError(ui, e) } }
+    else ui.setState({ importStage: "profile", importPath: path, importPathCaret: path.length, importProfileCursor: 0 })
+    return
+  }
+}
+
+function handleSettingsImportPath(ui: UiStore, key: KeyEvent, data?: DataStore): void {
+  const { name } = key
+  if (name === "escape") { ui.setState({ importStage: "files", importPath: "", importPathCaret: 0 }); return }
+  if (name === "return" || name === "enter") {
+    const raw = ui.state.importPath.trim()
+    if (!raw) { ui.setStatus("Enter a CSV path", true); return }
+    const path = resolve(ui.state.importDirectory, raw)
+    try {
+      const matches = data?.profileMatches(path) ?? []
+      if (matches.length === 1) ui.setState({ importStage: "preview", importPath: path, importPathCaret: path.length, importPreview: data?.previewImport(path, matches[0]!) ?? null })
+      else ui.setState({ importStage: "profile", importPath: path, importPathCaret: path.length, importProfileCursor: 0 })
+    } catch (e) { reportError(ui, e) }
+    return
+  }
+  const next = editText({ value: ui.state.importPath, caret: ui.state.importPathCaret }, key)
+  if (next) ui.setState({ importPath: next.value, importPathCaret: next.caret })
+}
+
+function handleSettingsImportProfile(ui: UiStore, key: KeyEvent, data?: DataStore): void {
+  const { name } = key
+  const profiles = data?.state.importProfiles ?? []
+  if (name === "escape") { ui.setState({ importStage: ui.state.importProfileManaging ? "none" : "files", importProfileManaging: false }); return }
+  const moved = listMove(key, ui.state.importProfileCursor, profiles.length + 1)
+  if (moved != null) { ui.setState({ importProfileCursor: moved }); return }
+  if (name === "a" || name === "n" || (name === "return" || name === "enter") && ui.state.importProfileCursor === profiles.length) { ui.openProfileEditor(defaultProfile(`profile-${profiles.length + 1}`, ui.state.importPath), null); return }
+  if (name === "e" && profiles[ui.state.importProfileCursor]) { ui.openProfileEditor(profiles[ui.state.importProfileCursor]!, profiles[ui.state.importProfileCursor]!.id); return }
+  if (name === "delete" && profiles[ui.state.importProfileCursor]) { const selected = profiles[ui.state.importProfileCursor]!; ui.armSettingsConfirm({ kind: "profile", id: selected.id, label: selected.name }); ui.setStatus(`Press del again to delete profile ${selected.name}`); return }
+  if ((name === "return" || name === "enter") && profiles[ui.state.importProfileCursor]) {
+    if (ui.state.importProfileManaging) { ui.openProfileEditor(profiles[ui.state.importProfileCursor]!, profiles[ui.state.importProfileCursor]!.id); return }
+    try { ui.setState({ importStage: "preview", importPreview: data?.previewImport(ui.state.importPath, profiles[ui.state.importProfileCursor]!) ?? null }) } catch (e) { reportError(ui, e) }
+    return
+  }
+}
+
+function handleSettingsImportProfileEditor(ui: UiStore, key: KeyEvent, data?: DataStore): void {
+  const { name } = key
+  const draft = ui.state.importProfileDraft, field = ui.state.importProfileField
+  const fields = ["id", "name", "account", "accountType", "importPrefix", "hasHeader", "delimiter", "dateColumn", "amountColumn", "descriptionColumns", "descriptionJoin", "amountStrip", "dateFormat"] as const
+  const selected = fields[field]!
+  if (name === "escape") { ui.setState({ importStage: "profile" }); return }
   if (name === "tab") {
-    ui.cycleTab(key.shift ? -1 : 1)
-    return true
+    const next = (field + (key.shift ? -1 : 1) + fields.length) % fields.length
+    const selected = fields[next]!
+    const value = selected === "descriptionColumns" ? draft.descriptionColumns.join(",") : String(draft[selected])
+    ui.setState({ importProfileField: next, importProfileCaret: value.length })
+    return
   }
+  if (name === "return" || name === "enter") {
+    try {
+      data?.saveImportProfile(draft)
+      const preview = ui.state.importPath ? data?.previewImport(ui.state.importPath, draft) : null
+      ui.setState({ importStage: preview ? "preview" : "profile", importPreview: preview ?? null, importProfileEditId: null })
+      ui.setStatus(`Saved profile ${draft.name}`)
+    } catch (e) { reportError(ui, e) }
+    return
+  }
+  if (selected === "accountType" && (name === "h" || name === "left" || name === "l" || name === "right" || name === "space")) { ui.setState("importProfileDraft", "accountType", draft.accountType === "debit" ? "credit" : "debit"); return }
+  if ((selected === "hasHeader" || selected === "descriptionJoin") && (name === "h" || name === "left" || name === "l" || name === "right" || name === "space")) { ui.setState("importProfileDraft", selected, !draft[selected]); return }
+  if (selected === "dateFormat" && (name === "h" || name === "left" || name === "l" || name === "right" || name === "space")) { const values = ["DMY", "MDY", "YMD"] as const; ui.setState("importProfileDraft", "dateFormat", values[(values.indexOf(draft.dateFormat) + 1) % values.length]!); return }
+  if (selected === "accountType" || selected === "hasHeader" || selected === "descriptionJoin" || selected === "dateFormat") return
+  const text = selected === "descriptionColumns" ? draft.descriptionColumns.join(",") : String(draft[selected])
+  const next = editText({ value: text, caret: ui.state.importProfileCaret }, key)
+  if (next) {
+    ui.setState({ importProfileCaret: next.caret })
+    if (selected === "descriptionColumns") ui.setState("importProfileDraft", selected, next.value ? next.value.split(",").map(Number).filter(Number.isInteger) : [])
+    else if (selected === "dateColumn" || selected === "amountColumn") ui.setState("importProfileDraft", selected, Number(next.value || 0))
+    else ui.setState("importProfileDraft", selected, next.value)
+  }
+}
 
-  const scope: ScopeId = ui.activeScope()
+function handleSettingsImportPreview(ui: UiStore, key: KeyEvent, data?: DataStore): void {
+  const { name } = key
+  const preview = ui.state.importPreview
+  const rows = preview ? (ui.state.importPreviewShowAll ? preview.rows : preview.rows.filter((row) => row.duplicate)) : []
+  if (name === "escape") { ui.cancelImport(); ui.setStatus("Import cancelled"); return }
+  const moved = listMove(key, ui.state.importPreviewCursor, rows.length)
+  if (moved != null) { ui.setState({ importPreviewCursor: moved }); return }
+  if (name === "p") { ui.setState({ importPreviewShowAll: !ui.state.importPreviewShowAll, importPreviewCursor: 0, importPreviewTop: 0 }); return }
+  if (name === "r") { ui.setState({ importPreviewRules: !ui.state.importPreviewRules }); return }
+  if ((name === "s" || name === "a") && preview) {
+    try { const summary = data?.commitPreview({ ...preview, rulesEnabled: ui.state.importPreviewRules }, name === "s") ?? "Import unavailable"; ui.cancelImport(); ui.setStatus(summary) } catch (e) { reportError(ui, e) }
+    return
+  }
+}
+
+function handleSettings(ui: UiStore, key: KeyEvent, data?: DataStore): void {
+  const { name } = key
+  if (name === "i") {
+    try {
+      const directory = data?.importDirectory() ?? process.cwd()
+      ui.activateSettings("database")
+      ui.beginImport(directory, data?.csvFiles(directory) ?? [])
+    } catch (e) { reportError(ui, e) }
+    return
+  }
+  const sections = SETTINGS_SECTIONS
+  const current = ui.state.settingsSection
+  if (name === "h" || name === "left") { ui.setState({ settingsSection: "taxonomy", focusedSection: "set.categories" }); return }
+  if (name === "l" || name === "right") { ui.setState({ settingsSection: "database", focusedSection: "set.database" }); return }
+  if (name === "j" || name === "down" || name === "k" || name === "up") {
+    const delta = name === "j" || name === "down" ? 1 : -1
+    const next = sections[(sections.indexOf(current) + delta + sections.length) % sections.length]!
+    ui.setState({ settingsSection: next, focusedSection: settingsSectionFocus(next) })
+    return
+  }
+  if (name === "return" || name === "enter") { ui.activateSettings(current); return }
+}
+
+function handleSettingsTaxonomy(ui: UiStore, key: KeyEvent, data?: DataStore): void {
+  const { name } = key
+  const list = ui.state.taxonomyList
+  const items = list === "categories" ? data?.state.categories ?? [] : data?.state.tags ?? []
+  const cursor = list === "categories" ? ui.state.categoryCursor : ui.state.tagCursor
+  if (name === "escape") { ui.leaveSettings(); return }
+  if (name === "h" || name === "left" || name === "l" || name === "right") { ui.activateSettings("taxonomy", list === "categories" ? "tags" : "categories"); return }
+  const moved = listMove(key, cursor, items.length)
+  if (moved != null) { ui.moveSettingsList(list, moved - cursor, items.length); return }
+  if (name === "pageup") { ui.moveSettingsList(list, -10, items.length); return }
+  if (name === "pagedown") { ui.moveSettingsList(list, 10, items.length); return }
+  if (name === "a") {
+    ui.openSettingsEditor(list === "categories" ? "category" : "tag", null, { ...ui.state.settingsDraft, name: "", color: list === "categories" ? "#94e2d5" : "#89b4fa", categoryId: null, notSpending: false })
+    return
+  }
+  if ((name === "return" || name === "enter") && items[cursor]) {
+    const item = items[cursor]!
+    ui.openSettingsEditor(list === "categories" ? "category" : "tag", item.id, { ...ui.state.settingsDraft, name: item.name, color: item.color, categoryId: list === "tags" ? ("categoryId" in item ? item.categoryId : null) : null, notSpending: "notSpending" in item ? item.notSpending : false })
+    return
+  }
+  if (name === "delete" && items[cursor]) { ui.armSettingsConfirm({ kind: list === "categories" ? "category" : "tag", id: items[cursor]!.id, label: items[cursor]!.name }); ui.setStatus(`Press del again to delete ${items[cursor]!.name}`); return }
+}
+
+function handleSettingsRules(ui: UiStore, key: KeyEvent, data?: DataStore): void {
+  const { name, sequence: seq } = key
+  const rules = data?.state.rules ?? []; const cursor = ui.state.ruleCursor; const rule = rules[cursor]
+  if (name === "escape") { ui.leaveSettings(); return }
+  if (((seq === "J") || (name === "j" && key.shift)) && rule) { data?.reorderSettingsRule(rule.id, cursor + 1); ui.setState({ ruleCursor: Math.min(rules.length - 1, cursor + 1) }); return }
+  if (((seq === "K") || (name === "k" && key.shift)) && rule) { data?.reorderSettingsRule(rule.id, cursor - 1); ui.setState({ ruleCursor: Math.max(0, cursor - 1) }); return }
+  if ((seq === "A" || (name === "a" && key.shift))) { const r = data?.applyRules(); ui.setStatus(r ? `Rules applied · ${r.updatedTransactions} transactions` : "No database"); return }
+  if ((seq === "D" || (name === "d" && key.shift))) { const r = data?.dryRunRules(); if (r) ui.setState({ dryRunReport: r, dryRunScroll: 0 }); else ui.setStatus("No database"); return }
+  const moved = listMove(key, ui.state.ruleCursor, rules.length)
+  if (moved != null) { ui.setState({ ruleCursor: moved }); return }
+  if (name === "a") { ui.openSettingsEditor("rule", null, { ...ui.state.settingsDraft, name: "", savedFilterId: data?.state.savedFilters[0]?.id ?? "", setCategoryId: null, addTagIds: [] }); return }
+  if ((name === "return" || name === "enter") && rule) { ui.openSettingsEditor("rule", rule.id, { ...ui.state.settingsDraft, name: rule.name, savedFilterId: rule.savedFilterId, setCategoryId: rule.setCategoryId, addTagIds: rule.addTagIds }); return }
+  if (name === "space" && rule) { data?.toggleSettingsRule(rule.id, !rule.enabled); return }
+  if (name === "delete" && rule) { ui.armSettingsConfirm({ kind: "rule", id: rule.id, label: rule.name }); ui.setStatus(`Press del again to delete ${rule.name}`); return }
+}
+
+function handleSettingsFilters(ui: UiStore, key: KeyEvent, data?: DataStore): void {
+  const { name } = key
+  const filters = data?.state.savedFilters ?? []; const cursor = ui.state.filterCursor; const filter = filters[cursor]
+  if (name === "escape") { ui.leaveSettings(); return }
+  const moved = listMove(key, ui.state.filterCursor, filters.length)
+  if (moved != null) { ui.setState({ filterCursor: moved }); return }
+  if (name === "a") { const id = `filter-${filters.length + 1}`; ui.openSettingsEditor("filter", null, { ...ui.state.settingsDraft, id, name: "", expr: "" }); return }
+  if ((name === "return" || name === "enter") && filter) { ui.openSettingsEditor("filter", filter.id, { ...ui.state.settingsDraft, id: filter.id, name: filter.name, expr: filter.expr }); return }
+  if (name === "delete" && filter) { ui.armSettingsConfirm({ kind: "filter", id: filter.id, label: filter.name }); ui.setStatus(`Press del again to delete ${filter.name}`); return }
+}
+
+function handleSettingsUp(ui: UiStore, key: KeyEvent, data?: DataStore): void {
+  const { name } = key
+  const accounts = data?.state.syncAccounts ?? []
+  const account = accounts[ui.state.upCursor]
+  if (name === "escape") { ui.leaveSettings(); return }
+  const moved = listMove(key, ui.state.upCursor, accounts.length)
+  if (moved != null) { ui.setState({ upCursor: moved }); return }
+  if (name === "space" && account && data) {
+    // Switching off deletes the account's transactions, so it is confirmed.
+    if (account.syncEnabled) { ui.armSettingsConfirm({ kind: "desyncAccount", id: account.id, label: account.name }); ui.setStatus(`Press del to stop syncing ${account.name}`); return }
+    try { data.setAccountSync(account.id, true); ui.setStatus(`Sync on for ${account.name} · s to sync now`) } catch (e) { reportError(ui, e) }
+    return
+  }
+  if (name === "s" && data) {
+    if (data.state.upSyncing) { ui.setStatus("Up sync already running"); return }
+    ui.setStatus("Syncing Up…")
+    data.syncUp().then(
+      (summary) => ui.setStatus(summary),
+      (e) => reportError(ui, e),
+    )
+    return
+  }
+}
+
+function handleSettingsDatabase(ui: UiStore, key: KeyEvent, data?: DataStore): void {
+  const { name } = key
+  if (name === "escape") { ui.leaveSettings(); return }
+  if (name === "i") {
+    try { const directory = data?.importDirectory() ?? process.cwd(); ui.beginImport(directory, data?.csvFiles(directory) ?? []) } catch (e) { reportError(ui, e) }
+    return
+  }
+  if (name === "p") { ui.setState({ importStage: "profile", importPath: "", importPathCaret: 0, importProfileCursor: 0, importProfileManaging: true }); return }
+  if (name === "n" && data) {
+    data.setIcons(!data.state.icons)
+    ui.setStatus(data.state.icons ? "Category icons on (needs a Nerd Font)" : "Category icons off")
+    return
+  }
+  // Approved port deviation: Database & Import owns the week toggle.
+  if (name === "w" && data) {
+    data.saveUiPrefs({ weekStart: data.state.weekStart === "monday" ? "sunday" : "monday" })
+    ui.setStatus(data.state.weekStart === "sunday" ? "Weeks start on Sunday" : "Weeks start on Monday")
+    return
+  }
+  if (name === "b" && data) {
+    data.saveUiPrefs({ xAxis: !data.state.uiPrefs.xAxis })
+    ui.setStatus(data.state.uiPrefs.xAxis ? "Charts draw an x-axis line" : "Charts without an x-axis line")
+    return
+  }
+  if (name === "c") { ui.armSettingsConfirm({ kind: "clearData", id: 0, label: "all transaction and import data" }); ui.setStatus("Press del to clear all transaction and import data"); return }
+  if (name === "x") { ui.setState({ factoryResetOpen: true, factoryResetDraft: "", factoryResetCaret: 0 }); ui.setStatus("Type RESET then enter to remove this SQLite database"); return }
+}
+
+function handleManagerTxns(ui: UiStore, key: KeyEvent, data?: DataStore): void {
+  const { name, sequence: seq } = key
   const rows = data?.scopedTransactions() ?? []
-  const accounts = data?.state.accounts ?? []
-  const clock = dataClock(data?.state.transactions ?? [])
+  if (savedFilterKeys(ui, data, key)) return
 
-  // ── Settings ───────────────────────────────────────────────────────
-  if (scope === "settings") {
-    if (name === "i") {
-      try {
-        const directory = data?.importDirectory() ?? process.cwd()
-        ui.activateSettings("database")
-        ui.beginImport(directory, data?.csvFiles(directory) ?? [])
-      } catch (e) { ui.setStatus(e instanceof Error ? e.message : String(e), true) }
-      return true
-    }
-    const sections = SETTINGS_SECTIONS
-    const current = ui.state.settingsSection
-    if (name === "h" || name === "left") { ui.setState({ settingsSection: "taxonomy", focusedSection: "set.categories" }); return true }
-    if (name === "l" || name === "right") { ui.setState({ settingsSection: "database", focusedSection: "set.database" }); return true }
-    if (name === "j" || name === "down" || name === "k" || name === "up") {
-      const delta = name === "j" || name === "down" ? 1 : -1
-      const next = sections[(sections.indexOf(current) + delta + sections.length) % sections.length]!
-      ui.setState({ settingsSection: next, focusedSection: settingsSectionFocus(next) })
-      return true
-    }
-    if (name === "return" || name === "enter") { ui.activateSettings(current); return true }
-    return true
+  // Step through the account sidebar's entries (the narrow layout hides it).
+  if (name === "a" && !key.shift && data) { stepAccount(ui, data); return }
+  if (name === "m") { ui.setState({ txnView: "merchants", merchantCursor: 0, merchantTop: 0 }); ui.setStatus("Grouped by merchant · m for rows"); return }
+  if (name === "return" || name === "enter") {
+    const row = (data?.scopedTransactions() ?? [])[ui.state.managerCursor]
+    if (row) ui.setState({ detailId: row.id, detailNotesEditing: false })
+    return
   }
-
-  if (scope === "settings.taxonomy") {
-    const list = ui.state.taxonomyList
-    const items = list === "categories" ? data?.state.categories ?? [] : data?.state.tags ?? []
-    const cursor = list === "categories" ? ui.state.categoryCursor : ui.state.tagCursor
-    if (name === "escape") { ui.leaveSettings(); return true }
-    if (name === "h" || name === "left" || name === "l" || name === "right") { ui.activateSettings("taxonomy", list === "categories" ? "tags" : "categories"); return true }
-    if (name === "j" || name === "down") { ui.moveSettingsList(list, 1, items.length); return true }
-    if (name === "k" || name === "up") { ui.moveSettingsList(list, -1, items.length); return true }
-    if (name === "g") { ui.moveSettingsList(list, -items.length, items.length); return true }
-    if (seq === "G" || (name === "g" && key.shift)) { ui.moveSettingsList(list, items.length, items.length); return true }
-    if (name === "pageup") { ui.moveSettingsList(list, -10, items.length); return true }
-    if (name === "pagedown") { ui.moveSettingsList(list, 10, items.length); return true }
-    if (name === "a") {
-      ui.openSettingsEditor(list === "categories" ? "category" : "tag", null, { ...ui.state.settingsDraft, name: "", color: list === "categories" ? "#94e2d5" : "#89b4fa", categoryId: null, notSpending: false })
-      return true
-    }
-    if ((name === "return" || name === "enter") && items[cursor]) {
-      const item = items[cursor]!
-      ui.openSettingsEditor(list === "categories" ? "category" : "tag", item.id, { ...ui.state.settingsDraft, name: item.name, color: item.color, categoryId: list === "tags" ? ("categoryId" in item ? item.categoryId : null) : null, notSpending: "notSpending" in item ? item.notSpending : false })
-      return true
-    }
-    if (name === "delete" && items[cursor]) { ui.armSettingsConfirm({ kind: list === "categories" ? "category" : "tag", id: items[cursor]!.id, label: items[cursor]!.name }); ui.setStatus(`Press del again to delete ${items[cursor]!.name}`); return true }
-    return true
+  if (name === "/" || seq === "/") {
+    ui.openFilter(data?.state.filterQuery ?? "")
+    return
   }
-
-  if (scope === "settings.rules") {
-    const rules = data?.state.rules ?? []; const cursor = ui.state.ruleCursor; const rule = rules[cursor]
-    if (name === "escape") { ui.leaveSettings(); return true }
-    if (((seq === "J") || (name === "j" && key.shift)) && rule) { data?.reorderSettingsRule(rule.id, cursor + 1); ui.setState({ ruleCursor: Math.min(rules.length - 1, cursor + 1) }); return true }
-    if (((seq === "K") || (name === "k" && key.shift)) && rule) { data?.reorderSettingsRule(rule.id, cursor - 1); ui.setState({ ruleCursor: Math.max(0, cursor - 1) }); return true }
-    if ((seq === "A" || (name === "a" && key.shift))) { const r = data?.applyRules(); ui.setStatus(r ? `Rules applied · ${r.updatedTransactions} transactions` : "No database"); return true }
-    if ((seq === "D" || (name === "d" && key.shift))) { const r = data?.dryRunRules(); if (r) ui.setState({ dryRunReport: r, dryRunScroll: 0 }); else ui.setStatus("No database"); return true }
-    if (name === "j" || name === "down") { ui.setState({ ruleCursor: Math.min(rules.length - 1, cursor + 1) }); return true }
-    if (name === "k" || name === "up") { ui.setState({ ruleCursor: Math.max(0, cursor - 1) }); return true }
-    if (name === "a") { ui.openSettingsEditor("rule", null, { ...ui.state.settingsDraft, name: "", savedFilterId: data?.state.savedFilters[0]?.id ?? "", setCategoryId: null, addTagIds: [] }); return true }
-    if ((name === "return" || name === "enter") && rule) { ui.openSettingsEditor("rule", rule.id, { ...ui.state.settingsDraft, name: rule.name, savedFilterId: rule.savedFilterId, setCategoryId: rule.setCategoryId, addTagIds: rule.addTagIds }); return true }
-    if (name === "space" && rule) { data?.toggleSettingsRule(rule.id, !rule.enabled); return true }
-    if (name === "delete" && rule) { ui.armSettingsConfirm({ kind: "rule", id: rule.id, label: rule.name }); ui.setStatus(`Press del again to delete ${rule.name}`); return true }
-    return true
+  if (name === "escape" && ui.state.drillReturn && data && !Object.keys(ui.state.selectedIds).length && !ui.state.rangeSelecting) {
+    // Back from a drill-down: the filter it replaced, the section it left.
+    const back = ui.state.drillReturn
+    if (back.filter) data.commitFilter(back.filter)
+    else data.clearFilter()
+    ui.switchTab("overview")
+    ui.setState({ focusedSection: back.focus })
+    ui.setStatus("Overview")
+    return
   }
-
-  if (scope === "settings.filters") {
-    const filters = data?.state.savedFilters ?? []; const cursor = ui.state.filterCursor; const filter = filters[cursor]
-    if (name === "escape") { ui.leaveSettings(); return true }
-    if (name === "j" || name === "down") { ui.setState({ filterCursor: Math.min(filters.length - 1, cursor + 1) }); return true }
-    if (name === "k" || name === "up") { ui.setState({ filterCursor: Math.max(0, cursor - 1) }); return true }
-    if (name === "a") { const id = `filter-${filters.length + 1}`; ui.openSettingsEditor("filter", null, { ...ui.state.settingsDraft, id, name: "", expr: "" }); return true }
-    if ((name === "return" || name === "enter") && filter) { ui.openSettingsEditor("filter", filter.id, { ...ui.state.settingsDraft, id: filter.id, name: filter.name, expr: filter.expr }); return true }
-    if (name === "delete" && filter) { ui.armSettingsConfirm({ kind: "filter", id: filter.id, label: filter.name }); ui.setStatus(`Press del again to delete ${filter.name}`); return true }
-    return true
-  }
-
-  if (scope === "settings.budgets" && data) {
-    const budgets = data.state.budgets
-    const budget = budgets[ui.state.budgetCursor]
-    if (name === "escape") { ui.leaveSettings(); return true }
-    if (name === "j" || name === "down") { ui.setState({ budgetCursor: Math.min(Math.max(0, budgets.length - 1), ui.state.budgetCursor + 1) }); return true }
-    if (name === "k" || name === "up") { ui.setState({ budgetCursor: Math.max(0, ui.state.budgetCursor - 1) }); return true }
-    if (name === "a") {
-      const taken = new Set(budgets.map((b) => scopeKey(b.scope)))
-      const free = budgetScopeOptions(data.state.accounts, data.state.categories).find((o) => !taken.has(o.key))
-      ui.openSettingsEditor("budget", null, { ...ui.state.settingsDraft, ...cycleDraft(data.state.budgetCycle), scopeKey: free?.key ?? "overall", amount: "" })
-      return true
-    }
-    if ((name === "return" || name === "enter") && budget) {
-      ui.openSettingsEditor("budget", budget.id, { ...ui.state.settingsDraft, ...cycleDraft(data.state.budgetCycle), scopeKey: scopeKey(budget.scope), amount: String(budget.amount) })
-      return true
-    }
-    if ((name === "delete" || name === "backspace") && budget) {
-      ui.armSettingsConfirm({ kind: "budget", id: budget.id, label: `the ${budgetLabel(budget, data.state.accounts, data.state.categories)} budget` })
-      ui.setStatus("Press del to delete the budget")
-      return true
-    }
-    if (name === "c") {
-      ui.openSettingsEditor("cycle", null, { ...ui.state.settingsDraft, ...cycleDraft(data.state.budgetCycle) })
-      return true
-    }
-    return true
-  }
-
-  if (scope === "settings.up") {
-    const accounts = data?.state.syncAccounts ?? []
-    const account = accounts[ui.state.upCursor]
-    if (name === "escape") { ui.leaveSettings(); return true }
-    if (name === "j" || name === "down") { ui.setState({ upCursor: Math.min(Math.max(0, accounts.length - 1), ui.state.upCursor + 1) }); return true }
-    if (name === "k" || name === "up") { ui.setState({ upCursor: Math.max(0, ui.state.upCursor - 1) }); return true }
-    if (name === "space" && account && data) {
-      // Switching off deletes the account's transactions, so it is confirmed.
-      if (account.syncEnabled) { ui.armSettingsConfirm({ kind: "desyncAccount", id: account.id, label: account.name }); ui.setStatus(`Press del to stop syncing ${account.name}`); return true }
-      try { data.setAccountSync(account.id, true); ui.setStatus(`Sync on for ${account.name} · s to sync now`) } catch (e) { ui.setStatus(e instanceof Error ? e.message : String(e), true) }
-      return true
-    }
-    if (name === "s" && data) {
-      if (data.state.upSyncing) { ui.setStatus("Up sync already running"); return true }
-      ui.setStatus("Syncing Up…")
-      data.syncUp().then(
-        (summary) => ui.setStatus(summary),
-        (e) => ui.setStatus(e instanceof Error ? e.message : String(e), true),
-      )
-      return true
-    }
-    return true
-  }
-
-  if (scope === "settings.database") {
-    if (name === "escape") { ui.leaveSettings(); return true }
-    if (name === "i") {
-      try { const directory = data?.importDirectory() ?? process.cwd(); ui.beginImport(directory, data?.csvFiles(directory) ?? []) } catch (e) { ui.setStatus(e instanceof Error ? e.message : String(e), true) }
-      return true
-    }
-    if (name === "p") { ui.setState({ importStage: "profile", importPath: "", importPathCaret: 0, importProfileCursor: 0, importProfileManaging: true }); return true }
-    if (name === "n" && data) {
-      data.setIcons(!data.state.icons)
-      ui.setStatus(data.state.icons ? "Category icons on (needs a Nerd Font)" : "Category icons off")
-      return true
-    }
-    // Approved port deviation: Database & Import owns the week toggle.
-    if (name === "w" && data) {
-      data.saveUiPrefs({ weekStart: data.state.weekStart === "monday" ? "sunday" : "monday" })
-      ui.setStatus(data.state.weekStart === "sunday" ? "Weeks start on Sunday" : "Weeks start on Monday")
-      return true
-    }
-    if (name === "b" && data) {
-      data.saveUiPrefs({ xAxis: !data.state.uiPrefs.xAxis })
-      ui.setStatus(data.state.uiPrefs.xAxis ? "Charts draw an x-axis line" : "Charts without an x-axis line")
-      return true
-    }
-    if (name === "c") { ui.armSettingsConfirm({ kind: "clearData", id: 0, label: "all transaction and import data" }); ui.setStatus("Press del to clear all transaction and import data"); return true }
-    if (name === "x") { ui.setState({ factoryResetOpen: true, factoryResetDraft: "", factoryResetCaret: 0 }); ui.setStatus("Type RESET then enter to remove this SQLite database"); return true }
-    return true
-  }
-
-  // ── Manager txns ────────────────────────────────────────────────────
-  // ── Transactions: grouped by merchant ───────────────────────────────
-  if (scope === "manager.merchants" && data) {
-    if (savedFilterKeys(ui, data, key)) return true
-
-    // The same filtered, scoped rows as the table, summarised per merchant.
-    const groups = sortMerchantGroups(groupByMerchant(data.scopedTransactions()), ui.state.merchantSort, ui.state.merchantReverse)
-    const group = groups[ui.state.merchantCursor]
-    const moveTo = (i: number) => ui.setState({ merchantCursor: Math.max(0, Math.min(groups.length - 1, i)) })
-    if (name === "a" && !key.shift) { stepAccount(ui, data); ui.setState({ merchantCursor: 0 }); return true }
-    if (name === "m") { ui.setState({ txnView: "rows" }); ui.setStatus("Transactions"); return true }
-    if (name === "j" || name === "down") { moveTo(ui.state.merchantCursor + 1); return true }
-    if (name === "k" || name === "up") { moveTo(ui.state.merchantCursor - 1); return true }
-    if (name === "g" && !key.shift) { moveTo(0); return true }
-    if ((name === "g" && key.shift) || name === "G") { moveTo(groups.length - 1); return true }
-    if (name === "pagedown") { moveTo(ui.state.merchantCursor + ui.state.managerVisible); return true }
-    if (name === "pageup") { moveTo(ui.state.merchantCursor - ui.state.managerVisible); return true }
-    if (name === "s" && !key.shift) {
-      const next = MERCHANT_SORTS[(MERCHANT_SORTS.indexOf(ui.state.merchantSort) + 1) % MERCHANT_SORTS.length]!
-      ui.setState({ merchantSort: next, merchantReverse: false, merchantCursor: 0 })
-      ui.setStatus(`Merchants by ${next}`)
-      return true
-    }
-    if ((name === "s" && key.shift) || name === "S") { ui.setState({ merchantReverse: !ui.state.merchantReverse, merchantCursor: 0 }); return true }
-    if (name === "/" || seq === "/") { ui.openFilter(data.state.filterQuery); return true }
-    if ((name === "return" || name === "enter") && group) {
-      // Drill in: narrow the filter to this merchant and show its rows.
-      const result = data.commitFilter(merchantFilter(data.state.filterQuery, group.merchant))
-      if (!result.ok) { ui.setStatus(result.err, true); return true }
-      ui.setState({ txnView: "rows" })
+  if (name === "u" || name === "escape") {
+    // Approved OpenTUI deviation from legacy: Esc mirrors u, clearing the
+    // current selection/range before an applied filter.
+    const nSel = Object.keys(ui.state.selectedIds).length
+    if (nSel > 0 || ui.state.rangeSelecting) {
+      ui.clearSelection()
+      ui.setStatus("Selection cleared")
+    } else if (data?.state.filterQuery) {
+      data.clearFilter()
       ui.jumpManagerCursor(0, data.scopedTransactions().length)
-      ui.setStatus(`${group.merchant} · ${group.count} transaction${group.count === 1 ? "" : "s"} · u to widen`)
-      return true
+      ui.setStatus("Filter cleared")
     }
-    if (name === "c" && group) { ui.openCatPicker(group.ids); return true }
-    if (name === "t" && group) { ui.openTagPicker(group.ids); return true }
-    if (name === "u" || name === "escape") {
-      if (data.state.filterQuery) { data.clearFilter(); ui.setState({ merchantCursor: 0 }); ui.setStatus("Filter cleared") }
-      else { ui.setState({ txnView: "rows" }); ui.setStatus("Transactions") }
-      return true
-    }
+    return
   }
-
-  if (scope === "manager.txns") {
-    if (savedFilterKeys(ui, data, key)) return true
-
-    // Step through the account sidebar's entries (the narrow layout hides it).
-    if (name === "a" && !key.shift && data) { stepAccount(ui, data); return true }
-    if (name === "m") { ui.setState({ txnView: "merchants", merchantCursor: 0, merchantTop: 0 }); ui.setStatus("Grouped by merchant · m for rows"); return true }
-    if (name === "return" || name === "enter") {
-      const row = (data?.scopedTransactions() ?? [])[ui.state.managerCursor]
-      if (row) ui.setState({ detailId: row.id, detailNotesEditing: false })
-      return true
+  if (name === "s" && !key.shift) {
+    const col = data?.cycleSortColumn() ?? "date"
+    ui.jumpManagerCursor(0, rows.length)
+    ui.setStatus(`Sort: ${col} ${data?.state.sortAscending ? "↑" : "↓"}`)
+    return
+  }
+  if ((name === "s" && key.shift) || name === "S") {
+    const asc = data?.toggleSortDirection() ?? false
+    ui.setStatus(`Sort: ${data?.state.sortColumn ?? "date"} ${asc ? "↑" : "↓"}`)
+    return
+  }
+  if (name === "c") {
+    if (rows.length === 0) {
+      ui.setStatus("No row to categorize", true)
+      return
     }
-    if (name === "/" || seq === "/") {
-      ui.openFilter(data?.state.filterQuery ?? "")
-      return true
+    ui.openCatPicker(ui.targetIds(rows))
+    return
+  }
+  if (name === "t") {
+    if (rows.length === 0) {
+      ui.setStatus("No row to tag", true)
+      return
     }
-    if (name === "escape" && ui.state.drillReturn && data && !Object.keys(ui.state.selectedIds).length && !ui.state.rangeSelecting) {
-      // Back from a drill-down: the filter it replaced, the section it left.
-      const back = ui.state.drillReturn
-      if (back.filter) data.commitFilter(back.filter)
-      else data.clearFilter()
-      ui.switchTab("overview")
-      ui.setState({ focusedSection: back.focus })
-      ui.setStatus("Overview")
-      return true
-    }
-    if (name === "u" || name === "escape") {
-      // Approved OpenTUI deviation from legacy: Esc mirrors u, clearing the
-      // current selection/range before an applied filter.
-      const nSel = Object.keys(ui.state.selectedIds).length
-      if (nSel > 0 || ui.state.rangeSelecting) {
-        ui.clearSelection()
-        ui.setStatus("Selection cleared")
-      } else if (data?.state.filterQuery) {
-        data.clearFilter()
-        ui.jumpManagerCursor(0, data.scopedTransactions().length)
-        ui.setStatus("Filter cleared")
+    ui.openTagPicker(ui.targetIds(rows))
+    return
+  }
+  if (name === "space" || seq === " ") {
+    const hl = ui.highlightedIds(rows)
+    const hlIds = Object.keys(hl).map(Number)
+    if (ui.state.rangeSelecting && hlIds.length > 0) {
+      const allOn = hlIds.every((id) => ui.state.selectedIds[id])
+      const next = { ...ui.state.selectedIds }
+      for (const id of hlIds) {
+        if (allOn) delete next[id]
+        else next[id] = true
       }
-      return true
-    }
-    if (name === "s" && !key.shift) {
-      const col = data?.cycleSortColumn() ?? "date"
-      ui.jumpManagerCursor(0, rows.length)
-      ui.setStatus(`Sort: ${col} ${data?.state.sortAscending ? "↑" : "↓"}`)
-      return true
-    }
-    if ((name === "s" && key.shift) || name === "S") {
-      const asc = data?.toggleSortDirection() ?? false
-      ui.setStatus(`Sort: ${data?.state.sortColumn ?? "date"} ${asc ? "↑" : "↓"}`)
-      return true
-    }
-    if (name === "c") {
-      if (rows.length === 0) {
-        ui.setStatus("No row to categorize", true)
-        return true
+      ui.setState({ selectedIds: next, rangeSelecting: false })
+      ui.setStatus(allOn ? `Deselected ${hlIds.length}` : `Selected ${hlIds.length}`)
+    } else {
+      const row = rows[ui.state.managerCursor]
+      if (row) {
+        ui.toggleSelectedId(row.id)
       }
-      ui.openCatPicker(ui.targetIds(rows))
-      return true
     }
-    if (name === "t") {
-      if (rows.length === 0) {
-        ui.setStatus("No row to tag", true)
-        return true
-      }
-      ui.openTagPicker(ui.targetIds(rows))
-      return true
-    }
-    if (name === "space" || seq === " ") {
-      const hl = ui.highlightedIds(rows)
-      const hlIds = Object.keys(hl).map(Number)
-      if (ui.state.rangeSelecting && hlIds.length > 0) {
-        const allOn = hlIds.every((id) => ui.state.selectedIds[id])
-        const next = { ...ui.state.selectedIds }
-        for (const id of hlIds) {
-          if (allOn) delete next[id]
-          else next[id] = true
-        }
-        ui.setState({ selectedIds: next, rangeSelecting: false })
-        ui.setStatus(allOn ? `Deselected ${hlIds.length}` : `Selected ${hlIds.length}`)
-      } else {
-        const row = rows[ui.state.managerCursor]
-        if (row) {
-          ui.toggleSelectedId(row.id)
-        }
-      }
-      return true
-    }
-    if (name === "j" || name === "down") {
-      moveTxnCursor(ui, data, 1, key.shift)
-      return true
-    }
-    if (name === "k" || name === "up") {
-      moveTxnCursor(ui, data, -1, key.shift)
-      return true
-    }
-    if (name === "g" && !key.shift) {
-      ui.jumpManagerCursor(0, rows.length)
+    return
+  }
+  const moved = listMove(key, ui.state.managerCursor, rows.length)
+  if (moved != null) {
+    if (name === "g" || seq === "G") {
+      ui.jumpManagerCursor(moved, rows.length)
       ui.setRangeFromMove(0, 0, false)
-      ui.setStatus("Top")
-      return true
-    }
-    if ((name === "g" && key.shift) || name === "G") {
-      ui.jumpManagerCursor(rows.length - 1, rows.length)
-      ui.setRangeFromMove(0, 0, false)
-      ui.setStatus("Bottom")
-      return true
-    }
-    if (name === "pageup") {
-      moveTxnCursor(ui, data, -ui.state.managerVisible, key.shift)
-      return true
-    }
-    if (name === "pagedown") {
-      moveTxnCursor(ui, data, ui.state.managerVisible, key.shift)
-      return true
-    }
+      ui.setStatus(key.shift || seq === "G" ? "Bottom" : "Top")
+    } else moveTxnCursor(ui, data, moved - ui.state.managerCursor, key.shift)
+    return
   }
-
-  // ── Manager accounts ────────────────────────────────────────────────
-  // The sidebar selection drives the table directly (no separate apply).
-  if (scope === "manager.accounts") {
-    const entries = selectableEntries(accounts)
-    const select = (index: number) => {
-      const entry = entries[index]
-      if (!entry || !data) return
-      ui.setState({ accountCursor: index, managerCursor: 0, managerTop: 0, selectedIds: {}, rangeSelecting: false })
-      data.setAccountSelection(entry.selection)
-    }
-    if (name === "j" || name === "down") { select(Math.min(entries.length - 1, ui.state.accountCursor + 1)); return true }
-    if (name === "k" || name === "up") { select(Math.max(0, ui.state.accountCursor - 1)); return true }
-    if (name === "return" || name === "enter" || name === "l" || name === "right") { ui.setState({ focusedSection: "mgr.transactions" }); return true }
-    const selection = data?.state.accountSelection
-    if ((name === "d" || name === "delete") && typeof selection === "number") { ui.setState({ accountActionId: selection }); ui.setStatus("Account data · c clear transactions · x remove account · esc cancel"); return true }
-    return true
+  if (name === "pageup") {
+    moveTxnCursor(ui, data, -ui.state.managerVisible, key.shift)
+    return
   }
+  if (name === "pagedown") {
+    moveTxnCursor(ui, data, ui.state.managerVisible, key.shift)
+    return
+  }
+}
 
-  // ── Overview: date range chips ──────────────────────────────────────
+function handleManagerAccounts(ui: UiStore, key: KeyEvent, data?: DataStore): void {
+  const { name } = key
+  const accounts = data?.state.accounts ?? []
+  const entries = selectableEntries(accounts)
+  const select = (index: number) => {
+    const entry = entries[index]
+    if (!entry || !data) return
+    ui.setState({ accountCursor: index, managerCursor: 0, managerTop: 0, selectedIds: {}, rangeSelecting: false })
+    data.setAccountSelection(entry.selection)
+  }
+  const moved = listMove(key, ui.state.accountCursor, entries.length)
+  if (moved != null) { select(moved); return }
+  if (name === "return" || name === "enter" || name === "l" || name === "right") { ui.setState({ focusedSection: "mgr.transactions" }); return }
+  const selection = data?.state.accountSelection
+  if ((name === "d" || name === "delete") && typeof selection === "number") { ui.setState({ accountActionId: selection }); ui.setStatus("Account data · c clear transactions · x remove account · esc cancel"); return }
+}
+
+function handleSettingsBudgets(ui: UiStore, key: KeyEvent, data?: DataStore): void {
+  const { name } = key
+  if (!data) return
+  const budgets = data.state.budgets
+  const budget = budgets[ui.state.budgetCursor]
+  if (name === "escape") { ui.leaveSettings(); return }
+  const moved = listMove(key, ui.state.budgetCursor, budgets.length)
+  if (moved != null) { ui.setState({ budgetCursor: moved }); return }
+  if (name === "a") {
+    const taken = new Set(budgets.map((b) => scopeKey(b.scope)))
+    const free = budgetScopeOptions(data.state.accounts, data.state.categories).find((o) => !taken.has(o.key))
+    ui.openSettingsEditor("budget", null, { ...ui.state.settingsDraft, ...cycleDraft(data.state.budgetCycle), scopeKey: free?.key ?? "overall", amount: "" })
+    return
+  }
+  if ((name === "return" || name === "enter") && budget) {
+    ui.openSettingsEditor("budget", budget.id, { ...ui.state.settingsDraft, ...cycleDraft(data.state.budgetCycle), scopeKey: scopeKey(budget.scope), amount: String(budget.amount) })
+    return
+  }
+  if ((name === "delete" || name === "backspace") && budget) {
+    ui.armSettingsConfirm({ kind: "budget", id: budget.id, label: `the ${budgetLabel(budget, data.state.accounts, data.state.categories)} budget` })
+    ui.setStatus("Press del to delete the budget")
+    return
+  }
+  if (name === "c") {
+    ui.openSettingsEditor("cycle", null, { ...ui.state.settingsDraft, ...cycleDraft(data.state.budgetCycle) })
+    return
+  }
+}
+
+function handleManagerMerchants(ui: UiStore, key: KeyEvent, data?: DataStore): void {
+  const { name, sequence: seq } = key
+  if (!data) return
+  if (savedFilterKeys(ui, data, key)) return
+
+  // The same filtered, scoped rows as the table, summarised per merchant.
+  const groups = sortMerchantGroups(groupByMerchant(data.scopedTransactions()), ui.state.merchantSort, ui.state.merchantReverse)
+  const group = groups[ui.state.merchantCursor]
+  const moveTo = (i: number) => ui.setState({ merchantCursor: Math.max(0, Math.min(groups.length - 1, i)) })
+  if (name === "a" && !key.shift) { stepAccount(ui, data); ui.setState({ merchantCursor: 0 }); return }
+  if (name === "m") { ui.setState({ txnView: "rows" }); ui.setStatus("Transactions"); return }
+  const moved = listMove(key, ui.state.merchantCursor, groups.length)
+  if (moved != null) { moveTo(moved); return }
+  if (name === "pagedown") { moveTo(ui.state.merchantCursor + ui.state.managerVisible); return }
+  if (name === "pageup") { moveTo(ui.state.merchantCursor - ui.state.managerVisible); return }
+  if (name === "s" && !key.shift) {
+    const next = MERCHANT_SORTS[(MERCHANT_SORTS.indexOf(ui.state.merchantSort) + 1) % MERCHANT_SORTS.length]!
+    ui.setState({ merchantSort: next, merchantReverse: false, merchantCursor: 0 })
+    ui.setStatus(`Merchants by ${next}`)
+    return
+  }
+  if ((name === "s" && key.shift) || name === "S") { ui.setState({ merchantReverse: !ui.state.merchantReverse, merchantCursor: 0 }); return }
+  if (name === "/" || seq === "/") { ui.openFilter(data.state.filterQuery); return }
+  if ((name === "return" || name === "enter") && group) {
+    // Drill in: narrow the filter to this merchant and show its rows.
+    const result = data.commitFilter(merchantFilter(data.state.filterQuery, group.merchant))
+    if (!result.ok) { ui.setStatus(result.err, true); return }
+    ui.setState({ txnView: "rows" })
+    ui.jumpManagerCursor(0, data.scopedTransactions().length)
+    ui.setStatus(`${group.merchant} · ${group.count} transaction${group.count === 1 ? "" : "s"} · u to widen`)
+    return
+  }
+  if (name === "c" && group) { ui.openCatPicker(group.ids); return }
+  if (name === "t" && group) { ui.openTagPicker(group.ids); return }
+  if (name === "u" || name === "escape") {
+    if (data.state.filterQuery) { data.clearFilter(); ui.setState({ merchantCursor: 0 }); ui.setStatus("Filter cleared") }
+    else { ui.setState({ txnView: "rows" }); ui.setStatus("Transactions") }
+    return
+  }
+}
+
+function handleOverview(ui: UiStore, key: KeyEvent, data?: DataStore): void {
+  const { name, sequence: seq } = key
+  const scope = ui.activeScope()
+  const clock = dataClock(data?.state.transactions ?? [])
   const cycle = data?.state.budgetCycle
-  if (scope === "overview.range") {
-    if (name === "h" || name === "left") {
-      const n = chipCount()
-      ui.setDashChipCursor((ui.state.dashChipCursor - 1 + n) % n)
-      return true
-    }
-    if (name === "l" || name === "right") {
-      const n = chipCount()
-      ui.setDashChipCursor((ui.state.dashChipCursor + 1) % n)
-      return true
-    }
-    if ((name === "return" || name === "enter") && ui.state.dashChipCursor === CUSTOM_CHIP) {
-      // Custom asks for dates, starting from the last custom range or the
-      // range on screen.
-      const from = ui.state.timeframe.custom ?? timeframeBounds(ui.state.timeframe, clock, cycle)
-      ui.setState({ customEdit: { start: textField(from.start), end: textField(from.end), field: 0, error: "" } })
-      return true
-    }
-    if (name === "return" || name === "enter") {
-      const tf = applyChip(ui.state.timeframe, ui.state.dashChipCursor, clock, cycle)
-      ui.setTimeframe(tf)
-      const label = tf.family === "lookback" ? tf.lookback : PERIOD_LABEL[tf.period]
-      ui.setStatus(`${tf.family === "lookback" ? "Timeframe" : "Period"}: ${label} · ${timeframeBounds(tf, clock, cycle).label}`)
-      return true
-    }
+  // h/l (or ,/.) step the focused chart pane's views, the top pane when
+  // neither is focused; H/L always step the bottom pane.
+  const back = seq === "H" || ((name === "h" || name === "left" || seq === ",") && scope === "overview")
+  const forward = seq === "L" || ((name === "l" || name === "right" || seq === ".") && scope === "overview")
+  if (back || forward) {
+    const pane = seq === "H" || seq === "L" || key.shift || ui.state.focusedSection === "ov.chart2" ? 1 : 0
+    const n = CHART_VIEWS.length
+    const views: [number, number] = [...ui.state.chartViews]
+    views[pane] = (views[pane] + (back ? -1 : 1) + n) % n
+    ui.setState({ chartViews: views })
+    return
   }
-
-  // ── Overview ────────────────────────────────────────────────────────
-  if (scope === "overview" || scope === "overview.range") {
-    // h/l (or ,/.) step the focused chart pane's views, the top pane when
-    // neither is focused; H/L always step the bottom pane.
-    const back = seq === "H" || ((name === "h" || name === "left" || seq === ",") && scope === "overview")
-    const forward = seq === "L" || ((name === "l" || name === "right" || seq === ".") && scope === "overview")
-    if (back || forward) {
-      const pane = seq === "H" || seq === "L" || key.shift || ui.state.focusedSection === "ov.chart2" ? 1 : 0
-      const n = CHART_VIEWS.length
-      const views: [number, number] = [...ui.state.chartViews]
-      views[pane] = (views[pane] + (back ? -1 : 1) + n) % n
-      ui.setState({ chartViews: views })
-      return true
-    }
-    // d / D: the next or previous date range chip, applied at once (no need
-    // to focus the Date Range first). Custom joins once a range exists.
-    if (name === "d" && !key.ctrl && !key.meta) {
-      const index = stepChip(ui.state.timeframe, key.shift || seq === "D" ? -1 : 1)
-      const tf = applyChip(ui.state.timeframe, index, clock, cycle)
-      ui.setTimeframe(tf)
-      ui.setDashChipCursor(index)
-      ui.setStatus(`${chipLabel(index)} · ${timeframeBounds(tf, clock, cycle).label}`)
-      return true
-    }
-    // / searches: the Transactions filter, opened from here (the Overview
-    // itself is not filtered).
-    if ((name === "/" || seq === "/") && scope === "overview") {
-      ui.switchTab("manager")
-      ui.openFilter(data?.state.filterQuery ?? "")
-      return true
-    }
-    // Which spending account the period covers: all, or one of them.
-    if (name === "a" && data) {
-      const choices: AccountSelection[] = ["all", ...data.state.accounts.filter((a) => accountRole(a) === "spending").map((a) => a.id)]
-      const at = choices.indexOf(data.state.accountSelection)
-      const next = choices[(at + 1) % choices.length]!
-      data.setAccountSelection(next)
-      ui.setStatus(`Overview · ${spendingScope(data.state.accounts, next).label}`)
-      return true
-    }
-    if (name === "[" || seq === "[" || name === "]" || seq === "]") {
-      const delta = name === "[" || seq === "[" ? -1 : 1
-      if (ui.state.timeframe.family === "period") {
-        const tf = stepPeriod(ui.state.timeframe, delta, cycle)
-        ui.setTimeframe(tf)
-        ui.setStatus(`${PERIOD_LABEL[tf.period]} · ${timeframeBounds(tf, clock, cycle).label}`)
-      } else if (ui.state.timeframe.family === "custom") {
-        const tf = stepCustom(ui.state.timeframe, delta)
-        ui.setTimeframe(tf)
-        ui.setStatus(`Custom · ${timeframeBounds(tf, clock, cycle).label}`)
-      } else {
-        ui.setStatus(`${ui.state.timeframe.lookback} always ends today · [ ] step Cycle, Month… and Custom ranges`)
-      }
-      return true
-    }
-    // Drill-down (Go app): enter opens Transactions filtered to the focused
-    // category line, or to all the range's spending from a chart; esc there
-    // comes back. With Categories focused, j/k move over every line.
-    const focus = ui.state.focusedSection
-    if (data && focus === "ov.categories") {
-      const lines = allCategoryLines(overviewRange(data.state, ui.state))
-      const moveTo = (i: number) => ui.setState({ overviewCategoryCursor: Math.max(0, Math.min(lines.length - 1, i)) })
-      if (name === "j" || name === "down") { moveTo(ui.state.overviewCategoryCursor + 1); return true }
-      if (name === "k" || name === "up") { moveTo(ui.state.overviewCategoryCursor - 1); return true }
-      if (name === "g" && !key.shift) { moveTo(0); return true }
-      if ((name === "g" && key.shift) || name === "G") { moveTo(lines.length - 1); return true }
-      const line = lines[Math.min(ui.state.overviewCategoryCursor, lines.length - 1)]
-      if ((name === "return" || name === "enter") && line) { drillDown(ui, data, line); return true }
-    }
-    if (data && (focus === "ov.chart" || focus === "ov.chart2") && (name === "return" || name === "enter")) { drillDown(ui, data); return true }
-    if (name === "0") {
-      // The same kind of range, now (this month, this quarter…).
-      const tf = timeframeNow(ui.state.timeframe, new Date(), cycle)
-      ui.setTimeframe(tf)
-      ui.setStatus(`Now · ${timeframeBounds(tf, clock, cycle).label}`)
-      return true
-    }
-    if (name === "z" && data) {
-      // Balance charts: fit the balances, or run the axis from $0.
-      data.saveUiPrefs({ zeroAxis: !data.state.uiPrefs.zeroAxis })
-      ui.setStatus(data.state.uiPrefs.zeroAxis ? "Balance charts from $0" : "Balance charts fit their balances")
-      return true
-    }
-    if (name === "c" && !key.ctrl && !key.meta) {
-      // Home: the current budget cycle, whatever the range was.
-      const tf = applyChip({ ...ui.state.timeframe, family: "period", period: "cycle" }, LOOKBACKS.length, new Date(), cycle)
-      ui.setTimeframe(tf)
-      ui.setDashChipCursor(activeChipIndex(tf))
-      ui.setStatus(`This cycle · ${timeframeBounds(tf, clock, cycle).label}`)
-      return true
-    }
+  // d / D: the next or previous date range chip, applied at once (no need
+  // to focus the Date Range first). Custom joins once a range exists.
+  if (name === "d" && !key.ctrl && !key.meta) {
+    const index = stepChip(ui.state.timeframe, key.shift || seq === "D" ? -1 : 1)
+    const tf = applyChip(ui.state.timeframe, index, clock, cycle)
+    ui.setTimeframe(tf)
+    ui.setDashChipCursor(index)
+    ui.setStatus(`${chipLabel(index)} · ${timeframeBounds(tf, clock, cycle).label}`)
+    return
   }
-
-  if (name === "escape" && ui.state.focusedSection !== "none") {
-    ui.clearFocus()
-    return true
+  // / searches: the Transactions filter, opened from here (the Overview
+  // itself is not filtered).
+  if ((name === "/" || seq === "/") && scope === "overview") {
+    ui.switchTab("manager")
+    ui.openFilter(data?.state.filterQuery ?? "")
+    return
   }
+  // Which spending account the period covers: all, or one of them.
+  if (name === "a" && data) {
+    const choices: AccountSelection[] = ["all", ...data.state.accounts.filter((a) => accountRole(a) === "spending").map((a) => a.id)]
+    const at = choices.indexOf(data.state.accountSelection)
+    const next = choices[(at + 1) % choices.length]!
+    data.setAccountSelection(next)
+    ui.setStatus(`Overview · ${spendingScope(data.state.accounts, next).label}`)
+    return
+  }
+  if (name === "[" || seq === "[" || name === "]" || seq === "]") {
+    const delta = name === "[" || seq === "[" ? -1 : 1
+    if (ui.state.timeframe.family === "period") {
+      const tf = stepPeriod(ui.state.timeframe, delta, cycle)
+      ui.setTimeframe(tf)
+      ui.setStatus(`${PERIOD_LABEL[tf.period]} · ${timeframeBounds(tf, clock, cycle).label}`)
+    } else if (ui.state.timeframe.family === "custom") {
+      const tf = stepCustom(ui.state.timeframe, delta)
+      ui.setTimeframe(tf)
+      ui.setStatus(`Custom · ${timeframeBounds(tf, clock, cycle).label}`)
+    } else {
+      ui.setStatus(`${ui.state.timeframe.lookback} always ends today · [ ] step Cycle, Month… and Custom ranges`)
+    }
+    return
+  }
+  // Drill-down (Go app): enter opens Transactions filtered to the focused
+  // category line, or to all the range's spending from a chart; esc there
+  // comes back. With Categories focused, j/k move over every line.
+  const focus = ui.state.focusedSection
+  if (data && focus === "ov.categories") {
+    const lines = allCategoryLines(overviewRange(data.state, ui.state))
+    const moveTo = (i: number) => ui.setState({ overviewCategoryCursor: Math.max(0, Math.min(lines.length - 1, i)) })
+    const moved = listMove(key, ui.state.overviewCategoryCursor, lines.length)
+    if (moved != null) { moveTo(moved); return }
+    const line = lines[Math.min(ui.state.overviewCategoryCursor, lines.length - 1)]
+    if ((name === "return" || name === "enter") && line) { drillDown(ui, data, line); return }
+  }
+  if (data && (focus === "ov.chart" || focus === "ov.chart2") && (name === "return" || name === "enter")) { drillDown(ui, data); return }
+  if (name === "0") {
+    // The same kind of range, now (this month, this quarter…).
+    const tf = timeframeNow(ui.state.timeframe, new Date(), cycle)
+    ui.setTimeframe(tf)
+    ui.setStatus(`Now · ${timeframeBounds(tf, clock, cycle).label}`)
+    return
+  }
+  if (name === "z" && data) {
+    // Balance charts: fit the balances, or run the axis from $0.
+    data.saveUiPrefs({ zeroAxis: !data.state.uiPrefs.zeroAxis })
+    ui.setStatus(data.state.uiPrefs.zeroAxis ? "Balance charts from $0" : "Balance charts fit their balances")
+    return
+  }
+  if (name === "c" && !key.ctrl && !key.meta) {
+    // Home: the current budget cycle, whatever the range was.
+    const tf = applyChip({ ...ui.state.timeframe, family: "period", period: "cycle" }, LOOKBACKS.length, new Date(), cycle)
+    ui.setTimeframe(tf)
+    ui.setDashChipCursor(activeChipIndex(tf))
+    ui.setStatus(`This cycle · ${timeframeBounds(tf, clock, cycle).label}`)
+    return
+  }
+  if (name === "escape" && ui.state.focusedSection !== "none") ui.clearFocus()
+}
 
-  return false
+function handleOverviewRange(ui: UiStore, key: KeyEvent, data?: DataStore): void {
+  const { name } = key
+  const clock = dataClock(data?.state.transactions ?? [])
+  const cycle = data?.state.budgetCycle
+  if (name === "h" || name === "left") {
+    const n = chipCount()
+    ui.setDashChipCursor((ui.state.dashChipCursor - 1 + n) % n)
+    return
+  }
+  if (name === "l" || name === "right") {
+    const n = chipCount()
+    ui.setDashChipCursor((ui.state.dashChipCursor + 1) % n)
+    return
+  }
+  if ((name === "return" || name === "enter") && ui.state.dashChipCursor === CUSTOM_CHIP) {
+    // Custom asks for dates, starting from the last custom range or the
+    // range on screen.
+    const from = ui.state.timeframe.custom ?? timeframeBounds(ui.state.timeframe, clock, cycle)
+    ui.setState({ customEdit: { start: textField(from.start), end: textField(from.end), field: 0, error: "" } })
+    return
+  }
+  if (name === "return" || name === "enter") {
+    const tf = applyChip(ui.state.timeframe, ui.state.dashChipCursor, clock, cycle)
+    ui.setTimeframe(tf)
+    const label = tf.family === "lookback" ? tf.lookback : PERIOD_LABEL[tf.period]
+    ui.setStatus(`${tf.family === "lookback" ? "Timeframe" : "Period"}: ${label} · ${timeframeBounds(tf, clock, cycle).label}`)
+    return
+  }
+  handleOverview(ui, key, data)
 }
 
 
@@ -1149,44 +1097,220 @@ function drillDown(ui: UiStore, data: DataStore, line?: CategoryLine) {
   ui.setStatus(`${line?.label ?? "Spending"} · ${range.bounds.label} · ${n} transaction${n === 1 ? "" : "s"} · esc back`)
 }
 
-export function footerHints(scope: ScopeId, state?: Pick<UiState, "focusedSection" | "drillReturn" | "chartViews">): { key: string; desc: string }[] {
-  switch (scope) {
-    case "filterPicker":
-      return [{ key: "↑/↓", desc: "move" }, { key: "enter", desc: "apply" }, { key: "esc", desc: "close" }, { key: "type", desc: "filter" }]
-    case "dryRun":
-      return [{ key: "j/k", desc: "scroll" }, { key: "esc", desc: "close" }]
-    case "overview.custom":
-      return [
-        { key: "tab", desc: "field" },
-        { key: "enter", desc: "apply" },
-        { key: "esc", desc: "cancel" },
-      ]
-    case "jump":
-      return [
+type HintState = Pick<UiState, "focusedSection" | "drillReturn" | "chartViews">
+type ScopeEntry = {
+  handle: (ui: UiStore, key: KeyEvent, data?: DataStore) => void
+  hints: (state?: HintState) => { key: string; desc: string }[]
+  quits: boolean
+}
+
+const scopes: Record<ScopeId, ScopeEntry> = {
+  "filterPicker": {
+    handle: handleFilterPicker,
+    quits: false,
+    hints: () => [{ key: "j/k", desc: "move" }, { key: "enter", desc: "apply" }, { key: "esc", desc: "close" }, { key: "type", desc: "filter" }],
+  },
+  "dryRun": {
+    handle: handleDryRun,
+    quits: false,
+    hints: () => [{ key: "j/k", desc: "scroll" }, { key: "esc", desc: "close" }],
+  },
+  "jump": {
+    handle: handleJump,
+    quits: false,
+    hints: () => [
         { key: "letter", desc: "jump" },
         { key: "esc", desc: "cancel" },
-      ]
-    case "filter":
-      return [
-        { key: "enter", desc: "apply" },
-        { key: "esc", desc: "clear" },
-        { key: "type", desc: "expr" },
-      ]
-    case "catPicker":
-      return [
-        { key: "j/k", desc: "move" },
-        { key: "enter", desc: "apply" },
-        { key: "esc", desc: "cancel" },
-        { key: "type", desc: "filter" },
-      ]
-    case "tagPicker":
-      return [
+      ],
+  },
+  "tagPicker": {
+    handle: handleTagPicker,
+    quits: false,
+    hints: () => [
         { key: "j/k", desc: "move" },
         { key: "space", desc: "stage" },
         { key: "enter", desc: "apply" },
         { key: "esc", desc: "cancel" },
-      ]
-    case "overview":
+      ],
+  },
+  "catPicker": {
+    handle: handleCatPicker,
+    quits: false,
+    hints: () => [
+        { key: "j/k", desc: "move" },
+        { key: "enter", desc: "apply" },
+        { key: "esc", desc: "cancel" },
+        { key: "type", desc: "filter" },
+      ],
+  },
+  "filter": {
+    handle: handleFilter,
+    quits: false,
+    hints: () => [
+        { key: "enter", desc: "apply" },
+        { key: "esc", desc: "clear" },
+        { key: "type", desc: "expr" },
+      ],
+  },
+  "manager.detail": {
+    handle: handleManagerDetail,
+    quits: false,
+    hints: () => [{ key: "j/k", desc: "prev/next" }, { key: "c", desc: "category" }, { key: "t", desc: "tags" }, { key: "n", desc: "notes" }, { key: "esc", desc: "close" }],
+  },
+  "overview.custom": {
+    handle: handleOverviewCustom,
+    quits: false,
+    hints: () => [
+        { key: "tab", desc: "field" },
+        { key: "enter", desc: "apply" },
+        { key: "esc", desc: "cancel" },
+      ],
+  },
+  "settings.factoryReset": {
+    handle: handleSettingsFactoryReset,
+    quits: false,
+    hints: () => [{ key: "type RESET", desc: "confirm" }, { key: "enter", desc: "erase DB" }, { key: "esc", desc: "cancel" }],
+  },
+  "manager.accountAction": {
+    handle: handleManagerAccountAction,
+    quits: false,
+    hints: () => [{ key: "c", desc: "clear txns" }, { key: "x", desc: "remove account" }, { key: "esc", desc: "cancel" }],
+  },
+  "settings.confirm": {
+    handle: handleSettingsConfirm,
+    quits: false,
+    hints: () => [{ key: "del", desc: "confirm" }, { key: "esc", desc: "cancel" }],
+  },
+  "settings.editor": {
+    handle: handleSettingsEditor,
+    quits: false,
+    hints: () => [{ key: "↑/↓", desc: "field" }, { key: "←/→", desc: "change" }, { key: "enter", desc: "save / choose" }, { key: "esc", desc: "cancel" }],
+  },
+  "settings.import.files": {
+    handle: handleSettingsImportFiles,
+    quits: false,
+    hints: () => [{ key: "j/k", desc: "file" }, { key: "enter", desc: "select" }, { key: "p", desc: "path" }, { key: "esc", desc: "cancel" }],
+  },
+  "settings.import.path": {
+    handle: handleSettingsImportPath,
+    quits: false,
+    hints: () => [{ key: "enter", desc: "open" }, { key: "esc", desc: "back" }, { key: "type", desc: "path" }],
+  },
+  "settings.import.profile": {
+    handle: handleSettingsImportProfile,
+    quits: false,
+    hints: () => [{ key: "j/k", desc: "profile" }, { key: "enter", desc: "select" }, { key: "a/e", desc: "new/edit" }, { key: "del", desc: "delete" }, { key: "esc", desc: "back" }],
+  },
+  "settings.import.profileEditor": {
+    handle: handleSettingsImportProfileEditor,
+    quits: false,
+    hints: () => [{ key: "tab", desc: "field" }, { key: "h/l", desc: "choice" }, { key: "enter", desc: "save" }, { key: "esc", desc: "back" }],
+  },
+  "settings.import.preview": {
+    handle: handleSettingsImportPreview,
+    quits: false,
+    hints: () => [{ key: "s", desc: "skip dupes" }, { key: "a", desc: "force import" }, { key: "p", desc: "all/dupes" }, { key: "r", desc: "rules" }, { key: "esc", desc: "cancel" }],
+  },
+  "settings": {
+    handle: handleSettings,
+    quits: true,
+    hints: () => [
+        { key: "j/k", desc: "section" },
+        { key: "h/l", desc: "column" },
+        { key: "enter", desc: "activate" },
+        { key: "v", desc: "jump" },
+        { key: "1-3", desc: "tab" },
+      ],
+  },
+  "settings.taxonomy": {
+    handle: handleSettingsTaxonomy,
+    quits: true,
+    hints: () => [
+        { key: "h/l", desc: "list" }, { key: "j/k", desc: "move" },
+        { key: "a", desc: "add" }, { key: "enter", desc: "edit" },
+        { key: "del", desc: "delete" }, { key: "esc", desc: "done" },
+      ],
+  },
+  "settings.rules": {
+    handle: handleSettingsRules,
+    quits: true,
+    hints: () => [
+        { key: "j/k", desc: "move" }, { key: "space", desc: "toggle" },
+        { key: "a", desc: "add" }, { key: "S-j/k", desc: "reorder" },
+        { key: "S-a", desc: "apply" }, { key: "S-d", desc: "dry run" }, { key: "esc", desc: "done" },
+      ],
+  },
+  "settings.filters": {
+    handle: handleSettingsFilters,
+    quits: true,
+    hints: () => [{ key: "j/k", desc: "move" }, { key: "a", desc: "add" }, { key: "enter", desc: "edit" }, { key: "del", desc: "delete" }, { key: "esc", desc: "done" }],
+  },
+  "settings.up": {
+    handle: handleSettingsUp,
+    quits: true,
+    hints: () => [{ key: "j/k", desc: "move" }, { key: "space", desc: "sync on/off" }, { key: "s", desc: "sync now" }, { key: "esc", desc: "done" }],
+  },
+  "settings.database": {
+    handle: handleSettingsDatabase,
+    quits: true,
+    hints: () => [{ key: "i", desc: "import" }, { key: "p", desc: "profiles" }, { key: "n", desc: "icons" }, { key: "w", desc: "week start" }, { key: "b", desc: "x-axis line" }, { key: "c", desc: "clear data" }, { key: "x", desc: "reset DB" }, { key: "esc", desc: "done" }],
+  },
+  "manager.txns": {
+    handle: handleManagerTxns,
+    quits: true,
+    hints: (state) => [
+      { key: "ctrl+s", desc: "save filter" },
+      { key: "ctrl+l", desc: "saved filters" },
+      { key: "enter", desc: "detail" },
+      { key: "j/k", desc: "move" },
+      { key: "m", desc: "merchants" },
+      { key: "a", desc: "account" },
+      { key: "S-j/k", desc: "range" },
+      { key: "space", desc: "select" },
+      { key: "c", desc: "cat" },
+      { key: "t", desc: "tag" },
+      { key: "s", desc: "sort" },
+      { key: "S-s", desc: "reverse" },
+      ...(state?.drillReturn ? [{ key: "esc", desc: "back" }, { key: "u", desc: "clear" }] : [{ key: "esc/u", desc: "clear" }]),
+      { key: "/", desc: "filter" },
+      { key: "v", desc: "jump" },
+    ],
+  },
+  "manager.accounts": {
+    handle: handleManagerAccounts,
+    quits: true,
+    hints: () => [
+        { key: "j/k", desc: "account" },
+        { key: "enter", desc: "transactions" },
+        { key: "d", desc: "data actions" },
+        { key: "v", desc: "jump" },
+      ],
+  },
+  "settings.budgets": {
+    handle: handleSettingsBudgets,
+    quits: true,
+    hints: () => [{ key: "j/k", desc: "move" }, { key: "a", desc: "add" }, { key: "enter", desc: "edit" }, { key: "del", desc: "delete" }, { key: "c", desc: "cycle" }, { key: "esc", desc: "done" }],
+  },
+  "manager.merchants": {
+    handle: handleManagerMerchants,
+    quits: true,
+    hints: () => [
+        { key: "ctrl+s", desc: "save filter" },
+        { key: "ctrl+l", desc: "saved filters" },
+        { key: "enter", desc: "its transactions" },
+        { key: "j/k", desc: "move" },
+        { key: "c", desc: "category" },
+        { key: "t", desc: "tags" },
+        { key: "s", desc: "sort" },
+        { key: "/", desc: "filter" },
+        { key: "m", desc: "rows" },
+        { key: "a", desc: "account" },
+      ],
+  },
+  "overview": {
+    handle: handleOverview,
+    quits: true,
+    hints: (state) => {
       if (state?.focusedSection === "ov.categories") return [
         { key: "j/k", desc: "move" },
         { key: "enter", desc: "transactions" },
@@ -1207,107 +1331,31 @@ export function footerHints(scope: ScopeId, state?: Pick<UiState, "focusedSectio
         { key: "v", desc: "jump" },
         { key: "1-3", desc: "tab" },
       ]
-    case "overview.range":
-      return [
+    },
+  },
+  "overview.range": {
+    handle: handleOverviewRange,
+    quits: true,
+    hints: () => [
         { key: "h/l", desc: "chip" },
         { key: "enter", desc: "apply" },
         { key: "[ ]", desc: "prev/next range" },
         { key: "esc", desc: "done" },
-      ]
-    case "manager.detail":
-      return [{ key: "j/k", desc: "prev/next" }, { key: "c", desc: "category" }, { key: "t", desc: "tags" }, { key: "n", desc: "notes" }, { key: "esc", desc: "close" }]
-    case "manager.detail.notes":
-      return [{ key: "type", desc: "notes" }, { key: "enter", desc: "save" }, { key: "esc", desc: "cancel" }]
-    case "manager.merchants":
-      return [
-        { key: "ctrl+s", desc: "save filter" },
-        { key: "ctrl+l", desc: "saved filters" },
-        { key: "enter", desc: "its transactions" },
-        { key: "j/k", desc: "move" },
-        { key: "c", desc: "category" },
-        { key: "t", desc: "tags" },
-        { key: "s", desc: "sort" },
-        { key: "/", desc: "filter" },
-        { key: "m", desc: "rows" },
-        { key: "a", desc: "account" },
-      ]
-    case "manager.txns":
-      return [
-        { key: "ctrl+s", desc: "save filter" },
-        { key: "ctrl+l", desc: "saved filters" },
-        { key: "enter", desc: "detail" },
-        { key: "j/k", desc: "move" },
-        { key: "m", desc: "merchants" },
-        { key: "a", desc: "account" },
-        { key: "S-j/k", desc: "range" },
-        { key: "space", desc: "select" },
-        { key: "c", desc: "cat" },
-        { key: "t", desc: "tag" },
-        { key: "s", desc: "sort" },
-        { key: "S-s", desc: "reverse" },
-        ...(state?.drillReturn ? [{ key: "esc", desc: "back" }, { key: "u", desc: "clear" }] : [{ key: "esc/u", desc: "clear" }]),
-        { key: "/", desc: "filter" },
-        { key: "v", desc: "jump" },
-      ]
-    case "manager.accounts":
-      return [
-        { key: "j/k", desc: "account" },
-        { key: "enter", desc: "transactions" },
-        { key: "d", desc: "data actions" },
-        { key: "v", desc: "jump" },
-      ]
-    case "settings":
-      return [
-        { key: "j/k", desc: "section" },
-        { key: "h/l", desc: "column" },
-        { key: "enter", desc: "activate" },
-        { key: "v", desc: "jump" },
-        { key: "1-3", desc: "tab" },
-      ]
-    case "settings.taxonomy":
-      return [
-        { key: "h/l", desc: "list" }, { key: "j/k", desc: "move" },
-        { key: "a", desc: "add" }, { key: "enter", desc: "edit" },
-        { key: "del", desc: "delete" }, { key: "esc", desc: "done" },
-      ]
-    case "settings.rules":
-      return [
-        { key: "j/k", desc: "move" }, { key: "space", desc: "toggle" },
-        { key: "a", desc: "add" }, { key: "S-j/k", desc: "reorder" },
-        { key: "S-a", desc: "apply" }, { key: "S-d", desc: "dry run" }, { key: "esc", desc: "done" },
-      ]
-    case "settings.filters":
-      return [{ key: "j/k", desc: "move" }, { key: "a", desc: "add" }, { key: "enter", desc: "edit" }, { key: "del", desc: "delete" }, { key: "esc", desc: "done" }]
-    case "settings.budgets":
-      return [{ key: "j/k", desc: "move" }, { key: "a", desc: "add" }, { key: "enter", desc: "edit" }, { key: "del", desc: "delete" }, { key: "c", desc: "cycle" }, { key: "esc", desc: "done" }]
-    case "settings.up":
-      return [{ key: "j/k", desc: "move" }, { key: "space", desc: "sync on/off" }, { key: "s", desc: "sync now" }, { key: "esc", desc: "done" }]
-    case "settings.database":
-      return [{ key: "i", desc: "import" }, { key: "p", desc: "profiles" }, { key: "n", desc: "icons" }, { key: "w", desc: "week start" }, { key: "b", desc: "x-axis line" }, { key: "c", desc: "clear data" }, { key: "x", desc: "reset DB" }, { key: "esc", desc: "done" }]
-    case "settings.import.files":
-      return [{ key: "j/k", desc: "file" }, { key: "enter", desc: "select" }, { key: "p", desc: "path" }, { key: "esc", desc: "cancel" }]
-    case "settings.import.path":
-      return [{ key: "enter", desc: "open" }, { key: "esc", desc: "back" }, { key: "type", desc: "path" }]
-    case "settings.import.profile":
-      return [{ key: "j/k", desc: "profile" }, { key: "enter", desc: "select" }, { key: "a/e", desc: "new/edit" }, { key: "del", desc: "delete" }, { key: "esc", desc: "back" }]
-    case "settings.import.profileEditor":
-      return [{ key: "tab", desc: "field" }, { key: "h/l", desc: "choice" }, { key: "enter", desc: "save" }, { key: "esc", desc: "back" }]
-    case "settings.import.preview":
-      return [{ key: "s", desc: "skip dupes" }, { key: "a", desc: "force import" }, { key: "p", desc: "all/dupes" }, { key: "r", desc: "rules" }, { key: "esc", desc: "cancel" }]
-    case "manager.accountAction":
-      return [{ key: "c", desc: "clear txns" }, { key: "x", desc: "remove account" }, { key: "esc", desc: "cancel" }]
-    case "settings.factoryReset":
-      return [{ key: "type RESET", desc: "confirm" }, { key: "enter", desc: "erase DB" }, { key: "esc", desc: "cancel" }]
-    case "settings.editor":
-      return [{ key: "↑/↓", desc: "field" }, { key: "←/→", desc: "change" }, { key: "enter", desc: "save / choose" }, { key: "esc", desc: "cancel" }]
-    case "settings.confirm":
-      return [{ key: "del", desc: "confirm" }, { key: "esc", desc: "cancel" }]
-    default:
-      return [{ key: "v", desc: "jump" }]
-  }
+      ],
+  },
+  "manager.detail.notes": {
+    handle: handleManagerDetailNotes,
+    quits: false,
+    hints: () => [{ key: "type", desc: "notes" }, { key: "enter", desc: "save" }, { key: "esc", desc: "cancel" }],
+  },
 }
 
-/** The Date Range period as [start, end] ISO dates. */
+export function scopeQuits(scope: ScopeId): boolean { return scopes[scope].quits }
+
+export function footerHints(scope: ScopeId, state?: HintState): { key: string; desc: string }[] {
+  return scopes[scope].hints(state)
+}
+
 /** The budget cycle as editor draft fields. */
 function cycleDraft(cycle: CycleConfig): { unit: CycleConfig["unit"]; anchor: CycleConfig["anchor"]; anchorDate: string } {
   return { unit: cycle.unit, anchor: cycle.anchor, anchorDate: anchorDraft(cycle) }
