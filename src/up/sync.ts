@@ -1,10 +1,12 @@
 import { uncategorisedCategoryId, type Db } from "../db/client"
 import type { createUpClient } from "./client"
+import { assignProviderCategories, syncCategoryTree } from "./categories"
 
 type LocalTransaction = { id: number; external_id: string | null; status: string | null; external_created_at: string | null }
 
-export async function syncUp(db: Db, client: Pick<ReturnType<typeof createUpClient>, "listAccounts" | "listAccountTransactions">, { now = new Date() }: { now?: Date } = {}) {
+export async function syncUp(db: Db, client: Pick<ReturnType<typeof createUpClient>, "listAccounts" | "listAccountTransactions" | "listCategories">, { now = new Date() }: { now?: Date } = {}) {
   try {
+    const tree = await client.listCategories()
     const accounts = await client.listAccounts()
     const disabledAccounts = () => new Set(db.query<{ external_id: string }, []>("SELECT external_id FROM accounts WHERE source = 'up' AND sync_enabled = 0 AND external_id IS NOT NULL").all().map(a => a.external_id))
     const batches: { accountId: string; local: LocalTransaction[]; since: string | undefined; transactions: Awaited<ReturnType<typeof client.listAccountTransactions>> }[] = []
@@ -25,6 +27,7 @@ export async function syncUp(db: Db, client: Pick<ReturnType<typeof createUpClie
     }
     const syncedAt = now.toISOString()
     return db.transaction(() => {
+      syncCategoryTree(db, tree)
       const disabled = disabledAccounts()
       const accountIds = new Map<string, number>()
       for (const account of accounts) {
@@ -53,11 +56,13 @@ export async function syncUp(db: Db, client: Pick<ReturnType<typeof createUpClie
       }
       // Include previously synced accounts if a transfer counterpart is absent from this response.
       for (const account of db.query<{ id: number; external_id: string }, []>("SELECT id, external_id FROM accounts WHERE source = 'up' AND external_id IS NOT NULL").all()) accountIds.set(account.external_id, account.id)
-      const columns = ["status", "amount", "description", "date_raw", "date_iso", "settled_at", "raw_text", "message", "account_id", "transfer_account_id", "ext_category", "ext_parent_category", "ext_tags", "ext_categorizable", "transaction_type", "card_method", "card_suffix", "foreign_amount", "round_up", "cashback"]
+      const columns = ["status", "amount", "description", "date_raw", "date_iso", "settled_at", "raw_text", "message", "account_id", "transfer_account_id", "ext_category", "ext_parent_category", "ext_tags", "ext_categorizable", "transaction_type", "card_method", "card_suffix", "foreign_amount", "round_up", "cashback", "category_id", "category_source"]
       const update = db.query(`UPDATE transactions SET ${columns.map(c => `${c} = ?`).join(", ")} WHERE id = ? AND NOT (${columns.map(c => `${c} IS ?`).join(" AND ")})`)
-      const insert = db.query(`INSERT INTO transactions (${columns.join(", ")}, source, external_id, external_created_at, category_id, notes, import_id)
-        VALUES (${columns.map(() => "?").join(", ")}, 'up', ?, ?, ?, '', NULL)`)
+      const insert = db.query(`INSERT INTO transactions (${columns.join(", ")}, source, external_id, external_created_at, notes, import_id)
+        VALUES (${columns.map(() => "?").join(", ")}, 'up', ?, ?, '', NULL)`)
       const categoryId = uncategorisedCategoryId(db)
+      const providerCategories = new Map(db.query<{ id: number; ext_id: string }, []>(
+        "SELECT id, ext_id FROM categories WHERE ext_id IS NOT NULL AND parent_id IS NOT NULL").all().map(c => [c.ext_id, c.id]))
       let inserted = 0, updated = 0, removedHeld = 0
       const insertedIds: number[] = []
       for (const transaction of batches.flatMap(batch => batch.transactions)) {
@@ -66,16 +71,21 @@ export async function syncUp(db: Db, client: Pick<ReturnType<typeof createUpClie
         if (!Number.isFinite(Date.parse(a.createdAt))) throw new Error("Invalid Up transaction timestamp")
         const accountId = accountIds.get(r.account.data.id)
         if (accountId === undefined) throw new Error("Up transaction account is missing")
+        const existing = db.query<{ id: number; category_id: number | null; category_source: string | null }, [string]>(
+          "SELECT id, category_id, category_source FROM transactions WHERE source = 'up' AND external_id = ?").get(transaction.id)
+        const providerCategory = providerCategories.get(r.category.data?.id ?? "")
+        const preserveCategory = existing && existing.category_source !== null && existing.category_source !== "provider"
+        const assignedCategory = preserveCategory ? existing.category_id : providerCategory ?? categoryId
+        const categorySource = preserveCategory ? existing.category_source : providerCategory === undefined ? null : "provider"
         const values = [a.status, a.amount.valueInBaseUnits / 100, a.description, a.createdAt, a.createdAt.slice(0, 10), a.settledAt, a.rawText, a.message,
           accountId, r.transferAccount.data ? accountIds.get(r.transferAccount.data.id) ?? null : null,
           r.category.data?.id ?? null, r.parentCategory.data?.id ?? null, JSON.stringify(r.tags.data.map(t => t.id)),
           a.isCategorizable ? 1 : 0, a.transactionType, a.cardPurchaseMethod?.method ?? null, a.cardPurchaseMethod?.cardNumberSuffix ?? null,
           a.foreignAmount ? `${a.foreignAmount.currencyCode} ${a.foreignAmount.value}` : null,
-          a.roundUp ? a.roundUp.amount.valueInBaseUnits / 100 : null, a.cashback ? a.cashback.amount.valueInBaseUnits / 100 : null]
-        const existing = db.query<{ id: number }, [string]>("SELECT id FROM transactions WHERE source = 'up' AND external_id = ?").get(transaction.id)
+          a.roundUp ? a.roundUp.amount.valueInBaseUnits / 100 : null, a.cashback ? a.cashback.amount.valueInBaseUnits / 100 : null, assignedCategory, categorySource]
         if (existing) updated += update.run(...values, existing.id, ...values).changes
         else {
-          const result = insert.run(...values, transaction.id, a.createdAt, categoryId)
+          const result = insert.run(...values, transaction.id, a.createdAt)
           inserted++
           insertedIds.push(Number(result.lastInsertRowid))
         }
@@ -89,6 +99,8 @@ export async function syncUp(db: Db, client: Pick<ReturnType<typeof createUpClie
             (row.external_id === null || !returned.has(row.external_id))) removedHeld += remove.run(row.id).changes > 0 ? 1 : 0
         }
       }
+      // Rows outside the fetch window still follow Up's (stored) category.
+      updated += assignProviderCategories(db)
       db.query(`INSERT INTO sync_state (source, last_synced_at, last_error) VALUES ('up', ?, NULL)
         ON CONFLICT(source) DO UPDATE SET last_synced_at = excluded.last_synced_at, last_error = NULL`).run(syncedAt)
       return { accounts: accounts.length, inserted, updated, removedHeld, insertedIds }

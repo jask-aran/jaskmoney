@@ -5,6 +5,10 @@ import { syncUp } from "./sync"
 import { data } from "../state/dataStore"
 import type { UpAccount, UpPage, UpTransaction } from "./types"
 
+const categoryTree = [
+  { id: "good-life", name: "Good Life", parentId: null },
+  { id: "groceries", name: "Groceries", parentId: "good-life" },
+]
 const now = new Date("2026-03-01T00:00:00Z")
 const money = (cents: number) => ({ currencyCode: "AUD", value: (cents / 100).toFixed(2), valueInBaseUnits: cents })
 function account(id = "daily", displayName = "Daily", accountType: UpAccount["attributes"]["accountType"] = "TRANSACTIONAL"): UpAccount {
@@ -20,6 +24,7 @@ function response<T>(data: T[], next: string | null = null) { return Response.js
 function client(transactions: UpTransaction[], accounts = [account(), account("saver", "Savings", "SAVER")], sinceValues: Array<string | undefined> = [], requests: URL[] = []) {
   return createUpClient({ token: "test-pat", fetch: async input => {
     const url = new URL(String(input))
+    if (url.pathname.endsWith("/categories")) return response([])
     if (url.pathname.endsWith("/accounts")) return response(accounts)
     requests.push(url)
     const accountId = decodeURIComponent(url.pathname.split("/").at(-2) ?? "")
@@ -33,6 +38,81 @@ function database() { const db = openDb(":memory:"); databases.push(db); return 
 afterEach(() => { for (const db of databases.splice(0)) db.close() })
 
 describe("Up sync", () => {
+
+  test("insert maps child categories; missing, unknown and parent categories use the default with NULL source", async () => {
+    const db = database()
+    const rows = [txn("known"), txn("missing"), txn("unknown"), txn("parent")]
+    rows[1]!.relationships.category.data = null
+    rows[2]!.relationships.category.data = { type: "categories", id: "unknown" }
+    rows[3]!.relationships.category.data = { type: "categories", id: "good-life" }
+    const withTree = { ...client(rows), listCategories: async () => categoryTree }
+    expect((await syncUp(db, withTree, { now })).inserted).toBe(4)
+    const category = db.query<{ id: number }, []>("SELECT id FROM categories WHERE ext_id = 'groceries'").get()!
+    const fallback = db.query<{ id: number }, []>("SELECT id FROM categories WHERE is_default = 1").get()!
+    expect(db.query("SELECT external_id, category_id, category_source FROM transactions ORDER BY id").all()).toEqual([
+      { external_id: "known", category_id: category.id, category_source: "provider" },
+      ...["missing", "unknown", "parent"].map(external_id => ({ external_id, category_id: fallback.id, category_source: null })),
+    ])
+  })
+
+  test.each([null, "provider", "user", "rule"])("update respects category source %s and counts category-only changes", async source => {
+    const db = database(), row = txn()
+    const withTree = { ...client([row]), listCategories: async () => categoryTree }
+    const first = await syncUp(db, withTree, { now })
+    const local = createCategory(db, { name: "Local choice", color: "#ffffff" })
+    const tag = createTag(db, { name: "Local tag", color: "#ffffff", categoryId: null })
+    db.query("UPDATE transactions SET category_id = ?, category_source = ?, notes = 'keep' WHERE id = ?").run(local, source, first.insertedIds[0]!)
+    db.query("INSERT INTO transaction_tags VALUES (?, ?)").run(first.insertedIds[0]!, tag)
+    const protectedChoice = source === "user" || source === "rule"
+    expect((await syncUp(db, withTree, { now })).updated).toBe(protectedChoice ? 0 : 1)
+    const provider = db.query<{ id: number }, []>("SELECT id FROM categories WHERE ext_id = 'groceries'").get()!
+    expect(db.query("SELECT category_id, category_source, notes FROM transactions").get()).toEqual({
+      category_id: protectedChoice ? local : provider.id, category_source: protectedChoice ? source : "provider", notes: "keep",
+    })
+    expect((await syncUp(db, withTree, { now })).updated).toBe(0)
+    row.relationships.category.data = null
+    expect((await syncUp(db, withTree, { now })).updated).toBe(1)
+    const fallback = db.query<{ id: number }, []>("SELECT id FROM categories WHERE is_default = 1").get()!
+    expect(db.query("SELECT category_id, category_source, notes FROM transactions").get()).toEqual({
+      category_id: protectedChoice ? local : fallback.id, category_source: protectedChoice ? source : null, notes: "keep",
+    })
+    expect(db.query("SELECT * FROM transaction_tags").all()).toEqual([{ transaction_id: first.insertedIds[0], tag_id: tag }])
+    expect((await syncUp(db, withTree, { now })).updated).toBe(0)
+    row.relationships.category.data = { type: "categories", id: "groceries" }
+    expect((await syncUp(db, withTree, { now })).updated).toBe(1)
+    expect(db.query("SELECT category_id, category_source FROM transactions").get()).toEqual({
+      category_id: protectedChoice ? local : provider.id, category_source: protectedChoice ? source : "provider",
+    })
+  })
+
+  test("provider reassignment follows a different child and an unknown category clears it", async () => {
+    const db = database(), row = txn()
+    const withTree = { ...client([row]), listCategories: async () => [...categoryTree, { id: "cafes", name: "Cafes", parentId: "good-life" }] }
+    await syncUp(db, withTree, { now })
+    row.relationships.category.data = { type: "categories", id: "cafes" }
+    expect((await syncUp(db, withTree, { now })).updated).toBe(1)
+    const cafes = db.query<{ id: number }, []>("SELECT id FROM categories WHERE ext_id = 'cafes'").get()!
+    expect(db.query("SELECT category_id, category_source FROM transactions").get()).toEqual({ category_id: cafes.id, category_source: "provider" })
+    row.relationships.category.data = { type: "categories", id: "unknown" }
+    expect((await syncUp(db, withTree, { now })).updated).toBe(1)
+    expect(loadTransactions(db)[0]?.categoryName).toBe("Uncategorised")
+    expect(db.query("SELECT category_source FROM transactions").get()).toEqual({ category_source: null })
+  })
+
+  test("listCategories failure writes only last_error", async () => {
+    const db = database()
+    await syncUp(db, client([txn()]), { now })
+    const snapshot = () => ["categories", "accounts", "transactions", "transaction_tags"].map(table => db.query(`SELECT * FROM ${table}`).all())
+    const before = snapshot()
+    let fetchedAccounts = false
+    const failing = { ...client([]), listCategories: async () => { throw new Error("Category fetch failed") },
+      listAccounts: async () => { fetchedAccounts = true; return [] } }
+    await expect(syncUp(db, failing, { now })).rejects.toThrow("Category fetch failed")
+    expect(snapshot()).toEqual(before)
+    expect(db.query("SELECT * FROM sync_state").get()).toEqual({ source: "up", last_synced_at: now.toISOString(), last_error: "Category fetch failed" })
+    expect(fetchedAccounts).toBe(false)
+  })
+
   test("first sync maps accounts, balances, local date, cents, transfer, and external fields", async () => {
     const db = database(), since: Array<string | undefined> = []
     const result = await syncUp(db, client([txn()], undefined, since), { now })
@@ -77,7 +157,7 @@ describe("Up sync", () => {
     const db = database(), row = txn()
     const attributes = Object.fromEntries(Object.entries(row.attributes).filter(([key]) => !["isCategorizable", "roundUp", "cashback", "cardPurchaseMethod"].includes(key)))
     const missing = createUpClient({ token: "test-pat", fetch: async input =>
-      new URL(String(input)).pathname.endsWith("/accounts") ? response([account()]) : response([{ ...row, attributes }]) })
+      new URL(String(input)).pathname.endsWith("/categories") ? response([]) : new URL(String(input)).pathname.endsWith("/accounts") ? response([account()]) : response([{ ...row, attributes }]) })
     expect((await syncUp(db, missing, { now })).inserted).toBe(1)
     expect(db.query("SELECT ext_categorizable, transaction_type, card_method, card_suffix, foreign_amount, round_up, cashback FROM transactions").get()).toEqual({
       ext_categorizable: 1, transaction_type: null, card_method: null, card_suffix: null, foreign_amount: null, round_up: null, cashback: null,
@@ -90,7 +170,7 @@ describe("Up sync", () => {
     const first = await syncUp(db, client([row]), { now })
     const category = createCategory(db, { name: "User", color: "#ffffff" })
     const tag = createTag(db, { name: "User", color: "#ffffff", categoryId: null })
-    db.query("UPDATE transactions SET category_id = ?, notes = 'keep' WHERE id = ?").run(category, first.insertedIds[0]!)
+    db.query("UPDATE transactions SET category_id = ?, category_source = 'user', notes = 'keep' WHERE id = ?").run(category, first.insertedIds[0]!)
     db.query("INSERT INTO transaction_tags VALUES (?, ?)").run(first.insertedIds[0]!, tag)
     const changes: Array<{ attributes: Partial<UpTransaction["attributes"]>; expected: Record<string, string | number | null> }> = [
       { attributes: { isCategorizable: false }, expected: { ext_categorizable: 0 } },
@@ -121,7 +201,7 @@ describe("Up sync", () => {
     const first = await syncUp(db, client([txn()]), { now })
     const category = createCategory(db, { name: "User", color: "#ffffff" })
     const tag = createTag(db, { name: "User", color: "#ffffff", categoryId: null })
-    db.query("UPDATE transactions SET category_id = ?, notes = 'keep' WHERE id = ?").run(category, first.insertedIds[0]!)
+    db.query("UPDATE transactions SET category_id = ?, category_source = 'user', notes = 'keep' WHERE id = ?").run(category, first.insertedIds[0]!)
     db.query("INSERT INTO transaction_tags VALUES (?, ?)").run(first.insertedIds[0]!, tag)
     const settled = txn("t", "SETTLED")
     settled.attributes.amount = money(-1200)
@@ -167,6 +247,7 @@ describe("Up sync", () => {
     const beforeTransactions = db.query("SELECT * FROM transactions").all()
     let pages = 0
     const failing = createUpClient({ token: "test-pat", fetch: async input => {
+      if (new URL(String(input)).pathname.endsWith("/categories")) return response([])
       if (new URL(String(input)).pathname.endsWith("/accounts")) return response([account("new", "New")])
       if (++pages === 1) return response([txn("new")], "https://api.up.com.au/api/v1/accounts/new/transactions?page[after]=new")
       return Response.json({ errors: [{ title: "Unavailable", detail: "Try later" }] }, { status: 503 })
@@ -191,6 +272,7 @@ describe("Up sync", () => {
     const requests: string[] = []
     const defensive = createUpClient({ token: "test-pat", fetch: async input => {
       const url = new URL(String(input))
+      if (url.pathname.endsWith("/categories")) return response([])
       if (url.pathname.endsWith("/accounts")) return response([account(), renamed])
       requests.push(url.pathname)
       // Include both a new disabled side and an existing disabled side defensively.
@@ -228,6 +310,7 @@ describe("Up sync", () => {
     const requests: string[] = []
     const switching = createUpClient({ token: "test-pat", fetch: async input => {
       const url = new URL(String(input))
+      if (url.pathname.endsWith("/categories")) return response([])
       if (url.pathname.endsWith("/accounts")) return response([account(), account("saver", "Savings", "SAVER")])
       requests.push(url.pathname)
       for (const a of accounts) setAccountSyncEnabled(db, a.id, false)
@@ -260,6 +343,7 @@ describe("Up sync", () => {
     const requests: string[] = []
     const failing = createUpClient({ token: "test-pat", fetch: async input => {
       const url = new URL(String(input))
+      if (url.pathname.endsWith("/categories")) return response([])
       if (url.pathname.endsWith("/accounts")) return response([account("daily", "Renamed"), account("saver", "Savings", "SAVER")])
       requests.push(url.pathname)
       if (url.pathname.endsWith("/daily/transactions")) return response([txn("new")])
@@ -274,10 +358,12 @@ describe("Up sync", () => {
 
   test("write failure rolls back accounts and transactions, then records error", async () => {
     const db = database(), broken = txn()
+    const beforeCategories = db.query("SELECT * FROM categories").all()
     broken.relationships.account.data.id = "missing"
     const brokenClient = createUpClient({ token: "test-pat", fetch: async input =>
-      new URL(String(input)).pathname.endsWith("/accounts") ? response([account()]) : response([txn("valid"), broken]) })
+      new URL(String(input)).pathname.endsWith("/categories") ? response([]) : new URL(String(input)).pathname.endsWith("/accounts") ? response([account()]) : response([txn("valid"), broken]) })
     await expect(syncUp(db, brokenClient, { now })).rejects.toThrow("Up transaction account is missing")
+    expect(db.query("SELECT * FROM categories").all()).toEqual(beforeCategories)
     expect(db.query("SELECT * FROM accounts WHERE source = 'up'").all()).toEqual([])
     expect(db.query("SELECT * FROM transactions").all()).toEqual([])
     expect(db.query("SELECT * FROM sync_state").get()).toEqual({ source: "up", last_synced_at: null, last_error: "Up transaction account is missing" })
@@ -286,7 +372,7 @@ describe("Up sync", () => {
   test("JSON-escaped API errors cannot put the PAT in sync_state.last_error", async () => {
     const db = database(), token = "secret-test-pat"
     const escaped = Array.from(token, c => `\\u${c.charCodeAt(0).toString(16).padStart(4, "0")}`).join("")
-    const failing = createUpClient({ token, fetch: async () => new Response(JSON.stringify({ errors: [{ title: `Denied ${token}`, detail: token }] }).replaceAll(token, escaped), { status: 403 }) })
+    const failing = createUpClient({ token, fetch: async input => new URL(String(input)).pathname.endsWith("/categories") ? response([]) : new Response(JSON.stringify({ errors: [{ title: `Denied ${token}`, detail: token }] }).replaceAll(token, escaped), { status: 403 }) })
     await expect(syncUp(db, failing, { now })).rejects.toThrow("Denied [redacted]")
     const state = db.query<{ last_error: string }, []>("SELECT last_error FROM sync_state WHERE source = 'up'").get()
     expect(state?.last_error).toBe("Up API request failed (403): Denied [redacted]: [redacted]")
@@ -320,7 +406,7 @@ test("store sync locks concurrent calls, refreshes, applies rules only to insert
     const category = createCategory(db, { name: "Rule category", color: "#ffffff" })
     data.setState({ savedFilters: [{ id: "merchant", name: "Merchant", expr: "desc:Merchant" }] })
     data.createSettingsRule({ name: "Merchant", savedFilterId: "merchant", setCategoryId: category, addTagIds: [], enabled: true })
-    fetchMock.mockImplementation(Object.assign(async (input: Parameters<typeof fetch>[0]) => new URL(String(input)).pathname.endsWith("/accounts") ? response([account()]) : response([txn()]), { preconnect: globalThis.fetch.preconnect }))
+    fetchMock.mockImplementation(Object.assign(async (input: Parameters<typeof fetch>[0]) => new URL(String(input)).pathname.endsWith("/categories") ? response([]) : new URL(String(input)).pathname.endsWith("/accounts") ? response([account()]) : response([txn()]), { preconnect: globalThis.fetch.preconnect }))
     const pending = data.syncUp()
     expect(data.state.upSyncing).toBe(true)
     await expect(data.syncUp()).rejects.toThrow("Up sync is already running")
@@ -329,7 +415,7 @@ test("store sync locks concurrent calls, refreshes, applies rules only to insert
     const inserted = data.state.transactions[0]
     expect(inserted?.categoryId).toBe(category)
     db.query("UPDATE transactions SET category_id = ? WHERE id = ?").run(data.state.categories.find(c => c.isDefault)!.id, inserted!.id)
-    fetchMock.mockImplementation(Object.assign(async (input: Parameters<typeof fetch>[0]) => new URL(String(input)).pathname.endsWith("/accounts") ? response([account()]) : response([txn("t", "SETTLED")]), { preconnect: globalThis.fetch.preconnect }))
+    fetchMock.mockImplementation(Object.assign(async (input: Parameters<typeof fetch>[0]) => new URL(String(input)).pathname.endsWith("/categories") ? response([]) : new URL(String(input)).pathname.endsWith("/accounts") ? response([account()]) : response([txn("t", "SETTLED")]), { preconnect: globalThis.fetch.preconnect }))
     expect(await data.syncUp()).toBe("Up sync: 0 new, 1 updated, 0 pending removed")
     expect(data.state.transactions[0]?.categoryName).toBe("Uncategorised")
     fetchMock.mockRejectedValue(new Error("Offline"))

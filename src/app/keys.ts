@@ -1,6 +1,7 @@
 import type { KeyEvent } from "@opentui/core"
 import { resolve } from "node:path"
 import { selectableEntries } from "../domain/accountTree"
+import { assignableCategories } from "../domain/categoryOptions"
 import { runSync } from "./sync"
 import { JUMP_TARGETS, SETTINGS_SECTIONS, TABS, settingsSectionFocus, type ScopeId, type UiStore } from "../state/uiStore"
 import type { DataStore } from "../state/dataStore"
@@ -143,10 +144,7 @@ export function handleKey(ui: UiStore, key: KeyEvent, data?: DataStore): boolean
 
   // ── Cat picker ──────────────────────────────────────────────────────
   if (ui.state.catPickerOpen) {
-    const q = ui.state.catPickerQuery.trim().toLowerCase()
-    const cats = (data?.state.categories ?? []).filter(
-      (c) => !q || c.name.toLowerCase().includes(q),
-    )
+    const cats = assignableCategories(data?.state.categories ?? [], ui.state.catPickerQuery)
     if (name === "escape") {
       ui.closeCatPicker()
       ui.setStatus("Categorize cancelled")
