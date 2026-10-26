@@ -444,7 +444,7 @@ describe("shell render M0", () => {
     await t.renderOnce()
     const frame = t.captureCharFrame()
     expect(frame).toContain("Clear all transaction and import data?")
-    expect(frame).toContain("Press del to confirm")
+    expect(frame).toContain("del confirm")
     expect(frame).toContain("del confirm")
     t.renderer.destroy()
   })

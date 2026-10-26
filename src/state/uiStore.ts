@@ -125,6 +125,8 @@ export interface UiState {
   settingsEditor: SettingsEditorKind | null
   settingsEditId: number | string | null
   settingsEditField: number
+  /** The open list for a picker field of the settings editor. */
+  formPicker: { query: string; cursor: number } | null
   settingsDraft: {
     name: string; color: string; categoryId: number | null; id: string; expr: string; savedFilterId: string; setCategoryId: number | null; addTagIds: number[]; notSpending: boolean
     /** Budget editor: scope key (see budgetScopes.scopeKey) and amount text. */
@@ -252,6 +254,7 @@ function createUiStore() {
     settingsEditor: null,
     settingsEditId: null,
     settingsEditField: 0,
+    formPicker: null,
     settingsDraft: { name: "", color: "#94e2d5", categoryId: null, id: "", expr: "", savedFilterId: "", setCategoryId: null, addTagIds: [], notSpending: false, scopeKey: "overall", amount: "", unit: "month", anchor: "calendar", anchorDate: "" },
     settingsConfirm: null,
     importStage: "none",
@@ -339,8 +342,8 @@ function createUiStore() {
   }
 
   function leaveSettings() { setState({ settingsActive: false, settingsEditor: null, settingsConfirm: null, importStage: "none", status: "Settings · navigate sections", statusErr: false }) }
-  function openSettingsEditor(kind: SettingsEditorKind, id: number | string | null, draft: UiState["settingsDraft"]) { setState({ settingsEditor: kind, settingsEditId: id, settingsEditField: 0, settingsDraft: draft, settingsConfirm: null, jumpMode: false }) }
-  function closeSettingsEditor() { setState({ settingsEditor: null, settingsEditId: null, settingsEditField: 0 }) }
+  function openSettingsEditor(kind: SettingsEditorKind, id: number | string | null, draft: UiState["settingsDraft"]) { setState({ settingsEditor: kind, settingsEditId: id, settingsEditField: 0, formPicker: null, settingsDraft: draft, settingsConfirm: null, jumpMode: false }) }
+  function closeSettingsEditor() { setState({ settingsEditor: null, settingsEditId: null, settingsEditField: 0, formPicker: null }) }
   function armSettingsConfirm(confirm: NonNullable<UiState["settingsConfirm"]>) { setState({ settingsConfirm: confirm }) }
   function clearSettingsConfirm() { setState({ settingsConfirm: null }) }
 

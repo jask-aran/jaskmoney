@@ -1,8 +1,7 @@
-import { For, Show, createMemo } from "solid-js"
+import { Show, createMemo } from "solid-js"
 import { ui } from "../../state/uiStore"
 import { data } from "../../state/dataStore"
-import { theme } from "../../theme"
-import { S } from "./S"
+import { ListPicker } from "./ListPicker"
 
 
 export function TagPicker() {
@@ -33,49 +32,15 @@ export function TagPicker() {
 
   return (
     <Show when={ui.state.tagPickerOpen}>
-      <box
-        position="absolute"
-        left={0}
-        top={0}
-        width="100%"
-        height="100%"
-        justifyContent="center"
-        alignItems="center"
-      >
-        <box
-          border
-          borderStyle="rounded"
-          borderColor={theme.accent}
-          backgroundColor={theme.mantle}
-          padding={1}
-          width={44}
-          flexDirection="column"
-        >
-          <text fg={theme.accent}>
-            <b>Quick Tags</b>
-            <S fg={theme.overlay1}> · {targets().length} target(s)</S>
-          </text>
-          <text fg={theme.overlay1}>
-            Filter: {ui.state.tagPickerQuery || "(type to filter)"}
-          </text>
-          <For each={filtered()}>
-            {(tg, i) => {
-              const sel = () => i() === ui.state.tagPickerCursor
-              const st = () => stateFor(tg.id)
-              return (
-                <text bg={sel() ? theme.surface0 : undefined}>
-                  <S fg={theme.accent} bold={sel()}>
-                    {sel() ? "> " : "  "}
-                  </S>
-                  <S fg={theme.subtext1}>{mark(st())} </S>
-                  <S fg={tg.color}>{tg.name}</S>
-                </text>
-              )
-            }}
-          </For>
-          <text fg={theme.overlay1}>space toggle  enter done  esc cancel</text>
-        </box>
-      </box>
+      <ListPicker
+        title="Tags"
+        subtitle={`${targets().length} transaction${targets().length === 1 ? "" : "s"}`}
+        items={filtered().map((t) => ({ kind: "item" as const, label: t.name, value: t.id, color: t.color }))}
+        cursor={ui.state.tagPickerCursor}
+        query={ui.state.tagPickerQuery}
+        mark={(value) => mark(stateFor(Number(value)))}
+        hints="j/k move · space toggle · enter done · esc cancel"
+      />
     </Show>
   )
 }

@@ -10,7 +10,11 @@ import { fit } from "../text"
 import { formatMoney } from "../../domain/dashboard"
 import { accountRole } from "../../domain/types"
 import { budgetLabel, budgetScopeOptions } from "../../domain/budgetScopes"
-import type { CycleAnchor, CycleConfig } from "../../domain/budget"
+import { describeCycle } from "../../domain/budget"
+import { Modal } from "../primitives/Modal"
+import { Form } from "../primitives/Form"
+import { ListPicker } from "../primitives/ListPicker"
+import { EDITOR_TITLE, editorFields, editorNote, pickerItems } from "../../state/settingsForm"
 
 function truncate(value: string, width: number) { return value.length <= width ? value : `${value.slice(0, Math.max(0, width - 1))}…` }
 
@@ -63,30 +67,6 @@ function TaxonomyList(props: { kind: SettingsList; narrow?: boolean; split?: boo
       <box height={1}><ListFooter top={top()} visible={visible()} count={rows().length} /></box>
     </box>
   )
-}
-
-const ANCHOR_LABEL: Record<CycleAnchor, string> = {
-  calendar: "calendar (week from Monday, month from the 1st)",
-  date: "on a date",
-  weekStartNearDate: "on the Monday nearest a date",
-}
-
-/** "Monthly from the 1st", "Fortnightly from 16 Oct 2026", "Monthly from the Monday nearest the 15th". */
-export function describeCycle(config: CycleConfig): string {
-  const every = config.unit === "week" ? "Weekly" : config.unit === "fortnight" ? "Fortnightly" : "Monthly"
-  if (config.anchor === "calendar") return config.unit === "month" ? `${every} from the 1st` : `${every} from Monday`
-  const date = config.anchorDate ?? ""
-  const day = Number(date.slice(8, 10))
-  const months = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"]
-  const pretty = /^\d{4}-\d{2}-\d{2}$/.test(date) ? `${day} ${months[Number(date.slice(5, 7)) - 1]} ${date.slice(0, 4)}` : date || "?"
-  const when = config.unit === "month" ? `the ${ordinal(day)}` : pretty
-  return config.anchor === "date" ? `${every} from ${when}` : `${every} from the Monday nearest ${when}`
-}
-
-function ordinal(n: number): string {
-  if (!n) return "?"
-  const s = n % 100 >= 11 && n % 100 <= 13 ? "th" : (["th", "st", "nd", "rd"][n % 10] ?? "th")
-  return `${n}${s}`
 }
 
 function BudgetsPane(props: { focused: boolean }) {
@@ -200,9 +180,6 @@ function ImportHistory(props: { height?: number | "auto" | `${number}%` }) {
   </SectionCard>
 }
 
-function Modal(props: { title: string; children: unknown }) {
-  return <box position="absolute" zIndex={20} left="10%" top="12%" width="80%" maxHeight="76%" border borderStyle="rounded" borderColor={theme.focus} paddingLeft={1} paddingRight={1} backgroundColor={theme.base} flexDirection="column"><text fg={theme.focus}><b>{props.title}</b></text>{props.children as never}</box>
-}
 
 function ImportOverlay() {
   const stage = () => ui.state.importStage
@@ -223,24 +200,45 @@ function ImportOverlay() {
 function FactoryResetOverlay() { return <Show when={ui.state.factoryResetOpen}><Modal title="Factory-reset database"><text fg={theme.error}>Removes the SQLite database and its transaction, account, taxonomy, and rule data.</text><text fg={theme.overlay1}>Saved filters and import profiles remain in OpenTUI config.</text><text fg={theme.text}>Type RESET: {ui.state.factoryResetDraft}<S fg={theme.focus}>▌</S></text><text fg={theme.overlay1}>enter erase · esc cancel</text></Modal></Show> }
 
 function EditorOverlay() {
-  const kind = () => ui.state.settingsEditor
-  const draft = () => ui.state.settingsDraft
-  const field = () => ui.state.settingsEditField
-  const fieldRow = (index: number, label: string, value: string) => <text><S fg={field() === index ? theme.focus : theme.subtext0} bold={field() === index}>{field() === index ? "> " : "  "}{label}: </S><S fg={theme.text}>{value}{field() === index ? "▌" : ""}</S></text>
-  return <Show when={kind()}>{(editor: () => NonNullable<ReturnType<typeof kind>>) => <box position="absolute" zIndex={10} left="20%" top="25%" width="60%" border borderStyle="rounded" borderColor={theme.focus} paddingLeft={1} paddingRight={1} backgroundColor={theme.base} flexDirection="column">
-    <text fg={theme.focus}><b>{editor() === "category" ? "Category" : editor() === "tag" ? "Tag" : editor() === "filter" ? "Saved Filter" : editor() === "budget" ? "Budget" : editor() === "cycle" ? "Budget cycle" : "Rule"} editor</b></text>
-    <Show when={editor() === "budget"}>{fieldRow(0, "Covers", budgetScopeOptions(data.state.accounts, data.state.categories).find((o) => o.key === draft().scopeKey)?.label ?? "—")}{fieldRow(1, "Amount", draft().amount)}<text fg={theme.overlay1}>{`  per cycle · ${describeCycle(data.state.budgetCycle)}`}</text></Show>
-    <Show when={editor() === "cycle"}>{fieldRow(0, "Every", draft().unit)}{fieldRow(1, "Starting", ANCHOR_LABEL[draft().anchor])}<Show when={draft().anchor !== "calendar"}>{fieldRow(2, "Date", draft().anchorDate || "YYYY-MM-DD")}</Show><text fg={theme.overlay1}>{`  ${describeCycle({ unit: draft().unit, anchor: draft().anchor, anchorDate: draft().anchorDate || null })}`}</text></Show>
-    <Show when={editor() === "category" || editor() === "tag"}>{fieldRow(0, "Name", draft().name)}{fieldRow(1, "Colour", draft().color)}{editor() === "tag" ? fieldRow(2, "Scope", data.state.categories.find((c) => c.id === draft().categoryId)?.name ?? "global") : null}{editor() === "category" ? fieldRow(2, "Spending", draft().notSpending ? "no — excluded from spending and income" : "yes") : null}</Show>
-    <Show when={editor() === "filter"}>{fieldRow(0, "ID", draft().id)}{fieldRow(1, "Name", draft().name)}{fieldRow(2, "Expr", draft().expr)}</Show>
-    <Show when={editor() === "rule"}>{fieldRow(0, "Name", draft().name)}{fieldRow(1, "Filter", draft().savedFilterId)}{fieldRow(2, "Category", data.state.categories.find((c) => c.id === draft().setCategoryId)?.name ?? "—")}{fieldRow(3, "Tags", draft().addTagIds.map((id) => data.state.tags.find((t) => t.id === id)?.name).filter(Boolean).join(", ") || "—")}</Show>
-    <text fg={theme.overlay1}>tab field · enter save · esc cancel</text>
-  </box>}</Show>
+  const ctx = () => ({ accounts: data.state.accounts, categories: data.state.categories, tags: data.state.tags, savedFilters: data.state.savedFilters })
+  return (
+    <Show when={ui.state.settingsEditor}>
+      {(kind: () => NonNullable<typeof ui.state.settingsEditor>) => {
+        const fields = () => editorFields(kind(), ui.state.settingsDraft, ctx())
+        const cursor = () => Math.min(ui.state.settingsEditField, fields().length - 1)
+        const field = () => fields()[cursor()]!
+        return (
+          <>
+            <Modal
+              title={`${ui.state.settingsEditId == null ? "New" : "Edit"} ${EDITOR_TITLE[kind()].toLowerCase()}`}
+              width={72}
+              hints={field().kind === "picker" ? "↑/↓ field · enter choose · esc cancel" : field().kind === "text" ? "↑/↓ field · type to edit · enter save · esc cancel" : "↑/↓ field · ←/→ change · enter save · esc cancel"}
+            >
+              <Form fields={fields()} cursor={cursor()} note={editorNote(kind(), ui.state.settingsDraft)} />
+            </Modal>
+            <Show when={ui.state.formPicker}>
+              {(picker: () => NonNullable<typeof ui.state.formPicker>) => (
+                <ListPicker
+                  title={field().label}
+                  subtitle={EDITOR_TITLE[kind()]}
+                  items={pickerItems(kind(), field().key, ctx(), picker().query)}
+                  cursor={picker().cursor}
+                  query={picker().query}
+                  mark={field().multi ? (value) => (ui.state.settingsDraft.addTagIds.includes(Number(value)) ? "[x]" : "[ ]") : undefined}
+                  hints={field().multi ? "j/k move · enter toggle · esc done" : "j/k move · enter choose · esc back"}
+                />
+              )}
+            </Show>
+          </>
+        )
+      }}
+    </Show>
+  )
 }
 
 function ConfirmOverlay() {
   const prompt = (confirm: NonNullable<typeof ui.state.settingsConfirm>) => confirm.kind === "clearData" ? "Clear all transaction and import data?" : confirm.kind === "clearAccount" ? `Clear transactions for ${confirm.label}?` : confirm.kind === "deleteAccount" ? `Remove ${confirm.label} and its transactions?` : confirm.kind === "budget" ? `Delete ${confirm.label}?` : confirm.kind === "desyncAccount" ? `Stop syncing ${confirm.label}? Its transactions are removed; switch sync back on to re-fetch them.` : `Delete ${confirm.label}?`
-  return <Show when={ui.state.settingsConfirm}>{(confirm: () => NonNullable<typeof ui.state.settingsConfirm>) => <box position="absolute" zIndex={11} left="25%" top="40%" width="50%" border borderStyle="rounded" borderColor={theme.error} paddingLeft={1} paddingRight={1} backgroundColor={theme.base} flexDirection="column"><text fg={theme.error}><b>{prompt(confirm())}</b></text><text fg={theme.overlay1}>Press del to confirm · esc cancel</text></box>}</Show>
+  return <Show when={ui.state.settingsConfirm}>{(confirm: () => NonNullable<typeof ui.state.settingsConfirm>) => <Modal title={prompt(confirm())} tone="error" width={64} hints="del confirm · esc cancel" />}</Show>
 }
 
 export function SettingsTab(props: { focused: SectionId }) {

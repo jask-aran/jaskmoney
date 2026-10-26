@@ -164,3 +164,27 @@ export function budgetProgress(
     }
   })
 }
+
+export const ANCHOR_LABEL: Record<CycleAnchor, string> = {
+  calendar: "calendar (week from Monday, month from the 1st)",
+  date: "on a date",
+  weekStartNearDate: "on the Monday nearest a date",
+}
+
+/** "Monthly from the 1st", "Fortnightly from 16 Oct 2026", "Monthly from the Monday nearest the 15th". */
+export function describeCycle(config: CycleConfig): string {
+  const every = config.unit === "week" ? "Weekly" : config.unit === "fortnight" ? "Fortnightly" : "Monthly"
+  if (config.anchor === "calendar") return config.unit === "month" ? `${every} from the 1st` : `${every} from Monday`
+  const date = config.anchorDate ?? ""
+  const day = Number(date.slice(8, 10))
+  const months = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"]
+  const pretty = /^\d{4}-\d{2}-\d{2}$/.test(date) ? `${day} ${months[Number(date.slice(5, 7)) - 1]} ${date.slice(0, 4)}` : date || "?"
+  const when = config.unit === "month" ? `the ${ordinal(day)}` : pretty
+  return config.anchor === "date" ? `${every} from ${when}` : `${every} from the Monday nearest ${when}`
+}
+
+function ordinal(n: number): string {
+  if (!n) return "?"
+  const s = n % 100 >= 11 && n % 100 <= 13 ? "th" : (["th", "st", "nd", "rd"][n % 10] ?? "th")
+  return `${n}${s}`
+}

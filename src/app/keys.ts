@@ -5,7 +5,8 @@ import { selectableEntries, spendingScope, type AccountSelection } from "../doma
 import { assignableCategories } from "../domain/categoryOptions"
 import { merchantSummaries } from "../domain/spending"
 import { budgetLabel, budgetScopeOptions, scopeKey } from "../domain/budgetScopes"
-import type { CycleAnchor, CycleUnit } from "../domain/budget"
+import type { CycleConfig } from "../domain/budget"
+import { editorFields, pickerChoices, pickerItems, stepChoice } from "../state/settingsForm"
 import { runSync } from "./sync"
 import { CHART_VIEWS, JUMP_TARGETS, SETTINGS_SECTIONS, TABS, settingsSectionFocus, type ScopeId, type UiStore } from "../state/uiStore"
 import type { DataStore } from "../state/dataStore"
@@ -432,11 +433,51 @@ export function handleKey(ui: UiStore, key: KeyEvent, data?: DataStore): boolean
 
   if (ui.state.settingsEditor) {
     const kind = ui.state.settingsEditor
-    const fieldCount = kind === "category" ? 3 : kind === "tag" ? 3 : kind === "filter" ? 3 : kind === "budget" ? 2 : kind === "cycle" ? (ui.state.settingsDraft.anchor === "calendar" ? 2 : 3) : 4
     const draft = ui.state.settingsDraft
-    const field = ui.state.settingsEditField
+    const ctx = { accounts: data?.state.accounts ?? [], categories: data?.state.categories ?? [], tags: data?.state.tags ?? [], savedFilters: data?.state.savedFilters ?? [] }
+    const fields = editorFields(kind, draft, ctx)
+    const fieldIndex = Math.min(ui.state.settingsEditField, fields.length - 1)
+    const field = fields[fieldIndex]!
+
+    // A picker field's list owns input until it closes (like the category
+    // picker: j/k and arrows move, other printable keys filter).
+    const picker = ui.state.formPicker
+    if (picker) {
+      const choices = pickerChoices(pickerItems(kind, field.key, ctx, picker.query))
+      if (name === "escape") { ui.setState({ formPicker: null }); return true }
+      if (name === "j" || name === "down") { ui.setState("formPicker", "cursor", Math.min(Math.max(0, choices.length - 1), picker.cursor + 1)); return true }
+      if (name === "k" || name === "up") { ui.setState("formPicker", "cursor", Math.max(0, picker.cursor - 1)); return true }
+      if (name === "return" || name === "enter") {
+        const choice = choices[picker.cursor]
+        if (!choice) return true
+        if (field.multi) {
+          // Multi-choice (rule tags): enter toggles; esc closes.
+          const id = Number(choice.value)
+          ui.setState("settingsDraft", "addTagIds", draft.addTagIds.includes(id) ? draft.addTagIds.filter((t) => t !== id) : [...draft.addTagIds, id])
+          return true
+        }
+        ui.setState("settingsDraft", field.key as "scopeKey", choice.value as never)
+        ui.setState({ formPicker: null })
+        return true
+      }
+      if (name === "backspace") { ui.setState({ formPicker: { query: picker.query.slice(0, -1), cursor: 0 } }); return true }
+      if (isPrintable(key)) { ui.setState({ formPicker: { query: picker.query + seq, cursor: 0 } }); return true }
+      return true
+    }
+
+    const isText = field.kind === "text"
+    const move = (step: number) => ui.setState({ settingsEditField: (fieldIndex + step + fields.length) % fields.length })
     if (name === "escape") { ui.closeSettingsEditor(); ui.setStatus("Edit cancelled"); return true }
-    if (name === "tab") { ui.setState({ settingsEditField: (field + (key.shift ? -1 : 1) + fieldCount) % fieldCount }); return true }
+    if (name === "tab") { move(key.shift ? -1 : 1); return true }
+    if (name === "down" || (!isText && name === "j")) { move(1); return true }
+    if (name === "up" || (!isText && name === "k")) { move(-1); return true }
+    if ((name === "return" || name === "enter") && field.kind === "picker") {
+      // Open the list on the current value.
+      const current = draft[field.key]
+      const at = field.multi ? 0 : pickerChoices(pickerItems(kind, field.key, ctx, "")).findIndex((c) => c.value === current)
+      ui.setState({ formPicker: { query: "", cursor: Math.max(0, at) } })
+      return true
+    }
     if (name === "return" || name === "enter") {
       try {
         if (kind === "category") {
@@ -446,10 +487,15 @@ export function handleKey(ui: UiStore, key: KeyEvent, data?: DataStore): boolean
           if (ui.state.settingsEditId == null) data?.createSettingsTag({ name: draft.name, color: draft.color, categoryId: draft.categoryId })
           else data?.updateSettingsTag(Number(ui.state.settingsEditId), { name: draft.name, color: draft.color, categoryId: draft.categoryId })
         } else if (kind === "budget") {
-          const option = budgetScopeOptions(data?.state.accounts ?? [], data?.state.categories ?? []).find((o) => o.key === draft.scopeKey)
+          const option = budgetScopeOptions(ctx.accounts, ctx.categories).find((o) => o.key === draft.scopeKey)
           const amount = Number(draft.amount.replace(/[$,\s]/g, ""))
           if (!option) throw new Error("choose what the budget covers")
           if (!draft.amount.trim() || !Number.isFinite(amount)) throw new Error("enter the budget amount")
+          const cycle = { unit: draft.unit, anchor: draft.anchor, anchorDate: draft.anchor === "calendar" ? null : draft.anchorDate.trim() }
+          const current = data?.state.budgetCycle
+          // The cycle is shared by every budget; save it first so a bad date
+          // stops the whole edit.
+          if (current && (current.unit !== cycle.unit || current.anchor !== cycle.anchor || current.anchorDate !== cycle.anchorDate)) data?.setBudgetCycle(cycle)
           const editing = data?.state.budgets.find((b) => b.id === ui.state.settingsEditId)
           if (editing && scopeKey(editing.scope) !== option.key) data?.removeBudget(editing.id)
           data?.setBudget(option.scope, amount)
@@ -467,40 +513,18 @@ export function handleKey(ui: UiStore, key: KeyEvent, data?: DataStore): boolean
       } catch (e) { ui.setStatus(e instanceof Error ? e.message : String(e), true) }
       return true
     }
-    const textKey = kind === "filter" ? (field === 0 ? "id" : field === 1 ? "name" : "expr")
-      : kind === "rule" ? (field === 0 ? "name" : field === 1 ? "savedFilterId" : null)
-      : kind === "budget" ? (field === 1 ? "amount" : null)
-      : kind === "cycle" ? (field === 2 ? "anchorDate" : null)
-      : (field === 0 ? "name" : field === 1 ? "color" : null)
-    const horizontal = name === "h" || name === "left" || name === "l" || name === "right" || name === "space"
-    const step = name === "h" || name === "left" ? -1 : 1
-    if (kind === "budget" && field === 0 && horizontal) {
-      const options = budgetScopeOptions(data?.state.accounts ?? [], data?.state.categories ?? [])
-      const index = Math.max(0, options.findIndex((o) => o.key === draft.scopeKey))
-      ui.setState("settingsDraft", "scopeKey", options[(index + step + options.length) % options.length]!.key)
+    const left = name === "left" || (!isText && name === "h")
+    const right = name === "right" || (!isText && (name === "l" || name === "space"))
+    if ((left || right) && field.kind === "choice" && field.choices) {
+      ui.setState("settingsDraft", field.key as "unit", stepChoice(field.choices, draft[field.key] as string, left ? -1 : 1) as never)
       return true
     }
-    if (kind === "cycle" && field < 2 && horizontal) {
-      if (field === 0) ui.setState("settingsDraft", "unit", cycleStep(CYCLE_UNITS, draft.unit, step))
-      else ui.setState("settingsDraft", "anchor", cycleStep(CYCLE_ANCHORS, draft.anchor, step))
+    if ((left || right) && field.kind === "toggle") {
+      ui.setState("settingsDraft", field.key as "notSpending", !draft[field.key])
       return true
     }
-    if (name === "backspace" && textKey) { ui.setState("settingsDraft", textKey as "name", draft[textKey as "name"].slice(0, -1)); return true }
-    if (isPrintable(key) && textKey) { ui.setState("settingsDraft", textKey as "name", draft[textKey as "name"] + seq); return true }
-    if (kind === "category" && field === 2 && (name === "h" || name === "left" || name === "l" || name === "right" || name === "space")) {
-      ui.setState("settingsDraft", "notSpending", !draft.notSpending)
-      return true
-    }
-    if ((name === "h" || name === "left" || name === "l" || name === "right") && ((kind === "tag" && field === 2) || (kind === "rule" && field === 2))) {
-      const categories = data?.state.categories ?? []
-      const current = draft.categoryId ?? draft.setCategoryId
-      const index = categories.findIndex((c) => c.id === current)
-      const delta = name === "h" || name === "left" ? -1 : 1
-      const next = categories[(index + delta + 1 + categories.length) % (categories.length + 1)]?.id ?? null
-      if (kind === "tag") ui.setState("settingsDraft", "categoryId", next)
-      else ui.setState("settingsDraft", "setCategoryId", next)
-      return true
-    }
+    if (isText && name === "backspace") { ui.setState("settingsDraft", field.key as "name", (draft[field.key] as string).slice(0, -1)); return true }
+    if (isText && isPrintable(key)) { ui.setState("settingsDraft", field.key as "name", (draft[field.key] as string) + seq); return true }
     return true
   }
 
@@ -612,11 +636,11 @@ export function handleKey(ui: UiStore, key: KeyEvent, data?: DataStore): boolean
     if (name === "a") {
       const taken = new Set(budgets.map((b) => scopeKey(b.scope)))
       const free = budgetScopeOptions(data.state.accounts, data.state.categories).find((o) => !taken.has(o.key))
-      ui.openSettingsEditor("budget", null, { ...ui.state.settingsDraft, scopeKey: free?.key ?? "overall", amount: "" })
+      ui.openSettingsEditor("budget", null, { ...ui.state.settingsDraft, ...cycleDraft(data.state.budgetCycle), scopeKey: free?.key ?? "overall", amount: "" })
       return true
     }
     if ((name === "return" || name === "enter") && budget) {
-      ui.openSettingsEditor("budget", budget.id, { ...ui.state.settingsDraft, scopeKey: scopeKey(budget.scope), amount: String(budget.amount) })
+      ui.openSettingsEditor("budget", budget.id, { ...ui.state.settingsDraft, ...cycleDraft(data.state.budgetCycle), scopeKey: scopeKey(budget.scope), amount: String(budget.amount) })
       return true
     }
     if ((name === "delete" || name === "backspace") && budget) {
@@ -625,8 +649,7 @@ export function handleKey(ui: UiStore, key: KeyEvent, data?: DataStore): boolean
       return true
     }
     if (name === "c") {
-      const cycle = data.state.budgetCycle
-      ui.openSettingsEditor("cycle", null, { ...ui.state.settingsDraft, unit: cycle.unit, anchor: cycle.anchor, anchorDate: cycle.anchorDate ?? "" })
+      ui.openSettingsEditor("cycle", null, { ...ui.state.settingsDraft, ...cycleDraft(data.state.budgetCycle) })
       return true
     }
     return true
@@ -1032,7 +1055,7 @@ export function footerHints(scope: ScopeId): { key: string; desc: string }[] {
     case "settings.factoryReset":
       return [{ key: "type RESET", desc: "confirm" }, { key: "enter", desc: "erase DB" }, { key: "esc", desc: "cancel" }]
     case "settings.editor":
-      return [{ key: "tab", desc: "field" }, { key: "enter", desc: "save" }, { key: "esc", desc: "cancel" }, { key: "type", desc: "edit" }]
+      return [{ key: "↑/↓", desc: "field" }, { key: "←/→", desc: "change" }, { key: "enter", desc: "save / choose" }, { key: "esc", desc: "cancel" }]
     case "settings.confirm":
       return [{ key: "del", desc: "confirm" }, { key: "esc", desc: "cancel" }]
     default:
@@ -1046,10 +1069,7 @@ function periodBounds(ui: UiStore, data: DataStore): [string, string] {
   return [b.start, b.end]
 }
 
-const CYCLE_UNITS: CycleUnit[] = ["week", "fortnight", "month"]
-const CYCLE_ANCHORS: CycleAnchor[] = ["calendar", "date", "weekStartNearDate"]
-
-function cycleStep<T>(values: T[], current: T, step: number): T {
-  const index = Math.max(0, values.indexOf(current))
-  return values[(index + step + values.length) % values.length]!
+/** The budget cycle as editor draft fields. */
+function cycleDraft(cycle: CycleConfig): { unit: CycleConfig["unit"]; anchor: CycleConfig["anchor"]; anchorDate: string } {
+  return { unit: cycle.unit, anchor: cycle.anchor, anchorDate: cycle.anchorDate ?? "" }
 }
