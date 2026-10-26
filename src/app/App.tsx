@@ -1,4 +1,4 @@
-import { ErrorBoundary, Match, Switch, createEffect, createSignal, on, onCleanup, onMount } from "solid-js"
+import { ErrorBoundary, Match, Switch, createEffect, createSignal, untrack, on, onCleanup, onMount } from "solid-js"
 import { useKeyboard, useRenderer } from "@opentui/solid"
 import type { KeyEvent } from "@opentui/core"
 import { ui } from "../state/uiStore"
@@ -16,15 +16,14 @@ import { SettingsTab } from "../ui/settings/SettingsTab"
 import { theme } from "../theme"
 import { selectionLabel } from "../domain/accountTree"
 import { SYNC_INTERVAL_MS, runSync, syncAgo } from "./sync"
-import {
-  LOOKBACKS,
-  activeChipIndex,
-  applyChip,
-  dataClock,
-} from "../domain/timeframe"
+import { activeChipIndex } from "../domain/timeframe"
+import type { UiPrefs } from "../state/settingsConfig"
+import { restoreUiPrefs } from "../state/uiPrefs"
 
 export function App() {
   const renderer = useRenderer()
+
+  const [bootstrapped, setBootstrapped] = createSignal(false)
 
   onMount(() => {
     try {
@@ -34,16 +33,12 @@ export function App() {
         ui.setStatus("OpenTUI shell · bootstrap off")
         return
       }
-      const clock = dataClock(data.state.transactions)
-      // Open on the current budget cycle.
-      const tf = applyChip(
-        { ...ui.state.timeframe, family: "period", period: "cycle" },
-        LOOKBACKS.length,
-        clock,
-        data.state.budgetCycle,
-      )
-      ui.setTimeframe(tf)
-      ui.setDashChipCursor(activeChipIndex(tf))
+      const restored = restoreUiPrefs(data.state.uiPrefs, data.state.accounts, new Date(), data.state.budgetCycle)
+      ui.setTimeframe(restored.timeframe)
+      ui.setDashChipCursor(activeChipIndex(restored.timeframe))
+      data.setAccountSelection(restored.accountSelection)
+      if (restored.chartViews) ui.setState({ chartViews: restored.chartViews })
+      setBootstrapped(true)
 
       if (data.state.transactions.length > 0) {
         ui.setStatus(`${data.state.transactions.length} transactions loaded.`)
@@ -57,6 +52,17 @@ export function App() {
     } catch (e) {
       ui.setStatus(`DB error: ${e instanceof Error ? e.message : String(e)}`, true)
     }
+  })
+
+  createEffect(() => {
+    if (process.env.JASKMONEY_NO_BOOTSTRAP === "1" || !bootstrapped()) return
+    const tf = ui.state.timeframe
+    const prefs: UiPrefs = {
+      timeframe: { family: tf.family, lookback: tf.lookback, period: tf.period, custom: tf.custom ? { start: tf.custom.start, end: tf.custom.end } : null },
+      accountSelection: data.state.accountSelection,
+      chartViews: [ui.state.chartViews[0], ui.state.chartViews[1]],
+    }
+    untrack(() => data.saveUiPrefs(prefs))
   })
 
   // Re-render the "synced Xm ago" label every 30 seconds.

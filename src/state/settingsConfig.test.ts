@@ -31,3 +31,37 @@ describe("settings config", () => {
     expect(loadSettingsConfig(path).importProfiles).toContainEqual(expect.objectContaining({ id: "anz", account: "ANZ CREDIT", dateFormat: "DMY", descriptionJoin: true }))
   })
 })
+
+test("round-trips UI prefs with a saved custom range in every family", () => {
+  const path = join(mkdtempSync(join(tmpdir(), "jaskmoney-ui-")), "settings.json")
+  for (const family of ["period", "lookback", "custom"] as const) {
+    const ui = {
+      timeframe: { family, lookback: "3M", period: "month", custom: { start: "2026-01-01", end: "2026-01-31" } },
+      accountSelection: 4, chartViews: [1, 2], weekStart: "sunday",
+    } satisfies import("./settingsConfig").UiPrefs
+    saveSettingsConfig({ version: 2, savedFilters: [], importProfiles: [], ui }, path)
+    expect(loadSettingsConfig(path).ui).toEqual(ui)
+  }
+})
+
+test("drops malformed UI members without discarding valid siblings", () => {
+  const path = join(mkdtempSync(join(tmpdir(), "jaskmoney-ui-")), "settings.json")
+  for (const ui of [null, [], "bad", 42]) {
+    writeFileSync(path, JSON.stringify({ version: 2, ui }))
+    expect(loadSettingsConfig(path).ui).toBeUndefined()
+  }
+  const valid = { family: "period", lookback: "1M", period: "month", custom: null }
+  for (const timeframe of [
+    null, "bad", { ...valid, family: "bad" }, { ...valid, lookback: "10Y" },
+    { ...valid, period: "week" }, { ...valid, custom: { start: "2026-02-30", end: "2026-03-01" } },
+    { ...valid, custom: { start: "2026-03-01", end: "2026-02-01" } },
+    { ...valid, family: "custom" },
+  ]) {
+    writeFileSync(path, JSON.stringify({ version: 2, ui: { timeframe, accountSelection: "bad", chartViews: [0, "1"], weekStart: "sunday" } }))
+    expect(loadSettingsConfig(path).ui).toEqual({ weekStart: "sunday" })
+  }
+  for (const chartViews of [null, [], [0], [0, 1, 2], [-1, 0], [0.5, 1]]) {
+    writeFileSync(path, JSON.stringify({ version: 2, ui: { chartViews, weekStart: "bad", accountSelection: -1 } }))
+    expect(loadSettingsConfig(path).ui).toEqual({})
+  }
+})

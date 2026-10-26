@@ -184,11 +184,11 @@ const addDay = (iso: string) => new Date(Date.parse(iso + "T12:00:00Z") + 864000
 /**
  * Gridlines and the x-axis label line for a daily series over `dates`, as in
  * the Go app: month starts ("year" on 1 Jan) and the range's closing month
- * end; week rules on Mondays when weeks are at least 6 cells apart, else on
+ * end; week rules on the week-start day when weeks are at least 6 cells apart, else on
  * days 7, 14 and 21 of each month, thinning to 7 and 21, then 14, as months
  * narrow (unlabelled); and today, which replaces a rule on its day.
  * Labels are placed greedily by priority (start and end, then months, then
- * Mondays' day numbers) with at least two blank cells between them. `colOf`
+ * week-start day numbers) with at least two blank cells between them. `colOf`
  * places date index i (default: the line chart's spread over `width`).
  */
 export function dateAxis(
@@ -196,6 +196,7 @@ export function dateAxis(
   width: number,
   todayISO: string,
   colOf: (index: number) => number = (i) => cellColumn(i, dates.length, width),
+  weekStart: "monday" | "sunday" = "monday",
 ): { markers: Marker[]; labels: string } {
   const n = dates.length
   const markers: Marker[] = []
@@ -204,7 +205,7 @@ export function dateAxis(
   const weekCells = (7 * width) / Math.max(1, n)
   const day = (iso: string) => Number(iso.slice(8, 10))
   const month = (iso: string) => MONTHS[Number(iso.slice(5, 7)) - 1] ?? ""
-  const weekday = (iso: string) => (new Date(iso + "T12:00:00Z").getUTCDay() + 6) % 7
+  const weekday = (iso: string) => (new Date(iso + "T12:00:00Z").getUTCDay() + (weekStart === "sunday" ? 0 : 6)) % 7
   const cross = dates[0]!.slice(0, 4) !== dates[n - 1]!.slice(0, 4)
   const dayLabel = (iso: string) => `${day(iso)} ${month(iso)}${cross ? ` ${iso.slice(2, 4)}` : ""}`
   labelAt.push({ col: 0, text: dayLabel(dates[0]!), align: "left" })
@@ -212,11 +213,11 @@ export function dateAxis(
   const colsPerMonth = width / new Set(dates.map((iso) => iso.slice(0, 7))).size
   const weekDays = weekCells >= 6 ? [] : colsPerMonth >= 14 ? [7, 14, 21] : colsPerMonth >= 9 ? [7, 21] : colsPerMonth >= 5 ? [14] : []
   const months: number[] = []
-  const mondays: number[] = []
+  const weekStarts: number[] = []
   dates.forEach((iso, i) => {
     if (i === 0) return
     if (day(iso) === 1) months.push(i)
-    else if (weekCells >= 6 && weekday(iso) === 0) mondays.push(i)
+    else if (weekCells >= 6 && weekday(iso) === 0) weekStarts.push(i)
     else if (weekDays.includes(day(iso))) markers.push({ index: i, ink: "week" })
   })
   const yearInk = (iso: string) => (iso.slice(5, 7) === "01" ? "year" : "month")
@@ -228,7 +229,7 @@ export function dateAxis(
   // The closing month end, when the range ends on one.
   const lastISO = dates[n - 1]!
   if (n > 1 && day(addDay(lastISO)) === 1) markers.push({ index: n - 1, ink: yearInk(addDay(lastISO)) })
-  for (const i of mondays) {
+  for (const i of weekStarts) {
     markers.push({ index: i, ink: "week" })
     labelAt.push({ col: colOf(i), text: String(day(dates[i]!)), align: "left" })
   }

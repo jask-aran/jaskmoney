@@ -22,7 +22,7 @@ import { INKS, addDays, balancesChart, cashFlowChart, spendingChart, type Period
 
 /** Calendar cell colours by spending level (0 = none). */
 const LEVEL_BG = [theme.surface0, "#5b4636", "#8c6146", "#c47f55", theme.peach] as const
-const WEEKDAYS = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"]
+const WEEKDAYS = () => data.state.weekStart === "sunday" ? ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"] : ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"]
 
 /** Below this width the chart pane spans the tab with categories below it;
  * at or above it, categories take a right-hand column. */
@@ -67,7 +67,7 @@ export function OverviewTab(props: { focused: SectionId }) {
   const flows = createMemo(() => computePeriodFlows(data.state.accounts, filterByTimeframe(data.state.transactions, ui.state.timeframe, clock(), cycleConfig()), scopeIds()))
   const previousFlows = createMemo(() => computePeriodFlows(data.state.accounts, inPrevious(), scopeIds()))
   const groups = () => range().groups
-  const calendar = createMemo(() => spendingCalendar(inPeriod(), bounds().start, bounds().end))
+  const calendar = createMemo(() => spendingCalendar(inPeriod(), bounds().start, bounds().end, data.state.weekStart))
   const series = createMemo(() => dailySpendSeries(inPeriod(), bounds().start, bounds().end))
 
   // Now: point-in-time figures, whatever the range.
@@ -136,10 +136,10 @@ export function OverviewTab(props: { focused: SectionId }) {
     const rows = Math.max(1, height - 3)
     const build = (axis: number): ChartModel | null => {
       const width = Math.max(1, mainWidth() - 4 - axis)
-      if (v === "Daily" || v === "Cumulative" || v === "Weekly") return spendingChart(v, series(), width, rows, today(), spending(), budget()?.budget.amount, periodNames())
-      if (v === "Cash flow") return cashFlowChart(series().dates, width, rows, today(), data.state.accounts, data.state.transactions, scopeIds())
+      if (v === "Daily" || v === "Cumulative" || v === "Weekly") return spendingChart(v, series(), width, rows, today(), spending(), budget()?.budget.amount, periodNames(), data.state.weekStart)
+      if (v === "Cash flow") return cashFlowChart(series().dates, width, rows, today(), data.state.accounts, data.state.transactions, scopeIds(), data.state.weekStart)
       if (v === "Calendar") return null
-      return balancesChart(v, series().dates, width, rows, today(), data.state.accounts, data.state.transactions)
+      return balancesChart(v, series().dates, width, rows, today(), data.state.accounts, data.state.transactions, data.state.weekStart)
     }
     const first = build(AXIS_GUESS)
     if (!first || first.ticks.size === 0 || axisWidth(first.ticks) === AXIS_GUESS) return first
@@ -381,7 +381,7 @@ function calendarLegend(weeks: Array<Array<CalendarDay | null>>, today: string):
     muted("less "),
     ...LEVEL_BG.map((fg): Span => ({ text: "■", fg })),
     muted(" more"),
-    muted(`   ${noSpend} no-spend ${noSpend === 1 ? "day" : "days"}   busiest ${WEEKDAYS[busiest]}`),
+    muted(`   ${noSpend} no-spend ${noSpend === 1 ? "day" : "days"}   busiest ${WEEKDAYS()[busiest]}`),
   ]
 }
 
@@ -399,7 +399,7 @@ function CalendarView(props: { weeks: Array<Array<CalendarDay | null>>; width: n
   return (
     <>
       <text wrapMode="none" fg={theme.overlay1}>{"    " + monthLabels(shown(), cellWidth())}</text>
-      <For each={WEEKDAYS}>
+      <For each={WEEKDAYS()}>
         {(label, row) => (
           <For each={Array.from({ length: band() }, (_, k) => k)}>
             {(line) => (

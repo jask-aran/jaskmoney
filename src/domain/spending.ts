@@ -16,11 +16,11 @@ export interface CalendarDay {
 }
 
 /**
- * Calendar heatmap for [startISO, endISO]: whole weeks, Monday first, as
+ * Calendar heatmap for [startISO, endISO]: whole weeks, configured weekday first, as
  * columns of seven days. Days outside the range are null (padding in the first
  * and last week). Weeks are oldest first.
  */
-export function spendingCalendar(transactions: Transaction[], startISO: string, endISO: string): Array<Array<CalendarDay | null>> {
+export function spendingCalendar(transactions: Transaction[], startISO: string, endISO: string, weekStart: "monday" | "sunday" = "monday"): Array<Array<CalendarDay | null>> {
   const start = Date.parse(startISO + "T12:00:00Z")
   const days = (Date.parse(endISO + "T12:00:00Z") - start) / 86400000 + 1
   const totals = new Map<string, number>()
@@ -37,7 +37,7 @@ export function spendingCalendar(transactions: Transaction[], startISO: string, 
     const level = quartile <= 1 ? 1 : quartile <= 2 ? 2 : quartile <= 3 ? 3 : 4
     levels.set(spent, level)
   })
-  const padding = (new Date(start).getUTCDay() + 6) % 7
+  const padding = (new Date(start).getUTCDay() + (weekStart === "sunday" ? 0 : 6)) % 7
   const weeks: Array<Array<CalendarDay | null>> = []
   for (let offset = -padding; offset < days; offset += 7) {
     const week: Array<CalendarDay | null> = []

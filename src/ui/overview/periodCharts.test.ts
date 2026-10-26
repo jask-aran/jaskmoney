@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test"
-import { addDays, spendingChart } from "./periodCharts"
+import { addDays, cashFlowChart, spendingChart } from "./periodCharts"
 
 const dates = Array.from({ length: 10 }, (_, i) => addDays("2026-10-01", i))
 const legendText = (model: ReturnType<typeof spendingChart>) => model.legend.map((s) => s.text).join("")
@@ -17,4 +17,14 @@ describe("Cumulative budget", () => {
     const model = spendingChart("Cumulative", { dates, values: dates.map(() => 150) }, 40, 10, "2026-10-05", [])
     expect(legendText(model)).not.toContain("pace")
   })
+})
+
+test("weekly spending and cash-flow charts use Sunday buckets and labels", () => {
+  const dates = ["2026-10-03", "2026-10-04", "2026-10-05"]
+  const weekly = spendingChart("Weekly", { dates, values: [1, 2, 3] }, 60, 8, "2026-10-05", [], undefined, undefined, "sunday")
+  expect(weekly.labels).toContain("4 Oct")
+  expect(weekly.legend.map((s) => s.text).join("")).toContain("This week $5 so far")
+  const cashFlow = cashFlowChart(dates, 60, 8, "2026-10-05", [], [], new Set(), "sunday")
+  expect(cashFlow.labels).toContain("4 Oct")
+  expect(cashFlow.labels).not.toContain("5 Oct")
 })

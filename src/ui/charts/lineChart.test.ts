@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test"
-import { dateAxis, lineChart, niceRange, niceScale, valueRow } from "./lineChart"
+import { cellColumn, dateAxis, lineChart, niceRange, niceScale, valueRow } from "./lineChart"
 
 const text = (rows: ReturnType<typeof lineChart>) => rows.map((runs) => runs.map((r) => r.text).join(""))
 
@@ -98,4 +98,11 @@ describe("niceRange", () => {
     expect(niceRange(6500, 14200)).toEqual({ min: 6000, max: 16000, step: 2000 })
     expect(niceRange(100, 100)).toEqual({ min: 100, max: 125, step: 25 })
   })
+})
+
+test("Sunday-start axis marks and labels Sundays instead of Mondays", () => {
+  const dates = Array.from({ length: 21 }, (_, i) => new Date(Date.UTC(2026, 9, 2 + i)).toISOString().slice(0, 10))
+  const axis = dateAxis(dates, 100, "", undefined, "sunday")
+  expect(axis.markers.filter((m) => m.ink === "week").map((m) => dates[m.index])).toEqual(["2026-10-04", "2026-10-11", "2026-10-18"])
+  expect(axis.labels.slice(cellColumn(9, dates.length, 100))).toMatch(/^11/)
 })

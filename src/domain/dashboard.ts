@@ -149,13 +149,13 @@ export function cumulative(values: number[]): number[] {
   return values.map((v) => (sum += v))
 }
 
-/** Totals per Monday-start week; the first and last weeks may be partial
+/** Totals per configured week; the first and last weeks may be partial
  * (their `days` say how many of `dates` they cover). */
-export function weeklyTotals(dates: string[], values: number[]): Array<{ startISO: string; total: number; days: number }> {
+export function weeklyTotals(dates: string[], values: number[], weekStart: "monday" | "sunday" = "monday"): Array<{ startISO: string; total: number; days: number }> {
   const weeks: Array<{ startISO: string; total: number; days: number }> = []
   dates.forEach((iso, i) => {
-    const monday = (new Date(iso + "T12:00:00Z").getUTCDay() + 6) % 7 === 0
-    if (monday || weeks.length === 0) weeks.push({ startISO: iso, total: 0, days: 0 })
+    const startsWeek = new Date(iso + "T12:00:00Z").getUTCDay() === (weekStart === "sunday" ? 0 : 1)
+    if (startsWeek || weeks.length === 0) weeks.push({ startISO: iso, total: 0, days: 0 })
     const week = weeks[weeks.length - 1]!
     week.total += values[i] ?? 0
     week.days++

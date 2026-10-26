@@ -54,7 +54,7 @@ export function addDays(iso: string, days: number): string {
  * - Cumulative: running total against the previous period of equal length
  *   (and `budget`, when given, as a pace line rising from nothing at the
  *   start to the whole budget at the end).
- * - Weekly: totals per Monday-start week; partial weeks in grey.
+ * - Weekly: totals per configured week; partial weeks in grey.
  * Days after today are not drawn.
  */
 export function spendingChart(
@@ -67,16 +67,17 @@ export function spendingChart(
   /** Cumulative only: a spending limit drawn as a rule and named in the legend. */
   budget?: number,
   names: PeriodNames = DEFAULT_NAMES,
+  weekStart: "monday" | "sunday" = "monday",
 ): ChartModel {
   const { dates, values } = series
   const n = dates.length
   const elapsed = dates.filter((d) => d <= todayISO).length
   const upToToday = (vs: number[]) => vs.map((v, i) => (i < elapsed ? v : null))
-  const axis = dateAxis(dates, width, todayISO)
+  const axis = dateAxis(dates, width, todayISO, undefined, weekStart)
   if (n === 0) return { rows: [], ticks: new Map(), labels: "", legend: [muted("No days in range")] }
 
   if (view === "Weekly") {
-    const weeks = weeklyTotals(dates, values)
+    const weeks = weeklyTotals(dates, values, weekStart)
     const scale = niceScale(Math.max(0, ...weeks.map((w) => w.total)))
     const bars = weeks.map((w) => ({ value: w.startISO <= todayISO ? w.total : 0, ink: w.days < 7 || addDays(w.startISO, 6) >= todayISO ? "partial" : "spend" }))
     const { rows: plain, slots } = columnBars(bars, width, height, scale.max)
@@ -91,7 +92,7 @@ export function spendingChart(
       }
     })
     const full = weeks.filter((w, i) => bars[i]!.ink === "spend")
-    const current = weeks.find((w) => w.startISO <= todayISO && addDays(w.startISO, 6) >= todayISO)
+    const current = weeks.findLast((w) => w.startISO <= todayISO && addDays(w.startISO, 6) >= todayISO)
     return {
       rows,
       ticks: tickRows(0, scale.max, scale.step, height, shortMoney),
@@ -187,7 +188,7 @@ export function spendingChart(
   return {
     rows: annotate(plain, marks),
     ticks: tickRows(0, scale.max, scale.step, height, shortMoney),
-    labels: dateAxis(dates, used, todayISO, colOf).labels,
+    labels: dateAxis(dates, used, todayISO, colOf, weekStart).labels,
     legend: [
       { text: BAR, fg: theme.peach },
       muted(n > width ? "Spent per day (averaged)" : "Spent per day"),
@@ -209,6 +210,7 @@ export function balancesChart(
   todayISO: string,
   accounts: Account[],
   transactions: Transaction[],
+  weekStart: "monday" | "sunday" = "monday",
 ): ChartModel {
   const last = dates.filter((d) => d <= todayISO).at(-1)
   if (!dates.length || !last) return { rows: [], ticks: new Map(), labels: "", legend: [muted("No balances in range")] }
@@ -217,7 +219,7 @@ export function balancesChart(
   const values = history.map(pick)
   const lo = Math.min(...values), hi = Math.max(...values)
   const range = niceRange(lo, hi)
-  const axis = dateAxis(dates, width, todayISO)
+  const axis = dateAxis(dates, width, todayISO, undefined, weekStart)
   const change = values[values.length - 1]! - values[0]!
   const low = values.indexOf(lo)
   // The low and the high marked where they happened (not at the ends,
@@ -248,7 +250,7 @@ export function balancesChart(
 
 /**
  * Cash flow over the period's `dates`: money in (green) beside money out (red)
- * per Monday-start week, or per calendar month when the period is longer than
+ * per configured week, or per calendar month when the period is longer than
  * about three months, by the same rules as the Date Range flows (internal
  * transfers and not-spending categories excluded; `scopeIds` narrows to the
  * selected spending accounts). Buckets after today are empty.
@@ -261,13 +263,14 @@ export function cashFlowChart(
   accounts: Account[],
   transactions: Transaction[],
   scopeIds: ReadonlySet<number>,
+  weekStart: "monday" | "sunday" = "monday",
 ): ChartModel {
   if (!dates.length) return { rows: [], ticks: new Map(), labels: "", legend: [muted("No days in range")] }
   const monthly = dates.length > 92
   const buckets: Array<{ start: string; end: string }> = []
   for (const iso of dates) {
-    const monday = (new Date(iso + "T12:00:00Z").getUTCDay() + 6) % 7 === 0
-    const newBucket = !buckets.length || (monthly ? iso.slice(8, 10) === "01" : monday)
+    const startsWeek = new Date(iso + "T12:00:00Z").getUTCDay() === (weekStart === "sunday" ? 0 : 1)
+    const newBucket = !buckets.length || (monthly ? iso.slice(8, 10) === "01" : startsWeek)
     if (newBucket) buckets.push({ start: iso, end: iso })
     else buckets[buckets.length - 1]!.end = iso
   }

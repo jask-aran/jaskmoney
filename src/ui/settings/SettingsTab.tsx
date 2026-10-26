@@ -133,7 +133,7 @@ function DatabasePane(props: { focused: boolean; height?: number | "auto" | `${n
     {/* Gaps are expressions: Solid collapses runs of literal JSX spaces. */}
     <text fg={theme.subtext0}>{"Schema "}<S fg={theme.text}>v{info()?.schemaVersion ?? "—"}</S>{"   Transactions "}<S fg={theme.text}>{info()?.transactionCount ?? 0}</S>{"   Accounts "}<S fg={theme.text}>{info()?.accountCount ?? 0}</S></text>
     <text fg={theme.subtext0}>{"Categories "}<S fg={theme.text}>{info()?.categoryCount ?? 0}</S>{"   Tags "}<S fg={theme.text}>{info()?.tagCount ?? 0}</S>{"   Rules "}<S fg={theme.text}>{info()?.ruleCount ?? 0}</S></text>
-    <text fg={theme.overlay1}>{`i import CSV · p manage profiles · n icons ${data.state.icons ? "on" : "off"}`}</text>
+    <text fg={theme.overlay1}>{`i import CSV · p manage profiles · n icons ${data.state.icons ? "on" : "off"} · w week starts ${data.state.weekStart === "sunday" ? "Sun" : "Mon"}`}</text>
     <text fg={theme.overlay1}>c clear transactions/imports · x factory-reset database</text>
     <text fg={theme.overlay1}>Profiles {data.state.importProfiles.length} · imports {info()?.importCount ?? 0} · reset keeps filters and config</text>
   </SectionCard>

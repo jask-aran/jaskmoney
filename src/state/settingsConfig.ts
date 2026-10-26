@@ -1,9 +1,19 @@
 import { existsSync, mkdirSync, readFileSync, renameSync, writeFileSync } from "node:fs"
 import { dirname, join } from "node:path"
 import { filterExprString, parseFilterStrict } from "../domain/filter"
+import type { AccountSelection } from "../domain/accountTree"
+import { customRange, LOOKBACKS, PERIODS, type TimeframeState } from "../domain/timeframe"
 import type { ImportProfile, SavedFilter } from "../domain/types"
 
+export interface UiPrefs {
+  timeframe?: Pick<TimeframeState, "family" | "lookback" | "period" | "custom">
+  accountSelection?: AccountSelection
+  chartViews?: [number, number]
+  weekStart?: "monday" | "sunday"
+}
+
 export interface SettingsConfig {
+  ui?: UiPrefs
   version: 2
   savedFilters: SavedFilter[]
   importProfiles: ImportProfile[]
@@ -66,6 +76,35 @@ export function validateImportProfile(profile: ImportProfile): ImportProfile {
   return { ...profile, id, name: profile.name.trim(), account: profile.account.trim(), importPrefix: profile.importPrefix.trim() }
 }
 
+function parseUiPrefs(raw: unknown): UiPrefs | undefined {
+  if (!raw || typeof raw !== "object" || Array.isArray(raw)) return undefined
+  const ui: UiPrefs = {}
+  if ("weekStart" in raw && (raw.weekStart === "monday" || raw.weekStart === "sunday")) ui.weekStart = raw.weekStart
+  if ("accountSelection" in raw) {
+    const sel = raw.accountSelection
+    if (sel === "all" || sel === "savers" || (typeof sel === "number" && Number.isSafeInteger(sel) && sel > 0)) ui.accountSelection = sel
+  }
+  if ("chartViews" in raw && Array.isArray(raw.chartViews) && raw.chartViews.length === 2) {
+    const [a, b] = raw.chartViews
+    if (typeof a === "number" && Number.isSafeInteger(a) && a >= 0 && typeof b === "number" && Number.isSafeInteger(b) && b >= 0) ui.chartViews = [a, b]
+  }
+  if ("timeframe" in raw && raw.timeframe && typeof raw.timeframe === "object") {
+    const tf = raw.timeframe
+    const lookback = LOOKBACKS.find((id) => "lookback" in tf && id === tf.lookback)
+    const period = PERIODS.find((id) => "period" in tf && id === tf.period)
+    let custom: TimeframeState["custom"] = null
+    let validCustom = "custom" in tf && tf.custom === null
+    if ("custom" in tf && tf.custom && typeof tf.custom === "object" && "start" in tf.custom && "end" in tf.custom && typeof tf.custom.start === "string" && typeof tf.custom.end === "string") {
+      const range = customRange(tf.custom.start, tf.custom.end)
+      if (typeof range !== "string") { custom = range; validCustom = true }
+    }
+    if ("family" in tf && (tf.family === "lookback" || tf.family === "period" || (tf.family === "custom" && custom)) && lookback && period && validCustom) {
+      ui.timeframe = { family: tf.family, lookback, period, custom }
+    }
+  }
+  return ui
+}
+
 export function loadSettingsConfig(path = defaultSettingsConfigPath()): SettingsConfig {
   if (!existsSync(path)) return { ...EMPTY, savedFilters: [], importProfiles: defaultProfiles() }
   const parsed: unknown = JSON.parse(readFileSync(path, "utf8"))
@@ -83,7 +122,7 @@ export function loadSettingsConfig(path = defaultSettingsConfigPath()): Settings
   const importProfiles = Array.isArray(raw.importProfiles)
     ? raw.importProfiles.map((p) => validateImportProfile({ dateFormat: "DMY", ...(p as Omit<ImportProfile, "dateFormat">) }))
     : []
-  return { version: 2, savedFilters, importProfiles: importProfiles.length ? importProfiles : defaultProfiles(), icons: raw.icons !== false }
+  return { version: 2, savedFilters, importProfiles: importProfiles.length ? importProfiles : defaultProfiles(), icons: raw.icons !== false, ui: parseUiPrefs("ui" in raw ? raw.ui : undefined) }
 }
 
 /** Rename is atomic on the same filesystem; a config write can therefore
@@ -96,6 +135,7 @@ export function saveSettingsConfig(config: SettingsConfig, path = defaultSetting
     savedFilters: config.savedFilters.map((f, i, all) => validateSavedFilter(f, all.filter((_, j) => j !== i))),
     importProfiles: config.importProfiles.map(validateImportProfile),
     icons: config.icons !== false,
+    ui: parseUiPrefs(config.ui),
   }
   const temp = `${path}.tmp-${process.pid}-${Date.now()}`
   try {

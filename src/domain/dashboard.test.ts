@@ -135,3 +135,11 @@ describe("fitCategoryLines", () => {
     expect(fitCategoryLines(groups, 0)).toEqual([])
   })
 })
+
+test("weekly totals split on Sunday when configured", () => {
+  const dates = ["2026-10-03", "2026-10-04", "2026-10-05", "2026-10-06"]
+  expect(weeklyTotals(dates, [1, 2, 3, 4], "sunday")).toEqual([
+    { startISO: "2026-10-03", total: 1, days: 1 },
+    { startISO: "2026-10-04", total: 9, days: 3 },
+  ])
+})

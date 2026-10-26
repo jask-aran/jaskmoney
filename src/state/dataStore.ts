@@ -1,4 +1,5 @@
-import { createStore } from "solid-js/store"
+import { createStore, reconcile, unwrap } from "solid-js/store"
+import { isDeepStrictEqual } from "node:util"
 import { existsSync, readFileSync, readdirSync, unlinkSync } from "node:fs"
 import { basename, join, resolve } from "node:path"
 import {
@@ -54,7 +55,7 @@ import {
   type FilterNode,
 } from "../domain/filter"
 import { type Account, type Category, type ImportPreview, type ImportProfile, type ImportRecord, type Rule, type RuleRunResult, type SavedFilter, type SortColumn, type Tag, type Transaction } from "../domain/types"
-import { loadSettingsConfig, saveSettingsConfig, validateImportProfile, validateSavedFilter } from "./settingsConfig"
+import { loadSettingsConfig, saveSettingsConfig, validateImportProfile, validateSavedFilter, type SettingsConfig, type UiPrefs } from "./settingsConfig"
 
 export interface DataState {
   ready: boolean
@@ -69,6 +70,8 @@ export interface DataState {
   tags: Tag[]
   rules: Rule[]
   savedFilters: SavedFilter[]
+  uiPrefs: UiPrefs
+  weekStart: "monday" | "sunday"
   /** Show Nerd Font category icons (settings config). */
   icons: boolean
   importProfiles: ImportProfile[]
@@ -111,6 +114,8 @@ function createDataStore() {
     rules: [],
     savedFilters: [],
     icons: true,
+    uiPrefs: {},
+    weekStart: "monday",
     importProfiles: [],
     imports: [],
     transactions: [],
@@ -158,7 +163,8 @@ function createDataStore() {
     db = openDb(actualDbPath)
     const config = loadSettingsConfig()
     setState({ dbPath: actualDbPath === ":memory:" ? ":memory:" : actualDbPath })
-    setState({ savedFilters: config.savedFilters, importProfiles: config.importProfiles, icons: config.icons !== false })
+    setState({ savedFilters: config.savedFilters, importProfiles: config.importProfiles, icons: config.icons !== false, weekStart: config.ui?.weekStart ?? "monday" })
+    setState("uiPrefs", reconcile(config.ui ?? {}))
     refresh()
   }
 
@@ -279,7 +285,7 @@ function createDataStore() {
   }
 
   function setAccountSelection(selection: AccountSelection) {
-    setState({ accountSelection: selection })
+    setState({ accountSelection: typeof selection === "number" && !state.accounts.some((a) => a.id === selection) ? "all" : selection })
   }
 
   /** Local-only categorisation (no provider push); see categorizeTransactions. */
@@ -440,35 +446,46 @@ function createDataStore() {
   function reorderSettingsRule(id: number, index: number) { if (!db) throw new Error("db not open"); reorderRule(db, id, index); refresh() }
   function toggleSettingsRule(id: number, enabled: boolean) { if (!db) throw new Error("db not open"); toggleRule(db, id, enabled); refresh() }
 
+  function persistConfig(patch: Partial<SettingsConfig>) {
+    saveSettingsConfig({ version: 2, icons: state.icons, savedFilters: state.savedFilters, importProfiles: state.importProfiles, ui: state.uiPrefs, ...patch })
+  }
+
+  function saveUiPrefs(patch: Partial<UiPrefs>) {
+    const next = { ...state.uiPrefs, ...patch }
+    if (isDeepStrictEqual(unwrap(next), unwrap(state.uiPrefs))) return
+    persistConfig({ ui: next })
+    setState({ uiPrefs: next, weekStart: next.weekStart ?? "monday" })
+  }
+
   function saveSavedFilter(filter: SavedFilter, originalId?: string) {
     const others = state.savedFilters.filter((f) => f.id !== originalId)
     const normalized = validateSavedFilter(filter, others)
     const next = originalId ? state.savedFilters.map((f) => f.id === originalId ? normalized : f) : [...state.savedFilters, normalized]
-    saveSettingsConfig({ version: 2, icons: state.icons, savedFilters: next, importProfiles: state.importProfiles })
+    persistConfig({ savedFilters: next })
     setState({ savedFilters: next })
   }
 
   function setIcons(on: boolean) {
-    saveSettingsConfig({ version: 2, icons: on, savedFilters: state.savedFilters, importProfiles: state.importProfiles })
+    persistConfig({ icons: on })
     setState({ icons: on })
   }
 
   function deleteSavedFilter(id: string) {
     const next = state.savedFilters.filter((f) => f.id !== id)
-    saveSettingsConfig({ version: 2, icons: state.icons, savedFilters: next, importProfiles: state.importProfiles })
+    persistConfig({ savedFilters: next })
     setState({ savedFilters: next })
   }
 
   function saveImportProfile(profile: ImportProfile) {
     const normalized = validateImportProfile(profile)
     const next = [...state.importProfiles.filter((p) => p.id !== normalized.id), normalized].sort((a, b) => a.id.localeCompare(b.id))
-    saveSettingsConfig({ version: 2, icons: state.icons, savedFilters: state.savedFilters, importProfiles: next })
+    persistConfig({ importProfiles: next })
     setState({ importProfiles: next })
   }
 
   function deleteImportProfile(id: string) {
     const next = state.importProfiles.filter((p) => p.id !== id)
-    saveSettingsConfig({ version: 2, icons: state.icons, savedFilters: state.savedFilters, importProfiles: next })
+    persistConfig({ importProfiles: next })
     setState({ importProfiles: next })
   }
 
@@ -634,6 +651,7 @@ function createDataStore() {
     toggleSettingsRule,
     saveSavedFilter,
     setIcons,
+    saveUiPrefs,
     deleteSavedFilter,
     saveImportProfile,
     deleteImportProfile,

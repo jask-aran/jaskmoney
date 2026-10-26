@@ -68,3 +68,11 @@ describe("spendingCalendar", () => {
     })
   }
 })
+
+test("Sunday-start calendar pads Saturday then begins a new week on Sunday", () => {
+  const weeks = spendingCalendar([], "2026-10-03", "2026-10-05", "sunday")
+  expect(weeks).toEqual([
+    [null, null, null, null, null, null, { dateISO: "2026-10-03", spent: 0, level: 0 }],
+    [{ dateISO: "2026-10-04", spent: 0, level: 0 }, { dateISO: "2026-10-05", spent: 0, level: 0 }, null, null, null, null, null],
+  ])
+})

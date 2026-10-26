@@ -751,6 +751,12 @@ export function handleKey(ui: UiStore, key: KeyEvent, data?: DataStore): boolean
       ui.setStatus(data.state.icons ? "Category icons on (needs a Nerd Font)" : "Category icons off")
       return true
     }
+    // Approved port deviation: Database & Import owns the week toggle.
+    if (name === "w" && data) {
+      data.saveUiPrefs({ weekStart: data.state.weekStart === "monday" ? "sunday" : "monday" })
+      ui.setStatus(data.state.weekStart === "sunday" ? "Weeks start on Sunday" : "Weeks start on Monday")
+      return true
+    }
     if (name === "c") { ui.armSettingsConfirm({ kind: "clearData", id: 0, label: "all transaction and import data" }); ui.setStatus("Press del to clear all transaction and import data"); return true }
     if (name === "x") { ui.setState({ factoryResetOpen: true, factoryResetDraft: "", factoryResetCaret: 0 }); ui.setStatus("Type RESET then enter to remove this SQLite database"); return true }
     return true
@@ -1171,7 +1177,7 @@ export function footerHints(scope: ScopeId, state?: Pick<UiState, "focusedSectio
     case "settings.up":
       return [{ key: "j/k", desc: "move" }, { key: "space", desc: "sync on/off" }, { key: "s", desc: "sync now" }, { key: "esc", desc: "done" }]
     case "settings.database":
-      return [{ key: "i", desc: "import" }, { key: "p", desc: "profiles" }, { key: "n", desc: "icons" }, { key: "c", desc: "clear data" }, { key: "x", desc: "reset DB" }, { key: "esc", desc: "done" }]
+      return [{ key: "i", desc: "import" }, { key: "p", desc: "profiles" }, { key: "n", desc: "icons" }, { key: "w", desc: "week start" }, { key: "c", desc: "clear data" }, { key: "x", desc: "reset DB" }, { key: "esc", desc: "done" }]
     case "settings.import.files":
       return [{ key: "j/k", desc: "file" }, { key: "enter", desc: "select" }, { key: "p", desc: "path" }, { key: "esc", desc: "cancel" }]
     case "settings.import.path":
