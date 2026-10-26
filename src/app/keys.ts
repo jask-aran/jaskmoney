@@ -20,14 +20,8 @@ import {
   stepPeriod,
   timeframeBounds,
 } from "../domain/timeframe"
+import { isPrintable } from "../domain/textField"
 
-function isPrintable(key: KeyEvent): boolean {
-  if (key.ctrl || key.meta) return false
-  const s = key.sequence
-  if (!s || s.length !== 1) return false
-  const code = s.charCodeAt(0)
-  return code >= 32 && code !== 127
-}
 
 function defaultProfile(id: string, path: string) {
   const name = path.split(/[\\/]/).pop()?.replace(/\.csv$/i, "") || "CSV import"
