@@ -50,23 +50,40 @@ export function columnBars(
 }
 
 /**
- * Filled area chart of a level series (e.g. net position), `height` rows,
- * eighth-block resolution, rows top first. The baseline is the series minimum
- * less a 10% margin, so movement shows instead of every column being nearly
- * full. Each column shows the value at the end of its slice of the series,
- * so the last column is always the latest value.
+ * Filled area chart of a level series (e.g. net position) between `min` and
+ * `max`, `height` rows, eighth-block resolution, rows top first as runs. Each
+ * column shows the value at the end of its slice of the series, so the last
+ * column is the latest value. Filled cells are inked "area" (callers shade
+ * them by row); empty cells in `markers` columns get a "grid" rule.
  */
-export function levelChart(values: number[], width: number, height: number): { rows: string[]; min: number; max: number } {
-  if (values.length === 0 || width <= 0) return { rows: [], min: 0, max: 0 }
-  const cols: number[] = []
-  for (let c = 0; c < width; c++) cols.push(values[Math.min(values.length - 1, Math.max(0, Math.ceil(((c + 1) * values.length) / width) - 1))]!)
-  const lo = Math.min(...cols), hi = Math.max(...cols)
-  const base = lo - (hi - lo) * 0.1
-  const span = hi - base || 1
-  const levels = cols.map((v) => Math.max(1, Math.round(((v - base) / span) * height * 8)))
-  const rows: string[] = []
-  for (let r = height - 1; r >= 0; r--) {
-    rows.push(levels.map((l) => EIGHTHS[Math.max(0, Math.min(8, l - r * 8))] || " ").join(""))
+export function areaChart(
+  values: number[],
+  width: number,
+  height: number,
+  min: number,
+  max: number,
+  markers: number[] = [],
+): Run[][] {
+  if (values.length === 0 || width <= 0 || height <= 0) return []
+  const span = max - min || 1
+  const levels: number[] = []
+  for (let c = 0; c < width; c++) {
+    const v = values[Math.min(values.length - 1, Math.max(0, Math.ceil(((c + 1) * values.length) / width) - 1))]!
+    levels.push(Math.max(1, Math.min(height * 8, Math.round(((v - min) / span) * height * 8))))
   }
-  return { rows, min: lo, max: hi }
+  const grid = new Set(markers)
+  const rows: Run[][] = []
+  for (let r = height - 1; r >= 0; r--) {
+    const runs: Run[] = []
+    for (let c = 0; c < width; c++) {
+      const level = levels[c]!
+      const eighths = Math.max(0, Math.min(8, level - r * 8))
+      const [text, ink] = eighths > 0 ? [EIGHTHS[eighths]!, "area"] : grid.has(c) ? ["│", "grid"] : [" ", null]
+      const last = runs[runs.length - 1]
+      if (last && last.ink === ink) last.text += text
+      else runs.push({ text, ink })
+    }
+    rows.push(runs)
+  }
+  return rows
 }

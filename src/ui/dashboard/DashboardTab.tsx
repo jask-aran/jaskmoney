@@ -12,9 +12,9 @@ import { budgetLabel } from "../../domain/budgetScopes"
 import { accountRole } from "../../domain/types"
 import { toISODate } from "../../domain/timeframe"
 import { fit, shortDate, shortMoney } from "../text"
-import { levelChart } from "../charts/bars"
+import { areaChart } from "../charts/bars"
 import { AXIS, ChartBody } from "../charts/ChartBody"
-import { dateAxis } from "../charts/lineChart"
+import { dateAxis, niceRange } from "../charts/lineChart"
 import { INKS, addDays, spendingChart } from "../spending/periodCharts"
 import { SpendingPane } from "./SpendingPane"
 
@@ -75,8 +75,29 @@ export function DashboardTab(props: { focused: SectionId }) {
     return spendingChart(cycleView(), dailySpendSeries(spending, cycle().start, cycle().end), Math.max(1, inner() - AXIS), Math.max(1, cycleChartRows()), today(), spending, overall()?.amount)
   })
 
-  const netStrip = createMemo(() => levelChart(position().history.map((h) => h.value), Math.max(1, dims().width - 4 - AXIS), 5))
-  const netStripLabels = createMemo(() => dateAxis(position().history.map((h) => h.dateISO), Math.max(1, dims().width - 4 - AXIS), today()).labels)
+  // Net position: an area shaded from bright (top) to dim (bottom) on round
+  // axis bounds, month rules, and the year's change, high and low in the
+  // title.
+  const netWidth = () => Math.max(1, dims().width - 4 - AXIS)
+  const netStrip = createMemo(() => {
+    const history = position().history
+    const values = history.map((h) => h.value)
+    const width = netWidth()
+    if (!values.length) return { rows: [], ticks: new Map<number, string>(), labels: "", note: "" }
+    const lo = Math.min(...values), hi = Math.max(...values)
+    const range = niceRange(lo, hi, 3)
+    const axis = dateAxis(history.map((h) => h.dateISO), width, today())
+    const months = axis.markers.filter((m) => m.ink === "month").map((m) => Math.floor((m.index * width) / values.length))
+    const change = values[values.length - 1]! - values[0]!
+    const when = (v: number) => shortDate(history[values.indexOf(v)]!.dateISO)
+    return {
+      rows: areaChart(values, width, NET_ROWS, range.min, range.max, months),
+      // Top, middle and bottom rows: five rows cannot space more ticks evenly.
+      ticks: new Map([[0, shortMoney(range.max)], [Math.floor(NET_ROWS / 2), shortMoney((range.min + range.max) / 2)], [NET_ROWS - 1, shortMoney(range.min)]]),
+      labels: axis.labels,
+      note: `· 1 year · ${change >= 0 ? "+" : "-"}${formatWholeMoney(Math.abs(change))} · high ${shortMoney(hi)} ${when(hi)} · low ${shortMoney(lo)} ${when(lo)}`,
+    }
+  })
   // Narrow Savers: two "name balance change" cells per line.
   const saverPairs = createMemo(() => {
     const cells = [
@@ -167,16 +188,16 @@ export function DashboardTab(props: { focused: SectionId }) {
 
   const netCard = () => (
     <Show when={showNetStrip()}>
-      <SectionCard title="Net Position" titleSuffix="· 1 year" titleSuffixColor={theme.subtext0} height={8}>
+      <SectionCard title="Net Position" titleSuffix={netStrip().note || "· 1 year"} titleSuffixColor={theme.subtext0} height={NET_ROWS + 3}>
         <For each={netStrip().rows}>
-          {(row, i) => (
+          {(runs, i) => (
             <text wrapMode="none">
-              <S fg={theme.overlay1}>{(i() === 0 ? shortMoney(netStrip().max) : i() === netStrip().rows.length - 1 ? shortMoney(netStrip().min) : "").padStart(AXIS - 2) + " ┤"}</S>
-              <S fg={theme.lavender}>{row}</S>
+              <S fg={theme.overlay1}>{(netStrip().ticks.get(i()) ?? "").padStart(AXIS - 2) + (netStrip().ticks.has(i()) ? " ┤" : " │")}</S>
+              <For each={runs}>{(run) => <S fg={run.ink === "area" ? NET_SHADES[i()] : run.ink === "grid" ? theme.surface0 : undefined}>{run.text}</S>}</For>
             </text>
           )}
         </For>
-        <text wrapMode="none" fg={theme.overlay1}>{" ".repeat(AXIS) + netStripLabels()}</text>
+        <text wrapMode="none" fg={theme.overlay1}>{" ".repeat(AXIS) + netStrip().labels}</text>
       </SectionCard>
     </Show>
   )
@@ -271,6 +292,10 @@ const WIDE = 120
 /** Savers' widest useful size. */
 const SIDE_MAX = 48
 const LABEL = 15
+/** Net position chart rows. */
+const NET_ROWS = 5
+/** Net position shades by row, top first: lavender fading towards the canvas. */
+const NET_SHADES = ["#b4befe", "#9da5dc", "#868cba", "#6f7398", "#585a76"]
 const VALUE = 14
 
 function money(n: number | null): string {
