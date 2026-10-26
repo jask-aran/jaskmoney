@@ -1,12 +1,13 @@
-import { For, Show, createEffect, createMemo } from "solid-js"
+import { For, Show, createMemo } from "solid-js"
 import { categoryMark, viewMark } from "../icons"
 import { useTerminalDimensions } from "@opentui/solid"
-import { SectionCard, type Span } from "../primitives/SectionCard"
+import { SectionCard } from "../primitives/SectionCard"
+import { muted, type Span } from "../primitives/spans"
 import { S } from "../primitives/S"
 import { CHART_VIEWS, ui, type SectionId } from "../../state/uiStore"
 import { data } from "../../state/dataStore"
 import { theme } from "../../theme"
-import { computeCategorySpend, dailySpendSeries, fitCategoryLines, formatMoney, formatPct, formatWholeMoney, groupCategorySpend } from "../../domain/dashboard"
+import { computeCategorySpend, dailySpendSeries, fitCategoryLines, formatMoney, formatPct, formatWholeMoney, groupCategorySpend, signedWholeMoney } from "../../domain/dashboard"
 import { computePeriodFlows, computePosition } from "../../domain/position"
 import { budgetProgress, cycleFor, type BudgetProgress } from "../../domain/budget"
 import { spendingCalendar, type CalendarDay } from "../../domain/spending"
@@ -182,7 +183,7 @@ export function OverviewTab(props: { focused: SectionId }) {
         {stat("  pending", formatMoney(Math.abs(position().pendingAmount)), `${position().pendingCount} txn`, { value: theme.overlay1 })}
       </Show>
       {stat("Runway", position().runwayDays != null ? `${Math.round(position().runwayDays!)} days` : "—", position().dailySpend != null ? `${formatWholeMoney(position().dailySpend!)}/day` : "", { value: theme.peach })}
-      {stat("30 day change", signedWhole(change30()), "", { value: signColor(change30()) })}
+      {stat("30 day change", signedWholeMoney(change30()), "", { value: signColor(change30()) })}
     </SectionCard>
   )
 
@@ -193,10 +194,10 @@ export function OverviewTab(props: { focused: SectionId }) {
       <Show when={saversFull()}>
         <text wrapMode="none" fg={theme.overlay1}>{" ".repeat(labelWidth()) + "Balance".padStart(VALUE) + "30 days".padStart(NOTE)}</text>
         <For each={position().savers}>
-          {(saver) => stat(saver.name, formatWholeMoney(saver.balance), signedWhole(saverChange(saver.accountId)), { note: signColor(saverChange(saver.accountId)) })}
+          {(saver) => stat(saver.name, formatWholeMoney(saver.balance), signedWholeMoney(saverChange(saver.accountId)), { note: signColor(saverChange(saver.accountId)) })}
         </For>
       </Show>
-      {stat("Total", formatWholeMoney(position().saversTotal), signedWhole(saversTotalChange()), { bold: true, note: signColor(saversTotalChange()) })}
+      {stat("Total", formatWholeMoney(position().saversTotal), signedWholeMoney(saversTotalChange()), { bold: true, note: signColor(saversTotalChange()) })}
     </SectionCard>
   )
 
@@ -207,8 +208,8 @@ export function OverviewTab(props: { focused: SectionId }) {
       <text wrapMode="none" fg={theme.overlay1}>{" ".repeat(labelWidth()) + "Range".padStart(VALUE) + "Before".padStart(NOTE)}</text>
       {stat("Spent", formatWholeMoney(flows().spent), formatWholeMoney(previousFlows().spent), { value: changeColor(flows().spent, previousFlows().spent) })}
       {stat("Income", formatWholeMoney(flows().income), formatWholeMoney(previousFlows().income))}
-      {stat("Net", signedWhole(flows().net), signedWhole(previousFlows().net), { value: signColor(flows().net) })}
-      {stat("To savers", signedWhole(flows().savedToSavers), signedWhole(previousFlows().savedToSavers), { value: signColor(flows().savedToSavers) })}
+      {stat("Net", signedWholeMoney(flows().net), signedWholeMoney(previousFlows().net), { value: signColor(flows().net) })}
+      {stat("To savers", signedWholeMoney(flows().savedToSavers), signedWholeMoney(previousFlows().savedToSavers), { value: signColor(flows().savedToSavers) })}
       {stat("Savings rate", formatPct(flows().savingsRate), formatPct(previousFlows().savingsRate))}
       {stat("Daily", daily(flows().spent), daily(previousFlows().spent))}
       {stat("Transactions", String(flows().txnCount), String(previousFlows().txnCount))}
@@ -334,7 +335,6 @@ const PERIOD_UNIT: Record<string, string> = { cycle: "cycle", month: "month", qt
 /** The calendar's legend for the pane's bottom border: the levels as
  * swatches, the no-spend days and the busiest weekday. */
 function calendarLegend(weeks: Array<Array<CalendarDay | null>>, today: string): Span[] {
-  const muted = (text: string): Span => ({ text, fg: theme.overlay1 })
   const days = weeks.flat().filter((d): d is CalendarDay => d != null && d.dateISO <= today)
   if (!days.length) return [muted("No days yet")]
   const noSpend = days.filter((d) => d.spent === 0).length
@@ -430,8 +430,4 @@ const MONTHS = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "
 function changeColor(now: number, before: number): string {
   if (before <= 0 || Math.abs(now - before) < 0.005) return theme.overlay1
   return now > before ? theme.error : theme.success
-}
-
-function signedWhole(n: number): string {
-  return n > 0 ? `+${formatWholeMoney(n)}` : formatWholeMoney(n)
 }

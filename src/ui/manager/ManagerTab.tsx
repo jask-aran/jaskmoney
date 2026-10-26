@@ -1,12 +1,12 @@
 import { For, Show, createEffect, createMemo } from "solid-js"
 import { useTerminalDimensions } from "@opentui/solid"
 import { SectionCard } from "../primitives/SectionCard"
+import { muted } from "../primitives/spans"
 import { S } from "../primitives/S"
 import { ui, type SectionId } from "../../state/uiStore"
 import { data } from "../../state/dataStore"
-import { theme, uncategorisedColor } from "../../theme"
+import { theme } from "../../theme"
 import { formatMoney } from "../../domain/dashboard"
-import { rowAppearance } from "../../domain/rowStyle"
 import { filterExprString } from "../../domain/filter"
 import type { Account } from "../../domain/types"
 import { fit, truncate } from "../text"
@@ -16,8 +16,8 @@ import { toISODate } from "../../domain/timeframe"
 import { TransactionTable } from "./TransactionTable"
 import { MerchantTable } from "./MerchantTable"
 import { groupByMerchant, sortMerchantGroups } from "../../domain/merchants"
-import { categoryMark } from "../icons"
 import { TransactionDetail } from "./TransactionDetail"
+import { Modal } from "../primitives/Modal"
 
 /** Sidebar width, borders included. */
 export const SIDEBAR_WIDTH = 36
@@ -82,16 +82,16 @@ export function ManagerTab(props: { focused: SectionId }) {
   const scrollIndicator = () => {
     if (merchants()) {
       if (groups().length === 0) return undefined
-      return `─ ${groups().length} merchants · ${rows().length} transactions · by ${ui.state.merchantSort}${ui.state.merchantReverse ? "↑" : "↓"} ─`
+      return `${groups().length} merchants · ${rows().length} transactions · by ${ui.state.merchantSort}${ui.state.merchantReverse ? "↑" : "↓"}`
     }
     if (rows().length === 0) return undefined
     const start = ui.state.managerTop + 1
     const end = Math.min(ui.state.managerTop + ui.state.managerVisible, rows().length)
-    return `─ showing ${start}-${end} of ${rows().length}${
+    return `showing ${start}-${end} of ${rows().length}${
       selCount() > 0 ? ` · ${selCount()} selected` : ""
     }${ui.state.rangeSelecting ? " · range" : ""} · sort ${data.state.sortColumn}${
       data.state.sortAscending ? "↑" : "↓"
-    } ─`
+    }`
   }
 
   // Go-style filter bar: the input stays in the pane; its canonical form is
@@ -177,7 +177,7 @@ export function ManagerTab(props: { focused: SectionId }) {
         active={txFocused()}
         flexGrow={1}
         height={wide() ? "100%" : undefined}
-        bottomTitle={scrollIndicator()}
+        bottomSpans={scrollIndicator() ? [muted(scrollIndicator()!)] : []}
       >
         <Show when={filterBar()}>
           {(fb: () => NonNullable<ReturnType<typeof filterBar>>) => (
@@ -223,12 +223,14 @@ export function ManagerTab(props: { focused: SectionId }) {
         </Show>
       </SectionCard>
       <TransactionDetail />
-      <Show when={accountAction()}>{(account: () => Account) => <box position="absolute" zIndex={20} left="22%" top="35%" width="56%" border borderStyle="rounded" borderColor={theme.warning} paddingLeft={1} paddingRight={1} backgroundColor={theme.base} flexDirection="column">
-        <text fg={theme.warning}><b>Account data · {account().name}</b></text>
-        <text fg={theme.text}>c clear this account’s transactions</text>
-        <text fg={theme.error}>x remove this account and its transactions</text>
-        <text fg={theme.overlay1}>Press del to confirm either action · esc cancel</text>
-      </box>}</Show>
+      <Show when={accountAction()}>
+        {(account: () => Account) => (
+          <Modal title="Account data" subtitle={account().name} tone="warning" width={56} hints="del confirms either action · esc cancel">
+            <text fg={theme.text}>c clear this account’s transactions</text>
+            <text fg={theme.error}>x remove this account and its transactions</text>
+          </Modal>
+        )}
+      </Show>
     </box>
   )
 }

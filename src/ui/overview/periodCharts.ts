@@ -1,11 +1,12 @@
 /** Chart models for the Overview's chart pane. Pure: each returns a
  * ChartModel for ChartBody. */
 import { theme } from "../../theme"
-import { cumulative, dailySpendSeries, formatWholeMoney, weeklyTotals } from "../../domain/dashboard"
+import { cumulative, dailySpendSeries, formatWholeMoney, signedWholeMoney, weeklyTotals } from "../../domain/dashboard"
 import { balanceHistory, computePeriodFlows } from "../../domain/position"
 import type { Account, Transaction } from "../../domain/types"
 import { shortDate, shortMoney } from "../text"
 import { barTopRow, columnBars } from "../charts/bars"
+import { muted } from "../primitives/spans"
 import type { ChartModel } from "../charts/ChartBody"
 import { annotate, type ChartLabel } from "../charts/annotate"
 import { dateAxis, lineChart, niceRange, niceScale, pointCell, tickRows } from "../charts/lineChart"
@@ -33,7 +34,6 @@ const sum = (values: number[]) => values.reduce((a, b) => a + b, 0)
 const LINE = "⠒⠒ "
 const BAR = "▆ "
 const RULE = "┈┈ "
-const muted = (text: string) => ({ text, fg: theme.overlay1 })
 const GAP = muted("   ")
 
 /** What the range and the one before it are called in legends and labels. */
@@ -224,7 +224,7 @@ export function balancesChart(
       { text: LINE, fg: view === "Savers" ? theme.green : theme.lavender },
       muted(`${view} ${formatWholeMoney(values[values.length - 1]!)}`),
       GAP,
-      { text: `${change >= 0 ? "+" : "-"}${formatWholeMoney(Math.abs(change))}`, fg: Math.abs(change) < 0.5 ? theme.overlay1 : change > 0 ? theme.success : theme.error },
+      { text: signedWholeMoney(change), fg: Math.abs(change) < 0.5 ? theme.overlay1 : change > 0 ? theme.success : theme.error },
       muted(` since ${shortDate(dates[0]!)}`),
       GAP,
       muted(`low ${formatWholeMoney(lo)} on ${shortDate(history[low]!.dateISO)}`),
@@ -291,7 +291,7 @@ export function cashFlowChart(
       { text: BAR, fg: theme.error },
       muted(`Out ${formatWholeMoney(spent)}`),
       GAP,
-      muted(`Net ${net >= 0 ? "+" : "-"}${formatWholeMoney(Math.abs(net))} · ${monthly ? "monthly" : "weekly"}`),
+      muted(`Net ${signedWholeMoney(net)} · ${monthly ? "monthly" : "weekly"}`),
     ],
   }
 }

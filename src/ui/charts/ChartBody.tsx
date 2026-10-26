@@ -2,6 +2,7 @@ import { For } from "solid-js"
 import { S } from "../primitives/S"
 import { theme } from "../../theme"
 import type { Run } from "./lineChart"
+import type { Span } from "../primitives/spans"
 
 /** The y-axis width for `ticks`: the longest label, a space and the tick. */
 export function axisWidth(ticks: Map<number, string>): number {
@@ -19,7 +20,7 @@ export interface ChartModel {
   labels: string
   /** The legend: series marks in their colours with names and figures,
    * shown in the pane's bottom border. */
-  legend: Array<{ text: string; fg: string }>
+  legend: Span[]
 }
 
 /** A y-axis, the plot rows, then the x labels. `inks` maps each run's ink

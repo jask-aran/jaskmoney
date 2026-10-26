@@ -1,9 +1,11 @@
 import { Show, createMemo, type JSX } from "solid-js"
 import { categoryMark } from "../icons"
+import { useTerminalDimensions } from "@opentui/solid"
+import { Modal } from "../primitives/Modal"
 import { S } from "../primitives/S"
 import { ui } from "../../state/uiStore"
 import { data } from "../../state/dataStore"
-import { theme, uncategorisedColor } from "../../theme"
+import { categoryColor, theme } from "../../theme"
 import { formatMoney } from "../../domain/dashboard"
 
 const LABEL = 12
@@ -11,6 +13,7 @@ const LABEL = 12
 /** Detail view for one transaction (enter in the Manager table). Rows with no
  * value are left out. */
 export function TransactionDetail() {
+  const dims = useTerminalDimensions()
   const row = createMemo(() => data.state.transactions.find((t) => t.id === ui.state.detailId) ?? null)
   // Re-read provider details whenever the transaction list refreshes.
   const detail = createMemo(() => {
@@ -27,24 +30,7 @@ export function TransactionDetail() {
 
   return (
     <Show when={row() && detail()}>
-      <box
-        position="absolute"
-        zIndex={15}
-        left="12%"
-        top={3}
-        width="76%"
-        border
-        borderStyle="rounded"
-        borderColor={theme.focus}
-        paddingLeft={1}
-        paddingRight={1}
-        backgroundColor={theme.base}
-        flexDirection="column"
-      >
-        <text fg={theme.focus} wrapMode="none">
-          <b>{row()!.description}</b>
-        </text>
-        <text> </text>
+      <Modal title={row()!.description} tone="focus" width={Math.floor(dims().width * 0.76)}>
         {field("Amount", <S fg={row()!.amount < 0 ? theme.error : theme.success} bold>{formatMoney(row()!.amount)}</S>)}
         {field("Date", <S fg={theme.text}>{formatWhen(detail()!.createdAt) ?? row()!.dateISO}</S>)}
         <Show when={detail()!.status}>
@@ -78,13 +64,9 @@ export function TransactionDetail() {
         >
           {field("Notes", <><S fg={theme.text}>{ui.state.detailNotesDraft}</S><S fg={theme.focus}>▌</S></>)}
         </Show>
-      </box>
+      </Modal>
     </Show>
   )
-}
-
-function categoryColor(color: string): string {
-  return !color || color === "#7f849c" ? uncategorisedColor : color
 }
 
 /** "CARD_ON_FILE" → "Card on file", with "··1234" when the suffix is known. */

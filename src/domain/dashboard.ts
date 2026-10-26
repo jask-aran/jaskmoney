@@ -105,6 +105,11 @@ export function formatWholeMoney(n: number): string {
   return `${sign}$${Math.round(Math.abs(n)).toLocaleString("en-AU")}`
 }
 
+/** Whole dollars with an explicit sign for gains: "+$1,680", "-$40", "$0". */
+export function signedWholeMoney(n: number): string {
+  return n > 0.5 ? `+${formatWholeMoney(n)}` : formatWholeMoney(n)
+}
+
 /** Daily debit totals between start/end inclusive. */
 export function dailySpendSeries(
   rows: Transaction[],

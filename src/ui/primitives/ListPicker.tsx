@@ -26,9 +26,9 @@ export function ListPicker(props: {
 }) {
   const dims = useTerminalDimensions()
   const width = () => Math.max(20, Math.min(props.width ?? 52, dims().width - 4))
-  // Modal chrome: border (2), padding (2), title + blank, filter + blank,
-  // blank + hints.
-  const visible = () => Math.max(4, Math.min(props.items.length, dims().height - 14))
+  // Modal chrome: border (2, the title in it), filter + blank, blank +
+  // hints, and a margin of 4.
+  const visible = () => Math.max(4, Math.min(props.items.length, dims().height - 10))
   const cursorRow = createMemo(() => {
     let seen = -1
     return props.items.findIndex((item) => item.kind === "item" && ++seen === props.cursor)

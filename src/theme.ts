@@ -61,3 +61,16 @@ export type ThemeColor = (typeof theme)[keyof typeof theme]
 
 /** Uncategorised / muted category label (Go overlay1). */
 export const uncategorisedColor = theme.overlay1
+
+/** The colour stored for the Uncategorised category. */
+const UNCATEGORISED_STORED = "#7f849c"
+
+/** Whether a category colour means "no category": none, or Uncategorised's. */
+export function isUncategorisedColor(color: string | null | undefined): boolean {
+  return !color || color === UNCATEGORISED_STORED
+}
+
+/** A category's display colour: its own, or the muted uncategorised colour. */
+export function categoryColor(color: string | null | undefined): string {
+  return isUncategorisedColor(color) ? uncategorisedColor : color!
+}

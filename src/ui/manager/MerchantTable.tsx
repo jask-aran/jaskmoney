@@ -1,6 +1,6 @@
 import { For, Show, createMemo } from "solid-js"
 import { S } from "../primitives/S"
-import { theme, uncategorisedColor } from "../../theme"
+import { categoryColor, theme } from "../../theme"
 import { formatMoney } from "../../domain/dashboard"
 import { rowAppearance } from "../../domain/rowStyle"
 import type { MerchantGroup, MerchantSort } from "../../domain/merchants"
@@ -56,7 +56,7 @@ export function MerchantTable(props: {
               const fg = (color: string) => look().fg ?? color
               const amountColor = (n: number) => (n < 0 ? theme.error : theme.success)
               const muted = () => !g.categoryName || g.categoryName === "Uncategorised"
-              const catColor = () => (muted() || !g.categoryColor ? uncategorisedColor : g.categoryColor)
+              const catColor = () => categoryColor(muted() ? null : g.categoryColor)
               return (
                 <text width="100%" bg={bg()}>
                   <S fg={fg(theme.accent)} bg={bg()} bold={look().bold}>{isCursor() ? ">" : " "}</S>

@@ -1,6 +1,6 @@
 import { For, Show, createMemo } from "solid-js"
 import { S } from "../primitives/S"
-import { theme, uncategorisedColor } from "../../theme"
+import { categoryColor, isUncategorisedColor, theme } from "../../theme"
 import { data } from "../../state/dataStore"
 import { formatMoney } from "../../domain/dashboard"
 import { rowAppearance } from "../../domain/rowStyle"
@@ -50,24 +50,19 @@ function fmtDate(iso: string): string {
 }
 
 
-function catFg(color: string | undefined): string {
-  if (!color || color === "" || color === "#7f849c") return uncategorisedColor
-  return color
-}
-
 function formatCategory(
   categoryId: number | null,
   name: string,
   color: string | undefined,
   width: number,
 ): { marker: string; markerColor: string; text: string; textColor: string; muted: boolean } {
-  const muted = !name || name === "Uncategorised" || !color || color === "#7f849c"
+  const muted = !name || name === "Uncategorised" || isUncategorisedColor(color)
   const text = name || "Uncategorised"
   return {
     marker: `${categoryMark(categoryId, muted)} `,
-    markerColor: catFg(color),
+    markerColor: categoryColor(color),
     text: fit(text, width - 2),
-    textColor: catFg(color),
+    textColor: categoryColor(color),
     muted,
   }
 }

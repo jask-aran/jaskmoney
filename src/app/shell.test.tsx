@@ -381,7 +381,7 @@ describe("shell render M0", () => {
     expect(lines.some((line) => line.includes("DESCRIPTION ROW 23"))).toBe(false)
 
     const bottom = lines.find((line) => line.includes("showing 1-23 of 30"))!
-    expect(bottom).toContain("╰── showing 1-23 of 30")
+    expect(bottom).toContain("╰─ showing 1-23 of 30")
     expect(bottom.trimEnd()).toEndWith("╯")
 
     const normalRow = t
