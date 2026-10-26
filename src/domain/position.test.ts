@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test"
-import { computePeriodFlows, computePosition } from "./position"
+import { balanceHistory, computePeriodFlows, computePosition } from "./position"
 import type { Account, Transaction } from "./types"
 
 function account(id: number, overrides: Partial<Account> = {}): Account {
@@ -200,5 +200,25 @@ describe("computePeriodFlows", () => {
     expect(computePeriodFlows([], [])).toEqual({
       spent: 0, income: 0, net: 0, savedToSavers: 0, savingsRate: null, txnCount: 0, saverChanges: [],
     })
+  })
+})
+
+describe("balanceHistory", () => {
+  test("reconstructs end-of-day balances per role, ignoring rows after the end", () => {
+    const accounts = [
+      account(1, { balance: 100 }),
+      account(2, { balance: 50, externalKind: "SAVER" }),
+    ]
+    const txns = [
+      row(-30, { accountId: 1, dateISO: "2026-10-02" }),
+      row(20, { accountId: 2, dateISO: "2026-10-03" }),
+      row(-5, { accountId: 1, dateISO: "2026-10-05" }),
+    ]
+    expect(balanceHistory(accounts, txns, "2026-10-01", "2026-10-04")).toEqual([
+      { dateISO: "2026-10-01", net: 165, spending: 135, savers: 30 },
+      { dateISO: "2026-10-02", net: 135, spending: 105, savers: 30 },
+      { dateISO: "2026-10-03", net: 155, spending: 105, savers: 50 },
+      { dateISO: "2026-10-04", net: 155, spending: 105, savers: 50 },
+    ])
   })
 })

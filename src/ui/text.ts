@@ -22,3 +22,21 @@ export function fit(s: string, n: number): string {
   const t = truncate(s, n)
   return t + " ".repeat(Math.max(0, n - Bun.stringWidth(t)))
 }
+
+/** Compact money for axes and tight columns: $950, $4.5k, $12k. */
+export function shortMoney(n: number): string {
+  const a = Math.abs(n)
+  const sign = n < 0 ? "-" : ""
+  if (a >= 10000) return `${sign}$${Math.round(a / 1000)}k`
+  if (a >= 1000) return `${sign}$${(a / 1000).toFixed(1)}k`
+  return `${sign}$${Math.round(a)}`
+}
+
+const MONTHS = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"]
+
+/** "2026-08-26" → "26 Aug". */
+export function shortDate(iso: string): string {
+  const [y, m, d] = iso.split("-").map(Number)
+  if (!y || !m || !d) return iso
+  return `${d} ${MONTHS[m - 1]}`
+}

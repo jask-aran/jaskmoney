@@ -8,8 +8,8 @@ import { theme } from "../../theme"
 import { computeCategorySpend, formatWholeMoney, groupCategorySpend } from "../../domain/dashboard"
 import { computePeriodFlows } from "../../domain/position"
 import { merchantSummaries, spendingCalendar, type CalendarDay } from "../../domain/spending"
-import { dataClock, filterByTimeframe, timeframeBounds } from "../../domain/timeframe"
-import { fit } from "../text"
+import { dataClock, filterByTimeframe, timeframeBounds, toISODate } from "../../domain/timeframe"
+import { fit, shortDate } from "../text"
 import { budgetProgress, cycleFor } from "../../domain/budget"
 import { budgetLabel } from "../../domain/budgetScopes"
 
@@ -37,7 +37,7 @@ export function SpendingTab(props: { focused: SectionId }) {
   const merchants = createMemo(() => merchantSummaries(spending(), bounds().start, bounds().end))
   const calendar = createMemo(() => spendingCalendar(inPeriod(), bounds().start, bounds().end))
   // Budgets always show the current cycle, whatever the Date Range.
-  const today = localTodayISO()
+  const today = toISODate(new Date())
   const cycle = createMemo(() => data.state.budgets.length ? cycleFor(data.state.budgetCycle, today) : null)
   const budgets = createMemo(() => data.state.budgets.length
     ? budgetProgress(data.state.budgets, data.state.budgetCycle, today, data.state.accounts, data.state.categories, data.state.transactions)
@@ -209,16 +209,7 @@ function monthLabels(weeks: Array<Array<CalendarDay | null>>, width: number): st
   return out.join("")
 }
 
-function localTodayISO(): string {
-  const now = new Date()
-  return `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}-${String(now.getDate()).padStart(2, "0")}`
-}
-
 const MONTHS = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"]
-
-function shortDate(iso: string): string {
-  return `${Number(iso.slice(8, 10))} ${MONTHS[Number(iso.slice(5, 7)) - 1]}`
-}
 
 /** "+12%", "-8%", "new" (nothing before), "—" (nothing now or before). */
 function changePct(now: number, before: number): string {

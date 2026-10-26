@@ -188,3 +188,51 @@ function isOrdinaryFlow(row: Transaction): boolean {
 function dayISO(today: number, offset: number): string {
   return new Date(today + offset * 86400000).toISOString().slice(0, 10)
 }
+
+export interface BalancePoint {
+  dateISO: string
+  /** All balance-reporting accounts. */
+  net: number
+  /** Spending-role accounts. */
+  spending: number
+  /** Saver-role accounts. */
+  savers: number
+}
+
+/**
+ * End-of-day balances for each day from `startISO` to `endISO` inclusive,
+ * reconstructed backwards from current balances like `Position.history`:
+ * value(D) = balance − Σ amounts dated after D, per balance-reporting account.
+ */
+export function balanceHistory(accounts: Account[], transactions: Transaction[], startISO: string, endISO: string): BalancePoint[] {
+  const start = Date.parse(startISO + "T12:00:00Z")
+  const end = Date.parse(endISO + "T12:00:00Z")
+  if (!Number.isFinite(start) || !Number.isFinite(end) || end < start) return []
+  const role = new Map(accounts.filter((a) => a.balance !== null).map((a) => [a.id, accountRole(a)]))
+  let spending = 0
+  let savers = 0
+  for (const a of accounts) {
+    if (a.balance === null) continue
+    if (role.get(a.id) === "spending") spending += a.balance
+    else savers += a.balance
+  }
+  const after = new Map<string, { spending: number; savers: number }>()
+  for (const row of transactions) {
+    if (row.accountId === null || !role.has(row.accountId)) continue
+    if (row.dateISO <= endISO) {
+      const day = after.get(row.dateISO) ?? { spending: 0, savers: 0 }
+      if (role.get(row.accountId) === "spending") day.spending += row.amount
+      else day.savers += row.amount
+      after.set(row.dateISO, day)
+    } else if (role.get(row.accountId) === "spending") spending -= row.amount
+    else savers -= row.amount
+  }
+  const points: BalancePoint[] = []
+  for (let t = end; t >= start; t -= 86400000) {
+    const dateISO = new Date(t).toISOString().slice(0, 10)
+    points.push({ dateISO, net: spending + savers, spending, savers })
+    const day = after.get(dateISO)
+    if (day) { spending -= day.spending; savers -= day.savers }
+  }
+  return points.reverse()
+}

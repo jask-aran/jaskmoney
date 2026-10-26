@@ -1,12 +1,11 @@
 import { describe, expect, test } from "bun:test"
 import {
-  barFill,
   computeCategorySpend,
-  computeOverview,
+  cumulative,
   dailySpendSeries,
-  sparkline,
   formatWholeMoney,
   groupCategorySpend,
+  weeklyTotals,
 } from "./dashboard"
 import type { Category, Transaction } from "./types"
 
@@ -38,26 +37,6 @@ function t(
 }
 
 describe("dashboard aggregates", () => {
-  test("overview", () => {
-    const s = computeOverview([
-      t({ amount: 100, dateISO: "2026-02-01", categoryName: "Income", categoryId: 9 }),
-      t({ amount: -40, dateISO: "2026-02-02", categoryName: "Groceries", categoryId: 1 }),
-      t({ amount: -10, dateISO: "2026-02-03", categoryName: "Uncategorised" }),
-    ])
-    expect(s.balance).toBe(50)
-    expect(s.debits).toBe(50)
-    expect(s.credits).toBe(100)
-    expect(s.uncatCount).toBe(1)
-  })
-
-  test("uncategorised total is a magnitude, matching Go renderSummaryCards", () => {
-    const s = computeOverview([
-      t({ amount: 25, dateISO: "2026-02-01", categoryName: "Uncategorised" }),
-      t({ amount: -10, dateISO: "2026-02-02", categoryName: "Uncategorised" }),
-    ])
-    expect(s.uncatTotal).toBe(35)
-  })
-
   test("category spend ignores credits and IGNORE", () => {
     const list = computeCategorySpend(
       [
@@ -71,11 +50,6 @@ describe("dashboard aggregates", () => {
     expect(list[0]!.name).toBe("Groceries")
     expect(list[0]!.amount).toBe(30)
     expect(list).toHaveLength(2)
-  })
-
-  test("sparkline and bar", () => {
-    expect(sparkline([0, 1, 2, 3], 4).length).toBe(4)
-    expect(barFill(50, 10)).toBe("█████░░░░░")
   })
 
   test("category spend excludes internal transfers but retains untracked transfers", () => {
@@ -120,5 +94,26 @@ describe("category groups", () => {
     ])
     expect(formatWholeMoney(1477.6)).toBe("$1,478")
     expect(formatWholeMoney(-20.2)).toBe("-$20")
+  })
+})
+
+describe("tracker series", () => {
+  test("cumulative running totals", () => {
+    expect(cumulative([1, 0, 2.5])).toEqual([1, 1, 3.5])
+  })
+
+  test("weekly totals start on Mondays; edge weeks are partial", () => {
+    // 2026-10-01 is a Thursday; 2026-10-05 a Monday.
+    const dates = ["2026-10-01", "2026-10-02", "2026-10-03", "2026-10-04", "2026-10-05", "2026-10-06"]
+    expect(weeklyTotals(dates, [1, 2, 3, 4, 5, 6])).toEqual([
+      { startISO: "2026-10-01", total: 10, days: 4 },
+      { startISO: "2026-10-05", total: 11, days: 2 },
+    ])
+  })
+
+  test("daily series steps calendar days across DST", () => {
+    // Sydney DST ends 2027-04-04 (a 25-hour day) in local time.
+    const { dates } = dailySpendSeries([], "2027-04-03", "2027-04-06")
+    expect(dates).toEqual(["2027-04-03", "2027-04-04", "2027-04-05", "2027-04-06"])
   })
 })

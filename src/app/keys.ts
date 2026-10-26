@@ -6,7 +6,7 @@ import { merchantSummaries } from "../domain/spending"
 import { budgetLabel, budgetScopeOptions, scopeKey } from "../domain/budgetScopes"
 import type { CycleAnchor, CycleUnit } from "../domain/budget"
 import { runSync } from "./sync"
-import { JUMP_TARGETS, SETTINGS_SECTIONS, TABS, settingsSectionFocus, type ScopeId, type UiStore } from "../state/uiStore"
+import { BALANCE_VIEWS, JUMP_TARGETS, TRACKER_VIEWS, SETTINGS_SECTIONS, TABS, settingsSectionFocus, type ScopeId, type UiStore } from "../state/uiStore"
 import type { DataStore } from "../state/dataStore"
 import {
   LOOKBACKS,
@@ -787,6 +787,21 @@ export function handleKey(ui: UiStore, key: KeyEvent, data?: DataStore): boolean
     return true
   }
 
+  // ── Dashboard charts ────────────────────────────────────────────────
+  if (scope === "dashboard.chart") {
+    const step = name === "h" || name === "left" || seq === "," ? -1 : name === "l" || name === "right" || seq === "." ? 1 : 0
+    if (step !== 0) {
+      if (ui.state.focusedSection === "dash.tracker") {
+        const n = TRACKER_VIEWS.length
+        ui.setState({ trackerView: (ui.state.trackerView + step + n) % n })
+      } else {
+        const n = BALANCE_VIEWS.length
+        ui.setState({ balanceView: (ui.state.balanceView + step + n) % n })
+      }
+      return true
+    }
+  }
+
   // ── Dashboard date ──────────────────────────────────────────────────
   if (scope === "dashboard.date") {
     if (name === "h" || name === "left") {
@@ -845,7 +860,7 @@ export function handleKey(ui: UiStore, key: KeyEvent, data?: DataStore): boolean
     }
   }
 
-  if (scope === "dashboard" || scope === "spending") {
+  if (scope === "dashboard" || scope === "dashboard.chart" || scope === "spending") {
     if (name === "[" || seq === "[") {
       if (ui.state.timeframe.family === "period") {
         ui.setTimeframe(stepPeriod(ui.state.timeframe, -1))
@@ -921,6 +936,13 @@ export function footerHints(scope: ScopeId): { key: string; desc: string }[] {
         { key: "[/]", desc: "period" },
         { key: "0", desc: "this month" },
         { key: "1-4", desc: "tab" },
+      ]
+    case "dashboard.chart":
+      return [
+        { key: "h/l", desc: "view" },
+        { key: "[/]", desc: "period" },
+        { key: "0", desc: "this month" },
+        { key: "esc", desc: "done" },
       ]
     case "dashboard.date":
       return [

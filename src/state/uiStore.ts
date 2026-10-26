@@ -11,6 +11,7 @@ export type TabId = "dashboard" | "spending" | "manager" | "settings"
 export type SectionId =
   | "none"
   | "dash.date"
+  | "dash.tracker"
   | "dash.cashflow"
   | "dash.composition"
   | "spend.categories"
@@ -33,6 +34,7 @@ export type ScopeId =
   | "tagPicker"
   | "dashboard"
   | "dashboard.date"
+  | "dashboard.chart"
   | "spending"
   | "manager"
   | "manager.accounts"
@@ -87,6 +89,9 @@ export interface UiState {
   accountCursor: number
   timeframe: TimeframeState
   dashChipCursor: number
+  /** Index into TRACKER_VIEWS / BALANCE_VIEWS. */
+  trackerView: number
+  balanceView: number
   filterMode: boolean
   filterDraft: string
   catPickerOpen: boolean
@@ -159,10 +164,15 @@ const TAB_DEFAULT_FOCUS: Record<TabId, SectionId> = {
   settings: "none",
 }
 
+/** Views of the Dashboard's chart cards, cycled with h/l when focused. */
+export const TRACKER_VIEWS = ["Daily", "Cumulative", "Weekly"] as const
+export const BALANCE_VIEWS = ["Net position", "Available", "Savers"] as const
+
 export const JUMP_TARGETS: Record<TabId, JumpTarget[]> = {
   dashboard: [
     { key: "d", section: "dash.date", label: "Date Range" },
-    { key: "n", section: "dash.cashflow", label: "Net Position" },
+    { key: "t", section: "dash.tracker", label: "Spending Tracker" },
+    { key: "b", section: "dash.cashflow", label: "Balances" },
     { key: "c", section: "dash.composition", label: "Spending by Category" },
   ],
   spending: [
@@ -205,6 +215,8 @@ function createUiStore() {
     accountCursor: 0,
     timeframe: defaultTimeframe(),
     dashChipCursor: 5,
+    trackerView: 0,
+    balanceView: 0,
     filterMode: false,
     filterDraft: "",
     catPickerOpen: false,
@@ -506,6 +518,7 @@ function createUiStore() {
     if (state.factoryResetOpen) return "settings.factoryReset"
     if (state.activeTab === "dashboard") {
       if (state.focusedSection === "dash.date") return "dashboard.date"
+      if (state.focusedSection === "dash.tracker" || state.focusedSection === "dash.cashflow") return "dashboard.chart"
       return "dashboard"
     }
     if (state.activeTab === "spending") return "spending"
