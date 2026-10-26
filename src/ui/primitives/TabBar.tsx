@@ -1,8 +1,10 @@
 import { For } from "solid-js"
 import { TABS, type TabId } from "../../state/uiStore"
 import { theme } from "../../theme"
+import { chipLook } from "./chip"
 
-/** Matches Go headerBarStyle + activeTabStyle / inactiveTabStyle. */
+/** Matches Go headerBarStyle + activeTabStyle / inactiveTabStyle; the
+ * current tab is an active chip (chipLook). */
 export function TabBar(props: { active: TabId; accountLabel?: string }) {
   return (
     <box
@@ -23,7 +25,7 @@ export function TabBar(props: { active: TabId; accountLabel?: string }) {
         </text>
         <For each={TABS}>
           {(tab, i) => {
-            const on = () => props.active === tab.id
+            const look = () => chipLook({ active: props.active === tab.id, cursor: false })
             return (
               <box flexDirection="row" gap={0} backgroundColor={theme.mantle}>
                 {i() > 0 ? (
@@ -31,15 +33,8 @@ export function TabBar(props: { active: TabId; accountLabel?: string }) {
                     │
                   </text>
                 ) : null}
-                <text
-                  fg={on() ? theme.accent : theme.overlay1}
-                  bg={on() ? theme.surface0 : theme.mantle}
-                >
-                  {on() ? (
-                    <b>{` ${tab.label} `}</b>
-                  ) : (
-                    ` ${tab.label} `
-                  )}
+                <text fg={look().fg} bg={look().bg ?? theme.mantle}>
+                  {look().bold ? <b>{` ${tab.label} `}</b> : ` ${tab.label} `}
                 </text>
               </box>
             )

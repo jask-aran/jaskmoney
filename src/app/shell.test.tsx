@@ -66,12 +66,12 @@ describe("shell render M0", () => {
     // Applying another chip moves the bold highlight to it.
     const boldChip = () =>
       t.captureSpans().lines.flatMap((line) => line.spans)
-        .filter((span) => /\[\w+\]/.test(span.text) && span.attributes & TextAttributes.BOLD)
-        .map((span) => span.text.trim().replace(/^>/, ""))
+        .filter((span) => /^ (\d[MY]|Cycle|Month|QTR|Half|FY|Year) $/.test(span.text) && span.attributes & TextAttributes.BOLD)
+        .map((span) => span.text.trim())
     ui.setState({ dashChipCursor: 7 })
     t.mockInput.pressEnter()
     await t.renderOnce()
-    expect(boldChip()).toEqual(["[QTR]"])
+    expect(boldChip()).toEqual(["QTR"])
 
     // tab to Transactions
     t.mockInput.pressKey("2")

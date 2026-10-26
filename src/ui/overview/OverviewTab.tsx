@@ -2,6 +2,7 @@ import { For, Show, createMemo } from "solid-js"
 import { categoryMark, viewMark } from "../icons"
 import { useTerminalDimensions } from "@opentui/solid"
 import { SectionCard } from "../primitives/SectionCard"
+import { chipLook } from "../primitives/chip"
 import { muted, type Span } from "../primitives/spans"
 import { S } from "../primitives/S"
 import { CHART_VIEWS, ui, type SectionId } from "../../state/uiStore"
@@ -11,7 +12,7 @@ import { computeCategorySpend, dailySpendSeries, fitCategoryLines, formatMoney, 
 import { computePeriodFlows, computePosition } from "../../domain/position"
 import { budgetProgress, cycleFor, type BudgetProgress } from "../../domain/budget"
 import { spendingCalendar, type CalendarDay } from "../../domain/spending"
-import { LOOKBACKS, PERIODS, PERIOD_LABEL, activeChipIndex, comparisonWindows, dataClock, filterByTimeframe, timeframeBounds, toISODate } from "../../domain/timeframe"
+import { LOOKBACKS, PERIODS, PERIOD_LABEL, comparisonWindows, dataClock, filterByTimeframe, timeframeBounds, toISODate } from "../../domain/timeframe"
 import { fit } from "../text"
 import { spendingScope } from "../../domain/accountTree"
 import { AXIS_GUESS, ChartBody, axisWidth, type ChartModel } from "../charts/ChartBody"
@@ -149,21 +150,18 @@ export function OverviewTab(props: { focused: SectionId }) {
   // Go narrow fallback: the preset chips keep priority and the timeframe
   // label is shown only when both fit on the card's single content line.
   const presetsWidth =
-    LOOKBACKS.reduce((n, lb) => n + lb.length + 3, 0) +
-    " │".length +
-    PERIODS.reduce((n, p) => n + PERIOD_LABEL[p].length + 3, 0)
+    LOOKBACKS.reduce((n, lb) => n + lb.length + 3, 0) - 1 +
+    " │ ".length +
+    PERIODS.reduce((n, p) => n + PERIOD_LABEL[p].length + 3, 0) - 1
   const showTimeframe = () => dims().width - 4 >= presetsWidth + 2 + bounds().label.length
   const dateFocused = () => props.focused === "ov.range"
-  const chipCursor = () => (dateFocused() ? ui.state.dashChipCursor : activeChipIndex(ui.state.timeframe))
-  // `active` is a function: For runs its callback once per chip, so a plain
-  // boolean would keep the first render's value.
+  // Chips are padded labels on a pill (chipLook); the cursor shows only
+  // while the Date Range is focused.
   const chip = (label: string, idx: number, active: () => boolean) => {
-    const cur = () => chipCursor() === idx && dateFocused()
-    return (
-      <S fg={active() ? theme.accent : theme.overlay1} bg={cur() ? theme.surface0 : undefined} bold={active()}>
-        {cur() ? ">" : " "}[{label}]
-      </S>
-    )
+    // `active` is a function: For runs its callback once per chip, so a plain
+    // boolean would keep the first render's value.
+    const look = () => chipLook({ active: active(), cursor: dateFocused() && ui.state.dashChipCursor === idx })
+    return <S fg={look().fg} bg={look().bg} bold={look().bold}>{` ${label} `}</S>
   }
 
   const stat = (label: string, value: string, note = "", colors: { value?: string; note?: string; bold?: boolean } = {}) => (
@@ -274,11 +272,11 @@ export function OverviewTab(props: { focused: SectionId }) {
         <box flexDirection="row" justifyContent="space-between" width="100%">
           <text fg={theme.subtext0} wrapMode="none">
             <For each={LOOKBACKS}>
-              {(lb, i) => chip(lb, i(), () => ui.state.timeframe.family === "lookback" && ui.state.timeframe.lookback === lb)}
+              {(lb, i) => <>{i() > 0 ? " " : ""}{chip(lb, i(), () => ui.state.timeframe.family === "lookback" && ui.state.timeframe.lookback === lb)}</>}
             </For>
-            <S fg={theme.surface2}>{" │"}</S>
+            <S fg={theme.surface2}>{" │ "}</S>
             <For each={PERIODS}>
-              {(p, i) => chip(PERIOD_LABEL[p], LOOKBACKS.length + i(), () => ui.state.timeframe.family === "period" && ui.state.timeframe.period === p)}
+              {(p, i) => <>{i() > 0 ? " " : ""}{chip(PERIOD_LABEL[p], LOOKBACKS.length + i(), () => ui.state.timeframe.family === "period" && ui.state.timeframe.period === p)}</>}
             </For>
           </text>
           <Show when={showTimeframe()}>
