@@ -4,6 +4,7 @@ import { dirname, join } from "node:path"
 import { addTagLink, decodeStoredTags, removeTagLink } from "./tagLinks"
 import {
   ACCOUNT_SYNC_COLUMNS_LIST,
+  BUDGET_PAY_EARLY_COLUMN,
   BUDGET_SQL,
   CATEGORY_SOURCE_COLUMN,
   CATEGORY_INCOME_COLUMN,
@@ -100,6 +101,7 @@ const MIGRATIONS: Record<number, (db: Db) => void> = {
     db.query("UPDATE tags SET category_id = ? WHERE category_id = ?").run(other, group)
     assignTypeCategories(db)
   },
+  17: (db) => db.exec(`ALTER TABLE budget_cycle ADD COLUMN ${BUDGET_PAY_EARLY_COLUMN}`),
 }
 
 /**
@@ -648,13 +650,14 @@ export function deleteBudget(db: Db, id: number): void {
 }
 
 export function loadBudgetCycle(db: Db): CycleConfig {
-  const row = db.query(`SELECT unit, anchor, anchor_date AS anchorDate FROM budget_cycle WHERE id = 1`).get() as CycleConfig | null
-  return row ?? { unit: "month", anchor: "calendar", anchorDate: null }
+  const row = db.query(`SELECT unit, anchor, anchor_date AS anchorDate, pay_early AS payEarly FROM budget_cycle WHERE id = 1`)
+    .get() as (Omit<CycleConfig, "payEarly"> & { payEarly: number }) | null
+  return row ? { ...row, payEarly: row.payEarly === 1 } : { unit: "month", anchor: "calendar", anchorDate: null, payEarly: false }
 }
 
 export function saveBudgetCycle(db: Db, config: CycleConfig): void {
   if (config.anchor !== "calendar" && !/^\d{4}-\d{2}-\d{2}$/.test(config.anchorDate ?? "")) throw new Error("enter the cycle date as YYYY-MM-DD")
-  db.query(`INSERT INTO budget_cycle (id, unit, anchor, anchor_date) VALUES (1, ?, ?, ?)
-    ON CONFLICT(id) DO UPDATE SET unit = excluded.unit, anchor = excluded.anchor, anchor_date = excluded.anchor_date`)
-    .run(config.unit, config.anchor, config.anchor === "calendar" ? null : config.anchorDate)
+  db.query(`INSERT INTO budget_cycle (id, unit, anchor, anchor_date, pay_early) VALUES (1, ?, ?, ?, ?)
+    ON CONFLICT(id) DO UPDATE SET unit = excluded.unit, anchor = excluded.anchor, anchor_date = excluded.anchor_date, pay_early = excluded.pay_early`)
+    .run(config.unit, config.anchor, config.anchor === "calendar" ? null : config.anchorDate, config.payEarly ? 1 : 0)
 }

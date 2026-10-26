@@ -43,7 +43,7 @@ import {
   type TransactionDetail,
 } from "../db/client"
 import { normaliseSelection, selectedAccounts, type AccountSelection } from "../domain/accountTree"
-import type { Budget, BudgetScope, CycleConfig } from "../domain/budget"
+import { paydays, type Budget, type BudgetScope, type CycleConfig } from "../domain/budget"
 import { buildImportPreview, commitImportPreview, matchingProfiles } from "../domain/profileImport"
 import { createUpClient, readUpToken } from "../up/client"
 import { pushTransactions } from "../up/push"
@@ -128,7 +128,7 @@ function createDataStore() {
     accounts: [],
     syncAccounts: [],
     budgets: [],
-    budgetCycle: { unit: "month", anchor: "calendar", anchorDate: null },
+    budgetCycle: { unit: "month", anchor: "calendar", anchorDate: null, payEarly: false },
     categories: [],
     tags: [],
     rules: [],
@@ -205,6 +205,10 @@ function createDataStore() {
    * walk all of them use this: through the store each field read would be
    * a tracked dependency, tens of thousands per pass. */
   const transactions = createRoot(() => createMemo(() => unwrap(state.transactions)))
+
+  /** The budget cycle with the pay dates `payEarly` needs. Everything that
+   * works out cycles reads this, not `state.budgetCycle`. */
+  const cycle = createRoot(() => createMemo((): CycleConfig => ({ ...state.budgetCycle, paydays: paydays(transactions()) })))
 
   /** Transactions of the Transactions tab's selected account(s). */
   const accountScoped = createRoot(() => createMemo(() => {
@@ -566,6 +570,7 @@ function createDataStore() {
     init,
     refresh,
     transactions,
+    cycle,
     accountScoped,
     scopedTransactions,
     setFilterLive,

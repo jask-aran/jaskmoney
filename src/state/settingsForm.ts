@@ -91,7 +91,12 @@ export function normaliseCycleDraft(draft: Draft, previousUnit: CycleUnit): Pick
 /** The cycle the draft describes, or an error message. Months store the day
  * in a 31-day January (any year), weeks the weekday's date in the week of
  * Monday 5 Jan 1970; fortnights the date itself. */
-export function cycleFromDraft(draft: Pick<Draft, "unit" | "anchor" | "anchorDate">): CycleConfig | string {
+export function cycleFromDraft(draft: Pick<Draft, "unit" | "anchor" | "anchorDate"> & Partial<Pick<Draft, "payEarly">>): CycleConfig | string {
+  const cycle = scheduleFromDraft(draft)
+  return typeof cycle === "string" ? cycle : { ...cycle, payEarly: !!draft.payEarly }
+}
+
+function scheduleFromDraft(draft: Pick<Draft, "unit" | "anchor" | "anchorDate">): CycleConfig | string {
   const { unit, anchor } = draft
   if (anchor === "calendar") return { unit, anchor, anchorDate: null }
   const text = draft.anchorDate.trim()
@@ -127,6 +132,7 @@ function cycleFields(draft: Draft): FormField[] {
     { key: "unit", label: "Every", kind: "choice", display: UNIT_LABEL[draft.unit], choices: CYCLE_UNITS },
     { key: "anchor", label: "Starting", kind: "choice", display: START_LABEL[draft.unit][draft.anchor], choices: anchorChoices(draft.unit) },
     ...start,
+    { key: "payEarly", label: "Payday", kind: "toggle", display: draft.payEarly ? "start early when pay comes first" : "no" },
   ]
 }
 

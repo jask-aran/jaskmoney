@@ -36,7 +36,7 @@ export function App() {
         ui.setStatus("OpenTUI shell · bootstrap off")
         return
       }
-      const restored = restoreUiPrefs(data.state.uiPrefs, data.state.accounts, appNow(), data.state.budgetCycle)
+      const restored = restoreUiPrefs(data.state.uiPrefs, data.state.accounts, appNow(), data.cycle())
       ui.setTimeframe(restored.timeframe)
       ui.setDashChipCursor(activeChipIndex(restored.timeframe))
       data.setAccountSelection(restored.accountSelection)

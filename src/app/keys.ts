@@ -477,7 +477,7 @@ function handleSettingsEditor(ui: UiStore, key: KeyEvent, data?: DataStore): voi
         const current = data?.state.budgetCycle
         // The cycle is shared by every budget; save it first so a bad date
         // stops the whole edit.
-        if (current && (current.unit !== cycle.unit || current.anchor !== cycle.anchor || current.anchorDate !== cycle.anchorDate)) data?.setBudgetCycle(cycle)
+        if (current && (current.unit !== cycle.unit || current.anchor !== cycle.anchor || current.anchorDate !== cycle.anchorDate || !!current.payEarly !== !!cycle.payEarly)) data?.setBudgetCycle(cycle)
         const editing = data?.state.budgets.find((b) => b.id === ui.state.settingsEditId)
         if (editing && scopeKey(editing.scope) !== option.key) data?.removeBudget(editing.id)
         data?.setBudget(option.scope, amount)
@@ -955,7 +955,7 @@ function handleOverview(ui: UiStore, key: KeyEvent, data?: DataStore): void {
   const { name, sequence: seq } = key
   const scope = ui.activeScope()
   const clock = appNow()
-  const cycle = data?.state.budgetCycle
+  const cycle = data?.cycle()
   // h/l (or ,/.) step the focused chart pane's views, the top pane when
   // neither is focused; H/L always step the bottom pane.
   const back = seq === "H" || ((name === "h" || name === "left" || seq === ",") && scope === "overview")
@@ -1051,7 +1051,7 @@ function handleOverview(ui: UiStore, key: KeyEvent, data?: DataStore): void {
 function handleOverviewRange(ui: UiStore, key: KeyEvent, data?: DataStore): void {
   const { name } = key
   const clock = appNow()
-  const cycle = data?.state.budgetCycle
+  const cycle = data?.cycle()
   if (name === "h" || name === "left") {
     const n = chipCount()
     ui.setDashChipCursor((ui.state.dashChipCursor - 1 + n) % n)
@@ -1377,8 +1377,8 @@ export function footerHints(scope: ScopeId, state?: HintState): { key: string; d
 }
 
 /** The budget cycle as editor draft fields. */
-function cycleDraft(cycle: CycleConfig): { unit: CycleConfig["unit"]; anchor: CycleConfig["anchor"]; anchorDate: string } {
-  return { unit: cycle.unit, anchor: cycle.anchor, anchorDate: anchorDraft(cycle) }
+function cycleDraft(cycle: CycleConfig): { unit: CycleConfig["unit"]; anchor: CycleConfig["anchor"]; anchorDate: string; payEarly: boolean } {
+  return { unit: cycle.unit, anchor: cycle.anchor, anchorDate: anchorDraft(cycle), payEarly: !!cycle.payEarly }
 }
 
 /** Show the next account in the accounts pane (the Transactions tab's `a`). */

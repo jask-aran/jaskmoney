@@ -53,7 +53,7 @@ const MIN_CATEGORIES = 8
 export function OverviewTab(props: { focused: SectionId }) {
   const dims = useTerminalDimensions()
   const today = () => appToday()
-  const cycleConfig = () => data.state.budgetCycle
+  const cycleConfig = () => data.cycle()
   // The range, scope and category spending, shared with the tab's keys.
   const range = createMemo(() => overviewRange(data, ui.state))
   const clock = () => range().clock

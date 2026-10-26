@@ -1,5 +1,5 @@
 import { addDays, addMonthsClamped, dayOfWeek, daysBetween, MONTHS } from "./days"
-import { isSpending } from "./moneyRules"
+import { isIncome, isSpending } from "./moneyRules"
 import { accountRole, type Account, type Category, type Transaction } from "./types"
 
 /**
@@ -32,6 +32,12 @@ export interface CycleConfig {
   anchor: CycleAnchor
   /** Required for "date" and "weekStartNearDate"; ignored for "calendar". */
   anchorDate: string | null
+  /** Start a cycle early on the day pay arrives, when it arrives in the few
+   * days before the scheduled start (see `cycleFor`). */
+  payEarly?: boolean
+  /** When pay arrived (the Salary category), ascending. Not stored: the data
+   * store fills it in for `payEarly`. */
+  paydays?: readonly string[]
 }
 
 export interface Cycle {
@@ -42,9 +48,41 @@ export interface Cycle {
   days: number
 }
 
-/** The cycle containing `dateISO` (dates before the anchor work too: cycles
- * extend backwards). Throws when the anchor needs a date and has none. */
+/** Days before a scheduled start that early pay still opens the cycle. */
+const PAY_EARLY_DAYS: Record<CycleUnit, number> = { week: 2, fortnight: 5, month: 5 }
+
+/**
+ * The cycle containing `dateISO` (dates before the anchor work too: cycles
+ * extend backwards). Throws when the anchor needs a date and has none.
+ *
+ * With `payEarly`, a cycle starts on the earliest payday in the
+ * PAY_EARLY_DAYS before its scheduled start (pay due on the 14th that lands
+ * on Friday the 12th starts the cycle on the 12th), and the cycle before it
+ * ends the day before. Pay on or after the scheduled start changes nothing.
+ */
 export function cycleFor(config: CycleConfig, dateISO: string): Cycle {
+  const scheduled = scheduledCycle(config, dateISO)
+  const finish = (start: string, next: string): Cycle => ({ start, end: addDays(next, -1), days: daysBetween(start, next) })
+  const paydays = config.payEarly ? config.paydays ?? [] : []
+  if (!paydays.length) return finish(scheduled.start, scheduled.next)
+  const early = (start: string): string => {
+    const from = addDays(start, -PAY_EARLY_DAYS[config.unit])
+    return paydays.find((day) => day >= from && day < start) ?? start
+  }
+  // Early pay for the next cycle can already have opened it.
+  const following = scheduledCycle(config, scheduled.next)
+  if (early(scheduled.next) <= dateISO) return finish(early(scheduled.next), early(following.next))
+  return finish(early(scheduled.start), early(scheduled.next))
+}
+
+/** The pay dates `payEarly` looks for: income in the Salary category. */
+export function paydays(transactions: Pick<Transaction, "dateISO" | "amount" | "categoryName" | "income" | "tagNames" | "excluded" | "categoryId">[]): string[] {
+  return [...new Set(transactions.filter((t) => isIncome(t) && t.amount > 0 && t.categoryName === "Salary").map((t) => t.dateISO))].sort()
+}
+
+/** The cycle containing `dateISO` by the anchor alone: its first day and the
+ * next cycle's. */
+function scheduledCycle(config: CycleConfig, dateISO: string): { start: string; next: string } {
   if (config.anchor !== "calendar" && config.anchorDate === null) {
     throw new Error("budget cycle needs an anchor date")
   }
@@ -71,7 +109,7 @@ export function cycleFor(config: CycleConfig, dateISO: string): Cycle {
     start = addDays(base, Math.floor(daysBetween(base, dateISO) / days) * days)
     next = addDays(start, days)
   }
-  return { start, end: addDays(next, -1), days: daysBetween(start, next) }
+  return { start, next }
 }
 
 function nearestMonday(iso: string): string {
@@ -154,6 +192,11 @@ export function budgetProgress(
 
 /** "Monthly from the 1st", "Fortnightly from 16 Oct 2026", "Monthly from the Monday nearest the 15th". */
 export function describeCycle(config: CycleConfig): string {
+  const from = scheduleText(config)
+  return config.payEarly ? `${from}, or payday if pay comes first` : from
+}
+
+function scheduleText(config: CycleConfig): string {
   const every = config.unit === "week" ? "Weekly" : config.unit === "fortnight" ? "Fortnightly" : "Monthly"
   if (config.anchor === "calendar") return config.unit === "month" ? `${every} from the 1st` : `${every} from Monday`
   const date = config.anchorDate ?? ""

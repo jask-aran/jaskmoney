@@ -161,7 +161,7 @@ export interface UiState {
     /** Budget editor: scope key (see budgetScopes.scopeKey) and amount text. */
     scopeKey: string; amount: string
     /** Cycle editor. */
-    unit: CycleUnit; anchor: CycleAnchor; anchorDate: string
+    unit: CycleUnit; anchor: CycleAnchor; anchorDate: string; payEarly: boolean
   }
   settingsConfirm: { kind: "category" | "tag" | "rule" | "filter" | "profile" | "clearData" | "clearAccount" | "deleteAccount" | "desyncAccount" | "budget"; id: number | string; label: string } | null
   importStage: ImportStage
@@ -294,7 +294,7 @@ function createUiStore() {
     settingsEditField: 0,
     settingsCaret: 0,
     formPicker: null,
-    settingsDraft: { name: "", color: "#94e2d5", categoryId: null, id: "", expr: "", savedFilterId: "", setCategoryId: null, addTagIds: [], notSpending: false, scopeKey: "overall", amount: "", unit: "month", anchor: "calendar", anchorDate: "" },
+    settingsDraft: { name: "", color: "#94e2d5", categoryId: null, id: "", expr: "", savedFilterId: "", setCategoryId: null, addTagIds: [], notSpending: false, scopeKey: "overall", amount: "", unit: "month", anchor: "calendar", anchorDate: "", payEarly: false },
     settingsConfirm: null,
     importStage: "none",
     importDirectory: "",

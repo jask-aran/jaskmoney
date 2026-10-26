@@ -13,8 +13,8 @@ const draft: Draft = { ...ui.state.settingsDraft, scopeKey: "overall", amount: "
 
 describe("settings form", () => {
   test("the budget editor carries the shared cycle; a date field only off calendar", () => {
-    expect(editorFields("budget", draft, ctx).map((f) => f.label)).toEqual(["Covers", "Amount", "Every", "Starting"])
-    expect(editorFields("budget", { ...draft, anchor: "date" }, ctx).map((f) => f.label)).toEqual(["Covers", "Amount", "Every", "Starting", "Day"])
+    expect(editorFields("budget", draft, ctx).map((f) => f.label)).toEqual(["Covers", "Amount", "Every", "Starting", "Payday"])
+    expect(editorFields("budget", { ...draft, anchor: "date" }, ctx).map((f) => f.label)).toEqual(["Covers", "Amount", "Every", "Starting", "Day", "Payday"])
     expect(editorFields("budget", draft, ctx)[0]).toMatchObject({ kind: "picker", display: "Overall spending" })
   })
 
@@ -28,18 +28,18 @@ describe("settings form", () => {
 
   test("each unit asks for its start in its own form", () => {
     const fields = (d: Partial<typeof draft>) => editorFields("cycle", { ...draft, ...d }, ctx).map((f) => `${f.label}:${f.kind}`)
-    expect(fields({ unit: "month", anchor: "date", anchorDate: "15" })).toEqual(["Every:choice", "Starting:choice", "Day:text"])
-    expect(fields({ unit: "week", anchor: "date", anchorDate: "Thursday" })).toEqual(["Every:choice", "Starting:choice", "Weekday:choice"])
-    expect(fields({ unit: "fortnight", anchor: "date", anchorDate: "2026-10-16" })).toEqual(["Every:choice", "Starting:choice", "Date:text"])
+    expect(fields({ unit: "month", anchor: "date", anchorDate: "15" })).toEqual(["Every:choice", "Starting:choice", "Day:text", "Payday:toggle"])
+    expect(fields({ unit: "week", anchor: "date", anchorDate: "Thursday" })).toEqual(["Every:choice", "Starting:choice", "Weekday:choice", "Payday:toggle"])
+    expect(fields({ unit: "fortnight", anchor: "date", anchorDate: "2026-10-16" })).toEqual(["Every:choice", "Starting:choice", "Date:text", "Payday:toggle"])
     expect(anchorChoices("week")).toEqual(["calendar", "date"])
   })
 
   test("drafts turn into stored cycles and back", () => {
-    expect(cycleFromDraft({ unit: "month", anchor: "date", anchorDate: "15th" })).toEqual({ unit: "month", anchor: "date", anchorDate: "2000-01-15" })
+    expect(cycleFromDraft({ unit: "month", anchor: "date", anchorDate: "15th" })).toEqual({ unit: "month", anchor: "date", anchorDate: "2000-01-15", payEarly: false })
     expect(cycleFromDraft({ unit: "month", anchor: "date", anchorDate: "32" })).toBe("Day must be 1–31")
-    expect(cycleFromDraft({ unit: "week", anchor: "date", anchorDate: "Thursday" })).toEqual({ unit: "week", anchor: "date", anchorDate: "1970-01-08" })
+    expect(cycleFromDraft({ unit: "week", anchor: "date", anchorDate: "Thursday" })).toEqual({ unit: "week", anchor: "date", anchorDate: "1970-01-08", payEarly: false })
     expect(cycleFromDraft({ unit: "fortnight", anchor: "date", anchorDate: "2026-02-30" })).toBe("Date must be YYYY-MM-DD")
-    expect(cycleFromDraft({ unit: "month", anchor: "calendar", anchorDate: "anything" })).toEqual({ unit: "month", anchor: "calendar", anchorDate: null })
+    expect(cycleFromDraft({ unit: "month", anchor: "calendar", anchorDate: "anything" })).toEqual({ unit: "month", anchor: "calendar", anchorDate: null, payEarly: false })
     // Old full-date anchors read back in the unit's form.
     expect(anchorDraft({ unit: "month", anchor: "date", anchorDate: "2026-10-15" })).toBe("15")
     expect(anchorDraft({ unit: "week", anchor: "date", anchorDate: "2026-10-15" })).toBe("Thursday")

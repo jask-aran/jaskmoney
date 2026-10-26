@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test"
-import { budgetProgress, cycleFor, type Budget, type CycleConfig } from "./budget"
+import { budgetProgress, cycleFor, paydays, type Budget, type CycleConfig } from "./budget"
 import type { Transaction } from "./types"
 import { account, category, transaction } from "../testing/fixtures"
 
@@ -39,6 +39,45 @@ const cycleCases: CycleCase[] = [
 ]
 
 describe("cycleFor", () => {
+  describe("payEarly", () => {
+    // Monthly from the 14th; pay lands on 12 Sep (a Friday, early), 14 Oct
+    // (on time), 16 Nov (late) and 6 Dec (too early to count).
+    const config: CycleConfig = { unit: "month", anchor: "date", anchorDate: "2000-01-14", payEarly: true, paydays: ["2026-09-12", "2026-10-14", "2026-11-16", "2026-12-06"] }
+    test("early pay opens the cycle that day; the cycle before ends the day before", () => {
+      expect(cycleFor(config, "2026-09-11")).toEqual({ start: "2026-08-14", end: "2026-09-11", days: 29 })
+      for (const date of ["2026-09-12", "2026-09-13", "2026-09-14", "2026-10-13"]) {
+        expect(cycleFor(config, date)).toEqual({ start: "2026-09-12", end: "2026-10-13", days: 32 })
+      }
+    })
+    test("pay on or after the scheduled start, or more than 5 days early, changes nothing", () => {
+      expect(cycleFor(config, "2026-10-14")).toEqual({ start: "2026-10-14", end: "2026-11-13", days: 31 })
+      expect(cycleFor(config, "2026-11-16")).toEqual({ start: "2026-11-14", end: "2026-12-13", days: 30 })
+      expect(cycleFor(config, "2026-12-06").start).toBe("2026-11-14")
+    })
+    test("off, or with no pay dates, cycles keep their schedule", () => {
+      expect(cycleFor({ ...config, payEarly: false }, "2026-09-12").start).toBe("2026-08-14")
+      expect(cycleFor({ ...config, paydays: [] }, "2026-09-12").start).toBe("2026-08-14")
+    })
+    test("cycles stay contiguous across a year of early and late pay", () => {
+      let previous = cycleFor(config, "2026-01-01")
+      for (let time = Date.parse("2026-01-02T12:00:00Z"); time < Date.parse("2027-01-01T12:00:00Z"); time += 86400000) {
+        const date = new Date(time).toISOString().slice(0, 10)
+        const cycle = cycleFor(config, date)
+        expect(cycle.start <= date && date <= cycle.end).toBe(true)
+        if (cycle.start !== previous.start) {
+          expect(previous.end).toBe(new Date(time - 86400000).toISOString().slice(0, 10))
+          expect(cycle.start).toBe(date)
+        } else expect(cycle).toEqual(previous)
+        previous = cycle
+      }
+    })
+    test("paydays are Salary income, once per day, in order", () => {
+      const row = (dateISO: string, overrides: Partial<Transaction> = {}) => transaction({ dateISO, amount: 5000, categoryId: 56, categoryName: "Salary", income: true, ...overrides })
+      expect(paydays([row("2026-10-14"), row("2026-09-12"), row("2026-09-12"), row("2026-08-01", { categoryName: "Interest" }),
+        row("2026-07-01", { income: false }), row("2026-06-01", { tagNames: ["IGNORE"] })])).toEqual(["2026-09-12", "2026-10-14"])
+    })
+  })
+
   for (const unit of ["week", "fortnight", "month"] as const) {
     for (const anchor of ["calendar", "date", "weekStartNearDate"] as const) {
       // All anchor days include both directions of Monday shifts and month crossings.

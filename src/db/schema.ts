@@ -1,4 +1,4 @@
-/** OpenTUI schema. v16 adds income categories. v15 adds budgets and the budget cycle. v14 let a category be excluded from spending. v13 linked local tags to provider tags. v12 added the category tree (parent, provider category id)
+/** OpenTUI schema. v17 lets the budget cycle start early on payday. v16 adds income categories. v15 adds budgets and the budget cycle. v14 let a category be excluded from spending. v13 linked local tags to provider tags. v12 added the category tree (parent, provider category id)
  * and who set each transaction's category. v11 added provider transaction details (categorisable flag,
  * method, card, foreign amount, round-up, cashback). v10 added a per-account
  * sync switch. v9 added synced sources (Up Bank): external identity,
@@ -6,7 +6,7 @@
  * version fallback with an additive migration registry. v7 was the initial
  * partial OpenTUI port. */
 
-export const SCHEMA_VERSION = 16
+export const SCHEMA_VERSION = 17
 
 /** Columns shared by the fresh schema and the v9 migration. Rows imported from
  * CSV keep source = 'csv' and NULL external fields. */
@@ -91,6 +91,9 @@ export const TRANSACTION_DETAIL_COLUMNS_LIST = [
 const ACCOUNT_SYNC_COLUMNS = ACCOUNT_SYNC_COLUMNS_LIST.join(",\n  ")
 const TRANSACTION_SYNC_COLUMNS = [...TRANSACTION_SYNC_COLUMNS_LIST, ...TRANSACTION_DETAIL_COLUMNS_LIST, CATEGORY_SOURCE_COLUMN].join(",\n  ")
 const CATEGORY_TREE_COLUMNS = [...CATEGORY_TREE_COLUMNS_LIST, CATEGORY_NOT_SPENDING_COLUMN, CATEGORY_INCOME_COLUMN].join(",\n  ")
+
+/** v17: 1 = a cycle starts early on the day pay arrives (see cycleFor). */
+export const BUDGET_PAY_EARLY_COLUMN = "pay_early INTEGER NOT NULL DEFAULT 0"
 
 /** v15: budgets (one per scope: overall, an account, or a category) and the
  * single budget cycle definition shared by all of them. */
@@ -207,6 +210,7 @@ ${SYNC_SQL}
 CREATE UNIQUE INDEX IF NOT EXISTS idx_categories_ext ON categories(ext_id) WHERE ext_id IS NOT NULL;
 CREATE UNIQUE INDEX IF NOT EXISTS idx_tags_ext ON tags(ext_id) WHERE ext_id IS NOT NULL;
 ${BUDGET_SQL}
+ALTER TABLE budget_cycle ADD COLUMN ${BUDGET_PAY_EARLY_COLUMN};
 `
 
 export const DEFAULT_CATEGORIES: { name: string; color: string; sortOrder: number; isDefault: number }[] = [
