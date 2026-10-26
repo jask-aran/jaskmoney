@@ -10,6 +10,8 @@ import { computePeriodFlows } from "../../domain/position"
 import { merchantSummaries, spendingCalendar, type CalendarDay } from "../../domain/spending"
 import { dataClock, filterByTimeframe, timeframeBounds } from "../../domain/timeframe"
 import { fit } from "../text"
+import { budgetProgress, cycleFor } from "../../domain/budget"
+import { budgetLabel } from "../../domain/budgetScopes"
 
 /** Calendar cell colours by spending level (0 = none). */
 const LEVEL_BG = [theme.surface0, "#5b4636", "#8c6146", "#c47f55", theme.peach] as const
@@ -34,6 +36,13 @@ export function SpendingTab(props: { focused: SectionId }) {
   const groups = createMemo(() => groupCategorySpend(computeCategorySpend(inPeriod(), data.state.categories), data.state.categories))
   const merchants = createMemo(() => merchantSummaries(spending(), bounds().start, bounds().end))
   const calendar = createMemo(() => spendingCalendar(inPeriod(), bounds().start, bounds().end))
+  // Budgets always show the current cycle, whatever the Date Range.
+  const today = localTodayISO()
+  const cycle = createMemo(() => data.state.budgets.length ? cycleFor(data.state.budgetCycle, today) : null)
+  const budgets = createMemo(() => data.state.budgets.length
+    ? budgetProgress(data.state.budgets, data.state.budgetCycle, today, data.state.accounts, data.state.categories, data.state.transactions)
+    : [])
+  const budgetHeight = () => (budgets().length ? budgets().length + 2 : 0)
 
   // Fixed rows: tab bar + gap (2), status + footer (2), summary card (3).
   const bodyHeight = () => Math.max(8, dims().height - 7)
@@ -44,8 +53,7 @@ export function SpendingTab(props: { focused: SectionId }) {
   // long periods show the latest weeks that fit at the minimum width.
   const calendarWeeks = createMemo(() => calendar().slice(-Math.max(1, Math.floor((rightInner() - 4) / 2))))
   const cellWidth = () => Math.max(2, Math.min(6, Math.floor((rightInner() - 4) / Math.max(1, calendarWeeks().length))))
-  const today = localTodayISO()
-  const merchantRows = () => Math.max(1, bodyHeight() - 11 - 3)
+  const merchantRows = () => Math.max(1, bodyHeight() - 11 - budgetHeight() - 3)
   createEffect(() => {
     const n = merchantRows()
     const cur = ui.state.merchantCursor
@@ -97,6 +105,30 @@ export function SpendingTab(props: { focused: SectionId }) {
           </Show>
         </SectionCard>
         <box flexGrow={1} flexBasis={0} minWidth={0} height={bodyHeight()} flexDirection="column" overflow="hidden">
+          <Show when={budgets().length}>
+            <SectionCard title="Budget" titleSuffix={cycle() ? `· ${shortDate(cycle()!.start)} – ${shortDate(cycle()!.end)}` : undefined} titleSuffixColor={theme.peach} height={budgetHeight()}>
+              <For each={budgets()}>
+                {(p) => {
+                  const over = () => p.remaining < 0
+                  const pctColor = () => (p.usedPct > 100 ? theme.error : p.usedPct >= 80 ? theme.warning : theme.success)
+                  return (
+                    <text wrapMode="none">
+                      <S fg={theme.text}>{fit(budgetLabel(p.budget, data.state.accounts, data.state.categories), Math.max(10, rightInner() - 44))}</S>
+                      <S fg={theme.text}>{formatWholeMoney(p.spent).padStart(8)}</S>
+                      <S fg={theme.overlay1}>{` of ${formatWholeMoney(p.budget.amount)}`.padEnd(10)}</S>
+                      <S fg={pctColor()} bold>{(Number.isFinite(p.usedPct) ? `${Math.round(p.usedPct)}%` : "—").padStart(5)}</S>
+                      <S fg={over() ? theme.error : theme.subtext0}>
+                        {over() ? `  ${formatWholeMoney(-p.remaining)} over` : `  ${formatWholeMoney(p.dailyAllowance)}/day, ${p.daysLeft}d`}
+                      </S>
+                      <Show when={!over() && p.projected > p.budget.amount}>
+                        <S fg={theme.warning}>{"  ▲ pace"}</S>
+                      </Show>
+                    </text>
+                  )
+                }}
+              </For>
+            </SectionCard>
+          </Show>
           <SectionCard title="Calendar" height={11}>
             <text wrapMode="none" fg={theme.overlay1}>{"    " + monthLabels(calendarWeeks(), cellWidth())}</text>
             <For each={WEEKDAYS}>

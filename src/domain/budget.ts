@@ -1,4 +1,4 @@
-import type { Account, Category, Transaction } from "./types"
+import { accountRole, type Account, type Category, type Transaction } from "./types"
 
 /**
  * Budget cycles and progress.
@@ -43,8 +43,52 @@ export interface Cycle {
 /** The cycle containing `dateISO` (dates before the anchor work too: cycles
  * extend backwards). Throws when the anchor needs a date and has none. */
 export function cycleFor(config: CycleConfig, dateISO: string): Cycle {
-  void config, dateISO
-  throw new Error("not implemented")
+  if (config.anchor !== "calendar" && config.anchorDate === null) {
+    throw new Error("budget cycle needs an anchor date")
+  }
+  const date = dayTime(dateISO)
+  const anchor = dayTime(config.anchorDate ?? "1970-01-05")
+  let start: number
+  let next: number
+  if (config.unit === "month") {
+    const current = new Date(date)
+    const anchorDay = config.anchor === "calendar" ? 1 : new Date(anchor).getUTCDate()
+    const monthStart = (offset: number): number => {
+      const month = new Date(date)
+      month.setUTCDate(1)
+      month.setUTCMonth(current.getUTCMonth() + offset)
+      const last = new Date(month)
+      last.setUTCMonth(last.getUTCMonth() + 1)
+      last.setUTCDate(0)
+      month.setUTCDate(Math.min(anchorDay, last.getUTCDate()))
+      return config.anchor === "weekStartNearDate" ? nearestMonday(month.getTime()) : month.getTime()
+    }
+    let offset = 0
+    while (monthStart(offset) > date) offset--
+    while (monthStart(offset + 1) <= date) offset++
+    start = monthStart(offset)
+    next = monthStart(offset + 1)
+  } else {
+    const days = config.unit === "week" ? 7 : 14
+    const base = config.anchor === "calendar" ? dayTime("1970-01-05")
+      : config.anchor === "weekStartNearDate" ? nearestMonday(anchor) : anchor
+    start = base + Math.floor((date - base) / (days * 86400000)) * days * 86400000
+    next = start + days * 86400000
+  }
+  return { start: dayISO(start), end: dayISO(next - 86400000), days: (next - start) / 86400000 }
+}
+
+function dayTime(dateISO: string): number {
+  return Date.parse(dateISO + "T12:00:00Z")
+}
+
+function dayISO(time: number): string {
+  return new Date(time).toISOString().slice(0, 10)
+}
+
+function nearestMonday(time: number): number {
+  const weekday = (new Date(time).getUTCDay() + 6) % 7
+  return time + (weekday <= 3 ? -weekday : 7 - weekday) * 86400000
 }
 
 /** What a budget limits. A category budget on a group covers its children. */
@@ -66,7 +110,7 @@ export interface BudgetProgress {
   spent: number
   /** amount − spent (negative when over). */
   remaining: number
-  /** spent / amount × 100. */
+  /** spent / amount × 100 (a $0 budget: Infinity once anything is spent, else 0). */
   usedPct: number
   /** Days from today to the cycle end, inclusive of today (≥ 1). */
   daysLeft: number
@@ -94,6 +138,29 @@ export function budgetProgress(
   categories: Category[],
   transactions: Transaction[],
 ): BudgetProgress[] {
-  void budgets, config, todayISO, accounts, categories, transactions
-  throw new Error("not implemented")
+  const cycle = cycleFor(config, todayISO)
+  const spendingIds = new Set(accounts.filter((a) => accountRole(a) === "spending").map((a) => a.id))
+  const parents = new Map(categories.map((category) => [category.id, category.parentId]))
+  const rows = transactions.filter((row) => row.amount < 0
+    && row.accountId !== null && spendingIds.has(row.accountId)
+    && !row.excluded && !row.tagNames.some((tag) => tag.toUpperCase() === "IGNORE")
+    && row.dateISO >= cycle.start && row.dateISO <= todayISO)
+  const daysLeft = (dayTime(cycle.end) - dayTime(todayISO)) / 86400000 + 1
+  const elapsed = (dayTime(todayISO) - dayTime(cycle.start)) / 86400000 + 1
+  return budgets.map((budget) => {
+    const scope = budget.scope
+    const spent = rows.reduce((sum, row) => {
+      const matches = scope.kind === "overall"
+        || (scope.kind === "account" && row.accountId === scope.accountId)
+        || (scope.kind === "category" && (row.categoryId === scope.categoryId
+          || (row.categoryId !== null && parents.get(row.categoryId) === scope.categoryId)))
+      return matches ? sum - row.amount : sum
+    }, 0)
+    const remaining = budget.amount - spent
+    return {
+      budget, spent, remaining, usedPct: budget.amount > 0 ? spent / budget.amount * 100 : spent > 0 ? Infinity : 0, daysLeft,
+      dailyAllowance: remaining <= 0 ? 0 : remaining / daysLeft,
+      projected: spent / elapsed * cycle.days,
+    }
+  })
 }

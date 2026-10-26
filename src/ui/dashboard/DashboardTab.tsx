@@ -7,6 +7,7 @@ import { data } from "../../state/dataStore"
 import { theme } from "../../theme"
 import { computeCategorySpend, dailySpendSeries, formatMoney, formatPct, formatWholeMoney, groupCategorySpend } from "../../domain/dashboard"
 import { computePeriodFlows, computePosition } from "../../domain/position"
+import { budgetProgress, type BudgetProgress } from "../../domain/budget"
 import {
   LOOKBACKS,
   PERIODS,
@@ -36,6 +37,12 @@ export function DashboardTab(props: { focused: SectionId }) {
   const position = createMemo(() => computePosition(data.state.accounts, data.state.transactions, localTodayISO()))
   const groups = createMemo(() => groupCategorySpend(computeCategorySpend(scoped(), data.state.categories), data.state.categories))
   const series = createMemo(() => dailySpendSeries(scoped(), bounds().start, bounds().end))
+  // The overall budget for the current cycle, when one is set.
+  const overallBudget = createMemo(() => {
+    const budget = data.state.budgets.find((b) => b.scope.kind === "overall")
+    if (!budget) return null
+    return budgetProgress([budget], data.state.budgetCycle, localTodayISO(), data.state.accounts, data.state.categories, data.state.transactions)[0] ?? null
+  })
   const saversPeriodChange = () => flows().saverChanges.reduce((sum, c) => sum + c.change, 0)
   const saverChange = (accountId: number) => flows().saverChanges.find((c) => c.accountId === accountId)?.change ?? 0
 
@@ -120,6 +127,15 @@ export function DashboardTab(props: { focused: SectionId }) {
               <S fg={theme.overlay1}>{`${formatMoney(position().dailySpend!)}/day, 90 day avg`}</S>
             </Show>
           </text>
+          <Show when={overallBudget()}>
+            {(p: () => BudgetProgress) => (
+              <text wrapMode="none">
+                <S fg={theme.subtext0}>{"Budget".padEnd(LABEL)}</S>
+                <S fg={p().remaining < 0 ? theme.error : theme.text}>{(p().remaining < 0 ? `${formatWholeMoney(-p().remaining)} over` : `${formatWholeMoney(p().remaining)} left`).padEnd(VALUE)}</S>
+                <S fg={theme.overlay1}>{p().remaining < 0 ? `${p().daysLeft} days to go` : `${formatWholeMoney(p().dailyAllowance)}/day, ${p().daysLeft} days`}</S>
+              </text>
+            )}
+          </Show>
           <text wrapMode="none">
             <S fg={theme.subtext0}>{"30-day change".padEnd(LABEL)}</S>
             <S fg={change30() >= 0 ? theme.success : theme.error}>{signedMoney(change30()).padEnd(VALUE)}</S>
