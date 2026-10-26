@@ -7,7 +7,7 @@ import { data } from "../state/dataStore"
 import { loadTransactions, loadTransactionDetail, setTransactionNotes } from "../db/client"
 import { account, category, transaction } from "../testing/fixtures"
 import { key } from "../testing/keys"
-import { testDb } from "../testing/scoped"
+import { testDb, testEnv } from "../testing/scoped"
 
 describe("key router", () => {
   beforeEach(() => {
@@ -125,6 +125,24 @@ describe("key router", () => {
     handleKey(ui, key("d"), data)
     expect(ui.state.accountActionId).toBe(1)
     ui.setState({ accountActionId: null })
+  })
+
+  test("? in the filter is a question in words: no live filtering while typing; enter asks and keeps the draft open", () => {
+    testEnv("JASKMONEY_CF_TOKEN", "")
+    data.setState({ accounts: [account({ name: "A" })], transactions: [transaction({ id: 1, description: "Coffee" })], accountSelection: "all", ready: true })
+    data.clearFilter()
+    ui.switchTab("manager")
+    ui.setState({ focusedSection: "mgr.transactions" })
+    handleKey(ui, key("/"), data)
+    for (const ch of "?zzz") handleKey(ui, key(ch), data)
+    expect(data.state.filterQuery).toBe("")
+    expect(data.scopedTransactions()).toHaveLength(1)
+    handleKey(ui, key("return"), data)
+    expect(ui.state.filterMode).toBe(true)
+    expect(ui.state.filterDraft).toBe("?zzz")
+    expect(ui.state.status).toContain("JASKMONEY_CF_TOKEN")
+    expect(footerHints(ui.activeScope()).some((h) => h.key === "?…")).toBe(true)
+    handleKey(ui, key("escape"), data)
   })
 
   test("transaction detail opens on enter, owns input, and targets its own row", () => {

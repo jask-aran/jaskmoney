@@ -9,6 +9,7 @@ import type { CycleConfig } from "../domain/budget"
 import { MERCHANT_SORTS, groupByMerchant, merchantFilter, sortMerchantGroups } from "../domain/merchants"
 import { anchorDraft, cycleFromDraft, editorFields, normaliseCycleDraft, pickerChoices, pickerItems, stepChoice } from "../state/settingsForm"
 import { runSync } from "./sync"
+import { runSmartSearch } from "./smartSearch"
 import { CHART_VIEWS, JUMP_TARGETS, SETTINGS_SECTIONS, TABS, settingsSectionFocus, type ScopeId, type UiState, type UiStore } from "../state/uiStore"
 import type { DataStore } from "../state/dataStore"
 import {
@@ -280,6 +281,11 @@ function handleFilter(ui: UiStore, key: KeyEvent, data?: DataStore): void {
   }
   if (name === "return" || name === "enter") {
     const draft = ui.state.filterDraft
+    // ?<query>: ask the models for a filter; the draft stays open with it.
+    if (draft.trimStart().startsWith("?")) {
+      if (data) void runSmartSearch(ui, data, draft, () => resetTransactionCursors(ui, data))
+      return
+    }
     ui.closeFilter(true)
     const r = data?.commitFilter(draft) ?? { ok: true, err: "" }
     resetTransactionCursors(ui, data)
@@ -295,6 +301,8 @@ function handleFilter(ui: UiStore, key: KeyEvent, data?: DataStore): void {
   const next = editText({ value: ui.state.filterDraft, caret: ui.state.filterCaret }, key)
   if (next) {
     ui.setState({ filterDraft: next.value, filterCaret: next.caret })
+    // A smart search is plain English until enter asks for its filter.
+    if (next.value.trimStart().startsWith("?")) return
     data?.setFilterLive(next.value)
     resetTransactionCursors(ui, data)
   }
@@ -1169,6 +1177,7 @@ const scopes: Record<ScopeId, ScopeEntry> = {
       { key: "enter", desc: "apply" },
       { key: "esc", desc: "clear" },
       { key: "type", desc: "expr" },
+      { key: "?…", desc: "ask in words" },
     ],
   },
   "manager.detail": {

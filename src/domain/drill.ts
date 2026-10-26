@@ -18,9 +18,12 @@ export function drillFilter(opts: {
 }): string {
   const terms = [`date:${opts.start}..${opts.end}`, "type:spending"]
   if (opts.accounts.length) terms.push(anyOf(opts.accounts.map((name) => filterTerm("acc", name))))
-  if (opts.category) {
-    const children = opts.category.id == null ? [] : (opts.categories ?? []).filter((c) => c.parentId === opts.category!.id).map((c) => c.name)
-    terms.push(anyOf([opts.category.name, ...children].map((name) => filterTerm("cat", name))))
-  }
+  if (opts.category) terms.push(categoryTerm(opts.category, opts.categories ?? []))
   return terms.join(" AND ")
+}
+
+/** A filter term for a category; a group covers itself and its subcategories. */
+export function categoryTerm(category: { id: number | null; name: string }, categories: Category[]): string {
+  const children = category.id == null ? [] : categories.filter((c) => c.parentId === category.id).map((c) => c.name)
+  return anyOf([category.name, ...children].map((name) => filterTerm("cat", name)))
 }
