@@ -10,6 +10,11 @@ import {
   stepCustom,
   CUSTOM_CHIP,
   activeChipIndex,
+  periodOffset,
+  offsetLabel,
+  stepChip,
+  LOOKBACKS,
+  PERIODS,
 } from "./timeframe"
 import type { Transaction } from "./types"
 
@@ -93,6 +98,25 @@ describe("cycle period", () => {
   })
 })
 
+describe("stepping", () => {
+  const now = new Date(2026, 9, 27)
+  test("periodOffset counts steps from the current period", () => {
+    const month = applyChip(defaultTimeframe(now), LOOKBACKS.length + PERIODS.indexOf("month"), now)
+    expect(periodOffset(month, now)).toBe(0)
+    expect(periodOffset(stepPeriod(stepPeriod(month, -1), -1), now)).toBe(-2)
+    expect(periodOffset(stepPeriod(month, 1), now)).toBe(1)
+    expect(offsetLabel("month", -2)).toBe("2 months back")
+    expect(offsetLabel("qtr", 1)).toBe("1 quarter ahead")
+    expect(offsetLabel("cycle", 0)).toBe("")
+  })
+  test("stepChip walks every chip, skipping Custom until there is a range", () => {
+    const tf = applyChip(defaultTimeframe(now), LOOKBACKS.length + PERIODS.indexOf("year"), now)
+    expect(stepChip(tf, 1)).toBe(0)
+    expect(stepChip({ ...tf, custom: { start: "2026-10-01", end: "2026-10-05" } }, 1)).toBe(CUSTOM_CHIP)
+    expect(stepChip(applyChip(tf, 0, now), -1)).toBe(LOOKBACKS.length + PERIODS.length - 1)
+  })
+})
+
 describe("custom range", () => {
   test("validates typed dates", () => {
     expect(customRange("2026-10-01", "2026-10-15")).toEqual({ start: "2026-10-01", end: "2026-10-15" })
@@ -114,4 +138,10 @@ describe("custom range", () => {
     expect(stepCustom(tf, 1).custom).toEqual({ start: "2026-10-11", end: "2026-10-20" })
     expect(stepCustom(tf, -1).custom).toEqual({ start: "2026-09-21", end: "2026-09-30" })
   })
+})
+
+test("a single month's label names it once", () => {
+  const now = new Date(2026, 9, 27)
+  const month = applyChip(defaultTimeframe(now), LOOKBACKS.length + PERIODS.indexOf("month"), now)
+  expect(timeframeBounds(month, now).label).toBe("Oct 2026")
 })

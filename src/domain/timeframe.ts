@@ -160,7 +160,8 @@ function formatDays(start: string, end: string): string {
 }
 
 function formatRange(start: string, end: string): string {
-  if (start === end) return pretty(start)
+  // One month reads "Aug 2026", not "Aug 2026 – Aug 2026".
+  if (pretty(start) === pretty(end)) return pretty(start)
   return `${pretty(start)} – ${pretty(end)}`
 }
 
@@ -277,6 +278,43 @@ export function stepPeriod(tf: TimeframeState, delta: number, cycle: CycleConfig
   const next = { ...tf, periodAnchor: toISODate(start) }
   const b = timeframeBounds(next, start, cycle)
   return { ...next, periodAnchor: b.start }
+}
+
+/** How many steps a period is from the one containing `now`: negative
+ * back, positive ahead, 0 for the current one (and for other families). */
+export function periodOffset(tf: TimeframeState, now: Date, cycle: CycleConfig = MONTHLY_CYCLE): number {
+  if (tf.family !== "period") return 0
+  const target = timeframeBounds(tf, now, cycle).start
+  const current = applyChip(tf, LOOKBACKS.length + PERIODS.indexOf(tf.period), now, cycle)
+  const start = timeframeBounds(current, now, cycle).start
+  if (target === start) return 0
+  const direction = target < start ? -1 : 1
+  let at = current
+  for (let steps = 1; steps <= 1000; steps++) {
+    at = stepPeriod(at, direction, cycle)
+    const atStart = timeframeBounds(at, now, cycle).start
+    if (atStart === target) return direction * steps
+    if (direction < 0 ? atStart < target : atStart > target) break
+  }
+  return 0
+}
+
+/** "2 cycles back", "1 quarter ahead"; "" for the current period. */
+export function offsetLabel(period: PeriodId, offset: number): string {
+  if (!offset) return ""
+  const unit = { cycle: "cycle", month: "month", qtr: "quarter", half: "half", fy: "FY", year: "year" }[period]
+  const n = Math.abs(offset)
+  return `${n} ${unit}${n === 1 || unit === "FY" ? "" : "s"} ${offset < 0 ? "back" : "ahead"}`
+}
+
+/** The next (or previous) chip to apply when stepping through them directly:
+ * every chip in order, Custom only once a custom range exists. */
+export function stepChip(tf: TimeframeState, delta: 1 | -1): number {
+  const n = chipCount()
+  let i = activeChipIndex(tf)
+  do i = (i + delta + n) % n
+  while (i === CUSTOM_CHIP && !tf.custom)
+  return i
 }
 
 /**

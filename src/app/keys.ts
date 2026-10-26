@@ -17,6 +17,8 @@ import {
   activeChipIndex,
   applyChip,
   chipCount,
+  chipLabel,
+  stepChip,
   customRange,
   dataClock,
   stepCustom,
@@ -978,6 +980,16 @@ export function handleKey(ui: UiStore, key: KeyEvent, data?: DataStore): boolean
       ui.setState({ chartViews: views })
       return true
     }
+    // d / D: the next or previous date range chip, applied at once (no need
+    // to focus the Date Range first). Custom joins once a range exists.
+    if (name === "d" && !key.ctrl && !key.meta) {
+      const index = stepChip(ui.state.timeframe, key.shift || seq === "D" ? -1 : 1)
+      const tf = applyChip(ui.state.timeframe, index, clock, cycle)
+      ui.setTimeframe(tf)
+      ui.setDashChipCursor(index)
+      ui.setStatus(`${chipLabel(index)} · ${timeframeBounds(tf, clock, cycle).label}`)
+      return true
+    }
     // / searches: the Transactions filter, opened from here (the Overview
     // itself is not filtered).
     if ((name === "/" || seq === "/") && scope === "overview") {
@@ -1004,6 +1016,8 @@ export function handleKey(ui: UiStore, key: KeyEvent, data?: DataStore): boolean
         const tf = stepCustom(ui.state.timeframe, delta)
         ui.setTimeframe(tf)
         ui.setStatus(`Custom · ${timeframeBounds(tf, clock, cycle).label}`)
+      } else {
+        ui.setStatus(`${ui.state.timeframe.lookback} always ends today · [ ] step Cycle, Month… and Custom ranges`)
       }
       return true
     }
@@ -1107,7 +1121,8 @@ export function footerHints(scope: ScopeId, state?: Pick<UiState, "focusedSectio
         { key: "h/l", desc: "chart" },
         { key: "H/L", desc: "bottom chart" },
         { key: "a", desc: "account" },
-        { key: "[ ]", desc: "prev/next range" },
+        { key: "d/D", desc: "range" },
+        { key: "[ ]", desc: "prev/next" },
         { key: "0", desc: "this cycle" },
         { key: "/", desc: "search" },
         { key: "v", desc: "jump" },

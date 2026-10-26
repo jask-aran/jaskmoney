@@ -14,7 +14,7 @@ import { dailySpendSeries, fitCategoryLines, formatMoney, formatPct, formatWhole
 import { computePeriodFlows, computePosition } from "../../domain/position"
 import { budgetProgress, cycleFor, type BudgetProgress } from "../../domain/budget"
 import { spendingCalendar, type CalendarDay } from "../../domain/spending"
-import { CUSTOM_CHIP, LOOKBACKS, PERIODS, PERIOD_LABEL, comparisonWindows, filterByTimeframe, toISODate } from "../../domain/timeframe"
+import { CUSTOM_CHIP, LOOKBACKS, PERIODS, PERIOD_LABEL, comparisonWindows, filterByTimeframe, offsetLabel, periodOffset, toISODate } from "../../domain/timeframe"
 import { fit } from "../text"
 import { allCategoryLines, overviewRange } from "../../state/overviewRange"
 import { AXIS_GUESS, ChartBody, axisWidth, type ChartModel } from "../charts/ChartBody"
@@ -160,7 +160,12 @@ export function OverviewTab(props: { focused: SectionId }) {
     " │ ".length +
     PERIODS.reduce((n, p) => n + PERIOD_LABEL[p].length + 3, 0) - 1 +
     " │ ".length + " Custom ".length
-  const showTimeframe = () => dims().width - 4 >= presetsWidth + 2 + bounds().label.length
+  // The dates on the right: arrows when [ ] can step them, and how far the
+  // range is from the current period (with 0 to come back).
+  const steppable = () => ui.state.timeframe.family !== "lookback"
+  const offsetText = createMemo(() => offsetLabel(ui.state.timeframe.period, periodOffset(ui.state.timeframe, new Date(), cycleConfig())))
+  const timeframeWidth = () => bounds().label.length + 4 + (offsetText() ? offsetText().length + 11 : 0)
+  const showTimeframe = () => dims().width - 4 >= presetsWidth + 2 + timeframeWidth()
   const dateFocused = () => props.focused === "ov.range"
   // Chips are padded labels on a pill (chipLook); the cursor shows only
   // while the Date Range is focused.
@@ -307,7 +312,16 @@ export function OverviewTab(props: { focused: SectionId }) {
             {chip("Custom", CUSTOM_CHIP, () => ui.state.timeframe.family === "custom")}
           </text>
           <Show when={showTimeframe()}>
-            <text fg={theme.peach} flexShrink={0}>{bounds().label}</text>
+            <text flexShrink={0} wrapMode="none">
+              <Show when={offsetText()}>
+                <S fg={theme.overlay1}>{`${offsetText()} · `}</S>
+                <S fg={theme.accent} bold>{"0"}</S>
+                <S fg={theme.overlay1}>{" now   "}</S>
+              </Show>
+              <S fg={steppable() ? theme.overlay1 : theme.canvas}>{"‹ "}</S>
+              <S fg={theme.peach}>{bounds().label}</S>
+              <S fg={steppable() ? theme.overlay1 : theme.canvas}>{" ›"}</S>
+            </text>
           </Show>
         </box>
       </SectionCard>
