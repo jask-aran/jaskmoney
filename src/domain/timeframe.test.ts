@@ -6,6 +6,9 @@ import {
   defaultTimeframe,
   filterByTimeframe,
   timeframeBounds,
+  customRange,
+  CUSTOM_CHIP,
+  activeChipIndex,
 } from "./timeframe"
 import type { Transaction } from "./types"
 
@@ -86,5 +89,23 @@ describe("cycle period", () => {
     const tf = defaultTimeframe(new Date(2026, 9, 26), payday)
     expect(stepPeriod(tf, -1, payday).periodAnchor).toBe("2026-10-02")
     expect(stepPeriod(tf, 2, payday).periodAnchor).toBe("2026-11-13")
+  })
+})
+
+describe("custom range", () => {
+  test("validates typed dates", () => {
+    expect(customRange("2026-10-01", "2026-10-15")).toEqual({ start: "2026-10-01", end: "2026-10-15" })
+    expect(customRange("2026-02-30", "2026-03-01")).toBe("Start must be a date: YYYY-MM-DD")
+    expect(customRange("2026-10-01", "2026-9-1")).toBe("End must be a date: YYYY-MM-DD")
+    expect(customRange("2026-10-15", "2026-10-01")).toBe("End is before start")
+  })
+  test("the Custom chip returns to the last range, and bounds follow it", () => {
+    const now = new Date(2026, 9, 26)
+    const tf = defaultTimeframe(now)
+    expect(applyChip(tf, CUSTOM_CHIP, now)).toBe(tf)
+    const custom = applyChip({ ...tf, custom: { start: "2026-09-03", end: "2026-10-09" } }, CUSTOM_CHIP, now)
+    expect(custom.family).toBe("custom")
+    expect(activeChipIndex(custom)).toBe(CUSTOM_CHIP)
+    expect(timeframeBounds(custom, now)).toEqual({ start: "2026-09-03", end: "2026-10-09", label: "3 Sep – 9 Oct 2026" })
   })
 })

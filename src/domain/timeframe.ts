@@ -3,7 +3,7 @@ import { cycleFor, type CycleConfig } from "./budget"
 
 export type LookbackId = "1M" | "2M" | "3M" | "6M" | "1Y"
 export type PeriodId = "cycle" | "month" | "qtr" | "half" | "fy" | "year"
-export type TimeframeFamily = "lookback" | "period"
+export type TimeframeFamily = "lookback" | "period" | "custom"
 
 export interface TimeframeState {
   family: TimeframeFamily
@@ -11,6 +11,9 @@ export interface TimeframeState {
   period: PeriodId
   /** YYYY-MM-DD start of active period instance (period family). */
   periodAnchor: string
+  /** The last custom range entered, inclusive (custom family); kept while
+   * another family is active so the Custom chip can return to it. */
+  custom: { start: string; end: string } | null
 }
 
 export const LOOKBACKS: LookbackId[] = ["1M", "2M", "3M", "6M", "1Y"]
@@ -35,6 +38,7 @@ export function defaultTimeframe(now: Date = new Date(), cycle: CycleConfig = MO
     lookback: "1M",
     period: "cycle",
     periodAnchor: cycleFor(cycle, toISODate(now)).start,
+    custom: null,
   }
 }
 
@@ -69,6 +73,9 @@ export interface DateBounds {
 export function timeframeBounds(tf: TimeframeState, now: Date, cycle: CycleConfig = MONTHLY_CYCLE): DateBounds {
   const day = new Date(now.getFullYear(), now.getMonth(), now.getDate())
 
+  if (tf.family === "custom" && tf.custom) {
+    return { start: tf.custom.start, end: tf.custom.end, label: formatDays(tf.custom.start, tf.custom.end) }
+  }
   if (tf.family === "lookback") {
     const end = day
     const start = new Date(day)
@@ -173,20 +180,39 @@ export function filterByTimeframe(
   return rows.filter((r) => r.dateISO >= b.start && r.dateISO <= b.end)
 }
 
-/** Chip index 0..lookbacks+periods-1 (+ custom later). */
+/** The Custom chip's index: after the lookbacks and periods. */
+export const CUSTOM_CHIP = LOOKBACKS.length + PERIODS.length
+
+/** Chips: lookbacks, periods, then Custom. */
 export function chipCount(): number {
-  return LOOKBACKS.length + PERIODS.length
+  return CUSTOM_CHIP + 1
 }
 
 export function chipLabel(index: number): string {
   if (index < LOOKBACKS.length) return LOOKBACKS[index]!
+  if (index === CUSTOM_CHIP) return "Custom"
   return PERIOD_LABEL[PERIODS[index - LOOKBACKS.length]!]
+}
+
+/**
+ * A custom range from two typed dates (YYYY-MM-DD), or an error message:
+ * both must be real dates and the end not before the start (Go app).
+ */
+export function customRange(start: string, end: string): { start: string; end: string } | string {
+  const valid = (iso: string) => /^\d{4}-\d{2}-\d{2}$/.test(iso) && toISODate(parseISODate(iso)) === iso
+  if (!valid(start)) return "Start must be a date: YYYY-MM-DD"
+  if (!valid(end)) return "End must be a date: YYYY-MM-DD"
+  if (end < start) return "End is before start"
+  return { start, end }
 }
 
 export function applyChip(tf: TimeframeState, index: number, now: Date, cycle: CycleConfig = MONTHLY_CYCLE): TimeframeState {
   if (index < 0) index = 0
   const n = chipCount()
   if (index >= n) index = n - 1
+  // Custom returns to the last range entered; without one, nothing changes
+  // (the caller asks for dates).
+  if (index === CUSTOM_CHIP) return tf.custom ? { ...tf, family: "custom" } : tf
   if (index < LOOKBACKS.length) {
     return { ...tf, family: "lookback", lookback: LOOKBACKS[index]! }
   }
@@ -203,6 +229,7 @@ export function applyChip(tf: TimeframeState, index: number, now: Date, cycle: C
 }
 
 export function activeChipIndex(tf: TimeframeState): number {
+  if (tf.family === "custom") return CUSTOM_CHIP
   if (tf.family === "lookback") return LOOKBACKS.indexOf(tf.lookback)
   return LOOKBACKS.length + PERIODS.indexOf(tf.period)
 }
