@@ -4,6 +4,25 @@ import { createSignal } from "solid-js"
 import { theme } from "../../theme"
 import { S } from "./S"
 
+export interface Span {
+  text: string
+  fg: string
+  bold?: boolean
+}
+
+/** Cut `spans` to `budget` cells, ending the cut one with an ellipsis. */
+export function fitSpans(spans: Span[], budget: number): Span[] {
+  const out: Span[] = []
+  let left = budget
+  for (const span of spans) {
+    const w = Bun.stringWidth(span.text)
+    if (w <= left) { out.push(span); left -= w; continue }
+    if (left > 1) out.push({ ...span, text: [...span.text].slice(0, left - 1).join("") + "…" })
+    break
+  }
+  return out
+}
+
 /** Fit title segments into `budget` cells, cutting the overflowing segment
  * with an ellipsis and dropping the rest (Go: title truncated to innerWidth). */
 export function fitTitle(segments: string[], budget: number): string[] {
@@ -38,9 +57,14 @@ export function SectionCard(props: {
   height?: number | "auto" | `${number}%`
   width?: number | "auto" | `${number}%`
   bottomTitle?: string
+  /** Coloured spans at the right of the top border. */
+  titleRight?: Span[]
+  /** Coloured spans in the bottom border (instead of `bottomTitle`). */
+  bottomSpans?: Span[]
   children?: JSX.Element
 }) {
   const [width, setWidth] = createSignal(0)
+  const [height, setHeight] = createSignal(0)
   const borderColor = () => (props.focused ? theme.focus : theme.surface1)
   const titleColor = () => (props.focused ? theme.focus : theme.brand)
   // `╭─` before the title and `─╮` after it leave width - 4 cells, one of
@@ -60,7 +84,7 @@ export function SectionCard(props: {
   return (
     <box
       ref={(box: BoxRenderable) => {
-        box.onSizeChange = () => setWidth(box.width)
+        box.onSizeChange = () => { setWidth(box.width); setHeight(box.height) }
       }}
       border
       borderStyle="rounded"
@@ -93,6 +117,26 @@ export function SectionCard(props: {
         </S>
       </text>
       {props.children}
+      {/* Border spans: a space either side, over the border line. Every span
+          paints the canvas background, or its spaces would show the border. */}
+      {props.titleRight?.length && width() > 0 ? (() => {
+        const spans = fitSpans(props.titleRight!, Math.max(0, width() - 8 - Bun.stringWidth(parts().join(""))))
+        const w = spans.reduce((n, sp) => n + Bun.stringWidth(sp.text), 0)
+        return w > 0 ? (
+          <text position="absolute" top={-1} left={width() - 5 - w} zIndex={1} height={1} wrapMode="none">
+            <S fg={borderColor()} bg={theme.canvas}>{" "}</S>
+            {spans.map((sp) => <S fg={sp.fg} bg={theme.canvas} bold={sp.bold}>{sp.text}</S>)}
+            <S fg={borderColor()} bg={theme.canvas}>{" "}</S>
+          </text>
+        ) : null
+      })() : null}
+      {props.bottomSpans?.length && height() > 1 ? (
+        <text position="absolute" top={height() - 2} left={1} zIndex={1} height={1} wrapMode="none">
+          <S fg={borderColor()} bg={theme.canvas}>{" "}</S>
+          {fitSpans(props.bottomSpans!, Math.max(0, width() - 6)).map((sp) => <S fg={sp.fg} bg={theme.canvas} bold={sp.bold}>{sp.text}</S>)}
+          <S fg={borderColor()} bg={theme.canvas}>{" "}</S>
+        </text>
+      ) : null}
     </box>
   )
 }

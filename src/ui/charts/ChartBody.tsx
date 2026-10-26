@@ -17,12 +17,13 @@ export interface ChartModel {
   ticks: Map<number, string>
   /** X-axis label line, aligned with the plot. */
   labels: string
-  /** Summary line under the axis. */
-  summary: Array<{ text: string; fg: string }>
+  /** The legend: series marks in their colours with names and figures,
+   * shown in the pane's bottom border. */
+  legend: Array<{ text: string; fg: string }>
 }
 
-/** A y-axis, the plot rows, the x labels, then the summary line. `inks`
- * maps each run's ink to a colour. */
+/** A y-axis, the plot rows, then the x labels. `inks` maps each run's ink
+ * to a colour. */
 export function ChartBody(props: { model: ChartModel; inks: Record<string, string> }) {
   const axis = () => axisWidth(props.model.ticks)
   return (
@@ -36,9 +37,6 @@ export function ChartBody(props: { model: ChartModel; inks: Record<string, strin
         )}
       </For>
       <text wrapMode="none" fg={theme.overlay1}>{" ".repeat(axis()) + props.model.labels}</text>
-      <text wrapMode="none">
-        <For each={props.model.summary}>{(part) => <S fg={part.fg}>{part.text}</S>}</For>
-      </text>
     </>
   )
 }

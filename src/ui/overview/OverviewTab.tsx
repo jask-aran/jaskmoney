@@ -1,7 +1,7 @@
 import { For, Show, createEffect, createMemo } from "solid-js"
-import { categoryMark } from "../icons"
+import { categoryMark, viewMark } from "../icons"
 import { useTerminalDimensions } from "@opentui/solid"
-import { SectionCard } from "../primitives/SectionCard"
+import { SectionCard, type Span } from "../primitives/SectionCard"
 import { S } from "../primitives/S"
 import { CHART_VIEWS, ui, type SectionId } from "../../state/uiStore"
 import { data } from "../../state/dataStore"
@@ -14,7 +14,7 @@ import { LOOKBACKS, PERIODS, PERIOD_LABEL, activeChipIndex, comparisonWindows, d
 import { fit } from "../text"
 import { spendingScope } from "../../domain/accountTree"
 import { AXIS_GUESS, ChartBody, axisWidth, type ChartModel } from "../charts/ChartBody"
-import { INKS, addDays, balancesChart, cashFlowChart, spendingChart } from "./periodCharts"
+import { INKS, addDays, balancesChart, cashFlowChart, spendingChart, type PeriodNames } from "./periodCharts"
 
 /** Calendar cell colours by spending level (0 = none). */
 const LEVEL_BG = [theme.surface0, "#5b4636", "#8c6146", "#c47f55", theme.peach] as const
@@ -82,6 +82,14 @@ export function OverviewTab(props: { focused: SectionId }) {
     return budgetProgress([overall], cycleConfig(), today(), data.state.accounts, data.state.categories, data.state.transactions)[0] ?? null
   })
 
+  // What the range and the one before it are called in chart labels.
+  const periodNames = (): PeriodNames => {
+    const tf = ui.state.timeframe
+    if (tf.family === "lookback") return { current: "Range", previous: "Before" }
+    const unit = PERIOD_UNIT[tf.period]
+    return { current: `This ${unit}`, previous: `Last ${unit}` }
+  }
+
   // Fixed rows: tab bar + gap (2), status + footer (2), Date Range (3).
   // Wide: two chart panes share the left column; the right column (up to
   // SIDE_MAX wide) stacks Now, Savers, Totals and Categories. Narrow: the
@@ -113,16 +121,16 @@ export function OverviewTab(props: { focused: SectionId }) {
   const stackWidth = () => sideWidth() - 4
   const labelWidth = () => Math.max(6, stackWidth() - VALUE - NOTE)
 
-  // Chart panes: border + padding (4) across; border (2), the view strip and
-  // a blank line, then the x labels and summary down.
+  // Chart panes: border + padding (4) across; border (2) and the x labels
+  // down. The view picker and the legend sit in the borders.
   // The y-axis is as wide as its labels: build once with a guessed width,
   // then again if the labels need a different one.
   const model = (index: number, height: number): ChartModel | null => {
     const v = (CHART_VIEWS[index] ?? CHART_VIEWS[0]).view
-    const rows = Math.max(1, height - 6)
+    const rows = Math.max(1, height - 3)
     const build = (axis: number): ChartModel | null => {
       const width = Math.max(1, mainWidth() - 4 - axis)
-      if (v === "Daily" || v === "Cumulative" || v === "Weekly") return spendingChart(v, series(), width, rows, today(), spending(), budget()?.budget.amount)
+      if (v === "Daily" || v === "Cumulative" || v === "Weekly") return spendingChart(v, series(), width, rows, today(), spending(), budget()?.budget.amount, periodNames())
       if (v === "Cash flow") return cashFlowChart(series().dates, width, rows, today(), data.state.accounts, data.state.transactions, scopeIds())
       if (v === "Calendar") return null
       return balancesChart(v, series().dates, width, rows, today(), data.state.accounts, data.state.transactions)
@@ -238,10 +246,17 @@ export function OverviewTab(props: { focused: SectionId }) {
     const index = ui.state.chartViews[pane]
     const view = CHART_VIEWS[index] ?? CHART_VIEWS[0]
     return (
-      <SectionCard title={view.group} titleSuffix={view.group === view.view ? undefined : `· ${view.view}`} titleSuffixColor={theme.subtext0} width={mainWidth()} height={height} focused={props.focused === (pane === 0 ? "ov.chart" : "ov.chart2")}>
-        <ViewStrip width={mainWidth() - 4} current={index} />
-        <text> </text>
-        <Show when={chart} fallback={<CalendarView weeks={calendar()} width={mainWidth() - 4} rows={height - 4} today={today()} />}>
+      <SectionCard
+        title={view.group}
+        titleSuffix={view.group === view.view ? undefined : `· ${view.view}`}
+        titleSuffixColor={theme.subtext0}
+        titleRight={viewPicker(index)}
+        bottomSpans={chart ? chart.legend : calendarLegend(calendar(), today())}
+        width={mainWidth()}
+        height={height}
+        focused={props.focused === (pane === 0 ? "ov.chart" : "ov.chart2")}
+      >
+        <Show when={chart} fallback={<CalendarView weeks={calendar()} width={mainWidth() - 4} rows={height - 2} today={today()} />}>
           {(m: () => ChartModel) => <ChartBody model={m()} inks={INKS} />}
         </Show>
       </SectionCard>
@@ -301,50 +316,47 @@ export function OverviewTab(props: { focused: SectionId }) {
   )
 }
 
-/** The chart pane's views in h/l order, the current one highlighted; groups
- * are separated by a rule. Short names when the full ones do not fit. */
-function ViewStrip(props: { width: number; current: number }) {
-  const full = CHART_VIEWS.reduce((n, v, i) => n + v.view.length + (i === 0 ? 0 : CHART_VIEWS[i - 1]!.group !== v.group ? 3 : 1), 0)
-  const label = (view: string) => (full <= props.width ? view : SHORT_VIEW[view] ?? view)
-  return (
-    <text wrapMode="none">
-      <For each={CHART_VIEWS}>
-        {(v, i) => {
-          const current = () => props.current === i()
-          const rule = () => i() > 0 && CHART_VIEWS[i() - 1]!.group !== v.group
-          return (
-            <>
-              <S fg={theme.surface2}>{i() === 0 ? "" : rule() ? " │ " : " "}</S>
-              <S fg={current() ? theme.accent : theme.overlay1} bg={current() ? theme.surface0 : undefined} bold={current()}>{label(v.view)}</S>
-            </>
-          )
-        }}
-      </For>
-    </text>
-  )
+/** The chart pane's views in h/l order as icons (dots when icons are off),
+ * the current one bright; a space between groups. */
+function viewPicker(current: number): Span[] {
+  return CHART_VIEWS.flatMap((v, i) => [
+    ...(i > 0 ? [{ text: CHART_VIEWS[i - 1]!.group !== v.group ? "  " : " ", fg: theme.overlay1 }] : []),
+    { text: viewMark(v.view, i === current), fg: i === current ? theme.accent : theme.overlay0, bold: i === current },
+  ])
 }
 
-const SHORT_VIEW: Record<string, string> = { Cumulative: "Cumul", "Cash flow": "Flow", "Net position": "Net", Available: "Avail", Calendar: "Cal" }
+const PERIOD_UNIT: Record<string, string> = { cycle: "cycle", month: "month", qtr: "quarter", half: "half", fy: "FY", year: "year" }
+
+/** The calendar's legend for the pane's bottom border: the levels as
+ * swatches, the no-spend days and the busiest weekday. */
+function calendarLegend(weeks: Array<Array<CalendarDay | null>>, today: string): Span[] {
+  const muted = (text: string): Span => ({ text, fg: theme.overlay1 })
+  const days = weeks.flat().filter((d): d is CalendarDay => d != null && d.dateISO <= today)
+  if (!days.length) return [muted("No days yet")]
+  const noSpend = days.filter((d) => d.spent === 0).length
+  const totals = [0, 0, 0, 0, 0, 0, 0], counts = [0, 0, 0, 0, 0, 0, 0]
+  for (const week of weeks) week.forEach((d, i) => { if (d && d.dateISO <= today) { totals[i]! += d.spent; counts[i]!++ } })
+  const avg = totals.map((t, i) => (counts[i] ? t / counts[i]! : 0))
+  const busiest = avg.indexOf(Math.max(...avg))
+  return [
+    muted("less "),
+    ...LEVEL_BG.map((fg): Span => ({ text: "■", fg })),
+    muted(" more"),
+    muted(`   ${noSpend} no-spend ${noSpend === 1 ? "day" : "days"}   busiest ${WEEKDAYS[busiest]}`),
+  ]
+}
 
 /**
  * The period's days as a month grid: a column per week, a row band per
  * weekday (up to three rows each), cells as wide as fit (2–10). Wide cells
- * carry the day of the month; days after today are blank. Below: month
- * labels, the legend, and a summary.
+ * carry the day of the month; days after today are blank. Month labels on
+ * top; the legend is in the pane's border (calendarLegend).
  */
 function CalendarView(props: { weeks: Array<Array<CalendarDay | null>>; width: number; rows: number; today: string }) {
-  // Rows: month labels, 7 weekday bands, legend, summary.
-  const band = () => Math.max(1, Math.min(3, Math.floor((props.rows - 3) / 7)))
+  // Rows: month labels, 7 weekday bands.
+  const band = () => Math.max(1, Math.min(3, Math.floor((props.rows - 1) / 7)))
   const shown = () => props.weeks.slice(-Math.max(1, Math.floor((props.width - 4) / 2)))
   const cellWidth = () => Math.max(2, Math.min(10, Math.floor((props.width - 4) / Math.max(1, shown().length))))
-  const days = () => props.weeks.flat().filter((d): d is CalendarDay => d != null && d.dateISO <= props.today)
-  const noSpend = () => days().filter((d) => d.spent === 0).length
-  const busiest = () => {
-    const totals = [0, 0, 0, 0, 0, 0, 0], counts = [0, 0, 0, 0, 0, 0, 0]
-    for (const week of props.weeks) week.forEach((d, i) => { if (d && d.dateISO <= props.today) { totals[i]! += d.spent; counts[i]!++ } })
-    const avg = totals.map((t, i) => (counts[i] ? t / counts[i]! : 0))
-    return avg.indexOf(Math.max(...avg))
-  }
   return (
     <>
       <text wrapMode="none" fg={theme.overlay1}>{"    " + monthLabels(shown(), cellWidth())}</text>
@@ -362,14 +374,6 @@ function CalendarView(props: { weeks: Array<Array<CalendarDay | null>>; width: n
           </For>
         )}
       </For>
-      <text wrapMode="none">
-        <S fg={theme.overlay1}>{"    less "}</S>
-        <For each={[0, 1, 2, 3, 4]}>{(level) => <S bg={LEVEL_BG[level]}>{"  "}</S>}</For>
-        <S fg={theme.overlay1}>{" more"}</S>
-      </text>
-      <text wrapMode="none" fg={theme.overlay1}>
-        {days().length ? `${noSpend()} no-spend ${noSpend() === 1 ? "day" : "days"} · busiest day ${WEEKDAYS[busiest()]}` : "No days yet"}
-      </text>
     </>
   )
 }

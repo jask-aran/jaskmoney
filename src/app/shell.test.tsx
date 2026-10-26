@@ -27,6 +27,8 @@ describe("shell render M0", () => {
     ui.switchTab("overview")
 
     const t = await testRender(() => <App />, { width: 140, height: 44 })
+    // After mount, which loads the settings config.
+    data.setState({ icons: false })
     await t.renderOnce()
     await t.flush()
     const frame = t.captureCharFrame()
@@ -39,9 +41,11 @@ describe("shell render M0", () => {
     expect(frame).toContain("Now")
     expect(frame).toContain("Savers")
     expect(frame).toContain("Date Range")
-    // One chart pane; its strip lists every view.
+    // Chart panes name their view; the picker in the border marks the
+    // current one (dots with icons off), groups two spaces apart.
     expect(frame).toContain("Spending · Cumulative")
-    expect(frame).toContain("Cash flow │ Net position Available Savers │ Calendar")
+    expect(frame).toContain(" ● ○ ○  ○  ○ ○ ○  ○ ")
+    expect(frame).toContain(" ○ ○ ○  ○  ● ○ ○  ○ ")
     expect(frame).toMatch(/status|shell|bootstrap|Tab:|jump|v /i)
     const dateRangeTitle = t
       .captureSpans()

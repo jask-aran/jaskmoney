@@ -127,6 +127,12 @@ function line([x0, y0]: [number, number], [x1, y1]: [number, number], plot: (x: 
   }
 }
 
+/** The cell (row top first, column) holding point `index` of `length` at
+ * `value`, on a chart drawn by lineChart with the same bounds. */
+export function pointCell(index: number, value: number, length: number, width: number, height: number, min: number, max: number): { row: number; col: number } {
+  return { row: valueRow(value, min, max, height), col: cellColumn(index, length, width) }
+}
+
 /**
  * A round axis ceiling for `max` and its tick step, at most `ticks` steps
  * (1, 2, 2.5 or 5 × 10^k per step).

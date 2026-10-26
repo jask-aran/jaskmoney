@@ -5,9 +5,10 @@ import { cumulative, dailySpendSeries, formatWholeMoney, weeklyTotals } from "..
 import { balanceHistory, computePeriodFlows } from "../../domain/position"
 import type { Account, Transaction } from "../../domain/types"
 import { shortDate, shortMoney } from "../text"
-import { columnBars } from "../charts/bars"
+import { barTopRow, columnBars } from "../charts/bars"
 import type { ChartModel } from "../charts/ChartBody"
-import { dateAxis, lineChart, niceRange, niceScale, tickRows } from "../charts/lineChart"
+import { annotate, type ChartLabel } from "../charts/annotate"
+import { dateAxis, lineChart, niceRange, niceScale, pointCell, tickRows } from "../charts/lineChart"
 
 export const INKS: Record<string, string> = {
   spend: theme.peach,
@@ -27,6 +28,20 @@ export const INKS: Record<string, string> = {
 }
 
 const sum = (values: number[]) => values.reduce((a, b) => a + b, 0)
+
+/** Legend marks: a line series, a bar, a rule. */
+const LINE = "⠒⠒ "
+const BAR = "▆ "
+const RULE = "┈┈ "
+const muted = (text: string) => ({ text, fg: theme.overlay1 })
+const GAP = muted("   ")
+
+/** What the range and the one before it are called in legends and labels. */
+export interface PeriodNames {
+  current: string
+  previous: string
+}
+const DEFAULT_NAMES: PeriodNames = { current: "This period", previous: "Last period" }
 
 /** "2026-10-05" shifted by `days`. */
 export function addDays(iso: string, days: number): string {
@@ -48,22 +63,24 @@ export function spendingChart(
   height: number,
   todayISO: string,
   spendingRows: Transaction[],
-  /** Cumulative only: a spending limit drawn as a rule and named in the summary. */
+  /** Cumulative only: a spending limit drawn as a rule and named in the legend. */
   budget?: number,
+  names: PeriodNames = DEFAULT_NAMES,
 ): ChartModel {
   const { dates, values } = series
   const n = dates.length
   const elapsed = dates.filter((d) => d <= todayISO).length
   const upToToday = (vs: number[]) => vs.map((v, i) => (i < elapsed ? v : null))
   const axis = dateAxis(dates, width, todayISO)
-  const muted = (text: string) => ({ text, fg: theme.overlay1 })
-  if (n === 0) return { rows: [], ticks: new Map(), labels: "", summary: [muted("No days in range")] }
+  if (n === 0) return { rows: [], ticks: new Map(), labels: "", legend: [muted("No days in range")] }
 
   if (view === "Weekly") {
     const weeks = weeklyTotals(dates, values)
     const scale = niceScale(Math.max(0, ...weeks.map((w) => w.total)))
     const bars = weeks.map((w) => ({ value: w.startISO <= todayISO ? w.total : 0, ink: w.days < 7 || addDays(w.startISO, 6) >= todayISO ? "partial" : "spend" }))
-    const { rows, slots } = columnBars(bars, width, height, scale.max)
+    const { rows: plain, slots } = columnBars(bars, width, height, scale.max)
+    // Each week's total over its bar, where it fits.
+    const rows = annotate(plain, slots.map((slot, i) => ({ row: barTopRow(bars[i]!.value, scale.max, height), col: slot.col + Math.floor((slot.width - 1) / 2), text: bars[i]!.value > 0 ? shortMoney(bars[i]!.value) : "", ink: bars[i]!.ink, above: true })).filter((l) => l.text && l.row > 0))
     const line = new Array<string>(width).fill(" ")
     slots.forEach((slot, i) => {
       const iso = weeks[i]!.startISO
@@ -78,9 +95,10 @@ export function spendingChart(
       rows,
       ticks: tickRows(0, scale.max, scale.step, height, shortMoney),
       labels: line.join(""),
-      summary: [
-        muted(full.length ? `avg ${formatWholeMoney(sum(full.map((w) => w.total)) / full.length)}/week` : "no full weeks yet"),
-        ...(current ? [muted(` · this week ${formatWholeMoney(current.total)} so far`)] : []),
+      legend: [
+        { text: BAR, fg: theme.peach },
+        muted(full.length ? `Weeks, avg ${formatWholeMoney(sum(full.map((w) => w.total)) / full.length)}` : "No full weeks yet"),
+        ...(current ? [GAP, { text: BAR, fg: theme.overlay1 }, muted(`This week ${formatWholeMoney(current.total)} so far`)] : []),
       ],
     }
   }
@@ -94,15 +112,25 @@ export function spendingChart(
     const scale = niceScale(Math.max(now, budget ?? 0, ...prev))
     const diff = then > 0 ? Math.round(((now - then) / then) * 100) : null
     const limit = budget != null ? [{ values: dates.map(() => budget), ink: "limit" }] : []
+    // Each line named at its end, the budget on its rule.
+    const at = (index: number, value: number) => pointCell(index, value, n, width, height, 0, scale.max)
+    const marks: ChartLabel[] = [
+      ...(elapsed > 0 ? [{ ...at(elapsed - 1, now), text: names.current, ink: "spend" }] : []),
+      ...(prev.length ? [{ ...at(n - 1, prev[n - 1]!), text: names.previous, ink: "prev" }] : []),
+      ...(budget != null ? [{ ...at(n - 1, budget), text: "Budget", ink: "limit" }] : []),
+    ]
     return {
-      rows: lineChart({ series: [...limit, { values: prev, ink: "prev" }, { values: upToToday(total), ink: "spend" }], length: n, width, height, min: 0, max: scale.max, markers: axis.markers }),
+      rows: annotate(lineChart({ series: [...limit, { values: prev, ink: "prev" }, { values: upToToday(total), ink: "spend" }], length: n, width, height, min: 0, max: scale.max, markers: axis.markers }), marks),
       ticks: tickRows(0, scale.max, scale.step, height, shortMoney),
       labels: axis.labels,
-      summary: [
-        { text: `${formatWholeMoney(now)} spent`, fg: theme.peach },
+      legend: [
+        { text: LINE, fg: theme.peach },
+        muted(`${names.current} ${formatWholeMoney(now)}`),
         ...(budget != null ? [muted(` of ${formatWholeMoney(budget)}`)] : []),
-        muted(` vs ${formatWholeMoney(then)} ${elapsed < n ? "at this point last period" : "previous period"}`),
-        ...(diff != null ? [{ text: ` (${diff > 0 ? "+" : ""}${diff}%)`, fg: diff > 0 ? theme.error : theme.success }] : []),
+        GAP,
+        { text: LINE, fg: theme.overlay0 },
+        muted(`${names.previous} ${formatWholeMoney(then)}${elapsed < n ? " by now" : ""}`),
+        ...(diff != null ? [GAP, { text: `${diff > 0 ? "+" : ""}${diff}%`, fg: diff > 0 ? theme.error : theme.success }] : []),
       ],
     }
   }
@@ -135,14 +163,25 @@ export function spendingChart(
     used = width
   }
   const scale = niceScale(Math.max(0, ...bars.map((b) => b.value)))
+  const { rows: plain, slots } = columnBars(bars, width, height, scale.max, { value: avg, ink: "ref" }, axis.markers.map((m) => ({ col: markerCol(m.index, m.ink), ink: m.ink })))
+  // The tallest bar's value over it, and the average at the end of its rule.
+  const tallest = bars.reduce((best, b, i) => (b.value > bars[best]!.value ? i : best), 0)
+  const avgRow = avg > 0 ? height - 1 - Math.min(height - 1, Math.floor((avg / scale.max) * height)) : -1
+  const marks: ChartLabel[] = [
+    ...(bars[tallest]!.value > 0 && slots[tallest] ? [{ row: barTopRow(bars[tallest]!.value, scale.max, height), col: slots[tallest]!.col, text: shortMoney(bars[tallest]!.value), ink: "spend", above: true }] : []),
+    ...(avgRow >= 0 ? [{ row: avgRow, col: width - 1 - "avg".length - 2, text: "avg", ink: "partial" }] : []),
+  ]
   return {
-    rows: columnBars(bars, width, height, scale.max, { value: avg, ink: "ref" }, axis.markers.map((m) => ({ col: markerCol(m.index, m.ink), ink: m.ink }))).rows,
+    rows: annotate(plain, marks),
     ticks: tickRows(0, scale.max, scale.step, height, shortMoney),
     labels: dateAxis(dates, used, todayISO, colOf).labels,
-    summary: [
-      muted(`avg ${formatWholeMoney(avg)}/day`),
-      ...(n > width ? [muted(" · bars average days")] : []),
-      ...(shown[peak] ? [muted(` · peak ${formatWholeMoney(shown[peak]!)} on ${shortDate(dates[peak]!)}`)] : []),
+    legend: [
+      { text: BAR, fg: theme.peach },
+      muted(n > width ? "Spent per day (averaged)" : "Spent per day"),
+      ...(shown[peak] ? [muted(`, peak ${formatWholeMoney(shown[peak]!)} on ${shortDate(dates[peak]!)}`)] : []),
+      GAP,
+      { text: RULE, fg: theme.surface2 },
+      muted(`Average ${formatWholeMoney(avg)}`),
     ],
   }
 }
@@ -159,7 +198,7 @@ export function balancesChart(
   transactions: Transaction[],
 ): ChartModel {
   const last = dates.filter((d) => d <= todayISO).at(-1)
-  if (!dates.length || !last) return { rows: [], ticks: new Map(), labels: "", summary: [{ text: "No balances in range", fg: theme.overlay1 }] }
+  if (!dates.length || !last) return { rows: [], ticks: new Map(), labels: "", legend: [muted("No balances in range")] }
   const history = balanceHistory(accounts, transactions, dates[0]!, last)
   const pick = (p: (typeof history)[number]) => (view === "Available" ? p.spending : view === "Savers" ? p.savers : p.net)
   const values = history.map(pick)
@@ -168,14 +207,27 @@ export function balancesChart(
   const axis = dateAxis(dates, width, todayISO)
   const change = values[values.length - 1]! - values[0]!
   const low = values.indexOf(lo)
+  // The low and the high marked where they happened (not at the ends,
+  // which the legend and the axis already give).
+  const high = values.indexOf(hi)
+  const ink = view === "Savers" ? "savers" : "balance"
+  const at = (i: number) => pointCell(i, values[i]!, dates.length, width, height, range.min, range.max)
+  const marks: ChartLabel[] = [
+    ...(high > 0 && high < values.length - 1 && hi > lo ? [{ ...at(high), text: shortMoney(hi), ink }] : []),
+    ...(low > 0 && low < values.length - 1 && hi > lo ? [{ ...at(low), text: shortMoney(lo), ink }] : []),
+  ]
   return {
-    rows: lineChart({ series: [{ values, ink: view === "Savers" ? "savers" : "balance" }], length: dates.length, width, height, min: range.min, max: range.max, markers: axis.markers }),
+    rows: annotate(lineChart({ series: [{ values, ink }], length: dates.length, width, height, min: range.min, max: range.max, markers: axis.markers }), marks),
     ticks: tickRows(range.min, range.max, range.step, height, shortMoney),
     labels: axis.labels,
-    summary: [
-      { text: formatWholeMoney(values[values.length - 1]!), fg: theme.text },
-      { text: ` ${change >= 0 ? "+" : "-"}${formatWholeMoney(Math.abs(change))}`, fg: Math.abs(change) < 0.5 ? theme.overlay1 : change > 0 ? theme.success : theme.error },
-      { text: ` since ${shortDate(dates[0]!)} · low ${formatWholeMoney(lo)} on ${shortDate(history[low]!.dateISO)}`, fg: theme.overlay1 },
+    legend: [
+      { text: LINE, fg: view === "Savers" ? theme.green : theme.lavender },
+      muted(`${view} ${formatWholeMoney(values[values.length - 1]!)}`),
+      GAP,
+      { text: `${change >= 0 ? "+" : "-"}${formatWholeMoney(Math.abs(change))}`, fg: Math.abs(change) < 0.5 ? theme.overlay1 : change > 0 ? theme.success : theme.error },
+      muted(` since ${shortDate(dates[0]!)}`),
+      GAP,
+      muted(`low ${formatWholeMoney(lo)} on ${shortDate(history[low]!.dateISO)}`),
     ],
   }
 }
@@ -197,8 +249,7 @@ export function cashFlowChart(
   transactions: Transaction[],
   scopeIds: ReadonlySet<number>,
 ): ChartModel {
-  const muted = (text: string) => ({ text, fg: theme.overlay1 })
-  if (!dates.length) return { rows: [], ticks: new Map(), labels: "", summary: [muted("No days in range")] }
+  if (!dates.length) return { rows: [], ticks: new Map(), labels: "", legend: [muted("No days in range")] }
   const monthly = dates.length > 92
   const buckets: Array<{ start: string; end: string }> = []
   for (const iso of dates) {
@@ -233,11 +284,14 @@ export function cashFlowChart(
     rows,
     ticks: tickRows(0, scale.max, scale.step, height, shortMoney),
     labels: line.join(""),
-    summary: [
-      { text: `in ${formatWholeMoney(income)}`, fg: theme.success },
-      muted(" · "),
-      { text: `out ${formatWholeMoney(spent)}`, fg: theme.error },
-      muted(` · net ${net >= 0 ? "+" : "-"}${formatWholeMoney(Math.abs(net))} · ${monthly ? "monthly" : "weekly"}`),
+    legend: [
+      { text: BAR, fg: theme.success },
+      muted(`In ${formatWholeMoney(income)}`),
+      GAP,
+      { text: BAR, fg: theme.error },
+      muted(`Out ${formatWholeMoney(spent)}`),
+      GAP,
+      muted(`Net ${net >= 0 ? "+" : "-"}${formatWholeMoney(Math.abs(net))} · ${monthly ? "monthly" : "weekly"}`),
     ],
   }
 }

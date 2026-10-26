@@ -48,3 +48,11 @@ export function columnBars(
   }
   return { rows, slots }
 }
+
+/** Row (top first) holding the top of a bar of `value` in a chart built by
+ * columnBars with the same `max` and `height`; -1 for an empty bar. */
+export function barTopRow(value: number, max: number, height: number): number {
+  if (value <= 0 || max <= 0) return -1
+  const level = Math.max(1, Math.min(height * 8, Math.round((value / max) * height * 8)))
+  return height - Math.ceil(level / 8)
+}
