@@ -599,8 +599,6 @@ export function handleKey(ui: UiStore, key: KeyEvent, data?: DataStore): boolean
         const row = rows[ui.state.managerCursor]
         if (row) {
           ui.toggleSelectedId(row.id)
-          const on = !!ui.state.selectedIds[row.id]
-          ui.setStatus(on ? `Selected #${row.id}` : `Deselected #${row.id}`)
         }
       }
       return true

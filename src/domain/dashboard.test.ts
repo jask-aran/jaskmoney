@@ -47,6 +47,14 @@ describe("dashboard aggregates", () => {
     expect(s.uncatCount).toBe(1)
   })
 
+  test("uncategorised total is a magnitude, matching Go renderSummaryCards", () => {
+    const s = computeOverview([
+      t({ amount: 25, dateISO: "2026-02-01", categoryName: "Uncategorised" }),
+      t({ amount: -10, dateISO: "2026-02-02", categoryName: "Uncategorised" }),
+    ])
+    expect(s.uncatTotal).toBe(35)
+  })
+
   test("category spend ignores credits and IGNORE", () => {
     const list = computeCategorySpend(
       [

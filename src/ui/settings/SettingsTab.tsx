@@ -69,7 +69,7 @@ function RulesPane(props: { focused: boolean; height?: number | "auto" | `${numb
   const active = () => ui.state.settingsActive && ui.state.settingsSection === "rules"
   const rows = () => data.state.rules
   return <SectionCard title="Rules" focused={props.focused} active={active()} height={props.height} flexGrow={props.height ? 0 : 1} bottomTitle={rows().length ? `─ ${rows().length} ordered rule${rows().length === 1 ? "" : "s"} ─` : "─ empty ─"}>
-    <Show when={rows().length} fallback={<text fg={theme.overlay1}>No rules. Activate to add.</text>}>
+    <Show when={rows().length} fallback={<text fg={theme.overlay1}>{active() ? "No rules. Press a to add." : "No rules. Activate to add."}</text>}>
       <For each={rows()}>{(rule, i) => {
         const selected = () => active() && ui.state.ruleCursor === i()
         const bg = () => selected() ? theme.surface0 : theme.canvas
@@ -85,7 +85,7 @@ function FiltersPane(props: { focused: boolean; height?: number | "auto" | `${nu
   const active = () => ui.state.settingsActive && ui.state.settingsSection === "filters"
   const rows = () => data.state.savedFilters
   return <SectionCard title="Saved Filters" focused={props.focused} active={active()} height={props.height} flexGrow={props.height ? 0 : 1}>
-    <Show when={rows().length} fallback={<text fg={theme.overlay1}>No saved filters. Activate to add.</text>}>
+    <Show when={rows().length} fallback={<text fg={theme.overlay1}>{active() ? "No saved filters. Press a to add." : "No saved filters. Activate to add."}</text>}>
       <For each={rows()}>{(filter, i) => { const selected = () => active() && ui.state.filterCursor === i(); const bg = () => selected() ? theme.surface0 : theme.canvas; return <text bg={bg()}><S fg={selected() ? theme.focus : theme.canvas} bg={bg()} bold>{selected() ? "> " : "  "}</S><S fg={theme.teal} bg={bg()}>{filter.id}</S><S fg={theme.text} bg={bg()}>{`  ${truncate(filter.name, 16)}`}</S><S fg={theme.overlay1} bg={bg()}>{`  ${truncate(filter.expr, 20)}`}</S></text> }}</For>
     </Show>
   </SectionCard>
@@ -95,9 +95,11 @@ function DatabasePane(props: { focused: boolean; height?: number | "auto" | `${n
   const info = () => data.state.dbInfo
   const active = () => ui.state.settingsActive && ui.state.settingsSection === "database"
   return <SectionCard title="Database & Import" focused={props.focused} active={active()} height={props.height} flexGrow={props.height ? 0 : 1}>
-    <text fg={theme.subtext0}>Schema <S fg={theme.text}>v{info()?.schemaVersion ?? "—"}</S>   Transactions <S fg={theme.text}>{info()?.transactionCount ?? 0}</S>   Accounts <S fg={theme.text}>{info()?.accountCount ?? 0}</S></text>
-    <text fg={theme.subtext0}>Categories <S fg={theme.text}>{info()?.categoryCount ?? 0}</S>   Tags <S fg={theme.text}>{info()?.tagCount ?? 0}</S>   Rules <S fg={theme.text}>{info()?.ruleCount ?? 0}</S></text>
-    <text fg={theme.overlay1}>i import CSV · p manage profiles · c clear transactions/imports · x factory-reset database</text>
+    {/* Gaps are expressions: Solid collapses runs of literal JSX spaces. */}
+    <text fg={theme.subtext0}>{"Schema "}<S fg={theme.text}>v{info()?.schemaVersion ?? "—"}</S>{"   Transactions "}<S fg={theme.text}>{info()?.transactionCount ?? 0}</S>{"   Accounts "}<S fg={theme.text}>{info()?.accountCount ?? 0}</S></text>
+    <text fg={theme.subtext0}>{"Categories "}<S fg={theme.text}>{info()?.categoryCount ?? 0}</S>{"   Tags "}<S fg={theme.text}>{info()?.tagCount ?? 0}</S>{"   Rules "}<S fg={theme.text}>{info()?.ruleCount ?? 0}</S></text>
+    <text fg={theme.overlay1}>i import CSV · p manage profiles</text>
+    <text fg={theme.overlay1}>c clear transactions/imports · x factory-reset database</text>
     <text fg={theme.overlay1}>Profiles {data.state.importProfiles.length} · imports {info()?.importCount ?? 0} · saved filters/config are retained by reset</text>
   </SectionCard>
 }
@@ -161,8 +163,8 @@ export function SettingsTab(props: { focused: SectionId }) {
   const taxonomyFocused = () => props.focused === "set.categories" || props.focused === "set.tags"
   const databaseFocused = () => props.focused === "set.database"
   return <box width="100%" height="100%" flexDirection={layout() === "wide" ? "row" : "column"} gap={1} backgroundColor={theme.canvas}>
-    <box width={layout() === "wide" ? "64%" : "100%"} height="100%" flexDirection="column" gap={1}><TaxonomyPane focused={taxonomyFocused()} narrow={layout() === "narrow"} height={layout() === "wide" ? undefined : "45%"} /><Show when={layout() !== "wide"}><RulesPane focused={props.focused === "set.rules"} /></Show><Show when={layout() === "narrow"}><FiltersPane focused={props.focused === "set.filters"} /></Show></box>
-    <box flexGrow={1} height="100%" flexDirection="column" gap={1}><Show when={layout() === "wide"}><RulesPane focused={props.focused === "set.rules"} /></Show><Show when={layout() !== "narrow"}><FiltersPane focused={props.focused === "set.filters"} /></Show><DatabasePane focused={databaseFocused()} /><ImportHistory /></box>
+    <box width={layout() === "wide" ? "55%" : "100%"} flexShrink={layout() === "wide" ? 0 : 1} height="100%" flexDirection="column" gap={1}><TaxonomyPane focused={taxonomyFocused()} narrow={layout() === "narrow"} height={layout() === "wide" ? undefined : "45%"} /><Show when={layout() !== "wide"}><RulesPane focused={props.focused === "set.rules"} /></Show><Show when={layout() === "narrow"}><FiltersPane focused={props.focused === "set.filters"} /></Show></box>
+    <box flexGrow={1} flexShrink={1} minWidth={0} height="100%" flexDirection="column" gap={1}><Show when={layout() === "wide"}><RulesPane focused={props.focused === "set.rules"} /></Show><Show when={layout() !== "narrow"}><FiltersPane focused={props.focused === "set.filters"} /></Show><DatabasePane focused={databaseFocused()} /><ImportHistory /></box>
     <EditorOverlay />
     <ConfirmOverlay />
     <ImportOverlay />

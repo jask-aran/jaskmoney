@@ -230,8 +230,6 @@ function createUiStore() {
       accountActionId: null,
       factoryResetOpen: false,
       factoryResetDraft: "",
-      status: `Tab: ${tab}`,
-      statusErr: false,
     })
   }
 
@@ -252,8 +250,6 @@ function createUiStore() {
       filterMode: false,
       catPickerOpen: false,
       tagPickerOpen: false,
-      status: "Jump mode · press target letter",
-      statusErr: false,
     })
   }
 
@@ -261,8 +257,6 @@ function createUiStore() {
     setState({
       jumpMode: false,
       focusedSection: state.jumpPreviousFocus,
-      status: "Jump cancelled",
-      statusErr: false,
     })
   }
 
@@ -270,13 +264,11 @@ function createUiStore() {
     setState({
       jumpMode: false,
       focusedSection: section,
-      status: `Focused ${section}`,
-      statusErr: false,
     })
   }
 
   function activateSettings(section: UiState["settingsSection"], list: SettingsList = "categories", reset = false) {
-    const updates: Partial<UiState> = { settingsActive: true, settingsSection: section, taxonomyList: list, focusedSection: section === "taxonomy" ? (list === "categories" ? "set.categories" : "set.tags") : section === "rules" ? "set.rules" : section === "filters" ? "set.filters" : "set.database", jumpMode: false, status: `${section === "taxonomy" ? list[0]!.toUpperCase() + list.slice(1) : section} active`, statusErr: false }
+    const updates: Partial<UiState> = { settingsActive: true, settingsSection: section, taxonomyList: list, focusedSection: section === "taxonomy" ? (list === "categories" ? "set.categories" : "set.tags") : section === "rules" ? "set.rules" : section === "filters" ? "set.filters" : "set.database", jumpMode: false }
     if (reset && list === "categories") { updates.categoryCursor = 0; updates.categoryTop = 0 }
     if (reset && list === "tags") { updates.tagCursor = 0; updates.tagTop = 0 }
     setState(updates)

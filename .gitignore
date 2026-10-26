@@ -31,3 +31,5 @@ logs/
 
 # Tool metadata
 .conduit/
+.claude/worktrees/
+.claude/settings.local.json

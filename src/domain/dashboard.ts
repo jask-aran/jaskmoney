@@ -36,7 +36,8 @@ export function computeOverview(rows: Transaction[]): OverviewStats {
     if (r.amount > 0) credits += r.amount
     if (!r.categoryId || r.categoryName === "Uncategorised") {
       uncatCount++
-      uncatTotal += r.amount
+      // Go renderSummaryCards: magnitude, so credits do not offset debits.
+      uncatTotal += Math.abs(r.amount)
     }
     if (!minISO || r.dateISO < minISO) minISO = r.dateISO
     if (!maxISO || r.dateISO > maxISO) maxISO = r.dateISO

@@ -1,4 +1,5 @@
-import { For, createMemo } from "solid-js"
+import { For, Show, createMemo } from "solid-js"
+import { useTerminalDimensions } from "@opentui/solid"
 import { SectionCard } from "../primitives/SectionCard"
 import { S } from "../primitives/S"
 import { ui, type SectionId } from "../../state/uiStore"
@@ -41,6 +42,17 @@ export function DashboardTab(props: { focused: SectionId }) {
   })
   const spark = createMemo(() => sparkline(series().values, 56))
 
+  // Go narrow fallback: the preset chips keep priority and the timeframe
+  // label is shown only when both fit on the card's single content line.
+  const dims = useTerminalDimensions()
+  const presetsWidth =
+    "Presets ".length +
+    LOOKBACKS.reduce((n, lb) => n + lb.length + 3, 0) +
+    " | ".length +
+    PERIODS.reduce((n, p) => n + PERIOD_LABEL[p].length + 3, 0)
+  const showTimeframe = () =>
+    dims().width - 4 >= presetsWidth + 2 + `Timeframe ${bounds().label}`.length
+
   const dateFocused = () => props.focused === "dash.date"
   const chipCursor = () =>
     dateFocused() ? ui.state.dashChipCursor : activeChipIndex(ui.state.timeframe)
@@ -49,7 +61,7 @@ export function DashboardTab(props: { focused: SectionId }) {
     <box width="100%" height="100%" flexDirection="column" gap={0} backgroundColor={theme.canvas}>
       <SectionCard title="Date Range" focused={dateFocused()} height={3}>
         <box flexDirection="row" justifyContent="space-between" width="100%">
-          <text fg={theme.subtext0}>
+          <text fg={theme.subtext0} wrapMode="none">
             Presets{" "}
             <For each={LOOKBACKS}>
               {(lb, i) => {
@@ -88,38 +100,42 @@ export function DashboardTab(props: { focused: SectionId }) {
               }}
             </For>
           </text>
-          <text fg={theme.subtext0}>
-            Timeframe <S fg={theme.peach}>{bounds().label}</S>
-          </text>
+          <Show when={showTimeframe()}>
+            <text fg={theme.subtext0} flexShrink={0}>
+              Timeframe <S fg={theme.peach}>{bounds().label}</S>
+            </text>
+          </Show>
         </box>
       </SectionCard>
 
       <SectionCard title="Overview" height={6}>
+        {/* Go renderSummaryCards: 13-col labels, 34-col first column. Padding
+            lives in expressions because Solid collapses runs of JSX spaces. */}
         <text>
-          <S fg={theme.subtext0}>Balance      </S>
+          <S fg={theme.subtext0}>{"Balance".padEnd(OV_LABEL)}</S>
           <S fg={stats().balance >= 0 ? theme.success : theme.error}>
-            {formatMoney(stats().balance).padEnd(18)}
+            {formatMoney(stats().balance).padEnd(OV_VALUE)}
           </S>
-          <S fg={theme.subtext0}>
-            Uncat {stats().uncatCount} ({formatMoney(stats().uncatTotal)})
-          </S>
+          <S fg={theme.subtext0}>{"Uncat "}</S>
+          <S fg={theme.peach}>{`${stats().uncatCount} (${formatMoney(stats().uncatTotal)})`}</S>
         </text>
         <text>
-          <S fg={theme.subtext0}>Debits       </S>
-          <S fg={theme.error}>{formatMoney(stats().debits).padEnd(18)}</S>
-          <S fg={theme.subtext0}>Transactions {stats().txnCount}</S>
+          <S fg={theme.subtext0}>{"Debits".padEnd(OV_LABEL)}</S>
+          <S fg={theme.error}>{formatMoney(stats().debits).padEnd(OV_VALUE)}</S>
+          <S fg={theme.subtext0}>{"Transactions "}</S>
+          <S fg={theme.peach}>{String(stats().txnCount)}</S>
         </text>
         <text>
-          <S fg={theme.subtext0}>Credits      </S>
-          <S fg={theme.success}>{formatMoney(stats().credits).padEnd(18)}</S>
-          <S fg={theme.subtext0}>
-            Daily Burn {stats().dailyBurn != null ? formatMoney(stats().dailyBurn!) : "—"}
-          </S>
+          <S fg={theme.subtext0}>{"Credits".padEnd(OV_LABEL)}</S>
+          <S fg={theme.success}>{formatMoney(stats().credits).padEnd(OV_VALUE)}</S>
+          <S fg={theme.subtext0}>{"Daily Burn "}</S>
+          <S fg={theme.warning}>{stats().dailyBurn != null ? formatMoney(stats().dailyBurn!) : "—"}</S>
         </text>
         <text>
-          <S fg={theme.subtext0}>Savings Rate </S>
-          <S fg={theme.peach}>{formatPct(stats().savingsRate).padEnd(18)}</S>
-          <S fg={theme.subtext0}>Runway {formatRunway(stats().runwayDays)}</S>
+          <S fg={theme.subtext0}>{"Savings Rate".padEnd(OV_LABEL)}</S>
+          <S fg={theme.peach}>{formatPct(stats().savingsRate).padEnd(OV_VALUE)}</S>
+          <S fg={theme.subtext0}>{"Runway "}</S>
+          <S fg={theme.peach}>{formatRunway(stats().runwayDays)}</S>
         </text>
       </SectionCard>
 
@@ -131,9 +147,7 @@ export function DashboardTab(props: { focused: SectionId }) {
               {bounds().start} → {bounds().end} · max day{" "}
               {formatMoney(Math.max(0, ...series().values, 0))}
             </text>
-            <text fg={theme.overlay1}>
-              {stats().txnCount} txns in scope (block sparkline · braille later)
-            </text>
+            <text fg={theme.overlay1}>{`${stats().txnCount} transactions in scope`}</text>
           </SectionCard>
         </box>
         <box flexGrow={2} height="100%" flexDirection="column" gap={0}>
@@ -143,7 +157,7 @@ export function DashboardTab(props: { focused: SectionId }) {
             ) : (
               <For each={cats()}>
                 {(c) => (
-                  <text>
+                  <text wrapMode="none">
                     <S fg={c.color}>{truncate(c.name, 14).padEnd(15)}</S>
                     <S fg={c.color}>{barFill(c.pct, 12)}</S>
                     <S fg={theme.subtext0}>
@@ -165,7 +179,7 @@ export function DashboardTab(props: { focused: SectionId }) {
             ) : (
               <For each={cats().slice(0, 8)}>
                 {(c) => (
-                  <text>
+                  <text wrapMode="none">
                     <S fg={c.color}>{truncate(c.name, 14).padEnd(15)}</S>
                     <S fg={c.color}>{barFill(c.pct, 10)}</S>
                     <S fg={theme.subtext0}>
@@ -183,17 +197,19 @@ export function DashboardTab(props: { focused: SectionId }) {
       <SectionCard
         title="Cashflow [N] · Net Worth"
         focused={props.focused === "dash.cashflow"}
-        height={4}
+        height={3}
       >
-        <text fg={theme.overlay1}>
+        <text fg={theme.overlay1} wrapMode="none">
           Balance {formatMoney(stats().balance)} · credits {formatMoney(stats().credits)} ·
           debits {formatMoney(stats().debits)}
         </text>
-        <text fg={theme.overlay1}>Net series chart deferred (sparkline above covers spend).</text>
       </SectionCard>
     </box>
   )
 }
+
+const OV_LABEL = 13
+const OV_VALUE = 34 - OV_LABEL
 
 function truncate(s: string, n: number): string {
   if (s.length <= n) return s

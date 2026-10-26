@@ -15,11 +15,22 @@ const columns = {
   gap: 1,
   date: 9,
   amount: 12,
-  description: 40,
   account: 12,
   category: 16,
-  tags: 12,
 } as const
+
+const DESCRIPTION_TARGET = 40
+const FIXED_WITHOUT_TAGS =
+  columns.marker + columns.date + columns.amount + columns.account + columns.category + 5 * columns.gap
+
+/** Go renderTransactionTable: description takes up to its target width, tags
+ * take the remainder so row state backgrounds span the whole table. */
+export function tableLayout(contentWidth: number): { description: number; tags: number } {
+  const avail = contentWidth - FIXED_WITHOUT_TAGS
+  let description = Math.min(DESCRIPTION_TARGET, avail)
+  if (description < 5) description = Math.max(5, avail)
+  return { description, tags: Math.max(1, contentWidth - FIXED_WITHOUT_TAGS - description) }
+}
 
 function fmtDate(iso: string): string {
   const [y, m, d] = iso.split("-")
@@ -73,6 +84,8 @@ export function ManagerTab(props: { focused: SectionId }) {
   const rows = createMemo(() => data.scopedTransactions())
   const accounts = () => data.state.accounts
   const highlighted = createMemo(() => ui.highlightedIds(rows()))
+  // Card borders (2) and horizontal padding (2) surround the table.
+  const layout = createMemo(() => tableLayout(dims().width - 4))
 
   createEffect(() => {
     // App chrome (4), Accounts (3), transaction borders (2), and the table
@@ -218,13 +231,13 @@ export function ManagerTab(props: { focused: SectionId }) {
             {" ".repeat(columns.gap)}
             {`Amount${sortMark("amount")}`.padEnd(columns.amount)}
             {" ".repeat(columns.gap)}
-            {`Description${sortMark("description")}`.padEnd(columns.description)}
+            {truncate(`Description${sortMark("description")}`, layout().description).padEnd(layout().description)}
             {" ".repeat(columns.gap)}
             {`Account${sortMark("account")}`.padEnd(columns.account)}
             {" ".repeat(columns.gap)}
             {`Category${sortMark("category")}`.padEnd(columns.category)}
             {" ".repeat(columns.gap)}
-            {"Tags"}
+            {truncate("Tags", layout().tags).padEnd(layout().tags)}
           </b>
         </text>
         {rows().length === 0 ? (
@@ -247,7 +260,7 @@ export function ManagerTab(props: { focused: SectionId }) {
                 // This is visually identical to the unstyled table background.
                 const rowBg = () =>
                   rowBackground(selected(), hl(), isCursor()) ?? theme.canvas
-                const tags = () => formatTags(r.tagNames, r.tagColors, columns.tags)
+                const tags = () => formatTags(r.tagNames, r.tagColors, layout().tags)
                 const category = () =>
                   formatCategory(r.categoryName, r.categoryColor, columns.category)
                 const strong = () => isCursor()
@@ -273,7 +286,7 @@ export function ManagerTab(props: { focused: SectionId }) {
                       {" ".repeat(columns.gap)}
                     </S>
                     <S fg={theme.brightText} bg={rowBg()} bold={strong()}>
-                      {truncate(r.description, columns.description).padEnd(columns.description)}
+                      {truncate(r.description, layout().description).padEnd(layout().description)}
                     </S>
                     <S fg={theme.text} bg={rowBg()} bold={strong()}>
                       {" ".repeat(columns.gap)}

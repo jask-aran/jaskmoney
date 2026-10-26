@@ -32,7 +32,6 @@ export function App() {
         ui.setStatus("OpenTUI shell · bootstrap off")
         return
       }
-      const summary = data.bootstrapAnzIfEmpty()
       const clock = dataClock(data.state.transactions)
       const tf = applyChip(
         { ...ui.state.timeframe, family: "period", period: "month" },
@@ -42,12 +41,10 @@ export function App() {
       ui.setTimeframe(tf)
       ui.setDashChipCursor(activeChipIndex(tf))
 
-      if (summary) {
-        ui.setStatus(summary)
-      } else if (data.state.transactions.length > 0) {
+      if (data.state.transactions.length > 0) {
         ui.setStatus(`${data.state.transactions.length} transactions loaded.`)
       } else {
-        ui.setStatus("OpenTUI · no data (place ANZ.csv at repo root)")
+        ui.setStatus("No transactions yet · Settings → Database & Import → i to import")
       }
     } catch (e) {
       ui.setStatus(`DB error: ${e instanceof Error ? e.message : String(e)}`, true)
@@ -88,7 +85,12 @@ export function App() {
           </Match>
         </Switch>
       </box>
-      <StatusBar text={ui.state.status} isErr={ui.state.statusErr} />
+      {/* Jump mode borrows the status line while active; the stored status
+          returns unchanged when it closes. */}
+      <StatusBar
+        text={ui.state.jumpMode ? "Jump mode · press target letter" : ui.state.status}
+        isErr={!ui.state.jumpMode && ui.state.statusErr}
+      />
       <Footer hints={footerHints(ui.activeScope())} />
       <JumpOverlay active={ui.state.jumpMode} tab={ui.state.activeTab} />
       <CatPicker />

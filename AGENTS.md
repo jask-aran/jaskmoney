@@ -30,3 +30,8 @@ Before changing ported behaviour, read the relevant legacy source under `legacy/
 - Verify visual transitions using OpenTUI's captured cell buffer, including foreground, background, and text attributes. ANSI/text captures are not sufficient visual evidence. User screenshots override tool conclusions until the discrepancy is explained.
 - Read dependency source or add a minimal proving test before relying on renderer semantics such as style clearing, keyed remounts, or reactive prop updates.
 - Keep a renderer defect isolated from input-policy changes. Do not change keys, selection lifetime, filters, or action precedence while repairing paint.
+
+Known renderer/compiler semantics (proved in this repo):
+
+- Solid's JSX compiler collapses runs of spaces in literal JSX text (`<S>Balance      </S>` renders `Balance `). Put alignment padding in expressions (`{"Balance".padEnd(13)}`).
+- An absolutely positioned child of a bordered box is placed from the border's inner edge (column 1), while a native box `title` starts at column 2. `text` `truncate` elides the middle; clip at the end with `wrapMode="none"` in an `overflow="hidden"` parent.

@@ -31,7 +31,6 @@ import {
   loadImports,
   removeAccountWithTransactions,
 } from "../db/client"
-import { ingestAnzCsv } from "../domain/ingest"
 import { buildImportPreview, commitImportPreview, matchingProfiles } from "../domain/profileImport"
 import {
   evalFilter,
@@ -390,17 +389,6 @@ function createDataStore() {
     return { updatedTransactions, categoryChanges, tagChanges, failedRules: failures }
   }
 
-  function ingestFile(path: string): string {
-    if (!db) throw new Error("db not open")
-    const text = readFileSync(path, "utf8")
-    const result = ingestAnzCsv(db, text, path, { skipDupes: true })
-    refresh()
-    const applied = result.transactionIds.length ? applyRules(result.transactionIds) : null
-    const summary = `Ingested ${result.inserted} rows into ${result.accountName} (${result.skippedDupes} dupes skipped)${applied?.updatedTransactions ? ` · ${applied.updatedTransactions} rules applied` : ""}`
-    setState({ lastIngestSummary: summary })
-    return summary
-  }
-
   function csvFiles(directory: string): string[] {
     try {
       return readdirSync(directory, { withFileTypes: true })
@@ -452,26 +440,6 @@ function createDataStore() {
     refresh()
   }
 
-  function findDefaultAnzPath(): string | null {
-    const candidates = [
-      resolve(process.cwd(), "ANZ.csv"),
-      resolve(import.meta.dir, "../../ANZ.csv"),
-      join(process.env.HOME ?? "", "jaskmoney", "ANZ.csv"),
-    ]
-    for (const p of candidates) {
-      if (existsSync(p)) return p
-    }
-    return null
-  }
-
-  function bootstrapAnzIfEmpty(): string | null {
-    if (!db) return null
-    if (state.transactions.length > 0) return null
-    const path = findDefaultAnzPath()
-    if (!path) return null
-    return ingestFile(path)
-  }
-
   function filterPreview(): string {
     if (state.filterExpr) return filterExprString(state.filterExpr)
     return state.filterQuery
@@ -509,7 +477,6 @@ function createDataStore() {
     saveImportProfile,
     deleteImportProfile,
     applyRules,
-    ingestFile,
     csvFiles,
     importDirectory,
     profileMatches,
@@ -519,8 +486,6 @@ function createDataStore() {
     clearAccountData,
     removeAccountData,
     factoryResetDatabase,
-    findDefaultAnzPath,
-    bootstrapAnzIfEmpty,
     filterPreview,
     getDb: () => db,
   }

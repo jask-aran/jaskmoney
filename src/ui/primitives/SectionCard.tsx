@@ -1,6 +1,26 @@
+import type { BoxRenderable } from "@opentui/core"
 import type { JSX } from "@opentui/solid"
+import { createSignal } from "solid-js"
 import { theme } from "../../theme"
 import { S } from "./S"
+
+/** Fit title segments into `budget` cells, cutting the overflowing segment
+ * with an ellipsis and dropping the rest (Go: title truncated to innerWidth). */
+export function fitTitle(segments: string[], budget: number): string[] {
+  const out: string[] = []
+  let left = budget
+  for (const seg of segments) {
+    if (seg.length <= left) {
+      out.push(seg)
+      left -= seg.length
+      continue
+    }
+    out.push(left > 1 ? `${seg.slice(0, left - 1)}…` : "")
+    left = 0
+  }
+  while (out.length < segments.length) out.push("")
+  return out
+}
 
 /**
  * Matches Go renderManagerSectionBox:
@@ -20,16 +40,28 @@ export function SectionCard(props: {
   bottomTitle?: string
   children?: JSX.Element
 }) {
+  const [width, setWidth] = createSignal(0)
   const borderColor = () => (props.focused ? theme.focus : theme.surface1)
   const titleColor = () => (props.focused ? theme.focus : theme.brand)
-  const titleText = () =>
-    ` ${props.title}${props.titleSuffix ? ` ${props.titleSuffix}` : ""}${
-      props.active ? " *" : ""
-    } `
-  const nativeTitleGap = () => titleText().replace(/[^\n]/g, " ")
+  // `╭─` before the title and `─╮` after it leave width - 4 cells, one of
+  // which is the closing space. Until the first layout reports a width,
+  // render the full title.
+  const parts = () => {
+    const segments = [
+      ` ${props.title}`,
+      props.titleSuffix ? ` ${props.titleSuffix}` : "",
+      props.active ? " *" : "",
+    ]
+    const fitted = width() > 0 ? fitTitle(segments, Math.max(0, width() - 5)) : segments
+    return [fitted[0]!, fitted[1]!, `${fitted[2]!} `]
+  }
+  const nativeTitleGap = () => parts().join("").replace(/[^\n]/g, " ")
 
   return (
     <box
+      ref={(box: BoxRenderable) => {
+        box.onSizeChange = () => setWidth(box.width)
+      }}
       border
       borderStyle="rounded"
       borderColor={borderColor()}
@@ -47,17 +79,17 @@ export function SectionCard(props: {
       paddingRight={1}
       backgroundColor={theme.canvas}
     >
-      <text position="absolute" top={-1} left={0} zIndex={1} width="100%" truncate>
+      {/* left=1: absolute children are placed from the border's inner edge
+          (column 1), but the native title gap starts at column 2. */}
+      <text position="absolute" top={-1} left={1} zIndex={1} height={1} wrapMode="none">
         <S fg={titleColor()} bold>
-          {` ${props.title}`}
+          {parts()[0]}
         </S>
-        {props.titleSuffix ? (
-          <S fg={props.titleSuffixColor ?? titleColor()} bold>
-            {` ${props.titleSuffix}`}
-          </S>
-        ) : null}
+        <S fg={props.titleSuffixColor ?? titleColor()} bold>
+          {parts()[1]}
+        </S>
         <S fg={titleColor()} bold>
-          {props.active ? " * " : " "}
+          {parts()[2]}
         </S>
       </text>
       {props.children}
