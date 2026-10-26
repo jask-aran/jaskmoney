@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test"
-import { cellColumn, dateAxis, lineChart, niceRange, niceScale, valueRow } from "./lineChart"
+import { cellColumn, dateAxis, fitRange, lineChart, niceRange, niceScale, tickRows, valueRow } from "./lineChart"
 
 const text = (rows: ReturnType<typeof lineChart>) => rows.map((runs) => runs.map((r) => r.text).join(""))
 
@@ -97,6 +97,27 @@ describe("niceRange", () => {
   test("snaps level bounds to the step", () => {
     expect(niceRange(6500, 14200)).toEqual({ min: 6000, max: 16000, step: 2000 })
     expect(niceRange(100, 100)).toEqual({ min: 100, max: 125, step: 25 })
+  })
+})
+
+describe("fitRange", () => {
+  const rows = 23
+  test("fits the series with a free row above and below it", () => {
+    const r = fitRange(11063, 13971, rows)
+    expect(valueRow(11063, r.min, r.max, rows)).toBe(rows - 2)
+    expect(valueRow(13971, r.min, r.max, rows)).toBe(1)
+    expect([...tickRows(r.min, r.max, r.step, rows, String).values()]).toEqual(["11000", "12000", "13000", "14000"])
+  })
+  test("from $0 the floor is $0 and only the top gets headroom", () => {
+    const r = fitRange(11063, 13971, rows, true)
+    expect(r.min).toBe(0)
+    expect(valueRow(13971, r.min, r.max, rows)).toBe(1)
+    expect(valueRow(0, r.min, r.max, rows)).toBe(rows - 1)
+    // A balance below $0 keeps headroom under it.
+    expect(fitRange(-500, 2000, rows, true).min).toBeLessThan(-500)
+  })
+  test("a flat series gets a band around its value", () => {
+    expect(fitRange(100, 100, rows)).toEqual(niceRange(100, 100))
   })
 })
 

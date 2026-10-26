@@ -14,6 +14,7 @@ import { dailySpendSeries, fitCategoryLines, formatMoney, formatPct, formatWhole
 import { computePeriodFlows, computePosition } from "../../domain/position"
 import { budgetProgress, cycleFor, type BudgetProgress } from "../../domain/budget"
 import { spendingCalendar, type CalendarDay } from "../../domain/spending"
+import { accountRole } from "../../domain/types"
 import { CUSTOM_CHIP, LOOKBACKS, PERIODS, PERIOD_LABEL, comparisonWindows, filterByTimeframe, offsetLabel, periodOffset, toISODate } from "../../domain/timeframe"
 import { fit } from "../text"
 import { allCategoryLines, overviewRange } from "../../state/overviewRange"
@@ -80,12 +81,16 @@ export function OverviewTab(props: { focused: SectionId }) {
     const h = position().history
     return h.length >= 31 ? h[h.length - 1]!.value - h[h.length - 31]!.value : 0
   }
-  // The overall budget applies while the range is the current cycle.
+  // The budget for the spending in scope applies while the range is the
+  // current cycle: the overall budget when the scope is every spending
+  // account, else the one selected account's own budget.
   const budget = createMemo(() => {
-    const overall = data.state.budgets.find((b) => b.scope.kind === "overall")
+    const ids = [...scopeIds()]
+    const all = data.state.accounts.filter((a) => accountRole(a) === "spending").every((a) => scopeIds().has(a.id))
+    const match = data.state.budgets.find((b) => (all ? b.scope.kind === "overall" : b.scope.kind === "account" && ids.length === 1 && b.scope.accountId === ids[0]))
     const current = cycleFor(cycleConfig(), today())
-    if (!overall || bounds().start !== current.start || bounds().end !== current.end) return null
-    return budgetProgress([overall], cycleConfig(), today(), data.state.accounts, data.state.categories, data.state.transactions)[0] ?? null
+    if (!match || bounds().start !== current.start || bounds().end !== current.end) return null
+    return budgetProgress([match], cycleConfig(), today(), data.state.accounts, data.state.categories, data.state.transactions)[0] ?? null
   })
 
   // What the range and the one before it are called in chart labels.
@@ -144,7 +149,7 @@ export function OverviewTab(props: { focused: SectionId }) {
       if (v === "Daily" || v === "Cumulative" || v === "Weekly") return spendingChart(v, series(), width, rows, today(), spending(), budget()?.budget.amount, periodNames(), data.state.weekStart)
       if (v === "Cash flow") return cashFlowChart(series().dates, width, rows, today(), data.state.accounts, data.state.transactions, scopeIds(), data.state.weekStart)
       if (v === "Calendar") return null
-      return balancesChart(v, series().dates, width, rows, today(), data.state.accounts, data.state.transactions, data.state.weekStart)
+      return balancesChart(v, series().dates, width, rows, today(), data.state.accounts, data.state.transactions, data.state.weekStart, data.state.uiPrefs.zeroAxis === true)
     }
     const first = build(AXIS_GUESS)
     if (!first || first.ticks.size === 0 || axisWidth(first.ticks) === AXIS_GUESS) return first

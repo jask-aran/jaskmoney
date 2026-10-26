@@ -37,7 +37,7 @@ test("round-trips UI prefs with a saved custom range in every family", () => {
   for (const family of ["period", "lookback", "custom"] as const) {
     const ui = {
       timeframe: { family, lookback: "3M", period: "month", custom: { start: "2026-01-01", end: "2026-01-31" } },
-      accountSelection: 4, chartViews: [1, 2], weekStart: "sunday",
+      accountSelection: 4, chartViews: [1, 2], weekStart: "sunday", xAxis: true, zeroAxis: true,
     } satisfies import("./settingsConfig").UiPrefs
     saveSettingsConfig({ version: 2, savedFilters: [], importProfiles: [], ui }, path)
     expect(loadSettingsConfig(path).ui).toEqual(ui)
@@ -61,7 +61,7 @@ test("drops malformed UI members without discarding valid siblings", () => {
     expect(loadSettingsConfig(path).ui).toEqual({ weekStart: "sunday" })
   }
   for (const chartViews of [null, [], [0], [0, 1, 2], [-1, 0], [0.5, 1]]) {
-    writeFileSync(path, JSON.stringify({ version: 2, ui: { chartViews, weekStart: "bad", accountSelection: -1 } }))
+    writeFileSync(path, JSON.stringify({ version: 2, ui: { chartViews, weekStart: "bad", accountSelection: -1, zeroAxis: "yes" } }))
     expect(loadSettingsConfig(path).ui).toEqual({})
   }
 })

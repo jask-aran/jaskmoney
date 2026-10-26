@@ -264,10 +264,25 @@ export function niceRange(lo: number, hi: number, ticks = 4): { min: number; max
   return { min, max, step }
 }
 
-/** Axis label per cell row (top first) for each tick from `min` to `max`;
- * when two ticks share a row the higher one wins. */
+/** Axis bounds for a level series drawn over `rows` cell rows: the series'
+ * own low and high with a row of headroom each side, so the line never sits
+ * on the plot's floor or ceiling; with `zero`, the bounds also take in $0.
+ * Ticks fall on the step's multiples between the bounds. A flat series gets
+ * a band around its value (see niceRange). */
+export function fitRange(lo: number, hi: number, rows: number, zero = false): { min: number; max: number; step: number } {
+  if (zero) [lo, hi] = [Math.min(0, lo), Math.max(0, hi)]
+  if (hi === lo) return niceRange(lo, hi)
+  // pad / (spread + 2 pad) = 1 / rows; $0 itself needs no headroom.
+  const pad = rows > 2 ? (hi - lo) / (rows - 2) : 0
+  const min = zero && lo === 0 ? 0 : lo - pad
+  const max = zero && hi === 0 ? 0 : hi + pad
+  return { min, max, step: niceScale(max - min).step }
+}
+
+/** Axis label per cell row (top first) for each multiple of `step` from
+ * `min` to `max`; when two ticks share a row the higher one wins. */
 export function tickRows(min: number, max: number, step: number, height: number, format: (v: number) => string): Map<number, string> {
   const rows = new Map<number, string>()
-  for (let v = min; v <= max + step * 1e-9; v += step) rows.set(valueRow(v, min, max, height), format(v))
+  for (let k = Math.ceil(min / step - 1e-9); k * step <= max + step * 1e-9; k++) rows.set(valueRow(k * step, min, max, height), format(k * step))
   return rows
 }

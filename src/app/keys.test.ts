@@ -302,6 +302,18 @@ describe("key router", () => {
     expect(ui.state.timeframe).toMatchObject({ family: "period", period: "cycle" })
   })
 
+  test("z runs balance charts from $0 and back; its hint shows with a balance chart", () => {
+    ui.setState({ focusedSection: "none", chartViews: [0, 1] })
+    expect(footerHints("overview", ui.state).some((h) => h.key === "z")).toBe(false)
+    ui.setState({ chartViews: [0, 4] })
+    expect(footerHints("overview", ui.state).some((h) => h.key === "z")).toBe(true)
+    const before = data.state.uiPrefs.zeroAxis === true
+    handleKey(ui, key({ name: "z", sequence: "z" }), data)
+    expect(data.state.uiPrefs.zeroAxis).toBe(!before)
+    handleKey(ui, key({ name: "z", sequence: "z" }), data)
+    expect(data.state.uiPrefs.zeroAxis).toBe(before)
+  })
+
   test("/ on the Overview opens the Transactions filter", () => {
     ui.setState({ focusedSection: "none" })
     handleKey(ui, key({ name: "/", sequence: "/" }), data)

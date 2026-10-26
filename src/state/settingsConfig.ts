@@ -13,6 +13,9 @@ export interface UiPrefs {
   weekStart?: "monday" | "sunday"
   /** Charts draw an x-axis line under the plot (default off). */
   xAxis?: boolean
+  /** Balance charts' y-axis runs from $0 rather than fitting the balances
+   * (default off). */
+  zeroAxis?: boolean
 }
 
 export interface SettingsConfig {
@@ -87,6 +90,7 @@ function parseUiPrefs(raw: unknown): UiPrefs | undefined {
   }
   if ("weekStart" in raw && (raw.weekStart === "monday" || raw.weekStart === "sunday")) ui.weekStart = raw.weekStart
   if ("xAxis" in raw && typeof raw.xAxis === "boolean") ui.xAxis = raw.xAxis
+  if ("zeroAxis" in raw && typeof raw.zeroAxis === "boolean") ui.zeroAxis = raw.zeroAxis
   if ("accountSelection" in raw) {
     const sel = raw.accountSelection
     if (sel === "all" || sel === "savers" || (typeof sel === "number" && Number.isSafeInteger(sel) && sel > 0)) ui.accountSelection = sel

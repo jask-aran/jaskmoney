@@ -1088,6 +1088,12 @@ export function handleKey(ui: UiStore, key: KeyEvent, data?: DataStore): boolean
       ui.setStatus(`Now · ${timeframeBounds(tf, clock, cycle).label}`)
       return true
     }
+    if (name === "z" && data) {
+      // Balance charts: fit the balances, or run the axis from $0.
+      data.saveUiPrefs({ zeroAxis: !data.state.uiPrefs.zeroAxis })
+      ui.setStatus(data.state.uiPrefs.zeroAxis ? "Balance charts from $0" : "Balance charts fit their balances")
+      return true
+    }
     if (name === "c" && !key.ctrl && !key.meta) {
       // Home: the current budget cycle, whatever the range was.
       const tf = applyChip({ ...ui.state.timeframe, family: "period", period: "cycle" }, LOOKBACKS.length, new Date(), cycle)
@@ -1143,7 +1149,7 @@ function drillDown(ui: UiStore, data: DataStore, line?: CategoryLine) {
   ui.setStatus(`${line?.label ?? "Spending"} · ${range.bounds.label} · ${n} transaction${n === 1 ? "" : "s"} · esc back`)
 }
 
-export function footerHints(scope: ScopeId, state?: Pick<UiState, "focusedSection" | "drillReturn">): { key: string; desc: string }[] {
+export function footerHints(scope: ScopeId, state?: Pick<UiState, "focusedSection" | "drillReturn" | "chartViews">): { key: string; desc: string }[] {
   switch (scope) {
     case "filterPicker":
       return [{ key: "↑/↓", desc: "move" }, { key: "enter", desc: "apply" }, { key: "esc", desc: "close" }, { key: "type", desc: "filter" }]
@@ -1196,6 +1202,7 @@ export function footerHints(scope: ScopeId, state?: Pick<UiState, "focusedSectio
         { key: "[ ]", desc: "prev/next" },
         { key: "0", desc: "now" },
         { key: "c", desc: "this cycle" },
+        ...(state?.chartViews.some((i) => CHART_VIEWS[i]?.group === "Balances") ? [{ key: "z", desc: "$0 axis" }] : []),
         { key: "/", desc: "search" },
         { key: "v", desc: "jump" },
         { key: "1-3", desc: "tab" },

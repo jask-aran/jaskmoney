@@ -9,7 +9,7 @@ import { barTopRow, columnBars } from "../charts/bars"
 import { muted } from "../primitives/spans"
 import type { ChartModel } from "../charts/ChartBody"
 import { annotate, type ChartLabel } from "../charts/annotate"
-import { dateAxis, lineChart, niceRange, niceScale, pointCell, tickRows } from "../charts/lineChart"
+import { dateAxis, fitRange, lineChart, niceScale, pointCell, tickRows } from "../charts/lineChart"
 
 export const INKS: Record<string, string> = {
   spend: theme.peach,
@@ -204,7 +204,8 @@ export function spendingChart(
 }
 
 /** End-of-day balances over the period's `dates` (up to today) for one view:
- * everything, spending accounts, or savers. */
+ * everything, spending accounts, or savers. The axis fits the balances, or
+ * runs from $0 with `zeroAxis`. */
 export function balancesChart(
   view: "Net position" | "Available" | "Savers",
   dates: string[],
@@ -214,6 +215,7 @@ export function balancesChart(
   accounts: Account[],
   transactions: Transaction[],
   weekStart: "monday" | "sunday" = "monday",
+  zeroAxis = false,
 ): ChartModel {
   const last = dates.filter((d) => d <= todayISO).at(-1)
   if (!dates.length || !last) return { rows: [], ticks: new Map(), labels: "", legend: [muted("No balances in range")] }
@@ -221,7 +223,7 @@ export function balancesChart(
   const pick = (p: (typeof history)[number]) => (view === "Available" ? p.spending : view === "Savers" ? p.savers : p.net)
   const values = history.map(pick)
   const lo = Math.min(...values), hi = Math.max(...values)
-  const range = niceRange(lo, hi)
+  const range = fitRange(lo, hi, height, zeroAxis)
   const axis = dateAxis(dates, width, todayISO, undefined, weekStart)
   const change = values[values.length - 1]! - values[0]!
   const low = values.indexOf(lo)
