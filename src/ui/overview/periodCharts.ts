@@ -4,6 +4,7 @@ import { theme } from "../../theme"
 import { cumulative, dailySpendSeries, formatWholeMoney, signedWholeMoney, weeklyTotals } from "../../domain/dashboard"
 import { balanceHistory, computePeriodFlows } from "../../domain/position"
 import type { Account, Transaction } from "../../domain/types"
+import { addDays } from "../../domain/days"
 import { shortDate, shortMoney } from "../text"
 import { barTopRow, columnBars } from "../charts/bars"
 import { muted } from "../primitives/spans"
@@ -45,11 +46,6 @@ export interface PeriodNames {
   previous: string
 }
 const DEFAULT_NAMES: PeriodNames = { current: "This period", previous: "Last period" }
-
-/** "2026-10-05" shifted by `days`. */
-export function addDays(iso: string, days: number): string {
-  return new Date(Date.parse(iso + "T12:00:00Z") + days * 86400000).toISOString().slice(0, 10)
-}
 
 /**
  * The Spending Tracker in one of its views, over the period's `dates`:

@@ -5,6 +5,8 @@
  * colours.
  */
 
+import { MONTHS, addDays } from "../../domain/days"
+
 export interface LineSeries {
   /** One value per x position; null leaves a gap (e.g. days after today). */
   values: Array<number | null>
@@ -176,11 +178,6 @@ export function valueRow(value: number, min: number, max: number, height: number
   return Math.floor((dotsHigh - 1 - Math.max(0, Math.min(dotsHigh - 1, level))) / 4)
 }
 
-const MONTHS = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"]
-
-/** The day after `iso`. */
-const addDay = (iso: string) => new Date(Date.parse(iso + "T12:00:00Z") + 86400000).toISOString().slice(0, 10)
-
 /**
  * Gridlines and the x-axis label line for a daily series over `dates`, as in
  * the Go app: month starts ("year" on 1 Jan) and the range's closing month
@@ -228,7 +225,7 @@ export function dateAxis(
   }
   // The closing month end, when the range ends on one.
   const lastISO = dates[n - 1]!
-  if (n > 1 && day(addDay(lastISO)) === 1) markers.push({ index: n - 1, ink: yearInk(addDay(lastISO)) })
+  if (n > 1 && day(addDays(lastISO, 1)) === 1) markers.push({ index: n - 1, ink: yearInk(addDays(lastISO, 1)) })
   for (const i of weekStarts) {
     markers.push({ index: i, ink: "week" })
     labelAt.push({ col: colOf(i), text: String(day(dates[i]!)), align: "left" })

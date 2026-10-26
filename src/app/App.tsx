@@ -4,6 +4,7 @@ import type { KeyEvent } from "@opentui/core"
 import { ui } from "../state/uiStore"
 import { data } from "../state/dataStore"
 import { footerHints, handleKey, scopeQuits } from "./keys"
+import { appNow } from "../domain/days"
 import { TabBar } from "../ui/primitives/TabBar"
 import { StatusBar } from "../ui/primitives/StatusBar"
 import { Footer } from "../ui/primitives/Footer"
@@ -35,7 +36,7 @@ export function App() {
         ui.setStatus("OpenTUI shell · bootstrap off")
         return
       }
-      const restored = restoreUiPrefs(data.state.uiPrefs, data.state.accounts, new Date(), data.state.budgetCycle)
+      const restored = restoreUiPrefs(data.state.uiPrefs, data.state.accounts, appNow(), data.state.budgetCycle)
       ui.setTimeframe(restored.timeframe)
       ui.setDashChipCursor(activeChipIndex(restored.timeframe))
       data.setAccountSelection(restored.accountSelection)

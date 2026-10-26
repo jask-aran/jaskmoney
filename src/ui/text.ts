@@ -1,5 +1,7 @@
 /** Terminal-cell text helpers shared by tables and lists. */
 
+import { MONTHS } from "../domain/days"
+
 const graphemes = new Intl.Segmenter(undefined, { granularity: "grapheme" })
 
 /** Truncate to `n` terminal cells with an ellipsis. Measures display width,
@@ -31,8 +33,6 @@ export function shortMoney(n: number): string {
   if (a >= 1000) return `${sign}$${(a / 1000).toFixed(1).replace(/\.0$/, "")}k`
   return `${sign}$${Math.round(a)}`
 }
-
-const MONTHS = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"]
 
 /** "2026-08-26" → "26 Aug". */
 export function shortDate(iso: string): string {

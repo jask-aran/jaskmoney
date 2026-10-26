@@ -1,5 +1,6 @@
 import { describe, expect, test } from "bun:test"
-import { addDays, cashFlowChart, spendingChart } from "./periodCharts"
+import { addDays } from "../../domain/days"
+import { cashFlowChart, spendingChart } from "./periodCharts"
 
 const dates = Array.from({ length: 10 }, (_, i) => addDays("2026-10-01", i))
 const legendText = (model: ReturnType<typeof spendingChart>) => model.legend.map((s) => s.text).join("")

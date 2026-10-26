@@ -43,22 +43,6 @@ export function defaultTimeframe(now: Date = appNow(), cycle: CycleConfig = MONT
   }
 }
 
-/** Compatibility export for the local calendar date formatter. */
-export { toISODay as toISODate } from "./days"
-
-/** Compatibility export for callers that need a local Date. */
-export { parseISODate } from "./days"
-
-/** Data clock: prefer latest txn day so lookbacks hit fixture/ANZ ranges. */
-export function dataClock(rows: Transaction[], fallback: Date = appNow()): Date {
-  let max = ""
-  for (const r of rows) {
-    if (r.dateISO > max) max = r.dateISO
-  }
-  if (!max) return fallback
-  return parseISODate(max)
-}
-
 export interface DateBounds {
   start: string // inclusive YYYY-MM-DD
   end: string // inclusive YYYY-MM-DD

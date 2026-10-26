@@ -16,11 +16,13 @@ import { computePeriodFlows, computePosition } from "../../domain/position"
 import { budgetProgress, cycleFor, type BudgetProgress } from "../../domain/budget"
 import { spendingCalendar, type CalendarDay } from "../../domain/spending"
 import { accountRole } from "../../domain/types"
-import { CUSTOM_CHIP, LOOKBACKS, PERIODS, PERIOD_LABEL, comparisonWindows, filterByTimeframe, offsetLabel, periodOffset, toISODate } from "../../domain/timeframe"
+import { MONTHS, addDays, appNow, appToday } from "../../domain/days"
+import { isSpending } from "../../domain/moneyRules"
+import { CUSTOM_CHIP, LOOKBACKS, PERIODS, PERIOD_LABEL, comparisonWindows, filterByTimeframe, offsetLabel, periodOffset } from "../../domain/timeframe"
 import { fit } from "../text"
 import { allCategoryLines, overviewRange } from "../../state/overviewRange"
 import { AXIS_GUESS, ChartBody, axisWidth, type ChartModel } from "../charts/ChartBody"
-import { INKS, addDays, balancesChart, cashFlowChart, spendingChart, type PeriodNames } from "./periodCharts"
+import { INKS, balancesChart, cashFlowChart, spendingChart, type PeriodNames } from "./periodCharts"
 
 /** Calendar cell colours by spending level (0 = none). */
 const LEVEL_BG = [theme.surface0, "#5b4636", "#8c6146", "#c47f55", theme.peach] as const
@@ -49,7 +51,7 @@ const MIN_CATEGORIES = 8
  */
 export function OverviewTab(props: { focused: SectionId }) {
   const dims = useTerminalDimensions()
-  const today = () => toISODate(new Date())
+  const today = () => appToday()
   const cycleConfig = () => data.state.budgetCycle
   // The range, scope and category spending, shared with the tab's keys.
   const range = createMemo(() => overviewRange(data.state, ui.state))
@@ -172,7 +174,7 @@ export function OverviewTab(props: { focused: SectionId }) {
   // The dates on the right: arrows when [ ] can step them, and how far the
   // range is from the current period (with 0 to come back).
   const steppable = () => ui.state.timeframe.family !== "lookback"
-  const offsetText = createMemo(() => offsetLabel(ui.state.timeframe.period, periodOffset(ui.state.timeframe, new Date(), cycleConfig())))
+  const offsetText = createMemo(() => offsetLabel(ui.state.timeframe.period, periodOffset(ui.state.timeframe, appNow(), cycleConfig())))
   const timeframeWidth = () => bounds().label.length + 4 + (offsetText() ? offsetText().length + 11 : 0)
   const showTimeframe = () => dims().width - 4 >= presetsWidth + 2 + timeframeWidth()
   const dateFocused = () => props.focused === "ov.range"
@@ -251,7 +253,7 @@ export function OverviewTab(props: { focused: SectionId }) {
   // with the cursor's row highlighted (enter opens it in Transactions).
   const categoriesFocused = () => props.focused === "ov.categories"
   // Spending in the range still to categorise (Go app's "Uncat N").
-  const uncategorised = createMemo(() => inPeriod().filter((t) => t.amount < 0 && !t.internal && !t.excluded && (t.categoryId == null || t.categoryName === "Uncategorised")).length)
+  const uncategorised = createMemo(() => inPeriod().filter((t) => isSpending(t) && (t.categoryId == null || t.categoryName === "Uncategorised")).length)
   const categoryRows = createMemo(() => {
     const rows = categoriesHeight() - 2
     if (!categoriesFocused()) return fitCategoryLines(groups(), rows).map((line) => ({ line, cursor: false }))
@@ -487,7 +489,6 @@ function monthLabels(weeks: Array<Array<CalendarDay | null>>, width: number): st
   return out.join("")
 }
 
-const MONTHS = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"]
 
 /** More spending than before is red, less is green. */
 function changeColor(now: number, before: number): string {

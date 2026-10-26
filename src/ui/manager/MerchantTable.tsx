@@ -5,6 +5,7 @@ import { formatMoney } from "../../domain/dashboard"
 import { rowAppearance } from "../../domain/rowStyle"
 import type { MerchantGroup, MerchantSort } from "../../domain/merchants"
 import { fit, shortDate } from "../text"
+import { appToday } from "../../domain/days"
 import { categoryMark } from "../icons"
 
 const COLUMNS = { marker: 1, gap: 1, total: 12, count: 5, average: 12, last: 9, category: 22 } as const
@@ -83,5 +84,5 @@ export function MerchantTable(props: {
 
 /** "21 Oct" this year, "28 Jun 25" before it. */
 function lastSeen(iso: string): string {
-  return iso.slice(0, 4) === String(new Date().getFullYear()) ? shortDate(iso) : `${shortDate(iso)} ${iso.slice(2, 4)}`
+  return iso.slice(0, 4) === appToday().slice(0, 4) ? shortDate(iso) : `${shortDate(iso)} ${iso.slice(2, 4)}`
 }

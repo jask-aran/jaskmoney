@@ -13,7 +13,7 @@ import type { Account } from "../../domain/types"
 import { fit, truncate } from "../text"
 import { selectableEntries, selectedAccounts, selectionLabel, sidebarEntries } from "../../domain/accountTree"
 import { computeAccountStats } from "../../domain/accountStats"
-import { toISODate } from "../../domain/timeframe"
+import { appToday } from "../../domain/days"
 import { TransactionTable } from "./TransactionTable"
 import { MerchantTable } from "./MerchantTable"
 import { groupByMerchant, sortMerchantGroups } from "../../domain/merchants"
@@ -32,7 +32,7 @@ export function ManagerTab(props: { focused: SectionId }) {
   const entries = createMemo(() => sidebarEntries(data.state.accounts))
   const showAccount = () => selectedAccounts(data.state.accounts, data.state.accountSelection).length > 1
   const wide = () => dims().width >= WIDE
-  const stats = createMemo(() => computeAccountStats(selectedAccounts(data.state.accounts, data.state.accountSelection), data.state.transactions, toISODate(new Date())))
+  const stats = createMemo(() => computeAccountStats(selectedAccounts(data.state.accounts, data.state.accountSelection), data.state.transactions, appToday()))
 
   createEffect(() => {
     // App chrome (4), transaction borders (2), and the table header (1) are

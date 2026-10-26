@@ -16,8 +16,8 @@ import {
   LOOKBACKS,
   PERIODS,
   timeframeNow,
-  toISODate,
 } from "./timeframe"
+import { toISODay } from "./days"
 import type { Transaction } from "./types"
 
 function txn(dateISO: string, amount = -10): Transaction {
@@ -163,6 +163,6 @@ test("calendar consolidation preserves early-year formatting and custom-range re
   }
   const early = new Date(1000, 0, 1)
   early.setFullYear(999)
-  expect(toISODate(early)).toBe("999-01-01")
+  expect(toISODay(early)).toBe("999-01-01")
   expect(customRange("1000-01-01", "1000-01-02")).toEqual({ start: "1000-01-01", end: "1000-01-02" })
 })

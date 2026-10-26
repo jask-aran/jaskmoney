@@ -20,7 +20,6 @@ import {
   chipLabel,
   stepChip,
   customRange,
-  dataClock,
   stepCustom,
   stepPeriod,
   timeframeBounds,
@@ -28,6 +27,7 @@ import {
   type TimeframeState,
 } from "../domain/timeframe"
 import { editText, isPrintable, textField } from "../domain/textField"
+import { appNow } from "../domain/days"
 import { drillFilter } from "../domain/drill"
 import type { CategoryLine } from "../domain/dashboard"
 import { allCategoryLines, overviewRange } from "../state/overviewRange"
@@ -346,7 +346,7 @@ function handleOverviewCustom(ui: UiStore, key: KeyEvent, data?: DataStore): voi
     ui.setTimeframe(tf)
     ui.setState({ customEdit: null })
     ui.setDashChipCursor(CUSTOM_CHIP)
-    ui.setStatus(`Custom · ${timeframeBounds(tf, new Date()).label}`)
+    ui.setStatus(`Custom · ${timeframeBounds(tf, appNow()).label}`)
     return
   }
   const key2 = edit.field === 0 ? "start" : "end"
@@ -937,7 +937,7 @@ function handleManagerMerchants(ui: UiStore, key: KeyEvent, data?: DataStore): v
 function handleOverview(ui: UiStore, key: KeyEvent, data?: DataStore): void {
   const { name, sequence: seq } = key
   const scope = ui.activeScope()
-  const clock = dataClock(data?.state.transactions ?? [])
+  const clock = appNow()
   const cycle = data?.state.budgetCycle
   // h/l (or ,/.) step the focused chart pane's views, the top pane when
   // neither is focused; H/L always step the bottom pane.
@@ -1007,7 +1007,7 @@ function handleOverview(ui: UiStore, key: KeyEvent, data?: DataStore): void {
   if (data && (focus === "ov.chart" || focus === "ov.chart2") && (name === "return" || name === "enter")) { drillDown(ui, data); return }
   if (name === "0") {
     // The same kind of range, now (this month, this quarter…).
-    const tf = timeframeNow(ui.state.timeframe, new Date(), cycle)
+    const tf = timeframeNow(ui.state.timeframe, appNow(), cycle)
     ui.setTimeframe(tf)
     ui.setStatus(`Now · ${timeframeBounds(tf, clock, cycle).label}`)
     return
@@ -1020,7 +1020,7 @@ function handleOverview(ui: UiStore, key: KeyEvent, data?: DataStore): void {
   }
   if (name === "c" && !key.ctrl && !key.meta) {
     // Home: the current budget cycle, whatever the range was.
-    const tf = applyChip({ ...ui.state.timeframe, family: "period", period: "cycle" }, LOOKBACKS.length, new Date(), cycle)
+    const tf = applyChip({ ...ui.state.timeframe, family: "period", period: "cycle" }, LOOKBACKS.length, appNow(), cycle)
     ui.setTimeframe(tf)
     ui.setDashChipCursor(activeChipIndex(tf))
     ui.setStatus(`This cycle · ${timeframeBounds(tf, clock, cycle).label}`)
@@ -1031,7 +1031,7 @@ function handleOverview(ui: UiStore, key: KeyEvent, data?: DataStore): void {
 
 function handleOverviewRange(ui: UiStore, key: KeyEvent, data?: DataStore): void {
   const { name } = key
-  const clock = dataClock(data?.state.transactions ?? [])
+  const clock = appNow()
   const cycle = data?.state.budgetCycle
   if (name === "h" || name === "left") {
     const n = chipCount()
