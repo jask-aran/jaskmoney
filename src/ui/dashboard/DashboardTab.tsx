@@ -359,7 +359,7 @@ function spendingChart(
       labels: axis.labels,
       summary: [
         { text: `${formatWholeMoney(now)} spent`, fg: theme.peach },
-        muted(` vs ${formatWholeMoney(then)} ${elapsed < n ? "by this day" : "in"} the previous period`),
+        muted(` vs ${formatWholeMoney(then)} ${elapsed < n ? "at this point last period" : "previous period"}`),
         ...(diff != null ? [{ text: ` (${diff > 0 ? "+" : ""}${diff}%)`, fg: diff > 0 ? theme.error : theme.success }] : []),
       ],
     }

@@ -27,21 +27,27 @@ export interface MerchantSummary {
 /**
  * Merchants with spending in [startISO, endISO] (inclusive), largest total
  * first (ties: more transactions, then merchant name). `previousTotal` uses
- * the same rules over the preceding window of equal length, so `transactions`
- * should cover both windows.
+ * the same rules over `previous` (default: the preceding window of equal
+ * length), so `transactions` should cover both windows.
  */
-export function merchantSummaries(transactions: Transaction[], startISO: string, endISO: string): MerchantSummary[] {
+export function merchantSummaries(
+  transactions: Transaction[],
+  startISO: string,
+  endISO: string,
+  previousWindow?: { start: string; end: string },
+): MerchantSummary[] {
   const start = Date.parse(startISO + "T12:00:00Z")
   const days = (Date.parse(endISO + "T12:00:00Z") - start) / 86400000 + 1
-  const previousStartISO = dayISO(start, -days)
+  const window = previousWindow ?? { start: dayISO(start, -days), end: dayISO(start, -1) }
   const previous = new Map<string, number>()
   const merchants = new Map<string, { summary: MerchantSummary; categories: Map<string, { count: number; total: number }> }>()
   for (const row of transactions) {
-    if (!isSpending(row) || row.dateISO < previousStartISO || row.dateISO > endISO) continue
-    if (row.dateISO < startISO) {
+    if (!isSpending(row)) continue
+    if (row.dateISO >= window.start && row.dateISO <= window.end) {
       previous.set(row.description, (previous.get(row.description) ?? 0) - row.amount)
       continue
     }
+    if (row.dateISO < startISO || row.dateISO > endISO) continue
     let entry = merchants.get(row.description)
     if (!entry) {
       entry = {

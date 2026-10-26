@@ -211,3 +211,23 @@ export function stepPeriod(tf: TimeframeState, delta: number): TimeframeState {
   const b = timeframeBounds(next, start)
   return { ...next, periodAnchor: b.start }
 }
+
+/**
+ * The part of [startISO, endISO] up to today, and the same stretch of the
+ * previous period (the window of equal length ending the day before
+ * startISO): both cover the period's first `days` days, all of them once the
+ * period is over. `partial` is true while the period is still running.
+ */
+export function comparisonWindows(startISO: string, endISO: string, todayISO: string): {
+  days: number
+  partial: boolean
+  previous: { start: string; end: string }
+} {
+  const day = (iso: string) => Date.parse(iso + "T12:00:00Z")
+  const iso = (t: number) => new Date(t).toISOString().slice(0, 10)
+  const length = Math.round((day(endISO) - day(startISO)) / 86400000) + 1
+  const lastISO = todayISO < endISO ? todayISO : endISO
+  const days = Math.max(0, Math.round((day(lastISO) - day(startISO)) / 86400000) + 1)
+  const previousStart = day(startISO) - length * 86400000
+  return { days, partial: days < length, previous: { start: iso(previousStart), end: iso(previousStart + (days - 1) * 86400000) } }
+}

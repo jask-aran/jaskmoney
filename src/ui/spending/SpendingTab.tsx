@@ -8,7 +8,7 @@ import { theme } from "../../theme"
 import { computeCategorySpend, formatWholeMoney, groupCategorySpend } from "../../domain/dashboard"
 import { computePeriodFlows } from "../../domain/position"
 import { merchantSummaries, spendingCalendar, type CalendarDay } from "../../domain/spending"
-import { dataClock, filterByTimeframe, timeframeBounds, toISODate } from "../../domain/timeframe"
+import { comparisonWindows, dataClock, filterByTimeframe, timeframeBounds, toISODate } from "../../domain/timeframe"
 import { fit, shortDate } from "../text"
 import { budgetProgress, cycleFor } from "../../domain/budget"
 import { budgetLabel } from "../../domain/budgetScopes"
@@ -26,15 +26,17 @@ export function SpendingTab(props: { focused: SectionId }) {
   const dims = useTerminalDimensions()
   const clock = createMemo(() => dataClock(data.state.transactions))
   const bounds = createMemo(() => timeframeBounds(ui.state.timeframe, clock()))
-  const previous = createMemo(() => previousWindow(bounds().start, bounds().end))
+  // Compare like with like: the period so far against the same days of the
+  // previous period.
+  const windows = createMemo(() => comparisonWindows(bounds().start, bounds().end, toISODate(new Date())))
+  const previous = () => windows().previous
   const spending = createMemo(() => data.spendingTransactions())
   const inPeriod = createMemo(() => filterByTimeframe(spending(), ui.state.timeframe, clock()))
   const inPrevious = createMemo(() => spending().filter((t) => t.dateISO >= previous().start && t.dateISO <= previous().end))
   const flows = createMemo(() => computePeriodFlows(data.state.accounts, inPeriod()))
   const previousFlows = createMemo(() => computePeriodFlows(data.state.accounts, inPrevious()))
-  const days = createMemo(() => dayCount(bounds().start, bounds().end))
   const groups = createMemo(() => groupCategorySpend(computeCategorySpend(inPeriod(), data.state.categories), data.state.categories))
-  const merchants = createMemo(() => merchantSummaries(spending(), bounds().start, bounds().end))
+  const merchants = createMemo(() => merchantSummaries(spending(), bounds().start, bounds().end, previous()))
   const calendar = createMemo(() => spendingCalendar(inPeriod(), bounds().start, bounds().end))
   // Budgets always show the current cycle, whatever the Date Range.
   const today = toISODate(new Date())
@@ -71,9 +73,9 @@ export function SpendingTab(props: { focused: SectionId }) {
           <S fg={theme.subtext0}>{"Spent "}</S>
           <S fg={theme.text} bold>{formatWholeMoney(flows().spent)}</S>
           <S fg={changeColor(flows().spent, previousFlows().spent)}>{`  ${changePct(flows().spent, previousFlows().spent)}`}</S>
-          <S fg={theme.overlay1}>{` vs ${formatWholeMoney(previousFlows().spent)} previous`}</S>
+          <S fg={theme.overlay1}>{` vs ${formatWholeMoney(previousFlows().spent)} ${windows().partial ? "at this point last period" : "previous period"}`}</S>
           <S fg={theme.subtext0}>{"     Daily avg "}</S>
-          <S fg={theme.text}>{formatWholeMoney(days() ? flows().spent / days() : 0)}</S>
+          <S fg={theme.text}>{formatWholeMoney(windows().days ? flows().spent / windows().days : 0)}</S>
           <S fg={theme.subtext0}>{"     Transactions "}</S>
           <S fg={theme.text}>{String(flows().txnCount)}</S>
           <S fg={theme.subtext0}>{"     Merchants "}</S>
@@ -222,16 +224,4 @@ function changePct(now: number, before: number): string {
 function changeColor(now: number, before: number): string {
   if (before <= 0 || Math.abs(now - before) < 0.005) return theme.overlay1
   return now > before ? theme.error : theme.success
-}
-
-function dayCount(startISO: string, endISO: string): number {
-  return Math.round((Date.parse(endISO + "T12:00:00Z") - Date.parse(startISO + "T12:00:00Z")) / 86400000) + 1
-}
-
-/** The window of equal length ending the day before `startISO`. */
-function previousWindow(startISO: string, endISO: string): { start: string; end: string } {
-  const start = Date.parse(startISO + "T12:00:00Z")
-  const days = dayCount(startISO, endISO)
-  const iso = (t: number) => new Date(t).toISOString().slice(0, 10)
-  return { start: iso(start - days * 86400000), end: iso(start - 86400000) }
 }

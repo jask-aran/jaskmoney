@@ -1,6 +1,7 @@
 import { describe, expect, test } from "bun:test"
 import {
   applyChip,
+  comparisonWindows,
   defaultTimeframe,
   filterByTimeframe,
   timeframeBounds,
@@ -54,5 +55,19 @@ describe("timeframe", () => {
     ]
     const filtered = filterByTimeframe(rows, tf, now)
     expect(filtered.map((r) => r.dateISO)).toEqual(["2026-02-03"])
+  })
+})
+
+describe("comparisonWindows", () => {
+  test("a running period compares its days so far with the same days before it", () => {
+    expect(comparisonWindows("2026-10-01", "2026-10-31", "2026-10-26")).toEqual({
+      days: 26, partial: true, previous: { start: "2026-08-31", end: "2026-09-25" },
+    })
+  })
+
+  test("a finished period compares with the whole previous window", () => {
+    expect(comparisonWindows("2026-09-01", "2026-09-30", "2026-10-26")).toEqual({
+      days: 30, partial: false, previous: { start: "2026-08-02", end: "2026-08-31" },
+    })
   })
 })

@@ -5,7 +5,7 @@ const EIGHTHS = ["", "▁", "▂", "▃", "▄", "▅", "▆", "▇", "█"]
 
 /**
  * Vertical bars, one per value, each in a slot of `floor(width / n)` columns
- * (the bar is the slot less a one-column gap when the slot is wider than 2),
+ * (the bar is the slot less a one-column gap when the slot is wider than 1),
  * scaled so `max` fills `height` rows. Rows are returned top first as runs
  * tagged with each bar's ink; `slots` gives each bar's first column and
  * width. Zero stays blank; any positive value shows at least one eighth.
@@ -19,7 +19,7 @@ export function columnBars(
   const n = bars.length
   if (n === 0 || width <= 0 || height <= 0) return { rows: [], slots: [] }
   const slot = Math.max(1, Math.floor(width / n))
-  const barWidth = slot > 2 ? slot - 1 : slot
+  const barWidth = slot > 1 ? slot - 1 : slot
   const slots = bars.map((_, i) => ({ col: i * slot, width: barWidth })).filter((s) => s.col + s.width <= width)
   const levels = bars.map(({ value }) => (value <= 0 || max <= 0 ? 0 : Math.max(1, Math.min(height * 8, Math.round((value / max) * height * 8)))))
   const rows: Run[][] = []
