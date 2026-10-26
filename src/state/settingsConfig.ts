@@ -25,7 +25,9 @@ function defaultProfiles(): ImportProfile[] { return DEFAULT_IMPORT_PROFILES.map
 
 const EMPTY: SettingsConfig = { version: 2, savedFilters: [], importProfiles: defaultProfiles() }
 
+/** JASKMONEY_CONFIG overrides the path (tests point it at a scratch file). */
 export function defaultSettingsConfigPath(): string {
+  if (process.env.JASKMONEY_CONFIG) return process.env.JASKMONEY_CONFIG
   return join(process.env.XDG_CONFIG_HOME ?? join(process.env.HOME ?? ".", ".config"), "jaskmoney-opentui", "settings.json")
 }
 
