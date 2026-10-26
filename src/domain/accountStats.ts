@@ -59,7 +59,7 @@ export interface AccountStats {
     impliedAnnualRatePct: number | null
   }
   /** Outflows to outside the tracked accounts in the last 90 days: rows with
-   * amount < 0 and internal = false, grouped by exact description, largest
+   * amount < 0 and excluded = false, grouped by exact description, largest
    * total first, at most 5. */
   topOutflows: Array<{ description: string; amount: number; count: number }>
 }
@@ -134,7 +134,7 @@ export function computeAccountStats(
       month.moneyIn += moneyIn
       month.moneyOut += moneyOut
     }
-    if (row.amount < 0 && !row.internal && row.dateISO >= outflowStartISO) {
+    if (row.amount < 0 && !row.excluded && row.dateISO >= outflowStartISO) {
       const outflow = outflows.get(row.description) ?? { description: row.description, amount: 0, count: 0 }
       outflow.amount -= row.amount
       outflow.count++

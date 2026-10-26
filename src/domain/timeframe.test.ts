@@ -23,7 +23,7 @@ function txn(dateISO: string, amount = -10): Transaction {
     accountName: "A",
     tagNames: [],
           tagColors: [],
-          tagIds: [], source: "csv" as const, status: null, transferAccountId: null, internal: false,
+          tagIds: [], source: "csv" as const, status: null, transferAccountId: null, internal: false, excluded: false,
   }
 }
 

@@ -8,11 +8,11 @@ function row(amount: number, overrides: Partial<Transaction> = {}): Transaction 
     description: "Shop", categoryId: null, categoryName: "Food",
     categoryColor: "", notes: "", importId: null, accountId: 1, accountName: "A",
     tagNames: [], tagColors: [], tagIds: [], source: "up", status: "SETTLED",
-    transferAccountId: null, internal: false, ...overrides,
+    transferAccountId: null, internal: false, excluded: false, ...overrides,
   }
 }
 
-const excluded = [row(100), row(0), row(-100, { internal: true }), row(-100, { tagNames: ["other", "iGnOrE"] })]
+const excluded = [row(100), row(0), row(-100, { internal: true, excluded: true }), row(-100, { tagNames: ["other", "iGnOrE"] })]
 
 describe("merchantSummaries", () => {
   test("groups exact descriptions, computes totals and average, and finds latest unsorted date", () => {

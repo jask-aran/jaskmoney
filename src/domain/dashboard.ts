@@ -78,7 +78,7 @@ export function computeCategorySpend(
   const byKey = new Map<string, CategorySpend>()
 
   for (const r of rows) {
-    if (r.internal) continue
+    if (r.excluded) continue
     if (r.tagNames.some((t) => t.toUpperCase() === "IGNORE")) continue
     if (r.amount >= 0) continue
     const name = r.categoryName || "Uncategorised"
@@ -157,7 +157,7 @@ export function dailySpendSeries(
   const values: number[] = []
   const map = new Map<string, number>()
   for (const r of rows) {
-    if (r.internal) continue
+    if (r.excluded) continue
     if (r.tagNames.some((t) => t.toUpperCase() === "IGNORE")) continue
     if (r.amount >= 0) continue
     if (r.dateISO < startISO || r.dateISO > endISO) continue

@@ -4,6 +4,7 @@ import { dirname, join } from "node:path"
 import {
   ACCOUNT_SYNC_COLUMNS_LIST,
   CATEGORY_SOURCE_COLUMN,
+  CATEGORY_NOT_SPENDING_COLUMN,
   CATEGORY_TREE_COLUMNS_LIST,
   TAG_EXT_COLUMN,
   DEFAULT_CATEGORIES,
@@ -75,6 +76,10 @@ const MIGRATIONS: Record<number, (db: Db) => void> = {
     db.exec(`ALTER TABLE tags ADD COLUMN ${TAG_EXT_COLUMN}`)
     db.exec(`CREATE UNIQUE INDEX IF NOT EXISTS idx_tags_ext ON tags(ext_id) WHERE ext_id IS NOT NULL`)
   },
+  14: (db) => {
+    db.exec(`ALTER TABLE categories ADD COLUMN ${CATEGORY_NOT_SPENDING_COLUMN}`)
+    db.exec(`UPDATE categories SET not_spending = 1 WHERE name = 'Transfers' AND ext_id IS NULL`)
+  },
 }
 
 export function ensureSchema(db: Db) {
@@ -115,10 +120,11 @@ function seedDefaults(db: Db) {
   ).c
   if (catCount === 0) {
     const ins = db.query(
-      "INSERT INTO categories (name, color, sort_order, is_default) VALUES (?, ?, ?, ?)",
+      "INSERT INTO categories (name, color, sort_order, is_default, not_spending) VALUES (?, ?, ?, ?, ?)",
     )
     for (const c of DEFAULT_CATEGORIES) {
-      ins.run(c.name, c.color, c.sortOrder, c.isDefault)
+      // Transfers start as not-spending, as the v14 migration sets them.
+      ins.run(c.name, c.color, c.sortOrder, c.isDefault, c.name === "Transfers" ? 1 : 0)
     }
   }
 
@@ -170,7 +176,7 @@ export function loadCategories(db: Db): Category[] {
   const rows = db
     .query(
       `SELECT id, name, color, sort_order AS sortOrder, is_default AS isDefault,
-              parent_id AS parentId, ext_id AS extId
+              parent_id AS parentId, ext_id AS extId, not_spending AS notSpending
        FROM categories ORDER BY sort_order, id`,
     )
     .all() as Array<{
@@ -181,10 +187,12 @@ export function loadCategories(db: Db): Category[] {
     isDefault: number
     parentId: number | null
     extId: string | null
+    notSpending: number
   }>
   return rows.map((r) => ({
     ...r,
     isDefault: r.isDefault === 1,
+    notSpending: r.notSpending === 1,
   }))
 }
 
@@ -329,7 +337,8 @@ export function loadTransactions(db: Db): Transaction[] {
          t.transfer_account_id AS transferAccountId,
          -- Internal: money moved to or from another tracked account. A transfer
          -- to an untracked account (e.g. a desynced joint account) is spending.
-         (t.transfer_account_id IS NOT NULL AND COALESCE(ta.sync_enabled, 0) = 1) AS internal
+         (t.transfer_account_id IS NOT NULL AND COALESCE(ta.sync_enabled, 0) = 1) AS internal,
+         COALESCE(c.not_spending, 0) AS notSpendingCategory
        FROM transactions t
        LEFT JOIN categories c ON c.id = t.category_id
        LEFT JOIN accounts a ON a.id = t.account_id
@@ -366,6 +375,7 @@ export function loadTransactions(db: Db): Transaction[] {
   return rows.map((r) => ({
     ...r,
     internal: !!r.internal,
+    excluded: !!r.internal || !!(r as { notSpendingCategory?: number }).notSpendingCategory,
     tagNames: tagNameMap.get(r.id) ?? [],
     tagColors: tagColorMap.get(r.id) ?? [],
     tagIds: tagIdMap.get(r.id) ?? [],

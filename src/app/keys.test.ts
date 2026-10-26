@@ -79,7 +79,7 @@ describe("key router", () => {
     const txn = (id: number, accountId: number) => ({
       id, dateRaw: "x", dateISO: `2026-02-0${id}`, amount: -id, description: `T${id}`, categoryId: 1, categoryName: "U",
       categoryColor: "#7f849c", notes: "", importId: null, accountId, accountName: "", tagNames: [], tagColors: [], tagIds: [],
-      source: "up" as const, status: null, transferAccountId: null, internal: false,
+      source: "up" as const, status: null, transferAccountId: null, internal: false, excluded: false,
     })
     data.setState({
       accounts: [account(1, "Spending", "TRANSACTIONAL"), account(2, "Holiday", "SAVER"), account(3, "General", "SAVER")],
@@ -119,7 +119,7 @@ describe("key router", () => {
     const txn = (id: number) => ({
       id, dateRaw: "x", dateISO: `2026-02-0${id}`, amount: -id, description: `T${id}`, categoryId: 1, categoryName: "U",
       categoryColor: "#7f849c", notes: id === 2 ? "kept" : "", importId: null, accountId: 1, accountName: "A", tagNames: [],
-      tagColors: [], tagIds: [], source: "up" as const, status: null, transferAccountId: null, internal: false,
+      tagColors: [], tagIds: [], source: "up" as const, status: null, transferAccountId: null, internal: false, excluded: false,
     })
     data.setState({
       accounts: [{ id: 1, name: "A", type: "debit" as const, sortOrder: 1, isActive: true, source: "up" as const, externalKind: "TRANSACTIONAL", balance: 1, syncEnabled: true }],
@@ -160,7 +160,7 @@ describe("key router", () => {
     const txn = (id: number, description: string, amount: number) => ({
       id, dateRaw: "x", dateISO: iso, amount, description, categoryId: 1, categoryName: "U", categoryColor: "#7f849c",
       notes: "", importId: null, accountId: 1, accountName: "Spending", tagNames: [], tagColors: [], tagIds: [],
-      source: "up" as const, status: null, transferAccountId: null, internal: false,
+      source: "up" as const, status: null, transferAccountId: null, internal: false, excluded: false,
     })
     data.setState({
       accounts: [{ id: 1, name: "Spending", type: "debit" as const, sortOrder: 1, isActive: true, source: "up" as const, externalKind: "TRANSACTIONAL", balance: 1, syncEnabled: true }],
@@ -200,7 +200,7 @@ describe("key router", () => {
         accountName: "A",
         tagNames: [],
           tagColors: [],
-          tagIds: [], source: "csv" as const, status: null, transferAccountId: null, internal: false,
+          tagIds: [], source: "csv" as const, status: null, transferAccountId: null, internal: false, excluded: false,
       })),
       accounts: [{ id: 1, name: "A", type: "credit" as const, sortOrder: 1, isActive: true, source: "csv" as const, externalKind: null, balance: null, syncEnabled: true }],
       ready: true,
@@ -259,7 +259,7 @@ describe("key router", () => {
           accountName: "A",
           tagNames: [],
           tagColors: [],
-          tagIds: [], source: "csv" as const, status: null, transferAccountId: null, internal: false,
+          tagIds: [], source: "csv" as const, status: null, transferAccountId: null, internal: false, excluded: false,
         },
       ],
       ready: true,

@@ -91,7 +91,7 @@ describe("shell render M0", () => {
           accountName: "ANZ CREDIT",
           tagNames: [],
           tagColors: [],
-          tagIds: [], source: "csv" as const, status: null, transferAccountId: null, internal: false,
+          tagIds: [], source: "csv" as const, status: null, transferAccountId: null, internal: false, excluded: false,
         },
       ],
       accounts: [
@@ -152,7 +152,7 @@ describe("shell render M0", () => {
           accountName: "ANZ CREDIT",
           tagNames: [],
           tagColors: [],
-          tagIds: [], source: "csv" as const, status: null, transferAccountId: null, internal: false,
+          tagIds: [], source: "csv" as const, status: null, transferAccountId: null, internal: false, excluded: false,
         },
         {
           id: 2,
@@ -169,7 +169,7 @@ describe("shell render M0", () => {
           accountName: "ANZ CREDIT",
           tagNames: [],
           tagColors: [],
-          tagIds: [], source: "csv" as const, status: null, transferAccountId: null, internal: false,
+          tagIds: [], source: "csv" as const, status: null, transferAccountId: null, internal: false, excluded: false,
         },
       ],
       accounts: [
@@ -225,7 +225,7 @@ describe("shell render M0", () => {
       id, dateRaw: "x", dateISO: "2026-10-01", amount: -1, description: `ROW ${id}`,
       categoryId: 10, categoryName: "Uncategorised", categoryColor: "#7f849c", notes: "",
       importId: null, accountId, accountName, tagNames: [], tagColors: [], tagIds: [],
-      source: "up" as const, status: "SETTLED" as const, transferAccountId: null, internal: false,
+      source: "up" as const, status: "SETTLED" as const, transferAccountId: null, internal: false, excluded: false,
     })
     data.setState({
       // "🏖️" is three UTF-16 units but two terminal cells.
@@ -259,7 +259,7 @@ describe("shell render M0", () => {
       id, dateRaw: "x", dateISO: `2026-02-0${4 - id}`, amount: -id, description,
       categoryId: 10, categoryName: "Uncategorised", categoryColor: "#7f849c", notes: "",
       importId: null, accountId: 1, accountName: "UP SPENDING", tagNames: [], tagColors: [], tagIds: [],
-      source: "up" as const, status, transferAccountId: null, internal: false,
+      source: "up" as const, status, transferAccountId: null, internal: false, excluded: false,
     })
     data.setState({
       transactions: [row(1, "RANGE ONLY", "SETTLED"), row(2, "RANGE SELECTED", "SETTLED"), row(3, "RANGE CURSOR", "HELD")],
@@ -321,7 +321,7 @@ describe("shell render M0", () => {
         accountName: "ANZ CREDIT",
         tagNames: [],
         tagColors: [],
-        tagIds: [], source: "csv" as const, status: null, transferAccountId: null, internal: false,
+        tagIds: [], source: "csv" as const, status: null, transferAccountId: null, internal: false, excluded: false,
       })),
       accounts: [
         { id: 1, name: "ANZ CREDIT", type: "credit", sortOrder: 1, isActive: true, source: "csv" as const, externalKind: null, balance: null, syncEnabled: true },

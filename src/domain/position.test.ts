@@ -16,7 +16,7 @@ function row(amount: number, overrides: Partial<Transaction> = {}): Transaction 
     description: "x", categoryId: null, categoryName: "Uncategorised",
     categoryColor: "", notes: "", importId: null, accountId: 1, accountName: "A",
     tagNames: [], tagColors: [], tagIds: [], source: "up", status: "SETTLED",
-    transferAccountId: null, internal: false, ...overrides,
+    transferAccountId: null, internal: false, excluded: false, ...overrides,
   }
 }
 
@@ -48,7 +48,7 @@ describe("computePosition", () => {
   test("pending counts only HELD spending rows, regardless of flow exclusions", () => {
     const p = computePosition(accounts, [
       row(-20, { status: "HELD" }),
-      row(-5, { status: "HELD", internal: true, tagNames: ["IGNORE"] }),
+      row(-5, { status: "HELD", internal: true, excluded: true, tagNames: ["IGNORE"] }),
       row(2, { status: "HELD", accountId: 2 }),
       row(-100, { status: "HELD", accountId: 3 }),
       row(-100), row(-100, { status: null }),
@@ -65,7 +65,7 @@ describe("computePosition", () => {
       row(-60, { dateISO: "2026-07-08" }),
       row(-30, { accountId: 2, status: "HELD" }),
       row(-900, { dateISO: "2026-10-06" }),
-      row(-900, { internal: true }),
+      row(-900, { internal: true, excluded: true }),
       row(-900, { tagNames: ["other", "iGnOrE"] }),
       row(-900, { accountId: 3 }),
       row(-900, { accountId: null }),
@@ -104,8 +104,8 @@ describe("computePosition", () => {
     const p = computePosition(accounts, [
       row(-20, { dateISO: "2026-10-04", status: "HELD" }),
       row(50, { tagNames: ["IGNORE"] }),
-      row(-100, { dateISO: "2026-10-04", internal: true, transferAccountId: 3 }),
-      row(100, { dateISO: "2026-10-04", accountId: 3, internal: true, transferAccountId: 1 }),
+      row(-100, { dateISO: "2026-10-04", internal: true, excluded: true, transferAccountId: 3 }),
+      row(100, { dateISO: "2026-10-04", accountId: 3, internal: true, excluded: true, transferAccountId: 1 }),
       row(5, { dateISO: "2026-10-04", accountId: 4 }),
       row(-10, { dateISO: "2026-10-06" }),
       row(3, { dateISO: "2027-01-01", accountId: 3 }),
@@ -153,12 +153,12 @@ describe("computePeriodFlows", () => {
   const rows = [
     row(1000), row(-100, { status: "HELD" }),
     row(-200, { transferAccountId: 99 }), // Untracked rent account is spending.
-    row(-500, { internal: true, transferAccountId: 3 }),
-    row(500, { accountId: 3, internal: true, transferAccountId: 1 }),
-    row(100, { internal: true, transferAccountId: 3 }),
-    row(-100, { accountId: 3, internal: true, transferAccountId: 1 }),
-    row(-50, { internal: true, transferAccountId: 2 }),
-    row(50, { accountId: 2, internal: true, transferAccountId: 1 }),
+    row(-500, { internal: true, excluded: true, transferAccountId: 3 }),
+    row(500, { accountId: 3, internal: true, excluded: true, transferAccountId: 1 }),
+    row(100, { internal: true, excluded: true, transferAccountId: 3 }),
+    row(-100, { accountId: 3, internal: true, excluded: true, transferAccountId: 1 }),
+    row(-50, { internal: true, excluded: true, transferAccountId: 2 }),
+    row(50, { accountId: 2, internal: true, excluded: true, transferAccountId: 1 }),
     row(-999, { tagNames: ["iGnOrE"] }), row(999, { tagNames: ["IGNORE"] }),
     row(5, { accountId: 3 }), // Interest belongs to saver changes only.
     row(-2, { accountId: 4, tagNames: ["IGNORE"] }),
@@ -188,8 +188,8 @@ describe("computePeriodFlows", () => {
   })
 
   test("saving and withdrawal signs come from the spending side, including IGNORE", () => {
-    expect(computePeriodFlows(accounts, [row(-20, { internal: true, transferAccountId: 3, tagNames: ["IGNORE"] })]).savedToSavers).toBe(20)
-    expect(computePeriodFlows(accounts, [row(30, { internal: true, transferAccountId: 3 })]).savedToSavers).toBe(-30)
+    expect(computePeriodFlows(accounts, [row(-20, { internal: true, excluded: true, transferAccountId: 3, tagNames: ["IGNORE"] })]).savedToSavers).toBe(20)
+    expect(computePeriodFlows(accounts, [row(30, { internal: true, excluded: true, transferAccountId: 3 })]).savedToSavers).toBe(-30)
     expect(computePeriodFlows(accounts, [row(-20, { transferAccountId: 3 })]).savedToSavers).toBe(0)
   })
 

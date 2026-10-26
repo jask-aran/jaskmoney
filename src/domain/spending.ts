@@ -3,7 +3,8 @@ import type { Transaction } from "./types"
 /**
  * Spending-tab aggregates. Callers pass the transactions to consider (already
  * limited to spending accounts); these functions apply the shared spending
- * rules: only outflows (amount < 0), never `internal` rows, never rows tagged
+ * rules: only outflows (amount < 0), never `excluded` rows (internal transfers
+ * or a not-spending category), never rows tagged
  * IGNORE (case-insensitive). Amounts in results are positive dollars.
  */
 
@@ -115,7 +116,7 @@ export function spendingCalendar(transactions: Transaction[], startISO: string, 
 }
 
 function isSpending(row: Transaction): boolean {
-  return row.amount < 0 && !row.internal && !row.tagNames.some((tag) => tag.toUpperCase() === "IGNORE")
+  return row.amount < 0 && !row.excluded && !row.tagNames.some((tag) => tag.toUpperCase() === "IGNORE")
 }
 
 function dayISO(today: number, offset: number): string {

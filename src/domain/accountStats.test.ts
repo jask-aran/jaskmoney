@@ -15,14 +15,14 @@ function row(amount: number, overrides: Partial<Transaction> = {}): Transaction 
     description: "x", categoryId: null, categoryName: "Uncategorised",
     categoryColor: "", notes: "", importId: null, accountId: 1, accountName: "A",
     tagNames: [], tagColors: [], tagIds: [], source: "up", status: "SETTLED",
-    transferAccountId: null, internal: false, ...overrides,
+    transferAccountId: null, internal: false, excluded: false, ...overrides,
   }
 }
 
 describe("computeAccountStats", () => {
   test("balances sum reported values; holds include null-balance accounts and internal rows", () => {
     const stats = computeAccountStats([account(1, 200), account(2, null), account(3, -50)], [
-      row(-20, { status: "HELD", internal: true, tagNames: ["IGNORE"] }),
+      row(-20, { status: "HELD", internal: true, excluded: true, tagNames: ["IGNORE"] }),
       row(-5, { status: "HELD", accountId: 2 }),
       row(2, { status: "HELD", accountId: 3 }),
       row(-900), row(-900, { status: null }),
@@ -64,7 +64,7 @@ describe("computeAccountStats", () => {
   test("first and last activity use all scoped rows, including future dates, regardless of input order", () => {
     const stats = computeAccountStats([account(1)], [
       row(1, { dateISO: "2027-01-01" }), row(1),
-      row(1, { dateISO: "2025-01-01", internal: true }),
+      row(1, { dateISO: "2025-01-01", internal: true, excluded: true }),
       row(1, { dateISO: "2020-01-01", accountId: 99 }),
       row(1, { dateISO: "2030-01-01", accountId: null }),
     ], "2026-10-05")
@@ -80,7 +80,7 @@ describe("computeAccountStats", () => {
   ] satisfies Array<[number, string, string]>) {
     test(`${days}-day window includes day ${days}, excludes day ${days + 1} and future rows`, () => {
       const stats = computeAccountStats([account(1)], [
-        row(10, { dateISO: included, internal: true }),
+        row(10, { dateISO: included, internal: true, excluded: true }),
         row(-3, { dateISO: included, status: "HELD", tagNames: ["IGNORE"] }),
         row(2), row(-1), row(0),
         row(900, { dateISO: excluded }), row(-900, { dateISO: excluded }),
@@ -95,7 +95,7 @@ describe("computeAccountStats", () => {
   test("monthly calendar list crosses years, fills empty months, and stops the current month at today", () => {
     const stats = computeAccountStats([account(1)], [
       row(10, { dateISO: "2025-11-30" }),
-      row(20, { dateISO: "2025-12-01", internal: true }),
+      row(20, { dateISO: "2025-12-01", internal: true, excluded: true }),
       row(-5, { dateISO: "2025-12-31" }),
       row(7, { dateISO: "2026-02-01" }), row(-2, { dateISO: "2026-02-03" }),
       row(900, { dateISO: "2026-02-04" }), row(900, { dateISO: "2026-03-01" }),
@@ -114,7 +114,7 @@ describe("computeAccountStats", () => {
   test("history reverses dated balanced-account amounts, including holds, internal, IGNORE, and future rows", () => {
     const stats = computeAccountStats([account(1, 100), account(2, null)], [
       row(50), row(-20, { dateISO: "2026-10-04", status: "HELD" }),
-      row(-10, { dateISO: "2026-10-04", internal: true, tagNames: ["IGNORE"] }),
+      row(-10, { dateISO: "2026-10-04", internal: true, excluded: true, tagNames: ["IGNORE"] }),
       row(-7, { dateISO: "2026-10-06" }), row(2, { dateISO: "2027-01-01" }),
       row(999, { accountId: 2 }), row(999, { accountId: 99 }), row(999, { accountId: null }),
       row(999, { dateISO: "2026-10-02" }),
@@ -175,7 +175,7 @@ describe("computeAccountStats", () => {
       row(1, { dateISO: "2025-10-05", description: "Interest" }),
       row(2, { dateISO: "2025-10-06", description: "Interest" }),
       row(3, { dateISO: "2025-12-31", description: "Interest" }),
-      row(4, { dateISO: "2026-01-01", description: "  iNtErEsT \t", internal: true }),
+      row(4, { dateISO: "2026-01-01", description: "  iNtErEsT \t", internal: true, excluded: true }),
       row(5, { description: "Interest", tagNames: ["IGNORE"] }),
       row(-900, { description: "Interest" }), row(0, { description: "Interest" }),
       row(900, { description: "Interest payment" }), row(900, { description: "Interest", accountId: 99 }),
@@ -245,7 +245,7 @@ describe("computeAccountStats", () => {
       row(-60, { description: "Travel" }), row(-50, { description: "Bills" }),
       row(-40, { description: "rent" }), row(-30, { description: "Other" }),
       row(900, { description: "Rent" }), row(0, { description: "Rent" }),
-      row(-900, { description: "Rent", internal: true }),
+      row(-900, { description: "Rent", internal: true, excluded: true }),
       row(-900, { description: "Rent", dateISO: "2026-07-07" }),
       row(-900, { description: "Rent", dateISO: "2026-10-06" }),
       row(-900, { description: "Rent", accountId: 99 }), row(-900, { accountId: null }),
@@ -261,7 +261,7 @@ describe("computeAccountStats", () => {
 
   test("two-account groups sum balances and merge flows while internal transfer sides cancel in history", () => {
     const stats = computeAccountStats([account(1, 100), account(2, 200)], [
-      row(-50, { internal: true }), row(50, { accountId: 2, internal: true }),
+      row(-50, { internal: true, excluded: true }), row(50, { accountId: 2, internal: true, excluded: true }),
       row(20, { accountId: 2 }), row(-10, { description: "Food" }),
       row(-5, { accountId: 2, description: "Food" }),
     ], "2026-10-05", { historyDays: 2, months: 1 })

@@ -1,4 +1,4 @@
-/** OpenTUI schema. v13 links local tags to provider tags. v12 added the category tree (parent, provider category id)
+/** OpenTUI schema. v14 lets a category be excluded from spending. v13 linked local tags to provider tags. v12 added the category tree (parent, provider category id)
  * and who set each transaction's category. v11 added provider transaction details (categorisable flag,
  * method, card, foreign amount, round-up, cashback). v10 added a per-account
  * sync switch. v9 added synced sources (Up Bank): external identity,
@@ -6,7 +6,7 @@
  * version fallback with an additive migration registry. v7 was the initial
  * partial OpenTUI port. */
 
-export const SCHEMA_VERSION = 13
+export const SCHEMA_VERSION = 14
 
 /** Columns shared by the fresh schema and the v9 migration. Rows imported from
  * CSV keep source = 'csv' and NULL external fields. */
@@ -50,6 +50,10 @@ export const CATEGORY_TREE_COLUMNS_LIST = [
   "ext_id TEXT",
 ] as const
 
+/** v14: 1 = money in this category is not spending or income (e.g. transfers
+ * to your own accounts elsewhere). The default Transfers category starts at 1. */
+export const CATEGORY_NOT_SPENDING_COLUMN = "not_spending INTEGER NOT NULL DEFAULT 0"
+
 /** v12: who set transactions.category_id. NULL = never set (falls back to the
  * provider's category on sync); 'provider' = mirrors the provider category
  * (sync keeps it in step); 'user' = chosen locally and not pushable (a local-only
@@ -80,7 +84,7 @@ export const TRANSACTION_DETAIL_COLUMNS_LIST = [
 
 const ACCOUNT_SYNC_COLUMNS = ACCOUNT_SYNC_COLUMNS_LIST.join(",\n  ")
 const TRANSACTION_SYNC_COLUMNS = [...TRANSACTION_SYNC_COLUMNS_LIST, ...TRANSACTION_DETAIL_COLUMNS_LIST, CATEGORY_SOURCE_COLUMN].join(",\n  ")
-const CATEGORY_TREE_COLUMNS = CATEGORY_TREE_COLUMNS_LIST.join(",\n  ")
+const CATEGORY_TREE_COLUMNS = [...CATEGORY_TREE_COLUMNS_LIST, CATEGORY_NOT_SPENDING_COLUMN].join(",\n  ")
 
 export const SYNC_SQL = `
 CREATE UNIQUE INDEX IF NOT EXISTS idx_accounts_external ON accounts(source, external_id) WHERE external_id IS NOT NULL;

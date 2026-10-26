@@ -36,6 +36,8 @@ export interface Category {
   parentId: number | null
   /** Provider category id (Up: e.g. "restaurants-and-cafes"); null = local-only. */
   extId: string | null
+  /** Money in this category is neither spending nor income. */
+  notSpending: boolean
 }
 
 export interface Tag {
@@ -148,8 +150,11 @@ export interface Transaction {
   status: "HELD" | "SETTLED" | null
   /** Own-account transfer counterpart, when the provider reports one. */
   transferAccountId: number | null
-  /** Transfer to or from another tracked account: never spending or income. */
+  /** Transfer to or from another tracked account. */
   internal: boolean
+  /** Not spending or income: `internal`, or its category is marked not-spending.
+   * Spending, income and merchant figures skip these rows. */
+  excluded: boolean
 }
 
 export type SortColumn = "date" | "amount" | "description" | "category" | "account"

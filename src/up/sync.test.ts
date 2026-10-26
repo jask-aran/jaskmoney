@@ -213,7 +213,7 @@ describe("Up sync", () => {
     settled.relationships.parentCategory.data = null
     settled.relationships.tags.data = []
     expect(await syncUp(db, client([settled]), { now })).toMatchObject({ inserted: 0, updated: 1, insertedIds: [] })
-    expect(loadTransactions(db)[0]).toMatchObject({ id: first.insertedIds[0], status: "SETTLED", categoryId: category, notes: "keep", tagIds: [tag], amount: -12, description: "Final merchant", transferAccountId: null, internal: false })
+    expect(loadTransactions(db)[0]).toMatchObject({ id: first.insertedIds[0], status: "SETTLED", categoryId: category, notes: "keep", tagIds: [tag], amount: -12, description: "Final merchant", transferAccountId: null, internal: false, excluded: false })
     expect(db.query("SELECT settled_at, raw_text, message, ext_category, ext_parent_category, ext_tags FROM transactions").get()).toEqual({ settled_at: settled.attributes.settledAt, raw_text: null, message: null, ext_category: null, ext_parent_category: null, ext_tags: "[]" })
     expect((await syncUp(db, client([settled]), { now })).updated).toBe(0)
   })
@@ -283,7 +283,7 @@ describe("Up sync", () => {
     expect(db.query("SELECT * FROM transactions WHERE account_id = ?").all(saver.id)).toEqual(before)
     expect(db.query("SELECT name, external_kind, balance, sync_enabled FROM accounts WHERE id = ?").get(saver.id))
       .toEqual({ name: "Renamed savings", external_kind: "HOME_LOAN", balance: 987.65, sync_enabled: 0 })
-    expect(loadTransactions(db)).toMatchObject([{ transferAccountId: saver.id, internal: false }])
+    expect(loadTransactions(db)).toMatchObject([{ transferAccountId: saver.id, internal: false, excluded: false }])
     // A counterpart omitted from the account response must still resolve locally.
     await syncUp(db, client([txn("enabled")], [account()]), { now })
     expect(db.query("SELECT transfer_account_id FROM transactions WHERE external_id = 'enabled'").get()).toEqual({ transfer_account_id: saver.id })

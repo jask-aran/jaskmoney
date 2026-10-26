@@ -6,6 +6,8 @@ import { accountRole, type Account, type Transaction } from "./types"
  * Position is point-in-time ("now") and ignores the dashboard timeframe.
  * Period flows describe the selected timeframe. Both share these rules:
  * - Only tracked accounts are passed in (sync-disabled accounts never are).
+ * - `excluded` transactions (internal transfers between tracked accounts, or a
+ *   category marked not-spending) are never spending or income.
  * - `internal` transactions move money between tracked accounts and are never
  *   spending or income. A transfer to an untracked account (e.g. a desynced
  *   joint account that pays rent) is ordinary spending.
@@ -180,7 +182,7 @@ export function computePeriodFlows(
 }
 
 function isOrdinaryFlow(row: Transaction): boolean {
-  return !row.internal && !row.tagNames.some((tag) => tag.toUpperCase() === "IGNORE")
+  return !row.excluded && !row.tagNames.some((tag) => tag.toUpperCase() === "IGNORE")
 }
 
 function dayISO(today: number, offset: number): string {

@@ -11,8 +11,8 @@ import {
 import type { Category, Transaction } from "./types"
 
 const cats: Category[] = [
-  { id: 1, name: "Groceries", color: "#94e2d5", sortOrder: 1, isDefault: false, parentId: null, extId: null },
-  { id: 2, name: "Transport", color: "#89b4fa", sortOrder: 2, isDefault: false, parentId: null, extId: null },
+  { id: 1, name: "Groceries", color: "#94e2d5", sortOrder: 1, isDefault: false, parentId: null, extId: null , notSpending: false},
+  { id: 2, name: "Transport", color: "#89b4fa", sortOrder: 2, isDefault: false, parentId: null, extId: null , notSpending: false},
 ]
 
 function t(
@@ -33,7 +33,7 @@ function t(
     accountName: "A",
     tagNames: partial.tagNames ?? [],
     tagColors: partial.tagColors ?? [],
-    tagIds: partial.tagIds ?? [], source: "csv" as const, status: null, transferAccountId: null, internal: false,
+    tagIds: partial.tagIds ?? [], source: "csv" as const, status: null, transferAccountId: null, internal: false, excluded: false,
   }
 }
 
@@ -82,7 +82,7 @@ describe("dashboard aggregates", () => {
     const debit = t({ amount: -30, dateISO: "2026-02-01", categoryName: "Groceries", categoryId: 1 })
     expect(computeCategorySpend([
       debit,
-      { ...debit, amount: -100, internal: true, transferAccountId: 2 },
+      { ...debit, amount: -100, internal: true, excluded: true, transferAccountId: 2 },
       { ...debit, amount: -20, transferAccountId: 99 },
     ], cats)).toEqual([{ categoryId: 1, name: "Groceries", color: "#94e2d5", amount: 50, pct: 100 }])
   })
@@ -91,7 +91,7 @@ describe("dashboard aggregates", () => {
     const debit = t({ amount: -30, dateISO: "2026-02-01", categoryName: "Groceries" })
     expect(dailySpendSeries([
       debit,
-      { ...debit, amount: -100, internal: true, transferAccountId: 2 },
+      { ...debit, amount: -100, internal: true, excluded: true, transferAccountId: 2 },
       { ...debit, amount: -20, transferAccountId: 99 },
       { ...debit, amount: -100, tagNames: ["iGnOrE"] },
       { ...debit, amount: 100 },
@@ -104,10 +104,10 @@ describe("dashboard aggregates", () => {
 describe("category groups", () => {
   test("subcategories roll up into their group; ungrouped categories stand alone; whole-dollar format", () => {
     const tree = [
-      { id: 1, name: "Uncategorised", color: "#7f849c", sortOrder: 1, isDefault: true, parentId: null, extId: null },
-      { id: 10, name: "Good Life", color: "#fab387", sortOrder: 2, isDefault: false, parentId: null, extId: "good-life" },
-      { id: 11, name: "Takeaway", color: "#fab387", sortOrder: 3, isDefault: false, parentId: 10, extId: "takeaway" },
-      { id: 12, name: "Pubs & Bars", color: "#fab387", sortOrder: 4, isDefault: false, parentId: 10, extId: "pubs-and-bars" },
+      { id: 1, name: "Uncategorised", color: "#7f849c", sortOrder: 1, isDefault: true, parentId: null, extId: null , notSpending: false},
+      { id: 10, name: "Good Life", color: "#fab387", sortOrder: 2, isDefault: false, parentId: null, extId: "good-life" , notSpending: false},
+      { id: 11, name: "Takeaway", color: "#fab387", sortOrder: 3, isDefault: false, parentId: 10, extId: "takeaway" , notSpending: false},
+      { id: 12, name: "Pubs & Bars", color: "#fab387", sortOrder: 4, isDefault: false, parentId: 10, extId: "pubs-and-bars" , notSpending: false},
     ]
     const groups = groupCategorySpend([
       { categoryId: 1, name: "Uncategorised", color: "#7f849c", amount: 50, pct: 0 },

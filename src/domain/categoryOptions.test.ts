@@ -3,7 +3,7 @@ import { assignableCategories, categoryPickerRows } from "./categoryOptions"
 import type { Category } from "./types"
 
 const cat = (id: number, name: string, parentId: number | null, extId: string | null, isDefault = false): Category =>
-  ({ id, name, color: "#fff", sortOrder: id, isDefault, parentId, extId })
+  ({ id, name, color: "#fff", sortOrder: id, isDefault, parentId, extId, notSpending: false })
 
 const tree: Category[] = [
   cat(1, "Uncategorised", null, null, true),
