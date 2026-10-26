@@ -1,6 +1,7 @@
 import type { KeyEvent } from "@opentui/core"
 import { resolve } from "node:path"
 import { selectableEntries } from "../domain/accountTree"
+import { runSync } from "./sync"
 import { JUMP_TARGETS, SETTINGS_SECTIONS, TABS, settingsSectionFocus, type ScopeId, type UiStore } from "../state/uiStore"
 import type { DataStore } from "../state/dataStore"
 import {
@@ -55,6 +56,11 @@ export function handleKey(ui: UiStore, key: KeyEvent, data?: DataStore): boolean
   const seq = key.sequence
 
   if (key.ctrl && name === "c") return false
+  // Sync from anywhere, including over overlays: it changes no UI state.
+  if (key.ctrl && name === "r") {
+    if (data) void runSync(ui, data, { manual: true })
+    return true
+  }
 
   // ── Jump ────────────────────────────────────────────────────────────
   if (ui.state.jumpMode) {

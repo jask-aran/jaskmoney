@@ -1,4 +1,4 @@
-import type { UpAccount, UpPage, UpTransaction } from "./types"
+import type { UpAccount, UpTransaction } from "./types"
 
 export class UpApiError extends Error {
   constructor(public readonly status: number, message: string) {
@@ -35,12 +35,39 @@ function isAccount(value: unknown): value is UpAccount {
 function isTransaction(value: unknown): value is UpTransaction {
   if (!object(value) || value.type !== "transactions" || typeof value.id !== "string" || !object(value.attributes) || !object(value.relationships)) return false
   const a = value.attributes, r = value.relationships
-  return (a.status === "HELD" || a.status === "SETTLED") && typeof a.description === "string" &&
+  const valid = (a.status === "HELD" || a.status === "SETTLED") && typeof a.description === "string" &&
     nullableString(a.rawText) && nullableString(a.message) && money(a.amount) &&
     (a.foreignAmount === null || money(a.foreignAmount)) && typeof a.createdAt === "string" &&
-    nullableString(a.settledAt) && nullableString(a.transactionType) && relationship(r.account, "accounts", false) &&
+    nullableString(a.settledAt) && nullableString(a.transactionType) &&
+    (a.isCategorizable === undefined || typeof a.isCategorizable === "boolean") &&
+    (a.roundUp === undefined || a.roundUp === null || (object(a.roundUp) && money(a.roundUp.amount) && (a.roundUp.boostPortion === null || money(a.roundUp.boostPortion)))) &&
+    (a.cashback === undefined || a.cashback === null || (object(a.cashback) && typeof a.cashback.description === "string" && money(a.cashback.amount))) &&
+    (a.cardPurchaseMethod === undefined || a.cardPurchaseMethod === null || (object(a.cardPurchaseMethod) &&
+      typeof a.cardPurchaseMethod.method === "string" && ["BAR_CODE", "OCR", "CARD_PIN", "CARD_DETAILS", "CARD_ON_FILE", "ECOMMERCE", "MAGNETIC_STRIPE", "CONTACTLESS"].includes(a.cardPurchaseMethod.method) &&
+      nullableString(a.cardPurchaseMethod.cardNumberSuffix))) && relationship(r.account, "accounts", false) &&
     relationship(r.transferAccount, "accounts") && relationship(r.category, "categories") && relationship(r.parentCategory, "categories") &&
     object(r.tags) && Array.isArray(r.tags.data) && r.tags.data.every(t => object(t) && t.type === "tags" && typeof t.id === "string")
+  if (valid) {
+    // Older payloads omit these fields; normalise before claiming UpTransaction.
+    a.isCategorizable ??= true
+    a.roundUp ??= null
+    a.cashback ??= null
+    a.cardPurchaseMethod ??= null
+  }
+  return valid
+}
+
+type CategoryResource = {
+  type: "categories"
+  id: string
+  attributes: { name: string }
+  relationships: { parent: { data: { type: "categories"; id: string } | null }; children: { data: Array<{ type: "categories"; id: string }> } }
+}
+function isCategory(value: unknown): value is CategoryResource {
+  return object(value) && value.type === "categories" && typeof value.id === "string" &&
+    object(value.attributes) && typeof value.attributes.name === "string" && object(value.relationships) &&
+    relationship(value.relationships.parent, "categories") && object(value.relationships.children) &&
+    Array.isArray(value.relationships.children.data) && value.relationships.children.data.every(c => object(c) && c.type === "categories" && typeof c.id === "string")
 }
 
 export function createUpClient({ token, fetch = globalThis.fetch, baseUrl = "https://api.up.com.au/api/v1", sleep = (ms: number) => new Promise<void>(resolve => setTimeout(resolve, ms)) }: {
@@ -58,12 +85,12 @@ export function createUpClient({ token, fetch = globalThis.fetch, baseUrl = "htt
   }
   let origin: string
   try { origin = new URL(baseUrl).origin } catch { throw new Error("Invalid Up API base URL") }
-  async function request(url: URL): Promise<unknown> {
+  async function request(url: URL, options: { method?: "PATCH"; body?: string } = {}): Promise<unknown> {
     try {
       if (url.origin !== origin) throw new Error("Up pagination URL has a foreign origin")
       for (let retry = 0; ; retry++) {
         // Refuse redirects so fetch cannot forward credentials to another origin.
-        const response = await fetch(url, { headers: { Authorization: `Bearer ${token}` }, redirect: "manual" })
+        const response = await fetch(url, { ...options, headers: { Authorization: `Bearer ${token}`, ...(options.body === undefined ? {} : { "Content-Type": "application/json" }) }, redirect: "manual" })
         if (response.status === 429 && retry < 3) {
           const header = response.headers.get("Retry-After")
           const seconds = header === null ? NaN : Number(header)
@@ -83,6 +110,10 @@ export function createUpClient({ token, fetch = globalThis.fetch, baseUrl = "htt
           if (response.status === 401) message = "Up token is invalid or expired; create one at https://api.up.com.au"
           throw new UpApiError(response.status, redact(message))
         }
+        if (options.method === "PATCH") {
+          if (response.status !== 204) throw new Error(`Unexpected Up API response status (${response.status}); expected 204`)
+          return
+        }
         if (body === null) throw new Error("Invalid Up API JSON response")
         return body
       }
@@ -91,19 +122,23 @@ export function createUpClient({ token, fetch = globalThis.fetch, baseUrl = "htt
       throw new Error(redact(error instanceof Error ? error.message : String(error)))
     }
   }
-  async function list<T>(path: string, valid: (value: unknown) => value is T, since?: string): Promise<T[]> {
+  async function list<T>(path: string, valid: (value: unknown) => value is T, since?: string, paginated = true): Promise<T[]> {
     try {
       let url: URL | null = new URL(`${baseUrl.replace(/\/$/, "")}/${path}`)
-      url.searchParams.set("page[size]", "100")
+      if (paginated) url.searchParams.set("page[size]", "100")
       if (since !== undefined) url.searchParams.set("filter[since]", since)
       const items: T[] = []
       while (url) {
         const body = await request(url)
-        if (!object(body) || !Array.isArray(body.data) || !body.data.every(valid) || !object(body.links) ||
-          !nullableString(body.links.prev) || !nullableString(body.links.next)) throw new Error("Invalid Up API page")
-        const page: UpPage<T> = { data: body.data, links: { prev: body.links.prev, next: body.links.next } }
-        items.push(...page.data)
-        url = page.links.next === null ? null : new URL(page.links.next, url)
+        if (!object(body) || !Array.isArray(body.data) || !body.data.every(valid)) throw new Error("Invalid Up API page")
+        let next: string | null = null
+        if (paginated || body.links !== undefined) {
+          if (!object(body.links) || (paginated && !nullableString(body.links.prev)) ||
+            !nullableString(body.links.next)) throw new Error("Invalid Up API page")
+          next = body.links.next
+        }
+        items.push(...body.data)
+        url = next === null ? null : new URL(next, url)
       }
       return items
     } catch (error) {
@@ -113,6 +148,15 @@ export function createUpClient({ token, fetch = globalThis.fetch, baseUrl = "htt
   }
   return {
     async ping(): Promise<void> { await request(new URL(`${baseUrl.replace(/\/$/, "")}/util/ping`)) },
+    async setTransactionCategory(transactionId: string, categoryId: string | null): Promise<void> {
+      if (transactionId === "." || transactionId === "..") throw new Error("Invalid Up transaction ID")
+      await request(new URL(`${baseUrl.replace(/\/$/, "")}/transactions/${encodeURIComponent(transactionId)}/relationships/category`), {
+        method: "PATCH", body: JSON.stringify({ data: categoryId === null ? null : { type: "categories", id: categoryId } }),
+      })
+    },
+    async listCategories(): Promise<Array<{ id: string; name: string; parentId: string | null }>> {
+      return (await list("categories", isCategory, undefined, false)).map(c => ({ id: c.id, name: c.attributes.name, parentId: c.relationships.parent.data?.id ?? null }))
+    },
     listAccounts: () => list("accounts", isAccount),
     listTransactions: ({ since }: { since?: string } = {}) => list("transactions", isTransaction, since),
     async listAccountTransactions(accountId: string, { since }: { since?: string } = {}) {

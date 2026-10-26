@@ -1,4 +1,4 @@
-import { ErrorBoundary, Match, Switch, createEffect, on, onMount } from "solid-js"
+import { ErrorBoundary, Match, Switch, createEffect, createSignal, on, onCleanup, onMount } from "solid-js"
 import { useKeyboard, useRenderer } from "@opentui/solid"
 import type { KeyEvent } from "@opentui/core"
 import { ui } from "../state/uiStore"
@@ -15,6 +15,7 @@ import { ManagerTab } from "../ui/manager/ManagerTab"
 import { SettingsTab } from "../ui/settings/SettingsTab"
 import { theme } from "../theme"
 import { selectionLabel } from "../domain/accountTree"
+import { SYNC_INTERVAL_MS, runSync, syncAgo } from "./sync"
 import {
   LOOKBACKS,
   activeChipIndex,
@@ -47,10 +48,24 @@ export function App() {
       } else {
         ui.setStatus("No transactions yet · Settings → Database & Import → i to import")
       }
+      // Sync now, then on an interval; ctrl+r syncs on demand.
+      void runSync(ui, data, { manual: false })
+      const timer = setInterval(() => void runSync(ui, data, { manual: false }), SYNC_INTERVAL_MS)
+      onCleanup(() => clearInterval(timer))
     } catch (e) {
       ui.setStatus(`DB error: ${e instanceof Error ? e.message : String(e)}`, true)
     }
   })
+
+  // Re-render the "synced Xm ago" label every 30 seconds.
+  const [now, setNow] = createSignal(Date.now())
+  const tick = setInterval(() => setNow(Date.now()), 30_000)
+  onCleanup(() => clearInterval(tick))
+  const syncLabel = () => {
+    if (data.state.upSyncing) return "syncing…"
+    const ago = syncAgo(data.state.dbInfo?.upLastSyncedAt ?? null, now())
+    return ago ? `synced ${ago}` : ""
+  }
 
   useKeyboard((key: KeyEvent) => {
     if (key.ctrl && key.name === "c") {
@@ -68,7 +83,7 @@ export function App() {
 
   return (
     <box width="100%" height="100%" flexDirection="column" backgroundColor={theme.canvas}>
-      <TabBar active={ui.state.activeTab} accountLabel={accountLabel()} />
+      <TabBar active={ui.state.activeTab} accountLabel={[accountLabel(), syncLabel()].filter(Boolean).join(" · ")} />
       <box height={1} width="100%" backgroundColor={theme.canvas} />
       <box flexGrow={1} width="100%" flexDirection="column" backgroundColor={theme.canvas}>
         {/* A rendering error stays inside the tab: the rest of the app (tab

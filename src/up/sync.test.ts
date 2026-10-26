@@ -11,7 +11,7 @@ function account(id = "daily", displayName = "Daily", accountType: UpAccount["at
   return { type: "accounts", id, attributes: { displayName, accountType, ownershipType: "INDIVIDUAL", balance: money(12345), createdAt: "2026-01-01T00:00:00+11:00" } }
 }
 function txn(id = "t", status: UpTransaction["attributes"]["status"] = "HELD", createdAt = "2026-02-01T23:30:00+11:00", accountId = "daily"): UpTransaction {
-  return { type: "transactions", id, attributes: { status, rawText: "RAW", description: "Merchant", message: "memo", amount: money(-1056), foreignAmount: null, createdAt, settledAt: status === "SETTLED" ? "2026-02-02T10:00:00+11:00" : null, transactionType: null }, relationships: {
+  return { type: "transactions", id, attributes: { status, rawText: "RAW", description: "Merchant", message: "memo", amount: money(-1056), foreignAmount: null, createdAt, settledAt: status === "SETTLED" ? "2026-02-02T10:00:00+11:00" : null, transactionType: null, isCategorizable: true, roundUp: null, cashback: null, cardPurchaseMethod: null }, relationships: {
     account: { data: { type: "accounts", id: accountId } }, transferAccount: { data: { type: "accounts", id: "saver" } },
     category: { data: { type: "categories", id: "groceries" } }, parentCategory: { data: { type: "categories", id: "good-life" } }, tags: { data: [{ type: "tags", id: "up-tag" }] },
   } }
@@ -47,6 +47,73 @@ describe("Up sync", () => {
     expect(db.query("SELECT balance_at FROM accounts WHERE source = 'up'").all()).toEqual([{ balance_at: now.toISOString() }, { balance_at: now.toISOString() }])
     expect(db.query("SELECT * FROM sync_state").get()).toEqual({ source: "up", last_synced_at: now.toISOString(), last_error: null })
     expect((await syncUp(db, client([txn()]), { now })).updated).toBe(0)
+  })
+
+  test("detail columns map every combination of optional objects on insert", async () => {
+    const db = database()
+    const rows = Array.from({ length: 16 }, (_, mask) => {
+      const row = txn(`details-${mask}`)
+      Object.assign(row.attributes, {
+        isCategorizable: false, transactionType: "Purchase",
+        cardPurchaseMethod: mask & 1 ? { method: "CONTACTLESS", cardNumberSuffix: "0123" } : null,
+        foreignAmount: mask & 2 ? { currencyCode: "USD", value: "-12.00", valueInBaseUnits: -1200 } : null,
+        roundUp: mask & 4 ? { amount: money(-44), boostPortion: money(-20) } : null,
+        cashback: mask & 8 ? { description: "Reward", amount: money(125) } : null,
+      })
+      return row
+    })
+    expect((await syncUp(db, client(rows), { now })).inserted).toBe(16)
+    for (let mask = 0; mask < 16; mask++) {
+      expect(db.query("SELECT ext_categorizable, transaction_type, card_method, card_suffix, foreign_amount, round_up, cashback FROM transactions WHERE external_id = ?").get(`details-${mask}`)).toEqual({
+        ext_categorizable: 0, transaction_type: "Purchase", card_method: mask & 1 ? "CONTACTLESS" : null,
+        card_suffix: mask & 1 ? "0123" : null, foreign_amount: mask & 2 ? "USD -12.00" : null,
+        round_up: mask & 4 ? -0.44 : null, cashback: mask & 8 ? 1.25 : null,
+      })
+    }
+    expect((await syncUp(db, client(rows), { now })).updated).toBe(0)
+  })
+
+  test("missing new attributes default to categorizable and null details", async () => {
+    const db = database(), row = txn()
+    const attributes = Object.fromEntries(Object.entries(row.attributes).filter(([key]) => !["isCategorizable", "roundUp", "cashback", "cardPurchaseMethod"].includes(key)))
+    const missing = createUpClient({ token: "test-pat", fetch: async input =>
+      new URL(String(input)).pathname.endsWith("/accounts") ? response([account()]) : response([{ ...row, attributes }]) })
+    expect((await syncUp(db, missing, { now })).inserted).toBe(1)
+    expect(db.query("SELECT ext_categorizable, transaction_type, card_method, card_suffix, foreign_amount, round_up, cashback FROM transactions").get()).toEqual({
+      ext_categorizable: 1, transaction_type: null, card_method: null, card_suffix: null, foreign_amount: null, round_up: null, cashback: null,
+    })
+  })
+
+  test("each detail column alone triggers an update and clearing preserves user data", async () => {
+    const db = database(), row = txn()
+    row.attributes.cardPurchaseMethod = { method: "CONTACTLESS", cardNumberSuffix: "0123" }
+    const first = await syncUp(db, client([row]), { now })
+    const category = createCategory(db, { name: "User", color: "#ffffff" })
+    const tag = createTag(db, { name: "User", color: "#ffffff", categoryId: null })
+    db.query("UPDATE transactions SET category_id = ?, notes = 'keep' WHERE id = ?").run(category, first.insertedIds[0]!)
+    db.query("INSERT INTO transaction_tags VALUES (?, ?)").run(first.insertedIds[0]!, tag)
+    const changes: Array<{ attributes: Partial<UpTransaction["attributes"]>; expected: Record<string, string | number | null> }> = [
+      { attributes: { isCategorizable: false }, expected: { ext_categorizable: 0 } },
+      { attributes: { transactionType: "Purchase" }, expected: { transaction_type: "Purchase" } },
+      { attributes: { cardPurchaseMethod: { method: "CARD_ON_FILE", cardNumberSuffix: "0123" } }, expected: { card_method: "CARD_ON_FILE" } },
+      { attributes: { cardPurchaseMethod: { method: "CONTACTLESS", cardNumberSuffix: "9876" } }, expected: { card_suffix: "9876" } },
+      { attributes: { cardPurchaseMethod: { method: "CONTACTLESS", cardNumberSuffix: null } }, expected: { card_suffix: null } },
+      { attributes: { foreignAmount: { currencyCode: "USD", value: "-12.00", valueInBaseUnits: -1200 } }, expected: { foreign_amount: "USD -12.00" } },
+      { attributes: { roundUp: { amount: money(-44), boostPortion: null } }, expected: { round_up: -0.44 } },
+      { attributes: { cashback: { description: "Reward", amount: money(125) } }, expected: { cashback: 1.25 } },
+    ]
+    for (const change of changes) {
+      const changed = { ...row, attributes: { ...row.attributes, ...change.attributes } }
+      expect(await syncUp(db, client([changed]), { now })).toMatchObject({ inserted: 0, updated: 1 })
+      expect(db.query("SELECT * FROM transactions").get()).toMatchObject(change.expected)
+      expect((await syncUp(db, client([changed]), { now })).updated).toBe(0)
+      expect((await syncUp(db, client([row]), { now })).updated).toBe(1)
+    }
+    expect((await syncUp(db, client([txn()]), { now })).updated).toBe(1)
+    expect(db.query("SELECT ext_categorizable, transaction_type, card_method, card_suffix, foreign_amount, round_up, cashback FROM transactions").get()).toEqual({
+      ext_categorizable: 1, transaction_type: null, card_method: null, card_suffix: null, foreign_amount: null, round_up: null, cashback: null,
+    })
+    expect(loadTransactions(db)[0]).toMatchObject({ id: first.insertedIds[0], categoryId: category, notes: "keep", tagIds: [tag] })
   })
 
   test("HELD becomes SETTLED in place and preserves user category, note, and tag", async () => {

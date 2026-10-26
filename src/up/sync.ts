@@ -53,7 +53,7 @@ export async function syncUp(db: Db, client: Pick<ReturnType<typeof createUpClie
       }
       // Include previously synced accounts if a transfer counterpart is absent from this response.
       for (const account of db.query<{ id: number; external_id: string }, []>("SELECT id, external_id FROM accounts WHERE source = 'up' AND external_id IS NOT NULL").all()) accountIds.set(account.external_id, account.id)
-      const columns = ["status", "amount", "description", "date_raw", "date_iso", "settled_at", "raw_text", "message", "account_id", "transfer_account_id", "ext_category", "ext_parent_category", "ext_tags"]
+      const columns = ["status", "amount", "description", "date_raw", "date_iso", "settled_at", "raw_text", "message", "account_id", "transfer_account_id", "ext_category", "ext_parent_category", "ext_tags", "ext_categorizable", "transaction_type", "card_method", "card_suffix", "foreign_amount", "round_up", "cashback"]
       const update = db.query(`UPDATE transactions SET ${columns.map(c => `${c} = ?`).join(", ")} WHERE id = ? AND NOT (${columns.map(c => `${c} IS ?`).join(" AND ")})`)
       const insert = db.query(`INSERT INTO transactions (${columns.join(", ")}, source, external_id, external_created_at, category_id, notes, import_id)
         VALUES (${columns.map(() => "?").join(", ")}, 'up', ?, ?, ?, '', NULL)`)
@@ -68,7 +68,10 @@ export async function syncUp(db: Db, client: Pick<ReturnType<typeof createUpClie
         if (accountId === undefined) throw new Error("Up transaction account is missing")
         const values = [a.status, a.amount.valueInBaseUnits / 100, a.description, a.createdAt, a.createdAt.slice(0, 10), a.settledAt, a.rawText, a.message,
           accountId, r.transferAccount.data ? accountIds.get(r.transferAccount.data.id) ?? null : null,
-          r.category.data?.id ?? null, r.parentCategory.data?.id ?? null, JSON.stringify(r.tags.data.map(t => t.id))]
+          r.category.data?.id ?? null, r.parentCategory.data?.id ?? null, JSON.stringify(r.tags.data.map(t => t.id)),
+          a.isCategorizable ? 1 : 0, a.transactionType, a.cardPurchaseMethod?.method ?? null, a.cardPurchaseMethod?.cardNumberSuffix ?? null,
+          a.foreignAmount ? `${a.foreignAmount.currencyCode} ${a.foreignAmount.value}` : null,
+          a.roundUp ? a.roundUp.amount.valueInBaseUnits / 100 : null, a.cashback ? a.cashback.amount.valueInBaseUnits / 100 : null]
         const existing = db.query<{ id: number }, [string]>("SELECT id FROM transactions WHERE source = 'up' AND external_id = ?").get(transaction.id)
         if (existing) updated += update.run(...values, existing.id, ...values).changes
         else {

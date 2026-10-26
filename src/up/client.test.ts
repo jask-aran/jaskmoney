@@ -1,10 +1,26 @@
 import { describe, expect, test } from "bun:test"
 import { createUpClient, readUpToken, UpApiError } from "./client"
-import type { UpAccount, UpPage } from "./types"
+import type { UpAccount, UpPage, UpTransaction } from "./types"
 
 const token = "secret-test-pat"
 const account: UpAccount = { type: "accounts", id: "a", attributes: { displayName: "Daily", accountType: "TRANSACTIONAL", ownershipType: "INDIVIDUAL", balance: { currencyCode: "AUD", value: "1.00", valueInBaseUnits: 100 }, createdAt: "2026-01-01T00:00:00+11:00" } }
 function page(data: UpAccount[], next: string | null = null) { return Response.json({ data, links: { prev: null, next } } satisfies UpPage<UpAccount>) }
+
+function transaction(): UpTransaction {
+  return { type: "transactions", id: "t", attributes: {
+    status: "SETTLED", description: "Merchant", rawText: null, message: null, amount: account.attributes.balance,
+    foreignAmount: null, createdAt: account.attributes.createdAt, settledAt: null, transactionType: null,
+    isCategorizable: true, roundUp: null, cashback: null, cardPurchaseMethod: null,
+  }, relationships: {
+    account: { data: { type: "accounts", id: "a" } }, transferAccount: { data: null }, category: { data: null },
+    parentCategory: { data: null }, tags: { data: [] },
+  } }
+}
+function category(id = "food", parentId: string | null = null) {
+  return { type: "categories", id, attributes: { name: id }, relationships: {
+    parent: { data: parentId === null ? null : { type: "categories", id: parentId } }, children: { data: [] },
+  } }
+}
 
 describe("Up client", () => {
   test("account IDs cannot traverse the URL path", async () => {
@@ -159,6 +175,102 @@ describe("Up client", () => {
         expect(calls).toBe(2)
       }
     }
+  })
+
+  test("transaction defaults apply only to missing new fields; nested objects follow the spec", async () => {
+    const amount = account.attributes.balance
+    const attributes = { ...transaction().attributes, roundUp: { amount, boostPortion: amount },
+      cashback: { description: "Reward", amount }, cardPurchaseMethod: { method: "CONTACTLESS", cardNumberSuffix: "0123" } }
+    const parse = (attrs: unknown) => createUpClient({ token, fetch: async () => Response.json({ data: [{ ...transaction(), attributes: attrs }], links: { prev: null, next: null } }) }).listTransactions()
+    expect((await parse(attributes))[0]?.attributes).toEqual(attributes)
+    expect((await parse({ ...attributes, roundUp: { amount, boostPortion: null }, cardPurchaseMethod: { method: "OCR", cardNumberSuffix: null } }))[0]?.attributes.cardPurchaseMethod?.cardNumberSuffix).toBeNull()
+    const missing = Object.fromEntries(Object.entries(attributes).filter(([key]) => !["isCategorizable", "roundUp", "cashback", "cardPurchaseMethod"].includes(key)))
+    expect((await parse(missing))[0]?.attributes).toMatchObject({ isCategorizable: true, roundUp: null, cashback: null, cardPurchaseMethod: null })
+    for (const patch of [
+      { isCategorizable: null }, { isCategorizable: 1 }, { roundUp: [] }, { roundUp: { amount } },
+      { roundUp: { amount, boostPortion: {} } }, { roundUp: { amount: { ...amount, valueInBaseUnits: 1.5 }, boostPortion: null } },
+      { cashback: { amount } }, { cashback: { description: "Reward", amount: null } },
+      { cardPurchaseMethod: { method: "UNKNOWN", cardNumberSuffix: null } }, { cardPurchaseMethod: { method: "OCR" } },
+      { cardPurchaseMethod: { method: "OCR", cardNumberSuffix: 1234 } },
+      { amount: null }, { foreignAmount: undefined }, { transactionType: undefined }, { rawText: undefined }, { status: "unknown" },
+    ]) await expect(parse({ ...attributes, ...patch })).rejects.toThrow("Invalid Up API page")
+  })
+
+  test("category PATCH encodes IDs, sends JSON, retries unchanged, and accepts empty 204", async () => {
+    const calls: Array<{ url: string; init?: RequestInit }> = [], delays: number[] = []
+    const client = createUpClient({ token, sleep: async ms => { delays.push(ms) }, fetch: async (input, init) => {
+      calls.push({ url: String(input), init })
+      return calls.length === 1 ? new Response(null, { status: 429, headers: { "Retry-After": "2" } }) : new Response(null, { status: 204 })
+    } })
+    for (const id of [".", ".."]) await expect(client.setTransactionCategory(id, null)).rejects.toThrow("Invalid Up transaction ID")
+    expect(calls).toEqual([])
+    expect(await client.setTransactionCategory("a/../b ?#%", "food")).toBeUndefined()
+    expect(await client.setTransactionCategory("a", null)).toBeUndefined()
+    expect(delays).toEqual([2000])
+    for (const call of calls) {
+      expect(call.init?.method).toBe("PATCH")
+      expect(call.init?.redirect).toBe("manual")
+      const headers = new Headers(call.init?.headers)
+      expect(headers.get("Authorization")).toBe(`Bearer ${token}`)
+      expect(headers.get("Content-Type")).toBe("application/json")
+    }
+    expect(new URL(calls[0]!.url).pathname).toBe("/api/v1/transactions/a%2F..%2Fb%20%3F%23%25/relationships/category")
+    expect(calls[0]).toEqual(calls[1])
+    expect(calls[0]?.init?.body).toBe(JSON.stringify({ data: { type: "categories", id: "food" } }))
+    expect(calls[2]?.init?.body).toBe('{"data":null}')
+    const unexpected = createUpClient({ token, fetch: async () => Response.json({}) })
+    await expect(unexpected.setTransactionCategory("a", null)).rejects.toThrow("expected 204")
+  })
+
+  test("category PATCH maps API errors and redacts escaped tokens and transport errors", async () => {
+    const escaped = Array.from(token, c => `\\u${c.charCodeAt(0).toString(16).padStart(4, "0")}`).join("")
+    for (const status of [401, 403, 404, 422, 302]) {
+      const client = createUpClient({ token, fetch: async () => new Response(JSON.stringify({ errors: [{ title: `Denied ${token}`, detail: token }] }).replaceAll(token, escaped), { status }) })
+      try { await client.setTransactionCategory("a", null); throw new Error("Expected failure") } catch (error) {
+        expect(error).toBeInstanceOf(UpApiError)
+        if (!(error instanceof UpApiError)) throw error
+        expect(error.status).toBe(status)
+        expect(error.message).toBe(status === 401 ? "Up token is invalid or expired; create one at https://api.up.com.au" : `Up API request failed (${status}): Denied [redacted]: [redacted]`)
+      }
+    }
+    const failing = createUpClient({ token, fetch: async () => { throw new Error(`Network ${token}`) } })
+    await expect(failing.setTransactionCategory("a", null)).rejects.toThrow("Network [redacted]")
+    let calls = 0
+    const limited = createUpClient({ token, sleep: async () => {}, fetch: async () => { calls++; return new Response(null, { status: 429 }) } })
+    await expect(limited.setTransactionCategory("a", null)).rejects.toThrow("429")
+    expect(calls).toBe(4)
+  })
+
+  test("categories parse parent IDs without pagination links and follow optional next links safely", async () => {
+    const client = createUpClient({ token, fetch: async (input, init) => {
+      expect(new URL(String(input)).pathname).toBe("/api/v1/categories")
+      expect(new URL(String(input)).search).toBe("")
+      expect(new Headers(init?.headers).get("Authorization")).toBe(`Bearer ${token}`)
+      return Response.json({ data: [category(), category("cafes", "food")] })
+    } })
+    expect(await client.listCategories()).toEqual([{ id: "food", name: "food", parentId: null }, { id: "cafes", name: "cafes", parentId: "food" }])
+    for (const next of ["?page[after]=food", `https://evil.example/${token}`]) {
+      let calls = 0
+      const paged = createUpClient({ token, fetch: async () => ++calls === 1 ? Response.json({ data: [category()], links: { next } }) : Response.json({ data: [category("cafes", "food")] }) })
+      if (next.startsWith("?")) {
+        expect(await paged.listCategories()).toHaveLength(2)
+        expect(calls).toBe(2)
+      } else {
+        await expect(paged.listCategories()).rejects.toThrow("foreign origin")
+        expect(calls).toBe(1)
+      }
+    }
+    for (const invalid of [
+      { ...category(), type: "tags" }, { ...category(), id: 1 }, { ...category(), attributes: { name: null } },
+      { ...category(), relationships: { parent: { data: { type: "accounts", id: "a" } }, children: { data: [] } } },
+      { ...category(), relationships: { parent: { data: null } } },
+      { ...category(), relationships: { parent: { data: null }, children: { data: [{ type: "tags", id: "a" }] } } },
+    ]) {
+      const invalidClient = createUpClient({ token, fetch: async () => Response.json({ data: [invalid] }) })
+      await expect(invalidClient.listCategories()).rejects.toThrow("Invalid Up API page")
+    }
+    const invalidLinks = createUpClient({ token, fetch: async () => Response.json({ data: [], links: { next: 1 } }) })
+    await expect(invalidLinks.listCategories()).rejects.toThrow("Invalid Up API page")
   })
 
   test("readUpToken trims and rejects missing or blank PAT", () => {
