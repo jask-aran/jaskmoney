@@ -25,24 +25,41 @@ const columns = {
   category: 16,
 } as const
 
-const DESCRIPTION_TARGET = 40
+/** Narrowest the category and tags go before the description gives way. */
+const CATEGORY_MIN = 16
+const TAGS_MIN = 8
 
-/** Go renderTransactionTable: description takes up to its target width, tags
- * take the remainder so row state backgrounds span the whole table. As in Go
- * (hasMultipleAccountNames), the Account column only shows for several accounts. */
-export function tableLayout(contentWidth: number, showAccount: boolean, showTags = true): { description: number; category: number; tags: number; showAccount: boolean; showTags: boolean } {
-  const fixed = columns.marker + columns.date + columns.amount + columns.category + 3 * columns.gap +
+/** Column widths. No bank documents a limit on descriptions, so the data
+ * sets it: the description gets its longest text, then the category its
+ * longest name, while both fit beside the minimums; tags, or without them
+ * the category, take the rest so row backgrounds span the table. As in Go
+ * (hasMultipleAccountNames), the Account column only shows for several
+ * accounts. */
+export function tableLayout(
+  contentWidth: number,
+  showAccount: boolean,
+  showTags: boolean,
+  longest: { description: number; category: number },
+): { description: number; category: number; tags: number; showAccount: boolean; showTags: boolean } {
+  const fixed = columns.marker + columns.date + columns.amount + 3 * columns.gap +
     (showTags ? columns.gap : 0) + (showAccount ? columns.account + columns.gap : 0)
   const avail = contentWidth - fixed
-  let description = Math.min(DESCRIPTION_TARGET, avail)
-  if (description < 5) description = Math.max(5, avail)
-  // Tags, or without them the category, take the rest, so row backgrounds
-  // span the table.
-  const rest = Math.max(0, contentWidth - fixed - description)
+  const tagsMin = showTags ? TAGS_MIN : 0
+  const description = Math.max(5, Math.min(longest.description, avail - CATEGORY_MIN - tagsMin))
+  const category = Math.max(CATEGORY_MIN, Math.min(longest.category, avail - description - tagsMin))
+  const rest = Math.max(0, avail - description - category)
   return showTags
-    ? { description, category: columns.category, tags: Math.max(1, rest), showAccount, showTags }
-    : { description, category: columns.category + rest, tags: 0, showAccount, showTags }
+    ? { description, category, tags: Math.max(1, rest), showAccount, showTags }
+    : { description, category: category + rest, tags: 0, showAccount, showTags }
 }
+
+/** The widest description and category (with its marker) in the data, or
+ * their headings with a sort mark. Every transaction counts, not just the
+ * rows shown, so a filter or account switch never moves the columns. */
+const longest = () => ({
+  description: Math.max("Description ▼".length, ...data.state.transactions.map((t) => Bun.stringWidth(t.description.trimEnd()))),
+  category: 2 + Math.max("Category ▼".length - 2, ...data.state.categories.map((c) => Bun.stringWidth(c.name))),
+})
 
 function fmtDate(iso: string): string {
   const [y, m, d] = iso.split("-")
@@ -101,7 +118,8 @@ export function TransactionTable(props: {
   sortMark?: (column: string) => string
   empty: string
 }) {
-  const layout = createMemo(() => tableLayout(props.width, props.showAccount, props.showTags))
+  const widest = createMemo(longest)
+  const layout = createMemo(() => tableLayout(props.width, props.showAccount, props.showTags, widest()))
   const mark = (column: string) => props.sortMark?.(column) ?? ""
   const windowRows = createMemo(() => props.rows.slice(props.top, props.top + props.visible))
   return (

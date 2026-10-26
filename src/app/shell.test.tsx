@@ -323,7 +323,9 @@ describe("shell render M0", () => {
     expect(header.indexOf("Date")).toBe(first.indexOf("30-02-26"))
     expect(header.indexOf("Amount")).toBe(first.indexOf("-$123.45"))
     expect(header.indexOf("Description")).toBe(first.indexOf("DESCRIPTION ROW 00"))
-    expect(first).toContain("DESCRIPTION ROW 00".padEnd(40))
+    // The description column is as wide as the longest description.
+    expect(first).toContain("DESCRIPTION ROW 00 ○")
+    expect(header.indexOf("Category")).toBe(first.indexOf("○"))
     expect(lines.some((line) => line.includes("DESCRIPTION ROW 18"))).toBe(true)
     expect(lines.some((line) => line.includes("DESCRIPTION ROW 19"))).toBe(false)
 
