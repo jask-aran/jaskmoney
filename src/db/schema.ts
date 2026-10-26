@@ -1,4 +1,4 @@
-/** OpenTUI schema. v12 adds the category tree (parent, provider category id)
+/** OpenTUI schema. v13 links local tags to provider tags. v12 added the category tree (parent, provider category id)
  * and who set each transaction's category. v11 added provider transaction details (categorisable flag,
  * method, card, foreign amount, round-up, cashback). v10 added a per-account
  * sync switch. v9 added synced sources (Up Bank): external identity,
@@ -6,7 +6,7 @@
  * version fallback with an additive migration registry. v7 was the initial
  * partial OpenTUI port. */
 
-export const SCHEMA_VERSION = 12
+export const SCHEMA_VERSION = 13
 
 /** Columns shared by the fresh schema and the v9 migration. Rows imported from
  * CSV keep source = 'csv' and NULL external fields. */
@@ -55,6 +55,10 @@ export const CATEGORY_TREE_COLUMNS_LIST = [
  * (sync keeps it in step); 'user' = chosen locally and not pushable (a local-only
  * category); 'rule' = set by a rule. Sync overwrites only NULL and 'provider'. */
 export const CATEGORY_SOURCE_COLUMN = "category_source TEXT"
+
+/** v13: provider tag id (Up: the tag's name, which is its id). NULL = local
+ * only (e.g. IGNORE, which never syncs). */
+export const TAG_EXT_COLUMN = "ext_id TEXT"
 
 /** v11: provider transaction details shown in the transaction detail view.
  * All NULL for CSV rows. */
@@ -108,7 +112,8 @@ CREATE TABLE IF NOT EXISTS tags (
   name        TEXT NOT NULL UNIQUE,
   color       TEXT NOT NULL DEFAULT '#94e2d5',
   category_id INTEGER REFERENCES categories(id) ON DELETE SET NULL,
-  sort_order  INTEGER NOT NULL DEFAULT 0
+  sort_order  INTEGER NOT NULL DEFAULT 0,
+  ${TAG_EXT_COLUMN}
 );
 
 CREATE TABLE IF NOT EXISTS transaction_tags (
@@ -170,6 +175,7 @@ CREATE INDEX IF NOT EXISTS idx_tags_sort_order ON tags(sort_order);
 CREATE INDEX IF NOT EXISTS idx_rules_v2_sort ON rules_v2(sort_order);
 ${SYNC_SQL}
 CREATE UNIQUE INDEX IF NOT EXISTS idx_categories_ext ON categories(ext_id) WHERE ext_id IS NOT NULL;
+CREATE UNIQUE INDEX IF NOT EXISTS idx_tags_ext ON tags(ext_id) WHERE ext_id IS NOT NULL;
 `
 
 export const DEFAULT_CATEGORIES: { name: string; color: string; sortOrder: number; isDefault: number }[] = [

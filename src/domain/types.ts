@@ -44,6 +44,8 @@ export interface Tag {
   color: string
   categoryId: number | null
   sortOrder: number
+  /** Provider tag id (Up: the tag name); null = local only. */
+  extId: string | null
 }
 
 /** A persisted, ordered classification rule. Filter definitions live in the

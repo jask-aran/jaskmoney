@@ -32,7 +32,7 @@ describe("OpenTUI settings database", () => {
       INSERT INTO transactions VALUES (7, 'x', '2026-01-01', -5, 'kept', 41, '', NULL, NULL, '');
     `)
     ensureSchema(db)
-    expect(db.query("SELECT version FROM schema_meta").get()).toEqual({ version: 12 })
+    expect(db.query("SELECT version FROM schema_meta").get()).toEqual({ version: 13 })
     expect(db.query("SELECT description FROM transactions WHERE id = 7").get()).toEqual({ description: "kept" })
     expect(db.query("SELECT name FROM categories WHERE id = 41").get()).toEqual({ name: "Preserved" })
     expect(db.query("SELECT 1 FROM sqlite_master WHERE name = 'rules_v2'").get()).toEqual({ 1: 1 })
@@ -59,10 +59,11 @@ describe("OpenTUI settings database", () => {
       ALTER TABLE transactions DROP COLUMN foreign_amount; ALTER TABLE transactions DROP COLUMN round_up; ALTER TABLE transactions DROP COLUMN cashback;
       DROP INDEX idx_categories_ext; ALTER TABLE categories DROP COLUMN parent_id; ALTER TABLE categories DROP COLUMN ext_id;
       ALTER TABLE transactions DROP COLUMN category_source;
+      DROP INDEX idx_tags_ext; ALTER TABLE tags DROP COLUMN ext_id;
       UPDATE schema_meta SET version = 8;
     `)
     ensureSchema(db)
-    expect(db.query("SELECT version FROM schema_meta").get()).toEqual({ version: 12 })
+    expect(db.query("SELECT version FROM schema_meta").get()).toEqual({ version: 13 })
     expect(db.query("SELECT description, source, external_id AS externalId, status, ext_tags AS extTags FROM transactions").get())
       .toEqual({ description: "kept", source: "csv", externalId: null, status: null, extTags: "[]" })
     expect(db.query("SELECT name, source, sync_enabled AS syncEnabled FROM accounts WHERE id = ?").get(account.id)).toEqual({ name: "ANZ CREDIT", source: "csv", syncEnabled: 1 })

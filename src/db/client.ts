@@ -5,6 +5,7 @@ import {
   ACCOUNT_SYNC_COLUMNS_LIST,
   CATEGORY_SOURCE_COLUMN,
   CATEGORY_TREE_COLUMNS_LIST,
+  TAG_EXT_COLUMN,
   DEFAULT_CATEGORIES,
   MANDATORY_TAGS,
   SCHEMA_SQL,
@@ -69,6 +70,10 @@ const MIGRATIONS: Record<number, (db: Db) => void> = {
     for (const column of CATEGORY_TREE_COLUMNS_LIST) db.exec(`ALTER TABLE categories ADD COLUMN ${column}`)
     db.exec(`ALTER TABLE transactions ADD COLUMN ${CATEGORY_SOURCE_COLUMN}`)
     db.exec(`CREATE UNIQUE INDEX IF NOT EXISTS idx_categories_ext ON categories(ext_id) WHERE ext_id IS NOT NULL`)
+  },
+  13: (db) => {
+    db.exec(`ALTER TABLE tags ADD COLUMN ${TAG_EXT_COLUMN}`)
+    db.exec(`CREATE UNIQUE INDEX IF NOT EXISTS idx_tags_ext ON tags(ext_id) WHERE ext_id IS NOT NULL`)
   },
 }
 
@@ -186,7 +191,7 @@ export function loadCategories(db: Db): Category[] {
 export function loadTags(db: Db): Tag[] {
   const rows = db
     .query(
-      `SELECT id, name, color, category_id AS categoryId, sort_order AS sortOrder
+      `SELECT id, name, color, category_id AS categoryId, sort_order AS sortOrder, ext_id AS extId
        FROM tags ORDER BY sort_order, id`,
     )
     .all() as Array<{
@@ -195,6 +200,7 @@ export function loadTags(db: Db): Tag[] {
     color: string
     categoryId: number | null
     sortOrder: number
+    extId: string | null
   }>
   return rows
 }
