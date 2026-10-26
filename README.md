@@ -53,7 +53,7 @@ Categories are Up's: its 4 groups and their subcategories, plus local-only ones 
 
 Each Up account has a sync switch (`space`). Switching an account off removes its transactions and hides it; money you move to it then counts as spending (useful for a joint account that pays shared bills). Savers are tracked by balance: transfers between Spending and a saver are never spending or income.
 
-The Manager's account sidebar lists All spending, each spending account, and its savers (as a group and singly). The selected entry decides which transactions the table shows, and the card beneath it shows that entry's balance, money in and out, monthly flows, balance history, interest and top outflows.
+The Transactions tab's account sidebar lists All spending, each spending account, and its savers (as a group and singly); the selected entry decides which transactions the table shows. `m` regroups the table by merchant (signed totals, counts, averages, last seen); the filter, account and sort work the same, `enter` narrows the filter to a merchant, and `c`/`t` act on all of its transactions.
 
 A category can be marked not-spending (Settings, category editor): its transactions are left out of spending, income and merchant figures. Transfers starts that way, for money moved to your own accounts at other banks.
 
@@ -61,9 +61,9 @@ Tags sync both ways with Up (adding or removing a tag on an Up transaction chang
 
 Budgets (Settings, `v` then `b`): an overall limit, optional limits per spending account or category (a group covers its subcategories), and one cycle for all of them — weekly, fortnightly or monthly, from calendar starts, a date (e.g. payday), or the Monday nearest that date (`c`). The Dashboard's **This Cycle** card shows each budget's progress and spending through the cycle against the overall budget and the previous cycle.
 
-Tabs: `1` Dashboard, `2` Spending, `3` Manager, `4` Settings. In the Manager, `enter` opens a transaction's details (`c` category, `t` tags, `n` notes). The Spending tab covers the Date Range period: flows, one chart pane (`h`/`l` steps through Daily, Cumulative, Weekly, Net position, Available, Savers and a Calendar month grid), categories, and merchants (`enter` lists a merchant's transactions). `a` switches between all spending accounts and one. Below 120 columns the Dashboard and Spending tabs stack their cards; below 110 the Manager folds its sidebar into a one-line account header (`a` switches account).
+Tabs: `1` Dashboard, `2` Spending, `3` Transactions, `4` Settings. In Transactions, `enter` opens a transaction's details (`c` category, `t` tags, `n` notes); pending transactions show a clock after the amount. The Spending tab covers the Date Range period: flows, one chart pane (`h`/`l` steps through Daily, Cumulative, Weekly, Net position, Available, Savers and a Calendar month grid) and categories. `a` switches between all spending accounts and one. Below 120 columns the Dashboard and Spending tabs stack their cards; below 110 Transactions folds its sidebar into a one-line account header (`a` switches account).
 
-The Dashboard is as of today and ignores the Date Range: balances, pending holds and runway (at the 90-day average spend), savers with their 30-day change, a year of net position, the current budget cycle, pending holds and recent transactions. Everything that depends on a chosen period lives on the Spending tab.
+Where information lives: the Dashboard is status (as of today and the current budget cycle) plus fixed visuals that need no adjusting: balances, pending and runway (at the 90-day average spend), savers with their 30-day change, a year of net position, This Cycle (budgets and a chart, `h`/`l` for cumulative, daily or weekly), and a Spending pane for every spending account (in/out, twelve months of flows, the cycle's categories, largest outflows). Spending is analysis over a period you choose. Transactions is the individual rows, and merchants as a grouping of them.
 
 ### CSV import
 

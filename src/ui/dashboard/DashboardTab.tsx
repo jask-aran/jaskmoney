@@ -16,11 +16,12 @@ import { levelChart } from "../charts/bars"
 import { AXIS, ChartBody } from "../charts/ChartBody"
 import { dateAxis } from "../charts/lineChart"
 import { INKS, addDays, spendingChart } from "../spending/periodCharts"
+import { SpendingPane } from "./SpendingPane"
 
 /**
  * Dashboard: how things stand today. Balances and runway, savers, a year of
- * net position, and the current budget cycle (budgets and a chart with
- * views). Nothing here follows the Date Range (that is the Spending tab's
+ * net position, the current budget cycle (budgets and a chart with views),
+ * and a fixed look at the spending accounts with the cycle's categories. Nothing here follows the Date Range (that is the Spending tab's
  * job).
  */
 export function DashboardTab(props: { focused: SectionId }) {
@@ -45,22 +46,24 @@ export function DashboardTab(props: { focused: SectionId }) {
   const spendingIds = createMemo(() => new Set(data.state.accounts.filter((a) => accountRole(a) === "spending").map((a) => a.id)))
 
 
-  // Wide (120+ cols): Now beside Savers (up to SIDE_MAX wide), then the Net
-  // Position strip and This Cycle, each full width.
-  // Narrow: Now and Savers stack too, Savers two to a line. Category
-  // breakdowns live on the Spending tab.
+  // Wide (120+ cols): Now beside Savers (up to SIDE_MAX wide), the Net
+  // Position strip, then This Cycle beside the Spending pane (Savers' width).
+  // Narrow: everything stacks, Savers two to a line; the Spending pane shows
+  // when there is room under This Cycle.
   const wide = () => dims().width >= WIDE
   // Fixed rows: tab bar + gap (2), status + footer (2), Now (7).
   const saversHeight = () => (wide() ? 0 : Math.ceil((position().savers.length + 1) / 2) + 2)
   const showNetStrip = () => dims().height >= (wide() ? 36 : 44)
   const lowerHeight = () => Math.max(6, dims().height - 11 - saversHeight() - (showNetStrip() ? 8 : 0))
   const budgetLines = () => Math.max(1, budgets().length)
-  // This Cycle takes the rest.
-  const cycleHeight = () => lowerHeight()
   const saversWidth = () => Math.min(SIDE_MAX, Math.floor((dims().width - 1) * 0.4))
   const nowWidth = () => (wide() ? dims().width - 1 - saversWidth() : dims().width)
-  // Full-width cards spend 4 cells on border + padding.
-  const inner = () => dims().width - 4
+  // Narrow: the Spending pane needs about 24 rows below a usable cycle chart.
+  const showPaneNarrow = () => !wide() && lowerHeight() >= 40
+  const cycleHeight = () => (showPaneNarrow() ? Math.floor(lowerHeight() * 0.45) : lowerHeight())
+  const paneHeight = () => (wide() ? lowerHeight() : lowerHeight() - cycleHeight())
+  // This Cycle's content width: its card spends 4 cells on border + padding.
+  const inner = () => nowWidth() - 4
 
 
   // The cycle chart in its current view (h/l), with the overall budget as a
@@ -183,6 +186,7 @@ export function DashboardTab(props: { focused: SectionId }) {
       title="This Cycle"
       titleSuffix={`· ${shortDate(cycle().start)} – ${shortDate(cycle().end)} · ${cycleDaysLeft()} ${cycleDaysLeft() === 1 ? "day" : "days"} left`}
       titleSuffixColor={theme.subtext0}
+      width={nowWidth()}
       height={cycleHeight()}
       focused={props.focused === "dash.cycle"}
     >
@@ -236,6 +240,9 @@ export function DashboardTab(props: { focused: SectionId }) {
             {saversCard()}
             {netCard()}
             {cycleCard()}
+            <Show when={showPaneNarrow()}>
+              <SpendingPane width={dims().width} height={paneHeight()} cycle={cycle()} today={today()} />
+            </Show>
           </>
         }
       >
@@ -244,7 +251,10 @@ export function DashboardTab(props: { focused: SectionId }) {
           {saversCard()}
         </box>
         {netCard()}
-        {cycleCard()}
+        <box flexDirection="row" gap={1} width="100%" height={lowerHeight()}>
+          {cycleCard()}
+          <SpendingPane width={saversWidth()} height={paneHeight()} cycle={cycle()} today={today()} />
+        </box>
       </Show>
     </box>
   )

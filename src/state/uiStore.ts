@@ -215,7 +215,7 @@ export const JUMP_TARGETS: Record<TabId, JumpTarget[]> = {
 export const TABS: { id: TabId; label: string; hotkey: string }[] = [
   { id: "dashboard", label: "Dashboard", hotkey: "1" },
   { id: "spending", label: "Spending", hotkey: "2" },
-  { id: "manager", label: "Manager", hotkey: "3" },
+  { id: "manager", label: "Transactions", hotkey: "3" },
   { id: "settings", label: "Settings", hotkey: "4" },
 ]
 

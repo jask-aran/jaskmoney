@@ -33,7 +33,7 @@ describe("shell render M0", () => {
 
     expect(frame).toContain("Jaskmoney")
     expect(frame).toContain("Dashboard")
-    expect(frame).toContain("Manager")
+    expect(frame).toContain("Transactions")
     expect(frame).toContain("Settings")
     expect(frame).toContain("Now")
     expect(frame).toContain("Savers")

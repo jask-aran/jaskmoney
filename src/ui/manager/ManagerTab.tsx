@@ -13,7 +13,6 @@ import { fit, truncate } from "../text"
 import { selectableEntries, selectedAccounts, selectionLabel, sidebarEntries } from "../../domain/accountTree"
 import { computeAccountStats } from "../../domain/accountStats"
 import { toISODate } from "../../domain/timeframe"
-import { AccountDetails } from "./AccountDetails"
 import { TransactionTable } from "./TransactionTable"
 import { MerchantTable } from "./MerchantTable"
 import { groupByMerchant, sortMerchantGroups } from "../../domain/merchants"
@@ -143,7 +142,7 @@ export function ManagerTab(props: { focused: SectionId }) {
       </Show>
       <Show when={wide()}>
       <box width={SIDEBAR_WIDTH} flexShrink={0} height="100%" flexDirection="column">
-        <SectionCard title="Accounts" focused={acctFocused()} active={acctFocused()} height={entries().length + 2}>
+        <SectionCard title="Accounts" focused={acctFocused()} active={acctFocused()} flexGrow={1}>
           <Show when={data.state.accounts.length} fallback={<text fg={theme.overlay1}>No accounts yet</text>}>
             <For each={entries()}>
               {(entry) => {
@@ -167,7 +166,6 @@ export function ManagerTab(props: { focused: SectionId }) {
             </For>
           </Show>
         </SectionCard>
-        <AccountDetails />
       </box>
       </Show>
 
