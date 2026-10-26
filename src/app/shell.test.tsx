@@ -1,9 +1,24 @@
-import { describe, expect, test } from "bun:test"
-import { testRender } from "@opentui/solid"
+import { afterEach, describe, expect, test } from "bun:test"
+import { testRender as openTestRender } from "@opentui/solid"
 import { TextAttributes } from "@opentui/core"
 import { App } from "./App"
 import { ui } from "../state/uiStore"
 import { data } from "../state/dataStore"
+
+
+// A test that fails before its own destroy() would leave the App mounted on
+// the shared stores, and the next file's store writes then drive its effects
+// into a loop. Destroy every renderer after each test regardless.
+let live: Array<{ renderer: { destroy(): void } }> = []
+const testRender: typeof openTestRender = async (...args) => {
+  const instance = await openTestRender(...args)
+  live.push(instance)
+  return instance
+}
+afterEach(() => {
+  for (const instance of live) try { instance.renderer.destroy() } catch { /* already destroyed */ }
+  live = []
+})
 
 describe("shell render M0", () => {
   test("renders header tabs status footer", async () => {
@@ -21,7 +36,9 @@ describe("shell render M0", () => {
     expect(frame).toContain("Manager")
     expect(frame).toContain("Settings")
     expect(frame).toContain("Date Range")
-    expect(frame).toContain("Overview")
+    expect(frame).toContain("Now")
+    expect(frame).toContain("Savers")
+    expect(frame).toContain("Spending Tracker")
     expect(frame).toMatch(/status|shell|bootstrap|Tab:|jump|v /i)
     const dateRangeTitle = t
       .captureSpans()
@@ -74,13 +91,12 @@ describe("shell render M0", () => {
           accountName: "ANZ CREDIT",
           tagNames: [],
           tagColors: [],
-          tagIds: [],
+          tagIds: [], source: "csv" as const, status: null, transferAccountId: null, internal: false,
         },
       ],
       accounts: [
-        { id: 1, name: "ANZ CREDIT", type: "credit", sortOrder: 1, isActive: true },
+        { id: 1, name: "ANZ CREDIT", type: "credit", sortOrder: 1, isActive: true, source: "csv" as const, externalKind: null, balance: null, syncEnabled: true },
       ],
-      accountScope: { 1: true },
       filterQuery: "",
       filterExpr: null,
       filterErr: "",
@@ -136,7 +152,7 @@ describe("shell render M0", () => {
           accountName: "ANZ CREDIT",
           tagNames: [],
           tagColors: [],
-          tagIds: [],
+          tagIds: [], source: "csv" as const, status: null, transferAccountId: null, internal: false,
         },
         {
           id: 2,
@@ -153,13 +169,12 @@ describe("shell render M0", () => {
           accountName: "ANZ CREDIT",
           tagNames: [],
           tagColors: [],
-          tagIds: [],
+          tagIds: [], source: "csv" as const, status: null, transferAccountId: null, internal: false,
         },
       ],
       accounts: [
-        { id: 1, name: "ANZ CREDIT", type: "credit", sortOrder: 1, isActive: true },
+        { id: 1, name: "ANZ CREDIT", type: "credit", sortOrder: 1, isActive: true, source: "csv" as const, externalKind: null, balance: null, syncEnabled: true },
       ],
-      accountScope: { 1: true },
       filterQuery: "",
       filterExpr: null,
       filterErr: "",
@@ -182,7 +197,9 @@ describe("shell render M0", () => {
         .captureSpans()
         .lines.find((row) => row.spans.some((span) => span.text.includes(needle)))
       expect(line).toBeDefined()
-      return line!.spans.some(
+      // Only the table's spans: the sidebar shares the screen line.
+      const start = line!.spans.findIndex((span) => span.text.includes(needle))
+      return line!.spans.slice(start - 3, start + 1).some(
         (span) => (span.attributes & TextAttributes.BOLD) !== 0,
       )
     }
@@ -194,6 +211,89 @@ describe("shell render M0", () => {
     await t.flush()
     expect(isBold("CURSOR FIRST")).toBe(false)
     expect(isBold("CURSOR SECOND")).toBe(true)
+
+    t.renderer.destroy()
+  })
+
+  test("emoji account names keep table columns aligned", async () => {
+    process.env.JASKMONEY_DB = ":memory:"
+    process.env.JASKMONEY_NO_BOOTSTRAP = "1"
+    const t = await testRender(() => <App />, { width: 140, height: 30 })
+    await t.renderOnce()
+    await t.flush()
+    const row = (id: number, accountId: number, accountName: string) => ({
+      id, dateRaw: "x", dateISO: "2026-10-01", amount: -1, description: `ROW ${id}`,
+      categoryId: 10, categoryName: "Uncategorised", categoryColor: "#7f849c", notes: "",
+      importId: null, accountId, accountName, tagNames: [], tagColors: [], tagIds: [],
+      source: "up" as const, status: "SETTLED" as const, transferAccountId: null, internal: false,
+    })
+    data.setState({
+      // "🏖️" is three UTF-16 units but two terminal cells.
+      transactions: [row(1, 1, "Spending"), row(2, 2, "🏖️ Holiday"), row(3, 3, "🚨 Emergency fund")],
+      accounts: [1, 2, 3].map((id) => ({ id, name: `a${id}`, type: "debit" as const, sortOrder: id, isActive: true, source: "up" as const, externalKind: "TRANSACTIONAL", balance: 0, syncEnabled: true })), filterQuery: "", filterExpr: null, filterErr: "",
+      sortColumn: "date", sortAscending: false, ready: true,
+    })
+    ui.switchTab("manager")
+    ui.setState({ focusedSection: "mgr.transactions", managerCursor: 0, managerTop: 0, filterMode: false })
+    await t.renderOnce()
+    await t.flush()
+    // Table rows only (they carry the category marker); the sidebar's top
+    // outflows list repeats the descriptions.
+    const lines = t.captureCharFrame().split("\n").filter((line) => /ROW [123]/.test(line) && line.includes("○"))
+    expect(lines).toHaveLength(3)
+    const column = (line: string, needle: string) => Bun.stringWidth(line.slice(0, line.indexOf(needle)))
+    // The category column starts at the same cell on every row.
+    expect(new Set(lines.map((line) => column(line, "○"))).size).toBe(1)
+    expect(lines.some((line) => line.includes("🚨 Emergenc…"))).toBe(true)
+    t.renderer.destroy()
+  })
+
+  test("row states paint independent range, selection and cursor appearances", async () => {
+    process.env.JASKMONEY_DB = ":memory:"
+    process.env.JASKMONEY_NO_BOOTSTRAP = "1"
+    const t = await testRender(() => <App />, { width: 140, height: 30 })
+    await t.renderOnce()
+    await t.flush()
+
+    const row = (id: number, description: string, status: "HELD" | "SETTLED" | null) => ({
+      id, dateRaw: "x", dateISO: `2026-02-0${4 - id}`, amount: -id, description,
+      categoryId: 10, categoryName: "Uncategorised", categoryColor: "#7f849c", notes: "",
+      importId: null, accountId: 1, accountName: "UP SPENDING", tagNames: [], tagColors: [], tagIds: [],
+      source: "up" as const, status, transferAccountId: null, internal: false,
+    })
+    data.setState({
+      transactions: [row(1, "RANGE ONLY", "SETTLED"), row(2, "RANGE SELECTED", "SETTLED"), row(3, "RANGE CURSOR", "HELD")],
+      accounts: [{ id: 1, name: "UP SPENDING", type: "debit", sortOrder: 1, isActive: true, source: "up" as const, externalKind: "TRANSACTIONAL", balance: 10, syncEnabled: true }], filterQuery: "", filterExpr: null, filterErr: "",
+      sortColumn: "date", sortAscending: false, ready: true,
+    })
+    ui.switchTab("manager")
+    ui.setState({
+      focusedSection: "mgr.transactions", managerCursor: 2, managerTop: 0, filterMode: false,
+      selectedIds: { 2: true }, rangeSelecting: true, rangeAnchorId: 1, rangeCursorId: 3,
+    })
+    await t.renderOnce()
+    await t.flush()
+
+    const span = (needle: string) =>
+      t.captureSpans().lines.flatMap((line) => line.spans).find((s) => s.text.includes(needle))!
+    // Range: base (visible on the crust canvas); range + selection: surface1.
+    expect(span("RANGE ONLY").bg.toInts()).toEqual([30, 30, 46, 255])
+    expect(span("RANGE SELECTED").bg.toInts()).toEqual([69, 71, 90, 255])
+    // Cursor inside the range: sapphire bar with crust text, bold; held rows are italic.
+    const cursor = span("RANGE CURSOR")
+    expect(cursor.bg.toInts()).toEqual([116, 199, 236, 255])
+    expect(cursor.fg.toInts()).toEqual([17, 17, 27, 255])
+    expect(cursor.attributes & TextAttributes.BOLD).toBe(TextAttributes.BOLD)
+    expect(cursor.attributes & TextAttributes.ITALIC).toBe(TextAttributes.ITALIC)
+    expect(span("RANGE ONLY").attributes & TextAttributes.ITALIC).toBe(0)
+
+    ui.setState({ selectedIds: {}, rangeSelecting: false, rangeAnchorId: 0, rangeCursorId: 0 })
+    await t.renderOnce()
+    await t.flush()
+    // Plain cursor keeps column colours on surface2.
+    expect(span("RANGE CURSOR").bg.toInts()).toEqual([88, 91, 112, 255])
+    expect(span("RANGE CURSOR").fg.toInts()).toEqual([230, 230, 230, 255])
+    expect(span("RANGE ONLY").bg.toInts()).toEqual([17, 17, 27, 255])
 
     t.renderer.destroy()
   })
@@ -221,12 +321,11 @@ describe("shell render M0", () => {
         accountName: "ANZ CREDIT",
         tagNames: [],
         tagColors: [],
-        tagIds: [],
+        tagIds: [], source: "csv" as const, status: null, transferAccountId: null, internal: false,
       })),
       accounts: [
-        { id: 1, name: "ANZ CREDIT", type: "credit", sortOrder: 1, isActive: true },
+        { id: 1, name: "ANZ CREDIT", type: "credit", sortOrder: 1, isActive: true, source: "csv" as const, externalKind: null, balance: null, syncEnabled: true },
       ],
-      accountScope: { 1: true },
       filterQuery: "",
       filterExpr: null,
       filterErr: "",
@@ -246,7 +345,8 @@ describe("shell render M0", () => {
     await t.renderOnce()
     await t.flush()
 
-    expect(ui.state.managerVisible).toBe(20)
+    // 30 rows − app chrome (4) − card borders (2) − table header (1).
+    expect(ui.state.managerVisible).toBe(23)
     const lines = t.captureCharFrame().split("\n")
     const header = lines.find(
       (line) => line.includes("Amount") && line.includes("Description"),
@@ -256,11 +356,11 @@ describe("shell render M0", () => {
     expect(header.indexOf("Amount")).toBe(first.indexOf("-$123.45"))
     expect(header.indexOf("Description")).toBe(first.indexOf("DESCRIPTION ROW 00"))
     expect(first).toContain("DESCRIPTION ROW 00".padEnd(40))
-    expect(lines.some((line) => line.includes("DESCRIPTION ROW 19"))).toBe(true)
-    expect(lines.some((line) => line.includes("DESCRIPTION ROW 20"))).toBe(false)
+    expect(lines.some((line) => line.includes("DESCRIPTION ROW 22"))).toBe(true)
+    expect(lines.some((line) => line.includes("DESCRIPTION ROW 23"))).toBe(false)
 
-    const bottom = lines.find((line) => line.includes("showing 1-20 of 30"))!
-    expect(bottom.trimStart()).toStartWith("╰── showing 1-20 of 30")
+    const bottom = lines.find((line) => line.includes("showing 1-23 of 30"))!
+    expect(bottom).toContain("╰── showing 1-23 of 30")
     expect(bottom.trimEnd()).toEndWith("╯")
 
     const normalRow = t
@@ -338,5 +438,27 @@ describe("shell render M0", () => {
     expect(frame).toContain("Press del to confirm")
     expect(frame).toContain("del confirm")
     t.renderer.destroy()
+  })
+})
+
+describe("render errors", () => {
+  test("a tab that throws shows an error card, and switching tabs recovers", async () => {
+    process.env.JASKMONEY_DB = ":memory:"
+    process.env.JASKMONEY_NO_BOOTSTRAP = "1"
+    const t = await testRender(() => <App />, { width: 120, height: 30 })
+    await t.renderOnce()
+    const original = data.spendingTransactions
+    try {
+      ;(data as { spendingTransactions: () => unknown }).spendingTransactions = () => { throw new Error("boom") }
+      ui.switchTab("manager"); await t.renderOnce()
+      ui.switchTab("dashboard"); await t.renderOnce()
+      expect(t.captureCharFrame()).toContain("This tab failed to render")
+      expect(t.captureCharFrame()).toContain("Manager")
+    } finally {
+      ;(data as { spendingTransactions: typeof original }).spendingTransactions = original
+    }
+    ui.switchTab("manager"); await t.renderOnce()
+    ui.switchTab("dashboard"); await t.renderOnce()
+    expect(t.captureCharFrame()).toContain("Savers")
   })
 })

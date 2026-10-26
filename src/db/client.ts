@@ -2,10 +2,13 @@ import { Database } from "bun:sqlite"
 import { mkdirSync } from "node:fs"
 import { dirname, join } from "node:path"
 import {
+  ACCOUNT_SYNC_COLUMNS_LIST,
   DEFAULT_CATEGORIES,
   MANDATORY_TAGS,
   SCHEMA_SQL,
   SCHEMA_VERSION,
+  SYNC_SQL,
+  TRANSACTION_SYNC_COLUMNS_LIST,
 } from "./schema"
 import type { Account, Category, ImportRecord, Rule, Tag, Transaction } from "../domain/types"
 
@@ -47,6 +50,15 @@ const MIGRATIONS: Record<number, (db: Db) => void> = {
     );
     CREATE INDEX IF NOT EXISTS idx_rules_v2_sort ON rules_v2(sort_order);
   `),
+  9: (db) => {
+    for (const column of ACCOUNT_SYNC_COLUMNS_LIST) {
+      if (column.startsWith("sync_enabled")) continue // added by v10
+      db.exec(`ALTER TABLE accounts ADD COLUMN ${column}`)
+    }
+    for (const column of TRANSACTION_SYNC_COLUMNS_LIST) db.exec(`ALTER TABLE transactions ADD COLUMN ${column}`)
+    db.exec(SYNC_SQL)
+  },
+  10: (db) => db.exec(`ALTER TABLE accounts ADD COLUMN sync_enabled INTEGER NOT NULL DEFAULT 1`),
 }
 
 export function ensureSchema(db: Db) {
@@ -105,11 +117,14 @@ function seedDefaults(db: Db) {
   }
 }
 
-export function loadAccounts(db: Db): Account[] {
+/** Tracked accounts only, unless `includeUnsynced`: an account whose sync the
+ * user switched off is hidden everywhere except the sync settings. */
+export function loadAccounts(db: Db, { includeUnsynced = false }: { includeUnsynced?: boolean } = {}): Account[] {
   const rows = db
     .query(
-      `SELECT id, name, type, sort_order AS sortOrder, is_active AS isActive
-       FROM accounts ORDER BY sort_order, id`,
+      `SELECT id, name, type, sort_order AS sortOrder, is_active AS isActive,
+              source, external_kind AS externalKind, balance, sync_enabled AS syncEnabled
+       FROM accounts ${includeUnsynced ? "" : "WHERE sync_enabled = 1"} ORDER BY sort_order, id`,
     )
     .all() as Array<{
     id: number
@@ -117,6 +132,10 @@ export function loadAccounts(db: Db): Account[] {
     type: "debit" | "credit"
     sortOrder: number
     isActive: number
+    source: Account["source"]
+    externalKind: string | null
+    balance: number | null
+    syncEnabled: number
   }>
   return rows.map((r) => ({
     id: r.id,
@@ -124,6 +143,10 @@ export function loadAccounts(db: Db): Account[] {
     type: r.type,
     sortOrder: r.sortOrder,
     isActive: r.isActive === 1,
+    source: r.source,
+    externalKind: r.externalKind,
+    balance: r.balance,
+    syncEnabled: r.syncEnabled === 1,
   }))
 }
 
@@ -280,13 +303,21 @@ export function loadTransactions(db: Db): Transaction[] {
          t.notes,
          t.import_id AS importId,
          t.account_id AS accountId,
-         COALESCE(a.name, '') AS accountName
+         COALESCE(a.name, '') AS accountName,
+         t.source,
+         t.status,
+         t.transfer_account_id AS transferAccountId,
+         -- Internal: money moved to or from another tracked account. A transfer
+         -- to an untracked account (e.g. a desynced joint account) is spending.
+         (t.transfer_account_id IS NOT NULL AND COALESCE(ta.sync_enabled, 0) = 1) AS internal
        FROM transactions t
        LEFT JOIN categories c ON c.id = t.category_id
        LEFT JOIN accounts a ON a.id = t.account_id
+       LEFT JOIN accounts ta ON ta.id = t.transfer_account_id
+       WHERE a.id IS NULL OR a.sync_enabled = 1
        ORDER BY t.date_iso DESC, t.id DESC`,
     )
-    .all() as Array<Omit<Transaction, "tagNames">>
+    .all() as Array<Omit<Transaction, "tagNames" | "tagColors" | "tagIds">>
 
   const tagRows = db
     .query(
@@ -314,6 +345,7 @@ export function loadTransactions(db: Db): Transaction[] {
 
   return rows.map((r) => ({
     ...r,
+    internal: !!r.internal,
     tagNames: tagNameMap.get(r.id) ?? [],
     tagColors: tagColorMap.get(r.id) ?? [],
     tagIds: tagIdMap.get(r.id) ?? [],
@@ -398,6 +430,9 @@ export interface DbInfo {
   importCount: number
   ruleCount: number
   path: string
+  /** Up sync bookkeeping from sync_state; null before the first attempt. */
+  upLastSyncedAt: string | null
+  upLastError: string | null
 }
 
 export function loadDbInfo(db: Db, path: string): DbInfo {
@@ -408,6 +443,9 @@ export function loadDbInfo(db: Db, path: string): DbInfo {
   )?.version ?? 0
   const count = (table: string) =>
     (db.query(`SELECT COUNT(*) AS c FROM ${table}`).get() as { c: number }).c
+  const upSync = db.query(`SELECT last_synced_at, last_error FROM sync_state WHERE source = 'up'`).get() as
+    | { last_synced_at: string | null; last_error: string | null }
+    | null
   return {
     schemaVersion: ver,
     transactionCount: count("transactions"),
@@ -417,6 +455,8 @@ export function loadDbInfo(db: Db, path: string): DbInfo {
     importCount: count("imports"),
     ruleCount: tableExists(db, "rules_v2") ? count("rules_v2") : 0,
     path,
+    upLastSyncedAt: upSync?.last_synced_at ?? null,
+    upLastError: upSync?.last_error ?? null,
   }
 }
 
@@ -425,36 +465,25 @@ export function ensureAccount(
   name: string,
   type: "debit" | "credit",
 ): Account {
-  const existing = db
-    .query(`SELECT id, name, type, sort_order AS sortOrder, is_active AS isActive FROM accounts WHERE name = ?`)
-    .get(name) as
-    | {
-        id: number
-        name: string
-        type: "debit" | "credit"
-        sortOrder: number
-        isActive: number
-      }
-    | null
-  if (existing) {
-    return {
-      id: existing.id,
-      name: existing.name,
-      type: existing.type,
-      sortOrder: existing.sortOrder,
-      isActive: existing.isActive === 1,
-    }
-  }
-  const info = db
-    .query(
-      `INSERT INTO accounts (name, type, sort_order, is_active) VALUES (?, ?, 1, 1)`,
-    )
-    .run(name, type)
-  return {
-    id: Number(info.lastInsertRowid),
-    name,
-    type,
-    sortOrder: 1,
-    isActive: true,
-  }
+  const existing = db.query(`SELECT id FROM accounts WHERE name = ?`).get(name) as { id: number } | null
+  const id = existing
+    ? existing.id
+    : Number(db.query(`INSERT INTO accounts (name, type, sort_order, is_active) VALUES (?, ?, 1, 1)`).run(name, type).lastInsertRowid)
+  return loadAccounts(db).find((account) => account.id === id)!
+}
+
+/** Switch provider sync for one account. Switching off removes the account's
+ * transactions in the same transaction (sync will not bring them back);
+ * switching on only sets the flag, and the next sync fetches its history.
+ * Returns the number of transactions removed. */
+export function setAccountSyncEnabled(db: Db, accountId: number, enabled: boolean): number {
+  return db.transaction(() => {
+    const row = db.query(`SELECT source FROM accounts WHERE id = ?`).get(accountId) as { source: string } | null
+    if (!row) throw new Error("account not found")
+    if (row.source === "csv") throw new Error("CSV accounts are not synced")
+    db.query(`UPDATE accounts SET sync_enabled = ? WHERE id = ?`).run(enabled ? 1 : 0, accountId)
+    if (enabled) return 0
+    db.query(`DELETE FROM account_selection WHERE account_id = ?`).run(accountId)
+    return Number(db.query(`DELETE FROM transactions WHERE account_id = ?`).run(accountId).changes)
+  })()
 }

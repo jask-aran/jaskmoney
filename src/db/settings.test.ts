@@ -32,10 +32,37 @@ describe("OpenTUI settings database", () => {
       INSERT INTO transactions VALUES (7, 'x', '2026-01-01', -5, 'kept', 41, '', NULL, NULL, '');
     `)
     ensureSchema(db)
-    expect(db.query("SELECT version FROM schema_meta").get()).toEqual({ version: 8 })
+    expect(db.query("SELECT version FROM schema_meta").get()).toEqual({ version: 10 })
     expect(db.query("SELECT description FROM transactions WHERE id = 7").get()).toEqual({ description: "kept" })
     expect(db.query("SELECT name FROM categories WHERE id = 41").get()).toEqual({ name: "Preserved" })
     expect(db.query("SELECT 1 FROM sqlite_master WHERE name = 'rules_v2'").get()).toEqual({ 1: 1 })
+  })
+
+  test("v9 and v10 add sync identity to existing rows without changing them", () => {
+    const db = new Database(":memory:")
+    db.exec("PRAGMA foreign_keys = ON")
+    ensureSchema(db)
+    const account = ensureAccount(db, "ANZ CREDIT", "credit")
+    db.query(`INSERT INTO transactions (date_raw, date_iso, amount, description, account_id) VALUES ('x', '2026-01-01', -5, 'kept', ?)`).run(account.id)
+    // Rewind to a v8 profile: drop the v9 columns and objects.
+    db.exec(`
+      DROP INDEX idx_accounts_external; DROP INDEX idx_transactions_external; DROP INDEX idx_transactions_status;
+      DROP TABLE sync_state;
+      ALTER TABLE accounts DROP COLUMN source; ALTER TABLE accounts DROP COLUMN external_id; ALTER TABLE accounts DROP COLUMN external_kind;
+      ALTER TABLE accounts DROP COLUMN balance; ALTER TABLE accounts DROP COLUMN balance_at; ALTER TABLE accounts DROP COLUMN sync_enabled;
+      ALTER TABLE transactions DROP COLUMN source; ALTER TABLE transactions DROP COLUMN external_id; ALTER TABLE transactions DROP COLUMN status;
+      ALTER TABLE transactions DROP COLUMN external_created_at; ALTER TABLE transactions DROP COLUMN settled_at; ALTER TABLE transactions DROP COLUMN raw_text;
+      ALTER TABLE transactions DROP COLUMN message; ALTER TABLE transactions DROP COLUMN transfer_account_id; ALTER TABLE transactions DROP COLUMN ext_category;
+      ALTER TABLE transactions DROP COLUMN ext_parent_category; ALTER TABLE transactions DROP COLUMN ext_tags;
+      UPDATE schema_meta SET version = 8;
+    `)
+    ensureSchema(db)
+    expect(db.query("SELECT version FROM schema_meta").get()).toEqual({ version: 10 })
+    expect(db.query("SELECT description, source, external_id AS externalId, status, ext_tags AS extTags FROM transactions").get())
+      .toEqual({ description: "kept", source: "csv", externalId: null, status: null, extTags: "[]" })
+    expect(db.query("SELECT name, source, sync_enabled AS syncEnabled FROM accounts WHERE id = ?").get(account.id)).toEqual({ name: "ANZ CREDIT", source: "csv", syncEnabled: 1 })
+    db.query(`INSERT INTO transactions (date_raw, date_iso, amount, description, source, external_id) VALUES ('x', '2026-01-02', -1, 'a', 'up', 'u1')`).run()
+    expect(() => db.query(`INSERT INTO transactions (date_raw, date_iso, amount, description, source, external_id) VALUES ('x', '2026-01-02', -1, 'b', 'up', 'u1')`).run()).toThrow()
   })
 
   test("taxonomy protections and ordered rules preserve foreign-key semantics", () => {

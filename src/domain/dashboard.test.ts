@@ -3,6 +3,7 @@ import {
   barFill,
   computeCategorySpend,
   computeOverview,
+  dailySpendSeries,
   sparkline,
 } from "./dashboard"
 import type { Category, Transaction } from "./types"
@@ -30,7 +31,7 @@ function t(
     accountName: "A",
     tagNames: partial.tagNames ?? [],
     tagColors: partial.tagColors ?? [],
-    tagIds: partial.tagIds ?? [],
+    tagIds: partial.tagIds ?? [], source: "csv" as const, status: null, transferAccountId: null, internal: false,
   }
 }
 
@@ -73,5 +74,27 @@ describe("dashboard aggregates", () => {
   test("sparkline and bar", () => {
     expect(sparkline([0, 1, 2, 3], 4).length).toBe(4)
     expect(barFill(50, 10)).toBe("█████░░░░░")
+  })
+
+  test("category spend excludes internal transfers but retains untracked transfers", () => {
+    const debit = t({ amount: -30, dateISO: "2026-02-01", categoryName: "Groceries", categoryId: 1 })
+    expect(computeCategorySpend([
+      debit,
+      { ...debit, amount: -100, internal: true, transferAccountId: 2 },
+      { ...debit, amount: -20, transferAccountId: 99 },
+    ], cats)).toEqual([{ categoryId: 1, name: "Groceries", color: "#94e2d5", amount: 50, pct: 100 }])
+  })
+
+  test("daily spending excludes internal transfers and keeps existing filters", () => {
+    const debit = t({ amount: -30, dateISO: "2026-02-01", categoryName: "Groceries" })
+    expect(dailySpendSeries([
+      debit,
+      { ...debit, amount: -100, internal: true, transferAccountId: 2 },
+      { ...debit, amount: -20, transferAccountId: 99 },
+      { ...debit, amount: -100, tagNames: ["iGnOrE"] },
+      { ...debit, amount: 100 },
+      { ...debit, dateISO: "2026-01-31" },
+      { ...debit, dateISO: "2026-02-03" },
+    ], "2026-02-01", "2026-02-02")).toEqual({ dates: ["2026-02-01", "2026-02-02"], values: [50, 0] })
   })
 })

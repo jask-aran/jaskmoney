@@ -1,11 +1,29 @@
 export type AccountType = "debit" | "credit"
 
+/** Where rows come from: a CSV import profile, or a provider sync. */
+export type DataSource = "csv" | "up"
+
 export interface Account {
   id: number
   name: string
   type: AccountType
   sortOrder: number
   isActive: boolean
+  source: DataSource
+  /** Provider account kind (Up: TRANSACTIONAL | SAVER | HOME_LOAN). */
+  externalKind: string | null
+  /** Provider-reported balance in dollars; null for CSV accounts. */
+  balance: number | null
+  /** False once the user switched sync off for this account. */
+  syncEnabled: boolean
+}
+
+/** Spending accounts carry day-to-day detail; savers are tracked by balance
+ * and money moved in or out. */
+export type AccountRole = "spending" | "saver"
+
+export function accountRole(account: Pick<Account, "externalKind">): AccountRole {
+  return account.externalKind === "SAVER" ? "saver" : "spending"
 }
 
 export interface Category {
@@ -119,6 +137,13 @@ export interface Transaction {
   tagColors: string[]
   /** Tag ids parallel to tagNames. */
   tagIds: number[]
+  source: DataSource
+  /** "HELD" (pending) or "SETTLED" for synced rows; null for CSV rows. */
+  status: "HELD" | "SETTLED" | null
+  /** Own-account transfer counterpart, when the provider reports one. */
+  transferAccountId: number | null
+  /** Transfer to or from another tracked account: never spending or income. */
+  internal: boolean
 }
 
 export type SortColumn = "date" | "amount" | "description" | "category" | "account"

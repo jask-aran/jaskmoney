@@ -70,6 +70,49 @@ describe("key router", () => {
     expect(ui.state.jumpMode).toBe(false)
   })
 
+  test("account sidebar selection drives the manager table, not the dashboard", () => {
+    const account = (id: number, name: string, externalKind: string) => ({
+      id, name, type: "debit" as const, sortOrder: id, isActive: true, source: "up" as const, externalKind, balance: id * 100, syncEnabled: true,
+    })
+    const txn = (id: number, accountId: number) => ({
+      id, dateRaw: "x", dateISO: `2026-02-0${id}`, amount: -id, description: `T${id}`, categoryId: 1, categoryName: "U",
+      categoryColor: "#7f849c", notes: "", importId: null, accountId, accountName: "", tagNames: [], tagColors: [], tagIds: [],
+      source: "up" as const, status: null, transferAccountId: null, internal: false,
+    })
+    data.setState({
+      accounts: [account(1, "Spending", "TRANSACTIONAL"), account(2, "Holiday", "SAVER"), account(3, "General", "SAVER")],
+      transactions: [txn(1, 1), txn(2, 2), txn(3, 3)],
+      accountSelection: "all",
+      ready: true,
+    })
+    ui.switchTab("manager")
+    ui.setState({ focusedSection: "mgr.accounts", accountCursor: 0 })
+    const shown = () => data.scopedTransactions().map((t) => t.id).sort()
+
+    // Entries: All spending, Spending, Savers, Holiday, General.
+    expect(shown()).toEqual([1])
+    handleKey(ui, key({ name: "j" }), data)
+    expect(data.state.accountSelection).toBe(1)
+    handleKey(ui, key({ name: "j" }), data)
+    expect(data.state.accountSelection).toBe("savers")
+    expect(shown()).toEqual([2, 3])
+    handleKey(ui, key({ name: "j" }), data)
+    expect(data.state.accountSelection).toBe(2)
+    expect(shown()).toEqual([2])
+    // The dashboard's spending set ignores the manager selection.
+    expect(data.spendingTransactions().map((t) => t.id)).toEqual([1])
+    // Data actions only for a single account.
+    handleKey(ui, key({ name: "d" }), data)
+    expect(ui.state.accountActionId).toBe(2)
+    ui.setState({ accountActionId: null })
+    handleKey(ui, key({ name: "k" }), data)
+    handleKey(ui, key({ name: "d" }), data)
+    expect(ui.state.accountActionId).toBeNull()
+    handleKey(ui, key({ name: "return" }), data)
+    expect(ui.state.focusedSection).toBe("mgr.transactions")
+    data.setState({ accountSelection: "all" })
+  })
+
   test("manager cursor moves with j/k", () => {
     data.setState({
       transactions: [1, 2, 3].map((id) => ({
@@ -87,10 +130,9 @@ describe("key router", () => {
         accountName: "A",
         tagNames: [],
           tagColors: [],
-          tagIds: [],
+          tagIds: [], source: "csv" as const, status: null, transferAccountId: null, internal: false,
       })),
-      accounts: [{ id: 1, name: "A", type: "credit" as const, sortOrder: 1, isActive: true }],
-      accountScope: { 1: true },
+      accounts: [{ id: 1, name: "A", type: "credit" as const, sortOrder: 1, isActive: true, source: "csv" as const, externalKind: null, balance: null, syncEnabled: true }],
       ready: true,
     })
 
@@ -147,7 +189,7 @@ describe("key router", () => {
           accountName: "A",
           tagNames: [],
           tagColors: [],
-          tagIds: [],
+          tagIds: [], source: "csv" as const, status: null, transferAccountId: null, internal: false,
         },
       ],
       ready: true,

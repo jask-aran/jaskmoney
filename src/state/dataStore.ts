@@ -30,8 +30,12 @@ import {
   defaultDbPath,
   loadImports,
   removeAccountWithTransactions,
+  setAccountSyncEnabled,
 } from "../db/client"
+import { selectedAccounts, type AccountSelection } from "../domain/accountTree"
 import { buildImportPreview, commitImportPreview, matchingProfiles } from "../domain/profileImport"
+import { createUpClient, readUpToken } from "../up/client"
+import { syncUp as runUpSync } from "../up/sync"
 import {
   evalFilter,
   filterExprString,
@@ -39,13 +43,16 @@ import {
   reparseFilterInput,
   type FilterNode,
 } from "../domain/filter"
-import type { Account, Category, ImportPreview, ImportProfile, ImportRecord, Rule, RuleRunResult, SavedFilter, SortColumn, Tag, Transaction } from "../domain/types"
+import { accountRole, type Account, type Category, type ImportPreview, type ImportProfile, type ImportRecord, type Rule, type RuleRunResult, type SavedFilter, type SortColumn, type Tag, type Transaction } from "../domain/types"
 import { loadSettingsConfig, saveSettingsConfig, validateImportProfile, validateSavedFilter } from "./settingsConfig"
 
 export interface DataState {
   ready: boolean
+  upSyncing: boolean
   dbPath: string
   accounts: Account[]
+  /** Every provider-synced account, including ones whose sync is off. */
+  syncAccounts: Account[]
   categories: Category[]
   tags: Tag[]
   rules: Rule[]
@@ -53,7 +60,9 @@ export interface DataState {
   importProfiles: ImportProfile[]
   imports: ImportRecord[]
   transactions: Transaction[]
-  accountScope: Record<number, boolean>
+  /** Which accounts the Manager shows. Approved deviation from Go's per-account
+   * on/off scope (2026-10-26): one selection from the account sidebar. */
+  accountSelection: AccountSelection
   lastIngestSummary: string
   dbInfo: DbInfo | null
   filterQuery: string
@@ -77,8 +86,10 @@ function createDataStore() {
   let actualDbPath = ""
   const [state, setState] = createStore<DataState>({
     ready: false,
+    upSyncing: false,
     dbPath: "",
     accounts: [],
+    syncAccounts: [],
     categories: [],
     tags: [],
     rules: [],
@@ -86,7 +97,7 @@ function createDataStore() {
     importProfiles: [],
     imports: [],
     transactions: [],
-    accountScope: {},
+    accountSelection: "all",
     lastIngestSummary: "",
     dbInfo: null,
     filterQuery: "",
@@ -105,20 +116,20 @@ function createDataStore() {
     const rules = loadRules(db)
     const transactions = loadTransactions(db)
     const imports = loadImports(db)
-    const accountScope: Record<number, boolean> = { ...state.accountScope }
-    for (const a of accounts) {
-      if (accountScope[a.id] === undefined) accountScope[a.id] = true
-    }
+    const sel = state.accountSelection
+    const accountSelection: AccountSelection = typeof sel === "number" && !accounts.some((a) => a.id === sel) ? "all" : sel
+    const syncAccounts = loadAccounts(db, { includeUnsynced: true }).filter((a) => a.source !== "csv")
     const dbInfo = loadDbInfo(db, state.dbPath || "default")
     setState({
       ready: true,
       accounts,
+      syncAccounts,
       categories,
       tags,
       rules,
       transactions,
       imports,
-      accountScope,
+      accountSelection,
       dbInfo,
     })
   }
@@ -132,13 +143,16 @@ function createDataStore() {
     refresh()
   }
 
+  /** Transactions of the Manager's selected account(s). */
   function accountScoped(): Transaction[] {
-    const scope = state.accountScope
-    const anyOff = state.accounts.some((a) => scope[a.id] === false)
-    if (!anyOff) return state.transactions
-    return state.transactions.filter(
-      (t) => t.accountId != null && scope[t.accountId] !== false,
-    )
+    const ids = new Set(selectedAccounts(state.accounts, state.accountSelection).map((a) => a.id))
+    return state.transactions.filter((t) => t.accountId != null && ids.has(t.accountId))
+  }
+
+  /** Transactions of every spending account, independent of the Manager. */
+  function spendingTransactions(): Transaction[] {
+    const ids = new Set(state.accounts.filter((a) => accountRole(a) === "spending").map((a) => a.id))
+    return state.transactions.filter((t) => t.accountId != null && ids.has(t.accountId))
   }
 
   function sortRows(rows: Transaction[]): Transaction[] {
@@ -251,8 +265,8 @@ function createDataStore() {
     return next
   }
 
-  function toggleAccount(id: number) {
-    setState("accountScope", id, !(state.accountScope[id] !== false))
+  function setAccountSelection(selection: AccountSelection) {
+    setState({ accountSelection: selection })
   }
 
   function categorizeTransaction(txnId: number, categoryId: number): string {
@@ -416,13 +430,34 @@ function createDataStore() {
     return summary
   }
 
+  async function syncUp(): Promise<string> {
+    if (state.upSyncing) throw new Error("Up sync is already running")
+    if (!db) throw new Error("db not open")
+    setState({ upSyncing: true })
+    try {
+      const result = await runUpSync(db, createUpClient({ token: readUpToken() }))
+      refresh()
+      const applied = result.insertedIds.length ? applyRules(result.insertedIds) : null
+      return `Up sync: ${result.inserted} new, ${result.updated} updated, ${result.removedHeld} pending removed${applied?.updatedTransactions ? ` · ${applied.updatedTransactions} rules applied` : ""}`
+    } finally {
+      setState({ upSyncing: false })
+    }
+  }
+
+  /** Returns the number of transactions removed when switching sync off. */
+  function setAccountSync(accountId: number, enabled: boolean): number {
+    if (!db) throw new Error("db not open")
+    const removed = setAccountSyncEnabled(db, accountId, enabled)
+    refresh()
+    return removed
+  }
+
   function clearDatabaseData(): void { if (!db) throw new Error("db not open"); clearAllData(db); refresh() }
   function clearAccountData(accountId: number): number { if (!db) throw new Error("db not open"); const n = clearAccountTransactions(db, accountId); refresh(); return n }
   function removeAccountData(accountId: number): number {
     if (!db) throw new Error("db not open")
     const n = removeAccountWithTransactions(db, accountId)
-    const scope = { ...state.accountScope }; delete scope[accountId]
-    setState({ accountScope: scope })
+    if (state.accountSelection === accountId) setState({ accountSelection: "all" })
     refresh()
     return n
   }
@@ -436,7 +471,7 @@ function createDataStore() {
       for (const path of [actualDbPath, `${actualDbPath}-wal`, `${actualDbPath}-shm`]) if (existsSync(path)) unlinkSync(path)
       db = openDb(actualDbPath)
     }
-    setState({ accountScope: {} })
+    setState({ accountSelection: "all" })
     refresh()
   }
 
@@ -451,6 +486,7 @@ function createDataStore() {
     init,
     refresh,
     accountScoped,
+    spendingTransactions,
     scopedTransactions,
     setFilterLive,
     commitFilter,
@@ -458,7 +494,7 @@ function createDataStore() {
     setFilterQuery,
     cycleSortColumn,
     toggleSortDirection,
-    toggleAccount,
+    setAccountSelection,
     categorizeTransaction,
     toggleTagOnTransactions,
     createSettingsCategory,
@@ -482,6 +518,8 @@ function createDataStore() {
     profileMatches,
     previewImport,
     commitPreview,
+    syncUp,
+    setAccountSync,
     clearDatabaseData,
     clearAccountData,
     removeAccountData,

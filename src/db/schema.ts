@@ -1,7 +1,58 @@
-/** OpenTUI schema. v8 replaces the old destructive version fallback with an
- * additive migration registry. v7 was the initial partial OpenTUI port. */
+/** OpenTUI schema. v10 adds a per-account sync switch. v9 added synced sources (Up Bank): external identity,
+ * settlement status and raw provider fields. v8 replaced the old destructive
+ * version fallback with an additive migration registry. v7 was the initial
+ * partial OpenTUI port. */
 
-export const SCHEMA_VERSION = 8
+export const SCHEMA_VERSION = 10
+
+/** Columns shared by the fresh schema and the v9 migration. Rows imported from
+ * CSV keep source = 'csv' and NULL external fields. */
+export const ACCOUNT_SYNC_COLUMNS_LIST = [
+  "source TEXT NOT NULL DEFAULT 'csv'",
+  // Provider account id (Up: accounts.id). Unique per source when present.
+  "external_id TEXT",
+  // Provider account kind (Up: TRANSACTIONAL | SAVER | HOME_LOAN).
+  "external_kind TEXT",
+  // Provider balance in dollars and when it was read; NULL for CSV accounts.
+  "balance REAL",
+  "balance_at TEXT",
+  // v10: 0 = the user switched sync off; the account and its transactions
+  // are hidden and skipped by sync, but the row remembers the choice.
+  "sync_enabled INTEGER NOT NULL DEFAULT 1",
+] as const
+
+export const TRANSACTION_SYNC_COLUMNS_LIST = [
+  "source TEXT NOT NULL DEFAULT 'csv'",
+  // Provider transaction id (Up: transactions.id); stable from HELD to SETTLED.
+  "external_id TEXT",
+  // 'HELD' | 'SETTLED' for synced rows, NULL for CSV rows.
+  "status TEXT",
+  // Provider timestamps, RFC 3339 with offset, verbatim.
+  "external_created_at TEXT",
+  "settled_at TEXT",
+  "raw_text TEXT",
+  "message TEXT",
+  // Own-account transfer counterpart (Up: relationships.transferAccount).
+  "transfer_account_id INTEGER REFERENCES accounts(id) ON DELETE SET NULL",
+  // Provider classification, stored raw and not mapped to local categories.
+  "ext_category TEXT",
+  "ext_parent_category TEXT",
+  "ext_tags TEXT NOT NULL DEFAULT '[]'",
+] as const
+
+const ACCOUNT_SYNC_COLUMNS = ACCOUNT_SYNC_COLUMNS_LIST.join(",\n  ")
+const TRANSACTION_SYNC_COLUMNS = TRANSACTION_SYNC_COLUMNS_LIST.join(",\n  ")
+
+export const SYNC_SQL = `
+CREATE UNIQUE INDEX IF NOT EXISTS idx_accounts_external ON accounts(source, external_id) WHERE external_id IS NOT NULL;
+CREATE UNIQUE INDEX IF NOT EXISTS idx_transactions_external ON transactions(source, external_id) WHERE external_id IS NOT NULL;
+CREATE INDEX IF NOT EXISTS idx_transactions_status ON transactions(source, status);
+CREATE TABLE IF NOT EXISTS sync_state (
+  source          TEXT PRIMARY KEY,
+  last_synced_at  TEXT,
+  last_error      TEXT
+);
+`
 
 export const SCHEMA_SQL = `
 CREATE TABLE IF NOT EXISTS schema_meta (
@@ -46,7 +97,8 @@ CREATE TABLE IF NOT EXISTS accounts (
   name       TEXT NOT NULL UNIQUE,
   type       TEXT NOT NULL CHECK(type IN ('debit','credit')) DEFAULT 'debit',
   sort_order INTEGER NOT NULL DEFAULT 0,
-  is_active  INTEGER NOT NULL DEFAULT 1
+  is_active  INTEGER NOT NULL DEFAULT 1,
+  ${ACCOUNT_SYNC_COLUMNS}
 );
 
 CREATE TABLE IF NOT EXISTS account_selection (
@@ -70,7 +122,8 @@ CREATE TABLE IF NOT EXISTS transactions (
   notes         TEXT NOT NULL DEFAULT '',
   import_id     INTEGER REFERENCES imports(id),
   account_id    INTEGER REFERENCES accounts(id),
-  created_at    TEXT NOT NULL DEFAULT (datetime('now'))
+  created_at    TEXT NOT NULL DEFAULT (datetime('now')),
+  ${TRANSACTION_SYNC_COLUMNS}
 );
 
 CREATE INDEX IF NOT EXISTS idx_transactions_date ON transactions(date_iso);
@@ -79,6 +132,7 @@ CREATE INDEX IF NOT EXISTS idx_transactions_account ON transactions(account_id);
 CREATE INDEX IF NOT EXISTS idx_accounts_sort_order ON accounts(sort_order);
 CREATE INDEX IF NOT EXISTS idx_tags_sort_order ON tags(sort_order);
 CREATE INDEX IF NOT EXISTS idx_rules_v2_sort ON rules_v2(sort_order);
+${SYNC_SQL}
 `
 
 export const DEFAULT_CATEGORIES: { name: string; color: string; sortOrder: number; isDefault: number }[] = [

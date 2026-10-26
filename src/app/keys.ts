@@ -1,6 +1,7 @@
 import type { KeyEvent } from "@opentui/core"
 import { resolve } from "node:path"
-import { JUMP_TARGETS, TABS, type ScopeId, type UiStore } from "../state/uiStore"
+import { selectableEntries } from "../domain/accountTree"
+import { JUMP_TARGETS, SETTINGS_SECTIONS, TABS, settingsSectionFocus, type ScopeId, type UiStore } from "../state/uiStore"
 import type { DataStore } from "../state/dataStore"
 import {
   LOOKBACKS,
@@ -71,6 +72,7 @@ export function handleKey(ui: UiStore, key: KeyEvent, data?: DataStore): boolean
         else if (hit.section === "set.rules") ui.activateSettings("rules")
         else if (hit.section === "set.filters") ui.activateSettings("filters")
         else if (hit.section === "set.database") ui.activateSettings("database")
+        else if (hit.section === "set.up") ui.activateSettings("up")
         return true
       }
       ui.applyJump(hit.section)
@@ -375,6 +377,11 @@ export function handleKey(ui: UiStore, key: KeyEvent, data?: DataStore): boolean
         if (confirm.kind === "clearData") data?.clearDatabaseData()
         if (confirm.kind === "clearAccount") data?.clearAccountData(Number(confirm.id))
         if (confirm.kind === "deleteAccount") data?.removeAccountData(Number(confirm.id))
+        if (confirm.kind === "desyncAccount") {
+          const removed = data?.setAccountSync(Number(confirm.id), false) ?? 0
+          ui.clearSettingsConfirm(); ui.setStatus(`Sync off for ${confirm.label} · ${removed} transactions removed`)
+          return true
+        }
         ui.clearSettingsConfirm(); ui.setStatus(confirm.kind === "clearData" ? "Transaction and import data cleared" : confirm.kind === "clearAccount" ? `Cleared ${confirm.label}` : confirm.kind === "deleteAccount" ? `Removed ${confirm.label}` : `Deleted ${confirm.label}`)
       } catch (e) { ui.clearSettingsConfirm(); ui.setStatus(e instanceof Error ? e.message : String(e), true) }
       return true
@@ -458,14 +465,14 @@ export function handleKey(ui: UiStore, key: KeyEvent, data?: DataStore): boolean
       } catch (e) { ui.setStatus(e instanceof Error ? e.message : String(e), true) }
       return true
     }
-    const sections: Array<"taxonomy" | "rules" | "filters" | "database"> = ["taxonomy", "rules", "filters", "database"]
+    const sections = SETTINGS_SECTIONS
     const current = ui.state.settingsSection
     if (name === "h" || name === "left") { ui.setState({ settingsSection: "taxonomy", focusedSection: "set.categories" }); return true }
     if (name === "l" || name === "right") { ui.setState({ settingsSection: "database", focusedSection: "set.database" }); return true }
     if (name === "j" || name === "down" || name === "k" || name === "up") {
       const delta = name === "j" || name === "down" ? 1 : -1
       const next = sections[(sections.indexOf(current) + delta + sections.length) % sections.length]!
-      ui.setState({ settingsSection: next, focusedSection: next === "taxonomy" ? "set.categories" : next === "rules" ? "set.rules" : next === "filters" ? "set.filters" : "set.database" })
+      ui.setState({ settingsSection: next, focusedSection: settingsSectionFocus(next) })
       return true
     }
     if (name === "return" || name === "enter") { ui.activateSettings(current); return true }
@@ -521,6 +528,30 @@ export function handleKey(ui: UiStore, key: KeyEvent, data?: DataStore): boolean
     if (name === "a") { const id = `filter-${filters.length + 1}`; ui.openSettingsEditor("filter", null, { ...ui.state.settingsDraft, id, name: "", expr: "" }); return true }
     if ((name === "return" || name === "enter") && filter) { ui.openSettingsEditor("filter", filter.id, { ...ui.state.settingsDraft, id: filter.id, name: filter.name, expr: filter.expr }); return true }
     if (name === "delete" && filter) { ui.armSettingsConfirm({ kind: "filter", id: filter.id, label: filter.name }); ui.setStatus(`Press del again to delete ${filter.name}`); return true }
+    return true
+  }
+
+  if (scope === "settings.up") {
+    const accounts = data?.state.syncAccounts ?? []
+    const account = accounts[ui.state.upCursor]
+    if (name === "escape") { ui.leaveSettings(); return true }
+    if (name === "j" || name === "down") { ui.setState({ upCursor: Math.min(Math.max(0, accounts.length - 1), ui.state.upCursor + 1) }); return true }
+    if (name === "k" || name === "up") { ui.setState({ upCursor: Math.max(0, ui.state.upCursor - 1) }); return true }
+    if (name === "space" && account && data) {
+      // Switching off deletes the account's transactions, so it is confirmed.
+      if (account.syncEnabled) { ui.armSettingsConfirm({ kind: "desyncAccount", id: account.id, label: account.name }); ui.setStatus(`Press del to stop syncing ${account.name}`); return true }
+      try { data.setAccountSync(account.id, true); ui.setStatus(`Sync on for ${account.name} · s to sync now`) } catch (e) { ui.setStatus(e instanceof Error ? e.message : String(e), true) }
+      return true
+    }
+    if (name === "s" && data) {
+      if (data.state.upSyncing) { ui.setStatus("Up sync already running"); return true }
+      ui.setStatus("Syncing Up…")
+      data.syncUp().then(
+        (summary) => ui.setStatus(summary),
+        (e) => ui.setStatus(e instanceof Error ? e.message : String(e), true),
+      )
+      return true
+    }
     return true
   }
 
@@ -634,25 +665,21 @@ export function handleKey(ui: UiStore, key: KeyEvent, data?: DataStore): boolean
   }
 
   // ── Manager accounts ────────────────────────────────────────────────
+  // The sidebar selection drives the table directly (no separate apply).
   if (scope === "manager.accounts") {
-    if (name === "j" || name === "down" || name === "l" || name === "right") {
-      ui.moveAccountCursor(1, accounts.length)
-      return true
+    const entries = selectableEntries(accounts)
+    const select = (index: number) => {
+      const entry = entries[index]
+      if (!entry || !data) return
+      ui.setState({ accountCursor: index, managerCursor: 0, managerTop: 0, selectedIds: {}, rangeSelecting: false })
+      data.setAccountSelection(entry.selection)
     }
-    if (name === "k" || name === "up" || name === "h" || name === "left") {
-      ui.moveAccountCursor(-1, accounts.length)
-      return true
-    }
-    if (name === "space" || seq === " ") {
-      const a = accounts[ui.state.accountCursor]
-      if (a && data) {
-        data.toggleAccount(a.id)
-        const on = data.state.accountScope[a.id] !== false
-        ui.setStatus(`${a.name} ${on ? "On" : "Off"}`)
-      }
-      return true
-    }
-    if ((name === "d" || name === "delete") && accounts[ui.state.accountCursor]) { ui.setState({ accountActionId: accounts[ui.state.accountCursor]!.id }); ui.setStatus("Account data · c clear transactions · x remove account · esc cancel"); return true }
+    if (name === "j" || name === "down") { select(Math.min(entries.length - 1, ui.state.accountCursor + 1)); return true }
+    if (name === "k" || name === "up") { select(Math.max(0, ui.state.accountCursor - 1)); return true }
+    if (name === "return" || name === "enter" || name === "l" || name === "right") { ui.setState({ focusedSection: "mgr.transactions" }); return true }
+    const selection = data?.state.accountSelection
+    if ((name === "d" || name === "delete") && typeof selection === "number") { ui.setState({ accountActionId: selection }); ui.setStatus("Account data · c clear transactions · x remove account · esc cancel"); return true }
+    return true
   }
 
   // ── Dashboard date ──────────────────────────────────────────────────
@@ -799,8 +826,8 @@ export function footerHints(scope: ScopeId): { key: string; desc: string }[] {
       ]
     case "manager.accounts":
       return [
-        { key: "h/l", desc: "move" },
-        { key: "space", desc: "toggle" },
+        { key: "j/k", desc: "account" },
+        { key: "enter", desc: "transactions" },
         { key: "d", desc: "data actions" },
         { key: "v", desc: "jump" },
       ]
@@ -826,6 +853,8 @@ export function footerHints(scope: ScopeId): { key: string; desc: string }[] {
       ]
     case "settings.filters":
       return [{ key: "j/k", desc: "move" }, { key: "a", desc: "add" }, { key: "enter", desc: "edit" }, { key: "del", desc: "delete" }, { key: "esc", desc: "done" }]
+    case "settings.up":
+      return [{ key: "j/k", desc: "move" }, { key: "space", desc: "sync on/off" }, { key: "s", desc: "sync now" }, { key: "esc", desc: "done" }]
     case "settings.database":
       return [{ key: "i", desc: "import" }, { key: "p", desc: "profiles" }, { key: "c", desc: "clear data" }, { key: "x", desc: "reset DB" }, { key: "esc", desc: "done" }]
     case "settings.import.files":

@@ -6,6 +6,9 @@ import type { SectionId, SettingsList } from "../../state/uiStore"
 import { ui } from "../../state/uiStore"
 import { data } from "../../state/dataStore"
 import { theme } from "../../theme"
+import { fit } from "../text"
+import { formatMoney } from "../../domain/dashboard"
+import { accountRole } from "../../domain/types"
 
 function truncate(value: string, width: number) { return value.length <= width ? value : `${value.slice(0, Math.max(0, width - 1))}…` }
 
@@ -100,7 +103,43 @@ function DatabasePane(props: { focused: boolean; height?: number | "auto" | `${n
     <text fg={theme.subtext0}>{"Categories "}<S fg={theme.text}>{info()?.categoryCount ?? 0}</S>{"   Tags "}<S fg={theme.text}>{info()?.tagCount ?? 0}</S>{"   Rules "}<S fg={theme.text}>{info()?.ruleCount ?? 0}</S></text>
     <text fg={theme.overlay1}>i import CSV · p manage profiles</text>
     <text fg={theme.overlay1}>c clear transactions/imports · x factory-reset database</text>
-    <text fg={theme.overlay1}>Profiles {data.state.importProfiles.length} · imports {info()?.importCount ?? 0} · saved filters/config are retained by reset</text>
+    <text fg={theme.overlay1}>Profiles {data.state.importProfiles.length} · imports {info()?.importCount ?? 0} · reset keeps filters and config</text>
+  </SectionCard>
+}
+
+/** Up Bank sync: status plus one row per Up account with its sync switch.
+ * Token presence is read from the environment (Bun loads .env); the value is
+ * never rendered. */
+function UpPane(props: { focused: boolean }) {
+  const info = () => data.state.dbInfo
+  const active = () => ui.state.settingsActive && ui.state.settingsSection === "up"
+  const tokenSet = () => !!process.env.JASKMONEY_UP_TOKEN?.trim()
+  const accounts = () => data.state.syncAccounts
+  return <SectionCard title="Up Bank" focused={props.focused} active={active()} height={Math.max(1, accounts().length) + 4}>
+    <text wrapMode="none">
+      <Show when={tokenSet()} fallback={<S fg={theme.warning}>Set JASKMONEY_UP_TOKEN to enable sync</S>}>
+        <Show when={!data.state.upSyncing} fallback={<S fg={theme.peach}>Syncing…</S>}>
+          <S fg={info()?.upLastSyncedAt ? theme.subtext0 : theme.overlay1}>
+            {info()?.upLastSyncedAt ? `Last sync ${new Date(info()!.upLastSyncedAt!).toLocaleString("en-AU", { dateStyle: "medium", timeStyle: "short" })}` : "Token set · not synced yet"}
+          </S>
+        </Show>
+      </Show>
+    </text>
+    <Show when={info()?.upLastError}>{(error: () => string) => <text fg={theme.error} wrapMode="none">{error()}</text>}</Show>
+    <Show when={accounts().length} fallback={<text fg={theme.overlay1}>No accounts synced yet</text>}>
+      <For each={accounts()}>{(account, i) => {
+        const selected = () => active() && ui.state.upCursor === i()
+        const bg = () => selected() ? theme.surface0 : theme.canvas
+        const on = () => account.syncEnabled
+        return <text bg={bg()} wrapMode="none">
+          <S fg={theme.focus} bg={bg()} bold>{selected() ? "> " : "  "}</S>
+          <S fg={on() ? theme.text : theme.overlay1} bg={bg()}>{fit(account.name, 16)}</S>
+          <S fg={theme.overlay1} bg={bg()}>{fit(accountRole(account) === "saver" ? "saver" : "spending", 10)}</S>
+          <S fg={on() ? theme.subtext1 : theme.overlay1} bg={bg()}>{fit(account.balance != null ? formatMoney(account.balance) : "—", 12)}</S>
+          <S fg={on() ? theme.success : theme.overlay1} bg={bg()}>{on() ? "● sync on" : "○ sync off"}</S>
+        </text>
+      }}</For>
+    </Show>
   </SectionCard>
 }
 
@@ -149,7 +188,7 @@ function EditorOverlay() {
 }
 
 function ConfirmOverlay() {
-  const prompt = (confirm: NonNullable<typeof ui.state.settingsConfirm>) => confirm.kind === "clearData" ? "Clear all transaction and import data?" : confirm.kind === "clearAccount" ? `Clear transactions for ${confirm.label}?` : confirm.kind === "deleteAccount" ? `Remove ${confirm.label} and its transactions?` : `Delete ${confirm.label}?`
+  const prompt = (confirm: NonNullable<typeof ui.state.settingsConfirm>) => confirm.kind === "clearData" ? "Clear all transaction and import data?" : confirm.kind === "clearAccount" ? `Clear transactions for ${confirm.label}?` : confirm.kind === "deleteAccount" ? `Remove ${confirm.label} and its transactions?` : confirm.kind === "desyncAccount" ? `Stop syncing ${confirm.label}? Its transactions are removed; switch sync back on to re-fetch them.` : `Delete ${confirm.label}?`
   return <Show when={ui.state.settingsConfirm}>{(confirm: () => NonNullable<typeof ui.state.settingsConfirm>) => <box position="absolute" zIndex={11} left="25%" top="40%" width="50%" border borderStyle="rounded" borderColor={theme.error} paddingLeft={1} paddingRight={1} backgroundColor={theme.base} flexDirection="column"><text fg={theme.error}><b>{prompt(confirm())}</b></text><text fg={theme.overlay1}>Press del to confirm · esc cancel</text></box>}</Show>
 }
 
@@ -164,7 +203,7 @@ export function SettingsTab(props: { focused: SectionId }) {
   const databaseFocused = () => props.focused === "set.database"
   return <box width="100%" height="100%" flexDirection={layout() === "wide" ? "row" : "column"} gap={1} backgroundColor={theme.canvas}>
     <box width={layout() === "wide" ? "55%" : "100%"} flexShrink={layout() === "wide" ? 0 : 1} height="100%" flexDirection="column" gap={1}><TaxonomyPane focused={taxonomyFocused()} narrow={layout() === "narrow"} height={layout() === "wide" ? undefined : "45%"} /><Show when={layout() !== "wide"}><RulesPane focused={props.focused === "set.rules"} /></Show><Show when={layout() === "narrow"}><FiltersPane focused={props.focused === "set.filters"} /></Show></box>
-    <box flexGrow={1} flexShrink={1} minWidth={0} height="100%" flexDirection="column" gap={1}><Show when={layout() === "wide"}><RulesPane focused={props.focused === "set.rules"} /></Show><Show when={layout() !== "narrow"}><FiltersPane focused={props.focused === "set.filters"} /></Show><DatabasePane focused={databaseFocused()} /><ImportHistory /></box>
+    <box flexGrow={1} flexShrink={1} minWidth={0} height="100%" flexDirection="column" gap={1}><Show when={layout() === "wide"}><RulesPane focused={props.focused === "set.rules"} /></Show><Show when={layout() !== "narrow"}><FiltersPane focused={props.focused === "set.filters"} /></Show><UpPane focused={props.focused === "set.up"} /><DatabasePane focused={databaseFocused()} /><ImportHistory /></box>
     <EditorOverlay />
     <ConfirmOverlay />
     <ImportOverlay />

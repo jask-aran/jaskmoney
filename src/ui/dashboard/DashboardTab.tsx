@@ -5,16 +5,8 @@ import { S } from "../primitives/S"
 import { ui, type SectionId } from "../../state/uiStore"
 import { data } from "../../state/dataStore"
 import { theme } from "../../theme"
-import {
-  barFill,
-  computeCategorySpend,
-  computeOverview,
-  dailySpendSeries,
-  formatMoney,
-  formatPct,
-  formatRunway,
-  sparkline,
-} from "../../domain/dashboard"
+import { barFill, computeCategorySpend, dailySpendSeries, formatMoney, formatPct } from "../../domain/dashboard"
+import { computePeriodFlows, computePosition } from "../../domain/position"
 import {
   LOOKBACKS,
   PERIODS,
@@ -24,27 +16,31 @@ import {
   filterByTimeframe,
   timeframeBounds,
 } from "../../domain/timeframe"
+import { fit } from "../text"
+import { barChart, levelChart } from "./charts"
 
+/**
+ * Dashboard: "now" (balances, pending, runway; ignores the timeframe) above
+ * the period (flows, spending tracker, categories) chosen in Date Range, then
+ * net position over the last 90 days.
+ */
 export function DashboardTab(props: { focused: SectionId }) {
+  const dims = useTerminalDimensions()
   const clock = createMemo(() => dataClock(data.state.transactions))
   const bounds = createMemo(() => timeframeBounds(ui.state.timeframe, clock()))
-  const scoped = createMemo(() => {
-    const byAcct = data.accountScoped()
-    return filterByTimeframe(byAcct, ui.state.timeframe, clock())
-  })
-  const stats = createMemo(() => computeOverview(scoped()))
-  const cats = createMemo(() =>
-    computeCategorySpend(scoped(), data.state.categories).slice(0, 10),
-  )
-  const series = createMemo(() => {
-    const b = bounds()
-    return dailySpendSeries(scoped(), b.start, b.end)
-  })
-  const spark = createMemo(() => sparkline(series().values, 56))
+  const inPeriod = createMemo(() => filterByTimeframe(data.state.transactions, ui.state.timeframe, clock()))
+  // Spending detail covers every spending account; the Manager's account
+  // selection does not apply here.
+  const scoped = createMemo(() => filterByTimeframe(data.spendingTransactions(), ui.state.timeframe, clock()))
+  const flows = createMemo(() => computePeriodFlows(data.state.accounts, inPeriod()))
+  const position = createMemo(() => computePosition(data.state.accounts, data.state.transactions, localTodayISO()))
+  const cats = createMemo(() => computeCategorySpend(scoped(), data.state.categories).slice(0, 12))
+  const series = createMemo(() => dailySpendSeries(scoped(), bounds().start, bounds().end))
+  const saversPeriodChange = () => flows().saverChanges.reduce((sum, c) => sum + c.change, 0)
+  const saverChange = (accountId: number) => flows().saverChanges.find((c) => c.accountId === accountId)?.change ?? 0
 
   // Go narrow fallback: the preset chips keep priority and the timeframe
   // label is shown only when both fit on the card's single content line.
-  const dims = useTerminalDimensions()
   const presetsWidth =
     "Presets ".length +
     LOOKBACKS.reduce((n, lb) => n + lb.length + 3, 0) +
@@ -57,9 +53,88 @@ export function DashboardTab(props: { focused: SectionId }) {
   const chipCursor = () =>
     dateFocused() ? ui.state.dashChipCursor : activeChipIndex(ui.state.timeframe)
 
+  // Fixed rows: tab bar + gap (2), status + footer (2), Now (7), Date Range (4),
+  // Net position (8, dropped on short terminals). The middle row takes the rest.
+  const showNetChart = () => dims().height >= 36
+  const middleHeight = () => Math.max(5, dims().height - 15 - (showNetChart() ? 8 : 0))
+  // Left column is 60% of the width; the card spends 4 cells on border + padding.
+  const leftInner = () => Math.floor((dims().width - 1) * 0.6) - 4
+  // Right column: what the 60% column and the 1-cell gap leave, minus the
+  // card's border + padding (4) and one cell of rounding slack.
+  const rightInner = () => dims().width - 1 - Math.floor((dims().width - 1) * 0.6) - 5
+  const AXIS = 9
+  const trackerRows = () => Math.max(1, middleHeight() - 4)
+  const tracker = createMemo(() => barChart(series().values, Math.max(1, leftInner() - AXIS), trackerRows()))
+  const trackerMax = createMemo(() => {
+    const width = Math.max(1, leftInner() - AXIS)
+    const v = series().values
+    if (v.length <= width) return Math.max(0, ...v)
+    // Bars are bucket averages; label the tallest bucket, not the tallest day.
+    const per = v.length / width
+    let max = 0
+    for (let c = 0; c < width; c++) {
+      const slice = v.slice(Math.floor(c * per), Math.floor((c + 1) * per))
+      if (slice.length) max = Math.max(max, slice.reduce((a, b) => a + b, 0) / slice.length)
+    }
+    return max
+  })
+  const netChart = createMemo(() =>
+    levelChart(position().history.map((h) => h.value), Math.max(1, dims().width - 4 - AXIS), 5),
+  )
+  // name (15) + "  NN%" (5) + " $12,345.67" (13) beside the bar.
+  const catBarWidth = () => Math.max(4, rightInner() - 15 - 5 - 13)
+
   return (
     <box width="100%" height="100%" flexDirection="column" gap={0} backgroundColor={theme.canvas}>
-      <SectionCard title="Date Range" focused={dateFocused()} height={3}>
+      <box flexDirection="row" gap={1} width="100%" height={7}>
+        <SectionCard title="Now" width="60%" height={7}>
+          {/* Label | value | note columns, so every row lines up. */}
+          <text wrapMode="none">
+            <S fg={theme.subtext0}>{"Net position".padEnd(LABEL)}</S>
+            <S fg={theme.text} bold>{money(position().netPosition).padEnd(VALUE)}</S>
+          </text>
+          <text wrapMode="none">
+            <S fg={theme.subtext0}>{"Available".padEnd(LABEL)}</S>
+            <S fg={theme.text}>{money(position().spendingBalance).padEnd(VALUE)}</S>
+            <Show when={position().pendingCount > 0}>
+              <S fg={theme.overlay1}>{`${formatMoney(Math.abs(position().pendingAmount))} pending, ${position().pendingCount} txn`}</S>
+            </Show>
+          </text>
+          <text wrapMode="none">
+            <S fg={theme.subtext0}>{"Runway".padEnd(LABEL)}</S>
+            <S fg={theme.peach}>{(position().runwayDays != null ? `${Math.round(position().runwayDays!)} days` : "—").padEnd(VALUE)}</S>
+            <Show when={position().dailySpend != null}>
+              <S fg={theme.overlay1}>{`${formatMoney(position().dailySpend!)}/day, 90 day avg`}</S>
+            </Show>
+          </text>
+          <text wrapMode="none">
+            <S fg={theme.subtext0}>{"30-day change".padEnd(LABEL)}</S>
+            <S fg={change30() >= 0 ? theme.success : theme.error}>{signedMoney(change30()).padEnd(VALUE)}</S>
+          </text>
+        </SectionCard>
+        <box flexGrow={1} flexBasis={0} minWidth={0} height={7} overflow="hidden">
+        <SectionCard title="Savers" height={7}>
+          <Show when={position().savers.length} fallback={<text fg={theme.overlay1}>No savers synced</text>}>
+            <For each={position().savers.slice(0, 4)}>
+              {(saver) => (
+                <text wrapMode="none">
+                  <S fg={theme.text}>{fit(saver.name, 14)}</S>
+                  <S fg={theme.subtext1}>{formatMoney(saver.balance).padStart(12)}</S>
+                  <S fg={changeColor(saverChange(saver.accountId))}>{`  ${changeText(saverChange(saver.accountId))}`}</S>
+                </text>
+              )}
+            </For>
+            <text wrapMode="none">
+              <S fg={theme.subtext0}>{fit("Total", 14)}</S>
+              <S fg={theme.text} bold>{formatMoney(position().saversTotal).padStart(12)}</S>
+              <S fg={changeColor(saversPeriodChange())}>{`  ${changeText(saversPeriodChange())}`}</S>
+            </text>
+          </Show>
+        </SectionCard>
+        </box>
+      </box>
+
+      <SectionCard title="Date Range" focused={dateFocused()} height={4}>
         <box flexDirection="row" justifyContent="space-between" width="100%">
           <text fg={theme.subtext0} wrapMode="none">
             Presets{" "}
@@ -106,112 +181,125 @@ export function DashboardTab(props: { focused: SectionId }) {
             </text>
           </Show>
         </box>
-      </SectionCard>
-
-      <SectionCard title="Overview" height={6}>
-        {/* Go renderSummaryCards: 13-col labels, 34-col first column. Padding
-            lives in expressions because Solid collapses runs of JSX spaces. */}
-        <text>
-          <S fg={theme.subtext0}>{"Balance".padEnd(OV_LABEL)}</S>
-          <S fg={stats().balance >= 0 ? theme.success : theme.error}>
-            {formatMoney(stats().balance).padEnd(OV_VALUE)}
-          </S>
-          <S fg={theme.subtext0}>{"Uncat "}</S>
-          <S fg={theme.peach}>{`${stats().uncatCount} (${formatMoney(stats().uncatTotal)})`}</S>
-        </text>
-        <text>
-          <S fg={theme.subtext0}>{"Debits".padEnd(OV_LABEL)}</S>
-          <S fg={theme.error}>{formatMoney(stats().debits).padEnd(OV_VALUE)}</S>
-          <S fg={theme.subtext0}>{"Transactions "}</S>
-          <S fg={theme.peach}>{String(stats().txnCount)}</S>
-        </text>
-        <text>
-          <S fg={theme.subtext0}>{"Credits".padEnd(OV_LABEL)}</S>
-          <S fg={theme.success}>{formatMoney(stats().credits).padEnd(OV_VALUE)}</S>
-          <S fg={theme.subtext0}>{"Daily Burn "}</S>
-          <S fg={theme.warning}>{stats().dailyBurn != null ? formatMoney(stats().dailyBurn!) : "—"}</S>
-        </text>
-        <text>
-          <S fg={theme.subtext0}>{"Savings Rate".padEnd(OV_LABEL)}</S>
-          <S fg={theme.peach}>{formatPct(stats().savingsRate).padEnd(OV_VALUE)}</S>
-          <S fg={theme.subtext0}>{"Runway "}</S>
-          <S fg={theme.peach}>{formatRunway(stats().runwayDays)}</S>
+        <text wrapMode="none">
+          <S fg={theme.subtext0}>{"Spent "}</S>
+          <S fg={theme.error}>{formatMoney(flows().spent)}</S>
+          <S fg={theme.subtext0}>{"   Income "}</S>
+          <S fg={theme.success}>{formatMoney(flows().income)}</S>
+          <S fg={theme.subtext0}>{"   Net "}</S>
+          <S fg={flows().net >= 0 ? theme.success : theme.error}>{signedMoney(flows().net)}</S>
+          <S fg={theme.subtext0}>{"   Saved to savers "}</S>
+          <S fg={flows().savedToSavers >= 0 ? theme.peach : theme.error}>{signedMoney(flows().savedToSavers)}</S>
+          <S fg={theme.subtext0}>{"   Savings rate "}</S>
+          <S fg={theme.peach}>{formatPct(flows().savingsRate)}</S>
+          <S fg={theme.overlay1}>{`   ${flows().txnCount} transactions`}</S>
         </text>
       </SectionCard>
 
-      <box flexDirection="row" flexGrow={1} gap={1} width="100%">
-        <box flexGrow={3} height="100%">
-          <SectionCard title="Spending Tracker" flexGrow={1} height="100%">
-            <text fg={theme.peach}>{spark()}</text>
-            <text fg={theme.overlay1}>
-              {bounds().start} → {bounds().end} · max day{" "}
-              {formatMoney(Math.max(0, ...series().values, 0))}
-            </text>
-            <text fg={theme.overlay1}>{`${stats().txnCount} transactions in scope`}</text>
-          </SectionCard>
-        </box>
-        <box flexGrow={2} height="100%" flexDirection="column" gap={0}>
-          <SectionCard title="Spending by Category" flexGrow={1}>
-            {cats().length === 0 ? (
-              <text fg={theme.overlay1}>No spend in range</text>
-            ) : (
-              <For each={cats()}>
-                {(c) => (
-                  <text wrapMode="none">
-                    <S fg={c.color}>{truncate(c.name, 14).padEnd(15)}</S>
-                    <S fg={c.color}>{barFill(c.pct, 12)}</S>
-                    <S fg={theme.subtext0}>
-                      {" "}
-                      {Math.round(c.pct).toString().padStart(3)}% {formatMoney(c.amount)}
-                    </S>
-                  </text>
-                )}
-              </For>
+      <box flexDirection="row" gap={1} width="100%" height={middleHeight()}>
+        <SectionCard title="Spending Tracker" width="60%" height={middleHeight()}>
+          <For each={tracker()}>
+            {(row, i) => (
+              <text wrapMode="none">
+                <S fg={theme.overlay1}>{(i() === 0 ? shortMoney(trackerMax()) : i() === tracker().length - 1 ? "$0" : "").padStart(AXIS - 2) + " ┤"}</S>
+                <S fg={theme.peach}>{row}</S>
+              </text>
             )}
-          </SectionCard>
-          <SectionCard
-            title="Composition [C] · Category Share"
-            focused={props.focused === "dash.composition"}
-            flexGrow={1}
-          >
-            {cats().length === 0 ? (
-              <text fg={theme.overlay1}>—</text>
-            ) : (
-              <For each={cats().slice(0, 8)}>
-                {(c) => (
-                  <text wrapMode="none">
-                    <S fg={c.color}>{truncate(c.name, 14).padEnd(15)}</S>
-                    <S fg={c.color}>{barFill(c.pct, 10)}</S>
-                    <S fg={theme.subtext0}>
-                      {" "}
-                      {Math.round(c.pct).toString().padStart(3)}%
-                    </S>
-                  </text>
-                )}
-              </For>
-            )}
-          </SectionCard>
+          </For>
+          <text wrapMode="none" fg={theme.overlay1}>
+            {" ".repeat(AXIS) + spreadLabels(shortDate(bounds().start), shortDate(bounds().end), Math.max(1, leftInner() - AXIS))}
+          </text>
+          <text wrapMode="none">
+            <S fg={theme.overlay1}>{`max ${formatMoney(Math.max(0, ...series().values))}/day · `}</S>
+            <S fg={theme.overlay1}>{`avg ${formatMoney(series().values.length ? flows().spent / series().values.length : 0)}/day`}</S>
+          </text>
+        </SectionCard>
+        <box flexGrow={1} flexBasis={0} minWidth={0} height={middleHeight()} overflow="hidden">
+        <SectionCard title="Spending by Category" height={middleHeight()} focused={props.focused === "dash.composition"}>
+          {cats().length === 0 ? (
+            <text fg={theme.overlay1}>No spending in range</text>
+          ) : (
+            <For each={cats().slice(0, Math.max(1, middleHeight() - 2))}>
+              {(c) => (
+                <text wrapMode="none">
+                  <S fg={c.color}>{fit(c.name, 15)}</S>
+                  <S fg={c.color}>{barFill(c.pct, catBarWidth())}</S>
+                  <S fg={theme.subtext0}>{`${Math.round(c.pct).toString().padStart(4)}% ${formatMoney(c.amount).padStart(12)}`}</S>
+                </text>
+              )}
+            </For>
+          )}
+        </SectionCard>
         </box>
       </box>
 
-      <SectionCard
-        title="Cashflow [N] · Net Worth"
-        focused={props.focused === "dash.cashflow"}
-        height={3}
-      >
-        <text fg={theme.overlay1} wrapMode="none">
-          Balance {formatMoney(stats().balance)} · credits {formatMoney(stats().credits)} ·
-          debits {formatMoney(stats().debits)}
-        </text>
-      </SectionCard>
+      <Show when={showNetChart()}>
+        <SectionCard title="Net Position · 90 days" focused={props.focused === "dash.cashflow"} height={8}>
+          <For each={netChart().rows}>
+            {(row, i) => (
+              <text wrapMode="none">
+                <S fg={theme.overlay1}>{(i() === 0 ? shortMoney(netChart().max) : i() === netChart().rows.length - 1 ? shortMoney(netChart().min) : "").padStart(AXIS - 2) + " ┤"}</S>
+                <S fg={theme.lavender}>{row}</S>
+              </text>
+            )}
+          </For>
+          <text wrapMode="none" fg={theme.overlay1}>
+            {" ".repeat(AXIS) + spreadLabels(shortDate(position().history[0]?.dateISO ?? ""), "today", Math.max(1, dims().width - 4 - AXIS))}
+          </text>
+        </SectionCard>
+      </Show>
     </box>
   )
+
+  function change30(): number {
+    const h = position().history
+    if (h.length < 31) return 0
+    return h[h.length - 1]!.value - h[h.length - 31]!.value
+  }
 }
 
-const OV_LABEL = 13
-const OV_VALUE = 34 - OV_LABEL
+const LABEL = 15
+const VALUE = 14
 
-function truncate(s: string, n: number): string {
-  if (s.length <= n) return s
-  return s.slice(0, Math.max(0, n - 1)) + "…"
+function money(n: number | null): string {
+  return n == null ? "—" : formatMoney(n)
+}
+
+function signedMoney(n: number): string {
+  return n > 0 ? `+${formatMoney(n)}` : formatMoney(n)
+}
+
+function changeText(n: number): string {
+  return Math.abs(n) < 0.005 ? "—" : signedMoney(n)
+}
+
+function changeColor(n: number): string {
+  return Math.abs(n) < 0.005 ? theme.overlay1 : n > 0 ? theme.success : theme.error
+}
+
+/** Compact axis label: $950, $4.5k, $12k. */
+function shortMoney(n: number): string {
+  const a = Math.abs(n)
+  const sign = n < 0 ? "-" : ""
+  if (a >= 10000) return `${sign}$${Math.round(a / 1000)}k`
+  if (a >= 1000) return `${sign}$${(a / 1000).toFixed(1)}k`
+  return `${sign}$${Math.round(a)}`
+}
+
+/** "2026-08-26" → "26 Aug". */
+function shortDate(iso: string): string {
+  const [y, m, d] = iso.split("-").map(Number)
+  if (!y || !m || !d) return iso
+  return `${d} ${["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"][m - 1]}`
+}
+
+/** Left label at the start, right label flush with the end of `width`. */
+function spreadLabels(left: string, right: string, width: number): string {
+  return left + " ".repeat(Math.max(1, width - left.length - right.length)) + right
+}
+
+/** Today's date in the local timezone, for point-in-time figures. */
+function localTodayISO(): string {
+  const now = new Date()
+  return `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}-${String(now.getDate()).padStart(2, "0")}`
 }

@@ -1,0 +1,98 @@
+import { uncategorisedCategoryId, type Db } from "../db/client"
+import type { createUpClient } from "./client"
+
+type LocalTransaction = { id: number; external_id: string | null; status: string | null; external_created_at: string | null }
+
+export async function syncUp(db: Db, client: Pick<ReturnType<typeof createUpClient>, "listAccounts" | "listAccountTransactions">, { now = new Date() }: { now?: Date } = {}) {
+  try {
+    const accounts = await client.listAccounts()
+    const disabledAccounts = () => new Set(db.query<{ external_id: string }, []>("SELECT external_id FROM accounts WHERE source = 'up' AND sync_enabled = 0 AND external_id IS NOT NULL").all().map(a => a.external_id))
+    const batches: { accountId: string; local: LocalTransaction[]; since: string | undefined; transactions: Awaited<ReturnType<typeof client.listAccountTransactions>> }[] = []
+    for (const account of accounts) {
+      if (disabledAccounts().has(account.id)) continue
+      const local = db.query<LocalTransaction, [string]>(`SELECT t.id, t.external_id, t.status, t.external_created_at FROM transactions t
+        JOIN accounts a ON a.id = t.account_id WHERE t.source = 'up' AND a.source = 'up' AND a.external_id = ?`).all(account.id)
+      let since: string | undefined
+      if (local.length) {
+        const times = local.map(t => Date.parse(t.external_created_at ?? ""))
+        if (times.some(t => !Number.isFinite(t))) throw new Error("Invalid local Up transaction timestamp")
+        const newest = times.reduce((a, b) => Math.max(a, b), -Infinity)
+        const held = local.filter(t => t.status === "HELD").map(t => Date.parse(t.external_created_at ?? ""))
+        since = new Date(held.reduce((a, b) => Math.min(a, b), newest - 14 * 86400000)).toISOString()
+      }
+      const transactions = await client.listAccountTransactions(account.id, since === undefined ? {} : { since })
+      batches.push({ accountId: account.id, local, since, transactions })
+    }
+    const syncedAt = now.toISOString()
+    return db.transaction(() => {
+      const disabled = disabledAccounts()
+      const accountIds = new Map<string, number>()
+      for (const account of accounts) {
+        const existing = db.query<{ id: number }, [string]>("SELECT id FROM accounts WHERE source = 'up' AND external_id = ?").get(account.id)
+        // Up's display name as-is; a clash with another account adds " (Up)".
+        const base = account.attributes.displayName
+        let name = base
+        const occupied = (candidate: string) => db.query<{ id: number }, [string]>("SELECT id FROM accounts WHERE name = ?").get(candidate)?.id
+        const conflicts = (candidate: string) => { const id = occupied(candidate); return id !== undefined && id !== existing?.id }
+        if (conflicts(name)) {
+          const qualified = `${base} (Up)`
+          name = qualified
+          for (let n = 2; conflicts(name); n++) name = `${qualified} ${n}`
+        }
+        const a = account.attributes
+        if (existing) {
+          db.query("UPDATE accounts SET name = ?, type = 'debit', external_kind = ?, balance = ?, balance_at = ? WHERE id = ?")
+            .run(name, a.accountType, a.balance.valueInBaseUnits / 100, syncedAt, existing.id)
+          accountIds.set(account.id, existing.id)
+        } else {
+          const result = db.query(`INSERT INTO accounts (name, type, source, external_id, external_kind, balance, balance_at, sort_order, is_active, sync_enabled)
+            VALUES (?, 'debit', 'up', ?, ?, ?, ?, (SELECT COALESCE(MAX(sort_order), -1) + 1 FROM accounts), 1, 1)`)
+            .run(name, account.id, a.accountType, a.balance.valueInBaseUnits / 100, syncedAt)
+          accountIds.set(account.id, Number(result.lastInsertRowid))
+        }
+      }
+      // Include previously synced accounts if a transfer counterpart is absent from this response.
+      for (const account of db.query<{ id: number; external_id: string }, []>("SELECT id, external_id FROM accounts WHERE source = 'up' AND external_id IS NOT NULL").all()) accountIds.set(account.external_id, account.id)
+      const columns = ["status", "amount", "description", "date_raw", "date_iso", "settled_at", "raw_text", "message", "account_id", "transfer_account_id", "ext_category", "ext_parent_category", "ext_tags"]
+      const update = db.query(`UPDATE transactions SET ${columns.map(c => `${c} = ?`).join(", ")} WHERE id = ? AND NOT (${columns.map(c => `${c} IS ?`).join(" AND ")})`)
+      const insert = db.query(`INSERT INTO transactions (${columns.join(", ")}, source, external_id, external_created_at, category_id, notes, import_id)
+        VALUES (${columns.map(() => "?").join(", ")}, 'up', ?, ?, ?, '', NULL)`)
+      const categoryId = uncategorisedCategoryId(db)
+      let inserted = 0, updated = 0, removedHeld = 0
+      const insertedIds: number[] = []
+      for (const transaction of batches.flatMap(batch => batch.transactions)) {
+        const a = transaction.attributes, r = transaction.relationships
+        if (disabled.has(r.account.data.id)) continue
+        if (!Number.isFinite(Date.parse(a.createdAt))) throw new Error("Invalid Up transaction timestamp")
+        const accountId = accountIds.get(r.account.data.id)
+        if (accountId === undefined) throw new Error("Up transaction account is missing")
+        const values = [a.status, a.amount.valueInBaseUnits / 100, a.description, a.createdAt, a.createdAt.slice(0, 10), a.settledAt, a.rawText, a.message,
+          accountId, r.transferAccount.data ? accountIds.get(r.transferAccount.data.id) ?? null : null,
+          r.category.data?.id ?? null, r.parentCategory.data?.id ?? null, JSON.stringify(r.tags.data.map(t => t.id))]
+        const existing = db.query<{ id: number }, [string]>("SELECT id FROM transactions WHERE source = 'up' AND external_id = ?").get(transaction.id)
+        if (existing) updated += update.run(...values, existing.id, ...values).changes
+        else {
+          const result = insert.run(...values, transaction.id, a.createdAt, categoryId)
+          inserted++
+          insertedIds.push(Number(result.lastInsertRowid))
+        }
+      }
+      const remove = db.query("DELETE FROM transactions WHERE id = ? AND source = 'up' AND status = 'HELD'")
+      for (const { accountId, local, since, transactions } of batches) {
+        if (disabled.has(accountId)) continue
+        const returned = new Set(transactions.filter(t => t.relationships.account.data.id === accountId).map(t => t.id))
+        for (const row of local) {
+          if (row.status === "HELD" && (since === undefined || Date.parse(row.external_created_at ?? "") >= Date.parse(since)) &&
+            (row.external_id === null || !returned.has(row.external_id))) removedHeld += remove.run(row.id).changes > 0 ? 1 : 0
+        }
+      }
+      db.query(`INSERT INTO sync_state (source, last_synced_at, last_error) VALUES ('up', ?, NULL)
+        ON CONFLICT(source) DO UPDATE SET last_synced_at = excluded.last_synced_at, last_error = NULL`).run(syncedAt)
+      return { accounts: accounts.length, inserted, updated, removedHeld, insertedIds }
+    })()
+  } catch (error) {
+    db.query(`INSERT INTO sync_state (source, last_error) VALUES ('up', ?)
+      ON CONFLICT(source) DO UPDATE SET last_error = excluded.last_error`).run(error instanceof Error ? error.message : String(error))
+    throw error
+  }
+}

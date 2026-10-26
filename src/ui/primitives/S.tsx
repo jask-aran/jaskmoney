@@ -13,6 +13,7 @@ export function S(props: {
   bg?: string
   bold?: boolean
   dim?: boolean
+  italic?: boolean
   children?: JSX.Element
 }) {
   return (
@@ -21,7 +22,8 @@ export function S(props: {
         createEffect(() => {
           node.attributes =
             (props.bold ? TextAttributes.BOLD : 0) |
-            (props.dim ? TextAttributes.DIM : 0)
+            (props.dim ? TextAttributes.DIM : 0) |
+            (props.italic ? TextAttributes.ITALIC : 0)
           node.fg = props.fg
           node.bg = props.bg
         })

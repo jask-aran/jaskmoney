@@ -51,7 +51,7 @@ describe("MVP slice: filter + categorize", () => {
           accountName: "ANZ CREDIT",
           tagNames: [],
           tagColors: [],
-          tagIds: [],
+          tagIds: [], source: "csv" as const, status: null, transferAccountId: null, internal: false,
         },
         {
           id: 2,
@@ -68,13 +68,12 @@ describe("MVP slice: filter + categorize", () => {
           accountName: "ANZ CREDIT",
           tagNames: [],
           tagColors: [],
-          tagIds: [],
+          tagIds: [], source: "csv" as const, status: null, transferAccountId: null, internal: false,
         },
       ],
       accounts: [
-        { id: 1, name: "ANZ CREDIT", type: "credit", sortOrder: 1, isActive: true },
+        { id: 1, name: "ANZ CREDIT", type: "credit", sortOrder: 1, isActive: true, source: "csv" as const, externalKind: null, balance: null, syncEnabled: true },
       ],
-      accountScope: { 1: true },
       categories: [
         { id: 4, name: "Transport", color: "#89b4fa", sortOrder: 4, isDefault: false },
         { id: 3, name: "Dining & Drinks", color: "#fab387", sortOrder: 3, isDefault: false },

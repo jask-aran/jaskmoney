@@ -19,6 +19,7 @@ export type SectionId =
   | "set.rules"
   | "set.filters"
   | "set.database"
+  | "set.up"
 
 export type ScopeId =
   | "global"
@@ -36,6 +37,7 @@ export type ScopeId =
   | "settings.rules"
   | "settings.filters"
   | "settings.database"
+  | "settings.up"
   | "settings.editor"
   | "settings.confirm"
   | "settings.import.files"
@@ -47,6 +49,14 @@ export type ScopeId =
   | "settings.factoryReset"
 
 export type SettingsList = "categories" | "tags"
+export type SettingsSection = "taxonomy" | "rules" | "filters" | "up" | "database"
+/** j/k order of Settings sections (wide layout: left column, then right). */
+export const SETTINGS_SECTIONS: SettingsSection[] = ["taxonomy", "rules", "filters", "up", "database"]
+
+export function settingsSectionFocus(section: SettingsSection, list: SettingsList = "categories"): SectionId {
+  if (section === "taxonomy") return list === "categories" ? "set.categories" : "set.tags"
+  return section === "rules" ? "set.rules" : section === "filters" ? "set.filters" : section === "up" ? "set.up" : "set.database"
+}
 export type SettingsEditorKind = "category" | "tag" | "filter" | "rule"
 export type ImportStage = "none" | "files" | "path" | "profile" | "profileEditor" | "preview"
 
@@ -82,7 +92,7 @@ export interface UiState {
   rangeAnchorId: number
   rangeCursorId: number
   settingsActive: boolean
-  settingsSection: "taxonomy" | "rules" | "filters" | "database"
+  settingsSection: SettingsSection
   taxonomyList: SettingsList
   categoryCursor: number
   categoryTop: number
@@ -92,11 +102,13 @@ export interface UiState {
   tagVisible: number
   ruleCursor: number
   filterCursor: number
+  /** Cursor in the Up Bank sync account list. */
+  upCursor: number
   settingsEditor: SettingsEditorKind | null
   settingsEditId: number | string | null
   settingsEditField: number
   settingsDraft: { name: string; color: string; categoryId: number | null; id: string; expr: string; savedFilterId: string; setCategoryId: number | null; addTagIds: number[] }
-  settingsConfirm: { kind: "category" | "tag" | "rule" | "filter" | "profile" | "clearData" | "clearAccount" | "deleteAccount"; id: number | string; label: string } | null
+  settingsConfirm: { kind: "category" | "tag" | "rule" | "filter" | "profile" | "clearData" | "clearAccount" | "deleteAccount" | "desyncAccount"; id: number | string; label: string } | null
   importStage: ImportStage
   importDirectory: string
   importFiles: string[]
@@ -126,8 +138,8 @@ const TAB_DEFAULT_FOCUS: Record<TabId, SectionId> = {
 export const JUMP_TARGETS: Record<TabId, JumpTarget[]> = {
   dashboard: [
     { key: "d", section: "dash.date", label: "Date Range" },
-    { key: "n", section: "dash.cashflow", label: "Cashflow" },
-    { key: "c", section: "dash.composition", label: "Composition" },
+    { key: "n", section: "dash.cashflow", label: "Net Position" },
+    { key: "c", section: "dash.composition", label: "Spending by Category" },
   ],
   manager: [
     { key: "a", section: "mgr.accounts", label: "Accounts" },
@@ -138,6 +150,7 @@ export const JUMP_TARGETS: Record<TabId, JumpTarget[]> = {
     { key: "t", section: "set.tags", label: "Tags" },
     { key: "r", section: "set.rules", label: "Rules" },
     { key: "f", section: "set.filters", label: "Filters" },
+    { key: "u", section: "set.up", label: "Up Bank" },
     { key: "d", section: "set.database", label: "Database & Import" },
   ],
 }
@@ -185,6 +198,7 @@ function createUiStore() {
     tagVisible: 10,
     ruleCursor: 0,
     filterCursor: 0,
+    upCursor: 0,
     settingsEditor: null,
     settingsEditId: null,
     settingsEditField: 0,
@@ -268,7 +282,7 @@ function createUiStore() {
   }
 
   function activateSettings(section: UiState["settingsSection"], list: SettingsList = "categories", reset = false) {
-    const updates: Partial<UiState> = { settingsActive: true, settingsSection: section, taxonomyList: list, focusedSection: section === "taxonomy" ? (list === "categories" ? "set.categories" : "set.tags") : section === "rules" ? "set.rules" : section === "filters" ? "set.filters" : "set.database", jumpMode: false }
+    const updates: Partial<UiState> = { settingsActive: true, settingsSection: section, taxonomyList: list, focusedSection: settingsSectionFocus(section, list), jumpMode: false }
     if (reset && list === "categories") { updates.categoryCursor = 0; updates.categoryTop = 0 }
     if (reset && list === "tags") { updates.tagCursor = 0; updates.tagTop = 0 }
     setState(updates)
@@ -419,17 +433,6 @@ function createUiStore() {
     setState({ managerCursor: cur, managerTop: top })
   }
 
-  function moveAccountCursor(delta: number, count: number) {
-    if (count <= 0) {
-      setState({ accountCursor: 0 })
-      return
-    }
-    let cur = state.accountCursor + delta
-    if (cur < 0) cur = 0
-    if (cur >= count) cur = count - 1
-    setState({ accountCursor: cur })
-  }
-
   function setTimeframe(tf: TimeframeState) {
     setState({ timeframe: tf })
   }
@@ -464,6 +467,7 @@ function createUiStore() {
     if (state.settingsSection === "taxonomy") return "settings.taxonomy"
     if (state.settingsSection === "rules") return "settings.rules"
     if (state.settingsSection === "filters") return "settings.filters"
+    if (state.settingsSection === "up") return "settings.up"
     return "settings.database"
   }
 
@@ -499,7 +503,6 @@ function createUiStore() {
     highlightedIds,
     moveManagerCursor,
     jumpManagerCursor,
-    moveAccountCursor,
     setTimeframe,
     setDashChipCursor,
     activeScope,

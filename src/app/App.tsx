@@ -1,4 +1,4 @@
-import { Match, Switch, onMount } from "solid-js"
+import { ErrorBoundary, Match, Switch, createEffect, on, onMount } from "solid-js"
 import { useKeyboard, useRenderer } from "@opentui/solid"
 import type { KeyEvent } from "@opentui/core"
 import { ui } from "../state/uiStore"
@@ -14,6 +14,7 @@ import { DashboardTab } from "../ui/dashboard/DashboardTab"
 import { ManagerTab } from "../ui/manager/ManagerTab"
 import { SettingsTab } from "../ui/settings/SettingsTab"
 import { theme } from "../theme"
+import { selectionLabel } from "../domain/accountTree"
 import {
   LOOKBACKS,
   activeChipIndex,
@@ -59,13 +60,10 @@ export function App() {
     handleKey(ui, key, data)
   })
 
+  // The Manager's account selection; the other tabs are not account-scoped.
   const accountLabel = () => {
-    const accts = data.state.accounts
-    if (accts.length === 0) return "No accounts"
-    const on = accts.filter((a) => data.state.accountScope[a.id] !== false)
-    if (on.length === accts.length) return "All Accounts"
-    if (on.length === 0) return "No accounts selected"
-    return on.map((a) => a.name).join(", ")
+    if (data.state.accounts.length === 0) return "No accounts"
+    return ui.state.activeTab === "manager" ? selectionLabel(data.state.accounts, data.state.accountSelection) : ""
   }
 
   return (
@@ -73,6 +71,9 @@ export function App() {
       <TabBar active={ui.state.activeTab} accountLabel={accountLabel()} />
       <box height={1} width="100%" backgroundColor={theme.canvas} />
       <box flexGrow={1} width="100%" flexDirection="column" backgroundColor={theme.canvas}>
+        {/* A rendering error stays inside the tab: the rest of the app (tab
+            switching, quit) keeps working. Switching tabs retries. */}
+        <ErrorBoundary fallback={(error: unknown, reset: () => void) => <TabError error={error} reset={reset} />}>
         <Switch>
           <Match when={ui.state.activeTab === "dashboard"}>
             <DashboardTab focused={ui.state.focusedSection} />
@@ -84,6 +85,7 @@ export function App() {
             <SettingsTab focused={ui.state.focusedSection} />
           </Match>
         </Switch>
+        </ErrorBoundary>
       </box>
       {/* Jump mode borrows the status line while active; the stored status
           returns unchanged when it closes. */}
@@ -95,6 +97,21 @@ export function App() {
       <JumpOverlay active={ui.state.jumpMode} tab={ui.state.activeTab} />
       <CatPicker />
       <TagPicker />
+    </box>
+  )
+}
+
+function TabError(props: { error: unknown; reset: () => void }) {
+  // Retry when the user switches tab.
+  createEffect(on(() => ui.state.activeTab, () => props.reset(), { defer: true }))
+  const message = () => (props.error instanceof Error ? props.error.message : String(props.error))
+  return (
+    <box border borderStyle="rounded" borderColor={theme.error} paddingLeft={1} paddingRight={1} flexDirection="column">
+      <text fg={theme.error}>
+        <b>This tab failed to render</b>
+      </text>
+      <text fg={theme.text}>{message()}</text>
+      <text fg={theme.overlay1}>Switch tabs to retry · ctrl+c quits</text>
     </box>
   )
 }
