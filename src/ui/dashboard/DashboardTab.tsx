@@ -401,9 +401,13 @@ function spendingChart(
   const peak = shown.reduce((best, v, i) => (v > shown[best]! ? i : best), 0)
   let bars: Array<{ value: number; ink: string }>
   let colOf: (i: number) => number
+  // Where a marker goes: today's rule runs through its own bar's column;
+  // week and month rules sit in the gap before their day's bar.
+  let markerCol: (index: number, ink: string) => number
   let used: number
   if (n <= width) {
     const slot = Math.floor(width / n)
+    markerCol = (i, ink) => (ink === "today" || slot === 1 ? i * slot : i * slot - 1)
     bars = dates.map((d, i) => ({ value: i < elapsed ? values[i]! : 0, ink: d === todayISO ? "partial" : "spend" }))
     colOf = (i) => i * slot
     used = (n - 1) * slot + (slot > 1 ? slot - 1 : 1)
@@ -413,11 +417,12 @@ function spendingChart(
     shown.forEach((v, i) => { sums[bucketOf(i)]! += v; counts[bucketOf(i)]!++ })
     bars = sums.map((total, b) => ({ value: counts[b] ? total / counts[b]! : 0, ink: "spend" }))
     colOf = bucketOf
+    markerCol = bucketOf
     used = width
   }
   const scale = niceScale(Math.max(0, ...bars.map((b) => b.value)))
   return {
-    rows: columnBars(bars, width, height, scale.max, { value: avg, ink: "ref" }).rows,
+    rows: columnBars(bars, width, height, scale.max, { value: avg, ink: "ref" }, axis.markers.map((m) => ({ col: markerCol(m.index, m.ink), ink: m.ink }))).rows,
     ticks: tickRows(0, scale.max, scale.step, height, shortMoney),
     labels: dateAxis(dates, used, todayISO, colOf).labels,
     summary: [

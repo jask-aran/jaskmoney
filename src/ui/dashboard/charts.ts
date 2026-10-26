@@ -9,7 +9,9 @@ const EIGHTHS = ["", "▁", "▂", "▃", "▄", "▅", "▆", "▇", "█"]
  * scaled so `max` fills `height` rows. Rows are returned top first as runs
  * tagged with each bar's ink; `slots` gives each bar's first column and
  * width. Zero stays blank; any positive value shows at least one eighth.
- * `ref` draws a dotted horizontal rule at its value through blank cells.
+ * `ref` draws a dotted horizontal rule at its value through blank cells;
+ * `markers` draw vertical rules through blank cells of their columns (over
+ * the ref rule).
  */
 export function columnBars(
   bars: Array<{ value: number; ink: string }>,
@@ -17,6 +19,7 @@ export function columnBars(
   height: number,
   max: number,
   ref?: { value: number; ink: string },
+  markers: Array<{ col: number; ink: string }> = [],
 ): { rows: Run[][]; slots: Array<{ col: number; width: number }> } {
   const n = bars.length
   if (n === 0 || width <= 0 || height <= 0) return { rows: [], slots: [] }
@@ -30,6 +33,7 @@ export function columnBars(
   for (let r = height - 1; r >= 0; r--) {
     const blank = r === refRow ? { text: "┈", ink: ref!.ink } : { text: " ", ink: null }
     const cells = new Array<{ text: string; ink: string | null }>(width).fill(blank)
+    for (const m of markers) if (m.col >= 0 && m.col < width) cells[m.col] = { text: "│", ink: m.ink }
     slots.forEach((s, i) => {
       const glyph = EIGHTHS[Math.max(0, Math.min(8, levels[i]! - r * 8))] || " "
       for (let c = s.col; c < s.col + s.width; c++) if (glyph !== " ") cells[c] = { text: glyph, ink: bars[i]!.ink }
