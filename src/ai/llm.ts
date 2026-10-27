@@ -16,7 +16,7 @@ export type LlmProvider = "openrouter" | "openai"
 type Env = Record<string, string | undefined>
 
 export const LLM_PROVIDERS: Record<LlmProvider, { label: string; keyName: "JASKMONEY_OPENROUTER_TOKEN" | "JASKMONEY_OPENAI_TOKEN"; modelName: "JASKMONEY_OPENROUTER_MODEL" | "JASKMONEY_OPENAI_MODEL"; defaultModel: string; signIn: string }> = {
-  openrouter: { label: "OpenRouter", keyName: "JASKMONEY_OPENROUTER_TOKEN", modelName: "JASKMONEY_OPENROUTER_MODEL", defaultModel: "meta/muse-spark-1.3", signIn: "Sign in with OpenRouter" },
+  openrouter: { label: "OpenRouter", keyName: "JASKMONEY_OPENROUTER_TOKEN", modelName: "JASKMONEY_OPENROUTER_MODEL", defaultModel: "meta/muse-spark-1.3-contributor", signIn: "Sign in with OpenRouter" },
   openai: { label: "OpenAI", keyName: "JASKMONEY_OPENAI_TOKEN", modelName: "JASKMONEY_OPENAI_MODEL", defaultModel: "gpt-6.1-sol", signIn: "Sign in with ChatGPT" },
 }
 
