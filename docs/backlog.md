@@ -11,7 +11,7 @@ committed; note the commit.
 - [x] **2. Dismissals stick.** Dismissed category suggestions (`x`) and
   dismissed tag candidates are remembered in the database, so re-suggesting
   (opening `i`, a sync, `T`) doesn't bring them back.
-- [ ] **6. Repeated accepts become rules.** After the same description is
+- [x] **6. Repeated accepts become rules.** After the same description is
   put in the same category a few times, offer a rule so new rows from it
   are categorised on sync without review.
 

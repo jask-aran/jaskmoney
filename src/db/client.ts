@@ -12,6 +12,7 @@ import {
   TAG_SCOPE_COLUMN,
   SUGGESTION_DISMISSED_COLUMN,
   TAG_DISMISSALS_SQL,
+  CATEGORY_CHOICES_SQL,
   CATEGORY_SOURCE_COLUMN,
   CATEGORY_INCOME_COLUMN,
   CATEGORY_NOT_SPENDING_COLUMN,
@@ -112,6 +113,13 @@ const MIGRATIONS: Record<number, (db: Db) => void> = {
   18: (db) => db.exec(CATEGORY_SUGGESTIONS_SQL),
   19: (db) => db.exec(CATEGORY_SUGGESTIONS_V19_SQL),
   20: (db) => db.exec(`ALTER TABLE category_suggestions ADD COLUMN ${SUGGESTION_RANKED_COLUMN}`),
+  23: (db) => {
+    db.exec(CATEGORY_CHOICES_SQL)
+    // Rows you categorised that Up couldn't take still say so.
+    db.exec(`INSERT OR IGNORE INTO category_choices (description, category_id, times)
+      SELECT lower(trim(description)), category_id, COUNT(*) FROM transactions
+      WHERE category_source IN ('user', 'pending') AND category_id IS NOT NULL GROUP BY 1, 2`)
+  },
   22: (db) => {
     // Tests wind a fresh schema back to older versions: add only if missing.
     const columns = db.query<{ name: string }, []>("PRAGMA table_info(category_suggestions)").all().map((c) => c.name)
@@ -499,6 +507,25 @@ export function saveSuggestions(db: Db, list: CategorySuggestion[]): void {
   db.transaction(() => {
     for (const s of list) save.run(s.transactionId, s.categoryId, s.confidence, s.source, s.ranked?.length ? JSON.stringify(s.ranked.map((r) => [r.categoryId, r.confidence])) : null)
   })()
+}
+
+/** A categorisation you made: `times` rows of `description` into the category. */
+export function recordCategoryChoices(db: Db, choices: { description: string; categoryId: number; times: number }[]): void {
+  const add = db.query(`INSERT INTO category_choices (description, category_id, times) VALUES (?, ?, ?)
+    ON CONFLICT (description, category_id) DO UPDATE SET times = times + excluded.times`)
+  db.transaction(() => { for (const c of choices) add.run(c.description.trim().toLowerCase(), c.categoryId, c.times) })()
+}
+
+export interface CategoryChoice { description: string; categoryId: number; times: number; declined: boolean }
+
+export function loadCategoryChoices(db: Db): CategoryChoice[] {
+  return db.query<{ description: string; categoryId: number; times: number; declined: number }, []>(
+    "SELECT description, category_id AS categoryId, times, declined FROM category_choices").all()
+    .map((c) => ({ ...c, declined: c.declined === 1 }))
+}
+
+export function declineCategoryChoice(db: Db, description: string, categoryId: number): void {
+  db.query("UPDATE category_choices SET declined = 1 WHERE description = ? AND category_id = ?").run(description.trim().toLowerCase(), categoryId)
 }
 
 /** Rows whose suggestion was dismissed: not suggested for again. */

@@ -175,6 +175,10 @@ export function ManagerTab(props: { focused: SectionId }) {
     })).sort((a, b) => b.n - a.n)
   })
   const ACCEPT_LINES = 8
+  const RULE_LINES = 6
+  /** R's offers, while its modal is open. */
+  const ruleOffers = createMemo(() => (ui.state.ruleOffersOpen ? data.ruleOffersFor() : []))
+  const ruleTop = () => Math.max(0, ui.state.ruleOfferCursor - RULE_LINES + 1)
 
   /** Tag-all's preview: the rows it would tag, by description (money in marked). */
   const tagPreview = createMemo(() => {
@@ -290,6 +294,33 @@ export function ManagerTab(props: { focused: SectionId }) {
             <text fg={theme.overlay1}>Up rows are categorised in Up too.</text>
           </Modal>
         )}
+      </Show>
+      <Show when={ui.state.ruleOffersOpen && ruleOffers().length}>
+        <Modal title="Make rules" subtitle={`${ruleOffers().length} offered`} width={76} hints="j/k move · enter make rule · x never offer · esc later">
+          <text fg={theme.overlay1}>New rows these find get the category on sync, without review.</text>
+          <text> </text>
+          <For each={ruleOffers().slice(ruleTop(), ruleTop() + RULE_LINES)}>{(offer, i) => {
+            const category = () => data.state.categories.find((c) => c.id === offer.categoryId)
+            const at = () => ruleTop() + i() === ui.state.ruleOfferCursor
+            return (
+              <>
+                <text wrapMode="none">
+                  <S fg={at() ? theme.accent : theme.overlay1}>{at() ? "> " : "  "}</S>
+                  <S fg={theme.text}>{fit(offer.description, 34)}</S>
+                  <S fg={theme.overlay1}>{" → "}</S>
+                  <S fg={category()?.color ?? theme.text}>{`${categoryMark(offer.categoryId)} ${fit(category()?.name ?? "?", 30)}`}</S>
+                </text>
+                <text wrapMode="none" fg={theme.overlay1}>{fit(`    you chose it ${offer.times}× · ${offer.agreeing} of ${offer.categorised} found are there${offer.waiting.length ? ` · ${offer.waiting.length} waiting` : ""}`, 72)}</text>
+                <Show when={offer.others.length}>
+                  <text wrapMode="none" fg={theme.warning}>{fit(`    also finds ${offer.others.join(", ")}`, 72)}</text>
+                </Show>
+              </>
+            )
+          }}</For>
+          <Show when={ruleOffers().length > RULE_LINES}>
+            <text fg={theme.overlay1}>{`  ${ruleTop() + 1}–${Math.min(ruleTop() + RULE_LINES, ruleOffers().length)} of ${ruleOffers().length}`}</text>
+          </Show>
+        </Modal>
       </Show>
       <Show when={accountAction()}>
         {(account: () => Account) => (

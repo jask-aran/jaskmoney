@@ -174,7 +174,7 @@ test("suggesting clears even when the database write and final refresh fail", as
 
 test("fresh schema includes suggestions and v18–v19 migrate a v17 database without losing rows", () => {
   const db = testDb()
-  expect(db.query("SELECT version FROM schema_meta").get()).toEqual({ version: 22 })
+  expect(db.query("SELECT version FROM schema_meta").get()).toEqual({ version: 23 })
   expect(db.query("SELECT * FROM category_suggestions").all()).toEqual([])
   expect(db.query("SELECT pay_early FROM budget_cycle").get()).toEqual({ pay_early: 0 })
   const t = transaction({ source: "csv" })
@@ -182,7 +182,7 @@ test("fresh schema includes suggestions and v18–v19 migrate a v17 database wit
     .run(t.id, t.dateRaw, t.dateISO, t.amount, t.description)
   db.exec("DROP TABLE category_suggestions; UPDATE schema_meta SET version = 17;")
   ensureSchema(db)
-  expect(db.query("SELECT version FROM schema_meta").get()).toEqual({ version: 22 })
+  expect(db.query("SELECT version FROM schema_meta").get()).toEqual({ version: 23 })
   expect(db.query("SELECT description FROM transactions WHERE id = ?").get(t.id)).toEqual({ description: t.description })
   const c = db.query<{ id: number }, []>("SELECT id FROM categories WHERE name = 'Groceries'").get()!
   const suggestion = { transactionId: t.id, categoryId: c.id, confidence: 1, source: "history" } satisfies Parameters<typeof saveSuggestions>[1][number]
@@ -201,7 +201,7 @@ test("v19: suggestions come from Jev; history's are kept, Clef's dropped", () =>
     INSERT INTO category_suggestions (transaction_id, category_id, confidence, source) VALUES (1, ${groceries}, 0.75, 'history'), (2, ${groceries}, 0.5, 'clef');
     UPDATE schema_meta SET version = 18;`)
   ensureSchema(db)
-  expect(db.query("SELECT version FROM schema_meta").get()).toEqual({ version: 22 })
+  expect(db.query("SELECT version FROM schema_meta").get()).toEqual({ version: 23 })
   expect(loadSuggestions(db)).toEqual([{ transactionId: 1, categoryId: groceries, confidence: 0.75, source: "history" }])
   saveSuggestions(db, [{ transactionId: 2, categoryId: groceries, confidence: 0.9, source: "jev" }])
   expect(loadSuggestions(db)).toHaveLength(2)

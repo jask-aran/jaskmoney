@@ -6,6 +6,7 @@ import { accountRows, accountStacks, spendingScope, type AccountSelection } from
 import { assignableCategories, pickerSuggestions } from "../domain/categoryOptions"
 import { parseTagScope } from "../domain/tagScope"
 import { tagChoices } from "../state/tagChooser"
+import { RULE_AFTER } from "../domain/ruleOffers"
 import { endTagReview, runTagAccept, startTagReview } from "./tagReview"
 import { budgetLabel, budgetScopeOptions, scopeKey } from "../domain/budgetScopes"
 import type { CycleConfig } from "../domain/budget"
@@ -846,6 +847,37 @@ function handleManagerAcceptPreview(ui: UiStore, key: KeyEvent, data?: DataStore
   }
 }
 
+/** R: rules offered from repeated categorisations. enter makes the cursor's,
+ * x declines it for good, esc closes (offers stay). */
+function handleRuleOffers(ui: UiStore, key: KeyEvent, data?: DataStore): void {
+  const { name } = key
+  const offers = data?.ruleOffersFor() ?? []
+  const close = () => ui.setState({ ruleOffersOpen: false, ruleOfferCursor: 0 })
+  if (name === "escape") { close(); ui.setStatus("Transactions"); return }
+  const moved = listMove(key, ui.state.ruleOfferCursor, offers.length)
+  if (moved != null) { ui.setState({ ruleOfferCursor: moved }); return }
+  const offer = offers[ui.state.ruleOfferCursor]
+  if (!offer || !data) return
+  const settle = () => {
+    const left = data.ruleOffersFor().length
+    if (!left) close()
+    else ui.setState({ ruleOfferCursor: Math.min(ui.state.ruleOfferCursor, left - 1) })
+  }
+  if (name === "return" || name === "enter") {
+    ui.setStatus(`Making a rule for ${offer.description}…`)
+    data.makeOfferedRule(offer).then(
+      (summary) => { settle(); ui.jumpManagerCursor(Math.min(ui.state.managerCursor, Math.max(0, data.scopedTransactions().length - 1)), data.scopedTransactions().length); ui.setStatus(summary) },
+      (e) => reportError(ui, e),
+    )
+    return
+  }
+  if (name === "x" && !key.shift) {
+    data.declineRuleOffer(offer)
+    settle()
+    ui.setStatus(`No rule for ${offer.description}; it won't be offered again`)
+  }
+}
+
 function handleSettingsAi(ui: UiStore, key: KeyEvent, data?: DataStore): void {
   const { name } = key
   const row = AI_ROWS[ui.state.aiCursor] ?? "jev"
@@ -913,6 +945,14 @@ function handleManagerTxns(ui: UiStore, key: KeyEvent, data?: DataStore): void {
     ui.jumpManagerCursor(0, data.scopedTransactions().length)
     const counts = data.askCounts()
     ui.setStatus(on ? `Near misses shown · ${counts?.near ?? 0} below ${MATCH_AT * 100}% · n hides them` : "Matches only")
+    return
+  }
+  // R: rules offered from what you've categorised the same way repeatedly.
+  if (name === "r" && key.shift && data) {
+    const n = data.ruleOffersFor().length
+    if (!n) { ui.setStatus(`No rule to offer: one comes after you put a description in the same category ${RULE_AFTER} times`); return }
+    ui.setState({ ruleOffersOpen: true, ruleOfferCursor: 0 })
+    ui.setStatus(`${count(n, "rule")} offered`)
     return
   }
   // Tag review: a tag's candidates, accepted (y, Y) or dismissed (x) like
@@ -1341,6 +1381,8 @@ type HintState = Pick<UiState, "focusedSection" | "drillReturn" | "chartViews"> 
   recallQuestion?: boolean
   /** A tag review is open. */
   tagReview?: boolean
+  /** Rules offered (R). */
+  ruleOffers?: number
   /** The filter has `ask:` terms; whether near misses are shown. */
   asks?: boolean
   askLoose?: boolean
@@ -1424,6 +1466,11 @@ const scopes: Record<ScopeId, ScopeEntry> = {
     handle: handleSettingsFactoryReset,
     quits: false,
     hints: () => [{ key: "type RESET", desc: "confirm" }, { key: "enter", desc: "erase DB" }, { key: "esc", desc: "cancel" }],
+  },
+  "manager.ruleOffers": {
+    handle: handleRuleOffers,
+    quits: false,
+    hints: () => [{ key: "j/k", desc: "move" }, { key: "enter", desc: "make rule" }, { key: "x", desc: "never" }, { key: "esc", desc: "later" }],
   },
   "manager.acceptPreview": {
     handle: handleManagerAcceptPreview,
@@ -1537,6 +1584,7 @@ const scopes: Record<ScopeId, ScopeEntry> = {
       { key: "Y", desc: `accept all ≥${ACCEPT_ALL_AT * 100}%` },
       { key: "x", desc: "dismiss" },
       { key: "c", desc: "choose" },
+      ...(state?.ruleOffers ? [{ key: "R", desc: `rules (${state.ruleOffers})` }] : []),
       // The review actions first: the footer cuts at the end on narrow screens.
       { key: "space", desc: "select" },
       { key: "S-j/k", desc: "range" },
@@ -1554,6 +1602,7 @@ const scopes: Record<ScopeId, ScopeEntry> = {
       { key: "j/k", desc: "move" },
       { key: "i", desc: "uncategorised" },
       { key: "T", desc: "tag review" },
+      ...(state?.ruleOffers ? [{ key: "R", desc: `rules (${state.ruleOffers})` }] : []),
       ...(state?.asks ? [{ key: "n", desc: state.askLoose ? "matches only" : "near misses" }] : []),
       { key: "m", desc: "merchants" },
       { key: "a", desc: "account" },

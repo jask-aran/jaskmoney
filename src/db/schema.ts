@@ -6,7 +6,7 @@
  * version fallback with an additive migration registry. v7 was the initial
  * partial OpenTUI port. */
 
-export const SCHEMA_VERSION = 22
+export const SCHEMA_VERSION = 23
 
 /** Columns shared by the fresh schema and the v9 migration. Rows imported from
  * CSV keep source = 'csv' and NULL external fields. */
@@ -161,6 +161,20 @@ CREATE TABLE IF NOT EXISTS tag_dismissals (
 );
 `
 
+/** v23: how often you've put a description in a category (each accept or
+ * choice adds the rows it categorised), which turns into a rule offer; and
+ * offers you declined. Needed because a category Up confirms reads as
+ * Up's own ('provider'). `description` is lower-case and trimmed. */
+export const CATEGORY_CHOICES_SQL = `
+CREATE TABLE IF NOT EXISTS category_choices (
+  description TEXT NOT NULL,
+  category_id INTEGER NOT NULL REFERENCES categories(id) ON DELETE CASCADE,
+  times       INTEGER NOT NULL DEFAULT 0,
+  declined    INTEGER NOT NULL DEFAULT 0,
+  PRIMARY KEY (description, category_id)
+);
+`
+
 export const SYNC_SQL = `
 CREATE UNIQUE INDEX IF NOT EXISTS idx_accounts_external ON accounts(source, external_id) WHERE external_id IS NOT NULL;
 CREATE UNIQUE INDEX IF NOT EXISTS idx_transactions_external ON transactions(source, external_id) WHERE external_id IS NOT NULL;
@@ -262,6 +276,7 @@ ALTER TABLE category_suggestions ADD COLUMN ${SUGGESTION_RANKED_COLUMN};
 ALTER TABLE tags ADD COLUMN ${TAG_SCOPE_COLUMN};
 ALTER TABLE category_suggestions ADD COLUMN ${SUGGESTION_DISMISSED_COLUMN};
 ${TAG_DISMISSALS_SQL}
+${CATEGORY_CHOICES_SQL}
 `
 
 export const DEFAULT_CATEGORIES: { name: string; color: string; sortOrder: number; isDefault: number }[] = [

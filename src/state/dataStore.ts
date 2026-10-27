@@ -15,6 +15,9 @@ import {
   saveSuggestions,
   deleteSuggestions,
   dismissSuggestionRows,
+  recordCategoryChoices,
+  loadCategoryChoices,
+  declineCategoryChoice,
   loadDismissedSuggestionIds,
   loadTagDismissals,
   saveTagDismissals,
@@ -58,6 +61,8 @@ import { historySuggestions, jevSuggestions } from "../domain/suggest"
 import { isOrdinaryFlow, isUncategorised } from "../domain/moneyRules"
 import { createUpClient, readUpToken, UpApiError } from "../up/client"
 import { PUSH_CONCURRENCY, pushTransactions } from "../up/push"
+import { count } from "../ui/text"
+import { ruleOffers, type RuleOffer } from "../domain/ruleOffers"
 import { detectRecurring, detectTrips } from "../domain/tagGroups"
 import { jevTagCandidates, knownTagCandidates, TAG_SHOW_AT, tagExamples, tagPool, type TagCandidate, type TagTarget } from "../domain/tagSuggest"
 import { appToday, type WeekStart } from "../domain/days"
@@ -524,8 +529,14 @@ function createDataStore() {
     type Prior = { categoryId: number | null; source: string | null; ext: string | null; extParent: string | null }
     const pushes = new Map<number, CategoryPush & { prior: Prior }>()
     let local = 0
+    const chosen = new Map<string, { description: string; categoryId: number; times: number }>()
     database.transaction(() => {
       for (const [id, categoryId] of assignments) {
+        const t = transactions().find((x) => x.id === id)
+        if (t && t.categoryId !== categoryId) {
+          const key = `${t.description.trim().toLowerCase()}\u0000${categoryId}`
+          chosen.set(key, { description: t.description, categoryId, times: (chosen.get(key)?.times ?? 0) + 1 })
+        }
         const category = state.categories.find((c) => c.id === categoryId)
         if (!category) throw new Error("category not found")
         const row = database.query(`SELECT source, external_id AS externalId, ext_categorizable AS categorizable,
@@ -540,6 +551,8 @@ function createDataStore() {
         if (push) pushes.set(id, { ...push, prior: { categoryId: row.categoryId, source: row.categorySource, ext: row.ext, extParent: row.extParent } })
         else local++
       }
+      // Repeated choices turn into rule offers (ruleOffersFor).
+      recordCategoryChoices(database, [...chosen.values()])
     })()
     refresh()
     let settled = 0, waiting = 0
@@ -621,7 +634,7 @@ function createDataStore() {
     const category = state.categories.find((c) => c.id === categoryId)
     if (!category) throw new Error("category not found")
     const result = await applyCategories(new Map(txnIds.map((id) => [id, categoryId])), onProgress)
-    return categorizedSummary(`Categorized ${result.done} → ${category.name}`, result)
+    return categorizedSummary(`Categorized ${result.done} → ${category.name}`, result) + ruleOfferNote(txnIds)
   }
 
   let suggestionsFinished: Promise<void> = Promise.resolve()
@@ -856,7 +869,7 @@ function createDataStore() {
     const result = await applyCategories(assignments, onProgress)
     const accepted = [...assignments].filter(([id, categoryId]) => transactions().some((t) => t.id === id && t.categoryId === categoryId)).map(([id]) => id)
     mutate((db) => deleteSuggestions(db, accepted))
-    return categorizedSummary(`Accepted ${result.done} suggestion${result.done === 1 ? "" : "s"}`, result)
+    return categorizedSummary(`Accepted ${result.done} suggestion${result.done === 1 ? "" : "s"}`, result) + ruleOfferNote(accepted)
   }
 
   function dismissSuggestions(ids: number[]): void {
@@ -1002,12 +1015,63 @@ function createDataStore() {
     const report = dryRunRules(transactionIds)
     if (!dryRun) mutate((database) => database.transaction(() => {
       for (const change of report.changes) {
-        // 'rule' keeps sync from replacing a rule's category with the provider's.
-        if (change.categorySet) database.query(`UPDATE transactions SET category_id = ?, category_source = 'rule' WHERE id = ?`).run(change.categoryId, change.id)
+        // 'rule' keeps sync from replacing a rule's category with the
+        // provider's. An Up row Up can hold the category for goes to Up like
+        // any categorisation: 'pending' until retryPendingCategories (which a
+        // sync runs right after its rules) sends it. (A deviation from the
+        // legacy app, which had no provider to send to.)
+        if (change.categorySet) {
+          const row = database.query(`SELECT source, external_id AS externalId, ext_categorizable AS categorizable FROM transactions WHERE id = ?`).get(change.id) as PushableRow | null
+          const category = state.categories.find((c) => c.id === change.categoryId)
+          const source = row && category && categoryPush(row, category, state.categories) ? "pending" : "rule"
+          database.query(`UPDATE transactions SET category_id = ?, category_source = ? WHERE id = ?`).run(change.categoryId, source, change.id)
+        }
         for (const tagId of change.tagIds) addTagLink(database, change.id, tagId)
       }
     })())
     return { updatedTransactions: report.updatedTransactions, categoryChanges: report.categoryChanges, tagChanges: report.tagChanges, failedRules: report.failedRules }
+  }
+
+  /** Rules worth making from your repeated categorisations (all of them, or
+   * those for the descriptions of `ids`). */
+  function ruleOffersFor(ids?: number[]): RuleOffer[] {
+    if (!db) return []
+    const descriptions = ids && transactions().filter((t) => ids.includes(t.id)).map((t) => t.description)
+    return ruleOffers(loadCategoryChoices(db), transactions(), state.rules, state.savedFilters, state.categories, state.tags, descriptions)
+  }
+
+  /** " · R: rule for Coles → Groceries", or how many, for the rows just categorised. */
+  function ruleOfferNote(ids: number[]): string {
+    const offers = ruleOffersFor(ids)
+    if (!offers.length) return ""
+    if (offers.length > 1) return ` · R: ${offers.length} rules to make`
+    const category = state.categories.find((c) => c.id === offers[0]!.categoryId)
+    return ` · R: rule for ${offers[0]!.description} → ${category?.name ?? "?"}`
+  }
+
+  /** Make an offered rule: a saved filter and a rule (last in order), then
+   * run it on the rows it finds waiting, Up rows sent to Up. */
+  async function makeOfferedRule(offer: RuleOffer): Promise<string> {
+    if (!db) throw new Error("db not open")
+    const category = state.categories.find((c) => c.id === offer.categoryId)
+    if (!category) throw new Error("category not found")
+    const base = `desc-${offer.description.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-+|-+$/g, "").slice(0, 50) || "rule"}`
+    let id = base
+    for (let n = 2; state.savedFilters.some((f) => f.id === id); n++) id = `${base}-${n}`
+    saveSavedFilter({ id, name: offer.description, expr: offer.expr })
+    createSettingsRule({ name: `${offer.description} → ${category.name}`, savedFilterId: id, setCategoryId: category.id, addTagIds: [], enabled: true })
+    const applied = offer.waiting.length ? applyRules(offer.waiting) : null
+    const sent = applied?.categoryChanges ? await retryPendingCategories() : null
+    return [
+      `Rule made: ${offer.description} → ${category.name}`,
+      applied?.categoryChanges ? `${count(applied.categoryChanges, "waiting row")} categorised` : "",
+      sent?.pushed ? `${sent.pushed} sent to Up` : "",
+      sent?.waiting ? `${sent.waiting} waiting for Up` : "",
+    ].filter(Boolean).join(" · ")
+  }
+
+  function declineRuleOffer(offer: RuleOffer): void {
+    mutate((db) => declineCategoryChoice(db, offer.description, offer.categoryId))
   }
 
   function csvFiles(directory: string): string[] {
@@ -1166,6 +1230,9 @@ function createDataStore() {
     saveImportProfile,
     deleteImportProfile,
     applyRules,
+    ruleOffersFor,
+    makeOfferedRule,
+    declineRuleOffer,
     dryRunRules,
     recordFilterUsage,
     csvFiles,

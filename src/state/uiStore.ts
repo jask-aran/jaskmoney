@@ -62,6 +62,7 @@ export type ScopeId =
   | "settings.import.preview"
   | "manager.accountAction"
   | "manager.acceptPreview"
+  | "manager.ruleOffers"
   | "settings.factoryReset"
 
 export type SettingsList = "categories" | "tags"
@@ -199,6 +200,9 @@ export interface UiState {
   smartQuestion: { question: string; expr: string } | null
   /** Accept-all's preview: the rows it would categorise, until confirmed. */
   acceptPreview: number[] | null
+  /** R: rules offered from repeated categorisations; the cursor among them. */
+  ruleOffersOpen: boolean
+  ruleOfferCursor: number
   factoryResetOpen: boolean
   factoryResetDraft: string
   factoryResetCaret: number
@@ -338,6 +342,8 @@ function createUiStore() {
     accountActionId: null,
     smartQuestion: null,
     acceptPreview: null,
+    ruleOffersOpen: false,
+    ruleOfferCursor: 0,
     factoryResetOpen: false,
     factoryResetDraft: "",
     factoryResetCaret: 0,
@@ -372,6 +378,7 @@ function createUiStore() {
       importStage: "none",
       accountActionId: null,
       acceptPreview: null,
+      ruleOffersOpen: false,
       factoryResetOpen: false,
       factoryResetDraft: "", factoryResetCaret: 0,
     })
@@ -609,6 +616,7 @@ function createUiStore() {
     if (state.importStage === "preview") return "settings.import.preview"
     if (state.accountActionId != null) return "manager.accountAction"
     if (state.acceptPreview) return "manager.acceptPreview"
+    if (state.ruleOffersOpen) return "manager.ruleOffers"
     if (state.factoryResetOpen) return "settings.factoryReset"
     if (state.customEdit) return "overview.custom"
     if (state.activeTab === "overview") return state.focusedSection === "ov.range" ? "overview.range" : "overview"
