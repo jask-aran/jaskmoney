@@ -33,7 +33,7 @@ test("a smart search's question describes its filter until the filter changes; â
 test("n toggles near misses only when the filter asks Jev", () => {
   setup()
   handleKey(ui, key("n"), data)
-  expect(data.state.askLoose).toBe(false)
+  expect(data.state.askLoose).toBeNull()
   data.commitFilter("ask:coffee")
   expect(footerHints("manager.txns", { focusedSection: "mgr.transactions", drillReturn: null, chartViews: [0, 4], asks: true }).find((h) => h.key === "n")?.desc).toBe("near misses")
   handleKey(ui, key("n"), data)

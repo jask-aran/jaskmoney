@@ -7,7 +7,7 @@ import { TextInput } from "../primitives/TextInput"
 import { smartQuestionFor, ui, type SectionId } from "../../state/uiStore"
 import { data } from "../../state/dataStore"
 import { theme } from "../../theme"
-import { filterExprString } from "../../domain/filter"
+import { askTerms, filterExprString } from "../../domain/filter"
 import type { Account } from "../../domain/types"
 import { fit, truncate } from "../text"
 import { categoryMark } from "../icons"
@@ -83,7 +83,7 @@ export function ManagerTab(props: { focused: SectionId }) {
   const askNote = () => {
     const c = data.askCounts()
     if (!c || data.state.asking) return null
-    return data.state.askLoose ? `${c.matches} match + ${c.near} near` : c.near ? `${c.matches} match · ${c.near} near (n)` : null
+    return data.nearMissesShown() ? `${c.matches} match, then ${c.near} near (≈)` : c.near ? `${c.matches} match · ${c.near} near (n)` : null
   }
 
   const scrollIndicator = () => {
@@ -131,7 +131,10 @@ export function ManagerTab(props: { focused: SectionId }) {
       (data.state.filterExpr ? filterExprString(data.state.filterExpr) : raw)
     // The question a smart search turned into this filter, while it still is that filter.
     const question = smartQuestionFor(ui.state, raw)
-    return { editing, raw, err, dotColor, dotLabel, preview, question }
+    // ask: terms make it a search Jev answers row by row, not just a filter.
+    // (A ?question being typed hasn't become a filter yet.)
+    const jev = !(editing && raw.trimStart().startsWith("?")) && askTerms(data.state.filterExpr).length > 0
+    return { editing, raw, err, dotColor, dotLabel, preview, question, jev }
   }
 
   /** The title names the filter: by its question when a smart search wrote it. */
@@ -178,6 +181,7 @@ export function ManagerTab(props: { focused: SectionId }) {
               <S fg={theme.text}>{"  "}</S>
               <S fg={fb().dotColor}>●</S>
               <S fg={fb().dotColor}> {fb().dotLabel}</S>
+              {fb().jev ? <S fg={theme.teal}>{"  ◆ Jev reads each row"}</S> : null}
               {fb().question ? <S fg={theme.overlay1}>{fb().editing ? `  ↑ ?${fb().question}` : `  from ?${fb().question}`}</S> : null}
               {!fb().editing ? <S fg={theme.overlay1}>{ui.state.drillReturn ? "  (esc back · u clear)" : "  (esc clear)"}</S> : null}
             </text>
@@ -209,7 +213,8 @@ export function ManagerTab(props: { focused: SectionId }) {
           sortMark={sortMark}
           empty={data.state.uncategorisedOnly ? "Nothing to categorise" : data.state.filterQuery ? "No matches" : "Empty · no transactions loaded"}
           suggestions={data.state.uncategorisedOnly ? data.state.suggestions : undefined}
-          askScore={data.state.askLoose ? data.askScore : undefined}
+          askScore={data.nearMissesShown() ? data.askScore : undefined}
+          nearMiss={(id) => data.nearMissIds().has(id)}
         />
         </Show>
       </SectionCard>

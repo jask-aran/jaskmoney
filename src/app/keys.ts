@@ -864,7 +864,7 @@ function handleManagerTxns(ui: UiStore, key: KeyEvent, data?: DataStore): void {
   if (name === "m") { ui.setState({ txnView: "merchants", merchantCursor: 0, merchantTop: 0 }); ui.setStatus("Grouped by merchant · m for rows"); return }
   // With ask: terms, n shows near misses too (rows Jev hasn't settled).
   if (name === "n" && !key.shift && data && askTerms(data.state.filterExpr).length) {
-    const on = !data.state.askLoose
+    const on = !data.nearMissesShown()
     data.setAskLoose(on)
     ui.jumpManagerCursor(0, data.scopedTransactions().length)
     const counts = data.askCounts()

@@ -166,6 +166,8 @@ export function TransactionTable(props: {
   /** Given (near misses shown): how likely each row matches the `ask:` terms,
    * shown after its category. */
   askScore?: (id: number) => number | undefined
+  /** Rows shown only as near misses: marked ≈ and dimmed, after the matches. */
+  nearMiss?: (id: number) => boolean
 }) {
   const widest = createMemo(longest)
   const layout = createMemo(() => tableLayout(props.width, props.showAccount, props.showTags, widest()))
@@ -203,6 +205,9 @@ export function TransactionTable(props: {
               const look = createMemo(() => rowAppearance(selected(), hl(), isCursor()))
               const rowBg = () => look().bg ?? theme.canvas
               const fg = (column: string) => look().fg ?? column
+              // A near miss reads quieter than a match, unless cursor, selection or range colour it.
+              const near = () => !!props.nearMiss?.(r().id)
+              const faint = (column: string) => look().fg ?? (near() ? theme.overlay1 : column)
               // Up holds (pending) render italic, with a clock, until they settle.
               const held = () => r().status === "HELD"
               const tags = createMemo(() => formatTags(r().tagNames, r().tagColors, layout().tags))
@@ -213,15 +218,15 @@ export function TransactionTable(props: {
               return (
                 <text width="100%" bg={rowBg()}>
                   <S fg={fg(theme.accent)} bg={rowBg()} bold={strong()}>
-                    {isCursor() ? ">" : selected() ? "*" : " "}
+                    {isCursor() ? ">" : selected() ? "*" : near() ? "≈" : " "}
                   </S>
-                  <S fg={fg(theme.mutedText)} bg={rowBg()} bold={strong()}>
+                  <S fg={faint(theme.mutedText)} bg={rowBg()} bold={strong()}>
                     {fmtDate(r().dateISO).padEnd(columns.date)}
                   </S>
                   <S fg={fg(theme.text)} bg={rowBg()} bold={strong()}>
                     {" ".repeat(columns.gap)}
                   </S>
-                  <S fg={fg(amountColor(r().amount))} bg={rowBg()} bold={strong()} italic={held()}>
+                  <S fg={faint(amountColor(r().amount))} bg={rowBg()} bold={strong()} italic={held()}>
                     {formatMoney(r().amount).padEnd(columns.amount - 2)}
                   </S>
                   <S fg={fg(theme.overlay1)} bg={rowBg()}>
@@ -230,7 +235,7 @@ export function TransactionTable(props: {
                   <S fg={fg(theme.text)} bg={rowBg()} bold={strong()}>
                     {" ".repeat(columns.gap)}
                   </S>
-                  <S fg={fg(theme.brightText)} bg={rowBg()} bold={strong()} italic={held()}>
+                  <S fg={faint(theme.brightText)} bg={rowBg()} bold={strong()} italic={held()}>
                     {fit(r().description, layout().description)}
                   </S>
                   <S fg={fg(theme.dimText)} bg={rowBg()} bold={strong()}>

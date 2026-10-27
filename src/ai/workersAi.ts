@@ -55,7 +55,7 @@ function clairicAnswer(value: unknown): ClairicAnswer | null {
 /** Cloudflare's error text, readable: its "AiError: AiError: …" prefixes go,
  * and the free plan's daily cap says what it means. */
 export function plainError(message: string): string {
-  if (/daily free allocation/i.test(message)) return "Cloudflare's free daily allowance is used up (it resets each day)"
+  if (/daily free allocation/i.test(message)) return "free daily limit used up"
   return message.replace(/^(?:\s*AiError:\s*)+/i, "").trim() || message
 }
 

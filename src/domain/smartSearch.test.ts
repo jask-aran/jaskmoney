@@ -2,7 +2,7 @@ import { describe, expect, test } from "bun:test"
 import type { JevAnswer } from "../ai/jev"
 import type { ClairicAnswer } from "../ai/workersAi"
 import { parseFilterStrict } from "./filter"
-import { categoriesNamed, parsedSearch, periodBounds, searchFilter, smartSearch, type ParsedSearch } from "./smartSearch"
+import { categoriesNamed, parsedSearch, periodBounds, searchFilter, smartSearch, snapPayee, type ParsedSearch } from "./smartSearch"
 import { searchNumbers, searchPhrases, searchQuestions } from "./questions"
 import { category } from "../testing/fixtures"
 
@@ -119,5 +119,17 @@ describe("smart search", () => {
     const down = await smartSearch({ clairic: async () => { throw new Error("daily allowance used up") }, jev }, "coffee over $5", ctx)
     expect(down).toMatchObject({ expr: 'ask:"coffee" AND type:spending AND amt:<=-5', clairic: "daily allowance used up" })
     expect((await smartSearch({ jev }, "coffee over $5", ctx)).clairic).toBe("no Workers AI key")
+  })
+})
+
+describe("payee words as the descriptions write them", () => {
+  const parsed = (words: string): ParsedSearch => ({ words, ask: null, atLeast: null, atMost: null, from: null, to: null, period: "any", flow: "any", categoryId: null })
+  test("words found as typed stay; otherwise punctuation and spacing are ignored; nothing found goes to Jev", () => {
+    const descriptions = ["McDonald's", "Uber Eats", "UBER *TRIP", "Coles Riverbend", "Coles Bayton"]
+    expect(snapPayee(parsed("uber eats"), descriptions)).toEqual(parsed("uber eats"))
+    expect(snapPayee(parsed("Mcdonalds"), descriptions)).toMatchObject({ words: "Mcdonalds", payeeMatches: ["McDonald's"] })
+    expect(searchFilter(snapPayee(parsed("Mcdonalds"), descriptions), ctx)).toBe(`desc:"McDonald's"`)
+    expect(snapPayee(parsed("maccas"), descriptions)).toMatchObject({ words: null, ask: "maccas" })
+    expect(snapPayee(parsed("ubertrip"), descriptions)).toMatchObject({ payeeMatches: ["UBER *TRIP"] })
   })
 })

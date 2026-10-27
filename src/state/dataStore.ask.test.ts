@@ -2,7 +2,7 @@ import { expect, onTestFinished, spyOn, test } from "bun:test"
 import type { JevClient, JevQuestion } from "../ai/jev"
 import { addDays, appToday } from "../domain/days"
 import { testEnv } from "../testing/scoped"
-import { data } from "./dataStore"
+import { data, showNearMisses } from "./dataStore"
 
 function setup() {
   testEnv("JASKMONEY_JEV_TOKEN", "")
@@ -113,7 +113,7 @@ test("session reset discards cached ASK verdicts and stops a pending run", async
   expect(shown()).toEqual([])
 })
 
-test("near misses: n shows rows Jev gave 30–70% too, scored; the border counts them; clearing the filter hides them again", async () => {
+test("near misses (Jev 30–70%) show after the matches when they don't swamp them; n hides or shows them; clearing the filter goes back to automatic", async () => {
   setup()
   const db = data.getDb()!
   db.query("INSERT INTO transactions (id, date_raw, date_iso, amount, description, account_id, source) VALUES (5, 'x', ?, -9, 'Tea House', 100, 'csv')").run(addDays(appToday(), -1))
@@ -126,12 +126,24 @@ test("near misses: n shows rows Jev gave 30–70% too, scored; the border counts
   } }
   data.commitFilter("ask:coffee")
   expect(await data.askAbout(ai)).toStartWith('ask "coffee": 2 of 4 match, 1 near (n shows them)')
-  expect(shown()).toEqual(["Alba Coffee", "Espresso Bar"])
   expect(data.askCounts()).toEqual({ matches: 2, near: 1 })
-  data.setAskLoose(true)
-  expect(shown()).toEqual(["Alba Coffee", "Espresso Bar", "Tea House"])
+  // One near miss beside two matches: shown, last, and marked as one.
+  expect(data.nearMissesShown()).toBe(true)
+  expect(data.scopedTransactions().map((t) => t.description).at(-1)).toBe("Tea House")
+  expect([...data.nearMissIds()]).toEqual([5])
   expect(data.askScore(5)).toBe(0.5)
   expect(data.askScore(1)).toBe(0.9)
+  data.setAskLoose(false)
+  expect(shown()).toEqual(["Alba Coffee", "Espresso Bar"])
+  expect(data.nearMissIds().size).toBe(0)
   data.clearFilter()
-  expect(data.state.askLoose).toBe(false)
+  expect(data.state.askLoose).toBeNull()
+})
+
+test("near misses show by themselves unless they outnumber the matches (a handful always do)", () => {
+  expect(showNearMisses(24, 5)).toBe(true)
+  expect(showNearMisses(0, 3)).toBe(true)
+  expect(showNearMisses(0, 6)).toBe(false)
+  expect(showNearMisses(5, 40)).toBe(false)
+  expect(showNearMisses(10, 10)).toBe(true)
 })

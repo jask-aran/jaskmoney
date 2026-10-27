@@ -58,7 +58,7 @@ describe("Workers AI client", () => {
 
 test("Cloudflare's errors read plainly", async () => {
   const { plainError } = await import("./workersAi")
-  expect(plainError("AiError: AiError: you have used up your daily free allocation of 10,000 neurons, please upgrade to Cloudflare's Workers Paid plan")).toBe("Cloudflare's free daily allowance is used up (it resets each day)")
+  expect(plainError("AiError: AiError: you have used up your daily free allocation of 10,000 neurons, please upgrade to Cloudflare's Workers Paid plan")).toBe("free daily limit used up")
   expect(plainError("AiError: AiError: bad input")).toBe("bad input")
   expect(plainError("plain")).toBe("plain")
 })

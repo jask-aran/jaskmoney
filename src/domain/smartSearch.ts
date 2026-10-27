@@ -30,6 +30,9 @@ export const SEARCH_FIELDS: Record<string, ClairicField> = {
 export interface ParsedSearch {
   /** Description words (a payee). */
   words: string | null
+  /** The real descriptions the payee words stand for, when they are not
+   * written as the descriptions write them ("Mcdonalds" for "McDonald's"). */
+  payeeMatches?: string[]
   /** Words for Jev to judge rows by (a kind of thing). */
   ask: string | null
   atLeast: number | null
@@ -89,6 +92,30 @@ export function parsedSearch(values: Record<string, ClairicAnswer> | null, answe
   }
 }
 
+/** Lower-case letters and digits only: "McDonald's" and "Mcdonalds" agree. */
+const squash = (s: string) => s.toLowerCase().replace(/[^a-z0-9]+/g, "")
+
+/** At most this many descriptions a payee's words may stand for; more, and
+ * the words are too vague to list (Jev judges rows instead). */
+const PAYEE_MATCHES = 5
+
+/**
+ * Payee words as the descriptions write them. Words found in a description
+ * as typed stay; otherwise the descriptions that contain them once case,
+ * spacing and punctuation are ignored stand in ("Mcdonalds" finds
+ * "McDonald's"); with none (or too many), the words go to Jev as `ask:`,
+ * which knows "Maccas" is McDonald's.
+ */
+export function snapPayee(p: ParsedSearch, descriptions: string[]): ParsedSearch {
+  if (!p.words) return p
+  const words = p.words.toLowerCase()
+  if (descriptions.some((d) => d.toLowerCase().includes(words))) return p
+  const key = squash(p.words)
+  const matches = key ? [...new Set(descriptions.filter((d) => squash(d).includes(key)))] : []
+  if (matches.length && matches.length <= PAYEE_MATCHES) return { ...p, payeeMatches: matches.sort() }
+  return { ...p, words: null, ask: p.words }
+}
+
 /** A period's first and last day; null for no period. Ranges that are still
  * running end today. */
 export function periodBounds(p: Pick<ParsedSearch, "period" | "from" | "to">, today: string, cycle: CycleConfig): { start: string; end: string } | null {
@@ -118,7 +145,7 @@ export function periodBounds(p: Pick<ParsedSearch, "period" | "from" | "to">, to
  * money in of at least $5, or either. */
 export function searchFilter(p: ParsedSearch, ctx: { today: string; cycle: CycleConfig; categories: Category[] }): string {
   const terms: string[] = []
-  if (p.words) terms.push(filterTerm("desc", p.words))
+  if (p.words) terms.push(p.payeeMatches?.length ? anyOf(p.payeeMatches.map((d) => filterTerm("desc", d))) : filterTerm("desc", p.words))
   if (p.ask) terms.push(filterTerm("ask", p.ask))
   if (p.categoryId != null) {
     const category = ctx.categories.find((c) => c.id === p.categoryId)
@@ -148,7 +175,7 @@ export function searchFilter(p: ParsedSearch, ctx: { today: string; cycle: Cycle
 export async function smartSearch(
   ai: { clairic?: WorkersAiClient["clairic"]; jev: Pick<JevClient, "judge"> },
   query: string,
-  ctx: { today: string; cycle: CycleConfig; categories: Category[] },
+  ctx: { today: string; cycle: CycleConfig; categories: Category[]; descriptions?: string[] },
 ): Promise<{ expr: string; parsed: ParsedSearch; clairic: string | null }> {
   const [values, answers] = await Promise.all([
     ai.clairic
@@ -157,7 +184,8 @@ export async function smartSearch(
     ai.jev.judge({ ...searchQuestions(ctx.categories), ...searchTermQuestions(query) }, { search: query }),
   ])
   const clairic = values instanceof Error ? values.message : null
-  const parsed = parsedSearch(values instanceof Error ? null : values, answers, ctx.categories, query)
+  const raw = parsedSearch(values instanceof Error ? null : values, answers, ctx.categories, query)
+  const parsed = ctx.descriptions ? snapPayee(raw, ctx.descriptions) : raw
   const expr = searchFilter(parsed, ctx)
   return { expr: expr || filterTerm("desc", query), parsed, clairic }
 }

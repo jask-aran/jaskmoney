@@ -84,8 +84,9 @@ export interface DataState {
   uncategorisedOnly: boolean
   /** Where each API key comes from, masked (`maskSecret`); never the key. */
   apiKeys: Record<CredentialName, { source: "saved" | "env" | null; mask: string }>
-  /** `ask:` terms also pass near misses (NEAR_AT up to MATCH_AT). */
-  askLoose: boolean
+  /** `ask:` terms also pass near misses (NEAR_AT up to MATCH_AT): on, off,
+   * or null to decide by the counts (`showNearMisses`). */
+  askLoose: boolean | null
   /** Jev is judging rows for an `ask:` term. */
   asking: { words: string; judged: number; total: number } | null
   dbPath: string
@@ -150,6 +151,12 @@ function loadApiKeys(): DataState["apiKeys"] {
   return Object.fromEntries(CREDENTIAL_NAMES.map((name) => [name, { source: credentialSource(name), mask: maskSecret(env[name]) }])) as DataState["apiKeys"]
 }
 
+/** Near misses show by themselves when they don't swamp the results: at
+ * most as many as the matches, and a handful whatever the matches. */
+export function showNearMisses(matches: number, near: number): boolean {
+  return near <= Math.max(matches, 5)
+}
+
 function createDataStore() {
   let db: Db | null = null
   let actualDbPath = ""
@@ -160,7 +167,7 @@ function createDataStore() {
     suggestions: {},
     uncategorisedOnly: false,
     apiKeys: loadApiKeys(),
-    askLoose: false,
+    askLoose: null,
     asking: null,
     dbPath: "",
     accounts: [],
@@ -269,7 +276,7 @@ function createDataStore() {
     const p = askVerdicts.get(words.toLowerCase())?.get(t.id)
     return p == null ? undefined : p >= at
   }
-  const askVerdict: AskVerdict<Transaction> = (words, t) => verdictAt(state.askLoose ? NEAR_AT : MATCH_AT)(words, t)
+  const askVerdict: AskVerdict<Transaction> = (words, t) => verdictAt(nearMissesShown() ? NEAR_AT : MATCH_AT)(words, t)
   /** Bumped by each ask run and by clearing the filter; a run stops once it's stale. */
   let askRun = 0
 
@@ -313,6 +320,22 @@ function createDataStore() {
     return { matches, near: loose - matches }
   }))
 
+  /** Whether near misses are in the table: as `n` last set it, else when
+   * they don't outnumber the matches (a few are always worth a look). */
+  const nearMissesShown = createRoot(() => createMemo(() => {
+    if (state.askLoose != null) return state.askLoose
+    const c = askCounts()
+    return !!c && c.near > 0 && showNearMisses(c.matches, c.near)
+  }))
+
+  /** Rows in the table only as near misses (they follow the matches). */
+  const nearMissIds = createRoot(() => createMemo(() => {
+    const expr = state.filterExpr ? unwrap(state.filterExpr) : null
+    if (!nearMissesShown() || !expr) return new Set<number>()
+    askVersion()
+    return new Set(filtered().filter((t) => !evalFilter(expr, t, verdictAt(MATCH_AT))).map((t) => t.id))
+  }))
+
   const filtered = createRoot(() => createMemo(() => {
     const expr = state.filterExpr ? unwrap(state.filterExpr) : null
     const rows = accountScoped()
@@ -324,7 +347,10 @@ function createDataStore() {
   /** The account's rows through the filter, in the table's sort. */
   const scopedTransactions = createRoot(() => createMemo(() => {
     const confidence = state.sortColumn === "confidence" ? (id: number) => state.suggestions[id]?.confidence ?? -1 : undefined
-    return sortRows(filtered(), state.sortColumn, state.sortAscending, confidence)
+    const sorted = sortRows(filtered(), state.sortColumn, state.sortAscending, confidence)
+    // Near misses after every match, each part in the table's order.
+    const near = nearMissIds()
+    return near.size ? [...sorted.filter((t) => !near.has(t.id)), ...sorted.filter((t) => near.has(t.id))] : sorted
   }))
 
   function setFilterLive(q: string) {
@@ -364,7 +390,7 @@ function createDataStore() {
     askRun++
     setState({
       asking: null,
-      askLoose: false,
+      askLoose: null,
       filterQuery: "",
       filterExpr: null,
       filterErr: "",
@@ -817,7 +843,9 @@ function createDataStore() {
      * first; leaving it goes back to date order if it still was. */
     askScore,
     askCounts,
-    setAskLoose: (on: boolean) => setState({ askLoose: on }),
+    nearMissesShown,
+    nearMissIds,
+    setAskLoose: (on: boolean | null) => setState({ askLoose: on }),
     setUncategorisedOnly: (on: boolean) => setState(on
       ? { uncategorisedOnly: true, sortColumn: "confidence", sortAscending: false }
       : { uncategorisedOnly: false, ...(state.sortColumn === "confidence" ? { sortColumn: "date" as const, sortAscending: false } : {}) }),
