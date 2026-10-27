@@ -2,8 +2,10 @@
  * A standalone binary: `bun run build` → dist/jaskmoney (this machine's
  * platform). OpenTUI's Solid plugin compiles the JSX, as the dev preload
  * does; the native renderer (libopentui.so) is a file import Bun embeds.
- * At run time the binary reads .env from the directory it's started in
- * (keys saved in Settings live beside settings.json and work anywhere).
+ * The binary behaves the same wherever it's started: it doesn't read the
+ * bunfig.toml or .env of its working directory (the repo's bunfig preloads
+ * the dev JSX transform, which a binary can't load). Keys and data come from
+ * ~/.jaskmoney.
  */
 import solidPlugin from "@opentui/solid/bun-plugin"
 
@@ -16,7 +18,7 @@ const result = await Bun.build({
   plugins: [solidPlugin],
   minify: true,
   sourcemap: "linked",
-  compile: { outfile },
+  compile: { outfile, autoloadBunfig: false, autoloadDotenv: false },
 })
 if (!result.success) {
   for (const log of result.logs) console.error(log)
