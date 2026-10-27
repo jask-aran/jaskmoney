@@ -36,9 +36,9 @@ turn icons off in Settings › Database & Import.
 - **Keyboard first**: a command palette (`ctrl+k`) and per-pane key hints.
 - **CSV import** for other banks.
 
-![Transactions](docs/screenshots/transactions.png)
-
-![Budgets](docs/screenshots/budgets.png)
+| Transactions | Budgets |
+| --- | --- |
+| ![Transactions](docs/screenshots/transactions.png) | ![Budgets](docs/screenshots/budgets.png) |
 
 ## Connecting Up
 
