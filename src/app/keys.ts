@@ -791,6 +791,19 @@ function handleSettingsUp(ui: UiStore, key: KeyEvent, data?: DataStore): void {
 
 /** AI models: one row per provider; enter edits its key, t tests it, del
  * removes the saved one (the environment's, if any, then applies). */
+/** `?` (some terminals send it as shift+/). */
+function isSmartSearchKey(key: KeyEvent): boolean {
+  return key.sequence === "?" || key.name === "?" || (key.name === "/" && key.shift)
+}
+
+/** Open the filter as a smart search: `?` and a question. On a filter a
+ * smart search wrote, its question comes back to reword. */
+function openSmartSearch(ui: UiStore, data?: DataStore): void {
+  const question = smartQuestionFor(ui.state, data?.state.filterQuery ?? "")
+  ui.openFilter(`?${question ?? ""}`)
+  ui.setStatus(question ? "Reword the question · enter asks again · esc clears" : "Smart search · ask in words · enter asks · esc clears")
+}
+
 /** Accept-all's preview: enter (or y) accepts those rows, esc doesn't. */
 function handleManagerAcceptPreview(ui: UiStore, key: KeyEvent, data?: DataStore): void {
   const { name } = key
@@ -896,6 +909,7 @@ function handleManagerTxns(ui: UiStore, key: KeyEvent, data?: DataStore): void {
     if (row) ui.setState({ detailId: row.id, detailNotesEditing: false })
     return
   }
+  if (isSmartSearchKey(key)) { openSmartSearch(ui, data); return }
   if (name === "/" || seq === "/") {
     ui.openFilter(data?.state.filterQuery ?? "")
     return
@@ -1070,6 +1084,7 @@ function handleManagerMerchants(ui: UiStore, key: KeyEvent, data?: DataStore): v
     return
   }
   if ((name === "s" && key.shift) || name === "S") { ui.setState({ merchantReverse: !ui.state.merchantReverse, merchantCursor: 0 }); return }
+  if (isSmartSearchKey(key)) { openSmartSearch(ui, data); return }
   if (name === "/" || seq === "/") { ui.openFilter(data.state.filterQuery); return }
   if ((name === "return" || name === "enter") && group) {
     // Drill in: narrow the filter to this merchant and show its rows.
@@ -1117,7 +1132,12 @@ function handleOverview(ui: UiStore, key: KeyEvent, data?: DataStore): void {
     return
   }
   // / searches: the Transactions filter, opened from here (the Overview
-  // itself is not filtered).
+  // itself is not filtered); ? goes straight to a smart search.
+  if (isSmartSearchKey(key) && scope === "overview") {
+    ui.switchTab("manager")
+    openSmartSearch(ui, data)
+    return
+  }
   if ((name === "/" || seq === "/") && scope === "overview") {
     ui.switchTab("manager")
     ui.openFilter(data?.state.filterQuery ?? "")
@@ -1448,6 +1468,7 @@ const scopes: Record<ScopeId, ScopeEntry> = {
       { key: "m", desc: "merchants" },
       { key: "i", desc: "all rows" },
       { key: "/", desc: "filter" },
+      { key: "?", desc: "smart search" },
       { key: "v", desc: "jump" },
     ] : [
       { key: "ctrl+s", desc: "save filter" },
@@ -1466,6 +1487,7 @@ const scopes: Record<ScopeId, ScopeEntry> = {
       { key: "S-s", desc: "reverse" },
       ...(state?.drillReturn ? [{ key: "esc", desc: "back" }, { key: "u", desc: "clear" }] : [{ key: "esc/u", desc: "clear" }]),
       { key: "/", desc: "filter" },
+      { key: "?", desc: "smart search" },
       { key: "v", desc: "jump" },
     ],
   },
@@ -1497,6 +1519,7 @@ const scopes: Record<ScopeId, ScopeEntry> = {
       { key: "t", desc: "tags" },
       { key: "s", desc: "sort" },
       { key: "/", desc: "filter" },
+      { key: "?", desc: "smart search" },
       { key: "m", desc: "rows" },
       { key: "a", desc: "account" },
     ],
@@ -1522,6 +1545,7 @@ const scopes: Record<ScopeId, ScopeEntry> = {
         { key: "c", desc: "this cycle" },
         ...(state?.chartViews.some((i) => CHART_VIEWS[i]?.group === "Balances") ? [{ key: "z", desc: "$0 axis" }] : []),
         { key: "/", desc: "search" },
+        { key: "?", desc: "smart search" },
         { key: "v", desc: "jump" },
         { key: "1-3", desc: "tab" },
       ]

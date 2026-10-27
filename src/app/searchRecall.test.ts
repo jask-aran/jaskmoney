@@ -42,3 +42,30 @@ test("n toggles near misses only when the filter asks Jev", () => {
   handleKey(ui, key("n"), data)
   expect(data.state.askLoose).toBe(false)
 })
+
+test("? jumps straight into a smart search, from the table, the merchants and the Overview; on a smart search's filter it brings the question back", () => {
+  setup()
+  handleKey(ui, key("?", { sequence: "?" }), data)
+  expect(ui.state.filterMode).toBe(true)
+  expect(ui.state.filterDraft).toBe("?")
+  handleKey(ui, key("escape"), data)
+
+  // On a filter a smart search wrote: its question, to reword.
+  const expr = `desc:"McDonald's"`
+  data.commitFilter(expr)
+  ui.setState({ smartQuestion: { question: "maccas", expr } })
+  handleKey(ui, key("/", { shift: true, sequence: "?" }), data)
+  expect(ui.state.filterDraft).toBe("?maccas")
+  handleKey(ui, key("escape"), data)
+
+  ui.setState({ txnView: "merchants" })
+  handleKey(ui, key("?", { sequence: "?" }), data)
+  expect(ui.state.filterDraft).toBe("?")
+  handleKey(ui, key("escape"), data)
+
+  ui.switchTab("overview")
+  handleKey(ui, key("?", { sequence: "?" }), data)
+  expect(ui.state.activeTab).toBe("manager")
+  expect(ui.state.filterDraft).toBe("?")
+  expect(footerHints("manager.txns", { focusedSection: "mgr.transactions", drillReturn: null, chartViews: [0, 4] }).some((h) => h.key === "?")).toBe(true)
+})
