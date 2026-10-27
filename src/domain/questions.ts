@@ -194,3 +194,43 @@ export function searchTermQuestions(query: string): Record<string, JevQuestion> 
   }
   return questions
 }
+
+// ---------- Category routing ----------
+
+/** A broad search ("stuff for the car") is routed to the user's categories
+ * it covers: Jev rates each category as "a kind of spending the search asks
+ * about" (kind) and "every transaction in it is something the search asks
+ * about" (every). A category needs both: kind alone takes the category a
+ * narrow search sits inside (coffee → Restaurants & Cafes); every alone
+ * misses most. Tuned on 20 searches, checked on 14 more (2026-10-27): 81%
+ * and 100% of the expected categories found, 2 and 1 wrong. */
+export const COVERS_KIND_AT = 0.6
+export const COVERS_EVERY_AT = 0.3
+
+/** Categories a search can be routed to: assignable leaves, not Uncategorised. */
+function routableCategories(categories: Category[]): Category[] {
+  const parents = new Set(categories.map((c) => c.parentId).filter((id): id is number => id != null))
+  return categories.filter((c) => !parents.has(c.id) && !c.isDefault)
+}
+
+const categoryPath = (c: Category, categories: Category[]) => {
+  const parent = categories.find((p) => p.id === c.parentId)
+  return parent ? `${parent.name} › ${c.name}` : c.name
+}
+
+/** Two questions per category about `search`: kind<id> and every<id>. */
+export function coverQuestions(categories: Category[]): Record<string, JevQuestion> {
+  const questions: Record<string, JevQuestion> = {}
+  for (const c of routableCategories(categories)) {
+    const category = categoryPath(c, categories)
+    questions[`kind${c.id}`] = { type: "noul", instructions: { question: "Is `category` a kind of spending that `search` asks about?", category } }
+    questions[`every${c.id}`] = { type: "noul", instructions: { question: "Is every transaction in `category` something `search` asks about?", category } }
+  }
+  return questions
+}
+
+/** The categories a search covers, by coverQuestions' answers. */
+export function coveredCategoryIds(answers: Record<string, { type: string; noul?: number }>, categories: Category[]): number[] {
+  const yes = (id: string, at: number) => { const a = answers[id]; return a?.type === "noul" && (a.noul ?? 0) >= at }
+  return routableCategories(categories).filter((c) => yes(`kind${c.id}`, COVERS_KIND_AT) && yes(`every${c.id}`, COVERS_EVERY_AT)).map((c) => c.id)
+}

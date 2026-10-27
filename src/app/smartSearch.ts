@@ -20,7 +20,7 @@ export async function runSmartSearch(ui: UiStore, data: DataStore, draft: string
   try {
     const ai = { clairic: hasWorkersAi() ? createWorkersAiClient(readWorkersAiCredentials()).clairic : undefined, jev: jevClient() }
     const descriptions = [...new Set(data.accountScoped().map((t) => t.description))]
-    const { expr, clairic } = await smartSearch(ai, query, { today: appToday(), cycle: data.cycle(), categories: data.state.categories, descriptions })
+    const { expr, clairic, parsed } = await smartSearch(ai, query, { today: appToday(), cycle: data.cycle(), categories: data.state.categories, descriptions })
     if (!ui.state.filterMode || ui.state.filterDraft !== draft) return
     ui.setState({ filterDraft: expr, filterCaret: expr.length, smartQuestion: { question: query, expr } })
     data.setFilterLive(expr)
@@ -29,8 +29,12 @@ export async function runSmartSearch(ui: UiStore, data: DataStore, draft: string
     const jevReads = askTerms(parseFilter(expr).node).length > 0
     // Without Clairic the words are Jev's pick and written dates are not read.
     const note = clairic ? ` · no Clairic (${clairic.replace(/^Workers AI clairic:\s*/, "")}): check words, dates` : ""
-    ui.setStatus(`?${query} → ${jevReads ? "Jev reads each row" : "a plain filter"} · enter applies${note}`, !!clairic)
-    if (jevReads) await runAsk(ui, data, note)
+    // A broad search names the categories it went to.
+    const covered = (parsed.categories ?? []).map((id) => data.state.categories.find((c) => c.id === id)?.name).filter(Boolean).join(", ")
+    const became = covered ? `${covered}${jevReads ? " + Jev reads the rest" : ""}` : jevReads ? "Jev reads each row" : "a plain filter"
+    ui.setStatus(`?${query} → ${became} · enter applies${note}`, !!clairic)
+    // Jev's tally counts only the rows it read: the categories' come first.
+    if (jevReads) await runAsk(ui, data, note, covered ? `${covered} by category · outside them, ` : "")
   } catch (error) {
     ui.setStatus(error instanceof Error ? error.message : String(error), true)
   }

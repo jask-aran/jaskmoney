@@ -147,3 +147,18 @@ test("near misses show by themselves unless they outnumber the matches (a handfu
   expect(showNearMisses(5, 40)).toBe(false)
   expect(showNearMisses(10, 10)).toBe(true)
 })
+
+test("rows a covered category already matches aren't sent to Jev; it reads only the rest", async () => {
+  setup()
+  const db = data.getDb()!
+  db.query("INSERT INTO categories (id, name, color) VALUES (200, 'Hardware', '#fff')").run()
+  db.query("UPDATE transactions SET category_id = 200 WHERE id = 2").run()
+  data.refresh()
+  const { ai, sent } = fakeJev()
+  data.commitFilter("(cat:Hardware OR ask:coffee) AND amt:<=-6")
+  // Bunnings matches by its category before Jev says anything.
+  expect(shown()).toEqual(["Bunnings"])
+  expect(await data.askAbout(ai)).toBe('ask "coffee": 2 of 2 match')
+  expect(sent.sort()).toEqual(["Alba Coffee", "Espresso Bar"])
+  expect(shown()).toEqual(["Alba Coffee", "Bunnings", "Espresso Bar"])
+})

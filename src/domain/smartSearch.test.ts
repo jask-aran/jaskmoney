@@ -3,7 +3,7 @@ import type { JevAnswer } from "../ai/jev"
 import type { ClairicAnswer } from "../ai/workersAi"
 import { parseFilterStrict } from "./filter"
 import { categoriesNamed, parsedSearch, periodBounds, searchFilter, smartSearch, snapPayee, type ParsedSearch } from "./smartSearch"
-import { searchNumbers, searchPhrases, searchQuestions } from "./questions"
+import { COVERS_EVERY_AT, COVERS_KIND_AT, coveredCategoryIds, coverQuestions, searchNumbers, searchPhrases, searchQuestions } from "./questions"
 import { category } from "../testing/fixtures"
 
 const categories = [
@@ -133,5 +133,37 @@ describe("payee words no description has", () => {
     expect(snapPayee(parsed("uber eats"), descriptions)).toEqual(parsed("uber eats"))
     expect(searchFilter(snapPayee(parsed("Mcdonalds"), descriptions), ctx)).toBe('desc:"Mcdonalds"')
     expect(snapPayee(parsed("maccas"), descriptions)).toMatchObject({ words: null, ask: "maccas" })
+  })
+})
+
+describe("broad searches go to the categories they cover", () => {
+  const noul = (p: number): JevAnswer => ({ type: "noul", noul: p })
+  /** Jev's coverage answers: category id → [kind, every]. */
+  const covers = (scores: Record<number, [number, number]>) =>
+    Object.fromEntries(Object.entries(scores).flatMap(([id, [kind, every]]) => [[`kind${id}`, noul(kind)], [`every${id}`, noul(every)]]))
+
+  test("two questions per routable category (leaves, not groups or Uncategorised), with its path", () => {
+    const qs = coverQuestions(categories)
+    expect(Object.keys(qs).sort()).toEqual(["every2", "every3", "every4", "kind2", "kind3", "kind4"])
+    expect(qs.kind2).toEqual({ type: "noul", instructions: { question: "Is `category` a kind of spending that `search` asks about?", category: "Good Life › Restaurants & Cafes" } })
+  })
+
+  test("a category needs both: a kind of spending asked about, and its every row plausibly so", () => {
+    expect([COVERS_KIND_AT, COVERS_EVERY_AT]).toEqual([0.6, 0.3])
+    // Restaurants: both. Takeaway: kind only (a narrow search sits inside it). Groceries: neither.
+    expect(coveredCategoryIds(covers({ 2: [0.85, 0.36], 3: [0.9, 0.2], 4: [0.3, 0.5] }), categories)).toEqual([2])
+  })
+
+  test("the covered categories match outright, OR ask: for the rest; payees and named categories aren't routed", () => {
+    const broad = parsedSearch(values({ words: "going out" }), { ...answers({ flow: "spending" }), ...covers({ 2: [0.8, 0.4], 3: [0.7, 0.35] }) }, categories, "going out")
+    expect(broad).toMatchObject({ categories: [2, 3], ask: "going out" })
+    const expr = searchFilter(broad, ctx)
+    expect(expr).toBe('(cat:"Restaurants & Cafes" OR cat:"Takeaway" OR ask:"going out") AND type:spending')
+    expect(parseFilterStrict(expr).error).toBeUndefined()
+    // A shop: desc:, never categories.
+    expect(parsedSearch(values({ words: "uber" }), { ...answers({ payee: 0.9 }), ...covers({ 2: [0.8, 0.4] }) }, categories, "uber").categories).toBeUndefined()
+    // Words naming a category take that category alone.
+    expect(parsedSearch(values({ words: "groceries" }), { ...answers({}), ...covers({ 2: [0.8, 0.4] }) }, categories, "groceries")).toMatchObject({ categoryId: 4 })
+    expect(parsedSearch(values({ words: "groceries" }), { ...answers({}), ...covers({ 2: [0.8, 0.4] }) }, categories, "groceries").categories).toBeUndefined()
   })
 })

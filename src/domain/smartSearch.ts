@@ -4,7 +4,7 @@ import { cycleFor, type CycleConfig } from "./budget"
 import { addDays, addMonths } from "./days"
 import { categoryTerm } from "./drill"
 import { anyOf, filterTerm, textContains } from "./filter"
-import { FLOWS, PERIODS, searchNumbers, searchPhrases, searchQuestions, searchTermQuestions, type Flow, type Period } from "./questions"
+import { FLOWS, PERIODS, searchNumbers, searchPhrases, searchQuestions, searchTermQuestions, type Flow, type Period, coverQuestions, coveredCategoryIds } from "./questions"
 import type { Category } from "./types"
 
 /**
@@ -28,6 +28,9 @@ export const SEARCH_FIELDS: Record<string, ClairicField> = {
 }
 
 export interface ParsedSearch {
+  /** Categories a broad search covers ("stuff for the car" → Fuel, Parking,
+   * …): any of them matches, as does `ask` for the rows outside them. */
+  categories?: number[]
   /** Description words (a payee). */
   words: string | null
   /** Words for Jev to judge rows by (a kind of thing). */
@@ -76,7 +79,10 @@ export function parsedSearch(values: Record<string, ClairicAnswer> | null, answe
     if (role === "at_least") atLeast = amount
     if (role === "at_most") atMost = amount
   })
+  // A search for a shop or person, or one naming a category, isn't routed further.
+  const covered = categoryId == null && !payee ? coveredCategoryIds(answers, categories) : []
   return {
+    ...(covered.length ? { categories: covered } : {}),
     words: categoryId == null && payee ? words : null,
     // Without Clairic the words are Jev's guess at a phrase (often a fragment:
     // "stuff" from "stuff for the car"); ask: has Jev read every row anyway,
@@ -132,7 +138,13 @@ export function periodBounds(p: Pick<ParsedSearch, "period" | "from" | "to">, to
 export function searchFilter(p: ParsedSearch, ctx: { today: string; cycle: CycleConfig; categories: Category[] }): string {
   const terms: string[] = []
   if (p.words) terms.push(filterTerm("desc", p.words))
-  if (p.ask) terms.push(filterTerm("ask", p.ask))
+  const covered = (p.categories ?? []).flatMap((id) => {
+    const category = ctx.categories.find((c) => c.id === id)
+    return category ? [categoryTerm(category, ctx.categories)] : []
+  })
+  // Covered categories match outright; Jev reads only the rows outside them.
+  if (covered.length) terms.push(anyOf([...covered, ...(p.ask ? [filterTerm("ask", p.ask)] : [])]))
+  else if (p.ask) terms.push(filterTerm("ask", p.ask))
   if (p.categoryId != null) {
     const category = ctx.categories.find((c) => c.id === p.categoryId)
     if (category) terms.push(categoryTerm(category, ctx.categories))
@@ -167,7 +179,7 @@ export async function smartSearch(
     ai.clairic
       ? ai.clairic(SEARCH_FIELDS, query, ctx.today).catch((error: unknown) => (error instanceof Error ? error : new Error(String(error))))
       : Promise.resolve(new Error("no Workers AI key")),
-    ai.jev.judge({ ...searchQuestions(ctx.categories), ...searchTermQuestions(query) }, { search: query }),
+    ai.jev.judge({ ...searchQuestions(ctx.categories), ...searchTermQuestions(query), ...coverQuestions(ctx.categories) }, { search: query }),
   ])
   const clairic = values instanceof Error ? values.message : null
   const raw = parsedSearch(values instanceof Error ? null : values, answers, ctx.categories, query)

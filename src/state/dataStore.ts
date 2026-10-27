@@ -68,7 +68,7 @@ import {
   reparseFilterInput,
   askTerms,
   hasDateTerm,
-  mightMatch,
+  undecided,
   type AskVerdict,
   type FilterNode,
 } from "../domain/filter"
@@ -691,9 +691,10 @@ function createDataStore() {
         const key = words.toLowerCase()
         const known = askVerdicts.get(key) ?? new Map<number, number>()
         askVerdicts.set(key, known)
-        // Rows the rest of the filter allows, whatever Jev says about these words.
+        // Rows whose match turns on these words: not ruled out by the rest of
+        // the filter, nor matched without them (a covered category's rows).
         const others: AskVerdict<Transaction> = (w, t) => w.toLowerCase() === key ? undefined : askVerdict(w, t)
-        const possible = accountScoped().filter((t) => inView(t) && mightMatch(expr, t, others))
+        const possible = accountScoped().filter((t) => inView(t) && undecided(expr, t, others))
         const { rows, skipped } = askCandidates(possible, appToday(), hasDateTerm(expr))
         const todo = rows.filter((t) => !known.has(t.id))
         setState({ asking: { words, judged: 0, total: todo.length } })

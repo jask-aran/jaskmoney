@@ -146,6 +146,12 @@ export function mightMatch<T extends FilterTxn>(node: FilterNode | null, t: T, a
   return verdict3(node, t, ask) !== false
 }
 
+/** Whether the row's match waits on an unjudged `ask:` term (neither
+ * matched nor ruled out without it). */
+export function undecided<T extends FilterTxn>(node: FilterNode | null, t: T, ask: AskVerdict<T>): boolean {
+  return verdict3(node, t, ask) === undefined
+}
+
 /** Three-valued evaluation: an unjudged `ask:` term is unknown (undefined),
  * and AND / OR / NOT carry the unknown through. */
 function verdict3<T extends FilterTxn>(node: FilterNode | null, t: T, ask: AskVerdict<T>): boolean | undefined {
