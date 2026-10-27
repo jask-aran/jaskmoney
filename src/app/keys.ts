@@ -296,7 +296,9 @@ function handleCatPicker(ui: UiStore, key: KeyEvent, data?: DataStore): void {
       if (cat && data && targets.length) {
         ui.closeCatPicker()
         ui.setStatus(`Categorizing ${targets.length} → ${cat.name}…`)
-        data.categorizeTransactions(targets, cat.id).then(
+        data.categorizeTransactions(targets, cat.id, (pushed, total) => {
+          if (total) ui.setStatus(`Categorized ${targets.length} → ${cat.name} · updating Up ${pushed}/${total}…`)
+        }).then(
           (summary) => ui.setStatus(summary, summary.includes(" failed: ")),
           (error) => reportError(ui, error),
         )

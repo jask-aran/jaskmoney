@@ -117,7 +117,7 @@ test("accept groups categories, categorises CSV rows and deletes only accepted s
   for (const id of [1, 2, 3, 4, 5]) add({ id })
   saveSuggestions(db, [1, 2, 3, 4].map((id) => ({ transactionId: id, categoryId: id === 3 ? 101 : 100, confidence: 1, source: "history" })))
   data.refresh()
-  expect(await data.acceptSuggestions([1, 2, 2, 3, 5, 999])).toBe("Categorized 2 → Test food · Categorized 1 → Test travel")
+  expect(await data.acceptSuggestions([1, 2, 2, 3, 5, 999])).toBe("Accepted 3 suggestions")
   expect(data.state.transactions.filter((t) => [1, 2].includes(t.id)).every((t) => t.categoryId === 100)).toBe(true)
   expect(data.state.transactions.find((t) => t.id === 3)?.categoryId).toBe(101)
   expect(Object.keys(data.state.suggestions)).toEqual(["4"])

@@ -61,3 +61,51 @@ test("categorising pushes Up subcategories and decategorisation, keeps local-onl
     db.close()
   }
 })
+
+test("every row takes its category before Up hears; pushes overlap; a rejected one is put back", async () => {
+  const fetchMock = spyOn(globalThis, "fetch")
+  data.init(":memory:")
+  const db = data.getDb()!
+  try {
+    testEnv("JASKMONEY_UP_TOKEN", "test-pat")
+    db.transaction(() => syncCategoryTree(db, [
+      { id: "home", name: "Home", parentId: null },
+      { id: "groceries", name: "Groceries", parentId: "home" },
+    ]))()
+    const account = Number(db.query(`INSERT INTO accounts (name, source, external_id, external_kind) VALUES ('Spending', 'up', 'acc', 'TRANSACTIONAL')`).run().lastInsertRowid)
+    const ids = ["r1", "r2", "r3", "r4", "r5", "bad"].map((ext) => Number(db.query(`INSERT INTO transactions
+      (date_raw, date_iso, amount, description, account_id, source, external_id, ext_categorizable)
+      VALUES ('x', '2026-10-01', -5, ?, ?, 'up', ?, 1)`).run(ext, account, ext).lastInsertRowid))
+    assignProviderCategories(db)
+    data.refresh()
+    const groceries = data.state.categories.find((c) => c.name === "Groceries")!.id
+    const uncategorised = data.state.categories.find((c) => c.isDefault)!.id
+    // Requests wait until released, so the test sees them in flight together.
+    let inFlight = 0, most = 0
+    const waiting: Array<() => void> = []
+    fetchMock.mockImplementation(Object.assign(async (input: Parameters<typeof fetch>[0]) => {
+      inFlight++; most = Math.max(most, inFlight)
+      await new Promise<void>((resolve) => waiting.push(resolve))
+      inFlight--
+      if (String(input).includes("/bad/")) return new Response(JSON.stringify({ errors: [{ status: "422", title: "Nope", detail: "rejected" }] }), { status: 422 })
+      return new Response(null, { status: 204 })
+    }, { preconnect: globalThis.fetch.preconnect }))
+    const row = (id: number) => db.query(`SELECT category_id AS categoryId, category_source AS source, ext_category AS ext FROM transactions WHERE id = ?`).get(id)
+    const before = row(ids[5]!)
+    const progress: string[] = []
+    const pending = data.categorizeTransactions(ids, groceries, (pushed, total) => progress.push(`${pushed}/${total}`))
+    // Shown at once, before any request is answered.
+    expect(ids.every((id) => data.state.transactions.find((t) => t.id === id)?.categoryId === groceries)).toBe(true)
+    expect(progress).toEqual(["0/6"])
+    while (progress.length < 7) { await new Promise((r) => setTimeout(r, 0)); waiting.splice(0).forEach((release) => release()) }
+    expect(await pending).toBe("Categorized 5 → Groceries · 5 updated in Up · 1 failed: Up API request failed (422): Nope: rejected")
+    expect(most).toBe(4)
+    expect(progress.at(-1)).toBe("6/6")
+    // The rejected row is as it was; the others follow Up.
+    expect(row(ids[5]!)).toEqual(before)
+    expect(row(ids[0]!)).toEqual({ categoryId: groceries, source: "provider", ext: "groceries" })
+    expect(data.state.transactions.find((t) => t.id === ids[5])?.categoryId).toBe(uncategorised)
+  } finally {
+    fetchMock.mockRestore()
+  }
+})
