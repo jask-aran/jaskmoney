@@ -55,6 +55,11 @@ export function OverviewTab(props: { focused: SectionId }) {
   const today = () => appToday()
   const cycleConfig = () => data.cycle()
   // The range, scope and category spending, shared with the tab's keys.
+  // Hidden (another tab shown, the tab kept mounted), the costly results
+  // keep their last values and stop following the data; showing the tab
+  // brings them up to date once.
+  const shown = () => ui.state.activeTab === "overview"
+  const live = <T,>(fn: () => T): (() => T) => createMemo<T | undefined>((was) => (shown() || was === undefined ? fn() : was)) as () => T
   const range = createMemo(() => overviewRange(data, ui.state))
   const clock = () => range().clock
   const bounds = () => range().bounds
@@ -69,14 +74,14 @@ export function OverviewTab(props: { focused: SectionId }) {
   const inPrevious = createMemo(() => data.transactions().filter((t) => t.dateISO >= previous().start && t.dateISO <= previous().end))
   // Flows see every tracked account (money moved to savers), narrowed to the
   // scope for spending and income.
-  const flows = createMemo(() => computePeriodFlows(data.state.accounts, filterByTimeframe(data.transactions(), ui.state.timeframe, clock(), cycleConfig()), scopeIds()))
-  const previousFlows = createMemo(() => computePeriodFlows(data.state.accounts, inPrevious(), scopeIds()))
+  const flows = live(() => computePeriodFlows(data.state.accounts, filterByTimeframe(data.transactions(), ui.state.timeframe, clock(), cycleConfig()), scopeIds()))
+  const previousFlows = live(() => computePeriodFlows(data.state.accounts, inPrevious(), scopeIds()))
   const groups = () => range().groups
-  const calendar = createMemo(() => spendingCalendar(inPeriod(), bounds().start, bounds().end, data.state.weekStart))
+  const calendar = live(() => spendingCalendar(inPeriod(), bounds().start, bounds().end, data.state.weekStart))
   const series = createMemo(() => dailySpendSeries(inPeriod(), bounds().start, bounds().end))
 
   // Now: point-in-time figures, whatever the range.
-  const position = createMemo(() => computePosition(data.state.accounts, data.transactions(), today()))
+  const position = live(() => computePosition(data.state.accounts, data.transactions(), today()))
   const saverChanges = createMemo(() => {
     const since = addDays(today(), -30)
     return computePeriodFlows(data.state.accounts, data.transactions().filter((t) => t.dateISO > since && t.dateISO <= today())).saverChanges
@@ -167,8 +172,8 @@ export function OverviewTab(props: { focused: SectionId }) {
   // Each chart follows its own view: switching one leaves the other alone.
   const topView = createMemo(() => ui.state.chartViews[0])
   const bottomView = createMemo(() => ui.state.chartViews[1])
-  const topModel = createMemo(() => model(0, topView(), topChartHeight()))
-  const bottomModel = createMemo(() => (wide() ? model(1, bottomView(), bottomChartHeight()) : null))
+  const topModel = live(() => model(0, topView(), topChartHeight()))
+  const bottomModel = live(() => (wide() ? model(1, bottomView(), bottomChartHeight()) : null))
 
   // Category lines: name, then amount (9) and share (5).
   const categoryNameWidth = () => Math.max(8, sideWidth() - 5 - 14)

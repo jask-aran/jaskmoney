@@ -1,6 +1,6 @@
 import { Index, Show, createMemo } from "solid-js"
 import { ACCEPT_ALL_AT, MATCH_AT } from "../../domain/questions"
-import { S } from "../primitives/S"
+import { StyledLine, type StyledSpan } from "../primitives/StyledLine"
 import { padSpans, type Span } from "../primitives/spans"
 import { categoryColor, isUncategorisedColor, theme } from "../../theme"
 import { data } from "../../state/dataStore"
@@ -234,56 +234,30 @@ export function TransactionTable(props: {
                 ? formatSuggestion(props.suggestions[r().id], layout().category)
                 : withAskScore(formatCategory(r().categoryId, r().categoryName, r().categoryColor, layout().category), props.askScore?.(r().id), layout().category))
               const strong = () => look().bold
-              return (
-                <text width="100%" bg={rowBg()}>
-                  <S fg={fg(theme.accent)} bg={rowBg()} bold={strong()}>
-                    {isCursor() ? ">" : selected() ? "*" : near() ? "≈" : " "}
-                  </S>
-                  <S fg={faint(theme.mutedText)} bg={rowBg()} bold={strong()}>
-                    {fmtDate(r().dateISO).padEnd(columns.date)}
-                  </S>
-                  <S fg={fg(theme.text)} bg={rowBg()} bold={strong()}>
-                    {" ".repeat(columns.gap)}
-                  </S>
-                  <S fg={faint(amountColor(r().amount))} bg={rowBg()} bold={strong()} italic={held()}>
-                    {formatMoney(r().amount).padEnd(columns.amount - 2)}
-                  </S>
-                  <S fg={fg(theme.overlay1)} bg={rowBg()}>
-                    {held() ? `${pendingMark()} ` : "  "}
-                  </S>
-                  <S fg={fg(theme.text)} bg={rowBg()} bold={strong()}>
-                    {" ".repeat(columns.gap)}
-                  </S>
-                  <S fg={faint(theme.brightText)} bg={rowBg()} bold={strong()} italic={held()}>
-                    {fit(r().description, layout().description)}
-                  </S>
-                  <S fg={fg(theme.dimText)} bg={rowBg()} bold={strong()}>
-                    {layout().showAccount ? " ".repeat(columns.gap) + fit(r().accountName, columns.account) : ""}
-                  </S>
-                  <S fg={fg(theme.text)} bg={rowBg()} bold={strong()}>
-                    {" ".repeat(columns.gap)}
-                  </S>
-                  <S fg={fg(category().markerColor)} bg={rowBg()} bold={strong() && (!category().muted || !!look().fg)}>
-                    {category().marker}
-                  </S>
-                  <S
-                    fg={fg(category().textColor)}
-                    bg={rowBg()}
-                    bold={strong() && (!category().muted || !!look().fg)}
-                    dim={category().muted && !look().fg}
-                    italic={category().italic}
-                  >
-                    {category().text}
-                  </S>
-                  <S fg={fg(category().noteColor ?? theme.overlay1)} bg={rowBg()}>{category().note ?? ""}</S>
-                  <Show when={layout().showTags}>
-                    <S fg={fg(theme.text)} bg={rowBg()} bold={strong()}>
-                      {" ".repeat(columns.gap)}
-                    </S>
-                    <Index each={tags()}>{(span) => <S fg={fg(span().fg)} bg={rowBg()} bold={strong()}>{span().text}</S>}</Index>
-                  </Show>
-                </text>
-              )
+              // One styled line (StyledLine), not a span per cell: a page
+              // or a sort rewrites every row.
+              const line = createMemo((): StyledSpan[] => {
+                const bg = rowBg(), bold = strong(), cat = category(), catBold = bold && (!cat.muted || !!look().fg)
+                return [
+                  { text: isCursor() ? ">" : selected() ? "*" : near() ? "≈" : " ", fg: fg(theme.accent), bg, bold },
+                  { text: fmtDate(r().dateISO).padEnd(columns.date), fg: faint(theme.mutedText), bg, bold },
+                  { text: " ".repeat(columns.gap), fg: fg(theme.text), bg, bold },
+                  { text: formatMoney(r().amount).padEnd(columns.amount - 2), fg: faint(amountColor(r().amount)), bg, bold, italic: held() },
+                  { text: held() ? `${pendingMark()} ` : "  ", fg: fg(theme.overlay1), bg },
+                  { text: " ".repeat(columns.gap), fg: fg(theme.text), bg, bold },
+                  { text: fit(r().description, layout().description), fg: faint(theme.brightText), bg, bold, italic: held() },
+                  { text: layout().showAccount ? " ".repeat(columns.gap) + fit(r().accountName, columns.account) : "", fg: fg(theme.dimText), bg, bold },
+                  { text: " ".repeat(columns.gap), fg: fg(theme.text), bg, bold },
+                  { text: cat.marker, fg: fg(cat.markerColor), bg, bold: catBold },
+                  { text: cat.text, fg: fg(cat.textColor), bg, bold: catBold, dim: cat.muted && !look().fg, italic: cat.italic },
+                  { text: cat.note ?? "", fg: fg(cat.noteColor ?? theme.overlay1), bg },
+                  ...(layout().showTags ? [
+                    { text: " ".repeat(columns.gap), fg: fg(theme.text), bg, bold },
+                    ...tags().map((span) => ({ text: span.text, fg: fg(span.fg), bg, bold })),
+                  ] : []),
+                ]
+              })
+              return <StyledLine spans={line()} bg={rowBg()} />
             }}
           </Index>
         </box>
