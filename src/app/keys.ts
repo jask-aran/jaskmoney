@@ -816,7 +816,7 @@ function handleSettings(ui: UiStore, key: KeyEvent, data?: DataStore): void {
   const sections = SETTINGS_SECTIONS
   const current = ui.state.settingsSection
   if (name === "h" || name === "left") { ui.setState({ settingsSection: "taxonomy", focusedSection: "set.categories" }); return }
-  if (name === "l" || name === "right") { ui.setState({ settingsSection: "database", focusedSection: "set.database" }); return }
+  if (name === "l" || name === "right") { ui.setState({ settingsSection: "up", focusedSection: "set.up" }); return }
   if (name === "j" || name === "down" || name === "k" || name === "up") {
     const delta = name === "j" || name === "down" ? 1 : -1
     const next = sections[(sections.indexOf(current) + delta + sections.length) % sections.length]!

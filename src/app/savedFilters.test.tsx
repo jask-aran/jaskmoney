@@ -171,15 +171,15 @@ test("rule health and selection colours use captured cells; dry-run body scrolls
   const draw = async () => { await rendered!.renderOnce(); await rendered!.flush() }
   const span = (needle: string) => rendered!.captureSpans().lines.flatMap((line) => line.spans).find((span) => span.text.includes(needle))!
   await draw()
-  expect(span("1. Healthy").bg.toInts()).toEqual([49, 50, 68, 255])
-  expect(span("filter:gone").fg.toInts()).toEqual([243, 139, 168, 255])
-  expect(span("filter:bad").fg.toInts()).toEqual([243, 139, 168, 255])
-  expect(span("4. Disabled").fg.toInts()).toEqual([127, 132, 156, 255])
-  expect(span("filter:absent").fg.toInts()).toEqual([127, 132, 156, 255])
+  expect(span("Healthy").bg.toInts()).toEqual([49, 50, 68, 255])
+  expect(span("missing filter gone").fg.toInts()).toEqual([243, 139, 168, 255])
+  expect(span("broken filter").fg.toInts()).toEqual([243, 139, 168, 255])
+  expect(span("Disabled (off)").fg.toInts()).toEqual([127, 132, 156, 255])
+  expect(span("missing filter absent").fg.toInts()).toEqual([127, 132, 156, 255])
   ui.setState({ ruleCursor: 1 })
   await draw()
-  expect(span("1. Healthy").bg.toInts()).toEqual([17, 17, 27, 255])
-  expect(span("filter:gone").bg.toInts()).toEqual([49, 50, 68, 255])
+  expect(span("Healthy").bg.toInts()).toEqual([17, 17, 27, 255])
+  expect(span("missing filter gone").bg.toInts()).toEqual([49, 50, 68, 255])
 
   const report = data.dryRunRules()
   ui.setState({ dryRunReport: { ...report, rules: Array.from({ length: 12 }, (_, index) => ({ ...report.rules[0]!, rule: { ...report.rules[0]!.rule, name: `Scroll rule ${index + 1}` } })) }, dryRunScroll: 0 })

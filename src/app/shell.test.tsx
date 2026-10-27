@@ -366,8 +366,8 @@ describe("shell render M0", () => {
       await t.flush()
       const frame = t.captureCharFrame()
       expect(frame).toContain("Taxonomy")
-      expect(frame).toContain("Categories (")
-      if (width >= 80) expect(frame).toContain("Tags (")
+      expect(frame).toMatch(/Categories \d+/)
+      if (width >= 80) expect(frame).toMatch(/Tags \d+/)
       const title = t.captureSpans().lines.flatMap((line) => line.spans).find((span) => span.text.includes("Taxonomy"))!
       expect(title.attributes & TextAttributes.BOLD).toBe(TextAttributes.BOLD)
       // Below the wide layout the panes keep their height and the column
