@@ -1,7 +1,8 @@
-import { ErrorBoundary, Match, Show, Switch, createEffect, createMemo, createSignal, untrack, on, onCleanup, onMount } from "solid-js"
+import { ErrorBoundary, Show, createEffect, createMemo, createSignal, untrack, on, onCleanup, onMount } from "solid-js"
 import { useKeyboard, usePaste, useRenderer } from "@opentui/solid"
 import type { KeyEvent } from "@opentui/core"
-import { ui } from "../state/uiStore"
+import { ui, type SectionId, type TabId } from "../state/uiStore"
+import type { JSX } from "@opentui/solid"
 import { data } from "../state/dataStore"
 import { footerLine, handleKey, hintState, paletteList, scopeQuits, handlePaste } from "./keys"
 import { CommandPalette } from "../ui/primitives/CommandPalette"
@@ -70,7 +71,8 @@ export function App() {
       accountSelection: data.state.accountSelection,
       chartViews: [ui.state.chartViews[0], ui.state.chartViews[1]],
     }
-    untrack(() => data.saveUiPrefs(prefs))
+    // Written once keys settle: these change on every [ ] d a h l.
+    untrack(() => data.saveUiPrefs(prefs, { soon: true }))
   })
 
   // Re-render the "synced Xm ago" label every 30 seconds.
@@ -108,21 +110,14 @@ export function App() {
       <TabBar active={ui.state.activeTab} accountLabel={[accountLabel(), syncLabel()].filter(Boolean).join(" · ")} />
       <box height={1} width="100%" backgroundColor={theme.canvas} />
       <box flexGrow={1} width="100%" flexDirection="column" backgroundColor={theme.canvas}>
-        {/* A rendering error stays inside the tab: the rest of the app (tab
-            switching, quit) keeps working. Switching tabs retries. */}
-        <ErrorBoundary fallback={(error: unknown, reset: () => void) => <TabError error={error} reset={reset} />}>
-        <Switch>
-          <Match when={ui.state.activeTab === "overview"}>
-            <OverviewTab focused={ui.state.focusedSection} />
-          </Match>
-          <Match when={ui.state.activeTab === "manager"}>
-            <ManagerTab focused={ui.state.focusedSection} />
-          </Match>
-          <Match when={ui.state.activeTab === "settings"}>
-            <SettingsTab focused={ui.state.focusedSection} />
-          </Match>
-        </Switch>
-        </ErrorBoundary>
+        {/* Each tab mounts on its first visit and then stays, hidden while
+            another is shown: switching tabs shows it rather than building it
+            again (~30ms on a full database). A rendering error stays inside
+            its tab, so the rest of the app (tab switching, quit) works;
+            switching tabs retries. */}
+        <KeptTab id="overview">{(focused) => <OverviewTab focused={focused()} />}</KeptTab>
+        <KeptTab id="manager">{(focused) => <ManagerTab focused={focused()} />}</KeptTab>
+        <KeptTab id="settings">{(focused) => <SettingsTab focused={focused()} />}</KeptTab>
       </box>
       {/* Jump mode borrows the status line while active; the stored status
           returns unchanged when it closes. */}
@@ -145,6 +140,24 @@ export function App() {
         )}
       </Show>
     </box>
+  )
+}
+
+/** A tab, mounted from its first visit on and shown while active. Hidden,
+ * its focus stays as it was: focus moves elsewhere don't redraw it. */
+function KeptTab(props: { id: TabId; children: (focused: () => SectionId) => JSX.Element }) {
+  const active = () => ui.state.activeTab === props.id
+  const [visited, setVisited] = createSignal(active())
+  createEffect(() => { if (active()) setVisited(true) })
+  const focused = createMemo<SectionId>((was) => (active() ? ui.state.focusedSection : was), ui.state.focusedSection)
+  return (
+    <Show when={visited()}>
+      <box visible={active()} flexGrow={1} width="100%" flexDirection="column">
+        <ErrorBoundary fallback={(error: unknown, reset: () => void) => <TabError error={error} reset={reset} />}>
+          {props.children(focused)}
+        </ErrorBoundary>
+      </box>
+    </Show>
   )
 }
 

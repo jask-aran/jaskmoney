@@ -3,7 +3,7 @@ import { mkdtempSync, readFileSync, writeFileSync } from "node:fs"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
 import { ensureAccount } from "../db/client"
-import { data } from "./dataStore"
+import { CONFIG_SETTLE_MS, data } from "./dataStore"
 import { DEFAULT_IMPORT_PROFILES, loadSettingsConfig, saveSettingsConfig } from "./settingsConfig"
 import { restoreUiPrefs } from "./uiPrefs"
 
@@ -67,4 +67,27 @@ test("renaming an import profile replaces it", () => {
   data.saveImportProfile({ ...profile, id: "bank-2" }, "bank")
   expect(data.state.importProfiles.map((p) => p.id).sort()).toEqual([...before, "bank-2"].sort())
   data.deleteImportProfile("bank-2")
+})
+
+test("prefs saved `soon` (the range, account, charts) are in state at once and written once they settle", async () => {
+  const previousPath = process.env.JASKMONEY_CONFIG
+  const path = join(mkdtempSync(join(tmpdir(), "jaskmoney-prefs-soon-")), "settings.json")
+  process.env.JASKMONEY_CONFIG = path
+  try {
+    data.init(":memory:")
+    data.saveUiPrefs({ chartViews: [0, 4] })
+    data.saveUiPrefs({ chartViews: [1, 4] }, { soon: true })
+    data.saveUiPrefs({ chartViews: [2, 4] }, { soon: true })
+    expect(data.state.uiPrefs.chartViews).toEqual([2, 4])
+    expect(loadSettingsConfig().ui?.chartViews).toEqual([0, 4])
+    await Bun.sleep(CONFIG_SETTLE_MS + 50)
+    expect(loadSettingsConfig().ui?.chartViews).toEqual([2, 4])
+    // A write now carries a pending one with it.
+    data.saveUiPrefs({ chartViews: [3, 4] }, { soon: true })
+    data.setIcons(!data.state.icons)
+    expect(loadSettingsConfig().ui?.chartViews).toEqual([3, 4])
+  } finally {
+    if (previousPath === undefined) delete process.env.JASKMONEY_CONFIG
+    else process.env.JASKMONEY_CONFIG = previousPath
+  }
 })

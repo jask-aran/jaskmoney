@@ -256,6 +256,9 @@ export interface TagReview extends TagTarget {
 /** A tag created from a review (the schema's default tag colour). */
 const NEW_TAG_COLOR = "#94e2d5"
 
+/** How long the range, account and chart views sit still before they're written. */
+export const CONFIG_SETTLE_MS = 400
+
 function createDataStore() {
   let db: Db | null = null
   let actualDbPath = ""
@@ -1086,19 +1089,36 @@ function createDataStore() {
   function toggleSettingsRule(id: number, enabled: boolean) { mutate((db) => toggleRule(db, id, enabled)) }
 
   function persistConfig(patch: Partial<SettingsConfig>) {
+    // Writes everything as it is now, so a deferred UI write is done too.
+    if (configTimer) { clearTimeout(configTimer); configTimer = null }
     saveSettingsConfig({ version: 2, icons: state.icons, savedFilters: state.savedFilters, importProfiles: state.importProfiles, ui: state.uiPrefs, ...patch })
   }
+
+  // Prefs that change with each key (the range, the account, the charts)
+  // are written once they settle, not on every press; exit writes any left.
+  let configTimer: ReturnType<typeof setTimeout> | null = null
+  function flushConfig() {
+    if (!configTimer) return
+    try { persistConfig({}) } catch { /* the next write or exit tries again */ }
+  }
+  process.on("exit", flushConfig)
 
   function recordFilterUsage(id: string) {
     saveUiPrefs({ filterUsage: { ...state.uiPrefs.filterUsage, [id]: new Date().toISOString() } })
   }
 
-  function saveUiPrefs(patch: Partial<UiPrefs>) {
+  /** `soon`: written once keys settle (CONFIG_SETTLE_MS), for prefs that
+   * change on every press; otherwise now. */
+  function saveUiPrefs(patch: Partial<UiPrefs>, { soon = false } = {}) {
     const next = { ...state.uiPrefs, ...patch }
     if (next.filterUsage) next.filterUsage = Object.fromEntries(Object.entries(next.filterUsage).filter(([id]) => state.savedFilters.some((filter) => filter.id === id)))
     if (isDeepStrictEqual(unwrap(next), unwrap(state.uiPrefs))) return
-    persistConfig({ ui: next })
+    if (!soon) persistConfig({ ui: next })
     setState({ uiPrefs: next, weekStart: next.weekStart ?? "monday" })
+    if (soon) {
+      if (configTimer) clearTimeout(configTimer)
+      configTimer = setTimeout(flushConfig, CONFIG_SETTLE_MS)
+    }
   }
 
   function saveSavedFilter(filter: SavedFilter, originalId?: string) {

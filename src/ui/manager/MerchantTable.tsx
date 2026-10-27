@@ -1,4 +1,4 @@
-import { For, Show, createMemo } from "solid-js"
+import { Index, Show, createMemo } from "solid-js"
 import { S } from "../primitives/S"
 import { categoryColor, theme } from "../../theme"
 import { formatMoney } from "../../domain/dashboard"
@@ -50,32 +50,35 @@ export function MerchantTable(props: {
       </text>
       <Show when={props.groups.length} fallback={<text fg={theme.overlay1}>{props.empty}</text>}>
         <box flexGrow={1} flexDirection="column">
-          <For each={windowRows()}>
-            {(g, i) => {
-              const isCursor = () => props.cursor === props.top + i()
-              const look = () => rowAppearance(false, false, isCursor())
+          {/* As the transactions table: Index updates screen rows in place, and the
+              look is a memo, so a cursor move redraws two rows, not all. */}
+          <Index each={windowRows()}>
+            {(row, i) => {
+              const g = row
+              const isCursor = () => props.cursor === props.top + i
+              const look = createMemo(() => rowAppearance(false, false, isCursor()))
               const bg = () => look().bg ?? theme.canvas
               const fg = (color: string) => look().fg ?? color
-              const muted = () => !g.categoryName || g.categoryName === "Uncategorised"
-              const catColor = () => categoryColor(muted() ? null : g.categoryColor)
+              const muted = () => !g().categoryName || g().categoryName === "Uncategorised"
+              const catColor = () => categoryColor(muted() ? null : g().categoryColor)
               return (
                 <text width="100%" bg={bg()}>
                   <S fg={fg(theme.accent)} bg={bg()} bold={look().bold}>{isCursor() ? ">" : " "}</S>
-                  <S fg={fg(theme.brightText)} bg={bg()} bold={look().bold}>{fit(g.merchant, nameWidth())}</S>
+                  <S fg={fg(theme.brightText)} bg={bg()} bold={look().bold}>{fit(g().merchant, nameWidth())}</S>
                   <S bg={bg()}>{gap}</S>
-                  <S fg={fg(amountColor(g.total))} bg={bg()} bold={look().bold}>{formatMoney(g.total).padStart(COLUMNS.total)}</S>
+                  <S fg={fg(amountColor(g().total))} bg={bg()} bold={look().bold}>{formatMoney(g().total).padStart(COLUMNS.total)}</S>
                   <S bg={bg()}>{gap}</S>
-                  <S fg={fg(theme.subtext0)} bg={bg()}>{String(g.count).padStart(COLUMNS.count)}</S>
+                  <S fg={fg(theme.subtext0)} bg={bg()}>{String(g().count).padStart(COLUMNS.count)}</S>
                   <S bg={bg()}>{gap}</S>
-                  <S fg={fg(theme.subtext0)} bg={bg()}>{formatMoney(g.average).padStart(COLUMNS.average)}</S>
+                  <S fg={fg(theme.subtext0)} bg={bg()}>{formatMoney(g().average).padStart(COLUMNS.average)}</S>
                   <S bg={bg()}>{gap}</S>
-                  <S fg={fg(theme.mutedText)} bg={bg()}>{lastSeen(g.lastISO).padStart(COLUMNS.last)}</S>
+                  <S fg={fg(theme.mutedText)} bg={bg()}>{lastSeen(g().lastISO).padStart(COLUMNS.last)}</S>
                   <S bg={bg()}>{gap}</S>
-                  <S fg={fg(catColor())} bg={bg()} dim={muted() && !look().fg}>{fit(`${categoryMark(g.categoryId, muted())} ${g.categoryName || "Uncategorised"}`, COLUMNS.category)}</S>
+                  <S fg={fg(catColor())} bg={bg()} dim={muted() && !look().fg}>{fit(`${categoryMark(g().categoryId, muted())} ${g().categoryName || "Uncategorised"}`, COLUMNS.category)}</S>
                 </text>
               )
             }}
-          </For>
+          </Index>
         </box>
       </Show>
     </>

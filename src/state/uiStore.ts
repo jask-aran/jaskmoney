@@ -298,6 +298,9 @@ function cursorWindow(cursor: number, top: number, count: number, visible: numbe
   return { cursor, top: Math.max(0, top) }
 }
 
+/** No ids: one shared object, so "still nothing highlighted" changes nothing downstream. */
+const NO_IDS: Record<number, boolean> = Object.freeze({}) as Record<number, boolean>
+
 function createUiStore() {
   const initialState = (): UiState => ({
     activeTab: "overview",
@@ -576,7 +579,7 @@ function createUiStore() {
   }
 
   function highlightedIds(rows: { id: number }[]): Record<number, boolean> {
-    if (!state.rangeSelecting || rows.length === 0) return {}
+    if (!state.rangeSelecting || rows.length === 0) return NO_IDS
     let a = rows.findIndex((r) => r.id === state.rangeAnchorId)
     let b = rows.findIndex((r) => r.id === state.rangeCursorId)
     if (a < 0) a = state.managerCursor

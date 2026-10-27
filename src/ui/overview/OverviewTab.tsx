@@ -1,4 +1,4 @@
-import { For, Show, createMemo } from "solid-js"
+import { For, Index, Show, createMemo } from "solid-js"
 import { categoryMark, viewMark } from "../icons"
 import { useTerminalDimensions } from "@opentui/solid"
 import { SectionCard } from "../primitives/SectionCard"
@@ -144,7 +144,10 @@ export function OverviewTab(props: { focused: SectionId }) {
   const baseline = () => data.state.uiPrefs.xAxis === true
   // The y-axis is as wide as its labels: build once with a guessed width,
   // then again if the labels need a different one.
-  const model = (index: number, height: number): ChartModel | null => {
+  // The axis width each chart had last: the first guess next time, so a
+  // chart is usually built once, not twice.
+  const axisWas: [number, number] = [AXIS_GUESS, AXIS_GUESS]
+  const model = (slot: 0 | 1, index: number, height: number): ChartModel | null => {
     const v = (CHART_VIEWS[index] ?? CHART_VIEWS[0]).view
     // Border (2), the x-axis line (a setting) and the x labels.
     const rows = Math.max(1, height - (baseline() ? 4 : 3))
@@ -155,12 +158,17 @@ export function OverviewTab(props: { focused: SectionId }) {
       if (v === "Calendar") return null
       return balancesChart(v, series().dates, width, rows, today(), data.state.accounts, data.transactions(), data.state.weekStart, data.state.uiPrefs.zeroAxis === true)
     }
-    const first = build(AXIS_GUESS)
-    if (!first || first.ticks.size === 0 || axisWidth(first.ticks) === AXIS_GUESS) return first
-    return build(axisWidth(first.ticks))
+    const guess = axisWas[slot]
+    const first = build(guess)
+    if (!first || first.ticks.size === 0) return first
+    axisWas[slot] = axisWidth(first.ticks)
+    return axisWas[slot] === guess ? first : build(axisWas[slot])
   }
-  const topModel = createMemo(() => model(ui.state.chartViews[0], topChartHeight()))
-  const bottomModel = createMemo(() => (wide() ? model(ui.state.chartViews[1], bottomChartHeight()) : null))
+  // Each chart follows its own view: switching one leaves the other alone.
+  const topView = createMemo(() => ui.state.chartViews[0])
+  const bottomView = createMemo(() => ui.state.chartViews[1])
+  const topModel = createMemo(() => model(0, topView(), topChartHeight()))
+  const bottomModel = createMemo(() => (wide() ? model(1, bottomView(), bottomChartHeight()) : null))
 
   // Category lines: name, then amount (9) and share (5).
   const categoryNameWidth = () => Math.max(8, sideWidth() - 5 - 14)
@@ -272,19 +280,22 @@ export function OverviewTab(props: { focused: SectionId }) {
         ...(toReview() ? [{ text: `${uncategorised() ? " · " : ""}${toReview()} to review (i)`, fg: theme.teal }] : []),
       ] : undefined} width={sideWidth()} height={categoriesHeight()} focused={categoriesFocused()}>
       <Show when={groups().length} fallback={<text fg={theme.overlay1}>No spending in this period</text>}>
-        <For each={categoryRows()}>
-          {({ line, cursor }) => {
-            const bg = cursor ? theme.surface0 : undefined
+        {/* Index: a new range or cursor move updates rows in place. */}
+        <Index each={categoryRows()}>
+          {(row) => {
+            const line = () => row().line
+            const cursor = () => row().cursor
+            const bg = () => cursor() ? theme.surface0 : undefined
             return (
-              <text wrapMode="none" bg={bg}>
-                <S fg={line.color} bg={bg}>{line.child ? "  " : ""}{`${categoryMark(line.categoryId)} `}</S>
-                <S fg={line.child && !cursor ? theme.subtext0 : line.color} bg={bg} bold={!line.child || cursor}>{fit(line.label, -(line.child ? 4 : 2) + categoryNameWidth())}</S>
-                <S fg={line.child ? theme.subtext0 : theme.text} bg={bg} bold={!line.child}>{formatWholeMoney(line.amount).padStart(9)}</S>
-                <S fg={theme.overlay1} bg={bg}>{(line.pct != null ? `${Math.round(line.pct)}%` : "").padStart(5)}</S>
+              <text wrapMode="none" bg={bg()}>
+                <S fg={line().color} bg={bg()}>{line().child ? "  " : ""}{`${categoryMark(line().categoryId)} `}</S>
+                <S fg={line().child && !cursor() ? theme.subtext0 : line().color} bg={bg()} bold={!line().child || cursor()}>{fit(line().label, -(line().child ? 4 : 2) + categoryNameWidth())}</S>
+                <S fg={line().child ? theme.subtext0 : theme.text} bg={bg()} bold={!line().child}>{formatWholeMoney(line().amount).padStart(9)}</S>
+                <S fg={theme.overlay1} bg={bg()}>{(line().pct != null ? `${Math.round(line().pct!)}%` : "").padStart(5)}</S>
               </text>
             )
           }}
-        </For>
+        </Index>
       </Show>
     </SectionCard>
   )
@@ -442,9 +453,10 @@ function CalendarView(props: { weeks: Array<Array<CalendarDay | null>>; width: n
             {(line) => (
               <text wrapMode="none">
                 <S fg={theme.overlay1}>{(line === 0 ? label : "").padEnd(4)}</S>
-                <For each={shown()}>
-                  {(week) => <Cell day={week[row()] ?? null} width={cellWidth()} today={props.today} label={line === 0} />}
-                </For>
+                {/* Index: a new range brings new weeks; their cells update in place. */}
+                <Index each={shown()}>
+                  {(week) => <Cell day={week()[row()] ?? null} width={cellWidth()} today={props.today} label={line === 0} />}
+                </Index>
               </text>
             )}
           </For>

@@ -103,8 +103,11 @@ export function fitCategoryLines(groups: CategoryGroupSpend[], maxLines: number)
 export function formatWholeMoney(n: number): string {
   const rounded = Math.round(Math.abs(n))
   const sign = n < 0 && rounded !== 0 ? "-" : ""
-  return `${sign}$${rounded.toLocaleString("en-AU")}`
+  return `${sign}$${wholeDollars.format(rounded)}`
 }
+
+/** One formatter: toLocaleString builds one per call (charts and lists call this hundreds of times a frame). */
+const wholeDollars = new Intl.NumberFormat("en-AU")
 
 /** Whole dollars with an explicit sign for gains: "+$1,680", "-$40", "$0". */
 export function signedWholeMoney(n: number): string {
