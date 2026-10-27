@@ -59,7 +59,11 @@ export async function runAgent<P extends TSchema>(
       context.tools = [finishTool]
       context.messages.push({ role: "user", content: "This is your last turn: answer now with `finish`, using what you have found.", timestamp: Date.now() })
     }
-    const reply: AssistantMessage = await llm.models.complete(llm.model, context, { apiKey: llm.apiKey, signal: options.signal })
+    const reply: AssistantMessage = await llm.models.completeSimple(llm.model, context, {
+      ...(llm.apiKey ? { apiKey: llm.apiKey } : {}),
+      ...(llm.effort ? { reasoning: llm.effort } : {}),
+      signal: options.signal,
+    })
     usage.input += reply.usage.input
     usage.output += reply.usage.output
     usage.cost += reply.usage.cost.total

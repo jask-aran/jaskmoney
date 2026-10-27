@@ -1,4 +1,4 @@
-import { activeLlmProvider, LLM_PROVIDERS, llmModelId, type LlmProvider } from "../ai/llm"
+import { activeLlmProvider, LLM_PROVIDERS, llmEffort, llmModelId, llmModels, type LlmProvider } from "../ai/llm"
 import { credentialEnv, type CredentialName } from "../ai/credentials"
 import type { DataStore } from "./dataStore"
 import { isLlmRow, type AiRow } from "../app/apiKeys"
@@ -18,7 +18,7 @@ export interface AiContext {
   /** The general model's provider in use. */
   inUse: LlmProvider
   /** A provider's model id, and whether it's the default. */
-  model: (provider: LlmProvider) => { id: string; isDefault: boolean }
+  model: (provider: LlmProvider) => { id: string; isDefault: boolean; effort?: string }
 }
 
 export const AI_NAMES: Record<AiRow, { name: string; by: string; uses: string; usesShort: string }> = {
@@ -35,7 +35,12 @@ export function aiContext(data: Pick<DataStore, "state">): AiContext {
     keys: data.state.apiKeys,
     signedIn: data.state.signedIn,
     inUse: activeLlmProvider(env),
-    model: (provider) => ({ id: llmModelId(env, provider), isDefault: llmModelId(env, provider) === LLM_PROVIDERS[provider].defaultModel }),
+    model: (provider) => {
+      const id = llmModelId(env, provider)
+      const model = llmModels().getModel(provider, id)
+      const effort = model ? llmEffort(model) : undefined
+      return { id, isDefault: id === LLM_PROVIDERS[provider].defaultModel, ...(effort ? { effort } : {}) }
+    },
   }
 }
 
@@ -71,7 +76,7 @@ export function aiStatus(row: AiRow, ctx: AiContext): { label: string; value: st
   if (row === "workersAi" && ctx.keys.JASKMONEY_CF_ACCOUNT_ID.source) lines.push({ label: "Account", value: ctx.keys.JASKMONEY_CF_ACCOUNT_ID.source === "env" ? "from .env" : "saved here" })
   if (isLlmRow(row)) {
     const model = ctx.model(row)
-    lines.push({ label: "Model", value: `${model.id}${model.isDefault ? " (default)" : ""}` })
+    lines.push({ label: "Model", value: `${model.id}${model.isDefault ? " (default)" : ""}${model.effort ? ` · ${model.effort} effort` : ""}` })
   }
   lines.push({ label: "Used for", value: `${AI_NAMES[row].uses}${aiInUse(row, ctx) ? " · in use" : isLlmRow(row) ? ` · ${LLM_PROVIDERS[ctx.inUse].label} is in use` : ""}` })
   return lines

@@ -19,7 +19,7 @@ test("the AI models dialog: status, actions with the cursor, the hint for the ac
   let frame = rendered.captureCharFrame()
   expect(frame).toContain("OpenRouter · general model")
   expect(frame).toContain("Connection  signed in with the browser")
-  expect(frame).toContain("Model       meta/muse-spark-1.3-contributor (default)")
+  expect(frame).toContain("Model       meta/muse-spark-1.3 (default) · xhigh effort")
   expect(frame).toContain("Used for    writing rules (R, then a) · in use")
   expect(frame).toContain("› Sign in again with the browser")
   expect(frame).toContain("Remove the saved key, model and sign-in")

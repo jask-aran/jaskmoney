@@ -1,4 +1,4 @@
-import { createModels, type Api, type Model, type Models } from "@earendil-works/pi-ai"
+import { createModels, getSupportedThinkingLevels, type Api, type Model, type Models, type ThinkingLevel } from "@earendil-works/pi-ai"
 import { openaiProvider } from "@earendil-works/pi-ai/providers/openai"
 import { openrouterProvider } from "@earendil-works/pi-ai/providers/openrouter"
 import { credentialEnv } from "./credentials"
@@ -16,7 +16,7 @@ export type LlmProvider = "openrouter" | "openai"
 type Env = Record<string, string | undefined>
 
 export const LLM_PROVIDERS: Record<LlmProvider, { label: string; keyName: "JASKMONEY_OPENROUTER_TOKEN" | "JASKMONEY_OPENAI_TOKEN"; modelName: "JASKMONEY_OPENROUTER_MODEL" | "JASKMONEY_OPENAI_MODEL"; defaultModel: string; signIn: string }> = {
-  openrouter: { label: "OpenRouter", keyName: "JASKMONEY_OPENROUTER_TOKEN", modelName: "JASKMONEY_OPENROUTER_MODEL", defaultModel: "meta/muse-spark-1.3-contributor", signIn: "Sign in with OpenRouter" },
+  openrouter: { label: "OpenRouter", keyName: "JASKMONEY_OPENROUTER_TOKEN", modelName: "JASKMONEY_OPENROUTER_MODEL", defaultModel: "meta/muse-spark-1.3", signIn: "Sign in with OpenRouter" },
   openai: { label: "OpenAI", keyName: "JASKMONEY_OPENAI_TOKEN", modelName: "JASKMONEY_OPENAI_MODEL", defaultModel: "gpt-6.1-sol", signIn: "Sign in with ChatGPT" },
 }
 
@@ -49,9 +49,20 @@ export function llmModelId(env: Env = credentialEnv(), provider: LlmProvider = a
   return saved || LLM_PROVIDERS[provider].defaultModel
 }
 
+/** How hard the model thinks: the highest of these it supports. */
+export const LLM_EFFORT: readonly ThinkingLevel[] = ["xhigh", "high", "medium"]
+
+export function llmEffort(model: Model<Api>): ThinkingLevel | undefined {
+  if (!model.reasoning) return undefined
+  const supported = getSupportedThinkingLevels(model)
+  return LLM_EFFORT.find((level) => supported.includes(level))
+}
+
 export interface Llm {
   models: Models
   model: Model<Api>
+  /** Reasoning effort for each request (llmEffort), when the model reasons. */
+  effort?: ThinkingLevel
   /** A key passed with each request; without one, pi-ai uses the provider's sign-in. */
   apiKey?: string
 }
@@ -73,5 +84,6 @@ export function createLlm(options: { provider?: LlmProvider; apiKey?: string; mo
   if (!model) throw new LlmError(`${LLM_PROVIDERS[provider].label} has no model ${id}`)
   const apiKey = options.apiKey ?? (env[LLM_PROVIDERS[provider].keyName]?.trim() || undefined)
   if (!apiKey && !signedIn(provider)) throw new LlmError(`Add a ${LLM_PROVIDERS[provider].label} key or sign in, in Settings › AI models`)
-  return { models, model, ...(apiKey ? { apiKey } : {}) }
+  const effort = llmEffort(model)
+  return { models, model, ...(apiKey ? { apiKey } : {}), ...(effort ? { effort } : {}) }
 }
