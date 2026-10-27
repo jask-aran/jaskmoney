@@ -1,5 +1,6 @@
-import { existsSync, mkdirSync, readFileSync, renameSync, writeFileSync } from "node:fs"
+import { existsSync, mkdirSync, readFileSync } from "node:fs"
 import { dirname, join } from "node:path"
+import { writeJsonAtomic } from "../storage/json"
 import { filterExprString, parseFilterStrict } from "../domain/filter"
 import type { AccountSelection } from "../domain/accountTree"
 import { customRange, LOOKBACKS, PERIODS, type TimeframeState } from "../domain/timeframe"
@@ -149,10 +150,5 @@ export function saveSettingsConfig(config: SettingsConfig, path = defaultSetting
   }
   if (normalized.ui?.filterUsage) normalized.ui.filterUsage = Object.fromEntries(Object.entries(normalized.ui.filterUsage).filter(([id]) => normalized.savedFilters.some((filter) => filter.id === id)))
   const temp = `${path}.tmp-${process.pid}-${Date.now()}`
-  try {
-    writeFileSync(temp, `${JSON.stringify(normalized, null, 2)}\n`, { mode: 0o600 })
-    renameSync(temp, path)
-  } finally {
-    // rename consumed the temp file; deliberately do not delete the target on failure.
-  }
+  writeJsonAtomic(path, normalized, temp)
 }

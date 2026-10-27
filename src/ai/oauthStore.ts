@@ -1,6 +1,7 @@
-import { chmodSync, existsSync, mkdirSync, readFileSync, renameSync, writeFileSync } from "node:fs"
+import { existsSync, readFileSync } from "node:fs"
 import { dirname, join } from "node:path"
 import type { Credential, CredentialInfo, CredentialStore } from "@earendil-works/pi-ai"
+import { writeJsonAtomic } from "../storage/json"
 import { defaultSettingsConfigPath } from "../state/settingsConfig"
 
 /**
@@ -24,11 +25,7 @@ function readAll(path: string): Record<string, Credential> {
 }
 
 function writeAll(path: string, all: Record<string, Credential>): void {
-  mkdirSync(dirname(path), { recursive: true })
-  const tmp = `${path}.tmp`
-  writeFileSync(tmp, JSON.stringify(all, null, 2) + "\n", { mode: 0o600 })
-  chmodSync(tmp, 0o600)
-  renameSync(tmp, path)
+  writeJsonAtomic(path, all)
 }
 
 /** Whether a provider has a stored sign-in (sync: for rows and hints). */

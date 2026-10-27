@@ -5,6 +5,7 @@
  */
 
 import { credentialEnv } from "./credentials"
+import { fetchWithTimeout, type Fetch } from "./http"
 
 export class WorkersAiError extends Error {
   constructor(public readonly status: number, message: string) {
@@ -39,8 +40,6 @@ export interface ClairicAnswer {
   confidence: number | null
 }
 
-type Fetch = (input: string | URL | Request, init?: RequestInit) => Promise<Response>
-
 function object(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value)
 }
@@ -64,21 +63,16 @@ export function createWorkersAiClient({ token, accountId, fetch = globalThis.fet
 
   async function run(model: string, body: Record<string, unknown>): Promise<Record<string, unknown>> {
     const url = `https://api.cloudflare.com/client/v4/accounts/${encodeURIComponent(accountId)}/ai/run/@cf/cloudflare/${model}`
-    const controller = new AbortController()
-    const timer = setTimeout(() => controller.abort(), timeoutMs)
     let response: Response
     try {
-      response = await fetch(url, {
+      response = await fetchWithTimeout(fetch, url, {
         method: "POST",
         headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json" },
         body: JSON.stringify({ model, ...body }),
-        signal: controller.signal,
-      })
+      }, timeoutMs)
     } catch (error) {
       const aborted = error instanceof Error && error.name === "AbortError"
       throw new WorkersAiError(0, aborted ? `Workers AI timed out after ${timeoutMs / 1000}s` : redact(`Workers AI request failed: ${error instanceof Error ? error.message : String(error)}`))
-    } finally {
-      clearTimeout(timer)
     }
     const payload: unknown = await response.json().catch(() => null)
     if (!response.ok || !object(payload) || payload.success !== true) {

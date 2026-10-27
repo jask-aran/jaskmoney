@@ -11,6 +11,7 @@
  */
 
 import { credentialEnv } from "./credentials"
+import { fetchWithTimeout, type Fetch } from "./http"
 
 /** Pinned: the questions and thresholds here were tuned against this
  * version (it was `jev-latest` on 2026-10-27). */
@@ -49,8 +50,6 @@ export type JevAnswer =
 
 export type JevState = string | Record<string, unknown>
 
-type Fetch = (input: string | URL | Request, init?: RequestInit) => Promise<Response>
-
 function object(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value)
 }
@@ -73,21 +72,16 @@ export function createJevClient({ token, fetch = globalThis.fetch, timeoutMs = 3
 
   async function post(body: string): Promise<Response> {
     for (let attempt = 0; ; attempt++) {
-      const controller = new AbortController()
-      const timer = setTimeout(() => controller.abort(), timeoutMs)
       let response: Response
       try {
-        response = await fetch("https://api.typesafe.ai/v1/systemone", {
+        response = await fetchWithTimeout(fetch, "https://api.typesafe.ai/v1/systemone", {
           method: "POST",
           headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json" },
           body,
-          signal: controller.signal,
-        })
+        }, timeoutMs)
       } catch (error) {
         const aborted = error instanceof Error && error.name === "AbortError"
         throw new JevError(0, aborted ? `Jev timed out after ${timeoutMs / 1000}s` : redact(`Jev request failed: ${error instanceof Error ? error.message : String(error)}`))
-      } finally {
-        clearTimeout(timer)
       }
       if ((response.status === 429 || response.status >= 500) && attempt < RETRIES) {
         const wait = Number(response.headers.get("retry-after"))

@@ -384,20 +384,29 @@ export function deleteRule(db: Db, id: number): void {
   } catch (error) { db.exec("ROLLBACK"); throw error }
 }
 
-function normalizeRuleOrder(db: Db): void {
-  const ids = db.query(`SELECT id FROM rules_v2 ORDER BY sort_order, id`).all() as { id: number }[]
+/** Load rule IDs in execution order, including ties. */
+function orderedRuleIds(db: Db): number[] {
+  return (db.query(`SELECT id FROM rules_v2 ORDER BY sort_order, id`).all() as { id: number }[]).map((r) => r.id)
+}
+
+/** Assign consecutive positions within the caller's transaction. */
+function writeRuleOrder(db: Db, ids: number[]): void {
   const update = db.query(`UPDATE rules_v2 SET sort_order = ? WHERE id = ?`)
-  ids.forEach((r, i) => update.run(i, r.id))
+  ids.forEach((id, i) => update.run(i, id))
+}
+
+function normalizeRuleOrder(db: Db): void {
+  writeRuleOrder(db, orderedRuleIds(db))
 }
 
 export function reorderRule(db: Db, id: number, index: number): void {
-  const ids = (db.query(`SELECT id FROM rules_v2 ORDER BY sort_order, id`).all() as { id: number }[]).map((r) => r.id)
+  const ids = orderedRuleIds(db)
   const old = ids.indexOf(id)
   if (old < 0) throw new Error(`rule ${id} not found`)
   ids.splice(old, 1)
   ids.splice(Math.max(0, Math.min(index, ids.length)), 0, id)
   db.exec("BEGIN")
-  try { const update = db.query(`UPDATE rules_v2 SET sort_order = ? WHERE id = ?`); ids.forEach((ruleId, i) => update.run(i, ruleId)); db.exec("COMMIT") } catch (error) { db.exec("ROLLBACK"); throw error }
+  try { writeRuleOrder(db, ids); db.exec("COMMIT") } catch (error) { db.exec("ROLLBACK"); throw error }
 }
 
 export function toggleRule(db: Db, id: number, enabled: boolean): void {

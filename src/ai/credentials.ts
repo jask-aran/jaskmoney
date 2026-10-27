@@ -1,5 +1,6 @@
-import { chmodSync, existsSync, mkdirSync, readFileSync, renameSync, writeFileSync } from "node:fs"
+import { existsSync, readFileSync } from "node:fs"
 import { dirname, join } from "node:path"
+import { writeJsonAtomic } from "../storage/json"
 import { defaultSettingsConfigPath } from "../state/settingsConfig"
 
 /**
@@ -51,11 +52,7 @@ export function saveCredentials(patch: Partial<Record<CredentialName, string | n
     if (value) next[name] = value
     else delete next[name]
   }
-  mkdirSync(dirname(path), { recursive: true })
-  const tmp = `${path}.tmp`
-  writeFileSync(tmp, JSON.stringify(next, null, 2) + "\n", { mode: 0o600 })
-  chmodSync(tmp, 0o600)
-  renameSync(tmp, path)
+  writeJsonAtomic(path, next)
 }
 
 /** The environment with saved keys laid over it: what the AI clients read. */
