@@ -1,5 +1,6 @@
 /** Block bar charts. Line charts live in lineChart.ts. */
 import type { Run } from "./lineChart"
+import { cellsToRuns } from "./runs"
 
 const EIGHTHS = ["", "▁", "▂", "▃", "▄", "▅", "▆", "▇", "█"]
 
@@ -38,13 +39,7 @@ export function columnBars(
       const glyph = EIGHTHS[Math.max(0, Math.min(8, levels[i]! - r * 8))] || " "
       for (let c = s.col; c < s.col + s.width; c++) if (glyph !== " ") cells[c] = { text: glyph, ink: bars[i]!.ink }
     })
-    const runs: Run[] = []
-    for (const cell of cells) {
-      const last = runs[runs.length - 1]
-      if (last && last.ink === cell.ink) last.text += cell.text
-      else runs.push({ ...cell })
-    }
-    rows.push(runs)
+    rows.push(cellsToRuns(cells))
   }
   return { rows, slots }
 }

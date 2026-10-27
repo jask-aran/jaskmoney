@@ -1,5 +1,6 @@
 import { addDays, daysBetween, MONTHS } from "./days"
 import { PERSON_TO_PERSON } from "./suggest"
+import { groupByDescription } from "./transactionGroups"
 import type { Transaction } from "./types"
 
 export interface TagGroup {
@@ -38,6 +39,11 @@ const currencyOf = (row: Transaction) => row.foreignAmount?.trim().split(/\s+/)[
 const inPerson = (row: Transaction) => !!row.cardMethod && row.cardMethod !== "ECOMMERCE" && row.cardMethod !== "CARD_ON_FILE"
 const byDate = (a: Transaction, b: Transaction) => a.dateISO.localeCompare(b.dateISO) || a.id - b.id
 
+/** Inclusive trip bounds for nearby bookings and refunds. */
+export function tripWindow(start: string, end: string): { from: string; to: string } {
+  return { from: addDays(start, -3), to: addDays(end, 14) }
+}
+
 export function detectTrips(transactions: readonly Transaction[]): TagGroup[] {
   const byCurrency = new Map<string, Transaction[]>()
   for (const row of transactions) {
@@ -62,8 +68,7 @@ export function detectTrips(transactions: readonly Transaction[]): TagGroup[] {
       if (run.length < 3 || !first || !last) continue
       const start = first.dateISO
       const end = last.dateISO
-      const from = addDays(start, -3)
-      const to = addDays(end, 14)
+      const { from, to } = tripWindow(start, end)
       const anchors = new Set(run.map((row) => row.id))
       const rows = foreignRows.filter((row) => anchors.has(row.id) || (row.dateISO >= from && row.dateISO <= to))
         .map((row) => ({ id: row.id, confidence: anchors.has(row.id) ? 0.95 : 0.85 }))
@@ -94,14 +99,7 @@ function median(values: number[]): number {
 }
 
 export function detectRecurring(transactions: readonly Transaction[]): TagGroup[] {
-  const merchants = new Map<string, Transaction[]>()
-  for (const row of transactions) {
-    if (row.amount >= 0 || (row.transactionType && PERSON_TO_PERSON.has(row.transactionType))) continue
-    const key = row.description.trim().toLowerCase()
-    const rows = merchants.get(key) ?? []
-    rows.push(row)
-    merchants.set(key, rows)
-  }
+  const merchants = groupByDescription(transactions.filter((row) => !(row.amount >= 0 || (row.transactionType && PERSON_TO_PERSON.has(row.transactionType)))))
   const regular: Array<{ name: string; cadence: string; charges: Transaction[] }> = []
   for (const charges of merchants.values()) {
     if (charges.length < 3) continue

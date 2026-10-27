@@ -288,6 +288,16 @@ export const TABS: { id: TabId; label: string; hotkey: string }[] = [
   { id: "settings", label: "Settings", hotkey: "3" },
 ]
 
+/** Clamp a list cursor and scroll only when it crosses a window edge. */
+function cursorWindow(cursor: number, top: number, count: number, visible: number): { cursor: number; top: number } {
+  if (count <= 0) return { cursor: 0, top: 0 }
+  cursor = Math.max(0, Math.min(count - 1, cursor))
+  const vis = Math.max(1, visible)
+  if (cursor < top) top = cursor
+  if (cursor >= top + vis) top = cursor - vis + 1
+  return { cursor, top: Math.max(0, top) }
+}
+
 function createUiStore() {
   const initialState = (): UiState => ({
     activeTab: "overview",
@@ -476,15 +486,11 @@ function createUiStore() {
   function openProfileEditor(draft: ImportProfile, id: string | null) { setState({ importStage: "profileEditor", importProfileDraft: draft, importProfileEditId: id, importProfileField: 0, importProfileCaret: draft.id.length }) }
 
   function moveSettingsList(list: SettingsList, delta: number, count: number) {
-    if (!count) { setState(list === "categories" ? { categoryCursor: 0, categoryTop: 0 } : { tagCursor: 0, tagTop: 0 }); return }
     const cursorKey = list === "categories" ? "categoryCursor" : "tagCursor"
     const topKey = list === "categories" ? "categoryTop" : "tagTop"
     const visible = list === "categories" ? state.categoryVisible : state.tagVisible
-    const cursor = Math.max(0, Math.min(count - 1, state[cursorKey] + delta))
-    let top = state[topKey]
-    if (cursor < top) top = cursor
-    if (cursor >= top + Math.max(1, visible)) top = cursor - Math.max(1, visible) + 1
-    setState({ [cursorKey]: cursor, [topKey]: Math.max(0, top) } as Pick<UiState, typeof cursorKey | typeof topKey>)
+    const { cursor, top } = cursorWindow(state[cursorKey] + delta, state[topKey], count, visible)
+    setState({ [cursorKey]: cursor, [topKey]: top } as Pick<UiState, typeof cursorKey | typeof topKey>)
   }
 
   function clearFocus() {
@@ -585,32 +591,13 @@ function createUiStore() {
   }
 
   function moveManagerCursor(delta: number, rowCount: number) {
-    if (rowCount <= 0) {
-      setState({ managerCursor: 0, managerTop: 0 })
-      return
-    }
-    let cur = state.managerCursor + delta
-    if (cur < 0) cur = 0
-    if (cur >= rowCount) cur = rowCount - 1
-    let top = state.managerTop
-    const vis = Math.max(1, state.managerVisible)
-    if (cur < top) top = cur
-    if (cur >= top + vis) top = cur - vis + 1
-    if (top < 0) top = 0
-    setState({ managerCursor: cur, managerTop: top })
+    const { cursor, top } = cursorWindow(state.managerCursor + delta, state.managerTop, rowCount, state.managerVisible)
+    setState({ managerCursor: cursor, managerTop: top })
   }
 
   function jumpManagerCursor(index: number, rowCount: number) {
-    if (rowCount <= 0) {
-      setState({ managerCursor: 0, managerTop: 0 })
-      return
-    }
-    const cur = Math.max(0, Math.min(rowCount - 1, index))
-    let top = state.managerTop
-    const vis = Math.max(1, state.managerVisible)
-    if (cur < top) top = cur
-    if (cur >= top + vis) top = Math.max(0, cur - vis + 1)
-    setState({ managerCursor: cur, managerTop: top })
+    const { cursor, top } = cursorWindow(index, state.managerTop, rowCount, state.managerVisible)
+    setState({ managerCursor: cursor, managerTop: top })
   }
 
   function setTimeframe(tf: TimeframeState) {

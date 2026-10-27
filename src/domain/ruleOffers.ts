@@ -2,6 +2,7 @@ import type { CategoryChoice } from "../db/client"
 import { evalFilter, parseFilterStrict } from "./filter"
 import { isUncategorised } from "./moneyRules"
 import { dryRunRules, filterRowNames } from "./rules"
+import { groupByDescription } from "./transactionGroups"
 import type { Category, Rule, SavedFilter, Tag, Transaction } from "./types"
 
 /**
@@ -56,11 +57,7 @@ export function ruleOffers(
 ): RuleOffer[] {
   const only = descriptions && new Set(descriptions.map((d) => d.trim().toLowerCase()))
   const names = filterRowNames(categories, tags)
-  const byKey = new Map<string, Transaction[]>()
-  for (const t of transactions) {
-    const key = t.description.trim().toLowerCase()
-    byKey.set(key, [...(byKey.get(key) ?? []), t])
-  }
+  const byKey = groupByDescription(transactions)
   const offers: RuleOffer[] = []
   for (const choice of choices) {
     if (choice.declined || choice.times < RULE_AFTER || (only && !only.has(choice.description))) continue

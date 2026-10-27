@@ -1,8 +1,7 @@
 import { judgeEach, type JevClient } from "../ai/jev"
 import { ASK_LIMIT } from "./ask"
-import { addDays } from "./days"
 import { tagQuestion, tagState } from "./questions"
-import type { TagGroup } from "./tagGroups"
+import { tripWindow, type TagGroup } from "./tagGroups"
 import { inTagScope } from "./tagScope"
 import type { Transaction } from "./types"
 
@@ -118,7 +117,8 @@ export const TAG_SHOW_AT = 0.5
  * abroad, refunds), as detectTrips gathers its rows. */
 export function tripScope(group: TagGroup): string | null {
   if (group.kind !== "trip" || !group.start || !group.end) return null
-  return `date:${addDays(group.start, -3)}..${addDays(group.end, 14)}`
+  const { from, to } = tripWindow(group.start, group.end)
+  return `date:${from}..${to}`
 }
 
 /** Letters and digits, lower-case: "SINGAPORE 2026" → "singapore2026". */

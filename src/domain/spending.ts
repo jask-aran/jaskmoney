@@ -1,5 +1,5 @@
 import { addDays, dayOfWeek, daysBetween, type WeekStart } from "./days"
-import { isSpending } from "./moneyRules"
+import { dailySpendSeries } from "./dashboard"
 import type { Transaction } from "./types"
 
 /**
@@ -24,13 +24,9 @@ export interface CalendarDay {
  */
 export function spendingCalendar(transactions: Transaction[], startISO: string, endISO: string, weekStart: WeekStart = "monday"): Array<Array<CalendarDay | null>> {
   const days = daysBetween(startISO, endISO) + 1
-  const totals = new Map<string, number>()
-  for (const row of transactions) {
-    if (isSpending(row) && row.dateISO >= startISO && row.dateISO <= endISO) {
-      totals.set(row.dateISO, (totals.get(row.dateISO) ?? 0) - row.amount)
-    }
-  }
-  const nonZero = [...totals.values()].sort((a, b) => a - b)
+  const { dates, values } = dailySpendSeries(transactions, startISO, endISO)
+  const totals = new Map(dates.map((date, i) => [date, values[i]!]))
+  const nonZero = values.filter((spent) => spent !== 0).sort((a, b) => a - b)
   const levels = new Map<number, CalendarDay["level"]>()
   nonZero.forEach((spent, index) => {
     if (levels.has(spent)) return

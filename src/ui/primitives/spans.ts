@@ -27,3 +27,10 @@ export function fitSpans(spans: Span[], budget: number): Span[] {
   }
   return out
 }
+
+/** Clip spans and fill the remaining cells with muted spaces. */
+export function padSpans(spans: Span[], width: number): Span[] {
+  const fitted = fitSpans(spans, width)
+  const used = spansWidth(fitted)
+  return used < width ? [...fitted, muted(" ".repeat(width - used))] : fitted
+}

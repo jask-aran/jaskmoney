@@ -197,7 +197,7 @@ export function showNearMisses(matches: number, near: number): boolean {
 interface CategorizeResult { done: number; pushed: number; failures: string[]; waiting: number; waitingError?: string }
 
 /** "<what> · N updated in Up · N waiting for Up … · N failed: <first error>". */
-function categorizedSummary(head: string, r: CategorizeResult): string {
+function operationSummary(head: string, r: Pick<CategorizeResult, "pushed" | "failures"> & Partial<Pick<CategorizeResult, "waiting" | "waitingError">>): string {
   const parts = [head]
   if (r.pushed) parts.push(`${r.pushed} updated in Up`)
   if (r.waiting) parts.push(`${r.waiting} waiting for Up (${r.waitingError}; sent on the next sync)`)
@@ -307,7 +307,7 @@ function createDataStore() {
       const restoreNull = db.query("UPDATE transactions SET category_id = NULL WHERE id = ? AND category_id = ?")
       for (const row of rows) if (row.categoryId == null) restoreNull.run(row.id, defaultId!)
     })
-    return categorizedSummary(`Restored ${result.done}`, result)
+    return operationSummary(`Restored ${result.done}`, result)
   }
   const initialState = (): DataState => ({
     ready: false,
@@ -729,7 +729,7 @@ function createDataStore() {
       mutate((db) => unrecordCategoryChoices(db, before.map((row) => ({ description: row.description, categoryId, times: 1 }))))
       return summary
     })
-    return categorizedSummary(`Categorized ${result.done} → ${category.name}`, result) + ruleOfferNote(txnIds)
+    return operationSummary(`Categorized ${result.done} → ${category.name}`, result) + ruleOfferNote(txnIds)
   }
 
   let suggestionsFinished: Promise<void> = Promise.resolve()
@@ -985,7 +985,7 @@ function createDataStore() {
       })
       return summary
     })
-    return categorizedSummary(`Accepted ${result.done} suggestion${result.done === 1 ? "" : "s"}`, result) + ruleOfferNote(accepted)
+    return operationSummary(`Accepted ${result.done} suggestion${result.done === 1 ? "" : "s"}`, result) + ruleOfferNote(accepted)
   }
 
   function dismissSuggestions(ids: number[]): void {
@@ -1044,10 +1044,7 @@ function createDataStore() {
       for (const reversal of reversals) summaries.push(await applyTagPatch(reversal.ids, reversal.patch, "undo"))
       return summaries.join(" · ")
     })
-    const parts = [`Tags: ${labels.join(", ")} on ${updated.size}`]
-    if (pushed.size) parts.push(`${pushed.size} updated in Up`)
-    if (failures.length) parts.push(`${failures.length} failed: ${failures[0]}`)
-    return parts.join(" · ")
+    return operationSummary(`Tags: ${labels.join(", ")} on ${updated.size}`, { pushed: pushed.size, failures })
   }
 
   function createSettingsCategory(input: Pick<Category, "name" | "color"> & { notSpending?: boolean }): number {

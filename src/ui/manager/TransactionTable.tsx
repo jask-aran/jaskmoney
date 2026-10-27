@@ -1,7 +1,7 @@
 import { Index, Show, createMemo } from "solid-js"
 import { ACCEPT_ALL_AT, MATCH_AT } from "../../domain/questions"
 import { S } from "../primitives/S"
-import { fitSpans, spansWidth, type Span } from "../primitives/spans"
+import { padSpans, type Span } from "../primitives/spans"
 import { categoryColor, isUncategorisedColor, theme } from "../../theme"
 import { data } from "../../state/dataStore"
 import { formatMoney } from "../../domain/dashboard"
@@ -136,9 +136,7 @@ function formatTags(names: string[], colors: string[], width: number): Span[] {
     ...(i > 0 ? [{ text: ", ", fg: theme.overlay1 }] : []),
     { text: name, fg: colors[i] || theme.teal },
   ])
-  const fitted = fitSpans(spans, width)
-  const used = spansWidth(fitted)
-  return used < width ? [...fitted, { text: " ".repeat(width - used), fg: theme.overlay1 }] : fitted
+  return padSpans(spans, width)
 }
 
 /** A tag review's candidate in the Tags cell: the proposed tag, its
@@ -151,9 +149,7 @@ function formatTagCandidate(candidate: TableTagCandidate, names: string[], color
     { text: ` ${mark}${Math.round(candidate.confidence * 100)}%`, fg: confidenceColor(candidate.confidence) },
     ...names.flatMap((name, i): Span[] => [{ text: ", ", fg: theme.overlay1 }, { text: name, fg: colors[i] || theme.teal }]),
   ]
-  const fitted = fitSpans(spans, width)
-  const used = spansWidth(fitted)
-  return used < width ? [...fitted, { text: " ".repeat(width - used), fg: theme.overlay1 }] : fitted
+  return padSpans(spans, width)
 }
 
 /** What the table needs of a tag review's candidate. */

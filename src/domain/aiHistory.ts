@@ -2,6 +2,7 @@ import type { CategoryLogEntry, TagLogEntry } from "../db/client"
 import { askTerms, evalFilter, parseFilterStrict } from "./filter"
 import { isUncategorised } from "./moneyRules"
 import { dryRunRules, filterRowNames } from "./rules"
+import { descKey, groupByDescription } from "./transactionGroups"
 import type { Category, Rule, SavedFilter, Tag, Transaction } from "./types"
 
 /**
@@ -68,9 +69,6 @@ export function rowFacts(t: Transaction): RowFacts {
   }
 }
 
-/** Exact descriptions match ignoring case and outer spaces. */
-export const descKey = (t: Pick<Transaction, "description">) => t.description.trim().toLowerCase()
-
 type Group<T> = { key: T; rows: number; share: number }
 
 /** The most common values of `pick` among `rows` (≥ min rows each), with their share. */
@@ -109,8 +107,7 @@ export function sharedFacts(rows: Transaction[]) {
  */
 export function descriptionGroups(inside: Transaction[], all: Transaction[], limit = 30) {
   const insideIds = new Set(inside.map((t) => t.id))
-  const byKey = new Map<string, Transaction[]>()
-  for (const t of all) byKey.set(descKey(t), [...(byKey.get(descKey(t)) ?? []), t])
+  const byKey = groupByDescription(all)
   const keys = [...new Set(inside.map(descKey))]
   return keys.map((key) => {
     const rows = byKey.get(key) ?? []
@@ -209,8 +206,7 @@ export function tagHistory(data: HistoryData, tagId: number, limits: { recent?: 
 /** Rows waiting for a category, by exact description (most first). */
 export function waitingOverview(data: HistoryData, limit = 40) {
   const waiting = data.transactions.filter((t) => isUncategorised(t) && !t.excluded)
-  const groups = new Map<string, Transaction[]>()
-  for (const t of waiting) groups.set(descKey(t), [...(groups.get(descKey(t)) ?? []), t])
+  const groups = groupByDescription(waiting)
   return {
     rows: waiting.length,
     descriptions: [...groups.values()].sort((a, b) => b.length - a.length).slice(0, limit).map((rows) => ({

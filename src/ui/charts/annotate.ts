@@ -7,6 +7,7 @@
  * figure elsewhere (the legend).
  */
 import type { Run } from "./lineChart"
+import { cellsToRuns } from "./runs"
 
 export interface ChartLabel {
   /** The cell the label describes (row top first). */
@@ -48,13 +49,5 @@ export function annotate(rows: Run[][], labels: ChartLabel[]): Run[][] {
     const [r, c] = spot
     ;[...label.text].forEach((ch, k) => (grid[r]![c + k] = { text: ch, ink: label.ink }))
   }
-  return grid.map((cells) => {
-    const runs: Run[] = []
-    for (const cell of cells) {
-      const last = runs[runs.length - 1]
-      if (last && last.ink === cell.ink) last.text += cell.text
-      else runs.push({ ...cell })
-    }
-    return runs
-  })
+  return grid.map(cellsToRuns)
 }

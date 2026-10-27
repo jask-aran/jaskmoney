@@ -6,6 +6,7 @@
  */
 
 import { MONTHS, addDays, dayOfWeek, type WeekStart } from "../../domain/days"
+import { appendRun } from "./runs"
 
 export interface LineSeries {
   /** One value per x position; null leaves a gap (e.g. days after today). */
@@ -127,9 +128,7 @@ export function lineChart(opts: {
       const marker = markerInk.get(c)
       const [text, ink] = mask ? [String.fromCharCode(0x2800 + mask), inks[r * width + c]!]
         : marker ? ["│", marker] : [" ", null]
-      const last = runs[runs.length - 1]
-      if (last && last.ink === ink) last.text += text
-      else runs.push({ text, ink })
+      appendRun(runs, text, ink)
     }
     rows.push(runs)
   }
