@@ -650,3 +650,78 @@ describe("key router", () => {
   })
 
 })
+
+describe("paging (every list and picker)", () => {
+  const rows = (n: number) => Array.from({ length: n }, (_, i) => transaction({ id: i + 1, dateISO: `2026-10-${String(28 - (i % 28)).padStart(2, "0")}`, description: `Row ${i + 1}` }))
+  beforeEach(() => {
+    data.clearFilter()
+    data.setState({ accounts: [account({ name: "A" })], transactions: rows(30), accountSelection: "all", ready: true })
+    ui.switchTab("manager")
+    ui.setState({ focusedSection: "mgr.transactions", txnView: "rows", managerCursor: 0, managerTop: 0, managerVisible: 10, selectedIds: {}, rangeSelecting: false, status: "" })
+  })
+
+  test("listMove pages by the list's height and jumps with home/end", async () => {
+    const { listMove } = await import("./keys")
+    expect(listMove(key("pagedown"), 3, 30, 10)).toBe(13)
+    expect(listMove(key("pageup"), 3, 30, 10)).toBe(0)
+    expect(listMove(key("pagedown"), 25, 30, 10)).toBe(29)
+    expect(listMove(key("pagedown"), 0, 30)).toBe(10)
+    expect(listMove(key("end"), 0, 30)).toBe(29)
+    expect(listMove(key("home"), 12, 30)).toBe(0)
+    expect(listMove(key("pagedown"), 0, 0)).toBe(0)
+  })
+
+  test("ctrl+d/ctrl+u page the table; ctrl+u is not undo", () => {
+    handleKey(ui, key("d", { ctrl: true }), data)
+    expect(ui.state.managerCursor).toBe(10)
+    handleKey(ui, key("d", { ctrl: true }), data)
+    handleKey(ui, key("u", { ctrl: true }), data)
+    expect(ui.state.managerCursor).toBe(10)
+    expect(ui.state.status).not.toMatch(/undo/i)
+    handleKey(ui, key("end"), data)
+    expect(ui.state.managerCursor).toBe(29)
+    expect(ui.state.status).toBe("Bottom")
+    handleKey(ui, key("home"), data)
+    expect(ui.state.managerCursor).toBe(0)
+    expect(ui.state.status).toBe("Top")
+  })
+
+  test("ctrl+n/ctrl+j/ctrl+p step; an unbound ctrl or alt letter does nothing; the scope's own ctrl keys still work", () => {
+    handleKey(ui, key("n", { ctrl: true }), data)
+    handleKey(ui, key("j", { ctrl: true }), data)
+    expect(ui.state.managerCursor).toBe(2)
+    handleKey(ui, key("p", { ctrl: true }), data)
+    expect(ui.state.managerCursor).toBe(1)
+    // ctrl+a and alt+a are not `a` (next account).
+    handleKey(ui, key("a", { ctrl: true }), data)
+    handleKey(ui, key("a", { meta: true }), data)
+    expect(data.state.accountSelection).toBe("all")
+    expect(ui.state.managerCursor).toBe(1)
+    handleKey(ui, key("l", { ctrl: true }), data)
+    expect(ui.state.filterPicker).not.toBeNull()
+    ui.setState({ filterPicker: null })
+  })
+
+  test("shift+pagedown extends the range by a page", () => {
+    handleKey(ui, key("pagedown", { shift: true }), data)
+    expect(ui.state.managerCursor).toBe(10)
+    expect(ui.state.rangeSelecting).toBe(true)
+  })
+
+  test("pickers page and jump too, letters still typing", () => {
+    data.setState({ savedFilters: Array.from({ length: 25 }, (_, i) => ({ id: `f${i}`, name: `Filter ${i}`, expr: `desc:f${i}` })) })
+    handleKey(ui, key("l", { ctrl: true }), data)
+    handleKey(ui, key("pagedown"), data)
+    expect(ui.state.filterPicker?.cursor).toBe(10)
+    handleKey(ui, key("end"), data)
+    expect(ui.state.filterPicker?.cursor).toBe(24)
+    handleKey(ui, key("home"), data)
+    expect(ui.state.filterPicker?.cursor).toBe(0)
+    handleKey(ui, key("d", { ctrl: true }), data)
+    expect(ui.state.filterPicker?.cursor).toBe(0)
+    handleKey(ui, key("g"), data)
+    expect(ui.state.filterPicker?.query).toBe("g")
+    ui.setState({ filterPicker: null })
+    data.setState({ savedFilters: [] })
+  })
+})

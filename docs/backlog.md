@@ -35,6 +35,9 @@ committed; note the commit.
 - [x] **K8. Repeat with `.`** the last categorise or tag change; the category
   picker starts on the last category used.
 - [x] **K9. Free `a` in rule offers:** a final "Ask the AI for more rules" row.
+- [x] **K10. Paging everywhere.** pageup/pagedown, home/end in every list and
+  picker (the dry run too); ctrl+d/u and ctrl+n/p as list aliases; an
+  unbound ctrl/alt letter no longer runs its bare letter (ctrl+u was undo).
 
 - [ ] **Settings at medium/narrow widths overflow** at 40 rows or fewer
   (the taxonomy list spills out of its pane; the last panes are cut off).

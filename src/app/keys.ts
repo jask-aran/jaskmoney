@@ -4,6 +4,7 @@ import { commands, rankCommands, type Command } from "./commands"
 import { ACCOUNT_ACTIONS, armedText, isArmed, isSecondPress, type Armed } from "../state/armed"
 import { DATABASE_ROWS } from "../state/databaseRows"
 import type { KeyEvent } from "@opentui/core"
+import { keyEvent } from "./keyEvent"
 import { resolve } from "node:path"
 import { batch } from "solid-js"
 import { accountRole } from "../domain/types"
@@ -103,24 +104,41 @@ function queryPickerKey(
 ): void {
   if (key.name === "escape") { actions.close(); return }
   if (actions.space && (key.name === "space" || key.sequence === " ")) { actions.space(); return }
-  const step = key.name === "down" || (key.ctrl && (key.name === "n" || key.name === "j")) ? 1 : key.name === "up" || (key.ctrl && (key.name === "p" || key.name === "k")) ? -1 : 0
+  const step = key.name === "down" || (key.ctrl && (key.name === "n" || key.name === "j")) ? 1 : key.name === "up" || (key.ctrl && (key.name === "p" || key.name === "k")) ? -1
+    : key.name === "pagedown" ? PAGE : key.name === "pageup" ? -PAGE : key.name === "end" ? length : key.name === "home" ? -length : 0
   if (step) { actions.update({ ...picker, cursor: Math.max(0, Math.min(length - 1, picker.cursor + step)) }); return }
   if (key.name === "return" || key.name === "enter") { actions.apply(); return }
   if (key.name === "backspace") { actions.update({ query: picker.query.slice(0, -1), cursor: 0 }); return }
   if (isPrintable(key)) actions.update({ query: picker.query + key.sequence, cursor: 0 })
 }
 
-/** List indices remain zero for empty lists. Callers include any extra create row. */
-export function listMove(key: Pick<KeyEvent, "name" | "sequence" | "shift">, cursor: number, length: number): number | null {
+/** Rows a page key moves where a list doesn't say how many it shows. */
+const PAGE = 10
+
+/** Every list's movement: j/k and the arrows a row, pageup/pagedown (and
+ * ctrl+u/ctrl+d, see handleKey) a page, g/home the top, G/end the bottom.
+ * List indices remain zero for empty lists. Callers include any extra create row. */
+export function listMove(key: Pick<KeyEvent, "name" | "sequence" | "shift">, cursor: number, length: number, page = PAGE): number | null {
   const last = Math.max(0, length - 1)
   let next: number
-  if (key.sequence === "G" || (key.name === "g" && key.shift)) next = last
-  else if (key.name === "g") next = 0
+  if (key.sequence === "G" || (key.name === "g" && key.shift) || key.name === "end") next = last
+  else if (key.name === "g" || key.name === "home") next = 0
   else if (key.name === "j" || key.name === "down") next = cursor + 1
   else if (key.name === "k" || key.name === "up") next = cursor - 1
+  else if (key.name === "pagedown") next = cursor + Math.max(1, page)
+  else if (key.name === "pageup") next = cursor - Math.max(1, page)
   else return null
   return Math.max(0, Math.min(last, next))
 }
+
+/** A move to the top or bottom (g, G, home, end), not a step. */
+function isJump(key: Pick<KeyEvent, "name" | "sequence">): boolean {
+  return key.name === "g" || key.sequence === "G" || key.name === "home" || key.name === "end"
+}
+
+/** ctrl+letters where letters are commands: the list keys readline and
+ * vim users reach for, as the keys they stand for. */
+const CTRL_ALIASES: Record<string, string> = { d: "pagedown", u: "pageup", n: "down", j: "down", p: "up" }
 
 /** A shifted letter, as terminals report it: the capital, or the letter with shift. */
 function shifted(key: Pick<KeyEvent, "name" | "sequence" | "shift">, letter: string): boolean {
@@ -176,6 +194,14 @@ export function handleKey(ui: UiStore, key: KeyEvent, data?: DataStore): boolean
   const entry = scopes[scope]
   if (entry.quits) {
     if (key.ctrl && name === "k") { ui.setState({ palette: { query: "", cursor: 0, from: scope, opened: ++paletteOpens } }); return true }
+    // A ctrl or alt letter is never its bare letter here (ctrl+u isn't undo):
+    // the list aliases move, the scope's own (ctrl+s, ctrl+l) pass, the
+    // rest do nothing.
+    if ((key.ctrl || key.meta) && /^[a-z]$/.test(name)) {
+      const alias = key.ctrl && !key.meta ? CTRL_ALIASES[name] : undefined
+      if (alias) return handleKey(ui, keyEvent(alias, { shift: key.shift }), data)
+      if (!key.ctrl || key.meta || !entry.hints(hintState(ui, data)).some((hint) => hint.key === `ctrl+${name}`)) return true
+    }
     if (name === "v") {
       if (JUMP_TARGETS[ui.state.activeTab].length) ui.enterJump()
       return true
@@ -248,13 +274,11 @@ function handleFilterPicker(ui: UiStore, key: KeyEvent, data?: DataStore): void 
 }
 
 function handleDryRun(ui: UiStore, key: KeyEvent, data?: DataStore): void {
-  const { name } = key
-  if (name === "escape") ui.setState({ dryRunReport: null, dryRunScroll: 0 })
-  if (name === "j" || name === "down") {
-    const lines = ui.state.dryRunReport?.rules.reduce((n, result) => n + 4 + result.samples.length, 0) ?? 0
-    ui.setState({ dryRunScroll: Math.min(Math.max(0, lines - ui.state.dryRunVisible), ui.state.dryRunScroll + 1) })
-  }
-  if (name === "k" || name === "up") ui.setState({ dryRunScroll: Math.max(0, ui.state.dryRunScroll - 1) })
+  if (key.name === "escape") { ui.setState({ dryRunReport: null, dryRunScroll: 0 }); return }
+  // Scrolls like a list whose rows are the scroll positions.
+  const lines = ui.state.dryRunReport?.rules.reduce((n, result) => n + 4 + result.samples.length, 0) ?? 0
+  const moved = listMove(key, ui.state.dryRunScroll, Math.max(0, lines - ui.state.dryRunVisible) + 1, ui.state.dryRunVisible)
+  if (moved != null) ui.setState({ dryRunScroll: moved })
 }
 
 function handleJump(ui: UiStore, key: KeyEvent, data?: DataStore): void {
@@ -809,10 +833,8 @@ function handleSettingsTaxonomy(ui: UiStore, key: KeyEvent, data?: DataStore): v
   const cursor = list === "categories" ? ui.state.categoryCursor : ui.state.tagCursor
   if (name === "escape") { ui.leaveSettings(); return }
   if (name === "h" || name === "left" || name === "l" || name === "right") { ui.activateSettings("taxonomy", list === "categories" ? "tags" : "categories"); return }
-  const moved = listMove(key, cursor, items.length)
+  const moved = listMove(key, cursor, items.length, list === "categories" ? ui.state.categoryVisible : ui.state.tagVisible)
   if (moved != null) { ui.moveSettingsList(list, moved - cursor, items.length); return }
-  if (name === "pageup") { ui.moveSettingsList(list, -10, items.length); return }
-  if (name === "pagedown") { ui.moveSettingsList(list, 10, items.length); return }
   if (name === "a") {
     ui.openSettingsEditor(list === "categories" ? "category" : "tag", null, { ...ui.state.settingsDraft, name: "", color: list === "categories" ? "#94e2d5" : "#89b4fa", expr: "", notSpending: false })
     return
@@ -1207,21 +1229,13 @@ function handleManagerTxns(ui: UiStore, key: KeyEvent, data?: DataStore): void {
     }
     return
   }
-  const moved = listMove(key, ui.state.managerCursor, rows.length)
+  const moved = listMove(key, ui.state.managerCursor, rows.length, ui.state.managerVisible)
   if (moved != null) {
-    if (name === "g" || seq === "G") {
+    if (isJump(key)) {
       ui.jumpManagerCursor(moved, rows.length)
       ui.setRangeFromMove(0, 0, false)
-      ui.setStatus(key.shift || seq === "G" ? "Bottom" : "Top")
+      ui.setStatus(seq === "G" || name === "end" || key.shift ? "Bottom" : "Top")
     } else moveTxnCursor(ui, data, moved - ui.state.managerCursor, key.shift)
-    return
-  }
-  if (name === "pageup") {
-    moveTxnCursor(ui, data, -ui.state.managerVisible, key.shift)
-    return
-  }
-  if (name === "pagedown") {
-    moveTxnCursor(ui, data, ui.state.managerVisible, key.shift)
     return
   }
 }
@@ -1298,10 +1312,8 @@ function handleManagerMerchants(ui: UiStore, key: KeyEvent, data?: DataStore): v
   const moveTo = (i: number) => ui.setState({ merchantCursor: Math.max(0, Math.min(groups.length - 1, i)) })
   if (name === "a" && !key.shift) { stepAccount(ui, data); ui.setState({ merchantCursor: 0 }); return }
   if (name === "m") { ui.setState({ txnView: "rows" }); ui.setStatus("Transactions"); return }
-  const moved = listMove(key, ui.state.merchantCursor, groups.length)
+  const moved = listMove(key, ui.state.merchantCursor, groups.length, ui.state.managerVisible)
   if (moved != null) { moveTo(moved); return }
-  if (name === "pagedown") { moveTo(ui.state.merchantCursor + ui.state.managerVisible); return }
-  if (name === "pageup") { moveTo(ui.state.merchantCursor - ui.state.managerVisible); return }
   if (name === "s" && !key.shift) {
     const next = MERCHANT_SORTS[(MERCHANT_SORTS.indexOf(ui.state.merchantSort) + 1) % MERCHANT_SORTS.length]!
     ui.setState({ merchantSort: next, merchantReverse: false, merchantCursor: 0 })
