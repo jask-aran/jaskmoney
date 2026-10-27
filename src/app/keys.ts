@@ -175,7 +175,7 @@ export function handleKey(ui: UiStore, key: KeyEvent, data?: DataStore): boolean
   const scope = ui.activeScope()
   const entry = scopes[scope]
   if (entry.quits) {
-    if (key.ctrl && name === "k") { ui.setState({ palette: { query: "", cursor: 0, from: scope } }); return true }
+    if (key.ctrl && name === "k") { ui.setState({ palette: { query: "", cursor: 0, from: scope, opened: ++paletteOpens } }); return true }
     if (name === "v") {
       if (JUMP_TARGETS[ui.state.activeTab].length) ui.enterJump()
       return true
@@ -196,9 +196,19 @@ export function handleKey(ui: UiStore, key: KeyEvent, data?: DataStore): boolean
 export function paletteList(ui: UiStore, data?: DataStore): Command[] {
   const palette = ui.state.palette
   if (!palette || !data) return []
-  const ctx = { ui, data, from: palette.from, press: (event: KeyEvent) => { handleKey(ui, event, data) } }
-  return rankCommands(commands(ctx, footerHints(palette.from, hintState(ui, data))), palette.query, ui.state.lastCommandId)
+  // Built once per opening (it reads offers, accounts, keys, undo: ~7ms on
+  // 1,200 rows) and ranked once per query, so a cursor move is free and
+  // the rows keep their identity (nothing remounts).
+  if (paletteBuilt?.opened !== palette.opened) {
+    const ctx = { ui, data, from: palette.from, press: (event: KeyEvent) => { handleKey(ui, event, data) } }
+    paletteBuilt = { opened: palette.opened, all: commands(ctx, footerHints(palette.from, hintState(ui, data))), query: null, ranked: [] }
+  }
+  if (paletteBuilt.query !== palette.query) paletteBuilt = { ...paletteBuilt, query: palette.query, ranked: rankCommands(paletteBuilt.all, palette.query, ui.state.lastCommandId) }
+  return paletteBuilt.ranked
 }
+
+let paletteOpens = 0
+let paletteBuilt: { opened: number; all: Command[]; query: string | null; ranked: Command[] } | null = null
 
 /** The command palette: enter runs the command under the cursor once the
  * palette has closed (from the pane it opened over); one that can't run

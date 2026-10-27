@@ -27,7 +27,8 @@ export function CommandPalette(props: { commands: Command[]; cursor: number; que
   const dims = useTerminalDimensions()
   const width = () => Math.min(WIDTH, dims().width - 2)
   const inner = () => width() - INSET * 2
-  const searching = () => !!props.query.trim()
+  // Memos, so a cursor move (a new palette state) doesn't rebuild the rows.
+  const searching = createMemo(() => !!props.query.trim())
   const lines = createMemo(() => {
     const out: Line[] = []
     let group = ""

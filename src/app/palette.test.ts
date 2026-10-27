@@ -152,6 +152,38 @@ test("enter on one that can't run says why and keeps the palette open", () => {
   handleKey(ui, key("escape"), data)
 })
 
+test("moving doesn't rebuild the list: the same commands until the query changes or it reopens", () => {
+  setup()
+  open()
+  const first = paletteList(ui, data)
+  handleKey(ui, key("down"), data)
+  handleKey(ui, key("down"), data)
+  expect(ui.state.palette?.cursor).toBe(2)
+  expect(paletteList(ui, data)).toBe(first)
+  type("rul")
+  const ranked = paletteList(ui, data)
+  expect(ranked).not.toBe(first)
+  handleKey(ui, key("down"), data)
+  expect(paletteList(ui, data)).toBe(ranked)
+  handleKey(ui, key("escape"), data)
+  open()
+  expect(paletteList(ui, data)).not.toBe(first)
+  handleKey(ui, key("escape"), data)
+})
+
+test("rule offers are kept until a write changes them", async () => {
+  setup()
+  const db = data.getDb()!
+  const food = Number(db.query("INSERT INTO categories (name, color) VALUES ('Test food', '#fff')").run().lastInsertRowid)
+  for (const id of [2, 3, 4]) db.query("INSERT INTO transactions (id, date_raw, date_iso, amount, description, account_id, source) VALUES (?, 'x', '2026-10-02', -5, 'Shop', 100, 'csv')").run(id)
+  data.refresh()
+  const before = data.allRuleOffers()
+  expect(data.allRuleOffers()).toBe(before)
+  expect(before).toEqual([])
+  await data.categorizeTransactions([1, 2, 3], food)
+  expect(data.allRuleOffers().map((o) => o.description)).toEqual(["Shop"])
+})
+
 test("ctrl+k inside a picker still moves its cursor", () => {
   setup()
   handleKey(ui, key("c"), data)

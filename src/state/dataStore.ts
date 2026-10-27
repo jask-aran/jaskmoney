@@ -349,6 +349,8 @@ function createDataStore() {
 
   function refresh() {
     if (!db) return
+    // Every write ends here: what's cached from the database is stale.
+    dbVersion++
     const accounts = loadAccounts(db)
     const categories = loadCategories(db)
     const tags = loadTags(db)
@@ -376,6 +378,9 @@ function createDataStore() {
   }
 
   /** A write to the open database, then a reload of the store from it. */
+  let dbVersion = 0
+  let offersCache: { key: readonly unknown[]; offers: RuleOffer[] } | null = null
+
   function mutate<T>(write: (db: Db) => T): T {
     if (!db) throw new Error("db not open")
     const result = write(db)
@@ -1179,12 +1184,17 @@ function createDataStore() {
     return ruleOffers(loadCategoryChoices(db), transactions(), state.rules, state.savedFilters, state.categories, state.tags, descriptions)
   }
 
-  /** R's list: the repeat offers, then the model's (one per expression and category). */
+  /** R's list: the repeat offers, then the model's (one per expression and
+   * category). Kept until a write, the rows, the saved filters or the
+   * model's offers change: the footer asks on every key (~3.5ms to build). */
   function allRuleOffers(): RuleOffer[] {
+    const key = [dbVersion, transactions(), state.savedFilters, state.aiRuleOffers] as const
+    if (offersCache && offersCache.key.every((part, i) => part === key[i])) return offersCache.offers
     const repeat = ruleOffersFor()
     const saved = new Set(state.savedFilters.map((f) => f.expr.toLowerCase()))
     const ai = state.aiRuleOffers.filter((o) => !saved.has(o.expr.toLowerCase()) && !repeat.some((r) => r.expr.toLowerCase() === o.expr.toLowerCase() && r.categoryId === o.categoryId))
-    return [...repeat, ...ai]
+    offersCache = { key, offers: [...repeat, ...ai] }
+    return offersCache.offers
   }
 
   /** Ask the general model for rules (ai/ruleWriter); `llm` replaces the

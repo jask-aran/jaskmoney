@@ -95,7 +95,7 @@ export interface JumpTarget {
 export interface UiState {
   filterPicker: { query: string; cursor: number } | null
   /** The command palette (ctrl+k), over the scope it was opened from. */
-  palette: { query: string; cursor: number; from: ScopeId } | null
+  palette: { query: string; cursor: number; from: ScopeId; opened: number } | null
   /** The palette's last command, listed first next time (session only). */
   lastCommandId: string | null
   dryRunReport: DryRunReport | null

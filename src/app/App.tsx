@@ -1,4 +1,4 @@
-import { ErrorBoundary, Match, Show, Switch, createEffect, createSignal, untrack, on, onCleanup, onMount } from "solid-js"
+import { ErrorBoundary, Match, Show, Switch, createEffect, createMemo, createSignal, untrack, on, onCleanup, onMount } from "solid-js"
 import { useKeyboard, usePaste, useRenderer } from "@opentui/solid"
 import type { KeyEvent } from "@opentui/core"
 import { ui } from "../state/uiStore"
@@ -29,6 +29,9 @@ export function App() {
   const renderer = useRenderer()
 
   const [bootstrapped, setBootstrapped] = createSignal(false)
+  // The same array until the palette reopens or its query changes (keys'
+  // paletteList), so a cursor move leaves the palette's rows alone.
+  const paletteCommands = createMemo(() => ui.state.palette ? paletteList(ui, data) : [])
 
   onMount(() => {
     try {
@@ -138,7 +141,7 @@ export function App() {
       <DryRunOverlay />
       <Show when={ui.state.palette}>
         {(palette: () => NonNullable<typeof ui.state.palette>) => (
-          <CommandPalette commands={paletteList(ui, data)} cursor={palette().cursor} query={palette().query} lastId={ui.state.lastCommandId} />
+          <CommandPalette commands={paletteCommands()} cursor={palette().cursor} query={palette().query} lastId={ui.state.lastCommandId} />
         )}
       </Show>
     </box>
