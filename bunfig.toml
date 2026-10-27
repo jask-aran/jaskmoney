@@ -1,4 +1,5 @@
-preload = ["@opentui/solid/preload"]
+# The app: OpenTUI's Solid transform with a disk cache (src/jsxCache.ts).
+preload = ["./src/jsxCache.ts"]
 
 # Solid must resolve the browser/dev build, not solid-js/server (orphan text crashes).
 [test]
