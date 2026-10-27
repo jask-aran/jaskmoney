@@ -72,3 +72,21 @@ test("building up: with category budgets and no overall one, the overall row off
   handleKey(ui, key("return"), data)
   expect(ui.state.settingsDraft).toMatchObject({ scopeKey: "overall", amount: "300" })
 })
+
+test("a narrow top card leaves out the pace figure rather than cutting it off", async () => {
+  setAppClock(new Date(2026, 9, 20, 12))
+  const t = await renderApp({ width: 84, height: 44 })
+  data.init(":memory:")
+  const db = data.getDb()!
+  db.query("INSERT INTO accounts (id, name, type, source, external_kind) VALUES (1, 'Spending', 'debit', 'up', 'TRANSACTIONAL')").run()
+  const groceries = data.state.categories.find((c) => c.name === "Groceries")!.id
+  db.query("INSERT INTO transactions (date_raw, date_iso, amount, description, account_id, category_id, source) VALUES ('x', '2026-10-03', -1234, 'Shop', 1, ?, 'up')").run(groceries)
+  data.refresh()
+  data.setBudget({ kind: "overall" }, 4200)
+  handleKey(ui, key("3"), data)
+  await t.renderOnce(); await t.flush()
+  const row = t.captureCharFrame().split("\n").find((l) => l.includes("Overall spending"))!
+  expect(row).toContain("$1,234 of $4,200")
+  // Nothing after "left · $X/day" but the card's border.
+  expect(row).toMatch(/\/day\s*│\s*$/)
+})

@@ -130,21 +130,25 @@ export function BudgetsTab(props: { focused: SectionId }) {
   const listFocused = () => props.focused === "bud.list"
   const categoriesFocused = () => props.focused === "bud.categories"
   const LABEL = () => Math.min(26, Math.max(18, ...rows().flatMap((r) => (r.kind === "account" ? [label(r.budget).length + 2] : []))))
-  const BAR = () => Math.max(10, Math.min(30, rowWidth(dims().width) - LABEL() - 62))
+  const BAR = () => Math.max(10, Math.min(30, rowWidth(dims().width) - LABEL() - 66))
 
   // One budget row in the top card: bar, spent of amount, left or over
-  // (and per day), and against an even pace.
+  // (and per day), and against an even pace when it fits whole (the bar's
+  // mark still shows pace).
   const budgetSpans = (budget: Budget): Span[] => {
     const p = progress().get(budget.id)
     if (!p) return []
     const used = budget.amount > 0 ? p.spent / budget.amount : p.spent > 0 ? 2 : 0
     const vsPace = p.spent - budget.amount * pace()
-    return [
+    const spans: Span[] = [
       ...bar(BAR(), used, pace(), used > 1 ? "over" : used > pace() ? "ahead" : "ok"),
       { text: `  ${formatWholeMoney(p.spent).padStart(7)} of ${formatWholeMoney(budget.amount).padEnd(7)}  `, fg: theme.subtext1 },
-      p.remaining < 0 ? { text: fit(`${formatWholeMoney(-p.remaining)} over`, 20), fg: theme.error } : { text: fit(`${formatWholeMoney(p.remaining)} left · ${formatWholeMoney(p.dailyAllowance)}/day`, 20), fg: theme.success },
-      { text: `  ${Math.abs(vsPace) < 1 ? "on pace" : `${formatWholeMoney(Math.abs(vsPace))} ${vsPace > 0 ? "over" : "under"} pace`}`, fg: vsPace > 0 ? theme.warning : theme.overlay1 },
+      p.remaining < 0 ? { text: fit(`${formatWholeMoney(-p.remaining)} over`, 24), fg: theme.error } : { text: fit(`${formatWholeMoney(p.remaining)} left · ${formatWholeMoney(p.dailyAllowance)}/day`, 24), fg: theme.success },
     ]
+    const paceText = `  ${Math.abs(vsPace) < 1 ? "on pace" : `${formatWholeMoney(Math.abs(vsPace))} ${vsPace > 0 ? "over" : "under"} pace`}`
+    const room = rowWidth(dims().width) - LABEL()
+    if (spans.reduce((n, span) => n + span.text.length, 0) + paceText.length <= room) spans.push({ text: paceText, fg: vsPace > 0 ? theme.warning : theme.overlay1 })
+    return spans
   }
 
   // Categories columns: numbers after the name, as many as fit (the name
