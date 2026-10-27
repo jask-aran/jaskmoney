@@ -7,7 +7,6 @@ import { assignableCategories, pickerSuggestions } from "../domain/categoryOptio
 import { parseTagScope } from "../domain/tagScope"
 import { tagChoices } from "../state/tagChooser"
 import { RULE_AFTER } from "../domain/ruleOffers"
-import { hasLlm, llmModelId } from "../ai/llm"
 import { endTagReview, runTagAccept, startTagReview } from "./tagReview"
 import { budgetLabel, budgetScopeOptions, scopeKey } from "../domain/budgetScopes"
 import type { CycleConfig } from "../domain/budget"
@@ -18,6 +17,7 @@ import { runSmartSearch } from "./smartSearch"
 import { runAsk } from "./ask"
 import { askTerms } from "../domain/filter"
 import { AI_ROWS, testApiKey } from "./apiKeys"
+import { createLlm, DEFAULT_LLM_MODEL, hasLlm, llmModelId } from "../ai/llm"
 import { credentialEnv } from "../ai/credentials"
 import { runAccept, toggleUncategorised, newSuggestionsNote, suggestNew } from "./suggest"
 import { ACCEPT_ALL_AT, MATCH_AT } from "../domain/questions"
@@ -493,7 +493,7 @@ const CONFIRMED: Record<Confirm["kind"], (data: DataStore | undefined, c: Confir
   clearAccount: (data, c) => { data?.clearAccountData(Number(c.id)); return `Cleared ${c.label}` },
   deleteAccount: (data, c) => { data?.removeAccountData(Number(c.id)); return `Removed ${c.label}` },
   apiKey: (data, c) => {
-    data?.saveApiKeys(c.id === "jev" ? { JASKMONEY_JEV_TOKEN: null } : { JASKMONEY_CF_TOKEN: null, JASKMONEY_CF_ACCOUNT_ID: null })
+    data?.saveApiKeys(c.id === "jev" ? { JASKMONEY_JEV_TOKEN: null } : c.id === "workersAi" ? { JASKMONEY_CF_TOKEN: null, JASKMONEY_CF_ACCOUNT_ID: null } : { JASKMONEY_OPENROUTER_TOKEN: null, JASKMONEY_LLM_MODEL: null })
     return `Removed the saved ${c.label} key`
   },
   desyncAccount: (data, c) => `Sync off for ${c.label} · ${data?.setAccountSync(Number(c.id), false) ?? 0} transactions removed`,
@@ -581,6 +581,11 @@ function handleSettingsEditor(ui: UiStore, key: KeyEvent, data?: DataStore): voi
         data?.setBudgetCycle(cycle)
       } else if (kind === "jevKey") {
         if (draft.secret.trim()) data?.saveApiKeys({ JASKMONEY_JEV_TOKEN: draft.secret })
+      } else if (kind === "openRouterKey") {
+        const modelId = draft.model.trim()
+        try { createLlm({ apiKey: "x", modelId: modelId || DEFAULT_LLM_MODEL }) }
+        catch (e) { throw new Error(e instanceof Error ? e.message : String(e)) }
+        data?.saveApiKeys({ ...(draft.secret.trim() ? { JASKMONEY_OPENROUTER_TOKEN: draft.secret } : {}), JASKMONEY_LLM_MODEL: modelId || null })
       } else if (kind === "workersAiKey") {
         if (!draft.accountId.trim()) throw new Error("enter the Cloudflare account ID")
         data?.saveApiKeys({ ...(draft.secret.trim() ? { JASKMONEY_CF_TOKEN: draft.secret } : {}), JASKMONEY_CF_ACCOUNT_ID: draft.accountId })
@@ -890,20 +895,21 @@ function handleRuleOffers(ui: UiStore, key: KeyEvent, data?: DataStore): void {
 function handleSettingsAi(ui: UiStore, key: KeyEvent, data?: DataStore): void {
   const { name } = key
   const row = AI_ROWS[ui.state.aiCursor] ?? "jev"
-  const label = row === "jev" ? "Jev" : "Workers AI"
+  const label = row === "jev" ? "Jev" : row === "workersAi" ? "Workers AI" : "OpenRouter"
   if (name === "escape") { ui.leaveSettings(); return }
   const moved = listMove(key, ui.state.aiCursor, AI_ROWS.length)
   if (moved != null) { ui.setState({ aiCursor: moved }); return }
   if (name === "return" || name === "enter") {
-    // The key starts empty (saving empty keeps the current one); the account id is not secret.
+    // The key starts empty (saving empty keeps the current one); the account id and model are not secret.
     const accountId = row === "workersAi" ? (credentialEnv().JASKMONEY_CF_ACCOUNT_ID ?? "") : ""
-    ui.openSettingsEditor(row === "jev" ? "jevKey" : "workersAiKey", null, { ...ui.state.settingsDraft, secret: "", accountId })
+    const model = row === "openRouter" ? llmModelId() : ""
+    ui.openSettingsEditor(row === "jev" ? "jevKey" : row === "workersAi" ? "workersAiKey" : "openRouterKey", null, { ...ui.state.settingsDraft, secret: "", accountId, model })
     ui.setState({ settingsEditField: 0 })
     return
   }
   if (name === "t") { void testApiKey(ui, row); return }
   if (name === "delete" && data) {
-    const saved = row === "jev" ? data.state.apiKeys.JASKMONEY_JEV_TOKEN.source === "saved" : data.state.apiKeys.JASKMONEY_CF_TOKEN.source === "saved" || data.state.apiKeys.JASKMONEY_CF_ACCOUNT_ID.source === "saved"
+    const saved = row === "jev" ? data.state.apiKeys.JASKMONEY_JEV_TOKEN.source === "saved" : row === "workersAi" ? data.state.apiKeys.JASKMONEY_CF_TOKEN.source === "saved" || data.state.apiKeys.JASKMONEY_CF_ACCOUNT_ID.source === "saved" : data.state.apiKeys.JASKMONEY_OPENROUTER_TOKEN.source === "saved" || data.state.apiKeys.JASKMONEY_LLM_MODEL.source === "saved"
     if (!saved) { ui.setStatus(`No saved ${label} key to remove`); return }
     ui.armSettingsConfirm({ kind: "apiKey", id: row, label })
     ui.setStatus(`Press del again to remove the saved ${label} key`)

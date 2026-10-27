@@ -59,7 +59,9 @@ export async function runAgent<P extends TSchema>(
     usage.output += reply.usage.output
     usage.cost += reply.usage.cost.total
     if (reply.stopReason === "error" || reply.stopReason === "aborted") {
-      return { result: null, error: reply.errorMessage ?? reply.stopReason, turns: turn, usage, calls }
+      // A provider's message can echo the request; never the key.
+      const message = reply.errorMessage ?? reply.stopReason
+      return { result: null, error: llm.apiKey ? message.replaceAll(llm.apiKey, "[redacted]") : message, turns: turn, usage, calls }
     }
     context.messages.push(reply)
     const toolCalls = reply.content.filter((block) => block.type === "toolCall")

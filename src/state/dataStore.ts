@@ -177,7 +177,7 @@ function sortRows(rows: Transaction[], col: SortColumn, asc: boolean, confidence
 /** Each API key's source and mask, read now. */
 function loadApiKeys(): DataState["apiKeys"] {
   const env = credentialEnv()
-  return Object.fromEntries(CREDENTIAL_NAMES.map((name) => [name, { source: credentialSource(name), mask: maskSecret(env[name]) }])) as DataState["apiKeys"]
+  return Object.fromEntries(CREDENTIAL_NAMES.map((name) => [name, { source: credentialSource(name), mask: name === "JASKMONEY_LLM_MODEL" ? (env[name] ?? "") : maskSecret(env[name]) }])) as DataState["apiKeys"]
 }
 
 /** Near misses show by themselves when they don't swamp the results: at

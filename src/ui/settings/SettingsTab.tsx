@@ -1,3 +1,4 @@
+import { llmModelId } from "../../ai/llm"
 import { For, Show, createEffect, createMemo } from "solid-js"
 import { useTerminalDimensions } from "@opentui/solid"
 import { SectionCard } from "../primitives/SectionCard"
@@ -187,6 +188,7 @@ function AiPane(props: { focused: boolean; width?: `${number}%` }) {
   const rows = () => [
     { name: "Jev", by: "TypeSafe", key: keys().JASKMONEY_JEV_TOKEN, uses: "suggestions · ask: · smart search" },
     { name: "Clairic", by: "Workers AI", key: keys().JASKMONEY_CF_TOKEN.source && keys().JASKMONEY_CF_ACCOUNT_ID.source ? keys().JASKMONEY_CF_TOKEN : { source: null, mask: "" }, uses: "smart search" },
+    { name: "General", by: "OpenRouter", key: keys().JASKMONEY_OPENROUTER_TOKEN, uses: `rules · ${llmModelId()}` },
   ]
   return <SectionCard title="AI models" focused={props.focused} active={active()} height={rows().length + 2} width={props.width}>
     <For each={rows()}>{(row, i) => {

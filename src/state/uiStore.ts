@@ -74,7 +74,7 @@ export function settingsSectionFocus(section: SettingsSection, list: SettingsLis
   if (section === "taxonomy") return list === "categories" ? "set.categories" : "set.tags"
   return section === "rules" ? "set.rules" : section === "filters" ? "set.filters" : section === "up" ? "set.up" : section === "ai" ? "set.ai" : section === "budgets" ? "set.budgets" : "set.database"
 }
-export type SettingsEditorKind = "category" | "tag" | "filter" | "rule" | "budget" | "cycle" | "jevKey" | "workersAiKey"
+export type SettingsEditorKind = "category" | "tag" | "filter" | "rule" | "budget" | "cycle" | "jevKey" | "workersAiKey" | "openRouterKey"
 export type ImportStage = "none" | "files" | "path" | "profile" | "profileEditor" | "preview"
 
 export interface JumpTarget {
@@ -175,6 +175,8 @@ export interface UiState {
     unit: CycleUnit; anchor: CycleAnchor; anchorDate: string; payEarly: boolean
     /** API key editors: the key as typed (never rendered), and Workers AI's account id. */
     secret: string; accountId: string
+    /** The general model's OpenRouter id (the OpenRouter editor). */
+    model: string
   }
   settingsConfirm: { kind: "category" | "tag" | "rule" | "filter" | "profile" | "clearData" | "clearAccount" | "deleteAccount" | "desyncAccount" | "budget" | "apiKey"; id: number | string; label: string } | null
   importStage: ImportStage
@@ -321,7 +323,7 @@ function createUiStore() {
     settingsEditField: 0,
     settingsCaret: 0,
     formPicker: null,
-    settingsDraft: { name: "", color: "#94e2d5", categoryId: null, id: "", expr: "", savedFilterId: "", setCategoryId: null, addTagIds: [], notSpending: false, scopeKey: "overall", amount: "", unit: "month", anchor: "calendar", anchorDate: "", payEarly: false, secret: "", accountId: "" },
+    settingsDraft: { name: "", color: "#94e2d5", categoryId: null, id: "", expr: "", savedFilterId: "", setCategoryId: null, addTagIds: [], notSpending: false, scopeKey: "overall", amount: "", unit: "month", anchor: "calendar", anchorDate: "", payEarly: false, secret: "", accountId: "", model: "" },
     settingsConfirm: null,
     importStage: "none",
     importDirectory: "",
