@@ -5,7 +5,7 @@ import { fuzzyScore } from "../domain/fuzzy"
 import type { DataStore } from "../state/dataStore"
 import { DATABASE_ROWS } from "../state/databaseRows"
 import { SETTINGS_SECTION_LABELS, SETTINGS_SECTIONS, TABS, type ScopeId, type UiState, type UiStore } from "../state/uiStore"
-import { applyAllRules, applySavedFilter, askForRules, runUndo, showAccount, showDryRun, toggleIcons, toggleWeekStart, toggleXAxis, toTransactions } from "./actions"
+import { applyAllRules, applySavedFilter, clearTransactionFilter, askForRules, runUndo, showAccount, showDryRun, toggleIcons, toggleWeekStart, toggleXAxis, toTransactions } from "./actions"
 import { AI_ROWS, aiRowLabel, isLlmRow } from "./apiKeys"
 import { keyEvent } from "./keyEvent"
 import { hintEvent, scopeLabel, type Hint } from "./palette"
@@ -53,7 +53,6 @@ type Section = UiState["settingsSection"]
 
 function registry(ctx: CommandContext): Entry[] {
   const { ui, data } = ctx
-  const status = (text: string) => ui.setStatus(text)
   const toSettings = (section: Section, list: "categories" | "tags" = "categories") => {
     if (ui.state.activeTab !== "settings") ui.switchTab("settings")
     ui.activateSettings(section, list)
@@ -77,7 +76,7 @@ function registry(ctx: CommandContext): Entry[] {
     { id: "txn:filter", category: "Transactions", label: "Filter…", description: "desc:coffee amt:>20", run: () => { toTransactions(ui); ui.openFilter(filter) } },
     { id: "txn:smart-search", category: "Transactions", label: "Smart search…", description: "a question in words", run: inTransactions("?") },
     { id: "txn:clear-filter", category: "Transactions", label: "Clear the filter", description: filter || undefined, disabled: filter ? undefined : "no filter",
-      run: () => { data.clearFilter(); ui.jumpManagerCursor(0, data.scopedTransactions().length); status("Filter cleared") } },
+      run: () => clearTransactionFilter(ui, data) },
     { id: "txn:save-filter", category: "Transactions", label: "Save the filter…", disabled: filter ? undefined : "no filter", run: inTransactions("ctrl+s") },
     { id: "txn:undo", category: "Transactions", label: undo ? `Undo ${undo}` : "Undo", disabled: undo ? undefined : "nothing to undo", run: () => runUndo(ui, data) },
     ...data.state.savedFilters.map((saved): Entry => ({

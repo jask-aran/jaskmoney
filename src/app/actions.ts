@@ -17,6 +17,13 @@ export function resetTransactionCursors(ui: UiStore, data?: DataStore): void {
   ui.setState({ merchantCursor: 0, merchantTop: 0 })
 }
 
+/** No filter on the table (or the merchants), cursors back to the top. */
+export function clearTransactionFilter(ui: UiStore, data: DataStore): void {
+  data.clearFilter()
+  resetTransactionCursors(ui, data)
+  ui.setStatus("Filter cleared")
+}
+
 /** The Transactions table, focused (from any tab). */
 export function toTransactions(ui: UiStore): void {
   if (ui.state.activeTab !== "manager") ui.switchTab("manager")

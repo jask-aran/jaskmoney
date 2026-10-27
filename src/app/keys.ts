@@ -1,5 +1,5 @@
 import { footerShown, type Hint } from "./palette"
-import { applyAllRules, applySavedFilter, askForRules, reportError, resetTransactionCursors, runUndo, showAccount, showDryRun, toggleIcons, toggleWeekStart, toggleXAxis } from "./actions"
+import { applyAllRules, applySavedFilter, clearTransactionFilter, askForRules, reportError, resetTransactionCursors, runUndo, showAccount, showDryRun, toggleIcons, toggleWeekStart, toggleXAxis } from "./actions"
 import { commands, rankCommands, type Command } from "./commands"
 import { ACCOUNT_ACTIONS, armedText, isArmed, isSecondPress, type Armed } from "../state/armed"
 import { DATABASE_ROWS } from "../state/databaseRows"
@@ -1058,7 +1058,7 @@ function stepBack(ui: UiStore, data?: DataStore): void {
     ui.setStatus("Overview")
     return
   }
-  if (data.state.filterQuery) { data.clearFilter(); ui.jumpManagerCursor(0, data.scopedTransactions().length); ui.setStatus("Filter cleared"); return }
+  if (data.state.filterQuery) { clearTransactionFilter(ui, data); return }
   if (data.state.tagReview) { endTagReview(ui, data); return }
   if (data.state.uncategorisedOnly) { toggleUncategorised(ui, data); return }
   ui.setStatus("Nothing to clear")
@@ -1313,7 +1313,7 @@ function handleManagerMerchants(ui: UiStore, key: KeyEvent, data?: DataStore): v
   if (name === "c" && group) { openCategoryPicker(ui, group.ids, data); return }
   if (name === "t" && group) { ui.openTagPicker(group.ids); return }
   if (name === "escape") {
-    if (data.state.filterQuery) { data.clearFilter(); ui.setState({ merchantCursor: 0 }); ui.setStatus("Filter cleared") }
+    if (data.state.filterQuery) clearTransactionFilter(ui, data)
     else { ui.setState({ txnView: "rows" }); ui.setStatus("Transactions") }
     return
   }
