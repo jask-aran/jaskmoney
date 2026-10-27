@@ -140,24 +140,31 @@ function TaxonomyPane(props: { focused: boolean; narrow: boolean; width: number;
   </SectionCard>
 }
 
-/** Rules in order: name, what they set, then what they match (the saved
- * filter's expression, or what's wrong with it). */
-function RulesPane(props: { focused: boolean; width: number; height?: number | "auto" | `${number}%` }) {
-  const active = () => ui.state.settingsActive && ui.state.settingsSection === "rules"
-  const rows = () => data.state.rules
-  const nameWidth = () => Math.min(28, Math.floor(rowWidth(props.width) * 0.35))
+/** Rules and the saved filters they match, in one card: Rules (ordered,
+ * first match wins) above Saved filters. Each list is its own section (its
+ * keys, cursor and jump); the card shows whichever has focus. */
+function RulesPane(props: { focused: boolean; width: number }) {
+  const rulesActive = () => ui.state.settingsActive && ui.state.settingsSection === "rules"
+  const filtersActive = () => ui.state.settingsActive && ui.state.settingsSection === "filters"
+  const rules = () => data.state.rules
+  const filters = () => data.state.savedFilters
+  const heading = (label: string, n: number, on: boolean) => <text height={1} wrapMode="none"><S fg={on ? theme.focus : theme.subtext1} bold>{label}</S><S fg={theme.overlay1}>{` ${n}`}</S></text>
+  const nameWidth = () => Math.min(28, Math.floor(rowWidth(props.width) * 0.32))
   const setWidth = () => Math.min(30, Math.floor(rowWidth(props.width) * 0.3))
-  return <SectionCard title={SETTINGS_SECTION_LABELS.rules} focused={props.focused} active={active()} height={props.height} flexGrow={props.height ? 0 : 1} width={props.width} bottomSpans={[muted(rows().length ? count(rows().length, "rule") + ", first match wins" : "empty")]}>
-    <Show when={rows().length} fallback={<text fg={theme.overlay1}>{active() ? "  No rules. Press a to add." : "  No rules yet."}</text>}>
-      <For each={rows()}>{(rule, i) => {
+  const idWidth = () => Math.min(22, Math.max(...filters().map((f) => f.id.length + 7), 12))
+  const height = () => 2 + 1 + Math.max(1, rules().length) + 1 + 1 + Math.max(1, filters().length)
+  return <SectionCard title="Rules & Filters" focused={props.focused} active={rulesActive() || filtersActive()} height={height()} width={props.width} bottomSpans={[muted(rules().length ? `${count(rules().length, "rule")}, first match wins` : "no rules")]}>
+    {heading("Rules", rules().length, rulesActive())}
+    <Show when={rules().length} fallback={<text fg={theme.overlay1}>{rulesActive() ? "  No rules. Press a to add." : "  No rules yet."}</text>}>
+      <For each={rules()}>{(rule, i) => {
         const cat = () => data.state.categories.find((c) => c.id === rule.setCategoryId)?.name
         const tags = () => rule.addTagIds.map((id) => data.state.tags.find((t) => t.id === id)?.name).filter(Boolean).map((name) => `+${name}`).join(" ")
-        const filter = () => data.state.savedFilters.find((filter) => filter.id === rule.savedFilterId)
+        const filter = () => filters().find((filter) => filter.id === rule.savedFilterId)
         const healthy = createMemo(() => { const parsed = parseFilterStrict(filter()?.expr ?? ""); return !!parsed.node && !parsed.error })
         const on = () => rule.enabled
-        const matches = () => !filter() ? `missing filter ${rule.savedFilterId}` : healthy() ? filter()!.expr : `broken filter: ${filter()!.expr}`
+        const matches = () => !filter() ? `missing filter ${rule.savedFilterId}` : healthy() ? `filter:${rule.savedFilterId}` : `broken filter:${rule.savedFilterId}`
         const sets = () => [cat() ? `→ ${cat()}` : "", tags()].filter(Boolean).join(" ") || "→ nothing"
-        return <ListRow id={`settings-rule-${i()}`} cursor={active() && ui.state.ruleCursor === i()} bg={theme.canvas} armed={armedFor(ui.state.armed, "rule", rule.id)} spans={[
+        return <ListRow id={`settings-rule-${i()}`} cursor={rulesActive() && ui.state.ruleCursor === i()} bg={theme.canvas} armed={armedFor(ui.state.armed, "rule", rule.id)} spans={[
           { text: `${String(i() + 1).padStart(2)}  `, fg: theme.overlay1 },
           { text: fit(`${rule.name}${on() ? "" : " (off)"}`, nameWidth()), fg: on() ? theme.text : theme.overlay1 },
           { text: `  ${fit(sets(), setWidth())}`, fg: on() ? theme.teal : theme.overlay1 },
@@ -165,20 +172,12 @@ function RulesPane(props: { focused: boolean; width: number; height?: number | "
         ]} />
       }}</For>
     </Show>
-  </SectionCard>
-}
-
-/** Saved filters: name, the id search uses (filter:<id>), the expression. */
-function FiltersPane(props: { focused: boolean; width: number; height?: number | "auto" | `${number}%` }) {
-  const active = () => ui.state.settingsActive && ui.state.settingsSection === "filters"
-  const rows = () => data.state.savedFilters
-  const nameWidth = () => Math.min(28, Math.floor(rowWidth(props.width) * 0.3))
-  const idWidth = () => Math.min(22, Math.max(...rows().map((f) => f.id.length + 7), 12))
-  return <SectionCard title={SETTINGS_SECTION_LABELS.filters} focused={props.focused} active={active()} height={props.height} flexGrow={props.height ? 0 : 1} width={props.width}>
-    <Show when={rows().length} fallback={<text fg={theme.overlay1}>{active() ? "  No saved filters. Press a to add." : "  No saved filters yet."}</text>}>
-      <For each={rows()}>{(filter, i) => (
-        <ListRow id={`settings-filter-${i()}`} cursor={active() && ui.state.filterCursor === i()} bg={theme.canvas} armed={armedFor(ui.state.armed, "filter", filter.id)} spans={[
-          { text: fit(filter.name, nameWidth()), fg: theme.text },
+    <text> </text>
+    {heading("Saved filters", filters().length, filtersActive())}
+    <Show when={filters().length} fallback={<text fg={theme.overlay1}>{filtersActive() ? "  No saved filters. Press a to add." : "  No saved filters yet."}</text>}>
+      <For each={filters()}>{(filter, i) => (
+        <ListRow id={`settings-filter-${i()}`} cursor={filtersActive() && ui.state.filterCursor === i()} bg={theme.canvas} armed={armedFor(ui.state.armed, "filter", filter.id)} spans={[
+          { text: fit(filter.name, nameWidth() + 4), fg: theme.text },
           { text: `  ${fit(`filter:${filter.id}`, idWidth())}`, fg: theme.teal },
           { text: `  ${filter.expr}`, fg: theme.overlay1 },
         ]} />
@@ -217,39 +216,56 @@ function DatabasePane(props: { focused: boolean; width: number; height?: number 
   </SectionCard>
 }
 
-/** Up Bank sync: the token (enter opens its dialog) with when sync last
- * ran, then one row per account with its sync switch. The token itself is
- * never rendered. */
+/** Up Bank: the token, sync and which accounts are linked; enter on a row
+ * opens it (the token's dialog, a sync now, the accounts dialog). The token
+ * itself is never rendered. */
 function UpPane(props: { focused: boolean; width: number }) {
   const info = () => data.state.dbInfo
   const active = () => ui.state.settingsActive && ui.state.settingsSection === "up"
   const connection = () => aiConnection("up", aiContext(data))
   const accounts = () => data.state.syncAccounts
+  const off = () => accounts().filter((a) => !a.syncEnabled)
   const synced = () => data.state.upSyncing ? "syncing…" : (() => { const ago = syncAgo(info()?.upLastSyncedAt ?? null, Date.now()); return ago ? `synced ${ago}` : "not synced yet" })()
-  // Name, kind, balance, switch: the name takes what the rest leave.
-  const name = () => Math.max(10, Math.min(22, rowWidth(props.width) - 9 - 12 - 7))
-  return <SectionCard title={SETTINGS_SECTION_LABELS.up} focused={props.focused} active={active()} height={Math.max(1, accounts().length) + 3 + (info()?.upLastError ? 1 : 0)} width={props.width}>
-    <ListRow cursor={active() && ui.state.upCursor === 0} bg={theme.canvas} spans={connection() ? [
-      { text: fit("Token", name()), fg: theme.text },
-      { text: connection()!.short, fg: theme.success },
-      { text: `  ${synced()}`, fg: data.state.upSyncing ? theme.peach : theme.overlay1 },
-    ] : [
-      { text: fit("Token", name()), fg: theme.text },
-      { text: "not set · enter to add", fg: theme.warning },
-    ]} />
-    <Show when={info()?.upLastError}>{(error: () => string) => <text fg={theme.error} wrapMode="none">{`  ${error()}`}</text>}</Show>
-    <Show when={accounts().length} fallback={<text fg={theme.overlay1}>  No accounts synced yet</text>}>
-      <For each={accounts()}>{(account, i) => {
-        const on = () => account.syncEnabled
-        return <ListRow cursor={active() && ui.state.upCursor === i() + 1} bg={theme.canvas} armed={armedFor(ui.state.armed, "desyncAccount", account.id)} spans={[
-          { text: fit(account.name, name()), fg: on() ? theme.text : theme.overlay1 },
-          { text: fit(accountRole(account) === "saver" ? " saver" : " spending", 9), fg: theme.overlay1 },
-          { text: (account.balance != null ? formatMoney(account.balance) : "—").padStart(12), fg: on() ? theme.subtext1 : theme.overlay1 },
-          { text: on() ? "  ● on" : "  ○ off", fg: on() ? theme.success : theme.overlay1 },
-        ]} />
-      }}</For>
-    </Show>
+  // How many sync; which are off when that fits, else just how many.
+  const linked = () => {
+    if (!accounts().length) return "none yet · they appear after a sync"
+    const syncing = `${accounts().length - off().length} of ${accounts().length} syncing`
+    const named = off().length ? `${syncing} · ${off().map((a) => a.name).join(", ")} off` : syncing
+    return named.length <= rowWidth(props.width) - 11 ? named : syncing
+  }
+  const row = (i: number, label: string, value: string, fg: string) =>
+    <ListRow cursor={active() && ui.state.upCursor === i} bg={theme.canvas} spans={[{ text: fit(label, 11), fg: theme.subtext0 }, { text: value, fg }]} />
+  return <SectionCard title={SETTINGS_SECTION_LABELS.up} focused={props.focused} active={active()} height={5 + (info()?.upLastError ? 1 : 0)} width={props.width}>
+    {row(0, "Token", connection() ? connection()!.short : "not set · enter to add", connection() ? theme.success : theme.warning)}
+    {row(1, "Sync", connection() ? `${synced()} · on start and every 5 min` : "needs the token", data.state.upSyncing ? theme.peach : theme.text)}
+    <Show when={info()?.upLastError}>{(error: () => string) => <text fg={theme.error} wrapMode="none">{`  ${" ".repeat(11)}${error()}`}</text>}</Show>
+    {row(2, "Accounts", linked(), theme.text)}
   </SectionCard>
+}
+
+/** Which Up accounts sync: name, kind, on or off. New accounts, savers
+ * included, sync from the start. */
+export function UpAccountsDialog() {
+  return (
+    <Show when={ui.state.upAccounts}>
+      {(d: () => NonNullable<UiState["upAccounts"]>) => (
+        <Modal title="Up accounts" subtitle="which accounts sync" width={52} hints="j/k move · enter on/off · esc close">
+          <Show when={data.state.syncAccounts.length} fallback={<text fg={theme.overlay1}>No accounts yet: they appear after a sync.</text>}>
+            <For each={data.state.syncAccounts}>{(account, i) => {
+              const on = () => account.syncEnabled
+              return <ListRow cursor={d().cursor === i()} bg={theme.mantle} armed={armedFor(ui.state.armed, "desyncAccount", account.id)} spans={[
+                { text: fit(account.name, 24), fg: on() ? theme.text : theme.overlay1 },
+                { text: fit(accountRole(account) === "saver" ? "saver" : "spending", 10), fg: theme.overlay1 },
+                { text: on() ? "● syncing" : "○ off", fg: on() ? theme.success : theme.overlay1 },
+              ]} />
+            }}</For>
+          </Show>
+          <text> </text>
+          <text fg={theme.overlay1} wrapMode="word">Switching an account off removes its transactions here (enter twice); on brings them back at the next sync.</text>
+        </Modal>
+      )}
+    </Show>
+  )
 }
 
 /** AI models: one row per model (what, how it's connected, what for);
@@ -472,7 +488,7 @@ function taxonomyRows(height: number, wide: boolean): number {
 }
 
 /** The box a section's pane sits in: what the column scrolls into view. */
-const paneId = (section: SectionId) => `settings-pane-${section === "set.tags" ? "set.categories" : section}`
+const paneId = (section: SectionId) => `settings-pane-${section === "set.tags" ? "set.categories" : section === "set.filters" ? "set.rules" : section}`
 
 export function SettingsTab(props: { focused: SectionId }) {
   const dims = useTerminalDimensions()
@@ -511,7 +527,7 @@ export function SettingsTab(props: { focused: SectionId }) {
     </scrollbox>
   )
   // Each pane's width: rows size their columns from it. Wide: the lists
-  // that want width (Taxonomy, Budgets, Rules, Saved Filters) in a 60% left
+  // that want width (Taxonomy, Budgets, Rules & Filters) in a 60% left
   // column, the compact panes in the rest; medium: the tab, Up Bank and AI models halves.
   const left = () => Math.floor(dims().width * 0.6)
   const right = () => dims().width - 1 - left()
@@ -520,8 +536,7 @@ export function SettingsTab(props: { focused: SectionId }) {
   const Pane = (pane: { section: SectionId; children: JSX.Element }) => <box id={paneId(pane.section)} width="100%" flexShrink={0}>{pane.children}</box>
   const taxonomy = (width: number) => <Pane section="set.categories"><TaxonomyPane focused={taxonomyFocused()} narrow={layout() === "narrow"} height={rows() + 4} width={width} /></Pane>
   const budgets = (width: number) => <Pane section="set.budgets"><BudgetsPane focused={props.focused === "set.budgets"} width={width} /></Pane>
-  const rules = (width: number) => <Pane section="set.rules"><RulesPane focused={props.focused === "set.rules"} width={width} /></Pane>
-  const filters = (width: number) => <Pane section="set.filters"><FiltersPane focused={props.focused === "set.filters"} width={width} /></Pane>
+  const rules = (width: number) => <Pane section="set.rules"><RulesPane focused={props.focused === "set.rules" || props.focused === "set.filters"} width={width} /></Pane>
   const up = (width: number) => <Pane section="set.up"><UpPane focused={props.focused === "set.up"} width={width} /></Pane>
   const ai = (width: number) => <Pane section="set.ai"><AiPane focused={props.focused === "set.ai"} width={width} /></Pane>
   const database = (width: number) => <Pane section="set.database"><DatabasePane focused={props.focused === "set.database"} width={width} /></Pane>
@@ -529,7 +544,7 @@ export function SettingsTab(props: { focused: SectionId }) {
   return <box width="100%" height="100%" flexDirection="row" gap={1} backgroundColor={theme.canvas}>
     <Show when={layout() === "wide"} fallback={
       <Column>
-        {taxonomy(full())}{budgets(full())}{rules(full())}{filters(full())}
+        {taxonomy(full())}{budgets(full())}{rules(full())}
         <Show when={layout() === "medium"} fallback={<>{up(full())}{ai(full())}</>}>
           <box flexDirection="row" gap={1} width="100%" flexShrink={0}>
             <box id={paneId("set.up")} width={half()} flexShrink={0}><UpPane focused={props.focused === "set.up"} width={half()} /></box>
@@ -539,7 +554,7 @@ export function SettingsTab(props: { focused: SectionId }) {
         {database(full())}{history(full())}
       </Column>
     }>
-      <Column width={left()}>{taxonomy(left())}{budgets(left())}{rules(left())}{filters(left())}</Column>
+      <Column width={left()}>{taxonomy(left())}{budgets(left())}{rules(left())}</Column>
       <Column>{up(right())}{ai(right())}{database(right())}{history(right())}</Column>
     </Show>
     <ImportOverlay />

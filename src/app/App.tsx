@@ -18,7 +18,7 @@ import { TagPicker } from "../ui/primitives/TagPicker"
 import { OverviewTab } from "../ui/overview/OverviewTab"
 import { ManagerTab } from "../ui/manager/ManagerTab"
 import { SavedFilterPicker } from "../ui/manager/SavedFilterPicker"
-import { SettingsTab, EditorOverlay, DryRunOverlay, AiDialog } from "../ui/settings/SettingsTab"
+import { SettingsTab, EditorOverlay, DryRunOverlay, AiDialog, UpAccountsDialog } from "../ui/settings/SettingsTab"
 import { theme } from "../theme"
 import { selectionLabel } from "../domain/accountTree"
 import { SYNC_INTERVAL_MS, runSync, syncAgo } from "./sync"
@@ -140,6 +140,7 @@ export function App() {
       <CatPicker />
       <TagChooser />
       <AiDialog />
+      <UpAccountsDialog />
       <TagPicker />
       <EditorOverlay />
       <SavedFilterPicker />

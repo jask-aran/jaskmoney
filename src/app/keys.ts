@@ -874,18 +874,36 @@ function handleSettingsFilters(ui: UiStore, key: KeyEvent, data?: DataStore): vo
   if (name === "delete" && filter) { confirmTwice(ui, data, { kind: "filter", id: filter.id, label: filter.name, with: "delete" }); return }
 }
 
+/** Settings › Up Bank's rows: the token (enter opens its dialog), sync
+ * (enter syncs now) and the accounts (enter opens which ones sync). */
+export const UP_ROWS = ["token", "sync", "accounts"] as const
+
 function handleSettingsUp(ui: UiStore, key: KeyEvent, data?: DataStore): void {
   const { name } = key
-  const accounts = data?.state.syncAccounts ?? []
-  // Row 0 is the token (enter opens its dialog); the accounts follow.
-  const account = accounts[ui.state.upCursor - 1]
   if (name === "escape") { ui.leaveSettings(); return }
-  const moved = listMove(key, ui.state.upCursor, accounts.length + 1)
+  const moved = listMove(key, ui.state.upCursor, UP_ROWS.length)
   if (moved != null) { ui.setState({ upCursor: moved }); return }
-  if ((name === "return" || name === "enter") && ui.state.upCursor === 0) {
-    ui.setState({ aiDialog: { row: "up", cursor: 0, field: null, armed: false, note: null, busy: false } })
+  if (name === "return" || name === "enter") {
+    const row = UP_ROWS[Math.min(ui.state.upCursor, UP_ROWS.length - 1)]
+    if (row === "token") ui.setState({ aiDialog: { row: "up", cursor: 0, field: null, armed: false, note: null, busy: false } })
+    else if (row === "sync" && data) void runSync(ui, data, { manual: true })
+    else if (row === "accounts") ui.setState({ upAccounts: { cursor: 0 } })
     return
   }
+  if (name === "s" && data) { void runSync(ui, data, { manual: true }); return }
+}
+
+/** The accounts dialog: one row per Up account; enter switches sync on at
+ * once, and off on a second enter (it removes the account's rows). */
+function handleUpAccounts(ui: UiStore, key: KeyEvent, data?: DataStore): void {
+  const dialog = ui.state.upAccounts
+  if (!dialog) return
+  const { name } = key
+  const accounts = data?.state.syncAccounts ?? []
+  if (name === "escape") { ui.disarm(); ui.setState({ upAccounts: null }); return }
+  const moved = listMove(key, dialog.cursor, accounts.length)
+  if (moved != null) { ui.setState("upAccounts", { cursor: moved }); return }
+  const account = accounts[dialog.cursor]
   if ((name === "return" || name === "enter") && account && data) {
     // Switching off deletes the account's transactions: enter twice.
     if (account.syncEnabled) { confirmTwice(ui, data, { kind: "desyncAccount", id: account.id, label: account.name, with: "enter" }); return }
@@ -1629,6 +1647,11 @@ const scopes: Record<ScopeId, ScopeEntry> = {
     quits: false,
     hints: () => [{ key: "type RESET", desc: "confirm" }, { key: "enter", desc: "erase DB" }, { key: "esc", desc: "cancel" }],
   },
+  "settings.upAccounts": {
+    handle: handleUpAccounts,
+    quits: false,
+    hints: () => [{ key: "j/k", desc: "move" }, { key: "enter", desc: "sync on/off" }, { key: "s", desc: "sync now" }, { key: "esc", desc: "close" }],
+  },
   "settings.aiDialog": {
     handle: handleAiDialog,
     quits: false,
@@ -1721,7 +1744,7 @@ const scopes: Record<ScopeId, ScopeEntry> = {
   "settings.up": {
     handle: handleSettingsUp,
     quits: true,
-    hints: () => [{ key: "j/k", desc: "move" }, { key: "enter", desc: "token · sync on/off" }, { key: "s", desc: "sync now" }, { key: "esc", desc: "done" }],
+    hints: () => [{ key: "j/k", desc: "move" }, { key: "enter", desc: "open" }, { key: "s", desc: "sync now" }, { key: "esc", desc: "done" }],
   },
   "settings.ai": {
     handle: handleSettingsAi,

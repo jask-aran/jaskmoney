@@ -66,6 +66,7 @@ export type ScopeId =
   | "manager.ruleOffers"
   | "llmSignIn"
   | "settings.aiDialog"
+  | "settings.upAccounts"
   | "settings.factoryReset"
 
 export type SettingsList = "categories" | "tags"
@@ -226,6 +227,8 @@ export interface UiState {
   /** Settings › AI models' dialog for one row (state/aiDialog): the action
    * at the cursor, a field being typed (a key, the account id, the model),
    * remove armed (enter again removes), and the last result. */
+  /** Settings › Up Bank › Accounts: which Up accounts sync (cursor row). */
+  upAccounts: { cursor: number } | null
   aiDialog: {
     row: "jev" | "workersAi" | "openrouter" | "openai" | "up"
     cursor: number
@@ -407,6 +410,7 @@ function createUiStore() {
     ruleOfferCursor: 0,
     llmSignIn: null,
     aiDialog: null,
+    upAccounts: null,
     factoryResetOpen: false,
     factoryResetDraft: "",
     factoryResetCaret: 0,
@@ -659,6 +663,7 @@ function createUiStore() {
     if (state.ruleOffersOpen) return "manager.ruleOffers"
     if (state.llmSignIn) return "llmSignIn"
     if (state.aiDialog) return "settings.aiDialog"
+    if (state.upAccounts) return "settings.upAccounts"
     if (state.factoryResetOpen) return "settings.factoryReset"
     if (state.customEdit) return "overview.custom"
     if (state.activeTab === "overview") return state.focusedSection === "ov.range" ? "overview.range" : "overview"

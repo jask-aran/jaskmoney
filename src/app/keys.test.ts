@@ -397,15 +397,18 @@ describe("key router", () => {
     expect(ui.state.status).toBe("Transaction and import data cleared")
   })
 
-  test("Up: enter switches sync on at once, and off on a second enter (it removes the account's rows)", () => {
+  test("Up: Accounts opens the accounts dialog; enter switches sync on at once, and off on a second enter (it removes the account's rows)", () => {
     data.init(":memory:")
     const db = data.getDb()!
     db.query("INSERT INTO accounts (id, name, type, source, sync_enabled) VALUES (300, 'Saver', 'debit', 'up', 0)").run()
     data.refresh()
     ui.switchTab("settings")
     ui.activateSettings("up")
-    // Row 0 is the token; the account is row 1.
-    ui.setState({ upCursor: 1 })
+    // Rows: token, sync, accounts.
+    ui.setState({ upCursor: 2 })
+    handleKey(ui, key("return"), data)
+    expect(ui.state.upAccounts).toEqual({ cursor: 0 })
+    expect(ui.activeScope()).toBe("settings.upAccounts")
     handleKey(ui, key("return"), data)
     expect(data.state.syncAccounts[0]!.syncEnabled).toBe(true)
     handleKey(ui, key("return"), data)
@@ -414,7 +417,10 @@ describe("key router", () => {
     handleKey(ui, key("return"), data)
     expect(ui.state.armed).toBeNull()
     expect(data.state.syncAccounts[0]!.syncEnabled).toBe(false)
-    expect(footerHints("settings.up").map((h) => `${h.key} ${h.desc}`)).toContain("enter token · sync on/off")
+    expect(footerHints("settings.upAccounts").map((h) => `${h.key} ${h.desc}`)).toContain("enter sync on/off")
+    handleKey(ui, key("escape"), data)
+    expect(ui.state.upAccounts).toBeNull()
+    expect(ui.activeScope()).toBe("settings.up")
   })
 
   test("Budgets: the cycle is the first row (enter edits it); budgets follow and delete on del del", () => {
