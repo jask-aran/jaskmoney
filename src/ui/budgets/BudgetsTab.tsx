@@ -143,7 +143,7 @@ export function BudgetsTab(props: { focused: SectionId }) {
       ...bar(BAR(), used, pace(), used > 1 ? "over" : used > pace() ? "ahead" : "ok"),
       { text: `  ${formatWholeMoney(p.spent).padStart(7)} of ${formatWholeMoney(budget.amount).padEnd(7)}  `, fg: theme.subtext1 },
       p.remaining < 0 ? { text: fit(`${formatWholeMoney(-p.remaining)} over`, 20), fg: theme.error } : { text: fit(`${formatWholeMoney(p.remaining)} left · ${formatWholeMoney(p.dailyAllowance)}/day`, 20), fg: theme.success },
-      { text: Math.abs(vsPace) < 1 ? "on pace" : `${formatWholeMoney(Math.abs(vsPace))} ${vsPace > 0 ? "over" : "under"} pace`, fg: vsPace > 0 ? theme.warning : theme.overlay1 },
+      { text: `  ${Math.abs(vsPace) < 1 ? "on pace" : `${formatWholeMoney(Math.abs(vsPace))} ${vsPace > 0 ? "over" : "under"} pace`}`, fg: vsPace > 0 ? theme.warning : theme.overlay1 },
     ]
   }
 

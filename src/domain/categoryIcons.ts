@@ -65,11 +65,21 @@ const LOCAL_ICONS: Record<string, number> = {
   uncategorised: 0xf128, // question
 }
 
-/** The category's glyph: by Up id, else by its own name, else its group's;
- * null when none is known (callers fall back to a dot). */
+/** Up's id for a category named as Up names it ("Rent & Mortgage" →
+ * "rent-and-mortgage"), for one without an Up id (the demo, a CSV import);
+ * two ids differ from their names. */
+const UP_ID_BY_NAME: Record<string, string> = { "tv-music-and-streaming": "tv-and-music", "apps-games-and-software": "games-and-software" }
+function upIdFromName(name: string): string {
+  const slug = name.toLowerCase().replace(/&/g, "and").replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "")
+  return UP_ID_BY_NAME[slug] ?? slug
+}
+
+/** The category's glyph: by Up id (its own, else the one its name would
+ * have), else by its own name, else its group's; null when none is known
+ * (callers fall back to a dot). */
 export function categoryIcon(category: Category | undefined, categories: Category[]): string | null {
   if (!category) return null
-  const code = (category.extId ? UP_ICONS[category.extId] : undefined) ?? LOCAL_ICONS[category.name.toLowerCase()]
+  const code = UP_ICONS[category.extId ?? upIdFromName(category.name)] ?? LOCAL_ICONS[category.name.toLowerCase()]
   if (code != null) return String.fromCodePoint(code)
   const parent = category.parentId != null ? categories.find((c) => c.id === category.parentId) : undefined
   return parent ? categoryIcon(parent, categories) : null

@@ -1,3 +1,4 @@
+import { toggleDemo } from "./actions"
 import { BudgetsTab } from "../ui/budgets/BudgetsTab"
 import { ErrorBoundary, Show, createEffect, createMemo, createSignal, untrack, on, onCleanup, onMount } from "solid-js"
 import { useKeyboard, usePaste, useRenderer } from "@opentui/solid"
@@ -44,6 +45,9 @@ export function App() {
         ui.setStatus("OpenTUI shell · bootstrap off")
         return
       }
+      // `jaskmoney --demo` opens straight into demo mode (your data untouched).
+      const demo = process.argv.includes("--demo")
+      if (demo) toggleDemo(ui, data)
       const restored = restoreUiPrefs(data.state.uiPrefs, data.state.accounts, appNow(), data.cycle())
       ui.setTimeframe(restored.timeframe)
       ui.setDashChipCursor(activeChipIndex(restored.timeframe))
@@ -51,7 +55,9 @@ export function App() {
       if (restored.chartViews) ui.setState({ chartViews: restored.chartViews })
       setBootstrapped(true)
 
-      if (data.state.transactions.length > 0) {
+      if (demo) {
+        // toggleDemo's status says what demo mode is.
+      } else if (data.state.transactions.length > 0) {
         ui.setStatus(`${data.state.transactions.length} transactions loaded.`)
       } else {
         ui.setStatus("No transactions yet · Settings → Database & Import → i to import")

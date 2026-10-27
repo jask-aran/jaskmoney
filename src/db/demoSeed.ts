@@ -20,6 +20,8 @@ export function seedDemoDb(path: string, demo: DemoData): void {
       DEMO_CATEGORIES.forEach((c, i) => upsert.run(c.name, c.color, i, 0, Number(!!c.notSpending), Number(!!c.income)))
       const categoryIds = new Map(loadCategories(db).map(c => [c.name, c.id]))
       const uncategorisedId = uncategorisedCategoryId(db)
+      // Uncategorised after the demo's tree, so no group's categories are split by it.
+      db.query("UPDATE categories SET sort_order = ? WHERE id = ?").run(DEMO_CATEGORIES.length, uncategorisedId)
       for (const c of DEMO_CATEGORIES) {
         const parentId = c.parent === null ? null : categoryIds.get(c.parent)
         if (parentId === undefined) throw new Error(`Missing demo category parent: ${c.name}`)

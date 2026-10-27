@@ -20,3 +20,11 @@ describe("categoryIcon", () => {
     expect(Bun.stringWidth(categoryIcon(categories[1], categories)!)).toBe(1)
   })
 })
+
+test("a category without an Up id, named as Up names it, gets that Up category's icon (the demo, a CSV import)", () => {
+  const named = (name: string, parentId: number | null = null) => category({ id: 900, name, parentId, extId: null })
+  expect(categoryIcon(named("Rent & Mortgage"), [])).toBe(categoryIcon(category({ id: 1, name: "x", extId: "rent-and-mortgage" }), []))
+  expect(categoryIcon(named("TV, Music & Streaming"), [])).toBe(categoryIcon(category({ id: 1, name: "x", extId: "tv-and-music" }), []))
+  expect(categoryIcon(named("Apps, Games & Software"), [])).toBe(categoryIcon(category({ id: 1, name: "x", extId: "games-and-software" }), []))
+  expect(categoryIcon(named("Good Life"), [])).not.toBeNull()
+})
