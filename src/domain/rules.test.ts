@@ -70,3 +70,10 @@ test("saved-filter picker sorts by MRU, then name, and searches name and express
   expect(savedFilterOptions(filters, usage, "Bta").map((filter) => filter.id)).toEqual(["b"])
   expect(filters[0]?.id).toBe("z")
 })
+
+test("a filter that asks Clef can't drive a rule: it fails and matches nothing", () => {
+  const savedFilters = [{ id: "coffee", name: "Coffee", expr: 'ask:coffee OR NOT ask:coffee' }]
+  const report = dryRunRules([transaction], [rule], savedFilters, [category], [tag])
+  expect(report.rules[0]).toMatchObject({ error: "ask: can't be used in a rule", matched: 0 })
+  expect(report.failedRules).toEqual(["coffee"])
+})

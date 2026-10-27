@@ -71,7 +71,18 @@ export function ManagerTab(props: { focused: SectionId }) {
     return data.state.sortAscending ? " ▲" : " ▼"
   }
 
+  const asking = () => {
+    const a = data.state.asking
+    return a ? `asking Clef "${a.words}" ${a.judged}/${a.total}…` : null
+  }
+
   const scrollIndicator = () => {
+    const progress = asking()
+    const text = rowsIndicator()
+    return progress ? (text ? `${progress} · ${text}` : progress) : text
+  }
+
+  const rowsIndicator = () => {
     if (merchants()) {
       if (groups().length === 0) return undefined
       return `${groups().length} merchants · ${rows().length} transactions · by ${ui.state.merchantSort}${ui.state.merchantReverse ? "↑" : "↓"}`

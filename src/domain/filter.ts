@@ -119,11 +119,38 @@ export function reparseFilterInput(input: string): {
   return { expr: node, err: "" }
 }
 
-export function evalFilter(
+/** Clef's verdict on whether a row matches an `ask:` term's words; undefined
+ * while it hasn't judged the row. */
+export type AskVerdict<T> = (words: string, t: T) => boolean | undefined
+
+/**
+ * Whether a row passes the filter. `ask:` terms take Clef's verdicts from
+ * `ask`; a row whose result hangs on a term not judged yet does not pass
+ * (with no `ask` at all, as in rules, that is every such row).
+ */
+export function evalFilter<T extends FilterTxn>(
   node: FilterNode | null,
-  t: FilterTxn,
+  t: T,
+  ask?: AskVerdict<T>,
 ): boolean {
+  return verdict3(node, t, ask ?? unjudged) === true
+}
+
+const unjudged = () => undefined
+
+/**
+ * Whether a row could pass once its unjudged `ask:` terms are judged: false
+ * only when no verdict could make it pass. The rows worth asking about.
+ */
+export function mightMatch<T extends FilterTxn>(node: FilterNode | null, t: T, ask: AskVerdict<T>): boolean {
+  return verdict3(node, t, ask) !== false
+}
+
+/** Three-valued evaluation: an unjudged `ask:` term is unknown (undefined),
+ * and AND / OR / NOT carry the unknown through. */
+function verdict3<T extends FilterTxn>(node: FilterNode | null, t: T, ask: AskVerdict<T>): boolean | undefined {
   if (!node) return true
+  const children = node.children ?? []
   switch (node.kind) {
     case "text": {
       const needle = (node.value ?? "").trim().toLowerCase()
@@ -136,17 +163,43 @@ export function evalFilter(
       return false
     }
     case "field":
-      return evalField(node, t)
-    case "and":
-      return (node.children ?? []).every((c) => evalFilter(c, t))
-    case "or":
-      return (node.children ?? []).some((c) => evalFilter(c, t))
-    case "not":
-      if (!node.children?.length) return true
-      return !evalFilter(node.children[0]!, t)
+      return node.field === "ask" ? ask(node.value ?? "", t) : evalField(node, t)
+    case "and": {
+      let unknown = false
+      for (const c of children) { const v = verdict3(c, t, ask); if (v === false) return false; if (v === undefined) unknown = true }
+      return unknown ? undefined : true
+    }
+    case "or": {
+      let unknown = false
+      for (const c of children) { const v = verdict3(c, t, ask); if (v === true) return true; if (v === undefined) unknown = true }
+      return unknown ? undefined : false
+    }
+    case "not": {
+      if (!children.length) return true
+      const v = verdict3(children[0]!, t, ask)
+      return v === undefined ? undefined : !v
+    }
     default:
       return true
   }
+}
+
+function isAsk(node: FilterNode): boolean {
+  return node.kind === "field" && node.field === "ask"
+}
+
+/** The distinct words of every `ask:` term, in order. */
+export function askTerms(node: FilterNode | null): string[] {
+  if (!node) return []
+  if (isAsk(node)) return [node.value ?? ""].filter(Boolean)
+  return [...new Set((node.children ?? []).flatMap(askTerms))]
+}
+
+/** Whether the filter limits dates anywhere. */
+export function hasDateTerm(node: FilterNode | null): boolean {
+  if (!node) return false
+  if (node.kind === "field" && node.field === "date") return true
+  return (node.children ?? []).some(hasDateTerm)
 }
 
 function evalField(node: FilterNode, t: FilterTxn): boolean {
@@ -414,7 +467,7 @@ class Parser {
       const raw = this.collectValue(field, true)
       return { kind: "field", field, op: "=", value: raw.trim() }
     }
-    // desc, note
+    // desc, note, ask
     const raw = this.collectValue(field, true)
     return { kind: "field", field, op: "contains", value: raw.trim() }
   }
@@ -454,7 +507,7 @@ function canStartTerm(k: TokKind): boolean {
 }
 
 function isField(v: string): boolean {
-  return ["desc", "cat", "tag", "acc", "amt", "type", "note", "date"].includes(v)
+  return ["desc", "cat", "tag", "acc", "amt", "type", "note", "date", "ask"].includes(v)
 }
 
 function flatten(children: FilterNode[], kind: "and" | "or"): FilterNode[] {
@@ -626,7 +679,7 @@ function renderField(node: FilterNode): string {
     if (node.op === "=") return `amt:=${node.value}`
     return `amt:${node.op}${node.value}`
   }
-  if (field === "desc" || field === "note") {
+  if (field === "desc" || field === "note" || field === "ask") {
     return `${field}:${quoteIfNeeded(node.value ?? "")}`
   }
   return `${field}:${quoteIfNeeded(node.value ?? "")}`

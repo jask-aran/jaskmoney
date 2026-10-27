@@ -3,6 +3,7 @@ import { appToday } from "../domain/days"
 import { smartSearch } from "../domain/smartSearch"
 import type { DataStore } from "../state/dataStore"
 import type { UiStore } from "../state/uiStore"
+import { runAsk } from "./ask"
 
 /**
  * Turn the filter draft `?<query>` into a filter expression and put it in the
@@ -22,6 +23,7 @@ export async function runSmartSearch(ui: UiStore, data: DataStore, draft: string
     data.setFilterLive(expr)
     onApplied()
     ui.setStatus(`Smart search: ${query} · enter applies, or edit it`)
+    await runAsk(ui, data)
   } catch (error) {
     ui.setStatus(error instanceof Error ? error.message : String(error), true)
   }

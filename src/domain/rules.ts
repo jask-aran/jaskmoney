@@ -1,4 +1,4 @@
-import { evalFilter, parseFilterStrict } from "./filter"
+import { askTerms, evalFilter, parseFilterStrict } from "./filter"
 import { incomeCategoryIds } from "./moneyRules"
 import type { Category, Rule, RuleRunResult, SavedFilter, Tag, Transaction } from "./types"
 
@@ -42,7 +42,11 @@ export function filterRowNames(categories: Category[], tags: Tag[]) {
 
 /** Evaluate in stored order. Each rule sees the changes from earlier rules. */
 export function dryRunRules(transactions: Transaction[], rules: Rule[], savedFilters: SavedFilter[], categories: Category[], tags: Tag[]): DryRunReport {
-  const filters = new Map(savedFilters.map((filter) => [filter.id, parseFilterStrict(filter.expr)]))
+  // A rule must decide on its own: a filter that asks Clef can't drive one.
+  const filters = new Map(savedFilters.map((filter) => {
+    const parsed = parseFilterStrict(filter.expr)
+    return [filter.id, askTerms(parsed.node).length ? { node: null, error: "ask: can't be used in a rule" } : parsed]
+  }))
   const names = filterRowNames(categories, tags)
   const report: DryRunReport = {
     transactionCount: transactions.length, updatedTransactions: 0, categoryChanges: 0, tagChanges: 0, failedRules: [], changes: [],

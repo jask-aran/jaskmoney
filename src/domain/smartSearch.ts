@@ -9,8 +9,10 @@ import type { Category } from "./types"
  * Smart search: a plain-English query ("coffee over $5 last month") becomes an
  * ordinary filter expression the user can read and edit. Clairic extracts the
  * values written in it (words, amounts, explicit dates); Clef decides what it
- * asks about (the period, spending or income, a category). Periods are worked
- * out here, not by the model, so "last month" and "this cycle" are exact.
+ * asks about (the period, spending or income, a payee or a kind of thing).
+ * Periods are worked out here, not by the model, so "last month" and "this
+ * cycle" are exact. The words become `cat:` when they name one of the user's
+ * categories, `desc:` when they name a payee, else `ask:` (Clef judges rows).
  */
 
 /** What Clairic reads from the query. No example values in the
@@ -58,13 +60,16 @@ export function searchQuestions(categories: Category[]): Record<string, ClefQues
   return {
     period: { type: "choice", instructions: "Which period does the search ask about?", criteria: { ...PERIODS } },
     flow: { type: "choice", instructions: "What kind of money is asked about?", criteria: { ...FLOWS } },
-    names_category: { type: "noul", instructions: "Does the search ask about a kind of spending or a category (groceries, eating out, travel, salary) rather than a particular merchant or payee?" },
+    names_payee: { type: "noul", instructions: "Does the search name a particular shop, merchant, company, app or person, rather than a kind of thing or spending?" },
     category: { type: "choice", instructions: "Which category does the search ask about?", criteria },
   }
 }
 
 export interface ParsedSearch {
+  /** Description words (a payee). */
   words: string | null
+  /** Words for Clef to judge rows by (a kind of thing). */
+  ask: string | null
   atLeast: number | null
   atMost: number | null
   from: string | null
@@ -74,24 +79,37 @@ export interface ParsedSearch {
   categoryId: number | null
 }
 
-/** The models' answers as a search. A category counts when Clef says the
- * query names one (the words naming it are then dropped), or when there are
- * no words to search for. Equal bounds come from one phrase ("over $20"
- * read both ways): the lower bound is kept. */
-export function parsedSearch(values: Record<string, ClairicAnswer>, answers: Record<string, ClefAnswer>): ParsedSearch {
+/** Categories whose name has every one of `words` as a whole word
+ * ("travel" names Holidays & Travel; "eating out" names nothing). */
+export function categoriesNamed(words: string, categories: Category[]): Category[] {
+  const split = (s: string) => s.toLowerCase().split(/[^a-z0-9]+/).filter(Boolean)
+  const wanted = split(words)
+  if (!wanted.length) return []
+  return categories.filter((c) => !c.isDefault && wanted.every((w) => split(c.name).includes(w)))
+}
+
+/** The models' answers as a search. The words are a category when they name
+ * one of `categories` (Clef's pick breaks ties), a payee to find in the
+ * description when Clef says so, else something for Clef to judge rows by.
+ * Equal bounds come from one phrase ("over $20" read both ways): the lower
+ * bound is kept. */
+export function parsedSearch(values: Record<string, ClairicAnswer>, answers: Record<string, ClefAnswer>, categories: Category[]): ParsedSearch {
   const choice = (id: string) => { const a = answers[id]; return a?.type === "choice" ? a.choice : null }
   const value = (id: string) => values[id]?.value ?? null
   const text = (id: string) => { const v = value(id); return typeof v === "string" && v.trim() ? v.trim() : null }
   const number = (id: string) => { const v = value(id); return typeof v === "number" && Number.isFinite(v) && v > 0 ? v : null }
-  const named = answers.names_category?.type === "noul" && answers.names_category.noul > 0.5
+  const payee = answers.names_payee?.type === "noul" && answers.names_payee.noul > 0.5
   const words = text("words")
-  const category = named || !words ? choice("category") : null
-  const categoryId = category && /^c\d+$/.test(category) ? Number(category.slice(1)) : null
+  const picked = choice("category")
+  const named = words ? categoriesNamed(words, categories) : []
+  const category = named.find((c) => `c${c.id}` === picked) ?? named.find((c) => c.name.toLowerCase() === words?.toLowerCase()) ?? (named.length === 1 ? named[0] : undefined)
+  const categoryId = !payee && category ? category.id : null
   const period = choice("period")
   const flow = choice("flow")
   const atLeast = number("at_least"), atMost = number("at_most")
   return {
-    words: categoryId != null && named ? null : words,
+    words: categoryId == null && payee ? words : null,
+    ask: categoryId == null && !payee ? words : null,
     atLeast,
     atMost: atMost === atLeast ? null : atMost,
     from: text("from"),
@@ -132,6 +150,7 @@ export function periodBounds(p: Pick<ParsedSearch, "period" | "from" | "to">, to
 export function searchFilter(p: ParsedSearch, ctx: { today: string; cycle: CycleConfig; categories: Category[] }): string {
   const terms: string[] = []
   if (p.words) terms.push(filterTerm("desc", p.words))
+  if (p.ask) terms.push(filterTerm("ask", p.ask))
   if (p.categoryId != null) {
     const category = ctx.categories.find((c) => c.id === p.categoryId)
     if (category) terms.push(categoryTerm(category, ctx.categories))
@@ -159,7 +178,7 @@ export async function smartSearch(ai: Pick<WorkersAiClient, "clef" | "clairic">,
     // Full Clef: Clef-flash mistook "this cycle" and "last month" for the last 30 days.
     ai.clef(searchQuestions(ctx.categories), query, "clef"),
   ])
-  const parsed = parsedSearch(values, answers)
+  const parsed = parsedSearch(values, answers, ctx.categories)
   const expr = searchFilter(parsed, ctx)
   return { expr: expr || filterTerm("desc", query), parsed }
 }

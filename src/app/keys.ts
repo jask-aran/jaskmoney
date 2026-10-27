@@ -10,6 +10,7 @@ import { MERCHANT_SORTS, groupByMerchant, merchantFilter, sortMerchantGroups } f
 import { anchorDraft, cycleFromDraft, editorFields, normaliseCycleDraft, pickerChoices, pickerItems, stepChoice } from "../state/settingsForm"
 import { runSync } from "./sync"
 import { runSmartSearch } from "./smartSearch"
+import { runAsk } from "./ask"
 import { runAccept, toggleUncategorised } from "./suggest"
 import { ACCEPT_ALL_AT } from "../domain/suggest"
 import { CHART_VIEWS, JUMP_TARGETS, SETTINGS_SECTIONS, TABS, settingsSectionFocus, type ScopeId, type UiState, type UiStore } from "../state/uiStore"
@@ -156,6 +157,7 @@ function handleFilterPicker(ui: UiStore, key: KeyEvent, data?: DataStore): void 
         ui.setState({ filterPicker: null })
         try { data.recordFilterUsage(filter.id); ui.setStatus(`Filter: ${filter.name}`) }
         catch (error) { reportError(ui, error) }
+        void runAsk(ui, data)
       }
     },
   })
@@ -298,6 +300,7 @@ function handleFilter(ui: UiStore, key: KeyEvent, data?: DataStore): void {
     } else {
       ui.setStatus(`Filter live (not strict): ${r.err}`, true)
     }
+    if (data && r.ok) void runAsk(ui, data)
     return
   }
   const next = editText({ value: ui.state.filterDraft, caret: ui.state.filterCaret }, key)

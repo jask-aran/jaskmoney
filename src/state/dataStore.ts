@@ -1,4 +1,4 @@
-import { createMemo, createRoot } from "solid-js"
+import { createMemo, createRoot, createSignal } from "solid-js"
 import { createStore, reconcile, unwrap } from "solid-js/store"
 import { isDeepStrictEqual } from "node:util"
 import { existsSync, readFileSync, readdirSync, unlinkSync } from "node:fs"
@@ -53,7 +53,8 @@ import { historySuggestions, clefSuggestions } from "../domain/suggest"
 import { isOrdinaryFlow, isUncategorised } from "../domain/moneyRules"
 import { createUpClient, readUpToken } from "../up/client"
 import { pushTransactions } from "../up/push"
-import type { WeekStart } from "../domain/days"
+import { appToday, type WeekStart } from "../domain/days"
+import { askCandidates, ASK_DEFAULT_DAYS, ASK_LIMIT, judgeRows } from "../domain/ask"
 import { addTagLink } from "../db/tagLinks"
 import { syncUp as runUpSync } from "../up/sync"
 import { dryRunRules as evaluateRules } from "../domain/rules"
@@ -63,6 +64,10 @@ import {
   filterExprString,
   parseFilterStrict,
   reparseFilterInput,
+  askTerms,
+  hasDateTerm,
+  mightMatch,
+  type AskVerdict,
   type FilterNode,
 } from "../domain/filter"
 import { type Account, type Category, type CategorySuggestion, type ImportPreview, type ImportProfile, type ImportRecord, type Rule, type RuleRunResult, type SavedFilter, type SortColumn, type Tag, type Transaction } from "../domain/types"
@@ -75,6 +80,8 @@ export interface DataState {
   suggestions: Record<number, CategorySuggestion>
   /** The Transactions table shows only ordinary uncategorised rows. */
   uncategorisedOnly: boolean
+  /** Clef is judging rows for an `ask:` term. */
+  asking: { words: string; judged: number; total: number } | null
   dbPath: string
   accounts: Account[]
   /** Every provider-synced account, including ones whose sync is off. */
@@ -137,6 +144,7 @@ function createDataStore() {
     suggesting: false,
     suggestions: {},
     uncategorisedOnly: false,
+    asking: null,
     dbPath: "",
     accounts: [],
     syncAccounts: [],
@@ -203,6 +211,9 @@ function createDataStore() {
   const aiClient = () => createWorkersAiClient(readWorkersAiCredentials())
 
   function init(dbPath?: string) {
+    // Verdicts are per row id, and a new database reuses ids.
+    askVerdicts.clear()
+    askRun++
     actualDbPath = dbPath ?? defaultDbPath()
     db = openDb(actualDbPath)
     const config = loadSettingsConfig()
@@ -232,12 +243,23 @@ function createDataStore() {
     return transactions().filter((t) => t.accountId != null && ids.has(t.accountId))
   }))
 
+  /** Clef's verdicts on `ask:` terms for this session: words (lower-cased)
+   * → row id → match. Each new batch bumps `askVersion`. */
+  const askVerdicts = new Map<string, Map<number, boolean>>()
+  const [askVersion, setAskVersion] = createSignal(0)
+  const askVerdict: AskVerdict<Transaction> = (words, t) => askVerdicts.get(words.toLowerCase())?.get(t.id)
+  /** Bumped by each ask run and by clearing the filter; a run stops once it's stale. */
+  let askRun = 0
+
+  /** The Uncategorised view's narrowing. */
+  const inView = (t: Transaction) => !state.uncategorisedOnly || (isOrdinaryFlow(t) && isUncategorised(t))
+
   const filtered = createRoot(() => createMemo(() => {
     const expr = state.filterExpr ? unwrap(state.filterExpr) : null
-    const unsorted = state.uncategorisedOnly
     const rows = accountScoped()
-    if (!expr && !unsorted) return rows
-    return rows.filter((t) => (!unsorted || (isOrdinaryFlow(t) && isUncategorised(t))) && (!expr || evalFilter(expr, t)))
+    if (!expr && !state.uncategorisedOnly) return rows
+    if (askTerms(expr).length) askVersion()
+    return rows.filter((t) => inView(t) && (!expr || evalFilter(expr, t, askVerdict)))
   }))
 
   /** The account's rows through the filter, in the table's sort. */
@@ -277,7 +299,9 @@ function createDataStore() {
   }
 
   function clearFilter() {
+    askRun++
     setState({
+      asking: null,
       filterQuery: "",
       filterExpr: null,
       filterErr: "",
@@ -390,6 +414,58 @@ function createDataStore() {
     } finally {
       try { refresh() } finally { setState({ suggesting: false }) }
     }
+  }
+
+  /**
+   * Have Clef judge the rows the current filter's `ask:` terms are waiting
+   * on: those the rest of the filter leaves possible, not judged yet, from
+   * the last ASK_DEFAULT_DAYS unless the filter limits dates, at most
+   * ASK_LIMIT, newest first. Matches show as each batch lands. Returns a
+   * summary, or "" when a newer run or a cleared filter took over.
+   */
+  async function askAbout(ai?: Pick<WorkersAiClient, "clef">): Promise<string> {
+    const expr = state.filterExpr ? unwrap(state.filterExpr) : null
+    const terms = askTerms(expr)
+    if (!terms.length) return ""
+    if (!ai && !hasWorkersAi()) throw new Error("Set JASKMONEY_CF_TOKEN and JASKMONEY_CF_ACCOUNT_ID to use ask:")
+    const run = ++askRun
+    const client = ai ?? aiClient()
+    const parts: string[] = []
+    const failures: string[] = []
+    try {
+      // One term at a time: each verdict narrows the rows the next must judge.
+      for (const words of terms) {
+        const key = words.toLowerCase()
+        const known = askVerdicts.get(key) ?? new Map<number, boolean>()
+        askVerdicts.set(key, known)
+        // Rows the rest of the filter allows, whatever Clef says about these words.
+        const others: AskVerdict<Transaction> = (w, t) => w.toLowerCase() === key ? undefined : askVerdict(w, t)
+        const possible = accountScoped().filter((t) => inView(t) && mightMatch(expr, t, others))
+        const { rows, skipped } = askCandidates(possible, appToday(), hasDateTerm(expr))
+        const todo = rows.filter((t) => !known.has(t.id))
+        setState({ asking: { words, judged: 0, total: todo.length } })
+        await judgeRows(client, words, todo, {
+          active: () => run === askRun,
+          onJudged: (verdicts) => {
+            if (run !== askRun) return
+            for (const [id, match] of verdicts) known.set(id, match)
+            setAskVersion((v) => v + 1)
+            setState("asking", (a) => a && { ...a, judged: a.judged + verdicts.size })
+          },
+          onError: (error) => failures.push(error instanceof Error ? error.message : String(error)),
+        })
+        if (run !== askRun) return ""
+        const matched = rows.filter((t) => known.get(t.id)).length
+        let part = `ask "${words}": ${matched} of ${rows.length} match`
+        if (skipped && !hasDateTerm(expr)) part += ` · judged the last ${ASK_DEFAULT_DAYS} days (add date: to look further)`
+        else if (skipped) part += ` · judged the latest ${ASK_LIMIT} of ${rows.length + skipped}`
+        parts.push(part)
+      }
+    } finally {
+      if (run === askRun) setState({ asking: null })
+    }
+    if (failures.length) parts.push(`${failures.length} batch${failures.length > 1 ? "es" : ""} failed: ${failures[0]}`)
+    return parts.join(" · ")
   }
 
   /** Categorise the rows among `ids` that have a suggestion as suggested
@@ -669,6 +745,7 @@ function createDataStore() {
     setAccountSelection,
     categorizeTransactions,
     setUncategorisedOnly: (on: boolean) => setState({ uncategorisedOnly: on }),
+    askAbout,
     suggestCategories,
     acceptSuggestions,
     dismissSuggestions,

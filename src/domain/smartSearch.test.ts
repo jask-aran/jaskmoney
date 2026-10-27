@@ -1,7 +1,7 @@
 import { describe, expect, test } from "bun:test"
 import type { ClairicAnswer, ClefAnswer } from "../ai/workersAi"
 import { parseFilterStrict } from "./filter"
-import { parsedSearch, periodBounds, searchFilter, searchQuestions, smartSearch, type ParsedSearch } from "./smartSearch"
+import { categoriesNamed, parsedSearch, periodBounds, searchFilter, searchQuestions, smartSearch, type ParsedSearch } from "./smartSearch"
 import { category } from "../testing/fixtures"
 
 const categories = [
@@ -13,14 +13,14 @@ const categories = [
 ]
 const cycle = { unit: "month" as const, anchor: "date" as const, anchorDate: "2000-01-14" }
 const ctx = { today: "2026-10-27", cycle, categories }
-const none: ParsedSearch = { words: null, atLeast: null, atMost: null, from: null, to: null, period: "any", flow: "any", categoryId: null }
+const none: ParsedSearch = { words: null, ask: null, atLeast: null, atMost: null, from: null, to: null, period: "any", flow: "any", categoryId: null }
 
 const values = (v: Record<string, string | number | null>): Record<string, ClairicAnswer> =>
   Object.fromEntries(["words", "at_least", "at_most", "from", "to"].map((id) => [id, { value: v[id] ?? null, confidence: 0.9 }]))
 const choice = (c: string): ClefAnswer => ({ type: "choice", choice: c, probabilities: { [c]: 0.9 }, confidence: 0.8 })
-const answers = (a: { period?: string; flow?: string; named?: number; category?: string }): Record<string, ClefAnswer> => ({
+const answers = (a: { period?: string; flow?: string; payee?: number; category?: string }): Record<string, ClefAnswer> => ({
   period: choice(a.period ?? "any"), flow: choice(a.flow ?? "any"),
-  names_category: { type: "noul", noul: a.named ?? 0 }, category: choice(a.category ?? "none"),
+  names_payee: { type: "noul", noul: a.payee ?? 0 }, category: choice(a.category ?? "none"),
 })
 
 describe("smart search", () => {
@@ -29,17 +29,32 @@ describe("smart search", () => {
     expect(q.type === "choice" && q.criteria).toEqual({ none: "No category is named", c1: "Good Life", c2: "Good Life › Restaurants & Cafes", c3: "Good Life › Takeaway", c4: "Groceries" })
   })
 
-  test("a named category replaces the words naming it; words win when the query names a merchant", () => {
-    expect(parsedSearch(values({ words: "groceries" }), answers({ named: 0.9, category: "c4" }))).toMatchObject({ words: null, categoryId: 4 })
-    expect(parsedSearch(values({ words: "amazon" }), answers({ named: 0.1, category: "c4" }))).toMatchObject({ words: "amazon", categoryId: null })
-    // No words at all: the category is the search.
-    expect(parsedSearch(values({}), answers({ named: 0.2, category: "c2" }))).toMatchObject({ words: null, categoryId: 2 })
-    expect(parsedSearch(values({}), answers({ named: 0.9, category: "none" }))).toMatchObject({ categoryId: null })
+  test("words name a category, a payee, or something for Clef to judge rows by", () => {
+    const parse = (words: string, a: Parameters<typeof answers>[0] = {}) => parsedSearch(values({ words }), answers(a), categories)
+    // Every word is a whole word of one category's name.
+    expect(parse("groceries")).toMatchObject({ words: null, ask: null, categoryId: 4 })
+    expect(parse("restaurants")).toMatchObject({ categoryId: 2 })
+    // A payee is found in the description, even when it reads like a category.
+    expect(parse("amazon", { payee: 0.7 })).toMatchObject({ words: "amazon", ask: null, categoryId: null })
+    expect(parse("groceries", { payee: 0.9 })).toMatchObject({ words: "groceries", categoryId: null })
+    // A kind of thing no category names: Clef judges.
+    expect(parse("coffee", { category: "c2" })).toMatchObject({ words: null, ask: "coffee", categoryId: null })
+    expect(parse("eating out")).toMatchObject({ ask: "eating out", categoryId: null })
+    // No words, no category, whatever Clef picked.
+    expect(parsedSearch(values({}), answers({ category: "c2" }), categories)).toMatchObject({ words: null, ask: null, categoryId: null })
+  })
+
+  test("several categories named: Clef's pick, else an exact name, else none", () => {
+    const tree = [...categories, category({ id: 5, name: "Life Admin" })]
+    expect(categoriesNamed("life", tree).map((c) => c.id)).toEqual([1, 5])
+    expect(parsedSearch(values({ words: "life" }), answers({ category: "c5" }), tree)).toMatchObject({ categoryId: 5 })
+    expect(parsedSearch(values({ words: "life" }), answers({}), tree)).toMatchObject({ categoryId: null, ask: "life" })
+    expect(parsedSearch(values({ words: "good life" }), answers({}), tree)).toMatchObject({ categoryId: 1 })
   })
 
   test("equal bounds are one phrase read both ways: the lower bound stays", () => {
-    expect(parsedSearch(values({ at_least: 20, at_most: 20 }), answers({}))).toMatchObject({ atLeast: 20, atMost: null })
-    expect(parsedSearch(values({ at_least: 5, at_most: 30 }), answers({}))).toMatchObject({ atLeast: 5, atMost: 30 })
+    expect(parsedSearch(values({ at_least: 20, at_most: 20 }), answers({}), categories)).toMatchObject({ atLeast: 20, atMost: null })
+    expect(parsedSearch(values({ at_least: 5, at_most: 30 }), answers({}), categories)).toMatchObject({ atLeast: 5, atMost: 30 })
   })
 
   test("periods are worked out here, cycles from the budget cycle", () => {
@@ -68,8 +83,8 @@ describe("smart search", () => {
   })
 
   test("every part together makes a filter the parser accepts; a group covers its subcategories", () => {
-    const expr = searchFilter({ ...none, words: "uber eats", categoryId: 1, flow: "spending", atMost: 30, period: "this_cycle" }, ctx)
-    expect(expr).toBe('desc:"uber eats" AND (cat:"Good Life" OR cat:"Restaurants & Cafes" OR cat:"Takeaway") AND type:spending AND amt:>=-30 AND date:2026-10-14..2026-10-27')
+    const expr = searchFilter({ ...none, words: "uber eats", ask: "late night food", categoryId: 1, flow: "spending", atMost: 30, period: "this_cycle" }, ctx)
+    expect(expr).toBe('desc:"uber eats" AND ask:"late night food" AND (cat:"Good Life" OR cat:"Restaurants & Cafes" OR cat:"Takeaway") AND type:spending AND amt:>=-30 AND date:2026-10-14..2026-10-27')
     expect(parseFilterStrict(expr).error).toBeUndefined()
   })
 
@@ -79,7 +94,7 @@ describe("smart search", () => {
       clairic: async () => { calls.push("clairic"); return values({ words: "coffee", at_least: 5 }) },
       clef: async (_: unknown, __: string, model?: string) => { calls.push(`clef:${model}`); return answers({ flow: "spending", period: "last_month" }) },
     }
-    expect((await smartSearch(ai, "coffee over $5 last month", ctx)).expr).toBe('desc:"coffee" AND type:spending AND amt:<=-5 AND date:2026-09-01..2026-09-30')
+    expect((await smartSearch(ai, "coffee over $5 last month", ctx)).expr).toBe('ask:"coffee" AND type:spending AND amt:<=-5 AND date:2026-09-01..2026-09-30')
     expect(calls.sort()).toEqual(["clairic", "clef:clef"])
     const empty = { clairic: async () => values({}), clef: async () => answers({}) }
     expect((await smartSearch(empty, "hmm", ctx)).expr).toBe('desc:"hmm"')
