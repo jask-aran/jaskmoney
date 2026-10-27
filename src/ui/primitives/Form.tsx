@@ -7,7 +7,8 @@ import { TextInput } from "./TextInput"
 /**
  * Editor fields, one per line: a marker on the focused field, labels padded
  * to one column, then the value. A focused text field shows a caret; a
- * focused choice or toggle is wrapped in ‹ ›; a picker says enter opens it.
+ * focused choice or toggle is wrapped in ‹ ›; a picker says enter opens it;
+ * a secret shows only its mask (`display`), with a caret at the end.
  */
 export function Form(props: { fields: FormField[]; cursor: number; caret: number; note?: FormNote | null }) {
   const labelWidth = () => Math.max(...props.fields.map((f) => f.label.length)) + 2
@@ -23,7 +24,12 @@ export function Form(props: { fields: FormField[]; cursor: number; caret: number
               <Show when={focused() && (field.kind === "choice" || field.kind === "toggle")}>
                 <S fg={theme.accent}>{"‹ "}</S>
               </Show>
-              <Show when={field.kind === "text"} fallback={<S fg={field.display ? theme.text : theme.overlay0}>{field.display || "—"}</S>}>
+              <Show when={field.kind === "text"} fallback={
+                <Show when={field.kind === "secret"} fallback={<S fg={field.display ? theme.text : theme.overlay0}>{field.display || "—"}</S>}>
+                  <S fg={field.display.startsWith("•") ? theme.text : theme.overlay0}>{field.display}</S>
+                  <S fg={theme.accent}>{focused() ? "▏" : ""}</S>
+                </Show>
+              }>
                 <TextInput field={{ value: field.display, caret: props.caret }} focused={focused()} caretColor={theme.accent} />
               </Show>
               <Show when={focused() && (field.kind === "choice" || field.kind === "toggle")}>

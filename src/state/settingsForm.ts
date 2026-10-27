@@ -17,9 +17,11 @@ import type { SettingsEditorKind, UiState } from "./uiStore"
  * - choice: h/l, ←/→ or space step through `choices`.
  * - toggle: h/l, ←/→ or space flip it.
  * - picker: enter opens a filterable list (`pickerItems`).
+ * - secret: typing and pasting append, backspace deletes; shown masked, never
+ *   as typed (`display` is the mask, the value stays in the draft).
  */
 export type Draft = UiState["settingsDraft"]
-export type FieldKind = "text" | "choice" | "toggle" | "picker"
+export type FieldKind = "text" | "choice" | "toggle" | "picker" | "secret"
 
 export interface FormField {
   key: keyof Draft
@@ -121,6 +123,13 @@ export const EDITOR_TITLE: Record<SettingsEditorKind, string> = {
   rule: "Rule",
   budget: "Budget",
   cycle: "Budget cycle",
+  jevKey: "Jev API key (TypeSafe)",
+  workersAiKey: "Workers AI key (Cloudflare)",
+}
+
+/** A secret as the form shows it: its length and last four, or a prompt. */
+export function secretDisplay(value: string): string {
+  return value ? `${"•".repeat(8)} …${value.slice(-4)}  (${value.length} chars)` : "paste the key"
 }
 
 function cycleFields(draft: Draft): FormField[] {
@@ -172,6 +181,13 @@ export function editorFields(kind: SettingsEditorKind, draft: Draft, ctx: Omit<F
       ]
     case "cycle":
       return cycleFields(draft)
+    case "jevKey":
+      return [{ key: "secret", label: "API key", kind: "secret", display: secretDisplay(draft.secret) }]
+    case "workersAiKey":
+      return [
+        { key: "secret", label: "API token", kind: "secret", display: secretDisplay(draft.secret) },
+        { key: "accountId", label: "Account ID", kind: "text", display: draft.accountId },
+      ]
   }
 }
 
@@ -184,7 +200,7 @@ export function editorFields(kind: SettingsEditorKind, draft: Draft, ctx: Omit<F
 export function editorWidth(fields: FormField[], note: FormNote | null, hints: string): number {
   const label = Math.max(...fields.map((f) => f.label.length)) + 2
   const line = (f: FormField) =>
-    2 + label + Math.max(f.display.length, f.kind === "text" ? 24 : 0) + (f.kind === "picker" ? 17 : f.kind === "text" ? 1 : 4)
+    2 + label + Math.max(f.display.length, f.kind === "text" ? 24 : f.kind === "secret" ? 34 : 0) + (f.kind === "picker" ? 17 : f.kind === "text" || f.kind === "secret" ? 1 : 4)
   return Math.max(...fields.map(line), (note?.text ?? "").length + (note?.dot ? 2 : 0), hints.length)
 }
 
@@ -199,6 +215,9 @@ export interface FormNote {
 /** The note for an editor, when it has one: a filter's or rule's live
  * status with its match count, or the budget cycle described. */
 export function editorNote(kind: SettingsEditorKind, draft: Draft, ctx: FormContext): FormNote | null {
+  if (kind === "jevKey" || kind === "workersAiKey") {
+    return { text: "Saved only for you (credentials.json); used before .env. Empty keeps the current key.", tone: "muted" }
+  }
   if (kind === "filter" || kind === "rule") {
     const filterId = kind === "rule" ? draft.savedFilterId : ""
     if (kind === "rule" && !filterId) return { text: "pending", tone: "muted", dot: true }

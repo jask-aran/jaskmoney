@@ -1,7 +1,7 @@
 import type { DryRunReport } from "../domain/rules"
 import type { CycleAnchor, CycleUnit } from "../domain/budget"
 import type { MerchantSort } from "../domain/merchants"
-import { createStore } from "solid-js/store"
+import { createStore, reconcile } from "solid-js/store"
 import {
   defaultTimeframe,
   type TimeframeState,
@@ -26,6 +26,7 @@ export type SectionId =
   | "set.filters"
   | "set.database"
   | "set.up"
+  | "set.ai"
   | "set.budgets"
 
 export type ScopeId =
@@ -47,6 +48,7 @@ export type ScopeId =
   | "settings.filters"
   | "settings.database"
   | "settings.up"
+  | "settings.ai"
   | "settings.budgets"
   | "manager.detail"
   | "manager.detail.notes"
@@ -61,15 +63,15 @@ export type ScopeId =
   | "settings.factoryReset"
 
 export type SettingsList = "categories" | "tags"
-export type SettingsSection = "taxonomy" | "budgets" | "rules" | "filters" | "up" | "database"
+export type SettingsSection = "taxonomy" | "budgets" | "rules" | "filters" | "up" | "ai" | "database"
 /** j/k order of Settings sections (wide layout: left column, then right). */
-export const SETTINGS_SECTIONS: SettingsSection[] = ["taxonomy", "budgets", "rules", "filters", "up", "database"]
+export const SETTINGS_SECTIONS: SettingsSection[] = ["taxonomy", "budgets", "ai", "rules", "filters", "up", "database"]
 
 export function settingsSectionFocus(section: SettingsSection, list: SettingsList = "categories"): SectionId {
   if (section === "taxonomy") return list === "categories" ? "set.categories" : "set.tags"
-  return section === "rules" ? "set.rules" : section === "filters" ? "set.filters" : section === "up" ? "set.up" : section === "budgets" ? "set.budgets" : "set.database"
+  return section === "rules" ? "set.rules" : section === "filters" ? "set.filters" : section === "up" ? "set.up" : section === "ai" ? "set.ai" : section === "budgets" ? "set.budgets" : "set.database"
 }
-export type SettingsEditorKind = "category" | "tag" | "filter" | "rule" | "budget" | "cycle"
+export type SettingsEditorKind = "category" | "tag" | "filter" | "rule" | "budget" | "cycle" | "jevKey" | "workersAiKey"
 export type ImportStage = "none" | "files" | "path" | "profile" | "profileEditor" | "preview"
 
 export interface JumpTarget {
@@ -145,6 +147,8 @@ export interface UiState {
   budgetCursor: number
   /** Cursor in the Up Bank sync account list. */
   upCursor: number
+  /** AI models pane: 0 Jev, 1 Workers AI. */
+  aiCursor: number
   /** Transaction shown in the detail view; null when closed. */
   detailId: number | null
   detailNotesEditing: boolean
@@ -162,8 +166,10 @@ export interface UiState {
     scopeKey: string; amount: string
     /** Cycle editor. */
     unit: CycleUnit; anchor: CycleAnchor; anchorDate: string; payEarly: boolean
+    /** API key editors: the key as typed (never rendered), and Workers AI's account id. */
+    secret: string; accountId: string
   }
-  settingsConfirm: { kind: "category" | "tag" | "rule" | "filter" | "profile" | "clearData" | "clearAccount" | "deleteAccount" | "desyncAccount" | "budget"; id: number | string; label: string } | null
+  settingsConfirm: { kind: "category" | "tag" | "rule" | "filter" | "profile" | "clearData" | "clearAccount" | "deleteAccount" | "desyncAccount" | "budget" | "apiKey"; id: number | string; label: string } | null
   importStage: ImportStage
   importDirectory: string
   importFiles: string[]
@@ -224,6 +230,7 @@ export const JUMP_TARGETS: Record<TabId, JumpTarget[]> = {
     { key: "f", section: "set.filters", label: "Filters" },
     { key: "b", section: "set.budgets", label: "Budgets" },
     { key: "u", section: "set.up", label: "Up Bank" },
+    { key: "a", section: "set.ai", label: "AI models" },
     { key: "d", section: "set.database", label: "Database & Import" },
   ],
 }
@@ -235,7 +242,7 @@ export const TABS: { id: TabId; label: string; hotkey: string }[] = [
 ]
 
 function createUiStore() {
-  const [state, setState] = createStore<UiState>({
+  const initialState = (): UiState => ({
     activeTab: "overview",
     focusedSection: "none",
     jumpMode: false,
@@ -278,6 +285,7 @@ function createUiStore() {
     ruleCursor: 0,
     filterCursor: 0,
     upCursor: 0,
+    aiCursor: 0,
     budgetCursor: 0,
     merchantCursor: 0,
     merchantTop: 0,
@@ -294,7 +302,7 @@ function createUiStore() {
     settingsEditField: 0,
     settingsCaret: 0,
     formPicker: null,
-    settingsDraft: { name: "", color: "#94e2d5", categoryId: null, id: "", expr: "", savedFilterId: "", setCategoryId: null, addTagIds: [], notSpending: false, scopeKey: "overall", amount: "", unit: "month", anchor: "calendar", anchorDate: "", payEarly: false },
+    settingsDraft: { name: "", color: "#94e2d5", categoryId: null, id: "", expr: "", savedFilterId: "", setCategoryId: null, addTagIds: [], notSpending: false, scopeKey: "overall", amount: "", unit: "month", anchor: "calendar", anchorDate: "", payEarly: false, secret: "", accountId: "" },
     settingsConfirm: null,
     importStage: "none",
     importDirectory: "",
@@ -317,6 +325,12 @@ function createUiStore() {
     factoryResetDraft: "",
     factoryResetCaret: 0,
   })
+  const [state, setState] = createStore<UiState>(initialState())
+
+  /** Test isolation only: restore initial UI state and discard session edits. */
+  function reset() {
+    setState(reconcile(initialState()))
+  }
 
   function setStatus(text: string, isErr = false) {
     setState({ status: text, statusErr: isErr })
@@ -586,6 +600,7 @@ function createUiStore() {
     if (state.settingsSection === "rules") return "settings.rules"
     if (state.settingsSection === "filters") return "settings.filters"
     if (state.settingsSection === "up") return "settings.up"
+    if (state.settingsSection === "ai") return "settings.ai"
     if (state.settingsSection === "budgets") return "settings.budgets"
     return "settings.database"
   }
@@ -593,6 +608,7 @@ function createUiStore() {
   return {
     state,
     setState,
+    reset,
     setStatus,
     switchTab,
     cycleTab,

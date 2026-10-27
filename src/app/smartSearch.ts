@@ -14,16 +14,17 @@ import { runAsk } from "./ask"
 export async function runSmartSearch(ui: UiStore, data: DataStore, draft: string, onApplied: () => void): Promise<void> {
   const query = draft.trim().slice(1).trim()
   if (!query) { ui.setStatus("Type a search after ?, e.g. ?coffee over $5 last month"); return }
-  if (!hasWorkersAi() || !hasJev()) { ui.setStatus("Smart search needs JASKMONEY_JEV_TOKEN, JASKMONEY_CF_TOKEN and JASKMONEY_CF_ACCOUNT_ID", true); return }
+  if (!hasJev()) { ui.setStatus("Smart search needs a Jev key: Settings › AI models", true); return }
   ui.setStatus(`Smart search: ${query}…`)
   try {
-    const ai = { clairic: createWorkersAiClient(readWorkersAiCredentials()).clairic, jev: jevClient() }
-    const { expr } = await smartSearch(ai, query, { today: appToday(), cycle: data.cycle(), categories: data.state.categories })
+    const ai = { clairic: hasWorkersAi() ? createWorkersAiClient(readWorkersAiCredentials()).clairic : undefined, jev: jevClient() }
+    const { expr, clairic } = await smartSearch(ai, query, { today: appToday(), cycle: data.cycle(), categories: data.state.categories })
     if (!ui.state.filterMode || ui.state.filterDraft !== draft) return
     ui.setState({ filterDraft: expr, filterCaret: expr.length })
     data.setFilterLive(expr)
     onApplied()
-    ui.setStatus(`Smart search: ${query} · enter applies, or edit it`)
+    // Without Clairic the words are Jev's pick and written dates are not read.
+    ui.setStatus(`Smart search: ${query} · enter applies, or edit it${clairic ? ` · without Clairic (${clairic}): check the words and dates` : ""}`, !!clairic)
     await runAsk(ui, data)
   } catch (error) {
     ui.setStatus(error instanceof Error ? error.message : String(error), true)

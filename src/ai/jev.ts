@@ -10,6 +10,8 @@
  * on the same tasks, preferred the opposite: rows listed in the state.)
  */
 
+import { credentialEnv } from "./credentials"
+
 /** Pinned: the questions and thresholds here were tuned against this
  * version (it was `jev-latest` on 2026-10-27). */
 export const JEV_MODEL = "jev-1.14.0"
@@ -21,14 +23,14 @@ export class JevError extends Error {
   }
 }
 
-export function readJevToken(env: Record<string, string | undefined> = process.env): string {
+export function readJevToken(env: Record<string, string | undefined> = credentialEnv()): string {
   const token = env.JASKMONEY_JEV_TOKEN?.trim()
   if (!token) throw new Error("Set JASKMONEY_JEV_TOKEN (a TypeSafe API key) for Jev")
   return token
 }
 
 /** Whether Jev is set up, without throwing. */
-export function hasJev(env: Record<string, string | undefined> = process.env): boolean {
+export function hasJev(env: Record<string, string | undefined> = credentialEnv()): boolean {
   return !!env.JASKMONEY_JEV_TOKEN?.trim()
 }
 

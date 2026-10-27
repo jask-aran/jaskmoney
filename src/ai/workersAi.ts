@@ -4,6 +4,8 @@
  * api.cloudflare.com. Typed judgments come from Jev (`./jev`).
  */
 
+import { credentialEnv } from "./credentials"
+
 export class WorkersAiError extends Error {
   constructor(public readonly status: number, message: string) {
     super(message)
@@ -16,7 +18,7 @@ export interface WorkersAiCredentials {
   accountId: string
 }
 
-export function readWorkersAiCredentials(env: Record<string, string | undefined> = process.env): WorkersAiCredentials {
+export function readWorkersAiCredentials(env: Record<string, string | undefined> = credentialEnv()): WorkersAiCredentials {
   const token = env.JASKMONEY_CF_TOKEN?.trim()
   const accountId = env.JASKMONEY_CF_ACCOUNT_ID?.trim()
   if (!token || !accountId) throw new Error("Set JASKMONEY_CF_TOKEN and JASKMONEY_CF_ACCOUNT_ID for Cloudflare Workers AI")
@@ -24,7 +26,7 @@ export function readWorkersAiCredentials(env: Record<string, string | undefined>
 }
 
 /** Whether Workers AI is set up, without throwing. */
-export function hasWorkersAi(env: Record<string, string | undefined> = process.env): boolean {
+export function hasWorkersAi(env: Record<string, string | undefined> = credentialEnv()): boolean {
   return !!env.JASKMONEY_CF_TOKEN?.trim() && !!env.JASKMONEY_CF_ACCOUNT_ID?.trim()
 }
 
@@ -48,6 +50,13 @@ function clairicAnswer(value: unknown): ClairicAnswer | null {
   const v = value.value
   if (v !== null && typeof v !== "string" && typeof v !== "number") return null
   return { value: v, confidence: typeof value.confidence === "number" ? value.confidence : null }
+}
+
+/** Cloudflare's error text, readable: its "AiError: AiError: …" prefixes go,
+ * and the free plan's daily cap says what it means. */
+export function plainError(message: string): string {
+  if (/daily free allocation/i.test(message)) return "Cloudflare's free daily allowance is used up (it resets each day)"
+  return message.replace(/^(?:\s*AiError:\s*)+/i, "").trim() || message
 }
 
 export function createWorkersAiClient({ token, accountId, fetch = globalThis.fetch, timeoutMs = 15_000 }: WorkersAiCredentials & { fetch?: Fetch; timeoutMs?: number }) {
@@ -75,7 +84,7 @@ export function createWorkersAiClient({ token, accountId, fetch = globalThis.fet
     if (!response.ok || !object(payload) || payload.success !== true) {
       const errors = object(payload) && Array.isArray(payload.errors) ? payload.errors : []
       const first = errors.find(object)
-      const message = first && typeof first.message === "string" ? first.message : `HTTP ${response.status}`
+      const message = first && typeof first.message === "string" ? plainError(first.message) : `HTTP ${response.status}`
       throw new WorkersAiError(response.status, redact(`Workers AI ${model}: ${message}`))
     }
     if (!object(payload.result) || !object(payload.result.answers)) throw new WorkersAiError(response.status, `Workers AI ${model}: unexpected response`)

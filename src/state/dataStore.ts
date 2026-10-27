@@ -49,6 +49,7 @@ import { normaliseSelection, selectedAccounts, type AccountSelection } from "../
 import { paydays, type Budget, type BudgetScope, type CycleConfig } from "../domain/budget"
 import { buildImportPreview, commitImportPreview, matchingProfiles } from "../domain/profileImport"
 import { hasJev, jevClient, type JevClient } from "../ai/jev"
+import { CREDENTIAL_NAMES, credentialEnv, credentialSource, maskSecret, saveCredentials, type CredentialName } from "../ai/credentials"
 import { historySuggestions, jevSuggestions } from "../domain/suggest"
 import { isOrdinaryFlow, isUncategorised } from "../domain/moneyRules"
 import { createUpClient, readUpToken } from "../up/client"
@@ -80,6 +81,8 @@ export interface DataState {
   suggestions: Record<number, CategorySuggestion>
   /** The Transactions table shows only ordinary uncategorised rows. */
   uncategorisedOnly: boolean
+  /** Where each API key comes from, masked (`maskSecret`); never the key. */
+  apiKeys: Record<CredentialName, { source: "saved" | "env" | null; mask: string }>
   /** Jev is judging rows for an `ask:` term. */
   asking: { words: string; judged: number; total: number } | null
   dbPath: string
@@ -135,15 +138,22 @@ function sortRows(rows: Transaction[], col: SortColumn, asc: boolean): Transacti
   return rows.slice().sort((a, b) => (asc ? compare(a, b) : -compare(a, b)))
 }
 
+/** Each API key's source and mask, read now. */
+function loadApiKeys(): DataState["apiKeys"] {
+  const env = credentialEnv()
+  return Object.fromEntries(CREDENTIAL_NAMES.map((name) => [name, { source: credentialSource(name), mask: maskSecret(env[name]) }])) as DataState["apiKeys"]
+}
+
 function createDataStore() {
   let db: Db | null = null
   let actualDbPath = ""
-  const [state, setState] = createStore<DataState>({
+  const initialState = (): DataState => ({
     ready: false,
     upSyncing: false,
     suggesting: false,
     suggestions: {},
     uncategorisedOnly: false,
+    apiKeys: loadApiKeys(),
     asking: null,
     dbPath: "",
     accounts: [],
@@ -168,6 +178,7 @@ function createDataStore() {
     sortColumn: "date",
     sortAscending: false, // date desc default like Go
   })
+  const [state, setState] = createStore<DataState>(initialState())
 
   function refresh() {
     if (!db) return
@@ -209,6 +220,7 @@ function createDataStore() {
   const upClient = () => createUpClient({ token: readUpToken() })
 
   function init(dbPath?: string) {
+    setState({ apiKeys: loadApiKeys() })
     // Verdicts are per row id, and a new database reuses ids.
     askVerdicts.clear()
     askRun++
@@ -248,6 +260,18 @@ function createDataStore() {
   const askVerdict: AskVerdict<Transaction> = (words, t) => askVerdicts.get(words.toLowerCase())?.get(t.id)
   /** Bumped by each ask run and by clearing the filter; a run stops once it's stale. */
   let askRun = 0
+
+  /** Test isolation only: close the database and restore the pre-init state.
+   * Call init() before using database actions again. Does not erase disk data. */
+  function reset() {
+    db?.close()
+    db = null
+    actualDbPath = ""
+    askRun++
+    askVerdicts.clear()
+    setAskVersion(0)
+    setState(reconcile(initialState()))
+  }
 
   /** The Uncategorised view's narrowing. */
   const inView = (t: Transaction) => !state.uncategorisedOnly || (isOrdinaryFlow(t) && isUncategorised(t))
@@ -730,6 +754,7 @@ function createDataStore() {
   return {
     state,
     setState,
+    reset,
     init,
     refresh,
     transactions,
@@ -744,6 +769,8 @@ function createDataStore() {
     setAccountSelection,
     categorizeTransactions,
     setUncategorisedOnly: (on: boolean) => setState({ uncategorisedOnly: on }),
+    /** Save (or with null, remove) API keys entered in Settings. */
+    saveApiKeys: (patch: Partial<Record<CredentialName, string | null>>) => { saveCredentials(patch); setState({ apiKeys: loadApiKeys() }) },
     askAbout,
     suggestCategories,
     acceptSuggestions,

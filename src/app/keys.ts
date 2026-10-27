@@ -11,6 +11,8 @@ import { anchorDraft, cycleFromDraft, editorFields, normaliseCycleDraft, pickerC
 import { runSync } from "./sync"
 import { runSmartSearch } from "./smartSearch"
 import { runAsk } from "./ask"
+import { AI_ROWS, testApiKey } from "./apiKeys"
+import { credentialEnv } from "../ai/credentials"
 import { runAccept, toggleUncategorised } from "./suggest"
 import { ACCEPT_ALL_AT } from "../domain/questions"
 import { CHART_VIEWS, JUMP_TARGETS, SETTINGS_SECTIONS, TABS, settingsSectionFocus, type ScopeId, type UiState, type UiStore } from "../state/uiStore"
@@ -116,6 +118,36 @@ function resetTransactionCursors(ui: UiStore, data?: DataStore): void {
   ui.setState({ merchantCursor: 0, merchantTop: 0 })
 }
 
+/** Scopes whose printable keys are text, so a paste can type into them. */
+const PASTE_SCOPES = new Set<ScopeId>(["filter", "manager.detail.notes", "catPicker", "tagPicker", "filterPicker", "settings.import.path", "settings.factoryReset"])
+
+/** Whether a paste would land as text where input is now: never where
+ * letters are commands (a pasted "x" must not dismiss anything). */
+function pasteTarget(ui: UiStore, data?: DataStore): boolean {
+  const scope = ui.activeScope()
+  if (scope !== "settings.editor") return PASTE_SCOPES.has(scope)
+  const kind = ui.state.settingsEditor
+  if (!kind) return false
+  if (ui.state.formPicker) return true
+  const ctx = { accounts: data?.state.accounts ?? [], categories: data?.state.categories ?? [], tags: data?.state.tags ?? [], savedFilters: data?.state.savedFilters ?? [] }
+  const fields = editorFields(kind, ui.state.settingsDraft, ctx)
+  const field = fields[Math.min(ui.state.settingsEditField, fields.length - 1)]
+  return field?.kind === "text" || field?.kind === "secret"
+}
+
+/** Type pasted text into the focused text field, one character at a time
+ * (one line: breaks become spaces, control characters are dropped, and the
+ * ends are trimmed: a copied key often brings a newline).
+ * Returns whether it landed. */
+export function handlePaste(ui: UiStore, text: string, data?: DataStore): boolean {
+  if (!pasteTarget(ui, data)) return false
+  const line = text.replace(/[\r\n\t]+/g, " ").replace(/[\u0000-\u001f\u007f]/g, "").trim()
+  batch(() => {
+    for (const ch of line) handleKey(ui, { name: ch === " " ? "space" : ch, sequence: ch, ctrl: false, meta: false, shift: false, option: false } as KeyEvent, data)
+  })
+  return true
+}
+
 export function handleKey(ui: UiStore, key: KeyEvent, data?: DataStore): boolean {
   const { name, sequence: seq } = key
   if (key.ctrl && name === "c") return false
@@ -190,6 +222,7 @@ function handleJump(ui: UiStore, key: KeyEvent, data?: DataStore): void {
       else if (hit.section === "set.filters") ui.activateSettings("filters")
       else if (hit.section === "set.database") ui.activateSettings("database")
       else if (hit.section === "set.up") ui.activateSettings("up")
+      else if (hit.section === "set.ai") ui.activateSettings("ai")
       else if (hit.section === "set.budgets") ui.activateSettings("budgets")
       return
     }
@@ -418,6 +451,10 @@ const CONFIRMED: Record<Confirm["kind"], (data: DataStore | undefined, c: Confir
   clearData: (data) => { data?.clearDatabaseData(); return "Transaction and import data cleared" },
   clearAccount: (data, c) => { data?.clearAccountData(Number(c.id)); return `Cleared ${c.label}` },
   deleteAccount: (data, c) => { data?.removeAccountData(Number(c.id)); return `Removed ${c.label}` },
+  apiKey: (data, c) => {
+    data?.saveApiKeys(c.id === "jev" ? { JASKMONEY_JEV_TOKEN: null } : { JASKMONEY_CF_TOKEN: null, JASKMONEY_CF_ACCOUNT_ID: null })
+    return `Removed the saved ${c.label} key`
+  },
   desyncAccount: (data, c) => `Sync off for ${c.label} · ${data?.setAccountSync(Number(c.id), false) ?? 0} transactions removed`,
 }
 
@@ -455,7 +492,7 @@ function handleSettingsEditor(ui: UiStore, key: KeyEvent, data?: DataStore): voi
     return
   }
 
-  const isText = field.kind === "text"
+  const isText = field.kind === "text" || field.kind === "secret"
   const move = (step: number) => {
     const next = (fieldIndex + step + fields.length) % fields.length
     const field = fields[next]!
@@ -498,6 +535,11 @@ function handleSettingsEditor(ui: UiStore, key: KeyEvent, data?: DataStore): voi
         const cycle = cycleFromDraft(draft)
         if (typeof cycle === "string") throw new Error(cycle)
         data?.setBudgetCycle(cycle)
+      } else if (kind === "jevKey") {
+        if (draft.secret.trim()) data?.saveApiKeys({ JASKMONEY_JEV_TOKEN: draft.secret })
+      } else if (kind === "workersAiKey") {
+        if (!draft.accountId.trim()) throw new Error("enter the Cloudflare account ID")
+        data?.saveApiKeys({ ...(draft.secret.trim() ? { JASKMONEY_CF_TOKEN: draft.secret } : {}), JASKMONEY_CF_ACCOUNT_ID: draft.accountId })
       } else if (kind === "filter") {
         data?.saveSavedFilter({ id: draft.id, name: draft.name, expr: draft.expr }, typeof ui.state.settingsEditId === "string" ? ui.state.settingsEditId : undefined)
       } else {
@@ -521,6 +563,13 @@ function handleSettingsEditor(ui: UiStore, key: KeyEvent, data?: DataStore): voi
   }
   if ((left || right) && field.kind === "toggle") {
     ui.setState("settingsDraft", field.key as "notSpending", !draft[field.key])
+    return
+  }
+  if (field.kind === "secret") {
+    // The key is never shown, so there is no caret to move: edits apply at the end.
+    const value = draft[field.key] as string
+    const next = editText({ value, caret: value.length }, key)
+    if (next) ui.setState("settingsDraft", field.key as "secret", next.value)
     return
   }
   if (isText) {
@@ -726,6 +775,32 @@ function handleSettingsUp(ui: UiStore, key: KeyEvent, data?: DataStore): void {
       (summary) => ui.setStatus(summary),
       (e) => reportError(ui, e),
     )
+    return
+  }
+}
+
+/** AI models: one row per provider; enter edits its key, t tests it, del
+ * removes the saved one (the environment's, if any, then applies). */
+function handleSettingsAi(ui: UiStore, key: KeyEvent, data?: DataStore): void {
+  const { name } = key
+  const row = AI_ROWS[ui.state.aiCursor] ?? "jev"
+  const label = row === "jev" ? "Jev" : "Workers AI"
+  if (name === "escape") { ui.leaveSettings(); return }
+  const moved = listMove(key, ui.state.aiCursor, AI_ROWS.length)
+  if (moved != null) { ui.setState({ aiCursor: moved }); return }
+  if (name === "return" || name === "enter") {
+    // The key starts empty (saving empty keeps the current one); the account id is not secret.
+    const accountId = row === "workersAi" ? (credentialEnv().JASKMONEY_CF_ACCOUNT_ID ?? "") : ""
+    ui.openSettingsEditor(row === "jev" ? "jevKey" : "workersAiKey", null, { ...ui.state.settingsDraft, secret: "", accountId })
+    ui.setState({ settingsEditField: 0 })
+    return
+  }
+  if (name === "t") { void testApiKey(ui, row); return }
+  if (name === "delete" && data) {
+    const saved = row === "jev" ? data.state.apiKeys.JASKMONEY_JEV_TOKEN.source === "saved" : data.state.apiKeys.JASKMONEY_CF_TOKEN.source === "saved" || data.state.apiKeys.JASKMONEY_CF_ACCOUNT_ID.source === "saved"
+    if (!saved) { ui.setStatus(`No saved ${label} key to remove`); return }
+    ui.armSettingsConfirm({ kind: "apiKey", id: row, label })
+    ui.setStatus(`Press del again to remove the saved ${label} key`)
     return
   }
 }
@@ -1302,6 +1377,11 @@ const scopes: Record<ScopeId, ScopeEntry> = {
     handle: handleSettingsUp,
     quits: true,
     hints: () => [{ key: "j/k", desc: "move" }, { key: "space", desc: "sync on/off" }, { key: "s", desc: "sync now" }, { key: "esc", desc: "done" }],
+  },
+  "settings.ai": {
+    handle: handleSettingsAi,
+    quits: true,
+    hints: () => [{ key: "j/k", desc: "move" }, { key: "enter", desc: "set key" }, { key: "t", desc: "test" }, { key: "del", desc: "remove saved" }, { key: "esc", desc: "done" }],
   },
   "settings.database": {
     handle: handleSettingsDatabase,

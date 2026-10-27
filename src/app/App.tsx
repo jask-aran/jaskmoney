@@ -1,9 +1,9 @@
 import { ErrorBoundary, Match, Switch, createEffect, createSignal, untrack, on, onCleanup, onMount } from "solid-js"
-import { useKeyboard, useRenderer } from "@opentui/solid"
+import { useKeyboard, usePaste, useRenderer } from "@opentui/solid"
 import type { KeyEvent } from "@opentui/core"
 import { ui } from "../state/uiStore"
 import { data } from "../state/dataStore"
-import { footerHints, handleKey, scopeQuits } from "./keys"
+import { footerHints, handleKey, scopeQuits, handlePaste } from "./keys"
 import { appNow } from "../domain/days"
 import { TabBar } from "../ui/primitives/TabBar"
 import { StatusBar } from "../ui/primitives/StatusBar"
@@ -85,6 +85,11 @@ export function App() {
       return
     }
     handleKey(ui, key, data)
+  })
+
+  // A paste arrives whole (bracketed paste), not as key presses.
+  usePaste((event) => {
+    if (handlePaste(ui, new TextDecoder().decode(event.bytes), data)) event.preventDefault()
   })
 
   // The Manager's account selection; the other tabs are not account-scoped.

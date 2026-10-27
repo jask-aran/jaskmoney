@@ -4,14 +4,16 @@ import { cycleFor, type CycleConfig } from "./budget"
 import { addDays, addMonths } from "./days"
 import { categoryTerm } from "./drill"
 import { anyOf, filterTerm } from "./filter"
-import { FLOWS, PERIODS, searchQuestions, type Flow, type Period } from "./questions"
+import { FLOWS, PERIODS, searchNumbers, searchPhrases, searchQuestions, searchTermQuestions, type Flow, type Period } from "./questions"
 import type { Category } from "./types"
 
 /**
  * Smart search: a plain-English query ("coffee over $5 last month") becomes an
- * ordinary filter expression the user can read and edit. Clairic extracts the
- * values written in it (words, amounts, explicit dates); Jev decides what it
- * asks about (the period, spending or income, a payee or a kind of thing).
+ * ordinary filter expression the user can read and edit. Jev, in one request,
+ * decides what it asks about (the period, spending or income, a payee or a
+ * kind of thing) and what each number in it means; Clairic, when it is set up
+ * and answering, extracts the words and explicit dates. Without Clairic, Jev
+ * picks the words from the query's own phrases and explicit dates are lost.
  * Periods are worked out here, not by the model, so "last month" and "this
  * cycle" are exact. The words become `cat:` when they name one of the user's
  * categories, `desc:` when they name a payee, else `ask:` (Jev judges rows).
@@ -21,8 +23,6 @@ import type { Category } from "./types"
  * instructions: Clairic can echo them back as answers. */
 export const SEARCH_FIELDS: Record<string, ClairicField> = {
   words: { type: "text", instructions: "Merchant or description words to search for. Not amounts, dates, periods or category names." },
-  at_least: { type: "number", decimals: 2, instructions: "A lower bound on the amount in dollars, only if the search gives one: words like over, more than, at least, or a number followed by +. Empty when no amount is written." },
-  at_most: { type: "number", decimals: 2, instructions: "An upper bound on the amount in dollars, only if the search gives one: words like under, less than, up to, at most. Empty when no amount is written." },
   from: { type: "date", instructions: "An explicit first date the user wrote, such as '3 March' or '2026-01-05'. Empty for relative periods like 'last month'." },
   to: { type: "date", instructions: "An explicit last date the user wrote. Empty for relative periods." },
 }
@@ -50,30 +50,37 @@ export function categoriesNamed(words: string, categories: Category[]): Category
   return categories.filter((c) => !c.isDefault && wanted.every((w) => split(c.name).includes(w)))
 }
 
-/** The models' answers as a search. The words are a category when they name
- * one of `categories` (Jev's pick breaks ties), a payee to find in the
+/** The models' answers as a search. The words (Clairic's, or with `values`
+ * null, Jev's pick of the query's phrases) are a category when they name one
+ * of `categories` (Jev's pick breaks ties), a payee to find in the
  * description when Jev says so, else something for Jev to judge rows by.
- * Equal bounds come from one phrase ("over $20" read both ways): the lower
- * bound is kept. */
-export function parsedSearch(values: Record<string, ClairicAnswer>, answers: Record<string, JevAnswer>, categories: Category[]): ParsedSearch {
+ * Amounts are the query's numbers in the roles Jev gives them. */
+export function parsedSearch(values: Record<string, ClairicAnswer> | null, answers: Record<string, JevAnswer>, categories: Category[], query: string): ParsedSearch {
   const choice = (id: string) => { const a = answers[id]; return a?.type === "choice" ? a.choice : null }
-  const value = (id: string) => values[id]?.value ?? null
+  const value = (id: string) => values?.[id]?.value ?? null
   const text = (id: string) => { const v = value(id); return typeof v === "string" && v.trim() ? v.trim() : null }
-  const number = (id: string) => { const v = value(id); return typeof v === "number" && Number.isFinite(v) && v > 0 ? v : null }
   const payee = answers.names_payee?.type === "noul" && answers.names_payee.noul > 0.5
-  const words = text("words")
+  const phrase = choice("phrase")
+  const words = values ? text("words") : phrase && /^p\d+$/.test(phrase) ? searchPhrases(query)[Number(phrase.slice(1))] ?? null : null
   const picked = choice("category")
   const named = words ? categoriesNamed(words, categories) : []
   const category = named.find((c) => `c${c.id}` === picked) ?? named.find((c) => c.name.toLowerCase() === words?.toLowerCase()) ?? (named.length === 1 ? named[0] : undefined)
   const categoryId = !payee && category ? category.id : null
   const period = choice("period")
   const flow = choice("flow")
-  const atLeast = number("at_least"), atMost = number("at_most")
+  let atLeast: number | null = null, atMost: number | null = null
+  searchNumbers(query).forEach((n, i) => {
+    const role = choice(`amount${i}`)
+    const amount = Number(n.replace(/[$+]/g, ""))
+    if (!Number.isFinite(amount) || amount <= 0) return
+    if (role === "at_least") atLeast = amount
+    if (role === "at_most") atMost = amount
+  })
   return {
     words: categoryId == null && payee ? words : null,
     ask: categoryId == null && !payee ? words : null,
     atLeast,
-    atMost: atMost === atLeast ? null : atMost,
+    atMost,
     from: text("from"),
     to: text("to"),
     period: period && period in PERIODS ? (period as Period) : "any",
@@ -132,14 +139,25 @@ export function searchFilter(p: ParsedSearch, ctx: { today: string; cycle: Cycle
   return terms.join(" AND ")
 }
 
-/** Ask both models about `query` (in parallel) and build its filter. When
- * nothing usable comes back, the query itself is the filter (plain text). */
-export async function smartSearch(ai: { clairic: WorkersAiClient["clairic"]; jev: Pick<JevClient, "judge"> }, query: string, ctx: { today: string; cycle: CycleConfig; categories: Category[] }): Promise<{ expr: string; parsed: ParsedSearch }> {
+/**
+ * Ask Jev (and Clairic, when there is one) about `query`, in parallel, and
+ * build its filter. Clairic failing (no key, or Cloudflare's free daily
+ * allowance used up) doesn't stop the search: `clairic` says why it was left
+ * out. When nothing usable comes back, the query itself is the filter.
+ */
+export async function smartSearch(
+  ai: { clairic?: WorkersAiClient["clairic"]; jev: Pick<JevClient, "judge"> },
+  query: string,
+  ctx: { today: string; cycle: CycleConfig; categories: Category[] },
+): Promise<{ expr: string; parsed: ParsedSearch; clairic: string | null }> {
   const [values, answers] = await Promise.all([
-    ai.clairic(SEARCH_FIELDS, query, ctx.today),
-    ai.jev.judge(searchQuestions(ctx.categories), query),
+    ai.clairic
+      ? ai.clairic(SEARCH_FIELDS, query, ctx.today).catch((error: unknown) => (error instanceof Error ? error : new Error(String(error))))
+      : Promise.resolve(new Error("no Workers AI key")),
+    ai.jev.judge({ ...searchQuestions(ctx.categories), ...searchTermQuestions(query) }, { search: query }),
   ])
-  const parsed = parsedSearch(values, answers, ctx.categories)
+  const clairic = values instanceof Error ? values.message : null
+  const parsed = parsedSearch(values instanceof Error ? null : values, answers, ctx.categories, query)
   const expr = searchFilter(parsed, ctx)
-  return { expr: expr || filterTerm("desc", query), parsed }
+  return { expr: expr || filterTerm("desc", query), parsed, clairic }
 }

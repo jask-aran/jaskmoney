@@ -149,12 +149,12 @@ function DatabasePane(props: { focused: boolean; height?: number | "auto" | `${n
 /** Up Bank sync: status plus one row per Up account with its sync switch.
  * Token presence is read from the environment (Bun loads .env); the value is
  * never rendered. */
-function UpPane(props: { focused: boolean }) {
+function UpPane(props: { focused: boolean; width?: `${number}%` }) {
   const info = () => data.state.dbInfo
   const active = () => ui.state.settingsActive && ui.state.settingsSection === "up"
   const tokenSet = () => !!process.env.JASKMONEY_UP_TOKEN?.trim()
   const accounts = () => data.state.syncAccounts
-  return <SectionCard title="Up Bank" focused={props.focused} active={active()} height={Math.max(1, accounts().length) + 4}>
+  return <SectionCard title="Up Bank" focused={props.focused} active={active()} height={Math.max(1, accounts().length) + 4} width={props.width}>
     <text wrapMode="none">
       <Show when={tokenSet()} fallback={<S fg={theme.warning}>Set JASKMONEY_UP_TOKEN to enable sync</S>}>
         <Show when={!data.state.upSyncing} fallback={<S fg={theme.peach}>Syncing…</S>}>
@@ -176,6 +176,29 @@ function UpPane(props: { focused: boolean }) {
         ]} />
       }}</For>
     </Show>
+  </SectionCard>
+}
+
+/** AI models: which key each provider uses (masked) and where it comes from,
+ * and what it powers. The keys themselves are never rendered. */
+function AiPane(props: { focused: boolean; width?: `${number}%` }) {
+  const active = () => ui.state.settingsActive && ui.state.settingsSection === "ai"
+  const keys = () => data.state.apiKeys
+  const from = (source: "saved" | "env" | null) => (source === "saved" ? "saved in Settings" : source === "env" ? "from .env" : "")
+  const rows = () => [
+    { name: "Jev", by: "TypeSafe", key: keys().JASKMONEY_JEV_TOKEN, uses: "suggestions · ask: · smart search" },
+    { name: "Clairic", by: "Workers AI", key: keys().JASKMONEY_CF_TOKEN.source && keys().JASKMONEY_CF_ACCOUNT_ID.source ? keys().JASKMONEY_CF_TOKEN : { source: null, mask: "" }, uses: "smart search" },
+  ]
+  return <SectionCard title="AI models" focused={props.focused} active={active()} height={rows().length + 2} width={props.width}>
+    <For each={rows()}>{(row, i) => {
+      const set = () => !!row.key.source
+      return <ListRow cursor={active() && ui.state.aiCursor === i()} bg={theme.canvas} spans={[
+        { text: set() ? "● " : "○ ", fg: set() ? theme.success : theme.overlay1 },
+        { text: fit(`${row.name} (${row.by})`, 22), fg: theme.text },
+        { text: set() ? `${row.key.mask}  ${from(row.key.source)}` : "no key · enter to add", fg: set() ? theme.subtext0 : theme.warning },
+        { text: `  · ${row.uses}`, fg: theme.overlay1 },
+      ]} />
+    }}</For>
   </SectionCard>
 }
 
@@ -303,10 +326,11 @@ const EDITOR_HINTS: Record<FormField["kind"], string> = {
   choice: "↑↓ field · ←→ change · enter save · esc cancel",
   toggle: "↑↓ field · ←→ change · enter save · esc cancel",
   picker: "↑↓ field · enter choose · esc cancel",
+  secret: "paste or type · backspace · ctrl+u clear · enter save · esc cancel",
 }
 
 function ConfirmOverlay() {
-  const prompt = (confirm: NonNullable<typeof ui.state.settingsConfirm>) => confirm.kind === "clearData" ? "Clear all transaction and import data?" : confirm.kind === "clearAccount" ? `Clear transactions for ${confirm.label}?` : confirm.kind === "deleteAccount" ? `Remove ${confirm.label} and its transactions?` : confirm.kind === "budget" ? `Delete ${confirm.label}?` : confirm.kind === "desyncAccount" ? `Stop syncing ${confirm.label}? Its transactions are removed; switch sync back on to re-fetch them.` : `Delete ${confirm.label}?`
+  const prompt = (confirm: NonNullable<typeof ui.state.settingsConfirm>) => confirm.kind === "clearData" ? "Clear all transaction and import data?" : confirm.kind === "clearAccount" ? `Clear transactions for ${confirm.label}?` : confirm.kind === "deleteAccount" ? `Remove ${confirm.label} and its transactions?` : confirm.kind === "budget" ? `Delete ${confirm.label}?` : confirm.kind === "apiKey" ? `Remove the saved ${confirm.label} key? A key in .env, if any, is used instead.` : confirm.kind === "desyncAccount" ? `Stop syncing ${confirm.label}? Its transactions are removed; switch sync back on to re-fetch them.` : `Delete ${confirm.label}?`
   return <Show when={ui.state.settingsConfirm}>{(confirm: () => NonNullable<typeof ui.state.settingsConfirm>) => <Modal title="Confirm" tone="error" width={64} hints="del confirm · esc cancel"><text fg={theme.text}>{prompt(confirm())}</text></Modal>}</Show>
 }
 
@@ -320,8 +344,8 @@ export function SettingsTab(props: { focused: SectionId }) {
   const taxonomyFocused = () => props.focused === "set.categories" || props.focused === "set.tags"
   const databaseFocused = () => props.focused === "set.database"
   return <box width="100%" height="100%" flexDirection={layout() === "wide" ? "row" : "column"} gap={1} backgroundColor={theme.canvas}>
-    <box width={layout() === "wide" ? "55%" : "100%"} flexShrink={layout() === "wide" ? 0 : 1} height="100%" flexDirection="column" gap={1}><TaxonomyPane focused={taxonomyFocused()} narrow={layout() === "narrow"} height={layout() === "wide" ? undefined : "45%"} /><BudgetsPane focused={props.focused === "set.budgets"} /><Show when={layout() !== "wide"}><RulesPane focused={props.focused === "set.rules"} /></Show><Show when={layout() === "narrow"}><FiltersPane focused={props.focused === "set.filters"} /></Show></box>
-    <box flexGrow={1} flexShrink={1} minWidth={0} height="100%" flexDirection="column" gap={1}><Show when={layout() === "wide"}><RulesPane focused={props.focused === "set.rules"} /></Show><Show when={layout() !== "narrow"}><FiltersPane focused={props.focused === "set.filters"} /></Show><UpPane focused={props.focused === "set.up"} /><DatabasePane focused={databaseFocused()} /><ImportHistory /></box>
+    <box width={layout() === "wide" ? "55%" : "100%"} flexShrink={layout() === "wide" ? 0 : 1} height="100%" flexDirection="column" gap={1}><TaxonomyPane focused={taxonomyFocused()} narrow={layout() === "narrow"} height={layout() === "wide" ? undefined : "45%"} /><BudgetsPane focused={props.focused === "set.budgets"} /><Show when={layout() === "wide"}><AiPane focused={props.focused === "set.ai"} /></Show><Show when={layout() !== "wide"}><RulesPane focused={props.focused === "set.rules"} /></Show><Show when={layout() === "narrow"}><FiltersPane focused={props.focused === "set.filters"} /></Show></box>
+    <box flexGrow={1} flexShrink={1} minWidth={0} height="100%" flexDirection="column" gap={1}><Show when={layout() === "wide"}><RulesPane focused={props.focused === "set.rules"} /></Show><Show when={layout() !== "narrow"}><FiltersPane focused={props.focused === "set.filters"} /></Show><Show when={layout() === "wide"} fallback={<box flexDirection="row" gap={1} width="100%" flexShrink={0}><UpPane focused={props.focused === "set.up"} width="50%" /><AiPane focused={props.focused === "set.ai"} width="50%" /></box>}><UpPane focused={props.focused === "set.up"} /></Show><DatabasePane focused={databaseFocused()} /><ImportHistory /></box>
     <ImportOverlay />
     <FactoryResetOverlay />
     {/* Last, so a confirmation armed from a dialog shows over it. */}

@@ -55,3 +55,10 @@ describe("Workers AI client", () => {
     await expect(ai.clairic({ q: { type: "text" } }, "s", "2026-10-27")).rejects.toThrow("timed out")
   })
 })
+
+test("Cloudflare's errors read plainly", async () => {
+  const { plainError } = await import("./workersAi")
+  expect(plainError("AiError: AiError: you have used up your daily free allocation of 10,000 neurons, please upgrade to Cloudflare's Workers Paid plan")).toBe("Cloudflare's free daily allowance is used up (it resets each day)")
+  expect(plainError("AiError: AiError: bad input")).toBe("bad input")
+  expect(plainError("plain")).toBe("plain")
+})

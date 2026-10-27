@@ -103,7 +103,7 @@ export const FLOWS = {
 } as const
 export type Flow = keyof typeof FLOWS
 
-/** Questions about a search query (the state): the period, the kind of
+/** Questions about a search query (the state, `search`): the period, the kind of
  * money, whether it names a payee, and which of the user's categories it
  * comes closest to (used only to break ties between named categories). */
 export function searchQuestions(categories: Category[]): Record<string, JevQuestion> {
@@ -115,9 +115,50 @@ export function searchQuestions(categories: Category[]): Record<string, JevQuest
     criteria[`c${c.id}`] = parent ? `${parent.name} › ${c.name}` : c.name
   }
   return {
-    period: { type: "choice", instructions: "Which period does the search ask about?", criteria: { ...PERIODS } },
-    flow: { type: "choice", instructions: "What kind of money is asked about?", criteria: { ...FLOWS } },
-    names_payee: { type: "noul", instructions: "Does the search name a particular shop, merchant, company, app or person, rather than a kind of thing or spending?" },
-    category: { type: "choice", instructions: "Which category does the search ask about?", criteria },
+    period: { type: "choice", instructions: "Which period does `search` ask about?", criteria: { ...PERIODS } },
+    flow: { type: "choice", instructions: "What kind of money does `search` ask about?", criteria: { ...FLOWS } },
+    names_payee: { type: "noul", instructions: "Does `search` name a particular shop, merchant, company, app or person, rather than a kind of thing or spending?" },
+    category: { type: "choice", instructions: "Which category does `search` ask about?", criteria },
   }
+}
+
+/** Amounts written in a search: "$5", "30", "20+". */
+export function searchNumbers(query: string): string[] {
+  return [...query.matchAll(/\$?\d+(?:\.\d+)?\+?/g)].map((m) => m[0])
+}
+
+/** Every run of one to four words without a number in it: the candidates
+ * for what a search names, when Clairic can't say. */
+export function searchPhrases(query: string): string[] {
+  const words = query.split(/\s+/).map((w) => w.replace(/[?,.!]+$/, "")).filter((w) => w && !/\d/.test(w))
+  const out = new Set<string>()
+  for (let i = 0; i < words.length; i++) for (let n = 1; n <= 4 && i + n <= words.length; n++) out.add(words.slice(i, i + n).join(" "))
+  return [...out]
+}
+
+/** Each number's role (Jev read all 25 tuning searches' amounts right;
+ * Clairic sometimes invented amounts), and which phrase names what the search
+ * is for (the fallback for words: 15 of 25 right, so Clairic goes first). */
+export function searchTermQuestions(query: string): Record<string, JevQuestion> {
+  const questions: Record<string, JevQuestion> = {}
+  searchNumbers(query).forEach((n, i) => {
+    questions[`amount${i}`] = {
+      type: "choice",
+      instructions: `What does "${n}" mean in \`search\`?`,
+      criteria: {
+        at_least: "The least amount of money wanted: over, more than, at least, or a number followed by +",
+        at_most: "The most money wanted: under, less than, up to, at most",
+        not_amount: "Not an amount of money: part of a date, a period or a count",
+      },
+    }
+  })
+  const phrases = searchPhrases(query)
+  if (phrases.length) {
+    questions.phrase = {
+      type: "choice",
+      instructions: "Which words in `search` name what it looks for: a shop, a person, or a kind of thing bought or received?",
+      criteria: { ...Object.fromEntries(phrases.map((p, i) => [`p${i}`, `"${p}"`])), none: "Nothing in particular is named, only amounts, dates or periods" },
+    }
+  }
+  return questions
 }

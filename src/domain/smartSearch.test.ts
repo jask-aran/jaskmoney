@@ -3,7 +3,7 @@ import type { JevAnswer } from "../ai/jev"
 import type { ClairicAnswer } from "../ai/workersAi"
 import { parseFilterStrict } from "./filter"
 import { categoriesNamed, parsedSearch, periodBounds, searchFilter, smartSearch, type ParsedSearch } from "./smartSearch"
-import { searchQuestions } from "./questions"
+import { searchNumbers, searchPhrases, searchQuestions } from "./questions"
 import { category } from "../testing/fixtures"
 
 const categories = [
@@ -18,11 +18,13 @@ const ctx = { today: "2026-10-27", cycle, categories }
 const none: ParsedSearch = { words: null, ask: null, atLeast: null, atMost: null, from: null, to: null, period: "any", flow: "any", categoryId: null }
 
 const values = (v: Record<string, string | number | null>): Record<string, ClairicAnswer> =>
-  Object.fromEntries(["words", "at_least", "at_most", "from", "to"].map((id) => [id, { value: v[id] ?? null, confidence: 0.9 }]))
+  Object.fromEntries(["words", "from", "to"].map((id) => [id, { value: v[id] ?? null, confidence: 0.9 }]))
 const choice = (c: string): JevAnswer => ({ type: "choice", choice: c, probabilities: { [c]: 0.9 }, confidence: 0.8 })
-const answers = (a: { period?: string; flow?: string; payee?: number; category?: string }): Record<string, JevAnswer> => ({
+const answers = (a: { period?: string; flow?: string; payee?: number; category?: string; amounts?: string[]; phrase?: string }): Record<string, JevAnswer> => ({
   period: choice(a.period ?? "any"), flow: choice(a.flow ?? "any"),
   names_payee: { type: "noul", noul: a.payee ?? 0 }, category: choice(a.category ?? "none"),
+  ...Object.fromEntries((a.amounts ?? []).map((role, i) => [`amount${i}`, choice(role)])),
+  ...(a.phrase ? { phrase: choice(a.phrase) } : {}),
 })
 
 describe("smart search", () => {
@@ -31,32 +33,42 @@ describe("smart search", () => {
     expect(q.type === "choice" && q.criteria).toEqual({ none: "No category is named", c1: "Good Life", c2: "Good Life › Restaurants & Cafes", c3: "Good Life › Takeaway", c4: "Groceries" })
   })
 
-  test("words name a category, a payee, or something for Clef to judge rows by", () => {
-    const parse = (words: string, a: Parameters<typeof answers>[0] = {}) => parsedSearch(values({ words }), answers(a), categories)
+  test("words name a category, a payee, or something for Jev to judge rows by", () => {
+    const parse = (words: string, a: Parameters<typeof answers>[0] = {}) => parsedSearch(values({ words }), answers(a), categories, words)
     // Every word is a whole word of one category's name.
     expect(parse("groceries")).toMatchObject({ words: null, ask: null, categoryId: 4 })
     expect(parse("restaurants")).toMatchObject({ categoryId: 2 })
     // A payee is found in the description, even when it reads like a category.
     expect(parse("amazon", { payee: 0.7 })).toMatchObject({ words: "amazon", ask: null, categoryId: null })
     expect(parse("groceries", { payee: 0.9 })).toMatchObject({ words: "groceries", categoryId: null })
-    // A kind of thing no category names: Clef judges.
+    // A kind of thing no category names: Jev judges rows.
     expect(parse("coffee", { category: "c2" })).toMatchObject({ words: null, ask: "coffee", categoryId: null })
     expect(parse("eating out")).toMatchObject({ ask: "eating out", categoryId: null })
-    // No words, no category, whatever Clef picked.
-    expect(parsedSearch(values({}), answers({ category: "c2" }), categories)).toMatchObject({ words: null, ask: null, categoryId: null })
+    // No words, no category, whatever Jev picked.
+    expect(parsedSearch(values({}), answers({ category: "c2" }), categories, "")).toMatchObject({ words: null, ask: null, categoryId: null })
   })
 
-  test("several categories named: Clef's pick, else an exact name, else none", () => {
+  test("several categories named: Jev's pick, else an exact name, else none", () => {
     const tree = [...categories, category({ id: 5, name: "Life Admin" })]
     expect(categoriesNamed("life", tree).map((c) => c.id)).toEqual([1, 5])
-    expect(parsedSearch(values({ words: "life" }), answers({ category: "c5" }), tree)).toMatchObject({ categoryId: 5 })
-    expect(parsedSearch(values({ words: "life" }), answers({}), tree)).toMatchObject({ categoryId: null, ask: "life" })
-    expect(parsedSearch(values({ words: "good life" }), answers({}), tree)).toMatchObject({ categoryId: 1 })
+    expect(parsedSearch(values({ words: "life" }), answers({ category: "c5" }), tree, "life")).toMatchObject({ categoryId: 5 })
+    expect(parsedSearch(values({ words: "life" }), answers({}), tree, "life")).toMatchObject({ categoryId: null, ask: "life" })
+    expect(parsedSearch(values({ words: "good life" }), answers({}), tree, "good life")).toMatchObject({ categoryId: 1 })
   })
 
-  test("equal bounds are one phrase read both ways: the lower bound stays", () => {
-    expect(parsedSearch(values({ at_least: 20, at_most: 20 }), answers({}), categories)).toMatchObject({ atLeast: 20, atMost: null })
-    expect(parsedSearch(values({ at_least: 5, at_most: 30 }), answers({}), categories)).toMatchObject({ atLeast: 5, atMost: 30 })
+  test("amounts are the query's numbers in the roles Jev gives them; numbers in dates are not amounts", () => {
+    expect(searchNumbers("bunnings between $50 and $200+ on 3 March")).toEqual(["$50", "$200+", "3"])
+    const parse = (query: string, amounts: string[]) => parsedSearch(values({}), answers({ amounts }), categories, query)
+    expect(parse("bunnings between $50 and $200", ["at_least", "at_most"])).toMatchObject({ atLeast: 50, atMost: 200 })
+    expect(parse("amazon $20+", ["at_least"])).toMatchObject({ atLeast: 20, atMost: null })
+    expect(parse("flights between 1 March and 20 April", ["not_amount", "not_amount"])).toMatchObject({ atLeast: null, atMost: null })
+  })
+
+  test("without Clairic, the words are Jev's pick of the query's phrases (or none)", () => {
+    expect(searchPhrases("uber eats under 30, this cycle")).toEqual(["uber", "uber eats", "uber eats under", "uber eats under this", "eats", "eats under", "eats under this", "eats under this cycle", "under", "under this", "under this cycle", "this", "this cycle", "cycle"])
+    const phrases = searchPhrases("uber eats under 30 this cycle")
+    expect(parsedSearch(null, answers({ phrase: `p${phrases.indexOf("uber eats")}`, payee: 0.8 }), categories, "uber eats under 30 this cycle")).toMatchObject({ words: "uber eats" })
+    expect(parsedSearch(null, answers({ phrase: "none" }), categories, "anything over $500")).toMatchObject({ words: null, ask: null })
   })
 
   test("periods are worked out here, cycles from the budget cycle", () => {
@@ -93,12 +105,19 @@ describe("smart search", () => {
   test("asks both models once each, and falls back to the query as words when nothing comes back", async () => {
     const calls: string[] = []
     const ai = {
-      clairic: async () => { calls.push("clairic"); return values({ words: "coffee", at_least: 5 }) },
-      jev: { judge: async () => { calls.push("jev"); return answers({ flow: "spending", period: "last_month" }) } },
+      clairic: async () => { calls.push("clairic"); return values({ words: "coffee" }) },
+      jev: { judge: async () => { calls.push("jev"); return answers({ flow: "spending", period: "last_month", amounts: ["at_least"] }) } },
     }
     expect((await smartSearch(ai, "coffee over $5 last month", ctx)).expr).toBe('ask:"coffee" AND type:spending AND amt:<=-5 AND date:2026-09-01..2026-09-30')
     expect(calls.sort()).toEqual(["clairic", "jev"])
     const empty = { clairic: async () => values({}), jev: { judge: async () => answers({}) } }
     expect((await smartSearch(empty, "hmm", ctx)).expr).toBe('desc:"hmm"')
+  })
+
+  test("Clairic failing or missing doesn't stop the search: Jev's phrase stands in, and the reason is reported", async () => {
+    const jev = { judge: async () => answers({ phrase: "p0", amounts: ["at_least"], flow: "spending" }) }
+    const down = await smartSearch({ clairic: async () => { throw new Error("daily allowance used up") }, jev }, "coffee over $5", ctx)
+    expect(down).toMatchObject({ expr: 'ask:"coffee" AND type:spending AND amt:<=-5', clairic: "daily allowance used up" })
+    expect((await smartSearch({ jev }, "coffee over $5", ctx)).clairic).toBe("no Workers AI key")
   })
 })
