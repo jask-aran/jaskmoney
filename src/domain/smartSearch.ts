@@ -3,7 +3,7 @@ import type { ClairicAnswer, ClairicField, WorkersAiClient } from "../ai/workers
 import { cycleFor, type CycleConfig } from "./budget"
 import { addDays, addMonths } from "./days"
 import { categoryTerm } from "./drill"
-import { anyOf, filterTerm } from "./filter"
+import { anyOf, filterTerm, textContains } from "./filter"
 import { FLOWS, PERIODS, searchNumbers, searchPhrases, searchQuestions, searchTermQuestions, type Flow, type Period } from "./questions"
 import type { Category } from "./types"
 
@@ -30,9 +30,6 @@ export const SEARCH_FIELDS: Record<string, ClairicField> = {
 export interface ParsedSearch {
   /** Description words (a payee). */
   words: string | null
-  /** The real descriptions the payee words stand for, when they are not
-   * written as the descriptions write them ("Mcdonalds" for "McDonald's"). */
-  payeeMatches?: string[]
   /** Words for Jev to judge rows by (a kind of thing). */
   ask: string | null
   atLeast: number | null
@@ -92,27 +89,13 @@ export function parsedSearch(values: Record<string, ClairicAnswer> | null, answe
   }
 }
 
-/** Lower-case letters and digits only: "McDonald's" and "Mcdonalds" agree. */
-const squash = (s: string) => s.toLowerCase().replace(/[^a-z0-9]+/g, "")
-
-/** At most this many descriptions a payee's words may stand for; more, and
- * the words are too vague to list (Jev judges rows instead). */
-const PAYEE_MATCHES = 5
-
 /**
- * Payee words as the descriptions write them. Words found in a description
- * as typed stay; otherwise the descriptions that contain them once case,
- * spacing and punctuation are ignored stand in ("Mcdonalds" finds
- * "McDonald's"); with none (or too many), the words go to Jev as `ask:`,
- * which knows "Maccas" is McDonald's.
+ * Payee words no description contains (as `desc:` matches, so "Mcdonalds"
+ * finds "McDonald's") go to Jev as `ask:` instead, which knows "Maccas" is
+ * McDonald's.
  */
 export function snapPayee(p: ParsedSearch, descriptions: string[]): ParsedSearch {
-  if (!p.words) return p
-  const words = p.words.toLowerCase()
-  if (descriptions.some((d) => d.toLowerCase().includes(words))) return p
-  const key = squash(p.words)
-  const matches = key ? [...new Set(descriptions.filter((d) => squash(d).includes(key)))] : []
-  if (matches.length && matches.length <= PAYEE_MATCHES) return { ...p, payeeMatches: matches.sort() }
+  if (!p.words || descriptions.some((d) => textContains(d, p.words!))) return p
   return { ...p, words: null, ask: p.words }
 }
 
@@ -145,7 +128,7 @@ export function periodBounds(p: Pick<ParsedSearch, "period" | "from" | "to">, to
  * money in of at least $5, or either. */
 export function searchFilter(p: ParsedSearch, ctx: { today: string; cycle: CycleConfig; categories: Category[] }): string {
   const terms: string[] = []
-  if (p.words) terms.push(p.payeeMatches?.length ? anyOf(p.payeeMatches.map((d) => filterTerm("desc", d))) : filterTerm("desc", p.words))
+  if (p.words) terms.push(filterTerm("desc", p.words))
   if (p.ask) terms.push(filterTerm("ask", p.ask))
   if (p.categoryId != null) {
     const category = ctx.categories.find((c) => c.id === p.categoryId)

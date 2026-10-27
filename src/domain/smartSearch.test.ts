@@ -122,14 +122,12 @@ describe("smart search", () => {
   })
 })
 
-describe("payee words as the descriptions write them", () => {
+describe("payee words no description has", () => {
   const parsed = (words: string): ParsedSearch => ({ words, ask: null, atLeast: null, atMost: null, from: null, to: null, period: "any", flow: "any", categoryId: null })
-  test("words found as typed stay; otherwise punctuation and spacing are ignored; nothing found goes to Jev", () => {
-    const descriptions = ["McDonald's", "Uber Eats", "UBER *TRIP", "Coles Riverbend", "Coles Bayton"]
+  test("stay as desc: when a description has them (punctuation aside); otherwise go to Jev", () => {
+    const descriptions = ["McDonald's", "Uber Eats", "UBER *TRIP"]
     expect(snapPayee(parsed("uber eats"), descriptions)).toEqual(parsed("uber eats"))
-    expect(snapPayee(parsed("Mcdonalds"), descriptions)).toMatchObject({ words: "Mcdonalds", payeeMatches: ["McDonald's"] })
-    expect(searchFilter(snapPayee(parsed("Mcdonalds"), descriptions), ctx)).toBe(`desc:"McDonald's"`)
+    expect(searchFilter(snapPayee(parsed("Mcdonalds"), descriptions), ctx)).toBe('desc:"Mcdonalds"')
     expect(snapPayee(parsed("maccas"), descriptions)).toMatchObject({ words: null, ask: "maccas" })
-    expect(snapPayee(parsed("ubertrip"), descriptions)).toMatchObject({ payeeMatches: ["UBER *TRIP"] })
   })
 })

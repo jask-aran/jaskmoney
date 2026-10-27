@@ -94,3 +94,34 @@ test("type:spending and type:income follow the money rules while debit and credi
   expect(evalFilter(parseFilterStrict("type:debit").node, { ...base, excluded: true, tagNames: ["IGNORE"] })).toBe(true)
   expect(evalFilter(parseFilterStrict("type:credit").node, { ...base, amount: 10, excluded: true, tagNames: ["IGNORE"] })).toBe(true)
 })
+
+describe("text matching ignores case, spacing and punctuation (approved deviation from legacy's plain substring)", () => {
+  const row = (description: string, notes = ""): FilterTxn => ({ ...base, description, notes })
+  const matches = (expr: string, description: string, notes = "") => evalFilter(parseFilterStrict(expr).node, row(description, notes))
+
+  test("desc:, note: and bare words find the bank's spelling", () => {
+    for (const q of ["desc:mcdonalds", 'desc:"Mc Donalds"', "desc:mcdonald's", "mcdonalds"]) expect(matches(q, "McDonald's")).toBe(true)
+    expect(matches("desc:ubertrip", "UBER *TRIP Sydney")).toBe(true)
+    expect(matches("note:kestrelram", "Corner Bar", "Kestrel RAM!")).toBe(true)
+    // Everything legacy matched still matches.
+    expect(matches('desc:"coffee shop"', "The Coffee Shop")).toBe(true)
+  })
+
+  test("letters stay in order: no scattered (picker-style) matches", () => {
+    expect(matches("desc:bp", "Bunnings Warehouse")).toBe(false)
+    expect(matches("desc:mcd", "McDonald's")).toBe(true)
+    expect(matches("desc:donaldmc", "McDonald's")).toBe(false)
+  })
+
+  test("other scripts and accents are letters; a needle of only punctuation matches as written", () => {
+    expect(matches("desc:茶馆", "Tea House 茶馆")).toBe(true)
+    expect(matches("desc:cafe", "Café Rio")).toBe(false)
+    expect(matches("desc:café", "CAFÉ Rio")).toBe(true)
+    expect(matches('desc:"*"', "UBER *TRIP")).toBe(true)
+    expect(matches('desc:"*"', "Coles")).toBe(false)
+  })
+
+  test("exact fields stay exact", () => {
+    expect(evalFilter(parseFilterStrict('cat:"Trans port"').node, base)).toBe(false)
+  })
+})

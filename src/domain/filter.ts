@@ -153,12 +153,12 @@ function verdict3<T extends FilterTxn>(node: FilterNode | null, t: T, ask: AskVe
   const children = node.children ?? []
   switch (node.kind) {
     case "text": {
-      const needle = (node.value ?? "").trim().toLowerCase()
-      if (!needle) return true
-      if (t.description.toLowerCase().includes(needle)) return true
+      const needle = node.value ?? ""
+      if (!needle.trim()) return true
+      if (textContains(t.description, needle)) return true
       if (node.op === "contains_meta") {
-        if (t.categoryName.toLowerCase().includes(needle)) return true
-        if (t.tagNames.some((tg) => tg.toLowerCase().includes(needle))) return true
+        if (textContains(t.categoryName, needle)) return true
+        if (t.tagNames.some((tg) => textContains(tg, needle))) return true
       }
       return false
     }
@@ -202,13 +202,42 @@ export function hasDateTerm(node: FilterNode | null): boolean {
   return (node.children ?? []).some(hasDateTerm)
 }
 
+/** Case, spacing and punctuation dropped; letters (any script) and digits kept. */
+const squash = (s: string) => s.toLowerCase().replace(/[\s\p{P}\p{S}]+/gu, "")
+/** Squashed text by original, since the same descriptions are matched on every keystroke. */
+const squashed = new Map<string, string>()
+const squashCached = (s: string) => {
+  let v = squashed.get(s)
+  if (v === undefined) {
+    if (squashed.size > 50_000) squashed.clear()
+    v = squash(s)
+    squashed.set(s, v)
+  }
+  return v
+}
+
+/**
+ * Whether `text` contains `needle`, ignoring case, spacing and punctuation:
+ * "mcdonalds", "Mc Donalds" and "mcdonald's" all find "McDonald's". The
+ * letters must still appear in order (not scattered, as a picker's fuzzy
+ * match allows): rules use this too, and must not catch stray rows.
+ * Approved deviation from legacy (Go filter.go: case-insensitive substring
+ * only), 2026-10-27; it matches everything legacy did, and more. A needle
+ * with no letters or digits ("*") is matched as written.
+ */
+export function textContains(text: string, needle: string): boolean {
+  const n = squash(needle)
+  if (!n) return text.toLowerCase().includes(needle.trim().toLowerCase())
+  return squashCached(text).includes(n)
+}
+
 function evalField(node: FilterNode, t: FilterTxn): boolean {
   const field = (node.field ?? "").toLowerCase()
   switch (field) {
     case "desc":
-      return t.description.toLowerCase().includes((node.value ?? "").toLowerCase())
+      return textContains(t.description, node.value ?? "")
     case "note":
-      return t.notes.toLowerCase().includes((node.value ?? "").toLowerCase())
+      return textContains(t.notes, node.value ?? "")
     case "cat":
       return eqFold(t.categoryName, node.value ?? "")
     case "acc":
