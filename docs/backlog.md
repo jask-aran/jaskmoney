@@ -61,7 +61,7 @@ committed; note the commit.
 - [x] **4. Steady cursor.** When re-suggesting reorders the Uncategorised
   view, keep the cursor on the same transaction (or hold the order until it
   moves).
-- [ ] **7. Subscriptions on the Overview.** From the regular-payments
+- [x] **7. Subscriptions on the Overview.** From the regular-payments
   detector: total per month, price changes, next charge, ones that stopped.
 - [x] **8. Split dataStore.ts** (about 1,100 lines): AI suggestions, tag
   review and Up pushes into their own modules.

@@ -20,7 +20,9 @@ import { accountRole } from "../../domain/types"
 import { MONTHS, addDays, appNow, appToday } from "../../domain/days"
 import { isSpending, isUncategorised, isUnsortedIn } from "../../domain/moneyRules"
 import { CUSTOM_CHIP, LOOKBACKS, PERIODS, PERIOD_LABEL, comparisonWindows, filterByTimeframe, offsetLabel, periodOffset } from "../../domain/timeframe"
-import { fit } from "../text"
+import { count, fit, shortDate } from "../text"
+import { StyledLine, type StyledSpan } from "../primitives/StyledLine"
+import { monthlyTotal, subscriptions, type Subscription } from "../../domain/subscriptions"
 import { allCategoryLines, overviewRange } from "../../state/overviewRange"
 import { AXIS_GUESS, ChartBody, axisWidth, type ChartModel } from "../charts/ChartBody"
 import { INKS, balancesChart, cashFlowChart, spendingChart, type PeriodNames } from "./periodCharts"
@@ -78,6 +80,10 @@ export function OverviewTab(props: { focused: SectionId }) {
   const previousFlows = live(() => computePeriodFlows(data.state.accounts, inPrevious(), scopeIds()))
   const groups = () => range().groups
   const calendar = live(() => spendingCalendar(inPeriod(), bounds().start, bounds().end, data.state.weekStart))
+  // Regular payments now, from the scope's whole history (no range).
+  // Built only while a pane shows it.
+  const subsShown = () => ui.state.chartViews.some((i) => CHART_VIEWS[i]?.view === "Subscriptions")
+  const subs = live(() => subsShown() ? subscriptions(data.transactions().filter((t) => t.accountId != null && scopeIds().has(t.accountId)), today()) : [])
   const series = createMemo(() => dailySpendSeries(inPeriod(), bounds().start, bounds().end))
 
   // Now: point-in-time figures, whatever the range.
@@ -160,7 +166,7 @@ export function OverviewTab(props: { focused: SectionId }) {
       const width = Math.max(1, mainWidth() - 4 - axis)
       if (v === "Daily" || v === "Cumulative" || v === "Weekly") return spendingChart(v, series(), width, rows, today(), spending(), budget()?.budget.amount, periodNames(), data.state.weekStart)
       if (v === "Cash flow") return cashFlowChart(series().dates, width, rows, today(), data.state.accounts, data.transactions(), scopeIds(), data.state.weekStart)
-      if (v === "Calendar") return null
+      if (v === "Calendar" || v === "Subscriptions") return null
       return balancesChart(v, series().dates, width, rows, today(), data.state.accounts, data.transactions(), data.state.weekStart, data.state.uiPrefs.zeroAxis === true)
     }
     const guess = axisWas[slot]
@@ -318,12 +324,14 @@ export function OverviewTab(props: { focused: SectionId }) {
         titleSuffix={view().group === view().view ? undefined : `· ${view().view}`}
         titleSuffixColor={theme.subtext0}
         titleRight={viewPicker(index())}
-        bottomSpans={chart()?.legend ?? calendarLegend(calendar(), today())}
+        bottomSpans={chart()?.legend ?? (view().view === "Subscriptions" ? subscriptionsLegend(subs()) : calendarLegend(calendar(), today()))}
         width={mainWidth()}
         height={p.height}
         focused={props.focused === (p.pane === 0 ? "ov.chart" : "ov.chart2")}
       >
-        <Show when={chart()} fallback={<CalendarView weeks={calendar()} width={mainWidth() - 4} rows={p.height - 2} today={today()} />}>
+        <Show when={chart()} fallback={view().view === "Subscriptions"
+          ? <SubscriptionsView list={subs()} width={mainWidth() - 4} rows={p.height - 2} today={today()} />
+          : <CalendarView weeks={calendar()} width={mainWidth() - 4} rows={p.height - 2} today={today()} />}>
           {(m: () => ChartModel) => <ChartBody model={m()} inks={INKS} baseline={baseline()} />}
         </Show>
       </SectionCard>
@@ -444,6 +452,61 @@ function calendarLegend(weeks: Array<Array<CalendarDay | null>>, today: string):
  * carry the day of the month; days after today are blank. Month labels on
  * top; the legend is in the pane's border (calendarLegend).
  */
+/** The Subscriptions view's legend: how many, what they cost a month, and
+ * what changed. */
+function subscriptionsLegend(list: Subscription[]): Span[] {
+  const active = list.filter((s) => !s.stopped)
+  const changed = active.filter((s) => s.change).length
+  const stopped = list.length - active.length
+  return [
+    { text: `${active.length} active · ${formatWholeMoney(monthlyTotal(list))} a month`, fg: theme.subtext0 },
+    ...(changed ? [{ text: ` · ${count(changed, "price change")}`, fg: theme.peach }] : []),
+    ...(stopped ? [{ text: ` · ${stopped} stopped`, fg: theme.overlay1 }] : []),
+  ]
+}
+
+const SUB_COLUMNS = { every: 12, charge: 10, month: 10, next: 11, change: 24 }
+
+/** Regular payments, one a line: what, how often, the latest charge, a
+ * month's worth, the next charge, and a price change. Stopped ones dimmed
+ * after the rest; more than fit end in "… N more". */
+function SubscriptionsView(props: { list: Subscription[]; width: number; rows: number; today: string }) {
+  const showChange = () => props.width >= 70
+  const nameWidth = () => Math.max(10, props.width - SUB_COLUMNS.every - SUB_COLUMNS.charge - SUB_COLUMNS.month - SUB_COLUMNS.next - (showChange() ? SUB_COLUMNS.change : 0))
+  const room = () => Math.max(0, props.rows - 1)
+  const shown = createMemo(() => props.list.length > room() ? props.list.slice(0, Math.max(0, room() - 1)) : props.list)
+  const more = () => props.list.length - shown().length
+  const line = (s: Subscription): StyledSpan[] => {
+    const dim = s.stopped
+    const due = s.stopped ? "stopped" : s.next < props.today ? "due" : shortDate(s.next)
+    return [
+      { text: fit(s.name, nameWidth()), fg: dim ? theme.overlay1 : theme.text },
+      { text: s.cadence.padStart(SUB_COLUMNS.every), fg: theme.overlay1 },
+      { text: formatMoney(s.amount).padStart(SUB_COLUMNS.charge), fg: dim ? theme.overlay1 : theme.text },
+      { text: formatMoney(s.monthly).padStart(SUB_COLUMNS.month), fg: dim ? theme.overlay1 : theme.subtext0 },
+      { text: due.padStart(SUB_COLUMNS.next), fg: s.stopped ? theme.overlay1 : s.next < props.today ? theme.yellow : theme.subtext0 },
+      ...(showChange() && s.change ? [{
+        text: `  ${s.change.to > s.change.from ? "▲" : "▼"} from ${formatMoney(s.change.from)} ${shortDate(s.change.since)}`.slice(0, SUB_COLUMNS.change),
+        fg: s.change.to > s.change.from ? theme.peach : theme.green,
+      }] : []),
+    ]
+  }
+  return (
+    <Show when={props.list.length} fallback={<text fg={theme.overlay1}>No regular payments found</text>}>
+      <StyledLine spans={[
+        { text: "Payment".padEnd(nameWidth()), fg: theme.subtext0, bold: true },
+        { text: "Every".padStart(SUB_COLUMNS.every), fg: theme.subtext0, bold: true },
+        { text: "Charge".padStart(SUB_COLUMNS.charge), fg: theme.subtext0, bold: true },
+        { text: "A month".padStart(SUB_COLUMNS.month), fg: theme.subtext0, bold: true },
+        { text: "Next".padStart(SUB_COLUMNS.next), fg: theme.subtext0, bold: true },
+        ...(showChange() ? [{ text: "  Change", fg: theme.subtext0, bold: true }] : []),
+      ]} />
+      <Index each={shown()}>{(s) => <StyledLine spans={line(s())} />}</Index>
+      <Show when={more() > 0}><text fg={theme.overlay1}>{`… ${more()} more`}</text></Show>
+    </Show>
+  )
+}
+
 function CalendarView(props: { weeks: Array<Array<CalendarDay | null>>; width: number; rows: number; today: string }) {
   // Rows: month labels, 7 weekday bands.
   const band = () => Math.max(1, Math.min(3, Math.floor((props.rows - 1) / 7)))

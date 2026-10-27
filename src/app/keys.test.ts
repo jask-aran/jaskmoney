@@ -3,7 +3,7 @@ import { describe, expect, test, beforeEach } from "bun:test"
 import { accountRows, accountStacks, spendingScope } from "../domain/accountTree"
 import { CUSTOM_CHIP, LOOKBACKS, PERIODS, applyChip } from "../domain/timeframe"
 import { handleKey, footerHints } from "./keys"
-import { ui } from "../state/uiStore"
+import { CHART_VIEWS, ui } from "../state/uiStore"
 import { data } from "../state/dataStore"
 import { loadTransactions, loadTransactionDetail, setTransactionNotes } from "../db/client"
 import { account, category, transaction } from "../testing/fixtures"
@@ -261,13 +261,14 @@ describe("key router", () => {
     handleKey(ui, key("l"), data)
     expect(ui.state.chartViews).toEqual([1, 4])
     handleKey(ui, key("h"), data)
+    // From the first view, h wraps to the last.
     handleKey(ui, key("h"), data)
-    expect(ui.state.chartViews).toEqual([7, 4])
+    expect(ui.state.chartViews).toEqual([CHART_VIEWS.length - 1, 4])
     handleKey(ui, key("l", { shift: true, sequence: "L" }), data)
-    expect(ui.state.chartViews).toEqual([7, 5])
+    expect(ui.state.chartViews).toEqual([CHART_VIEWS.length - 1, 5])
     ui.setState({ focusedSection: "ov.chart2" })
     handleKey(ui, key("h"), data)
-    expect(ui.state.chartViews).toEqual([7, 4])
+    expect(ui.state.chartViews).toEqual([CHART_VIEWS.length - 1, 4])
   })
 
   test("drill-down: enter on a category line opens its transactions; esc comes back", () => {

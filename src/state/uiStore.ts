@@ -257,6 +257,7 @@ export const CHART_VIEWS = [
   { view: "Available", group: "Balances" },
   { view: "Savers", group: "Balances" },
   { view: "Calendar", group: "Calendar" },
+  { view: "Subscriptions", group: "Subscriptions" },
 ] as const
 
 export const JUMP_TARGETS: Record<TabId, JumpTarget[]> = {

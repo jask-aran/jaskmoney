@@ -84,23 +84,35 @@ export function detectTrips(transactions: readonly Transaction[]): TagGroup[] {
   return trips.sort((a, b) => (b.start ?? "").localeCompare(a.start ?? "") || a.name.localeCompare(b.name))
 }
 
-const CADENCES = [
-  { name: "weekly", min: 5, max: 9 },
-  { name: "fortnightly", min: 12, max: 16 },
-  { name: "monthly", min: 26, max: 35 },
-  { name: "quarterly", min: 84, max: 97 },
-  { name: "yearly", min: 355, max: 375 },
+export interface RegularCharges {
+  name: string
+  cadence: Cadence
+  /** Oldest first. */
+  charges: Transaction[]
+}
+
+export interface Cadence { name: string; min: number; max: number; perMonth: number }
+
+const CADENCES: Cadence[] = [
+  { name: "weekly", min: 5, max: 9, perMonth: 52 / 12 },
+  { name: "fortnightly", min: 12, max: 16, perMonth: 26 / 12 },
+  { name: "monthly", min: 26, max: 35, perMonth: 1 },
+  { name: "quarterly", min: 84, max: 97, perMonth: 1 / 3 },
+  { name: "yearly", min: 355, max: 375, perMonth: 1 / 12 },
 ]
 
-function median(values: number[]): number {
+export function median(values: number[]): number {
   const sorted = [...values].sort((a, b) => a - b)
   const middle = Math.floor(sorted.length / 2)
   return sorted.length % 2 ? (sorted[middle] ?? 0) : ((sorted[middle - 1] ?? 0) + (sorted[middle] ?? 0)) / 2
 }
 
-export function detectRecurring(transactions: readonly Transaction[]): TagGroup[] {
+/** Payments to one description at a steady cadence (3 or more, three
+ * quarters of the gaps in the cadence's range) and a steady amount (two
+ * thirds within 20% of the usual). Money in and payments to people aren't. */
+export function regularCharges(transactions: readonly Transaction[]): RegularCharges[] {
   const merchants = groupByDescription(transactions.filter((row) => !(row.amount >= 0 || (row.transactionType && PERSON_TO_PERSON.has(row.transactionType)))))
-  const regular: Array<{ name: string; cadence: string; charges: Transaction[] }> = []
+  const regular: RegularCharges[] = []
   for (const charges of merchants.values()) {
     if (charges.length < 3) continue
     charges.sort(byDate)
@@ -113,8 +125,13 @@ export function detectRecurring(transactions: readonly Transaction[]): TagGroup[
     if (!cadence) continue
     const amount = median(charges.map((row) => Math.abs(row.amount)))
     if (charges.filter((row) => Math.abs(Math.abs(row.amount) - amount) <= amount * 0.2).length / charges.length < 2 / 3) continue
-    regular.push({ name: latest.description.trim(), cadence: cadence.name, charges })
+    regular.push({ name: latest.description.trim(), cadence, charges })
   }
+  return regular
+}
+
+export function detectRecurring(transactions: readonly Transaction[]): TagGroup[] {
+  const regular = regularCharges(transactions).map(({ name, cadence, charges }) => ({ name, cadence: cadence.name, charges }))
   if (!regular.length) return []
   regular.sort((a, b) => a.name.localeCompare(b.name))
   return [{
