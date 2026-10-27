@@ -65,7 +65,7 @@ import { normaliseSelection, selectedAccounts, type AccountSelection } from "../
 import { paydays, type Budget, type BudgetScope, type CycleConfig } from "../domain/budget"
 import { buildImportPreview, commitImportPreview, matchingProfiles } from "../domain/profileImport"
 import { hasJev, jevClient, type JevClient } from "../ai/jev"
-import { CREDENTIAL_NAMES, credentialEnv, credentialSource, maskSecret, saveCredentials, type CredentialName } from "../ai/credentials"
+import { CREDENTIAL_NAMES, credentialEnv, credentialSource, maskSecret, saveCredentials, type CredentialName, NOT_SECRET } from "../ai/credentials"
 import { historySuggestions, jevSuggestions } from "../domain/suggest"
 import { isOrdinaryFlow, isUncategorised } from "../domain/moneyRules"
 import { createUpClient, readUpToken, UpApiError } from "../up/client"
@@ -73,7 +73,8 @@ import { PUSH_CONCURRENCY, pushTransactions } from "../up/push"
 import { count } from "../ui/text"
 import { ruleOffers, type RuleOffer } from "../domain/ruleOffers"
 import type { HistoryData } from "../domain/aiHistory"
-import { createLlm, type Llm } from "../ai/llm"
+import { createLlm, type Llm, type LlmProvider } from "../ai/llm"
+import { signedIn } from "../ai/oauthStore"
 import { writeRules } from "../ai/ruleWriter"
 import { detectRecurring, detectTrips } from "../domain/tagGroups"
 import { jevTagCandidates, knownTagCandidates, TAG_SHOW_AT, tagExamples, tagPool, type TagCandidate, type TagTarget } from "../domain/tagSuggest"
@@ -113,6 +114,8 @@ export interface DataState {
   tagReview: TagReview | null
   /** Where each API key comes from, masked (`maskSecret`); never the key. */
   apiKeys: Record<CredentialName, { source: "saved" | "env" | null; mask: string }>
+  /** Browser sign-ins to the general model's providers (oauth.json). */
+  signedIn: Record<LlmProvider, boolean>
   /** `ask:` terms also pass near misses (NEAR_AT up to MATCH_AT): on, off,
    * or null to decide by the counts (`showNearMisses`). */
   askLoose: boolean | null
@@ -174,10 +177,12 @@ function sortRows(rows: Transaction[], col: SortColumn, asc: boolean, confidence
   return rows.slice().sort((a, b) => (asc ? compare(a, b) : -compare(a, b)))
 }
 
+const loadSignedIn = (): Record<LlmProvider, boolean> => ({ openrouter: signedIn("openrouter"), openai: signedIn("openai") })
+
 /** Each API key's source and mask, read now. */
 function loadApiKeys(): DataState["apiKeys"] {
   const env = credentialEnv()
-  return Object.fromEntries(CREDENTIAL_NAMES.map((name) => [name, { source: credentialSource(name), mask: name === "JASKMONEY_LLM_MODEL" ? (env[name] ?? "") : maskSecret(env[name]) }])) as DataState["apiKeys"]
+  return Object.fromEntries(CREDENTIAL_NAMES.map((name) => [name, { source: credentialSource(name), mask: NOT_SECRET.has(name) ? (env[name] ?? "") : maskSecret(env[name]) }])) as DataState["apiKeys"]
 }
 
 /** Near misses show by themselves when they don't swamp the results: at
@@ -261,6 +266,7 @@ function createDataStore() {
     uncategorisedOnly: false,
     tagReview: null,
     apiKeys: loadApiKeys(),
+    signedIn: loadSignedIn(),
     askLoose: null,
     asking: null,
     dbPath: "",
@@ -1262,7 +1268,9 @@ function createDataStore() {
       ? { uncategorisedOnly: true, sortColumn: "confidence", sortAscending: false }
       : { uncategorisedOnly: false, ...(state.sortColumn === "confidence" ? { sortColumn: "date" as const, sortAscending: false } : {}) }),
     /** Save (or with null, remove) API keys entered in Settings. */
-    saveApiKeys: (patch: Partial<Record<CredentialName, string | null>>) => { saveCredentials(patch); setState({ apiKeys: loadApiKeys() }) },
+    saveApiKeys: (patch: Partial<Record<CredentialName, string | null>>) => { saveCredentials(patch); setState({ apiKeys: loadApiKeys(), signedIn: loadSignedIn() }) },
+    /** After a sign-in or sign-out. */
+    refreshApiKeys: () => setState({ apiKeys: loadApiKeys(), signedIn: loadSignedIn() }),
     askAbout,
     suggestCategories,
     resuggestLike,

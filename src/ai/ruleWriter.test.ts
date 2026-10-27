@@ -85,6 +85,6 @@ test("R opens the list with a key to ask, and a without a key says where to add 
   expect(ui.state.status).toBe("No rules offered yet · a asks the AI")
   testEnv("JASKMONEY_OPENROUTER_TOKEN", "")
   handleKey(ui, key("a"), data)
-  expect(ui.state.status).toBe("Add an OpenRouter key in Settings › AI models to ask for rules")
+  expect(ui.state.status).toBe("Add a key or sign in (OpenRouter or OpenAI) in Settings › AI models to ask for rules")
   handleKey(ui, key("escape"), data)
 })

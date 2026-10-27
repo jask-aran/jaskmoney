@@ -9,8 +9,15 @@ import { defaultSettingsConfigPath } from "../state/settingsConfig"
  * what is used. Values are never rendered: `maskSecret` shows the last four.
  */
 
-// JASKMONEY_LLM_MODEL isn't a secret, but is set beside the OpenRouter key.
-export const CREDENTIAL_NAMES = ["JASKMONEY_JEV_TOKEN", "JASKMONEY_CF_TOKEN", "JASKMONEY_CF_ACCOUNT_ID", "JASKMONEY_OPENROUTER_TOKEN", "JASKMONEY_LLM_MODEL"] as const
+// The general model's settings sit beside its keys: the models and the
+// provider in use aren't secrets (NOT_SECRET); JASKMONEY_LLM_MODEL is the
+// OpenRouter model's former name, still read.
+export const CREDENTIAL_NAMES = [
+  "JASKMONEY_JEV_TOKEN", "JASKMONEY_CF_TOKEN", "JASKMONEY_CF_ACCOUNT_ID",
+  "JASKMONEY_OPENROUTER_TOKEN", "JASKMONEY_OPENROUTER_MODEL", "JASKMONEY_LLM_MODEL",
+  "JASKMONEY_OPENAI_TOKEN", "JASKMONEY_OPENAI_MODEL", "JASKMONEY_LLM_PROVIDER",
+] as const
+export const NOT_SECRET: ReadonlySet<CredentialName> = new Set(["JASKMONEY_OPENROUTER_MODEL", "JASKMONEY_LLM_MODEL", "JASKMONEY_OPENAI_MODEL", "JASKMONEY_LLM_PROVIDER"])
 export type CredentialName = (typeof CREDENTIAL_NAMES)[number]
 type Saved = Partial<Record<CredentialName, string>>
 

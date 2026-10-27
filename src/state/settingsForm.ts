@@ -1,4 +1,4 @@
-import { DEFAULT_LLM_MODEL } from "../ai/llm"
+import { LLM_PROVIDERS, type LlmProvider } from "../ai/llm"
 import { parseTagScope } from "../domain/tagScope"
 import { describeCycle, type CycleAnchor, type CycleConfig, type CycleUnit } from "../domain/budget"
 import { budgetScopeOptions } from "../domain/budgetScopes"
@@ -127,7 +127,7 @@ export const EDITOR_TITLE: Record<SettingsEditorKind, string> = {
   cycle: "Budget cycle",
   jevKey: "Jev API key (TypeSafe)",
   workersAiKey: "Workers AI key (Cloudflare)",
-  openRouterKey: "OpenRouter key and model",
+  llmKey: "General model: key and model",
 }
 
 /** A secret as the form shows it: its length and last four, or a prompt. */
@@ -186,7 +186,7 @@ export function editorFields(kind: SettingsEditorKind, draft: Draft, ctx: Omit<F
       return cycleFields(draft)
     case "jevKey":
       return [{ key: "secret", label: "API key", kind: "secret", display: secretDisplay(draft.secret) }]
-    case "openRouterKey":
+    case "llmKey":
       return [
         { key: "secret", label: "API key", kind: "secret", display: secretDisplay(draft.secret) },
         { key: "model", label: "Model", kind: "text", display: draft.model },
@@ -223,7 +223,10 @@ export interface FormNote {
 /** The note for an editor, when it has one: a filter's or rule's live
  * status with its match count, or the budget cycle described. */
 export function editorNote(kind: SettingsEditorKind, draft: Draft, ctx: FormContext): FormNote | null {
-  if (kind === "openRouterKey") return { text: `Saved only for you (credentials.json); used before .env. Empty keeps the current key; an empty model means ${DEFAULT_LLM_MODEL}.`, tone: "muted" }
+  if (kind === "llmKey") {
+    const provider = LLM_PROVIDERS[(draft.provider || "openrouter") as LlmProvider]
+    return { text: `${provider.label}. Saved only for you (credentials.json); used before .env and a browser sign-in. Empty keeps the current key; an empty model means ${provider.defaultModel}.`, tone: "muted" }
+  }
   if (kind === "jevKey" || kind === "workersAiKey") {
     return { text: "Saved only for you (credentials.json); used before .env. Empty keeps the current key.", tone: "muted" }
   }

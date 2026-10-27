@@ -1,4 +1,5 @@
-import { llmModelId } from "../../ai/llm"
+import { activeLlmProvider, LLM_PROVIDERS, llmAuth, llmModelId, type LlmProvider } from "../../ai/llm"
+import { credentialEnv } from "../../ai/credentials"
 import { For, Show, createEffect, createMemo } from "solid-js"
 import { useTerminalDimensions } from "@opentui/solid"
 import { SectionCard } from "../primitives/SectionCard"
@@ -184,11 +185,25 @@ function UpPane(props: { focused: boolean; width?: `${number}%` }) {
 function AiPane(props: { focused: boolean; width?: `${number}%` }) {
   const active = () => ui.state.settingsActive && ui.state.settingsSection === "ai"
   const keys = () => data.state.apiKeys
-  const from = (source: "saved" | "env" | null) => (source === "saved" ? "saved in Settings" : source === "env" ? "from .env" : "")
+  const from = (source: "saved" | "env" | "browser" | null) => (source === "saved" ? "saved in Settings" : source === "env" ? "from .env" : source === "browser" ? "with the browser" : "")
+  // The general model's rows: a key first, else a browser sign-in; one of them is in use.
+  const general = (provider: LlmProvider) => {
+    const key = keys()[LLM_PROVIDERS[provider].keyName]
+    // Reads keys() and signedIn first, so the row follows saves and sign-ins.
+    const reachable = !!key.source || data.state.signedIn[provider]
+    const inUse = reachable && activeLlmProvider() === provider && llmAuth(provider) !== null
+    return {
+      name: "General", by: LLM_PROVIDERS[provider].label,
+      key: key.source ? key : data.state.signedIn[provider] ? { source: "browser" as const, mask: "signed in" } : { source: null, mask: "" },
+      uses: `${inUse ? "in use · " : ""}rules · ${llmModelId(credentialEnv(), provider)}`,
+      missing: "no key · enter key · o sign in",
+    }
+  }
   const rows = () => [
-    { name: "Jev", by: "TypeSafe", key: keys().JASKMONEY_JEV_TOKEN, uses: "suggestions · ask: · smart search" },
-    { name: "Clairic", by: "Workers AI", key: keys().JASKMONEY_CF_TOKEN.source && keys().JASKMONEY_CF_ACCOUNT_ID.source ? keys().JASKMONEY_CF_TOKEN : { source: null, mask: "" }, uses: "smart search" },
-    { name: "General", by: "OpenRouter", key: keys().JASKMONEY_OPENROUTER_TOKEN, uses: `rules · ${llmModelId()}` },
+    { name: "Jev", by: "TypeSafe", key: keys().JASKMONEY_JEV_TOKEN, uses: "suggestions · ask: · smart search", missing: "no key · enter to add" },
+    { name: "Clairic", by: "Workers AI", key: keys().JASKMONEY_CF_TOKEN.source && keys().JASKMONEY_CF_ACCOUNT_ID.source ? keys().JASKMONEY_CF_TOKEN : { source: null, mask: "" }, uses: "smart search", missing: "no key · enter to add" },
+    general("openrouter"),
+    general("openai"),
   ]
   return <SectionCard title="AI models" focused={props.focused} active={active()} height={rows().length + 2} width={props.width}>
     <For each={rows()}>{(row, i) => {
@@ -196,7 +211,7 @@ function AiPane(props: { focused: boolean; width?: `${number}%` }) {
       return <ListRow cursor={active() && ui.state.aiCursor === i()} bg={theme.canvas} spans={[
         { text: set() ? "● " : "○ ", fg: set() ? theme.success : theme.overlay1 },
         { text: fit(`${row.name} (${row.by})`, 22), fg: theme.text },
-        { text: set() ? `${row.key.mask}  ${from(row.key.source)}` : "no key · enter to add", fg: set() ? theme.subtext0 : theme.warning },
+        { text: set() ? `${row.key.mask}  ${from(row.key.source)}` : row.missing, fg: set() ? theme.subtext0 : theme.warning },
         { text: `  · ${row.uses}`, fg: theme.overlay1 },
       ]} />
     }}</For>

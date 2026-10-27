@@ -63,6 +63,7 @@ export type ScopeId =
   | "manager.accountAction"
   | "manager.acceptPreview"
   | "manager.ruleOffers"
+  | "llmSignIn"
   | "settings.factoryReset"
 
 export type SettingsList = "categories" | "tags"
@@ -74,7 +75,7 @@ export function settingsSectionFocus(section: SettingsSection, list: SettingsLis
   if (section === "taxonomy") return list === "categories" ? "set.categories" : "set.tags"
   return section === "rules" ? "set.rules" : section === "filters" ? "set.filters" : section === "up" ? "set.up" : section === "ai" ? "set.ai" : section === "budgets" ? "set.budgets" : "set.database"
 }
-export type SettingsEditorKind = "category" | "tag" | "filter" | "rule" | "budget" | "cycle" | "jevKey" | "workersAiKey" | "openRouterKey"
+export type SettingsEditorKind = "category" | "tag" | "filter" | "rule" | "budget" | "cycle" | "jevKey" | "workersAiKey" | "llmKey"
 export type ImportStage = "none" | "files" | "path" | "profile" | "profileEditor" | "preview"
 
 export interface JumpTarget {
@@ -175,8 +176,8 @@ export interface UiState {
     unit: CycleUnit; anchor: CycleAnchor; anchorDate: string; payEarly: boolean
     /** API key editors: the key as typed (never rendered), and Workers AI's account id. */
     secret: string; accountId: string
-    /** The general model's OpenRouter id (the OpenRouter editor). */
-    model: string
+    /** The general model's provider and model id (its key editor). */
+    provider: string; model: string
   }
   settingsConfirm: { kind: "category" | "tag" | "rule" | "filter" | "profile" | "clearData" | "clearAccount" | "deleteAccount" | "desyncAccount" | "budget" | "apiKey"; id: number | string; label: string } | null
   importStage: ImportStage
@@ -202,6 +203,9 @@ export interface UiState {
   smartQuestion: { question: string; expr: string } | null
   /** Accept-all's preview: the rows it would categorise, until confirmed. */
   acceptPreview: number[] | null
+  /** A browser sign-in to the general model's provider (app/llmSignIn): the
+   * address to open, what's happening, and the paste field when pi-ai asks. */
+  llmSignIn: { provider: "openrouter" | "openai"; url: string | null; message: string; paste: { message: string; value: string; caret: number } | null } | null
   /** R: rules offered from repeated categorisations; the cursor among them. */
   ruleOffersOpen: boolean
   ruleOfferCursor: number
@@ -323,7 +327,7 @@ function createUiStore() {
     settingsEditField: 0,
     settingsCaret: 0,
     formPicker: null,
-    settingsDraft: { name: "", color: "#94e2d5", categoryId: null, id: "", expr: "", savedFilterId: "", setCategoryId: null, addTagIds: [], notSpending: false, scopeKey: "overall", amount: "", unit: "month", anchor: "calendar", anchorDate: "", payEarly: false, secret: "", accountId: "", model: "" },
+    settingsDraft: { name: "", color: "#94e2d5", categoryId: null, id: "", expr: "", savedFilterId: "", setCategoryId: null, addTagIds: [], notSpending: false, scopeKey: "overall", amount: "", unit: "month", anchor: "calendar", anchorDate: "", payEarly: false, secret: "", accountId: "", provider: "", model: "" },
     settingsConfirm: null,
     importStage: "none",
     importDirectory: "",
@@ -346,6 +350,7 @@ function createUiStore() {
     acceptPreview: null,
     ruleOffersOpen: false,
     ruleOfferCursor: 0,
+    llmSignIn: null,
     factoryResetOpen: false,
     factoryResetDraft: "",
     factoryResetCaret: 0,
@@ -619,6 +624,7 @@ function createUiStore() {
     if (state.accountActionId != null) return "manager.accountAction"
     if (state.acceptPreview) return "manager.acceptPreview"
     if (state.ruleOffersOpen) return "manager.ruleOffers"
+    if (state.llmSignIn) return "llmSignIn"
     if (state.factoryResetOpen) return "settings.factoryReset"
     if (state.customEdit) return "overview.custom"
     if (state.activeTab === "overview") return state.focusedSection === "ov.range" ? "overview.range" : "overview"

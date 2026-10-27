@@ -11,6 +11,7 @@ import { Footer } from "../ui/primitives/Footer"
 import { JumpOverlay } from "../ui/primitives/JumpOverlay"
 import { CatPicker } from "../ui/primitives/CatPicker"
 import { TagChooser } from "../ui/primitives/TagChooser"
+import { SignInModal } from "../ui/primitives/SignInModal"
 import { TagPicker } from "../ui/primitives/TagPicker"
 import { OverviewTab } from "../ui/overview/OverviewTab"
 import { ManagerTab } from "../ui/manager/ManagerTab"
@@ -126,10 +127,11 @@ export function App() {
         text={ui.state.jumpMode ? "Jump mode · press target letter" : ui.state.status}
         isErr={!ui.state.jumpMode && ui.state.statusErr}
       />
-      <Footer hints={footerHints(ui.activeScope(), { focusedSection: ui.state.focusedSection, drillReturn: ui.state.drillReturn, chartViews: ui.state.chartViews, uncategorisedOnly: data.state.uncategorisedOnly, tagReview: !!data.state.tagReview, ruleOffers: ui.state.activeTab === "manager" ? data.allRuleOffers().length : 0, asks: !!data.askCounts(), askLoose: data.nearMissesShown(), recallQuestion: !!smartQuestionFor(ui.state, ui.state.filterDraft) })} />
+      <Footer hints={footerHints(ui.activeScope(), { focusedSection: ui.state.focusedSection, drillReturn: ui.state.drillReturn, chartViews: ui.state.chartViews, uncategorisedOnly: data.state.uncategorisedOnly, tagReview: !!data.state.tagReview, signInPaste: !!ui.state.llmSignIn?.paste, ruleOffers: ui.state.activeTab === "manager" ? data.allRuleOffers().length : 0, asks: !!data.askCounts(), askLoose: data.nearMissesShown(), recallQuestion: !!smartQuestionFor(ui.state, ui.state.filterDraft) })} />
       <JumpOverlay active={ui.state.jumpMode} tab={ui.state.activeTab} />
       <CatPicker />
       <TagChooser />
+      <SignInModal />
       <TagPicker />
       <EditorOverlay />
       <SavedFilterPicker />
