@@ -15,7 +15,8 @@ import { tagChoices } from "../state/tagChooser"
 import { RULE_AFTER } from "../domain/ruleOffers"
 import { endTagReview, runTagAccept, startTagReview } from "./tagReview"
 import { budgetLabel, budgetScopeOptions, scopeKey } from "../domain/budgetScopes"
-import type { CycleConfig } from "../domain/budget"
+import type { Budget, BudgetScope, CycleConfig } from "../domain/budget"
+import { allocation, budgetCategoryLines, budgetListRows, type BudgetLine } from "../domain/budgetLines"
 import { MERCHANT_SORTS, groupByMerchant, merchantFilter, sortMerchantGroups } from "../domain/merchants"
 import { anchorDraft, cycleFromDraft, editorFields, normaliseCycleDraft, pickerChoices, pickerItems, stepChoice } from "../state/settingsForm"
 import { runSync } from "./sync"
@@ -48,7 +49,7 @@ import {
   type TimeframeState,
 } from "../domain/timeframe"
 import { editText, isPrintable, textField } from "../domain/textField"
-import { appNow } from "../domain/days"
+import { appNow, appToday } from "../domain/days"
 import { drillFilter } from "../domain/drill"
 import type { CategoryLine } from "../domain/dashboard"
 import { allCategoryLines, overviewRange } from "../state/overviewRange"
@@ -1292,34 +1293,70 @@ function handleManagerAccounts(ui: UiStore, key: KeyEvent, data?: DataStore): vo
   if ((name === "d" || name === "delete") && accountId != null) { ui.setState({ accountActionId: accountId, accountActionCursor: 0 }); ui.setStatus("Account data · enter twice to clear or remove · esc cancel"); return }
 }
 
-/** The Budgets tab's list: row 0 is the cycle (enter edits it); the
- * budgets follow (enter edits, a adds, del twice deletes). */
+/** The Categories card's lines, as the tab draws them. */
+function budgetLines(data: DataStore): BudgetLine[] {
+  return budgetCategoryLines(data.cycle(), appToday(), data.state.accounts, data.state.categories, data.state.budgets, data.transactions())
+}
+
+function openBudgetEditor(ui: UiStore, data: DataStore, budget: Budget | null, scope: BudgetScope, amount: number): void {
+  ui.openSettingsEditor("budget", budget?.id ?? null, { ...ui.state.settingsDraft, ...cycleDraft(data.state.budgetCycle), scopeKey: scopeKey(scope), amount: budget ? String(budget.amount) : amount > 0 ? String(Math.round(amount)) : "" })
+}
+
+/** The Budgets tab's top card: enter edits the cycle or a budget (an unset
+ * overall starts from the category budgets' total: building up), a adds,
+ * del twice deletes; j past the end, or l, goes to the Categories card. */
 function handleBudgets(ui: UiStore, key: KeyEvent, data?: DataStore): void {
   const { name } = key
   if (!data) return
-  const budgets = data.state.budgets
-  const budget = budgets[ui.state.budgetCursor - 1]
-  const moved = listMove(key, ui.state.budgetCursor, budgets.length + 1)
+  const rows = budgetListRows(data.state.budgets)
+  const row = rows[Math.min(ui.state.budgetCursor, rows.length - 1)]!
+  if (name === "l" || name === "right" || ((name === "j" || name === "down") && ui.state.budgetCursor >= rows.length - 1)) {
+    ui.setState({ focusedSection: "bud.categories" })
+    return
+  }
+  const moved = listMove(key, ui.state.budgetCursor, rows.length)
   if (moved != null) { ui.setState({ budgetCursor: moved }); return }
   if (name === "a") {
-    const taken = new Set(budgets.map((b) => scopeKey(b.scope)))
+    const taken = new Set(data.state.budgets.map((b) => scopeKey(b.scope)))
     const free = budgetScopeOptions(data.state.accounts, data.state.categories).find((o) => !taken.has(o.key))
     ui.openSettingsEditor("budget", null, { ...ui.state.settingsDraft, ...cycleDraft(data.state.budgetCycle), scopeKey: free?.key ?? "overall", amount: "" })
     return
   }
-  if ((name === "return" || name === "enter") && ui.state.budgetCursor === 0) {
-    ui.openSettingsEditor("cycle", null, { ...ui.state.settingsDraft, ...cycleDraft(data.state.budgetCycle) })
+  if (name === "return" || name === "enter") {
+    if (row.kind === "cycle") ui.openSettingsEditor("cycle", null, { ...ui.state.settingsDraft, ...cycleDraft(data.state.budgetCycle) })
+    else if (row.kind === "overall") openBudgetEditor(ui, data, row.budget, { kind: "overall" }, allocation(data.state.budgets, data.state.categories).allocated)
+    else openBudgetEditor(ui, data, row.budget, row.budget.scope, row.budget.amount)
     return
   }
-  if ((name === "return" || name === "enter") && budget) {
-    ui.openSettingsEditor("budget", budget.id, { ...ui.state.settingsDraft, ...cycleDraft(data.state.budgetCycle), scopeKey: scopeKey(budget.scope), amount: String(budget.amount) })
-    return
+  if ((name === "delete" || name === "backspace") && row.kind !== "cycle" && row.budget) {
+    confirmTwice(ui, data, { kind: "budget", id: row.budget.id, label: `the ${budgetLabel(row.budget, data.state.accounts, data.state.categories)} budget`, with: "delete" })
   }
-  if ((name === "delete" || name === "backspace") && budget) {
-    confirmTwice(ui, data, { kind: "budget", id: budget.id, label: `the ${budgetLabel(budget, data.state.accounts, data.state.categories)} budget`, with: "delete" })
-    return
-  }
+}
 
+/** The Budgets tab's Categories card: enter sets or edits the budget of the
+ * group or category at the cursor (a new one starts from its average:
+ * allocating down), del twice removes it; k past the top, or h, goes back. */
+function handleBudgetCategories(ui: UiStore, key: KeyEvent, data?: DataStore): void {
+  const { name } = key
+  if (!data) return
+  const lines = budgetLines(data)
+  const cursor = Math.min(ui.state.budgetCategoryCursor, Math.max(0, lines.length - 1))
+  if (name === "h" || name === "left" || ((name === "k" || name === "up") && cursor === 0)) {
+    ui.setState({ focusedSection: "bud.list", budgetCursor: budgetListRows(data.state.budgets).length - 1 })
+    return
+  }
+  const moved = listMove(key, cursor, lines.length)
+  if (moved != null) { ui.setState({ budgetCategoryCursor: moved }); return }
+  const line = lines[cursor]
+  if (!line) return
+  if (name === "return" || name === "enter") {
+    if (line.categoryId === null) { ui.setStatus("Uncategorised can't have a budget: categorise its rows first", true); return }
+    openBudgetEditor(ui, data, line.budget, { kind: "category", categoryId: line.categoryId }, line.average || line.now)
+    return
+  }
+  if ((name === "delete" || name === "backspace") && line.budget) {
+    confirmTwice(ui, data, { kind: "budget", id: line.budget.id, label: `the ${line.name} budget`, with: "delete" })
+  }
 }
 
 function handleManagerMerchants(ui: UiStore, key: KeyEvent, data?: DataStore): void {
@@ -1831,7 +1868,12 @@ const scopes: Record<ScopeId, ScopeEntry> = {
   "budgets": {
     handle: handleBudgets,
     quits: true,
-    hints: () => [{ key: "j/k", desc: "move" }, { key: "enter", desc: "edit" }, { key: "a", desc: "add" }, { key: "del del", desc: "delete" }, { key: "1-4", desc: "tab" }],
+    hints: () => [{ key: "j/k", desc: "move" }, { key: "enter", desc: "edit" }, { key: "a", desc: "add" }, { key: "del del", desc: "delete" }, { key: "l", desc: "categories" }, { key: "1-4", desc: "tab" }],
+  },
+  "budgets.categories": {
+    handle: handleBudgetCategories,
+    quits: true,
+    hints: () => [{ key: "j/k", desc: "move" }, { key: "enter", desc: "set budget" }, { key: "del del", desc: "remove budget" }, { key: "h", desc: "budgets" }, { key: "1-4", desc: "tab" }],
   },
   "manager.merchants": {
     handle: handleManagerMerchants,

@@ -29,6 +29,7 @@ export type SectionId =
   | "set.up"
   | "set.ai"
   | "bud.list"
+  | "bud.categories"
 
 export type ScopeId =
   | "palette"
@@ -53,6 +54,7 @@ export type ScopeId =
   | "settings.up"
   | "settings.ai"
   | "budgets"
+  | "budgets.categories"
   | "manager.detail"
   | "manager.detail.notes"
   | "settings.editor"
@@ -173,6 +175,8 @@ export interface UiState {
   merchantReverse: boolean
   /** Cursor in the Settings budget list. */
   budgetCursor: number
+  /** The Budgets tab's category list (domain/budgetLines order). */
+  budgetCategoryCursor: number
   /** Cursor in the Up Bank sync account list. */
   upCursor: number
   /** AI models pane: 0 Jev, 1 Workers AI. */
@@ -289,7 +293,10 @@ export const JUMP_TARGETS: Record<TabId, JumpTarget[]> = {
     { key: "a", section: "mgr.accounts", label: "Accounts" },
     { key: "t", section: "mgr.transactions", label: "Transactions" },
   ],
-  budgets: [],
+  budgets: [
+    { key: "b", section: "bud.list", label: "Budgets" },
+    { key: "c", section: "bud.categories", label: "Categories" },
+  ],
   settings: [
     { key: "c", section: "set.categories", label: "Categories" },
     { key: "t", section: "set.tags", label: "Tags" },
@@ -371,6 +378,7 @@ function createUiStore() {
     upCursor: 0,
     aiCursor: 0,
     budgetCursor: 0,
+    budgetCategoryCursor: 0,
     merchantCursor: 0,
     merchantTop: 0,
     txnView: "rows",
@@ -670,7 +678,7 @@ function createUiStore() {
     if (state.factoryResetOpen) return "settings.factoryReset"
     if (state.customEdit) return "overview.custom"
     if (state.activeTab === "overview") return state.focusedSection === "ov.range" ? "overview.range" : "overview"
-    if (state.activeTab === "budgets") return "budgets"
+    if (state.activeTab === "budgets") return state.focusedSection === "bud.categories" ? "budgets.categories" : "budgets"
     if (state.activeTab === "manager") {
       if (state.focusedSection === "mgr.accounts") return "manager.accounts"
       return state.txnView === "merchants" ? "manager.merchants" : "manager.txns"

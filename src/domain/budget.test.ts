@@ -1,6 +1,7 @@
 import { describe, expect, test } from "bun:test"
 import { budgetProgress, cycleFor, cycleSpending, pastCycles, paydays, spendByGroup, type Budget, type CycleConfig } from "./budget"
 import type { Transaction } from "./types"
+import { computePeriodFlows } from "./position"
 import { account, category, transaction } from "../testing/fixtures"
 
 interface CycleCase {
@@ -266,11 +267,17 @@ describe("past cycles and spending by group (the Budgets tab)", () => {
       transaction({ id: 4, accountId: 1, dateISO: "2026-09-23", amount: -7, categoryId: null }),
       transaction({ id: 5, accountId: 2, dateISO: "2026-09-23", amount: -99, categoryId: 20 }),
       transaction({ id: 6, accountId: 1, dateISO: "2026-10-20", amount: -99, categoryId: 20 }),
-      transaction({ id: 7, accountId: 1, dateISO: "2026-09-24", amount: 50, categoryId: 20 }),
+      // A refund into a spending category reduces it.
+      transaction({ id: 7, accountId: 1, dateISO: "2026-09-24", amount: 30, categoryId: 20, categoryName: "Groceries" }),
     ]
     const cycle = pastCycles(monthly, "2026-10-27", 1)[0]!
     const spent = cycleSpending(cycle, cycle.end, accounts, rows)
-    expect(spent.map((t) => t.id).sort()).toEqual([1, 2, 3, 4])
-    expect(Object.fromEntries(spendByGroup(spent, categories))).toEqual({ 10: 15, 20: 40, null: 7 })
+    expect(spent.map((t) => t.id).sort()).toEqual([1, 2, 3, 4, 7])
+    expect(Object.fromEntries(spendByGroup(spent, categories))).toEqual({ 10: 15, 20: 10, null: 7 })
+    // One rule for spending: a budget's spent is the Overview's Spent.
+    const overall = budgetProgress([{ id: 1, scope: { kind: "overall" }, amount: 100 }], monthly, cycle.end, accounts, categories, rows)[0]!
+    const inCycle = rows.filter((t) => t.dateISO >= cycle.start && t.dateISO <= cycle.end)
+    expect(overall.spent).toBe(computePeriodFlows(accounts, inCycle).spent)
+    expect(overall.spent).toBe(32)
   })
 })
