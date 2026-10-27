@@ -82,3 +82,33 @@ test("clearing the filter stops a run; no Jev is an error, not an empty result",
   data.commitFilter("ask:coffee")
   await expect(data.askAbout()).rejects.toThrow("JASKMONEY_JEV_TOKEN")
 })
+
+test("session reset discards cached ASK verdicts and stops a pending run", async () => {
+  setup()
+  const { ai } = fakeJev()
+  data.commitFilter("ask:coffee")
+  await data.askAbout(ai)
+  expect(shown()).toEqual(["Alba Coffee", "Espresso Bar"])
+  const accounts = [...data.state.accounts]
+  const transactions = [...data.state.transactions]
+  data.reset()
+  data.setState({ accounts, transactions })
+  data.commitFilter("ask:coffee")
+  expect(shown()).toEqual([])
+
+  let release = () => {}
+  const gate = new Promise<void>((resolve) => { release = resolve })
+  const pending: Pick<JevClient, "judge"> = { async judge(questions, state) {
+    await gate
+    return ai.judge(questions, state)
+  } }
+  const running = data.askAbout(pending)
+  expect(data.state.asking).not.toBeNull()
+  data.reset()
+  data.setState({ accounts, transactions })
+  data.commitFilter("ask:coffee")
+  release()
+  expect(await running).toBe("")
+  expect(data.state.asking).toBeNull()
+  expect(shown()).toEqual([])
+})
