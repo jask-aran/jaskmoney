@@ -9,7 +9,8 @@ import type { Category, Transaction } from "./types"
  * (2026-10-27), tuning on half and checking on the other half. Variants that
  * didn't beat this wording there (by more than noise): a group-then-
  * subcategory hierarchy, an ensemble of both, category definitions in the
- * criteria, "Was this money spent on …?" (it says yes far too often).
+ * criteria, "Was this money spent on …?" (it says yes far too often), and
+ * each row's most similar-looking categorised rows (trigram match).
  */
 
 /** What Jev is shown about a transaction. `category` (when it has a real
@@ -38,22 +39,35 @@ export const SUGGESTION_STATE = "Bank transactions from an Australian personal a
  * this sure matched the user's category. */
 export const ACCEPT_ALL_AT = 0.8
 
-/** One option per suggestable category, keyed `c<id>`: its path, and
- * whether it is income or not spending. */
-export function suggestionCriteria(suggestable: Category[], categories: Category[]): Record<string, string> {
+/** Each category option names this many of the account holder's own
+ * transactions in it, so their choices carry over to other merchants. On
+ * the rows with no same-description history this lifted top-1 by about
+ * 1.5 points (59 → 60%, three runs each) and let ~30 more of 297 rows
+ * reach ACCEPT_ALL_AT at the same precision; 8 did no better. */
+export const EXAMPLES_PER_CATEGORY = 4
+
+/** One option per suggestable category, keyed `c<id>`: its path, whether
+ * it is income or not spending, and `examples` of the user's own
+ * transactions in it. */
+export function suggestionCriteria(suggestable: Category[], categories: Category[], examples?: Map<number, string[]>): Record<string, string> {
   const criteria: Record<string, string> = {}
   for (const c of suggestable) {
     const parent = categories.find((p) => p.id === c.parentId)
-    criteria[`c${c.id}`] = `${parent ? `${parent.name} › ` : ""}${c.name}${c.income || parent?.income ? " (income)" : ""}${c.notSpending ? " (not spending: moving your own money)" : ""}`
+    const named = examples?.get(c.id) ?? []
+    criteria[`c${c.id}`] = `${parent ? `${parent.name} › ` : ""}${c.name}${c.income || parent?.income ? " (income)" : ""}${c.notSpending ? " (not spending: moving your own money)" : ""}${named.length ? ` (e.g. ${named.join(", ")})` : ""}`
   }
   return criteria
 }
+
+/** Whether any option in `criteria` names examples (the question then says so). */
+const namesExamples = (criteria: Record<string, string>) => Object.values(criteria).some((v) => v.includes(" (e.g. "))
 
 export function suggestionQuestion(t: Transaction, criteria: Record<string, string>, earlier = ""): JevQuestion {
   return {
     type: "choice",
     instructions: {
-      question: "Which category does `transaction` belong in? The description may be a person's name or a payment app rather than a shop: then the message, if any, says what the money was for, and the description says nothing about the category.",
+      question: "Which category does `transaction` belong in? The description may be a person's name or a payment app rather than a shop: then the message, if any, says what the money was for, and the description says nothing about the category."
+        + (namesExamples(criteria) ? " Each category lists some of the account holder's own transactions in it." : ""),
       transaction: transactionFacts(t, { earlier }),
     },
     criteria,

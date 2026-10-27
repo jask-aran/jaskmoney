@@ -1,7 +1,7 @@
 import { expect, test } from "bun:test"
 import type { JevQuestion } from "../ai/jev"
 import { category, transaction } from "../testing/fixtures"
-import { historySuggestions, jevSuggestions } from "./suggest"
+import { categoryExamples, historySuggestions, jevSuggestions } from "./suggest"
 import { SUGGESTION_STATE, suggestionCriteria, transactionFacts } from "./questions"
 
 const categories = [category({ id: 1 }), category({ id: 2 }), category({ id: 3, isDefault: true, name: "Uncategorised" })]
@@ -75,7 +75,9 @@ test("each row is its own question with the transaction inline; Jev is told how 
   const results = await jevSuggestions(jev, [target(), target(11)], categories, { history: [evidence(1, 1), evidence(2, 2), evidence(3, 1)] })
   expect(seen).toHaveLength(1)
   const q = Object.values(seen[0]!)[0]!
-  expect(q).toMatchObject({ type: "choice", criteria: { c1: "Category 1", c2: "Category 2" } })
+  // Each option names the user's own rows in it, and the question says so.
+  expect(q).toMatchObject({ type: "choice", criteria: { c1: "Category 1 (e.g. SHOP)", c2: "Category 2 (e.g. SHOP)" } })
+  expect((q.instructions as { question: string }).question).toEndWith("Each category lists some of the account holder's own transactions in it.")
   expect((q.instructions as { transaction: Record<string, string> }).transaction.categorised_before).toBe("Category 1 ×2, Category 2 ×1")
   // Confidence is Jev's probability for its pick, not its distribution's peakedness.
   expect(results).toEqual([{ transactionId: 10, categoryId: 1, confidence: 0.7, source: "jev" }, { transactionId: 11, categoryId: 1, confidence: 0.7, source: "jev" }])
@@ -92,4 +94,19 @@ test("unknown and group picks are dropped; a failed request reports its rows; no
   expect(await jevSuggestions({ judge: async () => { throw failure } }, [target(), target(11)], tree, { onError: (ids, e) => errors.push([ids, e]) })).toEqual([])
   expect(errors).toEqual([[[10, 11], failure]])
   expect(await jevSuggestions({ judge: async () => { throw new Error("must not call") } }, [target()], [])).toEqual([])
+})
+
+test("each category's examples: its most used descriptions, then the most recent; one per description; only categorised rows", () => {
+  const row = (id: number, description: string, categoryId: number | null, dateISO = "2026-01-01") => transaction({ id, description, categoryId, categoryName: categoryId ? `Category ${categoryId}` : "Uncategorised", dateISO })
+  const history = [
+    row(1, "Coles", 1), row(2, " coles ", 1), row(3, "Aldi", 1, "2026-03-01"), row(4, "IGA", 1, "2026-02-01"),
+    row(5, "FoodWorks", 1), row(6, "Spar", 1), row(7, "Uber", 2), row(8, "Mystery", null),
+    row(9, "A very long merchant description that goes on and on", 2),
+  ]
+  const examples = categoryExamples(history, categories.filter((c) => !c.isDefault))
+  expect(examples.get(1)).toEqual(["Coles", "Aldi", "IGA", "FoodWorks"])
+  expect(examples.get(2)).toEqual(["Uber", "A very long merchant description that g…"])
+  expect(suggestionCriteria(categories.slice(0, 2), categories, examples).c2).toBe("Category 2 (e.g. Uber, A very long merchant description that g…)")
+  // Without examples, options and question are as before.
+  expect(suggestionCriteria(categories.slice(0, 2), categories)).toEqual({ c1: "Category 1", c2: "Category 2" })
 })

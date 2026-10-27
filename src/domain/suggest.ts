@@ -1,7 +1,7 @@
 import { judgeEach, type JevClient } from "../ai/jev"
 import { assignableCategories } from "./categoryOptions"
 import { isOrdinaryFlow, isUncategorised } from "./moneyRules"
-import { SUGGESTION_STATE, suggestionCriteria, suggestionQuestion } from "./questions"
+import { EXAMPLES_PER_CATEGORY, SUGGESTION_STATE, suggestionCriteria, suggestionQuestion } from "./questions"
 import type { Category, CategorySuggestion, Transaction } from "./types"
 
 /**
@@ -56,6 +56,30 @@ function historyEvidence(transactions: Transaction[], categories: Category[]): (
   }
 }
 
+/** For each of `suggestable`, the descriptions of up to
+ * EXAMPLES_PER_CATEGORY of its rows in `history`: the most used first
+ * (ties: the most recent), one per description. */
+export function categoryExamples(history: Transaction[], suggestable: Category[]): Map<number, string[]> {
+  const allowed = new Set(suggestable.map((c) => c.id))
+  const tally = new Map<number, Map<string, { description: string; count: number; latest: string }>>()
+  for (const t of history) {
+    if (isUncategorised(t) || t.categoryId == null || !allowed.has(t.categoryId)) continue
+    const byKey = tally.get(t.categoryId) ?? new Map()
+    tally.set(t.categoryId, byKey)
+    const k = t.description.trim().toLowerCase()
+    const entry = byKey.get(k) ?? { description: t.description.trim(), count: 0, latest: "" }
+    entry.count++
+    if (t.dateISO > entry.latest) entry.latest = t.dateISO
+    byKey.set(k, entry)
+  }
+  const out = new Map<number, string[]>()
+  for (const [categoryId, byKey] of tally) {
+    const ranked = [...byKey.values()].sort((a, b) => b.count - a.count || b.latest.localeCompare(a.latest))
+    out.set(categoryId, ranked.slice(0, EXAMPLES_PER_CATEGORY).map((e) => e.description.length > 40 ? `${e.description.slice(0, 39)}…` : e.description))
+  }
+  return out
+}
+
 /**
  * Suggestions history settles without asking Jev: for an ordinary
  * uncategorised merchant row (not person-to-person, no message of its own)
@@ -92,7 +116,7 @@ export async function jevSuggestions(
 ): Promise<CategorySuggestion[]> {
   const suggestable = suggestionCategories(categories)
   if (!suggestable.length || !transactions.length) return []
-  const criteria = suggestionCriteria(suggestable, categories)
+  const criteria = suggestionCriteria(suggestable, categories, categoryExamples(options.history ?? [], suggestable))
   const categoryIds = new Map(suggestable.map((c) => [`c${c.id}`, c.id]))
   const names = new Map(categories.map((c) => [c.id, c.name]))
   const evidence = historyEvidence(options.history ?? [], categories)
