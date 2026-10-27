@@ -17,6 +17,10 @@ import {
   dismissSuggestionRows,
   recordCategoryChoices,
   logCategories,
+  declineRule,
+  loadRuleDeclines,
+  loadCategoryLog,
+  loadTagLog,
   unlogCategory,
   logTags,
   type CategoryHow,
@@ -68,6 +72,9 @@ import { createUpClient, readUpToken, UpApiError } from "../up/client"
 import { PUSH_CONCURRENCY, pushTransactions } from "../up/push"
 import { count } from "../ui/text"
 import { ruleOffers, type RuleOffer } from "../domain/ruleOffers"
+import type { HistoryData } from "../domain/aiHistory"
+import { createLlm, type Llm } from "../ai/llm"
+import { writeRules } from "../ai/ruleWriter"
 import { detectRecurring, detectTrips } from "../domain/tagGroups"
 import { jevTagCandidates, knownTagCandidates, TAG_SHOW_AT, tagExamples, tagPool, type TagCandidate, type TagTarget } from "../domain/tagSuggest"
 import { appNow, appToday, type WeekStart } from "../domain/days"
@@ -95,6 +102,10 @@ export interface DataState {
   ready: boolean
   upSyncing: boolean
   suggesting: boolean
+  /** Rules the general model proposed this session (R's list, after the repeat offers). */
+  aiRuleOffers: RuleOffer[]
+  /** The model is writing rules. */
+  writingRules: boolean
   suggestions: Record<number, CategorySuggestion>
   /** The Transactions table shows only ordinary uncategorised rows. */
   uncategorisedOnly: boolean
@@ -244,6 +255,8 @@ function createDataStore() {
     ready: false,
     upSyncing: false,
     suggesting: false,
+    aiRuleOffers: [],
+    writingRules: false,
     suggestions: {},
     uncategorisedOnly: false,
     tagReview: null,
@@ -321,7 +334,7 @@ function createDataStore() {
     askRun++
     tagRun++
     suggestTried.clear()
-    setState({ tagReview: null })
+    setState({ tagReview: null, aiRuleOffers: [] })
     actualDbPath = dbPath ?? defaultDbPath()
     db = openDb(actualDbPath)
     const config = loadSettingsConfig()
@@ -1047,12 +1060,47 @@ function createDataStore() {
     return { updatedTransactions: report.updatedTransactions, categoryChanges: report.categoryChanges, tagChanges: report.tagChanges, failedRules: report.failedRules }
   }
 
+  /** The history the AI reads (domain/aiHistory): current state and the logs. */
+  function historyData(): HistoryData {
+    return {
+      transactions: transactions(), categories: state.categories, tags: state.tags, rules: state.rules, savedFilters: state.savedFilters,
+      categoryLog: db ? loadCategoryLog(db) : [], tagLog: db ? loadTagLog(db) : [],
+    }
+  }
+
   /** Rules worth making from your repeated categorisations (all of them, or
    * those for the descriptions of `ids`). */
   function ruleOffersFor(ids?: number[]): RuleOffer[] {
     if (!db) return []
     const descriptions = ids && transactions().filter((t) => ids.includes(t.id)).map((t) => t.description)
     return ruleOffers(loadCategoryChoices(db), transactions(), state.rules, state.savedFilters, state.categories, state.tags, descriptions)
+  }
+
+  /** R's list: the repeat offers, then the model's (one per expression and category). */
+  function allRuleOffers(): RuleOffer[] {
+    const repeat = ruleOffersFor()
+    const saved = new Set(state.savedFilters.map((f) => f.expr.toLowerCase()))
+    const ai = state.aiRuleOffers.filter((o) => !saved.has(o.expr.toLowerCase()) && !repeat.some((r) => r.expr.toLowerCase() === o.expr.toLowerCase() && r.categoryId === o.categoryId))
+    return [...repeat, ...ai]
+  }
+
+  /** Ask the general model for rules (ai/ruleWriter); `llm` replaces the
+   * OpenRouter one (tests). Its offers replace the last run's. */
+  async function askForRules(llm?: Llm, focus?: string): Promise<string> {
+    if (!db) throw new Error("db not open")
+    if (state.writingRules) throw new Error("Already asking for rules")
+    setState({ writingRules: true })
+    try {
+      const model = llm ?? createLlm()
+      const result = await writeRules(model, historyData(), { declined: loadRuleDeclines(db), focus })
+      setState("aiRuleOffers", result.offers)
+      const cost = result.usage.cost ? ` · $${result.usage.cost.toFixed(4)}` : ""
+      if (result.error && !result.offers.length) return `No rules: ${result.error}${cost}`
+      const turned = result.rejected.length ? `, ${result.rejected.length} turned down by the check` : ""
+      return `${model.model.id.split("/").pop()} proposed ${count(result.offers.length, "rule")}${turned}${cost}`
+    } finally {
+      setState({ writingRules: false })
+    }
   }
 
   /** " · R: rule for Coles → Groceries", or how many, for the rows just categorised. */
@@ -1075,6 +1123,7 @@ function createDataStore() {
     for (let n = 2; state.savedFilters.some((f) => f.id === id); n++) id = `${base}-${n}`
     saveSavedFilter({ id, name: offer.description, expr: offer.expr })
     createSettingsRule({ name: `${offer.description} → ${category.name}`, savedFilterId: id, setCategoryId: category.id, addTagIds: [], enabled: true })
+    setState("aiRuleOffers", (offers) => offers.filter((o) => o.expr !== offer.expr))
     const applied = offer.waiting.length ? applyRules(offer.waiting) : null
     const sent = applied?.categoryChanges ? await retryPendingCategories() : null
     return [
@@ -1086,7 +1135,10 @@ function createDataStore() {
   }
 
   function declineRuleOffer(offer: RuleOffer): void {
-    mutate((db) => declineCategoryChoice(db, offer.description, offer.categoryId))
+    if (offer.source === "ai") {
+      mutate((db) => declineRule(db, offer.expr, offer.categoryId))
+      setState("aiRuleOffers", (offers) => offers.filter((o) => o !== offer && !(o.expr === offer.expr && o.categoryId === offer.categoryId)))
+    } else mutate((db) => declineCategoryChoice(db, offer.description, offer.categoryId))
   }
 
   function csvFiles(directory: string): string[] {
@@ -1246,6 +1298,9 @@ function createDataStore() {
     deleteImportProfile,
     applyRules,
     ruleOffersFor,
+    allRuleOffers,
+    askForRules,
+    historyData,
     makeOfferedRule,
     declineRuleOffer,
     dryRunRules,

@@ -17,6 +17,13 @@ committed; note the commit.
 
 ## Later
 
+- [ ] **10. Jev through pi-ai.** pi-ai's `classify()` serves Jev (TypeSafe, or
+  OpenRouter's `typesafe/jev-1.14`). Move our Jev client onto it so one
+  provider layer (maybe one OpenRouter key) serves Jev and the general model;
+  re-run the suggestion benchmark first to confirm identical answers.
+- [ ] **11. AI tag rules.** The rule writer does categories only: a rule that
+  adds a tag Up knows is undone by the next sync (Up's tags win). Needs 3.
+
 - [ ] **1. Real Up pushes.** Watch the first real concurrent category and tag
   pushes, and the retry of pending categories on sync (only tested against a
   fake Up so far).

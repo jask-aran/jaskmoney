@@ -18,11 +18,13 @@ export const RULE_AFTER = 3
 export const RULE_SHARE = 0.9
 
 export interface RuleOffer {
-  /** As your rows spell it most often. */
+  /** "repeat": you chose it RULE_AFTER times; "ai": the general model wrote it (ai/ruleWriter). */
+  source: "repeat" | "ai"
+  /** The description as your rows spell it most often; for an AI rule, its name. */
   description: string
   expr: string
   categoryId: number
-  /** Times you've put it in the category. */
+  /** Times you've put it in the category (AI: of your recent choices, how many it covers). */
   times: number
   /** Rows the filter finds that are categorised, and of those in the category. */
   categorised: number
@@ -32,6 +34,8 @@ export interface RuleOffer {
   /** Other descriptions the filter finds ("Coles Express" for Coles): what
    * else the rule will categorise. */
   others: string[]
+  /** The model's reason (AI rules). */
+  why?: string
 }
 
 /** `desc:"…"` for a description, quoted and escaped. */
@@ -75,7 +79,7 @@ export function ruleOffers(
     const fresh = { ...own[0]!, id: -1, categoryId: null, tagIds: [] }
     if (dryRunRules([fresh], rules, savedFilters, categories, tags).changes.some((c) => c.categorySet)) continue
     const others = [...new Map(found.filter((t) => t.description.trim().toLowerCase() !== choice.description).map((t) => [t.description.trim().toLowerCase(), t.description.trim()])).values()].sort()
-    offers.push({ description, expr, categoryId: choice.categoryId, times: choice.times, categorised: categorised.length, agreeing, waiting: found.filter(isUncategorised).map((t) => t.id).sort((a, b) => a - b), others })
+    offers.push({ source: "repeat", description, expr, categoryId: choice.categoryId, times: choice.times, categorised: categorised.length, agreeing, waiting: found.filter(isUncategorised).map((t) => t.id).sort((a, b) => a - b), others })
   }
   return offers.sort((a, b) => b.times - a.times || a.description.localeCompare(b.description))
 }

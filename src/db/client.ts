@@ -14,6 +14,7 @@ import {
   TAG_DISMISSALS_SQL,
   CATEGORY_CHOICES_SQL,
   ACTIVITY_LOG_SQL,
+  RULE_DECLINES_SQL,
   CATEGORY_SOURCE_COLUMN,
   CATEGORY_INCOME_COLUMN,
   CATEGORY_NOT_SPENDING_COLUMN,
@@ -114,6 +115,7 @@ const MIGRATIONS: Record<number, (db: Db) => void> = {
   18: (db) => db.exec(CATEGORY_SUGGESTIONS_SQL),
   19: (db) => db.exec(CATEGORY_SUGGESTIONS_V19_SQL),
   20: (db) => db.exec(`ALTER TABLE category_suggestions ADD COLUMN ${SUGGESTION_RANKED_COLUMN}`),
+  25: (db) => db.exec(RULE_DECLINES_SQL),
   24: (db) => db.exec(ACTIVITY_LOG_SQL),
   23: (db) => {
     db.exec(CATEGORY_CHOICES_SQL)
@@ -542,6 +544,14 @@ export function loadCategoryLog(db: Db): CategoryLogEntry[] {
 export function loadTagLog(db: Db): TagLogEntry[] {
   return db.query<{ transactionId: number; tagId: number; added: number; how: TagHow; at: string }, []>(`SELECT transaction_id AS transactionId, tag_id AS tagId, added, how, at
     FROM tag_log ORDER BY at DESC, id DESC`).all().map((e) => ({ ...e, added: e.added === 1 }))
+}
+
+export function declineRule(db: Db, expr: string, categoryId: number): void {
+  db.query("INSERT OR IGNORE INTO rule_declines (expr, category_id) VALUES (?, ?)").run(expr, categoryId)
+}
+
+export function loadRuleDeclines(db: Db): { expr: string; categoryId: number }[] {
+  return db.query<{ expr: string; categoryId: number }, []>("SELECT expr, category_id AS categoryId FROM rule_declines").all()
 }
 
 /** A categorisation you made: `times` rows of `description` into the category. */

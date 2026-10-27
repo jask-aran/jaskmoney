@@ -1,3 +1,4 @@
+import { hasLlm, llmModelId } from "../../ai/llm"
 import { For, Show, createEffect, createMemo } from "solid-js"
 import { useTerminalDimensions } from "@opentui/solid"
 import { SectionCard } from "../primitives/SectionCard"
@@ -177,7 +178,7 @@ export function ManagerTab(props: { focused: SectionId }) {
   const ACCEPT_LINES = 8
   const RULE_LINES = 6
   /** R's offers, while its modal is open. */
-  const ruleOffers = createMemo(() => (ui.state.ruleOffersOpen ? data.ruleOffersFor() : []))
+  const ruleOffers = createMemo(() => (ui.state.ruleOffersOpen ? data.allRuleOffers() : []))
   const ruleTop = () => Math.max(0, ui.state.ruleOfferCursor - RULE_LINES + 1)
 
   /** Tag-all's preview: the rows it would tag, by description (money in marked). */
@@ -295,10 +296,13 @@ export function ManagerTab(props: { focused: SectionId }) {
           </Modal>
         )}
       </Show>
-      <Show when={ui.state.ruleOffersOpen && ruleOffers().length}>
-        <Modal title="Make rules" subtitle={`${ruleOffers().length} offered`} width={76} hints="j/k move · enter make rule · x never offer · esc later">
+      <Show when={ui.state.ruleOffersOpen}>
+        <Modal title="Make rules" subtitle={data.state.writingRules ? "asking the AI…" : `${ruleOffers().length} offered`} width={76} hints={`j/k move · enter make rule · x never offer${hasLlm() ? " · a ask AI" : ""} · esc later`}>
           <text fg={theme.overlay1}>New rows these find get the category on sync, without review.</text>
           <text> </text>
+          <Show when={!ruleOffers().length}>
+            <text fg={theme.overlay1}>{data.state.writingRules ? `  ${llmModelId()} is reading your history…` : "  None yet. a asks the AI to write some from your history."}</text>
+          </Show>
           <For each={ruleOffers().slice(ruleTop(), ruleTop() + RULE_LINES)}>{(offer, i) => {
             const category = () => data.state.categories.find((c) => c.id === offer.categoryId)
             const at = () => ruleTop() + i() === ui.state.ruleOfferCursor
@@ -310,7 +314,10 @@ export function ManagerTab(props: { focused: SectionId }) {
                   <S fg={theme.overlay1}>{" → "}</S>
                   <S fg={category()?.color ?? theme.text}>{`${categoryMark(offer.categoryId)} ${fit(category()?.name ?? "?", 30)}`}</S>
                 </text>
-                <text wrapMode="none" fg={theme.overlay1}>{fit(`    you chose it ${offer.times}× · ${offer.agreeing} of ${offer.categorised} found are there${offer.waiting.length ? ` · ${offer.waiting.length} waiting` : ""}`, 72)}</text>
+                <text wrapMode="none" fg={theme.overlay1}>{fit(`    ${offer.source === "ai" ? `AI · ${offer.expr}` : `you chose it ${offer.times}×`} · ${offer.agreeing} of ${offer.categorised} found are there${offer.waiting.length ? ` · ${offer.waiting.length} waiting` : ""}`, 72)}</text>
+                <Show when={offer.why}>
+                  <text wrapMode="none" fg={theme.subtext0}>{fit(`    ${offer.why}`, 72)}</text>
+                </Show>
                 <Show when={offer.others.length}>
                   <text wrapMode="none" fg={theme.warning}>{fit(`    also finds ${offer.others.join(", ")}`, 72)}</text>
                 </Show>

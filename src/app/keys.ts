@@ -7,6 +7,7 @@ import { assignableCategories, pickerSuggestions } from "../domain/categoryOptio
 import { parseTagScope } from "../domain/tagScope"
 import { tagChoices } from "../state/tagChooser"
 import { RULE_AFTER } from "../domain/ruleOffers"
+import { hasLlm, llmModelId } from "../ai/llm"
 import { endTagReview, runTagAccept, startTagReview } from "./tagReview"
 import { budgetLabel, budgetScopeOptions, scopeKey } from "../domain/budgetScopes"
 import type { CycleConfig } from "../domain/budget"
@@ -851,15 +852,23 @@ function handleManagerAcceptPreview(ui: UiStore, key: KeyEvent, data?: DataStore
  * x declines it for good, esc closes (offers stay). */
 function handleRuleOffers(ui: UiStore, key: KeyEvent, data?: DataStore): void {
   const { name } = key
-  const offers = data?.ruleOffersFor() ?? []
+  const offers = data?.allRuleOffers() ?? []
   const close = () => ui.setState({ ruleOffersOpen: false, ruleOfferCursor: 0 })
   if (name === "escape") { close(); ui.setStatus("Transactions"); return }
+  // a: the general model writes more from the history.
+  if (name === "a" && !key.shift && data) {
+    if (!hasLlm()) { ui.setStatus("Add an OpenRouter key in Settings › AI models to ask for rules", true); return }
+    if (data.state.writingRules) { ui.setStatus("Already asking for rules"); return }
+    ui.setStatus(`Asking ${llmModelId()} for rules…`)
+    data.askForRules().then((summary) => ui.setStatus(summary), (e) => reportError(ui, e))
+    return
+  }
   const moved = listMove(key, ui.state.ruleOfferCursor, offers.length)
   if (moved != null) { ui.setState({ ruleOfferCursor: moved }); return }
   const offer = offers[ui.state.ruleOfferCursor]
   if (!offer || !data) return
   const settle = () => {
-    const left = data.ruleOffersFor().length
+    const left = data.allRuleOffers().length
     if (!left) close()
     else ui.setState({ ruleOfferCursor: Math.min(ui.state.ruleOfferCursor, left - 1) })
   }
@@ -949,10 +958,11 @@ function handleManagerTxns(ui: UiStore, key: KeyEvent, data?: DataStore): void {
   }
   // R: rules offered from what you've categorised the same way repeatedly.
   if (name === "r" && key.shift && data) {
-    const n = data.ruleOffersFor().length
-    if (!n) { ui.setStatus(`No rule to offer: one comes after you put a description in the same category ${RULE_AFTER} times`); return }
+    const n = data.allRuleOffers().length
+    // With a model to ask, the list opens empty (a asks).
+    if (!n && !hasLlm()) { ui.setStatus(`No rule to offer: one comes after you put a description in the same category ${RULE_AFTER} times`); return }
     ui.setState({ ruleOffersOpen: true, ruleOfferCursor: 0 })
-    ui.setStatus(`${count(n, "rule")} offered`)
+    ui.setStatus(n ? `${count(n, "rule")} offered` : "No rules offered yet · a asks the AI")
     return
   }
   // Tag review: a tag's candidates, accepted (y, Y) or dismissed (x) like
@@ -1470,7 +1480,7 @@ const scopes: Record<ScopeId, ScopeEntry> = {
   "manager.ruleOffers": {
     handle: handleRuleOffers,
     quits: false,
-    hints: () => [{ key: "j/k", desc: "move" }, { key: "enter", desc: "make rule" }, { key: "x", desc: "never" }, { key: "esc", desc: "later" }],
+    hints: () => [{ key: "j/k", desc: "move" }, { key: "enter", desc: "make rule" }, { key: "x", desc: "never" }, { key: "a", desc: "ask AI" }, { key: "esc", desc: "later" }],
   },
   "manager.acceptPreview": {
     handle: handleManagerAcceptPreview,
