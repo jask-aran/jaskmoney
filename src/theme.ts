@@ -58,7 +58,7 @@ export const theme = {
 
   // Chart rules: today's rule a vivid green, the budget pace line a muted
   // yellow, so the two never read alike.
-  chartToday: "#40d97a",
+  chartToday: "#66d690",
   chartBudget: "#a8996b",
 
   // Row states, every list (domain/rowStyle): the Transactions table's

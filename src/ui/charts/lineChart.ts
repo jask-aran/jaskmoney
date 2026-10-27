@@ -183,8 +183,11 @@ export function valueRow(value: number, min: number, max: number, height: number
  * end; week rules on the week-start day when weeks are at least 6 cells apart, else on
  * days 7, 14 and 21 of each month, thinning to 7 and 21, then 14, as months
  * narrow (unlabelled); and today, which replaces a rule on its day.
- * Labels are placed greedily by priority (start and end, then months, then
- * week-start day numbers) with at least two blank cells between them. `colOf`
+ * Today's date is always labelled, centred under its rule, as zoom allows
+ * ("27" over six weeks or less, "27 Oct" up to two years, "Oct 26" beyond);
+ * `today` says where, for its colour. The other labels are placed greedily
+ * around it by priority (start and end, then months, then week-start day
+ * numbers) with at least two blank cells between them. `colOf`
  * places date index i (default: the line chart's spread over `width`).
  */
 export function dateAxis(
@@ -193,7 +196,7 @@ export function dateAxis(
   todayISO: string,
   colOf: (index: number) => number = (i) => cellColumn(i, dates.length, width),
   weekStart: WeekStart = "monday",
-): { markers: Marker[]; labels: string } {
+): { markers: Marker[]; labels: string; today?: { start: number; length: number } } {
   const n = dates.length
   const markers: Marker[] = []
   const labelAt: Array<{ col: number; text: string; align: "left" | "right" | "center" }> = []
@@ -237,6 +240,16 @@ export function dateAxis(
   }
   const line = new Array<string>(width).fill(" ")
   const taken = new Array<boolean>(width).fill(false)
+  let todayLabel: { start: number; length: number } | undefined
+  if (today >= 0) {
+    const iso = dates[today]!
+    const text = n <= 45 ? String(day(iso)) : n <= 732 ? `${day(iso)} ${month(iso)}` : `${month(iso)} ${iso.slice(2, 4)}`
+    if (text.length <= width) {
+      const start = Math.max(0, Math.min(width - text.length, colOf(today) - Math.floor((text.length - 1) / 2)))
+      for (let c = 0; c < text.length; c++) { line[start + c] = text[c]!; taken[start + c] = true }
+      todayLabel = { start, length: text.length }
+    }
+  }
   for (const label of labelAt) {
     const start = label.align === "right" ? label.col - label.text.length + 1 : label.col
     const end = start + label.text.length
@@ -246,7 +259,7 @@ export function dateAxis(
     if (!free) continue
     for (let c = start; c < end; c++) { line[c] = label.text[c - start]!; taken[c] = true }
   }
-  return { markers, labels: line.join("") }
+  return { markers, labels: line.join(""), ...(todayLabel ? { today: todayLabel } : {}) }
 }
 
 /** Round axis bounds around `lo`..`hi` with their tick step (see niceScale).

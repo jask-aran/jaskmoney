@@ -137,6 +137,7 @@ export function spendingChart(
       rows: annotate(lineChart({ series: [...limit, { values: prev, ink: "prev" }, { values: upToToday(total), ink: "spend" }], length: n, width, height, min: 0, max: scale.max, markers: axis.markers }), marks),
       ticks: moneyTicks(0, scale.max, scale.step, height),
       labels: axis.labels,
+    today: axis.today,
       legend: [
         mark(LINE, "spend"),
         muted(`${names.current} ${formatWholeMoney(now)}`),
@@ -193,10 +194,12 @@ export function spendingChart(
     ...(bars[tallest]!.value > 0 && slots[tallest] ? [{ row: barTopRow(bars[tallest]!.value, scale.max, height), col: slots[tallest]!.col, text: shortMoney(bars[tallest]!.value), ink: "note", above: true }] : []),
     ...(avgRow >= 0 ? [{ row: avgRow, col: width - 1 - "avg".length - 2, text: "avg", ink: "partial" }] : []),
   ]
+  const { labels, today } = dateAxis(dates, used, todayISO, colOf, weekStart)
   return {
     rows: annotate(plain, marks),
     ticks: moneyTicks(0, scale.max, scale.step, height),
-    labels: dateAxis(dates, used, todayISO, colOf, weekStart).labels,
+    labels,
+    today,
     legend: [
       mark(BAR, "spend"),
       muted(n > width ? "Spent per day (averaged)" : "Spent per day"),
@@ -249,6 +252,7 @@ export function balancesChart(
     rows: annotate(lineChart({ series: [{ values, ink }], length: dates.length, width, height, min: range.min, max: range.max, markers: axis.markers }), marks),
     ticks: moneyTicks(range.min, range.max, range.step, height),
     labels: axis.labels,
+    today: axis.today,
     legend: [
       mark(LINE, ink),
       muted(`${view} ${formatWholeMoney(values[values.length - 1]!)}`),

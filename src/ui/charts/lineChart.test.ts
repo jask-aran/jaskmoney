@@ -66,12 +66,28 @@ describe("lineChart shared cells", () => {
 describe("dateAxis", () => {
   test("labels the ends and month starts and marks today", () => {
     const dates = Array.from({ length: 40 }, (_, i) => new Date(Date.UTC(2026, 8, 15 + i)).toISOString().slice(0, 10))
-    const axis = dateAxis(dates, 40, "2026-10-20")
+    const axis = dateAxis(dates, 40, "2026-09-25")
     expect(axis.labels.startsWith("15 Sep")).toBe(true)
     expect(axis.labels.endsWith("24 Oct")).toBe(true)
     expect(axis.labels).toContain("Oct")
     expect(axis.markers).toContainEqual({ index: dates.indexOf("2026-10-01"), ink: "month" })
-    expect(axis.markers).toContainEqual({ index: dates.indexOf("2026-10-20"), ink: "today" })
+    expect(axis.markers).toContainEqual({ index: dates.indexOf("2026-09-25"), ink: "today" })
+  })
+
+  test("today's date is always labelled under its rule, as zoom allows, over whatever it covers", () => {
+    const days = (start: string, n: number) => Array.from({ length: n }, (_, i) => new Date(Date.parse(start) + i * 86_400_000).toISOString().slice(0, 10))
+    const at = (axis: ReturnType<typeof dateAxis>) => axis.labels.slice(axis.today!.start, axis.today!.start + axis.today!.length)
+    // A month: the day; it takes the end label's place when they collide.
+    const month = dateAxis(days("2026-10-01", 31), 31, "2026-10-29")
+    expect(at(month)).toBe("29")
+    expect(month.today!.start).toBe(28)
+    expect(month.labels).not.toContain("31 Oct")
+    // A year: day and month; beyond two years: month and year.
+    expect(at(dateAxis(days("2025-11-01", 365), 100, "2026-10-27"))).toBe("27 Oct")
+    expect(at(dateAxis(days("2023-11-01", 1092), 100, "2026-10-27"))).toBe("Oct 26")
+    // Even on the first day, and not at all outside the range.
+    expect(at(dateAxis(days("2026-10-01", 31), 31, "2026-10-01"))).toBe("1")
+    expect(dateAxis(days("2026-09-01", 30), 30, "2026-10-27").today).toBeUndefined()
   })
 })
 

@@ -18,6 +18,8 @@ export interface ChartModel {
   ticks: Map<number, string>
   /** X-axis label line, aligned with the plot. */
   labels: string
+  /** Where in `labels` today's date sits, drawn in today's ink. */
+  today?: { start: number; length: number }
   /** The legend: series marks in their colours with names and figures,
    * shown in the pane's bottom border. */
   legend: Span[]
@@ -33,6 +35,17 @@ export function xAxisLine(rows: Run[][]): string {
   }
   const width = rows[0]?.reduce((n, run) => n + [...run.text].length, 0) ?? 0
   return "└" + Array.from({ length: width }, (_, c) => (gridlines.has(c) ? "┴" : "─")).join("")
+}
+
+/** The x labels as spans: muted, with today's date in its rule's colour. */
+function axisLabels(text: string, today: { start: number; length: number } | undefined, todayFg: string): Span[] {
+  if (!today) return [{ text, fg: theme.overlay1 }]
+  const end = today.start + today.length
+  return [
+    { text: text.slice(0, today.start), fg: theme.overlay1 },
+    { text: text.slice(today.start, end), fg: todayFg },
+    { text: text.slice(end), fg: theme.overlay1 },
+  ]
 }
 
 /** A y-axis, the plot rows, the x-axis line (with `baseline`), then the x
@@ -54,7 +67,7 @@ export function ChartBody(props: { model: ChartModel; inks: Record<string, strin
       <Show when={props.baseline && props.model.rows.length}>
         <text wrapMode="none" fg={theme.overlay1}>{" ".repeat(axis() - 1) + xAxisLine(props.model.rows)}</text>
       </Show>
-      <text wrapMode="none" fg={theme.overlay1}>{" ".repeat(axis()) + props.model.labels}</text>
+      <StyledLine spans={axisLabels(" ".repeat(axis()) + props.model.labels, props.model.today && { ...props.model.today, start: props.model.today.start + axis() }, props.inks.today ?? theme.text)} />
     </>
   )
 }
