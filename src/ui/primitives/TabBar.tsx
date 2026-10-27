@@ -5,7 +5,7 @@ import { chipLook } from "./chip"
 
 /** Matches Go headerBarStyle + activeTabStyle / inactiveTabStyle; the
  * current tab is an active chip (chipLook). */
-export function TabBar(props: { active: TabId; accountLabel?: string }) {
+export function TabBar(props: { active: TabId; accountLabel?: string; reserveRight?: number }) {
   return (
     <box
       width="100%"
@@ -13,7 +13,7 @@ export function TabBar(props: { active: TabId; accountLabel?: string }) {
       flexDirection="row"
       backgroundColor={theme.mantle}
       paddingLeft={2}
-      paddingRight={2}
+      paddingRight={2 + (props.reserveRight ?? 0)}
       justifyContent="space-between"
     >
       <box flexDirection="row" gap={0} backgroundColor={theme.mantle}>

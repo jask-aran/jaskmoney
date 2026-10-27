@@ -26,6 +26,7 @@ import { monthlyTotal, subscriptions, type Subscription } from "../../domain/sub
 import { allCategoryLines, overviewRange } from "../../state/overviewRange"
 import { AXIS_GUESS, ChartBody, axisWidth, type ChartModel } from "../charts/ChartBody"
 import { INKS, balancesChart, cashFlowChart, spendingChart, type PeriodNames } from "./periodCharts"
+import { UP_LOGO_WIDTH } from "../primitives/UpLogo"
 
 /** Calendar cell colours by spending level (0 = none). */
 const LEVEL_BG = [theme.surface0, "#5b4636", "#8c6146", "#c47f55", theme.peach] as const
@@ -340,7 +341,7 @@ export function OverviewTab(props: { focused: SectionId }) {
 
   return (
     <box width="100%" height="100%" flexDirection="column" backgroundColor={theme.canvas}>
-      <SectionCard title="Date Range" titleSuffix={`· ${scope().label}`} titleSuffixColor={theme.subtext0} focused={dateFocused()} height={3}>
+      <SectionCard title="Date Range" titleSuffix={`· ${scope().label}`} titleSuffixColor={theme.subtext0} focused={dateFocused()} height={3} width={Math.max(20, dims().width - UP_LOGO_WIDTH - 1)}>
         <box flexDirection="row" justifyContent="space-between" width="100%">
           <text fg={theme.subtext0} wrapMode="none">
             <For each={LOOKBACKS}>

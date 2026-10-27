@@ -8,6 +8,7 @@ import { footerLine, handleKey, hintState, paletteList, scopeQuits, handlePaste 
 import { CommandPalette } from "../ui/primitives/CommandPalette"
 import { appNow } from "../domain/days"
 import { TabBar } from "../ui/primitives/TabBar"
+import { UP_LOGO_WIDTH, UpLogo } from "../ui/primitives/UpLogo"
 import { StatusBar } from "../ui/primitives/StatusBar"
 import { Footer } from "../ui/primitives/Footer"
 import { JumpOverlay } from "../ui/primitives/JumpOverlay"
@@ -107,7 +108,13 @@ export function App() {
 
   return (
     <box width="100%" height="100%" flexDirection="column" backgroundColor={theme.canvas}>
-      <TabBar active={ui.state.activeTab} accountLabel={[accountLabel(), syncLabel()].filter(Boolean).join(" · ")} />
+      {/* The Up mark sits in the Overview's top-right corner, over the tab
+          bar, the gap and the Date Range, which end short of it. */}
+      <TabBar
+        active={ui.state.activeTab}
+        accountLabel={[accountLabel(), syncLabel()].filter(Boolean).join(" · ")}
+        reserveRight={ui.state.activeTab === "overview" ? UP_LOGO_WIDTH : 0}
+      />
       <box height={1} width="100%" backgroundColor={theme.canvas} />
       <box flexGrow={1} width="100%" flexDirection="column" backgroundColor={theme.canvas}>
         {/* Each tab mounts on its first visit and then stays, hidden while
@@ -126,6 +133,9 @@ export function App() {
         isErr={!ui.state.jumpMode && ui.state.statusErr}
       />
       <Footer hints={footerLine(ui.activeScope(), hintState(ui, data))} />
+      <Show when={ui.state.activeTab === "overview"}>
+        <UpLogo />
+      </Show>
       <JumpOverlay active={ui.state.jumpMode} tab={ui.state.activeTab} />
       <CatPicker />
       <TagChooser />
