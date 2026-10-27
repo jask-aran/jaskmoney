@@ -15,6 +15,11 @@ export interface AgentTool<P extends TSchema = TSchema> {
   run: (args: Static<P>) => unknown | Promise<unknown>
 }
 
+/** A tool with its own argument type, as runAgent's list takes it. */
+export function agentTool<P extends TSchema>(tool: AgentTool<P>): AgentTool {
+  return tool as unknown as AgentTool
+}
+
 export interface AgentUsage { input: number; output: number; cost: number }
 
 export interface AgentRun<T> {

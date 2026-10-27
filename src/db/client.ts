@@ -13,6 +13,7 @@ import {
   SUGGESTION_DISMISSED_COLUMN,
   TAG_DISMISSALS_SQL,
   CATEGORY_CHOICES_SQL,
+  ACTIVITY_LOG_SQL,
   CATEGORY_SOURCE_COLUMN,
   CATEGORY_INCOME_COLUMN,
   CATEGORY_NOT_SPENDING_COLUMN,
@@ -113,6 +114,7 @@ const MIGRATIONS: Record<number, (db: Db) => void> = {
   18: (db) => db.exec(CATEGORY_SUGGESTIONS_SQL),
   19: (db) => db.exec(CATEGORY_SUGGESTIONS_V19_SQL),
   20: (db) => db.exec(`ALTER TABLE category_suggestions ADD COLUMN ${SUGGESTION_RANKED_COLUMN}`),
+  24: (db) => db.exec(ACTIVITY_LOG_SQL),
   23: (db) => {
     db.exec(CATEGORY_CHOICES_SQL)
     // Rows you categorised that Up couldn't take still say so.
@@ -507,6 +509,39 @@ export function saveSuggestions(db: Db, list: CategorySuggestion[]): void {
   db.transaction(() => {
     for (const s of list) save.run(s.transactionId, s.categoryId, s.confidence, s.source, s.ranked?.length ? JSON.stringify(s.ranked.map((r) => [r.categoryId, r.confidence])) : null)
   })()
+}
+
+export type CategoryHow = "accept" | "choose" | "rule"
+export type TagHow = "picker" | "review" | "rule"
+
+export function logCategories(db: Db, entries: { transactionId: number; categoryId: number; previousCategoryId: number | null }[], how: CategoryHow, at: string): void {
+  const add = db.query("INSERT INTO category_log (transaction_id, category_id, previous_category_id, how, at) VALUES (?, ?, ?, ?, ?)")
+  db.transaction(() => { for (const e of entries) add.run(e.transactionId, e.categoryId, e.previousCategoryId, how, at) })()
+}
+
+/** Up refused a categorisation: it didn't happen. */
+export function unlogCategory(db: Db, transactionId: number, categoryId: number): void {
+  db.query("DELETE FROM category_log WHERE id = (SELECT MAX(id) FROM category_log WHERE transaction_id = ? AND category_id = ?)").run(transactionId, categoryId)
+}
+
+export function logTags(db: Db, transactionIds: number[], tagId: number, added: boolean, how: TagHow, at: string): void {
+  const add = db.query("INSERT INTO tag_log (transaction_id, tag_id, added, how, at) VALUES (?, ?, ?, ?, ?)")
+  db.transaction(() => { for (const id of transactionIds) add.run(id, tagId, added ? 1 : 0, how, at) })()
+}
+
+export interface CategoryLogEntry { transactionId: number; categoryId: number | null; previousCategoryId: number | null; how: CategoryHow; at: string }
+export interface TagLogEntry { transactionId: number; tagId: number; added: boolean; how: TagHow; at: string }
+
+/** Newest first. */
+export function loadCategoryLog(db: Db): CategoryLogEntry[] {
+  return db.query<CategoryLogEntry, []>(`SELECT transaction_id AS transactionId, category_id AS categoryId, previous_category_id AS previousCategoryId, how, at
+    FROM category_log ORDER BY at DESC, id DESC`).all()
+}
+
+/** Newest first. */
+export function loadTagLog(db: Db): TagLogEntry[] {
+  return db.query<{ transactionId: number; tagId: number; added: number; how: TagHow; at: string }, []>(`SELECT transaction_id AS transactionId, tag_id AS tagId, added, how, at
+    FROM tag_log ORDER BY at DESC, id DESC`).all().map((e) => ({ ...e, added: e.added === 1 }))
 }
 
 /** A categorisation you made: `times` rows of `description` into the category. */

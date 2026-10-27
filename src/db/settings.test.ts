@@ -1,3 +1,4 @@
+import { SCHEMA_VERSION } from "./schema"
 import { describe, expect, test } from "bun:test"
 import { Database } from "bun:sqlite"
 import {
@@ -32,7 +33,7 @@ describe("OpenTUI settings database", () => {
       INSERT INTO transactions VALUES (7, 'x', '2026-01-01', -5, 'kept', 41, '', NULL, NULL, '');
     `)
     ensureSchema(db)
-    expect(db.query("SELECT version FROM schema_meta").get()).toEqual({ version: 23 })
+    expect(db.query("SELECT version FROM schema_meta").get()).toEqual({ version: SCHEMA_VERSION })
     expect(db.query("SELECT description FROM transactions WHERE id = 7").get()).toEqual({ description: "kept" })
     expect(db.query("SELECT name FROM categories WHERE id = 41").get()).toEqual({ name: "Preserved" })
     expect(db.query("SELECT 1 FROM sqlite_master WHERE name = 'rules_v2'").get()).toEqual({ 1: 1 })
@@ -55,7 +56,7 @@ describe("OpenTUI settings database", () => {
     add.run(4800, "Employer", id("Groceries"), "user", "e", "Salary")
     db.query("INSERT INTO rules_v2 (name, saved_filter_id, set_category_id) VALUES ('pay', 'pay', ?)").run(income)
     ensureSchema(db)
-    expect(db.query("SELECT version FROM schema_meta").get()).toEqual({ version: 23 })
+    expect(db.query("SELECT version FROM schema_meta").get()).toEqual({ version: SCHEMA_VERSION })
     expect(db.query("SELECT income FROM categories WHERE id = ?").get(income)).toEqual({ income: 1 })
     expect(db.query("SELECT name FROM categories WHERE parent_id = ? ORDER BY sort_order").all(income).map((c) => (c as { name: string }).name))
       .toEqual(["Salary", "Interest", "Other income"])
@@ -96,7 +97,7 @@ describe("OpenTUI settings database", () => {
       UPDATE schema_meta SET version = 8;
     `)
     ensureSchema(db)
-    expect(db.query("SELECT version FROM schema_meta").get()).toEqual({ version: 23 })
+    expect(db.query("SELECT version FROM schema_meta").get()).toEqual({ version: SCHEMA_VERSION })
     expect(db.query("SELECT description, source, external_id AS externalId, status, ext_tags AS extTags FROM transactions").get())
       .toEqual({ description: "kept", source: "csv", externalId: null, status: null, extTags: "[]" })
     expect(db.query("SELECT name, source, sync_enabled AS syncEnabled FROM accounts WHERE id = ?").get(account.id)).toEqual({ name: "ANZ CREDIT", source: "csv", syncEnabled: 1 })

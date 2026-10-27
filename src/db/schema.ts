@@ -6,7 +6,7 @@
  * version fallback with an additive migration registry. v7 was the initial
  * partial OpenTUI port. */
 
-export const SCHEMA_VERSION = 23
+export const SCHEMA_VERSION = 24
 
 /** Columns shared by the fresh schema and the v9 migration. Rows imported from
  * CSV keep source = 'csv' and NULL external fields. */
@@ -175,6 +175,31 @@ CREATE TABLE IF NOT EXISTS category_choices (
 );
 `
 
+/** v24: what you (or a rule) did, when: each category set by accepting a
+ * suggestion, choosing one, or a rule, and each tag added or removed by the
+ * tag picker, a tag review, or a rule. Forward only (no times before v24).
+ * The AI's history of a category or tag reads it (domain/aiHistory). */
+export const ACTIVITY_LOG_SQL = `
+CREATE TABLE IF NOT EXISTS category_log (
+  id                   INTEGER PRIMARY KEY,
+  transaction_id       INTEGER NOT NULL REFERENCES transactions(id) ON DELETE CASCADE,
+  category_id          INTEGER REFERENCES categories(id) ON DELETE SET NULL,
+  previous_category_id INTEGER REFERENCES categories(id) ON DELETE SET NULL,
+  how                  TEXT NOT NULL,
+  at                   TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS category_log_category ON category_log(category_id, at);
+CREATE TABLE IF NOT EXISTS tag_log (
+  id             INTEGER PRIMARY KEY,
+  transaction_id INTEGER NOT NULL REFERENCES transactions(id) ON DELETE CASCADE,
+  tag_id         INTEGER NOT NULL REFERENCES tags(id) ON DELETE CASCADE,
+  added          INTEGER NOT NULL,
+  how            TEXT NOT NULL,
+  at             TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS tag_log_tag ON tag_log(tag_id, at);
+`
+
 export const SYNC_SQL = `
 CREATE UNIQUE INDEX IF NOT EXISTS idx_accounts_external ON accounts(source, external_id) WHERE external_id IS NOT NULL;
 CREATE UNIQUE INDEX IF NOT EXISTS idx_transactions_external ON transactions(source, external_id) WHERE external_id IS NOT NULL;
@@ -277,6 +302,7 @@ ALTER TABLE tags ADD COLUMN ${TAG_SCOPE_COLUMN};
 ALTER TABLE category_suggestions ADD COLUMN ${SUGGESTION_DISMISSED_COLUMN};
 ${TAG_DISMISSALS_SQL}
 ${CATEGORY_CHOICES_SQL}
+${ACTIVITY_LOG_SQL}
 `
 
 export const DEFAULT_CATEGORIES: { name: string; color: string; sortOrder: number; isDefault: number }[] = [

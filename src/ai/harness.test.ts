@@ -1,6 +1,6 @@
 import { expect, test } from "bun:test"
 import { createModels, fauxAssistantMessage, fauxProvider, fauxText, fauxToolCall, Type } from "@earendil-works/pi-ai"
-import { runAgent, type AgentTool } from "./harness"
+import { agentTool, runAgent } from "./harness"
 
 function fauxLlm() {
   const faux = fauxProvider()
@@ -9,11 +9,11 @@ function fauxLlm() {
   return { faux, llm: { models, model: faux.getModel() } }
 }
 
-const count: AgentTool = {
+const count = agentTool({
   name: "count", description: "Count rows a filter finds",
   parameters: Type.Object({ expr: Type.String() }),
   run: ({ expr }) => ({ expr, rows: expr === "desc:Coles" ? 4 : 0 }),
-}
+})
 const finish = { description: "The rules", parameters: Type.Object({ rules: Type.Array(Type.String()) }) }
 
 test("tools run until finish; its arguments are the result; bad arguments go back as errors", async () => {

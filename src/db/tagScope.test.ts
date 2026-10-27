@@ -1,3 +1,4 @@
+import { SCHEMA_VERSION } from "./schema"
 import { Database } from "bun:sqlite"
 import { expect, test } from "bun:test"
 import { ensureSchema, loadTags } from "./client"
@@ -14,7 +15,7 @@ test("v21 turns each tag's category scope into its cat: term (a group's with its
   const travel = Number(db.query("INSERT INTO categories (name, color) VALUES ('Trips abroad', '#fff')").run().lastInsertRowid)
   db.query("INSERT INTO tags (name, color, category_id) VALUES ('TRIP', '#fff', ?), ('CAR', '#fff', ?), ('ANY', '#fff', NULL)").run(travel, group)
   ensureSchema(db)
-  expect(db.query("SELECT version FROM schema_meta").get()).toEqual({ version: 23 })
+  expect(db.query("SELECT version FROM schema_meta").get()).toEqual({ version: SCHEMA_VERSION })
   const scopes = Object.fromEntries(loadTags(db).map((t) => [t.name, t.scope]))
   expect(scopes).toMatchObject({ TRIP: 'cat:"Trips abroad"', CAR: '(cat:"Motoring" OR cat:"Petrol" OR cat:"Road tolls")', ANY: null })
   expect(db.query("SELECT COUNT(*) AS n FROM tags WHERE category_id IS NOT NULL").get()).toEqual({ n: 0 })

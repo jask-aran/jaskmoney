@@ -42,19 +42,22 @@ export async function pushTagChange(
   transactionIds: number[],
   tagId: number,
   add: boolean,
-): Promise<{ changed: number; pushed: number; failures: string[] }> {
+): Promise<{ changed: number; pushed: number; failures: string[]; changedIds: number[]; pushedIds: number[] }> {
   const tag = db.query<{ name: string; ext_id: string | null }, [number]>("SELECT name, ext_id FROM tags WHERE id = ?").get(tagId)
   if (!tag) throw new Error("tag not found")
   const providerId = tag.ext_id ?? tag.name
   const localOnly = isIgnore(tag.name) || isIgnore(providerId)
   const change = add ? addTagLink : removeTagLink
   let local = 0
+  const changedIds: number[] = [], pushedIds: number[] = []
   const result = await pushTransactions(transactionIds, id => {
     const row = db.query<{ source: string; external_id: string | null; ext_tags: string }, [number]>(
       "SELECT source, external_id, ext_tags FROM transactions WHERE id = ?").get(id)
     if (!row) return null
     if (localOnly || row.source !== "up" || row.external_id === null) {
-      local += change(db, id, tagId)
+      const n = change(db, id, tagId)
+      local += n
+      if (n) changedIds.push(id)
       return null
     }
     const externalId = row.external_id
@@ -65,13 +68,16 @@ export async function pushTagChange(
       else await client.removeTransactionTags(externalId, [providerId])
       if (add) tags.add(providerId)
       else tags.delete(providerId)
-      return db.transaction(() => {
+      const count = db.transaction(() => {
         const count = change(db, id, tagId)
         db.query("UPDATE tags SET ext_id = ? WHERE id = ? AND ext_id IS NULL").run(tag.name, tagId)
         db.query("UPDATE transactions SET ext_tags = ? WHERE id = ?").run(JSON.stringify([...tags]), id)
         return count
       })()
+      pushedIds.push(id)
+      if (count) changedIds.push(id)
+      return count
     }
   }, { concurrency: PUSH_CONCURRENCY })
-  return { ...result, changed: result.changed + local }
+  return { ...result, changed: result.changed + local, changedIds, pushedIds }
 }

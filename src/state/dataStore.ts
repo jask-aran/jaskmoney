@@ -16,6 +16,11 @@ import {
   deleteSuggestions,
   dismissSuggestionRows,
   recordCategoryChoices,
+  logCategories,
+  unlogCategory,
+  logTags,
+  type CategoryHow,
+  type TagHow,
   loadCategoryChoices,
   declineCategoryChoice,
   loadDismissedSuggestionIds,
@@ -65,7 +70,7 @@ import { count } from "../ui/text"
 import { ruleOffers, type RuleOffer } from "../domain/ruleOffers"
 import { detectRecurring, detectTrips } from "../domain/tagGroups"
 import { jevTagCandidates, knownTagCandidates, TAG_SHOW_AT, tagExamples, tagPool, type TagCandidate, type TagTarget } from "../domain/tagSuggest"
-import { appToday, type WeekStart } from "../domain/days"
+import { appNow, appToday, type WeekStart } from "../domain/days"
 import { askCandidates, ASK_DEFAULT_DAYS, ASK_LIMIT, judgeRows } from "../domain/ask"
 import { ACCEPT_ALL_AT, MATCH_AT, NEAR_AT } from "../domain/questions"
 import { addTagLink } from "../db/tagLinks"
@@ -522,6 +527,7 @@ function createDataStore() {
    */
   async function applyCategories(
     assignments: Map<number, number>,
+    how: CategoryHow,
     onProgress?: (pushed: number, total: number) => void,
   ): Promise<CategorizeResult> {
     if (!db) throw new Error("db not open")
@@ -530,10 +536,12 @@ function createDataStore() {
     const pushes = new Map<number, CategoryPush & { prior: Prior }>()
     let local = 0
     const chosen = new Map<string, { description: string; categoryId: number; times: number }>()
+    const logged: { transactionId: number; categoryId: number; previousCategoryId: number | null }[] = []
     database.transaction(() => {
       for (const [id, categoryId] of assignments) {
         const t = transactions().find((x) => x.id === id)
         if (t && t.categoryId !== categoryId) {
+          logged.push({ transactionId: id, categoryId, previousCategoryId: t.categoryId })
           const key = `${t.description.trim().toLowerCase()}\u0000${categoryId}`
           chosen.set(key, { description: t.description, categoryId, times: (chosen.get(key)?.times ?? 0) + 1 })
         }
@@ -553,6 +561,7 @@ function createDataStore() {
       }
       // Repeated choices turn into rule offers (ruleOffersFor).
       recordCategoryChoices(database, [...chosen.values()])
+      logCategories(database, logged, how, appNow().toISOString())
     })()
     refresh()
     let settled = 0, waiting = 0
@@ -573,6 +582,7 @@ function createDataStore() {
           }
           database.query(`UPDATE transactions SET category_id = ?, category_source = ?, ext_category = ?, ext_parent_category = ? WHERE id = ?`)
             .run(p.prior.categoryId, p.prior.source, p.prior.ext, p.prior.extParent, id)
+          unlogCategory(database, id, p.categoryId)
           throw error
         } finally {
           pushingIds.delete(id)
@@ -633,7 +643,7 @@ function createDataStore() {
   async function categorizeTransactions(txnIds: number[], categoryId: number, onProgress?: (pushed: number, total: number) => void): Promise<string> {
     const category = state.categories.find((c) => c.id === categoryId)
     if (!category) throw new Error("category not found")
-    const result = await applyCategories(new Map(txnIds.map((id) => [id, categoryId])), onProgress)
+    const result = await applyCategories(new Map(txnIds.map((id) => [id, categoryId])), "choose", onProgress)
     return categorizedSummary(`Categorized ${result.done} → ${category.name}`, result) + ruleOfferNote(txnIds)
   }
 
@@ -834,7 +844,7 @@ function createDataStore() {
       tagId = createSettingsTag({ name: review.name, color: NEW_TAG_COLOR, scope: review.scope })
       setState("tagReview", "tagId", tagId)
     }
-    const summary = await applyTagPatch(take, { [tagId]: "add" })
+    const summary = await applyTagPatch(take, { [tagId]: "add" }, "review")
     const tagged = new Set(transactions().filter((t) => t.tagIds.includes(tagId!)).map((t) => t.id))
     // produce: a store merges a plain object into the old one, keeping removed keys.
     setState("tagReview", "candidates", produce((c) => { for (const id of take) if (tagged.has(id)) delete c[id] }))
@@ -866,7 +876,7 @@ function createDataStore() {
       if (suggestion) assignments.set(id, suggestion.categoryId)
     }
     if (!assignments.size) return "No suggestions accepted"
-    const result = await applyCategories(assignments, onProgress)
+    const result = await applyCategories(assignments, "accept", onProgress)
     const accepted = [...assignments].filter(([id, categoryId]) => transactions().some((t) => t.id === id && t.categoryId === categoryId)).map(([id]) => id)
     mutate((db) => deleteSuggestions(db, accepted))
     return categorizedSummary(`Accepted ${result.done} suggestion${result.done === 1 ? "" : "s"}`, result) + ruleOfferNote(accepted)
@@ -877,7 +887,7 @@ function createDataStore() {
     mutate((db) => dismissSuggestionRows(db, ids))
   }
 
-  async function applyTagPatch(txnIds: number[], patch: Record<number, "add" | "remove">): Promise<string> {
+  async function applyTagPatch(txnIds: number[], patch: Record<number, "add" | "remove">, how: TagHow = "picker"): Promise<string> {
     if (!db) throw new Error("db not open")
     const database = db
     if (!Object.keys(patch).length) return "Tags unchanged"
@@ -904,12 +914,14 @@ function createDataStore() {
         if (add) addTagToTransactions(database, local, tagId)
         else removeTagFromTransactions(database, local, tagId)
         for (const id of local) updated.add(id)
-        for (const id of targets.filter((id) => !local.includes(id))) {
-          const result = await pushTagChange(database, client, [id], tagId, add)
-          if (result.changed) updated.add(id)
-          if (result.pushed) pushed.add(id)
-          failures.push(...result.failures)
-        }
+        // Up rows in one batch (pushTagChange sends several at once); each
+        // applies here once Up confirms it.
+        const remote = targets.filter((id) => !local.includes(id))
+        const result = remote.length ? await pushTagChange(database, client, remote, tagId, add) : null
+        for (const id of result?.changedIds ?? []) updated.add(id)
+        for (const id of result?.pushedIds ?? []) pushed.add(id)
+        failures.push(...(result?.failures ?? []))
+        logTags(database, [...local, ...(result?.changedIds ?? [])], tagId, add, how, appNow().toISOString())
       }
     } finally {
       refresh()
@@ -1014,6 +1026,7 @@ function createDataStore() {
     if (!db) throw new Error("db not open")
     const report = dryRunRules(transactionIds)
     if (!dryRun) mutate((database) => database.transaction(() => {
+      const at = appNow().toISOString()
       for (const change of report.changes) {
         // 'rule' keeps sync from replacing a rule's category with the
         // provider's. An Up row Up can hold the category for goes to Up like
@@ -1025,8 +1038,10 @@ function createDataStore() {
           const category = state.categories.find((c) => c.id === change.categoryId)
           const source = row && category && categoryPush(row, category, state.categories) ? "pending" : "rule"
           database.query(`UPDATE transactions SET category_id = ?, category_source = ? WHERE id = ?`).run(change.categoryId, source, change.id)
+          const previous = transactions().find((t) => t.id === change.id)?.categoryId ?? null
+          if (change.categoryId != null) logCategories(database, [{ transactionId: change.id, categoryId: change.categoryId, previousCategoryId: previous }], "rule", at)
         }
-        for (const tagId of change.tagIds) addTagLink(database, change.id, tagId)
+        for (const tagId of change.tagIds) if (addTagLink(database, change.id, tagId)) logTags(database, [change.id], tagId, true, "rule", at)
       }
     })())
     return { updatedTransactions: report.updatedTransactions, categoryChanges: report.categoryChanges, tagChanges: report.tagChanges, failedRules: report.failedRules }

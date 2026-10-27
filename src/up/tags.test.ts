@@ -104,14 +104,14 @@ describe("pushTagChange", () => {
       expect(db.query("SELECT * FROM tags WHERE id = ?").get(local)).toEqual(beforeTag)
       return new Response(null, { status })
     } })
-    expect(await pushTagChange(db, client, [id], local, add)).toEqual({
+    expect(await pushTagChange(db, client, [id], local, add)).toMatchObject({
       changed: 0, pushed: 0, failures: ["Unexpected Up API response status (200); expected 204"],
     })
     expect(stored(db, id)).toEqual(before)
     expect(links(db, id)).toEqual(beforeLinks)
     expect(db.query("SELECT * FROM tags WHERE id = ?").get(local)).toEqual(beforeTag)
     status = 204
-    expect(await pushTagChange(db, client, [id], local, add)).toEqual({ changed: 1, pushed: 1, failures: [] })
+    expect(await pushTagChange(db, client, [id], local, add)).toMatchObject({ changed: 1, pushed: 1, failures: [] })
     expect(calls).toBe(2)
     expect(links(db, id)).toEqual(add ? [local] : [])
     expect(stored(db, id)).toMatchObject({ ext_tags: add ? '["Food","Local"]' : '["Food"]' })
@@ -136,12 +136,12 @@ describe("pushTagChange", () => {
   test("add and remove update Up, local links, stored tags, and provider identity", async () => {
     const db = database(), local = tag(db, "HOLIDAY"), id = row(db, ["Food"])
     const { client, calls } = mockClient()
-    expect(await pushTagChange(db, client, [id], local, true)).toEqual({ changed: 1, pushed: 1, failures: [] })
+    expect(await pushTagChange(db, client, [id], local, true)).toMatchObject({ changed: 1, pushed: 1, failures: [] })
     expect(links(db, id)).toEqual([local])
     expect(stored(db, id)).toMatchObject({ ext_tags: '["Food","HOLIDAY"]' })
     expect(db.query("SELECT ext_id FROM tags WHERE id = ?").get(local)).toEqual({ ext_id: "HOLIDAY" })
     db.query("UPDATE tags SET name = 'Renamed' WHERE id = ?").run(local)
-    expect(await pushTagChange(db, client, [id], local, false)).toEqual({ changed: 1, pushed: 1, failures: [] })
+    expect(await pushTagChange(db, client, [id], local, false)).toMatchObject({ changed: 1, pushed: 1, failures: [] })
     expect(links(db, id)).toEqual([])
     expect(stored(db, id)).toMatchObject({ ext_tags: '["Food"]' })
     expect(calls).toEqual([{ add: true, id: "remote", tags: ["HOLIDAY"] }, { add: false, id: "remote", tags: ["HOLIDAY"] }])
@@ -150,7 +150,7 @@ describe("pushTagChange", () => {
   test("remove also sets a previously local tag's provider identity", async () => {
     const db = database(), local = tag(db, "HOLIDAY"), id = row(db, ["HOLIDAY"])
     link(db, id, local)
-    expect(await pushTagChange(db, mockClient().client, [id], local, false)).toEqual({ changed: 1, pushed: 1, failures: [] })
+    expect(await pushTagChange(db, mockClient().client, [id], local, false)).toMatchObject({ changed: 1, pushed: 1, failures: [] })
     expect(db.query("SELECT ext_id FROM tags WHERE id = ?").get(local)).toEqual({ ext_id: "HOLIDAY" })
     expect(stored(db, id)).toMatchObject({ ext_tags: "[]" })
   })
@@ -162,8 +162,8 @@ describe("pushTagChange", () => {
       tag(db, "iGnOrE", "remote"), tag(db, "Alias", "ignore")]
     const before = stored(db, id), beforeTags = db.query("SELECT * FROM tags").all()
     for (const local of ids) {
-      expect(await pushTagChange(db, client, [id], local, true)).toEqual({ changed: 1, pushed: 0, failures: [] })
-      expect(await pushTagChange(db, client, [id], local, false)).toEqual({ changed: 1, pushed: 0, failures: [] })
+      expect(await pushTagChange(db, client, [id], local, true)).toMatchObject({ changed: 1, pushed: 0, failures: [] })
+      expect(await pushTagChange(db, client, [id], local, false)).toMatchObject({ changed: 1, pushed: 0, failures: [] })
     }
     expect(calls).toEqual([])
     expect(stored(db, id)).toEqual(before)
@@ -174,9 +174,9 @@ describe("pushTagChange", () => {
     const db = database(), local = tag(db, "Local")
     const ids = [row(db, [], "csv", null), row(db, [], "up", null)]
     const { client, calls } = mockClient()
-    expect(await pushTagChange(db, client, ids, local, true)).toEqual({ changed: 2, pushed: 0, failures: [] })
+    expect(await pushTagChange(db, client, ids, local, true)).toMatchObject({ changed: 2, pushed: 0, failures: [] })
     for (const id of ids) expect(links(db, id)).toEqual([local])
-    expect(await pushTagChange(db, client, ids, local, false)).toEqual({ changed: 2, pushed: 0, failures: [] })
+    expect(await pushTagChange(db, client, ids, local, false)).toMatchObject({ changed: 2, pushed: 0, failures: [] })
     expect(calls).toEqual([])
     expect(db.query("SELECT ext_id FROM tags WHERE id = ?").get(local)).toEqual({ ext_id: null })
   })
@@ -187,7 +187,7 @@ describe("pushTagChange", () => {
     const before = stored(db, id), beforeLinks = links(db, id), beforeTag = db.query("SELECT * FROM tags WHERE id = ?").get(local)
     const fail = async () => { throw new Error("Denied") }
     expect(await pushTagChange(db, { addTransactionTags: fail, removeTransactionTags: fail }, [id], local, add))
-      .toEqual({ changed: 0, pushed: 0, failures: ["Denied"] })
+      .toMatchObject({ changed: 0, pushed: 0, failures: ["Denied"] })
     expect(stored(db, id)).toEqual(before); expect(links(db, id)).toEqual(beforeLinks)
     expect(db.query("SELECT * FROM tags WHERE id = ?").get(local)).toEqual(beforeTag)
   })
@@ -197,11 +197,11 @@ describe("pushTagChange", () => {
     const full = row(db, ["1", "2", "3", "4", "5", "IGNORE"], "up", "full")
     const room = row(db, ["1", "2", "3", "4", "5"], "up", "room")
     const { client, calls } = mockClient(), before = stored(db, full)
-    expect(await pushTagChange(db, client, [full, room], local, true)).toEqual({ changed: 1, pushed: 1, failures: ["Up allows at most 6 tags"] })
+    expect(await pushTagChange(db, client, [full, room], local, true)).toMatchObject({ changed: 1, pushed: 1, failures: ["Up allows at most 6 tags"] })
     expect(stored(db, full)).toEqual(before); expect(links(db, full)).toEqual([])
     expect(calls.map(c => c.id)).toEqual(["room"])
-    expect(await pushTagChange(db, client, [room], local, true)).toEqual({ changed: 0, pushed: 1, failures: [] })
-    expect(await pushTagChange(db, client, [room], local, false)).toEqual({ changed: 1, pushed: 1, failures: [] })
+    expect(await pushTagChange(db, client, [room], local, true)).toMatchObject({ changed: 0, pushed: 1, failures: [] })
+    expect(await pushTagChange(db, client, [room], local, false)).toMatchObject({ changed: 1, pushed: 1, failures: [] })
   })
 
   test("requests run four at a time, in order, and continue after an error", async () => {
@@ -216,7 +216,7 @@ describe("pushTagChange", () => {
       if (id === "bad") throw new Error("Failed bad")
     }
     expect(await pushTagChange(db, { ...mockClient().client, addTransactionTags }, ids, local, true))
-      .toEqual({ changed: 5, pushed: 5, failures: ["Failed bad"] })
+      .toMatchObject({ changed: 5, pushed: 5, failures: ["Failed bad"] })
     expect(most).toBe(4)
     expect(events).toEqual(["bad", "a", "b", "c", "d", "e"])
     expect(ids.map((id) => links(db, id))).toEqual([[], ...ids.slice(1).map(() => [local])])
