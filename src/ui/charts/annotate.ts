@@ -3,8 +3,10 @@
  * rows any chart renderer returns: a label goes only where its cells (and a
  * one-cell margin) hold nothing but blanks, gridlines or rules, trying right
  * of the point, then left, then the rows above and below (above first for
- * bar tops). A label that fits nowhere is dropped, so callers keep the
- * figure elsewhere (the legend).
+ * bar tops), then two rows out. A label that fits nowhere is dropped, so
+ * callers keep the figure elsewhere (the legend), unless it's `required`:
+ * then it takes its first spot inside the chart anyway. Labels are placed
+ * in the order given, so the first ones win the space.
  */
 import type { Run } from "./lineChart"
 import { cellsToRuns } from "./runs"
@@ -17,6 +19,8 @@ export interface ChartLabel {
   ink: string
   /** Try the row above first (bar tops). */
   above?: boolean
+  /** Shown even where nothing is free (the period's own line). */
+  required?: boolean
 }
 
 /** Cells a label may cover: blank, gridlines and rules. */
@@ -43,8 +47,13 @@ export function annotate(rows: Run[][], labels: ChartLabel[]): Run[][] {
       [row - 1, col - n],
       [row + 1, col + 1],
       [row + 1, col - n],
+      [row - 2, col - n],
+      [row - 2, col + 1],
+      [row + 2, col - n],
+      [row + 2, col + 1],
     ]
-    const spot = spots.find(([r, c]) => free(r, c, c + n))
+    const inside = ([r, c]: [number, number]) => r >= 0 && r < grid.length && c >= 0 && c + n <= width
+    const spot = spots.find(([r, c]) => free(r, c, c + n)) ?? (label.required ? spots.find(inside) : undefined)
     if (!spot) continue
     const [r, c] = spot
     ;[...label.text].forEach((ch, k) => (grid[r]![c + k] = { text: ch, ink: label.ink }))

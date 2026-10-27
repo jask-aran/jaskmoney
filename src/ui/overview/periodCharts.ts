@@ -20,14 +20,14 @@ export const INKS: Record<string, string> = {
   ref: theme.surface2,
   in: theme.success,
   out: theme.error,
-  limit: theme.yellow,
+  limit: theme.chartBudget,
   balance: theme.lavender,
   savers: theme.green,
   // Gridlines, as in the Go app.
   week: theme.surface1,
   month: theme.blue,
   year: theme.accent,
-  today: theme.green,
+  today: theme.chartToday,
   // In-chart notes (highs, lows, totals): grey, so the coloured label is
   // always the latest value.
   note: theme.overlay1,
@@ -129,7 +129,7 @@ export function spendingChart(
     // Each line named at its end.
     const at = (index: number, value: number) => pointCell(index, value, n, width, height, 0, scale.max)
     const marks: ChartLabel[] = [
-      ...(elapsed > 0 ? [{ ...at(elapsed - 1, now), text: `${names.current} ${shortMoney(now)}`, ink: "spend" }] : []),
+      ...(elapsed > 0 ? [{ ...at(elapsed - 1, now), text: `${names.current} ${shortMoney(now)}`, ink: "spend", required: true }] : []),
       ...(prev.length ? [{ ...at(n - 1, prev[n - 1]!), text: names.previous, ink: "prev" }] : []),
       ...(budget != null ? [{ ...at(n - 1, budget), text: "Budget", ink: "limit" }] : []),
     ]

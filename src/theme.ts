@@ -56,6 +56,11 @@ export const theme = {
   warning: "#f9e2af",
   info: "#94e2d5",
 
+  // Chart rules: today's rule a vivid green, the budget pace line a muted
+  // yellow, so the two never read alike.
+  chartToday: "#40d97a",
+  chartBudget: "#a8996b",
+
   // Row states, every list (domain/rowStyle): the Transactions table's
   // washes. Cursor, selection and range are independent; a cursor on a
   // selected or ranged row is a bright bar with dark text.
