@@ -80,7 +80,7 @@ test("clearing the filter stops a run; no Jev is an error, not an empty result",
   expect(await running).toBe("")
   expect(data.state.asking).toBeNull()
   data.commitFilter("ask:coffee")
-  await expect(data.askAbout()).rejects.toThrow("JASKMONEY_JEV_TOKEN")
+  await expect(data.askAbout()).rejects.toThrow("ask: needs Jev")
 })
 
 test("session reset discards cached ASK verdicts and stops a pending run", async () => {

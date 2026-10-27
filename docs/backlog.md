@@ -45,7 +45,7 @@ committed; note the commit.
 
 ## Later
 
-- [ ] **10. Jev through pi-ai.** pi-ai's `classify()` serves Jev (TypeSafe, or
+- [x] **10. Jev through pi-ai.** pi-ai's `classify()` serves Jev (TypeSafe, or
   OpenRouter's `typesafe/jev-1.14`). Move our Jev client onto it so one
   provider layer (maybe one OpenRouter key) serves Jev and the general model;
   re-run the suggestion benchmark first to confirm identical answers.

@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test"
-import { createJevClient, hasJev, JEV_MODEL, JevError, judgeEach, readJevToken, type JevAnswer, type JevQuestion } from "./jev"
+import { createJevClient, hasJev, JEV_MODEL, JevError, jevRoute, judgeEach, readJevToken, type JevAnswer, type JevQuestion } from "./jev"
 
 const token = "apikey_secret_1234567890"
 
@@ -96,5 +96,25 @@ describe("judgeEach", () => {
     let sent = 0
     await judgeEach({ judge: async (qs) => { sent++; return Object.fromEntries(Object.keys(qs).map((id) => [id, noul(1)])) } }, [1, 2, 3, 4], question, "s", { budget: 250, active: () => false })
     expect(sent).toBe(0)
+  })
+})
+
+describe("Jev's route", () => {
+  test("a TypeSafe key first, then OpenRouter's key, then its sign-in; else none", () => {
+    expect(jevRoute({ JASKMONEY_JEV_TOKEN: " t ", JASKMONEY_OPENROUTER_TOKEN: "o" }, true)).toEqual({ provider: "typesafe", token: "t" })
+    expect(jevRoute({ JASKMONEY_OPENROUTER_TOKEN: "o" }, true)).toEqual({ provider: "openrouter", token: "o" })
+    expect(jevRoute({}, true)).toEqual({ provider: "openrouter" })
+    expect(jevRoute({}, false)).toBeNull()
+  })
+
+  test("through OpenRouter, the pinned version goes to OpenRouter's System One endpoint", async () => {
+    const calls: { url: string; auth: string | null; body: { model: string } }[] = []
+    const fetch = (async (url: string, init: RequestInit) => {
+      calls.push({ url: String(url), auth: new Headers(init.headers).get("authorization"), body: JSON.parse(String(init.body)) })
+      return new Response(JSON.stringify({ answers: { q: { type: "noul", noul: 0.9 } } }))
+    }) as unknown as typeof globalThis.fetch
+    const jev = createJevClient({ provider: "openrouter", token: "or-key", fetch })
+    expect(await jev.judge({ q: { type: "noul", instructions: "?" } }, "s")).toEqual({ q: noul(0.9) })
+    expect(calls[0]).toMatchObject({ url: "https://openrouter.ai/api/v1/systemone", auth: "Bearer or-key", body: { model: "typesafe/jev-1.14" } })
   })
 })

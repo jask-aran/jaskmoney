@@ -174,3 +174,10 @@ test("browser sign-in: the address opens, a pasted redirect URL is sent, the sig
   expect(ui.state.llmSignIn).toBeNull()
   expect(ui.state.status).toBe("OpenRouter sign-in cancelled")
 })
+
+test("without its own key, the Jev row shows it goes through OpenRouter when that is connected", () => {
+  const ctx = aiContext(data)
+  const signedIn = { ...ctx, signedIn: { openrouter: true, openai: false } }
+  expect(aiRow("jev", ctx).how).toBe("not set")
+  expect(aiRow("jev", signedIn)).toMatchObject({ connected: true, how: "via OpenRouter" })
+})

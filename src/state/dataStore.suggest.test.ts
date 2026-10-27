@@ -108,7 +108,7 @@ test("history works without Jev and reports missing setup", async () => {
   add({ id: 2, description: "Shop" })
   add({ id: 3, description: "Unknown" })
   data.refresh()
-  expect(await data.suggestCategories()).toBe("Suggested 1: 1 from history, 0 from Jev · Jev is not set up (JASKMONEY_JEV_TOKEN)")
+  expect(await data.suggestCategories()).toBe("Suggested 1: 1 from history, 0 from Jev · Jev is not set up (a TypeSafe key, or OpenRouter: Settings › AI models)")
   expect(data.state.suggestions[2]?.categoryId).toBe(100)
   expect(data.state.suggestions[3]).toBeUndefined()
 })

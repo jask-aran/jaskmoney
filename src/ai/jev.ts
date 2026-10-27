@@ -10,8 +10,12 @@
  * on the same tasks, preferred the opposite: rows listed in the state.)
  */
 
+import { createModels, type ClassifierAnswer, type ClassifierContext, type ClassifierQuestion, type Models } from "@earendil-works/pi-ai"
+import { openrouterProvider } from "@earendil-works/pi-ai/providers/openrouter"
+import { typesafeProvider } from "@earendil-works/pi-ai/providers/typesafe"
 import { credentialEnv } from "./credentials"
-import { fetchWithTimeout, type Fetch } from "./http"
+import type { Fetch } from "./http"
+import { createFileCredentialStore, signedIn } from "./oauthStore"
 
 /** Pinned: the questions and thresholds here were tuned against this
  * version (it was `jev-latest` on 2026-10-27). */
@@ -30,10 +34,24 @@ export function readJevToken(env: Record<string, string | undefined> = credentia
   return token
 }
 
+/** How Jev is reached now: a TypeSafe key first (the pinned version, at
+ * TypeSafe's price), else OpenRouter's key or browser sign-in (the general
+ * model's); null when neither is set up. */
+export function jevRoute(env: Record<string, string | undefined> = credentialEnv(), openrouterSignedIn = signedIn("openrouter")): { provider: JevProvider; token?: string } | null {
+  const typesafe = env.JASKMONEY_JEV_TOKEN?.trim()
+  if (typesafe) return { provider: "typesafe", token: typesafe }
+  const openrouter = env.JASKMONEY_OPENROUTER_TOKEN?.trim()
+  if (openrouter) return { provider: "openrouter", token: openrouter }
+  return openrouterSignedIn ? { provider: "openrouter" } : null
+}
+
 /** Whether Jev is set up, without throwing. */
 export function hasJev(env: Record<string, string | undefined> = credentialEnv()): boolean {
-  return !!env.JASKMONEY_JEV_TOKEN?.trim()
+  return jevRoute(env) != null
 }
+
+/** What sets Jev up, for "not set up" messages. */
+export const JEV_SETUP = "a TypeSafe key, or OpenRouter: Settings › AI models"
 
 /** A question's text, or the question with the data it is about in named
  * fields (`{ question, transaction }`), which the question refers to by
@@ -54,57 +72,80 @@ function object(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value)
 }
 
-function jevAnswer(value: unknown): JevAnswer | null {
-  if (!object(value)) return null
-  if (value.type === "noul" && typeof value.noul === "number") return { type: "noul", noul: value.noul }
-  if (value.type === "choice" && typeof value.choice === "string" && object(value.probabilities) && typeof value.confidence === "number" &&
-    Object.values(value.probabilities).every((p) => typeof p === "number")) {
-    return { type: "choice", choice: value.choice, probabilities: value.probabilities as Record<string, number>, confidence: value.confidence }
-  }
-  return null
-}
-
 /** Retries after a rate limit or a server error, waiting as asked. */
 const RETRIES = 3
 
-export function createJevClient({ token, fetch = globalThis.fetch, timeoutMs = 30_000 }: { token: string; fetch?: Fetch; timeoutMs?: number }) {
-  const redact = (message: string) => message.split(token).join("[redacted]")
+/** Where Jev is reached, through pi-ai: TypeSafe itself (a TypeSafe key), or
+ * OpenRouter (its key or browser sign-in, the general model's provider). */
+export type JevProvider = "typesafe" | "openrouter"
 
-  async function post(body: string): Promise<Response> {
-    for (let attempt = 0; ; attempt++) {
-      let response: Response
-      try {
-        response = await fetchWithTimeout(fetch, "https://api.typesafe.ai/v1/systemone", {
-          method: "POST",
-          headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json" },
-          body,
-        }, timeoutMs)
-      } catch (error) {
-        const aborted = error instanceof Error && error.name === "AbortError"
-        throw new JevError(0, aborted ? `Jev timed out after ${timeoutMs / 1000}s` : redact(`Jev request failed: ${error instanceof Error ? error.message : String(error)}`))
-      }
-      if ((response.status === 429 || response.status >= 500) && attempt < RETRIES) {
-        const wait = Number(response.headers.get("retry-after"))
-        await new Promise((resolve) => setTimeout(resolve, Number.isFinite(wait) && wait > 0 ? wait * 1000 : 250 * 2 ** attempt))
-        continue
-      }
-      return response
-    }
-  }
+/** The pinned version on each provider. TypeSafe's catalog in pi-ai lists
+ * only jev-latest, so its entry is reused with the version's id. */
+const JEV_MODELS: Record<JevProvider, { catalog: string; id: string }> = {
+  typesafe: { catalog: "jev-latest", id: JEV_MODEL },
+  openrouter: { catalog: "typesafe/jev-1.14", id: "typesafe/jev-1.14" },
+}
+
+/** pi-ai with Jev's two providers; OpenRouter's sign-in from oauth.json. */
+function jevModels(): Models {
+  const models = createModels({ credentials: createFileCredentialStore() })
+  models.setProvider(typesafeProvider())
+  models.setProvider(openrouterProvider())
+  return models
+}
+
+/** Our question types on pi-ai's: a noul is its bool. The instructions
+ * (text, or the question with its data) and the state pass through as
+ * they are: pi-ai sends them unchanged. */
+function piQuestion(question: JevQuestion): ClassifierQuestion {
+  return (question.type === "noul" ? { ...question, type: "bool" } : question) as ClassifierQuestion
+}
+
+function fromPi(answer: ClassifierAnswer | undefined): JevAnswer | null {
+  if (answer?.type === "bool") return { type: "noul", noul: answer.probability }
+  if (answer?.type === "choice") return { type: "choice", choice: answer.choice, probabilities: answer.probabilities, confidence: answer.confidence }
+  return null
+}
+
+/** pi-ai's "System One API error (422): {body}" as our "Jev: <detail>". */
+function piError(message: string): { status: number; message: string } {
+  const missing = /did not return an? (?:\w+ )?answer for (\S+)/.exec(message)
+  if (missing) return { status: 200, message: `Jev: no usable answer for ${missing[1]}` }
+  const match = /\((\d{3})\): ([\s\S]*)$/.exec(message)
+  if (!match) return { status: 0, message: /timed? ?out|timeout/i.test(message) ? "Jev timed out" : `Jev request failed: ${message}` }
+  let payload: unknown = null
+  try { payload = JSON.parse(match[2]!) } catch { /* not JSON */ }
+  const detail = object(payload) ? payload.detail ?? payload.error ?? payload.message : null
+  const text = typeof detail === "string" ? detail
+    : object(detail) && typeof detail.message === "string" ? detail.message
+    : Array.isArray(detail) && object(detail[0]) && typeof detail[0].msg === "string" ? detail[0].msg
+    : `HTTP ${match[1]}`
+  return { status: Number(match[1]), message: `Jev: ${text}` }
+}
+
+/** `token`: the provider's key; without one, OpenRouter uses its sign-in. */
+export function createJevClient({ token, provider = "typesafe", fetch, timeoutMs = 30_000 }: { token?: string; provider?: JevProvider; fetch?: Fetch; timeoutMs?: number }) {
+  const redact = (message: string) => (token ? message.split(token).join("[redacted]") : message)
+  const models = jevModels()
+  const entry = models.getModelOfType("classifier", provider, JEV_MODELS[provider].catalog)
+  if (!entry) throw new JevError(0, `pi-ai has no Jev model on ${provider}`)
+  const model = { ...entry, id: JEV_MODELS[provider].id }
 
   return {
+    provider,
     /** Jev's answer to each question about `state`; a missing or malformed answer is an error. */
     async judge(questions: Record<string, JevQuestion>, state: JevState): Promise<Record<string, JevAnswer>> {
-      const response = await post(JSON.stringify({ model: JEV_MODEL, state, questions }))
-      const payload: unknown = await response.json().catch(() => null)
-      if (!response.ok || !object(payload) || !object(payload.answers)) {
-        const detail = object(payload) ? payload.detail ?? payload.error ?? payload.message : null
-        const message = typeof detail === "string" ? detail : Array.isArray(detail) && object(detail[0]) && typeof detail[0].msg === "string" ? detail[0].msg : `HTTP ${response.status}`
-        throw new JevError(response.status, redact(`Jev: ${message}`))
+      const result = await models.classify(model, {
+        state: state as ClassifierContext["state"],
+        questions: Object.fromEntries(Object.entries(questions).map(([id, q]) => [id, piQuestion(q)])),
+      }, { ...(token ? { apiKey: token } : {}), ...(fetch ? { fetch: fetch as typeof globalThis.fetch } : {}), timeoutMs, maxRetries: RETRIES })
+      if (result.stopReason !== "stop") {
+        const error = piError(result.errorMessage ?? "no answer")
+        throw new JevError(error.status, redact(error.message === "Jev timed out" ? `Jev timed out after ${timeoutMs / 1000}s` : error.message))
       }
       const out: Record<string, JevAnswer> = {}
       for (const id of Object.keys(questions)) {
-        const answer = jevAnswer(payload.answers[id])
+        const answer = fromPi(result.answers[id])
         if (!answer) throw new JevError(200, `Jev: no usable answer for ${id}`)
         out[id] = answer
       }
@@ -115,8 +156,12 @@ export function createJevClient({ token, fetch = globalThis.fetch, timeoutMs = 3
 
 export type JevClient = ReturnType<typeof createJevClient>
 
-/** A Jev client for the token in the environment now. */
-export const jevClient = (): JevClient => createJevClient({ token: readJevToken() })
+/** A Jev client by the route set up now (jevRoute). */
+export function jevClient(options: { timeoutMs?: number } = {}): JevClient {
+  const route = jevRoute()
+  if (!route) throw new Error(`Jev is not set up (${JEV_SETUP})`)
+  return createJevClient({ ...route, ...options })
+}
 
 /** Request size to aim for, in estimated tokens (Jev takes 64k a request). */
 const REQUEST_BUDGET = 40_000

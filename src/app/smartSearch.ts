@@ -1,4 +1,4 @@
-import { hasJev, jevClient } from "../ai/jev"
+import { hasJev, JEV_SETUP, jevClient } from "../ai/jev"
 import { createWorkersAiClient, hasWorkersAi, readWorkersAiCredentials } from "../ai/workersAi"
 import { appToday } from "../domain/days"
 import { smartSearch } from "../domain/smartSearch"
@@ -15,7 +15,7 @@ import { askTerms, parseFilter } from "../domain/filter"
 export async function runSmartSearch(ui: UiStore, data: DataStore, draft: string, onApplied: () => void): Promise<void> {
   const query = draft.trim().slice(1).trim()
   if (!query) { ui.setStatus("Type a search after ?, e.g. ?coffee over $5 last month"); return }
-  if (!hasJev()) { ui.setStatus("Smart search needs a Jev key: Settings › AI models", true); return }
+  if (!hasJev()) { ui.setStatus(`Smart search needs Jev (${JEV_SETUP})`, true); return }
   ui.setStatus(`Smart search: ${query}…`)
   try {
     const ai = { clairic: hasWorkersAi() ? createWorkersAiClient(readWorkersAiCredentials()).clairic : undefined, jev: jevClient() }

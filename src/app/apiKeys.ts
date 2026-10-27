@@ -1,4 +1,4 @@
-import { createJevClient, JEV_MODEL, readJevToken } from "../ai/jev"
+import { JEV_MODEL, jevClient } from "../ai/jev"
 import { createWorkersAiClient, readWorkersAiCredentials } from "../ai/workersAi"
 import { createLlm, LLM_PROVIDERS, type LlmProvider } from "../ai/llm"
 import { appToday } from "../domain/days"
@@ -18,8 +18,9 @@ export async function testAi(row: AiRow): Promise<{ ok: boolean; text: string }>
   let llmKey = ""
   try {
     if (row === "jev") {
-      await createJevClient({ token: readJevToken(), timeoutMs: 15_000 }).judge({ ok: { type: "noul", instructions: "Is `state` a greeting?" } }, "hello")
-      return { ok: true, text: `Works (${JEV_MODEL})` }
+      const jev = jevClient({ timeoutMs: 15_000 })
+      await jev.judge({ ok: { type: "noul", instructions: "Is `state` a greeting?" } }, "hello")
+      return { ok: true, text: `Works (${JEV_MODEL}${jev.provider === "openrouter" ? " via OpenRouter" : ""})` }
     }
     if (row === "workersAi") {
       await createWorkersAiClient({ ...readWorkersAiCredentials(), timeoutMs: 15_000 }).clairic({ word: { type: "text" } }, "hello", appToday())

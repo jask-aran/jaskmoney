@@ -57,6 +57,11 @@ export function aiConnection(row: AiRow, ctx: AiContext): { long: string; short:
   if (key.source === "saved") return { long: `key saved here (${key.mask})`, short: "key · saved" }
   if (key.source === "env") return { long: `key from .env (${key.mask})`, short: "key · .env" }
   if (isLlmRow(row) && ctx.signedIn[row]) return { long: "signed in with the browser", short: "signed in" }
+  // Without its own key, Jev goes through OpenRouter when that's connected.
+  if (row === "jev") {
+    const openrouter = aiConnection("openrouter", ctx)
+    if (openrouter) return { long: `through OpenRouter (${openrouter.long})`, short: "via OpenRouter" }
+  }
   return null
 }
 

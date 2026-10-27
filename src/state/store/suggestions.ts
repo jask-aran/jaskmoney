@@ -1,6 +1,6 @@
 import { unwrap } from "solid-js/store"
 import { saveSuggestions, loadDismissedSuggestionIds, deleteSuggestions, dismissSuggestionRows, undismissSuggestionRows, unrecordCategoryChoices } from "../../db/client"
-import { hasJev, jevClient, type JevClient } from "../../ai/jev"
+import { hasJev, JEV_SETUP, jevClient, type JevClient } from "../../ai/jev"
 import { historySuggestions, jevSuggestions } from "../../domain/suggest"
 import { isOrdinaryFlow, isUncategorised } from "../../domain/moneyRules"
 import type { Transaction } from "../../domain/types"
@@ -67,7 +67,7 @@ export function createSuggestions(ctx: StoreContext, deps: {
       }
       if (options.replace) return history.length + fromJev
       const parts = [`Suggested ${history.length + fromJev}: ${history.length} from history, ${fromJev} from Jev`]
-      if (!enabled) parts.push("Jev is not set up (JASKMONEY_JEV_TOKEN)")
+      if (!enabled) parts.push(`Jev is not set up (${JEV_SETUP})`)
       if (failures.length) parts.push(`${failures.length} failed: ${failures[0]}`)
       return parts.join(" · ")
     } finally {
@@ -105,7 +105,7 @@ export function createSuggestions(ctx: StoreContext, deps: {
     const expr = state.filterExpr ? unwrap(state.filterExpr) : null
     const terms = askTerms(expr)
     if (!terms.length) return ""
-    if (!ai && !hasJev()) throw new Error("Set JASKMONEY_JEV_TOKEN (a TypeSafe API key) to use ask:")
+    if (!ai && !hasJev()) throw new Error(`ask: needs Jev (${JEV_SETUP})`)
     const run = ++ctx.askRun
     const client = ai ?? jevClient()
     const parts: string[] = []

@@ -142,7 +142,7 @@ describe("key router", () => {
     handleKey(ui, key("return"), data)
     expect(ui.state.filterMode).toBe(true)
     expect(ui.state.filterDraft).toBe("?zzz")
-    expect(ui.state.status).toContain("needs a Jev key")
+    expect(ui.state.status).toContain("Smart search needs Jev")
     expect(footerHints(ui.activeScope()).some((h) => h.key === "?…")).toBe(true)
     handleKey(ui, key("escape"), data)
   })
