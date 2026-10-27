@@ -14,7 +14,7 @@ import { categoryMark } from "../icons"
 import { ACCEPT_ALL_AT } from "../../domain/questions"
 import { accountStacks, selectedAccounts } from "../../domain/accountTree"
 import { AccountsPane, accountsPaneHeight } from "./AccountsPane"
-import { TransactionTable } from "./TransactionTable"
+import { TransactionTable, type TableTagCandidate } from "./TransactionTable"
 import { MerchantTable } from "./MerchantTable"
 import { groupByMerchant, sortMerchantGroups } from "../../domain/merchants"
 import { TransactionDetail } from "./TransactionDetail"
@@ -68,8 +68,9 @@ export function ManagerTab(props: { focused: SectionId }) {
   const selCount = () => Object.keys(ui.state.selectedIds).length
 
   const sortMark = (col: string) => {
-    // Confidence is the suggestion's, shown in the Category column.
-    const sorted = data.state.sortColumn === "confidence" ? "category" : data.state.sortColumn
+    // Confidence is the suggestion's, shown in the Category column (a tag
+    // candidate's is in the unsorted Tags column: no mark).
+    const sorted = data.state.sortColumn === "confidence" ? (data.state.tagReview ? "" : "category") : data.state.sortColumn
     if (sorted !== col) return ""
     return data.state.sortAscending ? " ▲" : " ▼"
   }
@@ -95,6 +96,11 @@ export function ManagerTab(props: { focused: SectionId }) {
     if (merchants()) {
       if (groups().length === 0) return undefined
       return `${groups().length} merchants · ${rows().length} transactions · by ${ui.state.merchantSort}${ui.state.merchantReverse ? "↑" : "↓"}`
+    }
+    const review = data.state.tagReview
+    if (review) {
+      const sure = rows().filter((r) => (review.candidates[r.id]?.confidence ?? 0) >= ACCEPT_ALL_AT).length
+      return `${rows().length} to review for ${review.name}, ${sure} ≥${ACCEPT_ALL_AT * 100}%${review.asking ? " · asking Jev…" : ""}${selCount() > 0 ? ` · ${selCount()} selected` : ""}`
     }
     if (rows().length === 0) return undefined
     if (data.state.uncategorisedOnly) {
@@ -170,11 +176,33 @@ export function ManagerTab(props: { focused: SectionId }) {
   })
   const ACCEPT_LINES = 8
 
+  /** Tag-all's preview: the rows it would tag, by description (money in marked). */
+  const tagPreview = createMemo(() => {
+    const byId = new Map(data.state.transactions.map((t) => [t.id, t]))
+    const counts = new Map<string, number>()
+    for (const id of ui.state.acceptPreview ?? []) {
+      const t = byId.get(id)
+      if (!t) continue
+      const label = `${t.description.trim()}${t.amount > 0 ? " (in)" : ""}`
+      counts.set(label, (counts.get(label) ?? 0) + 1)
+    }
+    return [...counts].sort((a, b) => b[1] - a[1]).map(([label, n]) => (n > 1 ? `${label} ×${n}` : label))
+  })
+
+  /** A row's candidate in a tag review, for the Tags column. */
+  const tagCandidate = (id: number): TableTagCandidate | undefined => {
+    const review = data.state.tagReview
+    const c = review?.candidates[id]
+    if (!review || !c) return undefined
+    const tag = review.tagId != null ? data.state.tags.find((t) => t.id === review.tagId) : undefined
+    return { name: review.name, color: tag?.color ?? theme.teal, confidence: c.confidence, source: c.source }
+  }
+
   return (
     <box width="100%" height="100%" flexDirection="column" backgroundColor={theme.canvas}>
       <AccountsPane focused={acctFocused()} width={dims().width} />
       <SectionCard
-        title={`Transactions${data.state.uncategorisedOnly ? " · uncategorised" : ""}${merchants() ? " · by merchant" : ""}`}
+        title={`Transactions${data.state.tagReview ? ` · tagging ${data.state.tagReview.name}` : data.state.uncategorisedOnly ? " · uncategorised" : ""}${merchants() ? " · by merchant" : ""}`}
         titleSuffix={filterTitle()}
         titleSuffixColor={data.state.filterErr ? theme.error : theme.blue}
         focused={txFocused()}
@@ -223,15 +251,26 @@ export function ManagerTab(props: { focused: SectionId }) {
           selectedIds={ui.state.selectedIds}
           highlighted={highlighted()}
           sortMark={sortMark}
-          empty={data.state.uncategorisedOnly ? "Nothing to categorise" : data.state.filterQuery ? "No matches" : "Empty · no transactions loaded"}
+          empty={data.state.tagReview ? (data.state.tagReview.asking ? "Asking Jev…" : "Nothing more to tag") : data.state.uncategorisedOnly ? "Nothing to categorise" : data.state.filterQuery ? "No matches" : "Empty · no transactions loaded"}
           suggestions={data.state.uncategorisedOnly ? data.state.suggestions : undefined}
           askScore={data.nearMissesShown() ? data.askScore : undefined}
           nearMiss={(id) => data.nearMissIds().has(id)}
+          tagCandidate={data.state.tagReview ? tagCandidate : undefined}
         />
         </Show>
       </SectionCard>
       <TransactionDetail />
-      <Show when={ui.state.acceptPreview}>
+      <Show when={ui.state.acceptPreview && data.state.tagReview}>
+        <Modal title={`Tag ${data.state.tagReview?.name ?? ""}`} subtitle={`${ui.state.acceptPreview?.length ?? 0} at ${ACCEPT_ALL_AT * 100}% or more`} width={72} hints="enter tag · esc cancel">
+          <For each={tagPreview().slice(0, ACCEPT_LINES * 2)}>{(line) => <text wrapMode="none" fg={theme.text}>{`  ${fit(line, 66)}`}</text>}</For>
+          <Show when={tagPreview().length > ACCEPT_LINES * 2}>
+            <text fg={theme.overlay1}>{`  and ${tagPreview().length - ACCEPT_LINES * 2} more`}</text>
+          </Show>
+          <text> </text>
+          <text fg={theme.overlay1}>Up rows are tagged in Up too.</text>
+        </Modal>
+      </Show>
+      <Show when={!data.state.tagReview && ui.state.acceptPreview}>
         {(ids: () => number[]) => (
           <Modal title="Accept suggestions" subtitle={`${ids().length} at ${ACCEPT_ALL_AT * 100}% or more`} width={72} hints="enter accept · esc cancel">
             <For each={acceptGroups().slice(0, ACCEPT_LINES)}>{(g) => (

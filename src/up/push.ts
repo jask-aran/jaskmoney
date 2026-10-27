@@ -1,6 +1,6 @@
-/** Category requests to the provider in flight at once. Up has no batch
+/** Requests to the provider in flight at once. Up has no batch
  * endpoint, so each row is its own request; the client backs off when Up
- * says 429. (Tag pushes stay one at a time.) */
+ * says 429. Category and tag pushes alike. */
 export const PUSH_CONCURRENCY = 4
 
 /**
@@ -28,7 +28,10 @@ export async function pushTransactions(
     while (next < pushes.length) {
       const push = pushes[next++]!
       try {
-        changed += await push()
+        // Await first: `changed += await` would read changed before the
+        // await and lose concurrent pushes' counts.
+        const n = await push()
+        changed += n
         pushed++
       } catch (error) {
         failures.push(error instanceof Error ? error.message : String(error))

@@ -204,21 +204,21 @@ describe("pushTagChange", () => {
     expect(await pushTagChange(db, client, [room], local, false)).toEqual({ changed: 1, pushed: 1, failures: [] })
   })
 
-  test("requests run sequentially and continue after an error", async () => {
+  test("requests run four at a time, in order, and continue after an error", async () => {
     const db = database(), local = tag(db, "Local")
-    const ids = [row(db, [], "up", "bad"), row(db, [], "up", "good")]
+    const ids = [row(db, [], "up", "bad"), ...["a", "b", "c", "d", "e"].map((ext) => row(db, [], "up", ext))]
     const events: string[] = []
-    let active = false
+    let active = 0, most = 0
     const addTransactionTags = async (id: string) => {
-      expect(active).toBe(false)
-      active = true; events.push(id)
-      await Promise.resolve()
-      active = false
+      active++; most = Math.max(most, active); events.push(id)
+      await new Promise((r) => setTimeout(r, 1))
+      active--
       if (id === "bad") throw new Error("Failed bad")
     }
     expect(await pushTagChange(db, { ...mockClient().client, addTransactionTags }, ids, local, true))
-      .toEqual({ changed: 1, pushed: 1, failures: ["Failed bad"] })
-    expect(events).toEqual(["bad", "good"])
-    expect(links(db, ids[0]!)).toEqual([]); expect(links(db, ids[1]!)).toEqual([local])
+      .toEqual({ changed: 5, pushed: 5, failures: ["Failed bad"] })
+    expect(most).toBe(4)
+    expect(events).toEqual(["bad", "a", "b", "c", "d", "e"])
+    expect(ids.map((id) => links(db, id))).toEqual([[], ...ids.slice(1).map(() => [local])])
   })
 })

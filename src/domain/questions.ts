@@ -1,5 +1,6 @@
 import type { JevQuestion } from "../ai/jev"
 import { formatMoney } from "./dashboard"
+import { MONTHS, weekdayIndex } from "./days"
 import type { Category, Transaction } from "./types"
 
 /**
@@ -233,4 +234,36 @@ export function coverQuestions(categories: Category[]): Record<string, JevQuesti
 export function coveredCategoryIds(answers: Record<string, { type: string; noul?: number }>, categories: Category[]): number[] {
   const yes = (id: string, at: number) => { const a = answers[id]; return a?.type === "noul" && (a.noul ?? 0) >= at }
   return routableCategories(categories).filter((c) => yes(`kind${c.id}`, COVERS_KIND_AT) && yes(`every${c.id}`, COVERS_EVERY_AT)).map((c) => c.id)
+}
+
+// ---------- Tag suggestions ----------
+
+/** When a row happened, as a person reads it: "Fri 22 May 2026, 18:45"
+ * (the time when the provider gives one: Up does, CSV doesn't). */
+export function whenText(t: Pick<Transaction, "dateISO" | "dateRaw">): string {
+  const [y, m, d] = t.dateISO.split("-").map(Number) as [number, number, number]
+  const date = `${["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"][weekdayIndex(t.dateISO)]} ${d} ${MONTHS[m - 1]} ${y}`
+  const time = /T(\d\d:\d\d)/.exec(t.dateRaw ?? "")?.[1]
+  return time ? `${date}, ${time}` : date
+}
+
+/** The tag, what it was found as (a detected trip's place and dates), and
+ * how it has been used; shared by every row's question. Without `about`
+ * Jev put coffee and parking at home in the days before a trip at 61–73%. */
+export const tagState = (name: string, examples: string[], about?: string) => ({
+  tag: name,
+  ...(about ? { about } : {}),
+  ...(examples.length ? { tagged_before: examples.join("; ") } : {}),
+})
+
+/** Whether the tag belongs on one row: the row with its category, when it
+ * happened, and any foreign amount (a trip's are). */
+export function tagQuestion(t: Transaction, withExamples: boolean, withAbout = false): JevQuestion {
+  return {
+    type: "noul",
+    instructions: {
+      question: "Does the tag `tag` belong on `transaction`?" + (withAbout ? " `about` says what the tag is for." : "") + (withExamples ? " `tagged_before` lists transactions already given it." : ""),
+      transaction: { ...transactionFacts(t, { category: true }), when: whenText(t), ...(t.foreignAmount ? { foreign_amount: t.foreignAmount } : {}) },
+    },
+  }
 }

@@ -1,7 +1,7 @@
 import type { Db } from "../db/client"
 import { addTagLink, decodeStoredTags, removeTagLink } from "../db/tagLinks"
 import type { createUpClient } from "./client"
-import { pushTransactions } from "./push"
+import { PUSH_CONCURRENCY, pushTransactions } from "./push"
 
 const isIgnore = (name: string) => name.toUpperCase() === "IGNORE"
 
@@ -72,6 +72,6 @@ export async function pushTagChange(
         return count
       })()
     }
-  })
+  }, { concurrency: PUSH_CONCURRENCY })
   return { ...result, changed: result.changed + local }
 }

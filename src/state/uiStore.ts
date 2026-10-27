@@ -35,6 +35,7 @@ export type ScopeId =
   | "jump"
   | "filter"
   | "catPicker"
+  | "tagChooser"
   | "tagPicker"
   | "overview"
   | "overview.range"
@@ -115,6 +116,10 @@ export interface UiState {
   catPickerOpen: boolean
   catPickerCursor: number
   catPickerQuery: string
+  /** Choosing a tag to find transactions for (T). */
+  tagChooserOpen: boolean
+  tagChooserCursor: number
+  tagChooserQuery: string
   tagPickerOpen: boolean
   tagPickerApplying: boolean
   tagPickerCursor: number
@@ -271,6 +276,9 @@ function createUiStore() {
     catPickerOpen: false,
     catPickerCursor: 0,
     catPickerQuery: "",
+    tagChooserOpen: false,
+    tagChooserCursor: 0,
+    tagChooserQuery: "",
     tagPickerOpen: false, tagPickerApplying: false, tagPickerPatch: {},
     tagPickerCursor: 0,
     tagPickerQuery: "",
@@ -354,6 +362,7 @@ function createUiStore() {
       jumpMode: false,
       filterMode: false,
       catPickerOpen: false,
+      tagChooserOpen: false, tagChooserQuery: "", tagChooserCursor: 0,
       tagPickerOpen: false, tagPickerApplying: false, tagPickerPatch: {},
       rangeSelecting: false,
       settingsActive: false,
@@ -588,6 +597,7 @@ function createUiStore() {
     if (state.jumpMode) return "jump"
     if (state.catPickerOpen) return "catPicker"
     if (state.tagPickerOpen) return "tagPicker"
+    if (state.tagChooserOpen) return "tagChooser"
     if (state.filterMode) return "filter"
     if (state.detailId != null) return state.detailNotesEditing ? "manager.detail.notes" : "manager.detail"
     if (state.settingsEditor) return "settings.editor"

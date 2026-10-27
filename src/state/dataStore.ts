@@ -1,5 +1,5 @@
 import { createMemo, createRoot, createSignal } from "solid-js"
-import { createStore, reconcile, unwrap } from "solid-js/store"
+import { createStore, reconcile, unwrap, produce } from "solid-js/store"
 import { isDeepStrictEqual } from "node:util"
 import { existsSync, readFileSync, readdirSync, unlinkSync } from "node:fs"
 import { basename, join, resolve } from "node:path"
@@ -54,9 +54,11 @@ import { historySuggestions, jevSuggestions } from "../domain/suggest"
 import { isOrdinaryFlow, isUncategorised } from "../domain/moneyRules"
 import { createUpClient, readUpToken, UpApiError } from "../up/client"
 import { PUSH_CONCURRENCY, pushTransactions } from "../up/push"
+import { detectRecurring, detectTrips } from "../domain/tagGroups"
+import { jevTagCandidates, knownTagCandidates, TAG_SHOW_AT, tagExamples, tagPool, type TagCandidate, type TagTarget } from "../domain/tagSuggest"
 import { appToday, type WeekStart } from "../domain/days"
 import { askCandidates, ASK_DEFAULT_DAYS, ASK_LIMIT, judgeRows } from "../domain/ask"
-import { MATCH_AT, NEAR_AT } from "../domain/questions"
+import { ACCEPT_ALL_AT, MATCH_AT, NEAR_AT } from "../domain/questions"
 import { addTagLink } from "../db/tagLinks"
 import { syncUp as runUpSync } from "../up/sync"
 import { dryRunRules as evaluateRules } from "../domain/rules"
@@ -82,6 +84,8 @@ export interface DataState {
   suggestions: Record<number, CategorySuggestion>
   /** The Transactions table shows only ordinary uncategorised rows. */
   uncategorisedOnly: boolean
+  /** Finding transactions for a tag: the table shows its candidates. */
+  tagReview: TagReview | null
   /** Where each API key comes from, masked (`maskSecret`); never the key. */
   apiKeys: Record<CredentialName, { source: "saved" | "env" | null; mask: string }>
   /** `ask:` terms also pass near misses (NEAR_AT up to MATCH_AT): on, off,
@@ -209,6 +213,16 @@ function upRejected(error: unknown): boolean {
   return error instanceof UpApiError && error.status >= 400 && error.status < 500 && error.status !== 401 && error.status !== 429
 }
 
+/** Finding transactions for a tag: its target and the candidates so far. */
+export interface TagReview extends TagTarget {
+  candidates: Record<number, TagCandidate>
+  /** Jev is still answering. */
+  asking: boolean
+}
+
+/** A tag created from a review (the schema's default tag colour). */
+const NEW_TAG_COLOR = "#94e2d5"
+
 function createDataStore() {
   let db: Db | null = null
   let actualDbPath = ""
@@ -218,6 +232,7 @@ function createDataStore() {
     suggesting: false,
     suggestions: {},
     uncategorisedOnly: false,
+    tagReview: null,
     apiKeys: loadApiKeys(),
     askLoose: null,
     asking: null,
@@ -290,6 +305,9 @@ function createDataStore() {
     // Verdicts are per row id, and a new database reuses ids.
     askVerdicts.clear()
     askRun++
+    tagRun++
+    tagDismissed.clear()
+    setState({ tagReview: null })
     actualDbPath = dbPath ?? defaultDbPath()
     db = openDb(actualDbPath)
     const config = loadSettingsConfig()
@@ -339,13 +357,16 @@ function createDataStore() {
     db = null
     actualDbPath = ""
     askRun++
+    tagRun++
+    tagDismissed.clear()
     askVerdicts.clear()
     setAskVersion(0)
     setState(reconcile(initialState()))
   }
 
   /** The Uncategorised view's narrowing. */
-  const inView = (t: Transaction) => !state.uncategorisedOnly || (isOrdinaryFlow(t) && isUncategorised(t))
+  const inView = (t: Transaction) => (!state.uncategorisedOnly || (isOrdinaryFlow(t) && isUncategorised(t)))
+    && (!state.tagReview || (state.tagReview.candidates[t.id]?.confidence ?? 0) >= TAG_SHOW_AT)
 
   /** How likely a row matches the filter's `ask:` terms: the lowest of its
    * judged terms' probabilities (the one holding it back); undefined if none
@@ -391,14 +412,17 @@ function createDataStore() {
   const filtered = createRoot(() => createMemo(() => {
     const expr = state.filterExpr ? unwrap(state.filterExpr) : null
     const rows = accountScoped()
-    if (!expr && !state.uncategorisedOnly) return rows
+    if (!expr && !state.uncategorisedOnly && !state.tagReview) return rows
     if (askTerms(expr).length) askVersion()
     return rows.filter((t) => inView(t) && (!expr || evalFilter(expr, t, askVerdict)))
   }))
 
   /** The account's rows through the filter, in the table's sort. */
   const scopedTransactions = createRoot(() => createMemo(() => {
-    const confidence = state.sortColumn === "confidence" ? (id: number) => state.suggestions[id]?.confidence ?? -1 : undefined
+    const review = state.tagReview
+    const confidence = state.sortColumn !== "confidence" ? undefined
+      : review ? (id: number) => review.candidates[id]?.confidence ?? -1
+      : (id: number) => state.suggestions[id]?.confidence ?? -1
     const sorted = sortRows(filtered(), state.sortColumn, state.sortAscending, confidence)
     // Near misses after every match, each part in the table's order.
     const near = nearMissIds()
@@ -451,7 +475,7 @@ function createDataStore() {
 
   function cycleSortColumn(): string {
     // Confidence is a column only where rows have suggestions.
-    const cycle: SortColumn[] = state.uncategorisedOnly ? ["confidence", ...SORT_CYCLE] : SORT_CYCLE
+    const cycle: SortColumn[] = state.uncategorisedOnly || state.tagReview ? ["confidence", ...SORT_CYCLE] : SORT_CYCLE
     const i = cycle.indexOf(state.sortColumn)
     const next = cycle[(i + 1) % cycle.length]!
     setState({ sortColumn: next })
@@ -722,6 +746,92 @@ function createDataStore() {
     }
     if (failures.length) parts.push(`${failures.length} request${failures.length > 1 ? "s" : ""} failed: ${failures[0]}`)
     return parts.join(" · ")
+  }
+
+  /** Detected groupings in the history: trips, then regular payments. */
+  const tagGroups = createRoot(() => createMemo(() => [...detectTrips(transactions()), ...detectRecurring(transactions())]))
+
+  /** Bumped by each tag review opened or closed; a run stops once stale. */
+  let tagRun = 0
+  /** Rows dismissed for a tag this session, by tag id or new name. */
+  const tagDismissed = new Map<string, Set<number>>()
+  const reviewKey = (target: TagTarget) => target.tagId != null ? `tag:${target.tagId}` : `new:${target.name.toLowerCase()}`
+
+  /**
+   * Show the transactions `target` could go on (see tagSuggest): the group's
+   * and history's at once, Jev's as its answers land (`ai` replaces the Jev
+   * client in tests). Returns a summary, or "" when closed meanwhile.
+   */
+  async function openTagReview(target: TagTarget, ai?: Pick<JevClient, "judge">): Promise<string> {
+    // Tag names are upper case (createTag); a new one is named as it will be.
+    if (target.tagId == null) target = { ...target, name: target.name.trim().toUpperCase() }
+    const run = ++tagRun
+    const dismissed = tagDismissed.get(reviewKey(target)) ?? new Set<number>()
+    const known = knownTagCandidates(target, transactions()).filter((c) => !dismissed.has(c.transactionId))
+    setState({
+      uncategorisedOnly: false, sortColumn: "confidence", sortAscending: false,
+      tagReview: { ...target, candidates: Object.fromEntries(known.map((c) => [c.transactionId, c])), asking: true },
+    })
+    const failures: string[] = []
+    if (ai || hasJev()) {
+      // The group's rows are settled; Jev weighs the rest of the scope.
+      const settled = new Set(known.filter((c) => c.source === "group").map((c) => c.transactionId))
+      const rows = tagPool(target, transactions()).filter((t) => !settled.has(t.id) && !dismissed.has(t.id))
+      await jevTagCandidates(ai ?? jevClient(), target, rows, tagExamples(target, transactions()), {
+        active: () => run === tagRun,
+        onCandidates: (found) => {
+          if (run !== tagRun) return
+          setState("tagReview", "candidates", (prev) => {
+            const next = { ...prev }
+            for (const c of found) if (!next[c.transactionId] || c.confidence > next[c.transactionId]!.confidence) next[c.transactionId] = c
+            return next
+          })
+        },
+        onError: (error) => failures.push(error instanceof Error ? error.message : String(error)),
+      })
+    }
+    if (run !== tagRun || !state.tagReview) return ""
+    setState("tagReview", "asking", false)
+    const shown = Object.values(state.tagReview.candidates).filter((c) => c.confidence >= TAG_SHOW_AT)
+    const parts = [`${target.name}: ${shown.length} to review, ${shown.filter((c) => c.confidence >= ACCEPT_ALL_AT).length} at ${ACCEPT_ALL_AT * 100}% or more`]
+    if (!ai && !hasJev()) parts.push("Jev isn't set up: tag history and detected groups only")
+    if (failures.length) parts.push(`${failures.length} failed: ${failures[0]}`)
+    return parts.join(" · ")
+  }
+
+  /** Put the review's tag on the candidates among `ids` (creating the tag,
+   * with its scope, when it is new); they leave the review. */
+  async function acceptTagCandidates(ids: number[]): Promise<string> {
+    const review = state.tagReview
+    if (!review) return ""
+    const take = ids.filter((id) => review.candidates[id])
+    if (!take.length) return "Nothing to tag"
+    let tagId = review.tagId
+    if (tagId == null) {
+      tagId = createSettingsTag({ name: review.name, color: NEW_TAG_COLOR, scope: review.scope })
+      setState("tagReview", "tagId", tagId)
+    }
+    const summary = await applyTagPatch(take, { [tagId]: "add" })
+    const tagged = new Set(transactions().filter((t) => t.tagIds.includes(tagId!)).map((t) => t.id))
+    // produce: a store merges a plain object into the old one, keeping removed keys.
+    setState("tagReview", "candidates", produce((c) => { for (const id of take) if (tagged.has(id)) delete c[id] }))
+    return summary
+  }
+
+  /** Drop candidates from the review, for the rest of the session. */
+  function dismissTagCandidates(ids: number[]): void {
+    const review = state.tagReview
+    if (!review) return
+    const key = reviewKey(review)
+    const set = tagDismissed.get(key) ?? new Set<number>()
+    for (const id of ids) set.add(id)
+    tagDismissed.set(key, set)
+    setState("tagReview", "candidates", produce((c) => { for (const id of ids) delete c[id] }))
+  }
+
+  function closeTagReview(): void {
+    tagRun++
+    setState({ tagReview: null, ...(state.sortColumn === "confidence" ? { sortColumn: "date" as const, sortAscending: false } : {}) })
   }
 
   /** Categorise the rows among `ids` that have a suggestion as suggested,
@@ -1018,6 +1128,11 @@ function createDataStore() {
     suggestCategories,
     resuggestLike,
     retryPendingCategories,
+    tagGroups,
+    openTagReview,
+    acceptTagCandidates,
+    dismissTagCandidates,
+    closeTagReview,
     acceptSuggestions,
     dismissSuggestions,
     applyTagPatch,

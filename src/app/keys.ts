@@ -5,6 +5,8 @@ import { accountRole } from "../domain/types"
 import { accountRows, accountStacks, spendingScope, type AccountSelection } from "../domain/accountTree"
 import { assignableCategories, pickerSuggestions } from "../domain/categoryOptions"
 import { parseTagScope } from "../domain/tagScope"
+import { tagChoices } from "../state/tagChooser"
+import { endTagReview, runTagAccept, startTagReview } from "./tagReview"
 import { budgetLabel, budgetScopeOptions, scopeKey } from "../domain/budgetScopes"
 import type { CycleConfig } from "../domain/budget"
 import { MERCHANT_SORTS, groupByMerchant, merchantFilter, sortMerchantGroups } from "../domain/merchants"
@@ -280,6 +282,21 @@ function handleTagPicker(ui: UiStore, key: KeyEvent, data?: DataStore): void {
         else patch[id] = base === "all" ? "remove" : "add"
         ui.setState({ tagPickerPatch: patch })
       }
+    },
+  })
+}
+
+/** T: choose a tag (or a group found in the history, or a new name) to
+ * find transactions for. */
+function handleTagChooser(ui: UiStore, key: KeyEvent, data?: DataStore): void {
+  const choices = data ? tagChoices(data.state.tags, data.tagGroups(), ui.state.tagChooserQuery) : []
+  queryPickerKey(key, { query: ui.state.tagChooserQuery, cursor: ui.state.tagChooserCursor }, choices.length, {
+    close: () => { ui.setState({ tagChooserOpen: false, tagChooserQuery: "", tagChooserCursor: 0 }); ui.setStatus("Transactions") },
+    update: (next) => { ui.setState({ tagChooserQuery: next.query, tagChooserCursor: next.cursor }) },
+    apply: () => {
+      const choice = choices[ui.state.tagChooserCursor]
+      ui.setState({ tagChooserOpen: false, tagChooserQuery: "", tagChooserCursor: 0 })
+      if (choice && data) void startTagReview(ui, data, choice)
     },
   })
 }
@@ -826,7 +843,8 @@ function handleManagerAcceptPreview(ui: UiStore, key: KeyEvent, data?: DataStore
   if (name === "escape") { ui.setState({ acceptPreview: null }); ui.setStatus("Nothing accepted"); return }
   if ((name === "return" || name === "enter" || name === "y") && data) {
     ui.setState({ acceptPreview: null })
-    void runAccept(ui, data, ids)
+    // The same preview serves a tag review and the Uncategorised view.
+    void (data.state.tagReview ? runTagAccept(ui, data, ids) : runAccept(ui, data, ids))
   }
 }
 
@@ -899,9 +917,31 @@ function handleManagerTxns(ui: UiStore, key: KeyEvent, data?: DataStore): void {
     ui.setStatus(on ? `Near misses shown · ${counts?.near ?? 0} below ${MATCH_AT * 100}% · n hides them` : "Matches only")
     return
   }
+  // Tag review: a tag's candidates, accepted (y, Y) or dismissed (x) like
+  // category suggestions; T chooses another tag, esc leaves.
+  if (name === "t" && key.shift && data) { ui.setState({ tagChooserOpen: true, tagChooserQuery: "", tagChooserCursor: 0 }); ui.setStatus("Find transactions for a tag · type to filter or name a new one"); return }
+  const review = data?.state.tagReview
+  if (review && data) {
+    if (name === "y" && !key.shift) { void runTagAccept(ui, data, ui.targetIds(rows)); return }
+    if (name === "y" && key.shift) {
+      const ids = rows.filter((r) => (review.candidates[r.id]?.confidence ?? 0) >= ACCEPT_ALL_AT).map((r) => r.id)
+      if (!ids.length) { ui.setStatus(`No candidate is ${ACCEPT_ALL_AT * 100}% sure or more`); return }
+      ui.setState({ acceptPreview: ids })
+      return
+    }
+    if (name === "x" && !key.shift) {
+      const ids = ui.targetIds(rows).filter((id) => review.candidates[id])
+      data.dismissTagCandidates(ids)
+      ui.clearSelection()
+      ui.jumpManagerCursor(Math.min(ui.state.managerCursor, Math.max(0, data.scopedTransactions().length - 1)), data.scopedTransactions().length)
+      ui.setStatus(ids.length ? `Dismissed ${count(ids.length, "candidate")} for this session` : "No candidate to dismiss")
+      return
+    }
+    if (name === "escape" && !Object.keys(ui.state.selectedIds).length && !ui.state.rangeSelecting) { endTagReview(ui, data); return }
+  }
   // The Uncategorised view: rows waiting for a category, with suggestions
   // to accept (y: these rows, Y: every confident one) or dismiss (x).
-  if (name === "i" && !key.shift && data) { toggleUncategorised(ui, data); return }
+  if (name === "i" && !key.shift && data) { if (review) data.closeTagReview(); toggleUncategorised(ui, data); return }
   if (data?.state.uncategorisedOnly) {
     if (name === "y" && !key.shift) { void runAccept(ui, data, ui.targetIds(rows)); return }
     if (name === "y" && key.shift) {
@@ -1294,6 +1334,8 @@ type HintState = Pick<UiState, "focusedSection" | "drillReturn" | "chartViews"> 
   uncategorisedOnly?: boolean
   /** In the filter: ↑ would bring back the smart search's question. */
   recallQuestion?: boolean
+  /** A tag review is open. */
+  tagReview?: boolean
   /** The filter has `ask:` terms; whether near misses are shown. */
   asks?: boolean
   askLoose?: boolean
@@ -1332,6 +1374,11 @@ const scopes: Record<ScopeId, ScopeEntry> = {
       { key: "enter", desc: "apply" },
       { key: "esc", desc: "cancel" },
     ],
+  },
+  "tagChooser": {
+    handle: handleTagChooser,
+    quits: false,
+    hints: () => [{ key: "↑/↓", desc: "move" }, { key: "type", desc: "filter or new tag" }, { key: "enter", desc: "find" }, { key: "esc", desc: "cancel" }],
   },
   "catPicker": {
     handle: handleCatPicker,
@@ -1470,7 +1517,17 @@ const scopes: Record<ScopeId, ScopeEntry> = {
   "manager.txns": {
     handle: handleManagerTxns,
     quits: true,
-    hints: (state) => state?.uncategorisedOnly ? [
+    hints: (state) => state?.tagReview ? [
+      { key: "y", desc: "tag" },
+      { key: "Y", desc: `tag all ≥${ACCEPT_ALL_AT * 100}%` },
+      { key: "x", desc: "dismiss" },
+      { key: "space", desc: "select" },
+      { key: "S-j/k", desc: "range" },
+      { key: "T", desc: "other tag" },
+      { key: "esc", desc: "done" },
+      { key: "s", desc: "sort" },
+      { key: "enter", desc: "detail" },
+    ] : state?.uncategorisedOnly ? [
       { key: "y", desc: "accept" },
       { key: "Y", desc: `accept all ≥${ACCEPT_ALL_AT * 100}%` },
       { key: "x", desc: "dismiss" },
@@ -1491,6 +1548,7 @@ const scopes: Record<ScopeId, ScopeEntry> = {
       { key: "enter", desc: "detail" },
       { key: "j/k", desc: "move" },
       { key: "i", desc: "uncategorised" },
+      { key: "T", desc: "tag review" },
       ...(state?.asks ? [{ key: "n", desc: state.askLoose ? "matches only" : "near misses" }] : []),
       { key: "m", desc: "merchants" },
       { key: "a", desc: "account" },

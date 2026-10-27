@@ -141,6 +141,24 @@ function formatTags(names: string[], colors: string[], width: number): Span[] {
   return used < width ? [...fitted, { text: " ".repeat(width - used), fg: theme.overlay1 }] : fitted
 }
 
+/** A tag review's candidate in the Tags cell: the proposed tag, its
+ * confidence coloured as a suggestion's (↺ from tag history, ◆ from a
+ * detected trip or group), then the row's own tags. */
+function formatTagCandidate(candidate: TableTagCandidate, names: string[], colors: string[], width: number): Span[] {
+  const mark = candidate.source === "history" ? "↺" : candidate.source === "group" ? "◆" : ""
+  const spans: Span[] = [
+    { text: `+${candidate.name}`, fg: candidate.color },
+    { text: ` ${mark}${Math.round(candidate.confidence * 100)}%`, fg: confidenceColor(candidate.confidence) },
+    ...names.flatMap((name, i): Span[] => [{ text: ", ", fg: theme.overlay1 }, { text: name, fg: colors[i] || theme.teal }]),
+  ]
+  const fitted = fitSpans(spans, width)
+  const used = spansWidth(fitted)
+  return used < width ? [...fitted, { text: " ".repeat(width - used), fg: theme.overlay1 }] : fitted
+}
+
+/** What the table needs of a tag review's candidate. */
+export interface TableTagCandidate { name: string; color: string; confidence: number; source: "group" | "history" | "jev" }
+
 /** The marker after a pending amount: a clock icon, or ◷ without icons. */
 function pendingMark(): string {
   return data.state.icons ? "\uf017" : "◷"
@@ -166,6 +184,8 @@ export function TransactionTable(props: {
   /** Given (near misses shown): how likely each row matches the `ask:` terms,
    * shown after its category. */
   askScore?: (id: number) => number | undefined
+  /** Given (a tag review): each row's candidate, shown in the Tags column. */
+  tagCandidate?: (id: number) => TableTagCandidate | undefined
   /** Rows shown only as near misses: marked ≈ and dimmed, after the matches. */
   nearMiss?: (id: number) => boolean
 }) {
@@ -210,7 +230,10 @@ export function TransactionTable(props: {
               const faint = (column: string) => look().fg ?? (near() ? theme.overlay1 : column)
               // Up holds (pending) render italic, with a clock, until they settle.
               const held = () => r().status === "HELD"
-              const tags = createMemo(() => formatTags(r().tagNames, r().tagColors, layout().tags))
+              const tags = createMemo(() => {
+                const candidate = props.tagCandidate?.(r().id)
+                return candidate ? formatTagCandidate(candidate, r().tagNames, r().tagColors, layout().tags) : formatTags(r().tagNames, r().tagColors, layout().tags)
+              })
               const category = createMemo(() => props.suggestions
                 ? formatSuggestion(props.suggestions[r().id], layout().category)
                 : withAskScore(formatCategory(r().categoryId, r().categoryName, r().categoryColor, layout().category), props.askScore?.(r().id), layout().category))
