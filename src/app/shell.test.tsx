@@ -368,9 +368,14 @@ describe("shell render M0", () => {
       expect(frame).toContain("Taxonomy")
       expect(frame).toContain("Categories (")
       if (width >= 80) expect(frame).toContain("Tags (")
-      expect(frame).toContain("Database & Import")
       const title = t.captureSpans().lines.flatMap((line) => line.spans).find((span) => span.text.includes("Taxonomy"))!
       expect(title.attributes & TextAttributes.BOLD).toBe(TextAttributes.BOLD)
+      // Below the wide layout the panes keep their height and the column
+      // scrolls: a lower pane comes into view when it is focused.
+      ui.setState({ settingsActive: false, focusedSection: "set.database" })
+      await t.renderOnce()
+      await t.flush()
+      expect(t.captureCharFrame()).toContain("Database & Import")
       t.renderer.destroy()
     }
   })

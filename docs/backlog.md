@@ -39,7 +39,7 @@ committed; note the commit.
   picker (the dry run too); ctrl+d/u and ctrl+n/p as list aliases; an
   unbound ctrl/alt letter no longer runs its bare letter (ctrl+u was undo).
 
-- [ ] **Settings at medium/narrow widths overflow** at 40 rows or fewer
+- [x] **Settings at medium/narrow widths overflow** at 40 rows or fewer
   (the taxonomy list spills out of its pane; the last panes are cut off).
   Older than the keyboard work; wants a scrolling or one-pane-at-a-time layout.
 

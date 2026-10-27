@@ -4,7 +4,8 @@ import { AI_ROWS } from "../../app/apiKeys"
 import { AI_NAMES, aiActionHint, aiActions, aiContext, aiRow, aiStatus } from "../../state/aiDialog"
 import { secretDisplay } from "../../state/settingsForm"
 import { SignInBody } from "../primitives/SignInBody"
-import { For, Show, createEffect, createMemo } from "solid-js"
+import { For, Show, createEffect, createMemo, onCleanup, type JSX } from "solid-js"
+import type { ScrollBoxRenderable } from "@opentui/core"
 import { useTerminalDimensions } from "@opentui/solid"
 import { SectionCard } from "../primitives/SectionCard"
 import { muted } from "../primitives/spans"
@@ -111,7 +112,7 @@ function RulesPane(props: { focused: boolean; height?: number | "auto" | `${numb
         const filter = () => data.state.savedFilters.find((filter) => filter.id === rule.savedFilterId)
         const healthy = createMemo(() => { const parsed = parseFilterStrict(filter()?.expr ?? ""); return !!parsed.node && !parsed.error })
         const appearance = () => ({ name: rule.enabled ? theme.text : theme.overlay1, filter: !rule.enabled ? theme.overlay1 : healthy() ? theme.subtext0 : theme.error, detail: !rule.enabled ? theme.overlay1 : healthy() ? theme.overlay1 : theme.error })
-        return <ListRow cursor={active() && ui.state.ruleCursor === i()} bg={theme.canvas} armed={armedFor(ui.state.armed, "rule", rule.id)} spans={[
+        return <ListRow id={`settings-rule-${i()}`} cursor={active() && ui.state.ruleCursor === i()} bg={theme.canvas} armed={armedFor(ui.state.armed, "rule", rule.id)} spans={[
           { text: `${i() + 1}. ${rule.name}  `, fg: appearance().name },
           { text: `filter:${rule.savedFilterId}`, fg: appearance().filter },
           { text: filter() ? ` (${filter()!.name})` : " (missing)", fg: appearance().detail },
@@ -128,7 +129,7 @@ function FiltersPane(props: { focused: boolean; height?: number | "auto" | `${nu
   return <SectionCard title={SETTINGS_SECTION_LABELS.filters} focused={props.focused} active={active()} height={props.height} flexGrow={props.height ? 0 : 1}>
     <Show when={rows().length} fallback={<text fg={theme.overlay1}>{active() ? "No saved filters. Press a to add." : "No saved filters. Activate to add."}</text>}>
       <For each={rows()}>{(filter, i) => (
-        <ListRow cursor={active() && ui.state.filterCursor === i()} bg={theme.canvas} armed={armedFor(ui.state.armed, "filter", filter.id)} spans={[
+        <ListRow id={`settings-filter-${i()}`} cursor={active() && ui.state.filterCursor === i()} bg={theme.canvas} armed={armedFor(ui.state.armed, "filter", filter.id)} spans={[
           { text: filter.id, fg: theme.teal },
           { text: `  ${truncate(filter.name, 16)}`, fg: theme.text },
           { text: `  ${truncate(filter.expr, 20)}`, fg: theme.overlay1 },
@@ -405,18 +406,78 @@ const EDITOR_HINTS: Record<FormField["kind"], string> = {
   picker: "↑↓ field · enter choose · esc cancel",
 }
 
+/** Rows the Taxonomy lists show: as many as the screen allows beside the
+ * other panes of its column, 5 to 15. The pane is exactly this tall, so
+ * the list's window and its footer always fit inside it. */
+function taxonomyRows(height: number, wide: boolean): number {
+  return Math.max(5, Math.min(15, height - (wide ? 21 : 16)))
+}
+
+/** The box a section's pane sits in: what the column scrolls into view. */
+const paneId = (section: SectionId) => `settings-pane-${section === "set.tags" ? "set.categories" : section}`
+
 export function SettingsTab(props: { focused: SectionId }) {
   const dims = useTerminalDimensions()
   const layout = () => dims().width >= 112 ? "wide" : dims().width >= 80 ? "medium" : "narrow"
+  const rows = () => taxonomyRows(dims().height, layout() === "wide")
   createEffect(() => {
-    const visible = Math.max(1, Math.floor((dims().height - 10) / (layout() === "wide" ? 2 : 3)))
+    const visible = rows()
     if (ui.state.categoryVisible !== visible || ui.state.tagVisible !== visible) ui.setState({ categoryVisible: visible, tagVisible: visible })
   })
   const taxonomyFocused = () => props.focused === "set.categories" || props.focused === "set.tags"
-  const databaseFocused = () => props.focused === "set.database"
-  return <box width="100%" height="100%" flexDirection={layout() === "wide" ? "row" : "column"} gap={1} backgroundColor={theme.canvas}>
-    <box width={layout() === "wide" ? "55%" : "100%"} flexShrink={layout() === "wide" ? 0 : 1} height="100%" flexDirection="column" gap={1}><TaxonomyPane focused={taxonomyFocused()} narrow={layout() === "narrow"} height={layout() === "wide" ? undefined : "45%"} /><BudgetsPane focused={props.focused === "set.budgets"} /><Show when={layout() === "wide"}><AiPane focused={props.focused === "set.ai"} /></Show><Show when={layout() !== "wide"}><RulesPane focused={props.focused === "set.rules"} /></Show><Show when={layout() === "narrow"}><FiltersPane focused={props.focused === "set.filters"} /></Show></box>
-    <box flexGrow={1} flexShrink={1} minWidth={0} height="100%" flexDirection="column" gap={1}><Show when={layout() === "wide"}><RulesPane focused={props.focused === "set.rules"} /></Show><Show when={layout() !== "narrow"}><FiltersPane focused={props.focused === "set.filters"} /></Show><Show when={layout() === "wide"} fallback={<box flexDirection="row" gap={1} width="100%" flexShrink={0}><UpPane focused={props.focused === "set.up"} width="50%" /><AiPane focused={props.focused === "set.ai"} width="50%" /></box>}><UpPane focused={props.focused === "set.up"} /></Show><DatabasePane focused={databaseFocused()} /><ImportHistory /></box>
+  // Panes keep their own height; a column taller than the screen scrolls,
+  // following the focused pane.
+  const columns: ScrollBoxRenderable[] = []
+  createEffect(() => {
+    const id = paneId(props.focused)
+    for (const column of columns) column.scrollChildIntoView(id)
+  })
+  // In the lists drawn whole (Rules, Saved Filters), the cursor row too.
+  createEffect(() => {
+    if (!ui.state.settingsActive) return
+    const id = ui.state.settingsSection === "rules" ? `settings-rule-${ui.state.ruleCursor}` : ui.state.settingsSection === "filters" ? `settings-filter-${ui.state.filterCursor}` : null
+    if (id) for (const column of columns) column.scrollChildIntoView(id)
+  })
+  const Column = (column: { width?: `${number}%`; children: JSX.Element }) => (
+    <scrollbox ref={(box: ScrollBoxRenderable) => {
+      columns.push(box)
+      onCleanup(() => columns.splice(columns.indexOf(box), 1))
+      // A first layout or a resize moves the panes: follow focus again,
+      // after the scrollbox's own handler (it updates the scroll range).
+      const own = box.content.onSizeChange
+      box.content.onSizeChange = () => { own?.call(box.content); box.scrollChildIntoView(paneId(props.focused)) }
+    }}
+      width={column.width} flexGrow={column.width ? 0 : 1} flexShrink={column.width ? 0 : 1} minWidth={0} height="100%"
+      scrollY scrollX={false} focusable={false} verticalScrollbarOptions={{ visible: false }} contentOptions={{ flexDirection: "column", gap: 1 }}>
+      {column.children}
+    </scrollbox>
+  )
+  const Pane = (pane: { section: SectionId; children: JSX.Element }) => <box id={paneId(pane.section)} width="100%" flexShrink={0}>{pane.children}</box>
+  const taxonomy = () => <Pane section="set.categories"><TaxonomyPane focused={taxonomyFocused()} narrow={layout() === "narrow"} height={rows() + 4} /></Pane>
+  const budgets = () => <Pane section="set.budgets"><BudgetsPane focused={props.focused === "set.budgets"} /></Pane>
+  const rules = () => <Pane section="set.rules"><RulesPane focused={props.focused === "set.rules"} /></Pane>
+  const filters = () => <Pane section="set.filters"><FiltersPane focused={props.focused === "set.filters"} /></Pane>
+  const database = () => <Pane section="set.database"><DatabasePane focused={props.focused === "set.database"} /></Pane>
+  const history = () => <box width="100%" flexShrink={0}><ImportHistory /></box>
+  return <box width="100%" height="100%" flexDirection="row" gap={1} backgroundColor={theme.canvas}>
+    <Show when={layout() === "wide"} fallback={
+      <Column>
+        {taxonomy()}{budgets()}{rules()}{filters()}
+        <Show when={layout() === "medium"} fallback={<>
+          <Pane section="set.up"><UpPane focused={props.focused === "set.up"} /></Pane>
+          <Pane section="set.ai"><AiPane focused={props.focused === "set.ai"} /></Pane>
+        </>}>
+          <box flexDirection="row" gap={1} width="100%" flexShrink={0}>
+            <box id={paneId("set.up")} width="50%"><UpPane focused={props.focused === "set.up"} /></box>
+            <box id={paneId("set.ai")} flexGrow={1} minWidth={0}><AiPane focused={props.focused === "set.ai"} /></box>
+          </box>
+        </Show>
+        {database()}{history()}
+      </Column>
+    }>
+      <Column width="55%">{taxonomy()}{budgets()}<Pane section="set.ai"><AiPane focused={props.focused === "set.ai"} /></Pane></Column>
+      <Column>{rules()}{filters()}<Pane section="set.up"><UpPane focused={props.focused === "set.up"} /></Pane>{database()}{history()}</Column>
+    </Show>
     <ImportOverlay />
     <FactoryResetOverlay />
     {/* Last, so a confirmation armed from a dialog shows over it. */}
