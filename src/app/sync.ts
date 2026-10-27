@@ -1,4 +1,5 @@
 import type { DataStore } from "../state/dataStore"
+import { newSuggestionsNote, suggestNew } from "./suggest"
 import type { UiStore } from "../state/uiStore"
 
 /** Background sync interval (startup sync runs immediately). */
@@ -16,6 +17,8 @@ export function syncConfigured(): boolean {
 export async function runSync(ui: UiStore, data: DataStore, { manual }: { manual: boolean }): Promise<void> {
   if (!syncConfigured()) {
     if (manual) ui.setStatus("Set JASKMONEY_UP_TOKEN to enable sync", true)
+    // Still suggest for waiting rows (CSV imports, or none suggested yet).
+    else { const n = await suggestNew(data); if (n) ui.setStatus(newSuggestionsNote(n).slice(3)) }
     return
   }
   if (data.state.upSyncing) {
@@ -25,7 +28,9 @@ export async function runSync(ui: UiStore, data: DataStore, { manual }: { manual
   if (manual) ui.setStatus("Syncing…")
   try {
     const summary = await data.syncUp()
-    if (manual || !/^Up sync: 0 new, 0 updated, 0 pending removed/.test(summary)) ui.setStatus(summary)
+    // New rows get suggestions now, so the Overview can say what's waiting.
+    const note = newSuggestionsNote(await suggestNew(data))
+    if (manual || note || !/^Up sync: 0 new, 0 updated, 0 pending removed/.test(summary)) ui.setStatus(summary + note)
   } catch (error) {
     ui.setStatus(error instanceof Error ? error.message : String(error), true)
   }

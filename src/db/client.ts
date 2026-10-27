@@ -10,6 +10,8 @@ import {
   CATEGORY_SUGGESTIONS_V19_SQL,
   SUGGESTION_RANKED_COLUMN,
   TAG_SCOPE_COLUMN,
+  SUGGESTION_DISMISSED_COLUMN,
+  TAG_DISMISSALS_SQL,
   CATEGORY_SOURCE_COLUMN,
   CATEGORY_INCOME_COLUMN,
   CATEGORY_NOT_SPENDING_COLUMN,
@@ -110,6 +112,12 @@ const MIGRATIONS: Record<number, (db: Db) => void> = {
   18: (db) => db.exec(CATEGORY_SUGGESTIONS_SQL),
   19: (db) => db.exec(CATEGORY_SUGGESTIONS_V19_SQL),
   20: (db) => db.exec(`ALTER TABLE category_suggestions ADD COLUMN ${SUGGESTION_RANKED_COLUMN}`),
+  22: (db) => {
+    // Tests wind a fresh schema back to older versions: add only if missing.
+    const columns = db.query<{ name: string }, []>("PRAGMA table_info(category_suggestions)").all().map((c) => c.name)
+    if (!columns.includes("dismissed")) db.exec(`ALTER TABLE category_suggestions ADD COLUMN ${SUGGESTION_DISMISSED_COLUMN}`)
+    db.exec(TAG_DISMISSALS_SQL)
+  },
   21: (db) => {
     // Tests wind a fresh (scoped) schema back to older versions: add only if missing.
     const columns = db.query<{ name: string }, []>("PRAGMA table_info(tags)").all().map((c) => c.name)
@@ -464,7 +472,7 @@ export function loadSuggestions(db: Db): CategorySuggestion[] {
     FROM category_suggestions s
     JOIN transactions t ON t.id = s.transaction_id
     LEFT JOIN categories c ON c.id = t.category_id
-    WHERE t.category_id IS NULL OR c.is_default = 1`).all().map(({ ranked, ...s }) => {
+    WHERE s.dismissed = 0 AND (t.category_id IS NULL OR c.is_default = 1)`).all().map(({ ranked, ...s }) => {
       const list = parseRanked(ranked)
       return list ? { ...s, ranked: list } : s
     })
@@ -491,6 +499,27 @@ export function saveSuggestions(db: Db, list: CategorySuggestion[]): void {
   db.transaction(() => {
     for (const s of list) save.run(s.transactionId, s.categoryId, s.confidence, s.source, s.ranked?.length ? JSON.stringify(s.ranked.map((r) => [r.categoryId, r.confidence])) : null)
   })()
+}
+
+/** Rows whose suggestion was dismissed: not suggested for again. */
+export function loadDismissedSuggestionIds(db: Db): Set<number> {
+  return new Set(db.query<{ id: number }, []>("SELECT transaction_id AS id FROM category_suggestions WHERE dismissed = 1").all().map((r) => r.id))
+}
+
+/** Dismiss suggestions: kept, marked, so they are not made again. */
+export function dismissSuggestionRows(db: Db, transactionIds: number[]): void {
+  const dismiss = db.query("UPDATE category_suggestions SET dismissed = 1 WHERE transaction_id = ?")
+  db.transaction(() => { for (const id of transactionIds) dismiss.run(id) })()
+}
+
+/** Rows dismissed for a tag (by its upper-case name). */
+export function loadTagDismissals(db: Db, tagName: string): Set<number> {
+  return new Set(db.query<{ id: number }, [string]>("SELECT transaction_id AS id FROM tag_dismissals WHERE tag_name = ?").all(tagName.toUpperCase()).map((r) => r.id))
+}
+
+export function saveTagDismissals(db: Db, tagName: string, transactionIds: number[]): void {
+  const save = db.query("INSERT OR IGNORE INTO tag_dismissals (tag_name, transaction_id) VALUES (?, ?)")
+  db.transaction(() => { for (const id of transactionIds) save.run(tagName.toUpperCase(), id) })()
 }
 
 export function deleteSuggestions(db: Db, transactionIds: number[]): void {

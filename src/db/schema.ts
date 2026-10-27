@@ -6,7 +6,7 @@
  * version fallback with an additive migration registry. v7 was the initial
  * partial OpenTUI port. */
 
-export const SCHEMA_VERSION = 21
+export const SCHEMA_VERSION = 22
 
 /** Columns shared by the fresh schema and the v9 migration. Rows imported from
  * CSV keep source = 'csv' and NULL external fields. */
@@ -149,6 +149,18 @@ export const SUGGESTION_RANKED_COLUMN = "ranked TEXT"
  * (Go: a tag's scope is one category), 2026-10-27. */
 export const TAG_SCOPE_COLUMN = "scope TEXT"
 
+/** v22: dismissals that last. A dismissed category suggestion stays, marked
+ * (re-suggesting skips it); a dismissed tag candidate is remembered per tag
+ * name (a tag being found may not exist yet). */
+export const SUGGESTION_DISMISSED_COLUMN = "dismissed INTEGER NOT NULL DEFAULT 0"
+export const TAG_DISMISSALS_SQL = `
+CREATE TABLE IF NOT EXISTS tag_dismissals (
+  tag_name       TEXT NOT NULL,
+  transaction_id INTEGER NOT NULL REFERENCES transactions(id) ON DELETE CASCADE,
+  PRIMARY KEY (tag_name, transaction_id)
+);
+`
+
 export const SYNC_SQL = `
 CREATE UNIQUE INDEX IF NOT EXISTS idx_accounts_external ON accounts(source, external_id) WHERE external_id IS NOT NULL;
 CREATE UNIQUE INDEX IF NOT EXISTS idx_transactions_external ON transactions(source, external_id) WHERE external_id IS NOT NULL;
@@ -248,6 +260,8 @@ ${CATEGORY_SUGGESTIONS_SQL}
 ALTER TABLE budget_cycle ADD COLUMN ${BUDGET_PAY_EARLY_COLUMN};
 ALTER TABLE category_suggestions ADD COLUMN ${SUGGESTION_RANKED_COLUMN};
 ALTER TABLE tags ADD COLUMN ${TAG_SCOPE_COLUMN};
+ALTER TABLE category_suggestions ADD COLUMN ${SUGGESTION_DISMISSED_COLUMN};
+${TAG_DISMISSALS_SQL}
 `
 
 export const DEFAULT_CATEGORIES: { name: string; color: string; sortOrder: number; isDefault: number }[] = [

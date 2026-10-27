@@ -14,6 +14,10 @@ import {
   loadSuggestions,
   saveSuggestions,
   deleteSuggestions,
+  dismissSuggestionRows,
+  loadDismissedSuggestionIds,
+  loadTagDismissals,
+  saveTagDismissals,
   openDb,
   removeTagFromTransactions,
   setTransactionCategory,
@@ -306,7 +310,7 @@ function createDataStore() {
     askVerdicts.clear()
     askRun++
     tagRun++
-    tagDismissed.clear()
+    suggestTried.clear()
     setState({ tagReview: null })
     actualDbPath = dbPath ?? defaultDbPath()
     db = openDb(actualDbPath)
@@ -358,7 +362,7 @@ function createDataStore() {
     actualDbPath = ""
     askRun++
     tagRun++
-    tagDismissed.clear()
+    suggestTried.clear()
     askVerdicts.clear()
     setAskVersion(0)
     setState(reconcile(initialState()))
@@ -640,7 +644,9 @@ function createDataStore() {
     setState({ suggesting: true })
     try {
       const selected = ids ? new Set(ids) : null
-      const targets = transactions().filter((t) => isOrdinaryFlow(t) && isUncategorised(t) && (options.replace ? !!state.suggestions[t.id] : !state.suggestions[t.id]) && (!selected || selected.has(t.id)))
+      // Rows whose suggestion was dismissed get no new one.
+      const dismissed = loadDismissedSuggestionIds(database)
+      const targets = transactions().filter((t) => isOrdinaryFlow(t) && isUncategorised(t) && !dismissed.has(t.id) && (options.replace ? !!state.suggestions[t.id] : !state.suggestions[t.id]) && (!selected || selected.has(t.id)))
       const history = historySuggestions(transactions(), state.categories, new Set(targets.map((t) => t.id)))
       saveSuggestions(database, history)
       refresh()
@@ -748,14 +754,18 @@ function createDataStore() {
     return parts.join(" · ")
   }
 
+  /** Rows background suggesting has asked about since the database opened:
+   * one Jev couldn't place isn't asked again every sync. */
+  const suggestTried = new Set<number>()
+  /** Waiting rows with no suggestion that background suggesting hasn't tried. */
+  const untriedWaiting = () => transactions().filter((t) => isOrdinaryFlow(t) && isUncategorised(t) && !state.suggestions[t.id] && !suggestTried.has(t.id)).map((t) => t.id)
+  const markTried = (ids: number[]) => { for (const id of ids) suggestTried.add(id) }
+
   /** Detected groupings in the history: trips, then regular payments. */
   const tagGroups = createRoot(() => createMemo(() => [...detectTrips(transactions()), ...detectRecurring(transactions())]))
 
   /** Bumped by each tag review opened or closed; a run stops once stale. */
   let tagRun = 0
-  /** Rows dismissed for a tag this session, by tag id or new name. */
-  const tagDismissed = new Map<string, Set<number>>()
-  const reviewKey = (target: TagTarget) => target.tagId != null ? `tag:${target.tagId}` : `new:${target.name.toLowerCase()}`
 
   /**
    * Show the transactions `target` could go on (see tagSuggest): the group's
@@ -766,7 +776,7 @@ function createDataStore() {
     // Tag names are upper case (createTag); a new one is named as it will be.
     if (target.tagId == null) target = { ...target, name: target.name.trim().toUpperCase() }
     const run = ++tagRun
-    const dismissed = tagDismissed.get(reviewKey(target)) ?? new Set<number>()
+    const dismissed = db ? loadTagDismissals(db, target.name) : new Set<number>()
     const known = knownTagCandidates(target, transactions()).filter((c) => !dismissed.has(c.transactionId))
     setState({
       uncategorisedOnly: false, sortColumn: "confidence", sortAscending: false,
@@ -818,14 +828,11 @@ function createDataStore() {
     return summary
   }
 
-  /** Drop candidates from the review, for the rest of the session. */
+  /** Drop candidates from the review, remembered for the tag (by name). */
   function dismissTagCandidates(ids: number[]): void {
     const review = state.tagReview
-    if (!review) return
-    const key = reviewKey(review)
-    const set = tagDismissed.get(key) ?? new Set<number>()
-    for (const id of ids) set.add(id)
-    tagDismissed.set(key, set)
+    if (!review || !db) return
+    saveTagDismissals(db, review.name, ids)
     setState("tagReview", "candidates", produce((c) => { for (const id of ids) delete c[id] }))
   }
 
@@ -853,7 +860,8 @@ function createDataStore() {
   }
 
   function dismissSuggestions(ids: number[]): void {
-    mutate((db) => deleteSuggestions(db, ids))
+    // Kept and marked: re-suggesting (i, a sync) won't make it again.
+    mutate((db) => dismissSuggestionRows(db, ids))
   }
 
   async function applyTagPatch(txnIds: number[], patch: Record<number, "add" | "remove">): Promise<string> {
@@ -1129,6 +1137,8 @@ function createDataStore() {
     resuggestLike,
     retryPendingCategories,
     tagGroups,
+    untriedWaiting,
+    markTried,
     openTagReview,
     acceptTagCandidates,
     dismissTagCandidates,

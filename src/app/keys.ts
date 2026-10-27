@@ -17,7 +17,7 @@ import { runAsk } from "./ask"
 import { askTerms } from "../domain/filter"
 import { AI_ROWS, testApiKey } from "./apiKeys"
 import { credentialEnv } from "../ai/credentials"
-import { runAccept, toggleUncategorised } from "./suggest"
+import { runAccept, toggleUncategorised, newSuggestionsNote, suggestNew } from "./suggest"
 import { ACCEPT_ALL_AT, MATCH_AT } from "../domain/questions"
 import { CHART_VIEWS, JUMP_TARGETS, SETTINGS_SECTIONS, TABS, settingsSectionFocus, smartQuestionFor, type ScopeId, type UiState, type UiStore } from "../state/uiStore"
 import type { DataStore } from "../state/dataStore"
@@ -719,7 +719,13 @@ function handleSettingsImportPreview(ui: UiStore, key: KeyEvent, data?: DataStor
   if (name === "p") { ui.setState({ importPreviewShowAll: !ui.state.importPreviewShowAll, importPreviewCursor: 0 }); return }
   if (name === "r") { ui.setState({ importPreviewRules: !ui.state.importPreviewRules }); return }
   if ((name === "s" || name === "a") && preview) {
-    try { const summary = data?.commitPreview({ ...preview, rulesEnabled: ui.state.importPreviewRules }, name === "s") ?? "Import unavailable"; ui.cancelImport(); ui.setStatus(summary) } catch (e) { reportError(ui, e) }
+    try {
+      const summary = data?.commitPreview({ ...preview, rulesEnabled: ui.state.importPreviewRules }, name === "s") ?? "Import unavailable"
+      ui.cancelImport()
+      ui.setStatus(summary)
+      // The new rows get suggestions in the background.
+      if (data) void suggestNew(data).then((n) => { if (n) ui.setStatus(summary + newSuggestionsNote(n)) })
+    } catch (e) { reportError(ui, e) }
     return
   }
 }
@@ -810,15 +816,7 @@ function handleSettingsUp(ui: UiStore, key: KeyEvent, data?: DataStore): void {
     try { data.setAccountSync(account.id, true); ui.setStatus(`Sync on for ${account.name} · s to sync now`) } catch (e) { reportError(ui, e) }
     return
   }
-  if (name === "s" && data) {
-    if (data.state.upSyncing) { ui.setStatus("Up sync already running"); return }
-    ui.setStatus("Syncing Up…")
-    data.syncUp().then(
-      (summary) => ui.setStatus(summary),
-      (e) => reportError(ui, e),
-    )
-    return
-  }
+  if (name === "s" && data) { void runSync(ui, data, { manual: true }); return }
 }
 
 /** AI models: one row per provider; enter edits its key, t tests it, del
@@ -1184,6 +1182,13 @@ function handleOverview(ui: UiStore, key: KeyEvent, data?: DataStore): void {
     ui.setTimeframe(tf)
     ui.setDashChipCursor(index)
     ui.setStatus(`${chipLabel(index)} · ${timeframeBounds(tf, clock, cycle).label}`)
+    return
+  }
+  // i: review what's waiting for a category, in Transactions.
+  if (name === "i" && !key.shift && scope === "overview" && data) {
+    ui.switchTab("manager")
+    ui.setState({ focusedSection: "mgr.transactions" })
+    if (!data.state.uncategorisedOnly) toggleUncategorised(ui, data)
     return
   }
   // / searches: the Transactions filter, opened from here (the Overview
@@ -1617,6 +1622,7 @@ const scopes: Record<ScopeId, ScopeEntry> = {
         { key: "0", desc: "now" },
         { key: "c", desc: "this cycle" },
         ...(state?.chartViews.some((i) => CHART_VIEWS[i]?.group === "Balances") ? [{ key: "z", desc: "$0 axis" }] : []),
+        { key: "i", desc: "review" },
         { key: "/", desc: "search" },
         { key: "?", desc: "smart search" },
         { key: "v", desc: "jump" },

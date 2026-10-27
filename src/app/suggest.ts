@@ -13,6 +13,31 @@ export function toggleUncategorised(ui: UiStore, data: DataStore): void {
   void runSuggest(ui, data)
 }
 
+/**
+ * Suggest categories, in the background, for waiting rows that have none
+ * (and weren't dismissed, or tried already this session): after a sync or
+ * an import, and at startup. Skips while suggestions already run. Returns
+ * how many new ones were made.
+ */
+export async function suggestNew(data: DataStore): Promise<number> {
+  if (data.state.suggesting) return 0
+  const ids = data.untriedWaiting()
+  if (!ids.length) return 0
+  data.markTried(ids)
+  const before = Object.keys(data.state.suggestions).length
+  try {
+    await data.suggestCategories(ids)
+  } catch {
+    return 0 // a background helper: the next sync tries again
+  }
+  return Math.max(0, Object.keys(data.state.suggestions).length - before)
+}
+
+/** " · 3 new suggestions (i to review)", or "" for none. */
+export function newSuggestionsNote(n: number): string {
+  return n ? ` · ${n} new suggestion${n === 1 ? "" : "s"} (i to review)` : ""
+}
+
 async function runSuggest(ui: UiStore, data: DataStore): Promise<void> {
   if (data.state.suggesting) return
   try {
