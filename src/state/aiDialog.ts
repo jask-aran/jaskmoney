@@ -1,7 +1,7 @@
 import { activeLlmProvider, LLM_PROVIDERS, llmEffort, llmModelId, llmModels, type LlmProvider } from "../ai/llm"
 import { credentialEnv, type CredentialName } from "../ai/credentials"
 import type { DataStore } from "./dataStore"
-import { isLlmRow, type AiRow } from "../app/apiKeys"
+import { isLlmRow, type KeyRow } from "../app/apiKeys"
 
 /**
  * Settings › AI models: one row per model, and one dialog (enter) for
@@ -21,11 +21,12 @@ export interface AiContext {
   model: (provider: LlmProvider) => { id: string; isDefault: boolean; effort?: string }
 }
 
-export const AI_NAMES: Record<AiRow, { name: string; by: string; uses: string; usesShort: string }> = {
+export const AI_NAMES: Record<KeyRow, { name: string; by: string; uses: string; usesShort: string }> = {
   jev: { name: "Jev", by: "TypeSafe", uses: "category suggestions, ask: searches, smart search", usesShort: "suggestions · ask:" },
   workersAi: { name: "Clairic", by: "Cloudflare Workers AI", uses: "smart search's words and dates", usesShort: "smart search" },
   openrouter: { name: "OpenRouter", by: "general model", uses: "writing rules (R, then a)", usesShort: "rules" },
   openai: { name: "OpenAI", by: "general model", uses: "writing rules (R, then a)", usesShort: "rules" },
+  up: { name: "Up Bank", by: "Personal Access Token", uses: "syncing accounts and transactions; your categories and tags go back to Up", usesShort: "sync" },
 }
 
 /** The context from the stores and settings (keys, sign-ins, provider in use, models). */
@@ -45,17 +46,18 @@ export function aiContext(data: Pick<DataStore, "state">): AiContext {
 }
 
 /** The key a row's connection rests on (Workers AI needs its account id too). */
-function keyOf(row: AiRow, ctx: AiContext) {
+function keyOf(row: KeyRow, ctx: AiContext) {
+  if (row === "up") return ctx.keys.JASKMONEY_UP_TOKEN
   if (row === "jev") return ctx.keys.JASKMONEY_JEV_TOKEN
   if (row === "workersAi") return ctx.keys.JASKMONEY_CF_TOKEN.source && ctx.keys.JASKMONEY_CF_ACCOUNT_ID.source ? ctx.keys.JASKMONEY_CF_TOKEN : { source: null, mask: "" }
   return ctx.keys[LLM_PROVIDERS[row].keyName]
 }
 
 /** How a row is connected, in full and in short; null when it isn't. */
-export function aiConnection(row: AiRow, ctx: AiContext): { long: string; short: string } | null {
+export function aiConnection(row: KeyRow, ctx: AiContext): { long: string; short: string } | null {
   const key = keyOf(row, ctx)
   if (key.source === "saved") return { long: `key saved here (${key.mask})`, short: "key · saved" }
-  if (key.source === "env") return { long: `key from .env (${key.mask})`, short: "key · .env" }
+  if (key.source === "env") return { long: `from the environment (${key.mask})`, short: "key · env" }
   if (isLlmRow(row) && ctx.signedIn[row]) return { long: "signed in with the browser", short: "signed in" }
   // Without its own key, Jev goes through OpenRouter when that's connected.
   if (row === "jev") {
@@ -65,20 +67,20 @@ export function aiConnection(row: AiRow, ctx: AiContext): { long: string; short:
   return null
 }
 
-export function aiInUse(row: AiRow, ctx: AiContext): boolean {
+export function aiInUse(row: KeyRow, ctx: AiContext): boolean {
   return isLlmRow(row) && ctx.inUse === row && aiConnection(row, ctx) !== null
 }
 
 /** The pane's row. */
-export function aiRow(row: AiRow, ctx: AiContext) {
+export function aiRow(row: KeyRow, ctx: AiContext) {
   const connection = aiConnection(row, ctx)
   return { name: AI_NAMES[row].name, connected: !!connection, how: connection?.short ?? "not set", uses: `${AI_NAMES[row].usesShort}${aiInUse(row, ctx) ? " · in use" : ""}` }
 }
 
 /** The dialog's status lines. */
-export function aiStatus(row: AiRow, ctx: AiContext): { label: string; value: string }[] {
+export function aiStatus(row: KeyRow, ctx: AiContext): { label: string; value: string }[] {
   const lines = [{ label: "Connection", value: aiConnection(row, ctx)?.long ?? "not set" }]
-  if (row === "workersAi" && ctx.keys.JASKMONEY_CF_ACCOUNT_ID.source) lines.push({ label: "Account", value: ctx.keys.JASKMONEY_CF_ACCOUNT_ID.source === "env" ? "from .env" : "saved here" })
+  if (row === "workersAi" && ctx.keys.JASKMONEY_CF_ACCOUNT_ID.source) lines.push({ label: "Account", value: ctx.keys.JASKMONEY_CF_ACCOUNT_ID.source === "env" ? "from the environment" : "saved here" })
   if (isLlmRow(row)) {
     const model = ctx.model(row)
     lines.push({ label: "Model", value: `${model.id}${model.isDefault ? " (default)" : ""}${model.effort ? ` · ${model.effort} effort` : ""}` })
@@ -88,11 +90,11 @@ export function aiStatus(row: AiRow, ctx: AiContext): { label: string; value: st
 }
 
 /** The dialog's actions, the likeliest first: a general model's browser sign-in. */
-export function aiActions(row: AiRow, ctx: AiContext): { id: AiAction; label: string }[] {
+export function aiActions(row: KeyRow, ctx: AiContext): { id: AiAction; label: string }[] {
   const connected = aiConnection(row, ctx) !== null
   const actions: { id: AiAction; label: string }[] = []
   if (isLlmRow(row)) actions.push({ id: "signIn", label: ctx.signedIn[row] ? "Sign in again with the browser" : "Sign in with the browser" })
-  actions.push({ id: "key", label: row === "workersAi" ? "Enter an API token" : "Enter an API key" })
+  actions.push({ id: "key", label: row === "up" ? "Enter the token" : row === "workersAi" ? "Enter an API token" : "Enter an API key" })
   if (row === "workersAi") actions.push({ id: "accountId", label: "Enter the account ID" })
   if (isLlmRow(row)) actions.push({ id: "model", label: "Change the model" })
   if (connected) actions.push({ id: "test", label: "Test" })
@@ -104,24 +106,26 @@ export function aiActions(row: AiRow, ctx: AiContext): { id: AiAction; label: st
 /** What the action at the cursor does, when it needs saying. OpenRouter's
  * browser sign-in mints a permanent key on the account: signing in again
  * makes another, and removing only forgets this app's copy. */
-export function aiActionHint(row: AiRow, action: AiAction, ctx: AiContext): string | null {
+export function aiActionHint(row: KeyRow, action: AiAction, ctx: AiContext): string | null {
   if (action === "signIn") {
     const again = isLlmRow(row) && ctx.signedIn[row]
     if (row === "openrouter") return `Opens OpenRouter in your browser. It creates an API key on your account${again ? " (another one: the last stays active until you delete it on openrouter.ai)" : ""}.`
     if (row === "openai") return "Opens Sign in with ChatGPT in your browser: uses your ChatGPT plan, no API key."
   }
-  if (action === "key") return "Saved only for you (credentials.json); used before .env and a browser sign-in."
+  if (action === "key" && row === "up") return "A Personal Access Token from api.up.com.au. Saved only for you (~/.jaskmoney/credentials.json); used before the environment's."
+  if (action === "key") return "Saved only for you (~/.jaskmoney/credentials.json); used before the environment's and a browser sign-in."
   if (action === "model" && isLlmRow(row)) return `An ${LLM_PROVIDERS[row].label} model id; empty means ${LLM_PROVIDERS[row].defaultModel}.`
   if (action === "remove") {
     if (row === "openrouter" && ctx.signedIn.openrouter) return "Forgets the sign-in here. Its key stays active on OpenRouter: delete it at openrouter.ai/settings/keys."
     if (row === "openai" && ctx.signedIn.openai) return "Forgets the sign-in here; you can also disconnect the app in ChatGPT's settings."
-    return "A key in .env stays: remove it there."
+    return "A key set in the environment stays: unset it there."
   }
   return null
 }
 
-/** Something saved here to remove (a key from .env stays: it isn't the app's). */
-export function removable(row: AiRow, ctx: AiContext): boolean {
+/** Something saved here to remove (a key from the environment stays: it isn't the app's). */
+export function removable(row: KeyRow, ctx: AiContext): boolean {
+  if (row === "up") return ctx.keys.JASKMONEY_UP_TOKEN.source === "saved"
   if (row === "jev") return ctx.keys.JASKMONEY_JEV_TOKEN.source === "saved"
   if (row === "workersAi") return ctx.keys.JASKMONEY_CF_TOKEN.source === "saved" || ctx.keys.JASKMONEY_CF_ACCOUNT_ID.source === "saved"
   const { keyName, modelName } = LLM_PROVIDERS[row]

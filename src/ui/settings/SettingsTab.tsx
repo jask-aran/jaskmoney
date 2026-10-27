@@ -1,7 +1,7 @@
 import { armedFor } from "../../state/armed"
 import { DATABASE_ROWS, databaseRow } from "../../state/databaseRows"
 import { AI_ROWS } from "../../app/apiKeys"
-import { AI_NAMES, aiActionHint, aiActions, aiContext, aiRow, aiStatus } from "../../state/aiDialog"
+import { AI_NAMES, aiActionHint, aiActions, aiConnection, aiContext, aiRow, aiStatus } from "../../state/aiDialog"
 import { secretDisplay } from "../../state/settingsForm"
 import { SignInBody } from "../primitives/SignInBody"
 import { For, Show, createEffect, createMemo, onCleanup, type JSX } from "solid-js"
@@ -170,23 +170,26 @@ function DatabasePane(props: { focused: boolean; height?: number | "auto" | `${n
 function UpPane(props: { focused: boolean; width?: `${number}%` }) {
   const info = () => data.state.dbInfo
   const active = () => ui.state.settingsActive && ui.state.settingsSection === "up"
-  const tokenSet = () => !!data.state.apiKeys.JASKMONEY_UP_TOKEN.source
+  const connection = () => aiConnection("up", aiContext(data))
   const accounts = () => data.state.syncAccounts
+  const syncNote = () => data.state.upSyncing ? "syncing…"
+    : info()?.upLastSyncedAt ? `last sync ${new Date(info()!.upLastSyncedAt!).toLocaleString("en-AU", { dateStyle: "medium", timeStyle: "short" })}`
+    : "not synced yet"
   return <SectionCard title={SETTINGS_SECTION_LABELS.up} focused={props.focused} active={active()} height={Math.max(1, accounts().length) + 4} width={props.width}>
-    <text wrapMode="none">
-      <Show when={tokenSet()} fallback={<S fg={theme.warning}>No Up token: JASKMONEY_UP_TOKEN in ~/.jaskmoney/credentials.json</S>}>
-        <Show when={!data.state.upSyncing} fallback={<S fg={theme.peach}>Syncing…</S>}>
-          <S fg={info()?.upLastSyncedAt ? theme.subtext0 : theme.overlay1}>
-            {info()?.upLastSyncedAt ? `Last sync ${new Date(info()!.upLastSyncedAt!).toLocaleString("en-AU", { dateStyle: "medium", timeStyle: "short" })}` : "Token set · not synced yet"}
-          </S>
-        </Show>
-      </Show>
-    </text>
+    {/* The token first: enter opens its dialog (enter, test, remove). */}
+    <ListRow cursor={active() && ui.state.upCursor === 0} bg={theme.canvas} spans={connection() ? [
+      { text: fit("Token", 16), fg: theme.text },
+      { text: fit(connection()!.short, 22), fg: theme.success },
+      { text: syncNote(), fg: data.state.upSyncing ? theme.peach : theme.overlay1 },
+    ] : [
+      { text: fit("Token", 16), fg: theme.text },
+      { text: "not set · enter to add one to sync", fg: theme.warning },
+    ]} />
     <Show when={info()?.upLastError}>{(error: () => string) => <text fg={theme.error} wrapMode="none">{error()}</text>}</Show>
     <Show when={accounts().length} fallback={<text fg={theme.overlay1}>No accounts synced yet</text>}>
       <For each={accounts()}>{(account, i) => {
         const on = () => account.syncEnabled
-        return <ListRow cursor={active() && ui.state.upCursor === i()} bg={theme.canvas} armed={armedFor(ui.state.armed, "desyncAccount", account.id)} spans={[
+        return <ListRow cursor={active() && ui.state.upCursor === i() + 1} bg={theme.canvas} armed={armedFor(ui.state.armed, "desyncAccount", account.id)} spans={[
           { text: fit(account.name, 16), fg: on() ? theme.text : theme.overlay1 },
           { text: fit(accountRole(account) === "saver" ? "saver" : "spending", 10), fg: theme.overlay1 },
           { text: fit(account.balance != null ? formatMoney(account.balance) : "—", 12), fg: on() ? theme.subtext1 : theme.overlay1 },
@@ -227,7 +230,7 @@ export function AiDialog() {
         const actions = () => aiActions(d().row, ctx())
         const at = () => actions()[Math.min(d().cursor, actions().length - 1)]
         const signIn = () => (ui.state.llmSignIn?.provider === d().row ? ui.state.llmSignIn : null)
-        const fieldLabel = (action: string) => (action === "key" ? (d().row === "workersAi" ? "API token" : "API key") : action === "accountId" ? "Account ID" : "Model")
+        const fieldLabel = (action: string) => (action === "key" ? (d().row === "up" ? "Token" : d().row === "workersAi" ? "API token" : "API key") : action === "accountId" ? "Account ID" : "Model")
         return (
           <Modal title={AI_NAMES[d().row].name} subtitle={AI_NAMES[d().row].by} width={AI_DIALOG_WIDTH}
             hints={signIn() ? (signIn()!.paste ? "enter send · esc cancel" : "esc cancel") : d().field ? "enter save · esc back" : "j/k move · enter do · esc close"}>

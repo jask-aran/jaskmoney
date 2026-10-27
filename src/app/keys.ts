@@ -877,10 +877,15 @@ function handleSettingsFilters(ui: UiStore, key: KeyEvent, data?: DataStore): vo
 function handleSettingsUp(ui: UiStore, key: KeyEvent, data?: DataStore): void {
   const { name } = key
   const accounts = data?.state.syncAccounts ?? []
-  const account = accounts[ui.state.upCursor]
+  // Row 0 is the token (enter opens its dialog); the accounts follow.
+  const account = accounts[ui.state.upCursor - 1]
   if (name === "escape") { ui.leaveSettings(); return }
-  const moved = listMove(key, ui.state.upCursor, accounts.length)
+  const moved = listMove(key, ui.state.upCursor, accounts.length + 1)
   if (moved != null) { ui.setState({ upCursor: moved }); return }
+  if ((name === "return" || name === "enter") && ui.state.upCursor === 0) {
+    ui.setState({ aiDialog: { row: "up", cursor: 0, field: null, armed: false, note: null, busy: false } })
+    return
+  }
   if ((name === "return" || name === "enter") && account && data) {
     // Switching off deletes the account's transactions: enter twice.
     if (account.syncEnabled) { confirmTwice(ui, data, { kind: "desyncAccount", id: account.id, label: account.name, with: "enter" }); return }
@@ -978,8 +983,8 @@ function handleAiDialog(ui: UiStore, key: KeyEvent, data?: DataStore): void {
       try {
         if (field.action === "key") {
           if (!value) { ui.setState("aiDialog", { field: null }); return }
-          data.saveApiKeys(row === "jev" ? { JASKMONEY_JEV_TOKEN: value } : row === "workersAi" ? { JASKMONEY_CF_TOKEN: value } : { [LLM_PROVIDERS[row].keyName]: value })
-          ui.setState("aiDialog", { field: null, note: { text: "Key saved", ok: true } })
+          data.saveApiKeys(row === "up" ? { JASKMONEY_UP_TOKEN: value } : row === "jev" ? { JASKMONEY_JEV_TOKEN: value } : row === "workersAi" ? { JASKMONEY_CF_TOKEN: value } : { [LLM_PROVIDERS[row].keyName]: value })
+          ui.setState("aiDialog", { field: null, note: { text: row === "up" ? "Token saved · Test checks it; s in Up Bank syncs" : "Key saved", ok: true } })
         } else if (field.action === "accountId") {
           data.saveApiKeys({ JASKMONEY_CF_ACCOUNT_ID: value || null })
           ui.setState("aiDialog", { field: null, note: { text: value ? "Account ID saved" : "Account ID removed", ok: true } })
@@ -1035,7 +1040,7 @@ function handleAiDialog(ui: UiStore, key: KeyEvent, data?: DataStore): void {
         const { keyName, modelName } = LLM_PROVIDERS[row]
         data.saveApiKeys({ [keyName]: null, [modelName]: null, ...(row === "openrouter" ? { JASKMONEY_LLM_MODEL: null } : {}) })
         void signOutLlm(data, row)
-      } else data.saveApiKeys(row === "jev" ? { JASKMONEY_JEV_TOKEN: null } : { JASKMONEY_CF_TOKEN: null, JASKMONEY_CF_ACCOUNT_ID: null })
+      } else data.saveApiKeys(row === "up" ? { JASKMONEY_UP_TOKEN: null } : row === "jev" ? { JASKMONEY_JEV_TOKEN: null } : { JASKMONEY_CF_TOKEN: null, JASKMONEY_CF_ACCOUNT_ID: null })
       ui.setState("aiDialog", { armed: false, cursor: 0, note: { text: `Removed what was saved for ${label}`, ok: true } })
       return
     }
@@ -1712,7 +1717,7 @@ const scopes: Record<ScopeId, ScopeEntry> = {
   "settings.up": {
     handle: handleSettingsUp,
     quits: true,
-    hints: () => [{ key: "j/k", desc: "move" }, { key: "enter", desc: "sync on/off" }, { key: "s", desc: "sync now" }, { key: "esc", desc: "done" }],
+    hints: () => [{ key: "j/k", desc: "move" }, { key: "enter", desc: "token · sync on/off" }, { key: "s", desc: "sync now" }, { key: "esc", desc: "done" }],
   },
   "settings.ai": {
     handle: handleSettingsAi,

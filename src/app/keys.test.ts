@@ -404,7 +404,8 @@ describe("key router", () => {
     data.refresh()
     ui.switchTab("settings")
     ui.activateSettings("up")
-    ui.setState({ upCursor: 0 })
+    // Row 0 is the token; the account is row 1.
+    ui.setState({ upCursor: 1 })
     handleKey(ui, key("return"), data)
     expect(data.state.syncAccounts[0]!.syncEnabled).toBe(true)
     handleKey(ui, key("return"), data)
@@ -413,7 +414,7 @@ describe("key router", () => {
     handleKey(ui, key("return"), data)
     expect(ui.state.armed).toBeNull()
     expect(data.state.syncAccounts[0]!.syncEnabled).toBe(false)
-    expect(footerHints("settings.up").map((h) => `${h.key} ${h.desc}`)).toContain("enter sync on/off")
+    expect(footerHints("settings.up").map((h) => `${h.key} ${h.desc}`)).toContain("enter token · sync on/off")
   })
 
   test("Budgets: the cycle is the first row (enter edits it); budgets follow and delete on del del", () => {

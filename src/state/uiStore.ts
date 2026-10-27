@@ -221,7 +221,7 @@ export interface UiState {
    * at the cursor, a field being typed (a key, the account id, the model),
    * remove armed (enter again removes), and the last result. */
   aiDialog: {
-    row: "jev" | "workersAi" | "openrouter" | "openai"
+    row: "jev" | "workersAi" | "openrouter" | "openai" | "up"
     cursor: number
     field: { action: "key" | "accountId" | "model"; value: string; caret: number } | null
     armed: boolean

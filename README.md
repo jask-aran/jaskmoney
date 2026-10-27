@@ -128,13 +128,7 @@ All user data lives in `~/.jaskmoney` (owner-only): `transactions.db`, `settings
 
 ### Up Bank sync (primary source)
 
-Up uses a Personal Access Token; there is no in-app login. Create one at <https://api.up.com.au> and save it in `~/.jaskmoney/credentials.json` (mode 600):
-
-```json
-{ "JASKMONEY_UP_TOKEN": "up:yeah:…" }
-```
-
-The environment variable of the same name also works; the saved one wins.
+Up uses a Personal Access Token; there is no in-app login. Create one at <https://api.up.com.au>, then in Settings › Up Bank, `enter` on the Token row: enter (or paste) it, test it, or remove it (`enter` twice). It is saved owner-only in `~/.jaskmoney/credentials.json`; a `JASKMONEY_UP_TOKEN` environment variable also works, and the saved one wins.
 
 - The app syncs at startup and every 5 minutes; `ctrl+r` syncs from anywhere, and the header shows when it last synced. In Settings, Up Bank (`v` then `u`) also has `s` to sync.
 - The first sync of each account pulls its full history; later syncs fetch a recent window per account, update pending (held) transactions in place when they settle, and drop holds that Up reversed. Sync never changes a category, tag or note you set.

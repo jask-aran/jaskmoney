@@ -2,21 +2,31 @@ import { JEV_MODEL, jevClient } from "../ai/jev"
 import { createWorkersAiClient, readWorkersAiCredentials } from "../ai/workersAi"
 import { createLlm, LLM_PROVIDERS, type LlmProvider } from "../ai/llm"
 import { appToday } from "../domain/days"
+import { createUpClient, readUpToken } from "../up/client"
 
 /** The AI models pane's rows, in order: the general model's are its providers. */
 export const AI_ROWS = ["jev", "workersAi", "openrouter", "openai"] as const
 export type AiRow = (typeof AI_ROWS)[number]
 
-export const isLlmRow = (row: AiRow): row is LlmProvider => row === "openrouter" || row === "openai"
+/** What the key dialog opens for: the AI models pane's rows, and the Up
+ * token (Settings › Up Bank's first row). */
+export type KeyRow = AiRow | "up"
 
-export function aiRowLabel(row: AiRow): string {
-  return row === "jev" ? "Jev" : row === "workersAi" ? "Workers AI" : LLM_PROVIDERS[row].label
+export const isLlmRow = (row: KeyRow): row is LlmProvider => row === "openrouter" || row === "openai"
+
+export function aiRowLabel(row: KeyRow): string {
+  return row === "up" ? "Up Bank" : row === "jev" ? "Jev" : row === "workersAi" ? "Workers AI" : LLM_PROVIDERS[row].label
 }
 
 /** Try a model with the smallest possible request (a few tokens): what to say, and whether it worked. */
-export async function testAi(row: AiRow): Promise<{ ok: boolean; text: string }> {
+export async function testAi(row: KeyRow): Promise<{ ok: boolean; text: string }> {
   let llmKey = ""
   try {
+    if (row === "up") {
+      llmKey = readUpToken()
+      await createUpClient({ token: llmKey }).ping()
+      return { ok: true, text: "Works (Up answered)" }
+    }
     if (row === "jev") {
       const jev = jevClient({ timeoutMs: 15_000 })
       await jev.judge({ ok: { type: "noul", instructions: "Is `state` a greeting?" } }, "hello")
