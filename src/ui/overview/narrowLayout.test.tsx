@@ -6,7 +6,7 @@ import { ui } from "../../state/uiStore"
 import { renderApp } from "../../testing/app"
 import { account, category, transaction } from "../../testing/fixtures"
 import { theme } from "../../theme"
-import { handleKey } from "../../app/keys"
+import { footerHints, handleKey, hintState } from "../../app/keys"
 import { key } from "../../testing/keys"
 
 afterEach(() => setAppClock(null))
@@ -98,14 +98,25 @@ for (const [width, height, wide] of [[80, 30, false], [80, 45, false], [89, 60, 
         expect(cursor!.attributes & TextAttributes.BOLD).toBe(TextAttributes.BOLD)
       }
     }
+    // H/L step the bottom chart, or the one chart on screen.
     ui.setState({ focusedSection: "none" })
+    expect(ui.state.overviewCharts).toBe(wide ? 2 : 1)
     t.mockInput.pressKey("L")
     await settle()
-    expect(ui.state.chartViews).toEqual([0, 5])
-    if (wide) expect(frame()).toContain("Balances · Available")
+    expect(ui.state.chartViews).toEqual(wide ? [0, 5] : [1, 4])
+    expect(frame()).toContain(wide ? "Balances · Available" : "Spending · Daily")
     t.mockInput.pressKey("H")
     await settle()
     expect(ui.state.chartViews).toEqual([0, 4])
+    expect(footerHints("overview", hintState(ui, data)).some((h) => h.key === "H/L")).toBe(wide)
+    // With one chart, v lists no bottom chart and b does nothing.
+    t.mockInput.pressKey("v")
+    await settle()
+    expect(frame().includes("Bottom chart")).toBe(wide)
+    t.mockInput.pressKey("b")
+    await settle()
+    expect(ui.state.focusedSection).toBe(wide ? "ov.chart2" : "none")
+    ui.setState({ focusedSection: "none", jumpMode: false })
     ui.setTimeframe({ ...ui.state.timeframe, family: "lookback", lookback: "2M" })
     await settle()
     expect(overviewCards(t).map((card) => card.id)).toEqual(sameCards)
@@ -135,6 +146,17 @@ test("a resize to narrow keeps Categories in view, and drill returns to its curs
   expect(ui.state.activeTab).toBe("overview")
   expect(ui.state.overviewCategoryCursor).toBe(10)
   expect(t.captureCharFrame()).toContain("Categories · enter to open")
+})
+
+test("going narrow with the bottom chart focused moves focus to the one chart", async () => {
+  const t = await overview(110, 45)
+  ui.setState({ focusedSection: "ov.chart2" })
+  await t.renderOnce()
+  t.resize(80, 40)
+  await t.renderOnce()
+  await t.flush()
+  expect(ui.state.focusedSection).toBe("ov.chart")
+  expect(ui.state.overviewCharts).toBe(1)
 })
 
 test("narrow at its shortest: the Calendar chart shows all seven weekdays above its legend", async () => {

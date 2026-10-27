@@ -132,6 +132,13 @@ export function OverviewTab(props: { focused: SectionId }) {
   const bodyHeight = () => Math.max(8, dims().height - 7)
   const sideWidth = () => (wide() ? Math.max(SIDE_MIN, Math.min(SIDE_MAX, Math.floor((dims().width - 1) * 0.4))) : Math.floor((dims().width - 1) / 2))
   const mainWidth = () => (wide() ? dims().width - 1 - sideWidth() : dims().width)
+  // The keys act on the charts on screen: with one, the bottom chart's keys
+  // and focus move to it.
+  createEffect(() => {
+    const charts = wide() ? 2 : 1
+    if (ui.state.overviewCharts !== charts) ui.setState({ overviewCharts: charts })
+    if (charts === 1 && ui.state.focusedSection === "ov.chart2") ui.setState({ focusedSection: "ov.chart" })
+  })
 
   // The stacks: label, value (VALUE) and a note or comparison (NOTE).
   const nowRows = () => 4 + (position().pendingCount > 0 ? 1 : 0)

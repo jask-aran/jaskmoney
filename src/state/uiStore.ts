@@ -124,6 +124,10 @@ export interface UiState {
   drillReturn: { filter: string; focus: SectionId } | null
   /** Each chart pane's view: indexes into CHART_VIEWS, top pane first. */
   chartViews: [number, number]
+  /** How many chart panes the Overview shows: 2 at its wide layout, 1
+   * below it (the Overview sets it from its width). With one, the bottom
+   * chart's keys and jump act on the top one. */
+  overviewCharts: 1 | 2
   filterMode: boolean
   filterDraft: string
   filterCaret: number
@@ -260,6 +264,13 @@ export const CHART_VIEWS = [
   { view: "Subscriptions", group: "Subscriptions" },
 ] as const
 
+/** The tab's jump targets that are on screen: no bottom chart when the
+ * Overview shows one chart. */
+export function jumpTargets(state: Pick<UiState, "activeTab" | "overviewCharts">): JumpTarget[] {
+  const targets = JUMP_TARGETS[state.activeTab]
+  return state.activeTab === "overview" && state.overviewCharts === 1 ? targets.filter((t) => t.section !== "ov.chart2") : targets
+}
+
 export const JUMP_TARGETS: Record<TabId, JumpTarget[]> = {
   overview: [
     { key: "d", section: "ov.range", label: "Date Range" },
@@ -319,6 +330,7 @@ function createUiStore() {
     overviewCategoryCursor: 0,
     drillReturn: null,
     chartViews: [0, 4],
+    overviewCharts: 2,
     filterMode: false,
     filterDraft: "",
     filterCaret: 0,

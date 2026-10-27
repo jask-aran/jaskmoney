@@ -29,7 +29,7 @@ import { createLlm, hasLlm, LLM_PROVIDERS, llmModelId } from "../ai/llm"
 import { credentialEnv } from "../ai/credentials"
 import { runAccept, toggleUncategorised, newSuggestionsNote, suggestNew } from "./suggest"
 import { ACCEPT_ALL_AT, MATCH_AT } from "../domain/questions"
-import { CHART_VIEWS, JUMP_TARGETS, SETTINGS_SECTIONS, TABS, settingsSectionFocus, smartQuestionFor, type ScopeId, type UiState, type UiStore } from "../state/uiStore"
+import { CHART_VIEWS, SETTINGS_SECTIONS, jumpTargets, TABS, settingsSectionFocus, smartQuestionFor, type ScopeId, type UiState, type UiStore } from "../state/uiStore"
 import type { DataStore } from "../state/dataStore"
 import {
   CUSTOM_CHIP,
@@ -203,7 +203,7 @@ export function handleKey(ui: UiStore, key: KeyEvent, data?: DataStore): boolean
       if (!key.ctrl || key.meta || !entry.hints(hintState(ui, data)).some((hint) => hint.key === `ctrl+${name}`)) return true
     }
     if (name === "v") {
-      if (JUMP_TARGETS[ui.state.activeTab].length) ui.enterJump()
+      if (jumpTargets(ui.state).length) ui.enterJump()
       return true
     }
     for (const tab of TABS) {
@@ -287,7 +287,7 @@ function handleJump(ui: UiStore, key: KeyEvent, data?: DataStore): void {
     ui.cancelJump()
     return
   }
-  const hit = JUMP_TARGETS[ui.state.activeTab].find(
+  const hit = jumpTargets(ui.state).find(
     (t) => t.key === name || t.key === seq,
   )
   if (hit) {
@@ -1353,11 +1353,12 @@ function handleOverview(ui: UiStore, key: KeyEvent, data?: DataStore): void {
   const clock = appNow()
   const cycle = data?.cycle()
   // h/l (or ,/.) step the focused chart pane's views, the top pane when
-  // neither is focused; H/L always step the bottom pane.
+  // neither is focused; H/L step the bottom pane, or the one chart when
+  // the Overview shows only one.
   const back = seq === "H" || ((name === "h" || name === "left" || seq === ",") && scope === "overview")
   const forward = seq === "L" || ((name === "l" || name === "right" || seq === ".") && scope === "overview")
   if (back || forward) {
-    const pane = seq === "H" || seq === "L" || key.shift || ui.state.focusedSection === "ov.chart2" ? 1 : 0
+    const pane = ui.state.overviewCharts === 2 && (seq === "H" || seq === "L" || key.shift || ui.state.focusedSection === "ov.chart2") ? 1 : 0
     const n = CHART_VIEWS.length
     const views: [number, number] = [...ui.state.chartViews]
     views[pane] = (views[pane] + (back ? -1 : 1) + n) % n
@@ -1525,6 +1526,8 @@ function drillDown(ui: UiStore, data: DataStore, line?: CategoryLine) {
 }
 
 type HintState = Pick<UiState, "focusedSection" | "drillReturn" | "chartViews"> & {
+  /** The Overview's chart panes on screen (one: no bottom-chart keys). */
+  overviewCharts?: 1 | 2
   /** From the data store: the Transactions table is the Uncategorised view. */
   uncategorisedOnly?: boolean
   /** In the filter: ↑ would bring back the smart search's question. */
@@ -1847,7 +1850,7 @@ const scopes: Record<ScopeId, ScopeEntry> = {
         { key: "i", desc: "review", command: "txn:uncategorised" },
         { key: "/", desc: "search", command: "txn:filter" },
         { key: "?", desc: "smart search", command: "txn:smart-search" },
-        { key: "H/L", desc: "bottom chart" },
+        ...(state?.overviewCharts !== 1 ? [{ key: "H/L", desc: "bottom chart" }] : []),
         { key: "0", desc: "now", label: "Range: back to now" },
         ...(state?.chartViews.some((i) => CHART_VIEWS[i]?.group === "Balances") ? [{ key: "z", desc: "$0 axis" }] : []),
         { key: "v", desc: "jump" },
@@ -1889,7 +1892,7 @@ export function footerLine(scope: ScopeId, state?: HintState): Hint[] {
 /** The state the hints read, from both stores. */
 export function hintState(ui: UiStore, data?: DataStore): HintState {
   return {
-    focusedSection: ui.state.focusedSection, drillReturn: ui.state.drillReturn, chartViews: ui.state.chartViews,
+    focusedSection: ui.state.focusedSection, drillReturn: ui.state.drillReturn, chartViews: ui.state.chartViews, overviewCharts: ui.state.overviewCharts,
     uncategorisedOnly: data?.state.uncategorisedOnly, tagReview: !!data?.state.tagReview,
     signInPaste: !!ui.state.llmSignIn?.paste, aiField: !!ui.state.aiDialog?.field,
     ruleOffers: data && ui.state.activeTab === "manager" ? data.allRuleOffers().length : 0,
