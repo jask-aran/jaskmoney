@@ -19,8 +19,6 @@ import { theme } from "../../theme"
 import { count, fit, truncate } from "../text"
 import { formatMoney } from "../../domain/dashboard"
 import { accountRole } from "../../domain/types"
-import { budgetLabel } from "../../domain/budgetScopes"
-import { describeCycle } from "../../domain/budget"
 import { Modal } from "../primitives/Modal"
 import { categoryMark } from "../icons"
 import { Form } from "../primitives/Form"
@@ -108,24 +106,6 @@ function TaxonomyList(props: { kind: SettingsList; width: number }) {
       <box height={1}><ListFooter top={top()} visible={visible()} count={rows().length} /></box>
     </box>
   )
-}
-
-function BudgetsPane(props: { focused: boolean; width: number }) {
-  const active = () => ui.state.settingsActive && ui.state.settingsSection === "budgets"
-  const budgets = () => data.state.budgets
-  // Label and amount side by side, not spread across a wide pane.
-  const label = () => Math.min(36, rowWidth(props.width) - 13)
-  return <SectionCard title={SETTINGS_SECTION_LABELS.budgets} focused={props.focused} active={active()} height={Math.max(1, budgets().length) + 3} width={props.width}>
-    <ListRow cursor={active() && ui.state.budgetCursor === 0} bg={theme.canvas} spans={[{ text: fit("Cycle", 14), fg: theme.subtext0 }, { text: describeCycle(data.state.budgetCycle), fg: theme.text }]} />
-    <Show when={budgets().length} fallback={<text fg={theme.overlay1}>{active() ? "  No budgets. Press a to add." : "  No budgets yet."}</text>}>
-      <For each={budgets()}>{(budget, i) => (
-        <ListRow cursor={active() && ui.state.budgetCursor === i() + 1} bg={theme.canvas} armed={armedFor(ui.state.armed, "budget", budget.id)} spans={[
-          { text: fit(budgetLabel(budget, data.state.accounts, data.state.categories), label()), fg: theme.text },
-          { text: formatMoney(budget.amount).padStart(13), fg: theme.subtext1 },
-        ]} />
-      )}</For>
-    </Show>
-  </SectionCard>
 }
 
 function TaxonomyPane(props: { focused: boolean; narrow: boolean; width: number; height?: number | "auto" | `${number}%` }) {
@@ -482,8 +462,11 @@ const EDITOR_HINTS: Record<FormField["kind"], string> = {
 /** Rows the Taxonomy lists show: as many as the screen allows beside the
  * other panes of its column, 5 to 15. The pane is exactly this tall, so
  * the list's window and its footer always fit inside it. */
+/** Category and tag rows shown: wide, Taxonomy has its column to itself
+ * (tab bar, status and footer 4, its border, heading and footer 4); else
+ * up to 15, the panes below it in view. */
 function taxonomyRows(height: number, wide: boolean): number {
-  return Math.max(5, Math.min(15, height - (wide ? 21 : 16)))
+  return Math.max(5, wide ? height - 8 : Math.min(15, height - 16))
 }
 
 /** The box a section's pane sits in: what the column scrolls into view. */
@@ -526,7 +509,7 @@ export function SettingsTab(props: { focused: SectionId }) {
     </scrollbox>
   )
   // Each pane's width: rows size their columns from it. Wide: Taxonomy
-  // (and Budgets) in a 60% left column; the rest on the right, Rules &
+  // in a 60% left column; the rest on the right, Rules &
   // Filters (they run on what comes in) just above Database & Import; medium: the tab, Up Bank and AI models halves.
   const left = () => Math.floor(dims().width * 0.6)
   const right = () => dims().width - 1 - left()
@@ -534,7 +517,6 @@ export function SettingsTab(props: { focused: SectionId }) {
   const half = () => Math.floor(dims().width * 0.5)
   const Pane = (pane: { section: SectionId; children: JSX.Element }) => <box id={paneId(pane.section)} width="100%" flexShrink={0}>{pane.children}</box>
   const taxonomy = (width: number) => <Pane section="set.categories"><TaxonomyPane focused={taxonomyFocused()} narrow={layout() === "narrow"} height={rows() + 4} width={width} /></Pane>
-  const budgets = (width: number) => <Pane section="set.budgets"><BudgetsPane focused={props.focused === "set.budgets"} width={width} /></Pane>
   const rules = (width: number) => <Pane section="set.rules"><RulesPane focused={props.focused === "set.rules" || props.focused === "set.filters"} width={width} /></Pane>
   const up = (width: number) => <Pane section="set.up"><UpPane focused={props.focused === "set.up"} width={width} /></Pane>
   const ai = (width: number) => <Pane section="set.ai"><AiPane focused={props.focused === "set.ai"} width={width} /></Pane>
@@ -543,7 +525,7 @@ export function SettingsTab(props: { focused: SectionId }) {
   return <box width="100%" height="100%" flexDirection="row" gap={1} backgroundColor={theme.canvas}>
     <Show when={layout() === "wide"} fallback={
       <Column>
-        {taxonomy(full())}{budgets(full())}
+        {taxonomy(full())}
         <Show when={layout() === "medium"} fallback={<>{up(full())}{ai(full())}</>}>
           <box flexDirection="row" gap={1} width="100%" flexShrink={0}>
             <box id={paneId("set.up")} width={half()} flexShrink={0}><UpPane focused={props.focused === "set.up"} width={half()} /></box>
@@ -553,7 +535,7 @@ export function SettingsTab(props: { focused: SectionId }) {
         {rules(full())}{database(full())}{history(full())}
       </Column>
     }>
-      <Column width={left()}>{taxonomy(left())}{budgets(left())}</Column>
+      <Column width={left()}>{taxonomy(left())}</Column>
       <Column>{up(right())}{ai(right())}{rules(right())}{database(right())}{history(right())}</Column>
     </Show>
     <ImportOverlay />

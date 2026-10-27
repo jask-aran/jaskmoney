@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test"
-import { budgetProgress, cycleFor, paydays, type Budget, type CycleConfig } from "./budget"
+import { budgetProgress, cycleFor, cycleSpending, pastCycles, paydays, spendByGroup, type Budget, type CycleConfig } from "./budget"
 import type { Transaction } from "./types"
 import { account, category, transaction } from "../testing/fixtures"
 
@@ -246,5 +246,31 @@ describe("budgetProgress", () => {
     expect(budgetProgress(budgets, config, "2026-10-12", accounts, categories, transactions).map((p) => p.spent))
       .toEqual([0, 0, 0, 0, 0, 0])
     expect(budgetProgress([], config, "2026-10-07", accounts, categories, transactions)).toEqual([])
+  })
+})
+
+describe("past cycles and spending by group (the Budgets tab)", () => {
+  const monthly: CycleConfig = { unit: "month", anchor: "date", anchorDate: "2026-01-14" }
+  test("pastCycles: the whole cycles before today's, newest first", () => {
+    expect(pastCycles(monthly, "2026-10-27", 3).map((c) => `${c.start}..${c.end}`)).toEqual([
+      "2026-09-14..2026-10-13", "2026-08-14..2026-09-13", "2026-07-14..2026-08-13",
+    ])
+  })
+  test("cycleSpending and spendByGroup: spending-account outflows in the cycle, children counted to their group", () => {
+    const accounts = [account({ id: 1 }), account({ id: 2, externalKind: "SAVER" })]
+    const categories = [category({ id: 10, name: "Good Life" }), category({ id: 11, name: "Cafes", parentId: 10 }), category({ id: 20, name: "Groceries" })]
+    const rows = [
+      transaction({ id: 1, accountId: 1, dateISO: "2026-09-20", amount: -10, categoryId: 11 }),
+      transaction({ id: 2, accountId: 1, dateISO: "2026-09-21", amount: -5, categoryId: 10 }),
+      transaction({ id: 3, accountId: 1, dateISO: "2026-09-22", amount: -40, categoryId: 20 }),
+      transaction({ id: 4, accountId: 1, dateISO: "2026-09-23", amount: -7, categoryId: null }),
+      transaction({ id: 5, accountId: 2, dateISO: "2026-09-23", amount: -99, categoryId: 20 }),
+      transaction({ id: 6, accountId: 1, dateISO: "2026-10-20", amount: -99, categoryId: 20 }),
+      transaction({ id: 7, accountId: 1, dateISO: "2026-09-24", amount: 50, categoryId: 20 }),
+    ]
+    const cycle = pastCycles(monthly, "2026-10-27", 1)[0]!
+    const spent = cycleSpending(cycle, cycle.end, accounts, rows)
+    expect(spent.map((t) => t.id).sort()).toEqual([1, 2, 3, 4])
+    expect(Object.fromEntries(spendByGroup(spent, categories))).toEqual({ 10: 15, 20: 40, null: 7 })
   })
 })

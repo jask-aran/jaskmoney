@@ -50,7 +50,7 @@ legacy/go/   frozen Go reference implementation
 
 ## Tabs
 
-Where information lives: the Overview is figures and charts (point-in-time ones in Now and Savers, everything else over the Date Range, which defaults to the budget cycle); Transactions is the individual rows, and merchants as a grouping of them; Settings is configuration.
+Where information lives: the Overview is figures and charts (point-in-time ones in Now and Savers, everything else over the Date Range, which defaults to the budget cycle); Transactions is the individual rows, and merchants as a grouping of them; Budgets is limits per cycle and how they're going; Settings is configuration.
 
 ### Overview
 
@@ -103,7 +103,7 @@ Each column scrolls when its panes don't fit, following the focused pane. Panes:
 
 ## Budgets
 
-Settings, `v` then `b`: an overall limit, optional limits per spending account or category (a group covers its subcategories), and one cycle for all of them: weekly, fortnightly or monthly, from calendar starts, a date (e.g. payday), or the Monday nearest that date (`c`). With Payday on, a cycle starts early on the day your Salary arrives when it lands in the 5 days before the start (2 for weekly cycles), and the cycle before ends the day before. The Overview opens on the current cycle (the Cycle preset); while the range is the current cycle, Totals shows the overall budget (used and left per day) and the Cumulative chart draws it as a rule.
+The Budgets tab (`3`): this cycle's budgets, each with a bar marking where an even pace would be by today, what's left and per day; the past six cycles of the budget under the cursor (bars on one scale, the budget marked); and this cycle's spending by group and category against the average of the three cycles before. `enter` edits a budget or (first row) the cycle, `a` adds, `del` twice deletes. A budget is an overall limit, optional limits per spending account or category (a group covers its subcategories), and one cycle for all of them: weekly, fortnightly or monthly, from calendar starts, a date (e.g. payday), or the Monday nearest that date (`c`). With Payday on, a cycle starts early on the day your Salary arrives when it lands in the 5 days before the start (2 for weekly cycles), and the cycle before ends the day before. The Overview opens on the current cycle (the Cycle preset); while the range is the current cycle, Totals shows the overall budget (used and left per day) and the Cumulative chart draws it as a rule.
 
 ## Categories and income
 

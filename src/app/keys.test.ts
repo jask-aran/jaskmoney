@@ -29,6 +29,8 @@ describe("key router", () => {
     handleKey(ui, key("2"), data)
     expect(ui.state.activeTab).toBe("manager")
     handleKey(ui, key("3"), data)
+    expect(ui.state.activeTab).toBe("budgets")
+    handleKey(ui, key("4"), data)
     expect(ui.state.activeTab).toBe("settings")
     handleKey(ui, key("1"), data)
     expect(ui.state.activeTab).toBe("overview")
@@ -423,10 +425,12 @@ describe("key router", () => {
     expect(ui.activeScope()).toBe("settings.up")
   })
 
-  test("Budgets: the cycle is the first row (enter edits it); budgets follow and delete on del del", () => {
+  test("Budgets tab (3): the cycle is the first row (enter edits it); budgets follow and delete on del del", () => {
     data.init(":memory:")
-    ui.switchTab("settings")
-    ui.activateSettings("budgets")
+    ui.switchTab("overview")
+    handleKey(ui, key("3"), data)
+    expect(ui.state.activeTab).toBe("budgets")
+    expect(ui.activeScope()).toBe("budgets")
     ui.setState({ budgetCursor: 0 })
     handleKey(ui, key("return"), data)
     expect(ui.state.settingsEditor).toBe("cycle")
@@ -438,7 +442,9 @@ describe("key router", () => {
     expect(ui.state.armed?.kind).toBe("budget")
     handleKey(ui, key("delete"), data)
     expect(data.state.budgets).toEqual([])
-    expect(footerHints("settings.budgets").some((h) => h.key === "c")).toBe(false)
+    expect(footerHints("budgets").some((h) => h.key === "c")).toBe(false)
+    handleKey(ui, key("4"), data)
+    expect(ui.state.activeTab).toBe("settings")
   })
 
   test("an import profile deletes on a second del; esc disarms and stays on the list", () => {

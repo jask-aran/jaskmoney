@@ -11,7 +11,7 @@ import type { ImportPreview, ImportProfile } from "../domain/types"
 import type { TextField } from "../domain/textField"
 import { editorFields } from "./settingsForm"
 
-export type TabId = "overview" | "manager" | "settings"
+export type TabId = "overview" | "manager" | "budgets" | "settings"
 
 export type SectionId =
   | "none"
@@ -28,7 +28,7 @@ export type SectionId =
   | "set.database"
   | "set.up"
   | "set.ai"
-  | "set.budgets"
+  | "bud.list"
 
 export type ScopeId =
   | "palette"
@@ -52,7 +52,7 @@ export type ScopeId =
   | "settings.database"
   | "settings.up"
   | "settings.ai"
-  | "settings.budgets"
+  | "budgets"
   | "manager.detail"
   | "manager.detail.notes"
   | "settings.editor"
@@ -70,22 +70,22 @@ export type ScopeId =
   | "settings.factoryReset"
 
 export type SettingsList = "categories" | "tags"
-export type SettingsSection = "taxonomy" | "budgets" | "rules" | "filters" | "up" | "ai" | "database"
+export type SettingsSection = "taxonomy" | "rules" | "filters" | "up" | "ai" | "database"
 /** j/k order of Settings sections (wide layout: left column, then right). */
-/** In reading order (j/k): the wide layout's left column (Taxonomy,
- * Budgets), then its right (Up Bank to Database & Import); the one-column
- * layouts stack them in the same order. */
-export const SETTINGS_SECTIONS: SettingsSection[] = ["taxonomy", "budgets", "up", "ai", "rules", "filters", "database"]
+/** In reading order (j/k): the wide layout's left column (Taxonomy), then
+ * its right (Up Bank to Database & Import); the one-column layouts stack
+ * them in the same order. */
+export const SETTINGS_SECTIONS: SettingsSection[] = ["taxonomy", "up", "ai", "rules", "filters", "database"]
 
 /** Each Settings section's name: its pane's title and the palette's. (Jump badges are shorter.) */
 export const SETTINGS_SECTION_LABELS: Record<SettingsSection, string> = {
-  taxonomy: "Taxonomy", budgets: "Budgets", ai: "AI models", rules: "Rules",
+  taxonomy: "Taxonomy", ai: "AI models", rules: "Rules",
   filters: "Saved Filters", up: "Up Bank", database: "Database & Import",
 }
 
 export function settingsSectionFocus(section: SettingsSection, list: SettingsList = "categories"): SectionId {
   if (section === "taxonomy") return list === "categories" ? "set.categories" : "set.tags"
-  return section === "rules" ? "set.rules" : section === "filters" ? "set.filters" : section === "up" ? "set.up" : section === "ai" ? "set.ai" : section === "budgets" ? "set.budgets" : "set.database"
+  return section === "rules" ? "set.rules" : section === "filters" ? "set.filters" : section === "up" ? "set.up" : section === "ai" ? "set.ai" : "set.database"
 }
 export type SettingsEditorKind = "category" | "tag" | "filter" | "rule" | "budget" | "cycle" 
 export type ImportStage = "none" | "files" | "path" | "profile" | "profileEditor" | "preview"
@@ -252,6 +252,7 @@ export interface UiState {
 const TAB_DEFAULT_FOCUS: Record<TabId, SectionId> = {
   overview: "none",
   manager: "mgr.transactions",
+  budgets: "bud.list",
   settings: "none",
 }
 
@@ -288,12 +289,12 @@ export const JUMP_TARGETS: Record<TabId, JumpTarget[]> = {
     { key: "a", section: "mgr.accounts", label: "Accounts" },
     { key: "t", section: "mgr.transactions", label: "Transactions" },
   ],
+  budgets: [],
   settings: [
     { key: "c", section: "set.categories", label: "Categories" },
     { key: "t", section: "set.tags", label: "Tags" },
     { key: "r", section: "set.rules", label: "Rules" },
     { key: "f", section: "set.filters", label: "Filters" },
-    { key: "b", section: "set.budgets", label: "Budgets" },
     { key: "u", section: "set.up", label: "Up Bank" },
     { key: "a", section: "set.ai", label: "AI models" },
     { key: "d", section: "set.database", label: "Database & Import" },
@@ -303,7 +304,8 @@ export const JUMP_TARGETS: Record<TabId, JumpTarget[]> = {
 export const TABS: { id: TabId; label: string; hotkey: string }[] = [
   { id: "overview", label: "Overview", hotkey: "1" },
   { id: "manager", label: "Transactions", hotkey: "2" },
-  { id: "settings", label: "Settings", hotkey: "3" },
+  { id: "budgets", label: "Budgets", hotkey: "3" },
+  { id: "settings", label: "Settings", hotkey: "4" },
 ]
 
 /** Clamp a list cursor and scroll only when it crosses a window edge. */
@@ -668,6 +670,7 @@ function createUiStore() {
     if (state.factoryResetOpen) return "settings.factoryReset"
     if (state.customEdit) return "overview.custom"
     if (state.activeTab === "overview") return state.focusedSection === "ov.range" ? "overview.range" : "overview"
+    if (state.activeTab === "budgets") return "budgets"
     if (state.activeTab === "manager") {
       if (state.focusedSection === "mgr.accounts") return "manager.accounts"
       return state.txnView === "merchants" ? "manager.merchants" : "manager.txns"
@@ -678,7 +681,6 @@ function createUiStore() {
     if (state.settingsSection === "filters") return "settings.filters"
     if (state.settingsSection === "up") return "settings.up"
     if (state.settingsSection === "ai") return "settings.ai"
-    if (state.settingsSection === "budgets") return "settings.budgets"
     return "settings.database"
   }
 

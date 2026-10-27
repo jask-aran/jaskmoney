@@ -165,11 +165,8 @@ export function budgetProgress(
   transactions: Transaction[],
 ): BudgetProgress[] {
   const cycle = cycleFor(config, todayISO)
-  const spendingIds = new Set(accounts.filter((a) => accountRole(a) === "spending").map((a) => a.id))
   const parents = new Map(categories.map((category) => [category.id, category.parentId]))
-  const rows = transactions.filter((row) => isSpending(row)
-    && row.accountId !== null && spendingIds.has(row.accountId)
-    && row.dateISO >= cycle.start && row.dateISO <= todayISO)
+  const rows = cycleSpending(cycle, todayISO, accounts, transactions)
   const daysLeft = daysBetween(todayISO, cycle.end) + 1
   const elapsed = daysBetween(cycle.start, todayISO) + 1
   return budgets.map((budget) => {
@@ -188,6 +185,39 @@ export function budgetProgress(
       projected: spent / elapsed * cycle.days,
     }
   })
+}
+
+/** Spending in a cycle through `throughISO` (the cycle's end for a whole
+ * past cycle): outflows from spending accounts, by the shared spending
+ * rules (budgetProgress). */
+export function cycleSpending(cycle: Cycle, throughISO: string, accounts: Account[], transactions: Transaction[]): Transaction[] {
+  const spendingIds = new Set(accounts.filter((a) => accountRole(a) === "spending").map((a) => a.id))
+  return transactions.filter((row) => isSpending(row)
+    && row.accountId !== null && spendingIds.has(row.accountId)
+    && row.dateISO >= cycle.start && row.dateISO <= throughISO)
+}
+
+/** The `count` whole cycles before the one containing `todayISO`, newest first. */
+export function pastCycles(config: CycleConfig, todayISO: string, count: number): Cycle[] {
+  const cycles: Cycle[] = []
+  let cycle = cycleFor(config, todayISO)
+  for (let i = 0; i < count; i++) {
+    cycle = cycleFor(config, addDays(cycle.start, -1))
+    cycles.push(cycle)
+  }
+  return cycles
+}
+
+/** Positive dollars spent per top-level category (a group's children count
+ * to it; uncategorised under null) in the given spending rows. */
+export function spendByGroup(rows: Transaction[], categories: Category[]): Map<number | null, number> {
+  const parents = new Map(categories.map((category) => [category.id, category.parentId]))
+  const spend = new Map<number | null, number>()
+  for (const row of rows) {
+    const group = row.categoryId === null ? null : parents.get(row.categoryId) ?? row.categoryId
+    spend.set(group, (spend.get(group) ?? 0) - row.amount)
+  }
+  return spend
 }
 
 /** "Monthly from the 1st", "Fortnightly from 16 Oct 2026", "Monthly from the Monday nearest the 15th". */

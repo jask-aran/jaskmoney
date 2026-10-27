@@ -7,7 +7,7 @@ import { keyEvent } from "./keyEvent"
  * read one source: a scope's hints. The footer shows the first
  * FOOTER_LIMIT, then "ctrl+k all"; the palette has a command for each hint
  * that is one key press, run by pressing it. Hints that name several keys
- * ("j/k", "S-j/k", "1-3") are movement, kept for the footer only.
+ * ("j/k", "S-j/k", "1-4") are movement, kept for the footer only.
  */
 /** A footer hint: its key and short text. A one-key hint is also a palette
  * command: the registry command it names (`command`, app/commands), or its

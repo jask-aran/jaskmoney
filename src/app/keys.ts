@@ -299,7 +299,6 @@ function handleJump(ui: UiStore, key: KeyEvent, data?: DataStore): void {
       else if (hit.section === "set.database") ui.activateSettings("database")
       else if (hit.section === "set.up") ui.activateSettings("up")
       else if (hit.section === "set.ai") ui.activateSettings("ai")
-      else if (hit.section === "set.budgets") ui.activateSettings("budgets")
       return
     }
     ui.applyJump(hit.section)
@@ -1293,13 +1292,13 @@ function handleManagerAccounts(ui: UiStore, key: KeyEvent, data?: DataStore): vo
   if ((name === "d" || name === "delete") && accountId != null) { ui.setState({ accountActionId: accountId, accountActionCursor: 0 }); ui.setStatus("Account data · enter twice to clear or remove · esc cancel"); return }
 }
 
-function handleSettingsBudgets(ui: UiStore, key: KeyEvent, data?: DataStore): void {
+/** The Budgets tab's list: row 0 is the cycle (enter edits it); the
+ * budgets follow (enter edits, a adds, del twice deletes). */
+function handleBudgets(ui: UiStore, key: KeyEvent, data?: DataStore): void {
   const { name } = key
   if (!data) return
   const budgets = data.state.budgets
-  // Row 0 is the cycle; the budgets follow.
   const budget = budgets[ui.state.budgetCursor - 1]
-  if (name === "escape") { ui.leaveSettings(); return }
   const moved = listMove(key, ui.state.budgetCursor, budgets.length + 1)
   if (moved != null) { ui.setState({ budgetCursor: moved }); return }
   if (name === "a") {
@@ -1715,7 +1714,7 @@ const scopes: Record<ScopeId, ScopeEntry> = {
       { key: "h/l", desc: "column" },
       { key: "enter", desc: "activate" },
       { key: "v", desc: "jump" },
-      { key: "1-3", desc: "tab" },
+      { key: "1-4", desc: "tab" },
     ],
   },
   "settings.taxonomy": {
@@ -1829,10 +1828,10 @@ const scopes: Record<ScopeId, ScopeEntry> = {
       { key: "v", desc: "jump" },
     ],
   },
-  "settings.budgets": {
-    handle: handleSettingsBudgets,
+  "budgets": {
+    handle: handleBudgets,
     quits: true,
-    hints: () => [{ key: "j/k", desc: "move" }, { key: "a", desc: "add", command: "add:budget" }, { key: "enter", desc: "edit" }, { key: "del del", desc: "delete" }, { key: "esc", desc: "done" }],
+    hints: () => [{ key: "j/k", desc: "move" }, { key: "enter", desc: "edit" }, { key: "a", desc: "add" }, { key: "del del", desc: "delete" }, { key: "1-4", desc: "tab" }],
   },
   "manager.merchants": {
     handle: handleManagerMerchants,
@@ -1877,7 +1876,7 @@ const scopes: Record<ScopeId, ScopeEntry> = {
         { key: "0", desc: "now", label: "Range: back to now" },
         ...(state?.chartViews.some((i) => CHART_VIEWS[i]?.group === "Balances") ? [{ key: "z", desc: "$0 axis" }] : []),
         { key: "v", desc: "jump" },
-        { key: "1-3", desc: "tab" },
+        { key: "1-4", desc: "tab" },
       ]
     },
   },

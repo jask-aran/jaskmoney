@@ -64,6 +64,12 @@ function registry(ctx: CommandContext): Entry[] {
     ctx.press(hintEvent(hint)!)
   }
   const inTransactions = (hint: string) => () => { toTransactions(ui); ctx.press(hintEvent(hint)!) }
+  // The Budgets tab's list key, pressed there (cursor 0: the cycle).
+  const inBudgets = (hint: string, cursor?: number) => () => {
+    if (ui.state.activeTab !== "budgets") ui.switchTab("budgets")
+    if (cursor != null) ui.setState({ budgetCursor: cursor })
+    ctx.press(hintEvent(hint)!)
+  }
   const filter = data.state.filterQuery
   const undo = data.undoLabel()
   const offers = data.allRuleOffers().length
@@ -109,7 +115,7 @@ function registry(ctx: CommandContext): Entry[] {
     { id: "add:tag", category: "Add", label: "Tag…", run: inSettings("taxonomy", "a", undefined, "tags") },
     { id: "add:rule", category: "Add", label: "Rule…", run: inSettings("rules", "a") },
     { id: "add:filter", category: "Add", label: "Saved filter…", run: inSettings("filters", "a") },
-    { id: "add:budget", category: "Add", label: "Budget…", run: inSettings("budgets", "a") },
+    { id: "add:budget", category: "Add", label: "Budget…", run: inBudgets("a") },
     // AI models
     ...AI_ROWS.map((row, i): Entry => ({
       id: `ai:${row}`, category: "AI models", label: `${aiRowLabel(row)}…`, description: isLlmRow(row) ? "sign in or key" : "key",
@@ -120,7 +126,7 @@ function registry(ctx: CommandContext): Entry[] {
     { id: "display:week", category: "Display", label: `Weeks start ${data.state.weekStart === "monday" ? "Sunday" : "Monday"}`, run: () => toggleWeekStart(ui, data) },
     { id: "display:x-axis", category: "Display", label: `Charts' $0 line ${data.state.uiPrefs.xAxis ? "off" : "on"}`, run: () => toggleXAxis(ui, data) },
     // Settings
-    { id: "settings:cycle", category: "Settings", label: "Budget cycle…", description: "e.g. from payday", run: inSettings("budgets", "enter", () => ui.setState({ budgetCursor: 0 })) },
+    { id: "settings:cycle", category: "Settings", label: "Budget cycle…", description: "e.g. from payday", run: inBudgets("enter", 0) },
     ...SETTINGS_SECTIONS.map((section): Entry => ({ id: `settings:${section}`, category: "Settings", label: SETTINGS_SECTION_LABELS[section], run: () => toSettings(section) })),
     // Go to
     ...TABS.map((tab): Entry => ({

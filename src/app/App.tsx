@@ -1,3 +1,4 @@
+import { BudgetsTab } from "../ui/budgets/BudgetsTab"
 import { ErrorBoundary, Show, createEffect, createMemo, createSignal, untrack, on, onCleanup, onMount } from "solid-js"
 import { useKeyboard, usePaste, useRenderer } from "@opentui/solid"
 import type { KeyEvent } from "@opentui/core"
@@ -124,6 +125,7 @@ export function App() {
             switching tabs retries. */}
         <KeptTab id="overview">{(focused) => <OverviewTab focused={focused()} />}</KeptTab>
         <KeptTab id="manager">{(focused) => <ManagerTab focused={focused()} />}</KeptTab>
+        <KeptTab id="budgets">{(focused) => <BudgetsTab focused={focused()} />}</KeptTab>
         <KeptTab id="settings">{(focused) => <SettingsTab focused={focused()} />}</KeptTab>
       </box>
       {/* Jump mode borrows the status line while active; the stored status
