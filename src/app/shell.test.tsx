@@ -1,5 +1,7 @@
+import { DATABASE_ROWS } from "../state/databaseRows"
 import { describe, expect, test } from "bun:test"
-import { TextAttributes } from "@opentui/core"
+import { RGBA, TextAttributes } from "@opentui/core"
+import { theme } from "../theme"
 import { ui } from "../state/uiStore"
 import { data } from "../state/dataStore"
 import { renderApp } from "../testing/app"
@@ -354,7 +356,7 @@ describe("shell render M0", () => {
   test("settings taxonomy stays split until the narrow stacked fallback", async () => {
     for (const width of [140, 96, 70]) {
       ui.switchTab("settings")
-      ui.setState({ settingsActive: false, settingsEditor: null, settingsConfirm: null })
+      ui.setState({ settingsActive: false, settingsEditor: null, armed: null })
       const t = await renderApp({ width, height: 36 })
       await t.renderOnce()
       await t.flush()
@@ -379,7 +381,8 @@ describe("shell render M0", () => {
     await t.flush()
     ui.switchTab("settings")
     ui.activateSettings("database")
-    t.mockInput.pressKey("i")
+    ui.setState({ databaseCursor: 0 })
+    t.mockInput.pressEnter()
     await t.renderOnce()
     const frame = t.captureCharFrame()
     expect(frame).toContain("Import CSV")
@@ -389,17 +392,23 @@ describe("shell render M0", () => {
     t.renderer.destroy()
   })
 
-  test("clear-data confirmation names its destructive key", async () => {
-    const t = await renderApp({ width: 110, height: 34 })
+  test("clear data arms its row in red, naming its key; a move disarms it", async () => {
+    const t = await renderApp({ width: 140, height: 44 })
     await t.renderOnce()
     await t.flush()
     ui.switchTab("settings")
     ui.activateSettings("database")
-    t.mockInput.pressKey("c")
+    ui.setState({ databaseCursor: DATABASE_ROWS.indexOf("clearData") })
+    t.mockInput.pressEnter()
     await t.renderOnce()
-    const frame = t.captureCharFrame()
-    expect(frame).toContain("Clear all transaction and import data?")
-    expect(frame).toContain("del confirm")
+    expect(t.captureCharFrame()).toContain("Press enter again to clear all transactions and imports")
+    const armed = t.captureSpans().lines.flatMap((line) => line.spans).find((span) => span.text.includes("> Press enter again"))!
+    expect(armed.fg.toInts()).toEqual(RGBA.fromHex(theme.error).toInts())
+    expect(armed.attributes & TextAttributes.BOLD).toBe(TextAttributes.BOLD)
+    t.mockInput.pressKey("k")
+    await t.renderOnce()
+    expect(t.captureCharFrame()).not.toContain("Press enter again")
+    expect(t.captureCharFrame()).toContain("Clear data…")
     t.renderer.destroy()
   })
 })

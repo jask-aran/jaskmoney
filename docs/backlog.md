@@ -17,10 +17,10 @@ committed; note the commit.
 
 ## Keyboard (agreed 2026-10-27, in this order)
 
-- [ ] **K1. Settings panes as rows + dialog.** Database, Up, Budgets (cycle as
+- [x] **K1. Settings panes as rows + dialog.** Database, Up, Budgets (cycle as
   the first row) and Transactions' account data (`d`) become rows with
   `enter` opening a dialog, like AI models.
-- [ ] **K2. One confirm rule.** Press the starting key again (`del del` on a
+- [x] **K2. One confirm rule.** Press the starting key again (`del del` on a
   list, `enter enter` on a dialog action), the row red with "press … again".
   Typing RESET stays only for wiping the database.
 - [ ] **K3. esc steps back one level.** Selection, then filter, then the
@@ -29,12 +29,16 @@ committed; note the commit.
   Rules pane's missing enter/del; g/G and paging listed.
 - [ ] **K4. Command palette (ctrl+k).** Port of the legacy palette: every
   action for the scope plus global ones, fuzzy, each with its key.
-- [ ] **K6. Undo (u).** The last batch of categorise, accept, dismiss, tag or
+- [x] **K6. Undo (u).** The last batch of categorise, accept, dismiss, tag or
   rule-made changes, reversed in Up too.
-- [ ] **K7. ctrl+j/k in type-to-filter lists** (pickers, tag chooser).
-- [ ] **K8. Repeat with `.`** the last categorise or tag change; the category
+- [x] **K7. ctrl+j/k in type-to-filter lists** (pickers, tag chooser).
+- [x] **K8. Repeat with `.`** the last categorise or tag change; the category
   picker starts on the last category used.
-- [ ] **K9. Free `a` in rule offers:** a final "Ask the AI for more rules" row.
+- [x] **K9. Free `a` in rule offers:** a final "Ask the AI for more rules" row.
+
+- [ ] **Settings at medium/narrow widths overflow** at 40 rows or fewer
+  (the taxonomy list spills out of its pane; the last panes are cut off).
+  Older than the keyboard work; wants a scrolling or one-pane-at-a-time layout.
 
 ## Later
 

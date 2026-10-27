@@ -1,3 +1,4 @@
+import { DATABASE_ROWS } from "../state/databaseRows"
 import { describe, expect, test, beforeEach } from "bun:test"
 import { accountRows, accountStacks, spendingScope } from "../domain/accountTree"
 import { CUSTOM_CHIP, LOOKBACKS, PERIODS, applyChip } from "../domain/timeframe"
@@ -374,19 +375,62 @@ describe("key router", () => {
     expect(footerHints("overview.range").some((h) => h.desc === "apply")).toBe(true)
   })
 
-  test("settings database owns i and clear confirmation requires del", () => {
+  test("settings database is rows: enter imports; clear data is enter twice, and a move disarms it", () => {
     data.init(":memory:")
     ui.switchTab("settings")
     ui.activateSettings("database")
-    handleKey(ui, key("i"), data)
+    ui.setState({ databaseCursor: 0 })
+    handleKey(ui, key("return"), data)
     expect(ui.state.importStage).toBe("files")
     handleKey(ui, key("escape"), data)
-    handleKey(ui, key("c"), data)
-    expect(ui.state.settingsConfirm?.kind).toBe("clearData")
-    handleKey(ui, key("c"), data)
-    expect(ui.state.settingsConfirm?.kind).toBe("clearData")
+    ui.setState({ databaseCursor: DATABASE_ROWS.indexOf("clearData") })
+    handleKey(ui, key("return"), data)
+    expect(ui.state.armed).toMatchObject({ kind: "clearData", with: "enter" })
+    expect(ui.state.status).toBe("Press enter again to clear all transactions and imports")
+    handleKey(ui, key("k"), data)
+    expect(ui.state.armed).toBeNull()
+    handleKey(ui, key("j"), data)
+    handleKey(ui, key("return"), data)
+    handleKey(ui, key("return"), data)
+    expect(ui.state.armed).toBeNull()
+    expect(ui.state.status).toBe("Transaction and import data cleared")
+  })
+
+  test("Up: enter switches sync on at once, and off on a second enter (it removes the account's rows)", () => {
+    data.init(":memory:")
+    const db = data.getDb()!
+    db.query("INSERT INTO accounts (id, name, type, source, sync_enabled) VALUES (300, 'Saver', 'debit', 'up', 0)").run()
+    data.refresh()
+    ui.switchTab("settings")
+    ui.activateSettings("up")
+    ui.setState({ upCursor: 0 })
+    handleKey(ui, key("return"), data)
+    expect(data.state.syncAccounts[0]!.syncEnabled).toBe(true)
+    handleKey(ui, key("return"), data)
+    expect(ui.state.armed).toMatchObject({ kind: "desyncAccount", id: 300, with: "enter" })
+    expect(data.state.syncAccounts[0]!.syncEnabled).toBe(true)
+    handleKey(ui, key("return"), data)
+    expect(ui.state.armed).toBeNull()
+    expect(data.state.syncAccounts[0]!.syncEnabled).toBe(false)
+    expect(footerHints("settings.up").map((h) => `${h.key} ${h.desc}`)).toContain("enter sync on/off")
+  })
+
+  test("Budgets: the cycle is the first row (enter edits it); budgets follow and delete on del del", () => {
+    data.init(":memory:")
+    ui.switchTab("settings")
+    ui.activateSettings("budgets")
+    ui.setState({ budgetCursor: 0 })
+    handleKey(ui, key("return"), data)
+    expect(ui.state.settingsEditor).toBe("cycle")
+    ui.setState({ settingsEditor: null })
+    data.setBudget({ kind: "overall" }, 500)
+    handleKey(ui, key("j"), data)
+    expect(ui.state.budgetCursor).toBe(1)
     handleKey(ui, key("delete"), data)
-    expect(ui.state.settingsConfirm).toBeNull()
+    expect(ui.state.armed?.kind).toBe("budget")
+    handleKey(ui, key("delete"), data)
+    expect(data.state.budgets).toEqual([])
+    expect(footerHints("settings.budgets").some((h) => h.key === "c")).toBe(false)
   })
 
   test("an import profile deletes on a second del; esc disarms and stays on the list", () => {
@@ -394,18 +438,19 @@ describe("key router", () => {
     data.saveImportProfile({ id: "bank", name: "Bank", account: "A", accountType: "debit", importPrefix: "bank", hasHeader: true, delimiter: ",", dateColumn: 0, amountColumn: 1, descriptionColumns: [2], descriptionJoin: false, amountStrip: "$", dateFormat: "DMY" })
     ui.switchTab("settings")
     ui.activateSettings("database")
-    handleKey(ui, key("p"), data)
+    ui.setState({ databaseCursor: DATABASE_ROWS.indexOf("profiles") })
+    handleKey(ui, key("return"), data)
     expect(ui.state.importStage).toBe("profile")
     const others = data.state.importProfiles.filter((p) => p.id !== "bank").map((p) => p.id)
     ui.setState({ importProfileCursor: data.state.importProfiles.findIndex((p) => p.id === "bank") })
     handleKey(ui, key("delete"), data)
-    expect(ui.state.settingsConfirm).toMatchObject({ kind: "profile", id: "bank" })
+    expect(ui.state.armed).toMatchObject({ kind: "profile", id: "bank" })
     handleKey(ui, key("escape"), data)
-    expect(ui.state.settingsConfirm).toBeNull()
+    expect(ui.state.armed).toBeNull()
     expect(ui.state.importStage).toBe("profile")
     handleKey(ui, key("delete"), data)
     handleKey(ui, key("delete"), data)
-    expect(ui.state.settingsConfirm).toBeNull()
+    expect(ui.state.armed).toBeNull()
     expect(data.state.importProfiles.map((p) => p.id)).toEqual(others)
     expect(ui.state.importStage).toBe("profile")
     ui.cancelImport()
@@ -568,7 +613,8 @@ describe("key router", () => {
     ui.cancelImport()
     expect(ui.state.importPathCaret).toBe(0)
     ui.activateSettings("database")
-    handleKey(ui, key("x"), data)
+    ui.setState({ databaseCursor: DATABASE_ROWS.indexOf("reset") })
+    handleKey(ui, key("return"), data)
     expect(ui.state.factoryResetCaret).toBe(0)
     for (const name of "REST") handleKey(ui, key(name), data)
     handleKey(ui, key("left"), data)
@@ -586,7 +632,7 @@ describe("key router", () => {
       { open: () => ui.openSettingsEditor("category", null, { ...ui.state.settingsDraft, name: "" }), value: () => ui.state.settingsDraft.name },
       { open: () => { ui.beginImport("/csv", []); handleKey(ui, key("p")) }, value: () => ui.state.importPath },
       { open: () => ui.openProfileEditor({ ...ui.state.importProfileDraft, id: "" }, null), value: () => ui.state.importProfileDraft.id },
-      { open: () => { ui.activateSettings("database"); handleKey(ui, key("x")) }, value: () => ui.state.factoryResetDraft },
+      { open: () => { ui.activateSettings("database"); ui.setState({ databaseCursor: DATABASE_ROWS.indexOf("reset") }); handleKey(ui, key("return")) }, value: () => ui.state.factoryResetDraft },
     ]
     for (const context of contexts) {
       ui.switchTab("settings")

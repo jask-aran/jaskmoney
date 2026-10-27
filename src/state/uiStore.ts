@@ -1,3 +1,4 @@
+import type { Armed } from "./armed"
 import type { DryRunReport } from "../domain/rules"
 import type { CycleAnchor, CycleUnit } from "../domain/budget"
 import type { MerchantSort } from "../domain/merchants"
@@ -54,7 +55,6 @@ export type ScopeId =
   | "manager.detail"
   | "manager.detail.notes"
   | "settings.editor"
-  | "settings.confirm"
   | "settings.import.files"
   | "settings.import.path"
   | "settings.import.profile"
@@ -178,7 +178,11 @@ export interface UiState {
     /** API key editors: the key as typed (never rendered), and Workers AI's account id. */
 
   }
-  settingsConfirm: { kind: "category" | "tag" | "rule" | "filter" | "profile" | "clearData" | "clearAccount" | "deleteAccount" | "desyncAccount" | "budget"; id: number | string; label: string } | null
+  /** A row waiting for its key again to do something destructive (state/armed). */
+  armed: Armed | null
+  /** Settings › Database's rows (DATABASE_ROWS), and the account data dialog's actions. */
+  databaseCursor: number
+  accountActionCursor: number
   importStage: ImportStage
   importDirectory: string
   importFiles: string[]
@@ -338,7 +342,9 @@ function createUiStore() {
     settingsCaret: 0,
     formPicker: null,
     settingsDraft: { name: "", color: "#94e2d5", categoryId: null, id: "", expr: "", savedFilterId: "", setCategoryId: null, addTagIds: [], notSpending: false, scopeKey: "overall", amount: "", unit: "month", anchor: "calendar", anchorDate: "", payEarly: false },
-    settingsConfirm: null,
+    armed: null,
+    databaseCursor: 0,
+    accountActionCursor: 0,
     importStage: "none",
     importDirectory: "",
     importFiles: [],
@@ -392,7 +398,7 @@ function createUiStore() {
       settingsActive: false,
       filterPicker: null, dryRunReport: null, dryRunScroll: 0, dryRunVisible: 10,
       settingsEditor: null,
-      settingsConfirm: null,
+      armed: null,
       importStage: "none",
       accountActionId: null,
       acceptPreview: null,
@@ -443,14 +449,14 @@ function createUiStore() {
     setState(updates)
   }
 
-  function leaveSettings() { setState({ settingsActive: false, settingsEditor: null, settingsConfirm: null, importStage: "none", status: "Settings · navigate sections", statusErr: false }) }
+  function leaveSettings() { setState({ settingsActive: false, settingsEditor: null, armed: null, importStage: "none", status: "Settings · navigate sections", statusErr: false }) }
   function openSettingsEditor(kind: SettingsEditorKind, id: number | string | null, draft: UiState["settingsDraft"]) {
     const field = editorFields(kind, draft, { accounts: [], categories: [], tags: [], savedFilters: [] })[0]
-    setState({ settingsEditor: kind, settingsEditId: id, settingsEditField: 0, formPicker: null, settingsDraft: draft, settingsCaret: field?.kind === "text" ? field.display.length : 0, settingsConfirm: null, jumpMode: false })
+    setState({ settingsEditor: kind, settingsEditId: id, settingsEditField: 0, formPicker: null, settingsDraft: draft, settingsCaret: field?.kind === "text" ? field.display.length : 0, armed: null, jumpMode: false })
   }
   function closeSettingsEditor() { setState({ settingsEditor: null, settingsEditId: null, settingsEditField: 0, settingsCaret: 0, formPicker: null }) }
-  function armSettingsConfirm(confirm: NonNullable<UiState["settingsConfirm"]>) { setState({ settingsConfirm: confirm }) }
-  function clearSettingsConfirm() { setState({ settingsConfirm: null }) }
+  function arm(armed: Armed) { setState({ armed }) }
+  function disarm() { if (state.armed) setState({ armed: null }) }
 
   function beginImport(directory: string, files: string[]) {
     setState({ importStage: "files", importDirectory: directory, importFiles: files, importCursor: 0, importPath: "", importPathCaret: 0, importProfileCursor: 0, importProfileManaging: false, importPreview: null, importPreviewCursor: 0, importPreviewShowAll: false, importPreviewRules: true, jumpMode: false })
@@ -626,7 +632,6 @@ function createUiStore() {
     if (state.filterMode) return "filter"
     if (state.detailId != null) return state.detailNotesEditing ? "manager.detail.notes" : "manager.detail"
     if (state.settingsEditor) return "settings.editor"
-    if (state.settingsConfirm) return "settings.confirm"
     if (state.importStage === "files") return "settings.import.files"
     if (state.importStage === "path") return "settings.import.path"
     if (state.importStage === "profile") return "settings.import.profile"
@@ -668,8 +673,8 @@ function createUiStore() {
     leaveSettings,
     openSettingsEditor,
     closeSettingsEditor,
-    armSettingsConfirm,
-    clearSettingsConfirm,
+    arm,
+    disarm,
     beginImport,
     cancelImport,
     openProfileEditor,

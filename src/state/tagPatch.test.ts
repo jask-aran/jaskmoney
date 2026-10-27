@@ -124,7 +124,7 @@ test("tag rows group by scope (taking a target, none, elsewhere), omit empty sec
   expect(rows.find((r) => r.kind === "item" && r.value === add)?.label).toBe("COFFEE")
   expect(tagPickerItems(data.state.tags, data.state.transactions, [1], "zz").map((r) => r.label)).toEqual(['Create "zz"'])
   expect(footerHints("tagPicker")).toEqual([
-    { key: "↑/↓", desc: "move" }, { key: "space", desc: "stage" },
+    { key: "↑↓ ^j/k", desc: "move" }, { key: "space", desc: "stage" },
     { key: "enter", desc: "apply" }, { key: "esc", desc: "cancel" },
   ])
 })

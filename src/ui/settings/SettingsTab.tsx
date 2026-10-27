@@ -1,3 +1,5 @@
+import { armedFor } from "../../state/armed"
+import { DATABASE_ROWS, databaseRow } from "../../state/databaseRows"
 import { AI_ROWS } from "../../app/apiKeys"
 import { AI_NAMES, aiActionHint, aiActions, aiContext, aiRow, aiStatus } from "../../state/aiDialog"
 import { secretDisplay } from "../../state/settingsForm"
@@ -61,7 +63,7 @@ function TaxonomyList(props: { kind: SettingsList; narrow?: boolean; split?: boo
             const category = row as typeof data.state.categories[number]
             return [category.isDefault ? "default" : "", category.notSpending ? "not spending" : ""].filter(Boolean).join(", ")
           }
-          return <ListRow cursor={selected()} bg={theme.canvas} spans={[
+          return <ListRow cursor={selected()} bg={theme.canvas} armed={armedFor(ui.state.armed, isCategory() ? "category" : "tag", row.id)} spans={[
             { text: `${isCategory() ? categoryMark(row.id) : "●"} `, fg: row.color },
             { text: truncate(row.name, props.narrow ? 28 : 20), fg: theme.text, bold: selected() },
             ...(scope() ? [{ text: ` (${scope()})`, fg: theme.overlay1 }] : []),
@@ -77,10 +79,10 @@ function BudgetsPane(props: { focused: boolean }) {
   const active = () => ui.state.settingsActive && ui.state.settingsSection === "budgets"
   const budgets = () => data.state.budgets
   return <SectionCard title="Budgets" focused={props.focused} active={active()} height={Math.max(1, budgets().length) + 4}>
-    <text wrapMode="none"><S fg={theme.subtext0}>{"Cycle  "}</S><S fg={theme.text}>{describeCycle(data.state.budgetCycle)}</S></text>
+    <ListRow cursor={active() && ui.state.budgetCursor === 0} bg={theme.canvas} spans={[{ text: "Cycle  ", fg: theme.subtext0 }, { text: describeCycle(data.state.budgetCycle), fg: theme.text }]} />
     <Show when={budgets().length} fallback={<text fg={theme.overlay1}>{active() ? "No budgets. Press a to add." : "No budgets. Activate to add."}</text>}>
       <For each={budgets()}>{(budget, i) => (
-        <ListRow cursor={active() && ui.state.budgetCursor === i()} bg={theme.canvas} spans={[
+        <ListRow cursor={active() && ui.state.budgetCursor === i() + 1} bg={theme.canvas} armed={armedFor(ui.state.armed, "budget", budget.id)} spans={[
           { text: fit(budgetLabel(budget, data.state.accounts, data.state.categories), 34), fg: theme.text },
           { text: formatMoney(budget.amount).padStart(12), fg: theme.subtext1 },
         ]} />
@@ -109,7 +111,7 @@ function RulesPane(props: { focused: boolean; height?: number | "auto" | `${numb
         const filter = () => data.state.savedFilters.find((filter) => filter.id === rule.savedFilterId)
         const healthy = createMemo(() => { const parsed = parseFilterStrict(filter()?.expr ?? ""); return !!parsed.node && !parsed.error })
         const appearance = () => ({ name: rule.enabled ? theme.text : theme.overlay1, filter: !rule.enabled ? theme.overlay1 : healthy() ? theme.subtext0 : theme.error, detail: !rule.enabled ? theme.overlay1 : healthy() ? theme.overlay1 : theme.error })
-        return <ListRow cursor={active() && ui.state.ruleCursor === i()} bg={theme.canvas} spans={[
+        return <ListRow cursor={active() && ui.state.ruleCursor === i()} bg={theme.canvas} armed={armedFor(ui.state.armed, "rule", rule.id)} spans={[
           { text: `${i() + 1}. ${rule.name}  `, fg: appearance().name },
           { text: `filter:${rule.savedFilterId}`, fg: appearance().filter },
           { text: filter() ? ` (${filter()!.name})` : " (missing)", fg: appearance().detail },
@@ -126,7 +128,7 @@ function FiltersPane(props: { focused: boolean; height?: number | "auto" | `${nu
   return <SectionCard title="Saved Filters" focused={props.focused} active={active()} height={props.height} flexGrow={props.height ? 0 : 1}>
     <Show when={rows().length} fallback={<text fg={theme.overlay1}>{active() ? "No saved filters. Press a to add." : "No saved filters. Activate to add."}</text>}>
       <For each={rows()}>{(filter, i) => (
-        <ListRow cursor={active() && ui.state.filterCursor === i()} bg={theme.canvas} spans={[
+        <ListRow cursor={active() && ui.state.filterCursor === i()} bg={theme.canvas} armed={armedFor(ui.state.armed, "filter", filter.id)} spans={[
           { text: filter.id, fg: theme.teal },
           { text: `  ${truncate(filter.name, 16)}`, fg: theme.text },
           { text: `  ${truncate(filter.expr, 20)}`, fg: theme.overlay1 },
@@ -139,13 +141,25 @@ function FiltersPane(props: { focused: boolean; height?: number | "auto" | `${nu
 function DatabasePane(props: { focused: boolean; height?: number | "auto" | `${number}%` }) {
   const info = () => data.state.dbInfo
   const active = () => ui.state.settingsActive && ui.state.settingsSection === "database"
-  return <SectionCard title="Database & Import" focused={props.focused} active={active()} height={props.height} flexGrow={props.height ? 0 : 1}>
-    {/* Gaps are expressions: Solid collapses runs of literal JSX spaces. */}
-    <text fg={theme.subtext0}>{"Schema "}<S fg={theme.text}>v{info()?.schemaVersion ?? "—"}</S>{"   Transactions "}<S fg={theme.text}>{info()?.transactionCount ?? 0}</S>{"   Accounts "}<S fg={theme.text}>{info()?.accountCount ?? 0}</S></text>
-    <text fg={theme.subtext0}>{"Categories "}<S fg={theme.text}>{info()?.categoryCount ?? 0}</S>{"   Tags "}<S fg={theme.text}>{info()?.tagCount ?? 0}</S>{"   Rules "}<S fg={theme.text}>{info()?.ruleCount ?? 0}</S></text>
-    <text fg={theme.overlay1} wrapMode="none">i import CSV · p profiles · c clear data · x factory reset</text>
-    <text fg={theme.overlay1} wrapMode="none">{`Display: n icons ${data.state.icons ? "on" : "off"} · w weeks from ${data.state.weekStart === "sunday" ? "Sun" : "Mon"} · b x-axis line ${data.state.uiPrefs.xAxis ? "on" : "off"}`}</text>
-    <text fg={theme.overlay1}>Profiles {data.state.importProfiles.length} · imports {info()?.importCount ?? 0} · reset keeps filters and config</text>
+  const counts = () => [
+    `v${info()?.schemaVersion ?? "—"}`, count(info()?.transactionCount ?? 0, "txn"), count(info()?.accountCount ?? 0, "account"),
+    `${info()?.categoryCount ?? 0} categor${info()?.categoryCount === 1 ? "y" : "ies"}`, count(info()?.tagCount ?? 0, "tag"), count(info()?.ruleCount ?? 0, "rule"), count(info()?.importCount ?? 0, "import"),
+  ].join(" · ")
+  const ctx = () => ({ icons: data.state.icons, weekStart: data.state.weekStart, xAxis: !!data.state.uiPrefs.xAxis, profiles: data.state.importProfiles.length })
+  const summary = () => (["icons", "weekStart", "xAxis"] as const).map((row) => { const view = databaseRow(row, ctx()); return `${view.label} ${view.value}` }).join(" · ")
+  // Fixed height: the counts and, while active, a row per action (else a
+  // line of the settings), so a tight column shrinks the panes that scroll.
+  return <SectionCard title="Database & Import" focused={props.focused} active={active()} height={props.height ?? (active() ? DATABASE_ROWS.length + 3 : 4)} flexGrow={0}>
+    <text fg={theme.overlay1} wrapMode="none">{counts()}</text>
+    <Show when={active()} fallback={<text fg={theme.subtext0} wrapMode="none">{summary()}</text>}>
+    <For each={DATABASE_ROWS}>{(row, i) => {
+      const view = () => databaseRow(row, ctx())
+      return <ListRow cursor={active() && ui.state.databaseCursor === i()} bg={theme.canvas} armed={row === "clearData" ? armedFor(ui.state.armed, "clearData", 0) : undefined} spans={[
+        { text: view().value != null ? fit(view().label, 20) : view().label, fg: view().danger ? theme.error : theme.text },
+        ...(view().value != null ? [{ text: view().value!, fg: theme.subtext1 }] : []),
+      ]} />
+    }}</For>
+    </Show>
   </SectionCard>
 }
 
@@ -171,7 +185,7 @@ function UpPane(props: { focused: boolean; width?: `${number}%` }) {
     <Show when={accounts().length} fallback={<text fg={theme.overlay1}>No accounts synced yet</text>}>
       <For each={accounts()}>{(account, i) => {
         const on = () => account.syncEnabled
-        return <ListRow cursor={active() && ui.state.upCursor === i()} bg={theme.canvas} spans={[
+        return <ListRow cursor={active() && ui.state.upCursor === i()} bg={theme.canvas} armed={armedFor(ui.state.armed, "desyncAccount", account.id)} spans={[
           { text: fit(account.name, 16), fg: on() ? theme.text : theme.overlay1 },
           { text: fit(accountRole(account) === "saver" ? "saver" : "spending", 10), fg: theme.overlay1 },
           { text: fit(account.balance != null ? formatMoney(account.balance) : "—", 12), fg: on() ? theme.subtext1 : theme.overlay1 },
@@ -299,10 +313,10 @@ function ImportOverlay() {
     </Show>
     <Show when={stage() === "path"}><Modal title="Import CSV path"><text fg={theme.text}><TextInput field={{ value: ui.state.importPath, caret: ui.state.importPathCaret }} focused /></text><text fg={theme.overlay1}>Enter an absolute path or one relative to the listed folder.</text></Modal></Show>
     <Show when={stage() === "profile"}>
-      <Modal title={ui.state.importProfileManaging ? "Import profiles" : "Choose import profile"} hints="a new · e edit · del delete · enter select · esc back">
+      <Modal title={ui.state.importProfileManaging ? "Import profiles" : "Choose import profile"} hints="a new · e edit · del del delete · enter select · esc back">
         <Show when={data.state.importProfiles.length} fallback={<text fg={theme.overlay1}>No profiles yet. Press a to map this CSV.</text>}>
           <For each={data.state.importProfiles}>{(item, i) => (
-            <ListRow cursor={i() === ui.state.importProfileCursor} bg={theme.mantle} spans={[
+            <ListRow cursor={i() === ui.state.importProfileCursor} bg={theme.mantle} armed={armedFor(ui.state.armed, "profile", item.id)} spans={[
               { text: item.name, fg: theme.text },
               { text: `  ${item.account} · ${item.importPrefix || "no prefix"}`, fg: theme.overlay1 },
             ]} />
@@ -391,11 +405,6 @@ const EDITOR_HINTS: Record<FormField["kind"], string> = {
   picker: "↑↓ field · enter choose · esc cancel",
 }
 
-function ConfirmOverlay() {
-  const prompt = (confirm: NonNullable<typeof ui.state.settingsConfirm>) => confirm.kind === "clearData" ? "Clear all transaction and import data?" : confirm.kind === "clearAccount" ? `Clear transactions for ${confirm.label}?` : confirm.kind === "deleteAccount" ? `Remove ${confirm.label} and its transactions?` : confirm.kind === "budget" ? `Delete ${confirm.label}?` : confirm.kind === "desyncAccount" ? `Stop syncing ${confirm.label}? Its transactions are removed; switch sync back on to re-fetch them.` : `Delete ${confirm.label}?`
-  return <Show when={ui.state.settingsConfirm}>{(confirm: () => NonNullable<typeof ui.state.settingsConfirm>) => <Modal title="Confirm" tone="error" width={64} hints="del confirm · esc cancel"><text fg={theme.text}>{prompt(confirm())}</text></Modal>}</Show>
-}
-
 export function SettingsTab(props: { focused: SectionId }) {
   const dims = useTerminalDimensions()
   const layout = () => dims().width >= 112 ? "wide" : dims().width >= 80 ? "medium" : "narrow"
@@ -411,7 +420,6 @@ export function SettingsTab(props: { focused: SectionId }) {
     <ImportOverlay />
     <FactoryResetOverlay />
     {/* Last, so a confirmation armed from a dialog shows over it. */}
-    <ConfirmOverlay />
   </box>
 }
 

@@ -1,3 +1,4 @@
+import { DATABASE_ROWS } from "../state/databaseRows"
 import { expect, test } from "bun:test"
 import { mkdtempSync, readFileSync } from "node:fs"
 import { tmpdir } from "node:os"
@@ -34,18 +35,19 @@ test("bootstrap-off preserves UI defaults; scoped w updates the hint and calenda
 
     ui.switchTab("settings")
     ui.activateSettings("database")
+    ui.setState({ databaseCursor: DATABASE_ROWS.indexOf("weekStart") })
     await t.renderOnce()
-    expect(t.captureCharFrame()).toContain("w weeks from Mon")
-    t.mockInput.pressKey("w")
+    expect(t.captureCharFrame()).toMatch(/Weeks start on\s+Monday/)
+    t.mockInput.pressEnter()
     await t.renderOnce()
     expect(data.state.weekStart).toBe("sunday")
     expect(ui.state.status).toBe("Weeks start on Sunday")
-    expect(t.captureCharFrame()).toContain("w weeks from Sun")
-    t.mockInput.pressKey("w")
+    expect(t.captureCharFrame()).toMatch(/Weeks start on\s+Sunday/)
+    t.mockInput.pressEnter()
     await t.renderOnce()
     expect(data.state.weekStart).toBe("monday")
     expect(ui.state.status).toBe("Weeks start on Monday")
-    t.mockInput.pressKey("w")
+    t.mockInput.pressEnter()
     await t.renderOnce()
 
     ui.setState({ importStage: "path", importPath: "" })

@@ -16,7 +16,7 @@ export function SavedFilterPicker() {
           cursor={picker().cursor}
           query={picker().query}
           width={72}
-          hints="↑/↓ move · enter apply · esc close · type filter"
+          hints="↑↓ ^j/k move · enter apply · esc close · type filter"
         />
       )}
     </Show>

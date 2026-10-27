@@ -7,15 +7,17 @@ import { S } from "./S"
  * One row of a list, in a pane or a dialog: the cursor marker (the Go app's
  * "> ", bold accent), then the row's spans, every cell on one background:
  * the cursor's, else the list's own (`bg`: canvas in a pane, mantle in a
- * dialog). Clipped at the end rather than wrapped.
+ * dialog). Clipped at the end rather than wrapped. An armed row (`armed`,
+ * state/armed) says what its key does again, in red, in place of its spans.
  */
-export function ListRow(props: { cursor: boolean; bg: string; spans: Span[] }) {
+export function ListRow(props: { cursor: boolean; bg: string; spans: Span[]; armed?: string }) {
   const bg = () => (props.cursor ? theme.surface0 : props.bg)
+  const spans = (): Span[] => props.armed ? [{ text: props.armed, fg: theme.error, bold: true }] : props.spans
   return (
     <box width="100%" height={1} overflow="hidden">
       <text bg={bg()} wrapMode="none">
-        <S fg={theme.accent} bg={bg()} bold>{props.cursor ? "> " : "  "}</S>
-        <Index each={props.spans}>{(span) => <S fg={span().fg} bg={bg()} bold={span().bold}>{span().text}</S>}</Index>
+        <S fg={props.armed ? theme.error : theme.accent} bg={bg()} bold>{props.cursor ? "> " : "  "}</S>
+        <Index each={spans()}>{(span) => <S fg={span().fg} bg={bg()} bold={span().bold}>{span().text}</S>}</Index>
       </text>
     </box>
   )

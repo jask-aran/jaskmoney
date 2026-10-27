@@ -17,7 +17,7 @@ export function TagChooser() {
         cursor={ui.state.tagChooserCursor}
         query={ui.state.tagChooserQuery}
         width={84}
-        hints="↑↓ move · type to filter or name a new tag · enter find · esc cancel"
+        hints="↑↓ ^j/k move · type to filter or name a new tag · enter find · esc cancel"
       />
     </Show>
   )

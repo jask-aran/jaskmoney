@@ -1,3 +1,5 @@
+import { ACCOUNT_ACTIONS, armedFor } from "../../state/armed"
+import { ListRow } from "../primitives/ListRow"
 import { hasLlm, llmModelId } from "../../ai/llm"
 import { For, Show, createEffect, createMemo } from "solid-js"
 import { useTerminalDimensions } from "@opentui/solid"
@@ -297,12 +299,9 @@ export function ManagerTab(props: { focused: SectionId }) {
         )}
       </Show>
       <Show when={ui.state.ruleOffersOpen}>
-        <Modal title="Make rules" subtitle={data.state.writingRules ? "asking the AI…" : `${ruleOffers().length} offered`} width={76} hints={`j/k move · enter make rule · x never offer${hasLlm() ? " · a ask AI" : ""} · esc later`}>
+        <Modal title="Make rules" subtitle={data.state.writingRules ? "asking the AI…" : `${ruleOffers().length} offered`} width={76} hints="j/k move · enter choose · x never offer · esc later">
           <text fg={theme.overlay1}>New rows these find get the category on sync, without review.</text>
           <text> </text>
-          <Show when={!ruleOffers().length}>
-            <text fg={theme.overlay1}>{data.state.writingRules ? `  ${llmModelId()} is reading your history…` : "  None yet. a asks the AI to write some from your history."}</text>
-          </Show>
           <For each={ruleOffers().slice(ruleTop(), ruleTop() + RULE_LINES)}>{(offer, i) => {
             const category = () => data.state.categories.find((c) => c.id === offer.categoryId)
             const at = () => ruleTop() + i() === ui.state.ruleOfferCursor
@@ -324,16 +323,22 @@ export function ManagerTab(props: { focused: SectionId }) {
               </>
             )
           }}</For>
-          <Show when={ruleOffers().length > RULE_LINES}>
-            <text fg={theme.overlay1}>{`  ${ruleTop() + 1}–${Math.min(ruleTop() + RULE_LINES, ruleOffers().length)} of ${ruleOffers().length}`}</text>
+          <Show when={hasLlm() && ruleOffers().length >= ruleTop() && ruleOffers().length < ruleTop() + RULE_LINES}>
+            <text wrapMode="none" fg={ui.state.ruleOfferCursor === ruleOffers().length ? theme.accent : theme.text}>{`${ui.state.ruleOfferCursor === ruleOffers().length ? "> " : "  "}${data.state.writingRules ? `Asking ${llmModelId()}…` : "Ask the AI for more rules"}`}</text>
+          </Show>
+          <Show when={ruleOffers().length + (hasLlm() ? 1 : 0) > RULE_LINES}>
+            <text fg={theme.overlay1}>{`  ${ruleTop() + 1}–${Math.min(ruleTop() + RULE_LINES, ruleOffers().length + (hasLlm() ? 1 : 0))} of ${ruleOffers().length + (hasLlm() ? 1 : 0)}`}</text>
           </Show>
         </Modal>
       </Show>
       <Show when={accountAction()}>
         {(account: () => Account) => (
-          <Modal title="Account data" subtitle={account().name} tone="warning" width={56} hints="del confirms either action · esc cancel">
-            <text fg={theme.text}>c clear this account’s transactions</text>
-            <text fg={theme.error}>x remove this account and its transactions</text>
+          <Modal title="Account data" subtitle={account().name} tone="warning" width={68} hints="j/k move · enter, enter again · esc cancel">
+            <For each={ACCOUNT_ACTIONS}>{(kind, i) => (
+              <ListRow cursor={ui.state.accountActionCursor === i()} bg={theme.mantle} armed={armedFor(ui.state.armed, kind, account().id)} spans={[
+                { text: kind === "clearAccount" ? "Clear this account’s transactions" : "Remove this account and its transactions", fg: kind === "clearAccount" ? theme.text : theme.error },
+              ]} />
+            )}</For>
           </Modal>
         )}
       </Show>

@@ -513,8 +513,8 @@ export function saveSuggestions(db: Db, list: CategorySuggestion[]): void {
   })()
 }
 
-export type CategoryHow = "accept" | "choose" | "rule"
-export type TagHow = "picker" | "review" | "rule"
+export type CategoryHow = "accept" | "choose" | "rule" | "undo"
+export type TagHow = "picker" | "review" | "rule" | "undo"
 
 export function logCategories(db: Db, entries: { transactionId: number; categoryId: number; previousCategoryId: number | null }[], how: CategoryHow, at: string): void {
   const add = db.query("INSERT INTO category_log (transaction_id, category_id, previous_category_id, how, at) VALUES (?, ?, ?, ?, ?)")
@@ -561,6 +561,11 @@ export function recordCategoryChoices(db: Db, choices: { description: string; ca
   db.transaction(() => { for (const c of choices) add.run(c.description.trim().toLowerCase(), c.categoryId, c.times) })()
 }
 
+export function unrecordCategoryChoices(db: Db, choices: { description: string; categoryId: number; times: number }[]): void {
+  const subtract = db.query("UPDATE category_choices SET times = MAX(0, times - ?) WHERE description = ? AND category_id = ?")
+  db.transaction(() => { for (const c of choices) subtract.run(c.times, c.description.trim().toLowerCase(), c.categoryId) })()
+}
+
 export interface CategoryChoice { description: string; categoryId: number; times: number; declined: boolean }
 
 export function loadCategoryChoices(db: Db): CategoryChoice[] {
@@ -584,6 +589,11 @@ export function dismissSuggestionRows(db: Db, transactionIds: number[]): void {
   db.transaction(() => { for (const id of transactionIds) dismiss.run(id) })()
 }
 
+export function undismissSuggestionRows(db: Db, transactionIds: number[]): void {
+  const restore = db.query("UPDATE category_suggestions SET dismissed = 0 WHERE transaction_id = ?")
+  db.transaction(() => { for (const id of transactionIds) restore.run(id) })()
+}
+
 /** Rows dismissed for a tag (by its upper-case name). */
 export function loadTagDismissals(db: Db, tagName: string): Set<number> {
   return new Set(db.query<{ id: number }, [string]>("SELECT transaction_id AS id FROM tag_dismissals WHERE tag_name = ?").all(tagName.toUpperCase()).map((r) => r.id))
@@ -592,6 +602,11 @@ export function loadTagDismissals(db: Db, tagName: string): Set<number> {
 export function saveTagDismissals(db: Db, tagName: string, transactionIds: number[]): void {
   const save = db.query("INSERT OR IGNORE INTO tag_dismissals (tag_name, transaction_id) VALUES (?, ?)")
   db.transaction(() => { for (const id of transactionIds) save.run(tagName.toUpperCase(), id) })()
+}
+
+export function deleteTagDismissals(db: Db, tagName: string, transactionIds: number[]): void {
+  const remove = db.query("DELETE FROM tag_dismissals WHERE tag_name = ? AND transaction_id = ?")
+  db.transaction(() => { for (const id of transactionIds) remove.run(tagName.toUpperCase(), id) })()
 }
 
 export function deleteSuggestions(db: Db, transactionIds: number[]): void {

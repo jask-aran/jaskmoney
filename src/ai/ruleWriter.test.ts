@@ -73,7 +73,7 @@ test("the brief: categories with recent choices, what's waiting, existing rules"
   expect(brief.waiting.descriptions[0]).toMatchObject({ description: "J Smith", rows: 1 })
 })
 
-test("R opens the list with a key to ask, and a without a key says where to add one", () => {
+test("R opens the list with a key to ask, and says how offers come without one", () => {
   setup()
   ui.switchTab("manager")
   ui.setState({ focusedSection: "mgr.transactions" })
@@ -82,10 +82,7 @@ test("R opens the list with a key to ask, and a without a key says where to add 
   testEnv("JASKMONEY_OPENROUTER_TOKEN", "test-key")
   handleKey(ui, key("r", { shift: true }), data)
   expect(ui.state.ruleOffersOpen).toBe(true)
-  expect(ui.state.status).toBe("No rules offered yet · a asks the AI")
-  testEnv("JASKMONEY_OPENROUTER_TOKEN", "")
-  handleKey(ui, key("a"), data)
-  expect(ui.state.status).toBe("Add a key or sign in (OpenRouter or OpenAI) in Settings › AI models to ask for rules")
+  expect(ui.state.status).toBe("No rules offered yet · enter asks the AI")
   handleKey(ui, key("escape"), data)
 })
 

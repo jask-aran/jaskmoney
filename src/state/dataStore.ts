@@ -16,6 +16,9 @@ import {
   deleteSuggestions,
   dismissSuggestionRows,
   recordCategoryChoices,
+  unrecordCategoryChoices,
+  undismissSuggestionRows,
+  deleteTagDismissals,
   logCategories,
   declineRule,
   loadRuleDeclines,
@@ -256,6 +259,56 @@ const NEW_TAG_COLOR = "#94e2d5"
 function createDataStore() {
   let db: Db | null = null
   let actualDbPath = ""
+  type TagPatch = Record<number, "add" | "remove">
+  type Repeat = { kind: "category"; categoryId: number } | { kind: "tags"; patch: TagPatch }
+  const [lastRepeat, setLastRepeat] = createSignal<Repeat | null>(null)
+  const [undoStack, setUndoStack] = createSignal<{ label: string; reverse: () => Promise<string> }[]>([])
+
+  function recordUndo(label: string, reverse: () => Promise<string>) {
+    setUndoStack((entries) => [...entries.slice(-19), { label, reverse }])
+  }
+
+  async function undo(): Promise<string> {
+    const entry = undoStack().at(-1)
+    if (!entry) return "Nothing to undo"
+    setUndoStack((entries) => entries.slice(0, -1))
+    const summary = await entry.reverse()
+    return `Undid: ${entry.label}${summary ? ` · ${summary}` : ""}`
+  }
+
+  async function repeatLast(ids: number[]): Promise<string> {
+    const repeat = lastRepeat()
+    if (!repeat) return "Nothing to repeat"
+    return repeat.kind === "category" ? categorizeTransactions(ids, repeat.categoryId) : applyTagPatch(ids, repeat.patch)
+  }
+
+  function categorySnapshot(assignments: Map<number, number>) {
+    return transactions().filter((t) => assignments.has(t.id) && t.categoryId !== assignments.get(t.id))
+      .map((t) => ({ id: t.id, categoryId: t.categoryId, description: t.description }))
+  }
+
+  async function restoreCategories(rows: { id: number; categoryId: number | null }[]): Promise<string> {
+    const defaultId = state.categories.find((c) => c.isDefault)?.id
+    const assignments = new Map<number, number>()
+    for (const row of rows) {
+      const categoryId = row.categoryId ?? defaultId
+      if (categoryId == null) throw new Error("default category not found")
+      assignments.set(row.id, categoryId)
+    }
+    if (!assignments.size) return ""
+    // Cancel the forward push even if Up rejects the reversal.
+    mutate((db) => {
+      const cancelPending = db.query("UPDATE transactions SET category_source = 'user' WHERE id = ? AND category_source = 'pending'")
+      for (const row of rows) cancelPending.run(row.id)
+    })
+    const result = await applyCategories(assignments, "undo")
+    // The default sends "no category" to Up; preserve a formerly null local value.
+    mutate((db) => {
+      const restoreNull = db.query("UPDATE transactions SET category_id = NULL WHERE id = ? AND category_id = ?")
+      for (const row of rows) if (row.categoryId == null) restoreNull.run(row.id, defaultId!)
+    })
+    return categorizedSummary(`Restored ${result.done}`, result)
+  }
   const initialState = (): DataState => ({
     ready: false,
     upSyncing: false,
@@ -334,6 +387,8 @@ function createDataStore() {
   const upClient = () => createUpClient({ token: readUpToken() })
 
   function init(dbPath?: string) {
+    setUndoStack([])
+    setLastRepeat(null)
     setState({ apiKeys: loadApiKeys() })
     // Verdicts are per row id, and a new database reuses ids.
     askVerdicts.clear()
@@ -386,6 +441,8 @@ function createDataStore() {
   /** Test isolation only: close the database and restore the pre-init state.
    * Call init() before using database actions again. Does not erase disk data. */
   function reset() {
+    setUndoStack([])
+    setLastRepeat(null)
     db?.close()
     db = null
     actualDbPath = ""
@@ -579,7 +636,7 @@ function createDataStore() {
         else local++
       }
       // Repeated choices turn into rule offers (ruleOffersFor).
-      recordCategoryChoices(database, [...chosen.values()])
+      if (how !== "undo") recordCategoryChoices(database, [...chosen.values()])
       logCategories(database, logged, how, appNow().toISOString())
     })()
     refresh()
@@ -633,7 +690,7 @@ function createDataStore() {
     database.transaction(() => {
       for (const row of rows) {
         if (pushingIds.has(row.id)) continue
-        const category = state.categories.find((c) => c.id === row.categoryId)
+        const category = state.categories.find((c) => row.categoryId == null ? c.isDefault : c.id === row.categoryId)
         const push = category && categoryPush(row, category, state.categories)
         if (push) pushes.set(row.id, push)
         else database.query(`UPDATE transactions SET category_source = 'user' WHERE id = ?`).run(row.id)
@@ -662,7 +719,16 @@ function createDataStore() {
   async function categorizeTransactions(txnIds: number[], categoryId: number, onProgress?: (pushed: number, total: number) => void): Promise<string> {
     const category = state.categories.find((c) => c.id === categoryId)
     if (!category) throw new Error("category not found")
-    const result = await applyCategories(new Map(txnIds.map((id) => [id, categoryId])), "choose", onProgress)
+    const assignments = new Map(txnIds.map((id) => [id, categoryId]))
+    const before = categorySnapshot(assignments)
+    setLastRepeat({ kind: "category", categoryId })
+    const result = await applyCategories(assignments, "choose", onProgress)
+    const changed = before.filter((row) => transactions().some((t) => t.id === row.id && t.categoryId !== row.categoryId))
+    if (changed.length) recordUndo(`categorised ${changed.length} → ${category.name}`, async () => {
+      const summary = await restoreCategories(changed)
+      mutate((db) => unrecordCategoryChoices(db, before.map((row) => ({ description: row.description, categoryId, times: 1 }))))
+      return summary
+    })
     return categorizedSummary(`Categorized ${result.done} → ${category.name}`, result) + ruleOfferNote(txnIds)
   }
 
@@ -874,7 +940,18 @@ function createDataStore() {
   function dismissTagCandidates(ids: number[]): void {
     const review = state.tagReview
     if (!review || !db) return
-    saveTagDismissals(db, review.name, ids)
+    const removed = Object.values(unwrap(review.candidates)).filter((c) => ids.includes(c.transactionId)).map((c) => ({ ...c }))
+    if (!removed.length) return
+    const run = tagRun
+    const tagName = review.name
+    saveTagDismissals(db, tagName, removed.map((c) => c.transactionId))
+    recordUndo(`dismissed ${count(removed.length, "candidate")}`, async () => {
+      mutate((db) => deleteTagDismissals(db, tagName, removed.map((c) => c.transactionId)))
+      if (tagRun === run && state.tagReview?.name === tagName) {
+        setState("tagReview", "candidates", (prev) => ({ ...prev, ...Object.fromEntries(removed.map((c) => [c.transactionId, c])) }))
+      }
+      return ""
+    })
     setState("tagReview", "candidates", produce((c) => { for (const id of ids) delete c[id] }))
   }
 
@@ -895,21 +972,39 @@ function createDataStore() {
       if (suggestion) assignments.set(id, suggestion.categoryId)
     }
     if (!assignments.size) return "No suggestions accepted"
+    const before = categorySnapshot(assignments)
+    const suggestions = [...assignments.keys()].flatMap((id) => state.suggestions[id] ? [{ ...unwrap(state.suggestions[id]!) }] : [])
     const result = await applyCategories(assignments, "accept", onProgress)
     const accepted = [...assignments].filter(([id, categoryId]) => transactions().some((t) => t.id === id && t.categoryId === categoryId)).map(([id]) => id)
     mutate((db) => deleteSuggestions(db, accepted))
+    if (accepted.length) recordUndo(`accepted ${count(accepted.length, "suggestion")}`, async () => {
+      const summary = await restoreCategories(before.filter((row) => accepted.includes(row.id)))
+      mutate((db) => {
+        unrecordCategoryChoices(db, before.map((row) => ({ description: row.description, categoryId: assignments.get(row.id)!, times: 1 })))
+        saveSuggestions(db, suggestions.filter((s) => accepted.includes(s.transactionId)))
+      })
+      return summary
+    })
     return categorizedSummary(`Accepted ${result.done} suggestion${result.done === 1 ? "" : "s"}`, result) + ruleOfferNote(accepted)
   }
 
   function dismissSuggestions(ids: number[]): void {
     // Kept and marked: re-suggesting (i, a sync) won't make it again.
-    mutate((db) => dismissSuggestionRows(db, ids))
+    const dismissed = [...new Set(ids)].filter((id) => state.suggestions[id])
+    mutate((db) => dismissSuggestionRows(db, dismissed))
+    if (dismissed.length) recordUndo(`dismissed ${count(dismissed.length, "suggestion")}`, async () => {
+      mutate((db) => undismissSuggestionRows(db, dismissed))
+      return ""
+    })
   }
 
-  async function applyTagPatch(txnIds: number[], patch: Record<number, "add" | "remove">, how: TagHow = "picker"): Promise<string> {
+  async function applyTagPatch(txnIds: number[], patch: TagPatch, how: TagHow = "picker"): Promise<string> {
     if (!db) throw new Error("db not open")
     const database = db
     if (!Object.keys(patch).length) return "Tags unchanged"
+    if (how === "picker") setLastRepeat({ kind: "tags", patch: { ...patch } })
+    const before = transactions().filter((t) => txnIds.includes(t.id)).map((t) => ({ id: t.id, source: t.source, tagIds: [...t.tagIds] }))
+    const reversals: { ids: number[]; patch: TagPatch }[] = []
     const client = {
       addTransactionTags: (id: string, tags: string[]) => upClient().addTransactionTags(id, tags),
       removeTransactionTags: (id: string, tags: string[]) => upClient().removeTransactionTags(id, tags),
@@ -924,12 +1019,9 @@ function createDataStore() {
         if (!tag) throw new Error("tag not found")
         const add = action === "add"
         labels.push(`${add ? "+" : "-"}${tag.name}`)
-        const targets = [...new Set(txnIds)].filter((id) => {
-          const t = transactions().find((t) => t.id === id)
-          return t && t.tagIds.includes(tagId) !== add
-        })
+        const targets = before.filter((t) => t.tagIds.includes(tagId) !== add).map((t) => t.id)
         const local = targets.filter((id) => tag.name.toUpperCase() === "IGNORE"
-          || transactions().find((t) => t.id === id)?.source !== "up")
+          || before.find((t) => t.id === id)?.source !== "up")
         if (add) addTagToTransactions(database, local, tagId)
         else removeTagFromTransactions(database, local, tagId)
         for (const id of local) updated.add(id)
@@ -940,11 +1032,18 @@ function createDataStore() {
         for (const id of result?.changedIds ?? []) updated.add(id)
         for (const id of result?.pushedIds ?? []) pushed.add(id)
         failures.push(...(result?.failures ?? []))
-        logTags(database, [...local, ...(result?.changedIds ?? [])], tagId, add, how, appNow().toISOString())
+        const changed = [...local, ...(result?.changedIds ?? [])]
+        if (changed.length) reversals.push({ ids: changed, patch: { [tagId]: add ? "remove" : "add" } })
+        logTags(database, changed, tagId, add, how, appNow().toISOString())
       }
     } finally {
       refresh()
     }
+    if ((how === "picker" || how === "review") && updated.size) recordUndo(`${labels.join(", ")} on ${updated.size}`, async () => {
+      const summaries: string[] = []
+      for (const reversal of reversals) summaries.push(await applyTagPatch(reversal.ids, reversal.patch, "undo"))
+      return summaries.join(" · ")
+    })
     const parts = [`Tags: ${labels.join(", ")} on ${updated.size}`]
     if (pushed.size) parts.push(`${pushed.size} updated in Up`)
     if (failures.length) parts.push(`${failures.length} failed: ${failures[0]}`)
@@ -1129,10 +1228,17 @@ function createDataStore() {
     let id = base
     for (let n = 2; state.savedFilters.some((f) => f.id === id); n++) id = `${base}-${n}`
     saveSavedFilter({ id, name: offer.description, expr: offer.expr })
-    createSettingsRule({ name: `${offer.description} → ${category.name}`, savedFilterId: id, setCategoryId: category.id, addTagIds: [], enabled: true })
+    const ruleId = createSettingsRule({ name: `${offer.description} → ${category.name}`, savedFilterId: id, setCategoryId: category.id, addTagIds: [], enabled: true })
     setState("aiRuleOffers", (offers) => offers.filter((o) => o.expr !== offer.expr))
+    const before = transactions().filter((t) => offer.waiting.includes(t.id)).map((t) => ({ id: t.id, categoryId: t.categoryId }))
     const applied = offer.waiting.length ? applyRules(offer.waiting) : null
+    const changed = before.filter((row) => transactions().some((t) => t.id === row.id && t.categoryId !== row.categoryId))
     const sent = applied?.categoryChanges ? await retryPendingCategories() : null
+    recordUndo(`rule ${offer.description} → ${category.name}`, async () => {
+      deleteSettingsRule(ruleId)
+      deleteSavedFilter(id)
+      return restoreCategories(changed)
+    })
     return [
       `Rule made: ${offer.description} → ${category.name}`,
       applied?.categoryChanges ? `${count(applied.categoryChanges, "waiting row")} categorised` : "",
@@ -1146,6 +1252,14 @@ function createDataStore() {
       mutate((db) => declineRule(db, offer.expr, offer.categoryId))
       setState("aiRuleOffers", (offers) => offers.filter((o) => o !== offer && !(o.expr === offer.expr && o.categoryId === offer.categoryId)))
     } else mutate((db) => declineCategoryChoice(db, offer.description, offer.categoryId))
+    recordUndo(`declined rule ${offer.description}`, async () => {
+      mutate((db) => {
+        if (offer.source === "ai") db.query("DELETE FROM rule_declines WHERE expr = ? AND category_id = ?").run(offer.expr, offer.categoryId)
+        else db.query("UPDATE category_choices SET declined = 0 WHERE description = ? AND category_id = ?").run(offer.description.trim().toLowerCase(), offer.categoryId)
+      })
+      if (offer.source === "ai") setState("aiRuleOffers", (offers) => [...offers, offer])
+      return ""
+    })
   }
 
   function csvFiles(directory: string): string[] {
@@ -1258,6 +1372,10 @@ function createDataStore() {
     toggleSortDirection,
     setAccountSelection,
     categorizeTransactions,
+    undoLabel: () => undoStack().at(-1)?.label ?? null,
+    undo,
+    lastRepeat,
+    repeatLast,
     /** The Uncategorised view sorts by suggestion confidence, most sure
      * first; leaving it goes back to date order if it still was. */
     askScore,
