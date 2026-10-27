@@ -54,6 +54,11 @@ export async function runAgent<P extends TSchema>(
   const maxTurns = options.maxTurns ?? 8
   let nudged = false
   for (let turn = 1; turn <= maxTurns; turn++) {
+    // The last turn can only answer: a run always ends with a result.
+    if (turn === maxTurns && maxTurns > 1) {
+      context.tools = [finishTool]
+      context.messages.push({ role: "user", content: "This is your last turn: answer now with `finish`, using what you have found.", timestamp: Date.now() })
+    }
     const reply: AssistantMessage = await llm.models.complete(llm.model, context, { apiKey: llm.apiKey, signal: options.signal })
     usage.input += reply.usage.input
     usage.output += reply.usage.output

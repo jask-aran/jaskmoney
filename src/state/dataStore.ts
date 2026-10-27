@@ -1071,6 +1071,7 @@ function createDataStore() {
     return {
       transactions: transactions(), categories: state.categories, tags: state.tags, rules: state.rules, savedFilters: state.savedFilters,
       categoryLog: db ? loadCategoryLog(db) : [], tagLog: db ? loadTagLog(db) : [],
+      categorySources: db ? new Map(db.query<{ id: number; source: string | null }, []>("SELECT id, category_source AS source FROM transactions").all().map((r) => [r.id, r.source])) : undefined,
     }
   }
 

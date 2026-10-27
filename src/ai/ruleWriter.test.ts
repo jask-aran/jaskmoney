@@ -5,7 +5,7 @@ import { ui } from "../state/uiStore"
 import { handleKey } from "../app/keys"
 import { key } from "../testing/keys"
 import { testEnv } from "../testing/scoped"
-import { ruleWriterBrief } from "./ruleWriter"
+import { ruleWriterBrief, writeRules } from "./ruleWriter"
 
 /** CSV rows: Rent paid to "J Smith" (4, all Rent), "Transfer to Holiday" (2 Travel, 1 Rent), "Bills Co" (2). */
 function setup() {
@@ -87,4 +87,17 @@ test("R opens the list with a key to ask, and a without a key says where to add 
   handleKey(ui, key("a"), data)
   expect(ui.state.status).toBe("Add a key or sign in (OpenRouter or OpenAI) in Settings › AI models to ask for rules")
   handleKey(ui, key("escape"), data)
+})
+
+test("a rule for rows Up already categorises (none waiting) is turned down; history reads are capped", async () => {
+  const { db, faux, llm, travel } = setup()
+  for (let i = 0; i < 3; i++) db.query("INSERT INTO transactions (date_raw, date_iso, amount, description, category_id, category_source, account_id, source) VALUES ('x', '2026-09-01', -9, 'Qantas', ?, 'provider', 100, 'csv')").run(travel)
+  data.refresh()
+  faux.setResponses([
+    fauxAssistantMessage(Array.from({ length: 11 }, () => fauxToolCall("category_history", { category: "Test travel" })), { stopReason: "toolUse" }),
+    fauxAssistantMessage([fauxToolCall("finish", { rules: [{ name: "Qantas", category: "Test travel", expr: "desc:Qantas", why: "3 of 3" }] })], { stopReason: "toolUse" }),
+  ])
+  const result = await writeRules(llm, data.historyData())
+  expect(result.rejected).toEqual([{ rule: expect.objectContaining({ expr: "desc:Qantas" }), reason: "Up already categorises these" }])
+  expect(result.calls.filter((c) => c.name === "category_history")).toHaveLength(11)
 })

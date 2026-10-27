@@ -36,3 +36,15 @@ test("an answer in words is nudged once toward finish, then given up on; turns a
   faux.setResponses(Array.from({ length: 3 }, () => fauxAssistantMessage([fauxToolCall("count", { expr: "x" })], { stopReason: "toolUse" })))
   expect(await runAgent(llm, { system: "s", prompt: "p", tools: [count], finish, maxTurns: 3 })).toMatchObject({ result: null, error: "no answer after 3 turns", turns: 3 })
 })
+
+test("the last turn is told to answer (and offered only finish)", async () => {
+  const { faux, llm } = fauxLlm()
+  const told: boolean[] = []
+  const lastTurn = (messages: { role: string; content: unknown }[]) => messages.some((m) => m.role === "user" && JSON.stringify(m.content).includes("This is your last turn"))
+  faux.setResponses([
+    (context) => { told.push(lastTurn(context.messages)); return fauxAssistantMessage([fauxToolCall("count", { expr: "x" })], { stopReason: "toolUse" }) },
+    (context) => { told.push(lastTurn(context.messages)); return fauxAssistantMessage([fauxToolCall("finish", { rules: [] })], { stopReason: "toolUse" }) },
+  ])
+  expect((await runAgent(llm, { system: "s", prompt: "p", tools: [count], finish, maxTurns: 2 })).result).toEqual({ rules: [] })
+  expect(told).toEqual([false, true])
+})

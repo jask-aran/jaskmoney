@@ -13,13 +13,15 @@ import type { Llm } from "./llm"
  * the category, not done by a rule already, not declined) before it is
  * offered. Nothing is made until you accept it.
  */
-export const RULE_WRITER_TURNS = 12
+export const RULE_WRITER_TURNS = 14
+/** category_history calls a run may make: after these it tests what it has. */
+export const HISTORY_LOOKS = 10
 const PROPOSALS = 8
 
 const SYSTEM = `You write categorisation rules for a personal finance app.
 A rule is a filter expression and a category: every new transaction the filter finds is put in that category on sync, without review. So a rule must be precise: the rows it finds should already be (nearly) all in that category.
 The bank (Up) categorises most card purchases itself. Rules matter for what it leaves: transfers, payments to and from people, bills paid by transfer, deposits, and merchants the user keeps categorising by hand (recent_choices).
-Work from evidence. Look at categories with category_history, and test every rule with test_rule before proposing it. Only propose rules whose test shows precision of at least ${RULE_SHARE}, at least ${RULE_AFTER} rows in the category, and already_by_rules false. Prefer rules that cover the user's recent choices or rows waiting for a category. Use the narrowest expression that does the job (an exact description in quotes beats a single common word); combine terms with OR to cover several descriptions of one thing, and with amt:, acc: or type: to separate look-alikes. Don't propose a rule an existing rule or a declined rule already covers.
+Work from evidence, and be economical: you have ${RULE_WRITER_TURNS} turns, and the last can only answer. Start from the categories with recent_choices and from the waiting rows in the brief; look at a category with category_history only when you have a candidate for it; don't survey every category. Test every rule with test_rule before proposing it (several tests per turn is fine). Only propose rules whose test shows precision of at least ${RULE_SHARE}, at least ${RULE_AFTER} rows in the category, and already_by_rules false. A rule whose rows Up already categorised itself (set_by_up close to in_target, nothing waiting) adds nothing: skip it. Be wary of payments to a person (a $handle or a name): what they're for changes; an amount range only holds while amounts don't overlap. Prefer rules that cover the user's recent choices or rows waiting for a category. Use the narrowest expression that does the job (an exact description in quotes beats a single common word); combine terms with OR to cover several descriptions of one thing, and with amt:, acc: or type: to separate look-alikes. Don't propose a rule an existing rule or a declined rule already covers.
 Answer with finish. Give each rule a short name, the exact category name, the expression, and why in one sentence citing the evidence. Propose nothing rather than a weak rule.
 
 ${FILTER_GUIDE}`
@@ -32,6 +34,8 @@ export interface RuleWriterResult {
   rejected: { rule: ProposedRule; reason: string }[]
   usage: AgentUsage
   turns: number
+  /** The model's tool calls, in order (for tuning). */
+  calls: { name: string; args: unknown }[]
   error?: string
 }
 
@@ -59,6 +63,7 @@ export async function writeRules(
   options: { declined?: { expr: string; categoryId: number }[]; focus?: string; signal?: AbortSignal } = {},
 ): Promise<RuleWriterResult> {
   const declined = options.declined ?? []
+  let looks = 0
   const categoryNamed = (name: string) => data.categories.find((c) => c.name.toLowerCase() === name.trim().toLowerCase())
   const tools = [
     agentTool({
@@ -66,6 +71,7 @@ export async function writeRules(
       description: "A category's history: rows' shared facts, the user's recent choices into it, its descriptions by purity (perfect = every row with that description is in it), look-alike descriptions elsewhere, and rules that set it.",
       parameters: Type.Object({ category: Type.String({ description: "Exact category name" }) }),
       run: ({ category }) => {
+        if (++looks > HISTORY_LOOKS) throw new Error(`You've looked at ${HISTORY_LOOKS} categories: test your candidates with test_rule now, then finish.`)
         const c = categoryNamed(category)
         if (!c) throw new Error(`no category named ${category}`)
         return categoryHistory(data, c.id, { recent: 20, descriptions: 25 })
@@ -102,7 +108,7 @@ export async function writeRules(
     maxTurns: RULE_WRITER_TURNS,
     signal: options.signal,
   })
-  const result: RuleWriterResult = { offers: [], rejected: [], usage: run.usage, turns: run.turns, ...(run.error ? { error: run.error } : {}) }
+  const result: RuleWriterResult = { offers: [], rejected: [], usage: run.usage, turns: run.turns, calls: run.calls, ...(run.error ? { error: run.error } : {}) }
   const seen = new Set(data.savedFilters.map((f) => f.expr.toLowerCase()))
   for (const rule of run.result?.rules ?? []) {
     const reject = (reason: string) => result.rejected.push({ rule, reason })
@@ -115,6 +121,8 @@ export async function writeRules(
     if (report.already_by_rules) { reject("rules already do it"); continue }
     if ((report.precision ?? 0) < RULE_SHARE) { reject(`precision ${report.precision ?? 0}`); continue }
     if (report.in_target < RULE_AFTER) { reject(`only ${report.in_target} rows in ${category.name}`); continue }
+    // Up (or sync, from Up's type) already categorises these, and none wait.
+    if (!report.waiting && report.set_by_up >= report.in_target * RULE_SHARE) { reject("Up already categorises these"); continue }
     seen.add(rule.expr.toLowerCase())
     const found = findRows(data, rule.expr)
     const rows = "rows" in found ? found.rows : []

@@ -19,6 +19,9 @@ export interface HistoryData {
   savedFilters: SavedFilter[]
   categoryLog: CategoryLogEntry[]
   tagLog: TagLogEntry[]
+  /** Who set each row's category ("provider": Up; "type": sync from Up's
+   * transaction type; "user", "pending", "rule"); absent rows have none. */
+  categorySources?: Map<number, string | null>
 }
 
 /** The filter language, for prompts: what a rule can test. */
@@ -260,6 +263,8 @@ export function matchReport(data: HistoryData, expr: string, target: MatchTarget
     waiting: waiting.length,
     precision: decided ? round(inTarget.length / decided) : null,
     covers_your_choices: { of: chosen.size, covered: [...chosen].filter((id) => foundIds.has(id)).length },
+    // Rows in the target that Up (or sync, from Up's type) categorised: a rule adds nothing for them.
+    set_by_up: inTarget.filter((t) => ["provider", "type"].includes(data.categorySources?.get(t.id) ?? "")).length,
     already_by_rules: "categoryId" in target && found.length > 0 && alreadyByRules(data, found, target.categoryId),
     by_category: byCategory,
     sample: [...elsewhere, ...waiting, ...inTarget].slice(0, sample).map((t) => ({ ...rowFacts(t), verdict: isIn(t) ? "in target" : isUncategorised(t) && "categoryId" in target ? "waiting" : "elsewhere" })),
