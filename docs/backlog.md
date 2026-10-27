@@ -25,9 +25,9 @@ committed; note the commit.
   Typing RESET stays only for wiping the database.
 - [x] **K3. esc steps back one level.** Selection, then filter, then the
   special view (uncategorised, merchants, tag review), then the pane.
-- [ ] **K5. Trimmed footer.** About 8 keys per scope, then "ctrl+k all"; the
+- [x] **K5. Trimmed footer.** About 8 keys per scope, then "ctrl+k all"; the
   Rules pane's missing enter/del; g/G and paging listed.
-- [ ] **K4. Command palette (ctrl+k).** Port of the legacy palette: every
+- [x] **K4. Command palette (ctrl+k).** Port of the legacy palette: every
   action for the scope plus global ones, fuzzy, each with its key.
 - [x] **K6. Undo (u).** The last batch of categorise, accept, dismiss, tag or
   rule-made changes, reversed in Up too.

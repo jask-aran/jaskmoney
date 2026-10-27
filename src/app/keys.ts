@@ -1,3 +1,4 @@
+import { footerShown, paletteEntries, type Hint } from "./palette"
 import { ACCOUNT_ACTIONS, armedText, isArmed, isSecondPress, type Armed } from "../state/armed"
 import { DATABASE_ROWS } from "../state/databaseRows"
 import type { KeyEvent } from "@opentui/core"
@@ -173,8 +174,10 @@ export function handleKey(ui: UiStore, key: KeyEvent, data?: DataStore): boolean
     if (name === "escape") { ui.setStatus("Cancelled"); return true }
     if (ui.state.status === armedText(armed)) ui.setStatus("")
   }
-  const entry = scopes[ui.activeScope()]
+  const scope = ui.activeScope()
+  const entry = scopes[scope]
   if (entry.quits) {
+    if (key.ctrl && name === "k") { ui.setState({ palette: { query: "", cursor: 0, from: scope } }); return true }
     if (name === "v") {
       if (JUMP_TARGETS[ui.state.activeTab].length) ui.enterJump()
       return true
@@ -188,6 +191,23 @@ export function handleKey(ui: UiStore, key: KeyEvent, data?: DataStore): boolean
   // once, not once per write.
   batch(() => entry.handle(ui, key, data))
   return true
+}
+
+/** The command palette: a scope's actions, run by pressing their key in
+ * that scope once the palette has closed (app/palette). */
+function handlePalette(ui: UiStore, key: KeyEvent, data?: DataStore): void {
+  const palette = ui.state.palette
+  if (!palette) return
+  const entries = paletteEntries(footerHints(palette.from, hintState(ui, data)), palette.query)
+  queryPickerKey(key, palette, entries.length, {
+    close: () => { ui.setState({ palette: null }) },
+    update: (next) => { ui.setState({ palette: { ...palette, ...next } }) },
+    apply: () => {
+      const entry = entries[palette.cursor]
+      ui.setState({ palette: null })
+      if (entry) handleKey(ui, entry.event, data)
+    },
+  })
 }
 
 function handleFilterPicker(ui: UiStore, key: KeyEvent, data?: DataStore): void {
@@ -1515,6 +1535,11 @@ type ScopeEntry = {
 }
 
 const scopes: Record<ScopeId, ScopeEntry> = {
+  "palette": {
+    handle: handlePalette,
+    quits: false,
+    hints: () => [{ key: "↑↓ ^j/k", desc: "move" }, { key: "enter", desc: "run" }, { key: "esc", desc: "close" }, { key: "type", desc: "filter" }],
+  },
   "filterPicker": {
     handle: handleFilterPicker,
     quits: false,
@@ -1713,8 +1738,10 @@ const scopes: Record<ScopeId, ScopeEntry> = {
       { key: "u", desc: "undo" },
       { key: "c", desc: "choose" },
       ...(state?.ruleOffers ? [{ key: "R", desc: `rules (${state.ruleOffers})` }] : []),
-      // The review actions first: the footer cuts at the end on narrow screens.
+      // The review actions first: the footer shows the first eight
+      // (footerLine), and cuts at the end on narrow screens.
       { key: "space", desc: "select" },
+      { key: "esc", desc: "all rows" },
       { key: "S-j/k", desc: "range" },
       { key: "i", desc: "all rows" },
       { key: "s", desc: "sort" },
@@ -1724,27 +1751,31 @@ const scopes: Record<ScopeId, ScopeEntry> = {
       { key: "m", desc: "merchants" },
       { key: "v", desc: "jump" },
     ] : [
-      { key: "ctrl+s", desc: "save filter" },
-      { key: "ctrl+l", desc: "saved filters" },
-      { key: "enter", desc: "detail" },
+      // The first eight show in the footer (footerLine); the rest are in
+      // the palette (ctrl+k).
       { key: "j/k", desc: "move" },
-      { key: "i", desc: "uncategorised" },
-      { key: "T", desc: "tag review" },
+      { key: "c", desc: "category" },
+      { key: "t", desc: "tag" },
+      { key: "space", desc: "select" },
+      { key: "/", desc: "filter" },
+      { key: "?", desc: "smart search" },
+      { key: "u", desc: "undo" },
+      ...(state?.drillReturn ? [{ key: "esc", desc: "back" }] : [{ key: "esc", desc: "clear" }]),
       ...(state?.ruleOffers ? [{ key: "R", desc: `rules (${state.ruleOffers})` }] : []),
       ...(state?.asks ? [{ key: "n", desc: state.askLoose ? "matches only" : "near misses" }] : []),
+      { key: "enter", desc: "detail" },
+      { key: ".", desc: "repeat" },
+      { key: "i", desc: "uncategorised" },
+      { key: "T", desc: "tag review" },
       { key: "m", desc: "merchants" },
       { key: "a", desc: "account" },
       { key: "S-j/k", desc: "range" },
-      { key: "space", desc: "select" },
-      { key: "c", desc: "cat" },
-      { key: "t", desc: "tag" },
-      { key: ".", desc: "repeat" },
       { key: "s", desc: "sort" },
       { key: "S-s", desc: "reverse" },
-      ...(state?.drillReturn ? [{ key: "esc", desc: "back" }] : [{ key: "esc", desc: "clear" }]),
-      { key: "u", desc: "undo" },
-      { key: "/", desc: "filter" },
-      { key: "?", desc: "smart search" },
+      { key: "ctrl+s", desc: "save filter" },
+      { key: "ctrl+l", desc: "saved filters" },
+      { key: "g", desc: "top" },
+      { key: "G", desc: "bottom" },
       { key: "v", desc: "jump" },
     ],
   },
@@ -1768,19 +1799,19 @@ const scopes: Record<ScopeId, ScopeEntry> = {
     handle: handleManagerMerchants,
     quits: true,
     hints: () => [
-      { key: "ctrl+s", desc: "save filter" },
-      { key: "ctrl+l", desc: "saved filters" },
-      { key: "enter", desc: "its transactions" },
       { key: "j/k", desc: "move" },
+      { key: "enter", desc: "its transactions" },
       { key: "c", desc: "category" },
       { key: "t", desc: "tags" },
-      { key: "s", desc: "sort" },
       { key: "/", desc: "filter" },
+      { key: "s", desc: "sort" },
+      { key: "u", desc: "undo" },
+      { key: "esc", desc: "back" },
       { key: "?", desc: "smart search" },
       { key: "m", desc: "rows" },
-      { key: "esc", desc: "clear" },
-      { key: "u", desc: "undo" },
       { key: "a", desc: "account" },
+      { key: "ctrl+s", desc: "save filter" },
+      { key: "ctrl+l", desc: "saved filters" },
     ],
   },
   "overview": {
@@ -1796,16 +1827,16 @@ const scopes: Record<ScopeId, ScopeEntry> = {
       return [
         ...(state?.focusedSection === "ov.chart" || state?.focusedSection === "ov.chart2" ? [{ key: "enter", desc: "transactions" }] : []),
         { key: "h/l", desc: "chart" },
-        { key: "H/L", desc: "bottom chart" },
-        { key: "a", desc: "account" },
         { key: "d/D", desc: "range" },
         { key: "[ ]", desc: "prev/next" },
-        { key: "0", desc: "now" },
         { key: "c", desc: "this cycle" },
-        ...(state?.chartViews.some((i) => CHART_VIEWS[i]?.group === "Balances") ? [{ key: "z", desc: "$0 axis" }] : []),
+        { key: "a", desc: "account" },
         { key: "i", desc: "review" },
         { key: "/", desc: "search" },
         { key: "?", desc: "smart search" },
+        { key: "H/L", desc: "bottom chart" },
+        { key: "0", desc: "now" },
+        ...(state?.chartViews.some((i) => CHART_VIEWS[i]?.group === "Balances") ? [{ key: "z", desc: "$0 axis" }] : []),
         { key: "v", desc: "jump" },
         { key: "1-3", desc: "tab" },
       ]
@@ -1830,8 +1861,28 @@ const scopes: Record<ScopeId, ScopeEntry> = {
 
 export function scopeQuits(scope: ScopeId): boolean { return scopes[scope].quits }
 
+/** Every hint for a scope: the palette's commands; the footer shows
+ * footerShown's cut of them. */
 export function footerHints(scope: ScopeId, state?: HintState): { key: string; desc: string }[] {
   return scopes[scope].hints(state)
+}
+
+/** What the footer shows in a scope: its hints, cut to the first few and
+ * "ctrl+k all" where the palette opens. */
+export function footerLine(scope: ScopeId, state?: HintState): Hint[] {
+  return footerShown(footerHints(scope, state), scopes[scope].quits)
+}
+
+/** The state the hints read, from both stores. */
+export function hintState(ui: UiStore, data?: DataStore): HintState {
+  return {
+    focusedSection: ui.state.focusedSection, drillReturn: ui.state.drillReturn, chartViews: ui.state.chartViews,
+    uncategorisedOnly: data?.state.uncategorisedOnly, tagReview: !!data?.state.tagReview,
+    signInPaste: !!ui.state.llmSignIn?.paste, aiField: !!ui.state.aiDialog?.field,
+    ruleOffers: data && ui.state.activeTab === "manager" ? data.allRuleOffers().length : 0,
+    asks: !!data?.askCounts(), askLoose: data?.nearMissesShown(),
+    recallQuestion: !!smartQuestionFor(ui.state, ui.state.filterDraft),
+  }
 }
 
 /** The budget cycle as editor draft fields. */

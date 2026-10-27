@@ -1,9 +1,11 @@
-import { ErrorBoundary, Match, Switch, createEffect, createSignal, untrack, on, onCleanup, onMount } from "solid-js"
+import { ErrorBoundary, Match, Show, Switch, createEffect, createSignal, untrack, on, onCleanup, onMount } from "solid-js"
 import { useKeyboard, usePaste, useRenderer } from "@opentui/solid"
 import type { KeyEvent } from "@opentui/core"
-import { ui, smartQuestionFor } from "../state/uiStore"
+import { ui } from "../state/uiStore"
 import { data } from "../state/dataStore"
-import { footerHints, handleKey, scopeQuits, handlePaste } from "./keys"
+import { footerHints, footerLine, handleKey, hintState, scopeQuits, handlePaste } from "./keys"
+import { paletteEntries, scopeLabel } from "./palette"
+import { CommandPalette } from "../ui/primitives/CommandPalette"
 import { appNow } from "../domain/days"
 import { TabBar } from "../ui/primitives/TabBar"
 import { StatusBar } from "../ui/primitives/StatusBar"
@@ -126,7 +128,7 @@ export function App() {
         text={ui.state.jumpMode ? "Jump mode · press target letter" : ui.state.status}
         isErr={!ui.state.jumpMode && ui.state.statusErr}
       />
-      <Footer hints={footerHints(ui.activeScope(), { focusedSection: ui.state.focusedSection, drillReturn: ui.state.drillReturn, chartViews: ui.state.chartViews, uncategorisedOnly: data.state.uncategorisedOnly, tagReview: !!data.state.tagReview, signInPaste: !!ui.state.llmSignIn?.paste, aiField: !!ui.state.aiDialog?.field, ruleOffers: ui.state.activeTab === "manager" ? data.allRuleOffers().length : 0, asks: !!data.askCounts(), askLoose: data.nearMissesShown(), recallQuestion: !!smartQuestionFor(ui.state, ui.state.filterDraft) })} />
+      <Footer hints={footerLine(ui.activeScope(), hintState(ui, data))} />
       <JumpOverlay active={ui.state.jumpMode} tab={ui.state.activeTab} />
       <CatPicker />
       <TagChooser />
@@ -135,6 +137,11 @@ export function App() {
       <EditorOverlay />
       <SavedFilterPicker />
       <DryRunOverlay />
+      <Show when={ui.state.palette}>
+        {(palette: () => NonNullable<typeof ui.state.palette>) => (
+          <CommandPalette entries={paletteEntries(footerHints(palette().from, hintState(ui, data)), palette().query)} cursor={palette().cursor} query={palette().query} from={scopeLabel(palette().from)} />
+        )}
+      </Show>
     </box>
   )
 }

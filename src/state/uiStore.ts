@@ -31,6 +31,7 @@ export type SectionId =
   | "set.budgets"
 
 export type ScopeId =
+  | "palette"
   | "filterPicker"
   | "dryRun"
   | "jump"
@@ -87,6 +88,8 @@ export interface JumpTarget {
 
 export interface UiState {
   filterPicker: { query: string; cursor: number } | null
+  /** The command palette (ctrl+k), over the scope it was opened from. */
+  palette: { query: string; cursor: number; from: ScopeId } | null
   dryRunReport: DryRunReport | null
   dryRunScroll: number
   dryRunVisible: number
@@ -335,7 +338,7 @@ function createUiStore() {
     detailNotesEditing: false,
     detailNotesDraft: "",
     detailNotesCaret: 0,
-    filterPicker: null, dryRunReport: null, dryRunScroll: 0, dryRunVisible: 10,
+    filterPicker: null, palette: null, dryRunReport: null, dryRunScroll: 0, dryRunVisible: 10,
     settingsEditor: null,
     settingsEditId: null,
     settingsEditField: 0,
@@ -396,7 +399,7 @@ function createUiStore() {
       tagPickerOpen: false, tagPickerApplying: false, tagPickerPatch: {},
       rangeSelecting: false,
       settingsActive: false,
-      filterPicker: null, dryRunReport: null, dryRunScroll: 0, dryRunVisible: 10,
+      filterPicker: null, palette: null, dryRunReport: null, dryRunScroll: 0, dryRunVisible: 10,
       settingsEditor: null,
       armed: null,
       importStage: "none",
@@ -623,6 +626,7 @@ function createUiStore() {
   }
 
   function activeScope(): ScopeId {
+    if (state.palette) return "palette"
     if (state.filterPicker) return "filterPicker"
     if (state.dryRunReport) return "dryRun"
     if (state.jumpMode) return "jump"
