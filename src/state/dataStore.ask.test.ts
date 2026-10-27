@@ -112,3 +112,26 @@ test("session reset discards cached ASK verdicts and stops a pending run", async
   expect(data.state.asking).toBeNull()
   expect(shown()).toEqual([])
 })
+
+test("near misses: n shows rows Jev gave 30–70% too, scored; the border counts them; clearing the filter hides them again", async () => {
+  setup()
+  const db = data.getDb()!
+  db.query("INSERT INTO transactions (id, date_raw, date_iso, amount, description, account_id, source) VALUES (5, 'x', ?, -9, 'Tea House', 100, 'csv')").run(addDays(appToday(), -1))
+  data.refresh()
+  const ai: Pick<JevClient, "judge"> = { async judge(questions) {
+    return Object.fromEntries(Object.entries(questions).map(([id, q]) => {
+      const d = (q.instructions as { transaction: { description: string } }).transaction.description
+      return [id, { type: "noul" as const, noul: /coffee|espresso/i.test(d) ? 0.9 : /tea/i.test(d) ? 0.5 : 0.1 }]
+    }))
+  } }
+  data.commitFilter("ask:coffee")
+  expect(await data.askAbout(ai)).toStartWith('ask "coffee": 2 of 4 match, 1 near (n shows them)')
+  expect(shown()).toEqual(["Alba Coffee", "Espresso Bar"])
+  expect(data.askCounts()).toEqual({ matches: 2, near: 1 })
+  data.setAskLoose(true)
+  expect(shown()).toEqual(["Alba Coffee", "Espresso Bar", "Tea House"])
+  expect(data.askScore(5)).toBe(0.5)
+  expect(data.askScore(1)).toBe(0.9)
+  data.clearFilter()
+  expect(data.state.askLoose).toBe(false)
+})

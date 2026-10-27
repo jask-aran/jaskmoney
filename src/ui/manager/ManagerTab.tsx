@@ -4,7 +4,7 @@ import { SectionCard } from "../primitives/SectionCard"
 import { muted } from "../primitives/spans"
 import { S } from "../primitives/S"
 import { TextInput } from "../primitives/TextInput"
-import { ui, type SectionId } from "../../state/uiStore"
+import { smartQuestionFor, ui, type SectionId } from "../../state/uiStore"
 import { data } from "../../state/dataStore"
 import { theme } from "../../theme"
 import { filterExprString } from "../../domain/filter"
@@ -79,10 +79,16 @@ export function ManagerTab(props: { focused: SectionId }) {
     return a ? `asking Jev "${a.words}" ${a.judged}/${a.total}…` : null
   }
 
+  /** With ask: terms, how many match and how many more are near misses. */
+  const askNote = () => {
+    const c = data.askCounts()
+    if (!c || data.state.asking) return null
+    return data.state.askLoose ? `${c.matches} match + ${c.near} near` : c.near ? `${c.matches} match · ${c.near} near (n)` : null
+  }
+
   const scrollIndicator = () => {
-    const progress = asking()
-    const text = rowsIndicator()
-    return progress ? (text ? `${progress} · ${text}` : progress) : text
+    const text = [asking(), askNote(), rowsIndicator()].filter(Boolean).join(" · ")
+    return text || undefined
   }
 
   const rowsIndicator = () => {
@@ -123,11 +129,15 @@ export function ManagerTab(props: { focused: SectionId }) {
     const preview =
       data.filterPreview() ||
       (data.state.filterExpr ? filterExprString(data.state.filterExpr) : raw)
-    return { editing, raw, err, dotColor, dotLabel, preview }
+    // The question a smart search turned into this filter, while it still is that filter.
+    const question = smartQuestionFor(ui.state, raw)
+    return { editing, raw, err, dotColor, dotLabel, preview, question }
   }
 
+  /** The title names the filter: by its question when a smart search wrote it. */
   const filterTitle = () => {
     const fb = filterBar()
+    if (fb?.question) return `[?${truncate(fb.question, 47)}]`
     if (!fb?.preview) return undefined
     return `[${truncate(fb.preview, 48)}]`
   }
@@ -168,6 +178,7 @@ export function ManagerTab(props: { focused: SectionId }) {
               <S fg={theme.text}>{"  "}</S>
               <S fg={fb().dotColor}>●</S>
               <S fg={fb().dotColor}> {fb().dotLabel}</S>
+              {fb().question ? <S fg={theme.overlay1}>{fb().editing ? `  ↑ ?${fb().question}` : `  from ?${fb().question}`}</S> : null}
               {!fb().editing ? <S fg={theme.overlay1}>{ui.state.drillReturn ? "  (esc back · u clear)" : "  (esc clear)"}</S> : null}
             </text>
           )}
@@ -198,6 +209,7 @@ export function ManagerTab(props: { focused: SectionId }) {
           sortMark={sortMark}
           empty={data.state.uncategorisedOnly ? "Nothing to categorise" : data.state.filterQuery ? "No matches" : "Empty · no transactions loaded"}
           suggestions={data.state.uncategorisedOnly ? data.state.suggestions : undefined}
+          askScore={data.state.askLoose ? data.askScore : undefined}
         />
         </Show>
       </SectionCard>

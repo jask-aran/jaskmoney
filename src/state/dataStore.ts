@@ -56,6 +56,7 @@ import { createUpClient, readUpToken } from "../up/client"
 import { pushTransactions } from "../up/push"
 import { appToday, type WeekStart } from "../domain/days"
 import { askCandidates, ASK_DEFAULT_DAYS, ASK_LIMIT, judgeRows } from "../domain/ask"
+import { MATCH_AT, NEAR_AT } from "../domain/questions"
 import { addTagLink } from "../db/tagLinks"
 import { syncUp as runUpSync } from "../up/sync"
 import { dryRunRules as evaluateRules } from "../domain/rules"
@@ -83,6 +84,8 @@ export interface DataState {
   uncategorisedOnly: boolean
   /** Where each API key comes from, masked (`maskSecret`); never the key. */
   apiKeys: Record<CredentialName, { source: "saved" | "env" | null; mask: string }>
+  /** `ask:` terms also pass near misses (NEAR_AT up to MATCH_AT). */
+  askLoose: boolean
   /** Jev is judging rows for an `ask:` term. */
   asking: { words: string; judged: number; total: number } | null
   dbPath: string
@@ -157,6 +160,7 @@ function createDataStore() {
     suggestions: {},
     uncategorisedOnly: false,
     apiKeys: loadApiKeys(),
+    askLoose: false,
     asking: null,
     dbPath: "",
     accounts: [],
@@ -256,11 +260,16 @@ function createDataStore() {
     return transactions().filter((t) => t.accountId != null && ids.has(t.accountId))
   }))
 
-  /** Jev's verdicts on `ask:` terms for this session: words (lower-cased)
-   * → row id → match. Each new batch bumps `askVersion`. */
-  const askVerdicts = new Map<string, Map<number, boolean>>()
+  /** Jev's probabilities for `ask:` terms this session: words (lower-cased)
+   * → row id → how likely the row matches. Each new batch bumps `askVersion`. */
+  const askVerdicts = new Map<string, Map<number, number>>()
   const [askVersion, setAskVersion] = createSignal(0)
-  const askVerdict: AskVerdict<Transaction> = (words, t) => askVerdicts.get(words.toLowerCase())?.get(t.id)
+  /** A row matches at MATCH_AT, or with near misses shown, at NEAR_AT. */
+  const verdictAt = (at: number): AskVerdict<Transaction> => (words, t) => {
+    const p = askVerdicts.get(words.toLowerCase())?.get(t.id)
+    return p == null ? undefined : p >= at
+  }
+  const askVerdict: AskVerdict<Transaction> = (words, t) => verdictAt(state.askLoose ? NEAR_AT : MATCH_AT)(words, t)
   /** Bumped by each ask run and by clearing the filter; a run stops once it's stale. */
   let askRun = 0
 
@@ -278,6 +287,31 @@ function createDataStore() {
 
   /** The Uncategorised view's narrowing. */
   const inView = (t: Transaction) => !state.uncategorisedOnly || (isOrdinaryFlow(t) && isUncategorised(t))
+
+  /** How likely a row matches the filter's `ask:` terms: the lowest of its
+   * judged terms' probabilities (the one holding it back); undefined if none
+   * is judged. */
+  function askScore(id: number): number | undefined {
+    askVersion()
+    let low: number | undefined
+    for (const words of askTerms(state.filterExpr ? unwrap(state.filterExpr) : null)) {
+      const p = askVerdicts.get(words.toLowerCase())?.get(id)
+      if (p != null) low = low == null ? p : Math.min(low, p)
+    }
+    return low
+  }
+
+  /** With `ask:` terms: rows that match, and near misses (rows that pass
+   * only when near misses count). */
+  const askCounts = createRoot(() => createMemo(() => {
+    const expr = state.filterExpr ? unwrap(state.filterExpr) : null
+    if (!askTerms(expr).length) return null
+    askVersion()
+    const rows = accountScoped().filter(inView)
+    const matches = rows.filter((t) => evalFilter(expr, t, verdictAt(MATCH_AT))).length
+    const loose = rows.filter((t) => evalFilter(expr, t, verdictAt(NEAR_AT))).length
+    return { matches, near: loose - matches }
+  }))
 
   const filtered = createRoot(() => createMemo(() => {
     const expr = state.filterExpr ? unwrap(state.filterExpr) : null
@@ -330,6 +364,7 @@ function createDataStore() {
     askRun++
     setState({
       asking: null,
+      askLoose: false,
       filterQuery: "",
       filterExpr: null,
       filterErr: "",
@@ -467,7 +502,7 @@ function createDataStore() {
       // One term at a time: each verdict narrows the rows the next must judge.
       for (const words of terms) {
         const key = words.toLowerCase()
-        const known = askVerdicts.get(key) ?? new Map<number, boolean>()
+        const known = askVerdicts.get(key) ?? new Map<number, number>()
         askVerdicts.set(key, known)
         // Rows the rest of the filter allows, whatever Jev says about these words.
         const others: AskVerdict<Transaction> = (w, t) => w.toLowerCase() === key ? undefined : askVerdict(w, t)
@@ -477,17 +512,19 @@ function createDataStore() {
         setState({ asking: { words, judged: 0, total: todo.length } })
         await judgeRows(client, words, todo, {
           active: () => run === askRun,
-          onJudged: (verdicts) => {
+          onJudged: (scores) => {
             if (run !== askRun) return
-            for (const [id, match] of verdicts) known.set(id, match)
+            for (const [id, p] of scores) known.set(id, p)
             setAskVersion((v) => v + 1)
-            setState("asking", (a) => a && { ...a, judged: a.judged + verdicts.size })
+            setState("asking", (a) => a && { ...a, judged: a.judged + scores.size })
           },
           onError: (error) => failures.push(error instanceof Error ? error.message : String(error)),
         })
         if (run !== askRun) return ""
-        const matched = rows.filter((t) => known.get(t.id)).length
+        const matched = rows.filter((t) => (known.get(t.id) ?? 0) >= MATCH_AT).length
+        const near = rows.filter((t) => { const p = known.get(t.id) ?? 0; return p >= NEAR_AT && p < MATCH_AT }).length
         let part = `ask "${words}": ${matched} of ${rows.length} match`
+        if (near) part += `, ${near} near (n shows them)`
         if (skipped && !hasDateTerm(expr)) part += ` · judged the last ${ASK_DEFAULT_DAYS} days (add date: to look further)`
         else if (skipped) part += ` · judged the latest ${ASK_LIMIT} of ${rows.length + skipped}`
         parts.push(part)
@@ -778,6 +815,9 @@ function createDataStore() {
     categorizeTransactions,
     /** The Uncategorised view sorts by suggestion confidence, most sure
      * first; leaving it goes back to date order if it still was. */
+    askScore,
+    askCounts,
+    setAskLoose: (on: boolean) => setState({ askLoose: on }),
     setUncategorisedOnly: (on: boolean) => setState(on
       ? { uncategorisedOnly: true, sortColumn: "confidence", sortAscending: false }
       : { uncategorisedOnly: false, ...(state.sortColumn === "confidence" ? { sortColumn: "date" as const, sortAscending: false } : {}) }),

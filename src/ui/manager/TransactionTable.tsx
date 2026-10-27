@@ -1,5 +1,5 @@
 import { Index, Show, createMemo } from "solid-js"
-import { ACCEPT_ALL_AT } from "../../domain/questions"
+import { ACCEPT_ALL_AT, MATCH_AT } from "../../domain/questions"
 import { S } from "../primitives/S"
 import { fitSpans, spansWidth, type Span } from "../primitives/spans"
 import { categoryColor, isUncategorisedColor, theme } from "../../theme"
@@ -97,6 +97,15 @@ function confidenceColor(confidence: number): string {
   return confidence >= ACCEPT_ALL_AT ? theme.success : confidence >= 0.5 ? theme.warning : theme.overlay1
 }
 
+/** A category cell with how likely the row matches the `ask:` terms: a
+ * match's probability in green, a near miss's (≈) in amber. */
+function withAskScore(cell: CategoryCell, score: number | undefined, width: number): CategoryCell {
+  if (score == null) return cell
+  const near = score < MATCH_AT
+  const note = `${near ? "≈" : ""}${Math.round(score * 100)}%`.padStart(5)
+  return { ...cell, text: fit(cell.text.trimEnd(), width - 2 - note.length), note, noteColor: near ? theme.warning : theme.success }
+}
+
 /** A suggested category, in italics with its confidence (↺ when it comes
  * from history); or why there is none yet. */
 function formatSuggestion(suggestion: TableSuggestion | undefined, width: number): CategoryCell {
@@ -154,6 +163,9 @@ export function TransactionTable(props: {
   empty: string
   /** Given (the Uncategorised view): the Category column shows these instead. */
   suggestions?: Record<number, TableSuggestion>
+  /** Given (near misses shown): how likely each row matches the `ask:` terms,
+   * shown after its category. */
+  askScore?: (id: number) => number | undefined
 }) {
   const widest = createMemo(longest)
   const layout = createMemo(() => tableLayout(props.width, props.showAccount, props.showTags, widest()))
@@ -196,7 +208,7 @@ export function TransactionTable(props: {
               const tags = createMemo(() => formatTags(r().tagNames, r().tagColors, layout().tags))
               const category = createMemo(() => props.suggestions
                 ? formatSuggestion(props.suggestions[r().id], layout().category)
-                : formatCategory(r().categoryId, r().categoryName, r().categoryColor, layout().category))
+                : withAskScore(formatCategory(r().categoryId, r().categoryName, r().categoryColor, layout().category), props.askScore?.(r().id), layout().category))
               const strong = () => look().bold
               return (
                 <text width="100%" bg={rowBg()}>

@@ -11,11 +11,12 @@ import { anchorDraft, cycleFromDraft, editorFields, normaliseCycleDraft, pickerC
 import { runSync } from "./sync"
 import { runSmartSearch } from "./smartSearch"
 import { runAsk } from "./ask"
+import { askTerms } from "../domain/filter"
 import { AI_ROWS, testApiKey } from "./apiKeys"
 import { credentialEnv } from "../ai/credentials"
 import { runAccept, toggleUncategorised } from "./suggest"
-import { ACCEPT_ALL_AT } from "../domain/questions"
-import { CHART_VIEWS, JUMP_TARGETS, SETTINGS_SECTIONS, TABS, settingsSectionFocus, type ScopeId, type UiState, type UiStore } from "../state/uiStore"
+import { ACCEPT_ALL_AT, MATCH_AT } from "../domain/questions"
+import { CHART_VIEWS, JUMP_TARGETS, SETTINGS_SECTIONS, TABS, settingsSectionFocus, smartQuestionFor, type ScopeId, type UiState, type UiStore } from "../state/uiStore"
 import type { DataStore } from "../state/dataStore"
 import {
   CUSTOM_CHIP,
@@ -309,7 +310,16 @@ function handleCatPicker(ui: UiStore, key: KeyEvent, data?: DataStore): void {
 
 function handleFilter(ui: UiStore, key: KeyEvent, data?: DataStore): void {
   const { name } = key
+  // ↑ on a smart search's filter brings its question back, to reword it.
+  const question = smartQuestionFor(ui.state, ui.state.filterDraft)
+  if (name === "up" && question) {
+    const draft = `?${question}`
+    ui.setState({ filterDraft: draft, filterCaret: draft.length })
+    ui.setStatus("Reword the question · enter asks again")
+    return
+  }
   if (name === "escape") {
+    ui.setState({ smartQuestion: null })
     ui.closeFilter(false)
     data?.clearFilter()
     resetTransactionCursors(ui, data)
@@ -852,6 +862,15 @@ function handleManagerTxns(ui: UiStore, key: KeyEvent, data?: DataStore): void {
   // Step through the accounts pane from the table.
   if (name === "a" && !key.shift && data) { stepAccount(ui, data); return }
   if (name === "m") { ui.setState({ txnView: "merchants", merchantCursor: 0, merchantTop: 0 }); ui.setStatus("Grouped by merchant · m for rows"); return }
+  // With ask: terms, n shows near misses too (rows Jev hasn't settled).
+  if (name === "n" && !key.shift && data && askTerms(data.state.filterExpr).length) {
+    const on = !data.state.askLoose
+    data.setAskLoose(on)
+    ui.jumpManagerCursor(0, data.scopedTransactions().length)
+    const counts = data.askCounts()
+    ui.setStatus(on ? `Near misses shown · ${counts?.near ?? 0} below ${MATCH_AT * 100}% · n hides them` : "Matches only")
+    return
+  }
   // The Uncategorised view: rows waiting for a category, with suggestions
   // to accept (y: these rows, Y: every confident one) or dismiss (x).
   if (name === "i" && !key.shift && data) { toggleUncategorised(ui, data); return }
@@ -1238,6 +1257,11 @@ function drillDown(ui: UiStore, data: DataStore, line?: CategoryLine) {
 type HintState = Pick<UiState, "focusedSection" | "drillReturn" | "chartViews"> & {
   /** From the data store: the Transactions table is the Uncategorised view. */
   uncategorisedOnly?: boolean
+  /** In the filter: ↑ would bring back the smart search's question. */
+  recallQuestion?: boolean
+  /** The filter has `ask:` terms; whether near misses are shown. */
+  asks?: boolean
+  askLoose?: boolean
 }
 type ScopeEntry = {
   handle: (ui: UiStore, key: KeyEvent, data?: DataStore) => void
@@ -1287,11 +1311,12 @@ const scopes: Record<ScopeId, ScopeEntry> = {
   "filter": {
     handle: handleFilter,
     quits: false,
-    hints: () => [
+    hints: (state) => [
       { key: "enter", desc: "apply" },
       { key: "esc", desc: "clear" },
       { key: "type", desc: "expr" },
       { key: "?…", desc: "ask in words" },
+      ...(state?.recallQuestion ? [{ key: "↑", desc: "your question" }] : []),
     ],
   },
   "manager.detail": {
@@ -1430,6 +1455,7 @@ const scopes: Record<ScopeId, ScopeEntry> = {
       { key: "enter", desc: "detail" },
       { key: "j/k", desc: "move" },
       { key: "i", desc: "uncategorised" },
+      ...(state?.asks ? [{ key: "n", desc: state.askLoose ? "matches only" : "near misses" }] : []),
       { key: "m", desc: "merchants" },
       { key: "a", desc: "account" },
       { key: "S-j/k", desc: "range" },

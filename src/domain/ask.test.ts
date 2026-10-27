@@ -1,7 +1,7 @@
 import { describe, expect, test } from "bun:test"
 import type { JevQuestion } from "../ai/jev"
 import { askCandidates, ASK_LIMIT, judgeRows } from "./ask"
-import { MATCH_AT } from "./questions"
+import { MATCH_AT, NEAR_AT } from "./questions"
 import { askTerms, evalFilter, filterExprString, hasDateTerm, mightMatch, parseFilterStrict, type AskVerdict, type FilterTxn } from "./filter"
 import { transaction } from "../testing/fixtures"
 
@@ -52,7 +52,7 @@ describe("asking Clef", () => {
     expect(askCandidates(many, "2026-10-27", true).rows[0]!.id).toBe(ASK_LIMIT + 3)
   })
 
-  test("each row is its own question, the transaction inline with its category; the words are the state; a match is 0.7 or more", async () => {
+  test("each row is its own question, the transaction inline with its category; the words are the state; Jev's probability comes back", async () => {
     const rows = [transaction({ id: 1, description: "Alba Coffee", categoryId: 4, categoryName: "Restaurants & Cafes" }), transaction({ id: 2, description: "Bunnings" }), transaction({ id: 3, description: "Maybe" })]
     const sent: { qs: Record<string, JevQuestion>; state: unknown }[] = []
     const jev = { async judge(qs: Record<string, JevQuestion>, state: unknown) {
@@ -60,13 +60,14 @@ describe("asking Clef", () => {
       const p = (q: JevQuestion) => { const d = (q.instructions as { transaction: { description: string } }).transaction.description; return d === "Alba Coffee" ? 0.9 : d === "Maybe" ? 0.6 : 0.1 }
       return Object.fromEntries(Object.entries(qs).map(([id, q]) => [id, { type: "noul" as const, noul: p(q) }]))
     } }
-    const verdicts = new Map<number, boolean>()
-    await judgeRows(jev, "coffee", rows, { onJudged: (v) => v.forEach((m, id) => verdicts.set(id, m)) })
+    const scores = new Map<number, number>()
+    await judgeRows(jev, "coffee", rows, { onJudged: (v) => v.forEach((p, id) => scores.set(id, p)) })
     expect(sent).toHaveLength(1)
     expect(sent[0]!.state).toEqual({ search: "coffee" })
     expect(Object.values(sent[0]!.qs)[0]).toMatchObject({ type: "noul", instructions: { transaction: { description: "Alba Coffee", category: "Restaurants & Cafes" } } })
-    expect([...verdicts]).toEqual([[1, true], [2, false], [3, false]])
-    expect(MATCH_AT).toBe(0.7)
+    // Probabilities, read by the store against MATCH_AT (and NEAR_AT for near misses).
+    expect([...scores]).toEqual([[1, 0.9], [2, 0.1], [3, 0.6]])
+    expect([MATCH_AT, NEAR_AT]).toEqual([0.7, 0.3])
   })
 
   test("a failed request is reported and the rest carry on", async () => {

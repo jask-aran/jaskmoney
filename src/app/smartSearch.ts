@@ -20,7 +20,7 @@ export async function runSmartSearch(ui: UiStore, data: DataStore, draft: string
     const ai = { clairic: hasWorkersAi() ? createWorkersAiClient(readWorkersAiCredentials()).clairic : undefined, jev: jevClient() }
     const { expr, clairic } = await smartSearch(ai, query, { today: appToday(), cycle: data.cycle(), categories: data.state.categories })
     if (!ui.state.filterMode || ui.state.filterDraft !== draft) return
-    ui.setState({ filterDraft: expr, filterCaret: expr.length })
+    ui.setState({ filterDraft: expr, filterCaret: expr.length, smartQuestion: { question: query, expr } })
     data.setFilterLive(expr)
     onApplied()
     // Without Clairic the words are Jev's pick and written dates are not read.

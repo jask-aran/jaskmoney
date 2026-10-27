@@ -188,6 +188,10 @@ export interface UiState {
   importPreviewShowAll: boolean
   importPreviewRules: boolean
   accountActionId: number | null
+  /** The last smart search: the question asked and the filter it became.
+   * It describes the filter only while the filter is still that expression
+   * (`smartQuestionFor`). */
+  smartQuestion: { question: string; expr: string } | null
   /** Accept-all's preview: the rows it would categorise, until confirmed. */
   acceptPreview: number[] | null
   factoryResetOpen: boolean
@@ -324,6 +328,7 @@ function createUiStore() {
     importPreviewShowAll: false,
     importPreviewRules: true,
     accountActionId: null,
+    smartQuestion: null,
     acceptPreview: null,
     factoryResetOpen: false,
     factoryResetDraft: "",
@@ -653,3 +658,10 @@ function createUiStore() {
 
 export type UiStore = ReturnType<typeof createUiStore>
 export const ui = createUiStore()
+
+/** The smart-search question behind `filter` (the draft or applied text),
+ * if it is still exactly the expression that question produced. */
+export function smartQuestionFor(state: Pick<UiState, "smartQuestion">, filter: string): string | null {
+  const q = state.smartQuestion
+  return q && filter.trim() === q.expr.trim() ? q.question : null
+}

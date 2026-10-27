@@ -1,7 +1,7 @@
 import { ErrorBoundary, Match, Switch, createEffect, createSignal, untrack, on, onCleanup, onMount } from "solid-js"
 import { useKeyboard, usePaste, useRenderer } from "@opentui/solid"
 import type { KeyEvent } from "@opentui/core"
-import { ui } from "../state/uiStore"
+import { ui, smartQuestionFor } from "../state/uiStore"
 import { data } from "../state/dataStore"
 import { footerHints, handleKey, scopeQuits, handlePaste } from "./keys"
 import { appNow } from "../domain/days"
@@ -125,7 +125,7 @@ export function App() {
         text={ui.state.jumpMode ? "Jump mode · press target letter" : ui.state.status}
         isErr={!ui.state.jumpMode && ui.state.statusErr}
       />
-      <Footer hints={footerHints(ui.activeScope(), { focusedSection: ui.state.focusedSection, drillReturn: ui.state.drillReturn, chartViews: ui.state.chartViews, uncategorisedOnly: data.state.uncategorisedOnly })} />
+      <Footer hints={footerHints(ui.activeScope(), { focusedSection: ui.state.focusedSection, drillReturn: ui.state.drillReturn, chartViews: ui.state.chartViews, uncategorisedOnly: data.state.uncategorisedOnly, asks: !!data.askCounts(), askLoose: data.state.askLoose, recallQuestion: !!smartQuestionFor(ui.state, ui.state.filterDraft) })} />
       <JumpOverlay active={ui.state.jumpMode} tab={ui.state.activeTab} />
       <CatPicker />
       <TagPicker />

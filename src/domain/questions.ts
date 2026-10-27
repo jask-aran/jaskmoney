@@ -68,6 +68,9 @@ export const matchState = (words: string) => ({ search: words })
 /** A row matches at this probability or more. Jev's Noul runs high on
  * near-misses here; 0.7 (TypeSafe's suggested "yes") scored best. */
 export const MATCH_AT = 0.7
+/** From here up to MATCH_AT a row is a near miss: Jev hasn't settled it
+ * (TypeSafe's suggested "no" is below 0.3). */
+export const NEAR_AT = 0.3
 
 export function matchQuestion(t: Transaction): JevQuestion {
   return {

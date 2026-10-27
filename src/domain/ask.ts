@@ -1,6 +1,6 @@
 import { judgeEach, type JevClient } from "../ai/jev"
 import { addDays } from "./days"
-import { MATCH_AT, matchQuestion, matchState } from "./questions"
+import { matchQuestion, matchState } from "./questions"
 import type { Transaction } from "./types"
 
 /**
@@ -26,22 +26,22 @@ export function askCandidates(rows: Transaction[], today: string, datedFilter: b
 }
 
 /**
- * Ask Jev whether each row matches `words`. `onJudged` gets each request's
- * verdicts as it lands; a failed request goes to `onError` and the rest
- * carry on.
+ * Ask Jev how likely each row matches `words` (0–1; MATCH_AT and NEAR_AT
+ * read it). `onJudged` gets each request's probabilities as it lands; a
+ * failed request goes to `onError` and the rest carry on.
  */
 export async function judgeRows(
   jev: Pick<JevClient, "judge">,
   words: string,
   rows: Transaction[],
-  options: { onJudged?: (verdicts: Map<number, boolean>) => void; onError?: (error: unknown) => void; active?: () => boolean } = {},
+  options: { onJudged?: (scores: Map<number, number>) => void; onError?: (error: unknown) => void; active?: () => boolean } = {},
 ): Promise<void> {
   await judgeEach(jev, rows, matchQuestion, matchState(words), {
     active: options.active,
     onAnswers: (answers) => {
-      const verdicts = new Map<number, boolean>()
-      for (const [t, a] of answers) if (a.type === "noul") verdicts.set(t.id, a.noul >= MATCH_AT)
-      options.onJudged?.(verdicts)
+      const scores = new Map<number, number>()
+      for (const [t, a] of answers) if (a.type === "noul") scores.set(t.id, a.noul)
+      options.onJudged?.(scores)
     },
     onError: (error) => options.onError?.(error),
   })
