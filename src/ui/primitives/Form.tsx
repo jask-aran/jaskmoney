@@ -18,9 +18,9 @@ export function Form(props: { fields: FormField[]; cursor: number; caret: number
         {(field, i) => {
           const focused = () => i() === props.cursor
           return (
-            <text wrapMode="none">
-              <S fg={theme.accent} bold>{focused() ? "› " : "  "}</S>
-              <S fg={focused() ? theme.text : theme.subtext0} bold={focused()}>{field.label.padEnd(labelWidth())}</S>
+            <text wrapMode="none" bg={focused() ? theme.rowCursor : undefined}>
+              <S bg={focused() ? theme.rowCursor : undefined}>{" "}</S>
+              <S fg={focused() ? theme.text : theme.subtext0} bg={focused() ? theme.rowCursor : undefined} bold={focused()}>{field.label.padEnd(labelWidth())}</S>
               <Show when={focused() && (field.kind === "choice" || field.kind === "toggle")}>
                 <S fg={theme.accent}>{"‹ "}</S>
               </Show>

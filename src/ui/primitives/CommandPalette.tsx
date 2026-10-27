@@ -78,10 +78,10 @@ export function CommandPalette(props: { commands: Command[]; cursor: number; que
           const label = () => truncate(command.label, Math.max(8, inner() - right().length - 2))
           // The description fills what's left, a space short of the right column.
           const rest = () => Math.max(0, inner() - label().length - right().length - 1)
-          const fg = () => at() ? theme.crust : command.disabled ? theme.overlay0 : theme.text
-          const muted = () => at() ? theme.crust : theme.overlay0
+          const fg = () => command.disabled ? theme.overlay0 : theme.text
+          const muted = () => at() ? theme.subtext0 : theme.overlay0
           return (
-            <box paddingLeft={INSET} paddingRight={INSET} backgroundColor={at() ? theme.accent : theme.mantle}>
+            <box paddingLeft={INSET} paddingRight={INSET} backgroundColor={at() ? theme.rowCursor : theme.mantle}>
               <text wrapMode="none">
                 <S fg={fg()} bold={at()}>{label()}</S>
                 <S fg={muted()}>{fit(detail() ? ` ${detail()}` : "", rest())}</S>

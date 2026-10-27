@@ -292,7 +292,7 @@ export function AiDialog() {
                 <>
                   <For each={actions()}>{(action, i) => {
                     const here = () => i() === Math.min(d().cursor, actions().length - 1)
-                    return <text wrapMode="none"><S fg={theme.accent} bold>{here() ? "› " : "  "}</S><S fg={action.id === "remove" ? theme.error : here() ? theme.text : theme.subtext0} bold={here()}>{action.id === "remove" && here() && d().armed ? "Press enter again to remove" : action.label}</S></text>
+                    return <ListRow cursor={here()} bg={theme.mantle} spans={[{ text: action.id === "remove" && here() && d().armed ? "Press enter again to remove" : action.label, fg: action.id === "remove" ? theme.error : here() ? theme.text : theme.subtext0 }]} />
                   }}</For>
                   <Show when={at() && aiActionHint(d().row, at()!.id, ctx())}>
                     <text> </text>

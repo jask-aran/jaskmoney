@@ -330,12 +330,11 @@ export function ManagerTab(props: { focused: SectionId }) {
             const at = () => ruleTop() + i() === ui.state.ruleOfferCursor
             return (
               <>
-                <text wrapMode="none">
-                  <S fg={at() ? theme.accent : theme.overlay1}>{at() ? "> " : "  "}</S>
-                  <S fg={theme.text}>{fit(offer.description, 34)}</S>
-                  <S fg={theme.overlay1}>{" → "}</S>
-                  <S fg={tag()?.color ?? category()?.color ?? theme.text}>{offer.tagId != null ? fit(`+${tag()?.name ?? "?"}`, 32) : `${categoryMark(offer.categoryId)} ${fit(category()?.name ?? "?", 30)}`}</S>
-                </text>
+                <ListRow cursor={at()} bg={theme.mantle} spans={[
+                  { text: ` ${fit(offer.description, 34)}`, fg: theme.text },
+                  { text: " → ", fg: theme.overlay1 },
+                  { text: offer.tagId != null ? fit(`+${tag()?.name ?? "?"}`, 32) : `${categoryMark(offer.categoryId)} ${fit(category()?.name ?? "?", 30)}`, fg: tag()?.color ?? category()?.color ?? theme.text },
+                ]} />
                 <text wrapMode="none" fg={theme.overlay1}>{fit(`    ${offer.source === "ai" ? `AI · ${offer.expr}` : `you chose it ${offer.times}×`} · ${offer.agreeing} of ${offer.categorised} found are there${offer.waiting.length ? ` · ${offer.waiting.length} waiting` : ""}`, 72)}</text>
                 <Show when={offer.why}>
                   <text wrapMode="none" fg={theme.subtext0}>{fit(`    ${offer.why}`, 72)}</text>
@@ -347,7 +346,7 @@ export function ManagerTab(props: { focused: SectionId }) {
             )
           }}</For>
           <Show when={hasLlm() && ruleOffers().length >= ruleTop() && ruleOffers().length < ruleTop() + RULE_LINES}>
-            <text wrapMode="none" fg={ui.state.ruleOfferCursor === ruleOffers().length ? theme.accent : theme.text}>{`${ui.state.ruleOfferCursor === ruleOffers().length ? "> " : "  "}${data.state.writingRules ? `Asking ${llmModelId()}…` : "Ask the AI for more rules"}`}</text>
+            <ListRow cursor={ui.state.ruleOfferCursor === ruleOffers().length} bg={theme.mantle} spans={[{ text: ` ${data.state.writingRules ? `Asking ${llmModelId()}…` : "Ask the AI for more rules"}`, fg: theme.accent }]} />
           </Show>
           <Show when={ruleOffers().length + (hasLlm() ? 1 : 0) > RULE_LINES}>
             <text fg={theme.overlay1}>{`  ${ruleTop() + 1}–${Math.min(ruleTop() + RULE_LINES, ruleOffers().length + (hasLlm() ? 1 : 0))} of ${ruleOffers().length + (hasLlm() ? 1 : 0)}`}</text>

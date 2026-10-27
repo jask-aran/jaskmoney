@@ -1,24 +1,28 @@
 import { Index } from "solid-js"
 import { theme } from "../../theme"
+import { rowAppearance } from "../../domain/rowStyle"
 import type { Span } from "./spans"
 import { S } from "./S"
 
 /**
- * One row of a list, in a pane or a dialog: the cursor marker (the Go app's
- * "> ", bold accent), then the row's spans, every cell on one background:
- * the cursor's, else the list's own (`bg`: canvas in a pane, mantle in a
- * dialog). Clipped at the end rather than wrapped. An armed row (`armed`,
- * state/armed) says what its key does again, in red, in place of its spans.
+ * One row of a list, in a pane or a dialog: the row's spans after a
+ * one-column inset, on the Transactions table's washes (rowAppearance):
+ * the cursor row bold on rowCursor, a selected one on rowSelected, else the
+ * list's own background (`bg`: canvas in a pane, mantle in a dialog), the
+ * wash across the whole row. Clipped at the end rather than wrapped. An
+ * armed row (`armed`, state/armed) says what its key does again, in red,
+ * in place of its spans.
  */
 /** `id`: for a scrolling parent to bring the row into view. */
-export function ListRow(props: { cursor: boolean; bg: string; spans: Span[]; armed?: string; id?: string }) {
-  const bg = () => (props.cursor ? theme.surface0 : props.bg)
+export function ListRow(props: { cursor: boolean; selected?: boolean; bg: string; spans: Span[]; armed?: string; id?: string }) {
+  const look = () => rowAppearance(!!props.selected, false, props.cursor)
+  const bg = () => look().bg ?? props.bg
   const spans = (): Span[] => props.armed ? [{ text: props.armed, fg: theme.error, bold: true }] : props.spans
   return (
-    <box id={props.id} width="100%" height={1} overflow="hidden">
+    <box id={props.id} width="100%" height={1} overflow="hidden" backgroundColor={bg()}>
       <text bg={bg()} wrapMode="none">
-        <S fg={props.armed ? theme.error : theme.accent} bg={bg()} bold>{props.cursor ? "> " : "  "}</S>
-        <Index each={spans()}>{(span) => <S fg={span().fg} bg={bg()} bold={span().bold}>{span().text}</S>}</Index>
+        <S bg={bg()}>{" "}</S>
+        <Index each={spans()}>{(span) => <S fg={look().fg ?? span().fg} bg={bg()} bold={span().bold || look().bold}>{span().text}</S>}</Index>
       </text>
     </box>
   )

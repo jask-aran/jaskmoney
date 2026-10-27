@@ -3,6 +3,7 @@ import { SectionCard } from "../primitives/SectionCard"
 import { S } from "../primitives/S"
 import { data } from "../../state/dataStore"
 import { theme } from "../../theme"
+import { rowAppearance } from "../../domain/rowStyle"
 import { formatMoney } from "../../domain/dashboard"
 import { accountStacks, type AccountStack } from "../../domain/accountTree"
 import { accountMark } from "../icons"
@@ -63,11 +64,14 @@ export function AccountsPane(props: { focused: boolean; width: number }) {
     const row = stack.rows[index - 1]
     if (!row) return [{ text: " ".repeat(width()), fg: theme.text }]
     const current = row.selection === data.state.accountSelection
+    // The chosen account: the cursor wash while the pane has focus (its
+    // bold name marks it otherwise).
+    const look = rowAppearance(false, false, current && props.focused)
     return line([
-      { text: current ? "▸ " : "  ", fg: theme.accent, bold: true },
+      { text: " ", fg: theme.text },
       { text: mark(row.kind), fg: row.kind === "savers" ? theme.success : theme.lavender },
       { text: row.label, fg: current ? theme.text : theme.subtext0, bold: current },
-    ], { text: money(row.balance), fg: row.balance != null && row.balance < 0 ? theme.error : theme.subtext1 }, current && props.focused ? theme.surface0 : theme.canvas)
+    ], { text: money(row.balance), fg: row.balance != null && row.balance < 0 ? theme.error : theme.subtext1 }, look.bg ?? theme.canvas)
   }
 
   return (

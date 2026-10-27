@@ -194,7 +194,7 @@ test("ctrl+k inside a picker still moves its cursor", () => {
   handleKey(ui, key("escape"), data)
 })
 
-test("the palette renders like opencode's: search line, bold group headings, a solid accent bar on the cursor, keys at the right", async () => {
+test("the palette renders like opencode's: search line, bold group headings, the cursor wash on the cursor row, keys at the right", async () => {
   const t = await renderApp({ width: 140, height: 50 })
   try {
     setup()
@@ -207,8 +207,8 @@ test("the palette renders like opencode's: search line, bold group headings, a s
     expect(frame).not.toContain("Can't run")
     const spans = t.captureSpans().lines.flatMap((l) => l.spans)
     const bar = spans.find((s) => s.text.startsWith("Categorise…"))!
-    expect(bar.bg.toInts()).toEqual(RGBA.fromHex(theme.accent).toInts())
-    expect(bar.fg.toInts()).toEqual(RGBA.fromHex(theme.crust).toInts())
+    expect(bar.bg.toInts()).toEqual(RGBA.fromHex(theme.rowCursor).toInts())
+    expect(bar.fg.toInts()).toEqual(RGBA.fromHex(theme.text).toInts())
     const heading = spans.find((s) => s.text === "Transactions" && s.fg.toInts().join() === RGBA.fromHex(theme.accent).toInts().join())
     expect(heading).toBeDefined()
     // Typed: one list, each row naming its group; what can't run is last, dimmed, with why.

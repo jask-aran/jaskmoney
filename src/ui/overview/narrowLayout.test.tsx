@@ -93,7 +93,7 @@ for (const [width, height, wide] of [[80, 30, false], [80, 45, false], [89, 60, 
         t.mockInput.pressKey("j")
         await settle()
         expect(ui.state.overviewCategoryCursor).toBe(1)
-        const cursor = t.captureSpans().lines.flatMap((line) => line.spans).find((s) => s.text.includes("Category") && s.bg.toInts().join() === RGBA.fromHex(theme.surface0).toInts().join())
+        const cursor = t.captureSpans().lines.flatMap((line) => line.spans).find((s) => s.text.includes("Category") && s.bg.toInts().join() === RGBA.fromHex(theme.rowCursor).toInts().join())
         expect(cursor).toBeDefined()
         expect(cursor!.attributes & TextAttributes.BOLD).toBe(TextAttributes.BOLD)
       }

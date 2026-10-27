@@ -21,11 +21,12 @@ test("the AI models dialog: status, actions with the cursor, the hint for the ac
   expect(frame).toContain("Connection  signed in with the browser")
   expect(frame).toContain("Model       meta/muse-spark-1.3-contributor (default) · xhigh effort")
   expect(frame).toContain("Used for    writing rules (R, then a) · in use")
-  expect(frame).toContain("› Sign in again with the browser")
+  expect(frame).toContain("Sign in again with the browser")
   expect(frame).toContain("Remove the saved key, model and sign-in")
   expect(frame).toContain("the last stays active until you delete it on openrouter.ai")
-  // The remove action reads as destructive.
+  // The remove action reads as destructive; the cursor row has the wash.
   const spans = rendered.captureSpans().lines.flatMap((l) => l.spans)
+  expect(spans.find((s) => s.text.includes("Sign in again"))!.bg.toInts()).toEqual(RGBA.fromHex(theme.rowCursor).toInts())
   expect(spans.find((s) => s.text.includes("Remove the saved key"))!.fg.toInts()).toEqual(RGBA.fromHex(theme.error).toInts())
 
   ui.setState({ llmSignIn: { provider: "openrouter", url: "https://openrouter.ai/auth?callback_url=http%3A%2F%2F127.0.0.1%3A40000%2Fcallback&code_challenge=abc", message: "Your browser should open; finish signing in there.", paste: null } })
@@ -34,6 +35,6 @@ test("the AI models dialog: status, actions with the cursor, the hint for the ac
   expect(frame).toContain("Your browser should open; finish signing in there.")
   expect(frame).toContain("If it didn't open, open this address:")
   expect(frame).toContain("https://openrouter.ai/auth?callback_url=")
-  expect(frame).not.toContain("› Sign in again")
+  expect(frame).not.toContain("Sign in again")
   expect(frame).toContain("esc cancel")
 })

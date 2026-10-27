@@ -55,6 +55,26 @@ export const theme = {
   error: "#f38ba8",
   warning: "#f9e2af",
   info: "#94e2d5",
+
+  // Row states, every list (domain/rowStyle): the Transactions table's
+  // washes. Cursor, selection and range are independent; a cursor on a
+  // selected or ranged row is a bright bar with dark text.
+  /** The cursor row (bold). */
+  rowCursor: "#585b70", // surface2
+  /** A selected row. */
+  rowSelected: "#313244", // surface0
+  /** A row in the range being marked. */
+  rowRange: "#1e1e2e", // base
+  /** Selected and in the range. */
+  rowSelectedRange: "#45475a", // surface1
+  /** The cursor on a selected row. */
+  rowCursorSelected: "#89b4fa", // blue
+  /** The cursor on a row in the range. */
+  rowCursorRange: "#74c7ec", // sapphire
+  /** The cursor on a selected row in the range. */
+  rowCursorSelectedRange: "#f5c2e7", // pink
+  /** Text on the bright cursor bars. */
+  rowCursorText: "#11111b", // crust
 } as const
 
 /** Uncategorised / muted category label (Go overlay1). */

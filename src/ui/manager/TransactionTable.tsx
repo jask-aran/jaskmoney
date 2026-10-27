@@ -239,7 +239,7 @@ export function TransactionTable(props: {
               const line = createMemo((): StyledSpan[] => {
                 const bg = rowBg(), bold = strong(), cat = category(), catBold = bold && (!cat.muted || !!look().fg)
                 return [
-                  { text: isCursor() ? ">" : selected() ? "*" : near() ? "≈" : " ", fg: fg(theme.accent), bg, bold },
+                  { text: selected() ? "*" : near() ? "≈" : " ", fg: fg(theme.accent), bg, bold },
                   { text: fmtDate(r().dateISO).padEnd(columns.date), fg: faint(theme.mutedText), bg, bold },
                   { text: " ".repeat(columns.gap), fg: fg(theme.text), bg, bold },
                   { text: formatMoney(r().amount).padEnd(columns.amount - 2), fg: faint(amountColor(r().amount)), bg, bold, italic: held() },

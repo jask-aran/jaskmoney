@@ -26,11 +26,11 @@ export function rowAppearance(selected: boolean, highlighted: boolean, isCursor:
  * same appearance back and redraws nothing. Index: cursor·4 + selected·2 + range. */
 const LOOKS: readonly RowAppearance[] = [
   { bg: null, fg: null, bold: false },
-  { bg: theme.base, fg: null, bold: false },
-  { bg: theme.surface0, fg: null, bold: false },
-  { bg: theme.surface1, fg: null, bold: false },
-  { bg: theme.surface2, fg: null, bold: true },
-  { bg: theme.sapphire, fg: theme.crust, bold: true },
-  { bg: theme.blue, fg: theme.crust, bold: true },
-  { bg: theme.accent, fg: theme.crust, bold: true },
+  { bg: theme.rowRange, fg: null, bold: false },
+  { bg: theme.rowSelected, fg: null, bold: false },
+  { bg: theme.rowSelectedRange, fg: null, bold: false },
+  { bg: theme.rowCursor, fg: null, bold: true },
+  { bg: theme.rowCursorRange, fg: theme.rowCursorText, bold: true },
+  { bg: theme.rowCursorSelected, fg: theme.rowCursorText, bold: true },
+  { bg: theme.rowCursorSelectedRange, fg: theme.rowCursorText, bold: true },
 ]

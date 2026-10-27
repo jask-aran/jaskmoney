@@ -407,7 +407,7 @@ describe("shell render M0", () => {
     t.mockInput.pressEnter()
     await t.renderOnce()
     expect(t.captureCharFrame()).toContain("Press enter again to clear all transactions and imports")
-    const armed = t.captureSpans().lines.flatMap((line) => line.spans).find((span) => span.text.includes("> Press enter again"))!
+    const armed = t.captureSpans().lines.flatMap((line) => line.spans).find((span) => span.text.includes("Press enter again"))!
     expect(armed.fg.toInts()).toEqual(RGBA.fromHex(theme.error).toInts())
     expect(armed.attributes & TextAttributes.BOLD).toBe(TextAttributes.BOLD)
     t.mockInput.pressKey("k")

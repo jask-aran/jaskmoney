@@ -305,7 +305,7 @@ export function OverviewTab(props: { focused: SectionId }) {
           {(row) => {
             const line = () => row().line
             const cursor = () => row().cursor
-            const bg = () => cursor() ? theme.surface0 : undefined
+            const bg = () => cursor() ? theme.rowCursor : undefined
             return (
               <text wrapMode="none" bg={bg()}>
                 <S fg={line().color} bg={bg()}>{line().child ? "  " : ""}{`${categoryMark(line().categoryId)} `}</S>

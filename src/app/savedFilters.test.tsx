@@ -1,8 +1,9 @@
+import { theme } from "../theme"
 import { afterEach, beforeEach, expect, test } from "bun:test"
 import { mkdtempSync, writeFileSync } from "node:fs"
 import { join } from "node:path"
 import { tmpdir } from "node:os"
-import { TextAttributes } from "@opentui/core"
+import { RGBA, TextAttributes } from "@opentui/core"
 import { handleKey, footerHints } from "./keys"
 import { data } from "../state/dataStore"
 import { ui } from "../state/uiStore"
@@ -172,7 +173,7 @@ test("rule health and selection colours use captured cells; dry-run body scrolls
   const draw = async () => { await rendered!.renderOnce(); await rendered!.flush() }
   const span = (needle: string) => rendered!.captureSpans().lines.flatMap((line) => line.spans).find((span) => span.text.includes(needle))!
   await draw()
-  expect(span("Healthy").bg.toInts()).toEqual([49, 50, 68, 255])
+  expect(span("Healthy").bg.toInts()).toEqual(RGBA.fromHex(theme.rowCursor).toInts())
   expect(span("missing filter gone").fg.toInts()).toEqual([243, 139, 168, 255])
   expect(span("broken filter").fg.toInts()).toEqual([243, 139, 168, 255])
   expect(span("Disabled (off)").fg.toInts()).toEqual([127, 132, 156, 255])
@@ -180,7 +181,7 @@ test("rule health and selection colours use captured cells; dry-run body scrolls
   ui.setState({ ruleCursor: 1 })
   await draw()
   expect(span("Healthy").bg.toInts()).toEqual([17, 17, 27, 255])
-  expect(span("missing filter gone").bg.toInts()).toEqual([49, 50, 68, 255])
+  expect(span("missing filter gone").bg.toInts()).toEqual(RGBA.fromHex(theme.rowCursor).toInts())
 
   const report = data.dryRunRules()
   ui.setState({ dryRunReport: { ...report, rules: Array.from({ length: 12 }, (_, index) => ({ ...report.rules[0]!, rule: { ...report.rules[0]!.rule, name: `Scroll rule ${index + 1}` } })) }, dryRunScroll: 0 })

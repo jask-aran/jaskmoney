@@ -1,5 +1,5 @@
 import { afterEach, expect, test } from "bun:test"
-import { TextAttributes } from "@opentui/core"
+import { RGBA, TextAttributes } from "@opentui/core"
 import { createComponent } from "solid-js"
 import { testRender } from "@opentui/solid"
 import { handleKey, footerHints } from "../app/keys"
@@ -140,7 +140,7 @@ test("captured cells show staged mixed/all/none marks and preserve cursor colour
       expect(spans.some((s) => s.text.includes(mark))).toBe(true)
       const label = spans.find((s) => s.text.includes("COFFEE") && (s.attributes & TextAttributes.BOLD))!
       expect(label.fg.toInts()).toEqual([137, 180, 250, 255])
-      expect(label.bg.toInts()).toEqual([49, 50, 68, 255])
+      expect(label.bg.toInts()).toEqual(RGBA.fromHex(theme.rowCursor).toInts())
       expect(label.attributes & TextAttributes.BOLD).toBe(TextAttributes.BOLD)
     }
     await check("[-]")

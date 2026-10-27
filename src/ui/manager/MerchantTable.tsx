@@ -63,7 +63,7 @@ export function MerchantTable(props: {
               const catColor = () => categoryColor(muted() ? null : g().categoryColor)
               return (
                 <text width="100%" bg={bg()}>
-                  <S fg={fg(theme.accent)} bg={bg()} bold={look().bold}>{isCursor() ? ">" : " "}</S>
+                  <S fg={fg(theme.accent)} bg={bg()} bold={look().bold}>{" "}</S>
                   <S fg={fg(theme.brightText)} bg={bg()} bold={look().bold}>{fit(g().merchant, nameWidth())}</S>
                   <S bg={bg()}>{gap}</S>
                   <S fg={fg(amountColor(g().total))} bg={bg()} bold={look().bold}>{formatMoney(g().total).padStart(COLUMNS.total)}</S>
