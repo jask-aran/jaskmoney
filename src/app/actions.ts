@@ -48,6 +48,16 @@ export function toggleWeekStart(ui: UiStore, data: DataStore): void {
   ui.setStatus(data.state.weekStart === "sunday" ? "Weeks start on Sunday" : "Weeks start on Monday")
 }
 
+/** Demo mode on (made-up rows, the real database untouched) or off. */
+export function toggleDemo(ui: UiStore, data: DataStore): void {
+  try {
+    if (data.state.demo) { data.leaveDemo(); ui.setStatus("Demo mode off · your data") }
+    else ui.setStatus(`Demo mode: ${data.enterDemo().toLocaleString("en-AU")} made-up transactions over 3 years · your data is untouched · sync is off`)
+    resetTransactionCursors(ui, data)
+    ui.setState({ selectedIds: {}, rangeSelecting: false, detailId: null })
+  } catch (error) { reportError(ui, error) }
+}
+
 export function toggleXAxis(ui: UiStore, data: DataStore): void {
   data.saveUiPrefs({ xAxis: !data.state.uiPrefs.xAxis })
   ui.setStatus(data.state.uiPrefs.xAxis ? "Charts draw an x-axis line" : "Charts without an x-axis line")

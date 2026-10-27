@@ -146,7 +146,7 @@ function DatabasePane(props: { focused: boolean; height?: number | "auto" | `${n
     `v${info()?.schemaVersion ?? "—"}`, count(info()?.transactionCount ?? 0, "txn"), count(info()?.accountCount ?? 0, "account"),
     `${info()?.categoryCount ?? 0} categor${info()?.categoryCount === 1 ? "y" : "ies"}`, count(info()?.tagCount ?? 0, "tag"), count(info()?.ruleCount ?? 0, "rule"), count(info()?.importCount ?? 0, "import"),
   ].join(" · ")
-  const ctx = () => ({ icons: data.state.icons, weekStart: data.state.weekStart, xAxis: !!data.state.uiPrefs.xAxis, profiles: data.state.importProfiles.length })
+  const ctx = () => ({ icons: data.state.icons, weekStart: data.state.weekStart, xAxis: !!data.state.uiPrefs.xAxis, profiles: data.state.importProfiles.length, demo: data.state.demo })
   const summary = () => (["icons", "weekStart", "xAxis"] as const).map((row) => { const view = databaseRow(row, ctx()); return `${view.label} ${view.value}` }).join(" · ")
   // Fixed height: the counts and, while active, a row per action (else a
   // line of the settings), so a tight column shrinks the panes that scroll.

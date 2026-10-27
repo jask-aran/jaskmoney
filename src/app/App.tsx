@@ -112,7 +112,7 @@ export function App() {
           bar, the gap and the Date Range, which end short of it. */}
       <TabBar
         active={ui.state.activeTab}
-        accountLabel={[accountLabel(), syncLabel()].filter(Boolean).join(" · ")}
+        accountLabel={[data.state.demo ? "DEMO" : "", accountLabel(), data.state.demo ? "" : syncLabel()].filter(Boolean).join(" · ")}
         reserveRight={ui.state.activeTab === "overview" ? UP_LOGO_WIDTH : 0}
       />
       <box height={1} width="100%" backgroundColor={theme.canvas} />

@@ -16,6 +16,11 @@ export function syncConfigured(): boolean {
  * not overwrite whatever the status line is showing.
  */
 export async function runSync(ui: UiStore, data: DataStore, { manual }: { manual: boolean }): Promise<void> {
+  // Demo rows are made up: nothing goes to or comes from Up.
+  if (data.state.demo) {
+    if (manual) ui.setStatus("Demo mode: sync is off (Settings › Database & Import to leave)", true)
+    return
+  }
   if (!syncConfigured()) {
     if (manual) ui.setStatus(UP_TOKEN_SETUP, true)
     // Still suggest for waiting rows (CSV imports, or none suggested yet).

@@ -126,6 +126,8 @@ Settings › AI models has a row per model; `enter` opens its dialog (sign in, p
 
 All user data lives in `~/.jaskmoney` (owner-only): `transactions.db`, `settings.json`, `credentials.json` (the Up token and API keys) and `oauth.json` (browser sign-ins). `JASKMONEY_HOME` moves the directory; `JASKMONEY_DB` and `JASKMONEY_CONFIG` point at other files. The first start after upgrading copies data from the old places (`~/.config/jaskmoney-opentui`, `~/.local/share/jaskmoney-opentui`) and leaves them as they were.
 
+Demo mode (Settings › Database & Import › Demo mode) swaps in three years of made-up transactions patterned on yours: the same kinds of merchants, subscriptions, pay and saving, with plenty of noise. People, your employer, notes, messages and account names are replaced. The demo lives in `~/.jaskmoney/demo.db`, made afresh each time, and your database is left untouched; sync is off until you leave (enter on the row again, or restart).
+
 ### Up Bank sync (primary source)
 
 Up uses a Personal Access Token; there is no in-app login. Create one at <https://api.up.com.au>, then in Settings › Up Bank, `enter` on the Token row: enter (or paste) it, test it, or remove it (`enter` twice). It is saved owner-only in `~/.jaskmoney/credentials.json`; a `JASKMONEY_UP_TOKEN` environment variable also works, and the saved one wins.

@@ -7,7 +7,7 @@ export type { TagReview } from "./store/tagReview"
 import { createMemo, createRoot, createSignal } from "solid-js"
 import { createStore, reconcile, unwrap } from "solid-js/store"
 import { isDeepStrictEqual } from "node:util"
-import { existsSync, readFileSync, readdirSync, unlinkSync } from "node:fs"
+import { existsSync, mkdirSync, readFileSync, readdirSync, unlinkSync } from "node:fs"
 import { basename, join, resolve } from "node:path"
 import {
   loadAccounts,
@@ -58,7 +58,10 @@ import { type RuleOffer } from "../domain/ruleOffers"
 import { type LlmProvider } from "../ai/llm"
 import { signedIn } from "../ai/oauthStore"
 import { TAG_SHOW_AT } from "../domain/tagSuggest"
-import { appNow, type WeekStart } from "../domain/days"
+import { appNow, appToday, type WeekStart } from "../domain/days"
+import { demoProfile, generateDemo } from "../domain/demo"
+import { seedDemoDb } from "../db/demoSeed"
+import { jaskmoneyHome } from "../storage/home"
 import { MATCH_AT, NEAR_AT } from "../domain/questions"
 import { addTagLink, queueTagPush } from "../db/tagLinks"
 import { syncUp as runUpSync } from "../up/sync"
@@ -78,6 +81,9 @@ import { loadSettingsConfig, saveSettingsConfig, validateImportProfile, validate
 export interface DataState {
   ready: boolean
   upSyncing: boolean
+  /** Demo mode: the app is on a database of made-up rows (enterDemo); the
+   * real one is untouched, and sync is off. */
+  demo: boolean
   suggesting: boolean
   /** Rules the general model proposed this session (R's list, after the repeat offers). */
   aiRuleOffers: RuleOffer[]
@@ -170,6 +176,10 @@ export function showNearMisses(matches: number, near: number): boolean {
 /** How long the range, account and chart views sit still before they're written. */
 export const CONFIG_SETTLE_MS = 400
 
+/** Demo mode makes this many years of rows, the same ones each time. */
+const DEMO_YEARS = 3
+const DEMO_SEED = 20261027
+
 function createDataStore() {
   let db: Db | null = null
   let actualDbPath = ""
@@ -224,6 +234,7 @@ function createDataStore() {
   const initialState = (): DataState => ({
     ready: false,
     upSyncing: false,
+    demo: false,
     suggesting: false,
     aiRuleOffers: [],
     writingRules: false,
@@ -302,7 +313,44 @@ function createDataStore() {
   /** An Up client for the token in the environment now. */
   const upClient = () => createUpClient({ token: readUpToken() })
 
+  /** The real database, kept open while demo mode shows the made-up one,
+   * and the account the Transactions tab showed. */
+  let beforeDemo: { path: string; db: Db; selection: AccountSelection } | null = null
+
+  /** Demo mode on: made-up rows patterned on yours (domain/demo, anonymised),
+   * three years of them, in ~/.jaskmoney/demo.db (made afresh each time).
+   * Returns how many rows. */
+  function enterDemo(): number {
+    if (state.demo) return state.transactions.length
+    const demo = generateDemo(demoProfile(transactions(), state.categories, state.accounts), { today: appToday(), years: DEMO_YEARS, seed: DEMO_SEED })
+    const path = join(jaskmoneyHome(), "demo.db")
+    mkdirSync(jaskmoneyHome(), { recursive: true, mode: 0o700 })
+    seedDemoDb(path, demo, state.categories)
+    beforeDemo = { path: actualDbPath, db: db!, selection: state.accountSelection }
+    attach(path, openDb(path))
+    setState({ demo: true })
+    setAccountSelection("all")
+    return demo.transactions.length
+  }
+
+  /** Demo mode off: back on the real database, as it was. */
+  function leaveDemo(): void {
+    if (!state.demo || !beforeDemo) return
+    const was = beforeDemo
+    beforeDemo = null
+    db?.close()
+    attach(was.path, was.db)
+    setState({ demo: false })
+    setAccountSelection(was.selection)
+  }
+
   function init(dbPath?: string) {
+    const path = dbPath ?? defaultDbPath()
+    attach(path, openDb(path))
+  }
+
+  /** Point the store at an open database and load it (and the settings). */
+  function attach(path: string, handle: Db) {
     setUndoStack([])
     setLastRepeat(null)
     setState({ apiKeys: loadApiKeys() })
@@ -312,8 +360,8 @@ function createDataStore() {
     tagReview.invalidateTagReview()
     suggestTried.clear()
     setState({ tagReview: null, aiRuleOffers: [] })
-    actualDbPath = dbPath ?? defaultDbPath()
-    db = openDb(actualDbPath)
+    actualDbPath = path
+    db = handle
     const config = loadSettingsConfig()
     setState({ dbPath: actualDbPath === ":memory:" ? ":memory:" : actualDbPath })
     setState({ savedFilters: config.savedFilters, importProfiles: config.importProfiles, icons: config.icons !== false, weekStart: config.ui?.weekStart ?? "monday" })
@@ -767,6 +815,8 @@ function createDataStore() {
     setState,
     reset,
     init,
+    enterDemo,
+    leaveDemo,
     refresh,
     transactions,
     cycle,
