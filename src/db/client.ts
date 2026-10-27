@@ -15,6 +15,7 @@ import {
   CATEGORY_CHOICES_SQL,
   ACTIVITY_LOG_SQL,
   RULE_DECLINES_SQL,
+  TAG_PUSHES_SQL,
   CATEGORY_SOURCE_COLUMN,
   CATEGORY_INCOME_COLUMN,
   CATEGORY_NOT_SPENDING_COLUMN,
@@ -116,6 +117,7 @@ const MIGRATIONS: Record<number, (db: Db) => void> = {
   19: (db) => db.exec(CATEGORY_SUGGESTIONS_V19_SQL),
   20: (db) => db.exec(`ALTER TABLE category_suggestions ADD COLUMN ${SUGGESTION_RANKED_COLUMN}`),
   25: (db) => db.exec(RULE_DECLINES_SQL),
+  26: (db) => db.exec(TAG_PUSHES_SQL),
   24: (db) => db.exec(ACTIVITY_LOG_SQL),
   23: (db) => {
     db.exec(CATEGORY_CHOICES_SQL)
@@ -538,6 +540,11 @@ export function unlogCategory(db: Db, transactionId: number, categoryId: number)
 export function logTags(db: Db, transactionIds: number[], tagId: number, added: boolean, how: TagHow, at: string): void {
   const add = db.query("INSERT INTO tag_log (transaction_id, tag_id, added, how, at) VALUES (?, ?, ?, ?, ?)")
   db.transaction(() => { for (const id of transactionIds) add.run(id, tagId, added ? 1 : 0, how, at) })()
+}
+
+/** Up refused a tag change: remove exactly its activity entry. */
+export function unlogTag(db: Db, logId: number | null): void {
+  db.query("DELETE FROM tag_log WHERE id = ?").run(logId)
 }
 
 export interface CategoryLogEntry { transactionId: number; categoryId: number | null; previousCategoryId: number | null; how: CategoryHow; at: string }

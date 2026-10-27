@@ -6,7 +6,7 @@
  * version fallback with an additive migration registry. v7 was the initial
  * partial OpenTUI port. */
 
-export const SCHEMA_VERSION = 25
+export const SCHEMA_VERSION = 26
 
 /** Columns shared by the fresh schema and the v9 migration. Rows imported from
  * CSV keep source = 'csv' and NULL external fields. */
@@ -209,6 +209,16 @@ CREATE TABLE IF NOT EXISTS rule_declines (
 );
 `
 
+/** v26: local tag changes that Up has not confirmed; the latest action wins. */
+export const TAG_PUSHES_SQL = `
+CREATE TABLE IF NOT EXISTS tag_pushes (
+  transaction_id INTEGER NOT NULL REFERENCES transactions(id) ON DELETE CASCADE,
+  tag_id INTEGER NOT NULL REFERENCES tags(id) ON DELETE CASCADE,
+  action TEXT NOT NULL CHECK (action IN ('add','remove')),
+  PRIMARY KEY (transaction_id, tag_id)
+);
+`
+
 export const SYNC_SQL = `
 CREATE UNIQUE INDEX IF NOT EXISTS idx_accounts_external ON accounts(source, external_id) WHERE external_id IS NOT NULL;
 CREATE UNIQUE INDEX IF NOT EXISTS idx_transactions_external ON transactions(source, external_id) WHERE external_id IS NOT NULL;
@@ -313,6 +323,7 @@ ${TAG_DISMISSALS_SQL}
 ${CATEGORY_CHOICES_SQL}
 ${ACTIVITY_LOG_SQL}
 ${RULE_DECLINES_SQL}
+${TAG_PUSHES_SQL}
 `
 
 export const DEFAULT_CATEGORIES: { name: string; color: string; sortOrder: number; isDefault: number }[] = [

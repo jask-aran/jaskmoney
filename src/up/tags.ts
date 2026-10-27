@@ -1,5 +1,5 @@
 import type { Db } from "../db/client"
-import { addTagLink, decodeStoredTags, removeTagLink } from "../db/tagLinks"
+import { addTagLink, canAddUpTag, decodeStoredTags, removeTagLink } from "../db/tagLinks"
 import type { createUpClient } from "./client"
 import { PUSH_CONCURRENCY, pushTransactions } from "./push"
 
@@ -28,12 +28,56 @@ export function syncTagLinks(db: Db): { tagsCreated: number; linksAdded: number;
     .filter(tag => !isIgnore(tag.name) && !isIgnore(tag.ext_id))
   for (const row of rows) {
     const wanted = new Set(row.tags)
+    const pending = db.query<{ tag_id: number; action: "add" | "remove" }, [number]>(
+      "SELECT tag_id, action FROM tag_pushes WHERE transaction_id = ?").all(row.id)
+    const waitingIds = new Set(pending.map((p) => p.tag_id))
     for (const tag of providerTags) {
+      if (waitingIds.has(tag.id)) continue
       if (wanted.has(tag.ext_id)) linksAdded += addTagLink(db, row.id, tag.id)
       else linksRemoved += removeTagLink(db, row.id, tag.id)
     }
+    // Waiting tags can still be local identities (no ext_id until confirmed).
+    for (const p of pending) {
+      if (p.action === "add") linksAdded += addTagLink(db, row.id, p.tag_id)
+      else linksRemoved += removeTagLink(db, row.id, p.tag_id)
+    }
   }
   return { tagsCreated, linksAdded, linksRemoved }
+}
+
+/** Send an already local, queued change. Errors reach the store for refusal
+ * or retry handling. Confirmation never overwrites a newer local intent. */
+export async function sendQueuedTagChange(
+  db: Db,
+  client: Pick<ReturnType<typeof createUpClient>, "addTransactionTags" | "removeTransactionTags">,
+  transactionId: number,
+  tagId: number,
+  action: "add" | "remove",
+  logId: number | null,
+): Promise<boolean> {
+  // A reserved request can become stale before a worker starts it.
+  const pending = db.query(`SELECT 1 FROM tag_pushes WHERE transaction_id = ? AND tag_id = ? AND action = ?
+    AND ? IS (SELECT MAX(id) FROM tag_log WHERE transaction_id = ? AND tag_id = ?)`)
+    .get(transactionId, tagId, action, logId, transactionId, tagId)
+  if (!pending) return false
+  const row = db.query<{ external_id: string }, [number]>("SELECT external_id FROM transactions WHERE id = ?").get(transactionId)
+  const tag = db.query<{ providerId: string }, [number]>("SELECT COALESCE(ext_id, name) AS providerId FROM tags WHERE id = ?").get(tagId)
+  if (!row || !tag) return false
+  if (action === "add") await client.addTransactionTags(row.external_id, [tag.providerId])
+  else await client.removeTransactionTags(row.external_id, [tag.providerId])
+  db.transaction(() => {
+    const current = db.query<{ ext_tags: string }, [number]>("SELECT ext_tags FROM transactions WHERE id = ?").get(transactionId)
+    if (!current) return
+    const tags = new Set(decodeStoredTags(current.ext_tags))
+    if (action === "add") tags.add(tag.providerId)
+    else tags.delete(tag.providerId)
+    db.query("UPDATE tags SET ext_id = ? WHERE id = ? AND ext_id IS NULL").run(tag.providerId, tagId)
+    db.query("UPDATE transactions SET ext_tags = ? WHERE id = ?").run(JSON.stringify([...tags]), transactionId)
+    db.query(`DELETE FROM tag_pushes WHERE transaction_id = ? AND tag_id = ? AND action = ?
+      AND ? IS (SELECT MAX(id) FROM tag_log WHERE transaction_id = ? AND tag_id = ?)`)
+      .run(transactionId, tagId, action, logId, transactionId, tagId)
+  })()
+  return true
 }
 
 export async function pushTagChange(
@@ -63,7 +107,7 @@ export async function pushTagChange(
     const externalId = row.external_id
     return async () => {
       const tags = new Set(decodeStoredTags(row.ext_tags))
-      if (add && !tags.has(providerId) && tags.size >= 6) throw new Error("Up allows at most 6 tags")
+      if (add && !canAddUpTag(db, id, tagId)) throw new Error("Up allows at most 6 tags")
       if (add) await client.addTransactionTags(externalId, [providerId])
       else await client.removeTransactionTags(externalId, [providerId])
       if (add) tags.add(providerId)

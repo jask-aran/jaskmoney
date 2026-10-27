@@ -60,7 +60,7 @@ import { signedIn } from "../ai/oauthStore"
 import { TAG_SHOW_AT } from "../domain/tagSuggest"
 import { appNow, type WeekStart } from "../domain/days"
 import { MATCH_AT, NEAR_AT } from "../domain/questions"
-import { addTagLink } from "../db/tagLinks"
+import { addTagLink, queueTagPush } from "../db/tagLinks"
 import { syncUp as runUpSync } from "../up/sync"
 import { dryRunRules as evaluateRules } from "../domain/rules"
 import {
@@ -517,12 +517,12 @@ function createDataStore() {
     set askRun(value) { askRun = value },
   }
   const push = createUpPush(ctx, { ruleOfferNote: (ids) => ruleOfferNote(ids) })
-  const { applyCategories, retryPendingCategories, categorizeTransactions, applyTagPatch } = push
+  const { applyCategories, retryPendingCategories, retryPendingTags, categorizeTransactions, applyTagPatch } = push
   const suggestions = createSuggestions(ctx, { applyCategories, ruleOfferNote: (ids) => ruleOfferNote(ids) })
   const { suggestCategories, resuggestLike, askAbout, suggestTried, untriedWaiting, markTried, acceptSuggestions, dismissSuggestions } = suggestions
   const tagReview = createTagReview(ctx, { applyTagPatch })
   const { tagGroups, openTagReview, acceptTagCandidates, dismissTagCandidates, closeTagReview } = tagReview
-  const { historyData, ruleOffersFor, allRuleOffers, askForRules, ruleOfferNote, makeOfferedRule, declineRuleOffer } = createRuleOffers(ctx, { retryPendingCategories })
+  const { historyData, ruleOffersFor, allRuleOffers, askForRules, ruleOfferNote, makeOfferedRule, declineRuleOffer } = createRuleOffers(ctx, { retryPendingCategories, retryPendingTags })
 
   function createSettingsCategory(input: Pick<Category, "name" | "color"> & { notSpending?: boolean }): number {
     return mutate((db) => createCategory(db, input))
@@ -650,7 +650,16 @@ function createDataStore() {
           const previous = transactions().find((t) => t.id === change.id)?.categoryId ?? null
           if (change.categoryId != null) logCategories(database, [{ transactionId: change.id, categoryId: change.categoryId, previousCategoryId: previous }], "rule", at)
         }
-        for (const tagId of change.tagIds) if (addTagLink(database, change.id, tagId)) logTags(database, [change.id], tagId, true, "rule", at)
+        for (const tagId of change.tagIds) if (addTagLink(database, change.id, tagId)) {
+          logTags(database, [change.id], tagId, true, "rule", at)
+          const row = database.query<{ source: string; externalId: string | null }, [number]>(
+            "SELECT source, external_id AS externalId FROM transactions WHERE id = ?").get(change.id)
+          const tag = state.tags.find((t) => t.id === tagId)
+          // Approved deviation from legacy: rule tags on Up rows wait for Up.
+          if (row?.source === "up" && row.externalId != null && tag && tag.name.toUpperCase() !== "IGNORE" && tag.extId?.toUpperCase() !== "IGNORE") {
+            queueTagPush(database, change.id, tagId, "add")
+          }
+        }
       }
     })())
     return { updatedTransactions: report.updatedTransactions, categoryChanges: report.categoryChanges, tagChanges: report.tagChanges, failedRules: report.failedRules }
@@ -694,10 +703,14 @@ function createDataStore() {
       const applied = result.insertedIds.length ? applyRules(result.insertedIds) : null
       // Categorisations Up hasn't confirmed go again now Up is answering.
       const retried = await retryPendingCategories()
+      const tagsRetried = await retryPendingTags()
       const parts = [`Up sync: ${result.inserted} new, ${result.updated} updated, ${result.removedHeld} pending removed${applied?.updatedTransactions ? ` · ${applied.updatedTransactions} rules applied` : ""}`]
       if (retried.pushed) parts.push(`${retried.pushed} waiting categor${retried.pushed === 1 ? "y" : "ies"} sent to Up`)
       if (retried.rejected) parts.push(`${retried.rejected} Up refused (kept here only)`)
       if (retried.waiting) parts.push(`${retried.waiting} still waiting for Up`)
+      if (tagsRetried.pushed) parts.push(`${tagsRetried.pushed} waiting tag changes sent to Up`)
+      if (tagsRetried.rejected) parts.push(`${tagsRetried.rejected} tag changes Up refused (reverted here)`)
+      if (tagsRetried.waiting) parts.push(`${tagsRetried.waiting} tag changes still waiting for Up`)
       return parts.join(" · ")
     } finally {
       setState({ upSyncing: false })
@@ -788,6 +801,7 @@ function createDataStore() {
     suggestCategories,
     resuggestLike,
     retryPendingCategories,
+    retryPendingTags,
     tagGroups,
     untriedWaiting,
     markTried,

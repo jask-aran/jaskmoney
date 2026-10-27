@@ -1,8 +1,9 @@
-import { addTagToTransactions, removeTagFromTransactions, setTransactionCategory, recordCategoryChoices, unrecordCategoryChoices, logCategories, unlogCategory, logTags, type Db, type CategoryHow, type TagHow } from "../../db/client"
+import { setTransactionCategory, recordCategoryChoices, unrecordCategoryChoices, logCategories, unlogCategory, logTags, unlogTag, type Db, type CategoryHow, type TagHow } from "../../db/client"
 import type { Category } from "../../domain/types"
 import { UpApiError } from "../../up/client"
 import { PUSH_CONCURRENCY, pushTransactions } from "../../up/push"
-import { pushTagChange } from "../../up/tags"
+import { sendQueuedTagChange } from "../../up/tags"
+import { addTagLink, removeTagLink, queueTagPush, canAddUpTag } from "../../db/tagLinks"
 import { appNow } from "../../domain/days"
 import type { StoreContext, TagPatch } from "./context"
 
@@ -204,54 +205,123 @@ export function createUpPush(ctx: StoreContext, deps: { ruleOfferNote: (ids: num
     return operationSummary(`Categorized ${result.done} → ${category.name}`, result) + ruleOfferNote(txnIds)
   }
 
+  type TagPush = { id: number; tagId: number; action: "add" | "remove" }
+  const pushingTags = new Set<string>()
+  const tagPushKey = (p: TagPush) => `${p.id}:${p.tagId}`
+
+  /** State matrix (approved provider deviation from legacy local-only tags):
+   * local/IGNORE: link + log only; Up: link + log + latest queued intent.
+   * Confirm: update provider snapshot + drop intent; refuse: inverse link +
+   * unlog + drop intent; no answer: retain link, log and intent. Sync overlays
+   * waiting intent on Up's links. A retry skips every reserved in-flight pair.
+   */
+  async function pushQueuedTags(database: Db, candidates: TagPush[]) {
+    const pushes = candidates.filter((p) => !pushingTags.has(tagPushKey(p))).map((p) => ({
+      ...p,
+      logId: database.query<{ id: number | null }, [number, number]>(
+        "SELECT MAX(id) AS id FROM tag_log WHERE transaction_id = ? AND tag_id = ?").get(p.id, p.tagId)!.id,
+    }))
+    for (const p of pushes) pushingTags.add(tagPushKey(p))
+    let pushed = 0, rejected = 0, waiting = 0
+    const pushedIds = new Set<number>()
+    let waitingError: string | undefined
+    const client = {
+      addTransactionTags: (id: string, tags: string[]) => upClient().addTransactionTags(id, tags),
+      removeTransactionTags: (id: string, tags: string[]) => upClient().removeTransactionTags(id, tags),
+    }
+    const result = await pushTransactions(pushes.map((_, i) => i), (i) => {
+      const p = pushes[i]!
+      return async () => {
+        try {
+          if (!await sendQueuedTagChange(database, client, p.id, p.tagId, p.action, p.logId)) return 0
+          pushed++
+          pushedIds.add(p.id)
+          return 1
+        } catch (error) {
+          if (!upRejected(error)) {
+            waiting++
+            waitingError ??= waitReason(error)
+            return 0
+          }
+          rejected++
+          database.transaction(() => {
+            const removed = database.query(`DELETE FROM tag_pushes WHERE transaction_id = ? AND tag_id = ? AND action = ?
+              AND ? IS (SELECT MAX(id) FROM tag_log WHERE transaction_id = ? AND tag_id = ?)`)
+              .run(p.id, p.tagId, p.action, p.logId, p.id, p.tagId).changes
+            unlogTag(database, p.logId)
+            if (!removed) return // A newer intent owns the link and its log.
+            if (p.action === "add") removeTagLink(database, p.id, p.tagId)
+            else addTagLink(database, p.id, p.tagId)
+          })()
+          throw error
+        } finally {
+          pushingTags.delete(tagPushKey(p))
+        }
+      }
+    }, { complete: refresh, concurrency: PUSH_CONCURRENCY })
+    return { pushed, pushedIds, rejected, waiting, waitingError, failures: result.failures }
+  }
+
+  async function retryPendingTags(): Promise<{ pushed: number; rejected: number; waiting: number }> {
+    if (!ctx.db) return { pushed: 0, rejected: 0, waiting: 0 }
+    const rows = ctx.db.query<TagPush, []>("SELECT transaction_id AS id, tag_id AS tagId, action FROM tag_pushes ORDER BY transaction_id, tag_id").all()
+    const { pushed, rejected, waiting } = await pushQueuedTags(ctx.db, rows)
+    return { pushed, rejected, waiting }
+  }
+
   async function applyTagPatch(txnIds: number[], patch: TagPatch, how: TagHow = "picker"): Promise<string> {
     if (!ctx.db) throw new Error("db not open")
     const database = ctx.db
     if (!Object.keys(patch).length) return "Tags unchanged"
     if (how === "picker") setLastRepeat({ kind: "tags", patch: { ...patch } })
-    const before = transactions().filter((t) => txnIds.includes(t.id)).map((t) => ({ id: t.id, source: t.source, tagIds: [...t.tagIds] }))
-    const reversals: { ids: number[]; patch: TagPatch }[] = []
-    const client = {
-      addTransactionTags: (id: string, tags: string[]) => upClient().addTransactionTags(id, tags),
-      removeTransactionTags: (id: string, tags: string[]) => upClient().removeTransactionTags(id, tags),
-    }
-    const labels: string[] = []
-    const updated = new Set<number>(), pushed = new Set<number>()
-    const failures: string[] = []
-    try {
+    const before = transactions().filter((t) => txnIds.includes(t.id)).map((t) => ({ id: t.id, tagIds: [...t.tagIds] }))
+    const pushes: TagPush[] = []
+    const labels: string[] = [], failures: string[] = []
+    database.transaction(() => {
+      const at = appNow().toISOString()
       for (const [key, action] of Object.entries(patch)) {
         const tagId = Number(key)
         const tag = state.tags.find((t) => t.id === tagId)
         if (!tag) throw new Error("tag not found")
         const add = action === "add"
         labels.push(`${add ? "+" : "-"}${tag.name}`)
-        const targets = before.filter((t) => t.tagIds.includes(tagId) !== add).map((t) => t.id)
-        const local = targets.filter((id) => tag.name.toUpperCase() === "IGNORE"
-          || before.find((t) => t.id === id)?.source !== "up")
-        if (add) addTagToTransactions(database, local, tagId)
-        else removeTagFromTransactions(database, local, tagId)
-        for (const id of local) updated.add(id)
-        // Up rows in one batch (pushTagChange sends several at once); each
-        // applies here once Up confirms it.
-        const remote = targets.filter((id) => !local.includes(id))
-        const result = remote.length ? await pushTagChange(database, client, remote, tagId, add) : null
-        for (const id of result?.changedIds ?? []) updated.add(id)
-        for (const id of result?.pushedIds ?? []) pushed.add(id)
-        failures.push(...(result?.failures ?? []))
-        const changed = [...local, ...(result?.changedIds ?? [])]
-        if (changed.length) reversals.push({ ids: changed, patch: { [tagId]: add ? "remove" : "add" } })
-        logTags(database, changed, tagId, add, how, appNow().toISOString())
+        for (const t of before.filter((t) => t.tagIds.includes(tagId) !== add)) {
+          const row = database.query<{ source: string; externalId: string | null }, [number]>(
+            "SELECT source, external_id AS externalId FROM transactions WHERE id = ?").get(t.id)
+          if (!row) continue
+          const remote = row.source === "up" && row.externalId != null && tag.name.toUpperCase() !== "IGNORE" && tag.extId?.toUpperCase() !== "IGNORE"
+          if (remote && add && !canAddUpTag(database, t.id, tagId)) {
+            failures.push("Up allows at most 6 tags")
+            continue
+          }
+          if (add) addTagLink(database, t.id, tagId)
+          else removeTagLink(database, t.id, tagId)
+          if (remote) {
+            queueTagPush(database, t.id, tagId, action)
+            pushes.push({ id: t.id, tagId, action })
+          }
+          logTags(database, [t.id], tagId, add, how, at)
+        }
       }
-    } finally {
-      refresh()
+    })()
+    refresh()
+    const result = pushes.length ? await pushQueuedTags(database, pushes) : { pushed: 0, pushedIds: new Set<number>(), rejected: 0, waiting: 0, failures: [] }
+    failures.push(...result.failures)
+    const updated = new Set<number>()
+    const reversals: { ids: number[]; patch: TagPatch }[] = []
+    for (const [key, action] of Object.entries(patch)) {
+      const tagId = Number(key)
+      const changed = before.filter((t) => transactions().some((now) => now.id === t.id && now.tagIds.includes(tagId) !== t.tagIds.includes(tagId))).map((t) => t.id)
+      for (const id of changed) updated.add(id)
+      if (changed.length) reversals.push({ ids: changed, patch: { [tagId]: action === "add" ? "remove" : "add" } })
     }
     if ((how === "picker" || how === "review") && updated.size) recordUndo(`${labels.join(", ")} on ${updated.size}`, async () => {
       const summaries: string[] = []
       for (const reversal of reversals) summaries.push(await applyTagPatch(reversal.ids, reversal.patch, "undo"))
       return summaries.join(" · ")
     })
-    return operationSummary(`Tags: ${labels.join(", ")} on ${updated.size}`, { pushed: pushed.size, failures })
+    return operationSummary(`Tags: ${labels.join(", ")} on ${updated.size}`, { ...result, pushed: result.pushedIds.size, failures })
   }
 
-  return { applyCategories, retryPendingCategories, categorizeTransactions, applyTagPatch }
+  return { applyCategories, retryPendingCategories, retryPendingTags, categorizeTransactions, applyTagPatch }
 }

@@ -7,9 +7,9 @@ import { count } from "../../ui/text"
 import type { createUpPush } from "./upPush"
 import type { StoreContext } from "./context"
 
-export function createRuleOffers(ctx: StoreContext, deps: { retryPendingCategories: ReturnType<typeof createUpPush>["retryPendingCategories"] }) {
+export function createRuleOffers(ctx: StoreContext, deps: Pick<ReturnType<typeof createUpPush>, "retryPendingCategories" | "retryPendingTags">) {
   const { state, setState, mutate, transactions, recordUndo, saveSavedFilter, createSettingsRule, applyRules, deleteSettingsRule, deleteSavedFilter, restoreCategories } = ctx
-  const { retryPendingCategories } = deps
+  const { retryPendingCategories, retryPendingTags } = deps
   let offersCache: { key: readonly unknown[]; offers: RuleOffer[] } | null = null
 
   /** The history the AI reads (domain/aiHistory): current state and the logs. */
@@ -86,6 +86,7 @@ export function createRuleOffers(ctx: StoreContext, deps: { retryPendingCategori
     const applied = offer.waiting.length ? applyRules(offer.waiting) : null
     const changed = before.filter((row) => transactions().some((t) => t.id === row.id && t.categoryId !== row.categoryId))
     const sent = applied?.categoryChanges ? await retryPendingCategories() : null
+    if (applied?.tagChanges) await retryPendingTags()
     recordUndo(`rule ${offer.description} → ${category.name}`, async () => {
       deleteSettingsRule(ruleId)
       deleteSavedFilter(id)

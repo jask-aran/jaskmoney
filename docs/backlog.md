@@ -52,10 +52,13 @@ committed; note the commit.
 - [ ] **11. AI tag rules.** The rule writer does categories only: a rule that
   adds a tag Up knows is undone by the next sync (Up's tags win). Needs 3.
 
+- [ ] **Remove pushTagChange** (src/up/tags.ts): unused since instant tags;
+  port its edge cases (IGNORE on Up rows, failures, six-tag limit) to tests
+  of the queue path, then delete it and its tests.
 - [ ] **1. Real Up pushes.** Watch the first real concurrent category and tag
   pushes, and the retry of pending categories on sync (only tested against a
   fake Up so far).
-- [ ] **3. Instant tags.** Apply tags locally at once, like categories, with
+- [x] **3. Instant tags.** Apply tags locally at once, like categories, with
   a saved queue of pending tag changes so a sync (which makes Up's tags
   authoritative) can't undo them before they reach Up.
 - [x] **4. Steady cursor.** When re-suggesting reorders the Uncategorised
@@ -65,4 +68,4 @@ committed; note the commit.
   detector: total per month, price changes, next charge, ones that stopped.
 - [x] **8. Split dataStore.ts** (about 1,100 lines): AI suggestions, tag
   review and Up pushes into their own modules.
-- [ ] **9. README sections.** The Transactions section is one paragraph.
+- [x] **9. README sections.** The Transactions section is one paragraph.
