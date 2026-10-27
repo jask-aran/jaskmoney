@@ -2,7 +2,7 @@ import { expect, test } from "bun:test"
 import type { JevQuestion } from "../ai/jev"
 import { category, transaction } from "../testing/fixtures"
 import { categoryExamples, historySuggestions, jevSuggestions } from "./suggest"
-import { SUGGESTION_STATE, suggestionCriteria, transactionFacts } from "./questions"
+import { NO_DETAIL_CAP, SUGGESTION_STATE, suggestionCriteria, transactionFacts } from "./questions"
 
 const categories = [category({ id: 1 }), category({ id: 2 }), category({ id: 3, isDefault: true, name: "Uncategorised" })]
 const evidence = (id: number, categoryId: number, amount = -10, dateISO = "2026-01-01") => transaction({ id, categoryId, categoryName: `Category ${categoryId}`, description: " SHOP ", amount, dateISO })
@@ -110,4 +110,30 @@ test("each category's examples: its most used descriptions, then the most recent
   expect(suggestionCriteria(categories.slice(0, 2), categories, examples).c2).toBe("Category 2 (e.g. Uber, A very long merchant description that g…)")
   // Without examples, options and question are as before.
   expect(suggestionCriteria(categories.slice(0, 2), categories)).toEqual({ c1: "Category 1", c2: "Category 2" })
+})
+
+test("a person-to-person payment with no message is a guess (at most NO_DETAIL_CAP); a message, or a purchase, keeps Jev's confidence", async () => {
+  const jev = { async judge(qs: Record<string, JevQuestion>) {
+    return Object.fromEntries(Object.keys(qs).map((id) => [id, { type: "choice" as const, choice: "c1", confidence: 0.5, probabilities: { c1: 0.9, c2: 0.1 } }]))
+  } }
+  const rows = [
+    transaction({ id: 10, description: "Beem", transactionType: "EFTPOS Withdrawal" }),
+    transaction({ id: 11, description: "Beem", transactionType: "EFTPOS Withdrawal", message: "Kestrel ram" }),
+    transaction({ id: 12, description: "Shop", transactionType: "Purchase" }),
+  ]
+  const out = await jevSuggestions(jev, rows, categories)
+  expect(NO_DETAIL_CAP).toBe(0.45)
+  expect(out.map((s) => s.confidence)).toEqual([0.45, 0.9, 0.9])
+  expect(out[0]!.ranked).toEqual([{ categoryId: 1, confidence: 0.45 }, { categoryId: 2, confidence: 0.1 }])
+})
+
+test("category examples skip people and payment apps: they name no merchant to learn from", () => {
+  const history = [
+    transaction({ id: 1, description: "Coles", categoryId: 1, categoryName: "Category 1", transactionType: "Purchase" }),
+    transaction({ id: 2, description: "Beem", categoryId: 1, categoryName: "Category 1", transactionType: "EFTPOS Withdrawal" }),
+    transaction({ id: 3, description: "$friend_a", categoryId: 2, categoryName: "Category 2", transactionType: "Deposit" }),
+  ]
+  const examples = categoryExamples(history, categories.filter((c) => !c.isDefault))
+  expect(examples.get(1)).toEqual(["Coles"])
+  expect(examples.get(2)).toBeUndefined()
 })

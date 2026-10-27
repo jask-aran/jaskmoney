@@ -78,7 +78,10 @@ export function parsedSearch(values: Record<string, ClairicAnswer> | null, answe
   })
   return {
     words: categoryId == null && payee ? words : null,
-    ask: categoryId == null && !payee ? words : null,
+    // Without Clairic the words are Jev's guess at a phrase (often a fragment:
+    // "stuff" from "stuff for the car"); ask: has Jev read every row anyway,
+    // so it gets the whole question.
+    ask: categoryId == null && !payee && words ? (values ? words : query.trim()) : null,
     atLeast,
     atMost,
     from: text("from"),

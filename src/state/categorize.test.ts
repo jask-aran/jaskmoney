@@ -140,7 +140,7 @@ test("a categorisation Up didn't answer stays, marked pending, and goes again af
     }, { preconnect: globalThis.fetch.preconnect }))
 
     // Up is down: the rows keep their new category, waiting.
-    expect(await data.categorizeTransactions([a, refused], id("Groceries"))).toStartWith("Categorized 2 → Groceries · 2 waiting for Up (sent on the next sync): ")
+    expect(await data.categorizeTransactions([a, refused], id("Groceries"))).toBe("Categorized 2 → Groceries · 2 waiting for Up (Up is down; sent on the next sync)")
     expect(row(a)).toEqual({ categoryId: id("Groceries"), source: "pending", ext: null })
     // A retry while Up is still down keeps them waiting.
     expect(await data.retryPendingCategories()).toEqual({ pushed: 0, rejected: 0, waiting: 2 })

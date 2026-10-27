@@ -163,7 +163,7 @@ interface CategorizeResult { done: number; pushed: number; failures: string[]; w
 function categorizedSummary(head: string, r: CategorizeResult): string {
   const parts = [head]
   if (r.pushed) parts.push(`${r.pushed} updated in Up`)
-  if (r.waiting) parts.push(`${r.waiting} waiting for Up (sent on the next sync): ${r.waitingError}`)
+  if (r.waiting) parts.push(`${r.waiting} waiting for Up (${r.waitingError}; sent on the next sync)`)
   if (r.failures.length) parts.push(`${r.failures.length} failed: ${r.failures[0]}`)
   return parts.join(" · ")
 }
@@ -189,6 +189,18 @@ function categoryPush(row: PushableRow, category: Category, categories: Category
  * for no category). */
 function confirmCategoryPush(db: Db, id: number, p: CategoryPush): void {
   setTransactionCategory(db, id, p.categoryId, p.providerId ? "provider" : null, { extCategory: p.providerId, extParentCategory: p.providerId ? p.parentExt : null })
+}
+
+/** Why Up didn't answer, in a few words (the status line has room for little). */
+function waitReason(error: unknown): string {
+  const message = error instanceof Error ? error.message : String(error)
+  if (/JASKMONEY_UP_TOKEN/.test(message)) return "no Up token"
+  if (error instanceof UpApiError) {
+    if (error.status === 401) return "Up token rejected"
+    if (error.status === 429) return "Up is busy"
+    if (error.status >= 500) return "Up is down"
+  }
+  return message.length > 40 ? `${message.slice(0, 39)}…` : message
 }
 
 /** Up refused the change itself (not a network, rate-limit or token problem):
@@ -515,7 +527,7 @@ function createDataStore() {
           if (!upRejected(error)) {
             // Up didn't answer: it stays 'pending' for the next sync.
             waiting++
-            waitingErrors.push(error instanceof Error ? error.message : String(error))
+            waitingErrors.push(waitReason(error))
             return 0
           }
           database.query(`UPDATE transactions SET category_id = ?, category_source = ?, ext_category = ?, ext_parent_category = ? WHERE id = ?`)

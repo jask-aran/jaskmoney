@@ -148,15 +148,27 @@ export function ManagerTab(props: { focused: SectionId }) {
   const accountAction = () => data.state.accounts.find((account) => account.id === ui.state.accountActionId)
 
   /** Accept-all's preview: how many rows go to each suggested category. */
+  /** Accept-all's preview: per suggested category, how many rows and which
+   * (descriptions, most common first; money in marked), so a wrong pick
+   * shows before it is taken. */
   const acceptGroups = createMemo(() => {
-    const counts = new Map<number, number>()
+    const groups = new Map<number, Map<string, number>>()
+    const byId = new Map(data.state.transactions.map((t) => [t.id, t]))
     for (const id of ui.state.acceptPreview ?? []) {
-      const s = data.state.suggestions[id]
-      if (s) counts.set(s.categoryId, (counts.get(s.categoryId) ?? 0) + 1)
+      const s = data.state.suggestions[id], t = byId.get(id)
+      if (!s || !t) continue
+      const rows = groups.get(s.categoryId) ?? new Map<string, number>()
+      const label = `${t.description.trim()}${t.amount > 0 ? " (in)" : ""}`
+      rows.set(label, (rows.get(label) ?? 0) + 1)
+      groups.set(s.categoryId, rows)
     }
-    return [...counts].sort((a, b) => b[1] - a[1]).map(([id, n]) => ({ category: data.state.categories.find((c) => c.id === id), n }))
+    return [...groups].map(([id, rows]) => ({
+      category: data.state.categories.find((c) => c.id === id),
+      n: [...rows.values()].reduce((a, b) => a + b, 0),
+      rows: [...rows].sort((a, b) => b[1] - a[1]).map(([label, n]) => (n > 1 ? `${label} ×${n}` : label)).join(", "),
+    })).sort((a, b) => b.n - a.n)
   })
-  const ACCEPT_LINES = 10
+  const ACCEPT_LINES = 8
 
   return (
     <box width="100%" height="100%" flexDirection="column" backgroundColor={theme.canvas}>
@@ -221,13 +233,16 @@ export function ManagerTab(props: { focused: SectionId }) {
       <TransactionDetail />
       <Show when={ui.state.acceptPreview}>
         {(ids: () => number[]) => (
-          <Modal title="Accept suggestions" subtitle={`${ids().length} at ${ACCEPT_ALL_AT * 100}% or more`} width={56} hints="enter accept · esc cancel">
+          <Modal title="Accept suggestions" subtitle={`${ids().length} at ${ACCEPT_ALL_AT * 100}% or more`} width={72} hints="enter accept · esc cancel">
             <For each={acceptGroups().slice(0, ACCEPT_LINES)}>{(g) => (
-              <text wrapMode="none">
-                <S fg={g.category?.color ?? theme.text}>{`${categoryMark(g.category?.id ?? null)} `}</S>
-                <S fg={theme.text}>{fit(g.category?.name ?? "?", 36)}</S>
-                <S fg={theme.subtext0}>{String(g.n).padStart(6)}</S>
-              </text>
+              <>
+                <text wrapMode="none">
+                  <S fg={g.category?.color ?? theme.text}>{`${categoryMark(g.category?.id ?? null)} `}</S>
+                  <S fg={theme.text}>{fit(g.category?.name ?? "?", 52)}</S>
+                  <S fg={theme.subtext0}>{String(g.n).padStart(6)}</S>
+                </text>
+                <text wrapMode="none" fg={theme.overlay1}>{`  ${fit(g.rows, 64)}`}</text>
+              </>
             )}</For>
             <Show when={acceptGroups().length > ACCEPT_LINES}>
               <text fg={theme.overlay1}>{`and ${acceptGroups().length - ACCEPT_LINES} more ${acceptGroups().length - ACCEPT_LINES === 1 ? "category" : "categories"}`}</text>

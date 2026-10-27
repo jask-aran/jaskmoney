@@ -39,6 +39,13 @@ export const SUGGESTION_STATE = "Bank transactions from an Australian personal a
  * this sure matched the user's category. */
 export const ACCEPT_ALL_AT = 0.8
 
+/** A person-to-person payment with no message (Beem, a PayID, "Deposit"
+ * from a name) says nothing about what the money was for: its suggestion is
+ * at most this sure, so it reads as a guess and accept-all never takes it.
+ * Jev still ranks it (one earlier Beem row in Holidays & Travel made Jev
+ * 60–82% sure of travel for every Beem row). */
+export const NO_DETAIL_CAP = 0.45
+
 /** A suggestion keeps this many of the categories it weighed (the picker
  * lists them first, with their confidence), each at least RANKED_MIN. */
 export const SUGGESTION_RANKED = 5
@@ -72,6 +79,9 @@ export function suggestionQuestion(t: Transaction, criteria: Record<string, stri
     type: "choice",
     instructions: {
       question: "Which category does `transaction` belong in? The description may be a person's name or a payment app rather than a shop: then the message, if any, says what the money was for, and the description says nothing about the category."
+        // Money in only: refunds belong with what was bought (said to every
+        // row, it cost a point of accuracy on spending).
+        + (t.amount > 0 ? " Money back for a purchase (a refund) belongs in the category of what was bought, not income." : "")
         + (namesExamples(criteria) ? " Each category lists some of the account holder's own transactions in it." : ""),
       transaction: transactionFacts(t, { earlier }),
     },

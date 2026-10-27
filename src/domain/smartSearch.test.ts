@@ -69,6 +69,9 @@ describe("smart search", () => {
     const phrases = searchPhrases("uber eats under 30 this cycle")
     expect(parsedSearch(null, answers({ phrase: `p${phrases.indexOf("uber eats")}`, payee: 0.8 }), categories, "uber eats under 30 this cycle")).toMatchObject({ words: "uber eats" })
     expect(parsedSearch(null, answers({ phrase: "none" }), categories, "anything over $500")).toMatchObject({ words: null, ask: null })
+    // A fragment that would go to ask: ("stuff") becomes the whole question; payees and categories keep the phrase.
+    const car = searchPhrases("stuff for the car")
+    expect(parsedSearch(null, answers({ phrase: `p${car.indexOf("stuff")}` }), categories, "stuff for the car")).toMatchObject({ words: null, ask: "stuff for the car" })
   })
 
   test("periods are worked out here, cycles from the budget cycle", () => {
@@ -117,7 +120,8 @@ describe("smart search", () => {
   test("Clairic failing or missing doesn't stop the search: Jev's phrase stands in, and the reason is reported", async () => {
     const jev = { judge: async () => answers({ phrase: "p0", amounts: ["at_least"], flow: "spending" }) }
     const down = await smartSearch({ clairic: async () => { throw new Error("daily allowance used up") }, jev }, "coffee over $5", ctx)
-    expect(down).toMatchObject({ expr: 'ask:"coffee" AND type:spending AND amt:<=-5', clairic: "daily allowance used up" })
+    // Jev's phrase ("coffee") would route to ask:, which then gets the whole question.
+    expect(down).toMatchObject({ expr: 'ask:"coffee over $5" AND type:spending AND amt:<=-5', clairic: "daily allowance used up" })
     expect((await smartSearch({ jev }, "coffee over $5", ctx)).clairic).toBe("no Workers AI key")
   })
 })

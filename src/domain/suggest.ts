@@ -1,7 +1,7 @@
 import { judgeEach, type JevClient } from "../ai/jev"
 import { assignableCategories } from "./categoryOptions"
 import { isOrdinaryFlow, isUncategorised } from "./moneyRules"
-import { EXAMPLES_PER_CATEGORY, RANKED_MIN, SUGGESTION_RANKED, SUGGESTION_STATE, suggestionCriteria, suggestionQuestion } from "./questions"
+import { EXAMPLES_PER_CATEGORY, NO_DETAIL_CAP, RANKED_MIN, SUGGESTION_RANKED, SUGGESTION_STATE, suggestionCriteria, suggestionQuestion } from "./questions"
 import type { Category, CategorySuggestion, Transaction } from "./types"
 
 /**
@@ -20,6 +20,7 @@ function suggestionCategories(categories: Category[]): Category[] {
  * (Beem, a PayID), not a merchant: the same description says little about
  * what the money was for. */
 const PERSON_TO_PERSON = new Set(["Payment", "Pay Anyone", "Transfer", "Osko Payment Received", "Payment Received", "Deposit", "EFTPOS Deposit", "EFTPOS Withdrawal"])
+const isPersonToPerson = (t: Transaction) => !!t.transactionType && PERSON_TO_PERSON.has(t.transactionType)
 
 /** How history settles a row on its own: this many earlier rows at least,
  * this share of them in one category. */
@@ -63,7 +64,8 @@ export function categoryExamples(history: Transaction[], suggestable: Category[]
   const allowed = new Set(suggestable.map((c) => c.id))
   const tally = new Map<number, Map<string, { description: string; count: number; latest: string }>>()
   for (const t of history) {
-    if (isUncategorised(t) || t.categoryId == null || !allowed.has(t.categoryId)) continue
+    // A person or a payment app names no merchant to learn from.
+    if (isUncategorised(t) || t.categoryId == null || !allowed.has(t.categoryId) || isPersonToPerson(t)) continue
     const byKey = tally.get(t.categoryId) ?? new Map()
     tally.set(t.categoryId, byKey)
     const k = t.description.trim().toLowerCase()
@@ -92,7 +94,7 @@ export function historySuggestions(transactions: Transaction[], categories: Cate
   const suggestions: CategorySuggestion[] = []
   for (const t of transactions) {
     if (!isOrdinaryFlow(t) || !isUncategorised(t) || (targetIds && !targetIds.has(t.id))) continue
-    if (t.message || (t.transactionType && PERSON_TO_PERSON.has(t.transactionType))) continue
+    if (t.message || isPersonToPerson(t)) continue
     const { total, ranked } = evidence(t)
     const top = ranked[0]
     if (!top || total < HISTORY_MIN_ROWS || top.count / total < HISTORY_MIN_SHARE) continue
@@ -136,9 +138,11 @@ export async function jevSuggestions(
           const id = categoryIds.get(key)
           return id != null && id !== categoryId && probability >= RANKED_MIN ? [{ categoryId: id, confidence: probability }] : []
         }).sort((a, b) => b.confidence - a.confidence)
+        // Nothing but a name or an app to go on: a guess, however sure Jev is.
+        const sure = isPersonToPerson(t) && !t.message ? Math.min(confidence, NO_DETAIL_CAP) : confidence
         const suggestion: CategorySuggestion = {
-          transactionId: t.id, categoryId, confidence, source: "jev",
-          ranked: [{ categoryId, confidence }, ...ranked].slice(0, SUGGESTION_RANKED),
+          transactionId: t.id, categoryId, confidence: sure, source: "jev",
+          ranked: [{ categoryId, confidence: sure }, ...ranked].slice(0, SUGGESTION_RANKED),
         }
         options.onSuggestion?.(suggestion)
         suggestions.push(suggestion)
