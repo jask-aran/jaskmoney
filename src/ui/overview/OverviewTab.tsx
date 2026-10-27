@@ -1,5 +1,5 @@
-import { For, Index, Show, createEffect, createMemo, on, onCleanup } from "solid-js"
-import type { ScrollBoxRenderable } from "@opentui/core"
+import { For, Index, Show, createEffect, createMemo, onCleanup } from "solid-js"
+import type { BoxRenderable, ScrollBoxRenderable } from "@opentui/core"
 import { categoryMark, viewMark } from "../icons"
 import { useTerminalDimensions } from "@opentui/solid"
 import { SectionCard } from "../primitives/SectionCard"
@@ -33,11 +33,15 @@ import { UP_LOGO_WIDTH } from "../primitives/UpLogo"
 const LEVEL_BG = [theme.surface0, "#5b4636", "#8c6146", "#c47f55", theme.peach] as const
 const WEEKDAYS = () => data.state.weekStart === "sunday" ? ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"] : ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"]
 
-/** Below this width the chart pane spans the tab with categories below it;
- * at or above it, categories take a right-hand column. */
-const WIDE = 120
+/** At or above this width the cards take a right-hand column beside the
+ * two charts; below it one chart spans the tab with the cards under it. */
+const WIDE = 90
 /** The categories column's widest useful size: Up's longest names fit. */
 const SIDE_MAX = 48
+/** The side stack's narrowest: Now's and Totals' labels still fit. */
+const SIDE_MIN = 40
+/** Narrow: the chart's fewest rows before the column scrolls. */
+const NARROW_CHART_MIN = 10
 /** Stack columns: value and note widths; the label takes the rest. */
 const VALUE = 12
 const NOTE = 11
@@ -119,46 +123,33 @@ export function OverviewTab(props: { focused: SectionId }) {
   }
 
   // Fixed rows: tab bar + gap (2), status + footer (2), Date Range (3).
-  // Wide: two chart panes share the left column; the right column (up to
-  // SIDE_MAX wide) stacks Now, Savers, Totals and Categories. Narrow: two
-  // charts, a compact summary row, then full-width Categories. Cards retain
-  // their minimum heights and the column scrolls when they do not fit.
+  // Wide: two chart panes share the left column; the right column (SIDE_MIN
+  // to SIDE_MAX wide) stacks Now, Savers, Totals and Categories. Narrow: the
+  // top chart across the tab takes what the cards leave; under it Now,
+  // Savers and Totals stack beside Categories, the two columns one height.
+  // When even the smallest chart doesn't fit, the column scrolls.
   const wide = () => dims().width >= WIDE
   const bodyHeight = () => Math.max(8, dims().height - 7)
-  const sideWidth = () => (wide() ? Math.min(SIDE_MAX, Math.floor((dims().width - 1) * 0.4)) : Math.floor((dims().width - 1) / 2))
+  const sideWidth = () => (wide() ? Math.max(SIDE_MIN, Math.min(SIDE_MAX, Math.floor((dims().width - 1) * 0.4))) : Math.floor((dims().width - 1) / 2))
   const mainWidth = () => (wide() ? dims().width - 1 - sideWidth() : dims().width)
-  // Wide: the two charts split the column with a blank line between them.
-  // Calendar needs a month label, seven weekdays and two borders.
-  const narrowChartMinimum = (pane: 0 | 1) => CHART_VIEWS[ui.state.chartViews[pane]]?.view === "Calendar" ? 10 : 8
-  const minimumChartsHeight = () => narrowChartMinimum(0) + narrowChartMinimum(1)
-  const narrowChartSpace = () => bodyHeight() - summaryHeight() - categoriesHeight()
-  const narrowChartHeight = (pane: 0 | 1) => {
-    const extra = Math.max(0, narrowChartSpace() - minimumChartsHeight()) / 2
-    return Math.min(20, narrowChartMinimum(pane) + (pane === 0 ? Math.ceil(extra) : Math.floor(extra)))
-  }
-  const topChartHeight = () => wide() ? Math.ceil((bodyHeight() - 1) / 2) : narrowChartHeight(0)
-  const bottomChartHeight = () => wide() ? bodyHeight() - 1 - topChartHeight() : narrowChartHeight(1)
 
   // The stacks: label, value (VALUE) and a note or comparison (NOTE).
   const nowRows = () => 4 + (position().pendingCount > 0 ? 1 : 0)
   // Column headings sit in the top border, so no row of their own.
   const totalsRows = () => 7 + (budget() ? (budget()!.remaining > 0 ? 2 : 1) : 0)
-  // Savers fold to their total when Categories would get under
-  // MIN_CATEGORIES rows.
   const saverRows = (full: boolean) => (full ? 1 + position().savers.length : 1)
-  const stackSpace = () => bodyHeight()
-  const categoryContentHeight = createMemo(() => Math.max(3, Math.min(16, groups().reduce((rows, group) => rows + 1 + group.children.length, 0) + 2)))
-  const narrowCategoryMinimum = () => Math.min(MIN_CATEGORIES + 2, categoryContentHeight())
-  const summaryRows = (full: boolean) => Math.max(nowRows() + 2 + saverRows(full) + 2, totalsRows() + 2)
-  const summaryHeight = () => summaryRows(saversFull())
+  // Narrow: the stack beside Categories, and so the height of both.
+  const lowerHeight = (full: boolean) => nowRows() + 2 + saverRows(full) + 2 + totalsRows() + 2
+  // Savers fold to their total when Categories (wide) or the chart (narrow)
+  // would get too small.
   const saversFull = () =>
     wide()
-      ? stackSpace() - (nowRows() + 2) - (totalsRows() + 2) - (saverRows(true) + 2) >= MIN_CATEGORIES + 2
-      : bodyHeight() >= minimumChartsHeight() + summaryRows(true) + narrowCategoryMinimum()
-  const categoriesHeight = () =>
-    wide()
-      ? Math.max(3, bodyHeight() - (nowRows() + 2) - (saverRows(saversFull()) + 2) - (totalsRows() + 2))
-      : Math.min(categoryContentHeight(), Math.max(narrowCategoryMinimum(), bodyHeight() - minimumChartsHeight() - summaryHeight()))
+      ? bodyHeight() - lowerHeight(true) >= MIN_CATEGORIES + 2
+      : bodyHeight() - lowerHeight(true) >= NARROW_CHART_MIN
+  const categoriesHeight = () => Math.max(3, wide() ? bodyHeight() - lowerHeight(saversFull()) : lowerHeight(saversFull()))
+  // Wide: the two charts split the column with a blank line between them.
+  const topChartHeight = () => (wide() ? Math.ceil((bodyHeight() - 1) / 2) : Math.max(NARROW_CHART_MIN, bodyHeight() - lowerHeight(saversFull())))
+  const bottomChartHeight = () => bodyHeight() - 1 - topChartHeight()
   const stackWidth = () => sideWidth() - 4
   const labelWidth = () => Math.max(6, stackWidth() - VALUE - NOTE)
 
@@ -192,10 +183,10 @@ export function OverviewTab(props: { focused: SectionId }) {
   const topView = createMemo(() => ui.state.chartViews[0])
   const bottomView = createMemo(() => ui.state.chartViews[1])
   const topModel = live(() => model(0, topView(), topChartHeight()))
-  const bottomModel = live(() => model(1, bottomView(), bottomChartHeight()))
+  const bottomModel = live(() => (wide() ? model(1, bottomView(), bottomChartHeight()) : null))
 
   // Category lines: name, then amount (9) and share (5).
-  const categoryWidth = () => wide() ? sideWidth() : mainWidth()
+  const categoryWidth = () => (wide() ? sideWidth() : dims().width - 1 - sideWidth())
   const categoryNameWidth = () => Math.max(8, categoryWidth() - 5 - 14)
 
   // Go narrow fallback: the preset chips keep priority and the timeframe
@@ -352,46 +343,33 @@ export function OverviewTab(props: { focused: SectionId }) {
     )
   }
 
-  // Requested narrow-layout deviation from the frozen Go layout: retain
-  // both panes and scroll instead of clipping cards. Keys and focus order
-  // stay unchanged. Only focus, view changes and layout changes scroll;
-  // category cursor movement keeps using the card's existing row window.
+  // Approved narrow-layout deviation from the Go layout: the cards stack
+  // in two columns under one chart, and a short terminal scrolls instead
+  // of clipping them. Keys and focus order are unchanged.
   const NarrowColumn = () => {
     let column: ScrollBoxRenderable | undefined
-    const paneId = (section: SectionId) => `overview-pane-${section}`
+    // Only a short terminal scrolls: Categories into view when it has focus,
+    // else back to the top (the chart).
     const followFocus = () => {
       if (!shown()) return
-      if (props.focused === "none" || props.focused === "ov.range") column?.scrollTo(0)
-      else column?.scrollChildIntoView(paneId(props.focused))
+      if (categoriesFocused()) column?.scrollChildIntoView("overview-narrow-cards")
+      else column?.scrollTo(0)
     }
     createEffect(followFocus)
-    createEffect(() => {
-      ui.state.overviewCategoryCursor
-      if (shown() && categoriesFocused()) column?.scrollChildIntoView(paneId("ov.categories"))
-    })
-    createEffect(on(topView, () => { if (shown()) column?.scrollChildIntoView(paneId("ov.chart")) }, { defer: true }))
-    createEffect(on(bottomView, () => { if (shown()) column?.scrollChildIntoView(paneId("ov.chart2")) }, { defer: true }))
     onCleanup(() => { column = undefined })
-    return <scrollbox ref={(box: ScrollBoxRenderable) => {
-      column = box
-      const own = box.content.onSizeChange
-      box.content.onSizeChange = () => { own?.call(box.content); followFocus() }
-    }} width="100%" height={bodyHeight()} scrollY scrollX={false} focusable={false}
+    // Layout reaches the scrollbox before its children, so follow focus
+    // when the cards row has its new place (a resize or a remount).
+    return <scrollbox ref={(box: ScrollBoxRenderable) => { column = box }} width="100%" height={bodyHeight()} scrollY scrollX={false} focusable={false}
       verticalScrollbarOptions={{ visible: false }} contentOptions={{ flexDirection: "column" }}>
-      <box id={paneId("ov.chart")} width="100%" height={topChartHeight()} flexShrink={0}>
+      <box id="overview-narrow-chart" width="100%" height={topChartHeight()} flexShrink={0}>
         <ChartPane pane={0} height={topChartHeight()} />
       </box>
-      <box id={paneId("ov.chart2")} width="100%" height={bottomChartHeight()} flexShrink={0}>
-        <ChartPane pane={1} height={bottomChartHeight()} />
-      </box>
-      <box width="100%" height={summaryHeight()} flexDirection="row" gap={1} flexShrink={0}>
+      <box id="overview-narrow-cards" ref={(row: BoxRenderable) => { row.onSizeChange = followFocus }} width="100%" height={categoriesHeight()} flexDirection="row" gap={1} flexShrink={0}>
         <box width={sideWidth()} flexDirection="column">
           {nowCard()}
           {saversCard()}
+          {totalsCard()}
         </box>
-        {totalsCard()}
-      </box>
-      <box id={paneId("ov.categories")} width="100%" height={categoriesHeight()} flexShrink={0}>
         {categoriesCard()}
       </box>
     </scrollbox>

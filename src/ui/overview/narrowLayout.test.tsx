@@ -43,21 +43,23 @@ function cards(root: BaseRenderable): BoxRenderable[] {
   ])
 }
 
-for (const [width, height] of [[80, 30], [100, 45], [110, 65], [119, 50], [160, 45]] as const) {
-  test(`${width}×${height}: titles, border geometry and focus paint`, async () => {
+/** The Overview's cards: Date Range, the charts, Now, Savers, Totals, Categories. */
+function overviewCards(t: Awaited<ReturnType<typeof overview>>): BoxRenderable[] {
+  const dateRange = cards(t.renderer.root).find((card) => card.y === 2)
+  expect(dateRange).toBeDefined()
+  return cards(dateRange!.parent!)
+}
+
+// Wide (>= 90 columns): two charts beside the stack. Narrow: one chart, then
+// Now, Savers and Totals beside Categories, both columns one height.
+for (const [width, height, wide] of [[80, 30, false], [80, 45, false], [89, 60, false], [90, 40, true], [100, 57, true], [160, 45, true]] as const) {
+  test(`${width}×${height}: ${wide ? "two columns" : "one chart, cards beside Categories"}; no overlaps; jumps reach whole cards in focus paint`, async () => {
     const t = await overview(width, height)
     const frame = () => t.captureCharFrame()
     const settle = async () => { await t.renderOnce(); await t.flush() }
-    // At 80×30 the column must scroll. Across the scroll positions,
-    // every title occurs exactly once, and each jump exposes its full card.
-    expect(frame().match(/ Date Range /g)?.length).toBe(1)
-    expect(frame().match(/ Spending · Cumulative /g)?.length).toBe(1)
-    const overviewCard = cards(t.renderer.root).find((card) => card.y === 2)
-    expect(overviewCard).toBeDefined()
-    const overviewRoot = overviewCard!.parent
-    expect(overviewRoot).toBeDefined()
-    const all = cards(overviewRoot!)
-    expect(all).toHaveLength(7)
+    const all = overviewCards(t)
+    expect(all).toHaveLength(wide ? 7 : 6)
+    expect(frame().includes("Balances · Net position")).toBe(wide)
     const sameCards = all.map((card) => card.id)
     for (let i = 0; i < all.length; i++) {
       const a = all[i]!
@@ -68,58 +70,49 @@ for (const [width, height] of [[80, 30], [100, 45], [110, 65], [119, 50], [160, 
         expect(a.x + a.width <= b.x || b.x + b.width <= a.x || a.y + a.height <= b.y || b.y + b.height <= a.y).toBe(true)
       }
     }
-    for (const [key, title, section] of [["t", "Spending · Cumulative", "ov.chart"], ["b", "Balances · Net position", "ov.chart2"], ["c", "Categories", "ov.categories"], ["d", "Date Range", "ov.range"]] as const) {
+    // The columns end on the same row: no empty area under either (wide:
+    // the bottom chart and Categories; narrow: Totals and Categories).
+    const left = all[wide ? 2 : all.length - 2]!, categories = all.at(-1)!
+    expect(left.y + left.height).toBe(categories.y + categories.height)
+    const jumps = [["t", "Spending · Cumulative", "ov.chart", 1], ...(wide ? [["b", "Balances · Net position", "ov.chart2", 2] as const] : []), ["c", "Categories", "ov.categories", all.length - 1], ["d", "Date Range", "ov.range", 0]] as const
+    for (const [jump, title, section, index] of jumps) {
       t.mockInput.pressKey("v")
-      t.mockInput.pressKey(key)
+      t.mockInput.pressKey(jump)
       await settle()
       expect(ui.state.focusedSection).toBe(section)
       expect(frame().split(title).length - 1).toBe(1)
-      const focusedCard = all[key === "d" ? 0 : key === "t" ? 1 : key === "b" ? 2 : 6]!
-      expect(focusedCard.y).toBeGreaterThanOrEqual(key === "d" ? 2 : 5)
+      const focusedCard = all[index]!
+      expect(focusedCard.y).toBeGreaterThanOrEqual(2)
       expect(focusedCard.y + focusedCard.height).toBeLessThanOrEqual(height - 2)
-      const spans = t.captureSpans().lines.flatMap((line) => line.spans)
-      const heading = spans.find((s) => s.text.includes(` ${title.split(" · ")[0]}`))!
+      const heading = t.captureSpans().lines.flatMap((line) => line.spans).find((s) => s.text.includes(` ${title.split(" · ")[0]}`))!
       expect(heading).toBeDefined()
       expect(heading.fg.toInts()).toEqual(RGBA.fromHex(theme.focus).toInts())
       expect(heading.bg.toInts()).toEqual(RGBA.fromHex(theme.canvas).toInts())
       expect(heading.attributes & TextAttributes.BOLD).toBe(TextAttributes.BOLD)
-      if (key === "c") {
-        for (const cardTitle of ["Now", "Savers", "Totals", "Categories"]) expect(frame().match(new RegExp(` ${cardTitle} `, "g"))?.length).toBe(1)
-        const categoryCard = all.at(-1)!
-        expect(categoryCard.y).toBeGreaterThanOrEqual(5)
-        expect(categoryCard.y + categoryCard.height).toBeLessThanOrEqual(height - 2)
+      if (jump === "c") {
         t.mockInput.pressKey("j")
         await settle()
         expect(ui.state.overviewCategoryCursor).toBe(1)
         const cursor = t.captureSpans().lines.flatMap((line) => line.spans).find((s) => s.text.includes("Category") && s.bg.toInts().join() === RGBA.fromHex(theme.surface0).toInts().join())
         expect(cursor).toBeDefined()
         expect(cursor!.attributes & TextAttributes.BOLD).toBe(TextAttributes.BOLD)
-        if (process.env.OVERVIEW_CAPTURES === "1" && height === 30) {
-          await Bun.write(`${import.meta.dir}/captures/${width}x${height}-categories.txt`, frame())
-        }
       }
-    }
-    if (process.env.OVERVIEW_CAPTURES === "1") {
-      await Bun.write(`${import.meta.dir}/captures/${width}x${height}.txt`, frame())
-      const cells = t.captureSpans().lines.map((line) => line.spans.map((s) => ({ text: s.text, fg: s.fg.toInts(), bg: s.bg.toInts(), attributes: s.attributes, width: s.width })))
-      await Bun.write(`${import.meta.dir}/captures/${width}x${height}.json`, JSON.stringify(cells))
     }
     ui.setState({ focusedSection: "none" })
     t.mockInput.pressKey("L")
     await settle()
     expect(ui.state.chartViews).toEqual([0, 5])
-    expect(frame()).toContain("Balances · Available")
+    if (wide) expect(frame()).toContain("Balances · Available")
     t.mockInput.pressKey("H")
     await settle()
     expect(ui.state.chartViews).toEqual([0, 4])
-    expect(frame()).toContain("Balances · Net position")
     ui.setTimeframe({ ...ui.state.timeframe, family: "lookback", lookback: "2M" })
     await settle()
-    expect(cards(overviewRoot!).map((card) => card.id)).toEqual(sameCards)
+    expect(overviewCards(t).map((card) => card.id)).toEqual(sameCards)
   })
 }
 
-test("a resize follows Categories, and drill returns to its cursor", async () => {
+test("a resize to narrow keeps Categories in view, and drill returns to its cursor", async () => {
   const t = await overview(110, 65)
   ui.setState({ focusedSection: "ov.categories", overviewCategoryCursor: 11 })
   await t.renderOnce()
@@ -144,12 +137,12 @@ test("a resize follows Categories, and drill returns to its cursor", async () =>
   expect(t.captureCharFrame()).toContain("Categories · enter to open")
 })
 
-test("the short Calendar pane contains all seven weekdays above its legend", async () => {
+test("narrow at its shortest: the Calendar chart shows all seven weekdays above its legend", async () => {
   const t = await overview(80, 30)
   ui.setState({ chartViews: [7, 4], focusedSection: "ov.chart" })
   await t.renderOnce()
   await t.flush()
-  const pane = t.renderer.root.findDescendantById("overview-pane-ov.chart")!
+  const pane = t.renderer.root.findDescendantById("overview-narrow-chart")!
   const lines = t.captureCharFrame().split("\n")
   for (const day of ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"]) {
     const y = lines.findIndex((line) => line.startsWith(`│ ${day}`))
