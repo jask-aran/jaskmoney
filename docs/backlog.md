@@ -58,7 +58,7 @@ committed; note the commit.
 - [ ] **3. Instant tags.** Apply tags locally at once, like categories, with
   a saved queue of pending tag changes so a sync (which makes Up's tags
   authoritative) can't undo them before they reach Up.
-- [ ] **4. Steady cursor.** When re-suggesting reorders the Uncategorised
+- [x] **4. Steady cursor.** When re-suggesting reorders the Uncategorised
   view, keep the cursor on the same transaction (or hold the order until it
   moves).
 - [ ] **7. Subscriptions on the Overview.** From the regular-payments

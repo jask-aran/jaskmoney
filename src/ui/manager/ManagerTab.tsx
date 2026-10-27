@@ -47,6 +47,28 @@ export function ManagerTab(props: { focused: SectionId }) {
     }
   })
 
+  // Steady cursor: when the rows reorder by themselves (suggestions or tag
+  // candidates landing re-sort a confidence-ordered view, ask: verdicts
+  // arriving), the cursor stays on its transaction. A change of view (sort,
+  // filter, account, special view) or a cursor move keeps the index rules:
+  // `s` still goes to the top. A row that left the view leaves the cursor
+  // where it was (the next row comes up), and a range keeps its indices.
+  const view = () => JSON.stringify([data.state.sortColumn, data.state.sortAscending, data.state.filterQuery, data.state.accountSelection, data.state.uncategorisedOnly, data.state.tagReview?.name ?? null])
+  let seen: { view: string; index: number; id: number | undefined } | null = null
+  createEffect(() => {
+    const list = rows(), now = view(), index = ui.state.managerCursor
+    const was = seen
+    if (was && was.view === now && was.index === index && was.id != null && list[index]?.id !== was.id && !ui.state.rangeSelecting) {
+      const at = list.findIndex((t) => t.id === was.id)
+      if (at >= 0) {
+        seen = { view: now, index: at, id: was.id }
+        ui.jumpManagerCursor(at, list.length)
+        return
+      }
+    }
+    seen = { view: now, index, id: list[index]?.id }
+  })
+
   createEffect(() => {
     const maxTop = Math.max(0, rows().length - ui.state.managerVisible)
     if (ui.state.managerTop > maxTop) ui.setState({ managerTop: maxTop })
