@@ -2,125 +2,115 @@ import { expect, test } from "bun:test"
 import { mkdtempSync } from "node:fs"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
-import { demoProfile, generateDemo, type DemoTransaction } from "./demo"
+import { DEMO_CATEGORIES, generateDemo, type DemoData } from "./demo"
 import { seedDemoDb } from "../db/demoSeed"
-import { loadAccounts, loadCategories, loadTransactions, openDb } from "../db/client"
-import { account, category, transaction } from "../testing/fixtures"
+import { loadAccounts, loadBudgetCycle, loadBudgets, loadCategories, loadTransactions, openDb } from "../db/client"
 import { isIncome, isSpending } from "./moneyRules"
 
 /**
- * Demo mode (acceptance, frozen). demoProfile reads the user's data for its
- * patterns; generateDemo spreads them over `years` with a lot of noise;
- * seedDemoDb writes the result to a fresh database. Nothing personal leaves
- * the real data: payments to and from people, the employer (income
- * descriptions), notes, messages and account names are replaced.
+ * Demo mode (acceptance, frozen). The demo ships with the app, so it is
+ * made from built-in data only: generateDemo takes no user data at all.
+ * Three years of an Up-style account with real variety: up months and
+ * down months, different spending patterns, a monthly budget it sometimes
+ * keeps and sometimes blows.
  */
-const categories = [
-  category({ id: 1, name: "Groceries" }), category({ id: 2, name: "TV, Music & Streaming" }),
-  category({ id: 3, name: "Salary", income: true }), category({ id: 4, name: "Restaurants & Cafes" }),
-  category({ id: 5, name: "People" }), category({ id: 6, name: "Holidays & Travel" }),
-  category({ id: 7, name: "Transfers", notSpending: true }),
-]
-const accounts = [
-  account({ id: 1, name: "My Spending", externalKind: "TRANSACTIONAL", balance: 1027.23 }),
-  account({ id: 2, name: "🏖️ My Holiday", externalKind: "SAVER", balance: 3400 }),
-]
-function realRows() {
-  let id = 0
-  const rows = []
-  const day = (m: number, d: number) => `2026-${String(m).padStart(2, "0")}-${String(d).padStart(2, "0")}`
-  for (let m = 5; m <= 10; m++) {
-    for (const d of [2, 9, 16, 23]) rows.push(transaction({ id: ++id, dateISO: day(m, d), amount: -(60 + d), description: "Coles", categoryId: 1, categoryName: "Groceries" }))
-    rows.push(transaction({ id: ++id, dateISO: day(m, 3), amount: -22.99, description: "Netflix", categoryId: 2, categoryName: "TV, Music & Streaming" }))
-    rows.push(transaction({ id: ++id, dateISO: day(m, 14), amount: 3100, description: "PAYROLL SECRET EMPLOYER PTY", categoryId: 3, categoryName: "Salary", income: true }))
-    rows.push(transaction({ id: ++id, dateISO: day(m, 20), amount: -45, description: "Alex Morgan ANZ", transactionType: "Pay Anyone", categoryId: 5, categoryName: "People", message: "rent share for jask", notes: "private note" }))
-    rows.push(transaction({ id: ++id, dateISO: day(m, 15), amount: -400, description: "Transfer to My Holiday", transferAccountId: 2, internal: true, excluded: true, categoryId: null, categoryName: "Uncategorised" }))
-    rows.push(transaction({ id: ++id, dateISO: day(m, 11), amount: -18.5, description: "Lane Coffee Roasters", categoryId: 4, categoryName: "Restaurants & Cafes" }))
+const today = "2026-10-27"
+const make = (seed = 7): DemoData => generateDemo({ today, years: 3, seed })
+
+function monthlySpend(demo: DemoData): Map<string, number> {
+  const spend = new Map<string, number>()
+  const spendingCats = new Set(DEMO_CATEGORIES.filter((c) => !c.income && !c.notSpending).map((c) => c.name))
+  for (const t of demo.transactions) {
+    if (t.amount >= 0 || t.transferToKey || !t.categoryName || !spendingCats.has(t.categoryName)) continue
+    const month = t.dateISO.slice(0, 7)
+    spend.set(month, (spend.get(month) ?? 0) - t.amount)
   }
-  return rows
-}
-const PERSONAL = /alex|morgan|secret employer|rent share|private note/i
-
-function generated(seed = 7) {
-  return generateDemo(demoProfile(realRows(), categories, accounts), { today: "2026-10-27", years: 3, seed })
+  return spend
 }
 
-test("three years of rows, oldest about three years back, none after today", () => {
-  const demo = generated()
+test("only built-in data: generateDemo takes options alone, and is deterministic by seed", () => {
+  expect(generateDemo.length).toBe(1)
+  expect(make(7)).toEqual(make(7))
+  expect(make(8).transactions.slice(0, 30)).not.toEqual(make(7).transactions.slice(0, 30))
+})
+
+test("three years ending today, every month with spending, a few thousand rows", () => {
+  const demo = make()
   const dates = demo.transactions.map((t) => t.dateISO).sort()
-  expect(dates.at(-1)! <= "2026-10-27").toBe(true)
-  expect(dates[0]! <= "2023-12-01").toBe(true)
+  expect(dates.at(-1)! <= today).toBe(true)
+  expect(dates[0]! <= "2023-11-30").toBe(true)
   expect(dates[0]! >= "2023-09-01").toBe(true)
-  // Every month of the three years has spending.
-  const months = new Set(demo.transactions.filter((t) => t.amount < 0).map((t) => t.dateISO.slice(0, 7)))
-  expect(months.size).toBeGreaterThanOrEqual(35)
-  expect(demo.transactions.length).toBeGreaterThan(1000)
+  const months = monthlySpend(demo)
+  expect(months.size).toBeGreaterThanOrEqual(36)
+  expect(demo.transactions.length).toBeGreaterThan(1500)
+  expect(demo.transactions.length).toBeLessThan(9000)
 })
 
-test("the same seed gives the same data; another seed different data", () => {
-  expect(generated(7)).toEqual(generated(7))
-  expect(generated(8).transactions.slice(0, 20)).not.toEqual(generated(7).transactions.slice(0, 20))
+test("an Up-style category tree: groups with categories in them, income and not-spending ones; every row's category is in it", () => {
+  const groups = DEMO_CATEGORIES.filter((c) => c.parent === null && DEMO_CATEGORIES.some((d) => d.parent === c.name))
+  expect(groups.length).toBeGreaterThanOrEqual(4)
+  expect(DEMO_CATEGORIES.filter((c) => c.parent !== null).length).toBeGreaterThanOrEqual(15)
+  expect(DEMO_CATEGORIES.some((c) => c.income)).toBe(true)
+  expect(DEMO_CATEGORIES.some((c) => c.notSpending)).toBe(true)
+  for (const c of DEMO_CATEGORIES) if (c.parent) expect(DEMO_CATEGORIES.some((d) => d.name === c.parent)).toBe(true)
+  const names = new Set(DEMO_CATEGORIES.map((c) => c.name))
+  for (const t of make().transactions) if (t.categoryName) expect(names.has(t.categoryName)).toBe(true)
 })
 
-test("nothing personal: people, the employer, notes, messages and account names are replaced", () => {
-  const demo = generated()
-  for (const t of demo.transactions) expect(`${t.description} ${t.message ?? ""}`).not.toMatch(PERSONAL)
-  for (const a of demo.accounts) expect(a.name).not.toMatch(PERSONAL)
-  // People payments still happen, to made-up names.
-  expect(demo.transactions.some((t) => t.categoryName === "People" && t.transactionType != null)).toBe(true)
+test("up months and down months: monthly spending varies a lot, with clear highs and lows", () => {
+  const values = [...monthlySpend(make()).values()].slice(1, -1) // whole months only
+  const mean = values.reduce((a, b) => a + b, 0) / values.length
+  const sd = Math.sqrt(values.reduce((a, b) => a + (b - mean) ** 2, 0) / values.length)
+  expect(sd / mean).toBeGreaterThan(0.2)
+  const sorted = [...values].sort((a, b) => a - b)
+  const median = sorted[Math.floor(sorted.length / 2)]!
+  expect(values.filter((v) => v > median * 1.3).length).toBeGreaterThanOrEqual(3)
+  expect(values.filter((v) => v < median * 0.8).length).toBeGreaterThanOrEqual(3)
 })
 
-test("patterned on the user's data, with noise", () => {
-  const demo = generated()
-  const coles = demo.transactions.filter((t) => t.description === "Coles")
-  // About four a month for three years, give or take the noise.
-  expect(coles.length).toBeGreaterThan(36 * 4 * 0.5)
-  expect(coles.length).toBeLessThan(36 * 4 * 1.8)
-  expect(coles.every((t) => t.categoryName === "Groceries" && t.amount < 0)).toBe(true)
-  const amounts = new Set(coles.map((t) => t.amount))
-  expect(amounts.size).toBeGreaterThan(coles.length / 2)
-  // Merchants the user never used appear too (noise), each in a category the user has.
-  const known = new Set(realRows().map((t) => t.description))
-  const extra = new Set(demo.transactions.filter((t) => t.amount < 0 && !known.has(t.description) && t.categoryName !== "People" && !t.transferToKey).map((t) => t.description))
-  expect(extra.size).toBeGreaterThanOrEqual(10)
-  for (const t of demo.transactions) if (t.categoryName) expect(categories.some((c) => c.name === t.categoryName)).toBe(true)
-})
-
-test("subscriptions keep their cadence with price changes; pay arrives regularly; savers get transfers; trips abroad", () => {
-  const demo = generated()
-  const netflix = demo.transactions.filter((t) => t.description === "Netflix")
-  expect(netflix.length).toBeGreaterThanOrEqual(30)
-  expect(new Set(netflix.map((t) => t.amount)).size).toBeGreaterThanOrEqual(2)
-  const pay = demo.transactions.filter((t) => t.amount > 0 && t.categoryName === "Salary")
-  expect(pay.length).toBeGreaterThanOrEqual(30)
-  const saver = demo.accounts.find((a) => a.kind === "saver")!
-  expect(demo.transactions.filter((t: DemoTransaction) => t.transferToKey === saver.key).length).toBeGreaterThanOrEqual(12)
+test("different spending patterns: a few big one-off purchases, trips abroad, regular bills and subscriptions, pay and saving", () => {
+  const demo = make()
+  const spending = demo.transactions.filter((t) => t.amount < 0 && !t.transferToKey)
+  const big = spending.filter((t) => -t.amount >= 800 && t.categoryName !== null && !/rent|mortgage/i.test(t.categoryName))
+  expect(big.length).toBeGreaterThanOrEqual(2)
+  expect(big.length).toBeLessThanOrEqual(15)
   expect(demo.transactions.filter((t) => t.foreignAmount).length).toBeGreaterThanOrEqual(10)
+  const byDesc = new Map<string, number>()
+  for (const t of spending) byDesc.set(t.description, (byDesc.get(t.description) ?? 0) + 1)
+  expect([...byDesc.values()].filter((n) => n >= 30).length).toBeGreaterThanOrEqual(4)
+  expect(demo.transactions.filter((t) => t.amount > 0 && t.categoryName && DEMO_CATEGORIES.find((c) => c.name === t.categoryName)?.income).length).toBeGreaterThanOrEqual(36)
+  const saver = demo.accounts.find((a) => a.kind === "saver")!
+  expect(demo.transactions.filter((t) => t.transferToKey === saver.key).length).toBeGreaterThanOrEqual(12)
 })
 
-test("with no data of the user's, it still makes a full demo", () => {
-  const demo = generateDemo(demoProfile([], categories, []), { today: "2026-10-27", years: 3, seed: 1 })
-  expect(demo.accounts.some((a) => a.kind === "spending")).toBe(true)
-  expect(demo.transactions.length).toBeGreaterThan(500)
+test("a monthly budget it keeps in some months and blows in others", () => {
+  const demo = make()
+  expect(demo.budget.monthly).toBeGreaterThan(0)
+  const values = [...monthlySpend(demo).values()].slice(1, -1)
+  expect(values.filter((v) => v > demo.budget.monthly).length).toBeGreaterThanOrEqual(4)
+  expect(values.filter((v) => v <= demo.budget.monthly).length).toBeGreaterThanOrEqual(8)
 })
 
-test("seedDemoDb writes a fresh database: the categories copied, Up-like accounts with no Up ids, every row", () => {
-  const demo = generated()
+test("seedDemoDb: the demo's own categories, Up-style accounts without Up ids, an overall budget on monthly cycles from the 1st, every row", () => {
+  const demo = make()
   const path = join(mkdtempSync(join(tmpdir(), "jaskmoney-demo-")), "demo.db")
-  seedDemoDb(path, demo, categories)
+  seedDemoDb(path, demo)
   const db = openDb(path)
   const rows = loadTransactions(db)
   expect(rows.length).toBe(demo.transactions.length)
-  for (const c of categories) expect(loadCategories(db).some((d) => d.name === c.name && d.income === c.income && d.notSpending === c.notSpending)).toBe(true)
-  const saved = loadAccounts(db)
-  expect(saved.map((a) => a.name).sort()).toEqual(demo.accounts.map((a) => a.name).sort())
-  expect(saved.every((a) => a.source === "up")).toBe(true)
-  expect(saved.some((a) => a.externalKind === "SAVER")).toBe(true)
+  const categories = loadCategories(db)
+  for (const c of DEMO_CATEGORIES) {
+    const saved = categories.find((d) => d.name === c.name)
+    expect(saved).toBeDefined()
+    expect(saved!.income).toBe(!!c.income)
+    if (c.parent) expect(categories.find((d) => d.id === saved!.parentId)?.name).toBe(c.parent)
+  }
+  expect(loadAccounts(db).every((a) => a.source === "up")).toBe(true)
   expect(db.query("SELECT COUNT(*) AS n FROM transactions WHERE external_id IS NOT NULL").get()).toEqual({ n: 0 })
-  expect(db.query("SELECT COUNT(*) AS n FROM accounts WHERE external_id IS NOT NULL").get()).toEqual({ n: 0 })
-  // Transfers to savers read as internal (not spending), pay as income.
+  expect(loadBudgets(db)).toEqual([expect.objectContaining({ scope: { kind: "overall" }, amount: demo.budget.monthly })])
+  expect(loadBudgetCycle(db)).toMatchObject({ unit: "month", anchor: "calendar" })
   expect(rows.some((t) => t.internal)).toBe(true)
   expect(rows.some((t) => isIncome(t))).toBe(true)
-  expect(rows.filter((t) => isSpending(t)).length).toBeGreaterThan(500)
+  expect(rows.filter((t) => isSpending(t)).length).toBeGreaterThan(1000)
   db.close()
 })

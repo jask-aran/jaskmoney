@@ -1,10 +1,9 @@
 import { unlinkSync } from "node:fs"
-import { openDb, loadCategories, uncategorisedCategoryId } from "./client"
-import type { DemoAccount, DemoTransaction } from "../domain/demo"
-import type { Category } from "../domain/types"
+import { openDb, loadCategories, uncategorisedCategoryId, saveBudget, saveBudgetCycle } from "./client"
+import { DEMO_CATEGORIES, type DemoData } from "../domain/demo"
 
 /** Destructive by contract: call only with the separate demo database path. */
-export function seedDemoDb(path: string, demo: { accounts: DemoAccount[]; transactions: DemoTransaction[] }, categories: readonly Category[]): void {
+export function seedDemoDb(path: string, demo: DemoData): void {
   for (const file of [path, `${path}-wal`, `${path}-shm`]) {
     try { unlinkSync(file) } catch (error) {
       if (!(error instanceof Error && "code" in error && error.code === "ENOENT")) throw error
@@ -13,19 +12,21 @@ export function seedDemoDb(path: string, demo: { accounts: DemoAccount[]; transa
   const db = openDb(path)
   try {
     db.transaction(() => {
+      const defaults = loadCategories(db)
       const upsert = db.query(`INSERT INTO categories (name, color, sort_order, is_default, not_spending, income)
         VALUES (?, ?, ?, ?, ?, ?) ON CONFLICT(name) DO UPDATE SET color = excluded.color,
         sort_order = excluded.sort_order, is_default = excluded.is_default,
         not_spending = excluded.not_spending, income = excluded.income`)
-      for (const c of categories) upsert.run(c.name, c.color, c.sortOrder, Number(c.isDefault), Number(c.notSpending), Number(c.income))
+      DEMO_CATEGORIES.forEach((c, i) => upsert.run(c.name, c.color, i, 0, Number(!!c.notSpending), Number(!!c.income)))
       const categoryIds = new Map(loadCategories(db).map(c => [c.name, c.id]))
       const uncategorisedId = uncategorisedCategoryId(db)
-      const sourceCategories = new Map(categories.map(c => [c.id, c]))
-      for (const c of categories) {
-        const parent = c.parentId === null ? null : sourceCategories.get(c.parentId)
-        if (c.parentId !== null && !parent) throw new Error(`Missing demo category parent: ${c.name}`)
-        db.query("UPDATE categories SET parent_id = ? WHERE name = ?").run(parent ? categoryIds.get(parent.name) ?? null : null, c.name)
+      for (const c of DEMO_CATEGORIES) {
+        const parentId = c.parent === null ? null : categoryIds.get(c.parent)
+        if (parentId === undefined) throw new Error(`Missing demo category parent: ${c.name}`)
+        db.query("UPDATE categories SET parent_id = ? WHERE name = ?").run(parentId, c.name)
       }
+      saveBudget(db, { kind: "overall" }, demo.budget.monthly)
+      saveBudgetCycle(db, { unit: "month", anchor: "calendar", anchorDate: null })
       const accountIds = new Map<string, number>()
       const insertAccount = db.query(`INSERT INTO accounts (name, type, source, external_id, external_kind, balance, sync_enabled, sort_order)
         VALUES (?, 'debit', 'up', NULL, ?, ?, 1, ?)`)
@@ -46,6 +47,14 @@ export function seedDemoDb(path: string, demo: { accounts: DemoAccount[]; transa
         const categorySource = t.categoryName === null ? null : t.transactionType === "Salary" || t.transactionType === "Interest" ? "type" : "provider"
         insert.run(t.dateISO, t.dateISO, t.amount, t.description, accountId, categoryId, categorySource, transferId,
           t.status, t.transactionType, t.message, t.foreignAmount, transferId === null ? 1 : 0)
+      }
+      // Only remove unused defaults from this freshly created demo database.
+      const names = new Set(DEMO_CATEGORIES.map(c => c.name))
+      const remove = db.query(`DELETE FROM categories WHERE id = ? AND is_default = 0
+        AND NOT EXISTS (SELECT 1 FROM transactions WHERE category_id = categories.id)
+        AND NOT EXISTS (SELECT 1 FROM categories AS child WHERE child.parent_id = categories.id)`)
+      for (const category of defaults) {
+        if (!names.has(category.name)) remove.run(category.id)
       }
     })()
   } finally {
