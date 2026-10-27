@@ -197,7 +197,7 @@ export function tagHistory(data: HistoryData, tagId: number, limits: { recent?: 
     tag: { name: tag.name, ...(tag.scope ? { scope: tag.scope } : {}), rows: inside.length },
     shared: sharedFacts(inside),
     recent_changes: recent,
-    descriptions: descriptionGroups(inside, data.transactions, limits.descriptions ?? 30),
+    descriptions: descriptionGroups(inside, data.transactions, limits.descriptions ?? 30).map((g) => ({ ...g, waiting: g.rows - g.inside })),
     lookalikes: lookalikes(inside, data.transactions),
     rules: ruleList(data, (r) => r.addTagIds.includes(tagId)),
   }
@@ -244,10 +244,10 @@ export function matchReport(data: HistoryData, expr: string, target: MatchTarget
   const isIn = "categoryId" in target ? (t: Transaction) => t.categoryId === target.categoryId : (t: Transaction) => t.tagIds.includes(target.tagId)
   const inTarget = found.filter(isIn)
   const elsewhere = found.filter((t) => !isIn(t) && ("tagId" in target || !isUncategorised(t)))
-  const waiting = "categoryId" in target ? found.filter((t) => !isIn(t) && isUncategorised(t)) : []
+  const waiting = "categoryId" in target ? found.filter((t) => !isIn(t) && isUncategorised(t)) : elsewhere
   const chosen = "categoryId" in target
     ? new Set(data.categoryLog.filter((e) => e.categoryId === target.categoryId && e.how !== "rule").map((e) => e.transactionId))
-    : new Set(data.tagLog.filter((e) => e.tagId === target.tagId && e.added && e.how !== "rule").map((e) => e.transactionId))
+    : new Set(data.tagLog.filter((e) => e.tagId === target.tagId && e.added && (e.how === "picker" || e.how === "review")).map((e) => e.transactionId))
   const foundIds = new Set(found.map((t) => t.id))
   const decided = inTarget.length + elsewhere.length
   return {
@@ -257,13 +257,13 @@ export function matchReport(data: HistoryData, expr: string, target: MatchTarget
     in_target: inTarget.length,
     elsewhere: elsewhere.length,
     waiting: waiting.length,
-    precision: decided ? round(inTarget.length / decided) : null,
+    precision: decided ? ("tagId" in target ? inTarget.length / decided : round(inTarget.length / decided)) : null,
     covers_your_choices: { of: chosen.size, covered: [...chosen].filter((id) => foundIds.has(id)).length },
     // Rows in the target that Up (or sync, from Up's type) categorised: a rule adds nothing for them.
-    set_by_up: inTarget.filter((t) => ["provider", "type"].includes(data.categorySources?.get(t.id) ?? "")).length,
-    already_by_rules: "categoryId" in target && found.length > 0 && alreadyByRules(data, found, target.categoryId),
+    set_by_up: "categoryId" in target ? inTarget.filter((t) => ["provider", "type"].includes(data.categorySources?.get(t.id) ?? "")).length : 0,
+    already_by_rules: found.length > 0 && ("categoryId" in target ? alreadyByRules(data, found, target.categoryId) : alreadyTaggedByRules(data, found, target.tagId)),
     by_category: byCategory,
-    sample: [...elsewhere, ...waiting, ...inTarget].slice(0, sample).map((t) => ({ ...rowFacts(t), verdict: isIn(t) ? "in target" : isUncategorised(t) && "categoryId" in target ? "waiting" : "elsewhere" })),
+    sample: [...elsewhere, ...("categoryId" in target ? waiting : []), ...inTarget].slice(0, sample).map((t) => ({ ...rowFacts(t), verdict: isIn(t) ? "in target" : isUncategorised(t) && "categoryId" in target ? "waiting" : "elsewhere" })),
   }
 }
 
@@ -272,4 +272,11 @@ function alreadyByRules(data: HistoryData, found: Transaction[], categoryId: num
   const fresh = found.map((t) => ({ ...t, categoryId: null, tagIds: [] }))
   const set = new Map(dryRunRules(fresh, data.rules, data.savedFilters, data.categories, data.tags).changes.filter((c) => c.categorySet).map((c) => [c.id, c.categoryId]))
   return fresh.every((t) => set.get(t.id) === categoryId)
+}
+
+/** Remove only the target tag: existing rules must add it to every row. */
+function alreadyTaggedByRules(data: HistoryData, found: Transaction[], tagId: number): boolean {
+  const fresh = found.map((t) => ({ ...t, tagIds: t.tagIds.filter((id) => id !== tagId) }))
+  const tagged = new Set(dryRunRules(fresh, data.rules, data.savedFilters, data.categories, data.tags).changes.filter((c) => c.tagIds.includes(tagId)).map((c) => c.id))
+  return fresh.every((t) => tagged.has(t.id))
 }

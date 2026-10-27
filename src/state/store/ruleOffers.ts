@@ -7,9 +7,9 @@ import { count } from "../../ui/text"
 import type { createUpPush } from "./upPush"
 import type { StoreContext } from "./context"
 
-export function createRuleOffers(ctx: StoreContext, deps: Pick<ReturnType<typeof createUpPush>, "retryPendingCategories" | "retryPendingTags">) {
+export function createRuleOffers(ctx: StoreContext, deps: Pick<ReturnType<typeof createUpPush>, "retryPendingCategories" | "retryPendingTags" | "applyTagPatch">) {
   const { state, setState, mutate, transactions, recordUndo, saveSavedFilter, createSettingsRule, applyRules, deleteSettingsRule, deleteSavedFilter, restoreCategories } = ctx
-  const { retryPendingCategories, retryPendingTags } = deps
+  const { retryPendingCategories, retryPendingTags, applyTagPatch } = deps
   let offersCache: { key: readonly unknown[]; offers: RuleOffer[] } | null = null
 
   /** The history the AI reads (domain/aiHistory): current state and the logs. */
@@ -37,7 +37,7 @@ export function createRuleOffers(ctx: StoreContext, deps: Pick<ReturnType<typeof
     if (offersCache && offersCache.key.every((part, i) => part === key[i])) return offersCache.offers
     const repeat = ruleOffersFor()
     const saved = new Set(state.savedFilters.map((f) => f.expr.toLowerCase()))
-    const ai = state.aiRuleOffers.filter((o) => !saved.has(o.expr.toLowerCase()) && !repeat.some((r) => r.expr.toLowerCase() === o.expr.toLowerCase() && r.categoryId === o.categoryId))
+    const ai = state.aiRuleOffers.filter((o) => !saved.has(o.expr.toLowerCase()) && !repeat.some((r) => r.expr.toLowerCase() === o.expr.toLowerCase() && r.categoryId === o.categoryId && r.tagId === o.tagId))
     offersCache = { key, offers: [...repeat, ...ai] }
     return offersCache.offers
   }
@@ -74,27 +74,30 @@ export function createRuleOffers(ctx: StoreContext, deps: Pick<ReturnType<typeof
    * run it on the rows it finds waiting, Up rows sent to Up. */
   async function makeOfferedRule(offer: RuleOffer): Promise<string> {
     if (!ctx.db) throw new Error("db not open")
-    const category = state.categories.find((c) => c.id === offer.categoryId)
-    if (!category) throw new Error("category not found")
+    const target = offer.tagId != null ? state.tags.find((t) => t.id === offer.tagId) : state.categories.find((c) => c.id === offer.categoryId)
+    if (!target) throw new Error(offer.tagId != null ? "tag not found" : "category not found")
+    const targetName = offer.tagId != null ? `+${target.name}` : target.name
     const base = `desc-${offer.description.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-+|-+$/g, "").slice(0, 50) || "rule"}`
     let id = base
     for (let n = 2; state.savedFilters.some((f) => f.id === id); n++) id = `${base}-${n}`
     saveSavedFilter({ id, name: offer.description, expr: offer.expr })
-    const ruleId = createSettingsRule({ name: `${offer.description} → ${category.name}`, savedFilterId: id, setCategoryId: category.id, addTagIds: [], enabled: true })
+    const ruleId = createSettingsRule({ name: `${offer.description} → ${targetName}`, savedFilterId: id, setCategoryId: offer.categoryId, addTagIds: offer.tagId != null ? [offer.tagId] : [], enabled: true })
     setState("aiRuleOffers", (offers) => offers.filter((o) => o.expr !== offer.expr))
-    const before = transactions().filter((t) => offer.waiting.includes(t.id)).map((t) => ({ id: t.id, categoryId: t.categoryId }))
+    const before = transactions().filter((t) => offer.waiting.includes(t.id)).map((t) => ({ id: t.id, categoryId: t.categoryId, tagIds: [...t.tagIds] }))
     const applied = offer.waiting.length ? applyRules(offer.waiting) : null
     const changed = before.filter((row) => transactions().some((t) => t.id === row.id && t.categoryId !== row.categoryId))
+    const tagId = offer.tagId
+    const tagged = tagId != null ? before.filter((row) => !row.tagIds.includes(tagId) && transactions().some((t) => t.id === row.id && t.tagIds.includes(tagId))).map((row) => row.id) : []
     const sent = applied?.categoryChanges ? await retryPendingCategories() : null
     if (applied?.tagChanges) await retryPendingTags()
-    recordUndo(`rule ${offer.description} → ${category.name}`, async () => {
+    recordUndo(`rule ${offer.description} → ${targetName}`, async () => {
       deleteSettingsRule(ruleId)
       deleteSavedFilter(id)
-      return restoreCategories(changed)
+      return tagId != null ? applyTagPatch(tagged, { [tagId]: "remove" }, "undo") : restoreCategories(changed)
     })
     return [
-      `Rule made: ${offer.description} → ${category.name}`,
-      applied?.categoryChanges ? `${count(applied.categoryChanges, "waiting row")} categorised` : "",
+      `Rule made: ${offer.description} → ${targetName}`,
+      tagId != null ? (tagged.length ? `${count(tagged.length, "row")} tagged` : "") : applied?.categoryChanges ? `${count(applied.categoryChanges, "waiting row")} categorised` : "",
       sent?.pushed ? `${sent.pushed} sent to Up` : "",
       sent?.waiting ? `${sent.waiting} waiting for Up` : "",
     ].filter(Boolean).join(" · ")
@@ -102,12 +105,15 @@ export function createRuleOffers(ctx: StoreContext, deps: Pick<ReturnType<typeof
 
   function declineRuleOffer(offer: RuleOffer): void {
     if (offer.source === "ai") {
-      mutate((db) => declineRule(db, offer.expr, offer.categoryId))
-      setState("aiRuleOffers", (offers) => offers.filter((o) => o !== offer && !(o.expr === offer.expr && o.categoryId === offer.categoryId)))
+      mutate((db) => declineRule(db, offer.expr, offer.categoryId, offer.tagId))
+      setState("aiRuleOffers", (offers) => offers.filter((o) => o !== offer && !(o.expr === offer.expr && o.categoryId === offer.categoryId && o.tagId === offer.tagId)))
     } else mutate((db) => declineCategoryChoice(db, offer.description, offer.categoryId))
     recordUndo(`declined rule ${offer.description}`, async () => {
       mutate((db) => {
-        if (offer.source === "ai") db.query("DELETE FROM rule_declines WHERE expr = ? AND category_id = ?").run(offer.expr, offer.categoryId)
+        if (offer.source === "ai") {
+          if (offer.tagId != null) db.query("DELETE FROM rule_tag_declines WHERE expr = ? AND tag_id = ?").run(offer.expr, offer.tagId)
+          else db.query("DELETE FROM rule_declines WHERE expr = ? AND category_id = ?").run(offer.expr, offer.categoryId)
+        }
         else db.query("UPDATE category_choices SET declined = 0 WHERE description = ? AND category_id = ?").run(offer.description.trim().toLowerCase(), offer.categoryId)
       })
       if (offer.source === "ai") setState("aiRuleOffers", (offers) => [...offers, offer])

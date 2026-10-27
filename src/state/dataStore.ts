@@ -522,7 +522,7 @@ function createDataStore() {
   const { suggestCategories, resuggestLike, askAbout, suggestTried, untriedWaiting, markTried, acceptSuggestions, dismissSuggestions } = suggestions
   const tagReview = createTagReview(ctx, { applyTagPatch })
   const { tagGroups, openTagReview, acceptTagCandidates, dismissTagCandidates, closeTagReview } = tagReview
-  const { historyData, ruleOffersFor, allRuleOffers, askForRules, ruleOfferNote, makeOfferedRule, declineRuleOffer } = createRuleOffers(ctx, { retryPendingCategories, retryPendingTags })
+  const { historyData, ruleOffersFor, allRuleOffers, askForRules, ruleOfferNote, makeOfferedRule, declineRuleOffer } = createRuleOffers(ctx, { retryPendingCategories, retryPendingTags, applyTagPatch })
 
   function createSettingsCategory(input: Pick<Category, "name" | "color"> & { notSpending?: boolean }): number {
     return mutate((db) => createCategory(db, input))

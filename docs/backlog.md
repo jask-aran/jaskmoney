@@ -49,7 +49,7 @@ committed; note the commit.
   OpenRouter's `typesafe/jev-1.14`). Move our Jev client onto it so one
   provider layer (maybe one OpenRouter key) serves Jev and the general model;
   re-run the suggestion benchmark first to confirm identical answers.
-- [ ] **11. AI tag rules.** The rule writer does categories only: a rule that
+- [x] **11. AI tag rules.** The rule writer does categories only: a rule that
   adds a tag Up knows is undone by the next sync (Up's tags win). Needs 3.
 
 - [ ] **Remove pushTagChange** (src/up/tags.ts): unused since instant tags;

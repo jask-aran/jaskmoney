@@ -326,6 +326,7 @@ export function ManagerTab(props: { focused: SectionId }) {
           <text> </text>
           <For each={ruleOffers().slice(ruleTop(), ruleTop() + RULE_LINES)}>{(offer, i) => {
             const category = () => data.state.categories.find((c) => c.id === offer.categoryId)
+            const tag = () => data.state.tags.find((t) => t.id === offer.tagId)
             const at = () => ruleTop() + i() === ui.state.ruleOfferCursor
             return (
               <>
@@ -333,7 +334,7 @@ export function ManagerTab(props: { focused: SectionId }) {
                   <S fg={at() ? theme.accent : theme.overlay1}>{at() ? "> " : "  "}</S>
                   <S fg={theme.text}>{fit(offer.description, 34)}</S>
                   <S fg={theme.overlay1}>{" → "}</S>
-                  <S fg={category()?.color ?? theme.text}>{`${categoryMark(offer.categoryId)} ${fit(category()?.name ?? "?", 30)}`}</S>
+                  <S fg={tag()?.color ?? category()?.color ?? theme.text}>{offer.tagId != null ? fit(`+${tag()?.name ?? "?"}`, 32) : `${categoryMark(offer.categoryId)} ${fit(category()?.name ?? "?", 30)}`}</S>
                 </text>
                 <text wrapMode="none" fg={theme.overlay1}>{fit(`    ${offer.source === "ai" ? `AI · ${offer.expr}` : `you chose it ${offer.times}×`} · ${offer.agreeing} of ${offer.categorised} found are there${offer.waiting.length ? ` · ${offer.waiting.length} waiting` : ""}`, 72)}</text>
                 <Show when={offer.why}>

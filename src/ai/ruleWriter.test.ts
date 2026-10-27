@@ -61,7 +61,7 @@ test("a declined AI rule isn't offered again, and the model is told", async () =
   await data.askForRules(llm)
   data.declineRuleOffer(data.state.aiRuleOffers[0]!)
   expect(data.allRuleOffers()).toEqual([])
-  expect(ruleWriterBrief(data.historyData(), [{ expr: 'desc:"J Smith"', categoryId: rent }]).declined).toEqual([{ expr: 'desc:"J Smith"', category: "Test rent" }])
+  expect(ruleWriterBrief(data.historyData(), [{ expr: 'desc:"J Smith"', categoryId: rent, tagId: null }]).declined).toEqual([{ expr: 'desc:"J Smith"', category: "Test rent" }])
   faux.setResponses([finish()])
   expect(await data.askForRules(llm)).toStartWith("faux-1 proposed 0 rules, 1 turned down")
 })
