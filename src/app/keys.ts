@@ -3,7 +3,7 @@ import { resolve } from "node:path"
 import { batch } from "solid-js"
 import { accountRole } from "../domain/types"
 import { accountRows, accountStacks, spendingScope, type AccountSelection } from "../domain/accountTree"
-import { assignableCategories, suggestedCategoryIds } from "../domain/categoryOptions"
+import { assignableCategories, pickerSuggestions } from "../domain/categoryOptions"
 import { budgetLabel, budgetScopeOptions, scopeKey } from "../domain/budgetScopes"
 import type { CycleConfig } from "../domain/budget"
 import { MERCHANT_SORTS, groupByMerchant, merchantFilter, sortMerchantGroups } from "../domain/merchants"
@@ -284,7 +284,7 @@ function handleTagPicker(ui: UiStore, key: KeyEvent, data?: DataStore): void {
 }
 
 function handleCatPicker(ui: UiStore, key: KeyEvent, data?: DataStore): void {
-  const cats = assignableCategories(data?.state.categories ?? [], ui.state.catPickerQuery, suggestedCategoryIds(ui.state.pickerTargets, data?.state.suggestions ?? {}))
+  const cats = assignableCategories(data?.state.categories ?? [], ui.state.catPickerQuery, pickerSuggestions(ui.state.pickerTargets, data?.state.suggestions ?? {}))
   queryPickerKey(key, { query: ui.state.catPickerQuery, cursor: ui.state.catPickerCursor }, cats.length, {
     close: () => { ui.closeCatPicker(); ui.setStatus("Categorize cancelled") },
     update: (next) => { ui.setState({ catPickerQuery: next.query, catPickerCursor: next.cursor }) },

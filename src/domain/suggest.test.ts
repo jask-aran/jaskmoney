@@ -10,7 +10,7 @@ const target = (id = 10) => transaction({ id, description: "shop" })
 
 test("history settles a merchant only with three or more earlier rows nearly all in one category; small samples are less sure", () => {
   const three = [evidence(1, 1), evidence(2, 1), evidence(3, 1)]
-  expect(historySuggestions([target(), ...three], categories)).toEqual([{ transactionId: 10, categoryId: 1, confidence: 3 / 4, source: "history" }])
+  expect(historySuggestions([target(), ...three], categories)).toEqual([{ transactionId: 10, categoryId: 1, confidence: 3 / 4, source: "history", ranked: [{ categoryId: 1, confidence: 3 / 4 }] }])
   expect(historySuggestions([target(), ...three.slice(0, 2)], categories)).toEqual([])
   // 3 of 4 is not nearly all: Clef decides, with the history as context.
   expect(historySuggestions([target(), ...three, evidence(4, 2)], categories)).toEqual([])
@@ -80,7 +80,8 @@ test("each row is its own question with the transaction inline; Jev is told how 
   expect((q.instructions as { question: string }).question).toEndWith("Each category lists some of the account holder's own transactions in it.")
   expect((q.instructions as { transaction: Record<string, string> }).transaction.categorised_before).toBe("Category 1 ×2, Category 2 ×1")
   // Confidence is Jev's probability for its pick, not its distribution's peakedness.
-  expect(results).toEqual([{ transactionId: 10, categoryId: 1, confidence: 0.7, source: "jev" }, { transactionId: 11, categoryId: 1, confidence: 0.7, source: "jev" }])
+  const ranked = [{ categoryId: 1, confidence: 0.7 }, { categoryId: 2, confidence: 0.3 }]
+  expect(results).toEqual([{ transactionId: 10, categoryId: 1, confidence: 0.7, source: "jev", ranked }, { transactionId: 11, categoryId: 1, confidence: 0.7, source: "jev", ranked }])
 })
 
 test("unknown and group picks are dropped; a failed request reports its rows; no categories, no request", async () => {

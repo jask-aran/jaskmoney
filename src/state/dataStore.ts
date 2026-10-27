@@ -52,7 +52,7 @@ import { hasJev, jevClient, type JevClient } from "../ai/jev"
 import { CREDENTIAL_NAMES, credentialEnv, credentialSource, maskSecret, saveCredentials, type CredentialName } from "../ai/credentials"
 import { historySuggestions, jevSuggestions } from "../domain/suggest"
 import { isOrdinaryFlow, isUncategorised } from "../domain/moneyRules"
-import { createUpClient, readUpToken } from "../up/client"
+import { createUpClient, readUpToken, UpApiError } from "../up/client"
 import { PUSH_CONCURRENCY, pushTransactions } from "../up/push"
 import { appToday, type WeekStart } from "../domain/days"
 import { askCandidates, ASK_DEFAULT_DAYS, ASK_LIMIT, judgeRows } from "../domain/ask"
@@ -157,12 +157,44 @@ export function showNearMisses(matches: number, near: number): boolean {
   return near <= Math.max(matches, 5)
 }
 
-/** "<what> · N updated in Up · N failed: <first error>". */
-function categorizedSummary(head: string, pushed: number, failures: string[]): string {
+interface CategorizeResult { done: number; pushed: number; failures: string[]; waiting: number; waitingError?: string }
+
+/** "<what> · N updated in Up · N waiting for Up … · N failed: <first error>". */
+function categorizedSummary(head: string, r: CategorizeResult): string {
   const parts = [head]
-  if (pushed) parts.push(`${pushed} updated in Up`)
-  if (failures.length) parts.push(`${failures.length} failed: ${failures[0]}`)
+  if (r.pushed) parts.push(`${r.pushed} updated in Up`)
+  if (r.waiting) parts.push(`${r.waiting} waiting for Up (sent on the next sync): ${r.waitingError}`)
+  if (r.failures.length) parts.push(`${r.failures.length} failed: ${r.failures[0]}`)
   return parts.join(" · ")
+}
+
+/** A transaction as far as pushing its category goes. */
+interface PushableRow { source: string; externalId: string | null; categorizable: number | null }
+/** Where a category goes in Up: an Up subcategory, or null (no category). */
+interface CategoryPush { categoryId: number; externalId: string; providerId: string | null; parentExt: string | null }
+
+/** The push that puts `category` on `row` in Up, or null when Up can't hold
+ * it: not an Up row, one Up won't categorise, or a local-only category. */
+function categoryPush(row: PushableRow, category: Category, categories: Category[]): CategoryPush | null {
+  if (row.source !== "up" || row.externalId == null || row.categorizable !== 1) return null
+  if (category.extId && category.parentId != null) {
+    const parentExt = categories.find((c) => c.id === category.parentId)?.extId ?? null
+    return { categoryId: category.id, externalId: row.externalId, providerId: category.extId, parentExt }
+  }
+  if (category.isDefault) return { categoryId: category.id, externalId: row.externalId, providerId: null, parentExt: null }
+  return null
+}
+
+/** Up has the category: the row follows Up again ('provider', or never set
+ * for no category). */
+function confirmCategoryPush(db: Db, id: number, p: CategoryPush): void {
+  setTransactionCategory(db, id, p.categoryId, p.providerId ? "provider" : null, { extCategory: p.providerId, extParentCategory: p.providerId ? p.parentExt : null })
+}
+
+/** Up refused the change itself (not a network, rate-limit or token problem):
+ * asking again won't help. */
+function upRejected(error: unknown): boolean {
+  return error instanceof UpApiError && error.status >= 400 && error.status < 500 && error.status !== 401 && error.status !== 429
 }
 
 function createDataStore() {
@@ -446,12 +478,11 @@ function createDataStore() {
   async function applyCategories(
     assignments: Map<number, number>,
     onProgress?: (pushed: number, total: number) => void,
-  ): Promise<{ done: number; pushed: number; failures: string[] }> {
+  ): Promise<CategorizeResult> {
     if (!db) throw new Error("db not open")
     const database = db
     type Prior = { categoryId: number | null; source: string | null; ext: string | null; extParent: string | null }
-    type Push = { categoryId: number; externalId: string; providerId: string | null; parentExt: string | null; prior: Prior }
-    const pushes = new Map<number, Push>()
+    const pushes = new Map<number, CategoryPush & { prior: Prior }>()
     let local = 0
     database.transaction(() => {
       for (const [id, categoryId] of assignments) {
@@ -459,47 +490,98 @@ function createDataStore() {
         if (!category) throw new Error("category not found")
         const row = database.query(`SELECT source, external_id AS externalId, ext_categorizable AS categorizable,
           category_id AS categoryId, category_source AS categorySource, ext_category AS ext, ext_parent_category AS extParent
-          FROM transactions WHERE id = ?`).get(id) as {
-            source: string; externalId: string | null; categorizable: number | null
+          FROM transactions WHERE id = ?`).get(id) as PushableRow & {
             categoryId: number | null; categorySource: string | null; ext: string | null; extParent: string | null
           } | null
         if (!row) continue
-        // undefined: the provider cannot represent this category.
-        const providerId: string | null | undefined = category.extId && category.parentId != null ? category.extId : category.isDefault ? null : undefined
-        const parentExt = category.parentId != null ? state.categories.find((c) => c.id === category.parentId)?.extId ?? null : null
-        // Shown at once as the user's choice; a push confirms it or puts it back.
-        setTransactionCategory(database, id, categoryId, "user")
-        if (row.source === "up" && row.externalId != null && row.categorizable === 1 && providerId !== undefined) {
-          pushes.set(id, { categoryId, externalId: row.externalId, providerId, parentExt, prior: { categoryId: row.categoryId, source: row.categorySource, ext: row.ext, extParent: row.extParent } })
-        } else local++
+        const push = categoryPush(row, category, state.categories)
+        // Shown at once; a push confirms it, a rejection puts it back.
+        setTransactionCategory(database, id, categoryId, push ? "pending" : "user")
+        if (push) pushes.set(id, { ...push, prior: { categoryId: row.categoryId, source: row.categorySource, ext: row.ext, extParent: row.extParent } })
+        else local++
       }
     })()
     refresh()
-    let settled = 0
+    let settled = 0, waiting = 0
+    const waitingErrors: string[] = []
     onProgress?.(0, pushes.size)
     const { pushed, failures } = await pushTransactions([...pushes.keys()], (id) => {
+      const p = pushes.get(id)!
+      return async () => {
+        pushingIds.add(id)
+        try {
+          await upClient().setTransactionCategory(p.externalId, p.providerId)
+        } catch (error) {
+          if (!upRejected(error)) {
+            // Up didn't answer: it stays 'pending' for the next sync.
+            waiting++
+            waitingErrors.push(error instanceof Error ? error.message : String(error))
+            return 0
+          }
+          database.query(`UPDATE transactions SET category_id = ?, category_source = ?, ext_category = ?, ext_parent_category = ? WHERE id = ?`)
+            .run(p.prior.categoryId, p.prior.source, p.prior.ext, p.prior.extParent, id)
+          throw error
+        } finally {
+          pushingIds.delete(id)
+        }
+        confirmCategoryPush(database, id, p)
+        return 1
+      }
+    }, { complete: refresh, onSettled: () => onProgress?.(++settled, pushes.size), concurrency: PUSH_CONCURRENCY })
+    return { done: local + pushed, pushed: pushed - waiting, failures, waiting, waitingError: waitingErrors[0] }
+  }
+
+  /** Rows whose categorisation is on its way to Up now (a retry leaves them alone). */
+  const pushingIds = new Set<number>()
+
+  /**
+   * Push the categorisations Up hasn't confirmed ('pending': the app closed
+   * mid-push, or Up didn't answer), after each Up sync. Confirmed rows follow
+   * Up; one Up rejects keeps its category here only ('user'); one it still
+   * doesn't answer stays pending for the next sync. A row that can no longer
+   * go to Up (its category is local now, or Up says it can't be
+   * categorised) becomes 'user'.
+   */
+  async function retryPendingCategories(): Promise<{ pushed: number; rejected: number; waiting: number }> {
+    if (!db) return { pushed: 0, rejected: 0, waiting: 0 }
+    const database = db
+    const rows = database.query(`SELECT id, category_id AS categoryId, source, external_id AS externalId, ext_categorizable AS categorizable
+      FROM transactions WHERE category_source = 'pending'`).all() as Array<PushableRow & { id: number; categoryId: number | null }>
+    const pushes = new Map<number, CategoryPush>()
+    database.transaction(() => {
+      for (const row of rows) {
+        if (pushingIds.has(row.id)) continue
+        const category = state.categories.find((c) => c.id === row.categoryId)
+        const push = category && categoryPush(row, category, state.categories)
+        if (push) pushes.set(row.id, push)
+        else database.query(`UPDATE transactions SET category_source = 'user' WHERE id = ?`).run(row.id)
+      }
+    })()
+    let rejected = 0, waiting = 0
+    const { pushed } = await pushTransactions([...pushes.keys()], (id) => {
       const p = pushes.get(id)!
       return async () => {
         try {
           await upClient().setTransactionCategory(p.externalId, p.providerId)
         } catch (error) {
-          database.query(`UPDATE transactions SET category_id = ?, category_source = ?, ext_category = ?, ext_parent_category = ? WHERE id = ?`)
-            .run(p.prior.categoryId, p.prior.source, p.prior.ext, p.prior.extParent, id)
+          if (upRejected(error)) { rejected++; database.query(`UPDATE transactions SET category_source = 'user' WHERE id = ?`).run(id) }
+          else waiting++
           throw error
         }
-        setTransactionCategory(database, id, p.categoryId, p.providerId ? "provider" : null, { extCategory: p.providerId, extParentCategory: p.providerId ? p.parentExt : null })
+        confirmCategoryPush(database, id, p)
         return 1
       }
-    }, { complete: refresh, onSettled: () => onProgress?.(++settled, pushes.size), concurrency: PUSH_CONCURRENCY })
-    return { done: local + pushed, pushed, failures }
+    }, { concurrency: PUSH_CONCURRENCY })
+    if (rows.length) refresh()
+    return { pushed, rejected, waiting }
   }
 
   /** Put `txnIds` in one category (see applyCategories). */
   async function categorizeTransactions(txnIds: number[], categoryId: number, onProgress?: (pushed: number, total: number) => void): Promise<string> {
     const category = state.categories.find((c) => c.id === categoryId)
     if (!category) throw new Error("category not found")
-    const { done, pushed, failures } = await applyCategories(new Map(txnIds.map((id) => [id, categoryId])), onProgress)
-    return categorizedSummary(`Categorized ${done} → ${category.name}`, pushed, failures)
+    const result = await applyCategories(new Map(txnIds.map((id) => [id, categoryId])), onProgress)
+    return categorizedSummary(`Categorized ${result.done} → ${category.name}`, result)
   }
 
   let suggestionsFinished: Promise<void> = Promise.resolve()
@@ -641,10 +723,10 @@ function createDataStore() {
       if (suggestion) assignments.set(id, suggestion.categoryId)
     }
     if (!assignments.size) return "No suggestions accepted"
-    const { done, pushed, failures } = await applyCategories(assignments, onProgress)
+    const result = await applyCategories(assignments, onProgress)
     const accepted = [...assignments].filter(([id, categoryId]) => transactions().some((t) => t.id === id && t.categoryId === categoryId)).map(([id]) => id)
     mutate((db) => deleteSuggestions(db, accepted))
-    return categorizedSummary(`Accepted ${done} suggestion${done === 1 ? "" : "s"}`, pushed, failures)
+    return categorizedSummary(`Accepted ${result.done} suggestion${result.done === 1 ? "" : "s"}`, result)
   }
 
   function dismissSuggestions(ids: number[]): void {
@@ -833,7 +915,13 @@ function createDataStore() {
       })
       refresh()
       const applied = result.insertedIds.length ? applyRules(result.insertedIds) : null
-      return `Up sync: ${result.inserted} new, ${result.updated} updated, ${result.removedHeld} pending removed${applied?.updatedTransactions ? ` · ${applied.updatedTransactions} rules applied` : ""}`
+      // Categorisations Up hasn't confirmed go again now Up is answering.
+      const retried = await retryPendingCategories()
+      const parts = [`Up sync: ${result.inserted} new, ${result.updated} updated, ${result.removedHeld} pending removed${applied?.updatedTransactions ? ` · ${applied.updatedTransactions} rules applied` : ""}`]
+      if (retried.pushed) parts.push(`${retried.pushed} waiting categor${retried.pushed === 1 ? "y" : "ies"} sent to Up`)
+      if (retried.rejected) parts.push(`${retried.rejected} Up refused (kept here only)`)
+      if (retried.waiting) parts.push(`${retried.waiting} still waiting for Up`)
+      return parts.join(" · ")
     } finally {
       setState({ upSyncing: false })
     }
@@ -916,6 +1004,7 @@ function createDataStore() {
     askAbout,
     suggestCategories,
     resuggestLike,
+    retryPendingCategories,
     acceptSuggestions,
     dismissSuggestions,
     applyTagPatch,

@@ -1,7 +1,7 @@
 import { judgeEach, type JevClient } from "../ai/jev"
 import { assignableCategories } from "./categoryOptions"
 import { isOrdinaryFlow, isUncategorised } from "./moneyRules"
-import { EXAMPLES_PER_CATEGORY, SUGGESTION_STATE, suggestionCriteria, suggestionQuestion } from "./questions"
+import { EXAMPLES_PER_CATEGORY, RANKED_MIN, SUGGESTION_RANKED, SUGGESTION_STATE, suggestionCriteria, suggestionQuestion } from "./questions"
 import type { Category, CategorySuggestion, Transaction } from "./types"
 
 /**
@@ -96,7 +96,10 @@ export function historySuggestions(transactions: Transaction[], categories: Cate
     const { total, ranked } = evidence(t)
     const top = ranked[0]
     if (!top || total < HISTORY_MIN_ROWS || top.count / total < HISTORY_MIN_SHARE) continue
-    suggestions.push({ transactionId: t.id, categoryId: top.categoryId, confidence: top.count / (total + 1), source: "history" })
+    suggestions.push({ transactionId: t.id, categoryId: top.categoryId, confidence: top.count / (total + 1), source: "history",
+      ranked: ranked.map((e) => ({ categoryId: e.categoryId, confidence: e.count / (total + 1) }))
+        .filter((e) => e.categoryId === top.categoryId || e.confidence >= RANKED_MIN).slice(0, SUGGESTION_RANKED),
+    })
   }
   return suggestions
 }
@@ -128,7 +131,15 @@ export async function jevSuggestions(
         if (answer.type !== "choice") continue
         const categoryId = categoryIds.get(answer.choice)
         if (categoryId == null) continue
-        const suggestion: CategorySuggestion = { transactionId: t.id, categoryId, confidence: answer.probabilities[answer.choice] ?? answer.confidence, source: "jev" }
+        const confidence = answer.probabilities[answer.choice] ?? answer.confidence
+        const ranked = Object.entries(answer.probabilities).flatMap(([key, probability]) => {
+          const id = categoryIds.get(key)
+          return id != null && id !== categoryId && probability >= RANKED_MIN ? [{ categoryId: id, confidence: probability }] : []
+        }).sort((a, b) => b.confidence - a.confidence)
+        const suggestion: CategorySuggestion = {
+          transactionId: t.id, categoryId, confidence, source: "jev",
+          ranked: [{ categoryId, confidence }, ...ranked].slice(0, SUGGESTION_RANKED),
+        }
         options.onSuggestion?.(suggestion)
         suggestions.push(suggestion)
       }

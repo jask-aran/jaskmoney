@@ -6,7 +6,7 @@
  * version fallback with an additive migration registry. v7 was the initial
  * partial OpenTUI port. */
 
-export const SCHEMA_VERSION = 19
+export const SCHEMA_VERSION = 20
 
 /** Columns shared by the fresh schema and the v9 migration. Rows imported from
  * CSV keep source = 'csv' and NULL external fields. */
@@ -61,9 +61,10 @@ export const CATEGORY_INCOME_COLUMN = "income INTEGER NOT NULL DEFAULT 0"
 /** v12: who set transactions.category_id. NULL = never set (falls back to the
  * provider's category on sync); 'provider' = mirrors the provider category
  * (sync keeps it in step); 'user' = chosen locally and not pushable (a local-only
- * category); 'rule' = set by a rule; 'type' (v16) = set from the provider's
+ * category, or one Up rejected); 'pending' = chosen locally for the provider,
+ * not yet confirmed by it (each Up sync pushes it again); 'rule' = set by a rule; 'type' (v16) = set from the provider's
  * transaction type (Up's Salary, Interest). Sync overwrites only NULL and
- * 'provider'. */
+ * 'provider'. No CHECK: values are added without a migration. */
 export const CATEGORY_SOURCE_COLUMN = "category_source TEXT"
 
 /** v13: provider tag id (Up: the tag's name, which is its id). NULL = local
@@ -136,6 +137,10 @@ INSERT INTO category_suggestions_v19 SELECT * FROM category_suggestions WHERE so
 DROP TABLE category_suggestions;
 ALTER TABLE category_suggestions_v19 RENAME TO category_suggestions;
 `
+
+/** v20: the categories a suggestion ranked, most likely first (JSON
+ * [[category id, confidence], ...], the pick first); NULL for older ones. */
+export const SUGGESTION_RANKED_COLUMN = "ranked TEXT"
 
 export const SYNC_SQL = `
 CREATE UNIQUE INDEX IF NOT EXISTS idx_accounts_external ON accounts(source, external_id) WHERE external_id IS NOT NULL;
@@ -234,6 +239,7 @@ CREATE UNIQUE INDEX IF NOT EXISTS idx_tags_ext ON tags(ext_id) WHERE ext_id IS N
 ${BUDGET_SQL}
 ${CATEGORY_SUGGESTIONS_SQL}
 ALTER TABLE budget_cycle ADD COLUMN ${BUDGET_PAY_EARLY_COLUMN};
+ALTER TABLE category_suggestions ADD COLUMN ${SUGGESTION_RANKED_COLUMN};
 `
 
 export const DEFAULT_CATEGORIES: { name: string; color: string; sortOrder: number; isDefault: number }[] = [

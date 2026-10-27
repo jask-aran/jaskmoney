@@ -68,7 +68,7 @@ test("suggestions use history before Jev and never categorise or resend ineligib
   })
   expect(await data.suggestCategories([1, 2, 3, 4, 5, 6, 7, 8], ai)).toBe("Suggested 3: 1 from history, 2 from Jev")
   expect(states.sort()).toEqual(["Default category", "Unknown"])
-  expect(data.state.suggestions[3]).toEqual({ transactionId: 3, categoryId: 101, confidence: 0.9, source: "jev" })
+  expect(data.state.suggestions[3]).toEqual({ transactionId: 3, categoryId: 101, confidence: 0.9, source: "jev", ranked: [{ categoryId: 101, confidence: 0.9 }] })
   expect(data.state.transactions.find((t) => t.id === 2)?.categoryId).toBeNull()
   expect(data.state.transactions.find((t) => t.id === 3)?.categoryId).toBeNull()
   expect(data.state.suggesting).toBe(false)
@@ -174,7 +174,7 @@ test("suggesting clears even when the database write and final refresh fail", as
 
 test("fresh schema includes suggestions and v18–v19 migrate a v17 database without losing rows", () => {
   const db = testDb()
-  expect(db.query("SELECT version FROM schema_meta").get()).toEqual({ version: 19 })
+  expect(db.query("SELECT version FROM schema_meta").get()).toEqual({ version: 20 })
   expect(db.query("SELECT * FROM category_suggestions").all()).toEqual([])
   expect(db.query("SELECT pay_early FROM budget_cycle").get()).toEqual({ pay_early: 0 })
   const t = transaction({ source: "csv" })
@@ -182,7 +182,7 @@ test("fresh schema includes suggestions and v18–v19 migrate a v17 database wit
     .run(t.id, t.dateRaw, t.dateISO, t.amount, t.description)
   db.exec("DROP TABLE category_suggestions; UPDATE schema_meta SET version = 17;")
   ensureSchema(db)
-  expect(db.query("SELECT version FROM schema_meta").get()).toEqual({ version: 19 })
+  expect(db.query("SELECT version FROM schema_meta").get()).toEqual({ version: 20 })
   expect(db.query("SELECT description FROM transactions WHERE id = ?").get(t.id)).toEqual({ description: t.description })
   const c = db.query<{ id: number }, []>("SELECT id FROM categories WHERE name = 'Groceries'").get()!
   const suggestion = { transactionId: t.id, categoryId: c.id, confidence: 1, source: "history" } satisfies Parameters<typeof saveSuggestions>[1][number]
@@ -201,7 +201,7 @@ test("v19: suggestions come from Jev; history's are kept, Clef's dropped", () =>
     INSERT INTO category_suggestions (transaction_id, category_id, confidence, source) VALUES (1, ${groceries}, 0.75, 'history'), (2, ${groceries}, 0.5, 'clef');
     UPDATE schema_meta SET version = 18;`)
   ensureSchema(db)
-  expect(db.query("SELECT version FROM schema_meta").get()).toEqual({ version: 19 })
+  expect(db.query("SELECT version FROM schema_meta").get()).toEqual({ version: 20 })
   expect(loadSuggestions(db)).toEqual([{ transactionId: 1, categoryId: groceries, confidence: 0.75, source: "history" }])
   saveSuggestions(db, [{ transactionId: 2, categoryId: groceries, confidence: 0.9, source: "jev" }])
   expect(loadSuggestions(db)).toHaveLength(2)

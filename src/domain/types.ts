@@ -173,6 +173,10 @@ export interface CategorySuggestion {
   /** 0–1. history: count / (matching rows + 1). jev: Jev's probability for its pick. */
   confidence: number
   source: "history" | "jev"
+  /** The categories it weighed, most likely first (the pick first), with
+   * their confidence: up to SUGGESTION_RANKED, each at RANKED_MIN or more.
+   * Absent on suggestions saved before v20. */
+  ranked?: Array<{ categoryId: number; confidence: number }>
 }
 
 /** "confidence": the suggestion's, in the Uncategorised view only. */

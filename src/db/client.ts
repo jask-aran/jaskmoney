@@ -8,6 +8,7 @@ import {
   BUDGET_SQL,
   CATEGORY_SUGGESTIONS_SQL,
   CATEGORY_SUGGESTIONS_V19_SQL,
+  SUGGESTION_RANKED_COLUMN,
   CATEGORY_SOURCE_COLUMN,
   CATEGORY_INCOME_COLUMN,
   CATEGORY_NOT_SPENDING_COLUMN,
@@ -106,6 +107,7 @@ const MIGRATIONS: Record<number, (db: Db) => void> = {
   17: (db) => db.exec(`ALTER TABLE budget_cycle ADD COLUMN ${BUDGET_PAY_EARLY_COLUMN}`),
   18: (db) => db.exec(CATEGORY_SUGGESTIONS_SQL),
   19: (db) => db.exec(CATEGORY_SUGGESTIONS_V19_SQL),
+  20: (db) => db.exec(`ALTER TABLE category_suggestions ADD COLUMN ${SUGGESTION_RANKED_COLUMN}`),
 }
 
 /**
@@ -442,21 +444,37 @@ export function loadTransactions(db: Db): Transaction[] {
 }
 
 export function loadSuggestions(db: Db): CategorySuggestion[] {
-  return db.query<CategorySuggestion, []>(`SELECT s.transaction_id AS transactionId,
-    s.category_id AS categoryId, s.confidence, s.source
+  return db.query<Omit<CategorySuggestion, "ranked"> & { ranked: string | null }, []>(`SELECT s.transaction_id AS transactionId,
+    s.category_id AS categoryId, s.confidence, s.source, s.ranked
     FROM category_suggestions s
     JOIN transactions t ON t.id = s.transaction_id
     LEFT JOIN categories c ON c.id = t.category_id
-    WHERE t.category_id IS NULL OR c.is_default = 1`).all()
+    WHERE t.category_id IS NULL OR c.is_default = 1`).all().map(({ ranked, ...s }) => {
+      const list = parseRanked(ranked)
+      return list ? { ...s, ranked: list } : s
+    })
+}
+
+/** A stored ranking, or undefined when absent or unreadable. */
+function parseRanked(raw: string | null): CategorySuggestion["ranked"] {
+  if (!raw) return undefined
+  try {
+    const value = JSON.parse(raw) as unknown
+    if (!Array.isArray(value)) return undefined
+    const list = value.filter((e): e is [number, number] => Array.isArray(e) && typeof e[0] === "number" && typeof e[1] === "number")
+    return list.length ? list.map(([categoryId, confidence]) => ({ categoryId, confidence })) : undefined
+  } catch {
+    return undefined
+  }
 }
 
 export function saveSuggestions(db: Db, list: CategorySuggestion[]): void {
-  const save = db.query(`INSERT INTO category_suggestions (transaction_id, category_id, confidence, source)
-    VALUES (?, ?, ?, ?) ON CONFLICT(transaction_id) DO UPDATE SET
+  const save = db.query(`INSERT INTO category_suggestions (transaction_id, category_id, confidence, source, ranked)
+    VALUES (?, ?, ?, ?, ?) ON CONFLICT(transaction_id) DO UPDATE SET
     category_id = excluded.category_id, confidence = excluded.confidence,
-    source = excluded.source, created_at = datetime('now')`)
+    source = excluded.source, ranked = excluded.ranked, created_at = datetime('now')`)
   db.transaction(() => {
-    for (const s of list) save.run(s.transactionId, s.categoryId, s.confidence, s.source)
+    for (const s of list) save.run(s.transactionId, s.categoryId, s.confidence, s.source, s.ranked?.length ? JSON.stringify(s.ranked.map((r) => [r.categoryId, r.confidence])) : null)
   })()
 }
 
@@ -509,7 +527,7 @@ export function setTransactionCategory(
   db: Db,
   txnId: number,
   categoryId: number,
-  source: "user" | "rule" | "provider" | null,
+  source: "user" | "pending" | "rule" | "provider" | null,
   provider?: { extCategory: string | null; extParentCategory: string | null },
 ): void {
   if (provider) {

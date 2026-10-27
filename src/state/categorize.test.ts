@@ -109,3 +109,59 @@ test("every row takes its category before Up hears; pushes overlap; a rejected o
     fetchMock.mockRestore()
   }
 })
+
+test("a categorisation Up didn't answer stays, marked pending, and goes again after the next sync; one Up refuses then stays here only", async () => {
+  const fetchMock = spyOn(globalThis, "fetch")
+  data.init(":memory:")
+  const db = data.getDb()!
+  try {
+    testEnv("JASKMONEY_UP_TOKEN", "test-pat")
+    db.transaction(() => syncCategoryTree(db, [
+      { id: "home", name: "Home", parentId: null },
+      { id: "groceries", name: "Groceries", parentId: "home" },
+    ]))()
+    const account = Number(db.query(`INSERT INTO accounts (name, source, external_id, external_kind) VALUES ('Spending', 'up', 'acc', 'TRANSACTIONAL')`).run().lastInsertRowid)
+    const add = (ext: string) => Number(db.query(`INSERT INTO transactions
+      (date_raw, date_iso, amount, description, account_id, source, external_id, ext_categorizable)
+      VALUES ('x', '2026-10-01', -5, ?, ?, 'up', ?, 1)`).run(ext, account, ext).lastInsertRowid)
+    const [a, refused, local] = [add("a"), add("refused"), add("local")]
+    assignProviderCategories(db)
+    data.refresh()
+    const id = (name: string) => data.state.categories.find((x) => x.name === name)!.id
+    const row = (txn: number) => db.query(`SELECT category_id AS categoryId, category_source AS source, ext_category AS ext FROM transactions WHERE id = ?`).get(txn)
+    let upDown = true
+    const calls: string[] = []
+    fetchMock.mockImplementation(Object.assign(async (input: Parameters<typeof fetch>[0]) => {
+      const url = String(input)
+      calls.push(url)
+      if (upDown) return new Response("down", { status: 503 })
+      if (url.includes("/refused/")) return new Response(JSON.stringify({ errors: [{ status: "422", title: "Nope", detail: "rejected" }] }), { status: 422 })
+      return new Response(null, { status: 204 })
+    }, { preconnect: globalThis.fetch.preconnect }))
+
+    // Up is down: the rows keep their new category, waiting.
+    expect(await data.categorizeTransactions([a, refused], id("Groceries"))).toStartWith("Categorized 2 → Groceries · 2 waiting for Up (sent on the next sync): ")
+    expect(row(a)).toEqual({ categoryId: id("Groceries"), source: "pending", ext: null })
+    // A retry while Up is still down keeps them waiting.
+    expect(await data.retryPendingCategories()).toEqual({ pushed: 0, rejected: 0, waiting: 2 })
+    expect(row(a)).toMatchObject({ source: "pending" })
+    // Sync keeps a pending row's category (it doesn't follow Up's yet).
+    expect(assignProviderCategories(db)).toBe(0)
+    // A pending row whose category became local-only can't go to Up: it's the user's now.
+    db.query("UPDATE transactions SET category_id = ?, category_source = 'pending' WHERE id = ?").run(id("People"), local)
+
+    upDown = false
+    calls.length = 0
+    expect(await data.retryPendingCategories()).toEqual({ pushed: 1, rejected: 1, waiting: 0 })
+    expect(calls.some((u) => u.includes("/local/"))).toBe(false)
+    expect(row(a)).toEqual({ categoryId: id("Groceries"), source: "provider", ext: "groceries" })
+    expect(row(refused)).toEqual({ categoryId: id("Groceries"), source: "user", ext: null })
+    expect(row(local)).toMatchObject({ categoryId: id("People"), source: "user" })
+    // Nothing left to send.
+    calls.length = 0
+    expect(await data.retryPendingCategories()).toEqual({ pushed: 0, rejected: 0, waiting: 0 })
+    expect(calls).toEqual([])
+  } finally {
+    fetchMock.mockRestore()
+  }
+})

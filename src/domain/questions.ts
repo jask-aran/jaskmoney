@@ -39,6 +39,11 @@ export const SUGGESTION_STATE = "Bank transactions from an Australian personal a
  * this sure matched the user's category. */
 export const ACCEPT_ALL_AT = 0.8
 
+/** A suggestion keeps this many of the categories it weighed (the picker
+ * lists them first, with their confidence), each at least RANKED_MIN. */
+export const SUGGESTION_RANKED = 5
+export const RANKED_MIN = 0.03
+
 /** Each category option names this many of the account holder's own
  * transactions in it, so their choices carry over to other merchants. On
  * the rows with no same-description history this lifted top-1 by about

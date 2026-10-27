@@ -3,7 +3,7 @@ import { footerHints, handleKey } from "./keys"
 import { ui } from "../state/uiStore"
 import { data } from "../state/dataStore"
 import { key } from "../testing/keys"
-import { assignableCategories, suggestedCategoryIds } from "../domain/categoryOptions"
+import { assignableCategories, pickerSuggestions } from "../domain/categoryOptions"
 import { testEnv } from "../testing/scoped"
 
 /** Data with no Jev and no network: suggestions come from history. */
@@ -52,7 +52,7 @@ test("i shows only rows to categorise, most confident first; y accepts, x dismis
 
   // c opens the picker with the suggestion first.
   handleKey(ui, key("c"), data)
-  expect(assignableCategories(data.state.categories, "", suggestedCategoryIds(ui.state.pickerTargets, data.state.suggestions))[0]?.name).toBe("Test food")
+  expect(assignableCategories(data.state.categories, "", pickerSuggestions(ui.state.pickerTargets, data.state.suggestions))[0]?.name).toBe("Test food")
   handleKey(ui, key("escape"), data)
 
   // y on the cursor row (Shop4) accepts its suggestion; the row leaves the view.
