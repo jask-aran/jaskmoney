@@ -801,11 +801,11 @@ function createDataStore() {
     mutate((db) => deleteCategory(db, id))
   }
 
-  function createSettingsTag(input: Pick<Tag, "name" | "color" | "categoryId">): number {
+  function createSettingsTag(input: Pick<Tag, "name" | "color" | "scope">): number {
     return mutate((db) => createTag(db, input))
   }
 
-  function updateSettingsTag(id: number, input: Pick<Tag, "name" | "color" | "categoryId">) {
+  function updateSettingsTag(id: number, input: Pick<Tag, "name" | "color" | "scope">) {
     mutate((db) => updateTag(db, id, input))
   }
 

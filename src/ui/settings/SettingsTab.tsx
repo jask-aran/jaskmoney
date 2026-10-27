@@ -34,7 +34,6 @@ function TaxonomyList(props: { kind: SettingsList; narrow?: boolean; split?: boo
   const visible = () => props.kind === "categories" ? ui.state.categoryVisible : ui.state.tagVisible
   const title = () => `${props.kind === "categories" ? "Categories" : "Tags"} (${rows().length})`
   const windowRows = createMemo(() => rows().slice(top(), top() + visible()))
-  const categoryName = (id: number | null) => categories().find((c) => c.id === id)?.name ?? "global"
 
   createEffect(() => {
     const count = rows().length
@@ -54,7 +53,7 @@ function TaxonomyList(props: { kind: SettingsList; narrow?: boolean; split?: boo
           const selected = () => active() && absolute() === cursor()
           const isCategory = () => props.kind === "categories"
           const scope = () => {
-            if (!isCategory()) return categoryName((row as typeof data.state.tags[number]).categoryId)
+            if (!isCategory()) return (row as typeof data.state.tags[number]).scope ?? ""
             const category = row as typeof data.state.categories[number]
             return [category.isDefault ? "default" : "", category.notSpending ? "not spending" : ""].filter(Boolean).join(", ")
           }

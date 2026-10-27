@@ -145,7 +145,7 @@ describe("Up sync", () => {
     const withTree = { ...client([row]), listCategories: async () => categoryTree }
     const first = await syncUp(db, withTree, { now })
     const local = createCategory(db, { name: "Local choice", color: "#ffffff" })
-    const tag = createTag(db, { name: "Local tag", color: "#ffffff", categoryId: null })
+    const tag = createTag(db, { name: "Local tag", color: "#ffffff", scope: null })
     db.query("UPDATE transactions SET category_id = ?, category_source = ?, notes = 'keep' WHERE id = ?").run(local, source, first.insertedIds[0]!)
     db.query("INSERT INTO transaction_tags VALUES (?, ?)").run(first.insertedIds[0]!, tag)
     const protectedChoice = source === "user" || source === "rule"
@@ -257,7 +257,7 @@ describe("Up sync", () => {
     row.attributes.cardPurchaseMethod = { method: "CONTACTLESS", cardNumberSuffix: "0123" }
     const first = await syncUp(db, client([row]), { now })
     const category = createCategory(db, { name: "User", color: "#ffffff" })
-    const tag = createTag(db, { name: "User", color: "#ffffff", categoryId: null })
+    const tag = createTag(db, { name: "User", color: "#ffffff", scope: null })
     db.query("UPDATE transactions SET category_id = ?, category_source = 'user', notes = 'keep' WHERE id = ?").run(category, first.insertedIds[0]!)
     db.query("INSERT INTO transaction_tags VALUES (?, ?)").run(first.insertedIds[0]!, tag)
     const changes: Array<{ attributes: Partial<UpTransaction["attributes"]>; expected: Record<string, string | number | null> }> = [
@@ -290,7 +290,7 @@ describe("Up sync", () => {
     const db = testDb()
     const first = await syncUp(db, client([txn()]), { now })
     const category = createCategory(db, { name: "User", color: "#ffffff" })
-    const tag = createTag(db, { name: "User", color: "#ffffff", categoryId: null })
+    const tag = createTag(db, { name: "User", color: "#ffffff", scope: null })
     db.query("UPDATE transactions SET category_id = ?, category_source = 'user', notes = 'keep' WHERE id = ?").run(category, first.insertedIds[0]!)
     db.query("INSERT INTO transaction_tags VALUES (?, ?)").run(first.insertedIds[0]!, tag)
     const settled = txn("t", "SETTLED")

@@ -7,7 +7,7 @@ import { savedFilterOptions } from "../state/savedFilters"
 import { category as makeCategory, transaction as makeTransaction } from "../testing/fixtures"
 
 const category = makeCategory({ id: 10, name: "Food", color: "#ffffff", sortOrder: 0 })
-const tag: Tag = { id: 20, name: "Weekly", color: "#ffffff", categoryId: null, sortOrder: 0, extId: null }
+const tag: Tag = { id: 20, name: "Weekly", color: "#ffffff", scope: null, sortOrder: 0, extId: null }
 const transaction = makeTransaction({
   description: "Coffee", amount: -5, dateISO: "2026-01-01", accountId: null, accountName: "Local", source: "csv", status: null,
 })

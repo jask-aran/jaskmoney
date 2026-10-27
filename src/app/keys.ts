@@ -4,6 +4,7 @@ import { batch } from "solid-js"
 import { accountRole } from "../domain/types"
 import { accountRows, accountStacks, spendingScope, type AccountSelection } from "../domain/accountTree"
 import { assignableCategories, pickerSuggestions } from "../domain/categoryOptions"
+import { parseTagScope } from "../domain/tagScope"
 import { budgetLabel, budgetScopeOptions, scopeKey } from "../domain/budgetScopes"
 import type { CycleConfig } from "../domain/budget"
 import { MERCHANT_SORTS, groupByMerchant, merchantFilter, sortMerchantGroups } from "../domain/merchants"
@@ -243,7 +244,7 @@ function handleTagPicker(ui: UiStore, key: KeyEvent, data?: DataStore): void {
       const patch = { ...ui.state.tagPickerPatch }
       try {
         if (items[ui.state.tagPickerCursor]?.value === null && data) {
-          const id = data.createSettingsTag({ name: ui.state.tagPickerQuery.trim(), color: theme.blue, categoryId: null })
+          const id = data.createSettingsTag({ name: ui.state.tagPickerQuery.trim(), color: theme.blue, scope: null })
           patch[id] = "add"
           ui.setState({ tagPickerPatch: patch })
         }
@@ -536,8 +537,11 @@ function handleSettingsEditor(ui: UiStore, key: KeyEvent, data?: DataStore): voi
         if (ui.state.settingsEditId == null) data?.createSettingsCategory({ name: draft.name, color: draft.color, notSpending: draft.notSpending })
         else data?.updateSettingsCategory(Number(ui.state.settingsEditId), { name: draft.name, color: draft.color, notSpending: draft.notSpending })
       } else if (kind === "tag") {
-        if (ui.state.settingsEditId == null) data?.createSettingsTag({ name: draft.name, color: draft.color, categoryId: draft.categoryId })
-        else data?.updateSettingsTag(Number(ui.state.settingsEditId), { name: draft.name, color: draft.color, categoryId: draft.categoryId })
+        const scope = draft.expr.trim()
+        const { error } = parseTagScope(scope)
+        if (error) throw new Error(`scope: ${error}`)
+        if (ui.state.settingsEditId == null) data?.createSettingsTag({ name: draft.name, color: draft.color, scope: scope || null })
+        else data?.updateSettingsTag(Number(ui.state.settingsEditId), { name: draft.name, color: draft.color, scope: scope || null })
       } else if (kind === "budget") {
         const option = budgetScopeOptions(ctx.accounts, ctx.categories).find((o) => o.key === draft.scopeKey)
         const amount = Number(draft.amount.replace(/[$,\s]/g, ""))
@@ -738,12 +742,12 @@ function handleSettingsTaxonomy(ui: UiStore, key: KeyEvent, data?: DataStore): v
   if (name === "pageup") { ui.moveSettingsList(list, -10, items.length); return }
   if (name === "pagedown") { ui.moveSettingsList(list, 10, items.length); return }
   if (name === "a") {
-    ui.openSettingsEditor(list === "categories" ? "category" : "tag", null, { ...ui.state.settingsDraft, name: "", color: list === "categories" ? "#94e2d5" : "#89b4fa", categoryId: null, notSpending: false })
+    ui.openSettingsEditor(list === "categories" ? "category" : "tag", null, { ...ui.state.settingsDraft, name: "", color: list === "categories" ? "#94e2d5" : "#89b4fa", expr: "", notSpending: false })
     return
   }
   if ((name === "return" || name === "enter") && items[cursor]) {
     const item = items[cursor]!
-    ui.openSettingsEditor(list === "categories" ? "category" : "tag", item.id, { ...ui.state.settingsDraft, name: item.name, color: item.color, categoryId: list === "tags" ? ("categoryId" in item ? item.categoryId : null) : null, notSpending: "notSpending" in item ? item.notSpending : false })
+    ui.openSettingsEditor(list === "categories" ? "category" : "tag", item.id, { ...ui.state.settingsDraft, name: item.name, color: item.color, expr: "scope" in item ? item.scope ?? "" : "", notSpending: "notSpending" in item ? item.notSpending : false })
     return
   }
   if (name === "delete" && items[cursor]) { ui.armSettingsConfirm({ kind: list === "categories" ? "category" : "tag", id: items[cursor]!.id, label: items[cursor]!.name }); ui.setStatus(`Press del again to delete ${items[cursor]!.name}`); return }

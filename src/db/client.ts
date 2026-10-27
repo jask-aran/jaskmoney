@@ -9,6 +9,7 @@ import {
   CATEGORY_SUGGESTIONS_SQL,
   CATEGORY_SUGGESTIONS_V19_SQL,
   SUGGESTION_RANKED_COLUMN,
+  TAG_SCOPE_COLUMN,
   CATEGORY_SOURCE_COLUMN,
   CATEGORY_INCOME_COLUMN,
   CATEGORY_NOT_SPENDING_COLUMN,
@@ -25,6 +26,7 @@ import {
 } from "./schema"
 import type { Account, Category, CategorySuggestion, ImportRecord, Rule, Tag, Transaction } from "../domain/types"
 import { assignTypeCategories } from "../up/categories"
+import { categoryTerm } from "../domain/drill"
 import type { Budget, BudgetScope, CycleConfig } from "../domain/budget"
 
 export type Db = Database
@@ -108,6 +110,17 @@ const MIGRATIONS: Record<number, (db: Db) => void> = {
   18: (db) => db.exec(CATEGORY_SUGGESTIONS_SQL),
   19: (db) => db.exec(CATEGORY_SUGGESTIONS_V19_SQL),
   20: (db) => db.exec(`ALTER TABLE category_suggestions ADD COLUMN ${SUGGESTION_RANKED_COLUMN}`),
+  21: (db) => {
+    // Tests wind a fresh (scoped) schema back to older versions: add only if missing.
+    const columns = db.query<{ name: string }, []>("PRAGMA table_info(tags)").all().map((c) => c.name)
+    if (!columns.includes("scope")) db.exec(`ALTER TABLE tags ADD COLUMN ${TAG_SCOPE_COLUMN}`)
+    // Each category scope becomes its cat: term (a group's takes its children too).
+    const categories = db.query<{ id: number; name: string; parentId: number | null }, []>("SELECT id, name, parent_id AS parentId FROM categories").all()
+    for (const tag of db.query<{ id: number; categoryId: number }, []>("SELECT id, category_id AS categoryId FROM tags WHERE category_id IS NOT NULL").all()) {
+      const category = categories.find((c) => c.id === tag.categoryId)
+      db.query("UPDATE tags SET scope = ?, category_id = NULL WHERE id = ?").run(category ? categoryTerm(category, categories as Category[]) : null, tag.id)
+    }
+  },
 }
 
 /**
@@ -251,14 +264,14 @@ export function loadCategories(db: Db): Category[] {
 export function loadTags(db: Db): Tag[] {
   const rows = db
     .query(
-      `SELECT id, name, color, category_id AS categoryId, sort_order AS sortOrder, ext_id AS extId
+      `SELECT id, name, color, scope, sort_order AS sortOrder, ext_id AS extId
        FROM tags ORDER BY sort_order, id`,
     )
     .all() as Array<{
     id: number
     name: string
     color: string
-    categoryId: number | null
+    scope: string | null
     sortOrder: number
     extId: string | null
   }>
@@ -308,16 +321,16 @@ export function deleteCategory(db: Db, id: number): void {
   db.query(`DELETE FROM categories WHERE id = ?`).run(id)
 }
 
-export function createTag(db: Db, input: Pick<Tag, "name" | "color" | "categoryId">): number {
+export function createTag(db: Db, input: Pick<Tag, "name" | "color" | "scope">): number {
   const name = input.name.trim().toUpperCase()
   if (!name) throw new Error("tag name is required")
-  return Number(db.query(`INSERT INTO tags (name, color, category_id, sort_order) VALUES (?, ?, ?, ?)`).run(name, input.color, input.categoryId, nextOrder(db, "tags")).lastInsertRowid)
+  return Number(db.query(`INSERT INTO tags (name, color, scope, sort_order) VALUES (?, ?, ?, ?)`).run(name, input.color, input.scope, nextOrder(db, "tags")).lastInsertRowid)
 }
 
-export function updateTag(db: Db, id: number, input: Pick<Tag, "name" | "color" | "categoryId">): void {
+export function updateTag(db: Db, id: number, input: Pick<Tag, "name" | "color" | "scope">): void {
   const name = input.name.trim().toUpperCase()
   if (!name) throw new Error("tag name is required")
-  db.query(`UPDATE tags SET name = ?, color = ?, category_id = ? WHERE id = ?`).run(name, input.color, input.categoryId, id)
+  db.query(`UPDATE tags SET name = ?, color = ?, scope = ? WHERE id = ?`).run(name, input.color, input.scope, id)
 }
 
 export function deleteTag(db: Db, id: number): void {
@@ -392,6 +405,8 @@ export function loadTransactions(db: Db): Transaction[] {
          t.transaction_type AS transactionType,
          NULLIF(TRIM(t.message), '') AS message,
          NULLIF(TRIM(t.raw_text), '') AS rawText,
+         NULLIF(TRIM(t.foreign_amount), '') AS foreignAmount,
+         NULLIF(TRIM(t.card_method), '') AS cardMethod,
          t.transfer_account_id AS transferAccountId,
          -- Internal: money moved to or from another tracked account. A transfer
          -- to an untracked account (e.g. a desynced joint account) is spending.

@@ -46,7 +46,8 @@ export interface Tag {
   id: number
   name: string
   color: string
-  categoryId: number | null
+  /** Filter expression for the rows it can go on (no ask:); null = anywhere. */
+  scope: string | null
   sortOrder: number
   /** Provider tag id (Up: the tag name); null = local only. */
   extId: string | null
@@ -156,6 +157,11 @@ export interface Transaction {
    * payer's full name); null when the provider has none. */
   message: string | null
   rawText: string | null
+  /** The amount in a foreign currency ("SGD -25.90"), and how the card was
+   * used ("CONTACTLESS", "ECOMMERCE", "CARD_ON_FILE"...); null when the
+   * provider has none. */
+  foreignAmount: string | null
+  cardMethod: string | null
   /** Own-account transfer counterpart, when the provider reports one. */
   transferAccountId: number | null
   /** Transfer to or from another tracked account. */

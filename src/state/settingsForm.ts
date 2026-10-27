@@ -1,3 +1,4 @@
+import { parseTagScope } from "../domain/tagScope"
 import { describeCycle, type CycleAnchor, type CycleConfig, type CycleUnit } from "../domain/budget"
 import { budgetScopeOptions } from "../domain/budgetScopes"
 import { appToday } from "../domain/days"
@@ -158,7 +159,7 @@ export function editorFields(kind: SettingsEditorKind, draft: Draft, ctx: Omit<F
       return [
         { key: "name", label: "Name", kind: "text", display: draft.name },
         { key: "color", label: "Colour", kind: "text", display: draft.color },
-        { key: "categoryId", label: "Scope", kind: "picker", display: categoryName(draft.categoryId, "global") },
+        { key: "expr", label: "Scope", kind: "text", display: draft.expr },
       ]
     case "filter":
       return [
@@ -231,6 +232,15 @@ export function editorNote(kind: SettingsEditorKind, draft: Draft, ctx: FormCont
     const count = ctx.transactions.filter((txn) => evalFilter(node, names.row(txn, txn.categoryId, txn.tagIds))).length
     return { text: `ok · ${count} txns`, tone: "ok", dot: true }
   }
+  if (kind === "tag") {
+    // A scope narrows where the tag can go: its count, or why it doesn't parse.
+    if (!draft.expr.trim()) return { text: "no scope: any transaction (e.g. cat:Takeaway, date:2026-05-19..2026-06-08)", tone: "muted" }
+    const { node, error } = parseTagScope(draft.expr)
+    if (error || !node) return { text: `invalid: ${error}`, tone: "error", dot: true }
+    const names = filterRowNames(ctx.categories, ctx.tags)
+    const count = ctx.transactions.filter((txn) => evalFilter(node, names.row(txn, txn.categoryId, txn.tagIds))).length
+    return { text: `ok · ${count} txns in scope`, tone: "ok", dot: true }
+  }
   if (kind !== "budget" && kind !== "cycle") return null
   const cycle = cycleFromDraft(draft)
   const text = typeof cycle === "string" ? cycle : describeCycle(cycle)
@@ -268,7 +278,7 @@ export function pickerItems(kind: SettingsEditorKind, key: keyof Draft, ctx: Omi
     return rows
   }
   if (key === "categoryId" || key === "setCategoryId") {
-    const none: PickerItem[] = match(kind === "tag" ? "global" : "none") ? [{ kind: "item", label: kind === "tag" ? "Global (every category)" : "None", value: null }] : []
+    const none: PickerItem[] = match("none") ? [{ kind: "item", label: "None", value: null }] : []
     return [
       ...none,
       ...categoryPickerRows(ctx.categories, query, false).map((r): PickerItem =>

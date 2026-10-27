@@ -17,8 +17,8 @@ function fixture() {
   ui.switchTab("manager")
   data.init(":memory:")
   const db = data.getDb()!
-  const add = data.createSettingsTag({ name: "COFFEE", color: theme.blue, categoryId: null })
-  const remove = data.createSettingsTag({ name: "WORK", color: theme.green, categoryId: null })
+  const add = data.createSettingsTag({ name: "COFFEE", color: theme.blue, scope: null })
+  const remove = data.createSettingsTag({ name: "WORK", color: theme.green, scope: null })
   for (const id of [1, 2, 3]) {
     db.query("INSERT INTO transactions (id, date_raw, date_iso, amount, description, source) VALUES (?, 'x', '2026-01-01', -1, 'Test', 'csv')").run(id)
     db.query("INSERT INTO transaction_tags VALUES (?, ?)").run(id, remove)
@@ -93,7 +93,7 @@ test("create row is last, cursor reaches it, and enter also applies the existing
   press("enter")
   await Promise.resolve()
   const created = data.state.tags.find((t) => t.name === "WO")!
-  expect(created).toMatchObject({ categoryId: null, color: theme.blue })
+  expect(created).toMatchObject({ scope: null, color: theme.blue })
   expect(data.state.transactions.every((t) => [add, remove, created.id].every((id) => t.tagIds.includes(id)))).toBe(true)
   expect(ui.state.tagPickerPatch).toEqual({})
   expect(tagPickerItems(data.state.tags, data.state.transactions, [1], " wo ").some((r) => r.kind === "item" && r.value === null)).toBe(false)
@@ -108,17 +108,18 @@ test("IGNORE changes on Up rows remain local without a token or client", async (
   expect(data.state.transactions.find((t) => t.id === 1)?.tagIds).toContain(ignore.id)
 })
 
-test("tag rows group by target category, omit empty sections and rank fuzzy matches within sections", () => {
+test("tag rows group by scope (taking a target, none, elsewhere), omit empty sections and rank fuzzy matches within sections", () => {
   const { add } = fixture()
   const cat = data.createSettingsCategory({ name: "Food", color: theme.blue })
   const other = data.createSettingsCategory({ name: "Other", color: theme.blue })
   data.getDb()!.query("UPDATE transactions SET category_id = ? WHERE id = 1").run(cat)
-  data.createSettingsTag({ name: "COFFEE BREAK", color: theme.blue, categoryId: cat })
-  data.createSettingsTag({ name: "COFFEE OTHER", color: theme.blue, categoryId: other })
-  data.createSettingsTag({ name: "COFFEE SHOP", color: theme.blue, categoryId: null })
+  void other
+  data.createSettingsTag({ name: "COFFEE BREAK", color: theme.blue, scope: "cat:Food" })
+  data.createSettingsTag({ name: "COFFEE OTHER", color: theme.blue, scope: "cat:Other" })
+  data.createSettingsTag({ name: "COFFEE SHOP", color: theme.blue, scope: null })
   data.refresh()
   const rows = tagPickerItems(data.state.tags, data.state.transactions, [1, 2], "cf")
-  expect(rows.map((r) => r.label)).toEqual(["Scoped", "COFFEE BREAK", "Global", "COFFEE", "COFFEE SHOP", "Other categories", "COFFEE OTHER", 'Create "cf"'])
+  expect(rows.map((r) => r.label)).toEqual(["Scoped", "COFFEE BREAK", "Global", "COFFEE", "COFFEE SHOP", "Out of scope", "COFFEE OTHER", 'Create "cf"'])
   expect(rows.find((r) => r.label === "COFFEE OTHER")).toMatchObject({ color: theme.overlay1 })
   expect(rows.find((r) => r.kind === "item" && r.value === add)?.label).toBe("COFFEE")
   expect(tagPickerItems(data.state.tags, data.state.transactions, [1], "zz").map((r) => r.label)).toEqual(['Create "zz"'])

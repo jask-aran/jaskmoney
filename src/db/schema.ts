@@ -6,7 +6,7 @@
  * version fallback with an additive migration registry. v7 was the initial
  * partial OpenTUI port. */
 
-export const SCHEMA_VERSION = 20
+export const SCHEMA_VERSION = 21
 
 /** Columns shared by the fresh schema and the v9 migration. Rows imported from
  * CSV keep source = 'csv' and NULL external fields. */
@@ -142,6 +142,13 @@ ALTER TABLE category_suggestions_v19 RENAME TO category_suggestions;
  * [[category id, confidence], ...], the pick first); NULL for older ones. */
 export const SUGGESTION_RANKED_COLUMN = "ranked TEXT"
 
+/** v21: a tag's scope, a filter expression (no ask:) naming the rows it can
+ * go on: the picker lists it first for them and tag suggestions look only
+ * there. NULL = anywhere. Replaces tags.category_id (v21 converts each to
+ * its cat: term and clears the column). Approved deviation from legacy
+ * (Go: a tag's scope is one category), 2026-10-27. */
+export const TAG_SCOPE_COLUMN = "scope TEXT"
+
 export const SYNC_SQL = `
 CREATE UNIQUE INDEX IF NOT EXISTS idx_accounts_external ON accounts(source, external_id) WHERE external_id IS NOT NULL;
 CREATE UNIQUE INDEX IF NOT EXISTS idx_transactions_external ON transactions(source, external_id) WHERE external_id IS NOT NULL;
@@ -240,6 +247,7 @@ ${BUDGET_SQL}
 ${CATEGORY_SUGGESTIONS_SQL}
 ALTER TABLE budget_cycle ADD COLUMN ${BUDGET_PAY_EARLY_COLUMN};
 ALTER TABLE category_suggestions ADD COLUMN ${SUGGESTION_RANKED_COLUMN};
+ALTER TABLE tags ADD COLUMN ${TAG_SCOPE_COLUMN};
 `
 
 export const DEFAULT_CATEGORIES: { name: string; color: string; sortOrder: number; isDefault: number }[] = [
