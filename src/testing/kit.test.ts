@@ -84,9 +84,11 @@ test("preload isolates credential siblings and fallback paths and blanks all cre
   expect(existsSync(join(directory, "credentials.json"))).toBe(false)
   writeFileSync(join(directory, "credentials.json"), '{"token":"test-only"}')
   // Leave a sibling file behind; the next test must receive a new directory.
+  // Without overrides, everything is in ~/.jaskmoney (inside the test HOME).
   delete process.env.JASKMONEY_CONFIG
-  expect(defaultSettingsConfigPath()).toBe(join(directory, "config", "jaskmoney-opentui", "settings.json"))
-  delete process.env.XDG_CONFIG_HOME
-  expect(defaultSettingsConfigPath()).toBe(join(directory, ".config", "jaskmoney-opentui", "settings.json"))
-  expect(defaultDbPath()).toBe(join(directory, ".local", "share", "jaskmoney-opentui", "transactions.db"))
+  expect(defaultSettingsConfigPath()).toBe(join(directory, ".jaskmoney", "settings.json"))
+  const db = process.env.JASKMONEY_DB
+  delete process.env.JASKMONEY_DB
+  expect(defaultDbPath()).toBe(join(directory, ".jaskmoney", "transactions.db"))
+  process.env.JASKMONEY_DB = db
 })

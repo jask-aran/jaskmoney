@@ -15,6 +15,8 @@ bun install
 bun start
 ```
 
+A standalone binary: `bun run build` makes `dist/jaskmoney` (this platform; the runtime and native renderer inside). Linked onto the PATH (`ln -s "$PWD/dist/jaskmoney" ~/.local/bin/jaskmoney`), `jaskmoney` runs from anywhere, and each build updates it.
+
 ## Verify
 
 ```bash
@@ -117,20 +119,22 @@ Settings › AI models has a row per model; `enter` opens its dialog (sign in, p
 - **Jev** (TypeSafe): category suggestions, `ask:`, tag candidates and smart search. It uses a TypeSafe key when there is one (`JASKMONEY_JEV_TOKEN`), otherwise OpenRouter's key or sign-in (OpenRouter serves the same Jev 1.14); the row says "via OpenRouter" then. It goes through pi-ai like the general model.
 - **Clairic** (Cloudflare Workers AI, `JASKMONEY_CF_TOKEN` and `JASKMONEY_CF_ACCOUNT_ID`): optional; it only improves smart search's words and written dates.
 - **The general model** writes rules: OpenRouter (default `meta/muse-spark-1.3-contributor`, at `xhigh` reasoning effort, or the highest a model supports) or OpenAI (default `gpt-6.1-sol`), each with a key (`JASKMONEY_OPENROUTER_TOKEN` / `JASKMONEY_OPENAI_TOKEN`) or a browser sign-in (`o`: OpenRouter's mints a key, OpenAI's is Sign in with ChatGPT on your plan; the browser opens, and if it can't reach the app the modal shows the address and takes the pasted redirect URL). `u` picks which provider is used; `t` tests it; `del` twice removes its key, model and sign-in.
-- Keys entered here are saved owner-only in `credentials.json` beside `settings.json` and take priority over `.env`; sign-ins are kept owner-only in `oauth.json` there too.
+- Keys entered here are saved owner-only in `~/.jaskmoney/credentials.json` and take priority over the environment; sign-ins are kept owner-only in `oauth.json` there too.
 - What leaves the machine: a search query goes to Jev and Clairic; a transaction's description, amount, type, message and category go to Jev (TypeSafe, or OpenRouter). Every question Jev is asked, and the thresholds that read its answers, are in `src/domain/questions.ts`.
 
 ## Data
 
-SQLite defaults to `~/.local/share/jaskmoney-opentui/transactions.db`; set `JASKMONEY_DB` to override it.
+All user data lives in `~/.jaskmoney` (owner-only): `transactions.db`, `settings.json`, `credentials.json` (the Up token and API keys) and `oauth.json` (browser sign-ins). `JASKMONEY_HOME` moves the directory; `JASKMONEY_DB` and `JASKMONEY_CONFIG` point at other files. The first start after upgrading copies data from the old places (`~/.config/jaskmoney-opentui`, `~/.local/share/jaskmoney-opentui`) and leaves them as they were.
 
 ### Up Bank sync (primary source)
 
-Up uses a Personal Access Token; there is no in-app login. Create one at <https://api.up.com.au> and export it before starting the app:
+Up uses a Personal Access Token; there is no in-app login. Create one at <https://api.up.com.au> and save it in `~/.jaskmoney/credentials.json` (mode 600):
 
-```bash
-export JASKMONEY_UP_TOKEN=up:yeah:…
+```json
+{ "JASKMONEY_UP_TOKEN": "up:yeah:…" }
 ```
+
+The environment variable of the same name also works; the saved one wins.
 
 - The app syncs at startup and every 5 minutes; `ctrl+r` syncs from anywhere, and the header shows when it last synced. In Settings, Up Bank (`v` then `u`) also has `s` to sync.
 - The first sync of each account pulls its full history; later syncs fetch a recent window per account, update pending (held) transactions in place when they settle, and drop holds that Up reversed. Sync never changes a category, tag or note you set.

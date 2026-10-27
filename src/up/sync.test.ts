@@ -519,7 +519,7 @@ test("store sync locks concurrent calls, refreshes, applies rules only to insert
     expect(data.state.dbInfo?.upLastError).toBe("Offline")
     expect(data.state.dbInfo?.upLastSyncedAt).toBe(lastSyncedAt)
     delete process.env.JASKMONEY_UP_TOKEN
-    await expect(data.syncUp()).rejects.toThrow("Set JASKMONEY_UP_TOKEN")
+    await expect(data.syncUp()).rejects.toThrow("Add your Up token")
     expect(data.state.upSyncing).toBe(false)
   } finally {
     fetchMock.mockRestore()

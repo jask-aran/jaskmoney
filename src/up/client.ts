@@ -1,3 +1,4 @@
+import { credentialEnv } from "../ai/credentials"
 import type { UpAccount, UpTransaction } from "./types"
 
 export class UpApiError extends Error {
@@ -7,11 +8,19 @@ export class UpApiError extends Error {
   }
 }
 
-export function readUpToken(env: Record<string, string | undefined> = process.env): string {
+/** The Up token: saved in ~/.jaskmoney/credentials.json, else the environment. */
+export function readUpToken(env: Record<string, string | undefined> = credentialEnv()): string {
   const token = env.JASKMONEY_UP_TOKEN?.trim()
-  if (!token) throw new Error("Set JASKMONEY_UP_TOKEN to an Up Personal Access Token (create one at https://api.up.com.au)")
+  if (!token) throw new Error(`${UP_TOKEN_SETUP} (create one at https://api.up.com.au)`)
   return token
 }
+
+export function hasUpToken(env: Record<string, string | undefined> = credentialEnv()): boolean {
+  return !!env.JASKMONEY_UP_TOKEN?.trim()
+}
+
+/** What sets sync up, for messages. */
+export const UP_TOKEN_SETUP = "Add your Up token: JASKMONEY_UP_TOKEN in ~/.jaskmoney/credentials.json or the environment"
 
 type Fetch = (input: string | URL | Request, init?: RequestInit) => Promise<Response>
 

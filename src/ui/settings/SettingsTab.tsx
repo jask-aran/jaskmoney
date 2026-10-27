@@ -170,11 +170,11 @@ function DatabasePane(props: { focused: boolean; height?: number | "auto" | `${n
 function UpPane(props: { focused: boolean; width?: `${number}%` }) {
   const info = () => data.state.dbInfo
   const active = () => ui.state.settingsActive && ui.state.settingsSection === "up"
-  const tokenSet = () => !!process.env.JASKMONEY_UP_TOKEN?.trim()
+  const tokenSet = () => !!data.state.apiKeys.JASKMONEY_UP_TOKEN.source
   const accounts = () => data.state.syncAccounts
   return <SectionCard title={SETTINGS_SECTION_LABELS.up} focused={props.focused} active={active()} height={Math.max(1, accounts().length) + 4} width={props.width}>
     <text wrapMode="none">
-      <Show when={tokenSet()} fallback={<S fg={theme.warning}>Set JASKMONEY_UP_TOKEN to enable sync</S>}>
+      <Show when={tokenSet()} fallback={<S fg={theme.warning}>No Up token: JASKMONEY_UP_TOKEN in ~/.jaskmoney/credentials.json</S>}>
         <Show when={!data.state.upSyncing} fallback={<S fg={theme.peach}>Syncing…</S>}>
           <S fg={info()?.upLastSyncedAt ? theme.subtext0 : theme.overlay1}>
             {info()?.upLastSyncedAt ? `Last sync ${new Date(info()!.upLastSyncedAt!).toLocaleString("en-AU", { dateStyle: "medium", timeStyle: "short" })}` : "Token set · not synced yet"}

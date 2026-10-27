@@ -99,7 +99,7 @@ function registry(ctx: CommandContext): Entry[] {
     { id: "rules:dry-run", category: "Rules", label: "Dry-run the rules", description: "what they'd change", run: () => showDryRun(ui, data) },
     // Data
     { id: "data:sync", category: "Data", label: "Sync with Up", key: "ctrl+r",
-      disabled: !process.env.JASKMONEY_UP_TOKEN?.trim() ? "set JASKMONEY_UP_TOKEN" : data.state.upSyncing ? "syncing now" : undefined,
+      disabled: !data.state.apiKeys.JASKMONEY_UP_TOKEN.source ? "no Up token" : data.state.upSyncing ? "syncing now" : undefined,
       run: () => { void runSync(ui, data, { manual: true }) } },
     { id: "data:import", category: "Data", label: "Import a CSV…", run: inSettings("database", "enter", () => ui.setState({ databaseCursor: DATABASE_ROWS.indexOf("import") })) },
     { id: "data:clear", category: "Data", label: "Clear transaction data…", description: "asks again", run: inSettings("database", "enter", () => ui.setState({ databaseCursor: DATABASE_ROWS.indexOf("clearData") })) },

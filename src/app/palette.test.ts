@@ -61,7 +61,7 @@ test("commands go beyond keys: from anywhere, per saved filter and account; keys
   // The rest of the registry: grouped, keyless unless global.
   expect(byId("rules:apply")?.category).toBe("Rules")
   expect(byId("rules:apply")?.key).toBeUndefined()
-  expect(byId("data:sync")).toMatchObject({ key: "ctrl+r", disabled: "set JASKMONEY_UP_TOKEN" })
+  expect(byId("data:sync")).toMatchObject({ key: "ctrl+r", disabled: "no Up token" })
   expect(byId("txn:saved:coffee")).toMatchObject({ label: "Filter: Coffee", description: "desc:coffee" })
   expect(list.some((c) => c.id.startsWith("txn:account:"))).toBe(true)
   expect(byId("settings:rules")?.label).toBe("Rules")
@@ -214,7 +214,7 @@ test("the palette renders like opencode's: search line, bold group headings, a s
     // Typed: one list, each row naming its group; what can't run is last, dimmed, with why.
     type("sync")
     await t.renderOnce()
-    expect(t.captureCharFrame()).toMatch(/Sync with Up set JASKMONEY_UP_TOKEN\s+Data · ctrl\+r/)
+    expect(t.captureCharFrame()).toMatch(/Sync with Up no Up token\s+Data · ctrl\+r/)
     for (let i = 0; i < 4; i++) handleKey(ui, key("backspace"), data)
     type("go to")
     await t.renderOnce()

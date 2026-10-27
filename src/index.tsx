@@ -1,3 +1,5 @@
+// First: the stores read keys and settings as their modules load.
+import "./startup"
 import { createCliRenderer } from "@opentui/core"
 import { render } from "@opentui/solid"
 import { App } from "./app/App"

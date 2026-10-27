@@ -1,3 +1,4 @@
+import { hasUpToken, UP_TOKEN_SETUP } from "../up/client"
 import type { DataStore } from "../state/dataStore"
 import { newSuggestionsNote, suggestNew } from "./suggest"
 import type { UiStore } from "../state/uiStore"
@@ -6,7 +7,7 @@ import type { UiStore } from "../state/uiStore"
 export const SYNC_INTERVAL_MS = 5 * 60 * 1000
 
 export function syncConfigured(): boolean {
-  return !!process.env.JASKMONEY_UP_TOKEN?.trim()
+  return hasUpToken()
 }
 
 /**
@@ -16,7 +17,7 @@ export function syncConfigured(): boolean {
  */
 export async function runSync(ui: UiStore, data: DataStore, { manual }: { manual: boolean }): Promise<void> {
   if (!syncConfigured()) {
-    if (manual) ui.setStatus("Set JASKMONEY_UP_TOKEN to enable sync", true)
+    if (manual) ui.setStatus(UP_TOKEN_SETUP, true)
     // Still suggest for waiting rows (CSV imports, or none suggested yet).
     else { const n = await suggestNew(data); if (n) ui.setStatus(newSuggestionsNote(n).slice(3)) }
     return

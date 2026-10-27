@@ -1,3 +1,4 @@
+import { jaskmoneyHome } from "../storage/home"
 import { Database } from "bun:sqlite"
 import { mkdirSync } from "node:fs"
 import { dirname, join } from "node:path"
@@ -39,8 +40,7 @@ import type { Budget, BudgetScope, CycleConfig } from "../domain/budget"
 export type Db = Database
 
 export function defaultDbPath(): string {
-  const home = process.env.HOME ?? "."
-  return join(home, ".local", "share", "jaskmoney-opentui", "transactions.db")
+  return join(jaskmoneyHome(), "transactions.db")
 }
 
 export function openDb(path: string = defaultDbPath()): Db {

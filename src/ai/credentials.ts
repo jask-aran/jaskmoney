@@ -4,8 +4,8 @@ import { writeJsonAtomic } from "../storage/json"
 import { defaultSettingsConfigPath } from "../state/settingsConfig"
 
 /**
- * API keys entered in Settings, kept in credentials.json beside settings.json
- * (owner-only, mode 600). A saved key takes priority over the environment
+ * API keys (and the Up token), kept in credentials.json beside settings.json
+ * in ~/.jaskmoney (owner-only, mode 600). A saved key takes priority over the environment
  * variable of the same name (Bun loads `.env`), so what the user typed is
  * what is used. Values are never rendered: `maskSecret` shows the last four.
  */
@@ -14,6 +14,7 @@ import { defaultSettingsConfigPath } from "../state/settingsConfig"
 // provider in use aren't secrets (NOT_SECRET); JASKMONEY_LLM_MODEL is the
 // OpenRouter model's former name, still read.
 export const CREDENTIAL_NAMES = [
+  "JASKMONEY_UP_TOKEN",
   "JASKMONEY_JEV_TOKEN", "JASKMONEY_CF_TOKEN", "JASKMONEY_CF_ACCOUNT_ID",
   "JASKMONEY_OPENROUTER_TOKEN", "JASKMONEY_OPENROUTER_MODEL", "JASKMONEY_LLM_MODEL",
   "JASKMONEY_OPENAI_TOKEN", "JASKMONEY_OPENAI_MODEL", "JASKMONEY_LLM_PROVIDER",

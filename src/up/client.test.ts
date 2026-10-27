@@ -275,7 +275,7 @@ describe("Up client", () => {
 
   test("readUpToken trims and rejects missing or blank PAT", () => {
     expect(readUpToken({ JASKMONEY_UP_TOKEN: "  abc\n" })).toBe("abc")
-    for (const env of [{}, { JASKMONEY_UP_TOKEN: "  " }]) expect(() => readUpToken(env)).toThrow("Set JASKMONEY_UP_TOKEN to an Up Personal Access Token (create one at https://api.up.com.au)")
+    for (const env of [{}, { JASKMONEY_UP_TOKEN: "  " }]) expect(() => readUpToken(env)).toThrow("Add your Up token: JASKMONEY_UP_TOKEN in ~/.jaskmoney/credentials.json or the environment (create one at https://api.up.com.au)")
   })
 })
 
