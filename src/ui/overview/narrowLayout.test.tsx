@@ -172,3 +172,19 @@ test("narrow at its shortest: the Calendar chart shows all seven weekdays above 
     expect(y).toBeLessThan(pane.y + pane.height - 1)
   }
 })
+
+test("the Date Range chips all show at every width, tightening before anything is cut; the dates show when they fit", async () => {
+  const shown: Record<number, boolean> = {}
+  for (const width of [80, 85, 90, 95, 100, 105, 110, 114, 120, 140, 160]) {
+    const t = await overview(width, 40)
+    const line = t.captureCharFrame().split("\n")[3]!
+    for (const label of ["1M", "2M", "3M", "6M", "1Y", "QTR", "Half", "FY", "Custom"]) expect(line).toContain(` ${label} `)
+    expect(line).toMatch(/ (Cycle|Cyc) .* (Month|Mth) .* (Year|Yr) /)
+    // The card's right border is intact: nothing ran past it.
+    expect(line.trimEnd().match(/│/g)!.length).toBeGreaterThanOrEqual(2)
+    shown[width] = line.includes("‹")
+    t.renderer.destroy()
+  }
+  expect(shown[160]).toBe(true)
+  expect(shown[80]).toBe(false)
+})

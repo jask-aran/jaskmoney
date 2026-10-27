@@ -20,7 +20,8 @@ import { spendingCalendar, type CalendarDay } from "../../domain/spending"
 import { accountRole } from "../../domain/types"
 import { MONTHS, addDays, appNow, appToday } from "../../domain/days"
 import { isSpending, isUncategorised, isUnsortedIn } from "../../domain/moneyRules"
-import { CUSTOM_CHIP, LOOKBACKS, PERIODS, PERIOD_LABEL, comparisonWindows, filterByTimeframe, offsetLabel, periodOffset } from "../../domain/timeframe"
+import { chipLayout } from "./rangeChips"
+import { CUSTOM_CHIP, LOOKBACKS, PERIODS, comparisonWindows, filterByTimeframe, offsetLabel, periodOffset } from "../../domain/timeframe"
 import { count, fit, shortDate } from "../text"
 import { StyledLine, type StyledSpan } from "../primitives/StyledLine"
 import { monthlyTotal, subscriptions, type Subscription } from "../../domain/subscriptions"
@@ -196,19 +197,15 @@ export function OverviewTab(props: { focused: SectionId }) {
   const categoryWidth = () => (wide() ? sideWidth() : dims().width - 1 - sideWidth())
   const categoryNameWidth = () => Math.max(8, categoryWidth() - 5 - 14)
 
-  // Go narrow fallback: the preset chips keep priority and the timeframe
-  // label is shown only when both fit on the card's single content line.
-  const presetsWidth =
-    LOOKBACKS.reduce((n, lb) => n + lb.length + 3, 0) - 1 +
-    " │ ".length +
-    PERIODS.reduce((n, p) => n + PERIOD_LABEL[p].length + 3, 0) - 1 +
-    " │ ".length + " Custom ".length
   // The dates on the right: arrows when [ ] can step them, and how far the
   // range is from the current period (with 0 to come back).
   const steppable = () => ui.state.timeframe.family !== "lookback"
   const offsetText = createMemo(() => offsetLabel(ui.state.timeframe.period, periodOffset(ui.state.timeframe, appNow(), cycleConfig())))
   const timeframeWidth = () => bounds().label.length + 4 + (offsetText() ? offsetText().length + 11 : 0)
-  const showTimeframe = () => dims().width - 4 >= presetsWidth + 2 + timeframeWidth()
+  // The card leaves the Up logo its columns; border and padding take 4.
+  const rangeCardWidth = () => Math.max(20, dims().width - UP_LOGO_WIDTH - 1)
+  const chipsFit = createMemo(() => chipLayout(rangeCardWidth() - 4, timeframeWidth()))
+  const showTimeframe = () => chipsFit().timeframe
   const dateFocused = () => props.focused === "ov.range"
   // Chips are padded labels on a pill (chipLook); the cursor shows only
   // while the Date Range is focused.
@@ -384,17 +381,17 @@ export function OverviewTab(props: { focused: SectionId }) {
 
   return (
     <box width="100%" height="100%" flexDirection="column" backgroundColor={theme.canvas}>
-      <SectionCard title="Date Range" titleSuffix={`· ${scope().label}`} titleSuffixColor={theme.subtext0} focused={dateFocused()} height={3} width={Math.max(20, dims().width - UP_LOGO_WIDTH - 1)}>
+      <SectionCard title="Date Range" titleSuffix={`· ${scope().label}`} titleSuffixColor={theme.subtext0} focused={dateFocused()} height={3} width={rangeCardWidth()}>
         <box flexDirection="row" justifyContent="space-between" width="100%">
           <text fg={theme.subtext0} wrapMode="none">
             <For each={LOOKBACKS}>
-              {(lb, i) => <>{i() > 0 ? " " : ""}{chip(lb, i(), () => ui.state.timeframe.family === "lookback" && ui.state.timeframe.lookback === lb)}</>}
+              {(lb, i) => <>{i() > 0 ? chipsFit().gap : ""}{chip(lb, i(), () => ui.state.timeframe.family === "lookback" && ui.state.timeframe.lookback === lb)}</>}
             </For>
-            <S fg={theme.surface2}>{" │ "}</S>
+            <S fg={theme.surface2}>{chipsFit().separator}</S>
             <For each={PERIODS}>
-              {(p, i) => <>{i() > 0 ? " " : ""}{chip(PERIOD_LABEL[p], LOOKBACKS.length + i(), () => ui.state.timeframe.family === "period" && ui.state.timeframe.period === p)}</>}
+              {(p, i) => <>{i() > 0 ? chipsFit().gap : ""}{chip(chipsFit().label(p), LOOKBACKS.length + i(), () => ui.state.timeframe.family === "period" && ui.state.timeframe.period === p)}</>}
             </For>
-            <S fg={theme.surface2}>{" │ "}</S>
+            <S fg={theme.surface2}>{chipsFit().separator}</S>
             {chip("Custom", CUSTOM_CHIP, () => ui.state.timeframe.family === "custom")}
           </text>
           <Show when={showTimeframe()}>
