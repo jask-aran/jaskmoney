@@ -63,6 +63,6 @@ committed; note the commit.
   moves).
 - [ ] **7. Subscriptions on the Overview.** From the regular-payments
   detector: total per month, price changes, next charge, ones that stopped.
-- [ ] **8. Split dataStore.ts** (about 1,100 lines): AI suggestions, tag
+- [x] **8. Split dataStore.ts** (about 1,100 lines): AI suggestions, tag
   review and Up pushes into their own modules.
 - [ ] **9. README sections.** The Transactions section is one paragraph.
