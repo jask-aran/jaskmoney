@@ -3,8 +3,8 @@ import { useKeyboard, usePaste, useRenderer } from "@opentui/solid"
 import type { KeyEvent } from "@opentui/core"
 import { ui } from "../state/uiStore"
 import { data } from "../state/dataStore"
-import { footerHints, footerLine, handleKey, hintState, scopeQuits, handlePaste } from "./keys"
-import { paletteEntries, scopeLabel } from "./palette"
+import { footerLine, handleKey, hintState, paletteList, scopeQuits, handlePaste } from "./keys"
+import { scopeLabel } from "./palette"
 import { CommandPalette } from "../ui/primitives/CommandPalette"
 import { appNow } from "../domain/days"
 import { TabBar } from "../ui/primitives/TabBar"
@@ -139,7 +139,7 @@ export function App() {
       <DryRunOverlay />
       <Show when={ui.state.palette}>
         {(palette: () => NonNullable<typeof ui.state.palette>) => (
-          <CommandPalette entries={paletteEntries(footerHints(palette().from, hintState(ui, data)), palette().query)} cursor={palette().cursor} query={palette().query} from={scopeLabel(palette().from)} />
+          <CommandPalette commands={paletteList(ui, data)} cursor={palette().cursor} query={palette().query} from={scopeLabel(palette().from)} lastId={ui.state.lastCommandId} />
         )}
       </Show>
     </box>

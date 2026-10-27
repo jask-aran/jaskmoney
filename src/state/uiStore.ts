@@ -90,6 +90,8 @@ export interface UiState {
   filterPicker: { query: string; cursor: number } | null
   /** The command palette (ctrl+k), over the scope it was opened from. */
   palette: { query: string; cursor: number; from: ScopeId } | null
+  /** The palette's last command, listed first next time (session only). */
+  lastCommandId: string | null
   dryRunReport: DryRunReport | null
   dryRunScroll: number
   dryRunVisible: number
@@ -338,7 +340,7 @@ function createUiStore() {
     detailNotesEditing: false,
     detailNotesDraft: "",
     detailNotesCaret: 0,
-    filterPicker: null, palette: null, dryRunReport: null, dryRunScroll: 0, dryRunVisible: 10,
+    filterPicker: null, palette: null, lastCommandId: null, dryRunReport: null, dryRunScroll: 0, dryRunVisible: 10,
     settingsEditor: null,
     settingsEditId: null,
     settingsEditField: 0,

@@ -1,4 +1,5 @@
-import { footerShown, paletteEntries, type Hint } from "./palette"
+import { footerShown, type Hint } from "./palette"
+import { commands, rankCommands, type Command } from "./commands"
 import { ACCOUNT_ACTIONS, armedText, isArmed, isSecondPress, type Armed } from "../state/armed"
 import { DATABASE_ROWS } from "../state/databaseRows"
 import type { KeyEvent } from "@opentui/core"
@@ -193,19 +194,31 @@ export function handleKey(ui: UiStore, key: KeyEvent, data?: DataStore): boolean
   return true
 }
 
-/** The command palette: a scope's actions, run by pressing their key in
- * that scope once the palette has closed (app/palette). */
+/** The palette's commands as listed now (app/commands), for the keys and
+ * the component alike. */
+export function paletteList(ui: UiStore, data?: DataStore): Command[] {
+  const palette = ui.state.palette
+  if (!palette || !data) return []
+  const ctx = { ui, data, from: palette.from, press: (event: KeyEvent) => { handleKey(ui, event, data) } }
+  return rankCommands(commands(ctx, footerHints(palette.from, hintState(ui, data))), palette.query, ui.state.lastCommandId)
+}
+
+/** The command palette: enter runs the command under the cursor once the
+ * palette has closed (from the pane it opened over); one that can't run
+ * says why and the palette stays. */
 function handlePalette(ui: UiStore, key: KeyEvent, data?: DataStore): void {
   const palette = ui.state.palette
   if (!palette) return
-  const entries = paletteEntries(footerHints(palette.from, hintState(ui, data)), palette.query)
-  queryPickerKey(key, palette, entries.length, {
+  const list = paletteList(ui, data)
+  queryPickerKey(key, palette, list.length, {
     close: () => { ui.setState({ palette: null }) },
     update: (next) => { ui.setState({ palette: { ...palette, ...next } }) },
     apply: () => {
-      const entry = entries[palette.cursor]
-      ui.setState({ palette: null })
-      if (entry) handleKey(ui, entry.event, data)
+      const command = list[palette.cursor]
+      if (!command) return
+      if (command.disabled) { ui.setStatus(`${command.label}: ${command.disabled}`); return }
+      ui.setState({ palette: null, lastCommandId: command.id })
+      try { command.run() } catch (error) { reportError(ui, error) }
     },
   })
 }
