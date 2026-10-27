@@ -6,54 +6,39 @@ keyboard.
 
 ![Overview](docs/screenshots/overview.png)
 
-<sub>Screenshots use the built-in demo data (`jaskmoney --demo`).</sub>
+## Quick start
+
+Needs [Bun](https://bun.sh) 1.3+.
+
+```bash
+git clone https://github.com/jask-aran/jaskmoney.git && cd jaskmoney && bun install && bun start
+```
+
+To install the `jaskmoney` command, build a standalone binary and link it onto your PATH (run from the repo):
+
+```bash
+bun run build && mkdir -p ~/.local/bin && ln -sf "$PWD/dist/jaskmoney" ~/.local/bin/jaskmoney
+```
+
+Screenshots use the built-in demo data: `jaskmoney --demo` (or `bun start --demo`) runs three years of made-up
+transactions without touching yours. A [Nerd Font](https://www.nerdfonts.com) shows the category icons; without one,
+turn icons off in Settings › Database & Import.
 
 ## Features
 
-- **Up Bank sync.** Full history on first sync, then every 5 minutes. Pending transactions settle in place, and savers
-  are tracked by balance. Categories and tags you change go back to Up.
-- **Overview.** Spending, income, savings rate and runway for any date range: cycle, month, quarter, financial year
-  or custom, compared with the period before. Charts show cumulative spend against budget pace, daily and weekly
-  spend, cash flow, net position, savers, a calendar, and subscriptions found in your history.
-- **Budgets.** One cycle (weekly, fortnightly or monthly, from payday if you like) with an overall budget and
-  per-category or per-account budgets. Allocate the overall budget down, or build it up from categories. See over or
-  under pace, last cycle by the same day, and the past six cycles.
-- **Fast transactions table.** Instant filtering (`desc:`, `cat:`, `amt:>20`, `date:` …), saved filters, sorting,
-  range selection, undo and repeat, and a merchant view.
-- **Categorising that learns.** Uncategorised rows get suggestions from your own history first, then from an AI
-  model. Accept them one at a time or all the confident ones at once. Rules are offered once a pattern repeats, and an
-  AI rule writer can propose more.
-- **Tags.** Synced with Up. Jaskmoney finds candidate rows for a tag, detects trips abroad and subscriptions, and
-  tags in bulk.
-- **Smart search.** Ask in words (`?coffee over $5 last month`) and get a filter you can read and edit, or use
-  `ask:"eating out"` to have each row judged.
-- **Keyboard first.** A command palette (`ctrl+k`) and footer hints for the pane you're in. Destructive actions take
-  their key twice.
-- **CSV import** for other banks, with import profiles and duplicate checks.
+- **Up Bank sync**: full history, then every 5 minutes; categories and tags sync back to Up.
+- **Overview**: spending, income, savings rate and runway for any date range, with charts against your budget pace.
+- **Budgets**: an overall budget per cycle, split by category or account, tracked against pace and past cycles.
+- **Transactions**: instant filters, saved filters, merchant view, bulk edits, undo.
+- **Categorising**: suggestions from your history and AI; accept one at a time or all at once; auto-offered rules.
+- **Tags**: synced with Up, with trip and subscription detection.
+- **Smart search**: ask in words (`?coffee over $5 last month`) and get an editable filter.
+- **Keyboard first**: a command palette (`ctrl+k`) and per-pane key hints.
+- **CSV import** for other banks.
 
 | Transactions | Budgets |
 | --- | --- |
 | ![Transactions](docs/screenshots/transactions.png) | ![Budgets](docs/screenshots/budgets.png) |
-
-## Quick start
-
-Needs [Bun](https://bun.sh) 1.3+. A [Nerd Font](https://www.nerdfonts.com) shows the category icons; without one,
-turn icons off in Settings › Database & Import.
-
-```bash
-git clone https://github.com/jask-aran/jaskmoney.git
-cd jaskmoney
-bun install
-bun start            # your data
-bun src/index.tsx --demo   # three years of made-up data, nothing of yours touched
-```
-
-To get a standalone binary, `bun run build` writes `dist/jaskmoney`. Link it onto your PATH to run it from anywhere:
-
-```bash
-ln -s "$PWD/dist/jaskmoney" ~/.local/bin/jaskmoney
-jaskmoney --demo
-```
 
 ## Connecting Up
 
