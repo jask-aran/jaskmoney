@@ -9,7 +9,8 @@ import { defaultSettingsConfigPath } from "../state/settingsConfig"
  * what is used. Values are never rendered: `maskSecret` shows the last four.
  */
 
-export const CREDENTIAL_NAMES = ["JASKMONEY_JEV_TOKEN", "JASKMONEY_CF_TOKEN", "JASKMONEY_CF_ACCOUNT_ID"] as const
+// JASKMONEY_LLM_MODEL isn't a secret, but is set beside the OpenRouter key.
+export const CREDENTIAL_NAMES = ["JASKMONEY_JEV_TOKEN", "JASKMONEY_CF_TOKEN", "JASKMONEY_CF_ACCOUNT_ID", "JASKMONEY_OPENROUTER_TOKEN", "JASKMONEY_LLM_MODEL"] as const
 export type CredentialName = (typeof CREDENTIAL_NAMES)[number]
 type Saved = Partial<Record<CredentialName, string>>
 
