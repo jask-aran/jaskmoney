@@ -72,9 +72,10 @@ export type ScopeId =
 export type SettingsList = "categories" | "tags"
 export type SettingsSection = "taxonomy" | "budgets" | "rules" | "filters" | "up" | "ai" | "database"
 /** j/k order of Settings sections (wide layout: left column, then right). */
-/** In reading order (j/k): the wide layout's left column (Taxonomy to Saved
- * Filters), then its right (Up Bank to Database & Import). */
-export const SETTINGS_SECTIONS: SettingsSection[] = ["taxonomy", "budgets", "rules", "filters", "up", "ai", "database"]
+/** In reading order (j/k): the wide layout's left column (Taxonomy,
+ * Budgets), then its right (Up Bank to Database & Import); the one-column
+ * layouts stack them in the same order. */
+export const SETTINGS_SECTIONS: SettingsSection[] = ["taxonomy", "budgets", "up", "ai", "rules", "filters", "database"]
 
 /** Each Settings section's name: its pane's title and the palette's. (Jump badges are shorter.) */
 export const SETTINGS_SECTION_LABELS: Record<SettingsSection, string> = {

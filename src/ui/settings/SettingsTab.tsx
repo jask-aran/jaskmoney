@@ -9,7 +9,6 @@ import { For, Show, createEffect, createMemo, onCleanup, type JSX } from "solid-
 import type { ScrollBoxRenderable } from "@opentui/core"
 import { useTerminalDimensions } from "@opentui/solid"
 import { SectionCard } from "../primitives/SectionCard"
-import { muted } from "../primitives/spans"
 import { S } from "../primitives/S"
 import { TextInput } from "../primitives/TextInput"
 import type { SectionId, SettingsList, UiState } from "../../state/uiStore"
@@ -148,13 +147,13 @@ function RulesPane(props: { focused: boolean; width: number }) {
   const filtersActive = () => ui.state.settingsActive && ui.state.settingsSection === "filters"
   const rules = () => data.state.rules
   const filters = () => data.state.savedFilters
-  const heading = (label: string, n: number, on: boolean) => <text height={1} wrapMode="none"><S fg={on ? theme.focus : theme.subtext1} bold>{label}</S><S fg={theme.overlay1}>{` ${n}`}</S></text>
+  const heading = (label: string, n: number, on: boolean, note = "") => <text height={1} wrapMode="none"><S fg={on ? theme.focus : theme.subtext1} bold>{label}</S><S fg={theme.overlay1}>{` ${n}${note}`}</S></text>
   const nameWidth = () => Math.min(28, Math.floor(rowWidth(props.width) * 0.32))
   const setWidth = () => Math.min(30, Math.floor(rowWidth(props.width) * 0.3))
   const idWidth = () => Math.min(22, Math.max(...filters().map((f) => f.id.length + 7), 12))
   const height = () => 2 + 1 + Math.max(1, rules().length) + 1 + 1 + Math.max(1, filters().length)
-  return <SectionCard title="Rules & Filters" focused={props.focused} active={rulesActive() || filtersActive()} height={height()} width={props.width} bottomSpans={[muted(rules().length ? `${count(rules().length, "rule")}, first match wins` : "no rules")]}>
-    {heading("Rules", rules().length, rulesActive())}
+  return <SectionCard title="Rules & Filters" focused={props.focused} active={rulesActive() || filtersActive()} height={height()} width={props.width}>
+    {heading("Rules", rules().length, rulesActive(), rules().length > 1 ? " · first match wins" : "")}
     <Show when={rules().length} fallback={<text fg={theme.overlay1}>{rulesActive() ? "  No rules. Press a to add." : "  No rules yet."}</text>}>
       <For each={rules()}>{(rule, i) => {
         const cat = () => data.state.categories.find((c) => c.id === rule.setCategoryId)?.name
@@ -522,13 +521,13 @@ export function SettingsTab(props: { focused: SectionId }) {
       box.content.onSizeChange = () => { own?.call(box.content); box.scrollChildIntoView(paneId(props.focused)) }
     }}
       width={column.width} flexGrow={column.width ? 0 : 1} flexShrink={column.width ? 0 : 1} minWidth={0} height="100%"
-      scrollY scrollX={false} focusable={false} verticalScrollbarOptions={{ visible: false }} contentOptions={{ flexDirection: "column", gap: 1 }}>
+      scrollY scrollX={false} focusable={false} verticalScrollbarOptions={{ visible: false }} contentOptions={{ flexDirection: "column" }}>
       {column.children}
     </scrollbox>
   )
-  // Each pane's width: rows size their columns from it. Wide: the lists
-  // that want width (Taxonomy, Budgets, Rules & Filters) in a 60% left
-  // column, the compact panes in the rest; medium: the tab, Up Bank and AI models halves.
+  // Each pane's width: rows size their columns from it. Wide: Taxonomy
+  // (and Budgets) in a 60% left column; the rest on the right, Rules &
+  // Filters (they run on what comes in) just above Database & Import; medium: the tab, Up Bank and AI models halves.
   const left = () => Math.floor(dims().width * 0.6)
   const right = () => dims().width - 1 - left()
   const full = () => dims().width
@@ -544,18 +543,18 @@ export function SettingsTab(props: { focused: SectionId }) {
   return <box width="100%" height="100%" flexDirection="row" gap={1} backgroundColor={theme.canvas}>
     <Show when={layout() === "wide"} fallback={
       <Column>
-        {taxonomy(full())}{budgets(full())}{rules(full())}
+        {taxonomy(full())}{budgets(full())}
         <Show when={layout() === "medium"} fallback={<>{up(full())}{ai(full())}</>}>
           <box flexDirection="row" gap={1} width="100%" flexShrink={0}>
             <box id={paneId("set.up")} width={half()} flexShrink={0}><UpPane focused={props.focused === "set.up"} width={half()} /></box>
             <box id={paneId("set.ai")} flexGrow={1} minWidth={0}><AiPane focused={props.focused === "set.ai"} width={full() - 1 - half()} /></box>
           </box>
         </Show>
-        {database(full())}{history(full())}
+        {rules(full())}{database(full())}{history(full())}
       </Column>
     }>
-      <Column width={left()}>{taxonomy(left())}{budgets(left())}{rules(left())}</Column>
-      <Column>{up(right())}{ai(right())}{database(right())}{history(right())}</Column>
+      <Column width={left()}>{taxonomy(left())}{budgets(left())}</Column>
+      <Column>{up(right())}{ai(right())}{rules(right())}{database(right())}{history(right())}</Column>
     </Show>
     <ImportOverlay />
     <FactoryResetOverlay />

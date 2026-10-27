@@ -155,7 +155,8 @@ test("App shows the filter editor on Transactions, updates status colours, and r
 })
 
 test("rule health and selection colours use captured cells; dry-run body scrolls and owns input", async () => {
-  rendered = await renderApp({ width: 160, height: 32 })
+  // Wide enough that Rules & Filters' right-hand column shows each row whole.
+  rendered = await renderApp({ width: 200, height: 32 })
   ui.switchTab("settings")
   ui.activateSettings("rules")
   data.setState({
