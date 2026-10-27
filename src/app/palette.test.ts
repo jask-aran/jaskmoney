@@ -50,44 +50,58 @@ test("the footer shows the first few hints, then ctrl+k all; short lists stay wh
   expect(footerLine("catPicker", state).some((h) => h.key === "ctrl+k")).toBe(false)
 })
 
-test("commands go beyond keys: everywhere's, one per saved filter and account, each with a description or a reason", () => {
+test("commands go beyond keys: from anywhere, per saved filter and account; keys come from the pane's hints", () => {
   setup()
   const list = listFrom("manager.txns")
   const byId = (id: string) => list.find((c) => c.id === id)
-  // Keyed where the key works, keyless elsewhere.
-  expect(byId("txn:uncategorised")).toMatchObject({ key: { hint: "i" }, group: "here" })
-  expect(byId("rules:apply")).toMatchObject({ group: "everywhere", key: undefined })
-  expect(byId("filter:saved:coffee")).toMatchObject({ label: "Filter: Coffee", description: "desc:coffee" })
-  expect(list.some((c) => c.label === "Show Spending" || c.label.startsWith("Show "))).toBe(true)
-  expect(byId("settings:rules")?.label).toBe("Settings › Rules")
-  expect(byId("import:csv")?.description).toContain("preview")
-  // Reasons, not silence.
-  expect(byId("sync:now")?.disabled).toBe("set JASKMONEY_UP_TOKEN")
-  expect(byId("edit:undo")?.disabled).toBe("nothing to undo")
-  expect(byId("filter:clear")?.disabled).toBe("no filter")
-  // The table's own commands, listed only where they act (the cursor row).
-  expect(byId("txn:sort")).toMatchObject({ label: "Cycle the sort", key: { hint: "s" }, group: "here" })
-  expect(listFrom("settings.rules").some((c) => c.id === "txn:category")).toBe(false)
-  // A pane's keys the registry lacks are commands too, once per key.
-  expect(listFrom("overview").find((c) => c.id === "key:overview:c")).toMatchObject({ label: "This cycle", key: { hint: "c" } })
-  const keys = list.flatMap((c) => c.key ? [c.key.hint] : [])
+  // A hint naming a registry command lists it, keyed, in this pane's group.
+  expect(byId("txn:uncategorised")).toMatchObject({ key: "i", category: "Transactions" })
+  // A hint with its own label is a command of this pane.
+  expect(byId("key:manager.txns:s")).toMatchObject({ label: "Cycle the sort", key: "s", category: "Transactions" })
+  // The rest of the registry: grouped, keyless unless global.
+  expect(byId("rules:apply")?.category).toBe("Rules")
+  expect(byId("rules:apply")?.key).toBeUndefined()
+  expect(byId("data:sync")).toMatchObject({ key: "ctrl+r", disabled: "set JASKMONEY_UP_TOKEN" })
+  expect(byId("txn:saved:coffee")).toMatchObject({ label: "Filter: Coffee", description: "desc:coffee" })
+  expect(list.some((c) => c.id.startsWith("txn:account:"))).toBe(true)
+  expect(byId("settings:rules")?.label).toBe("Rules")
+  expect(byId("txn:undo")?.disabled).toBe("nothing to undo")
+  // Each key once, each command once.
+  const keys = list.flatMap((c) => c.key ? [c.key] : [])
   expect(new Set(keys).size).toBe(keys.length)
-  // From Settings › Rules, apply shows its key there.
-  expect(listFrom("settings.rules").find((c) => c.id === "rules:apply")).toMatchObject({ key: { hint: "S-a" }, group: "here" })
+  expect(new Set(list.map((c) => c.id)).size).toBe(list.length)
+  // From Settings › Rules, S-a is apply, in that pane's group; the table's own aren't there.
+  const rules = listFrom("settings.rules")
+  expect(rules.find((c) => c.id === "rules:apply")).toMatchObject({ key: "S-a", category: "Settings › Rules" })
+  expect(rules.some((c) => c.id.startsWith("key:manager.txns"))).toBe(false)
+  // Overview's own key with its own words.
+  expect(listFrom("overview").find((c) => c.id === "key:overview:c")).toMatchObject({ label: "Range: this cycle", key: "c" })
 })
 
-test("ranking: matches by label or description; the last command first; those that can't run last", () => {
+test("every hint that names a command names a real one, in every pane and state", () => {
+  setup()
+  const states = [{}, { uncategorisedOnly: true }, { tagReview: true }, { ruleOffers: 2 }, { asks: true }]
+  for (const scope of ["overview", "manager.txns", "manager.merchants", "manager.accounts", "settings", "settings.taxonomy", "settings.rules", "settings.filters", "settings.budgets", "settings.up", "settings.ai", "settings.database"] as const) {
+    for (const extra of states) {
+      const ctx = { ui, data, from: scope, press: () => {} }
+      expect(() => commands(ctx, footerHints(scope, { ...hintState(ui, data), ...extra }))).not.toThrow()
+    }
+  }
+})
+
+test("ranking: nothing typed leaves out what can't run, last used first, the pane before the rest; typing ranks and explains", () => {
   setup()
   const list = listFrom("manager.txns")
-  expect(rankCommands(list, "uncat", null)[0]?.id).toBe("txn:uncategorised")
-  expect(rankCommands(list, "payday", null)[0]?.id).toBe("budget:cycle")
   const empty = rankCommands(list, "", "rules:dry-run")
   expect(empty[0]?.id).toBe("rules:dry-run")
-  const firstDisabled = empty.findIndex((c) => c.disabled)
-  expect(empty.slice(firstDisabled).every((c) => c.disabled)).toBe(true)
-  // With nothing typed, this pane's come before everywhere's.
-  const enabled = empty.slice(1, firstDisabled)
-  expect(enabled.findIndex((c) => c.group === "everywhere")).toBeGreaterThan(enabled.findLastIndex((c) => c.group === "here"))
+  expect(empty.some((c) => c.disabled)).toBe(false)
+  const categories = empty.slice(1).map((c) => c.category)
+  expect(categories.indexOf("Rules")).toBeGreaterThan(categories.lastIndexOf("Transactions") - 1)
+  expect(rankCommands(list, "uncat", null)[0]?.id).toBe("txn:uncategorised")
+  expect(rankCommands(list, "payday", null)[0]?.id).toBe("settings:cycle")
+  // Can't run: listed when asked for, last, with why.
+  const undo = rankCommands(list, "undo", null)
+  expect(undo.at(-1)).toMatchObject({ id: "txn:undo", disabled: "nothing to undo" })
 })
 
 test("run from another tab: it goes where it needs, and is listed first next time", () => {
@@ -130,7 +144,8 @@ test("enter on one that can't run says why and keeps the palette open", () => {
   setup()
   open()
   type("undo")
-  expect(paletteList(ui, data)[0]?.id).toBe("edit:undo")
+  const at = paletteList(ui, data).findIndex((c) => c.id === "txn:undo")
+  ui.setState({ palette: { ...ui.state.palette!, cursor: at } })
   handleKey(ui, key("return"), data)
   expect(ui.state.palette).not.toBeNull()
   expect(ui.state.status).toBe("Undo: nothing to undo")
@@ -147,19 +162,32 @@ test("ctrl+k inside a picker still moves its cursor", () => {
   handleKey(ui, key("escape"), data)
 })
 
-test("the palette renders groups, descriptions, keys in a column, and dims what can't run", async () => {
+test("the palette renders like opencode's: search line, bold group headings, a solid accent bar on the cursor, keys at the right", async () => {
   const t = await renderApp({ width: 140, height: 50 })
   try {
     setup()
     open()
     await t.renderOnce()
     const frame = t.captureCharFrame()
-    expect(frame).toContain("Commands")
-    expect(frame).toMatch(/Review uncategorised\s+the rows waiting for a category.*\s+i\s+│/)
-    expect(frame).toContain("Everywhere")
+    expect(frame).toContain("Search commands")
+    expect(frame).toMatch(/Categorise…\s+selection or row\s+c/)
+    expect(frame).toContain("Rules")
+    expect(frame).not.toContain("Can't run")
+    const spans = t.captureSpans().lines.flatMap((l) => l.spans)
+    const bar = spans.find((s) => s.text.startsWith("Categorise…"))!
+    expect(bar.bg.toInts()).toEqual(RGBA.fromHex(theme.accent).toInts())
+    expect(bar.fg.toInts()).toEqual(RGBA.fromHex(theme.crust).toInts())
+    const heading = spans.find((s) => s.text === "Transactions" && s.fg.toInts().join() === RGBA.fromHex(theme.accent).toInts().join())
+    expect(heading).toBeDefined()
+    // Typed: one list, each row naming its group; what can't run is last, dimmed, with why.
     type("sync")
     await t.renderOnce()
-    const sync = t.captureSpans().lines.flatMap((l) => l.spans).find((s) => s.text.includes("set JASKMONEY_UP_TOKEN"))!
-    expect(sync.fg.toInts()).toEqual(RGBA.fromHex(theme.overlay0).toInts())
+    expect(t.captureCharFrame()).toMatch(/Sync with Up set JASKMONEY_UP_TOKEN\s+Data · ctrl\+r/)
+    for (let i = 0; i < 4; i++) handleKey(ui, key("backspace"), data)
+    type("go to")
+    await t.renderOnce()
+    const here = t.captureSpans().lines.flatMap((l) => l.spans).find((s) => s.text.startsWith("Transactions") && s.bg.toInts().join() === RGBA.fromHex(theme.mantle).toInts().join())!
+    expect(here.fg.toInts()).toEqual(RGBA.fromHex(theme.overlay0).toInts())
+    expect(t.captureCharFrame()).toMatch(/Transactions here now\s+Go to · 2/)
   } finally { t.renderer.destroy() }
 })

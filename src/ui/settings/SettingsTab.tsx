@@ -11,7 +11,7 @@ import { muted } from "../primitives/spans"
 import { S } from "../primitives/S"
 import { TextInput } from "../primitives/TextInput"
 import type { SectionId, SettingsList, UiState } from "../../state/uiStore"
-import { ui } from "../../state/uiStore"
+import { SETTINGS_SECTION_LABELS, ui } from "../../state/uiStore"
 import { data } from "../../state/dataStore"
 import { parseFilterStrict } from "../../domain/filter"
 import { theme } from "../../theme"
@@ -78,7 +78,7 @@ function TaxonomyList(props: { kind: SettingsList; narrow?: boolean; split?: boo
 function BudgetsPane(props: { focused: boolean }) {
   const active = () => ui.state.settingsActive && ui.state.settingsSection === "budgets"
   const budgets = () => data.state.budgets
-  return <SectionCard title="Budgets" focused={props.focused} active={active()} height={Math.max(1, budgets().length) + 4}>
+  return <SectionCard title={SETTINGS_SECTION_LABELS.budgets} focused={props.focused} active={active()} height={Math.max(1, budgets().length) + 4}>
     <ListRow cursor={active() && ui.state.budgetCursor === 0} bg={theme.canvas} spans={[{ text: "Cycle  ", fg: theme.subtext0 }, { text: describeCycle(data.state.budgetCycle), fg: theme.text }]} />
     <Show when={budgets().length} fallback={<text fg={theme.overlay1}>{active() ? "No budgets. Press a to add." : "No budgets. Activate to add."}</text>}>
       <For each={budgets()}>{(budget, i) => (
@@ -93,7 +93,7 @@ function BudgetsPane(props: { focused: boolean }) {
 
 function TaxonomyPane(props: { focused: boolean; narrow: boolean; height?: number | "auto" | `${number}%` }) {
   const active = () => ui.state.settingsActive && ui.state.settingsSection === "taxonomy"
-  return <SectionCard title="Taxonomy" focused={props.focused} active={active()} height={props.height} flexGrow={props.height ? 0 : 1}>
+  return <SectionCard title={SETTINGS_SECTION_LABELS.taxonomy} focused={props.focused} active={active()} height={props.height} flexGrow={props.height ? 0 : 1}>
     <Show when={props.narrow} fallback={<box width="100%" flexGrow={1} flexDirection="row" gap={2}><TaxonomyList kind="categories" split /><TaxonomyList kind="tags" split /></box>}>
       <TaxonomyList kind={ui.state.taxonomyList} narrow />
     </Show>
@@ -103,7 +103,7 @@ function TaxonomyPane(props: { focused: boolean; narrow: boolean; height?: numbe
 function RulesPane(props: { focused: boolean; height?: number | "auto" | `${number}%` }) {
   const active = () => ui.state.settingsActive && ui.state.settingsSection === "rules"
   const rows = () => data.state.rules
-  return <SectionCard title="Rules" focused={props.focused} active={active()} height={props.height} flexGrow={props.height ? 0 : 1} bottomSpans={[muted(rows().length ? count(rows().length, "ordered rule") : "empty")]}>
+  return <SectionCard title={SETTINGS_SECTION_LABELS.rules} focused={props.focused} active={active()} height={props.height} flexGrow={props.height ? 0 : 1} bottomSpans={[muted(rows().length ? count(rows().length, "ordered rule") : "empty")]}>
     <Show when={rows().length} fallback={<text fg={theme.overlay1}>{active() ? "No rules. Press a to add." : "No rules. Activate to add."}</text>}>
       <For each={rows()}>{(rule, i) => {
         const cat = () => data.state.categories.find((c) => c.id === rule.setCategoryId)?.name
@@ -125,7 +125,7 @@ function RulesPane(props: { focused: boolean; height?: number | "auto" | `${numb
 function FiltersPane(props: { focused: boolean; height?: number | "auto" | `${number}%` }) {
   const active = () => ui.state.settingsActive && ui.state.settingsSection === "filters"
   const rows = () => data.state.savedFilters
-  return <SectionCard title="Saved Filters" focused={props.focused} active={active()} height={props.height} flexGrow={props.height ? 0 : 1}>
+  return <SectionCard title={SETTINGS_SECTION_LABELS.filters} focused={props.focused} active={active()} height={props.height} flexGrow={props.height ? 0 : 1}>
     <Show when={rows().length} fallback={<text fg={theme.overlay1}>{active() ? "No saved filters. Press a to add." : "No saved filters. Activate to add."}</text>}>
       <For each={rows()}>{(filter, i) => (
         <ListRow cursor={active() && ui.state.filterCursor === i()} bg={theme.canvas} armed={armedFor(ui.state.armed, "filter", filter.id)} spans={[
@@ -149,7 +149,7 @@ function DatabasePane(props: { focused: boolean; height?: number | "auto" | `${n
   const summary = () => (["icons", "weekStart", "xAxis"] as const).map((row) => { const view = databaseRow(row, ctx()); return `${view.label} ${view.value}` }).join(" · ")
   // Fixed height: the counts and, while active, a row per action (else a
   // line of the settings), so a tight column shrinks the panes that scroll.
-  return <SectionCard title="Database & Import" focused={props.focused} active={active()} height={props.height ?? (active() ? DATABASE_ROWS.length + 3 : 4)} flexGrow={0}>
+  return <SectionCard title={SETTINGS_SECTION_LABELS.database} focused={props.focused} active={active()} height={props.height ?? (active() ? DATABASE_ROWS.length + 3 : 4)} flexGrow={0}>
     <text fg={theme.overlay1} wrapMode="none">{counts()}</text>
     <Show when={active()} fallback={<text fg={theme.subtext0} wrapMode="none">{summary()}</text>}>
     <For each={DATABASE_ROWS}>{(row, i) => {
@@ -171,7 +171,7 @@ function UpPane(props: { focused: boolean; width?: `${number}%` }) {
   const active = () => ui.state.settingsActive && ui.state.settingsSection === "up"
   const tokenSet = () => !!process.env.JASKMONEY_UP_TOKEN?.trim()
   const accounts = () => data.state.syncAccounts
-  return <SectionCard title="Up Bank" focused={props.focused} active={active()} height={Math.max(1, accounts().length) + 4} width={props.width}>
+  return <SectionCard title={SETTINGS_SECTION_LABELS.up} focused={props.focused} active={active()} height={Math.max(1, accounts().length) + 4} width={props.width}>
     <text wrapMode="none">
       <Show when={tokenSet()} fallback={<S fg={theme.warning}>Set JASKMONEY_UP_TOKEN to enable sync</S>}>
         <Show when={!data.state.upSyncing} fallback={<S fg={theme.peach}>Syncing…</S>}>
@@ -204,7 +204,7 @@ function AiPane(props: { focused: boolean; width?: `${number}%` }) {
     const ctx = aiContext(data)
     return AI_ROWS.map((row) => aiRow(row, ctx))
   }
-  return <SectionCard title="AI models" focused={props.focused} active={active()} height={AI_ROWS.length + 2} width={props.width}>
+  return <SectionCard title={SETTINGS_SECTION_LABELS.ai} focused={props.focused} active={active()} height={AI_ROWS.length + 2} width={props.width}>
     <For each={rows()}>{(row, i) => (
       <ListRow cursor={active() && ui.state.aiCursor === i()} bg={theme.canvas} spans={[
         { text: row.connected ? "● " : "○ ", fg: row.connected ? theme.success : theme.overlay1 },

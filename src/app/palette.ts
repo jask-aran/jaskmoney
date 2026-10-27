@@ -1,5 +1,5 @@
 import type { KeyEvent } from "@opentui/core"
-import type { ScopeId } from "../state/uiStore"
+import { SETTINGS_SECTION_LABELS, SETTINGS_SECTIONS, type ScopeId } from "../state/uiStore"
 import { keyEvent } from "./keyEvent"
 
 /**
@@ -9,7 +9,10 @@ import { keyEvent } from "./keyEvent"
  * that is one key press, run by pressing it. Hints that name several keys
  * ("j/k", "S-j/k", "1-3") are movement, kept for the footer only.
  */
-export interface Hint { key: string; desc: string }
+/** A footer hint: its key and short text. A one-key hint is also a palette
+ * command: the registry command it names (`command`, app/commands), or its
+ * own, by `label` and `description` (else its text, capitalised). */
+export interface Hint { key: string; desc: string; command?: string; label?: string; description?: string }
 
 export const FOOTER_LIMIT = 8
 
@@ -41,13 +44,7 @@ const SCOPE_LABELS: Partial<Record<ScopeId, string>> = {
   "manager.accounts": "Accounts",
   "manager.merchants": "Merchants",
   "settings": "Settings",
-  "settings.taxonomy": "Settings › Taxonomy",
-  "settings.budgets": "Settings › Budgets",
-  "settings.ai": "Settings › AI models",
-  "settings.rules": "Settings › Rules",
-  "settings.filters": "Settings › Saved filters",
-  "settings.up": "Settings › Up Bank",
-  "settings.database": "Settings › Database",
+  ...Object.fromEntries(SETTINGS_SECTIONS.map((section) => [`settings.${section}`, `Settings › ${SETTINGS_SECTION_LABELS[section]}`])),
 }
 
 /** Where the palette opened, as its subtitle names it. */

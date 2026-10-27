@@ -1,4 +1,5 @@
 import { footerShown, type Hint } from "./palette"
+import { applyAllRules, applySavedFilter, askForRules, reportError, resetTransactionCursors, runUndo, showAccount, showDryRun, toggleIcons, toggleWeekStart, toggleXAxis } from "./actions"
 import { commands, rankCommands, type Command } from "./commands"
 import { ACCOUNT_ACTIONS, armedText, isArmed, isSecondPress, type Armed } from "../state/armed"
 import { DATABASE_ROWS } from "../state/databaseRows"
@@ -121,13 +122,9 @@ export function listMove(key: Pick<KeyEvent, "name" | "sequence" | "shift">, cur
   return Math.max(0, Math.min(last, next))
 }
 
-function reportError(ui: UiStore, error: unknown): void {
-  ui.setStatus(error instanceof Error ? error.message : String(error), true)
-}
-
-function resetTransactionCursors(ui: UiStore, data?: DataStore): void {
-  ui.jumpManagerCursor(0, data?.scopedTransactions().length ?? 0)
-  ui.setState({ merchantCursor: 0, merchantTop: 0 })
+/** A shifted letter, as terminals report it: the capital, or the letter with shift. */
+function shifted(key: Pick<KeyEvent, "name" | "sequence" | "shift">, letter: string): boolean {
+  return key.sequence === letter.toUpperCase() || (key.name === letter && key.shift)
 }
 
 /** Scopes whose printable keys are text, so a paste can type into them. */
@@ -232,13 +229,8 @@ function handleFilterPicker(ui: UiStore, key: KeyEvent, data?: DataStore): void 
     update: (next) => { ui.setState({ filterPicker: next }) },
     apply: () => {
       const filter = items[picker.cursor]
-      if (filter && data) {
-        const result = data.commitFilter(filter.expr)
-        if (!result.ok) { ui.setStatus(result.err, true); return }
-        resetTransactionCursors(ui, data)
+      if (filter && data && applySavedFilter(ui, data, filter)) {
         ui.setState({ filterPicker: null })
-        try { data.recordFilterUsage(filter.id); ui.setStatus(`Filter: ${filter.name}`) }
-        catch (error) { reportError(ui, error) }
         void runAsk(ui, data)
       }
     },
@@ -824,13 +816,13 @@ function handleSettingsTaxonomy(ui: UiStore, key: KeyEvent, data?: DataStore): v
 }
 
 function handleSettingsRules(ui: UiStore, key: KeyEvent, data?: DataStore): void {
-  const { name, sequence: seq } = key
+  const { name } = key
   const rules = data?.state.rules ?? []; const cursor = ui.state.ruleCursor; const rule = rules[cursor]
   if (name === "escape") { ui.leaveSettings(); return }
-  if (((seq === "J") || (name === "j" && key.shift)) && rule) { data?.reorderSettingsRule(rule.id, cursor + 1); ui.setState({ ruleCursor: Math.min(rules.length - 1, cursor + 1) }); return }
-  if (((seq === "K") || (name === "k" && key.shift)) && rule) { data?.reorderSettingsRule(rule.id, cursor - 1); ui.setState({ ruleCursor: Math.max(0, cursor - 1) }); return }
-  if ((seq === "A" || (name === "a" && key.shift))) { const r = data?.applyRules(); ui.setStatus(r ? `Rules applied · ${r.updatedTransactions} transactions` : "No database"); return }
-  if ((seq === "D" || (name === "d" && key.shift))) { const r = data?.dryRunRules(); if (r) ui.setState({ dryRunReport: r, dryRunScroll: 0 }); else ui.setStatus("No database"); return }
+  if (shifted(key, "j") && rule) { data?.reorderSettingsRule(rule.id, cursor + 1); ui.setState({ ruleCursor: Math.min(rules.length - 1, cursor + 1) }); return }
+  if (shifted(key, "k") && rule) { data?.reorderSettingsRule(rule.id, cursor - 1); ui.setState({ ruleCursor: Math.max(0, cursor - 1) }); return }
+  if (shifted(key, "a") && data) { applyAllRules(ui, data); return }
+  if (shifted(key, "d") && data) { showDryRun(ui, data); return }
   const moved = listMove(key, ui.state.ruleCursor, rules.length)
   if (moved != null) { ui.setState({ ruleCursor: moved }); return }
   if (name === "a") { ui.openSettingsEditor("rule", null, { ...ui.state.settingsDraft, name: "", savedFilterId: data?.state.savedFilters[0]?.id ?? "", setCategoryId: null, addTagIds: [] }); return }
@@ -902,9 +894,7 @@ function handleRuleOffers(ui: UiStore, key: KeyEvent, data?: DataStore): void {
   if (name === "escape") { close(); ui.setStatus("Transactions"); return }
   // The final action row asks the general model for more rules.
   if ((name === "return" || name === "enter") && ui.state.ruleOfferCursor === offers.length && hasLlm() && data) {
-    if (data.state.writingRules) return
-    ui.setStatus(`Asking ${llmModelId()} for rules…`)
-    data.askForRules().then((summary) => ui.setStatus(summary), (e) => reportError(ui, e))
+    askForRules(ui, data)
     return
   }
   const moved = listMove(key, ui.state.ruleOfferCursor, offers.length + (hasLlm() ? 1 : 0))
@@ -1043,22 +1033,10 @@ function handleSettingsDatabase(ui: UiStore, key: KeyEvent, data?: DataStore): v
       try { const directory = data?.importDirectory() ?? process.cwd(); ui.beginImport(directory, data?.csvFiles(directory) ?? []) } catch (e) { reportError(ui, e) }
       return
     case "profiles": ui.setState({ importStage: "profile", importPath: "", importPathCaret: 0, importProfileCursor: 0, importProfileManaging: true }); return
-    case "icons":
-      if (!data) return
-      data.setIcons(!data.state.icons)
-      ui.setStatus(data.state.icons ? "Category icons on (needs a Nerd Font)" : "Category icons off")
-      return
+    case "icons": if (data) toggleIcons(ui, data); return
     // Approved port deviation: Database & Import owns the week toggle.
-    case "weekStart":
-      if (!data) return
-      data.saveUiPrefs({ weekStart: data.state.weekStart === "monday" ? "sunday" : "monday" })
-      ui.setStatus(data.state.weekStart === "sunday" ? "Weeks start on Sunday" : "Weeks start on Monday")
-      return
-    case "xAxis":
-      if (!data) return
-      data.saveUiPrefs({ xAxis: !data.state.uiPrefs.xAxis })
-      ui.setStatus(data.state.uiPrefs.xAxis ? "Charts draw an x-axis line" : "Charts without an x-axis line")
-      return
+    case "weekStart": if (data) toggleWeekStart(ui, data); return
+    case "xAxis": if (data) toggleXAxis(ui, data); return
     case "clearData": confirmTwice(ui, data, { kind: "clearData", id: 0, label: "all transaction and import data", with: "enter" }); return
     case "reset": ui.setState({ factoryResetOpen: true, factoryResetDraft: "", factoryResetCaret: 0 }); ui.setStatus("Type RESET then enter to remove this SQLite database"); return
   }
@@ -1091,10 +1069,7 @@ function handleManagerTxns(ui: UiStore, key: KeyEvent, data?: DataStore): void {
   const rows = data?.scopedTransactions() ?? []
   if (savedFilterKeys(ui, data, key)) return
   // u undoes the last change (dataStore.undo); esc clears, below.
-  if (name === "u" && data) {
-    void data.undo().then((summary) => ui.setStatus(summary, summary.includes("failed:") || summary.includes("waiting for Up")), (error) => reportError(ui, error))
-    return
-  }
+  if (name === "u" && data) { runUndo(ui, data); return }
 
   if ((name === "." || seq === ".") && data) {
     if (!data.lastRepeat()) { ui.setStatus("Nothing to repeat"); return }
@@ -1305,10 +1280,7 @@ function handleManagerMerchants(ui: UiStore, key: KeyEvent, data?: DataStore): v
   if (!data) return
   if (savedFilterKeys(ui, data, key)) return
   // u undoes the last change (dataStore.undo); esc clears, below.
-  if (name === "u" && data) {
-    void data.undo().then((summary) => ui.setStatus(summary, summary.includes("failed:") || summary.includes("waiting for Up")), (error) => reportError(ui, error))
-    return
-  }
+  if (name === "u" && data) { runUndo(ui, data); return }
 
   // The same filtered, scoped rows as the table, summarised per merchant.
   const groups = sortMerchantGroups(groupByMerchant(data.scopedTransactions()), ui.state.merchantSort, ui.state.merchantReverse)
@@ -1543,7 +1515,7 @@ type HintState = Pick<UiState, "focusedSection" | "drillReturn" | "chartViews"> 
 }
 type ScopeEntry = {
   handle: (ui: UiStore, key: KeyEvent, data?: DataStore) => void
-  hints: (state?: HintState) => { key: string; desc: string }[]
+  hints: (state?: HintState) => Hint[]
   quits: boolean
 }
 
@@ -1706,14 +1678,14 @@ const scopes: Record<ScopeId, ScopeEntry> = {
     quits: true,
     hints: () => [
       { key: "j/k", desc: "move" }, { key: "enter", desc: "edit" }, { key: "space", desc: "toggle" },
-      { key: "a", desc: "add" }, { key: "del del", desc: "delete" }, { key: "S-j/k", desc: "reorder" },
-      { key: "S-a", desc: "apply" }, { key: "S-d", desc: "dry run" }, { key: "esc", desc: "done" },
+      { key: "a", desc: "add", command: "add:rule" }, { key: "del del", desc: "delete", label: "Delete the rule", description: "asks again" }, { key: "S-j/k", desc: "reorder" },
+      { key: "S-a", desc: "apply", command: "rules:apply" }, { key: "S-d", desc: "dry run", command: "rules:dry-run" }, { key: "esc", desc: "done" },
     ],
   },
   "settings.filters": {
     handle: handleSettingsFilters,
     quits: true,
-    hints: () => [{ key: "j/k", desc: "move" }, { key: "a", desc: "add" }, { key: "enter", desc: "edit" }, { key: "del del", desc: "delete" }, { key: "esc", desc: "done" }],
+    hints: () => [{ key: "j/k", desc: "move" }, { key: "a", desc: "add", command: "add:filter" }, { key: "enter", desc: "edit" }, { key: "del del", desc: "delete" }, { key: "esc", desc: "done" }],
   },
   "settings.up": {
     handle: handleSettingsUp,
@@ -1734,23 +1706,23 @@ const scopes: Record<ScopeId, ScopeEntry> = {
     handle: handleManagerTxns,
     quits: true,
     hints: (state) => state?.tagReview ? [
-      { key: "y", desc: "tag" },
-      { key: "Y", desc: `tag all ≥${ACCEPT_ALL_AT * 100}%` },
-      { key: "x", desc: "dismiss" },
-      { key: "u", desc: "undo" },
+      { key: "y", desc: "tag", label: "Tag the candidate", description: "selection or row" },
+      { key: "Y", desc: `tag all ≥${ACCEPT_ALL_AT * 100}%`, label: `Tag all ≥${ACCEPT_ALL_AT * 100}%…`, description: "shows them first" },
+      { key: "x", desc: "dismiss", label: "Dismiss the candidate", description: "for this tag" },
+      { key: "u", desc: "undo", command: "txn:undo" },
       { key: "space", desc: "select" },
       { key: "S-j/k", desc: "range" },
-      { key: "T", desc: "other tag" },
+      { key: "T", desc: "other tag", command: "txn:tag-review" },
       { key: "esc", desc: "done" },
       { key: "s", desc: "sort" },
       { key: "enter", desc: "detail" },
     ] : state?.uncategorisedOnly ? [
-      { key: "y", desc: "accept" },
-      { key: "Y", desc: `accept all ≥${ACCEPT_ALL_AT * 100}%` },
-      { key: "x", desc: "dismiss" },
-      { key: "u", desc: "undo" },
-      { key: "c", desc: "choose" },
-      ...(state?.ruleOffers ? [{ key: "R", desc: `rules (${state.ruleOffers})` }] : []),
+      { key: "y", desc: "accept", label: "Accept the suggestion", description: "selection or row" },
+      { key: "Y", desc: `accept all ≥${ACCEPT_ALL_AT * 100}%`, label: `Accept all ≥${ACCEPT_ALL_AT * 100}%…`, description: "shows them first" },
+      { key: "x", desc: "dismiss", label: "Dismiss the suggestion", description: "for good" },
+      { key: "u", desc: "undo", command: "txn:undo" },
+      { key: "c", desc: "choose", label: "Choose a category…" },
+      ...(state?.ruleOffers ? [{ key: "R", desc: `rules (${state.ruleOffers})`, command: "rules:offers" }] : []),
       // The review actions first: the footer shows the first eight
       // (footerLine), and cuts at the end on narrow screens.
       { key: "space", desc: "select" },
@@ -1767,28 +1739,28 @@ const scopes: Record<ScopeId, ScopeEntry> = {
       // The first eight show in the footer (footerLine); the rest are in
       // the palette (ctrl+k).
       { key: "j/k", desc: "move" },
-      { key: "c", desc: "category" },
-      { key: "t", desc: "tag" },
-      { key: "space", desc: "select" },
-      { key: "/", desc: "filter" },
-      { key: "?", desc: "smart search" },
-      { key: "u", desc: "undo" },
+      { key: "c", desc: "category", label: "Categorise…", description: "selection or row" },
+      { key: "t", desc: "tag", label: "Tag…", description: "selection or row" },
+      { key: "space", desc: "select", label: "Select the row" },
+      { key: "/", desc: "filter", command: "txn:filter" },
+      { key: "?", desc: "smart search", command: "txn:smart-search" },
+      { key: "u", desc: "undo", command: "txn:undo" },
       ...(state?.drillReturn ? [{ key: "esc", desc: "back" }] : [{ key: "esc", desc: "clear" }]),
-      ...(state?.ruleOffers ? [{ key: "R", desc: `rules (${state.ruleOffers})` }] : []),
-      ...(state?.asks ? [{ key: "n", desc: state.askLoose ? "matches only" : "near misses" }] : []),
-      { key: "enter", desc: "detail" },
-      { key: ".", desc: "repeat" },
-      { key: "i", desc: "uncategorised" },
-      { key: "T", desc: "tag review" },
-      { key: "m", desc: "merchants" },
-      { key: "a", desc: "account" },
+      ...(state?.ruleOffers ? [{ key: "R", desc: `rules (${state.ruleOffers})`, command: "rules:offers" }] : []),
+      ...(state?.asks ? [{ key: "n", desc: state.askLoose ? "matches only" : "near misses", label: state.askLoose ? "Matches only" : "Show near misses" }] : []),
+      { key: "enter", desc: "detail", label: "Open the transaction" },
+      { key: ".", desc: "repeat", label: "Repeat the last change", description: "on selection or row" },
+      { key: "i", desc: "uncategorised", command: "txn:uncategorised" },
+      { key: "T", desc: "tag review", command: "txn:tag-review" },
+      { key: "m", desc: "merchants", label: "Group by merchant" },
+      { key: "a", desc: "account", label: "Next account" },
       { key: "S-j/k", desc: "range" },
-      { key: "s", desc: "sort" },
-      { key: "S-s", desc: "reverse" },
-      { key: "ctrl+s", desc: "save filter" },
-      { key: "ctrl+l", desc: "saved filters" },
-      { key: "g", desc: "top" },
-      { key: "G", desc: "bottom" },
+      { key: "s", desc: "sort", label: "Cycle the sort" },
+      { key: "S-s", desc: "reverse", label: "Reverse the sort" },
+      { key: "ctrl+s", desc: "save filter", command: "txn:save-filter" },
+      { key: "ctrl+l", desc: "saved filters", label: "Pick a saved filter…" },
+      { key: "g", desc: "top", label: "Go to the top" },
+      { key: "G", desc: "bottom", label: "Go to the bottom" },
       { key: "v", desc: "jump" },
     ],
   },
@@ -1806,25 +1778,25 @@ const scopes: Record<ScopeId, ScopeEntry> = {
   "settings.budgets": {
     handle: handleSettingsBudgets,
     quits: true,
-    hints: () => [{ key: "j/k", desc: "move" }, { key: "a", desc: "add" }, { key: "enter", desc: "edit" }, { key: "del del", desc: "delete" }, { key: "esc", desc: "done" }],
+    hints: () => [{ key: "j/k", desc: "move" }, { key: "a", desc: "add", command: "add:budget" }, { key: "enter", desc: "edit" }, { key: "del del", desc: "delete" }, { key: "esc", desc: "done" }],
   },
   "manager.merchants": {
     handle: handleManagerMerchants,
     quits: true,
     hints: () => [
       { key: "j/k", desc: "move" },
-      { key: "enter", desc: "its transactions" },
-      { key: "c", desc: "category" },
-      { key: "t", desc: "tags" },
-      { key: "/", desc: "filter" },
-      { key: "s", desc: "sort" },
-      { key: "u", desc: "undo" },
+      { key: "enter", desc: "its transactions", label: "Its transactions" },
+      { key: "c", desc: "category", label: "Categorise all of it…" },
+      { key: "t", desc: "tags", label: "Tag all of it…" },
+      { key: "/", desc: "filter", command: "txn:filter" },
+      { key: "s", desc: "sort", label: "Cycle the sort" },
+      { key: "u", desc: "undo", command: "txn:undo" },
       { key: "esc", desc: "back" },
-      { key: "?", desc: "smart search" },
-      { key: "m", desc: "rows" },
-      { key: "a", desc: "account" },
-      { key: "ctrl+s", desc: "save filter" },
-      { key: "ctrl+l", desc: "saved filters" },
+      { key: "?", desc: "smart search", command: "txn:smart-search" },
+      { key: "m", desc: "rows", label: "Back to the rows" },
+      { key: "a", desc: "account", label: "Next account" },
+      { key: "ctrl+s", desc: "save filter", command: "txn:save-filter" },
+      { key: "ctrl+l", desc: "saved filters", label: "Pick a saved filter…" },
     ],
   },
   "overview": {
@@ -1842,13 +1814,13 @@ const scopes: Record<ScopeId, ScopeEntry> = {
         { key: "h/l", desc: "chart" },
         { key: "d/D", desc: "range" },
         { key: "[ ]", desc: "prev/next" },
-        { key: "c", desc: "this cycle" },
-        { key: "a", desc: "account" },
-        { key: "i", desc: "review" },
-        { key: "/", desc: "search" },
-        { key: "?", desc: "smart search" },
+        { key: "c", desc: "this cycle", label: "Range: this cycle" },
+        { key: "a", desc: "account", label: "Next spending account" },
+        { key: "i", desc: "review", command: "txn:uncategorised" },
+        { key: "/", desc: "search", command: "txn:filter" },
+        { key: "?", desc: "smart search", command: "txn:smart-search" },
         { key: "H/L", desc: "bottom chart" },
-        { key: "0", desc: "now" },
+        { key: "0", desc: "now", label: "Range: back to now" },
         ...(state?.chartViews.some((i) => CHART_VIEWS[i]?.group === "Balances") ? [{ key: "z", desc: "$0 axis" }] : []),
         { key: "v", desc: "jump" },
         { key: "1-3", desc: "tab" },
@@ -1876,7 +1848,7 @@ export function scopeQuits(scope: ScopeId): boolean { return scopes[scope].quits
 
 /** Every hint for a scope: the palette's commands; the footer shows
  * footerShown's cut of them. */
-export function footerHints(scope: ScopeId, state?: HintState): { key: string; desc: string }[] {
+export function footerHints(scope: ScopeId, state?: HintState): Hint[] {
   return scopes[scope].hints(state)
 }
 
@@ -1908,8 +1880,5 @@ function stepAccount(ui: UiStore, data: DataStore): void {
   const rows = accountRows(data.state.accounts)
   if (!rows.length) return
   const at = rows.findIndex((row) => row.selection === data.state.accountSelection)
-  const next = rows[(at + 1) % rows.length]!
-  data.setAccountSelection(next.selection)
-  ui.jumpManagerCursor(0, data.scopedTransactions().length)
-  ui.setStatus(`Showing ${next.label}`)
+  showAccount(ui, data, rows[(at + 1) % rows.length]!)
 }

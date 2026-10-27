@@ -4,20 +4,24 @@ import { accountRows } from "../domain/accountTree"
 import { fuzzyScore } from "../domain/fuzzy"
 import type { DataStore } from "../state/dataStore"
 import { DATABASE_ROWS } from "../state/databaseRows"
-import { SETTINGS_SECTIONS, TABS, type ScopeId, type UiState, type UiStore } from "../state/uiStore"
+import { SETTINGS_SECTION_LABELS, SETTINGS_SECTIONS, TABS, type ScopeId, type UiState, type UiStore } from "../state/uiStore"
+import { applyAllRules, applySavedFilter, askForRules, runUndo, showAccount, showDryRun, toggleIcons, toggleWeekStart, toggleXAxis, toTransactions } from "./actions"
 import { AI_ROWS, aiRowLabel, isLlmRow } from "./apiKeys"
 import { keyEvent } from "./keyEvent"
-import { hintEvent, type Hint } from "./palette"
+import { hintEvent, scopeLabel, type Hint } from "./palette"
 import { toggleUncategorised } from "./suggest"
 import { runSync } from "./sync"
 
 /**
  * The command palette's commands (ctrl+k), after the legacy registry
- * (legacy/go/commands.go): each has a label and a description, says why
- * it can't run now (shown dimmed, listed last), and runs from wherever the
- * palette opened, going to the pane it needs first. Some have a key, shown
- * where that key works. Beside these, the pane's own keys (its hints) are
- * commands that press that key. The last command run comes first.
+ * (legacy/go/commands.go). Keys live in one place, the panes' hints
+ * (app/keys): a one-key hint is a command here, either the registry
+ * command it names (`command`) or its own (label, description), and runs by
+ * pressing its key where the palette opened. The registry holds what works
+ * from anywhere: each command's label, description, category, why it can't
+ * run now, and how it runs (going to the pane it needs; the bodies are
+ * app/actions', shared with the keys). Only global keys (ctrl+r, the tabs,
+ * v) are declared here.
  */
 export interface CommandContext {
   ui: UiStore
@@ -32,174 +36,129 @@ export interface Command {
   id: string
   label: string
   description?: string
-  /** Its key, and the scopes it works in (shown only there). */
-  key?: { hint: string; scopes: ScopeId[] }
-  /** Listed only where its key works (it acts on the cursor row there). */
-  onlyThere?: boolean
-  /** "Here" (the pane's own) or "Everywhere", for the grouped list. */
-  group: "here" | "everywhere"
+  /** Its key where the palette opened, if it has one there. */
+  key?: string
+  /** The palette's group: the pane's name for the pane's own, else CATEGORIES'. */
+  category: string
   /** Why it can't run now; undefined when it can. */
   disabled?: string
   run: () => void
 }
 
+/** The registry's groups, in the palette's order (after the pane's own). */
+export const CATEGORIES = ["Transactions", "Rules", "Data", "Add", "AI models", "Display", "Settings", "Go to"] as const
+
+type Entry = Omit<Command, "category"> & { category: (typeof CATEGORIES)[number] }
 type Section = UiState["settingsSection"]
 
-const SECTION_LABELS: Record<Section, string> = {
-  taxonomy: "Taxonomy", budgets: "Budgets", ai: "AI models", rules: "Rules",
-  filters: "Saved filters", up: "Up Bank", database: "Database & Import",
-}
-
-const TXNS: ScopeId[] = ["manager.txns"]
-const ROWS: ScopeId[] = ["manager.txns", "manager.merchants"]
-
-/** Every registry command, then the pane's own keys not already among them. */
-export function commands(ctx: CommandContext, hints: Hint[]): Command[] {
+function registry(ctx: CommandContext): Entry[] {
   const { ui, data } = ctx
-  const status = (text: string, err = false) => ui.setStatus(text, err)
-  const fail = (error: unknown) => status(error instanceof Error ? error.message : String(error), true)
-  const toTransactions = () => {
-    if (ui.state.activeTab !== "manager") ui.switchTab("manager")
-    if (ui.state.focusedSection !== "mgr.transactions") ui.setState({ focusedSection: "mgr.transactions" })
-  }
+  const status = (text: string) => ui.setStatus(text)
   const toSettings = (section: Section, list: "categories" | "tags" = "categories") => {
     if (ui.state.activeTab !== "settings") ui.switchTab("settings")
     ui.activateSettings(section, list)
   }
-  const resetCursors = () => { ui.jumpManagerCursor(0, data.scopedTransactions().length); ui.setState({ merchantCursor: 0, merchantTop: 0 }) }
+  // A Settings pane's own key, pressed there.
+  const inSettings = (section: Section, hint: string, setup?: () => void, list?: "categories" | "tags") => () => {
+    toSettings(section, list)
+    setup?.()
+    ctx.press(hintEvent(hint)!)
+  }
+  const inTransactions = (hint: string) => () => { toTransactions(ui); ctx.press(hintEvent(hint)!) }
   const filter = data.state.filterQuery
   const undo = data.undoLabel()
   const offers = data.allRuleOffers().length
-
-  const press = (hint: string) => () => ctx.press(hintEvent(hint)!)
-  const registry: Omit<Command, "group">[] = [
-    // The table's own: on the cursor row or the selection, so only there.
-    { id: "txn:category", label: "Categorise…", description: "the selection, or the cursor row", key: { hint: "c", scopes: ROWS }, onlyThere: true, run: press("c") },
-    { id: "txn:tag", label: "Tag…", description: "add or remove tags on the selection or cursor row", key: { hint: "t", scopes: ROWS }, onlyThere: true, run: press("t") },
-    { id: "txn:select", label: "Select the row", description: "or unselect it; S-j/k selects a range", key: { hint: "space", scopes: TXNS }, onlyThere: true, run: press("space") },
-    { id: "txn:detail", label: "Open the transaction", description: "its details, notes and category", key: { hint: "enter", scopes: TXNS }, onlyThere: true, run: press("enter") },
-    { id: "txn:merchants", label: "Group by merchant", description: "totals, counts and averages per merchant", key: { hint: "m", scopes: TXNS }, onlyThere: true, run: press("m") },
-    { id: "txn:rows", label: "Back to the rows", key: { hint: "m", scopes: ["manager.merchants"] }, onlyThere: true, run: press("m") },
-    { id: "txn:account", label: "Next account", description: "step the accounts pane", key: { hint: "a", scopes: ROWS }, onlyThere: true, run: press("a") },
-    { id: "txn:sort", label: "Cycle the sort", description: "date, amount, description, category", key: { hint: "s", scopes: ROWS }, onlyThere: true, run: press("s") },
-    { id: "txn:reverse", label: "Reverse the sort", key: { hint: "S-s", scopes: TXNS }, onlyThere: true, run: press("S-s") },
-    { id: "txn:saved-filters", label: "Pick a saved filter…", description: "most recently used first", key: { hint: "ctrl+l", scopes: ROWS }, onlyThere: true, run: press("ctrl+l") },
-    { id: "txn:top", label: "Go to the top", key: { hint: "g", scopes: TXNS }, onlyThere: true, run: press("g") },
-    { id: "txn:bottom", label: "Go to the bottom", key: { hint: "G", scopes: TXNS }, onlyThere: true, run: press("G") },
+  return [
     // Transactions
-    { id: "txn:uncategorised", label: "Review uncategorised", description: "the rows waiting for a category, with suggestions to accept", key: { hint: "i", scopes: TXNS },
-      disabled: data.state.uncategorisedOnly && ui.state.activeTab === "manager" ? "already showing them" : undefined,
-      run: () => { toTransactions(); if (data.state.tagReview) data.closeTagReview(); if (!data.state.uncategorisedOnly) toggleUncategorised(ui, data) } },
-    { id: "txn:tag-review", label: "Find transactions for a tag…", description: "candidates for a tag of yours, a trip or subscriptions found, or a new one", key: { hint: "T", scopes: TXNS },
-      run: () => { toTransactions(); ctx.press(keyEvent("t", { shift: true, sequence: "T" })) } },
-    { id: "edit:undo", label: undo ? `Undo: ${undo}` : "Undo", description: "the last change in Transactions, in Up too", key: { hint: "u", scopes: ROWS },
-      disabled: undo ? undefined : "nothing to undo",
-      run: () => { void data.undo().then((summary) => status(summary, summary.includes("failed:")), fail) } },
-    { id: "edit:repeat", label: "Repeat the last change", description: "its category or tags on the cursor row or selection", key: { hint: ".", scopes: TXNS },
-      disabled: ctx.from !== "manager.txns" ? "in the Transactions table" : data.lastRepeat() ? undefined : "nothing to repeat yet",
-      run: () => ctx.press(keyEvent(".", { sequence: "." })) },
-    { id: "filter:open", label: "Filter transactions…", description: "an expression: desc:coffee amt:>20 date:2026-10", key: { hint: "/", scopes: ROWS },
-      run: () => { toTransactions(); ui.openFilter(data.state.filterQuery) } },
-    { id: "filter:smart", label: "Smart search…", description: "a question in words, turned into a filter", key: { hint: "?", scopes: ROWS },
-      run: () => { toTransactions(); ctx.press(keyEvent("?", { sequence: "?" })) } },
-    { id: "filter:clear", label: "Clear the filter", description: filter || undefined, disabled: filter ? undefined : "no filter",
-      run: () => { data.clearFilter(); resetCursors(); status("Filter cleared") } },
-    { id: "filter:save", label: "Save the filter…", description: filter || undefined, key: { hint: "ctrl+s", scopes: ROWS }, disabled: filter ? undefined : "no filter to save",
-      run: () => { toTransactions(); ctx.press(keyEvent("s", { ctrl: true, sequence: "" })) } },
-    ...data.state.savedFilters.map((saved) => ({
-      id: `filter:saved:${saved.id}`, label: `Filter: ${saved.name}`, description: saved.expr,
+    { id: "txn:uncategorised", category: "Transactions", label: "Review uncategorised", description: "rows waiting for a category",
+      disabled: data.state.uncategorisedOnly ? "showing them now" : undefined,
+      run: () => { toTransactions(ui); if (data.state.tagReview) data.closeTagReview(); toggleUncategorised(ui, data) } },
+    { id: "txn:tag-review", category: "Transactions", label: "Find transactions for a tag…", description: "yours, a trip, or a new one", run: inTransactions("T") },
+    { id: "txn:filter", category: "Transactions", label: "Filter…", description: "desc:coffee amt:>20", run: () => { toTransactions(ui); ui.openFilter(filter) } },
+    { id: "txn:smart-search", category: "Transactions", label: "Smart search…", description: "a question in words", run: inTransactions("?") },
+    { id: "txn:clear-filter", category: "Transactions", label: "Clear the filter", description: filter || undefined, disabled: filter ? undefined : "no filter",
+      run: () => { data.clearFilter(); ui.jumpManagerCursor(0, data.scopedTransactions().length); status("Filter cleared") } },
+    { id: "txn:save-filter", category: "Transactions", label: "Save the filter…", disabled: filter ? undefined : "no filter", run: inTransactions("ctrl+s") },
+    { id: "txn:undo", category: "Transactions", label: undo ? `Undo ${undo}` : "Undo", disabled: undo ? undefined : "nothing to undo", run: () => runUndo(ui, data) },
+    ...data.state.savedFilters.map((saved): Entry => ({
+      id: `txn:saved:${saved.id}`, category: "Transactions", label: `Filter: ${saved.name}`, description: saved.expr,
       disabled: filter === saved.expr ? "applied now" : undefined,
-      run: () => {
-        toTransactions()
-        const result = data.commitFilter(saved.expr)
-        if (!result.ok) { status(result.err, true); return }
-        resetCursors()
-        try { data.recordFilterUsage(saved.id); status(`Filter: ${saved.name}`) } catch (error) { fail(error) }
-      },
+      run: () => { toTransactions(ui); applySavedFilter(ui, data, saved) },
     })),
-    ...accountRows(data.state.accounts).map((row) => ({
-      id: `account:${row.selection}`, label: `Show ${row.label}`, description: "in the Transactions table",
+    ...accountRows(data.state.accounts).map((row): Entry => ({
+      id: `txn:account:${row.selection}`, category: "Transactions", label: `Show ${row.label}`,
       disabled: data.state.accountSelection === row.selection ? "showing it now" : undefined,
-      run: () => { toTransactions(); data.setAccountSelection(row.selection); resetCursors(); status(`Showing ${row.label}`) },
+      run: () => { toTransactions(ui); showAccount(ui, data, row) },
     })),
     // Rules
-    { id: "rules:offers", label: offers ? `Rules offered (${offers})…` : "Rules offered…", description: "rules from what you categorise the same way, to make or turn down", key: { hint: "R", scopes: TXNS },
-      disabled: offers || hasLlm() ? undefined : "none yet: one comes after the same description gets the same category 3 times",
-      run: () => { toTransactions(); ctx.press(keyEvent("r", { shift: true, sequence: "R" })) } },
-    { id: "rules:ask-ai", label: "Ask the AI for rules", description: hasLlm() ? `${llmModelId()} reads your history and offers rules` : undefined,
-      disabled: !hasLlm() ? "set up a model in Settings › AI models" : data.state.writingRules ? "already asking" : undefined,
-      run: () => {
-        toTransactions()
-        ui.setState({ ruleOffersOpen: true, ruleOfferCursor: data.allRuleOffers().length })
-        status(`Asking ${llmModelId()} for rules…`)
-        data.askForRules().then((summary) => status(summary), fail)
-      } },
-    { id: "rules:apply", label: "Apply all rules", description: "every enabled rule, over every transaction", key: { hint: "S-a", scopes: ["settings.rules"] },
-      run: () => { const r = data.applyRules(); status(`Rules applied · ${r.updatedTransactions} transactions`) } },
-    { id: "rules:dry-run", label: "Dry-run the rules", description: "what each rule would change, changing nothing", key: { hint: "S-d", scopes: ["settings.rules"] },
-      run: () => { ui.setState({ dryRunReport: data.dryRunRules(), dryRunScroll: 0 }) } },
+    { id: "rules:offers", category: "Rules", label: offers ? `Rules offered (${offers})…` : "Rules offered…", description: "from repeated categorising",
+      disabled: offers || hasLlm() ? undefined : "none yet", run: inTransactions("R") },
+    { id: "rules:ask-ai", category: "Rules", label: "Ask the AI for rules", description: hasLlm() ? llmModelId() : undefined,
+      disabled: !hasLlm() ? "no model set up" : data.state.writingRules ? "asking now" : undefined,
+      run: () => { toTransactions(ui); ui.setState({ ruleOffersOpen: true, ruleOfferCursor: data.allRuleOffers().length }); askForRules(ui, data) } },
+    { id: "rules:apply", category: "Rules", label: "Apply all rules", description: "to every transaction", run: () => applyAllRules(ui, data) },
+    { id: "rules:dry-run", category: "Rules", label: "Dry-run the rules", description: "what they'd change", run: () => showDryRun(ui, data) },
     // Data
-    { id: "sync:now", label: "Sync with Up now", description: "fetch new transactions and balances", key: { hint: "ctrl+r", scopes: [] },
+    { id: "data:sync", category: "Data", label: "Sync with Up", key: "ctrl+r",
       disabled: !process.env.JASKMONEY_UP_TOKEN?.trim() ? "set JASKMONEY_UP_TOKEN" : data.state.upSyncing ? "syncing now" : undefined,
       run: () => { void runSync(ui, data, { manual: true }) } },
-    { id: "import:csv", label: "Import a CSV…", description: "pick a file, map it with a profile, preview, then import",
-      run: () => { toSettings("database"); ui.setState({ databaseCursor: DATABASE_ROWS.indexOf("import") }); ctx.press(keyEvent("return")) } },
+    { id: "data:import", category: "Data", label: "Import a CSV…", run: inSettings("database", "enter", () => ui.setState({ databaseCursor: DATABASE_ROWS.indexOf("import") })) },
+    { id: "data:clear", category: "Data", label: "Clear transaction data…", description: "asks again", run: inSettings("database", "enter", () => ui.setState({ databaseCursor: DATABASE_ROWS.indexOf("clearData") })) },
+    { id: "data:reset", category: "Data", label: "Reset the database…", description: "type RESET", run: inSettings("database", "enter", () => ui.setState({ databaseCursor: DATABASE_ROWS.indexOf("reset") })) },
+    // Add
+    { id: "add:category", category: "Add", label: "Category…", run: inSettings("taxonomy", "a", undefined, "categories") },
+    { id: "add:tag", category: "Add", label: "Tag…", run: inSettings("taxonomy", "a", undefined, "tags") },
+    { id: "add:rule", category: "Add", label: "Rule…", run: inSettings("rules", "a") },
+    { id: "add:filter", category: "Add", label: "Saved filter…", run: inSettings("filters", "a") },
+    { id: "add:budget", category: "Add", label: "Budget…", run: inSettings("budgets", "a") },
+    // AI models
+    ...AI_ROWS.map((row, i): Entry => ({
+      id: `ai:${row}`, category: "AI models", label: `${aiRowLabel(row)}…`, description: isLlmRow(row) ? "sign in or key" : "key",
+      run: inSettings("ai", "enter", () => ui.setState({ aiCursor: i })),
+    })),
+    // Display
+    { id: "display:icons", category: "Display", label: `Category icons ${data.state.icons ? "off" : "on"}`, run: () => toggleIcons(ui, data) },
+    { id: "display:week", category: "Display", label: `Weeks start ${data.state.weekStart === "monday" ? "Sunday" : "Monday"}`, run: () => toggleWeekStart(ui, data) },
+    { id: "display:x-axis", category: "Display", label: `Charts' $0 line ${data.state.uiPrefs.xAxis ? "off" : "on"}`, run: () => toggleXAxis(ui, data) },
     // Settings
-    { id: "add:category", label: "Add a category…", run: () => { toSettings("taxonomy", "categories"); ctx.press(keyEvent("a")) } },
-    { id: "add:tag", label: "Add a tag…", description: "with a scope (a filter) if it belongs to a trip or a category", run: () => { toSettings("taxonomy", "tags"); ctx.press(keyEvent("a")) } },
-    { id: "add:rule", label: "Add a rule…", description: "a saved filter's rows get a category or tags", run: () => { toSettings("rules"); ctx.press(keyEvent("a")) } },
-    { id: "add:filter", label: "Add a saved filter…", run: () => { toSettings("filters"); ctx.press(keyEvent("a")) } },
-    { id: "add:budget", label: "Add a budget…", run: () => { toSettings("budgets"); ctx.press(keyEvent("a")) } },
-    { id: "budget:cycle", label: "Edit the budget cycle…", description: "when a cycle starts (e.g. payday)", run: () => { toSettings("budgets"); ui.setState({ budgetCursor: 0 }); ctx.press(keyEvent("return")) } },
-    ...AI_ROWS.map((row, i) => ({
-      id: `ai:${row}`, label: `Set up ${aiRowLabel(row)}…`, description: isLlmRow(row) ? "sign in or paste a key, test it, choose the model" : "paste a key, test it",
-      run: () => { toSettings("ai"); ui.setState({ aiCursor: i }); ctx.press(keyEvent("return")) },
+    { id: "settings:cycle", category: "Settings", label: "Budget cycle…", description: "e.g. from payday", run: inSettings("budgets", "enter", () => ui.setState({ budgetCursor: 0 })) },
+    ...SETTINGS_SECTIONS.map((section): Entry => ({ id: `settings:${section}`, category: "Settings", label: SETTINGS_SECTION_LABELS[section], run: () => toSettings(section) })),
+    // Go to
+    ...TABS.map((tab): Entry => ({
+      id: `go:${tab.id}`, category: "Go to", label: tab.label, key: tab.hotkey,
+      disabled: ui.state.activeTab === tab.id ? "here now" : undefined, run: () => ui.switchTab(tab.id),
     })),
-    { id: "prefs:icons", label: `Category icons: turn ${data.state.icons ? "off" : "on"}`, description: "they need a Nerd Font",
-      run: () => { data.setIcons(!data.state.icons); status(data.state.icons ? "Category icons on (needs a Nerd Font)" : "Category icons off") } },
-    { id: "prefs:week", label: `Start weeks on ${data.state.weekStart === "monday" ? "Sunday" : "Monday"}`,
-      run: () => { data.saveUiPrefs({ weekStart: data.state.weekStart === "monday" ? "sunday" : "monday" }); status(data.state.weekStart === "sunday" ? "Weeks start on Sunday" : "Weeks start on Monday") } },
-    { id: "prefs:x-axis", label: `Charts' $0 line: turn ${data.state.uiPrefs.xAxis ? "off" : "on"}`,
-      run: () => { data.saveUiPrefs({ xAxis: !data.state.uiPrefs.xAxis }); status(data.state.uiPrefs.xAxis ? "Charts draw an x-axis line" : "Charts without an x-axis line") } },
-    { id: "data:clear", label: "Clear transaction and import data…", description: "asks again (enter) first",
-      run: () => { toSettings("database"); ui.setState({ databaseCursor: DATABASE_ROWS.indexOf("clearData") }); ctx.press(keyEvent("return")) } },
-    { id: "data:reset", label: "Reset the database…", description: "asks you to type RESET; keeps filters and config",
-      run: () => { toSettings("database"); ui.setState({ databaseCursor: DATABASE_ROWS.indexOf("reset") }); ctx.press(keyEvent("return")) } },
-    ...SETTINGS_SECTIONS.map((section) => ({
-      id: `settings:${section}`, label: `Settings › ${SECTION_LABELS[section]}`,
-      run: () => toSettings(section),
-    })),
-    // Navigation
-    ...TABS.map((tab) => ({
-      id: `nav:${tab.id}`, label: `Go to ${tab.label}`, key: { hint: tab.hotkey, scopes: [] as ScopeId[] },
-      disabled: ui.state.activeTab === tab.id ? "here now" : undefined,
-      run: () => ui.switchTab(tab.id),
-    })),
-    { id: "nav:jump", label: "Jump to a pane", description: "a letter per pane", key: { hint: "v", scopes: [] }, run: () => ctx.press(keyEvent("v")) },
+    { id: "go:jump", category: "Go to", label: "Jump to a pane", key: "v", run: () => ctx.press(keyEvent("v")) },
   ]
+}
 
-  // A key with no scopes works everywhere; otherwise it shows only where it works.
-  const keyHere = (command: Omit<Command, "group">) => !!command.key && (!command.key.scopes.length || command.key.scopes.includes(ctx.from))
-  const listed: Command[] = registry.filter((command) => !command.onlyThere || command.key?.scopes.includes(ctx.from)).map((command) => ({
-    ...command,
-    key: command.key && keyHere(command) ? command.key : undefined,
-    group: command.key?.scopes.includes(ctx.from) ? "here" : "everywhere",
-  }))
-  const taken = new Set(listed.flatMap((c) => c.key ? [c.key.hint] : []))
-  // The pane's own keys the registry doesn't have: pressed where the palette opened.
-  const own: Command[] = hints.flatMap((hint) => {
+/** The pane's commands (its one-key hints, in their order), then the rest
+ * of the registry. A hint naming a registry command lists that command,
+ * keyed and run by its key here. */
+export function commands(ctx: CommandContext, hints: Hint[]): Command[] {
+  const entries = registry(ctx)
+  const byId = new Map(entries.map((entry) => [entry.id, entry]))
+  const here = scopeLabel(ctx.from)
+  const used = new Set<string>()
+  const own = hints.flatMap((hint): Command[] => {
     const event = hintEvent(hint.key)
-    if (!event || hint.key === "esc" || taken.has(hint.key)) return []
-    taken.add(hint.key)
-    return [{ id: `key:${ctx.from}:${hint.key}`, label: hint.desc[0]!.toUpperCase() + hint.desc.slice(1), key: { hint: hint.key, scopes: [ctx.from] }, group: "here" as const, run: () => ctx.press(event) }]
+    if (!event || hint.key === "esc" || used.has(`key:${hint.key}`)) return []
+    used.add(`key:${hint.key}`)
+    const linked = hint.command ? byId.get(hint.command) : undefined
+    if (hint.command && !linked) throw new Error(`hint ${hint.key} names no command ${hint.command}`)
+    if (linked) used.add(linked.id)
+    const run = () => ctx.press(event)
+    return [linked
+      ? { ...linked, key: hint.key, category: here, run }
+      : { id: `key:${ctx.from}:${hint.key}`, label: hint.label ?? hint.desc[0]!.toUpperCase() + hint.desc.slice(1), description: hint.description, key: hint.key, category: here, run }]
   })
-  return [...own, ...listed]
+  return [...own, ...entries.filter((entry) => !used.has(entry.id) && !(entry.key && used.has(`key:${entry.key}`)))]
 }
 
 /** How well a command matches: every word fuzzily in its label (or id, or
- * key), else every word whole in its description, which counts for less;
- * null when neither. (A loose match across a description finds nonsense:
- * "undo" in "Reset the database… keeps filters and config".) */
+ * key), else every word whole in its description or category, which counts
+ * for less; null when neither. (A loose match across a description finds
+ * nonsense: "undo" in "Reset the database… keeps filters and config".) */
 function commandScore(command: Command, query: string): number | null {
   const words = query.toLowerCase().split(/\s+/).filter(Boolean)
   const fuzzy = (text: string) => {
@@ -207,31 +166,25 @@ function commandScore(command: Command, query: string): number | null {
     for (const word of words) { const score = fuzzyScore(word, text); if (score == null) return null; total += score }
     return total
   }
-  const named = [command.label, command.id, command.key?.hint ?? ""].map(fuzzy).filter((s): s is number => s != null)
+  const named = [command.label, command.id, command.key ?? ""].map(fuzzy).filter((s): s is number => s != null)
   if (named.length) return Math.max(...named) + 100
-  const description = (command.description ?? "").toLowerCase()
-  return description && words.every((word) => description.includes(word)) ? words.length : null
+  const context = `${command.description ?? ""} ${command.category}`.toLowerCase()
+  return words.every((word) => context.includes(word)) ? words.length : null
 }
 
-/** The palette's list for a query: with none, this pane's commands then the
- * rest; with one, the best matches (label, description, id). Either way the
- * last command run comes first and those that can't run come last. */
+/** The palette's list. With nothing typed: the last command run, the pane's,
+ * then the registry's groups in order; those that can't run are left out.
+ * With a query: the best matches, those that can't run last (with why). */
 export function rankCommands(list: Command[], query: string, lastId: string | null): Command[] {
   const q = query.trim()
-  const scored = list.flatMap((command, order) => {
-    if (!q) return [{ command, order, score: 0 }]
+  if (!q) {
+    const runnable = list.filter((command) => !command.disabled)
+    const last = runnable.find((command) => command.id === lastId)
+    return last ? [last, ...runnable.filter((command) => command !== last)] : runnable
+  }
+  return list.flatMap((command, order) => {
     const score = commandScore(command, q)
     return score == null ? [] : [{ command, order, score }]
-  })
-  const rank = (entry: (typeof scored)[number]) => [
-    entry.command.disabled ? 1 : 0,
-    entry.command.id === lastId ? 0 : 1,
-    q ? -entry.score : entry.command.group === "here" ? 0 : 1,
-    entry.order,
-  ]
-  return scored.sort((a, b) => {
-    const ra = rank(a), rb = rank(b)
-    for (let i = 0; i < ra.length; i++) if (ra[i] !== rb[i]) return ra[i]! - rb[i]!
-    return 0
-  }).map((entry) => entry.command)
+  }).sort((a, b) => Number(!!a.command.disabled) - Number(!!b.command.disabled) || b.score - a.score || a.order - b.order)
+    .map((entry) => entry.command)
 }

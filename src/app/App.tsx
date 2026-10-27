@@ -4,7 +4,6 @@ import type { KeyEvent } from "@opentui/core"
 import { ui } from "../state/uiStore"
 import { data } from "../state/dataStore"
 import { footerLine, handleKey, hintState, paletteList, scopeQuits, handlePaste } from "./keys"
-import { scopeLabel } from "./palette"
 import { CommandPalette } from "../ui/primitives/CommandPalette"
 import { appNow } from "../domain/days"
 import { TabBar } from "../ui/primitives/TabBar"
@@ -139,7 +138,7 @@ export function App() {
       <DryRunOverlay />
       <Show when={ui.state.palette}>
         {(palette: () => NonNullable<typeof ui.state.palette>) => (
-          <CommandPalette commands={paletteList(ui, data)} cursor={palette().cursor} query={palette().query} from={scopeLabel(palette().from)} lastId={ui.state.lastCommandId} />
+          <CommandPalette commands={paletteList(ui, data)} cursor={palette().cursor} query={palette().query} lastId={ui.state.lastCommandId} />
         )}
       </Show>
     </box>

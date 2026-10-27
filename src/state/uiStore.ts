@@ -73,6 +73,12 @@ export type SettingsSection = "taxonomy" | "budgets" | "rules" | "filters" | "up
 /** j/k order of Settings sections (wide layout: left column, then right). */
 export const SETTINGS_SECTIONS: SettingsSection[] = ["taxonomy", "budgets", "ai", "rules", "filters", "up", "database"]
 
+/** Each Settings section's name: its pane's title and the palette's. (Jump badges are shorter.) */
+export const SETTINGS_SECTION_LABELS: Record<SettingsSection, string> = {
+  taxonomy: "Taxonomy", budgets: "Budgets", ai: "AI models", rules: "Rules",
+  filters: "Saved Filters", up: "Up Bank", database: "Database & Import",
+}
+
 export function settingsSectionFocus(section: SettingsSection, list: SettingsList = "categories"): SectionId {
   if (section === "taxonomy") return list === "categories" ? "set.categories" : "set.tags"
   return section === "rules" ? "set.rules" : section === "filters" ? "set.filters" : section === "up" ? "set.up" : section === "ai" ? "set.ai" : section === "budgets" ? "set.budgets" : "set.database"
