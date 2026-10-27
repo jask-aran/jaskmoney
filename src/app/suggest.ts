@@ -28,14 +28,24 @@ export async function runAccept(ui: UiStore, data: DataStore, ids: number[]): Pr
   const suggested = ids.filter((id) => data.state.suggestions[id])
   if (!suggested.length) { ui.setStatus("No suggestion to accept"); return }
   const settle = () => ui.jumpManagerCursor(Math.min(ui.state.managerCursor, Math.max(0, data.scopedTransactions().length - 1)), data.scopedTransactions().length)
+  let resuggest: Promise<string> | undefined
   try {
     // The rows take their categories at once; Up hears about them after.
-    const summary = await data.acceptSuggestions(suggested, (pushed, total) => {
-      if (pushed === 0) { ui.clearSelection(); settle() }
+    let summary = await data.acceptSuggestions(suggested, (pushed, total) => {
+      if (pushed === 0) {
+        ui.clearSelection()
+        settle()
+        resuggest ??= data.resuggestLike(suggested).then(
+          (count) => count > 0 ? ` · re-suggested ${count} alike` : "",
+          (error) => ` · re-suggest failed: ${error instanceof Error ? error.message : String(error)}`,
+        )
+      }
       if (total) ui.setStatus(`Accepted ${suggested.length} · updating Up ${pushed}/${total}…`)
     })
+    const failed = summary.includes(" failed: ")
+    summary += await (resuggest ?? "")
     settle()
-    ui.setStatus(summary, summary.includes(" failed: "))
+    ui.setStatus(summary, failed)
   } catch (error) {
     ui.setStatus(error instanceof Error ? error.message : String(error), true)
   }

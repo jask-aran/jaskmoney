@@ -296,10 +296,19 @@ function handleCatPicker(ui: UiStore, key: KeyEvent, data?: DataStore): void {
       if (cat && data && targets.length) {
         ui.closeCatPicker()
         ui.setStatus(`Categorizing ${targets.length} → ${cat.name}…`)
+        let resuggest: Promise<string> | undefined
         data.categorizeTransactions(targets, cat.id, (pushed, total) => {
+          if (pushed === 0) resuggest ??= data.resuggestLike(targets).then(
+            (count) => count > 0 ? ` · re-suggested ${count} alike` : "",
+            (error) => ` · re-suggest failed: ${error instanceof Error ? error.message : String(error)}`,
+          )
           if (total) ui.setStatus(`Categorized ${targets.length} → ${cat.name} · updating Up ${pushed}/${total}…`)
         }).then(
-          (summary) => ui.setStatus(summary, summary.includes(" failed: ")),
+          async (summary) => {
+            const failed = summary.includes(" failed: ")
+            summary += await (resuggest ?? "")
+            ui.setStatus(summary, failed)
+          },
           (error) => reportError(ui, error),
         )
       } else {

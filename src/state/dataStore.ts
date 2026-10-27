@@ -502,20 +502,27 @@ function createDataStore() {
     return categorizedSummary(`Categorized ${done} → ${category.name}`, pushed, failures)
   }
 
+  let suggestionsFinished: Promise<void> = Promise.resolve()
+
   /**
    * Suggest categories for ordinary uncategorised rows (`ids` narrows them)
    * that have none yet: history first, then Jev when it is set up, each
    * request's suggestions saved as they arrive. `ai` replaces the Jev client
    * (tests).
    */
-  async function suggestCategories(ids?: number[], ai?: Pick<JevClient, "judge">): Promise<string> {
+  function suggestCategories(ids?: number[], ai?: Pick<JevClient, "judge">): Promise<string>
+  function suggestCategories(ids: number[], ai: Pick<JevClient, "judge"> | undefined, options: { replace: true }): Promise<number>
+  async function suggestCategories(ids?: number[], ai?: Pick<JevClient, "judge">, options: { replace?: boolean } = {}): Promise<string | number> {
     if (state.suggesting) throw new Error("Category suggestions are already running")
     if (!db) throw new Error("db not open")
     const database = db
+    let finish = () => {}
+    const finished = new Promise<void>((resolve) => { finish = resolve })
+    suggestionsFinished = finished
     setState({ suggesting: true })
     try {
       const selected = ids ? new Set(ids) : null
-      const targets = transactions().filter((t) => isOrdinaryFlow(t) && isUncategorised(t) && !state.suggestions[t.id] && (!selected || selected.has(t.id)))
+      const targets = transactions().filter((t) => isOrdinaryFlow(t) && isUncategorised(t) && (options.replace ? !!state.suggestions[t.id] : !state.suggestions[t.id]) && (!selected || selected.has(t.id)))
       const history = historySuggestions(transactions(), state.categories, new Set(targets.map((t) => t.id)))
       saveSuggestions(database, history)
       refresh()
@@ -524,12 +531,14 @@ function createDataStore() {
       const enabled = !!ai || hasJev()
       if (enabled) {
         const targetIds = new Set(targets.map((t) => t.id))
-        const remaining = transactions().filter((t) => targetIds.has(t.id) && !state.suggestions[t.id] && isOrdinaryFlow(t) && isUncategorised(t))
+        const settled = new Set(history.map((s) => s.transactionId))
+        const remaining = transactions().filter((t) => targetIds.has(t.id) && !settled.has(t.id) && (options.replace ? !!state.suggestions[t.id] : !state.suggestions[t.id]) && isOrdinaryFlow(t) && isUncategorised(t))
         if (remaining.length) await jevSuggestions(ai ?? jevClient(), remaining, state.categories, {
           history: transactions(),
           onSuggestion: (s) => {
+            if (db !== database || !targetIds.has(s.transactionId)) return
             const current = transactions().find((t) => t.id === s.transactionId)
-            if (!current || !isOrdinaryFlow(current) || !isUncategorised(current) || state.suggestions[s.transactionId]) return
+            if (!current || !isOrdinaryFlow(current) || !isUncategorised(current) || (options.replace ? !state.suggestions[s.transactionId] : state.suggestions[s.transactionId])) return
             saveSuggestions(database, [s])
             setState("suggestions", s.transactionId, s)
             fromJev++
@@ -537,13 +546,33 @@ function createDataStore() {
           onError: (ids, error) => failures.push(`${ids.length} rows: ${error instanceof Error ? error.message : String(error)}`),
         })
       }
+      if (options.replace) return history.length + fromJev
       const parts = [`Suggested ${history.length + fromJev}: ${history.length} from history, ${fromJev} from Jev`]
       if (!enabled) parts.push("Jev is not set up (JASKMONEY_JEV_TOKEN)")
       if (failures.length) parts.push(`${failures.length} failed: ${failures[0]}`)
       return parts.join(" · ")
     } finally {
-      try { refresh() } finally { setState({ suggesting: false }) }
+      try { if (db === database) refresh() } finally {
+        if (suggestionsFinished === finished) setState({ suggesting: false })
+        finish()
+      }
     }
+  }
+
+  /** Replace existing suggestions for waiting rows with the same description. */
+  async function resuggestLike(ids: number[], ai?: Pick<JevClient, "judge">): Promise<number> {
+    const database = db
+    while (state.suggesting) {
+      await suggestionsFinished
+      if (db !== database) return 0
+    }
+    if (!database || db !== database) return 0
+    const selected = new Set(ids)
+    const key = (t: Transaction) => t.description.trim().toLowerCase()
+    const descriptions = new Set(transactions().filter((t) => selected.has(t.id)).map(key))
+    const targets = transactions().filter((t) => !selected.has(t.id) && descriptions.has(key(t)) && isOrdinaryFlow(t) && isUncategorised(t) && state.suggestions[t.id]).map((t) => t.id)
+    if (!targets.length) return 0
+    return suggestCategories(targets, ai, { replace: true })
   }
 
   /**
@@ -886,6 +915,7 @@ function createDataStore() {
     saveApiKeys: (patch: Partial<Record<CredentialName, string | null>>) => { saveCredentials(patch); setState({ apiKeys: loadApiKeys() }) },
     askAbout,
     suggestCategories,
+    resuggestLike,
     acceptSuggestions,
     dismissSuggestions,
     applyTagPatch,
