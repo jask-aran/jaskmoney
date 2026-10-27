@@ -175,7 +175,8 @@ export interface CategorySuggestion {
   source: "history" | "jev"
 }
 
-export type SortColumn = "date" | "amount" | "description" | "category" | "account"
+/** "confidence": the suggestion's, in the Uncategorised view only. */
+export type SortColumn = "date" | "amount" | "description" | "category" | "account" | "confidence"
 
 export interface ImportRecord {
   id: number

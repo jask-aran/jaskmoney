@@ -12,8 +12,10 @@ export type PickerRow =
  * Groups themselves are not assignable: Up only accepts subcategories.
  * `index` numbers the assignable rows in display order (the picker cursor).
  * A query matches a category's name or its group's name, case-insensitively.
+ * `suggested` categories (ids), when there is no query, come first under
+ * "Suggested" (they also stay in their groups).
  */
-export function categoryPickerRows(categories: Category[], query: string, sortMatches = true): PickerRow[] {
+export function categoryPickerRows(categories: Category[], query: string, sortMatches = true, suggested: number[] = []): PickerRow[] {
   const q = query.trim().toLowerCase()
   const groupIds = new Set(categories.map((c) => c.parentId).filter((id): id is number => id != null))
   const groups = categories.filter((c) => groupIds.has(c.id))
@@ -22,6 +24,11 @@ export function categoryPickerRows(categories: Category[], query: string, sortMa
   const matches = (c: Category, group?: Category) => score(c, group) > -Infinity
   const rows: PickerRow[] = []
   let index = 0
+  const picks = q ? [] : suggested.flatMap((id) => categories.filter((c) => c.id === id && !groupIds.has(c.id)))
+  if (picks.length) {
+    rows.push({ kind: "heading", label: "Suggested" })
+    for (const category of picks) rows.push({ kind: "category", category, index: index++ })
+  }
   for (const group of groups) {
     const children = categories.filter((c) => c.parentId === group.id && matches(c, group))
     if (q && sortMatches) children.sort((a, b) => score(b, group) - score(a, group))
@@ -40,6 +47,16 @@ export function categoryPickerRows(categories: Category[], query: string, sortMa
   return rows
 }
 
-export function assignableCategories(categories: Category[], query: string): Category[] {
-  return categoryPickerRows(categories, query).flatMap((r) => (r.kind === "category" ? [r.category] : []))
+export function assignableCategories(categories: Category[], query: string, suggested: number[] = []): Category[] {
+  return categoryPickerRows(categories, query, true, suggested).flatMap((r) => (r.kind === "category" ? [r.category] : []))
+}
+
+/** The categories suggested for `ids`, most often suggested first. */
+export function suggestedCategoryIds(ids: number[], suggestions: Record<number, { categoryId: number }>): number[] {
+  const counts = new Map<number, number>()
+  for (const id of ids) {
+    const s = suggestions[id]
+    if (s) counts.set(s.categoryId, (counts.get(s.categoryId) ?? 0) + 1)
+  }
+  return [...counts].sort((a, b) => b[1] - a[1]).map(([id]) => id)
 }

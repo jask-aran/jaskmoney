@@ -1,4 +1,5 @@
 import { Index, Show, createMemo } from "solid-js"
+import { ACCEPT_ALL_AT } from "../../domain/questions"
 import { S } from "../primitives/S"
 import { fitSpans, spansWidth, type Span } from "../primitives/spans"
 import { categoryColor, isUncategorisedColor, theme } from "../../theme"
@@ -71,7 +72,7 @@ function fmtDate(iso: string): string {
 }
 
 
-interface CategoryCell { marker: string; markerColor: string; text: string; textColor: string; muted: boolean; italic?: boolean; note?: string }
+interface CategoryCell { marker: string; markerColor: string; text: string; textColor: string; muted: boolean; italic?: boolean; note?: string; noteColor?: string }
 
 function formatCategory(
   categoryId: number | null,
@@ -90,13 +91,20 @@ function formatCategory(
   }
 }
 
-/** A suggested category, in italics with its confidence; or why there is none yet. */
+/** How sure a suggestion is, at a glance: sure enough for accept-all, worth
+ * a look, or a guess. */
+function confidenceColor(confidence: number): string {
+  return confidence >= ACCEPT_ALL_AT ? theme.success : confidence >= 0.5 ? theme.warning : theme.overlay1
+}
+
+/** A suggested category, in italics with its confidence (↺ when it comes
+ * from history); or why there is none yet. */
 function formatSuggestion(suggestion: TableSuggestion | undefined, width: number): CategoryCell {
   const category = suggestion && data.state.categories.find((c) => c.id === suggestion.categoryId)
   if (!suggestion || !category) {
     return { marker: `${categoryMark(null, true)} `, markerColor: theme.overlay1, text: fit(data.state.suggesting ? "suggesting…" : "no suggestion", width - 2), textColor: theme.overlay1, muted: true }
   }
-  const note = `${Math.round(suggestion.confidence * 100)}%`.padStart(5)
+  const note = `${suggestion.source === "history" ? "↺" : ""}${Math.round(suggestion.confidence * 100)}%`.padStart(5)
   return {
     marker: `${categoryMark(category.id)} `,
     markerColor: categoryColor(category.color),
@@ -105,11 +113,12 @@ function formatSuggestion(suggestion: TableSuggestion | undefined, width: number
     muted: false,
     italic: true,
     note,
+    noteColor: confidenceColor(suggestion.confidence),
   }
 }
 
 /** What the table needs of a category suggestion. */
-export interface TableSuggestion { categoryId: number; confidence: number }
+export interface TableSuggestion { categoryId: number; confidence: number; source: "history" | "jev" }
 
 /** Every tag in its own colour, comma-joined and cut to `width` (Go app). */
 function formatTags(names: string[], colors: string[], width: number): Span[] {
@@ -230,7 +239,7 @@ export function TransactionTable(props: {
                   >
                     {category().text}
                   </S>
-                  <S fg={fg(theme.overlay1)} bg={rowBg()}>{category().note ?? ""}</S>
+                  <S fg={fg(category().noteColor ?? theme.overlay1)} bg={rowBg()}>{category().note ?? ""}</S>
                   <Show when={layout().showTags}>
                     <S fg={fg(theme.text)} bg={rowBg()} bold={strong()}>
                       {" ".repeat(columns.gap)}

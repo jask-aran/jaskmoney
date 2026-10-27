@@ -3,6 +3,7 @@ import { footerHints, handleKey } from "./keys"
 import { ui } from "../state/uiStore"
 import { data } from "../state/dataStore"
 import { key } from "../testing/keys"
+import { assignableCategories, suggestedCategoryIds } from "../domain/categoryOptions"
 import { testEnv } from "../testing/scoped"
 
 /** Data with no Jev and no network: suggestions come from history. */
@@ -36,35 +37,53 @@ function setup() {
 const settle = () => new Promise((resolve) => setTimeout(resolve, 5))
 const shown = () => data.scopedTransactions().map((t) => t.description + t.id)
 
-test("i shows only rows to categorise, with suggestions; y accepts, x dismisses, Y takes the confident ones; i goes back", async () => {
+test("i shows only rows to categorise, most confident first; y accepts, x dismisses, Y previews then takes the confident ones; i goes back", async () => {
   setup()
   expect(footerHints("manager.txns", { focusedSection: "mgr.transactions", drillReturn: null, chartViews: [0, 4] }).some((h) => h.key === "i")).toBe(true)
   handleKey(ui, key("i"), data)
   expect(data.state.uncategorisedOnly).toBe(true)
-  expect(shown()).toEqual(["Shop4", "Mystery3", "Shop2"])
+  expect(data.state.sortColumn).toBe("confidence")
   await settle()
   // History: four earlier Shops, all Test food, settle both uncategorised Shops (4/5 = 80%).
   expect(Object.values(data.state.suggestions).map((s) => [s.transactionId, s.categoryId, s.confidence]).sort()).toEqual([[2, 100, 0.8], [4, 100, 0.8]])
-
+  // Suggested rows first (ties newest first), the unsuggested last.
+  expect(shown()).toEqual(["Shop4", "Shop2", "Mystery3"])
   expect(footerHints("manager.txns", { focusedSection: "mgr.transactions", drillReturn: null, chartViews: [0, 4], uncategorisedOnly: true }).map((h) => h.key)).toContain("Y")
+
+  // c opens the picker with the suggestion first.
+  handleKey(ui, key("c"), data)
+  expect(assignableCategories(data.state.categories, "", suggestedCategoryIds(ui.state.pickerTargets, data.state.suggestions))[0]?.name).toBe("Test food")
+  handleKey(ui, key("escape"), data)
 
   // y on the cursor row (Shop4) accepts its suggestion; the row leaves the view.
   handleKey(ui, key("y"), data)
   await settle()
   expect(data.transactions().find((t) => t.id === 4)?.categoryName).toBe("Test food")
-  expect(shown()).toEqual(["Mystery3", "Shop2"])
+  expect(shown()).toEqual(["Shop2", "Mystery3"])
 
   // x on a row without a suggestion says so; nothing changes.
+  handleKey(ui, key("j"), data)
   handleKey(ui, key("x"), data)
   expect(ui.state.status).toBe("No suggestion to dismiss")
 
-  // Y accepts every suggestion at or above the threshold: Shop2.
+  // Y shows what it would accept; esc accepts nothing, enter accepts Shop2.
   handleKey(ui, key("y", { shift: true, sequence: "Y" }), data)
+  expect(ui.state.acceptPreview).toEqual([2])
+  expect(ui.activeScope()).toBe("manager.acceptPreview")
+  handleKey(ui, key("escape"), data)
+  expect(ui.state.acceptPreview).toBeNull()
+  expect(shown()).toEqual(["Shop2", "Mystery3"])
+  handleKey(ui, key("y", { shift: true, sequence: "Y" }), data)
+  handleKey(ui, key("return"), data)
   await settle()
   expect(shown()).toEqual(["Mystery3"])
+  handleKey(ui, key("y", { shift: true, sequence: "Y" }), data)
+  expect(ui.state.acceptPreview).toBeNull()
 
+  // Leaving the view goes back to date order.
   handleKey(ui, key("i"), data)
   expect(data.state.uncategorisedOnly).toBe(false)
+  expect(data.state.sortColumn).toBe("date")
   expect(shown()).toHaveLength(7)
 })
 

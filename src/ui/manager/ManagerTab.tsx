@@ -1,4 +1,4 @@
-import { Show, createEffect, createMemo } from "solid-js"
+import { For, Show, createEffect, createMemo } from "solid-js"
 import { useTerminalDimensions } from "@opentui/solid"
 import { SectionCard } from "../primitives/SectionCard"
 import { muted } from "../primitives/spans"
@@ -9,7 +9,8 @@ import { data } from "../../state/dataStore"
 import { theme } from "../../theme"
 import { filterExprString } from "../../domain/filter"
 import type { Account } from "../../domain/types"
-import { truncate } from "../text"
+import { fit, truncate } from "../text"
+import { categoryMark } from "../icons"
 import { ACCEPT_ALL_AT } from "../../domain/questions"
 import { accountStacks, selectedAccounts } from "../../domain/accountTree"
 import { AccountsPane, accountsPaneHeight } from "./AccountsPane"
@@ -67,7 +68,9 @@ export function ManagerTab(props: { focused: SectionId }) {
   const selCount = () => Object.keys(ui.state.selectedIds).length
 
   const sortMark = (col: string) => {
-    if (data.state.sortColumn !== col) return ""
+    // Confidence is the suggestion's, shown in the Category column.
+    const sorted = data.state.sortColumn === "confidence" ? "category" : data.state.sortColumn
+    if (sorted !== col) return ""
     return data.state.sortAscending ? " ▲" : " ▼"
   }
 
@@ -131,6 +134,17 @@ export function ManagerTab(props: { focused: SectionId }) {
 
   const accountAction = () => data.state.accounts.find((account) => account.id === ui.state.accountActionId)
 
+  /** Accept-all's preview: how many rows go to each suggested category. */
+  const acceptGroups = createMemo(() => {
+    const counts = new Map<number, number>()
+    for (const id of ui.state.acceptPreview ?? []) {
+      const s = data.state.suggestions[id]
+      if (s) counts.set(s.categoryId, (counts.get(s.categoryId) ?? 0) + 1)
+    }
+    return [...counts].sort((a, b) => b[1] - a[1]).map(([id, n]) => ({ category: data.state.categories.find((c) => c.id === id), n }))
+  })
+  const ACCEPT_LINES = 10
+
   return (
     <box width="100%" height="100%" flexDirection="column" backgroundColor={theme.canvas}>
       <AccountsPane focused={acctFocused()} width={dims().width} />
@@ -188,6 +202,24 @@ export function ManagerTab(props: { focused: SectionId }) {
         </Show>
       </SectionCard>
       <TransactionDetail />
+      <Show when={ui.state.acceptPreview}>
+        {(ids: () => number[]) => (
+          <Modal title="Accept suggestions" subtitle={`${ids().length} at ${ACCEPT_ALL_AT * 100}% or more`} width={56} hints="enter accept · esc cancel">
+            <For each={acceptGroups().slice(0, ACCEPT_LINES)}>{(g) => (
+              <text wrapMode="none">
+                <S fg={g.category?.color ?? theme.text}>{`${categoryMark(g.category?.id ?? null)} `}</S>
+                <S fg={theme.text}>{fit(g.category?.name ?? "?", 36)}</S>
+                <S fg={theme.subtext0}>{String(g.n).padStart(6)}</S>
+              </text>
+            )}</For>
+            <Show when={acceptGroups().length > ACCEPT_LINES}>
+              <text fg={theme.overlay1}>{`and ${acceptGroups().length - ACCEPT_LINES} more ${acceptGroups().length - ACCEPT_LINES === 1 ? "category" : "categories"}`}</text>
+            </Show>
+            <text> </text>
+            <text fg={theme.overlay1}>Up rows are categorised in Up too.</text>
+          </Modal>
+        )}
+      </Show>
       <Show when={accountAction()}>
         {(account: () => Account) => (
           <Modal title="Account data" subtitle={account().name} tone="warning" width={56} hints="del confirms either action · esc cancel">

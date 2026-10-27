@@ -60,6 +60,7 @@ export type ScopeId =
   | "settings.import.profileEditor"
   | "settings.import.preview"
   | "manager.accountAction"
+  | "manager.acceptPreview"
   | "settings.factoryReset"
 
 export type SettingsList = "categories" | "tags"
@@ -187,6 +188,8 @@ export interface UiState {
   importPreviewShowAll: boolean
   importPreviewRules: boolean
   accountActionId: number | null
+  /** Accept-all's preview: the rows it would categorise, until confirmed. */
+  acceptPreview: number[] | null
   factoryResetOpen: boolean
   factoryResetDraft: string
   factoryResetCaret: number
@@ -321,6 +324,7 @@ function createUiStore() {
     importPreviewShowAll: false,
     importPreviewRules: true,
     accountActionId: null,
+    acceptPreview: null,
     factoryResetOpen: false,
     factoryResetDraft: "",
     factoryResetCaret: 0,
@@ -353,6 +357,7 @@ function createUiStore() {
       settingsConfirm: null,
       importStage: "none",
       accountActionId: null,
+      acceptPreview: null,
       factoryResetOpen: false,
       factoryResetDraft: "", factoryResetCaret: 0,
     })
@@ -588,6 +593,7 @@ function createUiStore() {
     if (state.importStage === "profileEditor") return "settings.import.profileEditor"
     if (state.importStage === "preview") return "settings.import.preview"
     if (state.accountActionId != null) return "manager.accountAction"
+    if (state.acceptPreview) return "manager.acceptPreview"
     if (state.factoryResetOpen) return "settings.factoryReset"
     if (state.customEdit) return "overview.custom"
     if (state.activeTab === "overview") return state.focusedSection === "ov.range" ? "overview.range" : "overview"

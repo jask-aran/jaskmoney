@@ -124,11 +124,14 @@ const SORT_CYCLE: SortColumn[] = [
 /** Text order as `localeCompare` gives it, without building a collator per call. */
 const textOrder = new Intl.Collator().compare
 
-/** Rows in a column's order; dates tie-break on id so the order is stable. */
-function sortRows(rows: Transaction[], col: SortColumn, asc: boolean): Transaction[] {
+/** Rows in a column's order; dates tie-break on id so the order is stable.
+ * Confidence sorts by `confidence(id)` (no suggestion lowest), then date. */
+function sortRows(rows: Transaction[], col: SortColumn, asc: boolean, confidence: (id: number) => number = () => -1): Transaction[] {
+  const byDate = (a: Transaction, b: Transaction) => (a.dateISO < b.dateISO ? -1 : a.dateISO > b.dateISO ? 1 : a.id - b.id)
   const compare = (a: Transaction, b: Transaction): number => {
     switch (col) {
-      case "date": return a.dateISO < b.dateISO ? -1 : a.dateISO > b.dateISO ? 1 : a.id - b.id
+      case "confidence": return confidence(a.id) - confidence(b.id) || byDate(a, b)
+      case "date": return byDate(a, b)
       case "amount": return a.amount - b.amount
       case "description": return textOrder(a.description, b.description)
       case "category": return textOrder(a.categoryName, b.categoryName)
@@ -285,7 +288,10 @@ function createDataStore() {
   }))
 
   /** The account's rows through the filter, in the table's sort. */
-  const scopedTransactions = createRoot(() => createMemo(() => sortRows(filtered(), state.sortColumn, state.sortAscending)))
+  const scopedTransactions = createRoot(() => createMemo(() => {
+    const confidence = state.sortColumn === "confidence" ? (id: number) => state.suggestions[id]?.confidence ?? -1 : undefined
+    return sortRows(filtered(), state.sortColumn, state.sortAscending, confidence)
+  }))
 
   function setFilterLive(q: string) {
     const { expr, err } = reparseFilterInput(q)
@@ -331,8 +337,10 @@ function createDataStore() {
   }
 
   function cycleSortColumn(): string {
-    const i = SORT_CYCLE.indexOf(state.sortColumn)
-    const next = SORT_CYCLE[(i + 1) % SORT_CYCLE.length]!
+    // Confidence is a column only where rows have suggestions.
+    const cycle: SortColumn[] = state.uncategorisedOnly ? ["confidence", ...SORT_CYCLE] : SORT_CYCLE
+    const i = cycle.indexOf(state.sortColumn)
+    const next = cycle[(i + 1) % cycle.length]!
     setState({ sortColumn: next })
     return next
   }
@@ -768,7 +776,11 @@ function createDataStore() {
     toggleSortDirection,
     setAccountSelection,
     categorizeTransactions,
-    setUncategorisedOnly: (on: boolean) => setState({ uncategorisedOnly: on }),
+    /** The Uncategorised view sorts by suggestion confidence, most sure
+     * first; leaving it goes back to date order if it still was. */
+    setUncategorisedOnly: (on: boolean) => setState(on
+      ? { uncategorisedOnly: true, sortColumn: "confidence", sortAscending: false }
+      : { uncategorisedOnly: false, ...(state.sortColumn === "confidence" ? { sortColumn: "date" as const, sortAscending: false } : {}) }),
     /** Save (or with null, remove) API keys entered in Settings. */
     saveApiKeys: (patch: Partial<Record<CredentialName, string | null>>) => { saveCredentials(patch); setState({ apiKeys: loadApiKeys() }) },
     askAbout,

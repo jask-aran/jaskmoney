@@ -3,7 +3,7 @@ import { resolve } from "node:path"
 import { batch } from "solid-js"
 import { accountRole } from "../domain/types"
 import { accountRows, accountStacks, spendingScope, type AccountSelection } from "../domain/accountTree"
-import { assignableCategories } from "../domain/categoryOptions"
+import { assignableCategories, suggestedCategoryIds } from "../domain/categoryOptions"
 import { budgetLabel, budgetScopeOptions, scopeKey } from "../domain/budgetScopes"
 import type { CycleConfig } from "../domain/budget"
 import { MERCHANT_SORTS, groupByMerchant, merchantFilter, sortMerchantGroups } from "../domain/merchants"
@@ -283,7 +283,7 @@ function handleTagPicker(ui: UiStore, key: KeyEvent, data?: DataStore): void {
 }
 
 function handleCatPicker(ui: UiStore, key: KeyEvent, data?: DataStore): void {
-  const cats = assignableCategories(data?.state.categories ?? [], ui.state.catPickerQuery)
+  const cats = assignableCategories(data?.state.categories ?? [], ui.state.catPickerQuery, suggestedCategoryIds(ui.state.pickerTargets, data?.state.suggestions ?? {}))
   queryPickerKey(key, { query: ui.state.catPickerQuery, cursor: ui.state.catPickerCursor }, cats.length, {
     close: () => { ui.closeCatPicker(); ui.setStatus("Categorize cancelled") },
     update: (next) => { ui.setState({ catPickerQuery: next.query, catPickerCursor: next.cursor }) },
@@ -781,6 +781,17 @@ function handleSettingsUp(ui: UiStore, key: KeyEvent, data?: DataStore): void {
 
 /** AI models: one row per provider; enter edits its key, t tests it, del
  * removes the saved one (the environment's, if any, then applies). */
+/** Accept-all's preview: enter (or y) accepts those rows, esc doesn't. */
+function handleManagerAcceptPreview(ui: UiStore, key: KeyEvent, data?: DataStore): void {
+  const { name } = key
+  const ids = ui.state.acceptPreview ?? []
+  if (name === "escape") { ui.setState({ acceptPreview: null }); ui.setStatus("Nothing accepted"); return }
+  if ((name === "return" || name === "enter" || name === "y") && data) {
+    ui.setState({ acceptPreview: null })
+    void runAccept(ui, data, ids)
+  }
+}
+
 function handleSettingsAi(ui: UiStore, key: KeyEvent, data?: DataStore): void {
   const { name } = key
   const row = AI_ROWS[ui.state.aiCursor] ?? "jev"
@@ -847,7 +858,10 @@ function handleManagerTxns(ui: UiStore, key: KeyEvent, data?: DataStore): void {
   if (data?.state.uncategorisedOnly) {
     if (name === "y" && !key.shift) { void runAccept(ui, data, ui.targetIds(rows)); return }
     if (name === "y" && key.shift) {
-      void runAccept(ui, data, rows.filter((r) => (data.state.suggestions[r.id]?.confidence ?? 0) >= ACCEPT_ALL_AT).map((r) => r.id))
+      // Several rows, possibly pushed to Up: show what it would do first.
+      const ids = rows.filter((r) => (data.state.suggestions[r.id]?.confidence ?? 0) >= ACCEPT_ALL_AT).map((r) => r.id)
+      if (!ids.length) { ui.setStatus(`No suggestion is ${ACCEPT_ALL_AT * 100}% sure or more`); return }
+      ui.setState({ acceptPreview: ids })
       return
     }
     if (name === "x" && !key.shift) {
@@ -1299,6 +1313,11 @@ const scopes: Record<ScopeId, ScopeEntry> = {
     quits: false,
     hints: () => [{ key: "type RESET", desc: "confirm" }, { key: "enter", desc: "erase DB" }, { key: "esc", desc: "cancel" }],
   },
+  "manager.acceptPreview": {
+    handle: handleManagerAcceptPreview,
+    quits: false,
+    hints: () => [{ key: "enter", desc: "accept" }, { key: "esc", desc: "cancel" }],
+  },
   "manager.accountAction": {
     handle: handleManagerAccountAction,
     quits: false,
@@ -1399,6 +1418,7 @@ const scopes: Record<ScopeId, ScopeEntry> = {
       { key: "space", desc: "select" },
       { key: "S-j/k", desc: "range" },
       { key: "j/k", desc: "move" },
+      { key: "s", desc: "sort" },
       { key: "enter", desc: "detail" },
       { key: "m", desc: "merchants" },
       { key: "i", desc: "all rows" },
