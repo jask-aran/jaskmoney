@@ -24,12 +24,7 @@ export function Form(props: { fields: FormField[]; cursor: number; caret: number
               <Show when={focused() && (field.kind === "choice" || field.kind === "toggle")}>
                 <S fg={theme.accent}>{"‹ "}</S>
               </Show>
-              <Show when={field.kind === "text"} fallback={
-                <Show when={field.kind === "secret"} fallback={<S fg={field.display ? theme.text : theme.overlay0}>{field.display || "—"}</S>}>
-                  <S fg={field.display.startsWith("•") ? theme.text : theme.overlay0}>{field.display}</S>
-                  <S fg={theme.accent}>{focused() ? "▏" : ""}</S>
-                </Show>
-              }>
+              <Show when={field.kind === "text"} fallback={<S fg={field.display ? theme.text : theme.overlay0}>{field.display || "—"}</S>}>
                 <TextInput field={{ value: field.display, caret: props.caret }} focused={focused()} caretColor={theme.accent} />
               </Show>
               <Show when={focused() && (field.kind === "choice" || field.kind === "toggle")}>

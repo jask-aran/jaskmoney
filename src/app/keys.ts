@@ -16,9 +16,10 @@ import { runSync } from "./sync"
 import { runSmartSearch } from "./smartSearch"
 import { runAsk } from "./ask"
 import { askTerms } from "../domain/filter"
-import { AI_ROWS, aiRowLabel, isLlmRow, testApiKey, type AiRow } from "./apiKeys"
+import { AI_ROWS, aiRowLabel, isLlmRow, testAi } from "./apiKeys"
+import { aiActions, aiContext } from "../state/aiDialog"
 import { cancelLlmSignIn, signOutLlm, startLlmSignIn, submitSignInPaste } from "./llmSignIn"
-import { createLlm, hasLlm, LLM_PROVIDERS, llmAuth, llmModelId, type LlmProvider } from "../ai/llm"
+import { createLlm, hasLlm, LLM_PROVIDERS, llmModelId } from "../ai/llm"
 import { credentialEnv } from "../ai/credentials"
 import { runAccept, toggleUncategorised, newSuggestionsNote, suggestNew } from "./suggest"
 import { ACCEPT_ALL_AT, MATCH_AT } from "../domain/questions"
@@ -126,7 +127,7 @@ function resetTransactionCursors(ui: UiStore, data?: DataStore): void {
 }
 
 /** Scopes whose printable keys are text, so a paste can type into them. */
-const PASTE_SCOPES = new Set<ScopeId>(["llmSignIn", "filter", "manager.detail.notes", "catPicker", "tagPicker", "filterPicker", "settings.import.path", "settings.factoryReset"])
+const PASTE_SCOPES = new Set<ScopeId>(["llmSignIn", "settings.aiDialog", "filter", "manager.detail.notes", "catPicker", "tagPicker", "filterPicker", "settings.import.path", "settings.factoryReset"])
 
 /** Whether a paste would land as text where input is now: never where
  * letters are commands (a pasted "x" must not dismiss anything). */
@@ -139,7 +140,7 @@ function pasteTarget(ui: UiStore, data?: DataStore): boolean {
   const ctx = { accounts: data?.state.accounts ?? [], categories: data?.state.categories ?? [], tags: data?.state.tags ?? [], savedFilters: data?.state.savedFilters ?? [] }
   const fields = editorFields(kind, ui.state.settingsDraft, ctx)
   const field = fields[Math.min(ui.state.settingsEditField, fields.length - 1)]
-  return field?.kind === "text" || field?.kind === "secret"
+  return field?.kind === "text"
 }
 
 /** Type pasted text into the focused text field, one character at a time
@@ -493,17 +494,7 @@ const CONFIRMED: Record<Confirm["kind"], (data: DataStore | undefined, c: Confir
   clearData: (data) => { data?.clearDatabaseData(); return "Transaction and import data cleared" },
   clearAccount: (data, c) => { data?.clearAccountData(Number(c.id)); return `Cleared ${c.label}` },
   deleteAccount: (data, c) => { data?.removeAccountData(Number(c.id)); return `Removed ${c.label}` },
-  apiKey: (data, c) => {
-    const row = c.id as AiRow
-    if (isLlmRow(row)) {
-      const { keyName, modelName } = LLM_PROVIDERS[row]
-      data?.saveApiKeys({ [keyName]: null, [modelName]: null, ...(row === "openrouter" ? { JASKMONEY_LLM_MODEL: null } : {}) })
-      if (data) void signOutLlm(data, row)
-      return `Removed ${c.label}'s saved key, model and sign-in`
-    }
-    data?.saveApiKeys(row === "jev" ? { JASKMONEY_JEV_TOKEN: null } : { JASKMONEY_CF_TOKEN: null, JASKMONEY_CF_ACCOUNT_ID: null })
-    return `Removed the saved ${c.label} key`
-  },
+
 
   desyncAccount: (data, c) => `Sync off for ${c.label} · ${data?.setAccountSync(Number(c.id), false) ?? 0} transactions removed`,
 }
@@ -542,7 +533,7 @@ function handleSettingsEditor(ui: UiStore, key: KeyEvent, data?: DataStore): voi
     return
   }
 
-  const isText = field.kind === "text" || field.kind === "secret"
+  const isText = field.kind === "text"
   const move = (step: number) => {
     const next = (fieldIndex + step + fields.length) % fields.length
     const field = fields[next]!
@@ -588,19 +579,6 @@ function handleSettingsEditor(ui: UiStore, key: KeyEvent, data?: DataStore): voi
         const cycle = cycleFromDraft(draft)
         if (typeof cycle === "string") throw new Error(cycle)
         data?.setBudgetCycle(cycle)
-      } else if (kind === "jevKey") {
-        if (draft.secret.trim()) data?.saveApiKeys({ JASKMONEY_JEV_TOKEN: draft.secret })
-      } else if (kind === "llmKey") {
-        const provider = draft.provider as LlmProvider
-        const { keyName, modelName, defaultModel } = LLM_PROVIDERS[provider]
-        const modelId = draft.model.trim()
-        // An id the provider doesn't have is refused before anything is saved.
-        createLlm({ provider, apiKey: "x", modelId: modelId || defaultModel })
-        // The default isn't saved, so it follows the app's default.
-        data?.saveApiKeys({ ...(draft.secret.trim() ? { [keyName]: draft.secret } : {}), [modelName]: modelId && modelId !== defaultModel ? modelId : null, ...(provider === "openrouter" ? { JASKMONEY_LLM_MODEL: null } : {}) })
-      } else if (kind === "workersAiKey") {
-        if (!draft.accountId.trim()) throw new Error("enter the Cloudflare account ID")
-        data?.saveApiKeys({ ...(draft.secret.trim() ? { JASKMONEY_CF_TOKEN: draft.secret } : {}), JASKMONEY_CF_ACCOUNT_ID: draft.accountId })
       } else if (kind === "filter") {
         data?.saveSavedFilter({ id: draft.id, name: draft.name, expr: draft.expr }, typeof ui.state.settingsEditId === "string" ? ui.state.settingsEditId : undefined)
       } else {
@@ -624,13 +602,6 @@ function handleSettingsEditor(ui: UiStore, key: KeyEvent, data?: DataStore): voi
   }
   if ((left || right) && field.kind === "toggle") {
     ui.setState("settingsDraft", field.key as "notSpending", !draft[field.key])
-    return
-  }
-  if (field.kind === "secret") {
-    // The key is never shown, so there is no caret to move: edits apply at the end.
-    const value = draft[field.key] as string
-    const next = editText({ value, caret: value.length }, key)
-    if (next) ui.setState("settingsDraft", field.key as "secret", next.value)
     return
   }
   if (isText) {
@@ -904,40 +875,92 @@ function handleRuleOffers(ui: UiStore, key: KeyEvent, data?: DataStore): void {
   }
 }
 
-function handleSettingsAi(ui: UiStore, key: KeyEvent, data?: DataStore): void {
+function handleSettingsAi(ui: UiStore, key: KeyEvent): void {
   const { name } = key
-  const row = AI_ROWS[ui.state.aiCursor] ?? "jev"
-  const label = aiRowLabel(row)
   if (name === "escape") { ui.leaveSettings(); return }
   const moved = listMove(key, ui.state.aiCursor, AI_ROWS.length)
   if (moved != null) { ui.setState({ aiCursor: moved }); return }
-  if (name === "return" || name === "enter") {
-    // The key starts empty (saving empty keeps the current one); the account id and model are not secret.
-    const accountId = row === "workersAi" ? (credentialEnv().JASKMONEY_CF_ACCOUNT_ID ?? "") : ""
-    const provider = isLlmRow(row) ? row : ""
-    const model = isLlmRow(row) ? llmModelId(credentialEnv(), row) : ""
-    ui.openSettingsEditor(row === "jev" ? "jevKey" : row === "workersAi" ? "workersAiKey" : "llmKey", null, { ...ui.state.settingsDraft, secret: "", accountId, provider, model })
-    ui.setState({ settingsEditField: 0 })
+  if (name === "return" || name === "enter") ui.setState({ aiDialog: { row: AI_ROWS[ui.state.aiCursor] ?? "jev", cursor: 0, field: null, armed: false, note: null, busy: false } })
+}
+
+/** The AI models dialog: j/k pick an action, enter runs it; a field (key,
+ * account id, model) takes typing and pasting until enter saves or esc
+ * backs out; remove needs enter twice; esc closes. */
+function handleAiDialog(ui: UiStore, key: KeyEvent, data?: DataStore): void {
+  const dialog = ui.state.aiDialog
+  if (!dialog || !data) return
+  const { name } = key
+  const row = dialog.row
+  const note = (text: string, ok: boolean | null) => ui.setState("aiDialog", { note: { text, ok }, busy: false })
+  if (dialog.field) {
+    const field = dialog.field
+    if (name === "escape") { ui.setState("aiDialog", { field: null }); return }
+    if (name === "return" || name === "enter") {
+      const value = field.value.trim()
+      try {
+        if (field.action === "key") {
+          if (!value) { ui.setState("aiDialog", { field: null }); return }
+          data.saveApiKeys(row === "jev" ? { JASKMONEY_JEV_TOKEN: value } : row === "workersAi" ? { JASKMONEY_CF_TOKEN: value } : { [LLM_PROVIDERS[row].keyName]: value })
+          ui.setState("aiDialog", { field: null, note: { text: "Key saved", ok: true } })
+        } else if (field.action === "accountId") {
+          data.saveApiKeys({ JASKMONEY_CF_ACCOUNT_ID: value || null })
+          ui.setState("aiDialog", { field: null, note: { text: value ? "Account ID saved" : "Account ID removed", ok: true } })
+        } else if (isLlmRow(row)) {
+          const { modelName, defaultModel } = LLM_PROVIDERS[row]
+          // An id the provider doesn't have is refused; the default isn't saved, so it follows the app's.
+          createLlm({ provider: row, apiKey: "x", modelId: value || defaultModel })
+          data.saveApiKeys({ [modelName]: value && value !== defaultModel ? value : null, ...(row === "openrouter" ? { JASKMONEY_LLM_MODEL: null } : {}) })
+          ui.setState("aiDialog", { field: null, note: { text: `Model: ${value || defaultModel}`, ok: true } })
+        }
+      } catch (e) {
+        note(e instanceof Error ? e.message : String(e), false)
+      }
+      return
+    }
+    // A key is never shown, so edits apply at its end.
+    const next = editText({ value: field.value, caret: field.action === "key" ? field.value.length : field.caret }, key)
+    if (next) ui.setState("aiDialog", "field", { value: next.value, caret: next.caret })
     return
   }
-  if (name === "t") { void testApiKey(ui, row); return }
-  // The general model: o signs in with the browser, u uses this provider.
-  if (name === "o" && isLlmRow(row) && data) { void startLlmSignIn(ui, data, row); return }
-  if (name === "u" && isLlmRow(row) && data) {
-    if (!llmAuth(row)) { ui.setStatus(`${label} has no key or sign-in yet · enter adds a key, o signs in`, true); return }
-    data.saveApiKeys({ JASKMONEY_LLM_PROVIDER: row })
-    ui.setStatus(`Rules are written by ${label} (${llmModelId(credentialEnv(), row)})`)
-    return
-  }
-  if (name === "delete" && data) {
-    const keys = data.state.apiKeys
-    const saved = row === "jev" ? keys.JASKMONEY_JEV_TOKEN.source === "saved"
-      : row === "workersAi" ? keys.JASKMONEY_CF_TOKEN.source === "saved" || keys.JASKMONEY_CF_ACCOUNT_ID.source === "saved"
-      : keys[LLM_PROVIDERS[row].keyName].source === "saved" || keys[LLM_PROVIDERS[row].modelName].source === "saved" || data.state.signedIn[row]
-    if (!saved) { ui.setStatus(`Nothing saved for ${label} to remove`); return }
-    ui.armSettingsConfirm({ kind: "apiKey", id: row, label })
-    ui.setStatus(`Press del again to remove ${label}'s saved key${isLlmRow(row) ? ", model and sign-in" : ""}`)
-    return
+  const ctx = aiContext(data)
+  const actions = aiActions(row, ctx)
+  if (name === "escape") { ui.setState({ aiDialog: null }); return }
+  const moved = listMove(key, dialog.cursor, actions.length)
+  if (moved != null) { ui.setState("aiDialog", { cursor: moved, armed: false }); return }
+  if (name !== "return" && name !== "enter") return
+  const action = actions[Math.min(dialog.cursor, actions.length - 1)]
+  if (!action || dialog.busy) return
+  const label = aiRowLabel(row)
+  switch (action.id) {
+    case "signIn":
+      if (isLlmRow(row)) void startLlmSignIn(ui, data, row).then(() => note(ui.state.status, !ui.state.statusErr))
+      return
+    case "key":
+    case "accountId":
+    case "model": {
+      const value = action.id === "model" && isLlmRow(row) ? llmModelId(credentialEnv(), row) : action.id === "accountId" ? (credentialEnv().JASKMONEY_CF_ACCOUNT_ID ?? "") : ""
+      ui.setState("aiDialog", { field: { action: action.id, value, caret: value.length }, note: null })
+      return
+    }
+    case "test":
+      ui.setState("aiDialog", { busy: true, note: { text: "Testing…", ok: null } })
+      void testAi(row).then((result) => note(result.text, result.ok))
+      return
+    case "use":
+      if (!isLlmRow(row)) return
+      data.saveApiKeys({ JASKMONEY_LLM_PROVIDER: row })
+      note(`${label} now writes rules`, true)
+      return
+    case "remove": {
+      if (!dialog.armed) { ui.setState("aiDialog", { armed: true, note: { text: "Press enter again to remove", ok: null } }); return }
+      if (isLlmRow(row)) {
+        const { keyName, modelName } = LLM_PROVIDERS[row]
+        data.saveApiKeys({ [keyName]: null, [modelName]: null, ...(row === "openrouter" ? { JASKMONEY_LLM_MODEL: null } : {}) })
+        void signOutLlm(data, row)
+      } else data.saveApiKeys(row === "jev" ? { JASKMONEY_JEV_TOKEN: null } : { JASKMONEY_CF_TOKEN: null, JASKMONEY_CF_ACCOUNT_ID: null })
+      ui.setState("aiDialog", { armed: false, cursor: 0, note: { text: `Removed what was saved for ${label}`, ok: true } })
+      return
+    }
   }
 }
 
@@ -1431,6 +1454,8 @@ type HintState = Pick<UiState, "focusedSection" | "drillReturn" | "chartViews"> 
   uncategorisedOnly?: boolean
   /** In the filter: ↑ would bring back the smart search's question. */
   recallQuestion?: boolean
+  /** The AI models dialog is taking a key, account id or model. */
+  aiField?: boolean
   /** The sign-in modal is asking for a pasted code or URL. */
   signInPaste?: boolean
   /** A tag review is open. */
@@ -1520,6 +1545,11 @@ const scopes: Record<ScopeId, ScopeEntry> = {
     handle: handleSettingsFactoryReset,
     quits: false,
     hints: () => [{ key: "type RESET", desc: "confirm" }, { key: "enter", desc: "erase DB" }, { key: "esc", desc: "cancel" }],
+  },
+  "settings.aiDialog": {
+    handle: handleAiDialog,
+    quits: false,
+    hints: (state) => state?.aiField ? [{ key: "enter", desc: "save" }, { key: "esc", desc: "back" }] : [{ key: "j/k", desc: "move" }, { key: "enter", desc: "do" }, { key: "esc", desc: "close" }],
   },
   "llmSignIn": {
     handle: (ui, key) => handleLlmSignIn(ui, key),
@@ -1618,7 +1648,7 @@ const scopes: Record<ScopeId, ScopeEntry> = {
   "settings.ai": {
     handle: handleSettingsAi,
     quits: true,
-    hints: () => [{ key: "j/k", desc: "move" }, { key: "enter", desc: "set key" }, { key: "t", desc: "test" }, { key: "del", desc: "remove saved" }, { key: "esc", desc: "done" }],
+    hints: () => [{ key: "j/k", desc: "move" }, { key: "enter", desc: "open" }, { key: "esc", desc: "done" }],
   },
   "settings.database": {
     handle: handleSettingsDatabase,

@@ -11,12 +11,11 @@ import { Footer } from "../ui/primitives/Footer"
 import { JumpOverlay } from "../ui/primitives/JumpOverlay"
 import { CatPicker } from "../ui/primitives/CatPicker"
 import { TagChooser } from "../ui/primitives/TagChooser"
-import { SignInModal } from "../ui/primitives/SignInModal"
 import { TagPicker } from "../ui/primitives/TagPicker"
 import { OverviewTab } from "../ui/overview/OverviewTab"
 import { ManagerTab } from "../ui/manager/ManagerTab"
 import { SavedFilterPicker } from "../ui/manager/SavedFilterPicker"
-import { SettingsTab, EditorOverlay, DryRunOverlay } from "../ui/settings/SettingsTab"
+import { SettingsTab, EditorOverlay, DryRunOverlay, AiDialog } from "../ui/settings/SettingsTab"
 import { theme } from "../theme"
 import { selectionLabel } from "../domain/accountTree"
 import { SYNC_INTERVAL_MS, runSync, syncAgo } from "./sync"
@@ -127,11 +126,11 @@ export function App() {
         text={ui.state.jumpMode ? "Jump mode · press target letter" : ui.state.status}
         isErr={!ui.state.jumpMode && ui.state.statusErr}
       />
-      <Footer hints={footerHints(ui.activeScope(), { focusedSection: ui.state.focusedSection, drillReturn: ui.state.drillReturn, chartViews: ui.state.chartViews, uncategorisedOnly: data.state.uncategorisedOnly, tagReview: !!data.state.tagReview, signInPaste: !!ui.state.llmSignIn?.paste, ruleOffers: ui.state.activeTab === "manager" ? data.allRuleOffers().length : 0, asks: !!data.askCounts(), askLoose: data.nearMissesShown(), recallQuestion: !!smartQuestionFor(ui.state, ui.state.filterDraft) })} />
+      <Footer hints={footerHints(ui.activeScope(), { focusedSection: ui.state.focusedSection, drillReturn: ui.state.drillReturn, chartViews: ui.state.chartViews, uncategorisedOnly: data.state.uncategorisedOnly, tagReview: !!data.state.tagReview, signInPaste: !!ui.state.llmSignIn?.paste, aiField: !!ui.state.aiDialog?.field, ruleOffers: ui.state.activeTab === "manager" ? data.allRuleOffers().length : 0, asks: !!data.askCounts(), askLoose: data.nearMissesShown(), recallQuestion: !!smartQuestionFor(ui.state, ui.state.filterDraft) })} />
       <JumpOverlay active={ui.state.jumpMode} tab={ui.state.activeTab} />
       <CatPicker />
       <TagChooser />
-      <SignInModal />
+      <AiDialog />
       <TagPicker />
       <EditorOverlay />
       <SavedFilterPicker />

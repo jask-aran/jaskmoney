@@ -1,12 +1,14 @@
-import { activeLlmProvider, LLM_PROVIDERS, llmAuth, llmModelId, type LlmProvider } from "../../ai/llm"
-import { credentialEnv } from "../../ai/credentials"
+import { AI_ROWS } from "../../app/apiKeys"
+import { AI_NAMES, aiActionHint, aiActions, aiContext, aiRow, aiStatus } from "../../state/aiDialog"
+import { secretDisplay } from "../../state/settingsForm"
+import { SignInBody } from "../primitives/SignInBody"
 import { For, Show, createEffect, createMemo } from "solid-js"
 import { useTerminalDimensions } from "@opentui/solid"
 import { SectionCard } from "../primitives/SectionCard"
 import { muted } from "../primitives/spans"
 import { S } from "../primitives/S"
 import { TextInput } from "../primitives/TextInput"
-import type { SectionId, SettingsList } from "../../state/uiStore"
+import type { SectionId, SettingsList, UiState } from "../../state/uiStore"
 import { ui } from "../../state/uiStore"
 import { data } from "../../state/dataStore"
 import { parseFilterStrict } from "../../domain/filter"
@@ -180,43 +182,88 @@ function UpPane(props: { focused: boolean; width?: `${number}%` }) {
   </SectionCard>
 }
 
-/** AI models: which key each provider uses (masked) and where it comes from,
- * and what it powers. The keys themselves are never rendered. */
+/** AI models: one compact row per model (what, how it's connected, what
+ * for); enter opens its dialog (AiDialog), where everything else is. */
 function AiPane(props: { focused: boolean; width?: `${number}%` }) {
   const active = () => ui.state.settingsActive && ui.state.settingsSection === "ai"
-  const keys = () => data.state.apiKeys
-  const from = (source: "saved" | "env" | "browser" | null) => (source === "saved" ? "saved in Settings" : source === "env" ? "from .env" : source === "browser" ? "with the browser" : "")
-  // The general model's rows: a key first, else a browser sign-in; one of them is in use.
-  const general = (provider: LlmProvider) => {
-    const key = keys()[LLM_PROVIDERS[provider].keyName]
-    // Reads keys() and signedIn first, so the row follows saves and sign-ins.
-    const reachable = !!key.source || data.state.signedIn[provider]
-    const inUse = reachable && activeLlmProvider() === provider && llmAuth(provider) !== null
-    return {
-      name: "General", by: LLM_PROVIDERS[provider].label,
-      key: key.source ? key : data.state.signedIn[provider] ? { source: "browser" as const, mask: "signed in" } : { source: null, mask: "" },
-      uses: `${inUse ? "in use · " : ""}rules · ${llmModelId(credentialEnv(), provider)}`,
-      missing: "no key · enter key · o sign in",
-    }
+  const rows = () => {
+    const ctx = aiContext(data)
+    return AI_ROWS.map((row) => aiRow(row, ctx))
   }
-  const rows = () => [
-    { name: "Jev", by: "TypeSafe", key: keys().JASKMONEY_JEV_TOKEN, uses: "suggestions · ask: · smart search", missing: "no key · enter to add" },
-    { name: "Clairic", by: "Workers AI", key: keys().JASKMONEY_CF_TOKEN.source && keys().JASKMONEY_CF_ACCOUNT_ID.source ? keys().JASKMONEY_CF_TOKEN : { source: null, mask: "" }, uses: "smart search", missing: "no key · enter to add" },
-    general("openrouter"),
-    general("openai"),
-  ]
-  return <SectionCard title="AI models" focused={props.focused} active={active()} height={rows().length + 2} width={props.width}>
-    <For each={rows()}>{(row, i) => {
-      const set = () => !!row.key.source
-      return <ListRow cursor={active() && ui.state.aiCursor === i()} bg={theme.canvas} spans={[
-        { text: set() ? "● " : "○ ", fg: set() ? theme.success : theme.overlay1 },
-        { text: fit(`${row.name} (${row.by})`, 22), fg: theme.text },
-        { text: set() ? `${row.key.mask}  ${from(row.key.source)}` : row.missing, fg: set() ? theme.subtext0 : theme.warning },
-        { text: `  · ${row.uses}`, fg: theme.overlay1 },
+  return <SectionCard title="AI models" focused={props.focused} active={active()} height={AI_ROWS.length + 2} width={props.width}>
+    <For each={rows()}>{(row, i) => (
+      <ListRow cursor={active() && ui.state.aiCursor === i()} bg={theme.canvas} spans={[
+        { text: row.connected ? "● " : "○ ", fg: row.connected ? theme.success : theme.overlay1 },
+        { text: row.name.padEnd(12), fg: theme.text },
+        { text: row.how.padEnd(13), fg: row.connected ? theme.subtext0 : theme.overlay1 },
+        { text: row.uses, fg: row.uses.endsWith("in use") ? theme.teal : theme.overlay1 },
       ]} />
-    }}</For>
+    )}</For>
   </SectionCard>
 }
+
+/** One model's dialog: how it's connected, then its actions; a field when
+ * typing a key, account id or model; a browser sign-in in progress. */
+export function AiDialog() {
+  return (
+    <Show when={ui.state.aiDialog}>
+      {(d: () => NonNullable<UiState["aiDialog"]>) => {
+        const ctx = () => aiContext(data)
+        const actions = () => aiActions(d().row, ctx())
+        const at = () => actions()[Math.min(d().cursor, actions().length - 1)]
+        const signIn = () => (ui.state.llmSignIn?.provider === d().row ? ui.state.llmSignIn : null)
+        const fieldLabel = (action: string) => (action === "key" ? (d().row === "workersAi" ? "API token" : "API key") : action === "accountId" ? "Account ID" : "Model")
+        return (
+          <Modal title={AI_NAMES[d().row].name} subtitle={AI_NAMES[d().row].by} width={AI_DIALOG_WIDTH}
+            hints={signIn() ? (signIn()!.paste ? "enter send · esc cancel" : "esc cancel") : d().field ? "enter save · esc back" : "j/k move · enter do · esc close"}>
+            <For each={aiStatus(d().row, ctx())}>{(line) => (
+              <text wrapMode="none"><S fg={theme.overlay1}>{line.label.padEnd(12)}</S><S fg={theme.text}>{fit(line.value, AI_DIALOG_WIDTH - 16)}</S></text>
+            )}</For>
+            <text> </text>
+            <Show when={signIn()} fallback={
+              <Show when={d().field} fallback={
+                <>
+                  <For each={actions()}>{(action, i) => {
+                    const here = () => i() === Math.min(d().cursor, actions().length - 1)
+                    return <text wrapMode="none"><S fg={theme.accent} bold>{here() ? "› " : "  "}</S><S fg={action.id === "remove" ? theme.error : here() ? theme.text : theme.subtext0} bold={here()}>{action.id === "remove" && here() && d().armed ? "Press enter again to remove" : action.label}</S></text>
+                  }}</For>
+                  <Show when={at() && aiActionHint(d().row, at()!.id, ctx())}>
+                    <text> </text>
+                    <text fg={theme.overlay1} wrapMode="word">{aiActionHint(d().row, at()!.id, ctx())!}</text>
+                  </Show>
+                </>
+              }>
+                {(f: () => NonNullable<NonNullable<UiState["aiDialog"]>["field"]>) => (
+                  <>
+                    <text wrapMode="none">
+                      <S fg={theme.overlay1}>{fieldLabel(f().action).padEnd(12)}</S>
+                      {f().action === "key"
+                        ? <S fg={f().value ? theme.text : theme.overlay0}>{secretDisplay(f().value)}</S>
+                        : <TextInput field={{ value: f().value, caret: f().caret }} focused caretColor={theme.accent} />}
+                    </text>
+                    <text fg={theme.overlay1} wrapMode="word">{aiActionHint(d().row, f().action, ctx()) ?? ""}</text>
+                  </>
+                )}
+              </Show>
+            }>
+              {(flow: () => NonNullable<UiState["llmSignIn"]>) => <SignInBody flow={flow()} width={AI_DIALOG_WIDTH - 4} />}
+            </Show>
+            <Show when={d().note}>
+              {(n: () => NonNullable<NonNullable<UiState["aiDialog"]>["note"]>) => (
+                <>
+                  <text> </text>
+                  <text fg={n().ok === true ? theme.success : n().ok === false ? theme.error : theme.overlay1} wrapMode="word">{n().text}</text>
+                </>
+              )}
+            </Show>
+          </Modal>
+        )
+      }}
+    </Show>
+  )
+}
+
+const AI_DIALOG_WIDTH = 78
 
 function ImportHistory(props: { height?: number | "auto" | `${number}%` }) {
   return <SectionCard title="Import History" height={props.height} flexGrow={props.height ? 0 : 1}>
@@ -342,11 +389,10 @@ const EDITOR_HINTS: Record<FormField["kind"], string> = {
   choice: "↑↓ field · ←→ change · enter save · esc cancel",
   toggle: "↑↓ field · ←→ change · enter save · esc cancel",
   picker: "↑↓ field · enter choose · esc cancel",
-  secret: "paste or type · backspace · ctrl+u clear · enter save · esc cancel",
 }
 
 function ConfirmOverlay() {
-  const prompt = (confirm: NonNullable<typeof ui.state.settingsConfirm>) => confirm.kind === "clearData" ? "Clear all transaction and import data?" : confirm.kind === "clearAccount" ? `Clear transactions for ${confirm.label}?` : confirm.kind === "deleteAccount" ? `Remove ${confirm.label} and its transactions?` : confirm.kind === "budget" ? `Delete ${confirm.label}?` : confirm.kind === "apiKey" ? `Remove the saved ${confirm.label} key? A key in .env, if any, is used instead.` : confirm.kind === "desyncAccount" ? `Stop syncing ${confirm.label}? Its transactions are removed; switch sync back on to re-fetch them.` : `Delete ${confirm.label}?`
+  const prompt = (confirm: NonNullable<typeof ui.state.settingsConfirm>) => confirm.kind === "clearData" ? "Clear all transaction and import data?" : confirm.kind === "clearAccount" ? `Clear transactions for ${confirm.label}?` : confirm.kind === "deleteAccount" ? `Remove ${confirm.label} and its transactions?` : confirm.kind === "budget" ? `Delete ${confirm.label}?` : confirm.kind === "desyncAccount" ? `Stop syncing ${confirm.label}? Its transactions are removed; switch sync back on to re-fetch them.` : `Delete ${confirm.label}?`
   return <Show when={ui.state.settingsConfirm}>{(confirm: () => NonNullable<typeof ui.state.settingsConfirm>) => <Modal title="Confirm" tone="error" width={64} hints="del confirm · esc cancel"><text fg={theme.text}>{prompt(confirm())}</text></Modal>}</Show>
 }
 
