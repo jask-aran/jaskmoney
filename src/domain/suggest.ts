@@ -19,7 +19,7 @@ function suggestionCategories(categories: Category[]): Category[] {
 /** Up transaction types whose description names a person or a payment app
  * (Beem, a PayID), not a merchant: the same description says little about
  * what the money was for. */
-const PERSON_TO_PERSON = new Set(["Payment", "Pay Anyone", "Transfer", "Osko Payment Received", "Payment Received", "Deposit", "EFTPOS Deposit", "EFTPOS Withdrawal"])
+export const PERSON_TO_PERSON = new Set(["Payment", "Pay Anyone", "Transfer", "Osko Payment Received", "Payment Received", "Deposit", "EFTPOS Deposit", "EFTPOS Withdrawal"])
 const isPersonToPerson = (t: Transaction) => !!t.transactionType && PERSON_TO_PERSON.has(t.transactionType)
 
 /** How history settles a row on its own: this many earlier rows at least,
