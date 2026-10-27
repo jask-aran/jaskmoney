@@ -1,5 +1,5 @@
 import { expect, onTestFinished, spyOn, test } from "bun:test"
-import type { WorkersAiClient } from "../ai/workersAi"
+import type { JevClient, JevQuestion } from "../ai/jev"
 import { deleteSuggestions, ensureSchema, loadSuggestions, saveSuggestions } from "../db/client"
 import type { Transaction } from "../domain/types"
 import { account, category, transaction } from "../testing/fixtures"
@@ -7,8 +7,7 @@ import { testDb, testEnv } from "../testing/scoped"
 import { data } from "./dataStore"
 
 function setup() {
-  testEnv("JASKMONEY_CF_TOKEN", "")
-  testEnv("JASKMONEY_CF_ACCOUNT_ID", "")
+  testEnv("JASKMONEY_JEV_TOKEN", "")
   const network = spyOn(globalThis, "fetch").mockImplementation(Object.assign(() => { throw new Error("network is forbidden") }, { preconnect: globalThis.fetch.preconnect }))
   onTestFinished(() => {
     try { expect(network).not.toHaveBeenCalled() } finally { network.mockRestore() }
@@ -30,11 +29,20 @@ function setup() {
   return { db, add }
 }
 
-const answer = (categoryId = 101): Awaited<ReturnType<WorkersAiClient["clef"]>> => ({
-  category: { type: "choice", choice: `c${categoryId}`, confidence: 0.9, probabilities: {} },
-})
+/** A fake Jev answering every question with one pick at 0.9; `seen` gets each row's description. */
+function fakeJev(onRow: (description: string) => Promise<void> | void = () => {}, categoryId = 101): Pick<JevClient, "judge"> {
+  return { async judge(questions) {
+    const out: Awaited<ReturnType<JevClient["judge"]>> = {}
+    for (const [id, q] of Object.entries(questions)) {
+      await onRow(description(q))
+      out[id] = { type: "choice", choice: `c${categoryId}`, confidence: 0.5, probabilities: { [`c${categoryId}`]: 0.9 } }
+    }
+    return out
+  } }
+}
+const description = (q: JevQuestion) => (q.instructions as { transaction: { description: string } }).transaction.description
 
-test("suggestions use history before Clef and never categorise or resend ineligible rows", async () => {
+test("suggestions use history before Jev and never categorise or resend ineligible rows", async () => {
   const { db, add } = setup()
   add({ id: 1, description: "Shop", categoryId: 100 })
   add({ id: 2, description: " SHOP " })
@@ -52,60 +60,54 @@ test("suggestions use history before Clef and never categorise or resend ineligi
   add({ id: 9, description: "Outside targets" })
   data.refresh()
   const states: string[] = []
-  const ai: Pick<WorkersAiClient, "clef"> = { async clef(_questions, state) {
+  const ai = fakeJev((d) => {
     expect(data.state.suggestions[2]?.source).toBe("history")
     expect(loadSuggestions(db).some((s) => s.transactionId === 2)).toBe(true)
     expect(data.state.suggesting).toBe(true)
-    states.push(state)
-    return answer()
-  } }
-  expect(await data.suggestCategories([1, 2, 3, 4, 5, 6, 7, 8], ai)).toBe("Suggested 3: 1 from history, 2 from Clef")
-  expect(states).toHaveLength(2)
-  expect(states.some((s) => s.startsWith("Description: Unknown\n") && s.includes("Type: Purchase"))).toBe(true)
-  expect(states.some((s) => s.startsWith("Description: Default category\n"))).toBe(true)
-  expect(data.state.suggestions[3]).toEqual({ transactionId: 3, categoryId: 101, confidence: 0.9, source: "clef" })
+    states.push(d)
+  })
+  expect(await data.suggestCategories([1, 2, 3, 4, 5, 6, 7, 8], ai)).toBe("Suggested 3: 1 from history, 2 from Jev")
+  expect(states.sort()).toEqual(["Default category", "Unknown"])
+  expect(data.state.suggestions[3]).toEqual({ transactionId: 3, categoryId: 101, confidence: 0.9, source: "jev" })
   expect(data.state.transactions.find((t) => t.id === 2)?.categoryId).toBeNull()
   expect(data.state.transactions.find((t) => t.id === 3)?.categoryId).toBeNull()
   expect(data.state.suggesting).toBe(false)
-  expect(await data.suggestCategories([2, 3, 7, 8], ai)).toBe("Suggested 0: 0 from history, 0 from Clef")
+  expect(await data.suggestCategories([2, 3, 7, 8], ai)).toBe("Suggested 0: 0 from history, 0 from Jev")
   expect(states).toHaveLength(2)
 })
 
-test("suggestions persist progressively, reject a second run, and report AI failures", async () => {
-  const { db, add } = setup()
+test("a second run is refused while one runs; a failed request is reported with its rows", async () => {
+  const { add } = setup()
   add({ id: 1, description: "First" })
   add({ id: 2, description: "Second" })
-  add({ id: 3, description: "Fails" })
   data.refresh()
   let release = () => {}
   const pending = new Promise<void>((resolve) => { release = resolve })
   let arrived = () => {}
   const started = new Promise<void>((resolve) => { arrived = resolve })
-  const ai: Pick<WorkersAiClient, "clef"> = { async clef(_questions, state) {
-    if (state.startsWith("Description: First\n")) return answer()
-    if (state.startsWith("Description: Fails\n")) throw new Error("fake unavailable")
+  const ai: Pick<JevClient, "judge"> = { async judge() {
     arrived()
     await pending
-    expect(data.state.suggestions[1]?.source).toBe("clef")
-    expect(loadSuggestions(db).some((s) => s.transactionId === 1)).toBe(true)
-    return answer()
+    throw new Error("fake unavailable")
   } }
   const running = data.suggestCategories(undefined, ai)
   try {
     await started
     await expect(data.suggestCategories(undefined, ai)).rejects.toThrow("Category suggestions are already running")
   } finally { release() }
-  expect(await running).toBe("Suggested 2: 0 from history, 2 from Clef · 1 failed: fake unavailable")
+  expect(await running).toBe("Suggested 0: 0 from history, 0 from Jev · 1 failed: 2 rows: fake unavailable")
   expect(data.state.suggesting).toBe(false)
+  // Asking again works, and lands every row of the request.
+  expect(await data.suggestCategories(undefined, fakeJev())).toBe("Suggested 2: 0 from history, 2 from Jev")
 })
 
-test("history works without Workers AI and reports missing setup", async () => {
+test("history works without Jev and reports missing setup", async () => {
   const { add } = setup()
   for (const id of [1, 4, 5]) add({ id, description: "Shop", categoryId: 100 })
   add({ id: 2, description: "Shop" })
   add({ id: 3, description: "Unknown" })
   data.refresh()
-  expect(await data.suggestCategories()).toBe("Suggested 1: 1 from history, 0 from Clef · Workers AI is not set up")
+  expect(await data.suggestCategories()).toBe("Suggested 1: 1 from history, 0 from Jev · Jev is not set up (JASKMONEY_JEV_TOKEN)")
   expect(data.state.suggestions[2]?.categoryId).toBe(100)
   expect(data.state.suggestions[3]).toBeUndefined()
 })
@@ -148,9 +150,9 @@ test("storage upserts suggestions, filters default categories, and cascades dele
   db.query("INSERT INTO categories (id, name, color) VALUES (?, ?, ?)").run(c.id, c.name, c.color)
   for (const id of [1, 2]) db.query("INSERT INTO transactions (id, date_raw, date_iso, amount, description, category_id) VALUES (?, 'x', '2026-01-01', -1, 'x', ?)").run(id, defaultId)
   saveSuggestions(db, [{ transactionId: 1, categoryId: c.id, confidence: 0.5, source: "history" }])
-  saveSuggestions(db, [{ transactionId: 1, categoryId: c.id, confidence: 0.9, source: "clef" }, { transactionId: 2, categoryId: c.id, confidence: 1, source: "history" }])
+  saveSuggestions(db, [{ transactionId: 1, categoryId: c.id, confidence: 0.9, source: "jev" }, { transactionId: 2, categoryId: c.id, confidence: 1, source: "history" }])
   expect(loadSuggestions(db)).toHaveLength(2)
-  expect(loadSuggestions(db)[0]).toEqual({ transactionId: 1, categoryId: 100, confidence: 0.9, source: "clef" })
+  expect(loadSuggestions(db)[0]).toEqual({ transactionId: 1, categoryId: 100, confidence: 0.9, source: "jev" })
   deleteSuggestions(db, [])
   db.query("DELETE FROM transactions WHERE id = ?").run(1)
   expect(loadSuggestions(db).map((s) => s.transactionId)).toEqual([2])
@@ -170,9 +172,9 @@ test("suggesting clears even when the database write and final refresh fail", as
   } finally { queryMock.mockRestore() }
 })
 
-test("fresh schema includes suggestions and v18 migrates a v17 database without losing rows", () => {
+test("fresh schema includes suggestions and v18–v19 migrate a v17 database without losing rows", () => {
   const db = testDb()
-  expect(db.query("SELECT version FROM schema_meta").get()).toEqual({ version: 18 })
+  expect(db.query("SELECT version FROM schema_meta").get()).toEqual({ version: 19 })
   expect(db.query("SELECT * FROM category_suggestions").all()).toEqual([])
   expect(db.query("SELECT pay_early FROM budget_cycle").get()).toEqual({ pay_early: 0 })
   const t = transaction({ source: "csv" })
@@ -180,10 +182,27 @@ test("fresh schema includes suggestions and v18 migrates a v17 database without 
     .run(t.id, t.dateRaw, t.dateISO, t.amount, t.description)
   db.exec("DROP TABLE category_suggestions; UPDATE schema_meta SET version = 17;")
   ensureSchema(db)
-  expect(db.query("SELECT version FROM schema_meta").get()).toEqual({ version: 18 })
+  expect(db.query("SELECT version FROM schema_meta").get()).toEqual({ version: 19 })
   expect(db.query("SELECT description FROM transactions WHERE id = ?").get(t.id)).toEqual({ description: t.description })
   const c = db.query<{ id: number }, []>("SELECT id FROM categories WHERE name = 'Groceries'").get()!
   const suggestion = { transactionId: t.id, categoryId: c.id, confidence: 1, source: "history" } satisfies Parameters<typeof saveSuggestions>[1][number]
   saveSuggestions(db, [suggestion])
   expect(loadSuggestions(db)).toEqual([suggestion])
+})
+
+test("v19: suggestions come from Jev; history's are kept, Clef's dropped", () => {
+  const db = testDb()
+  const groceries = db.query<{ id: number }, []>("SELECT id FROM categories WHERE name = 'Groceries'").get()!.id
+  for (const id of [1, 2]) db.query("INSERT INTO transactions (id, date_raw, date_iso, amount, description) VALUES (?, 'x', '2026-01-01', -1, 'x')").run(id)
+  db.exec(`DROP TABLE category_suggestions;
+    CREATE TABLE category_suggestions (transaction_id INTEGER PRIMARY KEY REFERENCES transactions(id) ON DELETE CASCADE,
+      category_id INTEGER NOT NULL REFERENCES categories(id) ON DELETE CASCADE, confidence REAL NOT NULL,
+      source TEXT NOT NULL CHECK(source IN ('history','clef')), created_at TEXT NOT NULL DEFAULT (datetime('now')));
+    INSERT INTO category_suggestions (transaction_id, category_id, confidence, source) VALUES (1, ${groceries}, 0.75, 'history'), (2, ${groceries}, 0.5, 'clef');
+    UPDATE schema_meta SET version = 18;`)
+  ensureSchema(db)
+  expect(db.query("SELECT version FROM schema_meta").get()).toEqual({ version: 19 })
+  expect(loadSuggestions(db)).toEqual([{ transactionId: 1, categoryId: groceries, confidence: 0.75, source: "history" }])
+  saveSuggestions(db, [{ transactionId: 2, categoryId: groceries, confidence: 0.9, source: "jev" }])
+  expect(loadSuggestions(db)).toHaveLength(2)
 })

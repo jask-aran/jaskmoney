@@ -1,6 +1,7 @@
 import { describe, expect, test } from "bun:test"
-import type { WorkersAiClient } from "../ai/workersAi"
-import { askCandidates, askLine, ASK_BATCH, ASK_LIMIT, judgeRows } from "./ask"
+import type { JevQuestion } from "../ai/jev"
+import { askCandidates, ASK_LIMIT, judgeRows } from "./ask"
+import { MATCH_AT } from "./questions"
 import { askTerms, evalFilter, filterExprString, hasDateTerm, mightMatch, parseFilterStrict, type AskVerdict, type FilterTxn } from "./filter"
 import { transaction } from "../testing/fixtures"
 
@@ -51,31 +52,27 @@ describe("asking Clef", () => {
     expect(askCandidates(many, "2026-10-27", true).rows[0]!.id).toBe(ASK_LIMIT + 3)
   })
 
-  test("a row reads as its description, signed amount, type, message, category and date", () => {
-    expect(askLine(transaction({ description: "Corner Bar", amount: -120, transactionType: "Payment", message: "Kestrel ram", categoryName: "Uncategorised", dateISO: "2026-09-06" })))
-      .toBe('Corner Bar; -$120.00; Payment; message "Kestrel ram"; category Uncategorised; 2026-09-06')
-  })
-
-  test("rows go in batches, each row its own question; a failed batch is reported and the rest land", async () => {
-    const rows = Array.from({ length: ASK_BATCH * 2 + 1 }, (_, i) => transaction({ id: i + 1, description: i % 2 ? "Cafe" : "Shop" }))
-    const sizes: number[] = []
-    let calls = 0
-    const ai: Pick<WorkersAiClient, "clef"> = { async clef(questions, state, model) {
-      expect(model).toBe("clef-flash")
-      if (++calls === 2) throw new Error("fake outage")
-      sizes.push(Object.keys(questions).length)
-      const lines = state.split("\n")
-      expect(questions.t1).toMatchObject({ type: "noul", instructions: expect.stringContaining('"coffee"') })
-      return Object.fromEntries(lines.map((l, i) => [`t${i + 1}`, { type: "noul" as const, noul: l.includes("Cafe") ? 0.9 : 0.1 }]))
+  test("each row is its own question, the transaction inline with its category; the words are the state; a match is 0.7 or more", async () => {
+    const rows = [transaction({ id: 1, description: "Alba Coffee", categoryId: 4, categoryName: "Restaurants & Cafes" }), transaction({ id: 2, description: "Bunnings" }), transaction({ id: 3, description: "Maybe" })]
+    const sent: { qs: Record<string, JevQuestion>; state: unknown }[] = []
+    const jev = { async judge(qs: Record<string, JevQuestion>, state: unknown) {
+      sent.push({ qs, state })
+      const p = (q: JevQuestion) => { const d = (q.instructions as { transaction: { description: string } }).transaction.description; return d === "Alba Coffee" ? 0.9 : d === "Maybe" ? 0.6 : 0.1 }
+      return Object.fromEntries(Object.entries(qs).map(([id, q]) => [id, { type: "noul" as const, noul: p(q) }]))
     } }
     const verdicts = new Map<number, boolean>()
+    await judgeRows(jev, "coffee", rows, { onJudged: (v) => v.forEach((m, id) => verdicts.set(id, m)) })
+    expect(sent).toHaveLength(1)
+    expect(sent[0]!.state).toEqual({ search: "coffee" })
+    expect(Object.values(sent[0]!.qs)[0]).toMatchObject({ type: "noul", instructions: { transaction: { description: "Alba Coffee", category: "Restaurants & Cafes" } } })
+    expect([...verdicts]).toEqual([[1, true], [2, false], [3, false]])
+    expect(MATCH_AT).toBe(0.7)
+  })
+
+  test("a failed request is reported and the rest carry on", async () => {
+    const rows = Array.from({ length: 3 }, (_, i) => transaction({ id: i + 1 }))
     const errors: unknown[] = []
-    await judgeRows(ai, "coffee", rows, { onJudged: (v) => v.forEach((m, id) => verdicts.set(id, m)), onError: (e) => errors.push(e) })
-    expect(calls).toBe(3)
+    await judgeRows({ judge: async () => { throw new Error("fake outage") } }, "coffee", rows, { onError: (e) => errors.push(e) })
     expect(errors).toHaveLength(1)
-    // Every row of the batches that answered has a verdict; the failed batch's rows have none.
-    expect(sizes).toHaveLength(2)
-    expect(verdicts.size).toBe(sizes.reduce((a, b) => a + b, 0))
-    expect([...verdicts].filter(([, m]) => m).every(([id]) => rows.find((t) => t.id === id)!.description === "Cafe")).toBe(true)
   })
 })

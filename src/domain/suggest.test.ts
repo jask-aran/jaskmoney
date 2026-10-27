@@ -1,7 +1,8 @@
 import { expect, test } from "bun:test"
-import type { WorkersAiClient } from "../ai/workersAi"
+import type { JevQuestion } from "../ai/jev"
 import { category, transaction } from "../testing/fixtures"
-import { clefQuestion, clefState, clefSuggestions, historySuggestions } from "./suggest"
+import { historySuggestions, jevSuggestions } from "./suggest"
+import { SUGGESTION_STATE, suggestionCriteria, transactionFacts } from "./questions"
 
 const categories = [category({ id: 1 }), category({ id: 2 }), category({ id: 3, isDefault: true, name: "Uncategorised" })]
 const evidence = (id: number, categoryId: number, amount = -10, dateISO = "2026-01-01") => transaction({ id, categoryId, categoryName: `Category ${categoryId}`, description: " SHOP ", amount, dateISO })
@@ -41,74 +42,54 @@ test("history excludes groups and uncategorised evidence and limits eligible tar
   expect(historySuggestions([transaction({ description: "unknown" })], tree)).toEqual([])
 })
 
-test("Clef question uses assignable keys, category paths and money notes", () => {
-  expect(clefQuestion([
+test("criteria: one per suggestable category, by path, with income and not-spending noted", () => {
+  const tree = [
     category({ id: 1, name: "Good Life" }), category({ id: 18, parentId: 1, name: "Holidays & Travel" }),
     category({ id: 2, name: "Income", income: true }), category({ id: 19, parentId: 2, name: "Salary" }),
     category({ id: 20, name: "Transfers", notSpending: true }), category({ id: 21, name: "Bonus", income: true }),
-    category({ id: 3, name: "Uncategorised", isDefault: true }),
-  ])).toMatchObject({ type: "choice", criteria: {
+  ]
+  expect(suggestionCriteria(tree.filter((c) => [18, 19, 20, 21].includes(c.id)), tree)).toEqual({
     c18: "Good Life › Holidays & Travel", c19: "Income › Salary (income)", c20: "Transfers (not spending: moving your own money)", c21: "Bonus (income)",
-  } })
-})
-
-test("Clef state supplies signed money, type, date and account", () => {
-  expect(clefState(transaction({ description: "SAM PARKER", amount: 882, transactionType: "Osko Payment Received", dateISO: "2026-02-03", accountName: "Spending" })))
-    .toBe("Description: SAM PARKER\nAmount: +$882.00 (money in)\nType: Osko Payment Received\nDate: 2026-02-03\nAccount: Spending")
-  expect(clefState(transaction({ amount: -12.5 }))).toBe("Description: x\nAmount: -$12.50 (money out)\nDate: 2026-10-05\nAccount: A")
-})
-
-test("Clef state carries the message, the bank's own text when it differs, and earlier categories", () => {
-  expect(clefState(transaction({ description: "Corner Bar", amount: -120, transactionType: "Payment", message: "Kestrel ram" })))
-    .toBe("Description: Corner Bar\nAmount: -$120.00 (money out)\nType: Payment\nMessage: Kestrel ram\nDate: 2026-10-05\nAccount: A")
-  expect(clefState(transaction({ description: "$friend_a", rawText: "Deniz Turkyilmaz" }), "Holidays & Travel ×2, Other income ×1"))
-    .toBe("Description: $friend_a\nAmount: -$10.00 (money out)\nBank text: Deniz Turkyilmaz\nDate: 2026-10-05\nAccount: A\nEarlier with this description: Holidays & Travel ×2, Other income ×1")
-  expect(clefState(transaction({ description: "Beem", rawText: "Beem" }))).not.toContain("Bank text")
-})
-
-test("Clef is told how rows with the same description were categorised", async () => {
-  const states: string[] = []
-  const ai: Pick<WorkersAiClient, "clef"> = { async clef(_q, state) { states.push(state); return { category: { type: "choice", choice: "c1", confidence: 0.5, probabilities: {} } } } }
-  await clefSuggestions(ai, [target()], categories, { history: [evidence(1, 1), evidence(2, 2), evidence(3, 1)] })
-  expect(states[0]).toContain("Earlier with this description: Category 1 ×2, Category 2 ×1")
-})
-
-test.each([1, 2, undefined])("Clef caps concurrency (%s), streams results, continues after failures and drops unknown keys", async (concurrency) => {
-  let active = 0, peak = 0
-  const errors: Array<[number, unknown]> = []
-  const arrived: number[] = []
-  const failure = new Error("fake failure")
-  const ai: Pick<WorkersAiClient, "clef"> = {
-    async clef(questions, state, model) {
-      expect(questions).toEqual({ category: clefQuestion(categories) })
-      expect(model).toBe("clef")
-      const id = Number(state.split("\n")[0]!.slice("Description: ".length))
-      active++
-      peak = Math.max(peak, active)
-      await Bun.sleep(2)
-      active--
-      if (id === 2) throw failure
-      return { category: { type: "choice", choice: id === 3 ? "c999" : id === 4 ? "c3" : "c1", confidence: 0.8, probabilities: {} } }
-    },
-  }
-  const results = await clefSuggestions(ai, Array.from({ length: 8 }, (_, id) => transaction({ id, description: String(id) })), categories, {
-    concurrency, onSuggestion: (s) => arrived.push(s.transactionId), onError: (id, error) => errors.push([id, error]),
   })
-  expect(peak).toBe(concurrency ?? 4)
-  expect(errors).toEqual([[2, failure]])
-  expect(results.map((s) => s.transactionId).sort()).toEqual([0, 1, 5, 6, 7])
-  expect(arrived).toEqual(results.map((s) => s.transactionId))
-  expect(results.every((s) => s.categoryId === 1 && s.confidence === 0.8 && s.source === "clef")).toBe(true)
 })
 
-test("Clef skips an empty category list and rejects invalid concurrency", async () => {
-  const ai: Pick<WorkersAiClient, "clef"> = { clef: async () => { throw new Error("must not call") } }
-  expect(await clefSuggestions(ai, [target()], [])).toEqual([])
-  await expect(clefSuggestions(ai, [target()], categories, { concurrency: 0 })).rejects.toThrow("concurrency must be a positive integer")
+test("Jev sees the transaction as named facts: signed money, direction, type, message, the bank's own text when it differs, earlier categories", () => {
+  expect(transactionFacts(transaction({ description: "Corner Bar", amount: -120, transactionType: "Payment", message: "Kestrel ram" })))
+    .toEqual({ description: "Corner Bar", amount: "-$120.00", direction: "money out", bank_type: "Payment", message: "Kestrel ram" })
+  expect(transactionFacts(transaction({ description: "$friend_a", amount: 23, rawText: "Deniz Turkyilmaz" }), { earlier: "Holidays & Travel ×2" }))
+    .toEqual({ description: "$friend_a", amount: "+$23.00", direction: "money in", bank_text: "Deniz Turkyilmaz", categorised_before: "Holidays & Travel ×2" })
+  expect(transactionFacts(transaction({ description: "Beem", rawText: "Beem" }))).not.toHaveProperty("bank_text")
+  // The category only where asked, and only a real one.
+  expect(transactionFacts(transaction({ categoryId: 4, categoryName: "Groceries" }), { category: true })).toHaveProperty("category", "Groceries")
+  expect(transactionFacts(transaction({ categoryId: 4, categoryName: "Groceries" }))).not.toHaveProperty("category")
+  expect(transactionFacts(transaction({ categoryName: "Uncategorised" }), { category: true })).not.toHaveProperty("category")
 })
 
+test("each row is its own question with the transaction inline; Jev is told how rows with the same description were categorised", async () => {
+  const seen: Record<string, JevQuestion>[] = []
+  const jev = { async judge(qs: Record<string, JevQuestion>, state: unknown) {
+    expect(state).toBe(SUGGESTION_STATE)
+    seen.push(qs)
+    return Object.fromEntries(Object.keys(qs).map((id) => [id, { type: "choice" as const, choice: "c1", confidence: 0.5, probabilities: { c1: 0.7, c2: 0.3 } }]))
+  } }
+  const results = await jevSuggestions(jev, [target(), target(11)], categories, { history: [evidence(1, 1), evidence(2, 2), evidence(3, 1)] })
+  expect(seen).toHaveLength(1)
+  const q = Object.values(seen[0]!)[0]!
+  expect(q).toMatchObject({ type: "choice", criteria: { c1: "Category 1", c2: "Category 2" } })
+  expect((q.instructions as { transaction: Record<string, string> }).transaction.categorised_before).toBe("Category 1 ×2, Category 2 ×1")
+  // Confidence is Jev's probability for its pick, not its distribution's peakedness.
+  expect(results).toEqual([{ transactionId: 10, categoryId: 1, confidence: 0.7, source: "jev" }, { transactionId: 11, categoryId: 1, confidence: 0.7, source: "jev" }])
+})
 
-test("Clef drops a group key even when it names an existing category", async () => {
-  const ai: Pick<WorkersAiClient, "clef"> = { clef: async () => ({ category: { type: "choice", choice: "c1", probabilities: {}, confidence: 1 } }) }
-  expect(await clefSuggestions(ai, [target()], [...categories, category({ id: 4, parentId: 1 })])).toEqual([])
+test("unknown and group picks are dropped; a failed request reports its rows; no categories, no request", async () => {
+  const tree = [...categories, category({ id: 4, parentId: 1 })]
+  const errors: Array<[number[], unknown]> = []
+  const pick = (choice: string) => ({ async judge(qs: Record<string, JevQuestion>) { return Object.fromEntries(Object.keys(qs).map((id) => [id, { type: "choice" as const, choice, confidence: 1, probabilities: { [choice]: 1 } }])) } })
+  expect(await jevSuggestions(pick("c999"), [target()], tree)).toEqual([])
+  expect(await jevSuggestions(pick("c1"), [target()], tree)).toEqual([])
+  expect(await jevSuggestions(pick("c4"), [target()], tree)).toHaveLength(1)
+  const failure = new Error("fake failure")
+  expect(await jevSuggestions({ judge: async () => { throw failure } }, [target(), target(11)], tree, { onError: (ids, e) => errors.push([ids, e]) })).toEqual([])
+  expect(errors).toEqual([[[10, 11], failure]])
+  expect(await jevSuggestions({ judge: async () => { throw new Error("must not call") } }, [target()], [])).toEqual([])
 })

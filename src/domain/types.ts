@@ -170,9 +170,9 @@ export interface Transaction {
 export interface CategorySuggestion {
   transactionId: number
   categoryId: number
-  /** 0–1. history: the share of matching rows in that category. clef: Clef's `confidence`. */
+  /** 0–1. history: count / (matching rows + 1). jev: Jev's probability for its pick. */
   confidence: number
-  source: "history" | "clef"
+  source: "history" | "jev"
 }
 
 export type SortColumn = "date" | "amount" | "description" | "category" | "account"

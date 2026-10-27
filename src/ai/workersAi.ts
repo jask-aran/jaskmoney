@@ -1,8 +1,7 @@
 /**
- * Cloudflare Workers AI decision models. Clef answers typed questions about
- * a state with probabilities (here: which category, which period); Clairic
- * extracts typed values from text (here: amounts, dates and words from a
- * search). Neither writes prose. Requests go only to api.cloudflare.com.
+ * Cloudflare Workers AI's Clairic: extracts typed values from text (here:
+ * amounts, dates and words from a search), never prose. Requests go only to
+ * api.cloudflare.com. Typed judgments come from Jev (`./jev`).
  */
 
 export class WorkersAiError extends Error {
@@ -29,14 +28,6 @@ export function hasWorkersAi(env: Record<string, string | undefined> = process.e
   return !!env.JASKMONEY_CF_TOKEN?.trim() && !!env.JASKMONEY_CF_ACCOUNT_ID?.trim()
 }
 
-export type ClefQuestion =
-  | { type: "noul"; instructions: string }
-  | { type: "choice"; instructions: string; criteria: Record<string, string> }
-
-export type ClefAnswer =
-  | { type: "noul"; noul: number }
-  | { type: "choice"; choice: string; probabilities: Record<string, number>; confidence: number }
-
 export type ClairicField = { type: "text" | "number" | "date"; instructions?: string; decimals?: number }
 
 /** A Clairic value: null when the text doesn't determine it. `guess` is
@@ -50,16 +41,6 @@ type Fetch = (input: string | URL | Request, init?: RequestInit) => Promise<Resp
 
 function object(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value)
-}
-
-function clefAnswer(value: unknown): ClefAnswer | null {
-  if (!object(value)) return null
-  if (value.type === "noul" && typeof value.noul === "number") return { type: "noul", noul: value.noul }
-  if (value.type === "choice" && typeof value.choice === "string" && object(value.probabilities) && typeof value.confidence === "number" &&
-    Object.values(value.probabilities).every((p) => typeof p === "number")) {
-    return { type: "choice", choice: value.choice, probabilities: value.probabilities as Record<string, number>, confidence: value.confidence }
-  }
-  return null
 }
 
 function clairicAnswer(value: unknown): ClairicAnswer | null {
@@ -114,10 +95,6 @@ export function createWorkersAiClient({ token, accountId, fetch = globalThis.fet
   }
 
   return {
-    /** Clef's answers to `questions` about `state`. Clef-flash is faster, Clef more precise. */
-    clef(questions: Record<string, ClefQuestion>, state: string, model: "clef" | "clef-flash" = "clef") {
-      return answers(model, { state, questions }, Object.keys(questions), clefAnswer)
-    },
     /** Clairic's values for `fields` in `state`; `referenceDate` anchors dates written without a year. */
     clairic(fields: Record<string, ClairicField>, state: string, referenceDate: string) {
       return answers("clairic", { state, fields, reference_date: referenceDate }, Object.keys(fields), clairicAnswer)

@@ -1,11 +1,11 @@
 import { expect, onTestFinished, spyOn, test } from "bun:test"
-import type { WorkersAiClient } from "../ai/workersAi"
+import type { JevClient, JevQuestion } from "../ai/jev"
 import { addDays, appToday } from "../domain/days"
 import { testEnv } from "../testing/scoped"
 import { data } from "./dataStore"
 
 function setup() {
-  testEnv("JASKMONEY_CF_TOKEN", "")
+  testEnv("JASKMONEY_JEV_TOKEN", "")
   const network = spyOn(globalThis, "fetch").mockImplementation(Object.assign(() => { throw new Error("network is forbidden") }, { preconnect: globalThis.fetch.preconnect }))
   onTestFinished(() => {
     try { expect(network).not.toHaveBeenCalled() } finally { network.mockRestore() }
@@ -25,13 +25,13 @@ function setup() {
   onTestFinished(() => { data.clearFilter(); data.init(":memory:") })
 }
 
-/** A fake Clef: coffee is anything with Coffee, Espresso or Cafe in it. Records what it was sent. */
-function fakeClef() {
+/** A fake Jev: coffee is anything with Coffee, Espresso or Cafe in it. Records what it was sent. */
+function fakeJev() {
   const sent: string[] = []
-  const ai: Pick<WorkersAiClient, "clef"> = { async clef(questions, state) {
-    const lines = state.split("\n")
-    sent.push(...lines.map((l) => l.split(";")[0]!.replace(/^T\d+: /, "")))
-    return Object.fromEntries(lines.map((l, i) => [`t${i + 1}`, { type: "noul" as const, noul: /coffee|espresso|cafe/i.test(l) ? 0.9 : 0.1 }]))
+  const description = (q: JevQuestion) => (q.instructions as { transaction: { description: string } }).transaction.description
+  const ai: Pick<JevClient, "judge"> = { async judge(questions) {
+    sent.push(...Object.values(questions).map(description))
+    return Object.fromEntries(Object.entries(questions).map(([id, q]) => [id, { type: "noul" as const, noul: /coffee|espresso|cafe/i.test(description(q)) ? 0.9 : 0.1 }]))
   } }
   return { ai, sent }
 }
@@ -39,7 +39,7 @@ const shown = () => data.scopedTransactions().map((t) => t.description).sort()
 
 test("ask: shows nothing until judged, then the matches; sends only rows the rest of the filter allows, from the window", async () => {
   setup()
-  const { ai, sent } = fakeClef()
+  const { ai, sent } = fakeJev()
   data.commitFilter("ask:coffee AND amt:<=-6")
   expect(shown()).toEqual([])
   const summary = await data.askAbout(ai)
@@ -59,7 +59,7 @@ test("ask: shows nothing until judged, then the matches; sends only rows the res
 
 test("a date term widens the window; without one the summary says what was left out", async () => {
   setup()
-  const { ai } = fakeClef()
+  const { ai } = fakeJev()
   data.commitFilter("ask:coffee")
   expect(await data.askAbout(ai)).toBe('ask "coffee": 2 of 3 match · judged the last 90 days (add date: to look further)')
   data.commitFilter(`ask:coffee AND date:${addDays(appToday(), -365)}..${appToday()}`)
@@ -67,11 +67,11 @@ test("a date term widens the window; without one the summary says what was left 
   expect(shown()).toEqual(["Alba Coffee", "Espresso Bar", "Old Cafe"])
 })
 
-test("clearing the filter stops a run; no Workers AI is an error, not an empty result", async () => {
+test("clearing the filter stops a run; no Jev is an error, not an empty result", async () => {
   setup()
   let release = () => {}
   const gate = new Promise<void>((resolve) => { release = resolve })
-  const ai: Pick<WorkersAiClient, "clef"> = { async clef() { await gate; return {} } }
+  const ai: Pick<JevClient, "judge"> = { async judge() { await gate; return {} } }
   data.commitFilter("ask:coffee")
   const running = data.askAbout(ai)
   expect(data.state.asking).toMatchObject({ words: "coffee", judged: 0, total: 3 })
@@ -80,5 +80,5 @@ test("clearing the filter stops a run; no Workers AI is an error, not an empty r
   expect(await running).toBe("")
   expect(data.state.asking).toBeNull()
   data.commitFilter("ask:coffee")
-  await expect(data.askAbout()).rejects.toThrow("JASKMONEY_CF_TOKEN")
+  await expect(data.askAbout()).rejects.toThrow("JASKMONEY_JEV_TOKEN")
 })

@@ -23,24 +23,6 @@ describe("Workers AI client", () => {
     expect(hasWorkersAi({ JASKMONEY_CF_TOKEN: "t", JASKMONEY_CF_ACCOUNT_ID: " " })).toBe(false)
   })
 
-  test("Clef: posts the questions to the model on api.cloudflare.com and returns typed answers", async () => {
-    const { calls, ai } = client(() => ok({
-      category: { type: "choice", choice: "travel", probabilities: { travel: 0.9, food: 0.1 }, confidence: 0.8 },
-      payback: { type: "noul", noul: 0.7 },
-    }))
-    const answers = await ai.clef({
-      category: { type: "choice", instructions: "Which?", criteria: { travel: "Trips", food: "Eating" } },
-      payback: { type: "noul", instructions: "Payback?" },
-    }, "state", "clef-flash")
-    expect(answers).toEqual({
-      category: { type: "choice", choice: "travel", probabilities: { travel: 0.9, food: 0.1 }, confidence: 0.8 },
-      payback: { type: "noul", noul: 0.7 },
-    })
-    expect(calls[0]!.url).toBe(`https://api.cloudflare.com/client/v4/accounts/${accountId}/ai/run/@cf/cloudflare/clef-flash`)
-    expect(calls[0]!.auth).toBe(`Bearer ${token}`)
-    expect(calls[0]!.body).toMatchObject({ model: "clef-flash", state: "state" })
-  })
-
   test("Clairic: sends the reference date; keeps value and confidence, not the guess", async () => {
     const { calls, ai } = client(() => ok({
       words: { type: "text", value: "coffee", span: [0, 6], confidence: 0.99, p_null: 0.01, guess: "coffee" },
@@ -53,7 +35,7 @@ describe("Workers AI client", () => {
 
   test("errors carry the API's message with the token and account redacted", async () => {
     const { ai } = client(() => Response.json({ success: false, errors: [{ message: `bad token ${token} for ${accountId}` }] }, { status: 401 }))
-    const error = await ai.clef({ q: { type: "noul", instructions: "?" } }, "s").catch((e: unknown) => e)
+    const error = await ai.clairic({ q: { type: "text" } }, "s", "2026-10-27").catch((e: unknown) => e)
     expect(error).toBeInstanceOf(WorkersAiError)
     expect((error as WorkersAiError).status).toBe(401)
     expect(String((error as Error).message)).not.toContain(token)
@@ -61,8 +43,8 @@ describe("Workers AI client", () => {
   })
 
   test("a missing or malformed answer is an error, not a silent gap", async () => {
-    const { ai } = client(() => ok({ q: { type: "choice", choice: "x" } }))
-    await expect(ai.clef({ q: { type: "noul", instructions: "?" } }, "s")).rejects.toThrow("no usable answer for q")
+    const { ai } = client(() => ok({ q: { type: "text", value: { nested: true } } }))
+    await expect(ai.clairic({ q: { type: "text" } }, "s", "2026-10-27")).rejects.toThrow("no usable answer for q")
   })
 
   test("a request that takes too long is abandoned", async () => {
@@ -70,6 +52,6 @@ describe("Workers AI client", () => {
       init?.signal?.addEventListener("abort", () => reject(Object.assign(new Error("aborted"), { name: "AbortError" })))
     })
     const ai = createWorkersAiClient({ token, accountId, fetch, timeoutMs: 10 })
-    await expect(ai.clef({ q: { type: "noul", instructions: "?" } }, "s")).rejects.toThrow("timed out")
+    await expect(ai.clairic({ q: { type: "text" } }, "s", "2026-10-27")).rejects.toThrow("timed out")
   })
 })

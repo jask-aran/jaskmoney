@@ -1,18 +1,20 @@
-import type { ClairicAnswer, ClairicField, ClefAnswer, ClefQuestion, WorkersAiClient } from "../ai/workersAi"
+import type { JevAnswer, JevClient } from "../ai/jev"
+import type { ClairicAnswer, ClairicField, WorkersAiClient } from "../ai/workersAi"
 import { cycleFor, type CycleConfig } from "./budget"
 import { addDays, addMonths } from "./days"
 import { categoryTerm } from "./drill"
 import { anyOf, filterTerm } from "./filter"
+import { FLOWS, PERIODS, searchQuestions, type Flow, type Period } from "./questions"
 import type { Category } from "./types"
 
 /**
  * Smart search: a plain-English query ("coffee over $5 last month") becomes an
  * ordinary filter expression the user can read and edit. Clairic extracts the
- * values written in it (words, amounts, explicit dates); Clef decides what it
+ * values written in it (words, amounts, explicit dates); Jev decides what it
  * asks about (the period, spending or income, a payee or a kind of thing).
  * Periods are worked out here, not by the model, so "last month" and "this
  * cycle" are exact. The words become `cat:` when they name one of the user's
- * categories, `desc:` when they name a payee, else `ask:` (Clef judges rows).
+ * categories, `desc:` when they name a payee, else `ask:` (Jev judges rows).
  */
 
 /** What Clairic reads from the query. No example values in the
@@ -25,50 +27,10 @@ export const SEARCH_FIELDS: Record<string, ClairicField> = {
   to: { type: "date", instructions: "An explicit last date the user wrote. Empty for relative periods." },
 }
 
-export const PERIODS = {
-  any: "No period mentioned",
-  this_cycle: "This budget cycle, or since payday",
-  last_cycle: "The previous budget cycle",
-  this_month: "This calendar month",
-  last_month: "Last calendar month",
-  last_30: "The last 30 days, or the past month",
-  last_90: "The last 3 months or 90 days",
-  this_year: "This year",
-  last_year: "Last year",
-  explicit: "Specific dates are given",
-} as const
-export type Period = keyof typeof PERIODS
-
-const FLOWS = {
-  any: "Not specified",
-  spending: "Spending, purchases, money out",
-  money_in: "Money received from someone, refunds, paybacks",
-  income: "Income: pay, salary, interest, earnings",
-} as const
-export type Flow = keyof typeof FLOWS
-
-/** Clef's questions about the query: the period, the kind of money, and
- * whether (and which) category it names. Categories are keyed `c<id>`. */
-export function searchQuestions(categories: Category[]): Record<string, ClefQuestion> {
-  const byId = new Map(categories.map((c) => [c.id, c]))
-  const criteria: Record<string, string> = { none: "No category is named" }
-  for (const c of categories) {
-    if (c.isDefault) continue
-    const parent = c.parentId != null ? byId.get(c.parentId) : undefined
-    criteria[`c${c.id}`] = parent ? `${parent.name} › ${c.name}` : c.name
-  }
-  return {
-    period: { type: "choice", instructions: "Which period does the search ask about?", criteria: { ...PERIODS } },
-    flow: { type: "choice", instructions: "What kind of money is asked about?", criteria: { ...FLOWS } },
-    names_payee: { type: "noul", instructions: "Does the search name a particular shop, merchant, company, app or person, rather than a kind of thing or spending?" },
-    category: { type: "choice", instructions: "Which category does the search ask about?", criteria },
-  }
-}
-
 export interface ParsedSearch {
   /** Description words (a payee). */
   words: string | null
-  /** Words for Clef to judge rows by (a kind of thing). */
+  /** Words for Jev to judge rows by (a kind of thing). */
   ask: string | null
   atLeast: number | null
   atMost: number | null
@@ -89,11 +51,11 @@ export function categoriesNamed(words: string, categories: Category[]): Category
 }
 
 /** The models' answers as a search. The words are a category when they name
- * one of `categories` (Clef's pick breaks ties), a payee to find in the
- * description when Clef says so, else something for Clef to judge rows by.
+ * one of `categories` (Jev's pick breaks ties), a payee to find in the
+ * description when Jev says so, else something for Jev to judge rows by.
  * Equal bounds come from one phrase ("over $20" read both ways): the lower
  * bound is kept. */
-export function parsedSearch(values: Record<string, ClairicAnswer>, answers: Record<string, ClefAnswer>, categories: Category[]): ParsedSearch {
+export function parsedSearch(values: Record<string, ClairicAnswer>, answers: Record<string, JevAnswer>, categories: Category[]): ParsedSearch {
   const choice = (id: string) => { const a = answers[id]; return a?.type === "choice" ? a.choice : null }
   const value = (id: string) => values[id]?.value ?? null
   const text = (id: string) => { const v = value(id); return typeof v === "string" && v.trim() ? v.trim() : null }
@@ -172,11 +134,10 @@ export function searchFilter(p: ParsedSearch, ctx: { today: string; cycle: Cycle
 
 /** Ask both models about `query` (in parallel) and build its filter. When
  * nothing usable comes back, the query itself is the filter (plain text). */
-export async function smartSearch(ai: Pick<WorkersAiClient, "clef" | "clairic">, query: string, ctx: { today: string; cycle: CycleConfig; categories: Category[] }): Promise<{ expr: string; parsed: ParsedSearch }> {
+export async function smartSearch(ai: { clairic: WorkersAiClient["clairic"]; jev: Pick<JevClient, "judge"> }, query: string, ctx: { today: string; cycle: CycleConfig; categories: Category[] }): Promise<{ expr: string; parsed: ParsedSearch }> {
   const [values, answers] = await Promise.all([
     ai.clairic(SEARCH_FIELDS, query, ctx.today),
-    // Full Clef: Clef-flash mistook "this cycle" and "last month" for the last 30 days.
-    ai.clef(searchQuestions(ctx.categories), query, "clef"),
+    ai.jev.judge(searchQuestions(ctx.categories), query),
   ])
   const parsed = parsedSearch(values, answers, ctx.categories)
   const expr = searchFilter(parsed, ctx)

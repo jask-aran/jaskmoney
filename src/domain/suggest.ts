@@ -1,18 +1,15 @@
-import type { ClefQuestion, WorkersAiClient } from "../ai/workersAi"
+import { judgeEach, type JevClient } from "../ai/jev"
 import { assignableCategories } from "./categoryOptions"
-import { formatMoney } from "./dashboard"
 import { isOrdinaryFlow, isUncategorised } from "./moneyRules"
+import { SUGGESTION_STATE, suggestionCriteria, suggestionQuestion } from "./questions"
 import type { Category, CategorySuggestion, Transaction } from "./types"
 
 /**
  * Category suggestions for uncategorised transactions, for the user to accept
  * or dismiss (nothing is categorised automatically): from history (the same
- * description already categorised) first, then from Clef choosing among the
+ * description already categorised) first, then from Jev choosing among the
  * user's categories.
  */
-
-/** Confidence at which accept-all (`Y`) takes a suggestion unseen. */
-export const ACCEPT_ALL_AT = 0.8
 
 /** Categories a suggestion may name: assignable ones, not Uncategorised. */
 function suggestionCategories(categories: Category[]): Category[] {
@@ -60,11 +57,11 @@ function historyEvidence(transactions: Transaction[], categories: Category[]): (
 }
 
 /**
- * Suggestions history settles without asking Clef: for an ordinary
+ * Suggestions history settles without asking Jev: for an ordinary
  * uncategorised merchant row (not person-to-person, no message of its own)
  * whose description at least HISTORY_MIN_ROWS earlier rows share, nearly all
  * in one category. Confidence shrinks for small samples: count / (total + 1),
- * so 3 of 3 is 0.75. Everything else goes to Clef with the history as context.
+ * so 3 of 3 is 0.75. Everything else goes to Jev with the history as context.
  */
 export function historySuggestions(transactions: Transaction[], categories: Category[], targetIds?: ReadonlySet<number>): CategorySuggestion[] {
   const evidence = historyEvidence(transactions, categories)
@@ -80,74 +77,39 @@ export function historySuggestions(transactions: Transaction[], categories: Cate
   return suggestions
 }
 
-/** Clef's question: one choice per suggestable category, keyed `c<id>`,
- * described by its path and whether it is income or not spending. */
-export function clefQuestion(categories: Category[]): ClefQuestion {
-  const criteria: Record<string, string> = {}
-  for (const c of suggestionCategories(categories)) {
-    const parent = categories.find((p) => p.id === c.parentId)
-    criteria[`c${c.id}`] = `${parent ? `${parent.name} › ` : ""}${c.name}${c.income || parent?.income ? " (income)" : ""}${c.notSpending ? " (not spending: moving your own money)" : ""}`
-  }
-  return {
-    type: "choice",
-    instructions: "Which category does this bank transaction belong in? The description may be a person's name or a payment app rather than a shop: then the message, if any, says what the money was for, and the description says nothing about the category.",
-    criteria,
-  }
-}
-
-/** The facts Clef sees about a transaction, one per line: what the bank
- * says, the payment's message, and how rows with the same description were
- * categorised before (`earlier`, as "Groceries ×3, Takeaway ×1"). */
-export function clefState(t: Transaction, earlier = ""): string {
-  return [
-    `Description: ${t.description}`,
-    `Amount: ${t.amount < 0 ? "-" : "+"}${formatMoney(Math.abs(t.amount))} (${t.amount < 0 ? "money out" : "money in"})`,
-    ...(t.transactionType == null ? [] : [`Type: ${t.transactionType}`]),
-    ...(t.message == null ? [] : [`Message: ${t.message}`]),
-    ...(t.rawText == null || t.rawText === t.description ? [] : [`Bank text: ${t.rawText}`]),
-    `Date: ${t.dateISO}`,
-    `Account: ${t.accountName}`,
-    ...(earlier ? [`Earlier with this description: ${earlier}`] : []),
-  ].join("\n")
-}
-
-/** Ask Clef about each transaction, `concurrency` at a time, telling it how
- * rows with the same description in `history` were categorised. Answers
- * naming no suggestable category are dropped; a failed call is reported
- * through `onError` and the rest carry on. */
-export async function clefSuggestions(
-  ai: Pick<WorkersAiClient, "clef">,
+/**
+ * Ask Jev about each transaction (packed into as few requests as fit),
+ * telling it how rows with the same description in `history` were
+ * categorised. Confidence is Jev's probability for its pick. Picks naming no
+ * suggestable category are dropped; a failed request is reported through
+ * `onError` with its rows, and the rest carry on.
+ */
+export async function jevSuggestions(
+  jev: Pick<JevClient, "judge">,
   transactions: Transaction[],
   categories: Category[],
-  options: { history?: Transaction[]; concurrency?: number; onSuggestion?: (s: CategorySuggestion) => void; onError?: (transactionId: number, error: unknown) => void } = {},
+  options: { history?: Transaction[]; onSuggestion?: (s: CategorySuggestion) => void; onError?: (transactionIds: number[], error: unknown) => void } = {},
 ): Promise<CategorySuggestion[]> {
-  const concurrency = options.concurrency ?? 4
-  if (!Number.isInteger(concurrency) || concurrency < 1) throw new Error("concurrency must be a positive integer")
-  const question = clefQuestion(categories)
-  const categoryIds = new Map(suggestionCategories(categories).map((c) => [`c${c.id}`, c.id]))
+  const suggestable = suggestionCategories(categories)
+  if (!suggestable.length || !transactions.length) return []
+  const criteria = suggestionCriteria(suggestable, categories)
+  const categoryIds = new Map(suggestable.map((c) => [`c${c.id}`, c.id]))
   const names = new Map(categories.map((c) => [c.id, c.name]))
   const evidence = historyEvidence(options.history ?? [], categories)
   const earlier = (t: Transaction) => evidence(t).ranked.map((e) => `${names.get(e.categoryId)} ×${e.count}`).join(", ")
-  if (!categoryIds.size) return []
   const suggestions: CategorySuggestion[] = []
-  let next = 0
-  async function worker() {
-    for (;;) {
-      const t = transactions[next++]
-      if (!t) return
-      try {
-        const answer = (await ai.clef({ category: question }, clefState(t, earlier(t)), "clef")).category
-        if (answer?.type !== "choice") continue
+  await judgeEach(jev, transactions, (t) => suggestionQuestion(t, criteria, earlier(t)), SUGGESTION_STATE, {
+    onAnswers: (answers) => {
+      for (const [t, answer] of answers) {
+        if (answer.type !== "choice") continue
         const categoryId = categoryIds.get(answer.choice)
         if (categoryId == null) continue
-        const suggestion: CategorySuggestion = { transactionId: t.id, categoryId, confidence: answer.confidence, source: "clef" }
+        const suggestion: CategorySuggestion = { transactionId: t.id, categoryId, confidence: answer.probabilities[answer.choice] ?? answer.confidence, source: "jev" }
         options.onSuggestion?.(suggestion)
         suggestions.push(suggestion)
-      } catch (error) {
-        options.onError?.(t.id, error)
       }
-    }
-  }
-  await Promise.all(Array.from({ length: Math.min(concurrency, transactions.length) }, worker))
+    },
+    onError: (error, rows) => options.onError?.(rows.map((t) => t.id), error),
+  })
   return suggestions
 }

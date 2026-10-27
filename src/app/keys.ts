@@ -12,7 +12,7 @@ import { runSync } from "./sync"
 import { runSmartSearch } from "./smartSearch"
 import { runAsk } from "./ask"
 import { runAccept, toggleUncategorised } from "./suggest"
-import { ACCEPT_ALL_AT } from "../domain/suggest"
+import { ACCEPT_ALL_AT } from "../domain/questions"
 import { CHART_VIEWS, JUMP_TARGETS, SETTINGS_SECTIONS, TABS, settingsSectionFocus, type ScopeId, type UiState, type UiStore } from "../state/uiStore"
 import type { DataStore } from "../state/dataStore"
 import {

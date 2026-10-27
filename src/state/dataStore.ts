@@ -48,8 +48,8 @@ import {
 import { normaliseSelection, selectedAccounts, type AccountSelection } from "../domain/accountTree"
 import { paydays, type Budget, type BudgetScope, type CycleConfig } from "../domain/budget"
 import { buildImportPreview, commitImportPreview, matchingProfiles } from "../domain/profileImport"
-import { createWorkersAiClient, hasWorkersAi, readWorkersAiCredentials, type WorkersAiClient } from "../ai/workersAi"
-import { historySuggestions, clefSuggestions } from "../domain/suggest"
+import { hasJev, jevClient, type JevClient } from "../ai/jev"
+import { historySuggestions, jevSuggestions } from "../domain/suggest"
 import { isOrdinaryFlow, isUncategorised } from "../domain/moneyRules"
 import { createUpClient, readUpToken } from "../up/client"
 import { pushTransactions } from "../up/push"
@@ -80,7 +80,7 @@ export interface DataState {
   suggestions: Record<number, CategorySuggestion>
   /** The Transactions table shows only ordinary uncategorised rows. */
   uncategorisedOnly: boolean
-  /** Clef is judging rows for an `ask:` term. */
+  /** Jev is judging rows for an `ask:` term. */
   asking: { words: string; judged: number; total: number } | null
   dbPath: string
   accounts: Account[]
@@ -207,8 +207,6 @@ function createDataStore() {
 
   /** An Up client for the token in the environment now. */
   const upClient = () => createUpClient({ token: readUpToken() })
-  /** A Workers AI client for the credentials in the environment now. */
-  const aiClient = () => createWorkersAiClient(readWorkersAiCredentials())
 
   function init(dbPath?: string) {
     // Verdicts are per row id, and a new database reuses ids.
@@ -243,7 +241,7 @@ function createDataStore() {
     return transactions().filter((t) => t.accountId != null && ids.has(t.accountId))
   }))
 
-  /** Clef's verdicts on `ask:` terms for this session: words (lower-cased)
+  /** Jev's verdicts on `ask:` terms for this session: words (lower-cased)
    * → row id → match. Each new batch bumps `askVersion`. */
   const askVerdicts = new Map<string, Map<number, boolean>>()
   const [askVersion, setAskVersion] = createSignal(0)
@@ -375,10 +373,11 @@ function createDataStore() {
 
   /**
    * Suggest categories for ordinary uncategorised rows (`ids` narrows them)
-   * that have none yet: history first, then Clef when Workers AI is set up,
-   * each saved as it arrives. `ai` replaces the Workers AI client (tests).
+   * that have none yet: history first, then Jev when it is set up, each
+   * request's suggestions saved as they arrive. `ai` replaces the Jev client
+   * (tests).
    */
-  async function suggestCategories(ids?: number[], ai?: Pick<WorkersAiClient, "clef">): Promise<string> {
+  async function suggestCategories(ids?: number[], ai?: Pick<JevClient, "judge">): Promise<string> {
     if (state.suggesting) throw new Error("Category suggestions are already running")
     if (!db) throw new Error("db not open")
     const database = db
@@ -390,25 +389,25 @@ function createDataStore() {
       saveSuggestions(database, history)
       refresh()
       const failures: string[] = []
-      let clef = 0
-      const enabled = !!ai || hasWorkersAi()
+      let fromJev = 0
+      const enabled = !!ai || hasJev()
       if (enabled) {
         const targetIds = new Set(targets.map((t) => t.id))
         const remaining = transactions().filter((t) => targetIds.has(t.id) && !state.suggestions[t.id] && isOrdinaryFlow(t) && isUncategorised(t))
-        if (remaining.length) await clefSuggestions(ai ?? aiClient(), remaining, state.categories, {
+        if (remaining.length) await jevSuggestions(ai ?? jevClient(), remaining, state.categories, {
           history: transactions(),
           onSuggestion: (s) => {
             const current = transactions().find((t) => t.id === s.transactionId)
             if (!current || !isOrdinaryFlow(current) || !isUncategorised(current) || state.suggestions[s.transactionId]) return
             saveSuggestions(database, [s])
             setState("suggestions", s.transactionId, s)
-            clef++
+            fromJev++
           },
-          onError: (_id, error) => failures.push(error instanceof Error ? error.message : String(error)),
+          onError: (ids, error) => failures.push(`${ids.length} rows: ${error instanceof Error ? error.message : String(error)}`),
         })
       }
-      const parts = [`Suggested ${history.length + clef}: ${history.length} from history, ${clef} from Clef`]
-      if (!enabled) parts.push("Workers AI is not set up")
+      const parts = [`Suggested ${history.length + fromJev}: ${history.length} from history, ${fromJev} from Jev`]
+      if (!enabled) parts.push("Jev is not set up (JASKMONEY_JEV_TOKEN)")
       if (failures.length) parts.push(`${failures.length} failed: ${failures[0]}`)
       return parts.join(" · ")
     } finally {
@@ -417,19 +416,19 @@ function createDataStore() {
   }
 
   /**
-   * Have Clef judge the rows the current filter's `ask:` terms are waiting
+   * Have Jev judge the rows the current filter's `ask:` terms are waiting
    * on: those the rest of the filter leaves possible, not judged yet, from
    * the last ASK_DEFAULT_DAYS unless the filter limits dates, at most
    * ASK_LIMIT, newest first. Matches show as each batch lands. Returns a
    * summary, or "" when a newer run or a cleared filter took over.
    */
-  async function askAbout(ai?: Pick<WorkersAiClient, "clef">): Promise<string> {
+  async function askAbout(ai?: Pick<JevClient, "judge">): Promise<string> {
     const expr = state.filterExpr ? unwrap(state.filterExpr) : null
     const terms = askTerms(expr)
     if (!terms.length) return ""
-    if (!ai && !hasWorkersAi()) throw new Error("Set JASKMONEY_CF_TOKEN and JASKMONEY_CF_ACCOUNT_ID to use ask:")
+    if (!ai && !hasJev()) throw new Error("Set JASKMONEY_JEV_TOKEN (a TypeSafe API key) to use ask:")
     const run = ++askRun
-    const client = ai ?? aiClient()
+    const client = ai ?? jevClient()
     const parts: string[] = []
     const failures: string[] = []
     try {
@@ -438,7 +437,7 @@ function createDataStore() {
         const key = words.toLowerCase()
         const known = askVerdicts.get(key) ?? new Map<number, boolean>()
         askVerdicts.set(key, known)
-        // Rows the rest of the filter allows, whatever Clef says about these words.
+        // Rows the rest of the filter allows, whatever Jev says about these words.
         const others: AskVerdict<Transaction> = (w, t) => w.toLowerCase() === key ? undefined : askVerdict(w, t)
         const possible = accountScoped().filter((t) => inView(t) && mightMatch(expr, t, others))
         const { rows, skipped } = askCandidates(possible, appToday(), hasDateTerm(expr))
@@ -464,7 +463,7 @@ function createDataStore() {
     } finally {
       if (run === askRun) setState({ asking: null })
     }
-    if (failures.length) parts.push(`${failures.length} batch${failures.length > 1 ? "es" : ""} failed: ${failures[0]}`)
+    if (failures.length) parts.push(`${failures.length} request${failures.length > 1 ? "s" : ""} failed: ${failures[0]}`)
     return parts.join(" · ")
   }
 

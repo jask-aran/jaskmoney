@@ -2,7 +2,7 @@ import type { DataStore } from "../state/dataStore"
 import type { UiStore } from "../state/uiStore"
 
 /** Turn the Uncategorised view on or off. On, it suggests categories for the
- * rows shown that have none yet (history at once, Clef as answers arrive). */
+ * rows shown that have none yet (history at once, Jev as answers arrive). */
 export function toggleUncategorised(ui: UiStore, data: DataStore): void {
   const on = !data.state.uncategorisedOnly
   data.setUncategorisedOnly(on)

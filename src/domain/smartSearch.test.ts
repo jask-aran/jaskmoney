@@ -1,7 +1,9 @@
 import { describe, expect, test } from "bun:test"
-import type { ClairicAnswer, ClefAnswer } from "../ai/workersAi"
+import type { JevAnswer } from "../ai/jev"
+import type { ClairicAnswer } from "../ai/workersAi"
 import { parseFilterStrict } from "./filter"
-import { categoriesNamed, parsedSearch, periodBounds, searchFilter, searchQuestions, smartSearch, type ParsedSearch } from "./smartSearch"
+import { categoriesNamed, parsedSearch, periodBounds, searchFilter, smartSearch, type ParsedSearch } from "./smartSearch"
+import { searchQuestions } from "./questions"
 import { category } from "../testing/fixtures"
 
 const categories = [
@@ -17,14 +19,14 @@ const none: ParsedSearch = { words: null, ask: null, atLeast: null, atMost: null
 
 const values = (v: Record<string, string | number | null>): Record<string, ClairicAnswer> =>
   Object.fromEntries(["words", "at_least", "at_most", "from", "to"].map((id) => [id, { value: v[id] ?? null, confidence: 0.9 }]))
-const choice = (c: string): ClefAnswer => ({ type: "choice", choice: c, probabilities: { [c]: 0.9 }, confidence: 0.8 })
-const answers = (a: { period?: string; flow?: string; payee?: number; category?: string }): Record<string, ClefAnswer> => ({
+const choice = (c: string): JevAnswer => ({ type: "choice", choice: c, probabilities: { [c]: 0.9 }, confidence: 0.8 })
+const answers = (a: { period?: string; flow?: string; payee?: number; category?: string }): Record<string, JevAnswer> => ({
   period: choice(a.period ?? "any"), flow: choice(a.flow ?? "any"),
   names_payee: { type: "noul", noul: a.payee ?? 0 }, category: choice(a.category ?? "none"),
 })
 
 describe("smart search", () => {
-  test("Clef is asked to pick categories by c<id>, with group paths and no Uncategorised", () => {
+  test("Jev is asked to pick categories by c<id>, with group paths and no Uncategorised", () => {
     const q = searchQuestions(categories).category
     expect(q.type === "choice" && q.criteria).toEqual({ none: "No category is named", c1: "Good Life", c2: "Good Life › Restaurants & Cafes", c3: "Good Life › Takeaway", c4: "Groceries" })
   })
@@ -92,11 +94,11 @@ describe("smart search", () => {
     const calls: string[] = []
     const ai = {
       clairic: async () => { calls.push("clairic"); return values({ words: "coffee", at_least: 5 }) },
-      clef: async (_: unknown, __: string, model?: string) => { calls.push(`clef:${model}`); return answers({ flow: "spending", period: "last_month" }) },
+      jev: { judge: async () => { calls.push("jev"); return answers({ flow: "spending", period: "last_month" }) } },
     }
     expect((await smartSearch(ai, "coffee over $5 last month", ctx)).expr).toBe('ask:"coffee" AND type:spending AND amt:<=-5 AND date:2026-09-01..2026-09-30')
-    expect(calls.sort()).toEqual(["clairic", "clef:clef"])
-    const empty = { clairic: async () => values({}), clef: async () => answers({}) }
+    expect(calls.sort()).toEqual(["clairic", "jev"])
+    const empty = { clairic: async () => values({}), jev: { judge: async () => answers({}) } }
     expect((await smartSearch(empty, "hmm", ctx)).expr).toBe('desc:"hmm"')
   })
 })

@@ -6,7 +6,7 @@
  * version fallback with an additive migration registry. v7 was the initial
  * partial OpenTUI port. */
 
-export const SCHEMA_VERSION = 18
+export const SCHEMA_VERSION = 19
 
 /** Columns shared by the fresh schema and the v9 migration. Rows imported from
  * CSV keep source = 'csv' and NULL external fields. */
@@ -115,14 +115,26 @@ CREATE TABLE IF NOT EXISTS budget_cycle (
 INSERT OR IGNORE INTO budget_cycle (id, unit, anchor, anchor_date) VALUES (1, 'month', 'calendar', NULL);
 `
 
-export const CATEGORY_SUGGESTIONS_SQL = `
-CREATE TABLE IF NOT EXISTS category_suggestions (
+/** Category suggestions awaiting the user (v18; v19 took them from Jev, not Clef). */
+const categorySuggestionsTable = (name: string) => `
+CREATE TABLE IF NOT EXISTS ${name} (
   transaction_id INTEGER PRIMARY KEY REFERENCES transactions(id) ON DELETE CASCADE,
   category_id    INTEGER NOT NULL REFERENCES categories(id) ON DELETE CASCADE,
   confidence     REAL NOT NULL,
-  source         TEXT NOT NULL CHECK(source IN ('history','clef')),
+  source         TEXT NOT NULL CHECK(source IN ('history','jev')),
   created_at     TEXT NOT NULL DEFAULT (datetime('now'))
 );
+`
+
+export const CATEGORY_SUGGESTIONS_SQL = categorySuggestionsTable("category_suggestions")
+
+/** v19: suggestions come from Jev. Clef's are dropped (asking again is cheap);
+ * history's are kept. */
+export const CATEGORY_SUGGESTIONS_V19_SQL = `
+${categorySuggestionsTable("category_suggestions_v19")}
+INSERT INTO category_suggestions_v19 SELECT * FROM category_suggestions WHERE source = 'history';
+DROP TABLE category_suggestions;
+ALTER TABLE category_suggestions_v19 RENAME TO category_suggestions;
 `
 
 export const SYNC_SQL = `

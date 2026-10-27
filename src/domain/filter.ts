@@ -119,12 +119,12 @@ export function reparseFilterInput(input: string): {
   return { expr: node, err: "" }
 }
 
-/** Clef's verdict on whether a row matches an `ask:` term's words; undefined
+/** Jev's verdict on whether a row matches an `ask:` term's words; undefined
  * while it hasn't judged the row. */
 export type AskVerdict<T> = (words: string, t: T) => boolean | undefined
 
 /**
- * Whether a row passes the filter. `ask:` terms take Clef's verdicts from
+ * Whether a row passes the filter. `ask:` terms take Jev's verdicts from
  * `ask`; a row whose result hangs on a term not judged yet does not pass
  * (with no `ask` at all, as in rules, that is every such row).
  */

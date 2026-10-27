@@ -10,7 +10,7 @@ import { theme } from "../../theme"
 import { filterExprString } from "../../domain/filter"
 import type { Account } from "../../domain/types"
 import { truncate } from "../text"
-import { ACCEPT_ALL_AT } from "../../domain/suggest"
+import { ACCEPT_ALL_AT } from "../../domain/questions"
 import { accountStacks, selectedAccounts } from "../../domain/accountTree"
 import { AccountsPane, accountsPaneHeight } from "./AccountsPane"
 import { TransactionTable } from "./TransactionTable"
@@ -73,7 +73,7 @@ export function ManagerTab(props: { focused: SectionId }) {
 
   const asking = () => {
     const a = data.state.asking
-    return a ? `asking Clef "${a.words}" ${a.judged}/${a.total}…` : null
+    return a ? `asking Jev "${a.words}" ${a.judged}/${a.total}…` : null
   }
 
   const scrollIndicator = () => {

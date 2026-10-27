@@ -5,9 +5,9 @@ import { data } from "../state/dataStore"
 import { key } from "../testing/keys"
 import { testEnv } from "../testing/scoped"
 
-/** Data with no Workers AI and no network: suggestions come from history. */
+/** Data with no Jev and no network: suggestions come from history. */
 function setup() {
-  testEnv("JASKMONEY_CF_TOKEN", "")
+  testEnv("JASKMONEY_JEV_TOKEN", "")
   const network = spyOn(globalThis, "fetch").mockImplementation(Object.assign(() => { throw new Error("network is forbidden") }, { preconnect: globalThis.fetch.preconnect }))
   onTestFinished(() => {
     try { expect(network).not.toHaveBeenCalled() } finally { network.mockRestore() }
