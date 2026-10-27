@@ -1031,6 +1031,28 @@ function handleSettingsDatabase(ui: UiStore, key: KeyEvent, data?: DataStore): v
   }
 }
 
+/** esc in Transactions steps back one level (K3): the selection, then a
+ * drill-down (back to Overview: its filter is the drill), then the filter,
+ * then a special view (tag review, then the Uncategorised view). Approved
+ * OpenTUI deviation from legacy, where u cleared and views had own keys. */
+function stepBack(ui: UiStore, data?: DataStore): void {
+  if (Object.keys(ui.state.selectedIds).length || ui.state.rangeSelecting) { ui.clearSelection(); ui.setStatus("Selection cleared"); return }
+  if (!data) return
+  const back = ui.state.drillReturn
+  if (back) {
+    if (back.filter) data.commitFilter(back.filter)
+    else data.clearFilter()
+    ui.switchTab("overview")
+    ui.setState({ focusedSection: back.focus })
+    ui.setStatus("Overview")
+    return
+  }
+  if (data.state.filterQuery) { data.clearFilter(); ui.jumpManagerCursor(0, data.scopedTransactions().length); ui.setStatus("Filter cleared"); return }
+  if (data.state.tagReview) { endTagReview(ui, data); return }
+  if (data.state.uncategorisedOnly) { toggleUncategorised(ui, data); return }
+  ui.setStatus("Nothing to clear")
+}
+
 function handleManagerTxns(ui: UiStore, key: KeyEvent, data?: DataStore): void {
   const { name, sequence: seq } = key
   const rows = data?.scopedTransactions() ?? []
@@ -1088,7 +1110,6 @@ function handleManagerTxns(ui: UiStore, key: KeyEvent, data?: DataStore): void {
       ui.setStatus(ids.length ? `Dismissed ${count(ids.length, "candidate")} for this session` : "No candidate to dismiss")
       return
     }
-    if (name === "escape" && !Object.keys(ui.state.selectedIds).length && !ui.state.rangeSelecting) { endTagReview(ui, data); return }
   }
   // The Uncategorised view: rows waiting for a category, with suggestions
   // to accept (y: these rows, Y: every confident one) or dismiss (x).
@@ -1120,30 +1141,7 @@ function handleManagerTxns(ui: UiStore, key: KeyEvent, data?: DataStore): void {
     ui.openFilter(data?.state.filterQuery ?? "")
     return
   }
-  if (name === "escape" && ui.state.drillReturn && data && !Object.keys(ui.state.selectedIds).length && !ui.state.rangeSelecting) {
-    // Back from a drill-down: the filter it replaced, the section it left.
-    const back = ui.state.drillReturn
-    if (back.filter) data.commitFilter(back.filter)
-    else data.clearFilter()
-    ui.switchTab("overview")
-    ui.setState({ focusedSection: back.focus })
-    ui.setStatus("Overview")
-    return
-  }
-  if (name === "escape") {
-    // Approved OpenTUI deviation from legacy: esc clears the current
-    // selection/range before an applied filter (u, legacy's clear, is undo).
-    const nSel = Object.keys(ui.state.selectedIds).length
-    if (nSel > 0 || ui.state.rangeSelecting) {
-      ui.clearSelection()
-      ui.setStatus("Selection cleared")
-    } else if (data?.state.filterQuery) {
-      data.clearFilter()
-      ui.jumpManagerCursor(0, data.scopedTransactions().length)
-      ui.setStatus("Filter cleared")
-    }
-    return
-  }
+  if (name === "escape") { stepBack(ui, data); return }
   if (name === "s" && !key.shift) {
     const col = data?.cycleSortColumn() ?? "date"
     ui.jumpManagerCursor(0, rows.length)

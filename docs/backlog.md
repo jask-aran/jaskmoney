@@ -23,7 +23,7 @@ committed; note the commit.
 - [x] **K2. One confirm rule.** Press the starting key again (`del del` on a
   list, `enter enter` on a dialog action), the row red with "press … again".
   Typing RESET stays only for wiping the database.
-- [ ] **K3. esc steps back one level.** Selection, then filter, then the
+- [x] **K3. esc steps back one level.** Selection, then filter, then the
   special view (uncategorised, merchants, tag review), then the pane.
 - [ ] **K5. Trimmed footer.** About 8 keys per scope, then "ctrl+k all"; the
   Rules pane's missing enter/del; g/G and paging listed.
