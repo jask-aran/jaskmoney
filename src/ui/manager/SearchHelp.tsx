@@ -1,34 +1,34 @@
-import { For, Show } from "solid-js"
+import { For, Show, createEffect, createMemo } from "solid-js"
+import { useTerminalDimensions } from "@opentui/solid"
 import { ui } from "../../state/uiStore"
+import { SEARCH_HELP, SEARCH_HELP_WIDTH, type HelpTone } from "../../state/searchHelp"
 import { theme } from "../../theme"
 import { Modal } from "../primitives/Modal"
 import { S } from "../primitives/S"
 
-/** What to type in the search bar, one example per line. */
-const EXAMPLES: Array<[string, string]> = [
-  ["coffee", "description has coffee"],
-  ["uber eats", "has both words"],
-  ["kfc OR mcdonalds", "has either (OR in capitals)"],
-  ["NOT uber", "leave these out"],
-  ["cat:Groceries", "in a category"],
-  ["tag:TRAVEL", "has a tag"],
-  ["amt:<-50", "spent more than $50"],
-  ["amt:>50", "received more than $50"],
-  ["date:2026-10", "in October 2026"],
-  ["date:2026-10-01..2026-10-14", "between two dates"],
-  ["top:10", "only the 10 biggest"],
-  ["?coffee last month", "ask in words"],
-]
+const TONE: Record<HelpTone, string> = { head: theme.text, key: theme.accent, text: theme.subtext0, muted: theme.overlay1 }
 
-/** F1 in the search bar: the syntax, as examples. */
+/** F1 in the search bar: how searches read, then examples; scrolls when the
+ * screen is too short for it all. */
 export function SearchHelp() {
+  const dims = useTerminalDimensions()
+  // The modal's border and hint lines, and a line of air above and below.
+  const visible = createMemo(() => Math.max(5, Math.min(SEARCH_HELP.length, dims().height - 8)))
+  createEffect(() => { if (ui.state.searchHelp && ui.state.searchHelpVisible !== visible()) ui.setState({ searchHelpVisible: visible() }) })
+  const top = () => Math.min(ui.state.searchHelpTop, SEARCH_HELP.length - visible())
+  const hints = () => visible() < SEARCH_HELP.length
+    ? `j/k scroll · ${top() + 1}–${top() + visible()} of ${SEARCH_HELP.length} · esc close`
+    : "esc close"
   return (
     <Show when={ui.state.searchHelp}>
-      <Modal title="Search" subtitle="type any of these" width={64} hints="esc close">
-        <For each={EXAMPLES}>
-          {([example, meaning]) => <text><S fg={theme.accent}>{example.padEnd(30)}</S><S fg={theme.subtext0}>{meaning}</S></text>}
+      <Modal title="Search" subtitle="how it reads" width={SEARCH_HELP_WIDTH + 4} hints={hints()}>
+        <For each={SEARCH_HELP.slice(top(), top() + visible())}>
+          {(line) => (
+            <text wrapMode="none">
+              {line.length ? <For each={line}>{(part) => <S fg={TONE[part.tone]} bold={part.tone === "head"}>{part.text}</S>}</For> : " "}
+            </text>
+          )}
         </For>
-        <text fg={theme.overlay1}>{"Mix them: cat:Groceries amt:<-50 date:2026-10"}</text>
       </Modal>
     </Show>
   )

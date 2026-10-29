@@ -6,6 +6,7 @@ import { key } from "../testing/keys"
 import { testEnv } from "../testing/scoped"
 import { notePrompts } from "../domain/suggest"
 import { category, transaction } from "../testing/fixtures"
+import { SEARCH_HELP } from "../state/searchHelp"
 
 function setup() {
   testEnv("JASKMONEY_JEV_TOKEN", "")
@@ -66,6 +67,21 @@ test("n in Merchants writes a note (letters are text); N on a row opens the same
   handleKey(ui, key("return"), data)
   await settle()
   expect(data.state.merchantNotes[merchant.toLowerCase()]).toBeUndefined()
+})
+
+test("the help scrolls when the screen is short: j/k by a line, never past the end", () => {
+  setup()
+  handleKey(ui, key("/"), data)
+  handleKey(ui, key("f1"), data)
+  ui.setState({ searchHelpVisible: 10 })
+  for (let i = 0; i < 100; i++) handleKey(ui, key("j"), data)
+  expect(ui.state.searchHelpTop).toBe(SEARCH_HELP.length - 10)
+  handleKey(ui, key("k"), data)
+  expect(ui.state.searchHelpTop).toBe(SEARCH_HELP.length - 11)
+  handleKey(ui, key("g"), data)
+  expect(ui.state.searchHelpTop).toBe(0)
+  handleKey(ui, key("escape"), data)
+  ui.closeFilter(false)
 })
 
 test("F1 in the search bar opens the search help; esc closes it and the bar stays open", () => {

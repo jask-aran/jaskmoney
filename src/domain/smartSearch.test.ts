@@ -184,6 +184,10 @@ describe("several payees and the biggest few", () => {
     expect(p.top).toBe(10)
     expect(searchFilter(p, ctx)).toBe("type:spending AND top:10")
     expect(parsedSearch(values({ words: null }), answers({ amounts: ["top_count"] }), categories, "top 2.5").top).toBeUndefined()
+    // "The 5 cheapest" is never the 5 biggest; the count isn't judged per row either.
+    const cheapest = parsedSearch(null, answers({ amounts: ["smallest_count"], phrase: "p2" }), categories, "5 cheapest coffees")
+    expect(cheapest).toMatchObject({ ask: "coffees" })
+    expect(searchFilter(cheapest, ctx)).not.toContain("top:")
   })
 })
 

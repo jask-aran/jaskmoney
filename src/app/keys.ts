@@ -23,6 +23,7 @@ import { anchorDraft, cycleFromDraft, editorFields, normaliseCycleDraft, pickerC
 import { runSync } from "./sync"
 import { runSmartSearch } from "./smartSearch"
 import { searchReport, writtenText } from "./searchReport"
+import { SEARCH_HELP } from "../state/searchHelp"
 import { runAsk } from "./ask"
 import { eitherInstead, askTerms } from "../domain/filter"
 import { AI_ROWS, aiRowLabel, isLlmRow, testAi } from "./apiKeys"
@@ -422,7 +423,7 @@ function handleCatPicker(ui: UiStore, key: KeyEvent, data?: DataStore): void {
 
 function handleFilter(ui: UiStore, key: KeyEvent, data?: DataStore): void {
   const { name } = key
-  if (name === "f1") { ui.setState({ searchHelp: true }); return }
+  if (name === "f1") { ui.setState({ searchHelp: true, searchHelpTop: 0 }); return }
   // ↑ on a smart search's filter brings its question back, to reword it.
   const question = smartQuestionFor(ui.state, ui.state.filterDraft)
   if (name === "up" && question) {
@@ -553,6 +554,17 @@ function handleSettingsFactoryReset(ui: UiStore, key: KeyEvent, data?: DataStore
   }
   const next = editText({ value: ui.state.factoryResetDraft, caret: ui.state.factoryResetCaret }, key)
   if (next) ui.setState({ factoryResetDraft: next.value, factoryResetCaret: next.caret })
+}
+
+/** The search help: esc, enter, F1 or q close it; j/k and paging scroll it
+ * when the screen is too short for it all. */
+function handleSearchHelp(ui: UiStore, key: KeyEvent): void {
+  if (["escape", "return", "enter", "f1", "q"].includes(key.name)) { ui.setState({ searchHelp: false }); return }
+  const visible = Math.max(1, ui.state.searchHelpVisible)
+  const last = Math.max(0, SEARCH_HELP.length - visible)
+  const step = key.name === "j" || key.name === "down" ? 1 : key.name === "k" || key.name === "up" ? -1
+    : key.name === "pagedown" ? visible : key.name === "pageup" ? -visible : key.name === "g" && !key.shift ? -Infinity : key.name === "g" || key.name === "G" ? Infinity : 0
+  if (step) ui.setState({ searchHelpTop: Math.max(0, Math.min(last, ui.state.searchHelpTop + step)) })
 }
 
 /** Open the note box for a merchant, on its note so far. */
@@ -1740,9 +1752,9 @@ const scopes: Record<ScopeId, ScopeEntry> = {
     hints: () => [{ key: "type RESET", desc: "confirm" }, { key: "enter", desc: "erase DB" }, { key: "esc", desc: "cancel" }],
   },
   "searchHelp": {
-    handle: (ui, key) => { if (["escape", "return", "enter", "f1", "q"].includes(key.name)) ui.setState({ searchHelp: false }) },
+    handle: handleSearchHelp,
     quits: false,
-    hints: () => [{ key: "esc", desc: "close" }],
+    hints: () => [{ key: "j/k", desc: "scroll" }, { key: "esc", desc: "close" }],
   },
   "merchantNote": {
     handle: handleMerchantNote,

@@ -1,3 +1,4 @@
+import { filterGuide } from "./filterLanguage"
 import { scopeText } from "./tagScope"
 import type { CategoryLogEntry, TagLogEntry } from "../db/client"
 import { evalFilter, notForRules, parseFilterStrict } from "./filter"
@@ -26,18 +27,12 @@ export interface HistoryData {
   categorySources?: Map<number, string | null>
 }
 
-/** The filter language, for prompts: what a rule can test. */
-export const FILTER_GUIDE = `Filter expressions (rules use these):
-- desc:WORDS  description contains the words (case, spaces and punctuation ignored); quote multi-word: desc:"Transfer to Holiday"
-- note:WORDS  the payment's message or note contains the words
-- cat:NAME  category is exactly NAME (quote names with spaces: cat:"Rent & Mortgage"); cat:Uncategorised for none
-- acc:NAME  account name is exactly NAME
-- tag:NAME  has the tag
-- type:debit | type:credit (money out | in), type:spending | type:income
-- amt:=-30  amt:<-100  amt:>=50  amt:-50..-20  (money out is negative)
-- date:2026-05  date:2026-05-01..2026-05-31
-- combine with AND, OR, NOT and parentheses; terms side by side mean AND
-Not testable in a filter (context only): up_type, card, foreign, payer.`
+/** The filter language for the model (domain/filterLanguage, the same
+ * description the search help shows), and what it can't test. Quoting is
+ * advised: a stored rule's value then can't run into the next word. */
+export const FILTER_GUIDE = `Filter expressions (rules use these). The parser takes values unquoted, but in a rule quote any value with spaces: cat:"Rent & Mortgage".
+${filterGuide()}
+Not testable in a filter (context only): up_type, card, foreign, payer, message.`
 
 /** A transaction as the model reads it: names, not ids; empty facts left out. */
 export interface RowFacts {

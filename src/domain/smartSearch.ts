@@ -79,7 +79,7 @@ export function parsedSearch(values: Record<string, ClairicAnswer> | null, answe
   const categoryId = !payee && category ? category.id : null
   const period = choice("period")
   const flow = choice("flow")
-  let atLeast: number | null = null, atMost: number | null = null, top: number | null = null
+  let atLeast: number | null = null, atMost: number | null = null, top: number | null = null, smallest = false
   searchNumbers(query).forEach((n, i) => {
     const role = choice(`amount${i}`)
     const amount = Number(n.replace(/[$+]/g, ""))
@@ -87,8 +87,11 @@ export function parsedSearch(values: Record<string, ClairicAnswer> | null, answe
     if (role === "at_least") atLeast = amount
     if (role === "at_most") atMost = amount
     if (role === "top_count" && Number.isInteger(amount)) top = amount
+    // "The 5 cheapest": no filter term cuts the smallest yet, but it is a
+    // count, not something to judge rows by.
+    if (role === "smallest_count") smallest = true
   })
-  const constrained = top != null || atLeast != null || atMost != null || (!!period && period !== "any")
+  const constrained = top != null || smallest || atLeast != null || atMost != null || (!!period && period !== "any")
   // A search for a shop or person, or one naming a category, isn't routed further.
   const covered = categoryId == null && !payee ? coveredCategoryIds(answers, categories) : []
   const related = categoryId == null && !payee ? relatedCategoryIds(answers, categories) : []

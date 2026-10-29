@@ -551,8 +551,11 @@ function canStartTerm(k: TokKind): boolean {
   return k === "lparen" || k === "word" || k === "quoted" || k === "not"
 }
 
+/** Every field the parser knows (each described in domain/filterLanguage). */
+export const FILTER_FIELDS = ["desc", "cat", "tag", "acc", "amt", "type", "note", "date", "ask", "top"] as const
+
 function isField(v: string): boolean {
-  return ["desc", "cat", "tag", "acc", "amt", "type", "note", "date", "ask", "top"].includes(v)
+  return (FILTER_FIELDS as readonly string[]).includes(v)
 }
 
 function flatten(children: FilterNode[], kind: "and" | "or"): FilterNode[] {

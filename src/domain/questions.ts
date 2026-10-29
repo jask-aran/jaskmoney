@@ -230,6 +230,8 @@ export function searchTermQuestions(query: string): Record<string, JevQuestion> 
         at_least: "The least amount of money wanted: over, more than, at least, or a number followed by +",
         at_most: "The most money wanted: under, less than, up to, at most",
         top_count: "How many of the biggest transactions to show: top 10, the 5 largest, biggest 3",
+        // Its own role so "the 5 cheapest" is never read as the 5 biggest.
+        smallest_count: "How many of the smallest transactions to show: the 5 cheapest, smallest 3",
         not_amount: "Not an amount of money: part of a date, a period or another count",
       },
     }
