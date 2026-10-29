@@ -39,7 +39,7 @@ import {
   TRANSACTION_DETAIL_COLUMNS_LIST,
   TRANSACTION_SYNC_COLUMNS_LIST,
 } from "./schema"
-import type { Account, Category, CategorySuggestion, ImportRecord, Rule, Tag, Transaction } from "../domain/types"
+import type { Account, BoughtItem, Category, CategorySuggestion, ImportRecord, Rule, Tag, Transaction } from "../domain/types"
 import { assignTypeCategories } from "../up/categories"
 import { categoryTerm } from "../domain/drill"
 import type { Budget, BudgetScope, CycleConfig } from "../domain/budget"
@@ -544,7 +544,19 @@ export function loadTransactions(db: Db): Transaction[] {
   })).sort(newestFirst)
 }
 
-const parseItems = (json: string): string[] => { try { const v = JSON.parse(json); return Array.isArray(v) ? v.filter((x): x is string => typeof x === "string") : [] } catch { return [] } }
+/** Saved items; a lookup saved before prices were kept (plain names) is
+ * `legacy`, and is looked up once more for its prices and quantities. */
+function readItems(json: string): { items: BoughtItem[]; legacy: boolean } {
+  try {
+    const v: unknown = JSON.parse(json)
+    if (!Array.isArray(v)) return { items: [], legacy: false }
+    const legacy = v.some((x) => typeof x === "string")
+    const items = v.flatMap((x): BoughtItem[] => typeof x === "string" ? [{ name: x, quantity: 1, price: null }]
+      : x && typeof x === "object" && typeof (x as BoughtItem).name === "string" ? [{ name: (x as BoughtItem).name, quantity: Number((x as BoughtItem).quantity) || 1, price: typeof (x as BoughtItem).price === "number" ? (x as BoughtItem).price : null }] : [])
+    return { items, legacy }
+  } catch { return { items: [], legacy: false } }
+}
+const parseItems = (json: string): BoughtItem[] => readItems(json).items
 
 /** A row's purchase lookup (purchase_lookups). */
 export interface PurchaseLookup {
@@ -552,7 +564,9 @@ export interface PurchaseLookup {
   status: "found" | "waiting" | "none"
   source: string | null
   order: string | null
-  items: string[]
+  items: BoughtItem[]
+  /** Saved before prices were kept: looked up once more. */
+  legacy?: boolean
   emailKey: string | null
   refundOf: number | null
   checks: number
@@ -562,7 +576,10 @@ export interface PurchaseLookup {
 export function loadPurchaseLookups(db: Db): Map<number, PurchaseLookup> {
   const rows = db.query<{ transactionId: number; status: PurchaseLookup["status"]; source: string | null; order: string | null; items: string | null; emailKey: string | null; refundOf: number | null; checks: number; checkedAt: string }, []>(
     `SELECT transaction_id AS transactionId, status, source, order_ref AS "order", items, email_key AS emailKey, refund_of AS refundOf, checks, checked_at AS checkedAt FROM purchase_lookups`).all()
-  return new Map(rows.map((r) => [r.transactionId, { ...r, items: r.items ? parseItems(r.items) : [] }]))
+  return new Map(rows.map((r) => {
+    const read = r.items ? readItems(r.items) : { items: [], legacy: false }
+    return [r.transactionId, { ...r, items: read.items, ...(read.legacy ? { legacy: true } : {}) }]
+  }))
 }
 
 export function savePurchaseLookups(db: Db, lookups: PurchaseLookup[]): void {

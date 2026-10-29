@@ -249,6 +249,8 @@ export interface UiState {
   executor: { status: ExecutorStatus | null; cursor: number; busy: string | null; waiting: string | null; note: { text: string; ok: boolean | null } | null } | null
   /** Executor's status as last read (the AI pane's Sources row). */
   executorStatus: ExecutorStatus | null
+  /** The detail view's bought list: its first line shown (J/K). */
+  detailBoughtTop: number
   /** Settings › Up Bank › Accounts: which Up accounts sync (cursor row). */
   upAccounts: { cursor: number } | null
   aiDialog: {
@@ -456,6 +458,7 @@ function createUiStore() {
     aiDialog: null,
     executor: null,
     executorStatus: null,
+    detailBoughtTop: 0,
     aiUse: null,
     aiSent: null,
     upAccounts: null,

@@ -1,3 +1,5 @@
+import type { BoughtItem } from "../domain/types"
+
 /**
  * What was bought, from the order emails behind a marketplace charge
  * (through Executor's Gmail, read-only). Measured on real mail (2026-10-30):
@@ -23,7 +25,7 @@ export interface Purchase { id: number; dateISO: string; createdMs: number | nul
 export interface Shipment { at: string; total: number | null; order: string | null; items: Array<{ name: string; quantity: number; price: number | null }> }
 export interface EbayOrder { order: string; at: string | null; item: string | null }
 
-export interface OrderContext { transactionId: number; source: "amazon" | "ebay"; order: string | null; items: string[]; emailAt: string | null; refundOf?: number }
+export interface OrderContext { transactionId: number; source: "amazon" | "ebay"; order: string | null; items: BoughtItem[]; emailAt: string | null; refundOf?: number }
 
 /** The email a match used: no other row takes it (an eBay order's emails can serve each of its charges). */
 export const emailKey = (c: Pick<OrderContext, "source" | "order" | "emailAt">) => (c.source === "ebay" ? `ebay:${c.order}` : `amazon:${c.order ?? ""}:${c.emailAt ?? ""}`)
@@ -156,7 +158,8 @@ export function matchOrders(rows: Purchase[], shipments: Shipment[], ebay: EbayO
   for (const t of rows.filter(isEbay)) {
     const order = ebayOrderOf(t.rawText)
     const found = order ? byOrder.get(order) : undefined
-    if (found?.item) out.push({ transactionId: t.id, source: "ebay", order, items: [found.item], emailAt: found.at })
+    // The order's total is the charge: one item, at that price.
+    if (found?.item) out.push({ transactionId: t.id, source: "ebay", order, items: [{ name: found.item, quantity: 1, price: Math.abs(t.amount) }], emailAt: found.at })
   }
   const used = new Set<Shipment>(shipments.filter((s) => prior.usedEmails.has(emailKey({ source: "amazon", order: s.order, emailAt: s.at }))))
   const when = (t: Purchase) => t.createdMs ?? Date.parse(`${t.dateISO}T12:00:00Z`)
@@ -170,7 +173,7 @@ export function matchOrders(rows: Purchase[], shipments: Shipment[], ebay: EbayO
     const best = candidates[0]?.s
     if (!best) continue
     used.add(best)
-    out.push({ transactionId: t.id, source: "amazon", order: best.order, items: best.items.map((i) => `${i.quantity > 1 ? `${i.quantity}× ` : ""}${i.name}`), emailAt: best.at })
+    out.push({ transactionId: t.id, source: "amazon", order: best.order, items: best.items, emailAt: best.at })
   }
   const charges = [...prior.found.filter((c) => c.source === "amazon" && !c.refundOf), ...out.filter((c) => c.source === "amazon")]
   const byId = new Map([...prior.rows, ...rows].map((t) => [t.id, t]))
@@ -201,7 +204,7 @@ export const LOOKUP_RETRY_HOURS = 6
  * nothing found by this age, after one look at that age, is given up. */
 export const LOOKUP_GIVE_UP_DAYS = 14
 
-export interface LookupState { status: "found" | "waiting" | "none"; checks: number; checkedAt: string }
+export interface LookupState { status: "found" | "waiting" | "none"; checks: number; checkedAt: string; legacy?: boolean }
 
 const ageDays = (t: Purchase, nowMs: number) => (nowMs - (t.createdMs ?? Date.parse(`${t.dateISO}T12:00:00Z`))) / 86_400_000
 
@@ -210,6 +213,8 @@ export function dueForLookup<T extends Purchase>(rows: T[], lookups: ReadonlyMap
     if (t.amount === 0) return false
     const l = lookups.get(t.id)
     if (!l) return true
+    // Found before prices were kept: once more, for them.
+    if (l.status === "found") return !!l.legacy
     if (l.status !== "waiting") return false
     return nowMs - Date.parse(l.checkedAt) >= LOOKUP_RETRY_HOURS * 3_600_000
   })

@@ -45,10 +45,14 @@ async function round(data: DataStore): Promise<PurchaseRound> {
   // Nothing to look up: still ask again for rows suggested before their purchase was known.
   if (!due.length) return { ...none, resuggested: await data.recordPurchases([]) }
   const byId = new Map(rows.map((t) => [t.id, t]))
+  // Earlier rounds' finds, except the rows looked up now (one found before
+  // prices were kept is looked up again, and its own email is fair game).
+  const dueIds = new Set(due.map((t) => t.id))
+  const earlier = [...lookups.values()].filter((l) => l.status === "found" && !dueIds.has(l.transactionId))
   const prior = {
-    rows: [...lookups.values()].filter((l) => l.status === "found").flatMap((l) => byId.get(l.transactionId) ?? []),
-    found: [...lookups.values()].filter((l) => l.status === "found").map((l): OrderContext => ({ transactionId: l.transactionId, source: l.source === "ebay" ? "ebay" : "amazon", order: l.order, items: l.items, emailAt: null, ...(l.refundOf ? { refundOf: l.refundOf } : {}) })),
-    usedEmails: new Set([...lookups.values()].flatMap((l) => (l.emailKey ? [l.emailKey] : []))),
+    rows: earlier.flatMap((l) => byId.get(l.transactionId) ?? []),
+    found: earlier.map((l): OrderContext => ({ transactionId: l.transactionId, source: l.source === "ebay" ? "ebay" : "amazon", order: l.order, items: l.items, emailAt: null, ...(l.refundOf ? { refundOf: l.refundOf } : {}) })),
+    usedEmails: new Set(earlier.flatMap((l) => (l.emailKey ? [l.emailKey] : []))),
   }
   try {
     // Refunds take their charge's items without an email: no program if that's all.
@@ -63,9 +67,14 @@ async function round(data: DataStore): Promise<PurchaseRound> {
       ebay = raw.ebay.map((e) => readEbay(e.order, e.emails))
     }
     const matched = matchOrders(due, shipments, ebay, prior)
-    const settled: PurchaseLookup[] = settleLookups(due, matched, lookups, now)
+    // A row found before that isn't found again keeps what it had (now saved with prices' shape).
+    const settled: PurchaseLookup[] = settleLookups(due, matched, lookups, now).map((l) => {
+      const before = lookups.get(l.transactionId)
+      return l.status !== "found" && before?.status === "found" ? { ...before, legacy: false, checks: l.checks, checkedAt: l.checkedAt } : l
+    })
     const resuggested = await data.recordPurchases(settled)
-    return { looked: due.length, found: settled.filter((l) => l.status === "found").length, resuggested, error: null }
+    // Newly found: a redone lookup (for prices) isn't news.
+    return { looked: due.length, found: settled.filter((l) => l.status === "found" && lookups.get(l.transactionId)?.status !== "found").length, resuggested, error: null }
   } catch (error) {
     return { ...none, looked: due.length, error: error instanceof Error ? error.message : String(error) }
   }

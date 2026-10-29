@@ -54,12 +54,12 @@ test("matching: Amazon charge to the shipment of the same total nearby, each ema
   ]
   const found = matchOrders(rows, [a, b, late, far], [{ order: "20-12345-67890", at: "2026-10-29T08:08:00Z", item: "Coffee Bean Keeper" }])
   const by = new Map(found.map((f) => [f.transactionId, f]))
-  expect(by.get(1)?.items).toEqual(["Backflush Insert"])
-  expect(by.get(2)?.items).toEqual(["Residue Cleaner"])
+  expect(by.get(1)?.items.map((i) => i.name)).toEqual(["Backflush Insert"])
+  expect(by.get(2)?.items.map((i) => i.name)).toEqual(["Residue Cleaner"])
   expect(by.has(3)).toBe(false) // the one 9.32 shipment nearby went to row 1; September's is too far
-  expect(by.get(4)?.items).toEqual(["Colouring Book"]) // emailed a day after the charge
-  expect(by.get(5)).toMatchObject({ source: "ebay", order: "20-12345-67890", items: ["Coffee Bean Keeper"] })
-  expect(by.get(6)).toMatchObject({ items: ["Residue Cleaner"], refundOf: 2 })
+  expect(by.get(4)?.items.map((i) => i.name)).toEqual(["Colouring Book"]) // emailed a day after the charge
+  expect(by.get(5)).toMatchObject({ source: "ebay", order: "20-12345-67890", items: [{ name: "Coffee Bean Keeper", quantity: 1, price: 48.49 }] })
+  expect(by.get(6)).toMatchObject({ items: [{ name: "Residue Cleaner", quantity: 1, price: 18.9 }], refundOf: 2 })
 })
 
 test("one program for a batch: Shipped emails over the Amazon rows' dates, each eBay order by number; bodies come back undecoded", () => {

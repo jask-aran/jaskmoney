@@ -27,6 +27,7 @@ import { SEARCH_HELP, SEARCH_HELP_FULL } from "../state/searchHelp"
 import { previewSent } from "./sentPreview"
 import { runAsk } from "./ask"
 import { eitherInstead, askTerms } from "../domain/filter"
+import { BOUGHT_LINES } from "../ui/manager/TransactionDetail"
 import { cancelExecutorSignIn, openExecutorDialog, runExecutorAction } from "./executorSource"
 import { executorActions } from "../state/executorDialog"
 import { AI_ROWS, aiRowLabel, isLlmRow, testAi, type AiRow } from "./apiKeys"
@@ -514,12 +515,19 @@ function handleManagerDetail(ui: UiStore, key: KeyEvent, data?: DataStore): void
     ui.setState({ detailNotesEditing: true, detailNotesDraft: notes, detailNotesCaret: notes.length })
     return
   }
+  // J/K scroll what it bought, when that's longer than the view shows.
+  if ((name === "j" || name === "k" || name === "J" || name === "K") && (key.shift || name === "J" || name === "K")) {
+    const items = data?.transactions().find((t) => t.id === ui.state.detailId)?.bought?.length ?? 0
+    const top = ui.state.detailBoughtTop + (name.toLowerCase() === "j" ? 1 : -1)
+    ui.setState({ detailBoughtTop: Math.max(0, Math.min(top, items - BOUGHT_LINES)) })
+    return
+  }
   // j/k browse neighbouring transactions without closing the view.
   if (name === "j" || name === "down" || name === "k" || name === "up") {
     const rows = data?.scopedTransactions() ?? []
     moveTxnCursor(ui, data, name === "j" || name === "down" ? 1 : -1, false)
     const row = rows[ui.state.managerCursor]
-    if (row) ui.setState({ detailId: row.id })
+    if (row) ui.setState({ detailId: row.id, detailBoughtTop: 0 })
     return
   }
 }
@@ -1741,6 +1749,7 @@ type HintState = Pick<UiState, "focusedSection" | "drillReturn" | "chartViews"> 
   /** The AI models dialog is taking a key, account id or model. */
   aiField?: boolean
   executorWaiting?: boolean
+  boughtScrolls?: boolean
   /** The sign-in modal is asking for a pasted code or URL. */
   signInPaste?: boolean
   /** A tag review is open. */
@@ -1823,7 +1832,7 @@ const scopes: Record<ScopeId, ScopeEntry> = {
   "manager.detail": {
     handle: handleManagerDetail,
     quits: false,
-    hints: () => [{ key: "j/k", desc: "prev/next" }, { key: "c", desc: "category" }, { key: "t", desc: "tags" }, { key: "n", desc: "notes" }, { key: "N", desc: "merchant note" }, { key: "esc", desc: "close" }],
+    hints: (state) => [{ key: "j/k", desc: "prev/next" }, ...(state?.boughtScrolls ? [{ key: "J/K", desc: "scroll bought" }] : []), { key: "c", desc: "category" }, { key: "t", desc: "tags" }, { key: "n", desc: "notes" }, { key: "N", desc: "merchant note" }, { key: "esc", desc: "close" }],
   },
   "overview.custom": {
     handle: handleOverviewCustom,
@@ -2142,7 +2151,7 @@ export function hintState(ui: UiStore, data?: DataStore): HintState {
   return {
     focusedSection: ui.state.focusedSection, drillReturn: ui.state.drillReturn, chartViews: ui.state.chartViews, overviewCharts: ui.state.overviewCharts,
     uncategorisedOnly: data?.state.uncategorisedOnly, tagReview: !!data?.state.tagReview,
-    signInPaste: !!ui.state.llmSignIn?.paste, aiField: !!ui.state.aiDialog?.field, executorWaiting: !!ui.state.executor?.waiting, searchHelpFull: ui.state.searchHelpFull,
+    signInPaste: !!ui.state.llmSignIn?.paste, aiField: !!ui.state.aiDialog?.field, executorWaiting: !!ui.state.executor?.waiting, boughtScrolls: (data?.transactions().find((t) => t.id === ui.state.detailId)?.bought?.length ?? 0) > BOUGHT_LINES, searchHelpFull: ui.state.searchHelpFull,
     ruleOffers: data && ui.state.activeTab === "manager" ? data.allRuleOffers().length : 0,
     asks: !!data?.askCounts(), askLoose: data?.nearMissesShown(),
     recallQuestion: !!smartQuestionFor(ui.state, ui.state.filterDraft),

@@ -9,8 +9,19 @@ import { data } from "../../state/dataStore"
 import { categoryColor, theme } from "../../theme"
 import { formatMoney } from "../../domain/dashboard"
 import { amountColor } from "../colors"
+import { fit } from "../text"
+import { marketplaceRows } from "../../ai/orderEmails"
+import { executorSignedIn } from "../../ai/executor"
 
 const LABEL = 12
+/** Bought items shown at once; more scroll (J/K). */
+export const BOUGHT_LINES = 10
+const BOUGHT_PRICE = 14
+
+const ago = (iso: string) => {
+  const minutes = Math.max(0, Math.round((Date.now() - Date.parse(iso)) / 60_000))
+  return minutes < 60 ? `${minutes}m ago` : minutes < 48 * 60 ? `${Math.round(minutes / 60)}h ago` : `${Math.round(minutes / 1440)}d ago`
+}
 
 /** Detail view for one transaction (enter in the Transactions table). Rows with no
  * value are left out. */
@@ -22,6 +33,22 @@ export function TransactionDetail() {
     void data.transactions()
     const id = ui.state.detailId
     return id == null ? null : data.transactionDetail(id)
+  })
+  // The bought list: a window of BOUGHT_LINES from ui.state.detailBoughtTop.
+  const boughtLines = createMemo(() => {
+    const items = row()?.bought ?? []
+    const top = Math.max(0, Math.min(ui.state.detailBoughtTop, items.length - BOUGHT_LINES))
+    return { shown: items.slice(top, top + BOUGHT_LINES), from: top + 1, to: Math.min(items.length, top + BOUGHT_LINES), total: items.length }
+  })
+  // Modal border and padding (4), label, quantity (5), price.
+  const boughtNameWidth = () => Math.max(10, Math.floor(dims().width * 0.76) - 4 - LABEL - 5 - BOUGHT_PRICE)
+  // An Amazon or eBay row without items: its lookup, if Executor is set up.
+  const lookup = createMemo(() => {
+    const t = row()
+    if (!t || t.bought?.length || !marketplaceRows([t]).length || !executorSignedIn()) return null
+    const l = data.purchaseLookups().get(t.id)
+    if (!l || l.status === "waiting") return `looking for its order email${l ? ` · checked ${ago(l.checkedAt)}` : " at the next sync"}`
+    return l.status === "none" ? "no order email found" : null
   })
   const field = (label: string, value: JSX.Element) => (
     <text wrapMode="none">
@@ -59,9 +86,18 @@ export function TransactionDetail() {
           {field("Bank text", <S fg={theme.text}>{detail()!.rawText!}</S>)}
         </Show>
         <Show when={detail()!.message}>{field("Message", <S fg={theme.text}>{detail()!.message!}</S>)}</Show>
-        {/* What its order emails say it bought (app/purchases), one item a line. */}
-        <Show when={row()!.bought?.length}>
-          <For each={row()!.bought!}>{(item, i) => field(i() === 0 ? "Bought" : "", <S fg={theme.text}>{item}</S>)}</For>
+        {/* What its order emails say it bought (app/purchases): quantity, item,
+            price each; BOUGHT_LINES at a time, J/K scroll. Else, for an Amazon
+            or eBay row, whether its email is still being looked for. */}
+        <Show when={row()!.bought?.length} fallback={<Show when={lookup()}>{field("Bought", <S fg={theme.overlay1}>{lookup()!}</S>)}</Show>}>
+          <For each={boughtLines().shown}>{(item, i) => field(i() === 0 ? "Bought" : "", <>
+            <S fg={theme.subtext0}>{`${item.quantity}×`.padStart(4)} </S>
+            <S fg={theme.text}>{fit(item.name, boughtNameWidth())}</S>
+            <S fg={theme.subtext1}>{(item.price == null ? "" : `${formatMoney(item.price)}${item.quantity > 1 ? " ea" : ""}`).padStart(BOUGHT_PRICE)}</S>
+          </>)}</For>
+          <Show when={boughtLines().total > BOUGHT_LINES}>
+            {field("", <S fg={theme.overlay1}>{`${boughtLines().from}–${boughtLines().to} of ${boughtLines().total} · J/K scroll`}</S>)}
+          </Show>
         </Show>
         <Show when={detail()!.importFilename}>{field("Imported", <S fg={theme.text}>{detail()!.importFilename!}</S>)}</Show>
         <Show

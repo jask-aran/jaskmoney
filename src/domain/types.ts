@@ -134,6 +134,9 @@ export interface RuleRunResult {
   failedRules: string[]
 }
 
+/** One thing a row bought (its order emails): price is each, null when the email doesn't say. */
+export interface BoughtItem { name: string; quantity: number; price: number | null }
+
 export interface Transaction {
   id: number
   dateRaw: string
@@ -144,7 +147,7 @@ export interface Transaction {
   categoryName: string
   categoryGroup: string
   /** What it bought, from its order emails (purchase_lookups; Amazon, eBay). */
-  bought?: string[]
+  bought?: BoughtItem[]
   /** Hex from categories.color; empty/overlay1 = uncategorised mute. */
   categoryColor: string
   notes: string
