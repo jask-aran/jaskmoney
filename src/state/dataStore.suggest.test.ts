@@ -6,6 +6,7 @@ import type { Transaction } from "../domain/types"
 import { account, category, transaction } from "../testing/fixtures"
 import { testDb, testEnv } from "../testing/scoped"
 import { data } from "./dataStore"
+import { answeringMerchants } from "../testing/merchantFake"
 
 function setup() {
   testEnv("JASKMONEY_JEV_TOKEN", "")
@@ -32,14 +33,14 @@ function setup() {
 
 /** A fake Jev answering every question with one pick at 0.9; `seen` gets each row's description. */
 function fakeJev(onRow: (description: string) => Promise<void> | void = () => {}, categoryId = 101): Pick<JevClient, "judge"> {
-  return { async judge(questions) {
+  return answeringMerchants({ async judge(questions) {
     const out: Awaited<ReturnType<JevClient["judge"]>> = {}
     for (const [id, q] of Object.entries(questions)) {
       await onRow(description(q))
       out[id] = { type: "choice", choice: `c${categoryId}`, confidence: 0.5, probabilities: { [`c${categoryId}`]: 0.9 } }
     }
     return out
-  } }
+  } })
 }
 const description = (q: JevQuestion) => (q.instructions as { transaction: { description: string } }).transaction.description
 
@@ -86,11 +87,11 @@ test("a second run is refused while one runs; a failed request is reported with 
   const pending = new Promise<void>((resolve) => { release = resolve })
   let arrived = () => {}
   const started = new Promise<void>((resolve) => { arrived = resolve })
-  const ai: Pick<JevClient, "judge"> = { async judge() {
+  const ai = answeringMerchants({ async judge() {
     arrived()
     await pending
     throw new Error("fake unavailable")
-  } }
+  } })
   const running = data.suggestCategories(undefined, ai)
   try {
     await started
@@ -206,4 +207,34 @@ test("v19: suggestions come from Jev; history's are kept, Clef's dropped", () =>
   expect(loadSuggestions(db)).toEqual([{ transactionId: 1, categoryId: groceries, confidence: 0.75, source: "history" }])
   saveSuggestions(db, [{ transactionId: 2, categoryId: groceries, confidence: 0.9, source: "jev" }])
   expect(loadSuggestions(db)).toHaveLength(2)
+})
+
+test("a run asks about each merchant once and lowers stored suggestions a marketplace can't support", async () => {
+  const { db, add } = setup()
+  add({ id: 1, description: "eBay" })
+  add({ id: 2, description: "eBay" })
+  add({ id: 3, description: "Corner Bar" })
+  saveSuggestions(db, [1, 3].map((id) => ({ transactionId: id, categoryId: 100, confidence: 1, source: "jev" as const })))
+  data.refresh()
+  const asked: string[] = []
+  const ai: Pick<JevClient, "judge"> = { async judge(questions) {
+    const out: Awaited<ReturnType<JevClient["judge"]>> = {}
+    for (const [id, q] of Object.entries(questions)) {
+      const merchant = (q.instructions as { merchant?: { name: string } }).merchant
+      if (merchant) asked.push(merchant.name)
+      out[id] = merchant ? { type: "noul", noul: merchant.name === "eBay" ? 0.95 : 0.1 } : { type: "choice", choice: "c101", confidence: 0.5, probabilities: { c101: 0.99 } }
+    }
+    return out
+  } }
+  await data.suggestCategories(undefined, ai)
+  expect(asked.sort()).toEqual(["Corner Bar", "eBay"])
+  expect(data.state.suggestions[1]?.confidence).toBe(0.45)
+  expect(data.state.suggestions[2]?.confidence).toBe(0.45)
+  expect(data.state.suggestions[3]?.confidence).toBe(1)
+  expect(loadSuggestions(db).find((s) => s.transactionId === 1)?.confidence).toBe(0.45)
+  asked.length = 0
+  deleteSuggestions(db, [2])
+  data.refresh()
+  await data.suggestCategories(undefined, ai)
+  expect(asked).toEqual([])
 })

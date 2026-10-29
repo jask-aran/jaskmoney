@@ -1,7 +1,7 @@
 import { unwrap } from "solid-js/store"
-import { saveSuggestions, loadDismissedSuggestionIds, deleteSuggestions, dismissSuggestionRows, undismissSuggestionRows, unrecordCategoryChoices } from "../../db/client"
+import { saveSuggestions, loadMerchantBreadth, saveMerchantBreadth, loadDismissedSuggestionIds, deleteSuggestions, dismissSuggestionRows, undismissSuggestionRows, unrecordCategoryChoices } from "../../db/client"
 import { hasJev, JEV_SETUP, jevClient, type JevClient } from "../../ai/jev"
-import { historySuggestions, jevSuggestions } from "../../domain/suggest"
+import { askMerchantBreadth, capSuggestion, historySuggestions, jevSuggestions, merchantBreadth, suggestionCap, unaskedMerchants } from "../../domain/suggest"
 import { isOrdinaryFlow, isUncategorised } from "../../domain/moneyRules"
 import type { Transaction } from "../../domain/types"
 import { askCandidates, ASK_DEFAULT_DAYS, ASK_LIMIT, judgeRows } from "../../domain/ask"
@@ -42,18 +42,33 @@ export function createSuggestions(ctx: StoreContext, deps: {
       // Rows whose suggestion was dismissed get no new one.
       const dismissed = loadDismissedSuggestionIds(database)
       const targets = transactions().filter((t) => isOrdinaryFlow(t) && isUncategorised(t) && !dismissed.has(t.id) && (options.replace ? !!state.suggestions[t.id] : !state.suggestions[t.id]) && (!selected || selected.has(t.id)))
-      const history = historySuggestions(transactions(), state.categories, new Set(targets.map((t) => t.id)))
+      const enabled = !!ai || hasJev()
+      const failures: string[] = []
+      // Which merchants' names don't say what was bought (eBay, Kmart): asked
+      // once per name, then kept.
+      const asked = loadMerchantBreadth(database)
+      const unasked = enabled ? unaskedMerchants(transactions(), asked) : []
+      if (unasked.length) await askMerchantBreadth(ai ?? jevClient(), unasked, {
+        onAnswers: (answers) => {
+          if (ctx.db !== database) return
+          saveMerchantBreadth(database, answers)
+          for (const [k, p] of answers) asked.set(k, p)
+        },
+        onError: (error) => failures.push(`merchants: ${error instanceof Error ? error.message : String(error)}`),
+      })
+      const breadth = merchantBreadth(transactions(), state.categories, asked)
+      capStored(database, breadth)
+      const history = historySuggestions(transactions(), state.categories, new Set(targets.map((t) => t.id)), breadth)
       saveSuggestions(database, history)
       refresh()
-      const failures: string[] = []
       let fromJev = 0
-      const enabled = !!ai || hasJev()
       if (enabled) {
         const targetIds = new Set(targets.map((t) => t.id))
         const settled = new Set(history.map((s) => s.transactionId))
         const remaining = transactions().filter((t) => targetIds.has(t.id) && !settled.has(t.id) && (options.replace ? !!state.suggestions[t.id] : !state.suggestions[t.id]) && isOrdinaryFlow(t) && isUncategorised(t))
         if (remaining.length) await jevSuggestions(ai ?? jevClient(), remaining, state.categories, {
           history: transactions(),
+          breadth,
           onSuggestion: (s) => {
             if (ctx.db !== database || !targetIds.has(s.transactionId)) return
             const current = transactions().find((t) => t.id === s.transactionId)
@@ -76,6 +91,21 @@ export function createSuggestions(ctx: StoreContext, deps: {
         finish()
       }
     }
+  }
+
+  /** Hold stored suggestions to what their row can say: one made before a
+   * merchant was known to be mixed (eBay at 100%) drops to a guess. */
+  function capStored(database: NonNullable<typeof ctx.db>, breadth: Parameters<typeof suggestionCap>[1]) {
+    const byId = new Map(transactions().map((t) => [t.id, t]))
+    const changed = Object.values(state.suggestions).flatMap((s) => {
+      const t = s && byId.get(s.transactionId)
+      if (!s || !t) return []
+      const capped = capSuggestion(s, suggestionCap(t, breadth))
+      return capped === s ? [] : [capped]
+    })
+    if (!changed.length) return
+    saveSuggestions(database, changed)
+    for (const s of changed) setState("suggestions", s.transactionId, s)
   }
 
   /** Replace existing suggestions for waiting rows with the same description. */

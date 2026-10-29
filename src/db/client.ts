@@ -19,6 +19,7 @@ import {
   RULE_DECLINES_SQL,
   TAG_PUSHES_SQL,
   RULE_TAG_DECLINES_SQL,
+  MERCHANT_BREADTH_SQL,
   CATEGORY_SOURCE_COLUMN,
   CATEGORY_INCOME_COLUMN,
   CATEGORY_NOT_SPENDING_COLUMN,
@@ -121,6 +122,7 @@ const MIGRATIONS: Record<number, (db: Db) => void> = {
   25: (db) => db.exec(RULE_DECLINES_SQL),
   26: (db) => db.exec(TAG_PUSHES_SQL),
   27: (db) => db.exec(RULE_TAG_DECLINES_SQL),
+  28: (db) => db.exec(MERCHANT_BREADTH_SQL),
   24: (db) => db.exec(ACTIVITY_LOG_SQL),
   23: (db) => {
     db.exec(CATEGORY_CHOICES_SQL)
@@ -607,6 +609,16 @@ export function declineCategoryChoice(db: Db, description: string, categoryId: n
 }
 
 /** Rows whose suggestion was dismissed: not suggested for again. */
+/** Jev's merchant-breadth answers, by lowercased name. */
+export function loadMerchantBreadth(db: Db): Map<string, number> {
+  return new Map(db.query<{ merchant: string; probability: number }, []>("SELECT merchant, probability FROM merchant_breadth").all().map((r) => [r.merchant, r.probability]))
+}
+
+export function saveMerchantBreadth(db: Db, answers: Map<string, number>): void {
+  const save = db.query("INSERT INTO merchant_breadth (merchant, probability) VALUES (?, ?) ON CONFLICT(merchant) DO UPDATE SET probability = excluded.probability, asked_at = datetime('now')")
+  db.transaction(() => { for (const [merchant, p] of answers) save.run(merchant, p) })()
+}
+
 export function loadDismissedSuggestionIds(db: Db): Set<number> {
   return new Set(db.query<{ id: number }, []>("SELECT transaction_id AS id FROM category_suggestions WHERE dismissed = 1").all().map((r) => r.id))
 }

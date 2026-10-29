@@ -90,6 +90,46 @@ export function suggestionQuestion(t: Transaction, criteria: Record<string, stri
   }
 }
 
+// ---------- Merchant breadth ----------
+
+/** Shared by every merchant-breadth question in a request. */
+export const MERCHANT_STATE = "Shops and merchants on an Australian personal bank account."
+
+/**
+ * Whether a merchant's name says what was bought: a marketplace or a store
+ * selling many unrelated goods (eBay, Kmart) doesn't, a supermarket or a
+ * cafe does. Asked once per name (cached). Probed 2026-10-29 on the user's
+ * ~80 most used merchants: marketplaces and department stores 0.87–0.95,
+ * convenience stores 0.58, an office supplier 0.45, supermarkets 0.15–0.26,
+ * cafes, bars, fuel and services under 0.4. Wordings that let supermarkets
+ * through (Coles 0.77–0.93): "Does it sell many different kinds of goods?"
+ * and "Could a purchase there belong in many spending categories?".
+ */
+export function merchantBreadthQuestion(description: string, bankText: string | null): JevQuestion {
+  return {
+    type: "noul",
+    instructions: {
+      question: "Does `merchant` sell a wide range of unrelated goods (such as electronics, homewares, clothing and toys), so a purchase there could be any of them?",
+      merchant: { name: description.trim(), ...(bankText && bankText !== description ? { bank_text: bankText } : {}) },
+    },
+    criteria: {
+      true: "A marketplace or a store selling many unrelated kinds of goods",
+      false: "A shop for one kind of thing, including a supermarket (groceries), a cafe, a petrol station or a service",
+    },
+  }
+}
+
+/** At or above: the name doesn't say what was bought (mixed). From
+ * MIXED_UNSURE_AT up: it might not (unsure). On the probe 0.3–0.4 held a
+ * pub, a cafe and a petrol station, so the band starts at 0.4. */
+export const MIXED_AT = 0.7
+export const MIXED_UNSURE_AT = 0.4
+
+/** An unsure merchant's suggestion, with no message to say what was bought,
+ * is at most this sure: below ACCEPT_ALL_AT, so accept-all doesn't take it
+ * unseen. A mixed one's is at most NO_DETAIL_CAP, a guess. */
+export const UNSURE_CAP = 0.75
+
 // ---------- ask: terms ----------
 
 /** The search words, shared by every row's question. */

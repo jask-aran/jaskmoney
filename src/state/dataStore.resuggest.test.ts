@@ -3,6 +3,7 @@ import type { JevClient, JevQuestion } from "../ai/jev"
 import { saveSuggestions } from "../db/client"
 import { testEnv } from "../testing/scoped"
 import { data } from "./dataStore"
+import { answeringMerchants } from "../testing/merchantFake"
 
 /** CSV rows (so categorising never calls Up), no Jev key, no network. */
 function setup() {
@@ -24,7 +25,7 @@ function setup() {
 const description = (q: JevQuestion) => (q.instructions as { transaction: { description: string; categorised_before?: string } }).transaction
 /** A fake Jev picking `categoryId` at 0.9 for every row; `seen` records what it was shown. */
 function fakeJev(categoryId: number, seen: Array<{ description: string; categorised_before?: string }> = [], gate?: Promise<void>): Pick<JevClient, "judge"> {
-  return { async judge(questions) {
+  return answeringMerchants({ async judge(questions) {
     if (gate) await gate
     const out: Awaited<ReturnType<JevClient["judge"]>> = {}
     for (const [id, q] of Object.entries(questions)) {
@@ -32,7 +33,7 @@ function fakeJev(categoryId: number, seen: Array<{ description: string; categori
       out[id] = { type: "choice", choice: `c${categoryId}`, confidence: 0.5, probabilities: { [`c${categoryId}`]: 0.9 } }
     }
     return out
-  } }
+  } })
 }
 const suggestion = (id: number) => data.state.suggestions[id] && { categoryId: data.state.suggestions[id]!.categoryId, source: data.state.suggestions[id]!.source }
 

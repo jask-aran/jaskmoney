@@ -6,7 +6,7 @@
  * version fallback with an additive migration registry. v7 was the initial
  * partial OpenTUI port. */
 
-export const SCHEMA_VERSION = 27
+export const SCHEMA_VERSION = 28
 
 /** Columns shared by the fresh schema and the v9 migration. Rows imported from
  * CSV keep source = 'csv' and NULL external fields. */
@@ -228,6 +228,17 @@ CREATE TABLE IF NOT EXISTS rule_tag_declines (
 );
 `
 
+/** Jev's answer to whether a merchant's name says what was bought
+ * (domain/questions merchantBreadthQuestion), keyed by the lowercased name:
+ * asked once per name. */
+export const MERCHANT_BREADTH_SQL = `
+CREATE TABLE IF NOT EXISTS merchant_breadth (
+  merchant    TEXT PRIMARY KEY,
+  probability REAL NOT NULL,
+  asked_at    TEXT NOT NULL DEFAULT (datetime('now'))
+);
+`
+
 export const SYNC_SQL = `
 CREATE UNIQUE INDEX IF NOT EXISTS idx_accounts_external ON accounts(source, external_id) WHERE external_id IS NOT NULL;
 CREATE UNIQUE INDEX IF NOT EXISTS idx_transactions_external ON transactions(source, external_id) WHERE external_id IS NOT NULL;
@@ -334,6 +345,7 @@ ${ACTIVITY_LOG_SQL}
 ${RULE_DECLINES_SQL}
 ${TAG_PUSHES_SQL}
 ${RULE_TAG_DECLINES_SQL}
+${MERCHANT_BREADTH_SQL}
 `
 
 export const DEFAULT_CATEGORIES: { name: string; color: string; sortOrder: number; isDefault: number }[] = [
