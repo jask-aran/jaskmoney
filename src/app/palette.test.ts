@@ -195,7 +195,7 @@ test("ctrl+k inside a picker still moves its cursor", () => {
 })
 
 test("the palette renders like opencode's: search line, bold group headings, the cursor wash on the cursor row, keys at the right", async () => {
-  const t = await renderApp({ width: 140, height: 50 })
+  const t = await renderApp({ width: 140, height: 54 })
   try {
     setup()
     open()

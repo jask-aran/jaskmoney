@@ -1,5 +1,6 @@
 import type { TagInput } from "../db/client"
 import { chronological } from "../domain/chronology"
+import { notePrompts as findNotePrompts } from "../domain/suggest"
 import { createUpPush, categoryPush, operationSummary, type PushableRow } from "./store/upPush"
 import { createSuggestions } from "./store/suggestions"
 import { createTagReview, type TagReview } from "./store/tagReview"
@@ -20,6 +21,7 @@ import {
   loadTransactions,
   loadSuggestions,
   loadMerchantNotes,
+  loadMerchantBreadth,
   logCategories,
   logTags,
   openDb,
@@ -94,6 +96,8 @@ export interface DataState {
   writingRules: boolean
   suggestions: Record<number, CategorySuggestion>
   merchantNotes: Record<string, string>
+  /** Jev's merchant-breadth answers, by key (domain/suggest merchantKey). */
+  merchantBreadth: Record<string, number>
   /** The Transactions table shows only ordinary uncategorised rows. */
   uncategorisedOnly: boolean
   /** Finding transactions for a tag: the table shows its candidates. */
@@ -244,6 +248,7 @@ function createDataStore() {
     writingRules: false,
     suggestions: {},
     merchantNotes: {},
+    merchantBreadth: {},
     uncategorisedOnly: false,
     tagReview: null,
     apiKeys: loadApiKeys(),
@@ -289,6 +294,7 @@ function createDataStore() {
     const syncAccounts = loadAccounts(db, { includeUnsynced: true }).filter((a) => a.source !== "csv")
     const dbInfo = loadDbInfo(db, state.dbPath || "default")
     setState("merchantNotes", reconcile(Object.fromEntries(loadMerchantNotes(db))))
+    setState("merchantBreadth", reconcile(Object.fromEntries(loadMerchantBreadth(db))))
     setState("suggestions", reconcile(Object.fromEntries(loadSuggestions(db).map((s) => [s.transactionId, s]))))
     setState({
       ready: true,
@@ -388,6 +394,9 @@ function createDataStore() {
 
   /** The budget cycle with the pay dates `payEarly` needs. Everything that
    * works out cycles reads this, not `state.budgetCycle`. */
+  /** Merchants worth a note (domain/suggest notePrompts), by key. */
+  const notePrompts = createRoot(() => createMemo(() => findNotePrompts(transactions(), state.categories,
+    new Map(Object.entries(state.merchantBreadth)), new Map(Object.entries(state.merchantNotes)))))
   const cycle = createRoot(() => createMemo((): CycleConfig => ({ ...state.budgetCycle, paydays: paydays(transactions()) })))
 
   /** Transactions of the Transactions tab's selected account(s). */
@@ -818,6 +827,7 @@ function createDataStore() {
   }
 
   return {
+    notePrompts,
     state,
     setState,
     reset,

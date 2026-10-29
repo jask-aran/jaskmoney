@@ -70,6 +70,7 @@ export type ScopeId =
   | "settings.aiDialog"
   | "settings.upAccounts"
   | "settings.factoryReset"
+  | "merchantNote"
 
 export type SettingsList = "categories" | "tags"
 export type SettingsSection = "taxonomy" | "rules" | "filters" | "up" | "ai" | "database"
@@ -251,6 +252,9 @@ export interface UiState {
   ruleOffersOpen: boolean
   ruleOfferCursor: number
   factoryResetOpen: boolean
+  /** Writing a note on a merchant (n in Merchants, N on a row): its name as
+   * shown, and the text. */
+  merchantNote: { merchant: string; draft: string; caret: number } | null
   factoryResetDraft: string
   factoryResetCaret: number
 }
@@ -425,6 +429,7 @@ function createUiStore() {
     aiDialog: null,
     upAccounts: null,
     factoryResetOpen: false,
+    merchantNote: null,
     factoryResetDraft: "",
     factoryResetCaret: 0,
   })
@@ -461,6 +466,7 @@ function createUiStore() {
       ruleOffersOpen: false,
       factoryResetOpen: false,
       factoryResetDraft: "", factoryResetCaret: 0,
+      merchantNote: null,
     })
   }
 
@@ -664,6 +670,7 @@ function createUiStore() {
     if (state.tagPickerOpen) return "tagPicker"
     if (state.tagChooserOpen) return "tagChooser"
     if (state.filterMode) return "filter"
+    if (state.merchantNote) return "merchantNote"
     if (state.detailId != null) return state.detailNotesEditing ? "manager.detail.notes" : "manager.detail"
     if (state.settingsEditor) return "settings.editor"
     if (state.importStage === "files") return "settings.import.files"

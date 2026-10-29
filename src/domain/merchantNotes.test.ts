@@ -23,12 +23,12 @@ test("merchant notes change only the breadth and category suggestion questions w
   expect(merchantBreadthQuestion(row.description, row.rawText, note)).toEqual({
     type: "noul",
     instructions: {
-      question: "Going by `merchant.note`, does the account holder buy many different kinds of things at `merchant`, so one purchase there could be any of them?",
+      question: "Going by `merchant.note`, would the account holder's purchases at `merchant` fall into different budget categories from one time to the next?",
       merchant: { name: "eBay", bank_text: "eBay INTERNET", note },
     },
     criteria: {
-      true: "Their purchases there are of many unrelated kinds",
-      false: "Their purchases there are nearly always one kind of thing",
+      true: "Different purchases there are different kinds of spending: electronics one time, clothes or a gift the next",
+      false: "Their purchases there are nearly always one kind of spending, such as groceries",
     },
   })
   const plain = suggestionQuestion(row, { c1: "Groceries" }, "Groceries ×1")

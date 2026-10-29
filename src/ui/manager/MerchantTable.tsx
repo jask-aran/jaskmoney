@@ -9,12 +9,15 @@ import { amountColor } from "../colors"
 import { appToday } from "../../domain/days"
 import { categoryMark } from "../icons"
 
-const COLUMNS = { marker: 1, gap: 1, total: 12, count: 5, average: 12, last: 9, category: 22 } as const
+const COLUMNS = { marker: 1, gap: 1, total: 12, count: 5, average: 12, last: 9, category: 22, note: 26 } as const
+/** Below this width the note column is left out. */
+const NOTE_FROM = 110
 
 /**
  * The Transactions table grouped by merchant: one row per merchant with its
- * signed total, row count, average, latest date and usual category, styled
- * like the row table (cursor only; selection and range belong to rows).
+ * signed total, row count, average, latest date, usual category and your
+ * note (or a dim prompt for one), styled like the row table (cursor only;
+ * selection and range belong to rows).
  */
 export function MerchantTable(props: {
   groups: MerchantGroup[]
@@ -25,8 +28,10 @@ export function MerchantTable(props: {
   sort: MerchantSort
   reverse: boolean
   empty: string
+  note?: (merchant: string) => { text: string; prompt: boolean } | null
 }) {
-  const nameWidth = () => Math.max(10, props.width - COLUMNS.marker - COLUMNS.total - COLUMNS.count - COLUMNS.average - COLUMNS.last - COLUMNS.category - 5 * COLUMNS.gap)
+  const noteWidth = () => (props.note && props.width >= NOTE_FROM ? COLUMNS.note : 0)
+  const nameWidth = () => Math.max(10, props.width - COLUMNS.marker - COLUMNS.total - COLUMNS.count - COLUMNS.average - COLUMNS.last - COLUMNS.category - 5 * COLUMNS.gap - (noteWidth() ? noteWidth() + COLUMNS.gap : 0))
   const mark = (column: MerchantSort) => (props.sort === column ? (props.reverse ? " ▲" : " ▼") : "")
   const windowRows = createMemo(() => props.groups.slice(props.top, props.top + props.visible))
   const gap = " ".repeat(COLUMNS.gap)
@@ -46,6 +51,7 @@ export function MerchantTable(props: {
           {`Last${mark("last")}`.padStart(COLUMNS.last)}
           {gap}
           {"Category".padEnd(COLUMNS.category)}
+          <Show when={noteWidth()}>{gap}{"Note".padEnd(noteWidth())}</Show>
         </b>
       </text>
       <Show when={props.groups.length} fallback={<text fg={theme.overlay1}>{props.empty}</text>}>
@@ -61,6 +67,7 @@ export function MerchantTable(props: {
               const fg = (color: string) => look().fg ?? color
               const muted = () => !g().categoryName || g().categoryName === "Uncategorised"
               const catColor = () => categoryColor(muted() ? null : g().categoryColor)
+              const note = () => props.note?.(g().merchant) ?? null
               return (
                 <text width="100%" bg={bg()}>
                   <S fg={fg(theme.accent)} bg={bg()} bold={look().bold}>{" "}</S>
@@ -75,6 +82,10 @@ export function MerchantTable(props: {
                   <S fg={fg(theme.mutedText)} bg={bg()}>{lastSeen(g().lastISO).padStart(COLUMNS.last)}</S>
                   <S bg={bg()}>{gap}</S>
                   <S fg={fg(catColor())} bg={bg()} dim={muted() && !look().fg}>{fit(`${categoryMark(g().categoryId, muted())} ${g().categoryName || "Uncategorised"}`, COLUMNS.category)}</S>
+                  <Show when={noteWidth()}>
+                    <S bg={bg()}>{gap}</S>
+                    <S fg={fg(note()?.prompt ? theme.overlay1 : theme.subtext0)} bg={bg()} italic={!!note()?.prompt}>{fit(note()?.text ?? "", noteWidth())}</S>
+                  </Show>
                 </text>
               )
             }}

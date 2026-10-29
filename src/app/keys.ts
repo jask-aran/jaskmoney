@@ -1,3 +1,4 @@
+import { merchantKey } from "../domain/suggest"
 import { footerShown, type Hint } from "./palette"
 import { toggleDemo, applyAllRules, applySavedFilter, clearTransactionFilter, askForRules, reportError, resetTransactionCursors, runUndo, showAccount, showDryRun, toggleIcons, toggleWeekStart, toggleXAxis } from "./actions"
 import { commands, rankCommands, type Command } from "./commands"
@@ -146,7 +147,7 @@ function shifted(key: Pick<KeyEvent, "name" | "sequence" | "shift">, letter: str
 }
 
 /** Scopes whose printable keys are text, so a paste can type into them. */
-const PASTE_SCOPES = new Set<ScopeId>(["llmSignIn", "settings.aiDialog", "filter", "manager.detail.notes", "catPicker", "tagPicker", "filterPicker", "settings.import.path", "settings.factoryReset"])
+const PASTE_SCOPES = new Set<ScopeId>(["merchantNote", "llmSignIn", "settings.aiDialog", "filter", "manager.detail.notes", "catPicker", "tagPicker", "filterPicker", "settings.import.path", "settings.factoryReset"])
 
 /** Whether a paste would land as text where input is now: never where
  * letters are commands (a pasted "x" must not dismiss anything). */
@@ -484,6 +485,11 @@ function handleManagerDetail(ui: UiStore, key: KeyEvent, data?: DataStore): void
   if (name === "escape" || name === "return" || name === "enter") { ui.setState({ detailId: null }); return }
   if (name === "c") { openCategoryPicker(ui, ui.targetIds(data?.scopedTransactions() ?? []), data); return }
   if (name === "t") { ui.openTagPicker(ui.targetIds(data?.scopedTransactions() ?? [])); return }
+  if ((name === "N" || (name === "n" && key.shift)) && data) {
+    const row = data.transactions().find((t) => t.id === ui.state.detailId)
+    if (row) { ui.setState({ detailId: null }); openMerchantNote(ui, data, row.description) }
+    return
+  }
   if (name === "n") {
     const notes = data?.transactions().find((t) => t.id === ui.state.detailId)?.notes ?? ""
     ui.setState({ detailNotesEditing: true, detailNotesDraft: notes, detailNotesCaret: notes.length })
@@ -534,6 +540,35 @@ function handleSettingsFactoryReset(ui: UiStore, key: KeyEvent, data?: DataStore
   }
   const next = editText({ value: ui.state.factoryResetDraft, caret: ui.state.factoryResetCaret }, key)
   if (next) ui.setState({ factoryResetDraft: next.value, factoryResetCaret: next.caret })
+}
+
+/** Open the note box for a merchant, on its note so far. */
+function openMerchantNote(ui: UiStore, data: DataStore, merchant: string): void {
+  const draft = data.state.merchantNotes[merchantKey(merchant)] ?? ""
+  ui.setState({ merchantNote: { merchant: merchant.trim(), draft, caret: draft.length } })
+  ui.setStatus(`Note on ${merchant.trim()} · for suggestions`)
+}
+
+/** The note box: enter saves (empty removes) and re-suggests the merchant's
+ * waiting rows; esc leaves it as it was. */
+function handleMerchantNote(ui: UiStore, key: KeyEvent, data?: DataStore): void {
+  const box = ui.state.merchantNote
+  if (!box) return
+  const { name } = key
+  if (name === "escape") { ui.setState({ merchantNote: null }); ui.setStatus("Note unchanged"); return }
+  if (name === "return" || name === "enter") {
+    ui.setState({ merchantNote: null })
+    if (!data) return
+    const note = box.draft.trim()
+    ui.setStatus(`${note ? "Note saved" : "Note removed"} · ${box.merchant}`)
+    void data.setMerchantNote(box.merchant, note).then(
+      (n) => { if (n) ui.setStatus(`${note ? "Note saved" : "Note removed"} · ${box.merchant} · re-suggested ${count(n, "row")}`) },
+      (error) => reportError(ui, error),
+    )
+    return
+  }
+  const next = editText({ value: box.draft, caret: box.caret }, key)
+  if (next) ui.setState("merchantNote", { draft: next.value, caret: next.caret })
 }
 
 function handleManagerAccountAction(ui: UiStore, key: KeyEvent, data?: DataStore): void {
@@ -1135,6 +1170,12 @@ function handleManagerTxns(ui: UiStore, key: KeyEvent, data?: DataStore): void {
   // Step through the accounts pane from the table.
   if (name === "a" && !key.shift && data) { stepAccount(ui, data); return }
   if (name === "m") { ui.setState({ txnView: "merchants", merchantCursor: 0, merchantTop: 0 }); ui.setStatus("Grouped by merchant · m for rows"); return }
+  // N: a note on the row's merchant (what you buy there), for suggestions.
+  if ((name === "N" || (name === "n" && key.shift)) && data) {
+    const row = data.scopedTransactions()[ui.state.managerCursor]
+    if (row) openMerchantNote(ui, data, row.description)
+    return
+  }
   // With ask: terms, n shows near misses too (rows Jev hasn't settled).
   if (name === "n" && !key.shift && data && askTerms(data.state.filterExpr).length) {
     const on = !data.nearMissesShown()
@@ -1393,6 +1434,7 @@ function handleManagerMerchants(ui: UiStore, key: KeyEvent, data?: DataStore): v
   }
   if (name === "c" && group) { openCategoryPicker(ui, group.ids, data); return }
   if (name === "t" && group) { ui.openTagPicker(group.ids); return }
+  if (name === "n" && !key.shift && group) { openMerchantNote(ui, data, group.merchant); return }
   if (name === "escape") {
     if (data.state.filterQuery) clearTransactionFilter(ui, data)
     else { ui.setState({ txnView: "rows" }); ui.setStatus("Transactions") }
@@ -1666,7 +1708,7 @@ const scopes: Record<ScopeId, ScopeEntry> = {
   "manager.detail": {
     handle: handleManagerDetail,
     quits: false,
-    hints: () => [{ key: "j/k", desc: "prev/next" }, { key: "c", desc: "category" }, { key: "t", desc: "tags" }, { key: "n", desc: "notes" }, { key: "esc", desc: "close" }],
+    hints: () => [{ key: "j/k", desc: "prev/next" }, { key: "c", desc: "category" }, { key: "t", desc: "tags" }, { key: "n", desc: "notes" }, { key: "N", desc: "merchant note" }, { key: "esc", desc: "close" }],
   },
   "overview.custom": {
     handle: handleOverviewCustom,
@@ -1681,6 +1723,11 @@ const scopes: Record<ScopeId, ScopeEntry> = {
     handle: handleSettingsFactoryReset,
     quits: false,
     hints: () => [{ key: "type RESET", desc: "confirm" }, { key: "enter", desc: "erase DB" }, { key: "esc", desc: "cancel" }],
+  },
+  "merchantNote": {
+    handle: handleMerchantNote,
+    quits: false,
+    hints: () => [{ key: "enter", desc: "save (empty removes)" }, { key: "esc", desc: "cancel" }],
   },
   "settings.upAccounts": {
     handle: handleUpAccounts,
@@ -1811,6 +1858,7 @@ const scopes: Record<ScopeId, ScopeEntry> = {
       { key: "x", desc: "dismiss", label: "Dismiss the suggestion", description: "for good" },
       { key: "u", desc: "undo", command: "txn:undo" },
       { key: "c", desc: "choose", label: "Choose a category…" },
+      { key: "N", desc: "merchant note", label: "Note on the merchant…", description: "what you buy there" },
       ...(state?.ruleOffers ? [{ key: "R", desc: `rules (${state.ruleOffers})`, command: "rules:offers" }] : []),
       // The review actions first: the footer shows the first eight
       // (footerLine), and cuts at the end on narrow screens.
@@ -1842,6 +1890,7 @@ const scopes: Record<ScopeId, ScopeEntry> = {
       { key: "i", desc: "uncategorised", command: "txn:uncategorised" },
       { key: "T", desc: "tag review", command: "txn:tag-review" },
       { key: "m", desc: "merchants", label: "Group by merchant" },
+      { key: "N", desc: "merchant note", label: "Note on the merchant…", description: "what you buy there" },
       { key: "a", desc: "account", label: "Next account" },
       { key: "S-j/k", desc: "range" },
       { key: "s", desc: "sort", label: "Cycle the sort" },
@@ -1882,6 +1931,7 @@ const scopes: Record<ScopeId, ScopeEntry> = {
       { key: "enter", desc: "its transactions", label: "Its transactions" },
       { key: "c", desc: "category", label: "Categorise all of it…" },
       { key: "t", desc: "tags", label: "Tag all of it…" },
+      { key: "n", desc: "note", label: "Note on the merchant…", description: "what you buy there" },
       { key: "/", desc: "filter", command: "txn:filter" },
       { key: "s", desc: "sort", label: "Cycle the sort" },
       { key: "u", desc: "undo", command: "txn:undo" },

@@ -19,9 +19,22 @@ import { accountStacks, selectedAccounts } from "../../domain/accountTree"
 import { AccountsPane, accountsPaneHeight } from "./AccountsPane"
 import { TransactionTable, type TableTagCandidate } from "./TransactionTable"
 import { MerchantTable } from "./MerchantTable"
+import { merchantKey } from "../../domain/suggest"
 import { groupByMerchant, sortMerchantGroups } from "../../domain/merchants"
 import { TransactionDetail } from "./TransactionDetail"
 import { Modal } from "../primitives/Modal"
+
+/** A merchant's note for the table, or a prompt for one where it would
+ * help (domain/suggest notePrompts): "always Groceries? n", "varies? n". */
+function merchantNote(merchant: string): { text: string; prompt: boolean } | null {
+  const key = merchantKey(merchant)
+  const note = data.state.merchantNotes[key]
+  if (note) return { text: note, prompt: false }
+  const prompt = data.notePrompts().get(key)
+  if (!prompt) return null
+  if (prompt.kind === "varies") return { text: "varies? n", prompt: true }
+  return { text: `always ${data.state.categories.find((c) => c.id === prompt.categoryId)?.name ?? "one"}? n`, prompt: true }
+}
 
 export function ManagerTab(props: { focused: SectionId }) {
   const dims = useTerminalDimensions()
@@ -266,6 +279,7 @@ export function ManagerTab(props: { focused: SectionId }) {
             sort={ui.state.merchantSort}
             reverse={ui.state.merchantReverse}
             empty={data.state.filterQuery ? "No matches" : "Empty · no transactions loaded"}
+            note={merchantNote}
           />
         </Show>
         <Show when={!merchants()}>

@@ -106,17 +106,23 @@ export const MERCHANT_STATE = "Shops and merchants on an Australian personal ban
  * cafes, bars, fuel and services under 0.4. Wordings that let supermarkets
  * through (Coles 0.77–0.93): "Does it sell many different kinds of goods?"
  * and "Could a purchase there belong in many spending categories?".
+ *
+ * With the user's note (merchant_notes) it asks about their own purchases
+ * there instead. On 12 notes (2026-10-29) this wording put "always
+ * groceries", "groceries", "only books", "stationery for uni" at 0.08–0.27
+ * and "varies…", "presents and homewares" at 0.80–0.93; "Does the holder buy
+ * many different kinds of things there?" read "groceries" (Coles) as 0.49.
  */
 export function merchantBreadthQuestion(description: string, bankText: string | null, note?: string): JevQuestion {
   return {
     type: "noul",
     instructions: {
-      question: note ? "Going by `merchant.note`, does the account holder buy many different kinds of things at `merchant`, so one purchase there could be any of them?" : "Does `merchant` sell a wide range of unrelated goods (such as electronics, homewares, clothing and toys), so a purchase there could be any of them?",
+      question: note ? "Going by `merchant.note`, would the account holder's purchases at `merchant` fall into different budget categories from one time to the next?" : "Does `merchant` sell a wide range of unrelated goods (such as electronics, homewares, clothing and toys), so a purchase there could be any of them?",
       merchant: { name: description.trim(), ...(bankText && bankText !== description ? { bank_text: bankText } : {}), ...(note ? { note } : {}) },
     },
     criteria: {
-      true: note ? "Their purchases there are of many unrelated kinds" : "A marketplace or a store selling many unrelated kinds of goods",
-      false: note ? "Their purchases there are nearly always one kind of thing" : "A shop for one kind of thing, including a supermarket (groceries), a cafe, a petrol station or a service",
+      true: note ? "Different purchases there are different kinds of spending: electronics one time, clothes or a gift the next" : "A marketplace or a store selling many unrelated kinds of goods",
+      false: note ? "Their purchases there are nearly always one kind of spending, such as groceries" : "A shop for one kind of thing, including a supermarket (groceries), a cafe, a petrol station or a service",
     },
   }
 }

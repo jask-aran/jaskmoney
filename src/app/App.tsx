@@ -16,6 +16,7 @@ import { Footer } from "../ui/primitives/Footer"
 import { JumpOverlay } from "../ui/primitives/JumpOverlay"
 import { CatPicker } from "../ui/primitives/CatPicker"
 import { TagChooser } from "../ui/primitives/TagChooser"
+import { MerchantNoteBox } from "../ui/manager/MerchantNoteBox"
 import { TagPicker } from "../ui/primitives/TagPicker"
 import { OverviewTab } from "../ui/overview/OverviewTab"
 import { ManagerTab } from "../ui/manager/ManagerTab"
@@ -147,6 +148,7 @@ export function App() {
       <JumpOverlay active={ui.state.jumpMode} tab={ui.state.activeTab} />
       <CatPicker />
       <TagChooser />
+      <MerchantNoteBox />
       <AiDialog />
       <UpAccountsDialog />
       <TagPicker />

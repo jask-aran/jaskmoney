@@ -34,7 +34,10 @@ export const merchantKey = (description: string) => description.trim().toLowerCa
  */
 export type Breadth = "mixed" | "unsure" | "single"
 
-export function merchantBreadth(transactions: Transaction[], categories: Category[], asked: ReadonlyMap<string, number>): (description: string) => Breadth {
+/** Per merchant, how its categorised rows (not people or payment apps)
+ * fall: the most used category, its count, the total, and whether they're
+ * spread (no category at HISTORY_MIN_SHARE). */
+function merchantTally(transactions: Transaction[], categories: Category[]): Map<string, { top: number; topCount: number; total: number; spread: boolean }> {
   const assignable = new Set(suggestionCategories(categories).map((c) => c.id))
   const tally = new Map<string, Map<number, number>>()
   for (const t of transactions) {
@@ -43,16 +46,48 @@ export function merchantBreadth(transactions: Transaction[], categories: Categor
     byCategory.set(t.categoryId, (byCategory.get(t.categoryId) ?? 0) + 1)
     tally.set(merchantKey(t.description), byCategory)
   }
-  const spread = new Set([...tally].filter(([, byCategory]) => {
-    const counts = [...byCategory.values()]
-    const total = counts.reduce((a, b) => a + b, 0)
-    return counts.length > 1 && Math.max(...counts) / total < HISTORY_MIN_SHARE
-  }).map(([key]) => key))
+  return new Map([...tally].map(([key, byCategory]) => {
+    const [top, topCount] = [...byCategory].sort((a, b) => b[1] - a[1])[0]!
+    const total = [...byCategory.values()].reduce((a, b) => a + b, 0)
+    return [key, { top, topCount, total, spread: byCategory.size > 1 && topCount / total < HISTORY_MIN_SHARE }]
+  }))
+}
+
+export function merchantBreadth(transactions: Transaction[], categories: Category[], asked: ReadonlyMap<string, number>): (description: string) => Breadth {
+  const tally = merchantTally(transactions, categories)
+  const spread = new Set([...tally].filter(([, t]) => t.spread).map(([key]) => key))
   return (description) => {
     const key = merchantKey(description)
     const p = asked.get(key) ?? 0
     return spread.has(key) || p >= MIXED_AT ? "mixed" : p >= MIXED_UNSURE_AT ? "unsure" : "single"
   }
+}
+
+/** Why a merchant could use a note: you put it in one category nearly
+ * always, though Jev reads its name as broad ("always"), or it varies. */
+export type NotePrompt = { kind: "always"; categoryId: number } | { kind: "varies" }
+
+/**
+ * The merchants worth a note, by key: spending at them at least
+ * HISTORY_MIN_ROWS times and no note yet. "always" when Jev thinks the name
+ * might not say what was bought (MIXED_UNSURE_AT) but your categorised rows
+ * nearly all sit in one category (Costco in Groceries); "varies" when they
+ * are spread, or Jev is sure the name is broad (eBay).
+ */
+export function notePrompts(transactions: Transaction[], categories: Category[], asked: ReadonlyMap<string, number>, notes: ReadonlyMap<string, string>): Map<string, NotePrompt> {
+  const tally = merchantTally(transactions, categories)
+  const spending = new Map<string, number>()
+  for (const t of transactions) if (t.amount < 0 && !isPersonToPerson(t)) spending.set(merchantKey(t.description), (spending.get(merchantKey(t.description)) ?? 0) + 1)
+  const out = new Map<string, NotePrompt>()
+  for (const [key, n] of spending) {
+    if (n < HISTORY_MIN_ROWS || notes.has(key)) continue
+    const p = asked.get(key) ?? 0
+    const t = tally.get(key)
+    if (t?.spread) out.set(key, { kind: "varies" })
+    else if (p >= MIXED_UNSURE_AT && t && t.total >= HISTORY_MIN_ROWS && t.topCount / t.total >= HISTORY_MIN_SHARE) out.set(key, { kind: "always", categoryId: t.top })
+    else if (p >= MIXED_AT) out.set(key, { kind: "varies" })
+  }
+  return out
 }
 
 /** The merchants among `transactions` worth asking about: card and online
