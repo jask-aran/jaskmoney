@@ -268,9 +268,10 @@ export interface UiState {
   /** Writing a note on a merchant (n in Merchants, N on a row): its name as
    * shown, and the text. */
   merchantNote: { merchant: string; draft: string; caret: number } | null
-  /** F1 in the search bar: how searches read (state/searchHelp), its first
-   * line shown, and how many lines fit (set by the dialog). */
+  /** F1 in the search bar: JQL (state/searchHelp), brief or full (m), its
+   * first line shown, and how many lines fit (set by the dialog). */
   searchHelp: boolean
+  searchHelpFull: boolean
   searchHelpTop: number
   searchHelpVisible: number
   factoryResetDraft: string
@@ -451,6 +452,7 @@ function createUiStore() {
     factoryResetOpen: false,
     merchantNote: null,
     searchHelp: false,
+    searchHelpFull: false,
     searchHelpTop: 0,
     searchHelpVisible: 0,
     factoryResetDraft: "",

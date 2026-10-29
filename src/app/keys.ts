@@ -23,7 +23,7 @@ import { anchorDraft, cycleFromDraft, editorFields, normaliseCycleDraft, pickerC
 import { runSync } from "./sync"
 import { runSmartSearch } from "./smartSearch"
 import { searchReport, writtenText } from "./searchReport"
-import { SEARCH_HELP } from "../state/searchHelp"
+import { SEARCH_HELP, SEARCH_HELP_FULL } from "../state/searchHelp"
 import { previewSent } from "./sentPreview"
 import { runAsk } from "./ask"
 import { eitherInstead, askTerms } from "../domain/filter"
@@ -426,7 +426,7 @@ function handleCatPicker(ui: UiStore, key: KeyEvent, data?: DataStore): void {
 
 function handleFilter(ui: UiStore, key: KeyEvent, data?: DataStore): void {
   const { name } = key
-  if (name === "f1") { ui.setState({ searchHelp: true, searchHelpTop: 0 }); return }
+  if (name === "f1") { ui.setState({ searchHelp: true, searchHelpFull: false, searchHelpTop: 0 }); return }
   // ↑ on a smart search's filter brings its question back, to reword it.
   const question = smartQuestionFor(ui.state, ui.state.filterDraft)
   if (name === "up" && question) {
@@ -559,11 +559,13 @@ function handleSettingsFactoryReset(ui: UiStore, key: KeyEvent, data?: DataStore
   if (next) ui.setState({ factoryResetDraft: next.value, factoryResetCaret: next.caret })
 }
 
-/** The search help: esc, enter, F1 or q close it; j/k and paging scroll it
- * when the screen is too short for it all. */
+/** The search help: m switches between the brief and the full version;
+ * esc, enter, F1 or q close it; j/k and paging scroll it when the screen
+ * is too short for it all. */
 function handleSearchHelp(ui: UiStore, key: KeyEvent): void {
   if (["escape", "return", "enter", "f1", "q"].includes(key.name)) { ui.setState({ searchHelp: false }); return }
-  const top = scrolled(key, ui.state.searchHelpTop, SEARCH_HELP.length, ui.state.searchHelpVisible)
+  if (key.name === "m") { ui.setState({ searchHelpFull: !ui.state.searchHelpFull, searchHelpTop: 0 }); return }
+  const top = scrolled(key, ui.state.searchHelpTop, (ui.state.searchHelpFull ? SEARCH_HELP_FULL : SEARCH_HELP).length, ui.state.searchHelpVisible)
   if (top != null) ui.setState({ searchHelpTop: top })
 }
 
@@ -1726,6 +1728,8 @@ type HintState = Pick<UiState, "focusedSection" | "drillReturn" | "chartViews"> 
   signInPaste?: boolean
   /** A tag review is open. */
   tagReview?: boolean
+  /** The search help shows its full version. */
+  searchHelpFull?: boolean
   /** Rules offered (R). */
   ruleOffers?: number
   /** The filter has `ask:` terms; whether near misses are shown. */
@@ -1821,7 +1825,7 @@ const scopes: Record<ScopeId, ScopeEntry> = {
   "searchHelp": {
     handle: handleSearchHelp,
     quits: false,
-    hints: () => [{ key: "j/k", desc: "scroll" }, { key: "esc", desc: "close" }],
+    hints: (state) => [{ key: "m", desc: state?.searchHelpFull ? "brief" : "full grammar" }, { key: "j/k", desc: "scroll" }, { key: "esc", desc: "close" }],
   },
   "merchantNote": {
     handle: handleMerchantNote,
@@ -2116,7 +2120,7 @@ export function hintState(ui: UiStore, data?: DataStore): HintState {
   return {
     focusedSection: ui.state.focusedSection, drillReturn: ui.state.drillReturn, chartViews: ui.state.chartViews, overviewCharts: ui.state.overviewCharts,
     uncategorisedOnly: data?.state.uncategorisedOnly, tagReview: !!data?.state.tagReview,
-    signInPaste: !!ui.state.llmSignIn?.paste, aiField: !!ui.state.aiDialog?.field,
+    signInPaste: !!ui.state.llmSignIn?.paste, aiField: !!ui.state.aiDialog?.field, searchHelpFull: ui.state.searchHelpFull,
     ruleOffers: data && ui.state.activeTab === "manager" ? data.allRuleOffers().length : 0,
     asks: !!data?.askCounts(), askLoose: data?.nearMissesShown(),
     recallQuestion: !!smartQuestionFor(ui.state, ui.state.filterDraft),
