@@ -120,8 +120,11 @@ describe("smart search", () => {
   test("Clairic failing or missing doesn't stop the search: Jev's phrase stands in, and the reason is reported", async () => {
     const jev = { judge: async () => answers({ phrase: "p0", amounts: ["at_least"], flow: "spending" }) }
     const down = await smartSearch({ clairic: async () => { throw new Error("daily allowance used up") }, jev }, "coffee over $5", ctx)
-    // Jev's phrase ("coffee") would route to ask:, which then gets the whole question.
-    expect(down).toMatchObject({ expr: 'ask:"coffee over $5" AND type:spending AND amt:<=-5', clairic: "daily allowance used up" })
+    // The amount is its own term, so ask: gets Jev's phrase, not "coffee over $5".
+    expect(down).toMatchObject({ expr: 'ask:"coffee" AND type:spending AND amt:<=-5', clairic: "daily allowance used up" })
+    // With nothing else said, ask: gets the whole question (a phrase can be a fragment).
+    const plain = { judge: async () => answers({ phrase: "p0" }) }
+    expect((await smartSearch({ jev: plain }, "stuff for the car", ctx)).expr).toBe('ask:"stuff for the car"')
     expect((await smartSearch({ jev }, "coffee over $5", ctx)).clairic).toBe("no Workers AI key")
   })
 })
@@ -158,7 +161,7 @@ describe("broad searches go to the categories they cover", () => {
     const broad = parsedSearch(values({ words: "going out" }), { ...answers({ flow: "spending" }), ...covers({ 2: [0.8, 0.4], 3: [0.7, 0.35] }) }, categories, "going out")
     expect(broad).toMatchObject({ categories: [2, 3], ask: "going out" })
     const expr = searchFilter(broad, ctx)
-    expect(expr).toBe('(cat:"Restaurants & Cafes" OR cat:"Takeaway" OR ask:"going out") AND type:spending')
+    expect(expr).toBe('(cat:"Restaurants & Cafes" OR cat:"Takeaway" OR (cat:"Uncategorised" AND ask:"going out")) AND type:spending')
     expect(parseFilterStrict(expr).error).toBeUndefined()
     // A shop: desc:, never categories.
     expect(parsedSearch(values({ words: "uber" }), { ...answers({ payee: 0.9 }), ...covers({ 2: [0.8, 0.4] }) }, categories, "uber").categories).toBeUndefined()
@@ -181,5 +184,20 @@ describe("several payees and the biggest few", () => {
     expect(p.top).toBe(10)
     expect(searchFilter(p, ctx)).toBe("type:spending AND top:10")
     expect(parsedSearch(values({ words: null }), answers({ amounts: ["top_count"] }), categories, "top 2.5").top).toBeUndefined()
+  })
+})
+
+describe("Jev reads only where a search could be", () => {
+  test("ask: is bounded to the related categories and uncategorised rows; with nothing related or covered, every row", () => {
+    const p: ParsedSearch = { ...none, ask: "coffee", related: [2, 4] }
+    expect(searchFilter(p, ctx)).toBe('(cat:"Restaurants & Cafes" OR cat:"Groceries" OR cat:"Uncategorised") AND ask:"coffee"')
+    expect(searchFilter({ ...p, categories: [3] }, ctx)).toBe('(cat:"Takeaway" OR ((cat:"Restaurants & Cafes" OR cat:"Groceries" OR cat:"Uncategorised") AND ask:"coffee"))')
+    expect(searchFilter({ ...none, ask: "coffee" }, ctx)).toBe('ask:"coffee"')
+    expect(parseFilterStrict(searchFilter({ ...p, categories: [3] }, ctx)).error).toBeUndefined()
+  })
+  test("related: Jev's kind at RELATED_KIND_AT or more, not covered", () => {
+    const noul = (n: number): JevAnswer => ({ type: "noul", noul: n })
+    const a = { ...answers({}), kind2: noul(0.78), every2: noul(0.1), kind3: noul(0.9), every3: noul(0.9), kind4: noul(0.39), every4: noul(0) }
+    expect(parsedSearch(values({ words: "coffee" }), a, categories, "coffee")).toMatchObject({ categories: [3], related: [2], ask: "coffee" })
   })
 })

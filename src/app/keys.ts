@@ -22,6 +22,7 @@ import { MERCHANT_SORTS, groupByMerchant, merchantFilter, sortMerchantGroups } f
 import { anchorDraft, cycleFromDraft, editorFields, normaliseCycleDraft, pickerChoices, pickerItems, stepChoice } from "../state/settingsForm"
 import { runSync } from "./sync"
 import { runSmartSearch } from "./smartSearch"
+import { searchReport, writtenText } from "./searchReport"
 import { runAsk } from "./ask"
 import { eitherInstead, askTerms } from "../domain/filter"
 import { AI_ROWS, aiRowLabel, isLlmRow, testAi } from "./apiKeys"
@@ -30,7 +31,7 @@ import { cancelLlmSignIn, signOutLlm, startLlmSignIn, submitSignInPaste } from "
 import { createLlm, hasLlm, LLM_PROVIDERS, llmModelId } from "../ai/llm"
 import { credentialEnv } from "../ai/credentials"
 import { runAccept, toggleUncategorised, newSuggestionsNote, suggestNew } from "./suggest"
-import { ACCEPT_ALL_AT, MATCH_AT } from "../domain/questions"
+import { ACCEPT_ALL_AT } from "../domain/questions"
 import { CHART_VIEWS, SETTINGS_SECTIONS, jumpTargets, TABS, settingsSectionFocus, smartQuestionFor, type ScopeId, type UiState, type UiStore } from "../state/uiStore"
 import type { DataStore } from "../state/dataStore"
 import {
@@ -445,21 +446,27 @@ function handleFilter(ui: UiStore, key: KeyEvent, data?: DataStore): void {
       if (data) void runSmartSearch(ui, data, draft, () => resetTransactionCursors(ui, data))
       return
     }
+    // A smart search's filter, applied as written, keeps saying who wrote it.
+    const smart = ui.state.smartQuestion
+    const written = smart && smart.expr === draft ? smart.written : undefined
     ui.closeFilter(true)
     const r = data?.commitFilter(draft) ?? { ok: true, err: "" }
     resetTransactionCursors(ui, data)
+    const asks = askTerms(data?.state.filterExpr ?? null).length > 0
     if (!draft.trim()) {
       ui.setStatus("Filter cleared")
-    } else if (r.ok && data && !data.scopedTransactions().length) {
+    } else if (!r.ok) {
+      ui.setStatus(`Filter live (not strict): ${r.err}`, true)
+    } else if (asks) {
+      ui.setStatus([written ? writtenText(written) : "", "Jev judging…"].filter(Boolean).join(" · "))
+    } else if (data && !data.scopedTransactions().length) {
       // Words that are never on one row together: say how to find either.
       const either = eitherInstead(data.state.filterExpr ? unwrap(data.state.filterExpr) : null, data.accountScoped())
       ui.setStatus(either ? `No row has all of those words · for any of them: ${either}` : "No matches · F1 for search help")
-    } else if (r.ok) {
-      ui.setStatus(`Filter ok · ${data?.scopedTransactions().length ?? 0} rows`)
     } else {
-      ui.setStatus(`Filter live (not strict): ${r.err}`, true)
+      ui.setStatus(searchReport({ written, rows: data?.scopedTransactions().length ?? 0 }))
     }
-    if (data && r.ok) void runAsk(ui, data)
+    if (data && r.ok) void runAsk(ui, data, written)
     return
   }
   const next = editText({ value: ui.state.filterDraft, caret: ui.state.filterCaret }, key)
@@ -1188,7 +1195,8 @@ function handleManagerTxns(ui: UiStore, key: KeyEvent, data?: DataStore): void {
     data.setAskLoose(on)
     ui.jumpManagerCursor(0, data.scopedTransactions().length)
     const counts = data.askCounts()
-    ui.setStatus(on ? `Near misses shown · ${counts?.near ?? 0} below ${MATCH_AT * 100}% · n hides them` : "Matches only")
+    const tally = `${counts?.matches ?? 0} match, ${counts?.near ?? 0} near`
+    ui.setStatus(on ? `${tally}: near misses below the matches (n hides them)` : `${tally}: matches only (n shows the near)`)
     return
   }
   // R: rules offered from what you've categorised the same way repeatedly.

@@ -39,6 +39,6 @@ test("near misses follow the matches, marked ≈ with their probability and dimm
   expect(span("≈50%", "Tea House").fg.toInts()).toEqual(RGBA.fromHex(theme.warning).toInts())
   // The near miss's description is dimmed; the filter bar says Jev reads each row.
   expect(span("Tea House", "Tea House").fg.toInts()).toEqual(RGBA.fromHex(theme.overlay1).toInts())
-  expect(frame).toContain("◆ Jev reads each row")
+  expect(frame).toContain("◆ ask: judged by Jev")
   expect(frame).toContain("1 match, then 1 near (≈)")
 })

@@ -1,3 +1,4 @@
+import type { Written } from "../app/searchReport"
 import type { Armed } from "./armed"
 import type { DryRunReport } from "../domain/rules"
 import type { CycleAnchor, CycleUnit } from "../domain/budget"
@@ -230,7 +231,7 @@ export interface UiState {
   /** The last smart search: the question asked and the filter it became.
    * It describes the filter only while the filter is still that expression
    * (`smartQuestionFor`). */
-  smartQuestion: { question: string; expr: string } | null
+  smartQuestion: { question: string; expr: string; written?: Written } | null
   /** Accept-all's preview: the rows it would categorise, until confirmed. */
   acceptPreview: number[] | null
   /** Settings › AI models' dialog for one row (state/aiDialog): the action

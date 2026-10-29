@@ -484,8 +484,13 @@ function createDataStore() {
     const expr = state.filterExpr ? unwrap(state.filterExpr) : null
     const rows = accountScoped()
     if (!expr && !state.uncategorisedOnly && !state.tagReview) return rows
-    if (askTerms(expr).length) askVersion()
-    return applyTop(expr, rows.filter((t) => inView(t) && (!expr || evalFilter(expr, t, askVerdict))))
+    const asks = askTerms(expr).length > 0
+    if (asks) askVersion()
+    // top: cuts the matches; near misses (when shown) follow, cut alike.
+    const matches = applyTop(expr, rows.filter((t) => inView(t) && (!expr || evalFilter(expr, t, verdictAt(MATCH_AT)))))
+    if (!asks || !nearMissesShown()) return matches
+    const near = rows.filter((t) => inView(t) && evalFilter(expr, t, verdictAt(NEAR_AT)) && !evalFilter(expr, t, verdictAt(MATCH_AT)))
+    return [...matches, ...applyTop(expr, near)]
   }))
 
   /** The account's rows through the filter, in the table's sort. */

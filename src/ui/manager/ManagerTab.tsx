@@ -263,7 +263,7 @@ export function ManagerTab(props: { focused: SectionId }) {
               <S fg={theme.text}>{"  "}</S>
               <S fg={fb().dotColor}>●</S>
               <S fg={fb().dotColor}> {fb().dotLabel}</S>
-              {fb().jev ? <S fg={theme.teal}>{"  ◆ Jev reads each row"}</S> : null}
+              {fb().jev ? <S fg={theme.teal}>{"  ◆ ask: judged by Jev"}</S> : null}
               {fb().question ? <S fg={theme.overlay1}>{fb().editing ? `  ↑ ?${fb().question}` : `  from ?${fb().question}`}</S> : null}
               {!fb().editing ? <S fg={theme.overlay1}>{ui.state.drillReturn ? "  (esc back · u clear)" : "  (esc clear)"}</S> : null}
             </text>

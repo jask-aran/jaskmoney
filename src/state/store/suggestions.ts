@@ -4,13 +4,23 @@ import { hasJev, JEV_SETUP, jevClient, type JevClient } from "../../ai/jev"
 import { askMerchantBreadth, capSuggestion, historySuggestions, jevSuggestions, merchantKey, merchantBreadth, suggestionCap, unaskedMerchants } from "../../domain/suggest"
 import { isOrdinaryFlow, isUncategorised } from "../../domain/moneyRules"
 import type { Transaction } from "../../domain/types"
-import { askCandidates, ASK_DEFAULT_DAYS, ASK_LIMIT, judgeRows } from "../../domain/ask"
+import { askCandidates, judgeRows } from "../../domain/ask"
 import { askTerms, hasDateTerm, undecided, type AskVerdict } from "../../domain/filter"
 import { MATCH_AT, NEAR_AT } from "../../domain/questions"
 import { appToday } from "../../domain/days"
 import { count } from "../../ui/text"
 import { operationSummary, type createUpPush } from "./upPush"
 import type { StoreContext } from "./context"
+
+/** What an ask run judged, per `ask:` term: the rows it covered, how many
+ * were sent to Jev (the rest were known), and how they came out. */
+export interface AskResult {
+  terms: Array<{ words: string; rows: number; asked: number; matched: number; near: number; skipped: number }>
+  failures: string[]
+  ms: number
+  /** The filter limits dates (else only the last ASK_DEFAULT_DAYS were judged). */
+  dated: boolean
+}
 
 export function createSuggestions(ctx: StoreContext, deps: {
   applyCategories: ReturnType<typeof createUpPush>["applyCategories"]
@@ -147,18 +157,20 @@ export function createSuggestions(ctx: StoreContext, deps: {
    * Have Jev judge the rows the current filter's `ask:` terms are waiting
    * on: those the rest of the filter leaves possible, not judged yet, from
    * the last ASK_DEFAULT_DAYS unless the filter limits dates, at most
-   * ASK_LIMIT, newest first. Matches show as each batch lands. Returns a
-   * summary, or "" when a newer run or a cleared filter took over.
+   * ASK_LIMIT, newest first. Matches show as each batch lands. Returns what
+   * was judged (app/searchReport words it), or null when a newer run or a
+   * cleared filter took over.
    */
-  async function askAbout(ai?: Pick<JevClient, "judge">): Promise<string> {
+  async function askAbout(ai?: Pick<JevClient, "judge">): Promise<AskResult | null> {
     const expr = state.filterExpr ? unwrap(state.filterExpr) : null
     const terms = askTerms(expr)
-    if (!terms.length) return ""
+    if (!terms.length) return null
     if (!ai && !hasJev()) throw new Error(`ask: needs Jev (${JEV_SETUP})`)
     const run = ++ctx.askRun
     const client = ai ?? jevClient()
-    const parts: string[] = []
-    const failures: string[] = []
+    const started = Date.now()
+    const result: AskResult = { terms: [], failures: [], ms: 0, dated: hasDateTerm(expr) }
+    const failures = result.failures
     try {
       // One term at a time: each verdict narrows the rows the next must judge.
       for (const words of terms) {
@@ -182,20 +194,16 @@ export function createSuggestions(ctx: StoreContext, deps: {
           },
           onError: (error) => failures.push(error instanceof Error ? error.message : String(error)),
         })
-        if (run !== ctx.askRun) return ""
+        if (run !== ctx.askRun) return null
         const matched = rows.filter((t) => (known.get(t.id) ?? 0) >= MATCH_AT).length
         const near = rows.filter((t) => { const p = known.get(t.id) ?? 0; return p >= NEAR_AT && p < MATCH_AT }).length
-        let part = `ask "${words}": ${matched} of ${rows.length} match`
-        if (near) part += `, ${near} near (n shows them)`
-        if (skipped && !hasDateTerm(expr)) part += ` · judged the last ${ASK_DEFAULT_DAYS} days (add date: to look further)`
-        else if (skipped) part += ` · judged the latest ${ASK_LIMIT} of ${rows.length + skipped}`
-        parts.push(part)
+        result.terms.push({ words, rows: rows.length, asked: todo.length, matched, near, skipped })
       }
     } finally {
       if (run === ctx.askRun) setState({ asking: null })
     }
-    if (failures.length) parts.push(`${failures.length} request${failures.length > 1 ? "s" : ""} failed: ${failures[0]}`)
-    return parts.join(" · ")
+    result.ms = Date.now() - started
+    return result
   }
 
   /** Rows background suggesting has asked about since the database opened:

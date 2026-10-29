@@ -238,7 +238,10 @@ export function searchTermQuestions(query: string): Record<string, JevQuestion> 
   if (phrases.length) {
     questions.phrase = {
       type: "choice",
-      instructions: "Which words in `search` name what it looks for: a shop, a person, or a kind of thing bought or received?",
+      // "Which words name what it looks for: a shop, a person, or a kind of
+      // thing?" picked fragments ("stuff" of "stuff for the car"); this
+      // took the full phrase on 2 of 8 searches and matched the rest (2026-10-29).
+      instructions: "Which phrase in `search` names, in full, the kind of thing, shop or person it looks for, leaving out amounts, counts, dates and periods?",
       criteria: { ...Object.fromEntries(phrases.map((p, i) => [`p${i}`, `"${p}"`])), none: "Nothing in particular is named: only amounts, dates, periods, or words for any transaction such as transactions, purchases or payments" },
     }
   }
@@ -277,6 +280,20 @@ export function coverQuestions(categories: Category[]): Record<string, JevQuesti
     questions[`every${c.id}`] = { type: "noul", instructions: { question: "Is every transaction in `category` something `search` asks about?", category } }
   }
   return questions
+}
+
+/** A category the search doesn't cover is still related at this "kind"
+ * or more: Jev reads only related and uncategorised rows, not every row.
+ * Probed on 8 searches (2026-10-29): coffee → Restaurants & Cafes 0.78,
+ * Takeaway 0.60, Groceries 0.59 (beans), with Pubs & Bars 0.33 left out;
+ * gifts → Holidays & Travel, Children & Family, People 0.44–0.54. */
+export const RELATED_KIND_AT = 0.4
+
+/** Categories related to a search but not covered by it (see RELATED_KIND_AT). */
+export function relatedCategoryIds(answers: Record<string, { type: string; noul?: number }>, categories: Category[]): number[] {
+  const covered = new Set(coveredCategoryIds(answers, categories))
+  const kind = (id: number) => { const a = answers[`kind${id}`]; return a?.type === "noul" ? a.noul ?? 0 : 0 }
+  return routableCategories(categories).filter((c) => !covered.has(c.id) && kind(c.id) >= RELATED_KIND_AT).map((c) => c.id)
 }
 
 /** The categories a search covers, by coverQuestions' answers. */
