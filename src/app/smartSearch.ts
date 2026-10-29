@@ -22,7 +22,7 @@ export async function runSmartSearch(ui: UiStore, data: DataStore, draft: string
     const ai = { clairic: searchUsesClairic() ? createWorkersAiClient(readWorkersAiCredentials()).clairic : undefined, jev: jevClient() }
     const descriptions = [...new Set(data.accountScoped().map((t) => t.description))]
     const started = Date.now()
-    const { expr, clairic } = await smartSearch(ai, query, { today: appToday(), cycle: data.cycle(), categories: data.state.categories, descriptions })
+    const { expr, clairic } = await smartSearch(ai, query, { today: appToday(), cycle: data.cycle(), categories: data.state.categories, descriptions, uses: data.categoryUses() })
     if (!ui.state.filterMode || ui.state.filterDraft !== draft) return
     // Without Clairic the words are Jev's pick and written dates are not read.
     const written: Written = { ms: Date.now() - started, clairic: !ai.clairic ? "off" : clairic ? { failed: clairic.replace(/^Workers AI clairic:\s*/, "") } : "used" }

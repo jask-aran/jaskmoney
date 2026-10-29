@@ -87,8 +87,10 @@ export async function previewSent(use: AiUse, data: DataStore, options: { smartQ
     const question = options.smartQuestion ?? "coffee over $5 last month"
     const clairic = recorder()
     const jevSent = await captureJev((jev) => smartSearch({ jev, ...(options.clairic ? { clairic: createWorkersAiClient({ token: "preview", accountId: "ACCOUNT", fetch: clairic.fetch, timeoutMs: 5_000 }).clairic } : {}) },
-      question, { today: appToday(), cycle: data.cycle(), categories, descriptions: [] }))
-    parts.push({ title: `Smart search (?${question})`, when: "once per smart search, Jev and Clairic at the same time; the answers are put together into JQL here, not by the models", ...first(jevSent) })
+      question, { today: appToday(), cycle: data.cycle(), categories, descriptions: [], uses: data.categoryUses() }))
+    // The query's questions, then the category questions with your examples (smartSearch).
+    parts.push({ title: `Smart search (?${question})`, when: "once per smart search, with the two below at the same time; the answers are put together into JQL here, not by the models", ...first(jevSent) })
+    parts.push({ title: "Smart search: categories", when: "with the request above: which of your categories the search covers or is related to", ...first(jevSent.slice(1)) })
     if (options.clairic) parts.push({ title: "Smart search: Clairic", when: "with the Jev request above", ...first(clairic.sent.map((s) => ({ ...s, url: s.url.replace("/accounts/ACCOUNT/", "/accounts/<your account>/") }))) })
     const row = sampleRow(data, false)
     const words = options.askWords ?? "coffee"

@@ -4,7 +4,7 @@ import { cycleFor, type CycleConfig } from "./budget"
 import { addDays, addMonths } from "./days"
 import { categoryTerm } from "./drill"
 import { anyOf, filterTerm, textContains } from "./filter"
-import { FLOWS, PERIODS, searchNumbers, searchPhrases, searchQuestions, searchTermQuestions, type Flow, type Period, coverQuestions, coveredCategoryIds, relatedCategoryIds } from "./questions"
+import { FLOWS, PERIODS, searchNumbers, searchPhrases, searchQuestions, searchTermQuestions, type Flow, type Period, coverQuestions, coveredCategoryIds, type CategoryUses, relatedCategoryIds } from "./questions"
 import type { Category } from "./types"
 
 /**
@@ -201,18 +201,25 @@ export function searchFilter(p: ParsedSearch, ctx: { today: string; cycle: Cycle
  * build its filter. Clairic failing (no key, or Cloudflare's free daily
  * allowance used up) doesn't stop the search: `clairic` says why it was left
  * out. When nothing usable comes back, the query itself is the filter.
+ * `uses`, the account holder's examples per category (suggest
+ * categoryUses), go with the category questions in a request of their own,
+ * at the same time: in the same state they pulled the phrase question
+ * ("stuff for the car" → "car", then read as Car Insurance).
  */
 export async function smartSearch(
   ai: { clairic?: WorkersAiClient["clairic"]; jev: Pick<JevClient, "judge"> },
   query: string,
-  ctx: { today: string; cycle: CycleConfig; categories: Category[]; descriptions?: string[] },
+  ctx: { today: string; cycle: CycleConfig; categories: Category[]; descriptions?: string[]; uses?: CategoryUses },
 ): Promise<{ expr: string; parsed: ParsedSearch; clairic: string | null }> {
-  const [values, answers] = await Promise.all([
+  const uses = ctx.uses && Object.keys(ctx.uses).length ? ctx.uses : null
+  const [values, terms, covers] = await Promise.all([
     ai.clairic
       ? ai.clairic(SEARCH_FIELDS, query, ctx.today).catch((error: unknown) => (error instanceof Error ? error : new Error(String(error))))
       : Promise.resolve(new Error("no Workers AI key")),
-    ai.jev.judge({ ...searchQuestions(ctx.categories), ...searchTermQuestions(query), ...coverQuestions(ctx.categories) }, { search: query }),
+    ai.jev.judge({ ...searchQuestions(ctx.categories), ...searchTermQuestions(query) }, { search: query }),
+    ai.jev.judge(coverQuestions(ctx.categories, !!uses), { search: query, ...(uses ? { categories_used_for: uses } : {}) }),
   ])
+  const answers = { ...terms, ...covers }
   const clairic = values instanceof Error ? values.message : null
   const raw = parsedSearch(values instanceof Error ? null : values, answers, ctx.categories, query)
   const parsed = ctx.descriptions ? snapPayee(raw, ctx.descriptions) : raw

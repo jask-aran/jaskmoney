@@ -12,12 +12,27 @@ import type { Category, Transaction } from "./types"
  * subcategory hierarchy, an ensemble of both, category definitions in the
  * criteria, "Was this money spent on …?" (it says yes far too often), and
  * each row's most similar-looking categorised rows (trigram match).
+ *
+ * Checked again on 2026-10-29 with 325 merchants held out of the history
+ * (each half of the merchants judged against the other half's history):
+ * the account holder's examples named in each option (e.g. …) 66.2% top-1;
+ * no examples 64.9%; the examples once in the state (`categories_used_for`)
+ * 66.2%, with more of its 80%-sure picks right (86% of 189, against 79% of
+ * 191) at 40% fewer tokens. How the card was used, the time, the account
+ * and a foreign amount added nothing (65.2%), nor did each row's 5 most
+ * similar past rows by shared words (64.3%). Most misses were Up's own
+ * labels (313 of the 325) on a fine line: a cafe as Takeaway, a roaster as
+ * Groceries.
  */
 
 /** What Jev is shown about a transaction. `category` (when it has a real
  * one) and `earlier` (how rows with the same description were categorised,
- * as "Groceries ×3, Takeaway ×1") only where the question allows. */
+ * as "Groceries ×3, Takeaway ×1") only where the question allows. The
+ * description is the merchant as the bank names it (Up has no separate
+ * merchant); the account holder's own note and tags go too, when there are
+ * any (IGNORE says nothing about the row). */
 export function transactionFacts(t: Transaction, extra: { category?: boolean; earlier?: string; note?: string } = {}): Record<string, string> {
+  const tags = t.tagNames.filter((name) => name.toUpperCase() !== "IGNORE")
   return {
     description: t.description,
     amount: `${t.amount < 0 ? "-" : "+"}${formatMoney(Math.abs(t.amount))}`,
@@ -25,6 +40,8 @@ export function transactionFacts(t: Transaction, extra: { category?: boolean; ea
     ...(t.transactionType ? { bank_type: t.transactionType } : {}),
     ...(t.message ? { message: t.message } : {}),
     ...(t.rawText && t.rawText !== t.description ? { bank_text: t.rawText } : {}),
+    ...(t.notes.trim() ? { your_note: t.notes.trim() } : {}),
+    ...(tags.length ? { tags: tags.join(", ") } : {}),
     ...(extra.category && t.categoryId != null && t.categoryName && t.categoryName !== "Uncategorised" ? { category: t.categoryName } : {}),
     ...(extra.earlier ? { categorised_before: extra.earlier } : {}),
     ...(extra.note ? { merchant_note: extra.note } : {}),
@@ -35,6 +52,26 @@ export function transactionFacts(t: Transaction, extra: { category?: boolean; ea
 
 /** Shared by every suggestion question in a request. */
 export const SUGGESTION_STATE = "Bank transactions from an Australian personal account, one per question."
+
+/** The account holder's own transactions in each category (by its path,
+ * as the options name it): in the state once, shared by every question in
+ * a request (suggestions, and smart search's category questions), so
+ * their choices carry over to merchants Jev hasn't seen with them. */
+export type CategoryUses = Record<string, string[]>
+
+/** Said by a question when the state has `categories_used_for`. */
+const USES_NOTE = " `categories_used_for` lists some of the account holder's own transactions in each category."
+
+/** The suggestion state: what the rows are, and the account holder's examples when there are any. */
+export function suggestionState(uses: CategoryUses = {}): string | Record<string, unknown> {
+  return Object.keys(uses).length ? { about: SUGGESTION_STATE, categories_used_for: uses } : SUGGESTION_STATE
+}
+
+/** A category as options and `categories_used_for` name it: "Parent › Name". */
+export const categoryPath = (c: Category, categories: Category[]) => {
+  const parent = categories.find((p) => p.id === c.parentId)
+  return parent ? `${parent.name} › ${c.name}` : c.name
+}
 
 /** A suggestion is at least this likely (Jev's probability for its pick) for
  * accept-all (`Y`) to take it unseen. On the tuning rows, about 83% of picks
@@ -53,30 +90,26 @@ export const NO_DETAIL_CAP = 0.45
 export const SUGGESTION_RANKED = 5
 export const RANKED_MIN = 0.03
 
-/** Each category option names this many of the account holder's own
- * transactions in it, so their choices carry over to other merchants. On
- * the rows with no same-description history this lifted top-1 by about
- * 1.5 points (59 → 60%, three runs each) and let ~30 more of 297 rows
- * reach ACCEPT_ALL_AT at the same precision; 8 did no better. */
+/** `categories_used_for` names this many of the account holder's own
+ * transactions in each category. Named in each option (2026-10-27), on the
+ * rows with no same-description history, this lifted top-1 by about 1.5
+ * points (59 → 60%, three runs each) and let ~30 more of 297 rows reach
+ * ACCEPT_ALL_AT at the same precision; 8 did no better. */
 export const EXAMPLES_PER_CATEGORY = 4
 
-/** One option per suggestable category, keyed `c<id>`: its path, whether
- * it is income or not spending, and `examples` of the user's own
- * transactions in it. */
-export function suggestionCriteria(suggestable: Category[], categories: Category[], examples?: Map<number, string[]>): Record<string, string> {
+/** One option per suggestable category, keyed `c<id>`: its path, and
+ * whether it is income or not spending. */
+export function suggestionCriteria(suggestable: Category[], categories: Category[]): Record<string, string> {
   const criteria: Record<string, string> = {}
   for (const c of suggestable) {
     const parent = categories.find((p) => p.id === c.parentId)
-    const named = examples?.get(c.id) ?? []
-    criteria[`c${c.id}`] = `${parent ? `${parent.name} › ` : ""}${c.name}${c.income || parent?.income ? " (income)" : ""}${c.notSpending ? " (not spending: moving your own money)" : ""}${named.length ? ` (e.g. ${named.join(", ")})` : ""}`
+    criteria[`c${c.id}`] = `${categoryPath(c, categories)}${c.income || parent?.income ? " (income)" : ""}${c.notSpending ? " (not spending: moving your own money)" : ""}`
   }
   return criteria
 }
 
-/** Whether any option in `criteria` names examples (the question then says so). */
-const namesExamples = (criteria: Record<string, string>) => Object.values(criteria).some((v) => v.includes(" (e.g. "))
-
-export function suggestionQuestion(t: Transaction, criteria: Record<string, string>, earlier = "", note?: string): JevQuestion {
+/** `uses`: the state has `categories_used_for` (suggestionState). */
+export function suggestionQuestion(t: Transaction, criteria: Record<string, string>, earlier = "", note?: string, uses = false): JevQuestion {
   return {
     type: "choice",
     instructions: {
@@ -84,7 +117,7 @@ export function suggestionQuestion(t: Transaction, criteria: Record<string, stri
         // Money in only: refunds belong with what was bought (said to every
         // row, it cost a point of accuracy on spending).
         + (t.amount > 0 ? " Money back for a purchase (a refund) belongs in the category of what was bought, not income." : "")
-        + (namesExamples(criteria) ? " Each category lists some of the account holder's own transactions in it." : "")
+        + (uses ? USES_NOTE : "")
         + (note ? " `transaction.merchant_note` is what the account holder says about this merchant." : ""),
       transaction: transactionFacts(t, { earlier, note }),
     },
@@ -188,13 +221,8 @@ export type Flow = keyof typeof FLOWS
  * money, whether it names a payee, and which of the user's categories it
  * comes closest to (used only to break ties between named categories). */
 export function searchQuestions(categories: Category[]): Record<string, JevQuestion> {
-  const byId = new Map(categories.map((c) => [c.id, c]))
   const criteria: Record<string, string> = { none: "No category is named" }
-  for (const c of categories) {
-    if (c.isDefault) continue
-    const parent = c.parentId != null ? byId.get(c.parentId) : undefined
-    criteria[`c${c.id}`] = parent ? `${parent.name} › ${c.name}` : c.name
-  }
+  for (const c of categories) if (!c.isDefault) criteria[`c${c.id}`] = categoryPath(c, categories)
   return {
     period: { type: "choice", instructions: "Which period does `search` ask about?", criteria: { ...PERIODS } },
     flow: { type: "choice", instructions: "What kind of money does `search` ask about?", criteria: { ...FLOWS } },
@@ -268,18 +296,18 @@ function routableCategories(categories: Category[]): Category[] {
   return categories.filter((c) => !parents.has(c.id) && !c.isDefault)
 }
 
-const categoryPath = (c: Category, categories: Category[]) => {
-  const parent = categories.find((p) => p.id === c.parentId)
-  return parent ? `${parent.name} › ${c.name}` : c.name
-}
-
-/** Two questions per category about `search`: kind<id> and every<id>. */
-export function coverQuestions(categories: Category[]): Record<string, JevQuestion> {
+/** Two questions per category about `search`: kind<id> and every<id>.
+ * `uses`: the state has `categories_used_for`. With it (2026-10-29, 30
+ * searches), a third as many unrelated categories passed RELATED_KIND_AT
+ * (0.7 a search, from 2.0) and none was wrongly covered (from 2), every
+ * expected category still related. */
+export function coverQuestions(categories: Category[], uses = false): Record<string, JevQuestion> {
   const questions: Record<string, JevQuestion> = {}
+  const note = uses ? USES_NOTE : ""
   for (const c of routableCategories(categories)) {
     const category = categoryPath(c, categories)
-    questions[`kind${c.id}`] = { type: "noul", instructions: { question: "Is `category` a kind of spending that `search` asks about?", category } }
-    questions[`every${c.id}`] = { type: "noul", instructions: { question: "Is every transaction in `category` something `search` asks about?", category } }
+    questions[`kind${c.id}`] = { type: "noul", instructions: { question: `Is \`category\` a kind of spending that \`search\` asks about?${note}`, category } }
+    questions[`every${c.id}`] = { type: "noul", instructions: { question: `Is every transaction in \`category\` something \`search\` asks about?${note}`, category } }
   }
   return questions
 }

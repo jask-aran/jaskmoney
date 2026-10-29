@@ -1,6 +1,6 @@
 import type { TagInput } from "../db/client"
 import { chronological } from "../domain/chronology"
-import { notePrompts as findNotePrompts } from "../domain/suggest"
+import { categoryUses as findCategoryUses, merchantBreadth, notePrompts as findNotePrompts } from "../domain/suggest"
 import { createUpPush, categoryPush, operationSummary, type PushableRow } from "./store/upPush"
 import { createSuggestions } from "./store/suggestions"
 import { createTagReview, type TagReview } from "./store/tagReview"
@@ -398,6 +398,9 @@ function createDataStore() {
   /** Merchants worth a note (domain/suggest notePrompts), by key. */
   const notePrompts = createRoot(() => createMemo(() => findNotePrompts(transactions(), state.categories,
     new Map(Object.entries(state.merchantBreadth)), new Map(Object.entries(state.merchantNotes)))))
+  /** The account holder's examples per category, for Jev (suggest categoryUses). */
+  const categoryUses = createRoot(() => createMemo(() => findCategoryUses(transactions(), state.categories,
+    merchantBreadth(transactions(), state.categories, new Map(Object.entries(state.merchantBreadth))))))
   const cycle = createRoot(() => createMemo((): CycleConfig => ({ ...state.budgetCycle, paydays: paydays(transactions()) })))
 
   /** Transactions of the Transactions tab's selected account(s). */
@@ -834,6 +837,7 @@ function createDataStore() {
 
   return {
     notePrompts,
+    categoryUses,
     state,
     setState,
     reset,

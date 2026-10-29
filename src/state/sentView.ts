@@ -72,9 +72,10 @@ function outline(key: string, value: unknown, indent: number, width: number, out
     out.push([{ text: `${pad}${label}`, tone: "key" }, { text, tone: "text" }])
     return
   }
-  // A list's item that fits on a line is its JSON there (the brief's 50 categories).
+  // A list, or a list's item, that fits on a line is its JSON there (the
+  // rule brief's 50 categories, a category's examples).
   const compact = JSON.stringify(value)
-  if (key.startsWith("[") && pad.length + label.length + compact.length <= width) {
+  if ((key.startsWith("[") || Array.isArray(value)) && pad.length + label.length + compact.length <= width) {
     out.push([{ text: `${pad}${label}`, tone: "key" }, { text: compact, tone: "text" }])
     return
   }

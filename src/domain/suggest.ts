@@ -1,7 +1,7 @@
 import { judgeEach, type JevClient } from "../ai/jev"
 import { assignableCategories } from "./categoryOptions"
 import { isOrdinaryFlow, isUncategorised } from "./moneyRules"
-import { EXAMPLES_PER_CATEGORY, MERCHANT_STATE, merchantBreadthQuestion, MIXED_AT, MIXED_UNSURE_AT, NO_DETAIL_CAP, RANKED_MIN, SUGGESTION_RANKED, SUGGESTION_STATE, UNSURE_CAP, suggestionCriteria, suggestionQuestion } from "./questions"
+import { EXAMPLES_PER_CATEGORY, MERCHANT_STATE, merchantBreadthQuestion, MIXED_AT, MIXED_UNSURE_AT, NO_DETAIL_CAP, RANKED_MIN, SUGGESTION_RANKED, UNSURE_CAP, categoryPath, suggestionCriteria, suggestionQuestion, suggestionState, type CategoryUses } from "./questions"
 import type { Category, CategorySuggestion, Transaction } from "./types"
 
 /**
@@ -194,6 +194,18 @@ export function categoryExamples(history: Transaction[], suggestable: Category[]
   return out
 }
 
+/** The account holder's examples by category path (`categories_used_for`),
+ * for suggestions and smart search alike. */
+export function categoryUses(history: Transaction[], categories: Category[], breadth?: (description: string) => Breadth): CategoryUses {
+  const uses: CategoryUses = {}
+  const byId = new Map(categories.map((c) => [c.id, c]))
+  for (const [id, names] of categoryExamples(history, suggestionCategories(categories), breadth)) {
+    const c = byId.get(id)
+    if (c && names.length) uses[categoryPath(c, categories)] = names
+  }
+  return uses
+}
+
 /**
  * Suggestions history settles without asking Jev: for an ordinary
  * uncategorised merchant row (not person-to-person, no message of its own)
@@ -235,14 +247,16 @@ export async function jevSuggestions(
 ): Promise<CategorySuggestion[]> {
   const suggestable = suggestionCategories(categories)
   if (!suggestable.length || !transactions.length) return []
-  const criteria = suggestionCriteria(suggestable, categories, categoryExamples(options.history ?? [], suggestable, options.breadth))
+  const criteria = suggestionCriteria(suggestable, categories)
+  const uses = categoryUses(options.history ?? [], categories, options.breadth)
+  const withUses = Object.keys(uses).length > 0
   const categoryIds = new Map(suggestable.map((c) => [`c${c.id}`, c.id]))
   const names = new Map(categories.map((c) => [c.id, c.name]))
   const evidence = historyEvidence(options.history ?? [], categories)
   // A marketplace's earlier categories say nothing about this purchase.
   const earlier = (t: Transaction) => options.breadth?.(t.description) === "mixed" ? "" : evidence(t).ranked.map((e) => `${names.get(e.categoryId)} ×${e.count}`).join(", ")
   const suggestions: CategorySuggestion[] = []
-  await judgeEach(jev, transactions, (t) => suggestionQuestion(t, criteria, earlier(t), options.notes?.get(merchantKey(t.description))), SUGGESTION_STATE, {
+  await judgeEach(jev, transactions, (t) => suggestionQuestion(t, criteria, earlier(t), options.notes?.get(merchantKey(t.description)), withUses), suggestionState(uses), {
     onAnswers: (answers) => {
       for (const [t, answer] of answers) {
         if (answer.type !== "choice") continue

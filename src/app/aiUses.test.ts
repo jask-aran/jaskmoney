@@ -97,9 +97,11 @@ test("what's sent is built by the real code, for your rows, and sent nowhere; ke
   expect(ui.state.aiUse?.use).toBe("suggestions")
 
   const search = await previewSent("search", data, { smartQuestion: "corner bar last month", clairic: true })
-  expect(search.map((p) => p.title)).toEqual(["Smart search (?corner bar last month)", "Smart search: Clairic", 'ask:"coffee"'])
+  expect(search.map((p) => p.title)).toEqual(["Smart search (?corner bar last month)", "Smart search: categories", "Smart search: Clairic", 'ask:"coffee"'])
+  // The account holder's examples go with the category questions, as with suggestions.
   expect((search[0]!.body as { state: unknown }).state).toEqual({ search: "corner bar last month" })
-  expect(search[1]!.to).toBe("POST https://api.cloudflare.com/client/v4/accounts/<your account>/ai/run/@cf/cloudflare/clairic")
+  expect((search[1]!.body as { state: unknown }).state).toEqual({ search: "corner bar last month", categories_used_for: { "Test food": ["Bulk Barn"] } })
+  expect(search[2]!.to).toBe("POST https://api.cloudflare.com/client/v4/accounts/<your account>/ai/run/@cf/cloudflare/clairic")
 
   const rules = await previewSent("rules", data, { clairic: false })
   const context = rules[0]!.body as { system: string; messages: Array<{ role: string; content: string }>; tools: Array<{ name: string }> }
@@ -125,6 +127,8 @@ test("the viewer's outline: fields indented, long text wrapped, a family of ques
   expect(text).toContain("  prompt: (sent as JSON text)")
   expect(text).toContain("    waiting: 3")
   expect(text).toContain('      [0]: {"name":"Food","rows":2}')
+  const examples = sentLines([{ title: "T", when: "now", to: "x", body: { categories_used_for: { Groceries: ["Coles", "Aldi"] } } }], 60).map((l) => l.map((p) => p.text).join(""))
+  expect(examples).toContain('    Groceries: ["Coles","Aldi"]')
   expect(Math.max(...text.map((l) => l.length))).toBeLessThanOrEqual(40)
   expect(text.filter((l) => l.trim().startsWith("word")).length).toBeGreaterThan(3)
 })

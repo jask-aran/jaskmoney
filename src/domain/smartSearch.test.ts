@@ -105,14 +105,20 @@ describe("smart search", () => {
     expect(parseFilterStrict(expr).error).toBeUndefined()
   })
 
-  test("asks both models once each, and falls back to the query as words when nothing comes back", async () => {
+  test("asks Clairic once and Jev twice, at once: the category questions alone get the examples; falls back to the query as words when nothing comes back", async () => {
     const calls: string[] = []
+    const states: Array<{ ids: string[]; state: unknown }> = []
     const ai = {
       clairic: async () => { calls.push("clairic"); return values({ words: "coffee" }) },
-      jev: { judge: async () => { calls.push("jev"); return answers({ flow: "spending", period: "last_month", amounts: ["at_least"] }) } },
+      jev: { judge: async (qs: Record<string, unknown>, state: unknown) => { calls.push("jev"); states.push({ ids: Object.keys(qs), state }); return answers({ flow: "spending", period: "last_month", amounts: ["at_least"] }) } },
     }
-    expect((await smartSearch(ai, "coffee over $5 last month", ctx)).expr).toBe('ask:"coffee" AND type:spending AND amt:<=-5 AND date:2026-09-01..2026-09-30')
-    expect(calls.sort()).toEqual(["clairic", "jev"])
+    const uses = { Groceries: ["Coles"] }
+    expect((await smartSearch(ai, "coffee over $5 last month", { ...ctx, uses })).expr).toBe('ask:"coffee" AND type:spending AND amt:<=-5 AND date:2026-09-01..2026-09-30')
+    expect(calls.sort()).toEqual(["clairic", "jev", "jev"])
+    const terms = states.find((s) => s.ids.includes("phrase"))!, covers = states.find((s) => s.ids.some((id) => id.startsWith("kind")))!
+    expect(terms.state).toEqual({ search: "coffee over $5 last month" })
+    expect(terms.ids.some((id) => id.startsWith("kind"))).toBe(false)
+    expect(covers.state).toEqual({ search: "coffee over $5 last month", categories_used_for: uses })
     const empty = { clairic: async () => values({}), jev: { judge: async () => answers({}) } }
     expect((await smartSearch(empty, "hmm", ctx)).expr).toBe('desc:"hmm"')
   })

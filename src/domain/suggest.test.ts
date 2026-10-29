@@ -1,8 +1,8 @@
 import { expect, test } from "bun:test"
 import type { JevQuestion } from "../ai/jev"
 import { category, transaction } from "../testing/fixtures"
-import { categoryExamples, historySuggestions, jevSuggestions } from "./suggest"
-import { NO_DETAIL_CAP, SUGGESTION_STATE, suggestionCriteria, transactionFacts } from "./questions"
+import { categoryExamples, categoryUses, historySuggestions, jevSuggestions } from "./suggest"
+import { NO_DETAIL_CAP, SUGGESTION_STATE, suggestionCriteria, suggestionState, transactionFacts } from "./questions"
 
 const categories = [category({ id: 1 }), category({ id: 2 }), category({ id: 3, isDefault: true, name: "Uncategorised" })]
 const evidence = (id: number, categoryId: number, amount = -10, dateISO = "2026-01-01") => transaction({ id, categoryId, categoryName: `Category ${categoryId}`, description: " SHOP ", amount, dateISO })
@@ -59,6 +59,10 @@ test("Jev sees the transaction as named facts: signed money, direction, type, me
   expect(transactionFacts(transaction({ description: "$friend_a", amount: 23, rawText: "Deniz Turkyilmaz" }), { earlier: "Holidays & Travel ×2" }))
     .toEqual({ description: "$friend_a", amount: "+$23.00", direction: "money in", bank_text: "Deniz Turkyilmaz", categorised_before: "Holidays & Travel ×2" })
   expect(transactionFacts(transaction({ description: "Beem", rawText: "Beem" }))).not.toHaveProperty("bank_text")
+  // The account holder's own note and tags, when there are any; IGNORE says nothing.
+  expect(transactionFacts(transaction({ notes: " birthday present for Sam ", tagNames: ["TRAVEL", "IGNORE"] }))).toMatchObject({ your_note: "birthday present for Sam", tags: "TRAVEL" })
+  expect(transactionFacts(transaction({ tagNames: ["IGNORE"] }))).not.toHaveProperty("tags")
+  expect(transactionFacts(transaction())).not.toHaveProperty("your_note")
   // The category only where asked, and only a real one.
   expect(transactionFacts(transaction({ categoryId: 4, categoryName: "Groceries" }), { category: true })).toHaveProperty("category", "Groceries")
   expect(transactionFacts(transaction({ categoryId: 4, categoryName: "Groceries" }))).not.toHaveProperty("category")
@@ -67,17 +71,20 @@ test("Jev sees the transaction as named facts: signed money, direction, type, me
 
 test("each row is its own question with the transaction inline; Jev is told how rows with the same description were categorised", async () => {
   const seen: Record<string, JevQuestion>[] = []
+  const states: unknown[] = []
   const jev = { async judge(qs: Record<string, JevQuestion>, state: unknown) {
-    expect(state).toBe(SUGGESTION_STATE)
+    states.push(state)
     seen.push(qs)
     return Object.fromEntries(Object.keys(qs).map((id) => [id, { type: "choice" as const, choice: "c1", confidence: 0.5, probabilities: { c1: 0.7, c2: 0.3 } }]))
   } }
   const results = await jevSuggestions(jev, [target(), target(11)], categories, { history: [evidence(1, 1), evidence(2, 2), evidence(3, 1)] })
   expect(seen).toHaveLength(1)
   const q = Object.values(seen[0]!)[0]!
-  // Each option names the user's own rows in it, and the question says so.
-  expect(q).toMatchObject({ type: "choice", criteria: { c1: "Category 1 (e.g. SHOP)", c2: "Category 2 (e.g. SHOP)" } })
-  expect((q.instructions as { question: string }).question).toEndWith("Each category lists some of the account holder's own transactions in it.")
+  // The user's own rows in each category are in the state once, the
+  // options are bare, and the question says where they are.
+  expect(states).toEqual([{ about: SUGGESTION_STATE, categories_used_for: { "Category 1": ["SHOP"], "Category 2": ["SHOP"] } }])
+  expect(q).toMatchObject({ type: "choice", criteria: { c1: "Category 1", c2: "Category 2" } })
+  expect((q.instructions as { question: string }).question).toEndWith("`categories_used_for` lists some of the account holder's own transactions in each category.")
   expect((q.instructions as { transaction: Record<string, string> }).transaction.categorised_before).toBe("Category 1 ×2, Category 2 ×1")
   // Confidence is Jev's probability for its pick, not its distribution's peakedness.
   const ranked = [{ categoryId: 1, confidence: 0.7 }, { categoryId: 2, confidence: 0.3 }]
@@ -107,9 +114,10 @@ test("each category's examples: its most used descriptions, then the most recent
   const examples = categoryExamples(history, categories.filter((c) => !c.isDefault))
   expect(examples.get(1)).toEqual(["Coles", "Aldi", "IGA", "FoodWorks"])
   expect(examples.get(2)).toEqual(["Uber", "A very long merchant description that g…"])
-  expect(suggestionCriteria(categories.slice(0, 2), categories, examples).c2).toBe("Category 2 (e.g. Uber, A very long merchant description that g…)")
-  // Without examples, options and question are as before.
-  expect(suggestionCriteria(categories.slice(0, 2), categories)).toEqual({ c1: "Category 1", c2: "Category 2" })
+  expect(categoryUses(history, categories)).toEqual({ "Category 1": ["Coles", "Aldi", "IGA", "FoodWorks"], "Category 2": ["Uber", "A very long merchant description that g…"] })
+  // No examples: the state is the plain text, as before.
+  expect(categoryUses([], categories)).toEqual({})
+  expect(suggestionState({})).toBe(SUGGESTION_STATE)
 })
 
 test("a person-to-person payment with no message is a guess (at most NO_DETAIL_CAP); a message, or a purchase, keeps Jev's confidence", async () => {
