@@ -1,3 +1,4 @@
+import type { GmailSetup } from "../ai/executor"
 import type { SentPart } from "../app/sentPreview"
 import type { QueryId } from "../ai/catalog"
 import type { Written } from "../app/searchReport"
@@ -71,6 +72,7 @@ export type ScopeId =
   | "manager.ruleOffers"
   | "llmSignIn"
   | "settings.aiDialog"
+  | "settings.gmail"
   | "settings.aiUse"
   | "settings.aiSent"
   | "settings.upAccounts"
@@ -241,6 +243,12 @@ export interface UiState {
   /** Settings › AI models' dialog for one row (state/aiDialog): the action
    * at the cursor, a field being typed (a key, the account id, the model),
    * remove armed (enter again removes), and the last result. */
+  /** Settings › AI models › Sources › Gmail's dialog (app/gmailSource): the
+   * setup as last read from Executor (null while reading), the action at
+   * the cursor, a browser sign-in being waited on, and the last result. */
+  gmail: { setup: GmailSetup | null; cursor: number; busy: string | null; waiting: string | null; note: { text: string; ok: boolean | null } | null } | null
+  /** Gmail's setup as last read (the AI pane's Sources row). */
+  gmailSetup: GmailSetup | null
   /** Settings › Up Bank › Accounts: which Up accounts sync (cursor row). */
   upAccounts: { cursor: number } | null
   aiDialog: {
@@ -446,6 +454,8 @@ function createUiStore() {
     ruleOfferCursor: 0,
     llmSignIn: null,
     aiDialog: null,
+    gmail: null,
+    gmailSetup: null,
     aiUse: null,
     aiSent: null,
     upAccounts: null,
@@ -712,6 +722,7 @@ function createUiStore() {
     if (state.aiSent) return "settings.aiSent"
     if (state.aiUse) return "settings.aiUse"
     if (state.aiDialog) return "settings.aiDialog"
+    if (state.gmail) return "settings.gmail"
     if (state.upAccounts) return "settings.upAccounts"
     if (state.factoryResetOpen) return "settings.factoryReset"
     if (state.customEdit) return "overview.custom"

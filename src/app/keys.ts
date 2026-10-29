@@ -27,6 +27,8 @@ import { SEARCH_HELP, SEARCH_HELP_FULL } from "../state/searchHelp"
 import { previewSent } from "./sentPreview"
 import { runAsk } from "./ask"
 import { eitherInstead, askTerms } from "../domain/filter"
+import { openGmailDialog, runGmailAction, stopWaiting } from "./gmailSource"
+import { gmailActions } from "../state/gmailDialog"
 import { AI_ROWS, aiRowLabel, isLlmRow, testAi, type AiRow } from "./apiKeys"
 import { AI_USES, aiActions, aiContext, useActions, type AiUse } from "../state/aiDialog"
 import { useQueries, type QueryId } from "../ai/catalog"
@@ -1047,13 +1049,15 @@ function handleRuleOffers(ui: UiStore, key: KeyEvent, data?: DataStore): void {
   }
 }
 
-/** Settings › AI models: the models, then the uses; enter opens the one at the cursor. */
+/** Settings › AI models: the models, the uses, then the sources; enter opens the one at the cursor. */
 function handleSettingsAi(ui: UiStore, key: KeyEvent): void {
   const { name } = key
   if (name === "escape") { ui.leaveSettings(); return }
-  const moved = listMove(key, ui.state.aiCursor, AI_ROWS.length + AI_USES.length)
+  // Models, then uses, then sources (Gmail, through Executor).
+  const moved = listMove(key, ui.state.aiCursor, AI_ROWS.length + AI_USES.length + 1)
   if (moved != null) { ui.setState({ aiCursor: moved }); return }
   if (name !== "return" && name !== "enter") return
+  if (ui.state.aiCursor === AI_ROWS.length + AI_USES.length) { void openGmailDialog(ui); return }
   const use = AI_USES[ui.state.aiCursor - AI_ROWS.length]
   if (use) ui.setState({ aiUse: { use, cursor: 0, note: null } })
   else openAiDialog(ui, AI_ROWS[ui.state.aiCursor] ?? "jev")
@@ -1120,6 +1124,18 @@ function handleAiSent(ui: UiStore, key: KeyEvent): void {
 /** The AI models dialog: j/k pick an action, enter runs it; a field (key,
  * account id, model) takes typing and pasting until enter saves or esc
  * backs out; remove needs enter twice; esc closes. */
+/** Gmail's dialog (app/gmailSource): j/k over the actions, enter runs one;
+ * esc stops waiting for a browser sign-in, else closes. */
+function handleGmail(ui: UiStore, key: KeyEvent): void {
+  const dialog = ui.state.gmail
+  if (!dialog) return
+  if (key.name === "escape") { if (dialog.waiting) stopWaiting(ui); else ui.setState({ gmail: null }); return }
+  if (dialog.waiting) return
+  const moved = listMove(key, dialog.cursor, gmailActions(dialog.setup).length)
+  if (moved != null) { ui.setState("gmail", { cursor: moved }); return }
+  if (key.name === "return" || key.name === "enter") void runGmailAction(ui)
+}
+
 function handleAiDialog(ui: UiStore, key: KeyEvent, data?: DataStore): void {
   const dialog = ui.state.aiDialog
   if (!dialog || !data) return
@@ -1724,6 +1740,7 @@ type HintState = Pick<UiState, "focusedSection" | "drillReturn" | "chartViews"> 
   recallQuestion?: boolean
   /** The AI models dialog is taking a key, account id or model. */
   aiField?: boolean
+  gmailWaiting?: boolean
   /** The sign-in modal is asking for a pasted code or URL. */
   signInPaste?: boolean
   /** A tag review is open. */
@@ -1851,6 +1868,11 @@ const scopes: Record<ScopeId, ScopeEntry> = {
     handle: handleAiDialog,
     quits: false,
     hints: (state) => state?.aiField ? [{ key: "enter", desc: "save" }, { key: "esc", desc: "back" }] : [{ key: "j/k", desc: "move" }, { key: "enter", desc: "do" }, { key: "esc", desc: "close" }],
+  },
+  "settings.gmail": {
+    handle: (ui, key) => handleGmail(ui, key),
+    quits: false,
+    hints: (state) => state?.gmailWaiting ? [{ key: "esc", desc: "stop waiting" }] : [{ key: "j/k", desc: "move" }, { key: "enter", desc: "do" }, { key: "esc", desc: "close" }],
   },
   "llmSignIn": {
     handle: (ui, key) => handleLlmSignIn(ui, key),
@@ -2120,7 +2142,7 @@ export function hintState(ui: UiStore, data?: DataStore): HintState {
   return {
     focusedSection: ui.state.focusedSection, drillReturn: ui.state.drillReturn, chartViews: ui.state.chartViews, overviewCharts: ui.state.overviewCharts,
     uncategorisedOnly: data?.state.uncategorisedOnly, tagReview: !!data?.state.tagReview,
-    signInPaste: !!ui.state.llmSignIn?.paste, aiField: !!ui.state.aiDialog?.field, searchHelpFull: ui.state.searchHelpFull,
+    signInPaste: !!ui.state.llmSignIn?.paste, aiField: !!ui.state.aiDialog?.field, gmailWaiting: !!ui.state.gmail?.waiting, searchHelpFull: ui.state.searchHelpFull,
     ruleOffers: data && ui.state.activeTab === "manager" ? data.allRuleOffers().length : 0,
     asks: !!data?.askCounts(), askLoose: data?.nearMissesShown(),
     recallQuestion: !!smartQuestionFor(ui.state, ui.state.filterDraft),
