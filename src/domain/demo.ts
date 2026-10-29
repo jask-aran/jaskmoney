@@ -44,8 +44,14 @@ export interface DemoSourceRow {
 }
 
 export const DEMO_HISTORY_FACTOR = 5
-export const DEMO_HELD_OUT_SHARE = 0.2
-export const DEMO_HIDDEN_SHARE = 0.03
+/** The demo: about this many rows from the rarer merchants are left wholly
+ * uncategorised, for the decision model (a suggestion run stays cheap), and
+ * this share of the other merchants' rows, for history. */
+export const DEMO_ASK_ROWS = 100
+export const DEMO_HIDDEN_SHARE = 0.01
+/** The evaluation's set: a fifth of all merchants, and 3% of the rest. */
+export const EVAL_HELD_OUT_SHARE = 0.2
+export const EVAL_HIDDEN_SHARE = 0.03
 
 /** Ordinary purchases in the demo tree, excluding its scheduled bills. */
 export function demoSource(transactions: Transaction[], categories: Category[]): DemoSourceRow[] {
@@ -63,7 +69,7 @@ export function demoSource(transactions: Transaction[], categories: Category[]):
 }
 
 /** Scrambled spending, or a built-in life. All randomness comes from the supplied seed. */
-export function generateDemo(options: { today: string; years?: number; seed?: number; history?: DemoSourceRow[] }): DemoData {
+export function generateDemo(options: { today: string; years?: number; seed?: number; history?: DemoSourceRow[]; hide?: "demo" | "evaluation" }): DemoData {
   if (!parseDay(options.today)) throw new Error("Invalid demo today: expected YYYY-MM-DD")
   const years = options.years ?? 3
   const history = options.history && options.history.length >= 20 ? options.history : null
@@ -223,28 +229,45 @@ export function generateDemo(options: { today: string; years?: number; seed?: nu
       return { weight: Math.exp(logWeight), days, dayWeights, bursts }
     })
     const monthWeights = calendar.map(month => month.weight)
-    const merchants = [...new Set(history.map(t => t.description.trim().toLowerCase()))]
-    const heldOut = new Set<string>()
-    for (let n = 0, count = Math.round(merchants.length * DEMO_HELD_OUT_SHARE); n < count; n++) {
-      const index = integer(merchants.length)
-      heldOut.add(merchants[index])
-      merchants.splice(index, 1)
-    }
-    // A held-out merchant can also appear in a built-in trip or large purchase.
-    for (const t of transactions) {
-      if (heldOut.has(t.description.trim().toLowerCase())) t.categoryName = null
-    }
     for (let n = 0; n < history.length * DEMO_HISTORY_FACTOR; n++) {
       const source = history[integer(history.length)]
       const month = calendar[weightedIndex(monthWeights)]
       const date = random() < 0.25 ? month.bursts[integer(month.bursts.length)] : month.days[weightedIndex(month.dayWeights)]
       let value = source.amount * Math.exp(normal() * 0.35)
       if (random() < 0.1) value *= 1.5 + random() * 1.5
-      const hidden = heldOut.has(source.description.trim().toLowerCase()) || random() < DEMO_HIDDEN_SHARE
       add(date, -Math.max(0.01, Math.abs(round(value))), source.description, source.categoryName, {
-        categoryName: hidden ? null : source.categoryName, rawText: source.rawText,
-        transactionType: source.transactionType, cardMethod: source.cardMethod,
+        rawText: source.rawText, transactionType: source.transactionType, cardMethod: source.cardMethod,
       })
+    }
+    // Which rows wait for a category, once they're all made. A held-out
+    // merchant has none categorised (history can't know it; built-in trips
+    // and purchases under its name included); the rest lose a few.
+    const key = (description: string) => description.trim().toLowerCase()
+    const yours = new Set(history.map(t => key(t.description)))
+    const rows = new Map<string, DemoData["transactions"]>()
+    for (const t of transactions) if (yours.has(key(t.description))) rows.set(key(t.description), [...rows.get(key(t.description)) ?? [], t])
+    const merchants = [...rows.keys()]
+    const heldOut = new Set<string>()
+    if (options.hide === "evaluation") {
+      for (let n = 0, count = Math.round(merchants.length * EVAL_HELD_OUT_SHARE); n < count; n++) {
+        heldOut.add(merchants.splice(integer(merchants.length), 1)[0])
+      }
+    } else {
+      // The rarer merchants, as a real backlog of new places is, up to
+      // DEMO_ASK_ROWS rows; ties in a random order.
+      const order = new Map(merchants.map(m => [m, random()]))
+      merchants.sort((a, b) => rows.get(a)!.length - rows.get(b)!.length || order.get(a)! - order.get(b)!)
+      let total = 0
+      for (const m of merchants) {
+        if (total + rows.get(m)!.length > DEMO_ASK_ROWS) break
+        heldOut.add(m)
+        total += rows.get(m)!.length
+      }
+    }
+    const share = options.hide === "evaluation" ? EVAL_HIDDEN_SHARE : DEMO_HIDDEN_SHARE
+    for (const [m, list] of rows) for (const t of list) {
+      if (heldOut.has(m)) t.categoryName = null
+      else if (t.categoryName !== null && random() < share) t.categoryName = null
     }
   }
   // Without history, hide exactly 4.5% of spending rows, sampled without replacement.

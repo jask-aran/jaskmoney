@@ -54,7 +54,7 @@ function makeSet(): SetMeta {
   const history = demoSource(loadTransactions(source), loadCategories(source))
   source.close()
   const today = appToday()
-  const demo = generateDemo({ today, years: 3, seed: SEED, history })
+  const demo = generateDemo({ today, years: 3, seed: SEED, history, hide: "evaluation" })
   seedDemoDb(setPath, demo)
   const meta: SetMeta = { made: new Date().toISOString(), today, rows: demo.transactions.length, hidden: readDemoTruth(setPath).size }
   writeFileSync(metaPath, JSON.stringify(meta, null, 2), { mode: 0o600 })

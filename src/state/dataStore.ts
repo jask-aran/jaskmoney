@@ -22,6 +22,7 @@ import {
   loadSuggestions,
   loadMerchantNotes,
   loadMerchantBreadth,
+  saveMerchantBreadth,
   logCategories,
   logTags,
   openDb,
@@ -347,8 +348,13 @@ function createDataStore() {
     const path = join(jaskmoneyHome(), "demo.db")
     mkdirSync(jaskmoneyHome(), { recursive: true, mode: 0o700 })
     seedDemoDb(path, demo)
+    // Your merchants' checks (does the name say what was bought?) come
+    // along, so the demo's suggestions don't ask them again.
+    const checked = loadMerchantBreadth(db!)
+    const demoDb = openDb(path)
+    saveMerchantBreadth(demoDb, checked)
     beforeDemo = { path: actualDbPath, db: db!, selection: state.accountSelection }
-    attach(path, openDb(path))
+    attach(path, demoDb)
     setState({ demo: true })
     setAccountSelection("all")
     return demo.transactions.length

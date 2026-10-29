@@ -2,7 +2,7 @@ import { expect, test } from "bun:test"
 import { mkdtempSync } from "node:fs"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
-import { DEMO_CATEGORIES, demoSource, generateDemo, type DemoData, type DemoSourceRow } from "./demo"
+import { DEMO_ASK_ROWS, DEMO_CATEGORIES, demoSource, generateDemo, type DemoData, type DemoSourceRow } from "./demo"
 import { readDemoTruth, seedDemoDb } from "../db/demoSeed"
 import { loadTransactions, openDb } from "../db/client"
 import { category, transaction } from "../testing/fixtures"
@@ -12,10 +12,13 @@ import type { Transaction } from "./types"
  * Demo mode from your history (acceptance, frozen; approved 2026-10-29).
  * Switching demo on samples your ordinary spending (no people, transfers,
  * income, messages or bills) and makes five times as many rows from it,
- * amounts varied, spread spikily over three years. A fifth of the merchants
- * are wholly uncategorised, so suggestions have to come from the decision
- * model rather than history; their true categories are kept beside the
- * demo database for evaluations. Fixtures here are invented.
+ * amounts varied, spread spikily over three years. Some of the rarer
+ * merchants are wholly uncategorised (about DEMO_ASK_ROWS rows, so a
+ * suggestion run is cheap), which the decision model has to work out
+ * rather than history; a few rows of known merchants are hidden too. The
+ * evaluation's set hides far more (a fifth of all merchants). True
+ * categories are kept beside the database. Fixtures here are invented.
+ * (Cheaper demo approved 2026-10-29.)
  */
 const today = "2026-10-27"
 
@@ -56,7 +59,7 @@ function history(): Transaction[] {
 }
 
 const source = (): DemoSourceRow[] => demoSource(history(), categories)
-const make = (seed = 7): DemoData => generateDemo({ today, years: 3, seed, history: source() })
+const make = (seed = 7, hide?: "demo" | "evaluation"): DemoData => generateDemo({ today, years: 3, seed, history: source(), hide })
 const fromHistory = (demo: DemoData) => { const names = new Set(MERCHANTS.map(([d]) => d)); return demo.transactions.filter((t) => names.has(t.description)) }
 
 test("demoSource: your ordinary spending only, its merchant, bank text, category and amount", () => {
@@ -97,22 +100,41 @@ test("spiky: months vary a lot, and some days have bursts", () => {
   expect(Math.max(...byDay.values())).toBeGreaterThanOrEqual(5)
 })
 
-test("a fifth of the merchants wholly uncategorised, plus a few rows elsewhere, spread over the years; the truth kept", () => {
-  const rows = fromHistory(make())
+const heldOutOf = (rows: ReturnType<typeof fromHistory>) => {
   const byMerchant = new Map<string, typeof rows>()
   for (const t of rows) byMerchant.set(t.description, [...(byMerchant.get(t.description) ?? []), t])
   const heldOut = [...byMerchant.values()].filter((list) => list.every((t) => t.categoryName === null))
+  const others = rows.filter((t) => !heldOut.some((list) => list.includes(t)))
+  return { byMerchant, heldOut, others }
+}
+
+test("the demo: about DEMO_ASK_ROWS rows from the rarer merchants wholly uncategorised, a few others hidden; the truth kept", () => {
+  const rows = fromHistory(make())
+  const { byMerchant, heldOut, others } = heldOutOf(rows)
+  const asked = heldOut.flat().length
+  expect(asked).toBeLessThanOrEqual(DEMO_ASK_ROWS)
+  expect(asked).toBeGreaterThan(DEMO_ASK_ROWS * 0.6)
+  // The rarer ones: none held out has more rows than a merchant left in.
+  const counts = [...byMerchant.values()].filter((list) => !heldOut.includes(list)).map((list) => list.length)
+  for (const list of heldOut) expect(list.length).toBeLessThanOrEqual(Math.min(...counts))
+  const hiddenOthers = others.filter((t) => t.categoryName === null).length
+  expect(hiddenOthers).toBeGreaterThan(0)
+  expect(hiddenOthers).toBeLessThan(others.length * 0.03)
+  const truth = new Map(MERCHANTS.map(([d, c]) => [d, c]))
+  for (const t of rows) expect(t.truthCategory).toBe(truth.get(t.description)!)
+  for (const t of rows) if (t.categoryName !== null) expect(t.categoryName).toBe(t.truthCategory)
+})
+
+test("the evaluation's set: a fifth of the merchants wholly uncategorised, plus a few rows elsewhere, spread over the years", () => {
+  const rows = fromHistory(make(7, "evaluation"))
+  const { heldOut, others } = heldOutOf(rows)
   expect(heldOut.length).toBeGreaterThanOrEqual(Math.floor(MERCHANTS.length * 0.15))
   expect(heldOut.length).toBeLessThanOrEqual(Math.ceil(MERCHANTS.length * 0.25))
   const hidden = rows.filter((t) => t.categoryName === null)
   expect(hidden.length).toBeGreaterThan(rows.length * 0.12)
   expect(new Set(hidden.map((t) => t.dateISO.slice(0, 7))).size).toBeGreaterThanOrEqual(24)
-  // Others: mostly categorised, a few hidden.
-  const others = rows.filter((t) => !heldOut.some((list) => list.includes(t)))
   expect(others.filter((t) => t.categoryName === null).length).toBeGreaterThan(0)
   expect(others.filter((t) => t.categoryName === null).length).toBeLessThan(others.length * 0.08)
-  const truth = new Map(MERCHANTS.map(([d, c]) => [d, c]))
-  for (const t of rows) expect(t.truthCategory).toBe(truth.get(t.description)!)
   for (const t of rows) if (t.categoryName !== null) expect(t.categoryName).toBe(t.truthCategory)
 })
 
