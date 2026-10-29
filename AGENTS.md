@@ -8,7 +8,10 @@ The repository root is the active OpenTUI product. `legacy/go/` is a read-only b
 bun start
 bun run typecheck
 bun run test
+bun run eval      # category suggestions vs the demo's hidden truth (src/eval/run.ts)
 ```
+
+`bun run eval` freezes a demo made from your history into `~/.jaskmoney/eval` (never the repo) and scores the suggestion pipeline against its hidden categories: right, top 3, accept-all precision, by source and by unseen merchant, with the change since the last run. Run it before and after changing a decision-model prompt or context block; `--limit N` for a fixed sample, `--fresh` to remake the set.
 
 Do not modify `legacy/go/` to make port work easier. A legacy change is allowed only to repair a broken reference fixture or test, and must be called out explicitly.
 
