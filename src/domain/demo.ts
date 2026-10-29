@@ -1,5 +1,5 @@
 import { addDays, addMonthsClamped, daysBetween, parseDay } from "./days"
-import { PERSON_TO_PERSON } from "./suggest"
+import { PERSON_TO_PERSON } from "./history"
 import { DEMO_CATEGORIES, MERCHANTS, PEOPLE } from "./demoData"
 
 export { DEMO_CATEGORIES } from "./demoData"

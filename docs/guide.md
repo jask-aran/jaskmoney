@@ -116,7 +116,11 @@ A budget is an overall limit, optional limits per spending account or category (
 
 ## AI models
 
-Settings › AI models lists the models, then what they're used for. `enter` on a model opens its dialog: sign in, paste a key, change the model, test, remove. `enter` on a use opens its dialog. It shows the model doing that use and lets you choose another (Rules: OpenRouter or OpenAI; Search: Clairic on or off) or connect one it needs. **Show exactly what's sent** builds each request the use makes, through the same code a real run uses, for your newest relevant row, and lays it out to read: the endpoint, the state, every question and option, the rule writer's system prompt, brief and tools. Nothing is sent, and keys and the account id are left out. A run of like questions (a smart search's per-category ones) shows its first and how many more.
+Settings › AI models lists the models, then what they're used for.
+
+- **A model's dialog** (`enter` on it) says what it is: how it's connected, the model, its endpoint, how it's signed in to, what it does, its limits and price (pi-ai's catalog for the general models), and the queries it answers now. Its actions sign in, take a key, change the model, test and remove.
+- **A use's dialog** names the model doing it and the app features it powers, with how you reach each and the code behind it (and what happens with no model: history, rule offers). Then come its queries; `enter` on one shows what it asks, what comes back and what the app does with it, when it's sent and the code. Then its context: each block, the field it fills in the request, what it says, and where it's gathered. Last is the exact request, built through the same code a real run uses, for your newest relevant row; nothing is sent, and keys and the account ID are left out. Below the queries, the use's model actions: Rules chooses OpenRouter or OpenAI, Search switches Clairic on or off, and Connect jumps to a model it needs.
+- **One source:** the uses, queries and blocks are described once (`src/ai/catalog.ts`), and each block is gathered by one function (`src/domain/history.ts`: the row, a merchant's history, the examples per category or tag). A test builds every query's real request and fails if it carries a field the catalog doesn't name, or lacks one it does.
 
 - **Suggestions** (Jev): category suggestions, the merchant check, and finding a tag's transactions (`T`).
 - **Search** (Jev, plus Clairic when connected and not switched off): smart search and `ask:`.

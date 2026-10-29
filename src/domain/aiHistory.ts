@@ -1,4 +1,5 @@
 import { filterGuide } from "./filterLanguage"
+import { paidText, rowFacts } from "./history"
 import { scopeText } from "./tagScope"
 import type { CategoryLogEntry, TagLogEntry } from "../db/client"
 import { evalFilter, notForRules, parseFilterStrict } from "./filter"
@@ -32,38 +33,7 @@ export interface HistoryData {
  * advised: a stored rule's value then can't run into the next word. */
 export const FILTER_GUIDE = `JQL, the app's filter language (rules are written in it). The parser takes values unquoted, but in a rule quote any value with spaces: cat:"Rent & Mortgage".
 ${filterGuide()}
-Not testable in a filter (context only): up_type, card, foreign, payer, message.`
-
-/** A transaction as the model reads it: names, not ids; empty facts left out. */
-export interface RowFacts {
-  date: string
-  description: string
-  amount: number
-  account: string
-  category: string
-  tags?: string[]
-  message?: string
-  payer?: string
-  up_type?: string
-  card?: string
-  foreign?: string
-}
-
-export function rowFacts(t: Transaction): RowFacts {
-  return {
-    date: t.dateISO,
-    description: t.description.trim(),
-    amount: t.amount,
-    account: t.accountName,
-    category: t.categoryName,
-    ...(t.tagNames.length ? { tags: t.tagNames } : {}),
-    ...(t.message ? { message: t.message } : {}),
-    ...(t.rawText && t.rawText !== t.description ? { payer: t.rawText } : {}),
-    ...(t.transactionType ? { up_type: t.transactionType } : {}),
-    ...(t.cardMethod ? { card: t.cardMethod } : {}),
-    ...(t.foreignAmount ? { foreign: t.foreignAmount } : {}),
-  }
-}
+Not testable in a filter (context only): bank_type, bank_text, paid, foreign_amount, message, direction, your_note.`
 
 type Group<T> = { key: T; rows: number; share: number }
 
@@ -86,8 +56,8 @@ export function sharedFacts(rows: Transaction[]) {
   return {
     rows: rows.length,
     accounts: named(common(rows, (t) => t.accountName), "account"),
-    up_types: named(common(rows, (t) => t.transactionType), "up_type"),
-    card: named(common(rows, (t) => t.cardMethod), "card"),
+    bank_types: named(common(rows, (t) => t.transactionType), "bank_type"),
+    paid: common(rows, (t) => t.cardMethod).map(({ key, rows, share }) => ({ paid: paidText(key), rows, share })),
     currencies: named(common(rows, (t) => t.foreignAmount?.split(" ")[0]), "currency"),
     money: { out: rows.filter((t) => t.amount < 0).length, in: rows.filter((t) => t.amount > 0).length },
     repeated_amounts: named(common(rows, (t) => t.amount, 6, 2), "amount"),
@@ -170,7 +140,7 @@ export function categoryHistory(data: HistoryData, categoryId: number, limits: {
   const seen = new Set<number>()
   const recent = data.categoryLog.filter((e) => e.categoryId === categoryId && byId.has(e.transactionId) && !seen.has(e.transactionId) && seen.add(e.transactionId))
     .slice(0, limits.recent ?? 25)
-    .map((e) => ({ ...rowFacts(byId.get(e.transactionId)!), how: e.how, at: e.at, was: e.previousCategoryId != null ? names.get(e.previousCategoryId) ?? "?" : "Uncategorised" }))
+    .map((e) => ({ ...rowFacts(byId.get(e.transactionId)!, { category: true, date: true, account: true, paid: true }), how: e.how, at: e.at, was: e.previousCategoryId != null ? names.get(e.previousCategoryId) ?? "?" : "Uncategorised" }))
   return {
     category: { name: category.name, ...(parent ? { group: parent } : {}), rows: inside.length },
     shared: sharedFacts(inside),
@@ -188,7 +158,7 @@ export function tagHistory(data: HistoryData, tagId: number, limits: { recent?: 
   const inside = data.transactions.filter((t) => t.tagIds.includes(tagId))
   const byId = new Map(data.transactions.map((t) => [t.id, t]))
   const recent = data.tagLog.filter((e) => e.tagId === tagId && byId.has(e.transactionId)).slice(0, limits.recent ?? 25)
-    .map((e) => ({ ...rowFacts(byId.get(e.transactionId)!), change: e.added ? "added" : "removed", how: e.how, at: e.at }))
+    .map((e) => ({ ...rowFacts(byId.get(e.transactionId)!, { category: true, date: true, account: true, paid: true }), change: e.added ? "added" : "removed", how: e.how, at: e.at }))
   return {
     tag: { name: tag.name, ...(tag.categoryIds.length ? { categories: scopeText(tag, data.categories) } : {}), ...(tag.about ? { about: tag.about } : {}), rows: inside.length },
     shared: sharedFacts(inside),
@@ -208,7 +178,7 @@ export function waitingOverview(data: HistoryData, limit = 40) {
     descriptions: [...groups.values()].sort((a, b) => b.length - a.length).slice(0, limit).map((rows) => ({
       description: rows[0]!.description.trim(),
       rows: rows.length,
-      latest: rowFacts(rows.reduce((a, t) => (t.dateISO > a.dateISO ? t : a))),
+      latest: rowFacts(rows.reduce((a, t) => (t.dateISO > a.dateISO ? t : a)), { category: true, date: true, account: true, paid: true }),
       amounts: [...new Set(rows.map((t) => t.amount))].slice(0, 6),
     })),
   }
@@ -260,7 +230,7 @@ export function matchReport(data: HistoryData, expr: string, target: MatchTarget
     set_by_up: "categoryId" in target ? inTarget.filter((t) => ["provider", "type"].includes(data.categorySources?.get(t.id) ?? "")).length : 0,
     already_by_rules: found.length > 0 && ("categoryId" in target ? alreadyByRules(data, found, target.categoryId) : alreadyTaggedByRules(data, found, target.tagId)),
     by_category: byCategory,
-    sample: [...elsewhere, ...("categoryId" in target ? waiting : []), ...inTarget].slice(0, sample).map((t) => ({ ...rowFacts(t), verdict: isIn(t) ? "in target" : isUncategorised(t) && "categoryId" in target ? "waiting" : "elsewhere" })),
+    sample: [...elsewhere, ...("categoryId" in target ? waiting : []), ...inTarget].slice(0, sample).map((t) => ({ ...rowFacts(t, { category: true, date: true, account: true, paid: true }), verdict: isIn(t) ? "in target" : isUncategorised(t) && "categoryId" in target ? "waiting" : "elsewhere" })),
   }
 }
 

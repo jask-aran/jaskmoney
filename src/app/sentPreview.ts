@@ -1,7 +1,7 @@
 import type { Context } from "@earendil-works/pi-ai"
 import { createJevClient, jevRoute } from "../ai/jev"
 import { createWorkersAiClient } from "../ai/workersAi"
-import { activeLlmProvider, LLM_PROVIDERS, llmModelId, type Llm } from "../ai/llm"
+import { activeLlmProvider, LLM_PROVIDERS, llmModelId, llmModelInfo, type Llm } from "../ai/llm"
 import { credentialEnv } from "../ai/credentials"
 import { writeRules } from "../ai/ruleWriter"
 import { loadRuleDeclines } from "../db/client"
@@ -13,7 +13,7 @@ import { askMerchantBreadth, jevSuggestions, merchantBreadth } from "../domain/s
 import { jevTagCandidates, tagExamples, tagPool } from "../domain/tagSuggest"
 import { newestFirst } from "../domain/chronology"
 import type { Transaction } from "../domain/types"
-import type { AiUse } from "../state/aiDialog"
+import type { AiUse, QueryId } from "../ai/catalog"
 import type { DataStore } from "../state/dataStore"
 
 /**
@@ -23,12 +23,12 @@ import type { DataStore } from "../state/dataStore"
  * use would look at), at no cost. Keys and account ids are left out.
  */
 export interface SentPart {
-  title: string
-  /** When it's sent, and how many of it. */
-  when: string
+  query: QueryId
   /** Method and URL, or the model a prompt goes to. */
   to: string
   body: unknown
+  /** What it was built for: "your newest waiting row (Amazon, -$54.90)". */
+  sample: string
 }
 
 /** A fetch that records each request and answers with an error, so nothing
@@ -54,6 +54,7 @@ async function captureJev(go: (jev: ReturnType<typeof createJevClient>) => Promi
 }
 
 const first = (sent: Array<{ url: string; body: unknown }>) => sent[0] ? { to: `POST ${sent[0].url}`, body: sent[0].body } : { to: "(nothing would be sent)", body: null }
+const rowSample = (what: string, t: Transaction) => `${what} (${t.description.trim()}, ${t.amount < 0 ? "-" : "+"}$${Math.abs(t.amount).toFixed(2)})`
 
 /** The row a use would look at first: the newest waiting one, else the newest spending. */
 function sampleRow(data: DataStore, waiting: boolean): Transaction | undefined {
@@ -71,15 +72,15 @@ export async function previewSent(use: AiUse, data: DataStore, options: { smartQ
   if (use === "suggestions") {
     const row = sampleRow(data, true)
     if (row) {
-      parts.push({ title: "Category suggestion", when: "for each waiting row with no suggestion: after each sync and when you open i; one question per row, as many rows a request as fit", ...first(await captureJev((jev) => jevSuggestions(jev, [row], categories, { history: transactions, breadth, notes }))) })
-      parts.push({ title: "Merchant check", when: "once per merchant name, before its rows are suggested (asked again when you change its note)", ...first(await captureJev((jev) => askMerchantBreadth(jev, [row], { notes, onAnswers: () => {} }))) })
+      parts.push({ query: "suggestion", sample: rowSample("your newest waiting row", row), ...first(await captureJev((jev) => jevSuggestions(jev, [row], categories, { history: transactions, breadth, notes }))) })
+      parts.push({ query: "merchantCheck", sample: `its merchant, ${row.description.trim()}`, ...first(await captureJev((jev) => askMerchantBreadth(jev, [row], { notes, onAnswers: () => {} }))) })
     }
     const tag = data.state.tags.find((t) => t.name.toUpperCase() !== "IGNORE")
     const target = tag && { tagId: tag.id, name: tag.name, categoryIds: tag.categoryIds, about: tag.about }
     // A row the tag would be asked about: in its scope, not tagged yet.
     const spend = target && tagPool(target, transactions, categories).sort(newestFirst)[0]
     if (tag && target && spend) {
-      parts.push({ title: `Finding a tag's transactions (T, ${tag.name})`, when: "when you choose a tag with T: one question per row in its scope, newest first", ...first(await captureJev((jev) => jevTagCandidates(jev, target, [spend], tagExamples(target, transactions)))) })
+      parts.push({ query: "tagFind", sample: rowSample(`your tag ${tag.name} and the newest row in its scope`, spend), ...first(await captureJev((jev) => jevTagCandidates(jev, target, [spend], tagExamples(target, transactions)))) })
     }
   }
 
@@ -89,12 +90,13 @@ export async function previewSent(use: AiUse, data: DataStore, options: { smartQ
     const jevSent = await captureJev((jev) => smartSearch({ jev, ...(options.clairic ? { clairic: createWorkersAiClient({ token: "preview", accountId: "ACCOUNT", fetch: clairic.fetch, timeoutMs: 5_000 }).clairic } : {}) },
       question, { today: appToday(), cycle: data.cycle(), categories, descriptions: [], uses: data.categoryUses() }))
     // The query's questions, then the category questions with your examples (smartSearch).
-    parts.push({ title: `Smart search (?${question})`, when: "once per smart search, with the two below at the same time; the answers are put together into JQL here, not by the models", ...first(jevSent) })
-    parts.push({ title: "Smart search: categories", when: "with the request above: which of your categories the search covers or is related to", ...first(jevSent.slice(1)) })
-    if (options.clairic) parts.push({ title: "Smart search: Clairic", when: "with the Jev request above", ...first(clairic.sent.map((s) => ({ ...s, url: s.url.replace("/accounts/ACCOUNT/", "/accounts/<your account>/") }))) })
+    const searched = `${options.smartQuestion ? "your last smart search" : "an example search"}, ?${question}`
+    parts.push({ query: "searchTerms", sample: searched, ...first(jevSent) })
+    parts.push({ query: "searchCategories", sample: searched, ...first(jevSent.slice(1)) })
+    if (options.clairic) parts.push({ query: "clairic", sample: searched, ...first(clairic.sent.map((s) => ({ ...s, url: s.url.replace("/accounts/ACCOUNT/", "/accounts/<your account>/") }))) })
     const row = sampleRow(data, false)
     const words = options.askWords ?? "coffee"
-    if (row) parts.push({ title: `ask:"${words}"`, when: "for each row an ask: term could match (in its categories, the last 90 days unless date: says): one question per row, many rows a request", ...first(await captureJev((jev) => judgeRows(jev, words, [row]))) })
+    if (row) parts.push({ query: "ask", sample: rowSample(`ask:"${words}" and your newest spending`, row), ...first(await captureJev((jev) => judgeRows(jev, words, [row]))) })
   }
 
   if (use === "rules") {
@@ -113,7 +115,8 @@ export async function previewSent(use: AiUse, data: DataStore, options: { smartQ
     } as unknown as Llm
     const db = data.getDb()
     await writeRules(llm, data.historyData(), { declined: db ? loadRuleDeclines(db) : [] }).catch(() => {})
-    parts.push({ title: "Writing rules", when: "when you press a in the rules list (R): this first request, then one per turn as the model looks things up with the tools, up to 14 turns", to: `${LLM_PROVIDERS[provider].label} · ${modelId} (through pi-ai)`, body: context })
+    const info = llmModelInfo(provider, modelId)
+    parts.push({ query: "ruleWriter", sample: "your history now", to: info ? `POST ${info.baseUrl} (${info.api}, through pi-ai)` : `${LLM_PROVIDERS[provider].label} (through pi-ai)`, body: context })
   }
   return parts
 }

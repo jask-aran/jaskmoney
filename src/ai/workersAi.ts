@@ -64,11 +64,14 @@ export function plainError(message: string): string {
   return message.replace(/^(?:\s*AiError:\s*)+/i, "").trim() || message
 }
 
+/** A Workers AI model's address on an account. */
+export const workersAiUrl = (accountId: string, model = "clairic") => `https://api.cloudflare.com/client/v4/accounts/${encodeURIComponent(accountId)}/ai/run/@cf/cloudflare/${model}`
+
 export function createWorkersAiClient({ token, accountId, fetch = globalThis.fetch, timeoutMs = 15_000 }: WorkersAiCredentials & { fetch?: Fetch; timeoutMs?: number }) {
   const redact = (message: string) => message.split(token).join("[redacted]").split(accountId).join("[account]")
 
   async function run(model: string, body: Record<string, unknown>): Promise<Record<string, unknown>> {
-    const url = `https://api.cloudflare.com/client/v4/accounts/${encodeURIComponent(accountId)}/ai/run/@cf/cloudflare/${model}`
+    const url = workersAiUrl(accountId, model)
     let response: Response
     try {
       response = await fetchWithTimeout(fetch, url, {

@@ -97,7 +97,7 @@ export interface DataState {
   writingRules: boolean
   suggestions: Record<number, CategorySuggestion>
   merchantNotes: Record<string, string>
-  /** Jev's merchant-breadth answers, by key (domain/suggest merchantKey). */
+  /** Jev's merchant-breadth answers, by key (domain/history merchantKey). */
   merchantBreadth: Record<string, number>
   /** The Transactions table shows only ordinary uncategorised rows. */
   uncategorisedOnly: boolean

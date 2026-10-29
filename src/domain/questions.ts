@@ -1,6 +1,5 @@
 import type { JevQuestion } from "../ai/jev"
-import { formatMoney } from "./dashboard"
-import { MONTHS, weekdayIndex } from "./days"
+import { rowFacts } from "./history"
 import type { Category, Transaction } from "./types"
 
 /**
@@ -24,29 +23,6 @@ import type { Category, Transaction } from "./types"
  * labels (313 of the 325) on a fine line: a cafe as Takeaway, a roaster as
  * Groceries.
  */
-
-/** What Jev is shown about a transaction. `category` (when it has a real
- * one) and `earlier` (how rows with the same description were categorised,
- * as "Groceries ×3, Takeaway ×1") only where the question allows. The
- * description is the merchant as the bank names it (Up has no separate
- * merchant); the account holder's own note and tags go too, when there are
- * any (IGNORE says nothing about the row). */
-export function transactionFacts(t: Transaction, extra: { category?: boolean; earlier?: string; note?: string } = {}): Record<string, string> {
-  const tags = t.tagNames.filter((name) => name.toUpperCase() !== "IGNORE")
-  return {
-    description: t.description,
-    amount: `${t.amount < 0 ? "-" : "+"}${formatMoney(Math.abs(t.amount))}`,
-    direction: t.amount < 0 ? "money out" : "money in",
-    ...(t.transactionType ? { bank_type: t.transactionType } : {}),
-    ...(t.message ? { message: t.message } : {}),
-    ...(t.rawText && t.rawText !== t.description ? { bank_text: t.rawText } : {}),
-    ...(t.notes.trim() ? { your_note: t.notes.trim() } : {}),
-    ...(tags.length ? { tags: tags.join(", ") } : {}),
-    ...(extra.category && t.categoryId != null && t.categoryName && t.categoryName !== "Uncategorised" ? { category: t.categoryName } : {}),
-    ...(extra.earlier ? { categorised_before: extra.earlier } : {}),
-    ...(extra.note ? { merchant_note: extra.note } : {}),
-  }
-}
 
 // ---------- Category suggestions ----------
 
@@ -119,7 +95,7 @@ export function suggestionQuestion(t: Transaction, criteria: Record<string, stri
         + (t.amount > 0 ? " Money back for a purchase (a refund) belongs in the category of what was bought, not income." : "")
         + (uses ? USES_NOTE : "")
         + (note ? " `transaction.merchant_note` is what the account holder says about this merchant." : ""),
-      transaction: transactionFacts(t, { earlier, note }),
+      transaction: rowFacts(t, { earlier, merchantNote: note }),
     },
     criteria,
   }
@@ -188,7 +164,7 @@ export function matchQuestion(t: Transaction): JevQuestion {
     type: "noul",
     instructions: {
       question: "Would someone searching their bank history for `search` want to find `transaction`?",
-      transaction: transactionFacts(t, { category: true }),
+      transaction: rowFacts(t, { category: true }),
     },
   }
 }
@@ -334,15 +310,6 @@ export function coveredCategoryIds(answers: Record<string, { type: string; noul?
 
 // ---------- Tag suggestions ----------
 
-/** When a row happened, as a person reads it: "Fri 22 May 2026, 18:45"
- * (the time when the provider gives one: Up does, CSV doesn't). */
-export function whenText(t: Pick<Transaction, "dateISO" | "dateRaw">): string {
-  const [y, m, d] = t.dateISO.split("-").map(Number) as [number, number, number]
-  const date = `${["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"][weekdayIndex(t.dateISO)]} ${d} ${MONTHS[m - 1]} ${y}`
-  const time = /T(\d\d:\d\d)/.exec(t.dateRaw ?? "")?.[1]
-  return time ? `${date}, ${time}` : date
-}
-
 /** The tag, what it was found as (a detected trip's place and dates), and
  * how it has been used; shared by every row's question. Without `about`
  * Jev put coffee and parking at home in the days before a trip at 61–73%. */
@@ -359,7 +326,7 @@ export function tagQuestion(t: Transaction, withExamples: boolean, withAbout = f
     type: "noul",
     instructions: {
       question: "Does the tag `tag` belong on `transaction`?" + (withAbout ? " `about` says what the tag is for." : "") + (withExamples ? " `tagged_before` lists transactions already given it." : ""),
-      transaction: { ...transactionFacts(t, { category: true }), when: whenText(t), ...(t.foreignAmount ? { foreign_amount: t.foreignAmount } : {}) },
+      transaction: rowFacts(t, { category: true, when: true }),
     },
   }
 }

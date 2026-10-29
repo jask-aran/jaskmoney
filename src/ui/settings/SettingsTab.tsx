@@ -1,8 +1,9 @@
 import { armedFor } from "../../state/armed"
 import { DATABASE_ROWS, databaseRow } from "../../state/databaseRows"
 import { AI_ROWS } from "../../app/apiKeys"
+import { USES } from "../../ai/catalog"
 import { syncAgo } from "../../app/sync"
-import { AI_NAMES, AI_USES, USE_INFO, aiActionHint, aiActions, aiConnection, aiContext, aiRow, aiStatus, useModel } from "../../state/aiDialog"
+import { AI_NAMES, AI_USES, aiActionHint, aiActions, aiConnection, aiContext, aiRow, aiStatus, useModel } from "../../state/aiDialog"
 import { secretDisplay } from "../../state/settingsForm"
 import { SignInBody } from "../primitives/SignInBody"
 import { For, Show, createEffect, createMemo, onCleanup, type JSX } from "solid-js"
@@ -256,7 +257,7 @@ function AiPane(props: { focused: boolean; width: number }) {
   const active = () => ui.state.settingsActive && ui.state.settingsSection === "ai"
   const ctx = () => aiContext(data)
   const models = () => AI_ROWS.map((row) => aiRow(row, ctx()))
-  const uses = () => AI_USES.map((use) => ({ name: USE_INFO[use].name, model: useModel(use, ctx()) }))
+  const uses = () => AI_USES.map((use) => ({ name: USES[use].name, model: useModel(use, ctx()) }))
   const heading = (text: string) => <text fg={theme.subtext0} wrapMode="none"><b>{text}</b></text>
   return <SectionCard title={SETTINGS_SECTION_LABELS.ai} focused={props.focused} active={active()} height={AI_ROWS.length + AI_USES.length + 4} width={props.width}>
     {heading("Models")}
@@ -293,7 +294,10 @@ export function AiDialog() {
           <Modal title={AI_NAMES[d().row].name} subtitle={AI_NAMES[d().row].by} width={AI_DIALOG_WIDTH}
             hints={signIn() ? (signIn()!.paste ? "enter send · esc cancel" : "esc cancel") : d().field ? "enter save · esc back" : "j/k move · enter do · esc close"}>
             <For each={aiStatus(d().row, ctx())}>{(line) => (
-              <text wrapMode="none"><S fg={theme.overlay1}>{line.label.padEnd(12)}</S><S fg={theme.text}>{fit(line.value, AI_DIALOG_WIDTH - 16)}</S></text>
+              <box flexDirection="row">
+                <text width={12} flexShrink={0} fg={theme.overlay1}>{line.label}</text>
+                <text flexGrow={1} flexShrink={1} wrapMode="word" fg={line.label === "Connection" || line.label === "Model" ? theme.text : theme.subtext0}>{line.value}</text>
+              </box>
             )}</For>
             <text> </text>
             <Show when={signIn()} fallback={
@@ -339,7 +343,7 @@ export function AiDialog() {
   )
 }
 
-const AI_DIALOG_WIDTH = 78
+const AI_DIALOG_WIDTH = 92
 
 function ImportHistory(props: { width: number; height?: number | "auto" | `${number}%` }) {
   const when = (iso: string) => { const d = new Date(iso.includes("T") ? iso : `${iso.replace(" ", "T")}Z`); return Number.isNaN(d.getTime()) ? iso : d.toLocaleString("en-AU", { dateStyle: "medium", timeStyle: "short" }) }

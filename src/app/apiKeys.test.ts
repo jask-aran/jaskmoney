@@ -106,12 +106,13 @@ test("a general model: browser sign-in first; its model checked against the prov
   data.saveApiKeys({ JASKMONEY_OPENROUTER_TOKEN: "or-key-for-test" })
   choose("key"); handlePaste(ui, KEY, data); handleKey(ui, key("return"), data)
   expect(actions()).toEqual(["signIn", "key", "model", "test", "remove"])
-  ui.setState({ aiDialog: null, aiUse: { use: "rules", cursor: 0, note: null } })
-  expect(useActions("rules", aiContext(data)).map((a) => a.label)).toEqual(["Use OpenAI instead", "Show exactly what's sent"])
+  // Past the Rules use's one query, its model actions.
+  ui.setState({ aiDialog: null, aiUse: { use: "rules", cursor: 1, note: null } })
+  expect(useActions("rules", aiContext(data)).map((a) => a.label)).toEqual(["Use OpenAI instead"])
   handleKey(ui, key("return"), data)
   expect(activeLlmProvider()).toBe("openai")
   expect(useModel("rules", aiContext(data))).toEqual({ text: "OpenAI · gpt-6.1-sol", ready: true })
-  expect(useActions("rules", aiContext(data)).map((a) => a.label)).toEqual(["Use OpenRouter instead", "Show exactly what's sent"])
+  expect(useActions("rules", aiContext(data)).map((a) => a.label)).toEqual(["Use OpenRouter instead"])
   ui.setState({ aiUse: null })
 })
 

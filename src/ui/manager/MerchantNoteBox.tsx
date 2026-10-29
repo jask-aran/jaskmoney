@@ -1,7 +1,7 @@
 import { Show } from "solid-js"
 import { ui } from "../../state/uiStore"
 import { data } from "../../state/dataStore"
-import { merchantKey } from "../../domain/suggest"
+import { merchantKey } from "../../domain/history"
 import { theme } from "../../theme"
 import { Modal } from "../primitives/Modal"
 import { TextInput } from "../primitives/TextInput"

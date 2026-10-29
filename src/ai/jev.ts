@@ -123,6 +123,12 @@ function piError(message: string): { status: number; message: string } {
   return { status: Number(match[1]), message: `Jev: ${text}` }
 }
 
+/** Where Jev is reached on `provider`, as pi-ai sends it, and how much one request holds. */
+export function jevEndpoint(provider: JevProvider): { url: string; model: string; contextWindow: number } {
+  const entry = jevModels().getModelOfType("classifier", provider, JEV_MODELS[provider].catalog)
+  return { url: `${(entry?.baseUrl ?? "").replace(/\/$/, "")}/systemone`, model: JEV_MODELS[provider].id, contextWindow: entry?.contextWindow ?? 0 }
+}
+
 /** `token`: the provider's key; without one, OpenRouter uses its sign-in. */
 export function createJevClient({ token, provider = "typesafe", fetch, timeoutMs = 30_000 }: { token?: string; provider?: JevProvider; fetch?: Fetch; timeoutMs?: number }) {
   const redact = (message: string) => (token ? message.split(token).join("[redacted]") : message)
@@ -164,7 +170,7 @@ export function jevClient(options: { timeoutMs?: number } = {}): JevClient {
 }
 
 /** Request size to aim for, in estimated tokens (Jev takes 64k a request). */
-const REQUEST_BUDGET = 40_000
+export const REQUEST_BUDGET = 40_000
 const REQUESTS_IN_FLIGHT = 4
 
 /** A rough token count: JSON characters / 3, erring large. */

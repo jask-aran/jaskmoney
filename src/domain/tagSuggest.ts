@@ -1,6 +1,8 @@
 import { newestFirst } from "./chronology"
 import { judgeEach, type JevClient } from "../ai/jev"
 import { ASK_LIMIT } from "./ask"
+import { examplesOf } from "./history"
+import { descKey } from "./transactionGroups"
 import { tagQuestion, tagState } from "./questions"
 import { tripWindow, type TagGroup } from "./tagGroups"
 import { tagCovers } from "./tagScope"
@@ -41,20 +43,12 @@ export function tagPool(target: TagTarget, transactions: Transaction[], categori
   return transactions.filter((t) => (target.tagId == null || !t.tagIds.includes(target.tagId)) && inScope(t))
 }
 
-const key = (t: Transaction) => t.description.trim().toLowerCase()
-
 /** Up to `limit` descriptions of rows already tagged, the most common first:
  * Jev's examples of what the tag means. */
 export function tagExamples(target: TagTarget, transactions: Transaction[], limit = 8): string[] {
-  if (target.tagId == null) return []
-  const counts = new Map<string, { label: string; n: number }>()
-  for (const t of transactions) {
-    if (!t.tagIds.includes(target.tagId)) continue
-    const entry = counts.get(key(t)) ?? { label: t.description.trim(), n: 0 }
-    entry.n++
-    counts.set(key(t), entry)
-  }
-  return [...counts.values()].sort((a, b) => b.n - a.n).slice(0, limit).map((e) => e.label)
+  const tagId = target.tagId
+  if (tagId == null) return []
+  return examplesOf(transactions.filter((t) => t.tagIds.includes(tagId)), limit)
 }
 
 /**
@@ -71,14 +65,14 @@ export function knownTagCandidates(target: TagTarget, transactions: Transaction[
   if (target.tagId != null) {
     const totals = new Map<string, { tagged: number; all: number }>()
     for (const t of transactions) {
-      const entry = totals.get(key(t)) ?? { tagged: 0, all: 0 }
+      const entry = totals.get(descKey(t)) ?? { tagged: 0, all: 0 }
       entry.all++
       if (t.tagIds.includes(target.tagId)) entry.tagged++
-      totals.set(key(t), entry)
+      totals.set(descKey(t), entry)
     }
     for (const t of transactions) {
       if (!pool.has(t.id) || out.has(t.id)) continue
-      const { tagged, all } = totals.get(key(t))!
+      const { tagged, all } = totals.get(descKey(t))!
       if (!tagged) continue
       out.set(t.id, { transactionId: t.id, confidence: (tagged / all) * (tagged / (tagged + 1)), source: "history" })
     }

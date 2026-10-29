@@ -2,8 +2,10 @@ import { For, Show, createEffect, createMemo } from "solid-js"
 import { useTerminalDimensions } from "@opentui/solid"
 import { ui, type UiState } from "../../state/uiStore"
 import { data } from "../../state/dataStore"
-import { USE_INFO, aiContext, useActions, useModel } from "../../state/aiDialog"
-import { sentLines } from "../../state/sentView"
+import { aiContext, useActions, useModel, type AiContext } from "../../state/aiDialog"
+import { QUERIES, USES, useQueries, type QueryId } from "../../ai/catalog"
+import { LLM_PROVIDERS } from "../../ai/llm"
+import { queryLines } from "../../state/sentView"
 import type { HelpTone } from "../../state/searchHelp"
 import { theme } from "../../theme"
 import { Modal } from "../primitives/Modal"
@@ -11,36 +13,76 @@ import { ListRow } from "../primitives/ListRow"
 import { S } from "../primitives/S"
 import { fit } from "../text"
 
-const WIDTH = 78
 const TONE: Record<HelpTone, string> = { head: theme.text, key: theme.accent, text: theme.subtext0, muted: theme.overlay1 }
 
-/** A use's dialog: the model doing it, what it does, what it can use; then
- * choosing the model, connecting one it needs, and what's sent. */
+/** The model answering a query now, as the dialogs name it. */
+function queryModel(id: QueryId, ctx: AiContext): string {
+  const model = QUERIES[id].model
+  if (model === "clairic") return "Clairic (Cloudflare Workers AI)"
+  if (model === "general") return useModel("rules", ctx).text
+  return useModel("suggestions", ctx).text
+}
+const shortModel = (id: QueryId, ctx: AiContext) => QUERIES[id].model === "jev" ? "Jev" : QUERIES[id].model === "clairic" ? "Clairic" : LLM_PROVIDERS[ctx.inUse].label
+
+/** The dialogs' width: wide enough for a feature, its keys and its code. */
+const dialogWidth = (screen: number) => Math.max(60, Math.min(100, screen - 4))
+
+/** A use's dialog: the model doing it; the app features it powers (how
+ * you reach each, the code); what happens without a model; its queries
+ * (enter opens one); then choosing its model. */
 export function AiUseDialog() {
+  const dims = useTerminalDimensions()
+  const width = createMemo(() => dialogWidth(dims().width))
   return (
     <Show when={ui.state.aiUse}>
       {(d: () => NonNullable<UiState["aiUse"]>) => {
         const ctx = () => aiContext(data)
-        const info = () => USE_INFO[d().use]
+        const use = () => USES[d().use]
         const model = () => useModel(d().use, ctx())
+        const queries = () => useQueries(d().use)
         const actions = () => useActions(d().use, ctx())
+        const heading = (text: string, aside = "") => <text wrapMode="none"><S fg={theme.subtext1} bold>{text}</S><S fg={theme.overlay1}>{aside}</S></text>
         // The label in a column; the value wraps beside it.
         const line = (label: string, value: string, fg: string = theme.text) => (
           <box flexDirection="row">
-            <text width={10} flexShrink={0} fg={theme.overlay1}>{label}</text>
+            <text width={12} flexShrink={0} fg={theme.overlay1}>{label}</text>
             <text flexGrow={1} flexShrink={1} wrapMode="word" fg={fg}>{value}</text>
           </box>
         )
+        const inner = () => width() - 4
+        const nameWidth = () => Math.max(...use().features.map((f) => f.name.length)) + 2
         return (
-          <Modal title={info().name} subtitle="AI use" width={WIDTH} hints="j/k move · enter do · esc close">
+          <Modal title={use().name} subtitle="AI use" width={width()} hints="j/k move · enter open · esc close">
             {line("Model", model().text, model().ready ? theme.teal : theme.warning)}
-            {line("Does", info().does)}
-            {line("Can use", info().available)}
             <text> </text>
-            <For each={actions()}>{(action, i) => {
-              const here = () => i() === Math.min(d().cursor, actions().length - 1)
-              return <ListRow cursor={here()} bg={theme.mantle} spans={[{ text: fit(action.label, WIDTH - 6), fg: here() ? theme.text : theme.subtext0 }]} />
-            }}</For>
+            {heading("Features")}
+            <For each={use().features}>{(f) => (
+              <text wrapMode="none">
+                <S fg={theme.text}>{`  ${f.name.padEnd(nameWidth())}`}</S>
+                <S fg={theme.accent}>{fit(f.reach, 26).padEnd(28)}</S>
+                <S fg={theme.overlay1}>{fit(f.code, Math.max(8, inner() - nameWidth() - 30))}</S>
+              </text>
+            )}</For>
+            <Show when={use().withoutModel}>
+              <box paddingLeft={2}><text fg={theme.overlay1} wrapMode="word">{`Without a model: ${use().withoutModel}`}</text></box>
+            </Show>
+            <text> </text>
+            {heading("Queries", "   enter: what it asks, its context, the exact request")}
+            <For each={queries()}>{(id, i) => (
+              <ListRow cursor={d().cursor === i()} bg={theme.mantle} spans={[
+                { text: QUERIES[id].name.padEnd(34), fg: d().cursor === i() ? theme.text : theme.subtext1 },
+                { text: shortModel(id, ctx()).padEnd(12), fg: theme.teal },
+                { text: fit(QUERIES[id].asks, Math.max(8, inner() - 48)), fg: theme.overlay1 },
+              ]} />
+            )}</For>
+            <Show when={actions().length}>
+              <text> </text>
+              {heading("Model")}
+              <For each={actions()}>{(action, i) => {
+                const here = () => d().cursor === queries().length + i()
+                return <ListRow cursor={here()} bg={theme.mantle} spans={[{ text: fit(action.label, inner() - 2), fg: here() ? theme.text : theme.subtext0 }]} />
+              }}</For>
+            </Show>
             <Show when={d().note}>
               {(n: () => NonNullable<NonNullable<UiState["aiUse"]>["note"]>) => (
                 <>
@@ -56,14 +98,15 @@ export function AiUseDialog() {
   )
 }
 
-/** Exactly what a use sends: each request, when it's sent and where, and
- * its body as an outline; scrolls. Built without sending anything. */
-export function AiSentViewer() {
+/** A query: what it asks, what comes back and what's done with it, when
+ * it's sent, the code; its context blocks; then the exact request, built
+ * without sending anything. Scrolls. */
+export function AiQueryView() {
   const dims = useTerminalDimensions()
-  const width = createMemo(() => Math.max(40, Math.min(110, dims().width - 4)))
+  const width = createMemo(() => Math.max(60, Math.min(110, dims().width - 4)))
   const lines = createMemo(() => {
     const view = ui.state.aiSent
-    return view?.parts ? sentLines(view.parts, width() - 4) : []
+    return view ? queryLines(view.query, queryModel(view.query, aiContext(data)), view.part, width() - 4, view.error) : []
   })
   // The border and hint lines, and a line of air above and below.
   const visible = createMemo(() => Math.max(5, dims().height - 8))
@@ -76,16 +119,14 @@ export function AiSentViewer() {
   return (
     <Show when={ui.state.aiSent}>
       {(view: () => NonNullable<UiState["aiSent"]>) => (
-        <Modal title={`What ${USE_INFO[view().use].name} sends`} subtitle="built for your newest row; nothing was sent" width={width()} hints={hints()}>
-          <Show when={view().parts} fallback={<text fg={view().error ? theme.error : theme.overlay1}>{view().error ?? "Building it…"}</text>}>
-            <For each={lines().slice(top(), top() + visible())}>
-              {(line) => (
-                <text wrapMode="none">
-                  {line.length ? <For each={line}>{(part) => <S fg={TONE[part.tone]} bold={part.tone === "head"}>{part.text}</S>}</For> : " "}
-                </text>
-              )}
-            </For>
-          </Show>
+        <Modal title={QUERIES[view().query].name} subtitle={`${USES[view().use].name} · query`} width={width()} hints={hints()}>
+          <For each={lines().slice(top(), top() + visible())}>
+            {(line) => (
+              <text wrapMode="none">
+                {line.length ? <For each={line}>{(part) => <S fg={TONE[part.tone]} bold={part.tone === "head"}>{part.text}</S>}</For> : " "}
+              </text>
+            )}
+          </For>
         </Modal>
       )}
     </Show>

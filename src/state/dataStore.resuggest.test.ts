@@ -49,7 +49,7 @@ test("categorising a row re-asks about the waiting rows with the same descriptio
   const seen: Array<{ description: string; categorised_before?: string }> = []
   expect(await data.resuggestLike([1], fakeJev(100, seen))).toBe(1)
   // Only row 2 was asked about, and Jev was told how row 1 went.
-  expect(seen).toEqual([expect.objectContaining({ description: " corner bar ", categorised_before: "Test food ×1" })])
+  expect(seen).toEqual([expect.objectContaining({ description: "corner bar", categorised_before: "Test food ×1" })])
   expect(suggestion(2)).toEqual({ categoryId: 100, source: "jev" })
   expect(suggestion(3)).toEqual({ categoryId: 101, source: "jev" })
   expect(suggestion(4)).toBeUndefined()

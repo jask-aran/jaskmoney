@@ -1,4 +1,5 @@
 import type { SentPart } from "../app/sentPreview"
+import type { QueryId } from "../ai/catalog"
 import type { Written } from "../app/searchReport"
 import type { Armed } from "./armed"
 import type { DryRunReport } from "../domain/rules"
@@ -253,10 +254,10 @@ export interface UiState {
   /** A use's dialog (Settings › AI models › Suggestions, Search, Rules): the
    * action at the cursor and the last result. */
   aiUse: { use: "suggestions" | "search" | "rules"; cursor: number; note: { text: string; ok: boolean | null } | null } | null
-  /** Exactly what a use sends (app/sentPreview): the requests once built,
-   * or why they couldn't be; the first line shown, and how many lines
-   * there are and fit (set by the viewer, which lays them out). */
-  aiSent: { use: "suggestions" | "search" | "rules"; parts: SentPart[] | null; error: string | null; top: number; visible: number; lines: number } | null
+  /** A query's view (ai/catalog): its exact request (app/sentPreview) once
+   * built, or why it couldn't be; the first line shown, and how many lines
+   * there are and fit (set by the view, which lays them out). */
+  aiSent: { use: "suggestions" | "search" | "rules"; query: QueryId; part: SentPart | null; error: string | null; top: number; visible: number; lines: number } | null
   /** A browser sign-in to the general model's provider (app/llmSignIn): the
    * address to open, what's happening, and the paste field when pi-ai asks. */
   llmSignIn: { provider: "openrouter" | "openai"; url: string | null; message: string; paste: { message: string; value: string; caret: number } | null } | null

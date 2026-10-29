@@ -1,5 +1,6 @@
 import { judgeEach, type JevClient } from "../ai/jev"
 import { assignableCategories } from "./categoryOptions"
+import { categorisedByMerchant, examplesOf, isPersonToPerson, merchantKey, rankCategories, type CategoryCount } from "./history"
 import { isOrdinaryFlow, isUncategorised } from "./moneyRules"
 import { EXAMPLES_PER_CATEGORY, MERCHANT_STATE, merchantBreadthQuestion, MIXED_AT, MIXED_UNSURE_AT, NO_DETAIL_CAP, RANKED_MIN, SUGGESTION_RANKED, UNSURE_CAP, categoryPath, suggestionCriteria, suggestionQuestion, suggestionState, type CategoryUses } from "./questions"
 import type { Category, CategorySuggestion, Transaction } from "./types"
@@ -16,15 +17,6 @@ function suggestionCategories(categories: Category[]): Category[] {
   return assignableCategories(categories, "").filter((c) => !c.isDefault)
 }
 
-/** Up transaction types whose description names a person or a payment app
- * (Beem, a PayID), not a merchant: the same description says little about
- * what the money was for. */
-export const PERSON_TO_PERSON = new Set(["Payment", "Pay Anyone", "Transfer", "Osko Payment Received", "Payment Received", "Deposit", "EFTPOS Deposit", "EFTPOS Withdrawal"])
-const isPersonToPerson = (t: Transaction) => !!t.transactionType && PERSON_TO_PERSON.has(t.transactionType)
-
-/** A merchant name as the breadth cache and history key it. */
-export const merchantKey = (description: string) => description.trim().toLowerCase()
-
 /**
  * Whether a merchant's name says what was bought: "mixed" when it doesn't
  * (Jev says it sells many unrelated goods, at MIXED_AT or more, or your rows
@@ -39,17 +31,12 @@ export type Breadth = "mixed" | "unsure" | "single"
  * spread (no category at HISTORY_MIN_SHARE). */
 function merchantTally(transactions: Transaction[], categories: Category[]): Map<string, { top: number; topCount: number; total: number; spread: boolean }> {
   const assignable = new Set(suggestionCategories(categories).map((c) => c.id))
-  const tally = new Map<string, Map<number, number>>()
-  for (const t of transactions) {
-    if (isUncategorised(t) || t.categoryId == null || !assignable.has(t.categoryId) || isPersonToPerson(t)) continue
-    const byCategory = tally.get(merchantKey(t.description)) ?? new Map<number, number>()
-    byCategory.set(t.categoryId, (byCategory.get(t.categoryId) ?? 0) + 1)
-    tally.set(merchantKey(t.description), byCategory)
-  }
-  return new Map([...tally].map(([key, byCategory]) => {
-    const [top, topCount] = [...byCategory].sort((a, b) => b[1] - a[1])[0]!
-    const total = [...byCategory.values()].reduce((a, b) => a + b, 0)
-    return [key, { top, topCount, total, spread: byCategory.size > 1 && topCount / total < HISTORY_MIN_SHARE }]
+  const byMerchant = categorisedByMerchant(transactions.filter((t) => !isPersonToPerson(t)), assignable)
+  return new Map([...byMerchant].map(([key, rows]) => {
+    const ranked = rankCategories(rows)
+    const top = ranked[0]!
+    const total = rows.length
+    return [key, { top: top.categoryId, topCount: top.count, total, spread: ranked.length > 1 && top.count / total < HISTORY_MIN_SHARE }]
   }))
 }
 
@@ -138,33 +125,17 @@ export function capSuggestion(s: CategorySuggestion, cap: number): CategorySugge
 const HISTORY_MIN_ROWS = 3
 const HISTORY_MIN_SHARE = 0.9
 
-interface Evidence { categoryId: number; count: number; latest: Transaction }
-
 /** For a row, how other rows with the same description were categorised,
  * most common first (ties: the most recent): same-sign rows when there are
  * any, else all. */
-function historyEvidence(transactions: Transaction[], categories: Category[]): (t: Transaction) => { total: number; ranked: Evidence[] } {
+function historyEvidence(transactions: Transaction[], categories: Category[]): (t: Transaction) => { total: number; ranked: CategoryCount[] } {
   const assignable = new Set(suggestionCategories(categories).map((c) => c.id))
-  const byKey = new Map<string, Transaction[]>()
-  const key = (t: Transaction) => t.description.trim().toLowerCase()
-  for (const t of transactions) {
-    if (isUncategorised(t) || t.categoryId == null || !assignable.has(t.categoryId)) continue
-    const rows = byKey.get(key(t)) ?? []
-    rows.push(t)
-    byKey.set(key(t), rows)
-  }
+  const byKey = categorisedByMerchant(transactions, assignable)
   return (t) => {
-    const matching = (byKey.get(key(t)) ?? []).filter((row) => row.id !== t.id)
+    const matching = (byKey.get(merchantKey(t.description)) ?? []).filter((row) => row.id !== t.id)
     const sameSign = matching.filter((row) => Math.sign(row.amount) === Math.sign(t.amount))
     const rows = sameSign.length ? sameSign : matching
-    const counts = new Map<number, Evidence>()
-    for (const row of rows) {
-      const entry = counts.get(row.categoryId!)
-      const latest = !entry || row.dateISO > entry.latest.dateISO || (row.dateISO === entry.latest.dateISO && row.id > entry.latest.id) ? row : entry.latest
-      counts.set(row.categoryId!, { categoryId: row.categoryId!, count: (entry?.count ?? 0) + 1, latest })
-    }
-    const ranked = [...counts.values()].sort((a, b) => b.count - a.count || b.latest.dateISO.localeCompare(a.latest.dateISO) || b.latest.id - a.latest.id)
-    return { total: rows.length, ranked }
+    return { total: rows.length, ranked: rankCategories(rows) }
   }
 }
 
@@ -173,24 +144,17 @@ function historyEvidence(transactions: Transaction[], categories: Category[]): (
  * (ties: the most recent), one per description. */
 export function categoryExamples(history: Transaction[], suggestable: Category[], breadth: (description: string) => Breadth = () => "single"): Map<number, string[]> {
   const allowed = new Set(suggestable.map((c) => c.id))
-  const tally = new Map<number, Map<string, { description: string; count: number; latest: string }>>()
+  const byCategory = new Map<number, Transaction[]>()
   for (const t of history) {
     // A person or a payment app names no merchant to learn from, and a
     // marketplace (eBay) says nothing about its category.
     if (isUncategorised(t) || t.categoryId == null || !allowed.has(t.categoryId) || isPersonToPerson(t) || breadth(t.description) === "mixed") continue
-    const byKey = tally.get(t.categoryId) ?? new Map()
-    tally.set(t.categoryId, byKey)
-    const k = t.description.trim().toLowerCase()
-    const entry = byKey.get(k) ?? { description: t.description.trim(), count: 0, latest: "" }
-    entry.count++
-    if (t.dateISO > entry.latest) entry.latest = t.dateISO
-    byKey.set(k, entry)
+    const rows = byCategory.get(t.categoryId) ?? []
+    rows.push(t)
+    byCategory.set(t.categoryId, rows)
   }
   const out = new Map<number, string[]>()
-  for (const [categoryId, byKey] of tally) {
-    const ranked = [...byKey.values()].sort((a, b) => b.count - a.count || b.latest.localeCompare(a.latest))
-    out.set(categoryId, ranked.slice(0, EXAMPLES_PER_CATEGORY).map((e) => e.description.length > 40 ? `${e.description.slice(0, 39)}…` : e.description))
-  }
+  for (const [categoryId, rows] of byCategory) out.set(categoryId, examplesOf(rows, EXAMPLES_PER_CATEGORY))
   return out
 }
 

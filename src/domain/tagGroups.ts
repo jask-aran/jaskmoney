@@ -1,6 +1,6 @@
 import { chronological } from "./chronology"
 import { addDays, daysBetween, MONTHS } from "./days"
-import { PERSON_TO_PERSON } from "./suggest"
+import { PERSON_TO_PERSON } from "./history"
 import { groupByDescription } from "./transactionGroups"
 import type { Transaction } from "./types"
 

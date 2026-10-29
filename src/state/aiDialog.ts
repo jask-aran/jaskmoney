@@ -1,7 +1,10 @@
-import { activeLlmProvider, LLM_PROVIDERS, llmEffort, llmModelId, llmModels, type LlmProvider } from "../ai/llm"
+import { activeLlmProvider, LLM_PROVIDERS, llmEffort, llmModelId, llmModelInfo, llmModels, type LlmProvider } from "../ai/llm"
 import { credentialEnv, type CredentialName } from "../ai/credentials"
 import type { DataStore } from "./dataStore"
 import { isLlmRow, type AiRow, type KeyRow } from "../app/apiKeys"
+import { MODEL_KINDS, QUERIES, queriesOf, type AiUse, type QueryId } from "../ai/catalog"
+import { jevEndpoint, REQUEST_BUDGET } from "../ai/jev"
+import { workersAiUrl } from "../ai/workersAi"
 
 /**
  * Settings › AI models: the models, each with a dialog (enter) for how it's
@@ -84,12 +87,58 @@ export function aiRow(row: KeyRow, ctx: AiContext) {
 export function aiStatus(row: KeyRow, ctx: AiContext): { label: string; value: string }[] {
   const lines = [{ label: "Connection", value: aiConnection(row, ctx)?.long ?? "not set" }]
   if (row === "workersAi" && ctx.keys.JASKMONEY_CF_ACCOUNT_ID.source) lines.push({ label: "Account", value: ctx.keys.JASKMONEY_CF_ACCOUNT_ID.source === "env" ? "from the environment" : "saved here" })
-  if (isLlmRow(row)) {
+  if (row === "up") return [...lines, { label: "Used for", value: AI_NAMES.up.uses }]
+  return [...lines, ...modelFacts(row, ctx)]
+}
+
+const thousands = (n: number) => (n >= 1000 ? `${Math.round(n / 1000)}k` : String(n))
+const names = (ids: QueryId[]) => ids.map((id) => QUERIES[id].name).join(", ")
+
+/** What a model is: its model, address, how it's signed in to, what it
+ * does, its limits and price, and the queries it answers now. Addresses
+ * and limits from the clients and pi-ai's catalog. */
+function modelFacts(row: AiRow, ctx: AiContext): { label: string; value: string }[] {
+  const kind = row === "jev" ? "jev" : row === "workersAi" ? "clairic" : "general"
+  const lines: { label: string; value: string }[] = []
+  if (row === "jev") {
+    const viaOpenRouter = jevVia(ctx) === "OpenRouter"
+    const endpoint = jevEndpoint(viaOpenRouter ? "openrouter" : "typesafe")
+    lines.push(
+      { label: "Model", value: endpoint.model },
+      { label: "Endpoint", value: `POST ${endpoint.url}` },
+      { label: "Auth", value: "A TypeSafe API key, sent as a bearer token; without one, OpenRouter's key or browser sign-in (OpenRouter serves Jev too)" },
+      { label: "Limits", value: `${thousands(endpoint.contextWindow)} tokens a request; the app fills each to about ${thousands(REQUEST_BUDGET)}` },
+    )
+  } else if (row === "workersAi") {
+    lines.push(
+      { label: "Model", value: "@cf/cloudflare/clairic" },
+      { label: "Endpoint", value: `POST ${workersAiUrl("<account id>")}` },
+      { label: "Auth", value: "A Cloudflare API token, sent as a bearer token, and your account ID (in the address)" },
+    )
+  } else {
     const model = ctx.model(row)
+    const info = llmModelInfo(row, model.id)
     lines.push({ label: "Model", value: `${model.id}${model.isDefault ? " (default)" : ""}${model.effort ? ` · ${model.effort} effort` : ""}` })
+    if (info) lines.push({ label: "Endpoint", value: `${info.baseUrl} (${info.api})` })
+    lines.push({ label: "Auth", value: row === "openrouter" ? "An API key, or the browser sign-in (OAuth: it creates an API key on your OpenRouter account)" : "An API key, or Sign in with ChatGPT (OAuth: your ChatGPT plan, no key)" })
+    if (info) lines.push(
+      { label: "Limits", value: `${thousands(info.contextWindow)} tokens of context, ${thousands(info.maxTokens)} out` },
+      { label: "Price", value: `$${info.cost.input} in, $${info.cost.output} out per million tokens (pi-ai's catalog)` },
+    )
   }
-  lines.push({ label: "Used for", value: `${AI_NAMES[row].uses}${aiInUse(row, ctx) ? " · in use" : isLlmRow(row) ? ` · ${LLM_PROVIDERS[ctx.inUse].label} is in use` : ""}` })
+  lines.push({ label: "Does", value: MODEL_KINDS[kind].does })
+  if (MODEL_KINDS[kind].price) lines.push({ label: "Price", value: MODEL_KINDS[kind].price! })
+  lines.push({ label: "Used by", value: usedBy(row, ctx) })
   return lines
+}
+
+/** The queries a model answers now. */
+function usedBy(row: AiRow, ctx: AiContext): string {
+  if (row === "jev") return names(queriesOf("jev"))
+  if (row === "workersAi") return `${names(queriesOf("clairic"))}${ctx.searchClairic ? "" : " (switched off in Search)"}`
+  const jev = row === "openrouter" && jevVia(ctx) === "OpenRouter" ? "Jev's queries (no TypeSafe key)" : ""
+  const rules = ctx.inUse === row ? names(queriesOf("general")) : ""
+  return [rules, jev].filter(Boolean).join("; ") || `nothing now (${LLM_PROVIDERS[ctx.inUse].label} writes rules)`
 }
 
 /** The dialog's actions, the likeliest first: a general model's browser sign-in. */
@@ -136,15 +185,7 @@ export function removable(row: KeyRow, ctx: AiContext): boolean {
 
 // ---------- Uses ----------
 
-/** What the models do, each with the model doing it. */
-export const AI_USES = ["suggestions", "search", "rules"] as const
-export type AiUse = (typeof AI_USES)[number]
-
-export const USE_INFO: Record<AiUse, { name: string; does: string; available: string }> = {
-  suggestions: { name: "Suggestions", does: "suggests categories (i, and after each sync), checks whether a merchant's name says what was bought, finds a tag's transactions (T)", available: "Jev only" },
-  search: { name: "Search", does: "smart search (?words) writes the JQL; ask: terms have Jev judge rows", available: "Jev, and Clairic for the words and dates" },
-  rules: { name: "Rules", does: "writes rules from your history (R, then a)", available: "a general model: OpenRouter or OpenAI" },
-}
+export { AI_USES, type AiUse } from "../ai/catalog"
 
 /** How Jev is reached: TypeSafe (its key) wins over OpenRouter. */
 function jevVia(ctx: AiContext): "TypeSafe" | "OpenRouter" | null {
@@ -165,9 +206,9 @@ export function useModel(use: AiUse, ctx: AiContext): { text: string; ready: boo
   return { text: `Jev (${via})${clairic ? " + Clairic" : ""}`, ready: true }
 }
 
-export type UseAction = { id: "view" } | { id: "clairic"; on: boolean } | { id: "provider"; provider: LlmProvider } | { id: "connect"; row: AiRow }
+export type UseAction = { id: "clairic"; on: boolean } | { id: "provider"; provider: LlmProvider } | { id: "connect"; row: AiRow }
 
-/** A use dialog's actions: connect what it needs, choose its model, see what's sent. */
+/** A use dialog's model actions: choose its model, connect one it needs. */
 export function useActions(use: AiUse, ctx: AiContext): Array<UseAction & { label: string }> {
   const out: Array<UseAction & { label: string }> = []
   if (use === "rules") {
@@ -184,6 +225,5 @@ export function useActions(use: AiUse, ctx: AiContext): Array<UseAction & { labe
       ? { id: "clairic", on: !ctx.searchClairic, label: ctx.searchClairic ? "Stop using Clairic (Jev picks the words; written dates are missed)" : "Use Clairic for the words and dates" }
       : { id: "connect", row: "workersAi", label: "Connect Clairic… (optional: reads words and dates)" })
   }
-  out.push({ id: "view", label: "Show exactly what's sent" })
   return out
 }

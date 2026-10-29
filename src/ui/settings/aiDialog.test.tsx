@@ -20,7 +20,11 @@ test("the AI models dialog: status, actions with the cursor, the hint for the ac
   expect(frame).toContain("OpenRouter · general model")
   expect(frame).toContain("Connection  signed in with the browser")
   expect(frame).toContain("Model       meta/muse-spark-1.3-contributor (default) · xhigh effort")
-  expect(frame).toContain("Used for    rules, and Jev when there's no TypeSafe key · in use")
+  // What it is: its address and sign-in, its limits and price from pi-ai's catalog, what it answers now.
+  expect(frame).toContain("Endpoint    https://openrouter.ai/api/v1 (openai-completions)")
+  expect(frame).toContain("Auth        An API key, or the browser sign-in")
+  expect(frame).toContain("Price       $0.1 in, $0.2 out per million tokens (pi-ai's catalog)")
+  expect(frame).toContain("Used by     Writing rules; Jev's queries (no TypeSafe key)")
   expect(frame).toContain("Sign in again with the browser")
   expect(frame).toContain("Remove the saved key, model and sign-in")
   expect(frame).toContain("the last stays active until you delete it on openrouter.ai")
@@ -58,12 +62,13 @@ test("the AI models pane: the models, then the uses with their model (teal when 
   await rendered.renderOnce(); await rendered.flush()
   frame = rendered.captureCharFrame()
   expect(frame).toContain("Search · AI use")
-  // A value that wraps carries on under itself, not under its label.
-  const lines = frame.split("\n")
-  const does = lines.findIndex((l) => l.includes("Does      smart search"))
-  expect(does).toBeGreaterThan(0)
-  expect(lines[does + 1]!.indexOf("rows")).toBe(lines[does]!.indexOf("smart search"))
+  // The features it powers, how you reach each, the code; its queries; its model actions.
+  expect(frame).toMatch(/Smart search +\? then words +app\/smartSearch\.runSmartSearch/)
+  expect(frame).toMatch(/ask: terms +ask:words in any search +app\/ask\.runAsk → data\.askAbout/)
+  for (const query of ["Smart search: your words", "Smart search: your categories", "Smart search: words and dates", "ask: judging"]) expect(frame).toContain(query)
   expect(frame).toContain("Connect Clairic… (optional: reads words and dates)")
-  expect(frame).toContain("Show exactly what's sent")
+  // The cursor's query has the wash.
+  const rows = rendered.captureSpans().lines.flatMap((l) => l.spans)
+  expect(rows.find((s) => s.text.startsWith("Smart search: your words"))!.bg.toInts()).toEqual(RGBA.fromHex(theme.rowCursor).toInts())
   ui.setState({ aiUse: null })
 })

@@ -1,13 +1,14 @@
 import type { SentPart } from "../app/sentPreview"
-import type { HelpLine } from "./searchHelp"
+import { BLOCKS, QUERIES, type QueryId } from "../ai/catalog"
+import type { HelpLine, HelpTone } from "./searchHelp"
 
 /**
- * What a use sends (app/sentPreview), as lines for the viewer: per request
- * its title, when it's sent, where to, then the body as an outline (keys,
- * nested values indented, long text wrapped, multi-line text as
- * paragraphs). A family of like questions (kind1 … kind51) shows its first
- * and how many more, so a smart search's 100 category questions read as
- * one. Nothing else is changed: the wording is as sent.
+ * A query (ai/catalog) as lines for Settings › AI models: readable first,
+ * then its exact request (app/sentPreview) as an outline (keys, nested
+ * values indented, long text wrapped, a list that fits on one line). A
+ * family of like questions (kind1 … kind51) shows its first and how many
+ * more, so a smart search's 100 category questions read as one. The
+ * request's wording is as sent.
  */
 
 /** `text` in lines of at most `width`, broken between words (a longer word is cut). */
@@ -92,14 +93,52 @@ function outline(key: string, value: unknown, indent: number, width: number, out
   }
 }
 
-export function sentLines(parts: SentPart[], width: number): HelpLine[] {
-  const out: HelpLine[] = []
-  parts.forEach((part, i) => {
-    if (i) out.push([])
-    out.push([{ text: part.title, tone: "head" }])
-    for (const line of wrap(`Sent ${part.when}.`, width)) out.push([{ text: line, tone: "muted" }])
-    out.push([{ text: part.to, tone: "key" }])
-    outline("", part.body, 2, width, out)
-  })
+/** The exact request, as an outline under its address. */
+export function requestLines(part: SentPart, width: number): HelpLine[] {
+  const out: HelpLine[] = [[{ text: part.to, tone: "key" }]]
+  outline("", part.body, 2, width, out)
   return out
+}
+
+/** `text` beside a label column, wrapped under itself. */
+function labelled(label: string, text: string, width: number, column = 10, tone: HelpTone = "text"): HelpLine[] {
+  return wrap(text, Math.max(20, width - column)).map((line, i) => [{ text: (i ? "" : label).padEnd(column), tone: "muted" as const }, { text: line, tone }])
+}
+
+/**
+ * A query, readable first: what it asks, what comes back and what the app
+ * does with it, when it's sent, the code; then each context block with
+ * where its field goes, what it says and where it comes from; then the
+ * exact request (when built) with what it was built for.
+ */
+export function queryLines(id: QueryId, model: string, part: SentPart | null, width: number, error: string | null = null): HelpLine[] {
+  const q = QUERIES[id]
+  const out: HelpLine[] = [
+    ...labelled("Asks", q.asks, width, 10, "head"),
+    ...labelled("Answer", q.answer, width),
+    ...labelled("Sent", q.when, width),
+    ...labelled("Model", part ? `${model} · ${part.to}` : model, width),
+    ...labelled("Code", q.code, width, 10, "key"),
+    [],
+    [{ text: "Context", tone: "head" }],
+    ...wrap("Each block is gathered by one function, the same wherever it's used.", width).map((line): HelpLine => [{ text: line, tone: "muted" }]),
+  ]
+  for (const use of q.context) {
+    const block = BLOCKS[use.block]
+    const where = use.via === "tools" ? "in the tools' results" : use.fields.length ? `→ ${use.fields.join(", ")}` : "decides, not sent"
+    // The code beside the name, or under it when it doesn't fit.
+    const head = `  ${block.name}  ${where}`
+    if (head.length + 2 + block.code.length <= width) out.push([{ text: `  ${block.name}`, tone: "head" }, { text: `  ${where}`, tone: "key" }, { text: `  ${block.code}`, tone: "muted" }])
+    else {
+      out.push([{ text: `  ${block.name}`, tone: "head" }, { text: `  ${where}`, tone: "key" }])
+      for (const line of wrap(block.code, width - 4)) out.push([{ text: `    ${line}`, tone: "muted" }])
+    }
+    for (const line of wrap(block.says, width - 4)) out.push([{ text: `    ${line}`, tone: "text" }])
+    for (const line of wrap(`from ${block.from}`, width - 4)) out.push([{ text: `    ${line}`, tone: "muted" }])
+  }
+  out.push([])
+  out.push([{ text: "Exact request", tone: "head" }])
+  const about = part ? `Built for ${part.sample}; nothing was sent.` : error ?? "Building it…"
+  for (const line of wrap(about, width)) out.push([{ text: line, tone: "muted" }])
+  return part ? [...out, ...requestLines(part, width)] : out
 }

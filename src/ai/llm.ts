@@ -75,6 +75,11 @@ export function llmModels(): Models {
   return models
 }
 
+/** A provider's model as pi-ai's catalog has it (address, API, price, context), without a key; null if unknown. */
+export function llmModelInfo(provider: LlmProvider, id: string = llmModelId(credentialEnv(), provider)): Model<Api> | null {
+  return llmModels().getModel(provider, id) ?? null
+}
+
 export function createLlm(options: { provider?: LlmProvider; apiKey?: string; modelId?: string } = {}): Llm {
   const env = credentialEnv()
   const provider = options.provider ?? activeLlmProvider(env)

@@ -1,5 +1,5 @@
 import { unwrap } from "solid-js/store"
-import { merchantKey } from "../domain/suggest"
+import { merchantKey } from "../domain/history"
 import { footerShown, type Hint } from "./palette"
 import { toggleDemo, applyAllRules, applySavedFilter, clearTransactionFilter, askForRules, reportError, resetTransactionCursors, runUndo, showAccount, showDryRun, toggleIcons, toggleWeekStart, toggleXAxis } from "./actions"
 import { commands, rankCommands, type Command } from "./commands"
@@ -29,6 +29,7 @@ import { runAsk } from "./ask"
 import { eitherInstead, askTerms } from "../domain/filter"
 import { AI_ROWS, aiRowLabel, isLlmRow, testAi, type AiRow } from "./apiKeys"
 import { AI_USES, aiActions, aiContext, useActions, type AiUse } from "../state/aiDialog"
+import { useQueries, type QueryId } from "../ai/catalog"
 import { hasWorkersAi } from "../ai/workersAi"
 import { cancelLlmSignIn, signOutLlm, startLlmSignIn, submitSignInPaste } from "./llmSignIn"
 import { createLlm, hasLlm, LLM_PROVIDERS, llmModelId } from "../ai/llm"
@@ -1058,22 +1059,25 @@ function handleSettingsAi(ui: UiStore, key: KeyEvent): void {
 
 const openAiDialog = (ui: UiStore, row: AiRow) => ui.setState({ aiDialog: { row, cursor: 0, field: null, armed: false, note: null, busy: false } })
 
-/** A use's dialog: j/k pick an action, enter runs it: choose its model,
- * connect one it needs, or see what's sent; esc closes. */
+/** A use's dialog: j/k move over its queries, then its model actions;
+ * enter opens a query (what it asks, its context, the exact request) or
+ * runs the action: choose the model, connect one it needs; esc closes. */
 function handleAiUse(ui: UiStore, key: KeyEvent, data?: DataStore): void {
   const dialog = ui.state.aiUse
   if (!dialog || !data) return
   const { name } = key
   if (name === "escape") { ui.setState({ aiUse: null }); return }
+  const queries = useQueries(dialog.use)
   const actions = useActions(dialog.use, aiContext(data))
-  const moved = listMove(key, dialog.cursor, actions.length)
+  const moved = listMove(key, dialog.cursor, queries.length + actions.length)
   if (moved != null) { ui.setState("aiUse", { cursor: moved }); return }
   if (name !== "return" && name !== "enter") return
-  const action = actions[Math.min(dialog.cursor, actions.length - 1)]
+  const query = queries[dialog.cursor]
+  if (query) { void openQuery(ui, data, dialog.use, query); return }
+  const action = actions[dialog.cursor - queries.length]
   if (!action) return
   const note = (text: string) => ui.setState("aiUse", { note: { text, ok: true } })
   switch (action.id) {
-    case "view": void openSent(ui, data, dialog.use); return
     case "clairic":
       data.saveApiKeys({ JASKMONEY_SEARCH_CLAIRIC: action.on ? null : "off" })
       note(action.on ? "Smart search asks Clairic for the words and dates" : "Smart search asks Jev alone")
@@ -1088,19 +1092,21 @@ function handleAiUse(ui: UiStore, key: KeyEvent, data?: DataStore): void {
   }
 }
 
-/** Build what a use sends (nothing is sent) and show it. */
-async function openSent(ui: UiStore, data: DataStore, use: AiUse): Promise<void> {
-  ui.setState({ aiSent: { use, parts: null, error: null, top: 0, visible: 0, lines: 0 } })
+/** Show a query, and build its exact request (nothing is sent). */
+async function openQuery(ui: UiStore, data: DataStore, use: AiUse, query: QueryId): Promise<void> {
+  ui.setState({ aiSent: { use, query, part: null, error: null, top: 0, visible: 0, lines: 0 } })
+  const current = () => ui.state.aiSent?.query === query
   try {
     const askWords = askTerms(data.state.filterExpr)[0]
     const parts = await previewSent(use, data, { smartQuestion: ui.state.smartQuestion?.question, ...(askWords ? { askWords } : {}), clairic: aiContext(data).searchClairic && hasWorkersAi() })
-    if (ui.state.aiSent?.use === use) ui.setState("aiSent", { parts })
+    const part = parts.find((p) => p.query === query)
+    if (current()) ui.setState("aiSent", part ? { part } : { error: "Nothing to build it for yet: it needs rows of the kind it asks about." })
   } catch (error) {
-    if (ui.state.aiSent?.use === use) ui.setState("aiSent", { error: error instanceof Error ? error.message : String(error) })
+    if (current()) ui.setState("aiSent", { error: error instanceof Error ? error.message : String(error) })
   }
 }
 
-/** What's sent: it scrolls; esc goes back to the use. */
+/** A query's view: it scrolls; esc goes back to the use. */
 function handleAiSent(ui: UiStore, key: KeyEvent): void {
   const view = ui.state.aiSent
   if (!view) return

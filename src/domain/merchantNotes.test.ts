@@ -1,7 +1,8 @@
 import { expect, test } from "bun:test"
 import type { JevClient, JevQuestion } from "../ai/jev"
 import { category, transaction } from "../testing/fixtures"
-import { matchQuestion, merchantBreadthQuestion, suggestionQuestion, tagQuestion, transactionFacts } from "./questions"
+import { matchQuestion, merchantBreadthQuestion, suggestionQuestion, tagQuestion } from "./questions"
+import { rowFacts } from "./history"
 import { askMerchantBreadth, jevSuggestions } from "./suggest"
 
 const note = "varies: phone cases, homewares, gifts"
@@ -36,7 +37,7 @@ test("merchant notes change only the breadth and category suggestion questions w
     type: "choice",
     instructions: {
       question: "Which category does `transaction` belong in? The description may be a person's name or a payment app rather than a shop: then the message, if any, says what the money was for, and the description says nothing about the category.",
-      transaction: { description: " eBay ", amount: "-$10.00", direction: "money out", bank_text: "eBay INTERNET", categorised_before: "Groceries ×1" },
+      transaction: { description: "eBay", amount: "-$10.00", direction: "money out", bank_text: "eBay INTERNET", categorised_before: "Groceries ×1" },
     },
     criteria: { c1: "Groceries" },
   }))
@@ -46,7 +47,7 @@ test("merchant notes change only the breadth and category suggestion questions w
     instructions: {
       ...plain.instructions,
       question: plain.instructions.question + " `transaction.merchant_note` is what the account holder says about this merchant.",
-      transaction: { ...transactionFacts(row, { earlier: "Groceries ×1" }), merchant_note: note },
+      transaction: { ...rowFacts(row, { earlier: "Groceries ×1" }), merchant_note: note },
     },
   })
   expect(JSON.stringify(plain)).not.toContain("merchant_note")

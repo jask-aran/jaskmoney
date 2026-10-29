@@ -2,7 +2,8 @@ import { expect, test } from "bun:test"
 import type { JevQuestion } from "../ai/jev"
 import { category, transaction } from "../testing/fixtures"
 import { categoryExamples, categoryUses, historySuggestions, jevSuggestions } from "./suggest"
-import { NO_DETAIL_CAP, SUGGESTION_STATE, suggestionCriteria, suggestionState, transactionFacts } from "./questions"
+import { NO_DETAIL_CAP, SUGGESTION_STATE, suggestionCriteria, suggestionState } from "./questions"
+import { rowFacts } from "./history"
 
 const categories = [category({ id: 1 }), category({ id: 2 }), category({ id: 3, isDefault: true, name: "Uncategorised" })]
 const evidence = (id: number, categoryId: number, amount = -10, dateISO = "2026-01-01") => transaction({ id, categoryId, categoryName: `Category ${categoryId}`, description: " SHOP ", amount, dateISO })
@@ -54,19 +55,19 @@ test("criteria: one per suggestable category, by path, with income and not-spend
 })
 
 test("Jev sees the transaction as named facts: signed money, direction, type, message, the bank's own text when it differs, earlier categories", () => {
-  expect(transactionFacts(transaction({ description: "Corner Bar", amount: -120, transactionType: "Payment", message: "Kestrel ram" })))
+  expect(rowFacts(transaction({ description: "Corner Bar", amount: -120, transactionType: "Payment", message: "Kestrel ram" })))
     .toEqual({ description: "Corner Bar", amount: "-$120.00", direction: "money out", bank_type: "Payment", message: "Kestrel ram" })
-  expect(transactionFacts(transaction({ description: "$friend_a", amount: 23, rawText: "Deniz Turkyilmaz" }), { earlier: "Holidays & Travel ×2" }))
+  expect(rowFacts(transaction({ description: "$friend_a", amount: 23, rawText: "Deniz Turkyilmaz" }), { earlier: "Holidays & Travel ×2" }))
     .toEqual({ description: "$friend_a", amount: "+$23.00", direction: "money in", bank_text: "Deniz Turkyilmaz", categorised_before: "Holidays & Travel ×2" })
-  expect(transactionFacts(transaction({ description: "Beem", rawText: "Beem" }))).not.toHaveProperty("bank_text")
+  expect(rowFacts(transaction({ description: "Beem", rawText: "Beem" }))).not.toHaveProperty("bank_text")
   // The account holder's own note and tags, when there are any; IGNORE says nothing.
-  expect(transactionFacts(transaction({ notes: " birthday present for Sam ", tagNames: ["TRAVEL", "IGNORE"] }))).toMatchObject({ your_note: "birthday present for Sam", tags: "TRAVEL" })
-  expect(transactionFacts(transaction({ tagNames: ["IGNORE"] }))).not.toHaveProperty("tags")
-  expect(transactionFacts(transaction())).not.toHaveProperty("your_note")
+  expect(rowFacts(transaction({ notes: " birthday present for Sam ", tagNames: ["TRAVEL", "IGNORE"] }))).toMatchObject({ your_note: "birthday present for Sam", tags: "TRAVEL" })
+  expect(rowFacts(transaction({ tagNames: ["IGNORE"] }))).not.toHaveProperty("tags")
+  expect(rowFacts(transaction())).not.toHaveProperty("your_note")
   // The category only where asked, and only a real one.
-  expect(transactionFacts(transaction({ categoryId: 4, categoryName: "Groceries" }), { category: true })).toHaveProperty("category", "Groceries")
-  expect(transactionFacts(transaction({ categoryId: 4, categoryName: "Groceries" }))).not.toHaveProperty("category")
-  expect(transactionFacts(transaction({ categoryName: "Uncategorised" }), { category: true })).not.toHaveProperty("category")
+  expect(rowFacts(transaction({ categoryId: 4, categoryName: "Groceries" }), { category: true })).toHaveProperty("category", "Groceries")
+  expect(rowFacts(transaction({ categoryId: 4, categoryName: "Groceries" }))).not.toHaveProperty("category")
+  expect(rowFacts(transaction({ categoryName: "Uncategorised" }), { category: true })).not.toHaveProperty("category")
 })
 
 test("each row is its own question with the transaction inline; Jev is told how rows with the same description were categorised", async () => {
