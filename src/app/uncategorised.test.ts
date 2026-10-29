@@ -94,6 +94,7 @@ test("x dismisses the selected rows' suggestions without categorising them", asy
   ui.setState({ selectedIds: { 2: true, 4: true } })
   handleKey(ui, key("x"), data)
   expect(data.state.suggestions).toEqual({})
-  expect(shown()).toEqual(["Shop4", "Mystery3", "Shop2"])
+  // Dismissed rows keep their places while you review (2026-10-30).
+  expect(shown()).toEqual(["Shop4", "Shop2", "Mystery3"])
   expect(ui.state.selectedIds).toEqual({})
 })

@@ -8,7 +8,7 @@ import { key } from "../../testing/keys"
 
 const suggestion = (id: number, confidence: number) => ({ transactionId: id, categoryId: 1, confidence, source: "jev" as const })
 
-test("a suggestion that re-sorts the Uncategorised view keeps the cursor on its transaction; s still goes to the top", async () => {
+test("new suggestions don't reorder the Uncategorised view under the cursor; reopening sorts afresh; s still goes to the top", async () => {
   const t = await renderApp({ width: 140, height: 30 })
   const rows = [1, 2, 3, 4].map((id) => transaction({ id, description: `Row ${id}`, categoryId: null, categoryName: "" }))
   data.setState({ accounts: [account({ name: "A" })], transactions: rows, accountSelection: "all", ready: true,
@@ -21,16 +21,19 @@ test("a suggestion that re-sorts the Uncategorised view keeps the cursor on its 
   handleKey(ui, key("j"), data)
   const at = () => data.scopedTransactions()[ui.state.managerCursor]?.id
   expect(at()).toBe(3)
-  // Row 3's new suggestion puts it first: the cursor goes with it.
+  // New suggestions (accepting asks namesakes again) change the numbers,
+  // not the order (2026-10-30, was: re-sorted with the cursor following).
   data.setState("suggestions", 3, suggestion(3, 0.95))
-  await t.renderOnce()
-  expect(data.scopedTransactions()[0]!.id).toBe(3)
-  expect(ui.state.managerCursor).toBe(0)
-  expect(at()).toBe(3)
-  // A row moving past the cursor doesn't drag it along.
   data.setState("suggestions", 4, suggestion(4, 0.99))
   await t.renderOnce()
+  expect(data.scopedTransactions().map((r) => r.id)).toEqual([1, 2, 3, 4])
+  expect(ui.state.managerCursor).toBe(2)
   expect(at()).toBe(3)
+  // Reopening the view sorts afresh.
+  data.setUncategorisedOnly(false)
+  data.setUncategorisedOnly(true)
+  expect(data.scopedTransactions().map((r) => r.id)).toEqual([4, 3, 1, 2])
+  ui.jumpManagerCursor(1, 4)
   // A change of view keeps the index rules: s goes to the top.
   handleKey(ui, key("j"), data)
   handleKey(ui, key("s"), data)

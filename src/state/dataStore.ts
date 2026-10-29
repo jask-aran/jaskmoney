@@ -509,12 +509,31 @@ function createDataStore() {
     return [...matches, ...applyTop(expr, near)]
   }))
 
+  /**
+   * Confidence order holds still while you review: each row sorts by its
+   * confidence when first seen in this view, so accepting one (which asks
+   * its namesakes again) or an answer arriving changes the numbers shown,
+   * not the order. A row waiting for its first answer moves once, when it
+   * comes. Reopening the view or changing the sort sorts afresh.
+   */
+  const sortedAt = new Map<number, number>()
+  let sortedFor = ""
+
   /** The account's rows through the filter, in the table's sort. */
   const scopedTransactions = createRoot(() => createMemo(() => {
     const review = state.tagReview
-    const confidence = state.sortColumn !== "confidence" ? undefined
+    const live = state.sortColumn !== "confidence" ? undefined
       : review ? (id: number) => review.candidates[id]?.confidence ?? -1
       : (id: number) => state.suggestions[id]?.confidence ?? -1
+    const view = `${state.demo}|${state.uncategorisedOnly}|${review?.name ?? ""}|${state.sortColumn}`
+    if (view !== sortedFor) { sortedAt.clear(); sortedFor = view }
+    const confidence = live && ((id: number) => {
+      const held = sortedAt.get(id)
+      if (held !== undefined) return held
+      const now = live(id)
+      if (now >= 0) sortedAt.set(id, now)
+      return now
+    })
     const sorted = sortRows(filtered(), state.sortColumn, state.sortAscending, confidence)
     // Near misses after every match, each part in the table's order.
     const near = nearMissIds()
