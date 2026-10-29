@@ -115,7 +115,34 @@ export async function runExecutor(code: string, connect: Connect<"callTool"> = c
     const result = await client.callTool("execute", { code }, { timeoutMs: 90_000 })
     const text = textOf(result)
     if (result.isError) throw new Error(text.slice(0, 300) || "Executor's program failed")
-    try { return JSON.parse(text) } catch { return text }
+    let parsed: unknown
+    try { parsed = JSON.parse(text) } catch { return text }
+    // { status, execution: { ok, value | error } }: the program's own value.
+    const run = parsed as { status?: string; execution?: { ok?: boolean; value?: unknown; error?: unknown } }
+    if (run?.execution) {
+      if (run.execution.ok === false) throw new Error(String((run.execution.error as { message?: string })?.message ?? run.execution.error ?? "Executor's program failed").slice(0, 300))
+      if (run.status && run.status !== "completed") throw new Error(`Executor's program is ${run.status} (it may want an approval at executor.sh)`)
+      return run.execution.value
+    }
+    return parsed
+  } finally { await client.close().catch(() => {}) }
+}
+
+/** Your Gmail accounts linked in Executor, from its search: the Gmail
+ * app's first (tools.gmail.api), then a Google bundle's (tools.google.api.gmail). */
+export interface GmailAccount { accountId: string; label: string; tools: string }
+
+export async function gmailAccounts(connect: Connect<"callTool"> = connectExecutor): Promise<GmailAccount[]> {
+  const client = await connect()
+  try {
+    const result = await client.callTool("search", { query: "gmail messages list" })
+    const found = JSON.parse(textOf(result)) as { namespaces?: Array<{ path: string; accounts?: string }> }
+    const out: GmailAccount[] = []
+    for (const [app, tools] of [["tools.gmail", "tools.gmail.api.users"], ["tools.google", "tools.google.api.gmail.users"]] as const) {
+      const accounts = found.namespaces?.find((n) => n.path === app)?.accounts ?? ""
+      for (const m of accounts.matchAll(/(acc_[\w-]+)(?: \(([^)]*)\))?/g)) out.push({ accountId: m[1]!, label: m[2] ?? m[1]!, tools })
+    }
+    return out
   } finally { await client.close().catch(() => {}) }
 }
 
