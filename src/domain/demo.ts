@@ -1,6 +1,8 @@
 import { addDays, addMonthsClamped, daysBetween, parseDay } from "./days"
-import { PERSON_TO_PERSON } from "./history"
+import { isPersonToPerson, PERSON_TO_PERSON } from "./history"
 import { DEMO_CATEGORIES, MERCHANTS, PEOPLE } from "./demoData"
+import { isOrdinaryFlow, isUncategorised } from "./moneyRules"
+import type { Category, Transaction } from "./types"
 
 export { DEMO_CATEGORIES } from "./demoData"
 export interface DemoCategory { name: string; color: string; parent: string | null; income?: boolean; notSpending?: boolean }
@@ -11,6 +13,10 @@ export interface DemoTransaction {
   amount: number
   description: string
   categoryName: string | null
+  truthCategory: string | null
+  rawText: string | null
+  cardMethod: string | null
+  time: string
   transactionType: string | null
   message: string | null
   foreignAmount: string | null
@@ -20,17 +26,47 @@ export interface DemoTransaction {
 
 export interface DemoData {
   accounts: DemoAccount[]
-  transactions: DemoTransaction[]
+  // Generated rows all start with a category, even when it is later hidden.
+  transactions: (DemoTransaction & { truthCategory: string })[]
   categories: readonly DemoCategory[]
   budget: { monthly: number }
 }
 
 const round = (n: number) => Math.round(n * 100) / 100
 
-/** Built-in fictional life only. All randomness comes from the supplied seed. */
-export function generateDemo(options: { today: string; years?: number; seed?: number }): DemoData {
+export interface DemoSourceRow {
+  description: string
+  rawText: string | null
+  categoryName: string
+  amount: number
+  transactionType: string | null
+  cardMethod: string | null
+}
+
+export const DEMO_HISTORY_FACTOR = 5
+export const DEMO_HELD_OUT_SHARE = 0.2
+export const DEMO_HIDDEN_SHARE = 0.03
+
+/** Ordinary purchases in the demo tree, excluding its scheduled bills. */
+export function demoSource(transactions: Transaction[], categories: Category[]): DemoSourceRow[] {
+  const bills = new Set(["Rent & Mortgage", "Utilities", "Internet", "Mobile Phone", "Rates & Insurance", "TV, Music & Streaming"])
+  const allowed = new Set(DEMO_CATEGORIES.filter(c => c.parent !== null && !bills.has(c.name)).map(c => c.name))
+  const names = new Map(categories.map(c => [c.id, c.name]))
+  return transactions.flatMap(t => {
+    const categoryName = t.categoryId === null ? undefined : names.get(t.categoryId)
+    const description = t.description.trim()
+    if (!(t.amount < 0) || t.internal || t.income || !isOrdinaryFlow(t) || isPersonToPerson(t)
+      || t.message || description.startsWith("$") || isUncategorised(t) || !categoryName || !allowed.has(categoryName)) return []
+    return [{ description, rawText: t.rawText, categoryName, amount: t.amount,
+      transactionType: t.transactionType, cardMethod: t.cardMethod }]
+  })
+}
+
+/** Scrambled spending, or a built-in life. All randomness comes from the supplied seed. */
+export function generateDemo(options: { today: string; years?: number; seed?: number; history?: DemoSourceRow[] }): DemoData {
   if (!parseDay(options.today)) throw new Error("Invalid demo today: expected YYYY-MM-DD")
   const years = options.years ?? 3
+  const history = options.history && options.history.length >= 20 ? options.history : null
   if (!Number.isFinite(years) || years <= 0 || years > 100) throw new Error("Demo years must be greater than 0 and at most 100")
   let state = (options.seed ?? 7) >>> 0
   const random = () => {
@@ -63,17 +99,20 @@ export function generateDemo(options: { today: string; years?: number; seed?: nu
     { key: "holiday", name: "Next adventure", kind: "saver", balance: 4250.32 },
     { key: "emergency", name: "Rainy day", kind: "saver", balance: 9800.55 },
   ]
-  const transactions: DemoTransaction[] = []
-  const add = (dateISO: string, value: number, description: string, categoryName: string | null, extra: Partial<DemoTransaction> = {}) => {
+  const transactions: DemoData["transactions"] = []
+  const add = (dateISO: string, value: number, description: string, categoryName: string,
+    extra: Partial<Omit<DemoTransaction, "truthCategory">> = {}) => {
     if (dateISO < start || dateISO > options.today) return
     transactions.push({ accountKey: "spending", dateISO, amount: round(value), description, categoryName,
+      truthCategory: categoryName,
+      rawText: null, cardMethod: null, time: "07:00",
       transactionType: "Purchase", message: null, foreignAmount: null, status: "SETTLED", ...extra })
   }
   // Large purchases have two following months of reduced discretionary spending.
   const purchases = [
     { fraction: 0.16, description: "JB Hi-Fi", category: "Technology", value: 1899 },
     { fraction: 0.39, description: "IKEA", category: "Homeware & Appliances", value: 1299 },
-    { fraction: 0.63, description: "mycar Tyre & Auto", category: "Car Insurance & Maintenance", value: 1650 },
+    { fraction: 0.63, description: "mycar Tyre & Auto", category: "Car Insurance, Rego & Maintenance", value: 1650 },
     { fraction: 0.86, description: "Apple", category: "Technology", value: 1199 },
   ].map(p => ({ ...p, month: Math.floor((months.length - 1) * p.fraction) }))
   let walk = 1
@@ -90,7 +129,7 @@ export function generateDemo(options: { today: string; years?: number; seed?: nu
     const social = index % 16 === 8 ? 2.8 : 1
     const season = calendarMonth === 12 ? 2.2 : calendarMonth === 6 || calendarMonth === 3 ? 1.1 : 1
     const discretionary = tight ? 0.25 : walk * season * social
-    for (const merchant of MERCHANTS) {
+    for (const merchant of history ? [] : MERCHANTS) {
       if (merchant.category === "Groceries") continue
       const multiplier = merchant.essential ? 1 : discretionary
       for (let n = 0, count = poisson(merchant.frequency * days / 30.4375 * multiplier); n < count; n++) {
@@ -130,7 +169,7 @@ export function generateDemo(options: { today: string; years?: number; seed?: nu
   })
   // Weekly groceries avoid random clusters of several full shops in one week.
   const groceries = MERCHANTS.find(m => m.category === "Groceries")
-  if (groceries) for (let date = addDays(start, 1); date <= options.today; date = addDays(date, 7)) {
+  if (!history && groceries) for (let date = addDays(start, 1); date <= options.today; date = addDays(date, 7)) {
     add(addDays(date, integer(3) - 1), -amount(groceries.amount, groceries.spread), pick(groceries.names, "Coles"), groceries.category)
   }
   for (let date = addDays(start, 2); date <= options.today; date = addDays(date, 14)) {
@@ -155,10 +194,63 @@ export function generateDemo(options: { today: string; years?: number; seed?: nu
       }
     }
   }
-  // Hide exactly 4.5% of spending rows, sampled without replacement.
+  if (history) {
+    const weightedIndex = (weights: number[]) => {
+      let remaining = random() * weights.reduce((sum, weight) => sum + weight, 0)
+      for (let i = 0; i < weights.length; i++) {
+        remaining -= weights[i]
+        if (remaining < 0) return i
+      }
+      return weights.length - 1
+    }
+    let logWeight = 0
+    const calendar = months.map(month => {
+      // Bound the walk so quiet months still receive examples across the whole period.
+      logWeight = Math.max(-1.2, Math.min(1.2, logWeight + normal() * 0.45))
+      const from = month < start ? start : month
+      const end = addDays(addMonthsClamped(month, 1), -1)
+      const to = end > options.today ? options.today : end
+      const days = Array.from({ length: daysBetween(from, to) + 1 }, (_, i) => addDays(from, i))
+      const dayWeights = days.map(day => {
+        const weekday = new Date(`${day}T00:00:00Z`).getUTCDay()
+        return weekday === 5 || weekday === 6 ? 1.6 : 1
+      })
+      const available = [...days]
+      const bursts: string[] = []
+      for (let n = 0, count = Math.min(days.length, 2 + integer(3)); n < count; n++) {
+        bursts.push(...available.splice(integer(available.length), 1))
+      }
+      return { weight: Math.exp(logWeight), days, dayWeights, bursts }
+    })
+    const monthWeights = calendar.map(month => month.weight)
+    const merchants = [...new Set(history.map(t => t.description.trim().toLowerCase()))]
+    const heldOut = new Set<string>()
+    for (let n = 0, count = Math.round(merchants.length * DEMO_HELD_OUT_SHARE); n < count; n++) {
+      const index = integer(merchants.length)
+      heldOut.add(merchants[index])
+      merchants.splice(index, 1)
+    }
+    // A held-out merchant can also appear in a built-in trip or large purchase.
+    for (const t of transactions) {
+      if (heldOut.has(t.description.trim().toLowerCase())) t.categoryName = null
+    }
+    for (let n = 0; n < history.length * DEMO_HISTORY_FACTOR; n++) {
+      const source = history[integer(history.length)]
+      const month = calendar[weightedIndex(monthWeights)]
+      const date = random() < 0.25 ? month.bursts[integer(month.bursts.length)] : month.days[weightedIndex(month.dayWeights)]
+      let value = source.amount * Math.exp(normal() * 0.35)
+      if (random() < 0.1) value *= 1.5 + random() * 1.5
+      const hidden = heldOut.has(source.description.trim().toLowerCase()) || random() < DEMO_HIDDEN_SHARE
+      add(date, -Math.max(0.01, Math.abs(round(value))), source.description, source.categoryName, {
+        categoryName: hidden ? null : source.categoryName, rawText: source.rawText,
+        transactionType: source.transactionType, cardMethod: source.cardMethod,
+      })
+    }
+  }
+  // Without history, hide exactly 4.5% of spending rows, sampled without replacement.
   const spending = transactions.filter(t => t.amount < 0 && !t.transferToKey)
   const candidates = [...spending]
-  for (let n = 0, count = Math.round(spending.length * 0.045); n < count; n++) {
+  for (let n = 0, count = history ? 0 : Math.round(spending.length * 0.045); n < count; n++) {
     const index = integer(candidates.length)
     const row = candidates[index]
     if (row) row.categoryName = null
@@ -166,6 +258,11 @@ export function generateDemo(options: { today: string; years?: number; seed?: nu
   }
   const recent = spending.filter(t => daysBetween(t.dateISO, options.today) <= 3)
   recent.forEach((t, i) => { if (i < 3 || random() < 0.4) t.status = "HELD" })
+  // Append these draws so the built-in life keeps its original amounts, dates and hiding.
+  for (const t of transactions) {
+    const minutes = 7 * 60 + integer(17 * 60)
+    t.time = `${String(Math.floor(minutes / 60)).padStart(2, "0")}:${String(minutes % 60).padStart(2, "0")}`
+  }
   transactions.sort((a, b) => a.dateISO < b.dateISO ? -1 : a.dateISO > b.dateISO ? 1 : 0)
   return { accounts, transactions, categories: DEMO_CATEGORIES, budget: { monthly: 4200 } }
 }

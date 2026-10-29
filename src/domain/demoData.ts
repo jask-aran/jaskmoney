@@ -3,10 +3,10 @@ import type { DemoCategory } from "./demo"
 /** Public Up category names; no account or transaction data enters this list. */
 export const DEMO_CATEGORIES: readonly DemoCategory[] = [
   ...[
-    { name: "Home", color: "#89b4fa", children: ["Groceries", "Rent & Mortgage", "Utilities", "Internet", "Homeware & Appliances", "Home Maintenance & Improvements", "Pets", "Home Insurance & Rates"] },
+    { name: "Home", color: "#89b4fa", children: ["Groceries", "Rent & Mortgage", "Utilities", "Internet", "Homeware & Appliances", "Maintenance & Improvements", "Pets", "Rates & Insurance"] },
     { name: "Good Life", color: "#fab387", children: ["Restaurants & Cafes", "Takeaway", "Pubs & Bars", "Booze", "TV, Music & Streaming", "Apps, Games & Software", "Holidays & Travel", "Events & Gigs", "Hobbies", "Adult", "Lottery & Gambling", "Tobacco & Vaping"] },
-    { name: "Personal", color: "#cba6f7", children: ["Clothing & Accessories", "Health & Medical", "Hair & Beauty", "Fitness & Wellbeing", "Gifts & Charity", "Technology", "Mobile Phone", "Family", "Education & Student Loans", "Investments", "Life Admin", "News, Magazines & Books"] },
-    { name: "Transport", color: "#f9e2af", children: ["Fuel", "Public Transport", "Taxis & Share Cars", "Parking", "Toll Roads", "Cycling", "Car Repayments", "Car Insurance & Maintenance"] },
+    { name: "Personal", color: "#cba6f7", children: ["Clothing & Accessories", "Health & Medical", "Hair & Beauty", "Fitness & Wellbeing", "Gifts & Charity", "Technology", "Mobile Phone", "Children & Family", "Education & Student Loans", "Investments", "Life Admin", "News, Magazines & Books"] },
+    { name: "Transport", color: "#f9e2af", children: ["Fuel", "Public Transport", "Taxis & Share Cars", "Parking", "Tolls", "Cycling", "Repayments", "Car Insurance, Rego & Maintenance"] },
   ].flatMap(group => [
     { name: group.name, color: group.color, parent: null },
     ...group.children.map(name => ({ name, color: group.color, parent: group.name })),
@@ -34,7 +34,7 @@ export const MERCHANTS = [
   { category: "Gifts & Charity", names: ["Typo", "Oxfam Australia", "Readings", "Dymocks"], amount: 40, spread: 0.4, frequency: 0.8, essential: false },
   { category: "Technology", names: ["JB Hi-Fi", "Officeworks", "Jaycar"], amount: 64, spread: 0.4, frequency: 0.4, essential: false },
   { category: "Homeware & Appliances", names: ["Kmart", "Target", "IKEA", "Adairs"], amount: 47, spread: 0.4, frequency: 0.7, essential: false },
-  { category: "Home Maintenance & Improvements", names: ["Bunnings", "Mitre 10"], amount: 30, spread: 0.3, frequency: 0.4, essential: false },
+  { category: "Maintenance & Improvements", names: ["Bunnings", "Mitre 10"], amount: 30, spread: 0.3, frequency: 0.4, essential: false },
   { category: "Events & Gigs", names: ["HOYTS", "Village Cinemas", "Ticketek", "Moshtix"], amount: 42, spread: 0.4, frequency: 1, essential: false },
   { category: "Hobbies", names: ["Spotlight", "Eckersley's", "Good Games"], amount: 32, spread: 0.35, frequency: 0.5, essential: false },
   { category: "News, Magazines & Books", names: ["Readings", "Dymocks", "Booktopia"], amount: 23, spread: 0.3, frequency: 0.5, essential: false },

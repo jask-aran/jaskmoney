@@ -64,7 +64,7 @@ import { type LlmProvider } from "../ai/llm"
 import { signedIn } from "../ai/oauthStore"
 import { TAG_SHOW_AT } from "../domain/tagSuggest"
 import { appNow, appToday, type WeekStart } from "../domain/days"
-import { generateDemo } from "../domain/demo"
+import { demoSource, generateDemo } from "../domain/demo"
 import { seedDemoDb } from "../db/demoSeed"
 import { jaskmoneyHome } from "../storage/home"
 import { MATCH_AT, NEAR_AT } from "../domain/questions"
@@ -330,13 +330,13 @@ function createDataStore() {
    * and the account the Transactions tab showed. */
   let beforeDemo: { path: string; db: Db; selection: AccountSelection } | null = null
 
-  /** Demo mode on: three years of made-up data from built-in lists only
-   * (domain/demo: nothing of yours, so it can ship with the app) in
-   * ~/.jaskmoney/demo.db, made afresh each time, with its own categories
-   * and monthly budget. Returns how many rows. */
+  /** Demo mode on: three years sampled from your spending, scrambled,
+   * or a built-in life with too little history, in ~/.jaskmoney/demo.db.
+   * Made afresh with its own categories and monthly budget. Returns how many rows. */
   function enterDemo(): number {
     if (state.demo) return state.transactions.length
-    const demo = generateDemo({ today: appToday(), years: DEMO_YEARS, seed: DEMO_SEED })
+    const demo = generateDemo({ today: appToday(), years: DEMO_YEARS, seed: DEMO_SEED,
+      history: demoSource(transactions(), state.categories) })
     const path = join(jaskmoneyHome(), "demo.db")
     mkdirSync(jaskmoneyHome(), { recursive: true, mode: 0o700 })
     seedDemoDb(path, demo)
