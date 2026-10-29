@@ -245,6 +245,11 @@ function verdict3<T extends FilterTxn>(node: FilterNode | null, t: T, ask: AskVe
       if (node.op === "contains_meta") {
         if (textContains(t.categoryName, needle)) return true
         if (t.tagNames.some((tg) => textContains(tg, needle))) return true
+        // Approved addition (2026-10-30): what it bought, its message and
+        // your notes too. The raw text stays under info: (city names).
+        if (t.bought?.some((item) => textContains(item.name, needle))) return true
+        if (t.message && textContains(t.message, needle)) return true
+        if (t.notes && textContains(t.notes, needle)) return true
       }
       return false
     }

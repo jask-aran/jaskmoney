@@ -1,12 +1,13 @@
 import { expect, test } from "bun:test"
-import { canonicalFilter, evalFilter, parseFilter, parseFilterStrict, type FilterTxn } from "./filter"
+import { canonicalFilter, evalFilter, parseFilter, parseFilterStrict, reparseFilterInput, type FilterTxn } from "./filter"
 import { JQL } from "./filterLanguage"
 
 /**
  * info: (approved 2026-10-30, a term legacy Go filter.go doesn't have):
  * what's known about a row beyond its description — what its order emails
  * say it bought, the bank's message, and the bank's raw text — matched as
- * desc: and note: match. Bare words stay description-only.
+ * desc: and note: match. Bare words in rules stay description-only; in
+ * the search bar see below.
  */
 
 const row = (over: Partial<FilterTxn> = {}): FilterTxn => ({
@@ -39,7 +40,7 @@ test("info: doesn't search the description, notes or category; a row with nothin
   expect(matches("info:anything", row({ bought: [], message: null, rawText: null }))).toBe(false)
 })
 
-test("bare words and desc: stay description-only", () => {
+test("bare words in rules and desc: stay description-only", () => {
   expect(matches("toothbrush", brush)).toBe(false)
   expect(matches("desc:toothbrush", brush)).toBe(false)
   expect(matches("amazon info:toothbrush", brush)).toBe(true)
@@ -56,4 +57,20 @@ test("info: is strict JQL, saved as written", () => {
 test("the JQL description has info: as a term", () => {
   const terms = JQL.find((s) => s.title === "Terms")!.blocks.flatMap((b) => (b.kind === "rows" ? b.rows : []))
   expect(terms.some((r) => r.write.startsWith("info:"))).toBe(true)
+})
+
+/** The search bar (2026-10-30, approved): words alone, with no field in
+ * the search, also find what a row bought, its message and your notes (as
+ * they find category and tag names, from the Go app). The bank's raw text
+ * stays under info: (it's full of city names). */
+const searched = (input: string, t: FilterTxn) => evalFilter(reparseFilterInput(input).expr, t)
+
+test("in the search bar, words alone find what it bought, its message and your notes, not the raw text", () => {
+  expect(searched("toothbrush", brush)).toBe(true)
+  expect(searched("rent", row({ description: "Sam Lee", message: "Rent for October" }))).toBe(true)
+  expect(searched("gift", row({ notes: "Gift for Sam" }))).toBe(true)
+  expect(searched("marketplace", row({ rawText: "AMAZON AU MARKETPLACE, SYDNEY" }))).toBe(false)
+  // A field in the search: words go back to the description, as for category names.
+  expect(searched("toothbrush amt:<0", brush)).toBe(false)
+  expect(searched("amazon amt:<0", brush)).toBe(true)
 })

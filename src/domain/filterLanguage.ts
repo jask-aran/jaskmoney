@@ -101,7 +101,7 @@ export const JQL: Section[] = [
     aside: "loose as you type, full on saving",
     brief: true,
     blocks: [{ kind: "rows", rows: [
-      { write: "words only", means: "match descriptions, category and tag names", brief: true, searchOnly: true },
+      { write: "words only", means: "match the description, category, tags, items, notes…", brief: true, searchOnly: true },
       { write: "add a field", means: "bare words then match only the description", brief: true, searchOnly: true },
       { write: "enter", means: "flags an ambiguous name or a mistyped field", brief: true, searchOnly: true },
       { write: "save it", means: "written in full: brackets, OR, NOT, full names", brief: true },
@@ -146,7 +146,7 @@ export const JQL: Section[] = [
     title: "Matching",
     blocks: [{ kind: "rows", rows: [
       { write: "words, \"…\", desc:, note:, info:", means: "contain the text, ignoring case, spaces and punctuation on both sides (desc:mcdonalds finds McDonald's); the letters stay in order, so a phrase must appear as one run. Text with no letters or digits is matched as written." },
-      { write: "bare words", means: "search the description; with no field anywhere in the search, category and tag names too", searchOnly: true },
+      { write: "bare words", means: "search the description; with no field anywhere in the search, category and tag names, what it bought, its message and your notes too", searchOnly: true },
       { write: "bare words", means: "search the description", ruleOnly: true },
       { write: "cat: tag: acc:", means: "equal the whole name, ignoring case; a group's name also finds its subcategories' rows. cat:Uncategorised is rows without a category." },
       { write: "short names", means: "in the search bar, a name is found by its start, else by any part, when only one fits; several fitting find any of them", searchOnly: true },
@@ -160,7 +160,7 @@ export const JQL: Section[] = [
   {
     title: "Saving",
     blocks: [
-      { kind: "text", text: "In the search bar, input that still doesn't parse is searched as one phrase, in descriptions and category and tag names, and the bar marks it parse, in red. Enter keeps the search; it flags what saving would refuse.", searchOnly: true },
+      { kind: "text", text: "In the search bar, input that still doesn't parse is searched as one phrase, wherever words alone look, and the bar marks it parse, in red. Enter keeps the search; it flags what saving would refuse.", searchOnly: true },
       { kind: "text", text: "A saved filter or a rule is stored in full: brackets around AND inside OR (and OR inside AND), OR and NOT in capitals, full names, ranges low to high. Saving refuses only what has no one reading: a name several fit, a name nothing fits, a mistyped field." },
     ],
   },
