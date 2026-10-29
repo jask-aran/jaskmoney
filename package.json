@@ -16,9 +16,9 @@
   },
   "dependencies": {
     "@earendil-works/pi-ai": "1.4.0",
+    "@earendil-works/pi-mcp": "1.4.0",
     "@opentui/core": "0.7.0",
     "@opentui/solid": "0.7.0",
-    "executor": "1.6.11",
     "solid-js": "1.9.12"
   },
   "devDependencies": {

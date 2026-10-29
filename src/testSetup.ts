@@ -7,7 +7,7 @@ import { data } from "./state/dataStore"
 import { ui } from "./state/uiStore"
 import { testEnv } from "./testing/scoped"
 import { CREDENTIAL_NAMES } from "./ai/credentials"
-import { sources } from "./app/gmailSource"
+import { sources } from "./app/executorSource"
 
 const settingsDirectory = mkdtempSync(join(tmpdir(), "jaskmoney-test-"))
 // Every app credential and setting beside them, Up's token, and the keys
@@ -21,9 +21,14 @@ process.env.JASKMONEY_CONFIG = join(settingsDirectory, "settings.json")
 process.env.JASKMONEY_DB = ":memory:"
 for (const name of credentialVariables) process.env[name] = ""
 
-// Never the real Executor: a test that wants one passes a fake.
-sources.run = async () => ({ code: 127, out: "no Executor in tests" })
-sources.open = () => {}
+// Never the real Executor, nor a browser: a test that wants one passes a fake.
+Object.assign(sources, {
+  open: () => {},
+  status: async () => ({ signedIn: false, tools: [], error: null }),
+  signIn: async () => { throw new Error("no Executor in tests") },
+  run: async () => { throw new Error("no Executor in tests") },
+  signOut: () => {},
+})
 
 beforeEach(() => {
   // A separate directory also isolates files beside settings, such as credentials.json.

@@ -1,119 +1,77 @@
-import { afterEach, expect, test } from "bun:test"
-import { mkdirSync, mkdtempSync, writeFileSync } from "node:fs"
-import { tmpdir } from "node:os"
+import { expect, test } from "bun:test"
+import { mkdirSync, writeFileSync } from "node:fs"
 import { join } from "node:path"
-import { callApproved, EXECUTOR_URL, executorEnv, gmailSetup, nextGmailStep, readCall, signedInUrl, type Run } from "./executor"
-import { openGmailDialog, runGmailAction, sources, stopWaiting } from "../app/gmailSource"
-import { gmailActions, gmailRow } from "../state/gmailDialog"
+import { COUNT_ORDER_EMAILS, executorSignedIn, executorStatus, runExecutor, signOutExecutor } from "./executor"
+import { cancelExecutorSignIn, openExecutorDialog, runExecutorAction, sources } from "../app/executorSource"
+import { executorActions, executorRow } from "../state/executorDialog"
 import { ui } from "../state/uiStore"
+import { jaskmoneyHome } from "../storage/home"
 
-/** A fake Executor: answers by the call's path; records every call. */
-function fakeExecutor(state: { gmail: boolean; client: boolean; account: boolean; paused?: boolean }) {
-  const calls: string[][] = []
-  const ok = (data: unknown) => ({ code: 0, out: JSON.stringify({ ok: true, data }) })
-  const run: Run = async (args) => {
-    calls.push(args)
-    const path = args.join(" ")
-    if (path === "--version") return { code: 0, out: "executor v1.6.11" }
-    if (path === "daemon status") return { code: 0, out: `Daemon running at ${EXECUTOR_URL} (pid 1).` }
-    if (path.startsWith("call executor coreTools integrations list")) return ok({ items: [{ id: "executor" }, ...(state.gmail ? [{ id: "gmail" }] : [])] })
-    if (path.startsWith("call executor coreTools oauth clients list")) return ok({ clients: state.client ? [{ slug: "google-app", owner: "user", tokenUrl: "https://oauth2.googleapis.com/token" }] : [] })
-    if (path.startsWith("call executor coreTools connections list")) return ok({ connections: state.account ? [{ owner: "user", name: "gmail", integration: "gmail", identityLabel: "me@example.com", lastHealth: { status: "healthy" } }] : [] })
-    if (path.startsWith("call executor openapi addSpec")) { return { code: 0, out: "Execution paused: Add an OpenAPI integration\n\nexecutionId: exec_1\n\nApprove in browser:\n  http://localhost:4799/resume/exec_1\n" } }
-    if (path.startsWith("resume --execution-id exec_1")) { state.gmail = true; return ok({ slug: "gmail", toolCount: 30 }) }
-    if (path.startsWith("call executor coreTools oauth clients createHandoff")) return ok({ url: `${EXECUTOR_URL}/integrations/gmail?addAccount=1`, instructions: "…" })
-    if (path.startsWith("call executor coreTools oauth start")) return ok({ status: "redirect", authorizationUrl: "https://accounts.google.com/o/oauth2/v2/auth?x=1", state: "s" })
-    if (path.startsWith("tools search")) return ok({ items: [{ path: "gmail.users.messages.list", integration: "gmail" }] })
-    if (path.startsWith("call gmail users messages list")) return ok({ messages: [{ id: "a" }, { id: "b" }, { id: "c" }], nextPageToken: "n" })
-    return { code: 1, out: `unexpected: ${path}` }
-  }
-  return { run, calls }
+/** A saved sign-in in this test's home (testSetup gives each test its own). */
+function signedIn() {
+  mkdirSync(jaskmoneyHome(), { recursive: true })
+  writeFileSync(join(jaskmoneyHome(), "executor.json"), JSON.stringify({ serverUrl: "https://mcp.executor.sh/mcp", tokens: { access_token: "a", token_type: "Bearer" }, redirectUrl: "http://127.0.0.1:47823/executor/callback" }))
 }
 
-const home = mkdtempSync(join(tmpdir(), "jaskmoney-executor-"))
-const before = process.env.JASKMONEY_HOME
-process.env.JASKMONEY_HOME = home
-afterEach(() => { ui.setState({ gmail: null, gmailSetup: null }) })
+const text = (t: string, isError = false) => ({ content: [{ type: "text" as const, text: t }], isError })
 
-test("jaskmoney's Executor is its own: a private data folder under the app's home, analytics off", () => {
-  expect(executorEnv()).toMatchObject({ EXECUTOR_DATA_DIR: join(home, "executor"), EXECUTOR_DISABLE_ANALYTICS: "1" })
-  expect(EXECUTOR_URL).toBe("http://localhost:4799")
+test("status: not signed in without a saved sign-in; signed in, Executor's tools; a failure says why", async () => {
+  expect(await executorStatus(async () => { throw new Error("never asked") })).toEqual({ signedIn: false, tools: [], error: null })
+  signedIn()
+  expect(executorSignedIn()).toBe(true)
+  const client = { listTools: async () => [{ name: "execute" }, { name: "search" }] as never, close: async () => {} }
+  expect(await executorStatus(async () => client)).toEqual({ signedIn: true, tools: ["execute", "search"], error: null })
+  expect(await executorStatus(async () => { throw new Error("401 Unauthorized") })).toEqual({ signedIn: true, tools: [], error: "401 Unauthorized" })
+  signOutExecutor()
+  expect(executorSignedIn()).toBe(false)
 })
 
-test("readCall: data, a paused execution, an error, a missing binary", () => {
-  expect(readCall(0, '{"ok":true,"data":{"a":1}}')).toEqual({ kind: "done", data: { a: 1 } })
-  expect(readCall(0, "Execution paused: Add an OpenAPI integration\n…\nexecutionId: exec_9\n\nApprove in browser:\n  http://x/resume/exec_9\n")).toEqual({ kind: "paused", title: "Add an OpenAPI integration", executionId: "exec_9", approveUrl: "http://x/resume/exec_9" })
-  expect(readCall(0, '{"ok":false,"error":{"code":"x","message":"nope"}}')).toEqual({ kind: "error", message: "nope" })
-  expect(readCall(127, "spawn executor ENOENT")).toMatchObject({ kind: "error", message: expect.stringContaining("isn't installed") })
+test("a program runs through Executor's execute tool: JSON comes back parsed, an error is an error", async () => {
+  const calls: unknown[] = []
+  const client = (result: ReturnType<typeof text>) => async () => ({ callTool: async (name: string, args?: Record<string, unknown>) => { calls.push([name, args]); return result }, close: async () => {} })
+  expect(await runExecutor(COUNT_ORDER_EMAILS, client(text('{"count":3,"more":true}')))).toEqual({ count: 3, more: true })
+  expect(calls[0]).toEqual(["execute", { code: COUNT_ORDER_EMAILS }])
+  expect(COUNT_ORDER_EMAILS).toContain("tools.gmail.api.users.gmailUsersMessagesList")
+  await expect(runExecutor("x", client(text("No Gmail account connected", true)))).rejects.toThrow("No Gmail account connected")
 })
 
-test("a call the user asked for is approved once, on jaskmoney's daemon", async () => {
-  const fake = fakeExecutor({ gmail: false, client: false, account: false })
-  expect(await callApproved(fake.run, ["executor", "openapi", "addSpec"], {})).toEqual({ kind: "done", data: { slug: "gmail", toolCount: 30 } })
-  expect(fake.calls.at(-1)).toEqual(["resume", "--execution-id", "exec_1", "--base-url", EXECUTOR_URL, "--action", "accept", "--content", "{}"])
-})
-
-test("the setup in steps: add, your Google app, sign in, ready", async () => {
-  const state = { gmail: false, client: false, account: false }
-  const fake = fakeExecutor(state)
-  const step = async () => nextGmailStep(await gmailSetup(fake.run))
-  expect(await step()).toBe("add")
-  state.gmail = true
-  expect(await step()).toBe("client")
-  state.client = true
-  expect(await step()).toBe("signIn")
-  state.account = true
-  expect(await step()).toBe("ready")
-  expect(gmailRow(await gmailSetup(fake.run))).toEqual({ connected: true, how: "signed in · me@example.com" })
-  expect(nextGmailStep({ version: null, gmail: false, client: null, account: null, error: "Executor isn't installed" })).toBe("install")
-})
-
-test("the web UI opens signed in with the private token; other addresses don't get it", () => {
-  mkdirSync(join(home, "executor", "server-control"), { recursive: true })
-  writeFileSync(join(home, "executor", "server-control", "auth.json"), JSON.stringify({ token: "t0k" }))
-  expect(signedInUrl()).toBe(`${EXECUTOR_URL}/?_token=t0k`)
-  expect(signedInUrl(`${EXECUTOR_URL}/integrations/gmail?addAccount=1`)).toBe(`${EXECUTOR_URL}/integrations/gmail?addAccount=1&_token=t0k`)
-  expect(signedInUrl("https://accounts.google.com/x")).toBe("https://accounts.google.com/x")
-})
-
-test("the dialog: add Gmail, open Executor's form for the Google app, sign in in the browser and wait, then test", async () => {
-  const state = { gmail: false, client: false, account: false }
-  const fake = fakeExecutor(state)
+test("the dialog: sign in in the browser (or make an account), then test Gmail through Executor", async () => {
+  let status = { signedIn: false, tools: [] as string[], error: null as string | null }
   const opened: string[] = []
-  Object.assign(sources, { run: fake.run, open: (url: string) => opened.push(url), pollMs: 5 })
-  await openGmailDialog(ui)
-  expect(gmailActions(ui.state.gmail!.setup).map((a) => a.id)).toEqual(["add", "open"])
-  await runGmailAction(ui)
-  expect(ui.state.gmail!.note).toMatchObject({ ok: true, text: expect.stringContaining("read-only") })
-  expect(gmailActions(ui.state.gmail!.setup)[0]!.id).toBe("client")
-  await runGmailAction(ui)
-  expect(opened.at(-1)).toStartWith(`${EXECUTOR_URL}/integrations/gmail?addAccount=1`)
-  state.client = true
-  ui.setState("gmail", { cursor: 1 }) // Check again
-  await runGmailAction(ui)
-  expect(gmailActions(ui.state.gmail!.setup)[0]!.id).toBe("signIn")
-  ui.setState("gmail", { cursor: 0 })
-  const signingIn = runGmailAction(ui)
-  await new Promise((r) => setTimeout(r, 20))
-  expect(opened.at(-1)).toStartWith("https://accounts.google.com/")
-  expect(ui.state.gmail!.waiting).toStartWith("https://accounts.google.com/")
-  state.account = true
-  await signingIn
-  expect(ui.state.gmail).toMatchObject({ waiting: null, note: { ok: true, text: "Signed in as me@example.com" } })
-  expect(ui.state.gmailSetup?.account?.identity).toBe("me@example.com")
-  await runGmailAction(ui) // Test
-  expect(ui.state.gmail!.note).toMatchObject({ ok: true, text: "3+ order emails from Amazon and eBay in the last 90 days" })
+  let finish = () => {}
+  Object.assign(sources, {
+    open: (url: string) => opened.push(url),
+    status: async () => status,
+    signIn: (open: (url: string) => void) => new Promise<void>((resolve) => { open("https://executor.sh/oauth/authorize?x=1"); finish = () => { status = { signedIn: true, tools: ["execute", "search", "describe", "skills"], error: null }; resolve() } }),
+    run: async () => ({ count: 7, more: false }),
+  })
+  await openExecutorDialog(ui)
+  expect(executorActions(ui.state.executor!.status).map((a) => a.id)).toEqual(["signIn", "site"])
+  expect(executorRow(ui.state.executorStatus, false)).toEqual({ connected: false, how: "not signed in · enter to connect" })
+  const signing = runExecutorAction(ui)
+  await new Promise((r) => setTimeout(r, 5))
+  expect(opened).toEqual(["https://executor.sh/oauth/authorize?x=1"])
+  expect(ui.state.executor!.waiting).toBe("https://executor.sh/oauth/authorize?x=1")
+  finish()
+  await signing
+  expect(ui.state.executor).toMatchObject({ waiting: null, note: { text: "Signed in to Executor", ok: true } })
+  expect(executorRow(ui.state.executorStatus, true)).toEqual({ connected: true, how: "signed in · 4 tools" })
+  expect(executorActions(ui.state.executor!.status).map((a) => a.id)).toEqual(["test", "site", "signOut"])
+  await runExecutorAction(ui)
+  expect(ui.state.executor!.note).toEqual({ text: "7 order emails from Amazon and eBay in the last 90 days", ok: true })
+  ui.setState({ executor: null, executorStatus: null })
 })
 
-test("esc while waiting stops waiting; the browser can still finish", async () => {
-  const fake = fakeExecutor({ gmail: true, client: true, account: false })
-  Object.assign(sources, { run: fake.run, open: () => {}, pollMs: 5 })
-  await openGmailDialog(ui)
-  const signingIn = runGmailAction(ui)
-  await new Promise((r) => setTimeout(r, 20))
-  stopWaiting(ui)
-  await signingIn
-  expect(ui.state.gmail).toMatchObject({ waiting: null, note: { text: expect.stringContaining("Check again") } })
-  if (before === undefined) delete process.env.JASKMONEY_HOME
-  else process.env.JASKMONEY_HOME = before
+test("esc during the browser sign-in cancels it", async () => {
+  Object.assign(sources, {
+    status: async () => ({ signedIn: false, tools: [], error: null }),
+    signIn: (open: (url: string) => void, signal: AbortSignal) => new Promise<void>((_, reject) => { open("https://executor.sh/x"); signal.addEventListener("abort", () => reject(new Error("cancelled"))) }),
+  })
+  await openExecutorDialog(ui)
+  const signing = runExecutorAction(ui)
+  await new Promise((r) => setTimeout(r, 5))
+  cancelExecutorSignIn()
+  await signing
+  expect(ui.state.executor).toMatchObject({ waiting: null, note: { text: "Sign-in cancelled", ok: null } })
+  ui.setState({ executor: null, executorStatus: null })
 })

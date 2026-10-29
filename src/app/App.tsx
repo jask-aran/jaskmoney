@@ -24,7 +24,7 @@ import { OverviewTab } from "../ui/overview/OverviewTab"
 import { ManagerTab } from "../ui/manager/ManagerTab"
 import { SavedFilterPicker } from "../ui/manager/SavedFilterPicker"
 import { SettingsTab, EditorOverlay, DryRunOverlay, AiDialog, UpAccountsDialog } from "../ui/settings/SettingsTab"
-import { GmailDialog } from "../ui/settings/GmailDialog"
+import { ExecutorDialog } from "../ui/settings/ExecutorDialog"
 import { theme } from "../theme"
 import { selectionLabel } from "../domain/accountTree"
 import { SYNC_INTERVAL_MS, runSync, syncAgo } from "./sync"
@@ -156,7 +156,7 @@ export function App() {
       <AiUseDialog />
       <AiQueryView />
       <AiDialog />
-      <GmailDialog />
+      <ExecutorDialog />
       <UpAccountsDialog />
       <TagPicker />
       <EditorOverlay />

@@ -5,7 +5,8 @@ import { USES } from "../../ai/catalog"
 import { syncAgo } from "../../app/sync"
 import { AI_NAMES, AI_USES, aiActionHint, aiActions, aiConnection, aiContext, aiRow, aiStatus, useModel } from "../../state/aiDialog"
 import { secretDisplay } from "../../state/settingsForm"
-import { gmailRow } from "../../state/gmailDialog"
+import { executorRow } from "../../state/executorDialog"
+import { executorSignedIn } from "../../ai/executor"
 import { SignInBody } from "../primitives/SignInBody"
 import { For, Show, createEffect, createMemo, onCleanup, type JSX } from "solid-js"
 import type { ScrollBoxRenderable } from "@opentui/core"
@@ -253,7 +254,7 @@ export function UpAccountsDialog() {
 /** AI models: one row per model (what, how it's connected, what for);
  * enter opens its dialog. */
 /** Settings › AI models: the models and how each is connected, the uses
- * and the model doing each, then the sources (Gmail, through Executor);
+ * and the model doing each, then the sources (Executor: Gmail and more);
  * enter opens any one's dialog. */
 function AiPane(props: { focused: boolean; width: number }) {
   const active = () => ui.state.settingsActive && ui.state.settingsSection === "ai"
@@ -261,7 +262,7 @@ function AiPane(props: { focused: boolean; width: number }) {
   const models = () => AI_ROWS.map((row) => aiRow(row, ctx()))
   const uses = () => AI_USES.map((use) => ({ name: USES[use].name, model: useModel(use, ctx()) }))
   const heading = (text: string) => <text fg={theme.subtext0} wrapMode="none"><b>{text}</b></text>
-  const gmail = () => gmailRow(ui.state.gmailSetup)
+  const executor = () => executorRow(ui.state.executorStatus, executorSignedIn())
   return <SectionCard title={SETTINGS_SECTION_LABELS.ai} focused={props.focused} active={active()} height={AI_ROWS.length + AI_USES.length + 6} width={props.width}>
     {heading("Models")}
     <For each={models()}>{(row, i) => (
@@ -281,9 +282,9 @@ function AiPane(props: { focused: boolean; width: number }) {
     )}</For>
     {heading("Sources")}
     <ListRow cursor={active() && ui.state.aiCursor === AI_ROWS.length + AI_USES.length} bg={theme.canvas} spans={[
-      { text: gmail().connected ? "● " : "○ ", fg: gmail().connected ? theme.success : theme.overlay1 },
-      { text: fit("Gmail", 13), fg: gmail().connected ? theme.text : theme.subtext0 },
-      { text: fit(gmail().how, Math.max(8, props.width - 20)), fg: gmail().connected ? theme.subtext1 : theme.overlay1 },
+      { text: executor().connected ? "● " : "○ ", fg: executor().connected ? theme.success : theme.overlay1 },
+      { text: fit("Executor", 13), fg: executor().connected ? theme.text : theme.subtext0 },
+      { text: fit(executor().how, Math.max(8, props.width - 20)), fg: executor().connected ? theme.subtext1 : theme.overlay1 },
     ]} />
   </SectionCard>
 }
