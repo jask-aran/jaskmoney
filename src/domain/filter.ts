@@ -71,6 +71,7 @@ function parseFilterWithMode(
       throw new Error(`unexpected token ${JSON.stringify(tok.text)} at ${tok.pos + 1}`)
     }
     if (strict) validateStrictGrouping(node)
+    validateTop(node)
     return { node }
   } catch (e) {
     return { node: null, error: e instanceof Error ? e.message : String(e) }
@@ -262,6 +263,9 @@ function evalField(node: FilterNode, t: FilterTxn): boolean {
       return evalAmount(node, t.amount)
     case "date":
       return evalDate(node, t.dateISO)
+    // Each row passes; applyTop cuts the result.
+    case "top":
+      return true
     default:
       return false
   }
@@ -491,6 +495,12 @@ class Parser {
       n.field = field
       return n
     }
+    if (field === "top") {
+      const raw = this.collectValue(field, false).trim()
+      const n = Number(raw)
+      if (!Number.isInteger(n) || n < 1) throw new Error(`top expects a number of rows, such as top:10, at ${fieldTok.pos + 1}`)
+      return { kind: "field", field, op: "=", value: String(n) }
+    }
     if (field === "type") {
       const raw = this.collectValue(field, false).toLowerCase().trim()
       if (raw !== "debit" && raw !== "credit" && raw !== "spending" && raw !== "income") {
@@ -542,7 +552,7 @@ function canStartTerm(k: TokKind): boolean {
 }
 
 function isField(v: string): boolean {
-  return ["desc", "cat", "tag", "acc", "amt", "type", "note", "date", "ask"].includes(v)
+  return ["desc", "cat", "tag", "acc", "amt", "type", "note", "date", "ask", "top"].includes(v)
 }
 
 function flatten(children: FilterNode[], kind: "and" | "or"): FilterNode[] {
@@ -555,6 +565,57 @@ function flatten(children: FilterNode[], kind: "and" | "or"): FilterNode[] {
     }
   }
   return out
+}
+
+/** `top:` cuts the whole result, so it may only be ANDed with the rest at
+ * the top level (not inside OR or NOT), once. */
+function validateTop(node: FilterNode | null): void {
+  if (!node) return
+  const isTop = (n: FilterNode) => n.kind === "field" && n.field === "top"
+  const level = isTop(node) ? [node] : node.kind === "and" ? (node.children ?? []) : []
+  if (level.filter(isTop).length > 1) throw new Error("only one top: per filter")
+  const nested = (n: FilterNode, top: boolean): boolean => (!top && isTop(n)) || (n.children ?? []).some((c) => nested(c, false))
+  if ((node.kind === "and" ? level : [node]).some((c) => !isTop(c) && nested(c, false))) {
+    throw new Error("top: applies to the whole filter: AND it with the rest, not inside OR, NOT or brackets")
+  }
+}
+
+/** The filter's `top:` count, if it has one. */
+export function topCount(node: FilterNode | null): number | null {
+  if (!node) return null
+  const level = node.kind === "and" ? (node.children ?? []) : [node]
+  const top = level.find((n) => n.kind === "field" && n.field === "top")
+  return top ? Number(top.value) : null
+}
+
+/** `rows` (already filtered) cut to the filter's `top:` count: the biggest
+ * by amount either way (money out or in), ties the newest. Without top:,
+ * `rows` as they are. */
+export function applyTop<T extends { amount: number; dateISO: string; id: number }>(node: FilterNode | null, rows: T[]): T[] {
+  const n = topCount(node)
+  if (n == null) return rows
+  const keep = new Set([...rows].sort((a, b) => Math.abs(b.amount) - Math.abs(a.amount) || b.dateISO.localeCompare(a.dateISO) || b.id - a.id).slice(0, n))
+  return rows.filter((t) => keep.has(t))
+}
+
+/** For a filter of plain words that finds nothing because no row has them
+ * all ("mcdonalds kfc"), though each finds some: the same words joined by
+ * OR. Else null. */
+export function eitherInstead<T extends FilterTxn>(node: FilterNode | null, rows: T[]): string | null {
+  if (node?.kind !== "and") return null
+  const words = node.children ?? []
+  const plain = (n: FilterNode) => n.kind === "text" || (n.kind === "field" && n.field === "desc")
+  if (words.length < 2 || !words.every(plain)) return null
+  if (!words.every((w) => rows.some((t) => evalFilter(w, t)))) return null
+  return filterExprString({ kind: "or", children: words })
+}
+
+/** Why a filter can't drive a rule (which decides each row on its own), or
+ * null: ask: needs Jev, top: needs the whole set. */
+export function notForRules(node: FilterNode | null): string | null {
+  if (askTerms(node).length) return "ask: can't be used in a rule"
+  if (topCount(node) != null) return "top: can't be used in a rule"
+  return null
 }
 
 function validateStrictGrouping(node: FilterNode | null): void {

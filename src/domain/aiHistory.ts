@@ -1,6 +1,6 @@
 import { scopeText } from "./tagScope"
 import type { CategoryLogEntry, TagLogEntry } from "../db/client"
-import { askTerms, evalFilter, parseFilterStrict } from "./filter"
+import { evalFilter, notForRules, parseFilterStrict } from "./filter"
 import { isUncategorised } from "./moneyRules"
 import { dryRunRules, filterRowNames } from "./rules"
 import { descKey, groupByDescription } from "./transactionGroups"
@@ -223,7 +223,8 @@ export function waitingOverview(data: HistoryData, limit = 40) {
 export function findRows(data: HistoryData, expr: string): { rows: Transaction[] } | { error: string } {
   const { node, error } = parseFilterStrict(expr)
   if (!node || error) return { error: error ?? "empty expression" }
-  if (askTerms(node).length) return { error: "ask: can't be used in a rule" }
+  const blocked = notForRules(node)
+  if (blocked) return { error: blocked }
   const names = filterRowNames(data.categories, data.tags)
   return { rows: data.transactions.filter((t) => evalFilter(node, names.row(t, t.categoryId, t.tagIds))) }
 }

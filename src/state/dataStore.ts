@@ -72,6 +72,7 @@ import { addTagLink, queueTagPush } from "../db/tagLinks"
 import { syncUp as runUpSync } from "../up/sync"
 import { dryRunRules as evaluateRules } from "../domain/rules"
 import {
+  applyTop,
   evalFilter,
   filterExprString,
   parseFilterStrict,
@@ -484,7 +485,7 @@ function createDataStore() {
     const rows = accountScoped()
     if (!expr && !state.uncategorisedOnly && !state.tagReview) return rows
     if (askTerms(expr).length) askVersion()
-    return rows.filter((t) => inView(t) && (!expr || evalFilter(expr, t, askVerdict)))
+    return applyTop(expr, rows.filter((t) => inView(t) && (!expr || evalFilter(expr, t, askVerdict))))
   }))
 
   /** The account's rows through the filter, in the table's sort. */

@@ -229,7 +229,8 @@ export function searchTermQuestions(query: string): Record<string, JevQuestion> 
       criteria: {
         at_least: "The least amount of money wanted: over, more than, at least, or a number followed by +",
         at_most: "The most money wanted: under, less than, up to, at most",
-        not_amount: "Not an amount of money: part of a date, a period or a count",
+        top_count: "How many of the biggest transactions to show: top 10, the 5 largest, biggest 3",
+        not_amount: "Not an amount of money: part of a date, a period or another count",
       },
     }
   })
@@ -238,7 +239,7 @@ export function searchTermQuestions(query: string): Record<string, JevQuestion> 
     questions.phrase = {
       type: "choice",
       instructions: "Which words in `search` name what it looks for: a shop, a person, or a kind of thing bought or received?",
-      criteria: { ...Object.fromEntries(phrases.map((p, i) => [`p${i}`, `"${p}"`])), none: "Nothing in particular is named, only amounts, dates or periods" },
+      criteria: { ...Object.fromEntries(phrases.map((p, i) => [`p${i}`, `"${p}"`])), none: "Nothing in particular is named: only amounts, dates, periods, or words for any transaction such as transactions, purchases or payments" },
     }
   }
   return questions

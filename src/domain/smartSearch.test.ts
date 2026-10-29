@@ -167,3 +167,19 @@ describe("broad searches go to the categories they cover", () => {
     expect(parsedSearch(values({ words: "groceries" }), { ...answers({}), ...covers({ 2: [0.8, 0.4] }) }, categories, "groceries").categories).toBeUndefined()
   })
 })
+
+describe("several payees and the biggest few", () => {
+  test("payees joined by and, or, & or commas match any of them, each a description term; one not found sends them all to Jev", () => {
+    const descriptions = ["McDonald's", "KFC", "Hungry Jack's"]
+    const words = (w: string): ParsedSearch => ({ ...none, words: w })
+    expect(searchFilter(snapPayee(words("mcdonalds and kfc"), descriptions), ctx)).toBe('(desc:"mcdonalds" OR desc:"kfc")')
+    expect(searchFilter(snapPayee(words("kfc, hungry jacks or mcdonalds"), descriptions), ctx)).toBe('(desc:"kfc" OR desc:"hungry jacks" OR desc:"mcdonalds")')
+    expect(snapPayee(words("kfc and maccas"), descriptions)).toMatchObject({ words: null, ask: "kfc and maccas" })
+  })
+  test("a count Jev reads as how many of the biggest becomes top:, after the rest", () => {
+    const p = parsedSearch(values({ words: null }), answers({ amounts: ["top_count"], flow: "spending" }), categories, "top 10 purchases")
+    expect(p.top).toBe(10)
+    expect(searchFilter(p, ctx)).toBe("type:spending AND top:10")
+    expect(parsedSearch(values({ words: null }), answers({ amounts: ["top_count"] }), categories, "top 2.5").top).toBeUndefined()
+  })
+})

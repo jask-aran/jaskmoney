@@ -67,3 +67,16 @@ test("n in Merchants writes a note (letters are text); N on a row opens the same
   await settle()
   expect(data.state.merchantNotes[merchant.toLowerCase()]).toBeUndefined()
 })
+
+test("F1 in the search bar opens the search help; esc closes it and the bar stays open", () => {
+  setup()
+  handleKey(ui, key("/"), data)
+  expect(ui.activeScope()).toBe("filter")
+  handleKey(ui, key("f1"), data)
+  expect(ui.activeScope()).toBe("searchHelp")
+  handleKey(ui, key("j"), data)
+  expect(ui.activeScope()).toBe("searchHelp")
+  handleKey(ui, key("escape"), data)
+  expect(ui.activeScope()).toBe("filter")
+  ui.closeFilter(false)
+})

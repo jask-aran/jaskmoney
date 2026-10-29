@@ -4,7 +4,7 @@ import { budgetScopeOptions } from "../domain/budgetScopes"
 import { appToday } from "../domain/days"
 import { fuzzyScore } from "../domain/fuzzy"
 import { categoryPickerRows } from "../domain/categoryOptions"
-import { evalFilter, parseFilterStrict } from "../domain/filter"
+import { applyTop, evalFilter, parseFilterStrict } from "../domain/filter"
 import { filterRowNames } from "../domain/rules"
 import type { Account, Category, SavedFilter, Tag, Transaction } from "../domain/types"
 import type { SettingsEditorKind, UiState } from "./uiStore"
@@ -218,7 +218,7 @@ export function editorNote(kind: SettingsEditorKind, draft: Draft, ctx: FormCont
     const { node, error } = parseFilterStrict(expr)
     if (error || !node) return { text: kind === "filter" ? `invalid: ${error ?? "empty expression"}` : "invalid", tone: "error", dot: true }
     const names = filterRowNames(ctx.categories, ctx.tags)
-    const count = ctx.transactions.filter((txn) => evalFilter(node, names.row(txn, txn.categoryId, txn.tagIds))).length
+    const count = applyTop(node, ctx.transactions.filter((txn) => evalFilter(node, names.row(txn, txn.categoryId, txn.tagIds)))).length
     return { text: `ok · ${count} txns`, tone: "ok", dot: true }
   }
   if (kind === "tag") {

@@ -1,3 +1,4 @@
+import { unwrap } from "solid-js/store"
 import { merchantKey } from "../domain/suggest"
 import { footerShown, type Hint } from "./palette"
 import { toggleDemo, applyAllRules, applySavedFilter, clearTransactionFilter, askForRules, reportError, resetTransactionCursors, runUndo, showAccount, showDryRun, toggleIcons, toggleWeekStart, toggleXAxis } from "./actions"
@@ -22,7 +23,7 @@ import { anchorDraft, cycleFromDraft, editorFields, normaliseCycleDraft, pickerC
 import { runSync } from "./sync"
 import { runSmartSearch } from "./smartSearch"
 import { runAsk } from "./ask"
-import { askTerms } from "../domain/filter"
+import { eitherInstead, askTerms } from "../domain/filter"
 import { AI_ROWS, aiRowLabel, isLlmRow, testAi } from "./apiKeys"
 import { aiActions, aiContext } from "../state/aiDialog"
 import { cancelLlmSignIn, signOutLlm, startLlmSignIn, submitSignInPaste } from "./llmSignIn"
@@ -420,6 +421,7 @@ function handleCatPicker(ui: UiStore, key: KeyEvent, data?: DataStore): void {
 
 function handleFilter(ui: UiStore, key: KeyEvent, data?: DataStore): void {
   const { name } = key
+  if (name === "f1") { ui.setState({ searchHelp: true }); return }
   // ↑ on a smart search's filter brings its question back, to reword it.
   const question = smartQuestionFor(ui.state, ui.state.filterDraft)
   if (name === "up" && question) {
@@ -448,6 +450,10 @@ function handleFilter(ui: UiStore, key: KeyEvent, data?: DataStore): void {
     resetTransactionCursors(ui, data)
     if (!draft.trim()) {
       ui.setStatus("Filter cleared")
+    } else if (r.ok && data && !data.scopedTransactions().length) {
+      // Words that are never on one row together: say how to find either.
+      const either = eitherInstead(data.state.filterExpr ? unwrap(data.state.filterExpr) : null, data.accountScoped())
+      ui.setStatus(either ? `No row has all of those words · for any of them: ${either}` : "No matches · F1 for search help")
     } else if (r.ok) {
       ui.setStatus(`Filter ok · ${data?.scopedTransactions().length ?? 0} rows`)
     } else {
@@ -1702,6 +1708,7 @@ const scopes: Record<ScopeId, ScopeEntry> = {
       { key: "esc", desc: "clear" },
       { key: "type", desc: "expr" },
       { key: "?…", desc: "ask in words" },
+      { key: "F1", desc: "help" },
       ...(state?.recallQuestion ? [{ key: "↑", desc: "your question" }] : []),
     ],
   },
@@ -1723,6 +1730,11 @@ const scopes: Record<ScopeId, ScopeEntry> = {
     handle: handleSettingsFactoryReset,
     quits: false,
     hints: () => [{ key: "type RESET", desc: "confirm" }, { key: "enter", desc: "erase DB" }, { key: "esc", desc: "cancel" }],
+  },
+  "searchHelp": {
+    handle: (ui, key) => { if (["escape", "return", "enter", "f1", "q"].includes(key.name)) ui.setState({ searchHelp: false }) },
+    quits: false,
+    hints: () => [{ key: "esc", desc: "close" }],
   },
   "merchantNote": {
     handle: handleMerchantNote,

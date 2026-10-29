@@ -71,6 +71,7 @@ export type ScopeId =
   | "settings.upAccounts"
   | "settings.factoryReset"
   | "merchantNote"
+  | "searchHelp"
 
 export type SettingsList = "categories" | "tags"
 export type SettingsSection = "taxonomy" | "rules" | "filters" | "up" | "ai" | "database"
@@ -255,6 +256,8 @@ export interface UiState {
   /** Writing a note on a merchant (n in Merchants, N on a row): its name as
    * shown, and the text. */
   merchantNote: { merchant: string; draft: string; caret: number } | null
+  /** F1 in the search bar: the search syntax, simply. */
+  searchHelp: boolean
   factoryResetDraft: string
   factoryResetCaret: number
 }
@@ -430,6 +433,7 @@ function createUiStore() {
     upAccounts: null,
     factoryResetOpen: false,
     merchantNote: null,
+    searchHelp: false,
     factoryResetDraft: "",
     factoryResetCaret: 0,
   })
@@ -467,6 +471,7 @@ function createUiStore() {
       factoryResetOpen: false,
       factoryResetDraft: "", factoryResetCaret: 0,
       merchantNote: null,
+      searchHelp: false,
     })
   }
 
@@ -663,6 +668,7 @@ function createUiStore() {
 
   function activeScope(): ScopeId {
     if (state.palette) return "palette"
+    if (state.searchHelp) return "searchHelp"
     if (state.filterPicker) return "filterPicker"
     if (state.dryRunReport) return "dryRun"
     if (state.jumpMode) return "jump"

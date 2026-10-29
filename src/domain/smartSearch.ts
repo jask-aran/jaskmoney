@@ -37,6 +37,8 @@ export interface ParsedSearch {
   ask: string | null
   atLeast: number | null
   atMost: number | null
+  /** Only the biggest this many ("top 10"). */
+  top?: number | null
   from: string | null
   to: string | null
   period: Period
@@ -71,13 +73,14 @@ export function parsedSearch(values: Record<string, ClairicAnswer> | null, answe
   const categoryId = !payee && category ? category.id : null
   const period = choice("period")
   const flow = choice("flow")
-  let atLeast: number | null = null, atMost: number | null = null
+  let atLeast: number | null = null, atMost: number | null = null, top: number | null = null
   searchNumbers(query).forEach((n, i) => {
     const role = choice(`amount${i}`)
     const amount = Number(n.replace(/[$+]/g, ""))
     if (!Number.isFinite(amount) || amount <= 0) return
     if (role === "at_least") atLeast = amount
     if (role === "at_most") atMost = amount
+    if (role === "top_count" && Number.isInteger(amount)) top = amount
   })
   // A search for a shop or person, or one naming a category, isn't routed further.
   const covered = categoryId == null && !payee ? coveredCategoryIds(answers, categories) : []
@@ -90,6 +93,7 @@ export function parsedSearch(values: Record<string, ClairicAnswer> | null, answe
     ask: categoryId == null && !payee && words ? (values ? words : query.trim()) : null,
     atLeast,
     atMost,
+    ...(top ? { top } : {}),
     from: text("from"),
     to: text("to"),
     period: period && period in PERIODS ? (period as Period) : "any",
@@ -98,13 +102,19 @@ export function parsedSearch(values: Record<string, ClairicAnswer> | null, answe
   }
 }
 
+/** The payees in a search's words: "mcdonalds and kfc", "kfc, hungry
+ * jacks or maccas" name several (any of them matches). */
+export function payees(words: string): string[] {
+  return words.split(/\s*(?:,|&|\band\b|\bor\b)\s*/i).map((w) => w.trim()).filter(Boolean)
+}
+
 /**
  * Payee words no description contains (as `desc:` matches, so "Mcdonalds"
  * finds "McDonald's") go to Jev as `ask:` instead, which knows "Maccas" is
- * McDonald's.
+ * McDonald's; for several payees, when any of them isn't found.
  */
 export function snapPayee(p: ParsedSearch, descriptions: string[]): ParsedSearch {
-  if (!p.words || descriptions.some((d) => textContains(d, p.words!))) return p
+  if (!p.words || payees(p.words).every((w) => descriptions.some((d) => textContains(d, w)))) return p
   return { ...p, words: null, ask: p.words }
 }
 
@@ -137,7 +147,7 @@ export function periodBounds(p: Pick<ParsedSearch, "period" | "from" | "to">, to
  * money in of at least $5, or either. */
 export function searchFilter(p: ParsedSearch, ctx: { today: string; cycle: CycleConfig; categories: Category[] }): string {
   const terms: string[] = []
-  if (p.words) terms.push(filterTerm("desc", p.words))
+  if (p.words) terms.push(anyOf(payees(p.words).map((w) => filterTerm("desc", w))))
   const covered = (p.categories ?? []).flatMap((id) => {
     const category = ctx.categories.find((c) => c.id === id)
     return category ? [categoryTerm(category, ctx.categories)] : []
@@ -161,6 +171,7 @@ export function searchFilter(p: ParsedSearch, ctx: { today: string; cycle: Cycle
   }
   const bounds = periodBounds(p, ctx.today, ctx.cycle)
   if (bounds) terms.push(`date:${bounds.start}..${bounds.end}`)
+  if (p.top) terms.push(`top:${p.top}`)
   return terms.join(" AND ")
 }
 
