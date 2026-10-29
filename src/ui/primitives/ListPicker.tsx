@@ -24,13 +24,15 @@ export function ListPicker(props: {
   mark?: (value: string | number | null) => string
   /** A marker (e.g. a category icon) before each item's label. */
   iconFor?: (value: string | number | null) => string | undefined
+  /** A line above the filter: what's being chosen for (e.g. what a row bought). */
+  note?: string
 }) {
   const dims = useTerminalDimensions()
   // Wide enough for the hint line (border and padding: 4).
   const width = () => Math.max(20, Math.min(Math.max(props.width ?? 52, props.hints.length + 4), dims().width - 4))
   // Modal chrome: border (2, the title in it), filter + blank, blank +
   // hints, and a margin of 4.
-  const visible = () => Math.max(4, Math.min(props.items.length, dims().height - 10))
+  const visible = () => Math.max(4, Math.min(props.items.length, dims().height - 10 - (props.note ? 2 : 0)))
   const cursorRow = createMemo(() => {
     let seen = -1
     return props.items.findIndex((item) => item.kind === "item" && ++seen === props.cursor)
@@ -39,6 +41,10 @@ export function ListPicker(props: {
   const rows = () => props.items.slice(top(), top() + visible()).map((item, i) => ({ item, row: top() + i }))
   return (
     <Modal title={props.title} subtitle={props.subtitle} width={width()} hints={props.hints}>
+      <Show when={props.note}>
+        <text wrapMode="none" fg={theme.subtext0}>{fit(props.note!, width() - 4)}</text>
+        <text> </text>
+      </Show>
       <text wrapMode="none">
         <S fg={theme.subtext0}>{"Filter "}</S>
         <S fg={props.query ? theme.text : theme.overlay0}>{props.query || "type to filter"}</S>

@@ -93,6 +93,14 @@ export function isUncategorisedColor(color: string | null | undefined): boolean 
   return !color || color === UNCATEGORISED_STORED
 }
 
+/** `color` taken `share` of the way to the canvas (#rrggbb only; others as they are). */
+export function fade(color: string, share: number): string {
+  const rgb = (hex: string) => [1, 3, 5].map((i) => parseInt(hex.slice(i, i + 2), 16))
+  if (!/^#[0-9a-f]{6}$/i.test(color)) return color
+  const [from, to] = [rgb(color), rgb(theme.canvas)]
+  return `#${from.map((c, i) => Math.round(c + (to[i]! - c) * share).toString(16).padStart(2, "0")).join("")}`
+}
+
 /** A category's display colour: its own, or the muted uncategorised colour. */
 export function categoryColor(color: string | null | undefined): string {
   return isUncategorisedColor(color) ? uncategorisedColor : color!

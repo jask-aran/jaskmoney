@@ -43,6 +43,9 @@ export interface FilterTxn {
   categoryGroup?: string
   accountName: string
   notes: string
+  bought?: readonly { name: string }[]
+  message?: string | null
+  rawText?: string | null
   amount: number
   dateISO: string
   excluded?: boolean
@@ -321,6 +324,11 @@ function evalField(node: FilterNode, t: FilterTxn): boolean {
       return textContains(t.description, node.value ?? "")
     case "note":
       return textContains(t.notes, node.value ?? "")
+    // Approved addition to legacy Go filter.go (2026-10-30): info:.
+    case "info":
+      return (t.bought?.some((item) => textContains(item.name, node.value ?? "")) ?? false)
+        || (t.message != null && textContains(t.message, node.value ?? ""))
+        || (t.rawText != null && textContains(t.rawText, node.value ?? ""))
     case "cat":
       return eqFold(t.categoryName, node.value ?? "") || (!!t.categoryGroup && eqFold(t.categoryGroup, node.value ?? ""))
     case "acc":
@@ -646,7 +654,7 @@ class Parser {
       const raw = this.collectValue(field, true)
       return { kind: "field", field, op: "=", value: raw.trim() }
     }
-    // desc, note, ask
+    // desc, note, info, ask
     const raw = this.collectValue(field, true)
     return { kind: "field", field, op: "contains", value: raw.trim() }
   }
@@ -688,7 +696,7 @@ function canStartTerm(k: TokKind): boolean {
 }
 
 /** Every field the parser knows (each described in domain/filterLanguage). */
-export const FILTER_FIELDS = ["desc", "cat", "tag", "acc", "amt", "type", "note", "date", "ask", "top"] as const
+export const FILTER_FIELDS = ["desc", "cat", "tag", "acc", "amt", "type", "note", "info", "date", "ask", "top"] as const
 
 function isField(v: string): boolean {
   return (FILTER_FIELDS as readonly string[]).includes(v)
@@ -954,7 +962,7 @@ function renderField(node: FilterNode, full = false): string {
     if (node.op === "=") return `amt:=${node.value}`
     return `amt:${node.op}${node.value}`
   }
-  if (field === "desc" || field === "note" || field === "ask") {
+  if (field === "desc" || field === "note" || field === "info" || field === "ask") {
     return `${field}:${quoteIfNeeded(node.value ?? "", full)}`
   }
   return `${field}:${quoteIfNeeded(node.value ?? "", full)}`

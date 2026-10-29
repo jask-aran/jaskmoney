@@ -205,7 +205,9 @@ export function ManagerTab(props: { focused: SectionId }) {
       const s = data.state.suggestions[id], t = byId.get(id)
       if (!s || !t) continue
       const rows = groups.get(s.categoryId) ?? new Map<string, number>()
-      const label = `${t.description.trim()}${t.amount > 0 ? " (in)" : ""}`
+      // What it bought says more than "Amazon ×6": each such row by its first item.
+      const item = t.bought?.[0]?.name
+      const label = `${item ? truncate(item, 28) : t.description.trim()}${t.amount > 0 ? " (in)" : ""}`
       rows.set(label, (rows.get(label) ?? 0) + 1)
       groups.set(s.categoryId, rows)
     }

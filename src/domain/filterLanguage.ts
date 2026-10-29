@@ -57,6 +57,7 @@ export const JQL: Section[] = [
       { write: "\"uber eats\"", means: "this phrase, words together and in order", brief: true },
       { write: "desc:uber eats", means: "description contains the phrase (a value runs on)", brief: true },
       { write: "note:gift", means: "your own notes on the row contain it", brief: true },
+      { write: "info:toothbrush", means: "what it bought, the bank's message or raw text", brief: true },
       { write: "cat:Groceries", means: "this category, or a group and its subcategories", brief: true },
       { write: "tag:TRAVEL", means: "has this tag", brief: true },
       { write: "acc:Spending", means: "account is this", brief: true },
@@ -125,7 +126,7 @@ export const JQL: Section[] = [
       "primary    = \"(\" or_expr \")\" | quoted | field_term | text ;",
       "field_term = multi \":\" ( quoted | word { word } )",
       "           | single \":\" ( quoted | word { word } ) ;  (* joined *)",
-      "multi      = \"desc\" | \"note\" | \"cat\" | \"tag\" | \"acc\" | \"ask\" ;",
+      "multi      = \"desc\" | \"note\" | \"info\" | \"cat\" | \"tag\" | \"acc\" | \"ask\" ;",
       "single     = \"amt\" | \"date\" | \"type\" | \"top\" ;  (* any case *)",
       "text       = word [ \":\" [ word ] ] ;    (* not a field: text *)",
       "word       = { char but space ( ) : \" } ;  (* not AND OR NOT *)",
@@ -135,16 +136,16 @@ export const JQL: Section[] = [
   {
     title: "Reading",
     blocks: [
-      { kind: "text", text: "Spaces only separate. ( ) : and \" are tokens of their own, so cat : Groceries is cat:Groceries. A word before : that isn't one of the ten fields is text with what's joined to it: 12:30, ref:ABC." },
+      { kind: "text", text: "Spaces only separate. ( ) : and \" are tokens of their own, so cat : Groceries is cat:Groceries. A word before : that isn't one of the eleven fields is text with what's joined to it: 12:30, ref:ABC." },
       { kind: "text", text: "AND, OR and NOT are operators in capitals, standing alone. A - joined to the start of a term is NOT (-eats, -cat:Takeaway, -\"uber eats\"); -50, a lone - and Coca-Cola are text. NOT may repeat (NOT NOT a is a)." },
       { kind: "text", text: "In the search bar, a lowercase or between two terms is OR; at either end, or quoted, it's a word. A trailing AND, OR or NOT is left for you to finish, and a missing ) is closed.", searchOnly: true },
-      { kind: "text", text: "A multi-word value (desc note cat tag acc ask) takes words until the next field, AND, OR, NOT, a -term, a bracket or quoted text; several spaces read as one. amt, date, type and top take one value, which may be spaced: amt:< -50, date:a .. b. Quoted text may escape \\\" and \\\\." },
+      { kind: "text", text: "A multi-word value (desc note info cat tag acc ask) takes words until the next field, AND, OR, NOT, a -term, a bracket or quoted text; several spaces read as one. amt, date, type and top take one value, which may be spaced: amt:< -50, date:a .. b. Quoted text may escape \\\" and \\\\." },
     ],
   },
   {
     title: "Matching",
     blocks: [{ kind: "rows", rows: [
-      { write: "words, \"…\", desc:, note:", means: "contain the text, ignoring case, spaces and punctuation on both sides (desc:mcdonalds finds McDonald's); the letters stay in order, so a phrase must appear as one run. Text with no letters or digits is matched as written." },
+      { write: "words, \"…\", desc:, note:, info:", means: "contain the text, ignoring case, spaces and punctuation on both sides (desc:mcdonalds finds McDonald's); the letters stay in order, so a phrase must appear as one run. Text with no letters or digits is matched as written." },
       { write: "bare words", means: "search the description; with no field anywhere in the search, category and tag names too", searchOnly: true },
       { write: "bare words", means: "search the description", ruleOnly: true },
       { write: "cat: tag: acc:", means: "equal the whole name, ignoring case; a group's name also finds its subcategories' rows. cat:Uncategorised is rows without a category." },

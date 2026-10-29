@@ -52,6 +52,12 @@ export interface RowFactsOptions {
  * says nothing about the row). Empty facts are left out; the rest only
  * where asked for.
  */
+/** What a row bought, as a line: "Oral-B iO Electric…; 2× Brush Heads"
+ * (the first `limit` items, names cut to `nameMax`). */
+export function boughtText(t: Pick<Transaction, "bought">, limit = Infinity, nameMax = Infinity): string {
+  return (t.bought ?? []).slice(0, limit).map((i) => `${i.quantity > 1 ? `${i.quantity}× ` : ""}${i.name.slice(0, nameMax)}`).join("; ")
+}
+
 export function rowFacts(t: Transaction, o: RowFactsOptions = {}): Record<string, string> {
   const tags = t.tagNames.filter((name) => name.toUpperCase() !== "IGNORE")
   return {
@@ -62,7 +68,7 @@ export function rowFacts(t: Transaction, o: RowFactsOptions = {}): Record<string
     ...(t.message ? { message: t.message } : {}),
     ...(t.rawText && t.rawText !== t.description ? { bank_text: t.rawText } : {}),
     // What the order emails say it bought (app/purchases): the items, a few at most.
-    ...(t.bought?.length ? { bought: t.bought.slice(0, 5).map((i) => `${i.quantity > 1 ? `${i.quantity}× ` : ""}${i.name.slice(0, 120)}`).join("; ") } : {}),
+    ...(t.bought?.length ? { bought: boughtText(t, 5, 120) } : {}),
     ...(t.notes.trim() ? { your_note: t.notes.trim() } : {}),
     ...(tags.length ? { tags: tags.join(", ") } : {}),
     ...(t.foreignAmount ? { foreign_amount: t.foreignAmount } : {}),

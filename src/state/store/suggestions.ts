@@ -134,7 +134,10 @@ export function createSuggestions(ctx: StoreContext, deps: {
       const t = s && byId.get(s.transactionId)
       if (!s || !t) return []
       const capped = capSuggestion(s, suggestionCap(t, breadth))
-      return capped === s ? [] : [capped]
+      if (capped === s) return []
+      // Capped for want of items: once they're known, it's asked again.
+      const { knewBought: _, ...rest } = capped
+      return [t.bought?.length ? capped : rest]
     })
     if (!changed.length) return
     saveSuggestions(database, changed)

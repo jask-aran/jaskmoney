@@ -2,13 +2,14 @@ import { Index, Show, createMemo } from "solid-js"
 import { ACCEPT_ALL_AT, MATCH_AT } from "../../domain/questions"
 import { StyledLine, type StyledSpan } from "../primitives/StyledLine"
 import { padSpans, type Span } from "../primitives/spans"
-import { categoryColor, isUncategorisedColor, theme } from "../../theme"
+import { categoryColor, fade, isUncategorisedColor, theme } from "../../theme"
 import { data } from "../../state/dataStore"
 import { formatMoney } from "../../domain/dashboard"
 import { rowAppearance } from "../../domain/rowStyle"
 import type { Transaction } from "../../domain/types"
 import { fit } from "../text"
 import { categoryMark } from "../icons"
+import { boughtText } from "../../domain/history"
 import { amountColor } from "../colors"
 
 /**
@@ -61,7 +62,8 @@ export function tableLayout(
  * their headings with a sort mark. Every transaction counts, not just the
  * rows shown, so a filter or account switch never moves the columns. */
 const longest = () => ({
-  description: Math.max("Description ▼".length, ...data.transactions().map((t) => Bun.stringWidth(t.description.trimEnd()))),
+  // With what a row bought after it (cut at DESCRIPTION_MAX all the same).
+  description: Math.max("Description ▼".length, ...data.transactions().map((t) => Bun.stringWidth(t.description.trimEnd()) + (t.bought?.length ? 3 + Bun.stringWidth(boughtText(t)) : 0))),
   category: 2 + Math.max("Category ▼".length - 2, ...data.state.categories.map((c) => Bun.stringWidth(c.name))),
 })
 
@@ -72,7 +74,7 @@ function fmtDate(iso: string): string {
 }
 
 
-interface CategoryCell { marker: string; markerColor: string; text: string; textColor: string; muted: boolean; italic?: boolean; note?: string; noteColor?: string }
+interface CategoryCell { marker: string; markerColor: string; text: string; textColor: string; muted: boolean; italic?: boolean; note?: string; noteColor?: string; lead?: string; leadColor?: string }
 
 function formatCategory(
   categoryId: number | null,
@@ -106,24 +108,47 @@ function withAskScore(cell: CategoryCell, score: number | undefined, width: numb
   return { ...cell, text: fit(cell.text.trimEnd(), width - 2 - note.length), note, noteColor: near ? theme.warning : theme.success }
 }
 
-/** A suggested category, in italics with its confidence (↺ when it comes
- * from history); or why there is none yet. */
+/** How far a suggested category's colour fades toward the canvas: it's
+ * provisional until accepted. */
+const PROVISIONAL_FADE = 0.35
+
+/** A suggested category: its confidence first (↺ when it comes from
+ * history), then the category faded and in italics; or why there is none yet. */
 function formatSuggestion(suggestion: TableSuggestion | undefined, width: number): CategoryCell {
   const category = suggestion && data.state.categories.find((c) => c.id === suggestion.categoryId)
   if (!suggestion || !category) {
     return { marker: `${categoryMark(null, true)} `, markerColor: theme.overlay1, text: fit(data.state.suggesting ? "suggesting…" : "no suggestion", width - 2), textColor: theme.overlay1, muted: true }
   }
-  const note = `${suggestion.source === "history" ? "↺" : ""}${Math.round(suggestion.confidence * 100)}%`.padStart(5)
+  const lead = `${suggestion.source === "history" ? "↺" : ""}${Math.round(suggestion.confidence * 100)}% `.padStart(6)
+  const color = fade(categoryColor(category.color), PROVISIONAL_FADE)
   return {
+    lead,
+    leadColor: confidenceColor(suggestion.confidence),
     marker: `${categoryMark(category.id)} `,
-    markerColor: categoryColor(category.color),
-    text: fit(category.name, width - 2 - note.length),
-    textColor: categoryColor(category.color),
+    markerColor: color,
+    text: fit(category.name, width - 2 - lead.length),
+    textColor: color,
     muted: false,
     italic: true,
-    note,
-    noteColor: confidenceColor(suggestion.confidence),
   }
+}
+
+/** The Uncategorised view's Details cell: what the row bought, else the
+ * bank's message, else its tags. */
+function formatDetails(t: Transaction, width: number): Span[] {
+  const bought = boughtText(t)
+  if (bought) return [{ text: fit(bought, width), fg: theme.subtext0 }]
+  if (t.message) return [{ text: fit(t.message, width), fg: theme.subtext0 }]
+  return formatTags(t.tagNames, t.tagColors, width)
+}
+
+/** The description cell: the description, then (dimmed) what the row
+ * bought, while there's room — except where a Details column shows it. */
+function describe(t: Transaction, width: number, details: boolean): string[] {
+  const bought = details ? "" : boughtText(t)
+  const name = t.description.trimEnd()
+  if (!bought || Bun.stringWidth(name) + 4 > width) return [fit(t.description, width)]
+  return [name, fit(` · ${bought}`, width - Bun.stringWidth(name))]
 }
 
 /** What the table needs of a category suggestion. */
@@ -202,7 +227,7 @@ export function TransactionTable(props: {
           {layout().showAccount ? " ".repeat(columns.gap) + `Account${mark("account")}`.padEnd(columns.account) : ""}
           {" ".repeat(columns.gap)}
           {`Category${mark("category")}`.padEnd(layout().category)}
-          {layout().showTags ? " ".repeat(columns.gap) + fit("Tags", layout().tags) : ""}
+          {layout().showTags ? " ".repeat(columns.gap) + fit(props.suggestions ? "Details" : "Tags", layout().tags) : ""}
         </b>
       </text>
       <Show when={props.rows.length} fallback={<text fg={theme.overlay1}>{props.empty}</text>}>
@@ -227,6 +252,7 @@ export function TransactionTable(props: {
               // Up holds (pending) render italic, with a clock, until they settle.
               const held = () => r().status === "HELD"
               const tags = createMemo(() => {
+                if (props.suggestions) return formatDetails(r(), layout().tags)
                 const candidate = props.tagCandidate?.(r().id)
                 return candidate ? formatTagCandidate(candidate, r().tagNames, r().tagColors, layout().tags) : formatTags(r().tagNames, r().tagColors, layout().tags)
               })
@@ -245,9 +271,10 @@ export function TransactionTable(props: {
                   { text: formatMoney(r().amount).padEnd(columns.amount - 2), fg: faint(amountColor(r().amount)), bg, bold, italic: held() },
                   { text: held() ? `${pendingMark()} ` : "  ", fg: fg(theme.overlay1), bg },
                   { text: " ".repeat(columns.gap), fg: fg(theme.text), bg, bold },
-                  { text: fit(r().description, layout().description), fg: faint(theme.brightText), bg, bold, italic: held() },
+                  ...describe(r(), layout().description, !!props.suggestions).map((part, k) => ({ text: part, fg: k ? faint(theme.overlay1) : faint(theme.brightText), bg, bold: bold && !k, italic: held() })),
                   { text: layout().showAccount ? " ".repeat(columns.gap) + fit(r().accountName, columns.account) : "", fg: fg(theme.dimText), bg, bold },
                   { text: " ".repeat(columns.gap), fg: fg(theme.text), bg, bold },
+                  ...(cat.lead ? [{ text: cat.lead, fg: fg(cat.leadColor ?? theme.overlay1), bg }] : []),
                   { text: cat.marker, fg: fg(cat.markerColor), bg, bold: catBold },
                   { text: cat.text, fg: fg(cat.textColor), bg, bold: catBold, dim: cat.muted && !look().fg, italic: cat.italic },
                   { text: cat.note ?? "", fg: fg(cat.noteColor ?? theme.overlay1), bg },
