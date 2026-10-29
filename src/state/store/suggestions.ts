@@ -1,10 +1,11 @@
+import { batch } from "solid-js"
 import { unwrap } from "solid-js/store"
 import { saveSuggestions, loadMerchantBreadth, saveMerchantBreadth, loadMerchantNotes, saveMerchantNote, loadDismissedSuggestionIds, deleteSuggestions, dismissSuggestionRows, undismissSuggestionRows, unrecordCategoryChoices } from "../../db/client"
 import { hasJev, JEV_SETUP, jevClient, type JevClient } from "../../ai/jev"
 import { askMerchantBreadth, capSuggestion, historySuggestions, jevSuggestions, merchantBreadth, suggestionCap, unaskedMerchants } from "../../domain/suggest"
 import { merchantKey } from "../../domain/history"
 import { isOrdinaryFlow, isUncategorised } from "../../domain/moneyRules"
-import type { Transaction } from "../../domain/types"
+import type { CategorySuggestion, Transaction } from "../../domain/types"
 import { askCandidates, judgeRows } from "../../domain/ask"
 import { askTerms, hasDateTerm, undecided, type AskVerdict } from "../../domain/filter"
 import { MATCH_AT, NEAR_AT } from "../../domain/questions"
@@ -79,20 +80,36 @@ export function createSuggestions(ctx: StoreContext, deps: {
         const targetIds = new Set(targets.map((t) => t.id))
         const settled = new Set(history.map((s) => s.transactionId))
         const remaining = transactions().filter((t) => targetIds.has(t.id) && !settled.has(t.id) && (options.replace ? !!state.suggestions[t.id] : !state.suggestions[t.id]) && isOrdinaryFlow(t) && isUncategorised(t))
+        // A request's answers arrive together: saved in one write and shown
+        // in one update. One at a time, each update re-sorts the table, and
+        // a few hundred answers hold the screen for seconds.
+        let pending: CategorySuggestion[] = []
+        const flush = () => {
+          const arrived = pending
+          pending = []
+          if (ctx.db !== database || !arrived.length) return
+          const byId = new Map(transactions().map((t) => [t.id, t]))
+          const fresh = arrived.filter((s) => {
+            const current = byId.get(s.transactionId)
+            return current && isOrdinaryFlow(current) && isUncategorised(current) && (options.replace ? !!state.suggestions[s.transactionId] : !state.suggestions[s.transactionId])
+          })
+          if (!fresh.length) return
+          saveSuggestions(database, fresh)
+          batch(() => { for (const s of fresh) setState("suggestions", s.transactionId, s) })
+          fromJev += fresh.length
+        }
         if (remaining.length) await jevSuggestions(ai ?? jevClient(), remaining, state.categories, {
           history: transactions(),
           breadth,
           notes,
           onSuggestion: (s) => {
             if (ctx.db !== database || !targetIds.has(s.transactionId)) return
-            const current = transactions().find((t) => t.id === s.transactionId)
-            if (!current || !isOrdinaryFlow(current) || !isUncategorised(current) || (options.replace ? !state.suggestions[s.transactionId] : state.suggestions[s.transactionId])) return
-            saveSuggestions(database, [s])
-            setState("suggestions", s.transactionId, s)
-            fromJev++
+            if (!pending.length) queueMicrotask(flush)
+            pending.push(s)
           },
           onError: (ids, error) => failures.push(`${ids.length} rows: ${error instanceof Error ? error.message : String(error)}`),
         })
+        flush()
       }
       if (options.replace) return history.length + fromJev
       const parts = [`Suggested ${history.length + fromJev}: ${history.length} from history, ${fromJev} from Jev`]
