@@ -168,8 +168,11 @@ export function ManagerTab(props: { focused: SectionId }) {
     const raw = editing ? ui.state.filterDraft : data.state.filterQuery
     if (!editing && !raw.trim()) return null
     const err = data.state.filterErr
-    const dotColor = err ? theme.error : theme.success
-    const dotLabel = err ? "parse" : "ok"
+    const note = data.state.filterNote
+    // parse: searched as one phrase; check: works, but a name or field is a guess.
+    const flag = note?.tone === "warn" ? "check" : err ? "parse" : "ok"
+    const dotColor = flag === "check" ? theme.warning : flag === "parse" ? theme.error : theme.success
+    const dotLabel = flag
     const preview =
       data.filterPreview() ||
       (data.state.filterExpr ? filterExprString(data.state.filterExpr) : raw)
@@ -178,7 +181,7 @@ export function ManagerTab(props: { focused: SectionId }) {
     // ask: terms make it a search Jev answers row by row, not just a filter.
     // (A ?question being typed hasn't become a filter yet.)
     const jev = !(editing && raw.trimStart().startsWith("?")) && askTerms(data.state.filterExpr).length > 0
-    return { editing, raw, err, dotColor, dotLabel, preview, question, jev }
+    return { editing, raw, err, dotColor, dotLabel, note, preview, question, jev }
   }
 
   /** The title names the filter: by its question when a smart search wrote it. */
@@ -263,6 +266,7 @@ export function ManagerTab(props: { focused: SectionId }) {
               <S fg={theme.text}>{"  "}</S>
               <S fg={fb().dotColor}>●</S>
               <S fg={fb().dotColor}> {fb().dotLabel}</S>
+              {fb().note ? <S fg={fb().note!.tone === "error" ? theme.error : fb().note!.tone === "warn" ? theme.warning : theme.overlay1}>{`  ${truncate(fb().note!.text, Math.max(8, dims().width - 4 - 14 - fb().raw.length - (fb().jev ? 22 : 0) - (fb().question ? 6 + fb().question!.length : 0) - (fb().editing ? 0 : 18)))}`}</S> : null}
               {fb().jev ? <S fg={theme.teal}>{"  ◆ ask: judged by Jev"}</S> : null}
               {fb().question ? <S fg={theme.overlay1}>{fb().editing ? `  ↑ ?${fb().question}` : `  from ?${fb().question}`}</S> : null}
               {!fb().editing ? <S fg={theme.overlay1}>{ui.state.drillReturn ? "  (esc back · u clear)" : "  (esc clear)"}</S> : null}

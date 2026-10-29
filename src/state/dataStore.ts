@@ -75,8 +75,11 @@ import {
   applyTop,
   evalFilter,
   filterExprString,
-  parseFilterStrict,
+  canonicalFilter,
   reparseFilterInput,
+  type FilterNames,
+  filterNote,
+  type FilterNote,
   askTerms,
   type AskVerdict,
   type FilterNode,
@@ -136,6 +139,9 @@ export interface DataState {
   filterQuery: string
   filterExpr: FilterNode | null
   filterErr: string
+  /** Beside the bar's dot: why it doesn't parse (error), what saving
+   * would refuse (warn), or the full form a forgiven search reads as. */
+  filterNote: FilterNote | null
   sortColumn: SortColumn
   sortAscending: boolean
 }
@@ -276,6 +282,7 @@ function createDataStore() {
     filterQuery: "",
     filterExpr: null,
     filterErr: "",
+    filterNote: null,
     sortColumn: "date",
     sortAscending: false, // date desc default like Go
   })
@@ -508,37 +515,41 @@ function createDataStore() {
     return near.size ? [...sorted.filter((t) => !near.has(t.id)), ...sorted.filter((t) => near.has(t.id))] : sorted
   }))
 
+  /** The names cat:, tag: and acc: values are found among (shortened names). */
+  function filterNames(): FilterNames {
+    return { cat: state.categories.map((c) => c.name), tag: state.tags.map((t) => t.name), acc: state.accounts.map((a) => a.name) }
+  }
+
   function setFilterLive(q: string) {
-    const { expr, err } = reparseFilterInput(q)
+    const names = filterNames()
+    const { expr, err, hints } = reparseFilterInput(q, names)
     setState({
       filterQuery: q,
       filterExpr: expr,
       filterErr: err,
+      filterNote: filterNote(q, err, hints, names),
     })
   }
 
+  /** Enter: keeps the search as typed (loose), and flags what saving it
+   * would refuse (a name several fit, a mistyped field) or what doesn't
+   * parse at all. */
   function commitFilter(q: string): { ok: boolean; err: string } {
     const trimmed = q.trim()
     if (!trimmed) {
       clearFilter()
       return { ok: true, err: "" }
     }
-    const { node, error } = parseFilterStrict(trimmed)
-    const live = reparseFilterInput(trimmed)
-    if (error || !node) {
-      setState({
-        filterQuery: trimmed,
-        filterExpr: live.expr,
-        filterErr: error ?? live.err,
-      })
-      return { ok: false, err: error ?? "invalid filter" }
-    }
+    const names = filterNames()
+    const live = reparseFilterInput(trimmed, names)
+    const err = live.err || canonicalFilter(trimmed, names).error || ""
     setState({
       filterQuery: trimmed,
-      filterExpr: live.expr ?? node,
-      filterErr: "",
+      filterExpr: live.expr,
+      filterErr: err,
+      filterNote: filterNote(trimmed, live.err, live.hints, names),
     })
-    return { ok: true, err: "" }
+    return { ok: !err, err }
   }
 
   function clearFilter() {
@@ -549,6 +560,7 @@ function createDataStore() {
       filterQuery: "",
       filterExpr: null,
       filterErr: "",
+      filterNote: null,
     })
   }
 
@@ -665,7 +677,7 @@ function createDataStore() {
 
   function saveSavedFilter(filter: SavedFilter, originalId?: string) {
     const others = state.savedFilters.filter((f) => f.id !== originalId)
-    const normalized = validateSavedFilter(filter, others)
+    const normalized = validateSavedFilter(filter, others, filterNames())
     const next = originalId ? state.savedFilters.map((f) => f.id === originalId ? normalized : f) : [...state.savedFilters, normalized]
     persistConfig({ savedFilters: next })
     setState({ savedFilters: next })

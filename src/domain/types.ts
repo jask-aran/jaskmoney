@@ -142,6 +142,7 @@ export interface Transaction {
   description: string
   categoryId: number | null
   categoryName: string
+  categoryGroup: string
   /** Hex from categories.color; empty/overlay1 = uncategorised mute. */
   categoryColor: string
   notes: string

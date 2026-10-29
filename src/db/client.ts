@@ -466,6 +466,7 @@ export function loadTransactions(db: Db): Transaction[] {
          t.description,
          t.category_id AS categoryId,
          COALESCE(c.name, 'Uncategorised') AS categoryName,
+         COALESCE(pc.name, '') AS categoryGroup,
          COALESCE(c.color, '#7f849c') AS categoryColor,
          t.notes,
          t.import_id AS importId,

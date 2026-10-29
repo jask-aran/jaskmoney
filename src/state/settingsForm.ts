@@ -4,7 +4,7 @@ import { budgetScopeOptions } from "../domain/budgetScopes"
 import { appToday } from "../domain/days"
 import { fuzzyScore } from "../domain/fuzzy"
 import { categoryPickerRows } from "../domain/categoryOptions"
-import { applyTop, evalFilter, parseFilterStrict } from "../domain/filter"
+import { applyTop, canonicalFilter, evalFilter, parseFilterStrict } from "../domain/filter"
 import { filterRowNames } from "../domain/rules"
 import type { Account, Category, SavedFilter, Tag, Transaction } from "../domain/types"
 import type { SettingsEditorKind, UiState } from "./uiStore"
@@ -215,11 +215,16 @@ export function editorNote(kind: SettingsEditorKind, draft: Draft, ctx: FormCont
     if (kind === "rule" && !filter) return { text: `missing: ${filterId}`, tone: "error", dot: true }
     const expr = kind === "filter" ? draft.expr : filter?.expr ?? ""
     if (!expr.trim() && kind === "filter") return { text: "empty", tone: "muted", dot: true }
-    const { node, error } = parseFilterStrict(expr)
+    // A filter is saved in full (names resolved); a rule's is stored text.
+    const saved = kind === "filter"
+      ? canonicalFilter(expr, { cat: ctx.categories.map((c) => c.name), tag: ctx.tags.map((t) => t.name), acc: ctx.accounts.map((a) => a.name) })
+      : { ...parseFilterStrict(expr), text: expr }
+    const { node, error } = saved
     if (error || !node) return { text: kind === "filter" ? `invalid: ${error ?? "empty expression"}` : "invalid", tone: "error", dot: true }
     const names = filterRowNames(ctx.categories, ctx.tags)
     const count = applyTop(node, ctx.transactions.filter((txn) => evalFilter(node, names.row(txn, txn.categoryId, txn.tagIds)))).length
-    return { text: `ok · ${count} txns`, tone: "ok", dot: true }
+    const full = kind === "filter" && saved.text !== expr.trim() ? ` · saves as ${saved.text}` : ""
+    return { text: `ok · ${count} txns${full}`, tone: "ok", dot: true }
   }
   if (kind === "tag") {
     // Categories put the tag first in the picker for their rows; about is

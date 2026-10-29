@@ -460,7 +460,7 @@ function handleFilter(ui: UiStore, key: KeyEvent, data?: DataStore): void {
     if (!draft.trim()) {
       ui.setStatus("Filter cleared")
     } else if (!r.ok) {
-      ui.setStatus(`Filter live (not strict): ${r.err}`, true)
+      ui.setStatus(`Searching as typed; it can't be saved: ${r.err}`, true)
     } else if (asks) {
       ui.setStatus([written ? writtenText(written) : "", "Jev judging…"].filter(Boolean).join(" · "))
     } else if (data && !data.scopedTransactions().length) {

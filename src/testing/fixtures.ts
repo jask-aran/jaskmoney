@@ -11,7 +11,7 @@ export function transaction(overrides: Partial<Transaction> = {}): Transaction {
   const dateISO = overrides.dateISO ?? "2026-10-05"
   return {
     id: 1, dateRaw: dateISO, dateISO, amount: -10, description: "x",
-    categoryId: null, categoryName: "Uncategorised", categoryColor: "#7f849c",
+    categoryId: null, categoryName: "Uncategorised", categoryGroup: "", categoryColor: "#7f849c",
     notes: "", importId: null, accountId: 1, accountName: "A",
     tagNames: [], tagColors: [], tagIds: [], source: "up", status: "SETTLED", transactionType: null, message: null, rawText: null, foreignAmount: null, cardMethod: null, createdMs: null,
     transferAccountId: null, internal: false, excluded: false, income: false,

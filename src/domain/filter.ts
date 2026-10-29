@@ -40,6 +40,7 @@ export interface FilterTxn {
   description: string
   categoryId: number | null
   categoryName: string
+  categoryGroup?: string
   accountName: string
   notes: string
   amount: number
@@ -49,33 +50,89 @@ export interface FilterTxn {
   tagNames: string[]
 }
 
-export function parseFilter(input: string): { node: FilterNode | null; error?: string } {
-  return parseFilterWithMode(input, false)
+export interface FilterNames {
+  cat: readonly string[]
+  tag: readonly string[]
+  acc: readonly string[]
 }
 
-export function parseFilterStrict(input: string): { node: FilterNode | null; error?: string } {
+interface FilterResult {
+  node: FilterNode | null
+  error?: string
+  hints: string[]
+}
+
+// Approved deviations from legacy Go filter.go (2026-10-29): loose live
+// input, full save form, name resolution and the unambiguous strict readings.
+export function parseFilter(input: string, names?: FilterNames): FilterResult {
+  return parseFilterWithMode(input, false, names)
+}
+
+export function parseFilterStrict(input: string): FilterResult {
   return parseFilterWithMode(input, true)
+}
+
+export function canonicalFilter(input: string, names?: FilterNames): FilterResult & { text: string } {
+  const result = parseFilterWithMode(input, false, names, true)
+  return { ...result, error: result.error, text: result.node ? renderCanonical(result.node) : "" }
 }
 
 function parseFilterWithMode(
   input: string,
   strict: boolean,
-): { node: FilterNode | null; error?: string } {
-  if (!input.trim()) return { node: null }
+  names?: FilterNames,
+  canonical = false,
+): FilterResult {
+  const hints: string[] = []
+  const ambiguities: string[] = []
+  if (!input.trim()) return { node: null, hints }
   try {
     const tokens = lexFilter(input)
-    const p = new Parser(tokens, strict)
-    const node = p.parseExpr()
+    const p = new Parser(tokens, strict, input, hints, ambiguities)
+    if (!strict) p.ignoreTrailingOperators()
+    if (p.peek().kind === "eof") return { node: null, hints }
+    let node = p.parseExpr()
     if (p.peek().kind !== "eof") {
       const tok = p.peek()
       throw new Error(`unexpected token ${JSON.stringify(tok.text)} at ${tok.pos + 1}`)
     }
     if (strict) validateStrictGrouping(node)
+    if (names) node = resolveNames(node, names, hints, ambiguities)
     validateTop(node)
-    return { node }
+    if (canonical && ambiguities.length) throw new Error(ambiguities[0])
+    return { node, hints }
   } catch (e) {
-    return { node: null, error: e instanceof Error ? e.message : String(e) }
+    return { node: null, error: e instanceof Error ? e.message : String(e), hints }
   }
+}
+
+function resolveNames(node: FilterNode, names: FilterNames, hints: string[], ambiguities: string[]): FilterNode {
+  const field = node.field
+  if (node.kind === "field" && (field === "cat" || field === "tag" || field === "acc")) {
+    const value = node.value ?? ""
+    const exact = names[field].find((name) => eqFold(name, value))
+    if (exact !== undefined) return { ...node, value: exact }
+    const needle = squash(value)
+    let matches = names[field].filter((name) => squash(name).startsWith(needle))
+    if (!matches.length) matches = names[field].filter((name) => squash(name).includes(needle))
+    if (matches.length === 1) {
+      hints.push(`${field}:${value} means ${matches[0]}`)
+      return { ...node, value: matches[0] }
+    }
+    if (!matches.length) {
+      const label = field === "cat" ? "category" : field === "acc" ? "account" : "tag"
+      const message = `no ${label} matches ${value}`
+      hints.push(message)
+      ambiguities.push(message)
+      return node
+    }
+    const list = `${matches.slice(0, -1).join(", ")} or ${matches.at(-1)}`
+    const message = `${field}:${value} could be ${list}`
+    hints.push(`${message}: finding either`)
+    ambiguities.push(`${message}: write one in full`)
+    return { kind: "or", grouped: node.grouped, children: matches.map((value) => ({ ...node, value })) }
+  }
+  return node.children ? { ...node, children: node.children.map((child) => resolveNames(child, names, hints, ambiguities)) } : node
 }
 
 export function fallbackPlainTextFilter(input: string): FilterNode | null {
@@ -104,20 +161,39 @@ export function filterContainsFieldPredicate(node: FilterNode | null): boolean {
   return (node.children ?? []).some(filterContainsFieldPredicate)
 }
 
+export interface FilterNote { text: string; tone: "error" | "warn" | "muted" }
+
+/**
+ * What the search bar says beside its dot: why the input doesn't parse
+ * (searched as one phrase), else what saving it would refuse (with the
+ * live reading of an ambiguous name: "finding either"), else, when
+ * something was forgiven or guessed, the full form it reads as.
+ */
+export function filterNote(input: string, err: string, hints: string[], names?: FilterNames): FilterNote | null {
+  if (!input.trim()) return null
+  if (err) return { text: `${err}: searching it as one phrase`, tone: "error" }
+  const full = canonicalFilter(input, names)
+  if (full.error) {
+    const live = hints.find((hint) => full.error!.startsWith(hint.replace(/: finding either$/, "")))
+    return { text: live ?? full.error, tone: "warn" }
+  }
+  return hints.length && full.text ? { text: `→ ${full.text}`, tone: "muted" } : null
+}
+
 /** Live reparse: permissive + metadata bare words + fallback. */
-export function reparseFilterInput(input: string): {
+export function reparseFilterInput(input: string, names?: FilterNames): {
   expr: FilterNode | null
   err: string
+  hints: string[]
 } {
-  if (!input.trim()) return { expr: null, err: "" }
-  const { node, error } = parseFilter(input)
-  if (error || !node) {
-    return { expr: fallbackPlainTextFilter(input), err: error ?? "parse error" }
+  const { node, error, hints } = parseFilter(input, names)
+  if (error) {
+    return { expr: fallbackPlainTextFilter(input), err: error, hints }
   }
   if (!filterContainsFieldPredicate(node)) {
-    return { expr: markTextNodesAsMetadata(node), err: "" }
+    return { expr: markTextNodesAsMetadata(node), err: "", hints }
   }
-  return { expr: node, err: "" }
+  return { expr: node, err: "", hints }
 }
 
 /** Jev's verdict on whether a row matches an `ask:` term's words; undefined
@@ -246,7 +322,7 @@ function evalField(node: FilterNode, t: FilterTxn): boolean {
     case "note":
       return textContains(t.notes, node.value ?? "")
     case "cat":
-      return eqFold(t.categoryName, node.value ?? "")
+      return eqFold(t.categoryName, node.value ?? "") || (!!t.categoryGroup && eqFold(t.categoryGroup, node.value ?? ""))
     case "acc":
       return eqFold(t.accountName, node.value ?? "")
     case "tag":
@@ -400,7 +476,55 @@ class Parser {
   constructor(
     readonly tokens: Tok[],
     readonly strict: boolean,
+    readonly input: string,
+    readonly hints: string[],
+    readonly ambiguities: string[],
   ) {}
+
+  ignoreTrailingOperators(): void {
+    while (this.tokens.length > 1) {
+      const tok = this.tokens[this.tokens.length - 2]!
+      if (tok.kind !== "and" && tok.kind !== "or" && tok.kind !== "not") break
+      // A keyword glued to an unknown colon belongs to that text term.
+      const before = this.tokens[this.tokens.length - 3]
+      if (before?.kind === "colon" && before.pos + 1 === tok.pos) break
+      this.tokens.splice(this.tokens.length - 2, 1)
+      this.hints.unshift(`ignoring the ${tok.text} at the end`)
+    }
+  }
+
+  isLooseOrAt(i: number): boolean {
+    if (this.strict) return false
+    const tok = this.tokens[i]
+    const before = this.tokens[i - 1]
+    const after = this.tokens[i + 1]
+    return tok?.kind === "word" && tok.text.toLowerCase() === "or"
+      && !!before && (before.kind === "word" || before.kind === "quoted" || before.kind === "rparen")
+      && !!after && canStartTerm(after.kind)
+  }
+
+  isDashAt(i: number): boolean {
+    const tok = this.tokens[i]
+    const next = this.tokens[i + 1]
+    return tok?.kind === "word" && (/^-\p{L}/u.test(tok.text)
+      || (tok.text === "-" && next?.pos === tok.pos + 1 && (next.kind === "quoted" || next.kind === "lparen")))
+  }
+
+  collectTextWord(): string {
+    const tok = this.consume()
+    if (this.peek().kind !== "colon") return tok.text
+    const suggestion = suggestField(tok.text)
+    if (suggestion) {
+      const message = `${tok.text}: isn't a field: did you mean ${suggestion}:?`
+      if (!this.strict) this.hints.push(message)
+      this.ambiguities.push(message)
+    }
+    // Keep a glued quoted token whole, including spaces inside its quotes.
+    const glued = this.input.slice(this.peek().pos).match(/^(?:[^\s()"]|"(?:\\.|[^"\\])*")*/)?.[0] ?? ""
+    const end = this.peek().pos + glued.length
+    while (this.peek().kind !== "eof" && this.peek().pos < end) this.consume()
+    return this.input.slice(tok.pos, end)
+  }
 
   peek(): Tok {
     return this.tokens[this.idx] ?? { kind: "eof", text: "", pos: 0 }
@@ -417,7 +541,8 @@ class Parser {
 
   parseOrExpr(): FilterNode {
     const children: FilterNode[] = [this.parseAndExpr()]
-    while (this.peek().kind === "or") {
+    while (this.peek().kind === "or" || this.isLooseOrAt(this.idx)) {
+      if (this.isLooseOrAt(this.idx)) this.hints.push(`reading ${this.peek().text} as OR`)
       this.consume()
       children.push(this.parseAndExpr())
     }
@@ -429,6 +554,7 @@ class Parser {
     const children: FilterNode[] = [this.parseUnary()]
     for (;;) {
       const tok = this.peek()
+      if (this.isLooseOrAt(this.idx)) break
       if (tok.kind === "and") {
         this.consume()
         children.push(this.parseUnary())
@@ -445,6 +571,13 @@ class Parser {
   }
 
   parseUnary(): FilterNode {
+    if (this.isDashAt(this.idx)) {
+      const tok = this.peek()
+      if (!this.strict) this.hints.push(`reading - at ${tok.pos + 1} as NOT`)
+      if (tok.text === "-") this.consume()
+      else this.tokens[this.idx] = { ...tok, text: tok.text.slice(1), pos: tok.pos + 1 }
+      return { kind: "not", children: [this.parseUnary()] }
+    }
     if (this.peek().kind === "not") {
       this.consume()
       return { kind: "not", children: [this.parseUnary()] }
@@ -457,10 +590,12 @@ class Parser {
     if (tok.kind === "lparen") {
       this.consume()
       const n = this.parseExpr()
-      if (this.peek().kind !== "rparen") {
-        throw new Error(`missing ')' at ${this.peek().pos + 1}`)
+      if (!this.strict && this.peek().kind === "eof") {
+        this.hints.push(`closing the ( at ${tok.pos + 1}`)
+      } else {
+        if (this.peek().kind !== "rparen") throw new Error(`missing ')' at ${this.peek().pos + 1}`)
+        this.consume()
       }
-      this.consume()
       n.grouped = true
       return n
     }
@@ -470,8 +605,7 @@ class Parser {
     }
     if (tok.kind === "word") {
       if (this.isFieldAt(this.idx)) return this.parseField()
-      const w = this.consume()
-      return { kind: "text", op: "contains", value: w.text }
+      return { kind: "text", op: "contains", value: this.collectTextWord() }
     }
     if (tok.kind === "eof") throw new Error("unexpected end of expression")
     throw new Error(`unexpected token ${JSON.stringify(tok.text)} at ${tok.pos + 1}`)
@@ -485,13 +619,13 @@ class Parser {
 
     if (field === "amt") {
       const raw = this.collectValue(field, false)
-      const n = parseAmountField(raw, fieldTok.pos)
+      const n = parseAmountField(raw, fieldTok.pos, this.strict ? [] : this.hints)
       n.field = field
       return n
     }
     if (field === "date") {
       const raw = this.collectValue(field, false)
-      const n = parseDateField(raw, fieldTok.pos)
+      const n = parseDateField(raw, fieldTok.pos, this.strict ? [] : this.hints)
       n.field = field
       return n
     }
@@ -523,19 +657,21 @@ class Parser {
     for (;;) {
       const tok = this.peek()
       if (tok.kind !== "word") break
-      if (words.length > 0 && this.isFieldAt(this.idx)) break
-      words.push(tok.text)
-      this.consume()
-      if (!allowMulti) break
-      const next = this.peek().kind
-      if (next === "eof" || next === "rparen" || next === "and" || next === "or") break
+      if (words.length > 0 && (this.isFieldAt(this.idx) || this.tokens[this.idx + 1]?.kind === "colon")) break
+      if (allowMulti && (this.isDashAt(this.idx) || this.isLooseOrAt(this.idx))) break
+      if (!allowMulti && words.length > 0) {
+        const value = words.join("")
+        if (!/^(<|>|<=|>=|=)$/.test(value) && !value.endsWith("..") && !tok.text.startsWith("..")) break
+      }
+      words.push(this.collectTextWord())
     }
     if (words.length === 0) {
       const tok = this.peek()
       if (tok.kind === "eof" || tok.kind === "rparen") throw new Error(`${field}: missing value`)
       throw new Error(`${field}: invalid value near ${JSON.stringify(tok.text)}`)
     }
-    return words.join(" ")
+    if (!this.strict && !allowMulti && words.length > 1) this.hints.push(`joining spaces in ${field}:${words.join(" ")}`)
+    return words.join(allowMulti ? " " : "")
   }
 
   isFieldAt(i: number): boolean {
@@ -556,6 +692,28 @@ export const FILTER_FIELDS = ["desc", "cat", "tag", "acc", "amt", "type", "note"
 
 function isField(v: string): boolean {
   return (FILTER_FIELDS as readonly string[]).includes(v)
+}
+
+function suggestField(word: string): string | undefined {
+  const value = word.toLowerCase()
+  // HTTP is ordinary colon text, though its edit distance from top is two.
+  if (value === "http") return undefined
+  const prefixes = FILTER_FIELDS.filter((field) => value.length >= 2 && field.startsWith(value))
+  if (prefixes.length === 1) return prefixes[0]
+  const distance = (field: string): number => {
+    let row = Array.from({ length: field.length + 1 }, (_, i) => i)
+    for (let i = 0; i < value.length; i++) {
+      const next = [i + 1]
+      for (let j = 0; j < field.length; j++) {
+        next.push(Math.min(next[j]! + 1, row[j + 1]! + 1, row[j]! + (value[i] === field[j] ? 0 : 1)))
+      }
+      row = next
+    }
+    return row[field.length]!
+  }
+  const ranked = FILTER_FIELDS.map((field) => ({ field, distance: distance(field) })).sort((a, b) => a.distance - b.distance)
+  const best = ranked[0]!
+  return best.distance <= (value.length >= 4 ? 2 : 1) ? best.field : undefined
 }
 
 function flatten(children: FilterNode[], kind: "and" | "or"): FilterNode[] {
@@ -637,7 +795,7 @@ function hasMixed(node: FilterNode): boolean {
   return false
 }
 
-function parseAmountField(raw: string, pos: number): FilterNode {
+function parseAmountField(raw: string, pos: number, hints: string[]): FilterNode {
   const v = raw.replace(/\s+/g, "").trim()
   if (!v) throw new Error(`amt: missing value at ${pos + 1}`)
   if (v.includes("..")) {
@@ -646,8 +804,8 @@ function parseAmountField(raw: string, pos: number): FilterNode {
     const lo = Number(a)
     const hi = Number(b)
     if (!Number.isFinite(lo) || !Number.isFinite(hi)) throw new Error("amt: invalid range number")
-    if (lo > hi) throw new Error("amt: range low > high")
-    return { kind: "field", op: "..", valueLo: String(lo), valueHi: String(hi) }
+    if (lo > hi) hints.push(`ordering amt:${raw} low..high`)
+    return { kind: "field", op: "..", valueLo: String(Math.min(lo, hi)), valueHi: String(Math.max(lo, hi)) }
   }
   for (const op of ["<=", ">=", "<", ">", "="] as const) {
     if (v.startsWith(op)) {
@@ -661,7 +819,7 @@ function parseAmountField(raw: string, pos: number): FilterNode {
   return { kind: "field", op: "=", value: String(n) }
 }
 
-function parseDateField(raw: string, pos: number): FilterNode {
+function parseDateField(raw: string, pos: number, hints: string[]): FilterNode {
   const v = raw.replace(/\s+/g, "").trim()
   if (!v) throw new Error(`date: missing value at ${pos + 1}`)
   if (v.includes("..")) {
@@ -671,7 +829,10 @@ function parseDateField(raw: string, pos: number): FilterNode {
     const hi = canonicalDateToken(b)
     const [loStart] = dateTokenBounds(lo)
     const [, hiEnd] = dateTokenBounds(hi)
-    if (hiEnd < loStart) throw new Error("date: range start is after end")
+    if (hiEnd < loStart) {
+      hints.push(`ordering date:${raw} low..high`)
+      return { kind: "field", op: "..", valueLo: hi, valueHi: lo }
+    }
     return { kind: "field", op: "..", valueLo: lo, valueHi: hi }
   }
   return { kind: "field", op: "=", value: canonicalDateToken(v) }
@@ -729,6 +890,21 @@ export function filterExprString(node: FilterNode | null): string {
   return renderNode(node, 0)
 }
 
+function renderCanonical(node: FilterNode): string {
+  if (node.kind === "text") return quoteIfNeeded(node.value ?? "", true)
+  if (node.kind === "field") return renderField(node, true)
+  if (node.kind === "not") {
+    const child = node.children?.[0]
+    if (!child) return ""
+    const text = renderCanonical(child)
+    return `NOT ${child.kind === "and" || child.kind === "or" ? `(${text})` : text}`
+  }
+  return (node.children ?? []).map((child) => {
+    const text = renderCanonical(child)
+    return (child.kind === "and" || child.kind === "or") && child.kind !== node.kind ? `(${text})` : text
+  }).join(node.kind === "and" ? " AND " : " OR ")
+}
+
 function prec(kind: FilterNodeKind): number {
   if (kind === "or") return 1
   if (kind === "and") return 2
@@ -771,7 +947,7 @@ function renderNode(node: FilterNode, parentPrec: number): string {
   return s
 }
 
-function renderField(node: FilterNode): string {
+function renderField(node: FilterNode, full = false): string {
   const field = (node.field ?? "").toLowerCase()
   if (node.op === "..") return `${field}:${node.valueLo}..${node.valueHi}`
   if (field === "amt") {
@@ -779,14 +955,14 @@ function renderField(node: FilterNode): string {
     return `amt:${node.op}${node.value}`
   }
   if (field === "desc" || field === "note" || field === "ask") {
-    return `${field}:${quoteIfNeeded(node.value ?? "")}`
+    return `${field}:${quoteIfNeeded(node.value ?? "", full)}`
   }
-  return `${field}:${quoteIfNeeded(node.value ?? "")}`
+  return `${field}:${quoteIfNeeded(node.value ?? "", full)}`
 }
 
-function quoteIfNeeded(v: string): string {
+function quoteIfNeeded(v: string, full = false): string {
   if (!v) return '""'
-  if (/[\s():]/.test(v) || v === "AND" || v === "OR" || v === "NOT") {
+  if (/[\s():]/.test(v) || /^-\p{L}/u.test(v) || /^(and|or|not)$/i.test(v) || (full && /["\\]/.test(v))) {
     return `"${v.replace(/\\/g, "\\\\").replace(/"/g, '\\"')}"`
   }
   return v

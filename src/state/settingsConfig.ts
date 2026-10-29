@@ -2,7 +2,7 @@ import { jaskmoneyHome } from "../storage/home"
 import { existsSync, mkdirSync, readFileSync } from "node:fs"
 import { dirname, join } from "node:path"
 import { writeJsonAtomic } from "../storage/json"
-import { filterExprString, parseFilterStrict } from "../domain/filter"
+import { canonicalFilter, type FilterNames } from "../domain/filter"
 import type { AccountSelection } from "../domain/accountTree"
 import { customRange, LOOKBACKS, PERIODS, type TimeframeState } from "../domain/timeframe"
 import type { ImportProfile, SavedFilter } from "../domain/types"
@@ -60,15 +60,17 @@ export function nextSavedFilterId(filters: SavedFilter[]): string {
   throw new Error("could not allocate a saved-filter ID")
 }
 
-export function validateSavedFilter(filter: SavedFilter, other: SavedFilter[] = []): SavedFilter {
+/** Saved in full (canonicalFilter): brackets, OR and NOT in capitals, full
+ * names when `names` are given; refused only when it has no one reading. */
+export function validateSavedFilter(filter: SavedFilter, other: SavedFilter[] = [], names?: FilterNames): SavedFilter {
   const id = normalizeSavedFilterId(filter.id)
   const name = filter.name.trim()
   if (!name) throw new Error("filter name is required")
   const expr = filter.expr.trim()
-  const { node, error } = parseFilterStrict(expr)
+  const { node, error, text } = canonicalFilter(expr, names)
   if (!node || error) throw new Error(error ?? "filter expression is required")
   if (other.some((f) => f.id.toLowerCase() === id)) throw new Error(`filter ID ${id} already exists`)
-  return { id, name, expr: filterExprString(node) }
+  return { id, name, expr: text }
 }
 
 export function validateImportProfile(profile: ImportProfile): ImportProfile {

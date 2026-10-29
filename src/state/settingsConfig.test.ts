@@ -14,7 +14,11 @@ describe("settings config", () => {
     expect(readFileSync(path, "utf8")).toContain('"version": 2')
     expect(nextSavedFilterId([{ id: "filter-1", name: "A", expr: "desc:a" }])).toBe("filter-2")
     expect(() => validateSavedFilter({ id: "bad id", name: "Bad", expr: "desc:x" })).toThrow("filter ID")
-    expect(() => validateSavedFilter({ id: "bad", name: "Bad", expr: "(desc:x OR cat:y" })).toThrow()
+    // Saved in full rather than refused (approved deviation, 2026-10-29); only what has no one reading is refused.
+    expect(validateSavedFilter({ id: "ok", name: "Ok", expr: "(desc:x OR cat:y" }).expr).toBe("desc:x OR cat:y")
+    expect(validateSavedFilter({ id: "ok", name: "Ok", expr: "a b OR c" }).expr).toBe("(a AND b) OR c")
+    expect(() => validateSavedFilter({ id: "bad", name: "Bad", expr: "catt:x" })).toThrow("did you mean cat:")
+    expect(() => validateSavedFilter({ id: "bad", name: "Bad", expr: "desc:x )" })).toThrow()
   })
 
   test("upgrades v1 profiles with the legacy ANZ date order", () => {

@@ -5,9 +5,11 @@ import { ASK_DEFAULT_DAYS } from "./ask"
  * (domain/filter): F1 in the search bar shows the brief version, `m` there
  * and the rule writer's guide (aiHistory FILTER_GUIDE) the full one, so
  * the two can't drift. What only the search bar has (top:, ask:, ?words,
- * names found by bare words, the fallback) is marked: a rule's guide leaves
- * it out. filterLanguage.test checks every example parses, and that each
- * gotcha's wrong input really reads differently from its fix.
+ * what it forgives, names found by bare words, the fallback) is marked: a
+ * rule's guide leaves it out, so the model writes the full form.
+ * filterLanguage.test checks every example parses, each forgiven input
+ * reads as it says, and each gotcha's wrong input really reads differently
+ * from its fix.
  */
 
 export interface Row {
@@ -19,6 +21,8 @@ export interface Row {
   searchOnly?: boolean
   /** Only in the search bar's version (a rule's says it differently). */
   ruleOnly?: boolean
+  /** What it reads as, in JQL (forgiven input). */
+  reads?: string
 }
 
 /** A mistake as people make it, what's wrong, and the input that works. */
@@ -53,9 +57,9 @@ export const JQL: Section[] = [
       { write: "\"uber eats\"", means: "this phrase, words together and in order", brief: true },
       { write: "desc:uber eats", means: "description contains the phrase (a value runs on)", brief: true },
       { write: "note:gift", means: "your own notes on the row contain it", brief: true },
-      { write: "cat:Groceries", means: "category is exactly this, not its subcategories", brief: true },
+      { write: "cat:Groceries", means: "this category, or a group and its subcategories", brief: true },
       { write: "tag:TRAVEL", means: "has this tag", brief: true },
-      { write: "acc:Spending", means: "account is exactly this", brief: true },
+      { write: "acc:Spending", means: "account is this", brief: true },
       { write: "type:spending", means: "spending, income, debit (out) or credit (in)", brief: true },
       { write: "amt:<-50", means: "amount, spent is negative: < > <= >= = or -50..-10", brief: true },
       { write: "date:2026-10", means: "a month, a day (2026-10-14), or a range with ..", brief: true },
@@ -69,60 +73,72 @@ export const JQL: Section[] = [
     aside: "NOT binds tightest, then AND (or a space), then OR",
     brief: true,
     blocks: [{ kind: "rows", rows: [
-      { write: "a b OR c", means: "reads as (a b) OR c", brief: true },
-      { write: "NOT a b", means: "reads as (NOT a) b", brief: true },
+      { write: "a b OR c", means: "reads as (a b) OR c", reads: "(a b) OR c", brief: true },
+      { write: "NOT a b", means: "reads as (NOT a) b", reads: "(NOT a) b", brief: true },
+    ] }],
+  },
+  {
+    title: "Forgiving",
+    aside: "as you type; saving writes it in full",
+    brief: true,
+    blocks: [{ kind: "rows", rows: [
+      { write: "kfc or mcdonalds", reads: "kfc OR mcdonalds", means: "reads as kfc OR mcdonalds", brief: true, searchOnly: true },
+      { write: "uber -eats", reads: "uber NOT eats", means: "reads as uber NOT eats", brief: true, searchOnly: true },
+      { write: "amt:< -50", reads: "amt:<-50", means: "reads as amt:<-50", brief: true, searchOnly: true },
+      { write: "cat:restaurants", reads: "cat:\"Restaurants & Cafes\"", means: "reads as cat:\"Restaurants & Cafes\", if one fits", brief: true, searchOnly: true },
+      { write: "12:30", reads: "\"12:30\"", means: "reads as \"12:30\": not a field, so text", brief: true, searchOnly: true },
+      { write: "amt:-10..-50", reads: "amt:-50..-10", means: "reads as amt:-50..-10: a range in either order", searchOnly: true },
+      { write: "date:2026-10-01 .. 2026-10-14", reads: "date:2026-10-01..2026-10-14", means: "spaces in a value read as none", searchOnly: true },
+      { write: "kfc OR", reads: "kfc", means: "a trailing AND, OR or NOT is left for you to finish", searchOnly: true },
+      { write: "(kfc OR mcdonalds", reads: "(kfc OR mcdonalds)", means: "a missing ) is closed", searchOnly: true },
+      { write: "cat:insurance", reads: "cat:\"Rates & Insurance\" OR cat:\"Car Insurance, Rego & Maintenance\"", means: "several names fit: any of them, and the bar says which", searchOnly: true },
+      { write: "catt:x", reads: "\"catt:x\"", means: "text, and the bar asks: did you mean cat:?", searchOnly: true },
     ] }],
   },
   {
     title: "How strict",
-    aside: "loose as you type, stricter on enter and on saving",
+    aside: "loose as you type, full on saving",
     brief: true,
     blocks: [{ kind: "rows", rows: [
       { write: "words only", means: "match descriptions, category and tag names", brief: true, searchOnly: true },
       { write: "add a field", means: "bare words then match only the description", brief: true, searchOnly: true },
-      { write: "as you type", means: "OR/NOT by precedence; unparsed input is a phrase", brief: true, searchOnly: true },
-      { write: "enter", means: "still searches, but flags what a rule won't take", brief: true, searchOnly: true },
-      { write: "save it", means: "must parse, with mixed AND and OR bracketed", brief: true },
+      { write: "enter", means: "flags an ambiguous name or a mistyped field", brief: true, searchOnly: true },
+      { write: "save it", means: "written in full: brackets, OR, NOT, full names", brief: true },
     ] }],
   },
   {
     title: "Gotchas",
     brief: true,
     blocks: [{ kind: "gotchas", rows: [
-      { write: "kfc or mcdonalds", fix: "kfc OR mcdonalds", means: "lowercase or is a word to find", brief: true },
-      { write: "-eats", fix: "NOT eats", means: "- isn't NOT; it's ignored", brief: true },
       { write: "cat:Groceries coffee", fix: "coffee cat:Groceries", means: "the value runs on", brief: true },
-      { write: "amt:< -50", fix: "amt:<-50", means: "amt: date: type: top: take one word", brief: true },
-      { write: "catt:x", fix: "cat:x", means: "not a field: the search becomes one phrase", brief: true, searchOnly: true },
-      { write: "catt:x", fix: "cat:x", means: "not a field: the filter doesn't parse", ruleOnly: true },
-      { write: "12:30", fix: "\"12:30\"", means: "a : outside a field needs quotes" },
-      { write: "date:2026-10-01 .. 2026-10-14", fix: "date:2026-10-01..2026-10-14", means: "a range is one word" },
-      { write: "amt:-10..-50", fix: "amt:-50..-10", means: "a range starts at its low end" },
-      { write: "a b OR c", fix: "(a b) OR c", means: "saved filters and rules bracket mixed AND/OR" },
+      { write: "desc:uber eats", fix: "uber eats", means: "one phrase; bare words are two", brief: true },
+      { write: "cat:insurance", fix: "cat:\"Rates & Insurance\"", means: "several names fit: saving asks for one" },
     ] }],
   },
   {
     title: "Grammar",
     blocks: [{ kind: "code", lines: [
       "query      = or_expr ;",
-      "or_expr    = and_expr { \"OR\" and_expr } ;",
-      "and_expr   = unary { [ \"AND\" ] unary } ;  (* side by side = AND *)",
-      "unary      = { \"NOT\" } primary ;",
-      "primary    = \"(\" or_expr \")\" | quoted | field_term | word ;",
+      "or_expr    = and_expr { ( \"OR\" | \"or\" ) and_expr } ;  (* or: typing *)",
+      "and_expr   = unary { [ \"AND\" ] unary } ;   (* side by side = AND *)",
+      "unary      = { \"NOT\" } [ \"-\" ] primary ;   (* -x: no space *)",
+      "primary    = \"(\" or_expr \")\" | quoted | field_term | text ;",
       "field_term = multi \":\" ( quoted | word { word } )",
-      "           | single \":\" ( quoted | word ) ;",
+      "           | single \":\" ( quoted | word { word } ) ;  (* joined *)",
       "multi      = \"desc\" | \"note\" | \"cat\" | \"tag\" | \"acc\" | \"ask\" ;",
-      "single     = \"amt\" | \"date\" | \"type\" | \"top\" ;  (* fields: any case *)",
-      "word       = { char but space ( ) : \" } ;  (* not AND, OR, NOT *)",
+      "single     = \"amt\" | \"date\" | \"type\" | \"top\" ;  (* any case *)",
+      "text       = word [ \":\" [ word ] ] ;    (* not a field: text *)",
+      "word       = { char but space ( ) : \" } ;  (* not AND OR NOT *)",
       "quoted     = '\"' { char | '\\\"' | '\\\\' } '\"' ;",
     ] }],
   },
   {
     title: "Reading",
     blocks: [
-      { kind: "text", text: "Spaces only separate. ( ) : and \" are tokens of their own, so cat : Groceries is cat:Groceries, and a : that doesn't follow a field name is an error unless it's inside quotes." },
-      { kind: "text", text: "AND, OR and NOT are operators only in capitals and standing alone; and, or, not and NOTE are words. NOT may repeat (NOT NOT a is a)." },
-      { kind: "text", text: "A word just before : is a field only if it's one of the ten names. A multi-word value (desc note cat tag acc ask) takes words until the next field, AND, OR, NOT, bracket or quoted text; several spaces read as one. amt, date, type and top take one word. Quoted text may escape \\\" and \\\\." },
+      { kind: "text", text: "Spaces only separate. ( ) : and \" are tokens of their own, so cat : Groceries is cat:Groceries. A word before : that isn't one of the ten fields is text with what's joined to it: 12:30, ref:ABC." },
+      { kind: "text", text: "AND, OR and NOT are operators in capitals, standing alone. A - joined to the start of a term is NOT (-eats, -cat:Takeaway, -\"uber eats\"); -50, a lone - and Coca-Cola are text. NOT may repeat (NOT NOT a is a)." },
+      { kind: "text", text: "In the search bar, a lowercase or between two terms is OR; at either end, or quoted, it's a word. A trailing AND, OR or NOT is left for you to finish, and a missing ) is closed.", searchOnly: true },
+      { kind: "text", text: "A multi-word value (desc note cat tag acc ask) takes words until the next field, AND, OR, NOT, a -term, a bracket or quoted text; several spaces read as one. amt, date, type and top take one value, which may be spaced: amt:< -50, date:a .. b. Quoted text may escape \\\" and \\\\." },
     ],
   },
   {
@@ -131,19 +147,20 @@ export const JQL: Section[] = [
       { write: "words, \"…\", desc:, note:", means: "contain the text, ignoring case, spaces and punctuation on both sides (desc:mcdonalds finds McDonald's); the letters stay in order, so a phrase must appear as one run. Text with no letters or digits is matched as written." },
       { write: "bare words", means: "search the description; with no field anywhere in the search, category and tag names too", searchOnly: true },
       { write: "bare words", means: "search the description", ruleOnly: true },
-      { write: "cat: tag: acc:", means: "equal the whole name, ignoring case. cat:Uncategorised is rows without a category; a group's name finds rows in the group itself, not in its subcategories." },
+      { write: "cat: tag: acc:", means: "equal the whole name, ignoring case; a group's name also finds its subcategories' rows. cat:Uncategorised is rows without a category." },
+      { write: "short names", means: "in the search bar, a name is found by its start, else by any part, when only one fits; several fitting find any of them", searchOnly: true },
       { write: "type:", means: "debit is any money out, credit any money in; spending is money out (or a refund back into a spending category) outside the income categories, income is money in an income category; neither counts transfers, excluded categories or IGNORE-tagged rows" },
-      { write: "amt:", means: "the signed amount (money out is negative): -12 or =-12 exactly; < > <= >= compare; lo..hi inclusive, low end first" },
-      { write: "date:", means: "the row's date: YYYY-MM-DD a day; YYYY-MM or YY-MM a whole month; a..b inclusive, each end a day or a month (2026-09..2026-10 is September to October)" },
+      { write: "amt:", means: "the signed amount (money out is negative): -12 or =-12 exactly; < > <= >= compare; lo..hi inclusive, either order" },
+      { write: "date:", means: "the row's date: YYYY-MM-DD a day; YYYY-MM or YY-MM a whole month; a..b inclusive, each end a day or a month (2026-09..2026-10 is September to October), either order" },
       { write: "top:N", means: "applied last: the N rows with the biggest amounts, money out or in, ties the newest; once, ANDed at the top level (not inside OR, NOT or brackets)", searchOnly: true },
       { write: "ask:words", means: "Jev judges whether each row is what someone searching for the words wants; a row it hasn't judged yet doesn't match", searchOnly: true },
     ] }],
   },
   {
-    title: "When it doesn't parse",
+    title: "Saving",
     blocks: [
-      { kind: "text", text: "In the search bar, input that doesn't parse is searched as one phrase, in descriptions and category and tag names, and the bar marks it parse, in red. Enter keeps that search and says why in the status line; it also flags AND and OR mixed without brackets (still searched by precedence).", searchOnly: true },
-      { kind: "text", text: "A saved filter or a rule must parse, and must bracket AND inside OR (or OR inside AND)." },
+      { kind: "text", text: "In the search bar, input that still doesn't parse is searched as one phrase, in descriptions and category and tag names, and the bar marks it parse, in red. Enter keeps the search; it flags what saving would refuse.", searchOnly: true },
+      { kind: "text", text: "A saved filter or a rule is stored in full: brackets around AND inside OR (and OR inside AND), OR and NOT in capitals, full names, ranges low to high. Saving refuses only what has no one reading: a name several fit, a name nothing fits, a mistyped field." },
     ],
   },
   {
@@ -152,6 +169,7 @@ export const JQL: Section[] = [
       { write: "uber NOT eats", means: "Uber, but not Uber Eats" },
       { write: "cat:\"Restaurants & Cafes\" date:2026-10", means: "a category, in October" },
       { write: "(cat:Groceries OR cat:Takeaway) amt:<-30", means: "either category, over $30 spent" },
+      { write: "cat:Home NOT cat:\"Rent & Mortgage\"", means: "the Home group, less rent" },
       { write: "note:gift date:2026-01..2026-06", means: "your notes say gift, January to June" },
       { write: "type:credit NOT cat:Salary", means: "money in that isn't pay" },
       { write: "type:spending date:2026-09 top:5", means: "September's 5 biggest", searchOnly: true },

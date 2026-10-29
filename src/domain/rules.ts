@@ -26,6 +26,7 @@ export interface DryRunReport extends RuleRunResult {
  * evaluation and the editors' live match counts. */
 export function filterRowNames(categories: Category[], tags: Tag[]) {
   const categoryNames = new Map(categories.map((category) => [category.id, category.name]))
+  const groupNames = new Map(categories.map((category) => [category.id, categoryNames.get(category.parentId ?? -1) ?? ""]))
   const tagNames = new Map(tags.map((tag) => [tag.id, tag.name]))
   const income = incomeCategoryIds(categories)
   return {
@@ -35,6 +36,8 @@ export function filterRowNames(categories: Category[], tags: Tag[]) {
       categoryId,
       income: categoryId != null && income.has(categoryId),
       categoryName: categoryNames.get(categoryId ?? -1) ?? "Uncategorised",
+      // cat: on a group takes in its subcategories.
+      categoryGroup: groupNames.get(categoryId ?? -1) ?? "",
       tagNames: [...tagIds].map((id) => tagNames.get(id)).filter((name): name is string => !!name),
     }),
   }
