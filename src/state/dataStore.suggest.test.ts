@@ -1,7 +1,7 @@
 import { SCHEMA_VERSION } from "../db/schema"
 import { expect, onTestFinished, spyOn, test } from "bun:test"
 import type { JevClient, JevQuestion } from "../ai/jev"
-import { deleteSuggestions, ensureSchema, loadSuggestions, saveSuggestions } from "../db/client"
+import { deleteSuggestions, ensureSchema, loadMerchantBreadth, loadMerchantNotes, saveMerchantNote, loadSuggestions, saveSuggestions } from "../db/client"
 import type { Transaction } from "../domain/types"
 import { account, category, transaction } from "../testing/fixtures"
 import { testDb, testEnv } from "../testing/scoped"
@@ -237,4 +237,132 @@ test("a run asks about each merchant once and lowers stored suggestions a market
   data.refresh()
   await data.suggestCategories(undefined, ai)
   expect(asked).toEqual([])
+})
+
+test("merchant notes reload, invalidate breadth, and re-suggest only that merchant's suggested waiting rows", async () => {
+  const { db, add } = setup()
+  add({ id: 1, description: "eBay" })
+  add({ id: 2, description: " EBAY " })
+  add({ id: 3, description: "Other" })
+  add({ id: 4, description: "eBay", categoryId: 100 })
+  add({ id: 5, description: "eBay" })
+  add({ id: 6, description: "eBay" })
+  saveMerchantNote(db, " Other ", "always groceries for me")
+  data.refresh()
+  expect(data.state.merchantNotes).toEqual({ other: "always groceries for me" })
+  const asked: JevQuestion[] = []
+  const suggested: JevQuestion[] = []
+  let pick = 100
+  const ai: Pick<JevClient, "judge"> = { async judge(questions) {
+    const out: Awaited<ReturnType<JevClient["judge"]>> = {}
+    for (const [id, q] of Object.entries(questions)) {
+      if (typeof q.instructions === "object" && "merchant" in q.instructions) {
+        asked.push(q)
+        out[id] = { type: "noul", noul: 0.9 }
+      } else {
+        suggested.push(q)
+        out[id] = { type: "choice", choice: `c${pick}`, confidence: 0.9, probabilities: { [`c${pick}`]: 0.9 } }
+      }
+    }
+    return out
+  } }
+  await data.suggestCategories([1, 2, 3, 6], ai)
+  data.dismissSuggestions([6])
+  expect(asked).toHaveLength(2)
+  await data.suggestCategories([1, 2, 3], ai)
+  expect(asked).toHaveLength(2)
+  pick = 101
+  suggested.length = 0
+  const note = "varies: phone cases, homewares, gifts"
+  expect(await data.setMerchantNote(" EBAY ", ` ${note} `, ai)).toBe(2)
+  expect(data.state.merchantNotes).toEqual({ ebay: note, other: "always groceries for me" })
+  expect(loadMerchantNotes(db).get("ebay")).toBe(note)
+  expect(asked).toHaveLength(3)
+  expect(asked[2]?.instructions).toMatchObject({ merchant: { name: "eBay", note } })
+  expect(suggested).toHaveLength(2)
+  for (const q of suggested) expect(q.instructions).toMatchObject({ transaction: { merchant_note: note } })
+  expect(data.state.suggestions[1]?.categoryId).toBe(101)
+  expect(data.state.suggestions[2]?.categoryId).toBe(101)
+  expect(data.state.suggestions[3]?.categoryId).toBe(100)
+  expect(data.state.suggestions[5]).toBeUndefined()
+  expect(data.state.suggestions[6]).toBeUndefined()
+  expect(await data.setMerchantNote("eBay", "always groceries for me", ai)).toBe(2)
+  expect(asked).toHaveLength(4)
+  suggested.length = 0
+  expect(await data.setMerchantNote("eBay", "  ", ai)).toBe(2)
+  expect(asked).toHaveLength(5)
+  expect(JSON.stringify(asked[4])).not.toContain('"note"')
+  expect(JSON.stringify(suggested)).not.toContain("merchant_note")
+  expect(data.state.merchantNotes).toEqual({ other: "always groceries for me" })
+  expect(loadMerchantNotes(db).has("ebay")).toBe(false)
+  // Without Jev, save and clear the breadth cache but leave suggestions alone.
+  expect(await data.setMerchantNote("eBay", note)).toBe(0)
+  expect(loadMerchantBreadth(db).has("ebay")).toBe(false)
+  expect(data.state.merchantNotes.ebay).toBe(note)
+  expect(data.state.suggestions[1]?.categoryId).toBe(101)
+})
+
+test("setting a merchant note waits for a suggestion pass before invalidating its breadth", async () => {
+  const { db, add } = setup()
+  add({ id: 1, description: "eBay" })
+  data.refresh()
+  let release = () => {}
+  const gate = new Promise<void>((resolve) => { release = resolve })
+  let arrive = () => {}
+  const started = new Promise<void>((resolve) => { arrive = resolve })
+  const running = data.suggestCategories(undefined, { async judge(questions) {
+    arrive()
+    await gate
+    return Object.fromEntries(Object.entries(questions).map(([id, q]) => [id, q.type === "noul"
+      ? { type: "noul", noul: 0.9 }
+      : { type: "choice", choice: "c100", confidence: 0.9, probabilities: { c100: 0.9 } }]))
+  } })
+  await started
+  const seen: JevQuestion[] = []
+  const ai = fakeJev()
+  const later = data.setMerchantNote("eBay", "always groceries for me", { async judge(questions, state) {
+    seen.push(...Object.values(questions))
+    return ai.judge(questions, state)
+  } })
+  release()
+  await running
+  expect(await later).toBe(1)
+  expect(loadMerchantBreadth(db).has("ebay")).toBe(true)
+  expect(seen.filter((q) => typeof q.instructions === "object" && "merchant" in q.instructions)).toEqual([
+    expect.objectContaining({ instructions: expect.objectContaining({ merchant: { name: "eBay", note: "always groceries for me" } }) }),
+  ])
+  expect(data.state.suggestions[1]?.categoryId).toBe(101)
+  expect(data.state.suggesting).toBe(false)
+})
+
+
+test("a database swap reloads merchant notes and cancels a note change waiting for suggestions", async () => {
+  const { db, add } = setup()
+  add({ id: 1, description: "eBay" })
+  saveMerchantNote(db, "eBay", "original note")
+  data.refresh()
+  let release = () => {}
+  const gate = new Promise<void>((resolve) => { release = resolve })
+  let arrive = () => {}
+  const started = new Promise<void>((resolve) => { arrive = resolve })
+  const running = data.suggestCategories(undefined, fakeJev(async () => {
+    arrive()
+    await gate
+  }))
+  await started
+  const later = data.setMerchantNote("eBay", "replacement note", fakeJev())
+  try {
+    data.init(":memory:")
+    const next = data.getDb()!
+    onTestFinished(() => next.close())
+    expect(data.state.merchantNotes).toEqual({})
+    expect(data.state.suggestions).toEqual({})
+  } finally { release() }
+  await running
+  expect(await later).toBe(0)
+  expect(loadMerchantNotes(db).get("ebay")).toBe("original note")
+  expect(data.state.merchantNotes).toEqual({})
+  saveMerchantNote(data.getDb()!, "Cafe", "new database note")
+  data.refresh()
+  expect(data.state.merchantNotes).toEqual({ cafe: "new database note" })
 })

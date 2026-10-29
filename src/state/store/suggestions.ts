@@ -1,7 +1,7 @@
 import { unwrap } from "solid-js/store"
-import { saveSuggestions, loadMerchantBreadth, saveMerchantBreadth, loadDismissedSuggestionIds, deleteSuggestions, dismissSuggestionRows, undismissSuggestionRows, unrecordCategoryChoices } from "../../db/client"
+import { saveSuggestions, loadMerchantBreadth, saveMerchantBreadth, loadMerchantNotes, saveMerchantNote, loadDismissedSuggestionIds, deleteSuggestions, dismissSuggestionRows, undismissSuggestionRows, unrecordCategoryChoices } from "../../db/client"
 import { hasJev, JEV_SETUP, jevClient, type JevClient } from "../../ai/jev"
-import { askMerchantBreadth, capSuggestion, historySuggestions, jevSuggestions, merchantBreadth, suggestionCap, unaskedMerchants } from "../../domain/suggest"
+import { askMerchantBreadth, capSuggestion, historySuggestions, jevSuggestions, merchantKey, merchantBreadth, suggestionCap, unaskedMerchants } from "../../domain/suggest"
 import { isOrdinaryFlow, isUncategorised } from "../../domain/moneyRules"
 import type { Transaction } from "../../domain/types"
 import { askCandidates, ASK_DEFAULT_DAYS, ASK_LIMIT, judgeRows } from "../../domain/ask"
@@ -47,8 +47,10 @@ export function createSuggestions(ctx: StoreContext, deps: {
       // Which merchants' names don't say what was bought (eBay, Kmart): asked
       // once per name, then kept.
       const asked = loadMerchantBreadth(database)
+      const notes = loadMerchantNotes(database)
       const unasked = enabled ? unaskedMerchants(transactions(), asked) : []
       if (unasked.length) await askMerchantBreadth(ai ?? jevClient(), unasked, {
+        notes,
         onAnswers: (answers) => {
           if (ctx.db !== database) return
           saveMerchantBreadth(database, answers)
@@ -69,6 +71,7 @@ export function createSuggestions(ctx: StoreContext, deps: {
         if (remaining.length) await jevSuggestions(ai ?? jevClient(), remaining, state.categories, {
           history: transactions(),
           breadth,
+          notes,
           onSuggestion: (s) => {
             if (ctx.db !== database || !targetIds.has(s.transactionId)) return
             const current = transactions().find((t) => t.id === s.transactionId)
@@ -120,6 +123,22 @@ export function createSuggestions(ctx: StoreContext, deps: {
     const key = (t: Transaction) => t.description.trim().toLowerCase()
     const descriptions = new Set(transactions().filter((t) => selected.has(t.id)).map(key))
     const targets = transactions().filter((t) => !selected.has(t.id) && descriptions.has(key(t)) && isOrdinaryFlow(t) && isUncategorised(t) && state.suggestions[t.id]).map((t) => t.id)
+    if (!targets.length) return 0
+    return suggestCategories(targets, ai, { replace: true })
+  }
+
+  /** Save a merchant's note and replace its waiting rows' existing suggestions. */
+  async function setMerchantNote(description: string, note: string, ai?: Pick<JevClient, "judge">): Promise<number> {
+    const database = ctx.db
+    while (state.suggesting) {
+      await suggestionsFinished
+      if (ctx.db !== database) return 0
+    }
+    if (!database || ctx.db !== database) return 0
+    mutate((db) => saveMerchantNote(db, description, note))
+    if (!ai && !hasJev()) return 0
+    const key = merchantKey(description)
+    const targets = transactions().filter((t) => merchantKey(t.description) === key && isOrdinaryFlow(t) && isUncategorised(t) && state.suggestions[t.id]).map((t) => t.id)
     if (!targets.length) return 0
     return suggestCategories(targets, ai, { replace: true })
   }
@@ -224,5 +243,5 @@ export function createSuggestions(ctx: StoreContext, deps: {
     })
   }
 
-  return { suggestCategories, resuggestLike, askAbout, suggestTried, untriedWaiting, markTried, acceptSuggestions, dismissSuggestions }
+  return { suggestCategories, resuggestLike, setMerchantNote, askAbout, suggestTried, untriedWaiting, markTried, acceptSuggestions, dismissSuggestions }
 }

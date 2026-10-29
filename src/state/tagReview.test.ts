@@ -33,24 +33,36 @@ function setup() {
 /** A fake Jev: coffee rows 0.9, the rest 0.1; `sent` gets each row's description. */
 function fakeJev() {
   const sent: string[] = []
+  const states: unknown[] = []
   const ai: Pick<JevClient, "judge"> = { async judge(questions, state) {
     expect(state).toMatchObject({ tag: expect.any(String) })
+    states.push(state)
     const d = (q: JevQuestion) => (q.instructions as { transaction: { description: string } }).transaction.description
     sent.push(...Object.values(questions).map(d))
     return Object.fromEntries(Object.entries(questions).map(([id, q]) => [id, { type: "noul" as const, noul: /coffee/i.test(d(q)) ? 0.9 : 0.1 }]))
   } }
-  return { ai, sent }
+  return { ai, sent, states }
+}
+
+/** A Food category with rows 1–4 in it (row 5, the old one, stays uncategorised). */
+function food(db: ReturnType<typeof setup>["db"]): number {
+  const id = Number(db.query("INSERT INTO categories (name, color) VALUES ('Food', '#fff')").run().lastInsertRowid)
+  db.query("UPDATE transactions SET category_id = ? WHERE id <= 4").run(id)
+  data.refresh()
+  return id
 }
 const shown = () => data.scopedTransactions().map((t) => t.id)
 
-test("a tag's review: tag history first, Jev for the rest of its scope; y tags, x dismisses for the session, esc leaves", async () => {
-  setup()
-  const coffee = data.createSettingsTag({ name: "COFFEE", color: "#ffffff", scope: "date:2026-01-01..2026-12-31" })
+test("a tag's review: tag history first, Jev for the rest of its categories, told what it's about; y tags, x dismisses for the session, esc leaves", async () => {
+  const { db } = setup()
+  const categoryIds = [food(db)]
+  const coffee = data.createSettingsTag({ name: "COFFEE", color: "#ffffff", categoryIds, about: "coffee out, not beans" })
   await data.applyTagPatch([1], { [coffee]: "add" })
-  const { ai, sent } = fakeJev()
-  const summary = await data.openTagReview({ tagId: coffee, name: "COFFEE", scope: "date:2026-01-01..2026-12-31" }, ai)
-  // Row 1 has the tag; row 5 is outside the scope; neither is asked about.
+  const { ai, sent, states } = fakeJev()
+  const summary = await data.openTagReview({ tagId: coffee, name: "COFFEE", categoryIds, about: "coffee out, not beans" }, ai)
+  // Row 1 has the tag; row 5 isn't in Food; neither is asked about.
   expect(sent.sort()).toEqual(["Bunnings", "Click Coffee", "Hilltop Coffee"])
+  expect(states[0]).toMatchObject({ about: "coffee out, not beans" })
   expect(summary).toBe("COFFEE: 2 to review, 2 at 80% or more")
   // Most sure first; Bunnings (0.1) isn't shown.
   expect(shown().sort()).toEqual([2, 3])
@@ -58,7 +70,7 @@ test("a tag's review: tag history first, Jev for the rest of its scope; y tags, 
   // x: gone for the session, even after reopening.
   data.dismissTagCandidates([3])
   expect(shown()).toEqual([2])
-  await data.openTagReview({ tagId: coffee, name: "COFFEE", scope: "date:2026-01-01..2026-12-31" }, ai)
+  await data.openTagReview({ tagId: coffee, name: "COFFEE", categoryIds, about: null }, ai)
   expect(shown()).toEqual([2])
   // y: tagged, and out of the review.
   expect(await data.acceptTagCandidates([2])).toContain("+COFFEE")
@@ -69,16 +81,25 @@ test("a tag's review: tag history first, Jev for the rest of its scope; y tags, 
   expect(data.state.sortColumn).toBe("date")
 })
 
-test("a new tag is created on its first accept, with the scope it was found with", async () => {
+test("a trip's review looks within its dates whatever the tag's categories", async () => {
+  const { db } = setup()
+  const categoryIds = [food(db)]
+  const trip: TagGroup = { kind: "trip", name: "Lisbon Jan 2025", detail: "3 in person · 1 Jan 2025", rows: [], start: "2025-01-01", end: "2025-01-01" }
+  const { ai, sent } = fakeJev()
+  await data.openTagReview({ tagId: null, name: "LISBON 2025", categoryIds, about: null, group: trip }, ai)
+  expect(sent).toEqual(["Old Coffee"])
+})
+
+test("a new tag is created on its first accept, for any category", async () => {
   setup()
   const { ai } = fakeJev()
-  await data.openTagReview({ tagId: null, name: "Coffee runs", scope: "date:2026-09-01..2026-10-31" }, ai)
+  await data.openTagReview({ tagId: null, name: "Coffee runs", categoryIds: [], about: null }, ai)
   // Tag names are upper case: the review names it as it will be.
   expect(data.state.tagReview!.name).toBe("COFFEE RUNS")
   expect(data.state.tags.some((t) => t.name === "COFFEE RUNS")).toBe(false)
   await data.acceptTagCandidates([1])
   const tag = data.state.tags.find((t) => t.name === "COFFEE RUNS")!
-  expect(tag.scope).toBe("date:2026-09-01..2026-10-31")
+  expect({ categoryIds: [...tag.categoryIds], about: tag.about }).toEqual({ categoryIds: [], about: null })
   expect(data.state.tagReview!.tagId).toBe(tag.id)
 })
 
@@ -89,7 +110,7 @@ test("the chooser: your tags (a trip found for one), groups no tag covers, then 
   expect(groupForTag("SINGAPORE 2026", [trip])).toBe(trip)
   expect(groupForTag("SINGAPORE 2025", [trip])).toBeUndefined()
   expect(groupForTag("Japan", [trip])).toBeUndefined()
-  data.createSettingsTag({ name: "SINGAPORE 2026", color: "#fff", scope: null })
+  data.createSettingsTag({ name: "SINGAPORE 2026", color: "#fff", categoryIds: [], about: null })
   const choices = tagChoices(data.state.tags, [trip, subs], "")
   expect(choices.map((c) => c.kind === "tag" ? `tag ${c.tag.name}${c.group ? " +trip" : ""}` : c.kind === "group" ? `group ${c.group.name}` : `new ${c.name}`))
     .toEqual(["tag SINGAPORE 2026 +trip", "group Subscriptions"])
@@ -105,7 +126,7 @@ test("keys: T opens the chooser; in a review y/x/esc act on candidates and the f
   handleKey(ui, key("escape"), data)
   expect(ui.state.tagChooserOpen).toBe(false)
   const { ai } = fakeJev()
-  await data.openTagReview({ tagId: null, name: "Coffee", scope: null }, ai)
+  await data.openTagReview({ tagId: null, name: "Coffee", categoryIds: [], about: null }, ai)
   expect(footerHints("manager.txns", { focusedSection: "mgr.transactions", drillReturn: null, chartViews: [0, 4], tagReview: true }).slice(0, 3).map((h) => h.desc)).toEqual(["tag", "tag all ≥80%", "dismiss"])
   // No scope: all four coffee rows; x drops the cursor row.
   expect(shown()).toHaveLength(4)

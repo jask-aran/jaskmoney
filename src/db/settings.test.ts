@@ -2,6 +2,7 @@ import { SCHEMA_VERSION } from "./schema"
 import { describe, expect, test } from "bun:test"
 import { Database } from "bun:sqlite"
 import {
+  loadTags,
   createCategory,
   createRule,
   createTag,
@@ -112,10 +113,11 @@ describe("OpenTUI settings database", () => {
     const defaultCategory = db.query("SELECT id FROM categories WHERE is_default = 1").get() as { id: number }
     expect(() => deleteCategory(db, defaultCategory.id)).toThrow("default")
     const cat = createCategory(db, { name: "Disposable", color: "#ffffff" })
-    // A tag scope is an expression: deleting the category it names leaves it (it then matches nothing).
-    const tag = createTag(db, { name: " scoped ", color: "#ffffff", scope: "cat:Disposable" })
+    // Deleting a tag's category drops it from the tag; the tag stays.
+    const keep = createCategory(db, { name: "Kept", color: "#ffffff" })
+    const tag = createTag(db, { name: " scoped ", color: "#ffffff", categoryIds: [cat, keep] })
     deleteCategory(db, cat)
-    expect(db.query("SELECT scope FROM tags WHERE id = ?").get(tag)).toEqual({ scope: "cat:Disposable" })
+    expect(loadTags(db).find((t) => t.id === tag)).toMatchObject({ name: "SCOPED", categoryIds: [keep] })
     const ignore = db.query("SELECT id FROM tags WHERE name = 'IGNORE'").get() as { id: number }
     expect(() => deleteTag(db, ignore.id)).toThrow("mandatory")
     const first = createRule(db, { name: "one", savedFilterId: "filter-1", setCategoryId: null, addTagIds: [], enabled: true })

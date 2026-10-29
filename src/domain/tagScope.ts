@@ -1,23 +1,24 @@
-import { askTerms, evalFilter, parseFilterStrict, type FilterNode, type FilterTxn } from "./filter"
-import type { Tag } from "./types"
+import type { Category, Tag } from "./types"
 
 /**
- * A tag's scope: a filter expression for the rows it can go on (a trip's
- * dates, a category), or empty for anywhere. Not ask: (a scope is checked
- * on every row, offline). Returns the parsed node, or an error to show.
+ * A tag's scope: the categories it fits, a group covering those under it.
+ * A tag without categories fits anywhere.
  */
-export function parseTagScope(expr: string | null): { node: FilterNode | null; error?: string } {
-  if (!expr?.trim()) return { node: null }
-  const { node, error } = parseFilterStrict(expr)
-  if (error || !node) return { node: null, error: error ?? "empty expression" }
-  if (askTerms(node).length) return { node: null, error: "ask: can't be used in a tag scope" }
-  return { node }
+export function scopeCategoryIds(tag: Pick<Tag, "categoryIds">, categories: Category[]): Set<number> {
+  const ids = new Set(tag.categoryIds)
+  for (const c of categories) if (c.parentId != null && ids.has(c.parentId)) ids.add(c.id)
+  return ids
 }
 
-/** Whether `t` is in `tag`'s scope (always, for a tag without one; never,
- * for one whose scope no longer parses). */
-export function inTagScope(tag: Pick<Tag, "scope">, t: FilterTxn): boolean {
-  if (!tag.scope?.trim()) return true
-  const { node } = parseTagScope(tag.scope)
-  return !!node && evalFilter(node, t)
+/** Whether `t` is in `tag`'s scope (always, for a tag without categories). */
+export function tagCovers(tag: Pick<Tag, "categoryIds">, categories: Category[]): (t: { categoryId: number | null }) => boolean {
+  if (!tag.categoryIds.length) return () => true
+  const ids = scopeCategoryIds(tag, categories)
+  return (t) => t.categoryId != null && ids.has(t.categoryId)
+}
+
+/** The scope in words: "Holidays & Travel", "Restaurants & Cafes, Takeaway",
+ * "" for anywhere. */
+export function scopeText(tag: Pick<Tag, "categoryIds">, categories: Category[]): string {
+  return tag.categoryIds.map((id) => categories.find((c) => c.id === id)?.name).filter(Boolean).join(", ")
 }

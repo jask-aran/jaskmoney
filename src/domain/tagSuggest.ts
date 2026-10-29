@@ -3,21 +3,24 @@ import { judgeEach, type JevClient } from "../ai/jev"
 import { ASK_LIMIT } from "./ask"
 import { tagQuestion, tagState } from "./questions"
 import { tripWindow, type TagGroup } from "./tagGroups"
-import { inTagScope } from "./tagScope"
-import type { Transaction } from "./types"
+import { tagCovers } from "./tagScope"
+import type { Category, Transaction } from "./types"
 
 /**
  * Finding the transactions a tag belongs on. A target is an existing tag, a
  * tag a detected group would create (a trip, subscriptions), or a name just
- * typed. Candidates come only from the tag's scope and never include rows
- * already carrying it: a detected group's rows first, then rows sharing a
- * description with rows already tagged, then Jev's judgement of the rest.
+ * typed. Candidates come only from the tag's scope (a trip's: its dates)
+ * and never include rows already carrying it: a detected group's rows
+ * first, then rows sharing a description with rows already tagged, then
+ * Jev's judgement of the rest.
  */
 export interface TagTarget {
   /** The tag, when it exists. */
   tagId: number | null
   name: string
-  scope: string | null
+  /** The tag's categories (none: anywhere) and what it is for. */
+  categoryIds: number[]
+  about: string | null
   /** The detected group behind it, when there is one. */
   group?: TagGroup
 }
@@ -29,9 +32,13 @@ export interface TagCandidate {
   source: "group" | "history" | "jev"
 }
 
-/** Rows the tag could still go on: in its scope, not already tagged. */
-export function tagPool(target: TagTarget, transactions: Transaction[]): Transaction[] {
-  return transactions.filter((t) => (target.tagId == null || !t.tagIds.includes(target.tagId)) && inTagScope(target, t))
+/** Rows the tag could still go on, not already tagged: a trip's within its
+ * dates, whatever their category (its coffee and trains too); otherwise in
+ * the tag's categories. */
+export function tagPool(target: TagTarget, transactions: Transaction[], categories: Category[]): Transaction[] {
+  const dates = tripDates(target.group)
+  const inScope = dates ? (t: Transaction) => t.dateISO >= dates.from && t.dateISO <= dates.to : tagCovers(target, categories)
+  return transactions.filter((t) => (target.tagId == null || !t.tagIds.includes(target.tagId)) && inScope(t))
 }
 
 const key = (t: Transaction) => t.description.trim().toLowerCase()
@@ -55,8 +62,8 @@ export function tagExamples(target: TagTarget, transactions: Transaction[], limi
  * whose description the tag is already on: share tagged × n / (n + 1), so
  * one tagged row of one is 0.5 and three of three 0.75. In the pool only.
  */
-export function knownTagCandidates(target: TagTarget, transactions: Transaction[]): TagCandidate[] {
-  const pool = new Set(tagPool(target, transactions).map((t) => t.id))
+export function knownTagCandidates(target: TagTarget, transactions: Transaction[], categories: Category[]): TagCandidate[] {
+  const pool = new Set(tagPool(target, transactions, categories).map((t) => t.id))
   const out = new Map<number, TagCandidate>()
   for (const row of target.group?.rows ?? []) {
     if (pool.has(row.id)) out.set(row.id, { transactionId: row.id, confidence: row.confidence, source: "group" })
@@ -91,7 +98,7 @@ export async function jevTagCandidates(
   options: { onCandidates?: (candidates: TagCandidate[]) => void; onError?: (error: unknown) => void; active?: () => boolean } = {},
 ): Promise<void> {
   const newest = [...rows].sort(newestFirst).slice(0, ASK_LIMIT)
-  const about = groupAbout(target.group)
+  const about = [target.about?.trim(), groupAbout(target.group)].filter(Boolean).join("; ")
   await judgeEach(jev, newest, (t) => tagQuestion(t, examples.length > 0, !!about), tagState(target.name, examples, about), {
     active: options.active,
     onAnswers: (answers) => {
@@ -114,12 +121,11 @@ function groupAbout(group?: TagGroup): string | undefined {
 /** Candidates below this aren't shown (Jev's unsure middle and below). */
 export const TAG_SHOW_AT = 0.5
 
-/** A trip's scope: its dates, from 3 days before to 14 after (bookings
- * abroad, refunds), as detectTrips gathers its rows. */
-export function tripScope(group: TagGroup): string | null {
-  if (group.kind !== "trip" || !group.start || !group.end) return null
-  const { from, to } = tripWindow(group.start, group.end)
-  return `date:${from}..${to}`
+/** A trip's dates, from 3 days before to 14 after (bookings abroad,
+ * refunds), as detectTrips gathers its rows; null for anything else. */
+export function tripDates(group?: TagGroup): { from: string; to: string } | null {
+  if (group?.kind !== "trip" || !group.start || !group.end) return null
+  return tripWindow(group.start, group.end)
 }
 
 /** Letters and digits, lower-case: "SINGAPORE 2026" → "singapore2026". */

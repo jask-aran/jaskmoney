@@ -52,12 +52,12 @@ test("each categorisation is logged with how and when; one Up refuses isn't", as
 
 test("tag changes are logged by how; Up rows go in one batch, several at a time", async () => {
   const { db, rows, seen } = setup()
-  const trip = data.createSettingsTag({ name: "Trip", color: "#fff", scope: null })
+  const trip = data.createSettingsTag({ name: "Trip", color: "#fff", categoryIds: [], about: null })
   const ok = rows.slice(0, 5)
   expect(await data.applyTagPatch(ok, { [trip]: "add" })).toBe("Tags: +TRIP on 5 · 5 updated in Up")
   expect(seen.most).toBeGreaterThan(1)
   await data.applyTagPatch([rows[0]!], { [trip]: "remove" })
-  await data.openTagReview({ tagId: trip, name: "TRIP", scope: null }, { judge: async (qs) => Object.fromEntries(Object.keys(qs).map((id) => [id, { type: "noul" as const, noul: 0.9 }])) })
+  await data.openTagReview({ tagId: trip, name: "TRIP", categoryIds: [], about: null }, { judge: async (qs) => Object.fromEntries(Object.keys(qs).map((id) => [id, { type: "noul" as const, noul: 0.9 }])) })
   await data.acceptTagCandidates([rows[0]!])
   const log = loadTagLog(db).map(({ transactionId, added, how }) => `${transactionId} ${added ? "+" : "-"} ${how}`)
   expect(log.slice(0, 2)).toEqual([`${rows[0]} + review`, `${rows[0]} - picker`])

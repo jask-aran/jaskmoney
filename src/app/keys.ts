@@ -10,7 +10,6 @@ import { batch } from "solid-js"
 import { accountRole } from "../domain/types"
 import { accountRows, accountStacks, spendingScope, type AccountSelection } from "../domain/accountTree"
 import { assignableCategories, pickerSuggestions } from "../domain/categoryOptions"
-import { parseTagScope } from "../domain/tagScope"
 import { tagChoices } from "../state/tagChooser"
 import { RULE_AFTER } from "../domain/ruleOffers"
 import { endTagReview, runTagAccept, startTagReview } from "./tagReview"
@@ -309,7 +308,7 @@ function handleJump(ui: UiStore, key: KeyEvent, data?: DataStore): void {
 
 function handleTagPicker(ui: UiStore, key: KeyEvent, data?: DataStore): void {
   if (ui.state.tagPickerApplying) return
-  const items = pickerChoices(tagPickerItems(data?.state.tags ?? [], data?.transactions() ?? [], ui.state.pickerTargets, ui.state.tagPickerQuery))
+  const items = pickerChoices(tagPickerItems(data?.state.tags ?? [], data?.state.categories ?? [], data?.transactions() ?? [], ui.state.pickerTargets, ui.state.tagPickerQuery))
   queryPickerKey(key, { query: ui.state.tagPickerQuery, cursor: ui.state.tagPickerCursor }, items.length, {
     close: () => { ui.closeTagPicker(); ui.setStatus("Tags unchanged") },
     update: (next) => { ui.setState({ tagPickerQuery: next.query, tagPickerCursor: next.cursor }) },
@@ -318,7 +317,7 @@ function handleTagPicker(ui: UiStore, key: KeyEvent, data?: DataStore): void {
       const patch = { ...ui.state.tagPickerPatch }
       try {
         if (items[ui.state.tagPickerCursor]?.value === null && data) {
-          const id = data.createSettingsTag({ name: ui.state.tagPickerQuery.trim(), color: theme.blue, scope: null })
+          const id = data.createSettingsTag({ name: ui.state.tagPickerQuery.trim(), color: theme.blue })
           patch[id] = "add"
           ui.setState({ tagPickerPatch: patch })
         }
@@ -604,9 +603,11 @@ function handleSettingsEditor(ui: UiStore, key: KeyEvent, data?: DataStore): voi
         const choice = choices[picker.cursor]
         if (!choice) return
         if (field.multi) {
-          // Multi-choice (rule tags): enter toggles; esc closes.
+          // Multi-choice (a rule's tags, a tag's categories): enter toggles; esc closes.
           const id = Number(choice.value)
-          ui.setState("settingsDraft", "addTagIds", draft.addTagIds.includes(id) ? draft.addTagIds.filter((t) => t !== id) : [...draft.addTagIds, id])
+          const multiKey = field.key as "addTagIds" | "categoryIds"
+          const ids = draft[multiKey]
+          ui.setState("settingsDraft", multiKey, ids.includes(id) ? ids.filter((t) => t !== id) : [...ids, id])
           return
         }
         ui.setState("settingsDraft", field.key as "scopeKey", choice.value as never)
@@ -639,11 +640,9 @@ function handleSettingsEditor(ui: UiStore, key: KeyEvent, data?: DataStore): voi
         if (ui.state.settingsEditId == null) data?.createSettingsCategory({ name: draft.name, color: draft.color, notSpending: draft.notSpending })
         else data?.updateSettingsCategory(Number(ui.state.settingsEditId), { name: draft.name, color: draft.color, notSpending: draft.notSpending })
       } else if (kind === "tag") {
-        const scope = draft.expr.trim()
-        const { error } = parseTagScope(scope)
-        if (error) throw new Error(`scope: ${error}`)
-        if (ui.state.settingsEditId == null) data?.createSettingsTag({ name: draft.name, color: draft.color, scope: scope || null })
-        else data?.updateSettingsTag(Number(ui.state.settingsEditId), { name: draft.name, color: draft.color, scope: scope || null })
+        const tag = { name: draft.name, color: draft.color, categoryIds: draft.categoryIds, about: draft.about.trim() || null }
+        if (ui.state.settingsEditId == null) data?.createSettingsTag(tag)
+        else data?.updateSettingsTag(Number(ui.state.settingsEditId), tag)
       } else if (kind === "budget") {
         const option = budgetScopeOptions(ctx.accounts, ctx.categories).find((o) => o.key === draft.scopeKey)
         const amount = Number(draft.amount.replace(/[$,\s]/g, ""))
@@ -836,12 +835,12 @@ function handleSettingsTaxonomy(ui: UiStore, key: KeyEvent, data?: DataStore): v
   const moved = listMove(key, cursor, items.length, list === "categories" ? ui.state.categoryVisible : ui.state.tagVisible)
   if (moved != null) { ui.moveSettingsList(list, moved - cursor, items.length); return }
   if (name === "a") {
-    ui.openSettingsEditor(list === "categories" ? "category" : "tag", null, { ...ui.state.settingsDraft, name: "", color: list === "categories" ? "#94e2d5" : "#89b4fa", expr: "", notSpending: false })
+    ui.openSettingsEditor(list === "categories" ? "category" : "tag", null, { ...ui.state.settingsDraft, name: "", color: list === "categories" ? "#94e2d5" : "#89b4fa", categoryIds: [], about: "", notSpending: false })
     return
   }
   if ((name === "return" || name === "enter") && items[cursor]) {
     const item = items[cursor]!
-    ui.openSettingsEditor(list === "categories" ? "category" : "tag", item.id, { ...ui.state.settingsDraft, name: item.name, color: item.color, expr: "scope" in item ? item.scope ?? "" : "", notSpending: "notSpending" in item ? item.notSpending : false })
+    ui.openSettingsEditor(list === "categories" ? "category" : "tag", item.id, { ...ui.state.settingsDraft, name: item.name, color: item.color, categoryIds: "categoryIds" in item ? [...item.categoryIds] : [], about: "about" in item ? item.about ?? "" : "", notSpending: "notSpending" in item ? item.notSpending : false })
     return
   }
   if (name === "delete" && items[cursor]) { confirmTwice(ui, data, { kind: list === "categories" ? "category" : "tag", id: items[cursor]!.id, label: items[cursor]!.name, with: "delete" }); return }

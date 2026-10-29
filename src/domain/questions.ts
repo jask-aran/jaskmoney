@@ -17,7 +17,7 @@ import type { Category, Transaction } from "./types"
 /** What Jev is shown about a transaction. `category` (when it has a real
  * one) and `earlier` (how rows with the same description were categorised,
  * as "Groceries ×3, Takeaway ×1") only where the question allows. */
-export function transactionFacts(t: Transaction, extra: { category?: boolean; earlier?: string } = {}): Record<string, string> {
+export function transactionFacts(t: Transaction, extra: { category?: boolean; earlier?: string; note?: string } = {}): Record<string, string> {
   return {
     description: t.description,
     amount: `${t.amount < 0 ? "-" : "+"}${formatMoney(Math.abs(t.amount))}`,
@@ -27,6 +27,7 @@ export function transactionFacts(t: Transaction, extra: { category?: boolean; ea
     ...(t.rawText && t.rawText !== t.description ? { bank_text: t.rawText } : {}),
     ...(extra.category && t.categoryId != null && t.categoryName && t.categoryName !== "Uncategorised" ? { category: t.categoryName } : {}),
     ...(extra.earlier ? { categorised_before: extra.earlier } : {}),
+    ...(extra.note ? { merchant_note: extra.note } : {}),
   }
 }
 
@@ -75,7 +76,7 @@ export function suggestionCriteria(suggestable: Category[], categories: Category
 /** Whether any option in `criteria` names examples (the question then says so). */
 const namesExamples = (criteria: Record<string, string>) => Object.values(criteria).some((v) => v.includes(" (e.g. "))
 
-export function suggestionQuestion(t: Transaction, criteria: Record<string, string>, earlier = ""): JevQuestion {
+export function suggestionQuestion(t: Transaction, criteria: Record<string, string>, earlier = "", note?: string): JevQuestion {
   return {
     type: "choice",
     instructions: {
@@ -83,8 +84,9 @@ export function suggestionQuestion(t: Transaction, criteria: Record<string, stri
         // Money in only: refunds belong with what was bought (said to every
         // row, it cost a point of accuracy on spending).
         + (t.amount > 0 ? " Money back for a purchase (a refund) belongs in the category of what was bought, not income." : "")
-        + (namesExamples(criteria) ? " Each category lists some of the account holder's own transactions in it." : ""),
-      transaction: transactionFacts(t, { earlier }),
+        + (namesExamples(criteria) ? " Each category lists some of the account holder's own transactions in it." : "")
+        + (note ? " `transaction.merchant_note` is what the account holder says about this merchant." : ""),
+      transaction: transactionFacts(t, { earlier, note }),
     },
     criteria,
   }
@@ -105,16 +107,16 @@ export const MERCHANT_STATE = "Shops and merchants on an Australian personal ban
  * through (Coles 0.77–0.93): "Does it sell many different kinds of goods?"
  * and "Could a purchase there belong in many spending categories?".
  */
-export function merchantBreadthQuestion(description: string, bankText: string | null): JevQuestion {
+export function merchantBreadthQuestion(description: string, bankText: string | null, note?: string): JevQuestion {
   return {
     type: "noul",
     instructions: {
-      question: "Does `merchant` sell a wide range of unrelated goods (such as electronics, homewares, clothing and toys), so a purchase there could be any of them?",
-      merchant: { name: description.trim(), ...(bankText && bankText !== description ? { bank_text: bankText } : {}) },
+      question: note ? "Going by `merchant.note`, does the account holder buy many different kinds of things at `merchant`, so one purchase there could be any of them?" : "Does `merchant` sell a wide range of unrelated goods (such as electronics, homewares, clothing and toys), so a purchase there could be any of them?",
+      merchant: { name: description.trim(), ...(bankText && bankText !== description ? { bank_text: bankText } : {}), ...(note ? { note } : {}) },
     },
     criteria: {
-      true: "A marketplace or a store selling many unrelated kinds of goods",
-      false: "A shop for one kind of thing, including a supermarket (groceries), a cafe, a petrol station or a service",
+      true: note ? "Their purchases there are of many unrelated kinds" : "A marketplace or a store selling many unrelated kinds of goods",
+      false: note ? "Their purchases there are nearly always one kind of thing" : "A shop for one kind of thing, including a supermarket (groceries), a cafe, a petrol station or a service",
     },
   }
 }

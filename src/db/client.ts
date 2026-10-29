@@ -21,6 +21,8 @@ import {
   RULE_TAG_DECLINES_SQL,
   MERCHANT_BREADTH_SQL,
   MERCHANT_NOTES_SQL,
+  TAG_CATEGORIES_SQL,
+  TAG_ABOUT_COLUMN,
   CATEGORY_SOURCE_COLUMN,
   CATEGORY_INCOME_COLUMN,
   CATEGORY_NOT_SPENDING_COLUMN,
@@ -125,6 +127,25 @@ const MIGRATIONS: Record<number, (db: Db) => void> = {
   27: (db) => db.exec(RULE_TAG_DECLINES_SQL),
   28: (db) => db.exec(MERCHANT_BREADTH_SQL),
   29: (db) => db.exec(MERCHANT_NOTES_SQL),
+  30: (db) => {
+    db.exec(TAG_CATEGORIES_SQL)
+    const columns = db.query<{ name: string }, []>("PRAGMA table_info(tags)").all().map((c) => c.name)
+    if (!columns.includes("about")) db.exec(`ALTER TABLE tags ADD COLUMN ${TAG_ABOUT_COLUMN}`)
+    // Each scope's cat: terms become its categories; a group's children,
+    // spelled out by v21, fold back into the group. Anything else (a trip's
+    // dates, other terms) is dropped: a trip is found by its dates at review.
+    const categories = db.query<{ id: number; name: string; parentId: number | null }, []>("SELECT id, name, parent_id AS parentId FROM categories").all()
+    const link = db.query("INSERT OR IGNORE INTO tag_categories (tag_id, category_id) VALUES (?, ?)")
+    for (const tag of db.query<{ id: number; scope: string }, []>("SELECT id, scope FROM tags WHERE TRIM(COALESCE(scope, '')) != ''").all()) {
+      const names = [...tag.scope.matchAll(/\bcat:(?:"([^"]+)"|([^\s()]+))/gi)].map((m) => (m[1] ?? m[2]!).toLowerCase())
+      const ids = new Set(names.flatMap((name) => categories.filter((c) => c.name.toLowerCase() === name).map((c) => c.id)))
+      for (const id of ids) {
+        const parent = categories.find((c) => c.id === id)?.parentId
+        if (parent == null || !ids.has(parent)) link.run(tag.id, id)
+      }
+    }
+    db.exec("UPDATE tags SET scope = NULL")
+  },
   24: (db) => db.exec(ACTIVITY_LOG_SQL),
   23: (db) => {
     db.exec(CATEGORY_CHOICES_SQL)
@@ -293,18 +314,18 @@ export function loadCategories(db: Db): Category[] {
 export function loadTags(db: Db): Tag[] {
   const rows = db
     .query(
-      `SELECT id, name, color, scope, sort_order AS sortOrder, ext_id AS extId
+      `SELECT id, name, color, NULLIF(TRIM(about), '') AS about, sort_order AS sortOrder, ext_id AS extId
        FROM tags ORDER BY sort_order, id`,
     )
-    .all() as Array<{
-    id: number
-    name: string
-    color: string
-    scope: string | null
-    sortOrder: number
-    extId: string | null
-  }>
-  return rows
+    .all() as Array<Omit<Tag, "categoryIds">>
+  const links = db.query<{ tagId: number; categoryId: number }, []>("SELECT tag_id AS tagId, category_id AS categoryId FROM tag_categories ORDER BY category_id").all()
+  return rows.map((r) => ({ ...r, categoryIds: links.filter((l) => l.tagId === r.id).map((l) => l.categoryId) }))
+}
+
+function setTagCategories(db: Db, id: number, categoryIds: number[]): void {
+  db.query("DELETE FROM tag_categories WHERE tag_id = ?").run(id)
+  const link = db.query("INSERT OR IGNORE INTO tag_categories (tag_id, category_id) VALUES (?, ?)")
+  for (const categoryId of categoryIds) link.run(id, categoryId)
 }
 
 export function loadRules(db: Db): Rule[] {
@@ -350,16 +371,28 @@ export function deleteCategory(db: Db, id: number): void {
   db.query(`DELETE FROM categories WHERE id = ?`).run(id)
 }
 
-export function createTag(db: Db, input: Pick<Tag, "name" | "color" | "scope">): number {
+export type TagInput = Pick<Tag, "name" | "color"> & Partial<Pick<Tag, "categoryIds" | "about">>
+
+/** A new tag; no categories or about, anywhere. */
+export function createTag(db: Db, input: TagInput): number {
   const name = input.name.trim().toUpperCase()
   if (!name) throw new Error("tag name is required")
-  return Number(db.query(`INSERT INTO tags (name, color, scope, sort_order) VALUES (?, ?, ?, ?)`).run(name, input.color, input.scope, nextOrder(db, "tags")).lastInsertRowid)
+  return db.transaction(() => {
+    const id = Number(db.query(`INSERT INTO tags (name, color, about, sort_order) VALUES (?, ?, ?, ?)`).run(name, input.color, input.about?.trim() || null, nextOrder(db, "tags")).lastInsertRowid)
+    setTagCategories(db, id, input.categoryIds ?? [])
+    return id
+  })()
 }
 
-export function updateTag(db: Db, id: number, input: Pick<Tag, "name" | "color" | "scope">): void {
+/** Categories and about are left as they are when omitted. */
+export function updateTag(db: Db, id: number, input: TagInput): void {
   const name = input.name.trim().toUpperCase()
   if (!name) throw new Error("tag name is required")
-  db.query(`UPDATE tags SET name = ?, color = ?, scope = ? WHERE id = ?`).run(name, input.color, input.scope, id)
+  db.transaction(() => {
+    db.query(`UPDATE tags SET name = ?, color = ? WHERE id = ?`).run(name, input.color, id)
+    if (input.about !== undefined) db.query(`UPDATE tags SET about = ? WHERE id = ?`).run(input.about?.trim() || null, id)
+    if (input.categoryIds) setTagCategories(db, id, input.categoryIds)
+  })()
 }
 
 export function deleteTag(db: Db, id: number): void {

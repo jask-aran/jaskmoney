@@ -7,7 +7,7 @@ import { ListPicker } from "./ListPicker"
 /** T: the tag to find transactions for: yours, groups found in the
  * history (trips, subscriptions), or a new name typed. */
 export function TagChooser() {
-  const items = createMemo(() => tagChooserItems(tagChoices(data.state.tags, data.tagGroups(), ui.state.tagChooserQuery), data.state.transactions))
+  const items = createMemo(() => tagChooserItems(tagChoices(data.state.tags, data.tagGroups(), ui.state.tagChooserQuery), data.state.transactions, data.state.categories))
   return (
     <Show when={ui.state.tagChooserOpen}>
       <ListPicker

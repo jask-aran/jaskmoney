@@ -39,7 +39,7 @@ export function createTagReview(ctx: StoreContext, deps: { applyTagPatch: Return
     if (target.tagId == null) target = { ...target, name: target.name.trim().toUpperCase() }
     const run = ++tagRun
     const dismissed = ctx.db ? loadTagDismissals(ctx.db, target.name) : new Set<number>()
-    const known = knownTagCandidates(target, transactions()).filter((c) => !dismissed.has(c.transactionId))
+    const known = knownTagCandidates(target, transactions(), state.categories).filter((c) => !dismissed.has(c.transactionId))
     setState({
       uncategorisedOnly: false, sortColumn: "confidence", sortAscending: false,
       tagReview: { ...target, candidates: Object.fromEntries(known.map((c) => [c.transactionId, c])), asking: true },
@@ -48,7 +48,7 @@ export function createTagReview(ctx: StoreContext, deps: { applyTagPatch: Return
     if (ai || hasJev()) {
       // The group's rows are settled; Jev weighs the rest of the scope.
       const settled = new Set(known.filter((c) => c.source === "group").map((c) => c.transactionId))
-      const rows = tagPool(target, transactions()).filter((t) => !settled.has(t.id) && !dismissed.has(t.id))
+      const rows = tagPool(target, transactions(), state.categories).filter((t) => !settled.has(t.id) && !dismissed.has(t.id))
       await jevTagCandidates(ai ?? jevClient(), target, rows, tagExamples(target, transactions()), {
         active: () => run === tagRun,
         onCandidates: (found) => {
@@ -71,8 +71,8 @@ export function createTagReview(ctx: StoreContext, deps: { applyTagPatch: Return
     return parts.join(" · ")
   }
 
-  /** Put the review's tag on the candidates among `ids` (creating the tag,
-   * with its scope, when it is new); they leave the review. */
+  /** Put the review's tag on the candidates among `ids` (creating the tag
+   * when it is new: anywhere, a trip's included); they leave the review. */
   async function acceptTagCandidates(ids: number[]): Promise<string> {
     const review = state.tagReview
     if (!review) return ""
@@ -80,7 +80,7 @@ export function createTagReview(ctx: StoreContext, deps: { applyTagPatch: Return
     if (!take.length) return "Nothing to tag"
     let tagId = review.tagId
     if (tagId == null) {
-      tagId = createSettingsTag({ name: review.name, color: NEW_TAG_COLOR, scope: review.scope })
+      tagId = createSettingsTag({ name: review.name, color: NEW_TAG_COLOR })
       setState("tagReview", "tagId", tagId)
     }
     const summary = await applyTagPatch(take, { [tagId]: "add" }, "review")

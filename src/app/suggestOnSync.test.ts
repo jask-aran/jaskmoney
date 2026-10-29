@@ -47,16 +47,16 @@ test("a dismissed suggestion stays dismissed: not loaded, not made again by i or
 test("a dismissed tag candidate stays dismissed for that tag, after a restart too", async () => {
   const { path } = setup()
   const ai = { judge: async (qs: Record<string, unknown>) => Object.fromEntries(Object.keys(qs).map((id) => [id, { type: "noul" as const, noul: 0.9 }])) }
-  await data.openTagReview({ tagId: null, name: "shop runs", scope: null }, ai)
+  await data.openTagReview({ tagId: null, name: "shop runs", categoryIds: [], about: null }, ai)
   expect(Object.keys(data.state.tagReview!.candidates)).toHaveLength(5)
   data.dismissTagCandidates([4])
   data.closeTagReview()
   data.init(path)
-  await data.openTagReview({ tagId: null, name: "SHOP RUNS", scope: null }, ai)
+  await data.openTagReview({ tagId: null, name: "SHOP RUNS", categoryIds: [], about: null }, ai)
   expect(data.state.tagReview!.candidates[4]).toBeUndefined()
   expect(Object.keys(data.state.tagReview!.candidates)).toHaveLength(4)
   // Another tag isn't affected.
-  await data.openTagReview({ tagId: null, name: "other", scope: null }, ai)
+  await data.openTagReview({ tagId: null, name: "other", categoryIds: [], about: null }, ai)
   expect(data.state.tagReview!.candidates[4]).toBeDefined()
   data.closeTagReview()
 })

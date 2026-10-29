@@ -32,8 +32,8 @@ test("ctrl+j / ctrl+k move in the category picker, tag picker and tag chooser, a
   expect(ui.state.catPickerQuery).toBe("")
   handleKey(ui, key("escape"), data)
 
-  data.createSettingsTag({ name: "AAA", color: "#fff", scope: null })
-  data.createSettingsTag({ name: "BBB", color: "#fff", scope: null })
+  data.createSettingsTag({ name: "AAA", color: "#fff", categoryIds: [], about: null })
+  data.createSettingsTag({ name: "BBB", color: "#fff", categoryIds: [], about: null })
   handleKey(ui, key("t"), data)
   handleKey(ui, ctrl("j"), data)
   expect(ui.state.tagPickerCursor).toBe(1)

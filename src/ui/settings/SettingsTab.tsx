@@ -18,7 +18,8 @@ import { parseFilterStrict } from "../../domain/filter"
 import { theme } from "../../theme"
 import { count, fit, truncate } from "../text"
 import { formatMoney } from "../../domain/dashboard"
-import { accountRole } from "../../domain/types"
+import { accountRole, type Category, type Tag } from "../../domain/types"
+import { scopeText } from "../../domain/tagScope"
 import { Modal } from "../primitives/Modal"
 import { categoryMark } from "../icons"
 import { Form } from "../primitives/Form"
@@ -34,11 +35,11 @@ function ListFooter(props: { top: number; visible: number; count: number }) {
  * (4) and the cursor marker (2). */
 const rowWidth = (width: number) => Math.max(10, width - 6)
 
-/** A tag's scope in words: "in Holidays & Travel" for one category, else
- * the filter itself. */
-function scopeText(scope: string): string {
-  const one = /^cat:(?:"([^"]+)"|(\S+))$/.exec(scope.trim())
-  return one ? `in ${one[1] ?? one[2]}` : scope
+/** A tag's scope in words: "in Holidays & Travel", "in Cafes, Takeaway",
+ * with "· about" when it says what it is for. */
+function tagNote(tag: Tag, categories: Category[]): string {
+  const scope = scopeText(tag, categories)
+  return [scope ? `in ${scope}` : "", tag.about ? "about" : ""].filter(Boolean).join(" · ")
 }
 
 function TaxonomyList(props: { kind: SettingsList; width: number }) {
@@ -73,7 +74,7 @@ function TaxonomyList(props: { kind: SettingsList; width: number }) {
   // as the longest note, so the name takes the rest.
   const width = () => props.width - 2
   const noteOf = (row: ReturnType<typeof rows>[number]) => {
-    if (props.kind === "tags") return scopeText((row as typeof data.state.tags[number]).scope ?? "")
+    if (props.kind === "tags") return tagNote(row as Tag, data.state.categories)
     const c = row as typeof data.state.categories[number]
     const parent = c.parentId != null && !underGroup().has(c.id) ? categories().find((p) => p.id === c.parentId)?.name : null
     return c.isDefault ? "default" : parent ? `in ${parent}` : c.income ? "income" : c.notSpending ? "not spending" : ""
@@ -438,7 +439,7 @@ export function EditorOverlay() {
                   items={pickerItems(kind(), field().key, ctx(), picker().query)}
                   cursor={picker().cursor}
                   query={picker().query}
-                  mark={field().multi ? (value) => (ui.state.settingsDraft.addTagIds.includes(Number(value)) ? "[x]" : "[ ]") : undefined}
+                  mark={field().multi ? (value) => (ui.state.settingsDraft[field().key as "addTagIds" | "categoryIds"].includes(Number(value)) ? "[x]" : "[ ]") : undefined}
                   iconFor={field().key === "categoryId" || field().key === "setCategoryId" ? (value) => (value == null ? undefined : categoryMark(Number(value))) : undefined}
                   hints={field().multi ? "↑↓ move · enter toggle · esc done" : "↑↓ move · enter choose · esc back"}
                 />

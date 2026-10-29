@@ -1,7 +1,8 @@
 import { fuzzyFilter } from "../domain/fuzzy"
 import type { TagGroup } from "../domain/tagGroups"
 import { groupForTag } from "../domain/tagSuggest"
-import type { Tag, Transaction } from "../domain/types"
+import { scopeText } from "../domain/tagScope"
+import type { Category, Tag, Transaction } from "../domain/types"
 import { theme } from "../theme"
 import type { PickerItem } from "./settingsForm"
 
@@ -34,7 +35,7 @@ export function tagChoices(tags: Tag[], groups: TagGroup[], query: string): TagC
 
 /** The chooser's rows: a heading per section, each choice with what it
  * holds (how many tagged, its scope, a trip found for it). */
-export function tagChooserItems(choices: TagChoice[], transactions: Transaction[]): PickerItem[] {
+export function tagChooserItems(choices: TagChoice[], transactions: Transaction[], categories: Category[]): PickerItem[] {
   const rows: PickerItem[] = []
   let section = ""
   choices.forEach((c, index) => {
@@ -43,7 +44,7 @@ export function tagChooserItems(choices: TagChoice[], transactions: Transaction[
     if (c.kind === "tag") {
       const tagged = transactions.filter((t) => t.tagIds.includes(c.tag.id)).length
       const found = c.group ? (c.group.kind === "trip" ? `trip found: ${c.group.detail.split(" · ").at(-1)}` : `${c.group.rows.length} regular payments`) : ""
-      rows.push({ kind: "item", label: c.tag.name, value: index, color: c.tag.color, detail: [`${tagged} tagged`, c.tag.scope ?? "", found].filter(Boolean).join(" · ") })
+      rows.push({ kind: "item", label: c.tag.name, value: index, color: c.tag.color, detail: [`${tagged} tagged`, scopeText(c.tag, categories), found].filter(Boolean).join(" · ") })
     } else if (c.kind === "group") {
       rows.push({ kind: "item", label: c.group.name, value: index, color: theme.teal, detail: c.group.detail })
     } else {

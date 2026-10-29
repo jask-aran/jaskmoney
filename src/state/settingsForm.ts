@@ -1,4 +1,4 @@
-import { parseTagScope } from "../domain/tagScope"
+import { tagCovers } from "../domain/tagScope"
 import { describeCycle, type CycleAnchor, type CycleConfig, type CycleUnit } from "../domain/budget"
 import { budgetScopeOptions } from "../domain/budgetScopes"
 import { appToday } from "../domain/days"
@@ -157,7 +157,8 @@ export function editorFields(kind: SettingsEditorKind, draft: Draft, ctx: Omit<F
       return [
         { key: "name", label: "Name", kind: "text", display: draft.name },
         { key: "color", label: "Colour", kind: "text", display: draft.color },
-        { key: "expr", label: "Scope", kind: "text", display: draft.expr },
+        { key: "categoryIds", label: "Categories", kind: "picker", multi: true, display: draft.categoryIds.map((id) => ctx.categories.find((c) => c.id === id)?.name).filter(Boolean).join(", ") || "any" },
+        { key: "about", label: "About", kind: "text", display: draft.about },
       ]
     case "filter":
       return [
@@ -221,13 +222,12 @@ export function editorNote(kind: SettingsEditorKind, draft: Draft, ctx: FormCont
     return { text: `ok · ${count} txns`, tone: "ok", dot: true }
   }
   if (kind === "tag") {
-    // A scope narrows where the tag can go: its count, or why it doesn't parse.
-    if (!draft.expr.trim()) return { text: "no scope: any transaction (e.g. cat:Takeaway, date:2026-05-19..2026-06-08)", tone: "muted" }
-    const { node, error } = parseTagScope(draft.expr)
-    if (error || !node) return { text: `invalid: ${error}`, tone: "error", dot: true }
-    const names = filterRowNames(ctx.categories, ctx.tags)
-    const count = ctx.transactions.filter((txn) => evalFilter(node, names.row(txn, txn.categoryId, txn.tagIds))).length
-    return { text: `ok · ${count} txns in scope`, tone: "ok", dot: true }
+    // Categories put the tag first in the picker for their rows; about is
+    // what Jev reads when finding its transactions (T).
+    const about = draft.about.trim() ? " · T reads About" : ""
+    if (!draft.categoryIds.length) return { text: `any category${about}`, tone: "muted" }
+    const count = ctx.transactions.filter(tagCovers({ categoryIds: draft.categoryIds }, ctx.categories)).length
+    return { text: `${count} txns in its categories${about}`, tone: "ok", dot: true }
   }
   if (kind !== "budget" && kind !== "cycle") return null
   const cycle = cycleFromDraft(draft)
@@ -275,6 +275,28 @@ export function pickerItems(kind: SettingsEditorKind, key: keyof Draft, ctx: Omi
   }
   if (key === "savedFilterId") {
     return ctx.savedFilters.filter((f) => match(f.name, f.id)).map((f) => ({ kind: "item", label: f.name, value: f.id }))
+  }
+  if (key === "categoryIds") {
+    // A group first under its heading ("All of Food": everything under it),
+    // then its categories; ungrouped ones under Other. Not Uncategorised.
+    // Typing: the matches alone, best first (a group by its own name).
+    const rows: PickerItem[] = []
+    const groupIds = new Set(ctx.categories.map((c) => c.parentId).filter((id): id is number => id != null))
+    const item = (c: Category, label = c.name): PickerItem => ({ kind: "item", label, value: c.id, color: c.color })
+    if (q) {
+      return ctx.categories.filter((c) => !c.isDefault).flatMap((c) => {
+        const score = fuzzyScore(q, c.name)
+        return score === null ? [] : [{ score, row: item(c, groupIds.has(c.id) ? `All of ${c.name}` : c.name) }]
+      }).sort((a, b) => b.score - a.score).map((m) => m.row)
+    }
+    for (const group of ctx.categories.filter((c) => groupIds.has(c.id))) {
+      const children = ctx.categories.filter((c) => c.parentId === group.id && match(c.name, group.name))
+      if (!children.length && !match(group.name)) continue
+      rows.push({ kind: "heading", label: group.name }, item(group, `All of ${group.name}`), ...children.map((c) => item(c)))
+    }
+    const others = ctx.categories.filter((c) => c.parentId == null && !groupIds.has(c.id) && !c.isDefault && match(c.name))
+    if (others.length) rows.push({ kind: "heading", label: "Other" }, ...others.map((c) => item(c)))
+    return rows
   }
   if (key === "addTagIds") {
     return ctx.tags.filter((t) => match(t.name)).map((t) => ({ kind: "item", label: t.name, value: t.id, color: t.color }))

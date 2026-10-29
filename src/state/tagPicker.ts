@@ -1,18 +1,18 @@
 import { fuzzyFilter } from "../domain/fuzzy"
-import { inTagScope } from "../domain/tagScope"
-import type { Tag, Transaction } from "../domain/types"
+import { tagCovers } from "../domain/tagScope"
+import type { Category, Tag, Transaction } from "../domain/types"
 import { theme } from "../theme"
 import type { PickerItem } from "./settingsForm"
 
 /**
- * The tag picker's rows, shared by its rendering and its keys: tags whose
- * scope takes a target transaction, then tags without a scope, then tags
- * scoped elsewhere (dimmed), each section fuzzy-filtered by `query`; then a
- * create row when the query names no existing tag.
+ * The tag picker's rows, shared by its rendering and its keys: tags for a
+ * target transaction's category, then tags without categories, then tags
+ * for other categories (dimmed), each section fuzzy-filtered by `query`;
+ * then a create row when the query names no existing tag.
  */
-export function tagPickerItems(tags: Tag[], transactions: Transaction[], targets: number[], query: string): PickerItem[] {
+export function tagPickerItems(tags: Tag[], categories: Category[], transactions: Transaction[], targets: number[], query: string): PickerItem[] {
   const targetRows = transactions.filter((t) => targets.includes(t.id))
-  const section = (t: Tag) => !t.scope?.trim() ? "Global" : targetRows.some((row) => inTagScope(t, row)) ? "Scoped" : "Out of scope"
+  const section = (t: Tag) => !t.categoryIds.length ? "Global" : targetRows.some(tagCovers(t, categories)) ? "Scoped" : "Out of scope"
   const rows: PickerItem[] = []
   for (const label of ["Scoped", "Global", "Out of scope"]) {
     const matches = fuzzyFilter(tags.filter((t) => section(t) === label), query.trim(), (t) => t.name)

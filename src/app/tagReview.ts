@@ -1,34 +1,26 @@
-import { inTagScope } from "../domain/tagScope"
-import { tripScope, type TagTarget } from "../domain/tagSuggest"
+import { tripDates, type TagTarget } from "../domain/tagSuggest"
 import type { DataStore } from "../state/dataStore"
 import type { TagChoice } from "../state/tagChooser"
 import type { UiStore } from "../state/uiStore"
 import { count } from "../ui/text"
 
 /**
- * Start finding transactions for a chosen tag. A trip found for an existing
- * tag whose scope leaves out the trip's rows (SINGAPORE 2026 scoped to
- * Holidays & Travel) takes the trip's dates as its scope, and says so.
+ * Start finding transactions for a chosen tag: in its categories, or for a
+ * trip found for it, within the trip's dates whatever the category (and the
+ * status says so).
  */
 export async function startTagReview(ui: UiStore, data: DataStore, choice: TagChoice): Promise<void> {
   let target: TagTarget
-  let note = ""
   if (choice.kind === "tag") {
     const { tag, group } = choice
-    let scope = tag.scope
-    const tripDates = group && tripScope(group)
-    const rows = data.transactions()
-    if (tripDates && group!.rows.some((r) => { const t = rows.find((x) => x.id === r.id); return t && !inTagScope(tag, t) })) {
-      data.updateSettingsTag(tag.id, { name: tag.name, color: tag.color, scope: tripDates })
-      note = ` · scope now ${tripDates}${tag.scope ? ` (was ${tag.scope})` : ""}`
-      scope = tripDates
-    }
-    target = { tagId: tag.id, name: tag.name, scope, ...(group ? { group } : {}) }
+    target = { tagId: tag.id, name: tag.name, categoryIds: tag.categoryIds, about: tag.about, ...(group ? { group } : {}) }
   } else if (choice.kind === "group") {
-    target = { tagId: null, name: choice.group.name, scope: tripScope(choice.group), group: choice.group }
+    target = { tagId: null, name: choice.group.name, categoryIds: [], about: null, group: choice.group }
   } else {
-    target = { tagId: null, name: choice.name, scope: null }
+    target = { tagId: null, name: choice.name, categoryIds: [], about: null }
   }
+  const dates = tripDates(target.group)
+  const note = dates && target.categoryIds.length ? ` · within the trip's dates, any category` : ""
   ui.clearSelection()
   ui.jumpManagerCursor(0, 0)
   ui.setStatus(`Finding transactions for ${target.name}…${note}`)

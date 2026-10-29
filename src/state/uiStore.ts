@@ -194,6 +194,8 @@ export interface UiState {
   formPicker: { query: string; cursor: number } | null
   settingsDraft: {
     name: string; color: string; categoryId: number | null; id: string; expr: string; savedFilterId: string; setCategoryId: number | null; addTagIds: number[]; notSpending: boolean
+    /** Tag editor: its categories and what it is for. */
+    categoryIds: number[]; about: string
     /** Budget editor: scope key (see budgetScopes.scopeKey) and amount text. */
     scopeKey: string; amount: string
     /** Cycle editor. */
@@ -394,7 +396,7 @@ function createUiStore() {
     settingsEditField: 0,
     settingsCaret: 0,
     formPicker: null,
-    settingsDraft: { name: "", color: "#94e2d5", categoryId: null, id: "", expr: "", savedFilterId: "", setCategoryId: null, addTagIds: [], notSpending: false, scopeKey: "overall", amount: "", unit: "month", anchor: "calendar", anchorDate: "", payEarly: false },
+    settingsDraft: { name: "", color: "#94e2d5", categoryId: null, id: "", expr: "", savedFilterId: "", setCategoryId: null, addTagIds: [], notSpending: false, categoryIds: [], about: "", scopeKey: "overall", amount: "", unit: "month", anchor: "calendar", anchorDate: "", payEarly: false },
     armed: null,
     databaseCursor: 0,
     accountActionCursor: 0,

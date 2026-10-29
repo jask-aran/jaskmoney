@@ -6,7 +6,7 @@
  * version fallback with an additive migration registry. v7 was the initial
  * partial OpenTUI port. */
 
-export const SCHEMA_VERSION = 29
+export const SCHEMA_VERSION = 30
 
 /** Columns shared by the fresh schema and the v9 migration. Rows imported from
  * CSV keep source = 'csv' and NULL external fields. */
@@ -249,6 +249,18 @@ CREATE TABLE IF NOT EXISTS merchant_notes (
 );
 `
 
+/** v30: a tag's scope is categories again (a group covers those under it),
+ * plus `about`, words Jev reads when finding its transactions. The v21
+ * expression column (tags.scope) is converted and left empty. */
+export const TAG_CATEGORIES_SQL = `
+CREATE TABLE IF NOT EXISTS tag_categories (
+  tag_id      INTEGER NOT NULL REFERENCES tags(id) ON DELETE CASCADE,
+  category_id INTEGER NOT NULL REFERENCES categories(id) ON DELETE CASCADE,
+  PRIMARY KEY (tag_id, category_id)
+);
+`
+export const TAG_ABOUT_COLUMN = "about TEXT"
+
 export const SYNC_SQL = `
 CREATE UNIQUE INDEX IF NOT EXISTS idx_accounts_external ON accounts(source, external_id) WHERE external_id IS NOT NULL;
 CREATE UNIQUE INDEX IF NOT EXISTS idx_transactions_external ON transactions(source, external_id) WHERE external_id IS NOT NULL;
@@ -357,6 +369,8 @@ ${TAG_PUSHES_SQL}
 ${RULE_TAG_DECLINES_SQL}
 ${MERCHANT_BREADTH_SQL}
 ${MERCHANT_NOTES_SQL}
+${TAG_CATEGORIES_SQL}
+ALTER TABLE tags ADD COLUMN ${TAG_ABOUT_COLUMN};
 `
 
 export const DEFAULT_CATEGORIES: { name: string; color: string; sortOrder: number; isDefault: number }[] = [

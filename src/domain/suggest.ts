@@ -71,8 +71,8 @@ export function unaskedMerchants(transactions: Transaction[], asked: ReadonlyMap
 /** Ask Jev whether each merchant's name says what was bought (one question
  * per name, packed into as few requests as fit). Answers arrive by request
  * through `onAnswers`; a failed request is reported and the rest carry on. */
-export async function askMerchantBreadth(jev: Pick<JevClient, "judge">, merchants: Transaction[], options: { onAnswers: (answers: Map<string, number>) => void; onError?: (error: unknown) => void }): Promise<void> {
-  await judgeEach(jev, merchants, (t) => merchantBreadthQuestion(t.description, t.rawText), MERCHANT_STATE, {
+export async function askMerchantBreadth(jev: Pick<JevClient, "judge">, merchants: Transaction[], options: { notes?: ReadonlyMap<string, string>; onAnswers: (answers: Map<string, number>) => void; onError?: (error: unknown) => void }): Promise<void> {
+  await judgeEach(jev, merchants, (t) => merchantBreadthQuestion(t.description, t.rawText, options.notes?.get(merchantKey(t.description))), MERCHANT_STATE, {
     onAnswers: (answers) => {
       const out = new Map<string, number>()
       for (const [t, answer] of answers) if (answer.type === "noul") out.set(merchantKey(t.description), answer.noul)
@@ -196,7 +196,7 @@ export async function jevSuggestions(
   jev: Pick<JevClient, "judge">,
   transactions: Transaction[],
   categories: Category[],
-  options: { history?: Transaction[]; breadth?: (description: string) => Breadth; onSuggestion?: (s: CategorySuggestion) => void; onError?: (transactionIds: number[], error: unknown) => void } = {},
+  options: { history?: Transaction[]; notes?: ReadonlyMap<string, string>; breadth?: (description: string) => Breadth; onSuggestion?: (s: CategorySuggestion) => void; onError?: (transactionIds: number[], error: unknown) => void } = {},
 ): Promise<CategorySuggestion[]> {
   const suggestable = suggestionCategories(categories)
   if (!suggestable.length || !transactions.length) return []
@@ -207,7 +207,7 @@ export async function jevSuggestions(
   // A marketplace's earlier categories say nothing about this purchase.
   const earlier = (t: Transaction) => options.breadth?.(t.description) === "mixed" ? "" : evidence(t).ranked.map((e) => `${names.get(e.categoryId)} ×${e.count}`).join(", ")
   const suggestions: CategorySuggestion[] = []
-  await judgeEach(jev, transactions, (t) => suggestionQuestion(t, criteria, earlier(t)), SUGGESTION_STATE, {
+  await judgeEach(jev, transactions, (t) => suggestionQuestion(t, criteria, earlier(t), options.notes?.get(merchantKey(t.description))), SUGGESTION_STATE, {
     onAnswers: (answers) => {
       for (const [t, answer] of answers) {
         if (answer.type !== "choice") continue

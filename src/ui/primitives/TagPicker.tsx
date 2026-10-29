@@ -6,7 +6,7 @@ import { ListPicker } from "./ListPicker"
 import { count } from "../text"
 
 export function TagPicker() {
-  const items = createMemo(() => tagPickerItems(data.state.tags, data.transactions(), ui.state.pickerTargets, ui.state.tagPickerQuery))
+  const items = createMemo(() => tagPickerItems(data.state.tags, data.state.categories, data.transactions(), ui.state.pickerTargets, ui.state.tagPickerQuery))
   const mark = (value: string | number | null) => {
     // The create row: a plus in the checkbox column.
     if (value === null) return " + "

@@ -22,7 +22,7 @@ test("a tag review shows each candidate's proposed tag in the Tags column, its c
   const jev: Pick<JevClient, "judge"> = { async judge(qs) {
     return Object.fromEntries(Object.entries(qs).map(([id, q]) => [id, { type: "noul" as const, noul: JSON.stringify(q).includes("Hilltop") ? 0.9 : 0.6 }]))
   } }
-  await data.openTagReview({ tagId: null, name: "coffee", scope: null }, jev)
+  await data.openTagReview({ tagId: null, name: "coffee", categoryIds: [], about: null }, jev)
   await rendered.renderOnce(); await rendered.flush()
   const frame = rendered.captureCharFrame()
   expect(frame).toContain("Transactions · tagging COFFEE")

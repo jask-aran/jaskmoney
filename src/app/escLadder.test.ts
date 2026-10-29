@@ -48,7 +48,7 @@ test("selection, then filter, then the Uncategorised view, one esc each", () => 
 test("tag review: the filter goes before the review", async () => {
   setup()
   const ai = { judge: async (qs: Record<string, unknown>) => Object.fromEntries(Object.keys(qs).map((id) => [id, { type: "noul" as const, noul: 0.9 }])) }
-  await data.openTagReview({ tagId: null, name: "Shopping", scope: null }, ai)
+  await data.openTagReview({ tagId: null, name: "Shopping", categoryIds: [], about: null }, ai)
   data.commitFilter("desc:shop")
   esc()
   expect(data.state.filterQuery).toBe("")

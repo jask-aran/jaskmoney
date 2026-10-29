@@ -23,7 +23,7 @@ function setup() {
   onTestFinished(() => data.init(":memory:"))
   const db = data.getDb()!
   db.query("INSERT INTO accounts (id, name, type, source) VALUES (100, 'Spending', 'debit', 'csv')").run()
-  const travel = data.createSettingsTag({ name: "TRAVEL", color: "#89b4fa", scope: null })
+  const travel = data.createSettingsTag({ name: "TRAVEL", color: "#89b4fa", categoryIds: [], about: null })
   const ignore = data.state.tags.find((t) => t.name === "IGNORE")!.id
   let n = 0
   const add = (description: string, tagged: boolean) => {

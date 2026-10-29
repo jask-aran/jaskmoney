@@ -70,12 +70,12 @@ test("undoing an accept puts the rows back waiting, with their suggestions; undo
 
 test("undo reverses tag changes from the picker and the tag review, and a tag review dismissal", async () => {
   const { row } = setup()
-  const trip = data.createSettingsTag({ name: "TRIP", color: "#fff", scope: null })
+  const trip = data.createSettingsTag({ name: "TRIP", color: "#fff", categoryIds: [], about: null })
   await data.applyTagPatch([1, 2], { [trip]: "add" })
   expect(await data.undo()).toStartWith("Undid: +TRIP on 2")
   expect(row(1).tagIds).toEqual([])
   const ai = { judge: async (qs: Record<string, unknown>) => Object.fromEntries(Object.keys(qs).map((id) => [id, { type: "noul" as const, noul: 0.9 }])) }
-  await data.openTagReview({ tagId: trip, name: "TRIP", scope: null }, ai)
+  await data.openTagReview({ tagId: trip, name: "TRIP", categoryIds: [], about: null }, ai)
   await data.acceptTagCandidates([3])
   expect(row(3).tagIds).toEqual([trip])
   expect(await data.undo()).toStartWith("Undid: +TRIP on 1")
@@ -121,7 +121,7 @@ test("u undoes in Transactions; esc still clears; the footer says u undo", async
 
 test(". repeats the last category or tag change on the cursor row or selection; the picker starts on the last category", async () => {
   const { food, fuel, row } = setup()
-  const trip = data.createSettingsTag({ name: "TRIP", color: "#fff", scope: null })
+  const trip = data.createSettingsTag({ name: "TRIP", color: "#fff", categoryIds: [], about: null })
   const at = (id: number) => ui.setState({ managerCursor: data.scopedTransactions().findIndex((t) => t.id === id), selectedIds: {} })
   // Nothing to repeat yet.
   at(1)

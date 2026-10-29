@@ -46,8 +46,13 @@ export interface Tag {
   id: number
   name: string
   color: string
-  /** Filter expression for the rows it can go on (no ask:); null = anywhere. */
-  scope: string | null
+  /** The categories it fits (a group covers those under it): its own come
+   * first in the tag picker, and finding its transactions looks there. None:
+   * anywhere. */
+  categoryIds: number[]
+  /** What the tag is for, in words: Jev reads it when finding its
+   * transactions. */
+  about: string | null
   sortOrder: number
   /** Provider tag id (Up: the tag name); null = local only. */
   extId: string | null

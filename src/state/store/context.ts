@@ -1,8 +1,8 @@
 import type { Setter } from "solid-js"
 import type { SetStoreFunction } from "solid-js/store"
-import type { Db } from "../../db/client"
+import type { Db, TagInput } from "../../db/client"
 import type { AskVerdict } from "../../domain/filter"
-import type { Rule, RuleRunResult, SavedFilter, Tag, Transaction } from "../../domain/types"
+import type { Rule, RuleRunResult, SavedFilter, Transaction } from "../../domain/types"
 import type { createUpClient } from "../../up/client"
 import type { DataState } from "../dataStore"
 
@@ -28,7 +28,7 @@ export interface StoreContext {
   askVerdict: AskVerdict<Transaction>
   accountScoped: () => Transaction[]
   inView: (t: Transaction) => boolean
-  createSettingsTag: (input: Pick<Tag, "name" | "color" | "scope">) => number
+  createSettingsTag: (input: TagInput) => number
   saveSavedFilter: (filter: SavedFilter, originalId?: string) => void
   createSettingsRule: (input: Omit<Rule, "id" | "sortOrder">) => number
   applyRules: (transactionIds?: number[], dryRun?: boolean) => RuleRunResult

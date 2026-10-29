@@ -1,3 +1,4 @@
+import type { TagInput } from "../db/client"
 import { chronological } from "../domain/chronology"
 import { createUpPush, categoryPush, operationSummary, type PushableRow } from "./store/upPush"
 import { createSuggestions } from "./store/suggestions"
@@ -18,6 +19,7 @@ import {
   loadTags,
   loadTransactions,
   loadSuggestions,
+  loadMerchantNotes,
   logCategories,
   logTags,
   openDb,
@@ -91,6 +93,7 @@ export interface DataState {
   /** The model is writing rules. */
   writingRules: boolean
   suggestions: Record<number, CategorySuggestion>
+  merchantNotes: Record<string, string>
   /** The Transactions table shows only ordinary uncategorised rows. */
   uncategorisedOnly: boolean
   /** Finding transactions for a tag: the table shows its candidates. */
@@ -240,6 +243,7 @@ function createDataStore() {
     aiRuleOffers: [],
     writingRules: false,
     suggestions: {},
+    merchantNotes: {},
     uncategorisedOnly: false,
     tagReview: null,
     apiKeys: loadApiKeys(),
@@ -284,6 +288,7 @@ function createDataStore() {
     const accountSelection = normaliseSelection(accounts, state.accountSelection)
     const syncAccounts = loadAccounts(db, { includeUnsynced: true }).filter((a) => a.source !== "csv")
     const dbInfo = loadDbInfo(db, state.dbPath || "default")
+    setState("merchantNotes", reconcile(Object.fromEntries(loadMerchantNotes(db))))
     setState("suggestions", reconcile(Object.fromEntries(loadSuggestions(db).map((s) => [s.transactionId, s]))))
     setState({
       ready: true,
@@ -569,7 +574,7 @@ function createDataStore() {
   const push = createUpPush(ctx, { ruleOfferNote: (ids) => ruleOfferNote(ids) })
   const { applyCategories, retryPendingCategories, retryPendingTags, categorizeTransactions, applyTagPatch } = push
   const suggestions = createSuggestions(ctx, { applyCategories, ruleOfferNote: (ids) => ruleOfferNote(ids) })
-  const { suggestCategories, resuggestLike, askAbout, suggestTried, untriedWaiting, markTried, acceptSuggestions, dismissSuggestions } = suggestions
+  const { suggestCategories, resuggestLike, setMerchantNote, askAbout, suggestTried, untriedWaiting, markTried, acceptSuggestions, dismissSuggestions } = suggestions
   const tagReview = createTagReview(ctx, { applyTagPatch })
   const { tagGroups, openTagReview, acceptTagCandidates, dismissTagCandidates, closeTagReview } = tagReview
   const { historyData, ruleOffersFor, allRuleOffers, askForRules, ruleOfferNote, makeOfferedRule, declineRuleOffer } = createRuleOffers(ctx, { retryPendingCategories, retryPendingTags, applyTagPatch })
@@ -586,11 +591,11 @@ function createDataStore() {
     mutate((db) => deleteCategory(db, id))
   }
 
-  function createSettingsTag(input: Pick<Tag, "name" | "color" | "scope">): number {
+  function createSettingsTag(input: TagInput): number {
     return mutate((db) => createTag(db, input))
   }
 
-  function updateSettingsTag(id: number, input: Pick<Tag, "name" | "color" | "scope">) {
+  function updateSettingsTag(id: number, input: TagInput) {
     mutate((db) => updateTag(db, id, input))
   }
 
@@ -852,6 +857,7 @@ function createDataStore() {
     askAbout,
     suggestCategories,
     resuggestLike,
+    setMerchantNote,
     retryPendingCategories,
     retryPendingTags,
     tagGroups,

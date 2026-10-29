@@ -1,3 +1,4 @@
+import { scopeText } from "./tagScope"
 import type { CategoryLogEntry, TagLogEntry } from "../db/client"
 import { askTerms, evalFilter, parseFilterStrict } from "./filter"
 import { isUncategorised } from "./moneyRules"
@@ -194,7 +195,7 @@ export function tagHistory(data: HistoryData, tagId: number, limits: { recent?: 
   const recent = data.tagLog.filter((e) => e.tagId === tagId && byId.has(e.transactionId)).slice(0, limits.recent ?? 25)
     .map((e) => ({ ...rowFacts(byId.get(e.transactionId)!), change: e.added ? "added" : "removed", how: e.how, at: e.at }))
   return {
-    tag: { name: tag.name, ...(tag.scope ? { scope: tag.scope } : {}), rows: inside.length },
+    tag: { name: tag.name, ...(tag.categoryIds.length ? { categories: scopeText(tag, data.categories) } : {}), ...(tag.about ? { about: tag.about } : {}), rows: inside.length },
     shared: sharedFacts(inside),
     recent_changes: recent,
     descriptions: descriptionGroups(inside, data.transactions, limits.descriptions ?? 30).map((g) => ({ ...g, waiting: g.rows - g.inside })),

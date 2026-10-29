@@ -20,7 +20,7 @@ function setup() {
   testEnv("JASKMONEY_UP_TOKEN", "test-pat")
   data.init(":memory:")
   const db = data.getDb()!
-  const tag = data.createSettingsTag({ name: "COFFEE", color: "#89b4fa", scope: null })
+  const tag = data.createSettingsTag({ name: "COFFEE", color: "#89b4fa", categoryIds: [], about: null })
   const ignore = data.state.tags.find((t) => t.name === "IGNORE")!.id
   const up = Number(db.query(`INSERT INTO transactions (date_raw, date_iso, amount, description, source, external_id, ext_tags)
     VALUES ('2026-01-01', '2026-01-01', -4, 'Cafe', 'up', 'remote-1', '[]')`).run().lastInsertRowid)
