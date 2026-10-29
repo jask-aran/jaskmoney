@@ -3,6 +3,7 @@ import { evalFilter, FILTER_FIELDS, filterExprString, notForRules, parseFilter, 
 import { filterGuide, JQL, JQL_EXAMPLE, type Gotcha, type Row } from "./filterLanguage"
 import { FILTER_GUIDE } from "./aiHistory"
 import { SEARCH_HELP, SEARCH_HELP_FULL, SEARCH_HELP_WIDTH } from "../state/searchHelp"
+import { data } from "../state/dataStore"
 
 const section = (title: string) => JQL.find((s) => s.title === title)!
 const rows = (title: string): Row[] => section(title).blocks.flatMap((b) => (b.kind === "rows" || b.kind === "gotchas" ? b.rows : []))
@@ -62,6 +63,19 @@ test("what the description claims about matching holds", () => {
   // A month, and a month-to-month range.
   expect(is("date:26-10")).toBe(true)
   expect(is("date:2026-09..2026-10")).toBe(true)
+  // The ladder: words alone match names too; a field narrows them to the
+  // description; mixed AND/OR is fine in the bar, refused when saved.
+  expect(evalFilter(reparseFilterInput("travel").expr, row({}))).toBe(true)
+  expect(evalFilter(reparseFilterInput("travel type:debit").expr, row({}))).toBe(false)
+  expect(reparseFilterInput("a b OR c").err).toBe("")
+  expect(parseFilterStrict("a b OR c").error).toBeDefined()
+  expect(reparseFilterInput("catt:x").expr).toMatchObject({ kind: "text", value: "catt:x" })
+  // Enter searches it anyway, and flags what a rule wouldn't take.
+  data.init(":memory:")
+  for (const loose of ["a b OR c", "catt:x"]) {
+    const result = data.commitFilter(loose)
+    expect({ loose, ok: result.ok, searching: data.state.filterExpr != null, flagged: !!data.state.filterErr }).toEqual({ loose, ok: false, searching: true, flagged: true })
+  }
   // Spaces around : don't matter.
   expect(read("cat : Takeaway")).toBe(read("cat:Takeaway"))
 })
@@ -79,7 +93,7 @@ test("the rule writer gets the full version, without what only the search bar ha
 test("F1's brief version fits a dialog; m's full version has all of it; both within the width", () => {
   const brief = text(SEARCH_HELP)
   const full = text(SEARCH_HELP_FULL)
-  expect(brief.length).toBeLessThanOrEqual(32)
+  expect(brief.length).toBeLessThanOrEqual(38)
   for (const line of [...brief, ...full]) expect(line.length).toBeLessThanOrEqual(SEARCH_HELP_WIDTH)
   const all = (lines: string[]) => lines.join(" ").replace(/\s+/g, " ")
   for (const r of [...rows("Terms"), ...rows("Precedence"), ...gotchas]) if (r.brief) expect(all(brief)).toContain(r.write)

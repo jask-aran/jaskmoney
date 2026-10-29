@@ -74,6 +74,18 @@ export const JQL: Section[] = [
     ] }],
   },
   {
+    title: "How strict",
+    aside: "loose as you type, stricter on enter and on saving",
+    brief: true,
+    blocks: [{ kind: "rows", rows: [
+      { write: "words only", means: "match descriptions, category and tag names", brief: true, searchOnly: true },
+      { write: "add a field", means: "bare words then match only the description", brief: true, searchOnly: true },
+      { write: "as you type", means: "OR/NOT by precedence; unparsed input is a phrase", brief: true, searchOnly: true },
+      { write: "enter", means: "still searches, but flags what a rule won't take", brief: true, searchOnly: true },
+      { write: "save it", means: "must parse, with mixed AND and OR bracketed", brief: true },
+    ] }],
+  },
+  {
     title: "Gotchas",
     brief: true,
     blocks: [{ kind: "gotchas", rows: [
@@ -130,7 +142,7 @@ export const JQL: Section[] = [
   {
     title: "When it doesn't parse",
     blocks: [
-      { kind: "text", text: "In the search bar, input that doesn't parse is searched as one phrase, in descriptions and category and tag names, and the bar marks it parse, in red.", searchOnly: true },
+      { kind: "text", text: "In the search bar, input that doesn't parse is searched as one phrase, in descriptions and category and tag names, and the bar marks it parse, in red. Enter keeps that search and says why in the status line; it also flags AND and OR mixed without brackets (still searched by precedence).", searchOnly: true },
       { kind: "text", text: "A saved filter or a rule must parse, and must bracket AND inside OR (or OR inside AND)." },
     ],
   },
