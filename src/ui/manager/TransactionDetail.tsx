@@ -1,4 +1,4 @@
-import { Show, createMemo, type JSX } from "solid-js"
+import { For, Show, createMemo, type JSX } from "solid-js"
 import { categoryMark } from "../icons"
 import { useTerminalDimensions } from "@opentui/solid"
 import { Modal } from "../primitives/Modal"
@@ -59,6 +59,10 @@ export function TransactionDetail() {
           {field("Bank text", <S fg={theme.text}>{detail()!.rawText!}</S>)}
         </Show>
         <Show when={detail()!.message}>{field("Message", <S fg={theme.text}>{detail()!.message!}</S>)}</Show>
+        {/* What its order emails say it bought (app/purchases), one item a line. */}
+        <Show when={row()!.bought?.length}>
+          <For each={row()!.bought!}>{(item, i) => field(i() === 0 ? "Bought" : "", <S fg={theme.text}>{item}</S>)}</For>
+        </Show>
         <Show when={detail()!.importFilename}>{field("Imported", <S fg={theme.text}>{detail()!.importFilename!}</S>)}</Show>
         <Show
           when={ui.state.detailNotesEditing}

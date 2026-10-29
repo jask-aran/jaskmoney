@@ -8,6 +8,7 @@ import { ui } from "./state/uiStore"
 import { testEnv } from "./testing/scoped"
 import { CREDENTIAL_NAMES } from "./ai/credentials"
 import { sources } from "./app/executorSource"
+import { purchaseSources } from "./app/purchases"
 
 const settingsDirectory = mkdtempSync(join(tmpdir(), "jaskmoney-test-"))
 // Every app credential and setting beside them, Up's token, and the keys
@@ -29,6 +30,9 @@ Object.assign(sources, {
   run: async () => { throw new Error("no Executor in tests") },
   signOut: () => {},
 })
+purchaseSources.signedIn = () => false
+purchaseSources.accounts = async () => { throw new Error("no Executor in tests") }
+purchaseSources.run = async () => { throw new Error("no Executor in tests") }
 
 beforeEach(() => {
   // A separate directory also isolates files beside settings, such as credentials.json.

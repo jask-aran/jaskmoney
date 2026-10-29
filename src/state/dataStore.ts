@@ -610,7 +610,7 @@ function createDataStore() {
   const push = createUpPush(ctx, { ruleOfferNote: (ids) => ruleOfferNote(ids) })
   const { applyCategories, retryPendingCategories, retryPendingTags, categorizeTransactions, applyTagPatch } = push
   const suggestions = createSuggestions(ctx, { applyCategories, ruleOfferNote: (ids) => ruleOfferNote(ids) })
-  const { suggestCategories, resuggestLike, setMerchantNote, askAbout, suggestTried, untriedWaiting, markTried, acceptSuggestions, dismissSuggestions } = suggestions
+  const { suggestCategories, resuggestLike, setMerchantNote, purchaseLookups, recordPurchases, askAbout, suggestTried, untriedWaiting, markTried, acceptSuggestions, dismissSuggestions } = suggestions
   const tagReview = createTagReview(ctx, { applyTagPatch })
   const { tagGroups, openTagReview, acceptTagCandidates, dismissTagCandidates, closeTagReview } = tagReview
   const { historyData, ruleOffersFor, allRuleOffers, askForRules, ruleOfferNote, makeOfferedRule, declineRuleOffer } = createRuleOffers(ctx, { retryPendingCategories, retryPendingTags, applyTagPatch })
@@ -896,6 +896,8 @@ function createDataStore() {
     suggestCategories,
     resuggestLike,
     setMerchantNote,
+    purchaseLookups,
+    recordPurchases,
     retryPendingCategories,
     retryPendingTags,
     tagGroups,

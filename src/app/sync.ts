@@ -1,6 +1,7 @@
 import { hasUpToken, UP_TOKEN_SETUP } from "../up/client"
 import type { DataStore } from "../state/dataStore"
 import { newSuggestionsNote, suggestNew } from "./suggest"
+import { lookUpPurchases, purchasesNote } from "./purchases"
 import type { UiStore } from "../state/uiStore"
 
 /** Background sync interval (startup sync runs immediately). */
@@ -23,8 +24,12 @@ export async function runSync(ui: UiStore, data: DataStore, { manual }: { manual
   }
   if (!syncConfigured()) {
     if (manual) ui.setStatus(UP_TOKEN_SETUP, true)
-    // Still suggest for waiting rows (CSV imports, or none suggested yet).
-    else { const n = await suggestNew(data); if (n) ui.setStatus(newSuggestionsNote(n).slice(3)) }
+    // Still look up purchases and suggest for waiting rows (CSV imports, or none suggested yet).
+    else {
+      const bought = purchasesNote(await lookUpPurchases(data))
+      const note = bought + newSuggestionsNote(await suggestNew(data))
+      if (note) ui.setStatus(note.slice(3))
+    }
     return
   }
   if (data.state.upSyncing) {
@@ -34,8 +39,10 @@ export async function runSync(ui: UiStore, data: DataStore, { manual }: { manual
   if (manual) ui.setStatus("Syncing…")
   try {
     const summary = await data.syncUp()
-    // New rows get suggestions now, so the Overview can say what's waiting.
-    const note = newSuggestionsNote(await suggestNew(data))
+    // New Amazon and eBay rows learn what they bought from your email
+    // first, then new rows get suggestions, so the Overview can say what's waiting.
+    const bought = purchasesNote(await lookUpPurchases(data))
+    const note = bought + newSuggestionsNote(await suggestNew(data))
     if (manual || note || !/^Up sync: 0 new, 0 updated, 0 pending removed/.test(summary)) ui.setStatus(summary + note)
   } catch (error) {
     ui.setStatus(error instanceof Error ? error.message : String(error), true)

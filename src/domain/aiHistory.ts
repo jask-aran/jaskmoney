@@ -33,7 +33,7 @@ export interface HistoryData {
  * advised: a stored rule's value then can't run into the next word. */
 export const FILTER_GUIDE = `JQL, the app's filter language (rules are written in it). The parser takes values unquoted, but in a rule quote any value with spaces: cat:"Rent & Mortgage".
 ${filterGuide()}
-Not testable in a filter (context only): bank_type, bank_text, paid, foreign_amount, message, direction, your_note.`
+Not testable in a filter (context only): bank_type, bank_text, bought, paid, foreign_amount, message, direction, your_note.`
 
 type Group<T> = { key: T; rows: number; share: number }
 

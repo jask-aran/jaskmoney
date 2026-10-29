@@ -61,6 +61,8 @@ export function rowFacts(t: Transaction, o: RowFactsOptions = {}): Record<string
     ...(t.transactionType ? { bank_type: t.transactionType } : {}),
     ...(t.message ? { message: t.message } : {}),
     ...(t.rawText && t.rawText !== t.description ? { bank_text: t.rawText } : {}),
+    // What the order emails say it bought (app/purchases): the items, a few at most.
+    ...(t.bought?.length ? { bought: t.bought.slice(0, 5).map((item) => item.slice(0, 120)).join("; ") } : {}),
     ...(t.notes.trim() ? { your_note: t.notes.trim() } : {}),
     ...(tags.length ? { tags: tags.join(", ") } : {}),
     ...(t.foreignAmount ? { foreign_amount: t.foreignAmount } : {}),

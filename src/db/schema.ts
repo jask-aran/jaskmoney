@@ -6,7 +6,7 @@
  * version fallback with an additive migration registry. v7 was the initial
  * partial OpenTUI port. */
 
-export const SCHEMA_VERSION = 30
+export const SCHEMA_VERSION = 32
 
 /** Columns shared by the fresh schema and the v9 migration. Rows imported from
  * CSV keep source = 'csv' and NULL external fields. */
@@ -153,6 +153,10 @@ export const TAG_SCOPE_COLUMN = "scope TEXT"
  * (re-suggesting skips it); a dismissed tag candidate is remembered per tag
  * name (a tag being found may not exist yet). */
 export const SUGGESTION_DISMISSED_COLUMN = "dismissed INTEGER NOT NULL DEFAULT 0"
+/** v32: the suggestion was made knowing what the row bought (its order
+ * emails, purchase_lookups): one made without that is asked again once the
+ * row's purchase is known (app/purchases). */
+export const SUGGESTION_KNEW_BOUGHT_COLUMN = "knew_bought INTEGER NOT NULL DEFAULT 0"
 export const TAG_DISMISSALS_SQL = `
 CREATE TABLE IF NOT EXISTS tag_dismissals (
   tag_name       TEXT NOT NULL,
@@ -236,6 +240,25 @@ CREATE TABLE IF NOT EXISTS merchant_breadth (
   merchant    TEXT PRIMARY KEY,
   probability REAL NOT NULL,
   asked_at    TEXT NOT NULL DEFAULT (datetime('now'))
+);
+`
+
+/** What an Amazon or eBay row bought, from its order emails (through
+ * Executor; ai/orderEmails, app/purchases). status: found (items saved;
+ * never looked up again), waiting (nothing yet; looked up again while the
+ * row is young, as emails can come after the charge), none (given up).
+ * email_key marks the email a match used, so no other row takes it. */
+export const PURCHASE_LOOKUPS_SQL = `
+CREATE TABLE IF NOT EXISTS purchase_lookups (
+  transaction_id INTEGER PRIMARY KEY REFERENCES transactions(id) ON DELETE CASCADE,
+  status         TEXT NOT NULL,
+  source         TEXT,
+  order_ref      TEXT,
+  items          TEXT,
+  email_key      TEXT,
+  refund_of      INTEGER,
+  checks         INTEGER NOT NULL DEFAULT 0,
+  checked_at     TEXT NOT NULL
 );
 `
 
@@ -370,6 +393,8 @@ ${RULE_TAG_DECLINES_SQL}
 ${MERCHANT_BREADTH_SQL}
 ${MERCHANT_NOTES_SQL}
 ${TAG_CATEGORIES_SQL}
+${PURCHASE_LOOKUPS_SQL}
+ALTER TABLE category_suggestions ADD COLUMN ${SUGGESTION_KNEW_BOUGHT_COLUMN};
 ALTER TABLE tags ADD COLUMN ${TAG_ABOUT_COLUMN};
 `
 

@@ -143,6 +143,8 @@ export interface Transaction {
   categoryId: number | null
   categoryName: string
   categoryGroup: string
+  /** What it bought, from its order emails (purchase_lookups; Amazon, eBay). */
+  bought?: string[]
   /** Hex from categories.color; empty/overlay1 = uncategorised mute. */
   categoryColor: string
   notes: string
@@ -192,6 +194,8 @@ export interface CategorySuggestion {
    * their confidence: up to SUGGESTION_RANKED, each at RANKED_MIN or more.
    * Absent on suggestions saved before v20. */
   ranked?: Array<{ categoryId: number; confidence: number }>
+  /** Made knowing what the row bought (its order emails). */
+  knewBought?: boolean
 }
 
 /** "confidence": the suggestion's, in the Uncategorised view only. */

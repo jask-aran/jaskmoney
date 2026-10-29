@@ -25,6 +25,12 @@ export interface EbayOrder { order: string; at: string | null; item: string | nu
 
 export interface OrderContext { transactionId: number; source: "amazon" | "ebay"; order: string | null; items: string[]; emailAt: string | null; refundOf?: number }
 
+/** The email a match used: no other row takes it (an eBay order's emails can serve each of its charges). */
+export const emailKey = (c: Pick<OrderContext, "source" | "order" | "emailAt">) => (c.source === "ebay" ? `ebay:${c.order}` : `amazon:${c.order ?? ""}:${c.emailAt ?? ""}`)
+
+/** What earlier lookups found: their rows and matches (for refunds), and the emails they used. */
+export interface Prior { rows: Purchase[]; found: OrderContext[]; usedEmails: ReadonlySet<string> }
+
 /** The eBay order number in a row's bank text, if any. */
 export const ebayOrderOf = (rawText: string | null) => /eBay O\*(\d{2}-\d{5}-\d{5})/i.exec(rawText ?? "")?.[1] ?? null
 
@@ -39,7 +45,7 @@ const gmailDate = (iso: string) => iso.replace(/-/g, "/")
  * eBay order's emails by number. Returns { shipments, ebay }.
  */
 export function orderEmailProgram(accountId: string, rows: Purchase[], gmail = "tools.gmail.api.users"): string {
-  const amazon = rows.filter(isAmazon).map((t) => t.dateISO).sort()
+  const amazon = rows.filter((t) => isAmazon(t) && t.amount < 0).map((t) => t.dateISO).sort()
   const orders = [...new Set(rows.filter(isEbay).map((t) => ebayOrderOf(t.rawText)).filter((o): o is string => !!o))]
   const window = amazon.length ? { after: gmailDate(addDaysIso(amazon[0]!, -7)), before: gmailDate(addDaysIso(amazon.at(-1)!, 2)) } : null
   return `const accountId = ${JSON.stringify(accountId)};
@@ -144,7 +150,7 @@ const AMAZON_AFTER_DAYS = 3
  * from Amazon) takes the items of the charge it returns: the same amount,
  * within REFUND_DAYS before it.
  */
-export function matchOrders(rows: Purchase[], shipments: Shipment[], ebay: EbayOrder[]): OrderContext[] {
+export function matchOrders(rows: Purchase[], shipments: Shipment[], ebay: EbayOrder[], prior: Prior = { rows: [], found: [], usedEmails: new Set() }): OrderContext[] {
   const out: OrderContext[] = []
   const byOrder = new Map(ebay.map((e) => [e.order, e]))
   for (const t of rows.filter(isEbay)) {
@@ -152,7 +158,7 @@ export function matchOrders(rows: Purchase[], shipments: Shipment[], ebay: EbayO
     const found = order ? byOrder.get(order) : undefined
     if (found?.item) out.push({ transactionId: t.id, source: "ebay", order, items: [found.item], emailAt: found.at })
   }
-  const used = new Set<Shipment>()
+  const used = new Set<Shipment>(shipments.filter((s) => prior.usedEmails.has(emailKey({ source: "amazon", order: s.order, emailAt: s.at }))))
   const when = (t: Purchase) => t.createdMs ?? Date.parse(`${t.dateISO}T12:00:00Z`)
   const amazon = rows.filter((t) => isAmazon(t) && t.amount < 0).sort((a, b) => when(a) - when(b))
   for (const t of amazon) {
@@ -166,13 +172,13 @@ export function matchOrders(rows: Purchase[], shipments: Shipment[], ebay: EbayO
     used.add(best)
     out.push({ transactionId: t.id, source: "amazon", order: best.order, items: best.items.map((i) => `${i.quantity > 1 ? `${i.quantity}× ` : ""}${i.name}`), emailAt: best.at })
   }
-  const charges = out.filter((c) => c.source === "amazon")
-  const byId = new Map(rows.map((t) => [t.id, t]))
-  const refunded = new Set<number>()
+  const charges = [...prior.found.filter((c) => c.source === "amazon" && !c.refundOf), ...out.filter((c) => c.source === "amazon")]
+  const byId = new Map([...prior.rows, ...rows].map((t) => [t.id, t]))
+  const refunded = new Set<number>(prior.found.flatMap((c) => (c.refundOf ? [c.refundOf] : [])))
   for (const t of rows.filter((r) => isAmazon(r) && r.amount > 0).sort((a, b) => when(a) - when(b))) {
     const charge = charges
       .map((c) => ({ c, row: byId.get(c.transactionId)! }))
-      .filter(({ c, row }) => !refunded.has(c.transactionId) && Math.round(-row.amount * 100) === Math.round(t.amount * 100) && when(row) <= when(t) && (when(t) - when(row)) / 86_400_000 <= REFUND_DAYS)
+      .filter(({ c, row }) => row && !refunded.has(c.transactionId) && Math.round(-row.amount * 100) === Math.round(t.amount * 100) && when(row) <= when(t) && (when(t) - when(row)) / 86_400_000 <= REFUND_DAYS)
       .sort((a, b) => when(b.row) - when(a.row))[0]
     if (!charge) continue
     refunded.add(charge.c.transactionId)
@@ -184,3 +190,39 @@ export function matchOrders(rows: Purchase[], shipments: Shipment[], ebay: EbayO
 /** Rows whose purchase emails could say what was bought. */
 export const marketplaceRows = <T extends Pick<Purchase, "description" | "rawText">>(rows: T[]) => rows.filter((t) => isAmazon(t) || isEbay(t))
 
+
+/**
+ * When a row's lookup is due (purchase_lookups): never looked up; or found
+ * nothing yet, RETRY_HOURS ago or more, and wasn't given up. A found or
+ * given-up row is never looked up again (look again forgets it).
+ */
+export const LOOKUP_RETRY_HOURS = 6
+/** Emails can come days after the charge (Amazon ships, then emails):
+ * nothing found by this age, after one look at that age, is given up. */
+export const LOOKUP_GIVE_UP_DAYS = 14
+
+export interface LookupState { status: "found" | "waiting" | "none"; checks: number; checkedAt: string }
+
+const ageDays = (t: Purchase, nowMs: number) => (nowMs - (t.createdMs ?? Date.parse(`${t.dateISO}T12:00:00Z`))) / 86_400_000
+
+export function dueForLookup<T extends Purchase>(rows: T[], lookups: ReadonlyMap<number, LookupState>, nowMs: number): T[] {
+  return marketplaceRows(rows).filter((t) => {
+    if (t.amount === 0) return false
+    const l = lookups.get(t.id)
+    if (!l) return true
+    if (l.status !== "waiting") return false
+    return nowMs - Date.parse(l.checkedAt) >= LOOKUP_RETRY_HOURS * 3_600_000
+  })
+}
+
+/** After a lookup: each due row found, still waiting, or given up (old enough, and looked at that age). */
+export function settleLookups(due: Purchase[], found: OrderContext[], lookups: ReadonlyMap<number, LookupState>, nowMs: number) {
+  const byId = new Map(found.map((c) => [c.transactionId, c]))
+  const checkedAt = new Date(nowMs).toISOString()
+  return due.map((t) => {
+    const c = byId.get(t.id)
+    const checks = (lookups.get(t.id)?.checks ?? 0) + 1
+    if (c) return { transactionId: t.id, status: "found" as const, source: c.source, order: c.order, items: c.items, emailKey: emailKey(c), refundOf: c.refundOf ?? null, checks, checkedAt }
+    return { transactionId: t.id, status: ageDays(t, nowMs) >= LOOKUP_GIVE_UP_DAYS ? ("none" as const) : ("waiting" as const), source: null, order: null, items: [], emailKey: null, refundOf: null, checks, checkedAt }
+  })
+}

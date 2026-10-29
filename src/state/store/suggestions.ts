@@ -1,6 +1,6 @@
 import { batch } from "solid-js"
 import { unwrap } from "solid-js/store"
-import { saveSuggestions, loadMerchantBreadth, saveMerchantBreadth, loadMerchantNotes, saveMerchantNote, loadDismissedSuggestionIds, deleteSuggestions, dismissSuggestionRows, undismissSuggestionRows, unrecordCategoryChoices } from "../../db/client"
+import { loadPurchaseLookups, savePurchaseLookups, type PurchaseLookup, saveSuggestions, loadMerchantBreadth, saveMerchantBreadth, loadMerchantNotes, saveMerchantNote, loadDismissedSuggestionIds, deleteSuggestions, dismissSuggestionRows, undismissSuggestionRows, unrecordCategoryChoices } from "../../db/client"
 import { hasJev, JEV_SETUP, jevClient, type JevClient } from "../../ai/jev"
 import { askMerchantBreadth, capSuggestion, historySuggestions, jevSuggestions, merchantBreadth, suggestionCap, unaskedMerchants } from "../../domain/suggest"
 import { merchantKey } from "../../domain/history"
@@ -72,7 +72,9 @@ export function createSuggestions(ctx: StoreContext, deps: {
       })
       const breadth = merchantBreadth(transactions(), state.categories, asked)
       capStored(database, breadth)
-      const history = historySuggestions(transactions(), state.categories, new Set(targets.map((t) => t.id)), breadth)
+      // Each suggestion says whether it knew what its row bought (order emails).
+      const knew = new Set(transactions().filter((t) => t.bought?.length).map((t) => t.id))
+      const history = historySuggestions(transactions(), state.categories, new Set(targets.map((t) => t.id)), breadth).map((h) => (knew.has(h.transactionId) ? { ...h, knewBought: true } : h))
       saveSuggestions(database, history)
       refresh()
       let fromJev = 0
@@ -92,7 +94,7 @@ export function createSuggestions(ctx: StoreContext, deps: {
           const fresh = arrived.filter((s) => {
             const current = byId.get(s.transactionId)
             return current && isOrdinaryFlow(current) && isUncategorised(current) && (options.replace ? !!state.suggestions[s.transactionId] : !state.suggestions[s.transactionId])
-          })
+          }).map((s) => (byId.get(s.transactionId)?.bought?.length ? { ...s, knewBought: true } : s))
           if (!fresh.length) return
           saveSuggestions(database, fresh)
           batch(() => { for (const s of fresh) setState("suggestions", s.transactionId, s) })
@@ -153,6 +155,30 @@ export function createSuggestions(ctx: StoreContext, deps: {
     const targets = transactions().filter((t) => !selected.has(t.id) && descriptions.has(key(t)) && isOrdinaryFlow(t) && isUncategorised(t) && state.suggestions[t.id]).map((t) => t.id)
     if (!targets.length) return 0
     return suggestCategories(targets, ai, { replace: true })
+  }
+
+  /** Purchase lookups so far (app/purchases), by row. */
+  function purchaseLookups(): Map<number, PurchaseLookup> {
+    return ctx.db ? loadPurchaseLookups(ctx.db) : new Map()
+  }
+
+  /**
+   * Save a round of purchase lookups (rows found get what they bought in
+   * their facts), then ask again for waiting rows whose suggestion was made
+   * without knowing what they bought, whenever that was. Returns how many
+   * were asked again.
+   */
+  async function recordPurchases(lookups: PurchaseLookup[], ai?: Pick<JevClient, "judge">): Promise<number> {
+    const database = ctx.db
+    if (!database) return 0
+    if (lookups.length) mutate((db) => savePurchaseLookups(db, lookups))
+    if (!ai && !hasJev()) return 0
+    while (state.suggesting) {
+      await suggestionsFinished
+      if (ctx.db !== database) return 0
+    }
+    const targets = transactions().filter((t) => t.bought?.length && isOrdinaryFlow(t) && isUncategorised(t) && state.suggestions[t.id] && !state.suggestions[t.id]!.knewBought).map((t) => t.id)
+    return targets.length ? suggestCategories(targets, ai, { replace: true }) : 0
   }
 
   /** Save a merchant's note and replace its waiting rows' existing suggestions. */
@@ -269,5 +295,5 @@ export function createSuggestions(ctx: StoreContext, deps: {
     })
   }
 
-  return { suggestCategories, resuggestLike, setMerchantNote, askAbout, suggestTried, untriedWaiting, markTried, acceptSuggestions, dismissSuggestions }
+  return { suggestCategories, resuggestLike, setMerchantNote, purchaseLookups, recordPurchases, askAbout, suggestTried, untriedWaiting, markTried, acceptSuggestions, dismissSuggestions }
 }

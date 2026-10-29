@@ -108,7 +108,8 @@ export async function askMerchantBreadth(jev: Pick<JevClient, "judge">, merchant
  * person-to-person payment or a mixed merchant, below accept-all for an
  * unsure one, unless the payment's message says what it was for. */
 export function suggestionCap(t: Transaction, breadth: (description: string) => Breadth = () => "single"): number {
-  if (t.message) return 1
+  // A message, or the order emails' items, say what it was for.
+  if (t.message || t.bought?.length) return 1
   if (isPersonToPerson(t)) return NO_DETAIL_CAP
   const b = breadth(t.description)
   return b === "mixed" ? NO_DETAIL_CAP : b === "unsure" ? UNSURE_CAP : 1

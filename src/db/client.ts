@@ -21,6 +21,8 @@ import {
   RULE_TAG_DECLINES_SQL,
   MERCHANT_BREADTH_SQL,
   MERCHANT_NOTES_SQL,
+  PURCHASE_LOOKUPS_SQL,
+  SUGGESTION_KNEW_BOUGHT_COLUMN,
   TAG_CATEGORIES_SQL,
   TAG_ABOUT_COLUMN,
   CATEGORY_SOURCE_COLUMN,
@@ -127,6 +129,11 @@ const MIGRATIONS: Record<number, (db: Db) => void> = {
   27: (db) => db.exec(RULE_TAG_DECLINES_SQL),
   28: (db) => db.exec(MERCHANT_BREADTH_SQL),
   29: (db) => db.exec(MERCHANT_NOTES_SQL),
+  31: (db) => db.exec(PURCHASE_LOOKUPS_SQL),
+  32: (db) => {
+    const columns = db.query<{ name: string }, []>("PRAGMA table_info(category_suggestions)").all().map((c) => c.name)
+    if (!columns.includes("knew_bought")) db.exec(`ALTER TABLE category_suggestions ADD COLUMN ${SUGGESTION_KNEW_BOUGHT_COLUMN}`)
+  },
   30: (db) => {
     db.exec(TAG_CATEGORIES_SQL)
     const columns = db.query<{ name: string }, []>("PRAGMA table_info(tags)").all().map((c) => c.name)
@@ -485,8 +492,10 @@ export function loadTransactions(db: Db): Transaction[] {
          -- to an untracked account (e.g. a desynced joint account) is spending.
          (t.transfer_account_id IS NOT NULL AND COALESCE(ta.sync_enabled, 0) = 1) AS internal,
          COALESCE(c.not_spending, 0) AS notSpendingCategory,
-         (COALESCE(c.income, 0) = 1 OR COALESCE(pc.income, 0) = 1) AS income
+         (COALESCE(c.income, 0) = 1 OR COALESCE(pc.income, 0) = 1) AS income,
+         pl.items AS boughtJson
        FROM transactions t
+       LEFT JOIN purchase_lookups pl ON pl.transaction_id = t.id AND pl.status = 'found'
        LEFT JOIN categories c ON c.id = t.category_id
        LEFT JOIN categories pc ON pc.id = c.parent_id
        LEFT JOIN accounts a ON a.id = t.account_id
@@ -494,7 +503,7 @@ export function loadTransactions(db: Db): Transaction[] {
        WHERE a.id IS NULL OR a.sync_enabled = 1
        ORDER BY t.date_iso DESC, t.id DESC`,
     )
-    .all() as Array<Omit<Transaction, "tagNames" | "tagColors" | "tagIds" | "createdMs"> & { createdAt: string | null }>
+    .all() as Array<Omit<Transaction, "tagNames" | "tagColors" | "tagIds" | "createdMs" | "bought"> & { createdAt: string | null; boughtJson: string | null }>
 
   const tagRows = db
     .query(
@@ -520,8 +529,9 @@ export function loadTransactions(db: Db): Transaction[] {
     tagIdMap.set(tr.txnId, ids)
   }
 
-  return rows.map(({ createdAt, ...r }) => ({
+  return rows.map(({ createdAt, boughtJson, ...r }) => ({
     ...r,
+    ...(boughtJson ? { bought: parseItems(boughtJson) } : {}),
     // RFC 3339 with its offset (+11:00, a trip's +08:00): parsed to one clock.
     createdMs: createdAt ? Date.parse(createdAt) || null : null,
     internal: !!r.internal,
@@ -534,15 +544,54 @@ export function loadTransactions(db: Db): Transaction[] {
   })).sort(newestFirst)
 }
 
+const parseItems = (json: string): string[] => { try { const v = JSON.parse(json); return Array.isArray(v) ? v.filter((x): x is string => typeof x === "string") : [] } catch { return [] } }
+
+/** A row's purchase lookup (purchase_lookups). */
+export interface PurchaseLookup {
+  transactionId: number
+  status: "found" | "waiting" | "none"
+  source: string | null
+  order: string | null
+  items: string[]
+  emailKey: string | null
+  refundOf: number | null
+  checks: number
+  checkedAt: string
+}
+
+export function loadPurchaseLookups(db: Db): Map<number, PurchaseLookup> {
+  const rows = db.query<{ transactionId: number; status: PurchaseLookup["status"]; source: string | null; order: string | null; items: string | null; emailKey: string | null; refundOf: number | null; checks: number; checkedAt: string }, []>(
+    `SELECT transaction_id AS transactionId, status, source, order_ref AS "order", items, email_key AS emailKey, refund_of AS refundOf, checks, checked_at AS checkedAt FROM purchase_lookups`).all()
+  return new Map(rows.map((r) => [r.transactionId, { ...r, items: r.items ? parseItems(r.items) : [] }]))
+}
+
+export function savePurchaseLookups(db: Db, lookups: PurchaseLookup[]): void {
+  const save = db.query(`INSERT INTO purchase_lookups (transaction_id, status, source, order_ref, items, email_key, refund_of, checks, checked_at)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?) ON CONFLICT(transaction_id) DO UPDATE SET status = excluded.status, source = excluded.source,
+    order_ref = excluded.order_ref, items = excluded.items, email_key = excluded.email_key, refund_of = excluded.refund_of,
+    checks = excluded.checks, checked_at = excluded.checked_at`)
+  db.transaction(() => {
+    for (const l of lookups) save.run(l.transactionId, l.status, l.source, l.order, l.items.length ? JSON.stringify(l.items) : null, l.emailKey, l.refundOf, l.checks, l.checkedAt)
+  })()
+}
+
+/** Look again: a row's lookup forgotten (it's due at the next one). */
+export function forgetPurchaseLookups(db: Db, ids: number[]): void {
+  const forget = db.query("DELETE FROM purchase_lookups WHERE transaction_id = ?")
+  db.transaction(() => { for (const id of ids) forget.run(id) })()
+}
+
 export function loadSuggestions(db: Db): CategorySuggestion[] {
-  return db.query<Omit<CategorySuggestion, "ranked"> & { ranked: string | null }, []>(`SELECT s.transaction_id AS transactionId,
-    s.category_id AS categoryId, s.confidence, s.source, s.ranked
+  return db.query<Omit<CategorySuggestion, "ranked" | "knewBought"> & { ranked: string | null; knewBought: number }, []>(`SELECT s.transaction_id AS transactionId,
+    s.category_id AS categoryId, s.confidence, s.source, s.ranked, s.knew_bought AS knewBought
     FROM category_suggestions s
     JOIN transactions t ON t.id = s.transaction_id
     LEFT JOIN categories c ON c.id = t.category_id
     WHERE s.dismissed = 0 AND (t.category_id IS NULL OR c.is_default = 1)`).all().map(({ ranked, ...s }) => {
       const list = parseRanked(ranked)
-      return list ? { ...s, ranked: list } : s
+      const { knewBought, ...rest } = s
+      const suggestion: CategorySuggestion = knewBought ? { ...rest, knewBought: true } : rest
+      return list ? { ...suggestion, ranked: list } : suggestion
     })
 }
 
@@ -560,12 +609,12 @@ function parseRanked(raw: string | null): CategorySuggestion["ranked"] {
 }
 
 export function saveSuggestions(db: Db, list: CategorySuggestion[]): void {
-  const save = db.query(`INSERT INTO category_suggestions (transaction_id, category_id, confidence, source, ranked)
-    VALUES (?, ?, ?, ?, ?) ON CONFLICT(transaction_id) DO UPDATE SET
+  const save = db.query(`INSERT INTO category_suggestions (transaction_id, category_id, confidence, source, ranked, knew_bought)
+    VALUES (?, ?, ?, ?, ?, ?) ON CONFLICT(transaction_id) DO UPDATE SET
     category_id = excluded.category_id, confidence = excluded.confidence,
-    source = excluded.source, ranked = excluded.ranked, created_at = datetime('now')`)
+    source = excluded.source, ranked = excluded.ranked, knew_bought = excluded.knew_bought, created_at = datetime('now')`)
   db.transaction(() => {
-    for (const s of list) save.run(s.transactionId, s.categoryId, s.confidence, s.source, s.ranked?.length ? JSON.stringify(s.ranked.map((r) => [r.categoryId, r.confidence])) : null)
+    for (const s of list) save.run(s.transactionId, s.categoryId, s.confidence, s.source, s.ranked?.length ? JSON.stringify(s.ranked.map((r) => [r.categoryId, r.confidence])) : null, s.knewBought ? 1 : 0)
   })()
 }
 

@@ -50,7 +50,7 @@ function contextKeys(body: unknown): { top: string[]; transaction: string[] } {
 }
 
 /** What the row block itself says (history.rowFacts). */
-const ROW = ["description", "amount", "direction", "bank_type", "message", "bank_text", "your_note", "tags", "foreign_amount", "category", "date", "when", "account", "paid"]
+const ROW = ["description", "amount", "direction", "bank_type", "message", "bank_text", "bought", "your_note", "tags", "foreign_amount", "category", "date", "when", "account", "paid"]
 
 test("every query a use names is in the catalog; every query and block is named by something", () => {
   const named: string[] = AI_USES.flatMap(useQueries)

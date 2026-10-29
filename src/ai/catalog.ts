@@ -38,7 +38,7 @@ export const BLOCKS: Record<BlockId, ContextBlock> = {
   },
   row: {
     name: "The transaction",
-    says: "Its description (the merchant as the bank names it), amount, money in or out, the bank's type, message and raw text, and your own note, tags and any foreign amount; per query, its category, date, account or card use.",
+    says: "Its description (the merchant as the bank names it), amount, money in or out, the bank's type, message and raw text, what its order emails say it bought (Amazon, eBay, through Executor), and your own note, tags and any foreign amount; per query, its category, date, account or card use.",
     from: "the row itself (Up's sync or a CSV import)",
     code: "history.rowFacts",
   },
@@ -152,7 +152,7 @@ export const QUERIES: Record<QueryId, QueryInfo> = {
     code: "suggest.jevSuggestions (questions.suggestionQuestion)",
     when: "For each waiting row history can't settle: in the background after a sync, an import and at startup, when you open i, and after you categorise a row with the same description. One question per row, as many rows a request as fit.",
     asks: "Which of your categories does this transaction belong in?",
-    answer: `A probability for every category. The likeliest is the suggestion; at ${pct(ACCEPT_ALL_AT)}+ Y takes it unseen. A person or payment app with no message is capped at ${pct(NO_DETAIL_CAP)}, as the merchant check says for mixed and unsure merchants. The ${SUGGESTION_RANKED} likeliest are kept for the picker (c).`,
+    answer: `A probability for every category. The likeliest is the suggestion; at ${pct(ACCEPT_ALL_AT)}+ Y takes it unseen. A person or payment app with no message is capped at ${pct(NO_DETAIL_CAP)}, as the merchant check says for mixed and unsure merchants, unless its order emails say what it bought. The ${SUGGESTION_RANKED} likeliest are kept for the picker (c).`,
     context: [
       { block: "framing", fields: ["about"] },
       { block: "row", fields: ["transaction"] },
