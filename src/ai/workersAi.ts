@@ -31,6 +31,12 @@ export function hasWorkersAi(env: Record<string, string | undefined> = credentia
   return !!env.JASKMONEY_CF_TOKEN?.trim() && !!env.JASKMONEY_CF_ACCOUNT_ID?.trim()
 }
 
+/** Whether smart search asks Clairic too: set up, and not switched off in
+ * Settings › AI models › Search. */
+export function searchUsesClairic(env: Record<string, string | undefined> = credentialEnv()): boolean {
+  return hasWorkersAi(env) && env.JASKMONEY_SEARCH_CLAIRIC?.trim() !== "off"
+}
+
 export type ClairicField = { type: "text" | "number" | "date"; instructions?: string; decimals?: number }
 
 /** A Clairic value: null when the text doesn't determine it. `guess` is

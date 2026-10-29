@@ -2,7 +2,7 @@ import { armedFor } from "../../state/armed"
 import { DATABASE_ROWS, databaseRow } from "../../state/databaseRows"
 import { AI_ROWS } from "../../app/apiKeys"
 import { syncAgo } from "../../app/sync"
-import { AI_NAMES, aiActionHint, aiActions, aiConnection, aiContext, aiRow, aiStatus } from "../../state/aiDialog"
+import { AI_NAMES, AI_USES, USE_INFO, aiActionHint, aiActions, aiConnection, aiContext, aiRow, aiStatus, useModel } from "../../state/aiDialog"
 import { secretDisplay } from "../../state/settingsForm"
 import { SignInBody } from "../primitives/SignInBody"
 import { For, Show, createEffect, createMemo, onCleanup, type JSX } from "solid-js"
@@ -250,21 +250,29 @@ export function UpAccountsDialog() {
 
 /** AI models: one row per model (what, how it's connected, what for);
  * enter opens its dialog. */
+/** Settings › AI models: the models and how each is connected, then the
+ * uses and the model doing each; enter opens either's dialog. */
 function AiPane(props: { focused: boolean; width: number }) {
   const active = () => ui.state.settingsActive && ui.state.settingsSection === "ai"
-  const rows = () => {
-    const ctx = aiContext(data)
-    return AI_ROWS.map((row) => aiRow(row, ctx))
-  }
-  // How each is connected, in a column as wide as the longest.
-  const how = () => Math.max(...rows().map((row) => row.how.length)) + 2
-  return <SectionCard title={SETTINGS_SECTION_LABELS.ai} focused={props.focused} active={active()} height={AI_ROWS.length + 2} width={props.width}>
-    <For each={rows()}>{(row, i) => (
+  const ctx = () => aiContext(data)
+  const models = () => AI_ROWS.map((row) => aiRow(row, ctx()))
+  const uses = () => AI_USES.map((use) => ({ name: USE_INFO[use].name, model: useModel(use, ctx()) }))
+  const heading = (text: string) => <text fg={theme.subtext0} wrapMode="none"><b>{text}</b></text>
+  return <SectionCard title={SETTINGS_SECTION_LABELS.ai} focused={props.focused} active={active()} height={AI_ROWS.length + AI_USES.length + 4} width={props.width}>
+    {heading("Models")}
+    <For each={models()}>{(row, i) => (
       <ListRow cursor={active() && ui.state.aiCursor === i()} bg={theme.canvas} spans={[
         { text: row.connected ? "● " : "○ ", fg: row.connected ? theme.success : theme.overlay1 },
-        { text: fit(row.name, 11), fg: row.connected ? theme.text : theme.subtext0 },
-        { text: fit(row.how, how()), fg: row.connected ? theme.subtext1 : theme.overlay1 },
-        { text: row.uses, fg: row.uses.endsWith("in use") ? theme.teal : theme.overlay1 },
+        { text: fit(row.name, 13), fg: row.connected ? theme.text : theme.subtext0 },
+        { text: row.how, fg: row.connected ? theme.subtext1 : theme.overlay1 },
+      ]} />
+    )}</For>
+    {heading("Uses")}
+    <For each={uses()}>{(use, i) => (
+      <ListRow cursor={active() && ui.state.aiCursor === AI_ROWS.length + i()} bg={theme.canvas} spans={[
+        { text: "  ", fg: theme.text },
+        { text: fit(use.name, 13), fg: theme.text },
+        { text: fit(use.model.text, Math.max(8, props.width - 20)), fg: use.model.ready ? theme.teal : theme.overlay1 },
       ]} />
     )}</For>
   </SectionCard>

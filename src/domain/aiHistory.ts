@@ -30,7 +30,7 @@ export interface HistoryData {
 /** The filter language for the model (domain/filterLanguage, the same
  * description the search help shows), and what it can't test. Quoting is
  * advised: a stored rule's value then can't run into the next word. */
-export const FILTER_GUIDE = `Filter expressions (rules use these). The parser takes values unquoted, but in a rule quote any value with spaces: cat:"Rent & Mortgage".
+export const FILTER_GUIDE = `JQL, the app's filter language (rules are written in it). The parser takes values unquoted, but in a rule quote any value with spaces: cat:"Rent & Mortgage".
 ${filterGuide()}
 Not testable in a filter (context only): up_type, card, foreign, payer, message.`
 

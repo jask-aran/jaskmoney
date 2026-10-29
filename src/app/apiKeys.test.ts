@@ -4,7 +4,7 @@ import type { AuthInteraction } from "@earendil-works/pi-ai"
 import { credentialsPath, loadSavedCredentials } from "../ai/credentials"
 import { activeLlmProvider, DEFAULT_LLM_MODEL, llmAuth, llmModelId } from "../ai/llm"
 import { createFileCredentialStore, oauthPath } from "../ai/oauthStore"
-import { aiActionHint, aiActions, aiContext, aiRow } from "../state/aiDialog"
+import { aiActionHint, aiActions, aiContext, aiRow, useActions, useModel } from "../state/aiDialog"
 import { data } from "../state/dataStore"
 import { ui } from "../state/uiStore"
 import { key } from "../testing/keys"
@@ -40,7 +40,7 @@ test("enter opens a row's dialog; the pane's rows say what, how connected, and w
   testEnv("JASKMONEY_CF_TOKEN", "cf-token"); testEnv("JASKMONEY_CF_ACCOUNT_ID", "acct")
   data.refreshApiKeys()
   const ctx = aiContext(data)
-  expect(aiRow("jev", ctx)).toEqual({ name: "Jev", connected: false, how: "not set", uses: "suggestions · ask:" })
+  expect(aiRow("jev", ctx)).toEqual({ name: "Jev", connected: false, how: "not set" })
   expect(aiRow("workersAi", ctx)).toMatchObject({ connected: true, how: "key · env" })
   handleKey(ui, key("return"), data)
   expect(ui.activeScope()).toBe("settings.aiDialog")
@@ -101,14 +101,18 @@ test("a general model: browser sign-in first; its model checked against the prov
   expect(loadSavedCredentials()).toEqual({ JASKMONEY_OPENAI_MODEL: "gpt-6-luna" })
   choose("model"); handleKey(ui, key("u", { ctrl: true }), data); handlePaste(ui, "gpt-6.1-sol", data); handleKey(ui, key("return"), data)
   expect(loadSavedCredentials()).toEqual({})
-  // OpenRouter set up and so in use: OpenAI, once it has a key, can take over.
+  // OpenRouter set up and so in use: OpenAI, once it has a key, can take
+  // over, from the Rules use (a model's dialog only connects it).
   data.saveApiKeys({ JASKMONEY_OPENROUTER_TOKEN: "or-key-for-test" })
   choose("key"); handlePaste(ui, KEY, data); handleKey(ui, key("return"), data)
-  expect(actions()).toEqual(["signIn", "key", "model", "test", "use", "remove"])
-  choose("use")
+  expect(actions()).toEqual(["signIn", "key", "model", "test", "remove"])
+  ui.setState({ aiDialog: null, aiUse: { use: "rules", cursor: 0, note: null } })
+  expect(useActions("rules", aiContext(data)).map((a) => a.label)).toEqual(["Use OpenAI instead", "Show exactly what's sent"])
+  handleKey(ui, key("return"), data)
   expect(activeLlmProvider()).toBe("openai")
-  expect(aiRow("openai", aiContext(data)).uses).toBe("rules · in use")
-  expect(actions()).not.toContain("use")
+  expect(useModel("rules", aiContext(data))).toEqual({ text: "OpenAI · gpt-6.1-sol", ready: true })
+  expect(useActions("rules", aiContext(data)).map((a) => a.label)).toEqual(["Use OpenRouter instead", "Show exactly what's sent"])
+  ui.setState({ aiUse: null })
 })
 
 test("a former JASKMONEY_LLM_MODEL still names OpenRouter's model", () => {

@@ -24,10 +24,12 @@ import { runSync } from "./sync"
 import { runSmartSearch } from "./smartSearch"
 import { searchReport, writtenText } from "./searchReport"
 import { SEARCH_HELP } from "../state/searchHelp"
+import { previewSent } from "./sentPreview"
 import { runAsk } from "./ask"
 import { eitherInstead, askTerms } from "../domain/filter"
-import { AI_ROWS, aiRowLabel, isLlmRow, testAi } from "./apiKeys"
-import { aiActions, aiContext } from "../state/aiDialog"
+import { AI_ROWS, aiRowLabel, isLlmRow, testAi, type AiRow } from "./apiKeys"
+import { AI_USES, aiActions, aiContext, useActions, type AiUse } from "../state/aiDialog"
+import { hasWorkersAi } from "../ai/workersAi"
 import { cancelLlmSignIn, signOutLlm, startLlmSignIn, submitSignInPaste } from "./llmSignIn"
 import { createLlm, hasLlm, LLM_PROVIDERS, llmModelId } from "../ai/llm"
 import { credentialEnv } from "../ai/credentials"
@@ -560,11 +562,18 @@ function handleSettingsFactoryReset(ui: UiStore, key: KeyEvent, data?: DataStore
  * when the screen is too short for it all. */
 function handleSearchHelp(ui: UiStore, key: KeyEvent): void {
   if (["escape", "return", "enter", "f1", "q"].includes(key.name)) { ui.setState({ searchHelp: false }); return }
-  const visible = Math.max(1, ui.state.searchHelpVisible)
-  const last = Math.max(0, SEARCH_HELP.length - visible)
+  const top = scrolled(key, ui.state.searchHelpTop, SEARCH_HELP.length, ui.state.searchHelpVisible)
+  if (top != null) ui.setState({ searchHelpTop: top })
+}
+
+/** A read-only text's first line after a scroll key (j/k a line, paging a
+ * screen, g/G the ends), never past its end; null for any other key. */
+function scrolled(key: KeyEvent, top: number, total: number, visible: number): number | null {
+  const screen = Math.max(1, visible)
   const step = key.name === "j" || key.name === "down" ? 1 : key.name === "k" || key.name === "up" ? -1
-    : key.name === "pagedown" ? visible : key.name === "pageup" ? -visible : key.name === "g" && !key.shift ? -Infinity : key.name === "g" || key.name === "G" ? Infinity : 0
-  if (step) ui.setState({ searchHelpTop: Math.max(0, Math.min(last, ui.state.searchHelpTop + step)) })
+    : key.name === "pagedown" || (key.ctrl && key.name === "d") ? screen : key.name === "pageup" || (key.ctrl && key.name === "u") ? -screen
+    : key.name === "g" && !key.shift ? -Infinity : key.name === "g" || key.name === "G" ? Infinity : 0
+  return step ? Math.max(0, Math.min(Math.max(0, total - screen), top + step)) : null
 }
 
 /** Open the note box for a merchant, on its note so far. */
@@ -1035,12 +1044,69 @@ function handleRuleOffers(ui: UiStore, key: KeyEvent, data?: DataStore): void {
   }
 }
 
+/** Settings › AI models: the models, then the uses; enter opens the one at the cursor. */
 function handleSettingsAi(ui: UiStore, key: KeyEvent): void {
   const { name } = key
   if (name === "escape") { ui.leaveSettings(); return }
-  const moved = listMove(key, ui.state.aiCursor, AI_ROWS.length)
+  const moved = listMove(key, ui.state.aiCursor, AI_ROWS.length + AI_USES.length)
   if (moved != null) { ui.setState({ aiCursor: moved }); return }
-  if (name === "return" || name === "enter") ui.setState({ aiDialog: { row: AI_ROWS[ui.state.aiCursor] ?? "jev", cursor: 0, field: null, armed: false, note: null, busy: false } })
+  if (name !== "return" && name !== "enter") return
+  const use = AI_USES[ui.state.aiCursor - AI_ROWS.length]
+  if (use) ui.setState({ aiUse: { use, cursor: 0, note: null } })
+  else openAiDialog(ui, AI_ROWS[ui.state.aiCursor] ?? "jev")
+}
+
+const openAiDialog = (ui: UiStore, row: AiRow) => ui.setState({ aiDialog: { row, cursor: 0, field: null, armed: false, note: null, busy: false } })
+
+/** A use's dialog: j/k pick an action, enter runs it: choose its model,
+ * connect one it needs, or see what's sent; esc closes. */
+function handleAiUse(ui: UiStore, key: KeyEvent, data?: DataStore): void {
+  const dialog = ui.state.aiUse
+  if (!dialog || !data) return
+  const { name } = key
+  if (name === "escape") { ui.setState({ aiUse: null }); return }
+  const actions = useActions(dialog.use, aiContext(data))
+  const moved = listMove(key, dialog.cursor, actions.length)
+  if (moved != null) { ui.setState("aiUse", { cursor: moved }); return }
+  if (name !== "return" && name !== "enter") return
+  const action = actions[Math.min(dialog.cursor, actions.length - 1)]
+  if (!action) return
+  const note = (text: string) => ui.setState("aiUse", { note: { text, ok: true } })
+  switch (action.id) {
+    case "view": void openSent(ui, data, dialog.use); return
+    case "clairic":
+      data.saveApiKeys({ JASKMONEY_SEARCH_CLAIRIC: action.on ? null : "off" })
+      note(action.on ? "Smart search asks Clairic for the words and dates" : "Smart search asks Jev alone")
+      return
+    case "provider":
+      data.saveApiKeys({ JASKMONEY_LLM_PROVIDER: action.provider })
+      note(`${LLM_PROVIDERS[action.provider].label} now writes rules`)
+      return
+    case "connect":
+      ui.setState({ aiUse: null, aiCursor: AI_ROWS.indexOf(action.row) })
+      openAiDialog(ui, action.row)
+  }
+}
+
+/** Build what a use sends (nothing is sent) and show it. */
+async function openSent(ui: UiStore, data: DataStore, use: AiUse): Promise<void> {
+  ui.setState({ aiSent: { use, parts: null, error: null, top: 0, visible: 0, lines: 0 } })
+  try {
+    const askWords = askTerms(data.state.filterExpr)[0]
+    const parts = await previewSent(use, data, { smartQuestion: ui.state.smartQuestion?.question, ...(askWords ? { askWords } : {}), clairic: aiContext(data).searchClairic && hasWorkersAi() })
+    if (ui.state.aiSent?.use === use) ui.setState("aiSent", { parts })
+  } catch (error) {
+    if (ui.state.aiSent?.use === use) ui.setState("aiSent", { error: error instanceof Error ? error.message : String(error) })
+  }
+}
+
+/** What's sent: it scrolls; esc goes back to the use. */
+function handleAiSent(ui: UiStore, key: KeyEvent): void {
+  const view = ui.state.aiSent
+  if (!view) return
+  if (key.name === "escape" || key.name === "q") { ui.setState({ aiSent: null }); return }
+  const top = scrolled(key, view.top, view.lines, view.visible)
+  if (top != null) ui.setState("aiSent", { top })
 }
 
 /** The AI models dialog: j/k pick an action, enter runs it; a field (key,
@@ -1105,11 +1171,6 @@ function handleAiDialog(ui: UiStore, key: KeyEvent, data?: DataStore): void {
     case "test":
       ui.setState("aiDialog", { busy: true, note: { text: "Testing…", ok: null } })
       void testAi(row).then((result) => note(result.text, result.ok))
-      return
-    case "use":
-      if (!isLlmRow(row)) return
-      data.saveApiKeys({ JASKMONEY_LLM_PROVIDER: row })
-      note(`${label} now writes rules`, true)
       return
     case "remove": {
       if (!dialog.armed) { ui.setState("aiDialog", { armed: true, note: { text: "Press enter again to remove", ok: null } }); return }
@@ -1726,7 +1787,7 @@ const scopes: Record<ScopeId, ScopeEntry> = {
     hints: (state) => [
       { key: "enter", desc: "apply" },
       { key: "esc", desc: "clear" },
-      { key: "type", desc: "expr" },
+      { key: "type", desc: "JQL" },
       { key: "?…", desc: "ask in words" },
       { key: "F1", desc: "help" },
       ...(state?.recallQuestion ? [{ key: "↑", desc: "your question" }] : []),
@@ -1765,6 +1826,16 @@ const scopes: Record<ScopeId, ScopeEntry> = {
     handle: handleUpAccounts,
     quits: false,
     hints: () => [{ key: "j/k", desc: "move" }, { key: "enter", desc: "sync on/off" }, { key: "s", desc: "sync now" }, { key: "esc", desc: "close" }],
+  },
+  "settings.aiUse": {
+    handle: handleAiUse,
+    quits: false,
+    hints: () => [{ key: "j/k", desc: "move" }, { key: "enter", desc: "do" }, { key: "esc", desc: "close" }],
+  },
+  "settings.aiSent": {
+    handle: handleAiSent,
+    quits: false,
+    hints: () => [{ key: "j/k", desc: "scroll" }, { key: "esc", desc: "back" }],
   },
   "settings.aiDialog": {
     handle: handleAiDialog,

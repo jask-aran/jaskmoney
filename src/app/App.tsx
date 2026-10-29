@@ -18,6 +18,7 @@ import { CatPicker } from "../ui/primitives/CatPicker"
 import { TagChooser } from "../ui/primitives/TagChooser"
 import { MerchantNoteBox } from "../ui/manager/MerchantNoteBox"
 import { SearchHelp } from "../ui/manager/SearchHelp"
+import { AiSentViewer, AiUseDialog } from "../ui/settings/AiUseDialogs"
 import { TagPicker } from "../ui/primitives/TagPicker"
 import { OverviewTab } from "../ui/overview/OverviewTab"
 import { ManagerTab } from "../ui/manager/ManagerTab"
@@ -151,6 +152,8 @@ export function App() {
       <TagChooser />
       <MerchantNoteBox />
       <SearchHelp />
+      <AiUseDialog />
+      <AiSentViewer />
       <AiDialog />
       <UpAccountsDialog />
       <TagPicker />

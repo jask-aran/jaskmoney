@@ -1,3 +1,4 @@
+import type { SentPart } from "../app/sentPreview"
 import type { Written } from "../app/searchReport"
 import type { Armed } from "./armed"
 import type { DryRunReport } from "../domain/rules"
@@ -69,6 +70,8 @@ export type ScopeId =
   | "manager.ruleOffers"
   | "llmSignIn"
   | "settings.aiDialog"
+  | "settings.aiUse"
+  | "settings.aiSent"
   | "settings.upAccounts"
   | "settings.factoryReset"
   | "merchantNote"
@@ -247,6 +250,13 @@ export interface UiState {
     note: { text: string; ok: boolean | null } | null
     busy: boolean
   } | null
+  /** A use's dialog (Settings › AI models › Suggestions, Search, Rules): the
+   * action at the cursor and the last result. */
+  aiUse: { use: "suggestions" | "search" | "rules"; cursor: number; note: { text: string; ok: boolean | null } | null } | null
+  /** Exactly what a use sends (app/sentPreview): the requests once built,
+   * or why they couldn't be; the first line shown, and how many lines
+   * there are and fit (set by the viewer, which lays them out). */
+  aiSent: { use: "suggestions" | "search" | "rules"; parts: SentPart[] | null; error: string | null; top: number; visible: number; lines: number } | null
   /** A browser sign-in to the general model's provider (app/llmSignIn): the
    * address to open, what's happening, and the paste field when pi-ai asks. */
   llmSignIn: { provider: "openrouter" | "openai"; url: string | null; message: string; paste: { message: string; value: string; caret: number } | null } | null
@@ -434,6 +444,8 @@ function createUiStore() {
     ruleOfferCursor: 0,
     llmSignIn: null,
     aiDialog: null,
+    aiUse: null,
+    aiSent: null,
     upAccounts: null,
     factoryResetOpen: false,
     merchantNote: null,
@@ -557,7 +569,7 @@ function createUiStore() {
       catPickerOpen: false,
       tagPickerOpen: false, tagPickerApplying: false, tagPickerPatch: {},
       jumpMode: false,
-      status: "Filter · type expr · enter apply · esc clear",
+      status: "Search: JQL, or ? then words",
     })
   }
 
@@ -694,6 +706,8 @@ function createUiStore() {
     if (state.acceptPreview) return "manager.acceptPreview"
     if (state.ruleOffersOpen) return "manager.ruleOffers"
     if (state.llmSignIn) return "llmSignIn"
+    if (state.aiSent) return "settings.aiSent"
+    if (state.aiUse) return "settings.aiUse"
     if (state.aiDialog) return "settings.aiDialog"
     if (state.upAccounts) return "settings.upAccounts"
     if (state.factoryResetOpen) return "settings.factoryReset"

@@ -1,7 +1,7 @@
 import { ASK_DEFAULT_DAYS } from "./ask"
 
 /**
- * The filter language, described once: the search help (F1) lays it out for
+ * JQL (Jask Query Language), the filter language, described once: the search help (F1) lays it out for
  * people, and the rule writer's guide (aiHistory FILTER_GUIDE) gives it to
  * the model, so the two can't drift. What a rule can't use (ask:, top:)
  * or only the search bar does is marked, and the guide leaves it out.

@@ -21,7 +21,7 @@ export function SearchHelp() {
     : "esc close"
   return (
     <Show when={ui.state.searchHelp}>
-      <Modal title="Search" subtitle="how it reads" width={SEARCH_HELP_WIDTH + 4} hints={hints()}>
+      <Modal title="JQL" subtitle="Jask Query Language: how a search reads" width={SEARCH_HELP_WIDTH + 4} hints={hints()}>
         <For each={SEARCH_HELP.slice(top(), top() + visible())}>
           {(line) => (
             <text wrapMode="none">

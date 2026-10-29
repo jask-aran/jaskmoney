@@ -48,7 +48,7 @@ turn icons off in Settings › Database & Import.
 Sync starts straight away. `ctrl+r` syncs on demand, and the Accounts row chooses which accounts sync.
 
 AI features are optional. Settings › AI models takes a TypeSafe or OpenRouter key (or a browser sign-in) for
-suggestions and search, and OpenRouter or OpenAI for the rule writer.
+suggestions and search, and OpenRouter or OpenAI for the rule writer; each use shows exactly what it sends.
 
 ## Your data
 

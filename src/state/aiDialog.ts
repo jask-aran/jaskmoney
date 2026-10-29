@@ -1,16 +1,16 @@
 import { activeLlmProvider, LLM_PROVIDERS, llmEffort, llmModelId, llmModels, type LlmProvider } from "../ai/llm"
 import { credentialEnv, type CredentialName } from "../ai/credentials"
 import type { DataStore } from "./dataStore"
-import { isLlmRow, type KeyRow } from "../app/apiKeys"
+import { isLlmRow, type AiRow, type KeyRow } from "../app/apiKeys"
 
 /**
- * Settings › AI models: one row per model, and one dialog (enter) for
- * everything about it: how it's connected, its model, what it's used for,
- * and the actions (sign in with the browser, enter a key, change the
- * model, test, use for rules, remove). Pure: what the pane and the dialog
- * show, from the stored keys and sign-ins.
+ * Settings › AI models: the models, each with a dialog (enter) for how it's
+ * connected (sign in with the browser, enter a key, change the model,
+ * test, remove); then the uses, each with the model doing it and a dialog
+ * to choose it and to see exactly what is sent. Pure: what the pane and
+ * the dialogs show, from the stored keys, settings and sign-ins.
  */
-export type AiAction = "signIn" | "key" | "accountId" | "model" | "test" | "use" | "remove"
+export type AiAction = "signIn" | "key" | "accountId" | "model" | "test" | "remove"
 
 export interface AiContext {
   keys: Record<CredentialName, { source: "saved" | "env" | null; mask: string }>
@@ -19,14 +19,16 @@ export interface AiContext {
   inUse: LlmProvider
   /** A provider's model id, and whether it's the default. */
   model: (provider: LlmProvider) => { id: string; isDefault: boolean; effort?: string }
+  /** Smart search asks Clairic too, when it's connected. */
+  searchClairic: boolean
 }
 
-export const AI_NAMES: Record<KeyRow, { name: string; by: string; uses: string; usesShort: string }> = {
-  jev: { name: "Jev", by: "TypeSafe", uses: "category suggestions, ask: searches, smart search", usesShort: "suggestions · ask:" },
-  workersAi: { name: "Clairic", by: "Cloudflare Workers AI", uses: "smart search's words and dates", usesShort: "smart search" },
-  openrouter: { name: "OpenRouter", by: "general model", uses: "writing rules (R, then a)", usesShort: "rules" },
-  openai: { name: "OpenAI", by: "general model", uses: "writing rules (R, then a)", usesShort: "rules" },
-  up: { name: "Up Bank", by: "Personal Access Token", uses: "syncing accounts and transactions; your categories and tags go back to Up", usesShort: "sync" },
+export const AI_NAMES: Record<KeyRow, { name: string; by: string; uses: string }> = {
+  jev: { name: "Jev", by: "TypeSafe", uses: "suggestions and search" },
+  workersAi: { name: "Clairic", by: "Cloudflare Workers AI", uses: "search: the words and dates of a smart search" },
+  openrouter: { name: "OpenRouter", by: "general model; also reaches Jev", uses: "rules, and Jev when there's no TypeSafe key" },
+  openai: { name: "OpenAI", by: "general model", uses: "rules" },
+  up: { name: "Up Bank", by: "Personal Access Token", uses: "syncing accounts and transactions; your categories and tags go back to Up" },
 }
 
 /** The context from the stores and settings (keys, sign-ins, provider in use, models). */
@@ -36,6 +38,7 @@ export function aiContext(data: Pick<DataStore, "state">): AiContext {
     keys: data.state.apiKeys,
     signedIn: data.state.signedIn,
     inUse: activeLlmProvider(env),
+    searchClairic: env.JASKMONEY_SEARCH_CLAIRIC?.trim() !== "off",
     model: (provider) => {
       const id = llmModelId(env, provider)
       const model = llmModels().getModel(provider, id)
@@ -74,7 +77,7 @@ export function aiInUse(row: KeyRow, ctx: AiContext): boolean {
 /** The pane's row. */
 export function aiRow(row: KeyRow, ctx: AiContext) {
   const connection = aiConnection(row, ctx)
-  return { name: AI_NAMES[row].name, connected: !!connection, how: connection?.short ?? "not set", uses: `${AI_NAMES[row].usesShort}${aiInUse(row, ctx) ? " · in use" : ""}` }
+  return { name: AI_NAMES[row].name, connected: !!connection, how: connection?.short ?? "not set" }
 }
 
 /** The dialog's status lines. */
@@ -98,7 +101,6 @@ export function aiActions(row: KeyRow, ctx: AiContext): { id: AiAction; label: s
   if (row === "workersAi") actions.push({ id: "accountId", label: "Enter the account ID" })
   if (isLlmRow(row)) actions.push({ id: "model", label: "Change the model" })
   if (connected) actions.push({ id: "test", label: "Test" })
-  if (isLlmRow(row) && connected && ctx.inUse !== row) actions.push({ id: "use", label: "Use for writing rules" })
   if (removable(row, ctx)) actions.push({ id: "remove", label: isLlmRow(row) ? "Remove the saved key, model and sign-in" : "Remove the saved key" })
   return actions
 }
@@ -130,4 +132,58 @@ export function removable(row: KeyRow, ctx: AiContext): boolean {
   if (row === "workersAi") return ctx.keys.JASKMONEY_CF_TOKEN.source === "saved" || ctx.keys.JASKMONEY_CF_ACCOUNT_ID.source === "saved"
   const { keyName, modelName } = LLM_PROVIDERS[row]
   return ctx.keys[keyName].source === "saved" || ctx.keys[modelName].source === "saved" || ctx.signedIn[row]
+}
+
+// ---------- Uses ----------
+
+/** What the models do, each with the model doing it. */
+export const AI_USES = ["suggestions", "search", "rules"] as const
+export type AiUse = (typeof AI_USES)[number]
+
+export const USE_INFO: Record<AiUse, { name: string; does: string; available: string }> = {
+  suggestions: { name: "Suggestions", does: "suggests categories (i, and after each sync), checks whether a merchant's name says what was bought, finds a tag's transactions (T)", available: "Jev only" },
+  search: { name: "Search", does: "smart search (?words) writes the JQL; ask: terms have Jev judge rows", available: "Jev, and Clairic for the words and dates" },
+  rules: { name: "Rules", does: "writes rules from your history (R, then a)", available: "a general model: OpenRouter or OpenAI" },
+}
+
+/** How Jev is reached: TypeSafe (its key) wins over OpenRouter. */
+function jevVia(ctx: AiContext): "TypeSafe" | "OpenRouter" | null {
+  if (ctx.keys.JASKMONEY_JEV_TOKEN.source) return "TypeSafe"
+  return aiConnection("openrouter", ctx) ? "OpenRouter" : null
+}
+
+/** The model doing a use, as the pane and the dialog name it; `ready` when it can run. */
+export function useModel(use: AiUse, ctx: AiContext): { text: string; ready: boolean } {
+  if (use === "rules") {
+    const provider = ctx.inUse
+    if (!aiConnection(provider, ctx)) return { text: `${LLM_PROVIDERS[provider].label}: not connected`, ready: false }
+    return { text: `${LLM_PROVIDERS[provider].label} · ${ctx.model(provider).id}`, ready: true }
+  }
+  const via = jevVia(ctx)
+  if (!via) return { text: "Jev: not connected", ready: false }
+  const clairic = use === "search" && ctx.searchClairic && !!aiConnection("workersAi", ctx)
+  return { text: `Jev (${via})${clairic ? " + Clairic" : ""}`, ready: true }
+}
+
+export type UseAction = { id: "view" } | { id: "clairic"; on: boolean } | { id: "provider"; provider: LlmProvider } | { id: "connect"; row: AiRow }
+
+/** A use dialog's actions: connect what it needs, choose its model, see what's sent. */
+export function useActions(use: AiUse, ctx: AiContext): Array<UseAction & { label: string }> {
+  const out: Array<UseAction & { label: string }> = []
+  if (use === "rules") {
+    for (const provider of ["openrouter", "openai"] as const) {
+      if (provider === ctx.inUse) continue
+      out.push(aiConnection(provider, ctx)
+        ? { id: "provider", provider, label: `Use ${LLM_PROVIDERS[provider].label} instead` }
+        : { id: "connect", row: provider, label: `Connect ${LLM_PROVIDERS[provider].label}…` })
+    }
+    if (!aiConnection(ctx.inUse, ctx)) out.unshift({ id: "connect", row: ctx.inUse, label: `Connect ${LLM_PROVIDERS[ctx.inUse].label}…` })
+  } else if (!jevVia(ctx)) out.push({ id: "connect", row: "jev", label: "Connect Jev…" })
+  if (use === "search") {
+    out.push(aiConnection("workersAi", ctx)
+      ? { id: "clairic", on: !ctx.searchClairic, label: ctx.searchClairic ? "Stop using Clairic (Jev picks the words; written dates are missed)" : "Use Clairic for the words and dates" }
+      : { id: "connect", row: "workersAi", label: "Connect Clairic… (optional: reads words and dates)" })
+  }
+  out.push({ id: "view", label: "Show exactly what's sent" })
+  return out
 }

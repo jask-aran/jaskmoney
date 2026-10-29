@@ -1,5 +1,5 @@
 import { hasJev, JEV_SETUP, jevClient } from "../ai/jev"
-import { createWorkersAiClient, hasWorkersAi, readWorkersAiCredentials } from "../ai/workersAi"
+import { createWorkersAiClient, readWorkersAiCredentials, searchUsesClairic } from "../ai/workersAi"
 import { appToday } from "../domain/days"
 import { smartSearch } from "../domain/smartSearch"
 import type { DataStore } from "../state/dataStore"
@@ -17,9 +17,9 @@ export async function runSmartSearch(ui: UiStore, data: DataStore, draft: string
   const query = draft.trim().slice(1).trim()
   if (!query) { ui.setStatus("Type a search after ?, e.g. ?coffee over $5 last month"); return }
   if (!hasJev()) { ui.setStatus(`Smart search needs Jev (${JEV_SETUP})`, true); return }
-  ui.setStatus(`Writing a filter with ${jevService()}${hasWorkersAi() ? " + Clairic" : ""}…`)
+  ui.setStatus(`Writing a filter with ${jevService()}${searchUsesClairic() ? " + Clairic" : ""}…`)
   try {
-    const ai = { clairic: hasWorkersAi() ? createWorkersAiClient(readWorkersAiCredentials()).clairic : undefined, jev: jevClient() }
+    const ai = { clairic: searchUsesClairic() ? createWorkersAiClient(readWorkersAiCredentials()).clairic : undefined, jev: jevClient() }
     const descriptions = [...new Set(data.accountScoped().map((t) => t.description))]
     const started = Date.now()
     const { expr, clairic } = await smartSearch(ai, query, { today: appToday(), cycle: data.cycle(), categories: data.state.categories, descriptions })
