@@ -510,11 +510,13 @@ function createDataStore() {
   }))
 
   /**
-   * Confidence order holds still while you review: each row sorts by its
-   * confidence when first seen in this view, so accepting one (which asks
-   * its namesakes again) or an answer arriving changes the numbers shown,
-   * not the order. A row waiting for its first answer moves once, when it
-   * comes. Reopening the view or changing the sort sorts afresh.
+   * Confidence order holds still while you review: a row sorts by the
+   * lowest confidence it has had in this view, so accepting one (which asks
+   * its namesakes again) or an answer arriving can drop a row down, never
+   * lift it; the numbers and categories shown are always the latest. A row
+   * waiting for its first answer is placed when it comes; a dismissed one
+   * (no suggestion) drops to the bottom. Reopening the view or changing the
+   * sort sorts afresh.
    */
   const sortedAt = new Map<number, number>()
   let sortedFor = ""
@@ -528,10 +530,9 @@ function createDataStore() {
     const view = `${state.demo}|${state.uncategorisedOnly}|${review?.name ?? ""}|${state.sortColumn}`
     if (view !== sortedFor) { sortedAt.clear(); sortedFor = view }
     const confidence = live && ((id: number) => {
-      const held = sortedAt.get(id)
-      if (held !== undefined) return held
-      const now = live(id)
-      if (now >= 0) sortedAt.set(id, now)
+      const now = live(id), held = sortedAt.get(id)
+      if (held !== undefined && held <= now) return held
+      if (held !== undefined || now >= 0) sortedAt.set(id, now)
       return now
     })
     const sorted = sortRows(filtered(), state.sortColumn, state.sortAscending, confidence)

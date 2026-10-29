@@ -21,18 +21,26 @@ test("new suggestions don't reorder the Uncategorised view under the cursor; reo
   handleKey(ui, key("j"), data)
   const at = () => data.scopedTransactions()[ui.state.managerCursor]?.id
   expect(at()).toBe(3)
-  // New suggestions (accepting asks namesakes again) change the numbers,
-  // not the order (2026-10-30, was: re-sorted with the cursor following).
+  // New suggestions (accepting asks namesakes again) may drop a row, never
+  // lift it (2026-10-30, was: re-sorted both ways, the cursor following).
   data.setState("suggestions", 3, suggestion(3, 0.95))
   data.setState("suggestions", 4, suggestion(4, 0.99))
   await t.renderOnce()
   expect(data.scopedTransactions().map((r) => r.id)).toEqual([1, 2, 3, 4])
   expect(ui.state.managerCursor).toBe(2)
   expect(at()).toBe(3)
+  data.setState("suggestions", 1, suggestion(1, 0.5))
+  await t.renderOnce()
+  expect(data.scopedTransactions().map((r) => r.id)).toEqual([2, 3, 4, 1])
+  expect(at()).toBe(3)
+  // Back up again: it stays down.
+  data.setState("suggestions", 1, suggestion(1, 0.97))
+  await t.renderOnce()
+  expect(data.scopedTransactions().map((r) => r.id)).toEqual([2, 3, 4, 1])
   // Reopening the view sorts afresh.
   data.setUncategorisedOnly(false)
   data.setUncategorisedOnly(true)
-  expect(data.scopedTransactions().map((r) => r.id)).toEqual([4, 3, 1, 2])
+  expect(data.scopedTransactions().map((r) => r.id)).toEqual([4, 1, 3, 2])
   ui.jumpManagerCursor(1, 4)
   // A change of view keeps the index rules: s goes to the top.
   handleKey(ui, key("j"), data)
