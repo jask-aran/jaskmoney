@@ -20,6 +20,7 @@ import {
   TAG_PUSHES_SQL,
   RULE_TAG_DECLINES_SQL,
   MERCHANT_BREADTH_SQL,
+  MERCHANT_NOTES_SQL,
   CATEGORY_SOURCE_COLUMN,
   CATEGORY_INCOME_COLUMN,
   CATEGORY_NOT_SPENDING_COLUMN,
@@ -123,6 +124,7 @@ const MIGRATIONS: Record<number, (db: Db) => void> = {
   26: (db) => db.exec(TAG_PUSHES_SQL),
   27: (db) => db.exec(RULE_TAG_DECLINES_SQL),
   28: (db) => db.exec(MERCHANT_BREADTH_SQL),
+  29: (db) => db.exec(MERCHANT_NOTES_SQL),
   24: (db) => db.exec(ACTIVITY_LOG_SQL),
   23: (db) => {
     db.exec(CATEGORY_CHOICES_SQL)
@@ -617,6 +619,22 @@ export function loadMerchantBreadth(db: Db): Map<string, number> {
 export function saveMerchantBreadth(db: Db, answers: Map<string, number>): void {
   const save = db.query("INSERT INTO merchant_breadth (merchant, probability) VALUES (?, ?) ON CONFLICT(merchant) DO UPDATE SET probability = excluded.probability, asked_at = datetime('now')")
   db.transaction(() => { for (const [merchant, p] of answers) save.run(merchant, p) })()
+}
+
+/** The user's merchant notes, by lowercased name. */
+export function loadMerchantNotes(db: Db): Map<string, string> {
+  return new Map(db.query<{ merchant: string; note: string }, []>("SELECT merchant, note FROM merchant_notes").all().map((r) => [r.merchant, r.note]))
+}
+
+/** Save (or, empty, remove) a merchant's note. Its breadth was judged
+ * without it: forgotten, so the next run asks again. */
+export function saveMerchantNote(db: Db, merchant: string, note: string): void {
+  const key = merchant.trim().toLowerCase()
+  db.transaction(() => {
+    if (note.trim()) db.query("INSERT INTO merchant_notes (merchant, note) VALUES (?, ?) ON CONFLICT(merchant) DO UPDATE SET note = excluded.note, updated_at = datetime('now')").run(key, note.trim())
+    else db.query("DELETE FROM merchant_notes WHERE merchant = ?").run(key)
+    db.query("DELETE FROM merchant_breadth WHERE merchant = ?").run(key)
+  })()
 }
 
 export function loadDismissedSuggestionIds(db: Db): Set<number> {
