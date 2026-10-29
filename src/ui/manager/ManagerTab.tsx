@@ -130,6 +130,11 @@ export function ManagerTab(props: { focused: SectionId }) {
     return text || undefined
   }
 
+  /** Selected rows the view doesn't show (a filter hides them), as the Go app counts them. */
+  const hiddenSelected = createMemo(() => {
+    const shown = new Set(rows().map((r) => r.id))
+    return Object.keys(ui.state.selectedIds).filter((id) => !shown.has(Number(id))).length
+  })
   const rowsIndicator = () => {
     if (merchants()) {
       if (groups().length === 0) return undefined
@@ -145,15 +150,14 @@ export function ManagerTab(props: { focused: SectionId }) {
       const suggested = rows().filter((r) => data.state.suggestions[r.id]).length
       const confident = rows().filter((r) => (data.state.suggestions[r.id]?.confidence ?? 0) >= ACCEPT_ALL_AT).length
       return `${rows().length} to categorise · ${suggested} suggested, ${confident} ≥${ACCEPT_ALL_AT * 100}%${data.state.suggesting ? " · suggesting…" : ""}${
-        selCount() > 0 ? ` · ${selCount()} selected` : ""}`
+        selCount() > 0 ? ` · ${selCount()} selected${hiddenSelected() ? `, ${hiddenSelected()} hidden` : ""}` : ""}`
     }
     const start = ui.state.managerTop + 1
     const end = Math.min(ui.state.managerTop + ui.state.managerVisible, rows().length)
     // With a filter: how many the account has in all, and selected rows the
     // filter hides (Go app).
     const total = data.state.filterQuery ? data.accountScoped().length : rows().length
-    const shown = new Set(rows().map((r) => r.id))
-    const hidden = Object.keys(ui.state.selectedIds).filter((id) => !shown.has(Number(id))).length
+    const hidden = hiddenSelected()
     return `showing ${start}-${end} of ${rows().length}${total !== rows().length ? ` (${total.toLocaleString("en-AU")} in all)` : ""}${
       selCount() > 0 ? ` · ${selCount()} selected${hidden ? `, ${hidden} hidden` : ""}` : ""
     }${ui.state.rangeSelecting ? " · range" : ""} · sort ${data.state.sortColumn}${

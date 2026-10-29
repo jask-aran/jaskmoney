@@ -406,6 +406,12 @@ function handleCatPicker(ui: UiStore, key: KeyEvent, data?: DataStore): void {
         ui.setStatus(`Categorizing ${targets.length} → ${cat.name}…`)
         let resuggest: Promise<string> | undefined
         data.categorizeTransactions(targets, cat.id, (pushed, total) => {
+          // In the Uncategorised view the rows have left: they leave the
+          // selection too, as y's do, so nothing unseen stays selected.
+          if (pushed === 0 && data.state.uncategorisedOnly) {
+            const left = new Set(targets)
+            ui.setState({ selectedIds: Object.fromEntries(Object.entries(ui.state.selectedIds).filter(([id]) => !left.has(Number(id)))) })
+          }
           if (pushed === 0) resuggest ??= data.resuggestLike(targets).then(
             (count) => count > 0 ? ` · re-suggested ${count} alike` : "",
             (error) => ` · re-suggest failed: ${error instanceof Error ? error.message : String(error)}`,
