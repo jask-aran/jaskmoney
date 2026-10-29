@@ -84,3 +84,7 @@ bun run test
 
 SolidJS on [OpenTUI](https://github.com/sst/opentui), with SQLite through `bun:sqlite`. `legacy/go/` holds the
 original Go app as a behavioural reference. `docs/` holds the guide, port contracts and frozen captures.
+
+## License
+
+Copyright (C) 2026 Jaskaran Singh. Licensed under the [GNU Affero General Public License v3.0 only](LICENSE) (`AGPL-3.0-only`): you may use, modify and share it freely, and anyone who runs a modified version as a network service must offer its users the source.

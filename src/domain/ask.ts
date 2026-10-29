@@ -1,3 +1,4 @@
+import { newestFirst } from "./chronology"
 import { judgeEach, type JevClient } from "../ai/jev"
 import { addDays } from "./days"
 import { matchQuestion, matchState } from "./questions"
@@ -21,7 +22,7 @@ export const ASK_DEFAULT_DAYS = 90
 export function askCandidates(rows: Transaction[], today: string, datedFilter: boolean): { rows: Transaction[]; skipped: number } {
   const since = datedFilter ? null : addDays(today, -(ASK_DEFAULT_DAYS - 1))
   const inWindow = since ? rows.filter((t) => t.dateISO >= since) : rows
-  const recent = [...inWindow].sort((a, b) => b.dateISO.localeCompare(a.dateISO) || b.id - a.id).slice(0, ASK_LIMIT)
+  const recent = [...inWindow].sort(newestFirst).slice(0, ASK_LIMIT)
   return { rows: recent, skipped: rows.length - recent.length }
 }
 

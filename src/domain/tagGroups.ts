@@ -1,3 +1,4 @@
+import { chronological } from "./chronology"
 import { addDays, daysBetween, MONTHS } from "./days"
 import { PERSON_TO_PERSON } from "./suggest"
 import { groupByDescription } from "./transactionGroups"
@@ -37,7 +38,7 @@ function dateRange(start: string, end: string): string {
 
 const currencyOf = (row: Transaction) => row.foreignAmount?.trim().split(/\s+/)[0]?.toUpperCase() ?? ""
 const inPerson = (row: Transaction) => !!row.cardMethod && row.cardMethod !== "ECOMMERCE" && row.cardMethod !== "CARD_ON_FILE"
-const byDate = (a: Transaction, b: Transaction) => a.dateISO.localeCompare(b.dateISO) || a.id - b.id
+const byDate = chronological
 
 /** Inclusive trip bounds for nearby bookings and refunds. */
 export function tripWindow(start: string, end: string): { from: string; to: string } {

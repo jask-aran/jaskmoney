@@ -1,3 +1,4 @@
+import { chronological } from "../domain/chronology"
 import { createUpPush, categoryPush, operationSummary, type PushableRow } from "./store/upPush"
 import { createSuggestions } from "./store/suggestions"
 import { createTagReview, type TagReview } from "./store/tagReview"
@@ -145,7 +146,7 @@ const textOrder = new Intl.Collator().compare
 /** Rows in a column's order; dates tie-break on id so the order is stable.
  * Confidence sorts by `confidence(id)` (no suggestion lowest), then date. */
 function sortRows(rows: Transaction[], col: SortColumn, asc: boolean, confidence: (id: number) => number = () => -1): Transaction[] {
-  const byDate = (a: Transaction, b: Transaction) => (a.dateISO < b.dateISO ? -1 : a.dateISO > b.dateISO ? 1 : a.id - b.id)
+  const byDate = chronological
   const compare = (a: Transaction, b: Transaction): number => {
     switch (col) {
       case "confidence": return confidence(a.id) - confidence(b.id) || byDate(a, b)

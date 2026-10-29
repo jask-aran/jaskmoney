@@ -1,3 +1,4 @@
+import { newestFirst } from "../domain/chronology"
 import { jaskmoneyHome } from "../storage/home"
 import { Database } from "bun:sqlite"
 import { mkdirSync } from "node:fs"
@@ -440,6 +441,7 @@ export function loadTransactions(db: Db): Transaction[] {
          NULLIF(TRIM(t.raw_text), '') AS rawText,
          NULLIF(TRIM(t.foreign_amount), '') AS foreignAmount,
          NULLIF(TRIM(t.card_method), '') AS cardMethod,
+         t.external_created_at AS createdAt,
          t.transfer_account_id AS transferAccountId,
          -- Internal: money moved to or from another tracked account. A transfer
          -- to an untracked account (e.g. a desynced joint account) is spending.
@@ -454,7 +456,7 @@ export function loadTransactions(db: Db): Transaction[] {
        WHERE a.id IS NULL OR a.sync_enabled = 1
        ORDER BY t.date_iso DESC, t.id DESC`,
     )
-    .all() as Array<Omit<Transaction, "tagNames" | "tagColors" | "tagIds">>
+    .all() as Array<Omit<Transaction, "tagNames" | "tagColors" | "tagIds" | "createdMs"> & { createdAt: string | null }>
 
   const tagRows = db
     .query(
@@ -480,15 +482,18 @@ export function loadTransactions(db: Db): Transaction[] {
     tagIdMap.set(tr.txnId, ids)
   }
 
-  return rows.map((r) => ({
+  return rows.map(({ createdAt, ...r }) => ({
     ...r,
+    // RFC 3339 with its offset (+11:00, a trip's +08:00): parsed to one clock.
+    createdMs: createdAt ? Date.parse(createdAt) || null : null,
     internal: !!r.internal,
     excluded: !!r.internal || !!(r as { notSpendingCategory?: number }).notSpendingCategory,
     income: !!r.income,
     tagNames: tagNameMap.get(r.id) ?? [],
     tagColors: tagColorMap.get(r.id) ?? [],
     tagIds: tagIdMap.get(r.id) ?? [],
-  }))
+  // Newest first by time, not just by day (domain/chronology).
+  })).sort(newestFirst)
 }
 
 export function loadSuggestions(db: Db): CategorySuggestion[] {

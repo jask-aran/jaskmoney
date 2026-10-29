@@ -1,3 +1,4 @@
+import { newestFirst } from "./chronology"
 import { judgeEach, type JevClient } from "../ai/jev"
 import { ASK_LIMIT } from "./ask"
 import { tagQuestion, tagState } from "./questions"
@@ -89,7 +90,7 @@ export async function jevTagCandidates(
   examples: string[],
   options: { onCandidates?: (candidates: TagCandidate[]) => void; onError?: (error: unknown) => void; active?: () => boolean } = {},
 ): Promise<void> {
-  const newest = [...rows].sort((a, b) => b.dateISO.localeCompare(a.dateISO) || b.id - a.id).slice(0, ASK_LIMIT)
+  const newest = [...rows].sort(newestFirst).slice(0, ASK_LIMIT)
   const about = groupAbout(target.group)
   await judgeEach(jev, newest, (t) => tagQuestion(t, examples.length > 0, !!about), tagState(target.name, examples, about), {
     active: options.active,

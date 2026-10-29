@@ -162,6 +162,9 @@ export interface Transaction {
    * provider has none. */
   foreignAmount: string | null
   cardMethod: string | null
+  /** When the provider says it happened (Up's createdAt), in epoch ms; null
+   * for CSV rows. Orders a day's rows (domain/chronology). */
+  createdMs: number | null
   /** Own-account transfer counterpart, when the provider reports one. */
   transferAccountId: number | null
   /** Transfer to or from another tracked account. */
