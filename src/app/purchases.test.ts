@@ -155,3 +155,25 @@ test("a lookup found before prices were kept is redone with its own email; if th
   expect(data.purchaseLookups().get(1)).toMatchObject({ status: "found", items: [{ name: "2× Residue Cleaner" }] })
   expect(data.purchaseLookups().get(1)?.legacy).toBeUndefined()
 })
+
+test("saving a note on a waiting row asks its suggestion again, with the note; clearing it doesn't", async () => {
+  data.init(":memory:")
+  const db = data.getDb()!
+  db.query("INSERT INTO accounts (id, name, type, source) VALUES (1, 'Spending', 'debit', 'up')").run()
+  db.query("INSERT INTO transactions (id, date_raw, date_iso, amount, description, account_id, source) VALUES (1, 'x', '2026-10-29', -79.96, 'Amazon', 1, 'up')").run()
+  const home = Number(db.query("INSERT INTO categories (name, color, sort_order) VALUES ('Homeware', '#fff', 90)").run().lastInsertRowid)
+  const gifts = Number(db.query("INSERT INTO categories (name, color, sort_order) VALUES ('Gifts & Charity', '#fff', 91)").run().lastInsertRowid)
+  db.query("INSERT INTO category_suggestions (transaction_id, category_id, confidence, source) VALUES (1, ?, 0.92, 'jev')").run(home)
+  data.refresh()
+  const sent: string[] = []
+  const ai = { async judge(questions: Record<string, unknown>) {
+    sent.push(JSON.stringify(questions))
+    return Object.fromEntries(Object.keys(questions).map((id) => [id, (questions[id] as { type?: string }).type === "choice"
+      ? { type: "choice" as const, choice: `c${gifts}`, confidence: 0.9, probabilities: { [`c${gifts}`]: 0.9 } }
+      : { type: "noul" as const, noul: 0.1 }]))
+  } }
+  expect(await data.updateTransactionNotes(1, "Gift for Sam", ai)).toBe(true)
+  expect(sent.some((q) => q.includes("Gift for Sam"))).toBe(true)
+  expect(data.state.suggestions[1]?.categoryId).toBe(gifts)
+  expect(await data.updateTransactionNotes(1, "", ai)).toBe(false)
+})

@@ -523,7 +523,7 @@ describe("key router", () => {
     try {
       db.query("INSERT INTO transactions (id, date_raw, date_iso, amount, description, notes, source) VALUES (901, 'x', '2026-01-01', -1, 'local', 'cofee', 'csv')").run()
       data.setState({ transactions: loadTransactions(db) })
-      const local = { ...data, updateTransactionNotes: (id: number, notes: string) => setTransactionNotes(db, id, notes) }
+      const local = { ...data, updateTransactionNotes: (id: number, notes: string) => { setTransactionNotes(db, id, notes); return Promise.resolve(false) } }
       ui.switchTab("manager")
       ui.setState({ detailId: 901, detailNotesCaret: 0 })
       handleKey(ui, key("n"), local)

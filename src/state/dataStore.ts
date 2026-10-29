@@ -59,6 +59,7 @@ import { paydays, type Budget, type BudgetScope, type CycleConfig } from "../dom
 import { buildImportPreview, commitImportPreview, matchingProfiles } from "../domain/profileImport"
 import { CREDENTIAL_NAMES, credentialEnv, credentialSource, maskSecret, saveCredentials, type CredentialName, NOT_SECRET } from "../ai/credentials"
 import { isOrdinaryFlow, isUncategorised } from "../domain/moneyRules"
+import { hasJev, type JevClient } from "../ai/jev"
 import { createUpClient, readUpToken } from "../up/client"
 import { type RuleOffer } from "../domain/ruleOffers"
 import { type LlmProvider } from "../ai/llm"
@@ -613,8 +614,14 @@ function createDataStore() {
     return db ? loadTransactionDetail(db, id) : null
   }
 
-  function updateTransactionNotes(id: number, notes: string): void {
+  /** Save a row's note. A waiting row's suggestion is asked again with it
+   * (Jev reads it as your_note; saving again re-asks, for a note written
+   * before this); resolves to whether it was. */
+  function updateTransactionNotes(id: number, notes: string, ai?: Pick<JevClient, "judge">): Promise<boolean> {
     mutate((db) => setTransactionNotes(db, id, notes))
+    const t = transactions().find((row) => row.id === id)
+    if (!t || !t.notes.trim() || !state.suggestions[id] || !isOrdinaryFlow(t) || !isUncategorised(t) || (!ai && !hasJev())) return Promise.resolve(false)
+    return suggestCategories([id], ai, { replace: true }).then(() => true, () => false)
   }
 
   const ctx: StoreContext = {

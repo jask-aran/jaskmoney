@@ -491,7 +491,11 @@ function handleManagerDetailNotes(ui: UiStore, key: KeyEvent, data?: DataStore):
   const { name } = key
   if (name === "escape") { ui.setState({ detailNotesEditing: false, detailNotesDraft: "", detailNotesCaret: 0 }); ui.setStatus("Notes unchanged"); return }
   if (name === "return" || name === "enter") {
-    try { data?.updateTransactionNotes(ui.state.detailId, ui.state.detailNotesDraft.trim()); ui.setStatus("Notes saved") } catch (e) { reportError(ui, e) }
+    try {
+      const asking = data?.updateTransactionNotes(ui.state.detailId, ui.state.detailNotesDraft.trim())
+      ui.setStatus("Notes saved")
+      void asking?.then((asked) => { if (asked) ui.setStatus("Notes saved · suggestion asked again with them") })
+    } catch (e) { reportError(ui, e) }
     ui.setState({ detailNotesEditing: false, detailNotesDraft: "", detailNotesCaret: 0 })
     return
   }
