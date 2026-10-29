@@ -22,7 +22,15 @@ function setup() {
   row.run(3, "2026-10-20", "2026-10-20", -7, "Bulk Barn", null, "BULK BARN PTY")
   row.run(4, "2026-10-03", "2026-10-03", -12, "Corner Bar", 101, "CORNER BAR")
   row.run(5, "2026-10-10", "2026-10-10", -20, "Night Owl", 101, "NIGHT OWL")
-  db.query("INSERT INTO merchant_notes (merchant, note) VALUES ('bulk barn', 'bulk dry foods')").run()
+  // A payment from a person with a message, and an earlier one like it.
+  const paid = db.query(`INSERT INTO transactions (id, date_raw, date_iso, amount, description, category_id, account_id, source, transaction_type, message)
+    VALUES (?, ?, ?, ?, ?, ?, 100, 'csv', 'Payment Received', ?)`)
+  paid.run(6, "2026-10-04", "2026-10-04", 15, "Sam Lee", 101, "karaoke night")
+  paid.run(8, "2026-10-05", "2026-10-05", 30, "Alex Kim", 100, "groceries")
+  // Enough messages that "karaoke" is a rare word (similarMessages weighs words by rarity).
+  for (let i = 0; i < 6; i++) paid.run(20 + i, "2026-09-0" + (i + 1), "2026-09-0" + (i + 1), 10, "Pat Doe", 100, "shopping")
+  paid.run(7, "2026-10-21", "2026-10-21", 12, "Alex Kim", null, "karaoke")
+  db.query("INSERT INTO merchant_notes (merchant, note) VALUES ('bulk barn', 'bulk dry foods'), ('alex kim', 'a friend')").run()
   db.query("INSERT INTO tags (id, name, about) VALUES (50, 'NIGHTS', 'nights out')").run()
   db.query("INSERT INTO tag_categories (tag_id, category_id) VALUES (50, 101)").run()
   db.query("INSERT INTO transaction_tags (transaction_id, tag_id) VALUES (4, 50)").run()

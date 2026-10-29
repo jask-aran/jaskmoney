@@ -1,6 +1,6 @@
 import { judgeEach, type JevClient } from "../ai/jev"
 import { assignableCategories } from "./categoryOptions"
-import { categorisedByMerchant, examplesOf, isPersonToPerson, merchantKey, rankCategories, type CategoryCount } from "./history"
+import { categorisedByMerchant, examplesOf, isPersonToPerson, merchantKey, rankCategories, similarMessages, type CategoryCount } from "./history"
 import { isOrdinaryFlow, isUncategorised } from "./moneyRules"
 import { EXAMPLES_PER_CATEGORY, MERCHANT_STATE, merchantBreadthQuestion, MIXED_AT, MIXED_UNSURE_AT, NO_DETAIL_CAP, RANKED_MIN, SUGGESTION_RANKED, UNSURE_CAP, categoryPath, suggestionCriteria, suggestionQuestion, suggestionState, type CategoryUses } from "./questions"
 import type { Category, CategorySuggestion, Transaction } from "./types"
@@ -221,7 +221,9 @@ export async function jevSuggestions(
   // A marketplace's earlier categories say nothing about this purchase.
   const earlier = (t: Transaction) => options.breadth?.(t.description) === "mixed" ? "" : evidence(t).ranked.map((e) => `${names.get(e.categoryId)} ×${e.count}`).join(", ")
   const suggestions: CategorySuggestion[] = []
-  await judgeEach(jev, transactions, (t) => suggestionQuestion(t, criteria, earlier(t), options.notes?.get(merchantKey(t.description)), withUses), suggestionState(uses), {
+  // Rows with a message: your categorised rows with messages like it.
+  const similar = similarMessages(options.history ?? [])
+  await judgeEach(jev, transactions, (t) => suggestionQuestion(t, criteria, earlier(t), options.notes?.get(merchantKey(t.description)), withUses, similar(t)), suggestionState(uses), {
     onAnswers: (answers) => {
       for (const [t, answer] of answers) {
         if (answer.type !== "choice") continue

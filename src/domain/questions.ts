@@ -22,6 +22,15 @@ import type { Category, Transaction } from "./types"
  * similar past rows by shared words (64.3%). Most misses were Up's own
  * labels (313 of the 325) on a fine line: a cafe as Takeaway, a roaster as
  * Groceries.
+ *
+ * Rows with a message (2026-10-30, the 59 categorised ones, each half held
+ * out against the other): a payment from a person is told by its message,
+ * which merchant history and examples don't cover. Adding up to three of
+ * your rows whose messages share rarer words (similar_messages): top-1 73 →
+ * 75%, top-3 83 → 85%, 38 picks at 80%+ (35 right) against 28 (26); the
+ * standard eval unchanged (203/300, twice, against 200–202). Also naming
+ * person-to-person messages among each category's examples: about the same
+ * on messages, but a point lower on the standard eval (197, 198); dropped.
  */
 
 // ---------- Category suggestions ----------
@@ -85,7 +94,7 @@ export function suggestionCriteria(suggestable: Category[], categories: Category
 }
 
 /** `uses`: the state has `categories_used_for` (suggestionState). */
-export function suggestionQuestion(t: Transaction, criteria: Record<string, string>, earlier = "", note?: string, uses = false): JevQuestion {
+export function suggestionQuestion(t: Transaction, criteria: Record<string, string>, earlier = "", note?: string, uses = false, similar: string[] = []): JevQuestion {
   return {
     type: "choice",
     instructions: {
@@ -94,8 +103,9 @@ export function suggestionQuestion(t: Transaction, criteria: Record<string, stri
         // row, it cost a point of accuracy on spending).
         + (t.amount > 0 ? " Money back for a purchase (a refund) belongs in the category of what was bought, not income." : "")
         + (uses ? USES_NOTE : "")
-        + (note ? " `transaction.merchant_note` is what the account holder says about this merchant." : ""),
-      transaction: rowFacts(t, { earlier, merchantNote: note }),
+        + (note ? " `transaction.merchant_note` is what the account holder says about this merchant." : "")
+        + (similar.length ? " `transaction.similar_messages` are the account holder's earlier transactions with messages like this one, and their categories." : ""),
+      transaction: rowFacts(t, { earlier, merchantNote: note, similar }),
     },
     criteria,
   }

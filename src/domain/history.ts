@@ -42,6 +42,8 @@ export interface RowFactsOptions {
   earlier?: string
   /** What you say about the merchant (merchant notes). */
   merchantNote?: string
+  /** Your categorised rows whose messages are like this one's (similarMessages). */
+  similar?: string[]
 }
 
 /**
@@ -79,6 +81,7 @@ export function rowFacts(t: Transaction, o: RowFactsOptions = {}): Record<string
     ...(o.paid && t.cardMethod ? { paid: paidText(t.cardMethod) } : {}),
     ...(o.earlier ? { categorised_before: o.earlier } : {}),
     ...(o.merchantNote ? { merchant_note: o.merchantNote } : {}),
+    ...(o.similar?.length ? { similar_messages: o.similar.join("; ") } : {}),
   }
 }
 
@@ -141,4 +144,42 @@ export function examplesOf(rows: readonly Transaction[], limit: number): string[
   }
   return [...byKey.values()].sort((a, b) => b.count - a.count || b.latest.localeCompare(a.latest)).slice(0, limit)
     .map((e) => (e.description.length > EXAMPLE_LENGTH ? `${e.description.slice(0, EXAMPLE_LENGTH - 1)}…` : e.description))
+}
+
+// ---------- Rows with messages like this one ----------
+
+/** The words of a message that can match another's: lowercased letters and
+ * digits, three or more. */
+const messageWords = (message: string) => new Set(message.toLowerCase().match(/[\p{L}\p{N}]{3,}/gu) ?? [])
+
+/** How many earlier rows with a message `similarMessages` names at most. */
+export const SIMILAR_MESSAGES = 3
+
+/**
+ * For a row with a message: up to SIMILAR_MESSAGES of your categorised rows
+ * whose messages share its rarer words ("gift" counts, a word in most
+ * messages, like your own name, barely does), most alike first, as
+ * `"panavs gift" (money in, $30.00) → Gifts & Charity`. A person's name
+ * says nothing; what the money was for is in the message, and the same
+ * words tend to mean the same category.
+ */
+export function similarMessages(history: readonly Transaction[]): (t: Transaction) => string[] {
+  const rows = history.filter((h) => h.message?.trim() && h.categoryId != null && h.categoryName && h.categoryName !== "Uncategorised")
+  const words = rows.map((h) => messageWords(h.message!))
+  const df = new Map<string, number>()
+  for (const set of words) for (const w of set) df.set(w, (df.get(w) ?? 0) + 1)
+  const idf = (w: string) => Math.log((rows.length + 1) / ((df.get(w) ?? 0) + 1))
+  // A shared word worth this much at least: rarer than about one message in four.
+  const minScore = Math.log(4)
+  return (t) => {
+    if (!t.message?.trim()) return []
+    const mine = messageWords(t.message)
+    return rows.flatMap((h, i) => {
+      if (h.id === t.id) return []
+      let score = 0
+      for (const w of mine) if (words[i]!.has(w)) score += idf(w)
+      return score >= minScore ? [{ h, score }] : []
+    }).sort((a, b) => b.score - a.score || b.h.dateISO.localeCompare(a.h.dateISO)).slice(0, SIMILAR_MESSAGES)
+      .map(({ h }) => `"${h.message!.trim()}" (${h.amount < 0 ? "money out" : "money in"}, ${formatMoney(Math.abs(h.amount))}) → ${h.categoryName}`)
+  }
 }

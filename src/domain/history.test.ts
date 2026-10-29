@@ -1,6 +1,6 @@
 import { expect, test } from "bun:test"
 import { transaction } from "../testing/fixtures"
-import { categorisedByMerchant, examplesOf, isPersonToPerson, merchantKey, rankCategories, rowFacts, whenText } from "./history"
+import { categorisedByMerchant, examplesOf, isPersonToPerson, merchantKey, rankCategories, rowFacts, similarMessages, whenText } from "./history"
 
 test("the row block: one vocabulary; empty facts left out; the rest only where asked for", () => {
   const t = transaction({ id: 1, description: " Amazon ", amount: -54.9, transactionType: "Purchase", rawText: "AMAZON AU RETAIL, SYDNEY", message: null, notes: "", tagNames: [], categoryId: 4, categoryName: "Homeware", dateISO: "2026-10-03", dateRaw: "2026-10-03T14:22:00+10:00", accountName: "Spending", cardMethod: "ECOMMERCE", foreignAmount: null })
@@ -42,4 +42,26 @@ test("the examples block: one per description, most rows first, then the most re
   expect(examplesOf(rows, 3)).toEqual(["Coles", "Aldi", "IGA"])
   expect(examplesOf(rows, 9).at(-1)).toBe("A very long merchant description that g…")
   expect(examplesOf([], 3)).toEqual([])
+})
+
+test("similar messages: your categorised rows sharing its rarer words, most alike first; a common word alone doesn't count", () => {
+  const paid = (id: number, message: string, categoryName: string, amount = 20, dateISO = "2026-09-01") =>
+    transaction({ id, description: `Friend ${id}`, transactionType: "Payment Received", message, amount, categoryId: 1, categoryName, dateISO })
+  // "jask" is in most messages: on its own it says nothing.
+  const history = [
+    paid(1, "sams gift jask", "Gifts & Charity", 30, "2026-08-05"),
+    paid(2, "pho jask", "Restaurants & Cafes"),
+    paid(3, "ramen jask", "Restaurants & Cafes"),
+    paid(4, "rent jask", "Rent & Mortgage"),
+    paid(5, "uber jask", "Taxis & Share Cars"),
+    paid(6, "Bright accom", "Holidays & Travel"),
+    paid(7, "power bill", "Utilities"),
+    transaction({ id: 8, description: "Friend 8", message: "gift wrap", categoryId: null, categoryName: "Uncategorised" }),
+  ]
+  const similar = similarMessages(history)
+  expect(similar(paid(10, "Sam gift bday", "Uncategorised"))).toEqual(['"sams gift jask" (money in, $30.00) → Gifts & Charity'])
+  expect(similar(paid(11, "jask", "Uncategorised"))).toEqual([])
+  expect(similar(transaction({ id: 12, description: "Coles", message: null }))).toEqual([])
+  const facts = rowFacts(paid(10, "Sam gift bday", "Uncategorised"), { similar: similar(paid(10, "Sam gift bday", "Uncategorised")) })
+  expect(facts.similar_messages).toBe('"sams gift jask" (money in, $30.00) → Gifts & Charity')
 })

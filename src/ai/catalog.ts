@@ -17,7 +17,7 @@ import { RULE_WRITER_TURNS } from "./ruleWriter"
 export const AI_USES = ["suggestions", "search", "rules"] as const
 export type AiUse = (typeof AI_USES)[number]
 
-export type BlockId = "framing" | "row" | "merchant" | "merchantHistory" | "merchantNote" | "merchantCheck" | "categories" | "categoryExamples" | "tag" | "tagExamples" | "search" | "today" | "jql" | "ruleBrief" | "ruleTools"
+export type BlockId = "framing" | "row" | "merchant" | "merchantHistory" | "merchantNote" | "similarMessages" | "merchantCheck" | "categories" | "categoryExamples" | "tag" | "tagExamples" | "search" | "today" | "jql" | "ruleBrief" | "ruleTools"
 
 /** A piece of context: what it says, where it's gathered from, and the code that gathers it. */
 export interface ContextBlock {
@@ -59,6 +59,12 @@ export const BLOCKS: Record<BlockId, ContextBlock> = {
     says: "What you wrote about the merchant (\"varies: electronics, gifts\").",
     from: "Merchants view, n (or N on a row)",
     code: "merchant_notes table",
+  },
+  similarMessages: {
+    name: "Messages like it",
+    says: "For a row with a message: up to three of your categorised rows whose messages share its rarer words, as \"panavs gift\" (money in, $30.00) → Gifts & Charity. A person's name says nothing; the message says what it was for.",
+    from: "your categorised rows with messages",
+    code: "history.similarMessages",
   },
   merchantCheck: {
     name: "Merchant check",
@@ -158,6 +164,7 @@ export const QUERIES: Record<QueryId, QueryInfo> = {
       { block: "row", fields: ["transaction"] },
       { block: "merchantHistory", fields: ["categorised_before"] },
       { block: "merchantNote", fields: ["merchant_note"] },
+      { block: "similarMessages", fields: ["similar_messages"] },
       { block: "categories", fields: ["criteria"] },
       { block: "categoryExamples", fields: ["categories_used_for"] },
       { block: "merchantCheck", fields: [] },
