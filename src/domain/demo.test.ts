@@ -8,11 +8,11 @@ import { loadAccounts, loadBudgetCycle, loadBudgets, loadCategories, loadTransac
 import { isIncome, isSpending } from "./moneyRules"
 
 /**
- * Demo mode (acceptance, frozen). The demo ships with the app, so it is
- * made from built-in data only: generateDemo takes no user data at all.
- * Three years of an Up-style account with real variety: up months and
- * down months, different spending patterns, a monthly budget it sometimes
- * keeps and sometimes blows.
+ * Demo mode (acceptance, frozen). Without history, the built-in life
+ * alone (it ships with the app): three years of an Up-style account with
+ * real variety: up months and down months, different spending patterns, a
+ * monthly budget it sometimes keeps and sometimes blows. With your history
+ * (approved 2026-10-29), see demoHistory.test.
  */
 const today = "2026-10-27"
 const make = (seed = 7): DemoData => generateDemo({ today, years: 3, seed })
