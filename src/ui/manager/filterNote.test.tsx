@@ -3,7 +3,7 @@ import { RGBA } from "@opentui/core"
 import { data } from "../../state/dataStore"
 import { ui } from "../../state/uiStore"
 import { renderApp } from "../../testing/app"
-import { theme } from "../../theme"
+import { theme, tone } from "../../theme"
 
 let rendered: Awaited<ReturnType<typeof renderApp>> | undefined
 afterEach(() => { rendered?.renderer.destroy(); rendered = undefined; data.clearFilter() })
@@ -27,6 +27,6 @@ test("beside the bar's dot: the full form a forgiven search reads as, what savin
     return { fg: span!.fg.toInts(), dot: /^●\s*(ok|check|parse)/.exec(spans.find((s) => s.text.trim().startsWith("●"))!.text.trim())![1] }
   }
   expect(await spanOf("cat:restaurants or kfc", '→ cat:"Restaurants & Cafes" OR kfc')).toEqual({ fg: RGBA.fromHex(theme.overlay1).toInts(), dot: "ok" })
-  expect(await spanOf("cat:insurance", "could be Rates & Insurance or Car Insurance: finding either")).toEqual({ fg: RGBA.fromHex(theme.warning).toInts(), dot: "check" })
-  expect(await spanOf('desc:"open', "searching it as one phrase")).toEqual({ fg: RGBA.fromHex(theme.error).toInts(), dot: "parse" })
+  expect(await spanOf("cat:insurance", "could be Rates & Insurance or Car Insurance: finding either")).toEqual({ fg: RGBA.fromHex(tone.caution).toInts(), dot: "check" })
+  expect(await spanOf('desc:"open', "searching it as one phrase")).toEqual({ fg: RGBA.fromHex(tone.bad).toInts(), dot: "parse" })
 })

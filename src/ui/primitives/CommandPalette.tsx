@@ -2,7 +2,7 @@ import { RGBA } from "@opentui/core"
 import { For, Show, createMemo } from "solid-js"
 import { useTerminalDimensions } from "@opentui/solid"
 import type { Command } from "../../app/commands"
-import { theme } from "../../theme"
+import { theme, ink, tone } from "../../theme"
 import { fit, truncate } from "../text"
 import { centredTop } from "./ListRow"
 import { S } from "./S"
@@ -61,14 +61,14 @@ export function CommandPalette(props: { commands: Command[]; cursor: number; que
     <box position="absolute" zIndex={30} left={0} top={0} width="100%" height="100%" backgroundColor={BACKDROP} alignItems="center" paddingTop={Math.floor(dims().height / 4)}>
       <box width={width()} backgroundColor={theme.mantle} paddingTop={1} paddingBottom={1} flexDirection="column">
         <box paddingLeft={INSET} paddingRight={INSET} flexDirection="row" justifyContent="space-between">
-          <text wrapMode="none"><TextInput field={{ value: props.query, caret: props.query.length }} focused placeholder="Search commands" /><Show when={!props.query}><S fg={theme.overlay0}>{"Search commands"}</S></Show></text>
-          <text fg={theme.overlay1}>esc</text>
+          <text wrapMode="none"><TextInput field={{ value: props.query, caret: props.query.length }} focused placeholder="Search commands" /><Show when={!props.query}><S fg={ink.faint}>{"Search commands"}</S></Show></text>
+          <text fg={tone.key}>esc</text>
         </box>
         <text> </text>
         <For each={shown()}>{(line) => {
           if (line.kind === "heading") return (
             <box paddingLeft={INSET} paddingTop={line.first ? 0 : 1}>
-              <text fg={theme.accent} wrapMode="none"><b>{line.label}</b></text>
+              <text fg={ink.label} wrapMode="none"><b>{line.label}</b></text>
             </box>
           )
           const command = line.command
@@ -78,8 +78,8 @@ export function CommandPalette(props: { commands: Command[]; cursor: number; que
           const label = () => truncate(command.label, Math.max(8, inner() - right().length - 2))
           // The description fills what's left, a space short of the right column.
           const rest = () => Math.max(0, inner() - label().length - right().length - 1)
-          const fg = () => command.disabled ? theme.overlay0 : theme.text
-          const muted = () => at() ? theme.subtext0 : theme.overlay0
+          const fg = () => command.disabled ? ink.faint : ink.figure
+          const muted = () => command.disabled ? ink.faint : ink.note
           return (
             <box paddingLeft={INSET} paddingRight={INSET} backgroundColor={at() ? theme.rowCursor : theme.mantle}>
               <text wrapMode="none">
@@ -90,8 +90,8 @@ export function CommandPalette(props: { commands: Command[]; cursor: number; que
             </box>
           )
         }}</For>
-        <Show when={more()}><box paddingLeft={INSET}><text fg={theme.overlay0}>…</text></box></Show>
-        <Show when={!props.commands.length}><box paddingLeft={INSET}><text fg={theme.overlay1}>No matching commands</text></box></Show>
+        <Show when={more()}><box paddingLeft={INSET}><text fg={ink.note}>…</text></box></Show>
+        <Show when={!props.commands.length}><box paddingLeft={INSET}><text fg={ink.note}>No matching commands</text></box></Show>
       </box>
     </box>
   )

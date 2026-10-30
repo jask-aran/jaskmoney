@@ -2,7 +2,7 @@ import { For, Show, createMemo } from "solid-js"
 import { SectionCard } from "../primitives/SectionCard"
 import { S } from "../primitives/S"
 import { data } from "../../state/dataStore"
-import { theme } from "../../theme"
+import { ink, tone, theme } from "../../theme"
 import { rowAppearance } from "../../domain/rowStyle"
 import { formatMoney } from "../../domain/dashboard"
 import { accountStacks, type AccountStack } from "../../domain/accountTree"
@@ -51,45 +51,45 @@ export function AccountsPane(props: { focused: boolean; width: number }) {
       used += Bun.stringWidth(text)
       return { ...cell, text, bg }
     })
-    return [...fitted, { text: " ".repeat(Math.max(1, width() - used - right.text.length)), fg: theme.text, bg }, { ...right, bg }]
+    return [...fitted, { text: " ".repeat(Math.max(1, width() - used - right.text.length)), fg: ink.figure, bg }, { ...right, bg }]
   }
   const cells = (stack: AccountStack, index: number): Cell[] => {
     if (index === 0) {
       return line([
-        { text: mark("net"), fg: theme.blue },
-        { text: stack.label, fg: theme.text, bold: true },
-        { text: NET, fg: theme.overlay1 },
-      ], { text: money(stack.net), fg: stack.net != null && stack.net < 0 ? theme.error : theme.text, bold: true }, theme.canvas)
+        { text: mark("net"), fg: ink.label },
+        { text: stack.label, fg: ink.figure, bold: true },
+        { text: NET, fg: ink.label },
+      ], { text: money(stack.net), fg: stack.net != null && stack.net < 0 ? tone.bad : ink.figure, bold: true }, theme.canvas)
     }
     const row = stack.rows[index - 1]
-    if (!row) return [{ text: " ".repeat(width()), fg: theme.text }]
+    if (!row) return [{ text: " ".repeat(width()), fg: ink.figure }]
     const current = row.selection === data.state.accountSelection
     // The chosen account: the cursor wash while the pane has focus (its
     // bold name marks it otherwise).
     const look = rowAppearance(false, false, current && props.focused)
     return line([
-      { text: " ", fg: theme.text },
-      { text: mark(row.kind), fg: row.kind === "savers" ? theme.success : theme.lavender },
-      { text: row.label, fg: current ? theme.text : theme.subtext0, bold: current },
-    ], { text: money(row.balance), fg: row.balance != null && row.balance < 0 ? theme.error : theme.subtext1 }, look.bg ?? theme.canvas)
+      { text: " ", fg: ink.figure },
+      { text: mark(row.kind), fg: ink.label },
+      { text: row.label, fg: current ? ink.figure : ink.label, bold: current },
+    ], { text: money(row.balance), fg: row.balance != null && row.balance < 0 ? tone.bad : ink.figure }, look.bg ?? theme.canvas)
   }
 
   return (
     <SectionCard title="Accounts" focused={props.focused} active={props.focused} height={accountsPaneHeight(stacks())}>
-      <Show when={stacks().length} fallback={<text fg={theme.overlay1}>No accounts yet</text>}>
+      <Show when={stacks().length} fallback={<text fg={ink.note}>No accounts yet</text>}>
         <For each={lines()}>
           {(index) => (
             <text wrapMode="none">
-              <S fg={theme.overlay1}>{window().start > 0 ? "‹ " : ""}</S>
+              <S fg={ink.note}>{window().start > 0 ? "‹ " : ""}</S>
               <For each={shown()}>
                 {(stack, i) => (
                   <>
-                    <S fg={theme.surface1}>{i() === 0 ? "" : " │ "}</S>
+                    <S fg={ink.rule}>{i() === 0 ? "" : " │ "}</S>
                     <For each={cells(stack, index)}>{(cell) => <S fg={cell.fg} bg={cell.bg ?? theme.canvas} bold={cell.bold}>{cell.text}</S>}</For>
                   </>
                 )}
               </For>
-              <S fg={theme.overlay1}>{window().end < stacks().length ? " ›" : ""}</S>
+              <S fg={ink.note}>{window().end < stacks().length ? " ›" : ""}</S>
             </text>
           )}
         </For>

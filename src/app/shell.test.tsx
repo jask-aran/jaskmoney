@@ -1,7 +1,7 @@
 import { DATABASE_ROWS } from "../state/databaseRows"
 import { describe, expect, test } from "bun:test"
 import { RGBA, TextAttributes } from "@opentui/core"
-import { theme } from "../theme"
+import { ink, tone } from "../theme"
 import { ui } from "../state/uiStore"
 import { data } from "../state/dataStore"
 import { renderApp } from "../testing/app"
@@ -107,7 +107,7 @@ describe("shell render M0", () => {
     expect(title.attributes & TextAttributes.BOLD).toBe(TextAttributes.BOLD)
     const canonical = spans.find((span) => span.text.includes("[amt:=-10]"))!
     expect(canonical.attributes & TextAttributes.BOLD).toBe(TextAttributes.BOLD)
-    expect(canonical.fg.toInts()).toEqual([137, 180, 250, 255])
+    expect(canonical.fg.toInts()).toEqual(RGBA.fromHex(tone.scope).toInts())
 
     t.renderer.destroy()
   })
@@ -187,8 +187,9 @@ describe("shell render M0", () => {
     expect(frame).toContain("$10,052.37")
     expect(frame).toContain("$8,948.01")
     expect(frame).not.toContain("Holiday")
-    // The last match: the header's status names the selection too.
-    const span = (text: string) => t.captureSpans().lines.flatMap((line) => line.spans).findLast((s) => s.text === text)!
+    // The last match: the header's status names the selection too. A name
+    // shares its run with the account's mark when they're one colour.
+    const span = (text: string) => t.captureSpans().lines.flatMap((line) => line.spans).findLast((s) => s.text === text || s.text.endsWith(` ${text}`))!
     expect(span("Spending").attributes & TextAttributes.BOLD).toBe(TextAttributes.BOLD)
     expect(span("Bills").attributes & TextAttributes.BOLD).toBe(0)
     // Unfocused, the selected row sits on the canvas like the others.
@@ -270,7 +271,7 @@ describe("shell render M0", () => {
     await t.flush()
     // Plain cursor keeps column colours on surface2.
     expect(span("RANGE CURSOR").bg.toInts()).toEqual([88, 91, 112, 255])
-    expect(span("RANGE CURSOR").fg.toInts()).toEqual([230, 230, 230, 255])
+    expect(span("RANGE CURSOR").fg.toInts()).toEqual(RGBA.fromHex(ink.figure).toInts())
     expect(span("RANGE ONLY").bg.toInts()).toEqual([17, 17, 27, 255])
 
     t.renderer.destroy()
@@ -407,7 +408,7 @@ describe("shell render M0", () => {
     await t.renderOnce()
     expect(t.captureCharFrame()).toContain("Press enter again to clear all transactions and imports")
     const armed = t.captureSpans().lines.flatMap((line) => line.spans).find((span) => span.text.includes("Press enter again"))!
-    expect(armed.fg.toInts()).toEqual(RGBA.fromHex(theme.error).toInts())
+    expect(armed.fg.toInts()).toEqual(RGBA.fromHex(tone.bad).toInts())
     expect(armed.attributes & TextAttributes.BOLD).toBe(TextAttributes.BOLD)
     t.mockInput.pressKey("k")
     await t.renderOnce()

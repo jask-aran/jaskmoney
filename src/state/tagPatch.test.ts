@@ -7,7 +7,7 @@ import { TagPicker } from "../ui/primitives/TagPicker"
 import { tagPickerItems } from "./tagPicker"
 import { data } from "./dataStore"
 import { ui } from "./uiStore"
-import { theme } from "../theme"
+import { ink, theme } from "../theme"
 import { key } from "../testing/keys"
 
 function press(name: string) {
@@ -121,7 +121,7 @@ test("tag rows group by categories (a target's, none, others; a group covers its
   data.refresh()
   const rows = tagPickerItems(data.state.tags, data.state.categories, data.state.transactions, [1, 2], "cf")
   expect(rows.map((r) => r.label)).toEqual(["Scoped", "COFFEE BREAK", "Global", "COFFEE", "COFFEE SHOP", "Out of scope", "COFFEE OTHER", 'Create "cf"'])
-  expect(rows.find((r) => r.label === "COFFEE OTHER")).toMatchObject({ color: theme.overlay1 })
+  expect(rows.find((r) => r.label === "COFFEE OTHER")).toMatchObject({ color: ink.faint })
   expect(rows.find((r) => r.kind === "item" && r.value === add)?.label).toBe("COFFEE")
   expect(tagPickerItems(data.state.tags, data.state.categories, data.state.transactions, [1], "zz").map((r) => r.label)).toEqual(['Create "zz"'])
   expect(footerHints("tagPicker")).toEqual([

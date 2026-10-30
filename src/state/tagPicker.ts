@@ -1,7 +1,7 @@
 import { fuzzyFilter } from "../domain/fuzzy"
 import { tagCovers } from "../domain/tagScope"
 import type { Category, Tag, Transaction } from "../domain/types"
-import { theme } from "../theme"
+import { ink } from "../theme"
 import type { PickerItem } from "./settingsForm"
 
 /**
@@ -20,12 +20,12 @@ export function tagPickerItems(tags: Tag[], categories: Category[], transactions
     rows.push({ kind: "heading", label })
     rows.push(...matches.map((t): PickerItem => ({
       kind: "item", label: t.name, value: t.id,
-      color: label === "Out of scope" ? theme.overlay1 : t.color,
+      color: label === "Out of scope" ? ink.faint : t.color,
     })))
   }
   const name = query.trim()
   if (name && !tags.some((t) => t.name.toLowerCase() === name.toLowerCase())) {
-    rows.push({ kind: "item", label: `Create "${name}"`, value: null, color: theme.teal })
+    rows.push({ kind: "item", label: `Create "${name}"`, value: null, color: ink.figure })
   }
   return rows
 }

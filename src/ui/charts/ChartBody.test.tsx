@@ -2,7 +2,7 @@ import { expect, test } from "bun:test"
 import { RGBA } from "@opentui/core"
 import { testRender } from "@opentui/solid"
 import { createSignal } from "solid-js"
-import { theme } from "../../theme"
+import { ink } from "../../theme"
 import { ChartBody, type ChartModel } from "./ChartBody"
 
 /** Chart rows are StyledText set on the node (not a span per run): prove the
@@ -22,7 +22,7 @@ test("chart rows paint each run's ink, the default where none, and clear an ink 
     const cells = () => t.captureSpans().lines[0]!.spans
     const span = (text: string) => cells().find((s) => s.text.includes(text))!
     expect(t.captureCharFrame()).toContain("$1 ┤abcd")
-    expect(span("$1").fg.toInts()).toEqual(RGBA.fromHex(theme.overlay1).toInts())
+    expect(span("$1").fg.toInts()).toEqual(RGBA.fromHex(ink.label).toInts())
     expect(span("ab").fg.toInts()).toEqual(RGBA.fromHex(red).toInts())
     const plain = span("cd").fg.toInts()
     expect(plain).not.toEqual(RGBA.fromHex(red).toInts())

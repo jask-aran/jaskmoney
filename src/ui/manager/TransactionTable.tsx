@@ -2,7 +2,7 @@ import { Index, Show, createMemo } from "solid-js"
 import { ACCEPT_ALL_AT, MATCH_AT } from "../../domain/questions"
 import { StyledLine, type StyledSpan } from "../primitives/StyledLine"
 import { padSpans, type Span } from "../primitives/spans"
-import { categoryColor, fade, isUncategorisedColor, theme } from "../../theme"
+import { categoryColor, fade, isUncategorisedColor, ink, tone, theme } from "../../theme"
 import { data } from "../../state/dataStore"
 import { formatMoney } from "../../domain/dashboard"
 import { rowAppearance } from "../../domain/rowStyle"
@@ -96,7 +96,7 @@ function formatCategory(
 /** How sure a suggestion is, at a glance: sure enough for accept-all, worth
  * a look, or a guess. */
 function confidenceColor(confidence: number): string {
-  return confidence >= ACCEPT_ALL_AT ? theme.success : confidence >= 0.5 ? theme.warning : theme.overlay1
+  return confidence >= ACCEPT_ALL_AT ? tone.good : confidence >= 0.5 ? tone.caution : ink.note
 }
 
 /** A category cell with how likely the row matches the `ask:` terms: a
@@ -105,7 +105,7 @@ function withAskScore(cell: CategoryCell, score: number | undefined, width: numb
   if (score == null) return cell
   const near = score < MATCH_AT
   const note = `${near ? "≈" : ""}${Math.round(score * 100)}%`.padStart(5)
-  return { ...cell, text: fit(cell.text.trimEnd(), width - 2 - note.length), note, noteColor: near ? theme.warning : theme.success }
+  return { ...cell, text: fit(cell.text.trimEnd(), width - 2 - note.length), note, noteColor: near ? tone.caution : tone.good }
 }
 
 /** How far a suggested category's colour fades toward the canvas: it's
@@ -117,7 +117,7 @@ const PROVISIONAL_FADE = 0.35
 function formatSuggestion(suggestion: TableSuggestion | undefined, width: number): CategoryCell {
   const category = suggestion && data.state.categories.find((c) => c.id === suggestion.categoryId)
   if (!suggestion || !category) {
-    return { marker: `${categoryMark(null, true)} `, markerColor: theme.overlay1, text: fit(data.state.suggesting ? "suggesting…" : "no suggestion", width - 2), textColor: theme.overlay1, muted: true }
+    return { marker: `${categoryMark(null, true)} `, markerColor: ink.note, text: fit(data.state.suggesting ? "suggesting…" : "no suggestion", width - 2), textColor: ink.note, muted: true }
   }
   const lead = `${suggestion.source === "history" ? "↺" : ""}${Math.round(suggestion.confidence * 100)}% `.padStart(6)
   const color = fade(categoryColor(category.color), PROVISIONAL_FADE)
@@ -137,8 +137,8 @@ function formatSuggestion(suggestion: TableSuggestion | undefined, width: number
  * bank's message, else its tags. */
 function formatDetails(t: Transaction, width: number): Span[] {
   const bought = boughtText(t)
-  if (bought) return [{ text: fit(bought, width), fg: theme.subtext0 }]
-  if (t.message) return [{ text: fit(t.message, width), fg: theme.subtext0 }]
+  if (bought) return [{ text: fit(bought, width), fg: ink.label }]
+  if (t.message) return [{ text: fit(t.message, width), fg: ink.label }]
   return formatTags(t.tagNames, t.tagColors, width)
 }
 
@@ -156,10 +156,10 @@ export interface TableSuggestion { categoryId: number; confidence: number; sourc
 
 /** Every tag in its own colour, comma-joined and cut to `width` (Go app). */
 function formatTags(names: string[], colors: string[], width: number): Span[] {
-  if (!names.length) return [{ text: "-".padEnd(width), fg: theme.overlay1 }]
+  if (!names.length) return [{ text: "-".padEnd(width), fg: ink.faint }]
   const spans = names.flatMap((name, i): Span[] => [
-    ...(i > 0 ? [{ text: ", ", fg: theme.overlay1 }] : []),
-    { text: name, fg: colors[i] || theme.teal },
+    ...(i > 0 ? [{ text: ", ", fg: ink.rule }] : []),
+    { text: name, fg: colors[i] || theme.blue },
   ])
   return padSpans(spans, width)
 }
@@ -172,7 +172,7 @@ function formatTagCandidate(candidate: TableTagCandidate, names: string[], color
   const spans: Span[] = [
     { text: `+${candidate.name}`, fg: candidate.color },
     { text: ` ${mark}${Math.round(candidate.confidence * 100)}%`, fg: confidenceColor(candidate.confidence) },
-    ...names.flatMap((name, i): Span[] => [{ text: ", ", fg: theme.overlay1 }, { text: name, fg: colors[i] || theme.teal }]),
+    ...names.flatMap((name, i): Span[] => [{ text: ", ", fg: ink.rule }, { text: name, fg: colors[i] || theme.blue }]),
   ]
   return padSpans(spans, width)
 }
@@ -216,7 +216,7 @@ export function TransactionTable(props: {
   const windowRows = createMemo(() => props.rows.slice(props.top, props.top + props.visible))
   return (
     <>
-      <text fg={theme.subtext0}>
+      <text fg={ink.label}>
         <b>
           {" ".repeat(columns.marker)}
           {`Date${mark("date")}`.padEnd(columns.date)}
@@ -230,7 +230,7 @@ export function TransactionTable(props: {
           {layout().showTags ? " ".repeat(columns.gap) + fit(props.suggestions ? "Details" : "Tags", layout().tags) : ""}
         </b>
       </text>
-      <Show when={props.rows.length} fallback={<text fg={theme.overlay1}>{props.empty}</text>}>
+      <Show when={props.rows.length} fallback={<text fg={ink.note}>{props.empty}</text>}>
         <box flexGrow={1} flexDirection="column">
           {/* Index keeps each screen row and updates it in place: a filter
               that changes every row would otherwise rebuild them all. */}
@@ -248,7 +248,7 @@ export function TransactionTable(props: {
               const fg = (column: string) => look().fg ?? column
               // A near miss reads quieter than a match, unless cursor, selection or range colour it.
               const near = () => !!props.nearMiss?.(r().id)
-              const faint = (column: string) => look().fg ?? (near() ? theme.overlay1 : column)
+              const faint = (column: string) => look().fg ?? (near() ? ink.note : column)
               // Up holds (pending) render italic, with a clock, until they settle.
               const held = () => r().status === "HELD"
               const tags = createMemo(() => {
@@ -265,21 +265,21 @@ export function TransactionTable(props: {
               const line = createMemo((): StyledSpan[] => {
                 const bg = rowBg(), bold = strong(), cat = category(), catBold = bold && (!cat.muted || !!look().fg)
                 return [
-                  { text: selected() ? "*" : near() ? "≈" : " ", fg: fg(theme.accent), bg, bold },
-                  { text: fmtDate(r().dateISO).padEnd(columns.date), fg: faint(theme.mutedText), bg, bold },
-                  { text: " ".repeat(columns.gap), fg: fg(theme.text), bg, bold },
+                  { text: selected() ? "*" : near() ? "≈" : " ", fg: fg(tone.key), bg, bold },
+                  { text: fmtDate(r().dateISO).padEnd(columns.date), fg: faint(ink.label), bg, bold },
+                  { text: " ".repeat(columns.gap), fg: fg(ink.figure), bg, bold },
                   { text: formatMoney(r().amount).padEnd(columns.amount - 2), fg: faint(amountColor(r().amount)), bg, bold, italic: held() },
-                  { text: held() ? `${pendingMark()} ` : "  ", fg: fg(theme.overlay1), bg },
-                  { text: " ".repeat(columns.gap), fg: fg(theme.text), bg, bold },
-                  ...describe(r(), layout().description, !!props.suggestions).map((part, k) => ({ text: part, fg: k ? faint(theme.overlay1) : faint(theme.brightText), bg, bold: bold && !k, italic: held() })),
-                  { text: layout().showAccount ? " ".repeat(columns.gap) + fit(r().accountName, columns.account) : "", fg: fg(theme.dimText), bg, bold },
-                  { text: " ".repeat(columns.gap), fg: fg(theme.text), bg, bold },
-                  ...(cat.lead ? [{ text: cat.lead, fg: fg(cat.leadColor ?? theme.overlay1), bg }] : []),
+                  { text: held() ? `${pendingMark()} ` : "  ", fg: fg(ink.note), bg },
+                  { text: " ".repeat(columns.gap), fg: fg(ink.figure), bg, bold },
+                  ...describe(r(), layout().description, !!props.suggestions).map((part, k) => ({ text: part, fg: k ? faint(ink.note) : faint(ink.figure), bg, bold: bold && !k, italic: held() })),
+                  { text: layout().showAccount ? " ".repeat(columns.gap) + fit(r().accountName, columns.account) : "", fg: fg(ink.label), bg, bold },
+                  { text: " ".repeat(columns.gap), fg: fg(ink.figure), bg, bold },
+                  ...(cat.lead ? [{ text: cat.lead, fg: fg(cat.leadColor ?? ink.note), bg }] : []),
                   { text: cat.marker, fg: fg(cat.markerColor), bg, bold: catBold },
                   { text: cat.text, fg: fg(cat.textColor), bg, bold: catBold, dim: cat.muted && !look().fg, italic: cat.italic },
-                  { text: cat.note ?? "", fg: fg(cat.noteColor ?? theme.overlay1), bg },
+                  { text: cat.note ?? "", fg: fg(cat.noteColor ?? ink.note), bg },
                   ...(layout().showTags ? [
-                    { text: " ".repeat(columns.gap), fg: fg(theme.text), bg, bold },
+                    { text: " ".repeat(columns.gap), fg: fg(ink.figure), bg, bold },
                     ...tags().map((span) => ({ text: span.text, fg: fg(span.fg), bg, bold })),
                   ] : []),
                 ]

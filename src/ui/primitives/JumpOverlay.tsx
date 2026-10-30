@@ -1,6 +1,6 @@
 import { For, Show } from "solid-js"
 import { jumpTargets, ui, type TabId } from "../../state/uiStore"
-import { theme } from "../../theme"
+import { theme, ink, tone } from "../../theme"
 import { Modal } from "./Modal"
 import { S } from "./S"
 
@@ -12,8 +12,8 @@ export function JumpOverlay(props: { active: boolean; tab: TabId }) {
         <For each={jumpTargets({ activeTab: props.tab, overviewCharts: ui.state.overviewCharts })}>
           {(t) => (
             <text wrapMode="none">
-              <S fg={theme.base} bg={theme.accent} bold>{`[${t.key}]`}</S>
-              <S fg={theme.text}>{` ${t.label}`}</S>
+              <S fg={theme.rowCursorText} bg={tone.key} bold>{`[${t.key}]`}</S>
+              <S fg={ink.figure}>{` ${t.label}`}</S>
             </text>
           )}
         </For>

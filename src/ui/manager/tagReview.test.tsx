@@ -4,7 +4,7 @@ import type { JevClient } from "../../ai/jev"
 import { data } from "../../state/dataStore"
 import { ui } from "../../state/uiStore"
 import { renderApp } from "../../testing/app"
-import { theme } from "../../theme"
+import { theme, tone } from "../../theme"
 
 let rendered: Awaited<ReturnType<typeof renderApp>> | undefined
 afterEach(() => { rendered?.renderer.destroy(); rendered = undefined; data.closeTagReview() })
@@ -30,7 +30,7 @@ test("a tag review shows each candidate's proposed tag in the Tags column, its c
   const spans = rendered.captureSpans().lines.flatMap((l) => l.spans)
   const pct = (text: string) => spans.find((s) => s.text.trim() === text)!.fg.toInts()
   // Sure enough for Y: green; between: amber. The tag itself in the new tag's colour.
-  expect(pct("90%")).toEqual(RGBA.fromHex(theme.success).toInts())
-  expect(pct("60%")).toEqual(RGBA.fromHex(theme.warning).toInts())
-  expect(spans.find((s) => s.text === "+COFFEE")!.fg.toInts()).toEqual(RGBA.fromHex(theme.teal).toInts())
+  expect(pct("90%")).toEqual(RGBA.fromHex(tone.good).toInts())
+  expect(pct("60%")).toEqual(RGBA.fromHex(tone.caution).toInts())
+  expect(spans.find((s) => s.text === "+COFFEE")!.fg.toInts()).toEqual(RGBA.fromHex(theme.blue).toInts())
 })

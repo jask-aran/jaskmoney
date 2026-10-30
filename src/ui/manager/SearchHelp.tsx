@@ -2,11 +2,11 @@ import { For, Show, createEffect, createMemo } from "solid-js"
 import { useTerminalDimensions } from "@opentui/solid"
 import { ui } from "../../state/uiStore"
 import { SEARCH_HELP, SEARCH_HELP_FULL, SEARCH_HELP_WIDTH, type HelpTone } from "../../state/searchHelp"
-import { theme } from "../../theme"
+import { ink, tone } from "../../theme"
 import { Modal } from "../primitives/Modal"
 import { S } from "../primitives/S"
 
-const TONE: Record<HelpTone, string> = { head: theme.text, key: theme.accent, text: theme.subtext0, muted: theme.overlay1 }
+const TONE: Record<HelpTone, string> = { head: ink.label, key: tone.key, text: ink.note, muted: ink.note }
 
 /** F1 in the search bar: JQL, brief (the language in a sentence, an
  * example, the terms, precedence, gotchas) or full (m: what the rule

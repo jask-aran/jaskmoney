@@ -1,6 +1,6 @@
 import { For, Show, createMemo } from "solid-js"
 import { useTerminalDimensions } from "@opentui/solid"
-import { theme } from "../../theme"
+import { theme, ink } from "../../theme"
 import type { PickerItem } from "../../state/settingsForm"
 import { fit } from "../text"
 import { Modal } from "./Modal"
@@ -42,31 +42,31 @@ export function ListPicker(props: {
   return (
     <Modal title={props.title} subtitle={props.subtitle} width={width()} hints={props.hints}>
       <Show when={props.note}>
-        <text wrapMode="none" fg={theme.subtext0}>{fit(props.note!, width() - 4)}</text>
+        <text wrapMode="none" fg={ink.label}>{fit(props.note!, width() - 4)}</text>
         <text> </text>
       </Show>
       <text wrapMode="none">
-        <S fg={theme.subtext0}>{"Filter "}</S>
-        <S fg={props.query ? theme.text : theme.overlay0}>{props.query || "type to filter"}</S>
+        <S fg={ink.label}>{"Filter "}</S>
+        <S fg={props.query ? ink.figure : ink.faint}>{props.query || "type to filter"}</S>
       </text>
       <text> </text>
       <For each={rows()}>
         {({ item, row }) => {
-          if (item.kind === "heading") return <text fg={theme.overlay1} wrapMode="none"><b>{item.label}</b></text>
+          if (item.kind === "heading") return <text fg={ink.label} wrapMode="none"><b>{item.label}</b></text>
           const selected = () => row === cursorRow()
           const icon = () => props.iconFor?.(item.value)
           return (
             <ListRow cursor={selected()} bg={theme.mantle} spans={[
-              ...(props.mark ? [{ text: `${props.mark(item.value)} `, fg: theme.subtext0 }] : []),
-              ...(icon() ? [{ text: `${icon()} `, fg: item.color ?? theme.text }] : []),
-              { text: item.detail ? item.label : fit(item.label, width() - 12), fg: item.color ?? theme.text, bold: selected() },
-              ...(item.detail ? [{ text: fit(`  ${item.detail}`, Math.max(0, width() - 12 - item.label.length)), fg: theme.overlay1 }] : []),
+              ...(props.mark ? [{ text: `${props.mark(item.value)} `, fg: ink.label }] : []),
+              ...(icon() ? [{ text: `${icon()} `, fg: item.color ?? ink.figure }] : []),
+              { text: item.detail ? item.label : fit(item.label, width() - 12), fg: item.color ?? ink.figure, bold: selected() },
+              ...(item.detail ? [{ text: fit(`  ${item.detail}`, Math.max(0, width() - 12 - item.label.length)), fg: ink.note }] : []),
             ]} />
           )
         }}
       </For>
       <Show when={!props.items.some((i) => i.kind === "item")}>
-        <text fg={theme.overlay1}>Nothing matches</text>
+        <text fg={ink.note}>Nothing matches</text>
       </Show>
     </Modal>
   )

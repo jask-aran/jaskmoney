@@ -5,7 +5,7 @@ import { data } from "../../state/dataStore"
 import { ui } from "../../state/uiStore"
 import { renderApp } from "../../testing/app"
 import { account, category, transaction } from "../../testing/fixtures"
-import { theme } from "../../theme"
+import { theme, tone } from "../../theme"
 import { footerHints, handleKey, hintState } from "../../app/keys"
 import { key } from "../../testing/keys"
 
@@ -86,7 +86,7 @@ for (const [width, height, wide] of [[80, 30, false], [80, 45, false], [89, 60, 
       expect(focusedCard.y + focusedCard.height).toBeLessThanOrEqual(height - 2)
       const heading = t.captureSpans().lines.flatMap((line) => line.spans).find((s) => s.text.includes(` ${title.split(" · ")[0]}`))!
       expect(heading).toBeDefined()
-      expect(heading.fg.toInts()).toEqual(RGBA.fromHex(theme.focus).toInts())
+      expect(heading.fg.toInts()).toEqual(RGBA.fromHex(tone.focus).toInts())
       expect(heading.bg.toInts()).toEqual(RGBA.fromHex(theme.canvas).toInts())
       expect(heading.attributes & TextAttributes.BOLD).toBe(TextAttributes.BOLD)
       if (jump === "c") {

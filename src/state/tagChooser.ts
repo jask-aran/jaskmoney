@@ -3,7 +3,7 @@ import type { TagGroup } from "../domain/tagGroups"
 import { groupForTag } from "../domain/tagSuggest"
 import { scopeText } from "../domain/tagScope"
 import type { Category, Tag, Transaction } from "../domain/types"
-import { theme } from "../theme"
+import { tone } from "../theme"
 import type { PickerItem } from "./settingsForm"
 
 /** What finding transactions can start from: an existing tag (and the
@@ -46,9 +46,9 @@ export function tagChooserItems(choices: TagChoice[], transactions: Transaction[
       const found = c.group ? (c.group.kind === "trip" ? `trip found: ${c.group.detail.split(" · ").at(-1)}` : `${c.group.rows.length} regular payments`) : ""
       rows.push({ kind: "item", label: c.tag.name, value: index, color: c.tag.color, detail: [`${tagged} tagged`, scopeText(c.tag, categories), found].filter(Boolean).join(" · ") })
     } else if (c.kind === "group") {
-      rows.push({ kind: "item", label: c.group.name, value: index, color: theme.teal, detail: c.group.detail })
+      rows.push({ kind: "item", label: c.group.name, value: index, color: tone.ai, detail: c.group.detail })
     } else {
-      rows.push({ kind: "item", label: `"${c.name}"`, value: index, color: theme.teal, detail: "Jev looks for it" })
+      rows.push({ kind: "item", label: `"${c.name}"`, value: index, color: tone.ai, detail: "Jev looks for it" })
     }
   })
   return rows

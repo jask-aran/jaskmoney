@@ -4,7 +4,7 @@ import { createFileCredentialStore } from "../../ai/oauthStore"
 import { data } from "../../state/dataStore"
 import { ui } from "../../state/uiStore"
 import { renderApp } from "../../testing/app"
-import { theme } from "../../theme"
+import { theme, tone } from "../../theme"
 
 let rendered: Awaited<ReturnType<typeof renderApp>> | undefined
 afterEach(() => { rendered?.renderer.destroy(); rendered = undefined; ui.setState({ aiDialog: null, llmSignIn: null }) })
@@ -31,7 +31,7 @@ test("the AI models dialog: status, actions with the cursor, the hint for the ac
   // The remove action reads as destructive; the cursor row has the wash.
   const spans = rendered.captureSpans().lines.flatMap((l) => l.spans)
   expect(spans.find((s) => s.text.includes("Sign in again"))!.bg.toInts()).toEqual(RGBA.fromHex(theme.rowCursor).toInts())
-  expect(spans.find((s) => s.text.includes("Remove the saved key"))!.fg.toInts()).toEqual(RGBA.fromHex(theme.error).toInts())
+  expect(spans.find((s) => s.text.includes("Remove the saved key"))!.fg.toInts()).toEqual(RGBA.fromHex(tone.bad).toInts())
 
   ui.setState({ llmSignIn: { provider: "openrouter", url: "https://openrouter.ai/auth?callback_url=http%3A%2F%2F127.0.0.1%3A40000%2Fcallback&code_challenge=abc", message: "Your browser should open; finish signing in there.", paste: null } })
   await rendered.renderOnce(); await rendered.flush()

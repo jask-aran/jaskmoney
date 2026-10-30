@@ -5,7 +5,7 @@ import { data } from "../../state/dataStore"
 import { ui } from "../../state/uiStore"
 import { renderApp } from "../../testing/app"
 import { key } from "../../testing/keys"
-import { fade, theme } from "../../theme"
+import { fade, ink } from "../../theme"
 
 // Invented rows: an Amazon order with items, and a plain row.
 async function setup() {
@@ -33,8 +33,8 @@ const ints = (hex: string) => RGBA.fromHex(hex).toInts()
 test("the table shows what a row bought after its description, dimmed", async () => {
   const { t, cell } = await setup()
   expect(t.captureCharFrame()).toMatch(/Amazon · Electric Toothbrush; 2× Br… /)
-  expect(cell("Amazon")!.fg.toInts()).toEqual(ints(theme.brightText))
-  expect(cell("· Electric Toothbrush")!.fg.toInts()).toEqual(ints(theme.overlay1))
+  expect(cell("Amazon")!.fg.toInts()).toEqual(ints(ink.figure))
+  expect(cell("· Electric Toothbrush")!.fg.toInts()).toEqual(ints(ink.note))
   t.renderer.destroy()
 })
 
@@ -51,7 +51,7 @@ test("Uncategorised: confidence before a faded, italic category; a Details colum
   expect(cell("Technology")!.attributes & TextAttributes.ITALIC).toBe(TextAttributes.ITALIC)
   // The description stands alone here: the items are in Details.
   expect(frame).not.toMatch(/Amazon · /)
-  expect(cell("Electric Toothbrush; 2× Brush Head 1")!.fg.toInts()).toEqual(ints(theme.subtext0))
+  expect(cell("Electric Toothbrush; 2× Brush Head 1")!.fg.toInts()).toEqual(ints(ink.label))
   t.renderer.destroy()
 })
 

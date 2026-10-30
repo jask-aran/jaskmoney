@@ -25,7 +25,7 @@ import { ManagerTab } from "../ui/manager/ManagerTab"
 import { SavedFilterPicker } from "../ui/manager/SavedFilterPicker"
 import { SettingsTab, EditorOverlay, DryRunOverlay, AiDialog, UpAccountsDialog } from "../ui/settings/SettingsTab"
 import { ExecutorDialog } from "../ui/settings/ExecutorDialog"
-import { theme } from "../theme"
+import { theme, ink, tone } from "../theme"
 import { selectionLabel } from "../domain/accountTree"
 import { SYNC_INTERVAL_MS, runSync, syncAgo } from "./sync"
 import { activeChipIndex } from "../domain/timeframe"
@@ -194,12 +194,12 @@ function TabError(props: { error: unknown; reset: () => void }) {
   createEffect(on(() => ui.state.activeTab, () => props.reset(), { defer: true }))
   const message = () => (props.error instanceof Error ? props.error.message : String(props.error))
   return (
-    <box border borderStyle="rounded" borderColor={theme.error} paddingLeft={1} paddingRight={1} flexDirection="column">
-      <text fg={theme.error}>
+    <box border borderStyle="rounded" borderColor={tone.bad} paddingLeft={1} paddingRight={1} flexDirection="column">
+      <text fg={tone.bad}>
         <b>This tab failed to render</b>
       </text>
-      <text fg={theme.text}>{message()}</text>
-      <text fg={theme.overlay1}>Switch tabs to retry · ctrl+c quits</text>
+      <text fg={ink.figure}>{message()}</text>
+      <text fg={ink.note}>Switch tabs to retry · ctrl+c quits</text>
     </box>
   )
 }

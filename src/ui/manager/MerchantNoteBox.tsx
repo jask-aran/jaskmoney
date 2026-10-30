@@ -2,7 +2,7 @@ import { Show } from "solid-js"
 import { ui } from "../../state/uiStore"
 import { data } from "../../state/dataStore"
 import { merchantKey } from "../../domain/history"
-import { theme } from "../../theme"
+import { ink } from "../../theme"
 import { Modal } from "../primitives/Modal"
 import { TextInput } from "../primitives/TextInput"
 
@@ -21,9 +21,9 @@ export function MerchantNoteBox() {
         }
         return (
           <Modal title={`Note · ${box().merchant}`} subtitle="for suggestions" width={72} hints="enter save · empty removes · esc cancel">
-            <Show when={why()}>{(text: () => string) => <text fg={theme.overlay1}>{text()}</text>}</Show>
-            <text fg={theme.subtext0}>What you buy here, e.g. "varies: gifts, homewares" or "always groceries".</text>
-            <text fg={theme.text}>Note: <TextInput field={{ value: box().draft, caret: box().caret }} focused /></text>
+            <Show when={why()}>{(text: () => string) => <text fg={ink.note}>{text()}</text>}</Show>
+            <text fg={ink.note}>What you buy here, e.g. "varies: gifts, homewares" or "always groceries".</text>
+            <text fg={ink.label}>Note: <TextInput field={{ value: box().draft, caret: box().caret }} focused /></text>
           </Modal>
         )
       }}

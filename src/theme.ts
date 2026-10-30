@@ -1,6 +1,9 @@
 /**
- * Catppuccin Mocha — parity with Go `theme.go` / `render.go`.
- * Semantic aliases match Go: accent=brand=pink, focus=lavender.
+ * Catppuccin Mocha — parity with Go `theme.go` / `render.go`. Text and
+ * accents take their colours through `ink` and `tone` below (Go's aliases:
+ * accent=brand=pink is tone.key, focus=lavender tone.focus, success,
+ * error, warning tone.good, bad, caution). The table's warm greys
+ * (brightText, mutedText, dimText) went in 2026-10-30: one set of greys.
  */
 export const theme = {
   // Palette
@@ -35,26 +38,6 @@ export const theme = {
   // Legacy leaves the terminal background exposed; use its darker equivalent
   // for the OpenTUI canvas rather than filling every empty cell with base.
   canvas: "#11111b",
-
-  // Semantic (Go aliases)
-  /** Active tab text, help keys, brand title default */
-  accent: "#f5c2e7", // pink
-  brand: "#f5c2e7",
-  /** Focused section border + title */
-  focus: "#b4befe", // lavender
-
-  // Custom neutral overrides — Catppuccin Mocha's light colours all skew
-  // blue/purple, so these provide a warm-neutral hierarchy for table text.
-  /** White-ish for descriptions (most prominent). */
-  brightText: "#e6e6e6",
-  /** Neutral light grey for dates (de-emphasised). */
-  mutedText: "#c0c0c0",
-  /** Neutral mid-grey for accounts (between mutedText and uncategorised). */
-  dimText: "#9e9e9e",
-  success: "#a6e3a1",
-  error: "#f38ba8",
-  warning: "#f9e2af",
-  info: "#94e2d5",
 
   // Chart rules: today's rule a vivid green, the budget pace line a muted
   // yellow, so the two never read alike.
@@ -115,7 +98,8 @@ export const ink = {
  *
  * - good / bad: green and red. Money in and money out on a row; up and down
  *   in a balance; spending less or more than it's compared with, or than
- *   its budget; connected or failing. Nothing else is green or red.
+ *   its budget; connected or failing; red also marks an action that
+ *   deletes. Nothing else is green or red.
  * - caution: yellow. Wants your attention: uncategorised rows, ahead of a
  *   budget's pace, an overdue payment, a price rise.
  * - ai: teal. Suggestions and what the models did.

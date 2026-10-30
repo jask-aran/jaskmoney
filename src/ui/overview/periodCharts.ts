@@ -1,6 +1,6 @@
 /** Chart models for the Overview's chart pane. Pure: each returns a
  * ChartModel for ChartBody. */
-import { theme } from "../../theme"
+import { ink, theme, tone } from "../../theme"
 import { cumulative, dailySpendSeries, formatWholeMoney, signedWholeMoney, weeklyTotals } from "../../domain/dashboard"
 import { balanceHistory, computePeriodFlows } from "../../domain/position"
 import type { Account, Transaction } from "../../domain/types"
@@ -18,19 +18,19 @@ export const INKS: Record<string, string> = {
   partial: theme.overlay1,
   prev: theme.overlay0,
   ref: theme.surface2,
-  in: theme.success,
-  out: theme.error,
+  in: tone.good,
+  out: tone.bad,
   limit: theme.chartBudget,
   balance: theme.lavender,
   savers: theme.green,
   // Gridlines, as in the Go app.
   week: theme.surface1,
   month: theme.blue,
-  year: theme.accent,
+  year: theme.pink,
   today: theme.chartToday,
   // In-chart notes (highs, lows, totals): grey, so the coloured label is
   // always the latest value.
-  note: theme.overlay1,
+  note: ink.note,
 }
 
 const sum = (values: number[]) => values.reduce((a, b) => a + b, 0)

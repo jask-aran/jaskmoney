@@ -1,4 +1,4 @@
-import { theme } from "../theme"
+import { ink, theme } from "../theme"
 import { afterEach, beforeEach, expect, test } from "bun:test"
 import { mkdtempSync, writeFileSync } from "node:fs"
 import { join } from "node:path"
@@ -176,8 +176,8 @@ test("rule health and selection colours use captured cells; dry-run body scrolls
   expect(span("Healthy").bg.toInts()).toEqual(RGBA.fromHex(theme.rowCursor).toInts())
   expect(span("missing filter gone").fg.toInts()).toEqual([243, 139, 168, 255])
   expect(span("broken filter").fg.toInts()).toEqual([243, 139, 168, 255])
-  expect(span("Disabled (off)").fg.toInts()).toEqual([127, 132, 156, 255])
-  expect(span("missing filter absent").fg.toInts()).toEqual([127, 132, 156, 255])
+  expect(span("Disabled (off)").fg.toInts()).toEqual(RGBA.fromHex(ink.faint).toInts())
+  expect(span("missing filter absent").fg.toInts()).toEqual(RGBA.fromHex(ink.faint).toInts())
   ui.setState({ ruleCursor: 1 })
   await draw()
   expect(span("Healthy").bg.toInts()).toEqual([17, 17, 27, 255])

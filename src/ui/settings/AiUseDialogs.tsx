@@ -7,13 +7,13 @@ import { QUERIES, USES, useQueries, type QueryId } from "../../ai/catalog"
 import { LLM_PROVIDERS } from "../../ai/llm"
 import { queryLines } from "../../state/sentView"
 import type { HelpTone } from "../../state/searchHelp"
-import { theme } from "../../theme"
+import { theme, ink, tone } from "../../theme"
 import { Modal } from "../primitives/Modal"
 import { ListRow } from "../primitives/ListRow"
 import { S } from "../primitives/S"
 import { fit } from "../text"
 
-const TONE: Record<HelpTone, string> = { head: theme.text, key: theme.accent, text: theme.subtext0, muted: theme.overlay1 }
+const TONE: Record<HelpTone, string> = { head: ink.label, key: tone.key, text: ink.note, muted: ink.note }
 
 /** The model answering a query now, as the dialogs name it. */
 function queryModel(id: QueryId, ctx: AiContext): string {
@@ -41,11 +41,11 @@ export function AiUseDialog() {
         const model = () => useModel(d().use, ctx())
         const queries = () => useQueries(d().use)
         const actions = () => useActions(d().use, ctx())
-        const heading = (text: string, aside = "") => <text wrapMode="none"><S fg={theme.subtext1} bold>{text}</S><S fg={theme.overlay1}>{aside}</S></text>
+        const heading = (text: string, aside = "") => <text wrapMode="none"><S fg={ink.label} bold>{text}</S><S fg={ink.note}>{aside}</S></text>
         // The label in a column; the value wraps beside it.
-        const line = (label: string, value: string, fg: string = theme.text) => (
+        const line = (label: string, value: string, fg: string = ink.figure) => (
           <box flexDirection="row">
-            <text width={12} flexShrink={0} fg={theme.overlay1}>{label}</text>
+            <text width={12} flexShrink={0} fg={ink.label}>{label}</text>
             <text flexGrow={1} flexShrink={1} wrapMode="word" fg={fg}>{value}</text>
           </box>
         )
@@ -53,26 +53,26 @@ export function AiUseDialog() {
         const nameWidth = () => Math.max(...use().features.map((f) => f.name.length)) + 2
         return (
           <Modal title={use().name} subtitle="AI use" width={width()} hints="j/k move · enter open · esc close">
-            {line("Model", model().text, model().ready ? theme.teal : theme.warning)}
+            {line("Model", model().text, model().ready ? tone.ai : tone.caution)}
             <text> </text>
             {heading("Features")}
             <For each={use().features}>{(f) => (
               <text wrapMode="none">
-                <S fg={theme.text}>{`  ${f.name.padEnd(nameWidth())}`}</S>
-                <S fg={theme.accent}>{fit(f.reach, 26).padEnd(28)}</S>
-                <S fg={theme.overlay1}>{fit(f.code, Math.max(8, inner() - nameWidth() - 30))}</S>
+                <S fg={ink.figure}>{`  ${f.name.padEnd(nameWidth())}`}</S>
+                <S fg={tone.key}>{fit(f.reach, 26).padEnd(28)}</S>
+                <S fg={ink.note}>{fit(f.code, Math.max(8, inner() - nameWidth() - 30))}</S>
               </text>
             )}</For>
             <Show when={use().withoutModel}>
-              <box paddingLeft={2}><text fg={theme.overlay1} wrapMode="word">{`Without a model: ${use().withoutModel}`}</text></box>
+              <box paddingLeft={2}><text fg={ink.note} wrapMode="word">{`Without a model: ${use().withoutModel}`}</text></box>
             </Show>
             <text> </text>
             {heading("Queries", "   enter: what it asks, its context, the exact request")}
             <For each={queries()}>{(id, i) => (
               <ListRow cursor={d().cursor === i()} bg={theme.mantle} spans={[
-                { text: QUERIES[id].name.padEnd(34), fg: d().cursor === i() ? theme.text : theme.subtext1 },
-                { text: shortModel(id, ctx()).padEnd(12), fg: theme.teal },
-                { text: fit(QUERIES[id].asks, Math.max(8, inner() - 48)), fg: theme.overlay1 },
+                { text: QUERIES[id].name.padEnd(34), fg: ink.figure },
+                { text: shortModel(id, ctx()).padEnd(12), fg: tone.ai },
+                { text: fit(QUERIES[id].asks, Math.max(8, inner() - 48)), fg: ink.note },
               ]} />
             )}</For>
             <Show when={actions().length}>
@@ -80,14 +80,14 @@ export function AiUseDialog() {
               {heading("Model")}
               <For each={actions()}>{(action, i) => {
                 const here = () => d().cursor === queries().length + i()
-                return <ListRow cursor={here()} bg={theme.mantle} spans={[{ text: fit(action.label, inner() - 2), fg: here() ? theme.text : theme.subtext0 }]} />
+                return <ListRow cursor={here()} bg={theme.mantle} spans={[{ text: fit(action.label, inner() - 2), fg: ink.figure }]} />
               }}</For>
             </Show>
             <Show when={d().note}>
               {(n: () => NonNullable<NonNullable<UiState["aiUse"]>["note"]>) => (
                 <>
                   <text> </text>
-                  <text fg={n().ok === false ? theme.error : theme.success} wrapMode="word">{n().text}</text>
+                  <text fg={n().ok === false ? tone.bad : tone.good} wrapMode="word">{n().text}</text>
                 </>
               )}
             </Show>

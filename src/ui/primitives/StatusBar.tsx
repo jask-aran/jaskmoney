@@ -1,4 +1,4 @@
-import { theme } from "../../theme"
+import { theme, ink, tone } from "../../theme"
 
 /** Go statusBarStyle: surface0 bg, subtext1 fg; error = red fg. */
 export function StatusBar(props: { text: string; isErr?: boolean }) {
@@ -10,7 +10,7 @@ export function StatusBar(props: { text: string; isErr?: boolean }) {
       paddingLeft={1}
       paddingRight={1}
     >
-      <text fg={props.isErr ? theme.error : theme.subtext1} bg={theme.surface0}>
+      <text fg={props.isErr ? tone.bad : ink.label} bg={theme.surface0}>
         {props.text || " "}
       </text>
     </box>

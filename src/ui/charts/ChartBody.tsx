@@ -1,6 +1,6 @@
 import { Index, Show } from "solid-js"
 import { StyledLine } from "../primitives/StyledLine"
-import { theme } from "../../theme"
+import { ink } from "../../theme"
 import type { Run } from "./lineChart"
 import type { Span } from "../primitives/spans"
 
@@ -39,12 +39,12 @@ export function xAxisLine(rows: Run[][]): string {
 
 /** The x labels as spans: muted, with today's date in its rule's colour. */
 function axisLabels(text: string, today: { start: number; length: number } | undefined, todayFg: string): Span[] {
-  if (!today) return [{ text, fg: theme.overlay1 }]
+  if (!today) return [{ text, fg: ink.label }]
   const end = today.start + today.length
   return [
-    { text: text.slice(0, today.start), fg: theme.overlay1 },
+    { text: text.slice(0, today.start), fg: ink.label },
     { text: text.slice(today.start, end), fg: todayFg },
-    { text: text.slice(end), fg: theme.overlay1 },
+    { text: text.slice(end), fg: ink.label },
   ]
 }
 
@@ -59,15 +59,15 @@ export function ChartBody(props: { model: ChartModel; inks: Record<string, strin
       <Index each={props.model.rows}>
         {(runs, i) => (
           <StyledLine spans={[
-            { text: (props.model.ticks.get(i) ?? "").padStart(axis() - 2) + (props.model.ticks.has(i) ? " ┤" : " │"), fg: theme.overlay1 },
-            ...runs().map((run) => ({ text: run.text, fg: run.ink ? props.inks[run.ink] ?? theme.text : undefined })),
+            { text: (props.model.ticks.get(i) ?? "").padStart(axis() - 2) + (props.model.ticks.has(i) ? " ┤" : " │"), fg: ink.label },
+            ...runs().map((run) => ({ text: run.text, fg: run.ink ? props.inks[run.ink] ?? ink.figure : undefined })),
           ]} />
         )}
       </Index>
       <Show when={props.baseline && props.model.rows.length}>
-        <text wrapMode="none" fg={theme.overlay1}>{" ".repeat(axis() - 1) + xAxisLine(props.model.rows)}</text>
+        <text wrapMode="none" fg={ink.rule}>{" ".repeat(axis() - 1) + xAxisLine(props.model.rows)}</text>
       </Show>
-      <StyledLine spans={axisLabels(" ".repeat(axis()) + props.model.labels, props.model.today && { ...props.model.today, start: props.model.today.start + axis() }, props.inks.today ?? theme.text)} />
+      <StyledLine spans={axisLabels(" ".repeat(axis()) + props.model.labels, props.model.today && { ...props.model.today, start: props.model.today.start + axis() }, props.inks.today ?? ink.figure)} />
     </>
   )
 }

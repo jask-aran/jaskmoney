@@ -22,6 +22,7 @@ Do not modify `legacy/go/` to make port work easier. A legacy change is allowed 
 3. Printable keys are literal text in text-entry contexts.
 4. Preserve state deliberately: cursor indices, ID-based selections, ranges, filters, and modal state have separate lifetimes.
 5. Footer hints list actionable commands for the active scope only.
+6. Text colours come from `ink` (figure, label, note, faint, rule) and accents from `tone` (good, bad, caution, ai, key, focus, scope) in `src/theme.ts`, chosen by what the text is; its doc comments are the rules. Raw palette colours are for data only (category, tag and chart colours). `src/ui/inkRoles.test.ts` enforces it.
 
 ## Port contract
 

@@ -18,7 +18,7 @@ import type { SectionId, SettingsList, UiState } from "../../state/uiStore"
 import { SETTINGS_SECTION_LABELS, ui } from "../../state/uiStore"
 import { data } from "../../state/dataStore"
 import { parseFilterStrict } from "../../domain/filter"
-import { theme } from "../../theme"
+import { ink, theme, tone } from "../../theme"
 import { count, fit, truncate } from "../text"
 import { formatMoney } from "../../domain/dashboard"
 import { accountRole, type Category, type Tag } from "../../domain/types"
@@ -31,7 +31,7 @@ import { ListRow, centredTop, windowLabel } from "../primitives/ListRow"
 import { EDITOR_TITLE, editorFields, editorNote, editorWidth, pickerItems, type FormField } from "../../state/settingsForm"
 
 function ListFooter(props: { top: number; visible: number; count: number }) {
-  return <text fg={theme.overlay1}>{`─ ${windowLabel(props.top, props.visible, props.count)} ─`}</text>
+  return <text fg={ink.note}>{`─ ${windowLabel(props.top, props.visible, props.count)} ─`}</text>
 }
 
 /** A row's text width in a pane `width` columns wide: border and padding
@@ -86,10 +86,10 @@ function TaxonomyList(props: { kind: SettingsList; width: number }) {
   return (
     <box width={props.width} flexShrink={0} flexDirection="column" backgroundColor={theme.canvas}>
       <text height={1} wrapMode="none">
-        <S fg={active() ? theme.focus : theme.subtext1} bold>{props.kind === "categories" ? "Categories" : "Tags"}</S>
-        <S fg={theme.overlay1}>{` ${rows().length}`}</S>
+        <S fg={active() ? tone.focus : ink.label} bold>{props.kind === "categories" ? "Categories" : "Tags"}</S>
+        <S fg={ink.note}>{` ${rows().length}`}</S>
       </text>
-      <box flexGrow={1} flexDirection="column"><Show when={rows().length} fallback={<text fg={theme.overlay1}>{`No ${props.kind}. Press a to add.`}</text>}>
+      <box flexGrow={1} flexDirection="column"><Show when={rows().length} fallback={<text fg={ink.note}>{`No ${props.kind}. Press a to add.`}</text>}>
         <For each={windowRows()}>{(row, index) => {
           const absolute = () => top() + index()
           const selected = () => active() && absolute() === cursor()
@@ -100,10 +100,10 @@ function TaxonomyList(props: { kind: SettingsList; width: number }) {
           const note = () => noteOf(row)
           const nameWidth = () => width() - 2 - (child() ? 2 : 0) - (note() ? NOTE() + 1 : 0)
           return <ListRow cursor={selected()} bg={theme.canvas} armed={armedFor(ui.state.armed, category() ? "category" : "tag", row.id)} spans={[
-            ...(child() ? [{ text: "  ", fg: theme.canvas }] : []),
+            ...(child() ? [{ text: "  ", fg: ink.label }] : []),
             { text: `${category() ? categoryMark(row.id) : "●"} `, fg: row.color },
-            { text: fit(row.name, nameWidth()), fg: group() || !category() ? theme.text : theme.subtext1, bold: group() || selected() },
-            ...(note() ? [{ text: ` ${truncate(note(), NOTE())}`, fg: theme.overlay1 }] : []),
+            { text: fit(row.name, nameWidth()), fg: category() && child() ? ink.label : ink.figure, bold: group() || selected() },
+            ...(note() ? [{ text: ` ${truncate(note(), NOTE())}`, fg: ink.note }] : []),
           ]} />
         }}</For>
       </Show></box>
@@ -131,14 +131,14 @@ function RulesPane(props: { focused: boolean; width: number }) {
   const filtersActive = () => ui.state.settingsActive && ui.state.settingsSection === "filters"
   const rules = () => data.state.rules
   const filters = () => data.state.savedFilters
-  const heading = (label: string, n: number, on: boolean, note = "") => <text height={1} wrapMode="none"><S fg={on ? theme.focus : theme.subtext1} bold>{label}</S><S fg={theme.overlay1}>{` ${n}${note}`}</S></text>
+  const heading = (label: string, n: number, on: boolean, note = "") => <text height={1} wrapMode="none"><S fg={on ? tone.focus : ink.label} bold>{label}</S><S fg={ink.note}>{` ${n}${note}`}</S></text>
   const nameWidth = () => Math.min(28, Math.floor(rowWidth(props.width) * 0.32))
   const setWidth = () => Math.min(30, Math.floor(rowWidth(props.width) * 0.3))
   const idWidth = () => Math.min(22, Math.max(...filters().map((f) => f.id.length + 7), 12))
   const height = () => 2 + 1 + Math.max(1, rules().length) + 1 + 1 + Math.max(1, filters().length)
   return <SectionCard title="Rules & Filters" focused={props.focused} active={rulesActive() || filtersActive()} height={height()} width={props.width}>
     {heading("Rules", rules().length, rulesActive(), rules().length > 1 ? " · first match wins" : "")}
-    <Show when={rules().length} fallback={<text fg={theme.overlay1}>{rulesActive() ? "  No rules. Press a to add." : "  No rules yet."}</text>}>
+    <Show when={rules().length} fallback={<text fg={ink.note}>{rulesActive() ? "  No rules. Press a to add." : "  No rules yet."}</text>}>
       <For each={rules()}>{(rule, i) => {
         const cat = () => data.state.categories.find((c) => c.id === rule.setCategoryId)?.name
         const tags = () => rule.addTagIds.map((id) => data.state.tags.find((t) => t.id === id)?.name).filter(Boolean).map((name) => `+${name}`).join(" ")
@@ -148,21 +148,21 @@ function RulesPane(props: { focused: boolean; width: number }) {
         const matches = () => !filter() ? `missing filter ${rule.savedFilterId}` : healthy() ? `filter:${rule.savedFilterId}` : `broken filter:${rule.savedFilterId}`
         const sets = () => [cat() ? `→ ${cat()}` : "", tags()].filter(Boolean).join(" ") || "→ nothing"
         return <ListRow id={`settings-rule-${i()}`} cursor={rulesActive() && ui.state.ruleCursor === i()} bg={theme.canvas} armed={armedFor(ui.state.armed, "rule", rule.id)} spans={[
-          { text: `${String(i() + 1).padStart(2)}  `, fg: theme.overlay1 },
-          { text: fit(`${rule.name}${on() ? "" : " (off)"}`, nameWidth()), fg: on() ? theme.text : theme.overlay1 },
-          { text: `  ${fit(sets(), setWidth())}`, fg: on() ? theme.teal : theme.overlay1 },
-          { text: `  ${matches()}`, fg: !on() ? theme.overlay1 : filter() && healthy() ? theme.overlay1 : theme.error },
+          { text: `${String(i() + 1).padStart(2)}  `, fg: ink.note },
+          { text: fit(`${rule.name}${on() ? "" : " (off)"}`, nameWidth()), fg: on() ? ink.figure : ink.faint },
+          { text: `  ${fit(sets(), setWidth())}`, fg: on() ? ink.label : ink.faint },
+          { text: `  ${matches()}`, fg: !on() ? ink.faint : filter() && healthy() ? ink.label : tone.bad },
         ]} />
       }}</For>
     </Show>
     <text> </text>
     {heading("Saved filters", filters().length, filtersActive())}
-    <Show when={filters().length} fallback={<text fg={theme.overlay1}>{filtersActive() ? "  No saved filters. Press a to add." : "  No saved filters yet."}</text>}>
+    <Show when={filters().length} fallback={<text fg={ink.note}>{filtersActive() ? "  No saved filters. Press a to add." : "  No saved filters yet."}</text>}>
       <For each={filters()}>{(filter, i) => (
         <ListRow id={`settings-filter-${i()}`} cursor={filtersActive() && ui.state.filterCursor === i()} bg={theme.canvas} armed={armedFor(ui.state.armed, "filter", filter.id)} spans={[
-          { text: fit(filter.name, nameWidth() + 4), fg: theme.text },
-          { text: `  ${fit(`filter:${filter.id}`, idWidth())}`, fg: theme.teal },
-          { text: `  ${filter.expr}`, fg: theme.overlay1 },
+          { text: fit(filter.name, nameWidth() + 4), fg: ink.figure },
+          { text: `  ${fit(`filter:${filter.id}`, idWidth())}`, fg: ink.label },
+          { text: `  ${filter.expr}`, fg: ink.label },
         ]} />
       )}</For>
     </Show>
@@ -186,14 +186,14 @@ function DatabasePane(props: { focused: boolean; width: number; height?: number 
   ].join(" · ")
   const ctx = () => ({ icons: data.state.icons, weekStart: data.state.weekStart, xAxis: !!data.state.uiPrefs.xAxis, profiles: data.state.importProfiles.length, demo: data.state.demo })
   return <SectionCard title={SETTINGS_SECTION_LABELS.database} focused={props.focused} active={active()} height={props.height ?? DATABASE_ROWS.length + 5} flexGrow={0} width={props.width}>
-    <text wrapMode="none"><S fg={theme.subtext1}>{`  ${truncate(where(), rowWidth(props.width))}`}</S></text>
-    <text wrapMode="none"><S fg={theme.overlay1}>{`  ${truncate(holds(), rowWidth(props.width))}`}</S></text>
+    <text wrapMode="none"><S fg={ink.label}>{`  ${truncate(where(), rowWidth(props.width))}`}</S></text>
+    <text wrapMode="none"><S fg={ink.note}>{`  ${truncate(holds(), rowWidth(props.width))}`}</S></text>
     <text> </text>
     <For each={DATABASE_ROWS}>{(row, i) => {
       const view = () => databaseRow(row, ctx())
       return <ListRow cursor={active() && ui.state.databaseCursor === i()} bg={theme.canvas} armed={row === "clearData" ? armedFor(ui.state.armed, "clearData", 0) : undefined} spans={[
-        { text: fit(view().label, 20), fg: view().danger ? theme.error : theme.text },
-        ...(view().value != null ? [{ text: view().value!, fg: view().danger ? theme.overlay1 : theme.subtext1 }] : []),
+        { text: fit(view().label, 20), fg: view().danger ? tone.bad : ink.label },
+        ...(view().value != null ? [{ text: view().value!, fg: view().danger ? ink.note : ink.figure }] : []),
       ]} />
     }}</For>
   </SectionCard>
@@ -217,12 +217,12 @@ function UpPane(props: { focused: boolean; width: number }) {
     return named.length <= rowWidth(props.width) - 11 ? named : syncing
   }
   const row = (i: number, label: string, value: string, fg: string) =>
-    <ListRow cursor={active() && ui.state.upCursor === i} bg={theme.canvas} spans={[{ text: fit(label, 11), fg: theme.subtext0 }, { text: value, fg }]} />
+    <ListRow cursor={active() && ui.state.upCursor === i} bg={theme.canvas} spans={[{ text: fit(label, 11), fg: ink.label }, { text: value, fg }]} />
   return <SectionCard title={SETTINGS_SECTION_LABELS.up} focused={props.focused} active={active()} height={5 + (info()?.upLastError ? 1 : 0)} width={props.width}>
-    {row(0, "Token", connection() ? connection()!.short : "not set · enter to add", connection() ? theme.success : theme.warning)}
-    {row(1, "Sync", connection() ? `${synced()} · on start and every 5 min` : "needs the token", data.state.upSyncing ? theme.peach : theme.text)}
-    <Show when={info()?.upLastError}>{(error: () => string) => <text fg={theme.error} wrapMode="none">{`  ${" ".repeat(11)}${error()}`}</text>}</Show>
-    {row(2, "Accounts", linked(), theme.text)}
+    {row(0, "Token", connection() ? connection()!.short : "not set · enter to add", connection() ? tone.good : ink.faint)}
+    {row(1, "Sync", connection() ? `${synced()} · on start and every 5 min` : "needs the token", ink.figure)}
+    <Show when={info()?.upLastError}>{(error: () => string) => <text fg={tone.bad} wrapMode="none">{`  ${" ".repeat(11)}${error()}`}</text>}</Show>
+    {row(2, "Accounts", linked(), ink.figure)}
   </SectionCard>
 }
 
@@ -233,18 +233,18 @@ export function UpAccountsDialog() {
     <Show when={ui.state.upAccounts}>
       {(d: () => NonNullable<UiState["upAccounts"]>) => (
         <Modal title="Up accounts" subtitle="which accounts sync" width={52} hints="j/k move · enter on/off · esc close">
-          <Show when={data.state.syncAccounts.length} fallback={<text fg={theme.overlay1}>No accounts yet: they appear after a sync.</text>}>
+          <Show when={data.state.syncAccounts.length} fallback={<text fg={ink.note}>No accounts yet: they appear after a sync.</text>}>
             <For each={data.state.syncAccounts}>{(account, i) => {
               const on = () => account.syncEnabled
               return <ListRow cursor={d().cursor === i()} bg={theme.mantle} armed={armedFor(ui.state.armed, "desyncAccount", account.id)} spans={[
-                { text: fit(account.name, 24), fg: on() ? theme.text : theme.overlay1 },
-                { text: fit(accountRole(account) === "saver" ? "saver" : "spending", 10), fg: theme.overlay1 },
-                { text: on() ? "● syncing" : "○ off", fg: on() ? theme.success : theme.overlay1 },
+                { text: fit(account.name, 24), fg: on() ? ink.figure : ink.faint },
+                { text: fit(accountRole(account) === "saver" ? "saver" : "spending", 10), fg: ink.label },
+                { text: on() ? "● syncing" : "○ off", fg: on() ? ink.label : ink.faint },
               ]} />
             }}</For>
           </Show>
           <text> </text>
-          <text fg={theme.overlay1} wrapMode="word">Switching an account off removes its transactions here (enter twice); on brings them back at the next sync.</text>
+          <text fg={ink.note} wrapMode="word">Switching an account off removes its transactions here (enter twice); on brings them back at the next sync.</text>
         </Modal>
       )}
     </Show>
@@ -261,30 +261,30 @@ function AiPane(props: { focused: boolean; width: number }) {
   const ctx = () => aiContext(data)
   const models = () => AI_ROWS.map((row) => aiRow(row, ctx()))
   const uses = () => AI_USES.map((use) => ({ name: USES[use].name, model: useModel(use, ctx()) }))
-  const heading = (text: string) => <text fg={theme.subtext0} wrapMode="none"><b>{text}</b></text>
+  const heading = (text: string) => <text fg={ink.label} wrapMode="none"><b>{text}</b></text>
   const executor = () => executorRow(ui.state.executorStatus, executorSignedIn())
   return <SectionCard title={SETTINGS_SECTION_LABELS.ai} focused={props.focused} active={active()} height={AI_ROWS.length + AI_USES.length + 6} width={props.width}>
     {heading("Models")}
     <For each={models()}>{(row, i) => (
       <ListRow cursor={active() && ui.state.aiCursor === i()} bg={theme.canvas} spans={[
-        { text: row.connected ? "● " : "○ ", fg: row.connected ? theme.success : theme.overlay1 },
-        { text: fit(row.name, 13), fg: row.connected ? theme.text : theme.subtext0 },
-        { text: row.how, fg: row.connected ? theme.subtext1 : theme.overlay1 },
+        { text: row.connected ? "● " : "○ ", fg: row.connected ? tone.good : ink.faint },
+        { text: fit(row.name, 13), fg: ink.figure },
+        { text: row.how, fg: row.connected ? ink.label : ink.note },
       ]} />
     )}</For>
     {heading("Uses")}
     <For each={uses()}>{(use, i) => (
       <ListRow cursor={active() && ui.state.aiCursor === AI_ROWS.length + i()} bg={theme.canvas} spans={[
-        { text: "  ", fg: theme.text },
-        { text: fit(use.name, 13), fg: theme.text },
-        { text: fit(use.model.text, Math.max(8, props.width - 20)), fg: use.model.ready ? theme.teal : theme.overlay1 },
+        { text: "  ", fg: ink.figure },
+        { text: fit(use.name, 13), fg: ink.figure },
+        { text: fit(use.model.text, Math.max(8, props.width - 20)), fg: use.model.ready ? tone.ai : ink.faint },
       ]} />
     )}</For>
     {heading("Sources")}
     <ListRow cursor={active() && ui.state.aiCursor === AI_ROWS.length + AI_USES.length} bg={theme.canvas} spans={[
-      { text: executor().connected ? "● " : "○ ", fg: executor().connected ? theme.success : theme.overlay1 },
-      { text: fit("Executor", 13), fg: executor().connected ? theme.text : theme.subtext0 },
-      { text: fit(executor().how, Math.max(8, props.width - 20)), fg: executor().connected ? theme.subtext1 : theme.overlay1 },
+      { text: executor().connected ? "● " : "○ ", fg: executor().connected ? tone.good : ink.faint },
+      { text: fit("Executor", 13), fg: ink.figure },
+      { text: fit(executor().how, Math.max(8, props.width - 20)), fg: executor().connected ? ink.label : ink.note },
     ]} />
   </SectionCard>
 }
@@ -305,8 +305,8 @@ export function AiDialog() {
             hints={signIn() ? (signIn()!.paste ? "enter send · esc cancel" : "esc cancel") : d().field ? "enter save · esc back" : "j/k move · enter do · esc close"}>
             <For each={aiStatus(d().row, ctx())}>{(line) => (
               <box flexDirection="row">
-                <text width={12} flexShrink={0} fg={theme.overlay1}>{line.label}</text>
-                <text flexGrow={1} flexShrink={1} wrapMode="word" fg={line.label === "Connection" || line.label === "Model" ? theme.text : theme.subtext0}>{line.value}</text>
+                <text width={12} flexShrink={0} fg={ink.label}>{line.label}</text>
+                <text flexGrow={1} flexShrink={1} wrapMode="word" fg={line.label === "Connection" || line.label === "Model" ? ink.figure : ink.label}>{line.value}</text>
               </box>
             )}</For>
             <text> </text>
@@ -315,23 +315,23 @@ export function AiDialog() {
                 <>
                   <For each={actions()}>{(action, i) => {
                     const here = () => i() === Math.min(d().cursor, actions().length - 1)
-                    return <ListRow cursor={here()} bg={theme.mantle} spans={[{ text: action.id === "remove" && here() && d().armed ? "Press enter again to remove" : action.label, fg: action.id === "remove" ? theme.error : here() ? theme.text : theme.subtext0 }]} />
+                    return <ListRow cursor={here()} bg={theme.mantle} spans={[{ text: action.id === "remove" && here() && d().armed ? "Press enter again to remove" : action.label, fg: action.id === "remove" ? tone.bad : ink.label }]} />
                   }}</For>
                   <Show when={at() && aiActionHint(d().row, at()!.id, ctx())}>
                     <text> </text>
-                    <text fg={theme.overlay1} wrapMode="word">{aiActionHint(d().row, at()!.id, ctx())!}</text>
+                    <text fg={ink.note} wrapMode="word">{aiActionHint(d().row, at()!.id, ctx())!}</text>
                   </Show>
                 </>
               }>
                 {(f: () => NonNullable<NonNullable<UiState["aiDialog"]>["field"]>) => (
                   <>
                     <text wrapMode="none">
-                      <S fg={theme.overlay1}>{fieldLabel(f().action).padEnd(12)}</S>
+                      <S fg={ink.label}>{fieldLabel(f().action).padEnd(12)}</S>
                       {f().action === "key"
-                        ? <S fg={f().value ? theme.text : theme.overlay0}>{secretDisplay(f().value)}</S>
-                        : <TextInput field={{ value: f().value, caret: f().caret }} focused caretColor={theme.accent} />}
+                        ? <S fg={f().value ? ink.figure : ink.faint}>{secretDisplay(f().value)}</S>
+                        : <TextInput field={{ value: f().value, caret: f().caret }} focused caretColor={ink.figure} />}
                     </text>
-                    <text fg={theme.overlay1} wrapMode="word">{aiActionHint(d().row, f().action, ctx()) ?? ""}</text>
+                    <text fg={ink.note} wrapMode="word">{aiActionHint(d().row, f().action, ctx()) ?? ""}</text>
                   </>
                 )}
               </Show>
@@ -342,7 +342,7 @@ export function AiDialog() {
               {(n: () => NonNullable<NonNullable<UiState["aiDialog"]>["note"]>) => (
                 <>
                   <text> </text>
-                  <text fg={n().ok === true ? theme.success : n().ok === false ? theme.error : theme.overlay1} wrapMode="word">{n().text}</text>
+                  <text fg={n().ok === false ? tone.bad : ink.note} wrapMode="word">{n().text}</text>
                 </>
               )}
             </Show>
@@ -359,8 +359,8 @@ function ImportHistory(props: { width: number; height?: number | "auto" | `${num
   const when = (iso: string) => { const d = new Date(iso.includes("T") ? iso : `${iso.replace(" ", "T")}Z`); return Number.isNaN(d.getTime()) ? iso : d.toLocaleString("en-AU", { dateStyle: "medium", timeStyle: "short" }) }
   const file = () => Math.min(36, rowWidth(props.width) - 32)
   return <SectionCard title="Import History" height={props.height} flexGrow={props.height ? 0 : 1} width={props.width}>
-    <Show when={data.state.imports.length} fallback={<text fg={theme.overlay1}>No imports yet.</text>}>
-      <For each={data.state.imports.slice(0, 4)}>{(item) => <text wrapMode="none"><S fg={theme.text}>{fit(item.filename, file())}</S><S fg={theme.subtext1}>{count(item.rowCount, "row").padStart(10)}</S><S fg={theme.overlay1}>{`  ${when(item.importedAt)}`}</S></text>}</For>
+    <Show when={data.state.imports.length} fallback={<text fg={ink.note}>No imports yet.</text>}>
+      <For each={data.state.imports.slice(0, 4)}>{(item) => <text wrapMode="none"><S fg={ink.figure}>{fit(item.filename, file())}</S><S fg={ink.note}>{count(item.rowCount, "row").padStart(10)}</S><S fg={ink.label}>{`  ${when(item.importedAt)}`}</S></text>}</For>
     </Show>
   </SectionCard>
 }
@@ -380,55 +380,55 @@ function ImportOverlay() {
   return <>
     <Show when={stage() === "files"}>
       <Modal title="Import CSV" hints="enter select · p path · esc cancel">
-        <text fg={theme.overlay1}>{ui.state.importDirectory}</text>
-        <Show when={ui.state.importFiles.length} fallback={<text fg={theme.overlay1}>No CSV files here. Press p to enter a path.</text>}>
+        <text fg={ink.label}>{ui.state.importDirectory}</text>
+        <Show when={ui.state.importFiles.length} fallback={<text fg={ink.note}>No CSV files here. Press p to enter a path.</text>}>
           <For each={ui.state.importFiles}>{(path, i) => (
-            <ListRow cursor={i() === ui.state.importCursor} bg={theme.mantle} spans={[{ text: path.split(/[\\/]/).pop() ?? path, fg: theme.text }]} />
+            <ListRow cursor={i() === ui.state.importCursor} bg={theme.mantle} spans={[{ text: path.split(/[\\/]/).pop() ?? path, fg: ink.figure }]} />
           )}</For>
         </Show>
       </Modal>
     </Show>
-    <Show when={stage() === "path"}><Modal title="Import CSV path"><text fg={theme.text}><TextInput field={{ value: ui.state.importPath, caret: ui.state.importPathCaret }} focused /></text><text fg={theme.overlay1}>Enter an absolute path or one relative to the listed folder.</text></Modal></Show>
+    <Show when={stage() === "path"}><Modal title="Import CSV path"><text fg={ink.figure}><TextInput field={{ value: ui.state.importPath, caret: ui.state.importPathCaret }} focused /></text><text fg={ink.note}>Enter an absolute path or one relative to the listed folder.</text></Modal></Show>
     <Show when={stage() === "profile"}>
       <Modal title={ui.state.importProfileManaging ? "Import profiles" : "Choose import profile"} hints="a new · e edit · del del delete · enter select · esc back">
-        <Show when={data.state.importProfiles.length} fallback={<text fg={theme.overlay1}>No profiles yet. Press a to map this CSV.</text>}>
+        <Show when={data.state.importProfiles.length} fallback={<text fg={ink.note}>No profiles yet. Press a to map this CSV.</text>}>
           <For each={data.state.importProfiles}>{(item, i) => (
             <ListRow cursor={i() === ui.state.importProfileCursor} bg={theme.mantle} armed={armedFor(ui.state.armed, "profile", item.id)} spans={[
-              { text: item.name, fg: theme.text },
-              { text: `  ${item.account} · ${item.importPrefix || "no prefix"}`, fg: theme.overlay1 },
+              { text: item.name, fg: ink.figure },
+              { text: `  ${item.account} · ${item.importPrefix || "no prefix"}`, fg: ink.label },
             ]} />
           )}</For>
         </Show>
-        <ListRow cursor={ui.state.importProfileCursor === data.state.importProfiles.length} bg={theme.mantle} spans={[{ text: "New mapped profile", fg: theme.teal }]} />
+        <ListRow cursor={ui.state.importProfileCursor === data.state.importProfiles.length} bg={theme.mantle} spans={[{ text: "New mapped profile", fg: ink.label }]} />
       </Modal>
     </Show>
-    <Show when={stage() === "profileEditor"}><Modal title="Map CSV profile" hints={`tab field · h/l choices · enter ${ui.state.importPath ? "save and scan" : "save"} · esc back`}><For each={profileFields()}>{(entry, i) => <text><S fg={i() === ui.state.importProfileField ? theme.focus : theme.subtext0} bold={i() === ui.state.importProfileField}>{i() === ui.state.importProfileField ? "> " : "  "}{entry[0]}: </S><TextInput field={{ value: entry[1] ?? "", caret: ui.state.importProfileCaret }} focused={i() === ui.state.importProfileField && ![3, 5, 10, 12].includes(i())} /></text>}</For></Modal></Show>
+    <Show when={stage() === "profileEditor"}><Modal title="Map CSV profile" hints={`tab field · h/l choices · enter ${ui.state.importPath ? "save and scan" : "save"} · esc back`}><For each={profileFields()}>{(entry, i) => <text><S fg={ink.label} bold={i() === ui.state.importProfileField}>{i() === ui.state.importProfileField ? "> " : "  "}{entry[0]}: </S><TextInput field={{ value: entry[1] ?? "", caret: ui.state.importProfileCaret }} focused={i() === ui.state.importProfileField && ![3, 5, 10, 12].includes(i())} /></text>}</For></Modal></Show>
     <Show when={stage() === "preview" && ui.state.importPreview}>{(p: () => NonNullable<typeof ui.state.importPreview>) => (
       <Modal title="Import preview" hints="s skip duplicates · a force import · p all/dupes · r rules · esc cancel">
-        <text fg={theme.subtext0}>{p().filename} · {p().accountName} · {p().profile.name}</text>
-        <text fg={theme.text}>Rows {p().rows.length} · <S fg={theme.success}>{p().newCount} new</S> · <S fg={theme.warning}>{p().duplicateCount} duplicates</S> · <S fg={p().errors.length ? theme.error : theme.success}>{p().errors.length} errors</S></text>
+        <text fg={ink.label}>{p().filename} · {p().accountName} · {p().profile.name}</text>
+        <text fg={ink.note}>Rows {p().rows.length} · <S fg={ink.note}>{p().newCount} new</S> · <S fg={tone.caution}>{p().duplicateCount} duplicates</S> · <S fg={p().errors.length ? tone.bad : ink.note}>{p().errors.length} errors</S></text>
         <Show when={p().errors.length}>
-          <For each={p().errors.slice(0, 4)}>{(err) => <text fg={theme.error}>{`line ${err.sourceLine}: ${err.message}`}</text>}</For>
-          <text fg={theme.error}>Import blocked until parsing errors are fixed.</text>
+          <For each={p().errors.slice(0, 4)}>{(err) => <text fg={tone.bad}>{`line ${err.sourceLine}: ${err.message}`}</text>}</For>
+          <text fg={tone.bad}>Import blocked until parsing errors are fixed.</text>
         </Show>
-        <text fg={theme.subtext0}>{ui.state.importPreviewShowAll ? "All rows" : "Duplicate rows"} · rules {ui.state.importPreviewRules ? "ON" : "OFF"}</text>
-        <Show when={previewRows().length} fallback={<text fg={theme.overlay1}>No rows in this view.</text>}>
+        <text fg={ink.label}>{ui.state.importPreviewShowAll ? "All rows" : "Duplicate rows"} · rules {ui.state.importPreviewRules ? "ON" : "OFF"}</text>
+        <Show when={previewRows().length} fallback={<text fg={ink.note}>No rows in this view.</text>}>
           <For each={previewWindow()}>{(row, i) => (
             <ListRow cursor={previewTop() + i() === ui.state.importPreviewCursor} bg={theme.mantle} spans={[
-              row.duplicate ? { text: "! ", fg: theme.warning } : { text: "· ", fg: theme.success },
-              { text: `${row.dateISO} `, fg: theme.overlay1 },
-              { text: fit(row.description, 38), fg: theme.text },
-              { text: formatMoney(row.amount).padStart(12), fg: theme.overlay1 },
+              row.duplicate ? { text: "! ", fg: tone.caution } : { text: "· ", fg: ink.rule },
+              { text: `${row.dateISO} `, fg: ink.label },
+              { text: fit(row.description, 38), fg: ink.figure },
+              { text: formatMoney(row.amount).padStart(12), fg: ink.figure },
             ]} />
           )}</For>
-          <Show when={previewRows().length > PREVIEW_ROWS}><text fg={theme.overlay1}>{`─ ${windowLabel(previewTop(), PREVIEW_ROWS, previewRows().length)} ─`}</text></Show>
+          <Show when={previewRows().length > PREVIEW_ROWS}><text fg={ink.note}>{`─ ${windowLabel(previewTop(), PREVIEW_ROWS, previewRows().length)} ─`}</text></Show>
         </Show>
       </Modal>
     )}</Show>
   </>
 }
 
-function FactoryResetOverlay() { return <Show when={ui.state.factoryResetOpen}><Modal title="Factory-reset database" tone="error" hints="enter erase · esc cancel"><text fg={theme.error}>Removes the SQLite database and its transaction, account, taxonomy, and rule data.</text><text fg={theme.overlay1}>Saved filters and import profiles remain in OpenTUI config.</text><text fg={theme.text}>Type RESET: <TextInput field={{ value: ui.state.factoryResetDraft, caret: ui.state.factoryResetCaret }} focused /></text></Modal></Show> }
+function FactoryResetOverlay() { return <Show when={ui.state.factoryResetOpen}><Modal title="Factory-reset database" tone="error" hints="enter erase · esc cancel"><text fg={tone.bad}>Removes the SQLite database and its transaction, account, taxonomy, and rule data.</text><text fg={ink.note}>Saved filters and import profiles remain in OpenTUI config.</text><text fg={tone.bad}>Type RESET: <TextInput field={{ value: ui.state.factoryResetDraft, caret: ui.state.factoryResetCaret }} focused /></text></Modal></Show> }
 
 export function EditorOverlay() {
   const ctx = () => ({ accounts: data.state.accounts, categories: data.state.categories, tags: data.state.tags, savedFilters: data.state.savedFilters, transactions: data.transactions() })
@@ -593,9 +593,9 @@ export function DryRunOverlay() {
   createEffect(() => { if (ui.state.dryRunReport && ui.state.dryRunVisible !== visible()) ui.setState({ dryRunVisible: visible() }) })
   const top = () => Math.min(ui.state.dryRunScroll, Math.max(0, lines().length - visible()))
   return <Show when={ui.state.dryRunReport}>{(report: () => NonNullable<typeof ui.state.dryRunReport>) => <Modal title="Dry run" width={96} hints="j/k scroll · esc close">
-    <text fg={theme.subtext0} wrapMode="none">{`All ${report().transactionCount} transactions`}</text>
-    <text fg={theme.text} wrapMode="none">{`${report().updatedTransactions} transactions would change · ${report().categoryChanges} categories · ${report().tagChanges} tags${report().failedRules.length ? ` · failed rules: ${report().failedRules.join(", ")}` : ""}`}</text>
+    <text fg={ink.note} wrapMode="none">{`All ${report().transactionCount} transactions`}</text>
+    <text fg={ink.note} wrapMode="none">{`${report().updatedTransactions} transactions would change · ${report().categoryChanges} categories · ${report().tagChanges} tags${report().failedRules.length ? ` · failed rules: ${report().failedRules.join(", ")}` : ""}`}</text>
     <text> </text>
-    <box flexDirection="column" height={Math.min(visible(), lines().length)} overflow="hidden"><For each={lines().slice(top(), top() + visible())}>{(line) => <text fg={line.error ? theme.error : theme.text} wrapMode="none">{line.text || " "}</text>}</For></box>
+    <box flexDirection="column" height={Math.min(visible(), lines().length)} overflow="hidden"><For each={lines().slice(top(), top() + visible())}>{(line) => <text fg={line.error ? tone.bad : ink.figure} wrapMode="none">{line.text || " "}</text>}</For></box>
   </Modal>}</Show>
 }

@@ -1,6 +1,6 @@
 import { For } from "solid-js"
 import { TABS, type TabId } from "../../state/uiStore"
-import { theme } from "../../theme"
+import { theme, ink, tone } from "../../theme"
 import { chipLook } from "./chip"
 
 /** Matches Go headerBarStyle + activeTabStyle / inactiveTabStyle; the
@@ -17,10 +17,10 @@ export function TabBar(props: { active: TabId; accountLabel?: string; reserveRig
       justifyContent="space-between"
     >
       <box flexDirection="row" gap={0} backgroundColor={theme.mantle}>
-        <text fg={theme.brand} bg={theme.mantle}>
+        <text fg={tone.key} bg={theme.mantle}>
           <b>Jaskmoney</b>
         </text>
-        <text fg={theme.overlay0} bg={theme.mantle}>
+        <text fg={ink.rule} bg={theme.mantle}>
           {"  "}
         </text>
         <For each={TABS}>
@@ -29,7 +29,7 @@ export function TabBar(props: { active: TabId; accountLabel?: string; reserveRig
             return (
               <box flexDirection="row" gap={0} backgroundColor={theme.mantle}>
                 {i() > 0 ? (
-                  <text fg={theme.overlay0} bg={theme.mantle}>
+                  <text fg={ink.rule} bg={theme.mantle}>
                     │
                   </text>
                 ) : null}
@@ -41,7 +41,7 @@ export function TabBar(props: { active: TabId; accountLabel?: string; reserveRig
           }}
         </For>
       </box>
-      <text fg={theme.overlay1} bg={theme.mantle}>
+      <text fg={ink.note} bg={theme.mantle}>
         {props.accountLabel ?? "All Accounts"}
       </text>
     </box>

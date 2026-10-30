@@ -3,7 +3,7 @@ import type { JevClient } from "../../ai/jev"
 import { data } from "../../state/dataStore"
 import { ui } from "../../state/uiStore"
 import { renderApp } from "../../testing/app"
-import { theme } from "../../theme"
+import { theme, tone } from "../../theme"
 import { RGBA } from "@opentui/core"
 
 let rendered: Awaited<ReturnType<typeof renderApp>> | undefined
@@ -36,7 +36,7 @@ test("near misses follow the matches, marked ≈ with their probability and dimm
   expect(frame.indexOf("Alba Coffee")).toBeLessThan(frame.indexOf("Tea House"))
   expect(row("Tea House").spans.map((s) => s.text).join("")).toMatch(/^│ ?≈/)
   // Probabilities: the match's in green, the near miss's (≈) in amber.
-  expect(span("≈50%", "Tea House").fg.toInts()).toEqual(RGBA.fromHex(theme.warning).toInts())
+  expect(span("≈50%", "Tea House").fg.toInts()).toEqual(RGBA.fromHex(tone.caution).toInts())
   // The near miss's description is dimmed; the filter bar says Jev reads each row.
   expect(span("Tea House", "Tea House").fg.toInts()).toEqual(RGBA.fromHex(theme.overlay1).toInts())
   expect(frame).toContain("◆ ask: judged by Jev")

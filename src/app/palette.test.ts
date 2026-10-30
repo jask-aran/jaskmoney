@@ -1,11 +1,11 @@
 import { expect, onTestFinished, test } from "bun:test"
-import { RGBA } from "@opentui/core"
+import { RGBA, TextAttributes } from "@opentui/core"
 import { data } from "../state/dataStore"
 import { ui } from "../state/uiStore"
 import { renderApp } from "../testing/app"
 import { key } from "../testing/keys"
 import { testEnv } from "../testing/scoped"
-import { theme } from "../theme"
+import { ink, theme } from "../theme"
 import { commands, rankCommands } from "./commands"
 import { footerHints, footerLine, handleKey, hintState, paletteList } from "./keys"
 import { FOOTER_LIMIT, hintEvent } from "./palette"
@@ -208,8 +208,9 @@ test("the palette renders like opencode's: search line, bold group headings, the
     const spans = t.captureSpans().lines.flatMap((l) => l.spans)
     const bar = spans.find((s) => s.text.startsWith("Categorise…"))!
     expect(bar.bg.toInts()).toEqual(RGBA.fromHex(theme.rowCursor).toInts())
-    expect(bar.fg.toInts()).toEqual(RGBA.fromHex(theme.text).toInts())
-    const heading = spans.find((s) => s.text === "Transactions" && s.fg.toInts().join() === RGBA.fromHex(theme.accent).toInts().join())
+    expect(bar.fg.toInts()).toEqual(RGBA.fromHex(ink.figure).toInts())
+    // Group headings are labels (2026-10-30: text by role).
+    const heading = spans.find((s) => s.text === "Transactions" && s.fg.toInts().join() === RGBA.fromHex(ink.label).toInts().join() && !!(s.attributes & TextAttributes.BOLD))
     expect(heading).toBeDefined()
     // Typed: one list, each row naming its group; what can't run is last, dimmed, with why.
     type("sync")

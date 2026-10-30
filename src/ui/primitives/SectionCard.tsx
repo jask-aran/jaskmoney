@@ -1,7 +1,7 @@
 import type { BoxRenderable } from "@opentui/core"
 import type { JSX } from "@opentui/solid"
 import { Show, createSignal } from "solid-js"
-import { theme } from "../../theme"
+import { theme, tone } from "../../theme"
 import { BorderText } from "./BorderText"
 import { fitSpans, spansWidth, type Span } from "./spans"
 
@@ -32,8 +32,8 @@ export function SectionCard(props: {
   // Until the first layout reports a size, start from the given one.
   const [width, setWidth] = createSignal(typeof props.width === "number" ? props.width : 0)
   const [height, setHeight] = createSignal(typeof props.height === "number" ? props.height : 0)
-  const borderColor = () => (props.focused ? theme.focus : theme.surface1)
-  const titleColor = () => (props.focused ? theme.focus : theme.brand)
+  const borderColor = () => (props.focused ? tone.focus : theme.surface1)
+  const titleColor = () => (props.focused ? tone.focus : tone.key)
   // Border text: `╭─` before the title and `─╮` after the right spans; a
   // space either side of each. Until the first layout reports a width, the
   // title is shown in full.

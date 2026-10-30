@@ -1,5 +1,5 @@
 import { For } from "solid-js"
-import { theme } from "../../theme"
+import { theme, ink, tone } from "../../theme"
 import { S } from "./S"
 
 /**
@@ -15,10 +15,10 @@ export function Footer(props: { hints: { key: string; desc: string }[] }) {
           {(h, i) => (
             <>
               {i() > 0 ? <S bg={theme.mantle}>{"  "}</S> : null}
-              <S fg={theme.accent} bg={theme.mantle} bold>
+              <S fg={tone.key} bg={theme.mantle} bold>
                 {h.key}
               </S>
-              <S fg={theme.subtext0} bg={theme.mantle}>
+              <S fg={ink.label} bg={theme.mantle}>
                 {` ${h.desc}`}
               </S>
             </>

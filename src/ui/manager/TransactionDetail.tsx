@@ -6,7 +6,7 @@ import { S } from "../primitives/S"
 import { TextInput } from "../primitives/TextInput"
 import { ui } from "../../state/uiStore"
 import { data } from "../../state/dataStore"
-import { categoryColor, theme } from "../../theme"
+import { categoryColor, ink, tone } from "../../theme"
 import { formatMoney } from "../../domain/dashboard"
 import { amountColor } from "../colors"
 import { fit } from "../text"
@@ -52,7 +52,7 @@ export function TransactionDetail() {
   })
   const field = (label: string, value: JSX.Element) => (
     <text wrapMode="none">
-      <S fg={theme.subtext0}>{label.padEnd(LABEL)}</S>
+      <S fg={ink.label}>{label.padEnd(LABEL)}</S>
       {value}
     </text>
   )
@@ -61,48 +61,48 @@ export function TransactionDetail() {
     <Show when={row() && detail()}>
       <Modal title={row()!.description} tone="focus" width={Math.floor(dims().width * 0.76)}>
         {field("Amount", <S fg={amountColor(row()!.amount)} bold>{formatMoney(row()!.amount)}</S>)}
-        {field("Date", <S fg={theme.text}>{formatWhen(detail()!.createdAt) ?? row()!.dateISO}</S>)}
+        {field("Date", <S fg={ink.figure}>{formatWhen(detail()!.createdAt) ?? row()!.dateISO}</S>)}
         <Show when={detail()!.status}>
           {field(
             "Status",
             detail()!.status === "HELD"
-              ? <S fg={theme.warning}>Pending</S>
-              : <S fg={theme.text}>{`Settled${detail()!.settledAt ? ` ${formatWhen(detail()!.settledAt)}` : ""}`}</S>,
+              ? <S fg={ink.note}>Pending</S>
+              : <S fg={ink.figure}>{`Settled${detail()!.settledAt ? ` ${formatWhen(detail()!.settledAt)}` : ""}`}</S>,
           )}
         </Show>
-        {field("Account", <S fg={theme.text}>{row()!.accountName || "—"}</S>)}
+        {field("Account", <S fg={ink.figure}>{row()!.accountName || "—"}</S>)}
         <Show when={detail()!.transferAccountName}>
-          {field("Transfer", <S fg={theme.text}>{`${row()!.amount < 0 ? "to" : "from"} ${detail()!.transferAccountName}`}</S>)}
+          {field("Transfer", <S fg={ink.figure}>{`${row()!.amount < 0 ? "to" : "from"} ${detail()!.transferAccountName}`}</S>)}
         </Show>
         {field("Category", <S fg={categoryColor(row()!.categoryColor)}>{`${categoryMark(row()!.categoryId)} ${row()!.categoryName}`}</S>)}
-        {field("Tags", <S fg={theme.text}>{row()!.tagNames.length ? row()!.tagNames.join(", ") : "—"}</S>)}
+        {field("Tags", <S fg={ink.figure}>{row()!.tagNames.length ? row()!.tagNames.join(", ") : "—"}</S>)}
         <Show when={detail()!.transactionType || detail()!.cardMethod}>
-          {field("Method", <S fg={theme.text}>{[detail()!.transactionType, cardText(detail()!.cardMethod, detail()!.cardSuffix)].filter(Boolean).join(" · ")}</S>)}
+          {field("Method", <S fg={ink.figure}>{[detail()!.transactionType, cardText(detail()!.cardMethod, detail()!.cardSuffix)].filter(Boolean).join(" · ")}</S>)}
         </Show>
-        <Show when={detail()!.foreignAmount}>{field("Foreign", <S fg={theme.text}>{detail()!.foreignAmount!}</S>)}</Show>
-        <Show when={detail()!.roundUp != null}>{field("Round-up", <S fg={theme.text}>{formatMoney(detail()!.roundUp!)}</S>)}</Show>
-        <Show when={detail()!.cashback != null}>{field("Cashback", <S fg={theme.success}>{formatMoney(detail()!.cashback!)}</S>)}</Show>
+        <Show when={detail()!.foreignAmount}>{field("Foreign", <S fg={ink.figure}>{detail()!.foreignAmount!}</S>)}</Show>
+        <Show when={detail()!.roundUp != null}>{field("Round-up", <S fg={ink.figure}>{formatMoney(detail()!.roundUp!)}</S>)}</Show>
+        <Show when={detail()!.cashback != null}>{field("Cashback", <S fg={tone.good}>{formatMoney(detail()!.cashback!)}</S>)}</Show>
         <Show when={detail()!.rawText && detail()!.rawText !== row()!.description}>
-          {field("Bank text", <S fg={theme.text}>{detail()!.rawText!}</S>)}
+          {field("Bank text", <S fg={ink.figure}>{detail()!.rawText!}</S>)}
         </Show>
-        <Show when={detail()!.message}>{field("Message", <S fg={theme.text}>{detail()!.message!}</S>)}</Show>
+        <Show when={detail()!.message}>{field("Message", <S fg={ink.figure}>{detail()!.message!}</S>)}</Show>
         {/* What its order emails say it bought (app/purchases): quantity, item,
             price each; BOUGHT_LINES at a time, J/K scroll. Else, for an Amazon
             or eBay row, whether its email is still being looked for. */}
-        <Show when={row()!.bought?.length} fallback={<Show when={lookup()}>{field("Bought", <S fg={theme.overlay1}>{lookup()!}</S>)}</Show>}>
+        <Show when={row()!.bought?.length} fallback={<Show when={lookup()}>{field("Bought", <S fg={ink.note}>{lookup()!}</S>)}</Show>}>
           <For each={boughtLines().shown}>{(item, i) => field(i() === 0 ? "Bought" : "", <>
-            <S fg={theme.subtext0}>{`${item.quantity}×`.padStart(4)} </S>
-            <S fg={theme.text}>{fit(item.name, boughtNameWidth())}</S>
-            <S fg={theme.subtext1}>{(item.price == null ? "" : `${formatMoney(item.price)}${item.quantity > 1 ? " ea" : ""}`).padStart(BOUGHT_PRICE)}</S>
+            <S fg={ink.note}>{`${item.quantity}×`.padStart(4)} </S>
+            <S fg={ink.figure}>{fit(item.name, boughtNameWidth())}</S>
+            <S fg={ink.figure}>{(item.price == null ? "" : `${formatMoney(item.price)}${item.quantity > 1 ? " ea" : ""}`).padStart(BOUGHT_PRICE)}</S>
           </>)}</For>
           <Show when={boughtLines().total > BOUGHT_LINES}>
-            {field("", <S fg={theme.overlay1}>{`${boughtLines().from}–${boughtLines().to} of ${boughtLines().total} · J/K scroll`}</S>)}
+            {field("", <S fg={ink.note}>{`${boughtLines().from}–${boughtLines().to} of ${boughtLines().total} · J/K scroll`}</S>)}
           </Show>
         </Show>
-        <Show when={detail()!.importFilename}>{field("Imported", <S fg={theme.text}>{detail()!.importFilename!}</S>)}</Show>
+        <Show when={detail()!.importFilename}>{field("Imported", <S fg={ink.figure}>{detail()!.importFilename!}</S>)}</Show>
         <Show
           when={ui.state.detailNotesEditing}
-          fallback={field("Notes", <S fg={row()!.notes ? theme.text : theme.overlay1}>{row()!.notes || "—"}</S>)}
+          fallback={field("Notes", <S fg={row()!.notes ? ink.figure : ink.faint}>{row()!.notes || "—"}</S>)}
         >
           {field("Notes", <TextInput field={{ value: ui.state.detailNotesDraft, caret: ui.state.detailNotesCaret }} focused />)}
         </Show>

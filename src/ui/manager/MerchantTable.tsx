@@ -1,6 +1,6 @@
 import { Index, Show, createMemo } from "solid-js"
 import { S } from "../primitives/S"
-import { categoryColor, theme } from "../../theme"
+import { categoryColor, ink, theme } from "../../theme"
 import { formatMoney } from "../../domain/dashboard"
 import { rowAppearance } from "../../domain/rowStyle"
 import type { MerchantGroup, MerchantSort } from "../../domain/merchants"
@@ -37,7 +37,7 @@ export function MerchantTable(props: {
   const gap = " ".repeat(COLUMNS.gap)
   return (
     <>
-      <text fg={theme.subtext0}>
+      <text fg={ink.label}>
         <b>
           {" ".repeat(COLUMNS.marker)}
           {fit(`Merchant${mark("merchant")}`, nameWidth())}
@@ -54,7 +54,7 @@ export function MerchantTable(props: {
           <Show when={noteWidth()}>{gap}{"Note".padEnd(noteWidth())}</Show>
         </b>
       </text>
-      <Show when={props.groups.length} fallback={<text fg={theme.overlay1}>{props.empty}</text>}>
+      <Show when={props.groups.length} fallback={<text fg={ink.note}>{props.empty}</text>}>
         <box flexGrow={1} flexDirection="column">
           {/* As the transactions table: Index updates screen rows in place, and the
               look is a memo, so a cursor move redraws two rows, not all. */}
@@ -70,21 +70,21 @@ export function MerchantTable(props: {
               const note = () => props.note?.(g().merchant) ?? null
               return (
                 <text width="100%" bg={bg()}>
-                  <S fg={fg(theme.accent)} bg={bg()} bold={look().bold}>{" "}</S>
-                  <S fg={fg(theme.brightText)} bg={bg()} bold={look().bold}>{fit(g().merchant, nameWidth())}</S>
+                  <S fg={fg(ink.figure)} bg={bg()} bold={look().bold}>{" "}</S>
+                  <S fg={fg(ink.figure)} bg={bg()} bold={look().bold}>{fit(g().merchant, nameWidth())}</S>
                   <S bg={bg()}>{gap}</S>
                   <S fg={fg(amountColor(g().total))} bg={bg()} bold={look().bold}>{formatMoney(g().total).padStart(COLUMNS.total)}</S>
                   <S bg={bg()}>{gap}</S>
-                  <S fg={fg(theme.subtext0)} bg={bg()}>{String(g().count).padStart(COLUMNS.count)}</S>
+                  <S fg={fg(ink.note)} bg={bg()}>{String(g().count).padStart(COLUMNS.count)}</S>
                   <S bg={bg()}>{gap}</S>
-                  <S fg={fg(theme.subtext0)} bg={bg()}>{formatMoney(g().average).padStart(COLUMNS.average)}</S>
+                  <S fg={fg(ink.label)} bg={bg()}>{formatMoney(g().average).padStart(COLUMNS.average)}</S>
                   <S bg={bg()}>{gap}</S>
-                  <S fg={fg(theme.mutedText)} bg={bg()}>{lastSeen(g().lastISO).padStart(COLUMNS.last)}</S>
+                  <S fg={fg(ink.label)} bg={bg()}>{lastSeen(g().lastISO).padStart(COLUMNS.last)}</S>
                   <S bg={bg()}>{gap}</S>
                   <S fg={fg(catColor())} bg={bg()} dim={muted() && !look().fg}>{fit(`${categoryMark(g().categoryId, muted())} ${g().categoryName || "Uncategorised"}`, COLUMNS.category)}</S>
                   <Show when={noteWidth()}>
                     <S bg={bg()}>{gap}</S>
-                    <S fg={fg(note()?.prompt ? theme.overlay1 : theme.subtext0)} bg={bg()} italic={!!note()?.prompt}>{fit(note()?.text ?? "", noteWidth())}</S>
+                    <S fg={fg(ink.note)} bg={bg()} italic={!!note()?.prompt}>{fit(note()?.text ?? "", noteWidth())}</S>
                   </Show>
                 </text>
               )

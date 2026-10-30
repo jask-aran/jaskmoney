@@ -1,5 +1,5 @@
 import { For, Show } from "solid-js"
-import { theme } from "../../theme"
+import { theme, ink, tone } from "../../theme"
 import type { FormField, FormNote } from "../../state/settingsForm"
 import { S } from "./S"
 import { TextInput } from "./TextInput"
@@ -20,18 +20,18 @@ export function Form(props: { fields: FormField[]; cursor: number; caret: number
           return (
             <text wrapMode="none" bg={focused() ? theme.rowCursor : undefined}>
               <S bg={focused() ? theme.rowCursor : undefined}>{" "}</S>
-              <S fg={focused() ? theme.text : theme.subtext0} bg={focused() ? theme.rowCursor : undefined} bold={focused()}>{field.label.padEnd(labelWidth())}</S>
+              <S fg={focused() ? ink.figure : ink.label} bg={focused() ? theme.rowCursor : undefined} bold={focused()}>{field.label.padEnd(labelWidth())}</S>
               <Show when={focused() && (field.kind === "choice" || field.kind === "toggle")}>
-                <S fg={theme.accent}>{"‹ "}</S>
+                <S fg={tone.key}>{"‹ "}</S>
               </Show>
-              <Show when={field.kind === "text"} fallback={<S fg={field.display ? theme.text : theme.overlay0}>{field.display || "—"}</S>}>
-                <TextInput field={{ value: field.display, caret: props.caret }} focused={focused()} caretColor={theme.accent} />
+              <Show when={field.kind === "text"} fallback={<S fg={field.display ? ink.figure : ink.faint}>{field.display || "—"}</S>}>
+                <TextInput field={{ value: field.display, caret: props.caret }} focused={focused()} caretColor={tone.key} />
               </Show>
               <Show when={focused() && (field.kind === "choice" || field.kind === "toggle")}>
-                <S fg={theme.accent}>{" ›"}</S>
+                <S fg={tone.key}>{" ›"}</S>
               </Show>
               <Show when={focused() && field.kind === "picker"}>
-                <S fg={theme.overlay1}>{"   enter to choose"}</S>
+                <S fg={ink.note}>{"   enter to choose"}</S>
               </Show>
             </text>
           )
@@ -39,7 +39,7 @@ export function Form(props: { fields: FormField[]; cursor: number; caret: number
       </For>
       <Show when={props.note}>
         <text> </text>
-        <text fg={props.note?.tone === "ok" ? theme.success : props.note?.tone === "error" ? theme.error : theme.overlay1} wrapMode="none">{`${props.note?.dot ? "● " : ""}${props.note?.text ?? ""}`}</text>
+        <text fg={props.note?.tone === "ok" ? tone.good : props.note?.tone === "error" ? tone.bad : ink.note} wrapMode="none">{`${props.note?.dot ? "● " : ""}${props.note?.text ?? ""}`}</text>
       </Show>
     </>
   )

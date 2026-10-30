@@ -9,7 +9,7 @@ import { S } from "../primitives/S"
 import { TextInput } from "../primitives/TextInput"
 import { smartQuestionFor, ui, type SectionId } from "../../state/uiStore"
 import { data } from "../../state/dataStore"
-import { theme } from "../../theme"
+import { ink, tone, theme } from "../../theme"
 import { askTerms, filterExprString } from "../../domain/filter"
 import type { Account } from "../../domain/types"
 import { fit, truncate } from "../text"
@@ -175,7 +175,7 @@ export function ManagerTab(props: { focused: SectionId }) {
     const note = data.state.filterNote
     // parse: searched as one phrase; check: works, but a name or field is a guess.
     const flag = note?.tone === "warn" ? "check" : err ? "parse" : "ok"
-    const dotColor = flag === "check" ? theme.warning : flag === "parse" ? theme.error : theme.success
+    const dotColor = flag === "check" ? tone.caution : flag === "parse" ? tone.bad : ink.note
     const dotLabel = flag
     const preview =
       data.filterPreview() ||
@@ -246,7 +246,7 @@ export function ManagerTab(props: { focused: SectionId }) {
     const c = review?.candidates[id]
     if (!review || !c) return undefined
     const tag = review.tagId != null ? data.state.tags.find((t) => t.id === review.tagId) : undefined
-    return { name: review.name, color: tag?.color ?? theme.teal, confidence: c.confidence, source: c.source }
+    return { name: review.name, color: tag?.color ?? theme.blue, confidence: c.confidence, source: c.source }
   }
 
   return (
@@ -255,7 +255,7 @@ export function ManagerTab(props: { focused: SectionId }) {
       <SectionCard
         title={`Transactions${data.state.tagReview ? ` · tagging ${data.state.tagReview.name}` : data.state.uncategorisedOnly ? " · uncategorised" : ""}${merchants() ? " · by merchant" : ""}`}
         titleSuffix={filterTitle()}
-        titleSuffixColor={data.state.filterErr ? theme.error : theme.blue}
+        titleSuffixColor={data.state.filterErr ? tone.bad : tone.scope}
         focused={txFocused()}
         active={txFocused()}
         flexGrow={1}
@@ -264,18 +264,18 @@ export function ManagerTab(props: { focused: SectionId }) {
         <Show when={filterBar()}>
           {(fb: () => NonNullable<ReturnType<typeof filterBar>>) => (
             <text>
-              <S fg={theme.accent} bold>
+              <S fg={tone.key} bold>
                 /
               </S>
-              <S fg={theme.text}>{" "}</S>
-              <TextInput field={{ value: fb().raw, caret: ui.state.filterCaret }} focused={fb().editing} caretColor={theme.accent} />
-              <S fg={theme.text}>{"  "}</S>
+              <S fg={ink.figure}>{" "}</S>
+              <TextInput field={{ value: fb().raw, caret: ui.state.filterCaret }} focused={fb().editing} caretColor={tone.key} />
+              <S fg={ink.figure}>{"  "}</S>
               <S fg={fb().dotColor}>●</S>
               <S fg={fb().dotColor}> {fb().dotLabel}</S>
-              {fb().note ? <S fg={fb().note!.tone === "error" ? theme.error : fb().note!.tone === "warn" ? theme.warning : theme.overlay1}>{`  ${truncate(fb().note!.text, Math.max(8, dims().width - 4 - 14 - fb().raw.length - (fb().jev ? 22 : 0) - (fb().question ? 6 + fb().question!.length : 0) - (fb().editing ? 0 : 18)))}`}</S> : null}
-              {fb().jev ? <S fg={theme.teal}>{"  ◆ ask: judged by Jev"}</S> : null}
-              {fb().question ? <S fg={theme.overlay1}>{fb().editing ? `  ↑ ?${fb().question}` : `  from ?${fb().question}`}</S> : null}
-              {!fb().editing ? <S fg={theme.overlay1}>{ui.state.drillReturn ? "  (esc back · u clear)" : "  (esc clear)"}</S> : null}
+              {fb().note ? <S fg={fb().note!.tone === "error" ? tone.bad : fb().note!.tone === "warn" ? tone.caution : ink.note}>{`  ${truncate(fb().note!.text, Math.max(8, dims().width - 4 - 14 - fb().raw.length - (fb().jev ? 22 : 0) - (fb().question ? 6 + fb().question!.length : 0) - (fb().editing ? 0 : 18)))}`}</S> : null}
+              {fb().jev ? <S fg={tone.ai}>{"  ◆ ask: judged by Jev"}</S> : null}
+              {fb().question ? <S fg={ink.note}>{fb().editing ? `  ↑ ?${fb().question}` : `  from ?${fb().question}`}</S> : null}
+              {!fb().editing ? <S fg={ink.note}>{ui.state.drillReturn ? "  (esc back · u clear)" : "  (esc clear)"}</S> : null}
             </text>
           )}
         </Show>
@@ -315,12 +315,12 @@ export function ManagerTab(props: { focused: SectionId }) {
       <TransactionDetail />
       <Show when={ui.state.acceptPreview && data.state.tagReview}>
         <Modal title={`Tag ${data.state.tagReview?.name ?? ""}`} subtitle={`${ui.state.acceptPreview?.length ?? 0} at ${ACCEPT_ALL_AT * 100}% or more`} width={72} hints="enter tag · esc cancel">
-          <For each={tagPreview().slice(0, ACCEPT_LINES * 2)}>{(line) => <text wrapMode="none" fg={theme.text}>{`  ${fit(line, 66)}`}</text>}</For>
+          <For each={tagPreview().slice(0, ACCEPT_LINES * 2)}>{(line) => <text wrapMode="none" fg={ink.figure}>{`  ${fit(line, 66)}`}</text>}</For>
           <Show when={tagPreview().length > ACCEPT_LINES * 2}>
-            <text fg={theme.overlay1}>{`  and ${tagPreview().length - ACCEPT_LINES * 2} more`}</text>
+            <text fg={ink.note}>{`  and ${tagPreview().length - ACCEPT_LINES * 2} more`}</text>
           </Show>
           <text> </text>
-          <text fg={theme.overlay1}>Up rows are tagged in Up too.</text>
+          <text fg={ink.note}>Up rows are tagged in Up too.</text>
         </Modal>
       </Show>
       <Show when={!data.state.tagReview && ui.state.acceptPreview}>
@@ -329,24 +329,24 @@ export function ManagerTab(props: { focused: SectionId }) {
             <For each={acceptGroups().slice(0, ACCEPT_LINES)}>{(g) => (
               <>
                 <text wrapMode="none">
-                  <S fg={g.category?.color ?? theme.text}>{`${categoryMark(g.category?.id ?? null)} `}</S>
-                  <S fg={theme.text}>{fit(g.category?.name ?? "?", 52)}</S>
-                  <S fg={theme.subtext0}>{String(g.n).padStart(6)}</S>
+                  <S fg={g.category?.color ?? ink.figure}>{`${categoryMark(g.category?.id ?? null)} `}</S>
+                  <S fg={ink.figure}>{fit(g.category?.name ?? "?", 52)}</S>
+                  <S fg={ink.note}>{String(g.n).padStart(6)}</S>
                 </text>
-                <text wrapMode="none" fg={theme.overlay1}>{`  ${fit(g.rows, 64)}`}</text>
+                <text wrapMode="none" fg={ink.note}>{`  ${fit(g.rows, 64)}`}</text>
               </>
             )}</For>
             <Show when={acceptGroups().length > ACCEPT_LINES}>
-              <text fg={theme.overlay1}>{`and ${acceptGroups().length - ACCEPT_LINES} more ${acceptGroups().length - ACCEPT_LINES === 1 ? "category" : "categories"}`}</text>
+              <text fg={ink.note}>{`and ${acceptGroups().length - ACCEPT_LINES} more ${acceptGroups().length - ACCEPT_LINES === 1 ? "category" : "categories"}`}</text>
             </Show>
             <text> </text>
-            <text fg={theme.overlay1}>Up rows are categorised in Up too.</text>
+            <text fg={ink.note}>Up rows are categorised in Up too.</text>
           </Modal>
         )}
       </Show>
       <Show when={ui.state.ruleOffersOpen}>
         <Modal title="Make rules" subtitle={data.state.writingRules ? "asking the AI…" : `${ruleOffers().length} offered`} width={76} hints="j/k move · enter choose · x never offer · esc later">
-          <text fg={theme.overlay1}>New rows these find get the category on sync, without review.</text>
+          <text fg={ink.note}>New rows these find get the category on sync, without review.</text>
           <text> </text>
           <For each={ruleOffers().slice(ruleTop(), ruleTop() + RULE_LINES)}>{(offer, i) => {
             const category = () => data.state.categories.find((c) => c.id === offer.categoryId)
@@ -355,25 +355,25 @@ export function ManagerTab(props: { focused: SectionId }) {
             return (
               <>
                 <ListRow cursor={at()} bg={theme.mantle} spans={[
-                  { text: ` ${fit(offer.description, 34)}`, fg: theme.text },
-                  { text: " → ", fg: theme.overlay1 },
-                  { text: offer.tagId != null ? fit(`+${tag()?.name ?? "?"}`, 32) : `${categoryMark(offer.categoryId)} ${fit(category()?.name ?? "?", 30)}`, fg: tag()?.color ?? category()?.color ?? theme.text },
+                  { text: ` ${fit(offer.description, 34)}`, fg: ink.figure },
+                  { text: " → ", fg: ink.rule },
+                  { text: offer.tagId != null ? fit(`+${tag()?.name ?? "?"}`, 32) : `${categoryMark(offer.categoryId)} ${fit(category()?.name ?? "?", 30)}`, fg: tag()?.color ?? category()?.color ?? ink.figure },
                 ]} />
-                <text wrapMode="none" fg={theme.overlay1}>{fit(`    ${offer.source === "ai" ? `AI · ${offer.expr}` : `you chose it ${offer.times}×`} · ${offer.agreeing} of ${offer.categorised} found are there${offer.waiting.length ? ` · ${offer.waiting.length} waiting` : ""}`, 72)}</text>
+                <text wrapMode="none" fg={ink.note}>{fit(`    ${offer.source === "ai" ? `AI · ${offer.expr}` : `you chose it ${offer.times}×`} · ${offer.agreeing} of ${offer.categorised} found are there${offer.waiting.length ? ` · ${offer.waiting.length} waiting` : ""}`, 72)}</text>
                 <Show when={offer.why}>
-                  <text wrapMode="none" fg={theme.subtext0}>{fit(`    ${offer.why}`, 72)}</text>
+                  <text wrapMode="none" fg={ink.note}>{fit(`    ${offer.why}`, 72)}</text>
                 </Show>
                 <Show when={offer.others.length}>
-                  <text wrapMode="none" fg={theme.warning}>{fit(`    also finds ${offer.others.join(", ")}`, 72)}</text>
+                  <text wrapMode="none" fg={tone.caution}>{fit(`    also finds ${offer.others.join(", ")}`, 72)}</text>
                 </Show>
               </>
             )
           }}</For>
           <Show when={hasLlm() && ruleOffers().length >= ruleTop() && ruleOffers().length < ruleTop() + RULE_LINES}>
-            <ListRow cursor={ui.state.ruleOfferCursor === ruleOffers().length} bg={theme.mantle} spans={[{ text: ` ${data.state.writingRules ? `Asking ${llmModelId()}…` : "Ask the AI for more rules"}`, fg: theme.accent }]} />
+            <ListRow cursor={ui.state.ruleOfferCursor === ruleOffers().length} bg={theme.mantle} spans={[{ text: ` ${data.state.writingRules ? `Asking ${llmModelId()}…` : "Ask the AI for more rules"}`, fg: tone.ai }]} />
           </Show>
           <Show when={ruleOffers().length + (hasLlm() ? 1 : 0) > RULE_LINES}>
-            <text fg={theme.overlay1}>{`  ${ruleTop() + 1}–${Math.min(ruleTop() + RULE_LINES, ruleOffers().length + (hasLlm() ? 1 : 0))} of ${ruleOffers().length + (hasLlm() ? 1 : 0)}`}</text>
+            <text fg={ink.note}>{`  ${ruleTop() + 1}–${Math.min(ruleTop() + RULE_LINES, ruleOffers().length + (hasLlm() ? 1 : 0))} of ${ruleOffers().length + (hasLlm() ? 1 : 0)}`}</text>
           </Show>
         </Modal>
       </Show>
@@ -382,7 +382,7 @@ export function ManagerTab(props: { focused: SectionId }) {
           <Modal title="Account data" subtitle={account().name} tone="warning" width={68} hints="j/k move · enter, enter again · esc cancel">
             <For each={ACCOUNT_ACTIONS}>{(kind, i) => (
               <ListRow cursor={ui.state.accountActionCursor === i()} bg={theme.mantle} armed={armedFor(ui.state.armed, kind, account().id)} spans={[
-                { text: kind === "clearAccount" ? "Clear this account’s transactions" : "Remove this account and its transactions", fg: kind === "clearAccount" ? theme.text : theme.error },
+                { text: kind === "clearAccount" ? "Clear this account’s transactions" : "Remove this account and its transactions", fg: kind === "clearAccount" ? ink.figure : tone.bad },
               ]} />
             )}</For>
           </Modal>

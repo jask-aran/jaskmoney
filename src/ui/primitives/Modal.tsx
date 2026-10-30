@@ -1,11 +1,11 @@
 import type { JSX } from "@opentui/solid"
 import { useTerminalDimensions } from "@opentui/solid"
 import { Show } from "solid-js"
-import { theme } from "../../theme"
+import { theme, ink, tone } from "../../theme"
 import { BorderText } from "./BorderText"
 import { fitSpans, spansWidth, type Span } from "./spans"
 
-const TONE = { accent: theme.accent, error: theme.error, warning: theme.warning, focus: theme.focus } as const
+const TONE = { accent: tone.key, error: tone.bad, warning: tone.caution, focus: tone.focus } as const
 
 /**
  * The app's one overlay, after the Go app's modals: a centred, bordered panel
@@ -29,7 +29,7 @@ export function Modal(props: {
     fitSpans(
       [
         { text: ` ${props.title}`, fg: color(), bold: true },
-        ...(props.subtitle ? [{ text: ` · ${props.subtitle}`, fg: theme.overlay1 }] : []),
+        ...(props.subtitle ? [{ text: ` · ${props.subtitle}`, fg: ink.note }] : []),
         { text: " ", fg: color() },
       ] satisfies Span[],
       width() - 4,
@@ -51,7 +51,7 @@ export function Modal(props: {
         {props.children}
         <Show when={props.hints}>
           <text> </text>
-          <text fg={theme.overlay1} wrapMode="none">{props.hints}</text>
+          <text fg={ink.note} wrapMode="none">{props.hints}</text>
         </Show>
       </box>
     </box>
