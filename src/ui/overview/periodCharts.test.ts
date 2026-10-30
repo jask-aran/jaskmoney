@@ -68,3 +68,14 @@ describe("Savers", () => {
     expect(Object.keys(balancesChart("Savers", dates, 60, 15, "2026-10-10", savers(1), []).inks!)).toEqual(["total"])
   })
 })
+
+test("Savers: each line is named at its end where there's room, else just its value", () => {
+  const savers = ["💰 General", "🏖️ Holiday"].map((name, i) => account({ id: i + 1, name, externalKind: "SAVER", balance: [5000, 3000][i]! }))
+  const text = (width: number) => balancesChart("Savers", dates, width, 15, "2026-10-05", savers, []).rows.map((r) => r.map((run) => run.text).join("")).join("\n")
+  expect(text(60)).toContain("General $5k")
+  expect(text(60)).toContain("Holiday $3k")
+  expect(text(60)).toContain("Total $8k")
+  // Too narrow for the names: the values stay.
+  expect(text(8)).not.toContain("General")
+  expect(text(8)).toContain("$5k")
+})

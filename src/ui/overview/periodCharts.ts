@@ -5,7 +5,7 @@ import { cumulative, dailySpendSeries, formatWholeMoney, signedWholeMoney, weekl
 import { balanceHistory, computePeriodFlows, saverHistories } from "../../domain/position"
 import type { Account, Transaction } from "../../domain/types"
 import { MONTHS, addDays, dayOfWeek, type WeekStart } from "../../domain/days"
-import { shortDate, shortMoney } from "../text"
+import { shortDate, shortMoney, truncate } from "../text"
 import { barTopRow, columnBars } from "../charts/bars"
 import { muted, type Span } from "../primitives/spans"
 import { changeColor, spendChangeColor } from "../colors"
@@ -271,6 +271,8 @@ export function balancesChart(
 /** Savers drawn one line each: as many as the chart's height keeps apart. */
 const MAX_SAVER_LINES = 6
 const ROWS_PER_SAVER_LINE = 3
+/** A saver's name in its line's label, at most. */
+const SAVER_LABEL = 14
 
 /**
  * Savers: their total (white) and a line per saver in its own colour
@@ -302,8 +304,9 @@ function saversChart(dates: string[], last: string, width: number, height: numbe
       series: [...shown.map((s) => ({ values: s.values, ink: `saver${s.accountId}` })), { values: total, ink: "total" }],
       length: dates.length, width, height, min: range.min, max: range.max, markers: axis.markers,
     }), [
-      { ...at(total), text: shortMoney(total[latest]!), ink: "total" },
-      ...shown.map((s) => ({ ...at(s.values), text: shortMoney(s.values[latest]!), ink: `saver${s.accountId}` })),
+      // Named where there's room, else the value alone.
+      { ...at(total), text: `Total ${shortMoney(total[latest]!)}`, short: shortMoney(total[latest]!), ink: "total" },
+      ...shown.map((s) => ({ ...at(s.values), text: `${truncate(withoutEmoji(s.name), SAVER_LABEL)} ${shortMoney(s.values[latest]!)}`, short: shortMoney(s.values[latest]!), ink: `saver${s.accountId}` })),
     ]),
     ticks: moneyTicks(range.min, range.max, range.step, height),
     labels: axis.labels,

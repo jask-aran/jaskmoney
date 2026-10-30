@@ -6,7 +6,8 @@
  * bar tops), then two rows out. A label that fits nowhere is dropped, so
  * callers keep the figure elsewhere (the legend), unless it's `required`:
  * then it takes its first spot inside the chart anyway. Labels are placed
- * in the order given, so the first ones win the space.
+ * in the order given, so the first ones win the space. A label with a
+ * `short` form tries every spot with its text, then every spot with that.
  */
 import type { Run } from "./lineChart"
 import { cellsToRuns } from "./runs"
@@ -16,6 +17,9 @@ export interface ChartLabel {
   row: number
   col: number
   text: string
+  /** A shorter text for where `text` fits nowhere ("$5.5k" for
+   * "General $5.5k"). */
+  short?: string
   ink: string
   /** Try the row above first (bar tops). */
   above?: boolean
@@ -36,8 +40,8 @@ export function annotate(rows: Run[][], labels: ChartLabel[]): Run[][] {
     for (let c = Math.max(0, from - 1); c < Math.min(width, to + 1); c++) if (!FREE.has(grid[r]![c]!.text)) return false
     return true
   }
-  for (const label of labels) {
-    const n = [...label.text].length
+  const spotFor = (label: ChartLabel, text: string) => {
+    const n = [...text].length
     const { row, col } = label
     const centred: Array<[number, number]> = [[row - 1, col - Math.floor((n - 1) / 2)], [row + 1, col - Math.floor((n - 1) / 2)]]
     const beside: Array<[number, number]> = [[row, col + 2], [row, col - 1 - n]]
@@ -53,10 +57,17 @@ export function annotate(rows: Run[][], labels: ChartLabel[]): Run[][] {
       [row + 2, col + 1],
     ]
     const inside = ([r, c]: [number, number]) => r >= 0 && r < grid.length && c >= 0 && c + n <= width
-    const spot = spots.find(([r, c]) => free(r, c, c + n)) ?? (label.required ? spots.find(inside) : undefined)
+    return { found: spots.find(([r, c]) => free(r, c, c + n)), inside: spots.find(inside) }
+  }
+  for (const label of labels) {
+    const long = spotFor(label, label.text)
+    const short = label.short && !long.found ? spotFor(label, label.short) : undefined
+    const [text, spot] = long.found ? [label.text, long.found]
+      : short?.found ? [label.short!, short.found]
+      : label.required ? [label.short ?? label.text, (short ?? long).inside] : [label.text, undefined]
     if (!spot) continue
     const [r, c] = spot
-    ;[...label.text].forEach((ch, k) => (grid[r]![c + k] = { text: ch, ink: label.ink }))
+    ;[...text].forEach((ch, k) => (grid[r]![c + k] = { text: ch, ink: label.ink }))
   }
   return grid.map(cellsToRuns)
 }
