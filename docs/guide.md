@@ -50,14 +50,14 @@ legacy/go/   frozen Go reference implementation
 
 ## Tabs
 
-Where information lives: the Overview is figures and charts (point-in-time ones in Now and Savers, everything else over the Date Range, which defaults to the budget cycle); Transactions is the individual rows, and merchants as a grouping of them; Budgets is limits per cycle and how they're going; Settings is configuration.
+Where information lives: the Overview is figures and charts (point-in-time ones in Accounts, everything else over the Date Range, which defaults to the budget cycle); Transactions is the individual rows, and merchants as a grouping of them; Budgets is limits per cycle and how they're going; Settings is configuration.
 
 ### Overview
 
 - **Date Range** across the top (`v` then `d`). Presets include Cycle and Custom, which asks for start and end dates. From anywhere on the Overview: `d`/`D` step through the presets, `[`/`]` step the range back and forward, `0` returns to now for the same kind of range (this month, this quarter; a custom range moves to end today), `c` goes to this cycle, `a` switches between all spending accounts and one.
 - **Two chart panes**, each cycling Cumulative, Daily, Weekly, Cash flow, Net position, Available, Savers, Calendar and Subscriptions: `h`/`l` the top or focused pane, `H`/`L` the bottom. The views show as icons in the top border and the legend in the bottom border; labels sit beside the points they describe where they fit.
 - **Subscriptions** lists regular spending payments found in your history (a steady cadence and amount): the cadence, latest charge, what it costs a month, the next charge ("due" once late), and a price change in the last six months ("▲ from $34.00 20 Oct"). Ones that stopped lately follow, dimmed. The legend sums them ("5 active · $238 a month · 1 price change"). It covers the Overview's accounts and isn't limited by the date range.
-- **A column of stacks:** Now (net position, available, pending, runway; no range), Savers, Totals (the range against the same days of the previous period) and Categories. With Categories focused (`v c`), `j`/`k` pick a category and `enter` opens its transactions in the range (`enter` on a chart opens all the range's spending); `esc` in Transactions comes back. Categories also shows how many rows wait for review ("136 to review (i)"), and `i` opens them.
+- **A column of stacks:** Accounts (no range: available first, then the balance with what's pending, runway and the 30 day change; then each saver, their subtotal and the net position, which is available plus savers), Totals (the range against the same days of the previous period) and Categories. With Categories focused (`v c`), `j`/`k` pick a category and `enter` opens its transactions in the range (`enter` on a chart opens all the range's spending); `esc` in Transactions comes back. Categories also shows how many rows wait for review ("136 to review (i)"), and `i` opens them.
 - The date range, account, chart views and week start (Settings › Database & Import `w`) are remembered between runs; `b` there draws an x-axis line under the charts (off by default). Below 120 columns the Overview shows one chart with the stacks below it.
 
 ### Transactions

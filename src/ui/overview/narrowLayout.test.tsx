@@ -43,7 +43,7 @@ function cards(root: BaseRenderable): BoxRenderable[] {
   ])
 }
 
-/** The Overview's cards: Date Range, the charts, Now, Savers, Totals, Categories. */
+/** The Overview's cards: Date Range, the charts, Accounts, Totals, Categories. */
 function overviewCards(t: Awaited<ReturnType<typeof overview>>): BoxRenderable[] {
   const dateRange = cards(t.renderer.root).find((card) => card.y === 2)
   expect(dateRange).toBeDefined()
@@ -51,14 +51,14 @@ function overviewCards(t: Awaited<ReturnType<typeof overview>>): BoxRenderable[]
 }
 
 // Wide (>= 90 columns): two charts beside the stack. Narrow: one chart, then
-// Now, Savers and Totals beside Categories, both columns one height.
+// Accounts and Totals beside Categories, both columns one height.
 for (const [width, height, wide] of [[80, 30, false], [80, 45, false], [89, 60, false], [90, 40, true], [100, 57, true], [160, 45, true]] as const) {
   test(`${width}×${height}: ${wide ? "two columns" : "one chart, cards beside Categories"}; no overlaps; jumps reach whole cards in focus paint`, async () => {
     const t = await overview(width, height)
     const frame = () => t.captureCharFrame()
     const settle = async () => { await t.renderOnce(); await t.flush() }
     const all = overviewCards(t)
-    expect(all).toHaveLength(wide ? 7 : 6)
+    expect(all).toHaveLength(wide ? 6 : 5)
     expect(frame().includes("Balances · Net position")).toBe(wide)
     const sameCards = all.map((card) => card.id)
     for (let i = 0; i < all.length; i++) {

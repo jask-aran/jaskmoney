@@ -39,21 +39,21 @@ const WEEKDAYS = () => data.state.weekStart === "sunday" ? ["Sun", "Mon", "Tue",
 const WIDE = 90
 /** The categories column's widest useful size: Up's longest names fit. */
 const SIDE_MAX = 48
-/** The side stack's narrowest: Now's and Totals' labels still fit. */
+/** The side stack's narrowest: Accounts' and Totals' labels still fit. */
 const SIDE_MIN = 40
 /** Narrow: the chart's fewest rows before the column scrolls. */
 const NARROW_CHART_MIN = 10
 /** Stack columns: value and note widths; the label takes the rest. */
-const VALUE = 12
-const NOTE = 11
-/** Savers fold to their total before Categories drop under this many rows. */
+const VALUE = 11
+const NOTE = 12
+/** Savers fold to their subtotal before Categories drop under this many rows. */
 const MIN_CATEGORIES = 8
 
 /**
  * The overview: the Date Range (opens on the current budget cycle), two chart
  * panes cycling through spending, cash flow, balance and calendar views (h/l
- * the top or focused pane, H/L the bottom), and a column of stacks: Now
- * (figures with no range), Savers, Totals (the range against the same days of
+ * the top or focused pane, H/L the bottom), and a column of stacks: Accounts
+ * (balances now, with no range), Totals (the range against the same days of
  * the previous period, with the overall budget when the range is the current
  * cycle) and Categories. Spending figures cover the selected spending account
  * (see spendingScope); internal transfers and not-spending categories are
@@ -93,7 +93,7 @@ export function OverviewTab(props: { focused: SectionId }) {
   const subs = live(() => subsShown() ? subscriptions(data.transactions().filter((t) => t.accountId != null && scopeIds().has(t.accountId)), today()) : [])
   const series = createMemo(() => dailySpendSeries(inPeriod(), bounds().start, bounds().end))
 
-  // Now: point-in-time figures, whatever the range.
+  // Accounts: point-in-time figures, whatever the range.
   const position = live(() => computePosition(data.state.accounts, data.transactions(), today()))
   const saverChanges = createMemo(() => {
     const since = addDays(today(), -30)
@@ -125,9 +125,9 @@ export function OverviewTab(props: { focused: SectionId }) {
 
   // Fixed rows: tab bar + gap (2), status + footer (2), Date Range (3).
   // Wide: two chart panes share the left column; the right column (SIDE_MIN
-  // to SIDE_MAX wide) stacks Now, Savers, Totals and Categories. Narrow: the
-  // top chart across the tab takes what the cards leave; under it Now,
-  // Savers and Totals stack beside Categories, the two columns one height.
+  // to SIDE_MAX wide) stacks Accounts, Totals and Categories. Narrow: the
+  // top chart across the tab takes what the cards leave; under it Accounts
+  // and Totals stack beside Categories, the two columns one height.
   // When even the smallest chart doesn't fit, the column scrolls.
   const wide = () => dims().width >= WIDE
   const bodyHeight = () => Math.max(8, dims().height - 7)
@@ -142,12 +142,16 @@ export function OverviewTab(props: { focused: SectionId }) {
   })
 
   // The stacks: label, value (VALUE) and a note or comparison (NOTE).
-  const nowRows = () => 4 + (position().pendingCount > 0 ? 1 : 0)
+  // Accounts: available, the balance with what's pending, runway and the
+  // 30 day change; then, with savers, a heading, each saver and their
+  // subtotal (folded: the subtotal alone), and the net position.
+  const hasSavers = () => position().savers.length > 0
+  const saverRows = (full: boolean) => (!hasSavers() ? 0 : full ? 2 + position().savers.length : 1) + (hasSavers() ? 1 : 0)
+  const accountRows = (full: boolean) => 3 + (position().pendingCount > 0 ? 1 : 0) + saverRows(full)
   // Column headings sit in the top border, so no row of their own.
   const totalsRows = () => 7 + (budget() ? (budget()!.remaining > 0 ? 2 : 1) : 0)
-  const saverRows = (full: boolean) => (full ? 1 + position().savers.length : 1)
   // Narrow: the stack beside Categories, and so the height of both.
-  const lowerHeight = (full: boolean) => nowRows() + 2 + saverRows(full) + 2 + totalsRows() + 2
+  const lowerHeight = (full: boolean) => accountRows(full) + 2 + totalsRows() + 2
   // Savers fold to their total when Categories (wide) or the chart (narrow)
   // would get too small.
   const saversFull = () =>
@@ -216,39 +220,49 @@ export function OverviewTab(props: { focused: SectionId }) {
     return <S fg={look().fg} bg={look().bg} bold={look().bold}>{` ${label} `}</S>
   }
 
-  const stat = (label: string, value: string, note = "", colors: { value?: string; note?: string; bold?: boolean } = {}) => (
-    <text wrapMode="none">
-      <S fg={theme.subtext0} bold={colors.bold}>{fit(label, labelWidth())}</S>
-      <S fg={colors.value ?? theme.text} bold={colors.bold}>{value.padStart(VALUE)}</S>
-      <S fg={colors.note ?? theme.overlay1}>{note.padStart(NOTE)}</S>
-    </text>
-  )
+  // A note too long for its column (a space before it) takes room from the
+  // label's padding.
+  const stat = (label: string, value: string, note = "", colors: { label?: string; value?: string; note?: string; bold?: boolean } = {}) => {
+    const spill = Math.max(0, Math.min(note.length + 1 - NOTE, labelWidth() - label.length - 1))
+    return (
+      <text wrapMode="none">
+        <S fg={colors.label ?? theme.subtext0} bold={colors.bold}>{fit(label, labelWidth() - spill)}</S>
+        <S fg={colors.value ?? theme.text} bold={colors.bold}>{value.padStart(VALUE)}</S>
+        <S fg={colors.note ?? theme.overlay1}>{note.padStart(NOTE + spill)}</S>
+      </text>
+    )
+  }
   // Value and note column headings for a stack's top border, right-aligned
   // over their columns.
   const headings = (value: string, note: string): Span[] => [muted(value), muted(" ".repeat(Math.max(1, NOTE - note.length))), muted(note)]
 
-  const nowCard = () => (
-    <SectionCard title="Now" width={sideWidth()} height={nowRows() + 2}>
-      {stat("Net position", position().netPosition != null ? formatMoney(position().netPosition!) : "—", "", { bold: true })}
-      {stat("Available", position().spendingBalance != null ? formatMoney(position().spendingBalance!) : "—")}
-      <Show when={position().pendingCount > 0}>
-        {stat("  pending", formatMoney(Math.abs(position().pendingAmount)), `${position().pendingCount} txn`, { value: theme.overlay1 })}
+  // Available is what Up shows: the balance less what's pending. The
+  // balance's note is the pending money and how many rows it is.
+  const available = () => position().spendingBalance
+  const pendingNote = () => `${formatWholeMoney(-position().pendingAmount)} · ${position().pendingCount} txn`
+  const saverChange = (accountId: number) => saverChanges().find((c) => c.accountId === accountId)?.change ?? 0
+  const saversTotalChange = () => saverChanges().reduce((sum, c) => sum + c.change, 0)
+  const accountsCard = () => (
+    <SectionCard title="Accounts" width={sideWidth()} height={accountRows(saversFull()) + 2}>
+      {stat("Available", available() != null ? formatMoney(available()!) : "—", "", { label: theme.text, bold: true })}
+      <Show when={position().pendingCount > 0 && available() != null}>
+        {stat("Balance", formatMoney(available()! - position().pendingAmount), pendingNote())}
       </Show>
       {stat("Runway", position().runwayDays != null ? `${Math.round(position().runwayDays!)} days` : "—", position().dailySpend != null ? `${formatWholeMoney(position().dailySpend!)}/day` : "", { value: theme.peach })}
       {stat("30 day change", signedWholeMoney(change30()), "", { value: changeColor(change30()) })}
-    </SectionCard>
-  )
-
-  const saverChange = (accountId: number) => saverChanges().find((c) => c.accountId === accountId)?.change ?? 0
-  const saversTotalChange = () => saverChanges().reduce((sum, c) => sum + c.change, 0)
-  const saversCard = () => (
-    <SectionCard title="Savers" titleRight={headings("Balance", "30 days")} titleRightFlush width={sideWidth()} height={saverRows(saversFull()) + 2}>
-      <Show when={saversFull()}>
-        <For each={position().savers}>
-          {(saver) => stat(saver.name, formatWholeMoney(saver.balance), signedWholeMoney(saverChange(saver.accountId)), { note: changeColor(saverChange(saver.accountId)) })}
-        </For>
+      <Show when={hasSavers()}>
+        <Show
+          when={saversFull()}
+          fallback={stat("Savers", formatWholeMoney(position().saversTotal), signedWholeMoney(saversTotalChange()), { note: changeColor(saversTotalChange()) })}
+        >
+          {stat("Savers", "", "30 days", { label: theme.text })}
+          <For each={position().savers}>
+            {(saver) => stat(`  ${saver.name}`, formatWholeMoney(saver.balance), signedWholeMoney(saverChange(saver.accountId)), { note: changeColor(saverChange(saver.accountId)) })}
+          </For>
+          {stat("  Total", formatWholeMoney(position().saversTotal), signedWholeMoney(saversTotalChange()), { note: changeColor(saversTotalChange()) })}
+        </Show>
+        {stat("Net position", position().netPosition != null ? formatMoney(position().netPosition!) : "—", "", { label: theme.text, bold: true })}
       </Show>
-      {stat("Total", formatWholeMoney(position().saversTotal), signedWholeMoney(saversTotalChange()), { bold: true, note: changeColor(saversTotalChange()) })}
     </SectionCard>
   )
 
@@ -370,8 +384,7 @@ export function OverviewTab(props: { focused: SectionId }) {
       </box>
       <box id="overview-narrow-cards" ref={(row: BoxRenderable) => { row.onSizeChange = followFocus }} width="100%" height={categoriesHeight()} flexDirection="row" gap={1} flexShrink={0}>
         <box width={sideWidth()} flexDirection="column">
-          {nowCard()}
-          {saversCard()}
+          {accountsCard()}
           {totalsCard()}
         </box>
         {categoriesCard()}
@@ -418,8 +431,7 @@ export function OverviewTab(props: { focused: SectionId }) {
             <ChartPane pane={1} height={bottomChartHeight()} />
           </box>
           <box flexDirection="column" flexGrow={1} flexBasis={0} minWidth={0} height={bodyHeight()} overflow="hidden">
-            {nowCard()}
-            {saversCard()}
+            {accountsCard()}
             {totalsCard()}
             {categoriesCard()}
           </box>

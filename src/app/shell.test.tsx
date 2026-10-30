@@ -28,8 +28,7 @@ describe("shell render M0", () => {
     expect(frame).toContain("Transactions")
     expect(frame).toContain("Settings")
     // Point-in-time figures, then everything over the Date Range.
-    expect(frame).toContain("Now")
-    expect(frame).toContain("Savers")
+    expect(frame).toContain("Accounts")
     expect(frame).toContain("Date Range")
     // Chart panes name their view; the picker in the border marks the
     // current one (dots with icons off), groups two spaces apart.
