@@ -8,7 +8,7 @@ import { TextInput } from "../primitives/TextInput"
 import { chipLook } from "../primitives/chip"
 import { centredTop } from "../primitives/ListRow"
 import { changeColor, spendChangeColor } from "../colors"
-import { muted, type Span } from "../primitives/spans"
+import type { Span } from "../primitives/spans"
 import { S } from "../primitives/S"
 import { CHART_VIEWS, ui, type SectionId } from "../../state/uiStore"
 import { data } from "../../state/dataStore"
@@ -16,9 +16,9 @@ import { ink, theme, tone } from "../../theme"
 import { dailySpendSeries, fitCategoryLines, formatMoney, formatPct, formatWholeMoney, signedWholeMoney } from "../../domain/dashboard"
 import { computePeriodFlows, computePosition } from "../../domain/position"
 import { budgetProgress, cycleFor, type BudgetProgress } from "../../domain/budget"
-import { spendingCalendar, type CalendarDay } from "../../domain/spending"
+import { spendingCalendar } from "../../domain/spending"
 import { accountRole } from "../../domain/types"
-import { MONTHS, addDays, appNow, appToday } from "../../domain/days"
+import { addDays, appNow, appToday } from "../../domain/days"
 import { isSpending, isUncategorised, isUnsortedIn } from "../../domain/moneyRules"
 import { chipLayout } from "./rangeChips"
 import { CUSTOM_CHIP, LOOKBACKS, PERIODS, comparisonWindows, filterByTimeframe, offsetLabel, periodOffset } from "../../domain/timeframe"
@@ -29,10 +29,8 @@ import { allCategoryLines, overviewRange } from "../../state/overviewRange"
 import { AXIS_GUESS, ChartBody, axisWidth, type ChartModel } from "../charts/ChartBody"
 import { INKS, balancesChart, cashFlowChart, spendingChart, type PeriodNames } from "./periodCharts"
 import { UP_LOGO_WIDTH } from "../primitives/UpLogo"
+import { CalendarView, calendarLegend } from "./CalendarView"
 
-/** Calendar cell colours by spending level (0 = none). */
-const LEVEL_BG = [theme.surface0, "#5b4636", "#8c6146", "#c47f55", theme.peach] as const
-const WEEKDAYS = () => data.state.weekStart === "sunday" ? ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"] : ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"]
 
 /** At or above this width the cards take a right-hand column beside the
  * two charts; below it one chart spans the tab with the cards under it. */
@@ -467,30 +465,7 @@ function viewPicker(current: number): Span[] {
 
 const PERIOD_UNIT: Record<string, string> = { cycle: "cycle", month: "month", qtr: "quarter", half: "half", fy: "FY", year: "year" }
 
-/** The calendar's legend for the pane's bottom border: the levels as
- * swatches, the no-spend days and the busiest weekday. */
-function calendarLegend(weeks: Array<Array<CalendarDay | null>>, today: string): Span[] {
-  const days = weeks.flat().filter((d): d is CalendarDay => d != null && d.dateISO <= today)
-  if (!days.length) return [muted("No days yet")]
-  const noSpend = days.filter((d) => d.spent === 0).length
-  const totals = [0, 0, 0, 0, 0, 0, 0], counts = [0, 0, 0, 0, 0, 0, 0]
-  for (const week of weeks) week.forEach((d, i) => { if (d && d.dateISO <= today) { totals[i]! += d.spent; counts[i]!++ } })
-  const avg = totals.map((t, i) => (counts[i] ? t / counts[i]! : 0))
-  const busiest = avg.indexOf(Math.max(...avg))
-  return [
-    muted("less "),
-    ...LEVEL_BG.map((fg): Span => ({ text: "■", fg })),
-    muted(" more"),
-    muted(`   ${noSpend} no-spend ${noSpend === 1 ? "day" : "days"}   busiest ${WEEKDAYS()[busiest]}`),
-  ]
-}
 
-/**
- * The period's days as a month grid: a column per week, a row band per
- * weekday (up to three rows each), cells as wide as fit (2–10). Wide cells
- * carry the day of the month; days after today are blank. Month labels on
- * top; the legend is in the pane's border (calendarLegend).
- */
 /** The Subscriptions view's legend: how many, what they cost a month, and
  * what changed. */
 function subscriptionsLegend(list: Subscription[]): Span[] {
@@ -546,71 +521,3 @@ function SubscriptionsView(props: { list: Subscription[]; width: number; rows: n
   )
 }
 
-function CalendarView(props: { weeks: Array<Array<CalendarDay | null>>; width: number; rows: number; today: string }) {
-  // Rows: month labels, 7 weekday bands.
-  const band = () => Math.max(1, Math.min(3, Math.floor((props.rows - 1) / 7)))
-  const shown = () => props.weeks.slice(-Math.max(1, Math.floor((props.width - 4) / 2)))
-  const cellWidth = () => Math.max(2, Math.min(10, Math.floor((props.width - 4) / Math.max(1, shown().length))))
-  return (
-    <>
-      <text wrapMode="none" fg={ink.note}>{"    " + monthLabels(shown(), cellWidth())}</text>
-      <For each={WEEKDAYS()}>
-        {(label, row) => (
-          <For each={Array.from({ length: band() }, (_, k) => k)}>
-            {(line) => (
-              <text wrapMode="none">
-                <S fg={ink.note}>{(line === 0 ? label : "").padEnd(4)}</S>
-                {/* Index: a new range brings new weeks; their cells update in place. */}
-                <Index each={shown()}>
-                  {(week) => <Cell day={week()[row()] ?? null} width={cellWidth()} today={props.today} label={line === 0} />}
-                </Index>
-              </text>
-            )}
-          </For>
-        )}
-      </For>
-    </>
-  )
-}
-
-/** One day (one line of its band); a gap column keeps wide cells apart. The
- * band's first line carries the day of the month when the cell is wide
- * enough. Days after today are blank. */
-function Cell(props: { day: CalendarDay | null; width: number; today: string; label: boolean }) {
-  const filled = () => props.day != null && props.day.dateISO <= props.today
-  const inner = () => (props.width > 2 ? props.width - 1 : props.width)
-  const text = () => {
-    if (!props.label || props.day == null || inner() < 3) return " ".repeat(inner())
-    return (" " + Number(props.day.dateISO.slice(8, 10))).padEnd(inner())
-  }
-  // Day numbers: dark on the brighter levels, muted on empty and future days.
-  const fg = () => (!filled() ? theme.surface1 : props.day!.level >= 3 ? theme.crust : ink.label)
-  return (
-    <>
-      <S fg={fg()} bg={filled() ? LEVEL_BG[props.day!.level] : theme.canvas}>{text()}</S>
-      {props.width > 2 ? <S bg={theme.canvas}>{" "}</S> : null}
-    </>
-  )
-}
-
-/** Three-letter month names over the week where each month starts; a name
- * may run over the following columns and is skipped if it would touch the
- * previous one. */
-function monthLabels(weeks: Array<Array<CalendarDay | null>>, width: number): string {
-  const out = new Array<string>(weeks.length * width).fill(" ")
-  let last = ""
-  let free = 0
-  weeks.forEach((week, i) => {
-    const month = (week.find((d) => d)?.dateISO ?? "").slice(5, 7)
-    if (month && month !== last) {
-      const pos = i * width
-      if (pos >= free) {
-        const name = MONTHS[Number(month) - 1]!
-        for (let k = 0; k < name.length && pos + k < out.length; k++) out[pos + k] = name[k]!
-        free = pos + name.length + 1
-      }
-    }
-    last = month || last
-  })
-  return out.join("")
-}

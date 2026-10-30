@@ -11,13 +11,12 @@ const sources = [...new Glob("src/**/*.{ts,tsx}").scanSync(".")]
   .filter((f) => !/\.test\.tsx?$/.test(f) && f !== "src/theme.ts" && !f.startsWith("src/testing/"))
 const read = (f: string) => Bun.file(f).text()
 
-/** Where a raw accent is a data colour: chart series, the calendar's heat,
- * the colour a new tag or category gets, a tag with none of its own. */
+/** Where a raw accent is a data colour: chart series, saver lines, the
+ * colour a new tag or category gets, a tag with none of its own. */
 const DATA_COLOURS = new Set([
   "src/ui/overview/periodCharts.ts",
   "src/ui/charts/saverInks.ts",
   "src/ui/manager/ManagerTab.tsx",
-  "src/ui/overview/OverviewTab.tsx",
   "src/ui/manager/TransactionTable.tsx",
   "src/app/keys.ts",
   "src/state/tagPicker.ts",
