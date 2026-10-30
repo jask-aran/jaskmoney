@@ -12,7 +12,7 @@ import { muted, type Span } from "../primitives/spans"
 import { S } from "../primitives/S"
 import { CHART_VIEWS, ui, type SectionId } from "../../state/uiStore"
 import { data } from "../../state/dataStore"
-import { theme } from "../../theme"
+import { ink, theme, tone } from "../../theme"
 import { dailySpendSeries, fitCategoryLines, formatMoney, formatPct, formatWholeMoney, signedWholeMoney } from "../../domain/dashboard"
 import { computePeriodFlows, computePosition } from "../../domain/position"
 import { budgetProgress, cycleFor, type BudgetProgress } from "../../domain/budget"
@@ -226,15 +226,15 @@ export function OverviewTab(props: { focused: SectionId }) {
     const spill = Math.max(0, Math.min(note.length + 1 - NOTE, labelWidth() - label.length - 1))
     return (
       <text wrapMode="none">
-        <S fg={colors.label ?? theme.subtext0} bold={colors.bold}>{fit(label, labelWidth() - spill)}</S>
-        <S fg={colors.value ?? theme.text} bold={colors.bold}>{value.padStart(VALUE)}</S>
-        <S fg={colors.note ?? theme.overlay1}>{note.padStart(NOTE + spill)}</S>
+        <S fg={colors.label ?? ink.label} bold={colors.bold}>{fit(label, labelWidth() - spill)}</S>
+        <S fg={colors.value ?? ink.figure} bold={colors.bold}>{value.padStart(VALUE)}</S>
+        <S fg={colors.note ?? ink.note}>{note.padStart(NOTE + spill)}</S>
       </text>
     )
   }
   // Value and note column headings for a stack's top border, right-aligned
   // over their columns.
-  const headings = (value: string, note: string): Span[] => [muted(value), muted(" ".repeat(Math.max(1, NOTE - note.length))), muted(note)]
+  const headings = (value: string, note: string): Span[] => [{ text: `${value}${" ".repeat(Math.max(1, NOTE - note.length))}${note}`, fg: ink.label }]
 
   // Available is what Up shows: the balance less what's pending. The
   // balance's note is the pending money and how many rows it is.
@@ -244,24 +244,24 @@ export function OverviewTab(props: { focused: SectionId }) {
   const saversTotalChange = () => saverChanges().reduce((sum, c) => sum + c.change, 0)
   const accountsCard = () => (
     <SectionCard title="Accounts" width={sideWidth()} height={accountRows(saversFull()) + 2}>
-      {stat("Available", available() != null ? formatMoney(available()!) : "—", "", { label: theme.text, bold: true })}
+      {stat("Available", available() != null ? formatMoney(available()!) : "—", "", { bold: true })}
       <Show when={position().pendingCount > 0 && available() != null}>
-        {stat("Balance", formatMoney(available()! - position().pendingAmount), pendingNote())}
+        {stat("Balance", formatMoney(available()! - position().pendingAmount), pendingNote(), { value: ink.label })}
       </Show>
-      {stat("Runway", position().runwayDays != null ? `${Math.round(position().runwayDays!)} days` : "—", position().dailySpend != null ? `${formatWholeMoney(position().dailySpend!)}/day` : "", { value: theme.peach })}
+      {stat("Runway", position().runwayDays != null ? `${Math.round(position().runwayDays!)} days` : "—", position().dailySpend != null ? `${formatWholeMoney(position().dailySpend!)}/day` : "")}
       {stat("30 day change", signedWholeMoney(change30()), "", { value: changeColor(change30()) })}
       <Show when={hasSavers()}>
         <Show
           when={saversFull()}
           fallback={stat("Savers", formatWholeMoney(position().saversTotal), signedWholeMoney(saversTotalChange()), { note: changeColor(saversTotalChange()) })}
         >
-          {stat("Savers", "", "30 days", { label: theme.text })}
+          {stat("Savers", "", "30 days", { note: ink.label, bold: true })}
           <For each={position().savers}>
             {(saver) => stat(`  ${saver.name}`, formatWholeMoney(saver.balance), signedWholeMoney(saverChange(saver.accountId)), { note: changeColor(saverChange(saver.accountId)) })}
           </For>
           {stat("  Total", formatWholeMoney(position().saversTotal), signedWholeMoney(saversTotalChange()), { note: changeColor(saversTotalChange()) })}
         </Show>
-        {stat("Net position", position().netPosition != null ? formatMoney(position().netPosition!) : "—", "", { label: theme.text, bold: true })}
+        {stat("Net position", position().netPosition != null ? formatMoney(position().netPosition!) : "—", "", { bold: true })}
       </Show>
     </SectionCard>
   )
@@ -270,7 +270,7 @@ export function OverviewTab(props: { focused: SectionId }) {
   const daily = (spent: number) => formatWholeMoney(windows().days ? spent / windows().days : 0)
   const totalsCard = () => (
     <SectionCard title="Totals" titleRight={headings("Range", "Before")} titleRightFlush width={sideWidth()} height={totalsRows() + 2}>
-      {stat("Spent", formatWholeMoney(flows().spent), formatWholeMoney(previousFlows().spent), { value: previousFlows().spent > 0 ? spendChangeColor(flows().spent - previousFlows().spent) : theme.overlay1 })}
+      {stat("Spent", formatWholeMoney(flows().spent), formatWholeMoney(previousFlows().spent), { value: previousFlows().spent > 0 ? spendChangeColor(flows().spent - previousFlows().spent) : ink.figure })}
       {stat("Income", formatWholeMoney(flows().income), formatWholeMoney(previousFlows().income))}
       {stat("Net", signedWholeMoney(flows().net), signedWholeMoney(previousFlows().net), { value: changeColor(flows().net) })}
       {stat("To savers", signedWholeMoney(flows().savedToSavers), signedWholeMoney(previousFlows().savedToSavers), { value: changeColor(flows().savedToSavers) })}
@@ -281,7 +281,7 @@ export function OverviewTab(props: { focused: SectionId }) {
         {(p: () => BudgetProgress) => (
           <>
             {stat("Budget", formatWholeMoney(p().budget.amount), `${Number.isFinite(p().usedPct) ? Math.round(p().usedPct) : "—"}% used`, {
-              note: p().usedPct > 100 ? theme.error : p().usedPct >= 80 ? theme.warning : theme.success,
+              note: p().usedPct > 100 ? tone.bad : p().usedPct >= 80 ? tone.caution : tone.good,
             })}
             <Show when={p().remaining > 0}>{stat("  left", formatWholeMoney(p().remaining), `${formatWholeMoney(p().dailyAllowance)}/day`)}</Show>
           </>
@@ -309,11 +309,11 @@ export function OverviewTab(props: { focused: SectionId }) {
     return lines.slice(top, top + rows).map((line, i) => ({ line, cursor: top + i === cursor }))
   })
   const categoriesCard = () => (
-    <SectionCard title="Categories" titleSuffix={categoriesFocused() ? "· enter to open" : undefined} titleSuffixColor={theme.overlay1} bottomSpans={uncategorised() || toReview() ? [
-        ...(uncategorised() ? [{ text: `${uncategorised()} uncategorised`, fg: theme.warning }] : []),
-        ...(toReview() ? [{ text: `${uncategorised() ? " · " : ""}${toReview()} to review (i)`, fg: theme.teal }] : []),
+    <SectionCard title="Categories" titleSuffix={categoriesFocused() ? "· enter to open" : undefined} titleSuffixColor={ink.note} bottomSpans={uncategorised() || toReview() ? [
+        ...(uncategorised() ? [{ text: `${uncategorised()} uncategorised`, fg: tone.caution }] : []),
+        ...(toReview() ? [{ text: `${uncategorised() ? " · " : ""}${toReview()} to review (i)`, fg: tone.ai }] : []),
       ] : undefined} width={categoryWidth()} height={categoriesHeight()} focused={categoriesFocused()}>
-      <Show when={groups().length} fallback={<text fg={theme.overlay1}>No spending in this period</text>}>
+      <Show when={groups().length} fallback={<text fg={ink.note}>No spending in this period</text>}>
         {/* Index: a new range or cursor move updates rows in place. */}
         <Index each={categoryRows()}>
           {(row) => {
@@ -323,9 +323,9 @@ export function OverviewTab(props: { focused: SectionId }) {
             return (
               <text wrapMode="none" bg={bg()}>
                 <S fg={line().color} bg={bg()}>{line().child ? "  " : ""}{`${categoryMark(line().categoryId)} `}</S>
-                <S fg={line().child && !cursor() ? theme.subtext0 : line().color} bg={bg()} bold={!line().child || cursor()}>{fit(line().label, -(line().child ? 4 : 2) + categoryNameWidth())}</S>
-                <S fg={line().child ? theme.subtext0 : theme.text} bg={bg()} bold={!line().child}>{formatWholeMoney(line().amount).padStart(9)}</S>
-                <S fg={theme.overlay1} bg={bg()}>{(line().pct != null ? `${Math.round(line().pct!)}%` : "").padStart(5)}</S>
+                <S fg={line().child && !cursor() ? ink.label : line().color} bg={bg()} bold={!line().child || cursor()}>{fit(line().label, -(line().child ? 4 : 2) + categoryNameWidth())}</S>
+                <S fg={line().child ? ink.label : ink.figure} bg={bg()} bold={!line().child}>{formatWholeMoney(line().amount).padStart(9)}</S>
+                <S fg={ink.note} bg={bg()}>{(line().pct != null ? `${Math.round(line().pct!)}%` : "").padStart(5)}</S>
               </text>
             )
           }}
@@ -345,7 +345,7 @@ export function OverviewTab(props: { focused: SectionId }) {
       <SectionCard
         title={view().group}
         titleSuffix={view().group === view().view ? undefined : `· ${view().view}`}
-        titleSuffixColor={theme.subtext0}
+        titleSuffixColor={ink.label}
         titleRight={viewPicker(index())}
         bottomSpans={chart()?.legend ?? (view().view === "Subscriptions" ? subscriptionsLegend(subs()) : calendarLegend(calendar(), today()))}
         width={mainWidth()}
@@ -394,29 +394,29 @@ export function OverviewTab(props: { focused: SectionId }) {
 
   return (
     <box width="100%" height="100%" flexDirection="column" backgroundColor={theme.canvas}>
-      <SectionCard title="Date Range" titleSuffix={`· ${scope().label}`} titleSuffixColor={theme.subtext0} focused={dateFocused()} height={3} width={rangeCardWidth()}>
+      <SectionCard title="Date Range" titleSuffix={`· ${scope().label}`} titleSuffixColor={ink.label} focused={dateFocused()} height={3} width={rangeCardWidth()}>
         <box flexDirection="row" justifyContent="space-between" width="100%">
-          <text fg={theme.subtext0} wrapMode="none">
+          <text fg={ink.label} wrapMode="none">
             <For each={LOOKBACKS}>
               {(lb, i) => <>{i() > 0 ? chipsFit().gap : ""}{chip(lb, i(), () => ui.state.timeframe.family === "lookback" && ui.state.timeframe.lookback === lb)}</>}
             </For>
-            <S fg={theme.surface2}>{chipsFit().separator}</S>
+            <S fg={ink.rule}>{chipsFit().separator}</S>
             <For each={PERIODS}>
               {(p, i) => <>{i() > 0 ? chipsFit().gap : ""}{chip(chipsFit().label(p), LOOKBACKS.length + i(), () => ui.state.timeframe.family === "period" && ui.state.timeframe.period === p)}</>}
             </For>
-            <S fg={theme.surface2}>{chipsFit().separator}</S>
+            <S fg={ink.rule}>{chipsFit().separator}</S>
             {chip("Custom", CUSTOM_CHIP, () => ui.state.timeframe.family === "custom")}
           </text>
           <Show when={showTimeframe()}>
             <text flexShrink={0} wrapMode="none">
               <Show when={offsetText()}>
-                <S fg={theme.overlay1}>{`${offsetText()} · `}</S>
-                <S fg={theme.accent} bold>{"0"}</S>
-                <S fg={theme.overlay1}>{" now   "}</S>
+                <S fg={ink.note}>{`${offsetText()} · `}</S>
+                <S fg={tone.key} bold>{"0"}</S>
+                <S fg={ink.note}>{" now   "}</S>
               </Show>
-              <S fg={steppable() ? theme.overlay1 : theme.canvas}>{"‹ "}</S>
-              <S fg={theme.peach}>{bounds().label}</S>
-              <S fg={steppable() ? theme.overlay1 : theme.canvas}>{" ›"}</S>
+              <S fg={steppable() ? ink.note : theme.canvas}>{"‹ "}</S>
+              <S fg={tone.scope}>{bounds().label}</S>
+              <S fg={steppable() ? ink.note : theme.canvas}>{" ›"}</S>
             </text>
           </Show>
         </box>
@@ -441,14 +441,14 @@ export function OverviewTab(props: { focused: SectionId }) {
         {(edit: () => NonNullable<typeof ui.state.customEdit>) => (
           <Modal title="Custom range" width={40} hints="tab field · enter apply · esc cancel">
             <text wrapMode="none">
-              <S fg={edit().field === 0 ? theme.text : theme.subtext0} bold={edit().field === 0}>{"Start  "}</S>
+              <S fg={edit().field === 0 ? ink.figure : ink.label} bold={edit().field === 0}>{"Start  "}</S>
               <TextInput field={edit().start} focused={edit().field === 0} />
             </text>
             <text wrapMode="none">
-              <S fg={edit().field === 1 ? theme.text : theme.subtext0} bold={edit().field === 1}>{"End    "}</S>
+              <S fg={edit().field === 1 ? ink.figure : ink.label} bold={edit().field === 1}>{"End    "}</S>
               <TextInput field={edit().end} focused={edit().field === 1} />
             </text>
-            <text fg={edit().error ? theme.error : theme.overlay1} wrapMode="none">{edit().error || "YYYY-MM-DD, both days included"}</text>
+            <text fg={edit().error ? tone.bad : ink.note} wrapMode="none">{edit().error || "YYYY-MM-DD, both days included"}</text>
           </Modal>
         )}
       </Show>
@@ -460,8 +460,8 @@ export function OverviewTab(props: { focused: SectionId }) {
  * the current one bright; a space between groups. */
 function viewPicker(current: number): Span[] {
   return CHART_VIEWS.flatMap((v, i) => [
-    ...(i > 0 ? [{ text: CHART_VIEWS[i - 1]!.group !== v.group ? "  " : " ", fg: theme.overlay1 }] : []),
-    { text: viewMark(v.view, i === current), fg: i === current ? theme.accent : theme.overlay0, bold: i === current },
+    ...(i > 0 ? [{ text: CHART_VIEWS[i - 1]!.group !== v.group ? "  " : " ", fg: ink.note }] : []),
+    { text: viewMark(v.view, i === current), fg: i === current ? tone.key : ink.faint, bold: i === current },
   ])
 }
 
@@ -498,9 +498,9 @@ function subscriptionsLegend(list: Subscription[]): Span[] {
   const changed = active.filter((s) => s.change).length
   const stopped = list.length - active.length
   return [
-    { text: `${active.length} active · ${formatWholeMoney(monthlyTotal(list))} a month`, fg: theme.subtext0 },
-    ...(changed ? [{ text: ` · ${count(changed, "price change")}`, fg: theme.peach }] : []),
-    ...(stopped ? [{ text: ` · ${stopped} stopped`, fg: theme.overlay1 }] : []),
+    { text: `${active.length} active · ${formatWholeMoney(monthlyTotal(list))} a month`, fg: ink.label },
+    ...(changed ? [{ text: ` · ${count(changed, "price change")}`, fg: tone.caution }] : []),
+    ...(stopped ? [{ text: ` · ${stopped} stopped`, fg: ink.note }] : []),
   ]
 }
 
@@ -519,29 +519,29 @@ function SubscriptionsView(props: { list: Subscription[]; width: number; rows: n
     const dim = s.stopped
     const due = s.stopped ? "stopped" : s.next < props.today ? "due" : shortDate(s.next)
     return [
-      { text: fit(s.name, nameWidth()), fg: dim ? theme.overlay1 : theme.text },
-      { text: s.cadence.padStart(SUB_COLUMNS.every), fg: theme.overlay1 },
-      { text: formatMoney(s.amount).padStart(SUB_COLUMNS.charge), fg: dim ? theme.overlay1 : theme.text },
-      { text: formatMoney(s.monthly).padStart(SUB_COLUMNS.month), fg: dim ? theme.overlay1 : theme.subtext0 },
-      { text: due.padStart(SUB_COLUMNS.next), fg: s.stopped ? theme.overlay1 : s.next < props.today ? theme.yellow : theme.subtext0 },
+      { text: fit(s.name, nameWidth()), fg: dim ? ink.note : ink.figure },
+      { text: s.cadence.padStart(SUB_COLUMNS.every), fg: ink.note },
+      { text: formatMoney(s.amount).padStart(SUB_COLUMNS.charge), fg: dim ? ink.note : ink.figure },
+      { text: formatMoney(s.monthly).padStart(SUB_COLUMNS.month), fg: dim ? ink.note : ink.label },
+      { text: due.padStart(SUB_COLUMNS.next), fg: s.stopped ? ink.note : s.next < props.today ? tone.caution : ink.label },
       ...(showChange() && s.change ? [{
         text: `  ${s.change.to > s.change.from ? "▲" : "▼"} from ${formatMoney(s.change.from)} ${shortDate(s.change.since)}`.slice(0, SUB_COLUMNS.change),
-        fg: s.change.to > s.change.from ? theme.peach : theme.green,
+        fg: s.change.to > s.change.from ? tone.caution : tone.good,
       }] : []),
     ]
   }
   return (
-    <Show when={props.list.length} fallback={<text fg={theme.overlay1}>No regular payments found</text>}>
+    <Show when={props.list.length} fallback={<text fg={ink.note}>No regular payments found</text>}>
       <StyledLine spans={[
-        { text: "Payment".padEnd(nameWidth()), fg: theme.subtext0, bold: true },
-        { text: "Every".padStart(SUB_COLUMNS.every), fg: theme.subtext0, bold: true },
-        { text: "Charge".padStart(SUB_COLUMNS.charge), fg: theme.subtext0, bold: true },
-        { text: "A month".padStart(SUB_COLUMNS.month), fg: theme.subtext0, bold: true },
-        { text: "Next".padStart(SUB_COLUMNS.next), fg: theme.subtext0, bold: true },
-        ...(showChange() ? [{ text: "  Change", fg: theme.subtext0, bold: true }] : []),
+        { text: "Payment".padEnd(nameWidth()), fg: ink.label, bold: true },
+        { text: "Every".padStart(SUB_COLUMNS.every), fg: ink.label, bold: true },
+        { text: "Charge".padStart(SUB_COLUMNS.charge), fg: ink.label, bold: true },
+        { text: "A month".padStart(SUB_COLUMNS.month), fg: ink.label, bold: true },
+        { text: "Next".padStart(SUB_COLUMNS.next), fg: ink.label, bold: true },
+        ...(showChange() ? [{ text: "  Change", fg: ink.label, bold: true }] : []),
       ]} />
       <Index each={shown()}>{(s) => <StyledLine spans={line(s())} />}</Index>
-      <Show when={more() > 0}><text fg={theme.overlay1}>{`… ${more()} more`}</text></Show>
+      <Show when={more() > 0}><text fg={ink.note}>{`… ${more()} more`}</text></Show>
     </Show>
   )
 }
@@ -553,13 +553,13 @@ function CalendarView(props: { weeks: Array<Array<CalendarDay | null>>; width: n
   const cellWidth = () => Math.max(2, Math.min(10, Math.floor((props.width - 4) / Math.max(1, shown().length))))
   return (
     <>
-      <text wrapMode="none" fg={theme.overlay1}>{"    " + monthLabels(shown(), cellWidth())}</text>
+      <text wrapMode="none" fg={ink.note}>{"    " + monthLabels(shown(), cellWidth())}</text>
       <For each={WEEKDAYS()}>
         {(label, row) => (
           <For each={Array.from({ length: band() }, (_, k) => k)}>
             {(line) => (
               <text wrapMode="none">
-                <S fg={theme.overlay1}>{(line === 0 ? label : "").padEnd(4)}</S>
+                <S fg={ink.note}>{(line === 0 ? label : "").padEnd(4)}</S>
                 {/* Index: a new range brings new weeks; their cells update in place. */}
                 <Index each={shown()}>
                   {(week) => <Cell day={week()[row()] ?? null} width={cellWidth()} today={props.today} label={line === 0} />}
@@ -584,7 +584,7 @@ function Cell(props: { day: CalendarDay | null; width: number; today: string; la
     return (" " + Number(props.day.dateISO.slice(8, 10))).padEnd(inner())
   }
   // Day numbers: dark on the brighter levels, muted on empty and future days.
-  const fg = () => (!filled() ? theme.surface1 : props.day!.level >= 3 ? theme.crust : theme.subtext0)
+  const fg = () => (!filled() ? theme.surface1 : props.day!.level >= 3 ? theme.crust : ink.label)
   return (
     <>
       <S fg={fg()} bg={filled() ? LEVEL_BG[props.day!.level] : theme.canvas}>{text()}</S>

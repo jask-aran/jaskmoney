@@ -1,4 +1,4 @@
-import { theme } from "../../theme"
+import { ink } from "../../theme"
 
 /** A run of text in one colour: titles, legends and other styled one-liners. */
 export interface Span {
@@ -7,7 +7,7 @@ export interface Span {
   bold?: boolean
 }
 
-export const muted = (text: string): Span => ({ text, fg: theme.overlay1 })
+export const muted = (text: string): Span => ({ text, fg: ink.note })
 
 /** Total display width of `spans`. */
 export function spansWidth(spans: Span[]): number {

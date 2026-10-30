@@ -82,6 +82,58 @@ export const theme = {
   rowCursorText: "#11111b", // crust
 } as const
 
+/**
+ * Text, by role. Every word on screen takes its colour from what it is,
+ * never from how loud it should look in one place:
+ *
+ * - figure: values and the names of things: amounts, descriptions,
+ *   merchants, what you typed. Bold makes a figure the one a card or row is
+ *   about (Available, Net position); one per card.
+ * - label: what a value is (row labels, field names, column headings,
+ *   headings inside a card, bold), and figures that explain another one
+ *   (Balance under Available, a child category's amount, a row's date, its
+ *   account).
+ * - note: comparisons, counts, units, hints, help prose, empty states.
+ * - faint: placeholders, and what can't be used now (a disabled command,
+ *   an unset field, a view that isn't shown).
+ * - rule: separators and lines, not words.
+ *
+ * Colour that isn't a role is data (a category's or tag's own colour, a
+ * chart's series) or one of the tones below. The table's cursor bars set
+ * their own text colour (rowCursorText).
+ */
+export const ink = {
+  figure: theme.text,
+  label: theme.subtext0,
+  note: theme.overlay1,
+  faint: theme.overlay0,
+  rule: theme.surface2,
+} as const
+
+/**
+ * Accents, one meaning each.
+ *
+ * - good / bad: green and red. Money in and money out on a row; up and down
+ *   in a balance; spending less or more than it's compared with, or than
+ *   its budget; connected or failing. Nothing else is green or red.
+ * - caution: yellow. Wants your attention: uncategorised rows, ahead of a
+ *   budget's pace, an overdue payment, a price rise.
+ * - ai: teal. Suggestions and what the models did.
+ * - key: pink. Keys you can press, the current tab, chip or view, the brand.
+ * - focus: lavender. The focused pane's border and title.
+ * - scope: peach. What the view is narrowed to: the date range, a search
+ *   in effect.
+ */
+export const tone = {
+  good: theme.green,
+  bad: theme.red,
+  caution: theme.yellow,
+  ai: theme.teal,
+  key: theme.pink,
+  focus: theme.lavender,
+  scope: theme.peach,
+} as const
+
 /** Uncategorised / muted category label (Go overlay1). */
 export const uncategorisedColor = theme.overlay1
 
