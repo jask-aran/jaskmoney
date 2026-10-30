@@ -559,7 +559,8 @@ function SubscriptionsView(props: { list: Subscription[]; width: number; rows: n
       const col = colOf(c.dateISO)
       const sub = props.list.find((s) => s.name === c.name)
       marks[col] = { text: "●", fg: colour(sub?.categoryId ?? null) }
-      put(names, col, `${truncate(c.name, 12)} ${shortMoney(c.amount)}`, ink.label) || put(names, col, shortMoney(c.amount), ink.label)
+      // The full name where it fits, then shorter, then the amount alone.
+      ;[`${c.name} ${shortMoney(c.amount)}`, `${truncate(c.name, 12)} ${shortMoney(c.amount)}`, shortMoney(c.amount)].some((text) => put(names, col, text, ink.label))
     }
     put(dates, 0, "today", theme.chartToday)
     if (paydayCol >= 0) put(dates, paydayCol, "payday", tone.good)

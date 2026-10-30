@@ -40,3 +40,11 @@ test("a line's label crowded out at its end names the line further back along it
   // An emoji takes two cells: every row keeps its width.
   expect(named.every((line) => Bun.stringWidth(line) === 20)).toBe(true)
 })
+
+test("a label tries each shorter form in turn, longest first, and never runs off the chart", () => {
+  const rows: Run[][] = [[{ text: " ".repeat(30), ink: null }], [{ text: "⣿" + " ".repeat(29), ink: "x" }]]
+  const placed = (text: string, short: string[]) => annotate(rows, [{ row: 1, col: 0, text, short, ink: "s" }]).map((r) => r.map((run) => run.text).join(""))
+  // Room for the middle form, not the full one.
+  expect(placed("-$4.5k Transfer to General Saver", ["-$4.5k Transfer to General", "-$4.5k Transfer to G…", "-$4.5k"]).join("\n")).toContain("-$4.5k Transfer to General ")
+  for (const line of placed("x".repeat(40), ["y".repeat(35)])) expect([...line].length).toBe(30)
+})

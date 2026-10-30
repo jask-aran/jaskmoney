@@ -118,7 +118,8 @@ export function spendingChart(
     const marks: ChartLabel[] = order.filter((i) => slots[i]).map((i) => {
       const total = shortMoney(bars[i]!.value)
       const row = i === biggest ? named(weeks[i]!.startISO, addDays(weeks[i]!.startISO, 6)) : undefined
-      return { ...at(i), ...besideBar(slots[i]!, at(i).row), text: barName(total, bars[i]!.value, row), short: total, ink: "note" }
+      const [text, ...shorter] = barNames(total, bars[i]!.value, row)
+      return { ...at(i), ...besideBar(slots[i]!, at(i).row), text: text!, short: [...shorter, total], ink: "note" }
     }).filter((l) => l.row >= 0)
     if (perWeek) marks.push({ row: ruleRow(perWeek, scale.max, height), col: width - 1 - "budget".length - 2, text: "budget", ink: "limit" })
     const starts = weeks.map((w) => w.startISO)
@@ -199,7 +200,8 @@ export function spendingChart(
   const biggestDays = shown.map((_, i) => i).filter((i) => shown[i]! > 0).sort((a, b) => shown[b]! - shown[a]!).slice(0, Math.max(1, Math.floor(width / 24)))
   const dayLabel = (i: number) => {
     const row = named(dates[i]!, dates[i]!)
-    return { text: barName(shortMoney(shown[i]!), shown[i]!, row), short: shortMoney(shown[i]!) }
+    const [text, ...shorter] = barNames(shortMoney(shown[i]!), shown[i]!, row)
+    return { text: text!, short: [...shorter, shortMoney(shown[i]!)] }
   }
   const peakNote = shown[peak] ? [muted(`, peak ${formatWholeMoney(shown[peak]!)} on ${shortDate(dates[peak]!)}${peakRow ? ` (${spendName(peakRow)})` : ""}`)] : []
 
@@ -266,8 +268,12 @@ export function spendingChart(
 /** "Nov 2025". */
 const monthYear = (iso: string) => `${MONTHS[Number(iso.slice(5, 7)) - 1]} ${iso.slice(0, 4)}`
 
-/** What a spending row is called in a chart label: short. */
-const spendName = (row: Transaction) => truncate(row.description, 14)
+/** What a row is called in a chart label: in full up to NAME_LONG cells,
+ * and as a label falls back for room, NAME_SHORT. */
+const NAME_LONG = 28
+const NAME_SHORT = 14
+const spendName = (row: Transaction) => truncate(row.description, NAME_SHORT)
+const rowNames = (row: Transaction) => [...new Set([truncate(row.description, NAME_LONG), spendName(row)])]
 
 /** Where a bar's label may go when there's no room over the bar (a bar
  * that fills the chart's height): beside its top, past its right edge. */
@@ -275,8 +281,8 @@ const besideBar = (slot: { col: number; width: number }, row: number) => ({ also
 
 /** A bar's label naming what made it tall: "Centre Com $826" when that one
  * row is (nearly) the whole bar, else "$1.3k · Centre Com", its biggest. */
-const barName = (amount: string, total: number, row: Transaction | undefined) =>
-  !row ? amount : Math.abs(row.amount) >= 0.9 * total ? `${spendName(row)} ${amount}` : `${amount} · ${spendName(row)}`
+const barNames = (amount: string, total: number, row: Transaction | undefined): string[] =>
+  !row ? [amount] : rowNames(row).map((name) => (Math.abs(row.amount) >= 0.9 * total ? `${name} ${amount}` : `${amount} · ${name}`))
 
 /** Labels under weekly bars: each week's start date where bars are wide,
  * else the month over the week holding its 1st. */
@@ -344,7 +350,8 @@ export function balancesChart(
   const moveLabels: ChartLabel[] = moves.map(({ i, d }) => {
     const row = biggestRow(moving.filter((t) => Math.sign(t.amount) === Math.sign(d)), dates[i]!, dates[i]!)
     const amount = `${d > 0 ? "+" : "-"}${shortMoney(Math.abs(d))}`
-    return { ...at(i), text: row ? `${amount} ${truncate(row.description, 14)}` : amount, short: amount, ink: d > 0 ? "in" : "out" }
+    const [text, ...shorter] = row ? rowNames(row).map((name) => `${amount} ${name}`) : [amount]
+    return { ...at(i), text: text!, short: [...shorter, amount], ink: d > 0 ? "in" : "out" }
   })
   const end = ahead.at(-1)
   // The latest value in the line's colour, placed first so it gets the best
@@ -369,9 +376,9 @@ export function balancesChart(
       GAP,
       { text: signedWholeMoney(change), fg: changeColor(change) },
       muted(` since ${shortDate(dates[0]!)}`),
-      GAP,
-      muted(`low ${formatWholeMoney(lo)} on ${shortDate(history[low]!.dateISO)}`),
-      ...(end ? [GAP, mark(LINE, "projection"), muted(`≈ ${formatWholeMoney(end.value)} by ${shortDate(end.dateISO)} at usual spending`)] : []),
+      // With a projection, it has the room (the low is labelled in the chart).
+      ...(end ? [GAP, mark(LINE, "projection"), muted(`≈ ${formatWholeMoney(end.value)} by ${shortDate(end.dateISO)} at usual spending`)]
+        : [GAP, muted(`low ${formatWholeMoney(lo)} on ${shortDate(history[low]!.dateISO)}`)]),
     ],
   }
 }
@@ -484,9 +491,9 @@ export function cashFlowChart(
     const b = buckets[Math.floor(i / 2)]!
     const row = biggestRow(i % 2 === 0 ? rowsOf.income : rowsOf.spent, b.start, b.end)
     const total = shortMoney(bars[i]!.value)
-    const text = barName(`${i % 2 === 0 ? "+" : "-"}${total}`, bars[i]!.value, row)
+    const [text, ...shorter] = barNames(`${i % 2 === 0 ? "+" : "-"}${total}`, bars[i]!.value, row)
     const top = barTopRow(bars[i]!.value, scale.max, height)
-    return { row: top, col: slots[i]!.col, text, short: total, ...besideBar(slots[i]!, top), ink: i % 2 === 0 ? "in" : "out", above: true }
+    return { row: top, col: slots[i]!.col, text: text!, short: [...shorter, total], ...besideBar(slots[i]!, top), ink: i % 2 === 0 ? "in" : "out", above: true }
   }).filter((l) => l.row >= 0)
   // A label under each pair: the month or the week's start, with the
   // period's net beside it when every period has room for one.

@@ -8,7 +8,8 @@
  * then it takes its first spot inside the chart anyway. Labels are placed
  * in the order given, so the first ones win the space.
  *
- * Where the text fits nowhere at its point, a `short` form tries there
+ * Where the text fits nowhere at its point, its `short` forms try there,
+ * longest first
  * next; then a line's `name` tries each point `along` it, nearest first, so
  * a line ending in a crowded corner is still named further back. Text is
  * measured in cells: an emoji takes two.
@@ -21,9 +22,9 @@ export interface ChartLabel {
   row: number
   col: number
   text: string
-  /** A shorter text for its point where `text` fits nowhere ("$5.5k" for
-   * "General $5.5k"). */
-  short?: string
+  /** Shorter texts for its point where `text` fits nowhere, longest
+   * first ("$5.5k" for "General $5.5k"). */
+  short?: string | string[]
   /** What the line is called, for points `along` it: no value, as the
    * label is away from the point the value belongs to. */
   name?: string
@@ -38,6 +39,8 @@ export interface ChartLabel {
   /** Shown even where nothing is free (the period's own line). */
   required?: boolean
 }
+
+const shorts = (label: ChartLabel) => (label.short === undefined ? [] : Array.isArray(label.short) ? label.short : [label.short])
 
 /** Cells a label may cover: blank, gridlines and rules. */
 const FREE = new Set([" ", "│", "┈"])
@@ -78,7 +81,7 @@ export function annotate(rows: Run[][], labels: ChartLabel[]): Run[][] {
   for (const label of labels) {
     const tries = [
       { text: label.text, at: [label, ...(label.alsoAt ?? [])] },
-      ...(label.short ? [{ text: label.short, at: [label, ...(label.alsoAt ?? [])] }] : []),
+      ...shorts(label).map((text) => ({ text, at: [label, ...(label.alsoAt ?? [])] })),
       ...(label.name && label.along?.length ? [{ text: label.name, at: label.along }] : []),
     ]
     let placed: { cells: string[]; spot: [number, number] } | undefined
@@ -91,7 +94,7 @@ export function annotate(rows: Run[][], labels: ChartLabel[]): Run[][] {
       if (placed) break
     }
     if (!placed && label.required) {
-      const cells = labelCells(label.short ?? label.text)
+      const cells = labelCells(shorts(label).at(-1) ?? label.text)
       const spot = spots(label.row, label.col, cells.length, label.above).find(inside(cells.length))
       if (spot) placed = { cells, spot }
     }
