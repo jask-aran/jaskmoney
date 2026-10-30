@@ -48,3 +48,15 @@ test("a label tries each shorter form in turn, longest first, and never runs off
   expect(placed("-$4.5k Transfer to General Saver", ["-$4.5k Transfer to General", "-$4.5k Transfer to G…", "-$4.5k"]).join("\n")).toContain("-$4.5k Transfer to General ")
   for (const line of placed("x".repeat(40), ["y".repeat(35)])) expect([...line].length).toBe(30)
 })
+
+test("a label keeps clear of one already placed where it can, and crowds it only where it can't", () => {
+  const blank = (n: number): Run[][] => Array.from({ length: n }, () => [{ text: " ".repeat(30), ink: null }])
+  // Points one above the other: beside the second is right under the first.
+  const place = (rows: Run[][]) => annotate(rows, [
+    { row: 2, col: 0, text: "first", ink: "a" },
+    { row: 3, col: 0, text: "second", ink: "b" },
+  ]).map((r) => r.map((run) => run.text).join(""))
+  expect(place(blank(6)).findIndex((line) => line.includes("second"))).toBe(4)
+  // No row clear of it: beside anyway.
+  expect(place(blank(4)).findIndex((line) => line.includes("second"))).toBe(3)
+})

@@ -90,6 +90,9 @@ export interface RegularCharges {
   cadence: Cadence
   /** Oldest first. */
   charges: Transaction[]
+  /** The payments, oldest first: a day's charges as one (a payment split
+   * in two is still one), positive. */
+  payments: Array<{ dateISO: string; amount: number }>
 }
 
 export interface Cadence { name: string; min: number; max: number; perMonth: number }
@@ -110,23 +113,34 @@ export function median(values: number[]): number {
 
 /** Payments to one description at a steady cadence (3 or more, three
  * quarters of the gaps in the cadence's range) and a steady amount (two
- * thirds within 20% of the usual). Money in and payments to people aren't. */
-export function regularCharges(transactions: readonly Transaction[]): RegularCharges[] {
-  const merchants = groupByDescription(transactions.filter((row) => !(row.amount >= 0 || (row.transactionType && PERSON_TO_PERSON.has(row.transactionType)))))
+ * thirds within 20% of the latest or, before a price change, of the usual
+ * then). A day's charges are one payment. Money in isn't, nor payments to
+ * people unless `people` (rent paid by transfer). */
+export function regularCharges(transactions: readonly Transaction[], { people = false } = {}): RegularCharges[] {
+  const merchants = groupByDescription(transactions.filter((row) => !(row.amount >= 0 || (!people && row.transactionType && PERSON_TO_PERSON.has(row.transactionType)))))
   const regular: RegularCharges[] = []
   for (const charges of merchants.values()) {
-    if (charges.length < 3) continue
     charges.sort(byDate)
-    const latest = charges.at(-1)
-    if (!latest) continue
-    const gaps = charges.slice(1).map((row, index) => daysBetween(charges[index]?.dateISO ?? row.dateISO, row.dateISO))
+    const payments: RegularCharges["payments"] = []
+    for (const row of charges) {
+      const last = payments.at(-1)
+      if (last?.dateISO === row.dateISO) last.amount += Math.abs(row.amount)
+      else payments.push({ dateISO: row.dateISO, amount: Math.abs(row.amount) })
+    }
+    if (payments.length < 3) continue
+    const gaps = payments.slice(1).map((p, index) => daysBetween(payments[index]!.dateISO, p.dateISO))
     const gap = median(gaps)
     const cadence = CADENCES.find(({ min, max }) => gap >= min && gap <= max
       && gaps.filter((value) => value >= min && value <= max).length / gaps.length >= 0.75)
     if (!cadence) continue
-    const amount = median(charges.map((row) => Math.abs(row.amount)))
-    if (charges.filter((row) => Math.abs(Math.abs(row.amount) - amount) <= amount * 0.2).length / charges.length < 2 / 3) continue
-    regular.push({ name: latest.description.trim(), cadence, charges })
+    // Steady: near the latest price, or near the usual among the rest (the
+    // price before it changed).
+    const near = (amount: number, to: number) => Math.abs(amount - to) <= to * 0.2
+    const latest = payments.at(-1)!.amount
+    const before = payments.filter((p) => !near(p.amount, latest)).map((p) => p.amount)
+    const steady = payments.length - before.length + before.filter((amount) => near(amount, median(before))).length
+    if (steady / payments.length < 2 / 3) continue
+    regular.push({ name: charges.at(-1)!.description.trim(), cadence, charges, payments })
   }
   return regular
 }

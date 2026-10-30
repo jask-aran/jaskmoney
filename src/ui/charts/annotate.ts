@@ -3,7 +3,8 @@
  * rows any chart renderer returns: a label goes only where its cells (and a
  * one-cell margin) hold nothing but blanks, gridlines or rules, trying right
  * of the point, then left, then the rows above and below (above first for
- * bar tops), then two rows out. A label that fits nowhere is dropped, so
+ * bar tops), then two rows out, keeping clear of the labels already placed
+ * (a row and two columns) where any spot is. A label that fits nowhere is dropped, so
  * callers keep the figure elsewhere (the legend), unless it's `required`:
  * then it takes its first spot inside the chart anyway. Labels are placed
  * in the order given, so the first ones win the space.
@@ -64,7 +65,8 @@ export function annotate(rows: Run[][], labels: ChartLabel[]): Run[][] {
   // Where `n` cells could go for a point, best first.
   const spots = (row: number, col: number, n: number, above = false): Array<[number, number]> => {
     const centred: Array<[number, number]> = [[row - 1, col - Math.floor((n - 1) / 2)], [row + 1, col - Math.floor((n - 1) / 2)]]
-    const beside: Array<[number, number]> = [[row, col + 2], [row, col - 1 - n]]
+    // Right of the point, or of a line two cells wide there (a spike), then left.
+    const beside: Array<[number, number]> = [[row, col + 2], [row, col + 3], [row, col - 1 - n]]
     return [
       ...(above ? [...centred, ...beside] : [...beside, ...centred]),
       [row - 1, col + 1],
@@ -75,7 +77,16 @@ export function annotate(rows: Run[][], labels: ChartLabel[]): Run[][] {
       [row - 2, col + 1],
       [row + 2, col - n],
       [row + 2, col + 1],
+      // Further out to the side: past a line a few cells wide (a spike).
+      ...[4, 5, 6].flatMap((d): Array<[number, number]> => [[row, col + d], [row - 1, col + d], [row + 1, col + d], [row, col - n - d + 2]]),
     ]
+  }
+  // Cells near a placed label: another label there reads as its neighbour.
+  const near = grid.map((cells) => cells.map(() => false))
+  const clear = ([r, c]: [number, number], n: number) => {
+    for (let rr = Math.max(0, r - 1); rr <= Math.min(grid.length - 1, r + 1); rr++)
+      for (let cc = Math.max(0, c - 2); cc < Math.min(width, c + n + 2); cc++) if (near[rr]![cc]) return false
+    return true
   }
   const inside = (n: number) => ([r, c]: [number, number]) => r >= 0 && r < grid.length && c >= 0 && c + n <= width
   for (const label of labels) {
@@ -87,11 +98,9 @@ export function annotate(rows: Run[][], labels: ChartLabel[]): Run[][] {
     let placed: { cells: string[]; spot: [number, number] } | undefined
     for (const t of tries) {
       const cells = labelCells(t.text)
-      for (const p of t.at) {
-        const spot = spots(p.row, p.col, cells.length, label.above).find(([r, c]) => free(r, c, c + cells.length))
-        if (spot) { placed = { cells, spot }; break }
-      }
-      if (placed) break
+      const open = t.at.flatMap((p) => spots(p.row, p.col, cells.length, label.above)).filter(([r, c]) => free(r, c, c + cells.length))
+      const spot = open.find((s) => clear(s, cells.length)) ?? open[0]
+      if (spot) { placed = { cells, spot }; break }
     }
     if (!placed && label.required) {
       const cells = labelCells(shorts(label).at(-1) ?? label.text)
@@ -100,7 +109,10 @@ export function annotate(rows: Run[][], labels: ChartLabel[]): Run[][] {
     }
     if (!placed) continue
     const [r, c] = placed.spot
-    placed.cells.forEach((text, k) => (grid[r]![c + k] = { text, ink: label.ink }))
+    placed.cells.forEach((text, k) => {
+      grid[r]![c + k] = { text, ink: label.ink }
+      near[r]![c + k] = true
+    })
   }
   return grid.map(cellsToRuns)
 }

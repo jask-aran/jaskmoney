@@ -14,7 +14,7 @@ import { CHART_VIEWS, ui, type SectionId } from "../../state/uiStore"
 import { data } from "../../state/dataStore"
 import { categoryColor, ink, theme, tone } from "../../theme"
 import { dailySpendSeries, fitCategoryLines, formatMoney, formatPct, formatWholeMoney, signedWholeMoney } from "../../domain/dashboard"
-import { computePeriodFlows, computePosition, historyCovers, projectAvailable } from "../../domain/position"
+import { computePeriodFlows, computePosition, historyCovers, projectAvailable, usualDailySpend } from "../../domain/position"
 import { budgetProgress, cycleFor, type BudgetProgress } from "../../domain/budget"
 import { spendingCalendar } from "../../domain/spending"
 import { accountRole } from "../../domain/types"
@@ -112,8 +112,9 @@ export function OverviewTab(props: { focused: SectionId }) {
     if (!availableShown() || p.spendingBalance == null || p.dailySpend == null) return []
     const until = [addDays(payday(), -1), bounds().end].sort()[0]!
     if (until <= today()) return []
-    const regular = subscriptions(data.transactions().filter((t) => t.accountId != null && scopeIds().has(t.accountId)), today())
-    return projectAvailable(p.spendingBalance, today(), until, p.dailySpend, monthlyTotal(regular) / (365.25 / 12), upcomingCharges(regular, today(), until))
+    const regular = subscriptions(data.transactions().filter((t) => t.accountId != null && scopeIds().has(t.accountId)), today(), { people: true })
+    const usual = usualDailySpend(data.state.accounts, data.transactions(), today(), new Set(regular.flatMap((s) => s.chargeIds)))
+    return projectAvailable(p.spendingBalance, today(), until, usual, upcomingCharges(regular, today(), until))
   })
   const change30 = () => {
     const h = position().history

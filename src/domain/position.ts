@@ -301,26 +301,43 @@ export function saverHistories(accounts: Account[], transactions: Transaction[],
 }
 
 /**
+ * What a usual day costs the spending accounts, for looking ahead: the last
+ * `days` days' spending without the regular payments (`regularIds`, which
+ * come on their own days), the biggest tenth of the days left out so a
+ * one-off doesn't count as usual. 0 with no spending.
+ */
+export function usualDailySpend(accounts: Account[], transactions: Transaction[], todayISO: string, regularIds: ReadonlySet<number>, days = 90): number {
+  const spendingIds = new Set(accounts.filter((a) => accountRole(a) === "spending").map((a) => a.id))
+  const first = transactions.reduce((min, row) => (row.dateISO < min ? row.dateISO : min), todayISO)
+  const start = addDays(todayISO, 1 - Math.min(days, daysBetween(first, todayISO) + 1))
+  const spent = new Map<string, number>()
+  for (let d = start; d <= todayISO; d = addDays(d, 1)) spent.set(d, 0)
+  for (const row of transactions) {
+    if (row.accountId === null || !spendingIds.has(row.accountId) || regularIds.has(row.id) || !spent.has(row.dateISO) || !isSpending(row)) continue
+    spent.set(row.dateISO, spent.get(row.dateISO)! - row.amount)
+  }
+  const usual = [...spent.values()].sort((a, b) => a - b).slice(0, spent.size - Math.floor(spent.size / 10))
+  return Math.max(0, usual.reduce((sum, v) => sum + v, 0) / usual.length)
+}
+
+/**
  * Where Available is headed: from today's balance, each day to `untilISO`
- * (the day before the next payday) less the usual day's spending and the
- * regular payments due that day. The usual day leaves out what the
- * regular payments cost on average, as they're counted on their days.
- * One value per day after today, in order.
+ * (the day before the next payday) less a usual day (usualDailySpend) and
+ * the regular payments due that day. One value per day after today, in
+ * order.
  */
 export function projectAvailable(
   available: number,
   todayISO: string,
   untilISO: string,
-  dailySpend: number,
-  regularPerDay: number,
+  usualDay: number,
   charges: ReadonlyArray<{ dateISO: string; amount: number }>,
 ): Array<{ dateISO: string; value: number }> {
-  const usual = Math.max(0, dailySpend - regularPerDay)
   const out: Array<{ dateISO: string; value: number }> = []
   // Charges due today and not yet taken come off first.
   let value = available - charges.filter((c) => c.dateISO <= todayISO).reduce((sum, c) => sum + c.amount, 0)
   for (let d = addDays(todayISO, 1); d <= untilISO; d = addDays(d, 1)) {
-    value -= usual + charges.filter((c) => c.dateISO === d).reduce((sum, c) => sum + c.amount, 0)
+    value -= usualDay + charges.filter((c) => c.dateISO === d).reduce((sum, c) => sum + c.amount, 0)
     out.push({ dateISO: d, value })
   }
   return out

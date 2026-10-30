@@ -354,13 +354,17 @@ export function balancesChart(
     return { ...at(i), text: text!, short: [...shorter, amount], ink: d > 0 ? "in" : "out" }
   })
   const end = ahead.at(-1)
+  // Below $0 it's what savers would have to cover; the day it gets there.
+  const ends = (v: number) => (v < 0 ? `≈ ${shortMoney(-v)} short` : `≈ ${shortMoney(v)}`)
+  const runsOut = ahead.find((p, k) => p.value < 0 && (k ? ahead[k - 1]!.value : values[latest]!) >= 0)
   // The latest value in the line's colour, placed first so it gets the best
   // spot; where it's headed; the biggest moves; the high and the low in
   // grey where they happened (not at the ends: the start is on the axis,
   // the end is the latest; nor when they read the same as the latest).
   const marks: ChartLabel[] = [
     { ...at(latest), text: shortMoney(values[latest]!), ink },
-    ...(end ? [{ ...at(dates.indexOf(end.dateISO), end.value), text: `≈ ${shortMoney(end.value)} by ${shortDate(end.dateISO)}`, short: `≈ ${shortMoney(end.value)}`, ink: "projection" }] : []),
+    ...(end ? [{ ...at(dates.indexOf(end.dateISO), end.value), text: `${ends(end.value)} by ${shortDate(end.dateISO)}`, short: ends(end.value), ink: "projection" }] : []),
+    ...(runsOut ? [{ ...at(dates.indexOf(runsOut.dateISO), runsOut.value), text: `$0 by ${shortDate(runsOut.dateISO)}`, ink: "projection" }] : []),
     ...moveLabels,
     ...(high > 0 && high < latest && hi > lo && shortMoney(hi) !== shortMoney(values[latest]!) ? [{ ...at(high), text: `high ${shortMoney(hi)}`, ink: "note" }] : []),
     ...(low > 0 && low < latest && hi > lo && shortMoney(lo) !== shortMoney(values[latest]!) ? [{ ...at(low), text: `low ${shortMoney(lo)}`, ink: "note" }] : []),
@@ -377,7 +381,9 @@ export function balancesChart(
       { text: signedWholeMoney(change), fg: changeColor(change) },
       muted(` since ${shortDate(dates[0]!)}`),
       // With a projection, it has the room (the low is labelled in the chart).
-      ...(end ? [GAP, mark(LINE, "projection"), muted(`≈ ${formatWholeMoney(end.value)} by ${shortDate(end.dateISO)} at usual spending`)]
+      ...(end ? [GAP, mark(LINE, "projection"), muted(runsOut
+        ? `runs out ${shortDate(runsOut.dateISO)}, ${formatWholeMoney(-end.value)} short by ${shortDate(end.dateISO)}`
+        : `${end.value < 0 ? `${formatWholeMoney(-end.value)} short` : `≈ ${formatWholeMoney(end.value)}`} by ${shortDate(end.dateISO)} at usual spending`)]
         : [GAP, muted(`low ${formatWholeMoney(lo)} on ${shortDate(history[low]!.dateISO)}`)]),
     ],
   }

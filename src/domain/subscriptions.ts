@@ -20,6 +20,8 @@ export interface Subscription {
   change: { from: number; to: number; since: string } | null
   /** The latest charge's category. */
   categoryId: number | null
+  /** Its charges' transaction ids. */
+  chargeIds: number[]
 }
 
 /** A change is news this long after it starts. */
@@ -32,31 +34,36 @@ const CHANGE_MIN = { dollars: 0.5, share: 0.02 }
  * by monthly cost, then the ones that stopped lately (within two of their
  * gaps after the charge they missed). A payment is stopped once a quarter
  * of its gap (at least 5 days) has passed after the next charge was due.
+ * With `people`, regular payments to people too (rent by transfer): for
+ * looking ahead, not the Subscriptions view.
  */
-export function subscriptions(transactions: readonly Transaction[], today: string): Subscription[] {
+export function subscriptions(transactions: readonly Transaction[], today: string, { people = false } = {}): Subscription[] {
   const out: Subscription[] = []
-  for (const { name, cadence, charges } of regularCharges(transactions.filter(isSpending))) {
-    const latest = charges.at(-1)!
-    const every = Math.round(median(charges.slice(1).map((row, i) => daysBetween(charges[i]!.dateISO, row.dateISO))))
+  for (const { name, cadence, charges, payments } of regularCharges(transactions.filter(isSpending), { people })) {
+    const latest = payments.at(-1)!
+    const every = Math.round(median(payments.slice(1).map((p, i) => daysBetween(payments[i]!.dateISO, p.dateISO))))
     const next = addDays(latest.dateISO, every)
     const late = daysBetween(next, today)
     const stopped = late > Math.max(5, Math.round(every / 4))
     if (stopped && late > 2 * every) continue
-    const amount = Math.abs(latest.amount)
-    out.push({ name, cadence: cadence.name, amount, monthly: amount * cadence.perMonth, last: latest.dateISO, next, stopped, change: priceChange(charges, today), categoryId: latest.categoryId })
+    const amount = latest.amount
+    out.push({
+      name, cadence: cadence.name, amount, monthly: amount * cadence.perMonth, last: latest.dateISO, next, stopped,
+      change: priceChange(payments, today), categoryId: charges.at(-1)!.categoryId, chargeIds: charges.map((row) => row.id),
+    })
   }
   return out.sort((a, b) => Number(a.stopped) - Number(b.stopped) || b.monthly - a.monthly || a.name.localeCompare(b.name))
 }
 
 /** The latest amount against the one before it, when it moved lately. */
-function priceChange(charges: Transaction[], today: string): Subscription["change"] {
-  const amounts = charges.map((row) => Math.abs(row.amount))
+function priceChange(payments: Array<{ dateISO: string; amount: number }>, today: string): Subscription["change"] {
+  const amounts = payments.map((p) => p.amount)
   const to = amounts.at(-1)!
   const moved = (a: number) => Math.abs(a - to) >= Math.max(CHANGE_MIN.dollars, to * CHANGE_MIN.share)
   let at = amounts.length - 1
   while (at > 0 && !moved(amounts[at - 1]!)) at--
   if (at === 0) return null
-  const since = charges[at]!.dateISO
+  const since = payments[at]!.dateISO
   return daysBetween(since, today) <= CHANGE_NEWS_DAYS ? { from: amounts[at - 1]!, to, since } : null
 }
 
