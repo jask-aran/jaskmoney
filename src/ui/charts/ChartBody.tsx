@@ -20,6 +20,8 @@ export interface ChartModel {
   labels: string
   /** Where in `labels` today's date sits, drawn in today's ink. */
   today?: { start: number; length: number }
+  /** Other stretches of `labels` in an ink of their own (a month's net). */
+  labelInks?: Array<{ start: number; length: number; ink: string }>
   /** The legend: series marks in their colours with names and figures,
    * shown in the pane's bottom border. */
   legend: Span[]
@@ -40,15 +42,18 @@ export function xAxisLine(rows: Run[][]): string {
   return "└" + Array.from({ length: width }, (_, c) => (gridlines.has(c) ? "┴" : "─")).join("")
 }
 
-/** The x labels as spans: muted, with today's date in its rule's colour. */
-function axisLabels(text: string, today: { start: number; length: number } | undefined, todayFg: string): Span[] {
-  if (!today) return [{ text, fg: ink.label }]
-  const end = today.start + today.length
-  return [
-    { text: text.slice(0, today.start), fg: ink.label },
-    { text: text.slice(today.start, end), fg: todayFg },
-    { text: text.slice(end), fg: ink.label },
-  ]
+/** The x labels as spans: label grey, with stretches in their own colours
+ * (today's date in its rule's). */
+function axisLabels(text: string, coloured: Array<{ start: number; length: number; fg: string }>): Span[] {
+  const fgs = new Array<string>(text.length).fill(ink.label)
+  for (const c of coloured) for (let i = c.start; i < Math.min(text.length, c.start + c.length); i++) fgs[i] = c.fg
+  const spans: Span[] = []
+  for (let i = 0; i < text.length; i++) {
+    const last = spans.at(-1)
+    if (last && last.fg === fgs[i]) last.text += text[i]
+    else spans.push({ text: text[i]!, fg: fgs[i]! })
+  }
+  return spans
 }
 
 /** A y-axis, the plot rows, the x-axis line (with `baseline`), then the x
@@ -70,7 +75,10 @@ export function ChartBody(props: { model: ChartModel; inks: Record<string, strin
       <Show when={props.baseline && props.model.rows.length}>
         <text wrapMode="none" fg={ink.rule}>{" ".repeat(axis() - 1) + xAxisLine(props.model.rows)}</text>
       </Show>
-      <StyledLine spans={axisLabels(" ".repeat(axis()) + props.model.labels, props.model.today && { ...props.model.today, start: props.model.today.start + axis() }, props.inks.today ?? ink.figure)} />
+      <StyledLine spans={axisLabels(" ".repeat(axis()) + props.model.labels, [
+        ...(props.model.labelInks ?? []).map((l) => ({ start: l.start + axis(), length: l.length, fg: props.model.inks?.[l.ink] ?? props.inks[l.ink] ?? ink.label })),
+        ...(props.model.today ? [{ start: props.model.today.start + axis(), length: props.model.today.length, fg: props.inks.today ?? ink.figure }] : []),
+      ])} />
     </>
   )
 }

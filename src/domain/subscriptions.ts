@@ -1,4 +1,4 @@
-import { addDays, daysBetween } from "./days"
+import { addDays, addMonthsClamped, daysBetween } from "./days"
 import { isSpending } from "./moneyRules"
 import { median, regularCharges } from "./tagGroups"
 import type { Transaction } from "./types"
@@ -18,6 +18,8 @@ export interface Subscription {
   stopped: boolean
   /** The price changed lately: from what, to what (the latest), and since when. */
   change: { from: number; to: number; since: string } | null
+  /** The latest charge's category. */
+  categoryId: number | null
 }
 
 /** A change is news this long after it starts. */
@@ -41,7 +43,7 @@ export function subscriptions(transactions: readonly Transaction[], today: strin
     const stopped = late > Math.max(5, Math.round(every / 4))
     if (stopped && late > 2 * every) continue
     const amount = Math.abs(latest.amount)
-    out.push({ name, cadence: cadence.name, amount, monthly: amount * cadence.perMonth, last: latest.dateISO, next, stopped, change: priceChange(charges, today) })
+    out.push({ name, cadence: cadence.name, amount, monthly: amount * cadence.perMonth, last: latest.dateISO, next, stopped, change: priceChange(charges, today), categoryId: latest.categoryId })
   }
   return out.sort((a, b) => Number(a.stopped) - Number(b.stopped) || b.monthly - a.monthly || a.name.localeCompare(b.name))
 }
@@ -61,4 +63,27 @@ function priceChange(charges: Transaction[], today: string): Subscription["chang
 /** Active subscriptions' total a month. */
 export function monthlyTotal(list: readonly Subscription[]): number {
   return list.reduce((sum, s) => sum + (s.stopped ? 0 : s.monthly), 0)
+}
+
+/** How far apart a cadence's charges fall: days, or months. */
+const STEP: Record<string, { days?: number; months?: number }> = {
+  weekly: { days: 7 }, fortnightly: { days: 14 }, monthly: { months: 1 }, quarterly: { months: 3 }, yearly: { months: 12 },
+}
+
+/** The charges active payments are expected to make from `fromISO` to
+ * `toISO` (inclusive), soonest first: each one's next charge, then on at
+ * its cadence. One already due but not yet charged counts on `fromISO`. */
+export function upcomingCharges(list: readonly Subscription[], fromISO: string, toISO: string): Array<{ name: string; dateISO: string; amount: number }> {
+  const out: Array<{ name: string; dateISO: string; amount: number }> = []
+  for (const s of list) {
+    if (s.stopped) continue
+    const step = STEP[s.cadence]
+    if (!step) continue
+    for (let k = 0, at = s.next; at <= toISO && k < 60; k++) {
+      // Overdue: once, today; its later ones on their own days.
+      if (at >= fromISO || k === 0) out.push({ name: s.name, dateISO: at < fromISO ? fromISO : at, amount: s.amount })
+      at = step.days ? addDays(s.next, step.days * (k + 1)) : addMonthsClamped(s.next, step.months! * (k + 1))
+    }
+  }
+  return out.sort((a, b) => a.dateISO.localeCompare(b.dateISO))
 }

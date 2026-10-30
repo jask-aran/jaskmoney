@@ -180,9 +180,11 @@ export function valueRow(value: number, min: number, max: number, height: number
 /**
  * Gridlines and the x-axis label line for a daily series over `dates`, as in
  * the Go app: month starts ("year" on 1 Jan) and the range's closing month
- * end; week rules on the week-start day when weeks are at least 6 cells apart, else on
- * days 7, 14 and 21 of each month, thinning to 7 and 21, then 14, as months
- * narrow (unlabelled); and today, which replaces a rule on its day.
+ * end, only quarters' when months are under 4 cells; week rules on the
+ * week-start day when weeks are at least 6 cells apart, else on days 7, 14
+ * and 21 of each month, then 14 alone, while those stay 6 cells apart
+ * (unlabelled; closer, they read as a fence); and today, which replaces a
+ * rule on its day.
  * Today's date is always labelled, centred under its rule, as zoom allows
  * ("27" over six weeks or less, "27 Oct" up to two years, "Oct 26" beyond);
  * `today` says where, for its colour. The other labels are placed greedily
@@ -210,7 +212,8 @@ export function dateAxis(
   labelAt.push({ col: 0, text: dayLabel(dates[0]!), align: "left" })
   labelAt.push({ col: width - 1, text: dayLabel(dates[n - 1]!), align: "right" })
   const colsPerMonth = width / new Set(dates.map((iso) => iso.slice(0, 7))).size
-  const weekDays = weekCells >= 6 ? [] : colsPerMonth >= 14 ? [7, 14, 21] : colsPerMonth >= 9 ? [7, 21] : colsPerMonth >= 5 ? [14] : []
+  const weekDays = weekCells >= 6 ? [] : colsPerMonth >= 24 ? [7, 14, 21] : colsPerMonth >= 12 ? [14] : []
+  const quartersOnly = colsPerMonth < 4
   const months: number[] = []
   const weekStarts: number[] = []
   dates.forEach((iso, i) => {
@@ -222,7 +225,7 @@ export function dateAxis(
   const yearInk = (iso: string) => (iso.slice(5, 7) === "01" ? "year" : "month")
   for (const i of months) {
     const iso = dates[i]!
-    markers.push({ index: i, ink: yearInk(iso) })
+    if (!quartersOnly || [1, 4, 7, 10].includes(Number(iso.slice(5, 7)))) markers.push({ index: i, ink: yearInk(iso) })
     labelAt.push({ col: colOf(i), text: iso.slice(5, 7) === "01" ? iso.slice(0, 4) : month(iso), align: "left" })
   }
   // The closing month end, when the range ends on one.

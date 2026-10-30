@@ -1,28 +1,32 @@
 /** Chart models for the Overview's chart pane. Pure: each returns a
  * ChartModel for ChartBody. */
-import { ink, theme, tone } from "../../theme"
+import { fade, ink, theme, tone } from "../../theme"
 import { cumulative, dailySpendSeries, formatWholeMoney, signedWholeMoney, weeklyTotals } from "../../domain/dashboard"
-import { balanceHistory, computePeriodFlows, saverHistories } from "../../domain/position"
-import type { Account, Transaction } from "../../domain/types"
+import { balanceHistory, biggestRow, computePeriodFlows, flowRows, historyCovers, historyStart, saverHistories } from "../../domain/position"
+import { accountRole, type Account, type Transaction } from "../../domain/types"
+import { isSpending } from "../../domain/moneyRules"
 import { MONTHS, addDays, dayOfWeek, type WeekStart } from "../../domain/days"
 import { shortDate, shortMoney, truncate } from "../text"
-import { barTopRow, columnBars } from "../charts/bars"
+import { barSlots, barTopRow, columnBars, ruleRow } from "../charts/bars"
 import { muted, type Span } from "../primitives/spans"
 import { changeColor, spendChangeColor } from "../colors"
 import type { ChartModel } from "../charts/ChartBody"
-import { annotate, lineAnchors, type ChartLabel } from "../charts/annotate"
-import { dateAxis, fitRange, lineChart, niceScale, pointCell, tickRows } from "../charts/lineChart"
+import { annotate, lineAnchors, stamp, type ChartLabel } from "../charts/annotate"
+import { cellColumn, dateAxis, fitRange, lineChart, niceScale, pointCell, tickRows, valueRow } from "../charts/lineChart"
 import { saverInks } from "../charts/saverInks"
 
 export const INKS: Record<string, string> = {
-  spend: theme.peach,
-  partial: theme.overlay1,
+  // Spending: the calendar's purple, lighter where a day or week isn't over.
+  spend: theme.mauve,
+  partial: fade(theme.mauve, 0.45),
   prev: theme.overlay0,
   ref: theme.surface2,
   in: tone.good,
   out: tone.bad,
   limit: theme.chartBudget,
   balance: theme.lavender,
+  // Where Available is headed: the balance line, faded.
+  projection: fade(theme.lavender, 0.5),
   // Savers' total; each saver's own line takes a colour from saverInks.
   total: ink.figure,
   // Gridlines, as in the Go app.
@@ -59,12 +63,16 @@ const DEFAULT_NAMES: PeriodNames = { current: "This period", previous: "Last per
 
 /**
  * The Spending chart in one of its views, over the period's `dates`:
- * - Daily: spend per day as bars, with the period's daily average so far.
+ * - Daily: spend per day as bars, the biggest days named after their
+ *   biggest spend, the daily average so far and, with a `budget`, what's
+ *   left a day over the days to come; more days than columns, a widening
+ *   average line with the biggest days as points.
  * - Cumulative: running total against the previous period of equal length
- *   (and `budget`, when given, as a pace line rising from nothing at the
- *   start to the whole budget at the end).
- * - Weekly: totals per configured week; partial weeks in grey.
- * Days after today are not drawn.
+ *   where the history covers it (and `budget`, when given, as a pace line
+ *   rising from nothing at the start to the whole budget at the end).
+ * - Weekly: totals per configured week, partial weeks lighter, a week's
+ *   share of a `budget`, the biggest named; months under narrow bars.
+ * Bars share the whole width out. Days after today are not drawn.
  */
 export function spendingChart(
   view: "Daily" | "Cumulative" | "Weekly",
@@ -85,32 +93,44 @@ export function spendingChart(
   const axis = dateAxis(dates, width, todayISO, undefined, weekStart)
   if (n === 0) return emptyChart("No days in range")
 
+  // Each spending row that took money out, to name what made a bar tall.
+  const outs = spendingRows.filter((t) => t.amount < 0 && isSpending(t))
+  const named = (start: string, end: string) => biggestRow(outs, start, end)
+
   if (view === "Weekly") {
     // Spending dated after today waits for its day, as in the other views.
     const weeks = weeklyTotals(dates, upToToday(values).map((v) => v ?? 0), weekStart)
-    const scale = niceScale(Math.max(0, ...weeks.map((w) => w.total)))
-    const bars = weeks.map((w) => ({ value: w.startISO <= todayISO ? w.total : 0, ink: w.days < 7 || addDays(w.startISO, 6) >= todayISO ? "partial" : "spend" }))
-    const { rows: plain, slots } = columnBars(bars, width, height, scale.max)
-    // Each week's total over its bar, where it fits.
-    const rows = annotate(plain, slots.map((slot, i) => ({ row: barTopRow(bars[i]!.value, scale.max, height), col: slot.col + Math.floor((slot.width - 1) / 2), text: bars[i]!.value > 0 ? shortMoney(bars[i]!.value) : "", ink: "note", above: true })).filter((l) => l.text && l.row > 0))
-    const line = new Array<string>(width).fill(" ")
-    slots.forEach((slot, i) => {
-      const iso = weeks[i]!.startISO
-      const label = slot.width >= 6 ? shortDate(iso) : String(Number(iso.slice(8, 10)))
-      if (label.length <= slot.width + (slot.width > 2 ? 1 : 0)) {
-        for (let c = 0; c < label.length && slot.col + c < width; c++) line[slot.col + c] = label[c]!
-      }
-    })
-    const full = weeks.filter((w, i) => bars[i]!.ink === "spend")
-    const current = weeks.findLast((w) => w.startISO <= todayISO && addDays(w.startISO, 6) >= todayISO)
+    // A cycle's budget, a week's share of it.
+    const perWeek = budget != null ? (budget * 7) / n : null
+    const scale = niceScale(Math.max(0, perWeek ?? 0, ...weeks.map((w) => w.total)))
+    const partial = (w: (typeof weeks)[number]) => w.days < 7 || addDays(w.startISO, 6) >= todayISO
+    const bars = weeks.map((w) => ({ value: w.startISO <= todayISO ? w.total : 0, ink: partial(w) ? "partial" : "spend" }))
+    const { rows: plain, slots } = columnBars(bars, width, height, scale.max, perWeek ? { value: perWeek, ink: "limit" } : undefined)
+    // Labels: this week, then the biggest (named by its biggest spend where
+    // it fits), then the rest by size; all of them when bars are wide, else
+    // the biggest few.
+    const current = weeks.findLastIndex((w) => w.startISO <= todayISO && addDays(w.startISO, 6) >= todayISO)
+    const bySize = bars.map((_, i) => i).filter((i) => bars[i]!.value > 0).sort((a, b) => bars[b]!.value - bars[a]!.value)
+    const roomy = Math.min(...slots.map((s) => s.width)) >= 5
+    const order = [...new Set([...(current >= 0 && bars[current]!.value > 0 ? [current] : []), ...bySize.slice(0, roomy ? bySize.length : 3)])]
+    const at = (i: number) => ({ row: barTopRow(bars[i]!.value, scale.max, height), col: slots[i]!.col + Math.floor((slots[i]!.width - 1) / 2), above: true })
+    const biggest = bySize[0]
+    const marks: ChartLabel[] = order.filter((i) => slots[i]).map((i) => {
+      const total = shortMoney(bars[i]!.value)
+      const row = i === biggest ? named(weeks[i]!.startISO, addDays(weeks[i]!.startISO, 6)) : undefined
+      return { ...at(i), ...besideBar(slots[i]!, at(i).row), text: barName(total, bars[i]!.value, row), short: total, ink: "note" }
+    }).filter((l) => l.row >= 0)
+    if (perWeek) marks.push({ row: ruleRow(perWeek, scale.max, height), col: width - 1 - "budget".length - 2, text: "budget", ink: "limit" })
+    const starts = weeks.map((w) => w.startISO)
     return {
-      rows,
+      rows: annotate(plain, marks),
       ticks: moneyTicks(0, scale.max, scale.step, height),
-      labels: line.join(""),
+      labels: weekAxis(starts, slots, width, roomy),
       legend: [
         mark(BAR, "spend"),
-        muted(full.length ? `Weeks, avg ${formatWholeMoney(sum(full.map((w) => w.total)) / full.length)}` : "No full weeks yet"),
-        ...(current ? [GAP, mark(BAR, "partial"), muted(`This week ${formatWholeMoney(current.total)} so far`)] : []),
+        muted(bars.some((b) => b.ink === "spend") ? `Weeks, avg ${formatWholeMoney(sum(weeks.filter((w, i) => bars[i]!.ink === "spend").map((w) => w.total)) / bars.filter((b) => b.ink === "spend").length)}` : "No full weeks yet"),
+        ...(bars.some((b) => b.ink === "partial") ? [GAP, mark(BAR, "partial"), muted(current >= 0 ? `partial week · this week ${formatWholeMoney(weeks[current]!.total)} so far` : "partial week")] : []),
+        ...(perWeek ? [GAP, mark(RULE, "limit"), muted(`Budget ${formatWholeMoney(perWeek)} a week`)] : []),
       ],
     }
   }
@@ -118,7 +138,10 @@ export function spendingChart(
   if (view === "Cumulative") {
     const total = cumulative(values)
     const prevStart = addDays(dates[0]!, -n)
-    const prev = cumulative(dailySpendSeries(spendingRows, prevStart, addDays(dates[0]!, -1)).values)
+    // Compared only where the history covers the period before (stray old
+    // rows don't): one with little in it isn't a period to compare with.
+    const covered = elapsed > 0 && historyCovers(spendingRows, { start: prevStart, end: addDays(prevStart, elapsed - 1) }, { start: dates[0]!, end: dates[elapsed - 1]! })
+    const prev = covered ? cumulative(dailySpendSeries(spendingRows, prevStart, addDays(dates[0]!, -1)).values) : []
     const now = elapsed > 0 ? total[elapsed - 1]! : 0
     const then = elapsed > 0 ? prev[elapsed - 1] ?? 0 : 0
     const scale = niceScale(Math.max(now, budget ?? 0, ...prev))
@@ -155,50 +178,74 @@ export function spendingChart(
           ] : []),
         ] : []),
         GAP,
-        mark(LINE, "prev"),
-        muted(`${names.previous} ${formatWholeMoney(then)}${elapsed < n ? " by now" : ""}`),
-        ...(diff != null ? [GAP, { text: `${diff > 0 ? "+" : ""}${diff}%`, fg: spendChangeColor(diff) }] : []),
+        ...(covered ? [
+          mark(LINE, "prev"),
+          muted(`${names.previous} ${formatWholeMoney(then)}${elapsed < n ? " by now" : ""}`),
+          ...(diff != null ? [GAP, { text: `${diff > 0 ? "+" : ""}${diff}%`, fg: spendChangeColor(diff) }] : []),
+        ] : [muted(`${names.previous}: too little history to compare`)]),
       ],
     }
   }
 
-  // Daily: a bar per day (today's in grey, as the day isn't over); a long
-  // period averages its days into one bar per column.
+  // Daily, a day a column or wider: a bar per day (today's lighter, as the
+  // day isn't over), the average so far, and with a budget what's left
+  // per day over the days to come. More days than columns: a 7-day
+  // average line, with the biggest days as points above it.
   const shown = values.slice(0, elapsed)
   const avg = elapsed ? sum(shown) / elapsed : 0
   const peak = shown.reduce((best, v, i) => (v > shown[best]! ? i : best), 0)
-  let bars: Array<{ value: number; ink: string }>
-  let colOf: (i: number) => number
-  // Where a marker goes: today's rule runs through its own bar's column;
-  // week and month rules sit in the gap before their day's bar.
-  let markerCol: (index: number, ink: string) => number
-  let used: number
-  if (n <= width) {
-    const slot = Math.floor(width / n)
-    // The closing month end sits in the gap after the last bar.
-    markerCol = (i, ink) => (ink === "today" || slot === 1 ? i * slot : i === n - 1 ? i * slot + slot - 1 : i * slot - 1)
-    bars = dates.map((d, i) => ({ value: i < elapsed ? values[i]! : 0, ink: d === todayISO ? "partial" : "spend" }))
-    colOf = (i) => i * slot
-    used = (n - 1) * slot + (slot > 1 ? slot - 1 : 1)
-  } else {
-    const bucketOf = (i: number) => Math.floor((i * width) / n)
-    const sums = new Array<number>(width).fill(0), counts = new Array<number>(width).fill(0)
-    shown.forEach((v, i) => { sums[bucketOf(i)]! += v; counts[bucketOf(i)]!++ })
-    bars = sums.map((total, b) => ({ value: counts[b] ? total / counts[b]! : 0, ink: "spend" }))
-    colOf = bucketOf
-    markerCol = bucketOf
-    used = width
+  const peakRow = shown[peak] ? named(dates[peak]!, dates[peak]!) : undefined
+  // The biggest days, as many as the width has room to name.
+  const biggestDays = shown.map((_, i) => i).filter((i) => shown[i]! > 0).sort((a, b) => shown[b]! - shown[a]!).slice(0, Math.max(1, Math.floor(width / 24)))
+  const dayLabel = (i: number) => {
+    const row = named(dates[i]!, dates[i]!)
+    return { text: barName(shortMoney(shown[i]!), shown[i]!, row), short: shortMoney(shown[i]!) }
   }
-  const scale = niceScale(Math.max(0, ...bars.map((b) => b.value)))
-  const { rows: plain, slots } = columnBars(bars, width, height, scale.max, { value: avg, ink: "ref" }, axis.markers.map((m) => ({ col: markerCol(m.index, m.ink), ink: m.ink })))
-  // The tallest bar's value over it, and the average at the end of its rule.
-  const tallest = bars.reduce((best, b, i) => (b.value > bars[best]!.value ? i : best), 0)
-  const avgRow = avg > 0 ? height - 1 - Math.min(height - 1, Math.floor((avg / scale.max) * height)) : -1
+  const peakNote = shown[peak] ? [muted(`, peak ${formatWholeMoney(shown[peak]!)} on ${shortDate(dates[peak]!)}${peakRow ? ` (${spendName(peakRow)})` : ""}`)] : []
+
+  if (n > width) {
+    // A week's average, longer as days crowd the columns (a month's at a
+    // year), so the line shows the trend rather than every day's noise.
+    const window = Math.min(30, 7 * Math.ceil(n / width))
+    const rolling = values.map((_, i) => (i < elapsed ? sum(values.slice(Math.max(0, i - window + 1), i + 1)) / Math.min(window, i + 1) : null))
+    const scale = niceScale(Math.max(0, ...rolling.map((v) => v ?? 0)))
+    const top = (i: number) => (shown[i]! >= scale.max ? 0 : valueRow(shown[i]!, 0, scale.max, height))
+    const points = biggestDays.map((i) => ({ row: top(i), col: cellColumn(i, n, width), text: shown[i]! >= scale.max ? "▲" : "•", ink: "spend" }))
+    const line = lineChart({ series: [{ values: rolling, ink: "spend" }], length: n, width, height, min: 0, max: scale.max, markers: axis.markers })
+    return {
+      rows: annotate(stamp(line, points), biggestDays.map((i) => ({ row: top(i), col: cellColumn(i, n, width), ...dayLabel(i), ink: "spend" }))),
+      ticks: moneyTicks(0, scale.max, scale.step, height),
+      labels: axis.labels,
+      today: axis.today,
+      legend: [mark(LINE, "spend"), muted(`${window}-day average, ${formatWholeMoney(avg)} a day overall`), ...peakNote, GAP, muted("• ▲ biggest days")],
+    }
+  }
+
+  const slots = barSlots(n, width)
+  const todayIndex = elapsed - 1
+  const daysLeft = n - elapsed
+  const spentSoFar = sum(shown)
+  const left = budget != null && daysLeft > 0 ? Math.max(0, (budget - spentSoFar) / daysLeft) : null
+  // Where a marker goes: today's rule runs through its own bar's column;
+  // week and month rules sit in the gap before their day's bar, and the
+  // closing month end in the gap after the last.
+  const markerCol = (i: number, ink: string) => (ink === "today" || slots[i]!.col === 0 ? slots[i]!.col : i === n - 1 ? slots[i]!.col + slots[i]!.width : slots[i]!.col - 1)
+  const bars = dates.map((d, i) => ({ value: i < elapsed ? values[i]! : 0, ink: d === todayISO ? "partial" : "spend" }))
+  const pastEnd = elapsed > 0 ? slots[todayIndex]!.col + slots[todayIndex]!.width : 0
+  const scale = niceScale(Math.max(0, left ?? 0, ...bars.map((b) => b.value)))
+  const { rows: plain } = columnBars(bars, width, height, scale.max, [
+    ...(avg > 0 ? [{ value: avg, ink: "ref", to: pastEnd }] : []),
+    ...(left ? [{ value: left, ink: "limit", from: pastEnd + 1 }] : []),
+  ], axis.markers.map((m) => ({ col: markerCol(m.index, m.ink), ink: m.ink })))
   const marks: ChartLabel[] = [
-    ...(bars[tallest]!.value > 0 && slots[tallest] ? [{ row: barTopRow(bars[tallest]!.value, scale.max, height), col: slots[tallest]!.col, text: shortMoney(bars[tallest]!.value), ink: "note", above: true }] : []),
-    ...(avgRow >= 0 ? [{ row: avgRow, col: width - 1 - "avg".length - 2, text: "avg", ink: "partial" }] : []),
+    ...biggestDays.map((i) => {
+      const row = barTopRow(shown[i]!, scale.max, height)
+      return { row, col: slots[i]!.col, ...dayLabel(i), ...besideBar(slots[i]!, row), ink: "note", above: true }
+    }).filter((l) => l.row >= 0),
+    ...(avg > 0 && pastEnd > 6 ? [{ row: ruleRow(avg, scale.max, height), col: pastEnd - 1 - "avg".length - 1, text: "avg", ink: "ref" }] : []),
+    ...(left ? [{ row: ruleRow(left, scale.max, height), col: pastEnd + 2, text: `${shortMoney(left)}/day left`, short: shortMoney(left), ink: "limit" }] : []),
   ]
-  const { labels, today } = dateAxis(dates, used, todayISO, colOf, weekStart)
+  const { labels, today } = dateAxis(dates, width, todayISO, (i) => slots[i]!.col, weekStart)
   return {
     rows: annotate(plain, marks),
     ticks: moneyTicks(0, scale.max, scale.step, height),
@@ -206,13 +253,48 @@ export function spendingChart(
     today,
     legend: [
       mark(BAR, "spend"),
-      muted(n > width ? "Spent per day (averaged)" : "Spent per day"),
-      ...(shown[peak] ? [muted(`, peak ${formatWholeMoney(shown[peak]!)} on ${shortDate(dates[peak]!)}`)] : []),
+      muted("Spent per day"),
+      ...peakNote,
       GAP,
       mark(RULE, "ref"),
       muted(`Average ${formatWholeMoney(avg)}`),
+      ...(left == null ? [] : left > 0 ? [GAP, mark(RULE, "limit"), muted(`${formatWholeMoney(left)} a day left in the budget`)] : [GAP, { text: "budget spent", fg: tone.bad }]),
     ],
   }
+}
+
+/** "Nov 2025". */
+const monthYear = (iso: string) => `${MONTHS[Number(iso.slice(5, 7)) - 1]} ${iso.slice(0, 4)}`
+
+/** What a spending row is called in a chart label: short. */
+const spendName = (row: Transaction) => truncate(row.description, 14)
+
+/** Where a bar's label may go when there's no room over the bar (a bar
+ * that fills the chart's height): beside its top, past its right edge. */
+const besideBar = (slot: { col: number; width: number }, row: number) => ({ alsoAt: [{ row, col: slot.col + slot.width - 1 }] })
+
+/** A bar's label naming what made it tall: "Centre Com $826" when that one
+ * row is (nearly) the whole bar, else "$1.3k · Centre Com", its biggest. */
+const barName = (amount: string, total: number, row: Transaction | undefined) =>
+  !row ? amount : Math.abs(row.amount) >= 0.9 * total ? `${spendName(row)} ${amount}` : `${amount} · ${spendName(row)}`
+
+/** Labels under weekly bars: each week's start date where bars are wide,
+ * else the month over the week holding its 1st. */
+function weekAxis(starts: string[], slots: Array<{ col: number; width: number }>, width: number, roomy: boolean): string {
+  const line = new Array<string>(width).fill(" ")
+  let free = 0
+  starts.forEach((iso, i) => {
+    const slot = slots[i]
+    if (!slot) return
+    // The week holding a month's 1st names that month (the first week, its own).
+    const end = addDays(iso, 6)
+    const first = iso.endsWith("-01") || i === 0 ? iso : end.slice(5, 7) !== iso.slice(5, 7) ? end : null
+    const label = roomy ? shortDate(iso) : first ? MONTHS[Number(first.slice(5, 7)) - 1]! : ""
+    if (!label || slot.col < free || slot.col + label.length > width) return
+    for (let c = 0; c < label.length; c++) line[slot.col + c] = label[c]!
+    free = slot.col + label.length + 1
+  })
+  return line.join("")
 }
 
 /** End-of-day balances over the period's `dates` (up to today) for one view:
@@ -228,6 +310,8 @@ export function balancesChart(
   transactions: Transaction[],
   weekStart: WeekStart = "monday",
   zeroAxis = false,
+  /** Available only: where it's headed after today (projectAvailable). */
+  projection: ReadonlyArray<{ dateISO: string; value: number }> = [],
 ): ChartModel {
   const last = dates.filter((d) => d <= todayISO).at(-1)
   if (!dates.length || !last) return emptyChart("No balances in range")
@@ -235,37 +319,59 @@ export function balancesChart(
   const history = balanceHistory(accounts, transactions, dates[0]!, last)
   const pick = (p: (typeof history)[number]) => (view === "Available" ? p.spending : p.net)
   const values = history.map(pick)
-  const lo = Math.min(...values), hi = Math.max(...values)
-  const range = fitRange(lo, hi, height, zeroAxis)
-  const axis = dateAxis(dates, width, todayISO, undefined, weekStart)
-  const change = values[values.length - 1]! - values[0]!
-  const low = values.indexOf(lo)
-  // The latest value in the line's colour, placed first so it gets the best
-  // spot; the high and the low in grey where they happened (not at the
-  // ends: the start is on the axis, the end is the latest; nor when they
-  // read the same as the latest).
-  const high = values.indexOf(hi)
   const latest = values.length - 1
+  // The projection, from today's point on, within the range.
+  const ahead = view === "Available" ? projection.filter((p) => p.dateISO > last && p.dateISO <= dates[dates.length - 1]!) : []
+  const projected = ahead.length ? dates.map((d, i) => (i === latest ? values[latest]! : ahead.find((p) => p.dateISO === d)?.value ?? null)) : []
+  const all = [...values, ...ahead.map((p) => p.value)]
+  const lo = Math.min(...values), hi = Math.max(...values)
+  const range = fitRange(Math.min(...all), Math.max(...all), height, zeroAxis)
+  const axis = dateAxis(dates, width, todayISO, undefined, weekStart)
+  const change = values[latest]! - values[0]!
+  const low = values.indexOf(lo)
+  const high = values.indexOf(hi)
   const ink = "balance"
-  const at = (i: number) => pointCell(i, values[i]!, dates.length, width, height, range.min, range.max)
+  const at = (i: number, value = values[i]!) => pointCell(i, value, dates.length, width, height, range.min, range.max)
+  // The biggest one-day moves, named after the row that made most of each
+  // (on the accounts the line counts; moving money between your own
+  // accounts doesn't move the net), as many as the width has room for.
+  const counted = new Set(accounts.filter((a) => a.balance !== null && (view !== "Available" || accountRole(a) === "spending")).map((a) => a.id))
+  const moving = transactions.filter((t) => t.accountId != null && counted.has(t.accountId) && (view === "Available" || !t.internal))
+  const moves = values.map((v, i) => ({ i, d: i ? v - values[i - 1]! : 0 }))
+    .filter((m) => Math.abs(m.d) >= (hi - lo) * 0.08 && m.d !== 0)
+    .sort((a, b) => Math.abs(b.d) - Math.abs(a.d))
+    .slice(0, Math.max(1, Math.floor(width / 30)))
+  const moveLabels: ChartLabel[] = moves.map(({ i, d }) => {
+    const row = biggestRow(moving.filter((t) => Math.sign(t.amount) === Math.sign(d)), dates[i]!, dates[i]!)
+    const amount = `${d > 0 ? "+" : "-"}${shortMoney(Math.abs(d))}`
+    return { ...at(i), text: row ? `${amount} ${truncate(row.description, 14)}` : amount, short: amount, ink: d > 0 ? "in" : "out" }
+  })
+  const end = ahead.at(-1)
+  // The latest value in the line's colour, placed first so it gets the best
+  // spot; where it's headed; the biggest moves; the high and the low in
+  // grey where they happened (not at the ends: the start is on the axis,
+  // the end is the latest; nor when they read the same as the latest).
   const marks: ChartLabel[] = [
     { ...at(latest), text: shortMoney(values[latest]!), ink },
+    ...(end ? [{ ...at(dates.indexOf(end.dateISO), end.value), text: `≈ ${shortMoney(end.value)} by ${shortDate(end.dateISO)}`, short: `≈ ${shortMoney(end.value)}`, ink: "projection" }] : []),
+    ...moveLabels,
     ...(high > 0 && high < latest && hi > lo && shortMoney(hi) !== shortMoney(values[latest]!) ? [{ ...at(high), text: `high ${shortMoney(hi)}`, ink: "note" }] : []),
     ...(low > 0 && low < latest && hi > lo && shortMoney(lo) !== shortMoney(values[latest]!) ? [{ ...at(low), text: `low ${shortMoney(lo)}`, ink: "note" }] : []),
   ]
   return {
-    rows: annotate(lineChart({ series: [{ values, ink }], length: dates.length, width, height, min: range.min, max: range.max, markers: axis.markers }), marks),
+    rows: annotate(lineChart({ series: [...(projected.length ? [{ values: projected, ink: "projection" }] : []), { values, ink }], length: dates.length, width, height, min: range.min, max: range.max, markers: axis.markers }), marks),
     ticks: moneyTicks(range.min, range.max, range.step, height),
     labels: axis.labels,
     today: axis.today,
     legend: [
       mark(LINE, ink),
-      muted(`${view} ${formatWholeMoney(values[values.length - 1]!)}`),
+      muted(`${view} ${formatWholeMoney(values[latest]!)}`),
       GAP,
       { text: signedWholeMoney(change), fg: changeColor(change) },
       muted(` since ${shortDate(dates[0]!)}`),
       GAP,
       muted(`low ${formatWholeMoney(lo)} on ${shortDate(history[low]!.dateISO)}`),
+      ...(end ? [GAP, mark(LINE, "projection"), muted(`≈ ${formatWholeMoney(end.value)} by ${shortDate(end.dateISO)} at usual spending`)] : []),
     ],
   }
 }
@@ -332,11 +438,13 @@ function saversChart(dates: string[], last: string, width: number, height: numbe
 
 
 /**
- * Cash flow over the period's `dates`: money in (green) beside money out (red)
- * per configured week, or per calendar month when the period is longer than
- * about three months, by the same rules as the Date Range flows (internal
- * transfers and not-spending categories excluded; `scopeIds` narrows to the
- * selected spending accounts). Buckets after today are empty.
+ * Cash flow over the period's `dates`: money in (green) beside money out
+ * (red) per configured week while a week's pair has room (5 columns), else
+ * per calendar month, by the same rules as the Date Range flows (internal
+ * transfers and not-spending categories excluded; `scopeIds` narrows to
+ * the selected spending accounts). The tallest bars are named after their
+ * biggest transaction, as many as fit; each period's net sits beside its
+ * date where every period has room. Buckets after today are empty.
  */
 export function cashFlowChart(
   dates: string[],
@@ -349,7 +457,7 @@ export function cashFlowChart(
   weekStart: WeekStart = "monday",
 ): ChartModel {
   if (!dates.length) return emptyChart("No days in range")
-  const monthly = dates.length > 92
+  const monthly = width / Math.ceil(dates.length / 7) < 5
   const buckets: Array<{ start: string; end: string }> = []
   for (const iso of dates) {
     const startsWeek = dayOfWeek(iso, weekStart) === 0
@@ -361,37 +469,72 @@ export function cashFlowChart(
   // Up to today: rows dated later wait for their day, as in the budget.
   const inRange = transactions.filter((t) => t.dateISO >= first && t.dateISO <= last && t.dateISO <= todayISO)
   const flows = buckets.map((b) => computePeriodFlows(accounts, inRange.filter((t) => t.dateISO >= b.start && t.dateISO <= b.end), scopeIds))
+  const rowsOf = flowRows(accounts, inRange, scopeIds)
   const scale = niceScale(Math.max(0, ...flows.flatMap((f) => [f.income, f.spent])))
-  const bars = flows.flatMap((f, i) => {
-    const future = buckets[i]!.start > todayISO
-    return [{ value: future ? 0 : f.income, ink: "in" }, { value: future ? 0 : f.spent, ink: "out" }]
+  const future = (i: number) => buckets[i]!.start > todayISO
+  const bars = flows.flatMap((f, i) => [{ value: future(i) ? 0 : f.income, ink: "in" }, { value: future(i) ? 0 : f.spent, ink: "out" }])
+  const { rows: plain, slots } = columnBars(bars, width, height, scale.max, undefined, [], 2)
+  // Names over the tallest bars: the tallest in and out first, then by
+  // height; all when pairs are wide, else two of each.
+  const roomy = Math.min(...slots.map((s) => s.width)) >= 4
+  const order = (kind: 0 | 1) => bars.map((_, i) => i).filter((i) => i % 2 === kind && bars[i]!.value > 0).sort((a, b) => bars[b]!.value - bars[a]!.value).slice(0, roomy ? undefined : 2)
+  const [ins, outs] = [order(0), order(1)]
+  const ranked = [ins[0], outs[0], ...[...ins.slice(1), ...outs.slice(1)].sort((a, b) => bars[b]!.value - bars[a]!.value)].filter((i): i is number => i != null)
+  const marks: ChartLabel[] = ranked.filter((i) => slots[i]).map((i) => {
+    const b = buckets[Math.floor(i / 2)]!
+    const row = biggestRow(i % 2 === 0 ? rowsOf.income : rowsOf.spent, b.start, b.end)
+    const total = shortMoney(bars[i]!.value)
+    const text = barName(`${i % 2 === 0 ? "+" : "-"}${total}`, bars[i]!.value, row)
+    const top = barTopRow(bars[i]!.value, scale.max, height)
+    return { row: top, col: slots[i]!.col, text, short: total, ...besideBar(slots[i]!, top), ink: i % 2 === 0 ? "in" : "out", above: true }
+  }).filter((l) => l.row >= 0)
+  // A label under each pair: the month or the week's start, with the
+  // period's net beside it when every period has room for one.
+  const name = (b: (typeof buckets)[number]) => (monthly ? MONTHS[Number(b.start.slice(5, 7)) - 1]! : shortDate(b.start))
+  const netText = (i: number) => (future(i) || (!flows[i]!.income && !flows[i]!.spent) ? "" : `${flows[i]!.net > 0.5 ? "+" : ""}${shortMoney(flows[i]!.net)}`)
+  const pairEnd = (i: number) => slots[i * 2 + 1] ?? slots[i * 2]
+  const withNet = buckets.every((b, i) => {
+    const slot = slots[i * 2], next = slots[(i + 1) * 2]
+    if (!slot) return true
+    const text = `${name(b)} ${netText(i)}`.trim()
+    return slot.col + text.length < (next?.col ?? width + 1)
   })
-  const { rows, slots } = columnBars(bars, width, height, scale.max)
-  // A label under each pair: the month, or the week's start.
   const line = new Array<string>(width).fill(" ")
+  const labelInks: NonNullable<ChartModel["labelInks"]> = []
   let free = 0
   buckets.forEach((b, i) => {
     const slot = slots[i * 2]
-    if (!slot) return
-    const label = monthly ? MONTHS[Number(b.start.slice(5, 7)) - 1]! : shortDate(b.start)
-    if (slot.col < free || slot.col + label.length > width) return
-    for (let c = 0; c < label.length; c++) line[slot.col + c] = label[c]!
-    free = slot.col + label.length + 1
+    if (!slot || !pairEnd(i)) return
+    const date = name(b)
+    const net = withNet ? netText(i) : ""
+    const text = net ? `${date} ${net}` : date
+    if (slot.col < free || slot.col + text.length > width) return
+    for (let c = 0; c < text.length; c++) line[slot.col + c] = text[c]!
+    if (net) labelInks.push({ start: slot.col + date.length + 1, length: net.length, ink: flows[i]!.net >= 0 ? "in" : "out" })
+    free = slot.col + text.length + 1
   })
   const income = sum(flows.map((f) => f.income)), spent = sum(flows.map((f) => f.spent))
   const net = income - spent
+  // Money in that only starts partway: say so, rather than suggest nothing
+  // came in before it.
+  const firstIn = historyStart(flowRows(accounts, transactions, scopeIds).income)
+  const inFrom = firstIn && firstIn > addDays(first, 31) && firstIn <= todayISO ? firstIn : null
   return {
-    rows,
+    rows: annotate(plain, marks),
     ticks: moneyTicks(0, scale.max, scale.step, height),
     labels: line.join(""),
+    labelInks,
     legend: [
       mark(BAR, "in"),
       muted(`In ${formatWholeMoney(income)}`),
+      ...(inFrom ? [muted(` (recorded from ${monthYear(inFrom)})`)] : []),
       GAP,
       mark(BAR, "out"),
       muted(`Out ${formatWholeMoney(spent)}`),
       GAP,
-      muted(`Net ${signedWholeMoney(net)} · ${monthly ? "monthly" : "weekly"}`),
+      muted("Net "),
+      { text: signedWholeMoney(net), fg: changeColor(net) },
+      muted(` · ${monthly ? "monthly" : "weekly"}`),
     ],
   }
 }

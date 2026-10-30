@@ -27,7 +27,7 @@ test("weekly spending and cash-flow charts use Sunday buckets and labels", () =>
   const dates = ["2026-10-03", "2026-10-04", "2026-10-05"]
   const weekly = spendingChart("Weekly", { dates, values: [1, 2, 3] }, 60, 8, "2026-10-05", [], undefined, undefined, "sunday")
   expect(weekly.labels).toContain("4 Oct")
-  expect(weekly.legend.map((s) => s.text).join("")).toContain("This week $5 so far")
+  expect(weekly.legend.map((s) => s.text).join("")).toContain("this week $5 so far")
   const cashFlow = cashFlowChart(dates, 60, 8, "2026-10-05", [], [], new Set(), "sunday")
   expect(cashFlow.labels).toContain("4 Oct")
   expect(cashFlow.labels).not.toContain("5 Oct")
@@ -36,7 +36,7 @@ test("weekly spending and cash-flow charts use Sunday buckets and labels", () =>
 test("spending dated after today waits for its day in Weekly and Cash flow", () => {
   const dates = ["2026-10-05", "2026-10-06", "2026-10-07"]
   const weekly = spendingChart("Weekly", { dates, values: [1, 2, 40] }, 60, 8, "2026-10-06", [])
-  expect(legendText(weekly)).toContain("This week $3 so far")
+  expect(legendText(weekly)).toContain("this week $3 so far")
   const account = { id: 1, name: "Spending", type: "debit", sortOrder: 1, isActive: true, source: "up", externalKind: "TRANSACTIONAL", balance: 0, syncEnabled: true } as Account
   const row = (id: number, dateISO: string, amount: number) => transaction({ id, dateISO, amount, accountName: "Spending", status: null })
   const cashFlow = cashFlowChart(dates, 60, 8, "2026-10-06", [account], [row(1, "2026-10-05", -10), row(2, "2026-10-07", -40)], new Set([1]))
@@ -78,4 +78,60 @@ test("Savers: each line is named at its end where there's room, else just its va
   // Too narrow for the names: the values stay.
   expect(text(8)).not.toContain("General")
   expect(text(8)).toContain("$5k")
+})
+
+describe("what made a bar tall, and how much room there is", () => {
+  const days = (n: number, from = "2026-10-01") => Array.from({ length: n }, (_, i) => addDays(from, i))
+  const text = (m: ReturnType<typeof spendingChart>) => m.rows.map((r) => r.map((run) => run.text).join("")).join("\n")
+  const spend = (id: number, dateISO: string, amount: number, description: string) =>
+    transaction({ id, dateISO, amount: -amount, description, accountName: "Spending", status: null })
+
+  test("Daily names its biggest days after their biggest spend, and shows what's left a day of a budget", () => {
+    const d = days(20)
+    const values = d.map((_, i) => (i === 3 ? 400 : 20))
+    const rows = [spend(1, d[3]!, 380, "Centre Com"), spend(2, d[3]!, 20, "Coffee")]
+    const m = spendingChart("Daily", { dates: d, values }, 80, 12, d[9]!, rows, 1000)
+    expect(text(m)).toContain("Centre Com $400")
+    expect(legendText(m)).toContain("a day left in the budget")
+    // A transfer isn't spending: it never names a bar.
+    const moved = spendingChart("Daily", { dates: d, values }, 80, 12, d[9]!, [...rows, transaction({ id: 3, dateISO: d[3]!, amount: -500, description: "Transfer to Holiday", internal: true, excluded: true, status: null })])
+    expect(text(moved)).not.toContain("Transfer")
+  })
+
+  test("Daily over more days than columns is a widening average line, with the biggest days as points", () => {
+    const d = days(365, "2025-11-01")
+    const m = spendingChart("Daily", { dates: d, values: d.map((_, i) => (i === 100 ? 2000 : 50)) }, 80, 12, d.at(-1)!, [])
+    expect(legendText(m)).toContain("30-day average")
+    expect(text(m)).toMatch(/[•▲]/)
+  })
+
+  test("Weekly over a year fills the width, with months under it", () => {
+    const d = days(364, "2025-11-03")
+    const m = spendingChart("Weekly", { dates: d, values: d.map(() => 30) }, 80, 10, d.at(-1)!, [])
+    expect(m.rows[m.rows.length - 1]!.map((r) => r.text).join("").trimEnd().length).toBeGreaterThanOrEqual(78)
+    expect(m.labels).toMatch(/Jan .*Jun/)
+    expect(m.labels).not.toMatch(/\b\d{1,2}\b/)
+  })
+
+  test("Cash flow goes monthly when weeks would be too narrow, and nets each period on the axis where they fit", () => {
+    const acc = account({ id: 1, balance: 0 })
+    const rows = [spend(1, "2026-10-02", 300, "Rent")]
+    const weekly = cashFlowChart(days(21), 80, 8, "2026-10-21", [acc], rows, new Set([1]))
+    expect(legendText(weekly)).toContain("weekly")
+    expect(weekly.labels).toContain("-$300")
+    expect(weekly.labelInks?.some((l) => l.ink === "out")).toBe(true)
+    expect(text(weekly)).toContain("Rent -$300")
+    const year = cashFlowChart(days(365, "2025-11-01"), 80, 8, "2026-10-31", [acc], rows, new Set([1]))
+    expect(legendText(year)).toContain("monthly")
+  })
+
+  test("Available names its biggest moves and shows where it's headed", () => {
+    const acc = account({ id: 1, balance: 1000 })
+    const d = days(30)
+    const rows = [spend(1, d[10]!, 800, "Car service")]
+    const m = balancesChart("Available", d, 80, 12, d[19]!, [acc], rows, "monday", false, [{ dateISO: d[25]!, value: 600 }, { dateISO: d[29]!, value: 400 }])
+    expect(text(m)).toContain("-$800 Car service")
+    expect(text(m)).toContain("≈ $400")
+    expect(legendText(m)).toContain("at usual spending")
+  })
 })

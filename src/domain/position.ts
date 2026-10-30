@@ -148,11 +148,8 @@ export function computePeriodFlows(
   transactions: Transaction[],
   spendingAccountIds?: ReadonlySet<number>,
 ): PeriodFlows {
-  const spending = accounts.filter((a) => accountRole(a) === "spending")
-  const spendingIds = new Set(spending.filter((a) => spendingAccountIds === undefined || spendingAccountIds.has(a.id)).map((a) => a.id))
-  // Savers' income (interest) belongs to all spending together, not to one account.
-  const saverIncome = spendingIds.size === spending.length
-  const saverAmounts = new Map(accounts.filter((a) => accountRole(a) === "saver").map((a) => [a.id, 0]))
+  const { spendingIds, saverIncome, saverIds } = flowScope(accounts, spendingAccountIds)
+  const saverAmounts = new Map([...saverIds].map((id) => [id, 0]))
   let spent = 0
   let income = 0
   let savedToSavers = 0
@@ -182,6 +179,58 @@ export function computePeriodFlows(
     txnCount,
     saverChanges: [...saverAmounts].map(([accountId, change]) => ({ accountId, change })),
   }
+}
+
+/** Which accounts a period's flows count: the spending accounts in scope,
+ * and savers (whose interest is income only when every spending account
+ * is in scope: it belongs to them all, not to one). */
+function flowScope(accounts: Account[], spendingAccountIds?: ReadonlySet<number>) {
+  const spending = accounts.filter((a) => accountRole(a) === "spending")
+  const spendingIds = new Set(spending.filter((a) => spendingAccountIds === undefined || spendingAccountIds.has(a.id)).map((a) => a.id))
+  const saverIds = new Set(accounts.filter((a) => accountRole(a) === "saver").map((a) => a.id))
+  return { spendingIds, saverIds, saverIncome: spendingIds.size === spending.length }
+}
+
+/** The rows computePeriodFlows counts as money spent and as money in, by
+ * the same rules: the rows behind a chart's bars, to say what made one
+ * tall. */
+export function flowRows(accounts: Account[], transactions: Transaction[], spendingAccountIds?: ReadonlySet<number>): { spent: Transaction[]; income: Transaction[] } {
+  const { spendingIds, saverIds, saverIncome } = flowScope(accounts, spendingAccountIds)
+  const spent: Transaction[] = [], income: Transaction[] = []
+  for (const row of transactions) {
+    if (row.accountId === null) continue
+    if (saverIds.has(row.accountId)) {
+      if (saverIncome && isIncome(row)) income.push(row)
+      continue
+    }
+    if (!spendingIds.has(row.accountId) || !isOrdinaryFlow(row)) continue
+    if (isSpending(row)) spent.push(row)
+    if (isIncome(row)) income.push(row)
+  }
+  return { spent, income }
+}
+
+/** The earliest date in `rows`: where their history starts. */
+export function historyStart(rows: readonly Transaction[]): string | null {
+  return rows.reduce<string | null>((first, t) => (first == null || t.dateISO < first ? t.dateISO : first), null)
+}
+
+/** Whether `rows` cover the `earlier` days well enough to compare them
+ * with the `later` ones: rows on at least half as many days, day for day.
+ * A few stray old rows (an import's leftovers) don't make a period. */
+export function historyCovers(rows: readonly Transaction[], earlier: { start: string; end: string }, later: { start: string; end: string }): boolean {
+  const days = (w: { start: string; end: string }) => new Set(rows.filter((t) => t.dateISO >= w.start && t.dateISO <= w.end).map((t) => t.dateISO)).size
+  const length = (w: { start: string; end: string }) => Math.max(1, daysBetween(w.start, w.end) + 1)
+  const now = days(later) / length(later)
+  return now === 0 || days(earlier) / length(earlier) >= now / 2
+}
+
+/** The largest of `rows` dated `start` to `end` (inclusive) by size: what
+ * most explains a day's, week's or month's figure. */
+export function biggestRow(rows: Transaction[], start: string, end: string): Transaction | undefined {
+  let best: Transaction | undefined
+  for (const row of rows) if (row.dateISO >= start && row.dateISO <= end && (!best || Math.abs(row.amount) > Math.abs(best.amount))) best = row
+  return best
 }
 
 export interface BalancePoint {
@@ -249,4 +298,30 @@ export function saverHistories(accounts: Account[], transactions: Transaction[],
     balance: a.balance!,
     values: reconstructHistory(a.balance!, amounts.get(a.id)!, endISO, days).map((p) => p.value),
   }))
+}
+
+/**
+ * Where Available is headed: from today's balance, each day to `untilISO`
+ * (the day before the next payday) less the usual day's spending and the
+ * regular payments due that day. The usual day leaves out what the
+ * regular payments cost on average, as they're counted on their days.
+ * One value per day after today, in order.
+ */
+export function projectAvailable(
+  available: number,
+  todayISO: string,
+  untilISO: string,
+  dailySpend: number,
+  regularPerDay: number,
+  charges: ReadonlyArray<{ dateISO: string; amount: number }>,
+): Array<{ dateISO: string; value: number }> {
+  const usual = Math.max(0, dailySpend - regularPerDay)
+  const out: Array<{ dateISO: string; value: number }> = []
+  // Charges due today and not yet taken come off first.
+  let value = available - charges.filter((c) => c.dateISO <= todayISO).reduce((sum, c) => sum + c.amount, 0)
+  for (let d = addDays(todayISO, 1); d <= untilISO; d = addDays(d, 1)) {
+    value -= usual + charges.filter((c) => c.dateISO === d).reduce((sum, c) => sum + c.amount, 0)
+    out.push({ dateISO: d, value })
+  }
+  return out
 }

@@ -12,19 +12,19 @@ import type { Span } from "../primitives/spans"
 import { S } from "../primitives/S"
 import { CHART_VIEWS, ui, type SectionId } from "../../state/uiStore"
 import { data } from "../../state/dataStore"
-import { ink, theme, tone } from "../../theme"
+import { categoryColor, ink, theme, tone } from "../../theme"
 import { dailySpendSeries, fitCategoryLines, formatMoney, formatPct, formatWholeMoney, signedWholeMoney } from "../../domain/dashboard"
-import { computePeriodFlows, computePosition } from "../../domain/position"
+import { computePeriodFlows, computePosition, historyCovers, projectAvailable } from "../../domain/position"
 import { budgetProgress, cycleFor, type BudgetProgress } from "../../domain/budget"
 import { spendingCalendar } from "../../domain/spending"
 import { accountRole } from "../../domain/types"
-import { addDays, appNow, appToday } from "../../domain/days"
+import { addDays, appNow, appToday, daysBetween } from "../../domain/days"
 import { isSpending, isUncategorised, isUnsortedIn } from "../../domain/moneyRules"
 import { chipLayout } from "./rangeChips"
 import { CUSTOM_CHIP, LOOKBACKS, PERIODS, comparisonWindows, filterByTimeframe, offsetLabel, periodOffset } from "../../domain/timeframe"
-import { count, fit, shortDate } from "../text"
+import { count, fit, shortDate, shortMoney, truncate } from "../text"
 import { StyledLine, type StyledSpan } from "../primitives/StyledLine"
-import { monthlyTotal, subscriptions, type Subscription } from "../../domain/subscriptions"
+import { monthlyTotal, subscriptions, upcomingCharges, type Subscription } from "../../domain/subscriptions"
 import { allCategoryLines, overviewRange } from "../../state/overviewRange"
 import { AXIS_GUESS, ChartBody, axisWidth, type ChartModel } from "../charts/ChartBody"
 import { INKS, balancesChart, cashFlowChart, spendingChart, type PeriodNames } from "./periodCharts"
@@ -83,6 +83,10 @@ export function OverviewTab(props: { focused: SectionId }) {
   // scope for spending and income.
   const flows = live(() => computePeriodFlows(data.state.accounts, filterByTimeframe(data.transactions(), ui.state.timeframe, clock(), cycleConfig()), scopeIds()))
   const previousFlows = live(() => computePeriodFlows(data.state.accounts, inPrevious(), scopeIds()))
+  // Before is a comparison only where the history covers the earlier
+  // period (historyCovers); else "—".
+  const covered = createMemo(() => windows().days === 0 || historyCovers(data.transactions(), previous(), { start: bounds().start, end: addDays(bounds().start, windows().days - 1) }))
+  const before = (text: string) => (covered() ? text : "—")
   const groups = () => range().groups
   const calendar = live(() => spendingCalendar(inPeriod(), bounds().start, bounds().end, data.state.weekStart))
   // Regular payments now, from the scope's whole history (no range).
@@ -90,12 +94,26 @@ export function OverviewTab(props: { focused: SectionId }) {
   const subsShown = () => ui.state.chartViews.some((i) => CHART_VIEWS[i]?.view === "Subscriptions")
   const subs = live(() => subsShown() ? subscriptions(data.transactions().filter((t) => t.accountId != null && scopeIds().has(t.accountId)), today()) : [])
   const series = createMemo(() => dailySpendSeries(inPeriod(), bounds().start, bounds().end))
+  // The next payday: the day after the current cycle ends.
+  const payday = () => addDays(cycleFor(cycleConfig(), today()).end, 1)
+  const dueBeforePayday = () => upcomingCharges(subs(), today(), addDays(payday(), -1)).reduce((sum, c) => sum + c.amount, 0)
 
   // Accounts: point-in-time figures, whatever the range.
   const position = live(() => computePosition(data.state.accounts, data.transactions(), today()))
   const saverChanges = createMemo(() => {
     const since = addDays(today(), -30)
     return computePeriodFlows(data.state.accounts, data.transactions().filter((t) => t.dateISO > since && t.dateISO <= today())).saverChanges
+  })
+  // Where Available is headed, up to the day before the next payday (or
+  // the range's end): built only while a pane shows Available.
+  const availableShown = () => ui.state.chartViews.some((i) => CHART_VIEWS[i]?.view === "Available")
+  const projection = live(() => {
+    const p = position()
+    if (!availableShown() || p.spendingBalance == null || p.dailySpend == null) return []
+    const until = [addDays(payday(), -1), bounds().end].sort()[0]!
+    if (until <= today()) return []
+    const regular = subscriptions(data.transactions().filter((t) => t.accountId != null && scopeIds().has(t.accountId)), today())
+    return projectAvailable(p.spendingBalance, today(), until, p.dailySpend, monthlyTotal(regular) / (365.25 / 12), upcomingCharges(regular, today(), until))
   })
   const change30 = () => {
     const h = position().history
@@ -181,7 +199,7 @@ export function OverviewTab(props: { focused: SectionId }) {
       if (v === "Daily" || v === "Cumulative" || v === "Weekly") return spendingChart(v, series(), width, rows, today(), spending(), budget()?.budget.amount, periodNames(), data.state.weekStart)
       if (v === "Cash flow") return cashFlowChart(series().dates, width, rows, today(), data.state.accounts, data.transactions(), scopeIds(), data.state.weekStart)
       if (v === "Calendar" || v === "Subscriptions") return null
-      return balancesChart(v, series().dates, width, rows, today(), data.state.accounts, data.transactions(), data.state.weekStart, data.state.uiPrefs.zeroAxis === true)
+      return balancesChart(v, series().dates, width, rows, today(), data.state.accounts, data.transactions(), data.state.weekStart, data.state.uiPrefs.zeroAxis === true, v === "Available" ? projection() : [])
     }
     const guess = axisWas[slot]
     const first = build(guess)
@@ -268,13 +286,13 @@ export function OverviewTab(props: { focused: SectionId }) {
   const daily = (spent: number) => formatWholeMoney(windows().days ? spent / windows().days : 0)
   const totalsCard = () => (
     <SectionCard title="Totals" titleRight={headings("Range", "Before")} titleRightFlush width={sideWidth()} height={totalsRows() + 2}>
-      {stat("Spent", formatWholeMoney(flows().spent), formatWholeMoney(previousFlows().spent), { value: previousFlows().spent > 0 ? spendChangeColor(flows().spent - previousFlows().spent) : ink.figure })}
-      {stat("Income", formatWholeMoney(flows().income), formatWholeMoney(previousFlows().income))}
-      {stat("Net", signedWholeMoney(flows().net), signedWholeMoney(previousFlows().net), { value: changeColor(flows().net) })}
-      {stat("To savers", signedWholeMoney(flows().savedToSavers), signedWholeMoney(previousFlows().savedToSavers), { value: changeColor(flows().savedToSavers) })}
-      {stat("Savings rate", formatPct(flows().savingsRate), formatPct(previousFlows().savingsRate))}
-      {stat("Daily", daily(flows().spent), daily(previousFlows().spent))}
-      {stat("Transactions", String(flows().txnCount), String(previousFlows().txnCount))}
+      {stat("Spent", formatWholeMoney(flows().spent), before(formatWholeMoney(previousFlows().spent)), { value: covered() && previousFlows().spent > 0 ? spendChangeColor(flows().spent - previousFlows().spent) : ink.figure })}
+      {stat("Income", formatWholeMoney(flows().income), before(formatWholeMoney(previousFlows().income)))}
+      {stat("Net", signedWholeMoney(flows().net), before(signedWholeMoney(previousFlows().net)), { value: changeColor(flows().net) })}
+      {stat("To savers", signedWholeMoney(flows().savedToSavers), before(signedWholeMoney(previousFlows().savedToSavers)), { value: changeColor(flows().savedToSavers) })}
+      {stat("Savings rate", formatPct(flows().savingsRate), before(formatPct(previousFlows().savingsRate)))}
+      {stat("Daily", daily(flows().spent), before(daily(previousFlows().spent)))}
+      {stat("Transactions", String(flows().txnCount), before(String(previousFlows().txnCount)))}
       <Show when={budget()}>
         {(p: () => BudgetProgress) => (
           <>
@@ -345,13 +363,13 @@ export function OverviewTab(props: { focused: SectionId }) {
         titleSuffix={view().group === view().view ? undefined : `· ${view().view}`}
         titleSuffixColor={ink.label}
         titleRight={viewPicker(index())}
-        bottomSpans={chart()?.legend ?? (view().view === "Subscriptions" ? subscriptionsLegend(subs()) : calendarLegend(calendar(), today()))}
+        bottomSpans={chart()?.legend ?? (view().view === "Subscriptions" ? subscriptionsLegend(subs(), dueBeforePayday()) : calendarLegend(calendar(), today()))}
         width={mainWidth()}
         height={p.height}
         focused={props.focused === (p.pane === 0 ? "ov.chart" : "ov.chart2")}
       >
         <Show when={chart()} fallback={view().view === "Subscriptions"
-          ? <SubscriptionsView list={subs()} width={mainWidth() - 4} rows={p.height - 2} today={today()} />
+          ? <SubscriptionsView list={subs()} width={mainWidth() - 4} rows={p.height - 2} today={today()} payday={payday()} />
           : <CalendarView weeks={calendar()} width={mainWidth() - 4} rows={p.height - 2} today={today()} />}>
           {(m: () => ChartModel) => <ChartBody model={m()} inks={INKS} baseline={baseline()} />}
         </Show>
@@ -466,49 +484,92 @@ function viewPicker(current: number): Span[] {
 const PERIOD_UNIT: Record<string, string> = { cycle: "cycle", month: "month", qtr: "quarter", half: "half", fy: "FY", year: "year" }
 
 
-/** The Subscriptions view's legend: how many, what they cost a month, and
- * what changed. */
-function subscriptionsLegend(list: Subscription[]): Span[] {
+/** The Subscriptions view's legend: how many, what they cost a month and
+ * a year, what's due before payday, and what changed. */
+function subscriptionsLegend(list: Subscription[], dueBeforePayday: number): Span[] {
   const active = list.filter((s) => !s.stopped)
   const changed = active.filter((s) => s.change).length
   const stopped = list.length - active.length
+  const monthly = monthlyTotal(list)
   return [
-    { text: `${active.length} active · ${formatWholeMoney(monthlyTotal(list))} a month`, fg: ink.label },
+    { text: `${active.length} active · ${formatWholeMoney(monthly)} a month · ${formatWholeMoney(monthly * 12)} a year`, fg: ink.label },
+    ...(dueBeforePayday > 0 ? [{ text: ` · ${formatWholeMoney(dueBeforePayday)} due before payday`, fg: ink.label }] : []),
     ...(changed ? [{ text: ` · ${count(changed, "price change")}`, fg: tone.caution }] : []),
     ...(stopped ? [{ text: ` · ${stopped} stopped`, fg: ink.note }] : []),
   ]
 }
 
-const SUB_COLUMNS = { every: 12, charge: 10, month: 10, next: 11, change: 24 }
+const SUB_COLUMNS = { every: 12, charge: 10, month: 10, next: 11, change: 30 }
+/** Days the strip under the table looks ahead. */
+const SUB_AHEAD = 30
+/** A charge this many days off (or fewer) wants a look. */
+const SUB_SOON = 3
 
-/** Regular payments, one a line: what, how often, the latest charge, a
- * month's worth, the next charge, and a price change. Stopped ones dimmed
- * after the rest; more than fit end in "… N more". */
-function SubscriptionsView(props: { list: Subscription[]; width: number; rows: number; today: string }) {
-  const showChange = () => props.width >= 70
-  const nameWidth = () => Math.max(10, props.width - SUB_COLUMNS.every - SUB_COLUMNS.charge - SUB_COLUMNS.month - SUB_COLUMNS.next - (showChange() ? SUB_COLUMNS.change : 0))
-  const room = () => Math.max(0, props.rows - 1)
+/** Regular payments, one a line: its category's mark, what, how often, the
+ * latest charge, a month's worth, the next charge (soon ones in caution),
+ * and a price change. Stopped ones dimmed after the rest; more than fit end
+ * in "… N more". Under the table, where there's room, the next 30 days as
+ * a strip: a mark on each day a payment is due, its name under it where it
+ * fits, and payday. */
+function SubscriptionsView(props: { list: Subscription[]; width: number; rows: number; today: string; payday: string }) {
+  const showChange = () => props.width >= 80
+  const nameWidth = () => Math.max(10, props.width - 2 - SUB_COLUMNS.every - SUB_COLUMNS.charge - SUB_COLUMNS.month - SUB_COLUMNS.next - (showChange() ? SUB_COLUMNS.change : 0))
+  // The strip takes a blank line and three of its own, when the table
+  // leaves them.
+  const strip = () => props.rows - 1 - props.list.length >= 4
+  const room = () => Math.max(0, props.rows - 1 - (strip() ? 4 : 0))
   const shown = createMemo(() => props.list.length > room() ? props.list.slice(0, Math.max(0, room() - 1)) : props.list)
   const more = () => props.list.length - shown().length
+  const colour = (id: number | null) => categoryColor(data.state.categories.find((c) => c.id === id)?.color)
   const line = (s: Subscription): StyledSpan[] => {
     const dim = s.stopped
+    const soon = !s.stopped && daysBetween(props.today, s.next) <= SUB_SOON
     const due = s.stopped ? "stopped" : s.next < props.today ? "due" : shortDate(s.next)
+    const pct = s.change ? Math.round(((s.change.to - s.change.from) / s.change.from) * 100) : 0
     return [
+      { text: `${categoryMark(s.categoryId)} `, fg: dim ? ink.note : colour(s.categoryId) },
       { text: fit(s.name, nameWidth()), fg: dim ? ink.note : ink.figure },
       { text: s.cadence.padStart(SUB_COLUMNS.every), fg: ink.note },
       { text: formatMoney(s.amount).padStart(SUB_COLUMNS.charge), fg: dim ? ink.note : ink.figure },
       { text: formatMoney(s.monthly).padStart(SUB_COLUMNS.month), fg: dim ? ink.note : ink.label },
-      { text: due.padStart(SUB_COLUMNS.next), fg: s.stopped ? ink.note : s.next < props.today ? tone.caution : ink.label },
+      { text: due.padStart(SUB_COLUMNS.next), fg: s.stopped ? ink.note : soon ? tone.caution : ink.label },
       ...(showChange() && s.change ? [{
-        text: `  ${s.change.to > s.change.from ? "▲" : "▼"} from ${formatMoney(s.change.from)} ${shortDate(s.change.since)}`.slice(0, SUB_COLUMNS.change),
+        text: `  ${s.change.to > s.change.from ? "▲" : "▼"} from ${formatMoney(s.change.from)} ${shortDate(s.change.since)} (${pct > 0 ? "+" : ""}${pct}%)`.slice(0, SUB_COLUMNS.change),
         fg: s.change.to > s.change.from ? tone.caution : tone.good,
       }] : []),
     ]
   }
+  // The strip: days 0 to SUB_AHEAD spread over the width.
+  const ahead = createMemo(() => upcomingCharges(props.list, props.today, addDays(props.today, SUB_AHEAD)))
+  const colOf = (iso: string) => Math.round((daysBetween(props.today, iso) * (props.width - 1)) / SUB_AHEAD)
+  const stripLines = createMemo((): StyledSpan[][] => {
+    const w = props.width
+    const marks = Array.from({ length: w }, (): StyledSpan => ({ text: "─", fg: ink.rule }))
+    const names = Array.from({ length: w }, (): StyledSpan => ({ text: " ", fg: ink.label }))
+    const dates = Array.from({ length: w }, (): StyledSpan => ({ text: " ", fg: ink.note }))
+    const put = (cells: StyledSpan[], col: number, text: string, fg: string) => {
+      if (col < 0 || col + text.length > w || cells.slice(Math.max(0, col - 1), col + text.length + 1).some((c) => c.text !== " ")) return false
+      ;[...text].forEach((ch, k) => (cells[col + k] = { text: ch, fg }))
+      return true
+    }
+    const paydayCol = props.payday > props.today && props.payday <= addDays(props.today, SUB_AHEAD) ? colOf(props.payday) : -1
+    if (paydayCol >= 0) marks[paydayCol] = { text: "┃", fg: tone.good }
+    marks[0] = { text: "┃", fg: theme.chartToday }
+    for (const c of ahead()) {
+      const col = colOf(c.dateISO)
+      const sub = props.list.find((s) => s.name === c.name)
+      marks[col] = { text: "●", fg: colour(sub?.categoryId ?? null) }
+      put(names, col, `${truncate(c.name, 12)} ${shortMoney(c.amount)}`, ink.label) || put(names, col, shortMoney(c.amount), ink.label)
+    }
+    put(dates, 0, "today", theme.chartToday)
+    if (paydayCol >= 0) put(dates, paydayCol, "payday", tone.good)
+    for (let d = 7; d <= SUB_AHEAD; d += 7) put(dates, colOf(addDays(props.today, d)), shortDate(addDays(props.today, d)), ink.note)
+    return [marks, names, dates]
+  })
   return (
     <Show when={props.list.length} fallback={<text fg={ink.note}>No regular payments found</text>}>
       <StyledLine spans={[
-        { text: "Payment".padEnd(nameWidth()), fg: ink.label, bold: true },
+        { text: "  " + "Payment".padEnd(nameWidth()), fg: ink.label, bold: true },
         { text: "Every".padStart(SUB_COLUMNS.every), fg: ink.label, bold: true },
         { text: "Charge".padStart(SUB_COLUMNS.charge), fg: ink.label, bold: true },
         { text: "A month".padStart(SUB_COLUMNS.month), fg: ink.label, bold: true },
@@ -517,6 +578,10 @@ function SubscriptionsView(props: { list: Subscription[]; width: number; rows: n
       ]} />
       <Index each={shown()}>{(s) => <StyledLine spans={line(s())} />}</Index>
       <Show when={more() > 0}><text fg={ink.note}>{`… ${more()} more`}</text></Show>
+      <Show when={strip()}>
+        <box flexGrow={1} />
+        <Index each={stripLines()}>{(cells) => <StyledLine spans={cells()} />}</Index>
+      </Show>
     </Show>
   )
 }

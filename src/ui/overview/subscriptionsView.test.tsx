@@ -24,7 +24,10 @@ test("the Subscriptions view lists regular payments with their change, stopped o
   expect(frame).toContain("Subscriptions")
   expect(frame).toMatch(/NETFLIX\s+monthly\s+\$22\.99\s+\$22\.99\s+\d+ Oct\s+▲ from \$18\.99 3 Jul/)
   expect(frame).toMatch(/GYM\s+monthly\s+\$60\.00\s+\$60\.00\s+stopped/)
-  expect(frame).toContain("1 active · $23 a month · 1 price change · 1 stopped")
+  expect(frame).toContain("1 active · $23 a month · $276 a year · 1 price change · 1 stopped")
+  // The next 30 days under the table: today, payday, and the charge due.
+  expect(frame).toMatch(/today .* payday/)
+  expect(frame).toContain("NETFLIX $23")
   const gym = t.captureSpans().lines.flatMap((l) => l.spans).find((s) => s.text.includes("GYM"))!
   expect(gym.fg.toInts()).toEqual(RGBA.fromHex(theme.overlay1).toInts())
 })

@@ -29,6 +29,9 @@ export interface ChartLabel {
   name?: string
   /** Other cells on the label's line (lineAnchors), nearest first. */
   along?: Array<{ row: number; col: number }>
+  /** More points `text` may go by, tried right after its own (the right
+   * edge of a wide bar, whose label can't sit over it). */
+  alsoAt?: Array<{ row: number; col: number }>
   ink: string
   /** Try the row above first (bar tops). */
   above?: boolean
@@ -74,7 +77,8 @@ export function annotate(rows: Run[][], labels: ChartLabel[]): Run[][] {
   const inside = (n: number) => ([r, c]: [number, number]) => r >= 0 && r < grid.length && c >= 0 && c + n <= width
   for (const label of labels) {
     const tries = [
-      ...[label.text, label.short].filter((t): t is string => !!t).map((text) => ({ text, at: [label] })),
+      { text: label.text, at: [label, ...(label.alsoAt ?? [])] },
+      ...(label.short ? [{ text: label.short, at: [label, ...(label.alsoAt ?? [])] }] : []),
       ...(label.name && label.along?.length ? [{ text: label.name, at: label.along }] : []),
     ]
     let placed: { cells: string[]; spot: [number, number] } | undefined
@@ -95,6 +99,14 @@ export function annotate(rows: Run[][], labels: ChartLabel[]): Run[][] {
     const [r, c] = placed.spot
     placed.cells.forEach((text, k) => (grid[r]![c + k] = { text, ink: label.ink }))
   }
+  return grid.map(cellsToRuns)
+}
+
+/** Single cells written over a chart's rows (a day's point above a line). */
+export function stamp(rows: Run[][], points: Array<{ row: number; col: number; text: string; ink: string }>): Run[][] {
+  if (!points.length || !rows.length) return rows
+  const grid = rows.map((runs) => runs.flatMap((run) => [...run.text].map((text) => ({ text, ink: run.ink }))))
+  for (const p of points) if (grid[p.row]?.[p.col]) grid[p.row]![p.col] = { text: p.text, ink: p.ink }
   return grid.map(cellsToRuns)
 }
 

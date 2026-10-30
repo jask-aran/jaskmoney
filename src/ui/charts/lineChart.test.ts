@@ -93,14 +93,22 @@ describe("dateAxis", () => {
 
 describe("dateAxis gridlines", () => {
   const days = (from: number, count: number) => Array.from({ length: count }, (_, i) => new Date(Date.UTC(2026, 6, from + i)).toISOString().slice(0, 10))
-  test("narrow months get unlabelled week rules on days 7, 14 and 21, and the range closes on a month end", () => {
+  test("narrow months get unlabelled week rules on days 7, 14 and 21 while they stay 6 cells apart, and the range closes on a month end", () => {
     const dates = days(1, 184) // 1 Jul – 31 Dec
-    const axis = dateAxis(dates, 100, "2026-10-26")
+    const axis = dateAxis(dates, 150, "2026-10-26")
     const weeks = axis.markers.filter((m) => m.ink === "week").map((m) => dates[m.index]!)
     expect(weeks.slice(0, 3)).toEqual(["2026-07-07", "2026-07-14", "2026-07-21"])
+    // Narrower (2026-10-30): day 14 alone, not a fence of rules.
+    const narrow = dateAxis(dates, 100, "2026-10-26").markers.filter((m) => m.ink === "week").map((m) => dates[m.index]!)
+    expect(narrow.slice(0, 2)).toEqual(["2026-07-14", "2026-08-14"])
     expect(axis.markers).toContainEqual({ index: dates.indexOf("2026-08-01"), ink: "month" })
     expect(axis.markers).toContainEqual({ index: dates.length - 1, ink: "year" })
     expect(axis.labels).not.toContain(" 14 ")
+  })
+  test("months under 4 cells keep only quarters' rules", () => {
+    const dates = days(1, 730)
+    const months = dateAxis(dates, 80, "2026-10-26").markers.filter((m) => m.ink === "month" || m.ink === "year").map((m) => dates[m.index]!.slice(5, 7))
+    expect(new Set(months)).toEqual(new Set(["01", "04", "07", "10"]))
   })
   test("today on the last day replaces the closing rule", () => {
     const dates = days(1, 31)
