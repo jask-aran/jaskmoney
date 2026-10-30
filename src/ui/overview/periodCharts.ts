@@ -10,9 +10,9 @@ import { barTopRow, columnBars } from "../charts/bars"
 import { muted, type Span } from "../primitives/spans"
 import { changeColor, spendChangeColor } from "../colors"
 import type { ChartModel } from "../charts/ChartBody"
-import { annotate, type ChartLabel } from "../charts/annotate"
+import { annotate, lineAnchors, type ChartLabel } from "../charts/annotate"
 import { dateAxis, fitRange, lineChart, niceScale, pointCell, tickRows } from "../charts/lineChart"
-import { leadingEmoji, saverInks } from "../charts/saverInks"
+import { saverInks } from "../charts/saverInks"
 
 export const INKS: Record<string, string> = {
   spend: theme.peach,
@@ -128,12 +128,14 @@ export function spendingChart(
     const pace = (i: number) => (budget ?? 0) * ((i + 1) / n)
     const limit = budget != null ? [{ values: dates.map((_, i) => pace(i)), ink: "limit" }] : []
     const overPace = budget != null && elapsed > 0 ? now - pace(elapsed - 1) : null
-    // Each line named at its end.
+    // Each line named at its end, or further back along it where the end
+    // is crowded.
     const at = (index: number, value: number) => pointCell(index, value, n, width, height, 0, scale.max)
+    const paceLine = dates.map((_, i) => pace(i))
     const marks: ChartLabel[] = [
       ...(elapsed > 0 ? [{ ...at(elapsed - 1, now), text: `${names.current} ${shortMoney(now)}`, ink: "spend", required: true }] : []),
-      ...(prev.length ? [{ ...at(n - 1, prev[n - 1]!), text: names.previous, ink: "prev" }] : []),
-      ...(budget != null ? [{ ...at(n - 1, budget), text: "Budget", ink: "limit" }] : []),
+      ...(prev.length ? [{ ...at(n - 1, prev[n - 1]!), text: names.previous, name: names.previous, along: lineAnchors(prev, n - 2, at), ink: "prev" }] : []),
+      ...(budget != null ? [{ ...at(n - 1, budget), text: "Budget", name: "Budget", along: lineAnchors(paceLine, n - 2, at), ink: "limit" }] : []),
     ]
     return {
       rows: annotate(lineChart({ series: [...limit, { values: prev, ink: "prev" }, { values: upToToday(total), ink: "spend" }], length: n, width, height, min: 0, max: scale.max, markers: axis.markers }), marks),
@@ -271,8 +273,8 @@ export function balancesChart(
 /** Savers drawn one line each: as many as the chart's height keeps apart. */
 const MAX_SAVER_LINES = 6
 const ROWS_PER_SAVER_LINE = 3
-/** A saver's name in its line's label, at most. */
-const SAVER_LABEL = 14
+/** A saver's name in its line's label, at most (cells, emoji included). */
+const SAVER_LABEL = 16
 
 /**
  * Savers: their total (white) and a line per saver in its own colour
@@ -295,7 +297,8 @@ function saversChart(dates: string[], last: string, width: number, height: numbe
   const range = fitRange(lo, hi, height, zeroAxis)
   const axis = dateAxis(dates, width, todayISO, undefined, weekStart)
   const latest = total.length - 1
-  const at = (series: number[]) => pointCell(latest, series[latest]!, dates.length, width, height, range.min, range.max)
+  const cell = (index: number, value: number) => pointCell(index, value, dates.length, width, height, range.min, range.max)
+  const at = (series: number[]) => cell(latest, series[latest]!)
   const change = total[latest]! - total[0]!
   const hidden = all.length - Math.max(1, shown.length)
   return {
@@ -304,9 +307,13 @@ function saversChart(dates: string[], last: string, width: number, height: numbe
       series: [...shown.map((s) => ({ values: s.values, ink: `saver${s.accountId}` })), { values: total, ink: "total" }],
       length: dates.length, width, height, min: range.min, max: range.max, markers: axis.markers,
     }), [
-      // Named where there's room, else the value alone.
-      { ...at(total), text: `Total ${shortMoney(total[latest]!)}`, short: shortMoney(total[latest]!), ink: "total" },
-      ...shown.map((s) => ({ ...at(s.values), text: `${truncate(withoutEmoji(s.name), SAVER_LABEL)} ${shortMoney(s.values[latest]!)}`, short: shortMoney(s.values[latest]!), ink: `saver${s.accountId}` })),
+      // Named with today's value at the end where there's room, else the
+      // value alone there, else the name further back along the line.
+      { ...at(total), text: `Total ${shortMoney(total[latest]!)}`, short: shortMoney(total[latest]!), name: "Total", along: lineAnchors(total, latest - 1, cell), ink: "total" },
+      ...shown.map((s) => {
+        const name = truncate(s.name, SAVER_LABEL)
+        return { ...at(s.values), text: `${name} ${shortMoney(s.values[latest]!)}`, short: shortMoney(s.values[latest]!), name, along: lineAnchors(s.values, latest - 1, cell), ink: `saver${s.accountId}` }
+      }),
     ]),
     ticks: moneyTicks(range.min, range.max, range.step, height),
     labels: axis.labels,
@@ -317,14 +324,12 @@ function saversChart(dates: string[], last: string, width: number, height: numbe
       muted(`Total ${formatWholeMoney(total[latest]!)} `),
       { text: signedWholeMoney(change), fg: changeColor(change) },
       muted(` since ${shortDate(dates[0]!)}`),
-      ...shown.flatMap((s) => [GAP, { text: LINE, fg: inks[`saver${s.accountId}`]! }, muted(withoutEmoji(s.name))]),
+      ...shown.flatMap((s) => [GAP, { text: LINE, fg: inks[`saver${s.accountId}`]! }, muted(s.name)]),
       ...(hidden > 0 ? [GAP, muted(`+${hidden} more in the total`)] : []),
     ],
   }
 }
 
-/** A saver's name without the emoji Up starts it with. */
-const withoutEmoji = (name: string) => (leadingEmoji(name) ? [...new Intl.Segmenter().segment(name.trim())].slice(1).map((s) => s.segment).join("").trim() : name)
 
 /**
  * Cash flow over the period's `dates`: money in (green) beside money out (red)

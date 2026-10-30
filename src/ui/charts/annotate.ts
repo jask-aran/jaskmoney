@@ -6,8 +6,12 @@
  * bar tops), then two rows out. A label that fits nowhere is dropped, so
  * callers keep the figure elsewhere (the legend), unless it's `required`:
  * then it takes its first spot inside the chart anyway. Labels are placed
- * in the order given, so the first ones win the space. A label with a
- * `short` form tries every spot with its text, then every spot with that.
+ * in the order given, so the first ones win the space.
+ *
+ * Where the text fits nowhere at its point, a `short` form tries there
+ * next; then a line's `name` tries each point `along` it, nearest first, so
+ * a line ending in a crowded corner is still named further back. Text is
+ * measured in cells: an emoji takes two.
  */
 import type { Run } from "./lineChart"
 import { cellsToRuns } from "./runs"
@@ -17,9 +21,14 @@ export interface ChartLabel {
   row: number
   col: number
   text: string
-  /** A shorter text for where `text` fits nowhere ("$5.5k" for
+  /** A shorter text for its point where `text` fits nowhere ("$5.5k" for
    * "General $5.5k"). */
   short?: string
+  /** What the line is called, for points `along` it: no value, as the
+   * label is away from the point the value belongs to. */
+  name?: string
+  /** Other cells on the label's line (lineAnchors), nearest first. */
+  along?: Array<{ row: number; col: number }>
   ink: string
   /** Try the row above first (bar tops). */
   above?: boolean
@@ -29,6 +38,12 @@ export interface ChartLabel {
 
 /** Cells a label may cover: blank, gridlines and rules. */
 const FREE = new Set([" ", "│", "┈"])
+
+const graphemes = new Intl.Segmenter()
+/** A label's cells: an emoji's second cell is empty text, so the row keeps
+ * its width. */
+const labelCells = (text: string) =>
+  [...graphemes.segment(text)].flatMap(({ segment }) => [segment, ...Array<string>(Math.max(0, Bun.stringWidth(segment) - 1)).fill("")])
 
 export function annotate(rows: Run[][], labels: ChartLabel[]): Run[][] {
   if (!labels.length || !rows.length) return rows
@@ -40,13 +55,12 @@ export function annotate(rows: Run[][], labels: ChartLabel[]): Run[][] {
     for (let c = Math.max(0, from - 1); c < Math.min(width, to + 1); c++) if (!FREE.has(grid[r]![c]!.text)) return false
     return true
   }
-  const spotFor = (label: ChartLabel, text: string) => {
-    const n = [...text].length
-    const { row, col } = label
+  // Where `n` cells could go for a point, best first.
+  const spots = (row: number, col: number, n: number, above = false): Array<[number, number]> => {
     const centred: Array<[number, number]> = [[row - 1, col - Math.floor((n - 1) / 2)], [row + 1, col - Math.floor((n - 1) / 2)]]
     const beside: Array<[number, number]> = [[row, col + 2], [row, col - 1 - n]]
-    const spots: Array<[number, number]> = [
-      ...(label.above ? [...centred, ...beside] : [...beside, ...centred]),
+    return [
+      ...(above ? [...centred, ...beside] : [...beside, ...centred]),
       [row - 1, col + 1],
       [row - 1, col - n],
       [row + 1, col + 1],
@@ -56,18 +70,44 @@ export function annotate(rows: Run[][], labels: ChartLabel[]): Run[][] {
       [row + 2, col - n],
       [row + 2, col + 1],
     ]
-    const inside = ([r, c]: [number, number]) => r >= 0 && r < grid.length && c >= 0 && c + n <= width
-    return { found: spots.find(([r, c]) => free(r, c, c + n)), inside: spots.find(inside) }
   }
+  const inside = (n: number) => ([r, c]: [number, number]) => r >= 0 && r < grid.length && c >= 0 && c + n <= width
   for (const label of labels) {
-    const long = spotFor(label, label.text)
-    const short = label.short && !long.found ? spotFor(label, label.short) : undefined
-    const [text, spot] = long.found ? [label.text, long.found]
-      : short?.found ? [label.short!, short.found]
-      : label.required ? [label.short ?? label.text, (short ?? long).inside] : [label.text, undefined]
-    if (!spot) continue
-    const [r, c] = spot
-    ;[...text].forEach((ch, k) => (grid[r]![c + k] = { text: ch, ink: label.ink }))
+    const tries = [
+      ...[label.text, label.short].filter((t): t is string => !!t).map((text) => ({ text, at: [label] })),
+      ...(label.name && label.along?.length ? [{ text: label.name, at: label.along }] : []),
+    ]
+    let placed: { cells: string[]; spot: [number, number] } | undefined
+    for (const t of tries) {
+      const cells = labelCells(t.text)
+      for (const p of t.at) {
+        const spot = spots(p.row, p.col, cells.length, label.above).find(([r, c]) => free(r, c, c + cells.length))
+        if (spot) { placed = { cells, spot }; break }
+      }
+      if (placed) break
+    }
+    if (!placed && label.required) {
+      const cells = labelCells(label.short ?? label.text)
+      const spot = spots(label.row, label.col, cells.length, label.above).find(inside(cells.length))
+      if (spot) placed = { cells, spot }
+    }
+    if (!placed) continue
+    const [r, c] = placed.spot
+    placed.cells.forEach((text, k) => (grid[r]![c + k] = { text, ink: label.ink }))
   }
   return grid.map(cellsToRuns)
+}
+
+/** Cells along a line, one per column, from index `from` back to its
+ * start: the places a label naming the line may go (ChartLabel.along). */
+export function lineAnchors(values: Array<number | null>, from: number, at: (index: number, value: number) => { row: number; col: number }): Array<{ row: number; col: number }> {
+  const out: Array<{ row: number; col: number }> = []
+  let lastCol = Infinity
+  for (let i = from; i >= 0; i--) {
+    const v = values[i]
+    if (v == null) continue
+    const p = at(i, v)
+    if (p.col < lastCol) { out.push(p); lastCol = p.col }
+  }
+  return out
 }
