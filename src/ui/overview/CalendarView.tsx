@@ -7,9 +7,9 @@ import { muted, type Span } from "../primitives/spans"
 import { S } from "../primitives/S"
 import { shortMoney } from "../text"
 
-/** Day colours by spending level (0 = none): violet through pink to the
- * spending charts' peach, brighter for more. Data colours. */
-export const LEVEL_BG = [theme.surface0, "#4a3d6b", "#7d5596", "#c46a9a", "#f5a97f"] as const
+/** Day colours by spending level (0 = none): one purple, darker to
+ * brighter for more, up to the palette's mauve. Data colours. */
+export const LEVEL_BG = [theme.surface0, "#3f3459", "#5f4888", "#8d68bd", "#cba6f7"] as const
 /** Days still to come in the range: the grid's extent, barely there. */
 const FUTURE_BG = theme.base
 
@@ -129,7 +129,7 @@ function Cell(props: { day: CalendarDay | null; width: number; layout: CalendarL
     return " ".repeat(w)
   }
   // Text: dark on the brighter levels; days to come faint; today in its colour.
-  const fg = () => (isToday() ? theme.chartToday : !past() ? ink.faint : props.day!.level >= 3 ? theme.crust : props.line === 0 ? ink.label : ink.figure)
+  const fg = () => (isToday() ? theme.chartToday : !past() ? ink.faint : props.day!.level >= 4 ? theme.crust : props.line === 0 ? ink.label : ink.figure)
   return (
     <>
       <S fg={fg()} bg={bg()} bold={isToday()}>{text()}</S>
