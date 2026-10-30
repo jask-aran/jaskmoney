@@ -68,7 +68,7 @@ export function CommandPalette(props: { commands: Command[]; cursor: number; que
         <For each={shown()}>{(line) => {
           if (line.kind === "heading") return (
             <box paddingLeft={INSET} paddingTop={line.first ? 0 : 1}>
-              <text fg={ink.label} wrapMode="none"><b>{line.label}</b></text>
+              <text fg={ink.heading} wrapMode="none"><b>{line.label}</b></text>
             </box>
           )
           const command = line.command

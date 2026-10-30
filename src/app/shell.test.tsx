@@ -481,7 +481,7 @@ describe("render errors", () => {
       await t.flush()
       expect(t.captureCharFrame()).toContain("abZcd▌")
       const restored = t.captureSpans().lines.find((line) => line.spans.some((span) => span.text.includes("▌")))!.spans.find((span) => span.text.includes("abZcd"))!
-      expect(restored.fg.toInts()).toEqual([205, 214, 244, 255])
+      expect(restored.fg.toInts()).toEqual(RGBA.fromHex(ink.figure).toInts())
       expect(restored.attributes).toBe(0)
       ui.closeFilter(false)
     }

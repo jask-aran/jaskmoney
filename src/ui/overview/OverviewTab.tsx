@@ -244,7 +244,7 @@ export function OverviewTab(props: { focused: SectionId }) {
   const saversTotalChange = () => saverChanges().reduce((sum, c) => sum + c.change, 0)
   const accountsCard = () => (
     <SectionCard title="Accounts" width={sideWidth()} height={accountRows(saversFull()) + 2}>
-      {stat("Available", available() != null ? formatMoney(available()!) : "—", "", { bold: true })}
+      {stat("Available", available() != null ? formatMoney(available()!) : "—", "", { value: ink.strong, bold: true })}
       <Show when={position().pendingCount > 0 && available() != null}>
         {stat("Balance", formatMoney(available()! - position().pendingAmount), pendingNote(), { value: ink.label })}
       </Show>
@@ -255,13 +255,13 @@ export function OverviewTab(props: { focused: SectionId }) {
           when={saversFull()}
           fallback={stat("Savers", formatWholeMoney(position().saversTotal), signedWholeMoney(saversTotalChange()), { note: changeColor(saversTotalChange()) })}
         >
-          {stat("Savers", "", "30 days", { note: ink.label, bold: true })}
+          {stat("Savers", "", "30 days", { label: ink.heading, note: ink.label, bold: true })}
           <For each={position().savers}>
             {(saver) => stat(`  ${saver.name}`, formatWholeMoney(saver.balance), signedWholeMoney(saverChange(saver.accountId)), { note: changeColor(saverChange(saver.accountId)) })}
           </For>
           {stat("  Total", formatWholeMoney(position().saversTotal), signedWholeMoney(saversTotalChange()), { note: changeColor(saversTotalChange()) })}
         </Show>
-        {stat("Net position", position().netPosition != null ? formatMoney(position().netPosition!) : "—", "", { bold: true })}
+        {stat("Net position", position().netPosition != null ? formatMoney(position().netPosition!) : "—", "", { value: ink.strong, bold: true })}
       </Show>
     </SectionCard>
   )

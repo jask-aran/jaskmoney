@@ -69,11 +69,15 @@ export const theme = {
  * Text, by role. Every word on screen takes its colour from what it is,
  * never from how loud it should look in one place:
  *
+ * - strong: the figure a card is about (Available, Net position), bold;
+ *   one or two per card. White, so the eye lands there first.
  * - figure: values and the names of things: amounts, descriptions,
- *   merchants, what you typed. Bold makes a figure the one a card or row is
- *   about (Available, Net position); one per card.
- * - label: what a value is (row labels, field names, column headings,
- *   headings inside a card, bold), and figures that explain another one
+ *   merchants, what you typed. A neutral near-white, clearly brighter than
+ *   the labels beside it.
+ * - heading: a subheading inside a card (Savers under Accounts, a group in
+ *   a picker), bold: the card title's pink, softened.
+ * - label: what a value is (row labels, field names, column headings),
+ *   and figures that explain another one
  *   (Balance under Available, a child category's amount, a row's date, its
  *   account).
  * - note: comparisons, counts, units, hints, help prose, empty states.
@@ -86,7 +90,9 @@ export const theme = {
  * their own text colour (rowCursorText).
  */
 export const ink = {
-  figure: theme.text,
+  strong: "#ffffff",
+  figure: "#e6e6e6",
+  heading: "#c79fbe",
   label: theme.subtext0,
   note: theme.overlay1,
   faint: theme.overlay0,

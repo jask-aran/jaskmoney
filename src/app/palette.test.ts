@@ -209,8 +209,8 @@ test("the palette renders like opencode's: search line, bold group headings, the
     const bar = spans.find((s) => s.text.startsWith("Categorise…"))!
     expect(bar.bg.toInts()).toEqual(RGBA.fromHex(theme.rowCursor).toInts())
     expect(bar.fg.toInts()).toEqual(RGBA.fromHex(ink.figure).toInts())
-    // Group headings are labels (2026-10-30: text by role).
-    const heading = spans.find((s) => s.text === "Transactions" && s.fg.toInts().join() === RGBA.fromHex(ink.label).toInts().join() && !!(s.attributes & TextAttributes.BOLD))
+    // Group headings are headings (2026-10-30: text by role).
+    const heading = spans.find((s) => s.text === "Transactions" && s.fg.toInts().join() === RGBA.fromHex(ink.heading).toInts().join() && !!(s.attributes & TextAttributes.BOLD))
     expect(heading).toBeDefined()
     // Typed: one list, each row naming its group; what can't run is last, dimmed, with why.
     type("sync")

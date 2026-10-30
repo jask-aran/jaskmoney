@@ -52,7 +52,7 @@ export function ListPicker(props: {
       <text> </text>
       <For each={rows()}>
         {({ item, row }) => {
-          if (item.kind === "heading") return <text fg={ink.label} wrapMode="none"><b>{item.label}</b></text>
+          if (item.kind === "heading") return <text fg={ink.heading} wrapMode="none"><b>{item.label}</b></text>
           const selected = () => row === cursorRow()
           const icon = () => props.iconFor?.(item.value)
           return (

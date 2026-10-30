@@ -1,6 +1,7 @@
 import { afterEach, expect, test } from "bun:test"
-import { TextAttributes } from "@opentui/core"
+import { RGBA, TextAttributes } from "@opentui/core"
 import { setAppClock } from "../../domain/days"
+import { ink } from "../../theme"
 import { data } from "../../state/dataStore"
 import { ui } from "../../state/uiStore"
 import { renderApp } from "../../testing/app"
@@ -52,6 +53,14 @@ test("Accounts: available first, the balance with what's pending, then each save
   expect(span("Available").attributes & TextAttributes.BOLD).toBe(TextAttributes.BOLD)
   expect(span("Net position").attributes & TextAttributes.BOLD).toBe(TextAttributes.BOLD)
   expect(span("Balance").attributes & TextAttributes.BOLD).toBe(0)
+  // White for the figures the card is about, the softened title pink for
+  // the Savers subheading, label grey for the balance under Available.
+  const ints = (hex: string) => RGBA.fromHex(hex).toInts()
+  expect(span("$1,149.56").fg.toInts()).toEqual(ints(ink.strong))
+  expect(span("$9,549.56").fg.toInts()).toEqual(ints(ink.strong))
+  expect(span("Savers").fg.toInts()).toEqual(ints(ink.heading))
+  expect(span("$1,246.50").fg.toInts()).toEqual(ints(ink.label))
+  expect(span("$3,400").fg.toInts()).toEqual(ints(ink.figure))
 })
 
 test("Accounts: short of rows, savers fold to their subtotal; with no savers, no savers or net position", async () => {

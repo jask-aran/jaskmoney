@@ -86,7 +86,7 @@ function TaxonomyList(props: { kind: SettingsList; width: number }) {
   return (
     <box width={props.width} flexShrink={0} flexDirection="column" backgroundColor={theme.canvas}>
       <text height={1} wrapMode="none">
-        <S fg={active() ? tone.focus : ink.label} bold>{props.kind === "categories" ? "Categories" : "Tags"}</S>
+        <S fg={active() ? tone.focus : ink.heading} bold>{props.kind === "categories" ? "Categories" : "Tags"}</S>
         <S fg={ink.note}>{` ${rows().length}`}</S>
       </text>
       <box flexGrow={1} flexDirection="column"><Show when={rows().length} fallback={<text fg={ink.note}>{`No ${props.kind}. Press a to add.`}</text>}>
@@ -131,7 +131,7 @@ function RulesPane(props: { focused: boolean; width: number }) {
   const filtersActive = () => ui.state.settingsActive && ui.state.settingsSection === "filters"
   const rules = () => data.state.rules
   const filters = () => data.state.savedFilters
-  const heading = (label: string, n: number, on: boolean, note = "") => <text height={1} wrapMode="none"><S fg={on ? tone.focus : ink.label} bold>{label}</S><S fg={ink.note}>{` ${n}${note}`}</S></text>
+  const heading = (label: string, n: number, on: boolean, note = "") => <text height={1} wrapMode="none"><S fg={on ? tone.focus : ink.heading} bold>{label}</S><S fg={ink.note}>{` ${n}${note}`}</S></text>
   const nameWidth = () => Math.min(28, Math.floor(rowWidth(props.width) * 0.32))
   const setWidth = () => Math.min(30, Math.floor(rowWidth(props.width) * 0.3))
   const idWidth = () => Math.min(22, Math.max(...filters().map((f) => f.id.length + 7), 12))

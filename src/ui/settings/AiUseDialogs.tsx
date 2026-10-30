@@ -41,7 +41,7 @@ export function AiUseDialog() {
         const model = () => useModel(d().use, ctx())
         const queries = () => useQueries(d().use)
         const actions = () => useActions(d().use, ctx())
-        const heading = (text: string, aside = "") => <text wrapMode="none"><S fg={ink.label} bold>{text}</S><S fg={ink.note}>{aside}</S></text>
+        const heading = (text: string, aside = "") => <text wrapMode="none"><S fg={ink.heading} bold>{text}</S><S fg={ink.note}>{aside}</S></text>
         // The label in a column; the value wraps beside it.
         const line = (label: string, value: string, fg: string = ink.figure) => (
           <box flexDirection="row">
