@@ -15,6 +15,7 @@ const read = (f: string) => Bun.file(f).text()
  * the colour a new tag or category gets, a tag with none of its own. */
 const DATA_COLOURS = new Set([
   "src/ui/overview/periodCharts.ts",
+  "src/ui/charts/saverInks.ts",
   "src/ui/manager/ManagerTab.tsx",
   "src/ui/overview/OverviewTab.tsx",
   "src/ui/manager/TransactionTable.tsx",

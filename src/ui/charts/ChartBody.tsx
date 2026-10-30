@@ -23,6 +23,9 @@ export interface ChartModel {
   /** The legend: series marks in their colours with names and figures,
    * shown in the pane's bottom border. */
   legend: Span[]
+  /** Colours for inks only this chart has (a saver's line), over the
+   * shared ones. */
+  inks?: Record<string, string>
 }
 
 /** The x-axis line under the plot: a corner under the y-axis, then a rule
@@ -60,7 +63,7 @@ export function ChartBody(props: { model: ChartModel; inks: Record<string, strin
         {(runs, i) => (
           <StyledLine spans={[
             { text: (props.model.ticks.get(i) ?? "").padStart(axis() - 2) + (props.model.ticks.has(i) ? " ┤" : " │"), fg: ink.label },
-            ...runs().map((run) => ({ text: run.text, fg: run.ink ? props.inks[run.ink] ?? ink.figure : undefined })),
+            ...runs().map((run) => ({ text: run.text, fg: run.ink ? props.model.inks?.[run.ink] ?? props.inks[run.ink] ?? ink.figure : undefined })),
           ]} />
         )}
       </Index>

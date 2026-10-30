@@ -224,3 +224,29 @@ export function balanceHistory(accounts: Account[], transactions: Transaction[],
     return { dateISO: point.dateISO, net: point.value + savers, spending: point.value, savers }
   })
 }
+
+/** One saver's end-of-day balances, as `balanceHistory` reconstructs them. */
+export interface SaverHistory {
+  accountId: number
+  name: string
+  /** Today's balance. */
+  balance: number
+  /** One per day from `startISO` to `endISO`, oldest first. */
+  values: number[]
+}
+
+/** Each saver-role account with a balance, in account order: its balance
+ * on each day from `startISO` to `endISO` inclusive. */
+export function saverHistories(accounts: Account[], transactions: Transaction[], startISO: string, endISO: string): SaverHistory[] {
+  if (!Number.isFinite(dayTime(startISO)) || !Number.isFinite(dayTime(endISO)) || dayTime(endISO) < dayTime(startISO)) return []
+  const savers = accounts.filter((a) => a.balance !== null && accountRole(a) !== "spending")
+  const amounts = new Map(savers.map((a) => [a.id, [] as Array<[string, number]>]))
+  for (const row of transactions) if (row.accountId !== null) amounts.get(row.accountId)?.push([row.dateISO, row.amount])
+  const days = daysBetween(startISO, endISO) + 1
+  return savers.map((a) => ({
+    accountId: a.id,
+    name: a.name,
+    balance: a.balance!,
+    values: reconstructHistory(a.balance!, amounts.get(a.id)!, endISO, days).map((p) => p.value),
+  }))
+}

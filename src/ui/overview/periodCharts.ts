@@ -2,7 +2,7 @@
  * ChartModel for ChartBody. */
 import { ink, theme, tone } from "../../theme"
 import { cumulative, dailySpendSeries, formatWholeMoney, signedWholeMoney, weeklyTotals } from "../../domain/dashboard"
-import { balanceHistory, computePeriodFlows } from "../../domain/position"
+import { balanceHistory, computePeriodFlows, saverHistories } from "../../domain/position"
 import type { Account, Transaction } from "../../domain/types"
 import { MONTHS, addDays, dayOfWeek, type WeekStart } from "../../domain/days"
 import { shortDate, shortMoney } from "../text"
@@ -12,6 +12,7 @@ import { changeColor, spendChangeColor } from "../colors"
 import type { ChartModel } from "../charts/ChartBody"
 import { annotate, type ChartLabel } from "../charts/annotate"
 import { dateAxis, fitRange, lineChart, niceScale, pointCell, tickRows } from "../charts/lineChart"
+import { leadingEmoji, saverInks } from "../charts/saverInks"
 
 export const INKS: Record<string, string> = {
   spend: theme.peach,
@@ -22,7 +23,8 @@ export const INKS: Record<string, string> = {
   out: tone.bad,
   limit: theme.chartBudget,
   balance: theme.lavender,
-  savers: theme.green,
+  // Savers' total; each saver's own line takes a colour from saverInks.
+  total: ink.figure,
   // Gridlines, as in the Go app.
   week: theme.surface1,
   month: theme.blue,
@@ -227,8 +229,9 @@ export function balancesChart(
 ): ChartModel {
   const last = dates.filter((d) => d <= todayISO).at(-1)
   if (!dates.length || !last) return emptyChart("No balances in range")
+  if (view === "Savers") return saversChart(dates, last, width, height, todayISO, accounts, transactions, weekStart, zeroAxis)
   const history = balanceHistory(accounts, transactions, dates[0]!, last)
-  const pick = (p: (typeof history)[number]) => (view === "Available" ? p.spending : view === "Savers" ? p.savers : p.net)
+  const pick = (p: (typeof history)[number]) => (view === "Available" ? p.spending : p.net)
   const values = history.map(pick)
   const lo = Math.min(...values), hi = Math.max(...values)
   const range = fitRange(lo, hi, height, zeroAxis)
@@ -241,7 +244,7 @@ export function balancesChart(
   // read the same as the latest).
   const high = values.indexOf(hi)
   const latest = values.length - 1
-  const ink = view === "Savers" ? "savers" : "balance"
+  const ink = "balance"
   const at = (i: number) => pointCell(i, values[i]!, dates.length, width, height, range.min, range.max)
   const marks: ChartLabel[] = [
     { ...at(latest), text: shortMoney(values[latest]!), ink },
@@ -265,6 +268,60 @@ export function balancesChart(
   }
 }
 
+/** Savers drawn one line each: as many as the chart's height keeps apart. */
+const MAX_SAVER_LINES = 6
+const ROWS_PER_SAVER_LINE = 3
+
+/**
+ * Savers: their total (white) and a line per saver in its own colour
+ * (saverInks: from its emoji, kept apart), the largest first when there are
+ * more than the height has room for (the rest are in the total). Each
+ * line's latest value sits at its end.
+ */
+function saversChart(dates: string[], last: string, width: number, height: number, todayISO: string, accounts: Account[], transactions: Transaction[], weekStart: WeekStart, zeroAxis: boolean): ChartModel {
+  const all = saverHistories(accounts, transactions, dates[0]!, last)
+  if (!all.length) return emptyChart("No savers")
+  const total = all[0]!.values.map((_, i) => all.reduce((sum, s) => sum + s.values[i]!, 0))
+  const room = Math.max(1, Math.min(MAX_SAVER_LINES, Math.floor(height / ROWS_PER_SAVER_LINE)))
+  // One saver is its own total: just the total.
+  const shown = all.length > 1 ? [...all].sort((a, b) => b.balance - a.balance).slice(0, room) : []
+  const colours = saverInks(shown.map((s) => s.name))
+  const inks: Record<string, string> = { total: INKS.total! }
+  shown.forEach((s, i) => { inks[`saver${s.accountId}`] = colours[i]! })
+  const values = [...total, ...shown.flatMap((s) => s.values)]
+  const lo = Math.min(...values), hi = Math.max(...values)
+  const range = fitRange(lo, hi, height, zeroAxis)
+  const axis = dateAxis(dates, width, todayISO, undefined, weekStart)
+  const latest = total.length - 1
+  const at = (series: number[]) => pointCell(latest, series[latest]!, dates.length, width, height, range.min, range.max)
+  const change = total[latest]! - total[0]!
+  const hidden = all.length - Math.max(1, shown.length)
+  return {
+    // The total drawn last: where lines meet, it shows.
+    rows: annotate(lineChart({
+      series: [...shown.map((s) => ({ values: s.values, ink: `saver${s.accountId}` })), { values: total, ink: "total" }],
+      length: dates.length, width, height, min: range.min, max: range.max, markers: axis.markers,
+    }), [
+      { ...at(total), text: shortMoney(total[latest]!), ink: "total" },
+      ...shown.map((s) => ({ ...at(s.values), text: shortMoney(s.values[latest]!), ink: `saver${s.accountId}` })),
+    ]),
+    ticks: moneyTicks(range.min, range.max, range.step, height),
+    labels: axis.labels,
+    today: axis.today,
+    inks,
+    legend: [
+      { text: LINE, fg: inks.total! },
+      muted(`Total ${formatWholeMoney(total[latest]!)} `),
+      { text: signedWholeMoney(change), fg: changeColor(change) },
+      muted(` since ${shortDate(dates[0]!)}`),
+      ...shown.flatMap((s) => [GAP, { text: LINE, fg: inks[`saver${s.accountId}`]! }, muted(withoutEmoji(s.name))]),
+      ...(hidden > 0 ? [GAP, muted(`+${hidden} more in the total`)] : []),
+    ],
+  }
+}
+
+/** A saver's name without the emoji Up starts it with. */
+const withoutEmoji = (name: string) => (leadingEmoji(name) ? [...new Intl.Segmenter().segment(name.trim())].slice(1).map((s) => s.segment).join("").trim() : name)
 
 /**
  * Cash flow over the period's `dates`: money in (green) beside money out (red)

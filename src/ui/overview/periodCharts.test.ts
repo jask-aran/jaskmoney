@@ -1,8 +1,9 @@
 import { describe, expect, test } from "bun:test"
 import { addDays } from "../../domain/days"
 import type { Account } from "../../domain/types"
-import { cashFlowChart, spendingChart } from "./periodCharts"
-import { transaction } from "../../testing/fixtures"
+import { balancesChart, cashFlowChart, spendingChart } from "./periodCharts"
+import { ink, theme } from "../../theme"
+import { account, transaction } from "../../testing/fixtures"
 
 const dates = Array.from({ length: 10 }, (_, i) => addDays("2026-10-01", i))
 const legendText = (model: ReturnType<typeof spendingChart>) => model.legend.map((s) => s.text).join("")
@@ -40,4 +41,30 @@ test("spending dated after today waits for its day in Weekly and Cash flow", () 
   const row = (id: number, dateISO: string, amount: number) => transaction({ id, dateISO, amount, accountName: "Spending", status: null })
   const cashFlow = cashFlowChart(dates, 60, 8, "2026-10-06", [account], [row(1, "2026-10-05", -10), row(2, "2026-10-07", -40)], new Set([1]))
   expect(legendText(cashFlow)).toContain("Out $10")
+})
+
+describe("Savers", () => {
+  const savers = (n: number): Account[] => Array.from({ length: n }, (_, i) => account({
+    id: i + 1, name: ["💰 General", "🏖️ Holiday", "🚨 Emergency", "🎁 Gifts"][i]!, externalKind: "SAVER", balance: [5000, 3000, 1000, 500][i]!,
+  }))
+  const legend = (model: ReturnType<typeof balancesChart>) => model.legend.map((s) => s.text).join("")
+
+  test("a line per saver in its own colour, then their total in white", () => {
+    const model = balancesChart("Savers", dates, 60, 15, "2026-10-10", savers(3), [])
+    expect(legend(model)).toContain("Total $9,000")
+    expect(legend(model)).toMatch(/General .*Holiday .*Emergency/)
+    expect(model.inks).toEqual({ total: ink.figure, saver1: theme.yellow, saver2: theme.sky, saver3: theme.red })
+    const drawn = new Set(model.rows.flat().map((r) => r.ink).filter((i) => i && i !== "today" && i !== "week"))
+    expect([...drawn].sort()).toEqual(["saver1", "saver2", "saver3", "total"])
+  })
+
+  test("a short chart draws the largest savers; the rest are in the total", () => {
+    const model = balancesChart("Savers", dates, 60, 6, "2026-10-10", savers(4), [])
+    expect(Object.keys(model.inks!)).toEqual(["total", "saver1", "saver2"])
+    expect(legend(model)).toContain("+2 more in the total")
+  })
+
+  test("one saver is its own total", () => {
+    expect(Object.keys(balancesChart("Savers", dates, 60, 15, "2026-10-10", savers(1), []).inks!)).toEqual(["total"])
+  })
 })

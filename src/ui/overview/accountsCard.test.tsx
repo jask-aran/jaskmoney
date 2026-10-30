@@ -60,7 +60,12 @@ test("Accounts: available first, the balance with what's pending, then each save
   expect(span("$9,549.56").fg.toInts()).toEqual(ints(ink.strong))
   expect(span("Savers").fg.toInts()).toEqual(ints(ink.heading))
   expect(span("$1,246.50").fg.toInts()).toEqual(ints(ink.label))
-  expect(span("$3,400").fg.toInts()).toEqual(ints(ink.figure))
+  // Each saver's balance in grey, their total in white.
+  expect(span("$3,400").fg.toInts()).toEqual(ints(ink.label))
+  expect(span("$8,400").fg.toInts()).toEqual(ints(ink.figure))
+  // The headline rows' labels are as bright as figures.
+  expect(span("Available").fg.toInts()).toEqual(ints(ink.figure))
+  expect(span("Net position").fg.toInts()).toEqual(ints(ink.figure))
 })
 
 test("Accounts: short of rows, savers fold to their subtotal; with no savers, no savers or net position", async () => {
