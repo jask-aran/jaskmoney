@@ -15,7 +15,7 @@ import { data } from "../../state/dataStore"
 import { categoryColor, ink, theme, tone } from "../../theme"
 import { dailySpendSeries, fitCategoryLines, formatMoney, formatPct, formatWholeMoney, signedWholeMoney } from "../../domain/dashboard"
 import { computePeriodFlows, computePosition, historyCovers, projectAvailable, usualDailySpend } from "../../domain/position"
-import { budgetCounts, budgetProgress, cycleFor, type BudgetProgress } from "../../domain/budget"
+import { allocation, budgetProgress, cycleFor, cycleSpending, progressOf, type BudgetProgress } from "../../domain/budget"
 import { spendingCalendar } from "../../domain/spending"
 import { accountRole } from "../../domain/types"
 import { addDays, appNow, appToday, daysBetween } from "../../domain/days"
@@ -121,25 +121,22 @@ export function OverviewTab(props: { focused: SectionId }) {
     return h.length >= 31 ? h[h.length - 1]!.value - h[h.length - 31]!.value : 0
   }
   // The budget for the spending in scope applies while the range is the
-  // current cycle: the overall budget when the scope is every spending
-  // account, else the one selected account's own budget.
+  // current cycle: every budget added up (allocation's total) against all
+  // spending when the scope is every spending account, so it reconciles
+  // with the money; else the one selected account's own budget.
   const budget = createMemo(() => {
     const ids = [...scopeIds()]
     const all = data.state.accounts.filter((a) => accountRole(a) === "spending").every((a) => scopeIds().has(a.id))
-    const match = data.state.budgets.find((b) => (all ? b.scope.kind === "overall" : b.scope.kind === "account" && ids.length === 1 && b.scope.accountId === ids[0]))
     const current = cycleFor(cycleConfig(), today())
-    if (!match || bounds().start !== current.start || bounds().end !== current.end) return null
-    return budgetProgress([match], cycleConfig(), today(), data.state.accounts, data.state.categories, data.transactions())[0] ?? null
-  })
-
-  // With a budget that leaves categories out, the Spending chart counts
-  // what the budget counts, so its pace and the Budgets tab agree.
-  const budgeted = createMemo(() => {
-    const p = budget()
-    const leftOut = data.state.categories.filter((c) => c.budgetIgnored).map((c) => c.name)
-    if (!p || !leftOut.length) return null
-    const counts = budgetCounts(p.budget.scope, data.state.categories)
-    return { series: dailySpendSeries(inPeriod().filter(counts), bounds().start, bounds().end), rows: spending().filter(counts), leftOut: leftOut.join(", ") }
+    if (bounds().start !== current.start || bounds().end !== current.end) return null
+    if (all) {
+      const total = allocation(data.state.budgets, data.state.categories)
+      if (total.overall == null && !total.allocated) return null
+      const spent = cycleSpending(current, today(), data.state.accounts, data.transactions()).reduce((sum, t) => sum - t.amount, 0)
+      return progressOf({ id: -1, scope: { kind: "overall" }, amount: total.total }, spent, current, today())
+    }
+    const match = data.state.budgets.find((b) => b.scope.kind === "account" && ids.length === 1 && b.scope.accountId === ids[0])
+    return match ? budgetProgress([match], cycleConfig(), today(), data.state.accounts, data.state.categories, data.transactions())[0] ?? null : null
   })
 
   // What the range and the one before it are called in chart labels.
@@ -207,11 +204,7 @@ export function OverviewTab(props: { focused: SectionId }) {
     const rows = Math.max(1, height - (baseline() ? 4 : 3))
     const build = (axis: number): ChartModel | null => {
       const width = Math.max(1, mainWidth() - 4 - axis)
-      if (v === "Daily" || v === "Cumulative" || v === "Weekly") {
-        const b = budgeted()
-        const chart = spendingChart(v, b?.series ?? series(), width, rows, today(), b?.rows ?? spending(), budget()?.budget.amount, periodNames(), data.state.weekStart)
-        return b ? { ...chart, legend: [...chart.legend, { text: ` · without ${b.leftOut}`, fg: ink.note }] } : chart
-      }
+      if (v === "Daily" || v === "Cumulative" || v === "Weekly") return spendingChart(v, series(), width, rows, today(), spending(), budget()?.budget.amount, periodNames(), data.state.weekStart)
       if (v === "Cash flow") return cashFlowChart(series().dates, width, rows, today(), data.state.accounts, data.transactions(), scopeIds(), data.state.weekStart)
       if (v === "Calendar" || v === "Subscriptions") return null
       return balancesChart(v, series().dates, width, rows, today(), data.state.accounts, data.transactions(), data.state.weekStart, data.state.uiPrefs.zeroAxis === true, v === "Available" ? projection() : [])

@@ -56,7 +56,11 @@ test("allocating down: in Categories, enter sets a category's budget starting fr
   ui.setState({ settingsEditor: null })
   data.setBudget({ kind: "category", categoryId: groceries }, 300)
   const f = await frame()
-  expect(f).toContain("Categories $300 of $500 · $200 unallocated")
+  // With a category budget the overall one is everything else, and the
+  // two add up to the total.
+  expect(f).toContain("Categories $300 + everything else $500")
+  expect(f).toMatch(/Total budgeted\s+[█▌│─]+\s+\$100 of \$800/)
+  expect(f).toMatch(/Everything else\s+[█▌│─]+\s+\$0 of \$500/)
   expect(f).toMatch(/Groceries\s+[█▌│─]+\s+\$100 of \$300\s+\$200 left/)
   expect(f).toContain("Groceries · day 20 of 31")
   expect(f).toContain("Each cycle · Groceries")
@@ -69,11 +73,9 @@ test("allocating down: in Categories, enter sets a category's budget starting fr
   expect(ui.activeScope()).toBe("budgets")
 })
 
-test("x leaves a category out of the overall budget (its own budget still counts it), and again brings it back", async () => {
+test("x leaves a category out of the budgets (not budgeted: the total and everything else leave it), and again brings it back", async () => {
   const { groceries, frame } = await budgetsTab()
   data.setBudget({ kind: "overall" }, 500)
-  data.setBudget({ kind: "category", categoryId: groceries }, 300)
-  handleKey(ui, key("j"), data)
   handleKey(ui, key("j"), data)
   ui.setState({ budgetCategoryCursor: 0 })
   // The first line is Groceries' group; its row is next.
@@ -82,9 +84,8 @@ test("x leaves a category out of the overall budget (its own budget still counts
   expect(data.state.categories.find((c) => c.id === groceries)!.budgetIgnored).toBe(true)
   const f = await frame()
   expect(f).toMatch(/Overall spending\s+[█▌│─]+\s+\$0 of \$500/)
-  expect(f).toMatch(/Groceries\s+[█▌│─]+\s+\$100 of \$300/)
-  expect(f).toContain("Leaving out Groceries")
-  expect(f).toMatch(/Groceries\s+\$100\s+\$300\s+\$300/)
+  expect(f).toContain("Not budgeted: Groceries")
+  expect(f).toMatch(/Groceries\s+\$100\s+\$300\s+left out/)
   handleKey(ui, key("x"), data)
   expect(data.state.categories.find((c) => c.id === groceries)!.budgetIgnored).toBe(false)
 })
@@ -100,14 +101,15 @@ test("each cycle is judged against the budget in force then", async () => {
   expect(f).toMatch(/1 Sep – 30 Sep\s+\$300\s+[█─▏│ ]+\s+\$50 over/)
 })
 
-test("building up: with category budgets and no overall one, the overall row offers their total", async () => {
+test("with only category budgets, the total is theirs and everything else waits to be set", async () => {
   const { groceries, frame } = await budgetsTab()
   data.setBudget({ kind: "category", categoryId: groceries }, 300)
   const f = await frame()
-  expect(f).toMatch(/Overall spending\s+not set: enter sets one \(your category budgets total \$300\)/)
-  ui.setState({ budgetCursor: 0 })
+  expect(f).toMatch(/Total budgeted\s+[█▌│─]+\s+\$100 of \$300/)
+  expect(f).toMatch(/Everything else\s+not set: enter sets one for spending outside the category budgets/)
+  ui.setState({ budgetCursor: 1 })
   handleKey(ui, key("return"), data)
-  expect(ui.state.settingsDraft).toMatchObject({ scopeKey: "overall", amount: "300" })
+  expect(ui.state.settingsDraft).toMatchObject({ scopeKey: "overall", amount: "" })
 })
 
 test("wide, the categories run down the right beside the chart and the budgets", async () => {

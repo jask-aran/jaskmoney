@@ -178,18 +178,20 @@ const transactions = [
 ]
 
 describe("budgetProgress", () => {
-  test("overall, accounts, group and child spending preserve budget order and exact metrics", () => {
+  test("overall (everything outside the category budgets), accounts, group and child spending preserve budget order and exact metrics", () => {
     const result = budgetProgress(budgets, config, "2026-10-07", accounts, categories, transactions)
     expect(result).toEqual(budgets.map((budget, index) => {
-      const spent = [60, 35, 20, 45, 15, 0][index] ?? 0
+      // The overall budget is everything else: group 10 has its own, so
+      // only category 20 and the uncategorised row count.
+      const spent = [25, 35, 20, 45, 15, 0][index] ?? 0
       return {
         budget, spent, remaining: 100 - spent, usedPct: spent,
         daysLeft: 5, dailyAllowance: (100 - spent) / 5, projected: spent / 3 * 7,
       }
     }))
     expect(result[0]).toEqual({
-      budget: budgets[0], spent: 60, remaining: 40, usedPct: 60,
-      daysLeft: 5, dailyAllowance: 8, projected: 140,
+      budget: budgets[0], spent: 25, remaining: 75, usedPct: 25,
+      daysLeft: 5, dailyAllowance: 15, projected: 25 / 3 * 7,
     })
   })
 

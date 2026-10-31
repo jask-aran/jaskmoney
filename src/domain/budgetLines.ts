@@ -56,25 +56,11 @@ export function budgetCategoryLines(
     .map((c) => line(c.id, catNow.get(c.id) ?? 0, average(catBefore, c.id), catBefore[0] ? catBefore[0].get(c.id) ?? 0 : null, true)).filter(worth).sort(order))])
 }
 
-/**
- * How the category budgets add up against the overall one. Budgets on a
- * group and on categories inside it overlap (the group's covers them), so
- * a category's counts only when its group has none.
- */
-export function allocation(budgets: Budget[], categories: Category[]): { overall: number | null; allocated: number } {
-  const overall = budgets.find((b) => b.scope.kind === "overall")?.amount ?? null
-  const onCategory = new Map(budgets.flatMap((b) => (b.scope.kind === "category" ? [[b.scope.categoryId, b.amount] as const] : [])))
-  let allocated = 0
-  for (const [id, amount] of onCategory) {
-    const parent = categories.find((c) => c.id === id)?.parentId ?? null
-    if (parent === null || !onCategory.has(parent)) allocated += amount
-  }
-  return { overall, allocated }
-}
-
-/** The Budgets tab's Budgets card: the overall budget (shown unset too),
- * then account budgets, then category budgets in `categories` order. */
-export function budgetListRows(budgets: Budget[], categories: Category[]): ({ kind: "overall"; budget: Budget | null } | { kind: "account" | "category"; budget: Budget })[] {
+/** The Budgets tab's Budgets card: with category budgets, their total
+ * with the overall one first; the overall budget (everything else; shown
+ * unset too), then account budgets, then category budgets in `categories`
+ * order. */
+export function budgetListRows(budgets: Budget[], categories: Category[]): ({ kind: "total"; budget: null } | { kind: "overall"; budget: Budget | null } | { kind: "account" | "category"; budget: Budget })[] {
   // A group, then the categories under it.
   const order = new Map(categories.map((c, i) => [c.id, i]))
   const place = ({ scope }: Budget) => {
@@ -83,6 +69,7 @@ export function budgetListRows(budgets: Budget[], categories: Category[]): ({ ki
     return c.parentId == null ? order.get(c.id)! * 1000 : (order.get(c.parentId) ?? 0) * 1000 + 1 + order.get(c.id)!
   }
   return [
+    ...(budgets.some((b) => b.scope.kind === "category") ? [{ kind: "total" as const, budget: null }] : []),
     { kind: "overall", budget: budgets.find((b) => b.scope.kind === "overall") ?? null },
     ...budgets.filter((b) => b.scope.kind === "account").map((budget) => ({ kind: "account" as const, budget })),
     ...budgets.filter((b) => b.scope.kind === "category").sort((a, b) => place(a) - place(b)).map((budget) => ({ kind: "category" as const, budget })),

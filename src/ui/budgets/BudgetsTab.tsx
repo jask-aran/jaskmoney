@@ -1,7 +1,7 @@
 import { Index, Show, createMemo } from "solid-js"
 import { useTerminalDimensions } from "@opentui/solid"
-import { budgetCounts, budgetIgnoredIds, budgetIn, budgetProgress, cycleFor, cycleSpending, pastCycles, type Budget, type BudgetScope, type Cycle } from "../../domain/budget"
-import { allocation, budgetCategoryLines, budgetListRows, type BudgetLine } from "../../domain/budgetLines"
+import { allocation, budgetCounts, budgetIgnoredIds, budgetIn, budgetProgress, cycleFor, cycleSpending, pastCycles, progressOf, totalBudgetIn, type Budget, type BudgetProgress, type BudgetSubject, type Cycle } from "../../domain/budget"
+import { budgetCategoryLines, budgetListRows, type BudgetLine } from "../../domain/budgetLines"
 import { budgetLabel } from "../../domain/budgetScopes"
 import { dailySpendSeries, formatWholeMoney } from "../../domain/dashboard"
 import { appToday, daysBetween } from "../../domain/days"
@@ -74,16 +74,28 @@ export function BudgetsTab(props: { focused: SectionId }) {
   const cycle = live(() => cycleFor(config(), today()))
   const elapsed = () => daysBetween(cycle().start, today()) + 1
   const pace = () => elapsed() / cycle().days
-  // A category's budget by the category's own name: the list shows its group.
+  // The overall budget is everything else once categories have their own;
+  // a category's budget goes by the category's own name (the list shows
+  // its group).
+  const hasCategoryBudgets = () => data.state.budgets.some((b) => b.scope.kind === "category")
+  const overallName = () => (hasCategoryBudgets() ? "Everything else" : "Overall spending")
   const label = (budget: Budget) => {
     const scope = budget.scope
+    if (scope.kind === "overall") return overallName()
     return scope.kind === "category" ? data.state.categories.find((c) => c.id === scope.categoryId)?.name ?? "(removed category)" : budgetLabel(budget, data.state.accounts, data.state.categories)
   }
+  const TOTAL = "Total budgeted"
 
   const rows = () => budgetListRows(data.state.budgets, data.state.categories)
   const budgetCursor = () => Math.min(ui.state.budgetCursor, rows().length - 1)
   const progress = live(() => new Map(budgetProgress(data.state.budgets, config(), today(), data.state.accounts, data.state.categories, data.transactions()).map((p) => [p.budget.id, p])))
   const split = live(() => allocation(data.state.budgets, data.state.categories))
+  // The budgets together against what they count between them.
+  const totalProgress = live(() => {
+    const counts = budgetCounts({ kind: "total" }, data.state.categories, data.state.budgets)
+    const spentOnBudgets = cycleSpending(cycle(), today(), data.state.accounts, data.transactions()).filter(counts).reduce((sum, t) => sum - t.amount, 0)
+    return progressOf({ id: -1, scope: { kind: "overall" }, amount: split().total }, spentOnBudgets, cycle(), today())
+  })
   const lines = live(() => budgetCategoryLines(config(), today(), data.state.accounts, data.state.categories, data.state.budgets, data.transactions()))
   const categoryCursor = () => Math.min(ui.state.budgetCategoryCursor, Math.max(0, lines().length - 1))
   const ignored = live(() => budgetIgnoredIds(data.state.categories))
@@ -91,8 +103,8 @@ export function BudgetsTab(props: { focused: SectionId }) {
   const firstData = live(() => data.transactions().reduce((first, t) => (t.dateISO < first ? t.dateISO : first), today()))
 
   // What the chart follows: the row at the focused card's cursor.
-  const subject = (): { title: string; scope: BudgetScope | null; counts: (row: Transaction) => boolean; amount: number | null } => {
-    const of = (scope: BudgetScope) => budgetCounts(scope, data.state.categories)
+  const subject = (): { title: string; scope: BudgetSubject | null; counts: (row: Transaction) => boolean; amount: number | null } => {
+    const of = (scope: BudgetSubject) => budgetCounts(scope, data.state.categories, data.state.budgets)
     if (props.focused === "bud.categories") {
       const line = lines()[categoryCursor()]
       if (line) {
@@ -103,7 +115,8 @@ export function BudgetsTab(props: { focused: SectionId }) {
       }
     }
     const row = rows()[budgetCursor()]!
-    return row.budget ? { title: label(row.budget), scope: row.budget.scope, counts: of(row.budget.scope), amount: row.budget.amount } : { title: "Overall spending", scope: { kind: "overall" }, counts: of({ kind: "overall" }), amount: null }
+    if (row.kind === "total") return { title: TOTAL, scope: { kind: "total" }, counts: of({ kind: "total" }), amount: split().total }
+    return row.budget ? { title: label(row.budget), scope: row.budget.scope, counts: of(row.budget.scope), amount: row.budget.amount } : { title: overallName(), scope: { kind: "overall" }, counts: of({ kind: "overall" }), amount: null }
   }
   const spending = (c: Cycle, through: string) => cycleSpending(c, through, data.state.accounts, data.transactions()).filter(subject().counts)
   const daily = (c: Cycle, through: string) => ({ cycle: c, daily: dailySpendSeries(spending(c, through), c.start, c.end).values })
@@ -122,7 +135,11 @@ export function BudgetsTab(props: { focused: SectionId }) {
     const scope = subject().scope
     return [
       { cycle: cycle(), spent: spent(), budget: subject().amount },
-      ...past().map((c) => ({ cycle: c, spent: daily(c, c.end).daily.reduce((a, b) => a + b, 0), budget: scope ? budgetIn(data.state.budgetHistory, scope, c.start) : null })),
+      ...past().map((c) => ({
+        cycle: c,
+        spent: daily(c, c.end).daily.reduce((a, b) => a + b, 0),
+        budget: !scope ? null : scope.kind === "total" ? totalBudgetIn(data.state.budgetHistory, data.state.budgets, data.state.categories, c.start) : budgetIn(data.state.budgetHistory, scope, c.start),
+      })),
     ]
   })
   const history = () => cycles().slice(1)
@@ -137,12 +154,9 @@ export function BudgetsTab(props: { focused: SectionId }) {
   const summary = (): Span[] => {
     const spans: Span[] = []
     const { allocated, overall } = split()
-    if (allocated > 0) {
-      spans.push({ text: `Categories ${formatWholeMoney(allocated)}`, fg: ink.label })
-      if (overall != null) spans.push({ text: ` of ${formatWholeMoney(overall)} · ${allocated > overall ? `${formatWholeMoney(allocated - overall)} over-allocated` : `${formatWholeMoney(overall - allocated)} unallocated`}`, fg: allocated > overall ? tone.caution : ink.label })
-    }
+    if (allocated > 0) spans.push({ text: `Categories ${formatWholeMoney(allocated)} + everything else ${overall == null ? "(not set)" : formatWholeMoney(overall)}`, fg: ink.label })
     const names = ignoredNames()
-    if (names.length) spans.push({ text: `${spans.length ? " · " : ""}Leaving out ${names.join(", ")}`, fg: ink.note })
+    if (names.length) spans.push({ text: `${spans.length ? " · " : ""}Not budgeted: ${names.join(", ")}`, fg: ink.note })
     return spans
   }
   const budgetsHeight = () => Math.min(rows().length, Math.max(1, Math.floor(body() * 0.3))) + 2 + (summary().length ? 1 : 0)
@@ -203,11 +217,11 @@ export function BudgetsTab(props: { focused: SectionId }) {
   // budget, what's left (a day) or over.
   const listFocused = () => props.focused === "bud.list"
   const categoriesFocused = () => props.focused === "bud.categories"
-  const LABEL = () => Math.min(22, Math.max(18, ...rows().map((r) => (r.budget ? label(r.budget).length + 2 : 18))))
-  const BAR = () => Math.max(10, Math.min(48, rowWidth(mainWidth()) - LABEL() - 40))
-  const budgetSpans = (budget: Budget): Span[] => {
-    const p = progress().get(budget.id)
+  const LABEL = () => Math.min(22, Math.max(18, ...rows().map((r) => (r.budget ? label(r.budget).length + 2 : r.kind === "total" ? TOTAL.length + 2 : 18))))
+  const BAR = () => Math.max(10, Math.min(48, rowWidth(mainWidth()) - LABEL() - 45))
+  const budgetSpans = (p: BudgetProgress | undefined): Span[] => {
     if (!p) return []
+    const budget = p.budget
     const used = budget.amount > 0 ? p.spent / budget.amount : p.spent > 0 ? 2 : 0
     return [
       ...bar(BAR(), used, pace()),
@@ -270,9 +284,9 @@ export function BudgetsTab(props: { focused: SectionId }) {
         const at = () => listFocused() && budgetTop() + i === budgetCursor()
         const spans = (): Span[] => {
           const r = row()
-          if (r.budget) return [{ text: fit(label(r.budget), LABEL()), fg: ink.figure, bold: true }, ...budgetSpans(r.budget)]
-          const total = split().allocated
-          return [{ text: fit("Overall spending", LABEL()), fg: ink.figure, bold: true }, { text: `not set: enter sets one${total ? ` (your category budgets total ${formatWholeMoney(total)})` : ""}`, fg: ink.note }]
+          if (r.kind === "total") return [{ text: fit(TOTAL, LABEL()), fg: ink.strong, bold: true }, ...budgetSpans(totalProgress())]
+          if (r.budget) return [{ text: fit(label(r.budget), LABEL()), fg: ink.figure, bold: true }, ...budgetSpans(progress().get(r.budget.id))]
+          return [{ text: fit(overallName(), LABEL()), fg: ink.figure, bold: true }, { text: `not set: enter sets one${hasCategoryBudgets() ? " for spending outside the category budgets" : ""}`, fg: ink.note }]
         }
         return <ListRow cursor={at()} bg={theme.canvas} armed={armedFor(ui.state.armed, "budget", row().budget?.id ?? -1)} spans={spans()} />
       }}</Index>

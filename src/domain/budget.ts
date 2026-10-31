@@ -177,16 +177,82 @@ export function budgetIgnoredIds(categories: Category[]): Set<number> {
     || (category.parentId !== null && flagged.has(category.parentId))).map((category) => category.id))
 }
 
-/** Whether a spending row counts toward a budget on `scope`: everything,
- * or that account's, but for ignored categories (budgetIgnoredIds); a
- * category's, the category's own rows and those of the ones under it. */
-export function budgetCounts(scope: BudgetScope, categories: Category[]): (row: Transaction) => boolean {
-  if (scope.kind === "category") {
+const sum = (values: number[]) => values.reduce((a, b) => a + b, 0)
+
+/** What a budget looks at: one budget's scope, or all the budgets
+ * together ("total": budgeted spending). */
+export type BudgetSubject = BudgetScope | { kind: "total" }
+
+/** Category ids with a budget of their own, and those under one. */
+export function budgetedCategoryIds(budgets: Budget[], categories: Category[]): Set<number> {
+  const own = new Set(budgets.flatMap((b) => (b.scope.kind === "category" ? [b.scope.categoryId] : [])))
+  return new Set(categories.filter((c) => own.has(c.id) || (c.parentId !== null && own.has(c.parentId))).map((c) => c.id))
+}
+
+/**
+ * Whether a spending row counts toward `subject`, given every budget:
+ * - a category's budget: its own rows and those under it;
+ * - the overall budget, everything else: rows in no category with a budget
+ *   of its own, but for categories left out (budgetIgnoredIds);
+ * - an account's: that account's rows, but for those left out;
+ * - the total: the two together, every row but those left out with no
+ *   budget of their own.
+ */
+export function budgetCounts(subject: BudgetSubject, categories: Category[], budgets: Budget[]): (row: Transaction) => boolean {
+  if (subject.kind === "category") {
     const parents = new Map(categories.map((category) => [category.id, category.parentId]))
-    return (row) => row.categoryId === scope.categoryId || (row.categoryId !== null && parents.get(row.categoryId) === scope.categoryId)
+    return (row) => row.categoryId === subject.categoryId || (row.categoryId !== null && parents.get(row.categoryId) === subject.categoryId)
   }
   const ignored = budgetIgnoredIds(categories)
-  return (row) => (row.categoryId === null || !ignored.has(row.categoryId)) && (scope.kind === "overall" || row.accountId === scope.accountId)
+  const own = budgetedCategoryIds(budgets, categories)
+  const kept = (row: Transaction) => row.categoryId === null || !ignored.has(row.categoryId)
+  const owned = (row: Transaction) => row.categoryId !== null && own.has(row.categoryId)
+  if (subject.kind === "total") return (row) => owned(row) || kept(row)
+  if (subject.kind === "overall") return (row) => kept(row) && !owned(row)
+  return (row) => kept(row) && row.accountId === subject.accountId
+}
+
+/**
+ * How the budgets add up: the overall one (everything else) and the
+ * category ones. Budgets on a group and on categories inside it overlap
+ * (the group's covers them), so a category's counts only when its group
+ * has none. `total` is the two together: what's budgeted in all.
+ */
+export function allocation(budgets: Budget[], categories: Category[]): { overall: number | null; allocated: number; total: number } {
+  const overall = budgets.find((b) => b.scope.kind === "overall")?.amount ?? null
+  const allocated = sum(topCategoryBudgets(budgets, categories).map((b) => b.amount))
+  return { overall, allocated, total: (overall ?? 0) + allocated }
+}
+
+/** Category budgets not inside a group that has one. */
+function topCategoryBudgets(budgets: Budget[], categories: Category[]): Budget[] {
+  const onCategory = new Set(budgets.flatMap((b) => (b.scope.kind === "category" ? [b.scope.categoryId] : [])))
+  return budgets.filter((b) => {
+    if (b.scope.kind !== "category") return false
+    const id = b.scope.categoryId
+    const parent = categories.find((c) => c.id === id)?.parentId ?? null
+    return parent === null || !onCategory.has(parent)
+  })
+}
+
+/** The total budget in force in the cycle starting `cycleStartISO`: each
+ * of today's budgets that make up the total (allocation) as it was then
+ * (budgetIn); null when none had one. */
+export function totalBudgetIn(history: readonly BudgetHistoryEntry[], budgets: Budget[], categories: Category[], cycleStartISO: string): number | null {
+  const parts = [...budgets.filter((b) => b.scope.kind === "overall"), ...topCategoryBudgets(budgets, categories)].map((b) => budgetIn(history, b.scope, cycleStartISO))
+  return parts.some((p) => p != null) ? sum(parts.map((p) => p ?? 0)) : null
+}
+
+/** A budget's progress from what's been `spent` in `cycle` by `todayISO`. */
+export function progressOf(budget: Budget, spent: number, cycle: Cycle, todayISO: string): BudgetProgress {
+  const daysLeft = daysBetween(todayISO, cycle.end) + 1
+  const elapsed = daysBetween(cycle.start, todayISO) + 1
+  const remaining = budget.amount - spent
+  return {
+    budget, spent, remaining, usedPct: budget.amount > 0 ? spent / budget.amount * 100 : spent > 0 ? Infinity : 0, daysLeft,
+    dailyAllowance: remaining <= 0 ? 0 : remaining / daysLeft,
+    projected: spent / elapsed * cycle.days,
+  }
 }
 
 /**
@@ -207,18 +273,9 @@ export function budgetProgress(
 ): BudgetProgress[] {
   const cycle = cycleFor(config, todayISO)
   const rows = cycleSpending(cycle, todayISO, accounts, transactions)
-  const daysLeft = daysBetween(todayISO, cycle.end) + 1
-  const elapsed = daysBetween(cycle.start, todayISO) + 1
   return budgets.map((budget) => {
-    const scope = budget.scope
-    const counts = budgetCounts(scope, categories)
-    const spent = rows.reduce((sum, row) => (counts(row) ? sum - row.amount : sum), 0)
-    const remaining = budget.amount - spent
-    return {
-      budget, spent, remaining, usedPct: budget.amount > 0 ? spent / budget.amount * 100 : spent > 0 ? Infinity : 0, daysLeft,
-      dailyAllowance: remaining <= 0 ? 0 : remaining / daysLeft,
-      projected: spent / elapsed * cycle.days,
-    }
+    const counts = budgetCounts(budget.scope, categories, budgets)
+    return progressOf(budget, rows.reduce((total, row) => (counts(row) ? total - row.amount : total), 0), cycle, todayISO)
   })
 }
 

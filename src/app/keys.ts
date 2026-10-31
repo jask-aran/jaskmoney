@@ -17,7 +17,7 @@ import { RULE_AFTER } from "../domain/ruleOffers"
 import { endTagReview, runTagAccept, startTagReview } from "./tagReview"
 import { budgetLabel, budgetScopeOptions, scopeKey } from "../domain/budgetScopes"
 import type { Budget, BudgetScope, CycleConfig } from "../domain/budget"
-import { allocation, budgetCategoryLines, budgetListRows, type BudgetLine } from "../domain/budgetLines"
+import { budgetCategoryLines, budgetListRows, type BudgetLine } from "../domain/budgetLines"
 import { MERCHANT_SORTS, groupByMerchant, merchantFilter, sortMerchantGroups } from "../domain/merchants"
 import { anchorDraft, cycleFromDraft, editorFields, normaliseCycleDraft, pickerChoices, pickerItems, stepChoice } from "../state/settingsForm"
 import { runSync } from "./sync"
@@ -1483,9 +1483,9 @@ function budgetKeys(ui: UiStore, key: KeyEvent, data: DataStore): boolean {
   return false
 }
 
-/** The Budgets tab's Budgets card: enter edits a budget (an unset overall
- * starts from the category budgets' total: building up), a adds, del twice
- * deletes; j past the end goes to the Categories card. */
+/** The Budgets tab's Budgets card: enter edits a budget (the total is
+ * theirs added up: it has none of its own), a adds, del twice deletes; j
+ * past the end goes to the Categories card. */
 function handleBudgets(ui: UiStore, key: KeyEvent, data?: DataStore): void {
   const { name } = key
   if (!data) return
@@ -1505,7 +1505,8 @@ function handleBudgets(ui: UiStore, key: KeyEvent, data?: DataStore): void {
     return
   }
   if (name === "return" || name === "enter") {
-    if (row.kind === "overall") openBudgetEditor(ui, data, row.budget, { kind: "overall" }, allocation(data.state.budgets, data.state.categories).allocated)
+    if (row.kind === "total") { ui.setStatus("The total is your budgets added up: set everything else, or a category's", true); return }
+    if (row.kind === "overall") openBudgetEditor(ui, data, row.budget, { kind: "overall" }, 0)
     else openBudgetEditor(ui, data, row.budget, row.budget.scope, row.budget.amount)
     return
   }
