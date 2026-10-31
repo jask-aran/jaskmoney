@@ -10,7 +10,7 @@ import "./settings.css"
 import { Page, PageHeader } from "../kit"
 import { compact } from "../store"
 import { Taxonomy } from "./settings/Taxonomy"
-import { AiModels, Database, RulesFilters, Status, UpBank } from "./settings/Panes"
+import { AiModels, App, Database, RulesFilters, Status, UpBank } from "./settings/Panes"
 import { useDisarm } from "./settings/confirm"
 
 export function Settings() {
@@ -19,13 +19,14 @@ export function Settings() {
     <>
       <PageHeader title="Settings" />
       <Page class="st-page">
-        <Show when={compact()}><Status /></Show>
+        <Show when={compact()}><Status /><App /></Show>
         <Taxonomy />
         <div class="st-side">
           <UpBank sync={!compact()} />
           <AiModels />
           <RulesFilters />
           <Database />
+          <Show when={!compact()}><App /></Show>
         </div>
       </Page>
     </>

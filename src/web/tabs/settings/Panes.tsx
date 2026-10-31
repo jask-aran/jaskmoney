@@ -13,6 +13,7 @@ import {
   Button, Icons, SettingColumn, SettingColumns, SettingDetails, SettingGroup, SettingLine, SettingNote, SettingValue, StatusDot, Switch,
 } from "../../v2"
 import { AI_NAMES, MODEL_ROWS, USES, connection, useModel } from "./ai"
+import { appState, applyUpdate, build, builtLabel, checkForUpdate, reloadFromServer } from "../../pwa"
 import { confirmTwice, isArmed } from "./confirm"
 
 const count = (n: number, one: string, many = `${one}s`) => `${n.toLocaleString("en-AU")} ${n === 1 ? one : many}`
@@ -215,6 +216,48 @@ export function Database() {
       <SettingLine plain label="Weeks start on"><SettingValue>{data.state.weekStart === "sunday" ? "Sunday" : "Monday"}</SettingValue></SettingLine>
       <SettingLine plain label="Demo mode"><SettingValue>{data.state.demo ? "on · from your spending, scrambled" : "off"}</SettingValue></SettingLine>
       <SettingNote>Importing, demo mode, clearing and resetting are in the TUI.</SettingNote>
+    </SettingGroup>
+  )
+}
+
+/**
+ * The app: which build this is, and (installed on a home screen) its updates. The installed app stays on the
+ * build it has until Update; a browser tab loads the newest build each visit (web/pwa.ts).
+ */
+export function App() {
+  const version = () => (build ? `${build.version} · ${builtLabel(build.built)}` : "—")
+  const status = () => {
+    const now = appState()
+    switch (now.kind) {
+      case "browser": return "a browser tab: the newest build each visit"
+      case "unsupported": return "can't update itself here (needs https)"
+      case "starting": return "starting…"
+      case "current": return "up to date"
+      case "checking": return "checking…"
+      case "downloading": return "downloading the update…"
+      case "ready": return now.next ? `update ready · ${now.next.version} · ${builtLabel(now.next.built)}` : "update ready"
+      case "failed": return "couldn't check"
+    }
+  }
+  const kind = () => appState().kind
+  return (
+    <SettingGroup title="App">
+      <SettingLine plain label="Build"><SettingValue mono>{version()}</SettingValue></SettingLine>
+      <SettingLine plain label="Updates" state={status()}>
+        <Show when={kind() === "ready"} fallback={
+          <Show when={kind() !== "browser" && kind() !== "unsupported"}>
+            <Button variant="secondary" size="sm" disabled={kind() === "checking" || kind() === "downloading" || kind() === "starting"} onClick={() => void checkForUpdate()}><Icons.Refresh />Check</Button>
+          </Show>
+        }>
+          <Button size="sm" onClick={applyUpdate}>Update</Button>
+        </Show>
+      </SettingLine>
+      <Show when={appState().kind === "failed" ? (appState() as { why: string }).why : null}>{(why) => <SettingNote tone="error">{why()}</SettingNote>}</Show>
+      <Show when={kind() !== "browser"}>
+        <SettingLine plain label="Load from the server" state="to sign in again" title="Loads the page from the server, past the kept build: to sign in again, or if this build won't start">
+          <Button variant="ghost" size="sm" onClick={reloadFromServer}>Reload</Button>
+        </SettingLine>
+      </Show>
     </SettingGroup>
   )
 }

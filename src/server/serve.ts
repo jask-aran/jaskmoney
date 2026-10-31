@@ -10,7 +10,7 @@
  * elsewhere (a tunnel) is the tunnel's business, and its own login.
  */
 import type { ServerWebSocket } from "bun"
-import { webBundler } from "./webBuild"
+import { FRESH, webBundler } from "./webBuild"
 import type { Core } from "../core/core"
 import { KEYED_SLICES, type ClientMessage, type CoreState, type ServerMessage } from "../core/protocol"
 
@@ -87,9 +87,9 @@ function stateMessage(ws: ServerWebSocket<Connection>, encoded: Encoded): string
 
 const send = (ws: ServerWebSocket<Connection>, message: ServerMessage) => ws.send(JSON.stringify(message))
 
-/** A served file: hashed bundles keep forever, the page is asked for fresh. */
-function fileResponse(file: { body: Uint8Array; type: string }, page: boolean): Response {
-  return new Response(file.body, { headers: { "content-type": file.type, "cache-control": page ? "no-cache" : "public, max-age=31536000, immutable" } })
+/** A served file: hashed bundles keep forever; the page, the worker, the manifest and icons are asked for fresh. */
+function fileResponse(file: { body: Uint8Array; type: string }, fresh: boolean): Response {
+  return new Response(file.body, { headers: { "content-type": file.type, "cache-control": fresh ? "no-cache" : "public, max-age=31536000, immutable" } })
 }
 
 export interface ServeOptions {
@@ -141,10 +141,12 @@ export function serveCore(core: Core, { port = DEFAULT_PORT, hostname = "127.0.0
       if (url.pathname !== "/api") {
         if (req.method !== "GET" && req.method !== "HEAD") return new Response("Not found", { status: 404 })
         const page = url.pathname === "/" || url.pathname === "/index.html"
-        const bundle = await bundler.get(page)
+        // The page and the service worker are where a new build shows: either may make it.
+        const bundle = await bundler.get(page || url.pathname === "/sw.js")
         if (bundle.error) return new Response(`The web app didn't build:\n\n${bundle.error}`, { status: 500, headers: { "content-type": "text/plain; charset=utf-8" } })
-        const file = bundle.files.get(page ? "/" : url.pathname)
-        return file ? fileResponse(file, page) : new Response("Not found", { status: 404 })
+        const path = page ? "/" : url.pathname
+        const file = bundle.files.get(path)
+        return file ? fileResponse(file, FRESH.has(path)) : new Response("Not found", { status: 404 })
       }
       const origin = req.headers.get("origin")
       if (origin && new URL(origin).host !== url.host) return new Response("Forbidden", { status: 403 })

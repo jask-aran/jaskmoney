@@ -86,3 +86,33 @@ test("a removed row leaves the other client's mirror; an unknown command is refu
   link.close()
 })
 
+
+test("the page is an installable app: its build, a manifest, icons, and a worker that keeps that build", async () => {
+  const { base } = served()
+  const get = (path: string) => fetch(`http://127.0.0.1:${base.port}${path}`)
+  const page = await get("/")
+  const html = await page.text()
+  expect(page.headers.get("cache-control")).toBe("no-cache")
+  const version = html.match(/<meta name="jaskmoney-build" content="([0-9a-f]{10})"/)?.[1]
+  expect(version).toBeTruthy()
+  expect(html).toContain(`<link rel="manifest" href="/manifest.webmanifest">`)
+  const manifest = await get("/manifest.webmanifest")
+  expect(manifest.headers.get("content-type")).toContain("application/manifest+json")
+  expect(((await manifest.json()) as { display: string }).display).toBe("standalone")
+  const icon = await get("/icon-512.png")
+  expect(icon.headers.get("content-type")).toBe("image/png")
+  // The worker names the same build, keeps every file the page needs (not itself), and is asked for fresh.
+  const worker = await get("/sw.js")
+  expect(worker.headers.get("cache-control")).toBe("no-cache")
+  const source = await worker.text()
+  const built = JSON.parse(source.match(/^const BUILD = (.*);$/m)![1]!) as { version: string; files: string[] }
+  expect(built.version).toBe(version!)
+  expect(built.files).toContain("/")
+  expect(built.files).not.toContain("/sw.js")
+  const assets = [...html.matchAll(/(?:src|href)="\.?(\/[^"]+\.(?:js|css|png))"/g)].map((match) => match[1]!)
+  expect(assets.length).toBeGreaterThanOrEqual(4)
+  for (const asset of assets) expect(built.files).toContain(asset)
+  // A hashed file keeps forever.
+  const script = built.files.find((path) => path.endsWith(".js"))!
+  expect((await get(script)).headers.get("cache-control")).toContain("immutable")
+}, 30000)

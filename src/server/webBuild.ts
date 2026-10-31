@@ -7,6 +7,10 @@
  * The bundle is made on the first request for the page and again on a
  * page request after any file it was made from changes, so working on the
  * web app needs only a reload (dev restarts the TUI for everything else).
+ *
+ * The bundle is also an installable app: a version (a hash of what it's made of), a manifest, its icons and
+ * a service worker (web/sw.js, told the version and the files to keep). The installed app updates when told
+ * to (web/pwa.ts); see sw.js.
  */
 import { statSync } from "node:fs"
 import { join, resolve } from "node:path"
@@ -14,6 +18,8 @@ import type { BunPlugin } from "bun"
 
 const WEB = resolve(import.meta.dir, "../web")
 const ENTRY = join(WEB, "index.html")
+const WORKER = join(WEB, "sw.js")
+const ICONS = join(WEB, "icons")
 
 /** The app's .tsx under src/web, through Babel: Solid's DOM output, then TypeScript stripped. */
 const solidDom: BunPlugin = {
@@ -58,7 +64,7 @@ const customMedia: BunPlugin = {
 }
 
 export interface WebFile { body: Uint8Array; type: string }
-export interface WebBundle { files: Map<string, WebFile>; inputs: Map<string, number>; error: string | null }
+export interface WebBundle { files: Map<string, WebFile>; inputs: Map<string, number>; error: string | null; version?: string }
 
 const TYPES: Record<string, string> = {
   ".html": "text/html; charset=utf-8",
@@ -67,7 +73,36 @@ const TYPES: Record<string, string> = {
   ".svg": "image/svg+xml",
   ".map": "application/json",
   ".woff2": "font/woff2",
+  ".png": "image/png",
+  ".webmanifest": "application/manifest+json",
 }
+
+/** The app as a home screen app: its name, colours (the TUI's canvas), standalone, its icons. */
+const MANIFEST = {
+  name: "jaskmoney",
+  short_name: "jaskmoney",
+  start_url: "/",
+  scope: "/",
+  display: "standalone",
+  background_color: "#11111b",
+  theme_color: "#11111b",
+  icons: [
+    { src: "/icon-192.png", sizes: "192x192", type: "image/png", purpose: "any" },
+    { src: "/icon-512.png", sizes: "512x512", type: "image/png", purpose: "any maskable" },
+  ],
+}
+const ICON_FILES = ["icon-192.png", "icon-512.png", "apple-touch-icon.png"]
+
+/** What the page's head says of the app: its build, the manifest, the icons. */
+const head = (version: string, built: string) => [
+  `<meta name="jaskmoney-build" content="${version}" data-built="${built}">`,
+  `<link rel="manifest" href="/manifest.webmanifest">`,
+  `<link rel="icon" type="image/png" sizes="192x192" href="/icon-192.png">`,
+  `<link rel="apple-touch-icon" href="/apple-touch-icon.png">`,
+].join("")
+
+/** Files the browser must ask for fresh each time (the rest are named by their hash). */
+export const FRESH = new Set(["/", "/sw.js", "/manifest.webmanifest", ...ICON_FILES.map((name) => `/${name}`)])
 
 /** Every source file the bundle was made from, with its modification time. */
 async function inputsOf(metafile: { inputs: Record<string, unknown> } | undefined): Promise<Map<string, number>> {
@@ -102,7 +137,24 @@ export async function buildWeb(): Promise<WebBundle> {
       const ext = path.slice(path.lastIndexOf("."))
       files.set(path === "/index.html" ? "/" : path, { body: new Uint8Array(await output.arrayBuffer()), type: TYPES[ext] ?? output.type })
     }
-    return { files, inputs: await inputsOf((result as unknown as { metafile?: { inputs: Record<string, unknown> } }).metafile), error: null }
+    const encode = (text: string, type: string): WebFile => ({ body: new TextEncoder().encode(text), type })
+    for (const name of ICON_FILES) files.set(`/${name}`, { body: new Uint8Array(await Bun.file(join(ICONS, name)).arrayBuffer()), type: TYPES[".png"]! })
+    // The version: what the app is made of (the page as built, before it names its own version, and every file).
+    const hasher = new Bun.CryptoHasher("sha256")
+    for (const [path, file] of [...files].sort(([a], [b]) => a.localeCompare(b))) { hasher.update(path); hasher.update(file.body) }
+    const worker = await Bun.file(WORKER).text()
+    hasher.update(worker)
+    const version = hasher.digest("hex").slice(0, 10)
+    const built = new Date().toISOString()
+    const page = new TextDecoder().decode(files.get("/")!.body).replace("</head>", `${head(version, built)}</head>`)
+    files.set("/", encode(page, TYPES[".html"]!))
+    files.set("/manifest.webmanifest", encode(JSON.stringify(MANIFEST), TYPES[".webmanifest"]!))
+    const keep = [...files.keys()].filter((path) => path !== "/sw.js" && path !== "/manifest.webmanifest" && !path.endsWith(".map"))
+    files.set("/sw.js", encode(`const BUILD = ${JSON.stringify({ version, built, files: keep })};\n${worker}`, TYPES[".js"]!))
+    const inputs = await inputsOf((result as unknown as { metafile?: { inputs: Record<string, unknown> } }).metafile)
+    inputs.set(WORKER, statSync(WORKER).mtimeMs)
+    for (const name of ICON_FILES) inputs.set(join(ICONS, name), statSync(join(ICONS, name)).mtimeMs)
+    return { files, inputs, error: null, version }
   } catch (error) {
     return { files: new Map(), inputs: new Map(), error: error instanceof Error ? error.stack ?? error.message : String(error) }
   }

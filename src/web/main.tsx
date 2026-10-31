@@ -12,6 +12,7 @@ import { LayoutDashboard, PiggyBank, ReceiptText, RefreshCw, Settings2, Undo2 } 
 import { accountStacks } from "../domain/accountTree"
 import { formatMoney } from "../domain/dashboard"
 import { applyTheme } from "./theme"
+import { appState, applyUpdate, startApp } from "./pwa"
 import { TABS, compact, connection, data, lostReason, run, say, setTab, status, syncLabel, tab, useKeys, type TabId } from "./store"
 import { AppShell, Button, Keycap, NavBrand, NavGroup, NavPane, NavRow, Sheet, StatusDot, Toast } from "./v2"
 import { TabBar } from "./kit"
@@ -22,6 +23,7 @@ import { Settings } from "./tabs/Settings"
 import { Palette } from "./palette"
 
 applyTheme()
+void startApp()
 document.documentElement.classList.add("dark")
 
 const VIEWS: Record<TabId, () => JSX.Element> = {
@@ -113,6 +115,7 @@ function App() {
     setToast(next)
     toastTimer = setTimeout(() => setToast(null), next.err ? 6000 : 3500)
   }, { defer: true }))
+  const [updateDismissed, setUpdateDismissed] = createSignal(false)
   const reviewCount = createMemo(() => Object.keys(data.state.suggestions).length)
   // A tab chosen by the address (back, a link) is visited too.
   const current = () => { const id = tab(); if (!visited().has(id)) queueMicrotask(() => show(id)); return id }
@@ -139,6 +142,11 @@ function App() {
       </AppShell>
       <Show when={compact()}>
         <TabBar tabs={TABS.map((t) => ({ id: t.id, label: t.label, icon: ICONS[t.id](), badge: t.id === "transactions" ? reviewCount() : null }))} current={tab()} onChoose={show} />
+        <Show when={appState().kind === "ready" && !updateDismissed()}>
+          <div class="jm-toasts">
+            <Toast kind="info" onDismiss={() => setUpdateDismissed(true)} action={{ label: "Update", onClick: applyUpdate }}>An update to jaskmoney is ready</Toast>
+          </div>
+        </Show>
         <Show when={toast()}>{(t) => (
           <div class="jm-toasts">
             <Toast kind={t().err ? "error" : "info"} onDismiss={() => setToast(null)}

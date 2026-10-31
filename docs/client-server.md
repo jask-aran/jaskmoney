@@ -45,6 +45,15 @@ View state is per client: the web app's filter doesn't change the TUI's.
 
 Run one core per database. Two cores on one file each keep their own copy and won't see each other's writes.
 
+### The web app installed on a phone
+
+The page is an installable app (`server/webBuild.ts`): a manifest, icons, and a service worker (`src/web/sw.js`)
+told the build's version (a hash of its files) and the files to keep. Only the app opened from a home screen
+registers the worker (`src/web/pwa.ts`); a browser tab loads the newest build each visit. The installed app
+opens on the build it keeps; a newer build downloads in the background and waits until Update (Settings › App,
+or the toast). `/?network` loads the page from the server past the kept build (signing in again to whatever
+stands in front of the core).
+
 ## Security
 
 The server listens on 127.0.0.1 only, and `/api` answers:
