@@ -7,7 +7,7 @@
  */
 import { For, Show, createEffect, createMemo, createSignal, onCleanup, onMount, untrack } from "solid-js"
 import "./transactions.css"
-import { accountStacks } from "../../domain/accountTree"
+import { selectionLabel } from "../../domain/accountTree"
 import { askTerms, parseFilter } from "../../domain/filter"
 import { JQL, JQL_EXAMPLE, JQL_SUMMARY, type Section } from "../../domain/filterLanguage"
 import { ACCEPT_ALL_AT } from "../../domain/questions"
@@ -15,9 +15,13 @@ import { formatMoney } from "../../domain/dashboard"
 import type { SortColumn, Transaction } from "../../domain/types"
 import type { TransactionDetail } from "../../db/client"
 import { JEV_SETUP } from "../../ai/judge"
+import { Check, Store as MerchantsIcon, Tags, Wand2, ListChecks, X } from "lucide-solid"
+import { Merchants } from "./transactions/Merchants"
+import { TagReview } from "./transactions/TagReview"
+import { RuleOffers } from "./transactions/RuleOffers"
 import { data, fail, run, say, useKeys } from "../store"
-import { CategoryLabel, CategoryPicker, Money, placeBelow } from "../ui"
-import { Portal } from "solid-js/web"
+import { CategoryLabel, CategoryPicker, Floating, Money, PageHeader } from "../kit"
+import { Button, Frost, GroupHeading, Input, Item, Menu, Section as MenuSection, TextArea } from "../v2"
 
 const narrowQuery = window.matchMedia("(max-width: 760px)")
 const [narrow, setNarrow] = createSignal(narrowQuery.matches)
@@ -34,57 +38,25 @@ function shortDate(iso: string): string {
 /** What a row bought, as the TUI's table says it after the description. */
 const boughtText = (t: Transaction) => (t.bought ?? []).map((b) => (b.quantity > 1 ? `${b.quantity}× ${b.name}` : b.name)).join(", ")
 
-/** The accounts pane: each source's accounts, and all of them together. */
-function Accounts() {
-  const stacks = createMemo(() => accountStacks(data.state.accounts))
-  return (
-    <div class="accounts">
-      <For each={stacks()}>{(stack) => (
-        <div class="stack">
-          <div class="stack-head"><span class="label small">{stack.label}</span>
-            <Show when={stack.net != null}><span class="small note money">net {formatMoney(stack.net!)}</span></Show>
-          </div>
-          <div class="stack-rows">
-            <For each={stack.rows}>{(row) => (
-              <button type="button" class="acct" classList={{ on: data.state.accountSelection === row.selection }}
-                onClick={() => data.setAccountSelection(row.selection)}>
-                <span class="name">{row.label}</span>
-                <Show when={row.balance != null}><span class="money">{formatMoney(row.balance!)}</span></Show>
-              </button>
-            )}</For>
-          </div>
-        </div>
-      )}</For>
-    </div>
-  )
-}
-
 /** The JQL guide: the same sections the TUI's search help shows. */
 function SearchHelp(props: { anchor: DOMRect; onClose: () => void; onTry: (q: string) => void }) {
   const sections = JQL.filter((s) => s.brief)
   const rows = (section: Section) => section.blocks.flatMap((b) => (b.kind === "rows" ? b.rows.filter((r) => r.brief && !r.ruleOnly) : []))
   return (
-    <Portal>
-      <div class="backdrop" onClick={props.onClose} />
-      <div class="popover help" style={placeBelow(props.anchor, 520, 560)}>
-        <div class="head">
-          <span class="small label">{JQL_SUMMARY}</span>
-          <button type="button" class="example mono" onClick={() => props.onTry(JQL_EXAMPLE.write)}>{JQL_EXAMPLE.write}<span class="note"> {JQL_EXAMPLE.means}</span></button>
-        </div>
-        <div class="list">
-          <For each={sections}>{(section) => (
-            <div class="help-section">
-              <div class="group">{section.title}<Show when={section.aside}><span class="note"> · {section.aside}</span></Show></div>
-              <For each={rows(section)}>{(row) => (
-                <button type="button" class="item help-row" onClick={() => props.onTry(row.write)}>
-                  <span class="mono key">{row.write}</span><span class="note small">{row.means}</span>
-                </button>
-              )}</For>
-            </div>
-          )}</For>
-        </div>
-      </div>
-    </Portal>
+    <Floating anchor={props.anchor} width={520} height={560} onClose={props.onClose}>
+      <Menu width="lg" height="lg">
+        <MenuSection note={JQL_SUMMARY}>
+          <Item detail={JQL_EXAMPLE.means} detailData={false} onClick={() => props.onTry(JQL_EXAMPLE.write)}><span class="mono">{JQL_EXAMPLE.write}</span></Item>
+        </MenuSection>
+        <For each={sections}>{(section) => (
+          <MenuSection title={section.aside ? `${section.title} · ${section.aside}` : section.title}>
+            <For each={rows(section)}>{(row) => (
+              <Item detail={row.means} onClick={() => props.onTry(row.write)}><span class="mono">{row.write}</span></Item>
+            )}</For>
+          </MenuSection>
+        )}</For>
+      </Menu>
+    </Floating>
   )
 }
 
@@ -138,7 +110,7 @@ function SearchBar(props: { ref: (el: HTMLInputElement) => void }) {
     <div class="search">
       <div class="search-row">
         <span class="search-dot" classList={{ err: !!data.state.filterErr, on: !!data.state.filterExpr }} />
-        <input ref={(el) => { input = el; props.ref(el) }} class="field mono grow" value={draft()} spellcheck={false} autocomplete="off"
+        <Input ref={(el: HTMLInputElement) => { input = el; props.ref(el) }} class="jm-search-input" value={draft()} spellcheck={false} autocomplete="off"
           placeholder="Search: coffee  cat:groceries  amt:<-20  date:2026-10   ·   ?in words"
           onInput={(e) => { const v = e.currentTarget.value; setDraft(v); if (!v.trim().startsWith("?")) data.setFilterLive(v) }}
           onKeyDown={(e) => {
@@ -146,8 +118,8 @@ function SearchBar(props: { ref: (el: HTMLInputElement) => void }) {
             else if (e.key === "Escape") { if (draft()) { setDraft(""); data.clearFilter() } else input.blur(); e.preventDefault() }
             else if (e.key === "ArrowDown") { input.blur(); e.preventDefault() }
           }} />
-        <Show when={draft()}><button type="button" class="btn ghost small" onClick={() => { setDraft(""); data.clearFilter(); input.focus() }}>Clear</button></Show>
-        <button type="button" class="btn ghost small" title="How searching works" onClick={(e) => setHelp(e.currentTarget.getBoundingClientRect())}>Help</button>
+        <Show when={draft()}><Button variant="ghost" size="sm" onClick={() => { setDraft(""); data.clearFilter(); input.focus() }}>Clear</Button></Show>
+        <Button variant="ghost" size="sm" title="How searching works" onClick={(e) => setHelp(e.currentTarget.getBoundingClientRect())}>Help</Button>
       </div>
       <div class="search-note mono" classList={{ error: note()?.tone === "error", warn: note()?.tone === "warn" }}>
         <Show when={data.state.asking} fallback={note()?.text ?? ""}>{(asking) => `Jev judging "${asking().words}": ${asking().judged} of ${asking().total}`}</Show>
@@ -160,11 +132,11 @@ function SearchBar(props: { ref: (el: HTMLInputElement) => void }) {
 }
 
 const COLUMNS: Array<{ id: SortColumn; label: string; class: string }> = [
-  { id: "date", label: "Date", class: "c-date" },
-  { id: "description", label: "Description", class: "c-desc" },
-  { id: "account", label: "Account", class: "c-acct" },
-  { id: "category", label: "Category", class: "c-cat" },
-  { id: "amount", label: "Amount", class: "c-amt" },
+  { id: "date", label: "Date", class: "jm-tx-date" },
+  { id: "description", label: "Description", class: "jm-tx-desc" },
+  { id: "account", label: "Account", class: "jm-tx-acct" },
+  { id: "category", label: "Category", class: "jm-tx-cat" },
+  { id: "amount", label: "Amount", class: "jm-tx-amt" },
 ]
 
 /** A row's details: everything the core knows of it, its category, tags and notes. */
@@ -172,11 +144,14 @@ function Detail(props: { id: number; onClose: () => void; onCategory: (anchor: D
   const t = () => data.transactions().find((x) => x.id === props.id)
   const [extra, setExtra] = createSignal<TransactionDetail | null>(null)
   const [notes, setNotes] = createSignal("")
+  // The drawer may close (or move to another row) before the core answers.
+  let open = true
+  onCleanup(() => { open = false })
   createEffect(() => {
     const id = props.id
     setExtra(null)
     setNotes(untrack(() => t()?.notes ?? ""))
-    void data.transactionDetail(id).then((d) => { if (props.id === id) setExtra(d as TransactionDetail | null) }, () => {})
+    void data.transactionDetail(id).then((d) => { if (open && untrack(() => props.id) === id) setExtra(d as TransactionDetail | null) }, () => {})
   })
   const suggestion = () => data.state.suggestions[props.id]
   const fields = () => {
@@ -200,76 +175,77 @@ function Detail(props: { id: number; onClose: () => void; onCategory: (anchor: D
     void run(data.applyTagPatch([props.id], { [tagId]: on ? "remove" : "add" }, "picker"))
   }
   return (
-    <aside class="drawer">
-      <Show when={t()} fallback={<div class="empty">This row is gone.</div>}>{(row) => (
+    <Frost as="div" lift="raised" class="jm-drawer" role="dialog" aria-label="Transaction">
+      <Show when={t()} fallback={<div class="jm-empty">This row is gone.</div>}>{(row) => (
         <>
-          <header>
+          <header class="jm-drawer-head">
             <div class="grow">
-              <div class="strong detail-title">{row().description}</div>
-              <div class="small note">{row().dateISO}{row().status === "HELD" ? " · pending" : ""}</div>
+              <div class="jm-drawer-title">{row().description}</div>
+              <div class="small note mono">{row().dateISO}{row().status === "HELD" ? " · pending" : ""}</div>
             </div>
-            <Money value={row().amount} tone class="detail-amount" />
-            <button type="button" class="btn ghost small" onClick={props.onClose} title="Close (esc)">✕</button>
+            <Money value={row().amount} tone={row().amount > 0} class="jm-drawer-amount" />
+            <Button variant="ghost" size="icon-sm" aria-label="Close" title="Close (esc)" onClick={props.onClose}><X /></Button>
           </header>
-          <div class="body">
-            <div>
-              <p class="section-title">Category</p>
-              <div class="row">
-                <button type="button" class="btn grow detail-cat" onClick={(e) => props.onCategory(e.currentTarget.getBoundingClientRect())}>
-                  <CategoryLabel name={row().categoryName} color={row().categoryColor} />
-                  <span class="note small" style={{ "margin-left": "auto" }}>change</span>
-                </button>
-              </div>
+          <div class="jm-drawer-body">
+            <section>
+              <GroupHeading>Category</GroupHeading>
+              <Button variant="secondary" outline class="jm-drawer-cat" onClick={(e) => props.onCategory(e.currentTarget.getBoundingClientRect())}>
+                <CategoryLabel name={row().categoryName} color={row().categoryColor} />
+                <span class="note small">change</span>
+              </Button>
               <Show when={suggestion()}>{(s) => {
                 const c = () => data.state.categories.find((x) => x.id === s().categoryId)
                 return (
-                  <div class="row small suggestion-line">
+                  <div class="row small jm-suggestion">
                     <span class="note">Suggested</span>
                     <CategoryLabel name={c()?.name ?? ""} color={c()?.color} suggestion confidence={s().confidence} history={s().source === "history"} />
-                    <button type="button" class="btn small" onClick={() => void run(data.acceptSuggestions([props.id]))}>Accept</button>
+                    <Button variant="ghost" size="sm" onClick={() => void run(data.acceptSuggestions([props.id]))}>Accept</Button>
                   </div>
                 )
               }}</Show>
-            </div>
+            </section>
             <Show when={data.state.tags.length}>
-              <div>
-                <p class="section-title">Tags</p>
-                <div class="row" style={{ "flex-wrap": "wrap" }}>
+              <section>
+                <GroupHeading>Tags</GroupHeading>
+                <div class="jm-tags">
                   <For each={data.state.tags}>{(tag) => {
                     const on = () => row().tagIds.includes(tag.id)
                     return (
-                      <button type="button" class="tagchip" classList={{ on: on() }} style={on() ? { color: tag.color } : undefined} onClick={() => toggleTag(tag.id, on())}>
+                      <button type="button" class="jm-tag" aria-pressed={on()} onClick={() => toggleTag(tag.id, on())}>
                         <span class="dot" style={{ background: tag.color }} />{tag.name}
                       </button>
                     )
                   }}</For>
                 </div>
-              </div>
+              </section>
             </Show>
             <Show when={row().bought?.length}>
-              <div>
-                <p class="section-title">Bought</p>
-                <div class="bought">
+              <section>
+                <GroupHeading count={row().bought!.length}>Bought</GroupHeading>
+                <div class="jm-bought">
                   <For each={row().bought}>{(item) => (
-                    <div class="bought-row"><span class="note mono">{item.quantity}×</span><span class="grow">{item.name}</span><Show when={item.price != null}><span class="money">{formatMoney(-Math.abs(item.price!))}</span></Show></div>
+                    <div class="jm-bought-row"><span class="note mono">{item.quantity}×</span><span class="grow">{item.name}</span><Show when={item.price != null}><span class="money">{formatMoney(-Math.abs(item.price!))}</span></Show></div>
                   )}</For>
                 </div>
-              </div>
+              </section>
             </Show>
-            <div>
-              <p class="section-title">Notes</p>
-              <textarea class="field" value={notes()} placeholder="Your own notes (local to jaskmoney)" onInput={(e) => setNotes(e.currentTarget.value)} />
-              <div class="row" style={{ "margin-top": "6px" }}>
-                <button type="button" class="btn small" disabled={notes() === row().notes} onClick={() => void run(data.updateTransactionNotes(props.id, notes()), () => "Notes saved")}>Save notes</button>
+            <section>
+              <GroupHeading>Notes</GroupHeading>
+              <TextArea value={notes()} placeholder="Your own notes (kept in jaskmoney)" onInput={(e) => setNotes(e.currentTarget.value)} />
+              <div class="row jm-notes-save">
+                <Button variant="secondary" size="sm" disabled={notes() === row().notes} onClick={() => void run(data.updateTransactionNotes(props.id, notes()), () => "Notes saved")}>Save notes</Button>
               </div>
-            </div>
-            <div class="lines detail-fields">
-              <For each={fields()}>{([k, v]) => (<><span class="k small">{k}</span><span class="small figure detail-v">{v}</span></>)}</For>
-            </div>
+            </section>
+            <section>
+              <GroupHeading>Details</GroupHeading>
+              <div class="lines">
+                <For each={fields()}>{([k, v]) => (<><span class="k small">{k}</span><span class="small figure jm-detail-v">{v}</span></>)}</For>
+              </div>
+            </section>
           </div>
         </>
       )}</Show>
-    </aside>
+    </Frost>
   )
 }
 
@@ -284,6 +260,10 @@ export function Transactions() {
   const [scrollTop, setScrollTop] = createSignal(0)
   const [viewHeight, setViewHeight] = createSignal(600)
   const review = () => data.state.uncategorisedOnly
+  /** Select mode: a press chooses a row (the check column shows, as DESIGN's edit mode). */
+  const [picking, setPicking] = createSignal(false)
+  const [merchants, setMerchants] = createSignal(false)
+  const [panel, setPanel] = createSignal<"tags" | "rules" | null>(null)
   // The Account column only when the rows come from more than one (the TUI's rule).
   const manyAccounts = createMemo(() => { const first = rows()[0]?.accountId; return rows().some((t) => t.accountId !== first) })
 
@@ -352,7 +332,7 @@ export function Transactions() {
 
   useKeys((e) => {
     if (picker()) return false
-    const cursorRect = () => scroller.querySelector(`[data-id="${cursor()}"] .c-cat`)?.getBoundingClientRect() ?? scroller.getBoundingClientRect()
+    const cursorRect = () => scroller.querySelector(`[data-id="${cursor()}"] .jm-tx-cat`)?.getBoundingClientRect() ?? scroller.getBoundingClientRect()
     switch (e.key) {
       case "/": search.focus(); return true
       case "?": search.focus(); if (!search.value.startsWith("?")) { search.value = "?"; search.dispatchEvent(new Event("input", { bubbles: true })) } return true
@@ -380,85 +360,96 @@ export function Transactions() {
     const suggested = () => { const s = suggestion(); return s ? data.state.categories.find((c) => c.id === s.categoryId) : undefined }
     const sub = () => [t.message ? `“${t.message}”` : "", boughtText(t)].filter(Boolean).join(" · ")
     return (
-      <div class="tx" data-id={t.id} classList={{ cursor: cursor() === t.id, selected: selected().has(t.id), pending: t.status === "HELD", review: review() }}
-        onClick={(e) => { if (e.shiftKey || e.metaKey || e.ctrlKey) toggle(t.id); else { setCursor(t.id); if (detail() != null) setDetail(t.id) } }}
+      <div class="jm-tx" data-id={t.id} data-cursor={cursor() === t.id ? "" : undefined} data-selected={selected().has(t.id) ? "" : undefined} data-pending={t.status === "HELD" ? "" : undefined}
+        onClick={(e) => { if (picking() || e.shiftKey || e.metaKey || e.ctrlKey) toggle(t.id); else { setCursor(t.id); if (detail() != null) setDetail(t.id) } }}
         onDblClick={() => setDetail(t.id)}>
-        <label class="c-check" onClick={(e) => e.stopPropagation()}>
-          <input type="checkbox" checked={selected().has(t.id)} onChange={() => toggle(t.id)} />
-        </label>
-        <span class="c-date mono note">{shortDate(t.dateISO)}</span>
-        <span class="c-desc">
-          <span class="desc-main">{t.description}</span>
-          <Show when={sub()}><span class="desc-sub note">{sub()}</span></Show>
+        <Show when={picking()}><span class="jm-tx-check" aria-hidden="true">{selected().has(t.id) ? <Check /> : null}</span></Show>
+        <span class="jm-tx-date">{shortDate(t.dateISO)}</span>
+        <span class="jm-tx-desc">
+          <span class="jm-tx-name">{t.description}</span>
+          <Show when={sub()}><span class="jm-tx-sub">{sub()}</span></Show>
         </span>
-        <Show when={manyAccounts()}><span class="c-acct note small ellipsis">{t.accountName}</span></Show>
-        <span class="c-cat">
-          <button type="button" class="cat-btn" title="Choose a category (c)" onClick={(e) => { e.stopPropagation(); setCursor(t.id); openPicker(e.currentTarget.getBoundingClientRect(), selected().has(t.id) ? undefined : t.id) }}>
+        <Show when={manyAccounts()}><span class="jm-tx-acct">{t.accountName}</span></Show>
+        <span class="jm-tx-cat">
+          <button type="button" class="jm-tx-catbtn" title="Choose a category (c)" onClick={(e) => { e.stopPropagation(); setCursor(t.id); openPicker(e.currentTarget.getBoundingClientRect(), selected().has(t.id) ? undefined : t.id) }}>
             <Show when={suggestion() && suggested()} fallback={<CategoryLabel name={review() ? (data.state.suggesting ? "suggesting…" : "no suggestion") : t.categoryName} color={review() ? null : t.categoryColor} />}>
               <CategoryLabel name={suggested()!.name} color={suggested()!.color} suggestion confidence={suggestion()!.confidence} history={suggestion()!.source === "history"} />
             </Show>
           </button>
           <Show when={suggestion()}>
-            <button type="button" class="accept" title="Accept (y)" onClick={(e) => { e.stopPropagation(); accept([t.id]) }}>✓</button>
+            <Button variant="ghost" size="icon-xs" aria-label="Accept" title="Accept (y)" onClick={(e) => { e.stopPropagation(); accept([t.id]) }}><Check /></Button>
           </Show>
           <Show when={!review() && t.tagNames.length}>
-            <span class="tags">
-              <For each={t.tagNames}>{(name, i) => <span class="tag" style={{ color: t.tagColors[i()] }}>{name}</span>}</For>
+            <span class="jm-tx-tags">
+              <For each={t.tagNames}>{(name, i) => <span style={{ color: t.tagColors[i()] }}>{name}</span>}</For>
             </span>
           </Show>
         </span>
-        <span class="c-amt"><Money value={t.amount} tone={t.amount > 0} /><Show when={t.status === "HELD"}><span class="faint pending-mark" title="Pending">◷</span></Show></span>
+        <span class="jm-tx-amt"><Money value={t.amount} tone={t.amount > 0} /><Show when={t.status === "HELD"}><span class="faint" title="Pending">◷</span></Show></span>
       </div>
     )
   }
 
+  const offers = createMemo(() => data.allRuleOffers().length)
   return (
-    <div class="txpage">
-      <Accounts />
-      <SearchBar ref={(el) => (search = el)} />
-      <div class="toolbar">
-        <span class="small label">
-          {rows().length.toLocaleString("en-AU")} row{rows().length === 1 ? "" : "s"}
-          <Show when={!review()}>
-            <span class="note"> · spent </span><span class="money figure">{formatMoney(totals().out)}</span>
-            <Show when={totals().inn}><span class="note"> · in </span><span class="money good">{formatMoney(totals().inn)}</span></Show>
+    <>
+      <PageHeader title="Transactions" place={selectionLabel(data.state.accounts, data.state.accountSelection)}
+        actions={<>
+          <Button variant="ghost" size="sm" aria-pressed={review()} onClick={toggleReview} title="Uncategorised rows and their suggestions"><ListChecks />{review() ? "All rows" : "Review"}</Button>
+          <Button variant="ghost" size="sm" aria-pressed={merchants()} onClick={() => setMerchants(!merchants())} title="Group these rows by merchant"><MerchantsIcon />Merchants</Button>
+          <Button variant="ghost" size="sm" onClick={() => setPanel("tags")} title="Find the rows a tag belongs on"><Tags />Tag</Button>
+          <Show when={offers()}><Button variant="ghost" size="sm" onClick={() => setPanel("rules")} title="Rules offered from repeated categorising"><Wand2 />Rules {offers()}</Button></Show>
+        </>} />
+      <div class="jm-txpage">
+        <SearchBar ref={(el) => (search = el)} />
+        <div class="jm-toolbar">
+          <span class="small label">
+            {rows().length.toLocaleString("en-AU")} row{rows().length === 1 ? "" : "s"}
+            <Show when={!review()}>
+              <span class="note"> · spent </span><span class="money figure">{formatMoney(totals().out)}</span>
+              <Show when={totals().inn}><span class="note"> · in </span><span class="money good">{formatMoney(totals().inn)}</span></Show>
+            </Show>
+            <Show when={review()}><span class="note"> · {waiting().length} suggested{data.state.suggesting ? " · suggesting…" : ""}</span></Show>
+          </span>
+          <span class="grow" />
+          <Show when={selected().size}>
+            <span class="small figure">{selected().size} selected</span>
+            <Button variant="secondary" size="sm" onClick={(e) => openPicker(e.currentTarget.getBoundingClientRect())}>Category…</Button>
+            <Show when={review()}><Button variant="secondary" size="sm" onClick={() => accept([...selected()])}>Accept</Button></Show>
+            <Button variant="ghost" size="sm" onClick={() => setSelected(new Set<number>())}>Clear</Button>
           </Show>
-          <Show when={review()}><span class="note"> · {waiting().length} suggested{data.state.suggesting ? " · suggesting…" : ""}</span></Show>
-        </span>
-        <span class="grow" />
-        <Show when={selected().size}>
-          <span class="small key">{selected().size} selected</span>
-          <button type="button" class="btn small" onClick={(e) => openPicker(e.currentTarget.getBoundingClientRect())}>Category…</button>
-          <Show when={review()}><button type="button" class="btn small" onClick={() => accept([...selected()])}>Accept</button></Show>
-          <button type="button" class="btn ghost small" onClick={() => setSelected(new Set<number>())}>Clear</button>
-        </Show>
-        <Show when={review() && sure().length && !selected().size}>
-          <button type="button" class="btn small primary" onClick={() => accept(sure().map((t) => t.id))}>Accept {sure().length} ≥{ACCEPT_ALL_AT * 100}%</button>
-        </Show>
-        <button type="button" class="btn small" classList={{ primary: !review() && false }} onClick={toggleReview}>{review() ? "All rows" : "Review uncategorised"}</button>
-      </div>
-      <div class="table" classList={{ "one-account": !manyAccounts() }}>
-        <div class="thead">
-          <span class="c-check" />
-          <For each={COLUMNS.filter((c) => c.id !== "account" || manyAccounts())}>{(col) => (
-            <button type="button" class={`th ${col.class}`} classList={{ on: data.state.sortColumn === col.id }} onClick={() => sortBy(col.id)}>
-              {col.id === "category" && review() ? "Suggestion" : col.label}
-              <Show when={data.state.sortColumn === col.id}><span class="key">{data.state.sortAscending ? " ▲" : " ▼"}</span></Show>
-            </button>
-          )}</For>
+          <Show when={review() && sure().length && !selected().size}>
+            <Button size="sm" onClick={() => accept(sure().map((t) => t.id))}>Accept {sure().length} ≥{ACCEPT_ALL_AT * 100}%</Button>
+          </Show>
+          <Button variant="ghost" size="sm" aria-pressed={picking()} onClick={() => { setPicking(!picking()); if (picking()) say("Select: a press chooses a row") }}>{picking() ? "Done" : "Select"}</Button>
         </div>
-        <div class="tbody" ref={scroller} onScroll={(e) => setScrollTop(e.currentTarget.scrollTop)}>
-          <Show when={rows().length} fallback={<div class="empty">{review() ? "Nothing waiting for a category." : data.state.filterQuery ? "No rows match this search." : "No transactions."}</div>}>
-            <div style={{ height: `${rows().length * rowHeight()}px`, position: "relative" }}>
-              <div style={{ transform: `translateY(${first() * rowHeight()}px)` }}>
-                <For each={shown()}>{(t) => <Row t={t} />}</For>
-              </div>
+        <Show when={!merchants()} fallback={<div class="jm-merchants"><Merchants onShowRows={() => setMerchants(false)} /></div>}>
+          <div class="jm-table" data-accounts={manyAccounts() ? "" : undefined} data-picking={picking() ? "" : undefined}>
+            <div class="jm-thead">
+              <Show when={picking()}><span /></Show>
+              <For each={COLUMNS.filter((c) => c.id !== "account" || manyAccounts())}>{(col) => (
+                <button type="button" class={`jm-th ${col.class}`} aria-current={data.state.sortColumn === col.id ? "true" : undefined} onClick={() => sortBy(col.id)}>
+                  {col.id === "category" && review() ? "Suggestion" : col.label}
+                  <Show when={data.state.sortColumn === col.id}>{data.state.sortAscending ? " ↑" : " ↓"}</Show>
+                </button>
+              )}</For>
             </div>
-          </Show>
-        </div>
+            <div class="jm-tbody" ref={scroller} onScroll={(e) => setScrollTop(e.currentTarget.scrollTop)}>
+              <Show when={rows().length} fallback={<div class="jm-empty">{review() ? "Nothing waiting for a category." : data.state.filterQuery ? "No rows match this search." : "No transactions."}</div>}>
+                <div style={{ height: `${rows().length * rowHeight()}px`, position: "relative" }}>
+                  <div style={{ transform: `translateY(${first() * rowHeight()}px)` }}>
+                    <For each={shown()}>{(t) => <Row t={t} />}</For>
+                  </div>
+                </div>
+              </Show>
+            </div>
+          </div>
+        </Show>
       </div>
       <Show when={detail()}>{(id) => <Detail id={id()} onClose={() => setDetail(null)} onCategory={(anchor) => setPicker({ ids: [id()], anchor })} />}</Show>
       <Show when={picker()}>{(p) => <CategoryPicker ids={p().ids} anchor={p().anchor} onClose={() => setPicker(null)} onDone={() => setSelected(new Set<number>())} />}</Show>
-    </div>
+      <Show when={panel() === "tags"}><TagReview onClose={() => setPanel(null)} /></Show>
+      <Show when={panel() === "rules"}><RuleOffers onClose={() => setPanel(null)} /></Show>
+    </>
   )
 }

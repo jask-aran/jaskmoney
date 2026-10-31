@@ -40,6 +40,23 @@ const solidDom: BunPlugin = {
   },
 }
 
+/** The library's stylesheets name the phone and wide layouts as custom media
+ * (src/web/v2/queries.ts has the queries); CSS has no such thing yet, so
+ * they're written out, as Conduit's build does. */
+const customMedia: BunPlugin = {
+  name: "jaskmoney-web-custom-media",
+  setup(build) {
+    build.onLoad({ filter: /\/src\/web\/.*\.css$/ }, async (args) => {
+      const { NON_PHONE_LAYOUT_QUERY, PHONE_LAYOUT_QUERY } = await import("../web/v2/queries")
+      const source = await Bun.file(args.path).text()
+      return {
+        contents: source.replaceAll("@media (--conduit-phone-layout)", `@media ${PHONE_LAYOUT_QUERY}`).replaceAll("@media (--conduit-wide-layout)", `@media ${NON_PHONE_LAYOUT_QUERY}`),
+        loader: "css",
+      }
+    })
+  },
+}
+
 export interface WebFile { body: Uint8Array; type: string }
 export interface WebBundle { files: Map<string, WebFile>; inputs: Map<string, number>; error: string | null }
 
@@ -49,6 +66,7 @@ const TYPES: Record<string, string> = {
   ".css": "text/css; charset=utf-8",
   ".svg": "image/svg+xml",
   ".map": "application/json",
+  ".woff2": "font/woff2",
 }
 
 /** Every source file the bundle was made from, with its modification time. */
@@ -70,12 +88,13 @@ export async function buildWeb(): Promise<WebBundle> {
       target: "browser",
       minify: true,
       metafile: true,
-      plugins: [solidDom],
+      plugins: [solidDom, customMedia],
       define: { "process.env.NODE_ENV": JSON.stringify("production") },
       throw: false,
     } as Parameters<typeof Bun.build>[0])
     if (!result.success) {
-      return { files: new Map(), inputs: new Map([[ENTRY, statSync(ENTRY).mtimeMs]]), error: result.logs.map((log) => String(log)).join("\n") }
+      // No inputs: a failed build is made again on the next page request.
+      return { files: new Map(), inputs: new Map(), error: result.logs.map((log) => String(log)).join("\n") }
     }
     const files = new Map<string, WebFile>()
     for (const output of result.outputs) {

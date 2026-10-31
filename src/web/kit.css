@@ -1,0 +1,73 @@
+/*
+ * jaskmoney's own rules on components v2: text by the TUI's roles (web/theme.ts sets --ink-* and the accents from
+ * src/theme.ts; AGENTS.md says which is which), money in the data face, a category's dot, and the page's gutter.
+ * Everything else (rows, headings, controls, menus, the cursor's wash) is the library's.
+ */
+:root {
+  --good: var(--live); --bad: var(--destructive); --caution: var(--warn);
+}
+body { background: var(--frame); }
+
+/* Roles (AGENTS.md): what the text is picks its ink. */
+.strong { color: var(--ink-strong); }
+.figure { color: var(--ink-figure); }
+.heading { color: var(--ink-heading); }
+.label { color: var(--ink-label); }
+.note { color: var(--ink-note); }
+.faint { color: var(--ink-faint); }
+.good { color: var(--tone-good); }
+.bad { color: var(--tone-bad); }
+.caution { color: var(--tone-caution); }
+.ai { color: var(--tone-ai); }
+.key { color: var(--tone-key); }
+.scope { color: var(--tone-scope); }
+.mono, .money { font-family: var(--font-data); font-variant-numeric: tabular-nums; }
+.money { white-space: nowrap; }
+.small { font-size: var(--text-caption); }
+.tiny { font-size: var(--text-label); }
+.grow { flex: 1 1 auto; min-width: 0; }
+.row { display: flex; align-items: center; gap: var(--space-xs); }
+.ellipsis { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.dot { width: .5rem; height: .5rem; border-radius: 50%; flex: none; display: inline-block; }
+
+/* A tab: its header, then its body scrolling in the page gutter. */
+.jm-tab { display: flex; flex-direction: column; min-height: 0; height: 100%; }
+.jm-page { flex: 1 1 auto; min-height: 0; overflow: auto; padding: var(--space-sm) var(--page-gutter, var(--space-lg)) var(--space-xl); }
+.jm-section + .jm-section { margin-top: var(--space-lg); }
+.jm-section-foot { padding-top: var(--space-xs); color: var(--muted-foreground); font-size: var(--text-caption); }
+.jm-empty { padding: var(--space-2xl) var(--space-md); text-align: center; color: var(--muted-foreground); }
+.jm-empty-line { padding: var(--space-xs) var(--space-sm); color: var(--muted-foreground); font-size: var(--text-caption); }
+
+/* Key and value lines (Accounts, Totals): a label at rest, the figure in the data face at the right. */
+.lines { display: grid; grid-template-columns: 1fr auto; gap: var(--space-2xs) var(--space-md); align-items: baseline; }
+.lines .k { color: var(--ink-label); }
+.lines .v { text-align: right; font-family: var(--font-data); font-variant-numeric: tabular-nums; }
+.lines .sub { color: var(--muted-foreground); grid-column: 1 / -1; margin-top: var(--space-xs); font: var(--label-weight) var(--label-size)/var(--leading-text) var(--label-face); letter-spacing: var(--label-tracking); text-transform: var(--label-case); }
+
+/* A category: dot and name; a suggestion faded and italic, its confidence first. */
+.cat { display: inline-flex; align-items: center; gap: var(--space-xs); min-width: 0; max-width: 100%; }
+.cat .name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.cat.muted .name { color: var(--muted-foreground); }
+.cat.provisional .name { font-style: italic; }
+.conf { font: var(--weight-light) var(--text-label)/1 var(--font-data); font-variant-numeric: tabular-nums; }
+
+/* Something floating under its anchor: a menu, a picker. A press outside closes it. */
+.jm-outside { position: fixed; inset: 0; z-index: 40; }
+.jm-floating { position: fixed; z-index: 41; }
+.jm-picker-group { padding: var(--space-xs) var(--space-sm) var(--space-2xs); }
+
+/* The status line: what the last action did, at the foot of the pane, in the data face. */
+.jm-status { display: flex; gap: var(--space-sm); align-items: center; min-height: calc(1.75 * var(--u-space)); padding: 0 var(--space-md);
+  border-top: 1px solid var(--border); color: var(--muted-foreground); font: var(--weight-light) var(--text-label)/1.2 var(--font-data); }
+.jm-status .msg { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.jm-status .msg[data-error] { color: var(--destructive); }
+.jm-status .hints { margin-left: auto; white-space: nowrap; display: flex; gap: var(--space-sm); align-items: center; }
+@media (--conduit-phone-layout) { .jm-status .hints { display: none; } }
+
+/* The frame: the sidebar beside the one inset pane (the library's AppShell and Sheet). */
+.jm-app { display: flex; height: 100dvh; background: var(--frame); overflow: hidden; }
+.jm-sheet { display: flex; flex-direction: column; flex: 1 1 auto; min-height: 0; }
+.jm-sheet > .jm-tab { flex: 1 1 auto; }
+.jm-nav-foot { display: flex; align-items: center; gap: var(--space-2xs); width: 100%; }
+.jm-conn { display: inline-flex; align-items: center; gap: var(--space-xs); min-width: 0; color: var(--muted-foreground); font: var(--weight-light) var(--text-label)/1.2 var(--font-data); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.jm-drawer-backdrop { position: fixed; inset: 0; z-index: calc(var(--layer-drawer) - 1); border: 0; background: var(--dim); }

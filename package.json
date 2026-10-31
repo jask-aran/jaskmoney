@@ -18,8 +18,13 @@
   "dependencies": {
     "@earendil-works/pi-ai": "1.4.0",
     "@earendil-works/pi-mcp": "1.4.0",
+    "@fontsource-variable/geist": "^5.2.9",
     "@opentui/core": "0.7.0",
     "@opentui/solid": "0.7.0",
+    "@unovis/solid": "1.7.1",
+    "@unovis/ts": "1.7.1",
+    "clsx": "^2.1.1",
+    "lucide-solid": "1.25.0",
     "solid-js": "1.9.12"
   },
   "devDependencies": {

@@ -51,6 +51,18 @@ export function setTab(id: TabId): void {
   setTabSignal(id)
 }
 
+/** Too narrow for the sidebar beside a tab (a phone, or a narrow window): the sidebar is a drawer. */
+const compactQuery = window.matchMedia("(max-width: 760px)")
+const [compact, setCompact] = createSignal(compactQuery.matches)
+compactQuery.addEventListener("change", (event) => setCompact(event.matches))
+export { compact }
+
+/** The sidebar as a phone's drawer: open or shut. */
+const [drawer, setDrawer] = createSignal(false)
+export { drawer }
+export const openDrawer = () => setDrawer(true)
+export const closeDrawer = () => setDrawer(false)
+
 /** The status line: what the last action did, or why it failed. */
 const [status, setStatus] = createSignal<{ text: string; err: boolean }>({ text: "", err: false })
 export { status }

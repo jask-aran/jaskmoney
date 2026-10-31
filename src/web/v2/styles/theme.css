@@ -1,0 +1,21 @@
+@import "@fontsource-variable/geist";
+:root { --font-sans: "Geist Variable", sans-serif; }
+/* jaskmoney's material on Conduit's surfaces (src/theme.ts is the palette's
+   source; web/theme.ts also sets --ink-* and the jaskmoney accents from it).
+   The frame is the TUI's canvas (crust); panes sit a step up (mantle), cards
+   and popovers a step more (base). Text is the TUI's figure ink, muted text
+   its note ink; the one bright action is white. Hue only for state and data:
+   red for errors and destructive actions, green and yellow as small marks. */
+.dark {
+  --frame: #11111b; --background: #181825; --foreground: #e6e6e6;
+  --card: #1e1e2e;
+  --popover: #1e1e2e;
+  --primary: #ffffff; --primary-foreground: #11111b;
+  --muted-foreground: #7f849c;
+  --destructive: #f38ba8; --border: oklch(1 0 0 / 7%);
+  --ring: #bac2de; --region-focus: #cdd6f4;
+}
+:root {
+  /* State: a runtime dot, a warning (the TUI's good and caution). */
+  --change-added: #a6e3a1; --change-modified: #f9e2af; --change-removed: var(--destructive);
+}

@@ -1,0 +1,7 @@
+.tag-review-choices, .rule-offers-offer { display: grid; gap: 8px; }
+.tag-review-tags, .tag-review-actions { display: flex; flex-wrap: wrap; gap: 6px; }
+.tag-review-list { display: grid; gap: 8px; }
+.tag-review-row { display: flex; align-items: center; gap: 8px; }
+.tag-review-row .grow { display: grid; min-width: 0; }
+.tag-review-description { overflow-wrap: anywhere; }
+.rule-offers-offer { padding-bottom: 12px; border-bottom: 1px solid var(--ink-faint); }
