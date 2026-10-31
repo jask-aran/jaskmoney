@@ -129,6 +129,17 @@ test("[ shows the cycle before with the budgets then; a budget removed from this
   expect(ui.state.budgetOffset).toBe(0)
 })
 
+test("each past cycle's everything else leaves out categories that had their own budget then (rent before moving out)", async () => {
+  const { groceries, frame } = await budgetsTab()
+  data.setBudget({ kind: "overall" }, 500)
+  data.setBudget({ kind: "category", categoryId: groceries }, 300)
+  data.removeBudget({ kind: "category", categoryId: groceries })
+  const f = await frame()
+  // This cycle Groceries is everything else; in September it had its own.
+  expect(f).toMatch(/1 Oct – 31 Oct\s+\$100\s+[█─▏│ ]+\s+\$400 under/)
+  expect(f).toMatch(/1 Sep – 30 Sep\s+\$0\s+[█─▏│ ]+\s+\$500 under/)
+})
+
 test("a budget set while showing a past cycle applies from that cycle until its next change", async () => {
   const { groceries } = await budgetsTab()
   data.setBudget({ kind: "category", categoryId: groceries }, 300)

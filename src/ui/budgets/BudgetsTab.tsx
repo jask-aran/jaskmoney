@@ -1,6 +1,6 @@
 import { Index, Show, createMemo } from "solid-js"
 import { useTerminalDimensions } from "@opentui/solid"
-import { allocation, budgetCounts, budgetIgnoredIds, budgetIn, budgetProgress, cycleSpending, pastCycles, progressOf, totalBudgetIn, type Budget, type BudgetProgress, type BudgetSubject, type Cycle } from "../../domain/budget"
+import { allocation, budgetCounts, budgetCountsThen, budgetIgnoredIds, budgetIn, budgetProgress, cycleSpending, pastCycles, progressOf, totalBudgetIn, type Budget, type BudgetProgress, type BudgetSubject, type Cycle } from "../../domain/budget"
 import { budgetArmId, budgetCategoryLines, budgetListRows, budgetView, type BudgetLine } from "../../domain/budgetLines"
 import { budgetLabel } from "../../domain/budgetScopes"
 import { dailySpendSeries, formatWholeMoney } from "../../domain/dashboard"
@@ -111,8 +111,10 @@ export function BudgetsTab(props: { focused: SectionId }) {
   const firstData = live(() => data.transactions().reduce((first, t) => (t.dateISO < first ? t.dateISO : first), today()))
 
   // What the chart follows: the row at the focused card's cursor.
-  const subject = (): { title: string; scope: BudgetSubject | null; counts: (row: Transaction) => boolean; amount: number | null } => {
-    const of = (scope: BudgetSubject) => budgetCounts(scope, data.state.categories, budgets())
+  // Its rows are judged by the budgets of their own cycle (budgetCountsThen):
+  // rent is everything else only in cycles it had no budget.
+  const subject = live((): { title: string; scope: BudgetSubject | null; counts: (row: Transaction) => boolean; amount: number | null } => {
+    const of = (scope: BudgetSubject) => budgetCountsThen(scope, data.state.categories, data.state.budgetHistory, data.state.budgets, config())
     if (props.focused === "bud.categories") {
       const line = lines()[categoryCursor()]
       if (line) {
@@ -125,7 +127,7 @@ export function BudgetsTab(props: { focused: SectionId }) {
     const row = rows()[budgetCursor()]!
     if (row.kind === "total") return { title: TOTAL, scope: { kind: "total" }, counts: of({ kind: "total" }), amount: split().total }
     return row.budget ? { title: label(row.budget), scope: row.budget.scope, counts: of(row.budget.scope), amount: row.budget.amount } : { title: overallName(), scope: { kind: "overall" }, counts: of({ kind: "overall" }), amount: null }
-  }
+  })
   const spending = (c: Cycle, through: string) => cycleSpending(c, through, data.state.accounts, data.transactions()).filter(subject().counts)
   const daily = (c: Cycle, through: string) => ({ cycle: c, daily: dailySpendSeries(spending(c, through), c.start, c.end).values })
   // Cycles the history covers as well as this one (historyCovers, as the
