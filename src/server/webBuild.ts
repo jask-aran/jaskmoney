@@ -1,0 +1,111 @@
+/**
+ * The web app, bundled by this process: Bun.build from src/web/index.html
+ * with Solid's DOM JSX transform (babel-preset-solid), minified, held in
+ * memory and served by server/serve. Nothing is printed: the TUI may be
+ * drawing on this terminal (`--serve`).
+ *
+ * The bundle is made on the first request for the page and again on a
+ * page request after any file it was made from changes, so working on the
+ * web app needs only a reload (dev restarts the TUI for everything else).
+ */
+import { statSync } from "node:fs"
+import { join, resolve } from "node:path"
+import type { BunPlugin } from "bun"
+
+const WEB = resolve(import.meta.dir, "../web")
+const ENTRY = join(WEB, "index.html")
+
+/** The app's .tsx under src/web, through Babel: Solid's DOM output, then TypeScript stripped. */
+const solidDom: BunPlugin = {
+  name: "jaskmoney-web-solid",
+  setup(build) {
+    build.onLoad({ filter: /\/src\/web\/.*\.tsx$/ }, async (args) => {
+      const [{ transformAsync }, solid, ts] = await Promise.all([
+        // @ts-expect-error untyped
+        import("@babel/core") as Promise<{ transformAsync: (code: string, options: object) => Promise<{ code?: string } | null> }>,
+        // @ts-expect-error untyped preset
+        import("babel-preset-solid"),
+        // @ts-expect-error untyped preset
+        import("@babel/preset-typescript"),
+      ])
+      const source = await Bun.file(args.path).text()
+      const out = await transformAsync(source, {
+        filename: args.path,
+        configFile: false,
+        babelrc: false,
+        presets: [[solid.default, { generate: "dom" }], [ts.default, { isTSX: true, allExtensions: true }]],
+      })
+      return { contents: out?.code ?? source, loader: "js" }
+    })
+  },
+}
+
+export interface WebFile { body: Uint8Array; type: string }
+export interface WebBundle { files: Map<string, WebFile>; inputs: Map<string, number>; error: string | null }
+
+const TYPES: Record<string, string> = {
+  ".html": "text/html; charset=utf-8",
+  ".js": "text/javascript; charset=utf-8",
+  ".css": "text/css; charset=utf-8",
+  ".svg": "image/svg+xml",
+  ".map": "application/json",
+}
+
+/** Every source file the bundle was made from, with its modification time. */
+async function inputsOf(metafile: { inputs: Record<string, unknown> } | undefined): Promise<Map<string, number>> {
+  const inputs = new Map<string, number>()
+  for (const path of Object.keys(metafile?.inputs ?? {})) {
+    if (path.includes("node_modules")) continue
+    const full = resolve(path)
+    try { inputs.set(full, statSync(full).mtimeMs) } catch { /* virtual */ }
+  }
+  inputs.set(ENTRY, statSync(ENTRY).mtimeMs)
+  return inputs
+}
+
+export async function buildWeb(): Promise<WebBundle> {
+  try {
+    const result = await Bun.build({
+      entrypoints: [ENTRY],
+      target: "browser",
+      minify: true,
+      metafile: true,
+      plugins: [solidDom],
+      define: { "process.env.NODE_ENV": JSON.stringify("production") },
+      throw: false,
+    } as Parameters<typeof Bun.build>[0])
+    if (!result.success) {
+      return { files: new Map(), inputs: new Map([[ENTRY, statSync(ENTRY).mtimeMs]]), error: result.logs.map((log) => String(log)).join("\n") }
+    }
+    const files = new Map<string, WebFile>()
+    for (const output of result.outputs) {
+      const path = "/" + output.path.replace(/^\.?\//, "")
+      const ext = path.slice(path.lastIndexOf("."))
+      files.set(path === "/index.html" ? "/" : path, { body: new Uint8Array(await output.arrayBuffer()), type: TYPES[ext] ?? output.type })
+    }
+    return { files, inputs: await inputsOf((result as unknown as { metafile?: { inputs: Record<string, unknown> } }).metafile), error: null }
+  } catch (error) {
+    return { files: new Map(), inputs: new Map(), error: error instanceof Error ? error.stack ?? error.message : String(error) }
+  }
+}
+
+/** Whether a file the bundle was made from has changed since. */
+export function stale(bundle: WebBundle): boolean {
+  if (!bundle.inputs.size) return true
+  for (const [path, mtime] of bundle.inputs) {
+    try { if (statSync(path).mtimeMs !== mtime) return true } catch { return true }
+  }
+  return false
+}
+
+/** One bundle at a time, remade on a page request when stale. */
+export function webBundler() {
+  let current: Promise<WebBundle> | null = null
+  return {
+    get(page: boolean): Promise<WebBundle> {
+      if (!current) current = buildWeb()
+      else if (page) current = current.then((bundle) => (stale(bundle) ? buildWeb() : bundle))
+      return current
+    },
+  }
+}

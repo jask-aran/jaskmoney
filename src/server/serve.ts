@@ -1,7 +1,7 @@
 /**
- * The core to other clients: the web app at /, and the core's protocol
- * (core/protocol) as JSON over a WebSocket at /api. One process owns the
- * database; everything else connects here.
+ * The core to other clients: the web app at / (server/webBuild), and the
+ * core's protocol (core/protocol) as JSON over a WebSocket at /api. One
+ * process owns the database; everything else connects here.
  *
  * It listens on this machine only, and /api answers only requests
  * addressed to it by a loopback name, and a browser only from this
@@ -10,7 +10,7 @@
  * elsewhere (a tunnel) is the tunnel's business, and its own login.
  */
 import type { ServerWebSocket } from "bun"
-import index from "../web/index.html"
+import { webBundler } from "./webBuild"
 import type { Core } from "../core/core"
 import { KEYED_SLICES, type ClientMessage, type CoreState, type ServerMessage } from "../core/protocol"
 
@@ -87,9 +87,22 @@ function stateMessage(ws: ServerWebSocket<Connection>, encoded: Encoded): string
 
 const send = (ws: ServerWebSocket<Connection>, message: ServerMessage) => ws.send(JSON.stringify(message))
 
-export function serveCore(core: Core, { port = DEFAULT_PORT, hostname = "127.0.0.1" }: { port?: number; hostname?: string } = {}) {
+/** A served file: hashed bundles keep forever, the page is asked for fresh. */
+function fileResponse(file: { body: Uint8Array; type: string }, page: boolean): Response {
+  return new Response(file.body, { headers: { "content-type": file.type, "cache-control": page ? "no-cache" : "public, max-age=31536000, immutable" } })
+}
+
+export interface ServeOptions {
+  port?: number
+  hostname?: string
+  /** How many clients are connected now, on each change. */
+  onClients?: (count: number) => void
+}
+
+export function serveCore(core: Core, { port = DEFAULT_PORT, hostname = "127.0.0.1", onClients }: ServeOptions = {}) {
   const hosts = new Set([...LOOPBACK, hostname])
   const connections = new Set<ServerWebSocket<Connection>>()
+  const bundler = webBundler()
   // One subscription for every client: each patch is serialised once.
   const unsubscribe = core.subscribe((patch) => {
     if (!connections.size) return
@@ -122,11 +135,17 @@ export function serveCore(core: Core, { port = DEFAULT_PORT, hostname = "127.0.0
   const server = Bun.serve<Connection>({
     port,
     hostname,
-    routes: { "/": index },
-    fetch(req, server) {
+    async fetch(req, server) {
       const url = new URL(req.url)
       if (!hosts.has(url.hostname)) return new Response("Misdirected", { status: 421 })
-      if (url.pathname !== "/api") return new Response("Not found", { status: 404 })
+      if (url.pathname !== "/api") {
+        if (req.method !== "GET" && req.method !== "HEAD") return new Response("Not found", { status: 404 })
+        const page = url.pathname === "/" || url.pathname === "/index.html"
+        const bundle = await bundler.get(page)
+        if (bundle.error) return new Response(`The web app didn't build:\n\n${bundle.error}`, { status: 500, headers: { "content-type": "text/plain; charset=utf-8" } })
+        const file = bundle.files.get(page ? "/" : url.pathname)
+        return file ? fileResponse(file, page) : new Response("Not found", { status: 404 })
+      }
       const origin = req.headers.get("origin")
       if (origin && new URL(origin).host !== url.host) return new Response("Forbidden", { status: 403 })
       if (server.upgrade(req, { data: { sent: new Map(), entries: new Map(), rows: new Map(), order: "", calls: new Map() } })) return undefined
@@ -135,6 +154,7 @@ export function serveCore(core: Core, { port = DEFAULT_PORT, hostname = "127.0.0
     websocket: {
       open(ws) {
         connections.add(ws)
+        onClients?.(connections.size)
         const message = stateMessage(ws, encode(core.state))
         if (message) ws.send(message)
       },
@@ -146,6 +166,7 @@ export function serveCore(core: Core, { port = DEFAULT_PORT, hostname = "127.0.0
       },
       close(ws) {
         connections.delete(ws)
+        onClients?.(connections.size)
         for (const abort of ws.data.calls.values()) abort.abort()
       },
     },

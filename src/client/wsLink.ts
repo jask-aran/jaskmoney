@@ -4,10 +4,10 @@ import type { CoreLink } from "./link"
 
 /**
  * The core over a WebSocket (server/serve's /api), from a browser or from
- * Bun. Calls made before the socket opens wait for it; when it closes, the
- * calls still waiting fail and `onClose` hears why.
+ * Bun. Calls made before the socket opens wait for it; `onOpen` hears it
+ * open. When it closes, the calls still waiting fail and `onClose` hears why.
  */
-export function wsLink(url: string, { onClose }: { onClose?: (reason: string) => void } = {}): CoreLink & { close(): void } {
+export function wsLink(url: string, { onClose, onOpen }: { onClose?: (reason: string) => void; onOpen?: () => void } = {}): CoreLink & { close(): void } {
   const socket = new WebSocket(url)
   const waiting = new Map<number, { resolve: (value: never) => void; reject: (error: Error) => void; onProgress?: (data: never) => void }>()
   const listeners = new Set<(patch: Partial<CoreState>) => void>()
@@ -44,7 +44,10 @@ export function wsLink(url: string, { onClose }: { onClose?: (reason: string) =>
     else outbox.push(text)
   }
 
-  socket.addEventListener("open", () => { for (const text of outbox.splice(0)) socket.send(text) })
+  socket.addEventListener("open", () => {
+    for (const text of outbox.splice(0)) socket.send(text)
+    onOpen?.()
+  })
   socket.addEventListener("message", (event) => {
     const message = JSON.parse(String(event.data)) as ServerMessage
     if (message.t === "state") {

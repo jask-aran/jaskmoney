@@ -44,6 +44,9 @@ function flagValue(name: string): string | null {
 }
 
 
+/** "1 web client", or nothing when none is connected. */
+export const webClientsLabel = (count: number) => (count ? `${count} web client${count === 1 ? "" : "s"}` : "")
+
 export function App() {
   const renderer = useRenderer()
 
@@ -58,6 +61,8 @@ export function App() {
   const remote = flagValue("--connect")
   const serving = remote == null ? flagValue("--serve") : null
   let servedAt = ""
+  // Clients of the core this TUI serves (the web app), for the top bar.
+  const [webClients, setWebClients] = createSignal(0)
 
   function bootstrap() {
     try {
@@ -101,7 +106,7 @@ export function App() {
       data.init(process.env.JASKMONEY_DB)
       if (serving != null) {
         const { serveCore, DEFAULT_PORT } = require("../server/serve") as typeof import("../server/serve")
-        const served = serveCore(data.core, { port: Number(serving) || DEFAULT_PORT })
+        const served = serveCore(data.core, { port: Number(serving) || DEFAULT_PORT, onClients: setWebClients })
         // A listening server would keep the process alive after quitting.
         onCleanup(() => served.stop())
         servedAt = ` · web app at ${served.page}`
@@ -170,7 +175,7 @@ export function App() {
           bar, the gap and the Date Range, which end short of it. */}
       <TabBar
         active={ui.state.activeTab}
-        accountLabel={[data.state.demo ? "DEMO" : "", accountLabel(), data.state.demo ? "" : syncLabel()].filter(Boolean).join(" · ")}
+        accountLabel={[data.state.demo ? "DEMO" : "", accountLabel(), webClientsLabel(webClients()), data.state.demo ? "" : syncLabel()].filter(Boolean).join(" · ")}
         reserveRight={ui.state.activeTab === "overview" ? UP_LOGO_WIDTH : 0}
       />
       <box height={1} width="100%" backgroundColor={theme.canvas} />
