@@ -4,7 +4,6 @@
  * styles imported in Conduit's cascade order. Shapes only: behaviour is the caller's.
  */
 import "./styles/reset.css";
-import "./styles/theme.css";
 import "./styles/foundations.css";
 import "./styles/controls.css";
 import "./styles/frost.css";
@@ -18,6 +17,8 @@ import "./styles/card.css";
 import "./styles/toast.css";
 import "./styles/overlay.css";
 import "./styles/pill.css";
+// Last: jaskmoney's material (faces, type sizes, colours) over the library's defaults.
+import "./styles/theme.css";
 
 export { moveCursor, hovers, cssTime, type Density, type Motion } from "./shared";
 export { Expand } from "./expand";

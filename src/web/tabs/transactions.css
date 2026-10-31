@@ -23,10 +23,10 @@
 .jm-table[data-picking] :is(.jm-thead, .jm-tx) { grid-template-columns: var(--icon) 4.75rem minmax(10rem, 1fr) minmax(9rem, 17rem) 6.5rem; }
 .jm-table[data-picking][data-accounts] :is(.jm-thead, .jm-tx) { grid-template-columns: var(--icon) 4.75rem minmax(10rem, 1fr) 7rem minmax(9rem, 17rem) 6.5rem; }
 .jm-thead { min-height: var(--control); flex: none; }
-.jm-th { border: 0; background: none; padding: 0; text-align: left; cursor: pointer; white-space: nowrap; color: var(--muted-foreground);
+.jm-thead > .jm-th { border: 0; background: none; padding: 0; text-align: left; cursor: pointer; white-space: nowrap; color: var(--muted-foreground);
   font: var(--label-weight) var(--label-size)/var(--leading-text) var(--label-face); letter-spacing: var(--label-tracking); text-transform: var(--label-case); }
-.jm-th[aria-current] { color: var(--foreground); }
-.jm-th.jm-tx-amt { text-align: right; }
+.jm-thead > .jm-th[aria-current] { color: var(--foreground); }
+.jm-thead > .jm-th.jm-tx-amt { text-align: right; }
 .jm-tbody { flex: 1 1 auto; min-height: 0; overflow: auto; overscroll-behavior: contain; scrollbar-width: var(--native-scrollbar-width); scrollbar-color: var(--native-scrollbar-color); }
 .jm-tx { height: var(--jm-row, 2.25rem); font-size: var(--text-row); border-radius: var(--radius-control); color: var(--ink-figure); cursor: default; user-select: none; }
 @media (hover: hover) { .jm-tx:hover { background: var(--border); } }
