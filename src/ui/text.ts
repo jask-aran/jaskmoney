@@ -26,9 +26,7 @@ export function fit(s: string, n: number): string {
 }
 
 /** "1 transaction", "3 transactions". */
-export function count(n: number, noun: string): string {
-  return `${n} ${noun}${n === 1 ? "" : "s"}`
-}
+export { count } from "../domain/words"
 
 /** Compact money for axes and tight columns: $950, $4.5k, $5k, $12k. */
 export function shortMoney(n: number): string {

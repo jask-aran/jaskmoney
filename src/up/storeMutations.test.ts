@@ -36,7 +36,7 @@ test("category pushes deduplicate provider and local IDs", async () => {
   }
 })
 
-test("rule application rolls back earlier rows and links when a later link fails", () => {
+test("rule application rolls back earlier rows and links when a later link fails", async () => {
   data.init(":memory:")
   const db = data.getDb()!
   try {
@@ -53,9 +53,9 @@ test("rule application rolls back earlier rows and links when a later link fails
         { id: 2, name: "Invalid tag", savedFilterId: "second", setCategoryId: null, addTagIds: [999999], sortOrder: 1, enabled: true },
       ],
     })
-    expect(data.applyRules([first, second], true).updatedTransactions).toBe(2)
+    expect((await data.applyRules([first, second], true)).updatedTransactions).toBe(2)
     const before = db.query("SELECT id, category_id, category_source FROM transactions ORDER BY id").all()
-    expect(() => data.applyRules([first, second])).toThrow("FOREIGN KEY constraint failed")
+    await expect(data.applyRules([first, second])).rejects.toThrow("FOREIGN KEY constraint failed")
     expect(db.query("SELECT id, category_id, category_source FROM transactions ORDER BY id").all()).toEqual(before)
     expect(db.query("SELECT * FROM transaction_tags").all()).toEqual([])
   } finally {

@@ -1,4 +1,5 @@
 import { basename } from "node:path"
+export { matchingProfiles } from "./profileMatch"
 import type { Db } from "../db/client"
 import { ensureAccount, uncategorisedCategoryId } from "../db/client"
 import type { ImportPreview, ImportPreviewError, ImportPreviewRow, ImportProfile, IngestResult } from "./types"
@@ -108,11 +109,4 @@ export function commitImportPreview(db: Db, preview: ImportPreview, skipDuplicat
     return id
   })())
   return { inserted: selected.length, skippedDupes: preview.rows.length - selected.length, accountId: account.id, accountName: account.name, importId, transactionIds }
-}
-
-export function matchingProfiles(profiles: ImportProfile[], filename: string): ImportProfile[] {
-  const lower = filename.toLowerCase()
-  const matches = profiles.filter((p) => p.importPrefix && lower.startsWith(p.importPrefix.toLowerCase()))
-  const longest = Math.max(0, ...matches.map((p) => p.importPrefix.length))
-  return matches.filter((p) => p.importPrefix.length === longest).sort((a, b) => a.name.localeCompare(b.name))
 }

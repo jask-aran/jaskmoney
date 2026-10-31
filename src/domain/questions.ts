@@ -1,4 +1,4 @@
-import type { JevQuestion } from "../ai/jev"
+import type { JevQuestion } from "../ai/judge"
 import { rowFacts } from "./history"
 import type { Category, Transaction } from "./types"
 

@@ -59,16 +59,16 @@ test("a declined AI rule isn't offered again, and the model is told", async () =
   const finish = () => fauxAssistantMessage([fauxToolCall("finish", { rules: [proposals[0]] })], { stopReason: "toolUse" })
   faux.setResponses([finish()])
   await data.askForRules(llm)
-  data.declineRuleOffer(data.state.aiRuleOffers[0]!)
+  await data.declineRuleOffer(data.state.aiRuleOffers[0]!)
   expect(data.allRuleOffers()).toEqual([])
-  expect(ruleWriterBrief(data.historyData(), [{ expr: 'desc:"J Smith"', categoryId: rent, tagId: null }]).declined).toEqual([{ expr: 'desc:"J Smith"', category: "Test rent" }])
+  expect(ruleWriterBrief((await data.ruleWriterInput()).history, [{ expr: 'desc:"J Smith"', categoryId: rent, tagId: null }]).declined).toEqual([{ expr: 'desc:"J Smith"', category: "Test rent" }])
   faux.setResponses([finish()])
   expect(await data.askForRules(llm)).toStartWith("faux-1 proposed 0 rules, 1 turned down")
 })
 
 test("the brief: categories with recent choices, what's waiting, existing rules", async () => {
   setup()
-  const brief = ruleWriterBrief(data.historyData(), [])
+  const brief = ruleWriterBrief((await data.ruleWriterInput()).history, [])
   expect(brief.categories.find((c) => c.name === "Test rent")).toEqual({ name: "Test rent", rows: 7 })
   expect(brief.waiting.descriptions[0]).toMatchObject({ description: "J Smith", rows: 1 })
 })
@@ -94,7 +94,7 @@ test("a rule for rows Up already categorises (none waiting) is turned down; hist
     fauxAssistantMessage(Array.from({ length: 11 }, () => fauxToolCall("category_history", { category: "Test travel" })), { stopReason: "toolUse" }),
     fauxAssistantMessage([fauxToolCall("finish", { rules: [{ name: "Qantas", category: "Test travel", expr: "desc:Qantas", why: "3 of 3" }] })], { stopReason: "toolUse" }),
   ])
-  const result = await writeRules(llm, data.historyData())
+  const result = await writeRules(llm, (await data.ruleWriterInput()).history)
   expect(result.rejected).toEqual([{ rule: expect.objectContaining({ expr: "desc:Qantas" }), reason: "Up already categorises these" }])
   expect(result.calls.filter((c) => c.name === "category_history")).toHaveLength(11)
 })

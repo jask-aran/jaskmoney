@@ -40,7 +40,7 @@ test("transaction fixtures never share arrays", () => {
   expect(transaction({ dateISO: "2026-01-02" }).dateRaw).toBe("2026-01-02")
 })
 
-test("preload isolates settings and resets stores; reset removes nested session state", () => {
+test("preload isolates settings and resets stores; reset removes nested session state", async () => {
   expect(existsSync(process.env.JASKMONEY_CONFIG!)).toBe(false)
   expect(existsSync(join(dirname(defaultSettingsConfigPath()), "credentials.json"))).toBe(false)
   writeFileSync(join(dirname(defaultSettingsConfigPath()), "credentials.json"), '{"token":"test-only"}')
@@ -52,7 +52,7 @@ test("preload isolates settings and resets stores; reset removes nested session 
   const initialUi = structuredClone(unwrap(ui.state))
   const initialData = structuredClone(unwrap(data.state))
   data.init(":memory:")
-  data.saveUiPrefs({ filterUsage: { old: "2026-01-01T00:00:00Z" }, weekStart: "sunday" })
+  await data.saveUiPrefs({ filterUsage: { old: "2026-01-01T00:00:00Z" }, weekStart: "sunday" })
   data.commitFilter("desc:Coffee")
   data.setState({ uncategorisedOnly: true, sortColumn: "amount", sortAscending: true, transactions: [transaction()] })
   ui.setState({

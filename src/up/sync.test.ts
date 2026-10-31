@@ -497,7 +497,7 @@ test("store sync locks concurrent calls, refreshes, applies rules only to insert
     testEnv("JASKMONEY_UP_TOKEN", "test-pat")
     const category = createCategory(db, { name: "Rule category", color: "#ffffff" })
     data.setState({ savedFilters: [{ id: "merchant", name: "Merchant", expr: "desc:Merchant" }] })
-    data.createSettingsRule({ name: "Merchant", savedFilterId: "merchant", setCategoryId: category, addTagIds: [], enabled: true })
+    await data.createSettingsRule({ name: "Merchant", savedFilterId: "merchant", setCategoryId: category, addTagIds: [], enabled: true })
     fetchMock.mockImplementation(Object.assign(async (input: Parameters<typeof fetch>[0]) => new URL(String(input)).pathname.endsWith("/categories") ? response([]) : new URL(String(input)).pathname.endsWith("/accounts") ? response([account()]) : response([txn()]), { preconnect: globalThis.fetch.preconnect }))
     const pending = data.syncUp()
     expect(data.state.upSyncing).toBe(true)

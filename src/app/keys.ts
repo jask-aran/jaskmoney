@@ -1,7 +1,7 @@
 import { unwrap } from "solid-js/store"
 import { merchantKey } from "../domain/history"
 import { footerShown, type Hint } from "./palette"
-import { toggleDemo, applyAllRules, applySavedFilter, clearTransactionFilter, askForRules, reportError, resetTransactionCursors, runUndo, showAccount, showDryRun, toggleIcons, toggleWeekStart, toggleXAxis } from "./actions"
+import { toggleDemo, applyAllRules, applySavedFilter, clearTransactionFilter, askForRules, reportError, settleData, resetTransactionCursors, runUndo, showAccount, showDryRun, toggleIcons, toggleWeekStart, toggleXAxis } from "./actions"
 import { commands, rankCommands, type Command } from "./commands"
 import { ACCOUNT_ACTIONS, armedText, isArmed, isSecondPress, type Armed } from "../state/armed"
 import { DATABASE_ROWS } from "../state/databaseRows"
@@ -325,9 +325,9 @@ function handleTagPicker(ui: UiStore, key: KeyEvent, data?: DataStore): void {
     apply: () => {
       const targets = [...ui.state.pickerTargets]
       const patch = { ...ui.state.tagPickerPatch }
-      try {
+      settleData(ui, (async () => {
         if (items[ui.state.tagPickerCursor]?.value === null && data) {
-          const id = data.createSettingsTag({ name: ui.state.tagPickerQuery.trim(), color: theme.blue })
+          const id = await data.createSettingsTag({ name: ui.state.tagPickerQuery.trim(), color: theme.blue })
           patch[id] = "add"
           ui.setState({ tagPickerPatch: patch })
         }
@@ -342,9 +342,7 @@ function handleTagPicker(ui: UiStore, key: KeyEvent, data?: DataStore): void {
             (error) => { ui.closeTagPicker(); reportError(ui, error) },
           )
         }
-      } catch (error) {
-        reportError(ui, error)
-      }
+      })())
     },
     space: () => {
       const item = items[ui.state.tagPickerCursor]
@@ -572,7 +570,7 @@ function handleSettingsFactoryReset(ui: UiStore, key: KeyEvent, data?: DataStore
   if (name === "escape") { ui.setState({ factoryResetOpen: false, factoryResetDraft: "", factoryResetCaret: 0 }); ui.setStatus("Factory reset cancelled"); return }
   if (name === "return" || name === "enter") {
     if (ui.state.factoryResetDraft !== "RESET") { ui.setStatus("Type RESET exactly to erase this database", true); return }
-    try { data?.factoryResetDatabase(); ui.setState({ factoryResetOpen: false, factoryResetDraft: "", factoryResetCaret: 0 }); ui.setStatus("Database reset · OpenTUI settings retained") } catch (e) { reportError(ui, e) }
+    settleData(ui, (async () => { await data?.factoryResetDatabase(); ui.setState({ factoryResetOpen: false, factoryResetDraft: "", factoryResetCaret: 0 }); ui.setStatus("Database reset · OpenTUI settings retained") })())
     return
   }
   const next = editText({ value: ui.state.factoryResetDraft, caret: ui.state.factoryResetCaret }, key)
@@ -636,19 +634,17 @@ function handleManagerAccountAction(ui: UiStore, key: KeyEvent, data?: DataStore
   if (moved != null) { ui.setState({ accountActionCursor: moved }); return }
   if ((name === "return" || name === "enter") && account) {
     const kind = ACCOUNT_ACTIONS[ui.state.accountActionCursor]!
-    const done = ui.state.armed && isArmed(ui.state.armed, kind, account.id)
-    confirmTwice(ui, data, { kind, id: account.id, label: account.name, with: "enter" })
-    if (done) ui.setState({ accountActionId: null })
+    confirmTwice(ui, data, { kind, id: account.id, label: account.name, with: "enter" }, () => ui.setState({ accountActionId: null }))
   }
 }
 
 /** del (or enter) twice (state/armed): the first press arms the row, the
  * same key on it again does it; handleKey disarms on any other key. */
-function confirmTwice(ui: UiStore, data: DataStore | undefined, armed: Armed): void {
+function confirmTwice(ui: UiStore, data: DataStore | undefined, armed: Armed, ok?: () => void): void {
   const now = ui.state.armed
   if (now && isArmed(now, armed.kind, armed.id) && now.with === armed.with) {
     ui.disarm()
-    try { ui.setStatus(CONFIRMED[armed.kind](data, armed)) } catch (e) { reportError(ui, e) }
+    settleData(ui, CONFIRMED[armed.kind](data, armed), (summary) => { ui.setStatus(summary); ok?.() })
     return
   }
   ui.arm(armed)
@@ -658,19 +654,19 @@ function confirmTwice(ui: UiStore, data: DataStore | undefined, armed: Armed): v
 type Confirm = Armed
 
 /** What each armed row does on its second press, and the status it leaves. */
-const CONFIRMED: Record<Confirm["kind"], (data: DataStore | undefined, c: Confirm) => string> = {
-  category: (data, c) => { data?.deleteSettingsCategory(Number(c.id)); return `Deleted ${c.label}` },
-  tag: (data, c) => { data?.deleteSettingsTag(Number(c.id)); return `Deleted ${c.label}` },
-  rule: (data, c) => { data?.deleteSettingsRule(Number(c.id)); return `Deleted ${c.label}` },
-  filter: (data, c) => { data?.deleteSavedFilter(String(c.id)); return `Deleted ${c.label}` },
-  profile: (data, c) => { data?.deleteImportProfile(String(c.id)); return `Deleted ${c.label}` },
-  budget: (data, c) => { data?.removeBudget(Number(c.id)); return `Deleted ${c.label}` },
-  clearData: (data) => { data?.clearDatabaseData(); return "Transaction and import data cleared" },
-  clearAccount: (data, c) => { data?.clearAccountData(Number(c.id)); return `Cleared ${c.label}` },
-  deleteAccount: (data, c) => { data?.removeAccountData(Number(c.id)); return `Removed ${c.label}` },
+const CONFIRMED: Record<Confirm["kind"], (data: DataStore | undefined, c: Confirm) => Promise<string>> = {
+  category: async (data, c) => { await data?.deleteSettingsCategory(Number(c.id)); return `Deleted ${c.label}` },
+  tag: async (data, c) => { await data?.deleteSettingsTag(Number(c.id)); return `Deleted ${c.label}` },
+  rule: async (data, c) => { await data?.deleteSettingsRule(Number(c.id)); return `Deleted ${c.label}` },
+  filter: async (data, c) => { await data?.deleteSavedFilter(String(c.id)); return `Deleted ${c.label}` },
+  profile: async (data, c) => { await data?.deleteImportProfile(String(c.id)); return `Deleted ${c.label}` },
+  budget: async (data, c) => { await data?.removeBudget(Number(c.id)); return `Deleted ${c.label}` },
+  clearData: async (data) => { await data?.clearDatabaseData(); return "Transaction and import data cleared" },
+  clearAccount: async (data, c) => { await data?.clearAccountData(Number(c.id)); return `Cleared ${c.label}` },
+  deleteAccount: async (data, c) => { await data?.removeAccountData(Number(c.id)); return `Removed ${c.label}` },
 
 
-  desyncAccount: (data, c) => `Sync off for ${c.label} · ${data?.setAccountSync(Number(c.id), false) ?? 0} transactions removed`,
+  desyncAccount: async (data, c) => `Sync off for ${c.label} · ${await data?.setAccountSync(Number(c.id), false) ?? 0} transactions removed`,
 }
 
 function handleSettingsEditor(ui: UiStore, key: KeyEvent, data?: DataStore): void {
@@ -727,14 +723,14 @@ function handleSettingsEditor(ui: UiStore, key: KeyEvent, data?: DataStore): voi
     return
   }
   if (name === "return" || name === "enter") {
-    try {
+    settleData(ui, (async () => {
       if (kind === "category") {
-        if (ui.state.settingsEditId == null) data?.createSettingsCategory({ name: draft.name, color: draft.color, notSpending: draft.notSpending })
-        else data?.updateSettingsCategory(Number(ui.state.settingsEditId), { name: draft.name, color: draft.color, notSpending: draft.notSpending })
+        if (ui.state.settingsEditId == null) await data?.createSettingsCategory({ name: draft.name, color: draft.color, notSpending: draft.notSpending })
+        else await data?.updateSettingsCategory(Number(ui.state.settingsEditId), { name: draft.name, color: draft.color, notSpending: draft.notSpending })
       } else if (kind === "tag") {
         const tag = { name: draft.name, color: draft.color, categoryIds: draft.categoryIds, about: draft.about.trim() || null }
-        if (ui.state.settingsEditId == null) data?.createSettingsTag(tag)
-        else data?.updateSettingsTag(Number(ui.state.settingsEditId), tag)
+        if (ui.state.settingsEditId == null) await data?.createSettingsTag(tag)
+        else await data?.updateSettingsTag(Number(ui.state.settingsEditId), tag)
       } else if (kind === "budget") {
         const option = budgetScopeOptions(ctx.accounts, ctx.categories).find((o) => o.key === draft.scopeKey)
         const amount = Number(draft.amount.replace(/[$,\s]/g, ""))
@@ -745,24 +741,24 @@ function handleSettingsEditor(ui: UiStore, key: KeyEvent, data?: DataStore): voi
         const current = data?.state.budgetCycle
         // The cycle is shared by every budget; save it first so a bad date
         // stops the whole edit.
-        if (current && (current.unit !== cycle.unit || current.anchor !== cycle.anchor || current.anchorDate !== cycle.anchorDate || !!current.payEarly !== !!cycle.payEarly)) data?.setBudgetCycle(cycle)
+        if (current && (current.unit !== cycle.unit || current.anchor !== cycle.anchor || current.anchorDate !== cycle.anchorDate || !!current.payEarly !== !!cycle.payEarly)) await data?.setBudgetCycle(cycle)
         const editing = data?.state.budgets.find((b) => b.id === ui.state.settingsEditId)
-        if (editing && scopeKey(editing.scope) !== option.key) data?.removeBudget(editing.id)
-        data?.setBudget(option.scope, amount)
+        if (editing && scopeKey(editing.scope) !== option.key) await data?.removeBudget(editing.id)
+        await data?.setBudget(option.scope, amount)
       } else if (kind === "cycle") {
         const cycle = cycleFromDraft(draft)
         if (typeof cycle === "string") throw new Error(cycle)
-        data?.setBudgetCycle(cycle)
+        await data?.setBudgetCycle(cycle)
       } else if (kind === "filter") {
-        data?.saveSavedFilter({ id: draft.id, name: draft.name, expr: draft.expr }, typeof ui.state.settingsEditId === "string" ? ui.state.settingsEditId : undefined)
+        await data?.saveSavedFilter({ id: draft.id, name: draft.name, expr: draft.expr }, typeof ui.state.settingsEditId === "string" ? ui.state.settingsEditId : undefined)
       } else {
         const existing = data?.state.rules.find((r) => r.id === ui.state.settingsEditId)
         const rule = { id: Number(ui.state.settingsEditId ?? 0), name: draft.name, savedFilterId: draft.savedFilterId, setCategoryId: draft.setCategoryId, addTagIds: draft.addTagIds, enabled: existing?.enabled ?? true, sortOrder: existing?.sortOrder ?? 0 }
-        if (ui.state.settingsEditId == null) data?.createSettingsRule(rule)
-        else data?.updateSettingsRule(rule)
+        if (ui.state.settingsEditId == null) await data?.createSettingsRule(rule)
+        else await data?.updateSettingsRule(rule)
       }
       ui.closeSettingsEditor(); ui.setStatus("Saved")
-    } catch (e) { reportError(ui, e) }
+    })())
     return
   }
   const left = name === "left" || (!isText && name === "h")
@@ -797,7 +793,7 @@ function handleSettingsImportFiles(ui: UiStore, key: KeyEvent, data?: DataStore)
   if ((name === "return" || name === "enter") && files[ui.state.importCursor]) {
     const path = files[ui.state.importCursor]!
     const matches = data?.profileMatches(path) ?? []
-    if (matches.length === 1) { try { const preview = data?.previewImport(path, matches[0]!); ui.setState({ importStage: "preview", importPath: path, importPathCaret: path.length, importPreview: preview ?? null }) } catch (e) { reportError(ui, e) } }
+    if (matches.length === 1) { settleData(ui, (async () => { const preview = await data?.previewImport(path, matches[0]!); ui.setState({ importStage: "preview", importPath: path, importPathCaret: path.length, importPreview: preview ?? null }) })()) }
     else ui.setState({ importStage: "profile", importPath: path, importPathCaret: path.length, importProfileCursor: 0 })
     return
   }
@@ -810,11 +806,11 @@ function handleSettingsImportPath(ui: UiStore, key: KeyEvent, data?: DataStore):
     const raw = ui.state.importPath.trim()
     if (!raw) { ui.setStatus("Enter a CSV path", true); return }
     const path = resolve(ui.state.importDirectory, raw)
-    try {
+    settleData(ui, (async () => {
       const matches = data?.profileMatches(path) ?? []
-      if (matches.length === 1) ui.setState({ importStage: "preview", importPath: path, importPathCaret: path.length, importPreview: data?.previewImport(path, matches[0]!) ?? null })
+      if (matches.length === 1) ui.setState({ importStage: "preview", importPath: path, importPathCaret: path.length, importPreview: await data?.previewImport(path, matches[0]!) ?? null })
       else ui.setState({ importStage: "profile", importPath: path, importPathCaret: path.length, importProfileCursor: 0 })
-    } catch (e) { reportError(ui, e) }
+    })())
     return
   }
   const next = editText({ value: ui.state.importPath, caret: ui.state.importPathCaret }, key)
@@ -832,7 +828,7 @@ function handleSettingsImportProfile(ui: UiStore, key: KeyEvent, data?: DataStor
   if (name === "delete" && profiles[ui.state.importProfileCursor]) { const selected = profiles[ui.state.importProfileCursor]!; confirmTwice(ui, data, { kind: "profile", id: selected.id, label: selected.name, with: "delete" }); return }
   if ((name === "return" || name === "enter") && profiles[ui.state.importProfileCursor]) {
     if (ui.state.importProfileManaging) { ui.openProfileEditor(profiles[ui.state.importProfileCursor]!, profiles[ui.state.importProfileCursor]!.id); return }
-    try { ui.setState({ importStage: "preview", importPreview: data?.previewImport(ui.state.importPath, profiles[ui.state.importProfileCursor]!) ?? null }) } catch (e) { reportError(ui, e) }
+    settleData(ui, (async () => { ui.setState({ importStage: "preview", importPreview: await data?.previewImport(ui.state.importPath, profiles[ui.state.importProfileCursor]!) ?? null }) })())
     return
   }
 }
@@ -851,12 +847,12 @@ function handleSettingsImportProfileEditor(ui: UiStore, key: KeyEvent, data?: Da
     return
   }
   if (name === "return" || name === "enter") {
-    try {
-      data?.saveImportProfile(draft, ui.state.importProfileEditId)
-      const preview = ui.state.importPath ? data?.previewImport(ui.state.importPath, draft) : null
+    settleData(ui, (async () => {
+      await data?.saveImportProfile(draft, ui.state.importProfileEditId)
+      const preview = ui.state.importPath ? await data?.previewImport(ui.state.importPath, draft) : null
       ui.setState({ importStage: preview ? "preview" : "profile", importPreview: preview ?? null, importProfileEditId: null })
       ui.setStatus(`Saved profile ${draft.name}`)
-    } catch (e) { reportError(ui, e) }
+    })())
     return
   }
   if (selected === "accountType" && (name === "h" || name === "left" || name === "l" || name === "right" || name === "space")) { ui.setState("importProfileDraft", "accountType", draft.accountType === "debit" ? "credit" : "debit"); return }
@@ -883,13 +879,13 @@ function handleSettingsImportPreview(ui: UiStore, key: KeyEvent, data?: DataStor
   if (name === "p") { ui.setState({ importPreviewShowAll: !ui.state.importPreviewShowAll, importPreviewCursor: 0 }); return }
   if (name === "r") { ui.setState({ importPreviewRules: !ui.state.importPreviewRules }); return }
   if ((name === "s" || name === "a") && preview) {
-    try {
-      const summary = data?.commitPreview({ ...preview, rulesEnabled: ui.state.importPreviewRules }, name === "s") ?? "Import unavailable"
+    settleData(ui, (async () => {
+      const summary = await data?.commitPreview({ ...preview, rulesEnabled: ui.state.importPreviewRules }, name === "s") ?? "Import unavailable"
       ui.cancelImport()
       ui.setStatus(summary)
       // The new rows get suggestions in the background.
-      if (data) void suggestNew(data).then((n) => { if (n) ui.setStatus(summary + newSuggestionsNote(n)) })
-    } catch (e) { reportError(ui, e) }
+      if (data) settleData(ui, suggestNew(data), (n) => { if (n) ui.setStatus(summary + newSuggestionsNote(n)) })
+    })())
     return
   }
 }
@@ -897,11 +893,11 @@ function handleSettingsImportPreview(ui: UiStore, key: KeyEvent, data?: DataStor
 function handleSettings(ui: UiStore, key: KeyEvent, data?: DataStore): void {
   const { name } = key
   if (name === "i") {
-    try {
-      const directory = data?.importDirectory() ?? process.cwd()
+    settleData(ui, (async () => {
+      const directory = await data?.importDirectory() ?? process.cwd()
       ui.activateSettings("database")
-      ui.beginImport(directory, data?.csvFiles(directory) ?? [])
-    } catch (e) { reportError(ui, e) }
+      ui.beginImport(directory, await data?.csvFiles(directory) ?? [])
+    })())
     return
   }
   const sections = SETTINGS_SECTIONS
@@ -942,15 +938,15 @@ function handleSettingsRules(ui: UiStore, key: KeyEvent, data?: DataStore): void
   const { name } = key
   const rules = data?.state.rules ?? []; const cursor = ui.state.ruleCursor; const rule = rules[cursor]
   if (name === "escape") { ui.leaveSettings(); return }
-  if (shifted(key, "j") && rule) { data?.reorderSettingsRule(rule.id, cursor + 1); ui.setState({ ruleCursor: Math.min(rules.length - 1, cursor + 1) }); return }
-  if (shifted(key, "k") && rule) { data?.reorderSettingsRule(rule.id, cursor - 1); ui.setState({ ruleCursor: Math.max(0, cursor - 1) }); return }
+  if (shifted(key, "j") && rule) { settleData(ui, (async () => { await data?.reorderSettingsRule(rule.id, cursor + 1); ui.setState({ ruleCursor: Math.min(rules.length - 1, cursor + 1) }) })()); return }
+  if (shifted(key, "k") && rule) { settleData(ui, (async () => { await data?.reorderSettingsRule(rule.id, cursor - 1); ui.setState({ ruleCursor: Math.max(0, cursor - 1) }) })()); return }
   if (shifted(key, "a") && data) { applyAllRules(ui, data); return }
   if (shifted(key, "d") && data) { showDryRun(ui, data); return }
   const moved = listMove(key, ui.state.ruleCursor, rules.length)
   if (moved != null) { ui.setState({ ruleCursor: moved }); return }
   if (name === "a") { ui.openSettingsEditor("rule", null, { ...ui.state.settingsDraft, name: "", savedFilterId: data?.state.savedFilters[0]?.id ?? "", setCategoryId: null, addTagIds: [] }); return }
   if ((name === "return" || name === "enter") && rule) { ui.openSettingsEditor("rule", rule.id, { ...ui.state.settingsDraft, name: rule.name, savedFilterId: rule.savedFilterId, setCategoryId: rule.setCategoryId, addTagIds: rule.addTagIds }); return }
-  if (name === "space" && rule) { data?.toggleSettingsRule(rule.id, !rule.enabled); return }
+  if (name === "space" && rule) { settleData(ui, (async () => { await data?.toggleSettingsRule(rule.id, !rule.enabled) })()); return }
   if (name === "delete" && rule) { confirmTwice(ui, data, { kind: "rule", id: rule.id, label: rule.name, with: "delete" }); return }
 }
 
@@ -998,7 +994,7 @@ function handleUpAccounts(ui: UiStore, key: KeyEvent, data?: DataStore): void {
   if ((name === "return" || name === "enter") && account && data) {
     // Switching off deletes the account's transactions: enter twice.
     if (account.syncEnabled) { confirmTwice(ui, data, { kind: "desyncAccount", id: account.id, label: account.name, with: "enter" }); return }
-    try { data.setAccountSync(account.id, true); ui.setStatus(`Sync on for ${account.name} · s to sync now`) } catch (e) { reportError(ui, e) }
+    settleData(ui, (async () => { await data.setAccountSync(account.id, true); ui.setStatus(`Sync on for ${account.name} · s to sync now`) })())
     return
   }
   if (name === "s" && data) { void runSync(ui, data, { manual: true }); return }
@@ -1061,9 +1057,10 @@ function handleRuleOffers(ui: UiStore, key: KeyEvent, data?: DataStore): void {
     return
   }
   if (name === "x" && !key.shift) {
-    data.declineRuleOffer(offer)
-    settle()
-    ui.setStatus(`No rule for ${offer.description}; it won't be offered again`)
+    settleData(ui, data.declineRuleOffer(offer), () => {
+      settle()
+      ui.setStatus(`No rule for ${offer.description}; it won't be offered again`)
+    })
   }
 }
 
@@ -1103,12 +1100,10 @@ function handleAiUse(ui: UiStore, key: KeyEvent, data?: DataStore): void {
   const note = (text: string) => ui.setState("aiUse", { note: { text, ok: true } })
   switch (action.id) {
     case "clairic":
-      data.saveApiKeys({ JASKMONEY_SEARCH_CLAIRIC: action.on ? null : "off" })
-      note(action.on ? "Smart search asks Clairic for the words and dates" : "Smart search asks Jev alone")
+      settleData(ui, data.saveApiKeys({ JASKMONEY_SEARCH_CLAIRIC: action.on ? null : "off" }), () => note(action.on ? "Smart search asks Clairic for the words and dates" : "Smart search asks Jev alone"))
       return
     case "provider":
-      data.saveApiKeys({ JASKMONEY_LLM_PROVIDER: action.provider })
-      note(`${LLM_PROVIDERS[action.provider].label} now writes rules`)
+      settleData(ui, data.saveApiKeys({ JASKMONEY_LLM_PROVIDER: action.provider }), () => note(`${LLM_PROVIDERS[action.provider].label} now writes rules`))
       return
     case "connect":
       ui.setState({ aiUse: null, aiCursor: AI_ROWS.indexOf(action.row) })
@@ -1165,24 +1160,26 @@ function handleAiDialog(ui: UiStore, key: KeyEvent, data?: DataStore): void {
     if (name === "escape") { ui.setState("aiDialog", { field: null }); return }
     if (name === "return" || name === "enter") {
       const value = field.value.trim()
-      try {
-        if (field.action === "key") {
-          if (!value) { ui.setState("aiDialog", { field: null }); return }
-          data.saveApiKeys(row === "up" ? { JASKMONEY_UP_TOKEN: value } : row === "jev" ? { JASKMONEY_JEV_TOKEN: value } : row === "workersAi" ? { JASKMONEY_CF_TOKEN: value } : { [LLM_PROVIDERS[row].keyName]: value })
-          ui.setState("aiDialog", { field: null, note: { text: row === "up" ? "Token saved · Test checks it; s in Up Bank syncs" : "Key saved", ok: true } })
-        } else if (field.action === "accountId") {
-          data.saveApiKeys({ JASKMONEY_CF_ACCOUNT_ID: value || null })
-          ui.setState("aiDialog", { field: null, note: { text: value ? "Account ID saved" : "Account ID removed", ok: true } })
-        } else if (isLlmRow(row)) {
-          const { modelName, defaultModel } = LLM_PROVIDERS[row]
-          // An id the provider doesn't have is refused; the default isn't saved, so it follows the app's.
-          createLlm({ provider: row, apiKey: "x", modelId: value || defaultModel })
-          data.saveApiKeys({ [modelName]: value && value !== defaultModel ? value : null, ...(row === "openrouter" ? { JASKMONEY_LLM_MODEL: null } : {}) })
-          ui.setState("aiDialog", { field: null, note: { text: `Model: ${value || defaultModel}`, ok: true } })
+      settleData(ui, (async () => {
+        try {
+          if (field.action === "key") {
+            if (!value) { ui.setState("aiDialog", { field: null }); return }
+            await data.saveApiKeys(row === "up" ? { JASKMONEY_UP_TOKEN: value } : row === "jev" ? { JASKMONEY_JEV_TOKEN: value } : row === "workersAi" ? { JASKMONEY_CF_TOKEN: value } : { [LLM_PROVIDERS[row].keyName]: value })
+            ui.setState("aiDialog", { field: null, note: { text: row === "up" ? "Token saved · Test checks it; s in Up Bank syncs" : "Key saved", ok: true } })
+          } else if (field.action === "accountId") {
+            await data.saveApiKeys({ JASKMONEY_CF_ACCOUNT_ID: value || null })
+            ui.setState("aiDialog", { field: null, note: { text: value ? "Account ID saved" : "Account ID removed", ok: true } })
+          } else if (isLlmRow(row)) {
+            const { modelName, defaultModel } = LLM_PROVIDERS[row]
+            // An id the provider doesn't have is refused; the default isn't saved, so it follows the app's.
+            createLlm({ provider: row, apiKey: "x", modelId: value || defaultModel })
+            await data.saveApiKeys({ [modelName]: value && value !== defaultModel ? value : null, ...(row === "openrouter" ? { JASKMONEY_LLM_MODEL: null } : {}) })
+            ui.setState("aiDialog", { field: null, note: { text: `Model: ${value || defaultModel}`, ok: true } })
+          }
+        } catch (e) {
+          note(e instanceof Error ? e.message : String(e), false)
         }
-      } catch (e) {
-        note(e instanceof Error ? e.message : String(e), false)
-      }
+      })())
       return
     }
     // A key is never shown, so edits apply at its end.
@@ -1201,7 +1198,7 @@ function handleAiDialog(ui: UiStore, key: KeyEvent, data?: DataStore): void {
   const label = aiRowLabel(row)
   switch (action.id) {
     case "signIn":
-      if (isLlmRow(row)) void startLlmSignIn(ui, data, row).then(() => note(ui.state.status, !ui.state.statusErr))
+      if (isLlmRow(row)) settleData(ui, startLlmSignIn(ui, data, row), () => note(ui.state.status, !ui.state.statusErr))
       return
     case "key":
     case "accountId":
@@ -1216,12 +1213,14 @@ function handleAiDialog(ui: UiStore, key: KeyEvent, data?: DataStore): void {
       return
     case "remove": {
       if (!dialog.armed) { ui.setState("aiDialog", { armed: true, note: { text: "Press enter again to remove", ok: null } }); return }
-      if (isLlmRow(row)) {
-        const { keyName, modelName } = LLM_PROVIDERS[row]
-        data.saveApiKeys({ [keyName]: null, [modelName]: null, ...(row === "openrouter" ? { JASKMONEY_LLM_MODEL: null } : {}) })
-        void signOutLlm(data, row)
-      } else data.saveApiKeys(row === "up" ? { JASKMONEY_UP_TOKEN: null } : row === "jev" ? { JASKMONEY_JEV_TOKEN: null } : { JASKMONEY_CF_TOKEN: null, JASKMONEY_CF_ACCOUNT_ID: null })
-      ui.setState("aiDialog", { armed: false, cursor: 0, note: { text: `Removed what was saved for ${label}`, ok: true } })
+      settleData(ui, (async () => {
+        if (isLlmRow(row)) {
+          const { keyName, modelName } = LLM_PROVIDERS[row]
+          await data.saveApiKeys({ [keyName]: null, [modelName]: null, ...(row === "openrouter" ? { JASKMONEY_LLM_MODEL: null } : {}) })
+          await signOutLlm(data, row)
+        } else await data.saveApiKeys(row === "up" ? { JASKMONEY_UP_TOKEN: null } : row === "jev" ? { JASKMONEY_JEV_TOKEN: null } : { JASKMONEY_CF_TOKEN: null, JASKMONEY_CF_ACCOUNT_ID: null })
+        ui.setState("aiDialog", { armed: false, cursor: 0, note: { text: `Removed what was saved for ${label}`, ok: true } })
+      })())
       return
     }
   }
@@ -1247,7 +1246,7 @@ function handleSettingsDatabase(ui: UiStore, key: KeyEvent, data?: DataStore): v
   if (name !== "return" && name !== "enter") return
   switch (DATABASE_ROWS[ui.state.databaseCursor]) {
     case "import":
-      try { const directory = data?.importDirectory() ?? process.cwd(); ui.beginImport(directory, data?.csvFiles(directory) ?? []) } catch (e) { reportError(ui, e) }
+      settleData(ui, (async () => { const directory = await data?.importDirectory() ?? process.cwd(); ui.beginImport(directory, await data?.csvFiles(directory) ?? []) })())
       return
     case "profiles": ui.setState({ importStage: "profile", importPath: "", importPathCaret: 0, importProfileCursor: 0, importProfileManaging: true }); return
     case "icons": if (data) toggleIcons(ui, data); return
@@ -1291,7 +1290,7 @@ function handleManagerTxns(ui: UiStore, key: KeyEvent, data?: DataStore): void {
 
   if ((name === "." || seq === ".") && data) {
     if (!data.lastRepeat()) { ui.setStatus("Nothing to repeat"); return }
-    void data.repeatLast(ui.targetIds(rows)).then((summary) => ui.setStatus(summary, summary.includes("failed:")), (error) => reportError(ui, error))
+    settleData(ui, data.repeatLast(ui.targetIds(rows)), (summary) => ui.setStatus(summary, summary.includes("failed:")))
     return
   }
 
@@ -1337,10 +1336,11 @@ function handleManagerTxns(ui: UiStore, key: KeyEvent, data?: DataStore): void {
     }
     if (name === "x" && !key.shift) {
       const ids = ui.targetIds(rows).filter((id) => review.candidates[id])
-      data.dismissTagCandidates(ids)
-      ui.clearSelection()
-      ui.jumpManagerCursor(Math.min(ui.state.managerCursor, Math.max(0, data.scopedTransactions().length - 1)), data.scopedTransactions().length)
-      ui.setStatus(ids.length ? `Dismissed ${count(ids.length, "candidate")} for this session` : "No candidate to dismiss")
+      settleData(ui, data.dismissTagCandidates(ids), () => {
+        ui.clearSelection()
+        ui.jumpManagerCursor(Math.min(ui.state.managerCursor, Math.max(0, data.scopedTransactions().length - 1)), data.scopedTransactions().length)
+        ui.setStatus(ids.length ? `Dismissed ${count(ids.length, "candidate")} for this session` : "No candidate to dismiss")
+      })
       return
     }
   }
@@ -1358,9 +1358,10 @@ function handleManagerTxns(ui: UiStore, key: KeyEvent, data?: DataStore): void {
     }
     if (name === "x" && !key.shift) {
       const ids = ui.targetIds(rows).filter((id) => data.state.suggestions[id])
-      data.dismissSuggestions(ids)
-      ui.clearSelection()
-      ui.setStatus(ids.length ? `Dismissed ${count(ids.length, "suggestion")}` : "No suggestion to dismiss")
+      settleData(ui, data.dismissSuggestions(ids), () => {
+        ui.clearSelection()
+        ui.setStatus(ids.length ? `Dismissed ${count(ids.length, "suggestion")}` : "No suggestion to dismiss")
+      })
       return
     }
   }
@@ -1538,8 +1539,7 @@ function handleBudgetCategories(ui: UiStore, key: KeyEvent, data?: DataStore): v
     if (!category) { ui.setStatus("Uncategorised always counts: categorise its rows first", true); return }
     const group = category.parentId == null ? undefined : data.state.categories.find((c) => c.id === category.parentId)
     if (group?.budgetIgnored) { ui.setStatus(`Left out with ${group.name}: x on ${group.name} brings it back`, true); return }
-    data.setCategoryBudgetIgnored(category.id, !category.budgetIgnored)
-    ui.setStatus(category.budgetIgnored ? `${category.name} counts toward the overall budget again` : `${category.name} left out of the overall budget`)
+    settleData(ui, data.setCategoryBudgetIgnored(category.id, !category.budgetIgnored), () => ui.setStatus(category.budgetIgnored ? `${category.name} counts toward the overall budget again` : `${category.name} left out of the overall budget`))
     return
   }
   if (name === "return" || name === "enter") {
@@ -1690,8 +1690,7 @@ function handleOverview(ui: UiStore, key: KeyEvent, data?: DataStore): void {
   }
   if (name === "z" && data) {
     // Balance charts: fit the balances, or run the axis from $0.
-    data.saveUiPrefs({ zeroAxis: !data.state.uiPrefs.zeroAxis })
-    ui.setStatus(data.state.uiPrefs.zeroAxis ? "Balance charts from $0" : "Balance charts fit their balances")
+    settleData(ui, data.saveUiPrefs({ zeroAxis: !data.state.uiPrefs.zeroAxis }), () => ui.setStatus(data.state.uiPrefs.zeroAxis ? "Balance charts from $0" : "Balance charts fit their balances"))
     return
   }
   if (name === "c" && !key.ctrl && !key.meta) {

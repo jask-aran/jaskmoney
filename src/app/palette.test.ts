@@ -12,7 +12,7 @@ import { FOOTER_LIMIT, hintEvent } from "./palette"
 
 const state = { focusedSection: "mgr.transactions" as const, drillReturn: null, chartViews: [0, 4] as [number, number] }
 
-function setup() {
+async function setup() {
   testEnv("JASKMONEY_UP_TOKEN", "")
   testEnv("JASKMONEY_OPENROUTER_TOKEN", "")
   onTestFinished(() => { ui.setState({ palette: null, lastCommandId: null, catPickerOpen: false, settingsEditor: null, settingsActive: false }); data.init(":memory:") })
@@ -21,7 +21,7 @@ function setup() {
   db.query("INSERT INTO accounts (id, name, type, source) VALUES (100, 'Spending', 'debit', 'csv')").run()
   db.query("INSERT INTO transactions (id, date_raw, date_iso, amount, description, account_id, source) VALUES (1, 'x', '2026-10-01', -5, 'Shop', 100, 'csv')").run()
   data.refresh()
-  data.saveSavedFilter({ id: "coffee", name: "Coffee", expr: "desc:coffee" })
+  await data.saveSavedFilter({ id: "coffee", name: "Coffee", expr: "desc:coffee" })
   data.setAccountSelection("all")
   ui.switchTab("manager")
   ui.setState({ focusedSection: "mgr.transactions", managerCursor: 0, selectedIds: {}, lastCommandId: null })
@@ -50,8 +50,8 @@ test("the footer shows the first few hints, then ctrl+k all; short lists stay wh
   expect(footerLine("catPicker", state).some((h) => h.key === "ctrl+k")).toBe(false)
 })
 
-test("commands go beyond keys: from anywhere, per saved filter and account; keys come from the pane's hints", () => {
-  setup()
+test("commands go beyond keys: from anywhere, per saved filter and account; keys come from the pane's hints", async () => {
+  await setup()
   const list = listFrom("manager.txns")
   const byId = (id: string) => list.find((c) => c.id === id)
   // A hint naming a registry command lists it, keyed, in this pane's group.
@@ -78,8 +78,8 @@ test("commands go beyond keys: from anywhere, per saved filter and account; keys
   expect(listFrom("overview").find((c) => c.id === "key:overview:c")).toMatchObject({ label: "Range: this cycle", key: "c" })
 })
 
-test("every hint that names a command names a real one, in every pane and state", () => {
-  setup()
+test("every hint that names a command names a real one, in every pane and state", async () => {
+  await setup()
   const states = [{}, { uncategorisedOnly: true }, { tagReview: true }, { ruleOffers: 2 }, { asks: true }]
   for (const scope of ["overview", "manager.txns", "manager.merchants", "manager.accounts", "settings", "settings.taxonomy", "settings.rules", "settings.filters", "budgets", "settings.up", "settings.ai", "settings.database"] as const) {
     for (const extra of states) {
@@ -89,8 +89,8 @@ test("every hint that names a command names a real one, in every pane and state"
   }
 })
 
-test("ranking: nothing typed leaves out what can't run, last used first, the pane before the rest; typing ranks and explains", () => {
-  setup()
+test("ranking: nothing typed leaves out what can't run, last used first, the pane before the rest; typing ranks and explains", async () => {
+  await setup()
   const list = listFrom("manager.txns")
   const empty = rankCommands(list, "", "rules:dry-run")
   expect(empty[0]?.id).toBe("rules:dry-run")
@@ -104,8 +104,8 @@ test("ranking: nothing typed leaves out what can't run, last used first, the pan
   expect(undo.at(-1)).toMatchObject({ id: "txn:undo", disabled: "nothing to undo" })
 })
 
-test("run from another tab: it goes where it needs, and is listed first next time", () => {
-  setup()
+test("run from another tab: it goes where it needs, and is listed first next time", async () => {
+  await setup()
   ui.switchTab("settings")
   open()
   expect(ui.state.palette?.from).toBe("settings")
@@ -125,8 +125,8 @@ test("run from another tab: it goes where it needs, and is listed first next tim
   handleKey(ui, key("escape"), data)
 })
 
-test("a saved filter from Overview filters the table; adding a category opens its editor in Settings", () => {
-  setup()
+test("a saved filter from Overview filters the table; adding a category opens its editor in Settings", async () => {
+  await setup()
   ui.switchTab("overview")
   open()
   type("filter coffee")
@@ -140,8 +140,8 @@ test("a saved filter from Overview filters the table; adding a category opens it
   expect(ui.state.settingsEditor).toBe("category")
 })
 
-test("enter on one that can't run says why and keeps the palette open", () => {
-  setup()
+test("enter on one that can't run says why and keeps the palette open", async () => {
+  await setup()
   open()
   type("undo")
   const at = paletteList(ui, data).findIndex((c) => c.id === "txn:undo")
@@ -152,8 +152,8 @@ test("enter on one that can't run says why and keeps the palette open", () => {
   handleKey(ui, key("escape"), data)
 })
 
-test("moving doesn't rebuild the list: the same commands until the query changes or it reopens", () => {
-  setup()
+test("moving doesn't rebuild the list: the same commands until the query changes or it reopens", async () => {
+  await setup()
   open()
   const first = paletteList(ui, data)
   handleKey(ui, key("down"), data)
@@ -172,7 +172,7 @@ test("moving doesn't rebuild the list: the same commands until the query changes
 })
 
 test("rule offers are kept until a write changes them", async () => {
-  setup()
+  await setup()
   const db = data.getDb()!
   const food = Number(db.query("INSERT INTO categories (name, color) VALUES ('Test food', '#fff')").run().lastInsertRowid)
   for (const id of [2, 3, 4]) db.query("INSERT INTO transactions (id, date_raw, date_iso, amount, description, account_id, source) VALUES (?, 'x', '2026-10-02', -5, 'Shop', 100, 'csv')").run(id)
@@ -184,8 +184,8 @@ test("rule offers are kept until a write changes them", async () => {
   expect(data.allRuleOffers().map((o) => o.description)).toEqual(["Shop"])
 })
 
-test("ctrl+k inside a picker still moves its cursor", () => {
-  setup()
+test("ctrl+k inside a picker still moves its cursor", async () => {
+  await setup()
   handleKey(ui, key("c"), data)
   handleKey(ui, key("j", { ctrl: true }), data)
   handleKey(ui, key("k", { ctrl: true }), data)
@@ -197,7 +197,7 @@ test("ctrl+k inside a picker still moves its cursor", () => {
 test("the palette renders like opencode's: search line, bold group headings, the cursor wash on the cursor row, keys at the right", async () => {
   const t = await renderApp({ width: 140, height: 54 })
   try {
-    setup()
+    await setup()
     open()
     await t.renderOnce()
     const frame = t.captureCharFrame()

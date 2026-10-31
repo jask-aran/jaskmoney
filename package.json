@@ -8,9 +8,10 @@
   "scripts": {
     "start": "bun run src/index.tsx",
     "dev": "bun run scripts/dev.ts",
+    "server": "bun run src/server/main.ts",
     "build": "bun run scripts/build.ts",
     "test": "bun test --conditions=browser",
-    "typecheck": "tsc --noEmit",
+    "typecheck": "tsc --noEmit && tsc --noEmit -p src/web",
     "bench": "bun test --conditions=browser ./src/bench/keys.bench.tsx",
     "eval": "bun --conditions=browser run src/eval/run.ts"
   },

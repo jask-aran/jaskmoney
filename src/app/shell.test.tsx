@@ -443,7 +443,7 @@ describe("render errors", () => {
     const t = await renderApp({ width: 140, height: 55 })
     await t.renderOnce()
     const profile = { ...ui.state.importProfileDraft, id: "abZcd", account: "Caret test", accountType: "debit" as const }
-    data.commitPreview({
+    await data.commitPreview({
       path: "caret.csv", filename: "caret.csv", profile, accountId: 0, accountName: profile.account,
       rows: [{ sourceLine: 1, dateRaw: "2026-01-01", dateISO: "2026-01-01", amount: -1, description: "LOCAL CARET", duplicate: false, categoryName: "", tagNames: [] }],
       errors: [], newCount: 1, duplicateCount: 0, rulesEnabled: false,

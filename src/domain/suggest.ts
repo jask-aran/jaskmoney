@@ -1,4 +1,5 @@
-import { judgeEach, type JevClient } from "../ai/jev"
+import type { JevClient } from "../ai/jev"
+import { judgeEach } from "../ai/judge"
 import { assignableCategories } from "./categoryOptions"
 import { categorisedByMerchant, examplesOf, isPersonToPerson, merchantKey, rankCategories, similarMessages, type CategoryCount } from "./history"
 import { isOrdinaryFlow, isUncategorised } from "./moneyRules"

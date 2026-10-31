@@ -4,7 +4,6 @@ import { createWorkersAiClient } from "../ai/workersAi"
 import { activeLlmProvider, LLM_PROVIDERS, llmModelId, llmModelInfo, type Llm } from "../ai/llm"
 import { credentialEnv } from "../ai/credentials"
 import { writeRules } from "../ai/ruleWriter"
-import { loadRuleDeclines } from "../db/client"
 import { judgeRows } from "../domain/ask"
 import { appToday } from "../domain/days"
 import { isOrdinaryFlow, isUncategorised } from "../domain/moneyRules"
@@ -113,8 +112,8 @@ export async function previewSent(use: AiUse, data: DataStore, options: { smartQ
         },
       },
     } as unknown as Llm
-    const db = data.getDb()
-    await writeRules(llm, data.historyData(), { declined: db ? loadRuleDeclines(db) : [] }).catch(() => {})
+    const { history, declined } = await data.ruleWriterInput()
+    await writeRules(llm, history, { declined }).catch(() => {})
     const info = llmModelInfo(provider, modelId)
     parts.push({ query: "ruleWriter", sample: "your history now", to: info ? `POST ${info.baseUrl} (${info.api}, through pi-ai)` : `${LLM_PROVIDERS[provider].label} (through pi-ai)`, body: context })
   }

@@ -16,11 +16,11 @@ let fetchMock: Mock<typeof fetch>
 let answers: Answer[] = []
 let sent: { method: string; url: string }[] = []
 
-function setup() {
+async function setup() {
   testEnv("JASKMONEY_UP_TOKEN", "test-pat")
   data.init(":memory:")
   const db = data.getDb()!
-  const tag = data.createSettingsTag({ name: "COFFEE", color: "#89b4fa", categoryIds: [], about: null })
+  const tag = await data.createSettingsTag({ name: "COFFEE", color: "#89b4fa", categoryIds: [], about: null })
   const ignore = data.state.tags.find((t) => t.name === "IGNORE")!.id
   const up = Number(db.query(`INSERT INTO transactions (date_raw, date_iso, amount, description, source, external_id, ext_tags)
     VALUES ('2026-01-01', '2026-01-01', -4, 'Cafe', 'up', 'remote-1', '[]')`).run().lastInsertRowid)
@@ -52,7 +52,7 @@ beforeEach(() => {
 afterEach(() => { fetchMock.mockRestore(); data.getDb()?.close() })
 
 test("a tag added to an Up row shows at once, waits in the queue, and leaves it once Up confirms", async () => {
-  const { tag, up } = setup()
+  const { tag, up } = await setup()
   let confirm = () => {}
   answers = [new Promise<void>((resolve) => { confirm = resolve })]
   const applying = data.applyTagPatch([up], { [tag]: "add" })
@@ -68,7 +68,7 @@ test("a tag added to an Up row shows at once, waits in the queue, and leaves it 
 })
 
 test("a sync before Up has the change keeps it: waiting adds stay on, waiting removes stay off", async () => {
-  const { db, tag, up } = setup()
+  const { db, tag, up } = await setup()
   answers = ["offline"]
   await data.applyTagPatch([up], { [tag]: "add" })
   expect(tagsOf(up)).toEqual([tag])
@@ -91,7 +91,7 @@ test("a sync before Up has the change keeps it: waiting adds stay on, waiting re
 })
 
 test("the latest change to a row's tag is the one that waits", async () => {
-  const { tag, up } = setup()
+  const { tag, up } = await setup()
   answers = ["offline", "offline"]
   await data.applyTagPatch([up], { [tag]: "add" })
   await data.applyTagPatch([up], { [tag]: "remove" })
@@ -100,7 +100,7 @@ test("the latest change to a row's tag is the one that waits", async () => {
 })
 
 test("retryPendingTags sends what waits; Up refusing a change puts the row back and drops it", async () => {
-  const { tag, up } = setup()
+  const { tag, up } = await setup()
   answers = ["offline"]
   await data.applyTagPatch([up], { [tag]: "add" })
   answers = ["offline"]
@@ -119,10 +119,10 @@ test("retryPendingTags sends what waits; Up refusing a change puts the row back 
 })
 
 test("rules that add a tag to an Up row queue it like a pick; local rows and IGNORE never queue", async () => {
-  const { tag, ignore, up, csv } = setup()
-  data.saveSavedFilter({ id: "cafe", name: "Cafe", expr: "desc:Cafe" })
-  data.createSettingsRule({ name: "Cafe coffee", savedFilterId: "cafe", setCategoryId: null, addTagIds: [tag, ignore], enabled: true })
-  data.applyRules([up, csv])
+  const { tag, ignore, up, csv } = await setup()
+  await data.saveSavedFilter({ id: "cafe", name: "Cafe", expr: "desc:Cafe" })
+  await data.createSettingsRule({ name: "Cafe coffee", savedFilterId: "cafe", setCategoryId: null, addTagIds: [tag, ignore], enabled: true })
+  await data.applyRules([up, csv])
   expect(tagsOf(up).sort()).toEqual([tag, ignore].sort())
   expect(tagsOf(csv).sort()).toEqual([tag, ignore].sort())
   expect(queue()).toEqual([{ id: up, tag, action: "add" }])
@@ -133,7 +133,7 @@ test("rules that add a tag to an Up row queue it like a pick; local rows and IGN
 })
 
 test("Up's six-tag limit: an add past it changes nothing and queues nothing", async () => {
-  const { db, tag, up } = setup()
+  const { db, tag, up } = await setup()
   db.query("UPDATE transactions SET ext_tags = ? WHERE id = ?").run(JSON.stringify(["A", "B", "C", "D", "E", "F"]), up)
   data.refresh()
   const summary = await data.applyTagPatch([up], { [tag]: "add" })

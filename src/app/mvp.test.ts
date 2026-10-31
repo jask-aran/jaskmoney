@@ -1,3 +1,4 @@
+import { settlePending } from "../testing/settle"
 import { describe, expect, test, beforeEach, onTestFinished } from "bun:test"
 import { handleKey } from "./keys"
 import { ui } from "../state/uiStore"
@@ -71,9 +72,9 @@ describe("MVP slice: filter + categorize", () => {
     expect(ui.state.catPickerOpen).toBe(false)
   })
 
-  test("categorize apply via picker + real db", () => {
+  test("categorize apply via picker + real db", async () => {
     data.init(":memory:")
-    data.commitPreview(buildImportPreview(data.getDb()!, '01/02/2026,"-5.00",TEST COFFEE\n', "anz.csv", DEFAULT_IMPORT_PROFILES[0]!), true)
+    await data.commitPreview(buildImportPreview(data.getDb()!, '01/02/2026,"-5.00",TEST COFFEE\n', "anz.csv", DEFAULT_IMPORT_PROFILES[0]!), true)
     ui.switchTab("manager")
     ui.setState({
       focusedSection: "mgr.transactions",
@@ -106,7 +107,7 @@ describe("MVP slice: filter + categorize", () => {
 
   test("tag picker stages and applies the focused tag and sort keys change ordering", async () => {
     data.init(":memory:")
-    data.commitPreview(buildImportPreview(data.getDb()!, '01/02/2026,"-5.00",TEST COFFEE\n', "anz.csv", DEFAULT_IMPORT_PROFILES[0]!), true)
+    await data.commitPreview(buildImportPreview(data.getDb()!, '01/02/2026,"-5.00",TEST COFFEE\n', "anz.csv", DEFAULT_IMPORT_PROFILES[0]!), true)
     ui.switchTab("manager")
     ui.setState({
       focusedSection: "mgr.transactions",
@@ -125,7 +126,7 @@ describe("MVP slice: filter + categorize", () => {
     const originalTags = [...data.state.transactions.find((row) => row.id === targetId)!.tagIds]
     handleKey(ui, key("space"), data)
     expect(data.state.transactions.find((row) => row.id === targetId)?.tagIds).toEqual(originalTags)
-    handleKey(ui, key("return"), data)
+    handleKey(ui, key("return"), data); await settlePending()
     await Promise.resolve()
     expect(data.state.transactions.find((row) => row.id === targetId)?.tagNames).toContain("IGNORE")
     expect(ui.state.tagPickerOpen).toBe(false)
@@ -190,25 +191,25 @@ describe("default ANZ profile import", () => {
     expect(repeatedResult.skippedDupes).toBe(3)
   })
 
-  test("applies enabled rules only to newly imported rows when rulesEnabled is true", () => {
+  test("applies enabled rules only to newly imported rows when rulesEnabled is true", async () => {
     data.init(":memory:")
     const db = data.getDb()!
     const profile = DEFAULT_IMPORT_PROFILES[0]!
     const csv = '01/02/2026,-5,COFFEE'
     const first = buildImportPreview(db, csv, "anz.csv", profile)
     first.rulesEnabled = false
-    data.commitPreview(first, true)
+    await data.commitPreview(first, true)
     const oldId = data.state.transactions[0]!.id
     const category = data.state.categories.find((c) => c.name === "Dining & Drinks")!
     data.setState({ savedFilters: [{ id: "coffee", name: "Coffee", expr: "desc:COFFEE" }] })
-    data.createSettingsRule({ name: "Coffee", savedFilterId: "coffee", setCategoryId: category.id, addTagIds: [], enabled: true })
+    await data.createSettingsRule({ name: "Coffee", savedFilterId: "coffee", setCategoryId: category.id, addTagIds: [], enabled: true })
     const disabled = buildImportPreview(db, '02/02/2026,-6,COFFEE', "anz.csv", profile)
     disabled.rulesEnabled = false
-    data.commitPreview(disabled, true)
+    await data.commitPreview(disabled, true)
     expect(data.state.transactions.every((t) => t.categoryName === "Uncategorised")).toBe(true)
     const next = buildImportPreview(db, csv + '\n03/02/2026,-7,COFFEE', "anz.csv", profile)
     expect(next.rulesEnabled).toBe(true)
-    data.commitPreview(next, true)
+    await data.commitPreview(next, true)
     expect(data.state.transactions).toHaveLength(3)
     expect(data.state.transactions.find((t) => t.id === oldId)?.categoryName).toBe("Uncategorised")
     expect(data.state.transactions.find((t) => t.dateISO === "2026-02-03")?.categoryName).toBe("Dining & Drinks")

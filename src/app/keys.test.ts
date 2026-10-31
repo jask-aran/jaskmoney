@@ -1,3 +1,4 @@
+import { settlePending } from "../testing/settle"
 import { DATABASE_ROWS } from "../state/databaseRows"
 import { describe, expect, test, beforeEach } from "bun:test"
 import { accountRows, accountStacks, spendingScope } from "../domain/accountTree"
@@ -378,12 +379,12 @@ describe("key router", () => {
     expect(footerHints("overview.range").some((h) => h.desc === "apply")).toBe(true)
   })
 
-  test("settings database is rows: enter imports; clear data is enter twice, and a move disarms it", () => {
+  test("settings database is rows: enter imports; clear data is enter twice, and a move disarms it", async () => {
     data.init(":memory:")
     ui.switchTab("settings")
     ui.activateSettings("database")
     ui.setState({ databaseCursor: 0 })
-    handleKey(ui, key("return"), data)
+    handleKey(ui, key("return"), data); await settlePending()
     expect(ui.state.importStage).toBe("files")
     handleKey(ui, key("escape"), data)
     ui.setState({ databaseCursor: DATABASE_ROWS.indexOf("clearData") })
@@ -394,7 +395,7 @@ describe("key router", () => {
     expect(ui.state.armed).toBeNull()
     handleKey(ui, key("j"), data)
     handleKey(ui, key("return"), data)
-    handleKey(ui, key("return"), data)
+    handleKey(ui, key("return"), data); await settlePending()
     expect(ui.state.armed).toBeNull()
     expect(ui.state.status).toBe("Transaction and import data cleared")
   })
@@ -425,7 +426,7 @@ describe("key router", () => {
     expect(ui.activeScope()).toBe("settings.up")
   })
 
-  test("Budgets tab (3): c edits the cycle; h/l switch the chart; budgets delete on del del; j past them goes to the categories", () => {
+  test("Budgets tab (3): c edits the cycle; h/l switch the chart; budgets delete on del del; j past them goes to the categories", async () => {
     data.init(":memory:")
     ui.switchTab("overview")
     handleKey(ui, key("3"), data)
@@ -439,7 +440,7 @@ describe("key router", () => {
     expect(ui.state.budgetChart).toBe(1)
     handleKey(ui, key("h"), data)
     expect(ui.state.budgetChart).toBe(0)
-    data.setBudget({ kind: "overall" }, 500)
+    await data.setBudget({ kind: "overall" }, 500)
     ui.setState({ budgetCursor: 0 })
     handleKey(ui, key("delete"), data)
     expect(ui.state.armed?.kind).toBe("budget")
@@ -453,9 +454,9 @@ describe("key router", () => {
     expect(ui.state.activeTab).toBe("settings")
   })
 
-  test("an import profile deletes on a second del; esc disarms and stays on the list", () => {
+  test("an import profile deletes on a second del; esc disarms and stays on the list", async () => {
     data.init(":memory:")
-    data.saveImportProfile({ id: "bank", name: "Bank", account: "A", accountType: "debit", importPrefix: "bank", hasHeader: true, delimiter: ",", dateColumn: 0, amountColumn: 1, descriptionColumns: [2], descriptionJoin: false, amountStrip: "$", dateFormat: "DMY" })
+    await data.saveImportProfile({ id: "bank", name: "Bank", account: "A", accountType: "debit", importPrefix: "bank", hasHeader: true, delimiter: ",", dateColumn: 0, amountColumn: 1, descriptionColumns: [2], descriptionJoin: false, amountStrip: "$", dateFormat: "DMY" })
     ui.switchTab("settings")
     ui.activateSettings("database")
     ui.setState({ databaseCursor: DATABASE_ROWS.indexOf("profiles") })

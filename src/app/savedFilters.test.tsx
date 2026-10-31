@@ -1,3 +1,4 @@
+import { settlePending } from "../testing/settle"
 import { ink, theme } from "../theme"
 import { afterEach, beforeEach, expect, test } from "bun:test"
 import { mkdtempSync, writeFileSync } from "node:fs"
@@ -29,8 +30,8 @@ afterEach(() => {
   ui.switchTab("overview")
 })
 
-test("ctrl+s pre-fills a new filter on Name in both transaction views; empty filter stays closed", () => {
-  data.saveSavedFilter({ id: "filter-1", name: "Existing", expr: "desc:Other" })
+test("ctrl+s pre-fills a new filter on Name in both transaction views; empty filter stays closed", async () => {
+  await data.saveSavedFilter({ id: "filter-1", name: "Existing", expr: "desc:Other" })
   for (const txnView of ["rows", "merchants"] as const) {
     ui.setState({ txnView })
     data.clearFilter()
@@ -48,23 +49,23 @@ test("ctrl+s pre-fills a new filter on Name in both transaction views; empty fil
     expect(data.state.savedFilters).toHaveLength(1)
     handleKey(ui, key("s", { ctrl: true }), data)
     handleKey(ui, key("N"), data)
-    handleKey(ui, key("enter"), data)
+    handleKey(ui, key("enter"), data); await settlePending()
     expect(ui.state.settingsEditor).toBeNull()
     expect(data.state.savedFilters.some((filter) => filter.name === "N")).toBe(true)
-    data.deleteSavedFilter("filter-2")
+    await data.deleteSavedFilter("filter-2")
   }
 })
 
-test("ctrl+l applies a saved filter, resets cursors, and persists usage; printable letters filter", () => {
-  data.saveSavedFilter({ id: "coffee", name: "Java", expr: "desc:Coffee" })
-  data.saveSavedFilter({ id: "other", name: "Other", expr: "desc:Other" })
+test("ctrl+l applies a saved filter, resets cursors, and persists usage; printable letters filter", async () => {
+  await data.saveSavedFilter({ id: "coffee", name: "Java", expr: "desc:Coffee" })
+  await data.saveSavedFilter({ id: "other", name: "Other", expr: "desc:Other" })
   for (const txnView of ["rows", "merchants"] as const) {
     ui.setState({ txnView, managerCursor: 8, managerTop: 5, merchantCursor: 4, merchantTop: 2 })
     handleKey(ui, key("l", { ctrl: true }), data)
     expect(ui.activeScope()).toBe("filterPicker")
     handleKey(ui, key("v"), data)
     expect(ui.state.filterPicker?.query).toBe("v")
-    handleKey(ui, key("enter"), data)
+    handleKey(ui, key("enter"), data); await settlePending()
     expect(ui.state.filterPicker).toBeNull()
     expect(data.state.filterQuery).toBe("desc:Coffee")
     expect(ui.state.managerCursor).toBe(0)
@@ -77,31 +78,31 @@ test("ctrl+l applies a saved filter, resets cursors, and persists usage; printab
   handleKey(ui, key("escape"), data)
   expect(ui.state.filterPicker).toBeNull()
   expect(data.state.filterQuery).toBe("desc:Coffee")
-  data.deleteSavedFilter("coffee")
+  await data.deleteSavedFilter("coffee")
   expect(data.state.uiPrefs.filterUsage?.coffee).toBeUndefined()
   expect(loadSettingsConfig().ui?.filterUsage?.coffee).toBeUndefined()
   expect(footerHints("filterPicker").some((hint) => hint.key === "type")).toBe(true)
 })
 
-test("filter usage loads valid timestamps, ignores malformed values, and drops deleted IDs on save", () => {
+test("filter usage loads valid timestamps, ignores malformed values, and drops deleted IDs on save", async () => {
   writeFileSync(process.env.JASKMONEY_CONFIG!, JSON.stringify({ version: 2, savedFilters: [{ id: "a", name: "A", expr: "desc:a" }], ui: { filterUsage: { a: "2026-01-01T00:00:00Z", gone: "2026-01-02T00:00:00Z", bad: 3, wrong: "nope" }, weekStart: "sunday" } }))
   data.init(":memory:")
   expect(data.state.uiPrefs.filterUsage).toEqual({ a: "2026-01-01T00:00:00Z", gone: "2026-01-02T00:00:00Z" })
-  data.saveUiPrefs({ chartViews: [1, 2] })
+  await data.saveUiPrefs({ chartViews: [1, 2] })
   expect(loadSettingsConfig().ui).toMatchObject({ filterUsage: { a: "2026-01-01T00:00:00Z" }, weekStart: "sunday" })
 })
 
-test("Shift+D opens a report without writes; Shift+A writes the same category and tag results", () => {
+test("Shift+D opens a report without writes; Shift+A writes the same category and tag results", async () => {
   const db = data.getDb()!
   const account = ensureAccount(db, "Local", "debit")
   db.query("INSERT INTO transactions (date_raw, date_iso, amount, description, account_id) VALUES ('x', '2026-01-01', -5, 'Coffee', ?)").run(account.id)
   data.refresh()
-  const category = data.createSettingsCategory({ name: "Coffee category", color: "#ffffff" })
-  const tag = data.createSettingsTag({ name: "Local tag", color: "#ffffff", categoryIds: [], about: null })
-  data.saveSavedFilter({ id: "coffee", name: "Coffee", expr: "desc:Coffee" })
-  data.saveSavedFilter({ id: "later", name: "Later", expr: 'cat:"Coffee category"' })
-  data.createSettingsRule({ name: "First", savedFilterId: "coffee", setCategoryId: category, addTagIds: [], enabled: true })
-  data.createSettingsRule({ name: "Later", savedFilterId: "later", setCategoryId: null, addTagIds: [tag], enabled: true })
+  const category = await data.createSettingsCategory({ name: "Coffee category", color: "#ffffff" })
+  const tag = await data.createSettingsTag({ name: "Local tag", color: "#ffffff", categoryIds: [], about: null })
+  await data.saveSavedFilter({ id: "coffee", name: "Coffee", expr: "desc:Coffee" })
+  await data.saveSavedFilter({ id: "later", name: "Later", expr: 'cat:"Coffee category"' })
+  await data.createSettingsRule({ name: "First", savedFilterId: "coffee", setCategoryId: category, addTagIds: [], enabled: true })
+  await data.createSettingsRule({ name: "Later", savedFilterId: "later", setCategoryId: null, addTagIds: [tag], enabled: true })
   ui.switchTab("settings")
   ui.activateSettings("rules")
   handleKey(ui, key("d", { shift: true }), data)
@@ -112,7 +113,7 @@ test("Shift+D opens a report without writes; Shift+A writes the same category an
   handleKey(ui, key("2"), data)
   expect(ui.state.activeTab).toBe("settings")
   handleKey(ui, key("escape"), data)
-  handleKey(ui, key("a", { shift: true }), data)
+  handleKey(ui, key("a", { shift: true }), data); await settlePending()
   expect(data.state.transactions[0]?.categoryId).toBe(category)
   expect([...data.state.transactions[0]!.tagIds]).toEqual([tag])
   expect(db.query("SELECT category_source FROM transactions").get()).toEqual({ category_source: "rule" })
@@ -220,10 +221,10 @@ test("dry-run samples keep amount and actions visible after a long description",
   const db = data.getDb()!
   db.query("INSERT INTO transactions (date_raw, date_iso, amount, description) VALUES ('x', '2026-01-01', -5, ?)").run("Coffee ".repeat(30))
   data.refresh()
-  const category = data.createSettingsCategory({ name: "Food", color: "#ffffff" })
-  const tag = data.createSettingsTag({ name: "Weekly", color: "#ffffff", categoryIds: [], about: null })
-  data.saveSavedFilter({ id: "coffee", name: "Coffee", expr: "desc:Coffee" })
-  data.createSettingsRule({ name: "Coffee rule", savedFilterId: "coffee", setCategoryId: category, addTagIds: [tag], enabled: true })
+  const category = await data.createSettingsCategory({ name: "Food", color: "#ffffff" })
+  const tag = await data.createSettingsTag({ name: "Weekly", color: "#ffffff", categoryIds: [], about: null })
+  await data.saveSavedFilter({ id: "coffee", name: "Coffee", expr: "desc:Coffee" })
+  await data.createSettingsRule({ name: "Coffee rule", savedFilterId: "coffee", setCategoryId: category, addTagIds: [tag], enabled: true })
   ui.switchTab("settings")
   ui.activateSettings("rules")
   handleKey(ui, key("d", { shift: true }), data)
@@ -235,9 +236,9 @@ test("dry-run samples keep amount and actions visible after a long description",
   expect(frame).toContain("matched 1 · category 1 · tags 1")
 })
 
-test("saved-filter input keeps command letters and space literal; arrows move and backspace edits", () => {
-  data.saveSavedFilter({ id: "a", name: "Alpha", expr: "desc:a" })
-  data.saveSavedFilter({ id: "b", name: "Beta", expr: "desc:b" })
+test("saved-filter input keeps command letters and space literal; arrows move and backspace edits", async () => {
+  await data.saveSavedFilter({ id: "a", name: "Alpha", expr: "desc:a" })
+  await data.saveSavedFilter({ id: "b", name: "Beta", expr: "desc:b" })
   handleKey(ui, key("l", { ctrl: true }), data)
   handleKey(ui, key("down"), data)
   expect(ui.state.filterPicker?.cursor).toBe(1)

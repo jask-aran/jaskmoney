@@ -56,7 +56,7 @@ const shown = () => data.scopedTransactions().map((t) => t.id)
 test("a tag's review: tag history first, Jev for the rest of its categories, told what it's about; y tags, x dismisses for the session, esc leaves", async () => {
   const { db } = setup()
   const categoryIds = [food(db)]
-  const coffee = data.createSettingsTag({ name: "COFFEE", color: "#ffffff", categoryIds, about: "coffee out, not beans" })
+  const coffee = await data.createSettingsTag({ name: "COFFEE", color: "#ffffff", categoryIds, about: "coffee out, not beans" })
   await data.applyTagPatch([1], { [coffee]: "add" })
   const { ai, sent, states } = fakeJev()
   const summary = await data.openTagReview({ tagId: coffee, name: "COFFEE", categoryIds, about: "coffee out, not beans" }, ai)
@@ -68,7 +68,7 @@ test("a tag's review: tag history first, Jev for the rest of its categories, tol
   expect(shown().sort()).toEqual([2, 3])
   expect(data.state.tagReview!.candidates[2]).toMatchObject({ source: "jev", confidence: 0.9 })
   // x: gone for the session, even after reopening.
-  data.dismissTagCandidates([3])
+  await data.dismissTagCandidates([3])
   expect(shown()).toEqual([2])
   await data.openTagReview({ tagId: coffee, name: "COFFEE", categoryIds, about: null }, ai)
   expect(shown()).toEqual([2])
@@ -103,14 +103,14 @@ test("a new tag is created on its first accept, for any category", async () => {
   expect(data.state.tagReview!.tagId).toBe(tag.id)
 })
 
-test("the chooser: your tags (a trip found for one), groups no tag covers, then a new name; IGNORE isn't offered", () => {
+test("the chooser: your tags (a trip found for one), groups no tag covers, then a new name; IGNORE isn't offered", async () => {
   setup()
   const trip: TagGroup = { kind: "trip", name: "Singapore May 2026", detail: "38 in person · 22–25 May 2026", rows: [], start: "2026-05-22", end: "2026-05-25" }
   const subs: TagGroup = { kind: "recurring", name: "Subscriptions", detail: "Netflix monthly", rows: [] }
   expect(groupForTag("SINGAPORE 2026", [trip])).toBe(trip)
   expect(groupForTag("SINGAPORE 2025", [trip])).toBeUndefined()
   expect(groupForTag("Japan", [trip])).toBeUndefined()
-  data.createSettingsTag({ name: "SINGAPORE 2026", color: "#fff", categoryIds: [], about: null })
+  await data.createSettingsTag({ name: "SINGAPORE 2026", color: "#fff", categoryIds: [], about: null })
   const choices = tagChoices(data.state.tags, [trip, subs], "")
   expect(choices.map((c) => c.kind === "tag" ? `tag ${c.tag.name}${c.group ? " +trip" : ""}` : c.kind === "group" ? `group ${c.group.name}` : `new ${c.name}`))
     .toEqual(["tag SINGAPORE 2026 +trip", "group Subscriptions"])

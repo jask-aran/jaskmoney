@@ -1,6 +1,6 @@
 import { jevRoute } from "../ai/jev"
 import { ASK_DEFAULT_DAYS, ASK_LIMIT } from "../domain/ask"
-import type { AskResult } from "../state/store/suggestions"
+import type { AskResult } from "../client/store"
 
 /**
  * The status line after a search, the same parts every time: who wrote the

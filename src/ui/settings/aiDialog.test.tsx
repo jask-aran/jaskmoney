@@ -12,7 +12,7 @@ afterEach(() => { rendered?.renderer.destroy(); rendered = undefined; ui.setStat
 test("the AI models dialog: status, actions with the cursor, the hint for the action at it; a sign-in shows inside it", async () => {
   rendered = await renderApp({ width: 120, height: 36 })
   await createFileCredentialStore().modify("openrouter", async () => ({ type: "oauth", access: "a", refresh: "", expires: Date.now() + 60_000 }))
-  data.refreshApiKeys()
+  await data.refreshApiKeys()
   ui.switchTab("settings")
   ui.setState({ aiDialog: { row: "openrouter", cursor: 0, field: null, armed: false, note: null, busy: false } })
   await rendered.renderOnce(); await rendered.flush()
@@ -46,7 +46,7 @@ test("the AI models dialog: status, actions with the cursor, the hint for the ac
 test("the AI models pane: the models, then the uses with their model (teal when it can run); a use's dialog lines its values up", async () => {
   rendered = await renderApp({ width: 130, height: 45 })
   await createFileCredentialStore().modify("openrouter", async () => ({ type: "oauth", access: "a", refresh: "", expires: Date.now() + 60_000 }))
-  data.refreshApiKeys()
+  await data.refreshApiKeys()
   ui.switchTab("settings")
   ui.activateSettings("ai")
   await rendered.renderOnce(); await rendered.flush()

@@ -1,4 +1,4 @@
-import { toggleDemo } from "./actions"
+import { settleData, toggleDemo } from "./actions"
 import { BudgetsTab } from "../ui/budgets/BudgetsTab"
 import { ErrorBoundary, Show, createEffect, createMemo, createSignal, untrack, on, onCleanup, onMount } from "solid-js"
 import { useKeyboard, usePaste, useRenderer } from "@opentui/solid"
@@ -84,7 +84,7 @@ export function App() {
       chartViews: [ui.state.chartViews[0], ui.state.chartViews[1]],
     }
     // Written once keys settle: these change on every [ ] d a h l.
-    untrack(() => data.saveUiPrefs(prefs, { soon: true }))
+    untrack(() => settleData(ui, data.saveUiPrefs(prefs, { soon: true })))
   })
 
   // Re-render the "synced Xm ago" label every 30 seconds.

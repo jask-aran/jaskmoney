@@ -1,16 +1,15 @@
-import { loadCategoryLog, loadTagLog, loadCategoryChoices, loadRuleDeclines, declineRule, declineCategoryChoice } from "../../db/client"
-import { ruleOffers, type RuleOffer } from "../../domain/ruleOffers"
-import type { HistoryData } from "../../domain/aiHistory"
-import { createLlm, type Llm } from "../../ai/llm"
-import { writeRules } from "../../ai/ruleWriter"
-import { count } from "../../ui/text"
+import { loadCategoryLog, loadTagLog, loadCategoryChoices, loadRuleDeclines, declineRule, declineCategoryChoice } from "../db/client"
+import { ruleOffers, type RuleOffer } from "../domain/ruleOffers"
+import type { HistoryData } from "../domain/aiHistory"
+import { createLlm, type Llm } from "../ai/llm"
+import { writeRules } from "../ai/ruleWriter"
+import { count } from "../domain/words"
 import type { createUpPush } from "./upPush"
-import type { StoreContext } from "./context"
+import type { CoreContext } from "./context"
 
-export function createRuleOffers(ctx: StoreContext, deps: Pick<ReturnType<typeof createUpPush>, "retryPendingCategories" | "retryPendingTags" | "applyTagPatch">) {
-  const { state, setState, mutate, transactions, recordUndo, saveSavedFilter, createSettingsRule, applyRules, deleteSettingsRule, deleteSavedFilter, restoreCategories } = ctx
+export function createRuleOffers(ctx: CoreContext, deps: Pick<ReturnType<typeof createUpPush>, "retryPendingCategories" | "retryPendingTags" | "applyTagPatch">) {
+  const { state, set, mutate, transactions, recordUndo, saveSavedFilter, createSettingsRule, applyRules, deleteSettingsRule, deleteSavedFilter, restoreCategories } = ctx
   const { retryPendingCategories, retryPendingTags, applyTagPatch } = deps
-  let offersCache: { key: readonly unknown[]; offers: RuleOffer[] } | null = null
 
   /** The history the AI reads (domain/aiHistory): current state and the logs. */
   function historyData(): HistoryData {
@@ -29,35 +28,22 @@ export function createRuleOffers(ctx: StoreContext, deps: Pick<ReturnType<typeof
     return ruleOffers(loadCategoryChoices(ctx.db), transactions(), state.rules, state.savedFilters, state.categories, state.tags, descriptions)
   }
 
-  /** R's list: the repeat offers, then the model's (one per expression and
-   * category). Kept until a write, the rows, the saved filters or the
-   * model's offers change: the footer asks on every key (~3.5ms to build). */
-  function allRuleOffers(): RuleOffer[] {
-    const key = [ctx.dbVersion, transactions(), state.savedFilters, state.aiRuleOffers] as const
-    if (offersCache && offersCache.key.every((part, i) => part === key[i])) return offersCache.offers
-    const repeat = ruleOffersFor()
-    const saved = new Set(state.savedFilters.map((f) => f.expr.toLowerCase()))
-    const ai = state.aiRuleOffers.filter((o) => !saved.has(o.expr.toLowerCase()) && !repeat.some((r) => r.expr.toLowerCase() === o.expr.toLowerCase() && r.categoryId === o.categoryId && r.tagId === o.tagId))
-    offersCache = { key, offers: [...repeat, ...ai] }
-    return offersCache.offers
-  }
-
   /** Ask the general model for rules (ai/ruleWriter); `llm` replaces the
    * OpenRouter one (tests). Its offers replace the last run's. */
   async function askForRules(llm?: Llm, focus?: string): Promise<string> {
     if (!ctx.db) throw new Error("db not open")
     if (state.writingRules) throw new Error("Already asking for rules")
-    setState({ writingRules: true })
+    set({ writingRules: true })
     try {
       const model = llm ?? createLlm()
       const result = await writeRules(model, historyData(), { declined: loadRuleDeclines(ctx.db), focus })
-      setState("aiRuleOffers", result.offers)
+      set({ aiRuleOffers: result.offers })
       const cost = result.usage.cost ? ` · $${result.usage.cost.toFixed(4)}` : ""
       if (result.error && !result.offers.length) return `No rules: ${result.error}${cost}`
       const turned = result.rejected.length ? `, ${result.rejected.length} turned down by the check` : ""
       return `${model.model.id.split("/").pop()} proposed ${count(result.offers.length, "rule")}${turned}${cost}`
     } finally {
-      setState({ writingRules: false })
+      set({ writingRules: false })
     }
   }
 
@@ -82,7 +68,7 @@ export function createRuleOffers(ctx: StoreContext, deps: Pick<ReturnType<typeof
     for (let n = 2; state.savedFilters.some((f) => f.id === id); n++) id = `${base}-${n}`
     saveSavedFilter({ id, name: offer.description, expr: offer.expr })
     const ruleId = createSettingsRule({ name: `${offer.description} → ${targetName}`, savedFilterId: id, setCategoryId: offer.categoryId, addTagIds: offer.tagId != null ? [offer.tagId] : [], enabled: true })
-    setState("aiRuleOffers", (offers) => offers.filter((o) => o.expr !== offer.expr))
+    set({ aiRuleOffers: state.aiRuleOffers.filter((o) => o.expr !== offer.expr) })
     const before = transactions().filter((t) => offer.waiting.includes(t.id)).map((t) => ({ id: t.id, categoryId: t.categoryId, tagIds: [...t.tagIds] }))
     const applied = offer.waiting.length ? applyRules(offer.waiting) : null
     const changed = before.filter((row) => transactions().some((t) => t.id === row.id && t.categoryId !== row.categoryId))
@@ -106,7 +92,7 @@ export function createRuleOffers(ctx: StoreContext, deps: Pick<ReturnType<typeof
   function declineRuleOffer(offer: RuleOffer): void {
     if (offer.source === "ai") {
       mutate((db) => declineRule(db, offer.expr, offer.categoryId, offer.tagId))
-      setState("aiRuleOffers", (offers) => offers.filter((o) => o !== offer && !(o.expr === offer.expr && o.categoryId === offer.categoryId && o.tagId === offer.tagId)))
+      set({ aiRuleOffers: state.aiRuleOffers.filter((o) => !(o.expr === offer.expr && o.categoryId === offer.categoryId && o.tagId === offer.tagId)) })
     } else mutate((db) => declineCategoryChoice(db, offer.description, offer.categoryId))
     recordUndo(`declined rule ${offer.description}`, async () => {
       mutate((db) => {
@@ -116,10 +102,10 @@ export function createRuleOffers(ctx: StoreContext, deps: Pick<ReturnType<typeof
         }
         else db.query("UPDATE category_choices SET declined = 0 WHERE description = ? AND category_id = ?").run(offer.description.trim().toLowerCase(), offer.categoryId)
       })
-      if (offer.source === "ai") setState("aiRuleOffers", (offers) => [...offers, offer])
+      if (offer.source === "ai") set({ aiRuleOffers: [...state.aiRuleOffers, offer] })
       return ""
     })
   }
 
-  return { historyData, ruleOffersFor, allRuleOffers, askForRules, ruleOfferNote, makeOfferedRule, declineRuleOffer }
+  return { historyData, askForRules, ruleOfferNote, makeOfferedRule, declineRuleOffer }
 }

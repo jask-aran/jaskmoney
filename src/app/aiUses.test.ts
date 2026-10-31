@@ -15,7 +15,7 @@ import { handleKey } from "./keys"
 
 /** Settings › AI models with a waiting row and a categorised one; Jev and
  * Clairic keys (never used: nothing may reach the network). */
-function setup() {
+async function setup() {
   testEnv("JASKMONEY_JEV_TOKEN", "jev-key-for-test")
   testEnv("JASKMONEY_CF_TOKEN", "cf-key-for-test"); testEnv("JASKMONEY_CF_ACCOUNT_ID", "acct-for-test")
   const network = spyOn(globalThis, "fetch").mockImplementation(Object.assign(() => { throw new Error("network is forbidden") }, { preconnect: globalThis.fetch.preconnect }))
@@ -27,7 +27,7 @@ function setup() {
   db.query(`INSERT INTO transactions (id, date_raw, date_iso, amount, description, category_id, account_id, source)
     VALUES (1, '2026-10-01', '2026-10-01', -5, 'Bulk Barn', 100, 100, 'csv'), (2, '2026-10-02', '2026-10-02', -12, 'Corner Bar', NULL, 100, 'csv')`).run()
   data.refresh()
-  data.refreshApiKeys()
+  await data.refreshApiKeys()
   ui.switchTab("settings")
   ui.activateSettings("ai")
   ui.setState({ aiCursor: 0, aiDialog: null, aiUse: null, aiSent: null })
@@ -44,8 +44,8 @@ async function until<T>(get: () => T | null | undefined): Promise<T> {
   throw new Error("timed out")
 }
 
-test("the pane's rows are the models, then the uses; a use names its model and enter opens it", () => {
-  setup()
+test("the pane's rows are the models, then the uses; a use names its model and enter opens it", async () => {
+  await setup()
   const ctx = aiContext(data)
   expect(useModel("suggestions", ctx)).toEqual({ text: "Jev (TypeSafe)", ready: true })
   expect(useModel("search", ctx)).toEqual({ text: "Jev (TypeSafe) + Clairic", ready: true })
@@ -58,8 +58,8 @@ test("the pane's rows are the models, then the uses; a use names its model and e
   expect(ui.state.aiDialog).toBeNull()
 })
 
-test("Search: Clairic switches off and on, saved as a setting", () => {
-  setup()
+test("Search: Clairic switches off and on, saved as a setting", async () => {
+  await setup()
   // The cursor passes Search's four queries before its model actions.
   ui.setState({ aiUse: { use: "search", cursor: 4, note: null } })
   expect(useActions("search", aiContext(data)).map((a) => a.id)).toEqual(["clairic"])
@@ -72,8 +72,8 @@ test("Search: Clairic switches off and on, saved as a setting", () => {
   expect(searchUsesClairic()).toBe(true)
 })
 
-test("a use's Connect opens that model's dialog", () => {
-  setup()
+test("a use's Connect opens that model's dialog", async () => {
+  await setup()
   ui.setState({ aiUse: { use: "rules", cursor: 2, note: null } })
   handleKey(ui, key("return"), data)
   expect(ui.state.aiUse).toBeNull()
@@ -83,7 +83,7 @@ test("a use's Connect opens that model's dialog", () => {
 })
 
 test("enter on a query opens it: its exact request is built by the real code, for your rows, and sent nowhere; keys left out", async () => {
-  setup()
+  await setup()
   ui.setState({ aiUse: { use: "suggestions", cursor: 0, note: null } })
   handleKey(ui, key("return"), data)
   expect(ui.state.aiSent?.query).toBe("suggestion")

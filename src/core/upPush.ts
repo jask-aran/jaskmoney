@@ -1,11 +1,11 @@
-import { setTransactionCategory, recordCategoryChoices, unrecordCategoryChoices, logCategories, unlogCategory, logTags, unlogTag, type Db, type CategoryHow, type TagHow } from "../../db/client"
-import type { Category } from "../../domain/types"
-import { UpApiError } from "../../up/client"
-import { PUSH_CONCURRENCY, pushTransactions } from "../../up/push"
-import { sendQueuedTagChange } from "../../up/tags"
-import { addTagLink, removeTagLink, queueTagPush, canAddUpTag } from "../../db/tagLinks"
-import { appNow } from "../../domain/days"
-import type { StoreContext, TagPatch } from "./context"
+import { setTransactionCategory, recordCategoryChoices, unrecordCategoryChoices, logCategories, unlogCategory, logTags, unlogTag, type Db, type CategoryHow, type TagHow } from "../db/client"
+import type { Category } from "../domain/types"
+import { UpApiError } from "../up/client"
+import { PUSH_CONCURRENCY, pushTransactions } from "../up/push"
+import { sendQueuedTagChange } from "../up/tags"
+import { addTagLink, removeTagLink, queueTagPush, canAddUpTag } from "../db/tagLinks"
+import { appNow } from "../domain/days"
+import type { CoreContext, TagPatch } from "./context"
 
 export interface CategorizeResult { done: number; pushed: number; failures: string[]; waiting: number; waitingError?: string }
 
@@ -59,7 +59,7 @@ function upRejected(error: unknown): boolean {
   return error instanceof UpApiError && error.status >= 400 && error.status < 500 && error.status !== 401 && error.status !== 429
 }
 
-export function createUpPush(ctx: StoreContext, deps: { ruleOfferNote: (ids: number[]) => string }) {
+export function createUpPush(ctx: CoreContext, deps: { ruleOfferNote: (ids: number[]) => string }) {
   const { state, mutate, refresh, transactions, upClient, recordUndo, categorySnapshot, restoreCategories, setLastRepeat } = ctx
   const { ruleOfferNote } = deps
 

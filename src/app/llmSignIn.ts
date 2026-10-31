@@ -56,7 +56,7 @@ export async function startLlmSignIn(ui: UiStore, data: DataStore, provider: Llm
         }, { once: true })
       }),
     })
-    data.refreshApiKeys()
+    await data.refreshApiKeys()
     ui.setStatus(`Signed in to ${label}`)
   } catch (error) {
     ui.setStatus(flow.signal.aborted ? `${label} sign-in cancelled` : `${label} sign-in failed: ${error instanceof Error ? error.message : String(error)}`, !flow.signal.aborted)
@@ -85,5 +85,5 @@ export function cancelLlmSignIn(): void {
 /** Forget a provider's browser sign-in. */
 export async function signOutLlm(data: DataStore, provider: LlmProvider): Promise<void> {
   await createFileCredentialStore().delete(provider)
-  data.refreshApiKeys()
+  await data.refreshApiKeys()
 }

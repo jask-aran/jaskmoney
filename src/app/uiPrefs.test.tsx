@@ -73,7 +73,7 @@ test("bootstrap-off preserves UI defaults; scoped w updates the hint and calenda
     t.mockInput.pressKey("w")
     await t.renderOnce()
     expect(data.state.weekStart).toBe("sunday")
-    data.saveUiPrefs({ weekStart: "monday" })
+    await data.saveUiPrefs({ weekStart: "monday" })
     await t.renderOnce()
     expect(weekdaySpans().map((s) => s.text.trim())).toEqual(["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"])
   } finally {

@@ -8,7 +8,7 @@ const settle = async (t: Awaited<ReturnType<typeof renderApp>>) => { await t.ren
 test("the Taxonomy list fits its pane: its footer is a line of its own below the rows", async () => {
   const t = await renderApp({ width: 120, height: 30 })
   data.init(":memory:")
-  for (let i = 0; i < 30; i++) data.createSettingsCategory({ name: `Category ${String(i).padStart(2, "0")}`, color: "#94e2d5" })
+  for (let i = 0; i < 30; i++) await data.createSettingsCategory({ name: `Category ${String(i).padStart(2, "0")}`, color: "#94e2d5" })
   ui.switchTab("settings")
   ui.setState({ focusedSection: "set.categories", settingsActive: false })
   await settle(t)
@@ -24,8 +24,8 @@ test("the Taxonomy list fits its pane: its footer is a line of its own below the
 test("narrow, the column scrolls to the focused pane and to the cursor row of a long Rules list", async () => {
   const t = await renderApp({ width: 70, height: 30 })
   data.init(":memory:")
-  data.saveSavedFilter({ id: "f", name: "F", expr: "desc:x" })
-  for (let i = 1; i <= 25; i++) data.createSettingsRule({ name: `Rule number ${i}`, savedFilterId: "f", setCategoryId: null, addTagIds: [], enabled: true })
+  await data.saveSavedFilter({ id: "f", name: "F", expr: "desc:x" })
+  for (let i = 1; i <= 25; i++) await data.createSettingsRule({ name: `Rule number ${i}`, savedFilterId: "f", setCategoryId: null, addTagIds: [], enabled: true })
   ui.switchTab("settings")
   ui.setState({ focusedSection: "set.categories", settingsActive: false })
   await settle(t)

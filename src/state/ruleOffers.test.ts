@@ -1,3 +1,4 @@
+import { settlePending } from "../testing/settle"
 import { expect, onTestFinished, spyOn, test } from "bun:test"
 import { join } from "node:path"
 import { mkdtempSync } from "node:fs"
@@ -69,18 +70,18 @@ test("no offer when the filter finds rows elsewhere (Coles Express in Fuel), and
   await data.categorizeTransactions(ids.aldi, cat("Groceries"))
   const [aldi] = data.ruleOffersFor()
   expect(aldi!.description).toBe("Aldi")
-  data.declineRuleOffer(aldi!)
+  await data.declineRuleOffer(aldi!)
   data.init(path)
   expect(data.ruleOffersFor()).toEqual([])
 })
 
-test("a rule's category on an Up row Up can hold waits to go to Up; a local-only one stays the rule's", () => {
+test("a rule's category on an Up row Up can hold waits to go to Up; a local-only one stays the rule's", async () => {
   const { ids, cat, source } = setup()
-  data.saveSavedFilter({ id: "aldi", name: "Aldi", expr: "desc:Aldi" })
-  data.saveSavedFilter({ id: "express", name: "Express", expr: 'desc:"Coles Express"' })
-  data.createSettingsRule({ name: "Aldi", savedFilterId: "aldi", setCategoryId: cat("Groceries"), addTagIds: [], enabled: true })
-  data.createSettingsRule({ name: "Express", savedFilterId: "express", setCategoryId: cat("Test fuel"), addTagIds: [], enabled: true })
-  data.applyRules([...ids.aldi, ids.express])
+  await data.saveSavedFilter({ id: "aldi", name: "Aldi", expr: "desc:Aldi" })
+  await data.saveSavedFilter({ id: "express", name: "Express", expr: 'desc:"Coles Express"' })
+  await data.createSettingsRule({ name: "Aldi", savedFilterId: "aldi", setCategoryId: cat("Groceries"), addTagIds: [], enabled: true })
+  await data.createSettingsRule({ name: "Express", savedFilterId: "express", setCategoryId: cat("Test fuel"), addTagIds: [], enabled: true })
+  await data.applyRules([...ids.aldi, ids.express])
   expect(ids.aldi.map(source)).toEqual(["pending", "pending", "pending"])
   expect(source(ids.express)).toBe("rule")
 })
@@ -93,7 +94,7 @@ test("R opens the offers; x declines the cursor's; esc closes", async () => {
   handleKey(ui, key("r", { shift: true }), data)
   expect(ui.state.ruleOffersOpen).toBe(true)
   expect(ui.activeScope()).toBe("manager.ruleOffers")
-  handleKey(ui, key("x"), data)
+  handleKey(ui, key("x"), data); await settlePending()
   expect(ui.state.ruleOffersOpen).toBe(false)
   expect(ui.state.status).toBe("No rule for Aldi; it won't be offered again")
   handleKey(ui, key("r", { shift: true }), data)

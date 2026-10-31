@@ -40,9 +40,9 @@ test("each categorisation is logged with how and when; one Up refuses isn't", as
   saveSuggestions(db, [{ transactionId: b!, categoryId: cat("Groceries"), confidence: 0.9, source: "jev" }])
   data.refresh()
   await data.acceptSuggestions([b!])
-  data.saveSavedFilter({ id: "shop", name: "Shop", expr: "desc:Shop" })
-  data.createSettingsRule({ name: "Shop", savedFilterId: "shop", setCategoryId: cat("People"), addTagIds: [], enabled: true })
-  data.applyRules([a!])
+  await data.saveSavedFilter({ id: "shop", name: "Shop", expr: "desc:Shop" })
+  await data.createSettingsRule({ name: "Shop", savedFilterId: "shop", setCategoryId: cat("People"), addTagIds: [], enabled: true })
+  await data.applyRules([a!])
   expect(loadCategoryLog(db).map(({ transactionId, categoryId, previousCategoryId, how, at }) => [transactionId, categoryId, previousCategoryId, how, at])).toEqual([
     [a, cat("People"), cat("Groceries"), "rule", "2026-10-27T10:00:00.000Z"],
     [b, cat("Groceries"), before, "accept", "2026-10-27T10:00:00.000Z"],
@@ -52,7 +52,7 @@ test("each categorisation is logged with how and when; one Up refuses isn't", as
 
 test("tag changes are logged by how; Up rows go in one batch, several at a time", async () => {
   const { db, rows, seen } = setup()
-  const trip = data.createSettingsTag({ name: "Trip", color: "#fff", categoryIds: [], about: null })
+  const trip = await data.createSettingsTag({ name: "Trip", color: "#fff", categoryIds: [], about: null })
   const ok = rows.slice(0, 5)
   expect(await data.applyTagPatch(ok, { [trip]: "add" })).toBe("Tags: +TRIP on 5 · 5 updated in Up")
   expect(seen.most).toBeGreaterThan(1)

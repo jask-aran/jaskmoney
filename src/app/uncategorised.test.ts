@@ -1,3 +1,4 @@
+import { settlePending } from "../testing/settle"
 import { expect, onTestFinished, spyOn, test } from "bun:test"
 import { footerHints, handleKey } from "./keys"
 import { ui } from "../state/uiStore"
@@ -63,7 +64,7 @@ test("i shows only rows to categorise, most confident first; y accepts, x dismis
 
   // x on a row without a suggestion says so; nothing changes.
   handleKey(ui, key("j"), data)
-  handleKey(ui, key("x"), data)
+  handleKey(ui, key("x"), data); await settlePending()
   expect(ui.state.status).toBe("No suggestion to dismiss")
 
   // Y shows what it would accept; esc accepts nothing, enter accepts Shop2.
@@ -92,7 +93,7 @@ test("x dismisses the selected rows' suggestions without categorising them", asy
   handleKey(ui, key("i"), data)
   await settle()
   ui.setState({ selectedIds: { 2: true, 4: true } })
-  handleKey(ui, key("x"), data)
+  handleKey(ui, key("x"), data); await settlePending()
   expect(data.state.suggestions).toEqual({})
   // Dismissed rows (no suggestion now) drop below those with one; here none has.
   expect(shown()).toEqual(["Shop4", "Mystery3", "Shop2"])

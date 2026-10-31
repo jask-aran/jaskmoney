@@ -1,5 +1,6 @@
 import { newestFirst } from "./chronology"
-import { judgeEach, type JevClient } from "../ai/jev"
+import type { JevClient } from "../ai/jev"
+import { judgeEach } from "../ai/judge"
 import { ASK_LIMIT } from "./ask"
 import { examplesOf } from "./history"
 import { descKey } from "./transactionGroups"

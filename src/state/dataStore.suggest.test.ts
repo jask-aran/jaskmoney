@@ -134,7 +134,7 @@ test("dismiss deletes suggestions without setting a category; refresh removes st
   for (const id of [1, 2, 3]) add({ id })
   saveSuggestions(db, [1, 2, 3].map((id) => ({ transactionId: id, categoryId: 100, confidence: 1, source: "history" })))
   data.refresh()
-  data.dismissSuggestions([1, 999])
+  await data.dismissSuggestions([1, 999])
   expect(data.state.suggestions[1]).toBeUndefined()
   expect(data.state.transactions.find((t) => t.id === 1)?.categoryId).toBeNull()
   db.query("UPDATE transactions SET category_id = 101 WHERE id = 2").run()
@@ -267,7 +267,7 @@ test("merchant notes reload, invalidate breadth, and re-suggest only that mercha
     return out
   } }
   await data.suggestCategories([1, 2, 3, 6], ai)
-  data.dismissSuggestions([6])
+  await data.dismissSuggestions([6])
   expect(asked).toHaveLength(2)
   await data.suggestCategories([1, 2, 3], ai)
   expect(asked).toHaveLength(2)

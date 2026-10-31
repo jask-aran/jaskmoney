@@ -1,4 +1,5 @@
-import type { JevAnswer, JevClient } from "../ai/jev"
+import type { JevClient } from "../ai/jev"
+import type { JevAnswer } from "../ai/judge"
 import type { ClairicAnswer, ClairicField, WorkersAiClient } from "../ai/workersAi"
 import { cycleFor, type CycleConfig } from "./budget"
 import { addDays, addMonths } from "./days"

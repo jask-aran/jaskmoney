@@ -1,3 +1,4 @@
+import { settlePending } from "../testing/settle"
 import { expect, test } from "bun:test"
 import { existsSync } from "node:fs"
 import { join } from "node:path"
@@ -22,7 +23,7 @@ test("Demo mode: enter swaps in three years of made-up rows, sync does nothing, 
   ui.switchTab("settings")
   ui.activateSettings("database")
   ui.setState({ databaseCursor: DATABASE_ROWS.indexOf("demo") })
-  handleKey(ui, key("return"), data)
+  handleKey(ui, key("return"), data); await settlePending()
   expect(data.state.demo).toBe(true)
   expect(existsSync(join(jaskmoneyHome(), "demo.db"))).toBe(true)
   expect(data.state.transactions.length).toBeGreaterThan(1000)
@@ -33,13 +34,13 @@ test("Demo mode: enter swaps in three years of made-up rows, sync does nothing, 
   await runSync(ui, data, { manual: true })
   expect(ui.state.status).toMatch(/Demo mode: sync is off/)
   expect(data.state.dbInfo?.upLastSyncedAt ?? null).toBe(before)
-  handleKey(ui, key("return"), data)
+  handleKey(ui, key("return"), data); await settlePending()
   expect(data.state.demo).toBe(false)
   expect(data.state.transactions.map((t) => t.description)).toEqual(["Real Cafe"])
   expect(data.state.accountSelection).toBe(300)
 })
 
-test("Demo mode uses none of your data: nothing of yours in its rows, accounts or categories; it has its own monthly budget", () => {
+test("Demo mode uses none of your data: nothing of yours in its rows, accounts or categories; it has its own monthly budget", async () => {
   data.init(":memory:")
   const db = data.getDb()!
   db.query("INSERT INTO accounts (id, name, type, source, external_kind, sync_enabled) VALUES (300, 'Zqxprivate Spending', 'debit', 'up', 'TRANSACTIONAL', 1)").run()
@@ -50,7 +51,7 @@ test("Demo mode uses none of your data: nothing of yours in its rows, accounts o
     db.query("INSERT INTO transactions (date_raw, date_iso, amount, description, account_id, category_id, message, source) VALUES (?, ?, ?, 'Zqxprivate Bakery', 300, ?, 'zqxprivate note', 'up')").run(day, day, -(10 + i), hobby)
   }
   data.refresh()
-  data.enterDemo()
+  await data.enterDemo()
   const everything = [
     ...data.state.transactions.map((t) => `${t.description} ${t.message ?? ""} ${t.notes}`),
     ...data.state.accounts.map((a) => a.name),
@@ -59,6 +60,6 @@ test("Demo mode uses none of your data: nothing of yours in its rows, accounts o
   expect(everything).not.toMatch(/zqxprivate/i)
   expect(data.state.budgets).toEqual([expect.objectContaining({ scope: { kind: "overall" } })])
   expect(data.state.budgetCycle).toMatchObject({ unit: "month", anchor: "calendar" })
-  data.leaveDemo()
+  await data.leaveDemo()
   expect(data.state.categories.some((c) => c.name === "Zqxprivate Hobby")).toBe(true)
 })

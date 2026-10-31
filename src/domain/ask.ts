@@ -1,5 +1,6 @@
 import { newestFirst } from "./chronology"
-import { judgeEach, type JevClient } from "../ai/jev"
+import type { JevClient } from "../ai/jev"
+import { judgeEach } from "../ai/judge"
 import { addDays } from "./days"
 import { matchQuestion, matchState } from "./questions"
 import type { Transaction } from "./types"

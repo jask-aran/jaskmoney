@@ -29,7 +29,7 @@ async function budgetsTab() {
 
 test("Budgets tab (3): a chart of the budget at the cursor under where it stands; the budgets as bars; refunds reduce spending as on the Overview", async () => {
   const { frame } = await budgetsTab()
-  data.setBudget({ kind: "overall" }, 500)
+  await data.setBudget({ kind: "overall" }, 500)
   const f = await frame()
   expect(f).toContain("Overall spending · day 20 of 31")
   // $120 − $20 refund; an even pace by day 20 is $323; $5 a day ends at $155.
@@ -47,14 +47,14 @@ test("Budgets tab (3): a chart of the budget at the cursor under where it stands
 
 test("allocating down: in Categories, enter sets a category's budget starting from its average; it joins the budgets, and the chart follows the cursor", async () => {
   const { groceries, frame } = await budgetsTab()
-  data.setBudget({ kind: "overall" }, 500)
+  await data.setBudget({ kind: "overall" }, 500)
   handleKey(ui, key("j"), data)
   expect(ui.activeScope()).toBe("budgets.categories")
   handleKey(ui, key("return"), data)
   expect(ui.state.settingsEditor).toBe("budget")
   expect(ui.state.settingsDraft).toMatchObject({ scopeKey: `category:${groceries}`, amount: "300" })
   ui.setState({ settingsEditor: null })
-  data.setBudget({ kind: "category", categoryId: groceries }, 300)
+  await data.setBudget({ kind: "category", categoryId: groceries }, 300)
   const f = await frame()
   // With a category budget the overall one is everything else, and the
   // two add up to the total.
@@ -75,7 +75,7 @@ test("allocating down: in Categories, enter sets a category's budget starting fr
 
 test("x leaves a category out of the budgets (not budgeted: the total and everything else leave it), and again brings it back", async () => {
   const { groceries, frame } = await budgetsTab()
-  data.setBudget({ kind: "overall" }, 500)
+  await data.setBudget({ kind: "overall" }, 500)
   handleKey(ui, key("j"), data)
   ui.setState({ budgetCategoryCursor: 0 })
   // The first line is Groceries' group; its row is next.
@@ -95,7 +95,7 @@ test("each cycle is judged against the budget in force then", async () => {
   // $250 from September; $500 from this cycle.
   saveBudget(data.getDb()!, { kind: "overall" }, 250, "2026-09-01")
   data.refresh()
-  data.setBudget({ kind: "overall" }, 500)
+  await data.setBudget({ kind: "overall" }, 500)
   const f = await frame()
   expect(f).toMatch(/1 Oct – 31 Oct\s+\$100\s+[█─▏│ ]+\s+\$400 under/)
   expect(f).toMatch(/1 Sep – 30 Sep\s+\$300\s+[█─▏│ ]+\s+\$50 over/)
@@ -103,7 +103,7 @@ test("each cycle is judged against the budget in force then", async () => {
 
 test("with only category budgets, the total is theirs and everything else waits to be set", async () => {
   const { groceries, frame } = await budgetsTab()
-  data.setBudget({ kind: "category", categoryId: groceries }, 300)
+  await data.setBudget({ kind: "category", categoryId: groceries }, 300)
   const f = await frame()
   expect(f).toMatch(/Total budgeted\s+[█▌│─]+\s+\$100 of \$300/)
   expect(f).toMatch(/Everything else\s+not set: enter sets one for spending outside the category budgets/)
@@ -116,7 +116,7 @@ test("wide, the categories run down the right beside the chart and the budgets",
   setAppClock(new Date(2026, 9, 20, 12))
   const t = await renderApp({ width: 140, height: 44 })
   data.init(":memory:")
-  data.setBudget({ kind: "overall" }, 4200)
+  await data.setBudget({ kind: "overall" }, 4200)
   handleKey(ui, key("3"), data)
   await t.renderOnce(); await t.flush()
   const lines = t.captureCharFrame().split("\n")

@@ -1,3 +1,4 @@
+import { settlePending } from "../testing/settle"
 import { afterEach, expect, onTestFinished, spyOn, test } from "bun:test"
 import { rmSync } from "node:fs"
 import type { AuthInteraction } from "@earendil-works/pi-ai"
@@ -35,10 +36,10 @@ function choose(action: string) {
   handleKey(ui, key("return"), data)
 }
 
-test("enter opens a row's dialog; the pane's rows say what, how connected, and what for", () => {
+test("enter opens a row's dialog; the pane's rows say what, how connected, and what for", async () => {
   setup()
   testEnv("JASKMONEY_CF_TOKEN", "cf-token"); testEnv("JASKMONEY_CF_ACCOUNT_ID", "acct")
-  data.refreshApiKeys()
+  await data.refreshApiKeys()
   const ctx = aiContext(data)
   expect(aiRow("jev", ctx)).toEqual({ name: "Jev", connected: false, how: "not set" })
   expect(aiRow("workersAi", ctx)).toMatchObject({ connected: true, how: "key · env" })
@@ -49,14 +50,14 @@ test("enter opens a row's dialog; the pane's rows say what, how connected, and w
   expect(ui.state.aiDialog).toBeNull()
 })
 
-test("a key: typed or pasted into the dialog, saved owner-only, used before .env; test and remove appear; remove takes enter twice", () => {
+test("a key: typed or pasted into the dialog, saved owner-only, used before .env; test and remove appear; remove takes enter twice", async () => {
   setup()
   handleKey(ui, key("return"), data)
   expect(actions()).toEqual(["key"])
   choose("key")
   expect(handlePaste(ui, `${KEY}\n`, data)).toBe(true)
   expect(ui.state.aiDialog!.field).toMatchObject({ action: "key", value: KEY })
-  handleKey(ui, key("return"), data)
+  handleKey(ui, key("return"), data); await settlePending()
   expect(ui.state.aiDialog!.field).toBeNull()
   expect(ui.state.aiDialog!.note).toEqual({ text: "Key saved", ok: true })
   expect(loadSavedCredentials()).toEqual({ JASKMONEY_JEV_TOKEN: KEY })
@@ -69,22 +70,22 @@ test("a key: typed or pasted into the dialog, saved owner-only, used before .env
   choose("remove")
   expect(ui.state.aiDialog!.armed).toBe(true)
   expect(loadSavedCredentials()).toEqual({ JASKMONEY_JEV_TOKEN: KEY })
-  handleKey(ui, key("return"), data)
+  handleKey(ui, key("return"), data); await settlePending()
   expect(loadSavedCredentials()).toEqual({})
   expect(data.state.apiKeys.JASKMONEY_JEV_TOKEN.source).toBeNull()
 })
 
-test("Workers AI: a token and an account id, each its own action", () => {
+test("Workers AI: a token and an account id, each its own action", async () => {
   setup(1)
   handleKey(ui, key("return"), data)
   expect(actions()).toEqual(["key", "accountId"])
-  choose("key"); handlePaste(ui, KEY, data); handleKey(ui, key("return"), data)
-  choose("accountId"); handlePaste(ui, "acct-for-test", data); handleKey(ui, key("return"), data)
+  choose("key"); handlePaste(ui, KEY, data); handleKey(ui, key("return"), data); await settlePending()
+  choose("accountId"); handlePaste(ui, "acct-for-test", data); handleKey(ui, key("return"), data); await settlePending()
   expect(loadSavedCredentials()).toEqual({ JASKMONEY_CF_TOKEN: KEY, JASKMONEY_CF_ACCOUNT_ID: "acct-for-test" })
   expect(aiRow("workersAi", aiContext(data))).toMatchObject({ connected: true, how: "key · saved" })
 })
 
-test("a general model: browser sign-in first; its model checked against the provider; the default isn't saved; u-style 'use' picks it", () => {
+test("a general model: browser sign-in first; its model checked against the provider; the default isn't saved; u-style 'use' picks it", async () => {
   setup(3)
   handleKey(ui, key("return"), data)
   expect(actions()).toEqual(["signIn", "key", "model"])
@@ -97,19 +98,19 @@ test("a general model: browser sign-in first; its model checked against the prov
   expect(loadSavedCredentials()).toEqual({})
   handleKey(ui, key("u", { ctrl: true }), data)
   handlePaste(ui, "gpt-6-luna", data)
-  handleKey(ui, key("return"), data)
+  handleKey(ui, key("return"), data); await settlePending()
   expect(loadSavedCredentials()).toEqual({ JASKMONEY_OPENAI_MODEL: "gpt-6-luna" })
-  choose("model"); handleKey(ui, key("u", { ctrl: true }), data); handlePaste(ui, "gpt-6.1-sol", data); handleKey(ui, key("return"), data)
+  choose("model"); handleKey(ui, key("u", { ctrl: true }), data); handlePaste(ui, "gpt-6.1-sol", data); handleKey(ui, key("return"), data); await settlePending()
   expect(loadSavedCredentials()).toEqual({})
   // OpenRouter set up and so in use: OpenAI, once it has a key, can take
   // over, from the Rules use (a model's dialog only connects it).
-  data.saveApiKeys({ JASKMONEY_OPENROUTER_TOKEN: "or-key-for-test" })
-  choose("key"); handlePaste(ui, KEY, data); handleKey(ui, key("return"), data)
+  await data.saveApiKeys({ JASKMONEY_OPENROUTER_TOKEN: "or-key-for-test" })
+  choose("key"); handlePaste(ui, KEY, data); handleKey(ui, key("return"), data); await settlePending()
   expect(actions()).toEqual(["signIn", "key", "model", "test", "remove"])
   // Past the Rules use's one query, its model actions.
   ui.setState({ aiDialog: null, aiUse: { use: "rules", cursor: 1, note: null } })
   expect(useActions("rules", aiContext(data)).map((a) => a.label)).toEqual(["Use OpenAI instead"])
-  handleKey(ui, key("return"), data)
+  handleKey(ui, key("return"), data); await settlePending()
   expect(activeLlmProvider()).toBe("openai")
   expect(useModel("rules", aiContext(data))).toEqual({ text: "OpenAI · gpt-6.1-sol", ready: true })
   expect(useActions("rules", aiContext(data)).map((a) => a.label)).toEqual(["Use OpenRouter instead"])
@@ -127,11 +128,11 @@ test("a former JASKMONEY_LLM_MODEL still names OpenRouter's model", () => {
 test("removing a general model removes only its key, model and sign-in", async () => {
   setup(2)
   const saved = { JASKMONEY_JEV_TOKEN: KEY, JASKMONEY_OPENROUTER_TOKEN: KEY, JASKMONEY_OPENROUTER_MODEL: "meta/muse-spark-1.3", JASKMONEY_OPENAI_TOKEN: KEY }
-  data.saveApiKeys(saved)
+  await data.saveApiKeys(saved)
   await createFileCredentialStore().modify("openrouter", async () => ({ type: "oauth", access: "a", refresh: "", expires: Date.now() + 60_000 }))
-  data.refreshApiKeys()
+  await data.refreshApiKeys()
   handleKey(ui, key("return"), data)
-  choose("remove"); handleKey(ui, key("return"), data)
+  choose("remove"); handleKey(ui, key("return"), data); await settlePending()
   await Bun.sleep(0)
   expect(loadSavedCredentials()).toEqual({ JASKMONEY_JEV_TOKEN: KEY, JASKMONEY_OPENAI_TOKEN: KEY })
   expect(data.state.signedIn.openrouter).toBe(false)
@@ -140,7 +141,7 @@ test("removing a general model removes only its key, model and sign-in", async (
 test("OpenRouter's sign-in says it makes a key on the account, and removing doesn't revoke it", async () => {
   setup()
   await createFileCredentialStore().modify("openrouter", async () => ({ type: "oauth", access: "a", refresh: "", expires: Date.now() + 60_000 }))
-  data.refreshApiKeys()
+  await data.refreshApiKeys()
   const ctx = aiContext(data)
   expect(aiActionHint("openrouter", "signIn", ctx)).toContain("another one: the last stays active until you delete it on openrouter.ai")
   expect(aiActionHint("openrouter", "remove", ctx)).toBe("Forgets the sign-in here. Its key stays active on OpenRouter: delete it at openrouter.ai/settings/keys.")
@@ -187,7 +188,7 @@ test("without its own key, the Jev row shows it goes through OpenRouter when tha
   expect(aiRow("jev", signedIn)).toMatchObject({ connected: true, how: "via OpenRouter" })
 })
 
-test("Settings › Up Bank: enter on the token row opens its dialog; a pasted token is saved owner-only, shown masked, and removed on enter twice", () => {
+test("Settings › Up Bank: enter on the token row opens its dialog; a pasted token is saved owner-only, shown masked, and removed on enter twice", async () => {
   data.init(":memory:")
   ui.switchTab("settings")
   ui.activateSettings("up")
@@ -199,14 +200,14 @@ test("Settings › Up Bank: enter on the token row opens its dialog; a pasted to
   handleKey(ui, key("return"), data)
   expect(ui.state.aiDialog?.field?.action).toBe("key")
   handlePaste(ui, "up:yeah:test-token-1234", data)
-  handleKey(ui, key("return"), data)
+  handleKey(ui, key("return"), data); await settlePending()
   expect(loadSavedCredentials().JASKMONEY_UP_TOKEN).toBe("up:yeah:test-token-1234")
   expect(aiRow("up", ctx())).toMatchObject({ connected: true, how: "key · saved" })
   expect(aiActions("up", ctx()).map((a) => a.id)).toEqual(["key", "test", "remove"])
   ui.setState("aiDialog", { cursor: 2 })
   handleKey(ui, key("return"), data)
   expect(loadSavedCredentials().JASKMONEY_UP_TOKEN).toBe("up:yeah:test-token-1234")
-  handleKey(ui, key("return"), data)
+  handleKey(ui, key("return"), data); await settlePending()
   expect(loadSavedCredentials().JASKMONEY_UP_TOKEN).toBeUndefined()
   ui.setState({ aiDialog: null })
 })

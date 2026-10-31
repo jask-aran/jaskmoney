@@ -4,7 +4,7 @@ import { addDays, appToday } from "../domain/days"
 import { testEnv } from "../testing/scoped"
 import { data, showNearMisses } from "./dataStore"
 import { judgedText } from "../app/searchReport"
-import type { AskResult } from "./store/suggestions"
+import type { AskResult } from "../client/store"
 
 /** The status line for a run, without its timing. */
 const said = async (run: Promise<AskResult | null>) => { const r = await run; return r ? judgedText(r).replace(/ in \d+\.\ds/, "") : "" }

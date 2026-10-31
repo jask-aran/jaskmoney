@@ -62,7 +62,7 @@ test("undoing an accept puts the rows back waiting, with their suggestions; undo
   expect(await data.undo()).toStartWith("Undid: accepted 1 suggestion")
   expect(row(1).categoryId).toBeNull()
   expect(data.state.suggestions[1]).toMatchObject({ categoryId: food, confidence: 0.91 })
-  data.dismissSuggestions([5])
+  await data.dismissSuggestions([5])
   expect(data.state.suggestions[5]).toBeUndefined()
   expect(await data.undo()).toStartWith("Undid: dismissed 1 suggestion")
   expect(data.state.suggestions[5]).toMatchObject({ categoryId: food, confidence: 0.6 })
@@ -70,7 +70,7 @@ test("undoing an accept puts the rows back waiting, with their suggestions; undo
 
 test("undo reverses tag changes from the picker and the tag review, and a tag review dismissal", async () => {
   const { row } = setup()
-  const trip = data.createSettingsTag({ name: "TRIP", color: "#fff", categoryIds: [], about: null })
+  const trip = await data.createSettingsTag({ name: "TRIP", color: "#fff", categoryIds: [], about: null })
   await data.applyTagPatch([1, 2], { [trip]: "add" })
   expect(await data.undo()).toStartWith("Undid: +TRIP on 2")
   expect(row(1).tagIds).toEqual([])
@@ -80,7 +80,7 @@ test("undo reverses tag changes from the picker and the tag review, and a tag re
   expect(row(3).tagIds).toEqual([trip])
   expect(await data.undo()).toStartWith("Undid: +TRIP on 1")
   expect(row(3).tagIds).toEqual([])
-  data.dismissTagCandidates([5])
+  await data.dismissTagCandidates([5])
   expect(data.state.tagReview!.candidates[5]).toBeUndefined()
   expect(await data.undo()).toStartWith("Undid: dismissed 1 candidate")
   expect(data.state.tagReview!.candidates[5]).toMatchObject({ confidence: 0.9 })
@@ -121,7 +121,7 @@ test("u undoes in Transactions; esc still clears; the footer says u undo", async
 
 test(". repeats the last category or tag change on the cursor row or selection; the picker starts on the last category", async () => {
   const { food, fuel, row } = setup()
-  const trip = data.createSettingsTag({ name: "TRIP", color: "#fff", categoryIds: [], about: null })
+  const trip = await data.createSettingsTag({ name: "TRIP", color: "#fff", categoryIds: [], about: null })
   const at = (id: number) => ui.setState({ managerCursor: data.scopedTransactions().findIndex((t) => t.id === id), selectedIds: {} })
   // Nothing to repeat yet.
   at(1)

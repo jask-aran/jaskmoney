@@ -1,0 +1,77 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>jaskmoney</title>
+  <style>
+    :root {
+      color-scheme: dark;
+      --canvas: #11111b; --base: #1e1e2e; --surface0: #313244; --surface1: #45475a; --overlay0: #6c7086;
+      --figure: #cdd6f4; --label: #bac2de; --note: #a6adc8; --faint: #7f849c;
+      --good: #a6e3a1; --bad: #f38ba8; --focus: #89b4fa; --ai: #cba6f7; --caution: #f9e2af;
+      --mono: ui-monospace, "JetBrains Mono", "SF Mono", Menlo, monospace;
+    }
+    * { box-sizing: border-box; }
+    body { margin: 0; background: var(--canvas); color: var(--figure); font: 14px/1.45 system-ui, sans-serif; }
+    header { position: sticky; top: 0; z-index: 1; background: var(--canvas); border-bottom: 1px solid var(--surface0); padding: 12px 16px; display: grid; gap: 10px; }
+    .top { display: flex; align-items: baseline; gap: 12px; flex-wrap: wrap; }
+    h1 { margin: 0; font: 600 16px var(--mono); color: var(--ai); letter-spacing: .02em; }
+    #status { color: var(--note); font-size: 12px; }
+    #status.off { color: var(--bad); }
+    .bar { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; }
+    select, input, button { font: inherit; color: var(--figure); background: var(--base); border: 1px solid var(--surface1); border-radius: 6px; padding: 6px 9px; }
+    input { flex: 1 1 260px; min-width: 0; font-family: var(--mono); }
+    input:focus, select:focus, button:focus-visible { outline: 2px solid var(--focus); outline-offset: -1px; }
+    button { cursor: pointer; color: var(--label); }
+    button:hover:not(:disabled) { border-color: var(--focus); color: var(--figure); }
+    button:disabled { opacity: .45; cursor: default; }
+    #note { font: 12px var(--mono); color: var(--faint); min-height: 1.2em; }
+    #note.error { color: var(--bad); }
+    #message { font-size: 12px; color: var(--note); }
+    main { padding: 0 16px 24px; }
+    table { width: 100%; border-collapse: collapse; font-variant-numeric: tabular-nums; }
+    th { text-align: left; font-weight: 500; color: var(--faint); font-size: 12px; padding: 10px 8px 6px; border-bottom: 1px solid var(--surface0); }
+    td { padding: 5px 8px; border-bottom: 1px solid var(--base); vertical-align: middle; }
+    tr:hover td { background: var(--base); }
+    .date { color: var(--note); white-space: nowrap; font-family: var(--mono); font-size: 12px; }
+    .desc { overflow-wrap: anywhere; }
+    .account { color: var(--note); font-size: 12px; }
+    .amount { text-align: right; white-space: nowrap; font-family: var(--mono); }
+    .amount.in { color: var(--good); }
+    .cat { display: flex; align-items: center; gap: 6px; }
+    .dot { width: 8px; height: 8px; border-radius: 50%; flex: none; }
+    .cat select { padding: 3px 6px; max-width: 200px; background: transparent; border-color: transparent; }
+    .cat select:hover { border-color: var(--surface1); }
+    .more { color: var(--faint); font-size: 12px; padding: 12px 8px; }
+    @media (max-width: 640px) {
+      .account, th.account { display: none; }
+      .cat select { max-width: 130px; }
+    }
+  </style>
+</head>
+<body>
+  <header>
+    <div class="top">
+      <h1>jaskmoney</h1>
+      <span id="status">connecting…</span>
+    </div>
+    <div class="bar">
+      <select id="accounts" aria-label="Accounts"></select>
+      <input id="filter" placeholder="filter: desc:coffee cat:groceries amt:>20 …" autocomplete="off" spellcheck="false" aria-label="Filter">
+      <button id="undo" disabled>Undo</button>
+      <button id="sync">Sync</button>
+    </div>
+    <div id="note"></div>
+    <div id="message"></div>
+  </header>
+  <main>
+    <table>
+      <thead><tr><th>Date</th><th>Description</th><th class="account">Account</th><th>Category</th><th class="amount">Amount</th></tr></thead>
+      <tbody id="rows"></tbody>
+    </table>
+    <div class="more" id="more"></div>
+  </main>
+  <script type="module" src="./main.ts"></script>
+</body>
+</html>

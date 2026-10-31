@@ -1,34 +1,19 @@
-import { batch } from "solid-js"
-import { unwrap } from "solid-js/store"
-import { loadPurchaseLookups, savePurchaseLookups, type PurchaseLookup, saveSuggestions, loadMerchantBreadth, saveMerchantBreadth, loadMerchantNotes, saveMerchantNote, loadDismissedSuggestionIds, deleteSuggestions, dismissSuggestionRows, undismissSuggestionRows, unrecordCategoryChoices } from "../../db/client"
-import { hasJev, JEV_SETUP, jevClient, type JevClient } from "../../ai/jev"
-import { askMerchantBreadth, capSuggestion, historySuggestions, jevSuggestions, merchantBreadth, suggestionCap, unaskedMerchants } from "../../domain/suggest"
-import { merchantKey } from "../../domain/history"
-import { isOrdinaryFlow, isUncategorised } from "../../domain/moneyRules"
-import type { CategorySuggestion, Transaction } from "../../domain/types"
-import { askCandidates, judgeRows } from "../../domain/ask"
-import { askTerms, hasDateTerm, undecided, type AskVerdict } from "../../domain/filter"
-import { MATCH_AT, NEAR_AT } from "../../domain/questions"
-import { appToday } from "../../domain/days"
-import { count } from "../../ui/text"
+import { savePurchaseLookups, type PurchaseLookup, saveSuggestions, loadMerchantBreadth, saveMerchantBreadth, loadMerchantNotes, saveMerchantNote, loadDismissedSuggestionIds, deleteSuggestions, dismissSuggestionRows, undismissSuggestionRows, unrecordCategoryChoices } from "../db/client"
+import { hasJev, JEV_SETUP, jevClient, type JevClient } from "../ai/jev"
+import { askMerchantBreadth, capSuggestion, historySuggestions, jevSuggestions, merchantBreadth, suggestionCap, unaskedMerchants } from "../domain/suggest"
+import { merchantKey } from "../domain/history"
+import { isOrdinaryFlow, isUncategorised } from "../domain/moneyRules"
+import type { CategorySuggestion, Transaction } from "../domain/types"
+import { judgeRows } from "../domain/ask"
+import { count } from "../domain/words"
 import { operationSummary, type createUpPush } from "./upPush"
-import type { StoreContext } from "./context"
+import type { CoreContext } from "./context"
 
-/** What an ask run judged, per `ask:` term: the rows it covered, how many
- * were sent to Jev (the rest were known), and how they came out. */
-export interface AskResult {
-  terms: Array<{ words: string; rows: number; asked: number; matched: number; near: number; skipped: number }>
-  failures: string[]
-  ms: number
-  /** The filter limits dates (else only the last ASK_DEFAULT_DAYS were judged). */
-  dated: boolean
-}
-
-export function createSuggestions(ctx: StoreContext, deps: {
+export function createSuggestions(ctx: CoreContext, deps: {
   applyCategories: ReturnType<typeof createUpPush>["applyCategories"]
   ruleOfferNote: (ids: number[]) => string
 }) {
-  const { state, setState, mutate, refresh, transactions, recordUndo, categorySnapshot, restoreCategories, askVerdicts, setAskVersion, askVerdict, accountScoped, inView } = ctx
+  const { state, set, mutate, refresh, transactions, recordUndo, categorySnapshot, restoreCategories } = ctx
   const { applyCategories, ruleOfferNote } = deps
 
   let suggestionsFinished: Promise<void> = Promise.resolve()
@@ -48,7 +33,7 @@ export function createSuggestions(ctx: StoreContext, deps: {
     let finish = () => {}
     const finished = new Promise<void>((resolve) => { finish = resolve })
     suggestionsFinished = finished
-    setState({ suggesting: true })
+    set({ suggesting: true })
     try {
       const selected = ids ? new Set(ids) : null
       // Rows whose suggestion was dismissed get no new one.
@@ -97,7 +82,7 @@ export function createSuggestions(ctx: StoreContext, deps: {
           }).map((s) => (byId.get(s.transactionId)?.bought?.length ? { ...s, knewBought: true } : s))
           if (!fresh.length) return
           saveSuggestions(database, fresh)
-          batch(() => { for (const s of fresh) setState("suggestions", s.transactionId, s) })
+          set({ suggestions: { ...state.suggestions, ...Object.fromEntries(fresh.map((s) => [s.transactionId, s])) } })
           fromJev += fresh.length
         }
         if (remaining.length) await jevSuggestions(ai ?? jevClient(), remaining, state.categories, {
@@ -120,7 +105,7 @@ export function createSuggestions(ctx: StoreContext, deps: {
       return parts.join(" · ")
     } finally {
       try { if (ctx.db === database) refresh() } finally {
-        if (suggestionsFinished === finished) setState({ suggesting: false })
+        if (suggestionsFinished === finished) set({ suggesting: false })
         finish()
       }
     }
@@ -141,7 +126,7 @@ export function createSuggestions(ctx: StoreContext, deps: {
     })
     if (!changed.length) return
     saveSuggestions(database, changed)
-    for (const s of changed) setState("suggestions", s.transactionId, s)
+    set({ suggestions: { ...state.suggestions, ...Object.fromEntries(changed.map((s) => [s.transactionId, s])) } })
   }
 
   /** Replace existing suggestions for waiting rows with the same description. */
@@ -158,11 +143,6 @@ export function createSuggestions(ctx: StoreContext, deps: {
     const targets = transactions().filter((t) => !selected.has(t.id) && descriptions.has(key(t)) && isOrdinaryFlow(t) && isUncategorised(t) && state.suggestions[t.id]).map((t) => t.id)
     if (!targets.length) return 0
     return suggestCategories(targets, ai, { replace: true })
-  }
-
-  /** Purchase lookups so far (app/purchases), by row. */
-  function purchaseLookups(): Map<number, PurchaseLookup> {
-    return ctx.db ? loadPurchaseLookups(ctx.db) : new Map()
   }
 
   /**
@@ -200,65 +180,23 @@ export function createSuggestions(ctx: StoreContext, deps: {
     return suggestCategories(targets, ai, { replace: true })
   }
 
-  /**
-   * Have Jev judge the rows the current filter's `ask:` terms are waiting
-   * on: those the rest of the filter leaves possible, not judged yet, from
-   * the last ASK_DEFAULT_DAYS unless the filter limits dates, at most
-   * ASK_LIMIT, newest first. Matches show as each batch lands. Returns what
-   * was judged (app/searchReport words it), or null when a newer run or a
-   * cleared filter took over.
-   */
-  async function askAbout(ai?: Pick<JevClient, "judge">): Promise<AskResult | null> {
-    const expr = state.filterExpr ? unwrap(state.filterExpr) : null
-    const terms = askTerms(expr)
-    if (!terms.length) return null
+  /** Have Jev judge `ids` (in that order) for an `ask:` term, `onJudged`
+   * hearing each batch's scores; stops sending once `active` says no. The
+   * client chose the rows (domain/ask askCandidates) and keeps the verdicts. */
+  async function judgeAsk(words: string, ids: number[], ai: Pick<JevClient, "judge"> | undefined, options: {
+    onJudged: (scores: Array<[number, number]>) => void; active: () => boolean
+  }): Promise<string[]> {
     if (!ai && !hasJev()) throw new Error(`ask: needs Jev (${JEV_SETUP})`)
-    const run = ++ctx.askRun
-    const client = ai ?? jevClient()
-    const started = Date.now()
-    const result: AskResult = { terms: [], failures: [], ms: 0, dated: hasDateTerm(expr) }
-    const failures = result.failures
-    try {
-      // One term at a time: each verdict narrows the rows the next must judge.
-      for (const words of terms) {
-        const key = words.toLowerCase()
-        const known = askVerdicts.get(key) ?? new Map<number, number>()
-        askVerdicts.set(key, known)
-        // Rows whose match turns on these words: not ruled out by the rest of
-        // the filter, nor matched without them (a covered category's rows).
-        const others: AskVerdict<Transaction> = (w, t) => w.toLowerCase() === key ? undefined : askVerdict(w, t)
-        const possible = accountScoped().filter((t) => inView(t) && undecided(expr, t, others))
-        const { rows, skipped } = askCandidates(possible, appToday(), hasDateTerm(expr))
-        const todo = rows.filter((t) => !known.has(t.id))
-        setState({ asking: { words, judged: 0, total: todo.length } })
-        await judgeRows(client, words, todo, {
-          active: () => run === ctx.askRun,
-          onJudged: (scores) => {
-            if (run !== ctx.askRun) return
-            for (const [id, p] of scores) known.set(id, p)
-            setAskVersion((v) => v + 1)
-            setState("asking", (a) => a && { ...a, judged: a.judged + scores.size })
-          },
-          onError: (error) => failures.push(error instanceof Error ? error.message : String(error)),
-        })
-        if (run !== ctx.askRun) return null
-        const matched = rows.filter((t) => (known.get(t.id) ?? 0) >= MATCH_AT).length
-        const near = rows.filter((t) => { const p = known.get(t.id) ?? 0; return p >= NEAR_AT && p < MATCH_AT }).length
-        result.terms.push({ words, rows: rows.length, asked: todo.length, matched, near, skipped })
-      }
-    } finally {
-      if (run === ctx.askRun) setState({ asking: null })
-    }
-    result.ms = Date.now() - started
-    return result
+    const byId = new Map(transactions().map((t) => [t.id, t]))
+    const rows = ids.flatMap((id) => byId.get(id) ?? [])
+    const failures: string[] = []
+    await judgeRows(ai ?? jevClient(), words, rows, {
+      active: options.active,
+      onJudged: (scores) => options.onJudged([...scores]),
+      onError: (error) => failures.push(error instanceof Error ? error.message : String(error)),
+    })
+    return failures
   }
-
-  /** Rows background suggesting has asked about since the database opened:
-   * one Jev couldn't place isn't asked again every sync. */
-  const suggestTried = new Set<number>()
-  /** Waiting rows with no suggestion that background suggesting hasn't tried. */
-  const untriedWaiting = () => transactions().filter((t) => isOrdinaryFlow(t) && isUncategorised(t) && !state.suggestions[t.id] && !suggestTried.has(t.id)).map((t) => t.id)
-  const markTried = (ids: number[]) => { for (const id of ids) suggestTried.add(id) }
 
   /** Categorise the rows among `ids` that have a suggestion as suggested,
    * all at once (see applyCategories), then clear the suggestions that
@@ -273,7 +211,7 @@ export function createSuggestions(ctx: StoreContext, deps: {
     }
     if (!assignments.size) return "No suggestions accepted"
     const before = categorySnapshot(assignments)
-    const suggestions = [...assignments.keys()].flatMap((id) => state.suggestions[id] ? [{ ...unwrap(state.suggestions[id]!) }] : [])
+    const suggestions = [...assignments.keys()].flatMap((id) => state.suggestions[id] ? [{ ...state.suggestions[id]! }] : [])
     const result = await applyCategories(assignments, "accept", onProgress)
     const accepted = [...assignments].filter(([id, categoryId]) => transactions().some((t) => t.id === id && t.categoryId === categoryId)).map(([id]) => id)
     mutate((db) => deleteSuggestions(db, accepted))
@@ -298,5 +236,5 @@ export function createSuggestions(ctx: StoreContext, deps: {
     })
   }
 
-  return { suggestCategories, resuggestLike, setMerchantNote, purchaseLookups, recordPurchases, askAbout, suggestTried, untriedWaiting, markTried, acceptSuggestions, dismissSuggestions }
+  return { suggestCategories, resuggestLike, setMerchantNote, recordPurchases, judgeAsk, acceptSuggestions, dismissSuggestions }
 }

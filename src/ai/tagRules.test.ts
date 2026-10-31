@@ -17,13 +17,13 @@ import { writeRules } from "./ruleWriter"
  * CSV rows: "Qantas" (9, tagged TRAVEL), "Qantas" (1, untagged), "Uber" (2
  * TRAVEL, 2 not), "Bunnings" (1 TRAVEL).
  */
-function setup() {
+async function setup() {
   testEnv("JASKMONEY_OPENROUTER_TOKEN", "")
   data.init(":memory:")
   onTestFinished(() => data.init(":memory:"))
   const db = data.getDb()!
   db.query("INSERT INTO accounts (id, name, type, source) VALUES (100, 'Spending', 'debit', 'csv')").run()
-  const travel = data.createSettingsTag({ name: "TRAVEL", color: "#89b4fa", categoryIds: [], about: null })
+  const travel = await data.createSettingsTag({ name: "TRAVEL", color: "#89b4fa", categoryIds: [], about: null })
   const ignore = data.state.tags.find((t) => t.name === "IGNORE")!.id
   let n = 0
   const add = (description: string, tagged: boolean) => {
@@ -54,12 +54,12 @@ const proposals = [
 const tagsOf = (id: number) => data.state.transactions.find((t) => t.id === id)!.tagIds
 
 test("tag proposals are checked by the same bar; test_rule takes a tag", async () => {
-  const { faux, llm, travel, untagged } = setup()
+  const { faux, llm, travel, untagged } = await setup()
   faux.setResponses([
     fauxAssistantMessage([fauxToolCall("test_rule", { expr: "desc:Qantas", tag: "TRAVEL" })], { stopReason: "toolUse" }),
     fauxAssistantMessage([fauxToolCall("finish", { rules: proposals })], { stopReason: "toolUse" }),
   ])
-  const result = await writeRules(llm, data.historyData())
+  const result = await writeRules(llm, (await data.ruleWriterInput()).history)
   expect(result.error).toBeUndefined()
   expect(result.offers).toHaveLength(1)
   expect(result.offers[0]).toMatchObject({ source: "ai", description: "Qantas is travel", expr: "desc:Qantas", categoryId: null, tagId: travel, agreeing: 9, categorised: 10, waiting: [untagged], why: "9 of 10 tagged" })
@@ -69,7 +69,7 @@ test("tag proposals are checked by the same bar; test_rule takes a tag", async (
 })
 
 test("making a tag offer adds a rule that tags the waiting rows; undo takes both back", async () => {
-  const { faux, llm, travel, untagged } = setup()
+  const { faux, llm, travel, untagged } = await setup()
   faux.setResponses([fauxAssistantMessage([fauxToolCall("finish", { rules: proposals.slice(0, 1) })], { stopReason: "toolUse" })])
   await data.askForRules(llm)
   const offer = data.state.aiRuleOffers[0]!
@@ -87,10 +87,10 @@ test("making a tag offer adds a rule that tags the waiting rows; undo takes both
 })
 
 test("a declined tag offer isn't offered again", async () => {
-  const { faux, llm } = setup()
+  const { faux, llm } = await setup()
   faux.setResponses([fauxAssistantMessage([fauxToolCall("finish", { rules: proposals.slice(0, 1) })], { stopReason: "toolUse" })])
   await data.askForRules(llm)
-  data.declineRuleOffer(data.state.aiRuleOffers[0]!)
+  await data.declineRuleOffer(data.state.aiRuleOffers[0]!)
   expect(data.state.aiRuleOffers).toHaveLength(0)
   faux.setResponses([fauxAssistantMessage([fauxToolCall("finish", { rules: proposals.slice(0, 1) })], { stopReason: "toolUse" })])
   expect(await data.askForRules(llm)).toStartWith("faux-1 proposed 0 rules, 1 turned down by the check")
