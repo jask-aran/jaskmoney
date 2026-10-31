@@ -162,9 +162,14 @@ export function cyclesChart(cycles: CycleSpent[], width: number, height: number)
 export function cycleLines(cycles: CycleSpent[], width: number, pace: number, todayISO: string): Span[][] {
   if (!cycles.length) return []
   const scale = Math.max(1, ...cycles.map((c) => Math.max(c.spent, c.budget ?? 0)))
-  const DATES = 20, SPENT = 8, VERDICT = 14
-  const bar = Math.max(6, width - DATES - SPENT - 2 - VERDICT)
   const day = (iso: string) => `${Number(iso.slice(8, 10))} ${MONTHS[Number(iso.slice(5, 7)) - 1]}`
+  const dates = cycles.map((c) => `${day(c.cycle.start)} – ${day(c.cycle.end)}${c.cycle.end.slice(0, 4) === todayISO.slice(0, 4) ? "" : ` ${c.cycle.end.slice(2, 4)}`}`)
+  const verdicts = cycles.map(verdict)
+  // Columns as wide as what's in them; the bar takes the rest.
+  const DATES = Math.max(...dates.map((d) => d.length)) + 2
+  const SPENT = Math.max(...cycles.map((c) => formatWholeMoney(c.spent).length)) + 1
+  const VERDICT = Math.max(0, ...verdicts.map((v) => (v ? v.text.length + 1 : 0)))
+  const bar = Math.max(1, width - DATES - SPENT - 2 - VERDICT)
   return cycles.map((c, i) => {
     const now = i === 0
     const cells = (v: number) => Math.round((v / scale) * bar)
@@ -187,9 +192,9 @@ export function cycleLines(cycles: CycleSpent[], width: number, pace: number, to
       else if (k === paceAt) push("▏", ink.note)
       else push(k < Math.max(limit, 0) ? "─" : " ", ink.rule)
     }
-    const v = verdict(c)
+    const v = verdicts[i]
     return [
-      { text: `${day(c.cycle.start)} – ${day(c.cycle.end)}${c.cycle.end.slice(0, 4) === todayISO.slice(0, 4) ? "" : ` ${c.cycle.end.slice(2, 4)}`}`.padEnd(DATES), fg: now ? ink.figure : ink.label, bold: now },
+      { text: dates[i]!.padEnd(DATES), fg: now ? ink.figure : ink.label, bold: now },
       { text: `${formatWholeMoney(c.spent).padStart(SPENT - 1)} `, fg: now ? ink.strong : ink.figure, bold: now },
       { text: " ", fg: ink.rule },
       ...spans,

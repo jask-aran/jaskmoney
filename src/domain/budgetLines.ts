@@ -1,4 +1,5 @@
-import { cycleFor, cycleSpending, pastCycles, spendByGroup, type Budget, type CycleConfig } from "./budget"
+import { scopeKey } from "./budgetScopes"
+import { budgetsIn, cycleAt, cycleFor, cycleSpending, pastCycles, spendByGroup, type Budget, type BudgetHistoryEntry, type Cycle, type CycleConfig } from "./budget"
 import type { Account, Category, Transaction } from "./types"
 
 /** One line of the Budgets tab's category list. */
@@ -75,3 +76,16 @@ export function budgetListRows(budgets: Budget[], categories: Category[]): ({ ki
     ...budgets.filter((b) => b.scope.kind === "category").sort((a, b) => place(a) - place(b)).map((budget) => ({ kind: "category" as const, budget })),
   ]
 }
+
+/** What the Budgets tab shows for the cycle `offset` from today's (0 this
+ * one, -1 the one before): the cycle, the day it's shown up to (today, or
+ * its last day once it's over), and the budgets in force in it. */
+export function budgetView(config: CycleConfig, todayISO: string, offset: number, history: readonly BudgetHistoryEntry[], budgets: Budget[]): { cycle: Cycle; through: string; budgets: Budget[]; current: boolean } {
+  const cycle = cycleAt(config, todayISO, Math.min(0, offset))
+  const current = cycle.end >= todayISO
+  return { cycle, through: current ? todayISO : cycle.end, budgets: current ? budgets : budgetsIn(history, budgets, cycle.start), current }
+}
+
+/** What arms a budget for deleting in the cycle `cycleStart`: its scope and
+ * the cycle, as one id. */
+export const budgetArmId = (budget: Budget, cycleStart: string) => `${scopeKey(budget.scope)}@${cycleStart}`

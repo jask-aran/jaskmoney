@@ -22,6 +22,8 @@ const VIEW_ICONS: Record<string, string> = {
   Savers: "\uf0d6", // money
   Calendar: "\uf073", // calendar
   Subscriptions: "\uf021", // refresh
+  // The Budgets tab's cycle by cycle (its Cumulative shares the Overview's).
+  Cycles: "\uf080", // bar-chart
 }
 
 /** A chart view's mark in the pane's view picker: its icon when icons are

@@ -13,11 +13,12 @@ import {
   loadMerchantBreadth, saveMerchantBreadth, loadCategoryChoices, loadPurchaseLookups, logCategories, logTags, openDb,
   createCategory, updateCategory, setCategoryBudgetIgnored, deleteCategory, createTag, updateTag, deleteTag,
   createRule, updateRule, deleteRule, reorderRule, toggleRule, clearAccountTransactions, clearAllData, defaultDbPath,
-  loadImports, removeAccountWithTransactions, setAccountSyncEnabled, deleteBudget, loadBudgetCycle, loadBudgets,
-  loadBudgetHistory, saveBudget, saveBudgetCycle, loadTransactionDetail, setTransactionNotes, loadRuleDeclines,
+  loadImports, removeAccountWithTransactions, setAccountSyncEnabled, loadBudgetCycle, loadBudgets,
+  loadBudgetHistory, recordBudget, saveBudgetCycle, loadTransactionDetail, setTransactionNotes, loadRuleDeclines,
   type Db, type TagInput,
 } from "../db/client"
 import { cycleFor, paydays, type BudgetScope, type CycleConfig } from "../domain/budget"
+import { scopeKey } from "../domain/budgetScopes"
 import { buildImportPreview, commitImportPreview } from "../domain/profileImport"
 import { CREDENTIAL_NAMES, credentialEnv, credentialSource, maskSecret, saveCredentials, type CredentialName, NOT_SECRET } from "../ai/credentials"
 import { isOrdinaryFlow, isUncategorised } from "../domain/moneyRules"
@@ -533,8 +534,19 @@ export function createCore() {
 
     /** Returns the number of transactions removed when switching sync off. */
     setAccountSync: (p: { accountId: number; enabled: boolean }) => mutate((db) => setAccountSyncEnabled(db, p.accountId, p.enabled)),
-    setBudget: (p: { scope: BudgetScope; amount: number }) => mutate((db) => saveBudget(db, p.scope, p.amount, cycleFor(cycle(), appToday()).start)),
-    removeBudget: (p: { id: number }) => mutate((db) => deleteBudget(db, p.id, cycleFor(cycle(), appToday()).start)),
+    /** A budget from the cycle starting `from` (default this one) until its
+     * next change. One first set in this cycle is recorded since always, so
+     * it measures earlier cycles too. */
+    setBudget: (p: { scope: BudgetScope; amount: number; from?: string }) => {
+      const now = cycleFor(cycle(), appToday()).start
+      const fresh = !state.budgetHistory.some((e) => scopeKey(e.scope) === scopeKey(p.scope))
+      mutate((db) => recordBudget(db, p.scope, p.amount, fresh && (p.from ?? now) === now ? null : p.from ?? now, now))
+    },
+    /** No budget for `scope` from the cycle starting `from` (default this one). */
+    removeBudget: (p: { scope: BudgetScope; from?: string }) => {
+      const now = cycleFor(cycle(), appToday()).start
+      mutate((db) => recordBudget(db, p.scope, null, p.from ?? now, now))
+    },
     setBudgetCycle: (p: { config: CycleConfig }) => mutate((db) => saveBudgetCycle(db, p.config)),
     clearDatabaseData: (_: object) => mutate((db) => clearAllData(db)),
     clearAccountData: (p: { accountId: number }) => mutate((db) => clearAccountTransactions(db, p.accountId)),

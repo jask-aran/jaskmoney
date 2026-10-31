@@ -730,8 +730,8 @@ export function createClientStore(initialLink: CoreLink) {
 
     /** Returns the number of transactions removed when switching sync off. */
     setAccountSync: (accountId: number, enabled: boolean) => link.call("setAccountSync", { accountId, enabled }),
-    setBudget: (scope: BudgetScope, amount: number) => link.call("setBudget", { scope, amount }),
-    removeBudget: (id: number) => link.call("removeBudget", { id }),
+    setBudget: (scope: BudgetScope, amount: number, from?: string) => link.call("setBudget", { scope, amount, from }),
+    removeBudget: (scope: BudgetScope, from?: string) => link.call("removeBudget", { scope, from }),
     setBudgetCycle: (config: CycleConfig) => link.call("setBudgetCycle", { config }),
     clearDatabaseData: () => link.call("clearDatabaseData", {}),
     clearAccountData: (accountId: number) => link.call("clearAccountData", { accountId }),
