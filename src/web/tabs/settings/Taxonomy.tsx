@@ -3,7 +3,8 @@
  * of rows (a group, then the ones in it indented). A row opens its editor
  * (the TUI's: name, colour, spending; a tag's categories and about), "New"
  * an empty one; the editors are cards over the page. A delete takes two
- * presses.
+ * presses. On a phone each list is a row opening it in a sheet, and the
+ * editors are sheets: Cancel, the title and Save across the top.
  */
 import { For, Show, createMemo, createSignal, createUniqueId, onMount, type JSX } from "solid-js"
 import { Portal } from "solid-js/web"
@@ -11,12 +12,13 @@ import { fuzzyScore } from "../../../domain/fuzzy"
 import { scopeText, tagCovers } from "../../../domain/tagScope"
 import type { Category, Tag } from "../../../domain/types"
 import { theme } from "../../../theme"
-import { Chips, Section } from "../../kit"
-import { data, fail, kept, say } from "../../store"
+import { ChevronRight } from "lucide-solid"
+import { BottomSheet, Section } from "../../kit"
+import { compact, data, fail, say } from "../../store"
 import { catColor } from "../../theme"
 import {
   Button, Card, CardForm, CardNote, DashEmpty, DashRow, Field, GroupAction, Icons, Input, Item, Scrim, SearchSection,
-  Section as ListSection, Swatch, Switch, TextArea, moveCursor,
+  Section as ListSection, SettingGroup, Swatch, Switch, TextArea, moveCursor,
 } from "../../v2"
 import { confirmTwice, disarm, isArmed } from "./confirm"
 
@@ -54,34 +56,57 @@ const tagNote = (tag: Tag, categories: Category[]) => {
 }
 
 export function Taxonomy() {
-  const [list, setList] = kept<"categories" | "tags">("settings.list", "categories")
   const [editing, setEditing] = createSignal<Editing | null>(null)
+  // A phone's list open in its sheet.
+  const [sheet, setSheet] = createSignal<Kind | null>(null)
   const rows = createMemo(() => categoryRows(data.state.categories))
   const edit = (kind: Kind, id: number | null) => { disarm(); setEditing({ kind, id }) }
   const close = () => { disarm(); setEditing(null) }
-  // A phone shows one list at a time (the TUI's narrow layout): the choice sits in the heading's place.
-  const aside = (kind: Kind) => (
+  const categoryList = () => (
+    <For each={rows()} fallback={<DashEmpty>No categories.</DashEmpty>}>{(row) => (
+      <DashRow element="button" type="button" title={`Edit ${row.category.name}`} onClick={() => edit("category", row.category.id)}
+        data-indent={row.child ? "" : undefined} data-group={row.group ? "" : undefined}
+        lead={<Swatch colour={catColor(row.category.color)} />} primary={row.category.name} context={row.note || undefined} />
+    )}</For>
+  )
+  const tagList = () => (
+    <For each={data.state.tags} fallback={<DashEmpty>No tags.</DashEmpty>}>{(tag) => (
+      <DashRow element="button" type="button" title={tag.about ? `${tag.name}: ${tag.about}` : `Edit ${tag.name}`} onClick={() => edit("tag", tag.id)}
+        lead={<Swatch colour={catColor(tag.color)} />} primary={tag.name} context={tagNote(tag, data.state.categories) || undefined} />
+    )}</For>
+  )
+  // A phone: a row for each list, opening it in a sheet with New at its head.
+  const phone = () => (
     <>
-      <Chips class="st-narrow-only" label="List" value={list()} onChange={setList}
-        options={[{ value: "categories", label: "Categories" }, { value: "tags", label: "Tags" }]} />
-      <GroupAction onClick={() => edit(kind, null)}><Icons.Add />New</GroupAction>
+      <SettingGroup title="Categories and tags">
+        <button type="button" class="st-nav" onClick={() => setSheet("category")}>
+          <span class="grow">Categories</span><span class="st-nav-count">{data.state.categories.length}</span><ChevronRight />
+        </button>
+        <button type="button" class="st-nav" onClick={() => setSheet("tag")}>
+          <span class="grow">Tags</span><span class="st-nav-count">{data.state.tags.length}</span><ChevronRight />
+        </button>
+      </SettingGroup>
+      <Show when={sheet()} keyed>{(kind) => (
+        <BottomSheet full label={kind === "category" ? "Categories" : "Tags"} onClose={() => setSheet(null)}
+          head={<>
+            <span class="jm-drawer-title grow">{kind === "category" ? "Categories" : "Tags"} <span class="st-nav-count">{kind === "category" ? data.state.categories.length : data.state.tags.length}</span></span>
+            <span class="st-sheet-acts"><Button variant="secondary" size="sm" onClick={() => edit(kind, null)}><Icons.Add />New</Button></span>
+          </>}>
+          <div class="st-sheet-list">{kind === "category" ? categoryList() : tagList()}</div>
+        </BottomSheet>
+      )}</Show>
     </>
   )
   return (
-    <div class="st-tax" data-list={list()}>
-      <Section class="st-cats" title="Categories" count={data.state.categories.length} aside={aside("category")}>
-        <For each={rows()} fallback={<DashEmpty>No categories.</DashEmpty>}>{(row) => (
-          <DashRow element="button" type="button" title={`Edit ${row.category.name}`} onClick={() => edit("category", row.category.id)}
-            data-indent={row.child ? "" : undefined} data-group={row.group ? "" : undefined}
-            lead={<Swatch colour={catColor(row.category.color)} />} primary={row.category.name} context={row.note || undefined} />
-        )}</For>
-      </Section>
-      <Section class="st-tags" title="Tags" count={data.state.tags.length} aside={aside("tag")}>
-        <For each={data.state.tags} fallback={<DashEmpty>No tags.</DashEmpty>}>{(tag) => (
-          <DashRow element="button" type="button" title={tag.about ? `${tag.name}: ${tag.about}` : `Edit ${tag.name}`} onClick={() => edit("tag", tag.id)}
-            lead={<Swatch colour={catColor(tag.color)} />} primary={tag.name} context={tagNote(tag, data.state.categories) || undefined} />
-        )}</For>
-      </Section>
+    <div class="st-tax">
+      <Show when={!compact()} fallback={phone()}>
+        <Section class="st-cats" title="Categories" count={data.state.categories.length} aside={<GroupAction onClick={() => edit("category", null)}><Icons.Add />New</GroupAction>}>
+          {categoryList()}
+        </Section>
+        <Section class="st-tags" title="Tags" count={data.state.tags.length} aside={<GroupAction onClick={() => edit("tag", null)}><Icons.Add />New</GroupAction>}>
+          {tagList()}
+        </Section>
+      </Show>
       <Show when={editing()} keyed>{(e) => (
         e.kind === "category"
           ? <CategoryEditor id={e.id} onClose={close} />
@@ -98,7 +123,30 @@ function Editor(props: {
 }) {
   const formId = createUniqueId()
   let card!: HTMLDivElement
-  onMount(() => (card.querySelector("input, textarea") as HTMLElement | null)?.focus())
+  onMount(() => { if (!compact()) (card.querySelector("input, textarea") as HTMLElement | null)?.focus() })
+  const deleteButton = (key: string) => (
+    <span data-arm={key} class="st-arm">
+      <Button variant="destructive" outline={!isArmed(key)} disabled={props.canDelete === false} title={props.deleteTitle}
+        onClick={() => confirmTwice(key, `delete ${props.what}`, props.onDelete)}>
+        {isArmed(key) ? "Press again" : "Delete"}
+      </Button>
+    </span>
+  )
+  // A phone: a sheet, Cancel and Save either side of the title (the grab area's drag left to the rest of the head).
+  if (compact()) return (
+    <BottomSheet full label={props.title} onClose={props.onClose}
+      head={<div class="st-sheet-head">
+        <Button variant="ghost" size="sm" onClick={props.onClose}>Cancel</Button>
+        <span class="jm-drawer-title">{props.title}</span>
+        <Button type="submit" size="sm" form={formId} disabled={props.saving}>{props.saving ? "Saving…" : "Save"}</Button>
+      </div>}>
+      <div class="st-sheet-form" ref={card}>
+        <Show when={props.detail}><p class="st-sheet-detail">{props.detail}</p></Show>
+        <CardForm id={formId} onSubmit={(event) => { event.preventDefault(); props.onSubmit() }}>{props.children}</CardForm>
+        <Show when={props.armKey}>{(key) => <div class="st-sheet-delete">{deleteButton(key())}</div>}</Show>
+      </div>
+    </BottomSheet>
+  )
   return (
     <Portal>
       <Scrim dialog placement="center" ref={card}
@@ -109,14 +157,7 @@ function Editor(props: {
         }}>
         <Card title={props.title} detail={props.detail} size={props.wide ? "wide" : undefined} close={props.onClose}
           actions={<>
-            <Show when={props.armKey}>{(key) => (
-              <span data-arm={key()} class="st-arm">
-                <Button variant="destructive" outline={!isArmed(key())} disabled={props.canDelete === false} title={props.deleteTitle}
-                  onClick={() => confirmTwice(key(), `delete ${props.what}`, props.onDelete)}>
-                  {isArmed(key()) ? "Press again" : "Delete"}
-                </Button>
-              </span>
-            )}</Show>
+            <Show when={props.armKey}>{(key) => deleteButton(key())}</Show>
             <Button variant="ghost" onClick={props.onClose}>Cancel</Button>
             <Button type="submit" form={formId} disabled={props.saving}>{props.saving ? "Saving…" : "Save"}</Button>
           </>}>

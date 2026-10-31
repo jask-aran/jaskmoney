@@ -29,8 +29,8 @@ import { allCategoryLines, overviewRange } from "../../state/overviewRange"
 import type { CycleConfig } from "../../domain/budget"
 import { Chart, Legend, type ChartModel, type LegendItem } from "../charts"
 import { compact, data, kept, now, say, setTab, tab, useKeys } from "../store"
-import { ArrowLeftRight, CalendarDays, ChevronLeft, ChevronRight, Landmark, Repeat, Wallet } from "lucide-solid"
-import { Chips, PageHeader, Section } from "../kit"
+import { ArrowLeftRight, CalendarDays, Check, ChevronLeft, ChevronRight, Landmark, Repeat, Wallet } from "lucide-solid"
+import { BottomSheet, Chips, PageHeader, Section } from "../kit"
 import { Button, GroupHeading, Input, Segmented } from "../v2"
 import { catColor } from "../theme"
 import { balancesChart, cashFlowChart, changeCls, spendChangeCls, spendingChart, type PeriodNames } from "./overview/periodCharts"
@@ -100,16 +100,18 @@ export function ChartPane(props: {
     props.onView(last.get(group) ?? props.views.findIndex((v) => v.group === group))
   }
   return (
-    <section class={`chart-pane ${props.class ?? ""}`}>
+    <section class={`chart-pane ${props.class ?? ""}`} data-views={inGroup().length > 1 ? "" : undefined}>
       <header class="chart-head">
         <GroupHeading>{title()}<Show when={title() !== view().view}><span>{view().view}</span></Show></GroupHeading>
         <div class="chart-switches">
           <Show when={inGroup().length > 1}>
-            <Chips label="View" options={inGroup().map((v) => ({ value: v.i, label: v.view }))} value={props.current} onChange={props.onView} />
+            <Chips class="view-seg" label="View" options={inGroup().map((v) => ({ value: v.i, label: v.view }))} value={props.current} onChange={props.onView} />
           </Show>
           <Show when={groups().length > 1}>
-            <Segmented size="sm" icons label="Chart" value={view().group} onChange={chooseGroup}
-              options={groups().map((g) => ({ value: g, label: g, icon: GROUP_ICON[g]?.() }))} />
+            <span class="group-seg">
+              <Segmented size="sm" icons label="Chart" value={view().group} onChange={chooseGroup}
+                options={groups().map((g) => ({ value: g, label: g, icon: GROUP_ICON[g]?.() }))} />
+            </span>
           </Show>
         </div>
       </header>
@@ -272,6 +274,8 @@ export function Overview() {
     return spending.length > 1 ? [{ value: "all" as const, label: "All spending" }, ...spending.map((a) => ({ value: a.id, label: a.name }))] : []
   })
   const scopeValue = () => (typeof data.state.accountSelection === "number" ? data.state.accountSelection : "all")
+  // A phone chooses the spending account from the header's pill.
+  const [scopeOpen, setScopeOpen] = createSignal(false)
   const setScope = (value: "all" | number) => {
     data.setAccountSelection(value)
     say(`Overview · ${scope().label}`)
@@ -330,23 +334,60 @@ export function Overview() {
     </div>
   )
 
+  // A phone's range: earlier and later either side of the dates, how far from now under them, Now (or a custom
+  // range's Dates…) at the end; every control a finger's size.
+  const phoneStepper = () => (
+    <div class="ov-stepper">
+      <Button variant="ghost" size="icon" class="step" disabled={!steppable()} onClick={() => step(-1)} aria-label="Earlier"><ChevronLeft /></Button>
+      <div class="mid">
+        <span class="scope range-label">{bounds().label}</span>
+        <Show when={offsetText()}><span class="note small">{offsetText()}</span></Show>
+      </div>
+      <Button variant="ghost" size="icon" class="step" disabled={!steppable()} onClick={() => step(1)} aria-label="Later"><ChevronRight /></Button>
+      <Show when={timeframe().family === "custom"} fallback={
+        <Show when={offsetText()}><Button variant="secondary" size="sm" class="now" onClick={toNow}>Now</Button></Show>
+      }>
+        <Button variant="secondary" size="sm" class="now" onClick={() => setCustomOpen(true)}>Dates…</Button>
+      </Show>
+    </div>
+  )
+  const customForm = () => (
+    <CustomRange start={timeframe().custom?.start ?? bounds().start} end={timeframe().custom?.end ?? bounds().end}
+      onApply={(r) => { setTimeframe({ ...timeframe(), family: "custom", custom: r }); setCustomOpen(false) }}
+      onCancel={() => setCustomOpen(false)} />
+  )
+
   return (
     <>
-      <PageHeader title="Overview" place={scope().label} actions={compact() ? undefined : rangeActions()} />
+      <PageHeader title="Overview" place={scope().label} actions={compact() ? undefined : rangeActions()}
+        onPill={compact() && scopeChoices().length ? () => setScopeOpen(true) : undefined} />
       <div class="ov">
         <div class="ov-range">
-          <Show when={compact()}>{rangeActions()}</Show>
+          <Show when={compact()}>{phoneStepper()}</Show>
           <Chips class="range-seg" label="Range" options={[...LOOKBACKS, ...PERIODS.map((p) => PERIOD_LABEL[p]), "Custom"].map((label, i) => ({ value: i, label }))}
             value={activeChipIndex(timeframe())} onChange={chooseChip} />
-          <Show when={timeframe().family === "custom" || customOpen()}>
-            <Button variant="ghost" size="sm" onClick={() => setCustomOpen(!customOpen())}>{customOpen() ? "Close" : "Dates…"}</Button>
+          <Show when={!compact()}>
+            <Show when={timeframe().family === "custom" || customOpen()}>
+              <Button variant="ghost" size="sm" onClick={() => setCustomOpen(!customOpen())}>{customOpen() ? "Close" : "Dates…"}</Button>
+            </Show>
+            <Show when={scopeChoices().length}><Chips label="Spending account" options={scopeChoices()} value={scopeValue()} onChange={setScope} /></Show>
           </Show>
-          <Show when={scopeChoices().length}><Chips label="Spending account" options={scopeChoices()} value={scopeValue()} onChange={setScope} /></Show>
         </div>
         <Show when={customOpen()}>
-          <CustomRange start={timeframe().custom?.start ?? bounds().start} end={timeframe().custom?.end ?? bounds().end}
-            onApply={(r) => { setTimeframe({ ...timeframe(), family: "custom", custom: r }); setCustomOpen(false) }}
-            onCancel={() => setCustomOpen(false)} />
+          <Show when={compact()} fallback={customForm()}>
+            <BottomSheet label="Custom range" head={<span class="jm-drawer-title">Custom range</span>} onClose={() => setCustomOpen(false)}>{customForm()}</BottomSheet>
+          </Show>
+        </Show>
+        <Show when={compact() && scopeOpen()}>
+          <BottomSheet label="Spending account" head={<span class="jm-drawer-title">Spending account</span>} onClose={() => setScopeOpen(false)}>
+            <div class="ov-choices" role="radiogroup" aria-label="Spending account">
+              <For each={scopeChoices()}>{(c) => (
+                <button type="button" role="radio" class="ov-choice" aria-checked={scopeValue() === c.value} onClick={() => { setScope(c.value); setScopeOpen(false) }}>
+                  <span class="grow ellipsis">{c.label}</span><Show when={scopeValue() === c.value}><Check /></Show>
+                </button>
+              )}</For>
+            </div>
+          </BottomSheet>
         </Show>
 
         <div class="ov-body">
@@ -370,7 +411,7 @@ export function Overview() {
                   <span class="sub">Savers</span><span class="n head">30 days</span>
                   <For each={position().savers}>{(saver) => (
                     <>
-                      <span class="k indent ellipsis" title={saver.name}>{saver.name}</span>
+                      <span class="k indent" title={saver.name}><span class="ellipsis">{saver.name}</span></span>
                       <span class="v label">{formatWholeMoney(saver.balance)}</span>
                       <span class={`n ${changeCls(saverChange(saver.accountId))}`}>{signedWholeMoney(saverChange(saver.accountId))}</span>
                     </>

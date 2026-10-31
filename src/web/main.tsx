@@ -11,9 +11,8 @@ import { render } from "solid-js/web"
 import { LayoutDashboard, PiggyBank, ReceiptText, RefreshCw, Settings2, Undo2 } from "lucide-solid"
 import { accountStacks } from "../domain/accountTree"
 import { formatMoney } from "../domain/dashboard"
-import { syncAgo } from "../domain/days"
 import { applyTheme } from "./theme"
-import { TABS, compact, connection, data, lostReason, now, run, say, setTab, status, tab, useKeys, type TabId } from "./store"
+import { TABS, compact, connection, data, lostReason, run, say, setTab, status, syncLabel, tab, useKeys, type TabId } from "./store"
 import { AppShell, Button, Keycap, NavBrand, NavGroup, NavPane, NavRow, Sheet, StatusDot, Toast } from "./v2"
 import { TabBar } from "./kit"
 import { Overview } from "./tabs/Overview"
@@ -44,12 +43,6 @@ const HINTS: Record<TabId, Array<[string, string]>> = {
   transactions: [["/", "search"], ["?", "smart"], ["j k", "move"], ["c", "category"], ["x", "select"], ["↵", "details"], ["⌃K", "all"]],
   budgets: [["[ ]", "cycle"], ["u", "undo"]],
   settings: [["u", "undo"]],
-}
-
-function syncLabel(): string {
-  if (data.state.upSyncing) return "syncing…"
-  const ago = syncAgo(data.state.dbInfo?.upLastSyncedAt ?? null, now())
-  return ago ? `synced ${ago}` : data.state.upToken ? "not synced yet" : "no Up token"
 }
 
 /** The sidebar: the tabs, the accounts (choosing one shows its transactions), and the connection and sync. */

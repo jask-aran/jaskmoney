@@ -6,10 +6,9 @@
  * mask.
  */
 import { For, Show, createMemo } from "solid-js"
-import { syncAgo } from "../../../domain/days"
 import { parseFilterStrict } from "../../../domain/filter"
 import { accountRole, type Account, type Rule, type SavedFilter } from "../../../domain/types"
-import { data, now, run, say, setTab } from "../../store"
+import { connection as link, data, lostReason, run, say, setTab, syncLabel } from "../../store"
 import {
   Button, Icons, SettingColumn, SettingColumns, SettingDetails, SettingGroup, SettingLine, SettingNote, SettingValue, StatusDot, Switch,
 } from "../../v2"
@@ -30,23 +29,43 @@ function Connected(props: { how: string | null | undefined; unset: string }) {
   )
 }
 
-/** Up Bank: the token (set in the TUI), sync, and which accounts sync. */
-export function UpBank() {
+const synced = syncLabel
+const canSync = () => !data.state.upSyncing && !data.state.demo && !!data.state.upToken
+const sync = () => { say("Syncing with Up…"); void run(data.syncUp()) }
+const syncTitle = () => (data.state.demo ? "Sync is off in demo mode" : data.state.upToken ? "Sync with Up now" : "The core has no Up token")
+
+/** A phone's sidebar foot: the connection to the core, and Up's sync with Sync now. */
+export function Status() {
+  const state = () => link()
+  return (
+    <SettingGroup title="Status">
+      <SettingLine plain label="Connection" title={state() === "lost" ? lostReason() : "Live: a change from any client shows at once"}>
+        <SettingValue>
+          <span class="st-conn">
+            <StatusDot label={state()} tone={state() === "open" ? "success" : state() === "lost" ? "danger" : "muted"} />
+            <span>{state() === "open" ? "live" : state() === "lost" ? "reconnecting…" : "connecting…"}</span>
+          </span>
+        </SettingValue>
+      </SettingLine>
+      <Show when={state() === "lost"}><SettingNote tone="error">{lostReason()}</SettingNote></Show>
+      <SettingLine plain label="Up Bank" state={data.state.demo ? "demo data" : data.state.upToken ? synced() : "no Up token"}>
+        <Button variant="secondary" size="sm" disabled={!canSync()} onClick={sync} title={syncTitle()}><Icons.Refresh />Sync now</Button>
+      </SettingLine>
+      <Show when={data.state.dbInfo?.upLastError}>{(error) => <SettingNote tone="error">{error()}</SettingNote>}</Show>
+    </SettingGroup>
+  )
+}
+
+/** Up Bank: the token (set in the TUI), sync (unless Status has it), and which accounts sync. */
+export function UpBank(props: { sync?: boolean }) {
   const token = createMemo(() => connection("up", data.state))
   const accounts = () => data.state.syncAccounts
   const off = () => accounts().filter((a) => !a.syncEnabled)
-  const synced = () => {
-    if (data.state.upSyncing) return "syncing…"
-    const ago = syncAgo(data.state.dbInfo?.upLastSyncedAt ?? null, now())
-    return ago ? `synced ${ago}` : "not synced yet"
-  }
   const linked = () => {
     if (!accounts().length) return "none yet · they appear after a sync"
     const syncing = `${accounts().length - off().length} of ${accounts().length} syncing`
     return off().length ? `${syncing} · ${off().map((a) => a.name).join(", ")} off` : syncing
   }
-  const canSync = () => !data.state.upSyncing && !data.state.demo && data.state.upToken
-  const sync = () => { say("Syncing with Up…"); void run(data.syncUp()) }
   const flip = (account: Account) => {
     // Switching off deletes the account's transactions: two presses.
     if (account.syncEnabled) {
@@ -59,11 +78,12 @@ export function UpBank() {
   return (
     <SettingGroup title="Up Bank">
       <SettingLine plain label="Token" title={token()?.long}><Connected how={token()?.short} unset="not set · add it in the TUI" /></SettingLine>
-      <SettingLine plain label="Sync" state={token() ? synced() : "needs the token"}>
-        <Button variant="ghost" size="sm" disabled={!canSync()} onClick={sync}
-          title={data.state.demo ? "Sync is off in demo mode" : data.state.upToken ? "Sync with Up now" : "The core has no Up token"}><Icons.Refresh />Sync now</Button>
-      </SettingLine>
-      <Show when={data.state.dbInfo?.upLastError}>{(error) => <SettingNote tone="error">{error()}</SettingNote>}</Show>
+      <Show when={props.sync !== false}>
+        <SettingLine plain label="Sync" state={token() ? synced() : "needs the token"}>
+          <Button variant="ghost" size="sm" disabled={!canSync()} onClick={sync} title={syncTitle()}><Icons.Refresh />Sync now</Button>
+        </SettingLine>
+        <Show when={data.state.dbInfo?.upLastError}>{(error) => <SettingNote tone="error">{error()}</SettingNote>}</Show>
+      </Show>
       <SettingLine plain label="Accounts" title={linked()}><SettingValue>{linked()}</SettingValue></SettingLine>
       <For each={accounts()}>{(account) => {
         const key = `desync:${account.id}`

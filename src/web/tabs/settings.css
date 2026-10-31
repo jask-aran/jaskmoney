@@ -1,26 +1,30 @@
 /*
  * Settings on components v2: the layout, and what the data marks (a category under its group, a group's own row,
  * an account or rule that's off, what a second press removes, a use whose model can run). Rows, headings, settings
- * lines, controls and the editors' cards are the library's.
+ * lines, controls and the editors' cards are the library's. (--tap, --row-tall, --row-desk, --ph-gutter:
+ * overview.css, on .st-page and the sheets.)
  */
 
 /* Wide: categories and tags on the left, the settings on the right, each side scrolling on its own. */
-.st-page { display: grid; grid-template-columns: minmax(0, 3fr) minmax(0, 2fr); grid-template-rows: minmax(0, 1fr); gap: var(--space-3xl, 2.5rem); overflow: hidden; padding-bottom: 0; }
-.st-tax { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: var(--space-xl); min-height: 0; }
+.st-page { display: grid; grid-template-columns: minmax(0, 3fr) minmax(0, 2fr); grid-template-rows: minmax(0, 1fr); gap: var(--space-4xl); overflow: hidden; padding-top: var(--space-lg); padding-bottom: 0; }
+.st-tax { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: var(--space-3xl); min-height: 0; }
 .st-tax > .jm-section { display: flex; flex-direction: column; min-height: 0; margin: 0; }
 .st-tax .ui-dash-group { flex: 1 1 auto; min-height: 0; }
-.st-tax .ui-dash-group-rows, .st-side { min-height: 0; overflow-y: auto; scrollbar-width: var(--native-scrollbar-width); scrollbar-color: var(--native-scrollbar-color); padding-bottom: var(--space-xl); }
+.st-tax .ui-dash-group-head { padding-bottom: var(--space-sm); }
+.st-tax .ui-dash-group-rows, .st-side { min-height: 0; overflow-y: auto; scrollbar-width: var(--native-scrollbar-width); scrollbar-color: var(--native-scrollbar-color); padding-bottom: var(--space-3xl); }
 .st-side { display: flex; flex-direction: column; }
-/* One hairline between groups, of either kind. */
+.st-side .ui-setting-line { min-height: var(--row-desk); }
+.st-side .ui-nav-label { padding-bottom: var(--space-sm); }
+/* One hairline between groups, of either kind, with room either side of it. */
 .st-side > :is(.jm-section, .ui-setting-group) { margin: 0; border: 0; padding: 0; }
-.st-side > * + * { margin-top: var(--space-lg) !important; border-top: var(--hairline) solid var(--tint) !important; padding-top: var(--space-xl) !important; }
-.st-narrow-only { display: none; }
+.st-side > * + * { margin-top: var(--space-2xl) !important; border-top: var(--hairline) solid var(--tint) !important; padding-top: var(--space-2xl) !important; }
 
 /* Categories: a group's own row strong, a little space above it; the ones in it indented under it; notes at the right. */
-.st-tax .ui-dash-row[data-group] .ui-dash-row-primary { color: var(--foreground); font-weight: var(--weight-strong); }
-.st-tax .ui-dash-row[data-group]:not(:first-child) { margin-top: var(--space-sm); }
-.st-tax .ui-dash-row[data-indent] { padding-left: calc(var(--row-inset) + var(--icon)); }
-.st-tax .ui-dash-row-context { text-align: right; }
+:is(.st-tax, .st-sheet-list) .ui-dash-row { min-height: var(--row-desk); }
+:is(.st-tax, .st-sheet-list) .ui-dash-row[data-group] .ui-dash-row-primary { color: var(--foreground); font-weight: var(--weight-strong); }
+:is(.st-tax, .st-sheet-list) .ui-dash-row[data-group]:not(:first-child) { margin-top: var(--space-md); }
+:is(.st-tax, .st-sheet-list) .ui-dash-row[data-indent] { padding-left: calc(var(--row-inset) + var(--icon)); }
+:is(.st-tax, .st-sheet-list) .ui-dash-row-context { text-align: right; }
 
 /* What's off is muted; what a second press removes says so in red; a use whose model can run is the AI's teal. */
 .st-account[data-off], .st-rule[data-off] { color: var(--muted-foreground); }
@@ -48,20 +52,65 @@
 .st-scope-group { padding: var(--space-xs) var(--row-inset) var(--space-2xs); }
 .st-none { margin: 0; padding: var(--space-xs) var(--row-inset); color: var(--muted-foreground); font-size: var(--text-caption); }
 
+/* A phone's list rows (Categories, Tags): the name, how many, a chevron; the sheets they open. */
+.st-nav {
+  appearance: none; border: 0; background: none; display: flex; align-items: center; gap: var(--space-md); width: 100%; min-height: var(--row-tall);
+  padding: 0 var(--space-sm) 0 var(--space-md); border-radius: var(--radius-control); color: var(--foreground); font: var(--weight-rest) var(--text-row) var(--font-sans); text-align: left;
+  -webkit-tap-highlight-color: transparent;
+}
+.st-nav:active { background: var(--tint); }
+.st-nav > svg { width: var(--icon); height: var(--icon); color: var(--muted-foreground); flex: none; }
+.st-nav-count { color: var(--muted-foreground); font: var(--weight-rest) var(--text-caption) var(--font-data); font-variant-numeric: tabular-nums; }
+.st-sheet-acts { display: inline-flex; flex: none; }
+.st-sheet-list { display: flex; flex-direction: column; margin: 0 calc(-1 * var(--space-md)); }
+.st-sheet-head { display: grid; grid-template-columns: 1fr auto 1fr; align-items: center; gap: var(--space-sm); width: 100%; }
+.st-sheet-head > :first-child { justify-self: start; margin-left: calc(-1 * var(--space-md)); }
+.st-sheet-head > :last-child { justify-self: end; }
+.st-sheet-head .jm-drawer-title { text-align: center; white-space: nowrap; }
+.st-sheet-form { display: flex; flex-direction: column; gap: var(--space-2xl); }
+.st-sheet-detail { margin: 0; color: var(--muted-foreground); font-size: var(--text-caption); }
+.jm-bottom-sheet .ui-card-form { gap: var(--space-2xl); }
+.st-sheet-delete { display: flex; flex-direction: column; padding-top: var(--space-md); }
+
 /* Narrower: one column, the lists a fixed height above the settings. */
 @media (max-width: 1180px) {
-  .st-page { display: block; overflow-y: auto; padding-bottom: var(--space-xl); }
+  .st-page { display: block; overflow-y: auto; padding-bottom: var(--space-3xl); }
   .st-tax { height: min(36rem, 70dvh); }
-  .st-side { overflow: visible; margin-top: var(--space-xl); padding-bottom: 0; }
+  .st-side { overflow: visible; margin-top: var(--space-3xl); padding-bottom: 0; }
 }
 
-/* Phone: one list at a time, the choice in the heading's place. */
+/* A phone: one column of groups as a phone's settings are: each group's label over its lines, a finger's height
+   each, the groups apart by space; the lists open in sheets; every control a finger's size; fields at the body's
+   size (a phone zooms into smaller ones). */
 @media (max-width: 760px) {
-  .st-page { padding-inline: var(--space-md); }
-  .st-tax { display: block; height: auto; }
-  .st-tax[data-list="categories"] .st-tags, .st-tax[data-list="tags"] .st-cats { display: none; }
-  .st-tax .ui-group-heading { display: none; }
-  .st-narrow-only { display: inline-flex; margin-right: auto; }
-  .st-tax .ui-dash-group-actions { flex: 1 1 auto; }
-  .st-tax .ui-dash-group-rows { max-height: 60dvh; }
+  .st-page { display: flex; flex-direction: column; gap: 0; padding: var(--space-sm) calc(var(--ph-gutter) - var(--space-md)) calc(var(--space-4xl) + var(--tabbar-room, 0px)); overscroll-behavior-y: contain; }
+  .st-tax, .st-side { display: contents; }
+  .st-page .ui-setting-group { margin: var(--space-4xl) 0 0 !important; border: 0 !important; padding: 0 !important; gap: 0; }
+  .st-page > .ui-setting-group:first-child { margin-top: 0 !important; }
+  .st-page .ui-nav-label { padding-bottom: var(--space-sm); }
+  .st-page .ui-setting-line { min-height: var(--row-tall); column-gap: var(--space-lg); row-gap: var(--space-xs); padding-block: var(--space-xs); }
+  .st-page .ui-setting-control .ui-button { height: var(--tap); }
+  .st-page .ui-setting-control .ui-button[data-size="icon-xs"] { width: var(--tap); border-radius: var(--radius-round); }
+  .st-page .ui-setting-control .ui-button[data-size="icon-xs"] svg { width: var(--icon); height: var(--icon); }
+  /* A switch's target reaches a finger's height round it. */
+  .st-page .ui-switch::after { content: ""; position: absolute; inset: calc(-1 * var(--space-lg)) calc(-1 * var(--space-sm)); }
+  .st-page .ui-setting-details > summary { display: flex; align-items: center; min-height: var(--tap); }
+  .st-page .ui-setting-note { padding-top: var(--space-xs); }
+  /* A rule's controls on their own line under its name: the filter it matches first, then on or off, its place, delete. */
+  .st-page .ui-setting-line:has(.st-rule) .ui-setting-control { flex: 1 0 100%; justify-content: flex-start; }
+  .st-page .ui-button.st-filter-link { min-width: 0; flex: 0 1 auto; margin-right: auto; padding-inline: 0 var(--space-md); overflow: hidden; text-overflow: ellipsis; }
+
+  :is(.st-tax, .st-sheet-list) .ui-dash-row { min-height: var(--row-tall); padding-inline: var(--space-md); }
+  :is(.st-tax, .st-sheet-list) .ui-dash-row[data-indent] { padding-left: calc(var(--space-md) + var(--icon)); }
+  .jm-bottom-sheet .st-sheet-head .ui-button, .jm-bottom-sheet .st-sheet-acts .ui-button { height: var(--tap); font-size: var(--text-body); }
+  .jm-bottom-sheet .ui-input { height: var(--tap); font-size: var(--text-body); }
+  .jm-bottom-sheet .ui-search { font-size: var(--text-body); }
+  .jm-bottom-sheet .st-hex > .ui-input { width: 9rem; }
+  .jm-bottom-sheet .st-colours { gap: var(--space-md); }
+  .jm-bottom-sheet .st-colours > .ui-button { width: var(--tap); height: var(--tap); border-radius: var(--radius-round); }
+  .jm-bottom-sheet .st-scope > .ui-section[data-scroll] { max-height: 50dvh; overscroll-behavior: contain; }
+  .jm-bottom-sheet .st-scope .ui-row { min-height: var(--tap); }
+  .jm-bottom-sheet .st-sheet-delete .ui-button { width: 100%; height: var(--tap); font-size: var(--text-body); }
+  .jm-bottom-sheet .ui-field[data-inline] { min-height: var(--tap); }
+  .jm-bottom-sheet .ui-switch::after { content: ""; position: absolute; inset: calc(-1 * var(--space-lg)) calc(-1 * var(--space-sm)); }
 }

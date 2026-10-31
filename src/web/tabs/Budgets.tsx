@@ -22,7 +22,7 @@ import { historyCovers } from "../../domain/position"
 import type { Transaction } from "../../domain/types"
 import { shortDate } from "../../ui/text"
 import { INKS, Legend, type LegendItem } from "../charts"
-import { PageHeader, Section } from "../kit"
+import { BottomSheet, PageHeader, Section } from "../kit"
 import { compact, data, fail, kept, now, run, say, tab, useKeys } from "../store"
 import { catColor, ink, tone } from "../theme"
 import { Button, DashMore, Input, Meter } from "../v2"
@@ -142,9 +142,16 @@ export function Budgets() {
   }
 
   // Setting, changing and removing a budget, from the cycle shown.
-  const [editing, setEditing] = createSignal<{ key: string; draft: string } | null>(null)
+  // What's being set (scope, name: a phone's sheet says which) and the amount typed so far.
+  const [editing, setEditing] = createSignal<{ key: string; draft: string; scope: BudgetScope; name: string } | null>(null)
   // An existing budget opens on its amount; a new one on its average, rounded (the TUI's openBudgetEditor).
-  const startEdit = (key: string, amount: number | null, existing = false) => setEditing({ key, draft: existing && amount != null ? String(amount) : amount != null && amount > 0 ? String(Math.round(amount)) : "" })
+  const startEdit = (key: string, amount: number | null, existing: boolean, scope: BudgetScope, name: string) =>
+    setEditing({ key, scope, name, draft: existing && amount != null ? String(amount) : amount != null && amount > 0 ? String(Math.round(amount)) : "" })
+  /** Set or change a category's budget (from its average when new). */
+  const editCategory = (line: BudgetLine) => {
+    if (line.categoryId === null) { say("Uncategorised can't have a budget: categorise its rows first", true); return }
+    startEdit(`cat:${line.categoryId}`, line.budget?.amount ?? (line.average || line.now), !!line.budget, { kind: "category", categoryId: line.categoryId }, line.name)
+  }
   const save = (scope: BudgetScope) => {
     const draft = editing()?.draft ?? ""
     const amount = Number(draft.replace(/[$,\s]/g, ""))
@@ -209,6 +216,19 @@ export function Budgets() {
     </div>
   )
 
+  // A phone's cycle: earlier and later either side of its dates, how far back under them, Now at the end.
+  const phoneStepper = () => (
+    <div class="ov-stepper">
+      <Button variant="ghost" size="icon" class="step" onClick={() => step(true)} aria-label="Earlier cycle"><ChevronLeft /></Button>
+      <div class="mid">
+        <span class="scope range-label">{period()}</span>
+        <Show when={!view().current}><span class="note small">{-offset()} {-offset() === 1 ? "cycle" : "cycles"} back</span></Show>
+      </div>
+      <Button variant="ghost" size="icon" class="step" disabled={view().current} onClick={() => step(false)} aria-label="Later cycle"><ChevronRight /></Button>
+      <Show when={!view().current}><Button variant="secondary" size="sm" class="now" onClick={() => setOffset(0)}>Now</Button></Show>
+    </div>
+  )
+
   const AmountEdit = (props: { scope: BudgetScope }) => (
     <form class="bud-edit" onSubmit={(e) => { e.preventDefault(); save(props.scope) }} onKeyDown={(e) => { if (e.key === "Escape") setEditing(null) }}>
       <Input ref={(el: HTMLInputElement) => queueMicrotask(() => { el.focus(); el.select() })} inputmode="decimal" placeholder="Amount" value={editing()?.draft ?? ""}
@@ -222,7 +242,7 @@ export function Budgets() {
     <>
       <PageHeader title="Budgets" place={view().current ? `day ${elapsed()} of ${cycle().days}` : "past cycle"} actions={compact() ? undefined : header()} />
       <div class="bud">
-        <Show when={compact()}><div class="bud-cycle">{header()}</div></Show>
+        <Show when={compact()}><div class="bud-cycle">{phoneStepper()}</div></Show>
         <div class="bud-main">
           <ChartPane class="bud-chart" views={BUDGET_VIEWS} current={chartView()} onView={setChartView} title={subject().title} build={build} />
 
@@ -241,7 +261,7 @@ export function Budgets() {
                   <div class="bud-row" data-current={isPicked({ list: "budgets", key }) ? "" : undefined} classList={{ total: row.kind === "total" }}
                     onClick={() => setPicked({ list: "budgets", key })}>
                     <span class="name">{name()}</span>
-                    <Show when={editing()?.key === key} fallback={
+                    <Show when={!compact() && editing()?.key === key} fallback={
                       <Show when={p()} fallback={<span class="note small unset">not set{hasCategoryBudgets() ? " for the rest" : ""}</span>}>
                         {(pr) => <BudgetBar p={pr()} pace={pace()} />}
                       </Show>
@@ -251,7 +271,7 @@ export function Budgets() {
                     <span class="acts" onClick={(e) => e.stopPropagation()}>
                       <Show when={row.kind !== "total"}>
                         <Button variant="ghost" size="icon-xs" aria-label={row.budget ? "Change the amount" : "Set a budget"} title={row.budget ? "Change the amount (from this cycle)" : "Set a budget"}
-                          onClick={() => startEdit(key, row.budget?.amount ?? null, !!row.budget)}><Pencil /></Button>
+                          onClick={() => startEdit(key, row.budget?.amount ?? null, !!row.budget, scope(), name())}><Pencil /></Button>
                       </Show>
                       <Show when={row.budget}>
                         <Button variant="ghost" size="icon-xs" aria-label="Remove" title={armed() === budgetArmId(row.budget!, cycle().start) ? "Press again to remove" : "Remove (press twice)"}
@@ -281,8 +301,8 @@ export function Budgets() {
                       <span class="name"><span class="dot" style={{ background: out() ? "transparent" : catColor(line.color), "box-shadow": out() ? `inset 0 0 0 1px ${ink.faint}` : undefined }} /><span class="ellipsis">{line.name}</span></span>
                       <span class={`num ${!out() && line.budget && line.now > line.budget.amount ? "bad" : ""}`}>{formatWholeMoney(line.now)}</span>
                       <span class="num avg note">{formatWholeMoney(line.average)}</span>
-                      <Show when={editing()?.key === key} fallback={
-                        <span class="num budget" onClick={(e) => { e.stopPropagation(); if (line.categoryId === null) say("Uncategorised can't have a budget: categorise its rows first", true); else startEdit(key, line.budget?.amount ?? (line.average || line.now), !!line.budget) }}
+                      <Show when={!compact() && editing()?.key === key} fallback={
+                        <span class="num budget" onClick={(e) => { e.stopPropagation(); editCategory(line) }}
                           title={line.categoryId === null ? "" : line.budget ? "Change its budget" : "Set a budget (from its average)"}>
                           {line.budget ? formatWholeMoney(line.budget.amount) : out() ? <span class="faint">left out</span> : <span class="faint set">set</span>}
                         </span>
@@ -290,13 +310,17 @@ export function Budgets() {
                         <span class="edit-cell" onClick={(e) => e.stopPropagation()}><AmountEdit scope={{ kind: "category", categoryId: line.categoryId! }} /></span>
                       </Show>
                       <span class="acts" onClick={(e) => e.stopPropagation()}>
+                        {/* A phone has no budget cell to press: its own button, named, as the others are there. */}
+                        <Show when={compact() && line.categoryId !== null}>
+                          <Button variant="ghost" size="icon-xs" class="act-set" onClick={() => editCategory(line)}><Pencil /><span class="act-name">{line.budget ? "Change budget" : "Set budget"}</span></Button>
+                        </Show>
                         <Show when={line.categoryId !== null}>
                           <Button variant="ghost" size="icon-xs" aria-label={out() ? "Count it" : "Leave out"} title={out() ? "Count it toward the overall budget again (x)" : "Leave it out of the overall budget (x)"}
-                            onClick={() => toggleLeftOut(line)}>{out() ? <Eye /> : <EyeOff />}</Button>
+                            onClick={() => toggleLeftOut(line)}>{out() ? <Eye /> : <EyeOff />}<span class="act-name">{out() ? "Count it" : "Leave out"}</span></Button>
                         </Show>
                         <Show when={line.budget}>
                           <Button variant="ghost" size="icon-xs" aria-label="Remove budget" title={armed() === budgetArmId(line.budget!, cycle().start) ? "Press again to remove" : "Remove its budget (press twice)"}
-                            classList={{ armed: armed() === budgetArmId(line.budget!, cycle().start) }} onClick={() => remove(line.budget!, line.name)}><Trash2 /></Button>
+                            classList={{ armed: armed() === budgetArmId(line.budget!, cycle().start) }} onClick={() => remove(line.budget!, line.name)}><Trash2 /><span class="act-name">{armed() === budgetArmId(line.budget!, cycle().start) ? "Press again" : "Remove"}</span></Button>
                         </Show>
                       </span>
                     </div>
@@ -307,6 +331,12 @@ export function Budgets() {
           </Section>
         </div>
       </div>
+      <Show when={compact() && editing()}>{(e) => (
+        <BottomSheet label={`Budget for ${e().name}`} onClose={() => setEditing(null)}
+          head={<div class="bud-sheet-head"><span class="jm-drawer-title">{e().name}</span><span class="note small">{view().current ? "From this cycle" : `From the cycle ${period()}`}</span></div>}>
+          <AmountEdit scope={e().scope} />
+        </BottomSheet>
+      )}</Show>
     </>
   )
 }

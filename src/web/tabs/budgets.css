@@ -1,25 +1,26 @@
 /* Budgets on components v2: the chart, Each cycle and the Budgets list on the
  * left, Categories on the right; one column on a phone. Rows are one line,
- * the chosen one under the wash (no edge, no box). */
+ * the chosen one under the wash (no edge, no box). (--tap, --row-tall,
+ * --row-desk, --stat-row and --ph-gutter: overview.css.) */
 .bud {
-  flex: 1 1 auto; min-height: 0; overflow: auto; display: grid; gap: var(--space-xl);
-  grid-template-columns: minmax(0, 1fr) minmax(330px, 430px); align-items: start;
-  padding: var(--space-xs) var(--page-gutter, var(--space-lg)) var(--space-xl);
+  flex: 1 1 auto; min-height: 0; overflow: auto; display: grid; gap: var(--space-3xl) var(--space-4xl);
+  grid-template-columns: minmax(0, 1fr) minmax(340px, 460px); align-items: start;
+  padding: var(--space-lg) var(--page-gutter, var(--space-lg)) var(--space-3xl);
 }
 .bud-cycle { grid-column: 1 / -1; }
-.bud-main { display: flex; flex-direction: column; gap: var(--space-xl); min-width: 0; }
+.bud-main { display: flex; flex-direction: column; gap: var(--space-3xl); min-width: 0; }
 .bud-main .jm-section + .jm-section { margin-top: 0; }
-.bud-chart { height: 340px; }
+.bud-chart { height: 360px; }
 .bud-side { min-width: 0; position: sticky; top: 0; }
 
 /* Budgets: name, bar, spent of budget, verdict, actions */
 .bud-list { display: flex; flex-direction: column; margin: 0 calc(-1 * var(--space-sm)); font-size: var(--text-row); }
-.bud-row, .bud-cat { position: relative; border-radius: var(--radius-control); cursor: pointer; }
-.bud-row:hover, .bud-cat:hover { background: color-mix(in oklch, var(--border), transparent 40%); }
+.bud-row, .bud-cat { position: relative; border-radius: var(--radius-control); cursor: pointer; -webkit-tap-highlight-color: transparent; }
+@media (hover: hover) { .bud-row:hover, .bud-cat:hover { background: color-mix(in oklch, var(--border), transparent 40%); } }
 .bud-row[data-current], .bud-cat[data-current] { background: var(--border); }
 .bud-row {
-  display: grid; grid-template-columns: minmax(110px, 170px) minmax(80px, 1fr) auto minmax(150px, auto) 56px;
-  align-items: center; gap: var(--space-md); padding: var(--space-xs) var(--space-sm); min-height: var(--row-min);
+  display: grid; grid-template-columns: minmax(120px, 180px) minmax(60px, 1fr) auto auto 56px;
+  align-items: center; gap: var(--space-lg); padding: var(--space-xs) var(--space-sm); min-height: var(--row-desk);
 }
 .bud-row .name { color: var(--ink-figure); font-weight: var(--weight-strong); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .bud-row.total .name { color: var(--ink-strong); }
@@ -29,14 +30,22 @@
 .bud-row .unset { grid-column: 2 / 5; }
 .bud-row .bud-edit { grid-column: 2 / 5; }
 .bud-row .acts, .bud-cat .acts { display: inline-flex; width: 48px; gap: var(--space-2xs); justify-content: flex-end; opacity: 0; transition: opacity var(--duration-quick, .12s); }
-.bud-row:hover .acts, .bud-row[data-current] .acts, .bud-cat:hover .acts, .bud-cat[data-current] .acts, .acts:focus-within { opacity: 1; }
+.bud-row[data-current] .acts, .bud-cat[data-current] .acts, .acts:focus-within { opacity: 1; }
+@media (hover: hover) { .bud-row:hover .acts, .bud-cat:hover .acts { opacity: 1; } }
+/* Without hover (a touch screen wider than a phone), what hover shows is always there. */
+@media (hover: none) { .bud-row .acts, .bud-cat .acts { opacity: 1; } }
+.acts .act-name { display: none; }
 .acts .armed { color: var(--tone-bad); background: color-mix(in oklch, var(--tone-bad), transparent 85%); }
-.bud-edit { display: flex; align-items: center; gap: var(--space-xs); min-width: 0; }
+.bud-edit { display: flex; align-items: center; gap: var(--space-sm); min-width: 0; }
 .bud-edit .ui-input { width: 7.5rem; font-family: var(--font-data); }
-.bud-summary { margin: var(--space-sm) 0 0; }
+.bud-summary { margin: var(--space-md) 0 0; }
+.bud-sheet-head { display: flex; flex-direction: column; gap: var(--space-2xs); min-width: 0; }
 
 /* Each cycle: one line a cycle, on one scale */
-.cyc-lines { display: grid; grid-template-columns: max-content max-content minmax(60px, 1fr) max-content; gap: var(--space-2xs) var(--space-md); align-items: center; font-size: var(--text-row); }
+.cyc-lines {
+  display: grid; grid-template-columns: max-content max-content minmax(60px, 1fr) max-content; grid-auto-rows: minmax(var(--stat-row), auto);
+  gap: 0 var(--space-lg); align-items: center; font-size: var(--text-row);
+}
 .cyc { display: contents; }
 .cyc .dates { color: var(--ink-label); font: var(--weight-data) var(--text-caption) var(--font-data); white-space: nowrap; }
 .cyc.now .dates { color: var(--ink-figure); font-weight: var(--weight-strong); }
@@ -48,42 +57,86 @@
 .cyc .mark.budget { background: var(--ink-figure); }
 .cyc .mark.pace { background: var(--ink-note); width: 1px; }
 .cyc .verdict { text-align: right; font: var(--weight-data) var(--text-caption) var(--font-data); white-space: nowrap; }
-.cyc-lines + .legend, .ui-dash-more + .legend { margin-top: var(--space-sm); }
+.cyc-lines + .legend, .ui-dash-more + .legend { margin-top: var(--space-md); }
 
 /* Categories: name, spent, average, budget (or left out), actions */
-.cat-head { display: inline-grid; grid-template-columns: 4rem 4rem 4.5rem; gap: var(--space-sm); padding-right: calc(48px + 2 * var(--space-sm)); color: var(--ink-label); font: var(--weight-data) var(--text-caption) var(--font-data); text-align: right; }
+.cat-head { display: inline-grid; grid-template-columns: 4rem 4rem 4.5rem; gap: var(--space-sm); padding-right: calc(48px + var(--space-sm) - var(--space-2xs)); color: var(--ink-label); font: var(--weight-data) var(--text-caption) var(--font-data); text-align: right; }
 .bud-cats { display: flex; flex-direction: column; margin: 0 calc(-1 * var(--space-sm)); font-size: var(--text-row); }
 .bud-cat {
-  display: grid; grid-template-columns: minmax(0, 1fr) 4rem 4rem 4.5rem 48px; gap: var(--space-sm); align-items: center;
-  padding: var(--space-2xs) var(--space-sm); color: var(--ink-figure); font-weight: var(--weight-strong);
+  display: grid; grid-template-columns: minmax(0, 1fr) 4rem 4rem 4.5rem 48px; gap: var(--space-sm); align-items: center; min-height: var(--row-desk);
+  padding: 0 var(--space-sm); color: var(--ink-figure); font-weight: var(--weight-strong);
 }
-.bud-cat.child { color: var(--ink-label); font-weight: var(--weight-rest); }
+.bud-cat.child { color: var(--ink-label); font-weight: var(--weight-rest); min-height: calc(2.25 * var(--u-space)); }
 .bud-cat.child .name { padding-left: var(--space-lg); }
 .bud-cat.out { color: var(--ink-note); }
 .bud-cat .name { display: flex; align-items: center; gap: var(--space-sm); min-width: 0; }
 .bud-cat .num { text-align: right; font-family: var(--font-data); font-weight: var(--weight-data); font-variant-numeric: tabular-nums; white-space: nowrap; }
 .bud-cat:not(.child) .num:not(.avg) { font-weight: var(--weight-strong); }
 .bud-cat .num.budget { color: var(--ink-figure); border-radius: var(--radius-control); }
-.bud-cat .num.budget:hover { text-decoration: underline; text-underline-offset: 3px; }
+@media (hover: hover) { .bud-cat .num.budget:hover { text-decoration: underline; text-underline-offset: 3px; } }
 .bud-cat .num.budget .set { opacity: 0; }
-.bud-cat:hover .num.budget .set, .bud-cat[data-current] .num.budget .set { opacity: 1; }
+.bud-cat[data-current] .num.budget .set { opacity: 1; }
+@media (hover: hover) { .bud-cat:hover .num.budget .set { opacity: 1; } }
 .bud-cat .edit-cell { grid-column: 2 / 5; justify-self: end; }
 
 @media (max-width: 1100px) {
   .bud { grid-template-columns: minmax(0, 1fr); }
   .bud-side { position: static; }
 }
+
+/* A phone: one column under the tab bar; each budget a few lines (name and its buttons, the bar, spent of budget
+   and the verdict); a category a row a finger's height, its buttons under it, named, when it's the one chosen. */
 @media (max-width: 760px) {
-  .bud { padding-left: var(--space-md); padding-right: var(--space-md); }
-  .bud-chart { height: 300px; }
-  .bud-row { grid-template-columns: minmax(0, 1fr) auto 56px; row-gap: var(--space-2xs); }
-  .bud-row .bar { grid-column: 1 / -1; grid-row: 2; }
-  .bud-row .fig { display: none; }
-  .bud-row .unset, .bud-row .bud-edit { grid-column: 1 / -1; grid-row: 2; }
-  .bud-row .acts, .bud-cat .acts { opacity: 1; }
-  .cyc-lines { grid-template-columns: max-content max-content minmax(40px, 1fr); }
-  .cyc .verdict { display: none; }
-  .bud-cat { grid-template-columns: minmax(0, 1fr) 4.2rem 4.6rem 48px; }
-  .bud-cat .avg, .cat-head .avg { display: none; }
-  .cat-head { grid-template-columns: 4.2rem 4.6rem; }
+  .bud { gap: var(--space-4xl); padding: var(--space-sm) var(--ph-gutter) calc(var(--space-4xl) + var(--tabbar-room, 0px)); overscroll-behavior-y: contain; }
+  .bud-main { gap: var(--space-4xl); }
+  .bud-chart { height: auto; }
+  .bud .acts .ui-button { width: var(--tap); height: var(--tap); border-radius: var(--radius-round); }
+  .bud .acts .ui-button svg { width: var(--icon); height: var(--icon); }
+
+  .bud-list { margin: 0 calc(-1 * var(--space-md)); }
+  .bud-row {
+    grid-template-columns: minmax(0, 1fr) auto; grid-template-areas: "name acts" "bar bar" "fig verdict";
+    gap: var(--space-sm) var(--space-md); padding: var(--space-xs) var(--space-md) var(--space-md); min-height: var(--row-tall);
+  }
+  .bud-row .name { grid-area: name; font-size: var(--text-body); }
+  .bud-row .bar { grid-area: bar; }
+  .bud-row .fig { grid-area: fig; text-align: left; }
+  .bud-row .verdict { grid-area: verdict; }
+  .bud-row .unset, .bud-row .bud-edit { grid-area: bar; grid-column: auto; }
+  .bud-row .acts { grid-area: acts; width: auto; opacity: 1; margin-right: calc(-1 * var(--space-xs)); }
+
+  .cyc-lines { display: flex; flex-direction: column; align-items: stretch; }
+  .cyc {
+    display: grid; grid-template-columns: minmax(0, 1fr) auto; grid-template-areas: "dates spent" "track verdict";
+    gap: var(--space-sm) var(--space-lg); align-items: center; min-height: var(--row-tall); padding-block: var(--space-sm);
+  }
+  .cyc .dates { grid-area: dates; font-size: var(--text-row); }
+  .cyc .spent { grid-area: spent; }
+  .cyc .track { grid-area: track; }
+  .cyc .verdict { grid-area: verdict; }
+  .cyc .verdict:empty { display: none; }
+  .cyc:has(.verdict:empty) .track { grid-column: 1 / -1; }
+
+  .cat-head { grid-template-columns: 4.5rem 4.5rem; padding-right: 0; margin-right: calc(-1 * var(--space-2xs)); }
+  .cat-head .avg { display: none; }
+  .bud-cats { margin: 0 calc(-1 * var(--space-md)); }
+  .bud-cat, .bud-cat.child {
+    grid-template-columns: minmax(0, 1fr) 4.5rem 4.5rem; grid-template-areas: "name spent budget" "acts acts acts";
+    min-height: var(--row-tall); padding: 0 var(--space-md); column-gap: var(--space-sm);
+  }
+  .bud-cat .name { grid-area: name; }
+  .bud-cat > :nth-child(2) { grid-area: spent; }
+  .bud-cat .avg { display: none; }
+  .bud-cat .num.budget { grid-area: budget; pointer-events: none; }
+  .bud-cat .num.budget .set { display: none; }
+  .bud-cat .acts { grid-area: acts; display: none; }
+  .bud-cat[data-current] .acts { display: flex; width: auto; opacity: 1; flex-wrap: wrap; justify-content: flex-start; gap: var(--space-xs); padding: 0 0 var(--space-sm) calc(.5rem + var(--space-sm)); }
+  .bud-cat .acts .ui-button { width: auto; padding-inline: var(--space-md); gap: var(--space-sm); font-weight: var(--weight-lift); }
+  .bud-cat .acts .act-name { display: inline; }
+
+  /* The amount in its sheet: the field across the width, Set and Cancel under it. */
+  .jm-bottom-sheet .bud-edit { display: grid; grid-template-columns: 1fr 1fr; gap: var(--space-md); }
+  .jm-bottom-sheet .bud-edit .ui-input { grid-column: 1 / -1; width: 100%; height: var(--tap); font-size: var(--text-body); }
+  .jm-bottom-sheet .bud-edit .ui-button { height: var(--tap); font-size: var(--text-body); }
+  .jm-bottom-sheet .bud-edit .ui-button[type="submit"] { order: 1; }
 }

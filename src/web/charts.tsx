@@ -12,12 +12,13 @@
  * and a label away from its mark carries a swatch of it.
  */
 import { For, Index, Show, createMemo, createSignal, onCleanup, onMount } from "solid-js"
-import { CurveType, PlotlineLineStylePresets } from "@unovis/ts"
+import { CurveType, PlotlineLineStylePresets, Position } from "@unovis/ts"
 import { VisAnnotations, VisArea, VisAxis, VisAxisSelectors, VisCrosshair, VisGroupedBar, VisGroupedBarSelectors, VisLine, VisPlotline, VisScatter, VisStackedBar, VisStackedBarSelectors, VisTooltip, VisXYContainer } from "@unovis/solid"
 import "./tabs/overview/charts.css"
 import { shortMoney } from "../ui/text"
 import { INKS } from "../ui/charts/inks"
 import { ink, theme, tone } from "./theme"
+import { compact } from "./store"
 
 /** The series and rules' colours, by what each is: the TUI's own (its
  * chart renderer's INKS), so a chart reads the same in both. */
@@ -481,9 +482,16 @@ export function Chart(props: { build: (width: number, height: number) => ChartMo
     return align === "start" ? "left" : align === "end" ? "right" : "center"
   }
 
+  // A finger: Unovis's crosshair follows the mouse alone, and a touch sends it one mousemove where it lands. A drag
+  // along the chart (vertical drags still scroll the page: touch-action) moves it as the mouse would.
+  const touch = (event: PointerEvent) => {
+    if (event.pointerType !== "touch") return
+    box.querySelector(".chart-vis svg")?.dispatchEvent(new MouseEvent("mousemove", { clientX: event.clientX, clientY: event.clientY, bubbles: true }))
+  }
+
   return (
     <div class={`chart-wrap ${props.class ?? ""}`}>
-      <div class="chart" ref={box}>
+      <div class="chart" ref={box} onPointerDown={touch} onPointerMove={touch}>
         <Show when={model()?.empty}><div class="chart-empty">{model()!.empty}</div></Show>
         {/* A new kind of chart (other series, bars or lines) mounts afresh; a new range or size updates it. */}
         <Show when={geo()?.key} keyed>{(_key) => {
@@ -526,7 +534,10 @@ export function Chart(props: { build: (width: number, height: number) => ChartMo
                   return g().circleSeries.flatMap((s) => (s.values[i] == null ? [] : [{ y: g().yAt(s.values[i]!), color: s.color, strokeColor: "var(--background)", strokeWidth: 2 }]))
                 }}
                 template={(d: Row) => { const t = model()?.tip?.(d.x); return t ? tipHtml(t) : "" }} />
-              <VisTooltip horizontalShift={14} verticalShift={0} />
+              {/* Beside the pointer; on a phone over the finger, where the hand doesn't cover it. */}
+              <Show when={compact()} fallback={<VisTooltip horizontalShift={14} verticalShift={0} />}>
+                <VisTooltip horizontalPlacement={Position.Center} verticalPlacement={Position.Top} verticalShift={36} />
+              </Show>
             </VisXYContainer>
           )
         }}</Show>

@@ -6,6 +6,7 @@
 import { createSignal, onCleanup } from "solid-js"
 import { createClientStore } from "../client/store"
 import { wsLink } from "../client/wsLink"
+import { syncAgo } from "../domain/days"
 
 const api = `${location.protocol === "https:" ? "wss" : "ws"}://${location.host}/api`
 
@@ -75,6 +76,13 @@ export function run<T>(promise: Promise<T>, done?: (value: T) => string | void):
 const [now, setNow] = createSignal(Date.now())
 setInterval(() => setNow(Date.now()), 30_000)
 export { now }
+
+/** When Up last synced, in the sidebar's (and Settings') words: syncing…, synced 4m ago, not synced yet. */
+export function syncLabel(): string {
+  if (data.state.upSyncing) return "syncing…"
+  const ago = syncAgo(data.state.dbInfo?.upLastSyncedAt ?? null, now())
+  return ago ? `synced ${ago}` : data.state.upToken ? "not synced yet" : "no Up token"
+}
 
 /** Keys for a tab while it's shown; text fields keep their keys. */
 export function useKeys(handler: (event: KeyboardEvent) => boolean | void): void {

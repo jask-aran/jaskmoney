@@ -42,8 +42,8 @@ export function SubscriptionsView(props: { list: Subscription[]; today: string; 
             <div class="subs-row" classList={{ stopped: s.stopped }}>
               <span class="name"><span class="dot" style={{ background: s.stopped ? ink.note : colour(s.categoryId) }} /><span class="ellipsis">{s.name}</span></span>
               <span class="every note">{s.cadence}</span>
-              <span class="num figure money">{formatMoney(s.amount)}</span>
-              <span class="num label money">{formatMoney(s.monthly)}</span>
+              <span class="num figure money charge">{formatMoney(s.amount)}</span>
+              <span class="num label money month">{formatMoney(s.monthly)}<span class="per"> a month</span></span>
               <span class={`next ${s.stopped ? "note" : soon(s) ? "caution" : "label"}`}>{due(s)}</span>
               <span class={`change ${!s.change ? "" : s.change.to > s.change.from ? "caution" : "good"}`}>{change(s)}</span>
             </div>

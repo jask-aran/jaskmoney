@@ -194,7 +194,11 @@ export function Empty(props: { children: JSX.Element }) {
 export function BottomSheet(props: { label: string; head?: JSX.Element; onClose: () => void; children: JSX.Element; full?: boolean }) {
   const [drag, setDrag] = createSignal(0)
   let start: number | null = null
-  const down = (event: PointerEvent) => { start = event.clientY; (event.currentTarget as HTMLElement).setPointerCapture(event.pointerId) }
+  // A press on a control in the head (Cancel, Save) is that control's, not a drag.
+  const down = (event: PointerEvent) => {
+    if ((event.target as Element).closest("button, input, textarea, select, a, [role=button]")) return
+    start = event.clientY; (event.currentTarget as HTMLElement).setPointerCapture(event.pointerId)
+  }
   const move = (event: PointerEvent) => { if (start != null) setDrag(Math.max(0, event.clientY - start)) }
   const up = () => { if (start == null) return; start = null; if (drag() > 90) props.onClose(); else setDrag(0) }
   const onKey = (event: KeyboardEvent) => { if (event.key === "Escape") { props.onClose(); event.preventDefault() } }
