@@ -49,11 +49,14 @@ Run one core per database. Two cores on one file each keep their own copy and wo
 
 The server listens on 127.0.0.1, and `/api` needs three things:
 
-- **Its token** (`?token=`): `JASKMONEY_SERVER_TOKEN`, or one made at each start. Any local user can reach a
+- **Its token** (`?token=`): `JASKMONEY_SERVER_TOKEN`, or one made once and kept in `server.json` beside
+  settings.json (owner-only), so an address keeps working across restarts. The web app remembers it in the
+  browser and drops it from the address bar. Any local user can reach a
   localhost port, and the core can read files (`previewImport`) and change credentials, so knowing the port
   isn't enough.
 - **A loopback host name** (`127.0.0.1`, `localhost`, `[::1]`): a DNS-rebound page reaches 127.0.0.1 under its
-  own host name, and is refused (421).
+  own host name, and is refused (421). `JASKMONEY_PUBLIC_HOST` (comma-separated) adds names a tunnel brings
+  requests in under.
 - **No foreign origin**: a browser may connect only from the server's own page (WebSockets ignore CORS).
 
 ## The wire
@@ -75,3 +78,17 @@ so the TUI behaves as a socket client would (the key bench shows no cost).
 4. Not yet: the server doesn't sync with Up on a timer by itself (a connected TUI's sync runs there); UI prefs
    (range, chart views) are the core's, so clients share them; the TUI's AI settings dialog shows the values in
    its own environment while saving to the core's; `ai`/`llm`/`models` stand-ins in calls work in-process only (tests).
+
+## From elsewhere (a tunnel)
+
+The server still listens on 127.0.0.1 only. To reach it from a phone, a Cloudflare Tunnel brings a public name
+to `http://127.0.0.1:4417`, behind Cloudflare Access (a login that admits only your email), and the core is
+told that name:
+
+```bash
+JASKMONEY_PUBLIC_HOST=money.example.com bun run dev -- --serve   # the TUI, serving its core
+```
+
+Access guards the page, `/api` and the WebSocket alike; the token is a second lock. Never point a tunnel at the
+server without Access in front: the core can read files and change credentials.
+
