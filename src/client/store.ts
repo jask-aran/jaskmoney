@@ -7,6 +7,7 @@
  * No database, file or model SDK here: the TUI runs it over an in-process
  * link (state/dataStore) and the web app over a WebSocket (web/main).
  */
+import type { Models } from "@earendil-works/pi-ai"
 import { batch, createMemo, createRoot, createSignal } from "solid-js"
 import { createStore, produce, reconcile, unwrap } from "solid-js/store"
 import { chronological } from "../domain/chronology"
@@ -25,7 +26,7 @@ import { dryRunRules as evaluateRules } from "../domain/rules"
 import type { HistoryData } from "../domain/aiHistory"
 import { JEV_SETUP } from "../ai/judge"
 import type { JevClient } from "../ai/jev"
-import type { Llm } from "../ai/llm"
+import type { Llm, LlmProvider } from "../ai/llm"
 import type { CredentialName } from "../ai/credentials"
 import type { PurchaseLookup, TagInput } from "../db/client"
 import {
@@ -34,7 +35,7 @@ import {
 } from "../domain/filter"
 import type { Category, ImportProfile, Rule, SavedFilter, SortColumn, Transaction } from "../domain/types"
 import type { UiPrefs } from "../state/settingsConfig"
-import { emptyCoreState, type CoreParams, type CoreResult, type CoreState, type TagPatch } from "../core/protocol"
+import { emptyCoreState, type CoreParams, type CoreResult, type CoreState, type SignInProgress, type TagPatch } from "../core/protocol"
 import type { CoreLink } from "./link"
 
 /** Finding transactions for a tag: its target and the candidates so far. */
@@ -682,6 +683,10 @@ export function createClientStore(initialLink: CoreLink) {
     saveApiKeys: (patch: Partial<Record<CredentialName, string | null>>) => link.call("saveApiKeys", { patch }),
     /** After a sign-in or sign-out. */
     refreshApiKeys: () => link.call("refreshApiKeys", {}),
+    signInLlm: (provider: LlmProvider, onProgress: (p: SignInProgress) => void, signal?: AbortSignal, models?: Pick<Models, "login">) =>
+      link.call("signInLlm", { provider }, { onProgress, signal, models }),
+    signInPaste: (provider: LlmProvider, value: string) => link.call("signInPaste", { provider, value }),
+    signOutLlm: (provider: LlmProvider) => link.call("signOutLlm", { provider }),
 
     createSettingsCategory: (input: Pick<Category, "name" | "color"> & { notSpending?: boolean }) => link.call("createCategory", { input }),
     updateSettingsCategory: (id: number, input: Pick<Category, "name" | "color"> & { notSpending?: boolean }) => link.call("updateCategory", { id, input }),
@@ -713,7 +718,7 @@ export function createClientStore(initialLink: CoreLink) {
 
     /** Returns the number of transactions removed when switching sync off. */
     setAccountSync: (accountId: number, enabled: boolean) => link.call("setAccountSync", { accountId, enabled }),
-    setBudget: (scope: BudgetScope, amount: number, from?: string) => link.call("setBudget", { scope, amount, from }),
+    setBudget: (scope: BudgetScope, amount: number, from?: string, replaces?: BudgetScope) => link.call("setBudget", { scope, amount, from, replaces }),
     removeBudget: (scope: BudgetScope, from?: string) => link.call("removeBudget", { scope, from }),
     setBudgetCycle: (config: CycleConfig) => link.call("setBudgetCycle", { config }),
     clearDatabaseData: () => link.call("clearDatabaseData", {}),

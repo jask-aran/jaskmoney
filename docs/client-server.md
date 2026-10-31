@@ -74,4 +74,4 @@ so the TUI behaves as a socket client would (the key bench shows no cost).
    own environment.
 4. Not yet: the server doesn't sync with Up on a timer by itself (a connected TUI's sync runs there); UI prefs
    (range, chart views) are the core's, so clients share them; the TUI's AI settings dialog shows the values in
-   its own environment while saving to the core's; `ai`/`llm` stand-ins in calls work in-process only (tests).
+   its own environment while saving to the core's; `ai`/`llm`/`models` stand-ins in calls work in-process only (tests).

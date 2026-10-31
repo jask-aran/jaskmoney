@@ -62,6 +62,9 @@ function upRejected(error: unknown): boolean {
 export function createUpPush(ctx: CoreContext, deps: { ruleOfferNote: (ids: number[]) => string }) {
   const { state, mutate, refresh, transactions, upClient, recordUndo, categorySnapshot, restoreCategories, setLastRepeat } = ctx
   const { ruleOfferNote } = deps
+  // Only the latest local write owns a row when Up answers.
+  const latest = new Map<number, number>()
+  let sequence = 0
 
   /**
    * Give each row (id → category id) its category: all of them locally at
@@ -70,19 +73,22 @@ export function createUpPush(ctx: CoreContext, deps: { ruleOfferNote: (ids: numb
    * Up subcategory, or "no category" for the default (Uncategorised). Pushed
    * rows then follow the provider (source 'provider'). Anything else (a
    * local-only category, a transfer, a CSV row) is the user's choice
-   * ('user'). A rejected push puts its row back as it was. Up has no batch
-   * endpoint: pushes run PUSH_CONCURRENCY at a time, `onProgress` hearing
+   * ('user'). A rejected push puts its row back as it was, unless a newer
+   * local write owns it. `afterLocal` records undo before any push. Up has
+   * no batch endpoint: pushes run PUSH_CONCURRENCY at a time, `onProgress` hearing
    * each (0 of n first, once every row shows its new category).
    */
   async function applyCategories(
     assignments: Map<number, number>,
     how: CategoryHow,
     onProgress?: (pushed: number, total: number) => void,
+    afterLocal?: () => void,
   ): Promise<CategorizeResult> {
     if (!ctx.db) throw new Error("db not open")
     const database = ctx.db
     type Prior = { categoryId: number | null; source: string | null; ext: string | null; extParent: string | null }
-    const pushes = new Map<number, CategoryPush & { prior: Prior }>()
+    const pushes = new Map<number, CategoryPush & { prior: Prior; sequence: number }>()
+    const writes = new Map<number, number>()
     let local = 0
     const chosen = new Map<string, { description: string; categoryId: number; times: number }>()
     const logged: { transactionId: number; categoryId: number; previousCategoryId: number | null }[] = []
@@ -105,14 +111,18 @@ export function createUpPush(ctx: CoreContext, deps: { ruleOfferNote: (ids: numb
         const push = categoryPush(row, category, state.categories)
         // Shown at once; a push confirms it, a rejection puts it back.
         setTransactionCategory(database, id, categoryId, push ? "pending" : "user")
-        if (push) pushes.set(id, { ...push, prior: { categoryId: row.categoryId, source: row.categorySource, ext: row.ext, extParent: row.extParent } })
+        writes.set(id, ++sequence)
+        if (push) pushes.set(id, { ...push, sequence, prior: { categoryId: row.categoryId, source: row.categorySource, ext: row.ext, extParent: row.extParent } })
         else local++
       }
       // Repeated choices turn into rule offers (ruleOffersFor).
       if (how !== "undo") recordCategoryChoices(database, [...chosen.values()])
       logCategories(database, logged, how, appNow().toISOString())
     })()
+    // A rolled-back transaction must not supersede an in-flight push.
+    for (const [id, sequence] of writes) latest.set(id, sequence)
     refresh()
+    afterLocal?.()
     let settled = 0, waiting = 0
     const waitingErrors: string[] = []
     onProgress?.(0, pushes.size)
@@ -124,19 +134,22 @@ export function createUpPush(ctx: CoreContext, deps: { ruleOfferNote: (ids: numb
           await upClient().setTransactionCategory(p.externalId, p.providerId)
         } catch (error) {
           if (!upRejected(error)) {
+            if (latest.get(id) !== p.sequence) return 0
             // Up didn't answer: it stays 'pending' for the next sync.
             waiting++
             waitingErrors.push(waitReason(error))
             return 0
           }
-          database.query(`UPDATE transactions SET category_id = ?, category_source = ?, ext_category = ?, ext_parent_category = ? WHERE id = ?`)
-            .run(p.prior.categoryId, p.prior.source, p.prior.ext, p.prior.extParent, id)
-          unlogCategory(database, id, p.categoryId)
+          if (latest.get(id) === p.sequence) {
+            database.query(`UPDATE transactions SET category_id = ?, category_source = ?, ext_category = ?, ext_parent_category = ? WHERE id = ?`)
+              .run(p.prior.categoryId, p.prior.source, p.prior.ext, p.prior.extParent, id)
+            unlogCategory(database, id, p.categoryId)
+          }
           throw error
         } finally {
           pushingIds.delete(id)
         }
-        confirmCategoryPush(database, id, p)
+        if (latest.get(id) === p.sequence) confirmCategoryPush(database, id, p)
         return 1
       }
     }, { complete: refresh, onSettled: () => onProgress?.(++settled, pushes.size), concurrency: PUSH_CONCURRENCY })
@@ -159,13 +172,13 @@ export function createUpPush(ctx: CoreContext, deps: { ruleOfferNote: (ids: numb
     const database = ctx.db
     const rows = database.query(`SELECT id, category_id AS categoryId, source, external_id AS externalId, ext_categorizable AS categorizable
       FROM transactions WHERE category_source = 'pending'`).all() as Array<PushableRow & { id: number; categoryId: number | null }>
-    const pushes = new Map<number, CategoryPush>()
+    const pushes = new Map<number, CategoryPush & { sequence: number | undefined }>()
     database.transaction(() => {
       for (const row of rows) {
         if (pushingIds.has(row.id)) continue
         const category = state.categories.find((c) => row.categoryId == null ? c.isDefault : c.id === row.categoryId)
         const push = category && categoryPush(row, category, state.categories)
-        if (push) pushes.set(row.id, push)
+        if (push) pushes.set(row.id, { ...push, sequence: latest.get(row.id) })
         else database.query(`UPDATE transactions SET category_source = 'user' WHERE id = ?`).run(row.id)
       }
     })()
@@ -176,11 +189,13 @@ export function createUpPush(ctx: CoreContext, deps: { ruleOfferNote: (ids: numb
         try {
           await upClient().setTransactionCategory(p.externalId, p.providerId)
         } catch (error) {
-          if (upRejected(error)) { rejected++; database.query(`UPDATE transactions SET category_source = 'user' WHERE id = ?`).run(id) }
-          else waiting++
+          if (upRejected(error)) {
+            rejected++
+            if (latest.get(id) === p.sequence) database.query(`UPDATE transactions SET category_source = 'user' WHERE id = ?`).run(id)
+          } else if (latest.get(id) === p.sequence) waiting++
           throw error
         }
-        confirmCategoryPush(database, id, p)
+        if (latest.get(id) === p.sequence) confirmCategoryPush(database, id, p)
         return 1
       }
     }, { concurrency: PUSH_CONCURRENCY })
@@ -195,12 +210,13 @@ export function createUpPush(ctx: CoreContext, deps: { ruleOfferNote: (ids: numb
     const assignments = new Map(txnIds.map((id) => [id, categoryId]))
     const before = categorySnapshot(assignments)
     setLastRepeat({ kind: "category", categoryId })
-    const result = await applyCategories(assignments, "choose", onProgress)
-    const changed = before.filter((row) => transactions().some((t) => t.id === row.id && t.categoryId !== row.categoryId))
-    if (changed.length) recordUndo(`categorised ${changed.length} → ${category.name}`, async () => {
-      const summary = await restoreCategories(changed)
-      mutate((db) => unrecordCategoryChoices(db, before.map((row) => ({ description: row.description, categoryId, times: 1 }))))
-      return summary
+    const result = await applyCategories(assignments, "choose", onProgress, () => {
+      const changed = before.filter((row) => transactions().some((t) => t.id === row.id && t.categoryId !== row.categoryId))
+      if (changed.length) recordUndo(`categorised ${changed.length} → ${category.name}`, async () => {
+        const summary = await restoreCategories(changed)
+        mutate((db) => unrecordCategoryChoices(db, before.map((row) => ({ description: row.description, categoryId, times: 1 }))))
+        return summary
+      })
     })
     return operationSummary(`Categorized ${result.done} → ${category.name}`, result) + ruleOfferNote(txnIds)
   }

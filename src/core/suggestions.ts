@@ -212,17 +212,19 @@ export function createSuggestions(ctx: CoreContext, deps: {
     if (!assignments.size) return "No suggestions accepted"
     const before = categorySnapshot(assignments)
     const suggestions = [...assignments.keys()].flatMap((id) => state.suggestions[id] ? [{ ...state.suggestions[id]! }] : [])
-    const result = await applyCategories(assignments, "accept", onProgress)
+    const result = await applyCategories(assignments, "accept", onProgress, () => {
+      const accepted = [...assignments].filter(([id, categoryId]) => transactions().some((t) => t.id === id && t.categoryId === categoryId)).map(([id]) => id)
+      if (accepted.length) recordUndo(`accepted ${count(accepted.length, "suggestion")}`, async () => {
+        const summary = await restoreCategories(before.filter((row) => accepted.includes(row.id)))
+        mutate((db) => {
+          unrecordCategoryChoices(db, before.map((row) => ({ description: row.description, categoryId: assignments.get(row.id)!, times: 1 })))
+          saveSuggestions(db, suggestions.filter((s) => accepted.includes(s.transactionId)))
+        })
+        return summary
+      })
+    })
     const accepted = [...assignments].filter(([id, categoryId]) => transactions().some((t) => t.id === id && t.categoryId === categoryId)).map(([id]) => id)
     mutate((db) => deleteSuggestions(db, accepted))
-    if (accepted.length) recordUndo(`accepted ${count(accepted.length, "suggestion")}`, async () => {
-      const summary = await restoreCategories(before.filter((row) => accepted.includes(row.id)))
-      mutate((db) => {
-        unrecordCategoryChoices(db, before.map((row) => ({ description: row.description, categoryId: assignments.get(row.id)!, times: 1 })))
-        saveSuggestions(db, suggestions.filter((s) => accepted.includes(s.transactionId)))
-      })
-      return summary
-    })
     return operationSummary(`Accepted ${result.done} suggestion${result.done === 1 ? "" : "s"}`, result) + ruleOfferNote(accepted)
   }
 

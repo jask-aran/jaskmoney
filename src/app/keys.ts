@@ -671,6 +671,9 @@ const CONFIRMED: Record<Confirm["kind"], (data: DataStore | undefined, c: Confir
   desyncAccount: async (data, c) => `Sync off for ${c.label} · ${await data?.setAccountSync(Number(c.id), false) ?? 0} transactions removed`,
 }
 
+/** A settings editor save is on its way to the core. */
+let editorSaving = false
+
 function handleSettingsEditor(ui: UiStore, key: KeyEvent, data?: DataStore): void {
   const { name } = key
   const kind = ui.state.settingsEditor
@@ -725,43 +728,49 @@ function handleSettingsEditor(ui: UiStore, key: KeyEvent, data?: DataStore): voi
     return
   }
   if (name === "return" || name === "enter") {
+    // One save at a time: over a socket the editor stays open until the
+    // core answers, and a second enter would create the record twice.
+    if (editorSaving) return
+    editorSaving = true
     settleData(ui, (async () => {
-      if (kind === "category") {
-        if (ui.state.settingsEditId == null) await data?.createSettingsCategory({ name: draft.name, color: draft.color, notSpending: draft.notSpending })
-        else await data?.updateSettingsCategory(Number(ui.state.settingsEditId), { name: draft.name, color: draft.color, notSpending: draft.notSpending })
-      } else if (kind === "tag") {
-        const tag = { name: draft.name, color: draft.color, categoryIds: draft.categoryIds, about: draft.about.trim() || null }
-        if (ui.state.settingsEditId == null) await data?.createSettingsTag(tag)
-        else await data?.updateSettingsTag(Number(ui.state.settingsEditId), tag)
-      } else if (kind === "budget") {
-        const option = budgetScopeOptions(ctx.accounts, ctx.categories).find((o) => o.key === draft.scopeKey)
-        const amount = Number(draft.amount.replace(/[$,\s]/g, ""))
-        if (!option) throw new Error("choose what the budget covers")
-        if (!draft.amount.trim() || !Number.isFinite(amount)) throw new Error("enter the budget amount")
-        const cycle = cycleFromDraft(draft)
-        if (typeof cycle === "string") throw new Error(cycle)
-        const current = data?.state.budgetCycle
-        // The cycle is shared by every budget; save it first so a bad date
-        // stops the whole edit.
-        if (current && (current.unit !== cycle.unit || current.anchor !== cycle.anchor || current.anchorDate !== cycle.anchorDate || !!current.payEarly !== !!cycle.payEarly)) await data?.setBudgetCycle(cycle)
-        // From the cycle the Budgets tab shows (this one elsewhere).
-        const view = data ? viewedBudgets(ui, data) : undefined
-        const editing = view?.budgets.find((b) => b.id === ui.state.settingsEditId)
-        if (editing && scopeKey(editing.scope) !== option.key) await data?.removeBudget(editing.scope, view!.cycle.start)
-        await data?.setBudget(option.scope, amount, view?.cycle.start)
-      } else if (kind === "cycle") {
-        const cycle = cycleFromDraft(draft)
-        if (typeof cycle === "string") throw new Error(cycle)
-        await data?.setBudgetCycle(cycle)
-      } else if (kind === "filter") {
-        await data?.saveSavedFilter({ id: draft.id, name: draft.name, expr: draft.expr }, typeof ui.state.settingsEditId === "string" ? ui.state.settingsEditId : undefined)
-      } else {
-        const existing = data?.state.rules.find((r) => r.id === ui.state.settingsEditId)
-        const rule = { id: Number(ui.state.settingsEditId ?? 0), name: draft.name, savedFilterId: draft.savedFilterId, setCategoryId: draft.setCategoryId, addTagIds: draft.addTagIds, enabled: existing?.enabled ?? true, sortOrder: existing?.sortOrder ?? 0 }
-        if (ui.state.settingsEditId == null) await data?.createSettingsRule(rule)
-        else await data?.updateSettingsRule(rule)
-      }
-      ui.closeSettingsEditor(); ui.setStatus("Saved")
+      try {
+        if (kind === "category") {
+          if (ui.state.settingsEditId == null) await data?.createSettingsCategory({ name: draft.name, color: draft.color, notSpending: draft.notSpending })
+          else await data?.updateSettingsCategory(Number(ui.state.settingsEditId), { name: draft.name, color: draft.color, notSpending: draft.notSpending })
+        } else if (kind === "tag") {
+          const tag = { name: draft.name, color: draft.color, categoryIds: draft.categoryIds, about: draft.about.trim() || null }
+          if (ui.state.settingsEditId == null) await data?.createSettingsTag(tag)
+          else await data?.updateSettingsTag(Number(ui.state.settingsEditId), tag)
+        } else if (kind === "budget") {
+          const option = budgetScopeOptions(ctx.accounts, ctx.categories).find((o) => o.key === draft.scopeKey)
+          const amount = Number(draft.amount.replace(/[$,\s]/g, ""))
+          if (!option) throw new Error("choose what the budget covers")
+          if (!draft.amount.trim() || !Number.isFinite(amount)) throw new Error("enter the budget amount")
+          const cycle = cycleFromDraft(draft)
+          if (typeof cycle === "string") throw new Error(cycle)
+          const current = data?.state.budgetCycle
+          // The cycle is shared by every budget; save it first so a bad date
+          // stops the whole edit.
+          if (current && (current.unit !== cycle.unit || current.anchor !== cycle.anchor || current.anchorDate !== cycle.anchorDate || !!current.payEarly !== !!cycle.payEarly)) await data?.setBudgetCycle(cycle)
+          // From the cycle the Budgets tab shows (this one elsewhere).
+          const view = data ? viewedBudgets(ui, data) : undefined
+          const editing = view?.budgets.find((b) => b.id === ui.state.settingsEditId)
+          // A new scope ends the old budget in the same write.
+          await data?.setBudget(option.scope, amount, view?.cycle.start, editing?.scope)
+        } else if (kind === "cycle") {
+          const cycle = cycleFromDraft(draft)
+          if (typeof cycle === "string") throw new Error(cycle)
+          await data?.setBudgetCycle(cycle)
+        } else if (kind === "filter") {
+          await data?.saveSavedFilter({ id: draft.id, name: draft.name, expr: draft.expr }, typeof ui.state.settingsEditId === "string" ? ui.state.settingsEditId : undefined)
+        } else {
+          const existing = data?.state.rules.find((r) => r.id === ui.state.settingsEditId)
+          const rule = { id: Number(ui.state.settingsEditId ?? 0), name: draft.name, savedFilterId: draft.savedFilterId, setCategoryId: draft.setCategoryId, addTagIds: draft.addTagIds, enabled: existing?.enabled ?? true, sortOrder: existing?.sortOrder ?? 0 }
+          if (ui.state.settingsEditId == null) await data?.createSettingsRule(rule)
+          else await data?.updateSettingsRule(rule)
+        }
+        ui.closeSettingsEditor(); ui.setStatus("Saved")
+      } finally { editorSaving = false }
     })())
     return
   }

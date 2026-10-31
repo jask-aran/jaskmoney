@@ -69,7 +69,7 @@ export function wsLink(url: string, { onClose }: { onClose?: (reason: string) =>
 
   return {
     call(method, params, options = {}) {
-      if (options.ai || options.llm) return Promise.reject(new Error("stand-in models work in-process only"))
+      if (options.ai || options.llm || options.models) return Promise.reject(new Error("stand-in models work in-process only"))
       if (closed) return Promise.reject(new Error(closed))
       const id = nextId++
       return new Promise((resolve, reject) => {

@@ -106,8 +106,12 @@ export type CoreMethod = keyof CoreCommands
 export type CoreParams<M extends CoreMethod> = Parameters<CoreCommands[M]>[0]
 export type CoreResult<M extends CoreMethod> = Awaited<ReturnType<CoreCommands[M]>>
 
+/** The whole browser sign-in view, without credentials. */
+export type SignInProgress = { url: string | null; message: string; paste: string | null }
+
 /** What a long command reports as it goes. */
 export interface CoreProgress {
+  signInLlm: SignInProgress
   categorize: { pushed: number; total: number }
   acceptSuggestions: { pushed: number; total: number }
   /** Rows judged for an `ask:` term: [row id, how likely it matches]. */

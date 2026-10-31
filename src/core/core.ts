@@ -5,6 +5,7 @@
  * link (client/link: in-process; server/serve: a WebSocket). See
  * core/protocol for the contract.
  */
+import type { Models } from "@earendil-works/pi-ai"
 import { isDeepStrictEqual } from "node:util"
 import { existsSync, mkdirSync, readFileSync, readdirSync, unlinkSync } from "node:fs"
 import { join, resolve } from "node:path"
@@ -23,12 +24,12 @@ import { buildImportPreview, commitImportPreview } from "../domain/profileImport
 import { CREDENTIAL_NAMES, credentialEnv, credentialSource, maskSecret, saveCredentials, type CredentialName, NOT_SECRET } from "../ai/credentials"
 import { isOrdinaryFlow, isUncategorised } from "../domain/moneyRules"
 import { hasJev, jevClient, jevRoute, JEV_SETUP, type JevClient } from "../ai/jev"
-import { hasLlm, llmModelId, type Llm } from "../ai/llm"
+import { hasLlm, llmModelId, llmModels, LLM_PROVIDERS, type Llm, type LlmProvider } from "../ai/llm"
 import { createWorkersAiClient, readWorkersAiCredentials, searchUsesClairic } from "../ai/workersAi"
 import { createUpClient, hasUpToken, readUpToken } from "../up/client"
 import { smartSearch } from "../domain/smartSearch"
 import { categoryUses, merchantBreadth } from "../domain/suggest"
-import { signedIn } from "../ai/oauthStore"
+import { createFileCredentialStore, signedIn } from "../ai/oauthStore"
 import { appNow, appToday } from "../domain/days"
 import { demoSource, generateDemo } from "../domain/demo"
 import { seedDemoDb } from "../db/demoSeed"
@@ -56,6 +57,7 @@ export interface CallContext<P = never> {
    * of the real ones. */
   ai?: Pick<JevClient, "judge">
   llm?: Llm
+  models?: Pick<Models, "login">
 }
 
 /** How long the range, account and chart views sit still before they're written. */
@@ -90,6 +92,8 @@ export function createCore() {
   // One object for the core's life: its parts read `ctx.state` as they go.
   const state: CoreState = initialCoreState()
   const listeners = new Set<(patch: Partial<CoreState>) => void>()
+  // Prompts stay in the core; clients send only the pasted code.
+  const signIns = new Map<LlmProvider, { paste: ((value: string) => void) | null }>()
 
   /** Change the state and tell every client. */
   function set(patch: Partial<CoreState>) {
@@ -507,6 +511,60 @@ export function createCore() {
     /** After a sign-in or sign-out. */
     refreshApiKeys: (_: object) => set(keyState()),
 
+    signInLlm: async (p: { provider: LlmProvider }, cx: CallContext<CoreProgress["signInLlm"]>) => {
+      const { provider } = p
+      const { label, signIn } = LLM_PROVIDERS[provider]
+      if (signIns.has(provider)) throw new Error(`${label} sign-in is already running`)
+      cx.signal.throwIfAborted()
+      const run: { paste: ((value: string) => void) | null } = { paste: null }
+      signIns.set(provider, run)
+      let view: CoreProgress["signInLlm"] = { url: null, message: `${signIn}…`, paste: null }
+      const report = (patch: Partial<typeof view>) => { view = { ...view, ...patch }; cx.progress(view) }
+      let cleanup = () => {}
+      try {
+        const models = cx.models ?? llmModels()
+        await models.login(provider, "oauth", {
+          signal: cx.signal,
+          notify: (event) => {
+            if (event.type === "auth_url") report({ url: event.url, message: "Your browser should open; finish signing in there." })
+            else if (event.type === "device_code") report({ url: event.verificationUri, message: `Enter the code ${event.userCode} at the address below.` })
+            else report({ message: event.message })
+          },
+          prompt: (prompt) => new Promise<string>((resolve, reject) => {
+            if (prompt.type === "select") { reject(new Error(`${label} asked a question this app can't show: ${prompt.message}`)); return }
+            // The callback won the race: the paste field goes.
+            const abort = () => { cleanup(); report({ paste: null }); reject(new Error("callback received")) }
+            const cancel = () => { cleanup(); report({ paste: null }); reject(new Error("cancelled")) }
+            cleanup = () => {
+              run.paste = null
+              prompt.signal?.removeEventListener("abort", abort)
+              cx.signal.removeEventListener("abort", cancel)
+            }
+            run.paste = (value) => { cleanup(); report({ paste: null, message: "Checking…" }); resolve(value) }
+            prompt.signal?.addEventListener("abort", abort, { once: true })
+            cx.signal.addEventListener("abort", cancel, { once: true })
+            if (cx.signal.aborted) cancel()
+            else if (prompt.signal?.aborted) abort()
+            else report({ paste: prompt.message })
+          }),
+        })
+        set(keyState())
+      } finally {
+        cleanup()
+        signIns.delete(provider)
+      }
+    },
+    signInPaste: (p: { provider: LlmProvider; value: string }): boolean => {
+      const paste = signIns.get(p.provider)?.paste
+      if (!paste) return false
+      paste(p.value)
+      return true
+    },
+    signOutLlm: async (p: { provider: LlmProvider }) => {
+      await createFileCredentialStore().delete(p.provider)
+      set(keyState())
+    },
+
     createCategory: (p: { input: Pick<Category, "name" | "color"> & { notSpending?: boolean } }) => createSettingsCategory(p.input),
     updateCategory: (p: { id: number; input: Pick<Category, "name" | "color"> & { notSpending?: boolean } }) => mutate((db) => updateCategory(db, p.id, p.input)),
     setCategoryBudgetIgnored: (p: { id: number; ignored: boolean }) => mutate((db) => setCategoryBudgetIgnored(db, p.id, p.ignored)),
@@ -553,11 +611,15 @@ export function createCore() {
     setAccountSync: (p: { accountId: number; enabled: boolean }) => mutate((db) => setAccountSyncEnabled(db, p.accountId, p.enabled)),
     /** A budget from the cycle starting `from` (default this one) until its
      * next change. One first set in this cycle is recorded since always, so
-     * it measures earlier cycles too. */
-    setBudget: (p: { scope: BudgetScope; amount: number; from?: string }) => {
+     * it measures earlier cycles too. `replaces`: the budget this one was
+     * (the editor changed what it covers) ends then, in the same write. */
+    setBudget: (p: { scope: BudgetScope; amount: number; from?: string; replaces?: BudgetScope }) => {
       const now = cycleFor(cycle(), appToday()).start
       const fresh = !state.budgetHistory.some((e) => scopeKey(e.scope) === scopeKey(p.scope))
-      mutate((db) => recordBudget(db, p.scope, p.amount, fresh && (p.from ?? now) === now ? null : p.from ?? now, now))
+      mutate((db) => db.transaction(() => {
+        if (p.replaces && scopeKey(p.replaces) !== scopeKey(p.scope)) recordBudget(db, p.replaces, null, p.from ?? now, now)
+        recordBudget(db, p.scope, p.amount, fresh && (p.from ?? now) === now ? null : p.from ?? now, now)
+      })())
     },
     /** No budget for `scope` from the cycle starting `from` (default this one). */
     removeBudget: (p: { scope: BudgetScope; from?: string }) => {

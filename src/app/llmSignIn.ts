@@ -1,19 +1,20 @@
 import { spawn } from "node:child_process"
 import type { Models } from "@earendil-works/pi-ai"
-import { LLM_PROVIDERS, llmModels, type LlmProvider } from "../ai/llm"
-import { createFileCredentialStore } from "../ai/oauthStore"
+import { LLM_PROVIDERS, type LlmProvider } from "../ai/llm"
 import type { DataStore } from "../state/dataStore"
 import type { UiStore } from "../state/uiStore"
 
 /**
  * Browser sign-in to the general model's provider (pi-ai's OAuth: OpenRouter
- * mints a key; OpenAI is Sign in with ChatGPT). pi-ai serves the callback on
- * 127.0.0.1 and races it with a prompt to paste the redirect URL (a browser
- * on another machine, or one that can't reach the callback); the modal shows
- * the URL and takes the paste. esc cancels. The credential goes to oauth.json.
+ * mints a key; OpenAI is Sign in with ChatGPT). The core runs pi-ai's login,
+ * serves the callback on 127.0.0.1, and races it with a prompt to paste the
+ * redirect URL (a browser on another machine, or one that can't reach the
+ * callback). The client opens the browser, shows the URL and paste field in
+ * the modal, and sends the paste to the core. esc cancels the core's login.
+ * The core keeps the credential in its own oauth.json.
  */
 let controller: AbortController | null = null
-let pending: { resolve: (value: string) => void; reject: (error: Error) => void } | null = null
+let sendPaste: ((value: string) => void) | null = null
 
 /** Open `url` in the user's browser (on WSL, Windows'); failures are silent: the modal shows the URL. */
 export function openBrowser(url: string): void {
@@ -26,42 +27,38 @@ export function openBrowser(url: string): void {
 }
 
 /** `open` and `models` are replaced in tests. */
-export async function startLlmSignIn(ui: UiStore, data: DataStore, provider: LlmProvider, open: (url: string) => void = openBrowser, models: Pick<Models, "login"> = llmModels()): Promise<void> {
+export async function startLlmSignIn(ui: UiStore, data: DataStore, provider: LlmProvider, open: (url: string) => void = openBrowser, models?: Pick<Models, "login">): Promise<void> {
   if (ui.state.llmSignIn) return
   const { label, signIn } = LLM_PROVIDERS[provider]
   const flow = new AbortController()
   controller = flow
+  let pasteError: Error | undefined
+  sendPaste = (value) => {
+    void data.signInPaste(provider, value).catch((error: unknown) => {
+      if (controller !== flow) return
+      pasteError = error instanceof Error ? error : new Error(String(error))
+      flow.abort()
+    })
+  }
   ui.setState({ llmSignIn: { provider, url: null, message: `${signIn}…`, paste: null } })
   try {
-    await models.login(provider, "oauth", {
-      signal: flow.signal,
-      notify: (event) => {
-        if (event.type === "auth_url") {
-          ui.setState("llmSignIn", { url: event.url, message: "Your browser should open; finish signing in there." })
-          open(event.url)
-        } else if (event.type === "device_code") {
-          ui.setState("llmSignIn", { url: event.verificationUri, message: `Enter the code ${event.userCode} at the address below.` })
-          open(event.verificationUri)
-        } else ui.setState("llmSignIn", "message", event.message)
-      },
-      prompt: (prompt) => new Promise<string>((resolve, reject) => {
-        if (prompt.type === "select") { reject(new Error(`${label} asked a question this app can't show: ${prompt.message}`)); return }
-        const entry = { resolve, reject }
-        pending = entry
-        ui.setState("llmSignIn", "paste", { message: prompt.message, value: "", caret: 0 })
-        // The callback won the race: the paste field goes.
-        prompt.signal?.addEventListener("abort", () => {
-          if (pending === entry) { pending = null; ui.setState("llmSignIn", "paste", null) }
-          reject(new Error("callback received"))
-        }, { once: true })
-      }),
-    })
-    await data.refreshApiKeys()
+    let lastUrl: string | null = null
+    await data.signInLlm(provider, (progress) => {
+      const paste = ui.state.llmSignIn?.paste
+      ui.setState("llmSignIn", {
+        url: progress.url,
+        message: progress.message,
+        paste: progress.paste === null ? null : paste?.message === progress.paste ? paste : { message: progress.paste, value: "", caret: 0 },
+      })
+      if (progress.url && progress.url !== lastUrl) { lastUrl = progress.url; open(progress.url) }
+    }, flow.signal, models)
     ui.setStatus(`Signed in to ${label}`)
   } catch (error) {
-    ui.setStatus(flow.signal.aborted ? `${label} sign-in cancelled` : `${label} sign-in failed: ${error instanceof Error ? error.message : String(error)}`, !flow.signal.aborted)
+    const cancelled = flow.signal.aborted && pasteError === undefined
+    const cause = pasteError ?? error
+    ui.setStatus(cancelled ? `${label} sign-in cancelled` : `${label} sign-in failed: ${cause instanceof Error ? cause.message : String(cause)}`, !cancelled)
   } finally {
-    if (controller === flow) { controller = null; pending = null }
+    if (controller === flow) { controller = null; sendPaste = null }
     ui.setState({ llmSignIn: null })
   }
 }
@@ -69,21 +66,16 @@ export async function startLlmSignIn(ui: UiStore, data: DataStore, provider: Llm
 /** enter in the paste field: hand pi-ai the code or redirect URL. */
 export function submitSignInPaste(ui: UiStore): void {
   const value = ui.state.llmSignIn?.paste?.value.trim()
-  if (!value || !pending) return
-  const entry = pending
-  pending = null
-  ui.setState("llmSignIn", { paste: null, message: "Checking…" })
-  entry.resolve(value)
+  if (!value || !sendPaste) return
+  // The core reports "Checking…" only when it accepts the paste.
+  sendPaste(value)
 }
 
 export function cancelLlmSignIn(): void {
-  pending?.reject(new Error("cancelled"))
-  pending = null
   controller?.abort()
 }
 
 /** Forget a provider's browser sign-in. */
 export async function signOutLlm(data: DataStore, provider: LlmProvider): Promise<void> {
-  await createFileCredentialStore().delete(provider)
-  await data.refreshApiKeys()
+  await data.signOutLlm(provider)
 }

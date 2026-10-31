@@ -87,3 +87,45 @@ test("sync keeps its error and clears the lock when failure refresh also throws"
     db.close()
   }
 })
+
+test("a slow Up answer to an older choice never undoes a newer one; undo follows the order of the choices", async () => {
+  const fetchMock = spyOn(globalThis, "fetch")
+  data.init(":memory:")
+  const db = data.getDb()!
+  try {
+    testEnv("JASKMONEY_UP_TOKEN", "test-pat")
+    syncCategoryTree(db, [
+      { id: "home", name: "Home", parentId: null },
+      { id: "food", name: "Food", parentId: "home" },
+      { id: "fuel", name: "Fuel", parentId: "home" },
+    ])
+    const row = Number(db.query(`INSERT INTO transactions (date_raw, date_iso, amount, description, source, external_id, ext_categorizable)
+      VALUES ('2026-01-01', '2026-01-01', -1, 'Test', 'up', 'remote', 1)`).run().lastInsertRowid)
+    data.refresh()
+    const food = data.state.categories.find((c) => c.extId === "food")!.id
+    const fuel = data.state.categories.find((c) => c.extId === "fuel")!.id
+    // The first push (Food) hangs, then Up refuses it; the second (Fuel) is accepted at once.
+    let refuseFirst!: () => void
+    let calls = 0
+    fetchMock.mockImplementation(Object.assign(async () => {
+      if (++calls === 1) {
+        await new Promise<void>((resolve) => { refuseFirst = resolve })
+        return new Response(JSON.stringify({ errors: [{ status: "422", title: "Invalid", detail: "refused" }] }), { status: 422 })
+      }
+      return new Response(null, { status: 204 })
+    }, { preconnect: globalThis.fetch.preconnect }))
+    const first = data.categorizeTransactions([row], food)
+    await Bun.sleep(0)
+    await data.categorizeTransactions([row], fuel)
+    refuseFirst()
+    await first.catch(() => {})
+    const now = db.query("SELECT category_id AS categoryId, category_source AS source FROM transactions WHERE id = ?").get(row) as { categoryId: number; source: string }
+    expect(now).toEqual({ categoryId: fuel, source: "provider" })
+    expect(data.state.transactions.find((t) => t.id === row)!.categoryId).toBe(fuel)
+    // The latest choice is what undo undoes first.
+    expect(data.undoLabel()).toContain("Fuel")
+  } finally {
+    fetchMock.mockRestore()
+    db.close()
+  }
+})

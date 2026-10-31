@@ -4,6 +4,7 @@
  * keep core/protocol's promise: a call's state patches arrive before its
  * result.
  */
+import type { Models } from "@earendil-works/pi-ai"
 import type { JevClient } from "../ai/jev"
 import type { Llm } from "../ai/llm"
 import type { CoreMethod, CoreParams, CoreResult, CoreState, ProgressOf } from "../core/protocol"
@@ -14,6 +15,7 @@ export interface CallOptions<M extends CoreMethod> {
   /** In-process links only (tests): stand-ins for Jev and the general model. */
   ai?: Pick<JevClient, "judge">
   llm?: Llm
+  models?: Pick<Models, "login">
 }
 
 export interface CoreLink {

@@ -28,6 +28,7 @@ export function localLink(core: Core): CoreLink {
         signal: options.signal ?? new AbortController().signal,
         ai: options.ai,
         llm: options.llm,
+        models: options.models,
       }
       try {
         const run = core.commands[method] as (params: unknown, cx: unknown) => unknown
