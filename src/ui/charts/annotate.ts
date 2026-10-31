@@ -2,18 +2,21 @@
  * Text labels inside a chart, beside the point they describe. Works on the
  * rows any chart renderer returns: a label goes only where its cells (and a
  * one-cell margin) hold nothing but blanks, gridlines or rules, trying right
- * of the point, then left, then the rows above and below (above first for
- * bar tops), then two rows out, keeping clear of the labels already placed
- * (a row and two columns) where any spot is. A label that fits nowhere is dropped, so
- * callers keep the figure elsewhere (the legend), unless it's `required`:
- * then it takes its first spot inside the chart anyway. Labels are placed
- * in the order given, so the first ones win the space.
+ * of the point, then left, then the rows above and below, then two rows
+ * out. Where its text fits nowhere at its point, its `short` forms try
+ * there, longest first; then a line's `name` tries each point `along` it,
+ * nearest first, so a line ending in a crowded corner is still named
+ * further back. A bar's label stays with its bar: touching it, over it or
+ * beside its top, in its shortest form if need be, before further up;
+ * never drifting over a neighbour.
  *
- * Where the text fits nowhere at its point, its `short` forms try there,
- * longest first
- * next; then a line's `name` tries each point `along` it, nearest first, so
- * a line ending in a crowded corner is still named further back. Text is
- * measured in cells: an emoji takes two.
+ * Labels keep clear of those already placed (a row and two columns): the
+ * first form and spot clear of them wins, else the first that fits at all.
+ * A label that fits nowhere is dropped, so callers keep the figure
+ * elsewhere (the legend), unless it's `required`: then it takes its first
+ * spot inside the chart anyway. Labels are placed in the order given, so
+ * the first ones win the space. Text is measured in cells: an emoji takes
+ * two.
  */
 import type { Run } from "./lineChart"
 import { cellsToRuns } from "./runs"
@@ -31,12 +34,10 @@ export interface ChartLabel {
   name?: string
   /** Other cells on the label's line (lineAnchors), nearest first. */
   along?: Array<{ row: number; col: number }>
-  /** More points `text` may go by, tried right after its own (the right
-   * edge of a wide bar, whose label can't sit over it). */
-  alsoAt?: Array<{ row: number; col: number }>
   ink: string
-  /** Try the row above first (bar tops). */
-  above?: boolean
+  /** The bar the label belongs to (`row` its top): the label goes over
+   * it, its middle within the bar's columns, or just right of its top. */
+  bar?: { col: number; width: number }
   /** Shown even where nothing is free (the period's own line). */
   required?: boolean
 }
@@ -63,12 +64,13 @@ export function annotate(rows: Run[][], labels: ChartLabel[]): Run[][] {
     return true
   }
   // Where `n` cells could go for a point, best first.
-  const spots = (row: number, col: number, n: number, above = false): Array<[number, number]> => {
+  const spots = (row: number, col: number, n: number): Array<[number, number]> => {
     const centred: Array<[number, number]> = [[row - 1, col - Math.floor((n - 1) / 2)], [row + 1, col - Math.floor((n - 1) / 2)]]
     // Right of the point, or of a line two cells wide there (a spike), then left.
     const beside: Array<[number, number]> = [[row, col + 2], [row, col + 3], [row, col - 1 - n]]
     return [
-      ...(above ? [...centred, ...beside] : [...beside, ...centred]),
+      ...beside,
+      ...centred,
       [row - 1, col + 1],
       [row - 1, col - n],
       [row + 1, col + 1],
@@ -81,6 +83,19 @@ export function annotate(rows: Run[][], labels: ChartLabel[]): Run[][] {
       ...[4, 5, 6].flatMap((d): Array<[number, number]> => [[row, col + d], [row - 1, col + d], [row + 1, col + d], [row, col - n - d + 2]]),
     ]
   }
+  // Where `n` cells could go for a bar whose top is `row`, nearest first:
+  // touching it (the row over it, centred and then shifted while the
+  // label's middle stays over the bar, or right of its top past a blank
+  // column), then two rows up or right of the row under its top, then
+  // three up.
+  const barTiers = (row: number, bar: { col: number; width: number }, n: number): Array<Array<[number, number]>> => {
+    const centred = bar.col + Math.floor((bar.width - n) / 2)
+    const lo = bar.col - Math.floor((n - 1) / 2), hi = bar.col + bar.width - 1 - Math.floor((n - 1) / 2)
+    const starts = [centred, ...Array.from({ length: 2 * Math.max(0, hi - lo) }, (_, k) => centred + (k % 2 ? 1 : -1) * Math.ceil((k + 1) / 2))].filter((c) => c >= lo && c <= hi)
+    const over = (d: number) => starts.map((c): [number, number] => [row - d, c])
+    const beside = (d: number): Array<[number, number]> => [[row + d, bar.col + bar.width + 1]]
+    return [[...over(1), ...beside(0)], [...over(2), ...beside(1)], over(3)]
+  }
   // Cells near a placed label: another label there reads as its neighbour.
   const near = grid.map((cells) => cells.map(() => false))
   const clear = ([r, c]: [number, number], n: number) => {
@@ -90,21 +105,22 @@ export function annotate(rows: Run[][], labels: ChartLabel[]): Run[][] {
   }
   const inside = (n: number) => ([r, c]: [number, number]) => r >= 0 && r < grid.length && c >= 0 && c + n <= width
   for (const label of labels) {
-    const tries = [
-      { text: label.text, at: [label, ...(label.alsoAt ?? [])] },
-      ...shorts(label).map((text) => ({ text, at: [label, ...(label.alsoAt ?? [])] })),
-      ...(label.name && label.along?.length ? [{ text: label.name, at: label.along }] : []),
-    ]
-    let placed: { cells: string[]; spot: [number, number] } | undefined
-    for (const t of tries) {
-      const cells = labelCells(t.text)
-      const open = t.at.flatMap((p) => spots(p.row, p.col, cells.length, label.above)).filter(([r, c]) => free(r, c, c + cells.length))
-      const spot = open.find((s) => clear(s, cells.length)) ?? open[0]
-      if (spot) { placed = { cells, spot }; break }
-    }
+    const forms = [label.text, ...shorts(label)].map(labelCells)
+    const bar = label.bar
+    // Every form at every spot, best first: a bar's label touching its bar
+    // in any form, longest first, before any further off; another's
+    // longest form anywhere first, then a line's name back along it.
+    const candidates = bar
+      ? barTiers(label.row, bar, 0).flatMap((_, tier) => forms.flatMap((cells) => barTiers(label.row, bar, cells.length)[tier]!.map((spot) => ({ cells, spot }))))
+      : [...forms.map((cells) => ({ cells, at: [label] })), ...(label.name && label.along?.length ? [{ cells: labelCells(label.name), at: label.along }] : [])]
+          .flatMap(({ cells, at }) => at.flatMap((p) => spots(p.row, p.col, cells.length)).map((spot) => ({ cells, spot })))
+    // The first clear of the labels placed; failing that, the first that
+    // fits at all.
+    const open = candidates.filter(({ cells, spot: [r, c] }) => free(r, c, c + cells.length))
+    let placed = open.find(({ cells, spot }) => clear(spot, cells.length)) ?? open[0]
     if (!placed && label.required) {
-      const cells = labelCells(shorts(label).at(-1) ?? label.text)
-      const spot = spots(label.row, label.col, cells.length, label.above).find(inside(cells.length))
+      const cells = forms.at(-1)!
+      const spot = (bar ? barTiers(label.row, bar, cells.length).flat() : spots(label.row, label.col, cells.length)).find(inside(cells.length))
       if (spot) placed = { cells, spot }
     }
     if (!placed) continue

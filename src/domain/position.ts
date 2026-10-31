@@ -233,6 +233,17 @@ export function biggestRow(rows: Transaction[], start: string, end: string): Tra
   return best
 }
 
+/** Who `rows` dated `start` to `end` came from or went to most, by the
+ * size of all their rows together (two pays from one employer are one
+ * payee): what most explains a bar. */
+export function biggestPayee(rows: Transaction[], start: string, end: string): { name: string; amount: number } | undefined {
+  const by = new Map<string, number>()
+  for (const row of rows) if (row.dateISO >= start && row.dateISO <= end) by.set(row.description, (by.get(row.description) ?? 0) + Math.abs(row.amount))
+  let best: { name: string; amount: number } | undefined
+  for (const [name, amount] of by) if (!best || amount > best.amount) best = { name, amount }
+  return best
+}
+
 export interface BalancePoint {
   dateISO: string
   /** All balance-reporting accounts. */

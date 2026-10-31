@@ -146,6 +146,17 @@ describe("what made a bar tall, and how much room there is", () => {
     expect(legendText(year)).toContain("monthly")
   })
 
+  test("a bar named after a payee who isn't most of it gives the payee's own figure, and adds up a payee's rows", () => {
+    const acc = account({ id: 1, balance: 0 })
+    const pay = (id: number, dateISO: string, amount: number, description: string) => transaction({ id, dateISO, amount, description, accountName: "Spending", categoryName: "Salary", income: true, status: null })
+    // Two pays from one employer and a refund: the employer is the whole bar.
+    const one = cashFlowChart(days(92, "2026-08-01"), 60, 12, "2026-10-31", [acc], [pay(1, "2026-10-02", 5000, "Acme Pty Ltd"), pay(2, "2026-10-16", 5000, "Acme Pty Ltd"), pay(3, "2026-10-20", 300, "Refund")], new Set([1]))
+    expect(text(one)).toContain("Acme Pty Ltd +$10k")
+    // Two payees: the bar's total, then the bigger payee's own.
+    const two = cashFlowChart(days(92, "2026-08-01"), 60, 12, "2026-10-31", [acc], [pay(1, "2026-08-04", 6000, "Acme Pty Ltd"), pay(2, "2026-08-18", 4000, "Globex")], new Set([1]))
+    expect(text(two)).toContain("+$10k · Acme Pty Ltd +$6k")
+  })
+
   test("Available names its biggest moves and shows where it's headed", () => {
     const acc = account({ id: 1, balance: 1000 })
     const d = days(30)

@@ -60,3 +60,24 @@ test("a label keeps clear of one already placed where it can, and crowds it only
   // No row clear of it: beside anyway.
   expect(place(blank(4)).findIndex((line) => line.includes("second"))).toBe(3)
 })
+
+test("a bar's label stays over its bar or beside its top, shortening rather than drifting over a neighbour", () => {
+  // Two bars: a tall one at 2–3 and a short one at 12–13 (top row 3).
+  const rows = grid(
+    "  ██            ",
+    "  ██            ",
+    "  ██            ",
+    "  ██        ██  ",
+    "  ██        ██  ",
+  )
+  const bar = { col: 12, width: 2 }
+  const place = (label: string, short: string[]) => text(annotate(rows, [{ row: 3, col: 12, bar, text: label, short, ink: "x" }]))
+  // Centred over the bar.
+  expect(place("$9", [])[2]).toBe("  ██        $9  ")
+  // Too long to sit with its middle over the bar: the shorter form, not the
+  // long one up and left over the other bar.
+  expect(place("$1.8k · Transfer to 2Up", ["$1.8k"]).join("\n")).not.toContain("Transfer")
+  expect(place("$1.8k · Transfer to 2Up", ["$1.8k"])[2]).toBe("  ██      $1.8k ")
+  // A bar that fills the height: beside its top.
+  expect(text(annotate(rows, [{ row: 0, col: 2, bar: { col: 2, width: 2 }, text: "$5k", ink: "x" }]))[0]).toBe("  ██ $5k        ")
+})
