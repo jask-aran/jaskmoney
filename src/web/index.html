@@ -44,9 +44,13 @@
     .cat select { padding: 3px 6px; max-width: 200px; background: transparent; border-color: transparent; }
     .cat select:hover { border-color: var(--surface1); }
     .more { color: var(--faint); font-size: 12px; padding: 12px 8px; }
+    .when { display: none; }
     @media (max-width: 640px) {
-      .account, th.account { display: none; }
-      .cat select { max-width: 130px; }
+      main { padding: 0 8px 24px; }
+      .account, .date { display: none; }
+      .when { display: block; color: var(--faint); font: 11px var(--mono); margin-top: 2px; }
+      td, th { padding-left: 4px; padding-right: 4px; }
+      .cat select { max-width: 120px; }
     }
   </style>
 </head>
@@ -67,7 +71,7 @@
   </header>
   <main>
     <table>
-      <thead><tr><th>Date</th><th>Description</th><th class="account">Account</th><th>Category</th><th class="amount">Amount</th></tr></thead>
+      <thead><tr><th class="date">Date</th><th>Description</th><th class="account">Account</th><th>Category</th><th class="amount">Amount</th></tr></thead>
       <tbody id="rows"></tbody>
     </table>
     <div class="more" id="more"></div>

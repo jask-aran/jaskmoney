@@ -21,13 +21,27 @@ const status = $("status"), note = $("note"), message = $("message"), rows = $<H
 const accounts = $<HTMLSelectElement>("accounts"), filter = $<HTMLInputElement>("filter")
 const undoButton = $<HTMLButtonElement>("undo"), syncButton = $<HTMLButtonElement>("sync")
 
-const token = new URLSearchParams(location.search).get("token")
+/** The server's token: from the address jaskmoney printed, then remembered
+ * in this browser (and taken out of the address bar), so the bare address
+ * works from then on. */
+function serverToken(): string | null {
+  const url = new URL(location.href)
+  const given = url.searchParams.get("token")
+  try {
+    if (!given) return localStorage.getItem("jaskmoney.token")
+    localStorage.setItem("jaskmoney.token", given)
+    url.searchParams.delete("token")
+    history.replaceState(null, "", url)
+  } catch { /* storage blocked: the address keeps it */ }
+  return given
+}
+const token = serverToken()
 const api = `${location.protocol === "https:" ? "wss" : "ws"}://${location.host}/api${token ? `?token=${encodeURIComponent(token)}` : ""}`
 let disconnected = ""
 const data = createClientStore(wsLink(api, { onClose: (reason) => {
   disconnected = reason
   // The server refuses a socket without its token, and a browser isn't told why.
-  status.textContent = token ? `disconnected: ${reason}` : "no token: open the address jaskmoney printed (it carries the server's token)"
+  status.textContent = token ? `disconnected: ${reason} · reload, or open the address jaskmoney printed` : "no token: open the address jaskmoney printed (it carries the server's token)"
   status.className = "off"
 } }))
 
@@ -97,7 +111,8 @@ createRoot(() => {
       dot.style.background = t.categoryColor || "var(--overlay0)"
       return el("tr", {},
         el("td", { className: "date", textContent: t.dateISO }),
-        el("td", { className: "desc", textContent: t.description }),
+        // On a phone the date and account go under the description.
+        el("td", { className: "desc" }, t.description, el("span", { className: "when", textContent: `${t.dateISO} · ${t.accountName}` })),
         el("td", { className: "account", textContent: t.accountName }),
         el("td", {}, el("span", { className: "cat" }, dot, choose)),
         el("td", { className: `amount${t.amount > 0 ? " in" : ""}`, textContent: formatMoney(t.amount) }),

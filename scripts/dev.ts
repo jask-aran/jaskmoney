@@ -9,7 +9,8 @@
  */
 import { watch } from "node:fs"
 
-const start = () => Bun.spawn(["bun", "run", "src/index.tsx"], { stdio: ["inherit", "inherit", "inherit"] })
+// Flags go through to the app (`bun run dev -- --serve`).
+const start = () => Bun.spawn(["bun", "run", "src/index.tsx", ...process.argv.slice(2)], { stdio: ["inherit", "inherit", "inherit"] })
 
 let app = start()
 let restarting = false

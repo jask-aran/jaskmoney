@@ -2,7 +2,11 @@ import { afterEach, expect, test } from "bun:test"
 import { createCore } from "../core/core"
 import { createClientStore } from "../client/store"
 import { wsLink } from "../client/wsLink"
-import { serveCore } from "./serve"
+import { serveCore, serverToken } from "./serve"
+import { testEnv } from "../testing/scoped"
+import { mkdtempSync, statSync } from "node:fs"
+import { tmpdir } from "node:os"
+import { join } from "node:path"
 
 const stops: Array<() => void> = []
 afterEach(() => { for (const stop of stops.splice(0)) stop() })
@@ -86,4 +90,24 @@ test("a removed row leaves the other client's mirror; an unknown command is refu
   const link = wsLink(server.api)
   await expect(link.call("nope" as never, {} as never)).rejects.toThrow("no such command: nope")
   link.close()
+})
+
+test("the token is kept (owner-only) so an address keeps working; JASKMONEY_SERVER_TOKEN wins", () => {
+  const path = join(mkdtempSync(join(tmpdir(), "jaskmoney-token-")), "server.json")
+  const first = serverToken(path)
+  expect(first).toMatch(/^[0-9a-f]{32}$/)
+  expect(serverToken(path)).toBe(first)
+  expect(statSync(path).mode & 0o777).toBe(0o600)
+  testEnv("JASKMONEY_SERVER_TOKEN", "from-the-environment")
+  expect(serverToken(path)).toBe("from-the-environment")
+})
+
+test("a public name in JASKMONEY_PUBLIC_HOST is answered (a tunnel's), its own origin too; others still aren't", async () => {
+  testEnv("JASKMONEY_PUBLIC_HOST", "money.example")
+  const { base } = served()
+  const token = base.searchParams.get("token")!
+  const api = (headers: Record<string, string>) => fetch(`http://127.0.0.1:${base.port}/api?token=${token}`, { headers })
+  expect((await api({ host: "money.example", origin: "https://money.example" })).status).toBe(426)
+  expect((await api({ host: "money.example", origin: "https://evil.example" })).status).toBe(403)
+  expect((await api({ host: "evil.example" })).status).toBe(421)
 })
