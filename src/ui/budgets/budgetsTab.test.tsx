@@ -5,6 +5,7 @@ import { ui } from "../../state/uiStore"
 import { renderApp } from "../../testing/app"
 import { handleKey } from "../../app/keys"
 import { key } from "../../testing/keys"
+import { saveBudget } from "../../db/client"
 
 afterEach(() => setAppClock(null))
 
@@ -30,12 +31,15 @@ test("Budgets tab (3): a chart of the budget at the cursor under where it stands
   const { frame } = await budgetsTab()
   data.setBudget({ kind: "overall" }, 500)
   const f = await frame()
-  expect(f).toContain("Overall spending · 1 Oct – 31 Oct · day 20 of 31")
+  expect(f).toContain("Overall spending · day 20 of 31")
   // $120 − $20 refund; an even pace by day 20 is $323; $5 a day ends at $155.
-  expect(f).toMatch(/\$100 of \$500\s+\$400 left · \$33 a day for 12 days\s+\$223 under pace\s+heading for \$155/)
+  expect(f).toMatch(/\$100 of \$500\s+\$400 left · \$33\/day\s+\$223 under pace\s+heading for \$155/)
   expect(f).toContain("Last cycle $300 by now -67%")
   expect(f).toMatch(/Overall spending\s+[█▌│─]+\s+\$100 of \$500\s+\$400 left · \$33\/day/)
   expect(f).toMatch(/Groceries\s+\$100\s+\$300/)
+  // Each cycle, newest first, against its budget.
+  expect(f).toMatch(/1 Oct – 31 Oct\s+\$100\s+[█─▏│ ]+\s+\$400 under/)
+  expect(f).toMatch(/1 Sep – 30 Sep\s+\$300\s+[█─▏│ ]+\s+\$200 under/)
   // l: cycle by cycle, against the budget.
   handleKey(ui, key("l"), data)
   expect(await frame()).toContain("over in 0 of 1 · avg $300")
@@ -54,7 +58,8 @@ test("allocating down: in Categories, enter sets a category's budget starting fr
   const f = await frame()
   expect(f).toContain("Categories $300 of $500 · $200 unallocated")
   expect(f).toMatch(/Groceries\s+[█▌│─]+\s+\$100 of \$300\s+\$200 left/)
-  expect(f).toContain("Groceries · 1 Oct – 31 Oct")
+  expect(f).toContain("Groceries · day 20 of 31")
+  expect(f).toContain("Each cycle · Groceries")
   // del twice removes the category's budget.
   handleKey(ui, key("delete"), data)
   handleKey(ui, key("delete"), data)
@@ -82,6 +87,17 @@ test("x leaves a category out of the overall budget (its own budget still counts
   expect(f).toMatch(/Groceries\s+\$100\s+\$300\s+\$300/)
   handleKey(ui, key("x"), data)
   expect(data.state.categories.find((c) => c.id === groceries)!.budgetIgnored).toBe(false)
+})
+
+test("each cycle is judged against the budget in force then", async () => {
+  const { frame } = await budgetsTab()
+  // $250 from September; $500 from this cycle.
+  saveBudget(data.getDb()!, { kind: "overall" }, 250, "2026-09-01")
+  data.refresh()
+  data.setBudget({ kind: "overall" }, 500)
+  const f = await frame()
+  expect(f).toMatch(/1 Oct – 31 Oct\s+\$100\s+[█─▏│ ]+\s+\$400 under/)
+  expect(f).toMatch(/1 Sep – 30 Sep\s+\$300\s+[█─▏│ ]+\s+\$50 over/)
 })
 
 test("building up: with category budgets and no overall one, the overall row offers their total", async () => {

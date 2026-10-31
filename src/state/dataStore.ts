@@ -49,6 +49,7 @@ import {
   deleteBudget,
   loadBudgetCycle,
   loadBudgets,
+  loadBudgetHistory,
   saveBudget,
   saveBudgetCycle,
   loadTransactionDetail,
@@ -56,7 +57,7 @@ import {
   type TransactionDetail,
 } from "../db/client"
 import { normaliseSelection, selectedAccounts, type AccountSelection } from "../domain/accountTree"
-import { paydays, type Budget, type BudgetScope, type CycleConfig } from "../domain/budget"
+import { cycleFor, paydays, type BudgetHistoryEntry, type Budget, type BudgetScope, type CycleConfig } from "../domain/budget"
 import { buildImportPreview, commitImportPreview, matchingProfiles } from "../domain/profileImport"
 import { CREDENTIAL_NAMES, credentialEnv, credentialSource, maskSecret, saveCredentials, type CredentialName, NOT_SECRET } from "../ai/credentials"
 import { isOrdinaryFlow, isUncategorised } from "../domain/moneyRules"
@@ -123,6 +124,7 @@ export interface DataState {
   /** Every provider-synced account, including ones whose sync is off. */
   syncAccounts: Account[]
   budgets: Budget[]
+  budgetHistory: BudgetHistoryEntry[]
   budgetCycle: CycleConfig
   categories: Category[]
   tags: Tag[]
@@ -269,6 +271,7 @@ function createDataStore() {
     accounts: [],
     syncAccounts: [],
     budgets: [],
+    budgetHistory: [],
     budgetCycle: { unit: "month", anchor: "calendar", anchorDate: null, payEarly: false },
     categories: [],
     tags: [],
@@ -312,6 +315,7 @@ function createDataStore() {
       accounts,
       syncAccounts,
       budgets: loadBudgets(db),
+      budgetHistory: loadBudgetHistory(db),
       budgetCycle: loadBudgetCycle(db),
       categories,
       tags,
@@ -841,11 +845,11 @@ function createDataStore() {
   }
 
   function setBudget(scope: BudgetScope, amount: number): void {
-    mutate((db) => saveBudget(db, scope, amount))
+    mutate((db) => saveBudget(db, scope, amount, cycleFor(cycle(), appToday()).start))
   }
 
   function removeBudget(id: number): void {
-    mutate((db) => deleteBudget(db, id))
+    mutate((db) => deleteBudget(db, id, cycleFor(cycle(), appToday()).start))
   }
 
   function setBudgetCycle(config: CycleConfig): void {

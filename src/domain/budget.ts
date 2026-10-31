@@ -1,3 +1,4 @@
+import { scopeKey } from "./budgetScopes"
 import { addDays, addMonthsClamped, dayOfWeek, daysBetween, MONTHS } from "./days"
 import { isIncome, isSpending } from "./moneyRules"
 import { accountRole, type Account, type Category, type Transaction } from "./types"
@@ -122,6 +123,28 @@ export type BudgetScope =
   | { kind: "overall" }
   | { kind: "account"; accountId: number }
   | { kind: "category"; categoryId: number }
+
+export interface BudgetHistoryEntry {
+  scope: BudgetScope
+  amount: number | null
+  from: string | null
+}
+
+/** Budget in force at the cycle start. NULL dates apply since always; equal
+ * dates use the later array entry. Before the first date, use the earliest
+ * entry. A scope with no history has no budget. */
+export function budgetIn(history: readonly BudgetHistoryEntry[], scope: BudgetScope, cycleStartISO: string): number | null {
+  const key = scopeKey(scope)
+  let earliest: BudgetHistoryEntry | undefined
+  let current: BudgetHistoryEntry | undefined
+  for (const entry of history) {
+    if (scopeKey(entry.scope) !== key) continue
+    if (!earliest || (earliest.from !== null && (entry.from === null || entry.from <= earliest.from))) earliest = entry
+    if ((entry.from === null || entry.from <= cycleStartISO)
+      && (!current || current.from === null || (entry.from !== null && entry.from >= current.from))) current = entry
+  }
+  return (current ?? earliest)?.amount ?? null
+}
 
 export interface Budget {
   id: number

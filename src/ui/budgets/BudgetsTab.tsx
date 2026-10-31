@@ -1,10 +1,11 @@
 import { Index, Show, createMemo } from "solid-js"
 import { useTerminalDimensions } from "@opentui/solid"
-import { budgetCounts, budgetIgnoredIds, budgetProgress, cycleFor, cycleSpending, pastCycles, type Budget, type BudgetScope, type Cycle } from "../../domain/budget"
+import { budgetCounts, budgetIgnoredIds, budgetIn, budgetProgress, cycleFor, cycleSpending, pastCycles, type Budget, type BudgetScope, type Cycle } from "../../domain/budget"
 import { allocation, budgetCategoryLines, budgetListRows, type BudgetLine } from "../../domain/budgetLines"
 import { budgetLabel } from "../../domain/budgetScopes"
 import { dailySpendSeries, formatWholeMoney } from "../../domain/dashboard"
-import { MONTHS, appToday, daysBetween } from "../../domain/days"
+import { appToday, daysBetween } from "../../domain/days"
+import { historyCovers } from "../../domain/position"
 import type { Transaction } from "../../domain/types"
 import type { SectionId } from "../../state/uiStore"
 import { ui } from "../../state/uiStore"
@@ -19,16 +20,10 @@ import { S } from "../primitives/S"
 import { fitSpans, type Span } from "../primitives/spans"
 import { AXIS_GUESS, ChartBody, axisWidth, type ChartModel } from "../charts/ChartBody"
 import { INKS } from "../overview/periodCharts"
-import { cycleProjection, cyclesChart, thisCycleChart } from "./budgetCharts"
+import { cycleLines, cycleLinesLegend, cycleProjection, cyclesChart, thisCycleChart, type CycleSpent } from "./budgetCharts"
 
-/** Cycles before this one the chart can show, at most. */
-const HISTORY = 12
-
-/** "14 Sep – 13 Oct". */
-function rangeLabel(cycle: Cycle): string {
-  const day = (iso: string) => `${Number(iso.slice(8, 10))} ${MONTHS[Number(iso.slice(5, 7)) - 1]}`
-  return `${day(cycle.start)} – ${day(cycle.end)}`
-}
+/** Cycles before this one the chart and the cycle lines can show, at most. */
+const HISTORY = 36
 
 /**
  * A bar in `width` cells for `fill` (0–1 of the width), coloured by how
@@ -96,31 +91,41 @@ export function BudgetsTab(props: { focused: SectionId }) {
   const firstData = live(() => data.transactions().reduce((first, t) => (t.dateISO < first ? t.dateISO : first), today()))
 
   // What the chart follows: the row at the focused card's cursor.
-  const subject = (): { title: string; counts: (row: Transaction) => boolean; amount: number | null } => {
+  const subject = (): { title: string; scope: BudgetScope | null; counts: (row: Transaction) => boolean; amount: number | null } => {
     const of = (scope: BudgetScope) => budgetCounts(scope, data.state.categories)
     if (props.focused === "bud.categories") {
       const line = lines()[categoryCursor()]
       if (line) {
         const id = line.categoryId
         return id === null
-          ? { title: "Uncategorised", counts: (row) => row.categoryId === null, amount: null }
-          : { title: line.name, counts: of({ kind: "category", categoryId: id }), amount: line.budget?.amount ?? null }
+          ? { title: "Uncategorised", scope: null, counts: (row) => row.categoryId === null, amount: null }
+          : { title: line.name, scope: { kind: "category", categoryId: id }, counts: of({ kind: "category", categoryId: id }), amount: line.budget?.amount ?? null }
       }
     }
     const row = rows()[budgetCursor()]!
-    return row.budget ? { title: label(row.budget), counts: of(row.budget.scope), amount: row.budget.amount } : { title: "Overall spending", counts: of({ kind: "overall" }), amount: null }
+    return row.budget ? { title: label(row.budget), scope: row.budget.scope, counts: of(row.budget.scope), amount: row.budget.amount } : { title: "Overall spending", scope: { kind: "overall" }, counts: of({ kind: "overall" }), amount: null }
   }
   const spending = (c: Cycle, through: string) => cycleSpending(c, through, data.state.accounts, data.transactions()).filter(subject().counts)
   const daily = (c: Cycle, through: string) => ({ cycle: c, daily: dailySpendSeries(spending(c, through), c.start, c.end).values })
-  // Cycles with any transactions at all: a gap in the history isn't a
+  // Cycles the history covers as well as this one (historyCovers, as the
+  // Overview compares periods): a gap, or a few stray old rows, isn't a
   // cycle of spending nothing.
   const past = live(() => {
-    const dates = data.transactions().map((t) => t.dateISO)
-    return pastCycles(config(), today(), HISTORY).filter((c) => c.end >= firstData() && dates.some((d) => d >= c.start && d <= c.end))
+    const now = { start: cycle().start, end: today() }
+    return pastCycles(config(), today(), HISTORY).filter((c) => c.end >= firstData() && historyCovers(data.transactions(), c, now))
   })
   const nowDays = live(() => daily(cycle(), today()))
   const spent = () => nowDays().daily.reduce((a, b) => a + b, 0)
-  const history = live(() => past().map((c) => ({ cycle: c, spent: daily(c, c.end).daily.reduce((a, b) => a + b, 0) })).reverse())
+  // Every cycle newest first, this one too, each with the budget in force
+  // then (this one's is today's).
+  const cycles = live((): CycleSpent[] => {
+    const scope = subject().scope
+    return [
+      { cycle: cycle(), spent: spent(), budget: subject().amount },
+      ...past().map((c) => ({ cycle: c, spent: daily(c, c.end).daily.reduce((a, b) => a + b, 0), budget: scope ? budgetIn(data.state.budgetHistory, scope, c.start) : null })),
+    ]
+  })
+  const history = () => cycles().slice(1)
 
   // Sizes: tab bar + gap (2) and status + footer (2) off the height. Wide,
   // the chart and the budgets share the left and the categories run down
@@ -141,8 +146,10 @@ export function BudgetsTab(props: { focused: SectionId }) {
     return spans
   }
   const budgetsHeight = () => Math.min(rows().length, Math.max(1, Math.floor(body() * 0.3))) + 2 + (summary().length ? 1 : 0)
-  const chartHeight = () => (wide() ? body() - budgetsHeight() : Math.max(12, Math.floor(body() * 0.45)))
-  const categoriesHeight = () => (wide() ? body() : Math.max(5, body() - chartHeight() - budgetsHeight()))
+  // The chart and the cycle lines share what the budgets leave: half each.
+  const chartHeight = () => (wide() ? Math.ceil((body() - budgetsHeight()) / 2) : Math.max(10, Math.floor(body() * 0.3)))
+  const linesHeight = () => (wide() ? body() - budgetsHeight() - chartHeight() : Math.max(5, Math.floor(body() * 0.2)))
+  const categoriesHeight = () => (wide() ? body() : Math.max(5, body() - chartHeight() - linesHeight() - budgetsHeight()))
   const rowWidth = (width: number) => width - 5
 
   // The chart, built once with a guessed axis width, again if the labels
@@ -154,7 +161,7 @@ export function BudgetsTab(props: { focused: SectionId }) {
     const height = Math.max(3, chartHeight() - (baseline() ? 5 : 4))
     const build = (axis: number): ChartModel => {
       const width = Math.max(1, mainWidth() - 4 - axis)
-      if (ui.state.budgetChart === 1) return cyclesChart(history().slice(-Math.max(1, Math.floor(width / 5) - 1)), { cycle: cycle(), spent: spent() }, subject().amount, width, height)
+      if (ui.state.budgetChart === 1) return cyclesChart(cycles().slice(0, Math.max(2, Math.floor(width / 5))).reverse(), width, height)
       const last = past()[0]
       return thisCycleChart(nowDays(), last ? daily(last, last.end) : null, subject().amount, width, height, today(), data.state.weekStart)
     }
@@ -182,7 +189,7 @@ export function BudgetsTab(props: { focused: SectionId }) {
       strong(formatWholeMoney(now), ink.strong),
       { text: ` of ${formatWholeMoney(s.amount)}   `, fg: ink.label },
       left < 0 ? strong(`${formatWholeMoney(-left)} over`, tone.bad) : strong(`${formatWholeMoney(left)} left`, tone.good),
-      ...(left > 0 ? [{ text: ` · ${formatWholeMoney(left / daysLeft)} a day for ${daysLeft} days`, fg: ink.label }] : []),
+      ...(left > 0 ? [{ text: ` · ${formatWholeMoney(left / daysLeft)}/day`, fg: ink.label }] : []),
       { text: `   ${Math.abs(vsPace) < 1 ? "on pace" : `${formatWholeMoney(Math.abs(vsPace))} ${vsPace > 0 ? "ahead of" : "under"} pace`}`, fg: vsPace > 0 ? tone.caution : ink.note },
       ...(projected ? [{ text: "   heading for ", fg: ink.label }, { text: formatWholeMoney(projected), fg: projected > s.amount ? tone.bad : tone.good }] : []),
     ]
@@ -234,7 +241,7 @@ export function BudgetsTab(props: { focused: SectionId }) {
   const Chart = () => (
     <SectionCard
       title={subject().title}
-      titleSuffix={`· ${rangeLabel(cycle())} · day ${elapsed()} of ${cycle().days}`}
+      titleSuffix={`· day ${elapsed()} of ${cycle().days}`}
       titleSuffixColor={tone.scope}
       titleRight={viewPicker()}
       bottomSpans={model().legend}
@@ -242,9 +249,19 @@ export function BudgetsTab(props: { focused: SectionId }) {
       height={chartHeight()}
     >
       <text wrapMode="none">
-        <Index each={headline()}>{(span) => <S fg={span().fg} bold={span().bold}>{span().text}</S>}</Index>
+        <Index each={fitSpans(headline(), mainWidth() - 4)}>{(span) => <S fg={span().fg} bold={span().bold}>{span().text}</S>}</Index>
       </text>
       <ChartBody model={model()} inks={INKS} baseline={baseline()} />
+    </SectionCard>
+  )
+  const Lines = () => (
+    <SectionCard title="Each cycle" titleSuffix={`· ${subject().title}`} titleSuffixColor={ink.label} bottomSpans={cycleLinesLegend(cycles())} width={mainWidth()} height={linesHeight()}>
+      <Index each={cycleLines(cycles().slice(0, Math.max(1, linesHeight() - 2)), rowWidth(mainWidth()), pace(), today())}>{(spans) => (
+        <text wrapMode="none">
+          <S fg={ink.note}>{" "}</S>
+          <Index each={spans()}>{(span) => <S fg={span().fg} bold={span().bold}>{span().text}</S>}</Index>
+        </text>
+      )}</Index>
     </SectionCard>
   )
   const Budgets = () => (
@@ -283,9 +300,10 @@ export function BudgetsTab(props: { focused: SectionId }) {
 
   return (
     <box width="100%" height="100%" flexDirection={wide() ? "row" : "column"} gap={wide() ? 1 : 0} backgroundColor={theme.canvas}>
-      <Show when={wide()} fallback={<><Chart /><Budgets /><Categories /></>}>
+      <Show when={wide()} fallback={<><Chart /><Lines /><Budgets /><Categories /></>}>
         <box flexDirection="column" width={mainWidth()} height={body()}>
           <Chart />
+          <Lines />
           <Budgets />
         </box>
         <Categories />

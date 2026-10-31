@@ -6,7 +6,7 @@
  * version fallback with an additive migration registry. v7 was the initial
  * partial OpenTUI port. */
 
-export const SCHEMA_VERSION = 33
+export const SCHEMA_VERSION = 34
 
 /** Columns shared by the fresh schema and the v9 migration. Rows imported from
  * CSV keep source = 'csv' and NULL external fields. */
@@ -160,6 +160,20 @@ export const SUGGESTION_DISMISSED_COLUMN = "dismissed INTEGER NOT NULL DEFAULT 0
  * emails, purchase_lookups): one made without that is asked again once the
  * row's purchase is known (app/purchases). */
 export const SUGGESTION_KNEW_BOUGHT_COLUMN = "knew_bought INTEGER NOT NULL DEFAULT 0"
+/** v34: each budget's amount from a date (NULL: always; NULL amount: none from then), so past cycles are judged
+ * against the budget in force then. */
+export const BUDGET_HISTORY_SQL = `
+CREATE TABLE IF NOT EXISTS budget_history (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  scope_kind TEXT NOT NULL,
+  target_id INTEGER,
+  amount REAL,
+  from_date TEXT
+);
+CREATE UNIQUE INDEX IF NOT EXISTS idx_budget_history_scope_from
+  ON budget_history(scope_kind, COALESCE(target_id, 0), COALESCE(from_date, ''));
+`
+
 export const TAG_DISMISSALS_SQL = `
 CREATE TABLE IF NOT EXISTS tag_dismissals (
   tag_name       TEXT NOT NULL,
@@ -397,6 +411,7 @@ ${MERCHANT_BREADTH_SQL}
 ${MERCHANT_NOTES_SQL}
 ${TAG_CATEGORIES_SQL}
 ${PURCHASE_LOOKUPS_SQL}
+${BUDGET_HISTORY_SQL}
 ALTER TABLE category_suggestions ADD COLUMN ${SUGGESTION_KNEW_BOUGHT_COLUMN};
 ALTER TABLE tags ADD COLUMN ${TAG_ABOUT_COLUMN};
 `

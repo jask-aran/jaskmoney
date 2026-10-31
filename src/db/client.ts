@@ -8,6 +8,7 @@ import {
   ACCOUNT_SYNC_COLUMNS_LIST,
   BUDGET_PAY_EARLY_COLUMN,
   BUDGET_SQL,
+  BUDGET_HISTORY_SQL,
   CATEGORY_SUGGESTIONS_SQL,
   CATEGORY_SUGGESTIONS_V19_SQL,
   SUGGESTION_RANKED_COLUMN,
@@ -43,7 +44,7 @@ import {
 import type { Account, BoughtItem, Category, CategorySuggestion, ImportRecord, Rule, Tag, Transaction } from "../domain/types"
 import { assignTypeCategories } from "../up/categories"
 import { categoryTerm } from "../domain/drill"
-import type { Budget, BudgetScope, CycleConfig } from "../domain/budget"
+import type { Budget, BudgetHistoryEntry, BudgetScope, CycleConfig } from "../domain/budget"
 
 export type Db = Database
 
@@ -136,6 +137,11 @@ const MIGRATIONS: Record<number, (db: Db) => void> = {
     if (!columns.includes("knew_bought")) db.exec(`ALTER TABLE category_suggestions ADD COLUMN ${SUGGESTION_KNEW_BOUGHT_COLUMN}`)
   },
   33: (db) => db.exec(`ALTER TABLE categories ADD COLUMN ${CATEGORY_BUDGET_IGNORED_COLUMN}`),
+  34: (db) => {
+    db.exec(BUDGET_HISTORY_SQL)
+    db.exec(`INSERT INTO budget_history (scope_kind, target_id, amount, from_date)
+      SELECT scope_kind, target_id, amount, NULL FROM budgets`)
+  },
   30: (db) => {
     db.exec(TAG_CATEGORIES_SQL)
     const columns = db.query<{ name: string }, []>("PRAGMA table_info(tags)").all().map((c) => c.name)
@@ -981,10 +987,25 @@ export function loadBudgets(db: Db): Budget[] {
   }))
 }
 
+export function loadBudgetHistory(db: Db): BudgetHistoryEntry[] {
+  const rows = db.query<{
+    kind: BudgetScope["kind"]; targetId: number | null; amount: number | null; from: string | null
+  }, []>(`SELECT scope_kind AS kind, target_id AS targetId, amount, from_date AS "from"
+    FROM budget_history
+    ORDER BY CASE scope_kind WHEN 'overall' THEN 0 WHEN 'account' THEN 1 ELSE 2 END, target_id, from_date`).all()
+  return rows.map((r) => ({
+    scope: r.kind === "overall" ? { kind: "overall" } : r.kind === "account" ? { kind: "account", accountId: r.targetId! } : { kind: "category", categoryId: r.targetId! },
+    amount: r.amount,
+    from: r.from,
+  }))
+}
+
 /** Insert or replace the budget for a scope; returns its id. */
-export function saveBudget(db: Db, scope: BudgetScope, amount: number): number {
+export function saveBudget(db: Db, scope: BudgetScope, amount: number, from: string | null = null): number {
   if (!Number.isFinite(amount) || amount < 0) throw new Error("budget amount must be a positive number")
   const target = scope.kind === "overall" ? null : scope.kind === "account" ? scope.accountId : scope.categoryId
+  db.query(`INSERT INTO budget_history (scope_kind, target_id, amount, from_date) VALUES (?, ?, ?, ?)
+    ON CONFLICT DO UPDATE SET amount = excluded.amount`).run(scope.kind, target, amount, from)
   const existing = db.query(`SELECT id FROM budgets WHERE scope_kind = ? AND COALESCE(target_id, 0) = COALESCE(?, 0)`).get(scope.kind, target) as { id: number } | null
   if (existing) {
     db.query(`UPDATE budgets SET amount = ? WHERE id = ?`).run(amount, existing.id)
@@ -994,7 +1015,12 @@ export function saveBudget(db: Db, scope: BudgetScope, amount: number): number {
   return Number(db.query(`INSERT INTO budgets (scope_kind, target_id, amount, sort_order) VALUES (?, ?, ?, ?)`).run(scope.kind, target, amount, order).lastInsertRowid)
 }
 
-export function deleteBudget(db: Db, id: number): void {
+export function deleteBudget(db: Db, id: number, from?: string): void {
+  if (from !== undefined) {
+    db.query(`INSERT INTO budget_history (scope_kind, target_id, amount, from_date)
+      SELECT scope_kind, target_id, NULL, ? FROM budgets WHERE id = ?
+      ON CONFLICT DO UPDATE SET amount = excluded.amount`).run(from, id)
+  }
   db.query(`DELETE FROM budgets WHERE id = ?`).run(id)
 }
 
