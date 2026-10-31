@@ -52,8 +52,8 @@
 .jm-drawer { position: fixed; top: var(--space-md); right: var(--space-md); bottom: var(--space-md); width: min(28rem, calc(100vw - 2 * var(--space-md)));
   z-index: 30; display: flex; flex-direction: column; border-radius: var(--radius-surface); overflow: hidden; }
 .jm-drawer-head { display: flex; align-items: flex-start; gap: var(--space-sm); padding: var(--space-lg) var(--space-lg) var(--space-sm); }
-.jm-drawer-title { font-size: var(--text-heading, 1.05rem); font-weight: var(--weight-strong); color: var(--ink-strong); overflow-wrap: anywhere; }
-.jm-drawer-amount { font-size: var(--text-heading, 1.05rem); font-weight: var(--weight-strong); }
+.jm-drawer-title { font-size: var(--text-body); font-weight: var(--weight-strong); color: var(--ink-strong); overflow-wrap: anywhere; }
+.jm-drawer-amount { font-size: var(--text-body); font-weight: var(--weight-strong); }
 .jm-drawer-body { overflow: auto; padding: var(--space-xs) var(--space-lg) var(--space-xl); display: grid; gap: var(--space-xl); align-content: start; }
 .jm-drawer-body > section { display: grid; gap: var(--space-xs); }
 .jm-drawer-cat { justify-content: space-between; width: 100%; }

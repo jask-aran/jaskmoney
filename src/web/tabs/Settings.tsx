@@ -1,10 +1,11 @@
 /**
- * Settings: the TUI's panes in a browser. Wide, Taxonomy has the left
- * column (its lists scroll in place) and the rest stack on the right:
- * Up Bank, AI models, Rules & Filters, Database; narrower, one column in
- * that order, Taxonomy showing one list at a time.
+ * Settings: the TUI's panes on components v2. Wide, the categories and
+ * tags take the left side and the settings the right, each scrolling on
+ * its own; narrower, one column in the TUI's order (Taxonomy, Up Bank, AI
+ * models, Rules and filters, Database), a phone showing one list at a time.
  */
 import "./settings.css"
+import { Page, PageHeader } from "../kit"
 import { Taxonomy } from "./settings/Taxonomy"
 import { AiModels, Database, RulesFilters, UpBank } from "./settings/Panes"
 import { useDisarm } from "./settings/confirm"
@@ -12,14 +13,17 @@ import { useDisarm } from "./settings/confirm"
 export function Settings() {
   useDisarm()
   return (
-    <div class="pane st-page">
-      <Taxonomy />
-      <div class="st-side">
-        <UpBank />
-        <AiModels />
-        <RulesFilters />
-        <Database />
-      </div>
-    </div>
+    <>
+      <PageHeader title="Settings" />
+      <Page class="st-page">
+        <Taxonomy />
+        <div class="st-side">
+          <UpBank />
+          <AiModels />
+          <RulesFilters />
+          <Database />
+        </div>
+      </Page>
+    </>
   )
 }

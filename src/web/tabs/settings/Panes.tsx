@@ -1,19 +1,34 @@
 /**
  * Settings' other panes, as the TUI's: Up Bank (the token, sync, which
  * accounts sync), AI models (read-only here: keys and sign-ins are set in
- * the TUI), Rules & Filters, and the Database. The token and keys are never
- * shown or sent: the core says only whether one is set, and its mask.
+ * the TUI), Rules and Saved filters, and the Database. The token and keys
+ * are never shown or sent: the core says only whether one is set, and its
+ * mask.
  */
-import { For, Show, createMemo, createSignal } from "solid-js"
+import { For, Show, createMemo } from "solid-js"
 import { syncAgo } from "../../../domain/days"
 import { parseFilterStrict } from "../../../domain/filter"
 import { accountRole, type Account, type Rule, type SavedFilter } from "../../../domain/types"
 import { data, now, run, say, setTab } from "../../store"
-import { AI_NAMES, MODEL_ROWS, USES, connection, useModel, type ModelRow } from "./ai"
+import {
+  Button, Icons, SettingColumn, SettingColumns, SettingDetails, SettingGroup, SettingLine, SettingNote, SettingValue, StatusDot, Switch,
+} from "../../v2"
+import { AI_NAMES, MODEL_ROWS, USES, connection, useModel } from "./ai"
 import { confirmTwice, isArmed } from "./confirm"
-import { Group, Line, Switch } from "./lines"
 
 const count = (n: number, one: string, many = `${one}s`) => `${n.toLocaleString("en-AU")} ${n === 1 ? one : many}`
+
+/** Set or not: a live dot beside how, or "not set". */
+function Connected(props: { how: string | null | undefined; unset: string }) {
+  return (
+    <SettingValue>
+      <span class="st-conn">
+        <StatusDot label={props.how ? "connected" : "not connected"} tone={props.how ? "success" : "muted"} />
+        <span>{props.how ?? props.unset}</span>
+      </span>
+    </SettingValue>
+  )
+}
 
 /** Up Bank: the token (set in the TUI), sync, and which accounts sync. */
 export function UpBank() {
@@ -42,52 +57,63 @@ export function UpBank() {
     void run(data.setAccountSync(account.id, true), () => `Sync on for ${account.name} · Sync now brings its transactions back`)
   }
   return (
-    <Group title="Up Bank" note="Switching an account off removes its transactions here (press twice); on brings them back at the next sync.">
-      <Line field label="Token" title={token()?.long} value={<span classList={{ good: !!token(), faint: !token() }}>{token()?.short ?? "not set · add it in the TUI"}</span>} />
-      <Line field label="Sync" value={token() ? synced() : "needs the token"}
-        control={<button type="button" class="btn small ghost" disabled={!canSync()} onClick={sync}
-          title={data.state.demo ? "Sync is off in demo mode" : data.state.upToken ? "Sync with Up now" : "The core has no Up token"}>Sync now</button>} />
-      <Show when={data.state.dbInfo?.upLastError}>{(error) => <Line field label="Last error" value={<span class="bad">{error()}</span>} wrap />}</Show>
-      <Line field label="Accounts" value={linked()} wrap />
+    <SettingGroup title="Up Bank">
+      <SettingLine plain label="Token" title={token()?.long}><Connected how={token()?.short} unset="not set · add it in the TUI" /></SettingLine>
+      <SettingLine plain label="Sync" state={token() ? synced() : "needs the token"}>
+        <Button variant="ghost" size="sm" disabled={!canSync()} onClick={sync}
+          title={data.state.demo ? "Sync is off in demo mode" : data.state.upToken ? "Sync with Up now" : "The core has no Up token"}><Icons.Refresh />Sync now</Button>
+      </SettingLine>
+      <Show when={data.state.dbInfo?.upLastError}>{(error) => <SettingNote tone="error">{error()}</SettingNote>}</Show>
+      <SettingLine plain label="Accounts" title={linked()}><SettingValue>{linked()}</SettingValue></SettingLine>
       <For each={accounts()}>{(account) => {
         const key = `desync:${account.id}`
         return (
-          <Line indent muted={!account.syncEnabled} label={account.name} meta={accountRole(account) === "saver" ? "saver" : "spending"}
-            value={isArmed(key) ? <span class="bad">press again: removes its transactions</span> : undefined}
-            control={<Switch on={account.syncEnabled} danger={isArmed(key)} arm={key} label={account.syncEnabled ? `Stop syncing ${account.name}` : `Sync ${account.name}`} onClick={() => flip(account)} />} />
+          <SettingLine plain label={<span class="st-account" data-off={account.syncEnabled ? undefined : ""}>{account.name}</span>}
+            state={isArmed(key) ? <span class="st-armed">press again: removes its transactions</span> : accountRole(account) === "saver" ? "saver" : "spending"}>
+            <span data-arm={key} class="st-arm">
+              <Switch label={account.syncEnabled ? `Stop syncing ${account.name}` : `Sync ${account.name}`} checked={account.syncEnabled} onChange={() => flip(account)} />
+            </span>
+          </SettingLine>
         )
       }}</For>
-    </Group>
+      <SettingNote>Switching an account off removes its transactions here (press twice); on brings them back at the next sync.</SettingNote>
+    </SettingGroup>
   )
 }
 
 /** AI models: how each is connected, and the model doing each use. Read-only. */
 export function AiModels() {
-  const [open, setOpen] = createSignal<ModelRow | null>(null)
   return (
-    <Group title="AI models" note="Keys and sign-ins are set in the TUI (Settings › AI models).">
-      <h3 class="st-sub">Models</h3>
-      <For each={MODEL_ROWS}>{(row) => {
-        const link = () => connection(row, data.state)
-        return (
-          <>
-            <Line onClick={() => setOpen(open() === row ? null : row)} title={`${AI_NAMES[row].name}: ${link()?.long ?? "not set"}`}
-              lead={<span classList={{ good: !!link(), faint: !link() }}>{link() ? "●" : "○"}</span>}
-              label={AI_NAMES[row].name} meta={AI_NAMES[row].by}
-              value={<span classList={{ label: !!link(), note: !link() }}>{link()?.short ?? "not set"}</span>} />
-            <Show when={open() === row}>
-              <Line indent field label="Connection" value={link()?.long ?? "not set"} wrap />
-              <Line indent field label="Used for" value={AI_NAMES[row].uses} wrap />
-            </Show>
-          </>
-        )
-      }}</For>
-      <h3 class="st-sub">Uses</h3>
-      <For each={USES}>{(use) => {
-        const model = () => useModel(use.id, data.state)
-        return <Line label={use.name} value={<span classList={{ ai: model().ready, faint: !model().ready }}>{model().text}</span>} />
-      }}</For>
-    </Group>
+    <SettingGroup title="AI models">
+      <SettingColumns>
+        <SettingColumn title="Models">
+          <For each={MODEL_ROWS}>{(row) => {
+            const link = () => connection(row, data.state)
+            return (
+              <SettingLine plain label={AI_NAMES[row].name} state={AI_NAMES[row].by} title={`${AI_NAMES[row].name}: ${link()?.long ?? "not set"}`}>
+                <Connected how={link()?.short} unset="not set" />
+              </SettingLine>
+            )
+          }}</For>
+        </SettingColumn>
+        <SettingColumn title="Uses">
+          <For each={USES}>{(use) => {
+            const model = () => useModel(use.id, data.state)
+            return (
+              <SettingLine plain label={use.name} title={model().text}>
+                <SettingValue><span class="st-model" data-ready={model().ready ? "" : undefined}>{model().text}</span></SettingValue>
+              </SettingLine>
+            )
+          }}</For>
+        </SettingColumn>
+      </SettingColumns>
+      <SettingDetails summary="How each is connected">
+        <dl class="st-facts">
+          <For each={MODEL_ROWS}>{(row) => <><dt>{AI_NAMES[row].name}</dt><dd>{connection(row, data.state)?.long ?? "not set"} · {AI_NAMES[row].uses}</dd></>}</For>
+        </dl>
+      </SettingDetails>
+      <SettingNote>Keys and sign-ins are set in the TUI (Settings › AI models).</SettingNote>
+    </SettingGroup>
   )
 }
 
@@ -113,24 +139,22 @@ function RuleLine(props: { rule: Rule; index: number; last: number }) {
   const move = (to: number) => void run(data.reorderSettingsRule(rule().id, to))
   const remove = () => confirmTwice(key(), `delete ${rule().name}`, () => void run(data.deleteSettingsRule(rule().id), () => `Deleted ${rule().name}`))
   return (
-    <Line stack muted={!on()} title={`${rule().name}: ${sets()} · ${matches()}${filter() ? `\n${filter()!.expr}` : ""}`}
-      lead={<span class="mono note">{props.index + 1}</span>}
-      label={`${rule().name}${on() ? "" : " (off)"}`}
-      meta={sets()}
-      value={
-        <button type="button" class="st-link mono" classList={{ faint: !on(), bad: on() && !(filter() && healthy()) }}
-          disabled={!filter()} title={filter() ? "Show its rows in Transactions" : undefined} onClick={() => filter() && showFilter(filter()!)}>{matches()}</button>
-      }
-      control={
-        <>
-          <Switch on={on()} label={on() ? `Switch ${rule().name} off` : `Switch ${rule().name} on`} onClick={toggle} />
-          <button type="button" class="btn small ghost" aria-label="Move up" title="Move up (the first match wins)" disabled={props.index === 0} onClick={() => move(props.index - 1)}>↑</button>
-          <button type="button" class="btn small ghost" aria-label="Move down" title="Move down" disabled={props.index === props.last} onClick={() => move(props.index + 1)}>↓</button>
-          <button type="button" class="btn small ghost st-delete" classList={{ armed: isArmed(key()) }} data-arm={key()} aria-label={`Delete ${rule().name}`} title={`Delete ${rule().name}`} onClick={remove}>
-            {isArmed(key()) ? "Press again to delete" : "✕"}
-          </button>
-        </>
-      } />
+    <SettingLine plain title={`${rule().name}: ${sets()} · ${matches()}${filter() ? `\n${filter()!.expr}` : ""}`}
+      label={<span class="st-rule" data-off={on() ? undefined : ""}><span class="st-num">{props.index + 1}</span>{rule().name}{on() ? "" : " (off)"}</span>}
+      state={sets()}>
+      <Button variant="ghost" size="sm" class="st-filter-link" data-broken={on() && !(filter() && healthy()) ? "" : undefined} disabled={!filter()}
+        title={filter() ? "Show its rows in Transactions" : undefined} onClick={() => filter() && showFilter(filter()!)}>{matches()}</Button>
+      <Switch label={on() ? `Switch ${rule().name} off` : `Switch ${rule().name} on`} checked={on()} onChange={toggle} />
+      <Button variant="ghost" size="icon-xs" aria-label="Move up" title="Move up (the first match wins)" disabled={props.index === 0} onClick={() => move(props.index - 1)}><Icons.ArrowUp /></Button>
+      <Button variant="ghost" size="icon-xs" aria-label="Move down" title="Move down" disabled={props.index === props.last} onClick={() => move(props.index + 1)}><Icons.ArrowDown /></Button>
+      <span data-arm={key()} class="st-arm">
+        <Show when={isArmed(key())} fallback={
+          <Button variant="ghost" size="icon-xs" aria-label={`Delete ${rule().name}`} title={`Delete ${rule().name}`} onClick={remove}><Icons.Delete /></Button>
+        }>
+          <Button variant="destructive" size="sm" onClick={remove}>Press again</Button>
+        </Show>
+      </span>
+    </SettingLine>
   )
 }
 
@@ -140,15 +164,17 @@ export function RulesFilters() {
   const filters = () => data.state.savedFilters
   return (
     <>
-      <Group title="Rules" count={`${rules().length}${rules().length > 1 ? " · first match wins" : ""}`}>
-        <For each={rules()} fallback={<div class="st-none">No rules yet.</div>}>{(rule, i) => <RuleLine rule={rule} index={i()} last={rules().length - 1} />}</For>
-      </Group>
-      <Group title="Saved filters" count={filters().length}>
-        <For each={filters()} fallback={<div class="st-none">No saved filters yet.</div>}>{(filter) => (
-          <Line stack onClick={() => showFilter(filter)} title={`Show in Transactions: ${filter.expr}`}
-            label={filter.name} meta={<span class="mono">filter:{filter.id}</span>} value={<span class="mono">{filter.expr}</span>} />
+      <SettingGroup title={`Rules ${rules().length}${rules().length > 1 ? " · first match wins" : ""}`}>
+        <For each={rules()} fallback={<SettingNote>No rules yet.</SettingNote>}>{(rule, i) => <RuleLine rule={rule} index={i()} last={rules().length - 1} />}</For>
+      </SettingGroup>
+      <SettingGroup title={`Saved filters ${filters().length}`}>
+        <For each={filters()} fallback={<SettingNote>No saved filters yet.</SettingNote>}>{(filter) => (
+          <SettingLine plain label={filter.name} state={`filter:${filter.id}`} title={filter.expr}>
+            <SettingValue mono>{filter.expr}</SettingValue>
+            <Button variant="ghost" size="sm" title="Show its rows in Transactions" onClick={() => showFilter(filter)}>Show</Button>
+          </SettingLine>
         )}</For>
-      </Group>
+      </SettingGroup>
     </>
   )
 }
@@ -163,11 +189,12 @@ export function Database() {
     count(info()?.categoryCount ?? 0, "category", "categories"), count(info()?.tagCount ?? 0, "tag"), count(info()?.ruleCount ?? 0, "rule"),
   ].join(" · ")
   return (
-    <Group title="Database" note="Importing, demo mode, clearing and resetting are in the TUI.">
-      <Line field label="Path" value={<span class="mono">{where()}</span>} stack />
-      <Line field label="Holds" value={holds()} stack />
-      <Line field label="Weeks start on" value={data.state.weekStart === "sunday" ? "Sunday" : "Monday"} />
-      <Line field label="Demo mode" value={<span classList={{ caution: data.state.demo }}>{data.state.demo ? "on · from your spending, scrambled" : "off"}</span>} />
-    </Group>
+    <SettingGroup title="Database">
+      <SettingLine plain label="Path" title={where()}><SettingValue mono><span class="st-wrap">{where()}</span></SettingValue></SettingLine>
+      <SettingLine plain label="Holds" title={holds()}><SettingValue><span class="st-wrap">{holds()}</span></SettingValue></SettingLine>
+      <SettingLine plain label="Weeks start on"><SettingValue>{data.state.weekStart === "sunday" ? "Sunday" : "Monday"}</SettingValue></SettingLine>
+      <SettingLine plain label="Demo mode"><SettingValue>{data.state.demo ? "on · from your spending, scrambled" : "off"}</SettingValue></SettingLine>
+      <SettingNote>Importing, demo mode, clearing and resetting are in the TUI.</SettingNote>
+    </SettingGroup>
   )
 }

@@ -49,3 +49,7 @@
   /* State: a runtime dot, a warning (the TUI's good and caution). */
   --change-added: #a6e3a1; --change-modified: #f9e2af; --change-removed: var(--destructive);
 }
+
+/* Frost over the TUI's dark: the base colour, a little see-through, so a panel reads as a surface over the page,
+   not a grey slab (Conduit's white fill is for its lighter backgrounds). */
+:root { --frost-fill: color-mix(in oklch, #1e1e2e 84%, transparent); --frost-stroke: #ffffff1f; }

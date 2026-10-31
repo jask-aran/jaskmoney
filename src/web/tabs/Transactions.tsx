@@ -402,7 +402,7 @@ export function Transactions() {
         </>} />
       <div class="jm-txpage">
         <SearchBar ref={(el) => (search = el)} />
-        <div class="jm-toolbar">
+        <Show when={!merchants()}><div class="jm-toolbar">
           <span class="small label">
             {rows().length.toLocaleString("en-AU")} row{rows().length === 1 ? "" : "s"}
             <Show when={!review()}>
@@ -422,7 +422,7 @@ export function Transactions() {
             <Button size="sm" onClick={() => accept(sure().map((t) => t.id))}>Accept {sure().length} ≥{ACCEPT_ALL_AT * 100}%</Button>
           </Show>
           <Button variant="ghost" size="sm" aria-pressed={picking()} onClick={() => { setPicking(!picking()); if (picking()) say("Select: a press chooses a row") }}>{picking() ? "Done" : "Select"}</Button>
-        </div>
+        </div></Show>
         <Show when={!merchants()} fallback={<div class="jm-merchants"><Merchants onShowRows={() => setMerchants(false)} /></div>}>
           <div class="jm-table" data-accounts={manyAccounts() ? "" : undefined} data-picking={picking() ? "" : undefined}>
             <div class="jm-thead">

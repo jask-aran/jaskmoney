@@ -1,4 +1,4 @@
-.merch-view { display: flex; flex-direction: column; flex: 1 1 auto; min-height: 0; gap: var(--space-sm); }
+.merch-view { font-size: var(--text-row); display: flex; flex-direction: column; flex: 1 1 auto; min-height: 0; gap: var(--space-sm); }
 .merch-toolbar { display: flex; align-items: center; justify-content: space-between; gap: var(--space-sm); flex-wrap: wrap; }
 .merch-list { overflow: auto; min-height: 0; }
 .merch-head, .merch-row { display: grid; grid-template-columns: minmax(var(--measure-xs), 1fr) var(--measure-2xs) calc(var(--measure-2xs) / 2) var(--measure-2xs) calc(var(--measure-2xs) * 0.75) minmax(var(--measure-2xs), var(--measure-sm)) auto; align-items: center; gap: var(--space-md); padding: var(--space-xs) var(--space-sm); min-width: var(--measure-3xl); }
@@ -9,3 +9,7 @@
 .merch-name { appearance: none; border: 0; background: none; color: var(--ink-figure); cursor: pointer; padding: 0; text-align: left; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .merch-note { padding: 0 var(--space-sm) var(--space-xs); white-space: pre-wrap; overflow-wrap: anywhere; }
 .merch-editor { padding: 0 var(--space-sm) var(--space-sm); display: grid; gap: var(--space-xs); }
+.merch-head { min-height: var(--control); color: var(--muted-foreground); font: var(--label-weight) var(--label-size)/var(--leading-text) var(--label-face); letter-spacing: var(--label-tracking); text-transform: var(--label-case); }
+.merch-row .money, .merch-row .mono { font-size: var(--text-row); }
+/* The note button: shown on the row the pointer is over (always on touch). */
+@media (hover: hover) { .merch-row .merch-note-btn { opacity: 0; } .merch-row:is(:hover, :focus-within) .merch-note-btn { opacity: 1; } }

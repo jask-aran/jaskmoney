@@ -1,26 +1,31 @@
 /**
- * Settings › Taxonomy: the categories (groups, and the ones in each under
- * it) and the tags, as the TUI's two lists; a row opens its editor (the
- * TUI's: name, colour, spending; a tag's categories and about), "+ New"
- * an empty one. A delete takes two presses.
+ * Settings › Categories and Tags: the TUI's Taxonomy pane as two sections
+ * of rows (a group, then the ones in it indented). A row opens its editor
+ * (the TUI's: name, colour, spending; a tag's categories and about), "New"
+ * an empty one; the editors are cards over the page. A delete takes two
+ * presses.
  */
-import { For, Show, createMemo, createSignal, onMount, type JSX } from "solid-js"
+import { For, Show, createMemo, createSignal, createUniqueId, onMount, type JSX } from "solid-js"
 import { Portal } from "solid-js/web"
 import { fuzzyScore } from "../../../domain/fuzzy"
 import { scopeText, tagCovers } from "../../../domain/tagScope"
 import type { Category, Tag } from "../../../domain/types"
 import { theme } from "../../../theme"
-import { Chips } from "../../ui"
+import { Chips, Section } from "../../kit"
 import { data, fail, kept, say } from "../../store"
 import { catColor } from "../../theme"
+import {
+  Button, Card, CardForm, CardNote, DashEmpty, DashRow, Field, GroupAction, Icons, Input, Item, Scrim, SearchSection,
+  Section as ListSection, Swatch, Switch, TextArea, moveCursor,
+} from "../../v2"
 import { confirmTwice, disarm, isArmed } from "./confirm"
-import { Group, Line, Switch } from "./lines"
 
 type Kind = "category" | "tag"
 type Editing = { kind: Kind; id: number | null }
 
-/** The colours offered: the palette's accents. A category's or tag's colour is data. */
-const SWATCHES = (["rosewater", "flamingo", "pink", "mauve", "red", "maroon", "peach", "yellow", "green", "teal", "sky", "sapphire", "blue", "lavender"] as const).map((name) => theme[name])
+/** The colours offered: the palette's accents (a category's or tag's colour is data). */
+const SWATCHES = (["rosewater", "flamingo", "pink", "mauve", "red", "maroon", "peach", "yellow", "green", "teal", "sky", "sapphire", "blue", "lavender"] as const)
+  .map((name) => ({ name: name[0]!.toUpperCase() + name.slice(1), colour: theme[name] }))
 /** What a new one starts as (the TUI's). */
 const NEW_COLOR: Record<Kind, string> = { category: "#94e2d5", tag: "#89b4fa" }
 const HEX = /^#[0-9a-f]{6}$/i
@@ -54,33 +59,29 @@ export function Taxonomy() {
   const rows = createMemo(() => categoryRows(data.state.categories))
   const edit = (kind: Kind, id: number | null) => { disarm(); setEditing({ kind, id }) }
   const close = () => { disarm(); setEditing(null) }
-  // A phone shows one list at a time (the TUI's narrow layout): the chooser takes the title's place.
-  const chooser = () => (
-    <Chips class="st-narrow-only" value={list()} onChange={setList} options={[
-      { value: "categories", label: "Categories" }, { value: "tags", label: "Tags" },
-    ]} />
+  // A phone shows one list at a time (the TUI's narrow layout): the choice sits in the heading's place.
+  const aside = (kind: Kind) => (
+    <>
+      <Chips class="st-narrow-only" label="List" value={list()} onChange={setList}
+        options={[{ value: "categories", label: "Categories" }, { value: "tags", label: "Tags" }]} />
+      <GroupAction onClick={() => edit(kind, null)}><Icons.Add />New</GroupAction>
+    </>
   )
-  const add = (kind: Kind) => <button type="button" class="btn small ghost" onClick={() => edit(kind, null)}>+ New</button>
   return (
     <div class="st-tax" data-list={list()}>
-      <Group class="st-cats" lead={chooser()} title="Categories" count={data.state.categories.length} aside={add("category")}>
-        <div class="st-scroll">
-          <For each={rows()} fallback={<div class="st-none">No categories.</div>}>{(row) => (
-            <Line indent={row.child} strong={row.group} title={`Edit ${row.category.name}`} onClick={() => edit("category", row.category.id)}
-              lead={<span class="dot" style={{ background: catColor(row.category.color) }} />}
-              label={<span classList={{ label: row.child }}>{row.category.name}</span>} meta={row.note || undefined} />
-          )}</For>
-        </div>
-      </Group>
-      <Group class="st-tags" lead={chooser()} title="Tags" count={data.state.tags.length} aside={add("tag")}>
-        <div class="st-scroll">
-          <For each={data.state.tags} fallback={<div class="st-none">No tags.</div>}>{(tag) => (
-            <Line title={tag.about ? `${tag.name}: ${tag.about}` : `Edit ${tag.name}`} onClick={() => edit("tag", tag.id)}
-              lead={<span class="dot" style={{ background: catColor(tag.color) }} />}
-              label={tag.name} meta={tagNote(tag, data.state.categories) || undefined} />
-          )}</For>
-        </div>
-      </Group>
+      <Section class="st-cats" title="Categories" count={data.state.categories.length} aside={aside("category")}>
+        <For each={rows()} fallback={<DashEmpty>No categories.</DashEmpty>}>{(row) => (
+          <DashRow element="button" type="button" title={`Edit ${row.category.name}`} onClick={() => edit("category", row.category.id)}
+            data-indent={row.child ? "" : undefined} data-group={row.group ? "" : undefined}
+            lead={<Swatch colour={catColor(row.category.color)} />} primary={row.category.name} context={row.note || undefined} />
+        )}</For>
+      </Section>
+      <Section class="st-tags" title="Tags" count={data.state.tags.length} aside={aside("tag")}>
+        <For each={data.state.tags} fallback={<DashEmpty>No tags.</DashEmpty>}>{(tag) => (
+          <DashRow element="button" type="button" title={tag.about ? `${tag.name}: ${tag.about}` : `Edit ${tag.name}`} onClick={() => edit("tag", tag.id)}
+            lead={<Swatch colour={catColor(tag.color)} />} primary={tag.name} context={tagNote(tag, data.state.categories) || undefined} />
+        )}</For>
+      </Section>
       <Show when={editing()} keyed>{(e) => (
         e.kind === "category"
           ? <CategoryEditor id={e.id} onClose={close} />
@@ -90,62 +91,57 @@ export function Taxonomy() {
   )
 }
 
-/** A dialog: owns the keyboard until it closes (esc closes). */
-export function Dialog(props: { title: string; subtitle?: string; onClose: () => void; onSubmit: () => void; footer: JSX.Element; children: JSX.Element }) {
-  let form!: HTMLFormElement
-  onMount(() => (form.querySelector("input, textarea") as HTMLElement | null)?.focus())
+/** An editor: a card over the dimmed page, owning the keys until it closes (esc closes, enter saves). */
+function Editor(props: {
+  title: string; detail?: string; wide?: boolean; armKey: string | null; what: string; saving: boolean
+  canDelete?: boolean; deleteTitle?: string; onDelete: () => void; onSubmit: () => void; onClose: () => void; children: JSX.Element
+}) {
+  const formId = createUniqueId()
+  let card!: HTMLDivElement
+  onMount(() => (card.querySelector("input, textarea") as HTMLElement | null)?.focus())
   return (
     <Portal>
-      <div class="st-scrim" onClick={props.onClose} />
-      <form ref={form} class="st-dialog" role="dialog" aria-modal="true" aria-label={props.title}
-        on:keydown={(event) => {
+      <Scrim dialog placement="center" ref={card}
+        onClick={(event) => { if (event.target === event.currentTarget) props.onClose() }}
+        onKeyDown={(event) => {
           event.stopPropagation()
           if (event.key === "Escape") { event.preventDefault(); props.onClose() }
-        }}
-        onSubmit={(event) => { event.preventDefault(); props.onSubmit() }}>
-        <header>
-          <h3>{props.title}</h3>
-          <Show when={props.subtitle}><span class="note small">{props.subtitle}</span></Show>
-          <button type="button" class="btn small ghost st-close" aria-label="Close" onClick={props.onClose}>esc</button>
-        </header>
-        <div class="st-form">{props.children}</div>
-        <footer>{props.footer}</footer>
-      </form>
+        }}>
+        <Card title={props.title} detail={props.detail} size={props.wide ? "wide" : undefined} close={props.onClose}
+          actions={<>
+            <Show when={props.armKey}>{(key) => (
+              <span data-arm={key()} class="st-arm">
+                <Button variant="destructive" outline={!isArmed(key())} disabled={props.canDelete === false} title={props.deleteTitle}
+                  onClick={() => confirmTwice(key(), `delete ${props.what}`, props.onDelete)}>
+                  {isArmed(key()) ? "Press again" : "Delete"}
+                </Button>
+              </span>
+            )}</Show>
+            <Button variant="ghost" onClick={props.onClose}>Cancel</Button>
+            <Button type="submit" form={formId} disabled={props.saving}>{props.saving ? "Saving…" : "Save"}</Button>
+          </>}>
+          <CardForm id={formId} onSubmit={(event) => { event.preventDefault(); props.onSubmit() }}>{props.children}</CardForm>
+        </Card>
+      </Scrim>
     </Portal>
   )
 }
 
+/** The colour: the palette's accents as swatches (one chosen), or any #rrggbb. */
 function ColourField(props: { value: string; onChange: (value: string) => void }) {
   return (
-    <div class="st-field">
-      <span class="st-field-label">Colour</span>
-      <div class="st-swatches">
-        <For each={SWATCHES}>{(colour) => (
-          <button type="button" class="st-swatch" classList={{ on: colour.toLowerCase() === props.value.toLowerCase() }} style={{ background: colour }} title={colour} aria-label={colour} onClick={() => props.onChange(colour)} />
+    <Field plain label="Colour">
+      <div class="st-colours" role="radiogroup" aria-label="Colour">
+        <For each={SWATCHES}>{(swatch) => (
+          <Button variant="ghost" role="radio" aria-label={swatch.name} title={`${swatch.name} ${swatch.colour}`} aria-checked={swatch.colour.toLowerCase() === props.value.toLowerCase()}
+            onClick={() => props.onChange(swatch.colour)}><Swatch colour={swatch.colour} fill /></Button>
         )}</For>
-        <span class="st-hex">
-          <span class="dot" style={{ background: HEX.test(props.value) ? props.value : "transparent" }} />
-          <input class="field mono" value={props.value} maxLength={7} spellcheck={false} aria-label="Colour, as #rrggbb" onInput={(e) => props.onChange(e.currentTarget.value.trim())} />
-        </span>
       </div>
-    </div>
-  )
-}
-
-/** Save, cancel, and (an existing one) delete on a second press. */
-function EditorFooter(props: { armKey: string | null; what: string; saving: boolean; canDelete?: boolean; deleteTitle?: string; onDelete: () => void; onClose: () => void }) {
-  return (
-    <>
-      <Show when={props.armKey}>{(key) => (
-        <button type="button" class="btn small st-delete" classList={{ armed: isArmed(key()) }} data-arm={key()} disabled={props.canDelete === false} title={props.deleteTitle}
-          onClick={() => confirmTwice(key(), `delete ${props.what}`, props.onDelete)}>
-          {isArmed(key()) ? "Press again to delete" : "Delete"}
-        </button>
-      )}</Show>
-      <span class="grow" />
-      <button type="button" class="btn" onClick={props.onClose}>Cancel</button>
-      <button type="submit" class="btn primary" disabled={props.saving}>{props.saving ? "Saving…" : "Save"}</button>
-    </>
+      <div class="st-hex">
+        <Swatch colour={HEX.test(props.value) ? props.value : undefined} hollow={!HEX.test(props.value)} />
+        <Input aria-label="Colour, as #rrggbb" value={props.value} maxLength={7} spellcheck={false} onInput={(e) => props.onChange(e.currentTarget.value.trim())} />
+      </div>
+    </Field>
   )
 }
 
@@ -174,22 +170,15 @@ function CategoryEditor(props: { id: number | null; onClose: () => void }) {
   }
   const remove = () => save(() => data.deleteSettingsCategory(props.id!), `Deleted ${original?.name}`)
   return (
-    <Dialog title={props.id == null ? "New category" : "Edit category"} subtitle={original?.isDefault ? "the default category" : undefined} onClose={props.onClose} onSubmit={submit}
-      footer={<EditorFooter armKey={original ? `category:${original.id}` : null} what={original?.name ?? ""} saving={saving()} canDelete={!original?.isDefault}
-        deleteTitle={original?.isDefault ? "The default category can't be deleted" : undefined} onDelete={remove} onClose={props.onClose} />}>
-      <label class="st-field">
-        <span class="st-field-label">Name</span>
-        <input class="field" value={name()} onInput={(e) => setName(e.currentTarget.value)} placeholder="Groceries" />
-      </label>
+    <Editor title={props.id == null ? "New category" : "Edit category"} detail={original?.isDefault ? "The default category" : undefined}
+      armKey={original ? `category:${original.id}` : null} what={original?.name ?? ""} saving={saving()} canDelete={!original?.isDefault}
+      deleteTitle={original?.isDefault ? "The default category can't be deleted" : undefined} onDelete={remove} onSubmit={submit} onClose={props.onClose}>
+      <Field label="Name"><Input value={name()} onInput={(e) => setName(e.currentTarget.value)} placeholder="Groceries" /></Field>
       <ColourField value={color()} onChange={setColor} />
-      <div class="st-field">
-        <span class="st-field-label">Spending</span>
-        <div class="row">
-          <Switch on={!notSpending()} label="Counts as spending" onClick={() => setNotSpending(!notSpending())} />
-          <span class={notSpending() ? "label" : "figure"}>{notSpending() ? "no, excluded from spending and income" : "yes"}</span>
-        </div>
-      </div>
-    </Dialog>
+      <Field inline label={<>Spending <small class="st-say">{notSpending() ? "no, excluded from spending and income" : "yes"}</small></>}>
+        <Switch label="Counts as spending" checked={!notSpending()} onChange={(on) => setNotSpending(!on)} />
+      </Field>
+    </Editor>
   )
 }
 
@@ -225,7 +214,7 @@ function TagEditor(props: { id: number | null; onClose: () => void }) {
   const [about, setAbout] = createSignal(original?.about ?? "")
   const [query, setQuery] = createSignal("")
   const choices = createMemo(() => scopeRows(data.state.categories, query()))
-  const named = createMemo(() => ids().map((id) => data.state.categories.find((c) => c.id === id)).filter((c): c is Category => !!c))
+  const named = createMemo(() => ids().map((id) => data.state.categories.find((c) => c.id === id)?.name).filter(Boolean).join(", "))
   // The TUI's note: how many rows its categories hold; About is what Jev reads finding its rows.
   const note = createMemo(() => {
     const reads = about().trim() ? " · Jev reads About" : ""
@@ -243,41 +232,29 @@ function TagEditor(props: { id: number | null; onClose: () => void }) {
   }
   const remove = () => save(() => data.deleteSettingsTag(props.id!), `Deleted ${original?.name}`)
   return (
-    <Dialog title={props.id == null ? "New tag" : "Edit tag"} onClose={props.onClose} onSubmit={submit}
-      footer={<EditorFooter armKey={original ? `tag:${original.id}` : null} what={original?.name ?? ""} saving={saving()} onDelete={remove} onClose={props.onClose} />}>
-      <label class="st-field">
-        <span class="st-field-label">Name</span>
-        <input class="field st-upper" value={name()} onInput={(e) => setName(e.currentTarget.value)} placeholder="HOLIDAY" />
-      </label>
+    <Editor wide title={props.id == null ? "New tag" : "Edit tag"} armKey={original ? `tag:${original.id}` : null} what={original?.name ?? ""}
+      saving={saving()} onDelete={remove} onSubmit={submit} onClose={props.onClose}>
+      <Field label="Name"><Input class="st-upper" value={name()} onInput={(e) => setName(e.currentTarget.value)} placeholder="HOLIDAY" /></Field>
       <ColourField value={color()} onChange={setColor} />
-      <div class="st-field">
-        <span class="st-field-label">Categories <span class="note">· its own come first in the tag picker</span></span>
-        <div class="st-picked">
-          <For each={named()} fallback={<span class="note small">any</span>}>{(c) => (
-            <button type="button" class="tagchip on" title={`Remove ${c.name}`} onClick={() => toggle(c.id)}>
-              <span class="dot" style={{ background: catColor(c.color) }} />{c.name}<span class="note">×</span>
-            </button>
-          )}</For>
+      {/* Its categories put it first in the tag picker for their rows. */}
+      <Field plain label={<>Categories <small class="st-say">{named() || "any"}</small></>}>
+        <div class="st-scope">
+          <SearchSection placeholder="Find a category" value={query()} onInput={setQuery} />
+          <ListSection scroll onPointerOver={moveCursor}>
+            <For each={choices()} fallback={<p class="st-none">No category matches</p>}>{(row) => (
+              row.kind === "heading"
+                ? <div class="ui-title st-scope-group">{row.label}</div>
+                : (
+                  <Item picked={ids().includes(row.id)} onClick={() => toggle(row.id)} icon={<Swatch colour={catColor(row.color)} />}>{row.label}</Item>
+                )
+            )}</For>
+          </ListSection>
         </div>
-        <input class="field" placeholder="Type to find a category" value={query()} onInput={(e) => setQuery(e.currentTarget.value)} />
-        <div class="st-choices">
-          <For each={choices()} fallback={<div class="note small st-none">No category matches</div>}>{(row) => (
-            row.kind === "heading"
-              ? <div class="st-choice-head">{row.label}</div>
-              : (
-                <button type="button" class="st-choice" classList={{ on: ids().includes(row.id) }} aria-pressed={ids().includes(row.id)} onClick={() => toggle(row.id)}>
-                  <span class="dot" style={{ background: catColor(row.color) }} />
-                  <span class="ellipsis">{row.label}</span>
-                </button>
-              )
-          )}</For>
-        </div>
-      </div>
-      <label class="st-field">
-        <span class="st-field-label">About</span>
-        <textarea class="field" rows={2} value={about()} onInput={(e) => setAbout(e.currentTarget.value)} placeholder="What it's for, in words: Jev reads it when finding its transactions" />
-      </label>
-      <div class="small" classList={{ good: ids().length > 0, note: !ids().length }}>{ids().length ? "● " : ""}{note()}</div>
-    </Dialog>
+      </Field>
+      <Field label="About">
+        <TextArea rows={2} value={about()} onInput={(e) => setAbout(e.currentTarget.value)} placeholder="What it's for, in words: Jev reads it when finding its transactions" />
+      </Field>
+      <CardNote>{note()}</CardNote>
+    </Editor>
   )
 }

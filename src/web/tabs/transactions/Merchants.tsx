@@ -1,3 +1,4 @@
+import { NotebookPen } from "lucide-solid"
 import { For, Show, createMemo, createSignal, onCleanup } from "solid-js"
 import { appToday } from "../../../domain/days"
 import { merchantKey } from "../../../domain/history"
@@ -61,7 +62,7 @@ export function Merchants(props: { onShowRows: () => void }) {
         } }}><Chips options={options()} value={sort()} onChange={sortBy} /></span>
       </div>
       <div class="merch-list">
-        <div class="merch-head small faint">
+        <div class="merch-head">
           <span>Merchant</span><span>Total</span><span>#</span><span>Average</span><span>Last</span><span>Category</span><span />
         </div>
         <For each={groups()} fallback={<Empty>No merchants.</Empty>}>{(group) => (
@@ -73,7 +74,7 @@ export function Merchants(props: { onShowRows: () => void }) {
               <Money value={group.average} class="label" />
               <span class="label small">{lastSeen(group.lastISO)}</span>
               <CategoryLabel name={group.categoryName} color={group.categoryColor} />
-              <Button variant="ghost" size="sm" disabled={saving()} onClick={() => editNote(group.merchant)} aria-label={`Note on ${group.merchant}`}>note</Button>
+              <Button variant="ghost" size="icon-xs" class="merch-note-btn" disabled={saving()} onClick={() => editNote(group.merchant)} aria-label={`Note on ${group.merchant}`} title="A note for Jev about this merchant"><NotebookPen /></Button>
             </div>
             <Show when={data.state.merchantNotes[merchantKey(group.merchant)]}>{(note) => <div class="merch-note faint small">{note()}</div>}</Show>
             <Show when={editing() === group.merchant}>
