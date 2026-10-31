@@ -1,5 +1,6 @@
 import { describe, expect, test } from "bun:test"
 import { addDays } from "../../domain/days"
+import { barSlots } from "../charts/bars"
 import type { Account } from "../../domain/types"
 import { balancesChart, cashFlowChart, spendingChart } from "./periodCharts"
 import { ink, theme } from "../../theme"
@@ -110,7 +111,27 @@ describe("what made a bar tall, and how much room there is", () => {
     const m = spendingChart("Weekly", { dates: d, values: d.map(() => 30) }, 80, 10, d.at(-1)!, [])
     expect(m.rows[m.rows.length - 1]!.map((r) => r.text).join("").trimEnd().length).toBeGreaterThanOrEqual(78)
     expect(m.labels).toMatch(/Jan .*Jun/)
-    expect(m.labels).not.toMatch(/\b\d{1,2}\b/)
+    // Months only, but for today's date under its rule.
+    expect(m.labels.slice(m.today!.start, m.today!.start + m.today!.length)).toBe("1 Nov")
+    expect(m.labels.slice(0, m.today!.start)).not.toMatch(/\b\d{1,2}\b/)
+  })
+
+  test("Weekly bars have month rules in the gap nearest each 1st and today's rule over its week", () => {
+    // Mon 29 Jun – Sun 4 Oct: Jul 1 (Wed) falls early in a week, Aug 1 (Sat) late.
+    const d = days(98, "2026-06-29")
+    const m = spendingChart("Weekly", { dates: d, values: d.map(() => 30) }, 80, 10, "2026-09-16", [])
+    const inks = (ink: string) => [...new Set(m.rows.flatMap((runs) => {
+      let col = 0
+      return runs.flatMap((r) => { const at = col; col += r.text.length; return r.ink === ink && r.text.includes("│") ? [at + r.text.indexOf("│")] : [] })
+    }))]
+    const slots = barSlots(14, 80)
+    // Jul 1 is in the first week, which keeps no rule at the chart's edge;
+    // Aug 1 is late in week 5 (27 Jul), so its rule follows that bar; Sep 1
+    // early in week 10 (31 Aug), so it comes before it, as Oct 1 (Thu) does in week 13.
+    expect(inks("month").sort((a, b) => a - b)).toEqual([slots[4]!.col + slots[4]!.width, slots[9]!.col - 1, slots[13]!.col - 1])
+    expect(inks("today")).toEqual([slots[11]!.col + 1]) // Wednesday, a third of the way across
+    expect(m.labels.slice(slots[5]!.col, slots[5]!.col + 3)).toBe("Aug")
+    expect(m.labels.slice(slots[9]!.col, slots[9]!.col + 3)).toBe("Sep")
   })
 
   test("Cash flow goes monthly when weeks would be too narrow, and nets each period on the axis where they fit", () => {

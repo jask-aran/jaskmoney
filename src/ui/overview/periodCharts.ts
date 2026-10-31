@@ -5,7 +5,7 @@ import { cumulative, dailySpendSeries, formatWholeMoney, signedWholeMoney, weekl
 import { balanceHistory, biggestRow, computePeriodFlows, flowRows, historyCovers, historyStart, saverHistories } from "../../domain/position"
 import { accountRole, type Account, type Transaction } from "../../domain/types"
 import { isSpending } from "../../domain/moneyRules"
-import { MONTHS, addDays, dayOfWeek, type WeekStart } from "../../domain/days"
+import { MONTHS, addDays, dayOfWeek, daysBetween, type WeekStart } from "../../domain/days"
 import { shortDate, shortMoney, truncate } from "../text"
 import { barSlots, barTopRow, columnBars, ruleRow } from "../charts/bars"
 import { muted, type Span } from "../primitives/spans"
@@ -105,7 +105,9 @@ export function spendingChart(
     const scale = niceScale(Math.max(0, perWeek ?? 0, ...weeks.map((w) => w.total)))
     const partial = (w: (typeof weeks)[number]) => w.days < 7 || addDays(w.startISO, 6) >= todayISO
     const bars = weeks.map((w) => ({ value: w.startISO <= todayISO ? w.total : 0, ink: partial(w) ? "partial" : "spend" }))
-    const { rows: plain, slots } = columnBars(bars, width, height, scale.max, perWeek ? { value: perWeek, ink: "limit" } : undefined)
+    const spans = barSlots(bars.length, width)
+    const weekRuns = weeks.map((w) => ({ start: w.startISO, end: addDays(w.startISO, w.days - 1) }))
+    const { rows: plain, slots } = columnBars(bars, width, height, scale.max, perWeek ? { value: perWeek, ink: "limit" } : undefined, periodMarkers(weekRuns, spans, width, todayISO))
     // Labels: this week, then the biggest (named by its biggest spend where
     // it fits), then the rest by size; all of them when bars are wide, else
     // the biggest few.
@@ -126,7 +128,7 @@ export function spendingChart(
     return {
       rows: annotate(plain, marks),
       ticks: moneyTicks(0, scale.max, scale.step, height),
-      labels: weekAxis(starts, slots, width, roomy),
+      ...weekAxis(starts, slots, width, roomy, todayISO, n),
       legend: [
         mark(BAR, "spend"),
         muted(bars.some((b) => b.ink === "spend") ? `Weeks, avg ${formatWholeMoney(sum(weeks.filter((w, i) => bars[i]!.ink === "spend").map((w) => w.total)) / bars.filter((b) => b.ink === "spend").length)}` : "No full weeks yet"),
@@ -286,21 +288,72 @@ const barNames = (amount: string, total: number, row: Transaction | undefined): 
 
 /** Labels under weekly bars: each week's start date where bars are wide,
  * else the month over the week holding its 1st. */
-function weekAxis(starts: string[], slots: Array<{ col: number; width: number }>, width: number, roomy: boolean): string {
+function weekAxis(starts: string[], slots: Array<{ col: number; width: number }>, width: number, roomy: boolean, todayISO: string, days: number): Pick<ChartModel, "labels" | "today"> {
   const line = new Array<string>(width).fill(" ")
-  let free = 0
+  const taken = new Array<boolean>(width).fill(false)
+  const put = (start: number, text: string) => {
+    for (let c = 0; c < text.length; c++) { line[start + c] = text[c]!; taken[start + c] = true }
+  }
+  // Today's date under its rule first, as in dateAxis; the weeks' names
+  // keep a cell clear of it.
+  const current = starts.findLastIndex((iso) => iso <= todayISO)
+  const todaySlot = current >= 0 && addDays(starts[current]!, 6) >= todayISO ? slots[current] : undefined
+  let today: ChartModel["today"]
+  if (todaySlot) {
+    const text = days <= 45 ? String(Number(todayISO.slice(8, 10))) : shortDate(todayISO)
+    const start = Math.max(0, Math.min(width - text.length, todaySlot.col + Math.floor((todaySlot.width - 1) / 2) - Math.floor((text.length - 1) / 2)))
+    if (text.length <= width) { put(start, text); today = { start, length: text.length } }
+  }
   starts.forEach((iso, i) => {
     const slot = slots[i]
     if (!slot) return
-    // The week holding a month's 1st names that month (the first week, its own).
-    const end = addDays(iso, 6)
-    const first = iso.endsWith("-01") || i === 0 ? iso : end.slice(5, 7) !== iso.slice(5, 7) ? end : null
-    const label = roomy ? shortDate(iso) : first ? MONTHS[Number(first.slice(5, 7)) - 1]! : ""
-    if (!label || slot.col < free || slot.col + label.length > width) return
-    for (let c = 0; c < label.length; c++) line[slot.col + c] = label[c]!
-    free = slot.col + label.length + 1
+    // The first week mostly in a month names it, after its rule
+    // (periodMarkers); the first week names its own.
+    const mid = addDays(iso, 3)
+    const named = i === 0 || mid.slice(0, 7) !== addDays(starts[i - 1]!, 3).slice(0, 7)
+    const label = roomy ? shortDate(iso) : named ? MONTHS[Number((i === 0 ? iso : mid).slice(5, 7)) - 1]! : ""
+    if (!label || slot.col + label.length > width) return
+    for (let c = Math.max(0, slot.col - 1); c < Math.min(width, slot.col + label.length + 1); c++) if (taken[c]) return
+    put(slot.col, label)
   })
-  return line.join("")
+  return { labels: line.join(""), ...(today ? { today } : {}) }
+}
+
+/**
+ * Rules for bars that each stand for a run of days (a week, or a month
+ * with `months: false`), as dateAxis draws them for days: a month's rule
+ * in the gap nearest its 1st (before the bar it falls in, or after it when
+ * the 1st is late in the run), only quarters' when months are under 4
+ * cells and only years' when every bar is a month; the closing month end
+ * after the last bar; and today's where its day falls across its bar.
+ */
+function periodMarkers(runs: Array<{ start: string; end: string }>, spans: Array<{ col: number; width: number }>, width: number, todayISO: string, months = true): Array<{ col: number; ink: string }> {
+  if (!runs.length || !spans.length) return []
+  const first = runs[0]!.start, last = runs[runs.length - 1]!.end
+  const quartersOnly = width / (Math.floor(daysBetween(first, last) / 30.44) + 1) < 4
+  const inkOf = (iso: string) => (iso.slice(5, 7) === "01" ? "year" : "month")
+  const wanted = (iso: string) => inkOf(iso) === "year" || (months && (!quartersOnly || ["04", "07", "10"].includes(iso.slice(5, 7))))
+  const before = (i: number) => spans[i]!.col - 1
+  const after = (i: number) => spans[i]!.col + spans[i]!.width
+  const markers: Array<{ col: number; ink: string }> = []
+  runs.forEach((run, i) => {
+    if (!spans[i]) return
+    for (let iso = run.start; iso <= run.end; iso = addDays(iso, 1)) {
+      if (!iso.endsWith("-01") || iso === first || !wanted(iso)) continue
+      const late = 2 * daysBetween(run.start, iso) > daysBetween(run.start, run.end) + 1
+      markers.push({ col: late ? after(i) : before(i), ink: inkOf(iso) })
+    }
+  })
+  const end = spans.length - 1
+  if (addDays(last, 1).endsWith("-01") && wanted(addDays(last, 1))) markers.push({ col: after(end), ink: inkOf(addDays(last, 1)) })
+  const current = runs.findIndex((r) => r.start <= todayISO && todayISO <= r.end)
+  const span = spans[current]
+  if (span) {
+    const run = runs[current]!
+    const at = (daysBetween(run.start, todayISO) + 0.5) / (daysBetween(run.start, run.end) + 1)
+    markers.push({ col: span.col + Math.min(span.width - 1, Math.floor(at * span.width)), ink: "today" })
+  }
+  return markers.filter((m) => m.col >= 0 && m.col < width)
 }
 
 /** End-of-day balances over the period's `dates` (up to today) for one view:
@@ -486,7 +539,9 @@ export function cashFlowChart(
   const scale = niceScale(Math.max(0, ...flows.flatMap((f) => [f.income, f.spent])))
   const future = (i: number) => buckets[i]!.start > todayISO
   const bars = flows.flatMap((f, i) => [{ value: future(i) ? 0 : f.income, ink: "in" }, { value: future(i) ? 0 : f.spent, ink: "out" }])
-  const { rows: plain, slots } = columnBars(bars, width, height, scale.max, undefined, [], 2)
+  const pairs = barSlots(bars.length, width, 2)
+  const pairSpans = buckets.map((_, i) => pairs[i * 2] && { col: pairs[i * 2]!.col, width: (pairs[i * 2 + 1] ?? pairs[i * 2]!).col + pairs[i * 2]!.width - pairs[i * 2]!.col }).filter((p) => p !== undefined)
+  const { rows: plain, slots } = columnBars(bars, width, height, scale.max, undefined, periodMarkers(buckets, pairSpans, width, todayISO, !monthly), 2)
   // Names over the tallest bars: the tallest in and out first, then by
   // height; all when pairs are wide, else two of each.
   const roomy = Math.min(...slots.map((s) => s.width)) >= 4
