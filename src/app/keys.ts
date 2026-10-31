@@ -1571,7 +1571,9 @@ function handleBudgetCategories(ui: UiStore, key: KeyEvent, data?: DataStore): v
     if (!category) { ui.setStatus("Uncategorised always counts: categorise its rows first", true); return }
     const group = category.parentId == null ? undefined : data.state.categories.find((c) => c.id === category.parentId)
     if (group?.budgetIgnored) { ui.setStatus(`Left out with ${group.name}: x on ${group.name} brings it back`, true); return }
-    settleData(ui, data.setCategoryBudgetIgnored(category.id, !category.budgetIgnored), () => ui.setStatus(category.budgetIgnored ? `${category.name} counts toward the overall budget again` : `${category.name} left out of the overall budget`))
+    // Read before the change: the store's category shows the new value once it's made.
+    const wasIgnored = category.budgetIgnored
+    settleData(ui, data.setCategoryBudgetIgnored(category.id, !wasIgnored), () => ui.setStatus(wasIgnored ? `${category.name} counts toward the overall budget again` : `${category.name} left out of the overall budget`))
     return
   }
   if (name === "return" || name === "enter") {
