@@ -596,10 +596,11 @@ export function createClientStore(initialLink: CoreLink) {
   let selectionBeforeDemo: AccountSelection | null = null
 
   async function enterDemo(): Promise<number> {
-    const was = state.demo
-    if (!was) selectionBeforeDemo = state.accountSelection
-    const rows = await link.call("enterDemo", {})
-    if (!was) setAccountSelection("all")
+    if (state.demo) return link.call("enterDemo", {})
+    selectionBeforeDemo = state.accountSelection
+    const rows = link.call("enterDemo", {})
+    // At once, as the switch began: what the caller sets next (restored prefs) wins.
+    setAccountSelection("all")
     return rows
   }
 

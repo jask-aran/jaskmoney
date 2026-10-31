@@ -31,6 +31,17 @@ import { SYNC_INTERVAL_MS, runSync, syncAgo } from "./sync"
 import { activeChipIndex } from "../domain/timeframe"
 import type { UiPrefs } from "../state/settingsConfig"
 import { restoreUiPrefs } from "../state/uiPrefs"
+import { wsLink } from "../client/wsLink"
+
+/** A flag's value: `--name=value` or `--name value`, "" when it has none, null when absent. */
+function flagValue(name: string): string | null {
+  const args = process.argv
+  const i = args.findIndex((a) => a === name || a.startsWith(`${name}=`))
+  if (i < 0) return null
+  if (args[i]!.includes("=")) return args[i]!.slice(name.length + 1)
+  const next = args[i + 1]
+  return next && !next.startsWith("--") ? next : ""
+}
 
 
 export function App() {
@@ -41,14 +52,15 @@ export function App() {
   // paletteList), so a cursor move leaves the palette's rows alone.
   const paletteCommands = createMemo(() => ui.state.palette ? paletteList(ui, data) : [])
 
-  onMount(() => {
+  // `--connect <ws url>`: a core elsewhere (bun run server, or a TUI's
+  // --serve). Otherwise the core is this process's; `--serve[=port]` serves
+  // it to the web app and other clients too.
+  const remote = flagValue("--connect")
+  const serving = remote == null ? flagValue("--serve") : null
+  let servedAt = ""
+
+  function bootstrap() {
     try {
-      const path = process.env.JASKMONEY_DB
-      data.init(path)
-      if (process.env.JASKMONEY_NO_BOOTSTRAP === "1") {
-        ui.setStatus("OpenTUI shell · bootstrap off")
-        return
-      }
       // `jaskmoney --demo` opens straight into demo mode (your data untouched).
       const demo = process.argv.includes("--demo")
       if (demo) toggleDemo(ui, data)
@@ -62,7 +74,7 @@ export function App() {
       if (demo) {
         // toggleDemo's status says what demo mode is.
       } else if (data.state.transactions.length > 0) {
-        ui.setStatus(`${data.state.transactions.length} transactions loaded.`)
+        ui.setStatus(`${data.state.transactions.length} transactions loaded.${remote ? ` · core at ${remote}` : ""}${servedAt}`)
       } else {
         ui.setStatus("No transactions yet · Settings → Database & Import → i to import")
       }
@@ -73,6 +85,34 @@ export function App() {
     } catch (e) {
       ui.setStatus(`DB error: ${e instanceof Error ? e.message : String(e)}`, true)
     }
+  }
+
+  onMount(() => {
+    if (remote) {
+      data.connect(wsLink(remote, { onClose: (reason) => ui.setStatus(`Lost the core at ${remote}: ${reason}`, true) }))
+      ui.setStatus(`Connecting to ${remote}…`)
+      return
+    }
+    try {
+      data.init(process.env.JASKMONEY_DB)
+      if (serving != null) {
+        const { serveCore, DEFAULT_PORT } = require("../server/serve") as typeof import("../server/serve")
+        servedAt = ` · web app at ${serveCore(data.core, { port: Number(serving) || DEFAULT_PORT }).url}`
+      }
+    } catch (e) {
+      ui.setStatus(`DB error: ${e instanceof Error ? e.message : String(e)}`, true)
+      return
+    }
+    if (process.env.JASKMONEY_NO_BOOTSTRAP === "1") {
+      ui.setStatus("OpenTUI shell · bootstrap off")
+      return
+    }
+    bootstrap()
+  })
+
+  // A remote core's state arrives after mount: start once it has.
+  createEffect(() => {
+    if (remote && data.state.ready && !untrack(bootstrapped)) untrack(bootstrap)
   })
 
   createEffect(() => {
