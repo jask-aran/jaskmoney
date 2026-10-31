@@ -1,0 +1,59 @@
+/* Charts (charts.tsx, drawn by Unovis): themed through Unovis's --vis-*
+ * variables from our tokens; text by role, marks in their series' colours. */
+.chart-wrap { display: flex; flex-direction: column; min-height: 0; height: 100%; gap: 6px; }
+.chart {
+  position: relative; flex: 1 1 auto; min-height: 120px; min-width: 0;
+  --vis-font-family: var(--font-data);
+  --vis-axis-font-family: var(--font-data);
+  --vis-axis-tick-label-font-size: var(--text-label);
+  --vis-axis-tick-label-weight: var(--weight-data);
+  --vis-axis-tick-label-color: var(--muted-foreground, var(--ink-note));
+  --vis-axis-tick-color: transparent;
+  --vis-axis-domain-color: var(--border, var(--surface1));
+  --vis-scatter-point-label-text-font-size: var(--text-label);
+  --vis-scatter-point-label-text-font-family: var(--font-data);
+  --vis-scatter-point-label-text-font-weight: var(--weight-data);
+  --vis-axis-grid-color: var(--border, var(--surface0));
+  --vis-axis-grid-line-width: 1px;
+  --vis-dark-axis-tick-label-color: var(--muted-foreground, var(--ink-note));
+  --vis-dark-axis-grid-color: var(--border, var(--surface0));
+  --vis-crosshair-line-stroke-color: var(--surface2);
+  --vis-crosshair-line-stroke-width: 1px;
+  --vis-crosshair-circle-stroke-color: var(--background);
+  --vis-crosshair-circle-stroke-width: 2px;
+  --vis-tooltip-background-color: var(--card);
+  --vis-tooltip-border-color: var(--border);
+  --vis-tooltip-text-color: var(--ink-figure);
+  --vis-tooltip-padding: 7px 10px;
+  --vis-tooltip-border-radius: 8px;
+  --vis-tooltip-box-shadow: 0 8px 24px rgb(0 0 0 / .45);
+  --vis-tooltip-backdrop-filter: none;
+  --vis-annotations-text-color: var(--ink-label);
+  --vis-annotations-connector-stroke-width: 1.5px;
+}
+.chart > .chart-vis { position: absolute !important; inset: 0; }
+.chart svg { overflow: visible; }
+.chart line, .chart path { stroke-linecap: round; }
+.chart g[data-tone="today"] text { fill: var(--chart-today) !important; font-weight: var(--weight-strong); }
+.chart-empty { position: absolute; inset: 0; display: grid; place-items: center; color: var(--ink-note); font-size: var(--text-caption); }
+
+/* The tooltip's content (the crosshair's template) */
+.chart-tip { min-width: 150px; max-width: 280px; font: var(--weight-rest) var(--text-caption)/1.5 var(--font-sans); }
+.chart-tip .title { color: var(--ink-heading); font-weight: var(--weight-strong); margin-bottom: 4px; white-space: nowrap; }
+.chart-tip .row { display: flex; align-items: center; gap: 6px; line-height: 1.6; }
+.chart-tip .row .k { color: var(--ink-label); flex: 1 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.chart-tip .row .v { font-family: var(--font-data); font-weight: var(--weight-data); font-variant-numeric: tabular-nums; color: var(--ink-figure); white-space: nowrap; margin-left: 10px; }
+.chart-tip .row .v.label { color: var(--ink-label); }
+.chart-tip .row .v.good { color: var(--tone-good); }
+.chart-tip .row .v.bad { color: var(--tone-bad); }
+.chart-tip .row.sub { padding-left: 22px; font-size: var(--text-label); line-height: 1.45; }
+.chart-tip .row.sub .k { color: var(--ink-note); }
+.chart-tip .note { color: var(--ink-note); margin-top: 3px; }
+
+.legend { display: flex; flex-wrap: wrap; gap: var(--space-2xs) var(--space-lg); font: var(--weight-rest) var(--text-caption)/1.5 var(--font-sans); color: var(--ink-note); }
+.legend .item { display: inline-flex; align-items: center; gap: 6px; }
+.legend .figure, .legend .good, .legend .bad { font-family: var(--font-data); font-weight: var(--weight-data); font-variant-numeric: tabular-nums; }
+.swatch.line { flex: none; }
+.swatch.bar { display: inline-block; width: 9px; height: 9px; border-radius: 2px; flex: none; }
+.swatches { display: inline-flex; gap: 2px; }
+.swatches .swatch.bar { width: 10px; height: 10px; }
