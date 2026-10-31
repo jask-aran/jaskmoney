@@ -258,12 +258,12 @@ function topCategoryBudgets(budgets: Budget[], categories: Category[]): Budget[]
   })
 }
 
-/** The total budget in force in the cycle starting `cycleStartISO`: each
- * of today's budgets that make up the total (allocation) as it was then
- * (budgetIn); null when none had one. */
+/** The total budget in force in the cycle starting `cycleStartISO`: the
+ * budgets then (budgetsIn) added up (allocation); null when there were
+ * none. */
 export function totalBudgetIn(history: readonly BudgetHistoryEntry[], budgets: Budget[], categories: Category[], cycleStartISO: string): number | null {
-  const parts = [...budgets.filter((b) => b.scope.kind === "overall"), ...topCategoryBudgets(budgets, categories)].map((b) => budgetIn(history, b.scope, cycleStartISO))
-  return parts.some((p) => p != null) ? sum(parts.map((p) => p ?? 0)) : null
+  const then = budgetsIn(history, budgets, cycleStartISO).filter((b) => b.scope.kind !== "account")
+  return then.length ? allocation(then, categories).total : null
 }
 
 /** A budget's progress from what's been `spent` in `cycle` by `todayISO`. */

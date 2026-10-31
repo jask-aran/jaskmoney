@@ -2118,12 +2118,12 @@ const scopes: Record<ScopeId, ScopeEntry> = {
   "budgets": {
     handle: handleBudgets,
     quits: true,
-    hints: () => [{ key: "j/k", desc: "move" }, { key: "enter", desc: "edit" }, { key: "a", desc: "add" }, { key: "del del", desc: "delete" }, { key: "h/l", desc: "chart" }, { key: "c", desc: "cycle" }, { key: "1-4", desc: "tab" }],
+    hints: () => [{ key: "j/k", desc: "move" }, { key: "enter", desc: "edit" }, { key: "a", desc: "add" }, { key: "del del", desc: "delete" }, { key: "h/l", desc: "chart" }, { key: "[ ]", desc: "cycles" }, { key: "c", desc: "cycle" }, { key: "1-4", desc: "tab" }],
   },
   "budgets.categories": {
     handle: handleBudgetCategories,
     quits: true,
-    hints: () => [{ key: "j/k", desc: "move" }, { key: "enter", desc: "set budget" }, { key: "x", desc: "leave out" }, { key: "del del", desc: "remove budget" }, { key: "h/l", desc: "chart" }, { key: "c", desc: "cycle" }, { key: "1-4", desc: "tab" }],
+    hints: () => [{ key: "j/k", desc: "move" }, { key: "enter", desc: "set budget" }, { key: "x", desc: "leave out" }, { key: "del del", desc: "remove budget" }, { key: "h/l", desc: "chart" }, { key: "[ ]", desc: "cycles" }, { key: "c", desc: "cycle" }, { key: "1-4", desc: "tab" }],
   },
   "manager.merchants": {
     handle: handleManagerMerchants,

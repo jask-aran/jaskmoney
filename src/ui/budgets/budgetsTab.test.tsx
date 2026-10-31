@@ -6,6 +6,7 @@ import { renderApp } from "../../testing/app"
 import { handleKey } from "../../app/keys"
 import { key } from "../../testing/keys"
 import { saveBudget } from "../../db/client"
+import { budgetIn } from "../../domain/budget"
 
 afterEach(() => setAppClock(null))
 
@@ -99,6 +100,37 @@ test("each cycle is judged against the budget in force then", async () => {
   const f = await frame()
   expect(f).toMatch(/1 Oct – 31 Oct\s+\$100\s+[█─▏│ ]+\s+\$400 under/)
   expect(f).toMatch(/1 Sep – 30 Sep\s+\$300\s+[█─▏│ ]+\s+\$50 over/)
+})
+
+test("[ shows the cycle before with the budgets then; a budget removed from this cycle on stays in the cycles before (no longer renting)", async () => {
+  const { groceries, frame } = await budgetsTab()
+  data.setBudget({ kind: "overall" }, 500)
+  // First set now: it applies to every cycle.
+  data.setBudget({ kind: "category", categoryId: groceries }, 300)
+  // Removed from this cycle on.
+  data.removeBudget({ kind: "category", categoryId: groceries })
+  expect(data.state.budgets.some((b) => b.scope.kind === "category")).toBe(false)
+  expect(await frame()).not.toMatch(/Groceries\s+[█▌│─]+/)
+  handleKey(ui, key("["), data)
+  expect(ui.state.budgetOffset).toBe(-1)
+  const f = await frame()
+  expect(f).toContain("Budgets · 1 Sep – 30 Sep · ] later")
+  expect(f).toMatch(/Groceries\s+[█▌│─]+\s+\$300 of \$300/)
+  expect(f).toMatch(/Total budgeted\s+[█▌│─]+\s+\$300 of \$800/)
+  // No cycle before September has data; ] comes back, and no further.
+  handleKey(ui, key("["), data)
+  expect(ui.state.budgetOffset).toBe(-1)
+  handleKey(ui, key("]"), data)
+  handleKey(ui, key("]"), data)
+  expect(ui.state.budgetOffset).toBe(0)
+})
+
+test("a budget set while showing a past cycle applies from that cycle until its next change", async () => {
+  const { groceries } = await budgetsTab()
+  data.setBudget({ kind: "category", categoryId: groceries }, 300)
+  data.setBudget({ kind: "category", categoryId: groceries }, 250, "2026-09-01")
+  expect(data.state.budgets.find((b) => b.scope.kind === "category")!.amount).toBe(250)
+  expect(budgetIn(data.state.budgetHistory, { kind: "category", categoryId: groceries }, "2026-08-01")).toBe(300)
 })
 
 test("with only category budgets, the total is theirs and everything else waits to be set", async () => {
