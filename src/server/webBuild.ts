@@ -96,7 +96,7 @@ const ICON_FILES = ["icon-192.png", "icon-512.png", "apple-touch-icon.png"]
 /** What the page's head says of the app: its build, the manifest, the icons. */
 const head = (version: string, built: string) => [
   `<meta name="jaskmoney-build" content="${version}" data-built="${built}">`,
-  `<link rel="manifest" href="/manifest.webmanifest">`,
+  `<link rel="manifest" href="/manifest.webmanifest" crossorigin="use-credentials">`,
   `<link rel="icon" type="image/png" sizes="192x192" href="/icon-192.png">`,
   `<link rel="apple-touch-icon" href="/apple-touch-icon.png">`,
 ].join("")

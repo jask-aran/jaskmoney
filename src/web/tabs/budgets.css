@@ -7,7 +7,6 @@
   grid-template-columns: minmax(0, 1fr) minmax(340px, 460px); align-items: start;
   padding: var(--space-lg) var(--page-gutter, var(--space-lg)) var(--space-3xl);
 }
-.bud-cycle { grid-column: 1 / -1; }
 .bud-main { display: flex; flex-direction: column; gap: var(--space-3xl); min-width: 0; }
 .bud-main .jm-section + .jm-section { margin-top: 0; }
 .bud-chart { height: 360px; }

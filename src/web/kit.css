@@ -133,3 +133,8 @@ body { background: var(--frame); }
 .jm-choice-check > svg { width: 1.125rem; height: 1.125rem; }
 /* A bar over the tabs (a selection's actions) pushes the toasts above it. */
 .jm-app:has(.jm-selbar) .jm-toasts { bottom: calc(var(--tabbar-room, 0px) + 4.25rem); }
+
+/* A phone's header row when it isn't the library's (PageHeader's `phone`): below the status bar, the tab's own
+   row (a range stepper), or only the status bar's room when the tab has nothing for it. */
+.jm-phone-head { flex: none; padding: calc(env(safe-area-inset-top, 0px) + var(--space-sm)) var(--space-lg) 0; }
+.jm-phone-head:empty { padding-bottom: var(--space-xs); }

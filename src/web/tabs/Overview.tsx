@@ -29,7 +29,7 @@ import { allCategoryLines, overviewRange } from "../../state/overviewRange"
 import type { CycleConfig } from "../../domain/budget"
 import { Chart, Legend, type ChartModel, type LegendItem } from "../charts"
 import { compact, data, kept, now, say, setTab, tab, useKeys } from "../store"
-import { ArrowLeftRight, CalendarDays, Check, ChevronLeft, ChevronRight, Landmark, Repeat, Wallet } from "lucide-solid"
+import { ArrowLeftRight, CalendarDays, Check, ChevronDown, ChevronLeft, ChevronRight, Landmark, Repeat, Wallet } from "lucide-solid"
 import { BottomSheet, Chips, PageHeader, Section } from "../kit"
 import { Button, GroupHeading, Input, Segmented } from "../v2"
 import { catColor } from "../theme"
@@ -341,7 +341,14 @@ export function Overview() {
       <Button variant="ghost" size="icon" class="step" disabled={!steppable()} onClick={() => step(-1)} aria-label="Earlier"><ChevronLeft /></Button>
       <div class="mid">
         <span class="scope range-label">{bounds().label}</span>
-        <Show when={offsetText()}><span class="note small">{offsetText()}</span></Show>
+        <Show when={offsetText() || scopeChoices().length}>
+          <span class="note small">
+            {offsetText()}
+            <Show when={scopeChoices().length}>
+              <button type="button" class="ov-scope" onClick={() => setScopeOpen(true)}>{offsetText() ? "· " : ""}{scope().label}<ChevronDown /></button>
+            </Show>
+          </span>
+        </Show>
       </div>
       <Button variant="ghost" size="icon" class="step" disabled={!steppable()} onClick={() => step(1)} aria-label="Later"><ChevronRight /></Button>
       <Show when={timeframe().family === "custom"} fallback={
@@ -359,11 +366,9 @@ export function Overview() {
 
   return (
     <>
-      <PageHeader title="Overview" place={scope().label} actions={compact() ? undefined : rangeActions()}
-        onPill={compact() && scopeChoices().length ? () => setScopeOpen(true) : undefined} />
+      <PageHeader title="Overview" place={scope().label} actions={rangeActions()} phone={phoneStepper()} />
       <div class="ov">
         <div class="ov-range">
-          <Show when={compact()}>{phoneStepper()}</Show>
           <Chips class="range-seg" label="Range" options={[...LOOKBACKS, ...PERIODS.map((p) => PERIOD_LABEL[p]), "Custom"].map((label, i) => ({ value: i, label }))}
             value={activeChipIndex(timeframe())} onChange={chooseChip} />
           <Show when={!compact()}>

@@ -3,7 +3,7 @@
  * pane with headings and space (no boxes); one column on a phone, every
  * control a finger's size. */
 /* Overview, Budgets and Settings, and the sheets they open (portalled out of the page). */
-.ov, .bud, .st-page, .jm-bottom-sheet, .ui-scrim {
+.ov, .bud, .st-page, .jm-bottom-sheet, .ui-scrim, .jm-phone-head {
   /* A finger's target, a phone's list row, a desktop's row, a key and value line. */
   --tap: calc(2.75 * var(--u-space)); --row-tall: calc(3 * var(--u-space)); --row-desk: calc(2.5 * var(--u-space));
   --stat-row: calc(2 * var(--u-space));
@@ -150,6 +150,8 @@ button.link.ai { color: var(--tone-ai); }
   .ov-stepper { display: flex; align-items: center; gap: var(--space-xs); min-height: var(--tap); }
   .ov-stepper .step { width: var(--tap); height: var(--tap); border-radius: var(--radius-round); }
   .ov-stepper .step svg { width: var(--icon-lg); height: var(--icon-lg); }
+  .ov-stepper .ov-scope { border: 0; background: none; padding: 0 var(--space-xs); color: var(--muted-foreground); font: inherit; font-size: var(--text-caption); display: inline-flex; align-items: center; gap: var(--space-2xs); min-height: 1.5rem; }
+  .ov-stepper .ov-scope svg { width: .875rem; height: .875rem; }
   .ov-stepper .mid { flex: 1 1 auto; min-width: 0; display: flex; flex-direction: column; align-items: center; gap: var(--space-2xs); text-align: center; }
   .ov-stepper .range-label { font-size: var(--text-body); font-weight: var(--weight-strong); white-space: nowrap; }
   .ov-stepper .now { height: var(--tap); border-radius: var(--radius-round); padding-inline: var(--space-xl); }

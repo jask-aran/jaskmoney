@@ -95,7 +95,8 @@ test("the page is an installable app: its build, a manifest, icons, and a worker
   expect(page.headers.get("cache-control")).toBe("no-cache")
   const version = html.match(/<meta name="jaskmoney-build" content="([0-9a-f]{10})"/)?.[1]
   expect(version).toBeTruthy()
-  expect(html).toContain(`<link rel="manifest" href="/manifest.webmanifest">`)
+  // Sent with credentials: whatever stands in front of the core (a sign-in) lets the manifest through.
+  expect(html).toContain(`<link rel="manifest" href="/manifest.webmanifest" crossorigin="use-credentials">`)
   const manifest = await get("/manifest.webmanifest")
   expect(manifest.headers.get("content-type")).toContain("application/manifest+json")
   expect(((await manifest.json()) as { display: string }).display).toBe("standalone")

@@ -240,9 +240,8 @@ export function Budgets() {
 
   return (
     <>
-      <PageHeader title="Budgets" place={view().current ? `day ${elapsed()} of ${cycle().days}` : "past cycle"} actions={compact() ? undefined : header()} />
+      <PageHeader title="Budgets" place={view().current ? `day ${elapsed()} of ${cycle().days}` : "past cycle"} actions={header()} phone={phoneStepper()} />
       <div class="bud">
-        <Show when={compact()}><div class="bud-cycle">{phoneStepper()}</div></Show>
         <div class="bud-main">
           <ChartPane class="bud-chart" views={BUDGET_VIEWS} current={chartView()} onView={setChartView} title={subject().title} build={build} />
 

@@ -18,12 +18,16 @@ import { Button, Frost, Group, GroupHeading, Header, HeaderButton, HeaderCrumb, 
 
 /** A tab's top line: its name, what it's looking at beside it, quiet actions at the right. On a phone the name is a
  *  pill (onPill: a tap on it chooses what the tab looks at, as an account) and the actions a pill of icons. */
-export function PageHeader(props: { title: string; place?: string; after?: JSX.Element; actions?: JSX.Element; onPill?: () => void }) {
+export function PageHeader(props: { title: string; place?: string; after?: JSX.Element; actions?: JSX.Element; onPill?: () => void; phone?: JSX.Element }) {
+  // A phone's tab bar names the tab: the header's row is for what the tab does there (`phone`, its own row
+  // such as a range stepper; else actions or a pill that chooses), and with nothing to do it takes no room.
   return (
+    <Show when={!compact() || (!props.phone && (props.actions || props.onPill))} fallback={<div class="jm-phone-head">{props.phone}</div>}>
     <Header pill={compact() ? <HeaderPill label={props.onPill && props.place ? props.place : props.title} opens={!!props.onPill} onClick={() => props.onPill?.()} icon={props.onPill ? <ChevronDown /> : undefined} /> : undefined}
       after={props.after} actions={props.actions}>
       <HeaderCrumb place={props.place} title={props.title} />
     </Header>
+    </Show>
   )
 }
 
