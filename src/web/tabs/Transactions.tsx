@@ -5,7 +5,7 @@
  * review (uncategorised rows with their suggestions), and a row's details.
  * Keys as the TUI's where a browser allows: / ? j k x c y enter esc.
  */
-import { For, Show, createEffect, createMemo, createSignal, onCleanup, onMount, untrack } from "solid-js"
+import { For, Show, createEffect, createMemo, createSignal, onCleanup, untrack } from "solid-js"
 import "./transactions.css"
 import { selectionLabel } from "../../domain/accountTree"
 import { askTerms, parseFilter } from "../../domain/filter"
@@ -273,11 +273,16 @@ export function Transactions() {
   const last = () => Math.min(rows().length, Math.ceil((scrollTop() + viewHeight()) / rowHeight()) + OVERSCAN)
   const shown = createMemo(() => rows().slice(first(), last()))
 
-  onMount(() => {
-    const observer = new ResizeObserver(() => setViewHeight(scroller.clientHeight))
-    observer.observe(scroller)
-    onCleanup(() => observer.disconnect())
-  })
+  // The table remounts (Merchants replaces it), so each one is measured as it mounts; a removed one says nothing.
+  let observer: ResizeObserver | undefined
+  const observe = (element: HTMLDivElement) => {
+    scroller = element
+    setScrollTop(0)
+    observer?.disconnect()
+    observer = new ResizeObserver(() => { if (element.isConnected) setViewHeight(element.clientHeight) })
+    observer.observe(element)
+  }
+  onCleanup(() => observer?.disconnect())
   // A new filter or account starts at the top.
   createEffect(() => { data.state.filterExpr; data.state.accountSelection; data.state.uncategorisedOnly; if (scroller) { scroller.scrollTop = 0; setScrollTop(0) } })
   // Selections are of rows still shown.
@@ -434,7 +439,7 @@ export function Transactions() {
                 </button>
               )}</For>
             </div>
-            <div class="jm-tbody" ref={scroller} onScroll={(e) => setScrollTop(e.currentTarget.scrollTop)}>
+            <div class="jm-tbody" ref={observe} onScroll={(e) => setScrollTop(e.currentTarget.scrollTop)}>
               <Show when={rows().length} fallback={<div class="jm-empty">{review() ? "Nothing waiting for a category." : data.state.filterQuery ? "No rows match this search." : "No transactions."}</div>}>
                 <div style={{ height: `${rows().length * rowHeight()}px`, position: "relative" }}>
                   <div style={{ transform: `translateY(${first() * rowHeight()}px)` }}>
