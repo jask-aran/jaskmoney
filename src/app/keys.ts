@@ -39,7 +39,7 @@ import { createLlm, LLM_PROVIDERS, llmModelId } from "../ai/llm"
 import { credentialEnv } from "../ai/credentials"
 import { runAccept, toggleUncategorised, newSuggestionsNote, suggestNew } from "./suggest"
 import { ACCEPT_ALL_AT } from "../domain/questions"
-import { CHART_VIEWS, SETTINGS_SECTIONS, jumpTargets, TABS, settingsSectionFocus, smartQuestionFor, type ScopeId, type UiState, type UiStore } from "../state/uiStore"
+import { BUDGET_VIEWS, CHART_VIEWS, SETTINGS_SECTIONS, jumpTargets, TABS, settingsSectionFocus, smartQuestionFor, type ScopeId, type UiState, type UiStore } from "../state/uiStore"
 import type { DataStore } from "../state/dataStore"
 import {
   CUSTOM_CHIP,
@@ -1482,8 +1482,8 @@ function openBudgetEditor(ui: UiStore, data: DataStore, budget: Budget | null, s
   ui.openSettingsEditor("budget", budget?.id ?? null, { ...ui.state.settingsDraft, ...cycleDraft(data.state.budgetCycle), scopeKey: scopeKey(scope), amount: budget ? String(budget.amount) : amount > 0 ? String(Math.round(amount)) : "" })
 }
 
-/** Keys either Budgets card shares: h/l switch the chart between this
- * cycle and cycle by cycle; [ and ] show the cycle before or after (up to
+/** Keys either Budgets card shares: h/l step the chart through its views
+ * (the Overview's spending ones); [ and ] show the cycle before or after (up to
  * this one, back to the first with data); c edits the cycle. */
 function budgetKeys(ui: UiStore, key: KeyEvent, data: DataStore): boolean {
   const { name, sequence: seq } = key
@@ -1497,7 +1497,8 @@ function budgetKeys(ui: UiStore, key: KeyEvent, data: DataStore): boolean {
     return true
   }
   if (name === "h" || name === "left" || name === "l" || name === "right") {
-    ui.setState({ budgetChart: ui.state.budgetChart === 0 ? 1 : 0 })
+    const step = name === "h" || name === "left" ? -1 : 1
+    ui.setState({ budgetChart: (ui.state.budgetChart + step + BUDGET_VIEWS.length) % BUDGET_VIEWS.length })
     return true
   }
   if (name === "c") { ui.openSettingsEditor("cycle", null, { ...ui.state.settingsDraft, ...cycleDraft(data.state.budgetCycle) }); return true }

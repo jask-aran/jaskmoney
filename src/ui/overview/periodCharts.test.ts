@@ -18,6 +18,16 @@ describe("Cumulative budget", () => {
     const under = spendingChart("Cumulative", { dates, values: dates.map(() => 50) }, 40, 10, "2026-10-05", [], 1000)
     expect(legendText(under)).toContain("$250 under pace")
   })
+  test("from a few days in it says where the period ends at its pace so far; once over, the budget's over or under, not its pace", () => {
+    const series = { dates, values: dates.map(() => 150) }
+    const text = (m: ReturnType<typeof spendingChart>) => m.rows.map((r) => r.map((run) => run.text).join("")).join("\n")
+    // $750 over 5 days of 10: $1.5k by the end.
+    expect(text(spendingChart("Cumulative", series, 40, 10, "2026-10-05", [], 1000))).toContain("≈ $1.5k")
+    const over = spendingChart("Cumulative", series, 40, 10, "2026-10-20", [], 1000)
+    expect(text(over)).not.toContain("≈")
+    expect(legendText(over)).toContain("Budget $1,000, $500 over")
+    expect(legendText(over)).not.toContain("pace")
+  })
   test("without a budget there is no pace", () => {
     const model = spendingChart("Cumulative", { dates, values: dates.map(() => 150) }, 40, 10, "2026-10-05", [])
     expect(legendText(model)).not.toContain("pace")

@@ -1,6 +1,6 @@
 import { Index, Show, createMemo } from "solid-js"
 import { useTerminalDimensions } from "@opentui/solid"
-import { allocation, budgetCounts, budgetIgnoredIds, budgetIn, budgetProgress, cycleSpending, pastCycles, progressOf, totalBudgetIn, type Budget, type BudgetProgress, type BudgetSubject, type Cycle } from "../../domain/budget"
+import { allocation, budgetCounts, budgetCountsThen, budgetIgnoredIds, budgetIn, budgetProgress, cycleSpending, pastCycles, progressOf, totalBudgetIn, type Budget, type BudgetProgress, type BudgetSubject, type Cycle } from "../../domain/budget"
 import { budgetArmId, budgetCategoryLines, budgetListRows, budgetView, type BudgetLine } from "../../domain/budgetLines"
 import { budgetLabel } from "../../domain/budgetScopes"
 import { dailySpendSeries, formatWholeMoney } from "../../domain/dashboard"
@@ -12,16 +12,18 @@ import { ui } from "../../state/uiStore"
 import { data } from "../../state/dataStore"
 import { armedFor } from "../../state/armed"
 import { ink, theme, tone } from "../../theme"
-import { categoryMark, viewMark } from "../icons"
+import { categoryMark } from "../icons"
 import { fit, shortDate } from "../text"
 import { ListRow, centredTop } from "../primitives/ListRow"
 import { SectionCard } from "../primitives/SectionCard"
 import { S } from "../primitives/S"
 import { fitSpans, type Span } from "../primitives/spans"
-import { AXIS_GUESS, ChartBody, axisWidth, type ChartModel } from "../charts/ChartBody"
-import { INKS } from "../overview/periodCharts"
+import { AXIS_GUESS, axisWidth, type ChartModel } from "../charts/ChartBody"
 import { WIDE } from "../overview/OverviewTab"
-import { cycleLines, cycleLinesLegend, cycleProjection, cyclesChart, thisCycleChart, type CycleSpent } from "./budgetCharts"
+import { cycleLines, cycleLinesLegend, type CycleSpent } from "./budgetCharts"
+import { ChartCard } from "../charts/ChartCard"
+import { spendingChart } from "../overview/periodCharts"
+import { BUDGET_VIEWS } from "../../state/uiStore"
 
 /** Cycles before this one the chart and the cycle lines can show, at most. */
 const HISTORY = 36
@@ -52,8 +54,6 @@ function bar(width: number, used: number, pace: number): Span[] {
   return spans
 }
 
-/** The view picker in the chart's top border, the current one bright. */
-const VIEWS = ["Cumulative", "Cycles"] as const
 
 /**
  * The Budgets tab: how a budget is going, at a glance. A chart of the
@@ -111,8 +111,10 @@ export function BudgetsTab(props: { focused: SectionId }) {
   const firstData = live(() => data.transactions().reduce((first, t) => (t.dateISO < first ? t.dateISO : first), today()))
 
   // What the chart follows: the row at the focused card's cursor.
-  const subject = (): { title: string; scope: BudgetSubject | null; counts: (row: Transaction) => boolean; amount: number | null } => {
-    const of = (scope: BudgetSubject) => budgetCounts(scope, data.state.categories, budgets())
+  // Its rows are judged by the budgets of their own cycle (budgetCountsThen):
+  // rent is everything else only in cycles it had no budget.
+  const subject = live((): { title: string; scope: BudgetSubject | null; counts: (row: Transaction) => boolean; amount: number | null } => {
+    const of = (scope: BudgetSubject) => budgetCountsThen(scope, data.state.categories, data.state.budgetHistory, data.state.budgets, config())
     if (props.focused === "bud.categories") {
       const line = lines()[categoryCursor()]
       if (line) {
@@ -125,7 +127,7 @@ export function BudgetsTab(props: { focused: SectionId }) {
     const row = rows()[budgetCursor()]!
     if (row.kind === "total") return { title: TOTAL, scope: { kind: "total" }, counts: of({ kind: "total" }), amount: split().total }
     return row.budget ? { title: label(row.budget), scope: row.budget.scope, counts: of(row.budget.scope), amount: row.budget.amount } : { title: overallName(), scope: { kind: "overall" }, counts: of({ kind: "overall" }), amount: null }
-  }
+  })
   const spending = (c: Cycle, through: string) => cycleSpending(c, through, data.state.accounts, data.transactions()).filter(subject().counts)
   const daily = (c: Cycle, through: string) => ({ cycle: c, daily: dailySpendSeries(spending(c, through), c.start, c.end).values })
   // Cycles the history covers as well as this one (historyCovers, as the
@@ -150,7 +152,6 @@ export function BudgetsTab(props: { focused: SectionId }) {
       })),
     ]
   })
-  const history = () => cycles().slice(1)
 
   // Sizes: tab bar + gap (2) and status + footer (2) off the height. Wide,
   // the chart and the budgets share the left and the categories run down
@@ -176,54 +177,23 @@ export function BudgetsTab(props: { focused: SectionId }) {
   const categoriesHeight = () => (wide() ? body() : Math.max(5, body() - chartHeight() - linesHeight() - budgetsHeight()))
   const rowWidth = (width: number) => width - 5
 
-  // The chart, built once with a guessed axis width, again if the labels
-  // need another.
+  // The chart: the Overview's spending view over the cycle shown, for what
+  // the subject counts, with its budget; built once with a guessed axis
+  // width, again if the labels need another.
   const baseline = () => data.state.uiPrefs.xAxis === true
+  const subjectRows = live(() => cycleSpending({ start: firstData(), end: today(), days: 0 }, today(), data.state.accounts, data.transactions()).filter(subject().counts))
   let axisWas = AXIS_GUESS
   const model = live((): ChartModel => {
-    // Border (2), the line over the chart, the x-axis line (a setting) and the x labels.
-    const height = Math.max(3, chartHeight() - (baseline() ? 5 : 4))
-    const build = (axis: number): ChartModel => {
-      const width = Math.max(1, mainWidth() - 4 - axis)
-      if (ui.state.budgetChart === 1) return cyclesChart(cycles().slice(0, Math.max(2, Math.floor(width / 5))).reverse(), width, height)
-      const last = past()[0]
-      return thisCycleChart(nowDays(), last ? daily(last, last.end) : null, subject().amount, width, height, today(), data.state.weekStart)
-    }
+    // Border (2), the x-axis line (a setting) and the x labels.
+    const height = Math.max(3, chartHeight() - (baseline() ? 4 : 3))
+    const series = dailySpendSeries(subjectRows(), cycle().start, cycle().end)
+    const view = (BUDGET_VIEWS[ui.state.budgetChart] ?? BUDGET_VIEWS[0]!).view as "Cumulative" | "Daily" | "Weekly"
+    const build = (axis: number) => spendingChart(view, series, Math.max(1, mainWidth() - 4 - axis), height, today(), subjectRows(), subject().amount ?? undefined, { current: "This cycle", previous: "Last cycle" }, data.state.weekStart)
     let built = build(axisWas)
     const axis = axisWidth(built.ticks)
     if (axis !== axisWas) { axisWas = axis; built = build(axis) }
     return built
   })
-
-  // Where the subject stands: what's spent and of what, what's left or
-  // over and against an even pace; without a budget, against its average.
-  const headline = (): Span[] => {
-    const s = subject()
-    const now = spent()
-    const strong = (text: string, fg: string): Span => ({ text, fg, bold: true })
-    const avg = history().length ? history().reduce((a, h) => a + h.spent, 0) / history().length : null
-    if (s.amount == null) {
-      return [strong(formatWholeMoney(now), ink.strong), { text: view().current ? " this cycle" : " that cycle", fg: ink.label }, ...(avg != null ? [{ text: `   ${formatWholeMoney(avg)} a cycle on average · no budget`, fg: ink.note }] : [{ text: "   no budget", fg: ink.note }])]
-    }
-    const left = s.amount - now
-    if (!view().current) return [strong(formatWholeMoney(now), ink.strong), { text: ` of ${formatWholeMoney(s.amount)}   `, fg: ink.label }, left < 0 ? strong(`${formatWholeMoney(-left)} over`, tone.bad) : strong(`${formatWholeMoney(left)} under`, tone.good)]
-    const vsPace = now - s.amount * pace()
-    const daysLeft = cycle().days - elapsed() + 1
-    const projected = cycleProjection(now, elapsed(), cycle().days)
-    return [
-      strong(formatWholeMoney(now), ink.strong),
-      { text: ` of ${formatWholeMoney(s.amount)}  `, fg: ink.label },
-      left < 0 ? strong(`${formatWholeMoney(-left)} over`, tone.bad) : strong(`${formatWholeMoney(left)} left`, tone.good),
-      ...(left > 0 ? [{ text: ` · ${formatWholeMoney(left / daysLeft)}/day`, fg: ink.label }] : []),
-      { text: `  ${Math.abs(vsPace) < 1 ? "on pace" : `${formatWholeMoney(Math.abs(vsPace))} ${vsPace > 0 ? "ahead of" : "under"} pace`}`, fg: vsPace > 0 ? tone.caution : ink.note },
-      ...(projected ? [{ text: "  heading for ", fg: ink.label }, { text: formatWholeMoney(projected), fg: projected > s.amount ? tone.bad : tone.good }] : []),
-    ]
-  }
-  // As the Overview's chart panes: the views as icons, the current one bright.
-  const viewPicker = (): Span[] => VIEWS.flatMap((v, i) => [
-    ...(i ? [{ text: " ", fg: ink.note }] : []),
-    { text: viewMark(v, i === ui.state.budgetChart), fg: i === ui.state.budgetChart ? tone.key : ink.faint, bold: i === ui.state.budgetChart },
-  ])
 
   // One budget in the Budgets card: its bar against an even pace, spent of
   // budget, what's left (a day) or over.
@@ -269,20 +239,7 @@ export function BudgetsTab(props: { focused: SectionId }) {
   const categoryTop = () => centredTop(categoryCursor(), lines().length, categoryRoom())
 
   const Chart = () => (
-    <SectionCard
-      title={subject().title}
-      titleSuffix={`· ${VIEWS[ui.state.budgetChart]}`}
-      titleSuffixColor={ink.label}
-      titleRight={viewPicker()}
-      bottomSpans={model().legend}
-      width={mainWidth()}
-      height={chartHeight()}
-    >
-      <text wrapMode="none">
-        <Index each={fitSpans(headline(), mainWidth() - 4)}>{(span) => <S fg={span().fg} bold={span().bold}>{span().text}</S>}</Index>
-      </text>
-      <ChartBody model={model()} inks={INKS} baseline={baseline()} />
-    </SectionCard>
+    <ChartCard title={subject().title} views={BUDGET_VIEWS} current={ui.state.budgetChart} model={model()} width={mainWidth()} height={chartHeight()} baseline={baseline()} />
   )
   const Lines = () => (
     <SectionCard title="Each cycle" titleSuffix={`· ${subject().title}`} titleSuffixColor={ink.label} bottomSpans={cycleLinesLegend(cycles())} width={mainWidth()} height={linesHeight()}>

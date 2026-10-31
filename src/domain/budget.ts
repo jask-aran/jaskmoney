@@ -235,6 +235,20 @@ export function budgetCounts(subject: BudgetSubject, categories: Category[], bud
   return (row) => kept(row) && row.accountId === subject.accountId
 }
 
+/** budgetCounts with the budgets in force in each row's own cycle
+ * (budgetsIn), for rows across cycles: rent counts toward everything else
+ * only in cycles when it had no budget of its own. */
+export function budgetCountsThen(subject: BudgetSubject, categories: Category[], history: readonly BudgetHistoryEntry[], budgets: Budget[], config: CycleConfig): (row: Transaction) => boolean {
+  if (subject.kind === "category") return budgetCounts(subject, categories, budgets)
+  const byCycle = new Map<string, (row: Transaction) => boolean>()
+  return (row) => {
+    const start = cycleFor(config, row.dateISO).start
+    let counts = byCycle.get(start)
+    if (!counts) byCycle.set(start, counts = budgetCounts(subject, categories, budgetsIn(history, budgets, start)))
+    return counts(row)
+  }
+}
+
 /**
  * How the budgets add up: the overall one (everything else) and the
  * category ones. Budgets on a group and on categories inside it overlap

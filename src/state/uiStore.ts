@@ -186,8 +186,9 @@ export interface UiState {
   budgetCursor: number
   /** The Budgets tab's category list (domain/budgetLines order). */
   budgetCategoryCursor: number
-  /** The Budgets tab's chart: 0 this cycle, 1 cycle by cycle. */
-  budgetChart: 0 | 1
+  /** The Budgets tab's chart view: an index into BUDGET_VIEWS (the
+   * Overview's spending views). */
+  budgetChart: number
   /** The cycle the Budgets tab shows: 0 this one, -1 the one before, ... */
   budgetOffset: number
   /** Cursor in the Up Bank sync account list. */
@@ -313,6 +314,10 @@ export const CHART_VIEWS = [
   { view: "Calendar", group: "Calendar" },
   { view: "Subscriptions", group: "Subscriptions" },
 ] as const
+
+/** The Budgets tab's chart views: the Overview's spending ones, over the
+ * cycle the tab shows. */
+export const BUDGET_VIEWS = CHART_VIEWS.filter((v) => v.group === "Spending")
 
 /** The tab's jump targets that are on screen: no bottom chart when the
  * Overview shows one chart. */
