@@ -15,6 +15,7 @@ const read = (f: string) => Bun.file(f).text()
  * colour a new tag or category gets, a tag with none of its own. */
 const DATA_COLOURS = new Set([
   "src/ui/overview/periodCharts.ts",
+  "src/ui/charts/inks.ts",
   "src/ui/charts/saverInks.ts",
   "src/ui/manager/ManagerTab.tsx",
   "src/ui/manager/TransactionTable.tsx",
@@ -27,7 +28,7 @@ test("no text takes a palette grey directly: ink says which", async () => {
   const greys = /theme\.(text|subtext[01]|overlay[012])\b/
   const offenders: string[] = []
   // Chart series (last period's line, a partial bar) are data colours.
-  for (const f of sources.filter((f) => f !== "src/ui/overview/periodCharts.ts")) {
+  for (const f of sources.filter((f) => f !== "src/ui/charts/inks.ts")) {
     (await read(f)).split("\n").forEach((line, i) => { if (greys.test(line)) offenders.push(`${f}:${i + 1}: ${line.trim()}`) })
   }
   expect(offenders).toEqual([])

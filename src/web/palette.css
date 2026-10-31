@@ -1,10 +1,1 @@
-.popover.palette {
-  top: min(12vh, 100px);
-  left: 50%;
-  transform: translateX(-50%);
-  width: min(520px, calc(100vw - 24px));
-  max-height: min(560px, calc(100dvh - 24px));
-}
-.palette .head .group { padding: 0; }
-.palette .item:disabled { opacity: .45; cursor: default; }
-.palette .item .aside { white-space: nowrap; }
+.palette-overlay { --overlay-width: var(--measure-2xl); --overlay-height: calc(100dvh - 2 * var(--space-xl)); }

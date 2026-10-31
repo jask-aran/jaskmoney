@@ -4,7 +4,8 @@ import { merchantKey } from "../../../domain/history"
 import { MERCHANT_SORTS, groupByMerchant, merchantFilter, sortMerchantGroups, type MerchantSort } from "../../../domain/merchants"
 import { shortDate } from "../../../ui/text"
 import { data, run, say } from "../../store"
-import { CategoryLabel, Chips, Money } from "../../ui"
+import { CategoryLabel, Chips, Empty, Money } from "../../ui"
+import { Button, TextArea } from "../../v2"
 import "./merchants.css"
 
 const LABELS: Record<MerchantSort, string> = { total: "Total", count: "#", merchant: "Merchant", last: "Last" }
@@ -54,14 +55,17 @@ export function Merchants(props: { onShowRows: () => void }) {
     <div class="merch-view">
       <div class="merch-toolbar">
         <span class="small label">{groups().length.toLocaleString("en-AU")} merchant{groups().length === 1 ? "" : "s"}<span class="note"> · total </span><Money value={total()} class="figure" /></span>
-        <Chips options={options()} value={sort()} onChange={sortBy} />
+        <span on:click={{ capture: true, handleEvent: (event) => {
+          // Segmented skips its current choice; pressing it still reverses this sort.
+          if (event.target instanceof Element && event.target.closest('button[aria-checked="true"]')) sortBy(sort())
+        } }}><Chips options={options()} value={sort()} onChange={sortBy} /></span>
       </div>
       <div class="merch-list">
         <div class="merch-head small faint">
           <span>Merchant</span><span>Total</span><span>#</span><span>Average</span><span>Last</span><span>Category</span><span />
         </div>
-        <For each={groups()} fallback={<div class="empty">No merchants.</div>}>{(group) => (
-          <div class="merch-entry">
+        <For each={groups()} fallback={<Empty>No merchants.</Empty>}>{(group) => (
+          <div>
             <div class="merch-row">
               <button type="button" class="merch-name" onClick={() => showRows(group.merchant)}>{group.merchant}</button>
               <Money value={group.total} tone={group.total > 0} class="figure" />
@@ -69,13 +73,13 @@ export function Merchants(props: { onShowRows: () => void }) {
               <Money value={group.average} class="label" />
               <span class="label small">{lastSeen(group.lastISO)}</span>
               <CategoryLabel name={group.categoryName} color={group.categoryColor} />
-              <button type="button" class="btn ghost small" disabled={saving()} onClick={() => editNote(group.merchant)} aria-label={`Note on ${group.merchant}`}>note</button>
+              <Button variant="ghost" size="sm" disabled={saving()} onClick={() => editNote(group.merchant)} aria-label={`Note on ${group.merchant}`}>note</Button>
             </div>
             <Show when={data.state.merchantNotes[merchantKey(group.merchant)]}>{(note) => <div class="merch-note faint small">{note()}</div>}</Show>
             <Show when={editing() === group.merchant}>
               <div class="merch-editor">
-                <textarea class="field" aria-label={`Note on ${group.merchant}`} disabled={saving()} value={draft()} onInput={(e) => setDraft(e.currentTarget.value)} />
-                <div class="row"><button type="button" class="btn small" disabled={saving()} onClick={() => void saveNote(group.merchant)}>Save</button><button type="button" class="btn ghost small" disabled={saving()} onClick={() => setEditing(null)}>Cancel</button></div>
+                <TextArea aria-label={`Note on ${group.merchant}`} disabled={saving()} value={draft()} onInput={(e) => setDraft(e.currentTarget.value)} />
+                <div class="row"><Button variant="secondary" size="sm" disabled={saving()} onClick={() => void saveNote(group.merchant)}>Save</Button><Button variant="ghost" size="sm" disabled={saving()} onClick={() => setEditing(null)}>Cancel</Button></div>
               </div>
             </Show>
           </div>

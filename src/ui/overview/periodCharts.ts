@@ -1,6 +1,7 @@
 /** Chart models for the Overview's chart pane. Pure: each returns a
  * ChartModel for ChartBody. */
-import { fade, ink, theme, tone } from "../../theme"
+import { tone } from "../../theme"
+import { INKS } from "../charts/inks"
 import { cumulative, dailySpendSeries, formatWholeMoney, signedWholeMoney, weeklyTotals } from "../../domain/dashboard"
 import { balanceHistory, biggestPayee, biggestRow, computePeriodFlows, flowRows, historyCovers, historyStart, saverHistories } from "../../domain/position"
 import { accountRole, type Account, type Transaction } from "../../domain/types"
@@ -18,29 +19,7 @@ import { saverInks } from "../charts/saverInks"
 /** Days into a period before Cumulative says where it's heading. */
 const PROJECT_FROM = 3
 
-export const INKS: Record<string, string> = {
-  // Spending: the calendar's purple, lighter where a day or week isn't over.
-  spend: theme.mauve,
-  partial: fade(theme.mauve, 0.45),
-  prev: theme.overlay0,
-  ref: theme.surface2,
-  in: tone.good,
-  out: tone.bad,
-  limit: theme.chartBudget,
-  balance: theme.lavender,
-  // Where Available is headed: the balance line, faded.
-  projection: fade(theme.lavender, 0.5),
-  // Savers' total; each saver's own line takes a colour from saverInks.
-  total: ink.figure,
-  // Gridlines, as in the Go app.
-  week: theme.surface1,
-  month: theme.blue,
-  year: theme.pink,
-  today: theme.chartToday,
-  // In-chart notes (highs, lows, totals): grey, so the coloured label is
-  // always the latest value.
-  note: ink.note,
-}
+export { INKS } from "../charts/inks"
 
 const sum = (values: number[]) => values.reduce((a, b) => a + b, 0)
 

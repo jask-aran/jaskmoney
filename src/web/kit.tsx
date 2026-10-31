@@ -14,14 +14,24 @@ import { ACCEPT_ALL_AT } from "../domain/questions"
 import { isUncategorisedColor } from "../theme"
 import { catColor, provisional } from "./theme"
 import { compact, data, openDrawer, run, say } from "./store"
-import { Group, GroupHeading, Header, HeaderButton, HeaderCrumb, Item, Menu, SearchSection, Section as MenuSection, Segmented } from "./v2"
+import { Button, Group, GroupHeading, Header, HeaderButton, HeaderCrumb, HeaderPill, Item, Menu, SearchSection, Section as MenuSection, Segmented } from "./v2"
 
 /** A tab's top line: its name, what it's looking at beside it, quiet actions at the right; on a phone the menu. */
 export function PageHeader(props: { title: string; place?: string; after?: JSX.Element; actions?: JSX.Element }) {
   return (
-    <Header lead={compact() ? <HeaderButton label="Menu" icon={<MenuIcon />} onClick={openDrawer} /> : undefined} after={props.after} actions={props.actions}>
+    <Header lead={compact() ? <HeaderButton label="Menu" icon={<MenuIcon />} onClick={openDrawer} /> : undefined}
+      pill={compact() ? <HeaderPill label={props.title} /> : undefined} after={props.after} actions={props.actions}>
       <HeaderCrumb place={props.place} title={props.title} />
     </Header>
+  )
+}
+
+/** One of a tab's header actions: its icon and name on a desktop, its icon alone on a phone (the name its label). */
+export function HeaderAction(props: { label: string; icon: JSX.Element; pressed?: boolean; title?: string; onClick: () => void }) {
+  return (
+    <Show when={!compact()} fallback={<HeaderButton label={props.label} icon={props.icon} aria-pressed={props.pressed} onClick={() => props.onClick()} />}>
+      <Button variant="ghost" size="sm" aria-pressed={props.pressed} title={props.title} onClick={() => props.onClick()}>{props.icon}{props.label}</Button>
+    </Show>
   )
 }
 

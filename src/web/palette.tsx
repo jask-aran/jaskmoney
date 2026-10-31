@@ -5,6 +5,7 @@ import { assignableCategories } from "../domain/categoryOptions"
 import { filterTerm } from "../domain/filter"
 import { fuzzyScore } from "../domain/fuzzy"
 import { data, run, say, setTab, TABS } from "./store"
+import { Item, Overlay, OverlayBar, OverlayEmpty, OverlayHints, OverlayList, Scrim, Section } from "./v2"
 import "./palette.css"
 
 type Command = { label: string; category: string; run: () => void; disabled?: boolean }
@@ -58,7 +59,15 @@ export function Palette(props: { onClose: () => void }) {
       return score === -Infinity ? [] : [{ command, score, order }]
     }).sort((a, b) => b.score - a.score || a.order - b.order).map((entry) => entry.command)
   })
-  const enabled = createMemo(() => matches().filter((command) => !command.disabled))
+  const sections = createMemo(() => {
+    const groups = new Map<string, Command[]>()
+    for (const command of commands()) {
+      if (!groups.has(command.category)) groups.set(command.category, [])
+    }
+    for (const command of matches()) groups.get(command.category)?.push(command)
+    return Array.from(groups, ([category, commands]) => ({ category, commands })).filter((group) => group.commands.length)
+  })
+  const enabled = createMemo(() => sections().flatMap((section) => section.commands).filter((command) => !command.disabled))
   const selected = createMemo(() => enabled()[Math.min(cursor(), enabled().length - 1)])
   const execute = (command: Command) => {
     if (command.disabled) return
@@ -78,32 +87,36 @@ export function Palette(props: { onClose: () => void }) {
       const length = enabled().length
       if (!length) return
       setCursor((Math.min(cursor(), length - 1) + (event.key === "ArrowDown" ? 1 : -1) + length) % length)
-      queueMicrotask(() => { if (!closed) list.querySelector(".item.on")?.scrollIntoView({ block: "nearest" }) })
+      queueMicrotask(() => { if (!closed) list.querySelector("[data-highlighted]")?.scrollIntoView({ block: "nearest" }) })
     }
   }
   onMount(() => input.focus())
 
   return (
     <Portal>
-      <div class="backdrop" onClick={onClose} />
-      <div class="popover palette" role="dialog" aria-modal="true" aria-label="All commands" onKeyDown={keydown}>
-        <div class="head">
-          <div class="group">All commands</div>
-          <input ref={input} class="field" aria-label="Search commands" placeholder="Search commands…" autocomplete="off"
-            value={query()} onInput={(event) => { setQuery(event.currentTarget.value); setCursor(0) }} />
-        </div>
-        <div ref={list} class="list">
-          <Show when={matches().length} fallback={<div class="empty">No commands match.</div>}>
-            <For each={matches()}>{(command) => (
-              <button type="button" class="item" classList={{ on: selected() === command }} disabled={command.disabled}
-                onMouseEnter={() => { const index = enabled().indexOf(command); if (index >= 0) setCursor(index) }}
-                onClick={() => execute(command)}>
-                <span>{command.label}</span><span class="aside faint">{command.category}</span>
-              </button>
-            )}</For>
-          </Show>
-        </div>
-      </div>
+      <Scrim dialog placement="top" onClick={(event) => { if (event.target === event.currentTarget) onClose() }} onKeyDown={keydown}>
+        <Overlay label="Commands" class="palette-overlay">
+          <OverlayBar placeholder="Search commands…" value={query()} onInput={(value) => { setQuery(value); setCursor(0) }} onClose={onClose}
+            field={{ ref: (element) => { input = element }, "aria-label": "Search commands", autocomplete: "off" }} />
+          <OverlayList ref={list} managed>
+            <Show when={matches().length} fallback={<OverlayEmpty>No commands match.</OverlayEmpty>}>
+              <For each={sections()}>{(section) => (
+                <Section title={section.category}>
+                  <For each={section.commands}>{(command) => (
+                    <Item active={selected() === command} disabled={command.disabled}
+                      tabIndex={command.disabled ? undefined : 0} aria-disabled={command.disabled || undefined}
+                      onKeyDown={(event) => { if (event.key === " " && !event.isComposing && !event.metaKey && !event.ctrlKey && !event.altKey) event.preventDefault() }}
+                      onKeyUp={(event) => { if (event.key === " " && !event.isComposing && !event.metaKey && !event.ctrlKey && !event.altKey) execute(command) }}
+                      onCursor={() => { const index = enabled().indexOf(command); if (index >= 0) setCursor(index) }}
+                      onClick={() => execute(command)}>{command.label}</Item>
+                  )}</For>
+                </Section>
+              )}</For>
+            </Show>
+          </OverlayList>
+          <OverlayHints start={[[["↑", "↓"], "move"], [["↵"], "run"], [["esc"], "close"]]} />
+        </Overlay>
+      </Scrim>
     </Portal>
   )
 }

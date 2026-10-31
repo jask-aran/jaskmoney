@@ -4,6 +4,8 @@ import { groupForTag, TAG_SHOW_AT, tripDates, type TagTarget } from "../../../do
 import { count } from "../../../domain/words"
 import { data, run, say } from "../../store"
 import { confidenceClass, Empty, Money } from "../../ui"
+import { Check, X } from "lucide-solid"
+import { Button, Frost, GroupHeading, Input } from "../../v2"
 import "./review.css"
 
 export function TagReview(props: { onClose: () => void }) {
@@ -61,32 +63,33 @@ export function TagReview(props: { onClose: () => void }) {
   })
 
   return (
-    <aside class="drawer">
-      <header><div class="grow"><div class="strong">Find transactions for a tag</div><div class="small note">Choose a tag or name a new one</div></div><button type="button" class="btn small ghost" onClick={close}>Close</button></header>
-      <div class="body">
-        <div class="tag-review-choices">
-          <div class="tag-review-tags"><For each={tags()}>{(tag) => (
-            <button type="button" class="tagchip" classList={{ on: data.state.tagReview?.tagId === tag.id }} disabled={busy()} onClick={() => {
+    <Frost as="div" lift="raised" class="jm-drawer" role="dialog" aria-label="Find transactions for a tag">
+      <header class="jm-drawer-head"><div class="grow"><div class="jm-drawer-title">Find transactions for a tag</div><div class="small note">Choose a tag or name a new one</div></div><Button variant="ghost" size="icon-sm" aria-label="Close" onClick={close}><X /></Button></header>
+      <div class="jm-drawer-body">
+        <section class="tag-review-choices"><GroupHeading>Tags</GroupHeading>
+          <div class="jm-tags"><For each={tags()}>{(tag) => (
+            <button type="button" class="jm-tag" aria-pressed={data.state.tagReview?.tagId === tag.id} disabled={busy()} onClick={() => {
               const group = groupForTag(tag.name, data.tagGroups())
               choose({ tagId: tag.id, name: tag.name, categoryIds: tag.categoryIds, about: tag.about, ...(group ? { group } : {}) })
-            }}>{tag.name}</button>
+            }}><span class="dot" style={{ background: tag.color }} />{tag.name}</button>
           )}</For></div>
           <form class="row" onSubmit={(event) => { event.preventDefault(); if (newName() && !existing()) choose({ tagId: null, name: newName(), categoryIds: [], about: null }) }}>
-            <input class="field grow" aria-label="New tag name" placeholder="New tag name" value={name()} onInput={(event) => setName(event.currentTarget.value)} />
-            <button type="submit" class="btn small" disabled={!newName() || !!existing() || busy()}>Find</button>
+            <Input class="grow" aria-label="New tag name" placeholder="New tag name" value={name()} onInput={(event) => setName(event.currentTarget.value)} />
+            <Button type="submit" variant="secondary" size="sm" disabled={!newName() || !!existing() || busy()}>Find</Button>
           </form>
-        </div>
+        </section>
         <Show when={data.state.tagReview}>{(review) => (
           <>
             <div class="row"><span class="heading grow">{review().name}</span><Show when={review().asking}><span class="small note">Jev judging…</span></Show></div>
             <div class="tag-review-actions">
-              <button type="button" class="btn small primary" disabled={!selectedIds().length || busy()} onClick={() => accept(selectedIds())}>Accept</button>
-              <button type="button" class="btn small" disabled={!confidentIds().length || busy()} onClick={() => accept(confidentIds())}>Accept all ≥{ACCEPT_ALL_AT * 100}%</button>
-              <button type="button" class="btn small" disabled={!selectedIds().length || busy()} onClick={dismiss}>Dismiss</button>
+              <Button variant="primary" size="sm" disabled={!selectedIds().length || busy()} onClick={() => accept(selectedIds())}>Accept</Button>
+              <Button variant="secondary" size="sm" disabled={!confidentIds().length || busy()} onClick={() => accept(confidentIds())}>Accept all ≥{ACCEPT_ALL_AT * 100}%</Button>
+              <Button variant="secondary" size="sm" disabled={!selectedIds().length || busy()} onClick={dismiss}>Dismiss</Button>
             </div>
             <div class="tag-review-list"><For each={rows()} fallback={<Empty>{review().asking ? "Asking Jev…" : "Nothing more to tag"}</Empty>}>{(row) => (
-              <label class="tag-review-row">
-                <input type="checkbox" checked={selected().has(row.transaction.id)} disabled={busy()} onChange={() => toggle(row.transaction.id)} aria-label={`Select ${row.transaction.description}`} />
+              <label class="tag-review-row" data-selected={selected().has(row.transaction.id) ? "" : undefined}>
+                <input class="tag-review-input" type="checkbox" checked={selected().has(row.transaction.id)} disabled={busy()} onChange={() => toggle(row.transaction.id)} aria-label={`Select ${row.transaction.description}`} />
+                <span class="tag-review-check" aria-hidden="true"><Show when={selected().has(row.transaction.id)}><Check /></Show></span>
                 <span class="grow"><span class="tag-review-description">{row.transaction.description}</span><span class="small note">{row.transaction.dateISO}</span></span>
                 <span class={`conf ${confidenceClass(row.candidate.confidence)}`} title={row.candidate.source}>{row.candidate.source === "history" ? "↺" : row.candidate.source === "group" ? "◆" : ""}{Math.round(row.candidate.confidence * 100)}%</span>
                 <Money value={row.transaction.amount} />
@@ -95,6 +98,6 @@ export function TagReview(props: { onClose: () => void }) {
           </>
         )}</Show>
       </div>
-    </aside>
+    </Frost>
   )
 }

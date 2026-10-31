@@ -1,17 +1,47 @@
 @import "@fontsource-variable/geist";
-:root { --font-sans: "Geist Variable", sans-serif; }
-/* jaskmoney's material on Conduit's surfaces (src/theme.ts is the palette's
-   source; web/theme.ts also sets --ink-* and the jaskmoney accents from it).
-   The frame is the TUI's canvas (crust); panes sit a step up (mantle), cards
-   and popovers a step more (base). Text is the TUI's figure ink, muted text
-   its note ink; the one bright action is white. Hue only for state and data:
-   red for errors and destructive actions, green and yellow as small marks. */
+/*
+ * jaskmoney's material on Conduit's surfaces. src/theme.ts is the palette's source: web/theme.ts sets the TUI's
+ * palette, its inks (--ink-*) and its accents (--tone-good … --tone-scope) from it, and this file maps the library's
+ * roles onto them, so the web app reads like the TUI.
+ *
+ * Two faces, and everything takes one of them through these tokens, never a family of its own:
+ * - Geist (--font-sans): words. Names, descriptions, titles, controls, prose.
+ * - Paper Mono (--font-mono): what the TUI's grid is made of. Money, dates, counts, percentages, keys, section
+ *   labels, JQL, tags. Tabular figures, so columns of money line up as they do in the terminal.
+ */
+:root {
+  --font-sans: "Geist Variable", "Geist", ui-sans-serif, system-ui, sans-serif;
+  --font-mono: "Paper Mono", ui-monospace, SFMono-Regular, Consolas, monospace;
+  --font-label: var(--font-mono); --font-data: var(--font-mono); --font-code: var(--font-mono);
+  --font-wordmark: var(--font-mono);
+  /* Data reads at the rest weight: a light mono goes thin and grey at the small sizes it's set in. */
+  --weight-data: var(--weight-rest);
+}
+
+/*
+ * Easier to read than Conduit's chat chrome, as money is read closely: rows at 14px, captions and data at 13px,
+ * section labels and keycaps at 11px (Conduit: 13, 12, 10). The units scale with the density and region as the
+ * library's do (these selectors are the library's region list).
+ */
+:root, [data-density="desktop"] { --row-text-units: 0.875; --row-min-units: 2; }
+[data-density="phone"] { --row-text-units: 0.9375; }
+@media (--conduit-phone-layout) { :root { --row-text-units: 0.9375; } }
+:root, [data-density], .ui-nav-pane, .ui-menu, .ui-overlay, .ui-card, .ui-toast-frame {
+  --text-label: calc(0.6875 * var(--u-type)); --text-caption: calc(0.8125 * var(--u-type)); --label-size: var(--text-label);
+}
+
+/*
+ * Colour: the frame is the TUI's canvas (crust), the pane a step up (mantle), what floats a step more (base).
+ * Text by the TUI's inks: the figure ink for what you read, its label ink for what's secondary (Conduit's muted
+ * text is darker; the TUI's label grey reads better at these sizes), its note ink for the quietest. The one bright
+ * action is white. Hue only for state and data: red for errors and destructive actions, green and yellow as marks.
+ */
 .dark {
-  --frame: #11111b; --background: #181825; --foreground: #e6e6e6;
+  --frame: #11111b; --background: #181825; --foreground: var(--ink-figure, #e6e6e6);
   --card: #1e1e2e;
   --popover: #1e1e2e;
   --primary: #ffffff; --primary-foreground: #11111b;
-  --muted-foreground: #7f849c;
+  --muted-foreground: var(--ink-label, #a6adc8);
   --destructive: #f38ba8; --border: oklch(1 0 0 / 7%);
   --ring: #bac2de; --region-focus: #cdd6f4;
 }

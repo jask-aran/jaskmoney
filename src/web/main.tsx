@@ -6,7 +6,7 @@
  * visit and then stays, hidden while another is shown, as the TUI's do. On a phone (or a narrow window) the sidebar
  * is a drawer.
  */
-import { For, Show, createMemo, createSignal, type JSX } from "solid-js"
+import { For, Show, createMemo, createSignal, onCleanup, type JSX } from "solid-js"
 import { render } from "solid-js/web"
 import { LayoutDashboard, PiggyBank, ReceiptText, RefreshCw, Settings2, Undo2 } from "lucide-solid"
 import { accountStacks } from "../domain/accountTree"
@@ -19,6 +19,7 @@ import { Overview } from "./tabs/Overview"
 import { Transactions } from "./tabs/Transactions"
 import { Budgets } from "./tabs/Budgets"
 import { Settings } from "./tabs/Settings"
+import { Palette } from "./palette"
 
 applyTheme()
 document.documentElement.classList.add("dark")
@@ -39,7 +40,7 @@ const ICONS: Record<TabId, () => JSX.Element> = {
 /** Each tab's keys, for the status line. */
 const HINTS: Record<TabId, Array<[string, string]>> = {
   overview: [["[ ]", "range"], ["u", "undo"]],
-  transactions: [["/", "search"], ["?", "smart"], ["j k", "move"], ["c", "category"], ["x", "select"], ["↵", "details"]],
+  transactions: [["/", "search"], ["?", "smart"], ["j k", "move"], ["c", "category"], ["x", "select"], ["↵", "details"], ["⌃K", "all"]],
   budgets: [["[ ]", "cycle"], ["u", "undo"]],
   settings: [["u", "undo"]],
 }
@@ -103,12 +104,20 @@ function App() {
     if (event.key === "Escape" && drawer()) { closeDrawer(); return true }
     return false
   })
+  // ctrl+k (⌘K): every command, as the TUI's palette; from anywhere, text fields included.
+  const [palette, setPalette] = createSignal(false)
+  const onPaletteKey = (event: KeyboardEvent) => {
+    if ((event.ctrlKey || event.metaKey) && !event.altKey && event.key.toLowerCase() === "k") { event.preventDefault(); setPalette((open) => !open) }
+  }
+  window.addEventListener("keydown", onPaletteKey)
+  onCleanup(() => window.removeEventListener("keydown", onPaletteKey))
   // A tab chosen by the address (back, a link) is visited too.
   const current = () => { const id = tab(); if (!visited().has(id)) queueMicrotask(() => show(id)); return id }
   return (
     <div class="jm-app">
       <Sidebar show={show} />
       <Show when={compact() && drawer()}><button type="button" class="jm-drawer-backdrop" aria-label="Close the menu" onClick={closeDrawer} /></Show>
+      <Show when={palette()}><Palette onClose={() => setPalette(false)} /></Show>
       <AppShell>
         <Sheet as="main" lead>
           <div class="jm-sheet">

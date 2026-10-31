@@ -20,7 +20,7 @@ import { Merchants } from "./transactions/Merchants"
 import { TagReview } from "./transactions/TagReview"
 import { RuleOffers } from "./transactions/RuleOffers"
 import { data, fail, run, say, useKeys } from "../store"
-import { CategoryLabel, CategoryPicker, Floating, Money, PageHeader } from "../kit"
+import { CategoryLabel, CategoryPicker, Floating, HeaderAction, Money, PageHeader } from "../kit"
 import { Button, Frost, GroupHeading, Input, Item, Menu, Section as MenuSection, TextArea } from "../v2"
 
 const narrowQuery = window.matchMedia("(max-width: 760px)")
@@ -395,10 +395,10 @@ export function Transactions() {
     <>
       <PageHeader title="Transactions" place={selectionLabel(data.state.accounts, data.state.accountSelection)}
         actions={<>
-          <Button variant="ghost" size="sm" aria-pressed={review()} onClick={toggleReview} title="Uncategorised rows and their suggestions"><ListChecks />{review() ? "All rows" : "Review"}</Button>
-          <Button variant="ghost" size="sm" aria-pressed={merchants()} onClick={() => setMerchants(!merchants())} title="Group these rows by merchant"><MerchantsIcon />Merchants</Button>
-          <Button variant="ghost" size="sm" onClick={() => setPanel("tags")} title="Find the rows a tag belongs on"><Tags />Tag</Button>
-          <Show when={offers()}><Button variant="ghost" size="sm" onClick={() => setPanel("rules")} title="Rules offered from repeated categorising"><Wand2 />Rules {offers()}</Button></Show>
+          <HeaderAction label={review() ? "All rows" : "Review"} icon={<ListChecks />} pressed={review()} onClick={toggleReview} title="Uncategorised rows and their suggestions" />
+          <HeaderAction label="Merchants" icon={<MerchantsIcon />} pressed={merchants()} onClick={() => setMerchants(!merchants())} title="Group these rows by merchant" />
+          <HeaderAction label="Tag" icon={<Tags />} onClick={() => setPanel("tags")} title="Find the rows a tag belongs on" />
+          <Show when={offers()}><HeaderAction label={`Rules ${offers()}`} icon={<Wand2 />} onClick={() => setPanel("rules")} title="Rules offered from repeated categorising" /></Show>
         </>} />
       <div class="jm-txpage">
         <SearchBar ref={(el) => (search = el)} />
