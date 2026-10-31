@@ -81,7 +81,8 @@ const TYPES: Record<string, string> = {
 const MANIFEST = {
   name: "jaskmoney",
   short_name: "jaskmoney",
-  start_url: "/",
+  // The installed app's address: its page is the one the worker keeps (web/sw.js).
+  start_url: "/?app",
   scope: "/",
   display: "standalone",
   background_color: "#11111b",

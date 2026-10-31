@@ -1,6 +1,7 @@
 /**
- * The installed app and its updates (the worker is web/sw.js). Only the app opened from a home screen
- * registers the worker; a browser tab loads the newest build each visit and has nothing to update.
+ * The installed app and its updates (the worker is web/sw.js). Every page registers the worker (a browser
+ * offers to install only a page with one), but it keeps only the installed app's page (`/?app`); a browser tab
+ * loads the newest build each visit and has nothing to update.
  *
  * The installed app stays on the build it has. It looks for a newer one when it opens, when it comes back to
  * the front and when asked (Settings › App › Check); a newer build downloads in the background and waits as
@@ -91,20 +92,19 @@ export function applyUpdate(): void {
 
 /** Load the page from the server, past the kept build (signing in again, a broken build). */
 export function reloadFromServer(): void {
-  location.replace(`/?network${location.hash}`)
+  location.replace(`/?network${installed ? "&app" : ""}${location.hash}`)
 }
 
 /** Register (the installed app only), then look for updates now and whenever the app comes back to the front. */
 export async function startApp(): Promise<void> {
   if (!("serviceWorker" in navigator)) return
-  // Back from `?network`: the address is the app's own again.
-  if (location.search.includes("network")) history.replaceState(null, "", `/${location.hash}`)
+  // Back from `?network`: the address is the app's own again (`?app` in the installed app: its page is kept).
+  if (location.search.includes("network")) history.replaceState(null, "", `/${installed ? "?app" : ""}${location.hash}`)
   try {
-    // A browser tab registers nothing, but where the browser shares the installed app's worker (Chrome on
-    // Android) the tab is on the kept build too, so it gets the same updates.
-    const existing = installed ? null : await navigator.serviceWorker.getRegistration("/")
-    if (!installed && !existing) return
-    registration = existing ?? await navigator.serviceWorker.register("/sw.js", { scope: "/" })
+    const registered = await navigator.serviceWorker.register("/sw.js", { scope: "/" })
+    // A tab is on the newest build already: only the installed app follows the worker's updates.
+    if (!installed) return
+    registration = registered
     registration.addEventListener("updatefound", () => void settle())
     await settle()
     void checkForUpdate()

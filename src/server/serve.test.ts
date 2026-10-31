@@ -99,7 +99,10 @@ test("the page is an installable app: its build, a manifest, icons, and a worker
   expect(html).toContain(`<link rel="manifest" href="/manifest.webmanifest" crossorigin="use-credentials">`)
   const manifest = await get("/manifest.webmanifest")
   expect(manifest.headers.get("content-type")).toContain("application/manifest+json")
-  expect(((await manifest.json()) as { display: string }).display).toBe("standalone")
+  const app = (await manifest.json()) as { display: string; start_url: string }
+  expect(app.display).toBe("standalone")
+  // The installed app opens at its own address: the page the worker keeps (a tab's comes from the server).
+  expect(app.start_url).toBe("/?app")
   const icon = await get("/icon-512.png")
   expect(icon.headers.get("content-type")).toBe("image/png")
   // The worker names the same build, keeps every file the page needs (not itself), and is asked for fresh.
