@@ -9,7 +9,7 @@ test("a v20 category scope comes through v21's expression back to its categories
   const db = new Database(":memory:")
   ensureSchema(db)
   // Back to v20's layout: no scope column, category scopes.
-  db.exec("ALTER TABLE tags DROP COLUMN scope; UPDATE schema_meta SET version = 20")
+  db.exec("ALTER TABLE tags DROP COLUMN scope; ALTER TABLE categories DROP COLUMN budget_ignored; UPDATE schema_meta SET version = 20")
   const group = Number(db.query("INSERT INTO categories (name, color) VALUES ('Motoring', '#fff')").run().lastInsertRowid)
   db.query("INSERT INTO categories (name, color, parent_id) VALUES ('Petrol', '#fff', ?), ('Road tolls', '#fff', ?)").run(group, group)
   const travel = Number(db.query("INSERT INTO categories (name, color) VALUES ('Trips abroad', '#fff')").run().lastInsertRowid)
@@ -26,7 +26,7 @@ test("a v20 category scope comes through v21's expression back to its categories
 test("v30 keeps an expression's categories and drops the rest (a trip's dates, other terms)", () => {
   const db = new Database(":memory:")
   ensureSchema(db)
-  db.exec("UPDATE schema_meta SET version = 29; DROP TABLE tag_categories")
+  db.exec("ALTER TABLE categories DROP COLUMN budget_ignored; UPDATE schema_meta SET version = 29; DROP TABLE tag_categories")
   const food = Number(db.query("INSERT INTO categories (name, color) VALUES ('Eating Out', '#fff')").run().lastInsertRowid)
   db.query(`INSERT INTO tags (name, color, scope) VALUES ('TRIP', '#fff', 'date:2026-05-19..2026-06-08'),
     ('DINNERS', '#fff', 'cat:"eating out" AND amount:>20'), ('BROKEN', '#fff', 'cat:Nowhere')`).run()

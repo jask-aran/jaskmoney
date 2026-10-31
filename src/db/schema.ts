@@ -6,7 +6,7 @@
  * version fallback with an additive migration registry. v7 was the initial
  * partial OpenTUI port. */
 
-export const SCHEMA_VERSION = 32
+export const SCHEMA_VERSION = 33
 
 /** Columns shared by the fresh schema and the v9 migration. Rows imported from
  * CSV keep source = 'csv' and NULL external fields. */
@@ -58,6 +58,9 @@ export const CATEGORY_NOT_SPENDING_COLUMN = "not_spending INTEGER NOT NULL DEFAU
  * Income group carries it; Salary, Interest and Other income sit under it. */
 export const CATEGORY_INCOME_COLUMN = "income INTEGER NOT NULL DEFAULT 0"
 
+/** v33: 1 = spending in this category, or one under it, is left out of the overall and account budgets (rent you can't change); its own budget still counts it. */
+export const CATEGORY_BUDGET_IGNORED_COLUMN = "budget_ignored INTEGER NOT NULL DEFAULT 0"
+
 /** v12: who set transactions.category_id. NULL = never set (falls back to the
  * provider's category on sync); 'provider' = mirrors the provider category
  * (sync keeps it in step); 'user' = chosen locally and not pushable (a local-only
@@ -91,7 +94,7 @@ export const TRANSACTION_DETAIL_COLUMNS_LIST = [
 
 const ACCOUNT_SYNC_COLUMNS = ACCOUNT_SYNC_COLUMNS_LIST.join(",\n  ")
 const TRANSACTION_SYNC_COLUMNS = [...TRANSACTION_SYNC_COLUMNS_LIST, ...TRANSACTION_DETAIL_COLUMNS_LIST, CATEGORY_SOURCE_COLUMN].join(",\n  ")
-const CATEGORY_TREE_COLUMNS = [...CATEGORY_TREE_COLUMNS_LIST, CATEGORY_NOT_SPENDING_COLUMN, CATEGORY_INCOME_COLUMN].join(",\n  ")
+const CATEGORY_TREE_COLUMNS = [...CATEGORY_TREE_COLUMNS_LIST, CATEGORY_NOT_SPENDING_COLUMN, CATEGORY_INCOME_COLUMN, CATEGORY_BUDGET_IGNORED_COLUMN].join(",\n  ")
 
 /** v17: 1 = a cycle starts early on the day pay arrives (see cycleFor). */
 export const BUDGET_PAY_EARLY_COLUMN = "pay_early INTEGER NOT NULL DEFAULT 0"

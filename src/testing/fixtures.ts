@@ -36,7 +36,7 @@ export function category(overrides: Partial<Category> = {}): Category {
   const id = overrides.id ?? 1
   return {
     id, name: `Category ${id}`, color: "#fff", sortOrder: id, isDefault: false,
-    parentId: null, extId: null, notSpending: false, income: false,
+    parentId: null, extId: null, notSpending: false, income: false, budgetIgnored: false,
     ...overrides,
   }
 }

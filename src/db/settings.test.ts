@@ -47,7 +47,7 @@ describe("OpenTUI settings database", () => {
     const id = (name: string) => (db.query("SELECT id FROM categories WHERE name = ?").get(name) as { id: number }).id
     const income = id("Income")
     // Rewind to v15: no income column and no income categories.
-    db.exec(`DELETE FROM categories WHERE parent_id = ${income}; ALTER TABLE categories DROP COLUMN income; ALTER TABLE budget_cycle DROP COLUMN pay_early; DROP TABLE category_suggestions; UPDATE schema_meta SET version = 15;`)
+    db.exec(`DELETE FROM categories WHERE parent_id = ${income}; ALTER TABLE categories DROP COLUMN income; ALTER TABLE budget_cycle DROP COLUMN pay_early; DROP TABLE category_suggestions; ALTER TABLE categories DROP COLUMN budget_ignored; UPDATE schema_meta SET version = 15;`)
     const add = db.query(`INSERT INTO transactions (date_raw, date_iso, amount, description, category_id, category_source, source, external_id, transaction_type)
       VALUES ('x', '2026-10-14', ?, ?, ?, ?, 'up', ?, ?)`)
     add.run(5000, "Employer", income, "user", "a", "Salary")
@@ -95,7 +95,7 @@ describe("OpenTUI settings database", () => {
       ALTER TABLE transactions DROP COLUMN category_source;
       DROP INDEX idx_tags_ext; ALTER TABLE tags DROP COLUMN ext_id; ALTER TABLE categories DROP COLUMN not_spending; ALTER TABLE categories DROP COLUMN income;
       DROP TABLE budgets; DROP TABLE budget_cycle; DROP TABLE category_suggestions;
-      UPDATE schema_meta SET version = 8;
+      ALTER TABLE categories DROP COLUMN budget_ignored; UPDATE schema_meta SET version = 8;
     `)
     ensureSchema(db)
     expect(db.query("SELECT version FROM schema_meta").get()).toEqual({ version: SCHEMA_VERSION })

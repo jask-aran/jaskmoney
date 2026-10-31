@@ -28,6 +28,7 @@ import {
   openDb,
   createCategory,
   updateCategory,
+  setCategoryBudgetIgnored as writeCategoryBudgetIgnored,
   deleteCategory,
   createTag,
   updateTag,
@@ -650,6 +651,10 @@ function createDataStore() {
     mutate((db) => updateCategory(db, id, input))
   }
 
+  function setCategoryBudgetIgnored(id: number, ignored: boolean) {
+    mutate((db) => writeCategoryBudgetIgnored(db, id, ignored))
+  }
+
   function deleteSettingsCategory(id: number) {
     mutate((db) => deleteCategory(db, id))
   }
@@ -941,6 +946,7 @@ function createDataStore() {
     updateTransactionNotes,
     createSettingsCategory,
     updateSettingsCategory,
+    setCategoryBudgetIgnored,
     deleteSettingsCategory,
     createSettingsTag,
     updateSettingsTag,

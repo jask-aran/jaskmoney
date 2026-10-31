@@ -27,6 +27,7 @@ import {
   TAG_ABOUT_COLUMN,
   CATEGORY_SOURCE_COLUMN,
   CATEGORY_INCOME_COLUMN,
+  CATEGORY_BUDGET_IGNORED_COLUMN,
   CATEGORY_NOT_SPENDING_COLUMN,
   CATEGORY_TREE_COLUMNS_LIST,
   INCOME_CATEGORIES,
@@ -134,6 +135,7 @@ const MIGRATIONS: Record<number, (db: Db) => void> = {
     const columns = db.query<{ name: string }, []>("PRAGMA table_info(category_suggestions)").all().map((c) => c.name)
     if (!columns.includes("knew_bought")) db.exec(`ALTER TABLE category_suggestions ADD COLUMN ${SUGGESTION_KNEW_BOUGHT_COLUMN}`)
   },
+  33: (db) => db.exec(`ALTER TABLE categories ADD COLUMN ${CATEGORY_BUDGET_IGNORED_COLUMN}`),
   30: (db) => {
     db.exec(TAG_CATEGORIES_SQL)
     const columns = db.query<{ name: string }, []>("PRAGMA table_info(tags)").all().map((c) => c.name)
@@ -296,7 +298,7 @@ export function loadCategories(db: Db): Category[] {
   const rows = db
     .query(
       `SELECT id, name, color, sort_order AS sortOrder, is_default AS isDefault,
-              parent_id AS parentId, ext_id AS extId, not_spending AS notSpending, income
+              parent_id AS parentId, ext_id AS extId, not_spending AS notSpending, income, budget_ignored AS budgetIgnored
        FROM categories ORDER BY sort_order, id`,
     )
     .all() as Array<{
@@ -309,12 +311,14 @@ export function loadCategories(db: Db): Category[] {
     extId: string | null
     notSpending: number
     income: number
+    budgetIgnored: number
   }>
   return rows.map((r) => ({
     ...r,
     isDefault: r.isDefault === 1,
     notSpending: r.notSpending === 1,
     income: r.income === 1,
+    budgetIgnored: r.budgetIgnored === 1,
   }))
 }
 
@@ -369,6 +373,11 @@ export function updateCategory(db: Db, id: number, input: Pick<Category, "name" 
   if (!name) throw new Error("category name is required")
   if (input.notSpending === undefined) db.query(`UPDATE categories SET name = ?, color = ? WHERE id = ?`).run(name, input.color, id)
   else db.query(`UPDATE categories SET name = ?, color = ?, not_spending = ? WHERE id = ?`).run(name, input.color, input.notSpending ? 1 : 0, id)
+}
+
+/** Set whether this category is left out of overall and account budgets. */
+export function setCategoryBudgetIgnored(db: Db, id: number, ignored: boolean): void {
+  db.query("UPDATE categories SET budget_ignored = ? WHERE id = ?").run(ignored ? 1 : 0, id)
 }
 
 export function deleteCategory(db: Db, id: number): void {

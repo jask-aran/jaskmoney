@@ -40,6 +40,8 @@ export interface Category {
   notSpending: boolean
   /** Money in this category, or in one under it, is income. */
   income: boolean
+  /** Left out of the overall and account budgets (it, or its group): see budget.ts. */
+  budgetIgnored: boolean
 }
 
 export interface Tag {

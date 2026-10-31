@@ -182,7 +182,7 @@ test("fresh schema includes suggestions and v18–v19 migrate a v17 database wit
   const t = transaction({ source: "csv" })
   db.query("INSERT INTO transactions (id, date_raw, date_iso, amount, description) VALUES (?, ?, ?, ?, ?)")
     .run(t.id, t.dateRaw, t.dateISO, t.amount, t.description)
-  db.exec("DROP TABLE category_suggestions; UPDATE schema_meta SET version = 17;")
+  db.exec("DROP TABLE category_suggestions; ALTER TABLE categories DROP COLUMN budget_ignored; UPDATE schema_meta SET version = 17;")
   ensureSchema(db)
   expect(db.query("SELECT version FROM schema_meta").get()).toEqual({ version: SCHEMA_VERSION })
   expect(db.query("SELECT description FROM transactions WHERE id = ?").get(t.id)).toEqual({ description: t.description })
@@ -201,7 +201,7 @@ test("v19: suggestions come from Jev; history's are kept, Clef's dropped", () =>
       category_id INTEGER NOT NULL REFERENCES categories(id) ON DELETE CASCADE, confidence REAL NOT NULL,
       source TEXT NOT NULL CHECK(source IN ('history','clef')), created_at TEXT NOT NULL DEFAULT (datetime('now')));
     INSERT INTO category_suggestions (transaction_id, category_id, confidence, source) VALUES (1, ${groceries}, 0.75, 'history'), (2, ${groceries}, 0.5, 'clef');
-    UPDATE schema_meta SET version = 18;`)
+    ALTER TABLE categories DROP COLUMN budget_ignored; UPDATE schema_meta SET version = 18;`)
   ensureSchema(db)
   expect(db.query("SELECT version FROM schema_meta").get()).toEqual({ version: SCHEMA_VERSION })
   expect(loadSuggestions(db)).toEqual([{ transactionId: 1, categoryId: groceries, confidence: 0.75, source: "history" }])

@@ -1,5 +1,5 @@
 import { expect, test } from "bun:test"
-import { deleteBudget, loadBudgetCycle, loadBudgets, saveBudget, saveBudgetCycle } from "./client"
+import { createCategory, deleteBudget, loadBudgetCycle, loadBudgets, loadCategories, saveBudget, saveBudgetCycle, setCategoryBudgetIgnored } from "./client"
 import { testDb } from "../testing/scoped"
 
 test("one budget per scope (saving again replaces the amount); cycle defaults to calendar months and validates dates", () => {
@@ -22,4 +22,14 @@ test("one budget per scope (saving again replaces the amount); cycle defaults to
   expect(loadBudgetCycle(db)).toEqual({ unit: "fortnight", anchor: "date", anchorDate: "2026-10-16", payEarly: true })
   saveBudgetCycle(db, { unit: "week", anchor: "calendar", anchorDate: "2026-10-16" })
   expect(loadBudgetCycle(db)).toEqual({ unit: "week", anchor: "calendar", anchorDate: null, payEarly: false })
+})
+
+test("a category can be left out of the overall budget, and that's remembered", () => {
+  const db = testDb()
+  const id = createCategory(db, { name: "Rent", color: "#fff" })
+  expect(loadCategories(db).find((c) => c.id === id)!.budgetIgnored).toBe(false)
+  setCategoryBudgetIgnored(db, id, true)
+  expect(loadCategories(db).find((c) => c.id === id)!.budgetIgnored).toBe(true)
+  setCategoryBudgetIgnored(db, id, false)
+  expect(loadCategories(db).find((c) => c.id === id)!.budgetIgnored).toBe(false)
 })

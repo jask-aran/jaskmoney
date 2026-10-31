@@ -147,6 +147,13 @@ export interface BudgetProgress {
   projected: number
 }
 
+/** Category ids flagged for budget exclusion, plus children of flagged groups. */
+export function budgetIgnoredIds(categories: Category[]): Set<number> {
+  const flagged = new Set(categories.filter((category) => category.budgetIgnored).map((category) => category.id))
+  return new Set(categories.filter((category) => flagged.has(category.id)
+    || (category.parentId !== null && flagged.has(category.parentId))).map((category) => category.id))
+}
+
 /**
  * Progress of each budget in the cycle containing `todayISO`, in the given
  * order. Spending follows the app's shared rules: outflows (amount < 0) from
@@ -155,6 +162,7 @@ export interface BudgetProgress {
  * on or before today. An account budget counts that account's spending; a
  * category budget counts rows whose category is the category or one of its
  * children (via `parentId`).
+ * Ignored categories are left out of overall and account budgets only.
  */
 export function budgetProgress(
   budgets: Budget[],
@@ -165,6 +173,7 @@ export function budgetProgress(
   transactions: Transaction[],
 ): BudgetProgress[] {
   const cycle = cycleFor(config, todayISO)
+  const ignored = budgetIgnoredIds(categories)
   const parents = new Map(categories.map((category) => [category.id, category.parentId]))
   const rows = cycleSpending(cycle, todayISO, accounts, transactions)
   const daysLeft = daysBetween(todayISO, cycle.end) + 1
@@ -172,6 +181,7 @@ export function budgetProgress(
   return budgets.map((budget) => {
     const scope = budget.scope
     const spent = rows.reduce((sum, row) => {
+      if (scope.kind !== "category" && row.categoryId !== null && ignored.has(row.categoryId)) return sum
       const matches = scope.kind === "overall"
         || (scope.kind === "account" && row.accountId === scope.accountId)
         || (scope.kind === "category" && (row.categoryId === scope.categoryId
