@@ -1471,15 +1471,28 @@ function openBudgetEditor(ui: UiStore, data: DataStore, budget: Budget | null, s
   ui.openSettingsEditor("budget", budget?.id ?? null, { ...ui.state.settingsDraft, ...cycleDraft(data.state.budgetCycle), scopeKey: scopeKey(scope), amount: budget ? String(budget.amount) : amount > 0 ? String(Math.round(amount)) : "" })
 }
 
-/** The Budgets tab's top card: enter edits the cycle or a budget (an unset
- * overall starts from the category budgets' total: building up), a adds,
- * del twice deletes; j past the end, or l, goes to the Categories card. */
+/** Keys either Budgets card shares: h/l switch the chart between this
+ * cycle and cycle by cycle; c edits the cycle. */
+function budgetKeys(ui: UiStore, key: KeyEvent, data: DataStore): boolean {
+  const { name } = key
+  if (name === "h" || name === "left" || name === "l" || name === "right") {
+    ui.setState({ budgetChart: ui.state.budgetChart === 0 ? 1 : 0 })
+    return true
+  }
+  if (name === "c") { ui.openSettingsEditor("cycle", null, { ...ui.state.settingsDraft, ...cycleDraft(data.state.budgetCycle) }); return true }
+  return false
+}
+
+/** The Budgets tab's Budgets card: enter edits a budget (an unset overall
+ * starts from the category budgets' total: building up), a adds, del twice
+ * deletes; j past the end goes to the Categories card. */
 function handleBudgets(ui: UiStore, key: KeyEvent, data?: DataStore): void {
   const { name } = key
   if (!data) return
-  const rows = budgetListRows(data.state.budgets)
+  if (budgetKeys(ui, key, data)) return
+  const rows = budgetListRows(data.state.budgets, data.state.categories)
   const row = rows[Math.min(ui.state.budgetCursor, rows.length - 1)]!
-  if (name === "l" || name === "right" || ((name === "j" || name === "down") && ui.state.budgetCursor >= rows.length - 1)) {
+  if ((name === "j" || name === "down") && ui.state.budgetCursor >= rows.length - 1) {
     ui.setState({ focusedSection: "bud.categories" })
     return
   }
@@ -1492,32 +1505,42 @@ function handleBudgets(ui: UiStore, key: KeyEvent, data?: DataStore): void {
     return
   }
   if (name === "return" || name === "enter") {
-    if (row.kind === "cycle") ui.openSettingsEditor("cycle", null, { ...ui.state.settingsDraft, ...cycleDraft(data.state.budgetCycle) })
-    else if (row.kind === "overall") openBudgetEditor(ui, data, row.budget, { kind: "overall" }, allocation(data.state.budgets, data.state.categories).allocated)
+    if (row.kind === "overall") openBudgetEditor(ui, data, row.budget, { kind: "overall" }, allocation(data.state.budgets, data.state.categories).allocated)
     else openBudgetEditor(ui, data, row.budget, row.budget.scope, row.budget.amount)
     return
   }
-  if ((name === "delete" || name === "backspace") && row.kind !== "cycle" && row.budget) {
+  if ((name === "delete" || name === "backspace") && row.budget) {
     confirmTwice(ui, data, { kind: "budget", id: row.budget.id, label: `the ${budgetLabel(row.budget, data.state.accounts, data.state.categories)} budget`, with: "delete" })
   }
 }
 
 /** The Budgets tab's Categories card: enter sets or edits the budget of the
  * group or category at the cursor (a new one starts from its average:
- * allocating down), del twice removes it; k past the top, or h, goes back. */
+ * allocating down), del twice removes it, x leaves it out of the overall
+ * budget (or brings it back); k past the top goes back to the budgets. */
 function handleBudgetCategories(ui: UiStore, key: KeyEvent, data?: DataStore): void {
   const { name } = key
   if (!data) return
+  if (budgetKeys(ui, key, data)) return
   const lines = budgetLines(data)
   const cursor = Math.min(ui.state.budgetCategoryCursor, Math.max(0, lines.length - 1))
-  if (name === "h" || name === "left" || ((name === "k" || name === "up") && cursor === 0)) {
-    ui.setState({ focusedSection: "bud.list", budgetCursor: budgetListRows(data.state.budgets).length - 1 })
+  if ((name === "k" || name === "up") && cursor === 0) {
+    ui.setState({ focusedSection: "bud.list", budgetCursor: budgetListRows(data.state.budgets, data.state.categories).length - 1 })
     return
   }
   const moved = listMove(key, cursor, lines.length)
   if (moved != null) { ui.setState({ budgetCategoryCursor: moved }); return }
   const line = lines[cursor]
   if (!line) return
+  if (name === "x") {
+    const category = data.state.categories.find((c) => c.id === line.categoryId)
+    if (!category) { ui.setStatus("Uncategorised always counts: categorise its rows first", true); return }
+    const group = category.parentId == null ? undefined : data.state.categories.find((c) => c.id === category.parentId)
+    if (group?.budgetIgnored) { ui.setStatus(`Left out with ${group.name}: x on ${group.name} brings it back`, true); return }
+    data.setCategoryBudgetIgnored(category.id, !category.budgetIgnored)
+    ui.setStatus(category.budgetIgnored ? `${category.name} counts toward the overall budget again` : `${category.name} left out of the overall budget`)
+    return
+  }
   if (name === "return" || name === "enter") {
     if (line.categoryId === null) { ui.setStatus("Uncategorised can't have a budget: categorise its rows first", true); return }
     openBudgetEditor(ui, data, line.budget, { kind: "category", categoryId: line.categoryId }, line.average || line.now)
@@ -2070,12 +2093,12 @@ const scopes: Record<ScopeId, ScopeEntry> = {
   "budgets": {
     handle: handleBudgets,
     quits: true,
-    hints: () => [{ key: "j/k", desc: "move" }, { key: "enter", desc: "edit" }, { key: "a", desc: "add" }, { key: "del del", desc: "delete" }, { key: "l", desc: "categories" }, { key: "1-4", desc: "tab" }],
+    hints: () => [{ key: "j/k", desc: "move" }, { key: "enter", desc: "edit" }, { key: "a", desc: "add" }, { key: "del del", desc: "delete" }, { key: "h/l", desc: "chart" }, { key: "c", desc: "cycle" }, { key: "1-4", desc: "tab" }],
   },
   "budgets.categories": {
     handle: handleBudgetCategories,
     quits: true,
-    hints: () => [{ key: "j/k", desc: "move" }, { key: "enter", desc: "set budget" }, { key: "del del", desc: "remove budget" }, { key: "h", desc: "budgets" }, { key: "1-4", desc: "tab" }],
+    hints: () => [{ key: "j/k", desc: "move" }, { key: "enter", desc: "set budget" }, { key: "x", desc: "leave out" }, { key: "del del", desc: "remove budget" }, { key: "h/l", desc: "chart" }, { key: "c", desc: "cycle" }, { key: "1-4", desc: "tab" }],
   },
   "manager.merchants": {
     handle: handleManagerMerchants,

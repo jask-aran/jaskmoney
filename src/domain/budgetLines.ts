@@ -72,12 +72,19 @@ export function allocation(budgets: Budget[], categories: Category[]): { overall
   return { overall, allocated }
 }
 
-/** The Budgets tab's top card: the cycle, the overall budget (shown unset
- * too) and account budgets; category budgets are the Categories card's. */
-export function budgetListRows(budgets: Budget[]): ({ kind: "cycle" } | { kind: "overall"; budget: Budget | null } | { kind: "account"; budget: Budget })[] {
+/** The Budgets tab's Budgets card: the overall budget (shown unset too),
+ * then account budgets, then category budgets in `categories` order. */
+export function budgetListRows(budgets: Budget[], categories: Category[]): ({ kind: "overall"; budget: Budget | null } | { kind: "account" | "category"; budget: Budget })[] {
+  // A group, then the categories under it.
+  const order = new Map(categories.map((c, i) => [c.id, i]))
+  const place = ({ scope }: Budget) => {
+    const c = scope.kind === "category" ? categories.find((x) => x.id === scope.categoryId) : undefined
+    if (!c) return Infinity
+    return c.parentId == null ? order.get(c.id)! * 1000 : (order.get(c.parentId) ?? 0) * 1000 + 1 + order.get(c.id)!
+  }
   return [
-    { kind: "cycle" },
     { kind: "overall", budget: budgets.find((b) => b.scope.kind === "overall") ?? null },
     ...budgets.filter((b) => b.scope.kind === "account").map((budget) => ({ kind: "account" as const, budget })),
+    ...budgets.filter((b) => b.scope.kind === "category").sort((a, b) => place(a) - place(b)).map((budget) => ({ kind: "category" as const, budget })),
   ]
 }

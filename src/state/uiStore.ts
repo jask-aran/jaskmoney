@@ -186,6 +186,8 @@ export interface UiState {
   budgetCursor: number
   /** The Budgets tab's category list (domain/budgetLines order). */
   budgetCategoryCursor: number
+  /** The Budgets tab's chart: 0 this cycle, 1 cycle by cycle. */
+  budgetChart: 0 | 1
   /** Cursor in the Up Bank sync account list. */
   upCursor: number
   /** AI models pane: 0 Jev, 1 Workers AI. */
@@ -414,6 +416,7 @@ function createUiStore() {
     aiCursor: 0,
     budgetCursor: 0,
     budgetCategoryCursor: 0,
+    budgetChart: 0,
     merchantCursor: 0,
     merchantTop: 0,
     txnView: "rows",

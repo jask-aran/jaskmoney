@@ -42,17 +42,17 @@ export const INKS: Record<string, string> = {
 const sum = (values: number[]) => values.reduce((a, b) => a + b, 0)
 
 /** Legend marks: a line series, a bar, a rule, each in its series' ink. */
-const LINE = "⠒⠒ "
-const BAR = "▆ "
-const RULE = "┈┈ "
-const mark = (shape: string, ink: keyof typeof INKS): Span => ({ text: shape, fg: INKS[ink]! })
-const GAP = muted("   ")
+export const LINE = "⠒⠒ "
+export const BAR = "▆ "
+export const RULE = "┈┈ "
+export const mark = (shape: string, ink: keyof typeof INKS): Span => ({ text: shape, fg: INKS[ink]! })
+export const GAP = muted("   ")
 
 /** A chart with nothing to draw, saying why in its legend. */
-const emptyChart = (why: string): ChartModel => ({ rows: [], ticks: new Map(), labels: "", legend: [muted(why)] })
+export const emptyChart = (why: string): ChartModel => ({ rows: [], ticks: new Map(), labels: "", legend: [muted(why)] })
 
 /** Money labels down the y-axis for ticks every `step` from `min` to `max`. */
-const moneyTicks = (min: number, max: number, step: number, height: number) => tickRows(min, max, step, height, shortMoney)
+export const moneyTicks = (min: number, max: number, step: number, height: number) => tickRows(min, max, step, height, shortMoney)
 
 /** What the range and the one before it are called in legends and labels. */
 export interface PeriodNames {

@@ -154,15 +154,25 @@ export function budgetIgnoredIds(categories: Category[]): Set<number> {
     || (category.parentId !== null && flagged.has(category.parentId))).map((category) => category.id))
 }
 
+/** Whether a spending row counts toward a budget on `scope`: everything,
+ * or that account's, but for ignored categories (budgetIgnoredIds); a
+ * category's, the category's own rows and those of the ones under it. */
+export function budgetCounts(scope: BudgetScope, categories: Category[]): (row: Transaction) => boolean {
+  if (scope.kind === "category") {
+    const parents = new Map(categories.map((category) => [category.id, category.parentId]))
+    return (row) => row.categoryId === scope.categoryId || (row.categoryId !== null && parents.get(row.categoryId) === scope.categoryId)
+  }
+  const ignored = budgetIgnoredIds(categories)
+  return (row) => (row.categoryId === null || !ignored.has(row.categoryId)) && (scope.kind === "overall" || row.accountId === scope.accountId)
+}
+
 /**
  * Progress of each budget in the cycle containing `todayISO`, in the given
  * order. Spending follows the app's shared rules: outflows (amount < 0) from
  * spending-role accounts (`accountRole`), never `excluded` rows, never rows
  * tagged IGNORE (case-insensitive), and only rows dated within the cycle and
- * on or before today. An account budget counts that account's spending; a
- * category budget counts rows whose category is the category or one of its
- * children (via `parentId`).
- * Ignored categories are left out of overall and account budgets only.
+ * on or before today. Which of those count toward each budget:
+ * budgetCounts.
  */
 export function budgetProgress(
   budgets: Budget[],
@@ -173,21 +183,13 @@ export function budgetProgress(
   transactions: Transaction[],
 ): BudgetProgress[] {
   const cycle = cycleFor(config, todayISO)
-  const ignored = budgetIgnoredIds(categories)
-  const parents = new Map(categories.map((category) => [category.id, category.parentId]))
   const rows = cycleSpending(cycle, todayISO, accounts, transactions)
   const daysLeft = daysBetween(todayISO, cycle.end) + 1
   const elapsed = daysBetween(cycle.start, todayISO) + 1
   return budgets.map((budget) => {
     const scope = budget.scope
-    const spent = rows.reduce((sum, row) => {
-      if (scope.kind !== "category" && row.categoryId !== null && ignored.has(row.categoryId)) return sum
-      const matches = scope.kind === "overall"
-        || (scope.kind === "account" && row.accountId === scope.accountId)
-        || (scope.kind === "category" && (row.categoryId === scope.categoryId
-          || (row.categoryId !== null && parents.get(row.categoryId) === scope.categoryId)))
-      return matches ? sum - row.amount : sum
-    }, 0)
+    const counts = budgetCounts(scope, categories)
+    const spent = rows.reduce((sum, row) => (counts(row) ? sum - row.amount : sum), 0)
     const remaining = budget.amount - spent
     return {
       budget, spent, remaining, usedPct: budget.amount > 0 ? spent / budget.amount * 100 : spent > 0 ? Infinity : 0, daysLeft,

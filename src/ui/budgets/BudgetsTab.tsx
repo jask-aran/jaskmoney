@@ -1,10 +1,11 @@
 import { Index, Show, createMemo } from "solid-js"
 import { useTerminalDimensions } from "@opentui/solid"
-import { budgetProgress, cycleFor, cycleSpending, describeCycle, pastCycles, type Budget, type BudgetScope, type Cycle } from "../../domain/budget"
+import { budgetCounts, budgetIgnoredIds, budgetProgress, cycleFor, cycleSpending, pastCycles, type Budget, type BudgetScope, type Cycle } from "../../domain/budget"
 import { allocation, budgetCategoryLines, budgetListRows, type BudgetLine } from "../../domain/budgetLines"
 import { budgetLabel } from "../../domain/budgetScopes"
-import { formatWholeMoney } from "../../domain/dashboard"
-import { MONTHS, addDays, appToday, daysBetween } from "../../domain/days"
+import { dailySpendSeries, formatWholeMoney } from "../../domain/dashboard"
+import { MONTHS, appToday, daysBetween } from "../../domain/days"
+import type { Transaction } from "../../domain/types"
 import type { SectionId } from "../../state/uiStore"
 import { ui } from "../../state/uiStore"
 import { data } from "../../state/dataStore"
@@ -15,10 +16,13 @@ import { fit } from "../text"
 import { ListRow, centredTop } from "../primitives/ListRow"
 import { SectionCard } from "../primitives/SectionCard"
 import { S } from "../primitives/S"
-import type { Span } from "../primitives/spans"
+import { fitSpans, type Span } from "../primitives/spans"
+import { AXIS_GUESS, ChartBody, axisWidth, type ChartModel } from "../charts/ChartBody"
+import { INKS } from "../overview/periodCharts"
+import { cycleProjection, cyclesChart, thisCycleChart } from "./budgetCharts"
 
-/** Past cycles shown for the budget at the cursor. */
-const HISTORY = 6
+/** Cycles before this one the chart can show, at most. */
+const HISTORY = 12
 
 /** "14 Sep – 13 Oct". */
 function rangeLabel(cycle: Cycle): string {
@@ -29,17 +33,21 @@ function rangeLabel(cycle: Cycle): string {
 /**
  * A bar in `width` cells for `fill` (0–1 of the width), coloured by how
  * it's going (green, yellow ahead of pace, red over budget), with a mark at
- * `mark` (0–1): where spending would be by today at an even pace, or
- * (`markIsBudget`) the budget on a bar scaled past it, red beyond it.
+ * `mark` (0–1): where spending would be by today at an even pace. Over
+ * budget, the bar is scaled to what was spent: green up to the budget's
+ * mark, red past it.
  */
-function bar(width: number, fill: number, mark: number | null, state: "ok" | "ahead" | "over", markIsBudget = false): Span[] {
-  const filled = Math.round(Math.min(1, Math.max(0, fill)) * width)
-  const at = mark == null ? -1 : Math.min(width - 1, Math.round(mark * width))
-  const fg = state === "over" ? tone.bad : state === "ahead" ? tone.caution : tone.good
+function bar(width: number, used: number, pace: number): Span[] {
+  const over = used > 1
+  const fill = over ? 1 : Math.max(0, used)
+  const mark = over ? 1 / used : pace
+  const filled = Math.round(fill * width)
+  const at = Math.min(width - 1, Math.round(mark * width))
+  const fg = over ? tone.bad : used > pace ? tone.caution : tone.good
   const spans: Span[] = []
   for (let i = 0; i < width; i++) {
     const cell = i === at ? { text: i < filled ? "▌" : "│", fg: ink.figure }
-      : i < filled ? { text: "█", fg: markIsBudget && state === "over" && i < at ? tone.good : fg }
+      : i < filled ? { text: "█", fg: over && i < at ? tone.good : fg }
       : { text: "─", fg: ink.rule }
     const last = spans[spans.length - 1]
     if (last && last.fg === cell.fg) last.text += cell.text
@@ -48,19 +56,17 @@ function bar(width: number, fill: number, mark: number | null, state: "ok" | "ah
   return spans
 }
 
-/** "$119 over" / "$881 left" for a budget, and its colour. */
-function leftText(amount: number, spent: number): Span {
-  return spent > amount ? { text: `${formatWholeMoney(spent - amount)} over`, fg: tone.bad } : { text: `${formatWholeMoney(amount - spent)} left`, fg: tone.good }
-}
+/** The view picker in the chart's top border, the current one bright. */
+const VIEWS = ["This cycle", "Cycles"] as const
 
 /**
- * The Budgets tab, the one place to set budgets and see how they're going:
- * the cycle, the overall budget (against an even pace and last cycle by the
- * same day) and how much of it the category budgets take, account budgets;
- * every group and category with its budget, this cycle, last cycle and the
- * average (enter sets a budget, from the average: allocating down; the
- * overall can start from their total: building up); and the past cycles of
- * whatever the cursor is on.
+ * The Budgets tab: how a budget is going, at a glance. A chart of the
+ * budget at the cursor (this cycle against its pace and last cycle, or
+ * cycle by cycle; h/l), under a line saying where it stands; the budgets
+ * as bars against an even pace; and every category with its spending, its
+ * budget, or that it's left out of the overall budget (x). Enter sets a
+ * budget (a category's from its average: allocating down; the overall from
+ * the category budgets' total: building up); c the cycle.
  */
 export function BudgetsTab(props: { focused: SectionId }) {
   const dims = useTerminalDimensions()
@@ -73,201 +79,217 @@ export function BudgetsTab(props: { focused: SectionId }) {
   const cycle = live(() => cycleFor(config(), today()))
   const elapsed = () => daysBetween(cycle().start, today()) + 1
   const pace = () => elapsed() / cycle().days
-  const label = (budget: Budget) => budgetLabel(budget, data.state.accounts, data.state.categories)
-  const spentIn = (scope: BudgetScope, throughISO: string) =>
-    budgetProgress([{ id: -1, scope, amount: 0 }], config(), throughISO, data.state.accounts, data.state.categories, data.transactions())[0]!.spent
+  // A category's budget by the category's own name: the list shows its group.
+  const label = (budget: Budget) => {
+    const scope = budget.scope
+    return scope.kind === "category" ? data.state.categories.find((c) => c.id === scope.categoryId)?.name ?? "(removed category)" : budgetLabel(budget, data.state.accounts, data.state.categories)
+  }
 
-  // Top card: the cycle, overall (set or not), account budgets.
-  const rows = () => budgetListRows(data.state.budgets)
+  const rows = () => budgetListRows(data.state.budgets, data.state.categories)
+  const budgetCursor = () => Math.min(ui.state.budgetCursor, rows().length - 1)
   const progress = live(() => new Map(budgetProgress(data.state.budgets, config(), today(), data.state.accounts, data.state.categories, data.transactions()).map((p) => [p.budget.id, p])))
-  const overallNow = live(() => spentIn({ kind: "overall" }, today()))
-  const firstData = live(() => data.transactions().reduce((first, t) => (t.dateISO < first ? t.dateISO : first), today()))
-  const past = live(() => pastCycles(config(), today(), HISTORY).filter((c) => c.end >= firstData()))
-  // Last cycle by the same day of it.
-  const lastByNow = live(() => {
-    const before = past()[0]
-    if (!before) return null
-    const through = addDays(before.start, elapsed() - 1)
-    return spentIn({ kind: "overall" }, through < before.end ? through : before.end)
-  })
   const split = live(() => allocation(data.state.budgets, data.state.categories))
-
-  // Categories card.
   const lines = live(() => budgetCategoryLines(config(), today(), data.state.accounts, data.state.categories, data.state.budgets, data.transactions()))
   const categoryCursor = () => Math.min(ui.state.budgetCategoryCursor, Math.max(0, lines().length - 1))
+  const ignored = live(() => budgetIgnoredIds(data.state.categories))
+  const ignoredNames = () => data.state.categories.filter((c) => c.budgetIgnored).map((c) => c.name)
+  const firstData = live(() => data.transactions().reduce((first, t) => (t.dateISO < first ? t.dateISO : first), today()))
 
-  // What the past-cycles card follows: the row at the focused card's cursor.
-  const subject = (): { title: string; scope: BudgetScope | null; amount: number | null } => {
+  // What the chart follows: the row at the focused card's cursor.
+  const subject = (): { title: string; counts: (row: Transaction) => boolean; amount: number | null } => {
+    const of = (scope: BudgetScope) => budgetCounts(scope, data.state.categories)
     if (props.focused === "bud.categories") {
       const line = lines()[categoryCursor()]
-      if (line) return { title: line.name, scope: line.categoryId === null ? null : { kind: "category", categoryId: line.categoryId }, amount: line.budget?.amount ?? null }
+      if (line) {
+        const id = line.categoryId
+        return id === null
+          ? { title: "Uncategorised", counts: (row) => row.categoryId === null, amount: null }
+          : { title: line.name, counts: of({ kind: "category", categoryId: id }), amount: line.budget?.amount ?? null }
+      }
     }
-    const row = rows()[Math.min(ui.state.budgetCursor, rows().length - 1)]
-    if (row?.kind === "account") return { title: label(row.budget), scope: row.budget.scope, amount: row.budget.amount }
-    const overall = data.state.budgets.find((b) => b.scope.kind === "overall")
-    return { title: "Overall spending", scope: { kind: "overall" }, amount: overall?.amount ?? null }
+    const row = rows()[budgetCursor()]!
+    return row.budget ? { title: label(row.budget), counts: of(row.budget.scope), amount: row.budget.amount } : { title: "Overall spending", counts: of({ kind: "overall" }), amount: null }
   }
-  const history = live(() => {
-    const s = subject()
-    return past().map((c) => ({
-      cycle: c,
-      spent: s.scope ? spentIn(s.scope, c.end) : cycleSpending(c, c.end, data.state.accounts, data.transactions()).filter((t) => t.categoryId === null).reduce((sum, t) => sum - t.amount, 0),
-    }))
+  const spending = (c: Cycle, through: string) => cycleSpending(c, through, data.state.accounts, data.transactions()).filter(subject().counts)
+  const daily = (c: Cycle, through: string) => ({ cycle: c, daily: dailySpendSeries(spending(c, through), c.start, c.end).values })
+  // Cycles with any transactions at all: a gap in the history isn't a
+  // cycle of spending nothing.
+  const past = live(() => {
+    const dates = data.transactions().map((t) => t.dateISO)
+    return pastCycles(config(), today(), HISTORY).filter((c) => c.end >= firstData() && dates.some((d) => d >= c.start && d <= c.end))
+  })
+  const nowDays = live(() => daily(cycle(), today()))
+  const spent = () => nowDays().daily.reduce((a, b) => a + b, 0)
+  const history = live(() => past().map((c) => ({ cycle: c, spent: daily(c, c.end).daily.reduce((a, b) => a + b, 0) })).reverse())
+
+  // Sizes: tab bar + gap (2) and status + footer (2) off the height. Wide,
+  // the chart and the budgets share the left and the categories run down
+  // the right; narrow, they stack.
+  const body = () => Math.max(16, dims().height - 4)
+  const wide = () => dims().width >= 130
+  const categoriesWidth = () => (wide() ? Math.min(62, Math.max(52, Math.floor(dims().width * 0.38))) : dims().width)
+  const mainWidth = () => (wide() ? dims().width - 1 - categoriesWidth() : dims().width)
+  const summary = (): Span[] => {
+    const spans: Span[] = []
+    const { allocated, overall } = split()
+    if (allocated > 0) {
+      spans.push({ text: `Categories ${formatWholeMoney(allocated)}`, fg: ink.label })
+      if (overall != null) spans.push({ text: ` of ${formatWholeMoney(overall)} · ${allocated > overall ? `${formatWholeMoney(allocated - overall)} over-allocated` : `${formatWholeMoney(overall - allocated)} unallocated`}`, fg: allocated > overall ? tone.caution : ink.label })
+    }
+    const names = ignoredNames()
+    if (names.length) spans.push({ text: `${spans.length ? " · " : ""}Leaving out ${names.join(", ")}`, fg: ink.note })
+    return spans
+  }
+  const budgetsHeight = () => Math.min(rows().length, Math.max(1, Math.floor(body() * 0.3))) + 2 + (summary().length ? 1 : 0)
+  const chartHeight = () => (wide() ? body() - budgetsHeight() : Math.max(12, Math.floor(body() * 0.45)))
+  const categoriesHeight = () => (wide() ? body() : Math.max(5, body() - chartHeight() - budgetsHeight()))
+  const rowWidth = (width: number) => width - 5
+
+  // The chart, built once with a guessed axis width, again if the labels
+  // need another.
+  const baseline = () => data.state.uiPrefs.xAxis === true
+  let axisWas = AXIS_GUESS
+  const model = live((): ChartModel => {
+    // Border (2), the line over the chart, the x-axis line (a setting) and the x labels.
+    const height = Math.max(3, chartHeight() - (baseline() ? 5 : 4))
+    const build = (axis: number): ChartModel => {
+      const width = Math.max(1, mainWidth() - 4 - axis)
+      if (ui.state.budgetChart === 1) return cyclesChart(history().slice(-Math.max(1, Math.floor(width / 5) - 1)), { cycle: cycle(), spent: spent() }, subject().amount, width, height)
+      const last = past()[0]
+      return thisCycleChart(nowDays(), last ? daily(last, last.end) : null, subject().amount, width, height, today(), data.state.weekStart)
+    }
+    let built = build(axisWas)
+    const axis = axisWidth(built.ticks)
+    if (axis !== axisWas) { axisWas = axis; built = build(axis) }
+    return built
   })
 
-  // Sizes: tab bar + gap (2) and status + footer (2) off the height; rows
-  // lose border and padding (4) and the inset (1).
-  const body = () => Math.max(12, dims().height - 4)
-  const rowWidth = (width: number) => width - 5
-  const topHeight = () => rows().length + 3
-  const wide = () => dims().width >= 130
-  const lowerHeight = () => body() - topHeight()
-  const historyWidth = () => (wide() ? Math.min(64, Math.floor((dims().width - 1) * 0.4)) : dims().width)
-  const categoriesWidth = () => (wide() ? dims().width - 1 - historyWidth() : dims().width)
-  const historyHeight = () => (wide() ? lowerHeight() : Math.min(HISTORY + 4, Math.max(5, lowerHeight() - 10)))
-  const categoriesHeight = () => (wide() ? lowerHeight() : lowerHeight() - historyHeight())
+  // Where the subject stands: what's spent and of what, what's left or
+  // over and against an even pace; without a budget, against its average.
+  const headline = (): Span[] => {
+    const s = subject()
+    const now = spent()
+    const strong = (text: string, fg: string): Span => ({ text, fg, bold: true })
+    const avg = history().length ? history().reduce((a, h) => a + h.spent, 0) / history().length : null
+    if (s.amount == null) {
+      return [strong(formatWholeMoney(now), ink.strong), { text: " this cycle", fg: ink.label }, ...(avg != null ? [{ text: `   ${formatWholeMoney(avg)} a cycle on average · no budget`, fg: ink.note }] : [{ text: "   no budget", fg: ink.note }])]
+    }
+    const vsPace = now - s.amount * pace()
+    const left = s.amount - now
+    const daysLeft = cycle().days - elapsed() + 1
+    const projected = cycleProjection(now, elapsed(), cycle().days)
+    return [
+      strong(formatWholeMoney(now), ink.strong),
+      { text: ` of ${formatWholeMoney(s.amount)}   `, fg: ink.label },
+      left < 0 ? strong(`${formatWholeMoney(-left)} over`, tone.bad) : strong(`${formatWholeMoney(left)} left`, tone.good),
+      ...(left > 0 ? [{ text: ` · ${formatWholeMoney(left / daysLeft)} a day for ${daysLeft} days`, fg: ink.label }] : []),
+      { text: `   ${Math.abs(vsPace) < 1 ? "on pace" : `${formatWholeMoney(Math.abs(vsPace))} ${vsPace > 0 ? "ahead of" : "under"} pace`}`, fg: vsPace > 0 ? tone.caution : ink.note },
+      ...(projected ? [{ text: "   heading for ", fg: ink.label }, { text: formatWholeMoney(projected), fg: projected > s.amount ? tone.bad : tone.good }] : []),
+    ]
+  }
+  const viewPicker = (): Span[] => VIEWS.flatMap((v, i) => [
+    ...(i ? [{ text: "  ", fg: ink.note }] : []),
+    { text: v, fg: i === ui.state.budgetChart ? tone.key : ink.faint, bold: i === ui.state.budgetChart },
+  ])
 
+  // One budget in the Budgets card: its bar against an even pace, spent of
+  // budget, what's left (a day) or over.
   const listFocused = () => props.focused === "bud.list"
   const categoriesFocused = () => props.focused === "bud.categories"
-  const LABEL = () => Math.min(26, Math.max(18, ...rows().flatMap((r) => (r.kind === "account" ? [label(r.budget).length + 2] : []))))
-  const BAR = () => Math.max(10, Math.min(30, rowWidth(dims().width) - LABEL() - 66))
-
-  // One budget row in the top card: bar, spent of amount, left or over
-  // (and per day), and against an even pace when it fits whole (the bar's
-  // mark still shows pace).
+  const LABEL = () => Math.min(22, Math.max(18, ...rows().map((r) => (r.budget ? label(r.budget).length + 2 : 18))))
+  const BAR = () => Math.max(10, Math.min(48, rowWidth(mainWidth()) - LABEL() - 40))
   const budgetSpans = (budget: Budget): Span[] => {
     const p = progress().get(budget.id)
     if (!p) return []
     const used = budget.amount > 0 ? p.spent / budget.amount : p.spent > 0 ? 2 : 0
-    const vsPace = p.spent - budget.amount * pace()
-    const spans: Span[] = [
-      ...bar(BAR(), used, pace(), used > 1 ? "over" : used > pace() ? "ahead" : "ok"),
+    return [
+      ...bar(BAR(), used, pace()),
       { text: `  ${formatWholeMoney(p.spent).padStart(7)} of ${formatWholeMoney(budget.amount).padEnd(7)}  `, fg: ink.label },
-      p.remaining < 0 ? { text: fit(`${formatWholeMoney(-p.remaining)} over`, 24), fg: tone.bad } : { text: fit(`${formatWholeMoney(p.remaining)} left · ${formatWholeMoney(p.dailyAllowance)}/day`, 24), fg: tone.good },
+      p.remaining < 0 ? { text: `${formatWholeMoney(-p.remaining)} over`, fg: tone.bad } : { text: `${formatWholeMoney(p.remaining)} left · ${formatWholeMoney(p.dailyAllowance)}/day`, fg: tone.good },
     ]
-    const paceText = `  ${Math.abs(vsPace) < 1 ? "on pace" : `${formatWholeMoney(Math.abs(vsPace))} ${vsPace > 0 ? "over" : "under"} pace`}`
-    const room = rowWidth(dims().width) - LABEL()
-    if (spans.reduce((n, span) => n + span.text.length, 0) + paceText.length <= room) spans.push({ text: paceText, fg: vsPace > 0 ? tone.caution : ink.note })
-    return spans
   }
+  const budgetRoom = () => budgetsHeight() - 2 - (summary().length ? 1 : 0)
+  const budgetTop = () => centredTop(budgetCursor(), rows().length, budgetRoom())
 
-  // Categories columns: numbers after the name, as many as fit (the name
-  // keeps at least 20); the first ones in `priority` win.
-  const columns = createMemo(() => {
-    const room = rowWidth(categoriesWidth()) - 2
-    const all = [
-      { key: "now", title: "This cycle", width: 11 },
-      { key: "budget", title: "Budget", width: 9 },
-      { key: "left", title: "", width: 12 },
-      { key: "bar", title: "", width: 12 },
-      { key: "last", title: "Last", width: 9 },
-      { key: "avg", title: "Average", width: 9 },
-    ] as const
-    const priority = ["now", "budget", "left", "avg", "last", "bar"]
-    const picked = new Set<string>()
-    let used = 0
-    for (const key of priority) {
-      const column = all.find((c) => c.key === key)!
-      if (room - used - column.width >= 20) { picked.add(key); used += column.width }
-    }
-    return { list: all.filter((c) => picked.has(c.key)), name: room - used }
-  })
-  const cell = (line: BudgetLine, key: string): Span[] => {
-    const right = (text: string, width: number, fg: string): Span[] => [{ text: text.padStart(width), fg }]
-    const budget = line.budget
-    switch (key) {
-      case "now": return right(formatWholeMoney(line.now), 11, budget && line.now > budget.amount ? tone.bad : line.child ? ink.label : ink.figure)
-      case "budget": return right(budget ? formatWholeMoney(budget.amount) : "—", 9, budget ? ink.label : ink.faint)
-      case "left": return budget ? right(leftText(budget.amount, line.now).text, 12, leftText(budget.amount, line.now).fg) : right("", 12, ink.figure)
-      case "bar": {
-        if (!budget) return right("", 12, ink.figure)
-        const used = budget.amount > 0 ? line.now / budget.amount : 1
-        return [{ text: "  ", fg: ink.figure }, ...bar(10, used, pace(), used > 1 ? "over" : used > pace() ? "ahead" : "ok")]
-      }
-      case "last": return right(line.last == null ? "—" : formatWholeMoney(line.last), 9, line.last == null ? ink.faint : ink.note)
-      default: return right(formatWholeMoney(line.average), 9, ink.note)
-    }
+  // Categories: a quiet list to set budgets from. Name, this cycle, the
+  // average, and its budget or that it's left out.
+  const NUM = 9
+  const nameWidth = () => rowWidth(categoriesWidth()) - 2 - NUM * 3
+  const lineSpans = (line: BudgetLine): Span[] => {
+    const out = line.categoryId !== null && ignored().has(line.categoryId)
+    const name = line.child ? ink.label : ink.figure
+    return [
+      { text: `${line.child ? "  " : ""}${line.categoryId === null ? "?" : categoryMark(line.categoryId)} `, fg: out ? ink.faint : line.color ?? ink.note },
+      { text: fit(line.name, nameWidth() - (line.child ? 4 : 2)), fg: out ? ink.note : name, bold: !line.child },
+      { text: formatWholeMoney(line.now).padStart(NUM), fg: out ? ink.note : line.budget && line.now > line.budget.amount ? tone.bad : name },
+      { text: formatWholeMoney(line.average).padStart(NUM), fg: ink.note },
+      line.budget ? { text: formatWholeMoney(line.budget.amount).padStart(NUM), fg: ink.figure }
+        : out ? { text: "left out".padStart(NUM), fg: ink.faint }
+        : { text: "".padStart(NUM), fg: ink.faint },
+    ]
   }
-  const lineSpans = (line: BudgetLine): Span[] => [
-    { text: `${line.child ? "  " : ""}${line.categoryId === null ? "?" : categoryMark(line.categoryId)} `, fg: line.color ?? ink.note },
-    { text: fit(line.name, columns().name - (line.child ? 4 : 2)), fg: line.child ? ink.label : ink.figure, bold: !line.child },
-    ...columns().list.flatMap((c) => cell(line, c.key)),
-  ]
-  const room = () => Math.max(1, categoriesHeight() - 3)
-  const top = () => centredTop(categoryCursor(), lines().length, room())
-  const windowLines = () => lines().slice(top(), top() + room())
+  const categoryRoom = () => Math.max(1, categoriesHeight() - 3)
+  const categoryTop = () => centredTop(categoryCursor(), lines().length, categoryRoom())
+
+  const Chart = () => (
+    <SectionCard
+      title={subject().title}
+      titleSuffix={`· ${rangeLabel(cycle())} · day ${elapsed()} of ${cycle().days}`}
+      titleSuffixColor={tone.scope}
+      titleRight={viewPicker()}
+      bottomSpans={model().legend}
+      width={mainWidth()}
+      height={chartHeight()}
+    >
+      <text wrapMode="none">
+        <Index each={headline()}>{(span) => <S fg={span().fg} bold={span().bold}>{span().text}</S>}</Index>
+      </text>
+      <ChartBody model={model()} inks={INKS} baseline={baseline()} />
+    </SectionCard>
+  )
+  const Budgets = () => (
+    <SectionCard title="Budgets" focused={listFocused()} width={mainWidth()} height={budgetsHeight()}>
+      <Index each={rows().slice(budgetTop(), budgetTop() + budgetRoom())}>{(row, i) => {
+        const at = () => listFocused() && budgetTop() + i === budgetCursor()
+        const spans = (): Span[] => {
+          const r = row()
+          if (r.budget) return [{ text: fit(label(r.budget), LABEL()), fg: ink.figure, bold: true }, ...budgetSpans(r.budget)]
+          const total = split().allocated
+          return [{ text: fit("Overall spending", LABEL()), fg: ink.figure, bold: true }, { text: `not set: enter sets one${total ? ` (your category budgets total ${formatWholeMoney(total)})` : ""}`, fg: ink.note }]
+        }
+        return <ListRow cursor={at()} bg={theme.canvas} armed={armedFor(ui.state.armed, "budget", row().budget?.id ?? -1)} spans={spans()} />
+      }}</Index>
+      <Show when={summary().length}>
+        <text wrapMode="none">
+          <S fg={ink.note}>{" "}</S>
+          <Index each={fitSpans(summary(), rowWidth(mainWidth()))}>{(span) => <S fg={span().fg}>{span().text}</S>}</Index>
+        </text>
+      </Show>
+    </SectionCard>
+  )
+  const Categories = () => (
+    <SectionCard title="Categories" titleSuffix={categoriesFocused() ? "· enter budget · x leave out" : undefined} titleSuffixColor={ink.note} focused={categoriesFocused()} width={categoriesWidth()} height={categoriesHeight()}>
+      <Show when={lines().length} fallback={<text fg={ink.note}>No spending yet.</text>}>
+        <text wrapMode="none">
+          <S fg={ink.note}>{` ${fit("", nameWidth())}`}</S>
+          <S fg={ink.label}>{"Spent".padStart(NUM)}{"Average".padStart(NUM)}{"Budget".padStart(NUM)}</S>
+        </text>
+        <Index each={lines().slice(categoryTop(), categoryTop() + categoryRoom())}>{(line, i) => (
+          <ListRow cursor={categoriesFocused() && categoryTop() + i === categoryCursor()} bg={theme.canvas} armed={line().budget ? armedFor(ui.state.armed, "budget", line().budget!.id) : undefined} spans={lineSpans(line())} />
+        )}</Index>
+      </Show>
+    </SectionCard>
+  )
 
   return (
-    <box width="100%" height="100%" flexDirection="column" backgroundColor={theme.canvas}>
-      <SectionCard title="Budgets" titleSuffix={`· ${rangeLabel(cycle())} · day ${elapsed()} of ${cycle().days}`} titleSuffixColor={tone.scope} focused={listFocused()} height={topHeight()}>
-        <Index each={rows()}>{(row, i) => {
-          const at = () => listFocused() && ui.state.budgetCursor === i
-          const spans = (): Span[] => {
-            const r = row()
-            if (r.kind === "cycle") return [{ text: fit("Cycle", LABEL()), fg: ink.label }, { text: describeCycle(config()), fg: ink.figure }]
-            if (r.kind === "account") return [{ text: fit(label(r.budget), LABEL()), fg: ink.figure, bold: true }, ...budgetSpans(r.budget)]
-            const name: Span = { text: fit("Overall spending", LABEL()), fg: ink.figure, bold: true }
-            if (r.budget) return [name, ...budgetSpans(r.budget)]
-            const total = split().allocated
-            return [name, { text: `${formatWholeMoney(overallNow())} so far · not set: enter sets one${total ? ` (your category budgets total ${formatWholeMoney(total)})` : ""}`, fg: ink.note }]
-          }
-          const armedId = () => { const r = row(); return r.kind === "cycle" ? -1 : r.budget?.id ?? -1 }
-          return <ListRow cursor={at()} bg={theme.canvas} armed={armedFor(ui.state.armed, "budget", armedId())} spans={spans()} />
-        }}</Index>
-        {/* How the category budgets add up, and last cycle by the same day. */}
-        <text wrapMode="none">
-          <S fg={ink.note}>{` ${fit("", LABEL())}`}</S>
-          <Show when={split().allocated > 0} fallback={<S fg={ink.note}>{"No category budgets yet (l)"}</S>}>
-            <S fg={ink.label}>{`Categories ${formatWholeMoney(split().allocated)}`}</S>
-            <Show when={split().overall != null}>
-              <S fg={split().allocated > split().overall! ? tone.caution : ink.label}>{` of ${formatWholeMoney(split().overall!)} · ${split().allocated > split().overall! ? `${formatWholeMoney(split().allocated - split().overall!)} over-allocated` : `${formatWholeMoney(split().overall! - split().allocated)} unallocated`}`}</S>
-            </Show>
-          </Show>
-          <Show when={lastByNow() != null}>
-            <S fg={ink.note}>{` · last cycle ${formatWholeMoney(lastByNow()!)} by now`}</S>
-            <S fg={overallNow() > lastByNow()! ? tone.bad : tone.good}>{lastByNow()! > 0 ? ` (${overallNow() >= lastByNow()! ? "+" : "−"}${Math.round(Math.abs(overallNow() / lastByNow()! - 1) * 100)}%)` : ""}</S>
-          </Show>
-        </text>
-      </SectionCard>
-      <box flexDirection={wide() ? "row" : "column"} gap={wide() ? 1 : 0} width="100%" height={lowerHeight()}>
-        <SectionCard title="Categories" titleSuffix={categoriesFocused() ? "· enter sets a budget" : undefined} titleSuffixColor={ink.note} focused={categoriesFocused()} width={categoriesWidth()} height={categoriesHeight()}>
-          <Show when={lines().length} fallback={<text fg={ink.note}>No spending yet.</text>}>
-            <text wrapMode="none">
-              <S fg={ink.note}>{` ${fit("", columns().name)}`}</S>
-              <Index each={columns().list}>{(c) => <S fg={ink.label}>{c().title.padStart(c().width)}</S>}</Index>
-            </text>
-            <Index each={windowLines()}>{(line, i) => (
-              <ListRow cursor={categoriesFocused() && top() + i === categoryCursor()} bg={theme.canvas} armed={line().budget ? armedFor(ui.state.armed, "budget", line().budget!.id) : undefined} spans={lineSpans(line())} />
-            )}</Index>
-          </Show>
-        </SectionCard>
-        <SectionCard title="Past cycles" titleSuffix={`· ${subject().title}`} titleSuffixColor={ink.figure} width={historyWidth()} height={historyHeight()}>
-          <Show when={history().length} fallback={<text fg={ink.note}>No earlier cycles yet.</text>}>
-            <Index each={history().slice(0, Math.max(1, historyHeight() - 3))}>{(h) => {
-              // One scale for every cycle (the biggest, or the budget), the
-              // budget marked.
-              const amount = () => subject().amount ?? 0
-              const scale = () => Math.max(amount(), ...history().map((x) => x.spent), 1)
-              const width = () => Math.max(6, rowWidth(historyWidth()) - 17 - 9 - 13)
-              return <text wrapMode="none">
-                <S fg={ink.label}>{` ${fit(rangeLabel(h().cycle), 16)}`}</S>
-                <S fg={ink.figure}>{formatWholeMoney(h().spent).padStart(8)} </S>
-                <Index each={bar(width(), h().spent / scale(), amount() > 0 ? amount() / scale() : null, amount() > 0 && h().spent > amount() ? "over" : "ok", true)}>{(span) => <S fg={span().fg}>{span().text}</S>}</Index>
-                <Show when={amount() > 0}>
-                  <S fg={h().spent > amount() ? tone.bad : tone.good}>{` ${leftText(amount(), h().spent).text.replace(" left", " under")}`.padStart(13)}</S>
-                </Show>
-              </text>
-            }}</Index>
-            <text wrapMode="none">
-              <S fg={ink.label} bold>{` ${fit("Average", 16)}`}</S>
-              <S fg={ink.figure} bold>{formatWholeMoney(history().reduce((sum, h) => sum + h.spent, 0) / history().length).padStart(8)}</S>
-              <Show when={(subject().amount ?? 0) > 0}>
-                <S fg={ink.note}>{`   over in ${history().filter((h) => h.spent > subject().amount!).length} of ${history().length}`}</S>
-              </Show>
-            </text>
-          </Show>
-        </SectionCard>
-      </box>
+    <box width="100%" height="100%" flexDirection={wide() ? "row" : "column"} gap={wide() ? 1 : 0} backgroundColor={theme.canvas}>
+      <Show when={wide()} fallback={<><Chart /><Budgets /><Categories /></>}>
+        <box flexDirection="column" width={mainWidth()} height={body()}>
+          <Chart />
+          <Budgets />
+        </box>
+        <Categories />
+      </Show>
     </box>
   )
 }
