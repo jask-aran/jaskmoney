@@ -34,7 +34,7 @@ import { CalendarView, calendarLegend } from "./CalendarView"
 
 /** At or above this width the cards take a right-hand column beside the
  * two charts; below it one chart spans the tab with the cards under it. */
-const WIDE = 90
+export const WIDE = 90
 /** The categories column's widest useful size: Up's longest names fit. */
 const SIDE_MAX = 48
 /** The side stack's narrowest: Accounts' and Totals' labels still fit. */

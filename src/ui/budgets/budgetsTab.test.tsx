@@ -32,7 +32,8 @@ test("Budgets tab (3): a chart of the budget at the cursor under where it stands
   const { frame } = await budgetsTab()
   data.setBudget({ kind: "overall" }, 500)
   const f = await frame()
-  expect(f).toContain("Overall spending · day 20 of 31")
+  expect(f).toContain("Overall spending · Cumulative")
+  expect(f).toContain("Budgets · day 20 of 31")
   // $120 − $20 refund; an even pace by day 20 is $323; $5 a day ends at $155.
   expect(f).toMatch(/\$100 of \$500\s+\$400 left · \$33\/day\s+\$223 under pace\s+heading for \$155/)
   expect(f).toContain("Last cycle $300 by now -67%")
@@ -63,7 +64,7 @@ test("allocating down: in Categories, enter sets a category's budget starting fr
   expect(f).toMatch(/Total budgeted\s+[█▌│─]+\s+\$100 of \$800/)
   expect(f).toMatch(/Everything else\s+[█▌│─]+\s+\$0 of \$500/)
   expect(f).toMatch(/Groceries\s+[█▌│─]+\s+\$100 of \$300\s+\$200 left/)
-  expect(f).toContain("Groceries · day 20 of 31")
+  expect(f).toContain("Groceries · Cumulative")
   expect(f).toContain("Each cycle · Groceries")
   // del twice removes the category's budget.
   handleKey(ui, key("delete"), data)
@@ -138,7 +139,7 @@ test("with only category budgets, the total is theirs and everything else waits 
   data.setBudget({ kind: "category", categoryId: groceries }, 300)
   const f = await frame()
   expect(f).toMatch(/Total budgeted\s+[█▌│─]+\s+\$100 of \$300/)
-  expect(f).toMatch(/Everything else\s+not set: enter sets one for spending outside the category budgets/)
+  expect(f).toMatch(/Everything else\s+not set: enter sets one for the rest/)
   ui.setState({ budgetCursor: 1 })
   handleKey(ui, key("return"), data)
   expect(ui.state.settingsDraft).toMatchObject({ scopeKey: "overall", amount: "" })

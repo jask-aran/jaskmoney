@@ -12,7 +12,7 @@ import { ui } from "../../state/uiStore"
 import { data } from "../../state/dataStore"
 import { armedFor } from "../../state/armed"
 import { ink, theme, tone } from "../../theme"
-import { categoryMark } from "../icons"
+import { categoryMark, viewMark } from "../icons"
 import { fit, shortDate } from "../text"
 import { ListRow, centredTop } from "../primitives/ListRow"
 import { SectionCard } from "../primitives/SectionCard"
@@ -20,6 +20,7 @@ import { S } from "../primitives/S"
 import { fitSpans, type Span } from "../primitives/spans"
 import { AXIS_GUESS, ChartBody, axisWidth, type ChartModel } from "../charts/ChartBody"
 import { INKS } from "../overview/periodCharts"
+import { WIDE } from "../overview/OverviewTab"
 import { cycleLines, cycleLinesLegend, cycleProjection, cyclesChart, thisCycleChart, type CycleSpent } from "./budgetCharts"
 
 /** Cycles before this one the chart and the cycle lines can show, at most. */
@@ -52,7 +53,7 @@ function bar(width: number, used: number, pace: number): Span[] {
 }
 
 /** The view picker in the chart's top border, the current one bright. */
-const VIEWS = ["This cycle", "Cycles"] as const
+const VIEWS = ["Cumulative", "Cycles"] as const
 
 /**
  * The Budgets tab: how a budget is going, at a glance. A chart of the
@@ -155,8 +156,10 @@ export function BudgetsTab(props: { focused: SectionId }) {
   // the chart and the budgets share the left and the categories run down
   // the right; narrow, they stack.
   const body = () => Math.max(16, dims().height - 4)
-  const wide = () => dims().width >= 130
-  const categoriesWidth = () => (wide() ? Math.min(62, Math.max(52, Math.floor(dims().width * 0.38))) : dims().width)
+  // The Overview's breakpoint; the categories take a column of about the
+  // Overview's side column, wider on a wide terminal.
+  const wide = () => dims().width >= WIDE
+  const categoriesWidth = () => (wide() ? Math.min(62, Math.max(40, Math.floor((dims().width - 1) * 0.4))) : dims().width)
   const mainWidth = () => (wide() ? dims().width - 1 - categoriesWidth() : dims().width)
   const summary = (): Span[] => {
     const spans: Span[] = []
@@ -209,16 +212,17 @@ export function BudgetsTab(props: { focused: SectionId }) {
     const projected = cycleProjection(now, elapsed(), cycle().days)
     return [
       strong(formatWholeMoney(now), ink.strong),
-      { text: ` of ${formatWholeMoney(s.amount)}   `, fg: ink.label },
+      { text: ` of ${formatWholeMoney(s.amount)}  `, fg: ink.label },
       left < 0 ? strong(`${formatWholeMoney(-left)} over`, tone.bad) : strong(`${formatWholeMoney(left)} left`, tone.good),
       ...(left > 0 ? [{ text: ` · ${formatWholeMoney(left / daysLeft)}/day`, fg: ink.label }] : []),
-      { text: `   ${Math.abs(vsPace) < 1 ? "on pace" : `${formatWholeMoney(Math.abs(vsPace))} ${vsPace > 0 ? "ahead of" : "under"} pace`}`, fg: vsPace > 0 ? tone.caution : ink.note },
-      ...(projected ? [{ text: "   heading for ", fg: ink.label }, { text: formatWholeMoney(projected), fg: projected > s.amount ? tone.bad : tone.good }] : []),
+      { text: `  ${Math.abs(vsPace) < 1 ? "on pace" : `${formatWholeMoney(Math.abs(vsPace))} ${vsPace > 0 ? "ahead of" : "under"} pace`}`, fg: vsPace > 0 ? tone.caution : ink.note },
+      ...(projected ? [{ text: "  heading for ", fg: ink.label }, { text: formatWholeMoney(projected), fg: projected > s.amount ? tone.bad : tone.good }] : []),
     ]
   }
+  // As the Overview's chart panes: the views as icons, the current one bright.
   const viewPicker = (): Span[] => VIEWS.flatMap((v, i) => [
-    ...(i ? [{ text: "  ", fg: ink.note }] : []),
-    { text: v, fg: i === ui.state.budgetChart ? tone.key : ink.faint, bold: i === ui.state.budgetChart },
+    ...(i ? [{ text: " ", fg: ink.note }] : []),
+    { text: viewMark(v, i === ui.state.budgetChart), fg: i === ui.state.budgetChart ? tone.key : ink.faint, bold: i === ui.state.budgetChart },
   ])
 
   // One budget in the Budgets card: its bar against an even pace, spent of
@@ -226,24 +230,28 @@ export function BudgetsTab(props: { focused: SectionId }) {
   const listFocused = () => props.focused === "bud.list"
   const categoriesFocused = () => props.focused === "bud.categories"
   const LABEL = () => Math.min(22, Math.max(18, ...rows().map((r) => (r.budget ? label(r.budget).length + 2 : r.kind === "total" ? TOTAL.length + 2 : 18))))
-  const BAR = () => Math.max(10, Math.min(48, rowWidth(mainWidth()) - LABEL() - 45))
+  const tight = () => rowWidth(mainWidth()) - LABEL() - 45 < 10
+  const BAR = () => Math.max(tight() ? 4 : 6, Math.min(48, rowWidth(mainWidth()) - LABEL() - (tight() ? 36 : 45)))
   const budgetSpans = (p: BudgetProgress | undefined): Span[] => {
     if (!p) return []
     const budget = p.budget
     const used = budget.amount > 0 ? p.spent / budget.amount : p.spent > 0 ? 2 : 0
-    return [
-      ...bar(BAR(), used, pace()),
-      { text: `  ${formatWholeMoney(p.spent).padStart(7)} of ${formatWholeMoney(budget.amount).padEnd(7)}  `, fg: ink.label },
-      p.remaining < 0 ? { text: `${formatWholeMoney(-p.remaining)} over`, fg: tone.bad } : { text: `${formatWholeMoney(p.remaining)} left · ${formatWholeMoney(p.dailyAllowance)}/day`, fg: tone.good },
-    ]
+    const verdict = p.remaining < 0 ? { text: `${formatWholeMoney(-p.remaining)} over`, fg: tone.bad } : { text: `${formatWholeMoney(p.remaining)} left · ${formatWholeMoney(p.dailyAllowance)}/day`, fg: tone.good }
+    // Narrow, the figures drop their alignment, and then go, before what's
+    // left or over does.
+    const figures = { text: tight() ? ` ${formatWholeMoney(p.spent)} of ${formatWholeMoney(budget.amount)} ` : `  ${formatWholeMoney(p.spent).padStart(7)} of ${formatWholeMoney(budget.amount).padEnd(7)}  `, fg: ink.label }
+    const room = rowWidth(mainWidth()) - LABEL() - BAR()
+    return [...bar(BAR(), used, pace()), ...(figures.text.length + verdict.text.length <= room ? [figures] : [{ text: " ", fg: ink.label }]), verdict]
   }
   const budgetRoom = () => budgetsHeight() - 2 - (summary().length ? 1 : 0)
   const budgetTop = () => centredTop(budgetCursor(), rows().length, budgetRoom())
 
   // Categories: a quiet list to set budgets from. Name, this cycle, the
   // average, and its budget or that it's left out.
+  // The average goes where it would leave names too short.
   const NUM = 9
-  const nameWidth = () => rowWidth(categoriesWidth()) - 2 - NUM * 3
+  const withAverage = () => rowWidth(categoriesWidth()) - 2 - NUM * 3 >= 12
+  const nameWidth = () => rowWidth(categoriesWidth()) - 2 - NUM * (withAverage() ? 3 : 2)
   const lineSpans = (line: BudgetLine): Span[] => {
     const out = line.categoryId !== null && ignored().has(line.categoryId)
     const name = line.child ? ink.label : ink.figure
@@ -251,7 +259,7 @@ export function BudgetsTab(props: { focused: SectionId }) {
       { text: `${line.child ? "  " : ""}${line.categoryId === null ? "?" : categoryMark(line.categoryId)} `, fg: out ? ink.faint : line.color ?? ink.note },
       { text: fit(line.name, nameWidth() - (line.child ? 4 : 2)), fg: out ? ink.note : name, bold: !line.child },
       { text: formatWholeMoney(line.now).padStart(NUM), fg: out ? ink.note : line.budget && line.now > line.budget.amount ? tone.bad : name },
-      { text: formatWholeMoney(line.average).padStart(NUM), fg: ink.note },
+      ...(withAverage() ? [{ text: formatWholeMoney(line.average).padStart(NUM), fg: ink.note }] : []),
       line.budget ? { text: formatWholeMoney(line.budget.amount).padStart(NUM), fg: ink.figure }
         : out ? { text: "left out".padStart(NUM), fg: ink.faint }
         : { text: "".padStart(NUM), fg: ink.faint },
@@ -263,8 +271,8 @@ export function BudgetsTab(props: { focused: SectionId }) {
   const Chart = () => (
     <SectionCard
       title={subject().title}
-      titleSuffix={view().current ? `· day ${elapsed()} of ${cycle().days}` : `· ${period()}`}
-      titleSuffixColor={view().current ? tone.scope : tone.caution}
+      titleSuffix={`· ${VIEWS[ui.state.budgetChart]}`}
+      titleSuffixColor={ink.label}
       titleRight={viewPicker()}
       bottomSpans={model().legend}
       width={mainWidth()}
@@ -287,14 +295,14 @@ export function BudgetsTab(props: { focused: SectionId }) {
     </SectionCard>
   )
   const Budgets = () => (
-    <SectionCard title="Budgets" titleSuffix={view().current ? undefined : `· ${period()} · ] later`} titleSuffixColor={tone.caution} focused={listFocused()} width={mainWidth()} height={budgetsHeight()}>
+    <SectionCard title="Budgets" titleSuffix={view().current ? `· day ${elapsed()} of ${cycle().days}` : `· ${period()} · ] later`} titleSuffixColor={view().current ? tone.scope : tone.caution} focused={listFocused()} width={mainWidth()} height={budgetsHeight()}>
       <Index each={rows().slice(budgetTop(), budgetTop() + budgetRoom())}>{(row, i) => {
         const at = () => listFocused() && budgetTop() + i === budgetCursor()
         const spans = (): Span[] => {
           const r = row()
-          if (r.kind === "total") return [{ text: fit(TOTAL, LABEL()), fg: ink.strong, bold: true }, ...budgetSpans(totalProgress())]
-          if (r.budget) return [{ text: fit(label(r.budget), LABEL()), fg: ink.figure, bold: true }, ...budgetSpans(progress().get(r.budget.id))]
-          return [{ text: fit(overallName(), LABEL()), fg: ink.figure, bold: true }, { text: `not set: enter sets one${hasCategoryBudgets() ? " for spending outside the category budgets" : ""}`, fg: ink.note }]
+          if (r.kind === "total") return fitSpans([{ text: fit(TOTAL, LABEL()), fg: ink.strong, bold: true }, ...budgetSpans(totalProgress())], rowWidth(mainWidth()))
+          if (r.budget) return fitSpans([{ text: fit(label(r.budget), LABEL()), fg: ink.figure, bold: true }, ...budgetSpans(progress().get(r.budget.id))], rowWidth(mainWidth()))
+          return fitSpans([{ text: fit(overallName(), LABEL()), fg: ink.figure, bold: true }, { text: `not set: enter sets one${hasCategoryBudgets() ? " for the rest" : ""}`, fg: ink.note }], rowWidth(mainWidth()))
         }
         return <ListRow cursor={at()} bg={theme.canvas} armed={row().budget ? armedFor(ui.state.armed, "budget", budgetArmId(row().budget!, cycle().start)) : undefined} spans={spans()} />
       }}</Index>
@@ -311,7 +319,7 @@ export function BudgetsTab(props: { focused: SectionId }) {
       <Show when={lines().length} fallback={<text fg={ink.note}>No spending yet.</text>}>
         <text wrapMode="none">
           <S fg={ink.note}>{` ${fit("", nameWidth())}`}</S>
-          <S fg={ink.label}>{"Spent".padStart(NUM)}{"Average".padStart(NUM)}{"Budget".padStart(NUM)}</S>
+          <S fg={ink.label}>{"Spent".padStart(NUM)}{withAverage() ? "Average".padStart(NUM) : ""}{"Budget".padStart(NUM)}</S>
         </text>
         <Index each={lines().slice(categoryTop(), categoryTop() + categoryRoom())}>{(line, i) => (
           <ListRow cursor={categoriesFocused() && categoryTop() + i === categoryCursor()} bg={theme.canvas} armed={line().budget ? armedFor(ui.state.armed, "budget", budgetArmId(line().budget!, cycle().start)) : undefined} spans={lineSpans(line())} />
