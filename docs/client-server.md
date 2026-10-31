@@ -37,27 +37,26 @@ View state is per client: the web app's filter doesn't change the TUI's.
 
 - `bun start` / `bun run dev`: the TUI with its core in-process (as before).
 - `bun run server`: the core alone, serving the web app and clients on port 4417 (`JASKMONEY_DB`,
-  `JASKMONEY_PORT`). It prints the web app's address and the `--connect` command, both carrying its token.
-- `bun start --serve[=port]`: the TUI, also serving its core, so the web app shares it live. The status line
-  shows the web app's address.
-- `bun start --connect 'ws://127.0.0.1:4417/api?token=…'`: the TUI as a client of a running server. What needs
+  `JASKMONEY_PORT`). It prints the web app's address and the `--connect` command.
+- `bun start --serve[=port]` (`bun run dev -- --serve`): the TUI, also serving its core, so the web app shares
+  it live. The status line shows the web app's address.
+- `bun start --connect ws://127.0.0.1:4417/api`: the TUI as a client of a running server. What needs
   credentials (sync, smart search, `ask:`, rule writing) runs in the core, with the core's credentials.
 
 Run one core per database. Two cores on one file each keep their own copy and won't see each other's writes.
 
 ## Security
 
-The server listens on 127.0.0.1, and `/api` needs three things:
+The server listens on 127.0.0.1 only, and `/api` answers:
 
-- **Its token** (`?token=`): `JASKMONEY_SERVER_TOKEN`, or one made once and kept in `server.json` beside
-  settings.json (owner-only), so an address keeps working across restarts. The web app remembers it in the
-  browser and drops it from the address bar. Any local user can reach a
-  localhost port, and the core can read files (`previewImport`) and change credentials, so knowing the port
-  isn't enough.
 - **A loopback host name** (`127.0.0.1`, `localhost`, `[::1]`): a DNS-rebound page reaches 127.0.0.1 under its
-  own host name, and is refused (421). `JASKMONEY_PUBLIC_HOST` (comma-separated) adds names a tunnel brings
-  requests in under.
-- **No foreign origin**: a browser may connect only from the server's own page (WebSockets ignore CORS).
+  own host name, and is refused (421).
+- **No foreign origin**: a browser may connect only from the server's own page (WebSockets ignore CORS), so a
+  site open in your browser can't reach for localhost (403).
+
+There is no token: anything running as a user on this machine can connect, and the core can read files
+(`previewImport`) and change credentials. Serving it beyond this machine (a tunnel, a proxy) is outside the
+project: put a login in front, and present requests to it as local (loopback host, its own origin).
 
 ## The wire
 
@@ -78,17 +77,3 @@ so the TUI behaves as a socket client would (the key bench shows no cost).
 4. Not yet: the server doesn't sync with Up on a timer by itself (a connected TUI's sync runs there); UI prefs
    (range, chart views) are the core's, so clients share them; the TUI's AI settings dialog shows the values in
    its own environment while saving to the core's; `ai`/`llm`/`models` stand-ins in calls work in-process only (tests).
-
-## From elsewhere (a tunnel)
-
-The server still listens on 127.0.0.1 only. To reach it from a phone, a Cloudflare Tunnel brings a public name
-to `http://127.0.0.1:4417`, behind Cloudflare Access (a login that admits only your email), and the core is
-told that name:
-
-```bash
-JASKMONEY_PUBLIC_HOST=money.example.com bun run dev -- --serve   # the TUI, serving its core
-```
-
-Access guards the page, `/api` and the WebSocket alike; the token is a second lock. Never point a tunnel at the
-server without Access in front: the core can read files and change credentials.
-

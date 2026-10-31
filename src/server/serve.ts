@@ -3,19 +3,13 @@
  * (core/protocol) as JSON over a WebSocket at /api. One process owns the
  * database; everything else connects here.
  *
- * /api needs the server's token (`?token=`): JASKMONEY_SERVER_TOKEN, or one
- * made once and kept in server.json beside settings.json, in the web app's
- * address the server prints. It also only answers requests addressed to
- * this machine by a loopback name, or by a public name in
- * JASKMONEY_PUBLIC_HOST (a tunnel's, behind its own login), and a browser
- * only from this server's own page: a WebSocket ignores CORS, and a
- * DNS-rebound page could otherwise name its own host.
+ * It listens on this machine only, and /api answers only requests
+ * addressed to it by a loopback name, and a browser only from this
+ * server's own page: a WebSocket ignores CORS, and a DNS-rebound page could
+ * otherwise name its own host. There is no token: reaching it from
+ * elsewhere (a tunnel) is the tunnel's business, and its own login.
  */
 import type { ServerWebSocket } from "bun"
-import { readFileSync } from "node:fs"
-import { dirname, join } from "node:path"
-import { writeJsonAtomic } from "../storage/json"
-import { defaultSettingsConfigPath } from "../state/settingsConfig"
 import index from "../web/index.html"
 import type { Core } from "../core/core"
 import { KEYED_SLICES, type ClientMessage, type CoreState, type ServerMessage } from "../core/protocol"
@@ -91,27 +85,10 @@ function stateMessage(ws: ServerWebSocket<Connection>, encoded: Encoded): string
   return `{"t":"state","patch":{${patch.join(",")}}${keyed.length ? `,"keyed":{${keyed.join(",")}}` : ""}${rows}}`
 }
 
-/** The token clients need: JASKMONEY_SERVER_TOKEN, else one kept beside
- * settings.json (owner-only), so a bookmarked address keeps working. */
-export function serverToken(path = join(dirname(defaultSettingsConfigPath()), "server.json")): string {
-  if (process.env.JASKMONEY_SERVER_TOKEN) return process.env.JASKMONEY_SERVER_TOKEN
-  try {
-    const kept = (JSON.parse(readFileSync(path, "utf8")) as { token?: unknown }).token
-    if (typeof kept === "string" && kept.length >= 32) return kept
-  } catch { /* none yet, or unreadable: make one */ }
-  const token = crypto.randomUUID().replaceAll("-", "")
-  writeJsonAtomic(path, { token })
-  return token
-}
-
-/** Public names this server answers to (JASKMONEY_PUBLIC_HOST, comma-separated). */
-const publicHosts = () => (process.env.JASKMONEY_PUBLIC_HOST ?? "").split(",").map((h) => h.trim().toLowerCase()).filter(Boolean)
-
 const send = (ws: ServerWebSocket<Connection>, message: ServerMessage) => ws.send(JSON.stringify(message))
 
 export function serveCore(core: Core, { port = DEFAULT_PORT, hostname = "127.0.0.1" }: { port?: number; hostname?: string } = {}) {
-  const token = serverToken()
-  const hosts = new Set([...LOOPBACK, hostname, ...publicHosts()])
+  const hosts = new Set([...LOOPBACK, hostname])
   const connections = new Set<ServerWebSocket<Connection>>()
   // One subscription for every client: each patch is serialised once.
   const unsubscribe = core.subscribe((patch) => {
@@ -152,7 +129,6 @@ export function serveCore(core: Core, { port = DEFAULT_PORT, hostname = "127.0.0
       if (url.pathname !== "/api") return new Response("Not found", { status: 404 })
       const origin = req.headers.get("origin")
       if (origin && new URL(origin).host !== url.host) return new Response("Forbidden", { status: 403 })
-      if (url.searchParams.get("token") !== token) return new Response("Unauthorized", { status: 401 })
       if (server.upgrade(req, { data: { sent: new Map(), entries: new Map(), rows: new Map(), order: "", calls: new Map() } })) return undefined
       return new Response("WebSocket only", { status: 426 })
     },
@@ -175,12 +151,12 @@ export function serveCore(core: Core, { port = DEFAULT_PORT, hostname = "127.0.0
     },
   })
 
-  const page = new URL(`/?token=${token}`, server.url).href
+  const page = server.url.href
   return {
-    /** The web app, token included. */
+    /** The web app. */
     page,
-    /** Where clients connect (`--connect`), token included. */
-    api: page.replace(/^http/, "ws").replace("/?", "/api?"),
+    /** Where clients connect (`--connect`). */
+    api: new URL("/api", page).href.replace(/^http/, "ws"),
     stop() {
       unsubscribe()
       server.stop(true)

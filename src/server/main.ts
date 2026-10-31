@@ -1,9 +1,8 @@
 /**
  * `bun run server`: the core on its own, for clients to connect to (the
  * web app at its address, the TUI with `--connect`). JASKMONEY_DB picks the
- * database, JASKMONEY_PORT the port and JASKMONEY_SERVER_TOKEN the token
- * (otherwise one is made each start; the addresses printed carry it). It
- * doesn't sync with Up by itself yet: a connected TUI's sync runs here.
+ * database and JASKMONEY_PORT the port. It doesn't sync with Up by itself
+ * yet: a connected TUI's sync runs here.
  */
 import "../startup"
 import { createCore } from "../core/core"

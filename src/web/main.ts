@@ -21,27 +21,11 @@ const status = $("status"), note = $("note"), message = $("message"), rows = $<H
 const accounts = $<HTMLSelectElement>("accounts"), filter = $<HTMLInputElement>("filter")
 const undoButton = $<HTMLButtonElement>("undo"), syncButton = $<HTMLButtonElement>("sync")
 
-/** The server's token: from the address jaskmoney printed, then remembered
- * in this browser (and taken out of the address bar), so the bare address
- * works from then on. */
-function serverToken(): string | null {
-  const url = new URL(location.href)
-  const given = url.searchParams.get("token")
-  try {
-    if (!given) return localStorage.getItem("jaskmoney.token")
-    localStorage.setItem("jaskmoney.token", given)
-    url.searchParams.delete("token")
-    history.replaceState(null, "", url)
-  } catch { /* storage blocked: the address keeps it */ }
-  return given
-}
-const token = serverToken()
-const api = `${location.protocol === "https:" ? "wss" : "ws"}://${location.host}/api${token ? `?token=${encodeURIComponent(token)}` : ""}`
+const api = `${location.protocol === "https:" ? "wss" : "ws"}://${location.host}/api`
 let disconnected = ""
 const data = createClientStore(wsLink(api, { onClose: (reason) => {
   disconnected = reason
-  // The server refuses a socket without its token, and a browser isn't told why.
-  status.textContent = token ? `disconnected: ${reason} · reload, or open the address jaskmoney printed` : "no token: open the address jaskmoney printed (it carries the server's token)"
+  status.textContent = `disconnected: ${reason} · reload to reconnect`
   status.className = "off"
 } }))
 

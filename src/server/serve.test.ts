@@ -2,11 +2,7 @@ import { afterEach, expect, test } from "bun:test"
 import { createCore } from "../core/core"
 import { createClientStore } from "../client/store"
 import { wsLink } from "../client/wsLink"
-import { serveCore, serverToken } from "./serve"
-import { testEnv } from "../testing/scoped"
-import { mkdtempSync, statSync } from "node:fs"
-import { tmpdir } from "node:os"
-import { join } from "node:path"
+import { serveCore } from "./serve"
 
 const stops: Array<() => void> = []
 afterEach(() => { for (const stop of stops.splice(0)) stop() })
@@ -30,18 +26,16 @@ async function until(ready: () => boolean) {
   expect(ready()).toBe(true)
 }
 
-test("/api takes only its token, a loopback host name and its own page's origin", async () => {
+test("/api takes only a loopback host name and its own page's origin", async () => {
   const { base } = served()
-  const token = base.searchParams.get("token")!
-  const api = (query: string, headers: Record<string, string> = {}) => fetch(`http://127.0.0.1:${base.port}/api${query}`, { headers })
-  expect((await api("")).status).toBe(401)
-  expect((await api("?token=wrong")).status).toBe(401)
-  // A plain request with the token is only refused for not being a WebSocket.
-  expect((await api(`?token=${token}`)).status).toBe(426)
+  const api = (headers: Record<string, string> = {}) => fetch(`http://127.0.0.1:${base.port}/api`, { headers })
+  // A plain request is only refused for not being a WebSocket.
+  expect((await api()).status).toBe(426)
+  expect((await api({ origin: `http://127.0.0.1:${base.port}` })).status).toBe(426)
   // DNS rebinding: a page on evil.example resolved to 127.0.0.1 names its own host.
-  expect((await api(`?token=${token}`, { host: `evil.example:${base.port}`, origin: `http://evil.example:${base.port}` })).status).toBe(421)
-  expect((await api(`?token=${token}`, { origin: "http://evil.example" })).status).toBe(403)
-  // The page itself needs no token (it reads the token from its address).
+  expect((await api({ host: `evil.example:${base.port}`, origin: `http://evil.example:${base.port}` })).status).toBe(421)
+  // Another site's page in the browser, reaching for localhost.
+  expect((await api({ origin: "http://evil.example" })).status).toBe(403)
   expect((await fetch(`http://127.0.0.1:${base.port}/`)).status).toBe(200)
 })
 
@@ -92,22 +86,3 @@ test("a removed row leaves the other client's mirror; an unknown command is refu
   link.close()
 })
 
-test("the token is kept (owner-only) so an address keeps working; JASKMONEY_SERVER_TOKEN wins", () => {
-  const path = join(mkdtempSync(join(tmpdir(), "jaskmoney-token-")), "server.json")
-  const first = serverToken(path)
-  expect(first).toMatch(/^[0-9a-f]{32}$/)
-  expect(serverToken(path)).toBe(first)
-  expect(statSync(path).mode & 0o777).toBe(0o600)
-  testEnv("JASKMONEY_SERVER_TOKEN", "from-the-environment")
-  expect(serverToken(path)).toBe("from-the-environment")
-})
-
-test("a public name in JASKMONEY_PUBLIC_HOST is answered (a tunnel's), its own origin too; others still aren't", async () => {
-  testEnv("JASKMONEY_PUBLIC_HOST", "money.example")
-  const { base } = served()
-  const token = base.searchParams.get("token")!
-  const api = (headers: Record<string, string>) => fetch(`http://127.0.0.1:${base.port}/api?token=${token}`, { headers })
-  expect((await api({ host: "money.example", origin: "https://money.example" })).status).toBe(426)
-  expect((await api({ host: "money.example", origin: "https://evil.example" })).status).toBe(403)
-  expect((await api({ host: "evil.example" })).status).toBe(421)
-})
