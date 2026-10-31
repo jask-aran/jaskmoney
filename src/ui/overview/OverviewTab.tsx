@@ -1,6 +1,6 @@
 import { For, Index, Show, createEffect, createMemo, onCleanup } from "solid-js"
 import type { BoxRenderable, ScrollBoxRenderable } from "@opentui/core"
-import { categoryMark, viewMark } from "../icons"
+import { categoryMark } from "../icons"
 import { useTerminalDimensions } from "@opentui/solid"
 import { SectionCard } from "../primitives/SectionCard"
 import { Modal } from "../primitives/Modal"
@@ -26,8 +26,9 @@ import { count, fit, shortDate, shortMoney, truncate } from "../text"
 import { StyledLine, type StyledSpan } from "../primitives/StyledLine"
 import { monthlyTotal, subscriptions, upcomingCharges, type Subscription } from "../../domain/subscriptions"
 import { allCategoryLines, overviewRange } from "../../state/overviewRange"
-import { AXIS_GUESS, ChartBody, axisWidth, type ChartModel } from "../charts/ChartBody"
-import { INKS, balancesChart, cashFlowChart, spendingChart, type PeriodNames } from "./periodCharts"
+import { AXIS_GUESS, axisWidth, type ChartModel } from "../charts/ChartBody"
+import { ChartCard } from "../charts/ChartCard"
+import { balancesChart, cashFlowChart, spendingChart, type PeriodNames } from "./periodCharts"
 import { UP_LOGO_WIDTH } from "../primitives/UpLogo"
 import { CalendarView, calendarLegend } from "./CalendarView"
 
@@ -366,22 +367,20 @@ export function OverviewTab(props: { focused: SectionId }) {
     const view = () => CHART_VIEWS[index()] ?? CHART_VIEWS[0]
     const chart = () => (p.pane === 0 ? topModel() : bottomModel())
     return (
-      <SectionCard
+      <ChartCard
         title={view().group}
-        titleSuffix={view().group === view().view ? undefined : `· ${view().view}`}
-        titleSuffixColor={ink.label}
-        titleRight={viewPicker(index())}
-        bottomSpans={chart()?.legend ?? (view().view === "Subscriptions" ? subscriptionsLegend(subs(), dueBeforePayday()) : calendarLegend(calendar(), today()))}
+        views={CHART_VIEWS}
+        current={index()}
+        model={chart()}
+        legend={view().view === "Subscriptions" ? subscriptionsLegend(subs(), dueBeforePayday()) : calendarLegend(calendar(), today())}
+        fallback={view().view === "Subscriptions"
+          ? <SubscriptionsView list={subs()} width={mainWidth() - 4} rows={p.height - 2} today={today()} payday={payday()} />
+          : <CalendarView weeks={calendar()} width={mainWidth() - 4} rows={p.height - 2} today={today()} />}
         width={mainWidth()}
         height={p.height}
         focused={props.focused === (p.pane === 0 ? "ov.chart" : "ov.chart2")}
-      >
-        <Show when={chart()} fallback={view().view === "Subscriptions"
-          ? <SubscriptionsView list={subs()} width={mainWidth() - 4} rows={p.height - 2} today={today()} payday={payday()} />
-          : <CalendarView weeks={calendar()} width={mainWidth() - 4} rows={p.height - 2} today={today()} />}>
-          {(m: () => ChartModel) => <ChartBody model={m()} inks={INKS} baseline={baseline()} />}
-        </Show>
-      </SectionCard>
+        baseline={baseline()}
+      />
     )
   }
 
@@ -478,15 +477,6 @@ export function OverviewTab(props: { focused: SectionId }) {
       </Show>
     </box>
   )
-}
-
-/** The chart pane's views in h/l order as icons (dots when icons are off),
- * the current one bright; a space between groups. */
-function viewPicker(current: number): Span[] {
-  return CHART_VIEWS.flatMap((v, i) => [
-    ...(i > 0 ? [{ text: CHART_VIEWS[i - 1]!.group !== v.group ? "  " : " ", fg: ink.note }] : []),
-    { text: viewMark(v.view, i === current), fg: i === current ? tone.key : ink.faint, bold: i === current },
-  ])
 }
 
 const PERIOD_UNIT: Record<string, string> = { cycle: "cycle", month: "month", qtr: "quarter", half: "half", fy: "FY", year: "year" }

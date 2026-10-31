@@ -15,6 +15,9 @@ import { annotate, lineAnchors, stamp, type ChartLabel } from "../charts/annotat
 import { cellColumn, dateAxis, fitRange, lineChart, niceScale, pointCell, tickRows, valueRow } from "../charts/lineChart"
 import { saverInks } from "../charts/saverInks"
 
+/** Days into a period before Cumulative says where it's heading. */
+const PROJECT_FROM = 3
+
 export const INKS: Record<string, string> = {
   // Spending: the calendar's purple, lighter where a day or week isn't over.
   spend: theme.mauve,
@@ -42,17 +45,17 @@ export const INKS: Record<string, string> = {
 const sum = (values: number[]) => values.reduce((a, b) => a + b, 0)
 
 /** Legend marks: a line series, a bar, a rule, each in its series' ink. */
-export const LINE = "⠒⠒ "
-export const BAR = "▆ "
-export const RULE = "┈┈ "
-export const mark = (shape: string, ink: keyof typeof INKS): Span => ({ text: shape, fg: INKS[ink]! })
+const LINE = "⠒⠒ "
+const BAR = "▆ "
+const RULE = "┈┈ "
+const mark = (shape: string, ink: keyof typeof INKS): Span => ({ text: shape, fg: INKS[ink]! })
 export const GAP = muted("   ")
 
 /** A chart with nothing to draw, saying why in its legend. */
-export const emptyChart = (why: string): ChartModel => ({ rows: [], ticks: new Map(), labels: "", legend: [muted(why)] })
+const emptyChart = (why: string): ChartModel => ({ rows: [], ticks: new Map(), labels: "", legend: [muted(why)] })
 
 /** Money labels down the y-axis for ticks every `step` from `min` to `max`. */
-export const moneyTicks = (min: number, max: number, step: number, height: number) => tickRows(min, max, step, height, shortMoney)
+const moneyTicks = (min: number, max: number, step: number, height: number) => tickRows(min, max, step, height, shortMoney)
 
 /** What the range and the one before it are called in legends and labels. */
 export interface PeriodNames {
@@ -69,7 +72,8 @@ const DEFAULT_NAMES: PeriodNames = { current: "This period", previous: "Last per
  *   average line with the biggest days as points.
  * - Cumulative: running total against the previous period of equal length
  *   where the history covers it (and `budget`, when given, as a pace line
- *   rising from nothing at the start to the whole budget at the end).
+ *   rising from nothing at the start to the whole budget at the end), and
+ *   from a few days in, dotted on to where it ends at its pace so far.
  * - Weekly: totals per configured week, partial weeks lighter, a week's
  *   share of a `budget`, the biggest named; months under narrow bars.
  * Bars share the whole width out. Days after today are not drawn.
@@ -147,7 +151,11 @@ export function spendingChart(
     const prev = covered ? cumulative(dailySpendSeries(spendingRows, prevStart, addDays(dates[0]!, -1)).values) : []
     const now = elapsed > 0 ? total[elapsed - 1]! : 0
     const then = elapsed > 0 ? prev[elapsed - 1] ?? 0 : 0
-    const scale = niceScale(Math.max(now, budget ?? 0, ...prev))
+    // Where the period ends at its pace so far: dotted on from today, from
+    // a few days in (earlier, one big day says too much).
+    const projected = elapsed >= PROJECT_FROM && elapsed < n ? (now / elapsed) * n : null
+    const ahead = projected == null ? [] : dates.map((_, i) => (i < elapsed - 1 ? null : now + ((projected - now) * (i - elapsed + 1)) / (n - elapsed)))
+    const scale = niceScale(Math.max(now, budget ?? 0, projected ?? 0, ...prev))
     const diff = then > 0 ? Math.round(((now - then) / then) * 100) : null
     // The budget as a pace line: nothing at the start of the period, the
     // whole budget by the end of its last day.
@@ -160,11 +168,12 @@ export function spendingChart(
     const paceLine = dates.map((_, i) => pace(i))
     const marks: ChartLabel[] = [
       ...(elapsed > 0 ? [{ ...at(elapsed - 1, now), text: `${names.current} ${shortMoney(now)}`, ink: "spend", required: true }] : []),
+      ...(projected != null ? [{ ...at(n - 1, projected), text: `≈ ${shortMoney(projected)}`, ink: "spend" }] : []),
       ...(prev.length ? [{ ...at(n - 1, prev[n - 1]!), text: names.previous, name: names.previous, along: lineAnchors(prev, n - 2, at), ink: "prev" }] : []),
       ...(budget != null ? [{ ...at(n - 1, budget), text: "Budget", name: "Budget", along: lineAnchors(paceLine, n - 2, at), ink: "limit" }] : []),
     ]
     return {
-      rows: annotate(lineChart({ series: [...limit, { values: prev, ink: "prev" }, { values: upToToday(total), ink: "spend" }], length: n, width, height, min: 0, max: scale.max, markers: axis.markers }), marks),
+      rows: annotate(lineChart({ series: [...limit, { values: prev, ink: "prev" }, { values: ahead, ink: "partial" }, { values: upToToday(total), ink: "spend" }], length: n, width, height, min: 0, max: scale.max, markers: axis.markers }), marks),
       ticks: moneyTicks(0, scale.max, scale.step, height),
       labels: axis.labels,
     today: axis.today,
@@ -177,7 +186,8 @@ export function spendingChart(
           muted(`Budget ${formatWholeMoney(budget)}`),
           ...(overPace != null ? [
             muted(", "),
-            { text: `${formatWholeMoney(Math.abs(overPace))} ${overPace > 0 ? "over" : "under"} pace`, fg: spendChangeColor(overPace) },
+            // Once the period is over, the pace is the budget.
+            { text: `${formatWholeMoney(Math.abs(overPace))} ${overPace > 0 ? "over" : "under"}${elapsed < n ? " pace" : ""}`, fg: spendChangeColor(overPace) },
           ] : []),
         ] : []),
         GAP,

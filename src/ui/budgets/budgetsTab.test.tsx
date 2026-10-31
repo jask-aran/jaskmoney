@@ -34,17 +34,20 @@ test("Budgets tab (3): a chart of the budget at the cursor under where it stands
   const f = await frame()
   expect(f).toContain("Overall spending · Cumulative")
   expect(f).toContain("Budgets · day 20 of 31")
-  // $120 − $20 refund; an even pace by day 20 is $323; $5 a day ends at $155.
-  expect(f).toMatch(/\$100 of \$500\s+\$400 left · \$33\/day\s+\$223 under pace\s+heading for \$155/)
-  expect(f).toContain("Last cycle $300 by now -67%")
+  // The Overview's Cumulative view over the cycle: $120 − $20 refund; an
+  // even pace by day 20 is $323; $5 a day ends at $155.
+  expect(f).toContain("This cycle $100")
+  expect(f).toContain("Budget $500, $223 under pace")
+  expect(f).toContain("≈ $155")
   expect(f).toMatch(/Overall spending\s+[█▌│─]+\s+\$100 of \$500\s+\$400 left · \$33\/day/)
   expect(f).toMatch(/Groceries\s+\$100\s+\$300/)
   // Each cycle, newest first, against its budget.
   expect(f).toMatch(/1 Oct – 31 Oct\s+\$100\s+[█─▏│ ]+\s+\$400 under/)
   expect(f).toMatch(/1 Sep – 30 Sep\s+\$300\s+[█─▏│ ]+\s+\$200 under/)
-  // l: cycle by cycle, against the budget.
+  expect(f).toContain("over in 0 of 1 · avg $300")
+  // l: the Overview's next spending view, Daily.
   handleKey(ui, key("l"), data)
-  expect(await frame()).toContain("over in 0 of 1 · avg $300")
+  expect(await frame()).toContain("Overall spending · Daily")
 })
 
 test("allocating down: in Categories, enter sets a category's budget starting from its average; it joins the budgets, and the chart follows the cursor", async () => {
