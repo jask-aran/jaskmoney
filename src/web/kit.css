@@ -32,8 +32,8 @@ body { background: var(--frame); }
 
 /* A tab: its header, then its body scrolling in the page gutter. */
 .jm-tab { display: flex; flex-direction: column; min-height: 0; height: 100%; }
-.jm-page { flex: 1 1 auto; min-height: 0; overflow: auto; padding: var(--space-sm) var(--page-gutter, var(--space-lg)) var(--space-xl); }
-.jm-section + .jm-section { margin-top: var(--space-lg); }
+.jm-page { flex: 1 1 auto; min-height: 0; overflow: auto; padding: var(--space-md) var(--page-gutter) calc(var(--space-4xl) + var(--tabbar-room, 0px)); }
+.jm-section + .jm-section { margin-top: var(--space-3xl); }
 .jm-section-foot { padding-top: var(--space-xs); color: var(--muted-foreground); font-size: var(--text-caption); }
 .jm-empty { padding: var(--space-2xl) var(--space-md); text-align: center; color: var(--muted-foreground); }
 .jm-empty-line { padding: var(--space-xs) var(--space-sm); color: var(--muted-foreground); font-size: var(--text-caption); }
@@ -71,5 +71,65 @@ body { background: var(--frame); }
 .jm-nav-foot { display: flex; align-items: center; gap: var(--space-2xs); width: 100%; }
 .jm-conn { display: inline-flex; align-items: center; gap: var(--space-xs); min-width: 0; color: var(--muted-foreground); font: var(--weight-data) var(--text-label)/1.2 var(--font-data); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .jm-drawer-backdrop { position: fixed; inset: 0; z-index: calc(var(--layer-drawer) - 1); border: 0; background: var(--dim); }
-/* A narrow window with a mouse: not the phone's chrome, but the sidebar is a drawer, so its menu button shows. */
-@media (max-width: 760px) { .ui-header-group[data-lead] { display: flex; } }
+
+/* A panel (Panel) on a desktop: frost over the page's right side, its parts by heading and space. */
+.jm-drawer { position: fixed; top: var(--space-md); right: var(--space-md); bottom: var(--space-md); width: min(28rem, calc(100vw - 2 * var(--space-md)));
+  z-index: 30; display: flex; flex-direction: column; border-radius: var(--radius-surface); overflow: hidden; }
+.jm-drawer-head { display: flex; align-items: flex-start; gap: var(--space-sm); padding: var(--space-lg) var(--space-lg) var(--space-sm); }
+.jm-drawer-title { font-size: var(--text-body); font-weight: var(--weight-strong); color: var(--ink-strong); overflow-wrap: anywhere; }
+.jm-drawer-amount { font-size: var(--text-body); font-weight: var(--weight-strong); }
+.jm-drawer-body { overflow: auto; padding: var(--space-xs) var(--space-lg) var(--space-xl); display: grid; gap: var(--space-xl); align-content: start; }
+.jm-drawer-body > section { display: grid; gap: var(--space-xs); }
+
+/* A panel on a phone (BottomSheet): it rises from the bottom over a dimmed page, rounded at the top, a grab handle. */
+.jm-sheet-dim { position: fixed; inset: 0; z-index: 50; background: var(--dim); animation: ui-fade-in var(--duration-gentle) var(--ease-change) backwards; }
+.jm-bottom-sheet { position: fixed; inset-inline: 0; bottom: 0; z-index: 51; display: flex; flex-direction: column; max-height: calc(100dvh - env(safe-area-inset-top, 0px) - 2.75rem);
+  border-radius: 1.375rem 1.375rem 0 0; background: var(--card); box-shadow: 0 -0.5rem 2.5rem #0009; padding-bottom: env(safe-area-inset-bottom, 0px);
+  animation: jm-sheet-in .32s cubic-bezier(.2, .9, .25, 1) backwards; transition: transform .22s cubic-bezier(.2, .9, .25, 1); }
+.jm-bottom-sheet[data-full] { height: calc(100dvh - env(safe-area-inset-top, 0px) - 2.75rem); }
+@keyframes jm-sheet-in { from { transform: translateY(100%); } }
+.jm-sheet-grab { flex: none; touch-action: none; padding: var(--space-sm) var(--space-xl) var(--space-sm); }
+.jm-sheet-handle { display: block; width: 2.25rem; height: .3125rem; margin: 0 auto var(--space-sm); border-radius: 99px; background: var(--muted-foreground); opacity: .45; }
+.jm-sheet-head { display: flex; align-items: flex-start; gap: var(--space-md); }
+.jm-sheet-body { flex: 1 1 auto; min-height: 0; overflow: auto; overscroll-behavior: contain; -webkit-overflow-scrolling: touch;
+  padding: var(--space-xs) var(--space-xl) var(--space-2xl); display: grid; gap: var(--space-2xl); align-content: start; }
+.jm-sheet-body > section { display: grid; gap: var(--space-sm); }
+
+/* A phone's tabs: a floating frost bar along the bottom, over the page scrolling under it. */
+.jm-tabbar { position: fixed; inset-inline: var(--space-lg); bottom: calc(env(safe-area-inset-bottom, 0px) + var(--space-sm)); z-index: 30;
+  display: grid; grid-template-columns: repeat(4, 1fr); padding: var(--space-2xs); border-radius: 1.75rem; }
+.jm-tabbar-tab { display: flex; flex-direction: column; align-items: center; gap: .1875rem; border: 0; border-radius: 1.5rem; background: none;
+  padding: .4375rem 0 .375rem; color: var(--muted-foreground); font: var(--weight-lift) .6875rem/1 var(--font-sans); -webkit-tap-highlight-color: transparent; }
+.jm-tabbar-tab[aria-selected="true"] { color: var(--ink-strong); background: color-mix(in oklch, var(--foreground) 10%, transparent); }
+.jm-tabbar-tab:active { transform: scale(.94); }
+.jm-tabbar-icon { position: relative; display: grid; place-items: center; }
+.jm-tabbar-icon > svg { width: 1.375rem; height: 1.375rem; stroke-width: 1.75; }
+.jm-tabbar-badge { position: absolute; top: -.25rem; left: calc(100% - .375rem); min-width: 1.125rem; padding: .0625rem .3125rem; border-radius: 99px;
+  background: var(--tone-key); color: var(--frame); font: var(--weight-strong) .625rem/1.2 var(--font-data); text-align: center; }
+/* Room the tab bar takes at the bottom of whatever scrolls under it. */
+.jm-app[data-compact] { --tabbar-room: calc(4.25rem + env(safe-area-inset-bottom, 0px)); }
+.jm-app[data-compact] .jm-status { display: none; }
+
+/* Toasts (a phone's status line): above the tab bar, the newest nearest it. */
+.jm-toasts { position: fixed; z-index: 45; inset-inline: var(--space-md); bottom: calc(var(--tabbar-room, 0px) + var(--space-md)); display: flex; justify-content: center; pointer-events: none; }
+.jm-toasts > * { pointer-events: auto; }
+
+/* A menu inside a phone's sheet: the list itself, flat on the sheet, rows a finger's height. */
+.jm-sheet-menu { margin: 0 calc(-1 * var(--space-lg)); }
+.jm-sheet-menu > .ui-menu.ui-frost { width: 100%; max-width: none; max-height: none; padding: 0; background: none; box-shadow: none; border: 0; backdrop-filter: none; -webkit-backdrop-filter: none; animation: none; }
+.jm-sheet-menu .ui-row { min-height: 3rem; font-size: 1rem; }
+.jm-sheet-menu .ui-search { font-size: 16px; }
+.jm-sheet-menu .ui-section[data-scroll] { max-height: none; overflow: visible; }
+.jm-sheet-menu .ui-search-section { position: sticky; top: 0; z-index: 1; background: var(--card); }
+
+/* Choices in a sheet (an account): full-width rows, the chosen one checked. */
+.jm-choices { display: grid; }
+.jm-choice { display: flex; align-items: center; gap: var(--space-md); min-height: 3.25rem; padding: 0 var(--space-xs); border: 0; border-radius: var(--radius-control);
+  background: none; color: var(--ink-figure); font: var(--weight-rest) 1rem/1.25 var(--font-sans); text-align: left; }
+.jm-choice:active { background: color-mix(in oklch, var(--foreground) 7%, transparent); }
+.jm-choice[aria-current] { color: var(--ink-strong); font-weight: var(--weight-lift); }
+.jm-choice .money { color: var(--muted-foreground); font-size: var(--text-row); }
+.jm-choice-check { width: 1.25rem; display: grid; place-items: center; color: var(--foreground); }
+.jm-choice-check > svg { width: 1.125rem; height: 1.125rem; }
+/* A bar over the tabs (a selection's actions) pushes the toasts above it. */
+.jm-app:has(.jm-selbar) .jm-toasts { bottom: calc(var(--tabbar-room, 0px) + 4.25rem); }

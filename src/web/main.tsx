@@ -3,18 +3,19 @@
  * Conduit's components v2 in jaskmoney's material (./v2, ./kit). Server/webBuild bundles it; server/serve serves it.
  *
  * The frame holds the sidebar (the tabs, the accounts, sync) and one inset pane: the tab. A tab mounts on its first
- * visit and then stays, hidden while another is shown, as the TUI's do. On a phone (or a narrow window) the sidebar
- * is a drawer.
+ * visit and then stays, hidden while another is shown, as the TUI's do. On a phone (or a narrow window) the tabs are
+ * a bar along the bottom and the status line is a toast.
  */
-import { For, Show, createMemo, createSignal, onCleanup, type JSX } from "solid-js"
+import { For, Show, createEffect, createMemo, createSignal, on, onCleanup, type JSX } from "solid-js"
 import { render } from "solid-js/web"
 import { LayoutDashboard, PiggyBank, ReceiptText, RefreshCw, Settings2, Undo2 } from "lucide-solid"
 import { accountStacks } from "../domain/accountTree"
 import { formatMoney } from "../domain/dashboard"
 import { syncAgo } from "../domain/days"
 import { applyTheme } from "./theme"
-import { TABS, closeDrawer, compact, connection, data, drawer, lostReason, now, run, say, setTab, status, tab, useKeys, type TabId } from "./store"
-import { AppShell, Button, Keycap, NavBrand, NavGroup, NavPane, NavRow, Sheet, StatusDot } from "./v2"
+import { TABS, compact, connection, data, lostReason, now, run, say, setTab, status, tab, useKeys, type TabId } from "./store"
+import { AppShell, Button, Keycap, NavBrand, NavGroup, NavPane, NavRow, Sheet, StatusDot, Toast } from "./v2"
+import { TabBar } from "./kit"
 import { Overview } from "./tabs/Overview"
 import { Transactions } from "./tabs/Transactions"
 import { Budgets } from "./tabs/Budgets"
@@ -55,9 +56,9 @@ function syncLabel(): string {
 function Sidebar(props: { show: (id: TabId) => void }) {
   const stacks = createMemo(() => accountStacks(data.state.accounts))
   const toReview = createMemo(() => Object.keys(data.state.suggestions).length)
-  const go = (id: TabId) => { props.show(id); closeDrawer() }
+  const go = (id: TabId) => props.show(id)
   return (
-    <NavPane drawer={compact() ? (drawer() ? "open" : "shut") : undefined}
+    <NavPane
       head={<NavBrand name="jaskmoney" aria-label="jaskmoney" onClick={() => go("overview")} />}
       foot={
         <div class="jm-nav-foot">
@@ -101,7 +102,6 @@ function App() {
     const n = Number(event.key)
     if (n >= 1 && n <= TABS.length) { show(TABS[n - 1]!.id); return true }
     if (event.key === "u" && data.undoLabel()) { void run(data.undo()); return true }
-    if (event.key === "Escape" && drawer()) { closeDrawer(); return true }
     return false
   })
   // ctrl+k (⌘K): every command, as the TUI's palette; from anywhere, text fields included.
@@ -111,12 +111,21 @@ function App() {
   }
   window.addEventListener("keydown", onPaletteKey)
   onCleanup(() => window.removeEventListener("keydown", onPaletteKey))
+  // A phone's status line: a toast over the tab bar for a few seconds, with Undo when there's something to undo.
+  const [toast, setToast] = createSignal<{ text: string; err: boolean } | null>(null)
+  let toastTimer: ReturnType<typeof setTimeout> | undefined
+  createEffect(on(status, (next) => {
+    clearTimeout(toastTimer)
+    if (!compact() || !next.text) { setToast(null); return }
+    setToast(next)
+    toastTimer = setTimeout(() => setToast(null), next.err ? 6000 : 3500)
+  }, { defer: true }))
+  const reviewCount = createMemo(() => Object.keys(data.state.suggestions).length)
   // A tab chosen by the address (back, a link) is visited too.
   const current = () => { const id = tab(); if (!visited().has(id)) queueMicrotask(() => show(id)); return id }
   return (
-    <div class="jm-app">
-      <Sidebar show={show} />
-      <Show when={compact() && drawer()}><button type="button" class="jm-drawer-backdrop" aria-label="Close the menu" onClick={closeDrawer} /></Show>
+    <div class="jm-app" data-compact={compact() ? "" : undefined}>
+      <Show when={!compact()}><Sidebar show={show} /></Show>
       <Show when={palette()}><Palette onClose={() => setPalette(false)} /></Show>
       <AppShell>
         <Sheet as="main" lead>
@@ -135,6 +144,15 @@ function App() {
           </div>
         </Sheet>
       </AppShell>
+      <Show when={compact()}>
+        <TabBar tabs={TABS.map((t) => ({ id: t.id, label: t.label, icon: ICONS[t.id](), badge: t.id === "transactions" ? reviewCount() : null }))} current={tab()} onChoose={show} />
+        <Show when={toast()}>{(t) => (
+          <div class="jm-toasts">
+            <Toast kind={t().err ? "error" : "info"} onDismiss={() => setToast(null)}
+              action={!t().err && data.undoLabel() ? { label: "Undo", onClick: () => { setToast(null); void run(data.undo()) } } : undefined}>{t().text}</Toast>
+          </div>
+        )}</Show>
+      </Show>
     </div>
   )
 }

@@ -1,13 +1,13 @@
 /* Transactions on components v2: the search, the toolbar, the rows (one line each, the cursor and the chosen rows
    a wash, no boxes or rules between them), the details panel (frost: it floats over the page). */
-.jm-txpage { display: flex; flex-direction: column; flex: 1 1 auto; min-height: 0; padding: var(--space-xs) var(--page-gutter) 0; gap: var(--space-sm); }
+.jm-txpage { display: flex; flex-direction: column; flex: 1 1 auto; min-height: 0; padding: var(--space-md) var(--page-gutter) 0; gap: var(--space-md); }
 
 .search { flex: none; }
 .search-row { display: flex; align-items: center; gap: var(--space-xs); }
 .search-dot { width: .4375rem; height: .4375rem; border-radius: 50%; background: var(--muted-foreground); opacity: var(--opacity-faint); flex: none; }
 .search-dot.on { background: var(--live); opacity: 1; }
 .search-dot.err { background: var(--destructive); opacity: 1; }
-.jm-search-input { flex: 1 1 auto; min-width: 0; font-family: var(--font-data); }
+.jm-search-input { flex: 1 1 auto; min-width: 0; height: 2.5rem; border-radius: .75rem; padding-inline: var(--space-md); font-family: var(--font-data); }
 .search-note { min-height: 1.4em; padding: var(--space-2xs) 0 0 calc(.4375rem + var(--space-xs)); color: var(--muted-foreground);
   font: var(--weight-data) var(--text-label)/1.4 var(--font-data); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .search-note.error { color: var(--destructive); }
@@ -22,13 +22,13 @@
 .jm-table[data-accounts] :is(.jm-thead, .jm-tx) { grid-template-columns: 4.75rem minmax(10rem, 1fr) 7rem minmax(9rem, 17rem) 6.5rem; }
 .jm-table[data-picking] :is(.jm-thead, .jm-tx) { grid-template-columns: var(--icon) 4.75rem minmax(10rem, 1fr) minmax(9rem, 17rem) 6.5rem; }
 .jm-table[data-picking][data-accounts] :is(.jm-thead, .jm-tx) { grid-template-columns: var(--icon) 4.75rem minmax(10rem, 1fr) 7rem minmax(9rem, 17rem) 6.5rem; }
-.jm-thead { min-height: var(--control); flex: none; }
+.jm-thead { min-height: calc(var(--control) + var(--space-xs)); flex: none; }
 .jm-thead > .jm-th { border: 0; background: none; padding: 0; text-align: left; cursor: pointer; white-space: nowrap; color: var(--muted-foreground);
   font: var(--label-weight) var(--label-size)/var(--leading-text) var(--label-face); letter-spacing: var(--label-tracking); text-transform: var(--label-case); }
 .jm-thead > .jm-th[aria-current] { color: var(--foreground); }
 .jm-thead > .jm-th.jm-tx-amt { text-align: right; }
 .jm-tbody { flex: 1 1 auto; min-height: 0; overflow: auto; overscroll-behavior: contain; scrollbar-width: var(--native-scrollbar-width); scrollbar-color: var(--native-scrollbar-color); }
-.jm-tx { height: var(--jm-row, 2.25rem); font-size: var(--text-row); border-radius: var(--radius-control); color: var(--ink-figure); cursor: default; user-select: none; }
+.jm-tx { height: 2.5rem; font-size: var(--text-row); border-radius: var(--radius-control); color: var(--ink-figure); cursor: default; user-select: none; }
 @media (hover: hover) { .jm-tx:hover { background: var(--border); } }
 .jm-tx[data-selected] { background: var(--border); }
 .jm-tx[data-cursor] { background: color-mix(in oklch, var(--foreground) 10%, transparent); color: var(--ink-strong); }
@@ -48,14 +48,6 @@
 
 .jm-merchants { flex: 1 1 auto; min-height: 0; overflow: auto; }
 
-/* The details: a frost panel over the page's right side, its parts by heading and space. */
-.jm-drawer { position: fixed; top: var(--space-md); right: var(--space-md); bottom: var(--space-md); width: min(28rem, calc(100vw - 2 * var(--space-md)));
-  z-index: 30; display: flex; flex-direction: column; border-radius: var(--radius-surface); overflow: hidden; }
-.jm-drawer-head { display: flex; align-items: flex-start; gap: var(--space-sm); padding: var(--space-lg) var(--space-lg) var(--space-sm); }
-.jm-drawer-title { font-size: var(--text-body); font-weight: var(--weight-strong); color: var(--ink-strong); overflow-wrap: anywhere; }
-.jm-drawer-amount { font-size: var(--text-body); font-weight: var(--weight-strong); }
-.jm-drawer-body { overflow: auto; padding: var(--space-xs) var(--space-lg) var(--space-xl); display: grid; gap: var(--space-xl); align-content: start; }
-.jm-drawer-body > section { display: grid; gap: var(--space-xs); }
 .jm-drawer-cat { justify-content: space-between; width: 100%; }
 .jm-suggestion { flex-wrap: wrap; }
 .jm-tags { display: flex; flex-wrap: wrap; gap: var(--space-2xs); }
@@ -68,14 +60,64 @@
 .jm-notes-save { justify-content: flex-end; }
 .jm-detail-v { text-align: left; overflow-wrap: anywhere; }
 
+/* A phone: the search a native field, the rows a day-grouped list (PhoneRow), a selection bar over the tabs. */
 @media (max-width: 760px) {
-  .jm-txpage { padding: var(--space-xs) var(--space-md) 0; }
-  .jm-thead { display: none; }
-  .jm-tx, .jm-table[data-accounts] .jm-tx, .jm-table[data-picking] .jm-tx, .jm-table[data-picking][data-accounts] .jm-tx {
-    height: 3.375rem; grid-template-columns: 1fr auto; grid-template-rows: auto auto; row-gap: var(--space-2xs); padding: var(--space-xs) var(--space-sm); }
-  .jm-tx .jm-tx-check, .jm-tx .jm-tx-acct, .jm-tx .jm-tx-sub, .jm-tx .jm-tx-tags { display: none; }
-  .jm-tx .jm-tx-desc { grid-column: 1; grid-row: 1; }
-  .jm-tx .jm-tx-amt { grid-column: 2; grid-row: 1; }
-  .jm-tx .jm-tx-cat { grid-column: 1; grid-row: 2; font-size: var(--text-caption); }
-  .jm-tx .jm-tx-date { grid-column: 2; grid-row: 2; text-align: right; }
+  .jm-txpage { padding: var(--space-xs) var(--space-lg) 0; gap: var(--space-sm); }
+  .jm-search-input { font-size: max(16px, var(--text-row)); height: 2.75rem; border-radius: .875rem; padding-inline: var(--space-md); }
+  .search-dot { display: none; }
+  .search-note { padding-left: var(--space-xs); }
+  .jm-toolbar { gap: var(--space-sm); }
+}
+.jm-plist { flex: 1 1 auto; min-height: 0; overflow: auto; overscroll-behavior: contain; -webkit-overflow-scrolling: touch;
+  margin-inline: calc(-1 * var(--space-lg)); padding-bottom: calc(var(--tabbar-room, 0px) + 4rem); }
+.jm-pday { display: flex; align-items: flex-end; justify-content: space-between; height: 44px; padding: 0 var(--space-xl) var(--space-xs);
+  color: var(--muted-foreground); font: var(--weight-lift) var(--text-caption)/1.2 var(--font-sans); }
+.jm-pday .money { font-size: var(--text-caption); color: var(--muted-foreground); }
+.jm-prow { display: flex; align-items: center; gap: var(--space-md); height: 68px; padding: 0 var(--space-lg) 0 var(--space-xl);
+  color: var(--ink-figure); -webkit-tap-highlight-color: transparent; user-select: none; -webkit-user-select: none; -webkit-touch-callout: none; }
+.jm-prow:active { background: color-mix(in oklch, var(--foreground) 6%, transparent); }
+.jm-prow[data-selected] { background: color-mix(in oklch, var(--foreground) 9%, transparent); }
+.jm-prow-check { flex: none; display: grid; place-items: center; width: 1.5rem; height: 1.5rem; border-radius: 50%; border: 1.5px solid var(--muted-foreground); color: transparent; }
+.jm-prow-check[data-on] { background: var(--foreground); border-color: var(--foreground); color: var(--frame); }
+.jm-prow-check > svg { width: 1rem; height: 1rem; stroke-width: 3; }
+.jm-prow-mark { flex: none; display: grid; place-items: center; width: 2.5rem; height: 2.5rem; border-radius: 50%;
+  background: color-mix(in oklch, var(--mark) 18%, transparent); color: var(--mark); font: var(--weight-strong) 1rem/1 var(--font-sans); }
+.jm-prow-main { flex: 1 1 auto; min-width: 0; display: grid; gap: .1875rem; }
+.jm-prow-name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font: var(--weight-lift) 1rem/1.25 var(--font-sans); color: var(--ink-strong); }
+.jm-prow[data-pending] .jm-prow-name { font-style: italic; }
+.jm-prow-sub { min-width: 0; font-size: var(--text-caption); color: var(--muted-foreground); }
+.jm-prow-end { flex: none; display: grid; justify-items: end; gap: .1875rem; }
+.jm-prow-end .money { font-size: 1rem; }
+.jm-prow-when { font: var(--weight-data) var(--text-label)/1.2 var(--font-data); color: var(--muted-foreground); }
+.jm-prow-accept { flex: none; display: grid; place-items: center; width: 2.5rem; height: 2.5rem; margin-left: calc(-1 * var(--space-2xs)); border: 0; border-radius: 50%;
+  background: color-mix(in oklch, var(--live) 16%, transparent); color: var(--live); }
+.jm-prow-accept:active { transform: scale(.92); }
+.jm-prow-accept > svg { width: 1.25rem; height: 1.25rem; stroke-width: 2.5; }
+.jm-selbar { position: fixed; z-index: 35; inset-inline: var(--space-lg); bottom: calc(var(--tabbar-room, 0px) + var(--space-xs)); display: flex; align-items: center; gap: var(--space-xs);
+  padding: var(--space-xs) var(--space-xs) var(--space-xs) var(--space-lg); border-radius: 1.5rem; background: var(--card); box-shadow: 0 .5rem 2rem #0008; }
+.jm-selbar-count { flex: 1 1 auto; font: var(--weight-lift) var(--text-row)/1.2 var(--font-sans); }
+.jm-prow-sub .cat .dot { display: none; }
+@media (max-width: 760px) {
+  .jm-toolbar { flex-wrap: nowrap; }
+  .jm-toolbar > .small.label { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: var(--text-caption); }
+}
+
+/* The details' category: a field you tap to change, its chevron at the end. */
+.jm-field-button { display: flex; align-items: center; justify-content: space-between; gap: var(--space-sm); width: 100%; min-height: 2.75rem;
+  padding: 0 var(--space-sm) 0 var(--space-md); border: 0; border-radius: var(--radius-control); background: color-mix(in oklch, var(--foreground) 5%, transparent);
+  color: var(--ink-figure); font: inherit; text-align: left; cursor: pointer; }
+.jm-field-button > svg { width: 1.125rem; height: 1.125rem; color: var(--muted-foreground); flex: none; }
+@media (hover: hover) { .jm-field-button:hover { background: color-mix(in oklch, var(--foreground) 8%, transparent); } }
+.jm-field-button:active { background: color-mix(in oklch, var(--foreground) 10%, transparent); }
+.jm-notes { width: 100%; min-height: 4.5rem; padding: var(--space-sm) var(--space-md); border-radius: var(--radius-control); background: color-mix(in oklch, var(--foreground) 5%, transparent); }
+.jm-detail-lines { grid-template-columns: auto 1fr; row-gap: var(--space-xs); font-size: var(--text-row); }
+.jm-detail-lines .jm-detail-v { text-align: right; }
+.jm-detail-head { display: grid; gap: var(--space-2xs); min-width: 0; }
+@media (max-width: 760px) {
+  .jm-tag { min-height: 2.25rem; padding-inline: var(--space-md); font-size: var(--text-caption); background: color-mix(in oklch, var(--foreground) 5%, transparent); border-radius: 99px; }
+  .jm-tags { gap: var(--space-xs); }
+  .jm-notes { font-size: 16px; }
+  .jm-detail-lines { font-size: .9375rem; row-gap: var(--space-sm); }
+  .jm-drawer-title { font-size: 1.1875rem; }
+  .jm-drawer-amount { font-size: 1.1875rem; }
 }

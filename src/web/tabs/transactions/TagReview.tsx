@@ -4,8 +4,9 @@ import { groupForTag, TAG_SHOW_AT, tripDates, type TagTarget } from "../../../do
 import { count } from "../../../domain/words"
 import { data, run, say } from "../../store"
 import { confidenceClass, Empty, Money } from "../../ui"
-import { Check, X } from "lucide-solid"
-import { Button, Frost, GroupHeading, Input } from "../../v2"
+import { Panel } from "../../kit"
+import { Check } from "lucide-solid"
+import { Button, GroupHeading, Input } from "../../v2"
 import "./review.css"
 
 export function TagReview(props: { onClose: () => void }) {
@@ -63,9 +64,7 @@ export function TagReview(props: { onClose: () => void }) {
   })
 
   return (
-    <Frost as="div" lift="raised" class="jm-drawer" role="dialog" aria-label="Find transactions for a tag">
-      <header class="jm-drawer-head"><div class="grow"><div class="jm-drawer-title">Find transactions for a tag</div><div class="small note">Choose a tag or name a new one</div></div><Button variant="ghost" size="icon-sm" aria-label="Close" onClick={close}><X /></Button></header>
-      <div class="jm-drawer-body">
+    <Panel label="Find transactions for a tag" head={<div class="grow"><div class="jm-drawer-title">Find transactions for a tag</div><div class="small note">Choose a tag or name a new one</div></div>} onClose={close}>
         <section class="tag-review-choices"><GroupHeading>Tags</GroupHeading>
           <div class="jm-tags"><For each={tags()}>{(tag) => (
             <button type="button" class="jm-tag" aria-pressed={data.state.tagReview?.tagId === tag.id} disabled={busy()} onClick={() => {
@@ -97,7 +96,6 @@ export function TagReview(props: { onClose: () => void }) {
             )}</For></div>
           </>
         )}</Show>
-      </div>
-    </Frost>
+    </Panel>
   )
 }

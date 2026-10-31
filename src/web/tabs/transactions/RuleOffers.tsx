@@ -2,8 +2,8 @@ import { For, Show, createMemo, createSignal, onCleanup } from "solid-js"
 import type { RuleOffer } from "../../../domain/ruleOffers"
 import { data, run, say } from "../../store"
 import { Empty } from "../../ui"
-import { X } from "lucide-solid"
-import { Button, Frost } from "../../v2"
+import { Panel } from "../../kit"
+import { Button } from "../../v2"
 import "./review.css"
 
 export function RuleOffers(props: { onClose: () => void }) {
@@ -38,9 +38,7 @@ export function RuleOffers(props: { onClose: () => void }) {
     }).then(() => { if (active) setBusy(false) })
   }
   return (
-    <Frost as="div" lift="raised" class="jm-drawer" role="dialog" aria-label="Make rules">
-      <header class="jm-drawer-head"><div class="grow"><div class="jm-drawer-title">Make rules</div><div class="small note">{offers().length} offered</div></div><Button variant="ghost" size="icon-sm" aria-label="Close" onClick={close}><X /></Button></header>
-      <div class="jm-drawer-body">
+    <Panel label="Make rules" head={<div class="grow"><div class="jm-drawer-title">Make rules</div><div class="small note">{offers().length} offered</div></div>} onClose={close}>
         <For each={offers()} fallback={<Empty>No rules offered yet</Empty>}>{(row) => {
           const { offer } = row
           return (
@@ -54,7 +52,6 @@ export function RuleOffers(props: { onClose: () => void }) {
             </div>
           )
         }}</For>
-      </div>
-    </Frost>
+    </Panel>
   )
 }

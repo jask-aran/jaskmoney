@@ -7,7 +7,7 @@
  */
 import { For, Show, createEffect, createMemo, createSignal, onCleanup, untrack } from "solid-js"
 import "./transactions.css"
-import { selectionLabel } from "../../domain/accountTree"
+import { accountStacks, selectionLabel } from "../../domain/accountTree"
 import { askTerms, parseFilter } from "../../domain/filter"
 import { JQL, JQL_EXAMPLE, JQL_SUMMARY, type Section } from "../../domain/filterLanguage"
 import { ACCEPT_ALL_AT } from "../../domain/questions"
@@ -15,20 +15,30 @@ import { formatMoney } from "../../domain/dashboard"
 import type { SortColumn, Transaction } from "../../domain/types"
 import type { TransactionDetail } from "../../db/client"
 import { JEV_SETUP } from "../../ai/judge"
-import { Check, Store as MerchantsIcon, Tags, Wand2, ListChecks, X } from "lucide-solid"
+import { Check, ChevronRight, CircleHelp, X, Store as MerchantsIcon, Tags, Wand2, ListChecks } from "lucide-solid"
 import { Merchants } from "./transactions/Merchants"
 import { TagReview } from "./transactions/TagReview"
 import { RuleOffers } from "./transactions/RuleOffers"
-import { data, fail, run, say, useKeys } from "../store"
-import { CategoryLabel, CategoryPicker, Floating, HeaderAction, Money, PageHeader } from "../kit"
-import { Button, Frost, GroupHeading, Input, Item, Menu, Section as MenuSection, TextArea } from "../v2"
+import { compact, data, fail, run, say, useKeys } from "../store"
+import { catColor } from "../theme"
+import { BottomSheet, CategoryLabel, CategoryPicker, HeaderAction, Money, PageHeader, Panel, Popup, longPress } from "../kit"
+import { Button, GroupHeading, Input, Item, Menu, Section as MenuSection, TextArea } from "../v2"
 
-const narrowQuery = window.matchMedia("(max-width: 760px)")
-const [narrow, setNarrow] = createSignal(narrowQuery.matches)
-narrowQuery.addEventListener("change", (e) => setNarrow(e.matches))
+/** A desktop row's height, which the list is drawn with. */
+const rowHeight = () => 40
 
-/** Row heights the list is drawn with (a phone row has a second line). */
-const rowHeight = () => (narrow() ? 54 : 36)
+/** A phone's list: a day's heading, then its rows (taller: a finger's target, two lines). */
+const DAY_HEIGHT = 44
+const PHONE_ROW = 68
+
+/** A day's name in a phone's list: Today, Yesterday, else its weekday and date (and year when not this one). */
+function dayName(iso: string, today: string): string {
+  if (iso === today) return "Today"
+  const date = new Date(`${iso}T12:00:00`)
+  const yesterday = new Date(`${today}T12:00:00`); yesterday.setDate(yesterday.getDate() - 1)
+  if (date.toDateString() === yesterday.toDateString()) return "Yesterday"
+  return date.toLocaleDateString("en-AU", { weekday: "short", day: "numeric", month: "short", ...(iso.slice(0, 4) !== today.slice(0, 4) ? { year: "numeric" } : {}) })
+}
 
 function shortDate(iso: string): string {
   const [y, m, d] = iso.split("-")
@@ -43,7 +53,7 @@ function SearchHelp(props: { anchor: DOMRect; onClose: () => void; onTry: (q: st
   const sections = JQL.filter((s) => s.brief)
   const rows = (section: Section) => section.blocks.flatMap((b) => (b.kind === "rows" ? b.rows.filter((r) => r.brief && !r.ruleOnly) : []))
   return (
-    <Floating anchor={props.anchor} width={520} height={560} onClose={props.onClose}>
+    <Popup label="How searching works" anchor={props.anchor} width={520} height={560} onClose={props.onClose}>
       <Menu width="lg" height="lg">
         <MenuSection note={JQL_SUMMARY}>
           <Item detail={JQL_EXAMPLE.means} detailData={false} onClick={() => props.onTry(JQL_EXAMPLE.write)}><span class="mono">{JQL_EXAMPLE.write}</span></Item>
@@ -56,7 +66,7 @@ function SearchHelp(props: { anchor: DOMRect; onClose: () => void; onTry: (q: st
           </MenuSection>
         )}</For>
       </Menu>
-    </Floating>
+    </Popup>
   )
 }
 
@@ -111,7 +121,8 @@ function SearchBar(props: { ref: (el: HTMLInputElement) => void }) {
       <div class="search-row">
         <span class="search-dot" classList={{ err: !!data.state.filterErr, on: !!data.state.filterExpr }} />
         <Input ref={(el: HTMLInputElement) => { input = el; props.ref(el) }} class="jm-search-input" value={draft()} spellcheck={false} autocomplete="off"
-          placeholder="Search: coffee  cat:groceries  amt:<-20  date:2026-10   ·   ?in words"
+          placeholder={compact() ? "Search, or ? to ask in words" : "Search: coffee  cat:groceries  amt:<-20  date:2026-10   ·   ?in words"}
+          inputMode="search" enterkeyhint="search"
           onInput={(e) => { const v = e.currentTarget.value; setDraft(v); if (!v.trim().startsWith("?")) data.setFilterLive(v) }}
           onKeyDown={(e) => {
             if (e.key === "Enter") { commit(); e.preventDefault() }
@@ -119,7 +130,9 @@ function SearchBar(props: { ref: (el: HTMLInputElement) => void }) {
             else if (e.key === "ArrowDown") { input.blur(); e.preventDefault() }
           }} />
         <Show when={draft()}><Button variant="ghost" size="sm" onClick={() => { setDraft(""); data.clearFilter(); input.focus() }}>Clear</Button></Show>
-        <Button variant="ghost" size="sm" title="How searching works" onClick={(e) => setHelp(e.currentTarget.getBoundingClientRect())}>Help</Button>
+        <Show when={!compact()} fallback={<Button variant="ghost" size="icon" aria-label="How searching works" onClick={(e) => setHelp(e.currentTarget.getBoundingClientRect())}><CircleHelp /></Button>}>
+          <Button variant="ghost" size="sm" title="How searching works" onClick={(e) => setHelp(e.currentTarget.getBoundingClientRect())}>Help</Button>
+        </Show>
       </div>
       <div class="search-note mono" classList={{ error: note()?.tone === "error", warn: note()?.tone === "warn" }}>
         <Show when={data.state.asking} fallback={note()?.text ?? ""}>{(asking) => `Jev judging "${asking().words}": ${asking().judged} of ${asking().total}`}</Show>
@@ -174,78 +187,81 @@ function Detail(props: { id: number; onClose: () => void; onCategory: (anchor: D
   const toggleTag = (tagId: number, on: boolean) => {
     void run(data.applyTagPatch([props.id], { [tagId]: on ? "remove" : "add" }, "picker"))
   }
+  const head = () => {
+    const row = t()
+    return row ? (
+      <div class="grow jm-detail-head">
+        <div class="row"><div class="jm-drawer-title grow">{row.description}</div><Money value={row.amount} tone={row.amount > 0} class="jm-drawer-amount" /></div>
+        <div class="small note mono">{row.dateISO}{row.status === "HELD" ? " · pending" : ""} · {row.accountName}</div>
+      </div>
+    ) : <div class="grow" />
+  }
   return (
-    <Frost as="div" lift="raised" class="jm-drawer" role="dialog" aria-label="Transaction">
+    <Panel label="Transaction" head={head()} onClose={props.onClose}>
       <Show when={t()} fallback={<div class="jm-empty">This row is gone.</div>}>{(row) => (
         <>
-          <header class="jm-drawer-head">
-            <div class="grow">
-              <div class="jm-drawer-title">{row().description}</div>
-              <div class="small note mono">{row().dateISO}{row().status === "HELD" ? " · pending" : ""}</div>
-            </div>
-            <Money value={row().amount} tone={row().amount > 0} class="jm-drawer-amount" />
-            <Button variant="ghost" size="icon-sm" aria-label="Close" title="Close (esc)" onClick={props.onClose}><X /></Button>
-          </header>
-          <div class="jm-drawer-body">
+          <section>
+            <GroupHeading>Category</GroupHeading>
+            <button type="button" class="jm-field-button" onClick={(e) => props.onCategory(e.currentTarget.getBoundingClientRect())}>
+              <CategoryLabel name={row().categoryName} color={row().categoryColor} />
+              <ChevronRight />
+            </button>
+            <Show when={suggestion()}>{(s) => {
+              const c = () => data.state.categories.find((x) => x.id === s().categoryId)
+              return (
+                <div class="row small jm-suggestion">
+                  <span class="note">Suggested</span>
+                  <CategoryLabel name={c()?.name ?? ""} color={c()?.color} suggestion confidence={s().confidence} history={s().source === "history"} />
+                  <span class="grow" />
+                  <Button variant="secondary" size="sm" onClick={() => void run(data.acceptSuggestions([props.id]))}><Check />Accept</Button>
+                </div>
+              )
+            }}</Show>
+          </section>
+          <Show when={data.state.tags.length}>
             <section>
-              <GroupHeading>Category</GroupHeading>
-              <Button variant="secondary" outline class="jm-drawer-cat" onClick={(e) => props.onCategory(e.currentTarget.getBoundingClientRect())}>
-                <CategoryLabel name={row().categoryName} color={row().categoryColor} />
-                <span class="note small">change</span>
-              </Button>
-              <Show when={suggestion()}>{(s) => {
-                const c = () => data.state.categories.find((x) => x.id === s().categoryId)
-                return (
-                  <div class="row small jm-suggestion">
-                    <span class="note">Suggested</span>
-                    <CategoryLabel name={c()?.name ?? ""} color={c()?.color} suggestion confidence={s().confidence} history={s().source === "history"} />
-                    <Button variant="ghost" size="sm" onClick={() => void run(data.acceptSuggestions([props.id]))}>Accept</Button>
-                  </div>
-                )
-              }}</Show>
+              <GroupHeading>Tags</GroupHeading>
+              <div class="jm-tags">
+                <For each={data.state.tags}>{(tag) => {
+                  const on = () => row().tagIds.includes(tag.id)
+                  return (
+                    <button type="button" class="jm-tag" aria-pressed={on()} onClick={() => toggleTag(tag.id, on())}>
+                      <span class="dot" style={{ background: tag.color }} />{tag.name}
+                    </button>
+                  )
+                }}</For>
+              </div>
             </section>
-            <Show when={data.state.tags.length}>
-              <section>
-                <GroupHeading>Tags</GroupHeading>
-                <div class="jm-tags">
-                  <For each={data.state.tags}>{(tag) => {
-                    const on = () => row().tagIds.includes(tag.id)
-                    return (
-                      <button type="button" class="jm-tag" aria-pressed={on()} onClick={() => toggleTag(tag.id, on())}>
-                        <span class="dot" style={{ background: tag.color }} />{tag.name}
-                      </button>
-                    )
-                  }}</For>
-                </div>
-              </section>
-            </Show>
-            <Show when={row().bought?.length}>
-              <section>
-                <GroupHeading count={row().bought!.length}>Bought</GroupHeading>
-                <div class="jm-bought">
-                  <For each={row().bought}>{(item) => (
-                    <div class="jm-bought-row"><span class="note mono">{item.quantity}×</span><span class="grow">{item.name}</span><Show when={item.price != null}><span class="money">{formatMoney(-Math.abs(item.price!))}</span></Show></div>
-                  )}</For>
-                </div>
-              </section>
-            </Show>
+          </Show>
+          <Show when={row().bought?.length}>
             <section>
-              <GroupHeading>Notes</GroupHeading>
-              <TextArea value={notes()} placeholder="Your own notes (kept in jaskmoney)" onInput={(e) => setNotes(e.currentTarget.value)} />
+              <GroupHeading count={row().bought!.length}>Bought</GroupHeading>
+              <div class="jm-bought">
+                <For each={row().bought}>{(item) => (
+                  <div class="jm-bought-row"><span class="note mono">{item.quantity}×</span><span class="grow">{item.name}</span><Show when={item.price != null}><span class="money">{formatMoney(-Math.abs(item.price!))}</span></Show></div>
+                )}</For>
+              </div>
+            </section>
+          </Show>
+          <section>
+            <GroupHeading>Notes</GroupHeading>
+            <TextArea class="jm-notes" value={notes()} placeholder="Your own notes (kept in jaskmoney)" onInput={(e) => setNotes(e.currentTarget.value)} />
+            <Show when={notes() !== row().notes}>
               <div class="row jm-notes-save">
-                <Button variant="secondary" size="sm" disabled={notes() === row().notes} onClick={() => void run(data.updateTransactionNotes(props.id, notes()), () => "Notes saved")}>Save notes</Button>
+                <Button variant="ghost" size="sm" onClick={() => setNotes(row().notes ?? "")}>Discard</Button>
+                <Button size="sm" onClick={() => void run(data.updateTransactionNotes(props.id, notes()), () => "Notes saved")}>Save notes</Button>
               </div>
-            </section>
-            <section>
-              <GroupHeading>Details</GroupHeading>
-              <div class="lines">
-                <For each={fields()}>{([k, v]) => (<><span class="k small">{k}</span><span class="small figure jm-detail-v">{v}</span></>)}</For>
-              </div>
-            </section>
-          </div>
+            </Show>
+          </section>
+          <section>
+            <GroupHeading>Details</GroupHeading>
+            <div class="lines jm-detail-lines">
+              <For each={fields()}>{([k, v]) => (<><span class="k">{k}</span><span class="figure jm-detail-v">{v}</span></>)}</For>
+            </div>
+          </section>
         </>
       )}</Show>
-    </Frost>
+    </Panel>
   )
 }
 
@@ -264,6 +280,8 @@ export function Transactions() {
   const [picking, setPicking] = createSignal(false)
   const [merchants, setMerchants] = createSignal(false)
   const [panel, setPanel] = createSignal<"tags" | "rules" | null>(null)
+  /** A phone's account chooser (the sidebar's accounts), from the title pill. */
+  const [accounts, setAccounts] = createSignal(false)
   // The Account column only when the rows come from more than one (the TUI's rule).
   const manyAccounts = createMemo(() => { const first = rows()[0]?.accountId; return rows().some((t) => t.accountId !== first) })
 
@@ -395,10 +413,80 @@ export function Transactions() {
     )
   }
 
+  /** A phone's list: by day while sorted by date, drawn only where it shows (heights vary, so by offset). */
+  type Item = { kind: "day"; key: string; label: string; spent: number } | { kind: "tx"; key: number; t: Transaction }
+  const today = () => new Date(Date.now() - new Date().getTimezoneOffset() * 60000).toISOString().slice(0, 10)
+  const items = createMemo<Item[]>(() => {
+    const list = rows()
+    if (data.state.sortColumn !== "date") return list.map((t) => ({ kind: "tx", key: t.id, t }))
+    const out: Item[] = []
+    const now = today()
+    let day: Extract<Item, { kind: "day" }> | null = null
+    for (const t of list) {
+      if (!day || day.key !== t.dateISO) { day = { kind: "day", key: t.dateISO, label: dayName(t.dateISO, now), spent: 0 }; out.push(day) }
+      if (!t.excluded && t.amount < 0) day.spent += t.amount
+      out.push({ kind: "tx", key: t.id, t })
+    }
+    return out
+  })
+  const offsets = createMemo(() => {
+    const at = [0]
+    for (const item of items()) at.push(at[at.length - 1]! + (item.kind === "day" ? DAY_HEIGHT : PHONE_ROW))
+    return at
+  })
+  const firstAt = (y: number) => { const at = offsets(); let lo = 0, hi = at.length - 1; while (lo < hi) { const mid = (lo + hi + 1) >> 1; if (at[mid]! <= y) lo = mid; else hi = mid - 1 } return lo }
+  const phoneShown = createMemo(() => {
+    const from = Math.max(0, firstAt(scrollTop() - 600)), to = Math.min(items().length, firstAt(scrollTop() + viewHeight() + 600) + 1)
+    return { top: offsets()[from]!, items: items().slice(from, to) }
+  })
+
+  function PhoneRow(props: { t: Transaction }) {
+    const t = props.t
+    const suggestion = () => (review() ? data.state.suggestions[t.id] : undefined)
+    const suggested = () => { const s = suggestion(); return s ? data.state.categories.find((c) => c.id === s.categoryId) : undefined }
+    const press = longPress(() => { setPicking(true); toggle(t.id) })
+    return (
+      <div class="jm-prow" data-selected={selected().has(t.id) ? "" : undefined} data-pending={t.status === "HELD" ? "" : undefined} {...press}
+        onClick={() => { if (picking()) toggle(t.id); else { setCursor(t.id); setDetail(t.id) } }}>
+        <Show when={picking()}><span class="jm-prow-check" data-on={selected().has(t.id) ? "" : undefined}><Check /></span></Show>
+        <span class="jm-prow-mark" style={{ "--mark": catColor(review() ? suggested()?.color ?? null : t.categoryColor) }}>{(t.description.match(/[A-Za-z0-9]/)?.[0] ?? "·").toUpperCase()}</span>
+        <span class="jm-prow-main">
+          <span class="jm-prow-name">{t.description}</span>
+          <span class="jm-prow-sub">
+            <Show when={suggestion() && suggested()} fallback={<CategoryLabel name={review() ? (data.state.suggesting ? "suggesting…" : "no suggestion") : t.categoryName} color={review() ? null : t.categoryColor} />}>
+              <CategoryLabel name={suggested()!.name} color={suggested()!.color} suggestion confidence={suggestion()!.confidence} history={suggestion()!.source === "history"} />
+            </Show>
+          </span>
+        </span>
+        <span class="jm-prow-end">
+          <Money value={t.amount} tone={t.amount > 0} />
+          <Show when={t.status === "HELD" || (data.state.sortColumn !== "date")}><span class="jm-prow-when">{t.status === "HELD" ? "pending" : shortDate(t.dateISO)}</span></Show>
+        </span>
+        <Show when={suggestion() && !picking()}>
+          <button type="button" class="jm-prow-accept" aria-label={`Accept ${suggested()?.name ?? "the suggestion"}`} onClick={(e) => { e.stopPropagation(); accept([t.id]) }}><Check /></button>
+        </Show>
+      </div>
+    )
+  }
+
+  const phoneList = () => (
+    <div class="jm-plist" ref={observe} onScroll={(e) => setScrollTop(e.currentTarget.scrollTop)}>
+      <Show when={rows().length} fallback={<div class="jm-empty">{review() ? "Nothing waiting for a category." : data.state.filterQuery ? "No rows match this search." : "No transactions."}</div>}>
+        <div style={{ height: `${offsets()[offsets().length - 1]}px`, position: "relative" }}>
+          <div style={{ transform: `translateY(${phoneShown().top}px)` }}>
+            <For each={phoneShown().items}>{(item) => item.kind === "day"
+              ? <div class="jm-pday"><span>{item.label}</span><Show when={item.spent}><span class="money">{formatMoney(item.spent)}</span></Show></div>
+              : <PhoneRow t={item.t} />}</For>
+          </div>
+        </div>
+      </Show>
+    </div>
+  )
+
   const offers = createMemo(() => data.allRuleOffers().length)
   return (
     <>
-      <PageHeader title="Transactions" place={selectionLabel(data.state.accounts, data.state.accountSelection)}
+      <PageHeader title="Transactions" place={selectionLabel(data.state.accounts, data.state.accountSelection)} onPill={() => setAccounts(true)}
         actions={<>
           <HeaderAction label={review() ? "All rows" : "Review"} icon={<ListChecks />} pressed={review()} onClick={toggleReview} title="Uncategorised rows and their suggestions" />
           <HeaderAction label="Merchants" icon={<MerchantsIcon />} pressed={merchants()} onClick={() => setMerchants(!merchants())} title="Group these rows by merchant" />
@@ -417,7 +505,7 @@ export function Transactions() {
             <Show when={review()}><span class="note"> · {waiting().length} suggested{data.state.suggesting ? " · suggesting…" : ""}</span></Show>
           </span>
           <span class="grow" />
-          <Show when={selected().size}>
+          <Show when={selected().size && !compact()}>
             <span class="small figure">{selected().size} selected</span>
             <Button variant="secondary" size="sm" onClick={(e) => openPicker(e.currentTarget.getBoundingClientRect())}>Category…</Button>
             <Show when={review()}><Button variant="secondary" size="sm" onClick={() => accept([...selected()])}>Accept</Button></Show>
@@ -426,9 +514,10 @@ export function Transactions() {
           <Show when={review() && sure().length && !selected().size}>
             <Button size="sm" onClick={() => accept(sure().map((t) => t.id))}>Accept {sure().length} ≥{ACCEPT_ALL_AT * 100}%</Button>
           </Show>
-          <Button variant="ghost" size="sm" aria-pressed={picking()} onClick={() => { setPicking(!picking()); if (picking()) say("Select: a press chooses a row") }}>{picking() ? "Done" : "Select"}</Button>
+          <Button variant="ghost" size="sm" aria-pressed={picking()} onClick={() => { setPicking(!picking()); if (picking()) say(compact() ? "Tap rows to select them" : "Select: a press chooses a row") }}>{picking() ? "Done" : "Select"}</Button>
         </div></Show>
         <Show when={!merchants()} fallback={<div class="jm-merchants"><Merchants onShowRows={() => setMerchants(false)} /></div>}>
+          <Show when={!compact()} fallback={phoneList()}>
           <div class="jm-table" data-accounts={manyAccounts() ? "" : undefined} data-picking={picking() ? "" : undefined}>
             <div class="jm-thead">
               <Show when={picking()}><span /></Show>
@@ -449,8 +538,38 @@ export function Transactions() {
               </Show>
             </div>
           </div>
+          </Show>
         </Show>
       </div>
+      <Show when={compact() && (picking() || selected().size)}>
+        <div class="jm-selbar">
+          <span class="jm-selbar-count">{selected().size ? `${selected().size} selected` : "Tap rows to select"}</span>
+          <Show when={selected().size}>
+            <Button variant="secondary" size="sm" onClick={(e) => openPicker(e.currentTarget.getBoundingClientRect())}>Category</Button>
+            <Show when={review()}><Button variant="secondary" size="sm" onClick={() => accept([...selected()])}>Accept</Button></Show>
+          </Show>
+          <Button variant="ghost" size="icon-sm" aria-label="Done selecting" onClick={() => { setPicking(false); setSelected(new Set<number>()) }}><X /></Button>
+        </div>
+      </Show>
+      <Show when={accounts()}>
+        <BottomSheet label="Accounts" head={<div class="jm-drawer-title">Accounts</div>} onClose={() => setAccounts(false)}>
+          <For each={accountStacks(data.state.accounts)}>{(stack) => (
+            <section>
+              <GroupHeading>{stack.label}</GroupHeading>
+              <div class="jm-choices">
+                <For each={stack.rows}>{(row) => (
+                  <button type="button" class="jm-choice" aria-current={data.state.accountSelection === row.selection ? "true" : undefined}
+                    onClick={() => { data.setAccountSelection(row.selection); setAccounts(false) }}>
+                    <span class="grow">{row.label}</span>
+                    <Show when={row.balance != null}><span class="money">{formatMoney(row.balance!)}</span></Show>
+                    <span class="jm-choice-check">{data.state.accountSelection === row.selection ? <Check /> : null}</span>
+                  </button>
+                )}</For>
+              </div>
+            </section>
+          )}</For>
+        </BottomSheet>
+      </Show>
       <Show when={detail()}>{(id) => <Detail id={id()} onClose={() => setDetail(null)} onCategory={(anchor) => setPicker({ ids: [id()], anchor })} />}</Show>
       <Show when={picker()}>{(p) => <CategoryPicker ids={p().ids} anchor={p().anchor} onClose={() => setPicker(null)} onDone={() => setSelected(new Set<number>())} />}</Show>
       <Show when={panel() === "tags"}><TagReview onClose={() => setPanel(null)} /></Show>
