@@ -44,7 +44,7 @@ import {
 import type { Account, BoughtItem, Category, CategorySuggestion, ImportRecord, Rule, Tag, Transaction } from "../domain/types"
 import { assignTypeCategories } from "../up/categories"
 import { categoryTerm } from "../domain/drill"
-import type { Budget, BudgetHistoryEntry, BudgetScope, CycleConfig } from "../domain/budget"
+import { budgetIn, type Budget, type BudgetHistoryEntry, type BudgetScope, type CycleConfig } from "../domain/budget"
 
 export type Db = Database
 
@@ -1022,6 +1022,22 @@ export function deleteBudget(db: Db, id: number, from?: string): void {
       ON CONFLICT DO UPDATE SET amount = excluded.amount`).run(from, id)
   }
   db.query(`DELETE FROM budgets WHERE id = ?`).run(id)
+}
+
+/** A budget for `scope` from the cycle starting `from` (null: always) until
+ * its next change, or none from then (`amount` null); then the budgets
+ * table holds what's in force in the cycle starting `nowStart`. */
+export function recordBudget(db: Db, scope: BudgetScope, amount: number | null, from: string | null, nowStart: string): void {
+  if (amount != null && (!Number.isFinite(amount) || amount < 0)) throw new Error("budget amount must be a positive number")
+  const target = scope.kind === "overall" ? null : scope.kind === "account" ? scope.accountId : scope.categoryId
+  db.query(`INSERT INTO budget_history (scope_kind, target_id, amount, from_date) VALUES (?, ?, ?, ?)
+    ON CONFLICT DO UPDATE SET amount = excluded.amount`).run(scope.kind, target, amount, from)
+  const now = budgetIn(loadBudgetHistory(db), scope, nowStart)
+  const existing = db.query(`SELECT id FROM budgets WHERE scope_kind = ? AND COALESCE(target_id, 0) = COALESCE(?, 0)`).get(scope.kind, target) as { id: number } | null
+  if (now == null) { if (existing) db.query(`DELETE FROM budgets WHERE id = ?`).run(existing.id); return }
+  if (existing) { db.query(`UPDATE budgets SET amount = ? WHERE id = ?`).run(now, existing.id); return }
+  const order = (db.query(`SELECT COALESCE(MAX(sort_order), 0) + 1 AS n FROM budgets`).get() as { n: number }).n
+  db.query(`INSERT INTO budgets (scope_kind, target_id, amount, sort_order) VALUES (?, ?, ?, ?)`).run(scope.kind, target, now, order)
 }
 
 export function loadBudgetCycle(db: Db): CycleConfig {

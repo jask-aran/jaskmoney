@@ -15,9 +15,9 @@ import { assignableCategories, pickerSuggestions } from "../domain/categoryOptio
 import { tagChoices } from "../state/tagChooser"
 import { RULE_AFTER } from "../domain/ruleOffers"
 import { endTagReview, runTagAccept, startTagReview } from "./tagReview"
-import { budgetLabel, budgetScopeOptions, scopeKey } from "../domain/budgetScopes"
-import type { Budget, BudgetScope, CycleConfig } from "../domain/budget"
-import { budgetCategoryLines, budgetListRows, type BudgetLine } from "../domain/budgetLines"
+import { budgetLabel, budgetScopeOptions, scopeKey, scopeOfKey } from "../domain/budgetScopes"
+import { cycleAt, type Budget, type BudgetScope, type CycleConfig } from "../domain/budget"
+import { budgetArmId, budgetCategoryLines, budgetListRows, budgetView, type BudgetLine } from "../domain/budgetLines"
 import { MERCHANT_SORTS, groupByMerchant, merchantFilter, sortMerchantGroups } from "../domain/merchants"
 import { anchorDraft, cycleFromDraft, editorFields, normaliseCycleDraft, pickerChoices, pickerItems, stepChoice } from "../state/settingsForm"
 import { runSync } from "./sync"
@@ -66,7 +66,7 @@ import { tagPickerItems, tagPickerState } from "../state/tagPicker"
 import { savedFilterOptions } from "../state/savedFilters"
 import { nextSavedFilterId } from "../state/settingsConfig"
 import { theme } from "../theme"
-import { count } from "../ui/text"
+import { count, shortDate } from "../ui/text"
 
 
 function defaultProfile(id: string, path: string) {
@@ -664,7 +664,11 @@ const CONFIRMED: Record<Confirm["kind"], (data: DataStore | undefined, c: Confir
   rule: (data, c) => { data?.deleteSettingsRule(Number(c.id)); return `Deleted ${c.label}` },
   filter: (data, c) => { data?.deleteSavedFilter(String(c.id)); return `Deleted ${c.label}` },
   profile: (data, c) => { data?.deleteImportProfile(String(c.id)); return `Deleted ${c.label}` },
-  budget: (data, c) => { data?.removeBudget(Number(c.id)); return `Deleted ${c.label}` },
+  budget: (data, c) => {
+    const [key, from] = String(c.id).split("@")
+    data?.removeBudget(scopeOfKey(key!), from)
+    return `Deleted ${c.label}`
+  },
   clearData: (data) => { data?.clearDatabaseData(); return "Transaction and import data cleared" },
   clearAccount: (data, c) => { data?.clearAccountData(Number(c.id)); return `Cleared ${c.label}` },
   deleteAccount: (data, c) => { data?.removeAccountData(Number(c.id)); return `Removed ${c.label}` },
@@ -746,9 +750,11 @@ function handleSettingsEditor(ui: UiStore, key: KeyEvent, data?: DataStore): voi
         // The cycle is shared by every budget; save it first so a bad date
         // stops the whole edit.
         if (current && (current.unit !== cycle.unit || current.anchor !== cycle.anchor || current.anchorDate !== cycle.anchorDate || !!current.payEarly !== !!cycle.payEarly)) data?.setBudgetCycle(cycle)
-        const editing = data?.state.budgets.find((b) => b.id === ui.state.settingsEditId)
-        if (editing && scopeKey(editing.scope) !== option.key) data?.removeBudget(editing.id)
-        data?.setBudget(option.scope, amount)
+        // From the cycle the Budgets tab shows (this one elsewhere).
+        const view = data ? viewedBudgets(ui, data) : undefined
+        const editing = view?.budgets.find((b) => b.id === ui.state.settingsEditId)
+        if (editing && scopeKey(editing.scope) !== option.key) data?.removeBudget(editing.scope, view!.cycle.start)
+        data?.setBudget(option.scope, amount, view?.cycle.start)
       } else if (kind === "cycle") {
         const cycle = cycleFromDraft(draft)
         if (typeof cycle === "string") throw new Error(cycle)
@@ -1462,9 +1468,15 @@ function handleManagerAccounts(ui: UiStore, key: KeyEvent, data?: DataStore): vo
   if ((name === "d" || name === "delete") && accountId != null) { ui.setState({ accountActionId: accountId, accountActionCursor: 0 }); ui.setStatus("Account data · enter twice to clear or remove · esc cancel"); return }
 }
 
+/** The cycle the Budgets tab shows and the budgets in force in it. */
+function viewedBudgets(ui: UiStore, data: DataStore) {
+  return budgetView(data.cycle(), appToday(), ui.state.activeTab === "budgets" ? ui.state.budgetOffset : 0, data.state.budgetHistory, data.state.budgets)
+}
+
 /** The Categories card's lines, as the tab draws them. */
-function budgetLines(data: DataStore): BudgetLine[] {
-  return budgetCategoryLines(data.cycle(), appToday(), data.state.accounts, data.state.categories, data.state.budgets, data.transactions())
+function budgetLines(ui: UiStore, data: DataStore): BudgetLine[] {
+  const view = viewedBudgets(ui, data)
+  return budgetCategoryLines(data.cycle(), view.through, data.state.accounts, data.state.categories, view.budgets, data.transactions())
 }
 
 function openBudgetEditor(ui: UiStore, data: DataStore, budget: Budget | null, scope: BudgetScope, amount: number): void {
@@ -1472,9 +1484,19 @@ function openBudgetEditor(ui: UiStore, data: DataStore, budget: Budget | null, s
 }
 
 /** Keys either Budgets card shares: h/l switch the chart between this
- * cycle and cycle by cycle; c edits the cycle. */
+ * cycle and cycle by cycle; [ and ] show the cycle before or after (up to
+ * this one, back to the first with data); c edits the cycle. */
 function budgetKeys(ui: UiStore, key: KeyEvent, data: DataStore): boolean {
-  const { name } = key
+  const { name, sequence: seq } = key
+  if (name === "[" || seq === "[" || name === "]" || seq === "]") {
+    const back = name === "[" || seq === "["
+    const first = data.transactions().reduce((min, t) => (t.dateISO < min ? t.dateISO : min), appToday())
+    const offset = ui.state.budgetOffset + (back ? -1 : 1)
+    if (offset > 0) { ui.setStatus("This is the current cycle"); return true }
+    if (back && cycleAt(data.cycle(), appToday(), offset).end < first) { ui.setStatus("No cycles before this one have data", true); return true }
+    ui.setState({ budgetOffset: offset })
+    return true
+  }
   if (name === "h" || name === "left" || name === "l" || name === "right") {
     ui.setState({ budgetChart: ui.state.budgetChart === 0 ? 1 : 0 })
     return true
@@ -1490,7 +1512,8 @@ function handleBudgets(ui: UiStore, key: KeyEvent, data?: DataStore): void {
   const { name } = key
   if (!data) return
   if (budgetKeys(ui, key, data)) return
-  const rows = budgetListRows(data.state.budgets, data.state.categories)
+  const view = viewedBudgets(ui, data)
+  const rows = budgetListRows(view.budgets, data.state.categories)
   const row = rows[Math.min(ui.state.budgetCursor, rows.length - 1)]!
   if ((name === "j" || name === "down") && ui.state.budgetCursor >= rows.length - 1) {
     ui.setState({ focusedSection: "bud.categories" })
@@ -1511,7 +1534,7 @@ function handleBudgets(ui: UiStore, key: KeyEvent, data?: DataStore): void {
     return
   }
   if ((name === "delete" || name === "backspace") && row.budget) {
-    confirmTwice(ui, data, { kind: "budget", id: row.budget.id, label: `the ${budgetLabel(row.budget, data.state.accounts, data.state.categories)} budget`, with: "delete" })
+    confirmTwice(ui, data, { kind: "budget", id: budgetArmId(row.budget, view.cycle.start), label: `the ${budgetLabel(row.budget, data.state.accounts, data.state.categories)} budget${view.current ? "" : ` from ${shortDate(view.cycle.start)}`}`, with: "delete" })
   }
 }
 
@@ -1523,10 +1546,11 @@ function handleBudgetCategories(ui: UiStore, key: KeyEvent, data?: DataStore): v
   const { name } = key
   if (!data) return
   if (budgetKeys(ui, key, data)) return
-  const lines = budgetLines(data)
+  const view = viewedBudgets(ui, data)
+  const lines = budgetLines(ui, data)
   const cursor = Math.min(ui.state.budgetCategoryCursor, Math.max(0, lines.length - 1))
   if ((name === "k" || name === "up") && cursor === 0) {
-    ui.setState({ focusedSection: "bud.list", budgetCursor: budgetListRows(data.state.budgets, data.state.categories).length - 1 })
+    ui.setState({ focusedSection: "bud.list", budgetCursor: budgetListRows(view.budgets, data.state.categories).length - 1 })
     return
   }
   const moved = listMove(key, cursor, lines.length)
@@ -1548,7 +1572,7 @@ function handleBudgetCategories(ui: UiStore, key: KeyEvent, data?: DataStore): v
     return
   }
   if ((name === "delete" || name === "backspace") && line.budget) {
-    confirmTwice(ui, data, { kind: "budget", id: line.budget.id, label: `the ${line.name} budget`, with: "delete" })
+    confirmTwice(ui, data, { kind: "budget", id: budgetArmId(line.budget, view.cycle.start), label: `the ${line.name} budget${view.current ? "" : ` from ${shortDate(view.cycle.start)}`}`, with: "delete" })
   }
 }
 

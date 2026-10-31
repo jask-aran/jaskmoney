@@ -130,20 +130,43 @@ export interface BudgetHistoryEntry {
   from: string | null
 }
 
-/** Budget in force at the cycle start. NULL dates apply since always; equal
- * dates use the later array entry. Before the first date, use the earliest
- * entry. A scope with no history has no budget. */
+/** Budget in force at the cycle start: the scope's latest entry from on or
+ * before it (a NULL date: since always; equal dates: the later array
+ * entry). Before its first entry, or with none, a scope has no budget. (A
+ * budget first set in the current cycle is recorded since always, so it
+ * measures earlier cycles too: the data store's setBudget.) */
 export function budgetIn(history: readonly BudgetHistoryEntry[], scope: BudgetScope, cycleStartISO: string): number | null {
   const key = scopeKey(scope)
-  let earliest: BudgetHistoryEntry | undefined
   let current: BudgetHistoryEntry | undefined
   for (const entry of history) {
     if (scopeKey(entry.scope) !== key) continue
-    if (!earliest || (earliest.from !== null && (entry.from === null || entry.from <= earliest.from))) earliest = entry
     if ((entry.from === null || entry.from <= cycleStartISO)
       && (!current || current.from === null || (entry.from !== null && entry.from >= current.from))) current = entry
   }
-  return (current ?? earliest)?.amount ?? null
+  return current?.amount ?? null
+}
+
+/** The budgets in force in the cycle starting `cycleStartISO`: every scope
+ * today's budgets or the history name, as it was then (budgetIn), keeping
+ * today's id where there is one (others get their own below zero), in
+ * today's order then the history's. */
+export function budgetsIn(history: readonly BudgetHistoryEntry[], budgets: Budget[], cycleStartISO: string): Budget[] {
+  const scopes = new Map<string, { scope: BudgetScope; id: number }>()
+  for (const b of budgets) scopes.set(scopeKey(b.scope), { scope: b.scope, id: b.id })
+  for (const entry of history) if (!scopes.has(scopeKey(entry.scope))) scopes.set(scopeKey(entry.scope), { scope: entry.scope, id: -1 - scopes.size })
+  return [...scopes.values()].flatMap(({ scope, id }) => {
+    const amount = budgetIn(history, scope, cycleStartISO)
+    return amount == null ? [] : [{ id, scope, amount }]
+  })
+}
+
+/** The cycle `offset` cycles from the one containing `todayISO` (0 that
+ * one, -1 the one before, ...). */
+export function cycleAt(config: CycleConfig, todayISO: string, offset: number): Cycle {
+  let cycle = cycleFor(config, todayISO)
+  for (let i = 0; i > offset; i--) cycle = cycleFor(config, addDays(cycle.start, -1))
+  for (let i = 0; i < offset; i++) cycle = cycleFor(config, addDays(cycle.end, 1))
+  return cycle
 }
 
 export interface Budget {

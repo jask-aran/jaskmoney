@@ -46,17 +46,17 @@ import {
   loadImports,
   removeAccountWithTransactions,
   setAccountSyncEnabled,
-  deleteBudget,
   loadBudgetCycle,
   loadBudgets,
   loadBudgetHistory,
-  saveBudget,
+  recordBudget,
   saveBudgetCycle,
   loadTransactionDetail,
   setTransactionNotes,
   type TransactionDetail,
 } from "../db/client"
 import { normaliseSelection, selectedAccounts, type AccountSelection } from "../domain/accountTree"
+import { scopeKey } from "../domain/budgetScopes"
 import { cycleFor, paydays, type BudgetHistoryEntry, type Budget, type BudgetScope, type CycleConfig } from "../domain/budget"
 import { buildImportPreview, commitImportPreview, matchingProfiles } from "../domain/profileImport"
 import { CREDENTIAL_NAMES, credentialEnv, credentialSource, maskSecret, saveCredentials, type CredentialName, NOT_SECRET } from "../ai/credentials"
@@ -844,12 +844,19 @@ function createDataStore() {
     }
   }
 
-  function setBudget(scope: BudgetScope, amount: number): void {
-    mutate((db) => saveBudget(db, scope, amount, cycleFor(cycle(), appToday()).start))
+  /** A budget from the cycle starting `from` (default this one) until its
+   * next change. One first set in this cycle is recorded since always, so
+   * it measures earlier cycles too. */
+  function setBudget(scope: BudgetScope, amount: number, from?: string): void {
+    const now = cycleFor(cycle(), appToday()).start
+    const fresh = !state.budgetHistory.some((e) => scopeKey(e.scope) === scopeKey(scope))
+    mutate((db) => recordBudget(db, scope, amount, fresh && (from ?? now) === now ? null : from ?? now, now))
   }
 
-  function removeBudget(id: number): void {
-    mutate((db) => deleteBudget(db, id, cycleFor(cycle(), appToday()).start))
+  /** No budget for `scope` from the cycle starting `from` (default this one). */
+  function removeBudget(scope: BudgetScope, from?: string): void {
+    const now = cycleFor(cycle(), appToday()).start
+    mutate((db) => recordBudget(db, scope, null, from ?? now, now))
   }
 
   function setBudgetCycle(config: CycleConfig): void {
