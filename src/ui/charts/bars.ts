@@ -14,22 +14,25 @@ export function shareColumns(n: number, width: number, from = 0): Array<{ col: n
 }
 
 /**
- * Where each of `n` bars goes across `width` columns: the width shared out
- * so the bars fill it (some a column wider than others), in groups of
- * `group` bars that stand together (a week's money in and out), each group
- * followed by a one-column gap when every group has a column to spare;
- * denser, the bars stand shoulder to shoulder.
+ * Where each of `n` bars goes across `width` columns: in groups of `group`
+ * bars that stand together (a week's money in and out), the groups spread
+ * evenly from the first column to the last. Every bar is as wide as the
+ * narrowest group allows, after a one-column gap when every group has a
+ * column to spare (the last group keeps its gap too), so bars never differ
+ * in width: the columns left over widen the gaps (or, shoulder to
+ * shoulder, open the odd one).
  */
 export function barSlots(n: number, width: number, group = 1): Array<{ col: number; width: number }> {
   if (n <= 0 || width <= 0) return []
   const groups = Math.ceil(n / group)
-  // Gaps all or none, so the spacing stays even: when the narrowest group
-  // has a column to spare.
-  const gap = Math.floor(width / groups) > group ? 1 : 0
-  return shareColumns(groups, Math.max(groups, width)).flatMap((g, k) => {
-    const members = Math.min(group, n - k * group)
-    return shareColumns(members, g.width - gap, g.col)
-  }).filter((s) => s.width > 0 && s.col + s.width <= width)
+  const narrowest = Math.floor(width / groups)
+  const gap = narrowest > group ? 1 : 0
+  const bar = Math.max(1, Math.floor((narrowest - gap) / group))
+  const span = group * bar
+  const room = Math.max(0, width - gap - span)
+  return Array.from({ length: groups }, (_, k) => (groups > 1 ? Math.round((k * room) / (groups - 1)) : 0)).flatMap((col, k) =>
+    Array.from({ length: Math.min(group, n - k * group) }, (_, m) => ({ col: col + m * bar, width: bar })),
+  ).filter((s) => s.col + s.width <= width)
 }
 
 /**

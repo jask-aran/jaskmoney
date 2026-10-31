@@ -20,10 +20,14 @@ test("bars share the whole width out: a year of weeks fills the pane", () => {
   expect(slots).toHaveLength(53)
   const last = slots.at(-1)!
   expect(last.col + last.width).toBe(88)
-  expect(new Set(slots.map((s) => s.width))).toEqual(new Set([1, 2]))
-  // Wider slots keep a gap; their bars fill the rest.
+  // One width for every bar: the spare columns open gaps instead.
+  expect(new Set(slots.map((s) => s.width))).toEqual(new Set([1]))
+  // Wider slots keep a gap, the last too; their bars fill the rest.
   const wide = barSlots(3, 88)
+  expect(wide.map((s) => s.width)).toEqual([28, 28, 28])
   expect(wide.at(-1)!.col + wide.at(-1)!.width).toBe(87)
+  // Weeks of a half year in 78 columns: one cell each, never one and two.
+  expect(new Set(barSlots(27, 78).map((s) => s.width))).toEqual(new Set([1]))
 })
 
 test("grouped bars stand together, with a gap after each group", () => {
