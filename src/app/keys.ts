@@ -35,7 +35,7 @@ import { AI_USES, aiActions, aiContext, useActions, type AiUse } from "../state/
 import { useQueries, type QueryId } from "../ai/catalog"
 import { hasWorkersAi } from "../ai/workersAi"
 import { cancelLlmSignIn, signOutLlm, startLlmSignIn, submitSignInPaste } from "./llmSignIn"
-import { createLlm, hasLlm, LLM_PROVIDERS, llmModelId } from "../ai/llm"
+import { createLlm, LLM_PROVIDERS, llmModelId } from "../ai/llm"
 import { credentialEnv } from "../ai/credentials"
 import { runAccept, toggleUncategorised, newSuggestionsNote, suggestNew } from "./suggest"
 import { ACCEPT_ALL_AT } from "../domain/questions"
@@ -495,11 +495,9 @@ function handleManagerDetailNotes(ui: UiStore, key: KeyEvent, data?: DataStore):
   const { name } = key
   if (name === "escape") { ui.setState({ detailNotesEditing: false, detailNotesDraft: "", detailNotesCaret: 0 }); ui.setStatus("Notes unchanged"); return }
   if (name === "return" || name === "enter") {
-    try {
-      const asking = data?.updateTransactionNotes(ui.state.detailId, ui.state.detailNotesDraft.trim())
-      ui.setStatus("Notes saved")
-      void asking?.then((asked) => { if (asked) ui.setStatus("Notes saved · suggestion asked again with them") })
-    } catch (e) { reportError(ui, e) }
+    const asking = data?.updateTransactionNotes(ui.state.detailId, ui.state.detailNotesDraft.trim())
+    ui.setStatus("Notes saved")
+    if (asking) settleData(ui, asking, (asked) => { if (asked) ui.setStatus("Notes saved · suggestion asked again with them") })
     ui.setState({ detailNotesEditing: false, detailNotesDraft: "", detailNotesCaret: 0 })
     return
   }
@@ -1041,16 +1039,16 @@ function handleRuleOffers(ui: UiStore, key: KeyEvent, data?: DataStore): void {
   const close = () => ui.setState({ ruleOffersOpen: false, ruleOfferCursor: 0 })
   if (name === "escape") { close(); ui.setStatus("Transactions"); return }
   // The final action row asks the general model for more rules.
-  if ((name === "return" || name === "enter") && ui.state.ruleOfferCursor === offers.length && hasLlm() && data) {
+  if ((name === "return" || name === "enter") && ui.state.ruleOfferCursor === offers.length && !!data?.state.llm && data) {
     askForRules(ui, data)
     return
   }
-  const moved = listMove(key, ui.state.ruleOfferCursor, offers.length + (hasLlm() ? 1 : 0))
+  const moved = listMove(key, ui.state.ruleOfferCursor, offers.length + (!!data?.state.llm ? 1 : 0))
   if (moved != null) { ui.setState({ ruleOfferCursor: moved }); return }
   const offer = offers[ui.state.ruleOfferCursor]
   if (!offer || !data) return
   const settle = () => {
-    const left = data.allRuleOffers().length + (hasLlm() ? 1 : 0)
+    const left = data.allRuleOffers().length + (!!data?.state.llm ? 1 : 0)
     if (!left) close()
     else ui.setState({ ruleOfferCursor: Math.min(ui.state.ruleOfferCursor, left - 1) })
   }
@@ -1323,7 +1321,7 @@ function handleManagerTxns(ui: UiStore, key: KeyEvent, data?: DataStore): void {
   if (name === "r" && key.shift && data) {
     const n = data.allRuleOffers().length
     // With a model to ask, the list opens on the final action row when empty.
-    if (!n && !hasLlm()) { ui.setStatus(`No rule to offer: one comes after you put a description in the same category ${RULE_AFTER} times`); return }
+    if (!n && !!!data?.state.llm) { ui.setStatus(`No rule to offer: one comes after you put a description in the same category ${RULE_AFTER} times`); return }
     ui.setState({ ruleOffersOpen: true, ruleOfferCursor: 0 })
     ui.setStatus(n ? `${count(n, "rule")} offered` : "No rules offered yet · enter asks the AI")
     return

@@ -22,9 +22,12 @@ import { scopeKey } from "../domain/budgetScopes"
 import { buildImportPreview, commitImportPreview } from "../domain/profileImport"
 import { CREDENTIAL_NAMES, credentialEnv, credentialSource, maskSecret, saveCredentials, type CredentialName, NOT_SECRET } from "../ai/credentials"
 import { isOrdinaryFlow, isUncategorised } from "../domain/moneyRules"
-import { hasJev, type JevClient } from "../ai/jev"
-import type { Llm } from "../ai/llm"
-import { createUpClient, readUpToken } from "../up/client"
+import { hasJev, jevClient, jevRoute, JEV_SETUP, type JevClient } from "../ai/jev"
+import { hasLlm, llmModelId, type Llm } from "../ai/llm"
+import { createWorkersAiClient, readWorkersAiCredentials, searchUsesClairic } from "../ai/workersAi"
+import { createUpClient, hasUpToken, readUpToken } from "../up/client"
+import { smartSearch } from "../domain/smartSearch"
+import { categoryUses, merchantBreadth } from "../domain/suggest"
 import { signedIn } from "../ai/oauthStore"
 import { appNow, appToday } from "../domain/days"
 import { demoSource, generateDemo } from "../domain/demo"
@@ -70,7 +73,11 @@ function loadApiKeys(): CoreState["apiKeys"] {
   return Object.fromEntries(CREDENTIAL_NAMES.map((name) => [name, { source: credentialSource(name), mask: NOT_SECRET.has(name) ? (env[name] ?? "") : maskSecret(env[name]) }])) as CoreState["apiKeys"]
 }
 
-const keyState = () => ({ apiKeys: loadApiKeys(), signedIn: loadSignedIn(), jev: hasJev() })
+/** What the clients know of the credentials: which services are set up. */
+function keyState(): Pick<CoreState, "apiKeys" | "signedIn" | "jev" | "clairic" | "llm" | "upToken"> {
+  const env = credentialEnv()
+  return { apiKeys: loadApiKeys(), signedIn: loadSignedIn(), jev: jevRoute(env)?.provider ?? null, clairic: searchUsesClairic(env), llm: hasLlm(env) ? llmModelId(env) : null, upToken: hasUpToken(env) }
+}
 
 export function initialCoreState(): CoreState {
   return { ...emptyCoreState(), apiKeys: loadApiKeys(), signedIn: loadSignedIn() }
@@ -478,6 +485,16 @@ export function createCore() {
     updateTransactionNotes: (p: { id: number; notes: string }, cx: CallContext) => updateTransactionNotes(p.id, p.notes, cx.ai),
     transactionDetail: (p: { id: number }) => db ? loadTransactionDetail(db, p.id) : null,
 
+    /** A filter expression written from `query` (domain/smartSearch), with
+     * the words found among `descriptions` (the client's rows). */
+    smartSearch: async (p: { query: string; descriptions: string[] }) => {
+      if (!hasJev()) throw new Error(`Smart search needs Jev (${JEV_SETUP})`)
+      const clairicOn = searchUsesClairic()
+      const ai = { clairic: clairicOn ? createWorkersAiClient(readWorkersAiCredentials()).clairic : undefined, jev: jevClient() }
+      const uses = categoryUses(transactions(), state.categories, merchantBreadth(transactions(), state.categories, new Map(Object.entries(state.merchantBreadth))))
+      const { expr, clairic } = await smartSearch(ai, p.query, { today: appToday(), cycle: cycle(), categories: state.categories, descriptions: p.descriptions, uses })
+      return { expr, clairic, clairicOn }
+    },
     judgeAsk: (p: { words: string; ids: number[] }, cx: CallContext<CoreProgress["judgeAsk"]>) =>
       judgeAsk(p.words, p.ids, cx.ai, { onJudged: cx.progress, active: () => !cx.signal.aborted }),
     tagCandidates: (p: { target: TagTarget }, cx: CallContext<CoreProgress["tagCandidates"]>) => {

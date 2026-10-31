@@ -1,7 +1,4 @@
-import { hasJev, JEV_SETUP, jevClient } from "../ai/jev"
-import { createWorkersAiClient, readWorkersAiCredentials, searchUsesClairic } from "../ai/workersAi"
-import { appToday } from "../domain/days"
-import { smartSearch } from "../domain/smartSearch"
+import { JEV_SETUP } from "../ai/judge"
 import type { DataStore } from "../state/dataStore"
 import type { UiStore } from "../state/uiStore"
 import { runAsk } from "./ask"
@@ -16,16 +13,17 @@ import { askTerms, parseFilter } from "../domain/filter"
 export async function runSmartSearch(ui: UiStore, data: DataStore, draft: string, onApplied: () => void): Promise<void> {
   const query = draft.trim().slice(1).trim()
   if (!query) { ui.setStatus("Type a search after ?, e.g. ?coffee over $5 last month"); return }
-  if (!hasJev()) { ui.setStatus(`Smart search needs Jev (${JEV_SETUP})`, true); return }
-  ui.setStatus(`Writing a filter with ${jevService()}${searchUsesClairic() ? " + Clairic" : ""}…`)
+  // The core's models: set up where the core runs.
+  if (!data.state.jev) { ui.setStatus(`Smart search needs Jev (${JEV_SETUP})`, true); return }
+  const by = jevService(data.state.jev)
+  ui.setStatus(`Writing a filter with ${by}${data.state.clairic ? " + Clairic" : ""}…`)
   try {
-    const ai = { clairic: searchUsesClairic() ? createWorkersAiClient(readWorkersAiCredentials()).clairic : undefined, jev: jevClient() }
     const descriptions = [...new Set(data.accountScoped().map((t) => t.description))]
     const started = Date.now()
-    const { expr, clairic } = await smartSearch(ai, query, { today: appToday(), cycle: data.cycle(), categories: data.state.categories, descriptions, uses: data.categoryUses() })
+    const { expr, clairic, clairicOn } = await data.smartSearch(query, descriptions)
     if (!ui.state.filterMode || ui.state.filterDraft !== draft) return
     // Without Clairic the words are Jev's pick and written dates are not read.
-    const written: Written = { ms: Date.now() - started, clairic: !ai.clairic ? "off" : clairic ? { failed: clairic.replace(/^Workers AI clairic:\s*/, "") } : "used" }
+    const written: Written = { ms: Date.now() - started, by, clairic: !clairicOn ? "off" : clairic ? { failed: clairic.replace(/^Workers AI clairic:\s*/, "") } : "used" }
     ui.setState({ filterDraft: expr, filterCaret: expr.length, smartQuestion: { question: query, expr, written } })
     data.setFilterLive(expr)
     onApplied()

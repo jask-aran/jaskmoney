@@ -24,7 +24,12 @@ const undoButton = $<HTMLButtonElement>("undo"), syncButton = $<HTMLButtonElemen
 const token = new URLSearchParams(location.search).get("token")
 const api = `${location.protocol === "https:" ? "wss" : "ws"}://${location.host}/api${token ? `?token=${encodeURIComponent(token)}` : ""}`
 let disconnected = ""
-const data = createClientStore(wsLink(api, { onClose: (reason) => { disconnected = reason; status.textContent = `disconnected: ${reason}`; status.className = "off" } }))
+const data = createClientStore(wsLink(api, { onClose: (reason) => {
+  disconnected = reason
+  // The server refuses a socket without its token, and a browser isn't told why.
+  status.textContent = token ? `disconnected: ${reason}` : "no token: open the address jaskmoney printed (it carries the server's token)"
+  status.className = "off"
+} }))
 
 const say = (text: string) => { message.textContent = text }
 const fail = (error: unknown) => say(error instanceof Error ? error.message : String(error))
@@ -77,7 +82,10 @@ createRoot(() => {
     const groups = Map.groupBy(assignableCategories(categories, ""), (c) => categories.find((g) => g.id === c.parentId)?.name ?? "")
     rows.replaceChildren(...all.slice(0, SHOWN).map((t) => {
       const option = (c: Category) => el("option", { value: String(c.id), textContent: c.name, selected: c.id === t.categoryId })
+      // A row in no category it could be put in shows as that, not as the first choice.
+      const placed = categories.some((c) => c.id === t.categoryId && [...groups.values()].some((list) => list.includes(c)))
       const choose = el("select", { title: "Category" },
+        ...(placed ? [] : [el("option", { value: "", textContent: t.categoryName || "No category", selected: true, disabled: true })]),
         ...[...groups].map(([group, list]) => el("optgroup", { label: group || "Other" }, ...list.map(option))))
       choose.addEventListener("change", () => {
         const category = categories.find((c) => c.id === Number(choose.value))

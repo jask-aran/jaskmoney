@@ -1,4 +1,5 @@
 import type { CoreState, ServerMessage, ClientMessage } from "../core/protocol"
+import type { Transaction } from "../domain/types"
 import type { CoreLink } from "./link"
 
 /**
@@ -16,6 +17,27 @@ export function wsLink(url: string, { onClose }: { onClose?: (reason: string) =>
   let nextId = 1
   let closed: string | null = null
 
+  /** Transactions by id, in the core's order. */
+  const rows = new Map<number, Transaction>()
+  let order: number[] = []
+
+  /** The keyed slices and transactions a message changes, whole again. */
+  function wholeSlices(message: Extract<ServerMessage, { t: "state" }>): Partial<CoreState> {
+    const whole: Record<string, unknown> = {}
+    for (const [slice, change] of Object.entries(message.keyed ?? {})) {
+      const next: Record<string, unknown> = { ...(seen[slice as keyof CoreState] as object | undefined), ...change.set }
+      for (const key of change.remove) delete next[key]
+      whole[slice] = next
+    }
+    if (message.rows) {
+      for (const id of message.rows.remove) rows.delete(id)
+      for (const t of message.rows.set) rows.set(t.id, t)
+      if (message.rows.order) order = message.rows.order
+      whole.transactions = order.map((id) => rows.get(id)!)
+    }
+    return whole
+  }
+
   const send = (message: ClientMessage) => {
     const text = JSON.stringify(message)
     if (socket.readyState === WebSocket.OPEN) socket.send(text)
@@ -26,8 +48,9 @@ export function wsLink(url: string, { onClose }: { onClose?: (reason: string) =>
   socket.addEventListener("message", (event) => {
     const message = JSON.parse(String(event.data)) as ServerMessage
     if (message.t === "state") {
-      Object.assign(seen, message.patch)
-      for (const listener of listeners) listener(message.patch)
+      const patch = { ...message.patch, ...wholeSlices(message) }
+      Object.assign(seen, patch)
+      for (const listener of listeners) listener(patch)
     } else if (message.t === "progress") {
       waiting.get(message.id)?.onProgress?.(message.data as never)
     } else {

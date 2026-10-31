@@ -1,6 +1,5 @@
 import { ACCOUNT_ACTIONS, armedFor } from "../../state/armed"
 import { ListRow } from "../primitives/ListRow"
-import { hasLlm, llmModelId } from "../../ai/llm"
 import { For, Show, createEffect, createMemo } from "solid-js"
 import { useTerminalDimensions } from "@opentui/solid"
 import { SectionCard } from "../primitives/SectionCard"
@@ -369,11 +368,11 @@ export function ManagerTab(props: { focused: SectionId }) {
               </>
             )
           }}</For>
-          <Show when={hasLlm() && ruleOffers().length >= ruleTop() && ruleOffers().length < ruleTop() + RULE_LINES}>
-            <ListRow cursor={ui.state.ruleOfferCursor === ruleOffers().length} bg={theme.mantle} spans={[{ text: ` ${data.state.writingRules ? `Asking ${llmModelId()}…` : "Ask the AI for more rules"}`, fg: tone.ai }]} />
+          <Show when={!!data.state.llm && ruleOffers().length >= ruleTop() && ruleOffers().length < ruleTop() + RULE_LINES}>
+            <ListRow cursor={ui.state.ruleOfferCursor === ruleOffers().length} bg={theme.mantle} spans={[{ text: ` ${data.state.writingRules ? `Asking ${data.state.llm}…` : "Ask the AI for more rules"}`, fg: tone.ai }]} />
           </Show>
-          <Show when={ruleOffers().length + (hasLlm() ? 1 : 0) > RULE_LINES}>
-            <text fg={ink.note}>{`  ${ruleTop() + 1}–${Math.min(ruleTop() + RULE_LINES, ruleOffers().length + (hasLlm() ? 1 : 0))} of ${ruleOffers().length + (hasLlm() ? 1 : 0)}`}</text>
+          <Show when={ruleOffers().length + (!!data.state.llm ? 1 : 0) > RULE_LINES}>
+            <text fg={ink.note}>{`  ${ruleTop() + 1}–${Math.min(ruleTop() + RULE_LINES, ruleOffers().length + (!!data.state.llm ? 1 : 0))} of ${ruleOffers().length + (!!data.state.llm ? 1 : 0)}`}</text>
           </Show>
         </Modal>
       </Show>

@@ -1,4 +1,4 @@
-import { jevRoute } from "../ai/jev"
+import type { JevProvider } from "../ai/jev"
 import { ASK_DEFAULT_DAYS, ASK_LIMIT } from "../domain/ask"
 import type { AskResult } from "../client/store"
 
@@ -10,19 +10,18 @@ import type { AskResult } from "../client/store"
  */
 
 /** How a smart search's filter was written. */
-export interface Written { ms: number; clairic: "used" | "off" | { failed: string } }
+export interface Written { ms: number; clairic: "used" | "off" | { failed: string }; by?: string }
 
 const seconds = (ms: number) => `${(ms / 1000).toFixed(1)}s`
 
 /** "Jev (TypeSafe)" or "Jev (OpenRouter)": the service answering Jev. */
-export function jevService(): string {
-  const route = jevRoute()
-  return route ? `Jev (${route.provider === "typesafe" ? "TypeSafe" : "OpenRouter"})` : "Jev"
+export function jevService(provider: JevProvider | null): string {
+  return provider ? `Jev (${provider === "typesafe" ? "TypeSafe" : "OpenRouter"})` : "Jev"
 }
 
 export function writtenText(w: Written): string {
   const clairic = w.clairic === "used" ? " + Clairic" : w.clairic === "off" ? "" : `, Clairic failed (${w.clairic.failed}): check words and dates`
-  return `written by ${jevService()}${clairic} in ${seconds(w.ms)}`
+  return `written by ${w.by ?? "Jev"}${clairic} in ${seconds(w.ms)}`
 }
 
 /** What Jev judged: "Jev judged 313 rows in 3.4s: 48 match, 77 near (n) ·

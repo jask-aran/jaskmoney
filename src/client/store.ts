@@ -571,20 +571,8 @@ export function createClientStore(initialLink: CoreLink) {
     return matchingProfiles(unwrap(state.importProfiles), path.split(/[\\/]/).pop() ?? path)
   }
 
-  /** A row's provider details, read from the core when the row or the
-   * database changes; null until they arrive. */
-  const [detail, setDetail] = createSignal<{ id: number; version: number; detail: CoreResult<"transactionDetail"> } | null>(null)
-  let detailWanted = ""
-  function transactionDetail(id: number) {
-    const version = state.version
-    const have = detail()
-    const want = `${id}@${version}`
-    if (want !== detailWanted && !(have && have.id === id && have.version === version)) {
-      detailWanted = want
-      link.call("transactionDetail", { id }).then((d) => { if (detailWanted === want) setDetail({ id, version, detail: d }) }, () => {})
-    }
-    return have?.id === id ? have.detail : null
-  }
+  /** A row's provider details (the TUI's detail view reads them as a resource). */
+  const transactionDetail = (id: number) => link.call("transactionDetail", { id })
 
   /** What the general model reads to write rules, and the rules declined so far. */
   async function ruleWriterInput(): Promise<{ history: HistoryData; declined: CoreResult<"ruleWriterInput">["declined"] }> {
@@ -621,12 +609,7 @@ export function createClientStore(initialLink: CoreLink) {
     return link.call("applyTagPatch", { ids, patch, how })
   }
 
-  /** Optimistic: the prefs show at once, and the core's copy follows. */
   function saveUiPrefs(patch: Partial<UiPrefs>, { soon = false } = {}): Promise<void> {
-    batch(() => {
-      setState("uiPrefs", reconcile({ ...unwrap(state.uiPrefs), ...patch }))
-      setState({ weekStart: state.uiPrefs.weekStart ?? "monday" })
-    })
     return link.call("saveUiPrefs", { patch, soon })
   }
 
@@ -745,6 +728,7 @@ export function createClientStore(initialLink: CoreLink) {
       setAccountSelection("all")
     },
 
+    smartSearch: (query: string, descriptions: string[]) => link.call("smartSearch", { query, descriptions }),
     askForRules: (llm?: Llm, focus?: string) => link.call("askForRules", { focus }, { llm }),
     makeOfferedRule: (offer: RuleOffer) => link.call("makeOfferedRule", { offer }),
     declineRuleOffer: (offer: RuleOffer) => link.call("declineRuleOffer", { offer }),

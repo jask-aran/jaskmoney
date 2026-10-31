@@ -74,7 +74,7 @@ export function App() {
       if (demo) {
         // toggleDemo's status says what demo mode is.
       } else if (data.state.transactions.length > 0) {
-        ui.setStatus(`${data.state.transactions.length} transactions loaded.${remote ? ` · core at ${remote}` : ""}${servedAt}`)
+        ui.setStatus(`${data.state.transactions.length} transactions loaded.${remote ? " · on a remote core" : ""}${servedAt}`)
       } else {
         ui.setStatus("No transactions yet · Settings → Database & Import → i to import")
       }
@@ -89,15 +89,22 @@ export function App() {
 
   onMount(() => {
     if (remote) {
-      data.connect(wsLink(remote, { onClose: (reason) => ui.setStatus(`Lost the core at ${remote}: ${reason}`, true) }))
-      ui.setStatus(`Connecting to ${remote}…`)
+      let quitting = false
+      const link = wsLink(remote, { onClose: (reason) => { if (!quitting) ui.setStatus(`Lost the core: ${reason}`, true) } })
+      // An open socket would keep the process alive after quitting.
+      onCleanup(() => { quitting = true; link.close() })
+      data.connect(link)
+      ui.setStatus("Connecting to the core…")
       return
     }
     try {
       data.init(process.env.JASKMONEY_DB)
       if (serving != null) {
         const { serveCore, DEFAULT_PORT } = require("../server/serve") as typeof import("../server/serve")
-        servedAt = ` · web app at ${serveCore(data.core, { port: Number(serving) || DEFAULT_PORT }).url}`
+        const served = serveCore(data.core, { port: Number(serving) || DEFAULT_PORT })
+        // A listening server would keep the process alive after quitting.
+        onCleanup(() => served.stop())
+        servedAt = ` · web app at ${served.page}`
       }
     } catch (e) {
       ui.setStatus(`DB error: ${e instanceof Error ? e.message : String(e)}`, true)

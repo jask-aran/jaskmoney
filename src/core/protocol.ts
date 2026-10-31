@@ -20,6 +20,7 @@ import type { TagCandidate } from "../domain/tagSuggest"
 import type { Account, Category, CategorySuggestion, ImportProfile, ImportRecord, Rule, SavedFilter, Tag, Transaction } from "../domain/types"
 import type { CredentialName } from "../ai/credentials"
 import type { LlmProvider } from "../ai/llm"
+import type { JevProvider } from "../ai/jev"
 import type { UiPrefs } from "../state/settingsConfig"
 import type { CoreCommands } from "./core"
 
@@ -55,8 +56,14 @@ export interface CoreState {
   apiKeys: Record<CredentialName, { source: "saved" | "env" | null; mask: string }>
   /** Browser sign-ins to the general model's providers (oauth.json). */
   signedIn: Record<LlmProvider, boolean>
-  /** Jev is set up (a key or a sign-in). */
-  jev: boolean
+  /** How Jev is reached (a key or a sign-in), or null when it isn't set up. */
+  jev: JevProvider | null
+  /** Smart search asks Clairic (Workers AI) for words and dates too. */
+  clairic: boolean
+  /** The general model that writes rules, or null when none is set up. */
+  llm: string | null
+  /** An Up token is set: sync can run. */
+  upToken: boolean
   dbPath: string
   accounts: Account[]
   /** Every provider-synced account, including ones whose sync is off. */
@@ -87,7 +94,7 @@ export function emptyCoreState(): CoreState {
   return {
     ready: false, session: 0, version: 0, upSyncing: false, demo: false, suggesting: false, aiRuleOffers: [], writingRules: false,
     suggestions: {}, merchantNotes: {}, merchantBreadth: {}, categoryChoices: [], purchaseLookups: {},
-    apiKeys: {} as CoreState["apiKeys"], signedIn: { openrouter: false, openai: false }, jev: false, dbPath: "",
+    apiKeys: {} as CoreState["apiKeys"], signedIn: { openrouter: false, openai: false }, jev: null, clairic: false, llm: null, upToken: false, dbPath: "",
     accounts: [], syncAccounts: [], budgets: [], budgetHistory: [],
     budgetCycle: { unit: "month", anchor: "calendar", anchorDate: null, payEarly: false },
     categories: [], tags: [], rules: [], savedFilters: [], icons: true, uiPrefs: {}, weekStart: "monday",
@@ -115,8 +122,19 @@ export type ClientMessage =
   | { t: "call"; id: number; method: string; params: unknown }
   | { t: "cancel"; id: number }
 
-/** Core → client. */
+/** The slices a WebSocket sends by entry: a write changes a few of their
+ * thousands of entries, so only those go (server/serve, client/wsLink). */
+export const KEYED_SLICES = ["suggestions", "merchantNotes", "merchantBreadth", "purchaseLookups"] as const
+
+/** Core → client. A state message's `patch` holds whole slices; `keyed`
+ * the entries of KEYED_SLICES that changed or went; `rows` the
+ * transactions that changed or went, and their order when it changed. */
 export type ServerMessage =
-  | { t: "state"; patch: Partial<CoreState> }
+  | {
+    t: "state"
+    patch: Partial<CoreState>
+    keyed?: Partial<Record<(typeof KEYED_SLICES)[number], { set: Record<string, unknown>; remove: string[] }>>
+    rows?: { set: CoreState["transactions"]; remove: number[]; order?: number[] }
+  }
   | { t: "progress"; id: number; data: unknown }
   | { t: "result"; id: number; value?: unknown; error?: string }

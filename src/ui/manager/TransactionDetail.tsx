@@ -1,4 +1,4 @@
-import { For, Show, createMemo, type JSX } from "solid-js"
+import { For, Show, createMemo, createResource, type JSX } from "solid-js"
 import { categoryMark } from "../icons"
 import { useTerminalDimensions } from "@opentui/solid"
 import { Modal } from "../primitives/Modal"
@@ -28,11 +28,15 @@ const ago = (iso: string) => {
 export function TransactionDetail() {
   const dims = useTerminalDimensions()
   const row = createMemo(() => data.transactions().find((t) => t.id === ui.state.detailId) ?? null)
-  // Re-read provider details whenever the transaction list refreshes.
+  // Provider details from the core: read again for each row and each write.
+  // The last answer shows only while it's still this row's.
+  const [fetched] = createResource(
+    () => (ui.state.detailId == null ? false : { id: ui.state.detailId, version: data.state.version }),
+    ({ id }) => data.transactionDetail(id).catch(() => null),
+  )
   const detail = createMemo(() => {
-    void data.transactions()
-    const id = ui.state.detailId
-    return id == null ? null : data.transactionDetail(id)
+    const d = fetched.latest
+    return d && d.id === ui.state.detailId ? d : null
   })
   // The bought list: a window of BOUGHT_LINES from ui.state.detailBoughtTop.
   const boughtLines = createMemo(() => {

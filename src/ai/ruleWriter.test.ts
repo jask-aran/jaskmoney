@@ -73,13 +73,15 @@ test("the brief: categories with recent choices, what's waiting, existing rules"
   expect(brief.waiting.descriptions[0]).toMatchObject({ description: "J Smith", rows: 1 })
 })
 
-test("R opens the list with a key to ask, and says how offers come without one", () => {
+test("R opens the list with a key to ask, and says how offers come without one", async () => {
   setup()
   ui.switchTab("manager")
   ui.setState({ focusedSection: "mgr.transactions" })
   handleKey(ui, key("r", { shift: true }), data)
   expect(ui.state.ruleOffersOpen).toBe(false)
   testEnv("JASKMONEY_OPENROUTER_TOKEN", "test-key")
+  // The core reads credentials when they're saved or a sign-in changes.
+  await data.refreshApiKeys()
   handleKey(ui, key("r", { shift: true }), data)
   expect(ui.state.ruleOffersOpen).toBe(true)
   expect(ui.state.status).toBe("No rules offered yet · enter asks the AI")

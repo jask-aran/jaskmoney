@@ -1,5 +1,4 @@
 import type { KeyEvent } from "@opentui/core"
-import { hasLlm, llmModelId } from "../ai/llm"
 import { accountRows } from "../domain/accountTree"
 import { fuzzyScore } from "../domain/fuzzy"
 import type { DataStore } from "../state/dataStore"
@@ -97,9 +96,9 @@ function registry(ctx: CommandContext): Entry[] {
     })),
     // Rules
     { id: "rules:offers", category: "Rules", label: offers ? `Rules offered (${offers})…` : "Rules offered…", description: "from repeated categorising",
-      disabled: offers || hasLlm() ? undefined : "none yet", run: inTransactions("R") },
-    { id: "rules:ask-ai", category: "Rules", label: "Ask the AI for rules", description: hasLlm() ? llmModelId() : undefined,
-      disabled: !hasLlm() ? "no model set up" : data.state.writingRules ? "asking now" : undefined,
+      disabled: offers || data.state.llm ? undefined : "none yet", run: inTransactions("R") },
+    { id: "rules:ask-ai", category: "Rules", label: "Ask the AI for rules", description: data.state.llm ?? undefined,
+      disabled: !data.state.llm ? "no model set up" : data.state.writingRules ? "asking now" : undefined,
       run: () => { toTransactions(ui); ui.setState({ ruleOffersOpen: true, ruleOfferCursor: data.allRuleOffers().length }); askForRules(ui, data) } },
     { id: "rules:apply", category: "Rules", label: "Apply all rules", description: "to every transaction", run: () => applyAllRules(ui, data) },
     { id: "rules:dry-run", category: "Rules", label: "Dry-run the rules", description: "what they'd change", run: () => showDryRun(ui, data) },

@@ -58,6 +58,8 @@ test("the pickers' footers say ↑/↓ or ctrl+j/k move", () => {
 test("rule offers: the last row asks the AI (when a model is set up); a no longer does", async () => {
   setup()
   testEnv("JASKMONEY_OPENROUTER_TOKEN", "test-key")
+  // The core reads credentials when they're saved or a sign-in changes.
+  await data.refreshApiKeys()
   handleKey(ui, key("r", { shift: true }), data)
   expect(ui.state.ruleOffersOpen).toBe(true)
   expect(data.allRuleOffers()).toEqual([])
