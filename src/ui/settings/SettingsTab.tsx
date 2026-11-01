@@ -235,7 +235,8 @@ function WebAppPane(props: { width: number }) {
   const time = (at: number) => new Date(at).toLocaleTimeString("en-AU", { hour: "numeric", minute: "2-digit" })
   const row = (label: string, value: string, fg: string, note = "") =>
     <ListRow cursor={false} bg={theme.canvas} spans={[{ text: fit(label, 11), fg: ink.label }, { text: value, fg }, ...(note ? [{ text: `  ${note}`, fg: ink.note }] : [])]} />
-  return <SectionCard title="Web app" height={3 + Math.max(1, server() ? clients().length : 0)} width={props.width}>
+  // Borders (2), the address, then a row per client (or "none connected").
+  return <SectionCard title="Web app" height={3 + (server() ? Math.max(1, clients().length) : 0)} width={props.width}>
     {server() ? row("Address", server()!.page, ink.figure) : row("Address", "not serving · start with --serve", ink.faint)}
     <Show when={server()}>
       <Show when={clients().length} fallback={row("Clients", "none connected", ink.faint)}>

@@ -7,7 +7,12 @@ test("Settings shows the web app's address and each connected client, as the dae
   ui.switchTab("settings")
   const t = await renderApp({ width: 160, height: 48 })
   await t.renderOnce()
-  expect(t.captureCharFrame()).toContain("not serving · start with --serve")
+  const idle = t.captureCharFrame().split("\n")
+  const at = idle.findIndex((line) => line.includes("not serving · start with --serve"))
+  expect(at).toBeGreaterThan(0)
+  // The card is its rows: the border comes straight after the last.
+  // "│  Address": the card's left border is three cells before the label.
+  expect(idle[at + 1]![idle[at]!.indexOf("Address") - 3]).toBe("╰")
   data.setState({
     server: { page: "http://127.0.0.1:4417/", api: "ws://127.0.0.1:4417/api" },
     clients: [
@@ -21,6 +26,11 @@ test("Settings shows the web app's address and each connected client, as the dae
   expect(frame).toContain("http://127.0.0.1:4417/")
   expect(frame).toMatch(/Clients\s+Edge on Windows\s+203\.0\.113\.7 · tunnel · since /)
   expect(frame).toMatch(/jaskmoney TUI\s+127\.0\.0\.1 · since /)
+  const lines = frame.split("\n")
+  const tui = lines.findIndex((line) => line.includes("jaskmoney TUI"))
+  // The label column (11 cells), then the card's "│  ".
+  const edge = lines[tui]!.indexOf("jaskmoney TUI") - 11 - 3
+  expect(lines[tui + 1]![edge]).toBe("╰")
   // The top bar counts browsers; the TUI is listed in Settings only.
   expect(frame).toContain("1 web client")
   data.setState({ server: null, clients: [] })
