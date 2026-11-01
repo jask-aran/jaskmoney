@@ -6,7 +6,8 @@ import { editText, isPrintable } from "../domain/textField"
 import { aiConnection, aiContext } from "../state/aiDialog"
 import type { DataStore } from "../state/dataStore"
 import type { UiStore } from "../state/uiStore"
-import { DEMO_COUNT, nextStep, previousStep, welcomeGo, welcomeRows, welcomeStart, type EmailPhase, type WelcomeAction, type WelcomeContext, type WelcomeState } from "../state/welcome"
+import { DEMO_COUNT, demoWorld, tryFrom, tryKey } from "../state/tour"
+import { nextStep, previousStep, welcomeGo, welcomeRows, welcomeStart, type EmailPhase, type WelcomeAction, type WelcomeContext, type WelcomeState } from "../state/welcome"
 import { openBrowser, startLlmSignIn } from "./llmSignIn"
 import { runSync } from "./sync"
 
@@ -74,7 +75,26 @@ function go(ui: UiStore, step: WelcomeState["step"] | null, data: DataStore): vo
   const state = ui.state.welcome
   if (!state) return
   if (!step) { closeWelcome(ui, data); return }
-  ui.setState("welcome", welcomeGo(state, step))
+  ui.setState("welcome", { ...welcomeGo(state, step), ...(step === "tour" ? { demoAt: performance.now() } : {}) })
+}
+
+/** Go to a step from the rail (a click). */
+export function welcomeJump(ui: UiStore, data: DataStore, step: WelcomeState["step"]): void {
+  const state = ui.state.welcome
+  if (!state || state.busy || state.step === step) return
+  go(ui, step, data)
+}
+
+/** Show demo `demo` from the start of its script. */
+function showDemo(ui: UiStore, demo: number): void {
+  ui.setState("welcome", { demo: Math.max(0, Math.min(DEMO_COUNT - 1, demo)), demoAt: performance.now(), trying: null, cursor: 0 })
+}
+
+/** Freeze the demo where its script has got to, and hand over its keys. */
+function startTry(ui: UiStore, data: DataStore): void {
+  const state = ui.state.welcome
+  if (!state || state.step !== "tour") return
+  ui.setState("welcome", { trying: tryFrom(state.demo, performance.now() - state.demoAt, demoWorld(data.state.categories)), cursor: 0 })
 }
 
 /** Keys while the setup is open (it owns them; a dialog it opened takes them first). */
@@ -85,6 +105,14 @@ export function handleWelcome(ui: UiStore, key: KeyEvent, data?: DataStore): voi
   const rows = welcomeRows(state, welcomeContext(data))
   // The Up screen is for typing the token: printable keys are the token's.
   const typing = rows.some((r) => r.action === "token") && !state.busy
+  // Trying a demo: its keys first; esc (or enter on "Back") gives it back.
+  if (state.step === "tour" && state.trying) {
+    if (name === "escape") { showDemo(ui, state.demo); return }
+    const next = tryKey(state.demo, state.trying, key, demoWorld(data.state.categories))
+    if (next) { ui.setState("welcome", "trying", next); return }
+    if (name === "return" || name === "enter") showDemo(ui, state.demo)
+    return
+  }
   if (name === "escape") {
     if (state.busy && emailFlow) { emailFlow.abort(); return }
     if (state.busy) return
@@ -93,12 +121,12 @@ export function handleWelcome(ui: UiStore, key: KeyEvent, data?: DataStore): voi
     return
   }
   if (state.busy) return
-  // The tour: ← and → between its demos.
+  // The tour: ← and → between its demos; t to try one.
   if (state.step === "tour" && (name === "left" || name === "right" || name === "h" || name === "l")) {
-    const demo = Math.max(0, Math.min(DEMO_COUNT - 1, state.demo + (name === "left" || name === "h" ? -1 : 1)))
-    ui.setState("welcome", { demo, cursor: 0 })
+    showDemo(ui, state.demo + (name === "left" || name === "h" ? -1 : 1))
     return
   }
+  if (state.step === "tour" && name === "t") { startTry(ui, data); return }
   if (name === "up" || (!typing && name === "k") || (key.shift && name === "tab")) { ui.setState("welcome", { cursor: Math.max(0, state.cursor - 1) }); return }
   if (name === "down" || (!typing && name === "j") || name === "tab") { ui.setState("welcome", { cursor: Math.min(rows.length - 1, state.cursor + 1) }); return }
   if (name === "return" || name === "enter") {
@@ -127,7 +155,9 @@ export function welcomeAct(ui: UiStore, data: DataStore, action: WelcomeAction):
   switch (action) {
     case "tour": go(ui, "tour", data); return
     case "start": go(ui, "up", data); return
-    case "demoNext": ui.setState("welcome", { demo: Math.min(DEMO_COUNT - 1, state.demo + 1), cursor: 0 }); return
+    case "demoNext": showDemo(ui, state.demo + 1); return
+    case "try": startTry(ui, data); return
+    case "stopTry": showDemo(ui, state.demo); return
     case "skipAll": case "finish": closeWelcome(ui, data); return
     case "next": go(ui, nextStep(state.step), data); return
     case "openUp":

@@ -4,9 +4,9 @@ import { ui } from "../../state/uiStore"
 import { data } from "../../state/dataStore"
 import { ink, theme, tone } from "../../theme"
 import { wrapText } from "../../state/textLayout"
-import { STEP_NAMES, WELCOME_STEPS, emailChecklist, stepMark, tokenShown, welcomeGo, welcomeRows, type ItemState, type WelcomeRow, type WelcomeState } from "../../state/welcome"
+import { STEP_NAMES, WELCOME_STEPS, emailChecklist, stepMark, tokenShown, welcomeRows, type ItemState, type WelcomeRow, type WelcomeState } from "../../state/welcome"
 import { AI_USES_TEXT, EMAIL_USES, UP_USES, type IntegrationUse } from "../../state/integrationUses"
-import { welcomeAct, welcomeContext } from "../../app/welcome"
+import { welcomeAct, welcomeContext, welcomeJump } from "../../app/welcome"
 import { onPointer } from "../../app/pointer"
 import { StyledLine, type StyledSpan } from "../primitives/StyledLine"
 import { DEMOS, DemoReel } from "./Demos"
@@ -297,7 +297,7 @@ function WelcomeScreen() {
         let x = event.x - Math.floor((dims().width - railWidth()) / 2)
         for (const [i, step] of WELCOME_STEPS.entries()) {
           const w = (i > 0 ? 7 : 0) + 2 + STEP_NAMES[step].length
-          if (x < w) { if (step !== state().step && !state().busy) ui.setState("welcome", welcomeGo(state(), step)); return }
+          if (x < w) { welcomeJump(ui, data, step); return }
           x -= w
         }
       })}>
@@ -314,7 +314,7 @@ function WelcomeScreen() {
       </box>
       <Show when={tour()}>
         <box height={1} />
-        <DemoReel scene={state().demo} width={reelWidth()} height={reelHeight()} />
+        <DemoReel scene={state().demo} startedAt={state().demoAt} trying={state().trying} width={reelWidth()} height={reelHeight()} />
       </Show>
     </box>
   )

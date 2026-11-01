@@ -208,7 +208,7 @@ test("the tour: after the welcome, ← → between the demos, enter to the next,
   expect(ui.state.welcome?.demo).toBe(1)
   press("return", "return")
   expect(ui.state.welcome?.demo).toBe(3)
-  expect(welcomeRows(ui.state.welcome!, none).map((r) => r.label)).toEqual(["Connect Up Bank", "Skip setup, open the app"])
+  expect(welcomeRows(ui.state.welcome!, none).map((r) => r.label)).toEqual(["Connect Up Bank", "Try it yourself", "Skip setup, open the app"])
   press("right")
   expect(ui.state.welcome?.demo).toBe(3)
   press("return")
