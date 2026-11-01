@@ -13,7 +13,7 @@ import { ListRow } from "../primitives/ListRow"
 import { S } from "../primitives/S"
 import { fit } from "../text"
 
-const TONE: Record<HelpTone, string> = { head: ink.label, key: tone.key, text: ink.note, muted: ink.note }
+const TONE: Record<HelpTone, string> = { get head() { return ink.label }, get key() { return tone.key }, get text() { return ink.note }, get muted() { return ink.note } }
 
 /** The model answering a query now, as the dialogs name it. */
 function queryModel(id: QueryId, ctx: AiContext): string {

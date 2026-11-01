@@ -1,69 +1,85 @@
+import { createSignal } from "solid-js"
+import { DEFAULT_THEME, THEMES, type BasePalette, type ThemeDef } from "./themes"
+
 /**
- * Catppuccin Mocha — parity with Go `theme.go` / `render.go`. Text and
- * accents take their colours through `ink` and `tone` below (Go's aliases:
- * accent=brand=pink is tone.key, focus=lavender tone.focus, success,
- * error, warning tone.good, bad, caution). The table's warm greys
- * (brightText, mutedText, dimText) went in 2026-10-30: one set of greys.
+ * The palette, in Catppuccin's slots (themes.ts holds each theme's).
+ * Text and accents take their colours through `ink` and `tone` below
+ * (Go's aliases: accent=brand=pink is tone.key, focus=lavender tone.focus,
+ * success, error, warning tone.good, bad, caution). `theme`, `ink` and
+ * `tone` are changed in place when the theme changes (applyTheme), and the
+ * app redraws from them: read them when drawing, never copy them into a
+ * module constant (whenThemeChanges re-derives one that must be).
  */
-export const theme = {
-  // Palette
-  rosewater: "#f5e0dc",
-  flamingo: "#f2cdcd",
-  pink: "#f5c2e7",
-  mauve: "#cba6f7",
-  red: "#f38ba8",
-  maroon: "#eba0ac",
-  peach: "#fab387",
-  yellow: "#f9e2af",
-  green: "#a6e3a1",
-  teal: "#94e2d5",
-  sky: "#89dceb",
-  sapphire: "#74c7ec",
-  blue: "#89b4fa",
-  lavender: "#b4befe",
-
-  text: "#cdd6f4",
-  subtext1: "#bac2de",
-  subtext0: "#a6adc8",
-  overlay2: "#9399b2",
-  overlay1: "#7f849c",
-  overlay0: "#6c7086",
-  surface2: "#585b70",
-  surface1: "#45475a",
-  surface0: "#313244",
-  base: "#1e1e2e",
-  mantle: "#181825",
-  crust: "#11111b",
-
-  // Legacy leaves the terminal background exposed; use its darker equivalent
-  // for the OpenTUI canvas rather than filling every empty cell with base.
-  canvas: "#11111b",
-
-  // Chart rules: today's rule a vivid green, the budget pace line a muted
-  // yellow, so the two never read alike.
-  chartToday: "#66d690",
-  chartBudget: "#a8996b",
-
+export interface Palette {
+  rosewater: string; flamingo: string; pink: string; mauve: string; red: string; maroon: string; peach: string
+  yellow: string; green: string; teal: string; sky: string; sapphire: string; blue: string; lavender: string
+  text: string; subtext1: string; subtext0: string; overlay2: string; overlay1: string; overlay0: string
+  surface2: string; surface1: string; surface0: string; base: string; mantle: string; crust: string
+  /** The OpenTUI canvas: every pane's background (crust on a dark theme). */
+  canvas: string
+  /** Chart rules: today's rule and the budget's pace line, never alike. */
+  chartToday: string
+  chartBudget: string
   // Row states, every list (domain/rowStyle): the Transactions table's
   // washes. Cursor, selection and range are independent; a cursor on a
   // selected or ranged row is a bright bar with dark text.
   /** The cursor row (bold). */
-  rowCursor: "#585b70", // surface2
+  rowCursor: string
   /** A selected row. */
-  rowSelected: "#313244", // surface0
+  rowSelected: string
   /** A row in the range being marked. */
-  rowRange: "#1e1e2e", // base
+  rowRange: string
   /** Selected and in the range. */
-  rowSelectedRange: "#45475a", // surface1
+  rowSelectedRange: string
   /** The cursor on a selected row. */
-  rowCursorSelected: "#89b4fa", // blue
+  rowCursorSelected: string
   /** The cursor on a row in the range. */
-  rowCursorRange: "#74c7ec", // sapphire
+  rowCursorRange: string
   /** The cursor on a selected row in the range. */
-  rowCursorSelectedRange: "#f5c2e7", // pink
+  rowCursorSelectedRange: string
   /** Text on the bright cursor bars. */
-  rowCursorText: "#11111b", // crust
-} as const
+  rowCursorText: string
+  /** ink.strong, ink.figure and ink.heading (see ink). */
+  strong: string
+  figure: string
+  heading: string
+}
+
+/** `a` taken `share` (0–1) of the way to `b` (#rrggbb). */
+export function mix(a: string, b: string, share: number): string {
+  if (share >= 1) return b
+  if (share <= 0) return a
+  const rgb = (hex: string) => [1, 3, 5].map((i) => parseInt(hex.slice(i, i + 2), 16))
+  const [from, to] = [rgb(a), rgb(b)]
+  return `#${from.map((c, i) => Math.round(c + (to[i]! - c) * share).toString(16).padStart(2, "0")).join("")}`
+}
+
+/** A theme's full palette: its own colours, the rest derived from them. */
+export function paletteOf(def: Pick<ThemeDef, "colors">): Palette {
+  const c: BasePalette = def.colors
+  const canvas = c.canvas ?? c.crust
+  return {
+    canvas,
+    chartToday: c.green,
+    chartBudget: mix(c.yellow, canvas, 0.35),
+    rowCursor: c.surface2,
+    rowSelected: c.surface0,
+    rowRange: c.base,
+    rowSelectedRange: c.surface1,
+    rowCursorSelected: c.blue,
+    rowCursorRange: c.sapphire,
+    rowCursorSelectedRange: c.pink,
+    rowCursorText: c.crust,
+    strong: "#ffffff",
+    figure: mix(c.text, "#ffffff", 0.4),
+    heading: mix(c.pink, canvas, 0.2),
+    ...c,
+  }
+}
+
+const themeById = (id: string | undefined): ThemeDef => THEMES.find((t) => t.id === id) ?? THEMES.find((t) => t.id === DEFAULT_THEME)!
+
+export const theme: Palette = paletteOf(themeById(DEFAULT_THEME))
 
 /**
  * Text, by role. Every word on screen takes its colour from what it is,
@@ -89,15 +105,16 @@ export const theme = {
  * chart's series) or one of the tones below. The table's cursor bars set
  * their own text colour (rowCursorText).
  */
-export const ink = {
-  strong: "#ffffff",
-  figure: "#e6e6e6",
-  heading: "#c79fbe",
-  label: theme.subtext0,
-  note: theme.overlay1,
-  faint: theme.overlay0,
-  rule: theme.surface2,
-} as const
+const inkOf = (p: Palette) => ({
+  strong: p.strong,
+  figure: p.figure,
+  heading: p.heading,
+  label: p.subtext0,
+  note: p.overlay1,
+  faint: p.overlay0,
+  rule: p.surface2,
+})
+export const ink: ReturnType<typeof inkOf> = inkOf(theme)
 
 /**
  * Accents, one meaning each.
@@ -114,18 +131,46 @@ export const ink = {
  * - scope: peach. What the view is narrowed to: the date range, a search
  *   in effect.
  */
-export const tone = {
-  good: theme.green,
-  bad: theme.red,
-  caution: theme.yellow,
-  ai: theme.teal,
-  key: theme.pink,
-  focus: theme.lavender,
-  scope: theme.peach,
-} as const
+const toneOf = (p: Palette) => ({
+  good: p.green,
+  bad: p.red,
+  caution: p.yellow,
+  ai: p.teal,
+  key: p.pink,
+  focus: p.lavender,
+  scope: p.peach,
+})
+export const tone: ReturnType<typeof toneOf> = toneOf(theme)
 
 /** Uncategorised / muted category label (Go overlay1). */
-export const uncategorisedColor = theme.overlay1
+export let uncategorisedColor = theme.overlay1
+
+/** The theme shown (its id), and a count that changes with it: App's view
+ * tree remounts on it, so everything redraws in the new colours. */
+export let themeId = DEFAULT_THEME
+const [themeVersion, setThemeVersion] = createSignal(0)
+export { themeVersion }
+
+const listeners: Array<() => void> = []
+/** Run `derive` now and whenever the theme changes: for a module constant
+ * made from theme colours (a lookup table read on every row). */
+export function whenThemeChanges(derive: () => void): void {
+  derive()
+  listeners.push(derive)
+}
+
+/** Show theme `id` (themes.ts; an unknown one is the default). */
+export function applyTheme(id: string | undefined): void {
+  const def = themeById(id)
+  if (def.id === themeId) return
+  themeId = def.id
+  Object.assign(theme, paletteOf(def))
+  Object.assign(ink, inkOf(theme))
+  Object.assign(tone, toneOf(theme))
+  uncategorisedColor = theme.overlay1
+  for (const derive of listeners) derive()
+  setThemeVersion((v) => v + 1)
+}
 
 /** The colour stored for the Uncategorised category. */
 const UNCATEGORISED_STORED = "#7f849c"
@@ -137,10 +182,7 @@ export function isUncategorisedColor(color: string | null | undefined): boolean 
 
 /** `color` taken `share` of the way to the canvas (#rrggbb only; others as they are). */
 export function fade(color: string, share: number): string {
-  const rgb = (hex: string) => [1, 3, 5].map((i) => parseInt(hex.slice(i, i + 2), 16))
-  if (!/^#[0-9a-f]{6}$/i.test(color)) return color
-  const [from, to] = [rgb(color), rgb(theme.canvas)]
-  return `#${from.map((c, i) => Math.round(c + (to[i]! - c) * share).toString(16).padStart(2, "0")).join("")}`
+  return /^#[0-9a-f]{6}$/i.test(color) ? mix(color, theme.canvas, share) : color
 }
 
 /** A category's display colour: its own, or the muted uncategorised colour. */

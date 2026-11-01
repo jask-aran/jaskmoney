@@ -2,16 +2,20 @@ import { For, Index, Show, createMemo } from "solid-js"
 import type { CalendarDay } from "../../domain/spending"
 import { MONTHS } from "../../domain/days"
 import { data } from "../../state/dataStore"
-import { ink, theme } from "../../theme"
+import { fade, ink, theme, whenThemeChanges } from "../../theme"
 import { muted, type Span } from "../primitives/spans"
 import { S } from "../primitives/S"
 import { shortMoney } from "../text"
 
 /** Day colours by spending level (0 = none): one purple, darker to
  * brighter for more, up to the palette's mauve. Data colours. */
-export const LEVEL_BG = [theme.surface0, "#3f3459", "#5f4888", "#8d68bd", "#cba6f7"] as const
+export const LEVEL_BG: string[] = []
 /** Days still to come in the range: the grid's extent, barely there. */
-const FUTURE_BG = theme.base
+let FUTURE_BG = ""
+whenThemeChanges(() => {
+  LEVEL_BG.splice(0, LEVEL_BG.length, theme.surface0, fade(theme.mauve, 0.75), fade(theme.mauve, 0.55), fade(theme.mauve, 0.3), theme.mauve)
+  FUTURE_BG = theme.base
+})
 
 const WEEKDAYS = () => (data.state.weekStart === "sunday" ? ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"] : ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"])
 /** The weekday names' column. */

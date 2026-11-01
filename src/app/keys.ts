@@ -1,11 +1,13 @@
 import { APPEARANCE_ROWS } from "../state/appearanceRows"
+import { THEMES } from "../themes"
+import { applyTheme } from "../theme"
 import { triable, tryHints } from "../state/tour"
 import { travel } from "./paneTravel"
 import { web } from "./webApp"
 import { unwrap } from "solid-js/store"
 import { merchantKey } from "../domain/history"
 import { footerShown, scopeLabel, type Hint } from "./palette"
-import { changeAccountScope, toTransactions, toggleDemo, applyAllRules, applySavedFilter, clearTransactionFilter, askForRules, reportError, settleData, resetTransactionCursors, runUndo, showAccount, showDryRun, toggleIcons, toggleWeekStart, toggleXAxis, toggleChartMotion, cycleChartSpeed, toggleChartLabels, cycleOpenRange, cycleBackdrop } from "./actions"
+import { changeAccountScope, toTransactions, toggleDemo, applyAllRules, applySavedFilter, clearTransactionFilter, askForRules, reportError, settleData, resetTransactionCursors, runUndo, showAccount, showDryRun, toggleIcons, toggleWeekStart, toggleXAxis, openThemePicker, keepTheme, toggleChartMotion, cycleChartSpeed, toggleChartLabels, cycleOpenRange, cycleBackdrop } from "./actions"
 import { commands, rankCommands, type Command } from "./commands"
 import { ACCOUNT_ACTIONS, armedText, isArmed, isSecondPress, type Armed } from "../state/armed"
 import { DATABASE_ROWS } from "../state/databaseRows"
@@ -305,6 +307,19 @@ function handleFilterPicker(ui: UiStore, key: KeyEvent, data?: DataStore): void 
       }
     },
   })
+}
+
+/** The theme picker: moving shows the theme at the cursor; enter keeps it;
+ * esc closes, and App puts the saved theme back. */
+function handleThemePicker(ui: UiStore, key: KeyEvent, data?: DataStore): void {
+  const picker = ui.state.themePicker
+  if (!picker) return
+  if (key.name === "escape") { ui.setState({ themePicker: null }); return }
+  if (key.name === "return" || key.name === "enter") { if (data) keepTheme(ui, data, THEMES[picker.cursor]!.id); return }
+  const moved = listMove(key, picker.cursor, THEMES.length) ?? (key.ctrl && key.name === "j" ? Math.min(THEMES.length - 1, picker.cursor + 1) : key.ctrl && key.name === "k" ? Math.max(0, picker.cursor - 1) : null)
+  if (moved == null || moved === picker.cursor) return
+  ui.setState({ themePicker: { cursor: moved } })
+  applyTheme(THEMES[moved]!.id)
 }
 
 function handleDryRun(ui: UiStore, key: KeyEvent, data?: DataStore): void {
@@ -1382,6 +1397,7 @@ function handleSettingsAppearance(ui: UiStore, key: KeyEvent, data?: DataStore):
   if (moved != null) { ui.setState({ appearanceCursor: moved }); return }
   if (name !== "return" && name !== "enter") return
   switch (APPEARANCE_ROWS[ui.state.appearanceCursor]) {
+    case "theme": if (data) openThemePicker(ui, data); return
     case "icons": if (data) toggleIcons(ui, data); return
     case "xAxis": if (data) toggleXAxis(ui, data); return
     case "chartMotion": if (data) toggleChartMotion(ui, data); return
@@ -2036,6 +2052,11 @@ const scopes: Record<ScopeId, ScopeEntry> = {
     handle: handleFilterPicker,
     list: false,
     hints: () => [{ key: "↑↓ ^j/k", desc: "move" }, { key: "enter", desc: "apply" }, { key: "esc", desc: "close" }, { key: "type", desc: "filter" }],
+  },
+  "themePicker": {
+    handle: handleThemePicker,
+    list: false,
+    hints: () => [{ key: "↑↓ j/k", desc: "preview" }, { key: "enter", desc: "keep" }, { key: "esc", desc: "put back" }],
   },
   "dryRun": {
     handle: handleDryRun,

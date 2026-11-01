@@ -1,4 +1,4 @@
-import { theme } from "../../theme"
+import { theme, whenThemeChanges } from "../../theme"
 
 /**
  * Colours for savers' chart lines, from the emoji Up puts at the start of
@@ -9,11 +9,10 @@ import { theme } from "../../theme"
 
 /** The accents a line may take, round the colour wheel. Rosewater,
  * flamingo and maroon are left out: each sits too near pink or red. */
-const LINE_COLOURS = {
-  red: theme.red, peach: theme.peach, yellow: theme.yellow, green: theme.green, teal: theme.teal,
-  sky: theme.sky, sapphire: theme.sapphire, blue: theme.blue, lavender: theme.lavender, mauve: theme.mauve, pink: theme.pink,
-} as const
-type LineColour = keyof typeof LINE_COLOURS
+const LINE_NAMES = ["red", "peach", "yellow", "green", "teal", "sky", "sapphire", "blue", "lavender", "mauve", "pink"] as const
+type LineColour = (typeof LINE_NAMES)[number]
+const LINE_COLOURS = {} as Record<LineColour, string>
+whenThemeChanges(() => { for (const name of LINE_NAMES) LINE_COLOURS[name] = theme[name] })
 
 /** What colour each emoji mostly is. */
 const EMOJI: Record<LineColour, string> = {

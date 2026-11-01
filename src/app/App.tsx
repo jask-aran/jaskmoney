@@ -1,4 +1,5 @@
 import { web, webLabel } from "./webApp"
+import { ThemePicker } from "../ui/settings/ThemePicker"
 import { paintWith } from "./afterPaint"
 import { openWelcome, restingStatus, shouldWelcome } from "./welcome"
 import { welcomeStatus } from "../state/welcome"
@@ -31,7 +32,7 @@ import { ManagerTab } from "../ui/manager/ManagerTab"
 import { SavedFilterPicker } from "../ui/manager/SavedFilterPicker"
 import { SettingsTab, EditorOverlay, DryRunOverlay, AiDialog, UpAccountsDialog } from "../ui/settings/SettingsTab"
 import { ExecutorDialog } from "../ui/settings/ExecutorDialog"
-import { theme, ink, tone } from "../theme"
+import { applyTheme, theme, themeVersion, ink, tone } from "../theme"
 import { selectionLabel } from "../domain/accountTree"
 import { SYNC_INTERVAL_MS, runSync, syncAgo } from "./sync"
 import { activeChipIndex } from "../domain/timeframe"
@@ -107,6 +108,8 @@ export function App() {
       traceMark("init start")
       data.init(process.env.JASKMONEY_DB)
       traceMark("database loaded")
+      // Before the first draw, so a chosen theme never flashes the default.
+      applyTheme(data.state.uiPrefs.theme)
       if (serving != null) {
         const { serveCore, DEFAULT_PORT } = require("../server/serve") as typeof import("../server/serve")
         // The core then broadcasts where it serves and who is connected.
@@ -177,7 +180,18 @@ export function App() {
     return ui.state.activeTab === "manager" ? selectionLabel(data.state.accounts, data.state.accountSelection) : ""
   }
 
+  // A theme change (Settings › Appearance › Theme) redraws everything: the
+  // view tree remounts on it, reading the new colours. State lives in the
+  // stores, so the tabs come back as they were.
+  createEffect(on(() => data.state.uiPrefs.theme, (id) => applyTheme(id), { defer: true }))
+  // The theme picker shows the theme at its cursor; closed (esc, a tab
+  // switch) without keeping one, the saved theme comes back.
+  createEffect(on(() => ui.state.themePicker == null, (closed) => { if (closed) applyTheme(data.state.uiPrefs.theme) }, { defer: true }))
+
   return (
+    // The child takes the version: Show calls a child function with its
+    // value (remounting on each new one) only when it declares a parameter.
+    <Show when={String(themeVersion())} keyed>{(_version: string) => (
     <box width="100%" height="100%" flexDirection="column" backgroundColor={theme.canvas}>
       {/* The Up mark sits in the Overview's top-right corner, over the tab
           bar, the gap and the Date Range, which end short of it. */}
@@ -226,6 +240,7 @@ export function App() {
       <TagPicker />
       <EditorOverlay />
       <SavedFilterPicker />
+      <ThemePicker />
       <DryRunOverlay />
       <Welcome />
       <Show when={ui.state.palette}>
@@ -234,6 +249,7 @@ export function App() {
         )}
       </Show>
     </box>
+    )}</Show>
   )
 }
 

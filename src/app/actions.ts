@@ -1,4 +1,6 @@
 import { nextOpenRange, OPEN_RANGE_LABELS } from "../domain/timeframe"
+import { DEFAULT_THEME, THEMES } from "../themes"
+import { themeName } from "../state/appearanceRows"
 import { BACKDROPS, DEFAULT_BACKDROP } from "../ui/welcome/backdrop"
 import { CHART_LABEL_LABELS, DEFAULT_CHART_LABELS, DEFAULT_CHART_MOTION, nextChartSpeed } from "../ui/charts/motion"
 import { runAsk } from "./ask"
@@ -65,6 +67,20 @@ export function toggleDemo(ui: UiStore, data: DataStore): Promise<void> {
   })()
   settleData(ui, done)
   return done.catch(() => {})
+}
+
+/** Open the theme picker on the theme in use (Settings › Appearance › Theme, the palette). */
+export function openThemePicker(ui: UiStore, data: DataStore): void {
+  ui.setState({ themePicker: { cursor: Math.max(0, THEMES.findIndex((t) => t.id === (data.state.uiPrefs.theme ?? DEFAULT_THEME))) } })
+}
+
+/** Keep theme `id`: saved, then the picker closes (closing it otherwise
+ * puts the saved theme back: App). */
+export function keepTheme(ui: UiStore, data: DataStore, id: string): void {
+  settleData(ui, data.saveUiPrefs({ theme: id }), () => {
+    ui.setState({ themePicker: null })
+    ui.setStatus(`Theme: ${themeName(id)}`)
+  })
 }
 
 export function toggleXAxis(ui: UiStore, data: DataStore): void {

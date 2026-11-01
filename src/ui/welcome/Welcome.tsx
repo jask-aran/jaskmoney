@@ -2,7 +2,7 @@ import { useTerminalDimensions } from "@opentui/solid"
 import { Index, Show, on, createEffect, createMemo, createSignal, onCleanup, untrack } from "solid-js"
 import { ui } from "../../state/uiStore"
 import { data } from "../../state/dataStore"
-import { ink, theme, tone } from "../../theme"
+import { ink, mix, theme, tone, whenThemeChanges } from "../../theme"
 import { wrapText } from "../../state/textLayout"
 import { STEP_NAMES, WELCOME_STEPS, emailChecklist, stepMark, tokenShown, welcomeBackdrop, welcomeRows, type ItemState, type WelcomeRow, type WelcomeState } from "../../state/welcome"
 import { AI_USES_TEXT, EMAIL_USES, UP_USES, type IntegrationUse } from "../../state/integrationUses"
@@ -38,24 +38,16 @@ const LETTERS: Record<string, [string, string]> = {
 }
 const TITLE: [string, string] = [0, 1].map((r) => [..."JASKMONEY"].map((c) => LETTERS[c]![r]).join(" ")) as [string, string]
 
-const hex = (c: string) => [1, 3, 5].map((i) => parseInt(c.slice(i, i + 2), 16))
-/** `a` → `b` by `t` (0–1). */
-function mix(a: string, b: string, t: number): string {
-  if (t >= 1) return b
-  if (t <= 0) return a
-  const [x, y] = [hex(a), hex(b)]
-  return `#${x.map((v, i) => Math.round(v + (y[i]! - v) * t).toString(16).padStart(2, "0")).join("")}`
-}
-
 /** The backdrop's colours, faint over the canvas: its levels mixed once,
  * not per cell per frame. */
-const BACKDROP_LEVEL_INK = Array.from({ length: BACKDROP_LEVELS }, (_, level) =>
-  mix(theme.canvas, level >= BACKDROP_LEVELS - 1 ? tone.key : tone.focus, 0.06 + (level / (BACKDROP_LEVELS - 1)) * 0.38))
-export const BACKDROP_INK: BackdropInk = {
-  level: (level) => BACKDROP_LEVEL_INK[level]!,
-  up: mix(theme.canvas, tone.good, 0.4),
-  down: mix(theme.canvas, tone.bad, 0.4),
-}
+const BACKDROP_LEVEL_INK: string[] = []
+export const BACKDROP_INK: BackdropInk = { level: (level) => BACKDROP_LEVEL_INK[level]!, up: "", down: "" }
+whenThemeChanges(() => {
+  BACKDROP_LEVEL_INK.splice(0, BACKDROP_LEVEL_INK.length, ...Array.from({ length: BACKDROP_LEVELS }, (_, level) =>
+    mix(theme.canvas, level >= BACKDROP_LEVELS - 1 ? tone.key : tone.focus, 0.06 + (level / (BACKDROP_LEVELS - 1)) * 0.38)))
+  BACKDROP_INK.up = mix(theme.canvas, tone.good, 0.4)
+  BACKDROP_INK.down = mix(theme.canvas, tone.bad, 0.4)
+})
 
 type Line = { spans: StyledSpan[]; row?: number }
 const blank: Line = { spans: [] }

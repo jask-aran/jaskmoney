@@ -1,4 +1,4 @@
-import { theme } from "../theme"
+import { theme, whenThemeChanges } from "../theme"
 
 export interface RowAppearance {
   /** Row background; null = the table canvas. */
@@ -24,7 +24,8 @@ export function rowAppearance(selected: boolean, highlighted: boolean, isCursor:
 
 /** One shared object per state, so a row whose state didn't change gets the
  * same appearance back and redraws nothing. Index: cursor·4 + selected·2 + range. */
-const LOOKS: readonly RowAppearance[] = [
+const LOOKS: RowAppearance[] = []
+whenThemeChanges(() => LOOKS.splice(0, LOOKS.length,
   { bg: null, fg: null, bold: false },
   { bg: theme.rowRange, fg: null, bold: false },
   { bg: theme.rowSelected, fg: null, bold: false },
@@ -33,4 +34,4 @@ const LOOKS: readonly RowAppearance[] = [
   { bg: theme.rowCursorRange, fg: theme.rowCursorText, bold: true },
   { bg: theme.rowCursorSelected, fg: theme.rowCursorText, bold: true },
   { bg: theme.rowCursorSelectedRange, fg: theme.rowCursorText, bold: true },
-]
+))

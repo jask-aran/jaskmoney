@@ -15,7 +15,7 @@ import { BACKDROPS, DEFAULT_BACKDROP } from "../ui/welcome/backdrop"
 import { handleKey, paletteList } from "./keys"
 
 // Approved port deviation: Appearance owns display rows; Database keeps week start.
-test("Appearance shows seven rows and values without clipping at each settings layout", async () => {
+test("Appearance shows eight rows and values without clipping at each settings layout", async () => {
   data.init(":memory:")
   for (const width of [140, 96, 70]) {
     ui.switchTab("settings")
@@ -28,7 +28,7 @@ test("Appearance shows seven rows and values without clipping at each settings l
       await t.flush()
       const frame = t.captureCharFrame()
       const expected = [
-        ["Category icons", "on (Nerd Font)"], ["Charts' $0 line", "off"],
+        ["Theme", "Jaskmoney"], ["Category icons", "on (Nerd Font)"], ["Charts' $0 line", "off"],
         ["Chart animation", "first launch"], ["Animation speed", "quick"],
         ["Chart labels", "together"], ["Range on open", "1M"], ["Welcome backdrop", "ticker tape"],
       ]
@@ -39,7 +39,7 @@ test("Appearance shows seven rows and values without clipping at each settings l
       expect(positions).toEqual([...positions].sort((a, b) => a - b))
       if (width === 140) expect(frame.indexOf("Appearance")).toBeLessThan(frame.indexOf("Database & Import"))
       const spans = () => t.captureSpans().lines.flatMap((line) => line.spans)
-      const label = () => spans().find((span) => span.text.includes("Category icons"))!
+      const label = () => spans().find((span) => span.text.startsWith("Theme "))!
       expect(label().fg.toInts()).toEqual(RGBA.fromHex(ink.label).toInts())
       expect(label().bg.toInts()).toEqual(RGBA.fromHex(theme.rowCursor).toInts())
       expect(label().attributes & TextAttributes.BOLD).toBe(TextAttributes.BOLD)
@@ -48,7 +48,7 @@ test("Appearance shows seven rows and values without clipping at each settings l
       expect(ui.state.appearanceCursor).toBe(1)
       expect(label().bg.toInts()).toEqual(RGBA.fromHex(theme.canvas).toInts())
       expect(label().attributes & TextAttributes.BOLD).toBe(0)
-      const value = spans().find((span) => span.text.includes("on (Nerd Font)"))!
+      const value = spans().filter((span) => span.text.includes("Jaskmoney")).at(-1)!
       expect(value.fg.toInts()).toEqual(RGBA.fromHex(ink.figure).toInts())
       t.mockInput.pressEscape()
       await Bun.sleep(100)
@@ -294,9 +294,9 @@ test("Settings panes and cursor rows stay inside the viewport at 140x44 and 100x
         parent.scrollBy(appearance.y - (height - 4))
         await t.renderOnce()
         const partial = t.captureCharFrame().split("\n")
-        const firstRow = partial.findIndex((line) => line.includes("Category icons"))
+        const firstRow = partial.findIndex((line) => line.includes("Theme") && line.includes("Jaskmoney"))
         expect(firstRow).toBe(height - 3)
-        await t.mockMouse.click(partial[firstRow]!.indexOf("Category icons"), firstRow)
+        await t.mockMouse.click(partial[firstRow]!.indexOf("Theme"), firstRow)
         await t.renderOnce()
         expect(ui.state.appearanceCursor).toBe(0)
       }

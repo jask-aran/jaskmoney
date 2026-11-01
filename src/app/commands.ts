@@ -8,7 +8,7 @@ import type { DataStore } from "../state/dataStore"
 import { DATABASE_ROWS } from "../state/databaseRows"
 import { CHART_LABEL_LABELS, DEFAULT_CHART_LABELS, CHART_MOTION_LABELS, DEFAULT_CHART_MOTION, nextChartSpeed } from "../ui/charts/motion"
 import { SETTINGS_SECTION_LABELS, SETTINGS_SECTIONS, TABS, type ScopeId, type UiState, type UiStore } from "../state/uiStore"
-import { applyAllRules, applySavedFilter, clearTransactionFilter, askForRules, runUndo, showAccount, showDryRun, toggleIcons, toggleWeekStart, toggleXAxis, toggleChartMotion, cycleChartSpeed, toggleChartLabels, cycleOpenRange, cycleBackdrop, toTransactions } from "./actions"
+import { applyAllRules, applySavedFilter, clearTransactionFilter, askForRules, runUndo, showAccount, showDryRun, toggleIcons, toggleWeekStart, toggleXAxis, openThemePicker, toggleChartMotion, cycleChartSpeed, toggleChartLabels, cycleOpenRange, cycleBackdrop, toTransactions } from "./actions"
 import { AI_ROWS, aiRowLabel, isLlmRow } from "./apiKeys"
 import { keyEvent } from "./keyEvent"
 import { hintEvent, scopeLabel, type Hint } from "./palette"
@@ -124,6 +124,7 @@ function registry(ctx: CommandContext): Entry[] {
       run: inSettings("ai", "enter", () => ui.setState({ aiCursor: i })),
     })),
     // Display
+    { id: "display:theme", category: "Display", label: "Theme…", description: "preview and pick a colour theme", run: () => openThemePicker(ui, data) },
     { id: "display:icons", category: "Display", label: `Category icons ${data.state.icons ? "off" : "on"}`, run: () => toggleIcons(ui, data) },
     { id: "display:week", category: "Display", label: `Weeks start ${data.state.weekStart === "monday" ? "Sunday" : "Monday"}`, run: () => toggleWeekStart(ui, data) },
     { id: "display:x-axis", category: "Display", label: `Charts' $0 line ${data.state.uiPrefs.xAxis ? "off" : "on"}`, run: () => toggleXAxis(ui, data) },

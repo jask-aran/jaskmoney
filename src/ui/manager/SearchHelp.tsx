@@ -6,7 +6,7 @@ import { ink, tone } from "../../theme"
 import { Modal } from "../primitives/Modal"
 import { S } from "../primitives/S"
 
-const TONE: Record<HelpTone, string> = { head: ink.heading, key: tone.key, text: ink.note, muted: ink.note }
+const TONE: Record<HelpTone, string> = { get head() { return ink.heading }, get key() { return tone.key }, get text() { return ink.note }, get muted() { return ink.note } }
 
 /** F1 in the search bar: JQL, brief (the language in a sentence, an
  * example, the terms, precedence, gotchas) or full (m: what the rule

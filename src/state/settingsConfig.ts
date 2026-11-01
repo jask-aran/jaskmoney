@@ -1,4 +1,5 @@
 import { jaskmoneyHome } from "../storage/home"
+import { THEMES } from "../themes"
 import { existsSync, readFileSync } from "node:fs"
 import { join } from "node:path"
 import { writeJsonAtomic } from "../storage/json"
@@ -19,6 +20,8 @@ export interface UiPrefs {
   weekStart?: WeekStart
   /** Charts draw an x-axis line under the plot (default off). */
   xAxis?: boolean
+  /** The colour theme's id (themes.ts; default Catppuccin Mocha). */
+  theme?: string
   chartMotion?: ChartMotionMode
   chartSpeed?: ChartSpeedId
   openRange?: OpenRange
@@ -109,6 +112,7 @@ function parseUiPrefs(raw: unknown): UiPrefs | undefined {
   }
   if ("weekStart" in raw && (raw.weekStart === "monday" || raw.weekStart === "sunday")) ui.weekStart = raw.weekStart
   if ("xAxis" in raw && typeof raw.xAxis === "boolean") ui.xAxis = raw.xAxis
+  if ("theme" in raw && THEMES.some((t) => t.id === raw.theme)) ui.theme = raw.theme as string
   const chartMotion = CHART_MOTION_MODES.find((mode) => "chartMotion" in raw && mode === raw.chartMotion)
   if (chartMotion) ui.chartMotion = chartMotion
   const chartSpeed = CHART_SPEEDS.find((speed) => "chartSpeed" in raw && speed.id === raw.chartSpeed)?.id
