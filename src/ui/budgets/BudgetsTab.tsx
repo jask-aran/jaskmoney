@@ -22,7 +22,6 @@ import { fitSpans, type Span } from "../primitives/spans"
 import { AXIS_GUESS, axisWidth, type ChartModel } from "../charts/ChartBody"
 import { WIDE } from "../overview/OverviewTab"
 import { cycleLines, cycleLinesLegend, type CycleSpent } from "./budgetCharts"
-import { hatchSpans } from "../charts/hatch"
 import { chartSpeedMs, showings } from "../charts/motion"
 import { ChartCard } from "../charts/ChartCard"
 import { spendingChart } from "../overview/periodCharts"
@@ -198,7 +197,6 @@ export function BudgetsTab(props: { focused: SectionId }) {
   const linesHeight = () => Math.min(cycles().length + 2, wide() ? Math.floor((body() - budgetsHeight()) / 2) : Math.max(5, Math.floor(body() * 0.2)))
   const chartHeight = () => (wide() ? body() - budgetsHeight() - linesHeight() : Math.max(10, Math.floor(body() * 0.3)))
   const categoriesHeight = () => (wide() ? body() : Math.max(5, body() - chartHeight() - linesHeight() - budgetsHeight()))
-  const hatched = () => data.state.uiPrefs.hatched === true
   const rowWidth = (width: number) => width - 5
 
   // The chart: the Overview's spending view over the cycle shown, for what
@@ -234,8 +232,7 @@ export function BudgetsTab(props: { focused: SectionId }) {
     // left or over does.
     const figures = { text: tight() ? ` ${formatWholeMoney(p.spent)} of ${formatWholeMoney(budget.amount)} ` : `  ${formatWholeMoney(p.spent).padStart(7)} of ${formatWholeMoney(budget.amount).padEnd(7)}  `, fg: ink.label }
     const room = rowWidth(mainWidth()) - LABEL() - BAR()
-    const drawn = bar(BAR(), used, pace())
-    return [...(hatched() ? hatchSpans(drawn) : drawn), ...(figures.text.length + verdict.text.length <= room ? [figures] : [{ text: " ", fg: ink.label }]), verdict]
+    return [...bar(BAR(), used, pace()), ...(figures.text.length + verdict.text.length <= room ? [figures] : [{ text: " ", fg: ink.label }]), verdict]
   }
   // A budget on two lines: its name and spent of budget hung from the bar's
   // left end (╭), what's left a day or over from its right (╮), and the bar
@@ -252,10 +249,9 @@ export function BudgetsTab(props: { focused: SectionId }) {
     const budget = p.budget
     const used = budget.amount > 0 ? p.spent / budget.amount : p.spent > 0 ? 2 : 0
     const verdict = p.remaining < 0 ? { text: `${formatWholeMoney(-p.remaining)} over`, fg: tone.bad } : { text: `${formatWholeMoney(p.remaining)} left · ${formatWholeMoney(p.dailyAllowance)}/day`, fg: tone.good }
-    const drawn = bar(width, used, pace())
     return [
       line([corner("╭ "), name, { text: `  ${formatWholeMoney(p.spent)} of ${formatWholeMoney(budget.amount)}`, fg: ink.label }], [verdict, corner(" ╮")]),
-      hatched() ? hatchSpans(drawn) : drawn,
+      bar(width, used, pace()),
     ]
   }
   const budgetTop = createMemo(() => centredTop(budgetCursor(), rows().length, budgetRoom()))
@@ -293,7 +289,7 @@ export function BudgetsTab(props: { focused: SectionId }) {
       <Index each={cycleLines(cycles().slice(0, Math.max(1, linesHeight() - 2)), rowWidth(mainWidth()), pace(), today())}>{(spans) => (
         <text wrapMode="none">
           <S fg={ink.note}>{" "}</S>
-          <Index each={hatched() ? hatchSpans(spans()) : spans()}>{(span) => <S fg={span().fg} bold={span().bold}>{span().text}</S>}</Index>
+          <Index each={spans()}>{(span) => <S fg={span().fg} bold={span().bold}>{span().text}</S>}</Index>
         </text>
       )}</Index>
     </SectionCard>
@@ -318,7 +314,8 @@ export function BudgetsTab(props: { focused: SectionId }) {
         return (
           <Show when={hung()} fallback={<ListRow cursor={at()} bg={theme.canvas} armed={armed()} spans={spans()} />}>
             <ListRow cursor={at()} bg={theme.canvas} armed={armed()} spans={twoLines()[0]} />
-            <ListRow cursor={at()} bg={theme.canvas} spans={twoLines()[1]} />
+            {/* The cursor washes the label line only: the bar stays on the canvas. */}
+            <ListRow cursor={false} bg={theme.canvas} spans={twoLines()[1]} />
           </Show>
         )
       }}</Index>

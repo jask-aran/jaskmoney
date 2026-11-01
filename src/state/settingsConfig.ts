@@ -19,8 +19,6 @@ export interface UiPrefs {
   weekStart?: WeekStart
   /** Charts draw an x-axis line under the plot (default off). */
   xAxis?: boolean
-  /** Bars are hatched ╱ rather than solid (default off). */
-  hatched?: boolean
   chartMotion?: ChartMotionMode
   chartSpeed?: ChartSpeedId
   openRange?: OpenRange
@@ -111,7 +109,6 @@ function parseUiPrefs(raw: unknown): UiPrefs | undefined {
   }
   if ("weekStart" in raw && (raw.weekStart === "monday" || raw.weekStart === "sunday")) ui.weekStart = raw.weekStart
   if ("xAxis" in raw && typeof raw.xAxis === "boolean") ui.xAxis = raw.xAxis
-  if ("hatched" in raw && typeof raw.hatched === "boolean") ui.hatched = raw.hatched
   const chartMotion = CHART_MOTION_MODES.find((mode) => "chartMotion" in raw && mode === raw.chartMotion)
   if (chartMotion) ui.chartMotion = chartMotion
   const chartSpeed = CHART_SPEEDS.find((speed) => "chartSpeed" in raw && speed.id === raw.chartSpeed)?.id

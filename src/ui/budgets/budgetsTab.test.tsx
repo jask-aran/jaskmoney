@@ -8,7 +8,7 @@ import { key } from "../../testing/keys"
 import { saveBudget } from "../../db/client"
 import { budgetIn } from "../../domain/budget"
 import { RGBA } from "@opentui/core"
-import { tone } from "../../theme"
+import { theme } from "../../theme"
 
 afterEach(() => setAppClock(null))
 
@@ -197,15 +197,13 @@ test("short of room for two lines each, every budget takes one line, the bar bet
   expect(f).not.toContain("╭ Groceries")
 })
 
-test("Bar fills hatched (Settings › Appearance): the budgets' bars are ╱ in the same ink", async () => {
+test("the cursor washes a budget's label line, not its bar", async () => {
   const { t, frame } = await budgetsTab()
   await data.setBudget({ kind: "overall" }, 500)
-  await data.saveUiPrefs({ hatched: true })
-  const f = await frame()
-  expect(f).toMatch(/\n│  ╱+─*│─+ │/)
-  expect(f).not.toMatch(/\n│  █/)
-  const bar = t.captureSpans().lines.flatMap((l) => l.spans).find((s) => s.text.startsWith("╱"))!
-  expect(bar.fg.toInts()).toEqual(RGBA.fromHex(tone.good).toInts())
-  await data.saveUiPrefs({ hatched: false })
-  expect(await frame()).toMatch(/\n│  █+─*│─+ │/)
+  await frame()
+  const spans = t.captureSpans().lines.flatMap((l) => l.spans)
+  const label = spans.find((s) => s.text.includes("$100 of $500"))!
+  const bar = spans.find((s) => s.text.startsWith("█"))!
+  expect(label.bg.toInts()).toEqual(RGBA.fromHex(theme.rowCursor).toInts())
+  expect(bar.bg.toInts()).toEqual(RGBA.fromHex(theme.canvas).toInts())
 })
