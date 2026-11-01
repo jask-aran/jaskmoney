@@ -79,7 +79,7 @@ export function followTickers(ui: UiStore): () => void {
     // Say once which they are.
     if (told) return
     told = true
-    ui.setStatus(tickers ? "These are real live tickers (Yahoo Finance, as delayed as Yahoo gives them)" : "Ticker tape: made-up tickers (Yahoo Finance couldn't be reached)")
+    ui.setStatus(tickers ? "These are real live tickers" : "Ticker tape: made-up tickers (Yahoo Finance couldn't be reached)")
   }
   void ask()
   const timer = setInterval(() => void ask(), 120_000)
