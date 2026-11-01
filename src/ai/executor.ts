@@ -1,9 +1,9 @@
-import { randomBytes } from "node:crypto"
-import { mkdirSync, readFileSync, renameSync, rmSync, writeFileSync } from "node:fs"
-import { dirname, join } from "node:path"
+import { readFileSync, rmSync } from "node:fs"
+import { join } from "node:path"
 import { McpClient, StreamableHttpTransport, type CallToolResult } from "@earendil-works/pi-mcp"
 import { adaptOAuthProvider, authorizeMcp, McpOAuthProvider, OAuthCallbackServer, type McpOAuthState } from "@earendil-works/pi-mcp/oauth"
 import { jaskmoneyHome } from "../storage/home"
+import { writeJsonAtomic } from "../storage/json"
 
 /**
  * Executor Cloud (executor.sh): your accounts (Gmail first) connected once
@@ -32,13 +32,7 @@ function load(): Saved | undefined {
   try { return JSON.parse(readFileSync(savedPath(), "utf8")) as Saved } catch { return undefined }
 }
 
-function save(state: Saved): void {
-  const path = savedPath()
-  mkdirSync(dirname(path), { recursive: true, mode: 0o700 })
-  const temp = `${path}.${randomBytes(6).toString("hex")}.tmp`
-  writeFileSync(temp, JSON.stringify(state), { mode: 0o600 })
-  renameSync(temp, path)
-}
+function save(state: Saved): void { writeJsonAtomic(savedPath(), state) }
 
 /** Signed in: tokens are saved (they may still need refreshing). */
 export const executorSignedIn = () => !!load()?.tokens

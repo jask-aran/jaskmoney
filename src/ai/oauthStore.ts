@@ -7,8 +7,8 @@ import { defaultSettingsConfigPath } from "../state/settingsConfig"
 /**
  * Browser sign-ins (OpenRouter, ChatGPT), kept by pi-ai's provider id in
  * oauth.json beside settings.json, owner-only (mode 600). pi-ai writes
- * through `modify` (login, token refresh); writes are serialized per
- * provider. Never rendered: the app only asks whether a provider is signed in.
+ * through `modify` (login, token refresh); writes to the file are
+ * serialized. Never rendered: the app only asks whether a provider is signed in.
  */
 export function oauthPath(): string {
   return join(dirname(defaultSettingsConfigPath()), "oauth.json")
@@ -33,25 +33,31 @@ export function signedIn(providerId: string, path = oauthPath()): boolean {
   return readAll(path)[providerId]?.type === "oauth"
 }
 
+/** One write at a time per file, across every store on it: each model
+ * client makes its own store, and two token refreshes at once would each
+ * write the file read before the other's. */
+const chains = new Map<string, Promise<unknown>>()
+function serial<T>(path: string, task: () => Promise<T>): Promise<T> {
+  const next = (chains.get(path) ?? Promise.resolve()).then(task, task)
+  const settled = next.catch(() => undefined)
+  chains.set(path, settled)
+  void settled.then(() => { if (chains.get(path) === settled) chains.delete(path) })
+  return next
+}
+
 export function createFileCredentialStore(path = oauthPath()): CredentialStore {
-  const chains = new Map<string, Promise<unknown>>()
-  const serial = <T>(id: string, task: () => Promise<T>): Promise<T> => {
-    const next = (chains.get(id) ?? Promise.resolve()).then(task, task)
-    chains.set(id, next.catch(() => undefined))
-    return next
-  }
   return {
     async read(providerId) { return readAll(path)[providerId] },
     async list() { return Object.entries(readAll(path)).map(([providerId, c]): CredentialInfo => ({ providerId, type: c.type })) },
     modify(providerId, fn) {
-      return serial(providerId, async () => {
+      return serial(path, async () => {
         const next = await fn(readAll(path)[providerId])
         if (next !== undefined) writeAll(path, { ...readAll(path), [providerId]: next })
         return next ?? readAll(path)[providerId]
       })
     },
     delete(providerId) {
-      return serial(providerId, async () => {
+      return serial(path, async () => {
         const all = readAll(path)
         delete all[providerId]
         writeAll(path, all)

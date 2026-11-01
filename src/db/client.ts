@@ -697,6 +697,12 @@ export function declineRule(db: Db, expr: string, categoryId: number | null, tag
   else db.query("INSERT OR IGNORE INTO rule_declines (expr, category_id) VALUES (?, ?)").run(expr, categoryId)
 }
 
+/** Undo declineRule: the model may offer it again. */
+export function undeclineRule(db: Db, expr: string, categoryId: number | null, tagId: number | null = null): void {
+  if (tagId != null) db.query("DELETE FROM rule_tag_declines WHERE expr = ? AND tag_id = ?").run(expr, tagId)
+  else db.query("DELETE FROM rule_declines WHERE expr = ? AND category_id = ?").run(expr, categoryId)
+}
+
 export function loadRuleDeclines(db: Db): RuleDecline[] {
   return db.query<RuleDecline, []>(`SELECT expr, category_id AS categoryId, NULL AS tagId FROM rule_declines
     UNION ALL SELECT expr, NULL AS categoryId, tag_id AS tagId FROM rule_tag_declines`).all()
@@ -722,8 +728,8 @@ export function loadCategoryChoices(db: Db): CategoryChoice[] {
     .map((c) => ({ ...c, declined: c.declined === 1 }))
 }
 
-export function declineCategoryChoice(db: Db, description: string, categoryId: number): void {
-  db.query("UPDATE category_choices SET declined = 1 WHERE description = ? AND category_id = ?").run(description.trim().toLowerCase(), categoryId)
+export function declineCategoryChoice(db: Db, description: string, categoryId: number, declined = true): void {
+  db.query("UPDATE category_choices SET declined = ? WHERE description = ? AND category_id = ?").run(declined ? 1 : 0, description.trim().toLowerCase(), categoryId)
 }
 
 /** Rows whose suggestion was dismissed: not suggested for again. */

@@ -1,4 +1,4 @@
-import { loadCategoryLog, loadTagLog, loadCategoryChoices, loadRuleDeclines, declineRule, declineCategoryChoice } from "../db/client"
+import { loadCategoryLog, loadTagLog, loadCategoryChoices, loadRuleDeclines, declineRule, declineCategoryChoice, undeclineRule } from "../db/client"
 import { ruleOffers, type RuleOffer } from "../domain/ruleOffers"
 import type { HistoryData } from "../domain/aiHistory"
 import { createLlm, type Llm } from "../ai/llm"
@@ -98,13 +98,7 @@ export function createRuleOffers(ctx: CoreContext, deps: Pick<ReturnType<typeof 
       set({ aiRuleOffers: state.aiRuleOffers.filter((o) => !(o.expr === offer.expr && o.categoryId === offer.categoryId && o.tagId === offer.tagId)) })
     } else mutate((db) => declineCategoryChoice(db, offer.description, offer.categoryId))
     recordUndo(`declined rule ${offer.description}`, async () => {
-      mutate((db) => {
-        if (offer.source === "ai") {
-          if (offer.tagId != null) db.query("DELETE FROM rule_tag_declines WHERE expr = ? AND tag_id = ?").run(offer.expr, offer.tagId)
-          else db.query("DELETE FROM rule_declines WHERE expr = ? AND category_id = ?").run(offer.expr, offer.categoryId)
-        }
-        else db.query("UPDATE category_choices SET declined = 0 WHERE description = ? AND category_id = ?").run(offer.description.trim().toLowerCase(), offer.categoryId)
-      })
+      mutate((db) => offer.source === "ai" ? undeclineRule(db, offer.expr, offer.categoryId, offer.tagId) : declineCategoryChoice(db, offer.description, offer.categoryId, false))
       if (offer.source === "ai") set({ aiRuleOffers: [...state.aiRuleOffers, offer] })
       return ""
     })

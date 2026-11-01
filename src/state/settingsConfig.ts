@@ -1,6 +1,6 @@
 import { jaskmoneyHome } from "../storage/home"
-import { existsSync, mkdirSync, readFileSync } from "node:fs"
-import { dirname, join } from "node:path"
+import { existsSync, readFileSync } from "node:fs"
+import { join } from "node:path"
 import { writeJsonAtomic } from "../storage/json"
 import { canonicalFilter, type FilterNames } from "../domain/filter"
 import type { AccountSelection } from "../domain/accountTree"
@@ -142,8 +142,6 @@ export function loadSettingsConfig(path = defaultSettingsConfigPath()): Settings
 /** Rename is atomic on the same filesystem; a config write can therefore
  * never leave a partially written settings document. */
 export function saveSettingsConfig(config: SettingsConfig, path = defaultSettingsConfigPath()): void {
-  const dir = dirname(path)
-  mkdirSync(dir, { recursive: true })
   const normalized: SettingsConfig = {
     version: 2,
     savedFilters: config.savedFilters.map((f, i, all) => validateSavedFilter(f, all.filter((_, j) => j !== i))),
@@ -152,6 +150,5 @@ export function saveSettingsConfig(config: SettingsConfig, path = defaultSetting
     ui: parseUiPrefs(config.ui),
   }
   if (normalized.ui?.filterUsage) normalized.ui.filterUsage = Object.fromEntries(Object.entries(normalized.ui.filterUsage).filter(([id]) => normalized.savedFilters.some((filter) => filter.id === id)))
-  const temp = `${path}.tmp-${process.pid}-${Date.now()}`
-  writeJsonAtomic(path, normalized, temp)
+  writeJsonAtomic(path, normalized)
 }
