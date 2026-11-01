@@ -41,11 +41,13 @@ export async function startLlmSignIn(ui: UiStore, data: DataStore, provider: Llm
     })
   }
   ui.setState({ llmSignIn: { provider, url: null, message: `${signIn}…`, paste: null } })
+  const opened = ui.opening("llmSignIn")
   try {
     let lastUrl: string | null = null
     await data.signInLlm(provider, (progress) => {
+      if (!opened.open || flow.signal.aborted) return
       const paste = ui.state.llmSignIn?.paste
-      ui.setState("llmSignIn", {
+      opened.patch({
         url: progress.url,
         message: progress.message,
         paste: progress.paste === null ? null : paste?.message === progress.paste ? paste : { message: progress.paste, value: "", caret: 0 },
@@ -59,7 +61,7 @@ export async function startLlmSignIn(ui: UiStore, data: DataStore, provider: Llm
     ui.setStatus(cancelled ? `${label} sign-in cancelled` : `${label} sign-in failed: ${cause instanceof Error ? cause.message : String(cause)}`, !cancelled)
   } finally {
     if (controller === flow) { controller = null; sendPaste = null }
-    ui.setState({ llmSignIn: null })
+    opened.close()
   }
 }
 

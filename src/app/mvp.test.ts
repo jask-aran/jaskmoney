@@ -112,7 +112,7 @@ describe("MVP slice: filter + categorize", () => {
     ui.setState({
       focusedSection: "mgr.transactions",
       managerCursor: 0,
-      tagPickerOpen: false,
+      tagPicker: null,
       selectedIds: {},
     })
     const targetId = data.scopedTransactions()[0]!.id
@@ -122,14 +122,14 @@ describe("MVP slice: filter + categorize", () => {
     onTestFinished(() => data.setState({ sortColumn: initialSort, sortAscending: initialAscending }))
 
     handleKey(ui, key("t"), data)
-    expect(ui.state.tagPickerOpen).toBe(true)
+    expect(ui.state.tagPicker !== null).toBe(true)
     const originalTags = [...data.state.transactions.find((row) => row.id === targetId)!.tagIds]
     handleKey(ui, key("space"), data)
     expect(data.state.transactions.find((row) => row.id === targetId)?.tagIds).toEqual(originalTags)
     handleKey(ui, key("return"), data); await settlePending()
     await Promise.resolve()
     expect(data.state.transactions.find((row) => row.id === targetId)?.tagNames).toContain("IGNORE")
-    expect(ui.state.tagPickerOpen).toBe(false)
+    expect(ui.state.tagPicker !== null).toBe(false)
 
     handleKey(ui, key("s"), data)
     expect(data.state.sortColumn).not.toBe(initialSort)

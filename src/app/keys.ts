@@ -163,12 +163,12 @@ const PASTE_SCOPES = new Set<ScopeId>(["merchantNote", "llmSignIn", "settings.ai
 function pasteTarget(ui: UiStore, data?: DataStore): boolean {
   const scope = ui.activeScope()
   if (scope !== "settings.editor") return PASTE_SCOPES.has(scope)
-  const kind = ui.state.settingsEditor
+  const kind = ui.state.settingsEditor?.kind
   if (!kind) return false
-  if (ui.state.formPicker) return true
+  if (ui.state.settingsEditor!.picker) return true
   const ctx = { accounts: data?.state.accounts ?? [], categories: data?.state.categories ?? [], tags: data?.state.tags ?? [], savedFilters: data?.state.savedFilters ?? [] }
   const fields = editorFields(kind, ui.state.settingsDraft, ctx)
-  const field = fields[Math.min(ui.state.settingsEditField, fields.length - 1)]
+  const field = fields[Math.min(ui.state.settingsEditor!.field, fields.length - 1)]
   return field?.kind === "text"
 }
 
@@ -317,40 +317,43 @@ function handleJump(ui: UiStore, key: KeyEvent, data?: DataStore): void {
 }
 
 function handleTagPicker(ui: UiStore, key: KeyEvent, data?: DataStore): void {
-  if (ui.state.tagPickerApplying) return
-  const items = pickerChoices(tagPickerItems(data?.state.tags ?? [], data?.state.categories ?? [], data?.transactions() ?? [], ui.state.pickerTargets, ui.state.tagPickerQuery))
-  queryPickerKey(key, { query: ui.state.tagPickerQuery, cursor: ui.state.tagPickerCursor }, items.length, {
-    close: () => { ui.closeTagPicker(); ui.setStatus("Tags unchanged") },
-    update: (next) => { ui.setState({ tagPickerQuery: next.query, tagPickerCursor: next.cursor }) },
+  const dialog = ui.state.tagPicker
+  if (!dialog || dialog.applying) return
+  const opened = ui.opening("tagPicker")
+  const items = pickerChoices(tagPickerItems(data?.state.tags ?? [], data?.state.categories ?? [], data?.transactions() ?? [], ui.state.pickerTargets, dialog.query))
+  queryPickerKey(key, { query: dialog.query, cursor: dialog.cursor }, items.length, {
+    close: () => { opened.close(); ui.setStatus("Tags unchanged") },
+    update: (next) => { opened.patch({ query: next.query, cursor: next.cursor }) },
     apply: () => {
       const targets = [...ui.state.pickerTargets]
-      const patch = { ...ui.state.tagPickerPatch }
+      const patch = { ...dialog.patch }
       settleData(ui, (async () => {
-        if (items[ui.state.tagPickerCursor]?.value === null && data) {
-          const id = await data.createSettingsTag({ name: ui.state.tagPickerQuery.trim(), color: theme.blue })
+        if (items[dialog.cursor]?.value === null && data) {
+          const id = await data.createSettingsTag({ name: dialog.query.trim(), color: theme.blue })
+          if (!opened.open) return
           patch[id] = "add"
-          ui.setState({ tagPickerPatch: patch })
+          opened.patch({ patch })
         }
         // Approved deviation from Go: enter without staged changes makes no edit.
         if (!data || !Object.keys(patch).length) {
-          ui.closeTagPicker()
+          opened.close()
           ui.setStatus("Tags unchanged")
         } else {
-          ui.setState({ tagPickerApplying: true })
+          opened.patch({ applying: true })
           data.applyTagPatch(targets, patch).then(
-            (summary) => { ui.closeTagPicker(); ui.setStatus(summary, summary.includes(" failed: ")) },
-            (error) => { ui.closeTagPicker(); reportError(ui, error) },
+            (summary) => { opened.close(); ui.setStatus(summary, summary.includes(" failed: ")) },
+            (error) => { opened.close(); reportError(ui, error) },
           )
         }
       })())
     },
     space: () => {
-      const item = items[ui.state.tagPickerCursor]
+      const item = items[dialog.cursor]
       const targets = ui.state.pickerTargets
       if (item && typeof item.value === "number" && data && targets.length) {
         const id = item.value
         const base = tagPickerState(data.transactions(), targets, id)
-        const patch = { ...ui.state.tagPickerPatch }
+        const patch = { ...dialog.patch }
         const current = patch[id]
         // Approved deviation from Go: mixed tags cycle back to their original state.
         if (base === "some") {
@@ -359,7 +362,7 @@ function handleTagPicker(ui: UiStore, key: KeyEvent, data?: DataStore): void {
           else delete patch[id]
         } else if (current) delete patch[id]
         else patch[id] = base === "all" ? "remove" : "add"
-        ui.setState({ tagPickerPatch: patch })
+        opened.patch({ patch })
       }
     },
   })
@@ -564,15 +567,23 @@ function handleOverviewCustom(ui: UiStore, key: KeyEvent, data?: DataStore): voi
 }
 
 function handleSettingsFactoryReset(ui: UiStore, key: KeyEvent, data?: DataStore): void {
+  const dialog = ui.state.factoryReset
+  if (!dialog) return
+  const opened = ui.opening("factoryReset")
   const { name } = key
-  if (name === "escape") { ui.setState({ factoryResetOpen: false, factoryResetDraft: "", factoryResetCaret: 0 }); ui.setStatus("Factory reset cancelled"); return }
+  if (name === "escape") { ui.setState({ factoryReset: null }); ui.setStatus("Factory reset cancelled"); return }
   if (name === "return" || name === "enter") {
-    if (ui.state.factoryResetDraft !== "RESET") { ui.setStatus("Type RESET exactly to erase this database", true); return }
-    settleData(ui, (async () => { await data?.factoryResetDatabase(); ui.setState({ factoryResetOpen: false, factoryResetDraft: "", factoryResetCaret: 0 }); ui.setStatus("Database reset · OpenTUI settings retained") })())
+    if (dialog.busy) return
+    if (dialog.draft !== "RESET") { ui.setStatus("Type RESET exactly to erase this database", true); return }
+    opened.patch({ busy: true })
+    settleData(ui, (async () => {
+      try { await data?.factoryResetDatabase(); opened.close(); ui.setStatus("Database reset · OpenTUI settings retained") }
+      finally { opened.patch({ busy: false }) }
+    })())
     return
   }
-  const next = editText({ value: ui.state.factoryResetDraft, caret: ui.state.factoryResetCaret }, key)
-  if (next) ui.setState({ factoryResetDraft: next.value, factoryResetCaret: next.caret })
+  const next = editText({ value: ui.state.factoryReset!.draft, caret: ui.state.factoryReset!.caret }, key)
+  if (next) ui.setState("factoryReset", { draft: next.value, caret: next.caret })
 }
 
 /** The search help: m switches between the brief and the full version;
@@ -681,27 +692,27 @@ const CONFIRMED: Record<Confirm["kind"], (data: DataStore | undefined, c: Confir
   },
 }
 
-/** A settings editor save is on its way to the core. */
-let editorSaving = false
-
 function handleSettingsEditor(ui: UiStore, key: KeyEvent, data?: DataStore): void {
   const { name } = key
-  const kind = ui.state.settingsEditor
+  const kind = ui.state.settingsEditor?.kind
   if (!kind) return
+  const opened = ui.opening("settingsEditor")
+  const id = ui.state.settingsEditor!.id
+  if ((name === "return" || name === "enter") && ui.state.settingsEditor!.saving) return
   const draft = ui.state.settingsDraft
   const ctx = { accounts: data?.state.accounts ?? [], categories: data?.state.categories ?? [], tags: data?.state.tags ?? [], savedFilters: data?.state.savedFilters ?? [] }
   const fields = editorFields(kind, draft, ctx)
-  const fieldIndex = Math.min(ui.state.settingsEditField, fields.length - 1)
+  const fieldIndex = Math.min(ui.state.settingsEditor!.field, fields.length - 1)
   const field = fields[fieldIndex]!
 
   // A picker field's list owns input until it closes (like the category
   // picker: arrows move, printable keys filter).
-  const picker = ui.state.formPicker
+  const picker = ui.state.settingsEditor!.picker
   if (picker) {
     const choices = pickerChoices(pickerItems(kind, field.key, ctx, picker.query))
     queryPickerKey(key, picker, choices.length, {
-      close: () => ui.setState({ formPicker: null }),
-      update: (next) => ui.setState({ formPicker: next }),
+      close: () => ui.setState("settingsEditor", { picker: null }),
+      update: (next) => ui.setState("settingsEditor", { picker: next }),
       apply: () => {
         const choice = choices[picker.cursor]
         if (!choice) return
@@ -714,7 +725,7 @@ function handleSettingsEditor(ui: UiStore, key: KeyEvent, data?: DataStore): voi
           return
         }
         ui.setState("settingsDraft", field.key as "scopeKey", choice.value as never)
-        ui.setState({ formPicker: null })
+        ui.setState("settingsEditor", { picker: null })
       },
     })
     return
@@ -724,7 +735,7 @@ function handleSettingsEditor(ui: UiStore, key: KeyEvent, data?: DataStore): voi
   const move = (step: number) => {
     const next = (fieldIndex + step + fields.length) % fields.length
     const field = fields[next]!
-    ui.setState({ settingsEditField: next, settingsCaret: field.kind === "text" ? field.display.length : 0 })
+    ui.setState("settingsEditor", { field: next, caret: field.kind === "text" ? field.display.length : 0 })
   }
   if (name === "escape") { ui.closeSettingsEditor(); ui.setStatus("Edit cancelled"); return }
   if (name === "tab") { move(key.shift ? -1 : 1); return }
@@ -734,23 +745,22 @@ function handleSettingsEditor(ui: UiStore, key: KeyEvent, data?: DataStore): voi
     // Open the list on the current value.
     const current = draft[field.key]
     const at = field.multi ? 0 : pickerChoices(pickerItems(kind, field.key, ctx, "")).findIndex((c) => c.value === current)
-    ui.setState({ formPicker: { query: "", cursor: Math.max(0, at) } })
+    ui.setState("settingsEditor", { picker: { query: "", cursor: Math.max(0, at) } })
     return
   }
   if (name === "return" || name === "enter") {
     // One save at a time: over a socket the editor stays open until the
     // core answers, and a second enter would create the record twice.
-    if (editorSaving) return
-    editorSaving = true
+    opened.patch({ saving: true })
     settleData(ui, (async () => {
       try {
         if (kind === "category") {
-          if (ui.state.settingsEditId == null) await data?.createSettingsCategory({ name: draft.name, color: draft.color, notSpending: draft.notSpending })
-          else await data?.updateSettingsCategory(Number(ui.state.settingsEditId), { name: draft.name, color: draft.color, notSpending: draft.notSpending })
+          if (id == null) await data?.createSettingsCategory({ name: draft.name, color: draft.color, notSpending: draft.notSpending })
+          else await data?.updateSettingsCategory(Number(id), { name: draft.name, color: draft.color, notSpending: draft.notSpending })
         } else if (kind === "tag") {
           const tag = { name: draft.name, color: draft.color, categoryIds: draft.categoryIds, about: draft.about.trim() || null }
-          if (ui.state.settingsEditId == null) await data?.createSettingsTag(tag)
-          else await data?.updateSettingsTag(Number(ui.state.settingsEditId), tag)
+          if (id == null) await data?.createSettingsTag(tag)
+          else await data?.updateSettingsTag(Number(id), tag)
         } else if (kind === "budget") {
           const option = budgetScopeOptions(ctx.accounts, ctx.categories).find((o) => o.key === draft.scopeKey)
           const amount = Number(draft.amount.replace(/[$,\s]/g, ""))
@@ -764,7 +774,7 @@ function handleSettingsEditor(ui: UiStore, key: KeyEvent, data?: DataStore): voi
           if (current && (current.unit !== cycle.unit || current.anchor !== cycle.anchor || current.anchorDate !== cycle.anchorDate || !!current.payEarly !== !!cycle.payEarly)) await data?.setBudgetCycle(cycle)
           // From the cycle the Budgets tab shows (this one elsewhere).
           const view = data ? viewedBudgets(ui, data) : undefined
-          const editing = view?.budgets.find((b) => b.id === ui.state.settingsEditId)
+          const editing = view?.budgets.find((b) => b.id === id)
           // A new scope ends the old budget in the same write.
           await data?.setBudget(option.scope, amount, view?.cycle.start, editing?.scope)
         } else if (kind === "cycle") {
@@ -772,15 +782,15 @@ function handleSettingsEditor(ui: UiStore, key: KeyEvent, data?: DataStore): voi
           if (typeof cycle === "string") throw new Error(cycle)
           await data?.setBudgetCycle(cycle)
         } else if (kind === "filter") {
-          await data?.saveSavedFilter({ id: draft.id, name: draft.name, expr: draft.expr }, typeof ui.state.settingsEditId === "string" ? ui.state.settingsEditId : undefined)
+          await data?.saveSavedFilter({ id: draft.id, name: draft.name, expr: draft.expr }, typeof id === "string" ? id : undefined)
         } else {
-          const existing = data?.state.rules.find((r) => r.id === ui.state.settingsEditId)
-          const rule = { id: Number(ui.state.settingsEditId ?? 0), name: draft.name, savedFilterId: draft.savedFilterId, setCategoryId: draft.setCategoryId, addTagIds: draft.addTagIds, enabled: existing?.enabled ?? true, sortOrder: existing?.sortOrder ?? 0 }
-          if (ui.state.settingsEditId == null) await data?.createSettingsRule(rule)
+          const existing = data?.state.rules.find((r) => r.id === id)
+          const rule = { id: Number(id ?? 0), name: draft.name, savedFilterId: draft.savedFilterId, setCategoryId: draft.setCategoryId, addTagIds: draft.addTagIds, enabled: existing?.enabled ?? true, sortOrder: existing?.sortOrder ?? 0 }
+          if (id == null) await data?.createSettingsRule(rule)
           else await data?.updateSettingsRule(rule)
         }
-        ui.closeSettingsEditor(); ui.setStatus("Saved")
-      } finally { editorSaving = false }
+        opened.close(); ui.setStatus("Saved")
+      } finally { opened.patch({ saving: false }) }
     })())
     return
   }
@@ -798,113 +808,136 @@ function handleSettingsEditor(ui: UiStore, key: KeyEvent, data?: DataStore): voi
     return
   }
   if (isText) {
-    const next = editText({ value: field.display, caret: ui.state.settingsCaret }, key)
+    const next = editText({ value: field.display, caret: ui.state.settingsEditor!.caret }, key)
     if (next) {
       ui.setState("settingsDraft", field.key as "name", next.value)
-      ui.setState({ settingsCaret: next.caret })
+      ui.setState("settingsEditor", { caret: next.caret })
     }
   }
 }
 
 function handleSettingsImportFiles(ui: UiStore, key: KeyEvent, data?: DataStore): void {
+  const wizard = ui.state.importWizard
+  if (!wizard) return
+  const opened = ui.opening("importWizard")
   const { name } = key
-  const files = ui.state.importFiles
+  const files = wizard.files
   if (name === "escape") { ui.cancelImport(); ui.setStatus("Import cancelled"); return }
-  const moved = listMove(key, ui.state.importCursor, files.length)
-  if (moved != null) { ui.setState({ importCursor: moved }); return }
-  if (name === "/" || name === "p") { ui.setState({ importStage: "path", importPath: "", importPathCaret: 0 }); return }
-  if ((name === "return" || name === "enter") && files[ui.state.importCursor]) {
-    const path = files[ui.state.importCursor]!
+  const moved = listMove(key, wizard.cursor, files.length)
+  if (moved != null) { opened.patch({ cursor: moved }); return }
+  if (name === "/" || name === "p") { opened.patch({ stage: "path", path: "", pathCaret: 0 }); return }
+  if ((name === "return" || name === "enter") && files[wizard.cursor]) {
+    const path = files[wizard.cursor]!
     const matches = data?.profileMatches(path) ?? []
-    if (matches.length === 1) { settleData(ui, (async () => { const preview = await data?.previewImport(path, matches[0]!); ui.setState({ importStage: "preview", importPath: path, importPathCaret: path.length, importPreview: preview ?? null }) })()) }
-    else ui.setState({ importStage: "profile", importPath: path, importPathCaret: path.length, importProfileCursor: 0 })
+    if (matches.length === 1) { settleData(ui, (async () => { const preview = await data?.previewImport(path, matches[0]!); opened.patch({ stage: "preview", path, pathCaret: path.length, preview: preview ?? null }) })()) }
+    else opened.patch({ stage: "profile", path, pathCaret: path.length, profileCursor: 0 })
     return
   }
 }
 
 function handleSettingsImportPath(ui: UiStore, key: KeyEvent, data?: DataStore): void {
+  const wizard = ui.state.importWizard
+  if (!wizard) return
+  const opened = ui.opening("importWizard")
   const { name } = key
-  if (name === "escape") { ui.setState({ importStage: "files", importPath: "", importPathCaret: 0 }); return }
+  if (name === "escape") { opened.patch({ stage: "files", path: "", pathCaret: 0 }); return }
   if (name === "return" || name === "enter") {
-    const raw = ui.state.importPath.trim()
+    const raw = wizard.path.trim()
     if (!raw) { ui.setStatus("Enter a CSV path", true); return }
-    const path = resolve(ui.state.importDirectory, raw)
+    const path = resolve(wizard.directory, raw)
     settleData(ui, (async () => {
       const matches = data?.profileMatches(path) ?? []
-      if (matches.length === 1) ui.setState({ importStage: "preview", importPath: path, importPathCaret: path.length, importPreview: await data?.previewImport(path, matches[0]!) ?? null })
-      else ui.setState({ importStage: "profile", importPath: path, importPathCaret: path.length, importProfileCursor: 0 })
+      if (matches.length === 1) opened.patch({ stage: "preview", path, pathCaret: path.length, preview: await data?.previewImport(path, matches[0]!) ?? null })
+      else opened.patch({ stage: "profile", path, pathCaret: path.length, profileCursor: 0 })
     })())
     return
   }
-  const next = editText({ value: ui.state.importPath, caret: ui.state.importPathCaret }, key)
-  if (next) ui.setState({ importPath: next.value, importPathCaret: next.caret })
+  const next = editText({ value: wizard.path, caret: wizard.pathCaret }, key)
+  if (next) opened.patch({ path: next.value, pathCaret: next.caret })
 }
 
 function handleSettingsImportProfile(ui: UiStore, key: KeyEvent, data?: DataStore): void {
+  const wizard = ui.state.importWizard
+  if (!wizard) return
+  const opened = ui.opening("importWizard")
   const { name } = key
   const profiles = data?.state.importProfiles ?? []
-  if (name === "escape") { ui.setState({ importStage: ui.state.importProfileManaging ? "none" : "files", importProfileManaging: false }); return }
-  const moved = listMove(key, ui.state.importProfileCursor, profiles.length + 1)
-  if (moved != null) { ui.setState({ importProfileCursor: moved }); return }
-  if (name === "a" || name === "n" || (name === "return" || name === "enter") && ui.state.importProfileCursor === profiles.length) { ui.openProfileEditor(defaultProfile(`profile-${profiles.length + 1}`, ui.state.importPath), null); return }
-  if (name === "e" && profiles[ui.state.importProfileCursor]) { ui.openProfileEditor(profiles[ui.state.importProfileCursor]!, profiles[ui.state.importProfileCursor]!.id); return }
-  if (name === "delete" && profiles[ui.state.importProfileCursor]) { const selected = profiles[ui.state.importProfileCursor]!; confirmTwice(ui, data, { kind: "profile", id: selected.id, label: selected.name, with: "delete" }); return }
-  if ((name === "return" || name === "enter") && profiles[ui.state.importProfileCursor]) {
-    if (ui.state.importProfileManaging) { ui.openProfileEditor(profiles[ui.state.importProfileCursor]!, profiles[ui.state.importProfileCursor]!.id); return }
-    settleData(ui, (async () => { ui.setState({ importStage: "preview", importPreview: await data?.previewImport(ui.state.importPath, profiles[ui.state.importProfileCursor]!) ?? null }) })())
+  if (name === "escape") { if (wizard.managing) opened.close(); else opened.patch({ stage: "files", managing: false }); return }
+  const moved = listMove(key, wizard.profileCursor, profiles.length + 1)
+  if (moved != null) { opened.patch({ profileCursor: moved }); return }
+  if (name === "a" || name === "n" || (name === "return" || name === "enter") && wizard.profileCursor === profiles.length) { ui.openProfileEditor(defaultProfile(`profile-${profiles.length + 1}`, wizard.path), null); return }
+  if (name === "e" && profiles[wizard.profileCursor]) { ui.openProfileEditor(profiles[wizard.profileCursor]!, profiles[wizard.profileCursor]!.id); return }
+  if (name === "delete" && profiles[wizard.profileCursor]) { const selected = profiles[wizard.profileCursor]!; confirmTwice(ui, data, { kind: "profile", id: selected.id, label: selected.name, with: "delete" }); return }
+  if ((name === "return" || name === "enter") && profiles[wizard.profileCursor]) {
+    if (wizard.managing) { ui.openProfileEditor(profiles[wizard.profileCursor]!, profiles[wizard.profileCursor]!.id); return }
+    settleData(ui, (async () => { opened.patch({ stage: "preview", preview: await data?.previewImport(wizard.path, profiles[wizard.profileCursor]!) ?? null }) })())
     return
   }
 }
 
 function handleSettingsImportProfileEditor(ui: UiStore, key: KeyEvent, data?: DataStore): void {
+  const wizard = ui.state.importWizard
+  if (!wizard) return
+  const opened = ui.opening("importWizard")
   const { name } = key
-  const draft = ui.state.importProfileDraft, field = ui.state.importProfileField
+  const draft = wizard.profileDraft, field = wizard.profileField
   const fields = ["id", "name", "account", "accountType", "importPrefix", "hasHeader", "delimiter", "dateColumn", "amountColumn", "descriptionColumns", "descriptionJoin", "amountStrip", "dateFormat"] as const
   const selected = fields[field]!
-  if (name === "escape") { ui.setState({ importStage: "profile" }); return }
+  if (name === "escape") { opened.patch({ stage: "profile" }); return }
   if (name === "tab") {
     const next = (field + (key.shift ? -1 : 1) + fields.length) % fields.length
     const selected = fields[next]!
     const value = selected === "descriptionColumns" ? draft.descriptionColumns.join(",") : String(draft[selected])
-    ui.setState({ importProfileField: next, importProfileCaret: value.length })
+    opened.patch({ profileField: next, profileCaret: value.length })
     return
   }
   if (name === "return" || name === "enter") {
     settleData(ui, (async () => {
-      await data?.saveImportProfile(draft, ui.state.importProfileEditId)
-      const preview = ui.state.importPath ? await data?.previewImport(ui.state.importPath, draft) : null
-      ui.setState({ importStage: preview ? "preview" : "profile", importPreview: preview ?? null, importProfileEditId: null })
+      const { path, profileEditId } = wizard
+      await data?.saveImportProfile(draft, profileEditId)
+      if (!opened.open) return
+      const preview = path ? await data?.previewImport(path, draft) : null
+      opened.patch({ stage: preview ? "preview" : "profile", preview: preview ?? null, profileEditId: null })
       ui.setStatus(`Saved profile ${draft.name}`)
     })())
     return
   }
-  if (selected === "accountType" && (name === "h" || name === "left" || name === "l" || name === "right" || name === "space")) { ui.setState("importProfileDraft", "accountType", draft.accountType === "debit" ? "credit" : "debit"); return }
-  if ((selected === "hasHeader" || selected === "descriptionJoin") && (name === "h" || name === "left" || name === "l" || name === "right" || name === "space")) { ui.setState("importProfileDraft", selected, !draft[selected]); return }
-  if (selected === "dateFormat" && (name === "h" || name === "left" || name === "l" || name === "right" || name === "space")) { const values = ["DMY", "MDY", "YMD"] as const; ui.setState("importProfileDraft", "dateFormat", values[(values.indexOf(draft.dateFormat) + 1) % values.length]!); return }
+  if (selected === "accountType" && (name === "h" || name === "left" || name === "l" || name === "right" || name === "space")) { ui.setState("importWizard", "profileDraft", "accountType", draft.accountType === "debit" ? "credit" : "debit"); return }
+  if ((selected === "hasHeader" || selected === "descriptionJoin") && (name === "h" || name === "left" || name === "l" || name === "right" || name === "space")) { ui.setState("importWizard", "profileDraft", selected, !draft[selected]); return }
+  if (selected === "dateFormat" && (name === "h" || name === "left" || name === "l" || name === "right" || name === "space")) { const values = ["DMY", "MDY", "YMD"] as const; ui.setState("importWizard", "profileDraft", "dateFormat", values[(values.indexOf(draft.dateFormat) + 1) % values.length]!); return }
   if (selected === "accountType" || selected === "hasHeader" || selected === "descriptionJoin" || selected === "dateFormat") return
   const text = selected === "descriptionColumns" ? draft.descriptionColumns.join(",") : String(draft[selected])
-  const next = editText({ value: text, caret: ui.state.importProfileCaret }, key)
+  const next = editText({ value: text, caret: wizard.profileCaret }, key)
   if (next) {
-    ui.setState({ importProfileCaret: next.caret })
-    if (selected === "descriptionColumns") ui.setState("importProfileDraft", selected, next.value ? next.value.split(",").map(Number).filter(Number.isInteger) : [])
-    else if (selected === "dateColumn" || selected === "amountColumn") ui.setState("importProfileDraft", selected, Number(next.value || 0))
-    else ui.setState("importProfileDraft", selected, next.value)
+    opened.patch({ profileCaret: next.caret })
+    if (selected === "descriptionColumns") ui.setState("importWizard", "profileDraft", selected, next.value ? next.value.split(",").map(Number).filter(Number.isInteger) : [])
+    else if (selected === "dateColumn" || selected === "amountColumn") ui.setState("importWizard", "profileDraft", selected, Number(next.value || 0))
+    else ui.setState("importWizard", "profileDraft", selected, next.value)
   }
 }
 
 function handleSettingsImportPreview(ui: UiStore, key: KeyEvent, data?: DataStore): void {
+  const wizard = ui.state.importWizard
+  if (!wizard) return
+  const opened = ui.opening("importWizard")
   const { name } = key
-  const preview = ui.state.importPreview
-  const rows = preview ? (ui.state.importPreviewShowAll ? preview.rows : preview.rows.filter((row) => row.duplicate)) : []
+  if (wizard.committing && ["s", "a", "r", "p", "escape"].includes(key.name)) return
+  const preview = wizard.preview
+  const rows = preview ? (wizard.previewShowAll ? preview.rows : preview.rows.filter((row) => row.duplicate)) : []
   if (name === "escape") { ui.cancelImport(); ui.setStatus("Import cancelled"); return }
-  const moved = listMove(key, ui.state.importPreviewCursor, rows.length)
-  if (moved != null) { ui.setState({ importPreviewCursor: moved }); return }
-  if (name === "p") { ui.setState({ importPreviewShowAll: !ui.state.importPreviewShowAll, importPreviewCursor: 0 }); return }
-  if (name === "r") { ui.setState({ importPreviewRules: !ui.state.importPreviewRules }); return }
+  const moved = listMove(key, wizard.previewCursor, rows.length)
+  if (moved != null) { opened.patch({ previewCursor: moved }); return }
+  if (name === "p") { opened.patch({ previewShowAll: !wizard.previewShowAll, previewCursor: 0 }); return }
+  if (name === "r") { opened.patch({ previewRules: !wizard.previewRules }); return }
   if ((name === "s" || name === "a") && preview) {
+    opened.patch({ committing: true })
+    const rulesEnabled = wizard.previewRules
     settleData(ui, (async () => {
-      const summary = await data?.commitPreview({ ...preview, rulesEnabled: ui.state.importPreviewRules }, name === "s") ?? "Import unavailable"
-      ui.cancelImport()
+      let summary: string
+      try {
+        summary = await data?.commitPreview({ ...preview, rulesEnabled }, name === "s") ?? "Import unavailable"
+      } catch (error) { opened.patch({ committing: false }); throw error }
+      opened.close()
       ui.setStatus(summary)
       // The new rows get suggestions in the background.
       if (data) settleData(ui, suggestNew(data), (n) => { if (n) ui.setStatus(summary + newSuggestionsNote(n)) })
@@ -916,10 +949,13 @@ function handleSettingsImportPreview(ui: UiStore, key: KeyEvent, data?: DataStor
 function handleSettings(ui: UiStore, key: KeyEvent, data?: DataStore): void {
   const { name } = key
   if (name === "i") {
+    const from = ui.activeScope()
     settleData(ui, (async () => {
       const directory = await data?.importDirectory() ?? process.cwd()
+      const files = await data?.csvFiles(directory) ?? []
+      if (ui.activeScope() !== from) return
       ui.activateSettings("database")
-      ui.beginImport(directory, await data?.csvFiles(directory) ?? [])
+      ui.beginImport(directory, files)
     })())
     return
   }
@@ -1053,37 +1089,47 @@ function handleManagerAcceptPreview(ui: UiStore, key: KeyEvent, data?: DataStore
 /** R: rules offered from repeated categorisations. enter makes the cursor's,
  * x declines it for good, esc closes (offers stay). */
 function handleRuleOffers(ui: UiStore, key: KeyEvent, data?: DataStore): void {
+  const dialog = ui.state.ruleOffers
+  if (!dialog) return
+  const opened = ui.opening("ruleOffers")
   const { name } = key
   const offers = data?.allRuleOffers() ?? []
-  const close = () => ui.setState({ ruleOffersOpen: false, ruleOfferCursor: 0 })
+  const close = () => opened.close()
   if (name === "escape") { close(); ui.setStatus("Transactions"); return }
+  if (dialog.busy && ["return", "enter", "x"].includes(name)) return
   // The final action row asks the general model for more rules.
-  if ((name === "return" || name === "enter") && ui.state.ruleOfferCursor === offers.length && !!data?.state.llm && data) {
+  if ((name === "return" || name === "enter") && dialog.cursor === offers.length && !!data?.state.llm && data) {
     askForRules(ui, data)
     return
   }
-  const moved = listMove(key, ui.state.ruleOfferCursor, offers.length + (!!data?.state.llm ? 1 : 0))
-  if (moved != null) { ui.setState({ ruleOfferCursor: moved }); return }
-  const offer = offers[ui.state.ruleOfferCursor]
+  const moved = listMove(key, dialog.cursor, offers.length + (!!data?.state.llm ? 1 : 0))
+  if (moved != null) { ui.setState("ruleOffers", { cursor: moved }); return }
+  const offer = offers[dialog.cursor]
   if (!offer || !data) return
   const settle = () => {
+    if (!opened.open) return
     const left = data.allRuleOffers().length + (!!data?.state.llm ? 1 : 0)
     if (!left) close()
-    else ui.setState({ ruleOfferCursor: Math.min(ui.state.ruleOfferCursor, left - 1) })
+    else opened.patch({ cursor: Math.min(dialog.cursor, left - 1), busy: false })
   }
   if (name === "return" || name === "enter") {
     ui.setStatus(`Making a rule for ${offer.description}…`)
+    opened.patch({ busy: true })
     data.makeOfferedRule(offer).then(
       (summary) => { settle(); ui.jumpManagerCursor(Math.min(ui.state.managerCursor, Math.max(0, data.scopedTransactions().length - 1)), data.scopedTransactions().length); ui.setStatus(summary) },
-      (e) => reportError(ui, e),
+      (e) => { opened.patch({ busy: false }); reportError(ui, e) },
     )
     return
   }
   if (name === "x" && !key.shift) {
-    settleData(ui, data.declineRuleOffer(offer), () => {
-      settle()
-      ui.setStatus(`No rule for ${offer.description}; it won't be offered again`)
-    })
+    opened.patch({ busy: true })
+    settleData(ui, (async () => {
+      try {
+        await data.declineRuleOffer(offer)
+        settle()
+        ui.setStatus(`No rule for ${offer.description}; it won't be offered again`)
+      } finally { opened.patch({ busy: false }) }
+    })())
   }
 }
 
@@ -1095,7 +1141,7 @@ function handleSettingsAi(ui: UiStore, key: KeyEvent): void {
   const moved = listMove(key, ui.state.aiCursor, AI_ROWS.length + AI_USES.length + 1)
   if (moved != null) { ui.setState({ aiCursor: moved }); return }
   if (name !== "return" && name !== "enter") return
-  if (ui.state.aiCursor === AI_ROWS.length + AI_USES.length) { void openExecutorDialog(ui); return }
+  if (ui.state.aiCursor === AI_ROWS.length + AI_USES.length) { settleData(ui, openExecutorDialog(ui)); return }
   const use = AI_USES[ui.state.aiCursor - AI_ROWS.length]
   if (use) ui.setState({ aiUse: { use, cursor: 0, note: null } })
   else openAiDialog(ui, AI_ROWS[ui.state.aiCursor] ?? "jev")
@@ -1120,7 +1166,8 @@ function handleAiUse(ui: UiStore, key: KeyEvent, data?: DataStore): void {
   if (query) { void openQuery(ui, data, dialog.use, query); return }
   const action = actions[dialog.cursor - queries.length]
   if (!action) return
-  const note = (text: string) => ui.setState("aiUse", { note: { text, ok: true } })
+  const opened = ui.opening("aiUse")
+  const note = (text: string) => opened.patch({ note: { text, ok: true } })
   switch (action.id) {
     case "clairic":
       settleData(ui, data.saveApiKeys({ JASKMONEY_SEARCH_CLAIRIC: action.on ? null : "off" }), () => note(action.on ? "Smart search asks Clairic for the words and dates" : "Smart search asks Jev alone"))
@@ -1161,15 +1208,15 @@ function handleAiSent(ui: UiStore, key: KeyEvent): void {
  * account id, model) takes typing and pasting until enter saves or esc
  * backs out; remove needs enter twice; esc closes. */
 /** Executor's dialog (app/executorSource): j/k over the actions, enter runs
- * one; esc cancels a browser sign-in in progress, else closes. */
+ * one; esc cancels a browser sign-in in progress and closes. */
 function handleExecutor(ui: UiStore, key: KeyEvent): void {
   const dialog = ui.state.executor
   if (!dialog) return
-  if (key.name === "escape") { if (dialog.waiting) cancelExecutorSignIn(); else ui.setState({ executor: null }); return }
+  if (key.name === "escape") { cancelExecutorSignIn(); ui.setState({ executor: null }); return }
   if (dialog.waiting) return
   const moved = listMove(key, dialog.cursor, executorActions(dialog.status).length)
   if (moved != null) { ui.setState("executor", { cursor: moved }); return }
-  if (key.name === "return" || key.name === "enter") void runExecutorAction(ui)
+  if (key.name === "return" || key.name === "enter") settleData(ui, runExecutorAction(ui))
 }
 
 function handleAiDialog(ui: UiStore, key: KeyEvent, data?: DataStore): void {
@@ -1261,17 +1308,23 @@ function handleSettingsDatabase(ui: UiStore, key: KeyEvent, data?: DataStore): v
   if (moved != null) { ui.setState({ databaseCursor: moved }); return }
   if (name !== "return" && name !== "enter") return
   switch (DATABASE_ROWS[ui.state.databaseCursor]) {
-    case "import":
-      settleData(ui, (async () => { const directory = await data?.importDirectory() ?? process.cwd(); ui.beginImport(directory, await data?.csvFiles(directory) ?? []) })())
+    case "import": {
+      const from = ui.activeScope()
+      settleData(ui, (async () => {
+        const directory = await data?.importDirectory() ?? process.cwd()
+        const files = await data?.csvFiles(directory) ?? []
+        if (ui.activeScope() === from) ui.beginImport(directory, files)
+      })())
       return
-    case "profiles": ui.setState({ importStage: "profile", importPath: "", importPathCaret: 0, importProfileCursor: 0, importProfileManaging: true }); return
+    }
+    case "profiles": ui.beginImport("", []); ui.opening("importWizard").patch({ stage: "profile", managing: true }); return
     case "icons": if (data) toggleIcons(ui, data); return
     // Approved port deviation: Database & Import owns the week toggle.
     case "weekStart": if (data) toggleWeekStart(ui, data); return
     case "xAxis": if (data) toggleXAxis(ui, data); return
     case "demo": if (data) toggleDemo(ui, data); return
     case "clearData": confirmTwice(ui, data, { kind: "clearData", id: 0, label: "all transaction and import data", with: "enter" }); return
-    case "reset": ui.setState({ factoryResetOpen: true, factoryResetDraft: "", factoryResetCaret: 0 }); ui.setStatus("Type RESET then enter to remove this SQLite database"); return
+    case "reset": ui.setState({ factoryReset: { draft: "", caret: 0, busy: false } }); ui.setStatus("Type RESET then enter to remove this SQLite database"); return
   }
 }
 
@@ -1334,7 +1387,7 @@ function handleManagerTxns(ui: UiStore, key: KeyEvent, data?: DataStore): void {
     const n = data.allRuleOffers().length
     // With a model to ask, the list opens on the final action row when empty.
     if (!n && !!!data?.state.llm) { ui.setStatus(`No rule to offer: one comes after you put a description in the same category ${RULE_AFTER} times`); return }
-    ui.setState({ ruleOffersOpen: true, ruleOfferCursor: 0 })
+    ui.setState({ ruleOffers: { cursor: 0, busy: false } })
     ui.setStatus(n ? `${count(n, "rule")} offered` : "No rules offered yet · enter asks the AI")
     return
   }
@@ -1781,7 +1834,7 @@ function savedFilterKeys(ui: UiStore, data: DataStore | undefined, key: KeyEvent
     const expr = data?.state.filterQuery ?? ""
     if (!expr) { ui.setStatus("No filter to save"); return true }
     ui.openSettingsEditor("filter", null, { ...ui.state.settingsDraft, id: nextSavedFilterId(data?.state.savedFilters ?? []), name: "", expr })
-    ui.setState({ settingsEditField: 1, settingsCaret: 0 })
+    ui.setState("settingsEditor", { field: 1, caret: 0 })
     return true
   }
   if (key.name === "l") { ui.setState({ filterPicker: { query: "", cursor: 0 } }); return true }
@@ -1827,7 +1880,7 @@ type HintState = Pick<UiState, "focusedSection" | "drillReturn" | "chartViews"> 
   /** The search help shows its full version. */
   searchHelpFull?: boolean
   /** Rules offered (R). */
-  ruleOffers?: number
+  ruleOfferCount?: number
   /** The filter has `ask:` terms; whether near misses are shown. */
   asks?: boolean
   askLoose?: boolean
@@ -2073,7 +2126,7 @@ const scopes: Record<ScopeId, ScopeEntry> = {
       { key: "u", desc: "undo", command: "txn:undo" },
       { key: "c", desc: "choose", label: "Choose a category…" },
       { key: "N", desc: "merchant note", label: "Note on the merchant…", description: "what you buy there" },
-      ...(state?.ruleOffers ? [{ key: "R", desc: `rules (${state.ruleOffers})`, command: "rules:offers" }] : []),
+      ...(state?.ruleOfferCount ? [{ key: "R", desc: `rules (${state.ruleOfferCount})`, command: "rules:offers" }] : []),
       // The review actions first: the footer shows the first eight
       // (footerLine), and cuts at the end on narrow screens.
       { key: "space", desc: "select" },
@@ -2097,7 +2150,7 @@ const scopes: Record<ScopeId, ScopeEntry> = {
       { key: "?", desc: "smart search", command: "txn:smart-search" },
       { key: "u", desc: "undo", command: "txn:undo" },
       ...(state?.drillReturn ? [{ key: "esc", desc: "back" }] : [{ key: "esc", desc: "clear" }]),
-      ...(state?.ruleOffers ? [{ key: "R", desc: `rules (${state.ruleOffers})`, command: "rules:offers" }] : []),
+      ...(state?.ruleOfferCount ? [{ key: "R", desc: `rules (${state.ruleOfferCount})`, command: "rules:offers" }] : []),
       ...(state?.asks ? [{ key: "n", desc: state.askLoose ? "matches only" : "near misses", label: state.askLoose ? "Matches only" : "Show near misses" }] : []),
       { key: "enter", desc: "detail", label: "Open the transaction" },
       { key: ".", desc: "repeat", label: "Repeat the last change", description: "on selection or row" },
@@ -2222,7 +2275,7 @@ export function hintState(ui: UiStore, data?: DataStore): HintState {
     focusedSection: ui.state.focusedSection, drillReturn: ui.state.drillReturn, chartViews: ui.state.chartViews, overviewCharts: ui.state.overviewCharts,
     uncategorisedOnly: data?.state.uncategorisedOnly, tagReview: !!data?.state.tagReview,
     signInPaste: !!ui.state.llmSignIn?.paste, aiField: !!ui.state.aiDialog?.field, executorWaiting: !!ui.state.executor?.waiting, boughtScrolls: (data?.transactions().find((t) => t.id === ui.state.detailId)?.bought?.length ?? 0) > BOUGHT_LINES, searchHelpFull: ui.state.searchHelpFull,
-    ruleOffers: data && ui.state.activeTab === "manager" ? data.allRuleOffers().length : 0,
+    ruleOfferCount: data && ui.state.activeTab === "manager" ? data.allRuleOffers().length : 0,
     asks: !!data?.askCounts(), askLoose: data?.nearMissesShown(),
     recallQuestion: !!smartQuestionFor(ui.state, ui.state.filterDraft),
   }

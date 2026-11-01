@@ -1,6 +1,6 @@
 import { COUNT_ORDER_EMAILS, EXECUTOR_SITE, executorStatus, runExecutor, signInExecutor, signOutExecutor } from "../ai/executor"
 import { executorActions } from "../state/executorDialog"
-import type { UiStore } from "../state/uiStore"
+import type { Opening, UiState, UiStore } from "../state/uiStore"
 import { openBrowser } from "./llmSignIn"
 
 /**
@@ -20,26 +20,33 @@ let signingIn: AbortController | null = null
 
 export async function openExecutorDialog(ui: UiStore): Promise<void> {
   ui.setState({ executor: { status: null, cursor: 0, busy: "Checking Executor…", waiting: null, note: null } })
-  await recheck(ui)
+  const opened = ui.opening("executor")
+  await recheck(ui, opened)
 }
 
-async function recheck(ui: UiStore): Promise<void> {
-  const status = await sources.status()
-  ui.setState({ executorStatus: status })
-  if (ui.state.executor) ui.setState("executor", { status, busy: null })
+async function recheck(ui: UiStore, opened: Opening<NonNullable<UiState["executor"]>>): Promise<void> {
+  try {
+    const status = await sources.status()
+    ui.setState({ executorStatus: status })
+    opened.patch({ status, busy: null })
+  } catch (error) {
+    opened.patch({ busy: null })
+    throw error
+  }
 }
 
 export async function runExecutorAction(ui: UiStore): Promise<void> {
   const dialog = ui.state.executor
   if (!dialog || dialog.busy || dialog.waiting) return
+  const opened = ui.opening("executor")
   const actions = executorActions(dialog.status)
   const action = actions[Math.min(dialog.cursor, actions.length - 1)]
   if (!action) return
-  const note = (text: string, ok: boolean | null) => { if (ui.state.executor) ui.setState("executor", { note: { text, ok }, busy: null, waiting: null }) }
+  const note = (text: string, ok: boolean | null) => { opened.patch({ note: { text, ok }, busy: null, waiting: null }) }
   switch (action.id) {
     case "recheck":
-      ui.setState("executor", { busy: "Checking Executor…", note: null })
-      await recheck(ui)
+      opened.patch({ busy: "Checking Executor…", note: null })
+      await recheck(ui, opened)
       return
     case "site":
       sources.open(EXECUTOR_SITE)
@@ -47,18 +54,19 @@ export async function runExecutorAction(ui: UiStore): Promise<void> {
       return
     case "signOut":
       sources.signOut()
-      await recheck(ui)
+      await recheck(ui, opened)
       note("Signed out here. Executor keeps your accounts; remove jaskmoney's access at executor.sh", null)
       return
     case "signIn": {
       const flow = new AbortController()
       signingIn = flow
-      ui.setState("executor", { busy: "Starting the sign-in…", note: null })
+      opened.patch({ busy: "Starting the sign-in…", note: null })
       try {
-        await sources.signIn((url) => { ui.setState("executor", { busy: null, waiting: url }); sources.open(url) }, flow.signal)
-        ui.setState("executor", { waiting: null, busy: "Checking Executor…" })
-        await recheck(ui)
-        ui.setState("executor", { cursor: 0 })
+        await sources.signIn((url) => { if (flow.signal.aborted || !opened.open) return; opened.patch({ busy: null, waiting: url }); sources.open(url) }, flow.signal)
+        if (flow.signal.aborted) return
+        opened.patch({ waiting: null, busy: "Checking Executor…" })
+        await recheck(ui, opened)
+        opened.patch({ cursor: 0 })
         note("Signed in to Executor", true)
         ui.setStatus("Signed in to Executor")
       } catch (error) {
@@ -69,7 +77,7 @@ export async function runExecutorAction(ui: UiStore): Promise<void> {
       return
     }
     case "test": {
-      ui.setState("executor", { busy: "Asking Gmail, through Executor…", note: null })
+      opened.patch({ busy: "Asking Gmail, through Executor…", note: null })
       try {
         const found = await sources.run(COUNT_ORDER_EMAILS) as { count?: number; more?: boolean }
         const count = found?.count ?? 0

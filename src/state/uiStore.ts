@@ -99,7 +99,7 @@ export function settingsSectionFocus(section: SettingsSection, list: SettingsLis
   return section === "rules" ? "set.rules" : section === "filters" ? "set.filters" : section === "up" ? "set.up" : section === "ai" ? "set.ai" : "set.database"
 }
 export type SettingsEditorKind = "category" | "tag" | "filter" | "rule" | "budget" | "cycle" 
-export type ImportStage = "none" | "files" | "path" | "profile" | "profileEditor" | "preview"
+export type ImportStage = "files" | "path" | "profile" | "profileEditor" | "preview"
 
 export interface JumpTarget {
   key: string
@@ -153,11 +153,7 @@ export interface UiState {
   tagChooserOpen: boolean
   tagChooserCursor: number
   tagChooserQuery: string
-  tagPickerOpen: boolean
-  tagPickerApplying: boolean
-  tagPickerCursor: number
-  tagPickerPatch: Record<number, "add" | "remove">
-  tagPickerQuery: string
+  tagPicker: { cursor: number; query: string; patch: Record<number, "add" | "remove">; applying: boolean } | null
   /** Transactions the open category or tag picker applies to. */
   pickerTargets: number[]
   selectedIds: Record<number, boolean>
@@ -200,12 +196,7 @@ export interface UiState {
   detailNotesEditing: boolean
   detailNotesDraft: string
   detailNotesCaret: number
-  settingsEditor: SettingsEditorKind | null
-  settingsEditId: number | string | null
-  settingsEditField: number
-  settingsCaret: number
-  /** The open list for a picker field of the settings editor. */
-  formPicker: { query: string; cursor: number } | null
+  settingsEditor: { kind: SettingsEditorKind; id: number | string | null; field: number; caret: number; picker: { query: string; cursor: number } | null; saving: boolean } | null
   settingsDraft: {
     name: string; color: string; categoryId: number | null; id: string; expr: string; savedFilterId: string; setCategoryId: number | null; addTagIds: number[]; notSpending: boolean
     /** Tag editor: its categories and what it is for. */
@@ -222,22 +213,7 @@ export interface UiState {
   /** Settings › Database's rows (DATABASE_ROWS), and the account data dialog's actions. */
   databaseCursor: number
   accountActionCursor: number
-  importStage: ImportStage
-  importDirectory: string
-  importFiles: string[]
-  importCursor: number
-  importPath: string
-  importPathCaret: number
-  importProfileCursor: number
-  importProfileManaging: boolean
-  importProfileDraft: ImportProfile
-  importProfileEditId: string | null
-  importProfileField: number
-  importProfileCaret: number
-  importPreview: ImportPreview | null
-  importPreviewCursor: number
-  importPreviewShowAll: boolean
-  importPreviewRules: boolean
+  importWizard: { stage: ImportStage; directory: string; files: string[]; cursor: number; path: string; pathCaret: number; profileCursor: number; managing: boolean; profileDraft: ImportProfile; profileEditId: string | null; profileField: number; profileCaret: number; preview: ImportPreview | null; previewCursor: number; previewShowAll: boolean; previewRules: boolean; committing: boolean } | null
   accountActionId: number | null
   /** The last smart search: the question asked and the filter it became.
    * It describes the filter only while the filter is still that expression
@@ -276,9 +252,8 @@ export interface UiState {
    * address to open, what's happening, and the paste field when pi-ai asks. */
   llmSignIn: { provider: "openrouter" | "openai"; url: string | null; message: string; paste: { message: string; value: string; caret: number } | null } | null
   /** R: rules offered from repeated categorisations; the cursor among them. */
-  ruleOffersOpen: boolean
-  ruleOfferCursor: number
-  factoryResetOpen: boolean
+  ruleOffers: { cursor: number; busy: boolean } | null
+  factoryReset: { draft: string; caret: number; busy: boolean } | null
   /** Writing a note on a merchant (n in Merchants, N on a row): its name as
    * shown, and the text. */
   merchantNote: { merchant: string; draft: string; caret: number } | null
@@ -288,8 +263,6 @@ export interface UiState {
   searchHelpFull: boolean
   searchHelpTop: number
   searchHelpVisible: number
-  factoryResetDraft: string
-  factoryResetCaret: number
 }
 
 const TAB_DEFAULT_FOCUS: Record<TabId, SectionId> = {
@@ -384,23 +357,23 @@ const MODALS: Modal[] = [
   { scope: (s) => s.dryRunReport ? "dryRun" : null, closed: { dryRunReport: null, dryRunScroll: 0, dryRunVisible: 10 } },
   { scope: (s) => s.jumpMode ? "jump" : null, closed: { jumpMode: false } },
   { scope: (s) => s.catPickerOpen ? "catPicker" : null, closed: { catPickerOpen: false } },
-  { scope: (s) => s.tagPickerOpen ? "tagPicker" : null, closed: { tagPickerOpen: false, tagPickerApplying: false, tagPickerPatch: {} } },
+  { scope: (s) => s.tagPicker ? "tagPicker" : null, closed: { tagPicker: null } },
   { scope: (s) => s.tagChooserOpen ? "tagChooser" : null, closed: { tagChooserOpen: false, tagChooserQuery: "", tagChooserCursor: 0 } },
   { scope: (s) => s.filterMode ? "filter" : null, closed: { filterMode: false } },
   { scope: (s) => s.merchantNote ? "merchantNote" : null, closed: { merchantNote: null } },
   { scope: (s) => s.detailId == null ? null : s.detailNotesEditing ? "manager.detail.notes" : "manager.detail", closed: { detailId: null, detailNotesEditing: false } },
-  { scope: (s) => s.settingsEditor ? "settings.editor" : null, closed: { settingsEditor: null, formPicker: null } },
-  { scope: (s) => s.importStage === "none" ? null : `settings.import.${s.importStage}`, closed: { importStage: "none" } },
+  { scope: (s) => s.settingsEditor ? "settings.editor" : null, closed: { settingsEditor: null } },
+  { scope: (s) => s.importWizard ? `settings.import.${s.importWizard.stage}` : null, closed: { importWizard: null } },
   { scope: (s) => s.accountActionId != null ? "manager.accountAction" : null, closed: { accountActionId: null } },
   { scope: (s) => s.acceptPreview ? "manager.acceptPreview" : null, closed: { acceptPreview: null } },
-  { scope: (s) => s.ruleOffersOpen ? "manager.ruleOffers" : null, closed: { ruleOffersOpen: false } },
+  { scope: (s) => s.ruleOffers ? "manager.ruleOffers" : null, closed: { ruleOffers: null } },
   { scope: (s) => s.llmSignIn ? "llmSignIn" : null, closed: { llmSignIn: null } },
   { scope: (s) => s.aiSent ? "settings.aiSent" : null, closed: { aiSent: null } },
   { scope: (s) => s.aiUse ? "settings.aiUse" : null, closed: { aiUse: null } },
   { scope: (s) => s.aiDialog ? "settings.aiDialog" : null, closed: { aiDialog: null } },
   { scope: (s) => s.executor ? "settings.executor" : null, closed: { executor: null } },
   { scope: (s) => s.upAccounts ? "settings.upAccounts" : null, closed: { upAccounts: null } },
-  { scope: (s) => s.factoryResetOpen ? "settings.factoryReset" : null, closed: { factoryResetOpen: false, factoryResetDraft: "", factoryResetCaret: 0 } },
+  { scope: (s) => s.factoryReset ? "settings.factoryReset" : null, closed: { factoryReset: null } },
   { scope: (s) => s.customEdit ? "overview.custom" : null, closed: { customEdit: null } },
 ]
 
@@ -457,9 +430,7 @@ function createUiStore() {
     tagChooserOpen: false,
     tagChooserCursor: 0,
     tagChooserQuery: "",
-    tagPickerOpen: false, tagPickerApplying: false, tagPickerPatch: {},
-    tagPickerCursor: 0,
-    tagPickerQuery: "",
+    tagPicker: null,
     pickerTargets: [],
 
     selectedIds: {},
@@ -494,35 +465,15 @@ function createUiStore() {
     detailNotesCaret: 0,
     filterPicker: null, palette: null, lastCommandId: null, dryRunReport: null, dryRunScroll: 0, dryRunVisible: 10,
     settingsEditor: null,
-    settingsEditId: null,
-    settingsEditField: 0,
-    settingsCaret: 0,
-    formPicker: null,
     settingsDraft: { name: "", color: "#94e2d5", categoryId: null, id: "", expr: "", savedFilterId: "", setCategoryId: null, addTagIds: [], notSpending: false, categoryIds: [], about: "", scopeKey: "overall", amount: "", unit: "month", anchor: "calendar", anchorDate: "", payEarly: false },
     armed: null,
     databaseCursor: 0,
     accountActionCursor: 0,
-    importStage: "none",
-    importDirectory: "",
-    importFiles: [],
-    importCursor: 0,
-    importPath: "",
-    importPathCaret: 0,
-    importProfileCursor: 0,
-    importProfileManaging: false,
-    importProfileDraft: { id: "", name: "", account: "", accountType: "debit", importPrefix: "", hasHeader: true, delimiter: ",", dateColumn: 0, amountColumn: 1, descriptionColumns: [2], descriptionJoin: false, amountStrip: "$", dateFormat: "DMY" },
-    importProfileEditId: null,
-    importProfileField: 0,
-    importProfileCaret: 0,
-    importPreview: null,
-    importPreviewCursor: 0,
-    importPreviewShowAll: false,
-    importPreviewRules: true,
+    importWizard: null,
     accountActionId: null,
     smartQuestion: null,
     acceptPreview: null,
-    ruleOffersOpen: false,
-    ruleOfferCursor: 0,
+    ruleOffers: null,
     llmSignIn: null,
     aiDialog: null,
     executor: null,
@@ -531,14 +482,12 @@ function createUiStore() {
     aiUse: null,
     aiSent: null,
     upAccounts: null,
-    factoryResetOpen: false,
+    factoryReset: null,
     merchantNote: null,
     searchHelp: false,
     searchHelpFull: false,
     searchHelpTop: 0,
     searchHelpVisible: 0,
-    factoryResetDraft: "",
-    factoryResetCaret: 0,
   })
   const [state, setState] = createStore<UiState>(initialState())
 
@@ -590,7 +539,7 @@ function createUiStore() {
       jumpPreviousFocus: state.focusedSection,
       filterMode: false,
       catPickerOpen: false,
-      tagPickerOpen: false, tagPickerApplying: false, tagPickerPatch: {},
+      tagPicker: null,
     })
   }
 
@@ -615,20 +564,20 @@ function createUiStore() {
     setState(updates)
   }
 
-  function leaveSettings() { setState({ settingsActive: false, settingsEditor: null, armed: null, importStage: "none", status: "Settings · navigate sections", statusErr: false }) }
+  function leaveSettings() { setState({ settingsActive: false, settingsEditor: null, armed: null, importWizard: null, status: "Settings · navigate sections", statusErr: false }) }
   function openSettingsEditor(kind: SettingsEditorKind, id: number | string | null, draft: UiState["settingsDraft"]) {
     const field = editorFields(kind, draft, { accounts: [], categories: [], tags: [], savedFilters: [] })[0]
-    setState({ settingsEditor: kind, settingsEditId: id, settingsEditField: 0, formPicker: null, settingsDraft: draft, settingsCaret: field?.kind === "text" ? field.display.length : 0, armed: null, jumpMode: false })
+    setState({ settingsEditor: { kind, id, field: 0, picker: null, caret: field?.kind === "text" ? field.display.length : 0, saving: false }, settingsDraft: draft, armed: null, jumpMode: false })
   }
-  function closeSettingsEditor() { setState({ settingsEditor: null, settingsEditId: null, settingsEditField: 0, settingsCaret: 0, formPicker: null }) }
+  function closeSettingsEditor() { setState({ settingsEditor: null }) }
   function arm(armed: Armed) { setState({ armed }) }
   function disarm() { if (state.armed) setState({ armed: null }) }
 
   function beginImport(directory: string, files: string[]) {
-    setState({ importStage: "files", importDirectory: directory, importFiles: files, importCursor: 0, importPath: "", importPathCaret: 0, importProfileCursor: 0, importProfileManaging: false, importPreview: null, importPreviewCursor: 0, importPreviewShowAll: false, importPreviewRules: true, jumpMode: false })
+    setState({ importWizard: { stage: "files", directory, files, cursor: 0, path: "", pathCaret: 0, profileCursor: 0, managing: false, profileDraft: { id: "", name: "", account: "", accountType: "debit", importPrefix: "", hasHeader: true, delimiter: ",", dateColumn: 0, amountColumn: 1, descriptionColumns: [2], descriptionJoin: false, amountStrip: "$", dateFormat: "DMY" }, profileEditId: null, profileField: 0, profileCaret: 0, preview: null, previewCursor: 0, previewShowAll: false, previewRules: true, committing: false }, jumpMode: false })
   }
-  function cancelImport() { setState({ importStage: "none", importPreview: null, importPath: "", importPathCaret: 0, importProfileEditId: null, importProfileManaging: false }) }
-  function openProfileEditor(draft: ImportProfile, id: string | null) { setState({ importStage: "profileEditor", importProfileDraft: draft, importProfileEditId: id, importProfileField: 0, importProfileCaret: draft.id.length }) }
+  function cancelImport() { setState({ importWizard: null }) }
+  function openProfileEditor(draft: ImportProfile, id: string | null) { if (!state.importWizard) beginImport("", []); setState("importWizard", { stage: "profileEditor", profileDraft: draft, profileEditId: id, profileField: 0, profileCaret: draft.id.length }) }
 
   function moveSettingsList(list: SettingsList, delta: number, count: number) {
     const cursorKey = list === "categories" ? "categoryCursor" : "tagCursor"
@@ -648,7 +597,7 @@ function createUiStore() {
       filterDraft: seed,
       filterCaret: seed.length,
       catPickerOpen: false,
-      tagPickerOpen: false, tagPickerApplying: false, tagPickerPatch: {},
+      tagPicker: null,
       jumpMode: false,
       status: "Search: JQL, or ? then words",
     })
@@ -665,7 +614,7 @@ function createUiStore() {
       catPickerOpen: true,
       catPickerCursor: 0,
       catPickerQuery: "",
-      tagPickerOpen: false, tagPickerApplying: false, tagPickerPatch: {},
+      tagPicker: null,
       filterMode: false,
       jumpMode: false,
       rangeSelecting: false,
@@ -680,11 +629,7 @@ function createUiStore() {
   function openTagPicker(targets: number[]) {
     setState({
       pickerTargets: targets,
-      tagPickerOpen: true,
-      tagPickerApplying: false,
-      tagPickerPatch: {},
-      tagPickerCursor: 0,
-      tagPickerQuery: "",
+      tagPicker: { cursor: 0, query: "", patch: {}, applying: false },
       catPickerOpen: false,
       filterMode: false,
       jumpMode: false,
@@ -694,7 +639,7 @@ function createUiStore() {
   }
 
   function closeTagPicker() {
-    setState({ tagPickerOpen: false, tagPickerApplying: false, tagPickerPatch: {}, tagPickerQuery: "", tagPickerCursor: 0 })
+    setState({ tagPicker: null })
   }
 
   function clearSelection() {

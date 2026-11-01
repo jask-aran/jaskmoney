@@ -56,7 +56,7 @@ test("allocating down: in Categories, enter sets a category's budget starting fr
   handleKey(ui, key("j"), data)
   expect(ui.activeScope()).toBe("budgets.categories")
   handleKey(ui, key("return"), data)
-  expect(ui.state.settingsEditor).toBe("budget")
+  expect(ui.state.settingsEditor?.kind).toBe("budget")
   expect(ui.state.settingsDraft).toMatchObject({ scopeKey: `category:${groceries}`, amount: "300" })
   ui.setState({ settingsEditor: null })
   await data.setBudget({ kind: "category", categoryId: groceries }, 300)

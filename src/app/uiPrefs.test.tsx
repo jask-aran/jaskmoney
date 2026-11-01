@@ -50,14 +50,14 @@ test("bootstrap-off preserves UI defaults; scoped w updates the hint and calenda
     t.mockInput.pressEnter()
     await t.renderOnce()
 
-    ui.setState({ importStage: "path", importPath: "" })
+    ui.beginImport("", []); ui.setState("importWizard", { stage: "path", path: "" })
     await t.mockInput.typeText("whl ")
     await t.renderOnce()
-    expect(ui.state.importPath).toBe("whl ")
+    expect(ui.state.importWizard!.path).toBe("whl ")
     expect(data.state.weekStart).toBe("sunday")
     t.mockInput.pressBackspace()
     await t.renderOnce()
-    expect(ui.state.importPath).toBe("whl")
+    expect(ui.state.importWizard!.path).toBe("whl")
     ui.cancelImport()
 
     ui.switchTab("overview")

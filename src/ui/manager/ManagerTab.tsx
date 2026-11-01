@@ -223,8 +223,8 @@ export function ManagerTab(props: { focused: SectionId }) {
   const ACCEPT_LINES = 8
   const RULE_LINES = 6
   /** R's offers, while its modal is open. */
-  const ruleOffers = createMemo(() => (ui.state.ruleOffersOpen ? data.allRuleOffers() : []))
-  const ruleTop = () => Math.max(0, ui.state.ruleOfferCursor - RULE_LINES + 1)
+  const ruleOffers = createMemo(() => (ui.state.ruleOffers !== null ? data.allRuleOffers() : []))
+  const ruleTop = () => Math.max(0, ui.state.ruleOffers!.cursor - RULE_LINES + 1)
 
   /** Tag-all's preview: the rows it would tag, by description (money in marked). */
   const tagPreview = createMemo(() => {
@@ -343,14 +343,14 @@ export function ManagerTab(props: { focused: SectionId }) {
           </Modal>
         )}
       </Show>
-      <Show when={ui.state.ruleOffersOpen}>
+      <Show when={ui.state.ruleOffers !== null}>
         <Modal title="Make rules" subtitle={data.state.writingRules ? "asking the AI…" : `${ruleOffers().length} offered`} width={76} hints="j/k move · enter choose · x never offer · esc later">
           <text fg={ink.note}>New rows these find get the category on sync, without review.</text>
           <text> </text>
           <For each={ruleOffers().slice(ruleTop(), ruleTop() + RULE_LINES)}>{(offer, i) => {
             const category = () => data.state.categories.find((c) => c.id === offer.categoryId)
             const tag = () => data.state.tags.find((t) => t.id === offer.tagId)
-            const at = () => ruleTop() + i() === ui.state.ruleOfferCursor
+            const at = () => ruleTop() + i() === ui.state.ruleOffers!.cursor
             return (
               <>
                 <ListRow cursor={at()} bg={theme.mantle} spans={[
@@ -369,7 +369,7 @@ export function ManagerTab(props: { focused: SectionId }) {
             )
           }}</For>
           <Show when={!!data.state.llm && ruleOffers().length >= ruleTop() && ruleOffers().length < ruleTop() + RULE_LINES}>
-            <ListRow cursor={ui.state.ruleOfferCursor === ruleOffers().length} bg={theme.mantle} spans={[{ text: ` ${data.state.writingRules ? `Asking ${data.state.llm}…` : "Ask the AI for more rules"}`, fg: tone.ai }]} />
+            <ListRow cursor={ui.state.ruleOffers!.cursor === ruleOffers().length} bg={theme.mantle} spans={[{ text: ` ${data.state.writingRules ? `Asking ${data.state.llm}…` : "Ask the AI for more rules"}`, fg: tone.ai }]} />
           </Show>
           <Show when={ruleOffers().length + (!!data.state.llm ? 1 : 0) > RULE_LINES}>
             <text fg={ink.note}>{`  ${ruleTop() + 1}–${Math.min(ruleTop() + RULE_LINES, ruleOffers().length + (!!data.state.llm ? 1 : 0))} of ${ruleOffers().length + (!!data.state.llm ? 1 : 0)}`}</text>

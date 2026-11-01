@@ -57,7 +57,7 @@ test("preload isolates settings and resets stores; reset removes nested session 
   data.setState({ uncategorisedOnly: true, sortColumn: "amount", sortAscending: true, transactions: [transaction()] })
   ui.setState({
     txnView: "merchants", merchantSort: "count", merchantReverse: true,
-    selectedIds: { 1: true }, tagPickerPatch: { 1: "add" },
+    selectedIds: { 1: true }, tagPicker: { cursor: 0, query: "", patch: { 1: "add" }, applying: false },
     detailId: 1, rangeSelecting: true, rangeAnchorId: 1, rangeCursorId: 2,
   })
   data.reset()

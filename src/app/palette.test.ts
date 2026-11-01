@@ -80,7 +80,7 @@ test("commands go beyond keys: from anywhere, per saved filter and account; keys
 
 test("every hint that names a command names a real one, in every pane and state", async () => {
   await setup()
-  const states = [{}, { uncategorisedOnly: true }, { tagReview: true }, { ruleOffers: 2 }, { asks: true }]
+  const states = [{}, { uncategorisedOnly: true }, { tagReview: true }, { ruleOfferCount: 2 }, { asks: true }]
   for (const scope of ["overview", "manager.txns", "manager.merchants", "manager.accounts", "settings", "settings.taxonomy", "settings.rules", "settings.filters", "budgets", "settings.up", "settings.ai", "settings.database"] as const) {
     for (const extra of states) {
       const ctx = { ui, data, from: scope, press: () => {} }
@@ -137,7 +137,7 @@ test("a saved filter from Overview filters the table; adding a category opens it
   type("add a category")
   handleKey(ui, key("return"), data)
   expect(ui.state.activeTab).toBe("settings")
-  expect(ui.state.settingsEditor).toBe("category")
+  expect(ui.state.settingsEditor?.kind).toBe("category")
 })
 
 test("enter on one that can't run says why and keeps the palette open", async () => {

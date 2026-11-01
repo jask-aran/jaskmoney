@@ -442,7 +442,7 @@ describe("render errors", () => {
     ui.setState({ detailId: null, detailNotesEditing: false })
     const t = await renderApp({ width: 140, height: 55 })
     await t.renderOnce()
-    const profile = { ...ui.state.importProfileDraft, id: "abZcd", account: "Caret test", accountType: "debit" as const }
+    const profile = { ...(ui.state.importWizard?.profileDraft ?? { id: "", name: "", account: "", accountType: "debit" as const, importPrefix: "", hasHeader: true, delimiter: ",", dateColumn: 0, amountColumn: 1, descriptionColumns: [2], descriptionJoin: false, amountStrip: "$", dateFormat: "DMY" as const }), id: "abZcd", account: "Caret test", accountType: "debit" as const }
     await data.commitPreview({
       path: "caret.csv", filename: "caret.csv", profile, accountId: 0, accountName: profile.account,
       rows: [{ sourceLine: 1, dateRaw: "2026-01-01", dateISO: "2026-01-01", amount: -1, description: "LOCAL CARET", duplicate: false, categoryName: "", tagNames: [] }],
@@ -454,9 +454,9 @@ describe("render errors", () => {
       { accent: true, open: () => { ui.switchTab("manager"); ui.openFilter("abZcd") } },
       { accent: false, open: () => { ui.switchTab("manager"); ui.setState({ detailId: id }); t.mockInput.pressKey("n") } },
       { accent: true, open: () => { ui.switchTab("settings"); ui.openSettingsEditor("category", null, { ...ui.state.settingsDraft, name: "abZcd" }) } },
-      { accent: false, open: () => { ui.switchTab("settings"); ui.setState({ importStage: "path", importPath: "abZcd", importPathCaret: 5 }) } },
+      { accent: false, open: () => { ui.switchTab("settings"); ui.beginImport("", []); ui.setState("importWizard", { stage: "path", path: "abZcd", pathCaret: 5 }) } },
       { accent: false, open: () => { ui.switchTab("settings"); ui.openProfileEditor(profile, null) } },
-      { accent: false, open: () => { ui.switchTab("settings"); ui.setState({ factoryResetOpen: true, factoryResetDraft: "abZcd", factoryResetCaret: 5 }) } },
+      { accent: false, open: () => { ui.switchTab("settings"); ui.setState({ factoryReset: { draft: "abZcd", caret: 5, busy: false } }) } },
     ]
     // Seed: end bar. Left: reverse character. End: normal text and end bar.
     for (const context of contexts) {

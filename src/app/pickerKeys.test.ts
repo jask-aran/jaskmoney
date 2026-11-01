@@ -12,7 +12,7 @@ import { footerHints, handleKey } from "./keys"
 function setup() {
   testEnv("JASKMONEY_OPENROUTER_TOKEN", "")
   const network = spyOn(globalThis, "fetch").mockImplementation(Object.assign(() => Promise.reject(new Error("network is forbidden")), { preconnect: globalThis.fetch.preconnect }))
-  onTestFinished(() => { network.mockRestore(); ui.setState({ catPickerOpen: false, tagPickerOpen: false, tagChooserOpen: false, ruleOffersOpen: false }); data.init(":memory:") })
+  onTestFinished(() => { network.mockRestore(); ui.setState({ catPickerOpen: false, tagChooserOpen: false, tagPicker: null, ruleOffers: null }); data.init(":memory:") })
   data.init(":memory:")
   const db = data.getDb()!
   db.query("INSERT INTO accounts (id, name, type, source) VALUES (100, 'Spending', 'debit', 'csv')").run()
@@ -36,9 +36,9 @@ test("ctrl+j / ctrl+k move in the category picker, tag picker and tag chooser, a
   await data.createSettingsTag({ name: "BBB", color: "#fff", categoryIds: [], about: null })
   handleKey(ui, key("t"), data)
   handleKey(ui, ctrl("j"), data)
-  expect(ui.state.tagPickerCursor).toBe(1)
+  expect(ui.state.tagPicker!.cursor).toBe(1)
   handleKey(ui, ctrl("k"), data)
-  expect(ui.state.tagPickerCursor).toBe(0)
+  expect(ui.state.tagPicker!.cursor).toBe(0)
   handleKey(ui, key("escape"), data)
 
   handleKey(ui, key("t", { shift: true }), data)
@@ -61,13 +61,13 @@ test("rule offers: the last row asks the AI (when a model is set up); a no longe
   // The core reads credentials when they're saved or a sign-in changes.
   await data.refreshApiKeys()
   handleKey(ui, key("r", { shift: true }), data)
-  expect(ui.state.ruleOffersOpen).toBe(true)
+  expect(ui.state.ruleOffers !== null).toBe(true)
   expect(data.allRuleOffers()).toEqual([])
   // a does nothing now.
   handleKey(ui, key("a"), data)
   expect(data.state.writingRules).toBe(false)
   // With no offers, the cursor is on the ask row; enter asks.
-  expect(ui.state.ruleOfferCursor).toBe(0)
+  expect(ui.state.ruleOffers!.cursor).toBe(0)
   handleKey(ui, key("return"), data)
   expect(ui.state.status).toStartWith("Asking ")
   await Bun.sleep(20)
@@ -79,6 +79,6 @@ test("rule offers: the last row asks the AI (when a model is set up); a no longe
 test("rule offers without a model: no ask row, and R says how to get offers", () => {
   setup()
   handleKey(ui, key("r", { shift: true }), data)
-  expect(ui.state.ruleOffersOpen).toBe(false)
+  expect(ui.state.ruleOffers !== null).toBe(false)
   expect(ui.state.status).toStartWith("No rule to offer")
 })

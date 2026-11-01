@@ -21,7 +21,7 @@ beforeEach(() => {
   data.init(":memory:")
   data.clearFilter()
   ui.switchTab("manager")
-  ui.setState({ detailId: null, formPicker: null, txnView: "rows" })
+  ui.setState({ detailId: null, txnView: "rows" })
 })
 afterEach(() => {
   // Unmount before switching tabs, so the switch runs no App effects.
@@ -41,7 +41,7 @@ test("ctrl+s pre-fills a new filter on Name in both transaction views; empty fil
     data.commitFilter("desc:Coffee")
     handleKey(ui, key("s", { ctrl: true }), data)
     expect(ui.state.settingsDraft).toMatchObject({ id: "filter-2", name: "", expr: "desc:Coffee" })
-    expect(ui.state.settingsEditField).toBe(1)
+    expect(ui.state.settingsEditor!.field).toBe(1)
     expect(ui.activeScope()).toBe("settings.editor")
     handleKey(ui, key("j"), data)
     expect(ui.state.settingsDraft.name).toBe("j")

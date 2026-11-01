@@ -368,42 +368,42 @@ function ImportHistory(props: { width: number; height?: number | "auto" | `${num
 const PREVIEW_ROWS = 8
 
 function ImportOverlay() {
-  const stage = () => ui.state.importStage
-  const previewRows = () => { const p = ui.state.importPreview; return p ? (ui.state.importPreviewShowAll ? p.rows : p.rows.filter((row) => row.duplicate)) : [] }
+  const stage = () => (ui.state.importWizard?.stage ?? "none")
+  const previewRows = () => { const p = ui.state.importWizard!.preview; return p ? (ui.state.importWizard!.previewShowAll ? p.rows : p.rows.filter((row) => row.duplicate)) : [] }
   // The preview shows PREVIEW_ROWS rows at a time around the cursor.
-  const previewTop = () => centredTop(ui.state.importPreviewCursor, previewRows().length, PREVIEW_ROWS)
+  const previewTop = () => centredTop(ui.state.importWizard!.previewCursor, previewRows().length, PREVIEW_ROWS)
   const previewWindow = () => previewRows().slice(previewTop(), previewTop() + PREVIEW_ROWS)
-  const profile = () => ui.state.importProfileDraft
+  const profile = () => ui.state.importWizard!.profileDraft
   const profileFields = () => [
     ["ID", profile().id], ["Name", profile().name], ["Account", profile().account], ["Type", profile().accountType], ["Prefix", profile().importPrefix], ["Header", profile().hasHeader ? "yes" : "no"], ["Delimiter", profile().delimiter], ["Date column", String(profile().dateColumn)], ["Amount column", String(profile().amountColumn)], ["Description columns", profile().descriptionColumns.join(",")], ["Join description tail", profile().descriptionJoin ? "yes" : "no"], ["Amount strip", profile().amountStrip], ["Date order", profile().dateFormat],
   ]
   return <>
     <Show when={stage() === "files"}>
       <Modal title="Import CSV" hints="enter select · p path · esc cancel">
-        <text fg={ink.label}>{ui.state.importDirectory}</text>
-        <Show when={ui.state.importFiles.length} fallback={<text fg={ink.note}>No CSV files here. Press p to enter a path.</text>}>
-          <For each={ui.state.importFiles}>{(path, i) => (
-            <ListRow cursor={i() === ui.state.importCursor} bg={theme.mantle} spans={[{ text: path.split(/[\\/]/).pop() ?? path, fg: ink.figure }]} />
+        <text fg={ink.label}>{ui.state.importWizard!.directory}</text>
+        <Show when={ui.state.importWizard!.files.length} fallback={<text fg={ink.note}>No CSV files here. Press p to enter a path.</text>}>
+          <For each={ui.state.importWizard!.files}>{(path, i) => (
+            <ListRow cursor={i() === ui.state.importWizard!.cursor} bg={theme.mantle} spans={[{ text: path.split(/[\\/]/).pop() ?? path, fg: ink.figure }]} />
           )}</For>
         </Show>
       </Modal>
     </Show>
-    <Show when={stage() === "path"}><Modal title="Import CSV path"><text fg={ink.figure}><TextInput field={{ value: ui.state.importPath, caret: ui.state.importPathCaret }} focused /></text><text fg={ink.note}>Enter an absolute path or one relative to the listed folder.</text></Modal></Show>
+    <Show when={stage() === "path"}><Modal title="Import CSV path"><text fg={ink.figure}><TextInput field={{ value: ui.state.importWizard!.path, caret: ui.state.importWizard!.pathCaret }} focused /></text><text fg={ink.note}>Enter an absolute path or one relative to the listed folder.</text></Modal></Show>
     <Show when={stage() === "profile"}>
-      <Modal title={ui.state.importProfileManaging ? "Import profiles" : "Choose import profile"} hints="a new · e edit · del del delete · enter select · esc back">
+      <Modal title={ui.state.importWizard!.managing ? "Import profiles" : "Choose import profile"} hints="a new · e edit · del del delete · enter select · esc back">
         <Show when={data.state.importProfiles.length} fallback={<text fg={ink.note}>No profiles yet. Press a to map this CSV.</text>}>
           <For each={data.state.importProfiles}>{(item, i) => (
-            <ListRow cursor={i() === ui.state.importProfileCursor} bg={theme.mantle} armed={armedFor(ui.state.armed, "profile", item.id)} spans={[
+            <ListRow cursor={i() === ui.state.importWizard!.profileCursor} bg={theme.mantle} armed={armedFor(ui.state.armed, "profile", item.id)} spans={[
               { text: item.name, fg: ink.figure },
               { text: `  ${item.account} · ${item.importPrefix || "no prefix"}`, fg: ink.label },
             ]} />
           )}</For>
         </Show>
-        <ListRow cursor={ui.state.importProfileCursor === data.state.importProfiles.length} bg={theme.mantle} spans={[{ text: "New mapped profile", fg: ink.label }]} />
+        <ListRow cursor={ui.state.importWizard!.profileCursor === data.state.importProfiles.length} bg={theme.mantle} spans={[{ text: "New mapped profile", fg: ink.label }]} />
       </Modal>
     </Show>
-    <Show when={stage() === "profileEditor"}><Modal title="Map CSV profile" hints={`tab field · h/l choices · enter ${ui.state.importPath ? "save and scan" : "save"} · esc back`}><For each={profileFields()}>{(entry, i) => <text><S fg={ink.label} bold={i() === ui.state.importProfileField}>{i() === ui.state.importProfileField ? "> " : "  "}{entry[0]}: </S><TextInput field={{ value: entry[1] ?? "", caret: ui.state.importProfileCaret }} focused={i() === ui.state.importProfileField && ![3, 5, 10, 12].includes(i())} /></text>}</For></Modal></Show>
-    <Show when={stage() === "preview" && ui.state.importPreview}>{(p: () => NonNullable<typeof ui.state.importPreview>) => (
+    <Show when={stage() === "profileEditor"}><Modal title="Map CSV profile" hints={`tab field · h/l choices · enter ${ui.state.importWizard!.path ? "save and scan" : "save"} · esc back`}><For each={profileFields()}>{(entry, i) => <text><S fg={ink.label} bold={i() === ui.state.importWizard!.profileField}>{i() === ui.state.importWizard!.profileField ? "> " : "  "}{entry[0]}: </S><TextInput field={{ value: entry[1] ?? "", caret: ui.state.importWizard!.profileCaret }} focused={i() === ui.state.importWizard!.profileField && ![3, 5, 10, 12].includes(i())} /></text>}</For></Modal></Show>
+    <Show when={stage() === "preview" && ui.state.importWizard!.preview}>{(p: () => NonNullable<NonNullable<typeof ui.state.importWizard>["preview"]>) => (
       <Modal title="Import preview" hints="s skip duplicates · a force import · p all/dupes · r rules · esc cancel">
         <text fg={ink.label}>{p().filename} · {p().accountName} · {p().profile.name}</text>
         <text fg={ink.note}>Rows {p().rows.length} · <S fg={ink.note}>{p().newCount} new</S> · <S fg={tone.caution}>{p().duplicateCount} duplicates</S> · <S fg={p().errors.length ? tone.bad : ink.note}>{p().errors.length} errors</S></text>
@@ -411,10 +411,10 @@ function ImportOverlay() {
           <For each={p().errors.slice(0, 4)}>{(err) => <text fg={tone.bad}>{`line ${err.sourceLine}: ${err.message}`}</text>}</For>
           <text fg={tone.bad}>Import blocked until parsing errors are fixed.</text>
         </Show>
-        <text fg={ink.label}>{ui.state.importPreviewShowAll ? "All rows" : "Duplicate rows"} · rules {ui.state.importPreviewRules ? "ON" : "OFF"}</text>
+        <text fg={ink.label}>{ui.state.importWizard!.previewShowAll ? "All rows" : "Duplicate rows"} · rules {ui.state.importWizard!.previewRules ? "ON" : "OFF"}</text>
         <Show when={previewRows().length} fallback={<text fg={ink.note}>No rows in this view.</text>}>
           <For each={previewWindow()}>{(row, i) => (
-            <ListRow cursor={previewTop() + i() === ui.state.importPreviewCursor} bg={theme.mantle} spans={[
+            <ListRow cursor={previewTop() + i() === ui.state.importWizard!.previewCursor} bg={theme.mantle} spans={[
               row.duplicate ? { text: "! ", fg: tone.caution } : { text: "· ", fg: ink.rule },
               { text: `${row.dateISO} `, fg: ink.label },
               { text: fit(row.description, 38), fg: ink.figure },
@@ -428,15 +428,16 @@ function ImportOverlay() {
   </>
 }
 
-function FactoryResetOverlay() { return <Show when={ui.state.factoryResetOpen}><Modal title="Factory-reset database" tone="error" hints="enter erase · esc cancel"><text fg={tone.bad}>Removes the SQLite database and its transaction, account, taxonomy, and rule data.</text><text fg={ink.note}>Saved filters and import profiles remain in OpenTUI config.</text><text fg={tone.bad}>Type RESET: <TextInput field={{ value: ui.state.factoryResetDraft, caret: ui.state.factoryResetCaret }} focused /></text></Modal></Show> }
+function FactoryResetOverlay() { return <Show when={ui.state.factoryReset !== null}><Modal title="Factory-reset database" tone="error" hints="enter erase · esc cancel"><text fg={tone.bad}>Removes the SQLite database and its transaction, account, taxonomy, and rule data.</text><text fg={ink.note}>Saved filters and import profiles remain in OpenTUI config.</text><text fg={tone.bad}>Type RESET: <TextInput field={{ value: ui.state.factoryReset!.draft, caret: ui.state.factoryReset!.caret }} focused /></text></Modal></Show> }
 
 export function EditorOverlay() {
   const ctx = () => ({ accounts: data.state.accounts, categories: data.state.categories, tags: data.state.tags, savedFilters: data.state.savedFilters, transactions: data.transactions() })
   return (
     <Show when={ui.state.settingsEditor}>
-      {(kind: () => NonNullable<typeof ui.state.settingsEditor>) => {
+      {(editor: () => NonNullable<typeof ui.state.settingsEditor>) => {
+        const kind = () => editor().kind
         const fields = () => editorFields(kind(), ui.state.settingsDraft, ctx())
-        const cursor = () => Math.min(ui.state.settingsEditField, fields().length - 1)
+        const cursor = () => Math.min(ui.state.settingsEditor!.field, fields().length - 1)
         const field = () => fields()[cursor()]!
         // Sized to its content (border and padding: 4), and steady while
         // moving between fields: every kind's hint line counts.
@@ -447,14 +448,14 @@ export function EditorOverlay() {
         return (
           <>
             <Modal
-              title={kind() === "cycle" ? EDITOR_TITLE.cycle : `${ui.state.settingsEditId == null ? "New" : "Edit"} ${EDITOR_TITLE[kind()].toLowerCase()}`}
+              title={kind() === "cycle" ? EDITOR_TITLE.cycle : `${ui.state.settingsEditor!.id == null ? "New" : "Edit"} ${EDITOR_TITLE[kind()].toLowerCase()}`}
               width={width()}
               hints={EDITOR_HINTS[field().kind]}
             >
-              <Form fields={fields()} cursor={cursor()} caret={ui.state.settingsCaret} note={note()} />
+              <Form fields={fields()} cursor={cursor()} caret={ui.state.settingsEditor!.caret} note={note()} />
             </Modal>
-            <Show when={ui.state.formPicker}>
-              {(picker: () => NonNullable<typeof ui.state.formPicker>) => (
+            <Show when={ui.state.settingsEditor!.picker}>
+              {(picker: () => NonNullable<NonNullable<typeof ui.state.settingsEditor>["picker"]>) => (
                 <ListPicker
                   title={field().label}
                   subtitle={EDITOR_TITLE[kind()]}
