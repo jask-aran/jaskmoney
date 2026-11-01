@@ -391,9 +391,12 @@ export function OverviewTab(props: { focused: SectionId }) {
   // A component, not a function call in JSX: its card stays mounted while
   // the view changes (a remounted card has no measured width for a frame or
   // two, so its border picker and legend would blink out).
-  // Once a launch, the charts draw in as they first show data (motion).
+  // Once a launch, the charts draw in as they first show data (motion),
+  // or, when the setup opens over them at launch, as it closes: the
+  // draw-in is for when they're seen. Latched: once fired, it stays, so
+  // the setup run again later doesn't play it again.
   const revealMs = takeLaunchReveal()
-  const revealKey = () => (data.state.ready ? "launch" : undefined)
+  const revealKey = createMemo<string | undefined>((was) => was ?? (data.state.ready && !ui.state.welcome ? "launch" : undefined))
   const ChartPane = (p: { pane: 0 | 1; height: number }) => {
     const index = () => ui.state.chartViews[p.pane]
     const view = () => CHART_VIEWS[index()] ?? CHART_VIEWS[0]
