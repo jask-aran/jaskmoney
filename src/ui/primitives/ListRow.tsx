@@ -1,4 +1,4 @@
-import { Index } from "solid-js"
+import { Index, createMemo } from "solid-js"
 import { tone } from "../../theme"
 import { rowAppearance } from "../../domain/rowStyle"
 import type { Span } from "./spans"
@@ -15,8 +15,10 @@ import { S } from "./S"
  */
 /** `id`: for a scrolling parent to bring the row into view. */
 export function ListRow(props: { cursor: boolean; selected?: boolean; bg: string; spans: Span[]; armed?: string; id?: string }) {
-  const look = () => rowAppearance(!!props.selected, false, props.cursor)
-  const bg = () => look().bg ?? props.bg
+  // Memos: the cursor prop is often an expression over the list's window
+  // and cursor, read here once per change rather than once per span.
+  const look = createMemo(() => rowAppearance(!!props.selected, false, props.cursor))
+  const bg = createMemo(() => look().bg ?? props.bg)
   const spans = (): Span[] => props.armed ? [{ text: props.armed, fg: tone.bad, bold: true }] : props.spans
   return (
     <box id={props.id} width="100%" height={1} overflow="hidden" backgroundColor={bg()}>

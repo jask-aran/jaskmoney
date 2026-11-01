@@ -235,6 +235,16 @@ export function budgetCounts(subject: BudgetSubject, categories: Category[], bud
   return (row) => kept(row) && row.accountId === subject.accountId
 }
 
+/** Each day's cycle start under `config`, kept while the config is: a new
+ * subject (the Budgets chart follows the cursor) finds them again only if
+ * the cycle settings or pay dates changed (store cycle makes a new one). */
+const startsByConfig = new WeakMap<CycleConfig, Map<string, string>>()
+function cycleStarts(config: CycleConfig): Map<string, string> {
+  let starts = startsByConfig.get(config)
+  if (!starts) startsByConfig.set(config, starts = new Map())
+  return starts
+}
+
 /** budgetCounts with the budgets in force in each row's own cycle
  * (budgetsIn), for rows across cycles: rent counts toward everything else
  * only in cycles when it had no budget of its own. */
@@ -243,10 +253,12 @@ export function budgetCountsThen(subject: BudgetSubject, categories: Category[],
   // Rows share days and days share cycles: find each day's cycle once.
   const byCycle = new Map<string, (row: Transaction) => boolean>()
   const byDay = new Map<string, (row: Transaction) => boolean>()
+  const starts = cycleStarts(config)
   return (row) => {
     let counts = byDay.get(row.dateISO)
     if (!counts) {
-      const start = cycleFor(config, row.dateISO).start
+      let start = starts.get(row.dateISO)
+      if (start === undefined) starts.set(row.dateISO, start = cycleFor(config, row.dateISO).start)
       counts = byCycle.get(start)
       if (!counts) byCycle.set(start, counts = budgetCounts(subject, categories, budgetsIn(history, budgets, start)))
       byDay.set(row.dateISO, counts)

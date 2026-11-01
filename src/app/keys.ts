@@ -19,7 +19,8 @@ import { RULE_AFTER } from "../domain/ruleOffers"
 import { endTagReview, runTagAccept, startTagReview } from "./tagReview"
 import { budgetLabel, budgetScopeOptions, scopeKey, scopeOfKey } from "../domain/budgetScopes"
 import { cycleAt, type Budget, type BudgetScope, type CycleConfig } from "../domain/budget"
-import { budgetArmId, budgetCategoryLines, budgetListRows, budgetView, type BudgetLine } from "../domain/budgetLines"
+import { budgetArmId, budgetListRows, type BudgetLine } from "../domain/budgetLines"
+import { sharedBudgetView, sharedCategoryLines } from "../state/budgetViews"
 import { MERCHANT_SORTS, groupByMerchant, merchantFilter, sortMerchantGroups } from "../domain/merchants"
 import { anchorDraft, cycleFromDraft, editorFields, normaliseCycleDraft, pickerChoices, pickerItems, stepChoice } from "../state/settingsForm"
 import { runSync } from "./sync"
@@ -1588,13 +1589,13 @@ function handleManagerAccounts(ui: UiStore, key: KeyEvent, data?: DataStore): vo
 
 /** The cycle the Budgets tab shows and the budgets in force in it. */
 function viewedBudgets(ui: UiStore, data: DataStore) {
-  return budgetView(data.cycle(), appToday(), ui.state.activeTab === "budgets" ? ui.state.budgetOffset : 0, data.state.budgetHistory, data.state.budgets)
+  return sharedBudgetView(data.cycle(), appToday(), ui.state.activeTab === "budgets" ? ui.state.budgetOffset : 0, data.state.budgetHistory, data.state.budgets)
 }
 
 /** The Categories card's lines, as the tab draws them. */
 function budgetLines(ui: UiStore, data: DataStore): BudgetLine[] {
   const view = viewedBudgets(ui, data)
-  return budgetCategoryLines(data.cycle(), view.through, data.state.accounts, data.state.categories, view.budgets, data.transactions())
+  return sharedCategoryLines(data.cycle(), view.through, data.state.accounts, data.state.categories, view.budgets, data.transactions())
 }
 
 function openBudgetEditor(ui: UiStore, data: DataStore, budget: Budget | null, scope: BudgetScope, amount: number): void {
