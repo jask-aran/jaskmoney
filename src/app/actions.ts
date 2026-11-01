@@ -71,6 +71,10 @@ export function toggleXAxis(ui: UiStore, data: DataStore): void {
   settleData(ui, data.saveUiPrefs({ xAxis: !data.state.uiPrefs.xAxis }), () => ui.setStatus(data.state.uiPrefs.xAxis ? "Charts draw an x-axis line" : "Charts without an x-axis line"))
 }
 
+export function toggleHatched(ui: UiStore, data: DataStore): void {
+  settleData(ui, data.saveUiPrefs({ hatched: !data.state.uiPrefs.hatched }), () => ui.setStatus(data.state.uiPrefs.hatched ? "Bars are hatched" : "Bars are solid"))
+}
+
 /** A saved filter on the table, its use recorded; false when it doesn't parse. */
 export function applySavedFilter(ui: UiStore, data: DataStore, filter: SavedFilter): boolean {
   const result = data.commitFilter(filter.expr)

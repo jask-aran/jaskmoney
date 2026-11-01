@@ -4,14 +4,15 @@ import { DEFAULT_OPEN_RANGE, OPEN_RANGE_LABELS } from "../domain/timeframe"
 import type { UiPrefs } from "./settingsConfig"
 
 /** Approved port deviation: display settings live in Appearance. */
-export type AppearanceRow = "icons" | "xAxis" | "chartMotion" | "chartSpeed" | "chartLabels" | "openRange" | "backdrop"
-export const APPEARANCE_ROWS: readonly AppearanceRow[] = ["icons", "xAxis", "chartMotion", "chartSpeed", "chartLabels", "openRange", "backdrop"]
-export type AppearanceRowContext = Pick<UiPrefs, "xAxis" | "chartMotion" | "chartSpeed" | "chartLabels" | "openRange" | "backdrop"> & { icons: boolean }
+export type AppearanceRow = "icons" | "xAxis" | "hatched" | "chartMotion" | "chartSpeed" | "chartLabels" | "openRange" | "backdrop"
+export const APPEARANCE_ROWS: readonly AppearanceRow[] = ["icons", "xAxis", "hatched", "chartMotion", "chartSpeed", "chartLabels", "openRange", "backdrop"]
+export type AppearanceRowContext = Pick<UiPrefs, "xAxis" | "hatched" | "chartMotion" | "chartSpeed" | "chartLabels" | "openRange" | "backdrop"> & { icons: boolean }
 
 export function appearanceRow(row: AppearanceRow, ctx: AppearanceRowContext): { label: string; value: string } {
   switch (row) {
     case "icons": return { label: "Category icons", value: ctx.icons ? "on (Nerd Font)" : "off" }
     case "xAxis": return { label: "Charts' $0 line", value: ctx.xAxis ? "on" : "off" }
+    case "hatched": return { label: "Bar fills", value: ctx.hatched ? "hatched ╱╱╱" : "solid ███" }
     case "chartMotion": return { label: "Chart animation", value: CHART_MOTION_LABELS[ctx.chartMotion ?? DEFAULT_CHART_MOTION] }
     case "chartSpeed": return { label: "Animation speed", value: CHART_SPEEDS.find((speed) => speed.id === (ctx.chartSpeed ?? DEFAULT_CHART_SPEED))!.label }
     case "chartLabels": return { label: "Chart labels", value: CHART_LABEL_LABELS[ctx.chartLabels ?? DEFAULT_CHART_LABELS] }

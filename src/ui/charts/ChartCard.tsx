@@ -6,6 +6,8 @@ import { SectionCard } from "../primitives/SectionCard"
 import { ChartBody, type ChartModel } from "./ChartBody"
 import { INKS } from "../overview/periodCharts"
 import type { ChartLabelMode } from "./motion"
+import { hatchModel } from "./hatch"
+import { data } from "../../state/dataStore"
 
 /** A chart pane's views, in h/l order, each with the group it belongs to. */
 export type ChartViews = ReadonlyArray<{ view: string; group: string }>
@@ -55,7 +57,7 @@ export function ChartCard(props: {
       focused={props.focused}
     >
       <Show when={props.model} fallback={props.fallback}>
-        {(m: () => ChartModel) => <ChartBody model={m()} inks={INKS} baseline={props.baseline} revealKey={props.revealKey} revealMs={props.revealMs} labels={props.labels} />}
+        {(m: () => ChartModel) => <ChartBody model={data.state.uiPrefs.hatched ? hatchModel(m()) : m()} inks={INKS} baseline={props.baseline} revealKey={props.revealKey} revealMs={props.revealMs} labels={props.labels} />}
       </Show>
     </SectionCard>
   )

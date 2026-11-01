@@ -7,6 +7,8 @@ import { handleKey } from "../../app/keys"
 import { key } from "../../testing/keys"
 import { saveBudget } from "../../db/client"
 import { budgetIn } from "../../domain/budget"
+import { RGBA } from "@opentui/core"
+import { tone } from "../../theme"
 
 afterEach(() => setAppClock(null))
 
@@ -39,7 +41,9 @@ test("Budgets tab (3): a chart of the budget at the cursor under where it stands
   expect(f).toContain("This cycle $100")
   expect(f).toContain("Budget $500, $223 under pace")
   expect(f).toContain("≈ $155")
-  expect(f).toMatch(/Overall spending\s+[█▌│─]+\s+\$100 of \$500\s+\$400 left · \$33\/day/)
+  expect(f).toMatch(/╭ Overall spending  \$100 of \$500\s+\$400 left · \$33\/day ╮ │/)
+  // Under it, the bar the card's width with today's even pace marked.
+  expect(f).toMatch(/\n│  █+─*│─+ │/)
   expect(f).toMatch(/Groceries\s+\$100\s+\$300/)
   // Each cycle, newest first, against its budget.
   expect(f).toMatch(/1 Oct – 31 Oct\s+\$100\s+[█─▏│ ]+\s+\$400 under/)
@@ -64,9 +68,9 @@ test("allocating down: in Categories, enter sets a category's budget starting fr
   // With a category budget the overall one is everything else, and the
   // two add up to the total.
   expect(f).toContain("Categories $300 + everything else $500")
-  expect(f).toMatch(/Total budgeted\s+[█▌│─]+\s+\$100 of \$800/)
-  expect(f).toMatch(/Everything else\s+[█▌│─]+\s+\$0 of \$500/)
-  expect(f).toMatch(/Groceries\s+[█▌│─]+\s+\$100 of \$300\s+\$200 left/)
+  expect(f).toMatch(/╭ Total budgeted  \$100 of \$800 /)
+  expect(f).toMatch(/╭ Everything else  \$0 of \$500 /)
+  expect(f).toMatch(/╭ Groceries  \$100 of \$300\s+\$200 left/)
   expect(f).toContain("Groceries · Cumulative")
   expect(f).toContain("Each cycle · Groceries")
   // del twice removes the category's budget.
@@ -88,7 +92,7 @@ test("x leaves a category out of the budgets (not budgeted: the total and everyt
   handleKey(ui, key("x"), data)
   expect(data.state.categories.find((c) => c.id === groceries)!.budgetIgnored).toBe(true)
   const f = await frame()
-  expect(f).toMatch(/Overall spending\s+[█▌│─]+\s+\$0 of \$500/)
+  expect(f).toMatch(/╭ Overall spending  \$0 of \$500 /)
   expect(f).toContain("Not budgeted: Groceries")
   expect(f).toMatch(/Groceries\s+\$100\s+\$300\s+left out/)
   handleKey(ui, key("x"), data)
@@ -114,13 +118,13 @@ test("[ shows the cycle before with the budgets then; a budget removed from this
   // Removed from this cycle on.
   await data.removeBudget({ kind: "category", categoryId: groceries })
   expect(data.state.budgets.some((b) => b.scope.kind === "category")).toBe(false)
-  expect(await frame()).not.toMatch(/Groceries\s+[█▌│─]+/)
+  expect(await frame()).not.toMatch(/╭ Groceries /)
   handleKey(ui, key("["), data)
   expect(ui.state.budgetOffset).toBe(-1)
   const f = await frame()
   expect(f).toContain("Budgets · 1 Sep – 30 Sep · ] later")
-  expect(f).toMatch(/Groceries\s+[█▌│─]+\s+\$300 of \$300/)
-  expect(f).toMatch(/Total budgeted\s+[█▌│─]+\s+\$300 of \$800/)
+  expect(f).toMatch(/╭ Groceries  \$300 of \$300 /)
+  expect(f).toMatch(/╭ Total budgeted  \$300 of \$800 /)
   // No cycle before September has data; ] comes back, and no further.
   handleKey(ui, key("["), data)
   expect(ui.state.budgetOffset).toBe(-1)
@@ -152,7 +156,7 @@ test("with only category budgets, the total is theirs and everything else waits 
   const { groceries, frame } = await budgetsTab()
   await data.setBudget({ kind: "category", categoryId: groceries }, 300)
   const f = await frame()
-  expect(f).toMatch(/Total budgeted\s+[█▌│─]+\s+\$100 of \$300/)
+  expect(f).toMatch(/╭ Total budgeted  \$100 of \$300 /)
   expect(f).toMatch(/Everything else\s+not set: enter sets one for the rest/)
   ui.setState({ budgetCursor: 1 })
   handleKey(ui, key("return"), data)
@@ -167,7 +171,41 @@ test("wide, the categories run down the right beside the chart and the budgets",
   handleKey(ui, key("3"), data)
   await t.renderOnce(); await t.flush()
   const lines = t.captureCharFrame().split("\n")
-  const top = lines.find((l) => l.includes("Overall spending ·"))!
+  // The budgets first, then the chart, beside the categories.
+  const top = lines.find((l) => l.includes("Budgets ·"))!
   expect(top).toContain("Categories")
-  expect(lines.some((l) => l.includes("Budgets") && l.includes("│"))).toBe(true)
+  const chart = lines.findIndex((l) => l.includes("Overall spending ·"))
+  expect(chart).toBeGreaterThan(lines.indexOf(top))
+  expect(lines[chart]!.endsWith("│")).toBe(true)
+})
+
+test("short of room for two lines each, every budget takes one line, the bar between its name and figures", async () => {
+  setAppClock(new Date(2026, 9, 20, 12))
+  const t = await renderApp({ width: 120, height: 24 })
+  data.init(":memory:")
+  const db = data.getDb()!
+  db.query("INSERT INTO accounts (id, name, type, source, external_kind) VALUES (1, 'Spending', 'debit', 'up', 'TRANSACTIONAL')").run()
+  const groceries = data.state.categories.find((c) => c.name === "Groceries")!.id
+  db.query("INSERT INTO transactions (date_raw, date_iso, amount, description, account_id, category_id, source) VALUES ('2026-10-03', '2026-10-03', -100, 'Shop', 1, ?, 'up')").run(groceries)
+  data.refresh()
+  await data.setBudget({ kind: "overall" }, 500)
+  await data.setBudget({ kind: "category", categoryId: groceries }, 300)
+  handleKey(ui, key("3"), data)
+  await t.renderOnce(); await t.flush()
+  const f = t.captureCharFrame()
+  expect(f).toMatch(/Groceries\s+[█▌│─]+\s+\$100 of \$300\s+\$200 left/)
+  expect(f).not.toContain("╭ Groceries")
+})
+
+test("Bar fills hatched (Settings › Appearance): the budgets' bars are ╱ in the same ink", async () => {
+  const { t, frame } = await budgetsTab()
+  await data.setBudget({ kind: "overall" }, 500)
+  await data.saveUiPrefs({ hatched: true })
+  const f = await frame()
+  expect(f).toMatch(/\n│  ╱+─*│─+ │/)
+  expect(f).not.toMatch(/\n│  █/)
+  const bar = t.captureSpans().lines.flatMap((l) => l.spans).find((s) => s.text.startsWith("╱"))!
+  expect(bar.fg.toInts()).toEqual(RGBA.fromHex(tone.good).toInts())
+  await data.saveUiPrefs({ hatched: false })
+  expect(await frame()).toMatch(/\n│  █+─*│─+ │/)
 })

@@ -5,7 +5,7 @@ import { web } from "./webApp"
 import { unwrap } from "solid-js/store"
 import { merchantKey } from "../domain/history"
 import { footerShown, scopeLabel, type Hint } from "./palette"
-import { changeAccountScope, toTransactions, toggleDemo, applyAllRules, applySavedFilter, clearTransactionFilter, askForRules, reportError, settleData, resetTransactionCursors, runUndo, showAccount, showDryRun, toggleIcons, toggleWeekStart, toggleXAxis, toggleChartMotion, cycleChartSpeed, toggleChartLabels, cycleOpenRange, cycleBackdrop } from "./actions"
+import { changeAccountScope, toTransactions, toggleDemo, applyAllRules, applySavedFilter, clearTransactionFilter, askForRules, reportError, settleData, resetTransactionCursors, runUndo, showAccount, showDryRun, toggleIcons, toggleWeekStart, toggleXAxis, toggleHatched, toggleChartMotion, cycleChartSpeed, toggleChartLabels, cycleOpenRange, cycleBackdrop } from "./actions"
 import { commands, rankCommands, type Command } from "./commands"
 import { ACCOUNT_ACTIONS, armedText, isArmed, isSecondPress, type Armed } from "../state/armed"
 import { DATABASE_ROWS } from "../state/databaseRows"
@@ -1384,6 +1384,7 @@ function handleSettingsAppearance(ui: UiStore, key: KeyEvent, data?: DataStore):
   switch (APPEARANCE_ROWS[ui.state.appearanceCursor]) {
     case "icons": if (data) toggleIcons(ui, data); return
     case "xAxis": if (data) toggleXAxis(ui, data); return
+    case "hatched": if (data) toggleHatched(ui, data); return
     case "chartMotion": if (data) toggleChartMotion(ui, data); return
     case "chartSpeed": if (data) cycleChartSpeed(ui, data); return
     case "chartLabels": if (data) toggleChartLabels(ui, data); return

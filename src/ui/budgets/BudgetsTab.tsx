@@ -22,6 +22,7 @@ import { fitSpans, type Span } from "../primitives/spans"
 import { AXIS_GUESS, axisWidth, type ChartModel } from "../charts/ChartBody"
 import { WIDE } from "../overview/OverviewTab"
 import { cycleLines, cycleLinesLegend, type CycleSpent } from "./budgetCharts"
+import { hatchSpans } from "../charts/hatch"
 import { chartSpeedMs, showings } from "../charts/motion"
 import { ChartCard } from "../charts/ChartCard"
 import { spendingChart } from "../overview/periodCharts"
@@ -34,8 +35,8 @@ const HISTORY = 36
  * A bar in `width` cells for `fill` (0–1 of the width), coloured by how
  * it's going (green, yellow ahead of pace, red over budget), with a mark at
  * `mark` (0–1): where spending would be by today at an even pace. Over
- * budget, the bar is scaled to what was spent: green up to the budget's
- * mark, red past it.
+ * budget, the bar is scaled to what was spent: green up to the budget,
+ * red past it (the change of colour marks it).
  */
 function bar(width: number, used: number, pace: number): Span[] {
   const over = used > 1
@@ -46,7 +47,7 @@ function bar(width: number, used: number, pace: number): Span[] {
   const fg = over ? tone.bad : used > pace ? tone.caution : tone.good
   const spans: Span[] = []
   for (let i = 0; i < width; i++) {
-    const cell = i === at ? { text: i < filled ? "▌" : "│", fg: ink.figure }
+    const cell = i === at && !over ? { text: i < filled ? "▌" : "│", fg: ink.figure }
       : i < filled ? { text: "█", fg: over && i < at ? tone.good : fg }
       : { text: "─", fg: ink.rule }
     const last = spans[spans.length - 1]
@@ -186,11 +187,18 @@ export function BudgetsTab(props: { focused: SectionId }) {
     if (names.length) spans.push({ text: `${spans.length ? " · " : ""}Not budgeted: ${names.join(", ")}`, fg: ink.note })
     return spans
   })
-  const budgetsHeight = () => Math.min(rows().length, Math.max(1, Math.floor(body() * 0.3))) + 2 + (summary().length ? 1 : 0)
-  // The chart and the cycle lines share what the budgets leave: half each.
-  const chartHeight = () => (wide() ? Math.ceil((body() - budgetsHeight()) / 2) : Math.max(10, Math.floor(body() * 0.3)))
-  const linesHeight = () => (wide() ? body() - budgetsHeight() - chartHeight() : Math.max(5, Math.floor(body() * 0.2)))
+  // Each budget takes two lines (hung) when they all fit in two fifths of
+  // the tab, else one; past a third of the tab, the list scrolls.
+  const summaryLines = () => (summary().length ? 1 : 0)
+  const hung = () => rows().length * 2 + 2 + summaryLines() <= Math.floor(body() * 0.4)
+  const budgetRoom = () => (hung() ? rows().length : Math.min(rows().length, Math.max(1, Math.floor(body() * 0.3))))
+  const budgetsHeight = () => budgetRoom() * (hung() ? 2 : 1) + 2 + summaryLines()
+  // The cycle lines as tall as their cycles (up to half of what the budgets
+  // leave); the chart the rest.
+  const linesHeight = () => Math.min(cycles().length + 2, wide() ? Math.floor((body() - budgetsHeight()) / 2) : Math.max(5, Math.floor(body() * 0.2)))
+  const chartHeight = () => (wide() ? body() - budgetsHeight() - linesHeight() : Math.max(10, Math.floor(body() * 0.3)))
   const categoriesHeight = () => (wide() ? body() : Math.max(5, body() - chartHeight() - linesHeight() - budgetsHeight()))
+  const hatched = () => data.state.uiPrefs.hatched === true
   const rowWidth = (width: number) => width - 5
 
   // The chart: the Overview's spending view over the cycle shown, for what
@@ -226,9 +234,30 @@ export function BudgetsTab(props: { focused: SectionId }) {
     // left or over does.
     const figures = { text: tight() ? ` ${formatWholeMoney(p.spent)} of ${formatWholeMoney(budget.amount)} ` : `  ${formatWholeMoney(p.spent).padStart(7)} of ${formatWholeMoney(budget.amount).padEnd(7)}  `, fg: ink.label }
     const room = rowWidth(mainWidth()) - LABEL() - BAR()
-    return [...bar(BAR(), used, pace()), ...(figures.text.length + verdict.text.length <= room ? [figures] : [{ text: " ", fg: ink.label }]), verdict]
+    const drawn = bar(BAR(), used, pace())
+    return [...(hatched() ? hatchSpans(drawn) : drawn), ...(figures.text.length + verdict.text.length <= room ? [figures] : [{ text: " ", fg: ink.label }]), verdict]
   }
-  const budgetRoom = () => budgetsHeight() - 2 - (summary().length ? 1 : 0)
+  // A budget on two lines: its name and spent of budget hung from the bar's
+  // left end (╭), what's left a day or over from its right (╮), and the bar
+  // the row's width under them. A budget not set says how to set one over a
+  // faint rule.
+  const hungSpans = (name: Span, p: BudgetProgress | undefined, unset: string): [Span[], Span[]] => {
+    const width = rowWidth(mainWidth())
+    const corner = (text: string): Span => ({ text, fg: ink.note })
+    const line = (left: Span[], right: Span[]): Span[] => {
+      const used = [...left, ...right].reduce((n, span) => n + span.text.length, 0)
+      return fitSpans([...left, { text: " ".repeat(Math.max(1, width - used)), fg: ink.note }, ...right], width)
+    }
+    if (!p) return [line([corner("╭ "), name, { text: `  ${unset}`, fg: ink.note }], [corner(" ╮")]), [{ text: "─".repeat(width), fg: ink.rule }]]
+    const budget = p.budget
+    const used = budget.amount > 0 ? p.spent / budget.amount : p.spent > 0 ? 2 : 0
+    const verdict = p.remaining < 0 ? { text: `${formatWholeMoney(-p.remaining)} over`, fg: tone.bad } : { text: `${formatWholeMoney(p.remaining)} left · ${formatWholeMoney(p.dailyAllowance)}/day`, fg: tone.good }
+    const drawn = bar(width, used, pace())
+    return [
+      line([corner("╭ "), name, { text: `  ${formatWholeMoney(p.spent)} of ${formatWholeMoney(budget.amount)}`, fg: ink.label }], [verdict, corner(" ╮")]),
+      hatched() ? hatchSpans(drawn) : drawn,
+    ]
+  }
   const budgetTop = createMemo(() => centredTop(budgetCursor(), rows().length, budgetRoom()))
 
   // Categories: a quiet list to set budgets from. Name, this cycle, the
@@ -264,7 +293,7 @@ export function BudgetsTab(props: { focused: SectionId }) {
       <Index each={cycleLines(cycles().slice(0, Math.max(1, linesHeight() - 2)), rowWidth(mainWidth()), pace(), today())}>{(spans) => (
         <text wrapMode="none">
           <S fg={ink.note}>{" "}</S>
-          <Index each={spans()}>{(span) => <S fg={span().fg} bold={span().bold}>{span().text}</S>}</Index>
+          <Index each={hatched() ? hatchSpans(spans()) : spans()}>{(span) => <S fg={span().fg} bold={span().bold}>{span().text}</S>}</Index>
         </text>
       )}</Index>
     </SectionCard>
@@ -273,13 +302,25 @@ export function BudgetsTab(props: { focused: SectionId }) {
     <SectionCard title="Budgets" titleSuffix={view().current ? `· day ${elapsed()} of ${cycle().days}` : `· ${period()} · ] later`} titleSuffixColor={view().current ? tone.scope : tone.caution} focused={listFocused()} width={mainWidth()} height={budgetsHeight()}>
       <Index each={rows().slice(budgetTop(), budgetTop() + budgetRoom())}>{(row, i) => {
         const at = () => listFocused() && budgetTop() + i === budgetCursor()
+        const armed = () => (row().budget ? armedFor(ui.state.armed, "budget", budgetArmId(row().budget!, cycle().start)) : undefined)
+        const twoLines = (): [Span[], Span[]] => {
+          const r = row()
+          if (r.kind === "total") return hungSpans({ text: TOTAL, fg: ink.strong, bold: true }, totalProgress(), "")
+          if (r.budget) return hungSpans({ text: label(r.budget), fg: ink.figure, bold: true }, progress().get(r.budget.id), "")
+          return hungSpans({ text: overallName(), fg: ink.figure, bold: true }, undefined, `not set: enter sets one${hasCategoryBudgets() ? " for the rest" : ""}`)
+        }
         const spans = (): Span[] => {
           const r = row()
           if (r.kind === "total") return fitSpans([{ text: fit(TOTAL, LABEL()), fg: ink.strong, bold: true }, ...budgetSpans(totalProgress())], rowWidth(mainWidth()))
           if (r.budget) return fitSpans([{ text: fit(label(r.budget), LABEL()), fg: ink.figure, bold: true }, ...budgetSpans(progress().get(r.budget.id))], rowWidth(mainWidth()))
           return fitSpans([{ text: fit(overallName(), LABEL()), fg: ink.figure, bold: true }, { text: `not set: enter sets one${hasCategoryBudgets() ? " for the rest" : ""}`, fg: ink.note }], rowWidth(mainWidth()))
         }
-        return <ListRow cursor={at()} bg={theme.canvas} armed={row().budget ? armedFor(ui.state.armed, "budget", budgetArmId(row().budget!, cycle().start)) : undefined} spans={spans()} />
+        return (
+          <Show when={hung()} fallback={<ListRow cursor={at()} bg={theme.canvas} armed={armed()} spans={spans()} />}>
+            <ListRow cursor={at()} bg={theme.canvas} armed={armed()} spans={twoLines()[0]} />
+            <ListRow cursor={at()} bg={theme.canvas} spans={twoLines()[1]} />
+          </Show>
+        )
       }}</Index>
       <Show when={summary().length}>
         <text wrapMode="none">
@@ -305,11 +346,11 @@ export function BudgetsTab(props: { focused: SectionId }) {
 
   return (
     <box width="100%" height="100%" flexDirection={wide() ? "row" : "column"} gap={wide() ? 1 : 0} backgroundColor={theme.canvas}>
-      <Show when={wide()} fallback={<><Chart /><Lines /><Budgets /><Categories /></>}>
+      <Show when={wide()} fallback={<><Budgets /><Chart /><Lines /><Categories /></>}>
         <box flexDirection="column" width={mainWidth()} height={body()}>
+          <Budgets />
           <Chart />
           <Lines />
-          <Budgets />
         </box>
         <Categories />
       </Show>
