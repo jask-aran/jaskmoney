@@ -4,11 +4,13 @@ import { createEffect, type JSX } from "solid-js"
 /**
  * Inline styled text.
  *
- * OpenTUI's Solid `style` reconciler ORs attributes into a node, so it cannot
- * clear a previous `bold` bit. Set the node's complete style directly instead;
- * this lets a former cursor row return to normal weight. Each value is
- * written only when it changes: a colour write parses it again and marks the
- * text for re-layout, and a table updates hundreds of spans per keystroke.
+ * Why not `<span fg bold>` or `style`: on a span, OpenTUI's Solid reconciler
+ * reads only `href` and `style` (@opentui/solid 0.7, index.js setProperty);
+ * plain `fg`/`bg`/`bold` props are dropped. `style` does clear the bits it
+ * set before (`attributes & ~prev | next`; older versions only ORed them in),
+ * but it writes fg and bg on every change, and each TextNode write parses the
+ * colour again and asks for a render. Here each value is written only when it
+ * changes: a table updates hundreds of spans per keystroke.
  */
 export function S(props: {
   fg?: string

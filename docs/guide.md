@@ -2,12 +2,6 @@
 
 Everything the app does, tab by tab. The [README](../README.md) is the short version.
 
-The active application is this repository root. The previous Go/Bubble Tea application is preserved under [`legacy/go/`](../legacy/go/) as a read-only behavioural reference. Frozen captures and reconstruction contracts remain in [`docs/`](./).
-
-- **Behaviour contract:** [`implementation-invariants.md`](implementation-invariants.md)
-- **Visual reference:** [`reference-reconstruction.md`](reference-reconstruction.md) and `docs/reference-*`
-- **Legacy source:** [`legacy/go/`](../legacy/go/)
-
 ## Run
 
 ```bash
@@ -35,8 +29,7 @@ src/
   state/     UI and data stores (state/store: Up pushes, suggestions, tag review, rule offers)
   ui/        tabs and reusable primitives
   bench/     benchmark, CPU-profile runner and summariser
-docs/        contracts, captures, legacy specifications
-legacy/go/   frozen Go reference implementation
+docs/        this guide, the client/server split, the backlog
 ```
 
 ## Keys

@@ -82,8 +82,8 @@ bun run typecheck
 bun run test
 ```
 
-SolidJS on [OpenTUI](https://github.com/sst/opentui), with SQLite through `bun:sqlite`. `legacy/go/` holds the
-original Go app as a behavioural reference. `docs/` holds the guide, port contracts and frozen captures.
+SolidJS on [OpenTUI](https://github.com/sst/opentui), with SQLite through `bun:sqlite`. `docs/` holds the guide, the
+client/server split and the backlog.
 
 ## License
 

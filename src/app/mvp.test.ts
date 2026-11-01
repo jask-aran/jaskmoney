@@ -174,8 +174,8 @@ describe("default ANZ profile import", () => {
     expect(txns).toHaveLength(2)
     expect(txns.every((t) => t.accountName === "ANZ CREDIT")).toBe(true)
     expect(txns.every((t) => t.categoryName === "Uncategorised")).toBe(true)
-    // The removed importer skipped intra-file duplicates. Profile preview and
-    // legacy/go/ingest.go keep them on first import; preserve that behavior.
+    // Rows repeated within one file are kept on first import (the original
+    // Go app did the same); a re-import skips each of them as a dupe.
     const repeated = buildImportPreview(db, csv + '\n03/02/2026,"-20.00",COFFEE', "anz.csv", DEFAULT_IMPORT_PROFILES[0]!)
     const repeatedResult = commitImportPreview(db, repeated, true)
     expect(repeatedResult.inserted).toBe(0)

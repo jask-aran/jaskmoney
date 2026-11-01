@@ -27,3 +27,10 @@ test("C3.8 search help and sent requests split words with the same wrapper", () 
     for (const span of line.filter((span) => span.tone === "text")) expect(span.text.length).toBeLessThanOrEqual(30)
   }
 })
+
+test("wraps by terminal columns: wide characters take two, an emoji is never cut in half", () => {
+  expect(wrapText("東京 東京", 4)).toEqual(["東京", "東京"])
+  expect(wrapText("東京東京", 3)).toEqual(["東", "京", "東", "京"])
+  expect(wrapText("🏖️ Holiday 🏖️ Holiday", 10)).toEqual(["🏖️ Holiday", "🏖️ Holiday"])
+  expect(wrapText("🏖️🏖️🏖️", 4)).toEqual(["🏖️🏖️", "🏖️"])
+})

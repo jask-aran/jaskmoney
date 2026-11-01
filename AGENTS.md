@@ -1,6 +1,6 @@
-# Jaskmoney OpenTUI Rebuild
+# Jaskmoney
 
-The repository root is the active OpenTUI product. `legacy/go/` is a read-only behavioural reference. `docs/` holds the port contract, frozen captures, and legacy specifications.
+The repository root is the OpenTUI product. `docs/` holds the guide, the client/server split and the backlog.
 
 ## Work in the active product
 
@@ -15,8 +15,6 @@ bun run eval:search  # smart search's filters, with and without Clairic (src/eva
 
 `bun run eval` freezes a demo made from your history into `~/.jaskmoney/eval` (never the repo) and scores the suggestion pipeline against its hidden categories: right, top 3, accept-all precision, by source and by unseen merchant, with the change since the last run. Run it before and after changing a decision-model prompt or context block; `--limit N` for a fixed sample, `--fresh` to remake the set, `--misses` to list the wrong picks. Confirm a change on a set it wasn't found on (`--set 1`, `--set 2`: other seeds, other held-out merchants), and prefer fixing what fails outright to nudging what's already right.
 
-Do not modify `legacy/go/` to make port work easier. A legacy change is allowed only to repair a broken reference fixture or test, and must be called out explicitly.
-
 The data lives in one core (`src/core/`) that the TUI and the web app reach as clients through `src/client/store.ts`; `docs/client-server.md` says what goes where.
 
 ## General TUI rules
@@ -28,11 +26,8 @@ The data lives in one core (`src/core/`) that the TUI and the web app reach as c
 5. Footer hints list actionable commands for the active scope only.
 6. Text colours come from `ink` (figure, label, note, faint, rule) and accents from `tone` (good, bad, caution, ai, key, focus, scope) in `src/theme.ts`, chosen by what the text is; its doc comments are the rules. Raw palette colours are for data only (category, tag and chart colours). `src/ui/inkRoles.test.ts` enforces it.
 
-## Port contract
+## Interaction and paint
 
-Before changing ported behaviour, read the relevant legacy source under `legacy/go/`, its tests, and the matching material in `docs/`.
-
-- Treat legacy code plus its tests as the behavioural reference. If they conflict with a requested change, state the conflict and record the approved deviation in the affected implementation/test; do not silently choose one.
 - Derive interaction behaviour as an explicit state matrix: states, transitions, persistence/clearing rules, action precedence, and every visual combination.
 - Implement a visual state from one pure appearance function. Cursor, selection, and range are independent states; do not conflate them.
 - Verify visual transitions using OpenTUI's captured cell buffer, including foreground, background, and text attributes. ANSI/text captures are not sufficient visual evidence. User screenshots override tool conclusions until the discrepancy is explained.

@@ -16,8 +16,7 @@ import { toggleUncategorised } from "./suggest"
 import { runSync } from "./sync"
 
 /**
- * The command palette's commands (ctrl+k), after the legacy registry
- * (legacy/go/commands.go). Keys live in one place, the panes' hints
+ * The command palette's commands (ctrl+k). Keys live in one place, the panes' hints
  * (app/keys): a one-key hint is a command here, either the registry
  * command it names (`command`) or its own (label, description), and runs by
  * pressing its key where the palette opened. The registry holds what works
