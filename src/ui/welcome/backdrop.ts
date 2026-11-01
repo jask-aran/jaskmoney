@@ -1,5 +1,14 @@
 import type { StyledSpan } from "../primitives/StyledLine"
 
+/** The welcome page's backdrops (Settings › Appearance). */
+export const BACKDROPS = [
+  { id: "plasma", label: "plasma" },
+  { id: "coins", label: "coin rain" },
+  { id: "ticker", label: "ticker tape" },
+] as const
+export type BackdropId = (typeof BACKDROPS)[number]["id"]
+export const DEFAULT_BACKDROP: BackdropId = "plasma"
+
 /**
  * The welcome page's backdrop: a slow plasma of money marks, full screen,
  * behind everything. Pure: the lines for a `width`×`height` screen `t`

@@ -34,6 +34,14 @@ export function nextChartSpeed(id: string | undefined): (typeof CHART_SPEEDS)[nu
   return CHART_SPEEDS[(at + 1) % CHART_SPEEDS.length]!
 }
 
+/** When a chart's labels (a peak's name, a low, a total) appear as it
+ * draws in: together, just before it's done, or each a beat after its
+ * point, in order. */
+export type ChartLabelMode = "together" | "sequential"
+export const CHART_LABEL_MODES: readonly ChartLabelMode[] = ["together", "sequential"]
+export const CHART_LABEL_LABELS: Record<ChartLabelMode, string> = { together: "together", sequential: "in order" }
+export const DEFAULT_CHART_LABELS: ChartLabelMode = "together"
+
 /** The tour's draw-in. */
 export const TOUR_CHART_MS = chartSpeedMs("juicy")
 
