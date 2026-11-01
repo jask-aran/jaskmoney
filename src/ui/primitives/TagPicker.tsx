@@ -6,6 +6,12 @@ import { ListPicker } from "./ListPicker"
 import { count } from "../text"
 
 export function TagPicker() {
+  return <Show when={ui.state.tagPicker !== null}><OpenTagPicker /></Show>
+}
+
+/** The open picker: its rows (with counts over every row) are made only
+ * while it shows. */
+function OpenTagPicker() {
   const items = createMemo(() => tagPickerItems(data.state.tags, data.state.categories, data.transactions(), ui.state.pickerTargets, ui.state.tagPicker?.query ?? ""))
   const mark = (value: string | number | null) => {
     // The create row: a plus in the checkbox column.
@@ -17,7 +23,6 @@ export function TagPicker() {
     return state === "all" ? "[x]" : state === "some" ? "[-]" : "[ ]"
   }
   return (
-    <Show when={ui.state.tagPicker !== null}>
       <ListPicker
         title="Tags"
         subtitle={count(ui.state.pickerTargets.length, "transaction")}
@@ -27,6 +32,5 @@ export function TagPicker() {
         mark={mark}
         hints="↑↓ ^j/k move · space stage · enter apply · esc cancel"
       />
-    </Show>
   )
 }

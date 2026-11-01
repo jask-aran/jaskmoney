@@ -213,8 +213,10 @@ export function ManagerTab(props: { focused: SectionId }) {
    * (descriptions, most common first; money in marked), so a wrong pick
    * shows before it is taken. */
   const acceptGroups = createMemo(() => {
+    // As tagPreview: only while it shows, through the plain rows.
+    if (!ui.state.acceptPreview?.length) return []
     const groups = new Map<number, Map<string, number>>()
-    const byId = new Map(data.state.transactions.map((t) => [t.id, t]))
+    const byId = new Map(data.transactions().map((t) => [t.id, t]))
     for (const id of ui.state.acceptPreview ?? []) {
       const s = data.state.suggestions[id], t = byId.get(id)
       if (!s || !t) continue
@@ -239,7 +241,10 @@ export function ManagerTab(props: { focused: SectionId }) {
 
   /** Tag-all's preview: the rows it would tag, by description (money in marked). */
   const tagPreview = createMemo(() => {
-    const byId = new Map(data.state.transactions.map((t) => [t.id, t]))
+    // Only while the preview shows; through the plain rows, not the store's
+    // proxies (a tracked read per field of every row).
+    if (!ui.state.acceptPreview?.length) return []
+    const byId = new Map(data.transactions().map((t) => [t.id, t]))
     const counts = new Map<string, number>()
     for (const id of ui.state.acceptPreview ?? []) {
       const t = byId.get(id)

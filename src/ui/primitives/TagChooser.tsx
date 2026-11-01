@@ -13,7 +13,7 @@ export function TagChooser() {
 /** The open chooser: its rows are worked out only while it shows (they
  * walk the whole history). */
 function OpenTagChooser() {
-  const items = createMemo(() => tagChooserItems(tagChoices(data.state.tags, data.tagGroups(), (ui.state.tagChooser?.query ?? "")), data.state.transactions, data.state.categories))
+  const items = createMemo(() => tagChooserItems(tagChoices(data.state.tags, data.tagGroups(), (ui.state.tagChooser?.query ?? "")), data.transactions(), data.state.categories))
   return (
       <ListPicker
         title="Find transactions for a tag"

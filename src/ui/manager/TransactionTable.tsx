@@ -245,8 +245,10 @@ export function TransactionTable(props: {
             {(r, i) => {
               const absIndex = () => props.top + i
               const isCursor = () => props.cursor === absIndex()
-              const selected = () => !!props.selectedIds?.[r().id]
-              const hl = () => !!props.highlighted?.[r().id]
+              // Booleans as memos: the maps they read are rebuilt whole on a
+              // write, and a row whose own state didn't change must not redraw.
+              const selected = createMemo(() => !!props.selectedIds?.[r().id])
+              const hl = createMemo(() => !!props.highlighted?.[r().id])
               // OpenTUI cannot repaint a previous cell to transparency: it must
               // receive the table canvas colour when a row loses its state bg.
               // This is visually identical to the unstyled table background.
@@ -254,7 +256,7 @@ export function TransactionTable(props: {
               const rowBg = () => look().bg ?? theme.canvas
               const fg = (column: string) => look().fg ?? column
               // A near miss reads quieter than a match, unless cursor, selection or range colour it.
-              const near = () => !!props.nearMiss?.(r().id)
+              const near = createMemo(() => !!props.nearMiss?.(r().id))
               const faint = (column: string) => look().fg ?? (near() ? ink.note : column)
               // Up holds (pending) render italic, with a clock, until they settle.
               const held = () => r().status === "HELD"
