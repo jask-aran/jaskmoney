@@ -269,3 +269,18 @@ export function comparisonWindows(startISO: string, endISO: string, todayISO: st
   const previousStart = addDays(startISO, -length)
   return { days, partial: days < length, previous: { start: previousStart, end: addDays(previousStart, days - 1) } }
 }
+
+/** Settings › Appearance › Range on open: the chip the Overview opens on,
+ * or "last", where it was left. Here, not in settingsConfig: the web app
+ * shows the setting and can't import the storage behind settingsConfig. */
+export const OPEN_RANGES = ["1M", "3M", "6M", "1Y", "cycle", "month", "last"] as const
+export type OpenRange = typeof OPEN_RANGES[number]
+export const DEFAULT_OPEN_RANGE: OpenRange = "1M"
+export const OPEN_RANGE_LABELS: Record<OpenRange, string> = {
+  "1M": "1M", "3M": "3M", "6M": "6M", "1Y": "1Y",
+  cycle: "this cycle", month: "this month", last: "where you left it",
+}
+
+export function nextOpenRange(value: OpenRange = DEFAULT_OPEN_RANGE): OpenRange {
+  return OPEN_RANGES[(OPEN_RANGES.indexOf(value) + 1) % OPEN_RANGES.length]!
+}

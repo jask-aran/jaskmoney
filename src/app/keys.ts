@@ -5,7 +5,7 @@ import { web } from "./webApp"
 import { unwrap } from "solid-js/store"
 import { merchantKey } from "../domain/history"
 import { footerShown, scopeLabel, type Hint } from "./palette"
-import { changeAccountScope, toTransactions, toggleDemo, applyAllRules, applySavedFilter, clearTransactionFilter, askForRules, reportError, settleData, resetTransactionCursors, runUndo, showAccount, showDryRun, toggleIcons, toggleWeekStart, toggleXAxis, toggleChartMotion, cycleChartSpeed, toggleChartLabels, cycleBackdrop } from "./actions"
+import { changeAccountScope, toTransactions, toggleDemo, applyAllRules, applySavedFilter, clearTransactionFilter, askForRules, reportError, settleData, resetTransactionCursors, runUndo, showAccount, showDryRun, toggleIcons, toggleWeekStart, toggleXAxis, toggleChartMotion, cycleChartSpeed, toggleChartLabels, cycleOpenRange, cycleBackdrop } from "./actions"
 import { commands, rankCommands, type Command } from "./commands"
 import { ACCOUNT_ACTIONS, armedText, isArmed, isSecondPress, type Armed } from "../state/armed"
 import { DATABASE_ROWS } from "../state/databaseRows"
@@ -38,10 +38,10 @@ import { handleWelcome, openWelcome, welcomeContext } from "./welcome"
 import { welcomeRows } from "../state/welcome"
 import { executorActions } from "../state/executorDialog"
 import { AI_ROWS, aiRowLabel, isLlmRow, testAi } from "./apiKeys"
-import { AI_USES, aiActions, aiContext, useActions, type AiUse } from "../state/aiDialog"
+import { AI_USES, KEY_PAGES, aiActions, aiContext, aiDialogFor, useActions, type AiUse } from "../state/aiDialog"
 import { useQueries, type QueryId } from "../ai/catalog"
 import { hasWorkersAi } from "../ai/workersAi"
-import { cancelLlmSignIn, signOutLlm, startLlmSignIn, submitSignInPaste } from "./llmSignIn"
+import { cancelLlmSignIn, openBrowser, signOutLlm, startLlmSignIn, submitSignInPaste } from "./llmSignIn"
 import { createLlm, LLM_PROVIDERS, llmModelId } from "../ai/llm"
 import { credentialEnv } from "../ai/credentials"
 import { runAccept, toggleUncategorised, newSuggestionsNote, suggestNew } from "./suggest"
@@ -183,6 +183,13 @@ function pasteTarget(ui: UiStore, data?: DataStore): boolean {
 export function handlePaste(ui: UiStore, text: string, data?: DataStore): boolean {
   if (!pasteTarget(ui, data)) return false
   const line = text.replace(/[\r\n\t]+/g, " ").replace(/[\u0000-\u001f\u007f]/g, "").trim()
+  // A model's dialog on its actions: a paste is its key (not letters to
+  // move by: a key's "j" or "k"), whichever action the cursor is on.
+  const dialog = ui.state.aiDialog
+  if (ui.activeScope() === "settings.aiDialog" && dialog && !dialog.field && !dialog.busy) {
+    ui.setState("aiDialog", { field: { action: "key", value: line, caret: line.length }, note: null })
+    return true
+  }
   batch(() => {
     for (const ch of line) handleKey(ui, { name: ch === " " ? "space" : ch, sequence: ch, ctrl: false, meta: false, shift: false, option: false } as KeyEvent, data)
   })
@@ -1186,7 +1193,7 @@ function handleSettingsAi(ui: UiStore, key: KeyEvent): void {
   else openAiDialog(ui, AI_ROWS[ui.state.aiCursor] ?? "jev")
 }
 
-const openAiDialog = (ui: UiStore, row: NonNullable<UiState["aiDialog"]>["row"]) => ui.setState({ aiDialog: { row, cursor: 0, field: null, note: null, busy: false } })
+const openAiDialog = (ui: UiStore, row: NonNullable<UiState["aiDialog"]>["row"]) => ui.setState({ aiDialog: aiDialogFor(row) })
 
 /** A use's dialog: j/k move over its queries, then its model actions;
  * enter opens a query (what it asks, its context, the exact request) or
@@ -1279,6 +1286,14 @@ function handleAiDialog(ui: UiStore, key: KeyEvent, data?: DataStore): void {
           if (field.action === "key") {
             if (!value) { opened.patch({ field: null }); return }
             await data.saveApiKeys(row === "up" ? { JASKMONEY_UP_TOKEN: value } : row === "jev" ? { JASKMONEY_JEV_TOKEN: value } : row === "workersAi" ? { JASKMONEY_CF_TOKEN: value } : { [LLM_PROVIDERS[row].keyName]: value })
+            // Clairic's account comes from its token: nobody has to find the ID.
+            if (row === "workersAi") {
+              const found = await data.findCloudflareAccount().catch((e: unknown) => ({ error: e instanceof Error ? e.message : String(e) }))
+              opened.patch({ field: null, note: "name" in found ? { text: `Token saved · account: ${found.name}`, ok: true }
+                : "count" in found ? { text: `Token saved · it reaches ${found.count} accounts: enter the account ID`, ok: null }
+                : { text: `Token saved, but Cloudflare didn't list its account (${found.error}): enter the account ID`, ok: false } })
+              return
+            }
             opened.patch({ field: null, note: { text: row === "up" ? "Token saved · Test checks it; s in Up Bank syncs" : "Key saved", ok: true } })
           } else if (field.action === "accountId") {
             await data.saveApiKeys({ JASKMONEY_CF_ACCOUNT_ID: value || null })
@@ -1320,6 +1335,11 @@ function handleAiDialog(ui: UiStore, key: KeyEvent, data?: DataStore): void {
       opened.patch({ field: { action: action.id, value, caret: value.length }, note: null })
       return
     }
+    case "page": {
+      const page = KEY_PAGES[row]
+      if (page) { openBrowser(page.url); note(`${page.site} should open in your browser; paste the key here when you have it`, null) }
+      return
+    }
     case "test":
       opened.patch({ busy: true, note: { text: "Testing…", ok: null } })
       void testAi(row).then((result) => note(result.text, result.ok))
@@ -1358,6 +1378,7 @@ function handleSettingsAppearance(ui: UiStore, key: KeyEvent, data?: DataStore):
     case "chartMotion": if (data) toggleChartMotion(ui, data); return
     case "chartSpeed": if (data) cycleChartSpeed(ui, data); return
     case "chartLabels": if (data) toggleChartLabels(ui, data); return
+    case "openRange": if (data) cycleOpenRange(ui, data); return
     case "backdrop": if (data) cycleBackdrop(ui, data); return
   }
 }

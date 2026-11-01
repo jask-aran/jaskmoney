@@ -260,3 +260,19 @@ test("drawn: the title in the brand's pink, the button in pink and bold; the dem
   expect(t.captureCharFrame()).toMatch(/│ \/ \w+/)
   ui.switchTab("overview")
 })
+
+test("the AI step's models each open the dialog Settings › AI models opens; nothing signs in unseen", async () => {
+  await renderApp({ width: 130, height: 44 })
+  openWelcome(ui)
+  ui.setState("welcome", { step: "ai", cursor: 0 })
+  const rows = welcomeRows(ui.state.welcome!, none)
+  for (const [action, row] of [["openai", "openai"], ["openrouter", "openrouter"], ["jevKey", "jev"], ["clairic", "workersAi"]] as const) {
+    ui.setState("welcome", { cursor: rows.findIndex((r) => r.action === action) })
+    press("return")
+    expect(ui.state.aiDialog).toMatchObject({ row, cursor: 0, field: null })
+    expect(ui.state.llmSignIn).toBeNull()
+    press("escape")
+    expect(ui.state.aiDialog).toBeNull()
+  }
+  ui.switchTab("overview")
+})

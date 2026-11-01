@@ -13,7 +13,15 @@ import { workersAiUrl } from "../ai/workersAi"
  * to choose it and to see exactly what is sent. Pure: what the pane and
  * the dialogs show, from the stored keys, settings and sign-ins.
  */
-export type AiAction = "signIn" | "key" | "accountId" | "model" | "test" | "remove"
+export type AiAction = "signIn" | "key" | "page" | "accountId" | "model" | "test" | "remove"
+
+/** Where a key or token is made, for the dialog's "Open … to make one". */
+export const KEY_PAGES: Partial<Record<KeyRow, { url: string; site: string }>> = {
+  // Cloudflare has no sign-in for other apps: a token from its dashboard.
+  workersAi: { url: "https://dash.cloudflare.com/?to=/:account/api-tokens", site: "Cloudflare" },
+  openrouter: { url: "https://openrouter.ai/settings/keys", site: "openrouter.ai" },
+  openai: { url: "https://platform.openai.com/api-keys", site: "platform.openai.com" },
+}
 
 export interface AiContext {
   keys: Record<CredentialName, { source: "saved" | "env" | null; mask: string }>
@@ -141,12 +149,21 @@ function usedBy(row: AiRow, ctx: AiContext): string {
   return [rules, jev].filter(Boolean).join("; ") || `nothing now (${LLM_PROVIDERS[ctx.inUse].label} writes rules)`
 }
 
+/** A model's dialog, opened (Settings › AI models, and the setup's AI
+ * step: one dialog for every model, however it connects). It opens on its
+ * actions, the likeliest first; a paste goes straight into the key. */
+export function aiDialogFor(row: KeyRow) {
+  return { row, cursor: 0, field: null, note: null, busy: false }
+}
+
 /** The dialog's actions, the likeliest first: a general model's browser sign-in. */
 export function aiActions(row: KeyRow, ctx: AiContext): { id: AiAction; label: string }[] {
   const connected = aiConnection(row, ctx) !== null
   const actions: { id: AiAction; label: string }[] = []
   if (isLlmRow(row)) actions.push({ id: "signIn", label: ctx.signedIn[row] ? "Sign in again with the browser" : "Sign in with the browser" })
   actions.push({ id: "key", label: row === "up" ? "Enter the token" : row === "workersAi" ? "Enter an API token" : "Enter an API key" })
+  const page = KEY_PAGES[row]
+  if (page) actions.push({ id: "page", label: `Open ${page.site} to make one` })
   if (row === "workersAi") actions.push({ id: "accountId", label: "Enter the account ID" })
   if (isLlmRow(row)) actions.push({ id: "model", label: "Change the model" })
   if (connected) actions.push({ id: "test", label: "Test" })
@@ -163,6 +180,9 @@ export function aiActionHint(row: KeyRow, action: AiAction, ctx: AiContext): str
     if (row === "openrouter") return `Opens OpenRouter in your browser. It creates an API key on your account${again ? " (another one: the last stays active until you delete it on openrouter.ai)" : ""}.`
     if (row === "openai") return "Opens Sign in with ChatGPT in your browser: uses your ChatGPT plan, no API key."
   }
+  if (action === "page" && row === "workersAi") return "Create Token › the Workers AI template (or Workers AI: Read and Edit), then paste it here. Its account is found from it."
+  if (action === "key" && row === "workersAi") return "A Cloudflare API token with Workers AI access: its account is found from it. Saved only for you (~/.jaskmoney/credentials.json)."
+  if (action === "accountId") return "Only when the token reaches several Cloudflare accounts: the one Clairic runs on."
   if (action === "key" && row === "up") return "A Personal Access Token from api.up.com.au. Saved only for you (~/.jaskmoney/credentials.json); used before the environment's."
   if (action === "key") return "Saved only for you (~/.jaskmoney/credentials.json); used before the environment's and a browser sign-in."
   if (action === "model" && isLlmRow(row)) return `An ${LLM_PROVIDERS[row].label} model id; empty means ${LLM_PROVIDERS[row].defaultModel}.`

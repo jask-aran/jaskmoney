@@ -717,6 +717,7 @@ export function createClientStore(initialLink: CoreLink) {
     saveApiKeys: (patch: Partial<Record<CredentialName, string | null>>) => link.call("saveApiKeys", { patch }),
     /** After a sign-in or sign-out. */
     refreshApiKeys: () => link.call("refreshApiKeys", {}),
+    findCloudflareAccount: () => link.call("findCloudflareAccount", {}),
     signInLlm: (provider: LlmProvider, onProgress: (p: SignInProgress) => void, signal?: AbortSignal, models?: Pick<Models, "login">) =>
       link.call("signInLlm", { provider }, { onProgress, signal, models }),
     signInPaste: (provider: LlmProvider, value: string) => link.call("signInPaste", { provider, value }),

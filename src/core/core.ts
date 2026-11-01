@@ -25,7 +25,7 @@ import { CREDENTIAL_NAMES, credentialEnv, credentialSource, maskSecret, saveCred
 import { isOrdinaryFlow, isUncategorised } from "../domain/moneyRules"
 import { hasJev, jevClient, jevRoute, JEV_SETUP, type JevClient } from "../ai/jev"
 import { hasLlm, llmModelId, llmModels, LLM_PROVIDERS, type Llm, type LlmProvider } from "../ai/llm"
-import { createWorkersAiClient, readWorkersAiCredentials, searchUsesClairic } from "../ai/workersAi"
+import { cloudflare, createWorkersAiClient, readWorkersAiCredentials, searchUsesClairic } from "../ai/workersAi"
 import { createUpClient, hasUpToken, readUpToken } from "../up/client"
 import { smartSearch } from "../domain/smartSearch"
 import { categoryUses, merchantBreadth } from "../domain/suggest"
@@ -605,6 +605,17 @@ export function createCore() {
     dismissTagCandidates: (p: { tag: string; candidates: TagCandidate[]; review: number }) => dismissTagCandidates(p.tag, p.candidates, p.review),
 
     saveApiKeys: (p: { patch: Partial<Record<CredentialName, string | null>> }) => { saveCredentials(p.patch); set(keyState()) },
+    /** Clairic's account from its saved token (cloudflareAccounts): saved
+     * when the token reaches exactly one; else how many it reaches. */
+    findCloudflareAccount: async (_: object): Promise<{ name: string } | { count: number }> => {
+      const token = credentialEnv().JASKMONEY_CF_TOKEN?.trim()
+      if (!token) throw new Error("Save the API token first")
+      const accounts = await cloudflare.accounts(token)
+      if (accounts.length !== 1) return { count: accounts.length }
+      saveCredentials({ JASKMONEY_CF_ACCOUNT_ID: accounts[0]!.id })
+      set(keyState())
+      return { name: accounts[0]!.name }
+    },
     /** After a sign-in or sign-out. */
     refreshApiKeys: (_: object) => set(keyState()),
 

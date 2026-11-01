@@ -67,6 +67,21 @@ export function plainError(message: string): string {
 /** A Workers AI model's address on an account. */
 export const workersAiUrl = (accountId: string, model = "clairic") => `https://api.cloudflare.com/client/v4/accounts/${encodeURIComponent(accountId)}/ai/run/@cf/cloudflare/${model}`
 
+/**
+ * The Cloudflare accounts a token reaches (GET /accounts): with exactly one,
+ * that's the account Clairic runs on, and nobody has to find its ID. A
+ * Workers AI token lists its own account (checked 2026-11-02).
+ */
+export async function cloudflareAccounts(token: string, fetch: Fetch = globalThis.fetch): Promise<Array<{ id: string; name: string }>> {
+  const response = await fetch("https://api.cloudflare.com/client/v4/accounts", { headers: { authorization: `Bearer ${token}` }, signal: AbortSignal.timeout(10_000) })
+  const body = (await response.json().catch(() => null)) as { success?: boolean; result?: Array<{ id?: unknown; name?: unknown }>; errors?: Array<{ message?: string }> } | null
+  if (!response.ok || !body?.success) throw new Error(body?.errors?.[0]?.message ?? `Cloudflare answered ${response.status}`)
+  return (body.result ?? []).flatMap((a) => (typeof a.id === "string" ? [{ id: a.id, name: typeof a.name === "string" ? a.name : a.id }] : []))
+}
+
+/** What the core asks Cloudflare; tests swap in fakes (testSetup). */
+export const cloudflare = { accounts: cloudflareAccounts }
+
 export function createWorkersAiClient({ token, accountId, fetch = globalThis.fetch, timeoutMs = 15_000 }: WorkersAiCredentials & { fetch?: Fetch; timeoutMs?: number }) {
   const redact = (message: string) => message.split(token).join("[redacted]").split(accountId).join("[account]")
 

@@ -1,3 +1,4 @@
+import { nextOpenRange, OPEN_RANGE_LABELS } from "../domain/timeframe"
 import { BACKDROPS, DEFAULT_BACKDROP } from "../ui/welcome/backdrop"
 import { CHART_LABEL_LABELS, DEFAULT_CHART_LABELS, DEFAULT_CHART_MOTION, nextChartSpeed } from "../ui/charts/motion"
 import { runAsk } from "./ask"
@@ -119,6 +120,11 @@ export function cycleChartSpeed(ui: UiStore, data: DataStore): void {
 export function toggleChartLabels(ui: UiStore, data: DataStore): void {
   const chartLabels = (data.state.uiPrefs.chartLabels ?? DEFAULT_CHART_LABELS) === "together" ? "sequential" : "together"
   settleData(ui, data.saveUiPrefs({ chartLabels }), () => ui.setStatus(`Chart labels appear ${CHART_LABEL_LABELS[chartLabels]}`))
+}
+
+export function cycleOpenRange(ui: UiStore, data: DataStore): void {
+  const openRange = nextOpenRange(data.state.uiPrefs.openRange)
+  settleData(ui, data.saveUiPrefs({ openRange }), () => ui.setStatus(`Range on open: ${OPEN_RANGE_LABELS[openRange]}`))
 }
 
 export function cycleBackdrop(ui: UiStore, data: DataStore): void {

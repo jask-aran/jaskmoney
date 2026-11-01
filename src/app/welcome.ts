@@ -3,14 +3,14 @@ import { EXECUTOR_SITE, ORDER_EMAILS, executorSignedIn, gmailAccounts, runExecut
 import { ExecutorPaused, ensureMailApp, gmailConnectLink, mailAccount, waitForMailAccount } from "../ai/executorSetup"
 import { createUpClient } from "../up/client"
 import { editText, isPrintable } from "../domain/textField"
-import { aiConnection, aiContext } from "../state/aiDialog"
+import { aiConnection, aiContext, aiDialogFor } from "../state/aiDialog"
 import type { DataStore } from "../state/dataStore"
 import type { UiStore } from "../state/uiStore"
 import { DEMO_COUNT, demoWorld, triable, tryFrom, tryKey } from "../state/tour"
 import { BACKDROPS } from "../ui/welcome/backdrop"
 import { fetchTickers } from "./tickers"
 import { nextStep, previousStep, welcomeBackdrop, welcomeGo, welcomeRows, welcomeStart, type EmailPhase, type WelcomeAction, type WelcomeContext, type WelcomeState } from "../state/welcome"
-import { openBrowser, startLlmSignIn } from "./llmSignIn"
+import { openBrowser } from "./llmSignIn"
 import { runSync } from "./sync"
 
 /**
@@ -202,9 +202,11 @@ export function welcomeAct(ui: UiStore, data: DataStore, action: WelcomeAction):
       return
     case "replaceToken": ui.setState("welcome", { token: { value: "", caret: 0 }, upAccounts: null, cursor: 0, note: null }); return
     case "token": void checkUpToken(ui, data); return
-    case "openrouter": case "openai": void signInModel(ui, data, action); return
-    case "jevKey": ui.setState({ aiDialog: { row: "jev", cursor: 0, field: { action: "key", value: "", caret: 0 }, note: null, busy: false } }); return
-    case "clairic": ui.setState({ aiDialog: { row: "workersAi", cursor: 0, field: null, note: null, busy: false } }); return
+    // Every model opens its own dialog, as in Settings › AI models: a
+    // browser sign-in, a key (paste it straight away), and how it's going.
+    case "openrouter": case "openai": ui.setState({ aiDialog: aiDialogFor(action) }); return
+    case "jevKey": ui.setState({ aiDialog: aiDialogFor("jev") }); return
+    case "clairic": ui.setState({ aiDialog: aiDialogFor("workersAi") }); return
     case "openExecutor":
       sources.open(EXECUTOR_SITE)
       ui.setState("welcome", { note: { text: "executor.sh should open in your browser", ok: null } })
@@ -232,11 +234,6 @@ async function checkUpToken(ui: UiStore, data: DataStore): Promise<void> {
   }
 }
 
-async function signInModel(ui: UiStore, data: DataStore, provider: "openrouter" | "openai"): Promise<void> {
-  const result = await startLlmSignIn(ui, data, provider)
-  const opened = ui.state.welcome ? ui.opening("welcome") : null
-  if (result && opened?.open) opened.patch({ note: { text: result.text, ok: result.ok && !/cancelled/.test(result.text) ? true : result.ok ? null : false } })
-}
 
 let emailFlow: AbortController | null = null
 

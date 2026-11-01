@@ -4,7 +4,7 @@ import { join } from "node:path"
 import { writeJsonAtomic } from "../storage/json"
 import { canonicalFilter, type FilterNames } from "../domain/filter"
 import type { AccountSelection } from "../domain/accountTree"
-import { customRange, LOOKBACKS, PERIODS, type TimeframeState } from "../domain/timeframe"
+import { customRange, LOOKBACKS, OPEN_RANGES, PERIODS, type OpenRange, type TimeframeState } from "../domain/timeframe"
 import type { ImportProfile, SavedFilter } from "../domain/types"
 import type { WeekStart } from "../domain/days"
 import { CHART_LABEL_MODES, type ChartLabelMode, CHART_MOTION_MODES, CHART_SPEEDS, type ChartMotionMode, type ChartSpeedId } from "../ui/charts/motion"
@@ -21,6 +21,7 @@ export interface UiPrefs {
   xAxis?: boolean
   chartMotion?: ChartMotionMode
   chartSpeed?: ChartSpeedId
+  openRange?: OpenRange
   chartLabels?: ChartLabelMode
   backdrop?: BackdropId
   /** Balance charts' y-axis runs from $0 rather than fitting the balances
@@ -114,6 +115,8 @@ function parseUiPrefs(raw: unknown): UiPrefs | undefined {
   if (chartSpeed) ui.chartSpeed = chartSpeed
   const chartLabels = CHART_LABEL_MODES.find((mode) => "chartLabels" in raw && mode === raw.chartLabels)
   if (chartLabels) ui.chartLabels = chartLabels
+  const openRange = OPEN_RANGES.find((value) => "openRange" in raw && value === raw.openRange)
+  if (openRange) ui.openRange = openRange
   const backdrop = BACKDROPS.find((entry) => "backdrop" in raw && entry.id === raw.backdrop)?.id
   if (backdrop) ui.backdrop = backdrop
   if ("zeroAxis" in raw && typeof raw.zeroAxis === "boolean") ui.zeroAxis = raw.zeroAxis

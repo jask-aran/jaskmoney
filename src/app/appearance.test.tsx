@@ -5,6 +5,7 @@ import { APPEARANCE_ROWS, appearanceRow } from "../state/appearanceRows"
 import { DATABASE_ROWS, databaseRow } from "../state/databaseRows"
 import { data } from "../state/dataStore"
 import { loadSettingsConfig, saveSettingsConfig } from "../state/settingsConfig"
+import { OPEN_RANGES, OPEN_RANGE_LABELS } from "../domain/timeframe"
 import { SETTINGS_SECTIONS, settingsSectionFocus, ui } from "../state/uiStore"
 import { renderApp } from "../testing/app"
 import { key } from "../testing/keys"
@@ -14,7 +15,7 @@ import { BACKDROPS, DEFAULT_BACKDROP } from "../ui/welcome/backdrop"
 import { handleKey, paletteList } from "./keys"
 
 // Approved port deviation: Appearance owns display rows; Database keeps week start.
-test("Appearance shows six rows and values without clipping at each settings layout", async () => {
+test("Appearance shows seven rows and values without clipping at each settings layout", async () => {
   data.init(":memory:")
   for (const width of [140, 96, 70]) {
     ui.switchTab("settings")
@@ -29,7 +30,7 @@ test("Appearance shows six rows and values without clipping at each settings lay
       const expected = [
         ["Category icons", "on (Nerd Font)"], ["Charts' $0 line", "off"],
         ["Chart animation", "first launch"], ["Animation speed", "quick"],
-        ["Chart labels", "together"], ["Welcome backdrop", "ticker tape"],
+        ["Chart labels", "together"], ["Range on open", "1M"], ["Welcome backdrop", "ticker tape"],
       ]
       const positions = expected.map(([label, value]) => {
         expect(frame).toMatch(new RegExp(`${label!.replace("$", "\\$")}\\s+${value!.replace(/[()]/g, "\\$&")}`))
@@ -103,6 +104,14 @@ test("Appearance enter changes every row, persists choices and reports status", 
       expect(ui.state.status).toBe(`Chart labels appear ${label}`)
       expect(t.captureCharFrame()).toMatch(new RegExp(`Chart labels\\s+${label}`))
     }
+    for (let step = 1; step <= OPEN_RANGES.length; step++) {
+      const openRange = OPEN_RANGES[step % OPEN_RANGES.length]!
+      await enter("openRange")
+      expect(data.state.uiPrefs.openRange).toBe(openRange)
+      expect(loadSettingsConfig(path).ui?.openRange).toBe(openRange)
+      expect(ui.state.status).toBe(`Range on open: ${OPEN_RANGE_LABELS[openRange]}`)
+      expect(t.captureCharFrame()).toMatch(new RegExp(`Range on open\\s+${OPEN_RANGE_LABELS[openRange]}`))
+    }
     const start = BACKDROPS.findIndex((entry) => entry.id === DEFAULT_BACKDROP)
     for (let step = 1; step <= BACKDROPS.length; step++) {
       const backdrop = BACKDROPS[(start + step) % BACKDROPS.length]!
@@ -124,15 +133,21 @@ test("Appearance preferences save/load known values and discard unknown values",
       expect(loadSettingsConfig(path).ui).toEqual(prefs)
     }
   }
+  for (const openRange of OPEN_RANGES) {
+    saveSettingsConfig({ version: 2, savedFilters: [], importProfiles: [], ui: { openRange } }, path)
+    expect(loadSettingsConfig(path).ui).toEqual({ openRange })
+  }
   for (const value of ["unknown", "", "in order", "coin rain", null, false, 12, {}, []]) {
-    writeFileSync(path, JSON.stringify({ version: 2, ui: { chartLabels: value, backdrop: value } }))
+    writeFileSync(path, JSON.stringify({ version: 2, ui: { chartLabels: value, openRange: value, backdrop: value } }))
     expect(loadSettingsConfig(path).ui).toEqual({})
     // @ts-expect-error Exercise malformed runtime input at the settings write boundary.
-    saveSettingsConfig({ version: 2, savedFilters: [], importProfiles: [], ui: { chartLabels: value, backdrop: value } }, path)
+    saveSettingsConfig({ version: 2, savedFilters: [], importProfiles: [], ui: { chartLabels: value, openRange: value, backdrop: value } }, path)
     expect(readFileSync(path, "utf8")).not.toContain('"chartLabels"')
     expect(readFileSync(path, "utf8")).not.toContain('"backdrop"')
+    expect(readFileSync(path, "utf8")).not.toContain('"openRange"')
   }
   expect(appearanceRow("chartLabels", { icons: true }).value).toBe("together")
+  expect(appearanceRow("openRange", { icons: true }).value).toBe("1M")
   expect(appearanceRow("backdrop", { icons: true }).value).toBe("ticker tape")
 })
 
@@ -203,6 +218,12 @@ test("Appearance is reachable through section navigation, jump, pointer and pale
     await t.renderOnce()
     expect(data.state.uiPrefs.chartLabels).toBe("sequential")
     expect(command("display:chart-labels").label).toBe("Chart labels: together")
+    const range = command("display:open-range")
+    expect(range.label).toBe("Range on open: 3M")
+    range.run()
+    await t.renderOnce()
+    expect(data.state.uiPrefs.openRange).toBe("3M")
+    expect(command("display:open-range").label).toBe("Range on open: 6M")
     const backdrop = command("display:backdrop")
     expect(backdrop.label).toBe("Welcome backdrop: plasma")
     backdrop.run()

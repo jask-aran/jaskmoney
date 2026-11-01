@@ -78,9 +78,15 @@ test("a key: typed or pasted into the dialog, saved owner-only, used before .env
 test("Workers AI: a token and an account id, each its own action", async () => {
   setup(1)
   handleKey(ui, key("return"), data)
-  expect(actions()).toEqual(["key", "accountId"])
+  expect(actions()).toEqual(["key", "page", "accountId"])
   choose("key"); handlePaste(ui, KEY, data); handleKey(ui, key("return"), data); await settlePending()
-  choose("accountId"); handlePaste(ui, "acct-for-test", data); handleKey(ui, key("return"), data); await settlePending()
+  // The token's account is found from it (testSetup's made-up one) …
+  expect(ui.state.aiDialog!.note).toMatchObject({ text: "Token saved · account: Test account", ok: true })
+  expect(loadSavedCredentials()).toMatchObject({ JASKMONEY_CF_ACCOUNT_ID: "acct-test" })
+  // … and can still be entered by hand.
+  choose("accountId")
+  expect(ui.state.aiDialog!.field).toMatchObject({ action: "accountId", value: "acct-test" })
+  handleKey(ui, key("u", { ctrl: true }), data); handlePaste(ui, "acct-for-test", data); handleKey(ui, key("return"), data); await settlePending()
   expect(loadSavedCredentials()).toEqual({ JASKMONEY_CF_TOKEN: KEY, JASKMONEY_CF_ACCOUNT_ID: "acct-for-test" })
   expect(aiRow("workersAi", aiContext(data))).toMatchObject({ connected: true, how: "key · saved" })
 })
@@ -88,7 +94,7 @@ test("Workers AI: a token and an account id, each its own action", async () => {
 test("a general model: browser sign-in first; its model checked against the provider; the default isn't saved; u-style 'use' picks it", async () => {
   setup(3)
   handleKey(ui, key("return"), data)
-  expect(actions()).toEqual(["signIn", "key", "model"])
+  expect(actions()).toEqual(["signIn", "key", "page", "model"])
   choose("model")
   expect(ui.state.aiDialog!.field).toMatchObject({ action: "model", value: "gpt-6.1-sol" })
   handleKey(ui, key("u", { ctrl: true }), data)
@@ -106,7 +112,7 @@ test("a general model: browser sign-in first; its model checked against the prov
   // over, from the Rules use (a model's dialog only connects it).
   await data.saveApiKeys({ JASKMONEY_OPENROUTER_TOKEN: "or-key-for-test" })
   choose("key"); handlePaste(ui, KEY, data); handleKey(ui, key("return"), data); await settlePending()
-  expect(actions()).toEqual(["signIn", "key", "model", "test", "remove"])
+  expect(actions()).toEqual(["signIn", "key", "page", "model", "test", "remove"])
   // Past the Rules use's one query, its model actions.
   ui.setState({ aiDialog: null, aiUse: { use: "rules", cursor: 1, note: null } })
   expect(useActions("rules", aiContext(data)).map((a) => a.label)).toEqual(["Use OpenAI instead"])
@@ -210,4 +216,14 @@ test("Settings › Up Bank: enter on the token row opens its dialog; a pasted to
   handleKey(ui, key("return"), data); await settlePending()
   expect(loadSavedCredentials().JASKMONEY_UP_TOKEN).toBeUndefined()
   ui.setState({ aiDialog: null })
+})
+
+test("on the dialog's actions, a paste is the key: straight away, its letters never moving the cursor", async () => {
+  setup()
+  handleKey(ui, key("return"), data)
+  expect(ui.state.aiDialog).toMatchObject({ row: "jev", cursor: 0, field: null })
+  expect(handlePaste(ui, "jjjj-key-for-test\n", data)).toBe(true)
+  expect(ui.state.aiDialog).toMatchObject({ cursor: 0, field: { action: "key", value: "jjjj-key-for-test" } })
+  handleKey(ui, key("return"), data); await settlePending()
+  expect(loadSavedCredentials()).toEqual({ JASKMONEY_JEV_TOKEN: "jjjj-key-for-test" })
 })

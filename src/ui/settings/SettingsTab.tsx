@@ -342,7 +342,7 @@ export function AiDialog() {
         const fieldLabel = (action: string) => (action === "key" ? (d().row === "up" ? "Token" : d().row === "workersAi" ? "API token" : "API key") : action === "accountId" ? "Account ID" : "Model")
         return (
           <Modal title={AI_NAMES[d().row].name} subtitle={AI_NAMES[d().row].by} width={AI_DIALOG_WIDTH}
-            hints={signIn() ? (signIn()!.paste ? "enter send · esc cancel" : "esc cancel") : d().field ? "enter save · esc back" : "j/k move · enter do · esc close"}>
+            hints={signIn() ? (signIn()!.paste ? "enter send · esc cancel" : "waiting for your browser · esc cancel") : d().field ? "enter save · esc back" : `paste ${d().row === "up" || d().row === "workersAi" ? "a token" : "a key"} · j/k move · enter do · esc close`}>
             <For each={aiStatus(d().row, ctx())}>{(line) => (
               <box flexDirection="row">
                 <text width={12} flexShrink={0} fg={ink.label}>{line.label}</text>

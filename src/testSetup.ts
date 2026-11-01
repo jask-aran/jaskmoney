@@ -10,6 +10,7 @@ import { CREDENTIAL_NAMES } from "./ai/credentials"
 import { sources } from "./app/executorSource"
 import { purchaseSources } from "./app/purchases"
 import { sources as welcomeSources } from "./app/welcome"
+import { cloudflare } from "./ai/workersAi"
 import { watchRowLifetimes } from "./state/rowLifetimes"
 
 const stopRowLifetimes = watchRowLifetimes(ui, data)
@@ -36,6 +37,8 @@ Object.assign(sources, {
   signOut: () => {},
 })
 // The first-run setup's too: no Up, Executor or browser unless a test fakes one.
+// Cloudflare is never asked from tests: one made-up account.
+cloudflare.accounts = async () => [{ id: "acct-test", name: "Test account" }]
 Object.assign(welcomeSources, {
   open: () => {},
   upAccounts: async () => { throw new Error("no Up in tests") },
