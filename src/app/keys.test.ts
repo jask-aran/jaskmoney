@@ -525,10 +525,13 @@ describe("key router", () => {
     data.init(":memory:")
     ui.switchTab("settings")
     ui.activateSettings("taxonomy", "categories", true)
-    const n = data.state.categories.length
+    // Taxonomy's lists run on as one: the bottom is the last tag (the
+    // empty tag list's one stop here).
     handleKey(ui, key("g", { shift: true, sequence: "G" }), data)
-    expect(ui.state.categoryCursor).toBe(n - 1)
+    expect(ui.state.taxonomyList).toBe("tags")
+    expect(ui.state.tagCursor).toBe(Math.max(0, data.state.tags.length - 1))
     handleKey(ui, key("g"), data)
+    expect(ui.state.taxonomyList).toBe("categories")
     expect(ui.state.categoryCursor).toBe(0)
     ui.activateSettings("database")
     ui.beginImport("/nowhere", [])

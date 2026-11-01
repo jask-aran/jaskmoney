@@ -72,7 +72,7 @@ export function paletteOf(def: Pick<ThemeDef, "colors">): Palette {
     rowCursorText: c.crust,
     strong: "#ffffff",
     figure: mix(c.text, "#ffffff", 0.4),
-    heading: mix(c.pink, canvas, 0.2),
+    heading: c.subtext1,
     ...c,
   }
 }
@@ -91,7 +91,8 @@ export const theme: Palette = paletteOf(themeById(DEFAULT_THEME))
  *   merchants, what you typed. A neutral near-white, clearly brighter than
  *   the labels beside it.
  * - heading: a subheading inside a card (Savers under Accounts, a group in
- *   a picker), bold: the card title's pink, softened.
+ *   a picker), bold: a light grey a step above label. Not the card title's
+ *   pink: inside a card that read as a second title.
  * - label: what a value is (row labels, field names, column headings),
  *   and figures that explain another one
  *   (Balance under Available, a child category's amount, a row's date, its

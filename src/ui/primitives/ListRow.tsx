@@ -1,3 +1,4 @@
+import type { MouseEvent } from "@opentui/core"
 import { Index, createMemo } from "solid-js"
 import { tone } from "../../theme"
 import { rowAppearance } from "../../domain/rowStyle"
@@ -14,14 +15,15 @@ import { S } from "./S"
  * in place of its spans.
  */
 /** `id`: for a scrolling parent to bring the row into view. */
-export function ListRow(props: { cursor: boolean; selected?: boolean; bg: string; spans: Span[]; armed?: string; id?: string }) {
+/** `onMouseDown`: a click on the row (Settings: select it). */
+export function ListRow(props: { cursor: boolean; selected?: boolean; bg: string; spans: Span[]; armed?: string; id?: string; onMouseDown?: (event: MouseEvent) => void }) {
   // Memos: the cursor prop is often an expression over the list's window
   // and cursor, read here once per change rather than once per span.
   const look = createMemo(() => rowAppearance(!!props.selected, false, props.cursor))
   const bg = createMemo(() => look().bg ?? props.bg)
   const spans = (): Span[] => props.armed ? [{ text: props.armed, fg: tone.bad, bold: true }] : props.spans
   return (
-    <box id={props.id} width="100%" height={1} overflow="hidden" backgroundColor={bg()}>
+    <box id={props.id} width="100%" height={1} overflow="hidden" backgroundColor={bg()} onMouseDown={props.onMouseDown}>
       <text bg={bg()} wrapMode="none">
         <S bg={bg()}>{" "}</S>
         <Index each={spans()}>{(span) => <S fg={look().fg ?? span().fg} bg={bg()} bold={span().bold || look().bold}>{span().text}</S>}</Index>

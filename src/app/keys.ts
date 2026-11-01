@@ -48,7 +48,9 @@ import { createLlm, LLM_PROVIDERS, llmModelId } from "../ai/llm"
 import { credentialEnv } from "../ai/credentials"
 import { runAccept, toggleUncategorised, newSuggestionsNote, suggestNew } from "./suggest"
 import { ACCEPT_ALL_AT } from "../domain/questions"
-import { BUDGET_VIEWS, CHART_VIEWS, SETTINGS_SECTIONS, jumpTargets, TABS, TAB_DEFAULT_FOCUS, settingsSectionFocus, smartQuestionFor, type ScopeId, type UiState, type UiStore } from "../state/uiStore"
+import { categoryRows } from "../state/taxonomyRows"
+import { IMPORT_HISTORY_ROWS } from "../state/databaseRows"
+import { BUDGET_VIEWS, CHART_VIEWS, SETTINGS_RIGHT, SETTINGS_SECTIONS, type SettingsSection, jumpTargets, TABS, TAB_DEFAULT_FOCUS, settingsSectionFocus, smartQuestionFor, type ScopeId, type UiState, type UiStore } from "../state/uiStore"
 import type { DataStore } from "../state/dataStore"
 import {
   CUSTOM_CHIP,
@@ -348,6 +350,7 @@ function handleJump(ui: UiStore, key: KeyEvent, data?: DataStore): void {
       else if (hit.section === "set.appearance") ui.activateSettings("appearance")
       else if (hit.section === "set.database") ui.activateSettings("database")
       else if (hit.section === "set.up") ui.activateSettings("up")
+      else if (hit.section === "set.web") ui.activateSettings("web")
       else if (hit.section === "set.ai") ui.activateSettings("ai")
       return
     }
@@ -1028,38 +1031,72 @@ function handleSettings(ui: UiStore, key: KeyEvent, data?: DataStore): void {
     })())
     return
   }
+  // One stop per pane: Saved filters shares Rules' pane, and its stop.
   const sections = SETTINGS_SECTIONS
-  const current = ui.state.settingsSection
-  if (name === "h" || name === "left") { ui.setState({ settingsSection: "taxonomy", focusedSection: "set.categories" }); return }
-  if (name === "l" || name === "right") { ui.setState({ settingsSection: "up", focusedSection: "set.up" }); return }
+  const current = ui.state.settingsSection === "filters" ? "rules" : ui.state.settingsSection
+  const go = (next: SettingsSection) => ui.setState({ settingsSection: next, taxonomyList: "categories", focusedSection: settingsSectionFocus(next) })
+  if (name === "h" || name === "left") { if (SETTINGS_RIGHT.includes(current)) go("taxonomy"); return }
+  if (name === "l" || name === "right") { if (!SETTINGS_RIGHT.includes(current)) go("up"); return }
   if (name === "j" || name === "down" || name === "k" || name === "up") {
     const delta = name === "j" || name === "down" ? 1 : -1
-    const next = sections[(sections.indexOf(current) + delta + sections.length) % sections.length]!
-    ui.setState({ settingsSection: next, focusedSection: settingsSectionFocus(next) })
+    go(sections[(sections.indexOf(current) + delta + sections.length) % sections.length]!)
     return
   }
   if (name === "return" || name === "enter") { ui.activateSettings(current); return }
 }
 
+/** Two lists stacked in one pane (Categories over Tags, Rules over Saved
+ * filters), moved through as one: j off the end of the first lands on the
+ * second. An empty list still takes a stop, where a adds to it. */
+function stackedMove(key: KeyEvent, first: { cursor: number; count: number }, second: { cursor: number; count: number }, onFirst: boolean, page = PAGE): { first: boolean; cursor: number } | null {
+  const a = Math.max(1, first.count), b = Math.max(1, second.count)
+  const at = onFirst ? Math.min(first.cursor, a - 1) : a + Math.min(second.cursor, b - 1)
+  const moved = listMove(key, at, a + b, page)
+  if (moved == null || moved === at) return moved == null ? null : { first: onFirst, cursor: onFirst ? at : at - a }
+  return moved < a ? { first: true, cursor: moved } : { first: false, cursor: moved - a }
+}
+
+/** Taxonomy's category groups: open or closed (one row with its count). */
+function setGroupOpen(ui: UiStore, id: number, open: boolean): void {
+  const ids = ui.state.taxonomyOpen.filter((other) => other !== id)
+  ui.setState({ taxonomyOpen: open ? [...ids, id] : ids })
+}
+
 function handleSettingsTaxonomy(ui: UiStore, key: KeyEvent, data?: DataStore): void {
   const { name } = key
   const list = ui.state.taxonomyList
-  const items = list === "categories" ? data?.state.categories ?? [] : data?.state.tags ?? []
-  const cursor = list === "categories" ? ui.state.categoryCursor : ui.state.tagCursor
+  const rows = categoryRows(data?.state.categories ?? [], ui.state.taxonomyOpen)
+  const tags = data?.state.tags ?? []
   if (name === "escape") { ui.leaveSettings(); return }
-  if (name === "h" || name === "left" || name === "l" || name === "right") { ui.activateSettings("taxonomy", list === "categories" ? "tags" : "categories"); return }
-  const moved = listMove(key, cursor, items.length, list === "categories" ? ui.state.categoryVisible : ui.state.tagVisible)
-  if (moved != null) { ui.moveSettingsList(list, moved - cursor, items.length); return }
+  const moved = stackedMove(key, { cursor: ui.state.categoryCursor, count: rows.length }, { cursor: ui.state.tagCursor, count: tags.length }, list === "categories", ui.state.taxonomyVisible)
+  if (moved) {
+    ui.setState(moved.first ? { taxonomyList: "categories", focusedSection: "set.categories", categoryCursor: moved.cursor } : { taxonomyList: "tags", focusedSection: "set.tags", tagCursor: moved.cursor })
+    return
+  }
+  const row = list === "categories" ? rows[Math.min(ui.state.categoryCursor, rows.length - 1)] : undefined
+  const item = list === "categories" ? row?.category : tags[Math.min(ui.state.tagCursor, tags.length - 1)]
+  // A group opens and closes on space or enter, l and h; h on a
+  // subcategory closes its group, the cursor back on the group.
+  if (row && row.children && (name === "space" || name === "return" || name === "enter")) { setGroupOpen(ui, row.category.id, !row.open); return }
+  if (row && row.children && (name === "l" || name === "right")) { setGroupOpen(ui, row.category.id, true); return }
+  if (row && (name === "h" || name === "left")) {
+    if (row.children) { setGroupOpen(ui, row.category.id, false); return }
+    if (row.depth === 1) {
+      const group = rows.findIndex((r) => r.category.id === row.category.parentId)
+      setGroupOpen(ui, row.category.parentId!, false)
+      ui.setState({ categoryCursor: Math.max(0, group) })
+    }
+    return
+  }
   if (name === "a") {
     ui.openSettingsEditor(list === "categories" ? "category" : "tag", null, { ...ui.state.settingsDraft, name: "", color: list === "categories" ? "#94e2d5" : "#89b4fa", categoryIds: [], about: "", notSpending: false })
     return
   }
-  if ((name === "return" || name === "enter") && items[cursor]) {
-    const item = items[cursor]!
+  if ((name === "e" || name === "return" || name === "enter") && item) {
     ui.openSettingsEditor(list === "categories" ? "category" : "tag", item.id, { ...ui.state.settingsDraft, name: item.name, color: item.color, categoryIds: "categoryIds" in item ? [...item.categoryIds] : [], about: "about" in item ? item.about ?? "" : "", notSpending: "notSpending" in item ? item.notSpending : false })
     return
   }
-  if (name === "delete" && items[cursor]) { confirmTwice(ui, data, { kind: list === "categories" ? "category" : "tag", id: items[cursor]!.id, label: items[cursor]!.name, with: "delete" }); return }
+  if (name === "delete" && item) { confirmTwice(ui, data, { kind: list === "categories" ? "category" : "tag", id: item.id, label: item.name, with: "delete" }); return }
 }
 
 function handleSettingsRules(ui: UiStore, key: KeyEvent, data?: DataStore): void {
@@ -1070,8 +1107,8 @@ function handleSettingsRules(ui: UiStore, key: KeyEvent, data?: DataStore): void
   if (shifted(key, "k") && rule) { settleData(ui, (async () => { await data?.reorderSettingsRule(rule.id, cursor - 1); ui.setState({ ruleCursor: Math.max(0, cursor - 1) }) })()); return }
   if (shifted(key, "a") && data) { applyAllRules(ui, data); return }
   if (shifted(key, "d") && data) { showDryRun(ui, data); return }
-  const moved = listMove(key, ui.state.ruleCursor, rules.length)
-  if (moved != null) { ui.setState({ ruleCursor: moved }); return }
+  const moved = stackedMove(key, { cursor: cursor, count: rules.length }, { cursor: ui.state.filterCursor, count: data?.state.savedFilters.length ?? 0 }, true)
+  if (moved) { ui.setState(moved.first ? { ruleCursor: moved.cursor } : { settingsSection: "filters", focusedSection: "set.filters", filterCursor: moved.cursor }); return }
   if (name === "a") { ui.openSettingsEditor("rule", null, { ...ui.state.settingsDraft, name: "", savedFilterId: data?.state.savedFilters[0]?.id ?? "", setCategoryId: null, addTagIds: [] }); return }
   if ((name === "return" || name === "enter") && rule) { ui.openSettingsEditor("rule", rule.id, { ...ui.state.settingsDraft, name: rule.name, savedFilterId: rule.savedFilterId, setCategoryId: rule.setCategoryId, addTagIds: rule.addTagIds }); return }
   if (name === "space" && rule) { settleData(ui, (async () => { await data?.toggleSettingsRule(rule.id, !rule.enabled) })()); return }
@@ -1082,8 +1119,8 @@ function handleSettingsFilters(ui: UiStore, key: KeyEvent, data?: DataStore): vo
   const { name } = key
   const filters = data?.state.savedFilters ?? []; const cursor = ui.state.filterCursor; const filter = filters[cursor]
   if (name === "escape") { ui.leaveSettings(); return }
-  const moved = listMove(key, ui.state.filterCursor, filters.length)
-  if (moved != null) { ui.setState({ filterCursor: moved }); return }
+  const moved = stackedMove(key, { cursor: ui.state.ruleCursor, count: data?.state.rules.length ?? 0 }, { cursor: cursor, count: filters.length }, false)
+  if (moved) { ui.setState(moved.first ? { settingsSection: "rules", focusedSection: "set.rules", ruleCursor: moved.cursor } : { filterCursor: moved.cursor }); return }
   if (name === "a") { const id = nextSavedFilterId(filters); ui.openSettingsEditor("filter", null, { ...ui.state.settingsDraft, id, name: "", expr: "" }); return }
   if ((name === "return" || name === "enter") && filter) { ui.openSettingsEditor("filter", filter.id, { ...ui.state.settingsDraft, id: filter.id, name: filter.name, expr: filter.expr }); return }
   if (name === "delete" && filter) { confirmTwice(ui, data, { kind: "filter", id: filter.id, label: filter.name, with: "delete" }); return }
@@ -1107,6 +1144,24 @@ function handleSettingsUp(ui: UiStore, key: KeyEvent, data?: DataStore): void {
     return
   }
   if (name === "s" && data) { void runSync(ui, data, { manual: true }); return }
+}
+
+/** Settings › Web app: enter opens the page this core serves. */
+function handleSettingsWeb(ui: UiStore, key: KeyEvent, data?: DataStore): void {
+  const { name } = key
+  if (name === "escape") { ui.leaveSettings(); return }
+  if (name === "return" || name === "enter" || name === "o") {
+    if (web.serving()) openBarItem(ui, data, "bar.web")
+    else ui.setStatus("Not serving the web app · start with --serve")
+  }
+}
+
+/** Database & Import › Import history: every import, newest first. */
+function handleImportHistory(ui: UiStore, key: KeyEvent, data?: DataStore): void {
+  if (key.name === "escape") { ui.setState({ importHistory: null }); return }
+  const count = data?.state.imports.length ?? 0
+  const moved = listMove(key, ui.state.importHistory?.top ?? 0, Math.max(1, count - IMPORT_HISTORY_ROWS + 1), IMPORT_HISTORY_ROWS)
+  if (moved != null) ui.setState("importHistory", { top: moved })
 }
 
 /** The accounts dialog: one row per Up account; enter switches sync on at
@@ -1424,6 +1479,7 @@ function handleSettingsDatabase(ui: UiStore, key: KeyEvent, data?: DataStore): v
       })())
       return
     }
+    case "history": ui.setState({ importHistory: { top: 0 } }); return
     case "profiles": ui.beginImport("", []); ui.opening("importWizard").patch({ stage: "profile", managing: true }); return
     // Approved port deviation: Database & Import owns the week toggle.
     case "weekStart": if (data) toggleWeekStart(ui, data); return
@@ -2235,8 +2291,8 @@ const scopes: Record<ScopeId, ScopeEntry> = {
     handle: handleSettingsTaxonomy,
     list: true,
     hints: () => [
-      { key: "h/l", desc: "list" }, { key: "j/k", desc: "move" },
-      { key: "a", desc: "add" }, { key: "enter", desc: "edit" },
+      { key: "j/k", desc: "move" }, { key: "space", desc: "open group" },
+      { key: "enter", desc: "edit" }, { key: "a", desc: "add" },
       { key: "del del", desc: "delete" }, { key: "esc", desc: "done" },
     ],
   },
@@ -2258,6 +2314,16 @@ const scopes: Record<ScopeId, ScopeEntry> = {
     handle: handleSettingsUp,
     list: true,
     hints: () => [{ key: "j/k", desc: "move" }, { key: "enter", desc: "open" }, { key: "s", desc: "sync now" }, { key: "esc", desc: "done" }],
+  },
+  "settings.web": {
+    handle: handleSettingsWeb,
+    list: true,
+    hints: () => [{ key: "enter", desc: "open in browser" }, { key: "esc", desc: "done" }],
+  },
+  "settings.importHistory": {
+    handle: handleImportHistory,
+    list: true,
+    hints: () => [{ key: "j/k", desc: "scroll" }, { key: "esc", desc: "close" }],
   },
   "settings.ai": {
     handle: handleSettingsAi,

@@ -62,7 +62,12 @@ Where information lives: the Overview is figures and charts (point-in-time ones 
 
 ### Settings
 
-Each column scrolls when its panes don't fit, following the focused pane. Panes: Taxonomy (categories and tags), Up Bank (token, sync, which accounts sync), AI models, Rules & Filters, Appearance, Database & Import, Import History.
+Wide, Taxonomy and Rules & Filters are on the left; Up Bank, Web app, AI models, Appearance and Database & Import on the right. Each column scrolls when its panes don't fit, following the focused pane. `j`/`k` step from pane to pane (one stop each), `h`/`l` between the columns, `enter` goes in; a click on a pane goes in too, and a click on a row puts the cursor there.
+
+- **Taxonomy:** Jaskmoney's own categories (Income, Transfers, Uncategorised, People and any you add), then Up's, then the tags. A group is one row with its size until opened: `space` or `enter` opens or closes it (`l`/`h` too; `h` in a subcategory closes its group), and `e` edits any row. `j` runs on from the categories into the tags.
+- **Rules & Filters:** `j` runs on from the rules into the saved filters.
+- **Web app:** `enter` opens the page in your browser.
+- **Database & Import:** Import history… lists every CSV import.
 
 ## Categorising
 

@@ -3,16 +3,20 @@
  * pane. Toggles flip on enter; Clear data arms (enter again clears); Reset
  * opens the typed RESET confirmation (the one action that wipes everything).
  */
-export type DatabaseRow = "import" | "profiles" | "weekStart" | "demo" | "clearData" | "reset"
+export type DatabaseRow = "import" | "history" | "profiles" | "weekStart" | "demo" | "clearData" | "reset"
 
-export const DATABASE_ROWS: readonly DatabaseRow[] = ["import", "profiles", "weekStart", "demo", "clearData", "reset"]
+export const DATABASE_ROWS: readonly DatabaseRow[] = ["import", "history", "profiles", "weekStart", "demo", "clearData", "reset"]
 
-export interface DatabaseRowContext { weekStart: "monday" | "sunday"; profiles: number; demo: boolean }
+export interface DatabaseRowContext { weekStart: "monday" | "sunday"; profiles: number; demo: boolean; imports?: number }
+
+/** Imports the history dialog shows at once. */
+export const IMPORT_HISTORY_ROWS = 12
 
 /** A row's label and its current value (toggles), and whether it destroys data. */
 export function databaseRow(row: DatabaseRow, ctx: DatabaseRowContext): { label: string; value?: string; danger?: boolean } {
   switch (row) {
     case "import": return { label: "Import a CSV…" }
+    case "history": return { label: "Import history…", value: ctx.imports ? `${ctx.imports} ${ctx.imports === 1 ? "import" : "imports"}` : "none yet" }
     case "profiles": return { label: "Import profiles…", value: String(ctx.profiles) }
     case "weekStart": return { label: "Weeks start on", value: ctx.weekStart === "sunday" ? "Sunday" : "Monday" }
     case "demo": return { label: "Demo mode", value: ctx.demo ? "on · from your spending, scrambled (enter: back to yours)" : "off · three years from your spending, scrambled" }

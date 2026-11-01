@@ -152,7 +152,7 @@ test("Appearance preferences save/load known values and discard unknown values",
 })
 
 test("Database keeps only data rows and week start", () => {
-  expect(DATABASE_ROWS).toEqual(["import", "profiles", "weekStart", "demo", "clearData", "reset"])
+  expect(DATABASE_ROWS).toEqual(["import", "history", "profiles", "weekStart", "demo", "clearData", "reset"])
   const labels = DATABASE_ROWS.map((row) => databaseRow(row, { weekStart: "monday", profiles: 1, demo: false }).label)
   for (const row of APPEARANCE_ROWS) expect(labels).not.toContain(appearanceRow(row, { icons: true }).label)
 })
@@ -160,7 +160,7 @@ test("Database keeps only data rows and week start", () => {
 test("Appearance is reachable through section navigation, jump, pointer and palette", async () => {
   data.init(":memory:")
   ui.switchTab("settings")
-  ui.setState({ settingsSection: "filters", focusedSection: "set.filters" })
+  ui.setState({ settingsSection: "ai", focusedSection: "set.ai" })
   handleKey(ui, key("down"), data)
   expect(ui.state.settingsSection).toBe("appearance")
   expect(ui.state.focusedSection).toBe("set.appearance")

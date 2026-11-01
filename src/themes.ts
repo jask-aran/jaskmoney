@@ -30,7 +30,7 @@ export const THEMES: readonly ThemeDef[] = [
       surface2: "#585b70", surface1: "#45475a", surface0: "#313244", base: "#1e1e2e", mantle: "#181825", crust: "#11111b",
       // As tuned before themes: today's rule a vivid green, the budget's a
       // muted yellow, so the two never read alike; neutral near-whites.
-      chartToday: "#66d690", chartBudget: "#a8996b", strong: "#ffffff", figure: "#e6e6e6", heading: "#c79fbe",
+      chartToday: "#66d690", chartBudget: "#a8996b", strong: "#ffffff", figure: "#e6e6e6",
     },
   },
   {
