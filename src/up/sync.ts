@@ -12,13 +12,17 @@ type LocalTransaction = { id: number; external_id: string | null; status: string
  * (Up confirmed a change for them while this fetched); they're left as they
  * are, and the next sync brings them up to date.
  */
-export async function syncUp(db: Db, client: Pick<ReturnType<typeof createUpClient>, "listAccounts" | "listAccountTransactions" | "listCategories">, { now = new Date(), keep, ensureCurrent }: { now?: Date; keep?: ReadonlySet<number>; ensureCurrent?: () => void } = {}) {
+/** `off`: the accounts (Up's ids) chosen not to sync (the setup's account
+ * choice): they're saved switched off, as Settings › Up Bank would leave
+ * them, and their transactions never fetched. Every other account Up
+ * lists is switched on. Without it, each account keeps its switch. */
+export async function syncUp(db: Db, client: Pick<ReturnType<typeof createUpClient>, "listAccounts" | "listAccountTransactions" | "listCategories">, { now = new Date(), keep, ensureCurrent, off }: { now?: Date; keep?: ReadonlySet<number>; ensureCurrent?: () => void; off?: ReadonlySet<string> } = {}) {
   try {
     const tree = await client.listCategories()
     ensureCurrent?.()
     const accounts = await client.listAccounts()
     ensureCurrent?.()
-    const disabledAccounts = () => new Set(db.query<{ external_id: string }, []>("SELECT external_id FROM accounts WHERE source = 'up' AND sync_enabled = 0 AND external_id IS NOT NULL").all().map(a => a.external_id))
+    const disabledAccounts = () => off ?? new Set(db.query<{ external_id: string }, []>("SELECT external_id FROM accounts WHERE source = 'up' AND sync_enabled = 0 AND external_id IS NOT NULL").all().map(a => a.external_id))
     const batches: { accountId: string; local: LocalTransaction[]; since: string | undefined; transactions: Awaited<ReturnType<typeof client.listAccountTransactions>> }[] = []
     for (const account of accounts) {
       if (disabledAccounts().has(account.id)) continue
@@ -51,11 +55,12 @@ export async function syncUp(db: Db, client: Pick<ReturnType<typeof createUpClie
         if (existing) {
           db.query("UPDATE accounts SET name = ?, type = 'debit', external_kind = ?, balance = ?, balance_at = ? WHERE id = ?")
             .run(name, a.accountType, a.balance.valueInBaseUnits / 100, syncedAt, existing.id)
+          if (off) db.query("UPDATE accounts SET sync_enabled = ? WHERE id = ?").run(off.has(account.id) ? 0 : 1, existing.id)
           accountIds.set(account.id, existing.id)
         } else {
           const result = db.query(`INSERT INTO accounts (name, type, source, external_id, external_kind, balance, balance_at, sort_order, is_active, sync_enabled)
-            VALUES (?, 'debit', 'up', ?, ?, ?, ?, (SELECT COALESCE(MAX(sort_order), -1) + 1 FROM accounts), 1, 1)`)
-            .run(name, account.id, a.accountType, a.balance.valueInBaseUnits / 100, syncedAt)
+            VALUES (?, 'debit', 'up', ?, ?, ?, ?, (SELECT COALESCE(MAX(sort_order), -1) + 1 FROM accounts), 1, ?)`)
+            .run(name, account.id, a.accountType, a.balance.valueInBaseUnits / 100, syncedAt, off?.has(account.id) ? 0 : 1)
           accountIds.set(account.id, Number(result.lastInsertRowid))
         }
       }

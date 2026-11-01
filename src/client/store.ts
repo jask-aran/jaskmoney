@@ -750,7 +750,7 @@ export function createClientStore(initialLink: CoreLink) {
     csvFiles: (directory: string) => link.call("csvFiles", { directory }),
     previewImport: (path: string, profile: ImportProfile) => link.call("previewImport", { path, profile }),
     commitPreview: (preview: CoreParams<"commitPreview">["preview"], skipDuplicates: boolean) => link.call("commitPreview", { preview, skipDuplicates }),
-    syncUp: () => link.call("syncUp", {}),
+    syncUp: (off?: string[]) => link.call("syncUp", off ? { off } : {}),
 
     /** Returns the number of transactions removed when switching sync off. */
     setAccountSync: (accountId: number, enabled: boolean) => link.call("setAccountSync", { accountId, enabled }),

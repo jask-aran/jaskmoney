@@ -18,7 +18,8 @@ export function syncConfigured(data: DataStore): boolean {
  * background one only reports new or changed data, or an error, so it does
  * not overwrite whatever the status line is showing.
  */
-export async function runSync(ui: UiStore, data: DataStore, { manual }: { manual: boolean }): Promise<void> {
+/** `off`: the setup's account choice, for its first sync (up/sync). */
+export async function runSync(ui: UiStore, data: DataStore, { manual, off }: { manual: boolean; off?: string[] }): Promise<void> {
   // Demo rows are made up: nothing goes to or comes from Up.
   if (data.state.demo) {
     if (manual) ui.setStatus("Demo mode: sync is off (Settings › Database & Import to leave)", true)
@@ -41,7 +42,7 @@ export async function runSync(ui: UiStore, data: DataStore, { manual }: { manual
   }
   if (manual) ui.setStatus("Syncing…")
   try {
-    const summary = await data.syncUp()
+    const summary = await data.syncUp(off)
     // New Amazon and eBay rows learn what they bought from your email
     // first, then new rows get suggestions, so the Overview can say what's waiting.
     const refresh = await runBackgroundRefresh(data)

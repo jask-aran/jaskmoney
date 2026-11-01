@@ -119,7 +119,7 @@ function WelcomeScreen() {
       spans: [
         { text: at ? " ›" : "  ", fg: tone.key, bold: true, bg },
         { text: row.done ? " ✓ " : "   ", fg: tone.good, bold: true, bg },
-        { text: label, fg: row.primary ? tone.key : at ? ink.strong : ink.figure, bold: at || row.primary, bg },
+        { text: label, fg: row.primary ? tone.key : row.off ? ink.faint : at ? ink.strong : ink.figure, bold: at || row.primary, bg },
         ...(field?.hint ? [{ text: field.hint, fg: ink.faint, bg }] : []),
         { text: row.detail ? `  ${row.detail} ` : " ", fg: row.done ? tone.good : ink.note, bg },
       ],
@@ -156,9 +156,10 @@ function WelcomeScreen() {
           say("Up Bank", ink.strong, true),
           blank,
           ...(connected ? [
-            ...(accounts ? [say("Up answered. These accounts sync:", tone.good), ...accounts.map((a) => ({ spans: [{ text: "  ● ", fg: tone.good }, { text: a, fg: ink.figure }] }))] : [say("Connected.", tone.good)]),
-            blank,
-            ...wrapped(data.state.upSyncing ? "Syncing your transactions." : `${data.state.transactions.length} transactions so far.`, w, ink.note),
+            ...(accounts
+              // The accounts are the rows below: enter switches one.
+              ? [say("Up answered. Choose the accounts to sync:", tone.good), ...wrapped("A saver is part of its spending account and comes with it. Settings › Up Bank changes this any time.", w, ink.note)]
+              : [say("Connected.", tone.good), blank, ...wrapped(data.state.upSyncing ? "Syncing your transactions." : `${data.state.transactions.length} transactions so far.`, w, ink.note)]),
           ] : [
             ...wrapped("Up's API reads with a Personal Access Token. To make one, in the Up app:", w),
             blank,
@@ -247,10 +248,10 @@ function WelcomeScreen() {
   const reelHeight = () => Math.max(8, Math.min(30, height() - 5 - (left().length + 2) - 1))
 
   const click = (row: number | undefined) => row === undefined ? undefined : onPointer("welcome", () => {
-    const action = rows()[row]?.action
-    if (!action) return
+    const at = rows()[row]
+    if (!at) return
     ui.setState("welcome", { cursor: row })
-    welcomeAct(ui, data, action)
+    welcomeAct(ui, data, at.action, at)
   })
 
   // ---- The title: its gradient drifts, and every few seconds a slanted

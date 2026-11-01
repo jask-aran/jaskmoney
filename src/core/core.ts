@@ -513,17 +513,17 @@ export function createCore() {
 
   /** Fetch from Up and save, then run rules on the new rows and send what
    * Up hasn't confirmed. Never in demo mode: its rows are made up. */
-  function syncUp(): Promise<string> {
+  function syncUp(off?: string[]): Promise<string> {
     if (state.demo) return Promise.reject(new Error("Sync is off in demo mode"))
-    return upSync.run(syncNow)
+    return upSync.run(() => syncNow(off))
   }
 
-  async function syncNow(): Promise<string> {
+  async function syncNow(off?: string[]): Promise<string> {
     const session = ctx.session()
     // A row Up confirms a change for while the sync fetches keeps its
     // copy: the fetched one predates the change (upPush watchUpWrites).
     const confirmed = push.watchUpWrites()
-    const result = await runUpSync(session.db, upClient(), { keep: confirmed.ids, ensureCurrent: () => ctx.ensureCurrent(session, "Up sync was running") }).catch((error: unknown) => {
+    const result = await runUpSync(session.db, upClient(), { keep: confirmed.ids, ensureCurrent: () => ctx.ensureCurrent(session, "Up sync was running"), ...(off ? { off: new Set(off) } : {}) }).catch((error: unknown) => {
       try { if (ctx.isCurrent(session)) refresh() } catch { /* Preserve the sync error if reloading also fails. */ }
       throw error
     }).finally(confirmed.stop)
@@ -718,7 +718,8 @@ export function createCore() {
       return buildImportPreview(db, readFileSync(p.path, "utf8"), p.path, validateImportProfile(p.profile))
     },
     commitPreview: (p: { preview: ImportPreview; skipDuplicates: boolean }) => commitPreview(p.preview, p.skipDuplicates),
-    syncUp: (_: object) => syncUp(),
+    /** `off`: the setup's choice of accounts not to sync (Up's ids). */
+    syncUp: (p: { off?: string[] }) => syncUp(p.off),
 
     /** Returns the number of transactions removed when switching sync off. */
     setAccountSync: (p: { accountId: number; enabled: boolean }) => mutate((db) => setAccountSyncEnabled(db, p.accountId, p.enabled)),

@@ -9,7 +9,7 @@ import type { UiStore } from "../state/uiStore"
 import { DEMO_COUNT, demoWorld, triable, tryFrom, tryKey } from "../state/tour"
 import { BACKDROPS } from "../ui/welcome/backdrop"
 import { fetchTickers } from "./tickers"
-import { nextStep, previousStep, welcomeBackdrop, welcomeGo, welcomeRows, welcomeStart, type EmailPhase, type WelcomeAction, type WelcomeContext, type WelcomeState } from "../state/welcome"
+import { nextStep, previousStep, welcomeBackdrop, welcomeGo, welcomeRows, toggleUpAccount, welcomeStart, type EmailPhase, type UpChoice, type WelcomeAction, type WelcomeContext, type WelcomeRow, type WelcomeState } from "../state/welcome"
 import { openBrowser } from "./llmSignIn"
 import { runSync } from "./sync"
 
@@ -24,8 +24,9 @@ export const sources = {
   open: openBrowser as (url: string) => void,
   /** Market prices for the ticker tape backdrop (null: keep the made-up ones). */
   tickers: () => fetchTickers(),
-  /** Up's accounts for a token, by name: Up answering is the check. */
-  upAccounts: async (token: string) => (await createUpClient({ token }).listAccounts()).map((a) => a.attributes.displayName),
+  /** Up's accounts for a token, all to sync until chosen otherwise: Up answering is the check. */
+  upAccounts: async (token: string): Promise<UpChoice[]> => (await createUpClient({ token }).listAccounts())
+    .map((a) => ({ id: a.id, name: a.attributes.displayName, type: a.attributes.accountType, ownership: a.attributes.ownershipType, on: true })),
   executorSignedIn: () => executorSignedIn(),
   signInExecutor: (open: (url: string) => void, signal: AbortSignal) => signInExecutor(open, signal),
   ensureMailApp: () => ensureMailApp(),
@@ -103,6 +104,16 @@ export function closeWelcome(ui: UiStore, data: DataStore): void {
 function go(ui: UiStore, step: WelcomeState["step"] | null, data: DataStore): void {
   const state = ui.state.welcome
   if (!state) return
+  // Leaving the Up step (Continue, s, the rail, or finishing) with its
+  // accounts chosen: a sync with that choice, the first one, its switched-off
+  // accounts never fetched. Again only if the choice changed since.
+  if (state.step === "up" && step !== "up" && state.upAccounts) {
+    const off = state.upAccounts.filter((a) => !a.on).map((a) => a.id)
+    if (off.join() !== state.upSyncedOff) {
+      ui.setState("welcome", { upSyncedOff: off.join() })
+      void runSync(ui, data, { manual: false, off })
+    }
+  }
   if (!step) { closeWelcome(ui, data); return }
   ui.setState("welcome", { ...welcomeGo(state, step), ...(step === "tour" ? { demoAt: performance.now() } : {}) })
 }
@@ -168,7 +179,7 @@ export function handleWelcome(ui: UiStore, key: KeyEvent, data?: DataStore): voi
   if (name === "return" || name === "enter") {
     // Typing a token, enter checks it wherever the cursor is.
     const row = typing && state.token.value.trim() ? rows.find((r) => r.action === "token")! : rows[Math.min(state.cursor, rows.length - 1)]
-    if (row) welcomeAct(ui, data, row.action)
+    if (row) welcomeAct(ui, data, row.action, row)
     return
   }
   if (typing) {
@@ -185,7 +196,7 @@ export function handleWelcome(ui: UiStore, key: KeyEvent, data?: DataStore): voi
 }
 
 /** Do a row's action (enter on it, or a click). */
-export function welcomeAct(ui: UiStore, data: DataStore, action: WelcomeAction): void {
+export function welcomeAct(ui: UiStore, data: DataStore, action: WelcomeAction, row?: WelcomeRow): void {
   const state = ui.state.welcome
   if (!state || state.busy) return
   switch (action) {
@@ -195,12 +206,13 @@ export function welcomeAct(ui: UiStore, data: DataStore, action: WelcomeAction):
     case "try": startTry(ui, data); return
     case "stopTry": showDemo(ui, state.demo); return
     case "skipAll": case "finish": closeWelcome(ui, data); return
+    case "account": if (row?.account && state.upAccounts) ui.setState("welcome", { upAccounts: toggleUpAccount(state.upAccounts, row.account) }); return
     case "next": go(ui, nextStep(state.step), data); return
     case "openUp":
       sources.open(UP_TOKEN_PAGE)
       ui.setState("welcome", { note: { text: "api.up.com.au should open in your browser", ok: null } })
       return
-    case "replaceToken": ui.setState("welcome", { token: { value: "", caret: 0 }, upAccounts: null, cursor: 0, note: null }); return
+    case "replaceToken": ui.setState("welcome", { token: { value: "", caret: 0 }, upAccounts: null, upSyncedOff: undefined, cursor: 0, note: null }); return
     case "token": void checkUpToken(ui, data); return
     // Every model opens its own dialog, as in Settings › AI models: a
     // browser sign-in, a key (paste it straight away), and how it's going.
@@ -225,8 +237,9 @@ async function checkUpToken(ui: UiStore, data: DataStore): Promise<void> {
   try {
     const accounts = await sources.upAccounts(token)
     await data.saveApiKeys({ JASKMONEY_UP_TOKEN: token })
-    opened.patch({ busy: null, upAccounts: accounts, token: { value: "", caret: 0 }, cursor: 0, note: { text: `Connected: ${accounts.length} account${accounts.length === 1 ? "" : "s"}. Your transactions are syncing now.`, ok: true } })
-    void runSync(ui, data, { manual: false })
+    // The first sync waits for Continue: which accounts sync is chosen first.
+    // The cursor on Continue (after the accounts): enter keeps them all.
+    opened.patch({ busy: null, upAccounts: accounts, token: { value: "", caret: 0 }, cursor: accounts.length, note: null })
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error)
     const hint = !token.startsWith("up:") ? " An Up token starts with up:yeah:" : ""

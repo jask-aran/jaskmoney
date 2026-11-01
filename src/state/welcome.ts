@@ -47,13 +47,16 @@ export interface WelcomeState {
   /** Real market prices for the ticker tape, once fetched (app/tickers). */
   tickers?: Ticker[]
   cursor: number
-  /** The Up token as typed: never drawn, only its length and last four. */
+  /** The Up token as typed: never drawn, only dots. */
   token: TextField
   /** Something running (a check, a sign-in): its words, with a spinner. */
   busy: string | null
   note: { text: string; ok: boolean | null } | null
-  /** Up answered this token: its accounts' names. */
-  upAccounts: string[] | null
+  /** Up answered this token: its accounts, each to sync or not. */
+  upAccounts: UpChoice[] | null
+  /** The choice the last sync from this step had (the switched-off ids), so
+   * leaving again unchanged doesn't sync again. */
+  upSyncedOff?: string
   email: { phase: EmailPhase; failedAt: EmailPhase | null; url: string | null; account: string | null; orders: number | null }
 }
 
@@ -87,7 +90,7 @@ export interface WelcomeContext {
 
 export type WelcomeAction =
   | "tour" | "demoNext" | "try" | "stopTry" | "start" | "skipAll"
-  | "token" | "openUp" | "replaceToken"
+  | "token" | "openUp" | "replaceToken" | "account"
   | "openrouter" | "openai" | "jevKey" | "clairic"
   | "email" | "openExecutor"
   | "next" | "finish"
@@ -101,6 +104,43 @@ export interface WelcomeRow {
   done?: boolean
   /** The one to press: drawn as the screen's main button. */
   primary?: boolean
+  /** An Up account's row: its id (Up's), toggled by enter. */
+  account?: string
+  /** Off: drawn faint (an account not to sync). */
+  off?: boolean
+}
+
+/** An Up account in the setup's choice: Up's id, name, type (TRANSACTIONAL,
+ * SAVER, …) and ownership (INDIVIDUAL, JOINT), and whether it syncs. */
+export interface UpChoice { id: string; name: string; type: string; ownership: string; on: boolean }
+
+/**
+ * Up's accounts as the app sees them: each spending account, with the
+ * savers of the same ownership under it (yours under Spending, joint ones
+ * under 2Up Spending): a saver is part of its spending account, not an
+ * account of its own. A saver with no spending account to go under comes
+ * last, on its own. In order, with each one's spending account (null for
+ * a spending account itself).
+ */
+export function upAccountTree(accounts: UpChoice[]): Array<{ account: UpChoice; under: UpChoice | null }> {
+  const heads = accounts.filter((a) => a.type !== "SAVER")
+  const headOf = (saver: UpChoice) => heads.find((h) => h.ownership === saver.ownership) ?? null
+  const savers = accounts.filter((a) => a.type === "SAVER")
+  return [
+    ...heads.flatMap((head) => [{ account: head, under: null }, ...savers.filter((s) => headOf(s) === head).map((s) => ({ account: s, under: head }))]),
+    ...savers.filter((s) => !headOf(s)).map((s) => ({ account: s, under: null })),
+  ]
+}
+
+/** Toggle one account: a spending account takes its savers with it; a
+ * saver turned on brings its spending account on (it's part of it). */
+export function toggleUpAccount(accounts: UpChoice[], id: string): UpChoice[] {
+  const tree = upAccountTree(accounts)
+  const at = tree.find((t) => t.account.id === id)
+  if (!at) return accounts
+  const on = !at.account.on
+  const savers = new Set(tree.filter((t) => t.under?.id === id).map((t) => t.account.id))
+  return accounts.map((a) => a.id === id || savers.has(a.id) ? { ...a, on } : on && a.id === at.under?.id ? { ...a, on: true } : a)
 }
 
 /** The rows of the screen, top to bottom; the cursor moves over them. */
@@ -124,6 +164,12 @@ export function welcomeRows(state: WelcomeState, ctx: WelcomeContext): WelcomeRo
     }
     case "up":
       if (ctx.up && state.token.value === "") return [
+        // Which accounts sync: each spending account, its savers under it.
+        ...upAccountTree(state.upAccounts ?? []).map(({ account, under }): WelcomeRow => ({
+          action: "account", account: account.id, off: !account.on,
+          label: `${under ? "  " : ""}${account.on ? "●" : "○"} ${account.name}`,
+          detail: account.on ? "" : "won't sync",
+        })),
         { action: "next", label: "Continue", primary: true },
         { action: "replaceToken", label: "Use a different token" },
       ]
