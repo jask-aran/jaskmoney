@@ -63,15 +63,21 @@ const MIN_CATEGORIES = 8
  * excluded.
  */
 export function OverviewTab(props: { focused: SectionId }) {
-  const dims = useTerminalDimensions()
-  const today = () => appToday()
-  const cycleConfig = () => data.cycle()
-  // The range, scope and category spending, shared with the tab's keys.
-  // Hidden (another tab shown, the tab kept mounted), the costly results
-  // keep their last values and stop following the data; showing the tab
-  // brings them up to date once.
+  // Hidden (another tab shown, the tab kept mounted), the tab's inputs keep
+  // their last values, so the costly results stop following the data;
+  // showing the tab passes on only the inputs that changed meanwhile, so a
+  // tab whose data didn't change wakes nothing.
   const shown = () => ui.state.activeTab === "overview"
-  const live = <T,>(fn: () => T): (() => T) => createMemo<T | undefined>((was) => (shown() || was === undefined ? fn() : was)) as () => T
+  const held = <T,>(fn: () => T): (() => T) => createMemo<T | undefined>((was) => (shown() || was === undefined ? fn() : was)) as () => T
+  const terminal = useTerminalDimensions()
+  const dims = held(() => terminal())
+  const transactions = held(() => data.transactions())
+  // The clock isn't reactive: read fresh as before, and showing the tab on
+  // a new day brings its results up to date.
+  const shownOn = held(() => appToday())
+  const today = () => (shownOn(), appToday())
+  const cycleConfig = held(() => data.cycle())
+  // The range, scope and category spending, shared with the tab's keys.
   const range = createMemo(() => overviewRange(data, ui.state))
   const clock = () => range().clock
   const bounds = () => range().bounds
@@ -83,42 +89,42 @@ export function OverviewTab(props: { focused: SectionId }) {
   const previous = () => windows().previous
   const spending = () => range().spending
   const inPeriod = () => range().inPeriod
-  const inPrevious = createMemo(() => data.transactions().filter((t) => t.dateISO >= previous().start && t.dateISO <= previous().end))
+  const inPrevious = createMemo(() => transactions().filter((t) => t.dateISO >= previous().start && t.dateISO <= previous().end))
   // Flows see every tracked account (money moved to savers), narrowed to the
   // scope for spending and income.
-  const flows = live(() => computePeriodFlows(data.state.accounts, filterByTimeframe(data.transactions(), ui.state.timeframe, clock(), cycleConfig()), scopeIds()))
-  const previousFlows = live(() => computePeriodFlows(data.state.accounts, inPrevious(), scopeIds()))
+  const flows = createMemo(() => computePeriodFlows(data.state.accounts, filterByTimeframe(transactions(), ui.state.timeframe, clock(), cycleConfig()), scopeIds()))
+  const previousFlows = createMemo(() => computePeriodFlows(data.state.accounts, inPrevious(), scopeIds()))
   // Before is a comparison only where the history covers the earlier
   // period (historyCovers); else "—".
-  const covered = createMemo(() => windows().days === 0 || historyCovers(data.transactions(), previous(), { start: bounds().start, end: addDays(bounds().start, windows().days - 1) }))
+  const covered = createMemo(() => windows().days === 0 || historyCovers(transactions(), previous(), { start: bounds().start, end: addDays(bounds().start, windows().days - 1) }))
   const before = (text: string) => (covered() ? text : "—")
   const groups = () => range().groups
-  const calendar = live(() => spendingCalendar(inPeriod(), bounds().start, bounds().end, data.state.weekStart))
+  const calendar = createMemo(() => spendingCalendar(inPeriod(), bounds().start, bounds().end, data.state.weekStart))
   // Regular payments now, from the scope's whole history (no range).
   // Built only while a pane shows it.
   const subsShown = () => ui.state.chartViews.some((i) => CHART_VIEWS[i]?.view === "Subscriptions")
-  const subs = live(() => subsShown() ? subscriptions(data.transactions().filter((t) => t.accountId != null && scopeIds().has(t.accountId)), today()) : [])
+  const subs = createMemo(() => subsShown() ? subscriptions(transactions().filter((t) => t.accountId != null && scopeIds().has(t.accountId)), today()) : [])
   const series = createMemo(() => dailySpendSeries(inPeriod(), bounds().start, bounds().end))
   // The next payday: the day after the current cycle ends.
   const payday = () => addDays(cycleFor(cycleConfig(), today()).end, 1)
   const dueBeforePayday = () => upcomingCharges(subs(), today(), addDays(payday(), -1)).reduce((sum, c) => sum + c.amount, 0)
 
   // Accounts: point-in-time figures, whatever the range.
-  const position = live(() => computePosition(data.state.accounts, data.transactions(), today()))
+  const position = createMemo(() => computePosition(data.state.accounts, transactions(), today()))
   const saverChanges = createMemo(() => {
     const since = addDays(today(), -30)
-    return computePeriodFlows(data.state.accounts, data.transactions().filter((t) => t.dateISO > since && t.dateISO <= today())).saverChanges
+    return computePeriodFlows(data.state.accounts, transactions().filter((t) => t.dateISO > since && t.dateISO <= today())).saverChanges
   })
   // Where Available is headed, up to the day before the next payday (or
   // the range's end): built only while a pane shows Available.
   const availableShown = () => ui.state.chartViews.some((i) => CHART_VIEWS[i]?.view === "Available")
-  const projection = live(() => {
+  const projection = createMemo(() => {
     const p = position()
     if (!availableShown() || p.spendingBalance == null || p.dailySpend == null) return []
     const until = [addDays(payday(), -1), bounds().end].sort()[0]!
     if (until <= today()) return []
-    const regular = subscriptions(data.transactions().filter((t) => t.accountId != null && scopeIds().has(t.accountId)), today(), { people: true })
-    const usual = usualDailySpend(data.state.accounts, data.transactions(), today(), new Set(regular.flatMap((s) => s.chargeIds)))
+    const regular = subscriptions(transactions().filter((t) => t.accountId != null && scopeIds().has(t.accountId)), today(), { people: true })
+    const usual = usualDailySpend(data.state.accounts, transactions(), today(), new Set(regular.flatMap((s) => s.chargeIds)))
     return projectAvailable(p.spendingBalance, today(), until, usual, upcomingCharges(regular, today(), until))
   })
   const change30 = () => {
@@ -137,11 +143,11 @@ export function OverviewTab(props: { focused: SectionId }) {
     if (all) {
       const total = allocation(data.state.budgets, data.state.categories)
       if (total.overall == null && !total.allocated) return null
-      const spent = cycleSpending(current, today(), data.state.accounts, data.transactions()).reduce((sum, t) => sum - t.amount, 0)
+      const spent = cycleSpending(current, today(), data.state.accounts, transactions()).reduce((sum, t) => sum - t.amount, 0)
       return progressOf({ id: -1, scope: { kind: "overall" }, amount: total.total }, spent, current, today())
     }
     const match = data.state.budgets.find((b) => b.scope.kind === "account" && ids.length === 1 && b.scope.accountId === ids[0])
-    return match ? budgetProgress([match], cycleConfig(), today(), data.state.accounts, data.state.categories, data.transactions())[0] ?? null : null
+    return match ? budgetProgress([match], cycleConfig(), today(), data.state.accounts, data.state.categories, transactions())[0] ?? null : null
   })
 
   // What the range and the one before it are called in chart labels.
@@ -210,9 +216,9 @@ export function OverviewTab(props: { focused: SectionId }) {
     const build = (axis: number): ChartModel | null => {
       const width = Math.max(1, mainWidth() - 4 - axis)
       if (v === "Daily" || v === "Cumulative" || v === "Weekly") return spendingChart(v, series(), width, rows, today(), spending(), budget()?.budget.amount, periodNames(), data.state.weekStart)
-      if (v === "Cash flow") return cashFlowChart(series().dates, width, rows, today(), data.state.accounts, data.transactions(), scopeIds(), data.state.weekStart)
+      if (v === "Cash flow") return cashFlowChart(series().dates, width, rows, today(), data.state.accounts, transactions(), scopeIds(), data.state.weekStart)
       if (v === "Calendar" || v === "Subscriptions") return null
-      return balancesChart(v, series().dates, width, rows, today(), data.state.accounts, data.transactions(), data.state.weekStart, data.state.uiPrefs.zeroAxis === true, v === "Available" ? projection() : [])
+      return balancesChart(v, series().dates, width, rows, today(), data.state.accounts, transactions(), data.state.weekStart, data.state.uiPrefs.zeroAxis === true, v === "Available" ? projection() : [])
     }
     const guess = axisWas[slot]
     const first = build(guess)
@@ -223,8 +229,8 @@ export function OverviewTab(props: { focused: SectionId }) {
   // Each chart follows its own view: switching one leaves the other alone.
   const topView = createMemo(() => ui.state.chartViews[0])
   const bottomView = createMemo(() => ui.state.chartViews[1])
-  const topModel = live(() => model(0, topView(), topChartHeight()))
-  const bottomModel = live(() => (wide() ? model(1, bottomView(), bottomChartHeight()) : null))
+  const topModel = createMemo(() => model(0, topView(), topChartHeight()))
+  const bottomModel = createMemo(() => (wide() ? model(1, bottomView(), bottomChartHeight()) : null))
 
   // Category lines: name, then amount (9) and share (5).
   const categoryWidth = () => (wide() ? sideWidth() : dims().width - 1 - sideWidth())

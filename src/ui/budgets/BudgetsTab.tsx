@@ -65,16 +65,23 @@ function bar(width: number, used: number, pace: number): Span[] {
  * the category budgets' total: building up); c the cycle.
  */
 export function BudgetsTab(props: { focused: SectionId }) {
-  const dims = useTerminalDimensions()
   const shown = () => ui.state.activeTab === "budgets"
-  // Hidden, the tab keeps what it last showed rather than recompute.
-  const live = <T,>(fn: () => T): (() => T) => createMemo<T | undefined>((was) => (shown() || was === undefined ? fn() : was)) as () => T
+  // Hidden, the tab keeps what it last showed rather than recompute: its
+  // inputs hold their last values, and showing it passes on only those that
+  // changed meanwhile, so a tab whose data didn't change wakes nothing.
+  const held = <T,>(fn: () => T): (() => T) => createMemo<T | undefined>((was) => (shown() || was === undefined ? fn() : was)) as () => T
+  const terminal = useTerminalDimensions()
+  const dims = held(() => terminal())
+  const transactions = held(() => data.transactions())
 
-  const today = () => appToday()
-  const config = () => data.cycle()
+  // The clock isn't reactive: read fresh as before, and showing the tab on
+  // a new day brings its results up to date.
+  const shownOn = held(() => appToday())
+  const today = () => (shownOn(), appToday())
+  const config = held(() => data.cycle())
   // The cycle shown ([ and ] step it), the day it's shown up to (today, or
   // its last day once over) and the budgets in force in it.
-  const view = live(() => budgetView(config(), today(), ui.state.budgetOffset, data.state.budgetHistory, data.state.budgets))
+  const view = createMemo(() => budgetView(config(), today(), ui.state.budgetOffset, data.state.budgetHistory, data.state.budgets))
   const cycle = () => view().cycle
   const through = () => view().through
   const budgets = () => view().budgets
@@ -96,24 +103,24 @@ export function BudgetsTab(props: { focused: SectionId }) {
 
   const rows = () => budgetListRows(budgets(), data.state.categories)
   const budgetCursor = () => Math.min(ui.state.budgetCursor, rows().length - 1)
-  const progress = live(() => new Map(budgetProgress(budgets(), config(), through(), data.state.accounts, data.state.categories, data.transactions()).map((p) => [p.budget.id, p])))
-  const split = live(() => allocation(budgets(), data.state.categories))
+  const progress = createMemo(() => new Map(budgetProgress(budgets(), config(), through(), data.state.accounts, data.state.categories, transactions()).map((p) => [p.budget.id, p])))
+  const split = createMemo(() => allocation(budgets(), data.state.categories))
   // The budgets together against what they count between them.
-  const totalProgress = live(() => {
+  const totalProgress = createMemo(() => {
     const counts = budgetCounts({ kind: "total" }, data.state.categories, budgets())
-    const spentOnBudgets = cycleSpending(cycle(), through(), data.state.accounts, data.transactions()).filter(counts).reduce((sum, t) => sum - t.amount, 0)
+    const spentOnBudgets = cycleSpending(cycle(), through(), data.state.accounts, transactions()).filter(counts).reduce((sum, t) => sum - t.amount, 0)
     return progressOf({ id: -1, scope: { kind: "overall" }, amount: split().total }, spentOnBudgets, cycle(), through())
   })
-  const lines = live(() => budgetCategoryLines(config(), through(), data.state.accounts, data.state.categories, budgets(), data.transactions()))
+  const lines = createMemo(() => budgetCategoryLines(config(), through(), data.state.accounts, data.state.categories, budgets(), transactions()))
   const categoryCursor = () => Math.min(ui.state.budgetCategoryCursor, Math.max(0, lines().length - 1))
-  const ignored = live(() => budgetIgnoredIds(data.state.categories))
+  const ignored = createMemo(() => budgetIgnoredIds(data.state.categories))
   const ignoredNames = () => data.state.categories.filter((c) => c.budgetIgnored).map((c) => c.name)
-  const firstData = live(() => data.transactions().reduce((first, t) => (t.dateISO < first ? t.dateISO : first), today()))
+  const firstData = createMemo(() => transactions().reduce((first, t) => (t.dateISO < first ? t.dateISO : first), today()))
 
   // What the chart follows: the row at the focused card's cursor.
   // Its rows are judged by the budgets of their own cycle (budgetCountsThen):
   // rent is everything else only in cycles it had no budget.
-  const subject = live((): { title: string; scope: BudgetSubject | null; counts: (row: Transaction) => boolean; amount: number | null } => {
+  const subject = createMemo((): { title: string; scope: BudgetSubject | null; counts: (row: Transaction) => boolean; amount: number | null } => {
     const of = (scope: BudgetSubject) => budgetCountsThen(scope, data.state.categories, data.state.budgetHistory, data.state.budgets, config())
     if (props.focused === "bud.categories") {
       const line = lines()[categoryCursor()]
@@ -128,20 +135,20 @@ export function BudgetsTab(props: { focused: SectionId }) {
     if (row.kind === "total") return { title: TOTAL, scope: { kind: "total" }, counts: of({ kind: "total" }), amount: split().total }
     return row.budget ? { title: label(row.budget), scope: row.budget.scope, counts: of(row.budget.scope), amount: row.budget.amount } : { title: overallName(), scope: { kind: "overall" }, counts: of({ kind: "overall" }), amount: null }
   })
-  const spending = (c: Cycle, through: string) => cycleSpending(c, through, data.state.accounts, data.transactions()).filter(subject().counts)
+  const spending = (c: Cycle, through: string) => cycleSpending(c, through, data.state.accounts, transactions()).filter(subject().counts)
   const daily = (c: Cycle, through: string) => ({ cycle: c, daily: dailySpendSeries(spending(c, through), c.start, c.end).values })
   // Cycles the history covers as well as this one (historyCovers, as the
   // Overview compares periods): a gap, or a few stray old rows, isn't a
   // cycle of spending nothing.
-  const past = live(() => {
+  const past = createMemo(() => {
     const now = { start: cycle().start, end: through() }
-    return pastCycles(config(), through(), HISTORY).filter((c) => c.end >= firstData() && historyCovers(data.transactions(), c, now))
+    return pastCycles(config(), through(), HISTORY).filter((c) => c.end >= firstData() && historyCovers(transactions(), c, now))
   })
-  const nowDays = live(() => daily(cycle(), through()))
+  const nowDays = createMemo(() => daily(cycle(), through()))
   const spent = () => nowDays().daily.reduce((a, b) => a + b, 0)
   // The cycle shown and those before it, newest first, each with the
   // budget in force then.
-  const cycles = live((): CycleSpent[] => {
+  const cycles = createMemo((): CycleSpent[] => {
     const scope = subject().scope
     return [
       { cycle: cycle(), spent: spent(), budget: subject().amount },
@@ -181,9 +188,9 @@ export function BudgetsTab(props: { focused: SectionId }) {
   // the subject counts, with its budget; built once with a guessed axis
   // width, again if the labels need another.
   const baseline = () => data.state.uiPrefs.xAxis === true
-  const subjectRows = live(() => cycleSpending({ start: firstData(), end: today(), days: 0 }, today(), data.state.accounts, data.transactions()).filter(subject().counts))
+  const subjectRows = createMemo(() => cycleSpending({ start: firstData(), end: today(), days: 0 }, today(), data.state.accounts, transactions()).filter(subject().counts))
   let axisWas = AXIS_GUESS
-  const model = live((): ChartModel => {
+  const model = createMemo((): ChartModel => {
     // Border (2), the x-axis line (a setting) and the x labels.
     const height = Math.max(3, chartHeight() - (baseline() ? 4 : 3))
     const series = dailySpendSeries(subjectRows(), cycle().start, cycle().end)

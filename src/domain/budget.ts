@@ -240,11 +240,17 @@ export function budgetCounts(subject: BudgetSubject, categories: Category[], bud
  * only in cycles when it had no budget of its own. */
 export function budgetCountsThen(subject: BudgetSubject, categories: Category[], history: readonly BudgetHistoryEntry[], budgets: Budget[], config: CycleConfig): (row: Transaction) => boolean {
   if (subject.kind === "category") return budgetCounts(subject, categories, budgets)
+  // Rows share days and days share cycles: find each day's cycle once.
   const byCycle = new Map<string, (row: Transaction) => boolean>()
+  const byDay = new Map<string, (row: Transaction) => boolean>()
   return (row) => {
-    const start = cycleFor(config, row.dateISO).start
-    let counts = byCycle.get(start)
-    if (!counts) byCycle.set(start, counts = budgetCounts(subject, categories, budgetsIn(history, budgets, start)))
+    let counts = byDay.get(row.dateISO)
+    if (!counts) {
+      const start = cycleFor(config, row.dateISO).start
+      counts = byCycle.get(start)
+      if (!counts) byCycle.set(start, counts = budgetCounts(subject, categories, budgetsIn(history, budgets, start)))
+      byDay.set(row.dateISO, counts)
+    }
     return counts(row)
   }
 }
