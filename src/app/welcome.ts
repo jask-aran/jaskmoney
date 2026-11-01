@@ -6,7 +6,7 @@ import { editText, isPrintable } from "../domain/textField"
 import { aiConnection, aiContext } from "../state/aiDialog"
 import type { DataStore } from "../state/dataStore"
 import type { UiStore } from "../state/uiStore"
-import { nextStep, previousStep, welcomeGo, welcomeRows, welcomeStart, type EmailPhase, type WelcomeAction, type WelcomeContext, type WelcomeState } from "../state/welcome"
+import { DEMO_COUNT, nextStep, previousStep, welcomeGo, welcomeRows, welcomeStart, type EmailPhase, type WelcomeAction, type WelcomeContext, type WelcomeState } from "../state/welcome"
 import { openBrowser, startLlmSignIn } from "./llmSignIn"
 import { runSync } from "./sync"
 
@@ -93,6 +93,12 @@ export function handleWelcome(ui: UiStore, key: KeyEvent, data?: DataStore): voi
     return
   }
   if (state.busy) return
+  // The tour: ← and → between its demos.
+  if (state.step === "hello" && (name === "left" || name === "right" || name === "h" || name === "l")) {
+    const demo = Math.max(0, Math.min(DEMO_COUNT - 1, state.demo + (name === "left" || name === "h" ? -1 : 1)))
+    ui.setState("welcome", { demo, cursor: 0 })
+    return
+  }
   if (name === "up" || (!typing && name === "k") || (key.shift && name === "tab")) { ui.setState("welcome", { cursor: Math.max(0, state.cursor - 1) }); return }
   if (name === "down" || (!typing && name === "j") || name === "tab") { ui.setState("welcome", { cursor: Math.min(rows.length - 1, state.cursor + 1) }); return }
   if (name === "return" || name === "enter") {
@@ -120,6 +126,7 @@ export function welcomeAct(ui: UiStore, data: DataStore, action: WelcomeAction):
   if (!state || state.busy) return
   switch (action) {
     case "start": go(ui, "up", data); return
+    case "demoNext": ui.setState("welcome", { demo: Math.min(DEMO_COUNT - 1, state.demo + 1), cursor: 0 }); return
     case "skipAll": case "finish": closeWelcome(ui, data); return
     case "next": go(ui, nextStep(state.step), data); return
     case "openUp":

@@ -22,6 +22,8 @@ const press = (...names: Array<string | [string, { ctrl?: boolean; shift?: boole
   for (const n of names) handleKey(ui, typeof n === "string" ? key(n) : key(n[0], n[1]), data)
 }
 const settle = () => new Promise((resolve) => setTimeout(resolve, 5))
+/** From the tour to the Up step: its "Skip the tour" row. */
+const skipTour = () => press("down", "return")
 const app = { id: "app_1", slug: "gmail", name: "Gmail", requirement: "gmail" }
 
 function fakeSaving() {
@@ -48,7 +50,7 @@ test("enter starts, s and ctrl+n skip, esc goes back; leaving marks it seen and 
   const { seen } = fakeSaving()
   openWelcome(ui)
   expect(ui.activeScope()).toBe("welcome")
-  press("return")
+  skipTour()
   expect(ui.state.welcome?.step).toBe("up")
   // The token screen types: s is a letter of the token, ctrl+n skips.
   press("s")
@@ -78,7 +80,7 @@ test("an Up token is pasted and never drawn; it's saved only when Up answers it,
   const { saved } = fakeSaving()
   const t = await renderApp({ width: 130, height: 44 })
   openWelcome(ui)
-  press("return")
+  skipTour()
   expect(handlePaste(ui, "up:yeah:secret-token-9f3a\n", data)).toBe(true)
   await t.renderOnce()
   const frame = t.captureCharFrame()
@@ -121,7 +123,8 @@ test("email is connected end to end: sign in, add Gmail, approve in the browser,
   ]
   onTestFinished(() => fakes.forEach((f) => f.mockRestore()))
   openWelcome(ui)
-  press("return", ["n", { ctrl: true }], "s")
+  skipTour()
+  press(["n", { ctrl: true }], "s")
   expect(ui.state.welcome?.step).toBe("email")
   press("return")
   await settle()
@@ -145,7 +148,8 @@ test("a step Executor pauses for approval says so; esc stops waiting for the bro
   ]
   onTestFinished(() => fakes.forEach((f) => f.mockRestore()))
   openWelcome(ui)
-  press("return", ["n", { ctrl: true }], "s", "return")
+  skipTour()
+  press(["n", { ctrl: true }], "s", "return")
   await settle()
   expect(ui.state.welcome?.email).toMatchObject({ phase: "failed", failedAt: "install" })
   expect(ui.state.welcome?.note?.text).toBe("Executor is waiting for your approval: Approve installing Gmail. Approve it at executor.sh, then try again.")
@@ -191,7 +195,24 @@ test("Settings › Up Bank › Setup runs it again", () => {
   ui.switchTab("overview")
 })
 
-test("drawn: the title in the brand's pink, the first screen's button in pink and bold once it's in", async () => {
+test("the tour: ← → between the demos, enter to the next, and from the last on to Up", () => {
+  openWelcome(ui)
+  expect(ui.state.welcome?.demo).toBe(0)
+  press("right", "right")
+  expect(ui.state.welcome?.demo).toBe(2)
+  press("left")
+  expect(ui.state.welcome?.demo).toBe(1)
+  press("return", "return")
+  expect(ui.state.welcome?.demo).toBe(3)
+  expect(welcomeRows(ui.state.welcome!, none).map((r) => r.label)).toEqual(["Connect Up Bank", "Skip setup, open the app"])
+  press("right")
+  expect(ui.state.welcome?.demo).toBe(3)
+  press("return")
+  expect(ui.state.welcome?.step).toBe("up")
+  ui.switchTab("overview")
+})
+
+test("drawn: the title in the brand's pink, the button in pink and bold; the demo is the real table, filtering as it types", async () => {
   const t = await renderApp({ width: 130, height: 44 })
   openWelcome(ui)
   await t.renderOnce()
@@ -200,12 +221,15 @@ test("drawn: the title in the brand's pink, the first screen's button in pink an
   const row = t.captureSpans().lines.find((l) => l.spans.map((s) => s.text).join("").includes("█▄█ █▀█"))!
   const first = row.spans.find((s) => s.text.trim())!
   expect(first.text.trimStart()[0]).toBe("█")
-  expect(first.fg.toInts()).toEqual(RGBA.fromHex(tone.key).toInts())
-  // The entrance takes about a second; then the button is at full colour.
-  await new Promise((resolve) => setTimeout(resolve, 1500))
-  await t.renderOnce()
-  const button = spans().find((s) => s.text.includes("Set up jaskmoney"))!
+  // Drawn at full colour from the first frame: nothing fades in.
+  const button = spans().find((s) => s.text === "Next")!
   expect(button.fg.toInts()).toEqual(RGBA.fromHex(tone.key).toInts())
   expect(button.attributes & 1).toBe(1)
+  expect(t.captureCharFrame()).toMatch(/Date\s+Amount\s+Description\s+Category/)
+  // A few seconds in, the filter is typed and the table counts what it keeps.
+  await new Promise((resolve) => setTimeout(resolve, 1600))
+  await t.renderOnce()
+  expect(t.captureCharFrame()).toMatch(/Transactions · \d+ of \d+/)
+  expect(t.captureCharFrame()).toMatch(/│\s+\/ \w+/)
   ui.switchTab("overview")
 })

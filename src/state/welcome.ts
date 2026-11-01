@@ -11,13 +11,17 @@ import type { TextField } from "../domain/textField"
  *
  *   hello → up → ai → email → done → (closed)
  *
+ * hello is a tour: the app's own pieces playing on a made-up year
+ * (ui/welcome/Demos), ←/→ between them; enter goes to the next, and from
+ * the last on to Up.
+ *
  * enter on a row does it; "Continue" (or skip, s) goes on; esc goes back a
  * step (on hello it closes, as skipping does). Leaving any way marks the
  * setup as seen (core welcomed): it doesn't open by itself again.
  */
 export type WelcomeStep = "hello" | "up" | "ai" | "email" | "done"
 export const WELCOME_STEPS: readonly WelcomeStep[] = ["hello", "up", "ai", "email", "done"]
-export const STEP_NAMES: Record<WelcomeStep, string> = { hello: "Welcome", up: "Up Bank", ai: "AI", email: "Email", done: "Ready" }
+export const STEP_NAMES: Record<WelcomeStep, string> = { hello: "Tour", up: "Up Bank", ai: "AI", email: "Email", done: "Ready" }
 
 /** Where connecting your email through Executor has got to. */
 export type EmailPhase = "idle" | "signIn" | "install" | "approve" | "check" | "done" | "failed"
@@ -28,6 +32,8 @@ export interface WelcomeState {
   dir: 1 | -1
   /** Counts screens shown: each new one starts its entrance again. */
   shown: number
+  /** The tour's demo shown (hello). */
+  demo: number
   cursor: number
   /** The Up token as typed: never drawn, only its length and last four. */
   token: TextField
@@ -41,7 +47,7 @@ export interface WelcomeState {
 
 export function welcomeStart(): WelcomeState {
   return {
-    step: "hello", dir: 1, shown: 0, cursor: 0, token: { value: "", caret: 0 }, busy: null, note: null, upAccounts: null,
+    step: "hello", dir: 1, shown: 0, demo: 0, cursor: 0, token: { value: "", caret: 0 }, busy: null, note: null, upAccounts: null,
     email: { phase: "idle", failedAt: null, url: null, account: null, orders: null },
   }
 }
@@ -51,6 +57,9 @@ export function welcomeGo(state: WelcomeState, step: WelcomeStep): Partial<Welco
   const from = WELCOME_STEPS.indexOf(state.step), to = WELCOME_STEPS.indexOf(step)
   return { step, dir: to >= from ? 1 : -1, shown: state.shown + 1, cursor: 0, note: null, busy: null }
 }
+
+/** How many demos the tour has (ui/welcome/Demos DEMOS). */
+export const DEMO_COUNT = 4
 
 export const nextStep = (step: WelcomeStep): WelcomeStep | null => WELCOME_STEPS[WELCOME_STEPS.indexOf(step) + 1] ?? null
 export const previousStep = (step: WelcomeStep): WelcomeStep | null => WELCOME_STEPS[WELCOME_STEPS.indexOf(step) - 1] ?? null
@@ -68,7 +77,7 @@ export interface WelcomeContext {
 }
 
 export type WelcomeAction =
-  | "start" | "skipAll"
+  | "demoNext" | "start" | "skipAll"
   | "token" | "openUp" | "replaceToken"
   | "openrouter" | "openai" | "jevKey" | "clairic"
   | "email" | "openExecutor"
@@ -88,11 +97,14 @@ export interface WelcomeRow {
 /** The rows of the screen, top to bottom; the cursor moves over them. */
 export function welcomeRows(state: WelcomeState, ctx: WelcomeContext): WelcomeRow[] {
   switch (state.step) {
-    case "hello":
+    case "hello": {
+      const last = state.demo >= DEMO_COUNT - 1
       return [
-        { action: "start", label: "Set up jaskmoney", detail: "about two minutes", primary: true },
-        { action: "skipAll", label: "Skip setup, go straight to the app" },
+        last ? { action: "start", label: "Connect Up Bank", primary: true } : { action: "demoNext", label: "Next", primary: true },
+        ...(last ? [] : [{ action: "start" as const, label: "Skip the tour" }]),
+        { action: "skipAll", label: "Skip setup, open the app" },
       ]
+    }
     case "up":
       if (ctx.up && state.token.value === "") return [
         { action: "next", label: "Continue", primary: true },

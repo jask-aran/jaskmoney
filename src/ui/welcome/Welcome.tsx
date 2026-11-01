@@ -9,19 +9,21 @@ import { AI_USES_TEXT, EMAIL_USES, UP_USES, type IntegrationUse } from "../../st
 import { welcomeAct, welcomeContext } from "../../app/welcome"
 import { onPointer } from "../../app/pointer"
 import { StyledLine, type StyledSpan } from "../primitives/StyledLine"
+import { DEMOS, DemoReel } from "./Demos"
 
 /**
  * The first-run setup, full screen over the app (state/welcome is the
- * machine, app/welcome the effects). A title, the steps as a rail, then the
- * step's card: what to do on the left, and on the right exactly what
- * jaskmoney does with what you're connecting (state/integrationUses).
+ * machine, app/welcome the effects). The title and the steps as a rail;
+ * then either the tour (the app's own pieces playing on a made-up year,
+ * ui/welcome/Demos) or a step's card: what to do on the left, and on the
+ * right exactly what jaskmoney does with what you're connecting
+ * (state/integrationUses).
  *
- * Animated, all of it presentation: a clock runs while something moves
- * (a screen's entrance, a spinner, the title's shimmer, the token caret)
- * and stops when nothing does. Each screen's lines fade and slide in, one
- * after another, from the side the step came from.
+ * Text is drawn at full colour from the first frame. What moves (a
+ * spinner, the token's caret, the title's light, the rail filling) runs on
+ * one clock while the setup is open; nothing waits on it to be readable.
  */
-const FRAME_MS = 33
+const FRAME_MS = 80
 const SPINNER = "⠋⠙⠹⠸⠼⠴⠦⠧⠇⠏"
 
 /** The title, two rows of block letters. */
@@ -39,18 +41,16 @@ function mix(a: string, b: string, t: number): string {
   const [x, y] = [hex(a), hex(b)]
   return `#${x.map((v, i) => Math.round(v + (y[i]! - v) * t).toString(16).padStart(2, "0")).join("")}`
 }
-const clamp = (t: number) => Math.max(0, Math.min(1, t))
-const ease = (t: number) => 1 - (1 - t) ** 3
 
 type Line = { spans: StyledSpan[]; row?: number }
 const blank: Line = { spans: [] }
 const say = (text: string, fg: string = ink.label, bold = false): Line => ({ spans: [{ text, fg, bold }] })
-const wrapped = (text: string, width: number, fg: string = ink.label, indent = ""): Line[] =>
-  wrapText(text, Math.max(10, width - indent.length)).map((t) => ({ spans: [{ text: indent }, { text: t, fg }] }))
+const wrapped = (text: string, width: number, fg: string = ink.label): Line[] =>
+  wrapText(text, Math.max(10, width)).map((t) => ({ spans: [{ text: t, fg }] }))
 
-/** An integration's panel: what it's for, what it does (writes marked), the
- * promises. Short labels ("Sees") sit in a column beside what they say;
- * long ones (an endpoint) take their own line, what it does beneath. */
+/** An integration's panel: what it's for, the promises, then what it does
+ * (writes marked). Short labels ("Sees") sit in a column beside what they
+ * say; long ones (an endpoint) take their own line, what it does beneath. */
 function usesLines(use: IntegrationUse, width: number): Line[] {
   const out: Line[] = [say(use.title, ink.heading, true), ...wrapped(use.why, width, ink.note), blank]
   // The promises first: on a short screen the list below them is what's cut.
@@ -79,135 +79,124 @@ function WelcomeScreen() {
   const ctx = createMemo(() => { void data.state.apiKeys; void data.state.signedIn; void data.state.upToken; void state().email.phase; return welcomeContext(data) })
   const rows = createMemo(() => welcomeRows(state(), ctx()))
 
-  // ---- The clock: frames while something moves.
+  // ---- The clock, while the setup is open.
   const [tick, setTick] = createSignal(0)
+  const timer = setInterval(() => setTick((t) => t + 1), FRAME_MS)
+  onCleanup(() => clearInterval(timer))
   let shownAt = 0
   createEffect(() => { void state().shown; shownAt = untrack(tick) })
   const since = () => tick() - shownAt
-  const moving = createMemo(() => since() < 45 || !!state().busy || state().step === "hello" || rows().some((r) => r.action === "token"))
-  createEffect(() => {
-    if (!moving()) return
-    const timer = setInterval(() => setTick((t) => t + 1), FRAME_MS)
-    onCleanup(() => clearInterval(timer))
-  })
   const spinner = () => SPINNER[tick() % SPINNER.length]!
 
   // ---- Layout.
-  const height = () => Math.max(10, dims().height - 2)
-  // Side by side when there's room and a panel to show; the hello and
-  // done screens have none and take a narrower card.
+  const height = () => Math.max(12, dims().height - 2)
+  const tour = () => state().step === "hello"
+  // Side by side when there's room and a panel to show.
   const paneled = () => state().step !== "hello" && state().step !== "done"
   const wide = () => dims().width >= 112
-  const cardWidth = () => Math.max(40, Math.min(dims().width - 4, wide() && paneled() ? 120 : 76))
+  const cardWidth = () => Math.max(40, Math.min(dims().width - 4, tour() ? 124 : wide() && paneled() ? 120 : 76))
   const inner = () => cardWidth() - 4
   const leftWidth = () => (wide() && paneled() ? Math.floor(inner() * 0.52) : inner())
   const rightWidth = () => (wide() ? inner() - leftWidth() - 3 : inner())
+  const panelWidth = () => rightWidth() - (wide() ? 3 : 0)
+  // Title (2), rail (1) and the gaps around them (3), the card's border (2).
+  const cardInner = () => Math.max(8, height() - 9)
 
   // ---- A row of the step: a button.
+  const tokenField = () => {
+    const shown = tokenShown(state().token.value)
+    const caret = Math.floor(tick() / 6) % 2 === 0 ? "▌" : " "
+    return shown ? `${shown}${caret}` : `${caret}paste it here`
+  }
   const rowLine = (row: WelcomeRow, i: number): Line => {
     const at = state().cursor === i && !state().busy
+    const bg = at ? theme.surface0 : undefined
     const label = row.action === "token" ? `Token  ${tokenField()}` : row.label
     return {
       row: i,
       spans: [
-        { text: at ? " ›" : "  ", fg: tone.key, bold: true, bg: at ? theme.surface0 : undefined },
-        { text: row.done ? " ✓ " : "   ", fg: tone.good, bold: true, bg: at ? theme.surface0 : undefined },
-        { text: label, fg: at || row.primary ? (row.primary ? tone.key : ink.strong) : ink.figure, bold: at || row.primary, bg: at ? theme.surface0 : undefined },
-        { text: row.detail ? `  ${row.detail} ` : " ", fg: row.done ? tone.good : ink.note, bg: at ? theme.surface0 : undefined },
+        { text: at ? " ›" : "  ", fg: tone.key, bold: true, bg },
+        { text: row.done ? " ✓ " : "   ", fg: tone.good, bold: true, bg },
+        { text: label, fg: row.primary ? tone.key : at ? ink.strong : ink.figure, bold: at || row.primary, bg },
+        { text: row.detail ? `  ${row.detail} ` : " ", fg: row.done ? tone.good : ink.note, bg },
       ],
     }
   }
-  const tokenField = () => {
-    const shown = tokenShown(state().token.value)
-    const caret = Math.floor(tick() / 15) % 2 === 0 ? "▌" : " "
-    return shown ? `${shown}${caret}` : `${caret}paste it here`
-  }
-  const note = (): Line[] => {
+  const note = (width: number): Line[] => {
     const busy = state().busy
     if (busy) return [blank, { spans: [{ text: ` ${spinner()} `, fg: tone.ai, bold: true }, { text: busy, fg: ink.label }] }]
     const n = state().note
     if (!n) return []
     const fg = n.ok === true ? tone.good : n.ok === false ? tone.bad : ink.note
-    return [blank, ...wrapText(n.text, leftWidth() - 3).map((t, i) => ({ spans: [{ text: i === 0 ? (n.ok === true ? " ✓ " : n.ok === false ? " ✗ " : " · ") : "   ", fg, bold: true }, { text: t, fg }] }))]
+    return [blank, ...wrapText(n.text, width - 3).map((t, i) => ({ spans: [{ text: i === 0 ? (n.ok === true ? " ✓ " : n.ok === false ? " ✗ " : " · ") : "   ", fg, bold: true }, { text: t, fg }] }))]
   }
   const buttons = (): Line[] => [blank, ...rows().map(rowLine)]
-  const numbered = (items: [string, string][]): Line[] => items.flatMap(([n, text]) =>
-    wrapText(text, leftWidth() - 4).map((t, i) => ({ spans: [{ text: i === 0 ? ` ${n}  ` : "    ", fg: tone.key, bold: true }, { text: t, fg: ink.figure }] })))
+  const numbered = (items: [string, string][], width: number): Line[] => items.flatMap(([n, text]) =>
+    wrapText(text, width - 4).map((t, i) => ({ spans: [{ text: i === 0 ? ` ${n}  ` : "    ", fg: tone.key, bold: true }, { text: t, fg: ink.figure }] })))
 
-  // ---- Each step's left column (and its rows), and the right panel.
+  // ---- A step's left column, and the right panel.
   const left = createMemo((): Line[] => {
     const s = state(), w = leftWidth()
     switch (s.step) {
-      case "hello": return [
-        say("Welcome to jaskmoney", ink.strong, true),
-        blank,
-        ...wrapped("Your Up Bank money, in order: every transaction categorised, budgets that keep pace with your pay, and search that understands plain English. Three things to connect, each optional, each yours to undo:", w),
-        blank,
-        ...([["1", "Up Bank", "your accounts and transactions"], ["2", "AI models", "suggestions, smart search and rules"], ["3", "Email", "what you bought on Amazon and eBay"]] as const).map(([n, a, b]) => ({ spans: [{ text: ` ${n}  `, fg: tone.key, bold: true }, { text: a.padEnd(12), fg: ink.figure, bold: true }, { text: b, fg: ink.note }] })),
-        ...buttons(), ...note(),
-      ]
+      case "hello": return []
       case "up": {
         const accounts = s.upAccounts
         const connected = ctx().up && !s.token.value
         return [
-          say("Connect Up Bank", ink.strong, true),
+          say("Up Bank", ink.strong, true),
           blank,
           ...(connected ? [
-            ...(accounts ? [say("Up answered. These accounts sync:", tone.good), ...accounts.map((a, i) => ({ spans: [{ text: "  ● ", fg: tone.good }, { text: a, fg: ink.figure, bold: i === 0 }] }))] : [say("Up is connected.", tone.good)]),
+            ...(accounts ? [say("Up answered. These accounts sync:", tone.good), ...accounts.map((a) => ({ spans: [{ text: "  ● ", fg: tone.good }, { text: a, fg: ink.figure }] }))] : [say("Connected.", tone.good)]),
             blank,
-            ...wrapped(data.state.upSyncing ? "Your transactions are syncing in the background. Carry on." : `${data.state.transactions.length} transactions here so far.`, w, ink.note),
+            ...wrapped(data.state.upSyncing ? "Syncing your transactions." : `${data.state.transactions.length} transactions so far.`, w, ink.note),
           ] : [
-            ...wrapped("jaskmoney reads your accounts with a Personal Access Token, a key Up makes for you. In the Up app:", w),
+            ...wrapped("Up's API reads with a Personal Access Token. To make one, in the Up app:", w),
             blank,
-            ...numbered([["1", "Open the Up app on your phone and swipe right"], ["2", "Tap Data sharing, then Personal Access Token"], ["3", "Tap Generate a token, choose how long it lasts, and copy it"], ["4", "Paste it below and press enter"]]),
+            ...numbered([["1", "Swipe right"], ["2", "Data sharing › Personal Access Token"], ["3", "Generate a token, choose how long it lasts, copy it"], ["4", "Paste it here, press enter"]], w),
             blank,
-            ...wrapped("Made one before? Up shows a token only once and only one works at a time: generate a new one in the app (the old one stops). On a computer instead? api.up.com.au makes one too (ctrl+o).", w, ink.note),
+            ...wrapped("Up shows a token once, and only the newest works: making a new one stops the old. api.up.com.au makes one too (ctrl+o).", w, ink.note),
           ]),
-          ...buttons(), ...note(),
+          ...buttons(), ...note(w),
         ]
       }
       case "ai": return [
-        say("Connect the AI", ink.strong, true),
-        say("optional", ink.note),
+        say("AI", ink.strong, true),
         blank,
-        ...wrapped("jaskmoney works without it. With it, new transactions get suggested categories, searches understand plain English, and your repeated choices become rules. One OpenRouter sign-in covers all three.", w),
-        ...buttons(), ...note(),
+        ...wrapped("Optional. Suggested categories, smart search (?) and rules. One OpenRouter sign-in covers all three.", w),
+        ...buttons(), ...note(w),
       ]
       case "email": {
         const items = emailChecklist(s, ctx())
         const icon = (st: ItemState) => (st === "done" ? { text: " ✓ ", fg: tone.good } : st === "failed" ? { text: " ✗ ", fg: tone.bad } : st === "active" ? { text: ` ${spinner()} `, fg: tone.ai } : { text: " ○ ", fg: ink.faint })
         return [
-          say("Connect your email", ink.strong, true),
-          say("optional", ink.note),
+          say("Email", ink.strong, true),
           blank,
-          ...wrapped("Amazon and eBay rows only say \"Amazon\". With Gmail connected, jaskmoney reads the order emails behind them and shows what you bought. It goes through Executor, which keeps your Google sign-in: you sign in and approve in your browser, jaskmoney does the rest.", w),
+          ...wrapped("Optional. Amazon and eBay rows say only \"Amazon\"; the order emails say what you bought. Executor reads Gmail for jaskmoney and keeps your Google sign-in. You sign in and approve in the browser; the rest happens here.", w),
           blank,
           ...items.flatMap((it) => [
             { spans: [{ ...icon(it.state), bold: true }, { text: it.label, fg: it.state === "todo" ? ink.label : ink.figure, bold: it.state === "active" }] },
             ...wrapText(it.detail, w - 4).map((t) => ({ spans: [{ text: "    " }, { text: t, fg: it.state === "done" ? tone.good : ink.note }] })),
           ]),
           ...(s.busy && s.email.url ? [blank, ...wrapped(`Browser didn't open? ${s.email.url}`, w, ink.faint)] : []),
-          ...buttons(), ...note(),
+          ...buttons(), ...note(w),
         ]
       }
       case "done": {
         const c = ctx()
         const line = (ok: boolean, name: string, how: string): Line => ({ spans: [{ text: ok ? " ✓ " : " – ", fg: ok ? tone.good : ink.faint, bold: true }, { text: name.padEnd(10), fg: ink.figure, bold: true }, { text: how, fg: ok ? ink.label : ink.note }] })
         return [
-          say("You're set", ink.strong, true),
+          say("Done", ink.strong, true),
           blank,
-          line(c.up, "Up Bank", c.up ? (data.state.upSyncing ? "connected · syncing your transactions…" : `connected · ${data.state.transactions.length} transactions`) : "not connected: Settings › Up Bank"),
-          line(c.jev || c.openai, "AI", c.openrouter ? "OpenRouter: suggestions, search and rules" : c.openai ? "ChatGPT writes rules" : c.jev ? "Jev: suggestions and search" : "off: Settings › AI models"),
-          line(s.email.phase === "done" || c.executor, "Email", s.email.phase === "done" ? `Gmail, through Executor${s.email.account ? ` (${s.email.account})` : ""}` : c.executor ? "Executor signed in" : "off: Settings › AI models › Sources"),
+          line(c.up, "Up Bank", c.up ? (data.state.upSyncing ? "syncing your transactions" : `${data.state.transactions.length} transactions`) : "not connected: Settings › Up Bank"),
+          line(c.jev || c.openai, "AI", c.openrouter ? "OpenRouter: suggestions, search, rules" : c.openai ? "ChatGPT: rules" : c.jev ? "Jev: suggestions, search" : "off: Settings › AI models"),
+          line(s.email.phase === "done" || c.executor, "Email", s.email.phase === "done" ? `Gmail through Executor${s.email.account ? ` (${s.email.account})` : ""}` : c.executor ? "Executor signed in" : "off: Settings › AI models › Sources"),
           blank,
-          ...wrapped("Change any of this in Settings. Settings › Up Bank runs this setup again.", w, ink.note),
+          ...wrapped("Settings › Up Bank › Setup runs this again.", w, ink.note),
           ...buttons(),
         ]
       }
     }
   })
-  // The panel draws inside its rule and padding (3 cells) when beside.
-  const panelWidth = () => rightWidth() - (wide() ? 3 : 0)
   const right = createMemo((): Line[] => {
     const s = state(), w = panelWidth()
     if (s.step === "up") return usesLines(UP_USES, w)
@@ -219,14 +208,22 @@ function WelcomeScreen() {
     return []
   })
 
-  // ---- Entrance: line i fades and slides in after the one before it.
-  const appear = (i: number) => ease(clamp((since() - i * 1.4) / 6))
-  const faded = (line: Line, i: number, bg: string): StyledSpan[] => {
-    const t = appear(i)
-    const shift = Math.round((1 - t) * 4)
-    const spans = t >= 1 ? line.spans : line.spans.map((sp) => ({ ...sp, fg: sp.fg ? mix(bg, sp.fg, t) : undefined, bg: sp.bg ? mix(bg, sp.bg, t) : undefined }))
-    return shift && state().dir > 0 ? [{ text: " ".repeat(shift) }, ...spans] : spans
+  // ---- The tour: a caption, the demo, where you are among them, the rows.
+  const tourHead = (): Line[] => {
+    const demo = DEMOS[state().demo]!
+    return [{ spans: demo.caption.flatMap(([k, text], i) => [...(i ? [{ text: "   " }] : []), { text: k, fg: tone.key, bold: true }, { text: ` ${text}`, fg: ink.label }]) }]
   }
+  const tourFoot = (): Line[] => [
+    blank,
+    { spans: DEMOS.flatMap((d, i): StyledSpan[] => [
+      ...(i ? [{ text: "   " }] : []),
+      { text: i === state().demo ? "● " : "○ ", fg: i === state().demo ? tone.key : ink.faint, bold: true },
+      { text: d.name, fg: i === state().demo ? ink.strong : ink.faint, bold: i === state().demo },
+    ]).concat([{ text: "    ← → to switch", fg: ink.note }] as StyledSpan[]) },
+    ...buttons(),
+  ]
+  // The demo shows the table at about its size in the app: 18 rows at most.
+  const reelHeight = () => Math.max(8, Math.min(18, cardInner() - tourHead().length - tourFoot().length - 1))
 
   const click = (row: number | undefined) => row === undefined ? undefined : onPointer("welcome", () => {
     const action = rows()[row]?.action
@@ -235,24 +232,23 @@ function WelcomeScreen() {
     welcomeAct(ui, data, action)
   })
 
-  // ---- The title, with a band of light that sweeps across it.
+  // ---- The title, with a band of light that sweeps across it now and then.
   const titleSpans = (r: 0 | 1): StyledSpan[] => {
     const text = TITLE[r], n = text.length
-    const sweep = ((tick() % 110) / 70) * (n + 16) - 8
+    const sweep = ((tick() % 60) / 30) * (n + 16) - 8
     return [...text].map((ch, x) => {
-      const base = mix(tone.key, tone.focus, x / n)
-      const glow = state().step === "hello" ? Math.max(0, 1 - Math.abs(x - sweep) / 5) : 0
-      return { text: ch, fg: mix(base, ink.strong, glow * 0.8), bold: true }
+      const glow = Math.max(0, 1 - Math.abs(x - sweep) / 5)
+      return { text: ch, fg: mix(mix(tone.key, tone.focus, x / n), ink.strong, glow * 0.7), bold: true }
     })
   }
 
-  // ---- The rail: where you are among the steps.
+  // ---- The rail: where you are among the steps; the way to here fills in.
   const railSpans = (): StyledSpan[] => {
     const at = WELCOME_STEPS.indexOf(state().step)
     const out: StyledSpan[] = []
     WELCOME_STEPS.forEach((step, i) => {
       if (i > 0) {
-        const lit = i <= at ? Math.min(5, Math.floor(i === at ? since() / 2 : 5)) : 0
+        const lit = i <= at ? (i === at ? Math.min(5, since()) : 5) : 0
         out.push({ text: " " + "━".repeat(lit), fg: tone.key }, { text: "─".repeat(5 - lit) + " ", fg: ink.rule })
       }
       const mark = stepMark(step, state(), ctx())
@@ -265,11 +261,11 @@ function WelcomeScreen() {
   }
   const railWidth = () => railSpans().reduce((n, s) => n + Bun.stringWidth(s.text), 0)
 
-  const column = (lines: () => Line[], width: () => number, offset: () => number) => (
+  const column = (lines: () => Line[], width: () => number) => (
     <box width={width()} flexDirection="column" flexShrink={0}>
-      <For each={lines()}>{(line, i) => (
+      <For each={lines()}>{(line) => (
         <box height={1} width={width()} onMouseDown={click(line.row)}>
-          <StyledLine spans={faded(line, i() + offset(), theme.mantle)} bg={theme.mantle} />
+          <StyledLine spans={line.spans} bg={theme.mantle} />
         </box>
       )}</For>
     </box>
@@ -281,11 +277,10 @@ function WelcomeScreen() {
         <StyledLine spans={titleSpans(0)} bg={theme.canvas} />
         <StyledLine spans={titleSpans(1)} bg={theme.canvas} />
       </box>
-      <text fg={ink.note} bg={theme.canvas}>your money, sorted</text>
       <box height={1} />
       <box height={1} width={railWidth()} onMouseDown={onPointer("welcome", (event) => {
         // A step on the rail: go there.
-        let x = event.x - (Math.floor((dims().width - railWidth()) / 2))
+        let x = event.x - Math.floor((dims().width - railWidth()) / 2)
         for (const [i, step] of WELCOME_STEPS.entries()) {
           const w = (i > 0 ? 7 : 0) + 2 + STEP_NAMES[step].length
           if (x < w) { if (step !== state().step && !state().busy) ui.setState("welcome", welcomeGo(state(), step)); return }
@@ -295,12 +290,21 @@ function WelcomeScreen() {
         <StyledLine spans={railSpans()} bg={theme.canvas} />
       </box>
       <box height={1} />
-      <box width={cardWidth()} border borderStyle="rounded" borderColor={tone.focus} backgroundColor={theme.mantle} paddingLeft={1} paddingRight={1} flexDirection={wide() ? "row" : "column"} gap={wide() ? 3 : 1} maxHeight={height() - 8} overflow="hidden">
-        {column(left, leftWidth, () => 0)}
-        <Show when={right().length}>
-          <box width={rightWidth()} flexShrink={0} flexDirection="column" border={[wide() ? "left" : "top"]} borderColor={ink.rule} paddingLeft={wide() ? 2 : 0}>
-            {column(right, panelWidth, () => 3)}
-          </box>
+      <box width={cardWidth()} border borderStyle="rounded" borderColor={tone.focus} backgroundColor={theme.mantle} paddingLeft={1} paddingRight={1} flexDirection={tour() ? "column" : wide() ? "row" : "column"} gap={tour() ? 0 : wide() ? 3 : 1} maxHeight={height() - 6} overflow="hidden">
+        <Show when={tour()} fallback={
+          <>
+            {column(left, leftWidth)}
+            <Show when={right().length}>
+              <box width={rightWidth()} flexShrink={0} flexDirection="column" border={[wide() ? "left" : "top"]} borderColor={ink.rule} paddingLeft={wide() ? 2 : 0}>
+                {column(right, panelWidth)}
+              </box>
+            </Show>
+          </>
+        }>
+          {column(tourHead, inner)}
+          <box height={1} />
+          <DemoReel scene={state().demo} width={inner()} height={reelHeight()} />
+          {column(tourFoot, inner)}
         </Show>
       </box>
     </box>
