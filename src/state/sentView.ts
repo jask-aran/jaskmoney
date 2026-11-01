@@ -1,3 +1,4 @@
+import { wrapText } from "./textLayout"
 import type { SentPart } from "../app/sentPreview"
 import { BLOCKS, QUERIES, type QueryId } from "../ai/catalog"
 import type { HelpLine, HelpTone } from "./searchHelp"
@@ -10,26 +11,6 @@ import type { HelpLine, HelpTone } from "./searchHelp"
  * more, so a smart search's 100 category questions read as one. The
  * request's wording is as sent.
  */
-
-/** `text` in lines of at most `width`, broken between words (a longer word is cut). */
-function wrap(text: string, width: number): string[] {
-  const out: string[] = []
-  for (const paragraph of text.split("\n")) {
-    let line = ""
-    for (let word of paragraph.split(" ")) {
-      while (word.length > width) {
-        if (line) { out.push(line); line = "" }
-        out.push(word.slice(0, width))
-        word = word.slice(width)
-      }
-      if (!line) line = word
-      else if (line.length + 1 + word.length <= width) line += ` ${word}`
-      else { out.push(line); line = word }
-    }
-    out.push(line)
-  }
-  return out
-}
 
 /** A string that is a JSON object, parsed; else null. */
 function jsonText(text: string): Record<string, unknown> | null {
@@ -67,7 +48,7 @@ function outline(key: string, value: unknown, indent: number, width: number, out
     }
     if (typeof value === "string" && (value.includes("\n") || pad.length + label.length + text.length > width)) {
       out.push([{ text: `${pad}${key}:`, tone: "key" }])
-      for (const line of wrap(text, Math.max(20, width - indent - 2))) out.push([{ text: `${pad}  ${line}`, tone: "text" }])
+      for (const line of wrapText(text, Math.max(20, width - indent - 2))) out.push([{ text: `${pad}  ${line}`, tone: "text" }])
       return
     }
     out.push([{ text: `${pad}${label}`, tone: "key" }, { text, tone: "text" }])
@@ -89,7 +70,7 @@ function outline(key: string, value: unknown, indent: number, width: number, out
   const entries = key === "questions" ? condense(value as Record<string, unknown>) : Object.entries(value as Record<string, unknown>)
   for (const entry of entries) {
     if (Array.isArray(entry)) outline(entry[0], entry[1], inner, width, out)
-    else for (const line of wrap(`… ${entry.more} more like it (${entry.first} to ${entry.last}), each the same with its own subject`, Math.max(20, width - inner))) out.push([{ text: `${" ".repeat(inner)}${line}`, tone: "muted" }])
+    else for (const line of wrapText(`… ${entry.more} more like it (${entry.first} to ${entry.last}), each the same with its own subject`, Math.max(20, width - inner))) out.push([{ text: `${" ".repeat(inner)}${line}`, tone: "muted" }])
   }
 }
 
@@ -102,7 +83,7 @@ export function requestLines(part: SentPart, width: number): HelpLine[] {
 
 /** `text` beside a label column, wrapped under itself. */
 function labelled(label: string, text: string, width: number, column = 10, tone: HelpTone = "text"): HelpLine[] {
-  return wrap(text, Math.max(20, width - column)).map((line, i) => [{ text: (i ? "" : label).padEnd(column), tone: "muted" as const }, { text: line, tone }])
+  return wrapText(text, Math.max(20, width - column)).map((line, i) => [{ text: (i ? "" : label).padEnd(column), tone: "muted" as const }, { text: line, tone }])
 }
 
 /**
@@ -121,7 +102,7 @@ export function queryLines(id: QueryId, model: string, part: SentPart | null, wi
     ...labelled("Code", q.code, width, 10, "key"),
     [],
     [{ text: "Context", tone: "head" }],
-    ...wrap("Each block is gathered by one function, the same wherever it's used.", width).map((line): HelpLine => [{ text: line, tone: "muted" }]),
+    ...wrapText("Each block is gathered by one function, the same wherever it's used.", width).map((line): HelpLine => [{ text: line, tone: "muted" }]),
   ]
   for (const use of q.context) {
     const block = BLOCKS[use.block]
@@ -131,14 +112,14 @@ export function queryLines(id: QueryId, model: string, part: SentPart | null, wi
     if (head.length + 2 + block.code.length <= width) out.push([{ text: `  ${block.name}`, tone: "head" }, { text: `  ${where}`, tone: "key" }, { text: `  ${block.code}`, tone: "muted" }])
     else {
       out.push([{ text: `  ${block.name}`, tone: "head" }, { text: `  ${where}`, tone: "key" }])
-      for (const line of wrap(block.code, width - 4)) out.push([{ text: `    ${line}`, tone: "muted" }])
+      for (const line of wrapText(block.code, width - 4)) out.push([{ text: `    ${line}`, tone: "muted" }])
     }
-    for (const line of wrap(block.says, width - 4)) out.push([{ text: `    ${line}`, tone: "text" }])
-    for (const line of wrap(`from ${block.from}`, width - 4)) out.push([{ text: `    ${line}`, tone: "muted" }])
+    for (const line of wrapText(block.says, width - 4)) out.push([{ text: `    ${line}`, tone: "text" }])
+    for (const line of wrapText(`from ${block.from}`, width - 4)) out.push([{ text: `    ${line}`, tone: "muted" }])
   }
   out.push([])
   out.push([{ text: "Exact request", tone: "head" }])
   const about = part ? `Built for ${part.sample}; nothing was sent.` : error ?? "Building it…"
-  for (const line of wrap(about, width)) out.push([{ text: line, tone: "muted" }])
+  for (const line of wrapText(about, width)) out.push([{ text: line, tone: "muted" }])
   return part ? [...out, ...requestLines(part, width)] : out
 }

@@ -4,7 +4,7 @@ import { useTerminalDimensions } from "@opentui/solid"
 import type { Command } from "../../app/commands"
 import { theme, ink, tone } from "../../theme"
 import { fit, truncate } from "../text"
-import { centredTop } from "./ListRow"
+import { visibleWindow } from "./listWindow"
 import { S } from "./S"
 import { TextInput } from "./TextInput"
 
@@ -45,18 +45,9 @@ export function CommandPalette(props: { commands: Command[]; cursor: number; que
   const height = (line: Line) => line.kind === "heading" && !line.first ? 2 : 1
   const limit = () => Math.max(6, Math.floor(dims().height / 2) - 4)
   const cursorLine = () => Math.max(0, lines().findIndex((line) => line.kind === "command" && line.index === props.cursor))
-  const top = () => centredTop(cursorLine(), lines().length, limit())
-  const shown = () => {
-    const out: Line[] = []
-    let used = 0
-    for (const line of lines().slice(top())) {
-      if (used + height(line) > limit()) break
-      out.push(line)
-      used += height(line)
-    }
-    return out
-  }
-  const more = () => top() + shown().length < lines().length
+  const window = () => visibleWindow(lines().map(height), cursorLine(), limit())
+  const shown = () => lines().slice(window().start, window().end)
+  const more = () => window().end < lines().length
   return (
     <box position="absolute" zIndex={30} left={0} top={0} width="100%" height="100%" backgroundColor={BACKDROP} alignItems="center" paddingTop={Math.floor(dims().height / 4)}>
       <box width={width()} backgroundColor={theme.mantle} paddingTop={1} paddingBottom={1} flexDirection="column">

@@ -1,5 +1,6 @@
+import { runAsk } from "./ask"
 import { llmModelId } from "../ai/llm"
-import type { AccountRow } from "../domain/accountTree"
+import type { AccountSelection, AccountRow } from "../domain/accountTree"
 import type { SavedFilter } from "../domain/types"
 import type { DataStore } from "../state/dataStore"
 import type { UiStore } from "../state/uiStore"
@@ -31,7 +32,7 @@ export function clearTransactionFilter(ui: UiStore, data: DataStore): void {
 /** The Transactions table, focused (from any tab). */
 export function toTransactions(ui: UiStore): void {
   if (ui.state.activeTab !== "manager") ui.switchTab("manager")
-  if (ui.state.focusedSection !== "mgr.transactions") ui.setState({ focusedSection: "mgr.transactions" })
+  ui.setState({ txnView: "rows", focusedSection: "mgr.transactions" })
 }
 
 export function applyAllRules(ui: UiStore, data: DataStore): void {
@@ -73,13 +74,22 @@ export function applySavedFilter(ui: UiStore, data: DataStore, filter: SavedFilt
   if (!result.ok) { ui.setStatus(result.err, true); return false }
   resetTransactionCursors(ui, data)
   settleData(ui, data.recordFilterUsage(filter.id), () => ui.setStatus(`Filter: ${filter.name}`))
+  void runAsk(ui, data)
   return true
+}
+
+/** Account reset matrix: accounts clears row position and targets; rows and
+ * merchants also clear merchant position; Overview preserves both.
+ * Approved deviation from Go: changing the table's account clears hidden targets. */
+export function changeAccountScope(ui: UiStore, data: DataStore, selection: AccountSelection, origin: "accounts" | "rows" | "merchants" | "overview"): void {
+  if (origin !== "overview") ui.setState({ managerCursor: 0, managerTop: 0, selectedIds: {}, range: null })
+  data.setAccountSelection(selection)
+  if (origin === "rows" || origin === "merchants") resetTransactionCursors(ui, data)
 }
 
 /** The table shows an account (a row of the accounts pane). */
 export function showAccount(ui: UiStore, data: DataStore, row: AccountRow): void {
-  data.setAccountSelection(row.selection)
-  ui.jumpManagerCursor(0, data.scopedTransactions().length)
+  changeAccountScope(ui, data, row.selection, ui.state.txnView)
   ui.setStatus(`Showing ${row.label}`)
 }
 

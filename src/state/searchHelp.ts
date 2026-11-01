@@ -1,3 +1,4 @@
+import { wrapText } from "./textLayout"
 import { JQL, JQL_EXAMPLE, JQL_SUMMARY, keeps, type Row } from "../domain/filterLanguage"
 
 /**
@@ -14,21 +15,10 @@ export type HelpLine = Array<{ text: string; tone: HelpTone }>
 
 export const SEARCH_HELP_WIDTH = 76
 
-/** `text` in lines of at most `width`, broken between words. */
-function wrap(text: string, width: number): string[] {
-  const lines: string[] = []
-  let line = ""
-  for (const word of text.split(" ")) {
-    if (line && line.length + 1 + word.length > width) { lines.push(line); line = word }
-    else line = line ? `${line} ${word}` : word
-  }
-  return line ? [...lines, line] : lines
-}
-
 export function searchHelpLines(full: boolean, width = SEARCH_HELP_WIDTH): HelpLine[] {
   const keep = keeps(false)
   const out: HelpLine[] = [
-    ...wrap(JQL_SUMMARY, width).map((line): HelpLine => [{ text: line, tone: "text" }]),
+    ...wrapText(JQL_SUMMARY, width).map((line): HelpLine => [{ text: line, tone: "text" }]),
     [],
     [{ text: `  ${JQL_EXAMPLE.write}`, tone: "key" }],
     [{ text: `  ${JQL_EXAMPLE.means}`, tone: "muted" }],
@@ -42,13 +32,13 @@ export function searchHelpLines(full: boolean, width = SEARCH_HELP_WIDTH): HelpL
     if (!full && !section.brief) continue
     out.push([], [{ text: section.title.toUpperCase(), tone: "head" }, ...(section.aside ? [{ text: `   ${section.aside}`, tone: "muted" as const }] : [])])
     for (const block of section.blocks) {
-      if (block.kind === "text") { if (keep(block)) out.push(...wrap(block.text, width - 2).map((line): HelpLine => [{ text: `  ${line}`, tone: "text" }])); continue }
+      if (block.kind === "text") { if (keep(block)) out.push(...wrapText(block.text, width - 2).map((line): HelpLine => [{ text: `  ${line}`, tone: "text" }])); continue }
       if (block.kind === "code") { out.push(...block.lines.map((line): HelpLine => [{ text: `  ${line}`, tone: "key" }])); continue }
       for (const row of block.rows.filter(shown)) {
         const fix = block.kind === "gotchas" && "fix" in row ? `→ ${row.fix}` : ""
         const lead = `  ${row.write}`
         // The fix stays whole: after the meaning when it fits, else under it.
-        const parts = wrap(row.means, width - column)
+        const parts = wrapText(row.means, width - column)
         if (fix && parts.at(-1)!.length + 2 + fix.length <= width - column) parts[parts.length - 1] += `  ${fix}`
         else if (fix) parts.push(fix)
         // A term wider than the column sits on its own line.

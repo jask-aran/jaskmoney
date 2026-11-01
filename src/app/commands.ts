@@ -27,8 +27,8 @@ export interface CommandContext {
   data: DataStore
   /** The scope the palette opened over. */
   from: ScopeId
-  /** Presses a key where input now is (handleKey). */
-  press: (key: KeyEvent) => void
+  /** Presses a key only when input is in its expected scope (handleKey). */
+  press: (key: KeyEvent, expected: ScopeId) => void
 }
 
 export interface Command {
@@ -60,14 +60,14 @@ function registry(ctx: CommandContext): Entry[] {
   const inSettings = (section: Section, hint: string, setup?: () => void, list?: "categories" | "tags") => () => {
     toSettings(section, list)
     setup?.()
-    ctx.press(hintEvent(hint)!)
+    ctx.press(hintEvent(hint)!, `settings.${section}`)
   }
-  const inTransactions = (hint: string) => () => { toTransactions(ui); ctx.press(hintEvent(hint)!) }
-  // The Budgets tab's list key, pressed there (cursor 0: the cycle).
-  const inBudgets = (hint: string, cursor?: number) => () => {
+  const inTransactions = (hint: string) => () => { toTransactions(ui); ctx.press(hintEvent(hint)!, "manager.txns") }
+  // The Budgets list owns these keys, including c for the cycle editor.
+  const inBudgets = (hint: string) => () => {
     if (ui.state.activeTab !== "budgets") ui.switchTab("budgets")
-    if (cursor != null) ui.setState({ budgetCursor: cursor })
-    ctx.press(hintEvent(hint)!)
+    ui.setState({ focusedSection: "bud.list" })
+    ctx.press(hintEvent(hint)!, "budgets")
   }
   const filter = data.state.filterQuery
   const undo = data.undoLabel()
@@ -125,14 +125,14 @@ function registry(ctx: CommandContext): Entry[] {
     { id: "display:week", category: "Display", label: `Weeks start ${data.state.weekStart === "monday" ? "Sunday" : "Monday"}`, run: () => toggleWeekStart(ui, data) },
     { id: "display:x-axis", category: "Display", label: `Charts' $0 line ${data.state.uiPrefs.xAxis ? "off" : "on"}`, run: () => toggleXAxis(ui, data) },
     // Settings
-    { id: "settings:cycle", category: "Settings", label: "Budget cycle…", description: "e.g. from payday", run: inBudgets("enter", 0) },
+    { id: "settings:cycle", category: "Settings", label: "Budget cycle…", description: "e.g. from payday", run: inBudgets("c") },
     ...SETTINGS_SECTIONS.map((section): Entry => ({ id: `settings:${section}`, category: "Settings", label: SETTINGS_SECTION_LABELS[section], run: () => toSettings(section) })),
     // Go to
     ...TABS.map((tab): Entry => ({
       id: `go:${tab.id}`, category: "Go to", label: tab.label, key: tab.hotkey,
       disabled: ui.state.activeTab === tab.id ? "here now" : undefined, run: () => ui.switchTab(tab.id),
     })),
-    { id: "go:jump", category: "Go to", label: "Jump to a pane", key: "v", run: () => ctx.press(keyEvent("v")) },
+    { id: "go:jump", category: "Go to", label: "Jump to a pane", key: "v", run: () => ctx.press(keyEvent("v"), ctx.from) },
   ]
 }
 
@@ -151,7 +151,7 @@ export function commands(ctx: CommandContext, hints: Hint[]): Command[] {
     const linked = hint.command ? byId.get(hint.command) : undefined
     if (hint.command && !linked) throw new Error(`hint ${hint.key} names no command ${hint.command}`)
     if (linked) used.add(linked.id)
-    const run = () => ctx.press(event)
+    const run = () => ctx.press(event, ctx.from)
     return [linked
       ? { ...linked, key: hint.key, category: here, run }
       : { id: `key:${ctx.from}:${hint.key}`, label: hint.label ?? hint.desc[0]!.toUpperCase() + hint.desc.slice(1), description: hint.description, key: hint.key, category: here, run }]

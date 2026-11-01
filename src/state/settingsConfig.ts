@@ -54,10 +54,15 @@ export function normalizeSavedFilterId(raw: string): string {
   return id
 }
 
+export function nextSettingsId(prefix: string, entries: readonly { id: string }[]): string {
+  const ids = new Set(entries.map((entry) => entry.id.toLowerCase()))
+  let n = 1
+  while (ids.has(`${prefix}-${n}`.toLowerCase())) n++
+  return `${prefix}-${n}`
+}
+
 export function nextSavedFilterId(filters: SavedFilter[]): string {
-  const ids = new Set(filters.map((f) => f.id.toLowerCase()))
-  for (let n = 1; n < 10000; n++) if (!ids.has(`filter-${n}`)) return `filter-${n}`
-  throw new Error("could not allocate a saved-filter ID")
+  return nextSettingsId("filter", filters)
 }
 
 /** Saved in full (canonicalFilter): brackets, OR and NOT in capitals, full

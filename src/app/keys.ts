@@ -1,7 +1,7 @@
 import { unwrap } from "solid-js/store"
 import { merchantKey } from "../domain/history"
-import { footerShown, type Hint } from "./palette"
-import { toggleDemo, applyAllRules, applySavedFilter, clearTransactionFilter, askForRules, reportError, settleData, resetTransactionCursors, runUndo, showAccount, showDryRun, toggleIcons, toggleWeekStart, toggleXAxis } from "./actions"
+import { footerShown, scopeLabel, type Hint } from "./palette"
+import { changeAccountScope, toTransactions, toggleDemo, applyAllRules, applySavedFilter, clearTransactionFilter, askForRules, reportError, settleData, resetTransactionCursors, runUndo, showAccount, showDryRun, toggleIcons, toggleWeekStart, toggleXAxis } from "./actions"
 import { commands, rankCommands, type Command } from "./commands"
 import { ACCOUNT_ACTIONS, armedText, isArmed, isSecondPress, type Armed } from "../state/armed"
 import { DATABASE_ROWS } from "../state/databaseRows"
@@ -64,7 +64,7 @@ import type { CategoryLine } from "../domain/dashboard"
 import { allCategoryLines, overviewRange } from "../state/overviewRange"
 import { tagPickerItems, tagPickerState } from "../state/tagPicker"
 import { savedFilterOptions } from "../state/savedFilters"
-import { nextSavedFilterId } from "../state/settingsConfig"
+import { nextSettingsId, nextSavedFilterId } from "../state/settingsConfig"
 import { theme } from "../theme"
 import { count, shortDate } from "../ui/text"
 
@@ -233,7 +233,10 @@ export function paletteList(ui: UiStore, data?: DataStore): Command[] {
   // 1,200 rows) and ranked once per query, so a cursor move is free and
   // the rows keep their identity (nothing remounts).
   if (paletteBuilt?.opened !== palette.opened) {
-    const ctx = { ui, data, from: palette.from, press: (event: KeyEvent) => { handleKey(ui, event, data) } }
+    const ctx = { ui, data, from: palette.from, press: (event: KeyEvent, expected: ScopeId) => {
+      if (ui.activeScope() !== expected) { ui.setStatus(`Command needs ${scopeLabel(expected)}; active scope is ${scopeLabel(ui.activeScope())}`, true); return }
+      handleKey(ui, event, data)
+    } }
     paletteBuilt = { opened: palette.opened, all: commands(ctx, footerHints(palette.from, hintState(ui, data))), query: null, ranked: [] }
   }
   if (paletteBuilt.query !== palette.query) paletteBuilt = { ...paletteBuilt, query: palette.query, ranked: rankCommands(paletteBuilt.all, palette.query, ui.state.lastCommandId) }
@@ -274,7 +277,6 @@ function handleFilterPicker(ui: UiStore, key: KeyEvent, data?: DataStore): void 
       const filter = items[picker.cursor]
       if (filter && data && applySavedFilter(ui, data, filter)) {
         ui.setState({ filterPicker: null })
-        void runAsk(ui, data)
       }
     },
   })
@@ -641,17 +643,26 @@ function handleManagerAccountAction(ui: UiStore, key: KeyEvent, data?: DataStore
   if (moved != null) { ui.setState("accountAction", { cursor: moved }); return }
   if ((name === "return" || name === "enter") && account) {
     const kind = ACCOUNT_ACTIONS[(ui.state.accountAction?.cursor ?? 0)]!
-    confirmTwice(ui, data, { kind, id: account.id, label: account.name, with: "enter" }, () => ui.setState({ accountAction: null }))
+    const opened = ui.opening("accountAction")
+    confirmTwice(ui, data, { kind, id: account.id, label: account.name, with: "enter" }, () => opened.close())
   }
 }
 
+const confirmations = new WeakMap<UiStore, Set<string>>()
+
 /** del (or enter) twice (state/armed): the first press arms the row, the
- * same key on it again does it; handleKey disarms on any other key. */
+ * same key on it again does it; handleKey disarms on any other key.
+ * Further confirmation presses do nothing until the write settles. */
 function confirmTwice(ui: UiStore, data: DataStore | undefined, armed: Armed, ok?: () => void): void {
+  const pending = confirmations.get(ui) ?? new Set<string>()
+  const action = `${armed.kind}:${armed.id}`
+  if (pending.has(action)) return
   const now = ui.state.armed
   if (now && isArmed(now, armed.kind, armed.id) && now.with === armed.with) {
     ui.disarm()
-    settleData(ui, CONFIRMED[armed.kind](data, armed), (summary) => { ui.setStatus(summary); ok?.() })
+    pending.add(action)
+    confirmations.set(ui, pending)
+    settleData(ui, CONFIRMED[armed.kind](data, armed).finally(() => pending.delete(action)), (summary) => { ui.setStatus(summary); ok?.() })
     return
   }
   ui.arm(armed)
@@ -818,6 +829,8 @@ function handleSettingsImportFiles(ui: UiStore, key: KeyEvent, data?: DataStore)
   const wizard = ui.state.importWizard
   if (!wizard) return
   const opened = ui.opening("importWizard")
+  const stage = wizard.stage
+  const current = () => opened.open && ui.state.importWizard?.stage === stage
   const { name } = key
   const files = wizard.files
   if (name === "escape") { ui.cancelImport(); ui.setStatus("Import cancelled"); return }
@@ -827,7 +840,7 @@ function handleSettingsImportFiles(ui: UiStore, key: KeyEvent, data?: DataStore)
   if ((name === "return" || name === "enter") && files[wizard.cursor]) {
     const path = files[wizard.cursor]!
     const matches = data?.profileMatches(path) ?? []
-    if (matches.length === 1) { settleData(ui, (async () => { const preview = await data?.previewImport(path, matches[0]!); opened.patch({ stage: "preview", path, pathCaret: path.length, preview: preview ?? null }) })()) }
+    if (matches.length === 1) { settleData(ui, (async () => { const preview = await data?.previewImport(path, matches[0]!); if (current()) opened.patch({ stage: "preview", path, pathCaret: path.length, preview: preview ?? null }) })()) }
     else opened.patch({ stage: "profile", path, pathCaret: path.length, profileCursor: 0 })
     return
   }
@@ -837,6 +850,8 @@ function handleSettingsImportPath(ui: UiStore, key: KeyEvent, data?: DataStore):
   const wizard = ui.state.importWizard
   if (!wizard) return
   const opened = ui.opening("importWizard")
+  const stage = wizard.stage
+  const current = () => opened.open && ui.state.importWizard?.stage === stage
   const { name } = key
   if (name === "escape") { opened.patch({ stage: "files", path: "", pathCaret: 0 }); return }
   if (name === "return" || name === "enter") {
@@ -845,7 +860,10 @@ function handleSettingsImportPath(ui: UiStore, key: KeyEvent, data?: DataStore):
     const path = resolve(wizard.directory, raw)
     settleData(ui, (async () => {
       const matches = data?.profileMatches(path) ?? []
-      if (matches.length === 1) opened.patch({ stage: "preview", path, pathCaret: path.length, preview: await data?.previewImport(path, matches[0]!) ?? null })
+      if (matches.length === 1) {
+        const preview = await data?.previewImport(path, matches[0]!) ?? null
+        if (current()) opened.patch({ stage: "preview", path, pathCaret: path.length, preview })
+      }
       else opened.patch({ stage: "profile", path, pathCaret: path.length, profileCursor: 0 })
     })())
     return
@@ -858,17 +876,22 @@ function handleSettingsImportProfile(ui: UiStore, key: KeyEvent, data?: DataStor
   const wizard = ui.state.importWizard
   if (!wizard) return
   const opened = ui.opening("importWizard")
+  const stage = wizard.stage
+  const current = () => opened.open && ui.state.importWizard?.stage === stage
   const { name } = key
   const profiles = data?.state.importProfiles ?? []
   if (name === "escape") { if (wizard.managing) opened.close(); else opened.patch({ stage: "files", managing: false }); return }
   const moved = listMove(key, wizard.profileCursor, profiles.length + 1)
   if (moved != null) { opened.patch({ profileCursor: moved }); return }
-  if (name === "a" || name === "n" || (name === "return" || name === "enter") && wizard.profileCursor === profiles.length) { ui.openProfileEditor(defaultProfile(`profile-${profiles.length + 1}`, wizard.path), null); return }
+  if (name === "a" || name === "n" || (name === "return" || name === "enter") && wizard.profileCursor === profiles.length) { ui.openProfileEditor(defaultProfile(nextSettingsId("profile", profiles), wizard.path), null); return }
   if (name === "e" && profiles[wizard.profileCursor]) { ui.openProfileEditor(profiles[wizard.profileCursor]!, profiles[wizard.profileCursor]!.id); return }
   if (name === "delete" && profiles[wizard.profileCursor]) { const selected = profiles[wizard.profileCursor]!; confirmTwice(ui, data, { kind: "profile", id: selected.id, label: selected.name, with: "delete" }); return }
   if ((name === "return" || name === "enter") && profiles[wizard.profileCursor]) {
     if (wizard.managing) { ui.openProfileEditor(profiles[wizard.profileCursor]!, profiles[wizard.profileCursor]!.id); return }
-    settleData(ui, (async () => { opened.patch({ stage: "preview", preview: await data?.previewImport(wizard.path, profiles[wizard.profileCursor]!) ?? null }) })())
+    settleData(ui, (async () => {
+      const preview = await data?.previewImport(wizard.path, profiles[wizard.profileCursor]!) ?? null
+      if (current()) opened.patch({ stage: "preview", preview })
+    })())
     return
   }
 }
@@ -877,6 +900,8 @@ function handleSettingsImportProfileEditor(ui: UiStore, key: KeyEvent, data?: Da
   const wizard = ui.state.importWizard
   if (!wizard) return
   const opened = ui.opening("importWizard")
+  const stage = wizard.stage
+  const current = () => opened.open && ui.state.importWizard?.stage === stage
   const { name } = key
   const draft = wizard.profileDraft, field = wizard.profileField
   const fields = ["id", "name", "account", "accountType", "importPrefix", "hasHeader", "delimiter", "dateColumn", "amountColumn", "descriptionColumns", "descriptionJoin", "amountStrip", "dateFormat"] as const
@@ -893,8 +918,9 @@ function handleSettingsImportProfileEditor(ui: UiStore, key: KeyEvent, data?: Da
     settleData(ui, (async () => {
       const { path, profileEditId } = wizard
       await data?.saveImportProfile(draft, profileEditId)
-      if (!opened.open) return
+      if (!current()) return
       const preview = path ? await data?.previewImport(path, draft) : null
+      if (!current()) return
       opened.patch({ stage: preview ? "preview" : "profile", preview: preview ?? null, profileEditId: null })
       ui.setStatus(`Saved profile ${draft.name}`)
     })())
@@ -1013,7 +1039,7 @@ function handleSettingsFilters(ui: UiStore, key: KeyEvent, data?: DataStore): vo
   if (name === "escape") { ui.leaveSettings(); return }
   const moved = listMove(key, ui.state.filterCursor, filters.length)
   if (moved != null) { ui.setState({ filterCursor: moved }); return }
-  if (name === "a") { const id = `filter-${filters.length + 1}`; ui.openSettingsEditor("filter", null, { ...ui.state.settingsDraft, id, name: "", expr: "" }); return }
+  if (name === "a") { const id = nextSavedFilterId(filters); ui.openSettingsEditor("filter", null, { ...ui.state.settingsDraft, id, name: "", expr: "" }); return }
   if ((name === "return" || name === "enter") && filter) { ui.openSettingsEditor("filter", filter.id, { ...ui.state.settingsDraft, id: filter.id, name: filter.name, expr: filter.expr }); return }
   if (name === "delete" && filter) { confirmTwice(ui, data, { kind: "filter", id: filter.id, label: filter.name, with: "delete" }); return }
 }
@@ -1182,14 +1208,15 @@ function handleAiUse(ui: UiStore, key: KeyEvent, data?: DataStore): void {
 /** Show a query, and build its exact request (nothing is sent). */
 async function openQuery(ui: UiStore, data: DataStore, use: AiUse, query: QueryId): Promise<void> {
   ui.setState({ aiSent: { use, query, part: null, error: null, top: 0, visible: 0, lines: 0 } })
-  const current = () => ui.state.aiSent?.query === query
+  const opened = ui.opening("aiSent")
+  const current = () => opened.open && ui.state.aiSent?.query === query
   try {
     const askWords = askTerms(data.state.filterExpr)[0]
     const parts = await previewSent(use, data, { smartQuestion: ui.state.smartQuestion?.question, ...(askWords ? { askWords } : {}), clairic: aiContext(data).searchClairic && hasWorkersAi() })
     const part = parts.find((p) => p.query === query)
-    if (current()) ui.setState("aiSent", part ? { part } : { error: "Nothing to build it for yet: it needs rows of the kind it asks about." })
+    if (current()) opened.patch(part ? { part } : { error: "Nothing to build it for yet: it needs rows of the kind it asks about." })
   } catch (error) {
-    if (current()) ui.setState("aiSent", { error: error instanceof Error ? error.message : String(error) })
+    if (current()) opened.patch({ error: error instanceof Error ? error.message : String(error) })
   }
 }
 
@@ -1226,10 +1253,12 @@ function handleAiDialog(ui: UiStore, key: KeyEvent, data?: DataStore): void {
   const opened = ui.opening("aiDialog")
   const note = (text: string, ok: boolean | null) => opened.patch({ note: { text, ok }, busy: false })
   if (dialog.field) {
+    if (dialog.busy && name !== "escape") return
     const field = dialog.field
     if (name === "escape") { opened.patch({ field: null }); return }
     if (name === "return" || name === "enter") {
       const value = field.value.trim()
+      opened.patch({ busy: true })
       settleData(ui, (async () => {
         try {
           if (field.action === "key") {
@@ -1248,7 +1277,7 @@ function handleAiDialog(ui: UiStore, key: KeyEvent, data?: DataStore): void {
           }
         } catch (e) {
           note(e instanceof Error ? e.message : String(e), false)
-        }
+        } finally { opened.patch({ busy: false }) }
       })())
       return
     }
@@ -1511,8 +1540,7 @@ function handleManagerAccounts(ui: UiStore, key: KeyEvent, data?: DataStore): vo
   const select = (index: number) => {
     const row = rows[index]
     if (!row || row.selection === data.state.accountSelection) return
-    ui.setState({ managerCursor: 0, managerTop: 0, selectedIds: {}, range: null })
-    data.setAccountSelection(row.selection)
+    changeAccountScope(ui, data, row.selection, "accounts")
   }
   // j/k move down the stacks in reading order; h/l go to the first row of
   // the stack beside.
@@ -1653,7 +1681,7 @@ function handleManagerMerchants(ui: UiStore, key: KeyEvent, data?: DataStore): v
   const group = groups[ui.state.merchantCursor]
   const moveTo = (i: number) => ui.setState({ merchantCursor: Math.max(0, Math.min(groups.length - 1, i)) })
   if (name === "a" && !key.shift) { stepAccount(ui, data); ui.setState({ merchantCursor: 0 }); return }
-  if (name === "m") { ui.setState({ txnView: "rows" }); ui.setStatus("Transactions"); return }
+  if (name === "m") { toTransactions(ui); ui.setStatus("Transactions"); return }
   const moved = listMove(key, ui.state.merchantCursor, groups.length, ui.state.managerVisible)
   if (moved != null) { moveTo(moved); return }
   if (name === "s" && !key.shift) {
@@ -1669,7 +1697,7 @@ function handleManagerMerchants(ui: UiStore, key: KeyEvent, data?: DataStore): v
     // Drill in: narrow the filter to this merchant and show its rows.
     const result = data.commitFilter(merchantFilter(data.state.filterQuery, group.merchant))
     if (!result.ok) { ui.setStatus(result.err, true); return }
-    ui.setState({ txnView: "rows" })
+    toTransactions(ui)
     ui.jumpManagerCursor(0, data.scopedTransactions().length)
     ui.setStatus(`${group.merchant} · ${count(group.count, "transaction")} · esc to widen`)
     return
@@ -1679,7 +1707,7 @@ function handleManagerMerchants(ui: UiStore, key: KeyEvent, data?: DataStore): v
   if (name === "n" && !key.shift && group) { openMerchantNote(ui, data, group.merchant); return }
   if (name === "escape") {
     if (data.state.filterQuery) clearTransactionFilter(ui, data)
-    else { ui.setState({ txnView: "rows" }); ui.setStatus("Transactions") }
+    else { toTransactions(ui); ui.setStatus("Transactions") }
     return
   }
 }
@@ -1714,20 +1742,19 @@ function handleOverview(ui: UiStore, key: KeyEvent, data?: DataStore): void {
   }
   // i: review what's waiting for a category, in Transactions.
   if (name === "i" && !key.shift && scope === "overview" && data) {
-    ui.switchTab("manager")
-    ui.setState({ focusedSection: "mgr.transactions" })
+    toTransactions(ui)
     if (!data.state.uncategorisedOnly) toggleUncategorised(ui, data)
     return
   }
   // / searches: the Transactions filter, opened from here (the Overview
   // itself is not filtered); ? goes straight to a smart search.
   if (isSmartSearchKey(key) && scope === "overview") {
-    ui.switchTab("manager")
+    toTransactions(ui)
     openSmartSearch(ui, data)
     return
   }
   if ((name === "/" || seq === "/") && scope === "overview") {
-    ui.switchTab("manager")
+    toTransactions(ui)
     ui.openFilter(data?.state.filterQuery ?? "")
     return
   }
@@ -1738,7 +1765,7 @@ function handleOverview(ui: UiStore, key: KeyEvent, data?: DataStore): void {
     const choices: AccountSelection[] = ["all", ...(spending.length > 1 ? spending.map((a) => a.id) : [])]
     const at = choices.indexOf(data.state.accountSelection)
     const next = choices[(at + 1) % choices.length]!
-    data.setAccountSelection(next)
+    changeAccountScope(ui, data, next, "overview")
     ui.setStatus(`Overview · ${spendingScope(data.state.accounts, next).label}`)
     return
   }
@@ -1852,10 +1879,10 @@ function drillDown(ui: UiStore, data: DataStore, line?: CategoryLine) {
     categories: data.state.categories,
   })
   const back = { filter: data.state.filterQuery, focus: ui.state.focusedSection }
-  ui.switchTab("manager")
+  toTransactions(ui)
   const result = data.commitFilter(query)
   if (!result.ok) { ui.setStatus(result.err, true); return }
-  ui.setState({ drillReturn: back, txnView: "rows", focusedSection: "mgr.transactions" })
+  ui.setState({ drillReturn: back })
   const n = data.scopedTransactions().length
   ui.jumpManagerCursor(0, n)
   ui.setStatus(`${line?.label ?? "Spending"} · ${range.bounds.label} · ${count(n, "transaction")} · esc back`)

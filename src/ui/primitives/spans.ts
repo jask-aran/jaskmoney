@@ -1,3 +1,4 @@
+import { truncate } from "../text"
 import { ink } from "../../theme"
 
 /** A run of text in one colour: titles, legends and other styled one-liners. */
@@ -22,7 +23,7 @@ export function fitSpans(spans: Span[], budget: number): Span[] {
   for (const span of spans) {
     const w = Bun.stringWidth(span.text)
     if (w <= left) { out.push(span); left -= w; continue }
-    if (left > 1) out.push({ ...span, text: [...span.text].slice(0, left - 1).join("") + "…" })
+    if (left > 0) out.push({ ...span, text: truncate(span.text, left) })
     break
   }
   return out

@@ -7,6 +7,7 @@ const graphemes = new Intl.Segmenter(undefined, { granularity: "grapheme" })
 /** Truncate to `n` terminal cells with an ellipsis. Measures display width,
  * not UTF-16 length: Up account names carry emoji such as "🏖️" (3 units, 2 cells). */
 export function truncate(s: string, n: number): string {
+  if (n <= 0) return ""
   if (Bun.stringWidth(s) <= n) return s
   let out = ""
   let width = 0
