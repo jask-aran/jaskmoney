@@ -166,7 +166,7 @@ function RuleLine(props: { rule: Rule; index: number; last: number }) {
       <Button variant="ghost" size="sm" class="st-filter-link" data-broken={on() && !(filter() && healthy()) ? "" : undefined} disabled={!filter()}
         title={filter() ? "Show its rows in Transactions" : undefined} onClick={() => filter() && showFilter(filter()!)}>{matches()}</Button>
       <Switch label={on() ? `Switch ${rule().name} off` : `Switch ${rule().name} on`} checked={on()} onChange={toggle} />
-      <Button variant="ghost" size="icon-xs" aria-label="Move up" title="Move up (the first match wins)" disabled={props.index === 0} onClick={() => move(props.index - 1)}><Icons.ArrowUp /></Button>
+      <Button variant="ghost" size="icon-xs" aria-label="Move up" title="Move up (a later rule wins)" disabled={props.index === 0} onClick={() => move(props.index - 1)}><Icons.ArrowUp /></Button>
       <Button variant="ghost" size="icon-xs" aria-label="Move down" title="Move down" disabled={props.index === props.last} onClick={() => move(props.index + 1)}><Icons.ArrowDown /></Button>
       <span data-arm={key()} class="st-arm">
         <Show when={isArmed(key())} fallback={
@@ -179,13 +179,13 @@ function RuleLine(props: { rule: Rule; index: number; last: number }) {
   )
 }
 
-/** Rules (ordered, first match wins), then the saved filters they match. */
+/** Rules (ordered, last match wins), then the saved filters they match. */
 export function RulesFilters() {
   const rules = () => data.state.rules
   const filters = () => data.state.savedFilters
   return (
     <>
-      <SettingGroup title={`Rules ${rules().length}${rules().length > 1 ? " · first match wins" : ""}`}>
+      <SettingGroup title={`Rules ${rules().length}${rules().length > 1 ? " · last match wins" : ""}`}>
         <For each={rules()} fallback={<SettingNote>No rules yet.</SettingNote>}>{(rule, i) => <RuleLine rule={rule} index={i()} last={rules().length - 1} />}</For>
       </SettingGroup>
       <SettingGroup title={`Saved filters ${filters().length}`}>

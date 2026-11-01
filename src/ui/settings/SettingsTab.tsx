@@ -124,7 +124,7 @@ function TaxonomyPane(props: { focused: boolean; narrow: boolean; width: number;
 }
 
 /** Rules and the saved filters they match, in one card: Rules (ordered,
- * first match wins) above Saved filters. Each list is its own section (its
+ * last match wins) above Saved filters. Each list is its own section (its
  * keys, cursor and jump); the card shows whichever has focus. */
 function RulesPane(props: { focused: boolean; width: number }) {
   const rulesActive = () => ui.state.settingsActive && ui.state.settingsSection === "rules"
@@ -137,7 +137,7 @@ function RulesPane(props: { focused: boolean; width: number }) {
   const idWidth = () => Math.min(22, Math.max(...filters().map((f) => f.id.length + 7), 12))
   const height = () => 2 + 1 + Math.max(1, rules().length) + 1 + 1 + Math.max(1, filters().length)
   return <SectionCard title="Rules & Filters" focused={props.focused} active={rulesActive() || filtersActive()} height={height()} width={props.width}>
-    {heading("Rules", rules().length, rulesActive(), rules().length > 1 ? " · first match wins" : "")}
+    {heading("Rules", rules().length, rulesActive(), rules().length > 1 ? " · last match wins" : "")}
     <Show when={rules().length} fallback={<text fg={ink.note}>{rulesActive() ? "  No rules. Press a to add." : "  No rules yet."}</text>}>
       <For each={rules()}>{(rule, i) => {
         const cat = () => data.state.categories.find((c) => c.id === rule.setCategoryId)?.name
