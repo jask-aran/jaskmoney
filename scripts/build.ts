@@ -17,6 +17,10 @@ const result = await Bun.build({
   conditions: ["browser"],
   plugins: [solidPlugin],
   minify: true,
+  // Precompiled to bytecode, as opencode ships: nothing is parsed at start
+  // (first frame ~540 → ~400 ms; the binary grows ~40 MB).
+  bytecode: true,
+  format: "esm",
   sourcemap: "linked",
   compile: { outfile, autoloadBunfig: false, autoloadDotenv: false },
 })
