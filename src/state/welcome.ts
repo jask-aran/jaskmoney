@@ -46,9 +46,6 @@ export interface WelcomeState {
   backdrop?: BackdropId
   /** Real market prices for the ticker tape, once fetched (app/tickers). */
   tickers?: Ticker[]
-  /** The first ask for them has answered (or failed): until then the tape
-   * waits, so it doesn't start made-up and jump to real a moment later. */
-  tickersAsked?: boolean
   cursor: number
   /** The Up token as typed: never drawn, only its length and last four. */
   token: TextField

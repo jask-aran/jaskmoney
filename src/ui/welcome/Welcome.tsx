@@ -1,5 +1,5 @@
 import { useTerminalDimensions } from "@opentui/solid"
-import { For, Index, Show, createEffect, createMemo, createSignal, onCleanup, untrack } from "solid-js"
+import { For, Index, Show, on, createEffect, createMemo, createSignal, onCleanup, untrack } from "solid-js"
 import { ui } from "../../state/uiStore"
 import { data } from "../../state/dataStore"
 import { ink, theme, tone } from "../../theme"
@@ -289,7 +289,10 @@ function WelcomeScreen() {
     if (backdropId() !== "ticker") return
     onCleanup(followTickers(ui))
   })
-  const backdrop = createMemo(() => backdropLines(backdropId(), dims().width, height(), backdropT(), backdropInk, state().tickersAsked ? state().tickers : "waiting"))
+  // Seconds since this backdrop began: a new one starts from its beginning
+  // (a ticker tape from empty, streaming in).
+  const backdropSince = createMemo(on(backdropId, () => untrack(backdropT)))
+  const backdrop = createMemo(() => backdropLines(backdropId(), dims().width, height(), backdropT() - backdropSince(), backdropInk, state().tickers))
 
   // ---- The rail: where you are among the steps; the way to here fills in.
   const railSpans = (): StyledSpan[] => {

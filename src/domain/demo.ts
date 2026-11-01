@@ -33,6 +33,12 @@ export interface DemoData {
 }
 
 const round = (n: number) => Math.round(n * 100) / 100
+/** A number in 0..1 from an integer, the same each time: draws that leave the seeded sequence alone. */
+const demoHash = (n: number) => {
+  let h = (n * 374761393) ^ 0x5bd1e995
+  h = Math.imul(h ^ (h >>> 13), 1274126177)
+  return ((h ^ (h >>> 16)) >>> 0) / 4294967295
+}
 
 export interface DemoSourceRow {
   description: string
@@ -187,7 +193,8 @@ export function generateDemo(options: { today: string; years?: number; seed?: nu
     const progress = daysBetween(start, date) / totalDays
     add(date, progress < 0.34 ? 2450 : progress < 0.7 ? 2625 : 2800, "ACME Group Payroll", "Salary", { transactionType: "Salary" })
     add(addDays(date, 1), -amount(350, 0.15), "Holiday savings", "Transfers", { transactionType: "Transfer", transferToKey: "holiday" })
-    add(addDays(date, 1), -amount(200, 0.15), "Emergency savings", "Transfers", { transactionType: "Transfer", transferToKey: "emergency" })
+    // A few days after the holiday one: the savers don't move together.
+    add(addDays(date, 4), -amount(200, 0.15), "Emergency savings", "Transfers", { transactionType: "Transfer", transferToKey: "emergency" })
   }
   // The rainy day saver, twice: a car repair, then a vet's bill.
   for (const [at, value, why] of [[0.42, 900, "Car repair"], [0.81, 650, "Vet bill"]] as const) {
@@ -296,6 +303,34 @@ export function generateDemo(options: { today: string; years?: number; seed?: nu
   for (const t of transactions) {
     const minutes = 7 * 60 + integer(17 * 60)
     t.time = `${String(Math.floor(minutes / 60)).padStart(2, "0")}:${String(minutes % 60).padStart(2, "0")}`
+  }
+  // Money out of the savers as well as in, on their own irregular days and
+  // for their own reasons: as much as keeps each saver's balance three
+  // years ago a plausible half of today's (deposits every pay would
+  // otherwise put it far below zero, rebuilt back from today). After every
+  // draw: fixed, from a hash, so the rest of the life is unchanged.
+  for (const [saverKey, why] of [
+    ["holiday", ["Flights", "Festival tickets", "Weekend away", "Concert", "Gift", "Hotel deposit", "Ski trip"]],
+    ["emergency", ["Car rego", "Dentist", "Vet bill", "Laptop repair", "Car service", "Insurance excess", "New tyres"]],
+  ] as const) {
+    const saver = accounts.find(a => a.key === saverKey)
+    if (!saver) continue
+    const flow = transactions.reduce((sum, t) =>
+      sum + (t.accountKey === saverKey ? t.amount : t.accountKey === "spending" && t.transferToKey === saverKey ? -t.amount : 0), 0)
+    const need = saver.balance * 0.5 - (saver.balance - flow)
+    if (need <= 0) continue
+    // About one a month, at irregular gaps; amounts uneven, summing to need.
+    const count = Math.max(3, Math.round(totalDays / 30))
+    const weights = Array.from({ length: count }, (_, i) => 0.3 + demoHash(saverKey.length * 97 + i * 13) * 1.7)
+    const total = weights.reduce((a, b) => a + b, 0)
+    weights.forEach((w, i) => {
+      const at = Math.min(totalDays - 2, Math.floor(((i + 0.2 + demoHash(saverKey.length * 31 + i * 7) * 0.6) / count) * totalDays))
+      const dateISO = addDays(start, at)
+      if (dateISO > options.today) return
+      transactions.push({ accountKey: "spending", dateISO, amount: round(need * w / total), description: `Transfer from ${saver.name}`, categoryName: "Transfers",
+        truthCategory: "Transfers", rawText: null, cardMethod: null, time: "12:30", transactionType: "Transfer", message: why[i % why.length]!,
+        foreignAmount: null, status: "SETTLED", transferToKey: saverKey })
+    })
   }
   // Each transfer shows on both accounts, as Up shows it: the saver's side
   // too, or its balance (rebuilt from its own rows) never moves. After every

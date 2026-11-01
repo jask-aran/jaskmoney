@@ -20,11 +20,10 @@ export interface BackdropInk { level: (level: number) => string; up: string; dow
  * lines for a `width`×`height` screen `t` seconds in. Neighbouring cells of
  * one colour share a span.
  */
-/** `tickers`: the tape's real prices; "waiting" while the first ask is out
- * (the tape stays blank, so it never starts made-up and jumps to real). */
-export function backdropLines(id: BackdropId, width: number, height: number, t: number, ink: BackdropInk, tickers?: readonly Ticker[] | "waiting"): StyledSpan[][] {
-  const blank: Cell = () => ({ ch: " ", fg: ink.level(0) })
-  const cell = id === "coins" ? coinRain(width, height, t, ink) : id === "ticker" ? (tickers === "waiting" ? blank : tickerTape(width, height, t, ink, tickers)) : plasma(width, height, t, ink)
+/** `tickers`: the tape's real prices, once they've come. `t` is seconds
+ * since this backdrop began (a tape streams in from empty). */
+export function backdropLines(id: BackdropId, width: number, height: number, t: number, ink: BackdropInk, tickers?: readonly Ticker[]): StyledSpan[][] {
+  const cell = id === "coins" ? coinRain(width, height, t, ink) : id === "ticker" ? tickerTape(width, height, t, ink, tickers) : plasma(width, height, t, ink)
   const lines: StyledSpan[][] = []
   for (let y = 0; y < height; y++) {
     const spans: StyledSpan[] = []
@@ -102,35 +101,52 @@ const FAKE_TICKERS: Ticker[] = ([
 /** A price as a tape shows it: big ones whole-ish, small ones to four places. */
 const price = (p: number) => (p >= 1000 ? p.toLocaleString("en-AU", { maximumFractionDigits: 1 }) : p >= 1 ? p.toFixed(2) : p.toFixed(4))
 
+/** A ticker's slot on a tape: the same width whatever its numbers, so a
+ * refresh changes the numbers in place and nothing moves. */
+const SLOT = 24
+const GAP = "   ·   "
+const slotText = (k: Ticker) => `${k.name} ${price(k.price)} ${k.change >= 0 ? "▲" : "▼"}${Math.abs(k.change).toFixed(1)}%`.padEnd(SLOT).slice(0, SLOT) + GAP
+/** Seconds of empty tape before the first ticker comes on screen, about:
+ * the first ask for real prices has answered by then. */
+const LEAD_SECONDS = 1.2
+/** How quickly a tape's entrance settles (its time constant, seconds). */
+const FILL_SECONDS = 0.8
+
 /**
- * Ticker tape: every fourth row a tape of tickers scrolling left, each
- * starting at its own place in the list and moving at its own speed (spread
- * by the golden ratio, so no two match); rises tinted up, falls tinted
- * down. `tickers`: real prices when they've been had, else made-up ones.
+ * Ticker tape: every fourth row a tape of tickers streaming in from the
+ * right (rushing in, then easing to its own speed), each tape at its own speed (spread by the golden ratio, so no two
+ * match) and starting at its own place in the list. `t` is seconds since
+ * the tape began: it begins empty and fills from the right, then runs on.
+ * Rises tinted up, falls tinted down. `tickers`: real prices once they've
+ * come, else made-up ones.
  */
 function tickerTape(width: number, height: number, t: number, ink: BackdropInk, tickers: readonly Ticker[] = FAKE_TICKERS): Cell {
   const list = tickers.length ? tickers : FAKE_TICKERS
-  const bands = new Map<number, { text: string; up: boolean[] }>()
+  const cycle = SLOT + GAP.length
+  const bands = new Map<number, (x: number) => { ch: string; up: boolean } | null>()
   for (let y = 1, k = 0; y < height; y += 4, k++) {
-    let text = ""
-    const up: boolean[] = []
-    for (let i = 0; text.length < width + 60; i++) {
-      const { name, price: p, change } = list[(k * 5 + i) % list.length]!
-      const item = `${name} ${price(p)} ${change >= 0 ? "▲" : "▼"}${Math.abs(change).toFixed(1)}%   ·   `
-      text += item
-      up.push(...Array.from(item, () => change >= 0))
-    }
-    // 2 to 11 columns a second: at 30 frames a second, under half a column
-    // a frame, so a tape moves in even steps.
+    // 2 to 11 columns a second: under half a column a frame at 30.
     const speed = 2 + ((k * 0.618034) % 1) * 9
-    const offset = Math.floor(t * speed + hash(k * 5 + 1) * text.length) % text.length
-    bands.set(y, { text: text.slice(offset) + text.slice(0, offset), up: [...up.slice(offset), ...up.slice(0, offset)] })
+    // How far the tape has come in from the right edge. After its lead-in
+    // (each tape's a little different, so they don't arrive together) it
+    // rushes in and eases down to its own speed: the screen fills in about
+    // two and a half seconds, with no jolt where the rush ends.
+    const u = t - (LEAD_SECONDS + hash(k * 7 + 3) * 0.8)
+    const head = u < 0 ? -1 : Math.floor(u * speed + width * (1 - Math.exp(-u / FILL_SECONDS)))
+    const first = (k * 5) % list.length
+    bands.set(y, (x) => {
+      // The tape's position under column x: 0 is its first character.
+      const i = head - (width - 1 - x)
+      if (i < 0) return null
+      const ticker = list[(first + Math.floor(i / cycle)) % list.length]!
+      const ch = slotText(ticker)[i % cycle]!
+      return { ch, up: ticker.change >= 0 }
+    })
   }
   return (x, y) => {
-    const band = bands.get(y)
-    const ch = band?.text[x] ?? " "
-    if (ch === " ") return { ch, fg: ink.level(0) }
-    if (ch === "▲" || ch === "▼" || /[\d.%,]/.test(ch)) return { ch, fg: band!.up[x] ? ink.up : ink.down }
-    return { ch, fg: ink.level(2) }
+    const at = bands.get(y)?.(x)
+    if (!at || at.ch === " ") return { ch: " ", fg: ink.level(0) }
+    if (at.ch === "▲" || at.ch === "▼" || /[\d.%,]/.test(at.ch)) return { ch: at.ch, fg: at.up ? ink.up : ink.down }
+    return { ch: at.ch, fg: ink.level(2) }
   }
 }

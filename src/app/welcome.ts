@@ -75,7 +75,7 @@ export function followTickers(ui: UiStore): () => void {
   const ask = async () => {
     const tickers = await sources.tickers()
     if (stopped || !ui.state.welcome) return
-    ui.setState("welcome", { ...(tickers ? { tickers } : {}), tickersAsked: true })
+    if (tickers) ui.setState("welcome", { tickers })
     // Say once which they are.
     if (told) return
     told = true
