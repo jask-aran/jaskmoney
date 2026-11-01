@@ -319,24 +319,25 @@ function WelcomeScreen() {
   const backdrop = createMemo(() => (drawn = keepSameLines(drawn, backdropLines(backdropId(), dims().width, height(), backdropT() - backdropSince(), BACKDROP_INK, state().tickers))))
 
   // ---- The rail: where you are among the steps; the way to here fills in.
-  const railSpans = (): StyledSpan[] => {
+  // A segment per step (the line into it, its mark, its name), each its own
+  // box: a click on it is OpenTUI's to place, not sums of widths here.
+  const railSegments = (): Array<{ step: WelcomeState["step"]; spans: StyledSpan[]; width: number }> => {
     const at = WELCOME_STEPS.indexOf(state().step)
-    const out: StyledSpan[] = []
-    WELCOME_STEPS.forEach((step, i) => {
+    return WELCOME_STEPS.map((step, i) => {
+      const spans: StyledSpan[] = []
       if (i > 0) {
         const lit = i <= at ? (i === at ? Math.min(5, since()) : 5) : 0
-        out.push({ text: " " + "━".repeat(lit), fg: tone.key }, { text: "─".repeat(5 - lit) + " ", fg: ink.rule })
+        spans.push({ text: " " + "━".repeat(lit), fg: tone.key }, { text: "─".repeat(5 - lit) + " ", fg: ink.rule })
       }
       const mark = stepMark(step, state(), ctx())
-      out.push(
+      spans.push(
         // Ready: a star, hollow until you get there.
         { text: step === "done" ? (mark === "ahead" ? "☆ " : "★ ") : mark === "done" ? "✓ " : mark === "skipped" ? "– " : mark === "current" ? "● " : "○ ", fg: mark === "done" ? tone.good : mark === "current" ? tone.key : ink.faint, bold: true },
         { text: STEP_NAMES[step], fg: mark === "current" ? ink.strong : mark === "done" ? ink.label : ink.faint, bold: mark === "current" },
       )
+      return { step, spans, width: spans.reduce((n, s) => n + Bun.stringWidth(s.text), 0) }
     })
-    return out
   }
-  const railWidth = () => railSpans().reduce((n, s) => n + Bun.stringWidth(s.text), 0)
 
   const column = (lines: () => Line[], width: () => number) => (
     <box width={width()} flexDirection="column" flexShrink={0}>
@@ -364,16 +365,13 @@ function WelcomeScreen() {
         <StyledLine spans={titleSpans(1)} bg={theme.canvas} />
       </box>
       <box height={1} />
-      <box height={1} width={railWidth()} onMouseDown={onPointer("welcome", (event) => {
-        // A step on the rail: go there.
-        let x = event.x - Math.floor((dims().width - railWidth()) / 2)
-        for (const [i, step] of WELCOME_STEPS.entries()) {
-          const w = (i > 0 ? 7 : 0) + 2 + STEP_NAMES[step].length
-          if (x < w) { welcomeJump(ui, data, step); return }
-          x -= w
-        }
-      })}>
-        <StyledLine spans={railSpans()} bg={theme.canvas} />
+      <box height={1} flexDirection="row">
+        {/* A step on the rail: a click goes there. */}
+        <Index each={railSegments()}>{(segment) => (
+          <box height={1} width={segment().width} flexShrink={0} onMouseDown={onPointer("welcome", () => welcomeJump(ui, data, segment().step))}>
+            <StyledLine spans={segment().spans} bg={theme.canvas} />
+          </box>
+        )}</Index>
       </box>
       <box height={1} />
       <box width={cardWidth()} border borderStyle="rounded" borderColor={tone.focus} backgroundColor={theme.canvas} paddingLeft={1} paddingRight={1} flexDirection={wide() ? "row" : "column"} gap={wide() ? 3 : 1} maxHeight={height() - 6} overflow="hidden" flexShrink={0}>

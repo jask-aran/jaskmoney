@@ -307,3 +307,21 @@ test("the AI step's models each open the dialog Settings › AI models opens; no
   }
   ui.switchTab("overview")
 })
+
+test("a click on a step of the rail goes there: each step is its own box, so OpenTUI places the click", async () => {
+  const t = await renderApp({ width: 130, height: 44 })
+  openWelcome(ui)
+  await t.renderOnce()
+  const lines = t.captureCharFrame().split("\n")
+  const y = lines.findIndex((l) => l.includes("Welcome") && l.includes("Ready"))
+  for (const [name, step] of [["Email", "email"], ["Tour", "tour"], ["AI", "ai"], ["Up Bank", "up"]] as const) {
+    // Every character of the step's name lands on it, the first to the last.
+    for (const dx of [0, name.length - 1]) {
+      ui.setState("welcome", { step: "hello" })
+      await t.renderOnce()
+      await t.mockMouse.click(lines[y]!.indexOf(name) + dx, y)
+      expect(ui.state.welcome?.step).toBe(step)
+    }
+  }
+  ui.switchTab("overview")
+})
