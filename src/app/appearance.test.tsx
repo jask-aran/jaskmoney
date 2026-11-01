@@ -304,3 +304,22 @@ test("Settings panes and cursor rows stay inside the viewport at 140x44 and 100x
     } finally { t.renderer.destroy() }
   }
 })
+
+test("Settings opens on, and a resize keeps, the focused pane in view, low in a scrolling column", async () => {
+  data.init(":memory:")
+  const t = await renderApp({ width: 100, height: 40 })
+  try {
+    ui.switchTab("settings")
+    ui.setState({ settingsSection: "database", focusedSection: "set.database" })
+    await t.renderOnce()
+    await t.flush()
+    expect(t.captureCharFrame()).toContain("Clear data")
+    for (const height of [24, 18, 30]) {
+      t.resize(100, height)
+      await t.renderOnce()
+      await t.renderOnce()
+      expect(t.captureCharFrame()).toContain("Clear data")
+    }
+    ui.leaveSettings()
+  } finally { t.renderer.destroy() }
+})

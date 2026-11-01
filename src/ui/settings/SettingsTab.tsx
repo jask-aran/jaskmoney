@@ -564,10 +564,15 @@ export function SettingsTab(props: { focused: SectionId }) {
     <scrollbox ref={(box: ScrollBoxRenderable) => {
       columns.push(box)
       onCleanup(() => columns.splice(columns.indexOf(box), 1))
-      // A first layout or a resize moves the panes: follow focus again,
-      // after the scrollbox's own handler (it updates the scroll range).
-      const own = box.content.onSizeChange
-      box.content.onSizeChange = () => { own?.call(box.content); box.scrollChildIntoView(paneId(props.focused)) }
+      // A first layout or a resize moves the panes: follow focus again. On
+      // the content's "resize" event, which comes after its onSizeChange (the
+      // scrollbox's own: it updates the scroll range), so that isn't replaced.
+      // After the frame's layout, not in it: the content is resized before
+      // its panes are placed, and a pane read then is where it was (a pane
+      // focused low in the column stayed off screen on opening).
+      const follow = () => queueMicrotask(() => { if (!box.isDestroyed) box.scrollChildIntoView(paneId(props.focused)) })
+      box.content.on("resize", follow)
+      onCleanup(() => box.content.off("resize", follow))
     }}
       width={column.width} flexGrow={column.width ? 0 : 1} flexShrink={column.width ? 0 : 1} minWidth={0} height="100%"
       scrollY scrollX={false} focusable={false} verticalScrollbarOptions={{ visible: false }} contentOptions={{ flexDirection: "column" }}>
