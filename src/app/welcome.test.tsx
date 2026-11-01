@@ -229,7 +229,8 @@ test("drawn: the title in the brand's pink, the button in pink and bold; the dem
   const spans = () => t.captureSpans().lines.flatMap((l) => l.spans)
   // The title's first column (the second row's J) is the gradient's start: pink.
   const row = t.captureSpans().lines.find((l) => l.spans.map((s) => s.text).join("").includes("█▄█ █▀█"))!
-  const first = row.spans.find((s) => s.text.trim())!
+  // (The backdrop runs behind it: the title's first glyph, not the row's first mark.)
+  const first = row.spans.find((s) => s.text.includes("█"))!
   expect(first.text.trimStart()[0]).toBe("█")
   // Drawn at full colour from the first frame: nothing fades in.
   const button = spans().find((s) => s.text === "Next")!

@@ -1,6 +1,7 @@
 import type { TextField } from "../domain/textField"
 import { DEMO_COUNT, triable, type DemoTry } from "./tour"
 import type { BackdropId } from "../ui/welcome/backdrop"
+import type { Ticker } from "../app/tickers"
 
 /**
  * The first-run setup: a full-screen walk through connecting Up, the AI
@@ -43,6 +44,11 @@ export interface WelcomeState {
   trying: DemoTry | null
   /** The welcome page's backdrop, as b last chose it (else Settings'). */
   backdrop?: BackdropId
+  /** Real market prices for the ticker tape, once fetched (app/tickers). */
+  tickers?: Ticker[]
+  /** The first ask for them has answered (or failed): until then the tape
+   * waits, so it doesn't start made-up and jump to real a moment later. */
+  tickersAsked?: boolean
   cursor: number
   /** The Up token as typed: never drawn, only its length and last four. */
   token: TextField

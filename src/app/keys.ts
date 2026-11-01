@@ -2111,7 +2111,7 @@ const scopes: Record<ScopeId, ScopeEntry> = {
     hints: (state) => state?.welcomeBusy ? [{ key: "esc", desc: "stop waiting" }]
       : state?.welcomeTry != null ? [...tryHints(state.welcomeTry), { key: "esc", desc: "back to the demo" }]
       : state?.welcomeTyping ? [{ key: "paste", desc: "your token" }, { key: "enter", desc: "connect" }, { key: "ctrl+o", desc: "open api.up.com.au" }, { key: "ctrl+n", desc: "skip" }, { key: "esc", desc: "back" }]
-      : [...(state?.welcomeStep === "tour" ? [{ key: "←→", desc: "demos" }, ...(state.welcomeTriable ? [{ key: "t", desc: "try it" }] : [])] : []), { key: "↑↓", desc: "move" }, { key: "enter", desc: "choose" }, ...(state?.welcomeStep === "done" || state?.welcomeStep === "hello" ? [] : [{ key: "s", desc: "skip" }]), { key: "esc", desc: state?.welcomeStep === "hello" ? "skip setup" : "back" }],
+      : [...(state?.welcomeStep === "tour" ? [{ key: "←→", desc: "demos" }, ...(state.welcomeTriable ? [{ key: "t", desc: "try it" }] : [])] : []), { key: "↑↓", desc: "move" }, { key: "enter", desc: "choose" }, ...(state?.welcomeStep === "done" || state?.welcomeStep === "hello" ? [] : [{ key: "s", desc: "skip" }]), ...(state?.welcomeStep === "hello" ? [{ key: "b", desc: "backdrop" }] : []), { key: "esc", desc: state?.welcomeStep === "hello" ? "skip setup" : "back" }],
   },
   "settings.executor": {
     handle: (ui, key) => handleExecutor(ui, key),

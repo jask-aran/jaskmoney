@@ -1,4 +1,5 @@
 import type { StyledSpan } from "../primitives/StyledLine"
+import type { Ticker } from "../../app/tickers"
 
 /** The welcome page's backdrops (Settings › Appearance). */
 export const BACKDROPS = [
@@ -19,8 +20,11 @@ export interface BackdropInk { level: (level: number) => string; up: string; dow
  * lines for a `width`×`height` screen `t` seconds in. Neighbouring cells of
  * one colour share a span.
  */
-export function backdropLines(id: BackdropId, width: number, height: number, t: number, ink: BackdropInk): StyledSpan[][] {
-  const cell = id === "coins" ? coinRain(width, height, t, ink) : id === "ticker" ? tickerTape(width, height, t, ink) : plasma(width, height, t, ink)
+/** `tickers`: the tape's real prices; "waiting" while the first ask is out
+ * (the tape stays blank, so it never starts made-up and jumps to real). */
+export function backdropLines(id: BackdropId, width: number, height: number, t: number, ink: BackdropInk, tickers?: readonly Ticker[] | "waiting"): StyledSpan[][] {
+  const blank: Cell = () => ({ ch: " ", fg: ink.level(0) })
+  const cell = id === "coins" ? coinRain(width, height, t, ink) : id === "ticker" ? (tickers === "waiting" ? blank : tickerTape(width, height, t, ink, tickers)) : plasma(width, height, t, ink)
   const lines: StyledSpan[][] = []
   for (let y = 0; y < height; y++) {
     const spans: StyledSpan[] = []
@@ -87,34 +91,39 @@ function coinRain(width: number, height: number, t: number, ink: BackdropInk): C
   }
 }
 
-/** Made-up market lines for the ticker: a name, a price, a change. */
-const TICKERS = [
-  ["JASK", 12.4, 2.1], ["ACME", 48.15, -0.8], ["UPBK", 3.07, 1.4], ["AUD/USD", 0.6612, 0.2], ["GOLD", 3141.6, 0.6], ["ASX200", 8204.1, -0.3],
+/** Made-up market lines, for when the real ones (app/tickers) can't be had. */
+const FAKE_TICKERS: Ticker[] = ([
+  ["ASX200", 8204.1, -0.3], ["JASK", 12.4, 2.1], ["ACME", 48.15, -0.8], ["UPBK", 3.07, 1.4], ["AUD/USD", 0.6612, 0.2], ["GOLD", 3141.6, 0.6],
   ["COFE", 5.5, 3.2], ["RENT", 650, 1.9], ["GROC", 132.8, -1.1], ["FUEL", 1.89, -2.4], ["SAVE", 100, 0.4], ["BTC", 98110, -3.6],
-] as const
+  ["AVO", 2.95, -0.7], ["TOAST", 18.5, 0.9], ["BREW", 6.2, 1.1], ["NETF", 18.99, 0], ["GYM", 59.9, -0.2], ["PHONE", 29, 0.3],
+  ["POWR", 93.97, 4.1], ["TRAM", 5.3, 0.6], ["PIZZ", 24.5, -1.8], ["BOOK", 32.99, 0.8], ["VET", 145, 2.6], ["HOLS", 1400, -4.2],
+] as const).map(([name, price, change]) => ({ name, price, change }))
+
+/** A price as a tape shows it: big ones whole-ish, small ones to four places. */
+const price = (p: number) => (p >= 1000 ? p.toLocaleString("en-AU", { maximumFractionDigits: 1 }) : p >= 1 ? p.toFixed(2) : p.toFixed(4))
 
 /**
- * Ticker tape: every third row a band of made-up tickers scrolling left,
- * each band at its own speed; rises tinted up, falls tinted down. The rows
- * between stay blank.
+ * Ticker tape: every fourth row a tape of tickers scrolling left, each
+ * starting at its own place in the list and moving at its own speed (spread
+ * by the golden ratio, so no two match); rises tinted up, falls tinted
+ * down. `tickers`: real prices when they've been had, else made-up ones.
  */
-function tickerTape(width: number, height: number, t: number, ink: BackdropInk): Cell {
+function tickerTape(width: number, height: number, t: number, ink: BackdropInk, tickers: readonly Ticker[] = FAKE_TICKERS): Cell {
+  const list = tickers.length ? tickers : FAKE_TICKERS
   const bands = new Map<number, { text: string; up: boolean[] }>()
-  for (let y = 1; y < height; y += 3) {
-    const start = Math.floor(hash(y) * TICKERS.length)
+  for (let y = 1, k = 0; y < height; y += 4, k++) {
     let text = ""
     const up: boolean[] = []
-    for (let i = 0; text.length < width * 2 + 40; i++) {
-      const [name, price, change] = TICKERS[(start + i) % TICKERS.length]!
-      // A little drift on the numbers each lap, so the tape isn't a loop.
-      const drift = (hash(y * 101 + i) - 0.5) * 0.6
-      const pct = change + drift
-      const item = `${name} ${price.toLocaleString("en-AU")} ${pct >= 0 ? "▲" : "▼"}${Math.abs(pct).toFixed(1)}%   ·   `
+    for (let i = 0; text.length < width + 60; i++) {
+      const { name, price: p, change } = list[(k * 5 + i) % list.length]!
+      const item = `${name} ${price(p)} ${change >= 0 ? "▲" : "▼"}${Math.abs(change).toFixed(1)}%   ·   `
       text += item
-      up.push(...Array.from(item, () => pct >= 0))
+      up.push(...Array.from(item, () => change >= 0))
     }
-    const speed = 3 + hash(y * 3 + 9) * 7 // columns a second
-    const offset = Math.floor(t * speed + hash(y * 5) * text.length) % text.length
+    // 2 to 11 columns a second: at 30 frames a second, under half a column
+    // a frame, so a tape moves in even steps.
+    const speed = 2 + ((k * 0.618034) % 1) * 9
+    const offset = Math.floor(t * speed + hash(k * 5 + 1) * text.length) % text.length
     bands.set(y, { text: text.slice(offset) + text.slice(0, offset), up: [...up.slice(offset), ...up.slice(0, offset)] })
   }
   return (x, y) => {

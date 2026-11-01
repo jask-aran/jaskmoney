@@ -8,6 +8,7 @@ import type { DataStore } from "../state/dataStore"
 import type { UiStore } from "../state/uiStore"
 import { DEMO_COUNT, demoWorld, triable, tryFrom, tryKey } from "../state/tour"
 import { BACKDROPS, DEFAULT_BACKDROP } from "../ui/welcome/backdrop"
+import { fetchTickers } from "./tickers"
 import { nextStep, previousStep, welcomeGo, welcomeRows, welcomeStart, type EmailPhase, type WelcomeAction, type WelcomeContext, type WelcomeState } from "../state/welcome"
 import { openBrowser, startLlmSignIn } from "./llmSignIn"
 import { runSync } from "./sync"
@@ -21,6 +22,8 @@ import { runSync } from "./sync"
  */
 export const sources = {
   open: openBrowser as (url: string) => void,
+  /** Market prices for the ticker tape backdrop (null: keep the made-up ones). */
+  tickers: () => fetchTickers(),
   /** Up's accounts for a token, by name: Up answering is the check. */
   upAccounts: async (token: string) => (await createUpClient({ token }).listAccounts()).map((a) => a.attributes.displayName),
   executorSignedIn: () => executorSignedIn(),
@@ -62,6 +65,25 @@ export function shouldWelcome(data: DataStore): boolean {
 
 export function openWelcome(ui: UiStore): void {
   ui.setState({ welcome: welcomeStart() })
+}
+
+/** The ticker tape's real prices: asked now and every two minutes while
+ * the setup is open and the tape is its backdrop. Returns a stop. */
+export function followTickers(ui: UiStore): () => void {
+  let stopped = false
+  let told = false
+  const ask = async () => {
+    const tickers = await sources.tickers()
+    if (stopped || !ui.state.welcome) return
+    ui.setState("welcome", { ...(tickers ? { tickers } : {}), tickersAsked: true })
+    // Say once which they are.
+    if (told) return
+    told = true
+    ui.setStatus(tickers ? "These are real live tickers (Yahoo Finance, as delayed as Yahoo gives them)" : "Ticker tape: made-up tickers (Yahoo Finance couldn't be reached)")
+  }
+  void ask()
+  const timer = setInterval(() => void ask(), 120_000)
+  return () => { stopped = true; clearInterval(timer) }
 }
 
 /** Leave the setup, finished or skipped: it won't open by itself again. */
@@ -129,10 +151,12 @@ export function handleWelcome(ui: UiStore, key: KeyEvent, data?: DataStore): voi
     return
   }
   if (state.step === "tour" && name === "t") { startTry(ui, data); return }
-  // The welcome page: b tries the next backdrop.
-  if (state.step === "hello" && name === "b") {
+  // b tries the next backdrop (not while typing a token, or trying a demo).
+  if (name === "b" && !typing && !state.trying) {
     const at = BACKDROPS.findIndex((b) => b.id === (state.backdrop ?? data.state.uiPrefs.backdrop ?? DEFAULT_BACKDROP))
-    ui.setState("welcome", { backdrop: BACKDROPS[(at + 1) % BACKDROPS.length]!.id })
+    const next = BACKDROPS[(at + 1) % BACKDROPS.length]!
+    ui.setState("welcome", { backdrop: next.id })
+    ui.setStatus(`Backdrop: ${next.label} (b for the next; Settings › Appearance keeps one)`)
     return
   }
   if (name === "up" || (!typing && name === "k") || (key.shift && name === "tab")) { ui.setState("welcome", { cursor: Math.max(0, state.cursor - 1) }); return }

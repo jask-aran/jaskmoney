@@ -6,7 +6,7 @@ import { ink, theme, tone } from "../../theme"
 import { wrapText } from "../../state/textLayout"
 import { STEP_NAMES, WELCOME_STEPS, emailChecklist, stepMark, tokenShown, welcomeRows, type ItemState, type WelcomeRow, type WelcomeState } from "../../state/welcome"
 import { AI_USES_TEXT, EMAIL_USES, UP_USES, type IntegrationUse } from "../../state/integrationUses"
-import { welcomeAct, welcomeContext, welcomeJump } from "../../app/welcome"
+import { followTickers, welcomeAct, welcomeContext, welcomeJump } from "../../app/welcome"
 import { onPointer } from "../../app/pointer"
 import { StyledLine, type StyledSpan } from "../primitives/StyledLine"
 import { SPINNER } from "../primitives/Spinner"
@@ -269,8 +269,8 @@ function WelcomeScreen() {
     })
   }
 
-  // ---- The welcome page's backdrop: money marks drifting, faint, behind
-  // everything (backdrop).
+  // ---- The setup's backdrop, behind every step: money marks drifting,
+  // faint (backdrop); the cards and the demo are solid over it.
   const backdropInk: BackdropInk = {
     level: (level) => mix(theme.canvas, level >= BACKDROP_LEVELS - 1 ? tone.key : tone.focus, 0.06 + (level / (BACKDROP_LEVELS - 1)) * 0.38),
     up: mix(theme.canvas, tone.good, 0.4),
@@ -278,7 +278,18 @@ function WelcomeScreen() {
   }
   // Settings › Appearance's choice; b on the welcome page tries the next.
   const backdropId = (): BackdropId => state().backdrop ?? data.state.uiPrefs.backdrop ?? DEFAULT_BACKDROP
-  const backdrop = createMemo(() => state().step === "hello" ? backdropLines(backdropId(), dims().width, height(), tick() * FRAME_MS / 1000, backdropInk) : [])
+  // Behind every step, on a clock of its own at 30 frames a second (the
+  // setup's is slower): a tape moves in even steps.
+  const [backdropT, setBackdropT] = createSignal(0)
+  const backdropStart = performance.now()
+  const backdropTimer = setInterval(() => setBackdropT((performance.now() - backdropStart) / 1000), 33)
+  onCleanup(() => clearInterval(backdropTimer))
+  // The tape's real prices, while it's the backdrop.
+  createEffect(() => {
+    if (backdropId() !== "ticker") return
+    onCleanup(followTickers(ui))
+  })
+  const backdrop = createMemo(() => backdropLines(backdropId(), dims().width, height(), backdropT(), backdropInk, state().tickersAsked ? state().tickers : "waiting"))
 
   // ---- The rail: where you are among the steps; the way to here fills in.
   const railSpans = (): StyledSpan[] => {
@@ -346,7 +357,10 @@ function WelcomeScreen() {
       </box>
       <Show when={tour()}>
         <box height={1} />
-        <DemoReel scene={state().demo} startedAt={state().demoAt} trying={state().trying} width={reelWidth()} height={reelHeight()} />
+        {/* Solid: the backdrop goes round the demo, not through it. */}
+        <box backgroundColor={theme.canvas}>
+          <DemoReel scene={state().demo} startedAt={state().demoAt} trying={state().trying} width={reelWidth()} height={reelHeight()} />
+        </box>
       </Show>
       </box>
     </box>

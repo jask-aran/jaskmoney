@@ -46,6 +46,7 @@ Object.assign(welcomeSources, {
   connectLink: async () => { throw new Error("no Executor in tests") },
   waitForAccount: async () => { throw new Error("no Executor in tests") },
   countOrders: async () => { throw new Error("no Executor in tests") },
+  tickers: async () => null,
 })
 purchaseSources.signedIn = () => false
 purchaseSources.accounts = async () => { throw new Error("no Executor in tests") }
