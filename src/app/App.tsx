@@ -6,7 +6,7 @@ import { BudgetsTab } from "../ui/budgets/BudgetsTab"
 import { ErrorBoundary, Show, createEffect, createMemo, createSignal, untrack, on, onCleanup, onMount } from "solid-js"
 import { useKeyboard, usePaste, useRenderer } from "@opentui/solid"
 import type { KeyEvent } from "@opentui/core"
-import { TABS, ui, type SectionId, type TabId } from "../state/uiStore"
+import { TABS, TAB_DEFAULT_FOCUS, ui, type SectionId, type TabId } from "../state/uiStore"
 import type { JSX } from "@opentui/solid"
 import { data } from "../state/dataStore"
 import { footerLine, handleKey, hintState, paletteList, scopeQuits, handlePaste } from "./keys"
@@ -256,7 +256,10 @@ function KeptTab(props: { id: TabId; children: (focused: () => SectionId) => JSX
   const active = () => ui.state.activeTab === props.id
   const [visited, setVisited] = createSignal(active())
   createEffect(() => { if (active() || warmed().has(props.id)) setVisited(true) })
-  const focused = createMemo<SectionId>((was) => (active() ? ui.state.focusedSection : was), ui.state.focusedSection)
+  // Hidden, the tab keeps its last focus; built before its first visit (the
+  // warm-up), it starts from the focus a switch gives it, so showing it
+  // changes nothing that follows the focus.
+  const focused = createMemo<SectionId>((was) => (active() ? ui.state.focusedSection : was), active() ? ui.state.focusedSection : TAB_DEFAULT_FOCUS[props.id])
   return (
     <Show when={visited()}>
       <box visible={active()} flexGrow={1} width="100%" flexDirection="column">

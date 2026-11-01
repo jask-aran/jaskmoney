@@ -29,7 +29,12 @@ export function traceKey(key: KeyEvent, scope: string, run: () => void): void {
   const at = start - input < 1000 ? input : start
   run()
   const name = `${key.ctrl ? "ctrl+" : ""}${key.shift && key.name.length > 1 ? "shift+" : ""}${key.name || key.sequence}`
-  // Keys faster than frames: the frame answers the first of them.
+  // Keys faster than frames: the frame answers the first of them. A key
+  // still waiting 100 ms on changed nothing on screen.
+  if (pending && at - pending.at > 100) {
+    appendFileSync(file, `${pending.key.padEnd(12)} ${pending.scope.padEnd(20)} handler=${pending.handler.toFixed(1)} no frame\n`)
+    pending = null
+  }
   if (!pending) pending = { key: name, scope, at, handler: performance.now() - start }
 }
 
