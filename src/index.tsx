@@ -18,7 +18,10 @@ const stopRowLifetimes = watchRowLifetimes(ui, data)
 process.on("exit", stopRowLifetimes)
 
 const renderer = await createCliRenderer({
-  exitOnCtrlC: true,
+  // ctrl+c is App's (its key handler quits, and the key goes no further):
+  // the renderer's own would quit too, a tick after the key also reached
+  // handleKey (a "c" in Transactions opens the category picker).
+  exitOnCtrlC: false,
   targetFps: 30,
   // Use terminal size; captures target 140×44 when resized
 })

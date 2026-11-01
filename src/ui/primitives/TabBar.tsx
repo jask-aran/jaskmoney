@@ -6,6 +6,7 @@ import { For } from "solid-js"
 import { TABS, ui, type ScopeId, type SectionId, type TabId } from "../../state/uiStore"
 import { theme, ink, tone } from "../../theme"
 import { chipLook } from "./chip"
+import { S } from "./S"
 
 /** Matches Go headerBarStyle + activeTabStyle / inactiveTabStyle; the
  * current tab is an active chip (chipLook). */
@@ -38,8 +39,9 @@ export function TabBar(props: { active: TabId; items?: { id?: SectionId; text: s
                     │
                   </text>
                 ) : null}
+                {/* Bold by S, not a <b> swapped for plain text: the label stays one node. */}
                 <text ref={regionRef(`bar.${tab.id}`, "bar")} onMouseDown={onPointer(pageScope, () => ui.switchTab(tab.id))} fg={look().fg} bg={look().bg ?? theme.mantle}>
-                  {look().bold ? <b>{` ${tab.label} `}</b> : ` ${tab.label} `}
+                  <S fg={look().fg} bg={look().bg ?? theme.mantle} bold={look().bold}>{` ${tab.label} `}</S>
                 </text>
               </box>
             )
