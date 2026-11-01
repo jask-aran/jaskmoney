@@ -37,4 +37,5 @@ The data lives in one core (`src/core/`) that the TUI and the web app reach as c
 Known renderer/compiler semantics (proved in this repo):
 
 - Solid's JSX compiler collapses runs of spaces in literal JSX text (`<S>Balance      </S>` renders `Balance `). Put alignment padding in expressions (`{"Balance".padEnd(13)}`).
+- A `keyed` `<Show>` remounts on a new value only when its child function declares a parameter (`{(v) => …}`); Solid treats `{() => …}` as a plain child and never re-runs it.
 - An absolutely positioned child of a bordered box is placed from the border's inner edge (column 1), while a native box `title` starts at column 2. `text` `truncate` elides the middle; clip at the end with `wrapMode="none"` in an `overflow="hidden"` parent.
