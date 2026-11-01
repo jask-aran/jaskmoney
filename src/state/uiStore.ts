@@ -1,3 +1,4 @@
+import type { WelcomeState } from "./welcome"
 import type { ExecutorStatus } from "../ai/executor"
 import type { SentPart } from "../app/sentPreview"
 import type { QueryId } from "../ai/catalog"
@@ -85,6 +86,7 @@ export type ScopeId =
   | "settings.factoryReset"
   | "merchantNote"
   | "searchHelp"
+  | "welcome"
 
 export type SettingsList = "categories" | "tags"
 export type SettingsSection = "taxonomy" | "rules" | "filters" | "up" | "ai" | "database"
@@ -224,6 +226,8 @@ export interface UiState {
   executorStatus: ExecutorStatus | null
   /** Settings › Up Bank › Accounts: which Up accounts sync (cursor row). */
   upAccounts: { cursor: number } | null
+  /** The first-run setup, full screen (state/welcome). */
+  welcome: WelcomeState | null
   aiDialog: {
     row: "jev" | "workersAi" | "openrouter" | "openai" | "up"
     cursor: number
@@ -359,6 +363,8 @@ const MODALS = [
   { key: "upAccounts", scope: () => "settings.upAccounts" },
   { key: "factoryReset", scope: () => "settings.factoryReset" },
   { key: "customEdit", scope: () => "overview.custom" },
+  // Under every dialog: a sign-in or key dialog it opens takes the keys.
+  { key: "welcome", scope: () => "welcome" },
 ] satisfies Modal[]
 
 /** What closing every dialog writes. */
@@ -457,6 +463,7 @@ function createUiStore() {
     aiUse: null,
     aiSent: null,
     upAccounts: null,
+    welcome: null,
     factoryReset: null,
     merchantNote: null,
     searchHelp: null,

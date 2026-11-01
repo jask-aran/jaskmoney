@@ -332,6 +332,7 @@ export function createCore() {
       savedFilters: config.savedFilters,
       importProfiles: config.importProfiles,
       icons: config.icons !== false,
+      welcomed: config.welcomed === true,
       weekStart: config.ui?.weekStart ?? "monday",
       uiPrefs: config.ui ?? {},
     })
@@ -416,7 +417,7 @@ export function createCore() {
   function persistConfig(patch: Partial<SettingsConfig>) {
     // Writes everything as it is now, so a deferred UI write is done too.
     if (configTimer) { clearTimeout(configTimer); configTimer = null }
-    saveSettingsConfig({ version: 2, icons: state.icons, savedFilters: state.savedFilters, importProfiles: state.importProfiles, ui: state.uiPrefs, ...patch })
+    saveSettingsConfig({ version: 2, icons: state.icons, welcomed: state.welcomed, savedFilters: state.savedFilters, importProfiles: state.importProfiles, ui: state.uiPrefs, ...patch })
     configDirty = false
   }
 
@@ -686,6 +687,7 @@ export function createCore() {
     deleteSavedFilter: (p: { id: string }) => deleteSavedFilter(p.id),
     recordFilterUsage: (p: { id: string }) => saveUiPrefs({ filterUsage: { ...state.uiPrefs.filterUsage, [p.id]: new Date().toISOString() } }),
     setIcons: (p: { on: boolean }) => { persistConfig({ icons: p.on }); set({ icons: p.on }) },
+    setWelcomed: (p: { done: boolean }) => { persistConfig({ welcomed: p.done }); set({ welcomed: p.done }) },
     saveUiPrefs: (p: { patch: Partial<UiPrefs>; soon?: boolean }) => saveUiPrefs(p.patch, { soon: p.soon }),
     /** Save a profile; `originalId` is the id it had when editing began, so
      * renaming one replaces it instead of leaving the old one behind. */

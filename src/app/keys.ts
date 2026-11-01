@@ -32,6 +32,8 @@ import { runAsk } from "./ask"
 import { eitherInstead, askTerms } from "../domain/filter"
 import { BOUGHT_LINES } from "../ui/manager/TransactionDetail"
 import { cancelExecutorSignIn, openExecutorDialog, runExecutorAction } from "./executorSource"
+import { handleWelcome, openWelcome, welcomeContext } from "./welcome"
+import { welcomeRows } from "../state/welcome"
 import { executorActions } from "../state/executorDialog"
 import { AI_ROWS, aiRowLabel, isLlmRow, testAi } from "./apiKeys"
 import { AI_USES, aiActions, aiContext, useActions, type AiUse } from "../state/aiDialog"
@@ -156,7 +158,7 @@ function shifted(key: Pick<KeyEvent, "name" | "sequence" | "shift">, letter: str
 }
 
 /** Scopes whose printable keys are text, so a paste can type into them. */
-const PASTE_SCOPES = new Set<ScopeId>(["merchantNote", "llmSignIn", "settings.aiDialog", "filter", "manager.detail.notes", "catPicker", "tagPicker", "filterPicker", "settings.import.path", "settings.factoryReset"])
+const PASTE_SCOPES = new Set<ScopeId>(["welcome", "merchantNote", "llmSignIn", "settings.aiDialog", "filter", "manager.detail.notes", "catPicker", "tagPicker", "filterPicker", "settings.import.path", "settings.factoryReset"])
 
 /** Whether a paste would land as text where input is now: never where
  * letters are commands (a pasted "x" must not dismiss anything). */
@@ -1055,7 +1057,7 @@ function handleSettingsFilters(ui: UiStore, key: KeyEvent, data?: DataStore): vo
 
 /** Settings › Up Bank's rows: the token (enter opens its dialog), sync
  * (enter syncs now) and the accounts (enter opens which ones sync). */
-export const UP_ROWS = ["token", "sync", "accounts"] as const
+export const UP_ROWS = ["token", "sync", "accounts", "setup"] as const
 
 function handleSettingsUp(ui: UiStore, key: KeyEvent, data?: DataStore): void {
   const { name } = key
@@ -1067,6 +1069,7 @@ function handleSettingsUp(ui: UiStore, key: KeyEvent, data?: DataStore): void {
     if (row === "token") openAiDialog(ui, "up")
     else if (row === "sync" && data) void runSync(ui, data, { manual: true })
     else if (row === "accounts") ui.setState({ upAccounts: { cursor: 0 } })
+    else if (row === "setup") openWelcome(ui)
     return
   }
   if (name === "s" && data) { void runSync(ui, data, { manual: true }); return }
@@ -1946,6 +1949,9 @@ type HintState = Pick<UiState, "focusedSection" | "drillReturn" | "chartViews"> 
   /** The AI models dialog is taking a key, account id or model. */
   aiField?: boolean
   executorWaiting?: boolean
+  welcomeStep?: string
+  welcomeTyping?: boolean
+  welcomeBusy?: boolean
   boughtScrolls?: boolean
   /** The sign-in modal is asking for a pasted code or URL. */
   signInPaste?: boolean
@@ -2074,6 +2080,13 @@ const scopes: Record<ScopeId, ScopeEntry> = {
     handle: handleAiDialog,
     quits: false,
     hints: (state) => state?.aiField ? [{ key: "enter", desc: "save" }, { key: "esc", desc: "back" }] : [{ key: "j/k", desc: "move" }, { key: "enter", desc: "do" }, { key: "esc", desc: "close" }],
+  },
+  "welcome": {
+    handle: handleWelcome,
+    quits: false,
+    hints: (state) => state?.welcomeBusy ? [{ key: "esc", desc: "stop waiting" }]
+      : state?.welcomeTyping ? [{ key: "paste", desc: "your token" }, { key: "enter", desc: "connect" }, { key: "ctrl+o", desc: "open api.up.com.au" }, { key: "ctrl+n", desc: "skip" }, { key: "esc", desc: "back" }]
+      : [{ key: "↑↓", desc: "move" }, { key: "enter", desc: "choose" }, ...(state?.welcomeStep === "done" || state?.welcomeStep === "hello" ? [] : [{ key: "s", desc: "skip" }]), { key: "esc", desc: state?.welcomeStep === "hello" ? "skip setup" : "back" }],
   },
   "settings.executor": {
     handle: (ui, key) => handleExecutor(ui, key),
@@ -2371,6 +2384,9 @@ export function hintState(ui: UiStore, data?: DataStore): HintState {
     signInPaste: !!ui.state.llmSignIn?.paste,
     aiField: !!ui.state.aiDialog?.field,
     executorWaiting: !!ui.state.executor?.waiting,
+    welcomeStep: ui.state.welcome?.step,
+    welcomeTyping: !!ui.state.welcome && !ui.state.welcome.busy && !!data && welcomeRows(ui.state.welcome, welcomeContext(data)).some((r) => r.action === "token"),
+    welcomeBusy: !!ui.state.welcome?.busy,
     boughtScrolls: (data?.transactions().find((t) => t.id === (ui.state.detail?.id ?? null))?.bought?.length ?? 0) > BOUGHT_LINES,
     searchHelp: { full: (ui.state.searchHelp?.full ?? false) },
     ruleOfferCount: data && ui.state.activeTab === "manager" ? data.ruleOfferCount() : 0,

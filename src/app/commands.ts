@@ -1,3 +1,4 @@
+import { openWelcome } from "./welcome"
 import type { KeyEvent } from "@opentui/core"
 import { accountRows } from "../domain/accountTree"
 import { fuzzyScore } from "../domain/fuzzy"
@@ -126,6 +127,7 @@ function registry(ctx: CommandContext): Entry[] {
     { id: "display:x-axis", category: "Display", label: `Charts' $0 line ${data.state.uiPrefs.xAxis ? "off" : "on"}`, run: () => toggleXAxis(ui, data) },
     // Settings
     { id: "settings:cycle", category: "Settings", label: "Budget cycle…", description: "e.g. from payday", run: inBudgets("c") },
+    { id: "settings:setup", category: "Settings", label: "First-time setup…", description: "Up, the AI, your email", run: () => openWelcome(ui) },
     ...SETTINGS_SECTIONS.map((section): Entry => ({ id: `settings:${section}`, category: "Settings", label: SETTINGS_SECTION_LABELS[section], run: () => toSettings(section) })),
     // Go to
     ...TABS.map((tab): Entry => ({

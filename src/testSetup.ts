@@ -9,6 +9,7 @@ import { testEnv } from "./testing/scoped"
 import { CREDENTIAL_NAMES } from "./ai/credentials"
 import { sources } from "./app/executorSource"
 import { purchaseSources } from "./app/purchases"
+import { sources as welcomeSources } from "./app/welcome"
 import { watchRowLifetimes } from "./state/rowLifetimes"
 
 const stopRowLifetimes = watchRowLifetimes(ui, data)
@@ -33,6 +34,18 @@ Object.assign(sources, {
   signIn: async () => { throw new Error("no Executor in tests") },
   run: async () => { throw new Error("no Executor in tests") },
   signOut: () => {},
+})
+// The first-run setup's too: no Up, Executor or browser unless a test fakes one.
+Object.assign(welcomeSources, {
+  open: () => {},
+  upAccounts: async () => { throw new Error("no Up in tests") },
+  executorSignedIn: () => false,
+  signInExecutor: async () => { throw new Error("no Executor in tests") },
+  ensureMailApp: async () => { throw new Error("no Executor in tests") },
+  mailAccount: async () => { throw new Error("no Executor in tests") },
+  connectLink: async () => { throw new Error("no Executor in tests") },
+  waitForAccount: async () => { throw new Error("no Executor in tests") },
+  countOrders: async () => { throw new Error("no Executor in tests") },
 })
 purchaseSources.signedIn = () => false
 purchaseSources.accounts = async () => { throw new Error("no Executor in tests") }

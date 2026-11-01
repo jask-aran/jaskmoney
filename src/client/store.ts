@@ -746,6 +746,7 @@ export function createClientStore(initialLink: CoreLink) {
     deleteSavedFilter: (id: string) => link.call("deleteSavedFilter", { id }),
     recordFilterUsage: (id: string) => link.call("recordFilterUsage", { id }),
     setIcons: (on: boolean) => link.call("setIcons", { on }),
+    setWelcomed: (done: boolean) => link.call("setWelcomed", { done }),
     saveUiPrefs,
     saveImportProfile: (profile: ImportProfile, originalId?: string | null) => link.call("saveImportProfile", { profile, originalId }),
     deleteImportProfile: (id: string) => link.call("deleteImportProfile", { id }),

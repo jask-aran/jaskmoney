@@ -79,6 +79,8 @@ export interface CoreState {
   weekStart: WeekStart
   /** Show Nerd Font category icons (settings config). */
   icons: boolean
+  /** The first-run setup has been through (settings config). */
+  welcomed: boolean
   importProfiles: ImportProfile[]
   imports: ImportRecord[]
   transactions: Transaction[]
@@ -118,7 +120,7 @@ export function emptyCoreState(): CoreState {
     apiKeys: {} as CoreState["apiKeys"], signedIn: { openrouter: false, openai: false }, jev: null, clairic: false, llm: null, upToken: false, dbPath: "",
     accounts: [], syncAccounts: [], budgets: [], budgetHistory: [],
     budgetCycle: { unit: "month", anchor: "calendar", anchorDate: null, payEarly: false },
-    categories: [], tags: [], rules: [], savedFilters: [], icons: true, uiPrefs: {}, weekStart: "monday",
+    categories: [], tags: [], rules: [], savedFilters: [], icons: true, welcomed: false, uiPrefs: {}, weekStart: "monday",
     server: null, clients: [],
     importProfiles: [], imports: [], transactions: [], dbInfo: null, undoLabel: null, lastRepeat: null,
   }

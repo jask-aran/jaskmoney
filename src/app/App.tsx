@@ -1,5 +1,7 @@
 import { web, webLabel } from "./webApp"
 import { paintWith } from "./afterPaint"
+import { openWelcome, shouldWelcome } from "./welcome"
+import { Welcome } from "../ui/welcome/Welcome"
 import { traceFrames, traceKey, traceMark } from "./trace"
 import { settleData, toggleDemo } from "./actions"
 import { BudgetsTab } from "../ui/budgets/BudgetsTab"
@@ -80,6 +82,9 @@ export function App() {
       } else {
         ui.setStatus("No transactions yet · Settings → Database & Import → i to import")
       }
+      // The first time (no Up token, setup not yet been through), or asked
+      // for: the first-run setup, over the app.
+      if (process.argv.includes("--welcome") || (!demo && shouldWelcome(data))) openWelcome(ui)
       // Sync now, then on an interval; ctrl+r syncs on demand.
       void demoReady.then(() => runSync(ui, data, { manual: false }))
       const timer = setInterval(() => void runSync(ui, data, { manual: false }), SYNC_INTERVAL_MS)
@@ -224,6 +229,7 @@ export function App() {
       <EditorOverlay />
       <SavedFilterPicker />
       <DryRunOverlay />
+      <Welcome />
       <Show when={ui.state.palette}>
         {(palette: () => NonNullable<typeof ui.state.palette>) => (
           <CommandPalette commands={paletteCommands()} cursor={palette().cursor} query={palette().query} lastId={ui.state.lastCommandId} />

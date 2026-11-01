@@ -218,11 +218,12 @@ function UpPane(props: { focused: boolean; width: number }) {
   }
   const row = (i: number, label: string, value: string, fg: string) =>
     <ListRow cursor={active() && ui.state.upCursor === i} bg={theme.canvas} spans={[{ text: fit(label, 11), fg: ink.label }, { text: value, fg }]} />
-  return <SectionCard title={SETTINGS_SECTION_LABELS.up} focused={props.focused} active={active()} height={5 + (info()?.upLastError ? 1 : 0)} width={props.width}>
+  return <SectionCard title={SETTINGS_SECTION_LABELS.up} focused={props.focused} active={active()} height={6 + (info()?.upLastError ? 1 : 0)} width={props.width}>
     {row(0, "Token", connection() ? connection()!.short : "not set · enter to add", connection() ? tone.good : ink.faint)}
     {row(1, "Sync", connection() ? `${synced()} · on start and every 5 min` : "needs the token", ink.figure)}
     <Show when={info()?.upLastError}>{(error: () => string) => <text fg={tone.bad} wrapMode="none">{`  ${" ".repeat(11)}${error()}`}</text>}</Show>
     {row(2, "Accounts", linked(), ink.figure)}
+    {row(3, "Setup", "the first-time setup: Up, AI, email · enter", ink.note)}
   </SectionCard>
 }
 

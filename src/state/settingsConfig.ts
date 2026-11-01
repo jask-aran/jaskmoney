@@ -29,6 +29,9 @@ export interface SettingsConfig {
   /** Nerd Font category icons (off: coloured dots). A per-machine display
    * choice, so it lives here rather than in the database. Default on. */
   icons?: boolean
+  /** The first-run setup has been through (finished or skipped): it
+   * doesn't open again by itself (Settings › Up Bank runs it again). */
+  welcomed?: boolean
 }
 
 /** The former hard-coded importer is now an ordinary editable profile. It is
@@ -141,7 +144,7 @@ export function loadSettingsConfig(path = defaultSettingsConfigPath()): Settings
   const importProfiles = Array.isArray(raw.importProfiles)
     ? raw.importProfiles.map((p) => validateImportProfile({ dateFormat: "DMY", ...(p as Omit<ImportProfile, "dateFormat">) }))
     : []
-  return { version: 2, savedFilters, importProfiles: importProfiles.length ? importProfiles : defaultProfiles(), icons: raw.icons !== false, ui: parseUiPrefs("ui" in raw ? raw.ui : undefined) }
+  return { version: 2, savedFilters, importProfiles: importProfiles.length ? importProfiles : defaultProfiles(), icons: raw.icons !== false, welcomed: raw.welcomed === true, ui: parseUiPrefs("ui" in raw ? raw.ui : undefined) }
 }
 
 /** Rename is atomic on the same filesystem; a config write can therefore
@@ -152,6 +155,7 @@ export function saveSettingsConfig(config: SettingsConfig, path = defaultSetting
     savedFilters: config.savedFilters.map((f, i, all) => validateSavedFilter(f, all.filter((_, j) => j !== i))),
     importProfiles: config.importProfiles.map(validateImportProfile),
     icons: config.icons !== false,
+    welcomed: config.welcomed === true,
     ui: parseUiPrefs(config.ui),
   }
   if (normalized.ui?.filterUsage) normalized.ui.filterUsage = Object.fromEntries(Object.entries(normalized.ui.filterUsage).filter(([id]) => normalized.savedFilters.some((filter) => filter.id === id)))
