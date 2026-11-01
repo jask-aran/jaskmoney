@@ -1,10 +1,10 @@
-import { tryHints } from "../state/tour"
+import { triable, tryHints } from "../state/tour"
 import { travel } from "./paneTravel"
 import { web } from "./webApp"
 import { unwrap } from "solid-js/store"
 import { merchantKey } from "../domain/history"
 import { footerShown, scopeLabel, type Hint } from "./palette"
-import { changeAccountScope, toTransactions, toggleDemo, applyAllRules, applySavedFilter, clearTransactionFilter, askForRules, reportError, settleData, resetTransactionCursors, runUndo, showAccount, showDryRun, toggleIcons, toggleWeekStart, toggleXAxis } from "./actions"
+import { changeAccountScope, toTransactions, toggleDemo, applyAllRules, applySavedFilter, clearTransactionFilter, askForRules, reportError, settleData, resetTransactionCursors, runUndo, showAccount, showDryRun, toggleIcons, toggleWeekStart, toggleXAxis, toggleChartMotion, cycleChartSpeed } from "./actions"
 import { commands, rankCommands, type Command } from "./commands"
 import { ACCOUNT_ACTIONS, armedText, isArmed, isSecondPress, type Armed } from "../state/armed"
 import { DATABASE_ROWS } from "../state/databaseRows"
@@ -1362,6 +1362,8 @@ function handleSettingsDatabase(ui: UiStore, key: KeyEvent, data?: DataStore): v
     // Approved port deviation: Database & Import owns the week toggle.
     case "weekStart": if (data) toggleWeekStart(ui, data); return
     case "xAxis": if (data) toggleXAxis(ui, data); return
+    case "chartMotion": if (data) toggleChartMotion(ui, data); return
+    case "chartSpeed": if (data) cycleChartSpeed(ui, data); return
     case "demo": if (data) toggleDemo(ui, data); return
     case "clearData": confirmTwice(ui, data, { kind: "clearData", id: 0, label: "all transaction and import data", with: "enter" }); return
     case "reset": ui.setState({ factoryReset: { draft: "", caret: 0, busy: false } }); ui.setStatus("Type RESET then enter to remove this SQLite database"); return
@@ -1955,6 +1957,8 @@ type HintState = Pick<UiState, "focusedSection" | "drillReturn" | "chartViews"> 
   welcomeBusy?: boolean
   /** Trying a tour demo: which. */
   welcomeTry?: number | null
+  /** The tour's demo shown can be tried. */
+  welcomeTriable?: boolean
   boughtScrolls?: boolean
   /** The sign-in modal is asking for a pasted code or URL. */
   signInPaste?: boolean
@@ -2090,7 +2094,7 @@ const scopes: Record<ScopeId, ScopeEntry> = {
     hints: (state) => state?.welcomeBusy ? [{ key: "esc", desc: "stop waiting" }]
       : state?.welcomeTry != null ? [...tryHints(state.welcomeTry), { key: "esc", desc: "back to the demo" }]
       : state?.welcomeTyping ? [{ key: "paste", desc: "your token" }, { key: "enter", desc: "connect" }, { key: "ctrl+o", desc: "open api.up.com.au" }, { key: "ctrl+n", desc: "skip" }, { key: "esc", desc: "back" }]
-      : [...(state?.welcomeStep === "tour" ? [{ key: "←→", desc: "demos" }, { key: "t", desc: "try it" }] : []), { key: "↑↓", desc: "move" }, { key: "enter", desc: "choose" }, ...(state?.welcomeStep === "done" || state?.welcomeStep === "hello" ? [] : [{ key: "s", desc: "skip" }]), { key: "esc", desc: state?.welcomeStep === "hello" ? "skip setup" : "back" }],
+      : [...(state?.welcomeStep === "tour" ? [{ key: "←→", desc: "demos" }, ...(state.welcomeTriable ? [{ key: "t", desc: "try it" }] : [])] : []), { key: "↑↓", desc: "move" }, { key: "enter", desc: "choose" }, ...(state?.welcomeStep === "done" || state?.welcomeStep === "hello" ? [] : [{ key: "s", desc: "skip" }]), { key: "esc", desc: state?.welcomeStep === "hello" ? "skip setup" : "back" }],
   },
   "settings.executor": {
     handle: (ui, key) => handleExecutor(ui, key),
@@ -2392,6 +2396,7 @@ export function hintState(ui: UiStore, data?: DataStore): HintState {
     welcomeTyping: !!ui.state.welcome && !ui.state.welcome.busy && !!data && welcomeRows(ui.state.welcome, welcomeContext(data)).some((r) => r.action === "token"),
     welcomeBusy: !!ui.state.welcome?.busy,
     welcomeTry: ui.state.welcome?.trying ? ui.state.welcome.demo : null,
+    welcomeTriable: !!ui.state.welcome && triable(ui.state.welcome.demo),
     boughtScrolls: (data?.transactions().find((t) => t.id === (ui.state.detail?.id ?? null))?.bought?.length ?? 0) > BOUGHT_LINES,
     searchHelp: { full: (ui.state.searchHelp?.full ?? false) },
     ruleOfferCount: data && ui.state.activeTab === "manager" ? data.ruleOfferCount() : 0,

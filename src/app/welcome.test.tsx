@@ -239,7 +239,9 @@ test("drawn: the title in the brand's pink, the button in pink and bold; the dem
   // A few seconds in, the filter is typed and the table counts what it keeps.
   await new Promise((resolve) => setTimeout(resolve, 1600))
   await t.renderOnce()
-  expect(t.captureCharFrame()).toMatch(/Transactions · \d+ of \d+/)
-  expect(t.captureCharFrame()).toMatch(/│\s+\/ \w+/)
+  // The Manager's own pane: the filter named in the title, the counts in the border.
+  expect(t.captureCharFrame()).toMatch(/Transactions \[\w+\]/)
+  expect(t.captureCharFrame()).toMatch(/showing \d+-\d+ of \d+ \([\d,]+ in all\)/)
+  expect(t.captureCharFrame()).toMatch(/│ \/ \w+/)
   ui.switchTab("overview")
 })

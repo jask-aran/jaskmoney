@@ -22,6 +22,7 @@ import { fitSpans, type Span } from "../primitives/spans"
 import { AXIS_GUESS, axisWidth, type ChartModel } from "../charts/ChartBody"
 import { WIDE } from "../overview/OverviewTab"
 import { cycleLines, cycleLinesLegend, type CycleSpent } from "./budgetCharts"
+import { chartSpeedMs } from "../charts/motion"
 import { ChartCard } from "../charts/ChartCard"
 import { spendingChart } from "../overview/periodCharts"
 import { BUDGET_VIEWS } from "../../state/uiStore"
@@ -251,7 +252,9 @@ export function BudgetsTab(props: { focused: SectionId }) {
   const categoryTop = createMemo(() => centredTop(categoryCursor(), lines().length, categoryRoom()))
 
   const Chart = () => (
-    <ChartCard title={subject().title} views={BUDGET_VIEWS} current={ui.state.budgetChart} model={model()} width={mainWidth()} height={chartHeight()} baseline={baseline()} />
+    <ChartCard title={subject().title} views={BUDGET_VIEWS} current={ui.state.budgetChart} model={model()} width={mainWidth()} height={chartHeight()} baseline={baseline()}
+      revealKey={data.state.uiPrefs.chartMotion === "always" ? `${(BUDGET_VIEWS[ui.state.budgetChart] ?? BUDGET_VIEWS[0]!).view}:${subject().title}` : undefined}
+      revealMs={data.state.uiPrefs.chartMotion === "always" ? chartSpeedMs(data.state.uiPrefs.chartSpeed) : undefined} />
   )
   const Lines = () => (
     <SectionCard title="Each cycle" titleSuffix={`· ${subject().title}`} titleSuffixColor={ink.label} bottomSpans={cycleLinesLegend(cycles())} width={mainWidth()} height={linesHeight()}>

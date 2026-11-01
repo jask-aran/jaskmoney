@@ -31,7 +31,7 @@ import type { Llm, LlmProvider } from "../ai/llm"
 import type { CredentialName } from "../ai/credentials"
 import type { PurchaseLookup, TagInput } from "../db/client"
 import {
-  applyTop, evalFilter, filterExprString, canonicalFilter, reparseFilterInput, filterNote, askTerms, hasDateTerm, undecided,
+  applyTop, evalFilter, filterExprString, canonicalFilter, reparseFilterInput, filterNote, liveFilter, askTerms, hasDateTerm, undecided,
   type FilterNames, type FilterNote, type AskVerdict, type FilterNode,
 } from "../domain/filter"
 import type { Category, ImportProfile, Rule, SavedFilter, SortColumn, Transaction } from "../domain/types"
@@ -341,14 +341,8 @@ export function createClientStore(initialLink: CoreLink) {
   }
 
   function setFilterLive(q: string) {
-    const names = filterNames()
-    const { expr, err, hints } = reparseFilterInput(q, names)
-    setState({
-      filterQuery: q,
-      filterExpr: expr,
-      filterErr: err,
-      filterNote: filterNote(q, err, hints, names),
-    })
+    const { expr, err, note } = liveFilter(q, filterNames())
+    setState({ filterQuery: q, filterExpr: expr, filterErr: err, filterNote: note })
   }
 
   /** Enter: keeps the search as typed (loose), and flags what saving it

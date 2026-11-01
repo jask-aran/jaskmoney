@@ -17,10 +17,11 @@ export async function runSmartSearch(ui: UiStore, data: DataStore, draft: string
   if (!data.state.jev) { ui.setStatus(`Smart search needs Jev (${JEV_SETUP})`, true); return }
   const by = jevService(data.state.jev)
   ui.setStatus(`Writing a filter with ${by}${data.state.clairic ? " + Clairic" : ""}…`)
+  ui.setState({ smartWriting: true })
   try {
     const descriptions = [...new Set(data.accountScoped().map((t) => t.description))]
     const started = Date.now()
-    const { expr, clairic, clairicOn } = await data.smartSearch(query, descriptions)
+    const { expr, clairic, clairicOn } = await data.smartSearch(query, descriptions).finally(() => ui.setState({ smartWriting: false }))
     if (ui.state.filterBar == null || (ui.state.filterBar?.draft ?? "") !== draft) return
     // Without Clairic the words are Jev's pick and written dates are not read.
     const written: Written = { ms: Date.now() - started, by, clairic: !clairicOn ? "off" : clairic ? { failed: clairic.replace(/^Workers AI clairic:\s*/, "") } : "used" }

@@ -28,6 +28,12 @@ export function chartSpeedMs(id: string | undefined): number {
   return (CHART_SPEEDS.find((s) => s.id === id) ?? CHART_SPEEDS.find((s) => s.id === DEFAULT_CHART_SPEED)!).ms
 }
 
+/** The speed after `id`'s, wrapping from the slowest to the quickest. */
+export function nextChartSpeed(id: string | undefined): (typeof CHART_SPEEDS)[number] {
+  const at = CHART_SPEEDS.findIndex((s) => s.id === (id ?? DEFAULT_CHART_SPEED))
+  return CHART_SPEEDS[(at + 1) % CHART_SPEEDS.length]!
+}
+
 /** The tour's draw-in. */
 export const TOUR_CHART_MS = chartSpeedMs("juicy")
 

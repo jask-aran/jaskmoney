@@ -1,12 +1,13 @@
 import { DATABASE_ROWS } from "../state/databaseRows"
 import { expect, test } from "bun:test"
-import { mkdtempSync, readFileSync } from "node:fs"
+import { mkdtempSync, readFileSync, writeFileSync } from "node:fs"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
 import { renderApp } from "../testing/app"
 import { ui, CHART_VIEWS } from "../state/uiStore"
 import { data } from "../state/dataStore"
-import { saveSettingsConfig } from "../state/settingsConfig"
+import { loadSettingsConfig, saveSettingsConfig } from "../state/settingsConfig"
+import { CHART_MOTION_MODES, CHART_SPEEDS, DEFAULT_CHART_SPEED, chartSpeedMs } from "../ui/charts/motion"
 import { defaultTimeframe } from "../domain/timeframe"
 
 test("bootstrap-off preserves UI defaults; scoped w updates the hint and calendar cells", async () => {
@@ -81,5 +82,76 @@ test("bootstrap-off preserves UI defaults; scoped w updates the hint and calenda
     process.env.JASKMONEY_CONFIG = previousPath
     data.init(":memory:")
     ui.setState({ chartViews: [0, 4] })
+  }
+})
+
+test("chart motion and speed load/save known values and discard invalid values", () => {
+  const path = join(mkdtempSync(join(tmpdir(), "jaskmoney-chart-prefs-")), "settings.json")
+  for (const chartMotion of CHART_MOTION_MODES) {
+    for (const speed of CHART_SPEEDS) {
+      const prefs = { chartMotion, chartSpeed: speed.id }
+      saveSettingsConfig({ version: 2, savedFilters: [], importProfiles: [], ui: prefs }, path)
+      expect(loadSettingsConfig(path).ui).toEqual(prefs)
+    }
+  }
+  for (const value of ["unknown", "", null, false, 12, {}, []]) {
+    writeFileSync(path, JSON.stringify({ version: 2, ui: { chartMotion: value, chartSpeed: value } }))
+    expect(loadSettingsConfig(path).ui).toEqual({})
+    // @ts-expect-error Exercise malformed runtime input at the settings write boundary.
+    saveSettingsConfig({ version: 2, savedFilters: [], importProfiles: [], ui: { chartMotion: value, chartSpeed: value } }, path)
+    expect(readFileSync(path, "utf8")).not.toContain('"chartMotion"')
+    expect(readFileSync(path, "utf8")).not.toContain('"chartSpeed"')
+    expect(loadSettingsConfig(path).ui).toEqual({})
+  }
+  expect(chartSpeedMs("unknown")).toBe(chartSpeedMs(DEFAULT_CHART_SPEED))
+  expect(chartSpeedMs(undefined)).toBe(chartSpeedMs(DEFAULT_CHART_SPEED))
+  for (const speed of CHART_SPEEDS) expect(chartSpeedMs(speed.id)).toBe(speed.ms)
+})
+
+test("Settings chart rows toggle motion and cycle speed, with persisted values and status", async () => {
+  const previousPath = process.env.JASKMONEY_CONFIG
+  const path = join(mkdtempSync(join(tmpdir(), "jaskmoney-chart-settings-")), "settings.json")
+  process.env.JASKMONEY_CONFIG = path
+  data.init(":memory:")
+  ui.switchTab("settings")
+  ui.activateSettings("database")
+  ui.setState({ databaseCursor: DATABASE_ROWS.indexOf("chartMotion") })
+  const t = await renderApp({ width: 180, height: 50 })
+  try {
+    await t.renderOnce()
+    expect(t.captureCharFrame()).toMatch(/Chart animation\s+first launch/)
+    expect(t.captureCharFrame()).toMatch(/Animation speed\s+quick/)
+    t.mockInput.pressEnter()
+    await t.renderOnce()
+    expect(data.state.uiPrefs.chartMotion).toBe("always")
+    expect(loadSettingsConfig(path).ui?.chartMotion).toBe("always")
+    expect(ui.state.status).toBe("Charts draw in every time")
+    expect(t.captureCharFrame()).toMatch(/Chart animation\s+always/)
+    t.mockInput.pressEnter()
+    await t.renderOnce()
+    expect(data.state.uiPrefs.chartMotion).toBe("launch")
+    expect(loadSettingsConfig(path).ui?.chartMotion).toBe("launch")
+    expect(ui.state.status).toBe("Charts draw in once, at launch")
+    expect(t.captureCharFrame()).toMatch(/Chart animation\s+first launch/)
+
+    ui.setState({ databaseCursor: DATABASE_ROWS.indexOf("chartSpeed") })
+    const current = CHART_SPEEDS.findIndex((speed) => speed.id === DEFAULT_CHART_SPEED)
+    for (let step = 1; step <= CHART_SPEEDS.length; step++) {
+      const speed = CHART_SPEEDS[(current + step) % CHART_SPEEDS.length]!
+      t.mockInput.pressEnter()
+      await t.renderOnce()
+      expect(data.state.uiPrefs.chartSpeed).toBe(speed.id)
+      expect(loadSettingsConfig(path).ui?.chartSpeed).toBe(speed.id)
+      expect(ui.state.status).toBe(`Animation speed: ${speed.label}`)
+      expect(t.captureCharFrame()).toMatch(new RegExp(`Animation speed\\s+${speed.label}`))
+    }
+    data.init(":memory:")
+    expect(data.state.uiPrefs).toMatchObject({ chartMotion: "launch", chartSpeed: DEFAULT_CHART_SPEED })
+  } finally {
+    t.renderer.destroy()
+    if (previousPath === undefined) delete process.env.JASKMONEY_CONFIG
+    else process.env.JASKMONEY_CONFIG = previousPath
+    data.init(":memory:")
+    ui.switchTab("overview")
   }
 })

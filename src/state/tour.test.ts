@@ -1,7 +1,7 @@
 import { expect, test } from "bun:test"
 import { footerHints } from "../app/keys"
 import { DEFAULT_CATEGORIES } from "../db/schema"
-import { DEMOS, acceptedAt, askAt, chartViewAt, demoWorld, filterAt, tourTopics, tryFrom, tryHints, tryKey, tryRows, waiting, type TryKey } from "./tour"
+import { DEMOS, askAt, chartViewAt, demoFilter, demoWorld, filterAt, suggestAt, tourTopics, triable, tryFrom, tryHints, tryKey, tryRows, waiting, type TryKey } from "./tour"
 
 const categories = DEFAULT_CATEGORIES.map((c, i) => ({ id: i + 1, name: c.name, color: c.color ?? "#cccccc", sortOrder: i, parentId: null, income: false, notSpending: false }) as never)
 const world = demoWorld(categories)
@@ -9,18 +9,35 @@ const t = tourTopics(world)
 const at = (id: string) => DEMOS.findIndex((d) => d.id === id)
 const k = (name: string, sequence = name.length === 1 ? name : "", shift = false): TryKey => ({ name, sequence, ctrl: false, meta: false, shift })
 
-test("trying freezes each demo exactly where its script had got to", () => {
-  for (const ms of [0, 1500, 3100, 7000, 12500]) {
+test("trying freezes each demo exactly where its script had got to; Smart search can't be tried", () => {
+  for (const ms of [0, 1500, 3100, 5300, 7000, 12500]) {
     expect(tryFrom(at("filter"), ms, world).filter.value).toBe(filterAt(ms, t))
-    const w = waiting(world)
-    expect(tryFrom(at("suggest"), ms, world).accepted).toEqual(w.rows.slice(0, acceptedAt(ms, w.rows.length)).map((r) => r.id))
+    expect(tryFrom(at("suggest"), ms, world)).toEqual(suggestAt(ms, world).state)
     expect(tryFrom(at("chart"), ms, world).view).toBe(chartViewAt(ms))
   }
-  // Smart search answered: as it stands. Stopped mid-question: on to its answer.
-  const answered = 600 + 40 * 85 + 3000
-  expect(askAt(answered, t).filter).not.toBeNull()
-  expect(tryFrom(at("ask"), answered, world).filter.value).toBe(askAt(answered, t).filter!)
-  expect(tryFrom(at("ask"), 1000, world).filter.value).toBe(`cat:"${t.category}" date:${t.lastMonth}`)
+  expect(triable(at("ask"))).toBe(false)
+  expect([at("filter"), at("suggest"), at("chart")].every(triable)).toBe(true)
+})
+
+test("the suggestions script presses y, x, j, y, Y through the same keys as trying it", () => {
+  const w = waiting(world)
+  const end = suggestAt(10000, world).state
+  expect(end.dismissed).toEqual([w.rows[1]!.id])
+  // y on the first, x on the second, j to the third, y on it, then Y takes the rest at 80% or more.
+  const sure = w.rows.slice(3).filter((r) => w.suggestions[r.id]!.confidence >= 0.8).map((r) => r.id)
+  expect(end.accepted).toEqual([w.rows[0]!.id, w.rows[2]!.id, ...sure])
+  expect(suggestAt(1600, world).pressed).toBe("y")
+  expect(suggestAt(2000, world).pressed).toBeNull()
+})
+
+test("the demo filters as the store does: a bare word finds a category", () => {
+  const transfers = demoFilter(world, "transfer").rows
+  expect(transfers.length).toBeGreaterThan(0)
+  expect(transfers.some((r) => r.categoryName === "Transfers" && !/transfer/i.test(r.description))).toBe(true)
+  // Smart search's answer is a filter that keeps rows too.
+  const asked = askAt(9000, t)
+  expect(asked.question).not.toBeNull()
+  expect(demoFilter(world, asked.raw).rows.length).toBeGreaterThan(0)
 })
 
 test("trying: the filter is yours to edit, through the real filter engine", () => {

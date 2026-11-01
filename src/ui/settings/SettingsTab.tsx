@@ -184,14 +184,14 @@ function DatabasePane(props: { focused: boolean; width: number; height?: number 
     n(info()?.transactionCount, "transaction"), n(info()?.accountCount, "account"),
     n(info()?.categoryCount, "category", "categories"), n(info()?.tagCount, "tag"), n(info()?.ruleCount, "rule"),
   ].join(" · ")
-  const ctx = () => ({ icons: data.state.icons, weekStart: data.state.weekStart, xAxis: !!data.state.uiPrefs.xAxis, profiles: data.state.importProfiles.length, demo: data.state.demo })
+  const ctx = () => ({ icons: data.state.icons, weekStart: data.state.weekStart, xAxis: !!data.state.uiPrefs.xAxis, chartMotion: data.state.uiPrefs.chartMotion, chartSpeed: data.state.uiPrefs.chartSpeed, profiles: data.state.importProfiles.length, demo: data.state.demo })
   return <SectionCard title={SETTINGS_SECTION_LABELS.database} focused={props.focused} active={active()} height={props.height ?? DATABASE_ROWS.length + 5} flexGrow={0} width={props.width}>
     <text wrapMode="none"><S fg={ink.label}>{`  ${truncate(where(), rowWidth(props.width))}`}</S></text>
     <text wrapMode="none"><S fg={ink.note}>{`  ${truncate(holds(), rowWidth(props.width))}`}</S></text>
     <text> </text>
     <For each={DATABASE_ROWS}>{(row, i) => {
       const view = () => databaseRow(row, ctx())
-      return <ListRow cursor={active() && ui.state.databaseCursor === i()} bg={theme.canvas} armed={row === "clearData" ? armedFor(ui.state.armed, "clearData", 0) : undefined} spans={[
+      return <ListRow id={`settings-database-${i()}`} cursor={active() && ui.state.databaseCursor === i()} bg={theme.canvas} armed={row === "clearData" ? armedFor(ui.state.armed, "clearData", 0) : undefined} spans={[
         { text: fit(view().label, 20), fg: view().danger ? tone.bad : ink.label },
         ...(view().value != null ? [{ text: view().value!, fg: view().danger ? ink.note : ink.figure }] : []),
       ]} />
@@ -536,10 +536,11 @@ export function SettingsTab(props: { focused: SectionId }) {
     const id = paneId(props.focused)
     for (const column of columns) column.scrollChildIntoView(id)
   })
-  // In the lists drawn whole (Rules, Saved Filters), the cursor row too.
+  // In the lists drawn whole (Rules, Saved Filters, Database), the cursor row too.
   createEffect(() => {
     if (!ui.state.settingsActive) return
-    const id = ui.state.settingsSection === "rules" ? `settings-rule-${ui.state.ruleCursor}` : ui.state.settingsSection === "filters" ? `settings-filter-${ui.state.filterCursor}` : null
+    const id = ui.state.settingsSection === "rules" ? `settings-rule-${ui.state.ruleCursor}` : ui.state.settingsSection === "filters" ? `settings-filter-${ui.state.filterCursor}`
+      : ui.state.settingsSection === "database" ? `settings-database-${ui.state.databaseCursor}` : null
     if (id) for (const column of columns) column.scrollChildIntoView(id)
   })
   const Column = (column: { width?: number; children: JSX.Element }) => (

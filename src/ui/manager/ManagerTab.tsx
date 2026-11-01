@@ -3,10 +3,7 @@ import { ACCOUNT_ACTIONS, armedFor } from "../../state/armed"
 import { ListRow } from "../primitives/ListRow"
 import { For, Show, createEffect, createMemo } from "solid-js"
 import { useTerminalDimensions } from "@opentui/solid"
-import { SectionCard } from "../primitives/SectionCard"
-import { muted } from "../primitives/spans"
 import { S } from "../primitives/S"
-import { TextInput } from "../primitives/TextInput"
 import { smartQuestionFor, ui, type SectionId } from "../../state/uiStore"
 import { data } from "../../state/dataStore"
 import { ink, tone, theme } from "../../theme"
@@ -18,6 +15,7 @@ import { ACCEPT_ALL_AT } from "../../domain/questions"
 import { accountStacks, selectedAccounts } from "../../domain/accountTree"
 import { AccountsPane, accountsPaneHeight } from "./AccountsPane"
 import { TransactionTable, type TableTagCandidate } from "./TransactionTable"
+import { TransactionsPane, rowsShown, rowsToCategorise, type FilterBarView } from "./TransactionsPane"
 import { MerchantTable } from "./MerchantTable"
 import { merchantKey } from "../../domain/history"
 import { groupByMerchant, sortMerchantGroups } from "../../domain/merchants"
@@ -148,24 +146,20 @@ export function ManagerTab(props: { focused: SectionId }) {
       const sure = rows().filter((r) => (review.candidates[r.id]?.confidence ?? 0) >= ACCEPT_ALL_AT).length
       return `${rows().length} to review for ${review.name}, ${sure} ≥${ACCEPT_ALL_AT * 100}%${review.asking ? " · asking Jev…" : ""}${selCount() > 0 ? ` · ${selCount()} selected` : ""}`
     }
-    if (rows().length === 0) return undefined
-    if (data.state.uncategorisedOnly) {
-      const suggested = rows().filter((r) => data.state.suggestions[r.id]).length
-      const confident = rows().filter((r) => (data.state.suggestions[r.id]?.confidence ?? 0) >= ACCEPT_ALL_AT).length
-      return `${rows().length} to categorise · ${suggested} suggested, ${confident} ≥${ACCEPT_ALL_AT * 100}%${data.state.suggesting ? " · suggesting…" : ""}${
-        selCount() > 0 ? ` · ${selCount()} selected${hiddenSelected() ? `, ${hiddenSelected()} hidden` : ""}` : ""}`
-    }
-    const start = ui.state.managerTop + 1
-    const end = Math.min(ui.state.managerTop + ui.state.managerVisible, rows().length)
+    if (data.state.uncategorisedOnly) return rowsToCategorise({
+      count: rows().length,
+      suggested: rows().filter((r) => data.state.suggestions[r.id]).length,
+      confident: rows().filter((r) => (data.state.suggestions[r.id]?.confidence ?? 0) >= ACCEPT_ALL_AT).length,
+      suggesting: data.state.suggesting, selected: selCount(), hidden: hiddenSelected(),
+    })
     // With a filter: how many the account has in all, and selected rows the
     // filter hides (Go app).
-    const total = data.state.filterQuery ? data.accountScoped().length : rows().length
-    const hidden = hiddenSelected()
-    return `showing ${start}-${end} of ${rows().length}${total !== rows().length ? ` (${total.toLocaleString("en-AU")} in all)` : ""}${
-      selCount() > 0 ? ` · ${selCount()} selected${hidden ? `, ${hidden} hidden` : ""}` : ""
-    }${(ui.state.range != null) ? " · range" : ""} · sort ${data.state.sortColumn}${
-      data.state.sortAscending ? "↑" : "↓"
-    }`
+    return rowsShown({
+      top: ui.state.managerTop, visible: ui.state.managerVisible, count: rows().length,
+      total: data.state.filterQuery ? data.accountScoped().length : rows().length,
+      selected: selCount(), hidden: hiddenSelected(), range: ui.state.range != null,
+      sort: data.state.sortColumn, ascending: data.state.sortAscending,
+    })
   }
 
   // A memo: the card reads it twice, and a cursor move should build it once.
@@ -177,33 +171,22 @@ export function ManagerTab(props: { focused: SectionId }) {
 
   // Go-style filter bar: the input stays in the pane; its canonical form is
   // rendered next to the title.
-  const filterBar = () => {
+  const filterBar = (): FilterBarView | null => {
     const editing = (ui.state.filterBar != null)
     const raw = editing ? (ui.state.filterBar?.draft ?? "") : data.state.filterQuery
     if (!editing && !raw.trim()) return null
-    const err = data.state.filterErr
-    const note = data.state.filterNote
-    // parse: searched as one phrase; check: works, but a name or field is a guess.
-    const flag = note?.tone === "warn" ? "check" : err ? "parse" : "ok"
-    const dotColor = flag === "check" ? tone.caution : flag === "parse" ? tone.bad : ink.note
-    const dotLabel = flag
-    const preview =
-      data.filterPreview() ||
-      (data.state.filterExpr ? filterExprString(data.state.filterExpr) : raw)
-    // The question a smart search turned into this filter, while it still is that filter.
-    const question = smartQuestionFor(ui.state, raw)
-    // ask: terms make it a search Jev answers row by row, not just a filter.
-    // (A ?question being typed hasn't become a filter yet.)
-    const jev = !(editing && raw.trimStart().startsWith("?")) && askTerms(data.state.filterExpr).length > 0
-    return { editing, raw, err, dotColor, dotLabel, note, preview, question, jev }
-  }
-
-  /** The title names the filter: by its question when a smart search wrote it. */
-  const filterTitle = () => {
-    const fb = filterBar()
-    if (fb?.question) return `[?${truncate(fb.question, 47)}]`
-    if (!fb?.preview) return undefined
-    return `[${truncate(fb.preview, 48)}]`
+    return {
+      editing, raw, caret: ui.state.filterBar?.caret ?? 0,
+      err: data.state.filterErr, note: data.state.filterNote,
+      // The question a smart search turned into this filter, while it still is that filter.
+      question: smartQuestionFor(ui.state, raw),
+      // ask: terms make it a search Jev answers row by row, not just a filter.
+      // (A ?question being typed hasn't become a filter yet.)
+      jev: !(editing && raw.trimStart().startsWith("?")) && askTerms(data.state.filterExpr).length > 0,
+      writing: ui.state.smartWriting,
+      drillReturn: !!ui.state.drillReturn,
+      preview: data.filterPreview() || (data.state.filterExpr ? filterExprString(data.state.filterExpr) : raw),
+    }
   }
 
   const accountAction = () => data.state.accounts.find((account) => account.id === (ui.state.accountAction?.id ?? null))
@@ -268,33 +251,14 @@ export function ManagerTab(props: { focused: SectionId }) {
     <box width="100%" height="100%" flexDirection="column" backgroundColor={theme.canvas}>
       <AccountsPane focused={acctFocused()} width={dims().width} />
       <box ref={regionRef("mgr.transactions", "manager")} width="100%" flexGrow={1}>
-      <SectionCard
+      <TransactionsPane
         title={`Transactions${data.state.tagReview ? ` · tagging ${data.state.tagReview.name}` : data.state.uncategorisedOnly ? " · uncategorised" : ""}${merchants() ? " · by merchant" : ""}`}
-        titleSuffix={filterTitle()}
-        titleSuffixColor={data.state.filterErr ? tone.bad : tone.scope}
+        filter={filterBar()}
         focused={txFocused()}
-        active={txFocused()}
+        width={dims().width}
         flexGrow={1}
-        bottomSpans={scrollIndicator() ? [muted(scrollIndicator()!)] : []}
+        bottom={scrollIndicator()}
       >
-        <Show when={filterBar()}>
-          {(fb: () => NonNullable<ReturnType<typeof filterBar>>) => (
-            <text>
-              <S fg={tone.key} bold>
-                /
-              </S>
-              <S fg={ink.figure}>{" "}</S>
-              <TextInput field={{ value: fb().raw, caret: (ui.state.filterBar?.caret ?? 0) }} focused={fb().editing} caretColor={tone.key} />
-              <S fg={ink.figure}>{"  "}</S>
-              <S fg={fb().dotColor}>●</S>
-              <S fg={fb().dotColor}> {fb().dotLabel}</S>
-              {fb().note ? <S fg={fb().note!.tone === "error" ? tone.bad : fb().note!.tone === "warn" ? tone.caution : ink.note}>{`  ${truncate(fb().note!.text, Math.max(8, dims().width - 4 - 14 - fb().raw.length - (fb().jev ? 22 : 0) - (fb().question ? 6 + fb().question!.length : 0) - (fb().editing ? 0 : 18)))}`}</S> : null}
-              {fb().jev ? <S fg={tone.ai}>{"  ◆ ask: judged by Jev"}</S> : null}
-              {fb().question ? <S fg={ink.note}>{fb().editing ? `  ↑ ?${fb().question}` : `  from ?${fb().question}`}</S> : null}
-              {!fb().editing ? <S fg={ink.note}>{ui.state.drillReturn ? "  (esc back · u clear)" : "  (esc clear)"}</S> : null}
-            </text>
-          )}
-        </Show>
         <box visible={merchants()} flexGrow={1} width="100%" flexDirection="column">
           <MerchantTable
             groups={groups()}
@@ -328,7 +292,7 @@ export function ManagerTab(props: { focused: SectionId }) {
           tagCandidate={data.state.tagReview ? tagCandidate : undefined}
         />
         </box>
-      </SectionCard>
+      </TransactionsPane>
       </box>
       <TransactionDetail />
       <Show when={ui.state.acceptPreview && data.state.tagReview}>

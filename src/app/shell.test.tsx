@@ -388,7 +388,10 @@ describe("shell render M0", () => {
     await t.flush()
     ui.switchTab("settings")
     ui.activateSettings("database")
+    // Laid out first, as on screen; then the cursor's move scrolls its row into view.
+    await t.renderOnce()
     ui.setState({ databaseCursor: DATABASE_ROWS.indexOf("clearData") })
+    await t.renderOnce()
     t.mockInput.pressEnter()
     await t.renderOnce()
     expect(t.captureCharFrame()).toContain("Press enter again to clear all transactions and imports")

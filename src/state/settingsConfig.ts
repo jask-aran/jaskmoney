@@ -7,6 +7,7 @@ import type { AccountSelection } from "../domain/accountTree"
 import { customRange, LOOKBACKS, PERIODS, type TimeframeState } from "../domain/timeframe"
 import type { ImportProfile, SavedFilter } from "../domain/types"
 import type { WeekStart } from "../domain/days"
+import { CHART_MOTION_MODES, CHART_SPEEDS, type ChartMotionMode, type ChartSpeedId } from "../ui/charts/motion"
 
 export interface UiPrefs {
   filterUsage?: Record<string, string>
@@ -16,6 +17,8 @@ export interface UiPrefs {
   weekStart?: WeekStart
   /** Charts draw an x-axis line under the plot (default off). */
   xAxis?: boolean
+  chartMotion?: ChartMotionMode
+  chartSpeed?: ChartSpeedId
   /** Balance charts' y-axis runs from $0 rather than fitting the balances
    * (default off). */
   zeroAxis?: boolean
@@ -101,6 +104,10 @@ function parseUiPrefs(raw: unknown): UiPrefs | undefined {
   }
   if ("weekStart" in raw && (raw.weekStart === "monday" || raw.weekStart === "sunday")) ui.weekStart = raw.weekStart
   if ("xAxis" in raw && typeof raw.xAxis === "boolean") ui.xAxis = raw.xAxis
+  const chartMotion = CHART_MOTION_MODES.find((mode) => "chartMotion" in raw && mode === raw.chartMotion)
+  if (chartMotion) ui.chartMotion = chartMotion
+  const chartSpeed = CHART_SPEEDS.find((speed) => "chartSpeed" in raw && speed.id === raw.chartSpeed)?.id
+  if (chartSpeed) ui.chartSpeed = chartSpeed
   if ("zeroAxis" in raw && typeof raw.zeroAxis === "boolean") ui.zeroAxis = raw.zeroAxis
   if ("accountSelection" in raw) {
     const sel = raw.accountSelection

@@ -213,6 +213,8 @@ export interface UiState {
    * It describes the filter only while the filter is still that expression
    * (`smartQuestionFor`). */
   smartQuestion: { question: string; expr: string; written?: Written } | null
+  /** A smart search is writing the filter for the question in the bar. */
+  smartWriting: boolean
   /** Accept-all's preview: the rows it would categorise, until confirmed. */
   acceptPreview: number[] | null
   /** Settings › AI models' dialog for one row (state/aiDialog): the action
@@ -454,6 +456,7 @@ function createUiStore() {
     accountAction: null,
     importWizard: null,
     smartQuestion: null,
+    smartWriting: false,
     acceptPreview: null,
     ruleOffers: null,
     llmSignIn: null,

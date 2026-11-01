@@ -1,5 +1,5 @@
 import type { TextField } from "../domain/textField"
-import { DEMO_COUNT, type DemoTry } from "./tour"
+import { DEMO_COUNT, triable, type DemoTry } from "./tour"
 
 /**
  * The first-run setup: a full-screen walk through connecting Up, the AI
@@ -111,7 +111,7 @@ export function welcomeRows(state: WelcomeState, ctx: WelcomeContext): WelcomeRo
       const last = state.demo >= DEMO_COUNT - 1
       return [
         last ? { action: "start", label: "Connect Up Bank", primary: true } : { action: "demoNext", label: "Next", primary: true },
-        { action: "try", label: "Try it yourself", detail: "t · stops it here" },
+        ...(triable(state.demo) ? [{ action: "try" as const, label: "Try it yourself", detail: "t · stops it here" }] : []),
         ...(last ? [] : [{ action: "start" as const, label: "Skip the tour" }]),
         { action: "skipAll", label: "Skip setup, open the app" },
       ]

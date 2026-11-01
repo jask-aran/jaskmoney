@@ -183,6 +183,13 @@ export function filterNote(input: string, err: string, hints: string[], names?: 
   return hints.length && full.text ? { text: `→ ${full.text}`, tone: "muted" } : null
 }
 
+/** A filter as it's typed: what it means, what's wrong with it and the
+ * note the bar shows. The store's (setFilterLive) and the setup tour's. */
+export function liveFilter(input: string, names: FilterNames): { expr: FilterNode | null; err: string; note: FilterNote | null } {
+  const { expr, err, hints } = reparseFilterInput(input, names)
+  return { expr, err, note: filterNote(input, err, hints, names) }
+}
+
 /** Live reparse: permissive + metadata bare words + fallback. */
 export function reparseFilterInput(input: string, names?: FilterNames): {
   expr: FilterNode | null

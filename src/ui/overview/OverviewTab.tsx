@@ -32,7 +32,7 @@ import { monthlyTotal, subscriptions, upcomingCharges, type Subscription } from 
 import { allCategoryLines, overviewRange } from "../../state/overviewRange"
 import { AXIS_GUESS, axisWidth, type ChartModel } from "../charts/ChartBody"
 import { ChartCard } from "../charts/ChartCard"
-import { DEFAULT_CHART_SPEED, chartSpeedMs, takeLaunchReveal } from "../charts/motion"
+import { chartSpeedMs, takeLaunchReveal } from "../charts/motion"
 import { balancesChart, cashFlowChart, spendingChart, type PeriodNames } from "./periodCharts"
 import { UP_LOGO_WIDTH } from "../primitives/UpLogo"
 import { CalendarView, calendarLegend } from "./CalendarView"
@@ -395,7 +395,8 @@ export function OverviewTab(props: { focused: SectionId }) {
   // or, when the setup opens over them at launch, as it closes: the
   // draw-in is for when they're seen. Latched: once fired, it stays, so
   // the setup run again later doesn't play it again.
-  const revealMs = takeLaunchReveal() ? chartSpeedMs(DEFAULT_CHART_SPEED) : 0
+  const launchReveal = takeLaunchReveal()
+  const revealMs = () => launchReveal ? chartSpeedMs(data.state.uiPrefs.chartSpeed) : 0
   const revealKey = createMemo<string | undefined>((was) => was ?? (data.state.ready && !ui.state.welcome ? "launch" : undefined))
   const ChartPane = (p: { pane: 0 | 1; height: number }) => {
     const index = () => ui.state.chartViews[p.pane]
@@ -416,8 +417,8 @@ export function OverviewTab(props: { focused: SectionId }) {
         height={p.height}
         focused={props.focused === (p.pane === 0 ? "ov.chart" : "ov.chart2")}
         baseline={baseline()}
-        revealKey={revealKey()}
-        revealMs={revealMs}
+        revealKey={data.state.uiPrefs.chartMotion === "always" ? (revealKey() ? view().view : undefined) : revealKey()}
+        revealMs={data.state.uiPrefs.chartMotion === "always" ? chartSpeedMs(data.state.uiPrefs.chartSpeed) : revealMs()}
       />
       </box>
     )

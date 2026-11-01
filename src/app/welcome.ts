@@ -6,7 +6,7 @@ import { editText, isPrintable } from "../domain/textField"
 import { aiConnection, aiContext } from "../state/aiDialog"
 import type { DataStore } from "../state/dataStore"
 import type { UiStore } from "../state/uiStore"
-import { DEMO_COUNT, demoWorld, tryFrom, tryKey } from "../state/tour"
+import { DEMO_COUNT, demoWorld, triable, tryFrom, tryKey } from "../state/tour"
 import { nextStep, previousStep, welcomeGo, welcomeRows, welcomeStart, type EmailPhase, type WelcomeAction, type WelcomeContext, type WelcomeState } from "../state/welcome"
 import { openBrowser, startLlmSignIn } from "./llmSignIn"
 import { runSync } from "./sync"
@@ -93,7 +93,7 @@ function showDemo(ui: UiStore, demo: number): void {
 /** Freeze the demo where its script has got to, and hand over its keys. */
 function startTry(ui: UiStore, data: DataStore): void {
   const state = ui.state.welcome
-  if (!state || state.step !== "tour") return
+  if (!state || state.step !== "tour" || !triable(state.demo)) return
   ui.setState("welcome", { trying: tryFrom(state.demo, performance.now() - state.demoAt, demoWorld(data.state.categories)), cursor: 0 })
 }
 

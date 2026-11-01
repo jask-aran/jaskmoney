@@ -1,3 +1,4 @@
+import { DEFAULT_CHART_MOTION, nextChartSpeed } from "../ui/charts/motion"
 import { runAsk } from "./ask"
 import { llmModelId } from "../ai/llm"
 import type { AccountSelection, AccountRow } from "../domain/accountTree"
@@ -102,4 +103,14 @@ export function askForRules(ui: UiStore, data: DataStore): void {
   if (data.state.writingRules) return
   ui.setStatus(`Asking ${llmModelId()} for rules…`)
   data.askForRules().then((summary) => ui.setStatus(summary), (error) => reportError(ui, error))
+}
+
+export function toggleChartMotion(ui: UiStore, data: DataStore): void {
+  const chartMotion = (data.state.uiPrefs.chartMotion ?? DEFAULT_CHART_MOTION) === "launch" ? "always" : "launch"
+  settleData(ui, data.saveUiPrefs({ chartMotion }), () => ui.setStatus(chartMotion === "always" ? "Charts draw in every time" : "Charts draw in once, at launch"))
+}
+
+export function cycleChartSpeed(ui: UiStore, data: DataStore): void {
+  const speed = nextChartSpeed(data.state.uiPrefs.chartSpeed)
+  settleData(ui, data.saveUiPrefs({ chartSpeed: speed.id }), () => ui.setStatus(`Animation speed: ${speed.label}`))
 }
