@@ -9,7 +9,7 @@ import { changeAccountScope, toTransactions, toggleDemo, applyAllRules, applySav
 import { commands, rankCommands, type Command } from "./commands"
 import { ACCOUNT_ACTIONS, armedText, isArmed, isSecondPress, type Armed } from "../state/armed"
 import { DATABASE_ROWS } from "../state/databaseRows"
-import type { KeyEvent } from "@opentui/core"
+import { stripAnsiSequences, type KeyEvent } from "@opentui/core"
 import { keyEvent } from "./keyEvent"
 import { resolve } from "node:path"
 import { batch } from "solid-js"
@@ -64,7 +64,7 @@ import {
   timeframeNow,
   type TimeframeState,
 } from "../domain/timeframe"
-import { editText, isPrintable, textField } from "../domain/textField"
+import { characters, editText, isPrintable, textField } from "../domain/textField"
 import { appNow, appToday } from "../domain/days"
 import { drillFilter } from "../domain/drill"
 import type { CategoryLine } from "../domain/dashboard"
@@ -122,7 +122,7 @@ function queryPickerKey(
     : key.name === "pagedown" ? PAGE : key.name === "pageup" ? -PAGE : key.name === "end" ? length : key.name === "home" ? -length : 0
   if (step) { actions.update({ ...picker, cursor: Math.max(0, Math.min(length - 1, picker.cursor + step)) }); return }
   if (key.name === "return" || key.name === "enter") { actions.apply(); return }
-  if (key.name === "backspace") { actions.update({ query: picker.query.slice(0, -1), cursor: 0 }); return }
+  if (key.name === "backspace") { actions.update({ query: characters(picker.query).slice(0, -1).join(""), cursor: 0 }); return }
   if (isPrintable(key)) actions.update({ query: picker.query + key.sequence, cursor: 0 })
 }
 
@@ -182,7 +182,9 @@ function pasteTarget(ui: UiStore, data?: DataStore): boolean {
  * Returns whether it landed. */
 export function handlePaste(ui: UiStore, text: string, data?: DataStore): boolean {
   if (!pasteTarget(ui, data)) return false
-  const line = text.replace(/[\r\n\t]+/g, " ").replace(/[\u0000-\u001f\u007f]/g, "").trim()
+  // Colour and other escape codes go (OpenTUI's stripAnsiSequences: a bare
+  // control-character strip left "[31m"), then breaks become spaces.
+  const line = stripAnsiSequences(text).replace(/[\r\n\t]+/g, " ").replace(/[\u0000-\u001f\u007f-\u009f]/g, "").trim()
   // A model's dialog on its actions: a paste is its key (not letters to
   // move by: a key's "j" or "k"), whichever action the cursor is on.
   const dialog = ui.state.aiDialog
@@ -191,7 +193,8 @@ export function handlePaste(ui: UiStore, text: string, data?: DataStore): boolea
     return true
   }
   batch(() => {
-    for (const ch of line) handleKey(ui, { name: ch === " " ? "space" : ch, sequence: ch, ctrl: false, meta: false, shift: false, option: false } as KeyEvent, data)
+    // A character at a time: graphemes, so "🏖️" arrives whole.
+    for (const ch of characters(line)) handleKey(ui, { name: ch === " " ? "space" : ch, sequence: ch, ctrl: false, meta: false, shift: false, option: false } as KeyEvent, data)
   })
   return true
 }

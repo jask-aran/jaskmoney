@@ -227,3 +227,11 @@ test("on the dialog's actions, a paste is the key: straight away, its letters ne
   handleKey(ui, key("return"), data); await settlePending()
   expect(loadSavedCredentials()).toEqual({ JASKMONEY_JEV_TOKEN: "jjjj-key-for-test" })
 })
+
+test("a paste keeps an emoji whole and drops colour codes (OpenTUI's stripAnsiSequences)", () => {
+  setup()
+  handleKey(ui, key("return"), data)
+  choose("key")
+  expect(handlePaste(ui, "\x1b[31mkey-🏖️-for-test\x1b[0m\n", data)).toBe(true)
+  expect(ui.state.aiDialog!.field).toMatchObject({ value: "key-🏖️-for-test" })
+})

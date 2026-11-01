@@ -8,7 +8,7 @@ import { settleData, toggleDemo } from "./actions"
 import { BudgetsTab } from "../ui/budgets/BudgetsTab"
 import { ErrorBoundary, Show, createEffect, createMemo, createSignal, untrack, on, onCleanup } from "solid-js"
 import { useKeyboard, usePaste, useRenderer } from "@opentui/solid"
-import type { KeyEvent } from "@opentui/core"
+import { decodePasteBytes, type KeyEvent } from "@opentui/core"
 import { TABS, TAB_DEFAULT_FOCUS, ui, type SectionId, type TabId } from "../state/uiStore"
 import type { JSX } from "@opentui/solid"
 import { data } from "../state/dataStore"
@@ -168,7 +168,7 @@ export function App() {
 
   // A paste arrives whole (bracketed paste), not as key presses.
   usePaste((event) => {
-    if (handlePaste(ui, new TextDecoder().decode(event.bytes), data)) event.preventDefault()
+    if (handlePaste(ui, decodePasteBytes(event.bytes), data)) event.preventDefault()
   })
 
   // The Manager's account selection; the other tabs are not account-scoped.

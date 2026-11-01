@@ -8,7 +8,10 @@
  * before / after it; ←/→ (ctrl+b / ctrl+f) move one character; home / end
  * (ctrl+a / ctrl+e) jump to the ends; alt+←/→ move a word; ctrl+w deletes
  * the word before the caret; ctrl+u deletes to the start, ctrl+k to the end.
- * The caret is a code-unit index into `value`, 0..value.length.
+ * The caret is a code-unit index into `value`, 0..value.length, always on a
+ * character's edge: a character is a grapheme (an emoji with its variation
+ * selector, a flag, a letter with its accent), typed, moved over and deleted
+ * whole; a code unit at a time split "🏖️" in two.
  */
 export interface TextField {
   value: string
@@ -23,13 +26,32 @@ export interface TextKey {
   meta: boolean
 }
 
-/** A key that types its own character: one printable code unit, no ctrl/meta. */
+const graphemes = new Intl.Segmenter(undefined, { granularity: "grapheme" })
+
+/** The text as characters (graphemes): what a caret steps over. */
+export function characters(text: string): string[] {
+  return Array.from(graphemes.segment(text), (s) => s.segment)
+}
+
+/** A key that types its own character: one printable character (a
+ * grapheme, which may be several code units: an emoji), no ctrl/meta. */
 export function isPrintable(key: TextKey): boolean {
   if (key.ctrl || key.meta) return false
   const s = key.sequence
-  if (!s || s.length !== 1) return false
-  const code = s.charCodeAt(0)
-  return code >= 32 && code !== 127
+  if (!s || characters(s).length !== 1) return false
+  // No control characters (C0, DEL, C1) anywhere in it.
+  return !/[\u0000-\u001f\u007f-\u009f]/.test(s)
+}
+
+/** The character edge before / after `caret` (graphemes, not code units). */
+function before(value: string, caret: number): number {
+  let edge = 0
+  for (const s of graphemes.segment(value)) { if (s.index >= caret) break; edge = s.index }
+  return edge
+}
+function after(value: string, caret: number): number {
+  for (const s of graphemes.segment(value)) if (s.index + s.segment.length > caret) return s.index + s.segment.length
+  return value.length
 }
 
 /** A field holding `value` with the caret at its end. */
@@ -66,19 +88,19 @@ export function editText(field: TextField, key: TextKey): TextField | null {
   if (key.ctrl) {
     if (name === "a") return at(value, 0)
     if (name === "e") return at(value, value.length)
-    if (name === "b") return at(value, Math.max(0, caret - 1))
-    if (name === "f") return at(value, Math.min(value.length, caret + 1))
+    if (name === "b") return at(value, before(value, caret))
+    if (name === "f") return at(value, after(value, caret))
     if (name === "u") return at(value.slice(caret), 0)
     if (name === "k") return at(value.slice(0, caret), caret)
     if (name === "w") { const start = wordStart(value, caret); return at(value.slice(0, start) + value.slice(caret), start) }
     return null
   }
   if (key.meta) return null
-  if (name === "left") return at(value, Math.max(0, caret - 1))
-  if (name === "right") return at(value, Math.min(value.length, caret + 1))
+  if (name === "left") return at(value, before(value, caret))
+  if (name === "right") return at(value, after(value, caret))
   if (name === "home") return at(value, 0)
   if (name === "end") return at(value, value.length)
-  if (name === "backspace") return caret === 0 ? at(value, 0) : at(value.slice(0, caret - 1) + value.slice(caret), caret - 1)
-  if (name === "delete") return at(value.slice(0, caret) + value.slice(caret + 1), caret)
+  if (name === "backspace") { const from = before(value, caret); return at(value.slice(0, from) + value.slice(caret), from) }
+  if (name === "delete") return at(value.slice(0, caret) + value.slice(after(value, caret)), caret)
   return null
 }
