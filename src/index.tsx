@@ -34,6 +34,11 @@ function fatal(error: unknown): void {
 process.on("uncaughtException", fatal)
 process.on("unhandledRejection", fatal)
 
+// Every component that follows the terminal's size listens for resize, and
+// the tabs stay mounted: a dozen or so at once is normal, not a leak (each
+// is removed with its component). Above Node's default warning at 10.
+renderer.setMaxListeners(64)
+
 traceMark("renderer created")
 await render(() => <App />, renderer)
 traceMark("app mounted")

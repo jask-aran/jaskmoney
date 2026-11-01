@@ -189,11 +189,17 @@ export function generateDemo(options: { today: string; years?: number; seed?: nu
     add(addDays(date, 1), -amount(350, 0.15), "Holiday savings", "Transfers", { transactionType: "Transfer", transferToKey: "holiday" })
     add(addDays(date, 1), -amount(200, 0.15), "Emergency savings", "Transfers", { transactionType: "Transfer", transferToKey: "emergency" })
   }
+  // The rainy day saver, twice: a car repair, then a vet's bill.
+  for (const [at, value, why] of [[0.42, 900, "Car repair"], [0.81, 650, "Vet bill"]] as const) {
+    add(addDays(start, Math.floor(totalDays * at)), value, "Transfer from Rainy day", "Transfers", { transactionType: "Transfer", transferToKey: "emergency", message: why })
+  }
   // Three separate holidays, with flights purchased before departure.
   for (let trip = 0; trip < 3; trip++) {
     const date = addDays(start, Math.floor(totalDays * (trip + 0.5) / 3))
     add(addDays(date, -45 + integer(7)), -(850 + integer(400)), pick(["Jetstar", "Qantas", "Virgin Australia"], "Jetstar"), "Holidays & Travel")
     add(date, -620, "Accor", "Holidays & Travel")
+    // The holiday saver pays for it: money out of a saver as well as in.
+    add(addDays(date, -4), 1400 + trip * 200, "Transfer from Next adventure", "Transfers", { transactionType: "Transfer", transferToKey: "holiday" })
     const currency = trip === 1 ? "JPY" : trip === 2 ? "NZD" : "SGD"
     const rate = currency === "JPY" ? 98 : currency === "NZD" ? 1.1 : 0.87
     // These businesses also trade in Australia; foreign currency marks overseas use.

@@ -7,7 +7,9 @@ import type { AccountSelection } from "../domain/accountTree"
 import { customRange, LOOKBACKS, PERIODS, type TimeframeState } from "../domain/timeframe"
 import type { ImportProfile, SavedFilter } from "../domain/types"
 import type { WeekStart } from "../domain/days"
-import { CHART_MOTION_MODES, CHART_SPEEDS, type ChartMotionMode, type ChartSpeedId } from "../ui/charts/motion"
+import { CHART_LABEL_MODES, type ChartLabelMode, CHART_MOTION_MODES, CHART_SPEEDS, type ChartMotionMode, type ChartSpeedId } from "../ui/charts/motion"
+
+import { BACKDROPS, type BackdropId } from "../ui/welcome/backdrop"
 
 export interface UiPrefs {
   filterUsage?: Record<string, string>
@@ -19,6 +21,8 @@ export interface UiPrefs {
   xAxis?: boolean
   chartMotion?: ChartMotionMode
   chartSpeed?: ChartSpeedId
+  chartLabels?: ChartLabelMode
+  backdrop?: BackdropId
   /** Balance charts' y-axis runs from $0 rather than fitting the balances
    * (default off). */
   zeroAxis?: boolean
@@ -108,6 +112,10 @@ function parseUiPrefs(raw: unknown): UiPrefs | undefined {
   if (chartMotion) ui.chartMotion = chartMotion
   const chartSpeed = CHART_SPEEDS.find((speed) => "chartSpeed" in raw && speed.id === raw.chartSpeed)?.id
   if (chartSpeed) ui.chartSpeed = chartSpeed
+  const chartLabels = CHART_LABEL_MODES.find((mode) => "chartLabels" in raw && mode === raw.chartLabels)
+  if (chartLabels) ui.chartLabels = chartLabels
+  const backdrop = BACKDROPS.find((entry) => "backdrop" in raw && entry.id === raw.backdrop)?.id
+  if (backdrop) ui.backdrop = backdrop
   if ("zeroAxis" in raw && typeof raw.zeroAxis === "boolean") ui.zeroAxis = raw.zeroAxis
   if ("accountSelection" in raw) {
     const sel = raw.accountSelection

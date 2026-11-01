@@ -1,12 +1,13 @@
+import { BACKDROPS, DEFAULT_BACKDROP } from "../ui/welcome/backdrop"
 import { openWelcome } from "./welcome"
 import type { KeyEvent } from "@opentui/core"
 import { accountRows } from "../domain/accountTree"
 import { fuzzyScore } from "../domain/fuzzy"
 import type { DataStore } from "../state/dataStore"
 import { DATABASE_ROWS } from "../state/databaseRows"
-import { CHART_MOTION_LABELS, DEFAULT_CHART_MOTION, nextChartSpeed } from "../ui/charts/motion"
+import { CHART_LABEL_LABELS, DEFAULT_CHART_LABELS, CHART_MOTION_LABELS, DEFAULT_CHART_MOTION, nextChartSpeed } from "../ui/charts/motion"
 import { SETTINGS_SECTION_LABELS, SETTINGS_SECTIONS, TABS, type ScopeId, type UiState, type UiStore } from "../state/uiStore"
-import { applyAllRules, applySavedFilter, clearTransactionFilter, askForRules, runUndo, showAccount, showDryRun, toggleIcons, toggleWeekStart, toggleXAxis, toggleChartMotion, cycleChartSpeed, toTransactions } from "./actions"
+import { applyAllRules, applySavedFilter, clearTransactionFilter, askForRules, runUndo, showAccount, showDryRun, toggleIcons, toggleWeekStart, toggleXAxis, toggleChartMotion, cycleChartSpeed, toggleChartLabels, cycleBackdrop, toTransactions } from "./actions"
 import { AI_ROWS, aiRowLabel, isLlmRow } from "./apiKeys"
 import { keyEvent } from "./keyEvent"
 import { hintEvent, scopeLabel, type Hint } from "./palette"
@@ -128,6 +129,8 @@ function registry(ctx: CommandContext): Entry[] {
     { id: "display:x-axis", category: "Display", label: `Charts' $0 line ${data.state.uiPrefs.xAxis ? "off" : "on"}`, run: () => toggleXAxis(ui, data) },
     { id: "display:chart-motion", category: "Display", label: `Chart animation: ${(data.state.uiPrefs.chartMotion ?? DEFAULT_CHART_MOTION) === "always" ? CHART_MOTION_LABELS.launch : CHART_MOTION_LABELS.always}`, run: () => toggleChartMotion(ui, data) },
     { id: "display:chart-speed", category: "Display", label: `Animation speed: ${nextChartSpeed(data.state.uiPrefs.chartSpeed).label}`, run: () => cycleChartSpeed(ui, data) },
+    { id: "display:chart-labels", category: "Display", label: `Chart labels: ${CHART_LABEL_LABELS[(data.state.uiPrefs.chartLabels ?? DEFAULT_CHART_LABELS) === "together" ? "sequential" : "together"]}`, run: () => toggleChartLabels(ui, data) },
+    { id: "display:backdrop", category: "Display", label: `Welcome backdrop: ${BACKDROPS[(BACKDROPS.findIndex((entry) => entry.id === (data.state.uiPrefs.backdrop ?? DEFAULT_BACKDROP)) + 1) % BACKDROPS.length]!.label}`, run: () => cycleBackdrop(ui, data) },
     // Settings
     { id: "settings:cycle", category: "Settings", label: "Budget cycle…", description: "e.g. from payday", run: inBudgets("c") },
     { id: "settings:setup", category: "Settings", label: "First-time setup…", description: "Up, the AI, your email", run: () => openWelcome(ui) },

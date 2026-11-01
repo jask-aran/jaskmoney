@@ -1,4 +1,5 @@
-import { DEFAULT_CHART_MOTION, nextChartSpeed } from "../ui/charts/motion"
+import { BACKDROPS, DEFAULT_BACKDROP } from "../ui/welcome/backdrop"
+import { CHART_LABEL_LABELS, DEFAULT_CHART_LABELS, DEFAULT_CHART_MOTION, nextChartSpeed } from "../ui/charts/motion"
 import { runAsk } from "./ask"
 import { llmModelId } from "../ai/llm"
 import type { AccountSelection, AccountRow } from "../domain/accountTree"
@@ -113,4 +114,15 @@ export function toggleChartMotion(ui: UiStore, data: DataStore): void {
 export function cycleChartSpeed(ui: UiStore, data: DataStore): void {
   const speed = nextChartSpeed(data.state.uiPrefs.chartSpeed)
   settleData(ui, data.saveUiPrefs({ chartSpeed: speed.id }), () => ui.setStatus(`Animation speed: ${speed.label}`))
+}
+
+export function toggleChartLabels(ui: UiStore, data: DataStore): void {
+  const chartLabels = (data.state.uiPrefs.chartLabels ?? DEFAULT_CHART_LABELS) === "together" ? "sequential" : "together"
+  settleData(ui, data.saveUiPrefs({ chartLabels }), () => ui.setStatus(`Chart labels appear ${CHART_LABEL_LABELS[chartLabels]}`))
+}
+
+export function cycleBackdrop(ui: UiStore, data: DataStore): void {
+  const at = BACKDROPS.findIndex((entry) => entry.id === (data.state.uiPrefs.backdrop ?? DEFAULT_BACKDROP))
+  const backdrop = BACKDROPS[(at + 1) % BACKDROPS.length]!
+  settleData(ui, data.saveUiPrefs({ backdrop: backdrop.id }), () => ui.setStatus(`Welcome backdrop: ${backdrop.label}`))
 }

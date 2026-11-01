@@ -20,15 +20,21 @@ test("trying freezes each demo exactly where its script had got to; Smart search
   expect([at("filter"), at("suggest"), at("chart")].every(triable)).toBe(true)
 })
 
-test("the suggestions script presses y, x, j, y, Y through the same keys as trying it", () => {
+test("the suggestions script: Y takes every sure one, then the order's detail opens and closes, then quick keys", () => {
   const w = waiting(world)
-  const end = suggestAt(10000, world).state
-  expect(end.dismissed).toEqual([w.rows[1]!.id])
-  // y on the first, x on the second, j to the third, y on it, then Y takes the rest at 80% or more.
-  const sure = w.rows.slice(3).filter((r) => w.suggestions[r.id]!.confidence >= 0.8).map((r) => r.id)
-  expect(end.accepted).toEqual([w.rows[0]!.id, w.rows[2]!.id, ...sure])
-  expect(suggestAt(1600, world).pressed).toBe("y")
-  expect(suggestAt(2000, world).pressed).toBeNull()
+  expect(w.rows.length).toBeGreaterThanOrEqual(20)
+  const sure = w.rows.filter((r) => w.suggestions[r.id]!.confidence >= 0.8).map((r) => r.id)
+  expect(suggestAt(1200, world).state.accepted).toEqual(sure)
+  expect(suggestAt(1150, world).pressed).toBe("Y")
+  // The vitamins order is under 80%: still waiting, its detail opened by enter.
+  const vitamins = w.rows.find((r) => r.bought?.some((b) => b.name.startsWith("Vitamin")))!
+  expect(sure).not.toContain(vitamins.id)
+  expect(suggestAt(4000, world).state.detail).toBe(vitamins.id)
+  expect(suggestAt(2950, world).pressed).toBe("enter")
+  expect(suggestAt(5200, world).state.detail).toBeNull()
+  const end = suggestAt(9000, world).state
+  expect(end.accepted.length).toBeGreaterThan(sure.length + 4)
+  expect(end.dismissed.length).toBe(2)
 })
 
 test("the demo filters as the store does: a bare word finds a category", () => {
@@ -36,7 +42,7 @@ test("the demo filters as the store does: a bare word finds a category", () => {
   expect(transfers.length).toBeGreaterThan(0)
   expect(transfers.some((r) => r.categoryName === "Transfers" && !/transfer/i.test(r.description))).toBe(true)
   // Smart search's answer is a filter that keeps rows too.
-  const asked = askAt(9000, t)
+  const asked = askAt(3000, t)
   expect(asked.question).not.toBeNull()
   expect(demoFilter(world, asked.raw).rows.length).toBeGreaterThan(0)
 })

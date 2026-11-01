@@ -12,6 +12,9 @@ import { amountColor } from "../colors"
 import { fit } from "../text"
 import { marketplaceRows } from "../../ai/orderEmails"
 import { executorSignedIn } from "../../ai/executor"
+import type { Transaction } from "../../domain/types"
+import type { TextField } from "../../domain/textField"
+import type { TransactionDetail as TransactionDetailInfo } from "../../db/client"
 
 const LABEL = 12
 /** Bought items shown at once; more scroll (J/K). */
@@ -23,8 +26,9 @@ const ago = (iso: string) => {
   return minutes < 60 ? `${minutes}m ago` : minutes < 48 * 60 ? `${Math.round(minutes / 60)}h ago` : `${Math.round(minutes / 1440)}d ago`
 }
 
-/** Detail view for one transaction (enter in the Transactions table). Rows with no
- * value are left out. */
+/** Detail view for one transaction (enter in the Transactions table), from
+ * the stores: the row, the core's provider details, its order-email
+ * lookup, the notes being edited. TransactionDetailCard draws it. */
 export function TransactionDetail() {
   const dims = useTerminalDimensions()
   const row = createMemo(() => data.transactions().find((t) => t.id === (ui.state.detail?.id ?? null)) ?? null)
@@ -38,14 +42,6 @@ export function TransactionDetail() {
     const d = fetched.latest
     return d && d.id === (ui.state.detail?.id ?? null) ? d : null
   })
-  // The bought list: a window of BOUGHT_LINES from (ui.state.detail?.boughtTop ?? 0).
-  const boughtLines = createMemo(() => {
-    const items = row()?.bought ?? []
-    const top = Math.max(0, Math.min((ui.state.detail?.boughtTop ?? 0), items.length - BOUGHT_LINES))
-    return { shown: items.slice(top, top + BOUGHT_LINES), from: top + 1, to: Math.min(items.length, top + BOUGHT_LINES), total: items.length }
-  })
-  // Modal border and padding (4), label, quantity (5), price.
-  const boughtNameWidth = () => Math.max(10, Math.floor(dims().width * 0.76) - 4 - LABEL - 5 - BOUGHT_PRICE)
   // An Amazon or eBay row without items: its lookup, if Executor is set up.
   const lookup = createMemo(() => {
     const t = row()
@@ -54,6 +50,43 @@ export function TransactionDetail() {
     if (!l || l.status === "waiting") return `looking for its order email${l ? ` · checked ${ago(l.checkedAt)}` : " at the next sync"}`
     return l.status === "none" ? "no order email found" : null
   })
+  return (
+    <Show when={row()}>
+      {(r: () => Transaction) => (
+        <TransactionDetailCard row={r()} detail={detail()} boughtTop={ui.state.detail?.boughtTop ?? 0} lookup={lookup()}
+          notes={ui.state.detail?.notes != null ? { value: ui.state.detail.notes.draft, caret: ui.state.detail.notes.caret } : null}
+          width={Math.floor(dims().width * 0.76)} />
+      )}
+    </Show>
+  )
+}
+
+/** One transaction's detail, from props (the Manager's, through
+ * TransactionDetail, and the setup tour's): what the bank and Up say,
+ * what its order emails say it bought, its notes. Rows with no value are
+ * left out. */
+export function TransactionDetailCard(props: {
+  row: Transaction
+  /** The core's provider details (Up's own fields), when it has them. */
+  detail: TransactionDetailInfo | null
+  boughtTop: number
+  /** An Amazon or eBay row without items: how its email lookup stands. */
+  lookup: string | null
+  /** The notes being edited, else null. */
+  notes: TextField | null
+  width: number
+}) {
+  const row = () => props.row
+  const detail = () => props.detail
+  const lookup = () => props.lookup
+  // The bought list: a window of BOUGHT_LINES from boughtTop.
+  const boughtLines = createMemo(() => {
+    const items = row().bought ?? []
+    const top = Math.max(0, Math.min(props.boughtTop, items.length - BOUGHT_LINES))
+    return { shown: items.slice(top, top + BOUGHT_LINES), from: top + 1, to: Math.min(items.length, top + BOUGHT_LINES), total: items.length }
+  })
+  // Modal border and padding (4), label, quantity (5), price.
+  const boughtNameWidth = () => Math.max(10, props.width - 4 - LABEL - 5 - BOUGHT_PRICE)
   const field = (label: string, value: JSX.Element) => (
     <text wrapMode="none">
       <S fg={ink.label}>{label.padEnd(LABEL)}</S>
@@ -62,8 +95,7 @@ export function TransactionDetail() {
   )
 
   return (
-    <Show when={row()}>
-      <Modal title={row()!.description} tone="focus" width={Math.floor(dims().width * 0.76)}>
+      <Modal title={row()!.description} tone="focus" width={props.width}>
         {field("Amount", <S fg={amountColor(row()!.amount)} bold>{formatMoney(row()!.amount)}</S>)}
         {field("Date", <S fg={ink.figure}>{formatWhen(detail()?.createdAt ?? null) ?? row()!.dateISO}</S>)}
         <Show when={detail()?.status}>
@@ -105,13 +137,12 @@ export function TransactionDetail() {
         </Show>
         <Show when={detail()?.importFilename}>{field("Imported", <S fg={ink.figure}>{detail()?.importFilename!}</S>)}</Show>
         <Show
-          when={(ui.state.detail?.notes != null)}
+          when={props.notes}
           fallback={field("Notes", <S fg={row()!.notes ? ink.figure : ink.faint}>{row()!.notes || "—"}</S>)}
         >
-          {field("Notes", <TextInput field={{ value: (ui.state.detail?.notes?.draft ?? ""), caret: (ui.state.detail?.notes?.caret ?? 0) }} focused />)}
+          {(notes: () => TextField) => field("Notes", <TextInput field={notes()} focused />)}
         </Show>
       </Modal>
-    </Show>
   )
 }
 

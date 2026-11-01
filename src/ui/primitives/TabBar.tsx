@@ -72,5 +72,5 @@ export function TabBar(props: { active: TabId; items?: { id?: SectionId; text: s
 
 /** Only page scopes and the bar accept clicks through the shared chrome. */
 function pageScope(scope: ScopeId): boolean {
-  return ["bar", "overview", "overview.range", "manager.accounts", "manager.txns", "manager.merchants", "budgets", "budgets.categories", "settings", "settings.taxonomy", "settings.rules", "settings.filters", "settings.database", "settings.up", "settings.ai"].includes(scope)
+  return ["bar", "overview", "overview.range", "manager.accounts", "manager.txns", "manager.merchants", "budgets", "budgets.categories", "settings", "settings.taxonomy", "settings.rules", "settings.filters", "settings.appearance", "settings.database", "settings.up", "settings.ai"].includes(scope)
 }

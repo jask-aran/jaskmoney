@@ -1,3 +1,5 @@
+import { APPEARANCE_ROWS, appearanceRow } from "../../state/appearanceRows"
+import { onPointer } from "../../app/pointer"
 import { armedFor, isArmed } from "../../state/armed"
 import { DATABASE_ROWS, databaseRow } from "../../state/databaseRows"
 import { AI_ROWS } from "../../app/apiKeys"
@@ -169,6 +171,20 @@ function RulesPane(props: { focused: boolean; width: number }) {
   </SectionCard>
 }
 
+function AppearancePane(props: { focused: boolean; width: number }) {
+  const active = () => ui.state.settingsActive && ui.state.settingsSection === "appearance"
+  const ctx = () => ({ ...data.state.uiPrefs, icons: data.state.icons })
+  return <SectionCard title={SETTINGS_SECTION_LABELS.appearance} focused={props.focused} active={active()} height={APPEARANCE_ROWS.length + 2} flexGrow={0} width={props.width}>
+    <For each={APPEARANCE_ROWS}>{(row, i) => {
+      const view = () => appearanceRow(row, ctx())
+      return <ListRow id={`settings-appearance-${i()}`} cursor={active() && ui.state.appearanceCursor === i()} bg={theme.canvas} spans={[
+        { text: fit(view().label, 20), fg: ink.label },
+        { text: view().value, fg: ink.figure },
+      ]} />
+    }}</For>
+  </SectionCard>
+}
+
 /** The database: where it is and what it holds, then its settings and
  * actions as rows (always shown; the cursor only while active). */
 function DatabasePane(props: { focused: boolean; width: number; height?: number | "auto" | `${number}%` }) {
@@ -184,7 +200,7 @@ function DatabasePane(props: { focused: boolean; width: number; height?: number 
     n(info()?.transactionCount, "transaction"), n(info()?.accountCount, "account"),
     n(info()?.categoryCount, "category", "categories"), n(info()?.tagCount, "tag"), n(info()?.ruleCount, "rule"),
   ].join(" · ")
-  const ctx = () => ({ icons: data.state.icons, weekStart: data.state.weekStart, xAxis: !!data.state.uiPrefs.xAxis, chartMotion: data.state.uiPrefs.chartMotion, chartSpeed: data.state.uiPrefs.chartSpeed, profiles: data.state.importProfiles.length, demo: data.state.demo })
+  const ctx = () => ({ weekStart: data.state.weekStart, profiles: data.state.importProfiles.length, demo: data.state.demo })
   return <SectionCard title={SETTINGS_SECTION_LABELS.database} focused={props.focused} active={active()} height={props.height ?? DATABASE_ROWS.length + 5} flexGrow={0} width={props.width}>
     <text wrapMode="none"><S fg={ink.label}>{`  ${truncate(where(), rowWidth(props.width))}`}</S></text>
     <text wrapMode="none"><S fg={ink.note}>{`  ${truncate(holds(), rowWidth(props.width))}`}</S></text>
@@ -536,10 +552,11 @@ export function SettingsTab(props: { focused: SectionId }) {
     const id = paneId(props.focused)
     for (const column of columns) column.scrollChildIntoView(id)
   })
-  // In the lists drawn whole (Rules, Saved Filters, Database), the cursor row too.
+  // In the lists drawn whole (Rules, Saved Filters, Appearance, Database), the cursor row too.
   createEffect(() => {
     if (!ui.state.settingsActive) return
     const id = ui.state.settingsSection === "rules" ? `settings-rule-${ui.state.ruleCursor}` : ui.state.settingsSection === "filters" ? `settings-filter-${ui.state.filterCursor}`
+      : ui.state.settingsSection === "appearance" ? `settings-appearance-${ui.state.appearanceCursor}`
       : ui.state.settingsSection === "database" ? `settings-database-${ui.state.databaseCursor}` : null
     if (id) for (const column of columns) column.scrollChildIntoView(id)
   })
@@ -559,7 +576,7 @@ export function SettingsTab(props: { focused: SectionId }) {
   )
   // Each pane's width: rows size their columns from it. Wide: Taxonomy
   // in a 60% left column; the rest on the right, Rules &
-  // Filters (they run on what comes in) just above Database & Import; medium: the tab, Up Bank and AI models halves.
+  // Filters, then Appearance just above Database & Import; medium: Up Bank and AI models halves.
   const left = () => Math.floor(dims().width * 0.6)
   const right = () => dims().width - 1 - left()
   const full = () => dims().width
@@ -569,6 +586,19 @@ export function SettingsTab(props: { focused: SectionId }) {
   const rules = (width: number) => <Pane section="set.rules"><RulesPane focused={props.focused === "set.rules" || props.focused === "set.filters"} width={width} /></Pane>
   const up = (width: number) => <Pane section="set.up"><UpPane focused={props.focused === "set.up"} width={width} /></Pane>
   const ai = (width: number) => <Pane section="set.ai"><AiPane focused={props.focused === "set.ai"} width={width} /></Pane>
+  const appearance = (width: number) => <Pane section="set.appearance">
+    <box width="100%" onMouseDown={onPointer(
+      (scope) => ["bar", "settings", "settings.taxonomy", "settings.rules", "settings.filters", "settings.up", "settings.ai", "settings.appearance", "settings.database"].includes(scope),
+      (event) => {
+        // Activation can scroll the pane; use its position at the click.
+        const cursor = event.currentTarget ? event.y - event.currentTarget.y - 1 : -1
+        ui.activateSettings("appearance")
+        if (cursor >= 0 && cursor < APPEARANCE_ROWS.length) ui.setState({ appearanceCursor: cursor })
+      },
+    )}>
+      <AppearancePane focused={props.focused === "set.appearance"} width={width} />
+    </box>
+  </Pane>
   const database = (width: number) => <Pane section="set.database"><DatabasePane focused={props.focused === "set.database"} width={width} /></Pane>
   const history = (width: number) => <box width="100%" flexShrink={0}><ImportHistory width={width} /></box>
   const webApp = (width: number) => <box width="100%" flexShrink={0}><WebAppPane width={width} /></box>
@@ -582,11 +612,11 @@ export function SettingsTab(props: { focused: SectionId }) {
             <box id={paneId("set.ai")} flexGrow={1} minWidth={0}><AiPane focused={props.focused === "set.ai"} width={full() - 1 - half()} /></box>
           </box>
         </Show>
-        {webApp(full())}{rules(full())}{database(full())}{history(full())}
+        {webApp(full())}{rules(full())}{appearance(full())}{database(full())}{history(full())}
       </Column>
     }>
       <Column width={left()}>{taxonomy(left())}</Column>
-      <Column>{up(right())}{webApp(right())}{ai(right())}{rules(right())}{database(right())}{history(right())}</Column>
+      <Column>{up(right())}{webApp(right())}{ai(right())}{rules(right())}{appearance(right())}{database(right())}{history(right())}</Column>
     </Show>
     <ImportOverlay />
     <FactoryResetOverlay />

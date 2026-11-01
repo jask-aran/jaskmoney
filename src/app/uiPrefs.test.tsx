@@ -1,3 +1,4 @@
+import { APPEARANCE_ROWS } from "../state/appearanceRows"
 import { DATABASE_ROWS } from "../state/databaseRows"
 import { expect, test } from "bun:test"
 import { mkdtempSync, readFileSync, writeFileSync } from "node:fs"
@@ -114,8 +115,8 @@ test("Settings chart rows toggle motion and cycle speed, with persisted values a
   process.env.JASKMONEY_CONFIG = path
   data.init(":memory:")
   ui.switchTab("settings")
-  ui.activateSettings("database")
-  ui.setState({ databaseCursor: DATABASE_ROWS.indexOf("chartMotion") })
+  ui.activateSettings("appearance")
+  ui.setState({ appearanceCursor: APPEARANCE_ROWS.indexOf("chartMotion") })
   const t = await renderApp({ width: 180, height: 50 })
   try {
     await t.renderOnce()
@@ -134,7 +135,7 @@ test("Settings chart rows toggle motion and cycle speed, with persisted values a
     expect(ui.state.status).toBe("Charts draw in once, at launch")
     expect(t.captureCharFrame()).toMatch(/Chart animation\s+first launch/)
 
-    ui.setState({ databaseCursor: DATABASE_ROWS.indexOf("chartSpeed") })
+    ui.setState({ appearanceCursor: APPEARANCE_ROWS.indexOf("chartSpeed") })
     const current = CHART_SPEEDS.findIndex((speed) => speed.id === DEFAULT_CHART_SPEED)
     for (let step = 1; step <= CHART_SPEEDS.length; step++) {
       const speed = CHART_SPEEDS[(current + step) % CHART_SPEEDS.length]!

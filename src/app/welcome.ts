@@ -7,6 +7,7 @@ import { aiConnection, aiContext } from "../state/aiDialog"
 import type { DataStore } from "../state/dataStore"
 import type { UiStore } from "../state/uiStore"
 import { DEMO_COUNT, demoWorld, triable, tryFrom, tryKey } from "../state/tour"
+import { BACKDROPS, DEFAULT_BACKDROP } from "../ui/welcome/backdrop"
 import { nextStep, previousStep, welcomeGo, welcomeRows, welcomeStart, type EmailPhase, type WelcomeAction, type WelcomeContext, type WelcomeState } from "../state/welcome"
 import { openBrowser, startLlmSignIn } from "./llmSignIn"
 import { runSync } from "./sync"
@@ -107,10 +108,11 @@ export function handleWelcome(ui: UiStore, key: KeyEvent, data?: DataStore): voi
   const typing = rows.some((r) => r.action === "token") && !state.busy
   // Trying a demo: its keys first; esc (or enter on "Back") gives it back.
   if (state.step === "tour" && state.trying) {
-    if (name === "escape") { showDemo(ui, state.demo); return }
+    // The demo's keys first (esc closes a detail pane it opened); else esc
+    // or enter gives it back.
     const next = tryKey(state.demo, state.trying, key, demoWorld(data.state.categories))
     if (next) { ui.setState("welcome", "trying", next); return }
-    if (name === "return" || name === "enter") showDemo(ui, state.demo)
+    if (name === "escape" || name === "return" || name === "enter") showDemo(ui, state.demo)
     return
   }
   if (name === "escape") {
@@ -127,6 +129,12 @@ export function handleWelcome(ui: UiStore, key: KeyEvent, data?: DataStore): voi
     return
   }
   if (state.step === "tour" && name === "t") { startTry(ui, data); return }
+  // The welcome page: b tries the next backdrop.
+  if (state.step === "hello" && name === "b") {
+    const at = BACKDROPS.findIndex((b) => b.id === (state.backdrop ?? data.state.uiPrefs.backdrop ?? DEFAULT_BACKDROP))
+    ui.setState("welcome", { backdrop: BACKDROPS[(at + 1) % BACKDROPS.length]!.id })
+    return
+  }
   if (name === "up" || (!typing && name === "k") || (key.shift && name === "tab")) { ui.setState("welcome", { cursor: Math.max(0, state.cursor - 1) }); return }
   if (name === "down" || (!typing && name === "j") || name === "tab") { ui.setState("welcome", { cursor: Math.min(rows.length - 1, state.cursor + 1) }); return }
   if (name === "return" || name === "enter") {

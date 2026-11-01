@@ -22,7 +22,7 @@ import { fitSpans, type Span } from "../primitives/spans"
 import { AXIS_GUESS, axisWidth, type ChartModel } from "../charts/ChartBody"
 import { WIDE } from "../overview/OverviewTab"
 import { cycleLines, cycleLinesLegend, type CycleSpent } from "./budgetCharts"
-import { chartSpeedMs } from "../charts/motion"
+import { chartSpeedMs, showings } from "../charts/motion"
 import { ChartCard } from "../charts/ChartCard"
 import { spendingChart } from "../overview/periodCharts"
 import { BUDGET_VIEWS } from "../../state/uiStore"
@@ -68,6 +68,8 @@ function bar(width: number, used: number, pace: number): Span[] {
  */
 export function BudgetsTab(props: { focused: SectionId }) {
   const shown = () => ui.state.activeTab === "budgets"
+  // "always": the chart draws in again each time the tab comes into view.
+  const seen = showings(shown)
   // Hidden, the tab keeps what it last showed rather than recompute: its
   // inputs hold their last values, and showing it passes on only those that
   // changed meanwhile, so a tab whose data didn't change wakes nothing.
@@ -253,8 +255,9 @@ export function BudgetsTab(props: { focused: SectionId }) {
 
   const Chart = () => (
     <ChartCard title={subject().title} views={BUDGET_VIEWS} current={ui.state.budgetChart} model={model()} width={mainWidth()} height={chartHeight()} baseline={baseline()}
-      revealKey={data.state.uiPrefs.chartMotion === "always" ? `${(BUDGET_VIEWS[ui.state.budgetChart] ?? BUDGET_VIEWS[0]!).view}:${subject().title}` : undefined}
-      revealMs={data.state.uiPrefs.chartMotion === "always" ? chartSpeedMs(data.state.uiPrefs.chartSpeed) : undefined} />
+      revealKey={data.state.uiPrefs.chartMotion === "always" ? `${(BUDGET_VIEWS[ui.state.budgetChart] ?? BUDGET_VIEWS[0]!).view}:${subject().title}:${seen()}` : undefined}
+      revealMs={data.state.uiPrefs.chartMotion === "always" ? chartSpeedMs(data.state.uiPrefs.chartSpeed) : undefined}
+      labels={data.state.uiPrefs.chartLabels} />
   )
   const Lines = () => (
     <SectionCard title="Each cycle" titleSuffix={`· ${subject().title}`} titleSuffixColor={ink.label} bottomSpans={cycleLinesLegend(cycles())} width={mainWidth()} height={linesHeight()}>

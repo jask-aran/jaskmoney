@@ -1,3 +1,4 @@
+/** @jsxImportSource @opentui/solid */
 import { RGBA, StyledText, TextAttributes, type TextChunk, type TextRenderable } from "@opentui/core"
 import { createEffect } from "solid-js"
 

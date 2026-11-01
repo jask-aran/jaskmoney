@@ -1,3 +1,4 @@
+import { APPEARANCE_ROWS, appearanceRow } from "../../../state/appearanceRows"
 /**
  * Settings' other panes, as the TUI's: Up Bank (the token, sync, which
  * accounts sync), AI models (read-only here: keys and sign-ins are set in
@@ -198,6 +199,18 @@ export function RulesFilters() {
       </SettingGroup>
     </>
   )
+}
+
+/** Display preferences are shown here and changed in the TUI. */
+export function Appearance() {
+  const ctx = () => ({ ...data.state.uiPrefs, icons: data.state.icons })
+  return <SettingGroup title="Appearance">
+    <For each={APPEARANCE_ROWS}>{(row) => {
+      const view = () => appearanceRow(row, ctx())
+      return <SettingLine plain label={view().label}><SettingValue>{view().value}</SettingValue></SettingLine>
+    }}</For>
+    <SettingNote>Change appearance in the TUI.</SettingNote>
+  </SettingGroup>
 }
 
 /** The database: where it is, what it holds, and its settings (shown, not changed here). */

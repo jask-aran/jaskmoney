@@ -32,7 +32,7 @@ import { monthlyTotal, subscriptions, upcomingCharges, type Subscription } from 
 import { allCategoryLines, overviewRange } from "../../state/overviewRange"
 import { AXIS_GUESS, axisWidth, type ChartModel } from "../charts/ChartBody"
 import { ChartCard } from "../charts/ChartCard"
-import { chartSpeedMs, takeLaunchReveal } from "../charts/motion"
+import { chartSpeedMs, showings, takeLaunchReveal, useReveal, type ChartLabelMode } from "../charts/motion"
 import { balancesChart, cashFlowChart, spendingChart, type PeriodNames } from "./periodCharts"
 import { UP_LOGO_WIDTH } from "../primitives/UpLogo"
 import { CalendarView, calendarLegend } from "./CalendarView"
@@ -392,6 +392,8 @@ export function OverviewTab(props: { focused: SectionId }) {
   // the setup run again later doesn't play it again.
   const launchReveal = takeLaunchReveal()
   const revealMs = () => launchReveal ? chartSpeedMs(data.state.uiPrefs.chartSpeed) : 0
+  // "always": again each time the tab comes into view (motion.showings).
+  const seen = showings(() => shown() && !ui.state.welcome)
   const revealKey = createMemo<string | undefined>((was) => was ?? (data.state.ready && !ui.state.welcome ? "launch" : undefined))
   const ChartPane = (p: { pane: 0 | 1; height: number }) => {
     const index = () => ui.state.chartViews[p.pane]
@@ -411,8 +413,9 @@ export function OverviewTab(props: { focused: SectionId }) {
         height={p.height}
         focused={props.focused === (p.pane === 0 ? "ov.chart" : "ov.chart2")}
         baseline={baseline()}
-        revealKey={data.state.uiPrefs.chartMotion === "always" ? (revealKey() ? view().view : undefined) : revealKey()}
+        revealKey={data.state.uiPrefs.chartMotion === "always" ? (revealKey() ? `${view().view}:${seen()}` : undefined) : revealKey()}
         revealMs={data.state.uiPrefs.chartMotion === "always" ? chartSpeedMs(data.state.uiPrefs.chartSpeed) : revealMs()}
+        labels={data.state.uiPrefs.chartLabels}
       />
       </box>
     )
@@ -591,8 +594,18 @@ export function OverviewChartCard(props: {
   baseline?: boolean
   revealKey?: string
   revealMs?: number
+  labels?: ChartLabelMode
 }) {
   const view = () => CHART_VIEWS[props.index] ?? CHART_VIEWS[0]
+  // Calendar and Subscriptions aren't charts (ChartBody draws those in):
+  // their own draw-in, on the same key.
+  const fallback = () => view().view === "Calendar" || view().view === "Subscriptions"
+  const progress = useReveal(() => (fallback() ? props.revealKey : undefined), () => props.revealMs ?? 0)
+  const through = () => {
+    if (progress() >= 1) return undefined
+    const days = props.calendar.flat().flatMap((d) => (d ? [d.dateISO] : [])).sort()
+    return days[Math.ceil(progress() * days.length) - 1] ?? ""
+  }
   return (
     <ChartCard
       title={view().group}
@@ -601,14 +614,15 @@ export function OverviewChartCard(props: {
       model={props.model}
       legend={view().view === "Subscriptions" ? subscriptionsLegend(props.subs, props.dueBeforePayday) : calendarLegend(props.calendar, props.today)}
       fallback={view().view === "Subscriptions"
-        ? <SubscriptionsView list={props.subs} width={props.width - 4} rows={props.height - 2} today={props.today} payday={props.payday} />
-        : <CalendarView weeks={props.calendar} width={props.width - 4} rows={props.height - 2} today={props.today} />}
+        ? <SubscriptionsView list={props.subs} width={props.width - 4} rows={props.height - 2} today={props.today} payday={props.payday} progress={progress()} />
+        : <CalendarView weeks={props.calendar} width={props.width - 4} rows={props.height - 2} today={props.today} through={through()} />}
       width={props.width}
       height={props.height}
       focused={props.focused}
       baseline={props.baseline}
       revealKey={props.revealKey}
       revealMs={props.revealMs}
+      labels={props.labels}
     />
   )
 }
@@ -640,7 +654,12 @@ const SUB_SOON = 3
  * in "… N more". Under the table, where there's room, the next 30 days as
  * a strip: a mark on each day a payment is due, its name under it where it
  * fits, and payday. */
-function SubscriptionsView(props: { list: Subscription[]; width: number; rows: number; today: string; payday: string }) {
+function SubscriptionsView(props: { list: Subscription[]; width: number; rows: number; today: string; payday: string; progress?: number }) {
+  // Drawing in (progress 0–1): the rows drop in, then the strip sweeps
+  // from today to the month ahead.
+  const p = () => props.progress ?? 1
+  const rowsIn = () => Math.ceil(Math.min(1, p() / 0.5) * shown().length)
+  const stripEdge = () => Math.min(1, Math.max(0, (p() - 0.35) / 0.65)) * props.width
   const showChange = () => props.width >= 80
   const nameWidth = () => Math.max(10, props.width - 2 - SUB_COLUMNS.every - SUB_COLUMNS.charge - SUB_COLUMNS.month - SUB_COLUMNS.next - (showChange() ? SUB_COLUMNS.change : 0))
   // The strip takes a blank line and three of its own, when the table
@@ -706,11 +725,11 @@ function SubscriptionsView(props: { list: Subscription[]; width: number; rows: n
         { text: "Next".padStart(SUB_COLUMNS.next), fg: ink.label, bold: true },
         ...(showChange() ? [{ text: "  Change", fg: ink.label, bold: true }] : []),
       ]} />
-      <Index each={shown()}>{(s) => <StyledLine spans={line(s())} />}</Index>
+      <Index each={shown()}>{(s, i) => <StyledLine spans={i < rowsIn() ? line(s()) : [{ text: " " }]} />}</Index>
       <Show when={more() > 0}><text fg={ink.note}>{`… ${more()} more`}</text></Show>
       <Show when={strip()}>
         <box flexGrow={1} />
-        <Index each={stripLines()}>{(cells) => <StyledLine spans={cells()} />}</Index>
+        <Index each={stripLines()}>{(cells) => <StyledLine spans={p() >= 1 ? cells() : cells().map((c, col) => (col < stripEdge() ? c : { text: " ", fg: c.fg }))} />}</Index>
       </Show>
     </Show>
   )

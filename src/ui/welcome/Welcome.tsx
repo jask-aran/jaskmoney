@@ -10,7 +10,7 @@ import { welcomeAct, welcomeContext, welcomeJump } from "../../app/welcome"
 import { onPointer } from "../../app/pointer"
 import { StyledLine, type StyledSpan } from "../primitives/StyledLine"
 import { SPINNER } from "../primitives/Spinner"
-import { BACKDROP_LEVELS, backdropLines } from "./backdrop"
+import { BACKDROP_LEVELS, DEFAULT_BACKDROP, backdropLines, type BackdropId, type BackdropInk } from "./backdrop"
 import { DEMOS, DemoReel } from "./Demos"
 
 /**
@@ -169,7 +169,7 @@ function WelcomeScreen() {
       case "ai": return [
         say("AI", ink.strong, true),
         blank,
-        ...wrapped("Optional. Suggested categories, smart search (?) and rules. One OpenRouter sign-in covers all three.", w),
+        ...wrapped("Optional, by provider: each enables what it lists. OpenRouter alone covers suggestions, smart search and rules; Cloudflare adds Clairic for the dates in a search.", w),
         ...buttons(), ...note(w),
       ]
       case "email": {
@@ -192,7 +192,7 @@ function WelcomeScreen() {
         const c = ctx()
         const line = (ok: boolean, name: string, how: string): Line => ({ spans: [{ text: ok ? " ✓ " : " – ", fg: ok ? tone.good : ink.faint, bold: true }, { text: name.padEnd(10), fg: ink.figure, bold: true }, { text: how, fg: ok ? ink.label : ink.note }] })
         return [
-          say("Done", ink.strong, true),
+          say("Ready", ink.strong, true),
           blank,
           line(c.up, "Up Bank", c.up ? (data.state.upSyncing ? "syncing your transactions" : `${data.state.transactions.length} transactions`) : "not connected: Settings › Up Bank"),
           line(c.jev || c.openai, "AI", c.openrouter ? "OpenRouter: suggestions, search, rules" : c.openai ? "ChatGPT: rules" : c.jev ? "Jev: suggestions, search" : "off: Settings › AI models"),
@@ -210,7 +210,10 @@ function WelcomeScreen() {
     if (s.step === "email") return usesLines(EMAIL_USES, w)
     if (s.step === "ai") {
       const at = rows()[s.cursor]?.action
-      return usesLines(AI_USES_TEXT[at === "openai" ? "openai" : at === "jevKey" ? "jev" : at === "clairic" ? "clairic" : "openrouter"], w)
+      const lines = usesLines(AI_USES_TEXT[at === "openai" ? "openai" : at === "jevKey" ? "jev" : at === "clairic" ? "clairic" : "openrouter"], w)
+      // As tall as the tallest provider's: the card keeps its size as the cursor moves.
+      const tallest = Math.max(...Object.values(AI_USES_TEXT).map((u) => usesLines(u, w).length))
+      return [...lines, ...Array.from({ length: tallest - lines.length }, () => blank)]
     }
     return []
   })
@@ -236,9 +239,9 @@ function WelcomeScreen() {
   }
   // Below the card, as wide as there's room for. Height: the title, the
   // rail and their gaps (5), the card and its border, a gap; at most about
-  // the table's size in the app.
+  // the table's size in the app, and taller where there's room.
   const reelWidth = () => Math.max(40, Math.min(dims().width - 4, 124))
-  const reelHeight = () => Math.max(8, Math.min(18, height() - 5 - (left().length + 2) - 1))
+  const reelHeight = () => Math.max(8, Math.min(30, height() - 5 - (left().length + 2) - 1))
 
   const click = (row: number | undefined) => row === undefined ? undefined : onPointer("welcome", () => {
     const action = rows()[row]?.action
@@ -268,8 +271,14 @@ function WelcomeScreen() {
 
   // ---- The welcome page's backdrop: money marks drifting, faint, behind
   // everything (backdrop).
-  const backdropColour = (level: number) => mix(theme.canvas, level >= BACKDROP_LEVELS - 1 ? tone.key : tone.focus, 0.06 + (level / (BACKDROP_LEVELS - 1)) * 0.38)
-  const backdrop = createMemo(() => state().step === "hello" ? backdropLines(dims().width, height(), tick() * FRAME_MS / 1000, backdropColour) : [])
+  const backdropInk: BackdropInk = {
+    level: (level) => mix(theme.canvas, level >= BACKDROP_LEVELS - 1 ? tone.key : tone.focus, 0.06 + (level / (BACKDROP_LEVELS - 1)) * 0.38),
+    up: mix(theme.canvas, tone.good, 0.4),
+    down: mix(theme.canvas, tone.bad, 0.4),
+  }
+  // Settings › Appearance's choice; b on the welcome page tries the next.
+  const backdropId = (): BackdropId => state().backdrop ?? data.state.uiPrefs.backdrop ?? DEFAULT_BACKDROP
+  const backdrop = createMemo(() => state().step === "hello" ? backdropLines(backdropId(), dims().width, height(), tick() * FRAME_MS / 1000, backdropInk) : [])
 
   // ---- The rail: where you are among the steps; the way to here fills in.
   const railSpans = (): StyledSpan[] => {
@@ -282,7 +291,8 @@ function WelcomeScreen() {
       }
       const mark = stepMark(step, state(), ctx())
       out.push(
-        { text: mark === "done" ? "✓ " : mark === "skipped" ? "– " : mark === "current" ? "● " : "○ ", fg: mark === "done" ? tone.good : mark === "current" ? tone.key : ink.faint, bold: true },
+        // Ready: a star, hollow until you get there.
+        { text: step === "done" ? (mark === "ahead" ? "☆ " : "★ ") : mark === "done" ? "✓ " : mark === "skipped" ? "– " : mark === "current" ? "● " : "○ ", fg: mark === "done" ? tone.good : mark === "current" ? tone.key : ink.faint, bold: true },
         { text: STEP_NAMES[step], fg: mark === "current" ? ink.strong : mark === "done" ? ink.label : ink.faint, bold: mark === "current" },
       )
     })

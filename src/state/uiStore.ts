@@ -35,6 +35,7 @@ export type SectionId =
   | "set.tags"
   | "set.rules"
   | "set.filters"
+  | "set.appearance"
   | "set.database"
   | "set.up"
   | "set.ai"
@@ -61,6 +62,7 @@ export type ScopeId =
   | "settings.taxonomy"
   | "settings.rules"
   | "settings.filters"
+  | "settings.appearance"
   | "settings.database"
   | "settings.up"
   | "settings.ai"
@@ -89,22 +91,22 @@ export type ScopeId =
   | "welcome"
 
 export type SettingsList = "categories" | "tags"
-export type SettingsSection = "taxonomy" | "rules" | "filters" | "up" | "ai" | "database"
+export type SettingsSection = "taxonomy" | "rules" | "filters" | "up" | "ai" | "appearance" | "database"
 /** j/k order of Settings sections (wide layout: left column, then right). */
 /** In reading order (j/k): the wide layout's left column (Taxonomy), then
  * its right (Up Bank to Database & Import); the one-column layouts stack
  * them in the same order. */
-export const SETTINGS_SECTIONS: SettingsSection[] = ["taxonomy", "up", "ai", "rules", "filters", "database"]
+export const SETTINGS_SECTIONS: SettingsSection[] = ["taxonomy", "up", "ai", "rules", "filters", "appearance", "database"]
 
 /** Each Settings section's name: its pane's title and the palette's. (Jump badges are shorter.) */
 export const SETTINGS_SECTION_LABELS: Record<SettingsSection, string> = {
   taxonomy: "Taxonomy", ai: "AI models", rules: "Rules",
-  filters: "Saved Filters", up: "Up Bank", database: "Database & Import",
+  filters: "Saved Filters", up: "Up Bank", appearance: "Appearance", database: "Database & Import",
 }
 
 export function settingsSectionFocus(section: SettingsSection, list: SettingsList = "categories"): SectionId {
   if (section === "taxonomy") return list === "categories" ? "set.categories" : "set.tags"
-  return section === "rules" ? "set.rules" : section === "filters" ? "set.filters" : section === "up" ? "set.up" : section === "ai" ? "set.ai" : "set.database"
+  return section === "rules" ? "set.rules" : section === "filters" ? "set.filters" : section === "up" ? "set.up" : section === "ai" ? "set.ai" : section === "appearance" ? "set.appearance" : "set.database"
 }
 export type SettingsEditorKind = "category" | "tag" | "filter" | "rule" | "budget" | "cycle" 
 export type ImportStage = "files" | "path" | "profile" | "profileEditor" | "preview"
@@ -205,7 +207,9 @@ export interface UiState {
   }
   /** A row waiting for its key again to do something destructive (state/armed). */
   armed: Armed | null
-  /** Settings › Database's rows (DATABASE_ROWS), and the account data dialog's actions. */
+  /** Settings › Appearance rows (APPEARANCE_ROWS). */
+  appearanceCursor: number
+  /** Settings › Database rows (DATABASE_ROWS). */
   databaseCursor: number
   importWizard: { stage: ImportStage; directory: string; files: string[]; cursor: number; path: string; pathCaret: number; profileCursor: number; managing: boolean; profileDraft: ImportProfile; profileEditId: string | null; profileField: number; profileCaret: number; preview: ImportPreview | null; previewCursor: number; previewShowAll: boolean; previewRules: boolean; committing: boolean } | null
   accountAction: { id: number; cursor: number } | null
@@ -313,6 +317,7 @@ export const JUMP_TARGETS: Record<TabId, JumpTarget[]> = {
     { key: "f", section: "set.filters", label: "Filters" },
     { key: "u", section: "set.up", label: "Up Bank" },
     { key: "a", section: "set.ai", label: "AI models" },
+    { key: "p", section: "set.appearance", label: "Appearance" },
     { key: "d", section: "set.database", label: "Database & Import" },
   ],
 }
@@ -452,6 +457,7 @@ function createUiStore() {
     settingsEditor: null,
     settingsDraft: { name: "", color: "#94e2d5", categoryId: null, id: "", expr: "", savedFilterId: "", setCategoryId: null, addTagIds: [], notSpending: false, categoryIds: [], about: "", scopeKey: "overall", amount: "", unit: "month", anchor: "calendar", anchorDate: "", payEarly: false },
     armed: null,
+    appearanceCursor: 0,
     databaseCursor: 0,
     accountAction: null,
     importWizard: null,
@@ -744,6 +750,7 @@ function createUiStore() {
     if (state.settingsSection === "filters") return "settings.filters"
     if (state.settingsSection === "up") return "settings.up"
     if (state.settingsSection === "ai") return "settings.ai"
+    if (state.settingsSection === "appearance") return "settings.appearance"
     return "settings.database"
   }
 

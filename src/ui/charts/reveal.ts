@@ -1,17 +1,19 @@
 import type { Run } from "./lineChart"
+import type { ChartLabelMode } from "./motion"
 
 /**
  * A chart drawing itself in: what's shown of a plot row `p` of the way
  * (0–1) through. Lines (braille) trace left to right behind an edge; bars
- * (block elements) rise from the bottom row. A label in the plot (a
- * stretch of words: a peak's name, a total) appears once the edge has
- * passed its end, a beat after its point: labels come in the order their
- * points do. On a chart with bars (`bars`) it waits, too, for the bars to
- * reach its row. The frame (gridlines, rules, axes: box drawing) is there
+ * (block elements) rise from the bottom row. Labels in the plot (a
+ * stretch of words: a peak's name, a total) appear together as the chart
+ * all but finishes (`labels` "together"), or each once the edge has passed
+ * its end, a beat after its point, in the order of their points
+ * ("sequential"); on a chart with bars (`bars`) a label waits, too, for
+ * the bars to reach its row. The frame (gridlines, rules, axes: box drawing) is there
  * from the start, so the chart's shape is never in doubt. Pure: the same
  * model, a mask over it.
  */
-export function revealRuns(runs: Run[], row: number, rows: number, p: number, frame?: ReadonlyMap<number, Run>, bars = false): Run[] {
+export function revealRuns(runs: Run[], row: number, rows: number, p: number, frame?: ReadonlyMap<number, Run>, bars = false, labels: ChartLabelMode = "together"): Run[] {
   if (p >= 1) return runs
   const cells: Array<{ ch: string; ink: Run["ink"] }> = []
   for (const run of runs) for (const ch of run.text) cells.push({ ch, ink: run.ink })
@@ -44,7 +46,7 @@ export function revealRuns(runs: Run[], row: number, rows: number, p: number, fr
   }
   cells.forEach(({ ch, ink }, col) => {
     let shown: boolean
-    if (labelEnd[col]! >= 0) shown = edge >= labelEnd[col]! + LABEL_LAG && (!bars || risen)
+    if (labelEnd[col]! >= 0) shown = labels === "together" ? p >= LABELS_TOGETHER_AT : edge >= labelEnd[col]! + LABEL_LAG && (!bars || risen)
     else {
       const k = kind(ch)
       shown = k === "space" || k === "frame" || (k === "line" ? col < edge : risen)
@@ -57,6 +59,10 @@ export function revealRuns(runs: Run[], row: number, rows: number, p: number, fr
   })
   return out
 }
+
+/** How far through (eased) labels shown together appear: the line is
+ * all but drawn; the rest of the ease is a slow settle. */
+const LABELS_TOGETHER_AT = 0.85
 
 /** How far (columns) past a label's end the edge goes before it shows: a
  * beat after its point. */

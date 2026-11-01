@@ -7,6 +7,8 @@ import { DEMOS, askAt, chartViewAt, demoFilter, demoWorld, filterAt, suggestAt, 
 import { ink, theme, tone } from "../../theme"
 import { StyledLine, type StyledSpan } from "../primitives/StyledLine"
 import { TransactionTable } from "../manager/TransactionTable"
+import { TransactionDetailCard } from "../manager/TransactionDetail"
+import type { Transaction } from "../../domain/types"
 import { TransactionsPane, rowsShown, rowsToCategorise, type FilterBarView } from "../manager/TransactionsPane"
 import { TOUR_CHART_MS } from "../charts/motion"
 import { OverviewChartCard, chartRows, overviewChartModel, type OverviewChartInput } from "../overview/OverviewTab"
@@ -111,7 +113,7 @@ export function DemoReel(props: { scene: number; startedAt: number; trying: Demo
     <box width={props.width} height={props.height} flexDirection="column">
       <Show when={id() === "chart"}>
         <OverviewChartCard index={view()} model={chart()} calendar={overview().calendar} subs={overview().subs} today={world().today} payday={overview().payday} dueBeforePayday={overview().dueBeforePayday}
-          width={props.width} height={paneHeight()} focused revealKey={CHART_VIEWS[view()]!.view} revealMs={TOUR_CHART_MS} />
+          width={props.width} height={paneHeight()} focused revealKey={CHART_VIEWS[view()]!.view} revealMs={TOUR_CHART_MS} labels={data.state.uiPrefs.chartLabels} />
       </Show>
       <Show when={id() === "filter"}>
         <TransactionsPane title="Transactions" filter={filterOpen() ? bar(filterText().value, filterText().caret, true) : null} focused width={props.width} height={paneHeight()} bottom={shown(filterRows().length, cursor())}>
@@ -132,7 +134,11 @@ export function DemoReel(props: { scene: number; startedAt: number; trying: Demo
         })}>
           <TransactionTable rows={waitingRows()} top={top(suggest().state.cursor)} visible={visible()} cursor={waitingRows().length ? suggest().state.cursor : null} width={tableWidth()} showAccount={false} showTags suggestions={suggestions()} empty="Nothing to categorise" />
         </TransactionsPane>
-        {under(keys([["y", "accept"], ["x", "dismiss"], ["j", "down"], ["Y", `accept all ≥${ACCEPT_ALL_AT * 100}%`]], suggest().pressed, suggest().state.note))}
+        {/* The row's detail, as enter opens it in the Manager: the real card. */}
+        <Show when={suggest().state.detail != null ? wait().originals[suggest().state.detail!] : undefined}>
+          {(row: () => Transaction) => <TransactionDetailCard row={row()} detail={null} boughtTop={0} lookup={null} notes={null} width={Math.min(props.width - 8, 96)} />}
+        </Show>
+        {under(keys([["Y", `accept all ≥${ACCEPT_ALL_AT * 100}%`], ["y", "accept"], ["x", "dismiss"], ["j", "down"], ["enter", "detail"], ["esc", "close"]], suggest().pressed, suggest().state.note))}
       </Show>
     </box>
   )

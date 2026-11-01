@@ -75,7 +75,8 @@ export function calendarLayout(weekCount: number, width: number, rows: number): 
  * before the next). Sized and filled by calendarLayout. Today is marked in
  * today's chart colour; days to come are dim.
  */
-export function CalendarView(props: { weeks: Array<Array<CalendarDay | null>>; width: number; rows: number; today: string }) {
+/** `through`: drawing in, the days after it are blank (the tiles come in in date order). */
+export function CalendarView(props: { weeks: Array<Array<CalendarDay | null>>; width: number; rows: number; today: string; through?: string }) {
   const layout = createMemo(() => calendarLayout(props.weeks.length, props.width, props.rows))
   const shown = createMemo(() => props.weeks.slice(-layout().weeks))
   const lines = () => Array.from({ length: layout().band }, (_, k) => k)
@@ -93,7 +94,7 @@ export function CalendarView(props: { weeks: Array<Array<CalendarDay | null>>; w
                 <S fg={ink.note}>{(line === 0 ? label : "").padEnd(LABEL)}</S>
                 {/* Index: a new range brings new weeks; their cells update in place. */}
                 <Index each={shown()}>
-                  {(week, i) => <Cell day={week()[row()] ?? null} width={layout().widths[i] ?? layout().cell} layout={layout()} line={line} today={props.today} />}
+                  {(week, i) => <Cell day={((d) => (d && props.through !== undefined && d.dateISO > props.through ? null : d))(week()[row()] ?? null)} width={layout().widths[i] ?? layout().cell} layout={layout()} line={line} today={props.today} />}
                 </Index>
               </text>
             )}

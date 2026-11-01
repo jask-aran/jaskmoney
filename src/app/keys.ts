@@ -1,10 +1,11 @@
+import { APPEARANCE_ROWS } from "../state/appearanceRows"
 import { triable, tryHints } from "../state/tour"
 import { travel } from "./paneTravel"
 import { web } from "./webApp"
 import { unwrap } from "solid-js/store"
 import { merchantKey } from "../domain/history"
 import { footerShown, scopeLabel, type Hint } from "./palette"
-import { changeAccountScope, toTransactions, toggleDemo, applyAllRules, applySavedFilter, clearTransactionFilter, askForRules, reportError, settleData, resetTransactionCursors, runUndo, showAccount, showDryRun, toggleIcons, toggleWeekStart, toggleXAxis, toggleChartMotion, cycleChartSpeed } from "./actions"
+import { changeAccountScope, toTransactions, toggleDemo, applyAllRules, applySavedFilter, clearTransactionFilter, askForRules, reportError, settleData, resetTransactionCursors, runUndo, showAccount, showDryRun, toggleIcons, toggleWeekStart, toggleXAxis, toggleChartMotion, cycleChartSpeed, toggleChartLabels, cycleBackdrop } from "./actions"
 import { commands, rankCommands, type Command } from "./commands"
 import { ACCOUNT_ACTIONS, armedText, isArmed, isSecondPress, type Armed } from "../state/armed"
 import { DATABASE_ROWS } from "../state/databaseRows"
@@ -318,6 +319,7 @@ function handleJump(ui: UiStore, key: KeyEvent, data?: DataStore): void {
       else if (hit.section === "set.tags") ui.activateSettings("taxonomy", "tags", true)
       else if (hit.section === "set.rules") ui.activateSettings("rules")
       else if (hit.section === "set.filters") ui.activateSettings("filters")
+      else if (hit.section === "set.appearance") ui.activateSettings("appearance")
       else if (hit.section === "set.database") ui.activateSettings("database")
       else if (hit.section === "set.up") ui.activateSettings("up")
       else if (hit.section === "set.ai") ui.activateSettings("ai")
@@ -1341,6 +1343,25 @@ function handleLlmSignIn(ui: UiStore, key: KeyEvent): void {
   if (next) ui.setState("llmSignIn", "paste", { value: next.value, caret: next.caret })
 }
 
+/** Appearance input matrix: navigation changes only its cursor; enter changes
+ * its row's preference; esc leaves the pane and keeps the cursor. Modal scopes
+ * take precedence in activeScope. Display rows moved here by request. */
+function handleSettingsAppearance(ui: UiStore, key: KeyEvent, data?: DataStore): void {
+  const { name } = key
+  if (name === "escape") { ui.leaveSettings(); return }
+  const moved = listMove(key, ui.state.appearanceCursor, APPEARANCE_ROWS.length)
+  if (moved != null) { ui.setState({ appearanceCursor: moved }); return }
+  if (name !== "return" && name !== "enter") return
+  switch (APPEARANCE_ROWS[ui.state.appearanceCursor]) {
+    case "icons": if (data) toggleIcons(ui, data); return
+    case "xAxis": if (data) toggleXAxis(ui, data); return
+    case "chartMotion": if (data) toggleChartMotion(ui, data); return
+    case "chartSpeed": if (data) cycleChartSpeed(ui, data); return
+    case "chartLabels": if (data) toggleChartLabels(ui, data); return
+    case "backdrop": if (data) cycleBackdrop(ui, data); return
+  }
+}
+
 function handleSettingsDatabase(ui: UiStore, key: KeyEvent, data?: DataStore): void {
   const { name } = key
   if (name === "escape") { ui.leaveSettings(); return }
@@ -1358,12 +1379,8 @@ function handleSettingsDatabase(ui: UiStore, key: KeyEvent, data?: DataStore): v
       return
     }
     case "profiles": ui.beginImport("", []); ui.opening("importWizard").patch({ stage: "profile", managing: true }); return
-    case "icons": if (data) toggleIcons(ui, data); return
     // Approved port deviation: Database & Import owns the week toggle.
     case "weekStart": if (data) toggleWeekStart(ui, data); return
-    case "xAxis": if (data) toggleXAxis(ui, data); return
-    case "chartMotion": if (data) toggleChartMotion(ui, data); return
-    case "chartSpeed": if (data) cycleChartSpeed(ui, data); return
     case "demo": if (data) toggleDemo(ui, data); return
     case "clearData": confirmTwice(ui, data, { kind: "clearData", id: 0, label: "all transaction and import data", with: "enter" }); return
     case "reset": ui.setState({ factoryReset: { draft: "", caret: 0, busy: false } }); ui.setStatus("Type RESET then enter to remove this SQLite database"); return
@@ -2194,6 +2211,11 @@ const scopes: Record<ScopeId, ScopeEntry> = {
     handle: handleSettingsAi,
     quits: true,
     hints: () => [{ key: "j/k", desc: "move" }, { key: "enter", desc: "open" }, { key: "esc", desc: "done" }],
+  },
+  "settings.appearance": {
+    handle: handleSettingsAppearance,
+    quits: true,
+    hints: () => [{ key: "j/k", desc: "move" }, { key: "enter", desc: "switch" }, { key: "esc", desc: "done" }],
   },
   "settings.database": {
     handle: handleSettingsDatabase,

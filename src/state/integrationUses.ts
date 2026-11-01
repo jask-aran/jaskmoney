@@ -36,7 +36,7 @@ export const UP_USES: IntegrationUse = {
 
 export const AI_USES_TEXT: Record<"jev" | "openrouter" | "openai" | "clairic", IntegrationUse> = {
   jev: {
-    title: "Jev (TypeSafe)",
+    title: "TypeSafe: Jev",
     why: "Suggests categories and reads your searches. Optional.",
     uses: [
       { what: "Sees", effect: "a waiting transaction: its description, amount, in or out, Up's message, what its order emails say it bought, your note and tags" },
@@ -47,7 +47,7 @@ export const AI_USES_TEXT: Record<"jev" | "openrouter" | "openai" | "clairic", I
   },
   openrouter: {
     title: "OpenRouter",
-    why: "One sign-in for both: it reaches Jev, and a general model that writes rules. Optional.",
+    why: "One sign-in for nearly all of it: it runs Jev (suggestions, smart search, ask:) and a general model that writes rules. Everything here but Clairic. Optional.",
     uses: [
       { what: "As Jev", effect: "without a TypeSafe key, Jev runs here: it sees a waiting transaction (description, amount, Up's message, what it bought, your note) and your categories, and suggests one" },
       { what: "For rules", effect: "your categories and tags with counts, recent choices, waiting rows' descriptions and your rules" },
@@ -65,7 +65,7 @@ export const AI_USES_TEXT: Record<"jev" | "openrouter" | "openai" | "clairic", I
     promises: ["A rule is only made when you choose it.", "Disconnect jaskmoney in ChatGPT's settings any time."],
   },
   clairic: {
-    title: "Clairic (Cloudflare Workers AI)",
+    title: "Cloudflare: Clairic",
     why: "Reads the words and dates in a smart search (\"coffee last March\"). Optional.",
     uses: [
       { what: "Sees", effect: "the words of your search and today's date" },
@@ -84,6 +84,7 @@ export const EMAIL_USES: IntegrationUse = {
   ],
   promises: [
     "Read-only: nothing is sent, deleted or changed in your mail.",
+    "Read by jaskmoney's own code: no AI model reads your email. Jev sees only the items found, with the row.",
     "Executor holds your Google sign-in: jaskmoney never sees a Google password or token.",
     "Remove access any time at executor.sh or in your Google account.",
   ],

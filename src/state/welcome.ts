@@ -1,5 +1,6 @@
 import type { TextField } from "../domain/textField"
 import { DEMO_COUNT, triable, type DemoTry } from "./tour"
+import type { BackdropId } from "../ui/welcome/backdrop"
 
 /**
  * The first-run setup: a full-screen walk through connecting Up, the AI
@@ -40,6 +41,8 @@ export interface WelcomeState {
   demoAt: number
   /** Trying the demo yourself: its state, frozen from the script. */
   trying: DemoTry | null
+  /** The welcome page's backdrop, as b last chose it (else Settings'). */
+  backdrop?: BackdropId
   cursor: number
   /** The Up token as typed: never drawn, only its length and last four. */
   token: TextField
@@ -128,10 +131,11 @@ export function welcomeRows(state: WelcomeState, ctx: WelcomeContext): WelcomeRo
       ]
     case "ai":
       return [
-        { action: "openrouter", label: "Sign in with OpenRouter", detail: ctx.openrouter ? "connected" : "recommended · does it all", done: ctx.openrouter, primary: !ctx.openrouter && !ctx.openai },
-        { action: "openai", label: "Sign in with ChatGPT", detail: ctx.openai ? "connected" : "rules, on your plan", done: ctx.openai },
-        { action: "jevKey", label: "TypeSafe key for Jev", detail: ctx.jevKey ? "saved" : "optional", done: ctx.jevKey },
-        { action: "clairic", label: "Cloudflare Clairic", detail: ctx.clairic ? "connected" : "optional", done: ctx.clairic },
+        // By provider: what each one enables.
+        { action: "clairic", label: "Cloudflare", detail: ctx.clairic ? "connected · Clairic" : "Clairic: smart search's words and dates", done: ctx.clairic },
+        { action: "jevKey", label: "TypeSafe", detail: ctx.jevKey ? "saved · Jev" : "Jev: suggestions, smart search, ask:", done: ctx.jevKey },
+        { action: "openai", label: "ChatGPT", detail: ctx.openai ? "connected · rules" : "a general model for rules, on your plan", done: ctx.openai },
+        { action: "openrouter", label: "OpenRouter", detail: ctx.openrouter ? "connected · Jev and rules" : "Jev and a general model: all but Clairic", done: ctx.openrouter, primary: !ctx.openrouter && !ctx.openai && !ctx.jevKey },
         { action: "next", label: ctx.jev || ctx.openai ? "Continue" : "Skip: no AI for now", primary: ctx.openrouter || ctx.openai },
       ]
     case "email": {

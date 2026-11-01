@@ -1,5 +1,7 @@
-import { Index, Show, createEffect, createMemo, createSignal, on, onCleanup } from "solid-js"
-import { easeOut, gridColumns, hasBars, revealRuns } from "./reveal"
+import { Index, Show, createMemo } from "solid-js"
+import { gridColumns, hasBars, revealRuns } from "./reveal"
+import { useReveal } from "./motion"
+import type { ChartLabelMode } from "./motion"
 import { StyledLine } from "../primitives/StyledLine"
 import { ink } from "../../theme"
 import type { Run } from "./lineChart"
@@ -61,32 +63,9 @@ function axisLabels(text: string, coloured: Array<{ start: number; length: numbe
  * labels. `inks` maps each run's ink to a colour. With `revealMs`, each
  * new `revealKey` draws the chart in over that long (reveal says how);
  * new data under the same key just shows (motion says when to ask). */
-export function ChartBody(props: { model: ChartModel; inks: Record<string, string>; baseline?: boolean; revealKey?: string; revealMs?: number }) {
+export function ChartBody(props: { model: ChartModel; inks: Record<string, string>; baseline?: boolean; revealKey?: string; revealMs?: number; labels?: ChartLabelMode }) {
   const axis = () => axisWidth(props.model.ticks)
-  const [shown, setShown] = createSignal(1)
-  let timer: ReturnType<typeof setInterval> | undefined
-  // Through a memo: it tells only when the key's value changes. A key read
-  // again unchanged (a store array replaced around it: the other pane's
-  // view switching) must not start a draw-in.
-  const revealKey = createMemo(() => props.revealKey)
-  createEffect(on(revealKey, (key) => {
-    clearInterval(timer)
-    const ms = props.revealMs ?? 0
-    if (key === undefined || ms <= 0) { setShown(1); return }
-    setShown(0)
-    // About a frame apart (OpenTUI draws at most 60 a second). The clock
-    // starts on the first tick, not now: at launch the frames after the
-    // data lands are busy, and a draw-in timed from here would be over
-    // before it's seen.
-    let start: number | undefined
-    timer = setInterval(() => {
-      start ??= performance.now()
-      const t = (performance.now() - start) / ms
-      setShown(easeOut(t))
-      if (t >= 1) clearInterval(timer)
-    }, 16)
-  }))
-  onCleanup(() => clearInterval(timer))
+  const shown = useReveal(() => props.revealKey, () => props.revealMs ?? 0)
   // The gridlines a reveal leaves standing, found once per model.
   const frame = createMemo(() => gridColumns(props.model.rows))
   const bars = createMemo(() => hasBars(props.model.rows))
@@ -98,7 +77,7 @@ export function ChartBody(props: { model: ChartModel; inks: Record<string, strin
         {(runs, i) => (
           <StyledLine spans={[
             { text: (props.model.ticks.get(i) ?? "").padStart(axis() - 2) + (props.model.ticks.has(i) ? " ┤" : " │"), fg: ink.label },
-            ...(shown() < 1 ? revealRuns(runs(), i, props.model.rows.length, shown(), frame(), bars()) : runs()).map((run) => ({ text: run.text, fg: run.ink ? props.model.inks?.[run.ink] ?? props.inks[run.ink] ?? ink.figure : undefined })),
+            ...(shown() < 1 ? revealRuns(runs(), i, props.model.rows.length, shown(), frame(), bars(), props.labels) : runs()).map((run) => ({ text: run.text, fg: run.ink ? props.model.inks?.[run.ink] ?? props.inks[run.ink] ?? ink.figure : undefined })),
           ]} />
         )}
       </Index>
