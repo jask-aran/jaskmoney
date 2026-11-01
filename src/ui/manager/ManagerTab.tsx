@@ -1,3 +1,4 @@
+import type { BoxRenderable } from "@opentui/core"
 import { regionRef } from "../regions"
 import { ACCOUNT_ACTIONS, armedFor } from "../../state/armed"
 import { ListRow } from "../primitives/ListRow"
@@ -12,8 +13,8 @@ import type { Account } from "../../domain/types"
 import { fit, truncate } from "../text"
 import { categoryMark } from "../icons"
 import { ACCEPT_ALL_AT } from "../../domain/questions"
-import { accountStacks, selectedAccounts } from "../../domain/accountTree"
-import { AccountsPane, accountsPaneHeight } from "./AccountsPane"
+import { selectedAccounts } from "../../domain/accountTree"
+import { AccountsPane } from "./AccountsPane"
 import { TransactionTable, type TableTagCandidate } from "./TransactionTable"
 import { TransactionsPane, rowsShown, rowsToCategorise, type FilterBarView } from "./TransactionsPane"
 import { MerchantTable } from "./MerchantTable"
@@ -42,14 +43,15 @@ export function ManagerTab(props: { focused: SectionId }) {
   const highlighted = createMemo(() => ui.highlightedIds(rows()))
   const showAccount = () => selectedAccounts(data.state.accounts, data.state.accountSelection).length > 1
 
-  createEffect(() => {
-    // App chrome (4), the accounts pane, transaction borders (2), and the
-    // table header (1) are fixed. The viewport consumes every remaining row.
-    const vis = Math.max(1, dims().height - 7 - accountsPaneHeight(accountStacks(data.state.accounts)) - (filterBar() ? 1 : 0))
-    if (vis !== ui.state.managerVisible) {
-      ui.setState({ managerVisible: vis })
+  // The tables' rows: the height their box gets, less the header. Measured
+  // (OpenTUI's layout), not the terminal's height less a count of the
+  // chrome around it, which went stale whenever the chrome changed.
+  const measureTables = (box: BoxRenderable) => {
+    box.onSizeChange = () => {
+      const vis = Math.max(1, box.height - 1)
+      if (vis !== ui.state.managerVisible) ui.setState({ managerVisible: vis })
     }
-  })
+  }
 
   createEffect(() => {
     const n = rows().length
@@ -259,6 +261,9 @@ export function ManagerTab(props: { focused: SectionId }) {
         flexGrow={1}
         bottom={scrollIndicator()}
       >
+        {/* Sized by the space it's given (flexBasis 0), never by its rows: a
+            table drawing the rows it was told to would hold its box at that size. */}
+        <box ref={measureTables} flexGrow={1} flexBasis={0} overflow="hidden" width="100%" flexDirection="column">
         <box visible={merchants()} flexGrow={1} width="100%" flexDirection="column">
           <MerchantTable
             groups={groups()}
@@ -291,6 +296,7 @@ export function ManagerTab(props: { focused: SectionId }) {
           nearMiss={(id) => data.nearMissIds().has(id)}
           tagCandidate={data.state.tagReview ? tagCandidate : undefined}
         />
+        </box>
         </box>
       </TransactionsPane>
       </box>
