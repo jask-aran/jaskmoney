@@ -192,3 +192,25 @@ test("the Date Range chips all show at every width, tightening before anything i
   expect(shown[160]).toBe(true)
   expect(shown[80]).toBe(false)
 })
+
+test("two Calendar panes draw the same grid when the body's height splits them a line apart", async () => {
+  // 69: panes of 29 and 28 rows (bands of 4); 59: 24 and 23 (bands of 3).
+  for (const height of [59, 69]) {
+    const t = await overview(160, height)
+    ui.setState({ chartViews: [7, 7] })
+    await t.renderOnce()
+    await t.flush()
+    const lines = t.captureCharFrame().split("\n").map((line) => line.slice(0, 110))
+    const tops = lines.flatMap((line, y) => (line.startsWith("╭─ Calendar") ? [y] : []))
+    const bottoms = lines.flatMap((line, y) => (line.startsWith("╰─ less") ? [y] : []))
+    expect(tops).toHaveLength(2)
+    const pane = (k: number) => lines.slice(tops[k]! + 1, bottoms[k]!)
+    // The heights differ by at most the spare line, which is blank; the
+    // grid above it is the same, line for line.
+    const [tall, short] = pane(0).length >= pane(1).length ? [pane(0), pane(1)] : [pane(1), pane(0)]
+    expect(tall.length - short.length).toBeLessThanOrEqual(1)
+    expect(tall.slice(0, short.length)).toEqual(short)
+    expect(tall.slice(short.length).every((line) => line.trim() === "│")).toBe(true)
+    t.renderer.destroy()
+  }
+})

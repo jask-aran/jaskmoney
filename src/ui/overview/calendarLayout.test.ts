@@ -42,3 +42,13 @@ test("month names sit over the week holding the 1st, with spending when every mo
   const tight = monthLabels(weeks, weeks.map(() => 1), "2026-09-30")
   expect(tight).not.toContain("$")
 })
+
+test("the last weekday's band has no gap line, so a pane a line short of 7 full bands keeps the bigger band", () => {
+  // 1 month-name line + 7 bands of 4, less the last band's gap: 28 rows.
+  expect(calendarLayout(27, 150, 28)).toMatchObject({ band: 4, bandGap: 1 })
+  expect(calendarLayout(27, 150, 29)).toMatchObject({ band: 4, bandGap: 1 })
+  expect(calendarLayout(27, 150, 27)).toMatchObject({ band: 3 })
+  // Below 3, bands have no gap to drop.
+  expect(calendarLayout(27, 150, 15)).toMatchObject({ band: 2, bandGap: 0 })
+  expect(calendarLayout(27, 150, 14)).toMatchObject({ band: 1 })
+})

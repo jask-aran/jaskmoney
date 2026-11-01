@@ -623,10 +623,11 @@ export function OverviewChartCard(props: {
   // their own draw-in, on the same key.
   const fallback = () => view().view === "Calendar" || view().view === "Subscriptions"
   const progress = useReveal(() => (fallback() ? props.revealKey : undefined), () => props.revealMs ?? 0)
+  // The days in date order, once per calendar, not per frame of the draw-in.
+  const days = createMemo(() => props.calendar.flat().flatMap((d) => (d ? [d.dateISO] : [])).sort())
   const through = () => {
     if (progress() >= 1) return undefined
-    const days = props.calendar.flat().flatMap((d) => (d ? [d.dateISO] : [])).sort()
-    return days[Math.ceil(progress() * days.length) - 1] ?? ""
+    return days()[Math.ceil(progress() * days().length) - 1] ?? ""
   }
   return (
     <ChartCard

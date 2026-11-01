@@ -1,10 +1,10 @@
-import { For, Index, Show, createMemo } from "solid-js"
+import { Index, Show, createMemo } from "solid-js"
 import type { CalendarDay } from "../../domain/spending"
 import { MONTHS } from "../../domain/days"
 import { data } from "../../state/dataStore"
 import { fade, ink, theme, whenThemeChanges } from "../../theme"
 import { muted, type Span } from "../primitives/spans"
-import { S } from "../primitives/S"
+import { StyledLine, type StyledSpan } from "../primitives/StyledLine"
 import { shortMoney } from "../text"
 
 /** Day colours by spending level (0 = none): one purple, darker to
@@ -63,9 +63,14 @@ export function calendarLayout(weekCount: number, width: number, rows: number): 
   const dayNumbers = cell >= 5
   const gap = dayNumbers ? 1 : 0
   const inner = cell - gap
-  // The month names take the first line.
-  const band = Math.max(1, Math.min(MAX_BAND, Math.floor((rows - 1) / 7)))
-  const bandGap = band >= 3 ? 1 : 0
+  // The month names take the first line; the last weekday needs no gap
+  // after it, so a band of 4 fits 1 + 7 × 4 - 1 lines (one line short of a
+  // band's worth more doesn't drop the whole grid a size: the Overview's
+  // two panes differ by a line when its height is odd).
+  const gapFor = (b: number) => (b >= 3 ? 1 : 0)
+  let band = 1
+  while (band < MAX_BAND && 1 + 7 * (band + 1) - gapFor(band + 1) <= rows) band++
+  const bandGap = gapFor(band)
   const lines = band - bandGap
   // An amount shows only where the largest ("$1.2k") fits, so no day goes
   // without one for want of room.
@@ -77,34 +82,23 @@ export function calendarLayout(weekCount: number, width: number, rows: number): 
  * The range's days as a grid: a column per week, a band of lines per
  * weekday, month names on top (with the month's spending where it fits
  * before the next). Sized and filled by calendarLayout. Today is marked in
- * today's chart colour; days to come are dim.
+ * today's chart colour; days to come are dim. `through`: drawing in, the
+ * days after it are blank (the tiles come in in date order).
  */
-/** `through`: drawing in, the days after it are blank (the tiles come in in date order). */
 export function CalendarView(props: { weeks: Array<Array<CalendarDay | null>>; width: number; rows: number; today: string; through?: string }) {
   const layout = createMemo(() => calendarLayout(props.weeks.length, props.width, props.rows))
   const shown = createMemo(() => props.weeks.slice(-layout().weeks))
-  const lines = () => Array.from({ length: layout().band }, (_, k) => k)
   // Months' spending under the grid when their names have no room for it
   // and a line is spare.
-  const totalsBelow = () => props.rows - 1 - 7 * layout().band >= 1 && !totalsFitBeside(shown(), layout().widths, props.today)
+  const totalsBelow = () => props.rows - 1 - gridLines(layout()) >= 1 && !totalsFitBeside(shown(), layout().widths, props.today)
+  // A line is one text of styled runs: a half year is a few dozen nodes,
+  // not a pair per day per line, and a frame of the draw-in restyles only
+  // the lines it changed (StyledLine).
+  const lines = createMemo(() => calendarLines(shown(), layout(), WEEKDAYS(), props.today, props.through))
   return (
     <>
       <text wrapMode="none" fg={ink.note}>{" ".repeat(LABEL) + monthLabels(shown(), layout().widths, props.today)}</text>
-      <For each={WEEKDAYS()}>
-        {(label, row) => (
-          <For each={lines()}>
-            {(line) => (
-              <text wrapMode="none">
-                <S fg={ink.note}>{(line === 0 ? label : "").padEnd(LABEL)}</S>
-                {/* Index: a new range brings new weeks; their cells update in place. */}
-                <Index each={shown()}>
-                  {(week, i) => <Cell day={((d) => (d && props.through !== undefined && d.dateISO > props.through ? null : d))(week()[row()] ?? null)} width={layout().widths[i] ?? layout().cell} layout={layout()} line={line} today={props.today} />}
-                </Index>
-              </text>
-            )}
-          </For>
-        )}
-      </For>
+      <Index each={lines()}>{(line) => <StyledLine spans={line()} />}</Index>
       <Show when={totalsBelow()}>
         <text wrapMode="none" fg={ink.label}>{" ".repeat(LABEL) + monthTotals(shown(), layout().widths, props.today)}</text>
       </Show>
@@ -112,35 +106,63 @@ export function CalendarView(props: { weeks: Array<Array<CalendarDay | null>>; w
   )
 }
 
-/** One line of one day's cell, then its gap column. */
-function Cell(props: { day: CalendarDay | null; width: number; layout: CalendarLayout; line: number; today: string }) {
-  const inner = () => props.width - props.layout.gap
-  const past = () => props.day != null && props.day.dateISO <= props.today
-  const isToday = () => props.day?.dateISO === props.today
-  // The band's last line is its gap: blank, so weekdays read as rows.
-  const blankLine = () => props.layout.bandGap === 1 && props.line === props.layout.band - 1
-  const bg = () => (props.day == null || blankLine() ? theme.canvas : past() ? LEVEL_BG[props.day.level] : FUTURE_BG)
-  const amount = () => (past() && props.day!.spent > 0 ? shortMoney(props.day!.spent) : "")
-  const text = () => {
-    const w = inner()
-    if (props.day == null || blankLine()) return " ".repeat(w)
-    const { dayNumbers, amounts } = props.layout
-    if (!dayNumbers) return isToday() && props.line === 0 ? "•".padEnd(w) : " ".repeat(w)
-    const day = ` ${Number(props.day.dateISO.slice(8, 10))}`
-    if (props.line === 0 && amounts === "beside" && amount() && day.length + 1 + amount().length < w) return day + amount().padStart(w - day.length - 1) + " "
-    if (props.line === 0) return day.padEnd(w)
-    // Under its day's number, so it reads as that day's.
-    if (props.line === 1 && amounts === "below" && amount().length < w) return ` ${amount()}`.padEnd(w)
-    return " ".repeat(w)
+/** Lines the weekdays take: a band each, less the last band's gap (nothing
+ * comes after it to keep apart). */
+export function gridLines(layout: CalendarLayout): number {
+  return 7 * layout.band - layout.bandGap
+}
+
+/** The grid's lines under the month names, as styled runs: each weekday's
+ * label, then each week's cell on that line and its gap column. Days after
+ * `through` are blank. */
+export function calendarLines(weeks: Array<Array<CalendarDay | null>>, layout: CalendarLayout, weekdays: string[], today: string, through?: string): StyledSpan[][] {
+  const out: StyledSpan[][] = []
+  for (let row = 0; row < 7; row++) {
+    for (let line = 0; line < layout.band; line++) {
+      if (row === 6 && line === layout.band - 1 && layout.bandGap) break
+      const spans: StyledSpan[] = [{ text: (line === 0 ? weekdays[row]! : "").padEnd(LABEL), fg: ink.note }]
+      weeks.forEach((week, i) => {
+        const d = week[row] ?? null
+        const day = d && through !== undefined && d.dateISO > through ? null : d
+        cell(spans, day, layout.widths[i] ?? layout.cell, layout, line, today)
+      })
+      out.push(spans)
+    }
   }
+  return out
+}
+
+/** Appends a run, merged into the one before when it looks the same. */
+function push(spans: StyledSpan[], span: StyledSpan) {
+  const last = spans[spans.length - 1]
+  if (last && last.fg === span.fg && last.bg === span.bg && !last.bold === !span.bold) last.text += span.text
+  else spans.push(span)
+}
+
+/** One line of one day's cell, then its gap column. */
+function cell(spans: StyledSpan[], day: CalendarDay | null, width: number, layout: CalendarLayout, line: number, today: string) {
+  const w = width - layout.gap
+  const past = day != null && day.dateISO <= today
+  const isToday = day?.dateISO === today
+  // The band's last line is its gap: blank, so weekdays read as rows.
+  const blankLine = layout.bandGap === 1 && line === layout.band - 1
+  const bg = day == null || blankLine ? theme.canvas : past ? LEVEL_BG[day.level] : FUTURE_BG
+  const amount = past && day!.spent > 0 ? shortMoney(day!.spent) : ""
+  const text = (() => {
+    if (day == null || blankLine) return " ".repeat(w)
+    const { dayNumbers, amounts } = layout
+    if (!dayNumbers) return isToday && line === 0 ? "•".padEnd(w) : " ".repeat(w)
+    const num = ` ${Number(day.dateISO.slice(8, 10))}`
+    if (line === 0 && amounts === "beside" && amount && num.length + 1 + amount.length < w) return num + amount.padStart(w - num.length - 1) + " "
+    if (line === 0) return num.padEnd(w)
+    // Under its day's number, so it reads as that day's.
+    if (line === 1 && amounts === "below" && amount.length < w) return ` ${amount}`.padEnd(w)
+    return " ".repeat(w)
+  })()
   // Text: dark on the brighter levels; days to come faint; today in its colour.
-  const fg = () => (isToday() ? theme.chartToday : !past() ? ink.faint : props.day!.level >= 4 ? theme.crust : props.line === 0 ? ink.label : ink.figure)
-  return (
-    <>
-      <S fg={fg()} bg={bg()} bold={isToday()}>{text()}</S>
-      {props.layout.gap ? <S bg={theme.canvas}>{" "}</S> : null}
-    </>
-  )
+  const fg = isToday ? theme.chartToday : !past ? ink.faint : day!.level >= 4 ? theme.crust : line === 0 ? ink.label : ink.figure
+  push(spans, { text, fg, bg, bold: isToday })
+  if (layout.gap) push(spans, { text: " ", bg: theme.canvas })
 }
 
 /** Where each month starts on the grid: the week holding its 1st (the
