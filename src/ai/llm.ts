@@ -1,6 +1,5 @@
-import { createModels, getSupportedThinkingLevels, type Api, type Model, type Models, type ThinkingLevel } from "@earendil-works/pi-ai"
-import { openaiProvider } from "@earendil-works/pi-ai/providers/openai"
-import { openrouterProvider } from "@earendil-works/pi-ai/providers/openrouter"
+import type { Api, Model, Models, ThinkingLevel } from "@earendil-works/pi-ai"
+import { piAi, piProviders } from "./piAi"
 import { credentialEnv } from "./credentials"
 import { createFileCredentialStore, signedIn } from "./oauthStore"
 
@@ -54,7 +53,7 @@ export const LLM_EFFORT: readonly ThinkingLevel[] = ["xhigh", "high", "medium"]
 
 export function llmEffort(model: Model<Api>): ThinkingLevel | undefined {
   if (!model.reasoning) return undefined
-  const supported = getSupportedThinkingLevels(model)
+  const supported = piAi().getSupportedThinkingLevels(model)
   return LLM_EFFORT.find((level) => supported.includes(level))
 }
 
@@ -69,9 +68,9 @@ export interface Llm {
 
 /** pi-ai with the two providers and the sign-in store; nothing else is loaded. */
 export function llmModels(): Models {
-  const models = createModels({ credentials: createFileCredentialStore() })
-  models.setProvider(openrouterProvider())
-  models.setProvider(openaiProvider())
+  const models = piAi().createModels({ credentials: createFileCredentialStore() })
+  models.setProvider(piProviders.openrouter())
+  models.setProvider(piProviders.openai())
   return models
 }
 

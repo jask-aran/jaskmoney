@@ -1,5 +1,5 @@
 import type { RuleDecline } from "../db/client"
-import { Type } from "@earendil-works/pi-ai"
+import { piAi } from "./piAi"
 import { categoryHistory, tagHistory, FILTER_GUIDE, findRows, matchReport, waitingOverview, type HistoryData } from "../domain/aiHistory"
 import { isUncategorised } from "../domain/moneyRules"
 import { RULE_AFTER, RULE_SHARE, type RuleOffer } from "../domain/ruleOffers"
@@ -75,6 +75,7 @@ export async function writeRules(
   const declined = options.declined ?? []
   let looks = 0
   const categoryNamed = (name: string) => data.categories.find((c) => c.name.toLowerCase() === name.trim().toLowerCase())
+  const { Type } = piAi()
   const tagNamed = (name: string) => data.tags.find((t) => t.name.toLowerCase() === name.trim().toLowerCase())
   // Flat optional fields, checked in code: providers' tool schemas want a
   // plain object (OpenAI refuses anyOf/allOf at the top).

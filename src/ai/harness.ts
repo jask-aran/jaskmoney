@@ -1,4 +1,5 @@
-import { validateToolCall, type AssistantMessage, type Context, type Static, type TSchema, type Tool } from "@earendil-works/pi-ai"
+import type { AssistantMessage, Context, Static, TSchema, Tool } from "@earendil-works/pi-ai"
+import { piAi } from "./piAi"
 import type { Llm } from "./llm"
 
 /**
@@ -85,7 +86,7 @@ export async function runAgent<P extends TSchema>(
       let text: string
       let isError = false
       try {
-        const args = validateToolCall(tools, call)
+        const args = piAi().validateToolCall(tools, call)
         if (call.name === "finish") return { result: args as Static<P>, turns: turn, usage, calls }
         const tool = options.tools.find((t) => t.name === call.name)
         if (!tool) throw new Error(`no tool ${call.name}`)
