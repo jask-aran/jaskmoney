@@ -75,11 +75,15 @@ export function wsLink(url: string, { onClose, onOpen }: { onClose?: (reason: st
       if (options.ai || options.llm || options.models) return Promise.reject(new Error("stand-in models work in-process only"))
       if (closed) return Promise.reject(new Error(closed))
       const id = nextId++
-      return new Promise((resolve, reject) => {
+      const signal = options.signal
+      const cancel = () => send({ t: "cancel", id })
+      return new Promise<unknown>((resolve, reject) => {
         waiting.set(id, { resolve, reject, onProgress: options.onProgress as never })
-        options.signal?.addEventListener("abort", () => send({ t: "cancel", id }), { once: true })
         send({ t: "call", id, method, params })
-      })
+        // Cancelled already: the core hears it at once, as a local call sees its signal.
+        if (signal?.aborted) cancel()
+        else signal?.addEventListener("abort", cancel, { once: true })
+      }).finally(() => signal?.removeEventListener("abort", cancel)) as never
     },
     subscribe(listener) {
       listeners.add(listener)

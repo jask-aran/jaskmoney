@@ -162,6 +162,8 @@ export function createClientStore(initialLink: CoreLink) {
   /** Use another link (another core): the mirror starts again from its state. */
   function connect(next: CoreLink) {
     unsubscribe()
+    // Another core's sessions are numbered on their own: its first patch is a new one.
+    session = -1
     link = next
     unsubscribe = link.subscribe(applyPatch)
   }
