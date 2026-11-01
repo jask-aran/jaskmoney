@@ -237,10 +237,12 @@ export function BudgetsTab(props: { focused: SectionId }) {
   // A budget on two lines: its name and spent of budget hung from the bar's
   // left end (╭), what's left a day or over from its right (╮), and the bar
   // the row's width under them. A budget not set says how to set one over a
-  // faint rule.
-  const hungSpans = (name: Span, p: BudgetProgress | undefined, unset: string): [Span[], Span[]] => {
+  // faint rule. No wash marks the cursor here: its name and corners take the
+  // focus colour.
+  const hungSpans = (name: Span, p: BudgetProgress | undefined, unset: string, cursor: boolean): [Span[], Span[]] => {
     const width = rowWidth(mainWidth())
-    const corner = (text: string): Span => ({ text, fg: ink.note })
+    const corner = (text: string): Span => ({ text, fg: cursor ? tone.focus : ink.note, bold: cursor })
+    if (cursor) name = { ...name, fg: tone.focus }
     const line = (left: Span[], right: Span[]): Span[] => {
       const used = [...left, ...right].reduce((n, span) => n + span.text.length, 0)
       return fitSpans([...left, { text: " ".repeat(Math.max(1, width - used)), fg: ink.note }, ...right], width)
@@ -301,9 +303,9 @@ export function BudgetsTab(props: { focused: SectionId }) {
         const armed = () => (row().budget ? armedFor(ui.state.armed, "budget", budgetArmId(row().budget!, cycle().start)) : undefined)
         const twoLines = (): [Span[], Span[]] => {
           const r = row()
-          if (r.kind === "total") return hungSpans({ text: TOTAL, fg: ink.strong, bold: true }, totalProgress(), "")
-          if (r.budget) return hungSpans({ text: label(r.budget), fg: ink.figure, bold: true }, progress().get(r.budget.id), "")
-          return hungSpans({ text: overallName(), fg: ink.figure, bold: true }, undefined, `not set: enter sets one${hasCategoryBudgets() ? " for the rest" : ""}`)
+          if (r.kind === "total") return hungSpans({ text: TOTAL, fg: ink.strong, bold: true }, totalProgress(), "", at())
+          if (r.budget) return hungSpans({ text: label(r.budget), fg: ink.figure, bold: true }, progress().get(r.budget.id), "", at())
+          return hungSpans({ text: overallName(), fg: ink.figure, bold: true }, undefined, `not set: enter sets one${hasCategoryBudgets() ? " for the rest" : ""}`, at())
         }
         const spans = (): Span[] => {
           const r = row()
@@ -313,8 +315,7 @@ export function BudgetsTab(props: { focused: SectionId }) {
         }
         return (
           <Show when={hung()} fallback={<ListRow cursor={at()} bg={theme.canvas} armed={armed()} spans={spans()} />}>
-            <ListRow cursor={at()} bg={theme.canvas} armed={armed()} spans={twoLines()[0]} />
-            {/* The cursor washes the label line only: the bar stays on the canvas. */}
+            <ListRow cursor={false} bg={theme.canvas} armed={armed()} spans={twoLines()[0]} />
             <ListRow cursor={false} bg={theme.canvas} spans={twoLines()[1]} />
           </Show>
         )

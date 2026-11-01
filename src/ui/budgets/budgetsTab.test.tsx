@@ -8,7 +8,7 @@ import { key } from "../../testing/keys"
 import { saveBudget } from "../../db/client"
 import { budgetIn } from "../../domain/budget"
 import { RGBA } from "@opentui/core"
-import { theme } from "../../theme"
+import { theme, tone } from "../../theme"
 
 afterEach(() => setAppClock(null))
 
@@ -197,13 +197,17 @@ test("short of room for two lines each, every budget takes one line, the bar bet
   expect(f).not.toContain("╭ Groceries")
 })
 
-test("the cursor washes a budget's label line, not its bar", async () => {
+test("no wash on a budget: the cursor's name and corners take the focus colour, the bar stays on the canvas", async () => {
   const { t, frame } = await budgetsTab()
   await data.setBudget({ kind: "overall" }, 500)
   await frame()
   const spans = t.captureSpans().lines.flatMap((l) => l.spans)
-  const label = spans.find((s) => s.text.includes("$100 of $500"))!
+  const canvas = RGBA.fromHex(theme.canvas).toInts()
+  // The corner and name share one style (one span), the closing corner too.
+  const name = spans.find((s) => s.text.includes("╭ Overall spending"))!
+  const corner = spans.find((s) => s.text.includes("╮"))!
   const bar = spans.find((s) => s.text.startsWith("█"))!
-  expect(label.bg.toInts()).toEqual(RGBA.fromHex(theme.rowCursor).toInts())
-  expect(bar.bg.toInts()).toEqual(RGBA.fromHex(theme.canvas).toInts())
+  for (const s of [name, corner, bar]) expect(s.bg.toInts()).toEqual(canvas)
+  expect(name.fg.toInts()).toEqual(RGBA.fromHex(tone.focus).toInts())
+  expect(corner.fg.toInts()).toEqual(RGBA.fromHex(tone.focus).toInts())
 })
