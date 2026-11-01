@@ -1,5 +1,5 @@
 import { useTerminalDimensions } from "@opentui/solid"
-import { For, Index, Show, on, createEffect, createMemo, createSignal, onCleanup, untrack } from "solid-js"
+import { Index, Show, on, createEffect, createMemo, createSignal, onCleanup, untrack } from "solid-js"
 import { ui } from "../../state/uiStore"
 import { data } from "../../state/dataStore"
 import { ink, theme, tone } from "../../theme"
@@ -10,7 +10,7 @@ import { followTickers, welcomeAct, welcomeContext, welcomeJump } from "../../ap
 import { onPointer } from "../../app/pointer"
 import { StyledLine, type StyledSpan } from "../primitives/StyledLine"
 import { SPINNER } from "../primitives/Spinner"
-import { BACKDROP_LEVELS, backdropLines, type BackdropId, type BackdropInk } from "./backdrop"
+import { BACKDROP_LEVELS, backdropLines, keepSameLines, type BackdropId, type BackdropInk } from "./backdrop"
 import { DEMOS, DemoReel } from "./Demos"
 
 /**
@@ -26,6 +26,10 @@ import { DEMOS, DemoReel } from "./Demos"
  * one clock while the setup is open; nothing waits on it to be readable.
  */
 const FRAME_MS = 80
+/** The clock's step: half a FRAME_MS, so the title's light keeps its beat
+ * exactly. 25 a second: the fastest tape (11 columns a second) moves under
+ * half a column a step, so it still moves in even steps. */
+const CLOCK_MS = FRAME_MS / 2
 
 /** The title, two rows of block letters. */
 const LETTERS: Record<string, [string, string]> = {
@@ -41,6 +45,16 @@ function mix(a: string, b: string, t: number): string {
   if (t <= 0) return a
   const [x, y] = [hex(a), hex(b)]
   return `#${x.map((v, i) => Math.round(v + (y[i]! - v) * t).toString(16).padStart(2, "0")).join("")}`
+}
+
+/** The backdrop's colours, faint over the canvas: its levels mixed once,
+ * not per cell per frame. */
+const BACKDROP_LEVEL_INK = Array.from({ length: BACKDROP_LEVELS }, (_, level) =>
+  mix(theme.canvas, level >= BACKDROP_LEVELS - 1 ? tone.key : tone.focus, 0.06 + (level / (BACKDROP_LEVELS - 1)) * 0.38))
+export const BACKDROP_INK: BackdropInk = {
+  level: (level) => BACKDROP_LEVEL_INK[level]!,
+  up: mix(theme.canvas, tone.good, 0.4),
+  down: mix(theme.canvas, tone.bad, 0.4),
 }
 
 type Line = { spans: StyledSpan[]; row?: number }
@@ -80,14 +94,24 @@ function WelcomeScreen() {
   const ctx = createMemo(() => { void data.state.apiKeys; void data.state.signedIn; void data.state.upToken; void state().email.phase; return welcomeContext(data) })
   const rows = createMemo(() => welcomeRows(state(), ctx()))
 
-  // ---- The clock, while the setup is open.
-  const [tick, setTick] = createSignal(0)
-  const timer = setInterval(() => setTick((t) => t + 1), FRAME_MS)
+  // ---- The clock, while the setup is open: one for everything that moves
+  // on it (the backdrop, the title's light, the rail, a spinner, the caret,
+  // the tour's demo), so each of its steps is one frame drawn; clocks of
+  // their own would each ask for frames of their own. The backdrop moves
+  // on every step; the rest on every other one (`tick`, FRAME_MS).
+  // A step: how many there have been, and when it came.
+  const [clock, setClock] = createSignal({ step: 0, at: performance.now() })
+  const timer = setInterval(() => setClock((c) => ({ step: c.step + 1, at: performance.now() })), CLOCK_MS)
   onCleanup(() => clearInterval(timer))
+  const now = () => clock().at
+  const tick = createMemo(() => clock().step >> 1)
   let shownAt = 0
   createEffect(() => { void state().shown; shownAt = untrack(tick) })
   const since = () => tick() - shownAt
   const spinner = () => SPINNER[tick() % SPINNER.length]!
+  // The token's caret blinks: on for six ticks, off for six. The card is
+  // rebuilt when it blinks, not on every tick.
+  const caretOn = createMemo(() => Math.floor(tick() / 6) % 2 === 0)
 
   // ---- Layout.
   const height = () => Math.max(12, dims().height - 2)
@@ -106,7 +130,7 @@ function WelcomeScreen() {
   // doesn't read as text the paste goes into the middle of.
   const tokenField = (): { text: string; hint: string } => {
     const shown = tokenShown(state().token.value)
-    const caret = Math.floor(tick() / 6) % 2 === 0 ? "▌" : " "
+    const caret = caretOn() ? "▌" : " "
     return shown ? { text: `${shown}${caret}`, hint: "" } : { text: caret, hint: "paste it here" }
   }
   const rowLine = (row: WelcomeRow, i: number): Line => {
@@ -276,20 +300,11 @@ function WelcomeScreen() {
   }
 
   // ---- The setup's backdrop, behind every step: money marks drifting,
-  // faint (backdrop); the cards and the demo are solid over it.
-  const backdropInk: BackdropInk = {
-    level: (level) => mix(theme.canvas, level >= BACKDROP_LEVELS - 1 ? tone.key : tone.focus, 0.06 + (level / (BACKDROP_LEVELS - 1)) * 0.38),
-    up: mix(theme.canvas, tone.good, 0.4),
-    down: mix(theme.canvas, tone.bad, 0.4),
-  }
+  // faint (BACKDROP_INK); the cards and the demo are solid over it.
   // Settings › Appearance's choice; b on the welcome page tries the next.
   const backdropId = (): BackdropId => welcomeBackdrop(state(), data.state.uiPrefs.backdrop)
-  // Behind every step, on a clock of its own at 30 frames a second (the
-  // setup's is slower): a tape moves in even steps.
-  const [backdropT, setBackdropT] = createSignal(0)
-  const backdropStart = performance.now()
-  const backdropTimer = setInterval(() => setBackdropT((performance.now() - backdropStart) / 1000), 33)
-  onCleanup(() => clearInterval(backdropTimer))
+  // Behind every step, moving on each step of the clock.
+  const backdropT = () => now() / 1000
   // The tape's real prices, while it's the backdrop.
   createEffect(() => {
     if (backdropId() !== "ticker") return
@@ -298,7 +313,10 @@ function WelcomeScreen() {
   // Seconds since this backdrop began: a new one starts from its beginning
   // (a ticker tape from empty, streaming in).
   const backdropSince = createMemo(on(backdropId, () => untrack(backdropT)))
-  const backdrop = createMemo(() => backdropLines(backdropId(), dims().width, height(), backdropT() - backdropSince(), backdropInk, state().tickers))
+  // A frame's lines that are as they were stay the same lines (and a frame
+  // that changes nothing, the same frame): only what moved is drawn again.
+  let drawn: StyledSpan[][] = []
+  const backdrop = createMemo(() => (drawn = keepSameLines(drawn, backdropLines(backdropId(), dims().width, height(), backdropT() - backdropSince(), BACKDROP_INK, state().tickers))))
 
   // ---- The rail: where you are among the steps; the way to here fills in.
   const railSpans = (): StyledSpan[] => {
@@ -322,11 +340,13 @@ function WelcomeScreen() {
 
   const column = (lines: () => Line[], width: () => number) => (
     <box width={width()} flexDirection="column" flexShrink={0}>
-      <For each={lines()}>{(line) => (
-        <box height={1} width={width()} onMouseDown={click(line.row)}>
-          <StyledLine spans={line.spans} bg={theme.canvas} />
+      {/* By place, not by line: a column rebuilt (the caret blinks, a
+          spinner turns) keeps its rows, and a row the same as it was is left alone. */}
+      <Index each={lines()}>{(line) => (
+        <box height={1} width={width()} onMouseDown={click(line().row)}>
+          <StyledLine spans={line().spans} bg={theme.canvas} />
         </box>
-      )}</For>
+      )}</Index>
     </box>
   )
 
@@ -368,7 +388,7 @@ function WelcomeScreen() {
         <box height={1} />
         {/* Solid: the backdrop goes round the demo, not through it. */}
         <box backgroundColor={theme.canvas}>
-          <DemoReel scene={state().demo} startedAt={state().demoAt} trying={state().trying} width={reelWidth()} height={reelHeight()} />
+          <DemoReel scene={state().demo} startedAt={state().demoAt} now={now()} trying={state().trying} width={reelWidth()} height={reelHeight()} />
         </box>
       </Show>
       </box>

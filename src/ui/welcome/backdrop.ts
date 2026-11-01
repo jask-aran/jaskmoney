@@ -18,27 +18,60 @@ export interface BackdropInk { level: (level: number) => string; up: string; dow
 /**
  * The welcome page's backdrop, full screen, behind everything. Pure: the
  * lines for a `width`×`height` screen `t` seconds in. Neighbouring cells of
- * one colour share a span.
+ * one colour share a span. `tickers`: the tape's real prices, once they've
+ * come. `t` is seconds since this backdrop began (a tape streams in from
+ * empty).
+ *
+ * It's drawn 30 times a second, so it's built for that: a backdrop fills a
+ * row of characters and colours at a time (no object per cell), `ink.level`
+ * should be a lookup (the caller mixes its handful of colours once), and a
+ * tape's text is made once per set of prices (tapeOf), not per cell.
  */
-/** `tickers`: the tape's real prices, once they've come. `t` is seconds
- * since this backdrop began (a tape streams in from empty). */
 export function backdropLines(id: BackdropId, width: number, height: number, t: number, ink: BackdropInk, tickers?: readonly Ticker[]): StyledSpan[][] {
-  const cell = id === "coins" ? coinRain(width, height, t, ink) : id === "ticker" ? tickerTape(width, height, t, ink, tickers) : plasma(width, height, t, ink)
+  const row = id === "coins" ? coinRain(width, height, t, ink) : id === "ticker" ? tickerTape(width, height, t, ink, tickers) : plasma(width, height, t, ink)
+  const ch: string[] = new Array(Math.max(0, width)), fg: string[] = new Array(Math.max(0, width))
   const lines: StyledSpan[][] = []
   for (let y = 0; y < height; y++) {
+    if (width <= 0) { lines.push([]); continue }
+    // A row with nothing on it: one blank run.
+    if (!row(y, ch, fg)) { lines.push([{ text: " ".repeat(width), fg: ink.level(0) }]); continue }
     const spans: StyledSpan[] = []
-    for (let x = 0; x < width; x++) {
-      const { ch, fg } = cell(x, y)
-      const last = spans.at(-1)
-      if (last && last.fg === fg) last.text += ch
-      else spans.push({ text: ch, fg })
+    let text = ch[0]!, colour = fg[0]!
+    for (let x = 1; x < width; x++) {
+      if (fg[x] === colour) text += ch[x]
+      else { spans.push({ text, fg: colour }); text = ch[x]!; colour = fg[x]! }
     }
+    spans.push({ text, fg: colour })
     lines.push(spans)
   }
   return lines
 }
 
-type Cell = (x: number, y: number) => { ch: string; fg: string }
+/**
+ * `next`, with each line that's the same as `prev`'s line there taken from
+ * `prev`; `prev` itself when every line is. The drawing then leaves an
+ * unchanged line, or screen, alone: most of a tape's frames change a few
+ * of its rows, and many of the coin rain's change none.
+ */
+export function keepSameLines(prev: readonly StyledSpan[][], next: StyledSpan[][]): StyledSpan[][] {
+  let same = prev.length === next.length
+  for (let y = 0; y < next.length; y++) {
+    const was = prev[y]
+    if (was && sameRuns(was, next[y]!)) next[y] = was
+    else same = false
+  }
+  return same ? (prev as StyledSpan[][]) : next
+}
+
+function sameRuns(a: readonly StyledSpan[], b: readonly StyledSpan[]): boolean {
+  if (a.length !== b.length) return false
+  for (let i = 0; i < a.length; i++) if (a[i]!.text !== b[i]!.text || a[i]!.fg !== b[i]!.fg) return false
+  return true
+}
+
+/** Fills row `y`'s characters and colours, `width` of each; false for a
+ * blank row (nothing filled). */
+type Row = (y: number, ch: string[], fg: string[]) => boolean
 
 /** A number in 0..1 from an integer, the same each time (a column's speed). */
 const hash = (n: number) => {
@@ -52,15 +85,22 @@ const hash = (n: number) => {
  * waves; its character climbs a ramp to "$", its colour brightens. The
  * lower half of the range is blank: quiet ground, bright crests.
  */
-function plasma(width: number, height: number, t: number, ink: BackdropInk): Cell {
+function plasma(width: number, height: number, t: number, ink: BackdropInk): Row {
   const RAMP = " ··::++==$"
   const cx = width / 2, cy = height / 2
-  return (x, y) => {
+  const levels = Array.from({ length: BACKDROP_LEVELS }, (_, l) => ink.level(l))
+  return (y, ch, fg) => {
     // Cells are about twice as tall as wide: y counts double.
-    const dx = x - cx, dy = (y - cy) * 2
-    const v = Math.sin(x * 0.07 + t * 0.9) + Math.sin(dy * 0.09 - t * 0.6) + Math.sin((x + dy) * 0.045 + t * 0.4) + Math.sin(Math.sqrt(dx * dx + dy * dy) * 0.11 - t * 1.1)
-    const u = Math.max(0, Math.min(1, ((v + 4) / 8 - 0.45) / 0.55)) ** 1.4
-    return { ch: RAMP[Math.min(RAMP.length - 1, Math.floor(u * RAMP.length))]!, fg: ink.level(Math.min(BACKDROP_LEVELS - 1, Math.floor(u * BACKDROP_LEVELS))) }
+    const dy = (y - cy) * 2
+    const across = Math.sin(dy * 0.09 - t * 0.6)
+    for (let x = 0; x < width; x++) {
+      const dx = x - cx
+      const v = Math.sin(x * 0.07 + t * 0.9) + across + Math.sin((x + dy) * 0.045 + t * 0.4) + Math.sin(Math.sqrt(dx * dx + dy * dy) * 0.11 - t * 1.1)
+      const u = Math.max(0, Math.min(1, ((v + 4) / 8 - 0.45) / 0.55)) ** 1.4
+      ch[x] = RAMP[Math.min(RAMP.length - 1, Math.floor(u * RAMP.length))]!
+      fg[x] = levels[Math.min(BACKDROP_LEVELS - 1, Math.floor(u * BACKDROP_LEVELS))]!
+    }
+    return true
   }
 }
 
@@ -69,8 +109,9 @@ function plasma(width: number, height: number, t: number, ink: BackdropInk): Cel
  * trailing digits and cents that fade behind it, then starts again from the
  * top after a pause.
  */
-function coinRain(width: number, height: number, t: number, ink: BackdropInk): Cell {
+function coinRain(width: number, height: number, t: number, ink: BackdropInk): Row {
   const TRAIL = "$0123456789¢.,"
+  const levels = Array.from({ length: BACKDROP_LEVELS }, (_, l) => ink.level(l))
   const columns = Array.from({ length: width }, (_, x) => {
     const on = hash(x * 7 + 1) < 0.34
     const speed = 4 + hash(x * 13 + 2) * 9 // rows a second
@@ -79,14 +120,17 @@ function coinRain(width: number, height: number, t: number, ink: BackdropInk): C
     const head = ((t * speed + hash(x * 23 + 5) * cycle) % cycle) - trail
     return { on, head, trail }
   })
-  return (x, y) => {
-    const c = columns[x]!
-    const back = c.head - y // 0 at the head, more up the trail
-    if (!c.on || back < 0 || back > c.trail) return { ch: " ", fg: ink.level(0) }
-    const fade = 1 - back / c.trail
-    // The trail's characters change as it falls: each row a new one.
-    const ch = back < 1 ? "$" : TRAIL[1 + Math.floor(hash(x * 31 + Math.floor(c.head) * 7 + y) * (TRAIL.length - 1))]!
-    return { ch, fg: ink.level(back < 1 ? BACKDROP_LEVELS - 1 : Math.max(0, Math.round(fade * (BACKDROP_LEVELS - 2)))) }
+  return (y, ch, fg) => {
+    for (let x = 0; x < width; x++) {
+      const c = columns[x]!
+      const back = c.head - y // 0 at the head, more up the trail
+      if (!c.on || back < 0 || back > c.trail) { ch[x] = " "; fg[x] = levels[0]!; continue }
+      const fade = 1 - back / c.trail
+      // The trail's characters change as it falls: each row a new one.
+      ch[x] = back < 1 ? "$" : TRAIL[1 + Math.floor(hash(x * 31 + Math.floor(c.head) * 7 + y) * (TRAIL.length - 1))]!
+      fg[x] = levels[back < 1 ? BACKDROP_LEVELS - 1 : Math.max(0, Math.round(fade * (BACKDROP_LEVELS - 2)))]!
+    }
+    return true
   }
 }
 
@@ -118,6 +162,22 @@ const slotText = (k: Ticker) => `${k.name} ${price(k)} ${k.change >= 0 ? "▲" :
  * the first ask for real prices has answered by then. */
 const LEAD_SECONDS = 1.2
 
+/** A ticker as a tape draws it: its slot's text, how much of it is the
+ * name, and whether it rose. */
+interface Slot { text: string; name: number; up: boolean }
+/** A set of prices as tapes, one per kind in the order they come: made
+ * once per set (the prices come every couple of minutes), not per frame. */
+const tapes = new WeakMap<readonly Ticker[], Slot[][]>()
+function tapeOf(list: readonly Ticker[]): Slot[][] {
+  let kinds = tapes.get(list)
+  if (!kinds) {
+    const slots = list.map((k) => ({ group: k.group, slot: { text: slotText(k), name: k.name.length, up: k.change >= 0 } }))
+    kinds = [...new Set(slots.map((s) => s.group))].map((group) => slots.filter((s) => s.group === group).map((s) => s.slot))
+    tapes.set(list, kinds)
+  }
+  return kinds
+}
+
 /**
  * Ticker tape: every fourth row a tape of tickers of one kind (indices,
  * ASX shares, US shares, FX, crypto, commodities: the kinds in turn down
@@ -128,13 +188,14 @@ const LEAD_SECONDS = 1.2
  * change are tinted up or down. `tickers`: real prices once they've come,
  * else made-up ones.
  */
-function tickerTape(width: number, height: number, t: number, ink: BackdropInk, tickers: readonly Ticker[] = FAKE_TICKERS): Cell {
-  const list = tickers.length ? tickers : FAKE_TICKERS
-  const kinds = [...new Set(list.map((k) => k.group))]
+function tickerTape(width: number, _height: number, t: number, ink: BackdropInk, tickers: readonly Ticker[] = FAKE_TICKERS): Row {
+  const kinds = tapeOf(tickers.length ? tickers : FAKE_TICKERS)
   const cycle = SLOT + GAP.length
-  const bands = new Map<number, (x: number) => { ch: string; up: boolean; name: boolean } | null>()
-  for (let y = 1, k = 0; y < height; y += 4, k++) {
-    const kind = list.filter((tk) => tk.group === kinds[k % kinds.length])
+  const blank = ink.level(0), name = ink.level(2)
+  return (y, ch, fg) => {
+    if (y % 4 !== 1) return false
+    const k = (y - 1) / 4
+    const kind = kinds[k % kinds.length]!
     // 2 to 11 columns a second: under half a column a frame at 30.
     const speed = 2 + ((k * 0.618034) % 1) * 9
     // How far the tape has come in from the right edge: after its lead-in
@@ -144,18 +205,15 @@ function tickerTape(width: number, height: number, t: number, ink: BackdropInk, 
     const head = u < 0 ? -1 : Math.floor(u * speed)
     // A kind's second tape starts further along it.
     const first = Math.floor(k / kinds.length) * 3
-    bands.set(y, (x) => {
+    for (let x = 0; x < width; x++) {
       // The tape's position under column x: 0 is its first character.
       const i = head - (width - 1 - x)
-      if (i < 0 || !kind.length) return null
-      const ticker = kind[(first + Math.floor(i / cycle)) % kind.length]!
+      const slot = i < 0 ? undefined : kind[(first + Math.floor(i / cycle)) % kind.length]
       const at = i % cycle
-      return { ch: slotText(ticker)[at]!, up: ticker.change >= 0, name: at < ticker.name.length }
-    })
-  }
-  return (x, y) => {
-    const at = bands.get(y)?.(x)
-    if (!at || at.ch === " ") return { ch: " ", fg: ink.level(0) }
-    return { ch: at.ch, fg: at.name ? ink.level(2) : at.up ? ink.up : ink.down }
+      const c = slot ? slot.text[at]! : " "
+      ch[x] = c
+      fg[x] = c === " " ? blank : at < slot!.name ? name : slot!.up ? ink.up : ink.down
+    }
+    return true
   }
 }

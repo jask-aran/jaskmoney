@@ -1,4 +1,4 @@
-import { Show, createMemo, createSignal, onCleanup, type JSX } from "solid-js"
+import { Show, createMemo, type JSX } from "solid-js"
 import { dailySpendSeries } from "../../domain/dashboard"
 import { addDays, addMonths } from "../../domain/days"
 import { ACCEPT_ALL_AT } from "../../domain/questions"
@@ -29,13 +29,10 @@ export { DEMOS }
  * presses show below it. Change the pane, the filter language or the
  * charts, and the demos change with them.
  */
-const TICK_MS = 60
-
-export function DemoReel(props: { scene: number; startedAt: number; trying: DemoTry | null; width: number; height: number }) {
-  const [now, setNow] = createSignal(performance.now())
-  const timer = setInterval(() => setNow(performance.now()), TICK_MS)
-  onCleanup(() => clearInterval(timer))
-  const ms = () => Math.max(0, now() - props.startedAt)
+/** `now`: the setup's clock (performance.now() at its latest step), so a
+ * demo moves in the same frames as everything else on the setup. */
+export function DemoReel(props: { scene: number; startedAt: number; now: number; trying: DemoTry | null; width: number; height: number }) {
+  const ms = () => Math.max(0, props.now - props.startedAt)
   const id = () => DEMOS[props.scene]?.id
   const world = createMemo(() => demoWorld(data.state.categories))
   const topics = createMemo(() => tourTopics(world()))
@@ -53,17 +50,27 @@ export function DemoReel(props: { scene: number; startedAt: number; trying: Demo
   }
   const shown = (count: number, cursor: number) => rowsShown({ top: top(cursor), visible: visible(), count, total: world().rows.length, selected: 0, hidden: 0, range: false, sort: "date", ascending: false })
 
+  // A demo's script plays only while it's the one shown, and what follows
+  // from it (its rows, the bar, the table) is worked out again only when
+  // the script's frame changes, not on every step of the clock: a frame
+  // the same as the last (by value) is the last.
+  const playing = (demo: string) => id() === demo
   // ---- Filter: / then what the script types, or what you type.
-  const filterText = () => props.trying?.filter ?? (() => { const v = filterAt(ms(), topics()); return { value: v, caret: v.length } })()
+  const filterText = createMemo(() => props.trying?.filter ?? (() => { const v = playing("filter") ? filterAt(ms(), topics()) : ""; return { value: v, caret: v.length } })(),
+    undefined, { equals: (a, b) => a.value === b.value && a.caret === b.caret })
   // The script presses / just before it types.
-  const filterOpen = () => !!props.trying || ms() % 13000 > 700
+  const filterOpen = createMemo(() => !!props.trying || ms() % 13000 > 700)
   const filterRows = createMemo(() => demoFilter(world(), filterText().value).rows)
+  const filterBar = createMemo(() => (filterOpen() ? bar(filterText().value, filterText().caret, true) : null))
   // ---- Smart search.
-  const ask = createMemo(() => askAt(ms(), topics()))
+  const ask = createMemo(() => (playing("ask") ? askAt(ms(), topics()) : { raw: "", editing: false, writing: false, question: null }),
+    undefined, { equals: (a, b) => a.raw === b.raw && a.editing === b.editing && a.writing === b.writing && a.question === b.question })
   const askRows = createMemo(() => (ask().question ? demoFilter(world(), ask().raw).rows : world().rows))
+  const askBar = createMemo(() => bar(ask().raw, ask().raw.length, ask().editing, { writing: ask().writing, question: ask().question }))
   // ---- Suggestions: the script's state, or yours.
   const wait = createMemo(() => waiting(world()))
-  const suggest = createMemo(() => (props.trying ? { state: props.trying, pressed: null } : suggestAt(ms(), world())))
+  const suggest = createMemo(() => (props.trying ? { state: props.trying, pressed: null } : suggestAt(playing("suggest") ? ms() : 0, world())),
+    undefined, { equals: (a, b) => a.pressed === b.pressed && (a.state === b.state || JSON.stringify(a.state) === JSON.stringify(b.state)) })
   const waitingRows = createMemo(() => wait().rows.filter((r) => !suggest().state.accepted.includes(r.id)))
   const suggestions = createMemo(() => {
     const gone = suggest().state.dismissed
@@ -116,12 +123,12 @@ export function DemoReel(props: { scene: number; startedAt: number; trying: Demo
           width={props.width} height={paneHeight()} focused revealKey={CHART_VIEWS[view()]!.view} revealMs={TOUR_CHART_MS} labels={data.state.uiPrefs.chartLabels} />
       </Show>
       <Show when={id() === "filter"}>
-        <TransactionsPane title="Transactions" filter={filterOpen() ? bar(filterText().value, filterText().caret, true) : null} focused width={props.width} height={paneHeight()} bottom={shown(filterRows().length, cursor())}>
+        <TransactionsPane title="Transactions" filter={filterBar()} focused width={props.width} height={paneHeight()} bottom={shown(filterRows().length, cursor())}>
           <TransactionTable rows={filterRows()} top={top(cursor())} visible={visible()} cursor={cursor()} width={tableWidth()} showAccount={false} showTags empty="No matches" />
         </TransactionsPane>
       </Show>
       <Show when={id() === "ask"}>
-        <TransactionsPane title="Transactions" filter={bar(ask().raw, ask().raw.length, ask().editing, { writing: ask().writing, question: ask().question })} focused width={props.width} height={paneHeight()} bottom={shown(askRows().length, 0)}>
+        <TransactionsPane title="Transactions" filter={askBar()} focused width={props.width} height={paneHeight()} bottom={shown(askRows().length, 0)}>
           <TransactionTable rows={askRows()} top={0} visible={visible()} cursor={0} width={tableWidth()} showAccount={false} showTags empty="No matches" />
         </TransactionsPane>
       </Show>
