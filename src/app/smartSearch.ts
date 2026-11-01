@@ -21,10 +21,10 @@ export async function runSmartSearch(ui: UiStore, data: DataStore, draft: string
     const descriptions = [...new Set(data.accountScoped().map((t) => t.description))]
     const started = Date.now()
     const { expr, clairic, clairicOn } = await data.smartSearch(query, descriptions)
-    if (!ui.state.filterMode || ui.state.filterDraft !== draft) return
+    if (ui.state.filterBar == null || (ui.state.filterBar?.draft ?? "") !== draft) return
     // Without Clairic the words are Jev's pick and written dates are not read.
     const written: Written = { ms: Date.now() - started, by, clairic: !clairicOn ? "off" : clairic ? { failed: clairic.replace(/^Workers AI clairic:\s*/, "") } : "used" }
-    ui.setState({ filterDraft: expr, filterCaret: expr.length, smartQuestion: { question: query, expr, written } })
+    ui.setState({ filterBar: { draft: expr, caret: expr.length }, smartQuestion: { question: query, expr, written } })
     data.setFilterLive(expr)
     onApplied()
     if (askTerms(parseFilter(expr).node).length) {

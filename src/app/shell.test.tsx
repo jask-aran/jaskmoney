@@ -131,12 +131,7 @@ describe("shell render M0", () => {
       ready: true,
     })
     ui.switchTab("manager")
-    ui.setState({
-      focusedSection: "mgr.transactions",
-      managerCursor: 0,
-      managerTop: 0,
-      filterMode: false,
-    })
+    ui.setState({ focusedSection: "mgr.transactions", managerCursor: 0, managerTop: 0, filterBar: null })
     await t.renderOnce()
     await t.flush()
 
@@ -219,7 +214,7 @@ describe("shell render M0", () => {
       sortColumn: "date", sortAscending: false, ready: true,
     })
     ui.switchTab("manager")
-    ui.setState({ focusedSection: "mgr.transactions", managerCursor: 0, managerTop: 0, filterMode: false })
+    ui.setState({ focusedSection: "mgr.transactions", managerCursor: 0, managerTop: 0, filterBar: null })
     await t.renderOnce()
     await t.flush()
     // Table rows only (they carry the category marker).
@@ -246,10 +241,7 @@ describe("shell render M0", () => {
       sortColumn: "date", sortAscending: false, ready: true,
     })
     ui.switchTab("manager")
-    ui.setState({
-      focusedSection: "mgr.transactions", managerCursor: 2, managerTop: 0, filterMode: false,
-      selectedIds: { 2: true }, rangeSelecting: true, rangeAnchorId: 1, rangeCursorId: 3,
-    })
+    ui.setState({ focusedSection: "mgr.transactions", managerCursor: 2, managerTop: 0, filterBar: null, selectedIds: { 2: true }, range: { anchorId: 1, cursorId: 3 } })
     await t.renderOnce()
     await t.flush()
 
@@ -266,7 +258,7 @@ describe("shell render M0", () => {
     expect(cursor.attributes & TextAttributes.ITALIC).toBe(TextAttributes.ITALIC)
     expect(span("RANGE ONLY").attributes & TextAttributes.ITALIC).toBe(0)
 
-    ui.setState({ selectedIds: {}, rangeSelecting: false, rangeAnchorId: 0, rangeCursorId: 0 })
+    ui.setState({ selectedIds: {}, range: null })
     await t.renderOnce()
     await t.flush()
     // Plain cursor keeps column colours on surface2.
@@ -303,14 +295,7 @@ describe("shell render M0", () => {
       ready: true,
     })
     ui.switchTab("manager")
-    ui.setState({
-      focusedSection: "mgr.transactions",
-      managerCursor: 0,
-      managerTop: 0,
-      filterMode: false,
-      selectedIds: {},
-      rangeSelecting: false,
-    })
+    ui.setState({ focusedSection: "mgr.transactions", managerCursor: 0, managerTop: 0, filterBar: null, selectedIds: {}, range: null })
     await t.renderOnce()
     await t.flush()
 
@@ -439,7 +424,7 @@ describe("render errors", () => {
 
   test("all six text contexts paint the caret character and restore the end bar", async () => {
     ui.switchTab("manager")
-    ui.setState({ detailId: null, detailNotesEditing: false })
+    ui.setState({ detail: null })
     const t = await renderApp({ width: 140, height: 55 })
     await t.renderOnce()
     const profile = { ...(ui.state.importWizard?.profileDraft ?? { id: "", name: "", account: "", accountType: "debit" as const, importPrefix: "", hasHeader: true, delimiter: ",", dateColumn: 0, amountColumn: 1, descriptionColumns: [2], descriptionJoin: false, amountStrip: "$", dateFormat: "DMY" as const }), id: "abZcd", account: "Caret test", accountType: "debit" as const }
@@ -452,7 +437,7 @@ describe("render errors", () => {
     data.updateTransactionNotes(id, "abZcd")
     const contexts = [
       { accent: true, open: () => { ui.switchTab("manager"); ui.openFilter("abZcd") } },
-      { accent: false, open: () => { ui.switchTab("manager"); ui.setState({ detailId: id }); t.mockInput.pressKey("n") } },
+      { accent: false, open: () => { ui.switchTab("manager"); ui.setState({ detail: { boughtTop: 0, notes: null, id: id } }); t.mockInput.pressKey("n") } },
       { accent: true, open: () => { ui.switchTab("settings"); ui.openSettingsEditor("category", null, { ...ui.state.settingsDraft, name: "abZcd" }) } },
       { accent: false, open: () => { ui.switchTab("settings"); ui.beginImport("", []); ui.setState("importWizard", { stage: "path", path: "abZcd", pathCaret: 5 }) } },
       { accent: false, open: () => { ui.switchTab("settings"); ui.openProfileEditor(profile, null) } },
@@ -460,7 +445,7 @@ describe("render errors", () => {
     ]
     // Seed: end bar. Left: reverse character. End: normal text and end bar.
     for (const context of contexts) {
-      ui.setState({ detailId: null, detailNotesEditing: false })
+      ui.setState({ detail: null })
       context.open()
       await t.renderOnce()
       await t.flush()
@@ -485,7 +470,7 @@ describe("render errors", () => {
       expect(restored.attributes).toBe(0)
       ui.closeFilter(false)
     }
-    ui.setState({ detailId: null, detailNotesEditing: false })
+    ui.setState({ detail: null })
     ui.switchTab("overview")
     data.clearFilter()
     t.renderer.destroy()

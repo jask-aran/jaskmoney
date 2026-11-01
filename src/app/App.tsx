@@ -194,14 +194,14 @@ export function App() {
       {/* Jump mode borrows the status line while active; the stored status
           returns unchanged when it closes. */}
       <StatusBar
-        text={ui.state.jumpMode ? "Jump mode · press target letter" : ui.state.status}
-        isErr={!ui.state.jumpMode && ui.state.statusErr}
+        text={(ui.state.jump != null) ? "Jump mode · press target letter" : ui.state.status}
+        isErr={ui.state.jump == null && ui.state.statusErr}
       />
       <Footer hints={footerLine(ui.activeScope(), hintState(ui, data))} />
       <Show when={ui.state.activeTab === "overview"}>
         <UpLogo />
       </Show>
-      <JumpOverlay active={ui.state.jumpMode} tab={ui.state.activeTab} />
+      <JumpOverlay active={(ui.state.jump != null)} tab={ui.state.activeTab} />
       <CatPicker />
       <TagChooser />
       <MerchantNoteBox />

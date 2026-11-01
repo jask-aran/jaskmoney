@@ -113,13 +113,10 @@ export interface UiState {
   palette: { query: string; cursor: number; from: ScopeId; opened: number } | null
   /** The palette's last command, listed first next time (session only). */
   lastCommandId: string | null
-  dryRunReport: DryRunReport | null
-  dryRunScroll: number
-  dryRunVisible: number
+  dryRun: { report: DryRunReport; scroll: number; visible: number } | null
   activeTab: TabId
   focusedSection: SectionId
-  jumpMode: boolean
-  jumpPreviousFocus: SectionId
+  jump: { previousFocus: SectionId } | null
   status: string
   statusErr: boolean
   managerCursor: number
@@ -143,23 +140,15 @@ export interface UiState {
    * below it (the Overview sets it from its width). With one, the bottom
    * chart's keys and jump act on the top one. */
   overviewCharts: 1 | 2
-  filterMode: boolean
-  filterDraft: string
-  filterCaret: number
-  catPickerOpen: boolean
-  catPickerCursor: number
-  catPickerQuery: string
+  filterBar: { draft: string; caret: number } | null
+  catPicker: { cursor: number; query: string } | null
   /** Choosing a tag to find transactions for (T). */
-  tagChooserOpen: boolean
-  tagChooserCursor: number
-  tagChooserQuery: string
+  tagChooser: { cursor: number; query: string } | null
   tagPicker: { cursor: number; query: string; patch: Record<number, "add" | "remove">; applying: boolean } | null
   /** Transactions the open category or tag picker applies to. */
   pickerTargets: number[]
   selectedIds: Record<number, boolean>
-  rangeSelecting: boolean
-  rangeAnchorId: number
-  rangeCursorId: number
+  range: { anchorId: number; cursorId: number } | null
   settingsActive: boolean
   settingsSection: SettingsSection
   taxonomyList: SettingsList
@@ -192,10 +181,7 @@ export interface UiState {
   /** AI models pane: 0 Jev, 1 Workers AI. */
   aiCursor: number
   /** Transaction shown in the detail view; null when closed. */
-  detailId: number | null
-  detailNotesEditing: boolean
-  detailNotesDraft: string
-  detailNotesCaret: number
+  detail: { id: number; boughtTop: number; notes: { draft: string; caret: number } | null } | null
   settingsEditor: { kind: SettingsEditorKind; id: number | string | null; field: number; caret: number; picker: { query: string; cursor: number } | null; saving: boolean } | null
   settingsDraft: {
     name: string; color: string; categoryId: number | null; id: string; expr: string; savedFilterId: string; setCategoryId: number | null; addTagIds: number[]; notSpending: boolean
@@ -212,9 +198,8 @@ export interface UiState {
   armed: Armed | null
   /** Settings › Database's rows (DATABASE_ROWS), and the account data dialog's actions. */
   databaseCursor: number
-  accountActionCursor: number
   importWizard: { stage: ImportStage; directory: string; files: string[]; cursor: number; path: string; pathCaret: number; profileCursor: number; managing: boolean; profileDraft: ImportProfile; profileEditId: string | null; profileField: number; profileCaret: number; preview: ImportPreview | null; previewCursor: number; previewShowAll: boolean; previewRules: boolean; committing: boolean } | null
-  accountActionId: number | null
+  accountAction: { id: number; cursor: number } | null
   /** The last smart search: the question asked and the filter it became.
    * It describes the filter only while the filter is still that expression
    * (`smartQuestionFor`). */
@@ -230,8 +215,6 @@ export interface UiState {
   executor: { status: ExecutorStatus | null; cursor: number; busy: string | null; waiting: string | null; note: { text: string; ok: boolean | null } | null } | null
   /** Executor's status as last read (the AI pane's Sources row). */
   executorStatus: ExecutorStatus | null
-  /** The detail view's bought list: its first line shown (J/K). */
-  detailBoughtTop: number
   /** Settings › Up Bank › Accounts: which Up accounts sync (cursor row). */
   upAccounts: { cursor: number } | null
   aiDialog: {
@@ -259,10 +242,7 @@ export interface UiState {
   merchantNote: { merchant: string; draft: string; caret: number } | null
   /** F1 in the search bar: JQL (state/searchHelp), brief or full (m), its
    * first line shown, and how many lines fit (set by the dialog). */
-  searchHelp: boolean
-  searchHelpFull: boolean
-  searchHelpTop: number
-  searchHelpVisible: number
+  searchHelp: { full: boolean; top: number; visible: number } | null
 }
 
 const TAB_DEFAULT_FOCUS: Record<TabId, SectionId> = {
@@ -341,50 +321,46 @@ function cursorWindow(cursor: number, top: number, count: number, visible: numbe
   return { cursor, top: Math.max(0, top) }
 }
 
-/** A dialog that owns input while it is open. `scope` is its key scope
- * while open (null while closed); `closed` is what closing it writes. */
-interface Modal { scope: (s: UiState) => ScopeId | null; closed: Partial<UiState> }
+/** A dialog key and its scope while open. */
+type Modal = {
+  [K in DialogKey]: { key: K; scope: (value: NonNullable<UiState[K]>) => ScopeId }
+}[DialogKey]
 
-/**
- * Every dialog, in the order they take input: the first open one is the
- * active scope (`activeScope`), and a tab switch closes them all
- * (`switchTab`). A new dialog goes here, once, so neither can forget it.
- */
-const MODALS: Modal[] = [
-  { scope: (s) => s.palette ? "palette" : null, closed: { palette: null } },
-  { scope: (s) => s.searchHelp ? "searchHelp" : null, closed: { searchHelp: false } },
-  { scope: (s) => s.filterPicker ? "filterPicker" : null, closed: { filterPicker: null } },
-  { scope: (s) => s.dryRunReport ? "dryRun" : null, closed: { dryRunReport: null, dryRunScroll: 0, dryRunVisible: 10 } },
-  { scope: (s) => s.jumpMode ? "jump" : null, closed: { jumpMode: false } },
-  { scope: (s) => s.catPickerOpen ? "catPicker" : null, closed: { catPickerOpen: false } },
-  { scope: (s) => s.tagPicker ? "tagPicker" : null, closed: { tagPicker: null } },
-  { scope: (s) => s.tagChooserOpen ? "tagChooser" : null, closed: { tagChooserOpen: false, tagChooserQuery: "", tagChooserCursor: 0 } },
-  { scope: (s) => s.filterMode ? "filter" : null, closed: { filterMode: false } },
-  { scope: (s) => s.merchantNote ? "merchantNote" : null, closed: { merchantNote: null } },
-  { scope: (s) => s.detailId == null ? null : s.detailNotesEditing ? "manager.detail.notes" : "manager.detail", closed: { detailId: null, detailNotesEditing: false } },
-  { scope: (s) => s.settingsEditor ? "settings.editor" : null, closed: { settingsEditor: null } },
-  { scope: (s) => s.importWizard ? `settings.import.${s.importWizard.stage}` : null, closed: { importWizard: null } },
-  { scope: (s) => s.accountActionId != null ? "manager.accountAction" : null, closed: { accountActionId: null } },
-  { scope: (s) => s.acceptPreview ? "manager.acceptPreview" : null, closed: { acceptPreview: null } },
-  { scope: (s) => s.ruleOffers ? "manager.ruleOffers" : null, closed: { ruleOffers: null } },
-  { scope: (s) => s.llmSignIn ? "llmSignIn" : null, closed: { llmSignIn: null } },
-  { scope: (s) => s.aiSent ? "settings.aiSent" : null, closed: { aiSent: null } },
-  { scope: (s) => s.aiUse ? "settings.aiUse" : null, closed: { aiUse: null } },
-  { scope: (s) => s.aiDialog ? "settings.aiDialog" : null, closed: { aiDialog: null } },
-  { scope: (s) => s.executor ? "settings.executor" : null, closed: { executor: null } },
-  { scope: (s) => s.upAccounts ? "settings.upAccounts" : null, closed: { upAccounts: null } },
-  { scope: (s) => s.factoryReset ? "settings.factoryReset" : null, closed: { factoryReset: null } },
-  { scope: (s) => s.customEdit ? "overview.custom" : null, closed: { customEdit: null } },
-]
+/** Every dialog, in input precedence order. Tab switches close them all. */
+const MODALS = [
+  { key: "palette", scope: () => "palette" },
+  { key: "searchHelp", scope: () => "searchHelp" },
+  { key: "filterPicker", scope: () => "filterPicker" },
+  { key: "dryRun", scope: () => "dryRun" },
+  { key: "jump", scope: () => "jump" },
+  { key: "catPicker", scope: () => "catPicker" },
+  { key: "tagPicker", scope: () => "tagPicker" },
+  { key: "tagChooser", scope: () => "tagChooser" },
+  { key: "filterBar", scope: () => "filter" },
+  { key: "merchantNote", scope: () => "merchantNote" },
+  { key: "detail", scope: (value) => value.notes ? "manager.detail.notes" : "manager.detail" },
+  { key: "settingsEditor", scope: () => "settings.editor" },
+  { key: "importWizard", scope: (value) => `settings.import.${value.stage}` },
+  { key: "accountAction", scope: () => "manager.accountAction" },
+  { key: "acceptPreview", scope: () => "manager.acceptPreview" },
+  { key: "ruleOffers", scope: () => "manager.ruleOffers" },
+  { key: "llmSignIn", scope: () => "llmSignIn" },
+  { key: "aiSent", scope: () => "settings.aiSent" },
+  { key: "aiUse", scope: () => "settings.aiUse" },
+  { key: "aiDialog", scope: () => "settings.aiDialog" },
+  { key: "executor", scope: () => "settings.executor" },
+  { key: "upAccounts", scope: () => "settings.upAccounts" },
+  { key: "factoryReset", scope: () => "settings.factoryReset" },
+  { key: "customEdit", scope: () => "overview.custom" },
+] satisfies Modal[]
 
 /** What closing every dialog writes. */
-const ALL_CLOSED: Partial<UiState> = Object.assign({}, ...MODALS.map((m) => m.closed))
+const ALL_CLOSED: Partial<UiState> = Object.assign({}, ...MODALS.map(({ key }) => ({ [key]: null })))
 
-/** The UiState fields that hold one object while open and null while
- * closed: a dialog, which `opening` can hold on to. */
+/** Nullable object fields, including the accept-all preview array. */
 export type DialogKey = {
   [K in keyof UiState]-?: null extends UiState[K]
-    ? NonNullable<UiState[K]> extends readonly unknown[] ? never : NonNullable<UiState[K]> extends object ? K : never
+    ? NonNullable<UiState[K]> extends object ? K : never
     : never
 }[keyof UiState]
 
@@ -407,8 +383,7 @@ function createUiStore() {
   const initialState = (): UiState => ({
     activeTab: "overview",
     focusedSection: "none",
-    jumpMode: false,
-    jumpPreviousFocus: "none",
+    jump: null,
     status: "OpenTUI shell",
     statusErr: false,
     managerCursor: 0,
@@ -421,22 +396,13 @@ function createUiStore() {
     drillReturn: null,
     chartViews: [0, 4],
     overviewCharts: 2,
-    filterMode: false,
-    filterDraft: "",
-    filterCaret: 0,
-    catPickerOpen: false,
-    catPickerCursor: 0,
-    catPickerQuery: "",
-    tagChooserOpen: false,
-    tagChooserCursor: 0,
-    tagChooserQuery: "",
+    filterBar: null,
+    catPicker: null,
+    tagChooser: null,
     tagPicker: null,
     pickerTargets: [],
-
     selectedIds: {},
-    rangeSelecting: false,
-    rangeAnchorId: 0,
-    rangeCursorId: 0,
+    range: null,
     settingsActive: false,
     settingsSection: "taxonomy",
     taxonomyList: "categories",
@@ -459,18 +425,17 @@ function createUiStore() {
     txnView: "rows",
     merchantSort: "total",
     merchantReverse: false,
-    detailId: null,
-    detailNotesEditing: false,
-    detailNotesDraft: "",
-    detailNotesCaret: 0,
-    filterPicker: null, palette: null, lastCommandId: null, dryRunReport: null, dryRunScroll: 0, dryRunVisible: 10,
+    detail: null,
+    filterPicker: null,
+    palette: null,
+    lastCommandId: null,
+    dryRun: null,
     settingsEditor: null,
     settingsDraft: { name: "", color: "#94e2d5", categoryId: null, id: "", expr: "", savedFilterId: "", setCategoryId: null, addTagIds: [], notSpending: false, categoryIds: [], about: "", scopeKey: "overall", amount: "", unit: "month", anchor: "calendar", anchorDate: "", payEarly: false },
     armed: null,
     databaseCursor: 0,
-    accountActionCursor: 0,
+    accountAction: null,
     importWizard: null,
-    accountActionId: null,
     smartQuestion: null,
     acceptPreview: null,
     ruleOffers: null,
@@ -478,16 +443,12 @@ function createUiStore() {
     aiDialog: null,
     executor: null,
     executorStatus: null,
-    detailBoughtTop: 0,
     aiUse: null,
     aiSent: null,
     upAccounts: null,
     factoryReset: null,
     merchantNote: null,
-    searchHelp: false,
-    searchHelpFull: false,
-    searchHelpTop: 0,
-    searchHelpVisible: 0,
+    searchHelp: null,
   })
   const [state, setState] = createStore<UiState>(initialState())
 
@@ -506,7 +467,7 @@ function createUiStore() {
       activeTab: tab,
       drillReturn: null,
       focusedSection: TAB_DEFAULT_FOCUS[tab],
-      rangeSelecting: false,
+      range: null,
       settingsActive: false,
       armed: null,
     })
@@ -530,35 +491,34 @@ function createUiStore() {
   }
 
   function enterJump() {
-    if (state.jumpMode) {
+    if (state.jump) {
       cancelJump()
       return
     }
     setState({
-      jumpMode: true,
-      jumpPreviousFocus: state.focusedSection,
-      filterMode: false,
-      catPickerOpen: false,
+      jump: { previousFocus: state.focusedSection },
+      filterBar: null,
+      catPicker: null,
       tagPicker: null,
     })
   }
 
   function cancelJump() {
     setState({
-      jumpMode: false,
-      focusedSection: state.jumpPreviousFocus,
+      jump: null,
+      focusedSection: (state.jump?.previousFocus ?? "none"),
     })
   }
 
   function applyJump(section: SectionId) {
     setState({
-      jumpMode: false,
+      jump: null,
       focusedSection: section,
     })
   }
 
   function activateSettings(section: UiState["settingsSection"], list: SettingsList = "categories", reset = false) {
-    const updates: Partial<UiState> = { settingsActive: true, settingsSection: section, taxonomyList: list, focusedSection: settingsSectionFocus(section, list), jumpMode: false }
+    const updates: Partial<UiState> = { settingsActive: true, settingsSection: section, taxonomyList: list, focusedSection: settingsSectionFocus(section, list), jump: null }
     if (reset && list === "categories") { updates.categoryCursor = 0; updates.categoryTop = 0 }
     if (reset && list === "tags") { updates.tagCursor = 0; updates.tagTop = 0 }
     setState(updates)
@@ -567,14 +527,14 @@ function createUiStore() {
   function leaveSettings() { setState({ settingsActive: false, settingsEditor: null, armed: null, importWizard: null, status: "Settings · navigate sections", statusErr: false }) }
   function openSettingsEditor(kind: SettingsEditorKind, id: number | string | null, draft: UiState["settingsDraft"]) {
     const field = editorFields(kind, draft, { accounts: [], categories: [], tags: [], savedFilters: [] })[0]
-    setState({ settingsEditor: { kind, id, field: 0, picker: null, caret: field?.kind === "text" ? field.display.length : 0, saving: false }, settingsDraft: draft, armed: null, jumpMode: false })
+    setState({ settingsEditor: { kind, id, field: 0, picker: null, caret: field?.kind === "text" ? field.display.length : 0, saving: false }, settingsDraft: draft, armed: null, jump: null })
   }
   function closeSettingsEditor() { setState({ settingsEditor: null }) }
   function arm(armed: Armed) { setState({ armed }) }
   function disarm() { if (state.armed) setState({ armed: null }) }
 
   function beginImport(directory: string, files: string[]) {
-    setState({ importWizard: { stage: "files", directory, files, cursor: 0, path: "", pathCaret: 0, profileCursor: 0, managing: false, profileDraft: { id: "", name: "", account: "", accountType: "debit", importPrefix: "", hasHeader: true, delimiter: ",", dateColumn: 0, amountColumn: 1, descriptionColumns: [2], descriptionJoin: false, amountStrip: "$", dateFormat: "DMY" }, profileEditId: null, profileField: 0, profileCaret: 0, preview: null, previewCursor: 0, previewShowAll: false, previewRules: true, committing: false }, jumpMode: false })
+    setState({ importWizard: { stage: "files", directory, files, cursor: 0, path: "", pathCaret: 0, profileCursor: 0, managing: false, profileDraft: { id: "", name: "", account: "", accountType: "debit", importPrefix: "", hasHeader: true, delimiter: ",", dateColumn: 0, amountColumn: 1, descriptionColumns: [2], descriptionJoin: false, amountStrip: "$", dateFormat: "DMY" }, profileEditId: null, profileField: 0, profileCaret: 0, preview: null, previewCursor: 0, previewShowAll: false, previewRules: true, committing: false }, jump: null })
   }
   function cancelImport() { setState({ importWizard: null }) }
   function openProfileEditor(draft: ImportProfile, id: string | null) { if (!state.importWizard) beginImport("", []); setState("importWizard", { stage: "profileEditor", profileDraft: draft, profileEditId: id, profileField: 0, profileCaret: draft.id.length }) }
@@ -593,47 +553,44 @@ function createUiStore() {
 
   function openFilter(seed = "") {
     setState({
-      filterMode: true,
-      filterDraft: seed,
-      filterCaret: seed.length,
-      catPickerOpen: false,
+      filterBar: { draft: seed, caret: seed.length },
+      catPicker: null,
       tagPicker: null,
-      jumpMode: false,
+      jump: null,
       status: "Search: JQL, or ? then words",
     })
   }
 
   function closeFilter(apply: boolean) {
-    setState({ filterMode: false })
-    return apply ? state.filterDraft : null
+    const draft = state.filterBar?.draft ?? ""
+    setState({ filterBar: null })
+    return apply ? draft : null
   }
 
   function openCatPicker(targets: number[]) {
     setState({
       pickerTargets: targets,
-      catPickerOpen: true,
-      catPickerCursor: 0,
-      catPickerQuery: "",
+      catPicker: { cursor: 0, query: "" },
       tagPicker: null,
-      filterMode: false,
-      jumpMode: false,
-      rangeSelecting: false,
+      filterBar: null,
+      jump: null,
+      range: null,
       status: "Quick categorize · j/k · enter · esc",
     })
   }
 
   function closeCatPicker() {
-    setState({ catPickerOpen: false, catPickerQuery: "", catPickerCursor: 0 })
+    setState({ catPicker: null })
   }
 
   function openTagPicker(targets: number[]) {
     setState({
       pickerTargets: targets,
       tagPicker: { cursor: 0, query: "", patch: {}, applying: false },
-      catPickerOpen: false,
-      filterMode: false,
-      jumpMode: false,
-      rangeSelecting: false,
+      catPicker: null,
+      filterBar: null,
+      jump: null,
+      range: null,
       status: "Quick tags · space stage · enter apply · esc cancel",
     })
   }
@@ -643,7 +600,7 @@ function createUiStore() {
   }
 
   function clearSelection() {
-    setState({ selectedIds: {}, rangeSelecting: false })
+    setState({ selectedIds: {}, range: null })
   }
 
   function toggleSelectedId(id: number) {
@@ -658,19 +615,15 @@ function createUiStore() {
     cursorId: number,
     selecting: boolean,
   ) {
-    setState({
-      rangeSelecting: selecting,
-      rangeAnchorId: anchorId,
-      rangeCursorId: cursorId,
-    })
+    setState({ range: selecting ? { anchorId, cursorId } : null })
   }
 
   function highlightedIds(rows: { id: number }[]): Record<number, boolean> {
-    if (!state.rangeSelecting || rows.length === 0) return NO_IDS
-    let a = rows.findIndex((r) => r.id === state.rangeAnchorId)
-    let b = rows.findIndex((r) => r.id === state.rangeCursorId)
-    if (a < 0) a = state.managerCursor
-    if (b < 0) b = state.managerCursor
+    const range = state.range
+    if (!range) return NO_IDS
+    let a = rows.findIndex((r) => r.id === range.anchorId)
+    let b = rows.findIndex((r) => r.id === range.cursorId)
+    if (a < 0 || b < 0) return NO_IDS
     if (a > b) [a, b] = [b, a]
     const out: Record<number, boolean> = {}
     for (let i = a; i <= b; i++) {
@@ -678,6 +631,26 @@ function createUiStore() {
       if (id != null) out[id] = true
     }
     return out
+  }
+
+  /** A range exists only while both ends are in the shown rows. */
+  function ensureRange(rows: { id: number }[]) {
+    const range = state.range
+    if (range && (!rows.some((row) => row.id === range.anchorId) || !rows.some((row) => row.id === range.cursorId))) {
+      setState({ range: null })
+    }
+  }
+
+  /** Data reloads remove targets only when their transactions no longer exist. */
+  function pruneRows(existing: ReadonlySet<number>) {
+    if (!Object.keys(state.selectedIds).some((id) => !existing.has(Number(id)))
+      && !state.pickerTargets.some((id) => !existing.has(id))
+      && (!state.detail || existing.has(state.detail.id))) return
+    setState({
+      selectedIds: Object.fromEntries(Object.entries(state.selectedIds).filter(([id]) => existing.has(Number(id)))),
+      pickerTargets: state.pickerTargets.filter((id) => existing.has(id)),
+      detail: state.detail && !existing.has(state.detail.id) ? null : state.detail,
+    })
   }
 
   function moveManagerCursor(delta: number, rowCount: number) {
@@ -701,7 +674,7 @@ function createUiStore() {
   /** Rows an action applies to: the open detail transaction, else the
    * highlighted range, else the selection, else the cursor row. */
   function targetIds(rows: { id: number }[]): number[] {
-    if (state.detailId != null) return [state.detailId]
+    if (state.detail) return [state.detail.id]
     const hl = Object.keys(highlightedIds(rows)).map(Number)
     if (hl.length) return hl
     const sel = Object.keys(state.selectedIds).map(Number)
@@ -712,8 +685,12 @@ function createUiStore() {
 
   function activeScope(): ScopeId {
     for (const modal of MODALS) {
-      const scope = modal.scope(state)
-      if (scope) return scope
+      const value = state[modal.key]
+      if (value != null) {
+        if (modal.key === "detail") return modal.scope(state.detail!)
+        if (modal.key === "importWizard") return modal.scope(state.importWizard!)
+        return modal.scope()
+      }
     }
     if (state.activeTab === "overview") return state.focusedSection === "ov.range" ? "overview.range" : "overview"
     if (state.activeTab === "budgets") return state.focusedSection === "bud.categories" ? "budgets.categories" : "budgets"
@@ -762,6 +739,8 @@ function createUiStore() {
     toggleSelectedId,
     setRangeFromMove,
     highlightedIds,
+    ensureRange,
+    pruneRows,
     moveManagerCursor,
     jumpManagerCursor,
     setTimeframe,

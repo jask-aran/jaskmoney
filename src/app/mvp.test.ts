@@ -30,18 +30,13 @@ describe("MVP slice: filter + categorize", () => {
       ready: true,
     })
     ui.switchTab("manager")
-    ui.setState({
-      focusedSection: "mgr.transactions",
-      managerCursor: 0,
-      filterMode: false,
-      catPickerOpen: false,
-    })
+    ui.setState({ focusedSection: "mgr.transactions", managerCursor: 0, filterBar: null, catPicker: null })
   })
 
   test("filter narrows scoped rows", () => {
     data.clearFilter()
     handleKey(ui, key("/"), data)
-    expect(ui.state.filterMode).toBe(true)
+    expect((ui.state.filterBar != null)).toBe(true)
     for (const ch of "uber") {
       handleKey(ui, key(ch), data)
     }
@@ -67,27 +62,23 @@ describe("MVP slice: filter + categorize", () => {
 
   test("open cat picker with c", () => {
     handleKey(ui, key("c"), data)
-    expect(ui.state.catPickerOpen).toBe(true)
+    expect((ui.state.catPicker != null)).toBe(true)
     handleKey(ui, key("escape"), data)
-    expect(ui.state.catPickerOpen).toBe(false)
+    expect((ui.state.catPicker != null)).toBe(false)
   })
 
   test("categorize apply via picker + real db", async () => {
     data.init(":memory:")
     await data.commitPreview(buildImportPreview(data.getDb()!, '01/02/2026,"-5.00",TEST COFFEE\n', "anz.csv", DEFAULT_IMPORT_PROFILES[0]!), true)
     ui.switchTab("manager")
-    ui.setState({
-      focusedSection: "mgr.transactions",
-      managerCursor: 0,
-      catPickerOpen: false,
-    })
+    ui.setState({ focusedSection: "mgr.transactions", managerCursor: 0, catPicker: null })
     const targetId = data.scopedTransactions()[0]!.id
     handleKey(ui, key("c"), data)
     for (const ch of "dining") {
       handleKey(ui, key(ch), data)
     }
     handleKey(ui, key("return"), data)
-    expect(ui.state.catPickerOpen).toBe(false)
+    expect((ui.state.catPicker != null)).toBe(false)
     const row = data.state.transactions.find((t) => t.id === targetId)
     expect(row?.categoryName).toBe("Dining & Drinks")
   })

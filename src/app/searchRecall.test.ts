@@ -16,12 +16,12 @@ test("a smart search's question describes its filter until the filter changes; â
   const expr = 'ask:"coffee" AND type:spending'
   handleKey(ui, key("/"), data)
   // As runSmartSearch leaves it: the expression in the draft, the question remembered.
-  ui.setState({ filterDraft: expr, filterCaret: expr.length, smartQuestion: { question: "coffee spending", expr } })
-  expect(smartQuestionFor(ui.state, ui.state.filterDraft)).toBe("coffee spending")
+  ui.setState({ filterBar: { draft: expr, caret: expr.length }, smartQuestion: { question: "coffee spending", expr } })
+  expect(smartQuestionFor(ui.state, (ui.state.filterBar?.draft ?? ""))).toBe("coffee spending")
   expect(footerHints("filter", { focusedSection: "mgr.transactions", drillReturn: null, chartViews: [0, 4], recallQuestion: true }).some((h) => h.key === "â†‘")).toBe(true)
   handleKey(ui, key("up"), data)
-  expect(ui.state.filterDraft).toBe("?coffee spending")
-  expect(ui.state.filterMode).toBe(true)
+  expect((ui.state.filterBar?.draft ?? "")).toBe("?coffee spending")
+  expect((ui.state.filterBar != null)).toBe(true)
   // Edited by hand, the filter is no longer the question's.
   expect(smartQuestionFor(ui.state, `${expr} AND amt:<=-5`)).toBeNull()
   expect(smartQuestionFor(ui.state, ` ${expr} `)).toBe("coffee spending")
@@ -46,8 +46,8 @@ test("n toggles near misses only when the filter asks Jev", () => {
 test("? jumps straight into a smart search, from the table, the merchants and the Overview; on a smart search's filter it brings the question back", () => {
   setup()
   handleKey(ui, key("?", { sequence: "?" }), data)
-  expect(ui.state.filterMode).toBe(true)
-  expect(ui.state.filterDraft).toBe("?")
+  expect((ui.state.filterBar != null)).toBe(true)
+  expect((ui.state.filterBar?.draft ?? "")).toBe("?")
   handleKey(ui, key("escape"), data)
 
   // On a filter a smart search wrote: its question, to reword.
@@ -55,17 +55,17 @@ test("? jumps straight into a smart search, from the table, the merchants and th
   data.commitFilter(expr)
   ui.setState({ smartQuestion: { question: "maccas", expr } })
   handleKey(ui, key("/", { shift: true, sequence: "?" }), data)
-  expect(ui.state.filterDraft).toBe("?maccas")
+  expect((ui.state.filterBar?.draft ?? "")).toBe("?maccas")
   handleKey(ui, key("escape"), data)
 
   ui.setState({ txnView: "merchants" })
   handleKey(ui, key("?", { sequence: "?" }), data)
-  expect(ui.state.filterDraft).toBe("?")
+  expect((ui.state.filterBar?.draft ?? "")).toBe("?")
   handleKey(ui, key("escape"), data)
 
   ui.switchTab("overview")
   handleKey(ui, key("?", { sequence: "?" }), data)
   expect(ui.state.activeTab).toBe("manager")
-  expect(ui.state.filterDraft).toBe("?")
+  expect((ui.state.filterBar?.draft ?? "")).toBe("?")
   expect(footerHints("manager.txns", { focusedSection: "mgr.transactions", drillReturn: null, chartViews: [0, 4] }).some((h) => h.key === "?")).toBe(true)
 })

@@ -9,6 +9,10 @@ import { testEnv } from "./testing/scoped"
 import { CREDENTIAL_NAMES } from "./ai/credentials"
 import { sources } from "./app/executorSource"
 import { purchaseSources } from "./app/purchases"
+import { watchRowLifetimes } from "./state/rowLifetimes"
+
+const stopRowLifetimes = watchRowLifetimes(ui, data)
+process.once("exit", stopRowLifetimes)
 
 const settingsDirectory = mkdtempSync(join(tmpdir(), "jaskmoney-test-"))
 // Every app credential and setting beside them, Up's token, and the keys

@@ -3,6 +3,12 @@ import "./startup"
 import { createCliRenderer } from "@opentui/core"
 import { render } from "@opentui/solid"
 import { App } from "./app/App"
+import { ui } from "./state/uiStore"
+import { data } from "./state/dataStore"
+import { watchRowLifetimes } from "./state/rowLifetimes"
+
+const stopRowLifetimes = watchRowLifetimes(ui, data)
+process.on("exit", stopRowLifetimes)
 
 const renderer = await createCliRenderer({
   exitOnCtrlC: true,

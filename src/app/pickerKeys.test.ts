@@ -12,7 +12,7 @@ import { footerHints, handleKey } from "./keys"
 function setup() {
   testEnv("JASKMONEY_OPENROUTER_TOKEN", "")
   const network = spyOn(globalThis, "fetch").mockImplementation(Object.assign(() => Promise.reject(new Error("network is forbidden")), { preconnect: globalThis.fetch.preconnect }))
-  onTestFinished(() => { network.mockRestore(); ui.setState({ catPickerOpen: false, tagChooserOpen: false, tagPicker: null, ruleOffers: null }); data.init(":memory:") })
+  onTestFinished(() => { network.mockRestore(); ui.setState({ catPicker: null, tagChooser: null, tagPicker: null, ruleOffers: null }); data.init(":memory:") })
   data.init(":memory:")
   const db = data.getDb()!
   db.query("INSERT INTO accounts (id, name, type, source) VALUES (100, 'Spending', 'debit', 'csv')").run()
@@ -28,8 +28,8 @@ test("ctrl+j / ctrl+k move in the category picker, tag picker and tag chooser, a
   setup()
   handleKey(ui, key("c"), data)
   handleKey(ui, ctrl("j"), data); handleKey(ui, ctrl("j"), data); handleKey(ui, ctrl("k"), data)
-  expect(ui.state.catPickerCursor).toBe(1)
-  expect(ui.state.catPickerQuery).toBe("")
+  expect((ui.state.catPicker?.cursor ?? 0)).toBe(1)
+  expect((ui.state.catPicker?.query ?? "")).toBe("")
   handleKey(ui, key("escape"), data)
 
   await data.createSettingsTag({ name: "AAA", color: "#fff", categoryIds: [], about: null })
@@ -43,8 +43,8 @@ test("ctrl+j / ctrl+k move in the category picker, tag picker and tag chooser, a
 
   handleKey(ui, key("t", { shift: true }), data)
   handleKey(ui, ctrl("j"), data)
-  expect(ui.state.tagChooserCursor).toBe(1)
-  expect(ui.state.tagChooserQuery).toBe("")
+  expect((ui.state.tagChooser?.cursor ?? 0)).toBe(1)
+  expect((ui.state.tagChooser?.query ?? "")).toBe("")
   handleKey(ui, key("escape"), data)
 })
 

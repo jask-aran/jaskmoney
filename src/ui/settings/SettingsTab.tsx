@@ -571,7 +571,7 @@ export function SettingsTab(props: { focused: SectionId }) {
 export function DryRunOverlay() {
   const dims = useTerminalDimensions()
   const lines = createMemo(() => {
-    const report = ui.state.dryRunReport
+    const report = ui.state.dryRun?.report
     if (!report) return []
     const rows: { text: string; error?: boolean }[] = []
     for (const [index, result] of report.rules.entries()) {
@@ -591,9 +591,9 @@ export function DryRunOverlay() {
     return rows
   })
   const visible = () => Math.max(1, dims().height - 10)
-  createEffect(() => { if (ui.state.dryRunReport && ui.state.dryRunVisible !== visible()) ui.setState({ dryRunVisible: visible() }) })
-  const top = () => Math.min(ui.state.dryRunScroll, Math.max(0, lines().length - visible()))
-  return <Show when={ui.state.dryRunReport}>{(report: () => NonNullable<typeof ui.state.dryRunReport>) => <Modal title="Dry run" width={96} hints="j/k scroll · esc close">
+  createEffect(() => { if (ui.state.dryRun?.report && (ui.state.dryRun?.visible ?? 10) !== visible()) ui.setState("dryRun", { visible: visible() }) })
+  const top = () => Math.min((ui.state.dryRun?.scroll ?? 0), Math.max(0, lines().length - visible()))
+  return <Show when={ui.state.dryRun?.report}>{(report: () => NonNullable<typeof ui.state.dryRun>["report"]) => <Modal title="Dry run" width={96} hints="j/k scroll · esc close">
     <text fg={ink.note} wrapMode="none">{`All ${report().transactionCount} transactions`}</text>
     <text fg={ink.note} wrapMode="none">{`${report().updatedTransactions} transactions would change · ${report().categoryChanges} categories · ${report().tagChanges} tags${report().failedRules.length ? ` · failed rules: ${report().failedRules.join(", ")}` : ""}`}</text>
     <text> </text>

@@ -15,15 +15,7 @@ describe("key router", () => {
   beforeEach(() => {
     data.clearFilter()
     ui.switchTab("overview")
-    ui.setState({
-      jumpMode: false,
-      focusedSection: "none",
-      managerCursor: 0,
-      managerTop: 0,
-      selectedIds: {},
-      rangeSelecting: false,
-      status: "reset",
-    })
+    ui.setState({ jump: null, focusedSection: "none", managerCursor: 0, managerTop: 0, selectedIds: {}, range: null, status: "reset" })
   })
 
   test("number keys switch tabs", () => {
@@ -46,14 +38,14 @@ describe("key router", () => {
 
   test("jump mode open, target, cancel", () => {
     handleKey(ui, key("v"), data)
-    expect(ui.state.jumpMode).toBe(true)
+    expect((ui.state.jump != null)).toBe(true)
     handleKey(ui, key("d"), data)
-    expect(ui.state.jumpMode).toBe(false)
+    expect((ui.state.jump != null)).toBe(false)
     expect(ui.state.focusedSection).toBe("ov.range")
 
     handleKey(ui, key("v"), data)
     handleKey(ui, key("escape"), data)
-    expect(ui.state.jumpMode).toBe(false)
+    expect((ui.state.jump != null)).toBe(false)
   })
 
   test("the accounts pane drives the Transactions table, not the Overview", () => {
@@ -101,11 +93,11 @@ describe("key router", () => {
     expect(spendingScope(data.state.accounts, data.state.accountSelection).accounts.map((a) => a.id)).toEqual([1, 4])
     // Data actions only for a row with one account behind it.
     handleKey(ui, key("d"), data)
-    expect(ui.state.accountActionId).toBeNull()
+    expect((ui.state.accountAction?.id ?? null)).toBeNull()
     handleKey(ui, key("k"), data)
     handleKey(ui, key("d"), data)
-    expect(ui.state.accountActionId).toBe(1)
-    ui.setState({ accountActionId: null })
+    expect((ui.state.accountAction?.id ?? null)).toBe(1)
+    ui.setState({ accountAction: null })
     handleKey(ui, key("return"), data)
     expect(ui.state.focusedSection).toBe("mgr.transactions")
     // A saver chosen elsewhere (a stored selection) shows as Savers.
@@ -127,8 +119,8 @@ describe("key router", () => {
     ui.switchTab("manager")
     ui.setState({ focusedSection: "mgr.accounts" })
     handleKey(ui, key("d"), data)
-    expect(ui.state.accountActionId).toBe(1)
-    ui.setState({ accountActionId: null })
+    expect((ui.state.accountAction?.id ?? null)).toBe(1)
+    ui.setState({ accountAction: null })
   })
 
   test("? in the filter is a question in words: no live filtering while typing; enter asks and keeps the draft open", () => {
@@ -143,8 +135,8 @@ describe("key router", () => {
     expect(data.state.filterQuery).toBe("")
     expect(data.scopedTransactions()).toHaveLength(1)
     handleKey(ui, key("return"), data)
-    expect(ui.state.filterMode).toBe(true)
-    expect(ui.state.filterDraft).toBe("?zzz")
+    expect((ui.state.filterBar != null)).toBe(true)
+    expect((ui.state.filterBar?.draft ?? "")).toBe("?zzz")
     expect(ui.state.status).toContain("Smart search needs Jev")
     expect(footerHints(ui.activeScope()).some((h) => h.key === "?…")).toBe(true)
     handleKey(ui, key("escape"), data)
@@ -163,26 +155,26 @@ describe("key router", () => {
     ui.switchTab("manager")
     ui.setState({ focusedSection: "mgr.transactions", managerCursor: 0, managerTop: 0, selectedIds: { 1: true } })
     handleKey(ui, key("return"), data)
-    expect(ui.state.detailId).toBe(3)
+    expect((ui.state.detail?.id ?? null)).toBe(3)
     expect(ui.activeScope()).toBe("manager.detail")
     // The detail row wins over the selection for pickers.
     expect(ui.targetIds(data.scopedTransactions())).toEqual([3])
     // j browses to the next row without closing.
     handleKey(ui, key("j"), data)
-    expect(ui.state.detailId).toBe(2)
+    expect((ui.state.detail?.id ?? null)).toBe(2)
     // Tab keys are swallowed while the modal is open.
     handleKey(ui, key("1"), data)
     expect(ui.state.activeTab).toBe("manager")
     // n edits notes starting from the current value; printable keys are text.
     handleKey(ui, key("n"), data)
     expect(ui.activeScope()).toBe("manager.detail.notes")
-    expect(ui.state.detailNotesDraft).toBe("kept")
+    expect((ui.state.detail?.notes?.draft ?? "")).toBe("kept")
     handleKey(ui, key("j"), data)
-    expect(ui.state.detailNotesDraft).toBe("keptj")
+    expect((ui.state.detail?.notes?.draft ?? "")).toBe("keptj")
     handleKey(ui, key("escape"), data)
-    expect(ui.state.detailNotesEditing).toBe(false)
+    expect((ui.state.detail?.notes != null)).toBe(false)
     handleKey(ui, key("escape"), data)
-    expect(ui.state.detailId).toBeNull()
+    expect((ui.state.detail?.id ?? null)).toBeNull()
     expect(ui.targetIds(data.scopedTransactions())).toEqual([1])
     ui.setState({ selectedIds: {} })
   })
@@ -240,17 +232,11 @@ describe("key router", () => {
 
   test("Escape mirrors u when clearing transaction selection and filters", () => {
     ui.switchTab("manager")
-    ui.setState({
-      focusedSection: "mgr.transactions",
-      selectedIds: { 1: true },
-      rangeSelecting: true,
-      rangeAnchorId: 1,
-      rangeCursorId: 2,
-    })
+    ui.setState({ focusedSection: "mgr.transactions", selectedIds: { 1: true }, range: { anchorId: 1, cursorId: 2 } })
 
     handleKey(ui, key("escape"), data)
     expect(ui.state.selectedIds).toEqual({})
-    expect(ui.state.rangeSelecting).toBe(false)
+    expect((ui.state.range != null)).toBe(false)
     expect(ui.state.status).toBe("Selection cleared")
 
     data.setFilterLive("coffee")
@@ -333,7 +319,7 @@ describe("key router", () => {
     ui.setState({ focusedSection: "none" })
     handleKey(ui, key("/"), data)
     expect(ui.state.activeTab).toBe("manager")
-    expect(ui.state.filterMode).toBe(true)
+    expect((ui.state.filterBar != null)).toBe(true)
     handleKey(ui, key("escape"), data)
   })
 
@@ -504,11 +490,11 @@ describe("key router", () => {
       account({ name: "A", sortOrder: 0, source: "csv", externalKind: null, balance: null }),
     ] })
     ui.openFilter("amt:-10")
-    expect(ui.state.filterCaret).toBe(7)
+    expect((ui.state.filterBar?.caret ?? 0)).toBe(7)
     handleKey(ui, key("left"), data)
     handleKey(ui, key("2"), data)
-    expect(ui.state.filterDraft).toBe("amt:-120")
-    expect(ui.state.filterCaret).toBe(7)
+    expect((ui.state.filterBar?.draft ?? "")).toBe("amt:-120")
+    expect((ui.state.filterBar?.caret ?? 0)).toBe(7)
     expect(data.state.filterQuery).toBe("amt:-120")
     expect(data.filterPreview()).toBe("amt:=-120")
     expect(data.state.filterErr).toBe("")
@@ -521,7 +507,7 @@ describe("key router", () => {
     expect(data.state.filterQuery).toBe("")
     ui.closeFilter(false)
     ui.openFilter("desc:seed")
-    expect(ui.state.filterCaret).toBe(9)
+    expect((ui.state.filterBar?.caret ?? 0)).toBe(9)
     handleKey(ui, key("escape"), data)
   })
 
@@ -532,19 +518,19 @@ describe("key router", () => {
       data.setState({ transactions: loadTransactions(db) })
       const local = { ...data, updateTransactionNotes: (id: number, notes: string) => { setTransactionNotes(db, id, notes); return Promise.resolve(false) } }
       ui.switchTab("manager")
-      ui.setState({ detailId: 901, detailNotesCaret: 0 })
+      ui.setState({ detail: { id: 901, boughtTop: 0, notes: null } })
       handleKey(ui, key("n"), local)
-      expect(ui.state.detailNotesCaret).toBe(5)
+      expect((ui.state.detail?.notes?.caret ?? 0)).toBe(5)
       handleKey(ui, key("left"), local)
       handleKey(ui, key("left"), local)
       handleKey(ui, key("f"), local)
-      expect(ui.state.detailNotesDraft).toBe("coffee")
+      expect((ui.state.detail?.notes?.draft ?? "")).toBe("coffee")
       handleKey(ui, key("return"), local)
       expect(loadTransactionDetail(db, 901)?.notes).toBe("coffee")
-      expect(ui.state.detailNotesCaret).toBe(0)
-      expect(ui.state.detailNotesEditing).toBe(false)
+      expect((ui.state.detail?.notes?.caret ?? 0)).toBe(0)
+      expect((ui.state.detail?.notes != null)).toBe(false)
     } finally {
-      ui.setState({ detailId: null, detailNotesEditing: false })
+      ui.setState({ detail: null })
     }
   })
 
@@ -649,8 +635,8 @@ describe("key router", () => {
 
   test("command letters and space stay literal in all six text contexts", () => {
     const contexts = [
-      { open: () => ui.openFilter(), value: () => ui.state.filterDraft },
-      { open: () => ui.setState({ detailId: 901, detailNotesEditing: true, detailNotesDraft: "", detailNotesCaret: 0 }), value: () => ui.state.detailNotesDraft },
+      { open: () => ui.openFilter(), value: () => (ui.state.filterBar?.draft ?? "") },
+      { open: () => ui.setState({ detail: { boughtTop: 0, notes: { draft: "", caret: 0 }, id: 901 } }), value: () => (ui.state.detail?.notes?.draft ?? "") },
       { open: () => ui.openSettingsEditor("category", null, { ...ui.state.settingsDraft, name: "" }), value: () => ui.state.settingsDraft.name },
       { open: () => { ui.beginImport("/csv", []); handleKey(ui, key("p")) }, value: () => ui.state.importWizard!.path },
       { open: () => { ui.beginImport("", []); ui.openProfileEditor({ ...ui.state.importWizard!.profileDraft, id: "" }, null) }, value: () => ui.state.importWizard!.profileDraft.id },
@@ -658,7 +644,7 @@ describe("key router", () => {
     ]
     for (const context of contexts) {
       ui.switchTab("settings")
-      ui.setState({ detailId: null, detailNotesEditing: false })
+      ui.setState({ detail: null })
       context.open()
       for (const name of "hljknx123") handleKey(ui, key(name))
       handleKey(ui, key("space"))
@@ -667,7 +653,7 @@ describe("key router", () => {
       expect(context.value()).toBe("hljknx123")
       handleKey(ui, key("escape"))
     }
-    ui.setState({ detailId: null, detailNotesEditing: false })
+    ui.setState({ detail: null })
     ui.switchTab("overview")
   })
 
@@ -679,7 +665,7 @@ describe("paging (every list and picker)", () => {
     data.clearFilter()
     data.setState({ accounts: [account({ name: "A" })], transactions: rows(30), accountSelection: "all", ready: true })
     ui.switchTab("manager")
-    ui.setState({ focusedSection: "mgr.transactions", txnView: "rows", managerCursor: 0, managerTop: 0, managerVisible: 10, selectedIds: {}, rangeSelecting: false, status: "" })
+    ui.setState({ focusedSection: "mgr.transactions", txnView: "rows", managerCursor: 0, managerTop: 0, managerVisible: 10, selectedIds: {}, range: null, status: "" })
   })
 
   test("listMove pages by the list's height and jumps with home/end", async () => {
@@ -727,7 +713,7 @@ describe("paging (every list and picker)", () => {
   test("shift+pagedown extends the range by a page", () => {
     handleKey(ui, key("pagedown", { shift: true }), data)
     expect(ui.state.managerCursor).toBe(10)
-    expect(ui.state.rangeSelecting).toBe(true)
+    expect((ui.state.range != null)).toBe(true)
   })
 
   test("pickers page and jump too, letters still typing", () => {

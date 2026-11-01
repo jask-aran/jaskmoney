@@ -47,7 +47,7 @@ test("key-to-frame cost", async () => {
     }
     results.push({ name, mean: times.reduce((a, b) => a + b, 0) / times.length, worst: Math.max(...times) })
   }
-  const txns = () => { ui.switchTab("manager"); ui.setState({ focusedSection: "mgr.transactions", selectedIds: {}, rangeSelecting: false, detailId: null }); data.clearFilter(); if (data.state.uncategorisedOnly) handleKey(ui, key("i"), data); ui.setState({ txnView: "rows" }) }
+  const txns = () => { ui.switchTab("manager"); ui.setState({ focusedSection: "mgr.transactions", selectedIds: {}, range: null, detail: null }); data.clearFilter(); if (data.state.uncategorisedOnly) handleKey(ui, key("i"), data); ui.setState({ txnView: "rows" }) }
   const j = key("j"), k = key("k")
 
   await measure("overview: h/l chart", () => { ui.switchTab("overview"); ui.setState({ focusedSection: "ov.chart" }) }, [key("l"), key("h")])

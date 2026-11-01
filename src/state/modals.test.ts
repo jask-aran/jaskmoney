@@ -32,9 +32,9 @@ test("work writes nothing to another opening of the same dialog", () => {
 
 test("a tab switch closes every dialog, and the first open one owns input", () => {
   ui.switchTab("settings")
-  ui.setState({ aiDialog: { ...aiDialog }, executor: { status: null, cursor: 0, busy: null, waiting: null, note: null }, detailId: 3, importWizard: { stage: "preview", directory: "", files: [], cursor: 0, path: "", pathCaret: 0, profileCursor: 0, managing: false, profileDraft: { id: "", name: "", account: "", accountType: "debit", importPrefix: "", hasHeader: true, delimiter: ",", dateColumn: 0, amountColumn: 1, descriptionColumns: [2], descriptionJoin: false, amountStrip: "$", dateFormat: "DMY" }, profileEditId: null, profileField: 0, profileCaret: 0, preview: null, previewCursor: 0, previewShowAll: false, previewRules: true, committing: false } })
+  ui.setState({ aiDialog: { ...aiDialog }, executor: { status: null, cursor: 0, busy: null, waiting: null, note: null }, detail: { id: 3, boughtTop: 0, notes: null }, importWizard: { stage: "preview", directory: "", files: [], cursor: 0, path: "", pathCaret: 0, profileCursor: 0, managing: false, profileDraft: { id: "", name: "", account: "", accountType: "debit", importPrefix: "", hasHeader: true, delimiter: ",", dateColumn: 0, amountColumn: 1, descriptionColumns: [2], descriptionJoin: false, amountStrip: "$", dateFormat: "DMY" }, profileEditId: null, profileField: 0, profileCaret: 0, preview: null, previewCursor: 0, previewShowAll: false, previewRules: true, committing: false } })
   expect(ui.activeScope()).toBe("manager.detail")
   ui.switchTab("overview")
   expect(ui.activeScope()).toBe("overview")
-  expect(ui.state).toMatchObject({ aiDialog: null, executor: null, detailId: null, importWizard: null })
+  expect(ui.state).toMatchObject({ aiDialog: null, executor: null, detail: null, importWizard: null })
 })

@@ -26,7 +26,7 @@ function setup() {
   data.refresh()
   data.setAccountSelection("all")
   ui.switchTab("manager")
-  ui.setState({ focusedSection: "mgr.transactions", managerCursor: 0, managerTop: 0, selectedIds: {}, rangeSelecting: false })
+  ui.setState({ focusedSection: "mgr.transactions", managerCursor: 0, managerTop: 0, selectedIds: {}, range: null })
   const row = (id: number) => data.state.transactions.find((t) => t.id === id)!
   return { db, food, fuel, row }
 }
@@ -141,8 +141,8 @@ test(". repeats the last category or tag change on the cursor row or selection; 
   // The picker opens on the last category for a row with no suggestion.
   at(3)
   handleKey(ui, key("c"), data)
-  expect(ui.state.catPickerOpen).toBe(true)
-  const fuelIndex = ui.state.catPickerCursor
+  expect((ui.state.catPicker != null)).toBe(true)
+  const fuelIndex = (ui.state.catPicker?.cursor ?? 0)
   handleKey(ui, key("return"), data)
   await Bun.sleep(5)
   expect(row(3).categoryId).toBe(fuel)

@@ -21,7 +21,7 @@ beforeEach(() => {
   data.init(":memory:")
   data.clearFilter()
   ui.switchTab("manager")
-  ui.setState({ detailId: null, txnView: "rows" })
+  ui.setState({ detail: null, txnView: "rows" })
 })
 afterEach(() => {
   // Unmount before switching tabs, so the switch runs no App effects.
@@ -107,7 +107,7 @@ test("Shift+D opens a report without writes; Shift+A writes the same category an
   ui.activateSettings("rules")
   handleKey(ui, key("d", { shift: true }), data)
   expect(ui.activeScope()).toBe("dryRun")
-  expect(ui.state.dryRunReport).toMatchObject({ transactionCount: 1, updatedTransactions: 1, categoryChanges: 1, tagChanges: 1 })
+  expect(ui.state.dryRun?.report).toMatchObject({ transactionCount: 1, updatedTransactions: 1, categoryChanges: 1, tagChanges: 1 })
   expect(data.state.transactions[0]?.categoryId).not.toBe(category)
   expect(db.query("SELECT category_source FROM transactions").get()).toEqual({ category_source: null })
   handleKey(ui, key("2"), data)
@@ -118,9 +118,9 @@ test("Shift+D opens a report without writes; Shift+A writes the same category an
   expect([...data.state.transactions[0]!.tagIds]).toEqual([tag])
   expect(db.query("SELECT category_source FROM transactions").get()).toEqual({ category_source: "rule" })
   handleKey(ui, key("d", { shift: true }), data)
-  expect(ui.state.dryRunReport?.updatedTransactions).toBe(0)
+  expect(ui.state.dryRun?.report?.updatedTransactions).toBe(0)
   ui.switchTab("manager")
-  expect(ui.state.dryRunReport).toBeNull()
+  expect(ui.state.dryRun?.report ?? null).toBeNull()
 })
 
 test("App shows the filter editor on Transactions, updates status colours, and retains the Name cursor", async () => {
@@ -185,7 +185,7 @@ test("rule health and selection colours use captured cells; dry-run body scrolls
   expect(span("missing filter gone").bg.toInts()).toEqual(RGBA.fromHex(theme.rowCursor).toInts())
 
   const report = data.dryRunRules()
-  ui.setState({ dryRunReport: { ...report, rules: Array.from({ length: 12 }, (_, index) => ({ ...report.rules[0]!, rule: { ...report.rules[0]!.rule, name: `Scroll rule ${index + 1}` } })) }, dryRunScroll: 0 })
+  ui.setState({ dryRun: { scroll: 0, visible: 10, report: { ...report, rules: Array.from({ length: 12 }, (_, index) => ({ ...report.rules[0]!, rule: { ...report.rules[0]!.rule, name: `Scroll rule ${index + 1}` } })) } } })
   await draw()
   expect(rendered.captureCharFrame()).toContain("All 0 transactions")
   expect(rendered.captureCharFrame()).toContain("0 transactions would change")
@@ -195,9 +195,9 @@ test("rule health and selection colours use captured cells; dry-run body scrolls
   for (let i = 0; i < 60; i++) handleKey(ui, key("j"), data)
   await draw()
   expect(rendered.captureCharFrame()).toContain("12. Scroll rule 12")
-  const bottom = ui.state.dryRunScroll
+  const bottom = (ui.state.dryRun?.scroll ?? 0)
   handleKey(ui, key("k"), data)
-  expect(ui.state.dryRunScroll).toBe(bottom - 1)
+  expect((ui.state.dryRun?.scroll ?? 0)).toBe(bottom - 1)
   handleKey(ui, key("escape"), data)
   expect(ui.activeScope()).toBe("settings.rules")
 })

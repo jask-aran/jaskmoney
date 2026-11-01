@@ -31,7 +31,7 @@ function setup() {
   data.refresh()
   data.clearFilter()
   ui.switchTab("manager")
-  ui.setState({ focusedSection: "mgr.transactions", managerCursor: 0, managerTop: 0, selectedIds: {}, rangeSelecting: false })
+  ui.setState({ focusedSection: "mgr.transactions", managerCursor: 0, managerTop: 0, selectedIds: {}, range: null })
   onTestFinished(() => { data.setUncategorisedOnly(false); data.init(":memory:") })
 }
 

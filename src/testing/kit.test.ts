@@ -55,11 +55,7 @@ test("preload isolates settings and resets stores; reset removes nested session 
   await data.saveUiPrefs({ filterUsage: { old: "2026-01-01T00:00:00Z" }, weekStart: "sunday" })
   data.commitFilter("desc:Coffee")
   data.setState({ uncategorisedOnly: true, sortColumn: "amount", sortAscending: true, transactions: [transaction()] })
-  ui.setState({
-    txnView: "merchants", merchantSort: "count", merchantReverse: true,
-    selectedIds: { 1: true }, tagPicker: { cursor: 0, query: "", patch: { 1: "add" }, applying: false },
-    detailId: 1, rangeSelecting: true, rangeAnchorId: 1, rangeCursorId: 2,
-  })
+  ui.setState({ txnView: "merchants", merchantSort: "count", merchantReverse: true, selectedIds: { 1: true }, tagPicker: { cursor: 0, query: "", patch: { 1: "add" }, applying: false }, detail: { boughtTop: 0, notes: null, id: 1 }, range: { anchorId: 1, cursorId: 2 } })
   data.reset()
   ui.reset()
   expect(data.getDb()).toBeNull()

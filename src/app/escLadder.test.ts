@@ -24,7 +24,7 @@ function setup() {
   data.refresh()
   data.setAccountSelection("all")
   ui.switchTab("manager")
-  ui.setState({ focusedSection: "mgr.transactions", managerCursor: 0, selectedIds: {}, rangeSelecting: false, drillReturn: null })
+  ui.setState({ focusedSection: "mgr.transactions", managerCursor: 0, selectedIds: {}, range: null, drillReturn: null })
 }
 const esc = () => handleKey(ui, key("escape"), data)
 

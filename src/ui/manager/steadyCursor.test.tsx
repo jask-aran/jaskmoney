@@ -15,7 +15,7 @@ test("new suggestions don't reorder the Uncategorised view under the cursor; reo
     suggestions: { 1: suggestion(1, 0.9), 2: suggestion(2, 0.8), 3: suggestion(3, 0.7), 4: suggestion(4, 0.6) } })
   data.setUncategorisedOnly(true)
   ui.switchTab("manager")
-  ui.setState({ focusedSection: "mgr.transactions", managerCursor: 0, managerTop: 0, rangeSelecting: false })
+  ui.setState({ focusedSection: "mgr.transactions", managerCursor: 0, managerTop: 0, range: null })
   await t.renderOnce()
   handleKey(ui, key("j"), data)
   handleKey(ui, key("j"), data)

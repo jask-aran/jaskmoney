@@ -15,7 +15,7 @@ const state = { focusedSection: "mgr.transactions" as const, drillReturn: null, 
 async function setup() {
   testEnv("JASKMONEY_UP_TOKEN", "")
   testEnv("JASKMONEY_OPENROUTER_TOKEN", "")
-  onTestFinished(() => { ui.setState({ palette: null, lastCommandId: null, catPickerOpen: false, settingsEditor: null, settingsActive: false }); data.init(":memory:") })
+  onTestFinished(() => { ui.setState({ palette: null, lastCommandId: null, catPicker: null, settingsEditor: null, settingsActive: false }); data.init(":memory:") })
   data.init(":memory:")
   const db = data.getDb()!
   db.query("INSERT INTO accounts (id, name, type, source) VALUES (100, 'Spending', 'debit', 'csv')").run()
@@ -118,8 +118,8 @@ test("run from another tab: it goes where it needs, and is listed first next tim
   open()
   type("dry run")
   handleKey(ui, key("return"), data)
-  expect(ui.state.dryRunReport).not.toBeNull()
-  ui.setState({ dryRunReport: null })
+  expect(ui.state.dryRun?.report).not.toBeNull()
+  ui.setState({ dryRun: null })
   open()
   expect(paletteList(ui, data)[0]?.id).toBe("rules:dry-run")
   handleKey(ui, key("escape"), data)

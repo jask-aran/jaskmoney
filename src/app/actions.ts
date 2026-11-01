@@ -39,7 +39,7 @@ export function applyAllRules(ui: UiStore, data: DataStore): void {
 }
 
 export function showDryRun(ui: UiStore, data: DataStore): void {
-  ui.setState({ dryRunReport: data.dryRunRules(), dryRunScroll: 0 })
+  ui.setState({ dryRun: { scroll: 0, visible: 10, report: data.dryRunRules() } })
 }
 
 export function toggleIcons(ui: UiStore, data: DataStore): void {
@@ -57,7 +57,7 @@ export function toggleDemo(ui: UiStore, data: DataStore): Promise<void> {
     if (data.state.demo) { await data.leaveDemo(); ui.setStatus("Demo mode off · your data") }
     else ui.setStatus(`Demo mode: ${(await data.enterDemo()).toLocaleString("en-AU")} made-up transactions over 3 years · your data is untouched · sync is off`)
     resetTransactionCursors(ui, data)
-    ui.setState({ selectedIds: {}, rangeSelecting: false, detailId: null })
+    ui.setState({ selectedIds: {}, range: null, detail: null })
   })()
   settleData(ui, done)
   return done.catch(() => {})

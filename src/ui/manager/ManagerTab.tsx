@@ -70,7 +70,7 @@ export function ManagerTab(props: { focused: SectionId }) {
   createEffect(() => {
     const list = rows(), now = view(), index = ui.state.managerCursor
     const was = seen
-    if (was && was.view === now && was.index === index && was.id != null && list[index]?.id !== was.id && !ui.state.rangeSelecting) {
+    if (was && was.view === now && was.index === index && was.id != null && list[index]?.id !== was.id && ui.state.range == null) {
       const at = list.findIndex((t) => t.id === was.id)
       if (at >= 0) {
         seen = { view: now, index: at, id: was.id }
@@ -159,7 +159,7 @@ export function ManagerTab(props: { focused: SectionId }) {
     const hidden = hiddenSelected()
     return `showing ${start}-${end} of ${rows().length}${total !== rows().length ? ` (${total.toLocaleString("en-AU")} in all)` : ""}${
       selCount() > 0 ? ` · ${selCount()} selected${hidden ? `, ${hidden} hidden` : ""}` : ""
-    }${ui.state.rangeSelecting ? " · range" : ""} · sort ${data.state.sortColumn}${
+    }${(ui.state.range != null) ? " · range" : ""} · sort ${data.state.sortColumn}${
       data.state.sortAscending ? "↑" : "↓"
     }`
   }
@@ -167,8 +167,8 @@ export function ManagerTab(props: { focused: SectionId }) {
   // Go-style filter bar: the input stays in the pane; its canonical form is
   // rendered next to the title.
   const filterBar = () => {
-    const editing = ui.state.filterMode
-    const raw = editing ? ui.state.filterDraft : data.state.filterQuery
+    const editing = (ui.state.filterBar != null)
+    const raw = editing ? (ui.state.filterBar?.draft ?? "") : data.state.filterQuery
     if (!editing && !raw.trim()) return null
     const err = data.state.filterErr
     const note = data.state.filterNote
@@ -195,7 +195,7 @@ export function ManagerTab(props: { focused: SectionId }) {
     return `[${truncate(fb.preview, 48)}]`
   }
 
-  const accountAction = () => data.state.accounts.find((account) => account.id === ui.state.accountActionId)
+  const accountAction = () => data.state.accounts.find((account) => account.id === (ui.state.accountAction?.id ?? null))
 
   /** Accept-all's preview: how many rows go to each suggested category. */
   /** Accept-all's preview: per suggested category, how many rows and which
@@ -267,7 +267,7 @@ export function ManagerTab(props: { focused: SectionId }) {
                 /
               </S>
               <S fg={ink.figure}>{" "}</S>
-              <TextInput field={{ value: fb().raw, caret: ui.state.filterCaret }} focused={fb().editing} caretColor={tone.key} />
+              <TextInput field={{ value: fb().raw, caret: (ui.state.filterBar?.caret ?? 0) }} focused={fb().editing} caretColor={tone.key} />
               <S fg={ink.figure}>{"  "}</S>
               <S fg={fb().dotColor}>●</S>
               <S fg={fb().dotColor}> {fb().dotLabel}</S>
@@ -283,7 +283,7 @@ export function ManagerTab(props: { focused: SectionId }) {
             groups={groups()}
             top={ui.state.merchantTop}
             visible={ui.state.managerVisible}
-            cursor={txFocused() && !ui.state.filterMode ? ui.state.merchantCursor : null}
+            cursor={txFocused() && ui.state.filterBar == null ? ui.state.merchantCursor : null}
             width={dims().width - 4}
             sort={ui.state.merchantSort}
             reverse={ui.state.merchantReverse}
@@ -296,7 +296,7 @@ export function ManagerTab(props: { focused: SectionId }) {
           rows={rows()}
           top={ui.state.managerTop}
           visible={ui.state.managerVisible}
-          cursor={txFocused() && !ui.state.filterMode ? ui.state.managerCursor : null}
+          cursor={txFocused() && ui.state.filterBar == null ? ui.state.managerCursor : null}
           width={dims().width - 4}
           showAccount={showAccount()}
           showTags
@@ -380,7 +380,7 @@ export function ManagerTab(props: { focused: SectionId }) {
         {(account: () => Account) => (
           <Modal title="Account data" subtitle={account().name} tone="warning" width={68} hints="j/k move · enter, enter again · esc cancel">
             <For each={ACCOUNT_ACTIONS}>{(kind, i) => (
-              <ListRow cursor={ui.state.accountActionCursor === i()} bg={theme.mantle} armed={armedFor(ui.state.armed, kind, account().id)} spans={[
+              <ListRow cursor={(ui.state.accountAction?.cursor ?? 0) === i()} bg={theme.mantle} armed={armedFor(ui.state.armed, kind, account().id)} spans={[
                 { text: kind === "clearAccount" ? "Clear this account’s transactions" : "Remove this account and its transactions", fg: kind === "clearAccount" ? ink.figure : tone.bad },
               ]} />
             )}</For>

@@ -25,7 +25,7 @@ function setup() {
   data.refresh()
   data.setState({ accountSelection: "all" })
   ui.switchTab("manager")
-  ui.setState({ focusedSection: "mgr.transactions", managerCursor: 0, managerTop: 0, selectedIds: {}, rangeSelecting: false })
+  ui.setState({ focusedSection: "mgr.transactions", managerCursor: 0, managerTop: 0, selectedIds: {}, range: null })
   onTestFinished(() => { data.closeTagReview(); data.init(":memory:") })
   return { db }
 }
@@ -120,11 +120,11 @@ test("the chooser: your tags (a trip found for one), groups no tag covers, then 
 test("keys: T opens the chooser; in a review y/x/esc act on candidates and the footer says so", async () => {
   setup()
   handleKey(ui, key("t", { shift: true }), data)
-  expect(ui.state.tagChooserOpen).toBe(true)
+  expect((ui.state.tagChooser != null)).toBe(true)
   for (const c of "dinners") handleKey(ui, key(c), data)
-  expect(ui.state.tagChooserQuery).toBe("dinners")
+  expect((ui.state.tagChooser?.query ?? "")).toBe("dinners")
   handleKey(ui, key("escape"), data)
-  expect(ui.state.tagChooserOpen).toBe(false)
+  expect((ui.state.tagChooser != null)).toBe(false)
   const { ai } = fakeJev()
   await data.openTagReview({ tagId: null, name: "Coffee", categoryIds: [], about: null }, ai)
   expect(footerHints("manager.txns", { focusedSection: "mgr.transactions", drillReturn: null, chartViews: [0, 4], tagReview: true }).slice(0, 3).map((h) => h.desc)).toEqual(["tag", "tag all ≥80%", "dismiss"])

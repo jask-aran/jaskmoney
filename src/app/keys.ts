@@ -87,12 +87,9 @@ function moveTxnCursor(
   const cur = rows[ui.state.managerCursor]
   if (!cur) return
   if (withRange) {
-    const anchorId =
-      ui.state.rangeSelecting && ui.state.rangeAnchorId
-        ? ui.state.rangeAnchorId
-        : (prev?.id ?? cur.id)
+    const anchorId = ui.state.range?.anchorId ?? prev?.id ?? cur.id
     ui.setRangeFromMove(anchorId, cur.id, true)
-  } else if (ui.state.rangeSelecting) {
+  } else if (ui.state.range) {
     ui.setRangeFromMove(0, 0, false)
   }
 }
@@ -284,11 +281,11 @@ function handleFilterPicker(ui: UiStore, key: KeyEvent, data?: DataStore): void 
 }
 
 function handleDryRun(ui: UiStore, key: KeyEvent, data?: DataStore): void {
-  if (key.name === "escape") { ui.setState({ dryRunReport: null, dryRunScroll: 0 }); return }
+  if (key.name === "escape") { ui.setState({ dryRun: null }); return }
   // Scrolls like a list whose rows are the scroll positions.
-  const lines = ui.state.dryRunReport?.rules.reduce((n, result) => n + 4 + result.samples.length, 0) ?? 0
-  const moved = listMove(key, ui.state.dryRunScroll, Math.max(0, lines - ui.state.dryRunVisible) + 1, ui.state.dryRunVisible)
-  if (moved != null) ui.setState({ dryRunScroll: moved })
+  const lines = ui.state.dryRun?.report?.rules.reduce((n, result) => n + 4 + result.samples.length, 0) ?? 0
+  const moved = listMove(key, (ui.state.dryRun?.scroll ?? 0), Math.max(0, lines - (ui.state.dryRun?.visible ?? 10)) + 1, (ui.state.dryRun?.visible ?? 10))
+  if (moved != null) ui.setState("dryRun", { scroll: moved })
 }
 
 function handleJump(ui: UiStore, key: KeyEvent, data?: DataStore): void {
@@ -371,13 +368,13 @@ function handleTagPicker(ui: UiStore, key: KeyEvent, data?: DataStore): void {
 /** T: choose a tag (or a group found in the history, or a new name) to
  * find transactions for. */
 function handleTagChooser(ui: UiStore, key: KeyEvent, data?: DataStore): void {
-  const choices = data ? tagChoices(data.state.tags, data.tagGroups(), ui.state.tagChooserQuery) : []
-  queryPickerKey(key, { query: ui.state.tagChooserQuery, cursor: ui.state.tagChooserCursor }, choices.length, {
-    close: () => { ui.setState({ tagChooserOpen: false, tagChooserQuery: "", tagChooserCursor: 0 }); ui.setStatus("Transactions") },
-    update: (next) => { ui.setState({ tagChooserQuery: next.query, tagChooserCursor: next.cursor }) },
+  const choices = data ? tagChoices(data.state.tags, data.tagGroups(), (ui.state.tagChooser?.query ?? "")) : []
+  queryPickerKey(key, { query: (ui.state.tagChooser?.query ?? ""), cursor: (ui.state.tagChooser?.cursor ?? 0) }, choices.length, {
+    close: () => { ui.setState({ tagChooser: null }); ui.setStatus("Transactions") },
+    update: (next) => { ui.setState({ tagChooser: { query: next.query, cursor: next.cursor } }) },
     apply: () => {
-      const choice = choices[ui.state.tagChooserCursor]
-      ui.setState({ tagChooserOpen: false, tagChooserQuery: "", tagChooserCursor: 0 })
+      const choice = choices[(ui.state.tagChooser?.cursor ?? 0)]
+      ui.setState({ tagChooser: null })
       if (choice && data) void startTagReview(ui, data, choice)
     },
   })
@@ -386,19 +383,19 @@ function handleTagChooser(ui: UiStore, key: KeyEvent, data?: DataStore): void {
 function openCategoryPicker(ui: UiStore, ids: number[], data?: DataStore): void {
   ui.openCatPicker(ids)
   const repeat = data?.lastRepeat()
-  if (!data || repeat?.kind !== "category" || ui.state.catPickerQuery || ids.some((id) => data.state.suggestions[id])) return
+  if (!data || repeat?.kind !== "category" || (ui.state.catPicker?.query ?? "") || ids.some((id) => data.state.suggestions[id])) return
   // Start on the last category chosen (the list keeps its order).
   const cursor = assignableCategories(data.state.categories, "", pickerSuggestions(ids, data.state.suggestions)).findIndex((c) => c.id === repeat.categoryId)
-  if (cursor >= 0) ui.setState({ catPickerCursor: cursor })
+  if (cursor >= 0) ui.setState("catPicker", { cursor })
 }
 
 function handleCatPicker(ui: UiStore, key: KeyEvent, data?: DataStore): void {
-  const cats = assignableCategories(data?.state.categories ?? [], ui.state.catPickerQuery, pickerSuggestions(ui.state.pickerTargets, data?.state.suggestions ?? {}))
-  queryPickerKey(key, { query: ui.state.catPickerQuery, cursor: ui.state.catPickerCursor }, cats.length, {
+  const cats = assignableCategories(data?.state.categories ?? [], (ui.state.catPicker?.query ?? ""), pickerSuggestions(ui.state.pickerTargets, data?.state.suggestions ?? {}))
+  queryPickerKey(key, { query: (ui.state.catPicker?.query ?? ""), cursor: (ui.state.catPicker?.cursor ?? 0) }, cats.length, {
     close: () => { ui.closeCatPicker(); ui.setStatus("Categorize cancelled") },
-    update: (next) => { ui.setState({ catPickerQuery: next.query, catPickerCursor: next.cursor }) },
+    update: (next) => { ui.setState({ catPicker: { query: next.query, cursor: next.cursor } }) },
     apply: () => {
-      const cat = cats[ui.state.catPickerCursor]
+      const cat = cats[(ui.state.catPicker?.cursor ?? 0)]
       // Targets were fixed when the picker opened (the Transactions
       // selection or cursor row, the open detail row, or a merchant group).
       const targets = ui.state.pickerTargets
@@ -436,12 +433,12 @@ function handleCatPicker(ui: UiStore, key: KeyEvent, data?: DataStore): void {
 
 function handleFilter(ui: UiStore, key: KeyEvent, data?: DataStore): void {
   const { name } = key
-  if (name === "f1") { ui.setState({ searchHelp: true, searchHelpFull: false, searchHelpTop: 0 }); return }
+  if (name === "f1") { ui.setState({ searchHelp: { full: false, top: 0, visible: 0 } }); return }
   // ↑ on a smart search's filter brings its question back, to reword it.
-  const question = smartQuestionFor(ui.state, ui.state.filterDraft)
+  const question = smartQuestionFor(ui.state, (ui.state.filterBar?.draft ?? ""))
   if (name === "up" && question) {
     const draft = `?${question}`
-    ui.setState({ filterDraft: draft, filterCaret: draft.length })
+    ui.setState({ filterBar: { draft, caret: draft.length } })
     ui.setStatus("Reword the question · enter asks again")
     return
   }
@@ -454,7 +451,7 @@ function handleFilter(ui: UiStore, key: KeyEvent, data?: DataStore): void {
     return
   }
   if (name === "return" || name === "enter") {
-    const draft = ui.state.filterDraft
+    const draft = (ui.state.filterBar?.draft ?? "")
     // ?<query>: ask the models for a filter; the draft stays open with it.
     if (draft.trimStart().startsWith("?")) {
       if (data) void runSmartSearch(ui, data, draft, () => resetTransactionCursors(ui, data))
@@ -483,9 +480,9 @@ function handleFilter(ui: UiStore, key: KeyEvent, data?: DataStore): void {
     if (data && r.ok) void runAsk(ui, data, written)
     return
   }
-  const next = editText({ value: ui.state.filterDraft, caret: ui.state.filterCaret }, key)
+  const next = editText({ value: (ui.state.filterBar?.draft ?? ""), caret: (ui.state.filterBar?.caret ?? 0) }, key)
   if (next) {
-    ui.setState({ filterDraft: next.value, filterCaret: next.caret })
+    ui.setState({ filterBar: { draft: next.value, caret: next.caret } })
     // A smart search is plain English until enter asks for its filter.
     if (next.value.trimStart().startsWith("?")) return
     data?.setFilterLive(next.value)
@@ -494,41 +491,42 @@ function handleFilter(ui: UiStore, key: KeyEvent, data?: DataStore): void {
 }
 
 function handleManagerDetailNotes(ui: UiStore, key: KeyEvent, data?: DataStore): void {
-  if (ui.state.detailId == null) return
+  const detail = ui.state.detail
+  if (!detail?.notes) return
   const { name } = key
-  if (name === "escape") { ui.setState({ detailNotesEditing: false, detailNotesDraft: "", detailNotesCaret: 0 }); ui.setStatus("Notes unchanged"); return }
+  if (name === "escape") { ui.setState("detail", { notes: null }); ui.setStatus("Notes unchanged"); return }
   if (name === "return" || name === "enter") {
-    const asking = data?.updateTransactionNotes(ui.state.detailId, ui.state.detailNotesDraft.trim())
+    const asking = data?.updateTransactionNotes(detail.id, detail.notes.draft.trim())
     ui.setStatus("Notes saved")
     if (asking) settleData(ui, asking, (asked) => { if (asked) ui.setStatus("Notes saved · suggestion asked again with them") })
-    ui.setState({ detailNotesEditing: false, detailNotesDraft: "", detailNotesCaret: 0 })
+    ui.setState("detail", { notes: null })
     return
   }
-  const next = editText({ value: ui.state.detailNotesDraft, caret: ui.state.detailNotesCaret }, key)
-  if (next) ui.setState({ detailNotesDraft: next.value, detailNotesCaret: next.caret })
+  const next = editText({ value: detail.notes.draft, caret: detail.notes.caret }, key)
+  if (next) ui.setState("detail", { notes: { draft: next.value, caret: next.caret } })
 }
 
 function handleManagerDetail(ui: UiStore, key: KeyEvent, data?: DataStore): void {
   const { name } = key
 
-  if (name === "escape" || name === "return" || name === "enter") { ui.setState({ detailId: null }); return }
+  if (name === "escape" || name === "return" || name === "enter") { ui.setState({ detail: null }); return }
   if (name === "c") { openCategoryPicker(ui, ui.targetIds(data?.scopedTransactions() ?? []), data); return }
   if (name === "t") { ui.openTagPicker(ui.targetIds(data?.scopedTransactions() ?? [])); return }
   if ((name === "N" || (name === "n" && key.shift)) && data) {
-    const row = data.transactions().find((t) => t.id === ui.state.detailId)
-    if (row) { ui.setState({ detailId: null }); openMerchantNote(ui, data, row.description) }
+    const row = data.transactions().find((t) => t.id === (ui.state.detail?.id ?? null))
+    if (row) { ui.setState({ detail: null }); openMerchantNote(ui, data, row.description) }
     return
   }
   if (name === "n") {
-    const notes = data?.transactions().find((t) => t.id === ui.state.detailId)?.notes ?? ""
-    ui.setState({ detailNotesEditing: true, detailNotesDraft: notes, detailNotesCaret: notes.length })
+    const notes = data?.transactions().find((t) => t.id === (ui.state.detail?.id ?? null))?.notes ?? ""
+    ui.setState("detail", { notes: { draft: notes, caret: notes.length } })
     return
   }
   // J/K scroll what it bought, when that's longer than the view shows.
   if ((name === "j" || name === "k" || name === "J" || name === "K") && (key.shift || name === "J" || name === "K")) {
-    const items = data?.transactions().find((t) => t.id === ui.state.detailId)?.bought?.length ?? 0
-    const top = ui.state.detailBoughtTop + (name.toLowerCase() === "j" ? 1 : -1)
-    ui.setState({ detailBoughtTop: Math.max(0, Math.min(top, items - BOUGHT_LINES)) })
+    const items = data?.transactions().find((t) => t.id === (ui.state.detail?.id ?? null))?.bought?.length ?? 0
+    const top = (ui.state.detail?.boughtTop ?? 0) + (name.toLowerCase() === "j" ? 1 : -1)
+    ui.setState("detail", { boughtTop: Math.max(0, Math.min(top, items - BOUGHT_LINES)) })
     return
   }
   // j/k browse neighbouring transactions without closing the view.
@@ -536,7 +534,7 @@ function handleManagerDetail(ui: UiStore, key: KeyEvent, data?: DataStore): void
     const rows = data?.scopedTransactions() ?? []
     moveTxnCursor(ui, data, name === "j" || name === "down" ? 1 : -1, false)
     const row = rows[ui.state.managerCursor]
-    if (row) ui.setState({ detailId: row.id, detailBoughtTop: 0 })
+    if (row) ui.setState({ detail: { id: row.id, boughtTop: 0, notes: null } })
     return
   }
 }
@@ -590,10 +588,10 @@ function handleSettingsFactoryReset(ui: UiStore, key: KeyEvent, data?: DataStore
  * esc, enter, F1 or q close it; j/k and paging scroll it when the screen
  * is too short for it all. */
 function handleSearchHelp(ui: UiStore, key: KeyEvent): void {
-  if (["escape", "return", "enter", "f1", "q"].includes(key.name)) { ui.setState({ searchHelp: false }); return }
-  if (key.name === "m") { ui.setState({ searchHelpFull: !ui.state.searchHelpFull, searchHelpTop: 0 }); return }
-  const top = scrolled(key, ui.state.searchHelpTop, (ui.state.searchHelpFull ? SEARCH_HELP_FULL : SEARCH_HELP).length, ui.state.searchHelpVisible)
-  if (top != null) ui.setState({ searchHelpTop: top })
+  if (["escape", "return", "enter", "f1", "q"].includes(key.name)) { ui.setState({ searchHelp: null }); return }
+  if (key.name === "m") { ui.setState("searchHelp", { full: !(ui.state.searchHelp?.full ?? false), top: 0 }); return }
+  const top = scrolled(key, (ui.state.searchHelp?.top ?? 0), ((ui.state.searchHelp?.full ?? false) ? SEARCH_HELP_FULL : SEARCH_HELP).length, (ui.state.searchHelp?.visible ?? 0))
+  if (top != null) ui.setState("searchHelp", { top })
 }
 
 /** A read-only text's first line after a scroll key (j/k a line, paging a
@@ -637,13 +635,13 @@ function handleMerchantNote(ui: UiStore, key: KeyEvent, data?: DataStore): void 
 
 function handleManagerAccountAction(ui: UiStore, key: KeyEvent, data?: DataStore): void {
   const { name } = key
-  if (name === "escape") { ui.setState({ accountActionId: null }); ui.setStatus("Account actions cancelled"); return }
-  const account = data?.state.accounts.find((a) => a.id === ui.state.accountActionId)
-  const moved = listMove(key, ui.state.accountActionCursor, ACCOUNT_ACTIONS.length)
-  if (moved != null) { ui.setState({ accountActionCursor: moved }); return }
+  if (name === "escape") { ui.setState({ accountAction: null }); ui.setStatus("Account actions cancelled"); return }
+  const account = data?.state.accounts.find((a) => a.id === (ui.state.accountAction?.id ?? null))
+  const moved = listMove(key, (ui.state.accountAction?.cursor ?? 0), ACCOUNT_ACTIONS.length)
+  if (moved != null) { ui.setState("accountAction", { cursor: moved }); return }
   if ((name === "return" || name === "enter") && account) {
-    const kind = ACCOUNT_ACTIONS[ui.state.accountActionCursor]!
-    confirmTwice(ui, data, { kind, id: account.id, label: account.name, with: "enter" }, () => ui.setState({ accountActionId: null }))
+    const kind = ACCOUNT_ACTIONS[(ui.state.accountAction?.cursor ?? 0)]!
+    confirmTwice(ui, data, { kind, id: account.id, label: account.name, with: "enter" }, () => ui.setState({ accountAction: null }))
   }
 }
 
@@ -1333,7 +1331,7 @@ function handleSettingsDatabase(ui: UiStore, key: KeyEvent, data?: DataStore): v
  * then a special view (tag review, then the Uncategorised view). Approved
  * OpenTUI deviation from legacy, where u cleared and views had own keys. */
 function stepBack(ui: UiStore, data?: DataStore): void {
-  if (Object.keys(ui.state.selectedIds).length || ui.state.rangeSelecting) { ui.clearSelection(); ui.setStatus("Selection cleared"); return }
+  if (Object.keys(ui.state.selectedIds).length || (ui.state.range != null)) { ui.clearSelection(); ui.setStatus("Selection cleared"); return }
   if (!data) return
   const back = ui.state.drillReturn
   if (back) {
@@ -1353,6 +1351,7 @@ function stepBack(ui: UiStore, data?: DataStore): void {
 function handleManagerTxns(ui: UiStore, key: KeyEvent, data?: DataStore): void {
   const { name, sequence: seq } = key
   const rows = data?.scopedTransactions() ?? []
+  ui.ensureRange(rows)
   if (savedFilterKeys(ui, data, key)) return
   // u undoes the last change (dataStore.undo); esc clears, below.
   if (name === "u" && data) { runUndo(ui, data); return }
@@ -1393,7 +1392,7 @@ function handleManagerTxns(ui: UiStore, key: KeyEvent, data?: DataStore): void {
   }
   // Tag review: a tag's candidates, accepted (y, Y) or dismissed (x) like
   // category suggestions; T chooses another tag, esc leaves.
-  if (name === "t" && key.shift && data) { ui.setState({ tagChooserOpen: true, tagChooserQuery: "", tagChooserCursor: 0 }); ui.setStatus("Find transactions for a tag · type to filter or name a new one"); return }
+  if (name === "t" && key.shift && data) { ui.setState({ tagChooser: { cursor: 0, query: "" } }); ui.setStatus("Find transactions for a tag · type to filter or name a new one"); return }
   const review = data?.state.tagReview
   if (review && data) {
     if (name === "y" && !key.shift) { void runTagAccept(ui, data, ui.targetIds(rows)); return }
@@ -1436,7 +1435,7 @@ function handleManagerTxns(ui: UiStore, key: KeyEvent, data?: DataStore): void {
   }
   if (name === "return" || name === "enter") {
     const row = (data?.scopedTransactions() ?? [])[ui.state.managerCursor]
-    if (row) ui.setState({ detailId: row.id, detailNotesEditing: false })
+    if (row) ui.setState({ detail: { id: row.id, boughtTop: 0, notes: null } })
     return
   }
   if (isSmartSearchKey(key)) { openSmartSearch(ui, data); return }
@@ -1475,14 +1474,14 @@ function handleManagerTxns(ui: UiStore, key: KeyEvent, data?: DataStore): void {
   if (name === "space" || seq === " ") {
     const hl = ui.highlightedIds(rows)
     const hlIds = Object.keys(hl).map(Number)
-    if (ui.state.rangeSelecting && hlIds.length > 0) {
+    if ((ui.state.range != null) && hlIds.length > 0) {
       const allOn = hlIds.every((id) => ui.state.selectedIds[id])
       const next = { ...ui.state.selectedIds }
       for (const id of hlIds) {
         if (allOn) delete next[id]
         else next[id] = true
       }
-      ui.setState({ selectedIds: next, rangeSelecting: false })
+      ui.setState({ selectedIds: next, range: null })
       ui.setStatus(allOn ? `Deselected ${hlIds.length}` : `Selected ${hlIds.length}`)
     } else {
       const row = rows[ui.state.managerCursor]
@@ -1512,7 +1511,7 @@ function handleManagerAccounts(ui: UiStore, key: KeyEvent, data?: DataStore): vo
   const select = (index: number) => {
     const row = rows[index]
     if (!row || row.selection === data.state.accountSelection) return
-    ui.setState({ managerCursor: 0, managerTop: 0, selectedIds: {}, rangeSelecting: false })
+    ui.setState({ managerCursor: 0, managerTop: 0, selectedIds: {}, range: null })
     data.setAccountSelection(row.selection)
   }
   // j/k move down the stacks in reading order; h/l go to the first row of
@@ -1529,7 +1528,7 @@ function handleManagerAccounts(ui: UiStore, key: KeyEvent, data?: DataStore): vo
   }
   if (name === "return" || name === "enter") { ui.setState({ focusedSection: "mgr.transactions" }); return }
   const accountId = rows[at]?.accountId
-  if ((name === "d" || name === "delete") && accountId != null) { ui.setState({ accountActionId: accountId, accountActionCursor: 0 }); ui.setStatus("Account data · enter twice to clear or remove · esc cancel"); return }
+  if ((name === "d" || name === "delete") && accountId != null) { ui.setState({ accountAction: { cursor: 0, id: accountId } }); ui.setStatus("Account data · enter twice to clear or remove · esc cancel"); return }
 }
 
 /** The cycle the Budgets tab shows and the budgets in force in it. */
@@ -1878,7 +1877,7 @@ type HintState = Pick<UiState, "focusedSection" | "drillReturn" | "chartViews"> 
   /** A tag review is open. */
   tagReview?: boolean
   /** The search help shows its full version. */
-  searchHelpFull?: boolean
+  searchHelp?: Pick<NonNullable<UiState["searchHelp"]>, "full"> | null
   /** Rules offered (R). */
   ruleOfferCount?: number
   /** The filter has `ask:` terms; whether near misses are shown. */
@@ -1974,7 +1973,7 @@ const scopes: Record<ScopeId, ScopeEntry> = {
   "searchHelp": {
     handle: handleSearchHelp,
     quits: false,
-    hints: (state) => [{ key: "m", desc: state?.searchHelpFull ? "brief" : "full grammar" }, { key: "j/k", desc: "scroll" }, { key: "esc", desc: "close" }],
+    hints: (state) => [{ key: "m", desc: state?.searchHelp?.full ? "brief" : "full grammar" }, { key: "j/k", desc: "scroll" }, { key: "esc", desc: "close" }],
   },
   "merchantNote": {
     handle: handleMerchantNote,
@@ -2272,12 +2271,21 @@ export function footerLine(scope: ScopeId, state?: HintState): Hint[] {
 /** The state the hints read, from both stores. */
 export function hintState(ui: UiStore, data?: DataStore): HintState {
   return {
-    focusedSection: ui.state.focusedSection, drillReturn: ui.state.drillReturn, chartViews: ui.state.chartViews, overviewCharts: ui.state.overviewCharts,
-    uncategorisedOnly: data?.state.uncategorisedOnly, tagReview: !!data?.state.tagReview,
-    signInPaste: !!ui.state.llmSignIn?.paste, aiField: !!ui.state.aiDialog?.field, executorWaiting: !!ui.state.executor?.waiting, boughtScrolls: (data?.transactions().find((t) => t.id === ui.state.detailId)?.bought?.length ?? 0) > BOUGHT_LINES, searchHelpFull: ui.state.searchHelpFull,
+    focusedSection: ui.state.focusedSection,
+    drillReturn: ui.state.drillReturn,
+    chartViews: ui.state.chartViews,
+    overviewCharts: ui.state.overviewCharts,
+    uncategorisedOnly: data?.state.uncategorisedOnly,
+    tagReview: !!data?.state.tagReview,
+    signInPaste: !!ui.state.llmSignIn?.paste,
+    aiField: !!ui.state.aiDialog?.field,
+    executorWaiting: !!ui.state.executor?.waiting,
+    boughtScrolls: (data?.transactions().find((t) => t.id === (ui.state.detail?.id ?? null))?.bought?.length ?? 0) > BOUGHT_LINES,
+    searchHelp: { full: (ui.state.searchHelp?.full ?? false) },
     ruleOfferCount: data && ui.state.activeTab === "manager" ? data.allRuleOffers().length : 0,
-    asks: !!data?.askCounts(), askLoose: data?.nearMissesShown(),
-    recallQuestion: !!smartQuestionFor(ui.state, ui.state.filterDraft),
+    asks: !!data?.askCounts(),
+    askLoose: data?.nearMissesShown(),
+    recallQuestion: !!smartQuestionFor(ui.state, (ui.state.filterBar?.draft ?? "")),
   }
 }
 

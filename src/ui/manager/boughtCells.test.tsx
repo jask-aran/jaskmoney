@@ -57,7 +57,7 @@ test("Uncategorised: confidence before a faded, italic category; a Details colum
 
 test("detail: the Bought list shows 10 items with quantity and price; J/K scroll it, j/k still move rows", async () => {
   const { t } = await setup()
-  ui.setState({ managerCursor: 0, detailId: 1 })
+  ui.setState({ managerCursor: 0, detail: { boughtTop: 0, notes: null, id: 1 } })
   await t.renderOnce()
   let frame = t.captureCharFrame()
   expect(frame).toMatch(/Bought\s+1× Electric Toothbrush\s+\$59\.99/)
@@ -74,7 +74,7 @@ test("detail: the Bought list shows 10 items with quantity and price; J/K scroll
   expect(frame).not.toMatch(/Electric Toothbrush\s+\$59/)
   expect(frame).toMatch(/3–12 of 12/)
   handleKey(ui, key("j"), data)
-  expect(ui.state.detailId).toBe(2)
-  expect(ui.state.detailBoughtTop).toBe(0)
+  expect((ui.state.detail?.id ?? null)).toBe(2)
+  expect((ui.state.detail?.boughtTop ?? 0)).toBe(0)
   t.renderer.destroy()
 })

@@ -116,7 +116,7 @@ for (const [width, height, wide] of [[80, 30, false], [80, 45, false], [89, 60, 
     t.mockInput.pressKey("b")
     await settle()
     expect(ui.state.focusedSection).toBe(wide ? "ov.chart2" : "none")
-    ui.setState({ focusedSection: "none", jumpMode: false })
+    ui.setState({ focusedSection: "none", jump: null })
     ui.setTimeframe({ ...ui.state.timeframe, family: "lookback", lookback: "2M" })
     await settle()
     expect(overviewCards(t).map((card) => card.id)).toEqual(sameCards)

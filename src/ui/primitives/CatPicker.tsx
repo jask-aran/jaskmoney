@@ -12,7 +12,7 @@ import { boughtText } from "../../domain/history"
  * their suggested categories first. */
 export function CatPicker() {
   const suggested = createMemo(() => pickerSuggestions(ui.state.pickerTargets, data.state.suggestions))
-  const items = createMemo((): PickerItem[] => categoryPickerRows(data.state.categories, ui.state.catPickerQuery, true, suggested()).map((r) =>
+  const items = createMemo((): PickerItem[] => categoryPickerRows(data.state.categories, (ui.state.catPicker?.query ?? ""), true, suggested()).map((r) =>
     r.kind === "heading" ? r : { kind: "item", label: r.category.name, value: r.category.id, color: r.category.color, ...(r.confidence !== undefined ? { detail: `${Math.round(r.confidence * 100)}%` } : {}) }))
   const targets = () => ui.state.pickerTargets.length
   // Targets the table doesn't show (a selection a filter hides): said, so it's no surprise.
@@ -28,13 +28,13 @@ export function CatPicker() {
     return bought ? `Bought ${bought}` : t?.message ? `Message ${t.message}` : undefined
   })
   return (
-    <Show when={ui.state.catPickerOpen}>
+    <Show when={(ui.state.catPicker != null)}>
       <ListPicker
         title="Category"
         subtitle={`${count(targets(), "transaction")}${hiddenTargets() ? `, ${hiddenTargets()} not in view` : ""}`}
         items={items()}
-        cursor={ui.state.catPickerCursor}
-        query={ui.state.catPickerQuery}
+        cursor={(ui.state.catPicker?.cursor ?? 0)}
+        query={(ui.state.catPicker?.query ?? "")}
         iconFor={(value) => categoryMark(Number(value))}
         note={note()}
         hints="↑↓ ^j/k move · enter apply · esc cancel"
