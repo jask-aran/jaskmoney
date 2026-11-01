@@ -500,15 +500,18 @@ export function createClientStore(initialLink: CoreLink) {
     if (!review) return ""
     const take = ids.filter((id) => review.candidates[id])
     if (!take.length) return "Nothing to tag"
+    // The review may close (or another open) while the core answers.
+    const run = tagRun
+    const open = () => run === tagRun && !!state.tagReview
     let tagId = review.tagId
     if (tagId == null) {
       tagId = await link.call("createTag", { input: { name: review.name, color: NEW_TAG_COLOR } })
-      setState("tagReview", "tagId", tagId)
+      if (open()) setState("tagReview", "tagId", tagId)
     }
     const summary = await applyTagPatch(take, { [tagId]: "add" }, "review")
     const tagged = new Set(transactions().filter((t) => t.tagIds.includes(tagId!)).map((t) => t.id))
     // produce: a store merges a plain object into the old one, keeping removed keys.
-    setState("tagReview", "candidates", produce((c) => { for (const id of take) if (tagged.has(id)) delete c[id] }))
+    if (open()) setState("tagReview", "candidates", produce((c) => { for (const id of take) if (tagged.has(id)) delete c[id] }))
     return summary
   }
 
@@ -642,9 +645,14 @@ export function createClientStore(initialLink: CoreLink) {
     toggleSortDirection,
     setAccountSelection,
     setAskLoose: (on: boolean | null) => setState({ askLoose: on }),
-    setUncategorisedOnly: (on: boolean) => setState(on
-      ? { uncategorisedOnly: true, sortColumn: "confidence", sortAscending: false }
-      : { uncategorisedOnly: false, ...(state.sortColumn === "confidence" ? { sortColumn: "date" as const, sortAscending: false } : {}) }),
+    /** The table's rows are all of them, the uncategorised ones, or a tag
+     * review's candidates: never two at once, so each closes the other. */
+    setUncategorisedOnly: (on: boolean) => {
+      if (on) stopTagReview()
+      setState(on
+        ? { uncategorisedOnly: true, tagReview: null, sortColumn: "confidence", sortAscending: false }
+        : { uncategorisedOnly: false, ...(state.sortColumn === "confidence" ? { sortColumn: "date" as const, sortAscending: false } : {}) })
+    },
     askAbout,
     openTagReview,
     acceptTagCandidates,
