@@ -2,8 +2,10 @@ import { describe, expect, test } from "bun:test"
 import type { JevAnswer } from "../ai/jev"
 import type { ClairicAnswer } from "../ai/workersAi"
 import { parseFilterStrict } from "./filter"
-import { categoriesNamed, parsedSearch, periodBounds, searchFilter, smartSearch, snapPayee, type ParsedSearch } from "./smartSearch"
+import { categoriesNamed, parsedSearch, periodBounds, searchDates, searchFilter, smartSearch, snapPayee, type ParsedSearch } from "./smartSearch"
 import { COVERS_EVERY_AT, COVERS_KIND_AT, coveredCategoryIds, coverQuestions, searchNumbers, searchPhrases, searchQuestions } from "./questions"
+
+const TODAY = "2026-11-01"
 import { category } from "../testing/fixtures"
 
 const categories = [
@@ -34,7 +36,7 @@ describe("smart search", () => {
   })
 
   test("words name a category, a payee, or something for Jev to judge rows by", () => {
-    const parse = (words: string, a: Parameters<typeof answers>[0] = {}) => parsedSearch(values({ words }), answers(a), categories, words)
+    const parse = (words: string, a: Parameters<typeof answers>[0] = {}) => parsedSearch(values({ words }), answers(a), categories, words, TODAY)
     // Every word is a whole word of one category's name.
     expect(parse("groceries")).toMatchObject({ words: null, ask: null, categoryId: 4 })
     expect(parse("restaurants")).toMatchObject({ categoryId: 2 })
@@ -45,20 +47,20 @@ describe("smart search", () => {
     expect(parse("coffee", { category: "c2" })).toMatchObject({ words: null, ask: "coffee", categoryId: null })
     expect(parse("eating out")).toMatchObject({ ask: "eating out", categoryId: null })
     // No words, no category, whatever Jev picked.
-    expect(parsedSearch(values({}), answers({ category: "c2" }), categories, "")).toMatchObject({ words: null, ask: null, categoryId: null })
+    expect(parsedSearch(values({}), answers({ category: "c2" }), categories, "", TODAY)).toMatchObject({ words: null, ask: null, categoryId: null })
   })
 
   test("several categories named: Jev's pick, else an exact name, else none", () => {
     const tree = [...categories, category({ id: 5, name: "Life Admin" })]
     expect(categoriesNamed("life", tree).map((c) => c.id)).toEqual([1, 5])
-    expect(parsedSearch(values({ words: "life" }), answers({ category: "c5" }), tree, "life")).toMatchObject({ categoryId: 5 })
-    expect(parsedSearch(values({ words: "life" }), answers({}), tree, "life")).toMatchObject({ categoryId: null, ask: "life" })
-    expect(parsedSearch(values({ words: "good life" }), answers({}), tree, "good life")).toMatchObject({ categoryId: 1 })
+    expect(parsedSearch(values({ words: "life" }), answers({ category: "c5" }), tree, "life", TODAY)).toMatchObject({ categoryId: 5 })
+    expect(parsedSearch(values({ words: "life" }), answers({}), tree, "life", TODAY)).toMatchObject({ categoryId: null, ask: "life" })
+    expect(parsedSearch(values({ words: "good life" }), answers({}), tree, "good life", TODAY)).toMatchObject({ categoryId: 1 })
   })
 
   test("amounts are the query's numbers in the roles Jev gives them; numbers in dates are not amounts", () => {
     expect(searchNumbers("bunnings between $50 and $200+ on 3 March")).toEqual(["$50", "$200+", "3"])
-    const parse = (query: string, amounts: string[]) => parsedSearch(values({}), answers({ amounts }), categories, query)
+    const parse = (query: string, amounts: string[]) => parsedSearch(values({}), answers({ amounts }), categories, query, TODAY)
     expect(parse("bunnings between $50 and $200", ["at_least", "at_most"])).toMatchObject({ atLeast: 50, atMost: 200 })
     expect(parse("amazon $20+", ["at_least"])).toMatchObject({ atLeast: 20, atMost: null })
     expect(parse("flights between 1 March and 20 April", ["not_amount", "not_amount"])).toMatchObject({ atLeast: null, atMost: null })
@@ -67,11 +69,11 @@ describe("smart search", () => {
   test("without Clairic, the words are Jev's pick of the query's phrases (or none)", () => {
     expect(searchPhrases("uber eats under 30, this cycle")).toEqual(["uber", "uber eats", "uber eats under", "uber eats under this", "eats", "eats under", "eats under this", "eats under this cycle", "under", "under this", "under this cycle", "this", "this cycle", "cycle"])
     const phrases = searchPhrases("uber eats under 30 this cycle")
-    expect(parsedSearch(null, answers({ phrase: `p${phrases.indexOf("uber eats")}`, payee: 0.8 }), categories, "uber eats under 30 this cycle")).toMatchObject({ words: "uber eats" })
-    expect(parsedSearch(null, answers({ phrase: "none" }), categories, "anything over $500")).toMatchObject({ words: null, ask: null })
+    expect(parsedSearch(null, answers({ phrase: `p${phrases.indexOf("uber eats")}`, payee: 0.8 }), categories, "uber eats under 30 this cycle", TODAY)).toMatchObject({ words: "uber eats" })
+    expect(parsedSearch(null, answers({ phrase: "none" }), categories, "anything over $500", TODAY)).toMatchObject({ words: null, ask: null })
     // A fragment that would go to ask: ("stuff") becomes the whole question; payees and categories keep the phrase.
     const car = searchPhrases("stuff for the car")
-    expect(parsedSearch(null, answers({ phrase: `p${car.indexOf("stuff")}` }), categories, "stuff for the car")).toMatchObject({ words: null, ask: "stuff for the car" })
+    expect(parsedSearch(null, answers({ phrase: `p${car.indexOf("stuff")}` }), categories, "stuff for the car", TODAY)).toMatchObject({ words: null, ask: "stuff for the car" })
   })
 
   test("periods are worked out here, cycles from the budget cycle", () => {
@@ -164,16 +166,16 @@ describe("broad searches go to the categories they cover", () => {
   })
 
   test("the covered categories match outright, OR ask: for the rest; payees and named categories aren't routed", () => {
-    const broad = parsedSearch(values({ words: "going out" }), { ...answers({ flow: "spending" }), ...covers({ 2: [0.8, 0.4], 3: [0.7, 0.35] }) }, categories, "going out")
+    const broad = parsedSearch(values({ words: "going out" }), { ...answers({ flow: "spending" }), ...covers({ 2: [0.8, 0.4], 3: [0.7, 0.35] }) }, categories, "going out", TODAY)
     expect(broad).toMatchObject({ categories: [2, 3], ask: "going out" })
     const expr = searchFilter(broad, ctx)
     expect(expr).toBe('(cat:"Restaurants & Cafes" OR cat:"Takeaway" OR (cat:"Uncategorised" AND ask:"going out")) AND type:spending')
     expect(parseFilterStrict(expr).error).toBeUndefined()
     // A shop: desc:, never categories.
-    expect(parsedSearch(values({ words: "uber" }), { ...answers({ payee: 0.9 }), ...covers({ 2: [0.8, 0.4] }) }, categories, "uber").categories).toBeUndefined()
+    expect(parsedSearch(values({ words: "uber" }), { ...answers({ payee: 0.9 }), ...covers({ 2: [0.8, 0.4] }) }, categories, "uber", TODAY).categories).toBeUndefined()
     // Words naming a category take that category alone.
-    expect(parsedSearch(values({ words: "groceries" }), { ...answers({}), ...covers({ 2: [0.8, 0.4] }) }, categories, "groceries")).toMatchObject({ categoryId: 4 })
-    expect(parsedSearch(values({ words: "groceries" }), { ...answers({}), ...covers({ 2: [0.8, 0.4] }) }, categories, "groceries").categories).toBeUndefined()
+    expect(parsedSearch(values({ words: "groceries" }), { ...answers({}), ...covers({ 2: [0.8, 0.4] }) }, categories, "groceries", TODAY)).toMatchObject({ categoryId: 4 })
+    expect(parsedSearch(values({ words: "groceries" }), { ...answers({}), ...covers({ 2: [0.8, 0.4] }) }, categories, "groceries", TODAY).categories).toBeUndefined()
   })
 })
 
@@ -186,12 +188,12 @@ describe("several payees and the biggest few", () => {
     expect(snapPayee(words("kfc and maccas"), descriptions)).toMatchObject({ words: null, ask: "kfc and maccas" })
   })
   test("a count Jev reads as how many of the biggest becomes top:, after the rest", () => {
-    const p = parsedSearch(values({ words: null }), answers({ amounts: ["top_count"], flow: "spending" }), categories, "top 10 purchases")
+    const p = parsedSearch(values({ words: null }), answers({ amounts: ["top_count"], flow: "spending" }), categories, "top 10 purchases", TODAY)
     expect(p.top).toBe(10)
     expect(searchFilter(p, ctx)).toBe("type:spending AND top:10")
-    expect(parsedSearch(values({ words: null }), answers({ amounts: ["top_count"] }), categories, "top 2.5").top).toBeUndefined()
+    expect(parsedSearch(values({ words: null }), answers({ amounts: ["top_count"] }), categories, "top 2.5", TODAY).top).toBeUndefined()
     // "The 5 cheapest" is never the 5 biggest; the count isn't judged per row either.
-    const cheapest = parsedSearch(null, answers({ amounts: ["smallest_count"], phrase: "p2" }), categories, "5 cheapest coffees")
+    const cheapest = parsedSearch(null, answers({ amounts: ["smallest_count"], phrase: "p2" }), categories, "5 cheapest coffees", TODAY)
     expect(cheapest).toMatchObject({ ask: "coffees" })
     expect(searchFilter(cheapest, ctx)).not.toContain("top:")
   })
@@ -208,6 +210,38 @@ describe("Jev reads only where a search could be", () => {
   test("related: Jev's kind at RELATED_KIND_AT or more, not covered", () => {
     const noul = (n: number): JevAnswer => ({ type: "noul", noul: n })
     const a = { ...answers({}), kind2: noul(0.78), every2: noul(0.1), kind3: noul(0.9), every3: noul(0.9), kind4: noul(0.39), every4: noul(0) }
-    expect(parsedSearch(values({ words: "coffee" }), a, categories, "coffee")).toMatchObject({ categories: [3], related: [2], ask: "coffee" })
+    expect(parsedSearch(values({ words: "coffee" }), a, categories, "coffee", TODAY)).toMatchObject({ categories: [3], related: [2], ask: "coffee" })
   })
+})
+
+describe("searchDates: dates the models leave out or get wrong", () => {
+  test("a date after today means the last one; dates make the period explicit", () => {
+    expect(searchDates("2026-12-25", null, "spotify since christmas", "2026-11-01", "any")).toEqual({ from: "2025-12-25", to: null, period: "explicit" })
+    expect(searchDates("2026-10-14", null, "spending on 14 October", "2026-11-01", "any")).toEqual({ from: "2026-10-14", to: "2026-10-14", period: "explicit" })
+    expect(searchDates("2026-03-03", null, "since 3 March", "2026-11-01", "explicit")).toEqual({ from: "2026-03-03", to: null, period: "explicit" })
+  })
+  test("a named month is that month, its last time; with a year, that year's; since one, to today", () => {
+    expect(searchDates(null, null, "fuel in September", "2026-11-01", "explicit")).toEqual({ from: "2026-09-01", to: "2026-09-30", period: "explicit" })
+    expect(searchDates(null, null, "groceries in december", "2026-11-01", "any")).toEqual({ from: "2025-12-01", to: "2025-12-31", period: "explicit" })
+    expect(searchDates(null, null, "rent march 2025", "2026-11-01", "any")).toEqual({ from: "2025-03-01", to: "2025-03-31", period: "explicit" })
+    expect(searchDates(null, null, "uber since august", "2026-11-01", "any")).toEqual({ from: "2026-08-01", to: "2026-11-01", period: "explicit" })
+  })
+  test("'may' is a month only after a word like 'in'; a relative period wins over a month", () => {
+    expect(searchDates(null, null, "what may be coffee", "2026-11-01", "any")).toEqual({ from: null, to: null, period: "any" })
+    expect(searchDates(null, null, "coffee in may", "2026-11-01", "any")).toMatchObject({ from: "2026-05-01", to: "2026-05-31" })
+    expect(searchDates(null, null, "september coffee last month", "2026-11-01", "last_month")).toEqual({ from: null, to: null, period: "last_month" })
+  })
+})
+
+test("when Clairic finds no words, Jev's pick of the query's phrases stands", () => {
+  const phrases = searchPhrases("money from Sam Parker")
+  const p = parsedSearch({ words: { value: null }, from: { value: null }, to: { value: null } } as never, { phrase: { type: "choice", choice: `p${phrases.indexOf("Sam Parker")}`, probabilities: {} }, names_payee: { type: "noul", noul: 0.9 } } as never, [], "money from Sam Parker", TODAY)
+  expect(p.words).toBe("Sam Parker")
+})
+
+test("Jev's phrase stands when it holds Clairic's words and more; Clairic's when it holds Jev's", () => {
+  const pick = (query: string, phrase: string, clairic: string) => parsedSearch({ words: { value: clairic }, from: { value: null }, to: { value: null } } as never,
+    { phrase: { type: "choice", choice: `p${searchPhrases(query).indexOf(phrase)}`, probabilities: {} }, names_payee: { type: "noul", noul: 0.9 } } as never, [], query, TODAY).words
+  expect(pick("netflix and stan", "netflix and stan", "netflix")).toBe("netflix and stan")
+  expect(pick("uber trips", "trips", "uber trips")).toBe("uber trips")
 })

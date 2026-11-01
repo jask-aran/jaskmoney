@@ -67,13 +67,21 @@ export function categoriesNamed(words: string, categories: Category[]): Category
  * of `categories` (Jev's pick breaks ties), a payee to find in the
  * description when Jev says so, else something for Jev to judge rows by.
  * Amounts are the query's numbers in the roles Jev gives them. */
-export function parsedSearch(values: Record<string, ClairicAnswer> | null, answers: Record<string, JevAnswer>, categories: Category[], query: string): ParsedSearch {
+export function parsedSearch(values: Record<string, ClairicAnswer> | null, answers: Record<string, JevAnswer>, categories: Category[], query: string, today: string): ParsedSearch {
   const choice = (id: string) => { const a = answers[id]; return a?.type === "choice" ? a.choice : null }
   const value = (id: string) => values?.[id]?.value ?? null
   const text = (id: string) => { const v = value(id); return typeof v === "string" && v.trim() ? v.trim() : null }
   const payee = answers.names_payee?.type === "noul" && answers.names_payee.noul > 0.5
   const phrase = choice("phrase")
-  const words = values ? text("words") : phrase && /^p\d+$/.test(phrase) ? searchPhrases(query)[Number(phrase.slice(1))] ?? null : null
+  // Clairic's words, or Jev's pick of the query's phrases: Jev's when
+  // Clairic has none (it gave none for "money from Sam Parker", which left
+  // all money in) or when Jev's holds Clairic's and more (Clairic read
+  // "netflix and stan" as "netflix"); Clairic's holding Jev's ("uber trips"
+  // over "trips") stands.
+  const jevWords = phrase && /^p\d+$/.test(phrase) ? searchPhrases(query)[Number(phrase.slice(1))] ?? null : null
+  const read = values ? text("words") : null
+  const clairicWords = read && jevWords && jevWords.length > read.length && jevWords.toLowerCase().includes(read.toLowerCase()) ? null : read
+  const words = clairicWords ?? jevWords
   const picked = choice("category")
   const named = words ? categoriesNamed(words, categories) : []
   const category = named.find((c) => `c${c.id}` === picked) ?? named.find((c) => c.name.toLowerCase() === words?.toLowerCase()) ?? (named.length === 1 ? named[0] : undefined)
@@ -94,8 +102,11 @@ export function parsedSearch(values: Record<string, ClairicAnswer> | null, answe
   })
   const constrained = top != null || smallest || atLeast != null || atMost != null || (!!period && period !== "any")
   // A search for a shop or person, or one naming a category, isn't routed further.
-  const covered = categoryId == null && !payee ? coveredCategoryIds(answers, categories) : []
-  const related = categoryId == null && !payee ? relatedCategoryIds(answers, categories) : []
+  // With no subject at all ("spending on 14 October", "top 10 biggest
+  // purchases this year"), no categories either: what the category
+  // questions say of a search with nothing in it is noise (Parking; Technology).
+  const covered = categoryId == null && !payee && words ? coveredCategoryIds(answers, categories) : []
+  const related = categoryId == null && !payee && words ? relatedCategoryIds(answers, categories) : []
   return {
     ...(covered.length ? { categories: covered } : {}),
     ...(related.length ? { related } : {}),
@@ -104,16 +115,46 @@ export function parsedSearch(values: Record<string, ClairicAnswer> | null, answe
     // "stuff" from "stuff for the car"), so ask: gets the whole question,
     // unless the question carries what the other terms already say (a
     // count, an amount, a period): no one row is "the top 10 coffees".
-    ask: categoryId == null && !payee && words ? (values || constrained ? words : query.trim()) : null,
+    ask: categoryId == null && !payee && words ? (clairicWords || constrained ? words : query.trim()) : null,
     atLeast,
     atMost,
     ...(top ? { top } : {}),
-    from: text("from"),
-    to: text("to"),
-    period: period && period in PERIODS ? (period as Period) : "any",
+    ...searchDates(text("from"), text("to"), query, today, period && period in PERIODS ? (period as Period) : "any"),
     flow: flow && flow in FLOWS ? (flow as Flow) : "any",
     categoryId,
   }
+}
+
+const MONTHS = ["january", "february", "march", "april", "may", "june", "july", "august", "september", "october", "november", "december"]
+
+/**
+ * The search's dates, worked out in code where the models leave a gap:
+ * - A first date alone is that day, or after "since", "from" and the
+ *   like, from then to today.
+ * - A date after today means the last one (Clairic read "since christmas"
+ *   as this coming one, which matched nothing): a year earlier.
+ * - A month named with no dates ("fuel in September": no period option
+ *   names a month, and Clairic gives only dates written as dates) is that
+ *   month, its last time (with a year, that year's); after "since" or
+ *   "from", that month to today. "may" counts only after "in", "since" or
+ *   the like, being a word too.
+ */
+export function searchDates(from: string | null, to: string | null, query: string, today: string, period: Period): Pick<ParsedSearch, "from" | "to" | "period"> {
+  const back = (d: string | null) => (d && d > today ? `${Number(d.slice(0, 4)) - 1}${d.slice(4)}` : d)
+  // A first date alone runs to today after "since" and the like; else it's
+  // that one day ("spending on 14 October").
+  const open = /\b(since|from|after|onwards?|starting)\b/i.test(query)
+  if (from || to) return { from: back(from), to: back(to ?? (open ? null : from)), period: period === "any" ? "explicit" : period }
+  if (period !== "any" && period !== "explicit") return { from: null, to: null, period }
+  const found = new RegExp(`\\b(in|during|for|of|since|from|after|throughout)?\\s*\\b(${MONTHS.join("|")})\\b(?:\\s+(\\d{4}))?`, "i").exec(query)
+  if (!found || (found[2]!.toLowerCase() === "may" && !found[1])) return { from: null, to: null, period }
+  const month = MONTHS.indexOf(found[2]!.toLowerCase()) + 1
+  let year = found[3] ? Number(found[3]) : Number(today.slice(0, 4))
+  const first = () => `${year}-${String(month).padStart(2, "0")}-01`
+  if (!found[3] && first() > today) year--
+  const start = first()
+  const since = /^(since|from|after)$/i.test(found[1] ?? "")
+  return { from: start, to: since ? today : addDays(addMonths(start, 1), -1), period: "explicit" }
 }
 
 /** The payees in a search's words: "mcdonalds and kfc", "kfc, hungry
@@ -222,7 +263,7 @@ export async function smartSearch(
   ])
   const answers = { ...terms, ...covers }
   const clairic = values instanceof Error ? values.message : null
-  const raw = parsedSearch(values instanceof Error ? null : values, answers, ctx.categories, query)
+  const raw = parsedSearch(values instanceof Error ? null : values, answers, ctx.categories, query, ctx.today)
   const parsed = ctx.descriptions ? snapPayee(raw, ctx.descriptions) : raw
   const expr = searchFilter(parsed, ctx)
   return { expr: expr || filterTerm("desc", query), parsed, clairic }

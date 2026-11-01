@@ -17,7 +17,8 @@
     "test": "bun test --conditions=browser",
     "typecheck": "tsc --noEmit && tsc --noEmit -p src/web",
     "bench": "bun test --conditions=browser ./src/bench/keys.bench.tsx",
-    "eval": "bun --conditions=browser run src/eval/run.ts"
+    "eval": "bun --conditions=browser run src/eval/run.ts",
+    "eval:search": "bun --conditions=browser run src/eval/search.ts"
   },
   "dependencies": {
     "@earendil-works/pi-ai": "1.4.0",
