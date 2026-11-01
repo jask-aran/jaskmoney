@@ -1,6 +1,7 @@
 import type { DataStore } from "../state/dataStore"
 import type { UiStore } from "../state/uiStore"
 import { lookUpPurchases, purchasesNote } from "./purchases"
+import { afterPaint } from "./afterPaint"
 
 /** Turn the Uncategorised view on or off. On, it suggests categories for the
  * rows shown that have none yet (history at once, Jev as answers arrive). */
@@ -11,12 +12,16 @@ export function toggleUncategorised(ui: UiStore, data: DataStore): void {
   ui.jumpManagerCursor(0, data.scopedTransactions().length)
   if (!on) { ui.setStatus("Transactions"); return }
   ui.setStatus(`${data.scopedTransactions().length} uncategorised · suggesting…`)
-  void runSuggest(ui, data)
-  // Due Amazon and eBay rows are looked up now too, not at the next sync;
-  // rows that gain items are asked again once suggesting is done.
-  void lookUpPurchases(data).then((round) => {
-    const note = purchasesNote(round)
-    if (note && data.state.uncategorisedOnly) ui.setStatus(`${note.slice(3)}${round.resuggested ? `, ${round.resuggested} asked again` : ""}`)
+  // The view shows first; suggesting (history at once) follows its frame.
+  afterPaint(() => {
+    if (!data.state.uncategorisedOnly) return
+    void runSuggest(ui, data)
+    // Due Amazon and eBay rows are looked up now too, not at the next sync;
+    // rows that gain items are asked again once suggesting is done.
+    void lookUpPurchases(data).then((round) => {
+      const note = purchasesNote(round)
+      if (note && data.state.uncategorisedOnly) ui.setStatus(`${note.slice(3)}${round.resuggested ? `, ${round.resuggested} asked again` : ""}`)
+    })
   })
 }
 

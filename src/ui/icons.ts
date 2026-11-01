@@ -1,15 +1,25 @@
 import { categoryIcon } from "../domain/categoryIcons"
+import { unwrap } from "solid-js/store"
 import { data } from "../state/dataStore"
+import { lazyMemo } from "../client/lazyMemo"
 
 /** The marker shown before a category name: its Nerd Font icon when icons
  * are on and one is known, otherwise a dot (hollow for uncategorised). */
 export function categoryMark(categoryId: number | null | undefined, muted = false): string {
   if (data.state.icons) {
-    const icon = categoryIcon(data.state.categories.find((c) => c.id === categoryId), data.state.categories)
+    const icon = icons().get(categoryId ?? -1)
     if (icon) return icon
   }
   return muted ? "○" : "●"
 }
+
+/** Each category's icon, worked out once per change of the categories
+ * rather than per row drawn (a search of the store's categories each). */
+const icons = lazyMemo(() => {
+  const categories = unwrap(data.state.categories)
+  void data.state.categories.length
+  return new Map(categories.flatMap((c) => { const icon = categoryIcon(c, categories); return icon ? [[c.id, icon] as const] : [] }))
+})
 
 /** The Overview chart views' icons (Font Awesome 4 in Nerd Fonts). */
 const VIEW_ICONS: Record<string, string> = {

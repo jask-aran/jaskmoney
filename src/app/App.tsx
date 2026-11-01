@@ -1,4 +1,5 @@
 import { web, webLabel } from "./webApp"
+import { paintWith } from "./afterPaint"
 import { traceFrames, traceKey, traceMark } from "./trace"
 import { settleData, toggleDemo } from "./actions"
 import { BudgetsTab } from "../ui/budgets/BudgetsTab"
@@ -158,6 +159,7 @@ export function App() {
     traceKey(key, ui.activeScope(), () => handleKey(ui, key, data))
   })
   traceFrames(renderer)
+  onCleanup(paintWith(renderer))
 
   // A paste arrives whole (bracketed paste), not as key presses.
   usePaste((event) => {
