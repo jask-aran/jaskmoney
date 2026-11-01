@@ -321,6 +321,23 @@ export function generateDemo(options: { today: string; years?: number; seed?: nu
       })
     }
   }
+  // Last month, the one the setup's tour charts: each saver drops and
+  // refills by a fifth to a half of its balance, so the Savers view shows
+  // what savers do (sized from today's balances, which last month ends near).
+  const showcase = addMonthsClamped(`${options.today.slice(0, 8)}01`, -1)
+  for (const [saverKey, outDay, out, outWhy, inDay, back, inWhy] of [
+    ["holiday", 3, 0.44, "Flights to Bali", 24, 0.35, "Bonus"],
+    ["emergency", 9, 0.3, "Car repair", 21, 0.22, "Tax refund"],
+  ] as const) {
+    const saver = accounts.find(a => a.key === saverKey)
+    if (!saver || addDays(showcase, inDay) > options.today) continue
+    const name = plainAccountName(saver.name)
+    const row = (day: number, amount: number, description: string, message: string) => transactions.push({ accountKey: "spending", dateISO: addDays(showcase, day),
+      amount: round(amount), description, categoryName: "Transfers", truthCategory: "Transfers", rawText: null, cardMethod: null, time: "09:10",
+      transactionType: "Transfer", message, foreignAmount: null, status: "SETTLED", transferToKey: saverKey })
+    row(outDay, saver.balance * out, `Transfer from ${name}`, outWhy)
+    row(inDay, -saver.balance * back, `Transfer to ${name}`, inWhy)
+  }
   // Money out of the savers as well as in, on their own irregular days and
   // for their own reasons: as much as keeps each saver's balance three
   // years ago a plausible half of today's (deposits every pay would
