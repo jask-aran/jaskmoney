@@ -270,7 +270,9 @@ export function suggestAt(ms: number, world: DemoWorld): { state: DemoTry; press
 
 /** Charts: the Overview's views (CHART_VIEWS), in turn, each long enough
  * to draw in and be looked at. */
-const VIEW_MS = 2200
+// 3.6 s: 0.9 to draw in (TOUR_CHART_MS), the rest to be looked at; at 2.2
+// it moved on too soon (2026-11-01 first-run test).
+const VIEW_MS = 3600
 
 export function chartViewAt(ms: number): number {
   return Math.floor(ms / VIEW_MS) % CHART_VIEWS.length

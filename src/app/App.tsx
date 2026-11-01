@@ -1,6 +1,7 @@
 import { web, webLabel } from "./webApp"
 import { paintWith } from "./afterPaint"
 import { openWelcome, restingStatus, shouldWelcome } from "./welcome"
+import { welcomeStatus } from "../state/welcome"
 import { Welcome } from "../ui/welcome/Welcome"
 import { traceFrames, traceKey, traceMark } from "./trace"
 import { settleData, toggleDemo } from "./actions"
@@ -11,7 +12,7 @@ import type { KeyEvent } from "@opentui/core"
 import { TABS, TAB_DEFAULT_FOCUS, ui, type SectionId, type TabId } from "../state/uiStore"
 import type { JSX } from "@opentui/solid"
 import { data } from "../state/dataStore"
-import { footerLine, handleKey, hintState, paletteList, scopeQuits, handlePaste } from "./keys"
+import { footerLine, handleKey, hintState, paletteList, handlePaste } from "./keys"
 import { CommandPalette } from "../ui/primitives/CommandPalette"
 import { appNow } from "../domain/days"
 import { TabBar } from "../ui/primitives/TabBar"
@@ -153,8 +154,10 @@ export function App() {
   }
 
   useKeyboard((key: KeyEvent) => {
-    // ctrl+c quits anywhere; q quits where it cannot be text (Go app).
-    if ((key.ctrl && key.name === "c") || (key.name === "q" && !key.ctrl && !key.meta && !key.shift && scopeQuits(ui.activeScope()))) {
+    // ctrl+c quits, anywhere. Approved deviation from the Go app, where q
+    // also quit outside text: one stray key away (2026-11-01, the user
+    // quit by accident in a first-run test).
+    if (key.ctrl && key.name === "c") {
       renderer.destroy()
       return
     }
@@ -200,11 +203,11 @@ export function App() {
         <KeptTab id="budgets">{(focused) => <BudgetsTab focused={focused()} />}</KeptTab>
         <KeptTab id="settings">{(focused) => <SettingsTab focused={focused()} />}</KeptTab>
       </box>
-      {/* Jump mode borrows the status line while active; the log's latest status
-          returns unchanged when it closes. */}
+      {/* Jump mode and the setup borrow the status line while open; the log's
+          latest status returns unchanged when they close. */}
       <StatusBar
-        text={(ui.state.jump != null) ? "Jump mode · press target letter" : ui.state.status}
-        isErr={ui.state.jump == null && ui.state.statusErr}
+        text={ui.state.jump != null ? "Jump mode · press target letter" : ui.state.welcome ? welcomeStatus(ui.state.welcome, data.state.uiPrefs.backdrop) : ui.state.status}
+        isErr={ui.state.jump == null && !ui.state.welcome && ui.state.statusErr}
       />
       <Footer hints={footerLine(ui.activeScope(), hintState(ui, data))} />
       <Show when={ui.state.activeTab === "overview"}>

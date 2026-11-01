@@ -46,7 +46,7 @@ legacy/go/   frozen Go reference implementation
 - **Undo and repeat.** `u` undoes the last change in Transactions (categorise, accept, dismiss, a tag change, a rule made from an offer), Up included; `.` repeats the last category or tag change on the cursor row or selection.
 - **Confirming.** Anything destructive takes its key twice (`del del` on a list row, `enter enter` on an action), the row red until then; wiping the database asks for RESET.
 - **Moving.** Pickers move with the arrows or `ctrl+j`/`ctrl+k`, so letters stay text. Every list and picker pages with `pageup`/`pagedown` (by the rows it shows) and jumps with `home`/`end`; lists also take `g`/`G`, `ctrl+d`/`ctrl+u` to page and `ctrl+n`/`ctrl+p` to step. A ctrl or alt letter never acts as its bare letter (`ctrl+u` isn't undo); one a pane doesn't use does nothing.
-- **Tabs and quitting.** `1` Overview, `2` Transactions, `3` Budgets, `4` Settings (`tab` cycles); `v` then a letter jumps to a pane. `q` quits wherever it cannot be typed text; `ctrl+c` anywhere. `ctrl+r` syncs from anywhere.
+- **Tabs and quitting.** `1` Overview, `2` Transactions, `3` Budgets, `4` Settings (`tab` cycles); `v` then a letter jumps to a pane. `ctrl+c` quits, anywhere (`q` doesn't: it was too easy to press by accident). `ctrl+r` syncs from anywhere.
 
 ## Tabs
 

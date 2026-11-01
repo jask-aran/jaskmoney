@@ -4,13 +4,13 @@ import { ui } from "../../state/uiStore"
 import { data } from "../../state/dataStore"
 import { ink, theme, tone } from "../../theme"
 import { wrapText } from "../../state/textLayout"
-import { STEP_NAMES, WELCOME_STEPS, emailChecklist, stepMark, tokenShown, welcomeRows, type ItemState, type WelcomeRow, type WelcomeState } from "../../state/welcome"
+import { STEP_NAMES, WELCOME_STEPS, emailChecklist, stepMark, tokenShown, welcomeBackdrop, welcomeRows, type ItemState, type WelcomeRow, type WelcomeState } from "../../state/welcome"
 import { AI_USES_TEXT, EMAIL_USES, UP_USES, type IntegrationUse } from "../../state/integrationUses"
 import { followTickers, welcomeAct, welcomeContext, welcomeJump } from "../../app/welcome"
 import { onPointer } from "../../app/pointer"
 import { StyledLine, type StyledSpan } from "../primitives/StyledLine"
 import { SPINNER } from "../primitives/Spinner"
-import { BACKDROP_LEVELS, DEFAULT_BACKDROP, backdropLines, type BackdropId, type BackdropInk } from "./backdrop"
+import { BACKDROP_LEVELS, backdropLines, type BackdropId, type BackdropInk } from "./backdrop"
 import { DEMOS, DemoReel } from "./Demos"
 
 /**
@@ -102,21 +102,25 @@ function WelcomeScreen() {
   const panelWidth = () => rightWidth() - (wide() ? 3 : 0)
 
   // ---- A row of the step: a button.
-  const tokenField = () => {
+  // The token as dots and a caret; empty, a caret and a faint hint, so it
+  // doesn't read as text the paste goes into the middle of.
+  const tokenField = (): { text: string; hint: string } => {
     const shown = tokenShown(state().token.value)
     const caret = Math.floor(tick() / 6) % 2 === 0 ? "▌" : " "
-    return shown ? `${shown}${caret}` : `${caret}paste it here`
+    return shown ? { text: `${shown}${caret}`, hint: "" } : { text: caret, hint: "paste it here" }
   }
   const rowLine = (row: WelcomeRow, i: number): Line => {
     const at = state().cursor === i && !state().busy
     const bg = at ? theme.surface0 : undefined
-    const label = row.action === "token" ? `Token  ${tokenField()}` : row.label
+    const field = row.action === "token" ? tokenField() : null
+    const label = field ? `Token  ${field.text}` : row.label
     return {
       row: i,
       spans: [
         { text: at ? " ›" : "  ", fg: tone.key, bold: true, bg },
         { text: row.done ? " ✓ " : "   ", fg: tone.good, bold: true, bg },
         { text: label, fg: row.primary ? tone.key : at ? ink.strong : ink.figure, bold: at || row.primary, bg },
+        ...(field?.hint ? [{ text: field.hint, fg: ink.faint, bg }] : []),
         { text: row.detail ? `  ${row.detail} ` : " ", fg: row.done ? tone.good : ink.note, bg },
       ],
     }
@@ -137,9 +141,8 @@ function WelcomeScreen() {
   const left = createMemo((): Line[] => {
     const s = state(), w = leftWidth()
     switch (s.step) {
+      // No heading: the title above says it, and the status line welcomes.
       case "hello": return [
-        say("Welcome to jaskmoney", ink.strong, true),
-        blank,
         ...wrapped("Setup connects Up Bank, an AI model and your email. Every step is optional; Settings › Up Bank › Setup runs it again.", w),
         blank,
         ...wrapped("Start shows a short tour first: the app's own screens, playing on made-up data.", w, ink.note),
@@ -277,7 +280,7 @@ function WelcomeScreen() {
     down: mix(theme.canvas, tone.bad, 0.4),
   }
   // Settings › Appearance's choice; b on the welcome page tries the next.
-  const backdropId = (): BackdropId => state().backdrop ?? data.state.uiPrefs.backdrop ?? DEFAULT_BACKDROP
+  const backdropId = (): BackdropId => welcomeBackdrop(state(), data.state.uiPrefs.backdrop)
   // Behind every step, on a clock of its own at 30 frames a second (the
   // setup's is slower): a tape moves in even steps.
   const [backdropT, setBackdropT] = createSignal(0)

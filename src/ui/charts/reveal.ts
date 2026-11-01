@@ -87,5 +87,11 @@ export function hasBars(rows: Run[][]): boolean {
   return rows.some((runs) => runs.some((run) => /[▀-▟]/.test(run.text)))
 }
 
+/** Whether a chart has anything to draw in: a dot of a line or a block of
+ * a bar (blank braille aside), not only its grid. */
+export function hasMarks(rows: Run[][]): boolean {
+  return rows.some((runs) => runs.some((run) => /[\u2801-\u28ff▀-▟]/.test(run.text)))
+}
+
 /** Ease out: quick to start, settling at the end. */
 export const easeOut = (t: number) => 1 - (1 - Math.min(1, Math.max(0, t))) ** 3

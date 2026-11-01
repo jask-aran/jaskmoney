@@ -208,7 +208,7 @@ export function handleKey(ui: UiStore, key: KeyEvent, data?: DataStore): boolean
   }
   const scope = ui.activeScope()
   const entry = scopes[scope]
-  if (entry.quits) {
+  if (entry.list) {
     if (key.ctrl && name === "k") { ui.setState({ palette: { query: "", cursor: 0, from: scope, opened: ++paletteOpens } }); return true }
     // A ctrl or alt letter is never its bare letter here (ctrl+u isn't undo):
     // the list aliases move, the scope's own (ctrl+s, ctrl+l) pass, the
@@ -1992,28 +1992,29 @@ type HintState = Pick<UiState, "focusedSection" | "drillReturn" | "chartViews"> 
 type ScopeEntry = {
   handle: (ui: UiStore, key: KeyEvent, data?: DataStore) => void
   hints: (state?: HintState) => Hint[]
-  quits: boolean
+  /** Not text entry: the palette (ctrl+k) and the ctrl aliases work here. */
+  list: boolean
 }
 
 const scopes: Record<ScopeId, ScopeEntry> = {
   "palette": {
     handle: handlePalette,
-    quits: false,
+    list: false,
     hints: () => [{ key: "↑↓ ^j/k", desc: "move" }, { key: "enter", desc: "run" }, { key: "esc", desc: "close" }, { key: "type", desc: "filter" }],
   },
   "filterPicker": {
     handle: handleFilterPicker,
-    quits: false,
+    list: false,
     hints: () => [{ key: "↑↓ ^j/k", desc: "move" }, { key: "enter", desc: "apply" }, { key: "esc", desc: "close" }, { key: "type", desc: "filter" }],
   },
   "dryRun": {
     handle: handleDryRun,
-    quits: false,
+    list: false,
     hints: () => [{ key: "j/k", desc: "scroll" }, { key: "esc", desc: "close" }],
   },
   "jump": {
     handle: handleJump,
-    quits: false,
+    list: false,
     hints: () => [
       { key: "letter", desc: "jump" },
       { key: "esc", desc: "cancel" },
@@ -2021,7 +2022,7 @@ const scopes: Record<ScopeId, ScopeEntry> = {
   },
   "tagPicker": {
     handle: handleTagPicker,
-    quits: false,
+    list: false,
     hints: () => [
       { key: "↑↓ ^j/k", desc: "move" },
       { key: "space", desc: "stage" },
@@ -2031,12 +2032,12 @@ const scopes: Record<ScopeId, ScopeEntry> = {
   },
   "tagChooser": {
     handle: handleTagChooser,
-    quits: false,
+    list: false,
     hints: () => [{ key: "↑↓ ^j/k", desc: "move" }, { key: "type", desc: "filter or new tag" }, { key: "enter", desc: "find" }, { key: "esc", desc: "cancel" }],
   },
   "catPicker": {
     handle: handleCatPicker,
-    quits: false,
+    list: false,
     hints: () => [
       { key: "↑↓ ^j/k", desc: "move" },
       { key: "enter", desc: "apply" },
@@ -2046,7 +2047,7 @@ const scopes: Record<ScopeId, ScopeEntry> = {
   },
   "filter": {
     handle: handleFilter,
-    quits: false,
+    list: false,
     hints: (state) => [
       { key: "enter", desc: "apply" },
       { key: "esc", desc: "clear" },
@@ -2058,12 +2059,12 @@ const scopes: Record<ScopeId, ScopeEntry> = {
   },
   "manager.detail": {
     handle: handleManagerDetail,
-    quits: false,
+    list: false,
     hints: (state) => [{ key: "j/k", desc: "prev/next" }, ...(state?.boughtScrolls ? [{ key: "J/K", desc: "scroll bought" }] : []), { key: "c", desc: "category" }, { key: "t", desc: "tags" }, { key: "n", desc: "notes" }, { key: "N", desc: "merchant note" }, { key: "esc", desc: "close" }],
   },
   "overview.custom": {
     handle: handleOverviewCustom,
-    quits: false,
+    list: false,
     hints: () => [
       { key: "tab", desc: "field" },
       { key: "enter", desc: "apply" },
@@ -2072,42 +2073,42 @@ const scopes: Record<ScopeId, ScopeEntry> = {
   },
   "settings.factoryReset": {
     handle: handleSettingsFactoryReset,
-    quits: false,
+    list: false,
     hints: () => [{ key: "type RESET", desc: "confirm" }, { key: "enter", desc: "erase DB" }, { key: "esc", desc: "cancel" }],
   },
   "searchHelp": {
     handle: handleSearchHelp,
-    quits: false,
+    list: false,
     hints: (state) => [{ key: "m", desc: state?.searchHelp?.full ? "brief" : "full grammar" }, { key: "j/k", desc: "scroll" }, { key: "esc", desc: "close" }],
   },
   "merchantNote": {
     handle: handleMerchantNote,
-    quits: false,
+    list: false,
     hints: () => [{ key: "enter", desc: "save (empty removes)" }, { key: "esc", desc: "cancel" }],
   },
   "settings.upAccounts": {
     handle: handleUpAccounts,
-    quits: false,
+    list: false,
     hints: () => [{ key: "j/k", desc: "move" }, { key: "enter", desc: "sync on/off" }, { key: "s", desc: "sync now" }, { key: "esc", desc: "close" }],
   },
   "settings.aiUse": {
     handle: handleAiUse,
-    quits: false,
+    list: false,
     hints: () => [{ key: "j/k", desc: "move" }, { key: "enter", desc: "do" }, { key: "esc", desc: "close" }],
   },
   "settings.aiSent": {
     handle: handleAiSent,
-    quits: false,
+    list: false,
     hints: () => [{ key: "j/k", desc: "scroll" }, { key: "esc", desc: "back" }],
   },
   "settings.aiDialog": {
     handle: handleAiDialog,
-    quits: false,
+    list: false,
     hints: (state) => state?.aiField ? [{ key: "enter", desc: "save" }, { key: "esc", desc: "back" }] : [{ key: "j/k", desc: "move" }, { key: "enter", desc: "do" }, { key: "esc", desc: "close" }],
   },
   "welcome": {
     handle: handleWelcome,
-    quits: false,
+    list: false,
     hints: (state) => state?.welcomeBusy ? [{ key: "esc", desc: "stop waiting" }]
       : state?.welcomeTry != null ? [...tryHints(state.welcomeTry), { key: "esc", desc: "back to the demo" }]
       : state?.welcomeTyping ? [{ key: "paste", desc: "your token" }, { key: "enter", desc: "connect" }, { key: "ctrl+o", desc: "open api.up.com.au" }, { key: "ctrl+n", desc: "skip" }, { key: "esc", desc: "back" }]
@@ -2115,62 +2116,62 @@ const scopes: Record<ScopeId, ScopeEntry> = {
   },
   "settings.executor": {
     handle: (ui, key) => handleExecutor(ui, key),
-    quits: false,
+    list: false,
     hints: (state) => state?.executorWaiting ? [{ key: "esc", desc: "cancel" }] : [{ key: "j/k", desc: "move" }, { key: "enter", desc: "do" }, { key: "esc", desc: "close" }],
   },
   "llmSignIn": {
     handle: (ui, key) => handleLlmSignIn(ui, key),
-    quits: false,
+    list: false,
     hints: (state) => [...(state?.signInPaste ? [{ key: "enter", desc: "send" }] : []), { key: "esc", desc: "cancel" }],
   },
   "manager.ruleOffers": {
     handle: handleRuleOffers,
-    quits: false,
+    list: false,
     hints: () => [{ key: "j/k", desc: "move" }, { key: "enter", desc: "make rule" }, { key: "x", desc: "never" }, { key: "esc", desc: "later" }],
   },
   "manager.acceptPreview": {
     handle: handleManagerAcceptPreview,
-    quits: false,
+    list: false,
     hints: () => [{ key: "enter", desc: "accept" }, { key: "esc", desc: "cancel" }],
   },
   "manager.accountAction": {
     handle: handleManagerAccountAction,
-    quits: false,
+    list: false,
     hints: () => [{ key: "j/k", desc: "move" }, { key: "enter", desc: "do (twice)" }, { key: "esc", desc: "cancel" }],
   },
   "settings.editor": {
     handle: handleSettingsEditor,
-    quits: false,
+    list: false,
     hints: () => [{ key: "↑/↓", desc: "field" }, { key: "←/→", desc: "change" }, { key: "enter", desc: "save / choose" }, { key: "esc", desc: "cancel" }],
   },
   "settings.import.files": {
     handle: handleSettingsImportFiles,
-    quits: false,
+    list: false,
     hints: () => [{ key: "j/k", desc: "file" }, { key: "enter", desc: "select" }, { key: "p", desc: "path" }, { key: "esc", desc: "cancel" }],
   },
   "settings.import.path": {
     handle: handleSettingsImportPath,
-    quits: false,
+    list: false,
     hints: () => [{ key: "enter", desc: "open" }, { key: "esc", desc: "back" }, { key: "type", desc: "path" }],
   },
   "settings.import.profile": {
     handle: handleSettingsImportProfile,
-    quits: false,
+    list: false,
     hints: () => [{ key: "j/k", desc: "profile" }, { key: "enter", desc: "select" }, { key: "a/e", desc: "new/edit" }, { key: "del del", desc: "delete" }, { key: "esc", desc: "back" }],
   },
   "settings.import.profileEditor": {
     handle: handleSettingsImportProfileEditor,
-    quits: false,
+    list: false,
     hints: () => [{ key: "tab", desc: "field" }, { key: "h/l", desc: "choice" }, { key: "enter", desc: "save" }, { key: "esc", desc: "back" }],
   },
   "settings.import.preview": {
     handle: handleSettingsImportPreview,
-    quits: false,
+    list: false,
     hints: () => [{ key: "s", desc: "skip dupes" }, { key: "a", desc: "force import" }, { key: "p", desc: "all/dupes" }, { key: "r", desc: "rules" }, { key: "esc", desc: "cancel" }],
   },
   "settings": {
     handle: handleSettings,
-    quits: true,
+    list: true,
     hints: () => [
       { key: "j/k", desc: "section" },
       { key: "h/l", desc: "column" },
@@ -2181,7 +2182,7 @@ const scopes: Record<ScopeId, ScopeEntry> = {
   },
   "settings.taxonomy": {
     handle: handleSettingsTaxonomy,
-    quits: true,
+    list: true,
     hints: () => [
       { key: "h/l", desc: "list" }, { key: "j/k", desc: "move" },
       { key: "a", desc: "add" }, { key: "enter", desc: "edit" },
@@ -2190,7 +2191,7 @@ const scopes: Record<ScopeId, ScopeEntry> = {
   },
   "settings.rules": {
     handle: handleSettingsRules,
-    quits: true,
+    list: true,
     hints: () => [
       { key: "j/k", desc: "move" }, { key: "enter", desc: "edit" }, { key: "space", desc: "toggle" },
       { key: "a", desc: "add", command: "add:rule" }, { key: "del del", desc: "delete", label: "Delete the rule", description: "asks again" }, { key: "S-j/k", desc: "reorder" },
@@ -2199,32 +2200,32 @@ const scopes: Record<ScopeId, ScopeEntry> = {
   },
   "settings.filters": {
     handle: handleSettingsFilters,
-    quits: true,
+    list: true,
     hints: () => [{ key: "j/k", desc: "move" }, { key: "a", desc: "add", command: "add:filter" }, { key: "enter", desc: "edit" }, { key: "del del", desc: "delete" }, { key: "esc", desc: "done" }],
   },
   "settings.up": {
     handle: handleSettingsUp,
-    quits: true,
+    list: true,
     hints: () => [{ key: "j/k", desc: "move" }, { key: "enter", desc: "open" }, { key: "s", desc: "sync now" }, { key: "esc", desc: "done" }],
   },
   "settings.ai": {
     handle: handleSettingsAi,
-    quits: true,
+    list: true,
     hints: () => [{ key: "j/k", desc: "move" }, { key: "enter", desc: "open" }, { key: "esc", desc: "done" }],
   },
   "settings.appearance": {
     handle: handleSettingsAppearance,
-    quits: true,
+    list: true,
     hints: () => [{ key: "j/k", desc: "move" }, { key: "enter", desc: "switch" }, { key: "esc", desc: "done" }],
   },
   "settings.database": {
     handle: handleSettingsDatabase,
-    quits: true,
+    list: true,
     hints: () => [{ key: "j/k", desc: "move" }, { key: "enter", desc: "open / switch" }, { key: "esc", desc: "done" }],
   },
   "manager.txns": {
     handle: handleManagerTxns,
-    quits: true,
+    list: true,
     hints: (state) => state?.tagReview ? [
       { key: "y", desc: "tag", label: "Tag the candidate", description: "selection or row" },
       { key: "Y", desc: `tag all ≥${ACCEPT_ALL_AT * 100}%`, label: `Tag all ≥${ACCEPT_ALL_AT * 100}%…`, description: "shows them first" },
@@ -2288,7 +2289,7 @@ const scopes: Record<ScopeId, ScopeEntry> = {
   },
   "manager.accounts": {
     handle: handleManagerAccounts,
-    quits: true,
+    list: true,
     hints: () => [
       { key: "j/k", desc: "account" },
       { key: "h/l", desc: "bank" },
@@ -2299,17 +2300,17 @@ const scopes: Record<ScopeId, ScopeEntry> = {
   },
   "budgets": {
     handle: handleBudgets,
-    quits: true,
+    list: true,
     hints: () => [{ key: "j/k", desc: "move" }, { key: "enter", desc: "edit" }, { key: "a", desc: "add" }, { key: "del del", desc: "delete" }, { key: "h/l", desc: "chart" }, { key: "[ ]", desc: "cycles" }, { key: "c", desc: "cycle" }, { key: "1-4", desc: "tab" }],
   },
   "budgets.categories": {
     handle: handleBudgetCategories,
-    quits: true,
+    list: true,
     hints: () => [{ key: "j/k", desc: "move" }, { key: "enter", desc: "set budget" }, { key: "x", desc: "leave out" }, { key: "del del", desc: "remove budget" }, { key: "h/l", desc: "chart" }, { key: "[ ]", desc: "cycles" }, { key: "c", desc: "cycle" }, { key: "1-4", desc: "tab" }],
   },
   "manager.merchants": {
     handle: handleManagerMerchants,
-    quits: true,
+    list: true,
     hints: () => [
       { key: "j/k", desc: "move" },
       { key: "enter", desc: "its transactions", label: "Its transactions" },
@@ -2328,7 +2329,7 @@ const scopes: Record<ScopeId, ScopeEntry> = {
     ],
   },
   "bar": {
-    quits: true,
+    list: true,
     handle: (ui, key, data) => {
       const { name } = key
       if (name === "left" || name === "right" || name === "up" || name === "down") travel(ui, name, data)
@@ -2344,7 +2345,7 @@ const scopes: Record<ScopeId, ScopeEntry> = {
   },
   "overview": {
     handle: handleOverview,
-    quits: true,
+    list: true,
     hints: (state) => {
       if (state?.focusedSection === "ov.categories") return [
         { key: "j/k", desc: "move" },
@@ -2373,7 +2374,7 @@ const scopes: Record<ScopeId, ScopeEntry> = {
   },
   "overview.range": {
     handle: handleOverviewRange,
-    quits: true,
+    list: true,
     hints: () => [
       { key: "h/l", desc: "chip" },
       { key: "enter", desc: "apply" },
@@ -2383,12 +2384,11 @@ const scopes: Record<ScopeId, ScopeEntry> = {
   },
   "manager.detail.notes": {
     handle: handleManagerDetailNotes,
-    quits: false,
+    list: false,
     hints: () => [{ key: "type", desc: "notes" }, { key: "enter", desc: "save" }, { key: "esc", desc: "cancel" }],
   },
 }
 
-export function scopeQuits(scope: ScopeId): boolean { return scopes[scope].quits }
 
 /** Every hint for a scope: the palette's commands; the footer shows
  * footerShown's cut of them. */
@@ -2399,7 +2399,7 @@ export function footerHints(scope: ScopeId, state?: HintState): Hint[] {
 /** What the footer shows in a scope: its hints, cut to the first few and
  * "ctrl+k all" where the palette opens. */
 export function footerLine(scope: ScopeId, state?: HintState): Hint[] {
-  return footerShown(footerHints(scope, state), scopes[scope].quits)
+  return footerShown(footerHints(scope, state), scopes[scope].list)
 }
 
 /** The state the hints read, from both stores. */

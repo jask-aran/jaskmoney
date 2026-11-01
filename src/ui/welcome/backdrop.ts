@@ -8,7 +8,7 @@ export const BACKDROPS = [
   { id: "ticker", label: "ticker tape" },
 ] as const
 export type BackdropId = (typeof BACKDROPS)[number]["id"]
-export const DEFAULT_BACKDROP: BackdropId = "plasma"
+export const DEFAULT_BACKDROP: BackdropId = "ticker"
 
 /** How bright a backdrop's mark is, 0 (barely there) to LEVELS - 1; and the
  * tints for a rise and a fall. The welcome screen picks the colours. */

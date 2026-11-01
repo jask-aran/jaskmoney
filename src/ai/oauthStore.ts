@@ -1,4 +1,5 @@
-import { existsSync, readFileSync } from "node:fs"
+import { randomUUID } from "node:crypto"
+import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs"
 import { dirname, join } from "node:path"
 import type { Credential, CredentialInfo, CredentialStore } from "@earendil-works/pi-ai"
 import { writeJsonAtomic } from "../storage/json"
@@ -26,6 +27,20 @@ function readAll(path: string): Record<string, Credential> {
 
 function writeAll(path: string, all: Record<string, Credential>): void {
   writeJsonAtomic(path, all)
+}
+
+/**
+ * This installation's ID, made on first use and the same ever after (a file
+ * beside oauth.json): Sign in with ChatGPT sends it to OpenAI as the agent
+ * host's ID, and refuses to start without one.
+ */
+export function installationId(path = join(dirname(oauthPath()), "installation-id")): string {
+  const kept = existsSync(path) ? readFileSync(path, "utf8").trim() : ""
+  if (/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(kept)) return kept
+  const id = randomUUID()
+  mkdirSync(dirname(path), { recursive: true, mode: 0o700 })
+  writeFileSync(path, `${id}\n`, { mode: 0o600 })
+  return id
 }
 
 /** Whether a provider has a stored sign-in (sync: for rows and hints). */

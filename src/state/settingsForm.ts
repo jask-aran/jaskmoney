@@ -126,9 +126,9 @@ export const EDITOR_TITLE: Record<SettingsEditorKind, string> = {
   cycle: "Budget cycle",
 }
 
-/** A key being typed (the AI models dialog): its length and last four, never the key. */
+/** A key being typed (the AI models dialog): its length, never any of the key. */
 export function secretDisplay(value: string): string {
-  return value ? `${"•".repeat(8)} …${value.slice(-4)}  (${value.length} chars)` : "paste the key"
+  return value ? `${"•".repeat(8)}  (${value.length} chars)` : "paste the key"
 }
 
 function cycleFields(draft: Draft): FormField[] {

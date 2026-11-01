@@ -32,6 +32,8 @@ export interface DemoData {
   budget: { monthly: number }
 }
 
+const plainAccountName = (name: string) => name.replace(/^\p{Extended_Pictographic}[\uFE0E\uFE0F]? /u, "")
+
 const round = (n: number) => Math.round(n * 100) / 100
 /** A number in 0..1 from an integer, the same each time: draws that leave the seeded sequence alone. */
 const demoHash = (n: number) => {
@@ -113,8 +115,8 @@ export function generateDemo(options: { today: string; years?: number; seed?: nu
   for (let month = firstMonth; month <= options.today; month = addMonthsClamped(month, 1)) months.push(month)
   const accounts: DemoAccount[] = [
     { key: "spending", name: "Spending", kind: "spending", balance: 1842.67 },
-    { key: "holiday", name: "Next adventure", kind: "saver", balance: 4250.32 },
-    { key: "emergency", name: "Rainy day", kind: "saver", balance: 9800.55 },
+    { key: "holiday", name: "🏖️ Next adventure", kind: "saver", balance: 7900.32 },
+    { key: "emergency", name: "☔ Rainy day", kind: "saver", balance: 18400.55 },
   ]
   const transactions: DemoData["transactions"] = []
   const add = (dateISO: string, value: number, description: string, categoryName: string,
@@ -173,7 +175,9 @@ export function generateDemo(options: { today: string; years?: number; seed?: nu
       if (s.active) add(addDays(month, 4 + i * 3), -(s.value + rise), s.name, s.category)
     })
     for (const saver of accounts.filter(a => a.kind === "saver")) {
-      add(addDays(end, -1), amount(saver.balance * 0.04 / 12, 0.15), "Savings interest", "Interest", { accountKey: saver.key, transactionType: "Interest" })
+      // Preserve the original interest rows when today's saver balances change.
+      const interestBalance = saver.key === "holiday" ? 4250.32 : 9800.55
+      add(addDays(end, -1), amount(interestBalance * 0.04 / 12, 0.15), "Savings interest", "Interest", { accountKey: saver.key, transactionType: "Interest" })
     }
     for (const direction of [-1, 1]) {
       const transactionType = direction < 0 ? "Pay Anyone" : "Osko Payment Received"
@@ -192,12 +196,12 @@ export function generateDemo(options: { today: string; years?: number; seed?: nu
   for (let date = addDays(start, 2); date <= options.today; date = addDays(date, 14)) {
     const progress = daysBetween(start, date) / totalDays
     add(date, progress < 0.34 ? 2450 : progress < 0.7 ? 2625 : 2800, "ACME Group Payroll", "Salary", { transactionType: "Salary" })
-    add(addDays(date, 1), -amount(350, 0.15), "Holiday savings", "Transfers", { transactionType: "Transfer", transferToKey: "holiday" })
+    add(addDays(date, 1), -amount(450, 0.15), "Holiday savings", "Transfers", { transactionType: "Transfer", transferToKey: "holiday" })
     // A few days after the holiday one: the savers don't move together.
-    add(addDays(date, 4), -amount(200, 0.15), "Emergency savings", "Transfers", { transactionType: "Transfer", transferToKey: "emergency" })
+    add(addDays(date, 4), -amount(300, 0.15), "Emergency savings", "Transfers", { transactionType: "Transfer", transferToKey: "emergency" })
   }
-  // The rainy day saver, twice: a car repair, then a vet's bill.
-  for (const [at, value, why] of [[0.42, 900, "Car repair"], [0.81, 650, "Vet bill"]] as const) {
+  // Two emergencies here; the dental bill is appended after the seeded draws.
+  for (const [at, value, why] of [[0.42, 4800, "Car repair"], [0.81, 2100, "Vet bill"]] as const) {
     add(addDays(start, Math.floor(totalDays * at)), value, "Transfer from Rainy day", "Transfers", { transactionType: "Transfer", transferToKey: "emergency", message: why })
   }
   // Three separate holidays, with flights purchased before departure.
@@ -206,7 +210,7 @@ export function generateDemo(options: { today: string; years?: number; seed?: nu
     add(addDays(date, -45 + integer(7)), -(850 + integer(400)), pick(["Jetstar", "Qantas", "Virgin Australia"], "Jetstar"), "Holidays & Travel")
     add(date, -620, "Accor", "Holidays & Travel")
     // The holiday saver pays for it: money out of a saver as well as in.
-    add(addDays(date, -4), 1400 + trip * 200, "Transfer from Next adventure", "Transfers", { transactionType: "Transfer", transferToKey: "holiday" })
+    add(addDays(date, -4), 3200 + trip * 400, "Transfer from Next adventure", "Transfers", { transactionType: "Transfer", transferToKey: "holiday" })
     const currency = trip === 1 ? "JPY" : trip === 2 ? "NZD" : "SGD"
     const rate = currency === "JPY" ? 98 : currency === "NZD" ? 1.1 : 0.87
     // These businesses also trade in Australia; foreign currency marks overseas use.
@@ -304,6 +308,19 @@ export function generateDemo(options: { today: string; years?: number; seed?: nu
     const minutes = 7 * 60 + integer(17 * 60)
     t.time = `${String(Math.floor(minutes / 60)).padStart(2, "0")}:${String(minutes % 60).padStart(2, "0")}`
   }
+  // New rows follow all seeded draws, including transaction times.
+  add(addDays(start, Math.floor(totalDays * 0.64)), 3200, "Transfer from Rainy day", "Transfers", {
+    transactionType: "Transfer", transferToKey: "emergency", message: "Dental bill",
+  })
+  // Once a year, move part of a tax refund or bonus from spending to each saver.
+  for (let year = 0; year < Math.ceil(years); year++) {
+    for (const [index, saver] of accounts.filter(a => a.kind === "saver").entries()) {
+      const date = addDays(addMonthsClamped(start, year * 12 + 7 + index * 2), Math.floor(demoHash(year * 17 + index) * 20))
+      add(date, -round(2000 + demoHash(year * 29 + index + 101) * 2000), `Transfer to ${plainAccountName(saver.name)}`, "Transfers", {
+        transactionType: "Transfer", transferToKey: saver.key, message: index === 0 ? "Tax refund" : "Annual bonus",
+      })
+    }
+  }
   // Money out of the savers as well as in, on their own irregular days and
   // for their own reasons: as much as keeps each saver's balance three
   // years ago a plausible half of today's (deposits every pay would
@@ -327,7 +344,7 @@ export function generateDemo(options: { today: string; years?: number; seed?: nu
       const at = Math.min(totalDays - 2, Math.floor(((i + 0.2 + demoHash(saverKey.length * 31 + i * 7) * 0.6) / count) * totalDays))
       const dateISO = addDays(start, at)
       if (dateISO > options.today) return
-      transactions.push({ accountKey: "spending", dateISO, amount: round(need * w / total), description: `Transfer from ${saver.name}`, categoryName: "Transfers",
+      transactions.push({ accountKey: "spending", dateISO, amount: round(need * w / total), description: `Transfer from ${plainAccountName(saver.name)}`, categoryName: "Transfers",
         truthCategory: "Transfers", rawText: null, cardMethod: null, time: "12:30", transactionType: "Transfer", message: why[i % why.length]!,
         foreignAmount: null, status: "SETTLED", transferToKey: saverKey })
     })
@@ -335,7 +352,7 @@ export function generateDemo(options: { today: string; years?: number; seed?: nu
   // Each transfer shows on both accounts, as Up shows it: the saver's side
   // too, or its balance (rebuilt from its own rows) never moves. After every
   // draw, so the rest of the life is unchanged.
-  const spendingName = accounts.find(a => a.key === "spending")?.name ?? "Spending"
+  const spendingName = plainAccountName(accounts.find(a => a.key === "spending")?.name ?? "Spending")
   for (const t of transactions.filter(t => t.transferToKey && t.accountKey === "spending")) {
     transactions.push({ ...t, accountKey: t.transferToKey!, transferToKey: "spending", amount: round(-t.amount),
       description: t.amount < 0 ? `Transfer from ${spendingName}` : `Transfer to ${spendingName}` })

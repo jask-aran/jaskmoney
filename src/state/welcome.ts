@@ -1,6 +1,6 @@
 import type { TextField } from "../domain/textField"
 import { DEMO_COUNT, triable, type DemoTry } from "./tour"
-import type { BackdropId } from "../ui/welcome/backdrop"
+import { DEFAULT_BACKDROP, type BackdropId } from "../ui/welcome/backdrop"
 import type { Ticker } from "../app/tickers"
 
 /**
@@ -187,9 +187,20 @@ export function emailChecklist(state: WelcomeState, ctx: WelcomeContext): { labe
   ]
 }
 
-/** "up:yeah:…" → "•••••• 3f9a": that a token is there, never the token. */
+/** The setup's backdrop: tried with b, else Settings › Appearance's, else the default. */
+export function welcomeBackdrop(state: Pick<WelcomeState, "backdrop">, chosen: BackdropId | undefined): BackdropId {
+  return state.backdrop ?? chosen ?? DEFAULT_BACKDROP
+}
+
+/** The status line while the setup is open, in place of the status log's
+ * latest (which goes on being written, and shows again once it closes):
+ * the setup's own cards say how each step went. */
+export function welcomeStatus(state: Pick<WelcomeState, "backdrop" | "tickers">, chosen: BackdropId | undefined): string {
+  return welcomeBackdrop(state, chosen) === "ticker" && state.tickers?.length ? "These are real live tickers" : "Welcome to jaskmoney"
+}
+
+/** "up:yeah:…" → "••••••••": that a token is there, never any of it (not
+ * even its last few characters). */
 export function tokenShown(value: string): string {
-  if (!value) return ""
-  const tail = value.slice(-4)
-  return `${"•".repeat(Math.min(24, Math.max(0, value.length - 4)))}${tail}`
+  return "•".repeat(Math.min(24, value.length))
 }

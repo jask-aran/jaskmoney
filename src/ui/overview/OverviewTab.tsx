@@ -2,7 +2,8 @@ import { regionRef } from "../regions"
 import { onPointer } from "../../app/pointer"
 import { drillDown, handleOverviewRange, moveOverviewCategory } from "../../app/keys"
 import { keyEvent } from "../../app/keyEvent"
-import { For, Index, Show, createEffect, createMemo, onCleanup, onMount } from "solid-js"
+import { For, Index, Show, createEffect, createMemo, createSignal, on, onCleanup, onMount } from "solid-js"
+import { hasMarks } from "../charts/reveal"
 import type { BoxRenderable, ScrollBoxRenderable } from "@opentui/core"
 import { categoryMark } from "../icons"
 import { useTerminalDimensions } from "@opentui/solid"
@@ -386,15 +387,29 @@ export function OverviewTab(props: { focused: SectionId }) {
   // A component, not a function call in JSX: its card stays mounted while
   // the view changes (a remounted card has no measured width for a frame or
   // two, so its border picker and legend would blink out).
-  // Once a launch, the charts draw in as they first show data (motion),
-  // or, when the setup opens over them at launch, as it closes: the
-  // draw-in is for when they're seen. Latched: once fired, it stays, so
-  // the setup run again later doesn't play it again.
+  // "first launch": once a launch, the charts draw in when first seen with
+  // something to draw: as the data lands, or as the setup closes over
+  // them, and not before the top chart has marks (a new user's first view
+  // can be an empty Cycle: the draw-in would play on nothing). Latched:
+  // the key fires once, and once its draw-in is over no view draws in
+  // again this launch (a view mounted later, the Calendar or Savers, would
+  // otherwise start its own each time it's switched to).
   const launchReveal = takeLaunchReveal()
-  const revealMs = () => launchReveal ? chartSpeedMs(data.state.uiPrefs.chartSpeed) : 0
+  const [launchOver, setLaunchOver] = createSignal(!launchReveal)
+  const revealMs = () => (launchOver() ? 0 : chartSpeedMs(data.state.uiPrefs.chartSpeed))
   // "always": again each time the tab comes into view (motion.showings).
   const seen = showings(() => shown() && !ui.state.welcome)
-  const revealKey = createMemo<string | undefined>((was) => was ?? (data.state.ready && !ui.state.welcome ? "launch" : undefined))
+  const drawable = () => {
+    const top = CHART_VIEWS[ui.state.chartViews[0]]?.view
+    return top === "Calendar" || top === "Subscriptions" || hasMarks(topModel()?.rows ?? [])
+  }
+  const revealKey = createMemo<string | undefined>((was) => was ?? (data.state.ready && !ui.state.welcome && drawable() ? "launch" : undefined))
+  createEffect(on(revealKey, (key) => {
+    if (!key || launchOver()) return
+    // The draw-in's clock starts on its first tick: a little over its length.
+    const timer = setTimeout(() => setLaunchOver(true), revealMs() + 500)
+    onCleanup(() => clearTimeout(timer))
+  }))
   const ChartPane = (p: { pane: 0 | 1; height: number }) => {
     const index = () => ui.state.chartViews[p.pane]
     const view = () => CHART_VIEWS[index()] ?? CHART_VIEWS[0]

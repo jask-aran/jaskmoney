@@ -29,7 +29,7 @@ import { createWorkersAiClient, readWorkersAiCredentials, searchUsesClairic } fr
 import { createUpClient, hasUpToken, readUpToken } from "../up/client"
 import { smartSearch } from "../domain/smartSearch"
 import { categoryUses, merchantBreadth } from "../domain/suggest"
-import { createFileCredentialStore, signedIn } from "../ai/oauthStore"
+import { createFileCredentialStore, installationId, signedIn } from "../ai/oauthStore"
 import { appNow, appToday } from "../domain/days"
 import { DEMO_SEED, DEMO_YEARS, demoSource, generateDemo } from "../domain/demo"
 import { seedDemoDb } from "../db/demoSeed"
@@ -645,7 +645,7 @@ export function createCore() {
             else if (prompt.signal?.aborted) abort()
             else report({ paste: prompt.message })
           }),
-        })
+        }, { getDeviceId: installationId, agentName: "jaskmoney" })
         if (current !== on) return
         set(keyState())
       } finally {

@@ -114,3 +114,29 @@ test("seedDemoDb: the demo's own categories, Up-style accounts without Up ids, a
   expect(rows.filter((t) => isSpending(t)).length).toBeGreaterThan(1000)
   db.close()
 })
+
+test("🏖️ Next adventure and ☔ Rainy day: plain transfer names, large moves, paired rows and nonnegative histories", () => {
+  for (const date of [today, "2026-11-01"]) for (const seed of [7, 8, 20261027]) {
+    const demo = generateDemo({ today: date, years: 3, seed })
+    expect(demo.accounts.filter(a => a.kind === "saver").map(a => a.name)).toEqual(["🏖️ Next adventure", "☔ Rainy day"])
+    for (const saver of demo.accounts.filter(a => a.kind === "saver")) {
+      const rows = demo.transactions.filter(t => t.accountKey === saver.key)
+      let balance = saver.balance
+      for (const row of rows.toReversed()) {
+        balance = Math.round((balance - row.amount) * 100) / 100
+        expect(balance).toBeGreaterThanOrEqual(0)
+      }
+      expect(Math.abs(balance - saver.balance / 2)).toBeLessThan(0.1)
+      expect(Math.max(...rows.map(t => t.amount))).toBeGreaterThanOrEqual(2000)
+      expect(-Math.min(...rows.map(t => t.amount))).toBeGreaterThanOrEqual(4000)
+      const plainName = saver.key === "holiday" ? "Next adventure" : "Rainy day"
+      for (const transfer of demo.transactions.filter(t => t.accountKey === "spending" && t.transferToKey === saver.key)) {
+        expect(transfer.description).not.toMatch(/\p{Extended_Pictographic}/u)
+        if (transfer.amount > 0) expect(transfer.description).toBe(`Transfer from ${plainName}`)
+        expect(rows.filter(t => t.transferToKey === "spending" && t.dateISO === transfer.dateISO && t.time === transfer.time
+          && t.amount === -transfer.amount && t.message === transfer.message
+          && t.description === (transfer.amount < 0 ? "Transfer from Spending" : "Transfer to Spending"))).toHaveLength(1)
+      }
+    }
+  }
+})

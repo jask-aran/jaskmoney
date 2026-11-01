@@ -29,7 +29,7 @@ test("Appearance shows six rows and values without clipping at each settings lay
       const expected = [
         ["Category icons", "on (Nerd Font)"], ["Charts' $0 line", "off"],
         ["Chart animation", "first launch"], ["Animation speed", "quick"],
-        ["Chart labels", "together"], ["Welcome backdrop", "plasma"],
+        ["Chart labels", "together"], ["Welcome backdrop", "ticker tape"],
       ]
       const positions = expected.map(([label, value]) => {
         expect(frame).toMatch(new RegExp(`${label!.replace("$", "\\$")}\\s+${value!.replace(/[()]/g, "\\$&")}`))
@@ -133,7 +133,7 @@ test("Appearance preferences save/load known values and discard unknown values",
     expect(readFileSync(path, "utf8")).not.toContain('"backdrop"')
   }
   expect(appearanceRow("chartLabels", { icons: true }).value).toBe("together")
-  expect(appearanceRow("backdrop", { icons: true }).value).toBe("plasma")
+  expect(appearanceRow("backdrop", { icons: true }).value).toBe("ticker tape")
 })
 
 test("Database keeps only data rows and week start", () => {
@@ -204,11 +204,11 @@ test("Appearance is reachable through section navigation, jump, pointer and pale
     expect(data.state.uiPrefs.chartLabels).toBe("sequential")
     expect(command("display:chart-labels").label).toBe("Chart labels: together")
     const backdrop = command("display:backdrop")
-    expect(backdrop.label).toBe("Welcome backdrop: coin rain")
+    expect(backdrop.label).toBe("Welcome backdrop: plasma")
     backdrop.run()
     await t.renderOnce()
-    expect(data.state.uiPrefs.backdrop).toBe("coins")
-    expect(command("display:backdrop").label).toBe("Welcome backdrop: ticker tape")
+    expect(data.state.uiPrefs.backdrop).toBe("plasma")
+    expect(command("display:backdrop").label).toBe("Welcome backdrop: coin rain")
   } finally { t.renderer.destroy() }
 })
 

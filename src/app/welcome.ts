@@ -7,9 +7,9 @@ import { aiConnection, aiContext } from "../state/aiDialog"
 import type { DataStore } from "../state/dataStore"
 import type { UiStore } from "../state/uiStore"
 import { DEMO_COUNT, demoWorld, triable, tryFrom, tryKey } from "../state/tour"
-import { BACKDROPS, DEFAULT_BACKDROP } from "../ui/welcome/backdrop"
+import { BACKDROPS } from "../ui/welcome/backdrop"
 import { fetchTickers } from "./tickers"
-import { nextStep, previousStep, welcomeGo, welcomeRows, welcomeStart, type EmailPhase, type WelcomeAction, type WelcomeContext, type WelcomeState } from "../state/welcome"
+import { nextStep, previousStep, welcomeBackdrop, welcomeGo, welcomeRows, welcomeStart, type EmailPhase, type WelcomeAction, type WelcomeContext, type WelcomeState } from "../state/welcome"
 import { openBrowser, startLlmSignIn } from "./llmSignIn"
 import { runSync } from "./sync"
 
@@ -71,15 +71,10 @@ export function openWelcome(ui: UiStore): void {
  * the setup is open and the tape is its backdrop. Returns a stop. */
 export function followTickers(ui: UiStore): () => void {
   let stopped = false
-  let told = false
+  // The status line says when they're real (welcomeStatus).
   const ask = async () => {
     const tickers = await sources.tickers()
-    if (stopped || !ui.state.welcome) return
-    if (tickers) ui.setState("welcome", { tickers })
-    // Say once which they are.
-    if (told) return
-    told = true
-    ui.setStatus(tickers ? "These are real live tickers" : "Ticker tape: made-up tickers (Yahoo Finance couldn't be reached)")
+    if (!stopped && tickers && ui.state.welcome) ui.setState("welcome", { tickers })
   }
   void ask()
   const timer = setInterval(() => void ask(), 120_000)
@@ -164,10 +159,8 @@ export function handleWelcome(ui: UiStore, key: KeyEvent, data?: DataStore): voi
   if (state.step === "tour" && name === "t") { startTry(ui, data); return }
   // b tries the next backdrop (not while typing a token, or trying a demo).
   if (name === "b" && !typing && !state.trying) {
-    const at = BACKDROPS.findIndex((b) => b.id === (state.backdrop ?? data.state.uiPrefs.backdrop ?? DEFAULT_BACKDROP))
-    const next = BACKDROPS[(at + 1) % BACKDROPS.length]!
-    ui.setState("welcome", { backdrop: next.id })
-    ui.setStatus(`Backdrop: ${next.label} (b for the next; Settings › Appearance keeps one)`)
+    const at = BACKDROPS.findIndex((b) => b.id === welcomeBackdrop(state, data.state.uiPrefs.backdrop))
+    ui.setState("welcome", { backdrop: BACKDROPS[(at + 1) % BACKDROPS.length]!.id })
     return
   }
   if (name === "up" || (!typing && name === "k") || (key.shift && name === "tab")) { ui.setState("welcome", { cursor: Math.max(0, state.cursor - 1) }); return }

@@ -68,7 +68,7 @@ Demo mode uses a separate `demo.db` built from made-up data and never syncs.
 | `c` · `t` | Category · tags for the cursor row or selection |
 | `u` · `.` | Undo · repeat the last change |
 | `esc` | Step back one level |
-| `q` | Quit |
+| `ctrl+c` | Quit |
 
 The footer always lists the keys for where you are. The [guide](docs/guide.md) covers everything else.
 

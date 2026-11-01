@@ -4,7 +4,7 @@ import { ui } from "../state/uiStore"
 import { data } from "../state/dataStore"
 import { renderApp } from "../testing/app"
 import { key } from "../testing/keys"
-import { tone } from "../theme"
+import { ink, tone } from "../theme"
 import { ExecutorPaused } from "../ai/executorSetup"
 import { emailChecklist, stepMark, tokenShown, welcomeRows, welcomeStart, type WelcomeContext } from "../state/welcome"
 import { handleKey, handlePaste } from "./keys"
@@ -81,10 +81,16 @@ test("an Up token is pasted and never drawn; it's saved only when Up answers it,
   const t = await renderApp({ width: 130, height: 44 })
   openWelcome(ui)
   skipTour()
+  // Empty, the hint is faint: it doesn't read as text the paste goes into.
+  await t.renderOnce()
+  const hint = t.captureSpans().lines.flatMap((l) => l.spans).find((s) => s.text === "paste it here")!
+  expect(hint.fg.toInts()).toEqual(RGBA.fromHex(ink.faint).toInts())
   expect(handlePaste(ui, "up:yeah:secret-token-9f3a\n", data)).toBe(true)
   await t.renderOnce()
   const frame = t.captureCharFrame()
-  expect(frame).toContain("9f3a")
+  // Dots only: not even the token's last few characters.
+  expect(frame).toContain("Token  ••••")
+  expect(frame).not.toContain("9f3a")
   expect(frame).not.toContain("secret-token")
   expect(frame).not.toContain("up:yeah")
 
@@ -182,7 +188,8 @@ test("the rail ticks a step only when its integration is connected; a token show
   expect(stepMark("ai", state, { ...none, openrouter: true, jev: true })).toBe("done")
   expect(stepMark("email", state, none)).toBe("current")
   expect(stepMark("done", state, none)).toBe("ahead")
-  expect(tokenShown("up:yeah:abcdefgh1234")).toBe("••••••••••••••••1234")
+  expect(tokenShown("up:yeah:abcdefgh1234")).toBe("••••••••••••••••••••")
+  expect(tokenShown("up:yeah:" + "x".repeat(60))).toBe("•".repeat(24))
   expect(tokenShown("")).toBe("")
 })
 
@@ -220,7 +227,9 @@ test("drawn: the title in the brand's pink, the button in pink and bold; the dem
   const t = await renderApp({ width: 130, height: 44 })
   openWelcome(ui)
   await t.renderOnce()
-  expect(t.captureCharFrame()).toContain("Welcome to jaskmoney")
+  // The status line welcomes (the log's latest is held back while the setup is open).
+  expect(t.captureCharFrame().split("\n").filter((l) => l.includes("Welcome to jaskmoney"))).toEqual([expect.stringMatching(/^\s*Welcome to jaskmoney\s*$/)])
+  expect(t.captureCharFrame()).toContain("Setup connects Up Bank")
   expect(t.captureCharFrame()).not.toMatch(/Date\s+Amount/)
   const start = t.captureSpans().lines.flatMap((l) => l.spans).find((s) => s.text === "Start")!
   expect(start.fg.toInts()).toEqual(RGBA.fromHex(tone.key).toInts())
