@@ -8,8 +8,8 @@ const answer = { spark: { result: [
 ] } }
 
 test("Yahoo's answer becomes tickers, named and in the list's order; ones without a price left out", () => {
-  const names = new Map([["^AXJO", "ASX200"], ["BHP.AX", "BHP"], ["BAD", "BAD"]])
-  expect(parseSpark(answer, names)).toEqual([{ name: "ASX200", price: 8908.1, change: 0.18 }, { name: "BHP", price: 57.56, change: 0.07 }])
+  const names = new Map([["^AXJO", { name: "ASX200", group: "Indices" as const }], ["BHP.AX", { name: "BHP", group: "ASX" as const }], ["BAD", { name: "BAD", group: "US" as const }]])
+  expect(parseSpark(answer, names)).toEqual([{ name: "ASX200", group: "Indices", price: 8908.1, change: 0.18 }, { name: "BHP", group: "ASX", price: 57.56, change: 0.07 }])
   expect(parseSpark({ nonsense: true }, names)).toEqual([])
 })
 

@@ -90,39 +90,51 @@ function coinRain(width: number, height: number, t: number, ink: BackdropInk): C
   }
 }
 
-/** Made-up market lines, for when the real ones (app/tickers) can't be had. */
+/** Made-up market lines, by kind, for when the real ones (app/tickers)
+ * can't be had. */
 const FAKE_TICKERS: Ticker[] = ([
-  ["ASX200", 8204.1, -0.3], ["JASK", 12.4, 2.1], ["ACME", 48.15, -0.8], ["UPBK", 3.07, 1.4], ["AUD/USD", 0.6612, 0.2], ["GOLD", 3141.6, 0.6],
-  ["COFE", 5.5, 3.2], ["RENT", 650, 1.9], ["GROC", 132.8, -1.1], ["FUEL", 1.89, -2.4], ["SAVE", 100, 0.4], ["BTC", 98110, -3.6],
-  ["AVO", 2.95, -0.7], ["TOAST", 18.5, 0.9], ["BREW", 6.2, 1.1], ["NETF", 18.99, 0], ["GYM", 59.9, -0.2], ["PHONE", 29, 0.3],
-  ["POWR", 93.97, 4.1], ["TRAM", 5.3, 0.6], ["PIZZ", 24.5, -1.8], ["BOOK", 32.99, 0.8], ["VET", 145, 2.6], ["HOLS", 1400, -4.2],
-] as const).map(([name, price, change]) => ({ name, price, change }))
+  ["ASX200", 8204.1, -0.3, "Indices"], ["S&P500", 6120.4, 0.4, "Indices"], ["NIKKEI", 38410, -0.6, "Indices"], ["FTSE", 8290.2, 0.2, "Indices"],
+  ["JASK", 12.4, 2.1, "ASX"], ["ACME", 48.15, -0.8, "ASX"], ["UPBK", 3.07, 1.4, "ASX"], ["COFE", 5.5, 3.2, "ASX"], ["GROC", 132.8, -1.1, "ASX"], ["RENT", 650, 1.9, "ASX"],
+  ["AVO", 2.95, -0.7, "US"], ["TOAST", 18.5, 0.9, "US"], ["BREW", 6.2, 1.1, "US"], ["NETF", 18.99, 0, "US"], ["PIZZ", 24.5, -1.8, "US"],
+  ["AUD/USD", 0.6612, 0.2, "FX"], ["AUD/EUR", 0.6105, -0.1, "FX"], ["AUD/JPY", 101.2, 0.3, "FX"], ["AUD/NZD", 1.0912, 0.1, "FX"],
+  ["BTC", 98110, -3.6, "Crypto"], ["ETH", 3420.5, 1.2, "Crypto"], ["SOL", 210.4, 4.4, "Crypto"],
+  ["GOLD", 3141.6, 0.6, "Commodities"], ["OIL", 98.4, -1.2, "Commodities"], ["COFFEE", 312.5, 2.3, "Commodities"], ["FUEL", 1.89, -2.4, "Commodities"],
+] as const).map(([name, price, change, group]) => ({ name, price, change, group }))
 
-/** A price as a tape shows it: big ones whole-ish, small ones to four places. */
-const price = (p: number) => (p >= 1000 ? p.toLocaleString("en-AU", { maximumFractionDigits: 1 }) : p >= 1 ? p.toFixed(2) : p.toFixed(4))
+/** A price as a tape shows it: a currency pair to four places (two past
+ * 100: yen); else big ones whole-ish, small ones to four places. */
+const price = (k: Ticker) => {
+  const p = k.price
+  if (k.group === "FX") return p.toFixed(p >= 100 ? 2 : 4)
+  return p >= 1000 ? p.toLocaleString("en-AU", { maximumFractionDigits: 1 }) : p >= 1 ? p.toFixed(2) : p.toFixed(4)
+}
 
 /** A ticker's slot on a tape: the same width whatever its numbers, so a
- * refresh changes the numbers in place and nothing moves. */
+ * refresh changes the numbers in place and nothing moves; spaces between. */
 const SLOT = 24
-const GAP = "   ·   "
-const slotText = (k: Ticker) => `${k.name} ${price(k.price)} ${k.change >= 0 ? "▲" : "▼"}${Math.abs(k.change).toFixed(1)}%`.padEnd(SLOT).slice(0, SLOT) + GAP
+const GAP = "      "
+const slotText = (k: Ticker) => `${k.name} ${price(k)} ${k.change >= 0 ? "▲" : "▼"}${Math.abs(k.change).toFixed(1)}%`.padEnd(SLOT).slice(0, SLOT) + GAP
 /** Seconds of empty tape before the first ticker comes on screen, about:
  * the first ask for real prices has answered by then. */
 const LEAD_SECONDS = 1.2
 
 /**
- * Ticker tape: every fourth row a tape of tickers creeping in from the
- * right, each at its own speed (spread by the golden ratio, so no two
- * match) and starting at its own place in the list. `t` is seconds since
- * the tape began: it begins empty and fills from the right, then runs on.
- * Rises tinted up, falls tinted down. `tickers`: real prices once they've
- * come, else made-up ones.
+ * Ticker tape: every fourth row a tape of tickers of one kind (indices,
+ * ASX shares, US shares, FX, crypto, commodities: the kinds in turn down
+ * the screen), creeping in from the right, each tape at its own speed
+ * (spread by the golden ratio, so no two match) and starting at its own
+ * place in its kind. `t` is seconds since the tape began: it begins empty
+ * and fills from the right, then runs on. A name is dim; its price and
+ * change are tinted up or down. `tickers`: real prices once they've come,
+ * else made-up ones.
  */
 function tickerTape(width: number, height: number, t: number, ink: BackdropInk, tickers: readonly Ticker[] = FAKE_TICKERS): Cell {
   const list = tickers.length ? tickers : FAKE_TICKERS
+  const kinds = [...new Set(list.map((k) => k.group))]
   const cycle = SLOT + GAP.length
-  const bands = new Map<number, (x: number) => { ch: string; up: boolean } | null>()
+  const bands = new Map<number, (x: number) => { ch: string; up: boolean; name: boolean } | null>()
   for (let y = 1, k = 0; y < height; y += 4, k++) {
+    const kind = list.filter((tk) => tk.group === kinds[k % kinds.length])
     // 2 to 11 columns a second: under half a column a frame at 30.
     const speed = 2 + ((k * 0.618034) % 1) * 9
     // How far the tape has come in from the right edge: after its lead-in
@@ -130,20 +142,20 @@ function tickerTape(width: number, height: number, t: number, ink: BackdropInk, 
     // creeps in at its own speed, the speed it keeps.
     const u = t - (LEAD_SECONDS + hash(k * 7 + 3) * 0.8)
     const head = u < 0 ? -1 : Math.floor(u * speed)
-    const first = (k * 5) % list.length
+    // A kind's second tape starts further along it.
+    const first = Math.floor(k / kinds.length) * 3
     bands.set(y, (x) => {
       // The tape's position under column x: 0 is its first character.
       const i = head - (width - 1 - x)
-      if (i < 0) return null
-      const ticker = list[(first + Math.floor(i / cycle)) % list.length]!
-      const ch = slotText(ticker)[i % cycle]!
-      return { ch, up: ticker.change >= 0 }
+      if (i < 0 || !kind.length) return null
+      const ticker = kind[(first + Math.floor(i / cycle)) % kind.length]!
+      const at = i % cycle
+      return { ch: slotText(ticker)[at]!, up: ticker.change >= 0, name: at < ticker.name.length }
     })
   }
   return (x, y) => {
     const at = bands.get(y)?.(x)
     if (!at || at.ch === " ") return { ch: " ", fg: ink.level(0) }
-    if (at.ch === "▲" || at.ch === "▼" || /[\d.%,]/.test(at.ch)) return { ch: at.ch, fg: at.up ? ink.up : ink.down }
-    return { ch: at.ch, fg: ink.level(2) }
+    return { ch: at.ch, fg: at.name ? ink.level(2) : at.up ? ink.up : ink.down }
   }
 }
