@@ -176,6 +176,12 @@ export function handleWelcome(ui: UiStore, key: KeyEvent, data?: DataStore): voi
   }
   if (name === "up" || (!typing && name === "k") || (key.shift && name === "tab")) { ui.setState("welcome", { cursor: Math.max(0, state.cursor - 1) }); return }
   if (name === "down" || (!typing && name === "j") || name === "tab") { ui.setState("welcome", { cursor: Math.min(rows.length - 1, state.cursor + 1) }); return }
+  // Space switches an Up account too, as enter does.
+  if (name === "space" && !typing) {
+    const row = rows[Math.min(state.cursor, rows.length - 1)]
+    if (row?.account) welcomeAct(ui, data, "account", row)
+    return
+  }
   if (name === "return" || name === "enter") {
     // Typing a token, enter checks it wherever the cursor is.
     const row = typing && state.token.value.trim() ? rows.find((r) => r.action === "token")! : rows[Math.min(state.cursor, rows.length - 1)]

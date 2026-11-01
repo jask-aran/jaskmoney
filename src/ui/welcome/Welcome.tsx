@@ -119,9 +119,11 @@ function WelcomeScreen() {
       spans: [
         { text: at ? " ›" : "  ", fg: tone.key, bold: true, bg },
         { text: row.done ? " ✓ " : "   ", fg: tone.good, bold: true, bg },
-        { text: label, fg: row.primary ? tone.key : row.off ? ink.faint : at ? ink.strong : ink.figure, bold: at || row.primary, bg },
+        // An Up account: its dot, green when it syncs, grey when it won't.
+        ...(row.account ? [{ text: `${label.match(/^ */)![0]}● `, fg: row.syncs ? tone.good : ink.faint, bg }] : []),
+        { text: row.account ? label.trimStart() : label, fg: row.primary ? tone.key : row.account && !row.syncs ? ink.faint : at ? ink.strong : ink.figure, bold: at || row.primary, bg },
         ...(field?.hint ? [{ text: field.hint, fg: ink.faint, bg }] : []),
-        { text: row.detail ? `  ${row.detail} ` : " ", fg: row.done ? tone.good : ink.note, bg },
+        { text: row.detail ? `  ${row.detail} ` : " ", fg: row.done || row.syncs ? tone.good : ink.note, bg },
       ],
     }
   }
@@ -133,7 +135,7 @@ function WelcomeScreen() {
     const fg = n.ok === true ? tone.good : n.ok === false ? tone.bad : ink.note
     return [blank, ...wrapText(n.text, width - 3).map((t, i) => ({ spans: [{ text: i === 0 ? (n.ok === true ? " ✓ " : n.ok === false ? " ✗ " : " · ") : "   ", fg, bold: true }, { text: t, fg }] }))]
   }
-  const buttons = (): Line[] => [blank, ...rows().map(rowLine)]
+  const buttons = (): Line[] => [blank, ...rows().flatMap((row, i) => row.gapBefore ? [blank, rowLine(row, i)] : [rowLine(row, i)])]
   const numbered = (items: [string, string][], width: number): Line[] => items.flatMap(([n, text]) =>
     wrapText(text, width - 4).map((t, i) => ({ spans: [{ text: i === 0 ? ` ${n}  ` : "    ", fg: tone.key, bold: true }, { text: t, fg: ink.figure }] })))
 

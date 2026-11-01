@@ -104,10 +104,12 @@ export interface WelcomeRow {
   done?: boolean
   /** The one to press: drawn as the screen's main button. */
   primary?: boolean
-  /** An Up account's row: its id (Up's), toggled by enter. */
+  /** An Up account's row: its id (Up's), toggled by enter or space, and
+   * whether it syncs (a green dot) or not (a grey one, the row faint). */
   account?: string
-  /** Off: drawn faint (an account not to sync). */
-  off?: boolean
+  syncs?: boolean
+  /** A blank line above it (Continue, after the accounts). */
+  gapBefore?: boolean
 }
 
 /** An Up account in the setup's choice: Up's id, name, type (TRANSACTIONAL,
@@ -166,11 +168,11 @@ export function welcomeRows(state: WelcomeState, ctx: WelcomeContext): WelcomeRo
       if (ctx.up && state.token.value === "") return [
         // Which accounts sync: each spending account, its savers under it.
         ...upAccountTree(state.upAccounts ?? []).map(({ account, under }): WelcomeRow => ({
-          action: "account", account: account.id, off: !account.on,
-          label: `${under ? "  " : ""}${account.on ? "●" : "○"} ${account.name}`,
-          detail: account.on ? "" : "won't sync",
+          action: "account", account: account.id, syncs: account.on,
+          label: `${under ? "  " : ""}${account.name}`,
+          detail: account.on ? "will sync" : "won't sync",
         })),
-        { action: "next", label: "Continue", primary: true },
+        { action: "next", label: "Continue", primary: true, gapBefore: !!state.upAccounts?.length },
         { action: "replaceToken", label: "Use a different token" },
       ]
       return [

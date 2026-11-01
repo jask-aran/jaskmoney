@@ -115,15 +115,16 @@ test("an Up token is pasted and never drawn; it's saved only when Up answers it;
   // Which accounts sync is chosen first: each spending account with its
   // savers (same ownership) under it; nothing synced yet.
   data.setState({ upToken: true })
-  const rows = () => welcomeRows(ui.state.welcome!, { ...none, up: true }).filter((r) => r.action === "account").map((r) => r.label)
-  expect(rows()).toEqual(["● Spending", "  ● 🏖️ Holiday", "  ● 🚨 Emergency", "● 2Up Spending", "  ● 🏠 House"])
+  const rows = () => welcomeRows(ui.state.welcome!, { ...none, up: true }).filter((r) => r.action === "account").map((r) => `${r.syncs ? "●" : "○"} ${r.label} · ${r.detail}`)
+  expect(rows()).toEqual(["● Spending · will sync", "●   🏖️ Holiday · will sync", "●   🚨 Emergency · will sync", "● 2Up Spending · will sync", "●   🏠 House · will sync"])
   expect(synced).not.toHaveBeenCalled()
   expect(welcomeRows(ui.state.welcome!, { ...none, up: true })[ui.state.welcome!.cursor]!.label).toBe("Continue")
   // 2Up Spending off takes its saver with it; its saver back on brings it back.
   ui.setState("welcome", { cursor: 3 }); press("return")
-  expect(rows()).toEqual(["● Spending", "  ● 🏖️ Holiday", "  ● 🚨 Emergency", "○ 2Up Spending", "  ○ 🏠 House"])
-  ui.setState("welcome", { cursor: 4 }); press("return")
-  expect(rows()[3]).toBe("● 2Up Spending")
+  expect(rows()).toEqual(["● Spending · will sync", "●   🏖️ Holiday · will sync", "●   🚨 Emergency · will sync", "○ 2Up Spending · won't sync", "○   🏠 House · won't sync"])
+  // Space switches too.
+  ui.setState("welcome", { cursor: 4 }); press("space")
+  expect(rows()[3]).toBe("● 2Up Spending · will sync")
   ui.setState("welcome", { cursor: 3 }); press("return")
   ui.setState("welcome", { cursor: 2 }); press("return")
   // Leaving the step: the first sync, without the switched-off ones.
