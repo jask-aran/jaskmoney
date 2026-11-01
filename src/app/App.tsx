@@ -60,7 +60,6 @@ export function App() {
   // it to the web app and other clients too.
   const remote = flagValue("--connect")
   const serving = remote == null ? flagValue("--serve") : null
-  let servedAt = ""
   // Clients of the core this TUI serves (the web app), for the top bar.
   const [webClients, setWebClients] = createSignal(0)
 
@@ -80,7 +79,7 @@ export function App() {
       if (demo) {
         // toggleDemo's status says what demo mode is.
       } else if (data.state.transactions.length > 0) {
-        ui.setStatus(`${data.state.transactions.length} transactions loaded.${remote ? " · on a remote core" : ""}${servedAt}`)
+        ui.setStatus(`${data.state.transactions.length} transactions loaded.${remote ? " · on a remote core" : ""}`)
       } else {
         ui.setStatus("No transactions yet · Settings → Database & Import → i to import")
       }
@@ -110,7 +109,7 @@ export function App() {
         const served = serveCore(data.core, { port: Number(serving) || DEFAULT_PORT, onClients: setWebClients })
         // A listening server would keep the process alive after quitting.
         onCleanup(() => served.stop())
-        servedAt = ` · web app at ${served.page}`
+        ui.setStatus(`Web app at ${served.page}`)
       }
     } catch (e) {
       ui.setStatus(`DB error: ${e instanceof Error ? e.message : String(e)}`, true)
@@ -191,7 +190,7 @@ export function App() {
         <KeptTab id="budgets">{(focused) => <BudgetsTab focused={focused()} />}</KeptTab>
         <KeptTab id="settings">{(focused) => <SettingsTab focused={focused()} />}</KeptTab>
       </box>
-      {/* Jump mode borrows the status line while active; the stored status
+      {/* Jump mode borrows the status line while active; the log's latest status
           returns unchanged when it closes. */}
       <StatusBar
         text={(ui.state.jump != null) ? "Jump mode · press target letter" : ui.state.status}

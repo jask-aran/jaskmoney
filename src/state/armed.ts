@@ -18,13 +18,15 @@ export interface Armed {
   label: string
   /** The key that armed it, which does it on a second press. */
   with: "delete" | "enter"
+  /** The log entry to withdraw when another key disarms this row. */
+  promptId: number
 }
 
 /** The account data dialog's actions (Transactions › accounts, d), each enter twice. */
 export const ACCOUNT_ACTIONS = ["clearAccount", "deleteAccount"] as const
 
 /** What the second press does, as the armed row and the status line say it. */
-export function armedText(armed: Armed): string {
+export function armedText(armed: Omit<Armed, "promptId">): string {
   const press = armed.with === "delete" ? "del" : "enter"
   const what = {
     category: `delete ${armed.label}`,

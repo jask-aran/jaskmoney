@@ -194,8 +194,10 @@ export function handleKey(ui: UiStore, key: KeyEvent, data?: DataStore): boolean
   const armed = ui.state.armed
   if (armed && !isSecondPress(armed, name)) {
     ui.disarm()
+    // Approved status-log deviation from Go: restore the previous message
+    // by withdrawing this prompt, while keeping every entry in the log.
+    ui.withdrawStatus(armed.promptId)
     if (name === "escape") { ui.setStatus("Cancelled"); return true }
-    if (ui.state.status === armedText(armed)) ui.setStatus("")
   }
   const scope = ui.activeScope()
   const entry = scopes[scope]
@@ -653,7 +655,7 @@ const confirmations = new WeakMap<UiStore, Set<string>>()
 /** del (or enter) twice (state/armed): the first press arms the row, the
  * same key on it again does it; handleKey disarms on any other key.
  * Further confirmation presses do nothing until the write settles. */
-function confirmTwice(ui: UiStore, data: DataStore | undefined, armed: Armed, ok?: () => void): void {
+function confirmTwice(ui: UiStore, data: DataStore | undefined, armed: Confirm, ok?: (summary: string) => void): void {
   const pending = confirmations.get(ui) ?? new Set<string>()
   const action = `${armed.kind}:${armed.id}`
   if (pending.has(action)) return
@@ -662,14 +664,13 @@ function confirmTwice(ui: UiStore, data: DataStore | undefined, armed: Armed, ok
     ui.disarm()
     pending.add(action)
     confirmations.set(ui, pending)
-    settleData(ui, CONFIRMED[armed.kind](data, armed).finally(() => pending.delete(action)), (summary) => { ui.setStatus(summary); ok?.() })
+    settleData(ui, CONFIRMED[armed.kind](data, armed).finally(() => pending.delete(action)), (summary) => { ui.setStatus(summary); ok?.(summary) })
     return
   }
-  ui.arm(armed)
-  ui.setStatus(armedText(armed))
+  ui.arm({ ...armed, promptId: ui.setStatus(armedText(armed)) })
 }
 
-type Confirm = Armed
+type Confirm = Omit<Armed, "promptId">
 
 /** What each armed row does on its second press, and the status it leaves. */
 const CONFIRMED: Record<Confirm["kind"], (data: DataStore | undefined, c: Confirm) => Promise<string>> = {
@@ -1296,7 +1297,7 @@ function handleAiDialog(ui: UiStore, key: KeyEvent, data?: DataStore): void {
   if (!action || dialog.busy) return
   switch (action.id) {
     case "signIn":
-      if (isLlmRow(row)) settleData(ui, startLlmSignIn(ui, data, row), () => note(ui.state.status, !ui.state.statusErr))
+      if (isLlmRow(row)) settleData(ui, startLlmSignIn(ui, data, row), (result) => { if (result) note(result.text, result.ok) })
       return
     case "key":
     case "accountId":
@@ -1311,7 +1312,7 @@ function handleAiDialog(ui: UiStore, key: KeyEvent, data?: DataStore): void {
       return
     case "remove":
       // Enter twice (state/armed); moving off the row disarms, like any key.
-      confirmTwice(ui, data, { kind: "aiKey", id: row, label: aiRowLabel(row), with: "enter" }, () => opened.patch({ cursor: 0, note: { text: ui.state.status, ok: true } }))
+      confirmTwice(ui, data, { kind: "aiKey", id: row, label: aiRowLabel(row), with: "enter" }, (text) => opened.patch({ cursor: 0, note: { text, ok: true } }))
       return
   }
 }

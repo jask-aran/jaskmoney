@@ -10,12 +10,70 @@ import { loadTransactions, loadTransactionDetail, setTransactionNotes } from "..
 import { account, category, transaction } from "../testing/fixtures"
 import { key } from "../testing/keys"
 import { testDb, testEnv } from "../testing/scoped"
+import { createMemo, createRoot } from "solid-js"
+
+test("status getters react to log appends, withdrawals and reset", () => {
+  ui.reset()
+  createRoot((dispose) => {
+    try {
+      const shown = createMemo(() => ({ text: ui.state.status, error: ui.state.statusErr }))
+      expect(shown()).toEqual({ text: "OpenTUI shell", error: false })
+      ui.setStatus("Previous")
+      const prompt = ui.setStatus("Prompt", true)
+      expect(shown()).toEqual({ text: "Prompt", error: true })
+      ui.withdrawStatus(prompt)
+      expect(shown()).toEqual({ text: "Previous", error: false })
+      ui.reset()
+      expect(shown()).toEqual({ text: "OpenTUI shell", error: false })
+      ui.setStatus("After reset", true)
+      expect(shown()).toEqual({ text: "After reset", error: true })
+    } finally {
+      dispose()
+      ui.reset()
+    }
+  })
+})
+
+test.each([0, 500])("disarming preserves a newer identical message after %i intervening entries", (intervening) => {
+  data.init(":memory:")
+  ui.switchTab("settings")
+  ui.activateSettings("database")
+  ui.setState({ databaseCursor: DATABASE_ROWS.indexOf("clearData") })
+  ui.setStatus("Before the prompt")
+  handleKey(ui, key("return"), data)
+  const promptId = ui.state.armed!.promptId
+  const text = "Press enter again to clear all transactions and imports"
+  for (let i = 0; i < intervening; i++) ui.setStatus(`Progress ${i}`)
+  if (intervening) expect(ui.state.statusLog.some((entry) => entry.id === promptId)).toBe(false)
+  const newerId = ui.setStatus(text, true)
+  handleKey(ui, key("k"), data)
+  expect(ui.state.armed).toBeNull()
+  expect(ui.state.statusLog.at(-1)).toMatchObject({ withdraws: promptId })
+  expect(ui.state.status).toBe(text)
+  expect(ui.state.statusErr).toBe(true)
+  ui.withdrawStatus(newerId)
+  expect(ui.state.status).toBe(intervening ? "Progress 499" : "Before the prompt")
+  expect(ui.state.statusErr).toBe(false)
+  expect(ui.state.statusLog.length).toBeLessThanOrEqual(500)
+})
+
+test("an empty status clears the line and error while keeping the previous entry", () => {
+  const previousId = ui.setStatus("Previous error", true)
+  const emptyId = ui.setStatus("")
+  expect(ui.state.status).toBe("")
+  expect(ui.state.statusErr).toBe(false)
+  expect(ui.state.statusLog.at(-2)).toMatchObject({ id: previousId, text: "Previous error", level: "error" })
+  ui.withdrawStatus(emptyId)
+  expect(ui.state.status).toBe("Previous error")
+  expect(ui.state.statusErr).toBe(true)
+})
 
 describe("key router", () => {
   beforeEach(() => {
     data.clearFilter()
     ui.switchTab("overview")
-    ui.setState({ jump: null, focusedSection: "none", managerCursor: 0, managerTop: 0, selectedIds: {}, range: null, status: "reset" })
+    ui.setState({ jump: null, focusedSection: "none", managerCursor: 0, managerTop: 0, selectedIds: {}, range: null })
+    ui.setStatus("reset")
   })
 
   test("number keys switch tabs", () => {
@@ -665,7 +723,8 @@ describe("paging (every list and picker)", () => {
     data.clearFilter()
     data.setState({ accounts: [account({ name: "A" })], transactions: rows(30), accountSelection: "all", ready: true })
     ui.switchTab("manager")
-    ui.setState({ focusedSection: "mgr.transactions", txnView: "rows", managerCursor: 0, managerTop: 0, managerVisible: 10, selectedIds: {}, range: null, status: "" })
+    ui.setState({ focusedSection: "mgr.transactions", txnView: "rows", managerCursor: 0, managerTop: 0, managerVisible: 10, selectedIds: {}, range: null })
+    ui.setStatus("")
   })
 
   test("listMove pages by the list's height and jumps with home/end", async () => {

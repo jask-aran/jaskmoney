@@ -27,7 +27,7 @@ export function openBrowser(url: string): void {
 }
 
 /** `open` and `models` are replaced in tests. */
-export async function startLlmSignIn(ui: UiStore, data: DataStore, provider: LlmProvider, open: (url: string) => void = openBrowser, models?: Pick<Models, "login">): Promise<void> {
+export async function startLlmSignIn(ui: UiStore, data: DataStore, provider: LlmProvider, open: (url: string) => void = openBrowser, models?: Pick<Models, "login">): Promise<{ text: string; ok: boolean } | undefined> {
   if (ui.state.llmSignIn) return
   const { label, signIn } = LLM_PROVIDERS[provider]
   const flow = new AbortController()
@@ -54,11 +54,15 @@ export async function startLlmSignIn(ui: UiStore, data: DataStore, provider: Llm
       })
       if (progress.url && progress.url !== lastUrl) { lastUrl = progress.url; open(progress.url) }
     }, flow.signal, models)
-    ui.setStatus(`Signed in to ${label}`)
+    const text = `Signed in to ${label}`
+    ui.setStatus(text)
+    return { text, ok: true }
   } catch (error) {
     const cancelled = flow.signal.aborted && pasteError === undefined
     const cause = pasteError ?? error
-    ui.setStatus(cancelled ? `${label} sign-in cancelled` : `${label} sign-in failed: ${cause instanceof Error ? cause.message : String(cause)}`, !cancelled)
+    const text = cancelled ? `${label} sign-in cancelled` : `${label} sign-in failed: ${cause instanceof Error ? cause.message : String(cause)}`
+    ui.setStatus(text, !cancelled)
+    return { text, ok: cancelled }
   } finally {
     if (controller === flow) { controller = null; sendPaste = null }
     opened.close()

@@ -3,6 +3,7 @@ import type { SentPart } from "../app/sentPreview"
 import type { QueryId } from "../ai/catalog"
 import type { Written } from "../app/searchReport"
 import type { Armed } from "./armed"
+import { latestStatus, type StatusEntry } from "./statusLog"
 import type { DryRunReport } from "../domain/rules"
 import type { CycleAnchor, CycleUnit } from "../domain/budget"
 import type { MerchantSort } from "../domain/merchants"
@@ -117,8 +118,9 @@ export interface UiState {
   activeTab: TabId
   focusedSection: SectionId
   jump: { previousFocus: SectionId } | null
-  status: string
-  statusErr: boolean
+  statusLog: StatusEntry[]
+  readonly status: string
+  readonly statusErr: boolean
   managerCursor: number
   managerTop: number
   managerVisible: number
@@ -380,12 +382,16 @@ export interface Opening<T> {
 const NO_IDS: Record<number, boolean> = Object.freeze({}) as Record<number, boolean>
 
 function createUiStore() {
+  let statusId = 0
+  // The initial entry is the same after each test-only reset.
+  const initialStatusAt = Date.now()
   const initialState = (): UiState => ({
     activeTab: "overview",
     focusedSection: "none",
     jump: null,
-    status: "OpenTUI shell",
-    statusErr: false,
+    statusLog: [{ id: 0, at: initialStatusAt, text: "OpenTUI shell", level: "info" }],
+    get status() { return latestStatus(this.statusLog).text },
+    get statusErr() { return latestStatus(this.statusLog).level === "error" },
     managerCursor: 0,
     managerTop: 0,
     managerVisible: 24,
@@ -457,8 +463,17 @@ function createUiStore() {
     setState(reconcile(initialState()))
   }
 
-  function setStatus(text: string, isErr = false) {
-    setState({ status: text, statusErr: isErr })
+  function appendStatus(entry: StatusEntry): number {
+    setState("statusLog", (log) => [...log, entry].slice(-500))
+    return entry.id
+  }
+
+  function setStatus(text: string, isErr = false): number {
+    return appendStatus({ id: ++statusId, at: Date.now(), text, level: isErr ? "error" : "info" })
+  }
+
+  function withdrawStatus(id: number): number {
+    return appendStatus({ id: ++statusId, at: Date.now(), withdraws: id })
   }
 
   function switchTab(tab: TabId) {
@@ -524,7 +539,10 @@ function createUiStore() {
     setState(updates)
   }
 
-  function leaveSettings() { setState({ settingsActive: false, settingsEditor: null, armed: null, importWizard: null, status: "Settings · navigate sections", statusErr: false }) }
+  function leaveSettings() {
+    setState({ settingsActive: false, settingsEditor: null, armed: null, importWizard: null })
+    setStatus("Settings · navigate sections")
+  }
   function openSettingsEditor(kind: SettingsEditorKind, id: number | string | null, draft: UiState["settingsDraft"]) {
     const field = editorFields(kind, draft, { accounts: [], categories: [], tags: [], savedFilters: [] })[0]
     setState({ settingsEditor: { kind, id, field: 0, picker: null, caret: field?.kind === "text" ? field.display.length : 0, saving: false }, settingsDraft: draft, armed: null, jump: null })
@@ -548,7 +566,8 @@ function createUiStore() {
   }
 
   function clearFocus() {
-    setState({ focusedSection: "none", status: "Focus cleared" })
+    setState({ focusedSection: "none" })
+    setStatus("Focus cleared")
   }
 
   function openFilter(seed = "") {
@@ -557,8 +576,8 @@ function createUiStore() {
       catPicker: null,
       tagPicker: null,
       jump: null,
-      status: "Search: JQL, or ? then words",
     })
+    setStatus("Search: JQL, or ? then words")
   }
 
   function closeFilter(apply: boolean) {
@@ -575,8 +594,8 @@ function createUiStore() {
       filterBar: null,
       jump: null,
       range: null,
-      status: "Quick categorize · j/k · enter · esc",
     })
+    setStatus("Quick categorize · j/k · enter · esc")
   }
 
   function closeCatPicker() {
@@ -591,8 +610,8 @@ function createUiStore() {
       filterBar: null,
       jump: null,
       range: null,
-      status: "Quick tags · space stage · enter apply · esc cancel",
     })
+    setStatus("Quick tags · space stage · enter apply · esc cancel")
   }
 
   function closeTagPicker() {
@@ -717,6 +736,7 @@ function createUiStore() {
     setState,
     reset,
     setStatus,
+    withdrawStatus,
     switchTab,
     opening,
     cycleTab,
