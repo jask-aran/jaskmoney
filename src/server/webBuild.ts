@@ -118,6 +118,9 @@ async function inputsOf(metafile: { inputs: Record<string, unknown> } | undefine
 }
 
 export async function buildWeb(): Promise<WebBundle> {
+  // mtimes are read after the build: one changed since it began was read
+  // half-written, or not at all, so the bundle counts as stale.
+  const began = Date.now()
   try {
     const result = await Bun.build({
       entrypoints: [ENTRY],
@@ -155,6 +158,7 @@ export async function buildWeb(): Promise<WebBundle> {
     const inputs = await inputsOf((result as unknown as { metafile?: { inputs: Record<string, unknown> } }).metafile)
     inputs.set(WORKER, statSync(WORKER).mtimeMs)
     for (const name of ICON_FILES) inputs.set(join(ICONS, name), statSync(join(ICONS, name)).mtimeMs)
+    for (const [path, mtime] of inputs) if (mtime >= began) inputs.set(path, -1)
     return { files, inputs, error: null, version }
   } catch (error) {
     return { files: new Map(), inputs: new Map(), error: error instanceof Error ? error.stack ?? error.message : String(error) }
