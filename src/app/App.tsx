@@ -3,7 +3,7 @@ import { paintWith } from "./afterPaint"
 import { traceFrames, traceKey, traceMark } from "./trace"
 import { settleData, toggleDemo } from "./actions"
 import { BudgetsTab } from "../ui/budgets/BudgetsTab"
-import { ErrorBoundary, Show, createEffect, createMemo, createSignal, untrack, on, onCleanup, onMount } from "solid-js"
+import { ErrorBoundary, Show, createEffect, createMemo, createSignal, untrack, on, onCleanup } from "solid-js"
 import { useKeyboard, usePaste, useRenderer } from "@opentui/solid"
 import type { KeyEvent } from "@opentui/core"
 import { TABS, TAB_DEFAULT_FOCUS, ui, type SectionId, type TabId } from "../state/uiStore"
@@ -90,7 +90,9 @@ export function App() {
     }
   }
 
-  onMount(() => {
+  // Before the tree below is built, so it is built once, with the data,
+  // rather than empty and then again (~80 ms of every start).
+  ;(() => {
     if (remote) {
       let quitting = false
       const link = wsLink(remote, { onClose: (reason) => { if (!quitting) ui.setStatus(`Lost the core: ${reason}`, true) } })
@@ -121,7 +123,7 @@ export function App() {
       return
     }
     bootstrap()
-  })
+  })()
 
   // A remote core's state arrives after mount: start once it has.
   createEffect(() => {
