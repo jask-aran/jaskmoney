@@ -38,12 +38,14 @@ async function round(data: DataStore): Promise<PurchaseRound> {
   const none: PurchaseRound = { looked: 0, found: 0, resuggested: 0, error: null }
   // Demo rows are made up; their emails don't exist.
   if (data.state.demo || !purchaseSources.signedIn()) return none
+  // The rows looked up are this database's: what's found is saved to it only.
+  const session = data.state.session
   const now = purchaseSources.now()
   const lookups = data.purchaseLookups()
   const rows = data.state.transactions.map(purchase)
   const due = dueForLookup(rows, lookups, now)
   // Nothing to look up: still ask again for rows suggested before their purchase was known.
-  if (!due.length) return { ...none, resuggested: await data.recordPurchases([]) }
+  if (!due.length) return { ...none, resuggested: await data.recordPurchases([], undefined, session) }
   const byId = new Map(rows.map((t) => [t.id, t]))
   // Earlier rounds' finds, except the rows looked up now (one found before
   // prices were kept is looked up again, and its own email is fair game).
@@ -72,7 +74,7 @@ async function round(data: DataStore): Promise<PurchaseRound> {
       const before = lookups.get(l.transactionId)
       return l.status !== "found" && before?.status === "found" ? { ...before, legacy: false, checks: l.checks, checkedAt: l.checkedAt } : l
     })
-    const resuggested = await data.recordPurchases(settled)
+    const resuggested = await data.recordPurchases(settled, undefined, session)
     // Newly found: a redone lookup (for prices) isn't news.
     return { looked: due.length, found: settled.filter((l) => l.status === "found" && lookups.get(l.transactionId)?.status !== "found").length, resuggested, error: null }
   } catch (error) {

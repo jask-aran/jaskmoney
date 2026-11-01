@@ -37,7 +37,8 @@ export function categoryPush(row: PushableRow, category: Category, categories: C
 
 /** Up has the category: the row follows Up again ('provider', or never set
  * for no category). */
-function confirmCategoryPush(db: Db, id: number, p: CategoryPush): void {
+function confirmCategoryPush(db: Db, id: number, p: CategoryPush, confirmed: (id: number) => void): void {
+  confirmed(id)
   setTransactionCategory(db, id, p.categoryId, p.providerId ? "provider" : null, { extCategory: p.providerId, extParentCategory: p.providerId ? p.parentExt : null })
 }
 
@@ -65,6 +66,18 @@ export function createUpPush(ctx: CoreContext, deps: { ruleOfferNote: (ids: numb
   // Only the latest local write owns a row when Up answers.
   const latest = new Map<number, number>()
   let sequence = 0
+
+  // Rows Up confirmed a change for, heard by each sync fetching meanwhile.
+  const watchers = new Set<Set<number>>()
+  const confirmed = (id: number) => { for (const ids of watchers) ids.add(id) }
+
+  /** Hear which rows Up confirms a change for from now until `stop`: a sync
+   * fetching meanwhile has their older copy (up/sync `keep`). */
+  function watchUpWrites(): { ids: ReadonlySet<number>; stop: () => void } {
+    const ids = new Set<number>()
+    watchers.add(ids)
+    return { ids, stop: () => { watchers.delete(ids) } }
+  }
 
   /**
    * Give each row (id → category id) its category: all of them locally at
@@ -149,7 +162,7 @@ export function createUpPush(ctx: CoreContext, deps: { ruleOfferNote: (ids: numb
         } finally {
           pushingIds.delete(id)
         }
-        if (latest.get(id) === p.sequence) confirmCategoryPush(database, id, p)
+        if (latest.get(id) === p.sequence) confirmCategoryPush(database, id, p, confirmed)
         return 1
       }
     }, { complete: refresh, onSettled: () => onProgress?.(++settled, pushes.size), concurrency: PUSH_CONCURRENCY })
@@ -195,7 +208,7 @@ export function createUpPush(ctx: CoreContext, deps: { ruleOfferNote: (ids: numb
           } else if (latest.get(id) === p.sequence) waiting++
           throw error
         }
-        if (latest.get(id) === p.sequence) confirmCategoryPush(database, id, p)
+        if (latest.get(id) === p.sequence) confirmCategoryPush(database, id, p, confirmed)
         return 1
       }
     }, { concurrency: PUSH_CONCURRENCY })
@@ -250,6 +263,7 @@ export function createUpPush(ctx: CoreContext, deps: { ruleOfferNote: (ids: numb
       return async () => {
         try {
           if (!await sendQueuedTagChange(database, client, p.id, p.tagId, p.action, p.logId)) return 0
+          confirmed(p.id)
           pushed++
           pushedIds.add(p.id)
           return 1
@@ -286,8 +300,8 @@ export function createUpPush(ctx: CoreContext, deps: { ruleOfferNote: (ids: numb
   }
 
   async function applyTagPatch(txnIds: number[], patch: TagPatch, how: TagHow = "picker"): Promise<string> {
-    if (!ctx.db) throw new Error("db not open")
-    const database = ctx.db
+    const session = ctx.session()
+    const database = session.db
     if (!Object.keys(patch).length) return "Tags unchanged"
     if (how === "picker") setLastRepeat({ kind: "tags", patch: { ...patch } })
     const before = transactions().filter((t) => txnIds.includes(t.id)).map((t) => ({ id: t.id, tagIds: [...t.tagIds] }))
@@ -322,6 +336,8 @@ export function createUpPush(ctx: CoreContext, deps: { ruleOfferNote: (ids: numb
     })()
     refresh()
     const result = pushes.length ? await pushQueuedTags(database, pushes) : { pushed: 0, pushedIds: new Set<number>(), rejected: 0, waiting: 0, failures: [] }
+    // What changed is read from this database, and undo belongs to it.
+    ctx.ensureCurrent(session, "tags were sent to Up")
     failures.push(...result.failures)
     const updated = new Set<number>()
     const reversals: { ids: number[]; patch: TagPatch }[] = []
@@ -339,5 +355,5 @@ export function createUpPush(ctx: CoreContext, deps: { ruleOfferNote: (ids: numb
     return operationSummary(`Tags: ${labels.join(", ")} on ${updated.size}`, { ...result, pushed: result.pushedIds.size, failures })
   }
 
-  return { applyCategories, retryPendingCategories, retryPendingTags, categorizeTransactions, applyTagPatch }
+  return { applyCategories, retryPendingCategories, retryPendingTags, categorizeTransactions, applyTagPatch, watchUpWrites }
 }

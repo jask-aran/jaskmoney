@@ -6,7 +6,13 @@ import { syncTagLinks } from "./tags"
 
 type LocalTransaction = { id: number; external_id: string | null; status: string | null; external_created_at: string | null; ext_categorizable: number | null }
 
-export async function syncUp(db: Db, client: Pick<ReturnType<typeof createUpClient>, "listAccounts" | "listAccountTransactions" | "listCategories">, { now = new Date() }: { now?: Date } = {}) {
+/**
+ * Fetch Up's accounts, categories and transactions, then save them in one
+ * write. `keep`: local rows whose fetched copy is older than what's here
+ * (Up confirmed a change for them while this fetched); they're left as they
+ * are, and the next sync brings them up to date.
+ */
+export async function syncUp(db: Db, client: Pick<ReturnType<typeof createUpClient>, "listAccounts" | "listAccountTransactions" | "listCategories">, { now = new Date(), keep }: { now?: Date; keep?: ReadonlySet<number> } = {}) {
   try {
     const tree = await client.listCategories()
     const accounts = await client.listAccounts()
@@ -69,6 +75,7 @@ export async function syncUp(db: Db, client: Pick<ReturnType<typeof createUpClie
         if (accountId === undefined) throw new Error("Up transaction account is missing")
         const existing = db.query<{ id: number; category_id: number | null; category_source: string | null }, [string]>(
           "SELECT id, category_id, category_source FROM transactions WHERE source = 'up' AND external_id = ?").get(transaction.id)
+        if (existing && keep?.has(existing.id)) continue
         const providerCategory = providerCategories.get(r.category.data?.id ?? "")
         const preserveCategory = existing && existing.category_source !== null && existing.category_source !== "provider"
         const assignedCategory = preserveCategory ? existing.category_id : providerCategory ?? categoryId

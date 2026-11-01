@@ -46,7 +46,8 @@ import { createUpPush, categoryPush, operationSummary, type PushableRow } from "
 import { createSuggestions } from "./suggestions"
 import { createTagCandidates } from "./tagReview"
 import { createRuleOffers } from "./ruleOffers"
-import type { CoreContext, TagPatch, UndoResult } from "./context"
+import type { CoreContext, Session, TagPatch, UndoResult } from "./context"
+import { createLane } from "./lane"
 import { emptyCoreState, type CoreProgress, type CoreState, type Repeat } from "./protocol"
 
 /** How a command hears about the call it serves. */
@@ -89,6 +90,8 @@ export function createCore() {
   let db: Db | null = null
   let actualDbPath = ""
   let dbVersion = 0
+  /** The open database's session (CoreContext Session); null before open. */
+  let current: Session | null = null
   // One object for the core's life: its parts read `ctx.state` as they go.
   const state: CoreState = initialCoreState()
   const listeners = new Set<(patch: Partial<CoreState>) => void>()
@@ -114,6 +117,7 @@ export function createCore() {
     return { invalidate: () => { run++ }, get run() { return run } }
   })()
 
+  // Cleared by attach: an entry reverses rows of the session it was made in.
   let undoStack: { label: string; reverse: () => Promise<string | UndoResult> }[] = []
 
   function recordUndo(label: string, reverse: () => Promise<string | UndoResult>) {
@@ -126,7 +130,19 @@ export function createCore() {
     if (!entry) return { message: "Nothing to undo" }
     undoStack = undoStack.slice(0, -1)
     set({ undoLabel: undoStack.at(-1)?.label ?? null })
-    const reversed = await entry.reverse()
+    const on = current
+    let reversed: string | UndoResult
+    try {
+      reversed = await entry.reverse()
+    } catch (error) {
+      // Kept, to try again: it failed before it changed anything it could
+      // report (a missing tag or category), unless the database changed.
+      if (current === on) {
+        undoStack = [...undoStack.slice(-19), entry]
+        set({ undoLabel: entry.label })
+      }
+      throw error
+    }
     const result = typeof reversed === "string" ? { message: reversed } : reversed
     return { ...result, message: `Undid: ${entry.label}${result.message ? ` · ${result.message}` : ""}` }
   }
@@ -211,8 +227,15 @@ export function createCore() {
   /** Demo mode on: three years sampled from your spending, scrambled,
    * or a built-in life with too little history, in ~/.jaskmoney/demo.db.
    * Made afresh with its own categories and monthly budget. Returns how many rows. */
+  /** A sync writes to the database it began on and then runs rules and
+   * pushes on the open one: the database stays put until it's done. */
+  function ensureNoSync(doing: string): void {
+    if (state.upSyncing) throw new Error(`Wait for the Up sync to finish before ${doing}`)
+  }
+
   function enterDemo(): number {
     if (state.demo) return state.transactions.length
+    ensureNoSync("demo mode")
     const demo = generateDemo({ today: appToday(), years: DEMO_YEARS, seed: DEMO_SEED,
       history: demoSource(transactions(), state.categories) })
     const path = join(jaskmoneyHome(), "demo.db")
@@ -232,6 +255,7 @@ export function createCore() {
   /** Demo mode off: back on the real database, as it was. */
   function leaveDemo(): void {
     if (!state.demo || !beforeDemo) return
+    ensureNoSync("leaving demo mode")
     const was = beforeDemo
     beforeDemo = null
     db?.close()
@@ -247,14 +271,17 @@ export function createCore() {
 
   /** Point the core at an open database and load it (and the settings). */
   function attach(path: string, handle: Db) {
+    // A deferred prefs write lands before the settings are read back.
+    flushConfig()
     undoStack = []
     tagCandidatesFor.invalidate()
     actualDbPath = path
     db = handle
+    current = { id: state.session + 1, db: handle }
     const config = loadSettingsConfig()
     set({
       ...keyState(),
-      session: state.session + 1,
+      session: current.id,
       undoLabel: null,
       lastRepeat: null,
       aiRuleOffers: [],
@@ -275,6 +302,9 @@ export function createCore() {
     undoStack = []
     db?.close()
     db = null
+    current = null
+    beforeDemo?.db.close()
+    beforeDemo = null
     actualDbPath = ""
     dbVersion = 0
     tagCandidatesFor.invalidate()
@@ -292,7 +322,7 @@ export function createCore() {
     mutate((db) => setTransactionNotes(db, id, notes))
     const t = transactions().find((row) => row.id === id)
     if (!t || !t.notes.trim() || !state.suggestions[id] || !isOrdinaryFlow(t) || !isUncategorised(t) || (!ai && !hasJev())) return Promise.resolve(false)
-    return suggestCategories([id], ai, { replace: true }).then(() => true, () => false)
+    return askAgain([id], ai).then(() => true, () => false)
   }
 
   const ctx: CoreContext = {
@@ -301,10 +331,18 @@ export function createCore() {
     createSettingsTag, saveSavedFilter, createSettingsRule, applyRules, deleteSettingsRule, deleteSavedFilter,
     get db() { return db },
     get dbVersion() { return dbVersion },
+    session: () => {
+      if (!current) throw new Error("db not open")
+      return current
+    },
+    isCurrent: (session) => session === current,
+    ensureCurrent: (session, doing) => {
+      if (session !== current) throw new Error(`The database changed while ${doing}; nothing more was saved`)
+    },
   }
   const push = createUpPush(ctx, { ruleOfferNote: (ids) => ruleOfferNote(ids) })
   const { applyCategories, retryPendingCategories, retryPendingTags, categorizeTransactions, applyTagPatch } = push
-  const { suggestCategories, resuggestLike, setMerchantNote, recordPurchases, judgeAsk, acceptSuggestions, dismissSuggestions } =
+  const { suggestCategories, askAgain, resuggestLike, setMerchantNote, recordPurchases, judgeAsk, acceptSuggestions, dismissSuggestions } =
     createSuggestions(ctx, { applyCategories, ruleOfferNote: (ids) => ruleOfferNote(ids) })
   const { historyData, askForRules, ruleOfferNote, makeOfferedRule, declineRuleOffer } = createRuleOffers(ctx, { retryPendingCategories, retryPendingTags, applyTagPatch })
   const { tagCandidates, dismissTagCandidates } = createTagCandidates(ctx)
@@ -332,13 +370,16 @@ export function createCore() {
     // Writes everything as it is now, so a deferred UI write is done too.
     if (configTimer) { clearTimeout(configTimer); configTimer = null }
     saveSettingsConfig({ version: 2, icons: state.icons, savedFilters: state.savedFilters, importProfiles: state.importProfiles, ui: state.uiPrefs, ...patch })
+    configDirty = false
   }
 
   // Prefs that change with each key (the range, the account, the charts)
   // are written once they settle, not on every press; exit writes any left.
+  // Dirty until a write succeeds, so a failed one is tried again.
   let configTimer: ReturnType<typeof setTimeout> | null = null
+  let configDirty = false
   function flushConfig() {
-    if (!configTimer) return
+    if (!configDirty) return
     try { persistConfig({}) } catch { /* the next write or exit tries again */ }
   }
   process.on("exit", flushConfig)
@@ -352,6 +393,7 @@ export function createCore() {
     if (!soon) persistConfig({ ui: next })
     set({ uiPrefs: next, weekStart: next.weekStart ?? "monday" })
     if (soon) {
+      configDirty = true
       if (configTimer) clearTimeout(configTimer)
       configTimer = setTimeout(flushConfig, CONFIG_SETTLE_MS)
     }
@@ -423,43 +465,48 @@ export function createCore() {
     return `Imported ${result.inserted} rows from ${result.accountName}${result.skippedDupes ? ` (${result.skippedDupes} duplicates ${skipDuplicates ? "skipped" : "forced"})` : ""}${applied?.updatedTransactions ? ` · ${applied.updatedTransactions} rules applied` : ""}`
   }
 
-  async function syncUp(): Promise<string> {
-    if (state.upSyncing) throw new Error("Up sync is already running")
-    if (!db) throw new Error("db not open")
-    set({ upSyncing: true })
-    try {
-      const result = await runUpSync(db, upClient()).catch((error: unknown) => {
-        try { refresh() } catch { /* Preserve the sync error if reloading also fails. */ }
-        throw error
-      })
-      refresh()
-      const applied = result.insertedIds.length ? applyRules(result.insertedIds) : null
-      // Categorisations Up hasn't confirmed go again now Up is answering.
-      const retried = await retryPendingCategories()
-      const tagsRetried = await retryPendingTags()
-      const parts = [`Up sync: ${result.inserted} new, ${result.updated} updated, ${result.removedHeld} pending removed${applied?.updatedTransactions ? ` · ${applied.updatedTransactions} rules applied` : ""}`]
-      if (retried.pushed) parts.push(`${retried.pushed} waiting categor${retried.pushed === 1 ? "y" : "ies"} sent to Up`)
-      if (retried.rejected) parts.push(`${retried.rejected} Up refused (kept here only)`)
-      if (retried.waiting) parts.push(`${retried.waiting} still waiting for Up`)
-      if (tagsRetried.pushed) parts.push(`${tagsRetried.pushed} waiting tag changes sent to Up`)
-      if (tagsRetried.rejected) parts.push(`${tagsRetried.rejected} tag changes Up refused (reverted here)`)
-      if (tagsRetried.waiting) parts.push(`${tagsRetried.waiting} tag changes still waiting for Up`)
-      return parts.join(" · ")
-    } finally {
-      set({ upSyncing: false })
-    }
+  const upSync = createLane({ state, set }, "upSyncing", "Up sync is already running")
+
+  /** Fetch from Up and save, then run rules on the new rows and send what
+   * Up hasn't confirmed. Never in demo mode: its rows are made up. */
+  function syncUp(): Promise<string> {
+    if (state.demo) return Promise.reject(new Error("Sync is off in demo mode"))
+    return upSync.run(syncNow)
   }
 
+  async function syncNow(): Promise<string> {
+    if (!db) throw new Error("db not open")
+    // A row Up confirms a change for while the sync fetches keeps its
+    // copy: the fetched one predates the change (upPush watchUpWrites).
+    const confirmed = push.watchUpWrites()
+    const result = await runUpSync(db, upClient(), { keep: confirmed.ids }).catch((error: unknown) => {
+      try { refresh() } catch { /* Preserve the sync error if reloading also fails. */ }
+      throw error
+    }).finally(confirmed.stop)
+    refresh()
+    const applied = result.insertedIds.length ? applyRules(result.insertedIds) : null
+    // Categorisations Up hasn't confirmed go again now Up is answering.
+    const retried = await retryPendingCategories()
+    const tagsRetried = await retryPendingTags()
+    const parts = [`Up sync: ${result.inserted} new, ${result.updated} updated, ${result.removedHeld} pending removed${applied?.updatedTransactions ? ` · ${applied.updatedTransactions} rules applied` : ""}`]
+    if (retried.pushed) parts.push(`${retried.pushed} waiting categor${retried.pushed === 1 ? "y" : "ies"} sent to Up`)
+    if (retried.rejected) parts.push(`${retried.rejected} Up refused (kept here only)`)
+    if (retried.waiting) parts.push(`${retried.waiting} still waiting for Up`)
+    if (tagsRetried.pushed) parts.push(`${tagsRetried.pushed} waiting tag changes sent to Up`)
+    if (tagsRetried.rejected) parts.push(`${tagsRetried.rejected} tag changes Up refused (reverted here)`)
+    if (tagsRetried.waiting) parts.push(`${tagsRetried.waiting} tag changes still waiting for Up`)
+    return parts.join(" · ")
+  }
+
+  /** A new, empty database at the same path: a new session (attach), so
+   * undo, rule offers and the clients' caches of the old rows go with it. */
   function factoryResetDatabase(): void {
     if (!db) throw new Error("db not open")
-    if (actualDbPath === ":memory:") { db.close(); db = openDb(":memory:") }
-    else {
-      db.close()
-      // Explicit paths only: never use a glob or a user-entered directory.
-      for (const path of [actualDbPath, `${actualDbPath}-wal`, `${actualDbPath}-shm`]) if (existsSync(path)) unlinkSync(path)
-      db = openDb(actualDbPath)
-    }
-    refresh()
+    ensureNoSync("a reset")
+    db.close()
+    // Explicit paths only: never use a glob or a user-entered directory.
+    if (actualDbPath !== ":memory:") for (const path of [actualDbPath, `${actualDbPath}-wal`, `${actualDbPath}-shm`]) if (existsSync(path)) unlinkSync(path)
+    attach(actualDbPath, openDb(actualDbPath))
   }
 
   /**
@@ -482,7 +529,8 @@ export function createCore() {
       p.replace ? suggestCategories(p.ids ?? [], cx.ai, { replace: true }) : suggestCategories(p.ids, cx.ai),
     resuggestLike: (p: { ids: number[] }, cx: CallContext) => resuggestLike(p.ids, cx.ai),
     setMerchantNote: (p: { description: string; note: string }, cx: CallContext) => setMerchantNote(p.description, p.note, cx.ai),
-    recordPurchases: (p: { lookups: PurchaseLookup[] }, cx: CallContext) => recordPurchases(p.lookups, cx.ai),
+    /** `session`: the one the lookups were made for (CoreState.session). */
+    recordPurchases: (p: { lookups: PurchaseLookup[]; session?: number }, cx: CallContext) => recordPurchases(p.lookups, cx.ai, p.session),
     acceptSuggestions: (p: { ids: number[] }, cx: CallContext<CoreProgress["acceptSuggestions"]>) =>
       acceptSuggestions(p.ids, (pushed, total) => cx.progress({ pushed, total })),
     dismissSuggestions: (p: { ids: number[] }) => dismissSuggestions(p.ids),

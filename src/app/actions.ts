@@ -50,14 +50,17 @@ export function toggleWeekStart(ui: UiStore, data: DataStore): void {
   settleData(ui, data.saveUiPrefs({ weekStart: data.state.weekStart === "monday" ? "sunday" : "monday" }), () => ui.setStatus(data.state.weekStart === "sunday" ? "Weeks start on Sunday" : "Weeks start on Monday"))
 }
 
-/** Demo mode on (made-up rows, the real database untouched) or off. */
-export function toggleDemo(ui: UiStore, data: DataStore): void {
-  settleData(ui, (async () => {
+/** Demo mode on (made-up rows, the real database untouched) or off;
+ * resolves once it's done (or failed, which the status line says). */
+export function toggleDemo(ui: UiStore, data: DataStore): Promise<void> {
+  const done = (async () => {
     if (data.state.demo) { await data.leaveDemo(); ui.setStatus("Demo mode off · your data") }
     else ui.setStatus(`Demo mode: ${(await data.enterDemo()).toLocaleString("en-AU")} made-up transactions over 3 years · your data is untouched · sync is off`)
     resetTransactionCursors(ui, data)
     ui.setState({ selectedIds: {}, rangeSelecting: false, detailId: null })
-  })())
+  })()
+  settleData(ui, done)
+  return done.catch(() => {})
 }
 
 export function toggleXAxis(ui: UiStore, data: DataStore): void {

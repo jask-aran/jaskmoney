@@ -673,7 +673,8 @@ export function createClientStore(initialLink: CoreLink) {
     suggestCategories,
     resuggestLike: (ids: number[], ai?: Pick<JevClient, "judge">) => link.call("resuggestLike", { ids }, { ai }),
     setMerchantNote: (description: string, note: string, ai?: Pick<JevClient, "judge">) => link.call("setMerchantNote", { description, note }, { ai }),
-    recordPurchases: (lookups: PurchaseLookup[], ai?: Pick<JevClient, "judge">) => link.call("recordPurchases", { lookups }, { ai }),
+    /** `session`: the one the lookups were made for, so they never land on another database's rows. */
+    recordPurchases: (lookups: PurchaseLookup[], ai?: Pick<JevClient, "judge">, session?: number) => link.call("recordPurchases", { lookups, session }, { ai }),
     acceptSuggestions: (ids: number[], onProgress?: (pushed: number, total: number) => void) =>
       link.call("acceptSuggestions", { ids }, { onProgress: (p) => onProgress?.(p.pushed, p.total) }),
     dismissSuggestions: (ids: number[]) => link.call("dismissSuggestions", { ids }),

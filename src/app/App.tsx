@@ -68,7 +68,8 @@ export function App() {
     try {
       // `jaskmoney --demo` opens straight into demo mode (your data untouched).
       const demo = process.argv.includes("--demo")
-      if (demo) toggleDemo(ui, data)
+      // Over a socket, demo mode arrives later: the first sync waits for it.
+      const demoReady = demo ? toggleDemo(ui, data) : Promise.resolve()
       const restored = restoreUiPrefs(data.state.uiPrefs, data.state.accounts, appNow(), data.cycle())
       ui.setTimeframe(restored.timeframe)
       ui.setDashChipCursor(activeChipIndex(restored.timeframe))
@@ -84,7 +85,7 @@ export function App() {
         ui.setStatus("No transactions yet · Settings → Database & Import → i to import")
       }
       // Sync now, then on an interval; ctrl+r syncs on demand.
-      void runSync(ui, data, { manual: false })
+      void demoReady.then(() => runSync(ui, data, { manual: false }))
       const timer = setInterval(() => void runSync(ui, data, { manual: false }), SYNC_INTERVAL_MS)
       onCleanup(() => clearInterval(timer))
     } catch (e) {

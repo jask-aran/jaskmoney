@@ -6,6 +6,7 @@ import { writeRules } from "../ai/ruleWriter"
 import { count } from "../domain/words"
 import type { createUpPush } from "./upPush"
 import type { CoreContext } from "./context"
+import { createLane } from "./lane"
 
 export function createRuleOffers(ctx: CoreContext, deps: Pick<ReturnType<typeof createUpPush>, "retryPendingCategories" | "retryPendingTags" | "applyTagPatch">) {
   const { state, set, mutate, transactions, recordUndo, saveSavedFilter, createSettingsRule, applyRules, deleteSettingsRule, deleteSavedFilter, restoreCategories } = ctx
@@ -30,21 +31,21 @@ export function createRuleOffers(ctx: CoreContext, deps: Pick<ReturnType<typeof 
 
   /** Ask the general model for rules (ai/ruleWriter); `llm` replaces the
    * OpenRouter one (tests). Its offers replace the last run's. */
-  async function askForRules(llm?: Llm, focus?: string): Promise<string> {
-    if (!ctx.db) throw new Error("db not open")
-    if (state.writingRules) throw new Error("Already asking for rules")
-    set({ writingRules: true })
-    try {
+  const writing = createLane(ctx, "writingRules", "Already asking for rules")
+
+  function askForRules(llm?: Llm, focus?: string): Promise<string> {
+    return writing.run(async () => {
+      const session = ctx.session()
       const model = llm ?? createLlm()
-      const result = await writeRules(model, historyData(), { declined: loadRuleDeclines(ctx.db), focus })
+      const result = await writeRules(model, historyData(), { declined: loadRuleDeclines(session.db), focus })
+      // Offers name this database's categories and tags.
+      ctx.ensureCurrent(session, "the model wrote rules")
       set({ aiRuleOffers: result.offers })
       const cost = result.usage.cost ? ` · $${result.usage.cost.toFixed(4)}` : ""
       if (result.error && !result.offers.length) return `No rules: ${result.error}${cost}`
       const turned = result.rejected.length ? `, ${result.rejected.length} turned down by the check` : ""
       return `${model.model.id.split("/").pop()} proposed ${count(result.offers.length, "rule")}${turned}${cost}`
-    } finally {
-      set({ writingRules: false })
-    }
+    })
   }
 
   /** " · R: rule for Coles → Groceries", or how many, for the rows just categorised. */
@@ -59,7 +60,7 @@ export function createRuleOffers(ctx: CoreContext, deps: Pick<ReturnType<typeof 
   /** Make an offered rule: a saved filter and a rule (last in order), then
    * run it on the rows it finds waiting, Up rows sent to Up. */
   async function makeOfferedRule(offer: RuleOffer): Promise<string> {
-    if (!ctx.db) throw new Error("db not open")
+    const session = ctx.session()
     const target = offer.tagId != null ? state.tags.find((t) => t.id === offer.tagId) : state.categories.find((c) => c.id === offer.categoryId)
     if (!target) throw new Error(offer.tagId != null ? "tag not found" : "category not found")
     const targetName = offer.tagId != null ? `+${target.name}` : target.name
@@ -76,6 +77,7 @@ export function createRuleOffers(ctx: CoreContext, deps: Pick<ReturnType<typeof 
     const tagged = tagId != null ? before.filter((row) => !row.tagIds.includes(tagId) && transactions().some((t) => t.id === row.id && t.tagIds.includes(tagId))).map((row) => row.id) : []
     const sent = applied?.categoryChanges ? await retryPendingCategories() : null
     if (applied?.tagChanges) await retryPendingTags()
+    ctx.ensureCurrent(session, "the rule's rows were sent to Up")
     recordUndo(`rule ${offer.description} → ${targetName}`, async () => {
       deleteSettingsRule(ruleId)
       deleteSavedFilter(id)

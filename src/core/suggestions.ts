@@ -8,6 +8,7 @@ import { judgeRows } from "../domain/ask"
 import { count } from "../domain/words"
 import { operationSummary, type createUpPush } from "./upPush"
 import type { CoreContext } from "./context"
+import { createLane } from "./lane"
 
 export function createSuggestions(ctx: CoreContext, deps: {
   applyCategories: ReturnType<typeof createUpPush>["applyCategories"]
@@ -16,7 +17,8 @@ export function createSuggestions(ctx: CoreContext, deps: {
   const { state, set, mutate, refresh, transactions, recordUndo, categorySnapshot, restoreCategories } = ctx
   const { applyCategories, ruleOfferNote } = deps
 
-  let suggestionsFinished: Promise<void> = Promise.resolve()
+  // One round at a time; a re-ask (a note, a purchase found) waits its turn.
+  const lane = createLane(ctx, "suggesting", "Category suggestions are already running")
 
   /**
    * Suggest categories for ordinary uncategorised rows (`ids` narrows them)
@@ -26,14 +28,13 @@ export function createSuggestions(ctx: CoreContext, deps: {
    */
   function suggestCategories(ids?: number[], ai?: Pick<JevClient, "judge">): Promise<string>
   function suggestCategories(ids: number[], ai: Pick<JevClient, "judge"> | undefined, options: { replace: true }): Promise<number>
-  async function suggestCategories(ids?: number[], ai?: Pick<JevClient, "judge">, options: { replace?: boolean } = {}): Promise<string | number> {
-    if (state.suggesting) throw new Error("Category suggestions are already running")
-    if (!ctx.db) throw new Error("db not open")
-    const database = ctx.db
-    let finish = () => {}
-    const finished = new Promise<void>((resolve) => { finish = resolve })
-    suggestionsFinished = finished
-    set({ suggesting: true })
+  function suggestCategories(ids?: number[], ai?: Pick<JevClient, "judge">, options: { replace?: boolean } = {}): Promise<string | number> {
+    return lane.run(() => suggestNow(ids, ai, options))
+  }
+
+  async function suggestNow(ids: number[] | undefined, ai: Pick<JevClient, "judge"> | undefined, options: { replace?: boolean }): Promise<string | number> {
+    const session = ctx.session()
+    const database = session.db
     try {
       const selected = ids ? new Set(ids) : null
       // Rows whose suggestion was dismissed get no new one.
@@ -49,7 +50,7 @@ export function createSuggestions(ctx: CoreContext, deps: {
       if (unasked.length) await askMerchantBreadth(ai ?? jevClient(), unasked, {
         notes,
         onAnswers: (answers) => {
-          if (ctx.db !== database) return
+          if (!ctx.isCurrent(session)) return
           saveMerchantBreadth(database, answers)
           for (const [k, p] of answers) asked.set(k, p)
         },
@@ -74,7 +75,7 @@ export function createSuggestions(ctx: CoreContext, deps: {
         const flush = () => {
           const arrived = pending
           pending = []
-          if (ctx.db !== database || !arrived.length) return
+          if (!ctx.isCurrent(session) || !arrived.length) return
           const byId = new Map(transactions().map((t) => [t.id, t]))
           const fresh = arrived.filter((s) => {
             const current = byId.get(s.transactionId)
@@ -90,7 +91,7 @@ export function createSuggestions(ctx: CoreContext, deps: {
           breadth,
           notes,
           onSuggestion: (s) => {
-            if (ctx.db !== database || !targetIds.has(s.transactionId)) return
+            if (!ctx.isCurrent(session) || !targetIds.has(s.transactionId)) return
             if (!pending.length) queueMicrotask(flush)
             pending.push(s)
           },
@@ -104,11 +105,15 @@ export function createSuggestions(ctx: CoreContext, deps: {
       if (failures.length) parts.push(`${failures.length} failed: ${failures[0]}`)
       return parts.join(" · ")
     } finally {
-      try { if (ctx.db === database) refresh() } finally {
-        if (suggestionsFinished === finished) set({ suggesting: false })
-        finish()
-      }
+      if (ctx.isCurrent(session)) refresh()
     }
+  }
+
+  /** Ask again for `ids`' existing suggestions once the running round is
+   * done, if the database is still the one they're in. Resolves to how many. */
+  function askAgain(ids: number[], ai?: Pick<JevClient, "judge">): Promise<number> {
+    const session = ctx.session()
+    return lane.whenIdle(() => ctx.isCurrent(session) && ids.length ? suggestCategories(ids, ai, { replace: true }) : 0)
   }
 
   /** Hold stored suggestions to what their row can say: one made before a
@@ -130,19 +135,16 @@ export function createSuggestions(ctx: CoreContext, deps: {
   }
 
   /** Replace existing suggestions for waiting rows with the same description. */
-  async function resuggestLike(ids: number[], ai?: Pick<JevClient, "judge">): Promise<number> {
-    const database = ctx.db
-    while (state.suggesting) {
-      await suggestionsFinished
-      if (ctx.db !== database) return 0
-    }
-    if (!database || ctx.db !== database) return 0
-    const selected = new Set(ids)
-    const key = (t: Transaction) => t.description.trim().toLowerCase()
-    const descriptions = new Set(transactions().filter((t) => selected.has(t.id)).map(key))
-    const targets = transactions().filter((t) => !selected.has(t.id) && descriptions.has(key(t)) && isOrdinaryFlow(t) && isUncategorised(t) && state.suggestions[t.id]).map((t) => t.id)
-    if (!targets.length) return 0
-    return suggestCategories(targets, ai, { replace: true })
+  function resuggestLike(ids: number[], ai?: Pick<JevClient, "judge">): Promise<number> {
+    const session = ctx.session()
+    return lane.whenIdle(() => {
+      if (!ctx.isCurrent(session)) return 0
+      const selected = new Set(ids)
+      const key = (t: Transaction) => t.description.trim().toLowerCase()
+      const descriptions = new Set(transactions().filter((t) => selected.has(t.id)).map(key))
+      const targets = transactions().filter((t) => !selected.has(t.id) && descriptions.has(key(t)) && isOrdinaryFlow(t) && isUncategorised(t) && state.suggestions[t.id]).map((t) => t.id)
+      return targets.length ? suggestCategories(targets, ai, { replace: true }) : 0
+    })
   }
 
   /**
@@ -151,33 +153,32 @@ export function createSuggestions(ctx: CoreContext, deps: {
    * without knowing what they bought, whenever that was. Returns how many
    * were asked again.
    */
-  async function recordPurchases(lookups: PurchaseLookup[], ai?: Pick<JevClient, "judge">): Promise<number> {
-    const database = ctx.db
-    if (!database) return 0
+  async function recordPurchases(lookups: PurchaseLookup[], ai?: Pick<JevClient, "judge">, sessionId?: number): Promise<number> {
+    if (!ctx.db) return 0
+    // Looked up for the rows of another database (demo mode came on meanwhile).
+    if (sessionId != null && sessionId !== state.session) throw new Error("The database changed while purchases were looked up; nothing was saved")
+    const session = ctx.session()
     if (lookups.length) mutate((db) => savePurchaseLookups(db, lookups))
     if (!ai && !hasJev()) return 0
-    while (state.suggesting) {
-      await suggestionsFinished
-      if (ctx.db !== database) return 0
-    }
-    const targets = transactions().filter((t) => t.bought?.length && isOrdinaryFlow(t) && isUncategorised(t) && state.suggestions[t.id] && !state.suggestions[t.id]!.knewBought).map((t) => t.id)
-    return targets.length ? suggestCategories(targets, ai, { replace: true }) : 0
+    return lane.whenIdle(() => {
+      if (!ctx.isCurrent(session)) return 0
+      const targets = transactions().filter((t) => t.bought?.length && isOrdinaryFlow(t) && isUncategorised(t) && state.suggestions[t.id] && !state.suggestions[t.id]!.knewBought).map((t) => t.id)
+      return targets.length ? suggestCategories(targets, ai, { replace: true }) : 0
+    })
   }
 
   /** Save a merchant's note and replace its waiting rows' existing suggestions. */
-  async function setMerchantNote(description: string, note: string, ai?: Pick<JevClient, "judge">): Promise<number> {
-    const database = ctx.db
-    while (state.suggesting) {
-      await suggestionsFinished
-      if (ctx.db !== database) return 0
-    }
-    if (!database || ctx.db !== database) return 0
-    mutate((db) => saveMerchantNote(db, description, note))
-    if (!ai && !hasJev()) return 0
-    const key = merchantKey(description)
-    const targets = transactions().filter((t) => merchantKey(t.description) === key && isOrdinaryFlow(t) && isUncategorised(t) && state.suggestions[t.id]).map((t) => t.id)
-    if (!targets.length) return 0
-    return suggestCategories(targets, ai, { replace: true })
+  function setMerchantNote(description: string, note: string, ai?: Pick<JevClient, "judge">): Promise<number> {
+    const session = ctx.session()
+    // Saved once the running round is done: it reads the notes it started with.
+    return lane.whenIdle(() => {
+      if (!ctx.isCurrent(session)) return 0
+      mutate((db) => saveMerchantNote(db, description, note))
+      if (!ai && !hasJev()) return 0
+      const key = merchantKey(description)
+      const targets = transactions().filter((t) => merchantKey(t.description) === key && isOrdinaryFlow(t) && isUncategorised(t) && state.suggestions[t.id]).map((t) => t.id)
+      return targets.length ? suggestCategories(targets, ai, { replace: true }) : 0
+    })
   }
 
   /** Have Jev judge `ids` (in that order) for an `ask:` term, `onJudged`
@@ -238,5 +239,5 @@ export function createSuggestions(ctx: CoreContext, deps: {
     })
   }
 
-  return { suggestCategories, resuggestLike, setMerchantNote, recordPurchases, judgeAsk, acceptSuggestions, dismissSuggestions }
+  return { suggestCategories, askAgain, resuggestLike, setMerchantNote, recordPurchases, judgeAsk, acceptSuggestions, dismissSuggestions }
 }
