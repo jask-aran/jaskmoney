@@ -235,6 +235,11 @@ test("drawn: the title in the brand's pink, the button in pink and bold; the dem
   const button = spans().find((s) => s.text === "Next")!
   expect(button.fg.toInts()).toEqual(RGBA.fromHex(tone.key).toInts())
   expect(button.attributes & 1).toBe(1)
+  // The tour opens on Charts: the Overview's own pane, its first view.
+  expect(t.captureCharFrame()).toContain("Spending · Cumulative")
+  // Then Filter: the Manager's own table.
+  press("right")
+  await t.renderOnce()
   expect(t.captureCharFrame()).toMatch(/Date\s+Amount\s+Description\s+Category/)
   // A few seconds in, the filter is typed and the table counts what it keeps.
   await new Promise((resolve) => setTimeout(resolve, 1600))

@@ -4,7 +4,8 @@ import { applyTop, evalFilter, filterExprString, liveFilter, type FilterNames } 
 import { isSpending } from "../domain/moneyRules"
 import { ACCEPT_ALL_AT } from "../domain/questions"
 import { editText, type TextField, type TextKey } from "../domain/textField"
-import type { Account, Category, Transaction } from "../domain/types"
+import type { Account, BoughtItem, Category, Transaction } from "../domain/types"
+import { CHART_VIEWS } from "./uiStore"
 
 /**
  * The setup's tour (state/welcome's "tour" step), pure: the made-up world
@@ -21,10 +22,10 @@ import type { Account, Category, Transaction } from "../domain/types"
  * the app's own Transactions pane, filter engine and charts.
  */
 export const DEMOS = [
+  { id: "chart", name: "Charts", caption: [["h/l", "the Overview's views: spending, cash flow, balances, savers,"], ["", "the calendar and your subscriptions"]] },
   { id: "filter", name: "Filter", caption: [["/", "filters as you type: words, amt:, cat:, date:, combined"]] },
-  { id: "ask", name: "Smart search", caption: [["?", "asks in words; Jev turns them into a filter you can read and edit"]] },
-  { id: "suggest", name: "Suggestions", caption: [["i", "shows rows without a category, each with a suggestion"], ["y", "accepts it"]] },
-  { id: "chart", name: "Overview", caption: [["h/l", "switch the chart's view"]] },
+  { id: "ask", name: "Smart search", caption: [["?", "asks in words; Jev writes the filter, yours to read and edit"]] },
+  { id: "suggest", name: "Suggestions", caption: [["✉", "Details: what Amazon and eBay rows bought, from your order emails"], ["◆", "Jev suggests each category from that, the merchant and the amount"]] },
 ] as const
 
 export const DEMO_COUNT = DEMOS.length
@@ -41,6 +42,8 @@ export interface DemoWorld {
   accounts: Account[]
   /** What cat:, acc: and tag: values are found among, as the store's. */
   names: FilterNames
+  /** The store's categories, the world's ids where names match. */
+  categories: Category[]
   today: string
 }
 
@@ -83,7 +86,7 @@ export function demoWorld(categories: Category[]): DemoWorld {
     })
     .sort((a, b) => b.dateISO.localeCompare(a.dateISO) || b.id - a.id)
   const names: FilterNames = { cat: [...new Set(rows.map((r) => r.categoryName).filter(Boolean))], tag: [], acc: accountList.map((a) => a.name) }
-  const world = { rows, spending: rows.filter(isSpending), accounts: accountList, names, today }
+  const world = { rows, spending: rows.filter(isSpending), accounts: accountList, names, categories, today }
   cached = { key, world }
   return world
 }
@@ -175,15 +178,39 @@ export interface Waiting {
   names: Record<number, string>
 }
 
-/** Suggestions: eight recent rows with their categories taken off, each
- * with a suggestion (the category it had), surest first. */
+/** Made-up orders (demo mode has no Amazon or eBay): what each bought,
+ * as its order email says, and the categories it belongs in, likeliest
+ * first (the first one the store has is used). */
+const ORDERS: Array<{ description: string; bought: BoughtItem[]; categories: string[] }> = [
+  { description: "Amazon AU", bought: [{ name: "Philips Hue starter kit, 3 bulbs and bridge", quantity: 1, price: 89.95 }], categories: ["Technology", "Homeware & Appliances", "Shopping"] },
+  { description: "eBay", bought: [{ name: "USB-C cable, braided, 2 m", quantity: 2, price: 12.2 }], categories: ["Technology", "Shopping"] },
+  { description: "Amazon AU", bought: [{ name: "Vitamin D3 1000 IU, 250 tablets", quantity: 1, price: 18.99 }, { name: "Fish oil 1000 mg, 400 capsules", quantity: 1, price: 18.99 }], categories: ["Health & Medical", "Health", "Pharmacy", "Shopping"] },
+]
+
+/** Suggestions: eight recent rows with their categories taken off, three
+ * of them orders whose emails say what they bought (Details), each with a
+ * suggestion, surest first. */
 export function waiting(world: DemoWorld): Waiting {
-  const picks = world.spending.filter((r) => r.categoryId != null && r.categoryId > 0 && r.amount < 0).slice(0, 8)
-  const confidences = [0.97, 0.93, 0.9, 0.84, 0.77, 0.68, 0.61, 0.55]
+  const byName = new Map(world.categories.map((c) => [c.name.toLowerCase(), c]))
+  const picks = world.spending.filter((r) => r.categoryId != null && r.categoryId > 0 && r.amount < 0).slice(0, 5)
+  const template = picks[0]
+  const orders = template ? ORDERS.flatMap((o, i): Array<{ row: Transaction; category: Category }> => {
+    const category = o.categories.map((n) => byName.get(n.toLowerCase())).find(Boolean)
+    if (!category) return []
+    const amount = -o.bought.reduce((sum, b) => sum + (b.price ?? 0) * b.quantity, 0)
+    return [{ row: { ...template, id: 900001 + i, description: o.description, amount: Math.round(amount * 100) / 100, bought: o.bought, message: "", categoryId: category.id, categoryName: category.name, categoryColor: category.color }, category }]
+  }) : []
+  // Orders first and third and fifth: the emails are the point.
+  const mixed: Transaction[] = []
+  for (let i = 0; mixed.length < picks.length + orders.length; i++) {
+    if (orders[i]) mixed.push(orders[i]!.row)
+    if (picks[i]) mixed.push(picks[i]!)
+  }
+  const confidences = [0.96, 0.93, 0.91, 0.84, 0.77, 0.68, 0.61, 0.55]
   return {
-    rows: picks.map((r) => ({ ...r, categoryId: null, categoryName: "", categoryColor: "", categoryGroup: "" })),
-    suggestions: Object.fromEntries(picks.map((r, i) => [r.id, { categoryId: r.categoryId!, confidence: confidences[i] ?? 0.5, source: i % 3 === 0 ? "history" : "jev" }])),
-    names: Object.fromEntries(picks.map((r) => [r.id, r.categoryName])),
+    rows: mixed.map((r) => ({ ...r, categoryId: null, categoryName: "", categoryColor: "", categoryGroup: "" })),
+    suggestions: Object.fromEntries(mixed.map((r, i) => [r.id, { categoryId: r.categoryId!, confidence: confidences[i] ?? 0.5, source: r.bought?.length || i % 3 !== 1 ? "jev" : "history" }])),
+    names: Object.fromEntries(mixed.map((r) => [r.id, r.categoryName])),
   }
 }
 
@@ -211,15 +238,12 @@ export function suggestAt(ms: number, world: DemoWorld): { state: DemoTry; press
   return { state, pressed }
 }
 
-/** Overview: the views it shows, in turn. */
-export const TOUR_CHART_VIEWS = [
-  { view: "Cumulative", group: "spending" }, { view: "Daily", group: "spending" }, { view: "Weekly", group: "spending" },
-  { view: "Net position", group: "balances" }, { view: "Cash flow", group: "balances" },
-] as const
-const VIEW_MS = 3400
+/** Charts: the Overview's views (CHART_VIEWS), in turn, each long enough
+ * to draw in and be looked at. */
+const VIEW_MS = 2200
 
 export function chartViewAt(ms: number): number {
-  return Math.floor(ms / VIEW_MS) % TOUR_CHART_VIEWS.length
+  return Math.floor(ms / VIEW_MS) % CHART_VIEWS.length
 }
 
 // ---- Trying a demo yourself.
@@ -232,7 +256,7 @@ export interface DemoTry {
   /** Suggestions: accepted (gone from the list) and dismissed, by row id. */
   accepted: number[]
   dismissed: number[]
-  /** Overview: the chart's view (TOUR_CHART_VIEWS). */
+  /** Charts: the view (CHART_VIEWS). */
   view: number
   /** What the last key did. */
   note: string | null
@@ -302,7 +326,7 @@ export function tryKey(demo: number, s: DemoTry, key: TryKey, world: DemoWorld):
   if (id === "chart") {
     const by = name === "left" || name === "h" ? -1 : name === "right" || name === "l" ? 1 : 0
     if (!by) return null
-    return { ...s, view: (s.view + by + TOUR_CHART_VIEWS.length) % TOUR_CHART_VIEWS.length }
+    return { ...s, view: (s.view + by + CHART_VIEWS.length) % CHART_VIEWS.length }
   }
   return null
 }

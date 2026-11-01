@@ -1,5 +1,5 @@
 import { useTerminalDimensions } from "@opentui/solid"
-import { For, Show, createEffect, createMemo, createSignal, onCleanup, untrack } from "solid-js"
+import { For, Index, Show, createEffect, createMemo, createSignal, onCleanup, untrack } from "solid-js"
 import { ui } from "../../state/uiStore"
 import { data } from "../../state/dataStore"
 import { ink, theme, tone } from "../../theme"
@@ -9,6 +9,8 @@ import { AI_USES_TEXT, EMAIL_USES, UP_USES, type IntegrationUse } from "../../st
 import { welcomeAct, welcomeContext, welcomeJump } from "../../app/welcome"
 import { onPointer } from "../../app/pointer"
 import { StyledLine, type StyledSpan } from "../primitives/StyledLine"
+import { SPINNER } from "../primitives/Spinner"
+import { BACKDROP_LEVELS, backdropLines } from "./backdrop"
 import { DEMOS, DemoReel } from "./Demos"
 
 /**
@@ -24,7 +26,6 @@ import { DEMOS, DemoReel } from "./Demos"
  * one clock while the setup is open; nothing waits on it to be readable.
  */
 const FRAME_MS = 80
-const SPINNER = "⠋⠙⠹⠸⠼⠴⠦⠧⠇⠏"
 
 /** The title, two rows of block letters. */
 const LETTERS: Record<string, [string, string]> = {
@@ -246,15 +247,29 @@ function WelcomeScreen() {
     welcomeAct(ui, data, action)
   })
 
-  // ---- The title, with a band of light that sweeps across it now and then.
+  // ---- The title: its gradient drifts, and every few seconds a slanted
+  // sheen sweeps across it, a white-hot core in a wide glow.
+  const SHEEN_EVERY = 40 // frames: a sweep, then a rest
+  const SHEEN_FRAMES = 18
   const titleSpans = (r: 0 | 1): StyledSpan[] => {
     const text = TITLE[r], n = text.length
-    const sweep = ((tick() % 60) / 30) * (n + 16) - 8
+    const f = tick() % SHEEN_EVERY
+    // The lower row trails: the sheen leans.
+    const sweep = f < SHEEN_FRAMES ? (f / SHEEN_FRAMES) * (n + 24) - 12 - r * 2 : -99
+    const drift = (Math.sin(tick() / 25) + 1) / 2
     return [...text].map((ch, x) => {
-      const glow = Math.max(0, 1 - Math.abs(x - sweep) / 5)
-      return { text: ch, fg: mix(mix(tone.key, tone.focus, x / n), ink.strong, glow * 0.7), bold: true }
+      const d = Math.abs(x - sweep)
+      const core = Math.max(0, 1 - d / 2)
+      const glow = Math.max(0, 1 - d / 9)
+      const base = mix(tone.key, tone.focus, Math.min(1, Math.max(0, x / n * 0.8 + drift * 0.4 - 0.1)))
+      return { text: ch, fg: mix(mix(base, tone.focus, glow * 0.6), ink.strong, Math.min(1, core * 1.2 + glow * 0.25)), bold: true }
     })
   }
+
+  // ---- The welcome page's backdrop: money marks drifting, faint, behind
+  // everything (backdrop).
+  const backdropColour = (level: number) => mix(theme.canvas, level >= BACKDROP_LEVELS - 1 ? tone.key : tone.focus, 0.06 + (level / (BACKDROP_LEVELS - 1)) * 0.38)
+  const backdrop = createMemo(() => state().step === "hello" ? backdropLines(dims().width, height(), tick() * FRAME_MS / 1000, backdropColour) : [])
 
   // ---- The rail: where you are among the steps; the way to here fills in.
   const railSpans = (): StyledSpan[] => {
@@ -279,7 +294,7 @@ function WelcomeScreen() {
     <box width={width()} flexDirection="column" flexShrink={0}>
       <For each={lines()}>{(line) => (
         <box height={1} width={width()} onMouseDown={click(line.row)}>
-          <StyledLine spans={line.spans} bg={theme.mantle} />
+          <StyledLine spans={line.spans} bg={theme.canvas} />
         </box>
       )}</For>
     </box>
@@ -287,6 +302,13 @@ function WelcomeScreen() {
 
   return (
     <box position="absolute" zIndex={15} left={0} top={0} width="100%" height={height()} backgroundColor={theme.canvas} flexDirection="column" alignItems="center" justifyContent="center">
+      <Show when={backdrop().length}>
+        <box position="absolute" left={0} top={0} width="100%" height={height()} flexDirection="column">
+          <Index each={backdrop()}>{(spans) => <StyledLine spans={spans()} bg={theme.canvas} />}</Index>
+        </box>
+      </Show>
+      {/* Over the backdrop: an absolute child paints after the flow, so the content takes a higher z. */}
+      <box zIndex={1} flexDirection="column" alignItems="center">
       <box height={2} flexDirection="column" alignItems="center">
         <StyledLine spans={titleSpans(0)} bg={theme.canvas} />
         <StyledLine spans={titleSpans(1)} bg={theme.canvas} />
@@ -304,7 +326,7 @@ function WelcomeScreen() {
         <StyledLine spans={railSpans()} bg={theme.canvas} />
       </box>
       <box height={1} />
-      <box width={cardWidth()} border borderStyle="rounded" borderColor={tone.focus} backgroundColor={theme.mantle} paddingLeft={1} paddingRight={1} flexDirection={wide() ? "row" : "column"} gap={wide() ? 3 : 1} maxHeight={height() - 6} overflow="hidden" flexShrink={0}>
+      <box width={cardWidth()} border borderStyle="rounded" borderColor={tone.focus} backgroundColor={theme.canvas} paddingLeft={1} paddingRight={1} flexDirection={wide() ? "row" : "column"} gap={wide() ? 3 : 1} maxHeight={height() - 6} overflow="hidden" flexShrink={0}>
         {column(left, leftWidth)}
         <Show when={right().length}>
           <box width={rightWidth()} flexShrink={0} flexDirection="column" border={[wide() ? "left" : "top"]} borderColor={ink.rule} paddingLeft={wide() ? 2 : 0}>
@@ -316,6 +338,7 @@ function WelcomeScreen() {
         <box height={1} />
         <DemoReel scene={state().demo} startedAt={state().demoAt} trying={state().trying} width={reelWidth()} height={reelHeight()} />
       </Show>
+      </box>
     </box>
   )
 }

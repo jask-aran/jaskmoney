@@ -1,5 +1,6 @@
 import { expect, test } from "bun:test"
 import { footerHints } from "../app/keys"
+import { CHART_VIEWS } from "./uiStore"
 import { DEFAULT_CATEGORIES } from "../db/schema"
 import { DEMOS, askAt, chartViewAt, demoFilter, demoWorld, filterAt, suggestAt, tourTopics, triable, tryFrom, tryHints, tryKey, tryRows, waiting, type TryKey } from "./tour"
 
@@ -67,7 +68,7 @@ test("trying suggestions: y accepts, x dismisses, Y accepts the sure ones; the c
   const chart = at("chart")
   const c = tryFrom(chart, 0, world)
   expect(tryKey(chart, c, k("l"), world)!.view).toBe(1)
-  expect(tryKey(chart, c, k("h"), world)!.view).toBe(4)
+  expect(tryKey(chart, c, k("h"), world)!.view).toBe(CHART_VIEWS.length - 1)
 })
 
 // The tour's keys are its own (the app's change your data), so they're

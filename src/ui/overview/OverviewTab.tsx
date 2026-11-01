@@ -20,9 +20,9 @@ import { categoryColor, ink, theme, tone } from "../../theme"
 import { dailySpendSeries, fitCategoryLines, formatMoney, formatPct, formatWholeMoney, signedWholeMoney } from "../../domain/dashboard"
 import { computePeriodFlows, computePosition, historyCovers, projectAvailable, usualDailySpend } from "../../domain/position"
 import { allocation, budgetProgress, cycleFor, cycleSpending, progressOf, type BudgetProgress } from "../../domain/budget"
-import { spendingCalendar } from "../../domain/spending"
-import { accountRole } from "../../domain/types"
-import { addDays, appNow, appToday, daysBetween } from "../../domain/days"
+import { spendingCalendar, type CalendarDay } from "../../domain/spending"
+import { accountRole, type Account, type Transaction } from "../../domain/types"
+import { addDays, appNow, appToday, daysBetween, type WeekStart } from "../../domain/days"
 import { isSpending, isUncategorised, isUnsortedIn } from "../../domain/moneyRules"
 import { chipLayout } from "./rangeChips"
 import { CUSTOM_CHIP, LOOKBACKS, PERIODS, comparisonWindows, filterByTimeframe, offsetLabel, periodOffset } from "../../domain/timeframe"
@@ -211,22 +211,17 @@ export function OverviewTab(props: { focused: SectionId }) {
   // The axis width each chart had last: the first guess next time, so a
   // chart is usually built once, not twice.
   const axisWas: [number, number] = [AXIS_GUESS, AXIS_GUESS]
+  // What the charts draw from, read lazily: a view reads only its own.
+  const chartInput: OverviewChartInput = {
+    get series() { return series() }, get today() { return today() }, get spending() { return spending() },
+    get budget() { return budget()?.budget.amount }, get names() { return periodNames() }, get weekStart() { return data.state.weekStart },
+    get accounts() { return data.state.accounts }, get transactions() { return transactions() }, get scopeIds() { return scopeIds() },
+    get zeroAxis() { return data.state.uiPrefs.zeroAxis === true }, get projection() { return projection() },
+  }
   const model = (slot: 0 | 1, index: number, height: number): ChartModel | null => {
-    const v = (CHART_VIEWS[index] ?? CHART_VIEWS[0]).view
-    // Border (2), the x-axis line (a setting) and the x labels.
-    const rows = Math.max(1, height - (baseline() ? 4 : 3))
-    const build = (axis: number): ChartModel | null => {
-      const width = Math.max(1, mainWidth() - 4 - axis)
-      if (v === "Daily" || v === "Cumulative" || v === "Weekly") return spendingChart(v, series(), width, rows, today(), spending(), budget()?.budget.amount, periodNames(), data.state.weekStart)
-      if (v === "Cash flow") return cashFlowChart(series().dates, width, rows, today(), data.state.accounts, transactions(), scopeIds(), data.state.weekStart)
-      if (v === "Calendar" || v === "Subscriptions") return null
-      return balancesChart(v, series().dates, width, rows, today(), data.state.accounts, transactions(), data.state.weekStart, data.state.uiPrefs.zeroAxis === true, v === "Available" ? projection() : [])
-    }
-    const guess = axisWas[slot]
-    const first = build(guess)
-    if (!first || first.ticks.size === 0) return first
-    axisWas[slot] = axisWidth(first.ticks)
-    return axisWas[slot] === guess ? first : build(axisWas[slot])
+    const m = overviewChartModel((CHART_VIEWS[index] ?? CHART_VIEWS[0]).view, chartInput, mainWidth() - 4, chartRows(height, baseline()), axisWas[slot])
+    if (m && m.ticks.size) axisWas[slot] = axisWidth(m.ticks)
+    return m
   }
   // Each chart follows its own view: switching one leaves the other alone.
   const topView = createMemo(() => ui.state.chartViews[0])
@@ -404,15 +399,14 @@ export function OverviewTab(props: { focused: SectionId }) {
     const chart = () => (p.pane === 0 ? topModel() : bottomModel())
     return (
       <box ref={regionRef(p.pane === 0 ? "ov.chart" : "ov.chart2", "overview")} width={mainWidth()} height={p.height} flexShrink={0} onMouseDown={panePointer(p.pane === 0 ? "ov.chart" : "ov.chart2")}>
-      <ChartCard
-        title={view().group}
-        views={CHART_VIEWS}
-        current={index()}
+      <OverviewChartCard
+        index={index()}
         model={chart()}
-        legend={view().view === "Subscriptions" ? subscriptionsLegend(subs(), dueBeforePayday()) : calendarLegend(calendar(), today())}
-        fallback={view().view === "Subscriptions"
-          ? <SubscriptionsView list={subs()} width={mainWidth() - 4} rows={p.height - 2} today={today()} payday={payday()} />
-          : <CalendarView weeks={calendar()} width={mainWidth() - 4} rows={p.height - 2} today={today()} />}
+        calendar={calendar()}
+        subs={subs()}
+        today={today()}
+        payday={payday()}
+        dueBeforePayday={dueBeforePayday()}
         width={mainWidth()}
         height={p.height}
         focused={props.focused === (p.pane === 0 ? "ov.chart" : "ov.chart2")}
@@ -540,6 +534,84 @@ export function OverviewTab(props: { focused: SectionId }) {
 
 const PERIOD_UNIT: Record<string, string> = { cycle: "cycle", month: "month", qtr: "quarter", half: "half", fy: "FY", year: "year" }
 
+
+/** What the Overview's chart pane draws from: the range's daily series and
+ * rows, the accounts and the scope. Read lazily (getters): a view reads
+ * only what it draws. The Overview's own; the setup's tour builds one
+ * from demo rows (ui/welcome/Demos). */
+export interface OverviewChartInput {
+  series: { dates: string[]; values: number[] }
+  today: string
+  spending: Transaction[]
+  budget?: number
+  names: PeriodNames
+  weekStart: WeekStart
+  accounts: Account[]
+  transactions: Transaction[]
+  scopeIds: ReadonlySet<number>
+  zeroAxis: boolean
+  projection: ReadonlyArray<{ dateISO: string; value: number }>
+}
+
+/** A chart pane's plot rows: its height less the border (2), the x labels
+ * and the x-axis line when it's drawn. */
+export const chartRows = (height: number, baseline: boolean) => Math.max(1, height - (baseline ? 4 : 3))
+
+/** The model for `view` (null for Calendar and Subscriptions, which aren't
+ * charts), `width` inside the card. The y-axis is as wide as its labels:
+ * built once with `guess` as its width, again if the labels need another. */
+export function overviewChartModel(view: string, input: OverviewChartInput, width: number, rows: number, guess = AXIS_GUESS): ChartModel | null {
+  const build = (axis: number): ChartModel | null => {
+    const w = Math.max(1, width - axis)
+    if (view === "Daily" || view === "Cumulative" || view === "Weekly") return spendingChart(view, input.series, w, rows, input.today, input.spending, input.budget, input.names, input.weekStart)
+    if (view === "Cash flow") return cashFlowChart(input.series.dates, w, rows, input.today, input.accounts, input.transactions, input.scopeIds, input.weekStart)
+    if (view === "Calendar" || view === "Subscriptions") return null
+    return balancesChart(view as "Net position" | "Available" | "Savers", input.series.dates, w, rows, input.today, input.accounts, input.transactions, input.weekStart, input.zeroAxis, view === "Available" ? input.projection : [])
+  }
+  const first = build(guess)
+  if (!first || first.ticks.size === 0) return first
+  const axis = axisWidth(first.ticks)
+  return axis === guess ? first : build(axis)
+}
+
+/** The Overview's chart pane: view `index` of CHART_VIEWS, titled by its
+ * group, the views in its border; Calendar and Subscriptions drawn in
+ * place of a chart. The Overview's two, and the tour's. */
+export function OverviewChartCard(props: {
+  index: number
+  model: ChartModel | null
+  calendar: Array<Array<CalendarDay | null>>
+  subs: Subscription[]
+  today: string
+  payday: string
+  dueBeforePayday: number
+  width: number
+  height: number
+  focused?: boolean
+  baseline?: boolean
+  revealKey?: string
+  revealMs?: number
+}) {
+  const view = () => CHART_VIEWS[props.index] ?? CHART_VIEWS[0]
+  return (
+    <ChartCard
+      title={view().group}
+      views={CHART_VIEWS}
+      current={props.index}
+      model={props.model}
+      legend={view().view === "Subscriptions" ? subscriptionsLegend(props.subs, props.dueBeforePayday) : calendarLegend(props.calendar, props.today)}
+      fallback={view().view === "Subscriptions"
+        ? <SubscriptionsView list={props.subs} width={props.width - 4} rows={props.height - 2} today={props.today} payday={props.payday} />
+        : <CalendarView weeks={props.calendar} width={props.width - 4} rows={props.height - 2} today={props.today} />}
+      width={props.width}
+      height={props.height}
+      focused={props.focused}
+      baseline={props.baseline}
+      revealKey={props.revealKey}
+      revealMs={props.revealMs}
+    />
+  )
+}
 
 /** The Subscriptions view's legend: how many, what they cost a month and
  * a year, what's due before payday, and what changed. */

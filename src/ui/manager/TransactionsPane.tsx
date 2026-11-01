@@ -5,6 +5,7 @@ import { ink, tone } from "../../theme"
 import { S } from "../primitives/S"
 import { SectionCard } from "../primitives/SectionCard"
 import { TextInput } from "../primitives/TextInput"
+import { Spinner } from "../primitives/Spinner"
 import { muted } from "../primitives/spans"
 import { truncate } from "../text"
 
@@ -113,7 +114,7 @@ function FilterBar(props: { fb: FilterBarView; width: number }) {
         <S fg={tone.key} bold>?</S>
         <S fg={ink.figure}>{" "}</S>
         <TextInput field={{ value: props.fb.raw.trimStart().slice(1), caret: Math.max(0, props.fb.caret - 1) }} focused={!props.fb.writing} caretColor={tone.key} />
-        {props.fb.writing ? <S fg={tone.ai}>{"  ◆ Jev is writing the filter…"}</S> : null}
+        {props.fb.writing ? <><S fg={tone.ai}>{"  "}</S><Spinner fg={tone.ai} /><S fg={tone.ai}>{" Jev is writing the filter"}</S></> : null}
       </text>
     }>
       <Show when={props.fb.question} fallback={
