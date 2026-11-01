@@ -5,15 +5,23 @@ import type { ChartLabelMode } from "./motion"
 import { StyledLine, type StyledSpan } from "../primitives/StyledLine"
 import { ink } from "../../theme"
 import type { Run } from "./lineChart"
+import { textCells } from "./runs"
 import type { Span } from "../primitives/spans"
 
-/** The y-axis width for `ticks`: the longest label, a space and the tick. */
+/** Columns every y-axis keeps for its labels: room for the money labels
+ * charts usually have ("$0", "$500", "$10k", "-$1.5k"), so the axis, and
+ * the gridlines after it, stay put from view to view and range to range.
+ * Only a longer label widens it. */
+const AXIS_LABEL = 6
+
+/** The y-axis width for `ticks`: the longest label (at least AXIS_LABEL),
+ * a space and the tick. */
 export function axisWidth(ticks: Map<number, string>): number {
-  return Math.max(0, ...[...ticks.values()].map((t) => t.length)) + 2
+  return Math.max(AXIS_LABEL, ...[...ticks.values()].map((t) => t.length)) + 2
 }
 
-/** A first guess at the axis width, before the ticks are known. */
-export const AXIS_GUESS = 6
+/** The axis width before the ticks are known: usually the right one. */
+export const AXIS_GUESS = AXIS_LABEL + 2
 
 export interface ChartModel {
   rows: Run[][]
@@ -39,9 +47,9 @@ export function xAxisLine(rows: Run[][]): string {
   const gridlines = new Set<number>()
   for (const runs of rows) {
     let col = 0
-    for (const run of runs) for (const ch of run.text) { if (ch === "│") gridlines.add(col); col++ }
+    for (const run of runs) for (const ch of textCells(run.text)) { if (ch === "│") gridlines.add(col); col++ }
   }
-  const width = rows[0]?.reduce((n, run) => n + [...run.text].length, 0) ?? 0
+  const width = rows[0]?.reduce((n, run) => n + textCells(run.text).length, 0) ?? 0
   return "└" + Array.from({ length: width }, (_, c) => (gridlines.has(c) ? "┴" : "─")).join("")
 }
 

@@ -43,3 +43,27 @@ test("a label shows a beat after the line reaches it, whole: labels come in the 
   // Never a part of one: it shows whole.
   expect(at(10)).not.toMatch(/To|General/)
 })
+
+test("a label with an emoji keeps its row's width while hidden: the gridlines after it stay in their columns", async () => {
+  const { balancesChart } = await import("../overview/periodCharts")
+  const { account } = await import("../../testing/fixtures")
+  const { addDays } = await import("../../domain/days")
+  const dates = Array.from({ length: 90 }, (_, i) => addDays("2026-09-01", i))
+  const savers = ["💰 General", "🚨 Emergency", "🏖️ Holiday"].map((name, i) => account({ id: i + 1, name, externalKind: "SAVER", balance: [5000, 1000, 3000][i]! }))
+  const model = balancesChart("Savers", dates, 100, 15, "2026-10-10", savers, [])
+  const width = (runs: Run[]) => runs.reduce((n, run) => n + Bun.stringWidth(run.text), 0)
+  const labelled = model.rows.filter((runs) => runs.some((run) => /\p{Extended_Pictographic}/u.test(run.text)))
+  expect(labelled.length).toBeGreaterThan(0)
+  const frame = gridColumns(model.rows)
+  for (const p of [0.3, 0.6, 0.9, 1]) {
+    model.rows.forEach((runs, i) => {
+      const shown = revealRuns(runs, i, model.rows.length, p, frame)
+      expect(width(shown)).toBe(100)
+      // Every gridline column of the full row is still a gridline or the line's dots.
+      let col = 0
+      const at = new Map<number, string>()
+      for (const run of shown) for (const ch of [...new Intl.Segmenter().segment(run.text)].map((s) => s.segment)) { at.set(col, ch); col += Bun.stringWidth(ch) }
+      for (const [c, g] of frame) if (p < 0.85 && at.get(c) !== undefined && /[⠀-⣿]/.test(at.get(c)!) === false) expect(at.get(c)).toBe(g.text)
+    })
+  }
+})

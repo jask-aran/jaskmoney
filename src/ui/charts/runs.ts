@@ -1,5 +1,17 @@
 import type { Run } from "./lineChart"
 
+const graphemes = new Intl.Segmenter()
+
+/** `text` as the terminal cells it takes: a wide character (an emoji) is
+ * itself then "" for its second cell, so a row's cells line up with its
+ * columns ("💰" is one code point but two columns; "🏖️" two code points,
+ * also two columns). Plain text (braille, box drawing, ASCII) is a cell a
+ * character, without segmenting. */
+export function textCells(text: string): string[] {
+  if (!/[\ud800-\udfff\u200d\ufe0f]/.test(text) && Bun.stringWidth(text) === text.length) return text.split("")
+  return [...graphemes.segment(text)].flatMap(({ segment }) => [segment, ...Array<string>(Math.max(0, Bun.stringWidth(segment) - 1)).fill("")])
+}
+
 /** Append text, merging only adjacent runs with the same ink. */
 export function appendRun(runs: Run[], text: string, ink: string | null): void {
   const last = runs[runs.length - 1]
@@ -22,7 +34,7 @@ export function cellsToRuns(cells: Run[]): Run[] {
 export function cellGrid(rows: Run[][]) {
   const cells: Array<Run[] | undefined> = new Array(rows.length)
   const written = new Uint8Array(rows.length)
-  const row = (r: number): Run[] => (cells[r] ??= rows[r]!.flatMap((run) => [...run.text].map((text) => ({ text, ink: run.ink }))))
+  const row = (r: number): Run[] => (cells[r] ??= rows[r]!.flatMap((run) => textCells(run.text).map((text) => ({ text, ink: run.ink }))))
   return {
     height: rows.length,
     row,

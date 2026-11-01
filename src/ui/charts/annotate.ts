@@ -19,7 +19,7 @@
  * two.
  */
 import type { Run } from "./lineChart"
-import { cellGrid } from "./runs"
+import { cellGrid, textCells } from "./runs"
 
 export interface ChartLabel {
   /** The cell the label describes (row top first). */
@@ -47,11 +47,9 @@ const shorts = (label: ChartLabel) => (label.short === undefined ? [] : Array.is
 /** Cells a label may cover: blank, gridlines and rules. */
 const FREE = new Set([" ", "│", "┈"])
 
-const graphemes = new Intl.Segmenter()
 /** A label's cells: an emoji's second cell is empty text, so the row keeps
  * its width. */
-const labelCells = (text: string) =>
-  [...graphemes.segment(text)].flatMap(({ segment }) => [segment, ...Array<string>(Math.max(0, Bun.stringWidth(segment) - 1)).fill("")])
+const labelCells = textCells
 
 export function annotate(rows: Run[][], labels: ChartLabel[]): Run[][] {
   if (!labels.length || !rows.length) return rows

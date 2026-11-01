@@ -1,5 +1,6 @@
 import type { Run } from "./lineChart"
 import type { ChartLabelMode } from "./motion"
+import { textCells } from "./runs"
 
 /**
  * A chart drawing itself in: what's shown of a plot row `p` of the way
@@ -15,14 +16,17 @@ import type { ChartLabelMode } from "./motion"
  */
 export function revealRuns(runs: Run[], row: number, rows: number, p: number, frame?: ReadonlyMap<number, Run>, bars = false, labels: ChartLabelMode = "together"): Run[] {
   if (p >= 1) return runs
+  // By terminal cell: an emoji's second cell is "" (textCells), so a hidden
+  // emoji leaves two blanks and the row keeps its width.
   const cells: Array<{ ch: string; ink: Run["ink"] }> = []
-  for (const run of runs) for (const ch of run.text) cells.push({ ch, ink: run.ink })
+  for (const run of runs) for (const ch of textCells(run.text)) cells.push({ ch, ink: run.ink })
   const width = cells.length
   const edge = p * width
   // Rows from the bottom that bars have reached.
   const risen = row >= rows - Math.ceil(p * rows)
   const kind = (ch: string): "space" | "line" | "bar" | "frame" | "word" => {
     if (ch === " ") return "space"
+    if (ch === "") return "word"
     const code = ch.codePointAt(0)!
     if (code >= 0x2800 && code <= 0x28ff) return "line"
     if (code >= 0x2580 && code <= 0x259f) return "bar"
@@ -53,7 +57,7 @@ export function revealRuns(runs: Run[], row: number, rows: number, p: number, fr
     }
     // Hidden: what's beneath it, the column's gridline if it has one.
     const under = frame?.get(col)
-    if (shown) put(ch, ink)
+    if (shown) { if (ch) put(ch, ink) }
     else if (under) put(under.text, under.ink)
     else put(" ", ink)
   })
@@ -74,7 +78,7 @@ export function gridColumns(rows: Run[][]): Map<number, Run> {
   const found = new Map<number, Run>()
   for (const runs of rows) {
     let col = 0
-    for (const run of runs) for (const ch of run.text) {
+    for (const run of runs) for (const ch of textCells(run.text)) {
       if (!found.has(col) && (ch === "│" || ch === "┊" || ch === "┆" || ch === "╎")) found.set(col, { text: ch, ink: run.ink })
       col++
     }

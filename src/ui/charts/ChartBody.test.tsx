@@ -3,7 +3,7 @@ import { testRender } from "@opentui/solid"
 import { RGBA } from "@opentui/core"
 import { createStore } from "solid-js/store"
 import { ink } from "../../theme"
-import { ChartBody, type ChartModel } from "./ChartBody"
+import { ChartBody, axisWidth, type ChartModel } from "./ChartBody"
 
 const model: ChartModel = { rows: [[{ text: "⣀".repeat(16), ink: "spend" }]], ticks: new Map(), labels: "", legend: [] }
 const dots = (frame: string) => [...frame].filter((c) => c === "⣀").length
@@ -49,7 +49,7 @@ test("a chart's cells take their inks, and a draw-in leaves the gridlines in the
     }
     return undefined
   }
-  const axis = 4 // "$5" + " ┤"
+  const axis = axisWidth(lined.ticks) // "$5" padded to the axis's least label width, then " ┤"
   const whole = await testRender(() => <ChartBody model={lined} inks={inks} />, { width: 20, height: 3 })
   await whole.renderOnce()
   expect(colourAt(whole, 0, axis)).toEqual({ ch: "⣀", fg: RGBA.fromHex("#00ff00").toInts() })
@@ -69,4 +69,11 @@ test("a chart's cells take their inks, and a draw-in leaves the gridlines in the
   expect(colourAt(drawing, 1, axis + 2)).toEqual({ ch: "│", fg: RGBA.fromHex("#444444").toInts() })
   expect(colourAt(drawing, 1, axis + 4)?.ch).toBe(" ")
   drawing.renderer.destroy()
+})
+
+test("the y-axis keeps one width for the usual money labels, so gridlines stay put across views", () => {
+  const width = (...labels: string[]) => axisWidth(new Map(labels.map((l, i) => [i, l])))
+  expect(new Set([width("$0", "$5"), width("$500", "$1k"), width("$10k", "$5k"), width("-$1.5k", "$2k")]).size).toBe(1)
+  expect(width("-$120k")).toBe(width("$10k"))
+  expect(width("$1,200k")).toBeGreaterThan(width("$10k"))
 })
