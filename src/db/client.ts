@@ -220,7 +220,7 @@ export function ensureSchema(db: Db) {
       const row = db.query("SELECT version FROM schema_meta LIMIT 1").get() as { version: number } | null
       if (!row) throw new Error("schema_meta has no version; database was left untouched")
       if (row.version > SCHEMA_VERSION) {
-        throw new Error(`database schema v${row.version} is newer than OpenTUI v${SCHEMA_VERSION}`)
+        throw new Error(`this jaskmoney is older than your data (schema v${row.version}, it knows v${SCHEMA_VERSION}); nothing was changed · rebuild it: bun run build`)
       }
       for (let version = row.version + 1; version <= SCHEMA_VERSION; version++) {
         const migrate = MIGRATIONS[version]
