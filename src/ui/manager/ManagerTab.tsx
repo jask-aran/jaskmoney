@@ -90,7 +90,13 @@ export function ManagerTab(props: { focused: SectionId }) {
 
   // Merchant view: the same rows grouped, with its own cursor kept in view.
   const merchants = () => ui.state.txnView === "merchants"
-  const groups = createMemo(() => (merchants() ? sortMerchantGroups(groupByMerchant(rows()), ui.state.merchantSort, ui.state.merchantReverse) : []))
+  // Both tables stay mounted and m flips which shows: a toggle rebuilt the
+  // whole table each time (~25 ms each way). Hidden, a table's input holds
+  // its last value, so it doesn't re-render while hidden, and showing it
+  // again redraws only what changed meanwhile.
+  const groups = createMemo<ReturnType<typeof groupByMerchant>>((was) => (merchants() || was === undefined
+    ? sortMerchantGroups(groupByMerchant(rows()), ui.state.merchantSort, ui.state.merchantReverse) : was))
+  const tableRows = createMemo<ReturnType<typeof rows>>((was) => (!merchants() || was === undefined ? rows() : was))
   createEffect(() => {
     if (!merchants()) return
     const n = ui.state.managerVisible
@@ -282,7 +288,7 @@ export function ManagerTab(props: { focused: SectionId }) {
             </text>
           )}
         </Show>
-        <Show when={merchants()}>
+        <box visible={merchants()} flexGrow={1} width="100%" flexDirection="column">
           <MerchantTable
             groups={groups()}
             top={ui.state.merchantTop}
@@ -294,10 +300,10 @@ export function ManagerTab(props: { focused: SectionId }) {
             empty={data.state.filterQuery ? "No matches" : "Empty · no transactions loaded"}
             note={merchantNote}
           />
-        </Show>
-        <Show when={!merchants()}>
+        </box>
+        <box visible={!merchants()} flexGrow={1} width="100%" flexDirection="column">
         <TransactionTable
-          rows={rows()}
+          rows={tableRows()}
           top={ui.state.managerTop}
           visible={ui.state.managerVisible}
           cursor={txFocused() && ui.state.filterBar == null ? ui.state.managerCursor : null}
@@ -313,7 +319,7 @@ export function ManagerTab(props: { focused: SectionId }) {
           nearMiss={(id) => data.nearMissIds().has(id)}
           tagCandidate={data.state.tagReview ? tagCandidate : undefined}
         />
-        </Show>
+        </box>
       </SectionCard>
       </box>
       <TransactionDetail />
