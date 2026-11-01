@@ -109,12 +109,10 @@ const slotText = (k: Ticker) => `${k.name} ${price(k.price)} ${k.change >= 0 ? "
 /** Seconds of empty tape before the first ticker comes on screen, about:
  * the first ask for real prices has answered by then. */
 const LEAD_SECONDS = 1.2
-/** How quickly a tape's entrance settles (its time constant, seconds). */
-const FILL_SECONDS = 0.8
 
 /**
- * Ticker tape: every fourth row a tape of tickers streaming in from the
- * right (rushing in, then easing to its own speed), each tape at its own speed (spread by the golden ratio, so no two
+ * Ticker tape: every fourth row a tape of tickers creeping in from the
+ * right, each at its own speed (spread by the golden ratio, so no two
  * match) and starting at its own place in the list. `t` is seconds since
  * the tape began: it begins empty and fills from the right, then runs on.
  * Rises tinted up, falls tinted down. `tickers`: real prices once they've
@@ -127,12 +125,11 @@ function tickerTape(width: number, height: number, t: number, ink: BackdropInk, 
   for (let y = 1, k = 0; y < height; y += 4, k++) {
     // 2 to 11 columns a second: under half a column a frame at 30.
     const speed = 2 + ((k * 0.618034) % 1) * 9
-    // How far the tape has come in from the right edge. After its lead-in
+    // How far the tape has come in from the right edge: after its lead-in
     // (each tape's a little different, so they don't arrive together) it
-    // rushes in and eases down to its own speed: the screen fills in about
-    // two and a half seconds, with no jolt where the rush ends.
+    // creeps in at its own speed, the speed it keeps.
     const u = t - (LEAD_SECONDS + hash(k * 7 + 3) * 0.8)
-    const head = u < 0 ? -1 : Math.floor(u * speed + width * (1 - Math.exp(-u / FILL_SECONDS)))
+    const head = u < 0 ? -1 : Math.floor(u * speed)
     const first = (k * 5) % list.length
     bands.set(y, (x) => {
       // The tape's position under column x: 0 is its first character.
