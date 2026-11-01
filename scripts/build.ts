@@ -16,6 +16,9 @@ const result = await Bun.build({
   // Solid's browser build: its server build has no reactivity.
   conditions: ["browser"],
   plugins: [solidPlugin],
+  // Production: without it, Bun.build resolves Solid's development build
+  // (dist/dev.js, with its checks and warnings), as `bun run` doesn't.
+  define: { "process.env.NODE_ENV": '"production"' },
   minify: true,
   // Precompiled to bytecode, as opencode ships: nothing is parsed at start
   // (first frame ~540 → ~400 ms; the binary grows ~40 MB).
