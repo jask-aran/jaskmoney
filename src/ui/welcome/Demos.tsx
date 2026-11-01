@@ -10,7 +10,7 @@ import { StyledLine, type StyledSpan } from "../primitives/StyledLine"
 import { TransactionTable, type TableSuggestion } from "../manager/TransactionTable"
 import { ChartCard } from "../charts/ChartCard"
 import { axisWidth, AXIS_GUESS } from "../charts/ChartBody"
-import { spendingChart } from "../overview/periodCharts"
+import { balancesChart, cashFlowChart, spendingChart } from "../overview/periodCharts"
 import { demoWorld, type DemoWorld } from "./demoData"
 
 /**
@@ -113,18 +113,40 @@ export function DemoReel(props: { scene: number; width: number; height: number }
   })
   const accepted = () => Math.max(0, Math.min(waiting().rows.length, Math.floor(((ms() % 14000) - 1500) / 1300) + 1))
   const pressing = () => { const m = (ms() % 14000) - 1500; return m >= 0 && m % 1300 < 260 && accepted() <= waiting().rows.length }
-  // ---- Chart: this month's spending, its views in turn.
-  const VIEWS = [{ view: "Cumulative", group: "spending" }, { view: "Daily", group: "spending" }, { view: "Weekly", group: "spending" }] as const
-  const view = () => Math.floor(ms() / 2600) % VIEWS.length
+  // ---- Chart: the Overview's views in turn, each drawing itself in:
+  // last month's spending against the month before, then a year of
+  // balances and of money in and out.
+  const VIEWS = [
+    { view: "Cumulative", group: "spending" }, { view: "Daily", group: "spending" }, { view: "Weekly", group: "spending" },
+    { view: "Net position", group: "balances" }, { view: "Cash flow", group: "balances" },
+  ] as const
+  const VIEW_MS = 3400
+  // A memo: the chart is built when the view changes, not on every tick.
+  const view = createMemo(() => Math.floor(ms() / VIEW_MS) % VIEWS.length)
+  const days = (from: string, to: string) => {
+    const out: string[] = []
+    for (let d = Date.parse(`${from}T00:00:00Z`); d <= Date.parse(`${to}T00:00:00Z`); d += 86400000) out.push(new Date(d).toISOString().slice(0, 10))
+    return out
+  }
   const chart = createMemo(() => {
-    // Last month, whole: a month with every day in it.
-    const start = addMonths(`${world().today.slice(0, 7)}-01`, -1)
-    const last = new Date(Date.parse(`${world().today.slice(0, 7)}-01T00:00:00Z`) - 86400000).toISOString().slice(0, 10)
-    const today = last
-    const rows = world().spending.filter((r) => r.dateISO >= start && r.dateISO <= last)
-    const series = dailySpendSeries(rows, start, last)
+    const w = world()
+    const monthStart = `${w.today.slice(0, 7)}-01`
+    const last = new Date(Date.parse(`${monthStart}T00:00:00Z`) - 86400000).toISOString().slice(0, 10)
+    const v = VIEWS[view()]!.view
     const height = Math.max(4, props.height - 3)
-    const build = (axis: number) => spendingChart(VIEWS[view()]!.view, series, Math.max(10, props.width - 4 - axis), height, today, rows)
+    const build = (axis: number) => {
+      const width = Math.max(10, props.width - 4 - axis)
+      if (v === "Net position" || v === "Cash flow") {
+        const dates = days(addMonths(w.today, -12), w.today)
+        if (v === "Cash flow") return cashFlowChart(dates, width, height, w.today, w.accounts, w.rows, new Set(w.accounts.map((a) => a.id)))
+        return balancesChart(v, dates, width, height, w.today, w.accounts, w.rows)
+      }
+      // Last month, every day of it, against the month before (all of the
+      // history goes in, as the Overview's does).
+      const start = addMonths(monthStart, -1)
+      const series = dailySpendSeries(w.spending.filter((r) => r.dateISO >= start && r.dateISO <= last), start, last)
+      return spendingChart(v, series, width, height, last, w.spending)
+    }
     let model = build(AXIS_GUESS)
     const axis = axisWidth(model.ticks)
     if (axis !== AXIS_GUESS) model = build(axis)
@@ -182,7 +204,7 @@ export function DemoReel(props: { scene: number; width: number; height: number }
         })()}
       </Show>
       <Show when={props.scene === 3}>
-        <ChartCard title="Spending" views={VIEWS} current={view()} model={chart()} width={props.width} height={props.height} focused />
+        <ChartCard title={view() < 3 ? "Spending" : "Balances"} views={VIEWS} current={view()} model={chart()} width={props.width} height={props.height} focused revealMs={900} />
       </Show>
     </box>
   )

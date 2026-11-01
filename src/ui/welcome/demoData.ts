@@ -1,10 +1,10 @@
-import { generateDemo } from "../../domain/demo"
+import { DEMO_SEED, DEMO_YEARS, generateDemo } from "../../domain/demo"
 import { appToday } from "../../domain/days"
 import { isSpending } from "../../domain/moneyRules"
-import type { Category, Transaction } from "../../domain/types"
+import type { Account, Category, Transaction } from "../../domain/types"
 
 /**
- * The setup's demos run on a made-up year (domain/demo's built-in life,
+ * The setup's demos run on demo mode's made-up three years (domain/demo,
  * nothing of yours), turned into ordinary rows so the real table, filter
  * engine and charts show them. Categories take the store's ids where the
  * names match, so suggestions and icons resolve as they do in the app.
@@ -13,6 +13,7 @@ export interface DemoWorld {
   /** Newest first, as the Transactions table sorts. */
   rows: Transaction[]
   spending: Transaction[]
+  accounts: Account[]
   today: string
 }
 
@@ -22,10 +23,15 @@ export function demoWorld(categories: Category[]): DemoWorld {
   const today = appToday()
   const key = `${today}:${categories.length}`
   if (cached?.key === key) return cached.world
-  const demo = generateDemo({ today, years: 1, seed: 20261101 })
+  // Demo mode's own life: the same three years it shows.
+  const demo = generateDemo({ today, years: DEMO_YEARS, seed: DEMO_SEED })
   const byName = new Map(categories.map((c) => [c.name.toLowerCase(), c]))
   const demoCats = new Map(demo.categories.map((c) => [c.name, c]))
-  const accounts = new Map(demo.accounts.map((a, i) => [a.key, { id: i + 1, name: a.name }]))
+  const accountList: Account[] = demo.accounts.map((a, i) => ({
+    id: i + 1, name: a.name, type: "debit", sortOrder: i, isActive: true, source: "up",
+    externalKind: a.kind === "saver" ? "SAVER" : "TRANSACTIONAL", balance: a.balance, syncEnabled: true,
+  }))
+  const accounts = new Map(demo.accounts.map((a, i) => [a.key, accountList[i]!]))
   const rows = demo.transactions
     .filter((t) => t.status === "SETTLED")
     .map((t, i): Transaction => {
@@ -46,7 +52,7 @@ export function demoWorld(categories: Category[]): DemoWorld {
       }
     })
     .sort((a, b) => b.dateISO.localeCompare(a.dateISO) || b.id - a.id)
-  const world = { rows, spending: rows.filter(isSpending), today }
+  const world = { rows, spending: rows.filter(isSpending), accounts: accountList, today }
   cached = { key, world }
   return world
 }

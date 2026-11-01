@@ -31,7 +31,7 @@ import { smartSearch } from "../domain/smartSearch"
 import { categoryUses, merchantBreadth } from "../domain/suggest"
 import { createFileCredentialStore, signedIn } from "../ai/oauthStore"
 import { appNow, appToday } from "../domain/days"
-import { demoSource, generateDemo } from "../domain/demo"
+import { DEMO_SEED, DEMO_YEARS, demoSource, generateDemo } from "../domain/demo"
 import { seedDemoDb } from "../db/demoSeed"
 import { jaskmoneyHome } from "../storage/home"
 import { stageTagChange } from "../db/tagLinks"
@@ -64,9 +64,6 @@ export interface CallContext<P = never> {
 /** How long the range, account and chart views sit still before they're written. */
 export const CONFIG_SETTLE_MS = 400
 
-/** Demo mode makes this many years of rows, the same ones each time. */
-const DEMO_YEARS = 3
-const DEMO_SEED = 20261027
 
 const SYNC_CONFLICTING_COMMANDS = {
   enterDemo: "demo mode", leaveDemo: "leaving demo mode", factoryResetDatabase: "a reset",

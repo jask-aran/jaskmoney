@@ -1,0 +1,59 @@
+import type { Run } from "./lineChart"
+
+/**
+ * A chart drawing itself in: what's shown of a plot row `p` of the way
+ * (0–1) through. Lines (braille) trace left to right behind an edge; bars
+ * (block elements) rise from the bottom row; words in the plot (a peak's
+ * name, a total) wait for the end; the frame (gridlines, rules, axes: box
+ * drawing) is there from the start, so the chart's shape is never in
+ * doubt. Pure: the same model, a mask over it.
+ */
+export function revealRuns(runs: Run[], row: number, rows: number, p: number, frame?: ReadonlyMap<number, Run>): Run[] {
+  if (p >= 1) return runs
+  const width = runs.reduce((n, run) => n + [...run.text].length, 0)
+  const edge = p * width
+  // Rows from the bottom that bars have reached.
+  const risen = Math.ceil(p * rows)
+  const barShown = row >= rows - risen
+  const out: Run[] = []
+  const put = (ch: string, ink: Run["ink"]) => {
+    const last = out.at(-1)
+    if (last && last.ink === ink) last.text += ch
+    else out.push({ text: ch, ink })
+  }
+  let col = 0
+  for (const run of runs) {
+    for (const ch of run.text) {
+      const code = ch.codePointAt(0)!
+      let shown: boolean
+      if (ch === " " || (code >= 0x2500 && code <= 0x257f)) shown = true
+      else if (code >= 0x2800 && code <= 0x28ff) shown = col < edge
+      else if (code >= 0x2580 && code <= 0x259f) shown = barShown
+      else shown = p >= 0.9
+      // Hidden: what's beneath it, the column's gridline if it has one.
+      const under = frame?.get(col)
+      if (shown) put(ch, run.ink)
+      else if (under) put(under.text, under.ink)
+      else put(" ", run.ink)
+      col++
+    }
+  }
+  return out
+}
+
+/** Each column's gridline (its character and ink) anywhere in the plot,
+ * for revealRuns to show where a line or bar hasn't reached yet. */
+export function gridColumns(rows: Run[][]): Map<number, Run> {
+  const found = new Map<number, Run>()
+  for (const runs of rows) {
+    let col = 0
+    for (const run of runs) for (const ch of run.text) {
+      if (!found.has(col) && (ch === "│" || ch === "┊" || ch === "┆" || ch === "╎")) found.set(col, { text: ch, ink: run.ink })
+      col++
+    }
+  }
+  return found
+}
+
+/** Ease out: quick to start, settling at the end. */
+export const easeOut = (t: number) => 1 - (1 - Math.min(1, Math.max(0, t))) ** 3

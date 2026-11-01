@@ -43,6 +43,11 @@ export interface DemoSourceRow {
   cardMethod: string | null
 }
 
+/** Demo mode makes this many years of rows, the same ones each time (the
+ * first-run tour shows the same life). */
+export const DEMO_YEARS = 3
+export const DEMO_SEED = 20261027
+
 export const DEMO_HISTORY_FACTOR = 5
 /** The demo: about this many rows from the rarer merchants are left wholly
  * uncategorised, for the decision model (a suggestion run stays cheap), and

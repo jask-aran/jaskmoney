@@ -1,4 +1,6 @@
-import { Index, Show } from "solid-js"
+import { Index, Show, createEffect, createMemo, createSignal, on, onCleanup } from "solid-js"
+import { chartMotion } from "./motion"
+import { easeOut, gridColumns, revealRuns } from "./reveal"
 import { StyledLine } from "../primitives/StyledLine"
 import { ink } from "../../theme"
 import type { Run } from "./lineChart"
@@ -57,9 +59,29 @@ function axisLabels(text: string, coloured: Array<{ start: number; length: numbe
 }
 
 /** A y-axis, the plot rows, the x-axis line (with `baseline`), then the x
- * labels. `inks` maps each run's ink to a colour. */
-export function ChartBody(props: { model: ChartModel; inks: Record<string, string>; baseline?: boolean }) {
+ * labels. `inks` maps each run's ink to a colour. A new `revealKey` (a
+ * view's name) draws the chart in over `revealMs` (chartMotion's by
+ * default; reveal says how); new data under the same key just shows. */
+export function ChartBody(props: { model: ChartModel; inks: Record<string, string>; baseline?: boolean; revealKey?: string; revealMs?: number }) {
   const axis = () => axisWidth(props.model.ticks)
+  const [shown, setShown] = createSignal(1)
+  let timer: ReturnType<typeof setInterval> | undefined
+  createEffect(on(() => props.revealKey, (key) => {
+    clearInterval(timer)
+    const ms = props.revealMs ?? chartMotion.ms
+    if (key === undefined || ms <= 0) { setShown(1); return }
+    const start = performance.now()
+    setShown(0)
+    // About a frame apart (OpenTUI draws at most 60 a second).
+    timer = setInterval(() => {
+      const t = (performance.now() - start) / ms
+      setShown(easeOut(t))
+      if (t >= 1) clearInterval(timer)
+    }, 16)
+  }))
+  onCleanup(() => clearInterval(timer))
+  // The gridlines a reveal leaves standing, found once per model.
+  const frame = createMemo(() => gridColumns(props.model.rows))
   return (
     <>
       {/* One styled line per row (StyledLine), not a span per run: a year's
@@ -68,7 +90,7 @@ export function ChartBody(props: { model: ChartModel; inks: Record<string, strin
         {(runs, i) => (
           <StyledLine spans={[
             { text: (props.model.ticks.get(i) ?? "").padStart(axis() - 2) + (props.model.ticks.has(i) ? " ┤" : " │"), fg: ink.label },
-            ...runs().map((run) => ({ text: run.text, fg: run.ink ? props.model.inks?.[run.ink] ?? props.inks[run.ink] ?? ink.figure : undefined })),
+            ...(shown() < 1 ? revealRuns(runs(), i, props.model.rows.length, shown(), frame()) : runs()).map((run) => ({ text: run.text, fg: run.ink ? props.model.inks?.[run.ink] ?? props.inks[run.ink] ?? ink.figure : undefined })),
           ]} />
         )}
       </Index>

@@ -7,8 +7,12 @@ import { ui } from "./state/uiStore"
 import { data } from "./state/dataStore"
 import { watchRowLifetimes } from "./state/rowLifetimes"
 import { traceMark } from "./app/trace"
+import { APP_CHART_MS, chartMotion } from "./ui/charts/motion"
 
 traceMark("modules loaded")
+
+// Charts draw themselves in on a new view, briefly (tests leave it at 0).
+chartMotion.ms = APP_CHART_MS
 
 const stopRowLifetimes = watchRowLifetimes(ui, data)
 process.on("exit", stopRowLifetimes)
