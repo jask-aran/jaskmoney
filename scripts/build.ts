@@ -9,6 +9,15 @@
  */
 import solidPlugin from "@opentui/solid/bun-plugin"
 
+// The binary embeds the Bun that builds it, and the pinned one matters:
+// Bun 1.4 binds OpenTUI's ~300 native functions in ~1 ms where 1.3 took
+// ~100 (first frame ~410 → ~180 ms).
+const pinned = (await Bun.file(new URL("../package.json", import.meta.url)).json()).engines.bun as string
+if (Bun.version !== pinned) {
+  console.error(`Build with Bun ${pinned} (package.json engines), not ${Bun.version}.`)
+  process.exit(1)
+}
+
 const outfile = process.argv[2] ?? "dist/jaskmoney"
 const result = await Bun.build({
   entrypoints: ["./src/index.tsx"],
