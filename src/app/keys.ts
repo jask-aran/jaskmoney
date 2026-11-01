@@ -66,6 +66,7 @@ import {
 } from "../domain/timeframe"
 import { characters, editText, isPrintable, textField } from "../domain/textField"
 import { appNow, appToday } from "../domain/days"
+import { amountFromText, dayFromText } from "../domain/typedInput"
 import { drillFilter } from "../domain/drill"
 import type { CategoryLine } from "../domain/dashboard"
 import { allCategoryLines, overviewRange } from "../state/overviewRange"
@@ -577,7 +578,12 @@ function handleOverviewCustom(ui: UiStore, key: KeyEvent, data?: DataStore): voi
     return
   }
   if (name === "return" || name === "enter") {
-    const range = customRange(edit.start.value.trim(), edit.end.value.trim())
+    const today = appToday()
+    const start = dayFromText(edit.start.value, today)
+    if (start === null) { ui.setState({ customEdit: { ...edit, error: "Start must be a date: 18, 18/11 or 18/11/2025" } }); return }
+    const end = dayFromText(edit.end.value, today)
+    if (end === null) { ui.setState({ customEdit: { ...edit, error: "End must be a date: 18, 18/11 or 18/11/2025" } }); return }
+    const range = customRange(start, end)
     if (typeof range === "string") { ui.setState({ customEdit: { ...edit, error: range } }); return }
     const tf: TimeframeState = { ...ui.state.timeframe, family: "custom", custom: range }
     ui.setTimeframe(tf)
@@ -796,9 +802,9 @@ function handleSettingsEditor(ui: UiStore, key: KeyEvent, data?: DataStore): voi
           else await data?.updateSettingsTag(Number(id), tag)
         } else if (kind === "budget") {
           const option = budgetScopeOptions(ctx.accounts, ctx.categories).find((o) => o.key === draft.scopeKey)
-          const amount = Number(draft.amount.replace(/[$,\s]/g, ""))
+          const amount = amountFromText(draft.amount)
           if (!option) throw new Error("choose what the budget covers")
-          if (!draft.amount.trim() || !Number.isFinite(amount)) throw new Error("enter the budget amount")
+          if (amount === null) throw new Error("enter the budget amount")
           const cycle = cycleFromDraft(draft)
           if (typeof cycle === "string") throw new Error(cycle)
           const current = data?.state.budgetCycle

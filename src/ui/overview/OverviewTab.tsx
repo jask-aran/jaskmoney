@@ -549,7 +549,7 @@ export function OverviewTab(props: { focused: SectionId }) {
               <S fg={edit().field === 1 ? ink.figure : ink.label} bold={edit().field === 1}>{"End    "}</S>
               <TextInput field={edit().end} focused={edit().field === 1} />
             </text>
-            <text fg={edit().error ? tone.bad : ink.note} wrapMode="none">{edit().error || "YYYY-MM-DD, both days included"}</text>
+            <text fg={edit().error ? tone.bad : ink.note} wrapMode="none">{edit().error || "18, 18/11 or 18/11/2025 · both days included"}</text>
           </Modal>
         )}
       </Show>
