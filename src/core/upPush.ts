@@ -190,7 +190,7 @@ export function createUpPush(ctx: CoreContext, deps: { ruleOfferNote: (ids: numb
         return 1
       }
     // With nothing pushed, the refresh above already shows every write.
-    }, { complete: () => { if (pushes.size && ctx.isCurrent(session)) refresh() }, onSettled: () => { if (ctx.isCurrent(session)) onProgress?.(++settled, pushes.size) }, concurrency: PUSH_CONCURRENCY })
+    }, { complete: () => { if (pushes.size && ctx.isCurrent(session)) refresh(pushes.keys()) }, onSettled: () => { if (ctx.isCurrent(session)) onProgress?.(++settled, pushes.size) }, concurrency: PUSH_CONCURRENCY })
     ctx.ensureCurrent(session, "categories were sent to Up")
     return { done: local + pushed + waiting, pushed, failures, waiting, waitingError: waitingErrors[0] }
   }
@@ -248,7 +248,7 @@ export function createUpPush(ctx: CoreContext, deps: { ruleOfferNote: (ids: numb
       }
     }, { concurrency: PUSH_CONCURRENCY })
     ctx.ensureCurrent(session, "pending categories were sent to Up")
-    if (rows.length) refresh()
+    if (rows.length) refresh(rows.map((row) => row.id))
     return { pushed, rejected, waiting }
   }
 
@@ -264,7 +264,8 @@ export function createUpPush(ctx: CoreContext, deps: { ruleOfferNote: (ids: numb
       const changed = before.filter((row) => transactions().some((t) => t.id === row.id && t.categoryId !== row.categoryId))
       if (changed.length) recordUndo(`categorised ${changed.length} → ${category.name}`, async () => {
         const summary = await restoreCategories(changed)
-        ctx.mutateSession(session, "categories were restored", (db) => unrecordCategoryChoices(db, before.map((row) => ({ description: row.description, categoryId, times: 1 }))))
+        // Only the choices table changes: every row stays as it is.
+        ctx.mutateSession(session, "categories were restored", (db) => unrecordCategoryChoices(db, before.map((row) => ({ description: row.description, categoryId, times: 1 }))), [])
         return summary
       })
     })

@@ -30,7 +30,8 @@ export interface CoreContext {
   readonly state: CoreState
   set: (patch: Partial<CoreState>) => void
   mutate: <T>(write: (db: Db) => T) => T
-  mutateSession: <T>(session: Session, doing: string, write: (db: Db) => T) => T
+  /** `rows`: only these transactions changed (refresh). */
+  mutateSession: <T>(session: Session, doing: string, write: (db: Db) => T, rows?: Iterable<number>) => T
   /** Reload from the database; `rows`: only these transactions changed (core refresh). */
   refresh: (rows?: Iterable<number>) => void
   readonly db: Db | null

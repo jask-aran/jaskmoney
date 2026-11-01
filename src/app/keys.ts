@@ -2372,7 +2372,7 @@ export function hintState(ui: UiStore, data?: DataStore): HintState {
     executorWaiting: !!ui.state.executor?.waiting,
     boughtScrolls: (data?.transactions().find((t) => t.id === (ui.state.detail?.id ?? null))?.bought?.length ?? 0) > BOUGHT_LINES,
     searchHelp: { full: (ui.state.searchHelp?.full ?? false) },
-    ruleOfferCount: data && ui.state.activeTab === "manager" ? data.allRuleOffers().length : 0,
+    ruleOfferCount: data && ui.state.activeTab === "manager" ? data.ruleOfferCount() : 0,
     asks: !!data?.askCounts(),
     askLoose: data?.nearMissesShown(),
     recallQuestion: !!smartQuestionFor(ui.state, (ui.state.filterBar?.draft ?? "")),

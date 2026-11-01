@@ -55,6 +55,10 @@ export function ruleOffers(
   const only = descriptions && new Set(descriptions.map((d) => d.trim().toLowerCase()))
   const names = filterRowNames(categories, tags)
   const byKey = groupByDescription(transactions)
+  // Each row as a filter sees it, built once: per choice it was a copy of
+  // every row (choices × rows).
+  let seen: { t: Transaction; row: ReturnType<typeof names.row> }[] | null = null
+  const filterRows = () => (seen ??= transactions.map((t) => ({ t, row: names.row(t, t.categoryId, t.tagIds) })))
   const offers: RuleOffer[] = []
   for (const choice of choices) {
     if (choice.declined || choice.times < RULE_AFTER || (only && !only.has(choice.description))) continue
@@ -65,7 +69,7 @@ export function ruleOffers(
     const expr = descExpr(description)
     const { node } = parseFilterStrict(expr)
     if (!node) continue
-    const found = transactions.filter((t) => evalFilter(node, names.row(t, t.categoryId, t.tagIds)))
+    const found = filterRows().filter((r) => evalFilter(node, r.row)).map((r) => r.t)
     const categorised = found.filter((t) => !isUncategorised(t))
     const agreeing = categorised.filter((t) => t.categoryId === choice.categoryId).length
     if (!categorised.length || agreeing / categorised.length < RULE_SHARE) continue

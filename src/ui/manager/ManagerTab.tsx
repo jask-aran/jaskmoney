@@ -26,6 +26,8 @@ import { Modal } from "../primitives/Modal"
 
 /** A merchant's note for the table, or a prompt for one where it would
  * help (domain/suggest notePrompts): "always Groceries? n", "varies? n". */
+const noNote = () => null
+
 function merchantNote(merchant: string): { text: string; prompt: boolean } | null {
   const key = merchantKey(merchant)
   const note = data.state.merchantNotes[key]
@@ -298,7 +300,8 @@ export function ManagerTab(props: { focused: SectionId }) {
             sort={ui.state.merchantSort}
             reverse={ui.state.merchantReverse}
             empty={data.state.filterQuery ? "No matches" : "Empty · no transactions loaded"}
-            note={merchantNote}
+            // Hidden, no notes: each reads the whole-history note prompts.
+            note={merchants() ? merchantNote : noNote}
           />
         </box>
         <box visible={!merchants()} flexGrow={1} width="100%" flexDirection="column">

@@ -178,16 +178,18 @@ export function createCore() {
     }
     if (!assignments.size) return ""
     // Cancel the forward push even if Up rejects the reversal.
+    const ids = rows.map((row) => row.id)
     ctx.mutateSession(session, "categories were restored", (db) => {
       const cancelPending = db.query("UPDATE transactions SET category_source = 'user' WHERE id = ? AND category_source = 'pending'")
       for (const row of rows) cancelPending.run(row.id)
-    })
+    }, ids)
     const result = await applyCategories(assignments, "undo")
     // The default sends "no category" to Up; preserve a formerly null local value.
-    ctx.mutateSession(session, "categories were restored", (db) => {
+    const wereNull = rows.filter((row) => row.categoryId == null)
+    if (wereNull.length) ctx.mutateSession(session, "categories were restored", (db) => {
       const restoreNull = db.query("UPDATE transactions SET category_id = NULL WHERE id = ? AND category_id = ?")
-      for (const row of rows) if (row.categoryId == null) restoreNull.run(row.id, defaultId!)
-    })
+      for (const row of wereNull) restoreNull.run(row.id, defaultId!)
+    }, wereNull.map((row) => row.id))
     return operationSummary(`Restored ${result.done}`, result)
   }
 
@@ -252,10 +254,10 @@ export function createCore() {
     return result
   }
 
-  function mutateSession<T>(session: Session, doing: string, write: (db: Db) => T): T {
+  function mutateSession<T>(session: Session, doing: string, write: (db: Db) => T, rows?: Iterable<number>): T {
     ctx.ensureCurrent(session, doing)
     const result = write(session.db)
-    refresh()
+    refresh(rows)
     return result
   }
 

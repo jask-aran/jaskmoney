@@ -8,9 +8,10 @@
  * link (state/dataStore) and the web app over a WebSocket (web/main).
  */
 import type { Models } from "@earendil-works/pi-ai"
-import { batch, createMemo, createRoot, createSignal } from "solid-js"
+import { batch, createEffect, createMemo, createRoot, createSignal, on } from "solid-js"
 import { $RAW, createStore, produce, reconcile, unwrap } from "solid-js/store"
 import { chronological } from "../domain/chronology"
+import { lazyMemo } from "./lazyMemo"
 import { categoryUses as findCategoryUses, merchantBreadth, notePrompts as findNotePrompts } from "../domain/suggest"
 import { normaliseSelection, selectedAccounts, type AccountSelection } from "../domain/accountTree"
 import { paydays, type BudgetScope, type CycleConfig } from "../domain/budget"
@@ -211,16 +212,18 @@ export function createClientStore(initialLink: CoreLink) {
   const transactions = createRoot(() => createMemo(() => unwrap(state.transactions)))
 
   /** Merchants worth a note (domain/suggest notePrompts), by key. */
-  const notePrompts = createRoot(() => createMemo(() => findNotePrompts(transactions(), state.categories,
-    new Map(Object.entries(state.merchantBreadth)), new Map(Object.entries(state.merchantNotes)))))
+  // These four walk the whole history: computed when read (lazyMemo), not
+  // on every write and at start whether anything reads them or not.
+  const notePrompts = lazyMemo(() => findNotePrompts(transactions(), state.categories,
+    new Map(Object.entries(state.merchantBreadth)), new Map(Object.entries(state.merchantNotes))))
   /** The account holder's examples per category, for Jev (suggest categoryUses). */
-  const categoryUses = createRoot(() => createMemo(() => findCategoryUses(transactions(), state.categories,
-    merchantBreadth(transactions(), state.categories, new Map(Object.entries(state.merchantBreadth))))))
+  const categoryUses = lazyMemo(() => findCategoryUses(transactions(), state.categories,
+    merchantBreadth(transactions(), state.categories, new Map(Object.entries(state.merchantBreadth)))))
   /** The budget cycle with the pay dates `payEarly` needs. Everything that
    * works out cycles reads this, not `state.budgetCycle`. */
   const cycle = createRoot(() => createMemo((): CycleConfig => ({ ...state.budgetCycle, paydays: paydays(transactions()) })))
   /** Detected groupings in the history: trips, then regular payments. */
-  const tagGroups = createRoot(() => createMemo(() => [...detectTrips(transactions()), ...detectRecurring(transactions())]))
+  const tagGroups = lazyMemo(() => [...detectTrips(transactions()), ...detectRecurring(transactions())])
   /** Order-email lookups so far, by row. */
   const purchaseLookups = createRoot(() => createMemo(() => new Map(Object.entries(state.purchaseLookups).map(([id, l]) => [Number(id), { ...l, items: l.items.map((item) => ({ ...item })) }]))))
 
@@ -572,13 +575,25 @@ export function createClientStore(initialLink: CoreLink) {
 
   /** R's list: the repeat offers, then the model's (one per expression and
    * category). */
-  const allRuleOffers = createRoot(() => createMemo(() => {
+  const allRuleOffers = lazyMemo(() => {
     void state.version
     const repeat = ruleOffersFor()
     const saved = new Set(state.savedFilters.map((f) => f.expr.toLowerCase()))
     const ai = unwrap(state.aiRuleOffers).filter((o) => !saved.has(o.expr.toLowerCase()) && !repeat.some((r) => r.expr.toLowerCase() === o.expr.toLowerCase() && r.categoryId === o.categoryId && r.tagId === o.tagId))
     return [...repeat, ...ai]
-  }))
+  })
+
+  /** How many rules are offered, for the footer's "R rules (n)": worked
+   * out 150 ms after the last write rather than in its frame (the offers
+   * walk the whole history). */
+  const [ruleOfferCount, setRuleOfferCount] = createSignal(0)
+  createRoot(() => {
+    let timer: ReturnType<typeof setTimeout> | undefined
+    createEffect(on(() => [state.version, state.aiRuleOffers, state.savedFilters, state.ready], () => {
+      clearTimeout(timer)
+      timer = setTimeout(() => setRuleOfferCount(allRuleOffers().length), 150)
+    }))
+  })
 
   function dryRunRules(transactionIds?: number[]) {
     const ids = transactionIds ? new Set(transactionIds) : null
@@ -677,6 +692,7 @@ export function createClientStore(initialLink: CoreLink) {
     markTried,
     ruleOffersFor,
     allRuleOffers,
+    ruleOfferCount,
     dryRunRules,
     profileMatches,
     transactionDetail,
