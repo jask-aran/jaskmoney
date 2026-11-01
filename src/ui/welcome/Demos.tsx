@@ -11,6 +11,7 @@ import { SectionCard } from "../primitives/SectionCard"
 import { StyledLine, type StyledSpan } from "../primitives/StyledLine"
 import { TransactionTable } from "../manager/TransactionTable"
 import { ChartCard } from "../charts/ChartCard"
+import { TOUR_CHART_MS } from "../charts/motion"
 import { axisWidth, AXIS_GUESS } from "../charts/ChartBody"
 import { balancesChart, cashFlowChart, spendingChart } from "../overview/periodCharts"
 
@@ -139,7 +140,7 @@ export function DemoReel(props: { scene: number; startedAt: number; trying: Demo
         </SectionCard>
       </Show>
       <Show when={props.scene === 3}>
-        <ChartCard title={view() < 3 ? "Spending" : "Balances"} views={TOUR_CHART_VIEWS} current={view()} model={chart()} width={props.width} height={props.height} focused revealKey={TOUR_CHART_VIEWS[view()]!.view} revealMs={900} />
+        <ChartCard title={view() < 3 ? "Spending" : "Balances"} views={TOUR_CHART_VIEWS} current={view()} model={chart()} width={props.width} height={props.height} focused revealKey={TOUR_CHART_VIEWS[view()]!.view} revealMs={TOUR_CHART_MS} />
       </Show>
     </box>
   )
