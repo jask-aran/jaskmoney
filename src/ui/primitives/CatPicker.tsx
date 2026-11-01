@@ -11,6 +11,12 @@ import { boughtText } from "../../domain/history"
 /** Choose a category for the target transactions, grouped and filterable;
  * their suggested categories first. */
 export function CatPicker() {
+  return <Show when={ui.state.catPicker != null}><OpenCatPicker /></Show>
+}
+
+/** The open picker: its rows and counts are worked out only while it
+ * shows (closed, they followed every write). */
+function OpenCatPicker() {
   const suggested = createMemo(() => pickerSuggestions(ui.state.pickerTargets, data.state.suggestions))
   const items = createMemo((): PickerItem[] => categoryPickerRows(data.state.categories, (ui.state.catPicker?.query ?? ""), true, suggested()).map((r) =>
     r.kind === "heading" ? r : { kind: "item", label: r.category.name, value: r.category.id, color: r.category.color, ...(r.confidence !== undefined ? { detail: `${Math.round(r.confidence * 100)}%` } : {}) }))
@@ -28,7 +34,6 @@ export function CatPicker() {
     return bought ? `Bought ${bought}` : t?.message ? `Message ${t.message}` : undefined
   })
   return (
-    <Show when={(ui.state.catPicker != null)}>
       <ListPicker
         title="Category"
         subtitle={`${count(targets(), "transaction")}${hiddenTargets() ? `, ${hiddenTargets()} not in view` : ""}`}
@@ -39,6 +44,5 @@ export function CatPicker() {
         note={note()}
         hints="↑↓ ^j/k move · enter apply · esc cancel"
       />
-    </Show>
   )
 }
