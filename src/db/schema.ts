@@ -83,6 +83,7 @@ export const CATEGORY_SOURCE_COLUMN = "category_source TEXT"
  *   pending   --Up refuses on a retry, or the row can't go to Up any more--> user
  *   pending   --no answer-->                          pending  (retried after each sync)
  *   pending   --undo cancels the push-->              user, then the undo's own choice
+ *   any       --category deleted-->                  NULL, with category_id NULL (db/client deleteCategory)
  *   NULL, provider --sync-->                         provider or NULL (Up's category)
  *   NULL      --sync, Up's transaction type-->        type     (up/categories)
  *

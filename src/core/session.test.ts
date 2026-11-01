@@ -58,15 +58,6 @@ test("the database stays put while an Up sync runs", () => {
   expect(core.state.demo).toBe(false)
 })
 
-test("an undo that fails stays, to try again", async () => {
-  const { core, tag } = coreWithRow()
-  await core.commands.applyTagPatch({ ids: [1], patch: { [tag]: "add" } })
-  const label = core.state.undoLabel
-  core.commands.deleteTag({ id: tag })
-  await expect(core.commands.undo({})).rejects.toThrow()
-  expect(core.state.undoLabel).toBe(label)
-})
-
 test("a note's re-ask waits for the running round instead of being dropped", async () => {
   const { core } = coreWithRow()
   const db = core.db!

@@ -56,6 +56,7 @@ export function createSuggestions(ctx: CoreContext, deps: {
         },
         onError: (error) => failures.push(`merchants: ${error instanceof Error ? error.message : String(error)}`),
       })
+      if (!ctx.isCurrent(session)) return options.replace ? 0 : ""
       const breadth = merchantBreadth(transactions(), state.categories, asked)
       capStored(database, breadth)
       // Each suggestion says whether it knew what its row bought (order emails).
@@ -97,6 +98,7 @@ export function createSuggestions(ctx: CoreContext, deps: {
           },
           onError: (ids, error) => failures.push(`${ids.length} rows: ${error instanceof Error ? error.message : String(error)}`),
         })
+        if (!ctx.isCurrent(session)) return options.replace ? 0 : ""
         flush()
       }
       if (options.replace) return history.length + fromJev
@@ -188,14 +190,17 @@ export function createSuggestions(ctx: CoreContext, deps: {
     onJudged: (scores: Array<[number, number]>) => void; active: () => boolean
   }): Promise<string[]> {
     if (!ai && !hasJev()) throw new Error(`ask: needs Jev (${JEV_SETUP})`)
+    const session = ctx.db ? ctx.session() : null
+    const isCurrent = () => session ? ctx.isCurrent(session) : ctx.db == null
     const byId = new Map(transactions().map((t) => [t.id, t]))
     const rows = ids.flatMap((id) => byId.get(id) ?? [])
     const failures: string[] = []
     await judgeRows(ai ?? jevClient(), words, rows, {
-      active: options.active,
-      onJudged: (scores) => options.onJudged([...scores]),
+      active: () => isCurrent() && options.active(),
+      onJudged: (scores) => { if (isCurrent()) options.onJudged([...scores]) },
       onError: (error) => failures.push(error instanceof Error ? error.message : String(error)),
     })
+    if (!isCurrent()) return []
     return failures
   }
 
@@ -203,7 +208,7 @@ export function createSuggestions(ctx: CoreContext, deps: {
    * all at once (see applyCategories), then clear the suggestions that
    * took; a row Up rejected keeps its suggestion. */
   async function acceptSuggestions(ids: number[], onProgress?: (pushed: number, total: number) => void): Promise<string> {
-    if (!ctx.db) throw new Error("db not open")
+    const session = ctx.session()
     refresh()
     const assignments = new Map<number, number>()
     for (const id of ids) {
@@ -217,15 +222,16 @@ export function createSuggestions(ctx: CoreContext, deps: {
       const accepted = [...assignments].filter(([id, categoryId]) => transactions().some((t) => t.id === id && t.categoryId === categoryId)).map(([id]) => id)
       if (accepted.length) recordUndo(`accepted ${count(accepted.length, "suggestion")}`, async () => {
         const summary = await restoreCategories(before.filter((row) => accepted.includes(row.id)))
-        mutate((db) => {
+        ctx.mutateSession(session, "suggestions were restored", (db) => {
           unrecordCategoryChoices(db, before.map((row) => ({ description: row.description, categoryId: assignments.get(row.id)!, times: 1 })))
           saveSuggestions(db, suggestions.filter((s) => accepted.includes(s.transactionId)))
         })
         return summary
       })
     })
+    ctx.ensureCurrent(session, "suggestions were accepted")
     const accepted = [...assignments].filter(([id, categoryId]) => transactions().some((t) => t.id === id && t.categoryId === categoryId)).map(([id]) => id)
-    mutate((db) => deleteSuggestions(db, accepted))
+    ctx.mutateSession(session, "suggestions were accepted", (db) => deleteSuggestions(db, accepted))
     return operationSummary(`Accepted ${result.done} suggestion${result.done === 1 ? "" : "s"}`, result) + ruleOfferNote(accepted)
   }
 

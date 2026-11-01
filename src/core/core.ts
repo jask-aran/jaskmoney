@@ -11,7 +11,7 @@ import { existsSync, mkdirSync, readFileSync, readdirSync, unlinkSync } from "no
 import { join, resolve } from "node:path"
 import {
   loadAccounts, loadCategories, loadDbInfo, loadRules, loadTags, loadTransactions, loadSuggestions, loadMerchantNotes,
-  loadMerchantBreadth, saveMerchantBreadth, loadCategoryChoices, loadPurchaseLookups, logCategories, logTags, openDb,
+  loadMerchantBreadth, saveMerchantBreadth, loadCategoryChoices, loadPurchaseLookups, logCategories, openDb,
   createCategory, updateCategory, setCategoryBudgetIgnored, deleteCategory, createTag, updateTag, deleteTag,
   createRule, updateRule, deleteRule, reorderRule, toggleRule, clearAccountTransactions, clearAllData, defaultDbPath,
   loadImports, removeAccountWithTransactions, setAccountSyncEnabled, loadBudgetCycle, loadBudgets,
@@ -34,7 +34,7 @@ import { appNow, appToday } from "../domain/days"
 import { demoSource, generateDemo } from "../domain/demo"
 import { seedDemoDb } from "../db/demoSeed"
 import { jaskmoneyHome } from "../storage/home"
-import { addTagLink, queueTagPush } from "../db/tagLinks"
+import { stageTagChange } from "../db/tagLinks"
 import { syncUp as runUpSync } from "../up/sync"
 import { dryRunRules as evaluateRules } from "../domain/rules"
 import type { TagCandidate, TagTarget } from "../domain/tagSuggest"
@@ -67,6 +67,11 @@ export const CONFIG_SETTLE_MS = 400
 /** Demo mode makes this many years of rows, the same ones each time. */
 const DEMO_YEARS = 3
 const DEMO_SEED = 20261027
+
+const SYNC_CONFLICTING_COMMANDS = {
+  enterDemo: "demo mode", leaveDemo: "leaving demo mode", factoryResetDatabase: "a reset",
+  clearDatabaseData: "clearing database data", clearAccountData: "clearing account data", removeAccountData: "removing an account",
+}
 
 const loadSignedIn = (): CoreState["signedIn"] => ({ openrouter: signedIn("openrouter"), openai: signedIn("openai") })
 
@@ -119,6 +124,7 @@ export function createCore() {
 
   // Cleared by attach: an entry reverses rows of the session it was made in.
   let undoStack: { label: string; reverse: () => Promise<string | UndoResult> }[] = []
+  let undoState: "idle" | "undoing" = "idle"
 
   function recordUndo(label: string, reverse: () => Promise<string | UndoResult>) {
     undoStack = [...undoStack.slice(-19), { label, reverse }]
@@ -126,22 +132,22 @@ export function createCore() {
   }
 
   async function undo(): Promise<UndoResult> {
+    if (undoState === "undoing") throw new Error("Undo is already running")
     const entry = undoStack.at(-1)
     if (!entry) return { message: "Nothing to undo" }
     undoStack = undoStack.slice(0, -1)
     set({ undoLabel: undoStack.at(-1)?.label ?? null })
-    const on = current
+    const session = ctx.session()
+    undoState = "undoing"
     let reversed: string | UndoResult
     try {
       reversed = await entry.reverse()
+      ctx.ensureCurrent(session, "undo was running")
     } catch (error) {
-      // Kept, to try again: it failed before it changed anything it could
-      // report (a missing tag or category), unless the database changed.
-      if (current === on) {
-        undoStack = [...undoStack.slice(-19), entry]
-        set({ undoLabel: entry.label })
-      }
-      throw error
+      // A reverse can fail after partial work. Drop it rather than replay it.
+      throw new Error(`Couldn't undo ${entry.label}: ${error instanceof Error ? error.message : String(error)}`)
+    } finally {
+      undoState = "idle"
     }
     const result = typeof reversed === "string" ? { message: reversed } : reversed
     return { ...result, message: `Undid: ${entry.label}${result.message ? ` · ${result.message}` : ""}` }
@@ -161,22 +167,24 @@ export function createCore() {
   }
 
   async function restoreCategories(rows: { id: number; categoryId: number | null }[]): Promise<string> {
+    const session = ctx.session()
     const defaultId = state.categories.find((c) => c.isDefault)?.id
     const assignments = new Map<number, number>()
     for (const row of rows) {
       const categoryId = row.categoryId ?? defaultId
       if (categoryId == null) throw new Error("default category not found")
+      if (!state.categories.some((c) => c.id === categoryId)) throw new Error("category not found")
       assignments.set(row.id, categoryId)
     }
     if (!assignments.size) return ""
     // Cancel the forward push even if Up rejects the reversal.
-    mutate((db) => {
+    ctx.mutateSession(session, "categories were restored", (db) => {
       const cancelPending = db.query("UPDATE transactions SET category_source = 'user' WHERE id = ? AND category_source = 'pending'")
       for (const row of rows) cancelPending.run(row.id)
     })
     const result = await applyCategories(assignments, "undo")
     // The default sends "no category" to Up; preserve a formerly null local value.
-    mutate((db) => {
+    ctx.mutateSession(session, "categories were restored", (db) => {
       const restoreNull = db.query("UPDATE transactions SET category_id = NULL WHERE id = ? AND category_id = ?")
       for (const row of rows) if (row.categoryId == null) restoreNull.run(row.id, defaultId!)
     })
@@ -218,6 +226,13 @@ export function createCore() {
     return result
   }
 
+  function mutateSession<T>(session: Session, doing: string, write: (db: Db) => T): T {
+    ctx.ensureCurrent(session, doing)
+    const result = write(session.db)
+    refresh()
+    return result
+  }
+
   /** An Up client for the token in the environment now. */
   const upClient = () => createUpClient({ token: readUpToken() })
 
@@ -229,13 +244,13 @@ export function createCore() {
    * Made afresh with its own categories and monthly budget. Returns how many rows. */
   /** A sync writes to the database it began on and then runs rules and
    * pushes on the open one: the database stays put until it's done. */
-  function ensureNoSync(doing: string): void {
-    if (state.upSyncing) throw new Error(`Wait for the Up sync to finish before ${doing}`)
+  function ensureNoSync(command: keyof typeof SYNC_CONFLICTING_COMMANDS): void {
+    if (state.upSyncing) throw new Error(`Wait for the Up sync to finish before ${SYNC_CONFLICTING_COMMANDS[command]}`)
   }
 
   function enterDemo(): number {
     if (state.demo) return state.transactions.length
-    ensureNoSync("demo mode")
+    ensureNoSync("enterDemo")
     const demo = generateDemo({ today: appToday(), years: DEMO_YEARS, seed: DEMO_SEED,
       history: demoSource(transactions(), state.categories) })
     const path = join(jaskmoneyHome(), "demo.db")
@@ -255,7 +270,7 @@ export function createCore() {
   /** Demo mode off: back on the real database, as it was. */
   function leaveDemo(): void {
     if (!state.demo || !beforeDemo) return
-    ensureNoSync("leaving demo mode")
+    ensureNoSync("leaveDemo")
     const was = beforeDemo
     beforeDemo = null
     db?.close()
@@ -299,6 +314,10 @@ export function createCore() {
    * state. Call open() before using database actions again. Does not erase
    * disk data. */
   function close() {
+    flushConfig()
+    if (configTimer) clearTimeout(configTimer)
+    configTimer = null
+    configDirty = false
     undoStack = []
     db?.close()
     db = null
@@ -326,7 +345,7 @@ export function createCore() {
   }
 
   const ctx: CoreContext = {
-    state, set, mutate, refresh, transactions, upClient, recordUndo,
+    state, set, mutate, mutateSession, refresh, transactions, upClient, recordUndo,
     categorySnapshot, restoreCategories, setLastRepeat: (repeat: Repeat | null) => set({ lastRepeat: repeat }),
     createSettingsTag, saveSavedFilter, createSettingsRule, applyRules, deleteSettingsRule, deleteSavedFilter,
     get db() { return db },
@@ -419,9 +438,11 @@ export function createCore() {
     if (!db) throw new Error("db not open")
     const ids = transactionIds ? new Set(transactionIds) : null
     const report = evaluateRules(ids ? transactions().filter((txn) => ids.has(txn.id)) : transactions(), state.rules, state.savedFilters, state.categories, state.tags)
+    let tagChanges = 0, updatedTransactions = 0
     if (!dryRun) mutate((database) => database.transaction(() => {
       const at = appNow().toISOString()
       for (const change of report.changes) {
+        let changed = change.categorySet
         // 'rule' keeps sync from replacing a rule's category with the
         // provider's. An Up row Up can hold the category for goes to Up like
         // any categorisation: 'pending' until retryPendingCategories (which a
@@ -435,19 +456,16 @@ export function createCore() {
           const previous = transactions().find((t) => t.id === change.id)?.categoryId ?? null
           if (change.categoryId != null) logCategories(database, [{ transactionId: change.id, categoryId: change.categoryId, previousCategoryId: previous }], "rule", at)
         }
-        for (const tagId of change.tagIds) if (addTagLink(database, change.id, tagId)) {
-          logTags(database, [change.id], tagId, true, "rule", at)
-          const row = database.query<{ source: string; externalId: string | null }, [number]>(
-            "SELECT source, external_id AS externalId FROM transactions WHERE id = ?").get(change.id)
-          const tag = state.tags.find((t) => t.id === tagId)
-          // Approved deviation from legacy: rule tags on Up rows wait for Up.
-          if (row?.source === "up" && row.externalId != null && tag && tag.name.toUpperCase() !== "IGNORE" && tag.extId?.toUpperCase() !== "IGNORE") {
-            queueTagPush(database, change.id, tagId, "add")
-          }
+        // Approved provider deviation from legacy: rule tags use the same
+        // staging and six-tag limit as the picker.
+        for (const tagId of change.tagIds) {
+          const staged = stageTagChange(database, { transactionId: change.id, tagId, action: "add", how: "rule", at })
+          if (staged.kind === "changed") { tagChanges++; changed = true }
         }
+        if (changed) updatedTransactions++
       }
     })())
-    return { updatedTransactions: report.updatedTransactions, categoryChanges: report.categoryChanges, tagChanges: report.tagChanges, failedRules: report.failedRules }
+    return { updatedTransactions: dryRun ? report.updatedTransactions : updatedTransactions, categoryChanges: report.categoryChanges, tagChanges: dryRun ? report.tagChanges : tagChanges, failedRules: report.failedRules }
   }
 
   function csvFiles(directory: string): string[] {
@@ -475,19 +493,22 @@ export function createCore() {
   }
 
   async function syncNow(): Promise<string> {
-    if (!db) throw new Error("db not open")
+    const session = ctx.session()
     // A row Up confirms a change for while the sync fetches keeps its
     // copy: the fetched one predates the change (upPush watchUpWrites).
     const confirmed = push.watchUpWrites()
-    const result = await runUpSync(db, upClient(), { keep: confirmed.ids }).catch((error: unknown) => {
-      try { refresh() } catch { /* Preserve the sync error if reloading also fails. */ }
+    const result = await runUpSync(session.db, upClient(), { keep: confirmed.ids, ensureCurrent: () => ctx.ensureCurrent(session, "Up sync was running") }).catch((error: unknown) => {
+      try { if (ctx.isCurrent(session)) refresh() } catch { /* Preserve the sync error if reloading also fails. */ }
       throw error
     }).finally(confirmed.stop)
+    ctx.ensureCurrent(session, "Up sync was running")
     refresh()
     const applied = result.insertedIds.length ? applyRules(result.insertedIds) : null
     // Categorisations Up hasn't confirmed go again now Up is answering.
     const retried = await retryPendingCategories()
+    ctx.ensureCurrent(session, "Up sync was running")
     const tagsRetried = await retryPendingTags()
+    ctx.ensureCurrent(session, "Up sync was running")
     const parts = [`Up sync: ${result.inserted} new, ${result.updated} updated, ${result.removedHeld} pending removed${applied?.updatedTransactions ? ` · ${applied.updatedTransactions} rules applied` : ""}`]
     if (retried.pushed) parts.push(`${retried.pushed} waiting categor${retried.pushed === 1 ? "y" : "ies"} sent to Up`)
     if (retried.rejected) parts.push(`${retried.rejected} Up refused (kept here only)`)
@@ -502,7 +523,7 @@ export function createCore() {
    * undo, rule offers and the clients' caches of the old rows go with it. */
   function factoryResetDatabase(): void {
     if (!db) throw new Error("db not open")
-    ensureNoSync("a reset")
+    ensureNoSync("factoryResetDatabase")
     db.close()
     // Explicit paths only: never use a glob or a user-entered directory.
     if (actualDbPath !== ":memory:") for (const path of [actualDbPath, `${actualDbPath}-wal`, `${actualDbPath}-shm`]) if (existsSync(path)) unlinkSync(path)
@@ -540,11 +561,13 @@ export function createCore() {
     /** A filter expression written from `query` (domain/smartSearch), with
      * the words found among `descriptions` (the client's rows). */
     smartSearch: async (p: { query: string; descriptions: string[] }) => {
+      const session = current
       if (!hasJev()) throw new Error(`Smart search needs Jev (${JEV_SETUP})`)
       const clairicOn = searchUsesClairic()
       const ai = { clairic: clairicOn ? createWorkersAiClient(readWorkersAiCredentials()).clairic : undefined, jev: jevClient() }
       const uses = categoryUses(transactions(), state.categories, merchantBreadth(transactions(), state.categories, new Map(Object.entries(state.merchantBreadth))))
       const { expr, clairic } = await smartSearch(ai, p.query, { today: appToday(), cycle: cycle(), categories: state.categories, descriptions: p.descriptions, uses })
+      if (current !== session) throw new Error("The database changed while the filter was written; nothing more was saved")
       return { expr, clairic, clairicOn }
     },
     judgeAsk: (p: { words: string; ids: number[] }, cx: CallContext<CoreProgress["judgeAsk"]>) =>
@@ -560,6 +583,7 @@ export function createCore() {
     refreshApiKeys: (_: object) => set(keyState()),
 
     signInLlm: async (p: { provider: LlmProvider }, cx: CallContext<CoreProgress["signInLlm"]>) => {
+      const on = current
       const { provider } = p
       const { label, signIn } = LLM_PROVIDERS[provider]
       if (signIns.has(provider)) throw new Error(`${label} sign-in is already running`)
@@ -596,6 +620,7 @@ export function createCore() {
             else report({ paste: prompt.message })
           }),
         })
+        if (current !== on) return
         set(keyState())
       } finally {
         cleanup()
@@ -609,7 +634,9 @@ export function createCore() {
       return true
     },
     signOutLlm: async (p: { provider: LlmProvider }) => {
+      const on = current
       await createFileCredentialStore().delete(p.provider)
+      if (current !== on) return
       set(keyState())
     },
 
@@ -675,9 +702,9 @@ export function createCore() {
       mutate((db) => recordBudget(db, p.scope, null, p.from ?? now, now))
     },
     setBudgetCycle: (p: { config: CycleConfig }) => mutate((db) => saveBudgetCycle(db, p.config)),
-    clearDatabaseData: (_: object) => mutate((db) => clearAllData(db)),
-    clearAccountData: (p: { accountId: number }) => mutate((db) => clearAccountTransactions(db, p.accountId)),
-    removeAccountData: (p: { accountId: number }) => mutate((db) => removeAccountWithTransactions(db, p.accountId)),
+    clearDatabaseData: (_: object) => { ensureNoSync("clearDatabaseData"); return mutate((db) => clearAllData(db)) },
+    clearAccountData: (p: { accountId: number }) => { ensureNoSync("clearAccountData"); return mutate((db) => clearAccountTransactions(db, p.accountId)) },
+    removeAccountData: (p: { accountId: number }) => { ensureNoSync("removeAccountData"); return mutate((db) => removeAccountWithTransactions(db, p.accountId)) },
     factoryResetDatabase: (_: object) => factoryResetDatabase(),
 
     /** What the general model reads to write rules (ai/ruleWriter), and the
@@ -697,6 +724,7 @@ export function createCore() {
     commands,
     open,
     close,
+    dispose: () => { process.off("exit", flushConfig) },
     refresh,
     /** Test seams (in-process only): write the state, reach the database. */
     set,

@@ -391,7 +391,10 @@ export function deleteCategory(db: Db, id: number): void {
   const row = db.query(`SELECT is_default AS isDefault FROM categories WHERE id = ?`).get(id) as { isDefault: number } | null
   if (!row) throw new Error("category not found")
   if (row.isDefault) throw new Error("cannot delete the default category")
-  db.query(`DELETE FROM categories WHERE id = ?`).run(id)
+  db.transaction(() => {
+    db.query(`UPDATE transactions SET category_id = NULL, category_source = NULL WHERE category_id = ?`).run(id)
+    db.query(`DELETE FROM categories WHERE id = ?`).run(id)
+  })()
 }
 
 export type TagInput = Pick<Tag, "name" | "color"> & Partial<Pick<Tag, "categoryIds" | "about">>

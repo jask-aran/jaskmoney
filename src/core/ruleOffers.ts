@@ -77,12 +77,15 @@ export function createRuleOffers(ctx: CoreContext, deps: Pick<ReturnType<typeof 
     const tagId = offer.tagId
     const tagged = tagId != null ? before.filter((row) => !row.tagIds.includes(tagId) && transactions().some((t) => t.id === row.id && t.tagIds.includes(tagId))).map((row) => row.id) : []
     const sent = applied?.categoryChanges ? await retryPendingCategories() : null
+    ctx.ensureCurrent(session, "the rule's categories were sent to Up")
     if (applied?.tagChanges) await retryPendingTags()
     ctx.ensureCurrent(session, "the rule's rows were sent to Up")
     recordUndo(`rule ${offer.description} → ${targetName}`, async () => {
+      const summary = await (tagId != null ? applyTagPatch(tagged, { [tagId]: "remove" }, "undo") : restoreCategories(changed))
+      ctx.ensureCurrent(session, "the rule's rows were restored")
       deleteSettingsRule(ruleId)
       deleteSavedFilter(id)
-      return tagId != null ? applyTagPatch(tagged, { [tagId]: "remove" }, "undo") : restoreCategories(changed)
+      return summary
     })
     return [
       `Rule made: ${offer.description} → ${targetName}`,

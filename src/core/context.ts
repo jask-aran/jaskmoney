@@ -30,6 +30,7 @@ export interface CoreContext {
   readonly state: CoreState
   set: (patch: Partial<CoreState>) => void
   mutate: <T>(write: (db: Db) => T) => T
+  mutateSession: <T>(session: Session, doing: string, write: (db: Db) => T) => T
   refresh: () => void
   readonly db: Db | null
   readonly dbVersion: number

@@ -1,4 +1,27 @@
-import type { Db } from "./client"
+import { logTags, type Db, type TagHow } from "./client"
+
+/** Stage one local change and its provider intent atomically. */
+export function stageTagChange(db: Db, change: {
+  transactionId: number; tagId: number; action: "add" | "remove"; how: TagHow; at: string
+}): { kind: "unchanged" } | { kind: "changed"; queued: boolean } | { kind: "refused"; reason: string } {
+  return db.transaction((): ReturnType<typeof stageTagChange> => {
+    const { transactionId, tagId, action, how, at } = change
+    const tag = db.query<{ name: string; extId: string | null }, [number]>("SELECT name, ext_id AS extId FROM tags WHERE id = ?").get(tagId)
+    const row = db.query<{ source: string; externalId: string | null }, [number]>(
+      "SELECT source, external_id AS externalId FROM transactions WHERE id = ?").get(transactionId)
+    if (!row) return { kind: "unchanged" }
+    const linked = !!db.query("SELECT 1 FROM transaction_tags WHERE transaction_id = ? AND tag_id = ?").get(transactionId, tagId)
+    const add = action === "add"
+    if (linked === add) return { kind: "unchanged" }
+    const queued = row.source === "up" && row.externalId != null && !!tag && tag.name.toUpperCase() !== "IGNORE" && tag.extId?.toUpperCase() !== "IGNORE"
+    if (queued && add && !canAddUpTag(db, transactionId, tagId)) return { kind: "refused", reason: "Up allows at most 6 tags" }
+    if (add) addTagLink(db, transactionId, tagId)
+    else removeTagLink(db, transactionId, tagId)
+    logTags(db, [transactionId], tagId, add, how, at)
+    if (queued) queueTagPush(db, transactionId, tagId, action)
+    return { kind: "changed", queued }
+  })()
+}
 
 /** Link a tag to a transaction; 1 if it was new. The caller owns the
  * transaction (if any). */

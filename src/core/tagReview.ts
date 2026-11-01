@@ -19,6 +19,8 @@ export function createTagCandidates(ctx: CoreContext) {
   async function tagCandidates(target: TagTarget, ai: Pick<JevClient, "judge"> | undefined, options: {
     onCandidates: (found: TagCandidate[]) => void; active: () => boolean
   }): Promise<{ failures: string[]; jev: boolean }> {
+    const session = ctx.db ? ctx.session() : null
+    const isCurrent = () => session ? ctx.isCurrent(session) : ctx.db == null
     const dismissed = ctx.db ? loadTagDismissals(ctx.db, target.name) : new Set<number>()
     const known = knownTagCandidates(target, transactions(), state.categories).filter((c) => !dismissed.has(c.transactionId))
     options.onCandidates(known)
@@ -29,10 +31,11 @@ export function createTagCandidates(ctx: CoreContext) {
       const settled = new Set(known.filter((c) => c.source === "group").map((c) => c.transactionId))
       const rows = tagPool(target, transactions(), state.categories).filter((t) => !settled.has(t.id) && !dismissed.has(t.id))
       await jevTagCandidates(ai ?? jevClient(), target, rows, tagExamples(target, transactions()), {
-        active: options.active,
-        onCandidates: options.onCandidates,
+        active: () => isCurrent() && options.active(),
+        onCandidates: (found) => { if (isCurrent()) options.onCandidates(found) },
         onError: (error) => failures.push(error instanceof Error ? error.message : String(error)),
       })
+      if (!isCurrent()) return { failures, jev }
     }
     return { failures, jev }
   }

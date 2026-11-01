@@ -12,10 +12,12 @@ type LocalTransaction = { id: number; external_id: string | null; status: string
  * (Up confirmed a change for them while this fetched); they're left as they
  * are, and the next sync brings them up to date.
  */
-export async function syncUp(db: Db, client: Pick<ReturnType<typeof createUpClient>, "listAccounts" | "listAccountTransactions" | "listCategories">, { now = new Date(), keep }: { now?: Date; keep?: ReadonlySet<number> } = {}) {
+export async function syncUp(db: Db, client: Pick<ReturnType<typeof createUpClient>, "listAccounts" | "listAccountTransactions" | "listCategories">, { now = new Date(), keep, ensureCurrent }: { now?: Date; keep?: ReadonlySet<number>; ensureCurrent?: () => void } = {}) {
   try {
     const tree = await client.listCategories()
+    ensureCurrent?.()
     const accounts = await client.listAccounts()
+    ensureCurrent?.()
     const disabledAccounts = () => new Set(db.query<{ external_id: string }, []>("SELECT external_id FROM accounts WHERE source = 'up' AND sync_enabled = 0 AND external_id IS NOT NULL").all().map(a => a.external_id))
     const batches: { accountId: string; local: LocalTransaction[]; since: string | undefined; transactions: Awaited<ReturnType<typeof client.listAccountTransactions>> }[] = []
     for (const account of accounts) {
@@ -31,6 +33,7 @@ export async function syncUp(db: Db, client: Pick<ReturnType<typeof createUpClie
         since = new Date(held.reduce((a, b) => Math.min(a, b), newest - 14 * 86400000)).toISOString()
       }
       const transactions = await client.listAccountTransactions(account.id, since === undefined ? {} : { since })
+      ensureCurrent?.()
       batches.push({ accountId: account.id, local, since, transactions })
     }
     const syncedAt = now.toISOString()
@@ -121,6 +124,7 @@ export async function syncUp(db: Db, client: Pick<ReturnType<typeof createUpClie
       return { accounts: accounts.length, inserted, updated, removedHeld, insertedIds }
     })()
   } catch (error) {
+    ensureCurrent?.()
     db.query(`INSERT INTO sync_state (source, last_error) VALUES ('up', ?)
       ON CONFLICT(source) DO UPDATE SET last_error = excluded.last_error`).run(error instanceof Error ? error.message : String(error))
     throw error
