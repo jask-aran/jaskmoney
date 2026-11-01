@@ -94,7 +94,7 @@ export function handleWelcome(ui: UiStore, key: KeyEvent, data?: DataStore): voi
   }
   if (state.busy) return
   // The tour: ← and → between its demos.
-  if (state.step === "hello" && (name === "left" || name === "right" || name === "h" || name === "l")) {
+  if (state.step === "tour" && (name === "left" || name === "right" || name === "h" || name === "l")) {
     const demo = Math.max(0, Math.min(DEMO_COUNT - 1, state.demo + (name === "left" || name === "h" ? -1 : 1)))
     ui.setState("welcome", { demo, cursor: 0 })
     return
@@ -125,6 +125,7 @@ export function welcomeAct(ui: UiStore, data: DataStore, action: WelcomeAction):
   const state = ui.state.welcome
   if (!state || state.busy) return
   switch (action) {
+    case "tour": go(ui, "tour", data); return
     case "start": go(ui, "up", data); return
     case "demoNext": ui.setState("welcome", { demo: Math.min(DEMO_COUNT - 1, state.demo + 1), cursor: 0 }); return
     case "skipAll": case "finish": closeWelcome(ui, data); return

@@ -90,17 +90,15 @@ function WelcomeScreen() {
 
   // ---- Layout.
   const height = () => Math.max(12, dims().height - 2)
-  const tour = () => state().step === "hello"
+  const tour = () => state().step === "tour"
   // Side by side when there's room and a panel to show.
-  const paneled = () => state().step !== "hello" && state().step !== "done"
+  const paneled = () => state().step === "up" || state().step === "ai" || state().step === "email"
   const wide = () => dims().width >= 112
-  const cardWidth = () => Math.max(40, Math.min(dims().width - 4, tour() ? 124 : wide() && paneled() ? 120 : 76))
+  const cardWidth = () => Math.max(40, Math.min(dims().width - 4, wide() && paneled() ? 120 : 76))
   const inner = () => cardWidth() - 4
   const leftWidth = () => (wide() && paneled() ? Math.floor(inner() * 0.52) : inner())
   const rightWidth = () => (wide() ? inner() - leftWidth() - 3 : inner())
   const panelWidth = () => rightWidth() - (wide() ? 3 : 0)
-  // Title (2), rail (1) and the gaps around them (3), the card's border (2).
-  const cardInner = () => Math.max(8, height() - 9)
 
   // ---- A row of the step: a button.
   const tokenField = () => {
@@ -138,7 +136,15 @@ function WelcomeScreen() {
   const left = createMemo((): Line[] => {
     const s = state(), w = leftWidth()
     switch (s.step) {
-      case "hello": return []
+      case "hello": return [
+        say("Welcome to jaskmoney", ink.strong, true),
+        blank,
+        ...wrapped("Setup connects Up Bank, an AI model and your email. Every step is optional; Settings › Up Bank › Setup runs it again.", w),
+        blank,
+        ...wrapped("Start shows a short tour first: the app's own screens, playing on made-up data.", w, ink.note),
+        ...buttons(),
+      ]
+      case "tour": return tourCard()
       case "up": {
         const accounts = s.upAccounts
         const connected = ctx().up && !s.token.value
@@ -208,22 +214,30 @@ function WelcomeScreen() {
     return []
   })
 
-  // ---- The tour: a caption, the demo, where you are among them, the rows.
-  const tourHead = (): Line[] => {
+  // ---- The tour's card: where you are among the demos, what this one
+  // shows, the rows. The demo itself plays below the card.
+  function tourCard(): Line[] {
     const demo = DEMOS[state().demo]!
-    return [{ spans: demo.caption.flatMap(([k, text], i) => [...(i ? [{ text: "   " }] : []), { text: k, fg: tone.key, bold: true }, { text: ` ${text}`, fg: ink.label }]) }]
-  }
-  const tourFoot = (): Line[] => [
+    return [
+    say(`Tour · ${demo.name}`, ink.strong, true),
+    blank,
+    ...demo.caption.map(([k, text]): Line => ({ spans: [{ text: k.padEnd(4), fg: tone.key, bold: true }, { text: text, fg: ink.label }] })),
+    // Two lines each, so the card (and the demo under it) stays put.
+    ...(demo.caption.length < 2 ? [blank] : []),
     blank,
     { spans: DEMOS.flatMap((d, i): StyledSpan[] => [
       ...(i ? [{ text: "   " }] : []),
       { text: i === state().demo ? "● " : "○ ", fg: i === state().demo ? tone.key : ink.faint, bold: true },
       { text: d.name, fg: i === state().demo ? ink.strong : ink.faint, bold: i === state().demo },
-    ]).concat([{ text: "    ← → to switch", fg: ink.note }] as StyledSpan[]) },
+    ]) },
     ...buttons(),
-  ]
-  // The demo shows the table at about its size in the app: 18 rows at most.
-  const reelHeight = () => Math.max(8, Math.min(18, cardInner() - tourHead().length - tourFoot().length - 1))
+    ]
+  }
+  // Below the card, as wide as there's room for. Height: the title, the
+  // rail and their gaps (5), the card and its border, a gap; at most about
+  // the table's size in the app.
+  const reelWidth = () => Math.max(40, Math.min(dims().width - 4, 124))
+  const reelHeight = () => Math.max(8, Math.min(18, height() - 5 - (left().length + 2) - 1))
 
   const click = (row: number | undefined) => row === undefined ? undefined : onPointer("welcome", () => {
     const action = rows()[row]?.action
@@ -290,23 +304,18 @@ function WelcomeScreen() {
         <StyledLine spans={railSpans()} bg={theme.canvas} />
       </box>
       <box height={1} />
-      <box width={cardWidth()} border borderStyle="rounded" borderColor={tone.focus} backgroundColor={theme.mantle} paddingLeft={1} paddingRight={1} flexDirection={tour() ? "column" : wide() ? "row" : "column"} gap={tour() ? 0 : wide() ? 3 : 1} maxHeight={height() - 6} overflow="hidden">
-        <Show when={tour()} fallback={
-          <>
-            {column(left, leftWidth)}
-            <Show when={right().length}>
-              <box width={rightWidth()} flexShrink={0} flexDirection="column" border={[wide() ? "left" : "top"]} borderColor={ink.rule} paddingLeft={wide() ? 2 : 0}>
-                {column(right, panelWidth)}
-              </box>
-            </Show>
-          </>
-        }>
-          {column(tourHead, inner)}
-          <box height={1} />
-          <DemoReel scene={state().demo} width={inner()} height={reelHeight()} />
-          {column(tourFoot, inner)}
+      <box width={cardWidth()} border borderStyle="rounded" borderColor={tone.focus} backgroundColor={theme.mantle} paddingLeft={1} paddingRight={1} flexDirection={wide() ? "row" : "column"} gap={wide() ? 3 : 1} maxHeight={height() - 6} overflow="hidden" flexShrink={0}>
+        {column(left, leftWidth)}
+        <Show when={right().length}>
+          <box width={rightWidth()} flexShrink={0} flexDirection="column" border={[wide() ? "left" : "top"]} borderColor={ink.rule} paddingLeft={wide() ? 2 : 0}>
+            {column(right, panelWidth)}
+          </box>
         </Show>
       </box>
+      <Show when={tour()}>
+        <box height={1} />
+        <DemoReel scene={state().demo} width={reelWidth()} height={reelHeight()} />
+      </Show>
     </box>
   )
 }

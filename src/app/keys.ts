@@ -2086,7 +2086,7 @@ const scopes: Record<ScopeId, ScopeEntry> = {
     quits: false,
     hints: (state) => state?.welcomeBusy ? [{ key: "esc", desc: "stop waiting" }]
       : state?.welcomeTyping ? [{ key: "paste", desc: "your token" }, { key: "enter", desc: "connect" }, { key: "ctrl+o", desc: "open api.up.com.au" }, { key: "ctrl+n", desc: "skip" }, { key: "esc", desc: "back" }]
-      : [{ key: "↑↓", desc: "move" }, { key: "enter", desc: "choose" }, ...(state?.welcomeStep === "done" || state?.welcomeStep === "hello" ? [] : [{ key: "s", desc: "skip" }]), { key: "esc", desc: state?.welcomeStep === "hello" ? "skip setup" : "back" }],
+      : [...(state?.welcomeStep === "tour" ? [{ key: "←→", desc: "demos" }] : []), { key: "↑↓", desc: "move" }, { key: "enter", desc: "choose" }, ...(state?.welcomeStep === "done" || state?.welcomeStep === "hello" ? [] : [{ key: "s", desc: "skip" }]), { key: "esc", desc: state?.welcomeStep === "hello" ? "skip setup" : "back" }],
   },
   "settings.executor": {
     handle: (ui, key) => handleExecutor(ui, key),

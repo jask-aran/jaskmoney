@@ -35,7 +35,8 @@ export function ChartCard(props: {
   height: number
   focused?: boolean
   baseline?: boolean
-  /** How long the chart takes to draw in on a new view (chartMotion's by default). */
+  /** Draw the chart in over `revealMs` each time `revealKey` changes (ChartBody). */
+  revealKey?: string
   revealMs?: number
 }) {
   const view = () => props.views[props.current] ?? props.views[0]!
@@ -51,7 +52,7 @@ export function ChartCard(props: {
       focused={props.focused}
     >
       <Show when={props.model} fallback={props.fallback}>
-        {(m: () => ChartModel) => <ChartBody model={m()} inks={INKS} baseline={props.baseline} revealKey={`${props.title}:${view().view}`} revealMs={props.revealMs} />}
+        {(m: () => ChartModel) => <ChartBody model={m()} inks={INKS} baseline={props.baseline} revealKey={props.revealKey} revealMs={props.revealMs} />}
       </Show>
     </SectionCard>
   )

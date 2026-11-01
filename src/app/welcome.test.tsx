@@ -195,8 +195,12 @@ test("Settings › Up Bank › Setup runs it again", () => {
   ui.switchTab("overview")
 })
 
-test("the tour: ← → between the demos, enter to the next, and from the last on to Up", () => {
+test("the tour: after the welcome, ← → between the demos, enter to the next, and from the last on to Up", () => {
   openWelcome(ui)
+  press("right")
+  expect(ui.state.welcome?.demo).toBe(0)
+  press("return")
+  expect(ui.state.welcome?.step).toBe("tour")
   expect(ui.state.welcome?.demo).toBe(0)
   press("right", "right")
   expect(ui.state.welcome?.demo).toBe(2)
@@ -215,6 +219,12 @@ test("the tour: ← → between the demos, enter to the next, and from the last 
 test("drawn: the title in the brand's pink, the button in pink and bold; the demo is the real table, filtering as it types", async () => {
   const t = await renderApp({ width: 130, height: 44 })
   openWelcome(ui)
+  await t.renderOnce()
+  expect(t.captureCharFrame()).toContain("Welcome to jaskmoney")
+  expect(t.captureCharFrame()).not.toMatch(/Date\s+Amount/)
+  const start = t.captureSpans().lines.flatMap((l) => l.spans).find((s) => s.text === "Start")!
+  expect(start.fg.toInts()).toEqual(RGBA.fromHex(tone.key).toInts())
+  press("return")
   await t.renderOnce()
   const spans = () => t.captureSpans().lines.flatMap((l) => l.spans)
   // The title's first column (the second row's J) is the gradient's start: pink.

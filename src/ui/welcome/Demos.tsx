@@ -204,7 +204,7 @@ export function DemoReel(props: { scene: number; width: number; height: number }
         })()}
       </Show>
       <Show when={props.scene === 3}>
-        <ChartCard title={view() < 3 ? "Spending" : "Balances"} views={VIEWS} current={view()} model={chart()} width={props.width} height={props.height} focused revealMs={900} />
+        <ChartCard title={view() < 3 ? "Spending" : "Balances"} views={VIEWS} current={view()} model={chart()} width={props.width} height={props.height} focused revealKey={VIEWS[view()]!.view} revealMs={900} />
       </Show>
     </box>
   )

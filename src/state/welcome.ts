@@ -9,19 +9,19 @@ import type { TextField } from "../domain/textField"
  *
  * Its own state machine, one modal (uiStore MODALS "welcome"):
  *
- *   hello → up → ai → email → done → (closed)
+ *   hello → tour → up → ai → email → done → (closed)
  *
- * hello is a tour: the app's own pieces playing on a made-up year
- * (ui/welcome/Demos), ←/→ between them; enter goes to the next, and from
- * the last on to Up.
+ * hello says what this is. The tour is the app's own pieces playing on
+ * demo mode's made-up years (ui/welcome/Demos), ←/→ between them; enter
+ * goes to the next, and from the last on to Up. Either can skip to Up.
  *
  * enter on a row does it; "Continue" (or skip, s) goes on; esc goes back a
  * step (on hello it closes, as skipping does). Leaving any way marks the
  * setup as seen (core welcomed): it doesn't open by itself again.
  */
-export type WelcomeStep = "hello" | "up" | "ai" | "email" | "done"
-export const WELCOME_STEPS: readonly WelcomeStep[] = ["hello", "up", "ai", "email", "done"]
-export const STEP_NAMES: Record<WelcomeStep, string> = { hello: "Tour", up: "Up Bank", ai: "AI", email: "Email", done: "Ready" }
+export type WelcomeStep = "hello" | "tour" | "up" | "ai" | "email" | "done"
+export const WELCOME_STEPS: readonly WelcomeStep[] = ["hello", "tour", "up", "ai", "email", "done"]
+export const STEP_NAMES: Record<WelcomeStep, string> = { hello: "Welcome", tour: "Tour", up: "Up Bank", ai: "AI", email: "Email", done: "Ready" }
 
 /** Where connecting your email through Executor has got to. */
 export type EmailPhase = "idle" | "signIn" | "install" | "approve" | "check" | "done" | "failed"
@@ -32,7 +32,7 @@ export interface WelcomeState {
   dir: 1 | -1
   /** Counts screens shown: each new one starts its entrance again. */
   shown: number
-  /** The tour's demo shown (hello). */
+  /** The tour's demo shown. */
   demo: number
   cursor: number
   /** The Up token as typed: never drawn, only its length and last four. */
@@ -77,7 +77,7 @@ export interface WelcomeContext {
 }
 
 export type WelcomeAction =
-  | "demoNext" | "start" | "skipAll"
+  | "tour" | "demoNext" | "start" | "skipAll"
   | "token" | "openUp" | "replaceToken"
   | "openrouter" | "openai" | "jevKey" | "clairic"
   | "email" | "openExecutor"
@@ -97,7 +97,13 @@ export interface WelcomeRow {
 /** The rows of the screen, top to bottom; the cursor moves over them. */
 export function welcomeRows(state: WelcomeState, ctx: WelcomeContext): WelcomeRow[] {
   switch (state.step) {
-    case "hello": {
+    case "hello":
+      return [
+        { action: "tour", label: "Start", primary: true },
+        { action: "start", label: "Skip the tour", detail: "straight to Up Bank" },
+        { action: "skipAll", label: "Skip setup, open the app" },
+      ]
+    case "tour": {
       const last = state.demo >= DEMO_COUNT - 1
       return [
         last ? { action: "start", label: "Connect Up Bank", primary: true } : { action: "demoNext", label: "Next", primary: true },
@@ -142,7 +148,7 @@ export function stepMark(step: WelcomeStep, state: WelcomeState, ctx: WelcomeCon
   const at = WELCOME_STEPS.indexOf(state.step), i = WELCOME_STEPS.indexOf(step)
   if (i === at) return "current"
   if (i > at) return "ahead"
-  const connected = step === "hello" || (step === "up" ? ctx.up : step === "ai" ? ctx.jev || ctx.openai : step === "email" ? state.email.phase === "done" || ctx.executor : true)
+  const connected = step === "hello" || step === "tour" || (step === "up" ? ctx.up : step === "ai" ? ctx.jev || ctx.openai : step === "email" ? state.email.phase === "done" || ctx.executor : true)
   return connected ? "done" : "skipped"
 }
 

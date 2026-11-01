@@ -32,6 +32,7 @@ import { monthlyTotal, subscriptions, upcomingCharges, type Subscription } from 
 import { allCategoryLines, overviewRange } from "../../state/overviewRange"
 import { AXIS_GUESS, axisWidth, type ChartModel } from "../charts/ChartBody"
 import { ChartCard } from "../charts/ChartCard"
+import { takeLaunchReveal } from "../charts/motion"
 import { balancesChart, cashFlowChart, spendingChart, type PeriodNames } from "./periodCharts"
 import { UP_LOGO_WIDTH } from "../primitives/UpLogo"
 import { CalendarView, calendarLegend } from "./CalendarView"
@@ -390,6 +391,9 @@ export function OverviewTab(props: { focused: SectionId }) {
   // A component, not a function call in JSX: its card stays mounted while
   // the view changes (a remounted card has no measured width for a frame or
   // two, so its border picker and legend would blink out).
+  // Once a launch, the charts draw in as they first show data (motion).
+  const revealMs = takeLaunchReveal()
+  const revealKey = () => (data.state.ready ? "launch" : undefined)
   const ChartPane = (p: { pane: 0 | 1; height: number }) => {
     const index = () => ui.state.chartViews[p.pane]
     const view = () => CHART_VIEWS[index()] ?? CHART_VIEWS[0]
@@ -409,6 +413,8 @@ export function OverviewTab(props: { focused: SectionId }) {
         height={p.height}
         focused={props.focused === (p.pane === 0 ? "ov.chart" : "ov.chart2")}
         baseline={baseline()}
+        revealKey={revealKey()}
+        revealMs={revealMs}
       />
       </box>
     )
