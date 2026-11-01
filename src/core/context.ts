@@ -31,7 +31,8 @@ export interface CoreContext {
   set: (patch: Partial<CoreState>) => void
   mutate: <T>(write: (db: Db) => T) => T
   mutateSession: <T>(session: Session, doing: string, write: (db: Db) => T) => T
-  refresh: () => void
+  /** Reload from the database; `rows`: only these transactions changed (core refresh). */
+  refresh: (rows?: Iterable<number>) => void
   readonly db: Db | null
   readonly dbVersion: number
   /** The session open now; throws when no database is open. */

@@ -481,7 +481,10 @@ export function toggleRule(db: Db, id: number, enabled: boolean): void {
   db.query(`UPDATE rules_v2 SET enabled = ? WHERE id = ?`).run(enabled ? 1 : 0, id)
 }
 
-export function loadTransactions(db: Db): Transaction[] {
+/** Every shown row, newest first; or just the rows of `ids` (those shown). */
+export function loadTransactions(db: Db, ids?: readonly number[]): Transaction[] {
+  const only = ids ? ` AND t.id IN (${ids.map(() => "?").join(",")})` : ""
+  const params = ids ? [...ids] : []
   const rows = db
     .query(
       `SELECT
@@ -519,19 +522,19 @@ export function loadTransactions(db: Db): Transaction[] {
        LEFT JOIN categories pc ON pc.id = c.parent_id
        LEFT JOIN accounts a ON a.id = t.account_id
        LEFT JOIN accounts ta ON ta.id = t.transfer_account_id
-       WHERE a.id IS NULL OR a.sync_enabled = 1
+       WHERE (a.id IS NULL OR a.sync_enabled = 1)${only}
        ORDER BY t.date_iso DESC, t.id DESC`,
     )
-    .all() as Array<Omit<Transaction, "tagNames" | "tagColors" | "tagIds" | "createdMs" | "bought"> & { createdAt: string | null; boughtJson: string | null }>
+    .all(...params) as Array<Omit<Transaction, "tagNames" | "tagColors" | "tagIds" | "createdMs" | "bought"> & { createdAt: string | null; boughtJson: string | null }>
 
   const tagRows = db
     .query(
       `SELECT tt.transaction_id AS txnId, tg.id AS tagId, tg.name AS name, tg.color AS color
        FROM transaction_tags tt
-       JOIN tags tg ON tg.id = tt.tag_id
+       JOIN tags tg ON tg.id = tt.tag_id${only.replace("t.id", "tt.transaction_id").replace(" AND", " WHERE")}
        ORDER BY tg.sort_order, LOWER(tg.name), tg.id`,
     )
-    .all() as Array<{ txnId: number; tagId: number; name: string; color: string }>
+    .all(...params) as Array<{ txnId: number; tagId: number; name: string; color: string }>
 
   const tagNameMap = new Map<number, string[]>()
   const tagColorMap = new Map<number, string[]>()

@@ -9,7 +9,7 @@
  */
 import type { Models } from "@earendil-works/pi-ai"
 import { batch, createMemo, createRoot, createSignal } from "solid-js"
-import { createStore, produce, reconcile, unwrap } from "solid-js/store"
+import { $RAW, createStore, produce, reconcile, unwrap } from "solid-js/store"
 import { chronological } from "../domain/chronology"
 import { categoryUses as findCategoryUses, merchantBreadth, notePrompts as findNotePrompts } from "../domain/suggest"
 import { normaliseSelection, selectedAccounts, type AccountSelection } from "../domain/accountTree"
@@ -136,6 +136,16 @@ export function showNearMisses(matches: number, near: number): boolean {
   return near <= Math.max(matches, 5)
 }
 
+/** The core's rows, marked as already plain. Setting a store value unwraps
+ * it deeply (every field of every row, ~half of a write's cost); the core's
+ * rows are fresh plain objects, never store proxies, so the marker (which
+ * Solid's `unwrap` returns as is) skips that walk. Reads still wrap them. */
+function plainRows<T>(rows: T): T {
+  if (Array.isArray(rows) && Object.isExtensible(rows) && !Object.prototype.hasOwnProperty.call(rows, $RAW))
+    Object.defineProperty(rows, $RAW, { value: rows })
+  return rows
+}
+
 export function createClientStore(initialLink: CoreLink) {
   let link = initialLink
   const [state, setState] = createStore<DataState>({ ...emptyCoreState(), ...initialView() })
@@ -147,7 +157,7 @@ export function createClientStore(initialLink: CoreLink) {
       const plain: Partial<CoreState> = {}
       for (const [key, value] of Object.entries(patch) as [keyof CoreState, never][]) {
         if (RECONCILED.has(key)) setState(key, reconcile(value))
-        else (plain as Record<string, unknown>)[key] = value
+        else (plain as Record<string, unknown>)[key] = key === "transactions" ? plainRows(value) : value
       }
       setState(plain)
       if (patch.session !== undefined && patch.session !== session) {

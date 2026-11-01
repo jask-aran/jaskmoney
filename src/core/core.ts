@@ -40,7 +40,7 @@ import { dryRunRules as evaluateRules } from "../domain/rules"
 import type { TagCandidate, TagTarget } from "../domain/tagSuggest"
 import type { RuleOffer } from "../domain/ruleOffers"
 import type { PurchaseLookup } from "../db/client"
-import type { Category, ImportPreview, ImportProfile, Rule, RuleRunResult, SavedFilter } from "../domain/types"
+import type { Category, ImportPreview, ImportProfile, Rule, RuleRunResult, SavedFilter, Transaction } from "../domain/types"
 import { loadSettingsConfig, saveSettingsConfig, validateImportProfile, validateSavedFilter, type SettingsConfig, type UiPrefs } from "../state/settingsConfig"
 import { createUpPush, categoryPush, operationSummary, type PushableRow } from "./upPush"
 import { createSuggestions } from "./suggestions"
@@ -191,14 +191,34 @@ export function createCore() {
     return operationSummary(`Restored ${result.done}`, result)
   }
 
-  /** Reload everything the clients see from the database. */
-  function refresh() {
+  /** The rows with `changed` reloaded: the others as they are. Null when
+   * that can't give what a whole reload would (a row came or moved), or
+   * reading them alone wouldn't pay. */
+  function reloadRows(database: Db, changed: Iterable<number>): Transaction[] | null {
+    const wanted = new Set(changed), ids = [...wanted]
+    if (ids.length > 500) return null
+    const fresh = new Map(loadTransactions(database, ids).map((t) => [t.id, t]))
+    const before = state.transactions
+    let seen = 0
+    const rows: Transaction[] = []
+    for (const t of before) {
+      const next = fresh.get(t.id)
+      if (!next) { if (!wanted.has(t.id)) rows.push(t); continue }
+      // The order is by date, time and id: a row whose date moved goes in afresh.
+      if (next.dateISO !== t.dateISO || next.createdMs !== t.createdMs) return null
+      seen++
+      rows.push(next)
+    }
+    return seen === fresh.size ? rows : null
+  }
+
+  /** Reload everything the clients see from the database; `rows`, when
+   * given, are the only transactions the write changed. */
+  function refresh(rows?: Iterable<number>) {
     if (!db) return
     // Every write ends here: what's cached from the database is stale.
     dbVersion++
-    set({
-      ready: true,
-      version: dbVersion,
+    const loaded: Partial<CoreState> = {
       accounts: loadAccounts(db),
       syncAccounts: loadAccounts(db, { includeUnsynced: true }).filter((a) => a.source !== "csv"),
       budgets: loadBudgets(db),
@@ -207,7 +227,7 @@ export function createCore() {
       categories: loadCategories(db),
       tags: loadTags(db),
       rules: loadRules(db),
-      transactions: loadTransactions(db),
+      transactions: (rows && reloadRows(db, rows)) || loadTransactions(db),
       imports: loadImports(db),
       dbInfo: loadDbInfo(db, state.dbPath || "default"),
       merchantNotes: Object.fromEntries(loadMerchantNotes(db)),
@@ -215,7 +235,13 @@ export function createCore() {
       suggestions: Object.fromEntries(loadSuggestions(db).map((s) => [s.transactionId, s])),
       categoryChoices: loadCategoryChoices(db),
       purchaseLookups: Object.fromEntries(loadPurchaseLookups(db)),
-    })
+    }
+    // Only the slices that changed go out: a client re-derives what reads
+    // a slice it is sent, equal or not. The rows always go (comparing them
+    // costs about what sending does).
+    for (const key of Object.keys(loaded) as (keyof CoreState)[])
+      if (key !== "transactions" && isDeepStrictEqual(loaded[key], state[key])) delete loaded[key]
+    set({ ready: true, version: dbVersion, ...loaded })
   }
 
   /** A write to the open database, then a reload of the state from it. */

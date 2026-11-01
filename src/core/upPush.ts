@@ -156,7 +156,7 @@ export function createUpPush(ctx: CoreContext, deps: { ruleOfferNote: (ids: numb
     }
     // A rolled-back transaction must not supersede an in-flight push.
     for (const [id, sequence] of writes) latest.set(id, sequence)
-    refresh()
+    refresh(writes.keys())
     afterLocal?.()
     let settled = 0, waiting = 0
     const waitingErrors: string[] = []
@@ -189,7 +189,8 @@ export function createUpPush(ctx: CoreContext, deps: { ruleOfferNote: (ids: numb
         if (latest.get(id) === p.sequence) confirmCategoryPush(database, id, p, confirmed)
         return 1
       }
-    }, { complete: () => { if (ctx.isCurrent(session)) refresh() }, onSettled: () => { if (ctx.isCurrent(session)) onProgress?.(++settled, pushes.size) }, concurrency: PUSH_CONCURRENCY })
+    // With nothing pushed, the refresh above already shows every write.
+    }, { complete: () => { if (pushes.size && ctx.isCurrent(session)) refresh() }, onSettled: () => { if (ctx.isCurrent(session)) onProgress?.(++settled, pushes.size) }, concurrency: PUSH_CONCURRENCY })
     ctx.ensureCurrent(session, "categories were sent to Up")
     return { done: local + pushed + waiting, pushed, failures, waiting, waitingError: waitingErrors[0] }
   }
@@ -376,7 +377,7 @@ export function createUpPush(ctx: CoreContext, deps: { ruleOfferNote: (ids: numb
         }
       }
     })()
-    refresh()
+    refresh(before.map((t) => t.id))
     const result = pushes.length ? await pushQueuedTags(session, pushes) : { pushed: 0, pushedIds: new Set<number>(), rejected: 0, waiting: 0, failures: [] }
     // What changed is read from this database, and undo belongs to it.
     ctx.ensureCurrent(session, "tags were sent to Up")
