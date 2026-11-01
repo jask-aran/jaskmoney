@@ -1,5 +1,5 @@
 import { Index, Show, createEffect, createMemo, createSignal, on, onCleanup } from "solid-js"
-import { easeOut, gridColumns, revealRuns } from "./reveal"
+import { easeOut, gridColumns, hasBars, revealRuns } from "./reveal"
 import { StyledLine } from "../primitives/StyledLine"
 import { ink } from "../../theme"
 import type { Run } from "./lineChart"
@@ -65,7 +65,11 @@ export function ChartBody(props: { model: ChartModel; inks: Record<string, strin
   const axis = () => axisWidth(props.model.ticks)
   const [shown, setShown] = createSignal(1)
   let timer: ReturnType<typeof setInterval> | undefined
-  createEffect(on(() => props.revealKey, (key) => {
+  // Through a memo: it tells only when the key's value changes. A key read
+  // again unchanged (a store array replaced around it: the other pane's
+  // view switching) must not start a draw-in.
+  const revealKey = createMemo(() => props.revealKey)
+  createEffect(on(revealKey, (key) => {
     clearInterval(timer)
     const ms = props.revealMs ?? 0
     if (key === undefined || ms <= 0) { setShown(1); return }
@@ -85,6 +89,7 @@ export function ChartBody(props: { model: ChartModel; inks: Record<string, strin
   onCleanup(() => clearInterval(timer))
   // The gridlines a reveal leaves standing, found once per model.
   const frame = createMemo(() => gridColumns(props.model.rows))
+  const bars = createMemo(() => hasBars(props.model.rows))
   return (
     <>
       {/* One styled line per row (StyledLine), not a span per run: a year's
@@ -93,7 +98,7 @@ export function ChartBody(props: { model: ChartModel; inks: Record<string, strin
         {(runs, i) => (
           <StyledLine spans={[
             { text: (props.model.ticks.get(i) ?? "").padStart(axis() - 2) + (props.model.ticks.has(i) ? " ┤" : " │"), fg: ink.label },
-            ...(shown() < 1 ? revealRuns(runs(), i, props.model.rows.length, shown(), frame()) : runs()).map((run) => ({ text: run.text, fg: run.ink ? props.model.inks?.[run.ink] ?? props.inks[run.ink] ?? ink.figure : undefined })),
+            ...(shown() < 1 ? revealRuns(runs(), i, props.model.rows.length, shown(), frame(), bars()) : runs()).map((run) => ({ text: run.text, fg: run.ink ? props.model.inks?.[run.ink] ?? props.inks[run.ink] ?? ink.figure : undefined })),
           ]} />
         )}
       </Index>

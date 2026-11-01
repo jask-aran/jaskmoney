@@ -15,11 +15,25 @@ test("a line traces left to right; gridlines and spaces stand from the start", (
   expect(revealRuns(covered, 0, 1, 0.25, new Map([[2, { text: "│", ink: "week" }]]))).toEqual([{ text: "⣀ ", ink: "spend" }, { text: "│", ink: "week" }, { text: " ", ink: "spend" }])
 })
 
-test("bars rise from the bottom row; words in the plot wait for the end", () => {
+test("bars rise from the bottom row; a label waits for its bar to reach it", () => {
   const top: Run[] = [{ text: "██ $826", ink: "spend" }]
   const bottom: Run[] = [{ text: "██", ink: "spend" }]
-  expect(text(revealRuns(bottom, 3, 4, 0.25))).toBe("██")
-  expect(text(revealRuns(top, 0, 4, 0.25))).toBe("       ")
-  expect(text(revealRuns(top, 0, 4, 0.8))).toBe("██     ")
-  expect(text(revealRuns(top, 0, 4, 0.95))).toBe("██ $826")
+  expect(text(revealRuns(bottom, 3, 4, 0.25, undefined, true))).toBe("██")
+  expect(text(revealRuns(top, 0, 4, 0.25, undefined, true))).toBe("       ")
+  expect(text(revealRuns(top, 0, 4, 0.8, undefined, true))).toBe("██     ")
+  expect(text(revealRuns(top, 0, 4, 1, undefined, true))).toBe("██ $826")
+})
+
+test("a label shows a beat after the line reaches it, whole: labels come in the order of their points", () => {
+  // "To General" ends at column 13; "From General" further on, at 38.
+  const row: Run[] = [{ text: "⣀⣀⣀ To General ⣀⣀⣀⣀⣀⣀⣀⣀⣀⣀⣀⣀ From General ⣀⣀⣀", ink: "spend" }]
+  const width = [...row[0]!.text].length
+  const at = (col: number) => text(revealRuns(row, 0, 1, col / width))
+  expect(at(13)).not.toContain("To General")
+  expect(at(15)).toContain("To General")
+  expect(at(15)).not.toContain("From")
+  expect(at(39)).not.toContain("From")
+  expect(at(41)).toContain("From General")
+  // Never a part of one: it shows whole.
+  expect(at(10)).not.toMatch(/To|General/)
 })

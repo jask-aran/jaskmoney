@@ -1,33 +1,28 @@
 import { expect, test } from "bun:test"
-import { RGBA } from "@opentui/core"
 import { testRender } from "@opentui/solid"
-import { createSignal } from "solid-js"
-import { ink } from "../../theme"
+import { createStore } from "solid-js/store"
 import { ChartBody, type ChartModel } from "./ChartBody"
 
-/** Chart rows are StyledText set on the node (not a span per run): prove the
- * cells' colours, including a run losing its ink on the next model. */
-test("chart rows paint each run's ink, the default where none, and clear an ink that goes", async () => {
-  const red = "#ff0000"
-  const model = (ink: string | null): ChartModel => ({
-    rows: [[{ text: "ab", ink }, { text: "cd", ink: null }]],
-    ticks: new Map([[0, "$1"]]),
-    labels: "lbl",
-    legend: [],
-  })
-  const [current, setCurrent] = createSignal(model("x"))
-  const t = await testRender(() => <box flexDirection="column"><ChartBody model={current()} inks={{ x: red }} /></box>, { width: 20, height: 4 })
-  try {
-    await t.renderOnce()
-    const cells = () => t.captureSpans().lines[0]!.spans
-    const span = (text: string) => cells().find((s) => s.text.includes(text))!
-    expect(t.captureCharFrame()).toContain("$1 ┤abcd")
-    expect(span("$1").fg.toInts()).toEqual(RGBA.fromHex(ink.label).toInts())
-    expect(span("ab").fg.toInts()).toEqual(RGBA.fromHex(red).toInts())
-    const plain = span("cd").fg.toInts()
-    expect(plain).not.toEqual(RGBA.fromHex(red).toInts())
-    setCurrent(model(null))
-    await t.renderOnce()
-    expect(span("ab").fg.toInts()).toEqual(plain)
-  } finally { t.renderer.destroy() }
+const model: ChartModel = { rows: [[{ text: "⣀".repeat(16), ink: "spend" }]], ticks: new Map(), labels: "", legend: [] }
+const dots = (frame: string) => [...frame].filter((c) => c === "⣀").length
+const wait = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms))
+
+// The Overview's two panes take their keys from one store array: switching
+// one pane's view replaces it. The other pane's key reads the same, and its
+// chart must not draw in again.
+test("a chart draws in when its key changes, not when it's read again unchanged", async () => {
+  const [views, setViews] = createStore({ list: ["Daily", "Available"] })
+  const t = await testRender(() => <ChartBody model={model} inks={{ spend: "#ffffff" }} revealKey={views.list[1]} revealMs={60} />, { width: 30, height: 3 })
+  await wait(150)
+  await t.renderOnce()
+  expect(dots(t.captureCharFrame())).toBe(16)
+  setViews("list", ["Weekly", "Available"])
+  await wait(20)
+  await t.renderOnce()
+  expect(dots(t.captureCharFrame())).toBe(16)
+  setViews("list", ["Weekly", "Savers"])
+  await wait(20)
+  await t.renderOnce()
+  expect(dots(t.captureCharFrame())).toBeLessThan(16)
+  t.renderer.destroy()
 })
