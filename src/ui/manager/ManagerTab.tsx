@@ -125,11 +125,6 @@ export function ManagerTab(props: { focused: SectionId }) {
     return data.nearMissesShown() ? `${c.matches} match, then ${c.near} near (≈)` : c.near ? `${c.matches} match · ${c.near} near (n)` : null
   }
 
-  const scrollIndicator = () => {
-    const text = [asking(), askNote(), rowsIndicator()].filter(Boolean).join(" · ")
-    return text || undefined
-  }
-
   /** Selected rows the view doesn't show (a filter hides them), as the Go app counts them. */
   const hiddenSelected = createMemo(() => {
     const shown = new Set(rows().map((r) => r.id))
@@ -164,6 +159,13 @@ export function ManagerTab(props: { focused: SectionId }) {
       data.state.sortAscending ? "↑" : "↓"
     }`
   }
+
+  // A memo: the card reads it twice, and a cursor move should build it once.
+  // After what it reads: a memo runs as it is made.
+  const scrollIndicator = createMemo(() => {
+    const text = [asking(), askNote(), rowsIndicator()].filter(Boolean).join(" · ")
+    return text || undefined
+  })
 
   // Go-style filter bar: the input stays in the pane; its canonical form is
   // rendered next to the title.

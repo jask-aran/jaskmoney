@@ -35,6 +35,8 @@ export function createSuggestions(ctx: CoreContext, deps: {
   async function suggestNow(ids: number[] | undefined, ai: Pick<JevClient, "judge"> | undefined, options: { replace?: boolean }): Promise<string | number> {
     const session = ctx.session()
     const database = session.db
+    // Whether anything since the last reload wrote to the database.
+    let wrote = false
     try {
       const selected = ids ? new Set(ids) : null
       // Rows whose suggestion was dismissed get no new one.
@@ -52,18 +54,22 @@ export function createSuggestions(ctx: CoreContext, deps: {
         onAnswers: (answers) => {
           if (!ctx.isCurrent(session)) return
           saveMerchantBreadth(database, answers)
+          wrote = true
           for (const [k, p] of answers) asked.set(k, p)
         },
         onError: (error) => failures.push(`merchants: ${error instanceof Error ? error.message : String(error)}`),
       })
       if (!ctx.isCurrent(session)) return options.replace ? 0 : ""
       const breadth = merchantBreadth(transactions(), state.categories, asked)
-      capStored(database, breadth)
+      if (capStored(database, breadth)) wrote = true
       // Each suggestion says whether it knew what its row bought (order emails).
       const knew = new Set(transactions().filter((t) => t.bought?.length).map((t) => t.id))
       const history = historySuggestions(transactions(), state.categories, new Set(targets.map((t) => t.id)), breadth).map((h) => (knew.has(h.transactionId) ? { ...h, knewBought: true } : h))
-      saveSuggestions(database, history)
-      refresh()
+      // A reload follows each write. With nothing written (the view opened
+      // again, every row already suggested) the clients already match the
+      // database, and a reload would rebuild everything that reads the rows.
+      if (history.length) saveSuggestions(database, history)
+      if (history.length || wrote) { refresh(); wrote = false }
       let fromJev = 0
       if (enabled) {
         const targetIds = new Set(targets.map((t) => t.id))
@@ -84,6 +90,7 @@ export function createSuggestions(ctx: CoreContext, deps: {
           }).map((s) => (byId.get(s.transactionId)?.bought?.length ? { ...s, knewBought: true } : s))
           if (!fresh.length) return
           saveSuggestions(database, fresh)
+          wrote = true
           set({ suggestions: { ...state.suggestions, ...Object.fromEntries(fresh.map((s) => [s.transactionId, s])) } })
           fromJev += fresh.length
         }
@@ -107,7 +114,7 @@ export function createSuggestions(ctx: CoreContext, deps: {
       if (failures.length) parts.push(`${failures.length} failed: ${failures[0]}`)
       return parts.join(" · ")
     } finally {
-      if (ctx.isCurrent(session)) refresh()
+      if (wrote && ctx.isCurrent(session)) refresh()
     }
   }
 
@@ -131,9 +138,10 @@ export function createSuggestions(ctx: CoreContext, deps: {
       const { knewBought: _, ...rest } = capped
       return [t.bought?.length ? capped : rest]
     })
-    if (!changed.length) return
+    if (!changed.length) return false
     saveSuggestions(database, changed)
     set({ suggestions: { ...state.suggestions, ...Object.fromEntries(changed.map((s) => [s.transactionId, s])) } })
+    return true
   }
 
   /** Replace existing suggestions for waiting rows with the same description. */
