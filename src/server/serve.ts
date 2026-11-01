@@ -12,7 +12,8 @@
 import type { ServerWebSocket } from "bun"
 import { FRESH, webBundler } from "./webBuild"
 import type { Core } from "../core/core"
-import { KEYED_SLICES, type ClientMessage, type CoreState, type ServerMessage } from "../core/protocol"
+import { KEYED_SLICES, type ClientMessage, type ConnectedClient, type CoreState, type ServerMessage } from "../core/protocol"
+import { describeClient } from "./clients"
 
 export const DEFAULT_PORT = 4417
 
@@ -27,6 +28,8 @@ interface Connection {
   rows: Map<string, string>
   order: string
   calls: Map<number, AbortController>
+  /** Who this is, as the core's clients list shows it. */
+  client: ConnectedClient
 }
 
 /** A patch serialised once for every client: whole slices, keyed slices by
@@ -95,13 +98,12 @@ function fileResponse(file: { body: Uint8Array; type: string }, fresh: boolean):
 export interface ServeOptions {
   port?: number
   hostname?: string
-  /** How many clients are connected now, on each change. */
-  onClients?: (count: number) => void
 }
 
-export function serveCore(core: Core, { port = DEFAULT_PORT, hostname = "127.0.0.1", onClients }: ServeOptions = {}) {
+export function serveCore(core: Core, { port = DEFAULT_PORT, hostname = "127.0.0.1" }: ServeOptions = {}) {
   const hosts = new Set([...LOOPBACK, hostname])
   const connections = new Set<ServerWebSocket<Connection>>()
+  let clientIds = 0
   const bundler = webBundler()
   // One subscription for every client: each patch is serialised once.
   const unsubscribe = core.subscribe((patch) => {
@@ -150,13 +152,15 @@ export function serveCore(core: Core, { port = DEFAULT_PORT, hostname = "127.0.0
       }
       const origin = req.headers.get("origin")
       if (origin && new URL(origin).host !== url.host) return new Response("Forbidden", { status: 403 })
-      if (server.upgrade(req, { data: { sent: new Map(), entries: new Map(), rows: new Map(), order: "", calls: new Map() } })) return undefined
+      const client = describeClient(++clientIds, req.headers, server.requestIP(req)?.address ?? null, Date.now())
+      if (server.upgrade(req, { data: { sent: new Map(), entries: new Map(), rows: new Map(), order: "", calls: new Map(), client } })) return undefined
       return new Response("WebSocket only", { status: 426 })
     },
     websocket: {
       open(ws) {
         connections.add(ws)
-        onClients?.(connections.size)
+        // The daemon broadcasts who is connected, as state, to every client.
+        core.set({ clients: [...core.state.clients, ws.data.client] })
         const message = stateMessage(ws, encode(core.state))
         if (message) ws.send(message)
       },
@@ -168,21 +172,24 @@ export function serveCore(core: Core, { port = DEFAULT_PORT, hostname = "127.0.0
       },
       close(ws) {
         connections.delete(ws)
-        onClients?.(connections.size)
+        core.set({ clients: core.state.clients.filter((c) => c.id !== ws.data.client.id) })
         for (const abort of ws.data.calls.values()) abort.abort()
       },
     },
   })
 
   const page = server.url.href
+  const api = new URL("/api", page).href.replace(/^http/, "ws")
+  core.set({ server: { page, api } })
   return {
     /** The web app. */
     page,
     /** Where clients connect (`--connect`). */
-    api: new URL("/api", page).href.replace(/^http/, "ws"),
+    api,
     stop() {
       unsubscribe()
       server.stop(true)
+      core.set({ server: null, clients: [] })
     },
   }
 }

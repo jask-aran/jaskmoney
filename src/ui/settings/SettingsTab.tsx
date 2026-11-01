@@ -226,6 +226,28 @@ function UpPane(props: { focused: boolean; width: number }) {
   </SectionCard>
 }
 
+/** Web app: where this core serves it and who is connected, as the daemon
+ * broadcasts them (core server, clients). Read-only; the top bar's web item
+ * opens the page. */
+function WebAppPane(props: { width: number }) {
+  const server = () => data.state.server
+  const clients = () => data.state.clients
+  const time = (at: number) => new Date(at).toLocaleTimeString("en-AU", { hour: "numeric", minute: "2-digit" })
+  const row = (label: string, value: string, fg: string, note = "") =>
+    <ListRow cursor={false} bg={theme.canvas} spans={[{ text: fit(label, 11), fg: ink.label }, { text: value, fg }, ...(note ? [{ text: `  ${note}`, fg: ink.note }] : [])]} />
+  return <SectionCard title="Web app" height={3 + Math.max(1, server() ? clients().length : 0)} width={props.width}>
+    {server() ? row("Address", server()!.page, ink.figure) : row("Address", "not serving · start with --serve", ink.faint)}
+    <Show when={server()}>
+      <Show when={clients().length} fallback={row("Clients", "none connected", ink.faint)}>
+        <For each={clients()}>
+          {(client, i) => row(i() === 0 ? "Clients" : "", client.agent, ink.figure,
+            `${client.address}${client.via === "tunnel" ? " · tunnel" : ""} · since ${time(client.since)}`)}
+        </For>
+      </Show>
+    </Show>
+  </SectionCard>
+}
+
 /** Which Up accounts sync: name, kind, on or off. New accounts, savers
  * included, sync from the start. */
 export function UpAccountsDialog() {
@@ -546,6 +568,7 @@ export function SettingsTab(props: { focused: SectionId }) {
   const ai = (width: number) => <Pane section="set.ai"><AiPane focused={props.focused === "set.ai"} width={width} /></Pane>
   const database = (width: number) => <Pane section="set.database"><DatabasePane focused={props.focused === "set.database"} width={width} /></Pane>
   const history = (width: number) => <box width="100%" flexShrink={0}><ImportHistory width={width} /></box>
+  const webApp = (width: number) => <box width="100%" flexShrink={0}><WebAppPane width={width} /></box>
   return <box width="100%" height="100%" flexDirection="row" gap={1} backgroundColor={theme.canvas}>
     <Show when={layout() === "wide"} fallback={
       <Column>
@@ -556,11 +579,11 @@ export function SettingsTab(props: { focused: SectionId }) {
             <box id={paneId("set.ai")} flexGrow={1} minWidth={0}><AiPane focused={props.focused === "set.ai"} width={full() - 1 - half()} /></box>
           </box>
         </Show>
-        {rules(full())}{database(full())}{history(full())}
+        {webApp(full())}{rules(full())}{database(full())}{history(full())}
       </Column>
     }>
       <Column width={left()}>{taxonomy(left())}</Column>
-      <Column>{up(right())}{ai(right())}{rules(right())}{database(right())}{history(right())}</Column>
+      <Column>{up(right())}{webApp(right())}{ai(right())}{rules(right())}{database(right())}{history(right())}</Column>
     </Show>
     <ImportOverlay />
     <FactoryResetOverlay />

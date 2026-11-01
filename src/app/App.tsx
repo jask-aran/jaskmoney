@@ -101,10 +101,10 @@ export function App() {
       data.init(process.env.JASKMONEY_DB)
       if (serving != null) {
         const { serveCore, DEFAULT_PORT } = require("../server/serve") as typeof import("../server/serve")
-        const served = serveCore(data.core, { port: Number(serving) || DEFAULT_PORT, onClients: (clients) => web.setServing({ page: served.page, clients }) })
+        // The core then broadcasts where it serves and who is connected.
+        const served = serveCore(data.core, { port: Number(serving) || DEFAULT_PORT })
         // A listening server would keep the process alive after quitting.
-        web.setServing({ page: served.page, clients: 0 })
-        onCleanup(() => { served.stop(); web.setServing(null) })
+        onCleanup(() => served.stop())
         ui.setStatus(`Web app at ${served.page}`)
       }
     } catch (e) {

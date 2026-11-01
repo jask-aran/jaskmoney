@@ -120,3 +120,30 @@ test("the page is an installable app: its build, a manifest, icons, and a worker
   const script = built.files.find((path) => path.endsWith(".js"))!
   expect((await get(script)).headers.get("cache-control")).toContain("immutable")
 }, 30000)
+
+test("the daemon broadcasts where it serves and who is connected, and forgets them on close", async () => {
+  const { core, server, base } = served()
+  expect(core.state.server).toEqual({ page: server.page, api: server.api })
+  expect(core.state.clients).toEqual([])
+  const ws = new WebSocket(server.api)
+  await until(() => core.state.clients.length === 1)
+  expect(core.state.clients[0]).toMatchObject({ kind: "tui", agent: "jaskmoney TUI", via: "direct" })
+  // A second client sees the list as state, itself included.
+  const store = createClientStore(wsLink(server.api))
+  await until(() => store.state.clients.length === 2)
+  expect(store.state.server?.page).toBe(server.page)
+  ws.close()
+  await until(() => core.state.clients.length === 1 && store.state.clients.length === 1)
+  expect(base.port).toBeTruthy()
+})
+
+test("stopping the server clears its address and clients", () => {
+  const core = createCore()
+  core.open(":memory:")
+  const server = serveCore(core, { port: 0 })
+  expect(core.state.server).not.toBeNull()
+  server.stop()
+  expect(core.state.server).toBeNull()
+  expect(core.state.clients).toEqual([])
+  core.close()
+})
