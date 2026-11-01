@@ -1,3 +1,4 @@
+import { regionRef } from "../regions"
 import { ACCOUNT_ACTIONS, armedFor } from "../../state/armed"
 import { ListRow } from "../primitives/ListRow"
 import { For, Show, createEffect, createMemo } from "solid-js"
@@ -251,6 +252,7 @@ export function ManagerTab(props: { focused: SectionId }) {
   return (
     <box width="100%" height="100%" flexDirection="column" backgroundColor={theme.canvas}>
       <AccountsPane focused={acctFocused()} width={dims().width} />
+      <box ref={regionRef("mgr.transactions", "manager")} width="100%" flexGrow={1}>
       <SectionCard
         title={`Transactions${data.state.tagReview ? ` · tagging ${data.state.tagReview.name}` : data.state.uncategorisedOnly ? " · uncategorised" : ""}${merchants() ? " · by merchant" : ""}`}
         titleSuffix={filterTitle()}
@@ -311,6 +313,7 @@ export function ManagerTab(props: { focused: SectionId }) {
         />
         </Show>
       </SectionCard>
+      </box>
       <TransactionDetail />
       <Show when={ui.state.acceptPreview && data.state.tagReview}>
         <Modal title={`Tag ${data.state.tagReview?.name ?? ""}`} subtitle={`${ui.state.acceptPreview?.length ?? 0} at ${ACCEPT_ALL_AT * 100}% or more`} width={72} hints="enter tag · esc cancel">

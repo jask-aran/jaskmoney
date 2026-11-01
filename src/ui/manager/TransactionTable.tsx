@@ -1,3 +1,6 @@
+import { onPointer } from "../../app/pointer"
+import { moveTxnCursor, openTransaction } from "../../app/keys"
+import { ui } from "../../state/uiStore"
 import { Index, Show, createMemo } from "solid-js"
 import { ACCEPT_ALL_AT, MATCH_AT } from "../../domain/questions"
 import { StyledLine, type StyledSpan } from "../primitives/StyledLine"
@@ -215,7 +218,11 @@ export function TransactionTable(props: {
   const mark = (column: string) => props.sortMark?.(column) ?? ""
   const windowRows = createMemo(() => props.rows.slice(props.top, props.top + props.visible))
   return (
-    <>
+    <box flexGrow={1} width="100%" flexDirection="column" onMouseScroll={onPointer((scope) => scope === "bar" || scope === "manager.txns" || scope === "manager.accounts", (event) => {
+      if (event.scroll?.direction !== "up" && event.scroll?.direction !== "down") return
+      ui.applyJump("mgr.transactions")
+      moveTxnCursor(ui, data, (event.scroll.direction === "down" ? 3 : -3) * event.scroll.delta, false)
+    })}>
       <text fg={ink.label}>
         <b>
           {" ".repeat(columns.marker)}
@@ -284,11 +291,16 @@ export function TransactionTable(props: {
                   ] : []),
                 ]
               })
-              return <StyledLine spans={line()} bg={rowBg()} />
+              return <box height={1} width="100%" onMouseDown={onPointer((scope) => scope === "bar" || scope === "manager.txns" || scope === "manager.accounts", () => {
+                const open = ui.state.focusedSection === "mgr.transactions" && ui.state.managerCursor === absIndex()
+                ui.applyJump("mgr.transactions")
+                moveTxnCursor(ui, data, absIndex() - ui.state.managerCursor, false)
+                if (open) openTransaction(ui, data)
+              })}><StyledLine spans={line()} bg={rowBg()} /></box>
             }}
           </Index>
         </box>
       </Show>
-    </>
+    </box>
   )
 }

@@ -1,4 +1,8 @@
-import { For, Index, Show, createEffect, createMemo, onCleanup } from "solid-js"
+import { regionRef } from "../regions"
+import { onPointer } from "../../app/pointer"
+import { drillDown, handleOverviewRange, moveOverviewCategory } from "../../app/keys"
+import { keyEvent } from "../../app/keyEvent"
+import { For, Index, Show, createEffect, createMemo, onCleanup, onMount } from "solid-js"
 import type { BoxRenderable, ScrollBoxRenderable } from "@opentui/core"
 import { categoryMark } from "../icons"
 import { useTerminalDimensions } from "@opentui/solid"
@@ -163,7 +167,7 @@ export function OverviewTab(props: { focused: SectionId }) {
   createEffect(() => {
     const charts = wide() ? 2 : 1
     if (ui.state.overviewCharts !== charts) ui.setState({ overviewCharts: charts })
-    if (charts === 1 && ui.state.focusedSection === "ov.chart2") ui.setState({ focusedSection: "ov.chart" })
+    if (charts === 1 && ui.state.focusedSection === "ov.chart2") ui.applyJump("ov.chart")
   })
 
   // The stacks: label, value (VALUE) and a note or comparison (NOTE).
@@ -267,8 +271,10 @@ export function OverviewTab(props: { focused: SectionId }) {
   const pendingNote = () => `${formatWholeMoney(-position().pendingAmount)} · ${position().pendingCount} txn`
   const saverChange = (accountId: number) => saverChanges().find((c) => c.accountId === accountId)?.change ?? 0
   const saversTotalChange = () => saverChanges().reduce((sum, c) => sum + c.change, 0)
+  const panePointer = (id: SectionId) => onPointer((s) => s === "bar" || s === "overview" || s === "overview.range", () => ui.applyJump(id))
   const accountsCard = () => (
-    <SectionCard title="Accounts" width={sideWidth()} height={accountRows(saversFull()) + 2}>
+    <box ref={regionRef("ov.accounts", "overview")} width={sideWidth()} height={accountRows(saversFull()) + 2} flexShrink={0} onMouseDown={panePointer("ov.accounts")}>
+    <SectionCard title="Accounts" focused={props.focused === "ov.accounts"} active={props.focused === "ov.accounts"} width={sideWidth()} height={accountRows(saversFull()) + 2}>
       {stat("Available", available() != null ? formatMoney(available()!) : "—", "", { label: ink.figure, value: ink.strong, bold: true })}
       <Show when={position().pendingCount > 0 && available() != null}>
         {stat("Balance", formatMoney(available()! - position().pendingAmount), pendingNote(), { value: ink.label })}
@@ -289,6 +295,7 @@ export function OverviewTab(props: { focused: SectionId }) {
         {stat("Net position", position().netPosition != null ? formatMoney(position().netPosition!) : "—", "", { label: ink.figure, value: ink.strong, bold: true })}
       </Show>
     </SectionCard>
+    </box>
   )
 
   // Totals: the range against the same days of the previous period.
@@ -334,10 +341,16 @@ export function OverviewTab(props: { focused: SectionId }) {
     return lines.slice(top, top + rows).map((line, i) => ({ line, cursor: top + i === cursor }))
   })
   const categoriesCard = () => (
+    <box ref={regionRef("ov.categories", "overview")} width={categoryWidth()} height={categoriesHeight()} flexShrink={0} onMouseDown={panePointer("ov.categories")}
+      onMouseScroll={onPointer((s) => s === "bar" || s === "overview" || s === "overview.range", (event) => {
+        if (event.scroll?.direction !== "up" && event.scroll?.direction !== "down") return
+        ui.applyJump("ov.categories")
+        moveOverviewCategory(ui, data, ui.state.overviewCategoryCursor + (event.scroll.direction === "down" ? 1 : -1) * event.scroll.delta)
+      })}>
     <SectionCard title="Categories" titleSuffix={categoriesFocused() ? "· enter to open" : undefined} titleSuffixColor={ink.note} bottomSpans={uncategorised() || toReview() ? [
         ...(uncategorised() ? [{ text: `${uncategorised()} uncategorised`, fg: tone.caution }] : []),
         ...(toReview() ? [{ text: `${uncategorised() ? " · " : ""}${toReview()} to review (i)`, fg: tone.ai }] : []),
-      ] : undefined} width={categoryWidth()} height={categoriesHeight()} focused={categoriesFocused()}>
+      ] : undefined} width={categoryWidth()} height={categoriesHeight()} focused={categoriesFocused()} active={categoriesFocused()}>
       <Show when={groups().length} fallback={<text fg={ink.note}>No spending in this period</text>}>
         {/* Index: a new range or cursor move updates rows in place. */}
         <Index each={categoryRows()}>
@@ -346,7 +359,14 @@ export function OverviewTab(props: { focused: SectionId }) {
             const cursor = () => row().cursor
             const bg = () => cursor() ? theme.rowCursor : undefined
             return (
-              <text wrapMode="none" bg={bg()}>
+              <text wrapMode="none" bg={bg()} onMouseDown={onPointer((s) => s === "bar" || s === "overview" || s === "overview.range", () => {
+                const lines = allCategoryLines(range())
+                const index = lines.findIndex((l) => l.categoryId === line().categoryId && l.child === line().child)
+                const open = categoriesFocused() && index === ui.state.overviewCategoryCursor
+                ui.applyJump("ov.categories")
+                moveOverviewCategory(ui, data, index)
+                if (open) drillDown(ui, data, lines[index])
+              })}>
                 <S fg={line().color} bg={bg()}>{line().child ? "  " : ""}{`${categoryMark(line().categoryId)} `}</S>
                 <S fg={line().child && !cursor() ? ink.label : line().color} bg={bg()} bold={!line().child || cursor()}>{fit(line().label, -(line().child ? 4 : 2) + categoryNameWidth())}</S>
                 <S fg={line().child ? ink.label : ink.figure} bg={bg()} bold={!line().child}>{formatWholeMoney(line().amount).padStart(9)}</S>
@@ -357,6 +377,7 @@ export function OverviewTab(props: { focused: SectionId }) {
         </Index>
       </Show>
     </SectionCard>
+    </box>
   )
 
   // A component, not a function call in JSX: its card stays mounted while
@@ -367,6 +388,7 @@ export function OverviewTab(props: { focused: SectionId }) {
     const view = () => CHART_VIEWS[index()] ?? CHART_VIEWS[0]
     const chart = () => (p.pane === 0 ? topModel() : bottomModel())
     return (
+      <box ref={regionRef(p.pane === 0 ? "ov.chart" : "ov.chart2", "overview")} width={mainWidth()} height={p.height} flexShrink={0} onMouseDown={panePointer(p.pane === 0 ? "ov.chart" : "ov.chart2")}>
       <ChartCard
         title={view().group}
         views={CHART_VIEWS}
@@ -381,6 +403,7 @@ export function OverviewTab(props: { focused: SectionId }) {
         focused={props.focused === (p.pane === 0 ? "ov.chart" : "ov.chart2")}
         baseline={baseline()}
       />
+      </box>
     )
   }
 
@@ -418,8 +441,27 @@ export function OverviewTab(props: { focused: SectionId }) {
   return (
     <box width="100%" height="100%" flexDirection="column" backgroundColor={theme.canvas}>
       <SectionCard title="Date Range" titleSuffix={`· ${scope().label}`} titleSuffixColor={ink.label} focused={dateFocused()} height={3} width={rangeCardWidth()}>
-        <box flexDirection="row" justifyContent="space-between" width="100%">
-          <text fg={ink.label} wrapMode="none">
+        <box flexDirection="row" justifyContent="space-between" width="100%" ref={(row: BoxRenderable) => {
+          // Register the card after insertion, keeping its parent and layout.
+          onMount(() => {
+            const card = row.parent
+            if (card) { regionRef("ov.range", "overview")(card); card.onMouseDown = panePointer("ov.range") }
+          })
+        }}>
+          <text fg={ink.label} wrapMode="none" onMouseDown={onPointer((s) => s === "bar" || s === "overview" || s === "overview.range", (event) => {
+            const x = event.x - (event.currentTarget?.x ?? 0)
+            let start = 0
+            const labels = [...LOOKBACKS, ...PERIODS.map((p) => chipsFit().label(p)), "Custom"]
+            const index = labels.findIndex((label, i) => {
+              if (i > 0) start += Bun.stringWidth(i === LOOKBACKS.length || i === CUSTOM_CHIP ? chipsFit().separator : chipsFit().gap)
+              const end = start + Bun.stringWidth(label) + 2
+              const hit = x >= start && x < end
+              start = end
+              return hit
+            })
+            ui.applyJump("ov.range")
+            if (index >= 0) { ui.setDashChipCursor(index); handleOverviewRange(ui, keyEvent("return"), data) }
+          })}>
             <For each={LOOKBACKS}>
               {(lb, i) => <>{i() > 0 ? chipsFit().gap : ""}{chip(lb, i(), () => ui.state.timeframe.family === "lookback" && ui.state.timeframe.lookback === lb)}</>}
             </For>

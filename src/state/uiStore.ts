@@ -20,6 +20,10 @@ export type TabId = "overview" | "manager" | "budgets" | "settings"
 
 export type SectionId =
   | "none"
+  | "ov.accounts"
+  | `bar.${TabId}`
+  | "bar.web"
+  | "bar.sync"
   | "ov.range"
   | "ov.chart"
   | "ov.chart2"
@@ -37,6 +41,7 @@ export type SectionId =
   | "bud.categories"
 
 export type ScopeId =
+  | "bar"
   | "palette"
   | "filterPicker"
   | "dryRun"
@@ -247,7 +252,7 @@ export interface UiState {
   searchHelp: { full: boolean; top: number; visible: number } | null
 }
 
-const TAB_DEFAULT_FOCUS: Record<TabId, SectionId> = {
+export const TAB_DEFAULT_FOCUS: Record<TabId, SectionId> = {
   overview: "none",
   manager: "mgr.transactions",
   budgets: "bud.list",
@@ -716,6 +721,7 @@ function createUiStore() {
         return modal.scope()
       }
     }
+    if (state.focusedSection.startsWith("bar.")) return "bar"
     if (state.activeTab === "overview") return state.focusedSection === "ov.range" ? "overview.range" : "overview"
     if (state.activeTab === "budgets") return state.focusedSection === "bud.categories" ? "budgets.categories" : "budgets"
     if (state.activeTab === "manager") {

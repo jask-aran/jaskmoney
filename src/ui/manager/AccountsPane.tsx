@@ -1,3 +1,7 @@
+import { onPointer } from "../../app/pointer"
+import { selectAccountRow } from "../../app/keys"
+import { ui } from "../../state/uiStore"
+import { regionRef } from "../regions"
 import { For, Show, createMemo } from "solid-js"
 import { SectionCard } from "../primitives/SectionCard"
 import { S } from "../primitives/S"
@@ -75,11 +79,19 @@ export function AccountsPane(props: { focused: boolean; width: number }) {
   }
 
   return (
+    <box ref={regionRef("mgr.accounts", "manager")} width="100%" height={accountsPaneHeight(stacks())} flexShrink={0} onMouseDown={onPointer((s) => s === "bar" || s === "manager.txns" || s === "manager.accounts" || s === "manager.merchants", () => ui.applyJump("mgr.accounts"))}>
     <SectionCard title="Accounts" focused={props.focused} active={props.focused} height={accountsPaneHeight(stacks())}>
       <Show when={stacks().length} fallback={<text fg={ink.note}>No accounts yet</text>}>
         <For each={lines()}>
           {(index) => (
-            <text wrapMode="none">
+            <text wrapMode="none" onMouseDown={onPointer((s) => s === "bar" || s === "manager.txns" || s === "manager.accounts" || s === "manager.merchants", (event) => {
+              ui.applyJump("mgr.accounts")
+              const x = event.x - (event.currentTarget?.x ?? 0) - (window().start > 0 ? MORE : 0)
+              const stackIndex = window().start + Math.floor(x / (width() + GAP))
+              const stack = stacks()[stackIndex]
+              if (!stack || stackIndex >= window().end || index === 0 || !stack.rows[index - 1] || x < 0 || x % (width() + GAP) >= width()) return
+              selectAccountRow(ui, data, stacks().slice(0, stackIndex).reduce((n, s) => n + s.rows.length, 0) + index - 1)
+            })}>
               <S fg={ink.note}>{window().start > 0 ? "‹ " : ""}</S>
               <For each={shown()}>
                 {(stack, i) => (
@@ -95,6 +107,7 @@ export function AccountsPane(props: { focused: boolean; width: number }) {
         </For>
       </Show>
     </SectionCard>
+    </box>
   )
 }
 

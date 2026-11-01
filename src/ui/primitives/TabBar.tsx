@@ -1,11 +1,16 @@
+import { regionRef } from "../regions"
+import { onPointer } from "../../app/pointer"
+import { openBarItem } from "../../app/keys"
+import { data } from "../../state/dataStore"
 import { For } from "solid-js"
-import { TABS, type TabId } from "../../state/uiStore"
+import { TABS, ui, type ScopeId, type SectionId, type TabId } from "../../state/uiStore"
 import { theme, ink, tone } from "../../theme"
 import { chipLook } from "./chip"
 
 /** Matches Go headerBarStyle + activeTabStyle / inactiveTabStyle; the
  * current tab is an active chip (chipLook). */
-export function TabBar(props: { active: TabId; accountLabel?: string; reserveRight?: number }) {
+export function TabBar(props: { active: TabId; items?: { id?: SectionId; text: string }[]; reserveRight?: number }) {
+  const items = () => (props.items ?? [{ text: "All Accounts" }]).filter((item) => item.text)
   return (
     <box
       width="100%"
@@ -25,7 +30,7 @@ export function TabBar(props: { active: TabId; accountLabel?: string; reserveRig
         </text>
         <For each={TABS}>
           {(tab, i) => {
-            const look = () => chipLook({ active: props.active === tab.id, cursor: false })
+            const look = () => chipLook({ active: props.active === tab.id, cursor: ui.state.focusedSection === `bar.${tab.id}` })
             return (
               <box flexDirection="row" gap={0} backgroundColor={theme.mantle}>
                 {i() > 0 ? (
@@ -33,7 +38,7 @@ export function TabBar(props: { active: TabId; accountLabel?: string; reserveRig
                     │
                   </text>
                 ) : null}
-                <text fg={look().fg} bg={look().bg ?? theme.mantle}>
+                <text ref={regionRef(`bar.${tab.id}`, "bar")} onMouseDown={onPointer(pageScope, () => ui.switchTab(tab.id))} fg={look().fg} bg={look().bg ?? theme.mantle}>
                   {look().bold ? <b>{` ${tab.label} `}</b> : ` ${tab.label} `}
                 </text>
               </box>
@@ -41,9 +46,31 @@ export function TabBar(props: { active: TabId; accountLabel?: string; reserveRig
           }}
         </For>
       </box>
-      <text fg={ink.note} bg={theme.mantle}>
-        {props.accountLabel ?? "All Accounts"}
-      </text>
+      {/* One text per item so each can take focus and clicks. Only the last
+          shrinks, wrapping by word out of sight, so a narrow bar drops whole
+          words at its end as the single label it replaced did. */}
+      <box flexDirection="row" flexShrink={1} overflow="hidden" backgroundColor={theme.mantle}>
+        <For each={items()}>
+          {(item, i) => {
+            const last = () => i() === items().length - 1
+            const cursor = () => item.id != null && ui.state.focusedSection === item.id
+            const look = () => chipLook({ active: false, cursor: cursor() })
+            return <>
+              {i() > 0 ? <text flexShrink={0} fg={ink.note} bg={theme.mantle}>{" · "}</text> : null}
+              <text flexShrink={last() ? 1 : 0} ref={item.id ? regionRef(item.id, "bar") : undefined}
+                onMouseDown={item.id ? onPointer(pageScope, () => openBarItem(ui, data, item.id ?? "")) : undefined}
+                fg={cursor() ? look().fg : ink.note} bg={look().bg ?? theme.mantle}>
+                {look().bold ? <b>{item.text}</b> : item.text}
+              </text>
+            </>
+          }}
+        </For>
+      </box>
     </box>
   )
+}
+
+/** Only page scopes and the bar accept clicks through the shared chrome. */
+function pageScope(scope: ScopeId): boolean {
+  return ["bar", "overview", "overview.range", "manager.accounts", "manager.txns", "manager.merchants", "budgets", "budgets.categories", "settings", "settings.taxonomy", "settings.rules", "settings.filters", "settings.database", "settings.up", "settings.ai"].includes(scope)
 }

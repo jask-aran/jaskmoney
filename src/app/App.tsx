@@ -1,3 +1,4 @@
+import { web, webLabel } from "./webApp"
 import { settleData, toggleDemo } from "./actions"
 import { BudgetsTab } from "../ui/budgets/BudgetsTab"
 import { ErrorBoundary, Show, createEffect, createMemo, createSignal, untrack, on, onCleanup, onMount } from "solid-js"
@@ -43,10 +44,6 @@ function flagValue(name: string): string | null {
   return next && !next.startsWith("--") ? next : ""
 }
 
-
-/** "1 web client", or nothing when none is connected. */
-export const webClientsLabel = (count: number) => (count ? `${count} web client${count === 1 ? "" : "s"}` : "")
-
 export function App() {
   const renderer = useRenderer()
 
@@ -60,8 +57,6 @@ export function App() {
   // it to the web app and other clients too.
   const remote = flagValue("--connect")
   const serving = remote == null ? flagValue("--serve") : null
-  // Clients of the core this TUI serves (the web app), for the top bar.
-  const [webClients, setWebClients] = createSignal(0)
 
   function bootstrap() {
     try {
@@ -106,9 +101,10 @@ export function App() {
       data.init(process.env.JASKMONEY_DB)
       if (serving != null) {
         const { serveCore, DEFAULT_PORT } = require("../server/serve") as typeof import("../server/serve")
-        const served = serveCore(data.core, { port: Number(serving) || DEFAULT_PORT, onClients: setWebClients })
+        const served = serveCore(data.core, { port: Number(serving) || DEFAULT_PORT, onClients: (clients) => web.setServing({ page: served.page, clients }) })
         // A listening server would keep the process alive after quitting.
-        onCleanup(() => served.stop())
+        web.setServing({ page: served.page, clients: 0 })
+        onCleanup(() => { served.stop(); web.setServing(null) })
         ui.setStatus(`Web app at ${served.page}`)
       }
     } catch (e) {
@@ -175,7 +171,12 @@ export function App() {
           bar, the gap and the Date Range, which end short of it. */}
       <TabBar
         active={ui.state.activeTab}
-        accountLabel={[data.state.demo ? "DEMO" : "", accountLabel(), webClientsLabel(webClients()), data.state.demo ? "" : syncLabel()].filter(Boolean).join(" · ")}
+        items={[
+          { text: data.state.demo ? "DEMO" : "" },
+          { text: accountLabel() },
+          { id: "bar.web", text: webLabel(web.serving()) },
+          { id: "bar.sync", text: data.state.demo ? "" : syncLabel() },
+        ]}
         reserveRight={ui.state.activeTab === "overview" ? UP_LOGO_WIDTH : 0}
       />
       <box height={1} width="100%" backgroundColor={theme.canvas} />

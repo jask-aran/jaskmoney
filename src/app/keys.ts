@@ -1,3 +1,5 @@
+import { travel } from "./paneTravel"
+import { web } from "./webApp"
 import { unwrap } from "solid-js/store"
 import { merchantKey } from "../domain/history"
 import { footerShown, scopeLabel, type Hint } from "./palette"
@@ -39,7 +41,7 @@ import { createLlm, LLM_PROVIDERS, llmModelId } from "../ai/llm"
 import { credentialEnv } from "../ai/credentials"
 import { runAccept, toggleUncategorised, newSuggestionsNote, suggestNew } from "./suggest"
 import { ACCEPT_ALL_AT } from "../domain/questions"
-import { BUDGET_VIEWS, CHART_VIEWS, SETTINGS_SECTIONS, jumpTargets, TABS, settingsSectionFocus, smartQuestionFor, type ScopeId, type UiState, type UiStore } from "../state/uiStore"
+import { BUDGET_VIEWS, CHART_VIEWS, SETTINGS_SECTIONS, jumpTargets, TABS, TAB_DEFAULT_FOCUS, settingsSectionFocus, smartQuestionFor, type ScopeId, type UiState, type UiStore } from "../state/uiStore"
 import type { DataStore } from "../state/dataStore"
 import {
   CUSTOM_CHIP,
@@ -74,7 +76,7 @@ function defaultProfile(id: string, path: string) {
   return { id, name, account: "", accountType: "debit" as const, importPrefix: name.toLowerCase(), hasHeader: true, delimiter: ",", dateColumn: 0, amountColumn: 1, descriptionColumns: [2], descriptionJoin: false, amountStrip: "$", dateFormat: "DMY" as const }
 }
 
-function moveTxnCursor(
+export function moveTxnCursor(
   ui: UiStore,
   data: DataStore | undefined,
   delta: number,
@@ -208,7 +210,12 @@ export function handleKey(ui: UiStore, key: KeyEvent, data?: DataStore): boolean
     // rest do nothing.
     if ((key.ctrl || key.meta) && /^[a-z]$/.test(name)) {
       const alias = key.ctrl && !key.meta ? CTRL_ALIASES[name] : undefined
-      if (alias) return handleKey(ui, keyEvent(alias, { shift: key.shift }), data)
+      if (alias) {
+        // Overview's ctrl aliases remain list moves; only arrow keys travel.
+        const list = scope === "overview" || scope === "overview.range"
+        const move = list && alias === "down" ? "j" : list && alias === "up" ? "k" : alias
+        return handleKey(ui, keyEvent(move, { shift: key.shift }), data)
+      }
       if (!key.ctrl || key.meta || !entry.hints(hintState(ui, data)).some((hint) => hint.key === `ctrl+${name}`)) return true
     }
     if (name === "v") {
@@ -1464,8 +1471,7 @@ function handleManagerTxns(ui: UiStore, key: KeyEvent, data?: DataStore): void {
     }
   }
   if (name === "return" || name === "enter") {
-    const row = (data?.scopedTransactions() ?? [])[ui.state.managerCursor]
-    if (row) ui.setState({ detail: { id: row.id, boughtTop: 0, notes: null } })
+    openTransaction(ui, data)
     return
   }
   if (isSmartSearchKey(key)) { openSmartSearch(ui, data); return }
@@ -1532,17 +1538,37 @@ function handleManagerTxns(ui: UiStore, key: KeyEvent, data?: DataStore): void {
   }
 }
 
+export function openTransaction(ui: UiStore, data?: DataStore): void {
+  const row = data?.scopedTransactions()[ui.state.managerCursor]
+  if (row) ui.setState({ detail: { id: row.id, boughtTop: 0, notes: null } })
+}
+
+export function selectAccountRow(ui: UiStore, data: DataStore, index: number): void {
+  const row = accountStacks(data.state.accounts).flatMap((stack) => stack.rows)[index]
+  if (row && row.selection !== data.state.accountSelection) changeAccountScope(ui, data, row.selection, "accounts")
+}
+
+export function moveOverviewCategory(ui: UiStore, data: DataStore, index: number): void {
+  const lines = allCategoryLines(overviewRange(data, ui.state))
+  ui.setState({ overviewCategoryCursor: Math.max(0, Math.min(lines.length - 1, index)) })
+}
+
+export function openBarItem(ui: UiStore, data: DataStore | undefined, id: string): void {
+  const tab = TABS.find((tab) => id === `bar.${tab.id}`)
+  if (tab) ui.switchTab(tab.id)
+  else if (id === "bar.web") {
+    const served = web.serving()
+    if (served) { web.open(served.page); ui.setStatus(`Opening ${served.page}`) }
+  } else if (id === "bar.sync" && data) void runSync(ui, data, { manual: true })
+}
+
 function handleManagerAccounts(ui: UiStore, key: KeyEvent, data?: DataStore): void {
   const { name } = key
   if (!data) return
   const stacks = accountStacks(data.state.accounts)
   const rows = stacks.flatMap((stack) => stack.rows)
   const at = rows.findIndex((row) => row.selection === data.state.accountSelection)
-  const select = (index: number) => {
-    const row = rows[index]
-    if (!row || row.selection === data.state.accountSelection) return
-    changeAccountScope(ui, data, row.selection, "accounts")
-  }
+  const select = (index: number) => selectAccountRow(ui, data, index)
   // j/k move down the stacks in reading order; h/l go to the first row of
   // the stack beside.
   const moved = listMove(key, Math.max(0, at), rows.length)
@@ -1718,11 +1744,26 @@ function handleOverview(ui: UiStore, key: KeyEvent, data?: DataStore): void {
   const scope = ui.activeScope()
   const clock = appNow()
   const cycle = data?.cycle()
+  // Approved deviation, user request 2026-11-01: arrows travel panes.
+  // Legacy keys.go:232 binds left/right only in the timeframe scope;
+  // h/l, ,/., H/L still step charts. Range arrows keep chip movement.
+  if (name === "up" || name === "down" || name === "left" || name === "right") {
+    if (data && ui.state.focusedSection === "ov.categories" && (name === "up" || name === "down")) {
+      const last = allCategoryLines(overviewRange(data, ui.state)).length - 1
+      const cursor = Math.min(ui.state.overviewCategoryCursor, last)
+      if (name === "up" ? cursor > 0 : cursor < last) {
+        moveOverviewCategory(ui, data, cursor + (name === "up" ? -1 : 1))
+        return
+      }
+    }
+    travel(ui, name, data)
+    return
+  }
   // h/l (or ,/.) step the focused chart pane's views, the top pane when
   // neither is focused; H/L step the bottom pane, or the one chart when
   // the Overview shows only one.
-  const back = seq === "H" || ((name === "h" || name === "left" || seq === ",") && scope === "overview")
-  const forward = seq === "L" || ((name === "l" || name === "right" || seq === ".") && scope === "overview")
+  const back = seq === "H" || ((name === "h" || seq === ",") && scope === "overview")
+  const forward = seq === "L" || ((name === "l" || seq === ".") && scope === "overview")
   if (back || forward) {
     const pane = ui.state.overviewCharts === 2 && (seq === "H" || seq === "L" || key.shift || ui.state.focusedSection === "ov.chart2") ? 1 : 0
     const n = CHART_VIEWS.length
@@ -1791,12 +1832,13 @@ function handleOverview(ui: UiStore, key: KeyEvent, data?: DataStore): void {
   const focus = ui.state.focusedSection
   if (data && focus === "ov.categories") {
     const lines = allCategoryLines(overviewRange(data, ui.state))
-    const moveTo = (i: number) => ui.setState({ overviewCategoryCursor: Math.max(0, Math.min(lines.length - 1, i)) })
+    const moveTo = (i: number) => moveOverviewCategory(ui, data, i)
     const moved = listMove(key, ui.state.overviewCategoryCursor, lines.length)
     if (moved != null) { moveTo(moved); return }
     const line = lines[Math.min(ui.state.overviewCategoryCursor, lines.length - 1)]
     if ((name === "return" || name === "enter") && line) { drillDown(ui, data, line); return }
   }
+  if (focus === "ov.accounts" && (name === "return" || name === "enter")) { ui.switchTab("manager"); ui.setState({ focusedSection: "mgr.accounts" }); return }
   if (data && (focus === "ov.chart" || focus === "ov.chart2") && (name === "return" || name === "enter")) { drillDown(ui, data); return }
   if (name === "0") {
     // The same kind of range, now (this month, this quarter…).
@@ -1821,10 +1863,14 @@ function handleOverview(ui: UiStore, key: KeyEvent, data?: DataStore): void {
   if (name === "escape" && ui.state.focusedSection !== "none") ui.clearFocus()
 }
 
-function handleOverviewRange(ui: UiStore, key: KeyEvent, data?: DataStore): void {
+export function handleOverviewRange(ui: UiStore, key: KeyEvent, data?: DataStore): void {
   const { name } = key
   const clock = appNow()
   const cycle = data?.cycle()
+  if (name === "up" || name === "down" || (name === "left" && ui.state.dashChipCursor === 0) || (name === "right" && ui.state.dashChipCursor === chipCount() - 1)) {
+    travel(ui, name, data)
+    return
+  }
   if (name === "h" || name === "left") {
     const n = chipCount()
     ui.setDashChipCursor((ui.state.dashChipCursor - 1 + n) % n)
@@ -1870,7 +1916,7 @@ function savedFilterKeys(ui: UiStore, data: DataStore | undefined, key: KeyEvent
 
 /** Open Transactions on the Overview range's spending, narrowed to one
  * category line when given, remembering where to come back to. */
-function drillDown(ui: UiStore, data: DataStore, line?: CategoryLine) {
+export function drillDown(ui: UiStore, data: DataStore, line?: CategoryLine) {
   const range = overviewRange(data, ui.state)
   const query = drillFilter({
     start: range.bounds.start,
@@ -2237,6 +2283,21 @@ const scopes: Record<ScopeId, ScopeEntry> = {
       { key: "ctrl+l", desc: "saved filters", label: "Pick a saved filter…" },
     ],
   },
+  "bar": {
+    quits: true,
+    handle: (ui, key, data) => {
+      const { name } = key
+      if (name === "left" || name === "right" || name === "up" || name === "down") travel(ui, name, data)
+      else if (name === "return" || name === "enter") openBarItem(ui, data, ui.state.focusedSection)
+      else if (name === "escape") ui.setState({ focusedSection: TAB_DEFAULT_FOCUS[ui.state.activeTab] })
+    },
+    hints: (state) => [
+      { key: "←→", desc: "move" },
+      { key: "enter", desc: state?.focusedSection === "bar.web" ? "open" : state?.focusedSection === "bar.sync" ? "sync" : "switch" },
+      { key: "↓", desc: "page" },
+      { key: "esc", desc: "done" },
+    ],
+  },
   "overview": {
     handle: handleOverview,
     quits: true,
@@ -2248,6 +2309,7 @@ const scopes: Record<ScopeId, ScopeEntry> = {
         { key: "esc", desc: "done" },
       ]
       return [
+        { key: "↑↓←→", desc: "panes" },
         ...(state?.focusedSection === "ov.chart" || state?.focusedSection === "ov.chart2" ? [{ key: "enter", desc: "transactions" }] : []),
         { key: "h/l", desc: "chart" },
         { key: "d/D", desc: "range" },
