@@ -19,7 +19,7 @@
  * two.
  */
 import type { Run } from "./lineChart"
-import { cellsToRuns } from "./runs"
+import { cellGrid } from "./runs"
 
 export interface ChartLabel {
   /** The cell the label describes (row top first). */
@@ -55,12 +55,13 @@ const labelCells = (text: string) =>
 
 export function annotate(rows: Run[][], labels: ChartLabel[]): Run[][] {
   if (!labels.length || !rows.length) return rows
-  const grid = rows.map((runs) => runs.flatMap((run) => [...run.text].map((text) => ({ text, ink: run.ink }))))
-  const width = grid[0]!.length
+  const grid = cellGrid(rows)
+  const width = grid.row(0).length
   const free = (r: number, from: number, to: number) => {
-    if (r < 0 || r >= grid.length || from < 0 || to > width) return false
+    if (r < 0 || r >= grid.height || from < 0 || to > width) return false
     // One cell of margin either side, where there is one.
-    for (let c = Math.max(0, from - 1); c < Math.min(width, to + 1); c++) if (!FREE.has(grid[r]![c]!.text)) return false
+    const cells = grid.row(r)
+    for (let c = Math.max(0, from - 1); c < Math.min(width, to + 1); c++) if (!FREE.has(cells[c]!.text)) return false
     return true
   }
   // Where `n` cells could go for a point, best first.
@@ -97,27 +98,41 @@ export function annotate(rows: Run[][], labels: ChartLabel[]): Run[][] {
     return [[...over(1), ...beside(0)], [...over(2), ...beside(1)], over(3)]
   }
   // Cells near a placed label: another label there reads as its neighbour.
-  const near = grid.map((cells) => cells.map(() => false))
+  const near = new Uint8Array(grid.height * width)
   const clear = ([r, c]: [number, number], n: number) => {
-    for (let rr = Math.max(0, r - 1); rr <= Math.min(grid.length - 1, r + 1); rr++)
-      for (let cc = Math.max(0, c - 2); cc < Math.min(width, c + n + 2); cc++) if (near[rr]![cc]) return false
+    for (let rr = Math.max(0, r - 1); rr <= Math.min(grid.height - 1, r + 1); rr++)
+      for (let cc = Math.max(0, c - 2); cc < Math.min(width, c + n + 2); cc++) if (near[rr * width + cc]) return false
     return true
   }
-  const inside = (n: number) => ([r, c]: [number, number]) => r >= 0 && r < grid.length && c >= 0 && c + n <= width
+  const inside = (n: number) => ([r, c]: [number, number]) => r >= 0 && r < grid.height && c >= 0 && c + n <= width
   for (const label of labels) {
     const forms = [label.text, ...shorts(label)].map(labelCells)
     const bar = label.bar
     // Every form at every spot, best first: a bar's label touching its bar
     // in any form, longest first, before any further off; another's
     // longest form anywhere first, then a line's name back along it.
-    const candidates = bar
-      ? barTiers(label.row, bar, 0).flatMap((_, tier) => forms.flatMap((cells) => barTiers(label.row, bar, cells.length)[tier]!.map((spot) => ({ cells, spot }))))
-      : [...forms.map((cells) => ({ cells, at: [label] })), ...(label.name && label.along?.length ? [{ cells: labelCells(label.name), at: label.along }] : [])]
-          .flatMap(({ cells, at }) => at.flatMap((p) => spots(p.row, p.col, cells.length)).map((spot) => ({ cells, spot })))
+    // Made as they're tried: the search usually stops early, and a line's
+    // name has a dozen or two spots at each of its points.
+    function* candidates(): Generator<{ cells: string[]; spot: [number, number] }> {
+      if (bar) {
+        const tiers = forms.map((cells) => barTiers(label.row, bar, cells.length))
+        for (let tier = 0; tier < tiers[0]!.length; tier++) for (let f = 0; f < forms.length; f++) for (const spot of tiers[f]![tier]!) yield { cells: forms[f]!, spot }
+        return
+      }
+      const groups = [...forms.map((cells) => ({ cells, at: [label] as Array<{ row: number; col: number }> })), ...(label.name && label.along?.length ? [{ cells: labelCells(label.name), at: label.along }] : [])]
+      for (const { cells, at } of groups) for (const p of at) for (const spot of spots(p.row, p.col, cells.length)) yield { cells, spot }
+    }
     // The first clear of the labels placed; failing that, the first that
     // fits at all.
-    const open = candidates.filter(({ cells, spot: [r, c] }) => free(r, c, c + cells.length))
-    let placed = open.find(({ cells, spot }) => clear(spot, cells.length)) ?? open[0]
+    let placed: { cells: string[]; spot: [number, number] } | undefined
+    let firstOpen: typeof placed
+    for (const candidate of candidates()) {
+      const [r, c] = candidate.spot
+      if (!free(r, c, c + candidate.cells.length)) continue
+      firstOpen ??= candidate
+      if (clear(candidate.spot, candidate.cells.length)) { placed = candidate; break }
+    }
+    placed ??= firstOpen
     if (!placed && label.required) {
       const cells = forms.at(-1)!
       const spot = (bar ? barTiers(label.row, bar, cells.length).flat() : spots(label.row, label.col, cells.length)).find(inside(cells.length))
@@ -126,19 +141,19 @@ export function annotate(rows: Run[][], labels: ChartLabel[]): Run[][] {
     if (!placed) continue
     const [r, c] = placed.spot
     placed.cells.forEach((text, k) => {
-      grid[r]![c + k] = { text, ink: label.ink }
-      near[r]![c + k] = true
+      grid.set(r, c + k, { text, ink: label.ink })
+      near[r * width + c + k] = 1
     })
   }
-  return grid.map(cellsToRuns)
+  return grid.runs()
 }
 
 /** Single cells written over a chart's rows (a day's point above a line). */
 export function stamp(rows: Run[][], points: Array<{ row: number; col: number; text: string; ink: string }>): Run[][] {
   if (!points.length || !rows.length) return rows
-  const grid = rows.map((runs) => runs.flatMap((run) => [...run.text].map((text) => ({ text, ink: run.ink }))))
-  for (const p of points) if (grid[p.row]?.[p.col]) grid[p.row]![p.col] = { text: p.text, ink: p.ink }
-  return grid.map(cellsToRuns)
+  const grid = cellGrid(rows)
+  for (const p of points) if (rows[p.row] && grid.row(p.row)[p.col]) grid.set(p.row, p.col, { text: p.text, ink: p.ink })
+  return grid.runs()
 }
 
 /** Cells along a line, one per column, from index `from` back to its

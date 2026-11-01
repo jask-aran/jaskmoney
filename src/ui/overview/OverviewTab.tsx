@@ -92,7 +92,12 @@ export function OverviewTab(props: { focused: SectionId }) {
   const previous = () => windows().previous
   const spending = () => range().spending
   const inPeriod = () => range().inPeriod
-  const inPrevious = createMemo(() => transactions().filter((t) => t.dateISO >= previous().start && t.dateISO <= previous().end))
+  // A memo reads its inputs once, not once a row: each read is a tracked
+  // lookup (today() a new Date), over the whole history.
+  const inPrevious = createMemo(() => {
+    const { start, end } = previous()
+    return transactions().filter((t) => t.dateISO >= start && t.dateISO <= end)
+  })
   // Flows see every tracked account (money moved to savers), narrowed to the
   // scope for spending and income.
   const flows = createMemo(() => computePeriodFlows(data.state.accounts, filterByTimeframe(transactions(), ui.state.timeframe, clock(), cycleConfig()), scopeIds()))
@@ -102,11 +107,17 @@ export function OverviewTab(props: { focused: SectionId }) {
   const covered = createMemo(() => windows().days === 0 || historyCovers(transactions(), previous(), { start: bounds().start, end: addDays(bounds().start, windows().days - 1) }))
   const before = (text: string) => (covered() ? text : "—")
   const groups = () => range().groups
-  const calendar = createMemo(() => spendingCalendar(inPeriod(), bounds().start, bounds().end, data.state.weekStart))
+  // Built only while a pane shows it.
+  const calendarShown = () => ui.state.chartViews.some((i) => CHART_VIEWS[i]?.view === "Calendar")
+  const calendar = createMemo(() => (calendarShown() ? spendingCalendar(inPeriod(), bounds().start, bounds().end, data.state.weekStart) : []))
+  const inScope = (rows: Transaction[]) => {
+    const ids = scopeIds()
+    return rows.filter((t) => t.accountId != null && ids.has(t.accountId))
+  }
   // Regular payments now, from the scope's whole history (no range).
   // Built only while a pane shows it.
   const subsShown = () => ui.state.chartViews.some((i) => CHART_VIEWS[i]?.view === "Subscriptions")
-  const subs = createMemo(() => subsShown() ? subscriptions(transactions().filter((t) => t.accountId != null && scopeIds().has(t.accountId)), today()) : [])
+  const subs = createMemo(() => subsShown() ? subscriptions(inScope(transactions()), today()) : [])
   const series = createMemo(() => dailySpendSeries(inPeriod(), bounds().start, bounds().end))
   // The next payday: the day after the current cycle ends.
   const payday = () => addDays(cycleFor(cycleConfig(), today()).end, 1)
@@ -115,8 +126,8 @@ export function OverviewTab(props: { focused: SectionId }) {
   // Accounts: point-in-time figures, whatever the range.
   const position = createMemo(() => computePosition(data.state.accounts, transactions(), today()))
   const saverChanges = createMemo(() => {
-    const since = addDays(today(), -30)
-    return computePeriodFlows(data.state.accounts, transactions().filter((t) => t.dateISO > since && t.dateISO <= today())).saverChanges
+    const now = today(), since = addDays(now, -30)
+    return computePeriodFlows(data.state.accounts, transactions().filter((t) => t.dateISO > since && t.dateISO <= now)).saverChanges
   })
   // Where Available is headed, up to the day before the next payday (or
   // the range's end): built only while a pane shows Available.
@@ -126,7 +137,7 @@ export function OverviewTab(props: { focused: SectionId }) {
     if (!availableShown() || p.spendingBalance == null || p.dailySpend == null) return []
     const until = [addDays(payday(), -1), bounds().end].sort()[0]!
     if (until <= today()) return []
-    const regular = subscriptions(transactions().filter((t) => t.accountId != null && scopeIds().has(t.accountId)), today(), { people: true })
+    const regular = subscriptions(inScope(transactions()), today(), { people: true })
     const usual = usualDailySpend(data.state.accounts, transactions(), today(), new Set(regular.flatMap((s) => s.chargeIds)))
     return projectAvailable(p.spendingBalance, today(), until, usual, upcomingCharges(regular, today(), until))
   })
@@ -140,7 +151,7 @@ export function OverviewTab(props: { focused: SectionId }) {
   // with the money; else the one selected account's own budget.
   const budget = createMemo(() => {
     const ids = [...scopeIds()]
-    const all = data.state.accounts.filter((a) => accountRole(a) === "spending").every((a) => scopeIds().has(a.id))
+    const all = data.state.accounts.filter((a) => accountRole(a) === "spending").every((a) => ids.includes(a.id))
     const current = cycleFor(cycleConfig(), today())
     if (bounds().start !== current.start || bounds().end !== current.end) return null
     if (all) {

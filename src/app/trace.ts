@@ -55,14 +55,13 @@ export function traceKey(key: KeyEvent, scope: string, run: () => void): void {
 export function traceFrames(renderer: CliRenderer): void {
   if (!file) return
   appendFileSync(file, `# trace ${new Date().toISOString()} ${process.stdout.columns}x${process.stdout.rows}\n`)
-  // The renderer's own time for the frame's layout and paint (private:
-  // a frame callback would add a yield to every frame).
-  const scene = renderer as unknown as { _lastSceneTimeMs?: number }
+  // The renderer's own time for the frame's layout and paint, read on its
+  // "frame" event (a frame callback would add a yield to every frame).
   let first = true
   renderer.on("frame", () => {
     const now = performance.now()
     if (first) { first = false; appendFileSync(file, `first frame at ${now.toFixed(0)} ms after start\n`) }
-    const paint = scene._lastSceneTimeMs ?? 0
+    const paint = renderer.lastSceneTimeMs ?? 0
     if (pending) {
       appendFileSync(file, `${pending.key.padEnd(12)} ${pending.scope.padEnd(20)} handler=${pending.handler.toFixed(1)} frame=${(now - pending.at).toFixed(1)} paint=${paint.toFixed(1)}\n`)
       pending = null

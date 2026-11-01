@@ -11,7 +11,7 @@ import { keyEvent as key } from "../app/keyEvent"
 /**
  * One scenario for a CPU profile: `bun --cpu-prof --cpu-prof-dir=<dir>
  * --conditions=browser src/bench/profile.tsx <scenario>`, then read it with
- * src/bench/hot.ts. Scenarios: txns, overview, range, chip, account, tabs, detail.
+ * src/bench/hot.ts. Scenarios: txns, overview, range, chip, account, tabs, detail, budgets.
  */
 const scenario = process.argv[2] ?? "txns"
 for (const name of ["JASKMONEY_UP_TOKEN", "JASKMONEY_JEV_TOKEN", "JASKMONEY_CF_TOKEN"]) process.env[name] = ""
@@ -19,7 +19,7 @@ process.env.JASKMONEY_DB = ":memory:"
 process.env.JASKMONEY_NO_BOOTSTRAP = "1"
 const dir = mkdtempSync(join(tmpdir(), "jaskmoney-prof-"))
 copyFileSync(process.env.JASKMONEY_BENCH_DB || join(homedir(), ".local/share/jaskmoney-opentui/transactions.db"), join(dir, "t.db"))
-const t = await testRender(() => <App />, { width: 200, height: 55 })
+const t = await testRender(() => <App />, { width: Number(process.env.BENCH_WIDTH ?? 200), height: Number(process.env.BENCH_HEIGHT ?? 55) })
 data.init(join(dir, "t.db"))
 data.setAccountSelection("all")
 const keys = {
@@ -29,10 +29,12 @@ const keys = {
   chip: () => { ui.switchTab("overview"); ui.setState({ focusedSection: "ov.chart" }); return [key("d")] },
   account: () => { ui.switchTab("manager"); ui.setState({ focusedSection: "mgr.transactions" }); return [key("a")] },
   tabs: () => [key("1"), key("2"), key("3")],
+  budgets: () => { ui.switchTab("budgets"); ui.setState({ focusedSection: "bud.categories" }); return [key("j"), key("j"), key("k")] },
   detail: () => { ui.switchTab("manager"); ui.setState({ focusedSection: "mgr.transactions" }); handleKey(ui, key("return"), data); return [key("j"), key("k")] },
 }[scenario]!()
 await t.renderOnce()
 let handling = 0, drawing = 0
+const each: number[] = []
 for (let i = 0; i < 300; i++) {
   const a = performance.now()
   handleKey(ui, keys[i % keys.length]!, data)
@@ -40,7 +42,10 @@ for (let i = 0; i < 300; i++) {
   await t.renderOnce()
   handling += b - a
   drawing += performance.now() - b
+  each.push(performance.now() - a)
 }
-console.log(`${scenario}: ${((handling + drawing) / 300).toFixed(1)} ms/key (key and updates ${(handling / 300).toFixed(1)}, frame ${(drawing / 300).toFixed(1)})`)
+// The median as well: on a busy machine the mean takes in other work.
+const median = each.sort((x, y) => x - y)[each.length >> 1]!
+console.log(`${scenario}: ${((handling + drawing) / 300).toFixed(1)} ms/key, median ${median.toFixed(1)} (key and updates ${(handling / 300).toFixed(1)}, frame ${(drawing / 300).toFixed(1)})`)
 t.renderer.destroy()
 process.exit(0)

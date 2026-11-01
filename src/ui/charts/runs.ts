@@ -13,3 +13,30 @@ export function cellsToRuns(cells: Run[]): Run[] {
   for (const cell of cells) appendRun(runs, cell.text, cell.ink)
   return runs
 }
+
+/** A chart's rows as cells to write over: a row is split into cells only
+ * when read, and back to runs only when written, so a few labels on a wide
+ * chart don't take every row apart and put it back together. A row left
+ * alone comes back as it was when its runs are already merged (as
+ * appendRun and cellsToRuns make them), else merged. */
+export function cellGrid(rows: Run[][]) {
+  const cells: Array<Run[] | undefined> = new Array(rows.length)
+  const written = new Uint8Array(rows.length)
+  const row = (r: number): Run[] => (cells[r] ??= rows[r]!.flatMap((run) => [...run.text].map((text) => ({ text, ink: run.ink }))))
+  return {
+    height: rows.length,
+    row,
+    set(r: number, c: number, cell: Run): void {
+      row(r)[c] = cell
+      written[r] = 1
+    },
+    runs: (): Run[][] => rows.map((runs, r) => (written[r] ? cellsToRuns(cells[r]!) : merged(runs) ? runs : cellsToRuns(row(r)))),
+  }
+}
+
+/** Whether runs are as cellsToRuns would make them: no empty run, no two
+ * neighbours in one ink. */
+function merged(runs: Run[]): boolean {
+  for (let i = 0; i < runs.length; i++) if (!runs[i]!.text || (i > 0 && runs[i]!.ink === runs[i - 1]!.ink)) return false
+  return true
+}

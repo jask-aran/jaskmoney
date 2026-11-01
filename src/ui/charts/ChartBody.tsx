@@ -1,8 +1,8 @@
-import { Index, Show, createMemo } from "solid-js"
+import { Index, Show } from "solid-js"
 import { gridColumns, hasBars, revealRuns } from "./reveal"
 import { useReveal } from "./motion"
 import type { ChartLabelMode } from "./motion"
-import { StyledLine } from "../primitives/StyledLine"
+import { StyledLine, type StyledSpan } from "../primitives/StyledLine"
 import { ink } from "../../theme"
 import type { Run } from "./lineChart"
 import type { Span } from "../primitives/spans"
@@ -66,19 +66,28 @@ function axisLabels(text: string, coloured: Array<{ start: number; length: numbe
 export function ChartBody(props: { model: ChartModel; inks: Record<string, string>; baseline?: boolean; revealKey?: string; revealMs?: number; labels?: ChartLabelMode }) {
   const axis = () => axisWidth(props.model.ticks)
   const shown = useReveal(() => props.revealKey, () => props.revealMs ?? 0)
-  // The gridlines a reveal leaves standing, found once per model.
-  const frame = createMemo(() => gridColumns(props.model.rows))
-  const bars = createMemo(() => hasBars(props.model.rows))
+  // The gridlines a reveal leaves standing, and whether it has bars: found
+  // once per model, and only for a draw-in (each looks at every cell).
+  const frame = perRows(gridColumns)
+  const bars = perRows(hasBars)
+  // A row's axis and runs, coloured. The props are read once a row, not
+  // once a run: each read is a tracked lookup, and a draw-in redoes every
+  // row on each tick.
+  const rowSpans = (runs: Run[], i: number): StyledSpan[] => {
+    const model = props.model, inks = props.inks, p = shown()
+    const own = model.inks
+    return [
+      { text: (model.ticks.get(i) ?? "").padStart(axis() - 2) + (model.ticks.has(i) ? " ┤" : " │"), fg: ink.label },
+      ...(p < 1 ? revealRuns(runs, i, model.rows.length, p, frame(model.rows), bars(model.rows), props.labels) : runs).map((run) => ({ text: run.text, fg: run.ink ? own?.[run.ink] ?? inks[run.ink] ?? ink.figure : undefined })),
+    ]
+  }
   return (
     <>
       {/* One styled line per row (StyledLine), not a span per run: a year's
           chart is hundreds of runs. Index keeps the rows as models change. */}
       <Index each={props.model.rows}>
         {(runs, i) => (
-          <StyledLine spans={[
-            { text: (props.model.ticks.get(i) ?? "").padStart(axis() - 2) + (props.model.ticks.has(i) ? " ┤" : " │"), fg: ink.label },
-            ...(shown() < 1 ? revealRuns(runs(), i, props.model.rows.length, shown(), frame(), bars(), props.labels) : runs()).map((run) => ({ text: run.text, fg: run.ink ? props.model.inks?.[run.ink] ?? props.inks[run.ink] ?? ink.figure : undefined })),
-          ]} />
+          <StyledLine spans={rowSpans(runs(), i)} />
         )}
       </Index>
       <Show when={props.baseline && props.model.rows.length}>
@@ -90,4 +99,14 @@ export function ChartBody(props: { model: ChartModel; inks: Record<string, strin
       ])} />
     </>
   )
+}
+
+/** `fn` of a chart's rows, worked out again only for new rows. */
+function perRows<T>(fn: (rows: Run[][]) => T): (rows: Run[][]) => T {
+  let was: Run[][] | undefined
+  let value: T
+  return (rows) => {
+    if (rows !== was) { was = rows; value = fn(rows) }
+    return value
+  }
 }
