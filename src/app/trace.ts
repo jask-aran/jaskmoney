@@ -7,16 +7,30 @@ import type { CliRenderer, KeyEvent } from "@opentui/core"
  * handler: the key's synchronous work (handleKey and the reactive updates
  * it sets off); frame: from the key's arrival to its frame on screen;
  * paint: the frame's layout and paint. Frames no key asked for that take
- * longer than 20 ms are logged as "(no key)". Off, it costs nothing.
+ * longer than 20 ms are logged as "(no key)", and any 50 ms or more the
+ * main thread was busy (a sync's write, a reload) as "stall". Off, it
+ * costs nothing.
  */
 const file = process.env.JASKMONEY_TRACE
 let pending: { key: string; scope: string; at: number; handler: number } | null = null
 
 export const tracing = !!file
 
-/** A start-up milestone: how long after the process started. */
+/** A milestone (start-up, a sync's stages): how long after the process started. */
 export function traceMark(label: string): void {
   if (file) appendFileSync(file, `mark ${label.padEnd(24)} ${performance.now().toFixed(0)} ms\n`)
+}
+
+// Stalls: a timer every 10 ms that comes late by more than 50 ms means
+// the main thread was busy that long (keys and frames waited too), logged
+//   stall <ms> ending at <ms after start>
+if (file) {
+  let last = performance.now()
+  setInterval(() => {
+    const now = performance.now()
+    if (now - last > 60) appendFileSync(file, `stall ${(now - last - 10).toFixed(0).padStart(5)} ms ending at ${now.toFixed(0)} ms\n`)
+    last = now
+  }, 10).unref()
 }
 // When the terminal's bytes arrived: a key's latency starts there, before
 // OpenTUI parses it (a lone esc waits out its escape-sequence timeout).

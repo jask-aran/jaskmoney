@@ -1,5 +1,5 @@
 import type { Api, Model, Models, ThinkingLevel } from "@earendil-works/pi-ai"
-import { piAi, piProviders } from "./piAi"
+import { piAi, piModels, piProviders } from "./piAi"
 import { credentialEnv } from "./credentials"
 import { createFileCredentialStore, signedIn } from "./oauthStore"
 
@@ -68,7 +68,7 @@ export interface Llm {
 
 /** pi-ai with the two providers and the sign-in store; nothing else is loaded. */
 export function llmModels(): Models {
-  const models = piAi().createModels({ credentials: createFileCredentialStore() })
+  const models = piModels().createModels({ credentials: createFileCredentialStore() })
   models.setProvider(piProviders.openrouter())
   models.setProvider(piProviders.openai())
   return models

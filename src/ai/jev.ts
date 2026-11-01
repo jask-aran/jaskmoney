@@ -11,7 +11,7 @@
  */
 
 import type { ClassifierAnswer, ClassifierContext, ClassifierQuestion, Models } from "@earendil-works/pi-ai"
-import { piAi, piProviders } from "./piAi"
+import { piModels, piProviders } from "./piAi"
 import { credentialEnv } from "./credentials"
 import type { Fetch } from "./http"
 import { createFileCredentialStore, signedIn } from "./oauthStore"
@@ -72,7 +72,7 @@ const JEV_MODELS: Record<JevProvider, { catalog: string; id: string }> = {
 
 /** pi-ai with Jev's two providers; OpenRouter's sign-in from oauth.json. */
 function jevModels(): Models {
-  const models = piAi().createModels({ credentials: createFileCredentialStore() })
+  const models = piModels().createModels({ credentials: createFileCredentialStore() })
   models.setProvider(piProviders.typesafe())
   models.setProvider(piProviders.openrouter())
   return models

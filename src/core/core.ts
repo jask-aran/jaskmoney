@@ -61,6 +61,9 @@ export interface CallContext<P = never> {
   models?: Pick<Models, "login">
 }
 
+/** Let the event loop turn (keys, frames) between long steps of a command. */
+const breathe = () => new Promise<void>((resolve) => setTimeout(resolve, 0))
+
 /** How long the range, account and chart views sit still before they're written. */
 export const CONFIG_SETTLE_MS = 400
 
@@ -211,12 +214,20 @@ export function createCore() {
     return seen === fresh.size ? rows : null
   }
 
+  /** What the rows are read with besides their own table (loadTransactions
+   * joins): account names and switches, categories, tags, purchases. */
+  function rowJoins(s: Partial<CoreState>) {
+    return [[...(s.accounts ?? []), ...(s.syncAccounts ?? [])].map((a) => [a.id, a.name, a.syncEnabled]), s.categories, s.tags, s.purchaseLookups]
+  }
+
   /** Reload everything the clients see from the database; `rows`, when
-   * given, are the only transactions the write changed. */
+   * given, are the only transactions the write changed. None: the rows stay
+   * as they are and aren't sent (unless what they're read with changed). */
   function refresh(rows?: Iterable<number>) {
     if (!db) return
     // Every write ends here: what's cached from the database is stale.
     dbVersion++
+    const changed = rows === undefined ? undefined : [...rows]
     const loaded: Partial<CoreState> = {
       accounts: loadAccounts(db),
       syncAccounts: loadAccounts(db, { includeUnsynced: true }).filter((a) => a.source !== "csv"),
@@ -226,7 +237,6 @@ export function createCore() {
       categories: loadCategories(db),
       tags: loadTags(db),
       rules: loadRules(db),
-      transactions: (rows && reloadRows(db, rows)) || loadTransactions(db),
       imports: loadImports(db),
       dbInfo: loadDbInfo(db, state.dbPath || "default"),
       merchantNotes: Object.fromEntries(loadMerchantNotes(db)),
@@ -235,9 +245,11 @@ export function createCore() {
       categoryChoices: loadCategoryChoices(db),
       purchaseLookups: Object.fromEntries(loadPurchaseLookups(db)),
     }
+    const same = changed?.length === 0 && isDeepStrictEqual(rowJoins(loaded), rowJoins(state))
+    if (!same) loaded.transactions = (changed?.length && reloadRows(db, changed)) || loadTransactions(db)
     // Only the slices that changed go out: a client re-derives what reads
-    // a slice it is sent, equal or not. The rows always go (comparing them
-    // costs about what sending does).
+    // a slice it is sent, equal or not. The rows go whenever they're
+    // reloaded (comparing them costs about what sending does).
     for (const key of Object.keys(loaded) as (keyof CoreState)[])
       if (key !== "transactions" && isDeepStrictEqual(loaded[key], state[key])) delete loaded[key]
     set({ ready: true, version: dbVersion, ...loaded })
@@ -465,7 +477,8 @@ export function createCore() {
     const ids = transactionIds ? new Set(transactionIds) : null
     const report = evaluateRules(ids ? transactions().filter((txn) => ids.has(txn.id)) : transactions(), state.rules, state.savedFilters, state.categories, state.tags)
     let tagChanges = 0, updatedTransactions = 0
-    if (!dryRun) mutate((database) => database.transaction(() => {
+    // No change, no write: a reload would send every row again for nothing.
+    if (!dryRun && report.changes.length) mutate((database) => database.transaction(() => {
       const at = appNow().toISOString()
       for (const change of report.changes) {
         let changed = change.categorySet
@@ -527,8 +540,16 @@ export function createCore() {
       try { if (ctx.isCurrent(session)) refresh() } catch { /* Preserve the sync error if reloading also fails. */ }
       throw error
     }).finally(confirmed.stop)
+    // The write, the reload (every client re-derives what reads the rows)
+    // and the rules each take a turn of their own, with keys and frames
+    // between them: a first sync's are ~50-100 ms each.
+    await breathe()
     ctx.ensureCurrent(session, "Up sync was running")
-    refresh()
+    // A sync that brought no new, changed or removed row (most background
+    // ones) leaves the rows as they are: no client rebuilds what reads them.
+    refresh(result.inserted || result.updated || result.removedHeld ? undefined : [])
+    await breathe()
+    ctx.ensureCurrent(session, "Up sync was running")
     const applied = result.insertedIds.length ? applyRules(result.insertedIds) : null
     // Categorisations Up hasn't confirmed go again now Up is answering.
     const retried = await retryPendingCategories()

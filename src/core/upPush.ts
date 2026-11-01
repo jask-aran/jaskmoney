@@ -350,6 +350,8 @@ export function createUpPush(ctx: CoreContext, deps: { ruleOfferNote: (ids: numb
     if (!ctx.db) return { pushed: 0, rejected: 0, waiting: 0 }
     const session = ctx.session()
     const rows = session.db.query<TagPush, []>("SELECT transaction_id AS id, tag_id AS tagId, action FROM tag_pushes ORDER BY transaction_id, tag_id").all()
+    // Nothing waiting: nothing to send or reload (after every sync).
+    if (!rows.length) return { pushed: 0, rejected: 0, waiting: 0 }
     const { pushed, rejected, waiting } = await pushQueuedTags(session, rows)
     ctx.ensureCurrent(session, "pending tags were sent to Up")
     return { pushed, rejected, waiting }

@@ -4,6 +4,7 @@ import { newSuggestionsNote } from "./suggest"
 import { purchasesNote } from "./purchases"
 import { runBackgroundRefresh } from "./backgroundRefresh"
 import type { UiStore } from "../state/uiStore"
+import { traceMark } from "./trace"
 
 /** Background sync interval (startup sync runs immediately). */
 export const SYNC_INTERVAL_MS = 5 * 60 * 1000
@@ -42,10 +43,13 @@ export async function runSync(ui: UiStore, data: DataStore, { manual, off }: { m
   }
   if (manual) ui.setStatus("Syncing…")
   try {
+    traceMark("sync start")
     const summary = await data.syncUp(off)
+    traceMark("sync done")
     // New Amazon and eBay rows learn what they bought from your email
     // first, then new rows get suggestions, so the Overview can say what's waiting.
     const refresh = await runBackgroundRefresh(data)
+    traceMark("background refresh done")
     if (refresh.error !== null) { ui.setStatus(refresh.error, true); return }
     const note = purchasesNote(refresh.purchases) + newSuggestionsNote(refresh.suggested)
     if (manual || note || !/^Up sync: 0 new, 0 updated, 0 pending removed/.test(summary)) ui.setStatus(summary + note)

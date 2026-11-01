@@ -69,7 +69,8 @@ export function createSuggestions(ctx: CoreContext, deps: {
       // again, every row already suggested) the clients already match the
       // database, and a reload would rebuild everything that reads the rows.
       if (history.length) saveSuggestions(database, history)
-      if (history.length || wrote) { refresh(); wrote = false }
+      // Suggestions and merchants' checks aren't in the rows: no row changed.
+      if (history.length || wrote) { refresh([]); wrote = false }
       let fromJev = 0
       if (enabled) {
         const targetIds = new Set(targets.map((t) => t.id))
@@ -114,7 +115,7 @@ export function createSuggestions(ctx: CoreContext, deps: {
       if (failures.length) parts.push(`${failures.length} failed: ${failures[0]}`)
       return parts.join(" · ")
     } finally {
-      if (wrote && ctx.isCurrent(session)) refresh()
+      if (wrote && ctx.isCurrent(session)) refresh([])
     }
   }
 
