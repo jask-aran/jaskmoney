@@ -47,19 +47,19 @@ async function round(data: DataStore): Promise<PurchaseRound> {
   const lookups = data.purchaseLookups()
   const rows = data.state.transactions.map(purchase)
   const due = dueForLookup(rows, lookups, now)
-  // Nothing to look up: still ask again for rows suggested before their purchase was known.
-  if (!due.length) return { ...none, resuggested: await data.recordPurchases([], undefined, session) }
-  const byId = new Map(rows.map((t) => [t.id, t]))
-  // Earlier rounds' finds, except the rows looked up now (one found before
-  // prices were kept is looked up again, and its own email is fair game).
-  const dueIds = new Set(due.map((t) => t.id))
-  const earlier = [...lookups.values()].filter((l) => l.status === "found" && !dueIds.has(l.transactionId))
-  const prior = {
-    rows: earlier.flatMap((l) => byId.get(l.transactionId) ?? []),
-    found: earlier.map((l): OrderContext => ({ transactionId: l.transactionId, source: l.source === "ebay" ? "ebay" : "amazon", order: l.order, items: l.items, emailAt: null, ...(l.refundOf ? { refundOf: l.refundOf } : {}) })),
-    usedEmails: new Set(earlier.flatMap((l) => (l.emailKey ? [l.emailKey] : []))),
-  }
   try {
+    // Nothing to look up: still ask again for rows suggested before their purchase was known.
+    if (!due.length) return { ...none, resuggested: await data.recordPurchases([], undefined, session) }
+    const byId = new Map(rows.map((t) => [t.id, t]))
+    // Earlier rounds' finds, except the rows looked up now (one found before
+    // prices were kept is looked up again, and its own email is fair game).
+    const dueIds = new Set(due.map((t) => t.id))
+    const earlier = [...lookups.values()].filter((l) => l.status === "found" && !dueIds.has(l.transactionId))
+    const prior = {
+      rows: earlier.flatMap((l) => byId.get(l.transactionId) ?? []),
+      found: earlier.map((l): OrderContext => ({ transactionId: l.transactionId, source: l.source === "ebay" ? "ebay" : "amazon", order: l.order, items: l.items, emailAt: null, ...(l.refundOf ? { refundOf: l.refundOf } : {}) })),
+      usedEmails: new Set(earlier.flatMap((l) => (l.emailKey ? [l.emailKey] : []))),
+    }
     // Refunds take their charge's items without an email: no program if that's all.
     const needsMail = due.some((t) => t.amount < 0 || /ebay/i.test(t.description))
     let shipments: ReturnType<typeof readShipment>[] = []

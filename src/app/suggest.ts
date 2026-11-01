@@ -30,10 +30,12 @@ export async function suggestNew(data: DataStore): Promise<number> {
   if (data.state.suggesting) return 0
   const ids = data.untriedWaiting()
   if (!ids.length) return 0
-  data.markTried(ids)
+  const session = data.state.session
   const before = Object.keys(data.state.suggestions).length
   try {
     await data.suggestCategories(ids)
+    if (data.state.session !== session) return 0
+    data.markTried(ids)
   } catch {
     return 0 // a background helper: the next sync tries again
   }

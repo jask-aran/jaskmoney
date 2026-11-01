@@ -37,6 +37,7 @@ import type { Category, ImportProfile, Rule, SavedFilter, SortColumn, Transactio
 import type { UiPrefs } from "../state/settingsConfig"
 import { emptyCoreState, type CoreParams, type CoreResult, type CoreState, type SignInProgress, type TagPatch } from "../core/protocol"
 import type { CoreLink } from "./link"
+import { createLatestRun } from "./latestRun"
 
 /** Finding transactions for a tag: its target and the candidates so far. */
 export interface TagReview extends TagTarget {
@@ -172,10 +173,14 @@ export function createClientStore(initialLink: CoreLink) {
   function newSession() {
     // Verdicts are per row id, and a new database reuses ids.
     askVerdicts.clear()
-    stopAsking()
+    askRuns.stop()
     stopTagReview()
     suggestTried.clear()
-    setState({ tagReview: null })
+    setState({
+      tagReview: null,
+      asking: null,
+      ...(!state.uncategorisedOnly && state.sortColumn === "confidence" ? { sortColumn: "date" as const, sortAscending: false } : {}),
+    })
   }
 
   /** Test isolation: the view as it starts (the core's state comes from the core). */
@@ -225,14 +230,7 @@ export function createClientStore(initialLink: CoreLink) {
     return p == null ? undefined : p >= at
   }
   const askVerdict: AskVerdict<Transaction> = (words, t) => verdictAt(nearMissesShown() ? NEAR_AT : MATCH_AT)(words, t)
-  /** Bumped by each ask run and by clearing the filter; a run stops once it's stale. */
-  let askRun = 0
-  let askAbort: AbortController | null = null
-  function stopAsking() {
-    askRun++
-    askAbort?.abort()
-    askAbort = null
-  }
+  const askRuns = createLatestRun()
 
   /** The Uncategorised view's narrowing. */
   const inView = (t: Transaction) => (!state.uncategorisedOnly || (isOrdinaryFlow(t) && isUncategorised(t)))
@@ -362,7 +360,7 @@ export function createClientStore(initialLink: CoreLink) {
   }
 
   function clearFilter() {
-    stopAsking()
+    askRuns.stop()
     setState({
       asking: null,
       askLoose: null,
@@ -410,9 +408,7 @@ export function createClientStore(initialLink: CoreLink) {
     const terms = askTerms(expr)
     if (!terms.length) return null
     if (!ai && !state.jev) throw new Error(`ask: needs Jev (${JEV_SETUP})`)
-    stopAsking()
-    const run = askRun
-    const abort = askAbort = new AbortController()
+    const run = askRuns.start()
     const started = Date.now()
     const result: AskResult = { terms: [], failures: [], ms: 0, dated: hasDateTerm(expr) }
     try {
@@ -430,33 +426,35 @@ export function createClientStore(initialLink: CoreLink) {
         setState({ asking: { words, judged: 0, total: todo.length } })
         if (todo.length) result.failures.push(...await link.call("judgeAsk", { words, ids: todo.map((t) => t.id) }, {
           ai,
-          signal: abort.signal,
+          signal: run.signal,
           onProgress: (scores) => {
-            if (run !== askRun) return
+            if (!run.isCurrent()) return
             for (const [id, p] of scores) known.set(id, p)
             setAskVersion((v) => v + 1)
             setState("asking", (a) => a && { ...a, judged: a.judged + scores.length })
           },
         }))
-        if (run !== askRun) return null
+        if (!run.isCurrent()) return null
         const matched = rows.filter((t) => (known.get(t.id) ?? 0) >= MATCH_AT).length
         const near = rows.filter((t) => { const p = known.get(t.id) ?? 0; return p >= NEAR_AT && p < MATCH_AT }).length
         result.terms.push({ words, rows: rows.length, asked: todo.length, matched, near, skipped })
       }
+    } catch (error) {
+      if (!run.isCurrent()) return null
+      throw error
     } finally {
-      if (run === askRun) setState({ asking: null })
+      if (run.isCurrent()) setState({ asking: null })
     }
     result.ms = Date.now() - started
     return result
   }
 
-  /** Bumped by each tag review opened or closed; a run stops once stale. */
-  let tagRun = 0
-  let tagAbort: AbortController | null = null
+  const tagRuns = createLatestRun()
+  /** Identifies the review opening when undo restores a dismissal. */
+  let tagReviewId = 0
   function stopTagReview() {
-    tagRun++
-    tagAbort?.abort()
-    tagAbort = null
+    tagReviewId++
+    tagRuns.stop()
   }
 
   /**
@@ -468,31 +466,36 @@ export function createClientStore(initialLink: CoreLink) {
     // Tag names are upper case (createTag); a new one is named as it will be.
     if (target.tagId == null) target = { ...target, name: target.name.trim().toUpperCase() }
     stopTagReview()
-    const run = tagRun
-    const abort = tagAbort = new AbortController()
+    const run = tagRuns.start()
     setState({
       uncategorisedOnly: false, sortColumn: "confidence", sortAscending: false,
       tagReview: { ...target, candidates: {}, asking: true },
     })
-    const { failures, jev } = await link.call("tagCandidates", { target: unwrap(target) }, {
-      ai,
-      signal: abort.signal,
-      onProgress: (found) => {
-        if (run !== tagRun) return
-        setState("tagReview", "candidates", (prev) => {
-          const next = { ...prev }
-          for (const c of found) if (!next[c.transactionId] || c.confidence > next[c.transactionId]!.confidence) next[c.transactionId] = c
-          return next
-        })
-      },
-    })
-    if (run !== tagRun || !state.tagReview) return ""
-    setState("tagReview", "asking", false)
-    const shown = Object.values(state.tagReview.candidates).filter((c) => c.confidence >= TAG_SHOW_AT)
-    const parts = [`${target.name}: ${shown.length} to review, ${shown.filter((c) => c.confidence >= ACCEPT_ALL_AT).length} at ${ACCEPT_ALL_AT * 100}% or more`]
-    if (!jev) parts.push("Jev isn't set up: tag history and detected groups only")
-    if (failures.length) parts.push(`${failures.length} failed: ${failures[0]}`)
-    return parts.join(" · ")
+    try {
+      const { failures, jev } = await link.call("tagCandidates", { target: unwrap(target) }, {
+        ai,
+        signal: run.signal,
+        onProgress: (found) => {
+          if (!run.isCurrent()) return
+          setState("tagReview", "candidates", (prev) => {
+            const next = { ...prev }
+            for (const c of found) if (!next[c.transactionId] || c.confidence > next[c.transactionId]!.confidence) next[c.transactionId] = c
+            return next
+          })
+        },
+      })
+      if (!run.isCurrent() || !state.tagReview) return ""
+      const shown = Object.values(state.tagReview.candidates).filter((c) => c.confidence >= TAG_SHOW_AT)
+      const parts = [`${target.name}: ${shown.length} to review, ${shown.filter((c) => c.confidence >= ACCEPT_ALL_AT).length} at ${ACCEPT_ALL_AT * 100}% or more`]
+      if (!jev) parts.push("Jev isn't set up: tag history and detected groups only")
+      if (failures.length) parts.push(`${failures.length} failed: ${failures[0]}`)
+      return parts.join(" · ")
+    } catch (error) {
+      if (!run.isCurrent()) return ""
+      throw error
+    } finally {
+      if (run.isCurrent() && state.tagReview) setState("tagReview", "asking", false)
+    }
   }
 
   /** Put the review's tag on the candidates among `ids` (creating the tag
@@ -503,8 +506,8 @@ export function createClientStore(initialLink: CoreLink) {
     const take = ids.filter((id) => review.candidates[id])
     if (!take.length) return "Nothing to tag"
     // The review may close (or another open) while the core answers.
-    const run = tagRun
-    const open = () => run === tagRun && !!state.tagReview
+    const reviewId = tagReviewId
+    const open = () => reviewId === tagReviewId && !!state.tagReview
     let tagId = review.tagId
     if (tagId == null) {
       tagId = await link.call("createTag", { input: { name: review.name, color: NEW_TAG_COLOR } })
@@ -523,7 +526,7 @@ export function createClientStore(initialLink: CoreLink) {
     if (!review) return Promise.resolve()
     const removed = Object.values(unwrap(review.candidates)).filter((c) => ids.includes(c.transactionId)).map((c) => ({ ...c }))
     if (!removed.length) return Promise.resolve()
-    const done = link.call("dismissTagCandidates", { tag: review.name, candidates: removed, review: tagRun })
+    const done = link.call("dismissTagCandidates", { tag: review.name, candidates: removed, review: tagReviewId })
     setState("tagReview", "candidates", produce((c) => { for (const id of ids) delete c[id] }))
     return done
   }
@@ -536,7 +539,7 @@ export function createClientStore(initialLink: CoreLink) {
   async function undo(): Promise<string> {
     const result = await link.call("undo", {})
     const back = result.restored
-    if (back && back.review === tagRun && state.tagReview?.name === back.tag) {
+    if (back && back.review === tagReviewId && state.tagReview?.name === back.tag) {
       setState("tagReview", "candidates", (prev) => ({ ...prev, ...Object.fromEntries(back.candidates.map((c) => [c.transactionId, c])) }))
     }
     return result.message

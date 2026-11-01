@@ -641,6 +641,11 @@ function createUiStore() {
     }
   }
 
+  /** Another database can reuse row ids; no row target carries across. */
+  function forgetRows() {
+    setState({ selectedIds: {}, range: null, pickerTargets: [], detail: null, acceptPreview: null })
+  }
+
   /** Data reloads remove targets only when their transactions no longer exist. */
   function pruneRows(existing: ReadonlySet<number>) {
     if (!Object.keys(state.selectedIds).some((id) => !existing.has(Number(id)))
@@ -740,6 +745,7 @@ function createUiStore() {
     setRangeFromMove,
     highlightedIds,
     ensureRange,
+    forgetRows,
     pruneRows,
     moveManagerCursor,
     jumpManagerCursor,
