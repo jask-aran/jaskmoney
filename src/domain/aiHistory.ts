@@ -1,4 +1,5 @@
 import { filterGuide } from "./filterLanguage"
+import type { CategorySource } from "../db/schema"
 import { paidText, rowFacts } from "./history"
 import { scopeText } from "./tagScope"
 import type { CategoryLogEntry, TagLogEntry } from "../db/client"
@@ -25,7 +26,7 @@ export interface HistoryData {
   tagLog: TagLogEntry[]
   /** Who set each row's category ("provider": Up; "type": sync from Up's
    * transaction type; "user", "pending", "rule"); absent rows have none. */
-  categorySources?: Map<number, string | null>
+  categorySources?: Map<number, CategorySource | null>
 }
 
 /** The filter language for the model (domain/filterLanguage, the same

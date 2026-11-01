@@ -70,6 +70,27 @@ export const CATEGORY_BUDGET_IGNORED_COLUMN = "budget_ignored INTEGER NOT NULL D
  * 'provider'. No CHECK: values are added without a migration. */
 export const CATEGORY_SOURCE_COLUMN = "category_source TEXT"
 
+/**
+ * category_source's values (CATEGORY_SOURCE_COLUMN; NULL = never set). How a
+ * row moves between them, and where:
+ *
+ *   any       --choose/accept/undo, Up can hold it--> pending  (core/upPush applyCategories)
+ *   any       --choose/accept/undo, local only-->     user
+ *   any       --rule, Up can hold it-->               pending  (core applyRules)
+ *   any       --rule, local only-->                   rule
+ *   pending   --Up confirms-->                        provider, or NULL for no category
+ *   pending   --Up refuses the choice-->              the source it had before
+ *   pending   --Up refuses on a retry, or the row can't go to Up any more--> user
+ *   pending   --no answer-->                          pending  (retried after each sync)
+ *   pending   --undo cancels the push-->              user, then the undo's own choice
+ *   NULL, provider --sync-->                         provider or NULL (Up's category)
+ *   NULL      --sync, Up's transaction type-->        type     (up/categories)
+ *
+ * Sync leaves pending, user, rule and type as they are, and leaves a row Up
+ * confirmed a change for while it fetched (up/sync `keep`).
+ */
+export type CategorySource = "provider" | "pending" | "user" | "rule" | "type"
+
 /** v13: provider tag id (Up: the tag's name, which is its id). NULL = local
  * only (e.g. IGNORE, which never syncs). */
 export const TAG_EXT_COLUMN = "ext_id TEXT"

@@ -7,6 +7,7 @@ import { count } from "../domain/words"
 import type { createUpPush } from "./upPush"
 import type { CoreContext } from "./context"
 import { createLane } from "./lane"
+import type { CategorySource } from "../db/schema"
 
 export function createRuleOffers(ctx: CoreContext, deps: Pick<ReturnType<typeof createUpPush>, "retryPendingCategories" | "retryPendingTags" | "applyTagPatch">) {
   const { state, set, mutate, transactions, recordUndo, saveSavedFilter, createSettingsRule, applyRules, deleteSettingsRule, deleteSavedFilter, restoreCategories } = ctx
@@ -17,7 +18,7 @@ export function createRuleOffers(ctx: CoreContext, deps: Pick<ReturnType<typeof 
     return {
       transactions: transactions(), categories: state.categories, tags: state.tags, rules: state.rules, savedFilters: state.savedFilters,
       categoryLog: ctx.db ? loadCategoryLog(ctx.db) : [], tagLog: ctx.db ? loadTagLog(ctx.db) : [],
-      categorySources: ctx.db ? new Map(ctx.db.query<{ id: number; source: string | null }, []>("SELECT id, category_source AS source FROM transactions").all().map((r) => [r.id, r.source])) : undefined,
+      categorySources: ctx.db ? new Map(ctx.db.query<{ id: number; source: CategorySource | null }, []>("SELECT id, category_source AS source FROM transactions").all().map((r) => [r.id, r.source])) : undefined,
     }
   }
 

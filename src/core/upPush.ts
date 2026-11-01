@@ -1,3 +1,4 @@
+import type { CategorySource } from "../db/schema"
 import { setTransactionCategory, recordCategoryChoices, unrecordCategoryChoices, logCategories, unlogCategory, logTags, unlogTag, type Db, type CategoryHow, type TagHow } from "../db/client"
 import type { Category } from "../domain/types"
 import { UpApiError } from "../up/client"
@@ -99,7 +100,7 @@ export function createUpPush(ctx: CoreContext, deps: { ruleOfferNote: (ids: numb
   ): Promise<CategorizeResult> {
     if (!ctx.db) throw new Error("db not open")
     const database = ctx.db
-    type Prior = { categoryId: number | null; source: string | null; ext: string | null; extParent: string | null }
+    type Prior = { categoryId: number | null; source: CategorySource | null; ext: string | null; extParent: string | null }
     const pushes = new Map<number, CategoryPush & { prior: Prior; sequence: number }>()
     const writes = new Map<number, number>()
     let local = 0
@@ -118,7 +119,7 @@ export function createUpPush(ctx: CoreContext, deps: { ruleOfferNote: (ids: numb
         const row = database.query(`SELECT source, external_id AS externalId, ext_categorizable AS categorizable,
           category_id AS categoryId, category_source AS categorySource, ext_category AS ext, ext_parent_category AS extParent
           FROM transactions WHERE id = ?`).get(id) as PushableRow & {
-            categoryId: number | null; categorySource: string | null; ext: string | null; extParent: string | null
+            categoryId: number | null; categorySource: CategorySource | null; ext: string | null; extParent: string | null
           } | null
         if (!row) continue
         const push = categoryPush(row, category, state.categories)

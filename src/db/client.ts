@@ -41,6 +41,7 @@ import {
   TRANSACTION_DETAIL_COLUMNS_LIST,
   TRANSACTION_SYNC_COLUMNS_LIST,
 } from "./schema"
+import type { CategorySource } from "./schema"
 import type { Account, BoughtItem, Category, CategorySuggestion, ImportRecord, Rule, Tag, Transaction } from "../domain/types"
 import { assignTypeCategories } from "../up/categories"
 import { categoryTerm } from "../domain/drill"
@@ -831,7 +832,7 @@ export function setTransactionCategory(
   db: Db,
   txnId: number,
   categoryId: number,
-  source: "user" | "pending" | "rule" | "provider" | null,
+  source: CategorySource | null,
   provider?: { extCategory: string | null; extParentCategory: string | null },
 ): void {
   if (provider) {
