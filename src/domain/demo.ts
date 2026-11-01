@@ -297,6 +297,14 @@ export function generateDemo(options: { today: string; years?: number; seed?: nu
     const minutes = 7 * 60 + integer(17 * 60)
     t.time = `${String(Math.floor(minutes / 60)).padStart(2, "0")}:${String(minutes % 60).padStart(2, "0")}`
   }
+  // Each transfer shows on both accounts, as Up shows it: the saver's side
+  // too, or its balance (rebuilt from its own rows) never moves. After every
+  // draw, so the rest of the life is unchanged.
+  const spendingName = accounts.find(a => a.key === "spending")?.name ?? "Spending"
+  for (const t of transactions.filter(t => t.transferToKey && t.accountKey === "spending")) {
+    transactions.push({ ...t, accountKey: t.transferToKey!, transferToKey: "spending", amount: round(-t.amount),
+      description: t.amount < 0 ? `Transfer from ${spendingName}` : `Transfer to ${spendingName}` })
+  }
   transactions.sort((a, b) => a.dateISO < b.dateISO ? -1 : a.dateISO > b.dateISO ? 1 : 0)
   return { accounts, transactions, categories: DEMO_CATEGORIES, budget: { monthly: 4200 } }
 }

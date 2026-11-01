@@ -86,12 +86,23 @@ export function followTickers(ui: UiStore): () => void {
   return () => { stopped = true; clearInterval(timer) }
 }
 
+/** The status line a start leaves: how many transactions there are, or
+ * how to bring some in. At start-up, and as the setup closes (its own
+ * notes, a ticker tape's, have had their moment). */
+export function restingStatus(ui: UiStore, data: DataStore): void {
+  // On a core elsewhere (--connect url, or --connect=url).
+  const remote = process.argv.some((a) => a === "--connect" || a.startsWith("--connect="))
+  if (data.state.transactions.length > 0) ui.setStatus(`${data.state.transactions.length} transactions loaded.${remote ? " · on a remote core" : ""}`)
+  else ui.setStatus("No transactions yet · Settings → Database & Import → i to import")
+}
+
 /** Leave the setup, finished or skipped: it won't open by itself again. */
 export function closeWelcome(ui: UiStore, data: DataStore): void {
   emailFlow?.abort()
   // A tab switch closes every dialog, the setup's own and any it opened.
   ui.switchTab("overview")
   void data.setWelcomed(true)
+  restingStatus(ui, data)
 }
 
 function go(ui: UiStore, step: WelcomeState["step"] | null, data: DataStore): void {

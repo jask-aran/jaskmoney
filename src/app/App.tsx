@@ -1,6 +1,6 @@
 import { web, webLabel } from "./webApp"
 import { paintWith } from "./afterPaint"
-import { openWelcome, shouldWelcome } from "./welcome"
+import { openWelcome, restingStatus, shouldWelcome } from "./welcome"
 import { Welcome } from "../ui/welcome/Welcome"
 import { traceFrames, traceKey, traceMark } from "./trace"
 import { settleData, toggleDemo } from "./actions"
@@ -75,13 +75,8 @@ export function App() {
       if (restored.chartViews) ui.setState({ chartViews: restored.chartViews })
       setBootstrapped(true)
 
-      if (demo) {
-        // toggleDemo's status says what demo mode is.
-      } else if (data.state.transactions.length > 0) {
-        ui.setStatus(`${data.state.transactions.length} transactions loaded.${remote ? " · on a remote core" : ""}`)
-      } else {
-        ui.setStatus("No transactions yet · Settings → Database & Import → i to import")
-      }
+      // toggleDemo's status says what demo mode is.
+      if (!demo) restingStatus(ui, data)
       // The first time (no Up token, setup not yet been through), or asked
       // for: the first-run setup, over the app.
       if (process.argv.includes("--welcome") || (!demo && shouldWelcome(data))) openWelcome(ui)
