@@ -2,7 +2,7 @@ import { regionRef } from "../regions"
 import { onPointer } from "../../app/pointer"
 import { drillDown, handleOverviewRange, moveOverviewCategory } from "../../app/keys"
 import { keyEvent } from "../../app/keyEvent"
-import { For, Index, Show, createEffect, createMemo, createSignal, on, onCleanup, onMount } from "solid-js"
+import { For, Index, Show, createEffect, createMemo, createSignal, on, onCleanup } from "solid-js"
 import { hasMarks } from "../charts/reveal"
 import type { BoxRenderable, ScrollBoxRenderable } from "@opentui/core"
 import { categoryMark } from "../icons"
@@ -263,6 +263,17 @@ export function OverviewTab(props: { focused: SectionId }) {
     const look = () => chipLook({ active: active(), cursor: dateFocused() && ui.state.dashChipCursor === idx })
     return <S fg={look().fg} bg={look().bg} bold={look().bold}>{` ${label} `}</S>
   }
+  // The space between chips: none when the row is tight (an empty text
+  // would still take a column).
+  const gap = () => <text wrapMode="none" fg={ink.label}>{chipsFit().gap}</text>
+  /** A range chip as its own text: a click on it chooses it. */
+  const chipText = (label: string, idx: number, active: () => boolean) => (
+    <text wrapMode="none" fg={ink.label} onMouseDown={onPointer((s) => s === "bar" || s === "overview" || s === "overview.range", () => {
+      ui.applyJump("ov.range")
+      ui.setDashChipCursor(idx)
+      handleOverviewRange(ui, keyEvent("return"), data)
+    })}>{chip(label, idx, active)}</text>
+  )
 
   // A note too long for its column (a space before it) takes room from the
   // label's padding.
@@ -480,38 +491,22 @@ export function OverviewTab(props: { focused: SectionId }) {
 
   return (
     <box width="100%" height="100%" flexDirection="column" backgroundColor={theme.canvas}>
+      <box ref={regionRef("ov.range", "overview")} width={rangeCardWidth()} height={3} flexShrink={0} onMouseDown={panePointer("ov.range")}>
       <SectionCard title="Date Range" titleSuffix={`· ${scope().label}`} titleSuffixColor={ink.label} focused={dateFocused()} height={3} width={rangeCardWidth()}>
-        <box flexDirection="row" justifyContent="space-between" width="100%" ref={(row: BoxRenderable) => {
-          // Register the card after insertion, keeping its parent and layout.
-          onMount(() => {
-            const card = row.parent
-            if (card) { regionRef("ov.range", "overview")(card); card.onMouseDown = panePointer("ov.range") }
-          })
-        }}>
-          <text fg={ink.label} wrapMode="none" onMouseDown={onPointer((s) => s === "bar" || s === "overview" || s === "overview.range", (event) => {
-            const x = event.x - (event.currentTarget?.x ?? 0)
-            let start = 0
-            const labels = [...LOOKBACKS, ...PERIODS.map((p) => chipsFit().label(p)), "Custom"]
-            const index = labels.findIndex((label, i) => {
-              if (i > 0) start += Bun.stringWidth(i === LOOKBACKS.length || i === CUSTOM_CHIP ? chipsFit().separator : chipsFit().gap)
-              const end = start + Bun.stringWidth(label) + 2
-              const hit = x >= start && x < end
-              start = end
-              return hit
-            })
-            ui.applyJump("ov.range")
-            if (index >= 0) { ui.setDashChipCursor(index); handleOverviewRange(ui, keyEvent("return"), data) }
-          })}>
+        <box flexDirection="row" justifyContent="space-between" width="100%">
+          {/* Each chip its own text: a click lands on the chip OpenTUI drew
+              there, with no sums of label widths to keep in step. */}
+          <box flexDirection="row" flexShrink={0}>
             <For each={LOOKBACKS}>
-              {(lb, i) => <>{i() > 0 ? chipsFit().gap : ""}{chip(lb, i(), () => ui.state.timeframe.family === "lookback" && ui.state.timeframe.lookback === lb)}</>}
+              {(lb, i) => <><Show when={i() > 0 && chipsFit().gap}>{gap()}</Show>{chipText(lb, i(), () => ui.state.timeframe.family === "lookback" && ui.state.timeframe.lookback === lb)}</>}
             </For>
-            <S fg={ink.rule}>{chipsFit().separator}</S>
+            <text wrapMode="none" fg={ink.rule}>{chipsFit().separator}</text>
             <For each={PERIODS}>
-              {(p, i) => <>{i() > 0 ? chipsFit().gap : ""}{chip(chipsFit().label(p), LOOKBACKS.length + i(), () => ui.state.timeframe.family === "period" && ui.state.timeframe.period === p)}</>}
+              {(p, i) => <><Show when={i() > 0 && chipsFit().gap}>{gap()}</Show>{chipText(chipsFit().label(p), LOOKBACKS.length + i(), () => ui.state.timeframe.family === "period" && ui.state.timeframe.period === p)}</>}
             </For>
-            <S fg={ink.rule}>{chipsFit().separator}</S>
-            {chip("Custom", CUSTOM_CHIP, () => ui.state.timeframe.family === "custom")}
-          </text>
+            <text wrapMode="none" fg={ink.rule}>{chipsFit().separator}</text>
+            {chipText("Custom", CUSTOM_CHIP, () => ui.state.timeframe.family === "custom")}
+          </box>
           <Show when={showTimeframe()}>
             <text flexShrink={0} wrapMode="none">
               <Show when={offsetText()}>
@@ -526,6 +521,7 @@ export function OverviewTab(props: { focused: SectionId }) {
           </Show>
         </box>
       </SectionCard>
+      </box>
       <Show
         when={wide()}
         fallback={<NarrowColumn />}

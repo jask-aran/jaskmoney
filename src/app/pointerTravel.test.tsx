@@ -178,3 +178,41 @@ test("KeptTab regions stay mounted but cannot be targets while hidden", async ()
   expect(regionRects("manager").every((r) => r.id.startsWith("bar."))).toBe(true)
   expect(regionRects("overview").some((r) => r.id === "ov.range")).toBe(true)
 })
+
+test("a click on any column of a Date Range chip chooses that chip: each chip is its own text", async () => {
+  for (const width of [160, 110, 84]) {
+    ui.switchTab("overview")
+    const t = await renderApp({ width, height: 40 })
+    try {
+      setAppClock(new Date(2026, 9, 20, 12))
+      data.setState({ accounts: [account()], categories: [category({ id: 10 })], transactions: [transaction({ id: 1, categoryId: 10 })], icons: false })
+      ui.setTimeframe({ ...ui.state.timeframe, family: "lookback", lookback: "1M" })
+      await t.renderOnce()
+      const y = regionRects("overview").find((r) => r.id === "ov.range")!.rect.y + 1
+      // Each chip is " label ": its first column is the space before. Read
+      // from what's drawn now: a chosen range changes the text beside the
+      // chips, and with it their spacing.
+      const labels = ["1M", "2M", "3M", "6M", "1Y", "Cycle", "Month", "QTR", "Half", "FY", "Year", "Custom"]
+      expect(labels.length).toBe(CUSTOM_CHIP + 1)
+      const chipAt = (index: number) => {
+        const row = t.captureCharFrame().split("\n")[y]!
+        let at = -1
+        for (const label of labels.slice(0, index + 1)) at = row.indexOf(label, at + 1)
+        return { first: at - 1, last: at + labels[index]!.length }
+      }
+      for (const index of labels.keys()) {
+        for (const end of ["first", "last"] as const) {
+          // Custom opens its dates dialog, which then owns the mouse.
+          ui.setState({ customEdit: null })
+          ui.setDashChipCursor(0)
+          await t.renderOnce()
+          const x = chipAt(index)[end]
+          await t.mockMouse.click(x, y)
+          await t.renderOnce()
+          expect({ width, x, cursor: ui.state.dashChipCursor }).toEqual({ width, x, cursor: index })
+          expect(ui.state.focusedSection).toBe("ov.range")
+        }
+      }
+    } finally { t.renderer.destroy() }
+  }
+})

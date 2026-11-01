@@ -47,7 +47,11 @@ function cards(root: BaseRenderable): BoxRenderable[] {
 function overviewCards(t: Awaited<ReturnType<typeof overview>>): BoxRenderable[] {
   const dateRange = cards(t.renderer.root).find((card) => card.y === 2)
   expect(dateRange).toBeDefined()
-  return cards(dateRange!.parent!)
+  // The Overview's body: Date Range's card sits in a box of its own (its
+  // region and click), as Accounts' and Categories' do.
+  let body = dateRange!.parent!
+  while (cards(body).length < 2 && body.parent) body = body.parent
+  return cards(body)
 }
 
 // Wide (>= 90 columns): two charts beside the stack. Narrow: one chart, then
