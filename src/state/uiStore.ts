@@ -6,7 +6,7 @@ import type { Armed } from "./armed"
 import type { DryRunReport } from "../domain/rules"
 import type { CycleAnchor, CycleUnit } from "../domain/budget"
 import type { MerchantSort } from "../domain/merchants"
-import { createStore, reconcile } from "solid-js/store"
+import { createStore, reconcile, unwrap } from "solid-js/store"
 import {
   defaultTimeframe,
   type TimeframeState,
@@ -262,7 +262,6 @@ export interface UiState {
     row: "jev" | "workersAi" | "openrouter" | "openai" | "up"
     cursor: number
     field: { action: "key" | "accountId" | "model"; value: string; caret: number } | null
-    armed: boolean
     note: { text: string; ok: boolean | null } | null
     busy: boolean
   } | null
@@ -367,6 +366,65 @@ function cursorWindow(cursor: number, top: number, count: number, visible: numbe
   if (cursor < top) top = cursor
   if (cursor >= top + vis) top = cursor - vis + 1
   return { cursor, top: Math.max(0, top) }
+}
+
+/** A dialog that owns input while it is open. `scope` is its key scope
+ * while open (null while closed); `closed` is what closing it writes. */
+interface Modal { scope: (s: UiState) => ScopeId | null; closed: Partial<UiState> }
+
+/**
+ * Every dialog, in the order they take input: the first open one is the
+ * active scope (`activeScope`), and a tab switch closes them all
+ * (`switchTab`). A new dialog goes here, once, so neither can forget it.
+ */
+const MODALS: Modal[] = [
+  { scope: (s) => s.palette ? "palette" : null, closed: { palette: null } },
+  { scope: (s) => s.searchHelp ? "searchHelp" : null, closed: { searchHelp: false } },
+  { scope: (s) => s.filterPicker ? "filterPicker" : null, closed: { filterPicker: null } },
+  { scope: (s) => s.dryRunReport ? "dryRun" : null, closed: { dryRunReport: null, dryRunScroll: 0, dryRunVisible: 10 } },
+  { scope: (s) => s.jumpMode ? "jump" : null, closed: { jumpMode: false } },
+  { scope: (s) => s.catPickerOpen ? "catPicker" : null, closed: { catPickerOpen: false } },
+  { scope: (s) => s.tagPickerOpen ? "tagPicker" : null, closed: { tagPickerOpen: false, tagPickerApplying: false, tagPickerPatch: {} } },
+  { scope: (s) => s.tagChooserOpen ? "tagChooser" : null, closed: { tagChooserOpen: false, tagChooserQuery: "", tagChooserCursor: 0 } },
+  { scope: (s) => s.filterMode ? "filter" : null, closed: { filterMode: false } },
+  { scope: (s) => s.merchantNote ? "merchantNote" : null, closed: { merchantNote: null } },
+  { scope: (s) => s.detailId == null ? null : s.detailNotesEditing ? "manager.detail.notes" : "manager.detail", closed: { detailId: null, detailNotesEditing: false } },
+  { scope: (s) => s.settingsEditor ? "settings.editor" : null, closed: { settingsEditor: null, formPicker: null } },
+  { scope: (s) => s.importStage === "none" ? null : `settings.import.${s.importStage}`, closed: { importStage: "none" } },
+  { scope: (s) => s.accountActionId != null ? "manager.accountAction" : null, closed: { accountActionId: null } },
+  { scope: (s) => s.acceptPreview ? "manager.acceptPreview" : null, closed: { acceptPreview: null } },
+  { scope: (s) => s.ruleOffersOpen ? "manager.ruleOffers" : null, closed: { ruleOffersOpen: false } },
+  { scope: (s) => s.llmSignIn ? "llmSignIn" : null, closed: { llmSignIn: null } },
+  { scope: (s) => s.aiSent ? "settings.aiSent" : null, closed: { aiSent: null } },
+  { scope: (s) => s.aiUse ? "settings.aiUse" : null, closed: { aiUse: null } },
+  { scope: (s) => s.aiDialog ? "settings.aiDialog" : null, closed: { aiDialog: null } },
+  { scope: (s) => s.executor ? "settings.executor" : null, closed: { executor: null } },
+  { scope: (s) => s.upAccounts ? "settings.upAccounts" : null, closed: { upAccounts: null } },
+  { scope: (s) => s.factoryResetOpen ? "settings.factoryReset" : null, closed: { factoryResetOpen: false, factoryResetDraft: "", factoryResetCaret: 0 } },
+  { scope: (s) => s.customEdit ? "overview.custom" : null, closed: { customEdit: null } },
+]
+
+/** What closing every dialog writes. */
+const ALL_CLOSED: Partial<UiState> = Object.assign({}, ...MODALS.map((m) => m.closed))
+
+/** The UiState fields that hold one object while open and null while
+ * closed: a dialog, which `opening` can hold on to. */
+export type DialogKey = {
+  [K in keyof UiState]-?: null extends UiState[K]
+    ? NonNullable<UiState[K]> extends readonly unknown[] ? never : NonNullable<UiState[K]> extends object ? K : never
+    : never
+}[keyof UiState]
+
+/** One opening of a dialog, held by work that finishes later (a save, a
+ * test, a sign-in): it writes to that opening only. Once the dialog closed,
+ * or another opened in its place, `patch` and `close` change nothing, where
+ * a plain `setState(key, patch)` would bring a closed dialog back as a
+ * fragment (Solid sets a path on null to the patch itself). */
+export interface Opening<T> {
+  /** Still this opening: not closed, not replaced. */
+  readonly open: boolean
+  patch(patch: Partial<T>): void
+  close(): void
 }
 
 /** No ids: one shared object, so "still nothing highlighted" changes nothing downstream. */
@@ -495,29 +553,25 @@ function createUiStore() {
 
   function switchTab(tab: TabId) {
     setState({
+      ...ALL_CLOSED,
       activeTab: tab,
       drillReturn: null,
-      customEdit: null,
       focusedSection: TAB_DEFAULT_FOCUS[tab],
-      jumpMode: false,
-      filterMode: false,
-      catPickerOpen: false,
-      tagChooserOpen: false, tagChooserQuery: "", tagChooserCursor: 0,
-      tagPickerOpen: false, tagPickerApplying: false, tagPickerPatch: {},
       rangeSelecting: false,
       settingsActive: false,
-      filterPicker: null, palette: null, dryRunReport: null, dryRunScroll: 0, dryRunVisible: 10,
-      settingsEditor: null,
       armed: null,
-      importStage: "none",
-      accountActionId: null,
-      acceptPreview: null,
-      ruleOffersOpen: false,
-      factoryResetOpen: false,
-      factoryResetDraft: "", factoryResetCaret: 0,
-      merchantNote: null,
-      searchHelp: false,
     })
+  }
+
+  /** The dialog open at `key` now, for work that finishes later (Opening). */
+  function opening<K extends DialogKey>(key: K): Opening<NonNullable<UiState[K]>> {
+    const at = unwrap(state)[key]
+    const open = () => at != null && unwrap(state)[key] === at
+    return {
+      get open() { return open() },
+      patch: (patch) => { if (open()) (setState as (k: K, v: unknown) => void)(key, patch) },
+      close: () => { if (open()) setState({ [key]: null } as Partial<UiState>) },
+    }
   }
 
   function cycleTab(delta: number) {
@@ -712,34 +766,10 @@ function createUiStore() {
   }
 
   function activeScope(): ScopeId {
-    if (state.palette) return "palette"
-    if (state.searchHelp) return "searchHelp"
-    if (state.filterPicker) return "filterPicker"
-    if (state.dryRunReport) return "dryRun"
-    if (state.jumpMode) return "jump"
-    if (state.catPickerOpen) return "catPicker"
-    if (state.tagPickerOpen) return "tagPicker"
-    if (state.tagChooserOpen) return "tagChooser"
-    if (state.filterMode) return "filter"
-    if (state.merchantNote) return "merchantNote"
-    if (state.detailId != null) return state.detailNotesEditing ? "manager.detail.notes" : "manager.detail"
-    if (state.settingsEditor) return "settings.editor"
-    if (state.importStage === "files") return "settings.import.files"
-    if (state.importStage === "path") return "settings.import.path"
-    if (state.importStage === "profile") return "settings.import.profile"
-    if (state.importStage === "profileEditor") return "settings.import.profileEditor"
-    if (state.importStage === "preview") return "settings.import.preview"
-    if (state.accountActionId != null) return "manager.accountAction"
-    if (state.acceptPreview) return "manager.acceptPreview"
-    if (state.ruleOffersOpen) return "manager.ruleOffers"
-    if (state.llmSignIn) return "llmSignIn"
-    if (state.aiSent) return "settings.aiSent"
-    if (state.aiUse) return "settings.aiUse"
-    if (state.aiDialog) return "settings.aiDialog"
-    if (state.executor) return "settings.executor"
-    if (state.upAccounts) return "settings.upAccounts"
-    if (state.factoryResetOpen) return "settings.factoryReset"
-    if (state.customEdit) return "overview.custom"
+    for (const modal of MODALS) {
+      const scope = modal.scope(state)
+      if (scope) return scope
+    }
     if (state.activeTab === "overview") return state.focusedSection === "ov.range" ? "overview.range" : "overview"
     if (state.activeTab === "budgets") return state.focusedSection === "bud.categories" ? "budgets.categories" : "budgets"
     if (state.activeTab === "manager") {
@@ -761,6 +791,7 @@ function createUiStore() {
     reset,
     setStatus,
     switchTab,
+    opening,
     cycleTab,
     enterJump,
     cancelJump,

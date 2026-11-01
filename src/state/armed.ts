@@ -8,6 +8,8 @@
 export type ArmedKind =
   | "category" | "tag" | "rule" | "filter" | "profile" | "budget"
   | "clearData" | "clearAccount" | "deleteAccount" | "desyncAccount"
+  /** Settings › AI models: remove a row's saved keys (its id is the row). */
+  | "aiKey"
 
 export interface Armed {
   kind: ArmedKind
@@ -35,6 +37,7 @@ export function armedText(armed: Armed): string {
     clearAccount: `clear ${armed.label}'s transactions`,
     deleteAccount: `remove ${armed.label} and its transactions`,
     desyncAccount: `stop syncing ${armed.label} (its transactions are removed)`,
+    aiKey: `remove what was saved for ${armed.label}`,
   }[armed.kind]
   return `Press ${press} again to ${what}`
 }

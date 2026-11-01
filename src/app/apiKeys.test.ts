@@ -68,7 +68,7 @@ test("a key: typed or pasted into the dialog, saved owner-only, used before .env
   handleKey(ui, key("return"), data)
   expect(loadSavedCredentials()).toEqual({ JASKMONEY_JEV_TOKEN: KEY })
   choose("remove")
-  expect(ui.state.aiDialog!.armed).toBe(true)
+  expect(ui.state.armed).toMatchObject({ kind: "aiKey", id: "jev" })
   expect(loadSavedCredentials()).toEqual({ JASKMONEY_JEV_TOKEN: KEY })
   handleKey(ui, key("return"), data); await settlePending()
   expect(loadSavedCredentials()).toEqual({})

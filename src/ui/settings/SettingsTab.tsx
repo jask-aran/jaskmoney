@@ -1,4 +1,4 @@
-import { armedFor } from "../../state/armed"
+import { armedFor, isArmed } from "../../state/armed"
 import { DATABASE_ROWS, databaseRow } from "../../state/databaseRows"
 import { AI_ROWS } from "../../app/apiKeys"
 import { USES } from "../../ai/catalog"
@@ -315,7 +315,7 @@ export function AiDialog() {
                 <>
                   <For each={actions()}>{(action, i) => {
                     const here = () => i() === Math.min(d().cursor, actions().length - 1)
-                    return <ListRow cursor={here()} bg={theme.mantle} spans={[{ text: action.id === "remove" && here() && d().armed ? "Press enter again to remove" : action.label, fg: action.id === "remove" ? tone.bad : ink.label }]} />
+                    return <ListRow cursor={here()} bg={theme.mantle} spans={[{ text: action.id === "remove" && here() && isArmed(ui.state.armed, "aiKey", d().row) ? "Press enter again to remove" : action.label, fg: action.id === "remove" ? tone.bad : ink.label }]} />
                   }}</For>
                   <Show when={at() && aiActionHint(d().row, at()!.id, ctx())}>
                     <text> </text>

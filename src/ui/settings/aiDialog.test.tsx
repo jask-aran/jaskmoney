@@ -14,7 +14,7 @@ test("the AI models dialog: status, actions with the cursor, the hint for the ac
   await createFileCredentialStore().modify("openrouter", async () => ({ type: "oauth", access: "a", refresh: "", expires: Date.now() + 60_000 }))
   await data.refreshApiKeys()
   ui.switchTab("settings")
-  ui.setState({ aiDialog: { row: "openrouter", cursor: 0, field: null, armed: false, note: null, busy: false } })
+  ui.setState({ aiDialog: { row: "openrouter", cursor: 0, field: null, note: null, busy: false } })
   await rendered.renderOnce(); await rendered.flush()
   let frame = rendered.captureCharFrame()
   expect(frame).toContain("OpenRouter · general model")

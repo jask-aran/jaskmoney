@@ -30,7 +30,7 @@ import { eitherInstead, askTerms } from "../domain/filter"
 import { BOUGHT_LINES } from "../ui/manager/TransactionDetail"
 import { cancelExecutorSignIn, openExecutorDialog, runExecutorAction } from "./executorSource"
 import { executorActions } from "../state/executorDialog"
-import { AI_ROWS, aiRowLabel, isLlmRow, testAi, type AiRow } from "./apiKeys"
+import { AI_ROWS, aiRowLabel, isLlmRow, testAi } from "./apiKeys"
 import { AI_USES, aiActions, aiContext, useActions, type AiUse } from "../state/aiDialog"
 import { useQueries, type QueryId } from "../ai/catalog"
 import { hasWorkersAi } from "../ai/workersAi"
@@ -669,6 +669,16 @@ const CONFIRMED: Record<Confirm["kind"], (data: DataStore | undefined, c: Confir
 
 
   desyncAccount: async (data, c) => `Sync off for ${c.label} · ${await data?.setAccountSync(Number(c.id), false) ?? 0} transactions removed`,
+  aiKey: async (data, c) => {
+    if (!data) return ""
+    const row = c.id as NonNullable<UiState["aiDialog"]>["row"]
+    if (isLlmRow(row)) {
+      const { keyName, modelName } = LLM_PROVIDERS[row]
+      await data.saveApiKeys({ [keyName]: null, [modelName]: null, ...(row === "openrouter" ? { JASKMONEY_LLM_MODEL: null } : {}) })
+      await signOutLlm(data, row)
+    } else await data.saveApiKeys(row === "up" ? { JASKMONEY_UP_TOKEN: null } : row === "jev" ? { JASKMONEY_JEV_TOKEN: null } : { JASKMONEY_CF_TOKEN: null, JASKMONEY_CF_ACCOUNT_ID: null })
+    return `Removed what was saved for ${c.label}`
+  },
 }
 
 /** A settings editor save is on its way to the core. */
@@ -985,7 +995,7 @@ function handleSettingsUp(ui: UiStore, key: KeyEvent, data?: DataStore): void {
   if (moved != null) { ui.setState({ upCursor: moved }); return }
   if (name === "return" || name === "enter") {
     const row = UP_ROWS[Math.min(ui.state.upCursor, UP_ROWS.length - 1)]
-    if (row === "token") ui.setState({ aiDialog: { row: "up", cursor: 0, field: null, armed: false, note: null, busy: false } })
+    if (row === "token") openAiDialog(ui, "up")
     else if (row === "sync" && data) void runSync(ui, data, { manual: true })
     else if (row === "accounts") ui.setState({ upAccounts: { cursor: 0 } })
     return
@@ -1091,7 +1101,7 @@ function handleSettingsAi(ui: UiStore, key: KeyEvent): void {
   else openAiDialog(ui, AI_ROWS[ui.state.aiCursor] ?? "jev")
 }
 
-const openAiDialog = (ui: UiStore, row: AiRow) => ui.setState({ aiDialog: { row, cursor: 0, field: null, armed: false, note: null, busy: false } })
+const openAiDialog = (ui: UiStore, row: NonNullable<UiState["aiDialog"]>["row"]) => ui.setState({ aiDialog: { row, cursor: 0, field: null, note: null, busy: false } })
 
 /** A use's dialog: j/k move over its queries, then its model actions;
  * enter opens a query (what it asks, its context, the exact request) or
@@ -1167,27 +1177,29 @@ function handleAiDialog(ui: UiStore, key: KeyEvent, data?: DataStore): void {
   if (!dialog || !data) return
   const { name } = key
   const row = dialog.row
-  const note = (text: string, ok: boolean | null) => ui.setState("aiDialog", { note: { text, ok }, busy: false })
+  // Work that finishes after the dialog closed writes nothing (Opening).
+  const opened = ui.opening("aiDialog")
+  const note = (text: string, ok: boolean | null) => opened.patch({ note: { text, ok }, busy: false })
   if (dialog.field) {
     const field = dialog.field
-    if (name === "escape") { ui.setState("aiDialog", { field: null }); return }
+    if (name === "escape") { opened.patch({ field: null }); return }
     if (name === "return" || name === "enter") {
       const value = field.value.trim()
       settleData(ui, (async () => {
         try {
           if (field.action === "key") {
-            if (!value) { ui.setState("aiDialog", { field: null }); return }
+            if (!value) { opened.patch({ field: null }); return }
             await data.saveApiKeys(row === "up" ? { JASKMONEY_UP_TOKEN: value } : row === "jev" ? { JASKMONEY_JEV_TOKEN: value } : row === "workersAi" ? { JASKMONEY_CF_TOKEN: value } : { [LLM_PROVIDERS[row].keyName]: value })
-            ui.setState("aiDialog", { field: null, note: { text: row === "up" ? "Token saved · Test checks it; s in Up Bank syncs" : "Key saved", ok: true } })
+            opened.patch({ field: null, note: { text: row === "up" ? "Token saved · Test checks it; s in Up Bank syncs" : "Key saved", ok: true } })
           } else if (field.action === "accountId") {
             await data.saveApiKeys({ JASKMONEY_CF_ACCOUNT_ID: value || null })
-            ui.setState("aiDialog", { field: null, note: { text: value ? "Account ID saved" : "Account ID removed", ok: true } })
+            opened.patch({ field: null, note: { text: value ? "Account ID saved" : "Account ID removed", ok: true } })
           } else if (isLlmRow(row)) {
             const { modelName, defaultModel } = LLM_PROVIDERS[row]
             // An id the provider doesn't have is refused; the default isn't saved, so it follows the app's.
             createLlm({ provider: row, apiKey: "x", modelId: value || defaultModel })
             await data.saveApiKeys({ [modelName]: value && value !== defaultModel ? value : null, ...(row === "openrouter" ? { JASKMONEY_LLM_MODEL: null } : {}) })
-            ui.setState("aiDialog", { field: null, note: { text: `Model: ${value || defaultModel}`, ok: true } })
+            opened.patch({ field: null, note: { text: `Model: ${value || defaultModel}`, ok: true } })
           }
         } catch (e) {
           note(e instanceof Error ? e.message : String(e), false)
@@ -1202,13 +1214,12 @@ function handleAiDialog(ui: UiStore, key: KeyEvent, data?: DataStore): void {
   }
   const ctx = aiContext(data)
   const actions = aiActions(row, ctx)
-  if (name === "escape") { ui.setState({ aiDialog: null }); return }
+  if (name === "escape") { opened.close(); return }
   const moved = listMove(key, dialog.cursor, actions.length)
-  if (moved != null) { ui.setState("aiDialog", { cursor: moved, armed: false }); return }
+  if (moved != null) { opened.patch({ cursor: moved }); return }
   if (name !== "return" && name !== "enter") return
   const action = actions[Math.min(dialog.cursor, actions.length - 1)]
   if (!action || dialog.busy) return
-  const label = aiRowLabel(row)
   switch (action.id) {
     case "signIn":
       if (isLlmRow(row)) settleData(ui, startLlmSignIn(ui, data, row), () => note(ui.state.status, !ui.state.statusErr))
@@ -1217,25 +1228,17 @@ function handleAiDialog(ui: UiStore, key: KeyEvent, data?: DataStore): void {
     case "accountId":
     case "model": {
       const value = action.id === "model" && isLlmRow(row) ? llmModelId(credentialEnv(), row) : action.id === "accountId" ? (credentialEnv().JASKMONEY_CF_ACCOUNT_ID ?? "") : ""
-      ui.setState("aiDialog", { field: { action: action.id, value, caret: value.length }, note: null })
+      opened.patch({ field: { action: action.id, value, caret: value.length }, note: null })
       return
     }
     case "test":
-      ui.setState("aiDialog", { busy: true, note: { text: "Testing…", ok: null } })
+      opened.patch({ busy: true, note: { text: "Testing…", ok: null } })
       void testAi(row).then((result) => note(result.text, result.ok))
       return
-    case "remove": {
-      if (!dialog.armed) { ui.setState("aiDialog", { armed: true, note: { text: "Press enter again to remove", ok: null } }); return }
-      settleData(ui, (async () => {
-        if (isLlmRow(row)) {
-          const { keyName, modelName } = LLM_PROVIDERS[row]
-          await data.saveApiKeys({ [keyName]: null, [modelName]: null, ...(row === "openrouter" ? { JASKMONEY_LLM_MODEL: null } : {}) })
-          await signOutLlm(data, row)
-        } else await data.saveApiKeys(row === "up" ? { JASKMONEY_UP_TOKEN: null } : row === "jev" ? { JASKMONEY_JEV_TOKEN: null } : { JASKMONEY_CF_TOKEN: null, JASKMONEY_CF_ACCOUNT_ID: null })
-        ui.setState("aiDialog", { armed: false, cursor: 0, note: { text: `Removed what was saved for ${label}`, ok: true } })
-      })())
+    case "remove":
+      // Enter twice (state/armed); moving off the row disarms, like any key.
+      confirmTwice(ui, data, { kind: "aiKey", id: row, label: aiRowLabel(row), with: "enter" }, () => opened.patch({ cursor: 0, note: { text: ui.state.status, ok: true } }))
       return
-    }
   }
 }
 
