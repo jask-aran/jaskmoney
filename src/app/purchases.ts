@@ -21,6 +21,7 @@ export const purchaseSources = {
   now: () => Date.now(),
 }
 
+/** The Gmail account lookups go through, found once per sign-in. */
 let account: GmailAccount | null = null
 let running: Promise<PurchaseRound> | null = null
 
@@ -36,8 +37,10 @@ const purchase = (t: { id: number; dateISO: string; createdMs: number | null; am
 
 async function round(data: DataStore): Promise<PurchaseRound> {
   const none: PurchaseRound = { looked: 0, found: 0, resuggested: 0, error: null }
+  // Signed out: the next sign-in may reach another Gmail account.
+  if (!purchaseSources.signedIn()) { account = null; return none }
   // Demo rows are made up; their emails don't exist.
-  if (data.state.demo || !purchaseSources.signedIn()) return none
+  if (data.state.demo) return none
   // The rows looked up are this database's: what's found is saved to it only.
   const session = data.state.session
   const now = purchaseSources.now()
