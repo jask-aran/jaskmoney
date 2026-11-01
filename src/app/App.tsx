@@ -1,10 +1,11 @@
 import { web, webLabel } from "./webApp"
+import { traceFrames, traceKey, traceMark } from "./trace"
 import { settleData, toggleDemo } from "./actions"
 import { BudgetsTab } from "../ui/budgets/BudgetsTab"
 import { ErrorBoundary, Show, createEffect, createMemo, createSignal, untrack, on, onCleanup, onMount } from "solid-js"
 import { useKeyboard, usePaste, useRenderer } from "@opentui/solid"
 import type { KeyEvent } from "@opentui/core"
-import { ui, type SectionId, type TabId } from "../state/uiStore"
+import { TABS, ui, type SectionId, type TabId } from "../state/uiStore"
 import type { JSX } from "@opentui/solid"
 import { data } from "../state/dataStore"
 import { footerLine, handleKey, hintState, paletteList, scopeQuits, handlePaste } from "./keys"
@@ -82,6 +83,7 @@ export function App() {
       void demoReady.then(() => runSync(ui, data, { manual: false }))
       const timer = setInterval(() => void runSync(ui, data, { manual: false }), SYNC_INTERVAL_MS)
       onCleanup(() => clearInterval(timer))
+      onCleanup(warmTabs())
     } catch (e) {
       ui.setStatus(`DB error: ${e instanceof Error ? e.message : String(e)}`, true)
     }
@@ -98,7 +100,9 @@ export function App() {
       return
     }
     try {
+      traceMark("init start")
       data.init(process.env.JASKMONEY_DB)
+      traceMark("database loaded")
       if (serving != null) {
         const { serveCore, DEFAULT_PORT } = require("../server/serve") as typeof import("../server/serve")
         // The core then broadcasts where it serves and who is connected.
@@ -151,8 +155,9 @@ export function App() {
       renderer.destroy()
       return
     }
-    handleKey(ui, key, data)
+    traceKey(key, ui.activeScope(), () => handleKey(ui, key, data))
   })
+  traceFrames(renderer)
 
   // A paste arrives whole (bracketed paste), not as key presses.
   usePaste((event) => {
@@ -226,10 +231,29 @@ export function App() {
 
 /** A tab, mounted from its first visit on and shown while active. Hidden,
  * its focus stays as it was: focus moves elsewhere don't redraw it. */
+/** Tabs built ahead of their first visit (App's warm-up after start). */
+const [warmed, setWarmed] = createSignal<ReadonlySet<TabId>>(new Set())
+
+/** Build the tabs not yet shown, one at a time while the app is idle, so a
+ * first visit is a switch (~5 ms) rather than a build (50-120 ms). Each
+ * waits its turn after the last, so a key pressed meanwhile waits for at
+ * most one tab's build. */
+function warmTabs(): () => void {
+  let timer: ReturnType<typeof setTimeout> | undefined
+  const next = () => {
+    const tab = TABS.map((t) => t.id).find((id) => id !== ui.state.activeTab && !warmed().has(id))
+    if (!tab) return
+    setWarmed(new Set([...warmed(), tab]))
+    timer = setTimeout(next, 60)
+  }
+  timer = setTimeout(next, 250)
+  return () => clearTimeout(timer)
+}
+
 function KeptTab(props: { id: TabId; children: (focused: () => SectionId) => JSX.Element }) {
   const active = () => ui.state.activeTab === props.id
   const [visited, setVisited] = createSignal(active())
-  createEffect(() => { if (active()) setVisited(true) })
+  createEffect(() => { if (active() || warmed().has(props.id)) setVisited(true) })
   const focused = createMemo<SectionId>((was) => (active() ? ui.state.focusedSection : was), ui.state.focusedSection)
   return (
     <Show when={visited()}>

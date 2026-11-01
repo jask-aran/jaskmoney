@@ -6,6 +6,9 @@ import { App } from "./app/App"
 import { ui } from "./state/uiStore"
 import { data } from "./state/dataStore"
 import { watchRowLifetimes } from "./state/rowLifetimes"
+import { traceMark } from "./app/trace"
+
+traceMark("modules loaded")
 
 const stopRowLifetimes = watchRowLifetimes(ui, data)
 process.on("exit", stopRowLifetimes)
@@ -27,4 +30,6 @@ function fatal(error: unknown): void {
 process.on("uncaughtException", fatal)
 process.on("unhandledRejection", fatal)
 
+traceMark("renderer created")
 await render(() => <App />, renderer)
+traceMark("app mounted")
