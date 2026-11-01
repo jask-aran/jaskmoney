@@ -24,7 +24,10 @@ import { scoreSuggestions, suggestionText, type Hidden, type SuggestionReport } 
  *   bun run eval               all hidden rows
  *   bun run eval --limit 300   a fixed sample of them (the same each time)
  *   bun run eval --fresh       make the set again from today's history
+ *   bun run eval --set 2       another set (its own seed: other merchants held out);
+ *                              tune on one, confirm a change on the others
  *   bun run eval --note "…"    a label for the run
+ *   bun run eval --misses [category]   also list each wrong pick (printed, never saved)
  *
  * Jev's price is $0.042 per million input tokens; tokens here are the
  * client's estimate (JSON characters / 3, erring large).
@@ -36,7 +39,12 @@ const args = process.argv.slice(2)
 const flag = (name: string) => args.includes(`--${name}`)
 const option = (name: string) => { const i = args.indexOf(`--${name}`); return i >= 0 ? args[i + 1] : undefined }
 
-const dir = join(jaskmoneyHome(), "eval")
+// --set N: another set, its own seed and so its own held-out merchants.
+// Tune on one, confirm on others: a change that only helps the rows it was
+// tuned on is fitting them, not improving suggestions. Set 0 is the default.
+const SET = Number(option("set") ?? 0)
+if (!Number.isInteger(SET) || SET < 0) throw new Error("--set takes a whole number")
+const dir = SET ? join(jaskmoneyHome(), "eval", `set-${SET}`) : join(jaskmoneyHome(), "eval")
 const setPath = join(dir, "demo.db")
 const metaPath = join(dir, "set.json")
 const runsDir = join(dir, "runs")
@@ -54,7 +62,7 @@ function makeSet(): SetMeta {
   const history = demoSource(loadTransactions(source), loadCategories(source))
   source.close()
   const today = appToday()
-  const demo = generateDemo({ today, years: 3, seed: SEED, history, hide: "evaluation" })
+  const demo = generateDemo({ today, years: 3, seed: SEED + SET * 1000, history, hide: "evaluation" })
   seedDemoDb(setPath, demo)
   const meta: SetMeta = { made: new Date().toISOString(), today, rows: demo.transactions.length, hidden: readDemoTruth(setPath).size }
   writeFileSync(metaPath, JSON.stringify(meta, null, 2), { mode: 0o600 })
@@ -121,12 +129,25 @@ async function main() {
   mkdirSync(runsDir, { recursive: true, mode: 0o700 })
   writeFileSync(join(runsDir, `${record.when.replace(/[:.]/g, "-")}.json`), JSON.stringify(record, null, 2), { mode: 0o600 })
 
-  console.log(`set made ${meta.made.slice(0, 10)} (${meta.rows} rows, ${meta.hidden} hidden) · ${chosen.length} rows asked · ${record.commit}${record.note ? ` · ${record.note}` : ""}`)
+  console.log(`${SET ? `set ${SET}, ` : ""}set made ${meta.made.slice(0, 10)} (${meta.rows} rows, ${meta.hidden} hidden) · ${chosen.length} rows asked · ${record.commit}${record.note ? ` · ${record.note}` : ""}`)
   console.log(`${summary}`)
   console.log(`${seconds.toFixed(1)}s · ${usage.requests} Jev requests, ${usage.questions} questions, ~${usage.tokens.toLocaleString()} tokens ≈ $${(usage.tokens * JEV_PRICE_PER_TOKEN).toFixed(4)}${usage.failures ? ` · ${usage.failures} failed` : ""}`)
   if (previous) console.log(`compared with ${previous.when.slice(0, 16)} (${previous.commit}${previous.note ? `, ${previous.note}` : ""}): changes in brackets`)
   console.log("")
   for (const line of suggestionText(report, previous?.report)) console.log(line)
+  // --misses [truth]: each wrong pick, by description, to see why (printed
+  // only, never saved: the descriptions are yours).
+  if (flag("misses")) {
+    const only = option("misses")?.startsWith("--") ? undefined : option("misses")
+    const wrong = chosen.flatMap((h) => {
+      const s = data.state.suggestions[h.id]
+      const pick = s ? names.get(s.categoryId) : undefined
+      return s && pick !== h.truth && (!only || h.truth === only || pick === only) ? [{ ...h, pick, confidence: s.confidence, source: s.source }] : []
+    })
+    console.log("", `misses${only ? ` (${only})` : ""}: ${wrong.length}`)
+    for (const m of wrong.sort((a, b) => a.truth.localeCompare(b.truth) || a.description.localeCompare(b.description)))
+      console.log(`  ${m.truth} → ${m.pick} ${Math.round(m.confidence * 100)}% ${m.source}${m.heldOut ? "" : " (known)"}  ${m.description}`)
+  }
   process.exit(0)
 }
 

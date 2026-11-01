@@ -1,5 +1,5 @@
 import type { JevQuestion } from "../ai/judge"
-import { rowFacts } from "./history"
+import { isPersonToPerson, rowFacts } from "./history"
 import type { Category, Transaction } from "./types"
 
 /**
@@ -93,12 +93,19 @@ export function suggestionCriteria(suggestable: Category[], categories: Category
   return criteria
 }
 
+/** The bank says the row is a card purchase (Up's "Purchase", "International
+ * Purchase"): the description is a business, not a person. */
+const purchaseType = (t: Transaction) => !!t.transactionType && !isPersonToPerson(t) && /purchase/i.test(t.transactionType)
+
 /** `uses`: the state has `categories_used_for` (suggestionState). */
 export function suggestionQuestion(t: Transaction, criteria: Record<string, string>, earlier = "", note?: string, uses = false, similar: string[] = []): JevQuestion {
   return {
     type: "choice",
     instructions: {
-      question: "Which category does `transaction` belong in? The description may be a person's name or a payment app rather than a shop: then the message, if any, says what the money was for, and the description says nothing about the category."
+      // A row whose bank type says it's a purchase is at a business: told
+      // every row that the description might be a person, Jev filed card
+      // purchases at shops with person-like names under People.
+      question: "Which category does `transaction` belong in?" + (purchaseType(t) ? "" : " The description may be a person's name or a payment app rather than a shop: then the message, if any, says what the money was for, and the description says nothing about the category.")
         // Money in only: refunds belong with what was bought (said to every
         // row, it cost a point of accuracy on spending).
         + (t.amount > 0 ? " Money back for a purchase (a refund) belongs in the category of what was bought, not income." : "")
