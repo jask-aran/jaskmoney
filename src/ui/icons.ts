@@ -50,3 +50,38 @@ export function accountMark(kind: "net" | "spending" | "savers"): string {
   if (!data.state.icons) return ""
   return VIEW_ICONS[kind === "net" ? "Net position" : kind === "spending" ? "Available" : "Savers"]!
 }
+
+/** Settings rows' icons (Font Awesome 4 in Nerd Fonts), by what the row is. */
+const SETTING_ICONS = {
+  token: "", // key
+  sync: "", // refresh
+  accounts: "", // university
+  setup: "", // magic
+  web: "", // globe
+  tui: "", // terminal
+  theme: "", // paint-brush
+  icons: "", // tags
+  xAxis: "", // line-chart
+  chartMotion: "", // play
+  chartSpeed: "", // dashboard
+  chartLabels: "", // tag
+  openRange: "", // calendar
+  backdrop: "", // picture-o
+  database: "", // database
+  import: "", // upload
+  history: "", // history
+  profiles: "", // tasks
+  weekStart: "", // calendar-o
+  demo: "", // flask
+  clearData: "", // trash
+  reset: "", // warning
+  rule: "", // bolt
+  filter: "", // filter
+} as const
+export type SettingIcon = keyof typeof SETTING_ICONS
+
+/** A Settings row's mark: its icon when icons are on, else `fallback` (a
+ * status dot, or nothing for a row whose mark is only decoration). */
+export function settingMark(icon: SettingIcon, fallback = ""): string {
+  return data.state.icons ? SETTING_ICONS[icon] : fallback
+}

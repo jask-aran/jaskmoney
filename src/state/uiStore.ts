@@ -97,13 +97,13 @@ export type ScopeId =
 export type SettingsList = "categories" | "tags"
 export type SettingsSection = "taxonomy" | "rules" | "filters" | "up" | "web" | "ai" | "appearance" | "database"
 /** The panes in reading order (j/k between them): the wide layout's left
- * column (Taxonomy), then its right, row by row (Up Bank, Web app beside
- * it, AI models, Rules & Filters, Appearance, Database & Import beside it);
+ * column (Taxonomy, Rules & Filters), then its right, row by row (Up Bank,
+ * Web app beside it, AI models, Appearance, Database & Import beside it);
  * the one-column layouts stack them in the same order. One stop per pane:
  * Saved filters is entered from Rules (or f in jump). */
-export const SETTINGS_SECTIONS: SettingsSection[] = ["taxonomy", "up", "web", "ai", "rules", "appearance", "database"]
+export const SETTINGS_SECTIONS: SettingsSection[] = ["taxonomy", "rules", "up", "web", "ai", "appearance", "database"]
 /** The panes of the wide layout's right column (l goes to its first). */
-export const SETTINGS_RIGHT: SettingsSection[] = ["up", "web", "ai", "rules", "appearance", "database"]
+export const SETTINGS_RIGHT: SettingsSection[] = ["up", "web", "ai", "appearance", "database"]
 
 /** Each Settings section's name: its pane's title and the palette's. (Jump badges are shorter.) */
 export const SETTINGS_SECTION_LABELS: Record<SettingsSection, string> = {

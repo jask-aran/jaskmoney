@@ -11,11 +11,15 @@ import type { Span } from "../primitives/spans"
 const NAME = 20
 
 /** A theme's colours as a strip, each in its own colour: keys, money in
- * and out, caution, focus, spending, suggestions. */
-function swatches(def: ThemeDef): Span[] {
+ * and out, caution, focus, spending, suggestions. `tight`: no gaps (the
+ * Appearance pane's Theme row). */
+export function swatches(def: ThemeDef, tight = false): Span[] {
   const p = paletteOf(def)
-  return [p.pink, p.green, p.red, p.yellow, p.lavender, p.mauve, p.teal].flatMap((fg, i) => [...(i ? [{ text: " ", fg: ink.note }] : []), { text: "■", fg }])
+  return [p.pink, p.green, p.red, p.yellow, p.lavender, p.mauve, p.teal].flatMap((fg, i) => [...(i && !tight ? [{ text: " ", fg: ink.note }] : []), { text: "■", fg }])
 }
+
+/** The theme in use (the default for none or an unknown id). */
+export const themeDef = (id: string | undefined): ThemeDef => THEMES.find((t) => t.id === id) ?? THEMES.find((t) => t.id === DEFAULT_THEME)!
 
 /**
  * Settings › Appearance › Theme (and the palette's Theme…): every theme

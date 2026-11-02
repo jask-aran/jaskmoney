@@ -31,15 +31,15 @@ test("j/k stop once on each pane: Rules & Filters is one stop, not two", () => {
   ui.setState({ settingsActive: false, settingsSection: "taxonomy", focusedSection: "set.categories" })
   const seen: string[] = []
   for (let i = 0; i < SETTINGS_SECTIONS.length; i++) { seen.push(ui.state.settingsSection); handleKey(ui, key("j"), data) }
-  expect(seen).toEqual(["taxonomy", "up", "web", "ai", "rules", "appearance", "database"])
+  expect(seen).toEqual(["taxonomy", "rules", "up", "web", "ai", "appearance", "database"])
   expect(ui.state.settingsSection).toBe("taxonomy")
   // Back up from Saved filters (where jump f leaves it): one press to the pane above.
   ui.setState({ settingsSection: "filters", focusedSection: "set.filters" })
   handleKey(ui, key("k"), data)
-  expect(ui.state.settingsSection).toBe("ai")
+  expect(ui.state.settingsSection).toBe("taxonomy")
   ui.setState({ settingsSection: "filters", focusedSection: "set.filters" })
   handleKey(ui, key("j"), data)
-  expect(ui.state.settingsSection).toBe("appearance")
+  expect(ui.state.settingsSection).toBe("up")
   // h/l before the panes are drawn: the other column's first pane;
   // nothing further that way.
   handleKey(ui, key("h"), data)

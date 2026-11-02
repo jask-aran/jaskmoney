@@ -61,8 +61,9 @@ test("Settings panes: text one cell in from the border, the title two further, s
     const y = lines.findIndex((line) => line.includes(`── ${title} `))
     const corner = lines[y]!.lastIndexOf("╭", lines[y]!.indexOf(title))
     expect(lines[y]!.indexOf(title) - corner).toBe(4)
+    // The first line's text (a mark, or the words) starts one cell in.
     const row = lines.findIndex((line, i) => i > y && line.includes(first))
-    expect(lines[row]!.indexOf(first) - corner).toBe(2)
+    expect(lines[row]!.slice(corner + 1).search(/\S/)).toBe(1)
   }
   const y = lines.findIndex((line) => line.includes("Jaskmoney categories"))
   const span = t.captureSpans().lines[y]!.spans.find((span) => span.text.includes("Jaskmoney categories"))!
@@ -126,4 +127,53 @@ test("wide, panes sit in pairs of one height and Taxonomy and AI models lay out 
   const bottom = (title: string) => { const y = row(`── ${title}`); const x = lines[y]!.lastIndexOf("╭", lines[y]!.indexOf(title)); let b = y + 1; while (lines[b]![x] !== "╰") b++; return b }
   expect(bottom("Web app")).toBe(bottom("Up Bank"))
   expect(bottom("Database & Import")).toBe(bottom("Appearance"))
+})
+
+test("marks: a rule's says whether it runs, Sync's spins while syncing, a choice shows which option is set", async () => {
+  const t = await renderApp({ width: 220, height: 66 })
+  data.init(":memory:")
+  data.setState({ icons: false })
+  await data.saveSavedFilter({ id: "f", name: "F", expr: "desc:x" })
+  await data.createSettingsRule({ name: "Runs", savedFilterId: "f", setCategoryId: null, addTagIds: [], enabled: true })
+  await data.createSettingsRule({ name: "Resting", savedFilterId: "f", setCategoryId: null, addTagIds: [], enabled: false })
+  ui.switchTab("settings")
+  ui.setState({ focusedSection: "set.categories", settingsActive: false })
+  await settle(t)
+  const at = (text: string) => {
+    const y = t.captureCharFrame().split("\n").findIndex((line) => line.includes(text))
+    return t.captureSpans().lines[y]!.spans
+  }
+  const dot = (text: string) => at(text).find((span) => /[●○]/.test(span.text))!
+  expect(dot("Runs").text).toContain("●")
+  expect(dot("Runs").fg.toInts()).toEqual(RGBA.fromHex(tone.good).toInts())
+  expect(dot("Resting").text).toContain("○")
+  // Range on open: one dot per range, the set one (1M, the first) filled.
+  expect(t.captureCharFrame()).toMatch(/Range on open\s+1M\s+●○+/)
+  // Sync's mark is a spinner frame while a sync runs.
+  data.setState({ upSyncing: true })
+  await settle(t)
+  expect(t.captureCharFrame()).toMatch(/[⠋⠙⠹⠸⠼⠴⠦⠧⠇⠏] Sync/)
+  data.setState({ upSyncing: false })
+  await settle(t)
+  expect(t.captureCharFrame()).not.toMatch(/[⠋⠙⠹⠸⠼⠴⠦⠧⠇⠏] Sync/)
+  data.setState({ icons: true })
+})
+
+test("AI models: Models and Sources in one column, Uses in the other; stacked, a blank before Uses", async () => {
+  for (const [width, beside] of [[220, true], [80, false]] as const) {
+    const t = await renderApp({ width, height: 66 })
+    try {
+      data.init(":memory:")
+      ui.switchTab("settings")
+      ui.setState({ focusedSection: "set.ai", settingsActive: false })
+      await settle(t)
+      const lines = t.captureCharFrame().split("\n")
+      const models = lines.findIndex((line) => /\bModels\b/.test(line) && !line.includes("AI models"))
+      const sources = lines.findIndex((line) => /\bSources\b/.test(line))
+      const uses = lines.findIndex((line) => /\bUses\b/.test(line))
+      expect(sources).toBe(models + 5)
+      if (beside) expect(uses).toBe(models)
+      else { expect(uses).toBe(sources + 3); expect(lines[sources + 2]!.replace(/[│\s]/g, "")).toBe("") }
+    } finally { t.renderer.destroy() }
+  }
 })

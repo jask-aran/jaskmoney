@@ -13,13 +13,13 @@ export interface DatabaseRowContext { weekStart: "monday" | "sunday"; profiles: 
 export const IMPORT_HISTORY_ROWS = 12
 
 /** A row's label and its current value (toggles), and whether it destroys data. */
-export function databaseRow(row: DatabaseRow, ctx: DatabaseRowContext): { label: string; value?: string; danger?: boolean } {
+export function databaseRow(row: DatabaseRow, ctx: DatabaseRowContext): { label: string; value?: string; danger?: boolean; on?: boolean; choice?: { index: number; count: number } } {
   switch (row) {
     case "import": return { label: "Import a CSV…" }
     case "history": return { label: "Import history…", value: ctx.imports ? `${ctx.imports} ${ctx.imports === 1 ? "import" : "imports"}` : "none yet" }
     case "profiles": return { label: "Import profiles…", value: String(ctx.profiles) }
-    case "weekStart": return { label: "Weeks start on", value: ctx.weekStart === "sunday" ? "Sunday" : "Monday" }
-    case "demo": return { label: "Demo mode", value: ctx.demo ? "on · from your spending, scrambled (enter: back to yours)" : "off · 3 years from your spending, scrambled" }
+    case "weekStart": return { label: "Weeks start on", value: ctx.weekStart === "sunday" ? "Sunday" : "Monday", choice: { index: ctx.weekStart === "sunday" ? 1 : 0, count: 2 } }
+    case "demo": return { label: "Demo mode", value: ctx.demo ? "on · your spending, scrambled (enter: back)" : "off · 3 years of your spending, scrambled", on: ctx.demo }
     case "clearData": return { label: "Clear data…", value: "transactions and imports", danger: true }
     case "reset": return { label: "Reset the database…", value: "keeps filters and config", danger: true }
   }

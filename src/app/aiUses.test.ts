@@ -44,15 +44,15 @@ async function until<T>(get: () => T | null | undefined): Promise<T> {
   throw new Error("timed out")
 }
 
-test("the pane's rows are the models, then the uses; a use names its model and enter opens it", async () => {
+test("the pane's rows are the models, the sources, then the uses; a use names its model and enter opens it", async () => {
   await setup()
   const ctx = aiContext(data)
   expect(useModel("suggestions", ctx)).toEqual({ text: "Jev (TypeSafe)", ready: true })
   expect(useModel("search", ctx)).toEqual({ text: "Jev (TypeSafe) + Clairic", ready: true })
   expect(useModel("rules", ctx)).toEqual({ text: "OpenRouter: not connected", ready: false })
   expect(useActions("rules", ctx).map((a) => a.label)).toEqual(["Connect OpenRouter…", "Connect OpenAI…"])
-  // j past the last model reaches the uses.
-  for (let i = 0; i < AI_ROWS.length + 1; i++) handleKey(ui, key("j"), data)
+  // j past the last model and the source reaches the uses.
+  for (let i = 0; i < AI_ROWS.length + 2; i++) handleKey(ui, key("j"), data)
   handleKey(ui, key("return"), data)
   expect(ui.state.aiUse).toEqual({ use: "search", cursor: 0, note: null })
   expect(ui.state.aiDialog).toBeNull()

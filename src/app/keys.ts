@@ -42,7 +42,7 @@ import { handleWelcome, openWelcome, welcomeContext } from "./welcome"
 import { welcomeRows } from "../state/welcome"
 import { executorActions } from "../state/executorDialog"
 import { AI_ROWS, aiRowLabel, isLlmRow, testAi } from "./apiKeys"
-import { AI_USES, KEY_PAGES, aiActions, aiContext, aiDialogFor, useActions, type AiUse } from "../state/aiDialog"
+import { KEY_PAGES, aiPaneRows, aiActions, aiContext, aiDialogFor, useActions, type AiUse } from "../state/aiDialog"
 import { useQueries, type QueryId } from "../ai/catalog"
 import { hasWorkersAi } from "../ai/workersAi"
 import { cancelLlmSignIn, openBrowser, signOutLlm, startLlmSignIn, submitSignInPaste } from "./llmSignIn"
@@ -1274,14 +1274,15 @@ function handleRuleOffers(ui: UiStore, key: KeyEvent, data?: DataStore): void {
 function handleSettingsAi(ui: UiStore, key: KeyEvent): void {
   const { name } = key
   if (name === "escape") { ui.leaveSettings(); return }
-  // Models, then uses, then sources (Executor: Gmail and your other accounts).
-  const moved = listMove(key, ui.state.aiCursor, AI_ROWS.length + AI_USES.length + 1)
+  // Models, then sources (Executor: Gmail and your other accounts), then uses.
+  const rows = aiPaneRows(AI_ROWS)
+  const moved = listMove(key, ui.state.aiCursor, rows.length)
   if (moved != null) { ui.setState({ aiCursor: moved }); return }
   if (name !== "return" && name !== "enter") return
-  if (ui.state.aiCursor === AI_ROWS.length + AI_USES.length) { settleData(ui, openExecutorDialog(ui)); return }
-  const use = AI_USES[ui.state.aiCursor - AI_ROWS.length]
-  if (use) ui.setState({ aiUse: { use, cursor: 0, note: null } })
-  else openAiDialog(ui, AI_ROWS[ui.state.aiCursor] ?? "jev")
+  const row = rows[Math.min(ui.state.aiCursor, rows.length - 1)]!
+  if (row.kind === "source") settleData(ui, openExecutorDialog(ui))
+  else if (row.kind === "use") ui.setState({ aiUse: { use: row.use, cursor: 0, note: null } })
+  else openAiDialog(ui, row.row)
 }
 
 const openAiDialog = (ui: UiStore, row: NonNullable<UiState["aiDialog"]>["row"]) => ui.setState({ aiDialog: aiDialogFor(row) })

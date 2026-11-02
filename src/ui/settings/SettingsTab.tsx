@@ -10,6 +10,8 @@ import { secretDisplay } from "../../state/settingsForm"
 import { executorRow } from "../../state/executorDialog"
 import { executorSignedIn } from "../../ai/executor"
 import { SignInBody } from "../primitives/SignInBody"
+import { spinnerFrame } from "../primitives/Spinner"
+import { swatches, themeDef } from "./ThemePicker"
 import { For, Show, createEffect, createMemo, onCleanup, type JSX } from "solid-js"
 import type { MouseEvent, ScrollBoxRenderable } from "@opentui/core"
 import { useTerminalDimensions } from "@opentui/solid"
@@ -26,7 +28,7 @@ import { formatMoney } from "../../domain/dashboard"
 import { accountRole, type Category, type Tag } from "../../domain/types"
 import { scopeText } from "../../domain/tagScope"
 import { Modal } from "../primitives/Modal"
-import { categoryMark } from "../icons"
+import { categoryMark, settingMark, type SettingIcon } from "../icons"
 import { regionRef } from "../regions"
 import { Form } from "../primitives/Form"
 import { ListPicker } from "../primitives/ListPicker"
@@ -219,13 +221,32 @@ function TaxonomyPane(props: { focused: boolean; width: number; height: number }
   </SectionCard>
 }
 
+/** A row's state: what colours its mark. */
+type RowState = "good" | "caution" | "bad" | "off" | "plain"
+const STATE_INK: Record<RowState, () => string> = { good: () => tone.good, caution: () => tone.caution, bad: () => tone.bad, off: () => ink.faint, plain: () => ink.label }
+/** A row's mark, in its state's colour: its icon with icons on, else a dot
+ * (hollow when off; `dot` for a row with no state, e.g. "›" for an action).
+ * `spin`: a spinner frame in its place while something runs. */
+const mark = (icon: SettingIcon, state: RowState, spin = "", dot?: string): Span =>
+  ({ text: `${spin || settingMark(icon, dot ?? (state === "off" ? "○" : "●"))} `, fg: spin ? ink.figure : STATE_INK[state]() })
+/** A row's icon as decoration (icons on), or nothing. */
+const decoration = (icon: SettingIcon, fg = ink.label): Span[] => { const glyph = settingMark(icon); return glyph ? [{ text: `${glyph} `, fg }] : [] }
+/** A setting's value: a toggle as a dot and its words, a choice with a dot
+ * per option (the set one filled). */
+function settingValue(view: { value: string; on?: boolean; choice?: { index: number; count: number } }, fg = ink.figure): Span[] {
+  if (view.on != null) return [{ text: view.on ? "● " : "○ ", fg: view.on ? ink.figure : ink.faint }, { text: view.value, fg: view.on ? fg : ink.label }]
+  if (!view.choice) return [{ text: view.value, fg }]
+  return [{ text: view.value, fg }, { text: "  ", fg }, ...Array.from({ length: view.choice.count }, (_, i): Span => ({ text: i === view.choice!.index ? "●" : "○", fg: i === view.choice!.index ? ink.figure : ink.faint }))]
+}
+
 /** Rules & Filters' height: borders, two headings, a blank between, and
  * each list's rows (one line when empty). */
 const rulesHeight = () => 2 + 1 + Math.max(1, data.state.rules.length) + 1 + 1 + Math.max(1, data.state.savedFilters.length)
 
 /** Rules and the saved filters they match, in one card: Rules (ordered,
  * last match wins) above Saved filters. Each list is its own section (its
- * keys and cursor); j/k run on from one into the other. */
+ * keys and cursor); j/k run on from one into the other. A rule's mark says
+ * whether it runs: on, off, or its filter broken or gone. */
 function RulesPane(props: { focused: boolean; width: number }) {
   const rulesActive = () => ui.state.settingsActive && ui.state.settingsSection === "rules"
   const filtersActive = () => ui.state.settingsActive && ui.state.settingsSection === "filters"
@@ -248,6 +269,7 @@ function RulesPane(props: { focused: boolean; width: number }) {
         const matches = () => !filter() ? `missing filter ${rule.savedFilterId}` : healthy() ? `filter:${rule.savedFilterId}` : `broken filter:${rule.savedFilterId}`
         const sets = () => [cat() ? `→ ${cat()}` : "", tags()].filter(Boolean).join(" ") || "→ nothing"
         return <ListRow id={`settings-rule-${i()}`} cursor={rulesActive() && ui.state.ruleCursor === i()} bg={theme.canvas} armed={armedFor(ui.state.armed, "rule", rule.id)} onMouseDown={pickRule(i())} spans={[
+          mark("rule", !on() ? "off" : filter() && healthy() ? "good" : "bad"),
           { text: `${String(i() + 1).padStart(2)}  `, fg: ink.note },
           { text: fit(`${rule.name}${on() ? "" : " (off)"}`, nameWidth()), fg: on() ? ink.figure : ink.faint },
           { text: `  ${fit(sets(), setWidth())}`, fg: on() ? ink.label : ink.faint },
@@ -260,6 +282,7 @@ function RulesPane(props: { focused: boolean; width: number }) {
     <Show when={filters().length} fallback={<ListRow cursor={filtersActive()} bg={theme.canvas} onMouseDown={pickFilter(0)} spans={[{ text: filtersActive() ? "No saved filters. Press a to add." : "No saved filters yet.", fg: ink.note }]} />}>
       <For each={filters()}>{(filter, i) => (
         <ListRow id={`settings-filter-${i()}`} cursor={filtersActive() && ui.state.filterCursor === i()} bg={theme.canvas} armed={armedFor(ui.state.armed, "filter", filter.id)} onMouseDown={pickFilter(i())} spans={[
+          ...decoration("filter"),
           { text: fit(filter.name, nameWidth() + 4), fg: ink.figure },
           { text: `  ${fit(`filter:${filter.id}`, idWidth())}`, fg: ink.label },
           { text: `  ${filter.expr}`, fg: ink.label },
@@ -270,8 +293,10 @@ function RulesPane(props: { focused: boolean; width: number }) {
 }
 
 /** Appearance's width beside Database & Import: its labels and longest values. */
-const APPEARANCE_WIDTH = 38
+const APPEARANCE_WIDTH = 40
 
+/** Appearance: each preference with its icon; the theme with its colours,
+ * a toggle as on or off, a choice with which of its options is set. */
 function AppearancePane(props: { focused: boolean; width: number; height?: number }) {
   const active = () => ui.state.settingsActive && ui.state.settingsSection === "appearance"
   const ctx = () => ({ ...data.state.uiPrefs, icons: data.state.icons })
@@ -280,8 +305,10 @@ function AppearancePane(props: { focused: boolean; width: number; height?: numbe
       const view = () => appearanceRow(row, ctx())
       return <ListRow id={`settings-appearance-${i()}`} cursor={active() && ui.state.appearanceCursor === i()} bg={theme.canvas}
         onMouseDown={onSettings(() => { ui.activateSettings("appearance"); ui.setState({ appearanceCursor: i() }) })} spans={[
-          { text: fit(view().label, 18), fg: ink.label },
-          { text: view().value, fg: ink.figure },
+          ...decoration(row),
+          { text: fit(view().label, 17), fg: ink.label },
+          ...settingValue(view()),
+          ...(row === "theme" ? [{ text: "  ", fg: ink.note }, ...swatches(themeDef(data.state.uiPrefs.theme), true)] : []),
         ]} />
     }}</For>
   </SectionCard>
@@ -303,16 +330,19 @@ function DatabasePane(props: { focused: boolean; width: number; height?: number 
     n(info()?.categoryCount, "category", "categories"), n(info()?.tagCount, "tag"), n(info()?.ruleCount, "rule"),
   ].join(" · ")
   const ctx = () => ({ weekStart: data.state.weekStart, profiles: data.state.importProfiles.length, demo: data.state.demo, imports: data.state.imports.length })
+  // The counts sit under the path, past the database's icon.
+  const indent = () => decoration("database").length ? "  " : ""
   return <SectionCard inset title={SETTINGS_SECTION_LABELS.database} focused={props.focused} active={active()} height={props.height ?? DATABASE_ROWS.length + 5} width={props.width}>
-    <Line spans={[{ text: truncate(where(), rowWidth(props.width)), fg: ink.label }]} />
-    <Line spans={[{ text: truncate(holds(), rowWidth(props.width)), fg: ink.note }]} />
+    <Line spans={[...decoration("database", ink.figure), { text: truncate(where(), rowWidth(props.width) - indent().length), fg: ink.label }]} />
+    <Line spans={[{ text: indent() + truncate(holds(), rowWidth(props.width) - indent().length), fg: ink.note }]} />
     <Line spans={[]} />
     <For each={DATABASE_ROWS}>{(row, i) => {
       const view = () => databaseRow(row, ctx())
       return <ListRow id={`settings-database-${i()}`} cursor={active() && ui.state.databaseCursor === i()} bg={theme.canvas} armed={row === "clearData" ? armedFor(ui.state.armed, "clearData", 0) : undefined}
         onMouseDown={onSettings(() => { ui.activateSettings("database"); ui.setState({ databaseCursor: i() }) })} spans={[
+          ...decoration(row, view().danger ? tone.bad : ink.label),
           { text: fit(view().label, 20), fg: view().danger ? tone.bad : ink.label },
-          ...(view().value != null ? [{ text: view().value!, fg: view().danger ? ink.note : ink.figure }] : []),
+          ...(view().value != null ? settingValue(view() as { value: string }, view().danger ? ink.note : ink.figure) : []),
         ]} />
     }}</For>
   </SectionCard>
@@ -320,7 +350,8 @@ function DatabasePane(props: { focused: boolean; width: number; height?: number 
 
 /** Up Bank: the token, sync and which accounts are linked; enter on a row
  * opens it (the token's dialog, a sync now, the accounts dialog). The token
- * itself is never rendered. */
+ * itself is never rendered. Each row's mark says how it stands; Sync's
+ * spins while a sync runs. */
 /** Up Bank's height: borders and its rows, and the last sync's error. */
 const upHeight = () => 6 + (data.state.dbInfo?.upLastError ? 1 : 0)
 
@@ -330,22 +361,24 @@ function UpPane(props: { focused: boolean; width: number; height?: number }) {
   const connection = () => aiConnection("up", aiContext(data))
   const accounts = () => data.state.syncAccounts
   const off = () => accounts().filter((a) => !a.syncEnabled)
+  const spin = spinnerFrame(() => data.state.upSyncing)
   const synced = () => data.state.upSyncing ? "syncing…" : (() => { const ago = syncAgo(info()?.upLastSyncedAt ?? null, Date.now()); return ago ? `synced ${ago}` : "not synced yet" })()
+  const syncState = (): RowState => !connection() ? "off" : info()?.upLastError ? "bad" : info()?.upLastSyncedAt ? "good" : "off"
   // How many sync; which are off when that fits, else just how many.
   const linked = () => {
     if (!accounts().length) return "none yet · they appear after a sync"
     const syncing = `${accounts().length - off().length} of ${accounts().length} syncing`
     const named = off().length ? `${syncing} · ${off().map((a) => a.name).join(", ")} off` : syncing
-    return named.length <= rowWidth(props.width) - 11 ? named : syncing
+    return named.length <= rowWidth(props.width) - 13 ? named : syncing
   }
-  const row = (i: number, label: string, value: string, fg: string) =>
-    <ListRow cursor={active() && ui.state.upCursor === i} bg={theme.canvas} onMouseDown={onSettings(() => { ui.activateSettings("up"); ui.setState({ upCursor: i }) })} spans={[{ text: fit(label, 11), fg: ink.label }, { text: value, fg }]} />
+  const row = (i: number, lead: Span, label: string, value: string, fg: string) =>
+    <ListRow cursor={active() && ui.state.upCursor === i} bg={theme.canvas} onMouseDown={onSettings(() => { ui.activateSettings("up"); ui.setState({ upCursor: i }) })} spans={[lead, { text: fit(label, 11), fg: ink.label }, { text: value, fg }]} />
   return <SectionCard inset title={SETTINGS_SECTION_LABELS.up} focused={props.focused} active={active()} height={props.height ?? upHeight()} width={props.width}>
-    {row(0, "Token", connection() ? connection()!.short : "not set · enter to add", connection() ? tone.good : ink.faint)}
-    {row(1, "Sync", connection() ? `${synced()} · on start and every 5 min` : "needs the token", ink.figure)}
-    <Show when={info()?.upLastError}>{(error: () => string) => <Line spans={[{ text: " ".repeat(11), fg: ink.label }, { text: error(), fg: tone.bad }]} />}</Show>
-    {row(2, "Accounts", linked(), ink.figure)}
-    {row(3, "Setup", "first-time setup: Up, AI, email", ink.note)}
+    {row(0, mark("token", connection() ? "good" : "off"), "Token", connection() ? connection()!.short : "not set · enter to add", connection() ? ink.figure : ink.faint)}
+    {row(1, mark("sync", syncState(), spin()), "Sync", connection() ? `${synced()} · on start and every 5 min` : "needs the token", ink.figure)}
+    <Show when={info()?.upLastError}>{(error: () => string) => <Line spans={[{ text: " ".repeat(13), fg: ink.label }, { text: error(), fg: tone.bad }]} />}</Show>
+    {row(2, mark("accounts", !accounts().length ? "off" : off().length ? "caution" : "good"), "Accounts", linked(), ink.figure)}
+    {row(3, mark("setup", "plain", "", "›"), "Setup", "first-time setup: Up, AI, email", ink.note)}
   </SectionCard>
 }
 
@@ -361,16 +394,17 @@ function WebAppPane(props: { focused: boolean; width: number; height?: number })
   const clients = () => data.state.clients
   const time = (at: number) => new Date(at).toLocaleTimeString("en-AU", { hour: "numeric", minute: "2-digit" })
   const pick = onSettings(() => ui.activateSettings("web"))
-  const row = (label: string, value: string, fg: string, note = "") =>
-    <ListRow cursor={false} bg={theme.canvas} onMouseDown={pick} spans={[{ text: fit(label, 11), fg: ink.label }, { text: value, fg }, ...(note ? [{ text: `  ${note}`, fg: ink.note }] : [])]} />
+  const row = (lead: Span, label: string, value: string, fg: string, note = "") =>
+    <ListRow cursor={false} bg={theme.canvas} onMouseDown={pick} spans={[lead, { text: fit(label, 9), fg: ink.label }, { text: value, fg }, ...(note ? [{ text: `  ${note}`, fg: ink.note }] : [])]} />
   return <SectionCard inset title={SETTINGS_SECTION_LABELS.web} focused={props.focused} active={active()} height={props.height ?? webHeight()} width={props.width}>
-    <ListRow cursor={active()} bg={theme.canvas} onMouseDown={pick} spans={server()
-      ? [{ text: fit("Address", 11), fg: ink.label }, { text: server()!.page, fg: ink.figure }]
-      : [{ text: fit("Address", 11), fg: ink.label }, { text: "not serving · start with --serve", fg: ink.faint }]} />
+    <ListRow cursor={active()} bg={theme.canvas} onMouseDown={pick} spans={[
+      mark("web", server() ? "good" : "off"), { text: fit("Address", 9), fg: ink.label },
+      server() ? { text: server()!.page, fg: ink.figure } : { text: "not serving · start with --serve", fg: ink.faint },
+    ]} />
     <Show when={server()}>
-      <Show when={clients().length} fallback={row("Clients", "none connected", ink.faint)}>
+      <Show when={clients().length} fallback={row(mark("web", "off", "", " "), "Clients", "none connected", ink.faint)}>
         <For each={clients()}>
-          {(client, i) => row(i() === 0 ? "Clients" : "", client.agent, ink.figure,
+          {(client, i) => row(mark(client.kind === "tui" ? "tui" : "web", "good"), i() === 0 ? "Clients" : "", client.agent, ink.figure,
             `${client.address}${client.via === "tunnel" ? " · tunnel" : ""} · since ${time(client.since)}`)}
         </For>
       </Show>
@@ -403,58 +437,60 @@ export function UpAccountsDialog() {
   )
 }
 
-/** AI models' height: two columns (Models beside Uses and Sources) from
- * AI_TWO_COLUMNS, else the three stacked. */
+/** AI models' height: two columns (Models and Sources beside Uses) from
+ * AI_TWO_COLUMNS, else stacked, a blank between the inputs and the uses. */
 const AI_TWO_COLUMNS = 84
-const aiHeight = (width: number) => 2 + (width - 2 >= AI_TWO_COLUMNS ? Math.max(1 + AI_ROWS.length, 1 + AI_USES.length + 1 + 1) : AI_ROWS.length + AI_USES.length + 4)
+const aiHeight = (width: number) => 2 + (width - 2 >= AI_TWO_COLUMNS ? Math.max(1 + AI_ROWS.length + 2, 1 + AI_USES.length) : AI_ROWS.length + 2 + 1 + 1 + AI_USES.length)
 
-/** Settings › AI models: the models and how each is connected, the uses
- * and the model doing each, then the sources (Executor: Gmail and more);
- * enter opens any one's dialog. j runs models, uses, sources: down the
- * first column, then the second. */
+/** Settings › AI models: what goes in (the models and how each is
+ * connected, the sources: Executor for Gmail and more), then what comes
+ * out (the uses and the model doing each); enter opens any one's dialog.
+ * j runs in that order (aiPaneRows): down the first column, then the second. */
 function AiPane(props: { focused: boolean; width: number }) {
   const active = () => ui.state.settingsActive && ui.state.settingsSection === "ai"
   const ctx = () => aiContext(data)
   const models = () => AI_ROWS.map((row) => aiRow(row, ctx()))
   const uses = () => AI_USES.map((use) => ({ name: USES[use].name, model: useModel(use, ctx()) }))
   const executor = () => executorRow(ui.state.executorStatus, executorSignedIn())
+  const at = (i: number) => active() && ui.state.aiCursor === i
   const pick = (i: number) => onSettings(() => { ui.activateSettings("ai"); ui.setState({ aiCursor: i }) })
   const two = () => props.width - 2 >= AI_TWO_COLUMNS
-  // Two columns: Models two fifths, Uses and Sources the rest.
-  const firstWidth = () => two() ? Math.floor((props.width - 2 - COLUMN_GAP) * 0.4) : props.width - 2
+  // Two columns: the inputs and the uses half each.
+  const firstWidth = () => two() ? Math.floor((props.width - 2 - COLUMN_GAP) / 2) : props.width - 2
   const secondWidth = () => two() ? props.width - 2 - COLUMN_GAP - firstWidth() : props.width - 2
   const valueWidth = (width: number) => Math.max(8, width - 2 - 15)
-  const Models = () => <>
+  const source = AI_ROWS.length
+  const Inputs = () => <>
     <Line spans={heading("Models")} />
     <For each={models()}>{(row, i) => (
-      <ListRow cursor={active() && ui.state.aiCursor === i()} bg={theme.canvas} onMouseDown={pick(i())} spans={[
+      <ListRow cursor={at(i())} bg={theme.canvas} onMouseDown={pick(i())} spans={[
         { text: row.connected ? "● " : "○ ", fg: row.connected ? tone.good : ink.faint },
         { text: fit(row.name, 13), fg: ink.figure },
         { text: fit(row.how, valueWidth(firstWidth())), fg: row.connected ? ink.label : ink.note },
       ]} />
     )}</For>
+    <Line spans={heading("Sources")} />
+    <ListRow cursor={at(source)} bg={theme.canvas} onMouseDown={pick(source)} spans={[
+      { text: executor().connected ? "● " : "○ ", fg: executor().connected ? tone.good : ink.faint },
+      { text: fit("Executor", 13), fg: ink.figure },
+      { text: fit(executor().how, valueWidth(firstWidth())), fg: executor().connected ? ink.label : ink.note },
+    ]} />
   </>
-  const UsesAndSources = () => <>
+  const Uses = () => <>
     <Line spans={heading("Uses")} />
     <For each={uses()}>{(use, i) => (
-      <ListRow cursor={active() && ui.state.aiCursor === AI_ROWS.length + i()} bg={theme.canvas} onMouseDown={pick(AI_ROWS.length + i())} spans={[
-        { text: "  ", fg: ink.figure },
+      <ListRow cursor={at(source + 1 + i())} bg={theme.canvas} onMouseDown={pick(source + 1 + i())} spans={[
+        { text: use.model.ready ? "● " : "○ ", fg: use.model.ready ? tone.ai : ink.faint },
         { text: fit(use.name, 13), fg: ink.figure },
         { text: fit(use.model.text, valueWidth(secondWidth())), fg: use.model.ready ? tone.ai : ink.faint },
       ]} />
     )}</For>
-    <Line spans={heading("Sources")} />
-    <ListRow cursor={active() && ui.state.aiCursor === AI_ROWS.length + AI_USES.length} bg={theme.canvas} onMouseDown={pick(AI_ROWS.length + AI_USES.length)} spans={[
-      { text: executor().connected ? "● " : "○ ", fg: executor().connected ? tone.good : ink.faint },
-      { text: fit("Executor", 13), fg: ink.figure },
-      { text: fit(executor().how, valueWidth(secondWidth())), fg: executor().connected ? ink.label : ink.note },
-    ]} />
   </>
   return <SectionCard inset title={SETTINGS_SECTION_LABELS.ai} focused={props.focused} active={active()} height={aiHeight(props.width)} width={props.width}>
-    <Show when={two()} fallback={<><Models /><UsesAndSources /></>}>
+    <Show when={two()} fallback={<><Inputs /><Line spans={[]} /><Uses /></>}>
       <box flexDirection="row" gap={COLUMN_GAP} width="100%">
-        <box width={firstWidth()} flexShrink={0} flexDirection="column"><Models /></box>
-        <box width={secondWidth()} flexShrink={0} flexDirection="column"><UsesAndSources /></box>
+        <box width={firstWidth()} flexShrink={0} flexDirection="column"><Inputs /></box>
+        <box width={secondWidth()} flexShrink={0} flexDirection="column"><Uses /></box>
       </box>
     </Show>
   </SectionCard>
@@ -710,8 +746,9 @@ export function SettingsTab(props: { focused: SectionId }) {
       {column.children}
     </scrollbox>
   )
-  // Wide: Taxonomy on the left; on the right Up Bank beside Web app, AI
-  // models, Rules & Filters, Appearance beside Database & Import (each
+  // Wide: Taxonomy over Rules & Filters on the left (full width of the
+  // column); on the right Up Bank beside Web app, AI models, Appearance
+  // beside Database & Import (each
   // pair one height), stacked when the column is too narrow for pairs.
   // Narrower: one column in the same order (SETTINGS_SECTIONS).
   const left = () => Math.floor(dims().width * 0.5)
@@ -740,16 +777,15 @@ export function SettingsTab(props: { focused: SectionId }) {
   return <box width="100%" height="100%" flexDirection="row" gap={1} backgroundColor={theme.canvas}>
     <Show when={dims().width >= 112} fallback={
       <Column>
-        {taxonomy(full(), dims().height - 6)}{up(full())}{webApp(full())}{ai(full())}{rules(full())}{appearance(full())}{database(full())}
+        {taxonomy(full(), dims().height - 6)}{rules(full())}{up(full())}{webApp(full())}{ai(full())}{appearance(full())}{database(full())}
       </Column>
     }>
-      <Column width={left()}>{taxonomy(left(), body())}</Column>
+      <Column width={left()}>{taxonomy(left(), body() - rulesHeight())}{rules(left())}</Column>
       <Column>
         <Show when={pairs()} fallback={<>{up(right())}{webApp(right())}</>}>
           <Pair>{up(upWidth(), Math.max(upHeight(), webHeight()))}{webApp(right() - 1 - upWidth(), Math.max(upHeight(), webHeight()))}</Pair>
         </Show>
         {ai(right())}
-        {rules(right())}
         <Show when={pairs()} fallback={<>{appearance(right())}{database(right())}</>}>
           <Pair>{appearance(APPEARANCE_WIDTH, DATABASE_ROWS.length + 5)}{database(right() - 1 - APPEARANCE_WIDTH, DATABASE_ROWS.length + 5)}</Pair>
         </Show>

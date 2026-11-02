@@ -62,7 +62,7 @@ Where information lives: the Overview is figures and charts (point-in-time ones 
 
 ### Settings
 
-Wide, Taxonomy is on the left (Categories beside Tags); on the right Up Bank beside Web app, AI models (Models beside Uses and Sources), Rules & Filters, then Appearance beside Database & Import. Each column scrolls when its panes don't fit, following the focused pane. `j`/`k` step from pane to pane in reading order (one stop each), `h`/`l` to the pane beside, `enter` goes in; a click on a pane goes in too, and a click on a row puts the cursor there.
+Wide, Taxonomy (Categories beside Tags) and Rules & Filters are on the left; on the right Up Bank beside Web app, AI models (what goes in, Models and Sources, beside what comes out, Uses), then Appearance beside Database & Import. Each row's mark says how it stands: a status in colour (connected, syncing, off, broken), a toggle on or off, a choice with a dot per option; with icons on, the marks are Nerd Font icons. Each column scrolls when its panes don't fit, following the focused pane. `j`/`k` step from pane to pane in reading order (one stop each), `h`/`l` to the pane beside, `enter` goes in; a click on a pane goes in too, and a click on a row puts the cursor there.
 
 - **Taxonomy:** Jaskmoney's own categories (Income, Transfers, Uncategorised, People and any you add), then Up's, then the tags. A group is one row with its size until opened: `space` or `enter` opens or closes it (`l`/`h` too; `h` in a subcategory closes its group), and `e` edits any row. `j` runs on from the categories into the tags.
 - **Rules & Filters:** `j` runs on from the rules into the saved filters.
