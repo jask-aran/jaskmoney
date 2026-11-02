@@ -5,9 +5,16 @@ tags transactions (both ways with Up), and shows where the money goes against a 
 
 ![The Overview, through its charts](docs/screenshots/overview.gif)
 
+
+
+https://github.com/user-attachments/assets/a5acf4e8-1cf5-4fc6-9ca6-32ae0252800f
+
+
+
 | Transactions | Budgets | Settings |
 | --- | --- | --- |
 | <a href="docs/screenshots/transactions.png"><img src="docs/screenshots/transactions.png" alt="Transactions"></a> | <a href="docs/screenshots/budgets.png"><img src="docs/screenshots/budgets.png" alt="Budgets"></a> | <a href="docs/screenshots/settings.png"><img src="docs/screenshots/settings.png" alt="Settings"></a> |
+
 
 ## Install
 
