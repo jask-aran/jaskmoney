@@ -208,9 +208,11 @@ export function OverviewTab(props: { focused: SectionId }) {
       ? bodyHeight() - lowerHeight(true) >= MIN_CATEGORIES + 2
       : bodyHeight() - lowerHeight(true) >= NARROW_CHART_MIN
   const categoriesHeight = () => Math.max(3, wide() ? bodyHeight() - lowerHeight(saversFull()) : lowerHeight(saversFull()))
-  // Wide: the two charts split the column with a blank line between them.
-  const topChartHeight = () => (wide() ? Math.ceil((bodyHeight() - 1) / 2) : Math.max(NARROW_CHART_MIN, bodyHeight() - lowerHeight(saversFull())))
-  const bottomChartHeight = () => bodyHeight() - 1 - topChartHeight()
+  // Wide: the two charts split the column equally with a blank line
+  // between them; an odd line left over widens that gap, so the panes
+  // (and a Calendar in each) are the same size whatever their views.
+  const topChartHeight = () => (wide() ? Math.floor((bodyHeight() - 1) / 2) : Math.max(NARROW_CHART_MIN, bodyHeight() - lowerHeight(saversFull())))
+  const bottomChartHeight = () => topChartHeight()
   const stackWidth = () => sideWidth() - 4
   const labelWidth = () => Math.max(6, stackWidth() - VALUE - NOTE)
 
@@ -527,7 +529,7 @@ export function OverviewTab(props: { focused: SectionId }) {
         fallback={<NarrowColumn />}
       >
         <box flexDirection="row" gap={1} width="100%" height={bodyHeight()}>
-          <box flexDirection="column" gap={1} width={mainWidth()} height={bodyHeight()}>
+          <box flexDirection="column" gap={1} justifyContent="space-between" width={mainWidth()} height={bodyHeight()}>
             <ChartPane pane={0} height={topChartHeight()} />
             <ChartPane pane={1} height={bottomChartHeight()} />
           </box>
