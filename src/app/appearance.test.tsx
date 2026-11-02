@@ -160,7 +160,7 @@ test("Database keeps only data rows and week start", () => {
 test("Appearance is reachable through section navigation, jump, pointer and palette", async () => {
   data.init(":memory:")
   ui.switchTab("settings")
-  ui.setState({ settingsSection: "ai", focusedSection: "set.ai" })
+  ui.setState({ settingsSection: "rules", focusedSection: "set.rules" })
   handleKey(ui, key("down"), data)
   expect(ui.state.settingsSection).toBe("appearance")
   expect(ui.state.focusedSection).toBe("set.appearance")

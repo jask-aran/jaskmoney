@@ -31,22 +31,41 @@ test("j/k stop once on each pane: Rules & Filters is one stop, not two", () => {
   ui.setState({ settingsActive: false, settingsSection: "taxonomy", focusedSection: "set.categories" })
   const seen: string[] = []
   for (let i = 0; i < SETTINGS_SECTIONS.length; i++) { seen.push(ui.state.settingsSection); handleKey(ui, key("j"), data) }
-  expect(seen).toEqual(["taxonomy", "rules", "up", "web", "ai", "appearance", "database"])
+  expect(seen).toEqual(["taxonomy", "up", "web", "ai", "rules", "appearance", "database"])
   expect(ui.state.settingsSection).toBe("taxonomy")
   // Back up from Saved filters (where jump f leaves it): one press to the pane above.
   ui.setState({ settingsSection: "filters", focusedSection: "set.filters" })
   handleKey(ui, key("k"), data)
-  expect(ui.state.settingsSection).toBe("taxonomy")
+  expect(ui.state.settingsSection).toBe("ai")
   ui.setState({ settingsSection: "filters", focusedSection: "set.filters" })
   handleKey(ui, key("j"), data)
-  expect(ui.state.settingsSection).toBe("up")
-  // h/l: the other column's first pane; nothing further that way.
+  expect(ui.state.settingsSection).toBe("appearance")
+  // h/l before the panes are drawn: the other column's first pane;
+  // nothing further that way.
   handleKey(ui, key("h"), data)
   expect(ui.state.settingsSection).toBe("taxonomy")
   handleKey(ui, key("h"), data)
   expect(ui.state.settingsSection).toBe("taxonomy")
   handleKey(ui, key("l"), data)
   expect(ui.state.settingsSection).toBe("up")
+})
+
+test("drawn, h/l go to the pane beside: Web app beside Up Bank, Database beside Appearance", async () => {
+  const t = await renderApp({ width: 220, height: 66 })
+  data.init(":memory:")
+  try {
+    ui.switchTab("settings")
+    ui.setState({ settingsActive: false, settingsSection: "up", focusedSection: "set.up" })
+    await t.renderOnce()
+    const go = (name: string) => { handleKey(ui, key(name), data); return ui.state.settingsSection }
+    expect(go("l")).toBe("web")
+    expect(go("l")).toBe("web")
+    expect(go("h")).toBe("up")
+    expect(go("h")).toBe("taxonomy")
+    ui.setState({ settingsSection: "appearance", focusedSection: "set.appearance" })
+    expect(go("l")).toBe("database")
+    expect(go("h")).toBe("appearance")
+  } finally { t.renderer.destroy() }
 })
 
 test("Taxonomy: space opens a group, h from inside closes it; j runs on from the categories into the tags", () => {
@@ -160,7 +179,7 @@ test("a click on any pane activates it; on a row, the cursor goes there; on the 
 
 test("Import history is a dialog from Database & Import, not a pane", async () => {
   data.init(":memory:")
-  const t = await renderApp({ width: 160, height: 44 })
+  const t = await renderApp({ width: 160, height: 66 })
   try {
     ui.switchTab("settings")
     data.setState({ imports: [{ id: 1, filename: "anz-2026-10.csv", rowCount: 312, importedAt: "2026-10-30 09:15:00" }] })

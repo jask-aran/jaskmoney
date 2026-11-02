@@ -3,6 +3,8 @@ import { THEMES } from "../themes"
 import { applyTheme } from "../theme"
 import { triable, tryHints } from "../state/tour"
 import { travel } from "./paneTravel"
+import { regionRects } from "../ui/regions"
+import { nearestRegion } from "../state/spatial"
 import { web } from "./webApp"
 import { unwrap } from "solid-js/store"
 import { merchantKey } from "../domain/history"
@@ -1035,8 +1037,18 @@ function handleSettings(ui: UiStore, key: KeyEvent, data?: DataStore): void {
   const sections = SETTINGS_SECTIONS
   const current = ui.state.settingsSection === "filters" ? "rules" : ui.state.settingsSection
   const go = (next: SettingsSection) => ui.setState({ settingsSection: next, taxonomyList: "categories", focusedSection: settingsSectionFocus(next) })
-  if (name === "h" || name === "left") { if (SETTINGS_RIGHT.includes(current)) go("taxonomy"); return }
-  if (name === "l" || name === "right") { if (!SETTINGS_RIGHT.includes(current)) go("up"); return }
+  // h/l: the pane beside it on screen (panes sit side by side within a
+  // column too); before the panes are drawn, the other column's first.
+  if (name === "h" || name === "left" || name === "l" || name === "right") {
+    const left = name === "h" || name === "left"
+    const regions = regionRects("settings")
+    const from = regions.find((region) => region.id === settingsSectionFocus(current))
+    if (!from) { if (left ? SETTINGS_RIGHT.includes(current) : !SETTINGS_RIGHT.includes(current)) go(left ? "taxonomy" : "up"); return }
+    const next = nearestRegion(from.rect, regions.filter((region) => region !== from), left ? "left" : "right")
+    const section = SETTINGS_SECTIONS.find((section) => settingsSectionFocus(section) === next)
+    if (section) go(section)
+    return
+  }
   if (name === "j" || name === "down" || name === "k" || name === "up") {
     const delta = name === "j" || name === "down" ? 1 : -1
     go(sections[(sections.indexOf(current) + delta + sections.length) % sections.length]!)

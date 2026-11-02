@@ -50,7 +50,7 @@ test("Taxonomy: Jaskmoney's categories apart from Up's, groups closed with their
 })
 
 test("Settings panes: text one cell in from the border, the title two further, subheadings not the title's pink", async () => {
-  const t = await renderApp({ width: 160, height: 44 })
+  const t = await renderApp({ width: 160, height: 66 })
   data.init(":memory:")
   taxonomy()
   ui.switchTab("settings")
@@ -71,7 +71,7 @@ test("Settings panes: text one cell in from the border, the title two further, s
 })
 
 test("a long Taxonomy scrolls in its pane, following the cursor, and says there's more", async () => {
-  const t = await renderApp({ width: 120, height: 30 })
+  const t = await renderApp({ width: 120, height: 24 })
   data.init(":memory:")
   const { goodLife } = taxonomy()
   ui.switchTab("settings")
@@ -107,4 +107,23 @@ test("narrow, the column scrolls to the focused pane and to the cursor row of a 
   ui.setState({ ruleCursor: 0 })
   await settle(t)
   expect(t.captureCharFrame()).toContain(" 1  Rule number 1 ")
+})
+
+test("wide, panes sit in pairs of one height and Taxonomy and AI models lay out in two columns", async () => {
+  const t = await renderApp({ width: 220, height: 66 })
+  data.init(":memory:")
+  taxonomy()
+  ui.switchTab("settings")
+  ui.setState({ focusedSection: "set.categories", settingsActive: false })
+  await settle(t)
+  const lines = t.captureCharFrame().split("\n")
+  const row = (text: string) => lines.findIndex((line) => line.includes(text))
+  expect(row("Tags ")).toBe(row("Jaskmoney categories"))
+  expect(row("Uses")).toBe(row("Models"))
+  expect(row("── Web app")).toBe(row("── Up Bank"))
+  expect(row("── Database & Import")).toBe(row("── Appearance"))
+  // A pair ends on one line: both bottom corners on the same row.
+  const bottom = (title: string) => { const y = row(`── ${title}`); const x = lines[y]!.lastIndexOf("╭", lines[y]!.indexOf(title)); let b = y + 1; while (lines[b]![x] !== "╰") b++; return b }
+  expect(bottom("Web app")).toBe(bottom("Up Bank"))
+  expect(bottom("Database & Import")).toBe(bottom("Appearance"))
 })
