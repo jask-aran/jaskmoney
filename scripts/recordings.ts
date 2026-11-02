@@ -1,20 +1,23 @@
 /**
- * The README's recordings: the setup's tour (--welcome) in a real terminal
- * (scripts/terminal.ts), each demo for exactly one loop of its script, at
- * its own speed, cropped to the demo's pane, as a GIF that loops cleanly
+ * The README's recordings in a real terminal (scripts/terminal.ts): the
+ * Overview through its charts (the hero), and the setup's tour (--welcome),
+ * each demo for exactly one loop of its script, at its own speed, cropped
+ * to the demo's pane; each a GIF that loops cleanly
  * (GitHub plays a GIF in a README; an MP4 in the repo it doesn't).
  *
- *   bun run recordings [binary] [--only=chart,filter,ask,suggest]
+ *   bun run recordings [binary] [--only=overview,filter,ask,suggest,chart]
  *                                    (default: dist/jaskmoney, built first)
  *
- * Headless Chrome draws a terminal this size a few times a second, too
- * slow to film live. So it's recorded, then rendered: while the tour plays,
- * a tap on ttyd's socket keeps every byte the app writes and when; then,
- * with the live output cut off, it's replayed into the same terminal a
- * frame at a time (FRAME_MS of tour time), each photographed once drawn.
+ * Chrome can't photograph a terminal this size as fast as it changes, so
+ * each demo is recorded, then rendered: while it plays, a tap on ttyd's
+ * socket keeps every byte the app writes and when; then, with the live
+ * output cut off, they're replayed into the same terminal a frame at a
+ * time (FRAME_MS of tour time), each photographed once drawn. Each demo
+ * has its own app, terminal and Chrome, all at once: the whole takes about
+ * the longest demo's loop and its rendering.
  *
- * Needs ffmpeg. Writes docs/screenshots/<demo>.gif, and the same as an
- * MP4 to dist/recordings/<demo>.mp4 (sharper and smaller; GitHub plays
+ * Needs ffmpeg. Writes docs/screenshots/<scene>.gif, and the same as an
+ * MP4 to dist/recordings/<scene>.mp4 (sharper and smaller; GitHub plays
  * one only uploaded through its web editor).
  */
 import { createHash } from "node:crypto"
@@ -22,7 +25,8 @@ import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
 import { openDb, loadCategories } from "../src/db/client"
-import { DEMOS, demoLoopMs, demoWorld, tourTopics } from "../src/state/tour"
+import { CHART_VIEW_MS, DEMOS, demoLoopMs, demoWorld, tourTopics } from "../src/state/tour"
+import { CHART_VIEWS } from "../src/state/uiStore"
 import { appBinary, openTerminal, type Terminal } from "./terminal"
 
 type DemoId = (typeof DEMOS)[number]["id"]
@@ -62,11 +66,15 @@ const TAP = `(() => {
   Object.assign(window.WebSocket, { CONNECTING: 0, OPEN: 1, CLOSING: 2, CLOSED: 3 })
   window.__restart = () => { term.reset(); term.clearTextureAtlas(); window.__at = 0 }
   window.__seek = async (t) => {
-    let n = 0
-    while (window.__at < window.__out.length && window.__out[window.__at][0] <= t) {
-      const bytes = window.__out[window.__at++][1]
+    const chunks = []
+    while (window.__at < window.__out.length && window.__out[window.__at][0] <= t) chunks.push(window.__out[window.__at++][1])
+    const n = chunks.length
+    if (n) {
+      // One write of them all.
+      const bytes = new Uint8Array(chunks.reduce((sum, c) => sum + c.length, 0))
+      let at = 0
+      for (const c of chunks) { bytes.set(c, at); at += c.length }
       await new Promise((done) => term.write(bytes, done))
-      n++
     }
     // Every row repainted: the renderer otherwise redraws only the cells
     // it believes changed, and after a reset some keep their old pixels.
@@ -87,29 +95,106 @@ function paneCells(lines: string[]): { col: number; row: number; cols: number; r
   return { col, row: top, cols: right - col + 1, rows: bottom - top + 1 }
 }
 
-/** Presses `key` to (re)start a demo; returns when it did, in page time. */
-async function start(term: Terminal, key: string): Promise<number> {
-  const at = await term.evaluate("performance.now()")
-  await term.press(key)
-  return at
+/** Waits until `ready` is true of the terminal's text (or 20 s); before
+ * ttyd's page has made its terminal, there's none. */
+async function until(term: Terminal, ready: (lines: string[]) => boolean): Promise<void> {
+  for (let i = 0; i < 100; i++) {
+    if (ready(await term.lines().catch(() => []))) return
+    await Bun.sleep(200)
+  }
+  throw new Error("the app didn't come up")
 }
 
-/** Renders one loop of `id`, from `from` (page time), to its GIF. */
-async function render(term: Terminal, id: DemoId, from: number): Promise<void> {
-  const loopMs = demoLoopMs(id, topics)
-  // Where the pane is, from the first of a few moments that shows it
-  // whole (a moment can have something drawn over its corners).
-  let pane: ReturnType<typeof paneCells> | null = null
-  for (const at of [0.2, 0.4, 0.6, 0.8]) {
-    await term.evaluate("__restart()")
-    await term.evaluate(`__seek(${from + loopMs * at})`)
-    try { pane = paneCells(await term.lines()); break } catch {}
+/** What's filmed: how to bring it up, how long a loop is, what's played
+ * through it, and whether it's cropped to the tour's demo pane. */
+interface Scene {
+  id: string
+  args: string[]
+  loopMs: number
+  /** Brings it to just before its loop; resolves with the key that starts
+   * it (pressed as the loop begins). */
+  setup(term: Terminal): Promise<string>
+  /** Keys pressed `at` ms into the loop. */
+  keys?: Array<{ at: number; key: string }>
+  pane: boolean
+  /** Its settings.json (scripts/terminal.ts). */
+  settings?: object
+}
+
+/** A tour demo: Welcome › Start, then → to it (each → starts the next
+ * demo from its beginning); Charts, the first, starts again with ←. */
+const tourDemo = (id: DemoId): Scene => ({
+  id, args: ["--welcome"], loopMs: demoLoopMs(id, topics), pane: true,
+  async setup(term) {
+    await until(term, (lines) => lines.some((l) => l.includes("Skip setup")))
+    await term.press("Enter")
+    await until(term, (lines) => lines.some((l) => l.includes("Tour ·")))
+    const keys = id === "chart" ? ["ArrowRight", "ArrowLeft"] : DEMOS.slice(1, DEMOS.findIndex((d) => d.id === id) + 1).map(() => "ArrowRight")
+    for (const key of keys.slice(0, -1)) { await term.press(key); await Bun.sleep(150) }
+    return keys.at(-1)!
+  },
+})
+
+/** The README's hero: the Overview on the demo data, its top chart
+ * through every view at the tour's pace (l), each drawing in as it does in
+ * the tour (chart motion "always"; a new install draws in once). It starts
+ * a view back, so the loop ends on the switch it begins with. */
+const overview: Scene = {
+  id: "overview", args: ["--demo"], loopMs: CHART_VIEW_MS * CHART_VIEWS.length, pane: false,
+  settings: { ui: { chartMotion: "always" } },
+  keys: Array.from({ length: CHART_VIEWS.length - 1 }, (_, k) => ({ at: (k + 1) * CHART_VIEW_MS, key: "l" })),
+  async setup(term) {
+    await until(term, (lines) => lines.some((l) => l.includes("Demo mode")))
+    await term.press("h")
+    await Bun.sleep(CHART_VIEW_MS)
+    return "l"
+  },
+}
+
+const SCENES: Scene[] = [overview, tourDemo("filter"), tourDemo("ask"), tourDemo("suggest"), tourDemo("chart")]
+
+/** Films `scene` in a terminal of its own: brought up, one loop recorded,
+ * then rendered. */
+async function film(binary: string, scene: Scene): Promise<void> {
+  const term = await openTerminal(binary, scene.args, { beforeLoad: TAP, settings: scene.settings })
+  try {
+    const key = await scene.setup(term)
+    const from = await term.evaluate("performance.now()")
+    await term.press(key)
+    const now = async () => (await term.evaluate("performance.now()")) - from
+    // Its keys on time, and (for a demo) where its pane is, from the live
+    // screen as soon as it shows whole.
+    let pane: ReturnType<typeof paneCells> | null = null
+    for (const { at, key } of scene.keys ?? []) {
+      if (scene.pane && !pane) try { pane = paneCells(await term.lines()) } catch {}
+      const wait = at - (await now())
+      if (wait > 0) await Bun.sleep(wait)
+      await term.press(key)
+    }
+    while (scene.pane && !pane && (await now()) < scene.loopMs) {
+      await Bun.sleep(300)
+      try { pane = paneCells(await term.lines()) } catch {}
+    }
+    if (scene.pane && !pane) throw new Error(`couldn't find ${scene.id}'s pane:\n${(await term.lines()).join("\n")}`)
+    const left = scene.loopMs + 200 - (await now())
+    if (left > 0) await Bun.sleep(left)
+    await term.evaluate("__mute = true")
+    await render(term, scene, from, pane)
+  } finally {
+    await term.close()
   }
-  if (!pane) throw new Error(`couldn't find ${id}'s pane:\n${(await term.lines()).join("\n")}`)
+}
+
+/** Renders one loop of `scene`, from `from` (page time), to its GIF and
+ * MP4: the whole terminal, or just the demo's pane. */
+async function render(term: Terminal, scene: Scene, from: number, pane: ReturnType<typeof paneCells> | null): Promise<void> {
+  const { id, loopMs } = scene
   const screen = await term.screen()
   const cellW = screen.width / screen.cols, cellH = screen.height / screen.rows
   // To the pane's border: the cells around it are the tour's backdrop.
-  const clip = { x: screen.x + pane.col * cellW, y: screen.y + pane.row * cellH, width: pane.cols * cellW, height: pane.rows * cellH, scale: 1 }
+  const clip = pane
+    ? { x: screen.x + pane.col * cellW, y: screen.y + pane.row * cellH, width: pane.cols * cellW, height: pane.rows * cellH, scale: 1 }
+    : { x: screen.x, y: screen.y, width: screen.width, height: screen.height, scale: 1 }
 
   await term.evaluate("__restart()")
   await term.evaluate(`__seek(${from})`)
@@ -140,29 +225,15 @@ async function render(term: Terminal, id: DemoId, from: number): Promise<void> {
   const codes = await Promise.all(runs.map((run) => run.exited))
   rmSync(dir, { recursive: true, force: true })
   if (codes.some((code) => code !== 0)) throw new Error(`ffmpeg failed for ${id}`)
-  console.log(`${gif} + ${mp4}  ${(loopMs / 1000).toFixed(1)} s, ${frames.length} frames, ${pane.cols}×${pane.rows} cells`)
+  console.log(`${gif} + ${mp4}  ${(loopMs / 1000).toFixed(1)} s, ${frames.length} frames${pane ? `, ${pane.cols}×${pane.rows} cells` : ""}`)
 }
 
-const term = await openTerminal(appBinary(), ["--welcome"], TAP)
+const only = process.argv.find((a) => a.startsWith("--only="))?.slice(7).split(",")
+const binary = appBinary()
+const started = Date.now()
 try {
-  await Bun.sleep(5000)
-  // Welcome › Start: the tour, on Charts.
-  await term.press("Enter")
-  await Bun.sleep(1500)
-  // Each → starts the next demo from its beginning; ← back starts Charts.
-  const starts: Array<[DemoId, number]> = []
-  for (const id of ["filter", "ask", "suggest"] as const) {
-    starts.push([id, await start(term, "ArrowRight")])
-    await Bun.sleep(demoLoopMs(id, topics) + 500)
-  }
-  for (let i = 0; i < 2; i++) { await term.press("ArrowLeft"); await Bun.sleep(300) }
-  starts.push(["chart", await start(term, "ArrowLeft")])
-  await Bun.sleep(demoLoopMs("chart", topics) + 500)
-
-  await term.evaluate("__mute = true")
-  const only = process.argv.find((a) => a.startsWith("--only="))?.slice(7).split(",")
-  for (const [id, from] of starts) if (!only || only.includes(id)) await render(term, id, from)
+  await Promise.all(SCENES.filter((scene) => !only || only.includes(scene.id)).map((scene) => film(binary, scene)))
+  console.log(`${((Date.now() - started) / 1000).toFixed(0)} s`)
 } finally {
-  await term.close()
   rmSync(scratch, { recursive: true, force: true })
 }

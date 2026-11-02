@@ -276,16 +276,16 @@ export function suggestAt(ms: number, world: DemoWorld): { state: DemoTry; press
  * to draw in and be looked at. */
 // 3.6 s: 0.9 to draw in (TOUR_CHART_MS), the rest to be looked at; at 2.2
 // it moved on too soon (2026-11-01 first-run test).
-const VIEW_MS = 3600
+export const CHART_VIEW_MS = 3600
 
 export function chartViewAt(ms: number): number {
-  return Math.floor(ms / VIEW_MS) % CHART_VIEWS.length
+  return Math.floor(ms / CHART_VIEW_MS) % CHART_VIEWS.length
 }
 
 /** How long a demo's script runs before it starts again (the README's
  * recordings are one loop: scripts/recordings.ts). */
 export function demoLoopMs(id: (typeof DEMOS)[number]["id"], t: TourTopics): number {
-  if (id === "chart") return VIEW_MS * CHART_VIEWS.length
+  if (id === "chart") return CHART_VIEW_MS * CHART_VIEWS.length
   if (id === "filter") return FILTER_LOOP
   if (id === "suggest") return SUGGEST_LOOP
   return askSpans(t).reduce((a, b) => a + b, 0)

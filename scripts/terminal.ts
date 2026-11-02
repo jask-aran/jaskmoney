@@ -15,7 +15,7 @@
  * the font installed for fontconfig (~/.local/share/fonts). And ttyd.
  */
 import { spawn, spawnSync } from "node:child_process"
-import { existsSync, mkdtempSync, rmSync } from "node:fs"
+import { existsSync, mkdtempSync, rmSync, writeFileSync } from "node:fs"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
 
@@ -26,8 +26,10 @@ export const FONT = "MesloLGS Nerd Font Mono"
 export const WIDTH = 1440, HEIGHT = 900, SCALE = 2, FONT_SIZE = 13
 /** Windows' Chrome, from WSL. */
 const WINDOWS_CHROME = "/mnt/c/Program Files/Google/Chrome/Application/chrome.exe"
-// Ports of its own, so several can run at once.
-const TTYD_PORT = 20000 + (process.pid % 20000), CDP_PORT = TTYD_PORT + 1
+// Ports of its own, so several can run at once (each terminal opened
+// takes the next two).
+const BASE_PORT = 20000 + (process.pid % 2000) * 10
+let opened = 0
 
 export interface Terminal {
   send(method: string, params?: object): Promise<any>
@@ -51,12 +53,17 @@ const KEY_CODES: Record<string, { code: string; keyCode: number; text?: string }
 }
 
 /** `beforeLoad`: a script the page runs before ttyd's own (to tap its
- * socket: scripts/recordings.ts). */
-export async function openTerminal(binary: string, args: string[], beforeLoad?: string): Promise<Terminal> {
+ * socket: scripts/recordings.ts). `settings`: the app's settings.json, as
+ * if already set (Settings › Appearance and the like). */
+export async function openTerminal(binary: string, args: string[], options: { beforeLoad?: string; settings?: object } = {}): Promise<Terminal> {
+  const { beforeLoad, settings } = options
+  const TTYD_PORT = BASE_PORT + opened * 2, CDP_PORT = TTYD_PORT + 1
+  opened++
   const windows = existsSync(WINDOWS_CHROME)
   // Chrome's profile, on its own side.
   const profile = mkdtempSync(join(windows ? "/mnt/c/Users/Public" : tmpdir(), "jaskmoney-shots-"))
   const home = mkdtempSync(join(tmpdir(), "jaskmoney-shots-home-"))
+  if (settings) writeFileSync(join(home, "settings.json"), JSON.stringify({ version: 2, ...settings }))
   const ttyd = spawn("ttyd", [
     "-W", "-p", String(TTYD_PORT), "-i", "127.0.0.1",
     "-t", `fontFamily=${FONT}`, "-t", `fontSize=${FONT_SIZE}`, "-t", "lineHeight=1", "-t", "letterSpacing=0",
