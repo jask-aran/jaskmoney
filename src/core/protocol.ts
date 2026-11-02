@@ -52,7 +52,9 @@ export interface CoreState {
   categoryChoices: CategoryChoice[]
   /** Order-email lookups so far (app/purchases), by row. */
   purchaseLookups: Record<number, PurchaseLookup>
-  /** Where each API key comes from, masked (`maskSecret`); never the key. */
+  /** Where each API key comes from; `mask` is a setting's value (a model,
+   * an account id), and empty for a secret: no part of a key or token
+   * leaves the core. */
   apiKeys: Record<CredentialName, { source: "saved" | "env" | null; mask: string }>
   /** Browser sign-ins to the general model's providers (oauth.json). */
   signedIn: Record<LlmProvider, boolean>

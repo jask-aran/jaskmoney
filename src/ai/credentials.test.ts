@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, test } from "bun:test"
 import { existsSync, rmSync, statSync, writeFileSync } from "node:fs"
-import { credentialEnv, credentialSource, credentialsPath, loadSavedCredentials, maskSecret, saveCredentials } from "./credentials"
+import { credentialEnv, credentialSource, credentialsPath, loadSavedCredentials, saveCredentials } from "./credentials"
 
 describe("saved API keys", () => {
   afterEach(() => rmSync(credentialsPath(), { force: true }))
@@ -32,9 +32,4 @@ describe("saved API keys", () => {
     expect(existsSync(credentialsPath())).toBe(true)
   })
 
-  test("a mask shows only the last four", () => {
-    expect(maskSecret("apikey_secret_3728")).toBe("•••• 3728")
-    expect(maskSecret("")).toBe("")
-    expect(maskSecret(undefined)).toBe("")
-  })
 })

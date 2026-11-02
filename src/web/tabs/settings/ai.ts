@@ -57,8 +57,8 @@ function rowKey(row: KeyRow, state: State) {
 /** How a row is connected, in full and in short; null when it isn't (aiConnection). */
 export function connection(row: KeyRow, state: State): { long: string; short: string } | null {
   const key = rowKey(row, state)
-  if (key.source === "saved") return { long: `key saved here (${key.mask})`, short: "key · saved" }
-  if (key.source === "env") return { long: `from the environment (${key.mask})`, short: "key · env" }
+  if (key.source === "saved") return { long: "key saved here", short: "key · saved" }
+  if (key.source === "env") return { long: "from the environment", short: "key · env" }
   if (isProvider(row) && state.signedIn[row]) return { long: "signed in with the browser", short: "signed in" }
   // Without its own key, Jev goes through OpenRouter when that's connected.
   if (row === "jev") {

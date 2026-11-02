@@ -77,8 +77,8 @@ function keyOf(row: KeyRow, ctx: AiContext) {
 /** How a row is connected, in full and in short; null when it isn't. */
 export function aiConnection(row: KeyRow, ctx: AiContext): { long: string; short: string } | null {
   const key = keyOf(row, ctx)
-  if (key.source === "saved") return { long: `key saved here (${key.mask})`, short: "key · saved" }
-  if (key.source === "env") return { long: `from the environment (${key.mask})`, short: "key · env" }
+  if (key.source === "saved") return { long: "key saved here", short: "key · saved" }
+  if (key.source === "env") return { long: "from the environment", short: "key · env" }
   if (isLlmRow(row) && ctx.signedIn[row]) return { long: "signed in with the browser", short: "signed in" }
   // Without its own key, Jev goes through OpenRouter when that's connected.
   if (row === "jev") {

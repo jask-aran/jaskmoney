@@ -7,7 +7,8 @@ import { defaultSettingsConfigPath } from "../state/settingsConfig"
  * API keys (and the Up token), kept in credentials.json beside settings.json
  * in ~/.jaskmoney (owner-only, mode 600). A saved key takes priority over the environment
  * variable of the same name (Bun loads `.env`), so what the user typed is
- * what is used. Values are never rendered: `maskSecret` shows the last four.
+ * what is used. A secret never leaves the core: clients learn only where it
+ * comes from (saved or the environment), not one character of it.
  */
 
 // The models' settings sit beside their keys: the models, the provider
@@ -69,8 +70,3 @@ export function credentialSource(name: CredentialName, env: Record<string, strin
   return env[name]?.trim() ? "env" : null
 }
 
-/** "•••• 3728": enough to tell keys apart, never the key. */
-export function maskSecret(value: string | undefined): string {
-  const v = value?.trim() ?? ""
-  return v ? `•••• ${v.slice(-4)}` : ""
-}

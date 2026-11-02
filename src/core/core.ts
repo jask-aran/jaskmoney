@@ -21,7 +21,7 @@ import {
 import { cycleFor, paydays, type BudgetScope, type CycleConfig } from "../domain/budget"
 import { scopeKey } from "../domain/budgetScopes"
 import { buildImportPreview, commitImportPreview } from "../domain/profileImport"
-import { CREDENTIAL_NAMES, credentialEnv, credentialSource, maskSecret, saveCredentials, type CredentialName, NOT_SECRET } from "../ai/credentials"
+import { CREDENTIAL_NAMES, credentialEnv, credentialSource, saveCredentials, type CredentialName, NOT_SECRET } from "../ai/credentials"
 import { isOrdinaryFlow, isUncategorised } from "../domain/moneyRules"
 import { hasJev, jevClient, jevRoute, JEV_SETUP, type JevClient } from "../ai/jev"
 import { hasLlm, llmModelId, llmModels, LLM_PROVIDERS, type Llm, type LlmProvider } from "../ai/llm"
@@ -78,7 +78,7 @@ const loadSignedIn = (): CoreState["signedIn"] => ({ openrouter: signedIn("openr
 /** Each API key's source and mask, read now. */
 function loadApiKeys(): CoreState["apiKeys"] {
   const env = credentialEnv()
-  return Object.fromEntries(CREDENTIAL_NAMES.map((name) => [name, { source: credentialSource(name), mask: NOT_SECRET.has(name) ? (env[name] ?? "") : maskSecret(env[name]) }])) as CoreState["apiKeys"]
+  return Object.fromEntries(CREDENTIAL_NAMES.map((name) => [name, { source: credentialSource(name), mask: NOT_SECRET.has(name) ? (env[name] ?? "") : "" }])) as CoreState["apiKeys"]
 }
 
 /** What the clients know of the credentials: which services are set up. */

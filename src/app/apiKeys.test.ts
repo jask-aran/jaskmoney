@@ -61,7 +61,8 @@ test("a key: typed or pasted into the dialog, saved owner-only, used before .env
   expect(ui.state.aiDialog!.field).toBeNull()
   expect(ui.state.aiDialog!.note).toEqual({ text: "Key saved", ok: true })
   expect(loadSavedCredentials()).toEqual({ JASKMONEY_JEV_TOKEN: KEY })
-  expect(data.state.apiKeys.JASKMONEY_JEV_TOKEN).toEqual({ source: "saved", mask: "•••• 9999" })
+  // Where it comes from, and not one character of it.
+  expect(data.state.apiKeys.JASKMONEY_JEV_TOKEN).toEqual({ source: "saved", mask: "" })
   expect(actions()).toEqual(["key", "test", "remove"])
   // An empty key leaves the saved one.
   choose("key")
