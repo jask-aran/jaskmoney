@@ -17,7 +17,19 @@ let controller: AbortController | null = null
 let sendPaste: ((value: string) => void) | null = null
 
 /** Open `url` in the user's browser (on WSL, Windows'); failures are silent: the modal shows the URL. */
+/** Whether `url` may go to the OS's opener: an https page, or http on
+ * this machine (a sign-in's loopback, the web app). Anything else (a
+ * file:, a custom scheme, text shaped like an option) a service could
+ * have sent, so it isn't opened; it stays on screen. */
+export function safeToOpen(url: string): boolean {
+  let parsed: URL
+  try { parsed = new URL(url) } catch { return false }
+  if (parsed.protocol === "https:") return true
+  return parsed.protocol === "http:" && ["localhost", "127.0.0.1", "[::1]"].includes(parsed.hostname)
+}
+
 export function openBrowser(url: string): void {
+  if (!safeToOpen(url)) return
   const command = process.platform === "darwin" ? "open" : process.env.WSL_DISTRO_NAME ? "wslview" : "xdg-open"
   try {
     const child = spawn(command, [url], { detached: true, stdio: "ignore" })

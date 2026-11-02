@@ -64,8 +64,9 @@ The server listens on 127.0.0.1 only, and `/api` answers:
 - **No foreign origin**: a browser may connect only from the server's own page (WebSockets ignore CORS), so a
   site open in your browser can't reach for localhost (403).
 
-There is no token: anything running as a user on this machine can connect, and the core can read files
-(`previewImport`) and change credentials. Serving it beyond this machine (a tunnel, a proxy) is outside the
+There is no token: anything running as any user on this machine can connect, read everything and change
+credentials, so serve only on a machine whose other users you trust. The core reads only `.csv` files outside its
+data folder for an import (`previewImport`), and rebuilds an import from the file when it's committed. Serving it beyond this machine (a tunnel, a proxy) is outside the
 project: put a login in front, and present requests to it as local (loopback host, its own origin).
 
 ## The wire

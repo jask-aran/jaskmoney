@@ -52,10 +52,21 @@ suggestions and search, and OpenRouter or OpenAI for the rule writer; each use s
 
 ## Your data
 
-Everything stays on your machine in `~/.jaskmoney` (owner-only): the SQLite database, settings, and your token and
-keys. Nothing is sent anywhere except Up, and the AI providers you set up. Those receive a transaction's description,
-amount, type, message and category, or your search query; every question asked is in `src/domain/questions.ts`.
+Your data is stored on your machine in `~/.jaskmoney` (owner-only): the SQLite database, settings, and your token
+and keys. It's sent only to the services you set up:
+
+- **Up**, to sync your accounts and to save categories and tags you set back to them.
+- **AI providers** (TypeSafe, OpenRouter, OpenAI, Cloudflare): a transaction's description, amount, type, message
+  and category, or your search query. Every question asked is in `src/domain/questions.ts`.
+- **Executor** (optional): it holds your Gmail sign-in, and after each sync looks up order emails for purchases
+  (searching by date and order number) so a transaction can show what was bought. Sign out in Settings › Executor, and
+  revoke it at executor.sh.
+
+The setup's ticker-tape backdrop fetches public market prices from Yahoo Finance; no data of yours goes with them.
 Demo mode uses a separate `demo.db` built from made-up data and never syncs.
+
+The optional server (`bun run server`, `--serve`) trusts every connection from this machine: see
+[docs/client-server.md](docs/client-server.md#security).
 
 ## Keys
 

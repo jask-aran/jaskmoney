@@ -7,10 +7,19 @@ __pycache__/
 *.db-wal
 *.db-shm
 *.db-journal
+*.sqlite
+*.sqlite3
+*.sqlite-wal
+*.sqlite-shm
+# Keys and sign-ins, should a data folder end up inside the checkout
+credentials.json
+oauth.json
+executor.json
 *.csv
 *.Zone.Identifier
 *:Zone.Identifier
 jaskmoney
+jaskmoney.exe
 
 # Bun / TypeScript
 node_modules/
@@ -22,7 +31,8 @@ coverage/
 logs/
 *.log
 .env
-.env.*.local
+.env.*
+!.env.example
 .eslintcache
 .cache/
 *.tsbuildinfo
