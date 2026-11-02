@@ -1,8 +1,8 @@
 import { describe, expect, test } from "bun:test"
 import { addDays } from "../../domain/days"
-import { barSlots } from "../charts/bars"
+import { cellColumn } from "../charts/lineChart"
 import type { Account } from "../../domain/types"
-import { balancesChart, cashFlowChart, spendingChart } from "./periodCharts"
+import { balancesChart, cashFlowChart, dateSlots, spendingChart } from "./periodCharts"
 import { ink, theme } from "../../theme"
 import { account, transaction } from "../../testing/fixtures"
 
@@ -37,7 +37,8 @@ describe("Cumulative budget", () => {
 test("weekly spending and cash-flow charts use Sunday buckets and labels", () => {
   const dates = ["2026-10-03", "2026-10-04", "2026-10-05"]
   const weekly = spendingChart("Weekly", { dates, values: [1, 2, 3] }, 60, 8, "2026-10-05", [], undefined, undefined, "sunday")
-  expect(weekly.labels).toContain("4 Oct")
+  // Its axis is a line chart's over the same days: Sunday the 4th starts a week.
+  expect(weekly.labels).toMatch(/ 4 /)
   expect(weekly.legend.map((s) => s.text).join("")).toContain("this week $5 so far")
   const cashFlow = cashFlowChart(dates, 60, 8, "2026-10-05", [], [], new Set(), "sunday")
   expect(cashFlow.labels).toContain("4 Oct")
@@ -120,28 +121,34 @@ describe("what made a bar tall, and how much room there is", () => {
     const d = days(364, "2025-11-03")
     const m = spendingChart("Weekly", { dates: d, values: d.map(() => 30) }, 80, 10, d.at(-1)!, [])
     expect(m.rows[m.rows.length - 1]!.map((r) => r.text).join("").trimEnd().length).toBeGreaterThanOrEqual(78)
-    expect(m.labels).toMatch(/Jan .*Jun/)
-    // Months only, but for today's date under its rule.
+    // The months, January as its year, as a line chart's axis has them.
+    expect(m.labels).toMatch(/2026 .*Jun/)
+    // Months only, but for the first day and today, as a line chart has them.
     expect(m.labels.slice(m.today!.start, m.today!.start + m.today!.length)).toBe("1 Nov")
-    expect(m.labels.slice(0, m.today!.start)).not.toMatch(/\b\d{1,2}\b/)
+    expect(m.labels.slice("3 Nov 25".length, m.today!.start)).not.toMatch(/\b\d{1,2}\b/)
   })
 
-  test("Weekly bars have month rules in the gap nearest each 1st and today's rule over its week", () => {
-    // Mon 29 Jun – Sun 4 Oct: Jul 1 (Wed) falls early in a week, Aug 1 (Sat) late.
+  test("bar charts draw a line chart's gridlines and today's rule, under their bars; a week's bar spans its days", () => {
+    // Mon 29 Jun – Sun 4 Oct, 80 columns.
     const d = days(98, "2026-06-29")
-    const m = spendingChart("Weekly", { dates: d, values: d.map(() => 30) }, 80, 10, "2026-09-16", [])
-    const inks = (ink: string) => [...new Set(m.rows.flatMap((runs) => {
+    const rules = (m: ReturnType<typeof spendingChart>, ink: string) => [...new Set(m.rows.flatMap((runs) => {
       let col = 0
-      return runs.flatMap((r) => { const at = col; col += r.text.length; return r.ink === ink && r.text.includes("│") ? [at + r.text.indexOf("│")] : [] })
-    }))]
-    const slots = barSlots(14, 80)
-    // Jul 1 is in the first week, which keeps no rule at the chart's edge;
-    // Aug 1 is late in week 5 (27 Jul), so its rule follows that bar; Sep 1
-    // early in week 10 (31 Aug), so it comes before it, as Oct 1 (Thu) does in week 13.
-    expect(inks("month").sort((a, b) => a - b)).toEqual([slots[4]!.col + slots[4]!.width, slots[9]!.col - 1, slots[13]!.col - 1])
-    expect(inks("today")).toEqual([slots[11]!.col + 1]) // Wednesday, a third of the way across
-    expect(m.labels.slice(slots[5]!.col, slots[5]!.col + 3)).toBe("Aug")
-    expect(m.labels.slice(slots[9]!.col, slots[9]!.col + 3)).toBe("Sep")
+      return runs.flatMap((r) => { const at = col; col += r.text.length; return [...r.text].flatMap((ch, k) => (r.ink === ink && ch === "│" ? [at + k] : [])) })
+    }))].sort((a, b) => a - b)
+    // Weekly at 80 columns; Daily at 120, where its 98 days are bars. No
+    // spending, so no bar covers a rule: bars hide only the cells they fill.
+    for (const [view, width] of [["Weekly", 80], ["Daily", 120]] as const) {
+      const line = spendingChart("Cumulative", { dates: d, values: d.map(() => 30) }, width, 10, "2026-09-16", [])
+      const bars = spendingChart(view, { dates: d, values: d.map(() => 0) }, width, 10, "2026-09-16", [])
+      for (const ink of ["month", "today", "week"]) expect(rules(bars, ink)).toEqual(rules(line, ink))
+      expect(bars.labels).toBe(line.labels)
+    }
+    // A week's bar runs from just after its first day's column (where a
+    // week rule goes) to just before the next week's; the last to the edge.
+    const slots = dateSlots(d.filter((_, i) => i % 7 === 0), d, 80)
+    for (let k = 1; k < slots.length; k++) expect(slots[k]!.col - 1).toBe(cellColumn(7 * k, d.length, 80))
+    for (let k = 0; k + 1 < slots.length; k++) expect(slots[k]!.col + slots[k]!.width).toBe(slots[k + 1]!.col - 1)
+    expect(slots.at(-1)!.col + slots.at(-1)!.width).toBe(80)
   })
 
   test("Cash flow goes monthly when weeks would be too narrow, and nets each period on the axis where they fit", () => {

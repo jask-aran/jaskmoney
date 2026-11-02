@@ -43,7 +43,9 @@ export function barSlots(n: number, width: number, group = 1): Array<{ col: numb
  * stays blank; any positive value shows at least one eighth. `rules` draw
  * dotted horizontal rules at their values through blank cells (across
  * columns `from` to `to`, all by default); `markers` draw vertical rules
- * through blank cells of their columns (over the dotted ones).
+ * through blank cells of their columns (over the dotted ones). Rules are
+ * a layer under the bars: a bar over a rule's column hides it there.
+ * `at` places the bars instead of barSlots (bars placed by their dates).
  */
 export interface BarRule { value: number; ink: string; from?: number; to?: number }
 
@@ -55,10 +57,11 @@ export function columnBars(
   rules?: BarRule | BarRule[],
   markers: Array<{ col: number; ink: string }> = [],
   group = 1,
+  at?: Array<{ col: number; width: number }>,
 ): { rows: Run[][]; slots: Array<{ col: number; width: number }> } {
   const n = bars.length
   if (n === 0 || width <= 0 || height <= 0) return { rows: [], slots: [] }
-  const slots = barSlots(n, width, group)
+  const slots = at ?? barSlots(n, width, group)
   const levels = bars.map(({ value }) => (value <= 0 || max <= 0 ? 0 : Math.max(1, Math.min(height * 8, Math.round((value / max) * height * 8)))))
   // The row (counted from the bottom) holding each rule's value.
   const lines = (rules === undefined ? [] : Array.isArray(rules) ? rules : [rules])
