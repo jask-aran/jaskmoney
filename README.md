@@ -8,12 +8,15 @@ keyboard.
 
 ## Quick start
 
-On Linux x64 (and WSL), download `jaskmoney` from the [latest release](https://github.com/jask-aran/jaskmoney/releases/latest)
-and run it:
+Download the binary for your platform from the [latest release](https://github.com/jask-aran/jaskmoney/releases/latest)
+(`jaskmoney-linux-x64`, also for WSL; `jaskmoney-darwin-arm64` for Apple silicon; `jaskmoney-darwin-x64` for Intel
+Macs) and put it on your PATH:
 
 ```bash
-chmod +x jaskmoney && mkdir -p ~/.local/bin && mv jaskmoney ~/.local/bin/ && jaskmoney
+chmod +x jaskmoney-* && mkdir -p ~/.local/bin && mv jaskmoney-* ~/.local/bin/jaskmoney && jaskmoney
 ```
+
+The macOS builds aren't signed: if macOS refuses to open one, run `xattr -d com.apple.quarantine ~/.local/bin/jaskmoney`.
 
 Or from source, with [Bun](https://bun.sh) 1.4.2:
 
@@ -102,6 +105,10 @@ bun run test
 
 SolidJS on [OpenTUI](https://github.com/sst/opentui), with SQLite through `bun:sqlite`. `docs/` holds the guide, the
 client/server split and the backlog.
+
+Releases: set `version` in `package.json`, commit, then tag and push it (`git tag -a v1.1.0 -m "Jaskmoney 1.1.0" &&
+git push origin v1.1.0`). The Release workflow tests the tag, builds the binaries on Linux and macOS, and attaches them
+to the tag's GitHub release, making it if there isn't one.
 
 ## License
 

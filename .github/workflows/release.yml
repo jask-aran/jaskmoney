@@ -1,0 +1,83 @@
+name: Release
+
+# Push a tag (git tag -a v1.1.0 -m "…" && git push origin v1.1.0) to test, build
+# the standalone binary on each platform and attach them to that tag's GitHub
+# release (made if it doesn't exist yet). Run it by hand with a tag to rebuild
+# an existing release's binaries.
+on:
+  push:
+    tags: ["v*"]
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: "Tag to build and attach binaries to (e.g. v1.0.0)"
+        required: true
+
+permissions:
+  contents: write
+
+env:
+  TAG: ${{ github.event_name == 'workflow_dispatch' && inputs.tag || github.ref_name }}
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ env.TAG }}
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version-file: package.json
+      - run: bun install --frozen-lockfile
+      - run: bun run typecheck
+      - run: bun run test
+
+  build:
+    needs: test
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          # The binary embeds OpenTUI's native renderer for the platform it's
+          # built on, so each is built on its own runner.
+          - runner: ubuntu-latest
+            name: linux-x64
+          - runner: macos-latest
+            name: darwin-arm64
+          - runner: macos-15-intel
+            name: darwin-x64
+    runs-on: ${{ matrix.runner }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ env.TAG }}
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version-file: package.json
+      - run: bun install --frozen-lockfile
+      - run: bun run build dist/jaskmoney-${{ matrix.name }}
+      - uses: actions/upload-artifact@v4
+        with:
+          name: jaskmoney-${{ matrix.name }}
+          path: dist/jaskmoney-${{ matrix.name }}
+          if-no-files-found: error
+
+  release:
+    needs: build
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          path: dist
+          merge-multiple: true
+      - name: Attach the binaries to the release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+        run: |
+          chmod +x dist/*
+          if ! gh release view "$TAG" >/dev/null 2>&1; then
+            gh release create "$TAG" --title "Jaskmoney ${TAG#v}" --generate-notes --verify-tag
+          fi
+          gh release upload "$TAG" dist/* --clobber
