@@ -164,7 +164,7 @@ describe("what made a bar tall, and how much room there is", () => {
     const pay = (id: number, dateISO: string) => transaction({ id, dateISO, amount: 2800, description: "Acme Pty Ltd", accountName: "Spending", categoryName: "Salary", income: true, status: null })
     // Mon 2 Nov is today and a week's first day; pay every other Friday,
     // spending every other day.
-    const range = days(62, "2026-09-01")
+    const range = days(63, "2026-09-01")
     const today = range.at(-1)!
     const rows = [
       ...range.filter((_, i) => i % 14 === 3).map((iso, k) => pay(100 + k, iso)),
@@ -187,6 +187,26 @@ describe("what made a bar tall, and how much room there is", () => {
     expect(runs.every((n) => n === w || n === 2 * w)).toBe(true)
     // 9 whole weeks' outs and 4 pays (plus the part week's): all named.
     expect((text(wide).match(/[+-]\$\d/g) ?? []).length).toBeGreaterThanOrEqual(13)
+  })
+
+  test("a period too new for bars (today its first day) is said beside today's rule, or in the legend where there's no room", () => {
+    const acc = account({ id: 1, balance: 0 })
+    const range = days(63, "2026-09-01")
+    const today = range.at(-1)!
+    const rows = [
+      transaction({ id: 1, dateISO: "2026-10-30", amount: 2800, description: "Acme Pty Ltd", accountName: "Spending", categoryName: "Salary", income: true, status: null }),
+      ...range.slice(-20).map((iso, k) => spend(10 + k, iso, 50, "Shop")),
+    ]
+    for (let width = 70; width <= 200; width += 7) {
+      const m = cashFlowChart(range, width, 12, today, [acc], rows, new Set([1]))
+      expect({ width, said: text(m).includes("this week -$50") || legendText(m).includes("this week -$50") }).toEqual({ width, said: true })
+    }
+    // Monthly (a year to Monday 2 Nov): November's first two days.
+    const year = days(366, "2025-11-02")
+    const monthly = cashFlowChart(year, 120, 12, today, [acc], rows, new Set([1]))
+    expect(text(monthly) + legendText(monthly)).toContain("Nov so far -$100")
+    const weekly = spendingChart("Weekly", { dates: range, values: range.map((d) => (d >= range.at(-20)! ? 50 : 0)) }, 120, 12, today, [])
+    expect(text(weekly)).toContain("this week $50")
   })
 
   test("Cash flow goes monthly when weeks would be too narrow, and nets each period on the axis where they fit", () => {

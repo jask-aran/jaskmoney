@@ -97,16 +97,18 @@ export function spendingChart(
     // the biggest few.
     const current = weeks.findLastIndex((w) => w.startISO <= todayISO && addDays(w.startISO, 6) >= todayISO)
     const bySize = bars.map((_, i) => i).filter((i) => bars[i]!.value > 0).sort((a, b) => bars[b]!.value - bars[a]!.value)
-    const roomy = Math.min(...slots.map((s) => s.width)) >= 5
+    const roomy = Math.min(...slots.filter((s) => s.width).map((s) => s.width)) >= 5
     const order = [...new Set([...(current >= 0 && bars[current]!.value > 0 ? [current] : []), ...bySize.slice(0, roomy ? bySize.length : 3)])]
     const at = (i: number) => ({ row: barTopRow(bars[i]!.value, scale.max, height), col: slots[i]!.col + Math.floor((slots[i]!.width - 1) / 2), bar: slots[i]! })
     const biggest = bySize[0]
-    const marks: ChartLabel[] = order.filter((i) => slots[i]).map((i) => {
+    const marks: ChartLabel[] = order.filter((i) => slots[i]?.width).map((i) => {
       const total = shortMoney(bars[i]!.value)
       const row = i === biggest ? named(weeks[i]!.startISO, addDays(weeks[i]!.startISO, 6)) : undefined
       const [text, ...shorter] = barNames(total, bars[i]!.value, row)
       return { ...at(i), text: text!, short: [...shorter, total], ink: "note" }
     }).filter((l) => l.row >= 0)
+    // This week, too new for a bar before today's rule: said beside it.
+    if (current >= 0 && !slots[current]?.width) marks.unshift(...unshownPeriod("this week", [{ value: weeks[current]!.total, sign: "", ink: "note" }], dates, todayISO, width))
     if (perWeek) marks.push({ row: ruleRow(perWeek, scale.max, height), col: width - 1 - "budget".length - 2, text: "budget", ink: "limit" })
     return {
       rows: annotate(plain, marks),
@@ -297,6 +299,24 @@ export function dateSlots(starts: string[], dates: string[], width: number): Arr
 }
 
 /**
+ * Labels for a run of days with no room for its bars (today its first day
+ * or so: runRules leaves it no columns before today's rule): each amount
+ * named for the run ("this week -$120"), from the top beside today's rule,
+ * one row each; nothing at all when it has none. A bar chart's labels go
+ * where their cells are free, so these keep clear of the bars, or aren't
+ * placed: whole or not at all, so the caller can tell and say them
+ * elsewhere.
+ */
+function unshownPeriod(name: string, amounts: Array<{ value: number; sign: string; ink: string }>, dates: string[], todayISO: string, width: number): ChartLabel[] {
+  const col = cellColumn(Math.max(0, dates.indexOf(todayISO)), dates.length, width)
+  const shown = amounts.filter((a) => a.value > 0)
+  return shown.map((a, k) => {
+    const money = `${a.sign}${shortMoney(a.value)}`
+    return { row: k, col, text: `${name} ${money}`, ink: a.ink }
+  })
+}
+
+/**
  * The gridlines and spans for bars standing for runs of days (a week, a
  * month): a rule where each run starts and on today, and no other (a
  * month's first day inside a week's bar would run through it, as would
@@ -320,8 +340,10 @@ export function runRules(
     for (let i = markers.length - 1; i >= 0; i--) if (markers[i]!.col === todayCol) markers.splice(i, 1)
     markers.push({ col: todayCol, ink: "today" })
   }
+  // Anything at or past today's rule is cut back to it: a run starting
+  // today begins a column past the rule, so has none.
   const spans = dateSlots(starts, dates, width).map((s) =>
-    todayCol != null && todayCol >= s.col && todayCol < s.col + s.width ? { col: s.col, width: todayCol - s.col } : s)
+    todayCol != null && s.col + s.width > todayCol ? { col: s.col, width: Math.max(0, todayCol - s.col) } : s)
   return { markers, spans }
 }
 
@@ -540,6 +562,14 @@ export function cashFlowChart(
     const [text, ...shorter] = barNames(`${sign}${total}`, bars[i]!.value, payee, sign)
     return { row: barTopRow(bars[i]!.value, scale.max, height), col: slots[i]!.col, bar: slots[i]!, text: text!, short: [...shorter, `${sign}${total}`], ink: i % 2 === 0 ? "in" : "out" }
   }).filter((l) => l.row >= 0)
+  // The current period, too new for bars before today's rule: its money
+  // said beside the rule instead.
+  const current = buckets.findIndex((b) => b.start <= todayISO && b.end >= todayISO)
+  const currentName = monthly && current >= 0 ? `${MONTHS[Number(buckets[current]!.start.slice(5, 7)) - 1]} so far` : "this week"
+  const unshown = current >= 0 && !slots[current * 2]?.width
+    ? unshownPeriod(currentName, [{ value: flows[current]!.spent, sign: "-", ink: "out" }, { value: flows[current]!.income, sign: "+", ink: "in" }], dates, todayISO, width)
+    : []
+  marks.unshift(...unshown)
   // A label under each pair: the month or the week's start, with the
   // period's net beside it when every period has room for one.
   const name = (b: (typeof buckets)[number]) => (monthly ? MONTHS[Number(b.start.slice(5, 7)) - 1]! : shortDate(b.start))
@@ -569,6 +599,10 @@ export function cashFlowChart(
     if (net) labelInks.push({ start: slot.col + date.length + 1, length: net.length, ink: flows[i]!.net >= 0 ? "in" : "out" })
     free = slot.col + text.length + 1
   })
+  const rows = annotate(plain, marks)
+  // Where the current period's amounts found no room beside today's rule
+  // (its last whole week's bars fill the corner), the legend says them.
+  const missed = unshown.filter((l) => !rows.some((r) => r.map((run) => run.text).join("").includes(l.text)))
   const income = sum(flows.map((f) => f.income)), spent = sum(flows.map((f) => f.spent))
   const net = income - spent
   // Money in that only starts partway: say so, rather than suggest nothing
@@ -576,7 +610,7 @@ export function cashFlowChart(
   const firstIn = historyStart(flowRows(accounts, transactions, scopeIds).income)
   const inFrom = firstIn && firstIn > addDays(first, 31) && firstIn <= todayISO ? firstIn : null
   return {
-    rows: annotate(plain, marks),
+    rows,
     ticks: moneyTicks(0, scale.max, scale.step, height),
     labels: line.join(""),
     labelInks,
@@ -591,6 +625,7 @@ export function cashFlowChart(
       muted("Net "),
       { text: signedWholeMoney(net), fg: changeColor(net) },
       muted(` · ${monthly ? "monthly" : "weekly"}`),
+      ...(missed.length ? [GAP, muted(`${currentName} `), ...missed.flatMap((l, k) => [...(k ? [muted(" ")] : []), { text: l.text.slice(currentName.length + 1), fg: changeColor(l.ink === "in" ? 1 : -1) }])] : []),
     ],
   }
 }
