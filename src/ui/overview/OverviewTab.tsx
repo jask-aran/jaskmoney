@@ -1,6 +1,6 @@
 import { regionRef } from "../regions"
 import { onPointer } from "../../app/pointer"
-import { drillDown, handleOverviewRange, moveOverviewCategory } from "../../app/keys"
+import { drillDown, handleOverviewRange, moveOverviewCategory, stepOverviewRange } from "../../app/keys"
 import { keyEvent } from "../../app/keyEvent"
 import { For, Index, Show, createEffect, createMemo, createSignal, on, onCleanup } from "solid-js"
 import { hasMarks } from "../charts/reveal"
@@ -26,7 +26,7 @@ import { accountRole, type Account, type Transaction } from "../../domain/types"
 import { addDays, appNow, appToday, daysBetween, type WeekStart } from "../../domain/days"
 import { isSpending, isUncategorised, isUnsortedIn } from "../../domain/moneyRules"
 import { chipLayout } from "./rangeChips"
-import { CUSTOM_CHIP, LOOKBACKS, PERIODS, comparisonWindows, filterByTimeframe, offsetLabel, periodOffset } from "../../domain/timeframe"
+import { CUSTOM_CHIP, CUSTOM_DATE_FORMS, LOOKBACKS, PERIODS, comparisonWindows, filterByTimeframe, offsetLabel, periodOffset, readCustomRange } from "../../domain/timeframe"
 import { count, fit, shortDate, shortMoney, truncate } from "../text"
 import { StyledLine, type StyledSpan } from "../primitives/StyledLine"
 import { monthlyTotal, subscriptions, upcomingCharges, type Subscription } from "../../domain/subscriptions"
@@ -250,9 +250,8 @@ export function OverviewTab(props: { focused: SectionId }) {
   const categoryWidth = () => (wide() ? sideWidth() : dims().width - 1 - sideWidth())
   const categoryNameWidth = () => Math.max(8, categoryWidth() - 5 - 14)
 
-  // The dates on the right: arrows when [ ] can step them, and how far the
-  // range is from the current period (with 0 to come back).
-  const steppable = () => ui.state.timeframe.family !== "lookback"
+  // The dates on the right, between the [ ] that step them, and how far
+  // the range is from the current period (with 0 to come back).
   const offsetText = createMemo(() => offsetLabel(ui.state.timeframe.period, periodOffset(ui.state.timeframe, appNow(), cycleConfig())))
   const timeframeWidth = () => bounds().label.length + 4 + (offsetText() ? offsetText().length + 11 : 0)
   // The card leaves the Up logo its columns; border and padding take 4.
@@ -272,6 +271,7 @@ export function OverviewTab(props: { focused: SectionId }) {
   // would still take a column).
   const gap = () => <text wrapMode="none" fg={ink.label}>{chipsFit().gap}</text>
   /** A range chip as its own text: a click on it chooses it. */
+  const stepPointer = (delta: -1 | 1) => onPointer((s) => s === "bar" || s === "overview" || s === "overview.range", () => stepOverviewRange(ui, delta, data))
   const chipText = (label: string, idx: number, active: () => boolean) => (
     <text wrapMode="none" fg={ink.label} onMouseDown={onPointer((s) => s === "bar" || s === "overview" || s === "overview.range", () => {
       ui.applyJump("ov.range")
@@ -411,6 +411,12 @@ export function OverviewTab(props: { focused: SectionId }) {
     </box>
   )
 
+  // The Custom range dialog's fields as a range, while both read.
+  const readsAs = (edit: { start: { value: string }; end: { value: string } }) => {
+    const read = readCustomRange(edit.start.value, edit.end.value, today())
+    return "error" in read ? null : read
+  }
+
   // A component, not a function call in JSX: its card stays mounted while
   // the view changes (a remounted card has no measured width for a frame or
   // two, so its border picker and legend would blink out).
@@ -514,17 +520,21 @@ export function OverviewTab(props: { focused: SectionId }) {
             <text wrapMode="none" fg={ink.rule}>{chipsFit().separator}</text>
             {chipText("Custom", CUSTOM_CHIP, () => ui.state.timeframe.family === "custom")}
           </box>
+          {/* The dates, between the [ and ] that step them (a click on
+              one steps too), after how far back the period is. */}
           <Show when={showTimeframe()}>
-            <text flexShrink={0} wrapMode="none">
+            <box flexDirection="row" flexShrink={0}>
               <Show when={offsetText()}>
-                <S fg={ink.note}>{`${offsetText()} · `}</S>
-                <S fg={tone.key} bold>{"0"}</S>
-                <S fg={ink.note}>{" now   "}</S>
+                <text wrapMode="none">
+                  <S fg={ink.note}>{`${offsetText()} · `}</S>
+                  <S fg={tone.key} bold>{"0"}</S>
+                  <S fg={ink.note}>{" now   "}</S>
+                </text>
               </Show>
-              <S fg={steppable() ? ink.note : theme.canvas}>{"‹ "}</S>
-              <S fg={tone.scope}>{bounds().label}</S>
-              <S fg={steppable() ? ink.note : theme.canvas}>{" ›"}</S>
-            </text>
+              <text wrapMode="none" onMouseDown={stepPointer(-1)}><S fg={tone.key} bold>{"["}</S></text>
+              <text wrapMode="none" fg={tone.scope}>{` ${bounds().label} `}</text>
+              <text wrapMode="none" onMouseDown={stepPointer(1)}><S fg={tone.key} bold>{"]"}</S></text>
+            </box>
           </Show>
         </box>
       </SectionCard>
@@ -547,7 +557,7 @@ export function OverviewTab(props: { focused: SectionId }) {
       </Show>
       <Show when={ui.state.customEdit}>
         {(edit: () => NonNullable<typeof ui.state.customEdit>) => (
-          <Modal title="Custom range" width={40} hints="tab field · enter apply · esc cancel">
+          <Modal title="Custom range" width={54} hints="tab field · ↑↓ a day, ⇧ a week · enter apply">
             <text wrapMode="none">
               <S fg={edit().field === 0 ? ink.figure : ink.label} bold={edit().field === 0}>{"Start  "}</S>
               <TextInput field={edit().start} focused={edit().field === 0} />
@@ -556,7 +566,15 @@ export function OverviewTab(props: { focused: SectionId }) {
               <S fg={edit().field === 1 ? ink.figure : ink.label} bold={edit().field === 1}>{"End    "}</S>
               <TextInput field={edit().end} focused={edit().field === 1} />
             </text>
-            <text fg={edit().error ? tone.bad : ink.note} wrapMode="none">{edit().error || "18, 18/11 or 18/11/2025 · both days included"}</text>
+            {/* The range as it reads now, as you type; what it takes while
+                a field doesn't read; the error enter found. */}
+            <Show when={!edit().error} fallback={<text fg={tone.bad} wrapMode="none">{edit().error}</text>}>
+              <Show when={readsAs(edit())} fallback={<text fg={ink.note} wrapMode="none">{CUSTOM_DATE_FORMS}</text>}>
+                {(range: () => { label: string; days: number }) => (
+                  <text wrapMode="none"><S fg={tone.scope}>{range().label}</S><S fg={ink.note}>{` · ${range().days} days`}</S></text>
+                )}
+              </Show>
+            </Show>
           </Modal>
         )}
       </Show>

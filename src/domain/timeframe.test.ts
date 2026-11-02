@@ -1,6 +1,9 @@
 import { describe, expect, test } from "bun:test"
 import {
   applyChip,
+  readCustomRange,
+  stepRange,
+  stepUnit,
   comparisonWindows,
   stepPeriod,
   defaultTimeframe,
@@ -145,4 +148,36 @@ test("calendar consolidation preserves early-year formatting and custom-range re
   early.setFullYear(999)
   expect(toISODay(early)).toBe("999-01-01")
   expect(customRange("1000-01-01", "1000-01-02")).toEqual({ start: "1000-01-01", end: "1000-01-02" })
+})
+
+describe("stepRange", () => {
+  const now = new Date(2026, 10, 2, 12)
+  const tf = { ...defaultTimeframe(now), family: "lookback" as const, lookback: "1M" as const }
+  test("a rolling range steps to the custom range of its days before it, and back to itself", () => {
+    const rolling = timeframeBounds(tf, now)
+    expect(rolling).toMatchObject({ start: "2026-10-02", end: "2026-11-02" })
+    const back = stepRange(tf, -1, now)
+    expect(back).toMatchObject({ family: "custom", custom: { start: "2026-08-31", end: "2026-10-01" } })
+    expect(stepRange(stepRange(back, -1, now), 1, now)).toEqual(back)
+    // Forward again, or 0 (now) from further back: the rolling range again.
+    expect(stepRange(back, 1, now)).toMatchObject({ family: "lookback", lookback: "1M" })
+    expect(timeframeNow(stepRange(back, -1, now), now)).toMatchObject({ family: "lookback", lookback: "1M" })
+  })
+  test("periods step a period and custom ranges their length; the footer names the step", () => {
+    const month = applyChip(tf, 6, now)
+    expect(timeframeBounds(stepRange(month, -1, now), now)).toMatchObject({ start: "2026-10-01", end: "2026-10-31" })
+    expect(stepUnit(month)).toBe("month")
+    expect(stepUnit(tf)).toBe("month")
+    expect(stepUnit({ ...tf, lookback: "3M" })).toBe("3 months")
+    expect(stepUnit({ ...tf, family: "custom", custom: { start: "2026-10-01", end: "2026-10-14" } })).toBe("14 days")
+  })
+})
+
+describe("readCustomRange", () => {
+  test("a range with its label and length, or what's wrong and where", () => {
+    expect(readCustomRange("oct", "", "2026-11-02")).toEqual({ start: "2026-10-01", end: "2026-11-02", label: "1 Oct – 2 Nov 2026", days: 33 })
+    expect(readCustomRange("oct", "oct", "2026-11-02")).toMatchObject({ start: "2026-10-01", end: "2026-10-31", days: 31 })
+    expect(readCustomRange("nope", "", "2026-11-02")).toMatchObject({ field: 0 })
+    expect(readCustomRange("today", "-3", "2026-11-02")).toEqual({ error: "End is before start", field: 1 })
+  })
 })

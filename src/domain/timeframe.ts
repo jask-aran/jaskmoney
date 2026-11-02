@@ -1,6 +1,7 @@
 import { addDays, addMonths, appNow, daysBetween, MONTHS, parseDay, parseISODate, toISODay } from "./days"
 import type { Transaction } from "./types"
 import { cycleFor, type CycleConfig } from "./budget"
+import { rangeDayFromText } from "./typedInput"
 
 export type LookbackId = "1M" | "2M" | "3M" | "6M" | "1Y"
 export type PeriodId = "cycle" | "month" | "qtr" | "half" | "fy" | "year"
@@ -150,6 +151,21 @@ export function customRange(start: string, end: string): { start: string; end: s
   return { start, end }
 }
 
+/** The Custom range dialog's two fields, read (rangeDayFromText): the
+ * range with its label and length, or what's wrong and in which field. */
+export function readCustomRange(startText: string, endText: string, today: string):
+  { start: string; end: string; label: string; days: number } | { error: string; field: 0 | 1 } {
+  const start = rangeDayFromText(startText, today, "start")
+  if (start === null) return { error: `Start isn't a date: ${CUSTOM_DATE_FORMS}`, field: 0 }
+  const end = rangeDayFromText(endText, today, "end")
+  if (end === null) return { error: `End isn't a date: ${CUSTOM_DATE_FORMS}`, field: 1 }
+  if (end < start) return { error: "End is before start", field: 1 }
+  return { start, end, label: formatDays(start, end), days: daysBetween(start, end) + 1 }
+}
+
+/** What the Custom range dialog's fields take, briefly. */
+export const CUSTOM_DATE_FORMS = "18/11, 1 oct, oct, -14, today"
+
 export function applyChip(tf: TimeframeState, index: number, now: Date, cycle: CycleConfig = MONTHLY_CYCLE): TimeframeState {
   if (index < 0) index = 0
   const n = chipCount()
@@ -231,7 +247,38 @@ export function timeframeNow(tf: TimeframeState, now: Date, cycle: CycleConfig =
   if (tf.family !== "custom" || !tf.custom) return tf
   const today = toISODay(now)
   const shift = daysBetween(tf.custom.end, today)
-  return { ...tf, custom: { start: addDays(tf.custom.start, shift), end: today } }
+  return rolledBack({ ...tf, custom: { start: addDays(tf.custom.start, shift), end: today } }, now, cycle)
+}
+
+/**
+ * [ and ]: the range before or after this one, every kind stepping. A
+ * period steps a period (stepPeriod); a Custom range by its own length
+ * (stepCustom); a rolling range (1M…1Y, always ending today) becomes the
+ * Custom range of its days before or after it. A Custom range that lands
+ * back on the rolling range's days (stepping forward again, or 0) is that
+ * rolling range again.
+ */
+export function stepRange(tf: TimeframeState, delta: number, now: Date, cycle: CycleConfig = MONTHLY_CYCLE): TimeframeState {
+  if (tf.family === "period") return stepPeriod(tf, delta, cycle)
+  const from: TimeframeState = tf.family === "lookback" ? { ...tf, family: "custom", custom: rangeOf(timeframeBounds(tf, now, cycle)) } : tf
+  return rolledBack(stepCustom(from, delta), now, cycle)
+}
+
+const rangeOf = (b: DateBounds) => ({ start: b.start, end: b.end })
+
+/** A Custom range on exactly its rolling range's days: that rolling range. */
+function rolledBack(tf: TimeframeState, now: Date, cycle: CycleConfig): TimeframeState {
+  if (tf.family !== "custom" || !tf.custom) return tf
+  const rolling = timeframeBounds({ ...tf, family: "lookback" }, now, cycle)
+  return tf.custom.start === rolling.start && tf.custom.end === rolling.end ? { ...tf, family: "lookback" } : tf
+}
+
+/** What [ and ] step by, for the footer: "month", "quarter", "2 months",
+ * "45 days". */
+export function stepUnit(tf: TimeframeState): string {
+  if (tf.family === "period") return { cycle: "cycle", month: "month", qtr: "quarter", half: "half", fy: "FY", year: "year" }[tf.period]
+  if (tf.family === "lookback") return { "1M": "month", "2M": "2 months", "3M": "3 months", "6M": "6 months", "1Y": "year" }[tf.lookback]
+  return tf.custom ? `${daysBetween(tf.custom.start, tf.custom.end) + 1} days` : "range"
 }
 
 /** "2 cycles back", "1 quarter ahead"; "" for the current period. */

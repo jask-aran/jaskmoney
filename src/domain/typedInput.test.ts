@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test"
-import { amountFromText, dayFromText } from "./typedInput"
+import { amountFromText, dayFromText, rangeDayFromText, rangeDayText } from "./typedInput"
 
 describe("amountFromText", () => {
   test("reads plain amounts, ignoring $, commas and spaces", () => {
@@ -59,5 +59,31 @@ describe("dayFromText", () => {
     }
     expect(dayFromText("29/2/28", today)).toBe("2028-02-29")
     expect(dayFromText("31", "2026-02-10")).toBeNull()
+  })
+})
+
+describe("rangeDayFromText", () => {
+  const today = "2026-11-02"
+  test("reads what dayFromText does, and today, days back, day and month, and a month alone", () => {
+    expect(rangeDayFromText("18/11/2025", today, "start")).toBe("2025-11-18")
+    expect(rangeDayFromText("today", today, "start")).toBe(today)
+    expect(rangeDayFromText(" Today ", today, "end")).toBe(today)
+    expect(rangeDayFromText("-14", today, "start")).toBe("2026-10-19")
+    expect(rangeDayFromText("1 oct", today, "start")).toBe("2026-10-01")
+    expect(rangeDayFromText("1 October 2025", today, "end")).toBe("2025-10-01")
+    expect(rangeDayFromText("2 Sep 2026", today, "start")).toBe("2026-09-02")
+    // A month: its first day as a start, its last as an end.
+    expect(rangeDayFromText("feb", today, "start")).toBe("2026-02-01")
+    expect(rangeDayFromText("feb", today, "end")).toBe("2026-02-28")
+    expect(rangeDayFromText("Sept 24", today, "end")).toBe("2024-09-30")
+    // A blank end is today; a blank start isn't a date.
+    expect(rangeDayFromText("", today, "end")).toBe(today)
+    expect(rangeDayFromText("", today, "start")).toBeNull()
+    for (const bad of ["ma", "31 feb", "smarch", "1 oct 202", "--3"]) expect(rangeDayFromText(bad, today, "start")).toBeNull()
+  })
+
+  test("writes a day the way it reads one back", () => {
+    for (const iso of ["2026-09-02", "2025-12-31"]) expect(rangeDayFromText(rangeDayText(iso), today, "start")).toBe(iso)
+    expect(rangeDayText("2026-09-02")).toBe("2 Sep 2026")
   })
 })

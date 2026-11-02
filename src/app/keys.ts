@@ -65,16 +65,17 @@ import {
   chipCount,
   chipLabel,
   stepChip,
-  customRange,
-  stepCustom,
-  stepPeriod,
+  CUSTOM_DATE_FORMS,
+  readCustomRange,
+  stepRange,
+  stepUnit,
   timeframeBounds,
   timeframeNow,
   type TimeframeState,
 } from "../domain/timeframe"
 import { characters, editText, isPrintable, textField } from "../domain/textField"
-import { appNow, appToday } from "../domain/days"
-import { amountFromText, dayFromText } from "../domain/typedInput"
+import { addDays, appNow, appToday } from "../domain/days"
+import { amountFromText, rangeDayFromText, rangeDayText } from "../domain/typedInput"
 import { drillFilter } from "../domain/drill"
 import type { CategoryLine } from "../domain/dashboard"
 import { allCategoryLines, overviewRange } from "../state/overviewRange"
@@ -606,29 +607,33 @@ function handleOverviewCustom(ui: UiStore, key: KeyEvent, data?: DataStore): voi
   const edit = ui.state.customEdit
   if (!edit) return
   if (name === "escape") { ui.setState({ customEdit: null }); ui.setStatus("Range unchanged"); return }
-  if (name === "tab" || name === "up" || name === "down") {
+  const today = appToday()
+  const side = edit.field === 0 ? "start" : "end"
+  if (name === "tab") {
     const field: 0 | 1 = edit.field === 0 ? 1 : 0
-    ui.setState({ customEdit: { ...edit, field, [field === 0 ? "start" : "end"]: textField((field === 0 ? edit.start : edit.end).value) } })
+    ui.setState({ customEdit: { ...edit, field, [field === 0 ? "start" : "end"]: textField((field === 0 ? edit.start : edit.end).value), error: "" } })
+    return
+  }
+  // Up and down move the field's date a day later or earlier (shift: a week).
+  if (name === "up" || name === "down") {
+    const day = rangeDayFromText(edit[side].value, today, side)
+    if (day === null) { ui.setState({ customEdit: { ...edit, error: `${side === "start" ? "Start" : "End"} isn't a date: ${CUSTOM_DATE_FORMS}` } }); return }
+    const next = addDays(day, (name === "up" ? 1 : -1) * (key.shift ? 7 : 1))
+    ui.setState({ customEdit: { ...edit, [side]: textField(rangeDayText(next)), error: "" } })
     return
   }
   if (name === "return" || name === "enter") {
-    const today = appToday()
-    const start = dayFromText(edit.start.value, today)
-    if (start === null) { ui.setState({ customEdit: { ...edit, error: "Start must be a date: 18, 18/11 or 18/11/2025" } }); return }
-    const end = dayFromText(edit.end.value, today)
-    if (end === null) { ui.setState({ customEdit: { ...edit, error: "End must be a date: 18, 18/11 or 18/11/2025" } }); return }
-    const range = customRange(start, end)
-    if (typeof range === "string") { ui.setState({ customEdit: { ...edit, error: range } }); return }
-    const tf: TimeframeState = { ...ui.state.timeframe, family: "custom", custom: range }
+    const read = readCustomRange(edit.start.value, edit.end.value, today)
+    if ("error" in read) { ui.setState({ customEdit: { ...edit, field: read.field, error: read.error } }); return }
+    const tf: TimeframeState = { ...ui.state.timeframe, family: "custom", custom: { start: read.start, end: read.end } }
     ui.setTimeframe(tf)
     ui.setState({ customEdit: null })
     ui.setDashChipCursor(CUSTOM_CHIP)
-    ui.setStatus(`Custom · ${timeframeBounds(tf, appNow()).label}`)
+    ui.setStatus(`Custom · ${read.label} · [ ] step by ${read.days} days`)
     return
   }
-  const key2 = edit.field === 0 ? "start" : "end"
-  const next = editText(edit[key2], key)
-  if (next) ui.setState({ customEdit: { ...edit, [key2]: next, error: "" } })
+  const next = editText(edit[side], key)
+  if (next) ui.setState({ customEdit: { ...edit, [side]: next, error: "" } })
 }
 
 function handleSettingsFactoryReset(ui: UiStore, key: KeyEvent, data?: DataStore): void {
@@ -1979,18 +1984,7 @@ function handleOverview(ui: UiStore, key: KeyEvent, data?: DataStore): void {
     return
   }
   if (name === "[" || seq === "[" || name === "]" || seq === "]") {
-    const delta = name === "[" || seq === "[" ? -1 : 1
-    if (ui.state.timeframe.family === "period") {
-      const tf = stepPeriod(ui.state.timeframe, delta, cycle)
-      ui.setTimeframe(tf)
-      ui.setStatus(`${PERIOD_LABEL[tf.period]} · ${timeframeBounds(tf, clock, cycle).label}`)
-    } else if (ui.state.timeframe.family === "custom") {
-      const tf = stepCustom(ui.state.timeframe, delta)
-      ui.setTimeframe(tf)
-      ui.setStatus(`Custom · ${timeframeBounds(tf, clock, cycle).label}`)
-    } else {
-      ui.setStatus(`${ui.state.timeframe.lookback} always ends today · [ ] step Cycle, Month… and Custom ranges`)
-    }
+    stepOverviewRange(ui, name === "[" || seq === "[" ? -1 : 1, data)
     return
   }
   // Drill-down (Go app): enter opens Transactions filtered to the focused
@@ -2019,6 +2013,7 @@ function handleOverview(ui: UiStore, key: KeyEvent, data?: DataStore): void {
     settleData(ui, data.saveUiPrefs({ zeroAxis: !data.state.uiPrefs.zeroAxis }), () => ui.setStatus(data.state.uiPrefs.zeroAxis ? "Balance charts from $0" : "Balance charts fit their balances"))
     return
   }
+  if (shifted(key, "c") && !key.ctrl && !key.meta) { openCustomRange(ui, cycle); return }
   if (name === "c" && !key.ctrl && !key.meta) {
     // Home: the current budget cycle, whatever the range was.
     const tf = applyChip({ ...ui.state.timeframe, family: "period", period: "cycle" }, LOOKBACKS.length, appNow(), cycle)
@@ -2028,6 +2023,26 @@ function handleOverview(ui: UiStore, key: KeyEvent, data?: DataStore): void {
     return
   }
   if (name === "escape" && ui.state.focusedSection !== "none") ui.clearFocus()
+}
+
+/** [ or ] (or a click on one in the Date Range card): the range before or
+ * after this one (stepRange). */
+export function stepOverviewRange(ui: UiStore, delta: -1 | 1, data?: DataStore): void {
+  const clock = appNow()
+  const cycle = data?.cycle()
+  const was = ui.state.timeframe
+  const tf = stepRange(was, delta, clock, cycle)
+  ui.setTimeframe(tf)
+  ui.setDashChipCursor(activeChipIndex(tf))
+  const kind = tf.family === "period" ? PERIOD_LABEL[tf.period] : tf.family === "lookback" ? tf.lookback : "Custom"
+  ui.setStatus(`${kind} · ${timeframeBounds(tf, clock, cycle).label}${tf.family === "custom" && was.family === "lookback" ? " · ] steps back to today" : ""}`)
+}
+
+/** The Custom range dialog, starting from the last custom range or the
+ * range on screen. */
+function openCustomRange(ui: UiStore, cycle: CycleConfig | undefined): void {
+  const from = ui.state.timeframe.custom ?? timeframeBounds(ui.state.timeframe, appNow(), cycle)
+  ui.setState({ customEdit: { start: textField(rangeDayText(from.start)), end: textField(rangeDayText(from.end)), field: 0, error: "" } })
 }
 
 export function handleOverviewRange(ui: UiStore, key: KeyEvent, data?: DataStore): void {
@@ -2049,10 +2064,7 @@ export function handleOverviewRange(ui: UiStore, key: KeyEvent, data?: DataStore
     return
   }
   if ((name === "return" || name === "enter") && ui.state.dashChipCursor === CUSTOM_CHIP) {
-    // Custom asks for dates, starting from the last custom range or the
-    // range on screen.
-    const from = ui.state.timeframe.custom ?? timeframeBounds(ui.state.timeframe, clock, cycle)
-    ui.setState({ customEdit: { start: textField(from.start), end: textField(from.end), field: 0, error: "" } })
+    openCustomRange(ui, cycle)
     return
   }
   if (name === "return" || name === "enter") {
@@ -2103,6 +2115,8 @@ export function drillDown(ui: UiStore, data: DataStore, line?: CategoryLine) {
 }
 
 type HintState = Pick<UiState, "focusedSection" | "drillReturn" | "chartViews"> & {
+  /** What [ and ] step the Overview's range by (stepUnit). */
+  stepUnit?: string
   /** The Overview's chart panes on screen (one: no bottom-chart keys). */
   overviewCharts?: 1 | 2
   /** From the data store: the Transactions table is the Uncategorised view. */
@@ -2513,7 +2527,7 @@ const scopes: Record<ScopeId, ScopeEntry> = {
       if (state?.focusedSection === "ov.categories") return [
         { key: "j/k", desc: "move" },
         { key: "enter", desc: "transactions" },
-        { key: "[ ]", desc: "prev/next range" },
+        { key: "[ ]", desc: `prev/next ${state?.stepUnit ?? "range"}` },
         { key: "esc", desc: "done" },
       ]
       return [
@@ -2521,12 +2535,14 @@ const scopes: Record<ScopeId, ScopeEntry> = {
         ...(state?.focusedSection === "ov.chart" || state?.focusedSection === "ov.chart2" ? [{ key: "enter", desc: "transactions" }] : []),
         { key: "h/l", desc: "chart" },
         { key: "d/D", desc: "range" },
-        { key: "[ ]", desc: "prev/next" },
+        { key: "[ ]", desc: `prev/next ${state?.stepUnit ?? "range"}` },
         { key: "c", desc: "this cycle", label: "Range: this cycle" },
         { key: "a", desc: "account", label: "Next spending account" },
         { key: "i", desc: "review", command: "txn:uncategorised" },
         { key: "/", desc: "search", command: "txn:filter" },
         { key: "?", desc: "smart search", command: "txn:smart-search" },
+        // Past the footer's eight: in the palette (the Custom chip shows too).
+        { key: "C", desc: "custom range", label: "Range: custom dates" },
         ...(state?.overviewCharts !== 1 ? [{ key: "H/L", desc: "bottom chart" }] : []),
         { key: "0", desc: "now", label: "Range: back to now" },
         ...(state?.chartViews.some((i) => CHART_VIEWS[i]?.group === "Balances") ? [{ key: "z", desc: "$0 axis" }] : []),
@@ -2538,10 +2554,10 @@ const scopes: Record<ScopeId, ScopeEntry> = {
   "overview.range": {
     handle: handleOverviewRange,
     list: true,
-    hints: () => [
+    hints: (state) => [
       { key: "h/l", desc: "chip" },
       { key: "enter", desc: "apply" },
-      { key: "[ ]", desc: "prev/next range" },
+      { key: "[ ]", desc: `prev/next ${state?.stepUnit ?? "range"}` },
       { key: "esc", desc: "done" },
     ],
   },
@@ -2571,6 +2587,7 @@ export function hintState(ui: UiStore, data?: DataStore): HintState {
     focusedSection: ui.state.focusedSection,
     drillReturn: ui.state.drillReturn,
     chartViews: ui.state.chartViews,
+    stepUnit: stepUnit(ui.state.timeframe),
     overviewCharts: ui.state.overviewCharts,
     uncategorisedOnly: data?.state.uncategorisedOnly,
     tagReview: !!data?.state.tagReview,

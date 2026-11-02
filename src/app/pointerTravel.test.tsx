@@ -216,3 +216,19 @@ test("a click on any column of a Date Range chip chooses that chip: each chip is
     } finally { t.renderer.destroy() }
   }
 })
+
+test("a click on the Date Range's [ or ] steps the range, as the keys do; a rolling range steps too", async () => {
+  const t = await overview()
+  const y = regionRects("overview").find((r) => r.id === "ov.range")!.rect.y + 1
+  const row = () => t.captureCharFrame().split("\n")[y]!
+  const dates = () => /\[ (.+) \]/.exec(row())![1]
+  const was = dates()
+  await t.mockMouse.click(row().lastIndexOf("["), y)
+  await t.renderOnce()
+  expect(ui.state.timeframe.family).toBe("custom")
+  expect(dates()).not.toBe(was)
+  await t.mockMouse.click(row().lastIndexOf("]"), y)
+  await t.renderOnce()
+  expect(ui.state.timeframe).toMatchObject({ family: "lookback", lookback: "1M" })
+  expect(dates()).toBe(was)
+})

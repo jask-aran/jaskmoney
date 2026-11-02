@@ -186,7 +186,7 @@ test("the Date Range chips all show at every width, tightening before anything i
     expect(line).toMatch(/ (Cycle|Cyc) .* (Month|Mth) .* (Year|Yr) /)
     // The card's right border is intact: nothing ran past it.
     expect(line.trimEnd().match(/│/g)!.length).toBeGreaterThanOrEqual(2)
-    shown[width] = line.includes("‹")
+    shown[width] = /\[ .+ \]/.test(line)
     t.renderer.destroy()
   }
   expect(shown[160]).toBe(true)
@@ -212,4 +212,23 @@ test("the two chart panes are the same height, an odd line widening the gap betw
     expect(full[bottoms[1]!]!.match(/╯/g)!.length).toBe(2)
     t.renderer.destroy()
   }
+})
+
+test("the Custom range dialog says the range as it reads while typing, what it takes when it doesn't, and the error enter found", async () => {
+  const t = await overview(140, 40)
+  handleKey(ui, key("c", { shift: true, sequence: "C" }), data)
+  const lines = async () => { await t.renderOnce(); return t.captureCharFrame().split("\n") }
+  expect((await lines()).some((l) => l.includes("Start  20 Sep 2026"))).toBe(true)
+  handleKey(ui, key("u", { ctrl: true }), data)
+  for (const c of "sep") handleKey(ui, key(c), data)
+  expect((await lines()).some((l) => l.includes("1 Sep – 20 Oct 2026 · 50 days"))).toBe(true)
+  handleKey(ui, key("u", { ctrl: true }), data)
+  handleKey(ui, key("z"), data)
+  expect((await lines()).some((l) => l.includes("│ 18/11, 1 oct, oct, -14, today"))).toBe(true)
+  handleKey(ui, key("return"), data)
+  const error = (await lines()).find((l) => l.includes("Start isn't a date"))!
+  // Whole: the dialog is wide enough for it.
+  expect(error).toMatch(/Start isn't a date: 18\/11, 1 oct, oct, -14, today +│/)
+  handleKey(ui, key("escape"), data)
+  t.renderer.destroy()
 })

@@ -1,4 +1,4 @@
-import { parseDay } from "./days"
+import { MONTHS, addDays, addMonths, parseDay } from "./days"
 
 /** Parse money with arithmetic, brackets (up to 128 levels) and unary minus; ignore $, commas and spaces, round to cents or return null. */
 export function amountFromText(text: string): number | null {
@@ -65,4 +65,48 @@ export function dayFromText(text: string, today: string): string | null {
   const month = match[3] ?? today.slice(5, 7)
   const year = match[4] ? match[4].length === 2 ? `20${match[4]}` : match[4] : today.slice(0, 4)
   return parseDay(`${year}-${month.padStart(2, "0")}-${day.padStart(2, "0")}`)
+}
+
+const MONTH_NAMES = ["january", "february", "march", "april", "may", "june", "july", "august", "september", "october", "november", "december"]
+
+/** A month named by its first three letters or more ("oct", "October"): 1–12. */
+function monthNumber(word: string): number | null {
+  if (word.length < 3) return null
+  const at = MONTH_NAMES.findIndex((name) => name.startsWith(word))
+  return at < 0 ? null : at + 1
+}
+
+const year4 = (text: string | undefined, today: string) => (text ? (text.length === 2 ? `20${text}` : text) : today.slice(0, 4))
+
+/**
+ * A Custom range's start or end as typed: everything dayFromText reads
+ * (18, 18/11, 18/11/2025, 2025-11-18), and also `today`, `-14` (14 days
+ * ago), a day and month ("1 oct", "1 October 2025") and a month alone
+ * ("oct", "oct 2025": its 1st as a start, its last day as an end). A blank
+ * end is today. Months without a year are this year's.
+ */
+export function rangeDayFromText(text: string, today: string, side: "start" | "end"): string | null {
+  const source = text.trim().toLowerCase()
+  if (source === "" ) return side === "end" ? today : null
+  if (source === "today") return today
+  const ago = /^-(\d{1,4})$/.exec(source)
+  if (ago) return addDays(today, -Number(ago[1]))
+  const dayMonth = /^(\d{1,2})\s+([a-z]+)(?:\s+(\d{2}|\d{4}))?$/.exec(source)
+  if (dayMonth) {
+    const month = monthNumber(dayMonth[2]!)
+    return month ? parseDay(`${year4(dayMonth[3], today)}-${String(month).padStart(2, "0")}-${dayMonth[1]!.padStart(2, "0")}`) : null
+  }
+  const monthOnly = /^([a-z]+)(?:\s+(\d{2}|\d{4}))?$/.exec(source)
+  if (monthOnly) {
+    const month = monthNumber(monthOnly[1]!)
+    if (!month) return null
+    const first = parseDay(`${year4(monthOnly[2], today)}-${String(month).padStart(2, "0")}-01`)
+    return first && side === "end" ? addDays(addMonths(first, 1), -1) : first
+  }
+  return dayFromText(text, today)
+}
+
+/** A day as the Custom range dialog writes it: "2 Sep 2026". */
+export function rangeDayText(iso: string): string {
+  return `${Number(iso.slice(8, 10))} ${MONTHS[Number(iso.slice(5, 7)) - 1]} ${iso.slice(0, 4)}`
 }
