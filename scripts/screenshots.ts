@@ -1,35 +1,32 @@
 /**
- * The README's screenshots: the built app's demo (`--demo`, made-up data)
- * in a real terminal (scripts/terminal.ts), one per tab, cropped to the
- * terminal.
+ * The README's screenshots (scripts/cast.ts): the demo (`--demo`, made-up
+ * data), one per tab, drawn as the recordings are.
  *
  *   bun run screenshots [binary]      (default: dist/jaskmoney, built first)
  *
  * Writes docs/screenshots/*.png.
  */
-import { writeFileSync } from "node:fs"
-import { join } from "node:path"
-import { appBinary, openTerminal } from "./terminal"
+import { appBinary, draw, startApp } from "./cast"
 
 /** Each shot: the key that brings it up, and its file. */
 const SHOTS = [
-  { file: "transactions.png", keys: "2" },
-  { file: "budgets.png", keys: "3" },
-  { file: "settings.png", keys: "4" },
+  { file: "transactions.png", key: "2" },
+  { file: "budgets.png", key: "3" },
+  { file: "settings.png", key: "4" },
 ]
 
-const term = await openTerminal(appBinary(), ["--demo"])
+const app = startApp(appBinary(), ["--demo"])
+const taken: number[] = []
 try {
   // The app starts, loads the demo and draws its charts in.
-  await Bun.sleep(6000)
+  await app.waitFor("Demo mode")
+  await Bun.sleep(2000)
   for (const shot of SHOTS) {
-    await term.type(shot.keys)
-    await Bun.sleep(2500)
-    const box = await term.screen()
-    const { data } = await term.send("Page.captureScreenshot", { format: "png", clip: { x: box.x, y: box.y, width: box.width, height: box.height, scale: 1 } })
-    writeFileSync(join("docs/screenshots", shot.file), Buffer.from(data, "base64"))
-    console.log(`docs/screenshots/${shot.file}`)
+    app.press(shot.key)
+    await Bun.sleep(2000)
+    taken.push(app.now())
   }
 } finally {
-  await term.close()
+  app.close()
 }
+await Promise.all(SHOTS.map((shot, i) => draw(app.cast(taken[i]! - 1, taken[i]!), 20, { png: `docs/screenshots/${shot.file}` }).then(() => console.log(`docs/screenshots/${shot.file}`))))

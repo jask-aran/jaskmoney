@@ -103,8 +103,8 @@ that, the merchant and the amount.
 bun run dev           # restarts on save
 bun run typecheck
 bun run test
-bun run screenshots   # the README's images: the demo in a real terminal (ttyd, Chrome, a Nerd Font)
-bun run recordings    # its GIFs: the setup's tour, a loop of each demo
+bun run recordings    # the README's GIFs and screenshots: docs/media.md
+bun run screenshots
 ```
 
 SolidJS on [OpenTUI](https://github.com/sst/opentui), SQLite through `bun:sqlite`. A release: set `version` in
