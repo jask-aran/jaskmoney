@@ -245,6 +245,23 @@ export function createClientStore(initialLink: CoreLink) {
   const askVerdict: AskVerdict<Transaction> = (words, t) => verdictAt(nearMissesShown() ? NEAR_AT : MATCH_AT)(words, t)
   const askRuns = createLatestRun()
 
+  // Map insertion order is recency. Active terms stay even if a filter
+  // has more than eight; leaving that filter restores the limit.
+  function trimAskVerdicts() {
+    const active = new Set(askTerms(state.filterExpr ? unwrap(state.filterExpr) : null).map((words) => words.toLowerCase()))
+    for (const key of askVerdicts.keys()) {
+      if (askVerdicts.size <= 8) break
+      if (!active.has(key)) askVerdicts.delete(key)
+    }
+  }
+  createRoot(() => createEffect(on(() => state.filterExpr, () => {
+    for (const words of askTerms(state.filterExpr ? unwrap(state.filterExpr) : null)) {
+      const key = words.toLowerCase(), known = askVerdicts.get(key)
+      if (known) { askVerdicts.delete(key); askVerdicts.set(key, known) }
+    }
+    trimAskVerdicts()
+  })))
+
   /** The Uncategorised view's narrowing. */
   const inView = (t: Transaction) => (!state.uncategorisedOnly || (isOrdinaryFlow(t) && isUncategorised(t)))
     && (!state.tagReview || (state.tagReview.candidates[t.id]?.confidence ?? 0) >= TAG_SHOW_AT)
@@ -423,7 +440,9 @@ export function createClientStore(initialLink: CoreLink) {
       for (const words of terms) {
         const key = words.toLowerCase()
         const known = askVerdicts.get(key) ?? new Map<number, number>()
+        askVerdicts.delete(key)
         askVerdicts.set(key, known)
+        trimAskVerdicts()
         // Rows whose match turns on these words: not ruled out by the rest of
         // the filter, nor matched without them (a covered category's rows).
         const others: AskVerdict<Transaction> = (w, t) => w.toLowerCase() === key ? undefined : askVerdict(w, t)
@@ -570,7 +589,6 @@ export function createClientStore(initialLink: CoreLink) {
   /** R's list: the repeat offers, then the model's (one per expression and
    * category). */
   const allRuleOffers = lazyMemo(() => {
-    void state.version
     const repeat = ruleOffersFor()
     const saved = new Set(state.savedFilters.map((f) => f.expr.toLowerCase()))
     const ai = unwrap(state.aiRuleOffers).filter((o) => !saved.has(o.expr.toLowerCase()) && !repeat.some((r) => r.expr.toLowerCase() === o.expr.toLowerCase() && r.categoryId === o.categoryId && r.tagId === o.tagId))
@@ -583,7 +601,7 @@ export function createClientStore(initialLink: CoreLink) {
   const [ruleOfferCount, setRuleOfferCount] = createSignal(0)
   createRoot(() => {
     let timer: ReturnType<typeof setTimeout> | undefined
-    createEffect(on(() => [state.version, state.aiRuleOffers, state.savedFilters, state.ready], () => {
+    createEffect(on(() => [transactions(), state.categoryChoices, state.rules, state.savedFilters, state.categories, state.tags, state.aiRuleOffers, state.ready], () => {
       clearTimeout(timer)
       timer = setTimeout(() => setRuleOfferCount(allRuleOffers().length), 150)
     }))

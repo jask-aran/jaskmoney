@@ -10,6 +10,15 @@ import { setTransactionCategory } from "../db/client"
 import { account, category, transaction } from "../testing/fixtures"
 import { key } from "../testing/keys"
 import { testDb } from "../testing/scoped"
+import { mkdtempSync, writeFileSync } from "node:fs"
+import { tmpdir } from "node:os"
+import { join } from "node:path"
+
+function temporaryCsv(csv: string): string {
+  const path = join(mkdtempSync(join(tmpdir(), "jaskmoney-mvp-import-")), "anz.csv")
+  writeFileSync(path, csv)
+  return path
+}
 
 describe("MVP slice: filter + categorize", () => {
   beforeEach(() => {
@@ -69,7 +78,7 @@ describe("MVP slice: filter + categorize", () => {
 
   test("categorize apply via picker + real db", async () => {
     data.init(":memory:")
-    await data.commitPreview(buildImportPreview(data.getDb()!, '01/02/2026,"-5.00",TEST COFFEE\n', "anz.csv", DEFAULT_IMPORT_PROFILES[0]!), true)
+    await data.commitPreview(buildImportPreview(data.getDb()!, '01/02/2026,"-5.00",TEST COFFEE\n', temporaryCsv('01/02/2026,"-5.00",TEST COFFEE\n'), DEFAULT_IMPORT_PROFILES[0]!), true)
     ui.switchTab("manager")
     ui.setState({ focusedSection: "mgr.transactions", managerCursor: 0, catPicker: null })
     const targetId = data.scopedTransactions()[0]!.id
@@ -98,7 +107,7 @@ describe("MVP slice: filter + categorize", () => {
 
   test("tag picker stages and applies the focused tag and sort keys change ordering", async () => {
     data.init(":memory:")
-    await data.commitPreview(buildImportPreview(data.getDb()!, '01/02/2026,"-5.00",TEST COFFEE\n', "anz.csv", DEFAULT_IMPORT_PROFILES[0]!), true)
+    await data.commitPreview(buildImportPreview(data.getDb()!, '01/02/2026,"-5.00",TEST COFFEE\n', temporaryCsv('01/02/2026,"-5.00",TEST COFFEE\n'), DEFAULT_IMPORT_PROFILES[0]!), true)
     ui.switchTab("manager")
     ui.setState({
       focusedSection: "mgr.transactions",
@@ -187,18 +196,20 @@ describe("default ANZ profile import", () => {
     const db = data.getDb()!
     const profile = DEFAULT_IMPORT_PROFILES[0]!
     const csv = '01/02/2026,-5,COFFEE'
-    const first = buildImportPreview(db, csv, "anz.csv", profile)
+    const first = buildImportPreview(db, csv, temporaryCsv(csv), profile)
     first.rulesEnabled = false
     await data.commitPreview(first, true)
     const oldId = data.state.transactions[0]!.id
     const category = data.state.categories.find((c) => c.name === "Dining & Drinks")!
     data.setState({ savedFilters: [{ id: "coffee", name: "Coffee", expr: "desc:COFFEE" }] })
     await data.createSettingsRule({ name: "Coffee", savedFilterId: "coffee", setCategoryId: category.id, addTagIds: [], enabled: true })
-    const disabled = buildImportPreview(db, '02/02/2026,-6,COFFEE', "anz.csv", profile)
+    const disabledCsv = '02/02/2026,-6,COFFEE'
+    const disabled = buildImportPreview(db, disabledCsv, temporaryCsv(disabledCsv), profile)
     disabled.rulesEnabled = false
     await data.commitPreview(disabled, true)
     expect(data.state.transactions.every((t) => t.categoryName === "Uncategorised")).toBe(true)
-    const next = buildImportPreview(db, csv + '\n03/02/2026,-7,COFFEE', "anz.csv", profile)
+    const nextCsv = csv + '\n03/02/2026,-7,COFFEE'
+    const next = buildImportPreview(db, nextCsv, temporaryCsv(nextCsv), profile)
     expect(next.rulesEnabled).toBe(true)
     await data.commitPreview(next, true)
     expect(data.state.transactions).toHaveLength(3)

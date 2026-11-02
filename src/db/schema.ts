@@ -6,7 +6,7 @@
  * version fallback with an additive migration registry. v7 was the initial
  * partial OpenTUI port. */
 
-export const SCHEMA_VERSION = 34
+export const SCHEMA_VERSION = 35
 
 /** Columns shared by the fresh schema and the v9 migration. Rows imported from
  * CSV keep source = 'csv' and NULL external fields. */
@@ -243,6 +243,12 @@ CREATE TABLE IF NOT EXISTS tag_log (
 CREATE INDEX IF NOT EXISTS tag_log_tag ON tag_log(tag_id, at);
 `
 
+/** v35: latest activity for a transaction/tag or category, and transaction cascades. */
+export const ACTIVITY_LOG_TRANSACTION_INDEXES_SQL = `
+CREATE INDEX IF NOT EXISTS tag_log_transaction_tag ON tag_log(transaction_id, tag_id);
+CREATE INDEX IF NOT EXISTS category_log_transaction_category ON category_log(transaction_id, category_id);
+`
+
 /** v25: rules the AI proposed that you declined, so it isn't asked for them again. */
 export const RULE_DECLINES_SQL = `
 CREATE TABLE IF NOT EXISTS rule_declines (
@@ -426,6 +432,7 @@ ALTER TABLE category_suggestions ADD COLUMN ${SUGGESTION_DISMISSED_COLUMN};
 ${TAG_DISMISSALS_SQL}
 ${CATEGORY_CHOICES_SQL}
 ${ACTIVITY_LOG_SQL}
+${ACTIVITY_LOG_TRANSACTION_INDEXES_SQL}
 ${RULE_DECLINES_SQL}
 ${TAG_PUSHES_SQL}
 ${RULE_TAG_DECLINES_SQL}

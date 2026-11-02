@@ -1,4 +1,4 @@
-import { describe, expect, test } from "bun:test"
+import { describe, expect, onTestFinished, spyOn, test } from "bun:test"
 import type { Db } from "../db/client"
 import { pushTagChange, syncTagLinks } from "./tags"
 import { createUpClient } from "./client"
@@ -32,6 +32,29 @@ function mockClient() {
 }
 
 describe("syncTagLinks", () => {
+  test("writes only link differences and loads pending changes once per sync", () => {
+    const db = database()
+    const food = tag(db, "Food", "Food"), old = tag(db, "Old", "Old"), local = tag(db, "Local")
+    const unchanged = row(db, ["Food"], "up", "unchanged")
+    const changed = row(db, ["Food"], "up", "changed")
+    link(db, unchanged, food)
+    link(db, changed, old)
+    db.query("INSERT INTO tag_pushes VALUES (?, ?, 'add')").run(changed, local)
+    db.query("INSERT INTO tag_pushes VALUES (?, ?, 'remove')").run(unchanged, old)
+    const queries = spyOn(db, "query")
+    onTestFinished(() => queries.mockRestore())
+    const linkWrites = () => queries.mock.calls.filter(([sql]) => /^(INSERT|DELETE).*transaction_tags/.test(sql))
+    expect(syncTagLinks(db)).toEqual({ tagsCreated: 0, linksAdded: 2, linksRemoved: 1 })
+    expect(linkWrites()).toHaveLength(3)
+    expect(links(db, unchanged)).toEqual([food])
+    expect(links(db, changed)).toEqual([food, local])
+    expect(queries.mock.calls.filter(([sql]) => sql.includes("FROM tag_pushes"))).toHaveLength(1)
+    queries.mockClear()
+    expect(syncTagLinks(db)).toEqual({ tagsCreated: 0, linksAdded: 0, linksRemoved: 0 })
+    expect(linkWrites()).toHaveLength(0)
+    expect(queries.mock.calls.filter(([sql]) => sql.includes("FROM tag_pushes"))).toHaveLength(1)
+  })
+
   test.each(["123", "null", '["ok", 1]', "invalid"])("rejects malformed stored tags before writing: %s", json => {
     const db = database(), id = row(db)
     db.query("UPDATE transactions SET ext_tags = ? WHERE id = ?").run(json, id)

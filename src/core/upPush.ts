@@ -122,9 +122,10 @@ export function createUpPush(ctx: CoreContext, deps: { ruleOfferNote: (ids: numb
     let local = 0
     const chosen = new Map<string, { description: string; categoryId: number; times: number }>()
     const logged: { transactionId: number; categoryId: number; previousCategoryId: number | null }[] = []
+    const byId = new Map(transactions().map(t => [t.id, t]))
     try { database.transaction(() => {
       for (const [id, categoryId] of assignments) {
-        const t = transactions().find((x) => x.id === id)
+        const t = byId.get(id)
         if (t && t.categoryId !== categoryId) {
           logged.push({ transactionId: id, categoryId, previousCategoryId: t.categoryId })
           const key = `${t.description.trim().toLowerCase()}\u0000${categoryId}`
@@ -261,7 +262,11 @@ export function createUpPush(ctx: CoreContext, deps: { ruleOfferNote: (ids: numb
     const before = categorySnapshot(assignments)
     setLastRepeat({ kind: "category", categoryId })
     const result = await applyCategories(assignments, "choose", onProgress, () => {
-      const changed = before.filter((row) => transactions().some((t) => t.id === row.id && t.categoryId !== row.categoryId))
+      const byId = new Map(transactions().map(t => [t.id, t]))
+      const changed = before.filter((row) => {
+        const t = byId.get(row.id)
+        return t && t.categoryId !== row.categoryId
+      })
       if (changed.length) recordUndo(`categorised ${changed.length} → ${category.name}`, async () => {
         const summary = await restoreCategories(changed)
         // Only the choices table changes: every row stays as it is.
@@ -362,7 +367,8 @@ export function createUpPush(ctx: CoreContext, deps: { ruleOfferNote: (ids: numb
     const database = session.db
     if (!Object.keys(patch).length) return "Tags unchanged"
     if (how === "picker") setLastRepeat({ kind: "tags", patch: { ...patch } })
-    const before = transactions().filter((t) => txnIds.includes(t.id)).map((t) => ({ id: t.id, tagIds: [...t.tagIds] }))
+    const selected = new Set(txnIds)
+    const before = transactions().filter((t) => selected.has(t.id)).map((t) => ({ id: t.id, tagIds: [...t.tagIds] }))
     const pushes: TagPush[] = []
     const labels: string[] = [], failures: string[] = []
     database.transaction(() => {
@@ -385,11 +391,15 @@ export function createUpPush(ctx: CoreContext, deps: { ruleOfferNote: (ids: numb
     // What changed is read from this database, and undo belongs to it.
     ctx.ensureCurrent(session, "tags were sent to Up")
     failures.push(...result.failures)
+    const byId = new Map(transactions().map(t => [t.id, t]))
     const updated = new Set<number>()
     const reversals: { ids: number[]; patch: TagPatch }[] = []
     for (const [key, action] of Object.entries(patch)) {
       const tagId = Number(key)
-      const changed = before.filter((t) => transactions().some((now) => now.id === t.id && now.tagIds.includes(tagId) !== t.tagIds.includes(tagId))).map((t) => t.id)
+      const changed = before.filter((t) => {
+        const now = byId.get(t.id)
+        return now && now.tagIds.includes(tagId) !== t.tagIds.includes(tagId)
+      }).map((t) => t.id)
       for (const id of changed) updated.add(id)
       if (changed.length) reversals.push({ ids: changed, patch: { [tagId]: action === "add" ? "remove" : "add" } })
     }

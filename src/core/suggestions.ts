@@ -184,7 +184,7 @@ export function createSuggestions(ctx: CoreContext, deps: {
     // Saved once the running round is done: it reads the notes it started with.
     return lane.whenIdle(() => {
       if (!ctx.isCurrent(session)) return 0
-      mutate((db) => saveMerchantNote(db, description, note))
+      ctx.mutateSession(session, "the merchant note was saved", (db) => saveMerchantNote(db, description, note), [])
       if (!ai && !hasJev()) return 0
       const key = merchantKey(description)
       const targets = transactions().filter((t) => merchantKey(t.description) === key && isOrdinaryFlow(t) && isUncategorised(t) && state.suggestions[t.id]).map((t) => t.id)
@@ -218,7 +218,7 @@ export function createSuggestions(ctx: CoreContext, deps: {
    * took; a row Up rejected keeps its suggestion. */
   async function acceptSuggestions(ids: number[], onProgress?: (pushed: number, total: number) => void): Promise<string> {
     const session = ctx.session()
-    refresh()
+    refresh([])
     const assignments = new Map<number, number>()
     for (const id of ids) {
       const suggestion = state.suggestions[id]
@@ -228,19 +228,21 @@ export function createSuggestions(ctx: CoreContext, deps: {
     const before = categorySnapshot(assignments)
     const suggestions = [...assignments.keys()].flatMap((id) => state.suggestions[id] ? [{ ...state.suggestions[id]! }] : [])
     const result = await applyCategories(assignments, "accept", onProgress, () => {
-      const accepted = [...assignments].filter(([id, categoryId]) => transactions().some((t) => t.id === id && t.categoryId === categoryId)).map(([id]) => id)
-      if (accepted.length) recordUndo(`accepted ${count(accepted.length, "suggestion")}`, async () => {
-        const summary = await restoreCategories(before.filter((row) => accepted.includes(row.id)))
+      const byId = new Map(transactions().map(t => [t.id, t]))
+      const accepted = new Set([...assignments].filter(([id, categoryId]) => byId.get(id)?.categoryId === categoryId).map(([id]) => id))
+      if (accepted.size) recordUndo(`accepted ${count(accepted.size, "suggestion")}`, async () => {
+        const summary = await restoreCategories(before.filter((row) => accepted.has(row.id)))
         ctx.mutateSession(session, "suggestions were restored", (db) => {
           unrecordCategoryChoices(db, before.map((row) => ({ description: row.description, categoryId: assignments.get(row.id)!, times: 1 })))
-          saveSuggestions(db, suggestions.filter((s) => accepted.includes(s.transactionId)))
-        })
+          saveSuggestions(db, suggestions.filter((s) => accepted.has(s.transactionId)))
+        }, [])
         return summary
       })
     })
     ctx.ensureCurrent(session, "suggestions were accepted")
-    const accepted = [...assignments].filter(([id, categoryId]) => transactions().some((t) => t.id === id && t.categoryId === categoryId)).map(([id]) => id)
-    ctx.mutateSession(session, "suggestions were accepted", (db) => deleteSuggestions(db, accepted))
+    const byId = new Map(transactions().map(t => [t.id, t]))
+    const accepted = [...assignments].filter(([id, categoryId]) => byId.get(id)?.categoryId === categoryId).map(([id]) => id)
+    ctx.mutateSession(session, "suggestions were accepted", (db) => deleteSuggestions(db, accepted), [])
     return operationSummary(`Accepted ${result.done} suggestion${result.done === 1 ? "" : "s"}`, result) + ruleOfferNote(accepted)
   }
 

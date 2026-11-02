@@ -81,7 +81,10 @@ export function OverviewTab(props: { focused: SectionId }) {
   const cycleConfig = held(() => data.cycle())
   // The range, scope and category spending, shared with the tab's keys.
   // Through the held inputs: hidden, the range doesn't follow every write.
-  const range = createMemo(() => overviewRange({ state: data.state, transactions, cycle: cycleConfig }, ui.state))
+  const rangeAccounts = held(() => data.state.accounts)
+  const rangeSelection = held(() => data.state.accountSelection)
+  const rangeCategories = held(() => data.state.categories)
+  const range = createMemo(() => overviewRange({ state: { accounts: rangeAccounts(), accountSelection: rangeSelection(), categories: rangeCategories() }, transactions, cycle: cycleConfig }, ui.state))
   const clock = () => range().clock
   const bounds = () => range().bounds
   const scope = () => range().scope

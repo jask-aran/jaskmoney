@@ -102,15 +102,26 @@ export function createUpClient({ token, fetch = globalThis.fetch, baseUrl = "htt
     try {
       if (url.origin !== origin) throw new Error("Up pagination URL has a foreign origin")
       for (let retry = 0; ; retry++) {
-        // Refuse redirects so fetch cannot forward credentials to another origin.
-        const response = await fetch(url, { ...options, headers: { Authorization: `Bearer ${token}`, ...(options.body === undefined ? {} : { "Content-Type": "application/json" }) }, redirect: "manual" })
+        const controller = new AbortController()
+        const timer = setTimeout(() => controller.abort(), 30_000)
+        let response: Response
+        let text: string
+        try {
+          // Refuse redirects so fetch cannot forward credentials to another origin.
+          response = await fetch(url, { ...options, signal: controller.signal, headers: { Authorization: `Bearer ${token}`, ...(options.body === undefined ? {} : { "Content-Type": "application/json" }) }, redirect: "manual" })
+          if (response.status === 429 && retry < 3) {
+            void response.body?.cancel().catch(() => {})
+            text = ""
+          } else text = await response.text()
+        } finally { clearTimeout(timer) }
         if (response.status === 429 && retry < 3) {
           const header = response.headers.get("Retry-After")
           const seconds = header === null ? NaN : Number(header)
-          await sleep(Number.isFinite(seconds) && seconds >= 0 ? seconds * 1000 : 1000 * 2 ** retry)
+          const wait = seconds >= 0 ? seconds * 1000 : 1000 * 2 ** retry
+          if (wait > 60_000) throw new UpApiError(429, "Up API Retry-After exceeds 60 seconds")
+          await sleep(wait)
           continue
         }
-        const text = await response.text()
         let body: unknown
         try { body = redactValue(JSON.parse(text)) } catch { body = null }
         if (!response.ok) {

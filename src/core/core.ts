@@ -517,7 +517,8 @@ export function createCore() {
 
   function commitPreview(preview: ImportPreview, skipDuplicates: boolean): string {
     if (!db) throw new Error("db not open")
-    const result = mutate((db) => commitImportPreview(db, preview, skipDuplicates))
+    const rebuilt = commands.previewImport({ path: preview.path, profile: preview.profile })
+    const result = mutate((db) => commitImportPreview(db, rebuilt, skipDuplicates))
     const applied = preview.rulesEnabled && result.transactionIds.length ? applyRules(result.transactionIds) : null
     return `Imported ${result.inserted} rows from ${result.accountName}${result.skippedDupes ? ` (${result.skippedDupes} duplicates ${skipDuplicates ? "skipped" : "forced"})` : ""}${applied?.updatedTransactions ? ` · ${applied.updatedTransactions} rules applied` : ""}`
   }
@@ -736,7 +737,7 @@ export function createCore() {
     csvFiles: (p: { directory: string }) => csvFiles(p.directory),
     previewImport: (p: { path: string; profile: ImportProfile }): ImportPreview => {
       if (!db) throw new Error("db not open")
-      return buildImportPreview(db, readFileSync(p.path, "utf8"), p.path, validateImportProfile(p.profile))
+      return buildImportPreview(db, readFileSync, p.path, validateImportProfile(p.profile))
     },
     commitPreview: (p: { preview: ImportPreview; skipDuplicates: boolean }) => commitPreview(p.preview, p.skipDuplicates),
     /** `off`: the setup's choice of accounts not to sync (Up's ids). */

@@ -46,3 +46,14 @@ describe("profile import", () => {
     expect(preview.rows[0]?.description).toBe("PAYMENT,REFERENCE")
   })
 })
+
+test("parse errors strip controls and limit echoed fields to 32 characters", () => {
+  const db = testDb()
+  const raw = "a\u001b\u0000\u0085\u202e" + "b".repeat(80)
+  for (const csv of [`A;${raw};-5;one`, `A;3/02/2026;${raw};one`]) {
+    const preview = buildImportPreview(db, csv, "test.csv", { ...profile, hasHeader: false })
+    expect(preview.errors).toHaveLength(1)
+    expect(preview.errors[0]!.message).toEndWith(JSON.stringify("a" + "b".repeat(31)))
+    expect(preview.errors[0]!.message).not.toMatch(/[\p{Cc}\p{Cf}]/u)
+  }
+})

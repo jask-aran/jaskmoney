@@ -1,7 +1,7 @@
 import { newestFirst } from "../domain/chronology"
 import { jaskmoneyHome } from "../storage/home"
 import { Database } from "bun:sqlite"
-import { mkdirSync } from "node:fs"
+import { chmodSync, mkdirSync } from "node:fs"
 import { dirname, join } from "node:path"
 import { addTagLink, decodeStoredTags, removeTagLink } from "./tagLinks"
 import {
@@ -17,6 +17,7 @@ import {
   TAG_DISMISSALS_SQL,
   CATEGORY_CHOICES_SQL,
   ACTIVITY_LOG_SQL,
+  ACTIVITY_LOG_TRANSACTION_INDEXES_SQL,
   RULE_DECLINES_SQL,
   TAG_PUSHES_SQL,
   RULE_TAG_DECLINES_SQL,
@@ -55,9 +56,15 @@ export function defaultDbPath(): string {
 
 export function openDb(path: string = defaultDbPath()): Db {
   if (path !== ":memory:") {
-    mkdirSync(dirname(path), { recursive: true })
+    // Owner-only, as the keys beside it are: a new folder is 0700, and
+    // the database 0600 before its write-ahead log exists (SQLite gives
+    // the -wal and -shm files the database's mode).
+    mkdirSync(dirname(path), { recursive: true, mode: 0o700 })
   }
   const db = new Database(path, { create: true })
+  if (path !== ":memory:") {
+    try { chmodSync(path, 0o600) } catch { /* not ours to change (a shared path): leave it */ }
+  }
   db.exec("PRAGMA foreign_keys = ON;")
   db.exec("PRAGMA journal_mode = WAL;")
   ensureSchema(db)
@@ -143,6 +150,7 @@ const MIGRATIONS: Record<number, (db: Db) => void> = {
     db.exec(`INSERT INTO budget_history (scope_kind, target_id, amount, from_date)
       SELECT scope_kind, target_id, amount, NULL FROM budgets`)
   },
+  35: (db) => db.exec(ACTIVITY_LOG_TRANSACTION_INDEXES_SQL),
   30: (db) => {
     db.exec(TAG_CATEGORIES_SQL)
     const columns = db.query<{ name: string }, []>("PRAGMA table_info(tags)").all().map((c) => c.name)

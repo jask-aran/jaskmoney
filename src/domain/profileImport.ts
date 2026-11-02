@@ -1,4 +1,6 @@
-import { basename } from "node:path"
+import { basename, resolve, sep } from "node:path"
+import { existsSync, realpathSync, statSync } from "node:fs"
+import { jaskmoneyHome } from "../storage/home"
 export { matchingProfiles } from "./profileMatch"
 import type { Db } from "../db/client"
 import { ensureAccount, uncategorisedCategoryId } from "../db/client"
@@ -33,6 +35,10 @@ export function parseCsvRecords(text: string, delimiter: string): { records: Csv
   return { records, errors }
 }
 
+function errorField(value: string): string {
+  return value.replace(/[\p{Cc}\p{Cf}]/gu, "").slice(0, 32)
+}
+
 function isoDate(raw: string, format: ImportProfile["dateFormat"]): string | null {
   const values = raw.trim().match(/^(\d{1,4})[\/-](\d{1,2})[\/-](\d{1,4})$/)
   if (!values) return null
@@ -62,7 +68,20 @@ function existingKeys(db: Db, accountId: number): Set<string> {
   return result
 }
 
-export function buildImportPreview(db: Db, text: string, path: string, profile: ImportProfile): ImportPreview {
+/** File readers receive only a checked CSV path; supplied text needs no file access. */
+export function buildImportPreview(db: Db, text: string | ((path: string, encoding: "utf8") => string), path: string, profile: ImportProfile): ImportPreview {
+  if (typeof text === "function") {
+    try {
+      const realPath = realpathSync(path)
+      const home = resolve(jaskmoneyHome())
+      const realHome = existsSync(home) ? realpathSync(home) : home
+      const inside = (file: string, directory: string) => file === directory || file.startsWith(directory.endsWith(sep) ? directory : directory + sep)
+      const stat = statSync(realPath)
+      if (!realPath.toLowerCase().endsWith(".csv") || !stat.isFile() || stat.size > 20 * 1024 * 1024 ||
+        inside(resolve(path), home) || inside(realPath, realHome)) throw new Error("invalid import file")
+      text = text(realPath, "utf8")
+    } catch { throw new Error("Only .csv files can be imported") }
+  }
   const account = db.query(`SELECT id, name, type FROM accounts WHERE name = ?`).get(profile.account) as { id: number; name: string; type: string } | null
   if (account && account.type !== profile.accountType) throw new Error(`account ${account.name} is ${account.type}, profile expects ${profile.accountType}`)
   const parsed = parseCsvRecords(text, profile.delimiter)
@@ -78,9 +97,9 @@ export function buildImportPreview(db: Db, text: string, path: string, profile: 
     const amountRaw = record.fields[profile.amountColumn]!.trim()
     if (!dateRaw || !amountRaw) continue
     const dateISO = isoDate(dateRaw, profile.dateFormat)
-    if (!dateISO) { errors.push({ sourceLine: record.line, field: "date", message: `invalid ${profile.dateFormat} date ${JSON.stringify(dateRaw)}` }); continue }
+    if (!dateISO) { errors.push({ sourceLine: record.line, field: "date", message: `invalid ${profile.dateFormat} date ${JSON.stringify(errorField(dateRaw))}` }); continue }
     const amount = parseAmount(amountRaw, profile.amountStrip)
-    if (amount == null) { errors.push({ sourceLine: record.line, field: "amount", message: `invalid amount ${JSON.stringify(amountRaw)}` }); continue }
+    if (amount == null) { errors.push({ sourceLine: record.line, field: "amount", message: `invalid amount ${JSON.stringify(errorField(amountRaw))}` }); continue }
     const descriptionFields = profile.descriptionJoin
       ? record.fields.slice(profile.descriptionColumns[0]!)
       : profile.descriptionColumns.map((i) => record.fields[i]!)

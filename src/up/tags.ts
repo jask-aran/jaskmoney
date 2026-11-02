@@ -26,21 +26,36 @@ export function syncTagLinks(db: Db): { tagsCreated: number; linksAdded: number;
   }
   const providerTags = db.query<{ id: number; name: string; ext_id: string }, []>("SELECT id, name, ext_id FROM tags WHERE ext_id IS NOT NULL").all()
     .filter(tag => !isIgnore(tag.name) && !isIgnore(tag.ext_id))
+  const providerByExt = new Map(providerTags.map(tag => [tag.ext_id, tag.id]))
+  const providerIds = new Set(providerTags.map(tag => tag.id))
+  const stored = new Map<number, Set<number>>()
+  for (const link of db.query<{ transaction_id: number; tag_id: number }, []>(
+    "SELECT transaction_id, tag_id FROM transaction_tags").all()) {
+    let ids = stored.get(link.transaction_id)
+    if (!ids) stored.set(link.transaction_id, ids = new Set())
+    ids.add(link.tag_id)
+  }
+  const pending = new Map<number, Map<number, "add" | "remove">>()
+  for (const change of db.query<{ transaction_id: number; tag_id: number; action: "add" | "remove" }, []>(
+    "SELECT transaction_id, tag_id, action FROM tag_pushes").all()) {
+    let changes = pending.get(change.transaction_id)
+    if (!changes) pending.set(change.transaction_id, changes = new Map())
+    changes.set(change.tag_id, change.action)
+  }
   for (const row of rows) {
-    const wanted = new Set(row.tags)
-    const pending = db.query<{ tag_id: number; action: "add" | "remove" }, [number]>(
-      "SELECT tag_id, action FROM tag_pushes WHERE transaction_id = ?").all(row.id)
-    const waitingIds = new Set(pending.map((p) => p.tag_id))
-    for (const tag of providerTags) {
-      if (waitingIds.has(tag.id)) continue
-      if (wanted.has(tag.ext_id)) linksAdded += addTagLink(db, row.id, tag.id)
-      else linksRemoved += removeTagLink(db, row.id, tag.id)
+    const current = stored.get(row.id) ?? new Set<number>()
+    // Local and IGNORE links survive unless a queued change overrides them.
+    const wanted = new Set([...current].filter(id => !providerIds.has(id)))
+    for (const extId of row.tags) {
+      const id = providerByExt.get(extId)
+      if (id !== undefined) wanted.add(id)
     }
-    // Waiting tags can still be local identities (no ext_id until confirmed).
-    for (const p of pending) {
-      if (p.action === "add") linksAdded += addTagLink(db, row.id, p.tag_id)
-      else linksRemoved += removeTagLink(db, row.id, p.tag_id)
+    for (const [id, action] of pending.get(row.id) ?? []) {
+      if (action === "add") wanted.add(id)
+      else wanted.delete(id)
     }
+    for (const id of wanted) if (!current.has(id)) linksAdded += addTagLink(db, row.id, id)
+    for (const id of current) if (!wanted.has(id)) linksRemoved += removeTagLink(db, row.id, id)
   }
   return { tagsCreated, linksAdded, linksRemoved }
 }

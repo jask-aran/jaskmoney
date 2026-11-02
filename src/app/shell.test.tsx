@@ -6,6 +6,9 @@ import { ui } from "../state/uiStore"
 import { data } from "../state/dataStore"
 import { renderApp } from "../testing/app"
 import { account, transaction } from "../testing/fixtures"
+import { mkdtempSync, writeFileSync } from "node:fs"
+import { tmpdir } from "node:os"
+import { join } from "node:path"
 
 // The CSV credit account and its rows the manager tests render.
 const anzAccount = () => account({ name: "ANZ CREDIT", type: "credit", source: "csv", externalKind: null, balance: null })
@@ -430,9 +433,11 @@ describe("render errors", () => {
     ui.setState({ detail: null })
     const t = await renderApp({ width: 140, height: 55 })
     await t.renderOnce()
-    const profile = { ...(ui.state.importWizard?.profileDraft ?? { id: "", name: "", account: "", accountType: "debit" as const, importPrefix: "", hasHeader: true, delimiter: ",", dateColumn: 0, amountColumn: 1, descriptionColumns: [2], descriptionJoin: false, amountStrip: "$", dateFormat: "DMY" as const }), id: "abZcd", account: "Caret test", accountType: "debit" as const }
+    const profile = { ...(ui.state.importWizard?.profileDraft ?? { id: "", name: "", account: "", accountType: "debit" as const, importPrefix: "", hasHeader: true, delimiter: ",", dateColumn: 0, amountColumn: 1, descriptionColumns: [2], descriptionJoin: false, amountStrip: "$", dateFormat: "DMY" as const }), id: "abZcd", name: "Caret test", account: "Caret test", accountType: "debit" as const, hasHeader: false, dateFormat: "YMD" as const }
+    const path = join(mkdtempSync(join(tmpdir(), "jaskmoney-caret-import-")), "caret.csv")
+    writeFileSync(path, "2026-01-01,-1,LOCAL CARET\n")
     await data.commitPreview({
-      path: "caret.csv", filename: "caret.csv", profile, accountId: 0, accountName: profile.account,
+      path, filename: "caret.csv", profile, accountId: 0, accountName: profile.account,
       rows: [{ sourceLine: 1, dateRaw: "2026-01-01", dateISO: "2026-01-01", amount: -1, description: "LOCAL CARET", duplicate: false, categoryName: "", tagNames: [] }],
       errors: [], newCount: 1, duplicateCount: 0, rulesEnabled: false,
     }, true)

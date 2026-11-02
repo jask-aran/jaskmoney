@@ -323,3 +323,64 @@ describe("Up tag requests", () => {
 
   })
 })
+
+test("request deadlines abort stalled headers and bodies", async () => {
+  await Promise.all([false, true].map(headers => {
+    let signal: AbortSignal | null | undefined
+    const client = createUpClient({ token, fetch: async (_, init) => {
+      signal = init?.signal
+      if (!headers) return new Promise<Response>((_, reject) => {
+        signal?.addEventListener("abort", () => reject(new Error(`aborted ${token}`)))
+      })
+      return new Response(new ReadableStream({ start(controller) {
+        signal?.addEventListener("abort", () => controller.error(new Error(`aborted ${token}`)))
+      } }))
+    } })
+    return client.ping().then(() => { throw new Error("Expected deadline failure") }, error => {
+      expect(error.message).toBe("aborted [redacted]")
+      expect(signal?.aborted).toBe(true)
+    })
+  }))
+}, 35_000)
+
+test("Retry-After waits are capped at 60 seconds", async () => {
+  for (const retryAfter of ["61", "1e100", "1e999"]) {
+    let calls = 0
+    const delays: number[] = []
+    const client = createUpClient({ token, sleep: async ms => { delays.push(ms) }, fetch: async () => {
+      calls++
+      return new Response("", { status: 429, headers: { "Retry-After": retryAfter } })
+    } })
+    await expect(client.ping()).rejects.toThrow("Retry-After exceeds 60 seconds")
+    expect(calls).toBe(1)
+    expect(delays).toEqual([])
+  }
+  const delays: number[] = []
+  let calls = 0
+  const client = createUpClient({ token, sleep: async ms => { delays.push(ms) }, fetch: async () => {
+    return ++calls === 1 ? new Response("", { status: 429, headers: { "Retry-After": "60" } }) : Response.json({})
+  } })
+  await client.ping()
+  expect(delays).toEqual([60_000])
+})
+
+
+test("invalid and HTTP-date Retry-After headers retain exponential fallback", async () => {
+  for (const retryAfter of ["-1", "invalid", "Wed, 01 Jan 2031 00:00:00 GMT"]) {
+    const delays: number[] = []
+    const client = createUpClient({ token, sleep: async ms => { delays.push(ms) }, fetch: async () => {
+      return new Response(null, { status: 429, headers: { "Retry-After": retryAfter } })
+    } })
+    await expect(client.ping()).rejects.toThrow("429")
+    expect(delays).toEqual([1000, 2000, 4000])
+  }
+})
+
+test("retryable 429 responses do not wait for the response body", async () => {
+  let calls = 0
+  const client = createUpClient({ token, sleep: async () => {}, fetch: async () => {
+    return ++calls === 1 ? new Response(new ReadableStream(), { status: 429 }) : Response.json({})
+  } })
+  await client.ping()
+  expect(calls).toBe(2)
+})

@@ -27,7 +27,7 @@ interface Connection {
   entries: Map<string, Map<string, string>>
   rows: Map<string, string>
   order: string
-  calls: Map<number, AbortController>
+  calls: Map<string | number, AbortController>
   /** Who this is, as the core's clients list shows it. */
   client: ConnectedClient
 }
@@ -40,17 +40,29 @@ interface Encoded {
   rows: { byId: Map<string, string>; order: string } | null
 }
 
-function encode(patch: Partial<CoreState>): Encoded {
-  const encoded: Encoded = { whole: new Map(), entries: new Map(), rows: null }
-  for (const [key, value] of Object.entries(patch)) {
-    if (key === "transactions") {
-      const rows = value as CoreState["transactions"]
-      encoded.rows = { byId: new Map(rows.map((t) => [String(t.id), JSON.stringify(t)])), order: rows.map((t) => t.id).join(",") }
-    } else if (KEYED.has(key)) {
-      encoded.entries.set(key, new Map(Object.entries(value as object).map(([k, v]) => [k, JSON.stringify(v)])))
-    } else encoded.whole.set(key, JSON.stringify(value ?? null))
+function createEncoder() {
+  const rowJSON = new WeakMap<CoreState["transactions"][number], string>()
+  let ids: number[] = [], order = ""
+  return function encode(patch: Partial<CoreState>): Encoded {
+    const encoded: Encoded = { whole: new Map(), entries: new Map(), rows: null }
+    for (const [key, value] of Object.entries(patch)) {
+      if (key === "transactions") {
+        const rows = value as CoreState["transactions"]
+        if (rows.length !== ids.length || rows.some((t, i) => t.id !== ids[i])) {
+          ids = rows.map((t) => t.id)
+          order = ids.join(",")
+        }
+        encoded.rows = { byId: new Map(rows.map((t) => {
+          let json = rowJSON.get(t)
+          if (json === undefined) { json = JSON.stringify(t); rowJSON.set(t, json) }
+          return [String(t.id), json]
+        })), order }
+      } else if (KEYED.has(key)) {
+        encoded.entries.set(key, new Map(Object.entries(value as object).map(([k, v]) => [k, JSON.stringify(v)])))
+      } else encoded.whole.set(key, JSON.stringify(value ?? null))
+    }
+    return encoded
   }
-  return encoded
 }
 
 /** The keys whose JSON changed since `before` was sent, and the keys gone. */
@@ -88,7 +100,9 @@ function stateMessage(ws: ServerWebSocket<Connection>, encoded: Encoded): string
   return `{"t":"state","patch":{${patch.join(",")}}${keyed.length ? `,"keyed":{${keyed.join(",")}}` : ""}${rows}}`
 }
 
-const send = (ws: ServerWebSocket<Connection>, message: ServerMessage) => ws.send(JSON.stringify(message))
+type Call = Omit<Extract<ClientMessage, { t: "call" }>, "id"> & { id: string | number }
+type Reply = (Omit<Extract<ServerMessage, { t: "result" }>, "id"> | Omit<Extract<ServerMessage, { t: "progress" }>, "id">) & { id: Call["id"] }
+const send = (ws: ServerWebSocket<Connection>, message: Reply) => ws.send(JSON.stringify(message))
 
 /** A served file: hashed bundles keep forever; the page, the worker, the manifest and icons are asked for fresh. */
 function fileResponse(file: { body: Uint8Array; type: string }, fresh: boolean): Response {
@@ -103,6 +117,7 @@ export interface ServeOptions {
 export function serveCore(core: Core, { port = DEFAULT_PORT, hostname = "127.0.0.1" }: ServeOptions = {}) {
   const hosts = new Set([...LOOPBACK, hostname])
   const connections = new Set<ServerWebSocket<Connection>>()
+  const encode = createEncoder()
   let clientIds = 0
   const bundler = webBundler()
   // One subscription for every client: each patch is serialised once.
@@ -117,8 +132,10 @@ export function serveCore(core: Core, { port = DEFAULT_PORT, hostname = "127.0.0
 
   const commands = core.commands as unknown as Record<string, (params: unknown, cx: unknown) => unknown>
 
-  function call(ws: ServerWebSocket<Connection>, message: Extract<ClientMessage, { t: "call" }>) {
+  function call(ws: ServerWebSocket<Connection>, message: Call) {
     const { id, method } = message
+    if (ws.data.calls.has(id)) return send(ws, { t: "result", id, error: "duplicate active call id" })
+    if (ws.data.calls.size >= 64) return send(ws, { t: "result", id, error: "too many active calls" })
     if (!Object.hasOwn(commands, method)) return send(ws, { t: "result", id, error: `no such command: ${method}` })
     const abort = new AbortController()
     ws.data.calls.set(id, abort)
@@ -165,10 +182,13 @@ export function serveCore(core: Core, { port = DEFAULT_PORT, hostname = "127.0.0
         if (message) ws.send(message)
       },
       message(ws, raw) {
-        let message: ClientMessage
+        let message: unknown
         try { message = JSON.parse(String(raw)) } catch { return }
+        if (message === null || typeof message !== "object" || !("t" in message) || typeof message.t !== "string") return
+        if (!("id" in message) || (typeof message.id !== "string" && typeof message.id !== "number")) return
         if (message.t === "cancel") ws.data.calls.get(message.id)?.abort()
-        else if (message.t === "call") call(ws, message)
+        else if (message.t === "call" && "method" in message && typeof message.method === "string")
+          call(ws, { t: "call", id: message.id, method: message.method, params: "params" in message ? message.params : undefined })
       },
       close(ws) {
         connections.delete(ws)
