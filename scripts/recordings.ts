@@ -12,13 +12,15 @@
  * each demo is recorded, then rendered: while it plays, a tap on ttyd's
  * socket keeps every byte the app writes and when; then, with the live
  * output cut off, they're replayed into the same terminal a frame at a
- * time (FRAME_MS of tour time), each photographed once drawn. Each demo
- * has its own app, terminal and Chrome, all at once: the whole takes about
- * the longest demo's loop and its rendering.
+ * time (every frame the app drew, held as long as it was), each
+ * photographed once drawn. Each scene has its own app, terminal and
+ * Chrome, all at once: the whole takes about the longest loop and its
+ * rendering.
  *
- * Needs ffmpeg. Writes docs/screenshots/<scene>.gif, and the same as an
- * MP4 to dist/recordings/<scene>.mp4 (sharper and smaller; GitHub plays
- * one only uploaded through its web editor).
+ * Needs ffmpeg. Writes docs/screenshots/<scene>.gif (50 fps: browsers
+ * slow a GIF's frames under 20 ms to 100), and to dist/recordings the
+ * same as an MP4 (60 fps, sharper and smaller; GitHub plays one only
+ * uploaded through its web editor) and as asciinema's .cast.
  */
 import { createHash } from "node:crypto"
 import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs"
@@ -30,7 +32,9 @@ import { CHART_VIEWS } from "../src/state/uiStore"
 import { appBinary, openTerminal, type Terminal } from "./terminal"
 
 type DemoId = (typeof DEMOS)[number]["id"]
-const FRAME_MS = 40
+/** Writes this close together are one frame of the app's (it draws
+ * about every 16 ms). */
+const SAME_FRAME_MS = 4
 
 // The tour's world, as a new install's categories make it, for how long
 // each demo's script runs (the Smart search's depends on its words).
@@ -185,6 +189,18 @@ async function film(binary: string, scene: Scene): Promise<void> {
   }
 }
 
+/** ffmpeg, one at a time across the scenes: several full-screen encodes
+ * at once is more memory than WSL has. */
+let encoding: Promise<unknown> = Promise.resolve()
+function encode(args: string[]): Promise<void> {
+  const run = encoding.then(async () => {
+    const code = await Bun.spawn(args, { stderr: "inherit" }).exited
+    if (code !== 0) throw new Error(`ffmpeg failed: ${args.at(-1)}`)
+  })
+  encoding = run.catch(() => {})
+  return run
+}
+
 /** Renders one loop of `scene`, from `from` (page time), to its GIF and
  * MP4: the whole terminal, or just the demo's pane. */
 async function render(term: Terminal, scene: Scene, from: number, pane: ReturnType<typeof paneCells> | null): Promise<void> {
@@ -199,32 +215,57 @@ async function render(term: Terminal, scene: Scene, from: number, pane: ReturnTy
   await term.evaluate("__restart()")
   await term.evaluate(`__seek(${from})`)
   const dir = mkdtempSync(join(tmpdir(), `jaskmoney-rec-${id}-`))
-  // Each distinct frame, held for as long as nothing changes.
+  // Every frame the app drew, each held until its next: the loop's start,
+  // then each run of writes (SAME_FRAME_MS apart at most).
+  const times: number[] = await term.evaluate(`(() => {
+    const at = []
+    let previous = -Infinity
+    for (const [t] of __out) {
+      if (t > ${from} && t < ${from + loopMs} && t - previous > ${SAME_FRAME_MS}) at.push(t)
+      previous = t
+    }
+    return at
+  })()`)
+  const starts = [from, ...times.filter((t) => t - from > SAME_FRAME_MS)]
   const frames: Array<{ file: string; ms: number }> = []
   let last = ""
-  for (let t = 0; t < loopMs; t += FRAME_MS) {
-    const writes = await term.evaluate(`__seek(${from + t})`)
-    if (frames.length && !writes) { frames.at(-1)!.ms += FRAME_MS; continue }
+  for (let i = 0; i < starts.length; i++) {
+    // The whole frame: its writes, up to just before the next one's.
+    await term.evaluate(`__seek(${(starts[i + 1] ?? from + loopMs) - 0.5})`)
+    const ms = (starts[i + 1] ?? from + loopMs) - starts[i]!
     const { data } = await term.send("Page.captureScreenshot", { format: "png", clip, optimizeForSpeed: true })
     const hash = createHash("sha1").update(data).digest("hex")
-    if (hash === last) { frames.at(-1)!.ms += FRAME_MS; continue }
+    if (hash === last) { frames.at(-1)!.ms += ms; continue }
     last = hash
     const file = join(dir, `${String(frames.length).padStart(5, "0")}.png`)
     writeFileSync(file, Buffer.from(data, "base64"))
-    frames.push({ file, ms: FRAME_MS })
+    frames.push({ file, ms })
   }
-  writeFileSync(join(dir, "list.txt"), [...frames.flatMap((f) => [`file '${f.file}'`, `duration ${(f.ms / 1000).toFixed(3)}`]), `file '${frames.at(-1)!.file}'`].join("\n"))
+  writeFileSync(join(dir, "list.txt"), [...frames.flatMap((f) => [`file '${f.file}'`, `duration ${(f.ms / 1000).toFixed(4)}`]), `file '${frames.at(-1)!.file}'`].join("\n"))
 
   const gif = `docs/screenshots/${id}.gif`, mp4 = `dist/recordings/${id}.mp4`
   mkdirSync("dist/recordings", { recursive: true })
+  // The same loop as asciinema's .cast (the whole terminal): what led up
+  // to it at 0, then each write at its time.
+  writeFileSync(`dist/recordings/${id}.cast`, await term.evaluate(`(() => {
+    const decoder = new TextDecoder(), before = [], events = []
+    for (const [t, bytes] of __out) {
+      if (t >= ${from + loopMs}) break
+      const text = decoder.decode(bytes, { stream: true })
+      if (t <= ${from}) before.push(text)
+      else events.push(JSON.stringify([+((t - ${from}) / 1000).toFixed(4), "o", text]))
+    }
+    return [JSON.stringify({ version: 2, width: term.cols, height: term.rows }), JSON.stringify([0, "o", before.join("")]), ...events].join("\\n") + "\\n"
+  })()`))
   const input = ["-y", "-loglevel", "error", "-f", "concat", "-safe", "0", "-i", join(dir, "list.txt")]
-  const runs = [
-    ["ffmpeg", ...input, "-filter_complex", "split[a][b];[a]palettegen=stats_mode=full:max_colors=128[p];[b][p]paletteuse=dither=none", "-fps_mode", "vfr", "-loop", "0", gif],
-    ["ffmpeg", ...input, "-vf", "pad=ceil(iw/2)*2:ceil(ih/2)*2,fps=25", "-c:v", "libx264", "-crf", "16", "-preset", "slow", "-tune", "animation", "-pix_fmt", "yuv420p", "-movflags", "+faststart", mp4],
-  ].map((args) => Bun.spawn(args, { stderr: "inherit" }))
-  const codes = await Promise.all(runs.map((run) => run.exited))
+  const palette = join(dir, "palette.png")
+  // The palette, then the GIF with it: each streams. (In one pass, the
+  // frames wait in memory for the palette: gigabytes, enough that WSL ran
+  // out of memory, 2026-11-02.)
+  await encode(["ffmpeg", ...input, "-vf", "fps=50,palettegen=stats_mode=full:max_colors=128", palette])
+  await encode(["ffmpeg", ...input, "-i", palette, "-filter_complex", "[0:v]fps=50[v];[v][1:v]paletteuse=dither=none", "-loop", "0", gif])
+  await encode(["ffmpeg", ...input, "-vf", "pad=ceil(iw/2)*2:ceil(ih/2)*2,fps=60", "-c:v", "libx264", "-crf", "16", "-preset", "medium", "-tune", "animation", "-pix_fmt", "yuv420p", "-movflags", "+faststart", mp4])
   rmSync(dir, { recursive: true, force: true })
-  if (codes.some((code) => code !== 0)) throw new Error(`ffmpeg failed for ${id}`)
   console.log(`${gif} + ${mp4}  ${(loopMs / 1000).toFixed(1)} s, ${frames.length} frames${pane ? `, ${pane.cols}×${pane.rows} cells` : ""}`)
 }
 
