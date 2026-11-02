@@ -7,7 +7,7 @@ import { easeOut } from "./reveal"
  * By default ("launch"), once a launch: as the Overview first shows data,
  * or, when the setup opens over it, as the setup closes (index.tsx arms
  * it, the Overview takes it). "always": every chart, each time it shows
- * or its view changes. New data under the same view never redraws. The
+ * or its view or the Overview's Date Range changes. New data under the same view never redraws. The
  * setup's tour always draws in, at "juicy". Tests never arm the launch and
  * keep the default mode, so they see whole charts. "off": never; charts
  * are whole from the start (the tour still draws in).
