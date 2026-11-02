@@ -390,17 +390,13 @@ describe("key router", () => {
     expect(ui.state.customEdit?.start.value).toBe("1 Oct 2026")
     expect(ui.state.customEdit?.end.value).toBe("31 Oct 2026")
     // It opens on the calendar: arrows move its cursor, not the dates.
-    expect(ui.state.customEdit?.field).toBe(2)
+    expect(ui.state.customEdit?.focus).toBe("grid")
     handleKey(ui, key("right"), data)
     expect(ui.state.customEdit?.cursor).toBe("2026-10-02")
     expect(ui.state.customEdit?.start.value).toBe("1 Oct 2026")
-    // Tab to From: up and down move its date a day, shift a week.
+    // Tab to From, to type.
     handleKey(ui, key("tab"), data)
-    handleKey(ui, key("down"), data)
-    expect(ui.state.customEdit?.start.value).toBe("30 Sep 2026")
-    handleKey(ui, key("up", { shift: true }), data)
-    expect(ui.state.customEdit?.start.value).toBe("7 Oct 2026")
-    expect(ui.state.customEdit?.field).toBe(0)
+    expect(ui.state.customEdit?.focus).toBe("from")
     handleKey(ui, key("u", { ctrl: true }), data)
     for (const ch of "oct") handleKey(ui, key(ch), data)
     handleKey(ui, key("tab"), data)

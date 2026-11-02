@@ -184,7 +184,7 @@ describe("readCustomRange", () => {
   test("a range with its label and length, or what's wrong and where", () => {
     expect(readCustomRange("oct", "", "2026-11-02")).toEqual({ start: "2026-10-01", end: "2026-11-02", label: "1 Oct – 2 Nov 2026", days: 33 })
     expect(readCustomRange("oct", "oct", "2026-11-02")).toMatchObject({ start: "2026-10-01", end: "2026-10-31", days: 31 })
-    expect(readCustomRange("nope", "", "2026-11-02")).toMatchObject({ field: 0 })
-    expect(readCustomRange("today", "-3", "2026-11-02")).toEqual({ error: "To is before From", field: 1 })
+    expect(readCustomRange("nope", "", "2026-11-02")).toMatchObject({ field: "from" })
+    expect(readCustomRange("today", "-3", "2026-11-02")).toEqual({ error: "To is before From", field: "to" })
   })
 })

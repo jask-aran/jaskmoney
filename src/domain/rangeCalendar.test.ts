@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test"
-import { markedRange, monthWeeks, moveCursor, pageCursor, pageLabel, unitGrid, unitOf, weekdayNames, yearsFrom } from "./rangeCalendar"
+import { leftHalf, markedRange, rowStep, monthWeeks, moveCursor, pageCursor, pageLabel, unitGrid, unitOf, weekdayNames, yearsFrom } from "./rangeCalendar"
 
 describe("the Custom range calendar", () => {
   test("a cell stands for a day, a month or a year; two marks join whichever starts first to whichever ends last", () => {
@@ -38,5 +38,19 @@ describe("the Custom range calendar", () => {
     expect(yearsFrom("2028-01-01")).toBe(2028)
     expect(unitGrid("2026-03-01", "months").map((r) => r.length)).toEqual([4, 4, 4])
     expect(unitGrid("2026-03-01", "years")[2]![3]).toBe("2027-01-01")
+  })
+
+  test("a row up or down stays on the page or is null (the arrow leaves the grid); the cursor's half picks the control", () => {
+    expect(rowStep("2026-09-20", "days", "down")).toBe("2026-09-27")
+    expect(rowStep("2026-09-27", "days", "down")).toBeNull()
+    expect(rowStep("2026-09-06", "days", "up")).toBeNull()
+    expect(rowStep("2026-03-01", "months", "up")).toBeNull()
+    expect(rowStep("2026-03-01", "months", "down")).toBe("2026-07-01")
+    expect(rowStep("2017-03-01", "years", "down")).toBe("2021-03-01")
+    expect(rowStep("2026-03-01", "years", "down")).toBeNull()
+    expect(leftHalf("2026-09-01", "days", "monday")).toBe(true)
+    expect(leftHalf("2026-09-06", "days", "monday")).toBe(false)
+    expect(leftHalf("2026-02-01", "months", "monday")).toBe(true)
+    expect(leftHalf("2026-03-01", "months", "monday")).toBe(false)
   })
 })

@@ -9,6 +9,11 @@ import { MONTHS, addDays, addMonthsClamped, dayOfWeek, type WeekStart } from "./
  * the second's end, whichever comes first.
  */
 export type CalendarView = "days" | "months" | "years"
+
+/** The Custom range dialog's stops, in tab order: the page selector
+ * (‹ October 2026 ›), the views (Days Months Years), the grid, From, To. */
+export type CustomFocus = "page" | "views" | "grid" | "from" | "to"
+export const CUSTOM_FOCUS_ORDER: readonly CustomFocus[] = ["page", "views", "grid", "from", "to"]
 export const CALENDAR_VIEWS: readonly CalendarView[] = ["days", "months", "years"]
 export const CALENDAR_VIEW_LABELS: Record<CalendarView, string> = { days: "Days", months: "Months", years: "Years" }
 
@@ -87,4 +92,21 @@ export function moveCursor(iso: string, view: CalendarView, dir: "left" | "right
 /** The cursor a page on ([ ], or ‹ ›): a month, a year, or twelve years. */
 export function pageCursor(iso: string, view: CalendarView, delta: -1 | 1): string {
   return addMonthsClamped(iso, delta * (view === "days" ? 1 : view === "months" ? 12 : 144))
+}
+
+/** A row up or down in the grid (a week, or a row of four months or
+ * years), or null where that leaves the page shown: the arrow leaves the
+ * grid there instead (to the controls above or the dates below). */
+export function rowStep(iso: string, view: CalendarView, dir: "up" | "down"): string | null {
+  const next = moveCursor(iso, view, dir)
+  const page = (d: string) => (view === "days" ? d.slice(0, 7) : view === "months" ? d.slice(0, 4) : String(yearsFrom(d)))
+  return page(next) === page(iso) ? next : null
+}
+
+/** Whether the cursor's cell is in the grid's left half (the arrow out of
+ * it lands on the control on that side: the page selector or From). */
+export function leftHalf(iso: string, view: CalendarView, weekStart: WeekStart): boolean {
+  if (view === "days") return dayOfWeek(iso, weekStart) < 4
+  const index = view === "months" ? Number(iso.slice(5, 7)) - 1 : Number(iso.slice(0, 4)) - yearsFrom(iso)
+  return index % CALENDAR_COLUMNS < CALENDAR_COLUMNS / 2
 }

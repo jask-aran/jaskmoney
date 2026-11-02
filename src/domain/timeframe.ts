@@ -161,12 +161,12 @@ export function customRange(start: string, end: string): { start: string; end: s
 /** The Custom range dialog's two fields, read (rangeDayFromText): the
  * range with its label and length, or what's wrong and in which field. */
 export function readCustomRange(startText: string, endText: string, today: string):
-  { start: string; end: string; label: string; days: number } | { error: string; field: 0 | 1 } {
+  { start: string; end: string; label: string; days: number } | { error: string; field: "from" | "to" } {
   const start = rangeDayFromText(startText, today, "start")
-  if (start === null) return { error: `From isn't a date: ${CUSTOM_DATE_FORMS}`, field: 0 }
+  if (start === null) return { error: `From isn't a date: ${CUSTOM_DATE_FORMS}`, field: "from" }
   const end = rangeDayFromText(endText, today, "end")
-  if (end === null) return { error: `To isn't a date: ${CUSTOM_DATE_FORMS}`, field: 1 }
-  if (end < start) return { error: "To is before From", field: 1 }
+  if (end === null) return { error: `To isn't a date: ${CUSTOM_DATE_FORMS}`, field: "to" }
+  if (end < start) return { error: "To is before From", field: "to" }
   return { start, end, label: formatDays(start, end), days: daysBetween(start, end) + 1 }
 }
 
