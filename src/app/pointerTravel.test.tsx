@@ -231,6 +231,6 @@ test("a click on the Date Range's [ or ] steps the range, as the keys do; a look
   await t.mockMouse.click(row().lastIndexOf("]"), y)
   await t.renderOnce()
   expect(ui.state.timeframe.lookbackOffset).toBe(0)
-  expect(row()).not.toContain("back")
+  expect(row()).not.toContain("month back")
   expect(dates()).toBe(was)
 })

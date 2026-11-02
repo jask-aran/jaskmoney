@@ -25,7 +25,7 @@ import { spendingCalendar, type CalendarDay } from "../../domain/spending"
 import { accountRole, type Account, type Transaction } from "../../domain/types"
 import { addDays, appNow, appToday, daysBetween, type WeekStart } from "../../domain/days"
 import { isSpending, isUncategorised, isUnsortedIn } from "../../domain/moneyRules"
-import { chipLayout } from "./rangeChips"
+import { GROUP_NAMES, chipLayout } from "./rangeChips"
 import { CUSTOM_CHIP, CUSTOM_DATE_FORMS, LOOKBACKS, PERIODS, comparisonWindows, filterByTimeframe, rangeOffsetLabel, readCustomRange } from "../../domain/timeframe"
 import { count, fit, shortDate, shortMoney, truncate } from "../text"
 import { StyledLine, type StyledSpan } from "../primitives/StyledLine"
@@ -510,10 +510,12 @@ export function OverviewTab(props: { focused: SectionId }) {
           {/* Each chip its own text: a click lands on the chip OpenTUI drew
               there, with no sums of label widths to keep in step. */}
           <box flexDirection="row" flexShrink={0}>
+            <Show when={chipsFit().groups}><text wrapMode="none" fg={ink.heading}><b>{`${GROUP_NAMES.lookback} `}</b></text></Show>
             <For each={LOOKBACKS}>
               {(lb, i) => <><Show when={i() > 0 && chipsFit().gap}>{gap()}</Show>{chipText(lb, i(), () => ui.state.timeframe.family === "lookback" && ui.state.timeframe.lookback === lb)}</>}
             </For>
             <text wrapMode="none" fg={ink.rule}>{chipsFit().separator}</text>
+            <Show when={chipsFit().groups}><text wrapMode="none" fg={ink.heading}><b>{`${GROUP_NAMES.period} `}</b></text></Show>
             <For each={PERIODS}>
               {(p, i) => <><Show when={i() > 0 && chipsFit().gap}>{gap()}</Show>{chipText(chipsFit().label(p), LOOKBACKS.length + i(), () => ui.state.timeframe.family === "period" && ui.state.timeframe.period === p)}</>}
             </For>

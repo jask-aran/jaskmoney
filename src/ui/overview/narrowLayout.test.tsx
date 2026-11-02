@@ -179,6 +179,8 @@ test("narrow at its shortest: the Calendar chart shows all seven weekdays above 
 
 test("the Date Range chips all show at every width, tightening before anything is cut; the dates show when they fit", async () => {
   const shown: Record<number, boolean> = {}
+  // The families' names (Lookback, Period) where there's room, first to go.
+  const named: Record<number, boolean> = {}
   for (const width of [80, 85, 90, 95, 100, 105, 110, 114, 120, 140, 160]) {
     const t = await overview(width, 40)
     const line = t.captureCharFrame().split("\n")[3]!
@@ -187,10 +189,14 @@ test("the Date Range chips all show at every width, tightening before anything i
     // The card's right border is intact: nothing ran past it.
     expect(line.trimEnd().match(/│/g)!.length).toBeGreaterThanOrEqual(2)
     shown[width] = /\[ .+ \]/.test(line)
+    named[width] = line.includes("Lookback  1M") && line.includes("Period  Cycle")
     t.renderer.destroy()
   }
   expect(shown[160]).toBe(true)
   expect(shown[80]).toBe(false)
+  expect(named[160]).toBe(true)
+  expect(named[120]).toBe(false)
+  expect(shown[120]).toBe(true)
 })
 
 test("the two chart panes are the same height, an odd line widening the gap between them, so two Calendars draw the same grid", async () => {
