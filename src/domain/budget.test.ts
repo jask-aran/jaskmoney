@@ -79,28 +79,27 @@ describe("cycleFor", () => {
     })
   })
 
-  test("every unit, anchor and anchor day: daily containment and contiguous cycles over 2023–2025", () => {
-    for (const unit of ["week", "fortnight", "month"] as const) {
-      for (const anchor of ["calendar", "date", "weekStartNearDate"] as const) {
-        // All anchor days include both directions of Monday shifts and month crossings.
-        const anchorDays = anchor === "calendar" ? [1] : Array.from({ length: 31 }, (_, i) => i + 1)
-        for (const day of anchorDays) {
-          const config: CycleConfig = { unit, anchor, anchorDate: `2024-01-${String(day).padStart(2, "0")}` }
-          let previous = cycleFor(config, "2022-12-31")
-          for (let time = Date.parse("2023-01-01T12:00:00Z"); time < Date.parse("2026-01-01T12:00:00Z"); time += 86400000) {
-            const date = new Date(time).toISOString().slice(0, 10)
-            const cycle = cycleFor(config, date)
-            expect(cycle.start <= date && date <= cycle.end).toBe(true)
-            expect(cycle.days).toBe((Date.parse(cycle.end + "T12:00:00Z") - Date.parse(cycle.start + "T12:00:00Z")) / 86400000 + 1)
-            if (cycle.start === previous.start) {
-              expect(cycle).toEqual(previous)
-            } else {
-              expect(previous.end).toBe(new Date(time - 86400000).toISOString().slice(0, 10))
-              expect(cycle.start).toBe(date)
-            }
-            previous = cycle
-          }
+  // One test per unit and anchor: all of them in one ran past the timeout
+  // under the suite's parallel load.
+  const UNIT_ANCHORS = (["week", "fortnight", "month"] as const).flatMap((unit) => (["calendar", "date", "weekStartNearDate"] as const).map((anchor) => [unit, anchor] as const))
+  test.each(UNIT_ANCHORS)("%s cycles anchored by %s, every anchor day: daily containment and contiguous cycles over 2023–2025", (unit, anchor) => {
+    // All anchor days include both directions of Monday shifts and month crossings.
+    const anchorDays = anchor === "calendar" ? [1] : Array.from({ length: 31 }, (_, i) => i + 1)
+    for (const day of anchorDays) {
+      const config: CycleConfig = { unit, anchor, anchorDate: `2024-01-${String(day).padStart(2, "0")}` }
+      let previous = cycleFor(config, "2022-12-31")
+      for (let time = Date.parse("2023-01-01T12:00:00Z"); time < Date.parse("2026-01-01T12:00:00Z"); time += 86400000) {
+        const date = new Date(time).toISOString().slice(0, 10)
+        const cycle = cycleFor(config, date)
+        expect(cycle.start <= date && date <= cycle.end).toBe(true)
+        expect(cycle.days).toBe((Date.parse(cycle.end + "T12:00:00Z") - Date.parse(cycle.start + "T12:00:00Z")) / 86400000 + 1)
+        if (cycle.start === previous.start) {
+          expect(cycle).toEqual(previous)
+        } else {
+          expect(previous.end).toBe(new Date(time - 86400000).toISOString().slice(0, 10))
+          expect(cycle.start).toBe(date)
         }
+        previous = cycle
       }
     }
   })
