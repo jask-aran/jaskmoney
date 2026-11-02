@@ -217,7 +217,7 @@ test("a click on any column of a Date Range chip chooses that chip: each chip is
   }
 })
 
-test("a click on the Date Range's [ or ] steps the range, as the keys do; a rolling range steps too", async () => {
+test("a click on the Date Range's [ or ] steps the range, as the keys do; a lookback stays one, saying how far back", async () => {
   const t = await overview()
   const y = regionRects("overview").find((r) => r.id === "ov.range")!.rect.y + 1
   const row = () => t.captureCharFrame().split("\n")[y]!
@@ -225,10 +225,12 @@ test("a click on the Date Range's [ or ] steps the range, as the keys do; a roll
   const was = dates()
   await t.mockMouse.click(row().lastIndexOf("["), y)
   await t.renderOnce()
-  expect(ui.state.timeframe.family).toBe("custom")
+  expect(ui.state.timeframe).toMatchObject({ family: "lookback", lookback: "1M", lookbackOffset: -1 })
+  expect(row()).toContain("1 month back · 0 now")
   expect(dates()).not.toBe(was)
   await t.mockMouse.click(row().lastIndexOf("]"), y)
   await t.renderOnce()
-  expect(ui.state.timeframe).toMatchObject({ family: "lookback", lookback: "1M" })
+  expect(ui.state.timeframe.lookbackOffset).toBe(0)
+  expect(row()).not.toContain("back")
   expect(dates()).toBe(was)
 })

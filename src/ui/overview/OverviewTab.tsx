@@ -26,7 +26,7 @@ import { accountRole, type Account, type Transaction } from "../../domain/types"
 import { addDays, appNow, appToday, daysBetween, type WeekStart } from "../../domain/days"
 import { isSpending, isUncategorised, isUnsortedIn } from "../../domain/moneyRules"
 import { chipLayout } from "./rangeChips"
-import { CUSTOM_CHIP, CUSTOM_DATE_FORMS, LOOKBACKS, PERIODS, comparisonWindows, filterByTimeframe, offsetLabel, periodOffset, readCustomRange } from "../../domain/timeframe"
+import { CUSTOM_CHIP, CUSTOM_DATE_FORMS, LOOKBACKS, PERIODS, comparisonWindows, filterByTimeframe, rangeOffsetLabel, readCustomRange } from "../../domain/timeframe"
 import { count, fit, shortDate, shortMoney, truncate } from "../text"
 import { StyledLine, type StyledSpan } from "../primitives/StyledLine"
 import { monthlyTotal, subscriptions, upcomingCharges, type Subscription } from "../../domain/subscriptions"
@@ -252,7 +252,7 @@ export function OverviewTab(props: { focused: SectionId }) {
 
   // The dates on the right, between the [ ] that step them, and how far
   // the range is from the current period (with 0 to come back).
-  const offsetText = createMemo(() => offsetLabel(ui.state.timeframe.period, periodOffset(ui.state.timeframe, appNow(), cycleConfig())))
+  const offsetText = createMemo(() => rangeOffsetLabel(ui.state.timeframe, appNow(), cycleConfig()))
   const timeframeWidth = () => bounds().label.length + 4 + (offsetText() ? offsetText().length + 11 : 0)
   // The card leaves the Up logo its columns; border and padding take 4.
   const rangeCardWidth = () => Math.max(20, dims().width - UP_LOGO_WIDTH - 1)

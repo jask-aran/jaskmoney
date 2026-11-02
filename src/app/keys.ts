@@ -67,6 +67,7 @@ import {
   stepChip,
   CUSTOM_DATE_FORMS,
   readCustomRange,
+  rangeOffsetLabel,
   stepRange,
   stepUnit,
   timeframeBounds,
@@ -2035,7 +2036,8 @@ export function stepOverviewRange(ui: UiStore, delta: -1 | 1, data?: DataStore):
   ui.setTimeframe(tf)
   ui.setDashChipCursor(activeChipIndex(tf))
   const kind = tf.family === "period" ? PERIOD_LABEL[tf.period] : tf.family === "lookback" ? tf.lookback : "Custom"
-  ui.setStatus(`${kind} · ${timeframeBounds(tf, clock, cycle).label}${tf.family === "custom" && was.family === "lookback" ? " · ] steps back to today" : ""}`)
+  const offset = rangeOffsetLabel(tf, clock, cycle)
+  ui.setStatus(`${kind} · ${timeframeBounds(tf, clock, cycle).label}${offset ? ` · ${offset} · 0 for now` : ""}`)
 }
 
 /** The Custom range dialog, starting from the last custom range or the

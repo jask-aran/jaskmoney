@@ -18,7 +18,8 @@ describe("restore UI preferences", () => {
   test("restores lookbacks and custom without changing the custom dates", () => {
     for (const family of ["lookback", "custom"] as const) {
       expect(restoreUiPrefs({ openRange: "last", timeframe: { ...saved, family } }, [], now, MONTHLY_CYCLE).timeframe).toEqual({
-        ...saved, family, periodAnchor: "2026-10-01",
+        // A lookback opens on now (its offset isn't saved).
+        ...saved, family, periodAnchor: "2026-10-01", ...(family === "lookback" ? { lookbackOffset: 0 } : {}),
       })
     }
     expect(restoreUiPrefs({ openRange: "last" }, [], now, MONTHLY_CYCLE).timeframe).toEqual(defaultTimeframe(now))

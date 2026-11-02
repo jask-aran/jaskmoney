@@ -7,6 +7,8 @@ export type LookbackId = "1M" | "2M" | "3M" | "6M" | "1Y"
 export type PeriodId = "cycle" | "month" | "qtr" | "half" | "fy" | "year"
 export type TimeframeFamily = "lookback" | "period" | "custom"
 
+const LOOKBACK_MONTHS: Record<LookbackId, number> = { "1M": 1, "2M": 2, "3M": 3, "6M": 6, "1Y": 12 }
+
 export interface TimeframeState {
   family: TimeframeFamily
   lookback: LookbackId
@@ -16,6 +18,10 @@ export interface TimeframeState {
   /** The last custom range entered, inclusive (custom family); kept while
    * another family is active so the Custom chip can return to it. */
   custom: { start: string; end: string } | null
+  /** Lookback family: how many of its own lengths back (negative) or
+   * ahead the window is from the one ending today ([ and ]); 0 or missing
+   * is now. Not saved: like a period's anchor, a launch opens on now. */
+  lookbackOffset?: number
 }
 
 export const LOOKBACKS: LookbackId[] = ["1M", "2M", "3M", "6M", "1Y"]
@@ -57,9 +63,10 @@ export function timeframeBounds(tf: TimeframeState, now: Date, cycle: CycleConfi
     return { start: tf.custom.start, end: tf.custom.end, label: formatDays(tf.custom.start, tf.custom.end) }
   }
   if (tf.family === "lookback") {
-    const months = { "1M": 1, "2M": 2, "3M": 3, "6M": 6, "1Y": 12 }[tf.lookback]
-    const start = addMonths(day, -months)
-    return { start, end: day, label: formatRange(start, day) }
+    const months = LOOKBACK_MONTHS[tf.lookback]
+    const end = tf.lookbackOffset ? addMonths(day, tf.lookbackOffset * months) : day
+    const start = addMonths(end, -months)
+    return { start, end, label: formatRange(start, end) }
   }
 
   if (tf.period === "cycle") {
@@ -174,7 +181,7 @@ export function applyChip(tf: TimeframeState, index: number, now: Date, cycle: C
   // (the caller asks for dates).
   if (index === CUSTOM_CHIP) return tf.custom ? { ...tf, family: "custom" } : tf
   if (index < LOOKBACKS.length) {
-    return { ...tf, family: "lookback", lookback: LOOKBACKS[index]! }
+    return { ...tf, family: "lookback", lookback: LOOKBACKS[index]!, lookbackOffset: 0 }
   }
   const period = PERIODS[index - LOOKBACKS.length]!
   // Snap anchor to current period start containing `now`
@@ -221,9 +228,21 @@ export function stepPeriod(tf: TimeframeState, delta: number, cycle: CycleConfig
   return { ...next, periodAnchor: b.start }
 }
 
-/** How many steps a period is from the one containing `now`: negative
+/** How far the range is from now, as the Date Range card says it: "2
+ * months back" (a period's steps, or a lookback's months), "" for now. */
+export function rangeOffsetLabel(tf: TimeframeState, now: Date, cycle: CycleConfig = MONTHLY_CYCLE): string {
+  const offset = periodOffset(tf, now, cycle)
+  if (tf.family !== "lookback") return offsetLabel(tf.period, offset)
+  if (!offset) return ""
+  const months = Math.abs(offset) * LOOKBACK_MONTHS[tf.lookback]
+  const [n, unit] = months % 12 === 0 ? [months / 12, "year"] : [months, "month"]
+  return `${n} ${unit}${n === 1 ? "" : "s"} ${offset < 0 ? "back" : "ahead"}`
+}
+
+/** How many steps a period (or lookback) is from the one containing `now`: negative
  * back, positive ahead, 0 for the current one (and for other families). */
 export function periodOffset(tf: TimeframeState, now: Date, cycle: CycleConfig = MONTHLY_CYCLE): number {
+  if (tf.family === "lookback") return tf.lookbackOffset ?? 0
   if (tf.family !== "period") return 0
   const target = timeframeBounds(tf, now, cycle).start
   const current = applyChip(tf, LOOKBACKS.length + PERIODS.indexOf(tf.period), now, cycle)
@@ -244,33 +263,23 @@ export function periodOffset(tf: TimeframeState, now: Date, cycle: CycleConfig =
  * moved to end today (same length); a lookback already ends today. */
 export function timeframeNow(tf: TimeframeState, now: Date, cycle: CycleConfig = MONTHLY_CYCLE): TimeframeState {
   if (tf.family === "period") return applyChip(tf, LOOKBACKS.length + PERIODS.indexOf(tf.period), now, cycle)
-  if (tf.family !== "custom" || !tf.custom) return tf
+  if (tf.family === "lookback") return { ...tf, lookbackOffset: 0 }
+  if (!tf.custom) return tf
   const today = toISODay(now)
   const shift = daysBetween(tf.custom.end, today)
-  return rolledBack({ ...tf, custom: { start: addDays(tf.custom.start, shift), end: today } }, now, cycle)
+  return { ...tf, custom: { start: addDays(tf.custom.start, shift), end: today } }
 }
 
 /**
- * [ and ]: the range before or after this one, every kind stepping. A
- * period steps a period (stepPeriod); a Custom range by its own length
- * (stepCustom); a rolling range (1M…1Y, always ending today) becomes the
- * Custom range of its days before or after it. A Custom range that lands
- * back on the rolling range's days (stepping forward again, or 0) is that
- * rolling range again.
+ * [ and ]: the range before or after this one, each kind keeping its kind.
+ * A period steps a period (stepPeriod); a lookback its own length (2M: two
+ * months, its window ending two months before); a Custom range its own
+ * length in days (stepCustom).
  */
-export function stepRange(tf: TimeframeState, delta: number, now: Date, cycle: CycleConfig = MONTHLY_CYCLE): TimeframeState {
+export function stepRange(tf: TimeframeState, delta: number, _now?: Date, cycle: CycleConfig = MONTHLY_CYCLE): TimeframeState {
   if (tf.family === "period") return stepPeriod(tf, delta, cycle)
-  const from: TimeframeState = tf.family === "lookback" ? { ...tf, family: "custom", custom: rangeOf(timeframeBounds(tf, now, cycle)) } : tf
-  return rolledBack(stepCustom(from, delta), now, cycle)
-}
-
-const rangeOf = (b: DateBounds) => ({ start: b.start, end: b.end })
-
-/** A Custom range on exactly its rolling range's days: that rolling range. */
-function rolledBack(tf: TimeframeState, now: Date, cycle: CycleConfig): TimeframeState {
-  if (tf.family !== "custom" || !tf.custom) return tf
-  const rolling = timeframeBounds({ ...tf, family: "lookback" }, now, cycle)
-  return tf.custom.start === rolling.start && tf.custom.end === rolling.end ? { ...tf, family: "lookback" } : tf
+  if (tf.family === "lookback") return { ...tf, lookbackOffset: (tf.lookbackOffset ?? 0) + delta }
+  return stepCustom(tf, delta)
 }
 
 /** What [ and ] step by, for the footer: "month", "quarter", "2 months",

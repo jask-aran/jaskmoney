@@ -1,6 +1,7 @@
 import { describe, expect, test } from "bun:test"
 import {
   applyChip,
+  rangeOffsetLabel,
   readCustomRange,
   stepRange,
   stepUnit,
@@ -153,15 +154,20 @@ test("calendar consolidation preserves early-year formatting and custom-range re
 describe("stepRange", () => {
   const now = new Date(2026, 10, 2, 12)
   const tf = { ...defaultTimeframe(now), family: "lookback" as const, lookback: "1M" as const }
-  test("a rolling range steps to the custom range of its days before it, and back to itself", () => {
-    const rolling = timeframeBounds(tf, now)
-    expect(rolling).toMatchObject({ start: "2026-10-02", end: "2026-11-02" })
-    const back = stepRange(tf, -1, now)
-    expect(back).toMatchObject({ family: "custom", custom: { start: "2026-08-31", end: "2026-10-01" } })
-    expect(stepRange(stepRange(back, -1, now), 1, now)).toEqual(back)
-    // Forward again, or 0 (now) from further back: the rolling range again.
-    expect(stepRange(back, 1, now)).toMatchObject({ family: "lookback", lookback: "1M" })
-    expect(timeframeNow(stepRange(back, -1, now), now)).toMatchObject({ family: "lookback", lookback: "1M" })
+  test("a lookback steps its own length and stays a lookback: 2M back is the two months before; 0 is now", () => {
+    expect(timeframeBounds(tf, now)).toMatchObject({ start: "2026-10-02", end: "2026-11-02" })
+    const twoM = applyChip(tf, 1, now)
+    const back = stepRange(twoM, -1, now)
+    expect(back).toMatchObject({ family: "lookback", lookback: "2M", lookbackOffset: -1 })
+    expect(timeframeBounds(back, now)).toMatchObject({ start: "2026-07-02", end: "2026-09-02" })
+    expect(rangeOffsetLabel(back, now)).toBe("2 months back")
+    expect(rangeOffsetLabel(stepRange(back, -1, now), now)).toBe("4 months back")
+    expect(rangeOffsetLabel(stepRange(applyChip(tf, 4, now), -2, now), now)).toBe("2 years back")
+    expect(rangeOffsetLabel(stepRange(twoM, 1, now), now)).toBe("2 months ahead")
+    // Forward again, 0, or the chip itself: now.
+    expect(rangeOffsetLabel(stepRange(back, 1, now), now)).toBe("")
+    expect(timeframeNow(back, now).lookbackOffset).toBe(0)
+    expect(applyChip(back, 1, now).lookbackOffset).toBe(0)
   })
   test("periods step a period and custom ranges their length; the footer names the step", () => {
     const month = applyChip(tf, 6, now)
