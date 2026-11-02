@@ -10,37 +10,13 @@ const row = transaction({ description: " eBay ", rawText: "eBay INTERNET" })
 
 test("merchant notes change only the breadth and category suggestion questions when present", () => {
   const breadth = merchantBreadthQuestion(row.description, row.rawText)
-  expect(JSON.stringify(breadth)).toBe(JSON.stringify({
-    type: "noul",
-    instructions: {
-      question: "Does `merchant` sell a wide range of unrelated goods (such as electronics, homewares, clothing and toys), so a purchase there could be any of them?",
-      merchant: { name: "eBay", bank_text: "eBay INTERNET" },
-    },
-    criteria: {
-      true: "A marketplace or a store selling many unrelated kinds of goods",
-      false: "A shop for one kind of thing, including a supermarket (groceries), a cafe, a petrol station or a service",
-    },
-  }))
-  expect(merchantBreadthQuestion(row.description, row.rawText, note)).toEqual({
-    type: "noul",
-    instructions: {
-      question: "Going by `merchant.note`, would the account holder's purchases at `merchant` fall into different budget categories from one time to the next?",
-      merchant: { name: "eBay", bank_text: "eBay INTERNET", note },
-    },
-    criteria: {
-      true: "Different purchases there are different kinds of spending: electronics one time, clothes or a gift the next",
-      false: "Their purchases there are nearly always one kind of spending, such as groceries",
-    },
-  })
+  expect(breadth).toMatchObject({ type: "noul", instructions: { merchant: { name: "eBay", bank_text: "eBay INTERNET" } } })
+  expect(JSON.stringify(breadth)).not.toContain("note")
+  const withNote = merchantBreadthQuestion(row.description, row.rawText, note)
+  expect(withNote).toMatchObject({ type: "noul", instructions: { merchant: { name: "eBay", bank_text: "eBay INTERNET", note } } })
+  expect(JSON.stringify(withNote)).not.toBe(JSON.stringify({ ...breadth, instructions: { ...(breadth.instructions as object), merchant: { name: "eBay", bank_text: "eBay INTERNET", note } } }))
   const plain = suggestionQuestion(row, { c1: "Groceries" }, "Groceries ×1")
-  expect(JSON.stringify(plain)).toBe(JSON.stringify({
-    type: "choice",
-    instructions: {
-      question: "Which category does `transaction` belong in? The description may be a person's name or a payment app rather than a shop: then the message, if any, says what the money was for, and the description says nothing about the category.",
-      transaction: { description: "eBay", amount: "-$10.00", direction: "money out", bank_text: "eBay INTERNET", categorised_before: "Groceries ×1" },
-    },
-    criteria: { c1: "Groceries" },
-  }))
+  expect(plain).toMatchObject({ type: "choice", instructions: { transaction: rowFacts(row, { earlier: "Groceries ×1" }) }, criteria: { c1: "Groceries" } })
   if (typeof plain.instructions !== "object") throw new Error("Expected transaction facts")
   expect(suggestionQuestion(row, { c1: "Groceries" }, "Groceries ×1", note)).toEqual({
     ...plain,

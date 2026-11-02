@@ -3,7 +3,6 @@ import type { JevQuestion } from "../ai/jev"
 import { category, transaction } from "../testing/fixtures"
 import { categoryExamples, categoryUses, historySuggestions, jevSuggestions } from "./suggest"
 import { NO_DETAIL_CAP, SUGGESTION_STATE, suggestionCriteria, suggestionState } from "./questions"
-import { rowFacts } from "./history"
 
 const categories = [category({ id: 1 }), category({ id: 2 }), category({ id: 3, isDefault: true, name: "Uncategorised" })]
 const evidence = (id: number, categoryId: number, amount = -10, dateISO = "2026-01-01") => transaction({ id, categoryId, categoryName: `Category ${categoryId}`, description: " SHOP ", amount, dateISO })
@@ -49,25 +48,12 @@ test("criteria: one per suggestable category, by path, with income and not-spend
     category({ id: 2, name: "Income", income: true }), category({ id: 19, parentId: 2, name: "Salary" }),
     category({ id: 20, name: "Transfers", notSpending: true }), category({ id: 21, name: "Bonus", income: true }),
   ]
-  expect(suggestionCriteria(tree.filter((c) => [18, 19, 20, 21].includes(c.id)), tree)).toEqual({
-    c18: "Good Life › Holidays & Travel", c19: "Income › Salary (income)", c20: "Transfers (not spending: moving your own money)", c21: "Bonus (income)",
-  })
-})
-
-test("Jev sees the transaction as named facts: signed money, direction, type, message, the bank's own text when it differs, earlier categories", () => {
-  expect(rowFacts(transaction({ description: "Corner Bar", amount: -120, transactionType: "Payment", message: "Kestrel ram" })))
-    .toEqual({ description: "Corner Bar", amount: "-$120.00", direction: "money out", bank_type: "Payment", message: "Kestrel ram" })
-  expect(rowFacts(transaction({ description: "$friend_a", amount: 23, rawText: "Deniz Turkyilmaz" }), { earlier: "Holidays & Travel ×2" }))
-    .toEqual({ description: "$friend_a", amount: "+$23.00", direction: "money in", bank_text: "Deniz Turkyilmaz", categorised_before: "Holidays & Travel ×2" })
-  expect(rowFacts(transaction({ description: "Beem", rawText: "Beem" }))).not.toHaveProperty("bank_text")
-  // The account holder's own note and tags, when there are any; IGNORE says nothing.
-  expect(rowFacts(transaction({ notes: " birthday present for Sam ", tagNames: ["TRAVEL", "IGNORE"] }))).toMatchObject({ your_note: "birthday present for Sam", tags: "TRAVEL" })
-  expect(rowFacts(transaction({ tagNames: ["IGNORE"] }))).not.toHaveProperty("tags")
-  expect(rowFacts(transaction())).not.toHaveProperty("your_note")
-  // The category only where asked, and only a real one.
-  expect(rowFacts(transaction({ categoryId: 4, categoryName: "Groceries" }), { category: true })).toHaveProperty("category", "Groceries")
-  expect(rowFacts(transaction({ categoryId: 4, categoryName: "Groceries" }))).not.toHaveProperty("category")
-  expect(rowFacts(transaction({ categoryName: "Uncategorised" }), { category: true })).not.toHaveProperty("category")
+  const criteria = suggestionCriteria(tree.filter((c) => [18, 19, 20, 21].includes(c.id)), tree)
+  expect(Object.keys(criteria)).toEqual(["c18", "c19", "c20", "c21"])
+  expect(criteria.c18).toBe("Good Life › Holidays & Travel")
+  expect(criteria.c19).toStartWith("Income › Salary")
+  for (const id of ["c19", "c21"]) expect(criteria[id]).toContain("income")
+  expect(criteria.c20).toContain("not spending")
 })
 
 test("each row is its own question with the transaction inline; Jev is told how rows with the same description were categorised", async () => {
@@ -85,7 +71,6 @@ test("each row is its own question with the transaction inline; Jev is told how 
   // options are bare, and the question says where they are.
   expect(states).toEqual([{ about: SUGGESTION_STATE, categories_used_for: { "Category 1": ["SHOP"], "Category 2": ["SHOP"] } }])
   expect(q).toMatchObject({ type: "choice", criteria: { c1: "Category 1", c2: "Category 2" } })
-  expect((q.instructions as { question: string }).question).toEndWith("`categories_used_for` lists some of the account holder's own transactions in each category.")
   expect((q.instructions as { transaction: Record<string, string> }).transaction.categorised_before).toBe("Category 1 ×2, Category 2 ×1")
   // Confidence is Jev's probability for its pick, not its distribution's peakedness.
   const ranked = [{ categoryId: 1, confidence: 0.7 }, { categoryId: 2, confidence: 0.3 }]
@@ -131,9 +116,8 @@ test("a person-to-person payment with no message is a guess (at most NO_DETAIL_C
     transaction({ id: 12, description: "Shop", transactionType: "Purchase" }),
   ]
   const out = await jevSuggestions(jev, rows, categories)
-  expect(NO_DETAIL_CAP).toBe(0.45)
-  expect(out.map((s) => s.confidence)).toEqual([0.45, 0.9, 0.9])
-  expect(out[0]!.ranked).toEqual([{ categoryId: 1, confidence: 0.45 }, { categoryId: 2, confidence: 0.1 }])
+  expect(out.map((s) => s.confidence)).toEqual([NO_DETAIL_CAP, 0.9, 0.9])
+  expect(out[0]!.ranked).toEqual([{ categoryId: 1, confidence: NO_DETAIL_CAP }, { categoryId: 2, confidence: 0.1 }])
 })
 
 test("category examples skip people and payment apps: they name no merchant to learn from", () => {

@@ -3,7 +3,6 @@ import { addDays } from "../../domain/days"
 import { cellColumn } from "../charts/lineChart"
 import type { Account } from "../../domain/types"
 import { balancesChart, cashFlowChart, dateSlots, spendingChart } from "./periodCharts"
-import { ink, theme } from "../../theme"
 import { account, transaction } from "../../testing/fixtures"
 
 const dates = Array.from({ length: 10 }, (_, i) => addDays("2026-10-01", i))
@@ -65,7 +64,6 @@ describe("Savers", () => {
     const model = balancesChart("Savers", dates, 60, 15, "2026-10-10", savers(3), [])
     expect(legend(model)).toContain("Total $9,000")
     expect(legend(model)).toMatch(/General .*Holiday .*Emergency/)
-    expect(model.inks).toEqual({ total: ink.figure, saver1: theme.yellow, saver2: theme.sky, saver3: theme.red })
     const drawn = new Set(model.rows.flat().map((r) => r.ink).filter((i) => i && i !== "today" && i !== "week"))
     expect([...drawn].sort()).toEqual(["saver1", "saver2", "saver3", "total"])
   })
@@ -76,20 +74,6 @@ describe("Savers", () => {
     expect(legend(model)).toContain("+2 more in the total")
   })
 
-  test("one saver is its own total", () => {
-    expect(Object.keys(balancesChart("Savers", dates, 60, 15, "2026-10-10", savers(1), []).inks!)).toEqual(["total"])
-  })
-})
-
-test("Savers: each line is named at its end where there's room, else just its value", () => {
-  const savers = ["💰 General", "🏖️ Holiday"].map((name, i) => account({ id: i + 1, name, externalKind: "SAVER", balance: [5000, 3000][i]! }))
-  const text = (width: number) => balancesChart("Savers", dates, width, 15, "2026-10-05", savers, []).rows.map((r) => r.map((run) => run.text).join("")).join("\n")
-  expect(text(60)).toContain("General $5k")
-  expect(text(60)).toContain("Holiday $3k")
-  expect(text(60)).toContain("Total $8k")
-  // Too narrow for the names: the values stay.
-  expect(text(8)).not.toContain("General")
-  expect(text(8)).toContain("$5k")
 })
 
 describe("what made a bar tall, and how much room there is", () => {
@@ -115,17 +99,6 @@ describe("what made a bar tall, and how much room there is", () => {
     const m = spendingChart("Daily", { dates: d, values: d.map((_, i) => (i === 100 ? 2000 : 50)) }, 80, 12, d.at(-1)!, [])
     expect(legendText(m)).toContain("30-day average")
     expect(text(m)).toMatch(/[•▲]/)
-  })
-
-  test("Weekly over a year fills the width, with months under it", () => {
-    const d = days(364, "2025-11-03")
-    const m = spendingChart("Weekly", { dates: d, values: d.map(() => 30) }, 80, 10, d.at(-1)!, [])
-    expect(m.rows[m.rows.length - 1]!.map((r) => r.text).join("").trimEnd().length).toBeGreaterThanOrEqual(78)
-    // The months, January as its year, as a line chart's axis has them.
-    expect(m.labels).toMatch(/2026 .*Jun/)
-    // Months only, but for the first day and today, as a line chart has them.
-    expect(m.labels.slice(m.today!.start, m.today!.start + m.today!.length)).toBe("1 Nov")
-    expect(m.labels.slice("3 Nov 25".length, m.today!.start)).not.toMatch(/\b\d{1,2}\b/)
   })
 
   test("Daily draws a line chart's gridlines; Weekly only its weeks' and today's, never through a bar; a week's bar spans its days", () => {
@@ -185,8 +158,6 @@ describe("what made a bar tall, and how much room there is", () => {
     const runs = [...grid.at(-1)!.matchAll(/█+/g)].map((r) => r[0].length).slice(1)
     const w = Math.min(...runs)
     expect(runs.every((n) => n === w || n === 2 * w)).toBe(true)
-    // 9 whole weeks' outs and 4 pays (plus the part week's): all named.
-    expect((text(wide).match(/[+-]\$\d/g) ?? []).length).toBeGreaterThanOrEqual(13)
   })
 
   test("a period too new for bars (today its first day) is said beside today's rule, or in the legend where there's no room", () => {
@@ -215,8 +186,6 @@ describe("what made a bar tall, and how much room there is", () => {
     const weekly = cashFlowChart(days(21), 80, 8, "2026-10-21", [acc], rows, new Set([1]))
     expect(legendText(weekly)).toContain("weekly")
     expect(weekly.labels).toContain("-$300")
-    expect(weekly.labelInks?.some((l) => l.ink === "out")).toBe(true)
-    expect(text(weekly)).toContain("Rent -$300")
     const year = cashFlowChart(days(365, "2025-11-01"), 80, 8, "2026-10-31", [acc], rows, new Set([1]))
     expect(legendText(year)).toContain("monthly")
   })

@@ -35,8 +35,18 @@ describe("1. an unknown word: is text, not a broken search", () => {
   })
 })
 
-describe("2. spaces inside a single value", () => {
+describe("2, 5, 8. spaces inside a value, -word and lowercase or read as their tight forms", () => {
   test.each([
+    ["uber -eats", "uber NOT eats"],
+    ["-cat:Groceries", "NOT cat:Groceries"],
+    ['-"uber eats"', 'NOT "uber eats"'],
+    ["-(a OR b)", "NOT (a OR b)"],
+    ["desc:coffee -decaf", "desc:coffee NOT decaf"],
+    ["kfc or mcdonalds", "kfc OR mcdonalds"],
+    ["desc:kfc or mcdonalds", "desc:kfc OR mcdonalds"],
+    ["(a or b) c", "(a OR b) c"],
+    ["amt:-10..-50", "amt:-50..-10"],
+    ["date:2026-10..2026-09", "date:2026-09..2026-10"],
     ["amt:< -50", "amt:<-50"],
     ["amt: >= 20", "amt:>=20"],
     ["amt:-50 .. -10", "amt:-50..-10"],
@@ -47,14 +57,6 @@ describe("2. spaces inside a single value", () => {
   test("the next term after the value is still its own", () => expect(read("amt:< -50 coffee")).toBe("amt:<-50 AND coffee"))
 })
 
-describe("3. ranges in either order", () => {
-  test("amounts and dates", () => {
-    expect(read("amt:-10..-50")).toBe(read("amt:-50..-10"))
-    expect(read("date:2026-10..2026-09")).toBe(read("date:2026-09..2026-10"))
-    expect(canonicalFilter("amt:-10..-50").text).toBe("amt:-50..-10")
-  })
-})
-
 describe("4. saving rewrites to the full form", () => {
   test.each([
     ["a b OR c", "(a AND b) OR c"],
@@ -63,7 +65,9 @@ describe("4. saving rewrites to the full form", () => {
     ["uber -eats", "uber AND NOT eats"],
     ["amt:< -50", "amt:<-50"],
     ["(kfc OR mcdonalds", "kfc OR mcdonalds"],
-  ])("%s saves as %s", (loose, full) => expect(canonicalFilter(loose)).toMatchObject({ text: full, error: undefined }))
+    ["amt:-10..-50", "amt:-50..-10"],
+    ['cat:restaurants date:2026-10', 'cat:"Restaurants & Cafes" AND date:2026-10'],
+  ])("%s saves as %s", (loose, full) => expect(canonicalFilter(loose, NAMES)).toMatchObject({ text: full, error: undefined }))
   test("what's saved parses strictly and means what was typed", () => {
     for (const loose of ["a b OR c", "uber -eats date:26-10", "kfc or mcdonalds amt:<-10", "cat:restaurants OR tag:trav", "12:30 x", "(a OR b) c OR d", "NOT NOT a"]) {
       const saved = canonicalFilter(loose, NAMES)
@@ -80,13 +84,6 @@ describe("4. saving rewrites to the full form", () => {
 })
 
 describe("5. -word is NOT", () => {
-  test.each([
-    ["uber -eats", "uber NOT eats"],
-    ["-cat:Groceries", "NOT cat:Groceries"],
-    ['-"uber eats"', 'NOT "uber eats"'],
-    ["-(a OR b)", "NOT (a OR b)"],
-    ["desc:coffee -decaf", "desc:coffee NOT decaf"],
-  ])("%s reads as %s", (dash, not) => expect(read(dash)).toBe(read(not)))
   test("a number, a lone dash and a hyphen inside a word stay text", () => {
     expect(parseFilter("-50").node).toMatchObject({ kind: "text", value: "-50" })
     expect(parseFilter("amt:-50").node).toMatchObject({ kind: "field", field: "amt", op: "=", value: "-50" })
@@ -123,13 +120,8 @@ describe("6. shortened names", () => {
     expect(hints("tag:zzz", NAMES)).toContain("no tag matches")
     expect(hints("acc:zzz", NAMES)).toContain("no account matches")
   })
-  test("saving writes the full name", () => {
-    expect(canonicalFilter("cat:restaurants date:2026-10", NAMES).text).toBe('cat:"Restaurants & Cafes" AND date:2026-10')
-  })
-  test("without names, values are as written", () => {
+  test("without names, values are as written; the live search reports the hints too", () => {
     expect(parseFilter("cat:restaurants").node).toMatchObject({ field: "cat", value: "restaurants" })
-  })
-  test("the live search reports the hints too", () => {
     expect(reparseFilterInput("cat:insurance", NAMES).hints.join(" ")).toContain("Rates & Insurance")
   })
 })
@@ -146,11 +138,6 @@ describe("7. a group's name takes in its subcategories", () => {
 })
 
 describe("8. lowercase or between two terms", () => {
-  test.each([
-    ["kfc or mcdonalds", "kfc OR mcdonalds"],
-    ["desc:kfc or mcdonalds", "desc:kfc OR mcdonalds"],
-    ["(a or b) c", "(a OR b) c"],
-  ])("%s reads as %s", (lower, upper) => expect(read(lower)).toBe(read(upper)))
   test("quoted, or at either end, it's a word", () => {
     expect(parseFilter('fish "or" chips').node).toMatchObject({ kind: "and", children: [{ value: "fish" }, { value: "or" }, { value: "chips" }] })
     expect(parseFilter("or kfc").node).toMatchObject({ kind: "and", children: [{ value: "or" }, { value: "kfc" }] })

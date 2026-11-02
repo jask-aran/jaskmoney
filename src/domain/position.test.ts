@@ -112,12 +112,12 @@ describe("computePosition", () => {
       .toEqual(["2025-12-31", "2026-01-01"])
   })
 
-  for (const dates of [
-    ["2026-09-30", "2026-10-01", "2026-10-02", "2026-10-03", "2026-10-04"],
-    ["2026-04-01", "2026-04-02", "2026-04-03", "2026-04-04", "2026-04-05"],
-  ]) {
-    const todayISO = dates[4]!
-    test(`history dates and burn window end on Melbourne DST change ${todayISO}`, () => {
+  test("history dates and burn window end on both Melbourne DST changes", () => {
+    for (const dates of [
+      ["2026-09-30", "2026-10-01", "2026-10-02", "2026-10-03", "2026-10-04"],
+      ["2026-04-01", "2026-04-02", "2026-04-03", "2026-04-04", "2026-04-05"],
+    ]) {
+      const todayISO = dates[4]!
       const transactions = [
         row(-900, { dateISO: dates[1]! }), // Before the three-day burn window.
         row(-20, { dateISO: dates[2]! }),
@@ -130,8 +130,8 @@ describe("computePosition", () => {
       expect(p.dailySpend).toBe(10)
       const short = computePosition(accounts, transactions.slice(1), todayISO, { burnDays: 90 })
       expect(short.dailySpend).toBe(10)
-    })
-  }
+    }
+  })
 })
 
 describe("computePeriodFlows", () => {

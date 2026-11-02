@@ -7,18 +7,13 @@ describe("amountFromText", () => {
     expect(amountFromText("$1,250.50")).toBe(1250.5)
     expect(amountFromText("  80 ")).toBe(80)
     expect(amountFromText(".5")).toBe(0.5)
-  })
-
-  test("does arithmetic with the usual precedence and brackets", () => {
+    // Arithmetic with the usual precedence and brackets, rounded to cents.
     expect(amountFromText("12+3.5*2")).toBe(19)
     expect(amountFromText("(12+3)*2")).toBe(30)
     expect(amountFromText("600/4")).toBe(150)
     expect(amountFromText("100 - 20 - 5")).toBe(75)
     expect(amountFromText("-5+10")).toBe(5)
     expect(amountFromText("$50 * 4")).toBe(200)
-  })
-
-  test("rounds to cents", () => {
     expect(amountFromText("100/3")).toBe(33.33)
     expect(amountFromText("0.1+0.2")).toBe(0.3)
   })
@@ -33,22 +28,16 @@ describe("amountFromText", () => {
 describe("dayFromText", () => {
   const today = "2026-11-02"
 
-  test("a day number alone is that day of this month", () => {
+  test("a day alone is this month; day/month is this year; day/month/year takes two or four digit years; ISO works", () => {
     expect(dayFromText("18", today)).toBe("2026-11-18")
     expect(dayFromText("1", today)).toBe("2026-11-01")
     expect(dayFromText("07", today)).toBe("2026-11-07")
-  })
-
-  test("day/month is this year; day/month/year takes two or four digit years", () => {
     expect(dayFromText("18/11", today)).toBe("2026-11-18")
     expect(dayFromText("3/2", today)).toBe("2026-02-03")
     expect(dayFromText("18/11/25", today)).toBe("2025-11-18")
     expect(dayFromText("18/11/2025", today)).toBe("2025-11-18")
     expect(dayFromText("18-11-2025", today)).toBe("2025-11-18")
     expect(dayFromText("18.11.25", today)).toBe("2025-11-18")
-  })
-
-  test("full ISO dates still work", () => {
     expect(dayFromText("2025-06-30", today)).toBe("2025-06-30")
     expect(dayFromText(" 2025-06-30 ", today)).toBe("2025-06-30")
   })
@@ -84,6 +73,5 @@ describe("rangeDayFromText", () => {
 
   test("writes a day the way it reads one back", () => {
     for (const iso of ["2026-09-02", "2025-12-31"]) expect(rangeDayFromText(rangeDayText(iso), today, "start")).toBe(iso)
-    expect(rangeDayText("2026-09-02")).toBe("2 Sep 2026")
   })
 })

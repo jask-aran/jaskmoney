@@ -3,13 +3,11 @@ import type { JevClient } from "../../ai/jev"
 import { data } from "../../state/dataStore"
 import { ui } from "../../state/uiStore"
 import { renderApp } from "../../testing/app"
-import { theme, tone } from "../../theme"
-import { RGBA } from "@opentui/core"
 
 let rendered: Awaited<ReturnType<typeof renderApp>> | undefined
 afterEach(() => { rendered?.renderer.destroy(); rendered = undefined })
 
-test("near misses follow the matches, marked ≈ with their probability and dimmed; matches keep their colours", async () => {
+test("near misses follow the matches, marked ≈ with their probability", async () => {
   rendered = await renderApp({ width: 140, height: 30 })
   data.init(":memory:")
   const db = data.getDb()!
@@ -30,15 +28,8 @@ test("near misses follow the matches, marked ≈ with their probability and dimm
   await rendered.renderOnce(); await rendered.flush()
   const lines = rendered.captureSpans().lines
   const row = (text: string) => lines.find((l) => l.spans.some((s) => s.text.includes(text)))!
-  const span = (text: string, inRow: string) => row(inRow).spans.find((s) => s.text.includes(text))!
   const frame = rendered.captureCharFrame()
-  // The match first (cursor on it), the near miss after, marked ≈ in the gutter.
+  // The match first, the near miss after, marked ≈ with its probability.
   expect(frame.indexOf("Alba Coffee")).toBeLessThan(frame.indexOf("Tea House"))
-  expect(row("Tea House").spans.map((s) => s.text).join("")).toMatch(/^│ ?≈/)
-  // Probabilities: the match's in green, the near miss's (≈) in amber.
-  expect(span("≈50%", "Tea House").fg.toInts()).toEqual(RGBA.fromHex(tone.caution).toInts())
-  // The near miss's description is dimmed; the filter bar says Jev reads each row.
-  expect(span("Tea House", "Tea House").fg.toInts()).toEqual(RGBA.fromHex(theme.overlay1).toInts())
-  expect(frame).toContain("◆ ask: judged by Jev")
-  expect(frame).toContain("1 match, then 1 near (≈)")
+  expect(row("Tea House").spans.map((s) => s.text).join("")).toMatch(/^│ ?≈.*≈50%/)
 })

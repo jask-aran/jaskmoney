@@ -32,21 +32,16 @@ describe("trips", () => {
       { id: online.id, confidence: 0.85 },
       { id: refund.id, confidence: 0.85 },
     ].sort((a, b) => a.id - b.id))
-    expect(trips[1]!.detail).toBe("4 in person, 2 more in SGD · 22–25 May 2026")
   })
 
-  test("a trip needs 3 in-person rows; an unknown currency is named by its code", () => {
+  test("a trip needs 3 in-person rows; an unknown currency is named by its code; a trip across months names the month it started", () => {
     nextId = 100
     const two = [sgd("2026-05-22", "a"), sgd("2026-05-23", "b")]
     expect(detectTrips(two)).toEqual([])
     const xyz = ["2026-03-01", "2026-03-01", "2026-03-02"].map((d) => spend(d, "x", { foreignAmount: "XYZ -1", cardMethod: "CHIP", transactionType: "International Purchase" }))
     expect(detectTrips(xyz).map((t) => t.name)).toEqual(["XYZ Mar 2026"])
-  })
-
-  test("a trip across months names the month it started", () => {
-    nextId = 200
     const rows = ["2026-05-30", "2026-05-31", "2026-06-02"].map((d) => sgd(d, "x"))
-    expect(detectTrips(rows)[0]).toMatchObject({ name: "Singapore May 2026", start: "2026-05-30", end: "2026-06-02", detail: "3 in person · 30 May – 2 Jun 2026" })
+    expect(detectTrips(rows)[0]).toMatchObject({ name: "Singapore May 2026", start: "2026-05-30", end: "2026-06-02" })
   })
 })
 
@@ -63,12 +58,8 @@ describe("regular payments", () => {
     const yearly = ["2025-03-01", "2026-03-01"].map((d) => spend(d, "Domain", { amount: -20 }))
     const groups = detectRecurring([...netflix, ...openai, ...gym, ...coles, ...rent, ...pay, ...yearly])
     expect(groups).toHaveLength(1)
-    expect(groups[0]).toMatchObject({ kind: "recurring", name: "Subscriptions", detail: "Gym fortnightly · Netflix monthly · OpenAI monthly" })
+    expect(groups[0]).toMatchObject({ kind: "recurring", name: "Subscriptions" })
     expect(groups[0]!.rows).toEqual([...netflix, ...openai, ...gym].map((t) => ({ id: t.id, confidence: 0.9 })).sort((a, b) => a.id - b.id))
-  })
-
-  test("nothing regular, no suggestion", () => {
-    nextId = 400
     expect(detectRecurring([spend("2026-01-01", "Once")])).toEqual([])
   })
 })

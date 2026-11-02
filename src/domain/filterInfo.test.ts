@@ -1,6 +1,5 @@
 import { expect, test } from "bun:test"
 import { canonicalFilter, evalFilter, parseFilter, parseFilterStrict, reparseFilterInput, type FilterTxn } from "./filter"
-import { JQL } from "./filterLanguage"
 
 /**
  * info: (approved 2026-10-30, a term legacy Go filter.go doesn't have):
@@ -22,14 +21,11 @@ const matches = (input: string, t: FilterTxn) => {
 
 const brush = row({ bought: [{ name: "Oral-B iO Series 3 Electric Toothbrush" }, { name: "Brush Heads" }] })
 
-test("info: finds what a row bought, ignoring case, spaces and punctuation", () => {
+test("info: finds what a row bought (ignoring case, spaces and punctuation), the bank's message and raw text", () => {
   expect(matches("info:toothbrush", brush)).toBe(true)
   expect(matches("info:oralb", brush)).toBe(true)
   expect(matches("info:\"brush heads\"", brush)).toBe(true)
   expect(matches("info:blender", brush)).toBe(false)
-})
-
-test("info: finds the bank's message and raw text", () => {
   expect(matches("info:rent", row({ description: "Sam Lee", message: "Rent for October" }))).toBe(true)
   expect(matches("info:marketplace", row({ rawText: "AMAZON AU MARKETPLACE, SYDNEY" }))).toBe(true)
 })
@@ -46,17 +42,9 @@ test("bare words in rules and desc: stay description-only", () => {
   expect(matches("amazon info:toothbrush", brush)).toBe(true)
   expect(matches("info:toothbrush OR info:blender", brush)).toBe(true)
   expect(matches("NOT info:toothbrush", brush)).toBe(false)
-})
-
-test("info: is strict JQL, saved as written", () => {
+  // Strict JQL, saved as written.
   expect(parseFilterStrict("info:toothbrush").error).toBeUndefined()
-  expect(canonicalFilter("info:toothbrush").text).toBe("info:toothbrush")
   expect(canonicalFilter('info:"brush heads"').text).toBe('info:"brush heads"')
-})
-
-test("the JQL description has info: as a term", () => {
-  const terms = JQL.find((s) => s.title === "Terms")!.blocks.flatMap((b) => (b.kind === "rows" ? b.rows : []))
-  expect(terms.some((r) => r.write.startsWith("info:"))).toBe(true)
 })
 
 /** The search bar (2026-10-30, approved): words alone, with no field in

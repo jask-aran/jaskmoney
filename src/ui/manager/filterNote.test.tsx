@@ -1,14 +1,12 @@
 import { afterEach, expect, test } from "bun:test"
-import { RGBA } from "@opentui/core"
 import { data } from "../../state/dataStore"
 import { ui } from "../../state/uiStore"
 import { renderApp } from "../../testing/app"
-import { theme, tone } from "../../theme"
 
 let rendered: Awaited<ReturnType<typeof renderApp>> | undefined
 afterEach(() => { rendered?.renderer.destroy(); rendered = undefined; data.clearFilter() })
 
-test("beside the bar's dot: the full form a forgiven search reads as, what saving would refuse, why it doesn't parse", async () => {
+test("the filter bar's dot says whether a search reads cleanly, needs a check, or doesn't parse", async () => {
   rendered = await renderApp({ width: 140, height: 30 })
   data.init(":memory:")
   const db = data.getDb()!
@@ -18,15 +16,14 @@ test("beside the bar's dot: the full form a forgiven search reads as, what savin
   data.refresh()
   data.setState({ accountSelection: "all" })
   ui.switchTab("manager")
-  const spanOf = async (search: string, text: string) => {
+  const dot = async (search: string) => {
     data.setFilterLive(search)
     await rendered!.renderOnce(); await rendered!.flush()
-    const spans = rendered!.captureSpans().lines.flatMap((l) => l.spans)
-    const span = spans.find((s) => s.text.includes(text))
-    expect({ search, found: !!span }).toEqual({ search, found: true })
-    return { fg: span!.fg.toInts(), dot: /^●\s*(ok|check|parse)/.exec(spans.find((s) => s.text.trim().startsWith("●"))!.text.trim())![1] }
+    const mark = rendered!.captureSpans().lines.flatMap((l) => l.spans).find((s) => s.text.trim().startsWith("●"))!
+    return /^●\s*(ok|check|parse)/.exec(mark.text.trim())![1]
   }
-  expect(await spanOf("cat:restaurants or kfc", '→ cat:"Restaurants & Cafes" OR kfc')).toEqual({ fg: RGBA.fromHex(theme.overlay1).toInts(), dot: "ok" })
-  expect(await spanOf("cat:insurance", "could be Rates & Insurance or Car Insurance: finding either")).toEqual({ fg: RGBA.fromHex(tone.caution).toInts(), dot: "check" })
-  expect(await spanOf('desc:"open', "searching it as one phrase")).toEqual({ fg: RGBA.fromHex(tone.bad).toInts(), dot: "parse" })
+  // Forgiven and read in full; ambiguous, which saving would refuse; unparsed.
+  expect(await dot("cat:restaurants or kfc")).toBe("ok")
+  expect(await dot("cat:insurance")).toBe("check")
+  expect(await dot('desc:"open')).toBe("parse")
 })

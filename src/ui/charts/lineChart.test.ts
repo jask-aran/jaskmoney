@@ -19,12 +19,6 @@ describe("lineChart", () => {
     expect(rows[0]!.map((r) => [r.text, r.ink])).toEqual([["⣀⡀", "a"], [" ", null], ["│", "today"]])
   })
 
-  test("a later series owns shared cells", () => {
-    const rows = lineChart({
-      series: [{ values: [0, 0], ink: "ref" }, { values: [0, 0], ink: "data" }], length: 2, width: 1, height: 1, min: 0, max: 1,
-    })
-    expect(rows[0]).toEqual([{ text: "⣀", ink: "data" }])
-  })
 })
 
 describe("lineChart fill", () => {

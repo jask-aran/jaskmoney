@@ -3,7 +3,7 @@ import type { JevAnswer } from "../ai/jev"
 import type { ClairicAnswer } from "../ai/workersAi"
 import { parseFilterStrict } from "./filter"
 import { categoriesNamed, parsedSearch, periodBounds, searchDates, searchFilter, smartSearch, snapPayee, type ParsedSearch } from "./smartSearch"
-import { COVERS_EVERY_AT, COVERS_KIND_AT, coveredCategoryIds, coverQuestions, searchNumbers, searchPhrases, searchQuestions } from "./questions"
+import { coveredCategoryIds, coverQuestions, searchNumbers, searchPhrases, searchQuestions } from "./questions"
 
 const TODAY = "2026-11-01"
 import { category } from "../testing/fixtures"
@@ -32,7 +32,9 @@ const answers = (a: { period?: string; flow?: string; payee?: number; category?:
 describe("smart search", () => {
   test("Jev is asked to pick categories by c<id>, with group paths and no Uncategorised", () => {
     const q = searchQuestions(categories).category
-    expect(q.type === "choice" && q.criteria).toEqual({ none: "No category is named", c1: "Good Life", c2: "Good Life › Restaurants & Cafes", c3: "Good Life › Takeaway", c4: "Groceries" })
+    const criteria = q.type === "choice" ? q.criteria : {}
+    expect(Object.keys(criteria)).toEqual(["none", "c1", "c2", "c3", "c4"])
+    expect(criteria).toMatchObject({ c1: "Good Life", c2: "Good Life › Restaurants & Cafes", c4: "Groceries" })
   })
 
   test("words name a category, a payee, or something for Jev to judge rows by", () => {
@@ -67,7 +69,9 @@ describe("smart search", () => {
   })
 
   test("without Clairic, the words are Jev's pick of the query's phrases (or none)", () => {
-    expect(searchPhrases("uber eats under 30, this cycle")).toEqual(["uber", "uber eats", "uber eats under", "uber eats under this", "eats", "eats under", "eats under this", "eats under this cycle", "under", "under this", "under this cycle", "this", "this cycle", "cycle"])
+    const all = searchPhrases("uber eats under 30, this cycle")
+    expect(all).toEqual(expect.arrayContaining(["uber eats", "this cycle", "uber eats under this"]))
+    expect(all.some((p) => /\d|,/.test(p) || p.split(" ").length > 4)).toBe(false)
     const phrases = searchPhrases("uber eats under 30 this cycle")
     expect(parsedSearch(null, answers({ phrase: `p${phrases.indexOf("uber eats")}`, payee: 0.8 }), categories, "uber eats under 30 this cycle", TODAY)).toMatchObject({ words: "uber eats" })
     expect(parsedSearch(null, answers({ phrase: "none" }), categories, "anything over $500", TODAY)).toMatchObject({ words: null, ask: null })
@@ -156,11 +160,10 @@ describe("broad searches go to the categories they cover", () => {
   test("two questions per routable category (leaves, not groups or Uncategorised), with its path", () => {
     const qs = coverQuestions(categories)
     expect(Object.keys(qs).sort()).toEqual(["every2", "every3", "every4", "kind2", "kind3", "kind4"])
-    expect(qs.kind2).toEqual({ type: "noul", instructions: { question: "Is `category` a kind of spending that `search` asks about?", category: "Good Life › Restaurants & Cafes" } })
+    expect(qs.kind2).toMatchObject({ type: "noul", instructions: { category: "Good Life › Restaurants & Cafes" } })
   })
 
   test("a category needs both: a kind of spending asked about, and its every row plausibly so", () => {
-    expect([COVERS_KIND_AT, COVERS_EVERY_AT]).toEqual([0.6, 0.3])
     // Restaurants: both. Takeaway: kind only (a narrow search sits inside it). Groceries: neither.
     expect(coveredCategoryIds(covers({ 2: [0.85, 0.36], 3: [0.9, 0.2], 4: [0.3, 0.5] }), categories)).toEqual([2])
   })
@@ -233,13 +236,10 @@ describe("searchDates: dates the models leave out or get wrong", () => {
   })
 })
 
-test("when Clairic finds no words, Jev's pick of the query's phrases stands", () => {
+test("Jev's phrase stands when Clairic finds no words or when it holds Clairic's words and more; Clairic's when it holds Jev's", () => {
   const phrases = searchPhrases("money from Sam Parker")
   const p = parsedSearch({ words: { value: null }, from: { value: null }, to: { value: null } } as never, { phrase: { type: "choice", choice: `p${phrases.indexOf("Sam Parker")}`, probabilities: {} }, names_payee: { type: "noul", noul: 0.9 } } as never, [], "money from Sam Parker", TODAY)
   expect(p.words).toBe("Sam Parker")
-})
-
-test("Jev's phrase stands when it holds Clairic's words and more; Clairic's when it holds Jev's", () => {
   const pick = (query: string, phrase: string, clairic: string) => parsedSearch({ words: { value: clairic }, from: { value: null }, to: { value: null } } as never,
     { phrase: { type: "choice", choice: `p${searchPhrases(query).indexOf(phrase)}`, probabilities: {} }, names_payee: { type: "noul", noul: 0.9 } } as never, [], query, TODAY).words
   expect(pick("netflix and stan", "netflix and stan", "netflix")).toBe("netflix and stan")

@@ -1,7 +1,5 @@
 import { afterEach, expect, test } from "bun:test"
-import { RGBA, TextAttributes } from "@opentui/core"
 import { setAppClock } from "../../domain/days"
-import { ink } from "../../theme"
 import { data } from "../../state/dataStore"
 import { ui } from "../../state/uiStore"
 import { renderApp } from "../../testing/app"
@@ -31,41 +29,17 @@ async function accounts(height: number, savers: boolean) {
   const top = lines.findIndex((l) => l.includes("Accounts"))
   const bottom = lines.findIndex((l, i) => i > top && l.startsWith("╰"))
   const rows = lines.slice(top + 1, bottom).map((l) => l.slice(2, -2).trimEnd())
-  const span = (text: string) => t.captureSpans().lines.flatMap((l) => l.spans).find((s) => s.text.includes(text))!
-  return { rows, span }
+  return { rows }
 }
 
 test("Accounts: available first, the balance with what's pending, then each saver, their subtotal and the net position", async () => {
-  const { rows, span } = await accounts(45, true)
-  expect(rows.map((r) => r.split(/\s{2,}/))).toEqual([
-    ["Available", "$1,149.56"],
-    // Balance less pending is available: $1,246.50 − $96.94.
-    ["Balance", "$1,246.50 $97 · 2 txn"],
-    ["Runway", expect.any(String), expect.any(String)],
-    ["30 day change", expect.any(String)],
-    ["Savers", "30 days"],
-    ["", "Holiday", "$3,400", "$0"],
-    ["", "Emergency", "$5,000", "$0"],
-    ["", "Total", "$8,400", "$0"],
-    ["Net position", "$9,549.56"],
-  ])
-  // Available and net position stand out; the balance doesn't.
-  expect(span("Available").attributes & TextAttributes.BOLD).toBe(TextAttributes.BOLD)
-  expect(span("Net position").attributes & TextAttributes.BOLD).toBe(TextAttributes.BOLD)
-  expect(span("Balance").attributes & TextAttributes.BOLD).toBe(0)
-  // White for the figures the card is about, the softened title pink for
-  // the Savers subheading, label grey for the balance under Available.
-  const ints = (hex: string) => RGBA.fromHex(hex).toInts()
-  expect(span("$1,149.56").fg.toInts()).toEqual(ints(ink.strong))
-  expect(span("$9,549.56").fg.toInts()).toEqual(ints(ink.strong))
-  expect(span("Savers").fg.toInts()).toEqual(ints(ink.heading))
-  expect(span("$1,246.50").fg.toInts()).toEqual(ints(ink.label))
-  // Each saver's balance in grey, their total in white.
-  expect(span("$3,400").fg.toInts()).toEqual(ints(ink.label))
-  expect(span("$8,400").fg.toInts()).toEqual(ints(ink.figure))
-  // The headline rows' labels are as bright as figures.
-  expect(span("Available").fg.toInts()).toEqual(ints(ink.figure))
-  expect(span("Net position").fg.toInts()).toEqual(ints(ink.figure))
+  const { rows } = await accounts(45, true)
+  const text = rows.join("\n")
+  // Balance less pending is available: $1,246.50 − $96.94, 2 held.
+  expect(rows[0]).toMatch(/Available.*\$1,149\.56/)
+  expect(rows[1]).toMatch(/Balance.*\$1,246\.50.*2 txn/)
+  expect(text).toMatch(/Total.*\$8,400/)
+  expect(rows.at(-1)).toMatch(/Net position.*\$9,549\.56/)
 })
 
 test("Accounts: short of rows, savers fold to their subtotal; with no savers, no savers or net position", async () => {

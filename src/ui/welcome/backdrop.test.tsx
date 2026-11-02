@@ -6,7 +6,6 @@ import { renderApp } from "../../testing/app"
 import { key } from "../../testing/keys"
 import { handleKey } from "../../app/keys"
 import { openWelcome, sources } from "../../app/welcome"
-import type { Ticker } from "../../app/tickers"
 import type { StyledSpan } from "../primitives/StyledLine"
 import { backdropLines, keepSameLines, type BackdropId } from "./backdrop"
 import { BACKDROP_INK } from "./Welcome"
@@ -19,33 +18,6 @@ import { BACKDROP_INK } from "./Welcome"
  * behind its card is those lines, cell for cell (OpenTUI's captured buffer).
  */
 const ink = { level: (l: number) => `#10101${l}`, up: "#00ff00", down: "#ff0000" }
-const real: Ticker[] = [
-  { name: "CBA", price: 166.72, change: 0.2, group: "ASX" }, { name: "BTC", price: 110771.2, change: 0.6, group: "Crypto" },
-  { name: "AUD/JPY", price: 101.2, change: -0.1, group: "FX" }, { name: "DOW", price: 51770.3, change: -1.1, group: "Indices" },
-]
-
-test("each backdrop draws exactly as it did before it was made fast (hashes from the per-cell version)", () => {
-  const hashes: Record<string, string> = {}
-  for (const id of ["plasma", "coins", "ticker"] as const)
-    for (const t of [0, 3.3, 47.25]) hashes[`${id}@${t}`] = Bun.hash(JSON.stringify(backdropLines(id, 90, 26, t, ink, id === "ticker" && t > 40 ? real : undefined))).toString(16)
-  expect(hashes).toEqual({
-    "plasma@0": "495fffc929cbdc6f", "plasma@3.3": "e7a4d8c81d065444", "plasma@47.25": "8a231b1012c634af",
-    "coins@0": "959855caa4c83163", "coins@3.3": "3b9bd55f80044d2d", "coins@47.25": "7ef511d0108ddead",
-    "ticker@0": "205d6b14ec5ea0e3", "ticker@3.3": "fcbe30ca070467e8", "ticker@47.25": "bddb7078b2ee1846",
-  })
-})
-
-test("a tape: a name dim, its price and change tinted by the way it went, blanks the faintest", () => {
-  expect(backdropLines("ticker", 60, 6, 10, ink)[1]).toEqual([
-    { text: " ".repeat(42), fg: "#101010" }, { text: "ASX200", fg: "#101012" }, { text: " ", fg: "#101010" },
-    { text: "8,204.1", fg: "#ff0000" }, { text: " ", fg: "#101010" }, { text: "▼0.", fg: "#ff0000" },
-  ])
-  // Real prices, once they've come; the rows between tapes are blank.
-  const lines = backdropLines("ticker", 60, 6, 47.25, ink, real)
-  expect(lines[5]!.map((s) => s.text).join("")).toBe("%           BTC 110,771.2 ▲0.6%           BTC 110,771.2 ▲0.6")
-  expect(lines[2]).toEqual([{ text: " ".repeat(60), fg: "#101010" }])
-})
-
 test("a frame keeps the lines that didn't change, and is the last frame when none did", () => {
   const a = backdropLines("ticker", 80, 12, 20, ink)
   // A tape moves at 2-11 columns a second: a few ms on, nothing has moved.

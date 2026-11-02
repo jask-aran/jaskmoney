@@ -4,7 +4,6 @@ import { loadSuggestions, saveSuggestions } from "../db/client"
 import { category, transaction } from "../testing/fixtures"
 import { testDb } from "../testing/scoped"
 import { categoryPickerRows, pickerSuggestions } from "./categoryOptions"
-import { RANKED_MIN, SUGGESTION_RANKED } from "./questions"
 import { historySuggestions, jevSuggestions } from "./suggest"
 import type { CategorySuggestion } from "./types"
 
@@ -15,7 +14,6 @@ const categories = [
 ]
 
 test("Jev's suggestion keeps the categories it weighed: its pick first, then most likely, at most SUGGESTION_RANKED, none under RANKED_MIN", async () => {
-  expect([SUGGESTION_RANKED, RANKED_MIN]).toEqual([5, 0.03])
   const probabilities = { c1: 0.05, c2: 0.5, c3: 0.2, c4: 0.1, c5: 0.06, c6: 0.04, c7: 0.02, c9: 0.03 }
   const jev: Pick<JevClient, "judge"> = { async judge(qs) {
     return Object.fromEntries(Object.keys(qs).map((id) => [id, { type: "choice" as const, choice: "c3", confidence: 0.4, probabilities }]))

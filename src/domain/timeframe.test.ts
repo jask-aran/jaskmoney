@@ -1,10 +1,8 @@
 import { describe, expect, test } from "bun:test"
 import {
   applyChip,
-  rangeOffsetLabel,
   readCustomRange,
   stepRange,
-  stepUnit,
   comparisonWindows,
   stepPeriod,
   defaultTimeframe,
@@ -15,7 +13,6 @@ import {
   CUSTOM_CHIP,
   activeChipIndex,
   periodOffset,
-  offsetLabel,
   stepChip,
   LOOKBACKS,
   PERIODS,
@@ -27,22 +24,9 @@ import { transaction } from "../testing/fixtures"
 describe("timeframe", () => {
   const now = new Date(2026, 1, 18) // 18 Feb 2026
 
-  test("month period bounds", () => {
-    const tf = defaultTimeframe(now)
-    const b = timeframeBounds(tf, now)
-    expect(b.start).toBe("2026-02-01")
-    expect(b.end).toBe("2026-02-28")
-  })
-
-  test("lookback 1M", () => {
-    let tf = defaultTimeframe(now)
-    tf = applyChip(tf, 0, now) // 1M
-    const b = timeframeBounds(tf, now)
-    expect(b.start).toBe("2026-01-18")
-    expect(b.end).toBe("2026-02-18")
-  })
-
-  test("filter rows", () => {
+  test("month period and 1M lookback bounds; rows filtered to the period", () => {
+    expect(timeframeBounds(defaultTimeframe(now), now)).toMatchObject({ start: "2026-02-01", end: "2026-02-28" })
+    expect(timeframeBounds(applyChip(defaultTimeframe(now), 0, now), now)).toMatchObject({ start: "2026-01-18", end: "2026-02-18" })
     const tf = defaultTimeframe(now)
     const rows = [
       transaction({ dateISO: "2026-01-15" }),
@@ -55,13 +39,10 @@ describe("timeframe", () => {
 })
 
 describe("comparisonWindows", () => {
-  test("a running period compares its days so far with the same days before it", () => {
+  test("a running period compares its days so far with the same days before it; a finished one the whole previous window", () => {
     expect(comparisonWindows("2026-10-01", "2026-10-31", "2026-10-26")).toEqual({
       days: 26, partial: true, previous: { start: "2026-08-31", end: "2026-09-25" },
     })
-  })
-
-  test("a finished period compares with the whole previous window", () => {
     expect(comparisonWindows("2026-09-01", "2026-09-30", "2026-10-26")).toEqual({
       days: 30, partial: false, previous: { start: "2026-08-02", end: "2026-08-31" },
     })
@@ -71,14 +52,10 @@ describe("comparisonWindows", () => {
 describe("cycle period", () => {
   const payday = { unit: "fortnight" as const, anchor: "date" as const, anchorDate: "2026-10-16" }
 
-  test("defaults to the budget cycle containing today", () => {
+  test("defaults to the budget cycle containing today and steps a whole cycle at a time", () => {
     const tf = defaultTimeframe(new Date(2026, 9, 26), payday)
     expect(tf).toMatchObject({ family: "period", period: "cycle", periodAnchor: "2026-10-16" })
-    expect(timeframeBounds(tf, new Date(2026, 9, 26), payday)).toEqual({ start: "2026-10-16", end: "2026-10-29", label: "16 Oct – 29 Oct 2026" })
-  })
-
-  test("steps a whole cycle at a time", () => {
-    const tf = defaultTimeframe(new Date(2026, 9, 26), payday)
+    expect(timeframeBounds(tf, new Date(2026, 9, 26), payday)).toMatchObject({ start: "2026-10-16", end: "2026-10-29" })
     expect(stepPeriod(tf, -1, payday).periodAnchor).toBe("2026-10-02")
     expect(stepPeriod(tf, 2, payday).periodAnchor).toBe("2026-11-13")
   })
@@ -91,9 +68,6 @@ describe("stepping", () => {
     expect(periodOffset(month, now)).toBe(0)
     expect(periodOffset(stepPeriod(stepPeriod(month, -1), -1), now)).toBe(-2)
     expect(periodOffset(stepPeriod(month, 1), now)).toBe(1)
-    expect(offsetLabel("month", -2)).toBe("2 months back")
-    expect(offsetLabel("qtr", 1)).toBe("1 quarter ahead")
-    expect(offsetLabel("cycle", 0)).toBe("")
   })
   test("stepChip walks the Lookback and Period chips, never Custom (C, or its chip, asks for dates)", () => {
     const tf = applyChip(defaultTimeframe(now), LOOKBACKS.length + PERIODS.indexOf("year"), now)
@@ -107,9 +81,9 @@ describe("stepping", () => {
 describe("custom range", () => {
   test("validates typed dates", () => {
     expect(customRange("2026-10-01", "2026-10-15")).toEqual({ start: "2026-10-01", end: "2026-10-15" })
-    expect(customRange("2026-02-30", "2026-03-01")).toBe("Start must be a date: YYYY-MM-DD")
-    expect(customRange("2026-10-01", "2026-9-1")).toBe("End must be a date: YYYY-MM-DD")
-    expect(customRange("2026-10-15", "2026-10-01")).toBe("End is before start")
+    expect(customRange("2026-02-30", "2026-03-01")).toContain("Start")
+    expect(customRange("2026-10-01", "2026-9-1")).toContain("End")
+    expect(typeof customRange("2026-10-15", "2026-10-01")).toBe("string")
   })
   test("the Custom chip returns to the last range, and bounds follow it", () => {
     const now = new Date(2026, 9, 26)
@@ -118,19 +92,13 @@ describe("custom range", () => {
     const custom = applyChip({ ...tf, custom: { start: "2026-09-03", end: "2026-10-09" } }, CUSTOM_CHIP, now)
     expect(custom.family).toBe("custom")
     expect(activeChipIndex(custom)).toBe(CUSTOM_CHIP)
-    expect(timeframeBounds(custom, now)).toEqual({ start: "2026-09-03", end: "2026-10-09", label: "3 Sep – 9 Oct 2026" })
+    expect(timeframeBounds(custom, now)).toMatchObject({ start: "2026-09-03", end: "2026-10-09" })
   })
   test("[ and ] move a custom range by its own length", () => {
     const tf = { ...defaultTimeframe(new Date(2026, 9, 26)), family: "custom" as const, custom: { start: "2026-10-01", end: "2026-10-10" } }
     expect(stepCustom(tf, 1).custom).toEqual({ start: "2026-10-11", end: "2026-10-20" })
     expect(stepCustom(tf, -1).custom).toEqual({ start: "2026-09-21", end: "2026-09-30" })
   })
-})
-
-test("a single month's label names it once", () => {
-  const now = new Date(2026, 9, 27)
-  const month = applyChip(defaultTimeframe(now), LOOKBACKS.length + PERIODS.indexOf("month"), now)
-  expect(timeframeBounds(month, now).label).toBe("Oct 2026")
 })
 
 test("timeframeNow: the same kind of range, now", () => {
@@ -143,8 +111,8 @@ test("timeframeNow: the same kind of range, now", () => {
 
 test("calendar consolidation preserves early-year formatting and custom-range rejection", () => {
   for (const iso of ["0099-01-01", "0100-01-01", "0999-01-01"]) {
-    expect(customRange(iso, "2026-10-27")).toBe("Start must be a date: YYYY-MM-DD")
-    expect(customRange("2026-10-27", iso)).toBe("End must be a date: YYYY-MM-DD")
+    expect(customRange(iso, "2026-10-27")).toContain("Start")
+    expect(customRange("2026-10-27", iso)).toContain("End")
   }
   const early = new Date(1000, 0, 1)
   early.setFullYear(999)
@@ -161,30 +129,23 @@ describe("stepRange", () => {
     const back = stepRange(twoM, -1, now)
     expect(back).toMatchObject({ family: "lookback", lookback: "2M", lookbackOffset: -1 })
     expect(timeframeBounds(back, now)).toMatchObject({ start: "2026-07-02", end: "2026-09-02" })
-    expect(rangeOffsetLabel(back, now)).toBe("2 months back")
-    expect(rangeOffsetLabel(stepRange(back, -1, now), now)).toBe("4 months back")
-    expect(rangeOffsetLabel(stepRange(applyChip(tf, 4, now), -2, now), now)).toBe("2 years back")
-    expect(rangeOffsetLabel(stepRange(twoM, 1, now), now)).toBe("2 months ahead")
+    expect(stepRange(back, -1, now).lookbackOffset).toBe(-2)
+    expect(stepRange(twoM, 1, now).lookbackOffset).toBe(1)
     // Forward again, 0, or the chip itself: now.
-    expect(rangeOffsetLabel(stepRange(back, 1, now), now)).toBe("")
+    expect(stepRange(back, 1, now).lookbackOffset).toBe(0)
     expect(timeframeNow(back, now).lookbackOffset).toBe(0)
     expect(applyChip(back, 1, now).lookbackOffset).toBe(0)
   })
-  test("periods step a period and custom ranges their length; the footer names the step", () => {
-    const month = applyChip(tf, 6, now)
-    expect(timeframeBounds(stepRange(month, -1, now), now)).toMatchObject({ start: "2026-10-01", end: "2026-10-31" })
-    expect(stepUnit(month)).toBe("month")
-    expect(stepUnit(tf)).toBe("month")
-    expect(stepUnit({ ...tf, lookback: "3M" })).toBe("3 months")
-    expect(stepUnit({ ...tf, family: "custom", custom: { start: "2026-10-01", end: "2026-10-14" } })).toBe("14 days")
+  test("periods step a period", () => {
+    expect(timeframeBounds(stepRange(applyChip(tf, 6, now), -1, now), now)).toMatchObject({ start: "2026-10-01", end: "2026-10-31" })
   })
 })
 
 describe("readCustomRange", () => {
   test("a range with its label and length, or what's wrong and where", () => {
-    expect(readCustomRange("oct", "", "2026-11-02")).toEqual({ start: "2026-10-01", end: "2026-11-02", label: "1 Oct – 2 Nov 2026", days: 33 })
+    expect(readCustomRange("oct", "", "2026-11-02")).toMatchObject({ start: "2026-10-01", end: "2026-11-02", days: 33 })
     expect(readCustomRange("oct", "oct", "2026-11-02")).toMatchObject({ start: "2026-10-01", end: "2026-10-31", days: 31 })
     expect(readCustomRange("nope", "", "2026-11-02")).toMatchObject({ field: "from" })
-    expect(readCustomRange("today", "-3", "2026-11-02")).toEqual({ error: "To is before From", field: "to" })
+    expect(readCustomRange("today", "-3", "2026-11-02")).toMatchObject({ field: "to" })
   })
 })

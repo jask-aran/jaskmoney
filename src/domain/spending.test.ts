@@ -8,10 +8,14 @@ const row = (amount: number, overrides: Partial<Transaction> = {}) => transactio
 const excluded = [row(100), row(0), row(-100, { internal: true, excluded: true }), row(-100, { tagNames: ["other", "iGnOrE"] })]
 
 describe("spendingCalendar", () => {
-  test("pads both ends with Monday at row zero", () => {
+  test("pads both ends from the week start (Monday or Sunday)", () => {
     expect(spendingCalendar([], "2026-10-04", "2026-10-06")).toEqual([
       [null, null, null, null, null, null, { dateISO: "2026-10-04", spent: 0, level: 0 }],
       [{ dateISO: "2026-10-05", spent: 0, level: 0 }, { dateISO: "2026-10-06", spent: 0, level: 0 }, null, null, null, null, null],
+    ])
+    expect(spendingCalendar([], "2026-10-03", "2026-10-05", "sunday")).toEqual([
+      [null, null, null, null, null, null, { dateISO: "2026-10-03", spent: 0, level: 0 }],
+      [{ dateISO: "2026-10-04", spent: 0, level: 0 }, { dateISO: "2026-10-05", spent: 0, level: 0 }, null, null, null, null, null],
     ])
   })
 
@@ -49,23 +53,15 @@ describe("spendingCalendar", () => {
     ])
   })
 
-  for (const { values, levels } of [
-    { values: [1, 1, 2, 3, 4], levels: [1, 1, 3, 4, 4] },
-    { values: [7, 7, 7, 7, 7], levels: [1, 1, 1, 1, 1] },
-    { values: [7], levels: [4] },
-    { values: [1, 2, 2], levels: [2, 3, 3] },
-  ] satisfies Array<{ values: number[]; levels: CalendarDay["level"][] }>) {
-    test(`first rank determines tied levels for ${values}`, () => {
+  test("first rank determines tied levels", () => {
+    for (const { values, levels } of [
+      { values: [1, 1, 2, 3, 4], levels: [1, 1, 3, 4, 4] },
+      { values: [7, 7, 7, 7, 7], levels: [1, 1, 1, 1, 1] },
+      { values: [7], levels: [4] },
+      { values: [1, 2, 2], levels: [2, 3, 3] },
+    ] satisfies Array<{ values: number[]; levels: CalendarDay["level"][] }>) {
       const rows = values.map((value, i) => row(-value, { dateISO: `2026-10-${String(i + 5).padStart(2, "0")}` }))
       expect(spendingCalendar(rows, "2026-10-05", "2026-10-11")[0].slice(0, values.length).map((d) => d?.level)).toEqual(levels)
-    })
-  }
-})
-
-test("Sunday-start calendar pads Saturday then begins a new week on Sunday", () => {
-  const weeks = spendingCalendar([], "2026-10-03", "2026-10-05", "sunday")
-  expect(weeks).toEqual([
-    [null, null, null, null, null, null, { dateISO: "2026-10-03", spent: 0, level: 0 }],
-    [{ dateISO: "2026-10-04", spent: 0, level: 0 }, { dateISO: "2026-10-05", spent: 0, level: 0 }, null, null, null, null, null],
-  ])
+    }
+  })
 })

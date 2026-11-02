@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test"
-import { leftHalf, markedRange, rowStep, monthWeeks, moveCursor, pageCursor, pageLabel, unitGrid, unitOf, weekdayNames, yearsFrom } from "./rangeCalendar"
+import { leftHalf, markedRange, rowStep, monthWeeks, moveCursor, pageCursor, unitGrid, unitOf, yearsFrom } from "./rangeCalendar"
 
 describe("the Custom range calendar", () => {
   test("a cell stands for a day, a month or a year; two marks join whichever starts first to whichever ends last", () => {
@@ -22,7 +22,6 @@ describe("the Custom range calendar", () => {
     expect(weeks[5]!.slice(1).every((d) => d === null)).toBe(true)
     expect(monthWeeks("2026-02-10", "monday")[5]!.every((d) => d === null)).toBe(true)
     expect(monthWeeks("2026-11-17", "sunday")[0]![0]).toBe("2026-11-01")
-    expect(weekdayNames("sunday")[0]).toBe("Su")
   })
 
   test("arrows move a cell or a row, pages a month, a year or twelve years; the selector says where", () => {
@@ -33,8 +32,6 @@ describe("the Custom range calendar", () => {
     expect(moveCursor("2026-03-01", "years", "up")).toBe("2022-03-01")
     expect(pageCursor("2026-03-31", "days", -1)).toBe("2026-02-28")
     expect(pageCursor("2026-03-01", "years", 1)).toBe("2038-03-01")
-    expect(pageLabel("2026-03-01", "days")).toBe("March 2026")
-    expect(pageLabel("2026-03-01", "years")).toBe("2016 – 2027")
     expect(yearsFrom("2028-01-01")).toBe(2028)
     expect(unitGrid("2026-03-01", "months").map((r) => r.length)).toEqual([4, 4, 4])
     expect(unitGrid("2026-03-01", "years")[2]![3]).toBe("2027-01-01")

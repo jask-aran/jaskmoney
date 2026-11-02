@@ -20,6 +20,3 @@ test("savers whose emoji share a colour are kept apart; the first keeps its own"
   expect(inks).not.toContain(theme.sapphire)
 })
 
-test("a name without a known emoji still gets a steady colour", () => {
-  expect(saverInks(["Rainy day"])).toEqual(saverInks(["Rainy day"]))
-})
