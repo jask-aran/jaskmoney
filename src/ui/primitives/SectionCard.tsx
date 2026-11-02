@@ -11,6 +11,11 @@ import { fitSpans, spansWidth, type Span } from "./spans"
  * - focused = lavender title + border
  * - active adds " *" suffix (Go isActive)
  */
+/** Where an inset card's title starts (its leading space; the words one
+ * further): the content's column plus one, so the title sits clearly in
+ * from the text below rather than nearly level with it. */
+const TITLE_INSET = 2
+
 export function SectionCard(props: {
   title: string
   focused?: boolean
@@ -27,6 +32,11 @@ export function SectionCard(props: {
   titleRightFlush?: boolean
   /** Coloured spans in the bottom border. */
   bottomSpans?: Span[]
+  /** The inset layout (Settings): no padding, every line bringing its own
+   * one-cell inset (ListRow, PaneLine), so all of a card's text starts one
+   * cell from its border and a cursor's wash runs border to border; the
+   * title stands TITLE_INSET cells further in than the content. */
+  inset?: boolean
   children?: JSX.Element
 }) {
   // Until the first layout reports a size, start from the given one.
@@ -37,6 +47,7 @@ export function SectionCard(props: {
   // Border text: `╭─` before the title and `─╮` after the right spans; a
   // space either side of each. Until the first layout reports a width, the
   // title is shown in full.
+  const titleLeft = () => (props.inset ? TITLE_INSET : 1)
   const space = (): Span => ({ text: " ", fg: borderColor() })
   const title = () => {
     const spans: Span[] = [
@@ -44,7 +55,7 @@ export function SectionCard(props: {
       ...(props.titleSuffix ? [{ text: ` ${props.titleSuffix}`, fg: props.titleSuffixColor ?? titleColor(), bold: true }] : []),
       ...(props.active ? [{ text: " *", fg: titleColor(), bold: true }] : []),
     ]
-    return [...(width() > 0 ? fitSpans(spans, Math.max(0, width() - 5)) : spans), space()]
+    return [...(width() > 0 ? fitSpans(spans, Math.max(0, width() - 4 - titleLeft())) : spans), space()]
   }
   const right = () => {
     const spans = width() > 0 && props.titleRight ? fitSpans(props.titleRight, Math.max(0, width() - 8 - spansWidth(title()))) : []
@@ -66,11 +77,11 @@ export function SectionCard(props: {
       flexGrow={props.flexGrow ?? 0}
       height={props.height}
       width={props.width ?? "100%"}
-      paddingLeft={1}
-      paddingRight={1}
+      paddingLeft={props.inset ? 0 : 1}
+      paddingRight={props.inset ? 0 : 1}
       backgroundColor={theme.canvas}
     >
-      <BorderText spans={title()} top={-1} left={1} bg={theme.canvas} />
+      <BorderText spans={title()} top={-1} left={titleLeft()} bg={theme.canvas} />
       {props.children}
       <Show when={props.titleRight}>
         <BorderText spans={right()} top={-1} left={width() - 3 - spansWidth(right())} bg={theme.canvas} />

@@ -2,7 +2,7 @@ import { activeLlmProvider, LLM_PROVIDERS, llmEffort, llmModelId, llmModelInfo, 
 import { credentialEnv, type CredentialName } from "../ai/credentials"
 import type { DataStore } from "./dataStore"
 import { isLlmRow, type AiRow, type KeyRow } from "../app/apiKeys"
-import { MODEL_KINDS, QUERIES, queriesOf, type AiUse, type QueryId } from "../ai/catalog"
+import { AI_USES, MODEL_KINDS, QUERIES, queriesOf, type AiUse, type QueryId } from "../ai/catalog"
 import { jevEndpoint, REQUEST_BUDGET } from "../ai/jev"
 import { workersAiUrl } from "../ai/workersAi"
 
@@ -13,6 +13,13 @@ import { workersAiUrl } from "../ai/workersAi"
  * to choose it and to see exactly what is sent. Pure: what the pane and
  * the dialogs show, from the stored keys, settings and sign-ins.
  */
+/** The AI models pane's rows in cursor order: the inputs (the models, then
+ * the sources), then the outputs (the uses). */
+export type AiPaneRow = { kind: "model"; row: AiRow } | { kind: "source" } | { kind: "use"; use: AiUse }
+export const aiPaneRows = (models: readonly AiRow[]): AiPaneRow[] => [
+  ...models.map((row) => ({ kind: "model" as const, row })), { kind: "source" as const }, ...AI_USES.map((use) => ({ kind: "use" as const, use })),
+]
+
 export type AiAction = "signIn" | "key" | "page" | "accountId" | "model" | "test" | "remove"
 
 /** Where a key or token is made, for the dialog's "Open … to make one". */

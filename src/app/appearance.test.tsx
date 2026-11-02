@@ -33,13 +33,15 @@ test("Appearance shows eight rows and values without clipping at each settings l
         ["Chart labels", "together"], ["Range on open", "1M"], ["Welcome backdrop", "ticker tape"],
       ]
       const positions = expected.map(([label, value]) => {
-        expect(frame).toMatch(new RegExp(`${label!.replace("$", "\\$")}\\s+${value!.replace(/[()]/g, "\\$&")}`))
+        // A toggle's value comes after its on/off dot.
+        expect(frame).toMatch(new RegExp(`${label!.replace("$", "\\$")}\\s+(?:[●○] )?${value!.replace(/[()]/g, "\\$&")}`))
         return frame.indexOf(label!)
       })
       expect(positions).toEqual([...positions].sort((a, b) => a - b))
       if (width === 140) expect(frame.indexOf("Appearance")).toBeLessThan(frame.indexOf("Database & Import"))
       const spans = () => t.captureSpans().lines.flatMap((line) => line.spans)
-      const label = () => spans().find((span) => span.text.startsWith("Theme "))!
+      // The row's icon shares the label's style, so the two may be one span.
+      const label = () => spans().find((span) => /(^|\s)Theme /.test(span.text))!
       expect(label().fg.toInts()).toEqual(RGBA.fromHex(ink.label).toInts())
       expect(label().bg.toInts()).toEqual(RGBA.fromHex(theme.rowCursor).toInts())
       expect(label().attributes & TextAttributes.BOLD).toBe(TextAttributes.BOLD)
@@ -152,7 +154,7 @@ test("Appearance preferences save/load known values and discard unknown values",
 })
 
 test("Database keeps only data rows and week start", () => {
-  expect(DATABASE_ROWS).toEqual(["import", "profiles", "weekStart", "demo", "clearData", "reset"])
+  expect(DATABASE_ROWS).toEqual(["import", "history", "profiles", "weekStart", "demo", "clearData", "reset"])
   const labels = DATABASE_ROWS.map((row) => databaseRow(row, { weekStart: "monday", profiles: 1, demo: false }).label)
   for (const row of APPEARANCE_ROWS) expect(labels).not.toContain(appearanceRow(row, { icons: true }).label)
 })
@@ -160,7 +162,7 @@ test("Database keeps only data rows and week start", () => {
 test("Appearance is reachable through section navigation, jump, pointer and palette", async () => {
   data.init(":memory:")
   ui.switchTab("settings")
-  ui.setState({ settingsSection: "filters", focusedSection: "set.filters" })
+  ui.setState({ settingsSection: "ai", focusedSection: "set.ai" })
   handleKey(ui, key("down"), data)
   expect(ui.state.settingsSection).toBe("appearance")
   expect(ui.state.focusedSection).toBe("set.appearance")

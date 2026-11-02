@@ -20,7 +20,7 @@ test("Jaskmoney is the default and keeps the colours the app had before themes",
   expect(themeId).toBe("jaskmoney")
   expect(theme.canvas).toBe("#11111b")
   expect(theme.rowCursor).toBe("#585b70")
-  expect(ink).toEqual({ strong: "#ffffff", figure: "#e6e6e6", heading: "#c79fbe", label: "#a6adc8", note: "#7f849c", faint: "#6c7086", rule: "#585b70" })
+  expect(ink).toEqual({ strong: "#ffffff", figure: "#e6e6e6", heading: "#bac2de", label: "#a6adc8", note: "#7f849c", faint: "#6c7086", rule: "#585b70" })
   expect(tone).toEqual({ good: "#a6e3a1", bad: "#f38ba8", caution: "#f9e2af", ai: "#94e2d5", key: "#f5c2e7", focus: "#b4befe", scope: "#fab387" })
   expect(theme.chartBudget).toBe("#a8996b")
 })

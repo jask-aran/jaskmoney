@@ -1,7 +1,7 @@
 import { APPEARANCE_ROWS, appearanceRow } from "../../state/appearanceRows"
 import { onPointer } from "../../app/pointer"
 import { armedFor, isArmed } from "../../state/armed"
-import { DATABASE_ROWS, databaseRow } from "../../state/databaseRows"
+import { DATABASE_ROWS, IMPORT_HISTORY_ROWS, databaseRow } from "../../state/databaseRows"
 import { AI_ROWS } from "../../app/apiKeys"
 import { USES } from "../../ai/catalog"
 import { syncAgo } from "../../app/sync"
@@ -10,13 +10,15 @@ import { secretDisplay } from "../../state/settingsForm"
 import { executorRow } from "../../state/executorDialog"
 import { executorSignedIn } from "../../ai/executor"
 import { SignInBody } from "../primitives/SignInBody"
+import { spinnerFrame } from "../primitives/Spinner"
+import { swatches, themeDef } from "./ThemePicker"
 import { For, Show, createEffect, createMemo, onCleanup, type JSX } from "solid-js"
-import type { ScrollBoxRenderable } from "@opentui/core"
+import type { MouseEvent, ScrollBoxRenderable } from "@opentui/core"
 import { useTerminalDimensions } from "@opentui/solid"
 import { SectionCard } from "../primitives/SectionCard"
 import { S } from "../primitives/S"
 import { TextInput } from "../primitives/TextInput"
-import type { SectionId, SettingsList, UiState } from "../../state/uiStore"
+import type { ScopeId, SectionId, SettingsSection, UiState } from "../../state/uiStore"
 import { SETTINGS_SECTION_LABELS, ui } from "../../state/uiStore"
 import { data } from "../../state/dataStore"
 import { parseFilterStrict } from "../../domain/filter"
@@ -26,19 +28,39 @@ import { formatMoney } from "../../domain/dashboard"
 import { accountRole, type Category, type Tag } from "../../domain/types"
 import { scopeText } from "../../domain/tagScope"
 import { Modal } from "../primitives/Modal"
-import { categoryMark } from "../icons"
+import { categoryMark, settingMark, type SettingIcon } from "../icons"
+import { regionRef } from "../regions"
 import { Form } from "../primitives/Form"
 import { ListPicker } from "../primitives/ListPicker"
 import { ListRow, centredTop, windowLabel } from "../primitives/ListRow"
+import type { Span } from "../primitives/spans"
+import { categoryRows, originCounts, originOf, type CategoryRow } from "../../state/taxonomyRows"
 import { EDITOR_TITLE, editorFields, editorNote, editorWidth, pickerItems, type FormField } from "../../state/settingsForm"
 
-function ListFooter(props: { top: number; visible: number; count: number }) {
-  return <text fg={ink.note}>{`─ ${windowLabel(props.top, props.visible, props.count)} ─`}</text>
-}
+/**
+ * Settings' panes share one layout (SectionCard `inset`): every line is a
+ * ListRow, so all text starts one cell in from the border and a cursor's
+ * wash runs border to border; subheadings are ink.heading. Every pane takes
+ * focus: a click on it activates it, a click on a row also puts the cursor
+ * there.
+ */
 
-/** A row's text width in a pane `width` columns wide: border and padding
- * (4) and the cursor marker (2). */
-const rowWidth = (width: number) => Math.max(10, width - 6)
+/** A row's text width in a pane `width` columns wide: the borders, the
+ * row's inset and a cell before the right border. */
+const rowWidth = (width: number) => Math.max(10, width - 4)
+
+/** Where a click on a pane counts: the page, or a pane of it (not under a dialog). */
+const SETTINGS_SCOPES = new Set<ScopeId>(["bar", "settings", "settings.taxonomy", "settings.rules", "settings.filters", "settings.up", "settings.web", "settings.ai", "settings.appearance", "settings.database"])
+const onSettings = (action: (event: MouseEvent) => void) => onPointer((scope) => SETTINGS_SCOPES.has(scope), action)
+
+/** A line of a pane that isn't a cursor row: a subheading, a note, a blank. */
+function Line(props: { spans: Span[] }) {
+  return <ListRow cursor={false} bg={theme.canvas} spans={props.spans} />
+}
+const heading = (label: string, n?: number, note = ""): Span[] => [
+  { text: label, fg: ink.heading, bold: true },
+  ...(n != null ? [{ text: ` ${n}${note}`, fg: ink.note }] : []),
+]
 
 /** A tag's scope in words: "in Holidays & Travel", "in Cafes, Takeaway",
  * with "· about" when it says what it is for. */
@@ -47,100 +69,197 @@ function tagNote(tag: Tag, categories: Category[]): string {
   return [scope ? `in ${scope}` : "", tag.about ? "about" : ""].filter(Boolean).join(" · ")
 }
 
-function TaxonomyList(props: { kind: SettingsList; width: number }) {
-  const categories = () => data.state.categories
-  const active = () => ui.state.settingsActive && ui.state.settingsSection === "taxonomy" && ui.state.taxonomyList === props.kind
-  const rows = () => props.kind === "categories" ? categories() : data.state.tags
-  const cursor = () => props.kind === "categories" ? ui.state.categoryCursor : ui.state.tagCursor
-  const top = () => props.kind === "categories" ? ui.state.categoryTop : ui.state.tagTop
-  const visible = () => props.kind === "categories" ? ui.state.categoryVisible : ui.state.tagVisible
-  const windowRows = createMemo(() => rows().slice(top(), top() + visible()))
-  const parents = createMemo(() => new Set(categories().map((c) => c.parentId).filter((id) => id != null)))
-  // A category is drawn under its group (indented) when it follows it in
-  // the list; one listed elsewhere names its group instead.
-  const underGroup = createMemo(() => {
-    const under = new Set<number>()
-    let group: number | null = null
-    for (const c of categories()) {
-      if (c.parentId == null) group = c.id
-      else if (c.parentId === group) under.add(c.id)
-    }
-    return under
-  })
-
-  createEffect(() => {
-    const count = rows().length
-    const current = cursor()
-    if (count === 0 && current !== 0) ui.setState(props.kind === "categories" ? { categoryCursor: 0, categoryTop: 0 } : { tagCursor: 0, tagTop: 0 })
-    else if (count > 0 && current >= count) ui.moveSettingsList(props.kind, count - 1 - current, count)
-  })
-
-  // Name, then a note (a category's kind, a tag's scope) in a column as wide
-  // as the longest note, so the name takes the rest.
-  const width = () => props.width - 2
-  const noteOf = (row: ReturnType<typeof rows>[number]) => {
-    if (props.kind === "tags") return tagNote(row as Tag, data.state.categories)
-    const c = row as typeof data.state.categories[number]
-    const parent = c.parentId != null && !underGroup().has(c.id) ? categories().find((p) => p.id === c.parentId)?.name : null
-    return c.isDefault ? "default" : parent ? `in ${parent}` : c.income ? "income" : c.notSpending ? "not spending" : ""
-  }
-  const NOTE = createMemo(() => Math.min(width() - 2 - 1 - 12, Math.max(0, ...rows().map((row) => noteOf(row).length))))
-  return (
-    <box width={props.width} flexShrink={0} flexDirection="column" backgroundColor={theme.canvas}>
-      <text height={1} wrapMode="none">
-        <S fg={active() ? tone.focus : ink.heading} bold>{props.kind === "categories" ? "Categories" : "Tags"}</S>
-        <S fg={ink.note}>{` ${rows().length}`}</S>
-      </text>
-      <box flexGrow={1} flexDirection="column"><Show when={rows().length} fallback={<text fg={ink.note}>{`No ${props.kind}. Press a to add.`}</text>}>
-        <For each={windowRows()}>{(row, index) => {
-          const absolute = () => top() + index()
-          const selected = () => active() && absolute() === cursor()
-          const category = () => props.kind === "categories" ? row as typeof data.state.categories[number] : null
-          // Categories: a group bold, the ones in it indented under it.
-          const child = () => underGroup().has(row.id)
-          const group = () => parents().has(row.id)
-          const note = () => noteOf(row)
-          const nameWidth = () => width() - 2 - (child() ? 2 : 0) - (note() ? NOTE() + 1 : 0)
-          return <ListRow cursor={selected()} bg={theme.canvas} armed={armedFor(ui.state.armed, category() ? "category" : "tag", row.id)} spans={[
-            ...(child() ? [{ text: "  ", fg: ink.label }] : []),
-            { text: `${category() ? categoryMark(row.id) : "●"} `, fg: row.color },
-            { text: fit(row.name, nameWidth()), fg: category() && child() ? ink.label : ink.figure, bold: group() || selected() },
-            ...(note() ? [{ text: ` ${truncate(note(), NOTE())}`, fg: ink.note }] : []),
-          ]} />
-        }}</For>
-      </Show></box>
-      <box height={1}><ListFooter top={top()} visible={visible()} count={rows().length} /></box>
-    </box>
-  )
+/** What a category row says beside its name: a group's size, then what
+ * kind of money it holds; a subcategory only what sets it apart. */
+function categoryNote(row: CategoryRow, parentOrigin: "jaskmoney" | "up"): string {
+  const c = row.category
+  if (row.depth === 1) return parentOrigin === "up" && originOf(c) === "jaskmoney" ? "yours" : ""
+  const kind = c.isDefault ? "default" : c.income ? "income" : c.notSpending ? "not spending" : ""
+  return [row.children ? `${row.children} ${row.children === 1 ? "subcategory" : "subcategories"}` : "", kind].filter(Boolean).join(" · ")
 }
 
-function TaxonomyPane(props: { focused: boolean; narrow: boolean; width: number; height?: number | "auto" | `${number}%` }) {
+type TaxonomyLine =
+  | { kind: "heading"; spans: Span[] }
+  | { kind: "blank" }
+  | { kind: "empty"; text: string; list: "categories" | "tags" }
+  | { kind: "category"; row: CategoryRow; index: number }
+  | { kind: "tag"; tag: Tag; index: number }
+
+/** Taxonomy's two blocks of lines: the categories (Jaskmoney's, then
+ * Up's, each under its heading, a blank between) and the tags. */
+function taxonomyBlocks(categories: Category[], tags: Tag[], open: readonly number[], active: boolean): { categories: TaxonomyLine[]; tags: TaxonomyLine[] } {
+  const rows = categoryRows(categories, open)
+  const counts = originCounts(categories)
+  const out: TaxonomyLine[] = []
+  const blocks = (["jaskmoney", "up"] as const).filter((origin) => rows.some((r) => r.origin === origin))
+  for (const origin of blocks) {
+    if (out.length) out.push({ kind: "blank" })
+    const label = blocks.length === 1 ? "Categories" : origin === "up" ? "Up categories" : "Jaskmoney categories"
+    out.push({ kind: "heading", spans: heading(label, blocks.length === 1 ? categories.length : counts[origin]) })
+    rows.forEach((row, index) => { if (row.origin === origin) out.push({ kind: "category", row, index }) })
+  }
+  if (!blocks.length) out.push({ kind: "heading", spans: heading("Categories", 0) }, { kind: "empty", text: "No categories. Press a to add.", list: "categories" })
+  const tagLines: TaxonomyLine[] = [{ kind: "heading", spans: heading("Tags", tags.length) }]
+  if (tags.length) tags.forEach((tag, index) => tagLines.push({ kind: "tag", tag, index }))
+  else tagLines.push({ kind: "empty", text: active ? "No tags. Press a to add." : "No tags yet.", list: "tags" })
+  return { categories: out, tags: tagLines }
+}
+
+/** Taxonomy's columns: Categories beside Tags when the pane is wide
+ * enough (j runs down the first, then the second), else one column with
+ * the tags under the categories. */
+function taxonomyColumns(width: number, active: boolean): TaxonomyLine[][] {
+  const blocks = taxonomyBlocks(data.state.categories, data.state.tags, ui.state.taxonomyOpen, active)
+  return width - 2 >= TAXONOMY_TWO_COLUMNS ? [blocks.categories, blocks.tags] : [[...blocks.categories, { kind: "blank" }, ...blocks.tags]]
+}
+/** The inner width (borders off) from which Taxonomy has two columns. */
+const TAXONOMY_TWO_COLUMNS = 90
+/** Between Taxonomy's columns. */
+const COLUMN_GAP = 2
+
+/** Taxonomy's height: its longest column and borders, up to `room` (then it scrolls), at least 8. */
+const taxonomyHeight = (width: number, room: number) =>
+  Math.max(8, Math.min(room, Math.max(...taxonomyColumns(width, false).map((lines) => lines.length)) + 2))
+
+/** Taxonomy: Jaskmoney's categories, then Up's (groups closed until
+ * opened), and the tags; each column a window that follows the cursor. */
+function TaxonomyPane(props: { focused: boolean; width: number; height: number }) {
   const active = () => ui.state.settingsActive && ui.state.settingsSection === "taxonomy"
-  // Split: the two lists share the content width with a 3-column gap.
-  const half = () => Math.floor((props.width - 4 - 3) / 2)
-  return <SectionCard title={SETTINGS_SECTION_LABELS.taxonomy} focused={props.focused} active={active()} height={props.height} flexGrow={props.height ? 0 : 1} width={props.width}>
-    <Show when={props.narrow} fallback={<box width="100%" flexGrow={1} flexDirection="row" gap={3}><TaxonomyList kind="categories" width={half()} /><TaxonomyList kind="tags" width={props.width - 4 - 3 - half()} /></box>}>
-      <TaxonomyList kind={ui.state.taxonomyList} width={props.width - 4} />
-    </Show>
+  const categories = () => data.state.categories
+  const rows = createMemo(() => categoryRows(categories(), ui.state.taxonomyOpen))
+  const columns = createMemo(() => taxonomyColumns(props.width, active()))
+  const visible = () => Math.max(3, props.height - 2)
+  createEffect(() => { if (ui.state.taxonomyVisible !== visible()) ui.setState({ taxonomyVisible: visible() }) })
+  // Keep the cursors on a row as rows open, close and go.
+  createEffect(() => {
+    const last = Math.max(0, rows().length - 1)
+    if (ui.state.categoryCursor > last) ui.setState({ categoryCursor: last })
+    const tagLast = Math.max(0, data.state.tags.length - 1)
+    if (ui.state.tagCursor > tagLast) ui.setState({ tagCursor: tagLast })
+  })
+  const isCursor = (line: TaxonomyLine) => active() && (
+    line.kind === "category" ? ui.state.taxonomyList === "categories" && line.index === ui.state.categoryCursor
+      : line.kind === "tag" ? ui.state.taxonomyList === "tags" && line.index === ui.state.tagCursor
+        : line.kind === "empty" && ui.state.taxonomyList === line.list)
+  // The column widths: Categories takes three fifths; the rest Tags.
+  const inner = () => props.width - 2
+  const widths = () => columns().length === 1 ? [inner()] : (() => { const first = Math.floor((inner() - COLUMN_GAP) * 0.6); return [first, inner() - COLUMN_GAP - first] })()
+  // Each column's window moves only when the cursor would leave it; at the
+  // top it shows the first heading.
+  const tops = [0, 1].map((c) => createMemo<number>((prev) => {
+    const lines = columns()[c] ?? []
+    if (lines.length <= visible()) return 0
+    const at = lines.findIndex(isCursor)
+    let next = Math.min(prev, lines.length - visible())
+    if (at >= 0 && at < next + 1) next = Math.max(0, at - 1)
+    if (at >= 0 && at >= next + visible() - 1) next = Math.min(lines.length - visible(), at - visible() + 2)
+    return next
+  }, 0))
+  const top = (c: number) => tops[c]?.() ?? 0
+  const note = (line: TaxonomyLine) => line.kind === "category"
+    ? categoryNote(line.row, line.row.depth === 1 ? originOf(categories().find((c) => c.id === line.row.category.parentId) ?? line.row.category) : line.row.origin)
+    : line.kind === "tag" ? tagNote(line.tag, categories()) : ""
+  const select = (line: TaxonomyLine) => onSettings(() => {
+    if (line.kind === "category") {
+      // A click on the row at the cursor opens or closes its group.
+      if (isCursor(line) && line.row.children) {
+        const open = ui.state.taxonomyOpen.filter((id) => id !== line.row.category.id)
+        ui.setState({ taxonomyOpen: line.row.open ? open : [...open, line.row.category.id] })
+        return
+      }
+      ui.activateSettings("taxonomy", "categories")
+      ui.setState({ categoryCursor: line.index })
+    } else if (line.kind === "tag") {
+      ui.activateSettings("taxonomy", "tags")
+      ui.setState({ tagCursor: line.index })
+    } else ui.activateSettings("taxonomy", line.kind === "empty" ? line.list : ui.state.taxonomyList)
+  })
+  const more = (): Span[] | undefined => {
+    const above = columns().some((_, c) => top(c) > 0), below = columns().some((lines, c) => top(c) + visible() < lines.length)
+    return above || below ? [{ text: `${above ? "↑" : ""}${below ? "↓" : ""} more`, fg: ink.note }] : undefined
+  }
+  const Column = (col: { index: number }) => {
+    const lines = () => columns()[col.index] ?? []
+    const width = () => (widths()[col.index] ?? inner()) - 2
+    // Names in a column as wide as the longest shown, the notes just after.
+    const NAME = createMemo(() => Math.min(width() - 8, Math.max(12, ...lines().map((line) =>
+      line.kind === "category" ? (line.row.depth ? 6 : 4) + line.row.category.name.length : line.kind === "tag" ? 2 + line.tag.name.length : 0))))
+    const NOTE = createMemo(() => Math.max(0, Math.min(width() - NAME() - 2, Math.max(0, ...lines().map((line) => note(line).length)))))
+    return <box width={widths()[col.index]} flexShrink={0} flexDirection="column">
+      <For each={lines().slice(top(col.index), top(col.index) + visible())}>{(line) => {
+        const cursor = () => isCursor(line)
+        if (line.kind === "heading") return <Line spans={line.spans} />
+        if (line.kind === "blank") return <Line spans={[]} />
+        if (line.kind === "empty") return <ListRow cursor={cursor()} bg={theme.canvas} onMouseDown={select(line)} spans={[{ text: line.text, fg: ink.note }]} />
+        const text = (): Span[] => {
+          const n = note(line)
+          const tail: Span[] = n && NOTE() ? [{ text: `  ${truncate(n, NOTE())}`, fg: ink.note }] : []
+          if (line.kind === "tag") return [
+            { text: "● ", fg: line.tag.color },
+            { text: fit(line.tag.name, NAME() - 2), fg: ink.figure, bold: cursor() },
+            ...tail,
+          ]
+          const row = line.row
+          const lead = row.depth === 1 ? "    " : row.children ? (row.open ? "▾ " : "▸ ") : "  "
+          return [
+            { text: lead, fg: ink.label },
+            { text: `${categoryMark(row.category.id)} `, fg: row.category.color },
+            { text: fit(row.category.name, NAME() - lead.length - 2), fg: row.depth === 1 ? ink.label : ink.figure, bold: cursor() },
+            ...tail,
+          ]
+        }
+        const armed = () => line.kind === "tag" ? armedFor(ui.state.armed, "tag", line.tag.id) : armedFor(ui.state.armed, "category", line.row.category.id)
+        return <ListRow cursor={cursor()} bg={theme.canvas} armed={armed()} onMouseDown={select(line)} spans={text()} />
+      }}</For>
+    </box>
+  }
+  return <SectionCard inset title={SETTINGS_SECTION_LABELS.taxonomy} focused={props.focused} active={active()} height={props.height} width={props.width} bottomSpans={more()}>
+    <box flexDirection="row" gap={COLUMN_GAP} width="100%" flexGrow={1}>
+      <Column index={0} />
+      <Show when={columns().length > 1}><Column index={1} /></Show>
+    </box>
   </SectionCard>
 }
 
+/** A row's state: what colours its mark. */
+type RowState = "good" | "caution" | "bad" | "off" | "plain"
+const STATE_INK: Record<RowState, () => string> = { good: () => tone.good, caution: () => tone.caution, bad: () => tone.bad, off: () => ink.faint, plain: () => ink.label }
+/** A row's mark, in its state's colour: its icon with icons on, else a dot
+ * (hollow when off; `dot` for a row with no state, e.g. "›" for an action).
+ * `spin`: a spinner frame in its place while something runs. */
+const mark = (icon: SettingIcon, state: RowState, spin = "", dot?: string): Span =>
+  ({ text: `${spin || settingMark(icon, dot ?? (state === "off" ? "○" : "●"))} `, fg: spin ? ink.figure : STATE_INK[state]() })
+/** A row's icon as decoration (icons on), or nothing. */
+const decoration = (icon: SettingIcon, fg = ink.label): Span[] => { const glyph = settingMark(icon); return glyph ? [{ text: `${glyph} `, fg }] : [] }
+/** A setting's value: a toggle as a dot and its words, a choice with a dot
+ * per option (the set one filled). */
+function settingValue(view: { value: string; on?: boolean; choice?: { index: number; count: number } }, fg = ink.figure): Span[] {
+  if (view.on != null) return [{ text: view.on ? "● " : "○ ", fg: view.on ? ink.figure : ink.faint }, { text: view.value, fg: view.on ? fg : ink.label }]
+  if (!view.choice) return [{ text: view.value, fg }]
+  return [{ text: view.value, fg }, { text: "  ", fg }, ...Array.from({ length: view.choice.count }, (_, i): Span => ({ text: i === view.choice!.index ? "●" : "○", fg: i === view.choice!.index ? ink.figure : ink.faint }))]
+}
+
+/** Rules & Filters' height: borders, two headings, a blank between, and
+ * each list's rows (one line when empty). */
+const rulesHeight = () => 2 + 1 + Math.max(1, data.state.rules.length) + 1 + 1 + Math.max(1, data.state.savedFilters.length)
+
 /** Rules and the saved filters they match, in one card: Rules (ordered,
  * last match wins) above Saved filters. Each list is its own section (its
- * keys, cursor and jump); the card shows whichever has focus. */
+ * keys and cursor); j/k run on from one into the other. A rule's mark says
+ * whether it runs: on, off, or its filter broken or gone. */
 function RulesPane(props: { focused: boolean; width: number }) {
   const rulesActive = () => ui.state.settingsActive && ui.state.settingsSection === "rules"
   const filtersActive = () => ui.state.settingsActive && ui.state.settingsSection === "filters"
   const rules = () => data.state.rules
   const filters = () => data.state.savedFilters
-  const heading = (label: string, n: number, on: boolean, note = "") => <text height={1} wrapMode="none"><S fg={on ? tone.focus : ink.heading} bold>{label}</S><S fg={ink.note}>{` ${n}${note}`}</S></text>
   const nameWidth = () => Math.min(28, Math.floor(rowWidth(props.width) * 0.32))
   const setWidth = () => Math.min(30, Math.floor(rowWidth(props.width) * 0.3))
   const idWidth = () => Math.min(22, Math.max(...filters().map((f) => f.id.length + 7), 12))
-  const height = () => 2 + 1 + Math.max(1, rules().length) + 1 + 1 + Math.max(1, filters().length)
-  return <SectionCard title="Rules & Filters" focused={props.focused} active={rulesActive() || filtersActive()} height={height()} width={props.width}>
-    {heading("Rules", rules().length, rulesActive(), rules().length > 1 ? " · last match wins" : "")}
-    <Show when={rules().length} fallback={<text fg={ink.note}>{rulesActive() ? "  No rules. Press a to add." : "  No rules yet."}</text>}>
+  const pickRule = (i: number) => onSettings(() => { ui.activateSettings("rules"); ui.setState({ ruleCursor: i }) })
+  const pickFilter = (i: number) => onSettings(() => { ui.activateSettings("filters"); ui.setState({ filterCursor: i }) })
+  return <SectionCard inset title="Rules & Filters" focused={props.focused} active={rulesActive() || filtersActive()} height={rulesHeight()} width={props.width}>
+    <Line spans={heading("Rules", rules().length, rules().length > 1 ? " · last match wins" : "")} />
+    <Show when={rules().length} fallback={<ListRow cursor={rulesActive()} bg={theme.canvas} onMouseDown={pickRule(0)} spans={[{ text: rulesActive() ? "No rules. Press a to add." : "No rules yet.", fg: ink.note }]} />}>
       <For each={rules()}>{(rule, i) => {
         const cat = () => data.state.categories.find((c) => c.id === rule.setCategoryId)?.name
         const tags = () => rule.addTagIds.map((id) => data.state.tags.find((t) => t.id === id)?.name).filter(Boolean).map((name) => `+${name}`).join(" ")
@@ -149,7 +268,8 @@ function RulesPane(props: { focused: boolean; width: number }) {
         const on = () => rule.enabled
         const matches = () => !filter() ? `missing filter ${rule.savedFilterId}` : healthy() ? `filter:${rule.savedFilterId}` : `broken filter:${rule.savedFilterId}`
         const sets = () => [cat() ? `→ ${cat()}` : "", tags()].filter(Boolean).join(" ") || "→ nothing"
-        return <ListRow id={`settings-rule-${i()}`} cursor={rulesActive() && ui.state.ruleCursor === i()} bg={theme.canvas} armed={armedFor(ui.state.armed, "rule", rule.id)} spans={[
+        return <ListRow id={`settings-rule-${i()}`} cursor={rulesActive() && ui.state.ruleCursor === i()} bg={theme.canvas} armed={armedFor(ui.state.armed, "rule", rule.id)} onMouseDown={pickRule(i())} spans={[
+          mark("rule", !on() ? "off" : filter() && healthy() ? "good" : "bad"),
           { text: `${String(i() + 1).padStart(2)}  `, fg: ink.note },
           { text: fit(`${rule.name}${on() ? "" : " (off)"}`, nameWidth()), fg: on() ? ink.figure : ink.faint },
           { text: `  ${fit(sets(), setWidth())}`, fg: on() ? ink.label : ink.faint },
@@ -157,11 +277,12 @@ function RulesPane(props: { focused: boolean; width: number }) {
         ]} />
       }}</For>
     </Show>
-    <text> </text>
-    {heading("Saved filters", filters().length, filtersActive())}
-    <Show when={filters().length} fallback={<text fg={ink.note}>{filtersActive() ? "  No saved filters. Press a to add." : "  No saved filters yet."}</text>}>
+    <Line spans={[]} />
+    <Line spans={heading("Saved filters", filters().length)} />
+    <Show when={filters().length} fallback={<ListRow cursor={filtersActive()} bg={theme.canvas} onMouseDown={pickFilter(0)} spans={[{ text: filtersActive() ? "No saved filters. Press a to add." : "No saved filters yet.", fg: ink.note }]} />}>
       <For each={filters()}>{(filter, i) => (
-        <ListRow id={`settings-filter-${i()}`} cursor={filtersActive() && ui.state.filterCursor === i()} bg={theme.canvas} armed={armedFor(ui.state.armed, "filter", filter.id)} spans={[
+        <ListRow id={`settings-filter-${i()}`} cursor={filtersActive() && ui.state.filterCursor === i()} bg={theme.canvas} armed={armedFor(ui.state.armed, "filter", filter.id)} onMouseDown={pickFilter(i())} spans={[
+          ...decoration("filter"),
           { text: fit(filter.name, nameWidth() + 4), fg: ink.figure },
           { text: `  ${fit(`filter:${filter.id}`, idWidth())}`, fg: ink.label },
           { text: `  ${filter.expr}`, fg: ink.label },
@@ -171,23 +292,31 @@ function RulesPane(props: { focused: boolean; width: number }) {
   </SectionCard>
 }
 
-function AppearancePane(props: { focused: boolean; width: number }) {
+/** Appearance's width beside Database & Import: its labels and longest values. */
+const APPEARANCE_WIDTH = 40
+
+/** Appearance: each preference with its icon; the theme with its colours,
+ * a toggle as on or off, a choice with which of its options is set. */
+function AppearancePane(props: { focused: boolean; width: number; height?: number }) {
   const active = () => ui.state.settingsActive && ui.state.settingsSection === "appearance"
   const ctx = () => ({ ...data.state.uiPrefs, icons: data.state.icons })
-  return <SectionCard title={SETTINGS_SECTION_LABELS.appearance} focused={props.focused} active={active()} height={APPEARANCE_ROWS.length + 2} flexGrow={0} width={props.width}>
+  return <SectionCard inset title={SETTINGS_SECTION_LABELS.appearance} focused={props.focused} active={active()} height={props.height ?? APPEARANCE_ROWS.length + 2} width={props.width}>
     <For each={APPEARANCE_ROWS}>{(row, i) => {
       const view = () => appearanceRow(row, ctx())
-      return <ListRow id={`settings-appearance-${i()}`} cursor={active() && ui.state.appearanceCursor === i()} bg={theme.canvas} spans={[
-        { text: fit(view().label, 20), fg: ink.label },
-        { text: view().value, fg: ink.figure },
-      ]} />
+      return <ListRow id={`settings-appearance-${i()}`} cursor={active() && ui.state.appearanceCursor === i()} bg={theme.canvas}
+        onMouseDown={onSettings(() => { ui.activateSettings("appearance"); ui.setState({ appearanceCursor: i() }) })} spans={[
+          ...decoration(row),
+          { text: fit(view().label, 17), fg: ink.label },
+          ...settingValue(view()),
+          ...(row === "theme" ? [{ text: "  ", fg: ink.note }, ...swatches(themeDef(data.state.uiPrefs.theme), true)] : []),
+        ]} />
     }}</For>
   </SectionCard>
 }
 
 /** The database: where it is and what it holds, then its settings and
  * actions as rows (always shown; the cursor only while active). */
-function DatabasePane(props: { focused: boolean; width: number; height?: number | "auto" | `${number}%` }) {
+function DatabasePane(props: { focused: boolean; width: number; height?: number }) {
   const info = () => data.state.dbInfo
   const active = () => ui.state.settingsActive && ui.state.settingsSection === "database"
   const where = () => {
@@ -200,65 +329,82 @@ function DatabasePane(props: { focused: boolean; width: number; height?: number 
     n(info()?.transactionCount, "transaction"), n(info()?.accountCount, "account"),
     n(info()?.categoryCount, "category", "categories"), n(info()?.tagCount, "tag"), n(info()?.ruleCount, "rule"),
   ].join(" · ")
-  const ctx = () => ({ weekStart: data.state.weekStart, profiles: data.state.importProfiles.length, demo: data.state.demo })
-  return <SectionCard title={SETTINGS_SECTION_LABELS.database} focused={props.focused} active={active()} height={props.height ?? DATABASE_ROWS.length + 5} flexGrow={0} width={props.width}>
-    <text wrapMode="none"><S fg={ink.label}>{`  ${truncate(where(), rowWidth(props.width))}`}</S></text>
-    <text wrapMode="none"><S fg={ink.note}>{`  ${truncate(holds(), rowWidth(props.width))}`}</S></text>
-    <text> </text>
+  const ctx = () => ({ weekStart: data.state.weekStart, profiles: data.state.importProfiles.length, demo: data.state.demo, imports: data.state.imports.length })
+  // The counts sit under the path, past the database's icon.
+  const indent = () => decoration("database").length ? "  " : ""
+  return <SectionCard inset title={SETTINGS_SECTION_LABELS.database} focused={props.focused} active={active()} height={props.height ?? DATABASE_ROWS.length + 5} width={props.width}>
+    <Line spans={[...decoration("database", ink.figure), { text: truncate(where(), rowWidth(props.width) - indent().length), fg: ink.label }]} />
+    <Line spans={[{ text: indent() + truncate(holds(), rowWidth(props.width) - indent().length), fg: ink.note }]} />
+    <Line spans={[]} />
     <For each={DATABASE_ROWS}>{(row, i) => {
       const view = () => databaseRow(row, ctx())
-      return <ListRow id={`settings-database-${i()}`} cursor={active() && ui.state.databaseCursor === i()} bg={theme.canvas} armed={row === "clearData" ? armedFor(ui.state.armed, "clearData", 0) : undefined} spans={[
-        { text: fit(view().label, 20), fg: view().danger ? tone.bad : ink.label },
-        ...(view().value != null ? [{ text: view().value!, fg: view().danger ? ink.note : ink.figure }] : []),
-      ]} />
+      return <ListRow id={`settings-database-${i()}`} cursor={active() && ui.state.databaseCursor === i()} bg={theme.canvas} armed={row === "clearData" ? armedFor(ui.state.armed, "clearData", 0) : undefined}
+        onMouseDown={onSettings(() => { ui.activateSettings("database"); ui.setState({ databaseCursor: i() }) })} spans={[
+          ...decoration(row, view().danger ? tone.bad : ink.label),
+          { text: fit(view().label, 20), fg: view().danger ? tone.bad : ink.label },
+          ...(view().value != null ? settingValue(view() as { value: string }, view().danger ? ink.note : ink.figure) : []),
+        ]} />
     }}</For>
   </SectionCard>
 }
 
 /** Up Bank: the token, sync and which accounts are linked; enter on a row
  * opens it (the token's dialog, a sync now, the accounts dialog). The token
- * itself is never rendered. */
-function UpPane(props: { focused: boolean; width: number }) {
+ * itself is never rendered. Each row's mark says how it stands; Sync's
+ * spins while a sync runs. */
+/** Up Bank's height: borders and its rows, and the last sync's error. */
+const upHeight = () => 6 + (data.state.dbInfo?.upLastError ? 1 : 0)
+
+function UpPane(props: { focused: boolean; width: number; height?: number }) {
   const info = () => data.state.dbInfo
   const active = () => ui.state.settingsActive && ui.state.settingsSection === "up"
   const connection = () => aiConnection("up", aiContext(data))
   const accounts = () => data.state.syncAccounts
   const off = () => accounts().filter((a) => !a.syncEnabled)
+  const spin = spinnerFrame(() => data.state.upSyncing)
   const synced = () => data.state.upSyncing ? "syncing…" : (() => { const ago = syncAgo(info()?.upLastSyncedAt ?? null, Date.now()); return ago ? `synced ${ago}` : "not synced yet" })()
+  const syncState = (): RowState => !connection() ? "off" : info()?.upLastError ? "bad" : info()?.upLastSyncedAt ? "good" : "off"
   // How many sync; which are off when that fits, else just how many.
   const linked = () => {
     if (!accounts().length) return "none yet · they appear after a sync"
     const syncing = `${accounts().length - off().length} of ${accounts().length} syncing`
     const named = off().length ? `${syncing} · ${off().map((a) => a.name).join(", ")} off` : syncing
-    return named.length <= rowWidth(props.width) - 11 ? named : syncing
+    return named.length <= rowWidth(props.width) - 13 ? named : syncing
   }
-  const row = (i: number, label: string, value: string, fg: string) =>
-    <ListRow cursor={active() && ui.state.upCursor === i} bg={theme.canvas} spans={[{ text: fit(label, 11), fg: ink.label }, { text: value, fg }]} />
-  return <SectionCard title={SETTINGS_SECTION_LABELS.up} focused={props.focused} active={active()} height={6 + (info()?.upLastError ? 1 : 0)} width={props.width}>
-    {row(0, "Token", connection() ? connection()!.short : "not set · enter to add", connection() ? tone.good : ink.faint)}
-    {row(1, "Sync", connection() ? `${synced()} · on start and every 5 min` : "needs the token", ink.figure)}
-    <Show when={info()?.upLastError}>{(error: () => string) => <text fg={tone.bad} wrapMode="none">{`  ${" ".repeat(11)}${error()}`}</text>}</Show>
-    {row(2, "Accounts", linked(), ink.figure)}
-    {row(3, "Setup", "the first-time setup: Up, AI, email · enter", ink.note)}
+  const row = (i: number, lead: Span, label: string, value: string, fg: string) =>
+    <ListRow cursor={active() && ui.state.upCursor === i} bg={theme.canvas} onMouseDown={onSettings(() => { ui.activateSettings("up"); ui.setState({ upCursor: i }) })} spans={[lead, { text: fit(label, 11), fg: ink.label }, { text: value, fg }]} />
+  return <SectionCard inset title={SETTINGS_SECTION_LABELS.up} focused={props.focused} active={active()} height={props.height ?? upHeight()} width={props.width}>
+    {row(0, mark("token", connection() ? "good" : "off"), "Token", connection() ? connection()!.short : "not set · enter to add", connection() ? ink.figure : ink.faint)}
+    {row(1, mark("sync", syncState(), spin()), "Sync", connection() ? `${synced()} · on start and every 5 min` : "needs the token", ink.figure)}
+    <Show when={info()?.upLastError}>{(error: () => string) => <Line spans={[{ text: " ".repeat(13), fg: ink.label }, { text: error(), fg: tone.bad }]} />}</Show>
+    {row(2, mark("accounts", !accounts().length ? "off" : off().length ? "caution" : "good"), "Accounts", linked(), ink.figure)}
+    {row(3, mark("setup", "plain", "", "›"), "Setup", "first-time setup: Up, AI, email", ink.note)}
   </SectionCard>
 }
 
+/** Web app's height: borders, the address, then a row per client (or "none connected"). */
+const webHeight = () => 3 + (data.state.server ? Math.max(1, data.state.clients.length) : 0)
+
 /** Web app: where this core serves it and who is connected, as the daemon
- * broadcasts them (core server, clients). Read-only; the top bar's web item
- * opens the page. */
-function WebAppPane(props: { width: number }) {
+ * broadcasts them (core server, clients). Enter on the address opens the
+ * page (as the top bar's web item does). */
+function WebAppPane(props: { focused: boolean; width: number; height?: number }) {
+  const active = () => ui.state.settingsActive && ui.state.settingsSection === "web"
   const server = () => data.state.server
   const clients = () => data.state.clients
   const time = (at: number) => new Date(at).toLocaleTimeString("en-AU", { hour: "numeric", minute: "2-digit" })
-  const row = (label: string, value: string, fg: string, note = "") =>
-    <ListRow cursor={false} bg={theme.canvas} spans={[{ text: fit(label, 11), fg: ink.label }, { text: value, fg }, ...(note ? [{ text: `  ${note}`, fg: ink.note }] : [])]} />
-  // Borders (2), the address, then a row per client (or "none connected").
-  return <SectionCard title="Web app" height={3 + (server() ? Math.max(1, clients().length) : 0)} width={props.width}>
-    {server() ? row("Address", server()!.page, ink.figure) : row("Address", "not serving · start with --serve", ink.faint)}
+  const pick = onSettings(() => ui.activateSettings("web"))
+  const row = (lead: Span, label: string, value: string, fg: string, note = "") =>
+    <ListRow cursor={false} bg={theme.canvas} onMouseDown={pick} spans={[lead, { text: fit(label, 9), fg: ink.label }, { text: value, fg }, ...(note ? [{ text: `  ${note}`, fg: ink.note }] : [])]} />
+  return <SectionCard inset title={SETTINGS_SECTION_LABELS.web} focused={props.focused} active={active()} height={props.height ?? webHeight()} width={props.width}>
+    <ListRow cursor={active()} bg={theme.canvas} onMouseDown={pick} spans={[
+      mark("web", server() ? "good" : "off"), { text: fit("Address", 9), fg: ink.label },
+      server() ? { text: server()!.page, fg: ink.figure } : { text: "not serving · start with --serve", fg: ink.faint },
+    ]} />
     <Show when={server()}>
-      <Show when={clients().length} fallback={row("Clients", "none connected", ink.faint)}>
+      <Show when={clients().length} fallback={row(mark("web", "off", "", " "), "Clients", "none connected", ink.faint)}>
         <For each={clients()}>
-          {(client, i) => row(i() === 0 ? "Clients" : "", client.agent, ink.figure,
+          {(client, i) => row(mark(client.kind === "tui" ? "tui" : "web", "good"), i() === 0 ? "Clients" : "", client.agent, ink.figure,
             `${client.address}${client.via === "tunnel" ? " · tunnel" : ""} · since ${time(client.since)}`)}
         </For>
       </Show>
@@ -291,41 +437,62 @@ export function UpAccountsDialog() {
   )
 }
 
-/** AI models: one row per model (what, how it's connected, what for);
- * enter opens its dialog. */
-/** Settings › AI models: the models and how each is connected, the uses
- * and the model doing each, then the sources (Executor: Gmail and more);
- * enter opens any one's dialog. */
+/** AI models' height: two columns (Models and Sources beside Uses) from
+ * AI_TWO_COLUMNS, else stacked, a blank between the inputs and the uses. */
+const AI_TWO_COLUMNS = 84
+const aiHeight = (width: number) => 2 + (width - 2 >= AI_TWO_COLUMNS ? Math.max(1 + AI_ROWS.length + 2, 1 + AI_USES.length) : AI_ROWS.length + 2 + 1 + 1 + AI_USES.length)
+
+/** Settings › AI models: what goes in (the models and how each is
+ * connected, the sources: Executor for Gmail and more), then what comes
+ * out (the uses and the model doing each); enter opens any one's dialog.
+ * j runs in that order (aiPaneRows): down the first column, then the second. */
 function AiPane(props: { focused: boolean; width: number }) {
   const active = () => ui.state.settingsActive && ui.state.settingsSection === "ai"
   const ctx = () => aiContext(data)
   const models = () => AI_ROWS.map((row) => aiRow(row, ctx()))
   const uses = () => AI_USES.map((use) => ({ name: USES[use].name, model: useModel(use, ctx()) }))
-  const heading = (text: string) => <text fg={ink.label} wrapMode="none"><b>{text}</b></text>
   const executor = () => executorRow(ui.state.executorStatus, executorSignedIn())
-  return <SectionCard title={SETTINGS_SECTION_LABELS.ai} focused={props.focused} active={active()} height={AI_ROWS.length + AI_USES.length + 6} width={props.width}>
-    {heading("Models")}
+  const at = (i: number) => active() && ui.state.aiCursor === i
+  const pick = (i: number) => onSettings(() => { ui.activateSettings("ai"); ui.setState({ aiCursor: i }) })
+  const two = () => props.width - 2 >= AI_TWO_COLUMNS
+  // Two columns: the inputs and the uses half each.
+  const firstWidth = () => two() ? Math.floor((props.width - 2 - COLUMN_GAP) / 2) : props.width - 2
+  const secondWidth = () => two() ? props.width - 2 - COLUMN_GAP - firstWidth() : props.width - 2
+  const valueWidth = (width: number) => Math.max(8, width - 2 - 15)
+  const source = AI_ROWS.length
+  const Inputs = () => <>
+    <Line spans={heading("Models")} />
     <For each={models()}>{(row, i) => (
-      <ListRow cursor={active() && ui.state.aiCursor === i()} bg={theme.canvas} spans={[
+      <ListRow cursor={at(i())} bg={theme.canvas} onMouseDown={pick(i())} spans={[
         { text: row.connected ? "● " : "○ ", fg: row.connected ? tone.good : ink.faint },
         { text: fit(row.name, 13), fg: ink.figure },
-        { text: row.how, fg: row.connected ? ink.label : ink.note },
+        { text: fit(row.how, valueWidth(firstWidth())), fg: row.connected ? ink.label : ink.note },
       ]} />
     )}</For>
-    {heading("Uses")}
-    <For each={uses()}>{(use, i) => (
-      <ListRow cursor={active() && ui.state.aiCursor === AI_ROWS.length + i()} bg={theme.canvas} spans={[
-        { text: "  ", fg: ink.figure },
-        { text: fit(use.name, 13), fg: ink.figure },
-        { text: fit(use.model.text, Math.max(8, props.width - 20)), fg: use.model.ready ? tone.ai : ink.faint },
-      ]} />
-    )}</For>
-    {heading("Sources")}
-    <ListRow cursor={active() && ui.state.aiCursor === AI_ROWS.length + AI_USES.length} bg={theme.canvas} spans={[
+    <Line spans={heading("Sources")} />
+    <ListRow cursor={at(source)} bg={theme.canvas} onMouseDown={pick(source)} spans={[
       { text: executor().connected ? "● " : "○ ", fg: executor().connected ? tone.good : ink.faint },
       { text: fit("Executor", 13), fg: ink.figure },
-      { text: fit(executor().how, Math.max(8, props.width - 20)), fg: executor().connected ? ink.label : ink.note },
+      { text: fit(executor().how, valueWidth(firstWidth())), fg: executor().connected ? ink.label : ink.note },
     ]} />
+  </>
+  const Uses = () => <>
+    <Line spans={heading("Uses")} />
+    <For each={uses()}>{(use, i) => (
+      <ListRow cursor={at(source + 1 + i())} bg={theme.canvas} onMouseDown={pick(source + 1 + i())} spans={[
+        { text: use.model.ready ? "● " : "○ ", fg: use.model.ready ? tone.ai : ink.faint },
+        { text: fit(use.name, 13), fg: ink.figure },
+        { text: fit(use.model.text, valueWidth(secondWidth())), fg: use.model.ready ? tone.ai : ink.faint },
+      ]} />
+    )}</For>
+  </>
+  return <SectionCard inset title={SETTINGS_SECTION_LABELS.ai} focused={props.focused} active={active()} height={aiHeight(props.width)} width={props.width}>
+    <Show when={two()} fallback={<><Inputs /><Line spans={[]} /><Uses /></>}>
+      <box flexDirection="row" gap={COLUMN_GAP} width="100%">
+        <box width={firstWidth()} flexShrink={0} flexDirection="column"><Inputs /></box>
+        <box width={secondWidth()} flexShrink={0} flexDirection="column"><Uses /></box>
+      </box>
+    </Show>
   </SectionCard>
 }
 
@@ -395,14 +562,28 @@ export function AiDialog() {
 
 const AI_DIALOG_WIDTH = 92
 
-function ImportHistory(props: { width: number; height?: number | "auto" | `${number}%` }) {
+/** Database & Import › Import history: every CSV import, newest first, a
+ * window of IMPORT_HISTORY_ROWS at a time. */
+export function ImportHistoryDialog() {
   const when = (iso: string) => { const d = new Date(iso.includes("T") ? iso : `${iso.replace(" ", "T")}Z`); return Number.isNaN(d.getTime()) ? iso : d.toLocaleString("en-AU", { dateStyle: "medium", timeStyle: "short" }) }
-  const file = () => Math.min(36, rowWidth(props.width) - 32)
-  return <SectionCard title="Import History" height={props.height} flexGrow={props.height ? 0 : 1} width={props.width}>
-    <Show when={data.state.imports.length} fallback={<text fg={ink.note}>No imports yet.</text>}>
-      <For each={data.state.imports.slice(0, 4)}>{(item) => <text wrapMode="none"><S fg={ink.figure}>{fit(item.filename, file())}</S><S fg={ink.note}>{count(item.rowCount, "row").padStart(10)}</S><S fg={ink.label}>{`  ${when(item.importedAt)}`}</S></text>}</For>
+  const imports = () => data.state.imports
+  const top = () => Math.min(ui.state.importHistory?.top ?? 0, Math.max(0, imports().length - IMPORT_HISTORY_ROWS))
+  return (
+    <Show when={ui.state.importHistory}>
+      <Modal title="Import history" subtitle={count(imports().length, "import")} width={72} hints={imports().length > IMPORT_HISTORY_ROWS ? "j/k scroll · esc close" : "esc close"}>
+        <Show when={imports().length} fallback={<text fg={ink.note}>No imports yet. Import a CSV from Database & Import.</text>}>
+          <For each={imports().slice(top(), top() + IMPORT_HISTORY_ROWS)}>{(item) => (
+            <ListRow cursor={false} bg={theme.mantle} spans={[
+              { text: fit(item.filename, 34), fg: ink.figure },
+              { text: count(item.rowCount, "row").padStart(10), fg: ink.note },
+              { text: `  ${when(item.importedAt)}`, fg: ink.label },
+            ]} />
+          )}</For>
+          <Show when={imports().length > IMPORT_HISTORY_ROWS}><text fg={ink.note}>{`─ ${windowLabel(top(), IMPORT_HISTORY_ROWS, imports().length)} ─`}</text></Show>
+        </Show>
+      </Modal>
     </Show>
-  </SectionCard>
+  )
 }
 
 const PREVIEW_ROWS = 8
@@ -523,28 +704,11 @@ const EDITOR_HINTS: Record<FormField["kind"], string> = {
   picker: "↑↓ field · enter choose · esc cancel",
 }
 
-/** Rows the Taxonomy lists show: as many as the screen allows beside the
- * other panes of its column, 5 to 15. The pane is exactly this tall, so
- * the list's window and its footer always fit inside it. */
-/** Category and tag rows shown: wide, Taxonomy has its column to itself
- * (tab bar, status and footer 4, its border, heading and footer 4); else
- * up to 15, the panes below it in view. */
-function taxonomyRows(height: number, wide: boolean): number {
-  return Math.max(5, wide ? height - 8 : Math.min(15, height - 16))
-}
-
 /** The box a section's pane sits in: what the column scrolls into view. */
 const paneId = (section: SectionId) => `settings-pane-${section === "set.tags" ? "set.categories" : section === "set.filters" ? "set.rules" : section}`
 
 export function SettingsTab(props: { focused: SectionId }) {
   const dims = useTerminalDimensions()
-  const layout = () => dims().width >= 112 ? "wide" : dims().width >= 80 ? "medium" : "narrow"
-  const rows = () => taxonomyRows(dims().height, layout() === "wide")
-  createEffect(() => {
-    const visible = rows()
-    if (ui.state.categoryVisible !== visible || ui.state.tagVisible !== visible) ui.setState({ categoryVisible: visible, tagVisible: visible })
-  })
-  const taxonomyFocused = () => props.focused === "set.categories" || props.focused === "set.tags"
   // Panes keep their own height; a column taller than the screen scrolls,
   // following the focused pane.
   const columns: ScrollBoxRenderable[] = []
@@ -571,59 +735,64 @@ export function SettingsTab(props: { focused: SectionId }) {
       // its panes are placed, and a pane read then is where it was (a pane
       // focused low in the column stayed off screen on opening).
       const follow = () => queueMicrotask(() => { if (!box.isDestroyed) box.scrollChildIntoView(paneId(props.focused)) })
+      // The viewport too: a shorter screen can leave the content's height
+      // as it was (Taxonomy at its own height) while the view shrinks.
       box.content.on("resize", follow)
-      onCleanup(() => box.content.off("resize", follow))
+      box.viewport.on("resize", follow)
+      onCleanup(() => { box.content.off("resize", follow); box.viewport.off("resize", follow) })
     }}
       width={column.width} flexGrow={column.width ? 0 : 1} flexShrink={column.width ? 0 : 1} minWidth={0} height="100%"
       scrollY scrollX={false} focusable={false} verticalScrollbarOptions={{ visible: false }} contentOptions={{ flexDirection: "column" }}>
       {column.children}
     </scrollbox>
   )
-  // Each pane's width: rows size their columns from it. Wide: Taxonomy
-  // in a 60% left column; the rest on the right, Rules &
-  // Filters, then Appearance just above Database & Import; medium: Up Bank and AI models halves.
-  const left = () => Math.floor(dims().width * 0.6)
+  // Wide: Taxonomy over Rules & Filters on the left (full width of the
+  // column); on the right Up Bank beside Web app, AI models, Appearance
+  // beside Database & Import (each
+  // pair one height), stacked when the column is too narrow for pairs.
+  // Narrower: one column in the same order (SETTINGS_SECTIONS).
+  const left = () => Math.floor(dims().width * 0.5)
   const right = () => dims().width - 1 - left()
   const full = () => dims().width
-  const half = () => Math.floor(dims().width * 0.5)
-  const Pane = (pane: { section: SectionId; children: JSX.Element }) => <box id={paneId(pane.section)} width="100%" flexShrink={0}>{pane.children}</box>
-  const taxonomy = (width: number) => <Pane section="set.categories"><TaxonomyPane focused={taxonomyFocused()} narrow={layout() === "narrow"} height={rows() + 4} width={width} /></Pane>
-  const rules = (width: number) => <Pane section="set.rules"><RulesPane focused={props.focused === "set.rules" || props.focused === "set.filters"} width={width} /></Pane>
-  const up = (width: number) => <Pane section="set.up"><UpPane focused={props.focused === "set.up"} width={width} /></Pane>
-  const ai = (width: number) => <Pane section="set.ai"><AiPane focused={props.focused === "set.ai"} width={width} /></Pane>
-  const appearance = (width: number) => <Pane section="set.appearance">
-    <box width="100%" onMouseDown={onPointer(
-      (scope) => ["bar", "settings", "settings.taxonomy", "settings.rules", "settings.filters", "settings.up", "settings.ai", "settings.appearance", "settings.database"].includes(scope),
-      (event) => {
-        // Activation can scroll the pane; use its position at the click.
-        const cursor = event.currentTarget ? event.y - event.currentTarget.y - 1 : -1
-        ui.activateSettings("appearance")
-        if (cursor >= 0 && cursor < APPEARANCE_ROWS.length) ui.setState({ appearanceCursor: cursor })
-      },
-    )}>
-      <AppearancePane focused={props.focused === "set.appearance"} width={width} />
-    </box>
-  </Pane>
-  const database = (width: number) => <Pane section="set.database"><DatabasePane focused={props.focused === "set.database"} width={width} /></Pane>
-  const history = (width: number) => <box width="100%" flexShrink={0}><ImportHistory width={width} /></box>
-  const webApp = (width: number) => <box width="100%" flexShrink={0}><WebAppPane width={width} /></box>
+  // The tab's body: the screen less the tab bar, its gap, the status and the footer.
+  const body = () => dims().height - 4
+  // Each pane registers where it is (h/l go to the one beside) and
+  // activates on a click anywhere in it (a row's own click also moves the cursor).
+  const Pane = (pane: { section: SectionId; settings: SettingsSection; width?: number; children: JSX.Element }) =>
+    <box id={paneId(pane.section)} ref={regionRef(pane.section, "settings")} width={pane.width ?? "100%"} flexShrink={0} onMouseDown={onSettings(() => ui.activateSettings(pane.settings))}>{pane.children}</box>
+  /** Two panes side by side, one height. */
+  const Pair = (pair: { children: JSX.Element }) => <box flexDirection="row" gap={1} width="100%" flexShrink={0}>{pair.children}</box>
+  const taxonomyFocused = () => props.focused === "set.categories" || props.focused === "set.tags"
+  const taxonomy = (width: number, room: number) => <Pane section="set.categories" settings="taxonomy"><TaxonomyPane focused={taxonomyFocused()} height={taxonomyHeight(width, room)} width={width} /></Pane>
+  const rules = (width: number) => <Pane section="set.rules" settings="rules"><RulesPane focused={props.focused === "set.rules" || props.focused === "set.filters"} width={width} /></Pane>
+  const up = (width: number, height?: number) => <Pane section="set.up" settings="up" width={width}><UpPane focused={props.focused === "set.up"} width={width} height={height} /></Pane>
+  const webApp = (width: number, height?: number) => <Pane section="set.web" settings="web" width={width}><WebAppPane focused={props.focused === "set.web"} width={width} height={height} /></Pane>
+  const ai = (width: number) => <Pane section="set.ai" settings="ai"><AiPane focused={props.focused === "set.ai"} width={width} /></Pane>
+  const appearance = (width: number, height?: number) => <Pane section="set.appearance" settings="appearance" width={width}><AppearancePane focused={props.focused === "set.appearance"} width={width} height={height} /></Pane>
+  const database = (width: number, height?: number) => <Pane section="set.database" settings="database" width={width}><DatabasePane focused={props.focused === "set.database"} width={width} height={height} /></Pane>
+  // Pairs need room for Up Bank's rows and Database's values beside their partners.
+  const pairs = () => right() >= 100
+  // Up Bank as wide as its rows; Web app the rest.
+  const upWidth = () => Math.min(62, right() - 1 - 46)
   return <box width="100%" height="100%" flexDirection="row" gap={1} backgroundColor={theme.canvas}>
-    <Show when={layout() === "wide"} fallback={
+    <Show when={dims().width >= 112} fallback={
       <Column>
-        {taxonomy(full())}
-        <Show when={layout() === "medium"} fallback={<>{up(full())}{ai(full())}</>}>
-          <box flexDirection="row" gap={1} width="100%" flexShrink={0}>
-            <box id={paneId("set.up")} width={half()} flexShrink={0}><UpPane focused={props.focused === "set.up"} width={half()} /></box>
-            <box id={paneId("set.ai")} flexGrow={1} minWidth={0}><AiPane focused={props.focused === "set.ai"} width={full() - 1 - half()} /></box>
-          </box>
-        </Show>
-        {webApp(full())}{rules(full())}{appearance(full())}{database(full())}{history(full())}
+        {taxonomy(full(), dims().height - 6)}{rules(full())}{up(full())}{webApp(full())}{ai(full())}{appearance(full())}{database(full())}
       </Column>
     }>
-      <Column width={left()}>{taxonomy(left())}</Column>
-      <Column>{up(right())}{webApp(right())}{ai(right())}{rules(right())}{appearance(right())}{database(right())}{history(right())}</Column>
+      <Column width={left()}>{taxonomy(left(), body() - rulesHeight())}{rules(left())}</Column>
+      <Column>
+        <Show when={pairs()} fallback={<>{up(right())}{webApp(right())}</>}>
+          <Pair>{up(upWidth(), Math.max(upHeight(), webHeight()))}{webApp(right() - 1 - upWidth(), Math.max(upHeight(), webHeight()))}</Pair>
+        </Show>
+        {ai(right())}
+        <Show when={pairs()} fallback={<>{appearance(right())}{database(right())}</>}>
+          <Pair>{appearance(APPEARANCE_WIDTH, DATABASE_ROWS.length + 5)}{database(right() - 1 - APPEARANCE_WIDTH, DATABASE_ROWS.length + 5)}</Pair>
+        </Show>
+      </Column>
     </Show>
     <ImportOverlay />
+    <ImportHistoryDialog />
     <FactoryResetOverlay />
     {/* Last, so a confirmation armed from a dialog shows over it. */}
   </box>

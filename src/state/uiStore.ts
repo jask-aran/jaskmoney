@@ -39,6 +39,7 @@ export type SectionId =
   | "set.database"
   | "set.up"
   | "set.ai"
+  | "set.web"
   | "bud.list"
   | "bud.categories"
 
@@ -67,6 +68,8 @@ export type ScopeId =
   | "settings.database"
   | "settings.up"
   | "settings.ai"
+  | "settings.web"
+  | "settings.importHistory"
   | "budgets"
   | "budgets.categories"
   | "manager.detail"
@@ -92,22 +95,25 @@ export type ScopeId =
   | "welcome"
 
 export type SettingsList = "categories" | "tags"
-export type SettingsSection = "taxonomy" | "rules" | "filters" | "up" | "ai" | "appearance" | "database"
-/** j/k order of Settings sections (wide layout: left column, then right). */
-/** In reading order (j/k): the wide layout's left column (Taxonomy), then
- * its right (Up Bank to Database & Import); the one-column layouts stack
- * them in the same order. */
-export const SETTINGS_SECTIONS: SettingsSection[] = ["taxonomy", "up", "ai", "rules", "filters", "appearance", "database"]
+export type SettingsSection = "taxonomy" | "rules" | "filters" | "up" | "web" | "ai" | "appearance" | "database"
+/** The panes in reading order (j/k between them): the wide layout's left
+ * column (Taxonomy, Rules & Filters), then its right, row by row (Up Bank,
+ * Web app beside it, AI models, Appearance, Database & Import beside it);
+ * the one-column layouts stack them in the same order. One stop per pane:
+ * Saved filters is entered from Rules (or f in jump). */
+export const SETTINGS_SECTIONS: SettingsSection[] = ["taxonomy", "rules", "up", "web", "ai", "appearance", "database"]
+/** The panes of the wide layout's right column (l goes to its first). */
+export const SETTINGS_RIGHT: SettingsSection[] = ["up", "web", "ai", "appearance", "database"]
 
 /** Each Settings section's name: its pane's title and the palette's. (Jump badges are shorter.) */
 export const SETTINGS_SECTION_LABELS: Record<SettingsSection, string> = {
   taxonomy: "Taxonomy", ai: "AI models", rules: "Rules",
-  filters: "Saved Filters", up: "Up Bank", appearance: "Appearance", database: "Database & Import",
+  filters: "Saved Filters", up: "Up Bank", web: "Web app", appearance: "Appearance", database: "Database & Import",
 }
 
 export function settingsSectionFocus(section: SettingsSection, list: SettingsList = "categories"): SectionId {
   if (section === "taxonomy") return list === "categories" ? "set.categories" : "set.tags"
-  return section === "rules" ? "set.rules" : section === "filters" ? "set.filters" : section === "up" ? "set.up" : section === "ai" ? "set.ai" : section === "appearance" ? "set.appearance" : "set.database"
+  return section === "rules" ? "set.rules" : section === "filters" ? "set.filters" : section === "up" ? "set.up" : section === "web" ? "set.web" : section === "ai" ? "set.ai" : section === "appearance" ? "set.appearance" : "set.database"
 }
 export type SettingsEditorKind = "category" | "tag" | "filter" | "rule" | "budget" | "cycle" 
 export type ImportStage = "files" | "path" | "profile" | "profileEditor" | "preview"
@@ -166,12 +172,13 @@ export interface UiState {
   settingsActive: boolean
   settingsSection: SettingsSection
   taxonomyList: SettingsList
+  /** Taxonomy: a row of categoryRows (state/taxonomyRows), and a tag. */
   categoryCursor: number
-  categoryTop: number
-  categoryVisible: number
   tagCursor: number
-  tagTop: number
-  tagVisible: number
+  /** The category groups open in Taxonomy (ids); the rest show as one row. */
+  taxonomyOpen: number[]
+  /** Taxonomy rows in view: a page for pgup/pgdn (set by the pane). */
+  taxonomyVisible: number
   ruleCursor: number
   filterCursor: number
   /** Transactions table: rows, or the same rows grouped by merchant. */
@@ -235,6 +242,8 @@ export interface UiState {
   executorStatus: ExecutorStatus | null
   /** Settings › Up Bank › Accounts: which Up accounts sync (cursor row). */
   upAccounts: { cursor: number } | null
+  /** Settings › Database & Import › Import history: the first import shown. */
+  importHistory: { top: number } | null
   /** The first-run setup, full screen (state/welcome). */
   welcome: WelcomeState | null
   aiDialog: {
@@ -319,6 +328,7 @@ export const JUMP_TARGETS: Record<TabId, JumpTarget[]> = {
     { key: "r", section: "set.rules", label: "Rules" },
     { key: "f", section: "set.filters", label: "Filters" },
     { key: "u", section: "set.up", label: "Up Bank" },
+    { key: "w", section: "set.web", label: "Web app" },
     { key: "a", section: "set.ai", label: "AI models" },
     { key: "p", section: "set.appearance", label: "Appearance" },
     { key: "d", section: "set.database", label: "Database & Import" },
@@ -372,6 +382,7 @@ const MODALS = [
   { key: "aiDialog", scope: () => "settings.aiDialog" },
   { key: "executor", scope: () => "settings.executor" },
   { key: "upAccounts", scope: () => "settings.upAccounts" },
+  { key: "importHistory", scope: () => "settings.importHistory" },
   { key: "factoryReset", scope: () => "settings.factoryReset" },
   { key: "customEdit", scope: () => "overview.custom" },
   // Under every dialog: a sign-in or key dialog it opens takes the keys.
@@ -435,11 +446,9 @@ function createUiStore() {
     settingsSection: "taxonomy",
     taxonomyList: "categories",
     categoryCursor: 0,
-    categoryTop: 0,
-    categoryVisible: 10,
     tagCursor: 0,
-    tagTop: 0,
-    tagVisible: 10,
+    taxonomyOpen: [],
+    taxonomyVisible: 10,
     ruleCursor: 0,
     filterCursor: 0,
     upCursor: 0,
@@ -477,6 +486,7 @@ function createUiStore() {
     aiUse: null,
     aiSent: null,
     upAccounts: null,
+    importHistory: null,
     welcome: null,
     factoryReset: null,
     merchantNote: null,
@@ -560,8 +570,8 @@ function createUiStore() {
 
   function activateSettings(section: UiState["settingsSection"], list: SettingsList = "categories", reset = false) {
     const updates: Partial<UiState> = { settingsActive: true, settingsSection: section, taxonomyList: list, focusedSection: settingsSectionFocus(section, list), jump: null }
-    if (reset && list === "categories") { updates.categoryCursor = 0; updates.categoryTop = 0 }
-    if (reset && list === "tags") { updates.tagCursor = 0; updates.tagTop = 0 }
+    if (reset && list === "categories") updates.categoryCursor = 0
+    if (reset && list === "tags") updates.tagCursor = 0
     setState(updates)
   }
 
@@ -582,14 +592,6 @@ function createUiStore() {
   }
   function cancelImport() { setState({ importWizard: null }) }
   function openProfileEditor(draft: ImportProfile, id: string | null) { if (!state.importWizard) beginImport("", []); setState("importWizard", { stage: "profileEditor", profileDraft: draft, profileEditId: id, profileField: 0, profileCaret: draft.id.length }) }
-
-  function moveSettingsList(list: SettingsList, delta: number, count: number) {
-    const cursorKey = list === "categories" ? "categoryCursor" : "tagCursor"
-    const topKey = list === "categories" ? "categoryTop" : "tagTop"
-    const visible = list === "categories" ? state.categoryVisible : state.tagVisible
-    const { cursor, top } = cursorWindow(state[cursorKey] + delta, state[topKey], count, visible)
-    setState({ [cursorKey]: cursor, [topKey]: top } as Pick<UiState, typeof cursorKey | typeof topKey>)
-  }
 
   function clearFocus() {
     setState({ focusedSection: "none" })
@@ -754,6 +756,7 @@ function createUiStore() {
     if (state.settingsSection === "rules") return "settings.rules"
     if (state.settingsSection === "filters") return "settings.filters"
     if (state.settingsSection === "up") return "settings.up"
+    if (state.settingsSection === "web") return "settings.web"
     if (state.settingsSection === "ai") return "settings.ai"
     if (state.settingsSection === "appearance") return "settings.appearance"
     return "settings.database"
@@ -780,7 +783,6 @@ function createUiStore() {
     beginImport,
     cancelImport,
     openProfileEditor,
-    moveSettingsList,
     clearFocus,
     openFilter,
     closeFilter,
