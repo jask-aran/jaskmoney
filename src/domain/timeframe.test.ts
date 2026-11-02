@@ -95,10 +95,11 @@ describe("stepping", () => {
     expect(offsetLabel("qtr", 1)).toBe("1 quarter ahead")
     expect(offsetLabel("cycle", 0)).toBe("")
   })
-  test("stepChip walks every chip, skipping Custom until there is a range", () => {
+  test("stepChip walks the Lookback and Period chips, never Custom (C, or its chip, asks for dates)", () => {
     const tf = applyChip(defaultTimeframe(now), LOOKBACKS.length + PERIODS.indexOf("year"), now)
     expect(stepChip(tf, 1)).toBe(0)
-    expect(stepChip({ ...tf, custom: { start: "2026-10-01", end: "2026-10-05" } }, 1)).toBe(CUSTOM_CHIP)
+    expect(stepChip({ ...tf, custom: { start: "2026-10-01", end: "2026-10-05" } }, 1)).toBe(0)
+    expect(stepChip({ ...tf, family: "custom", custom: { start: "2026-10-01", end: "2026-10-05" } }, -1)).toBe(CUSTOM_CHIP - 1)
     expect(stepChip(applyChip(tf, 0, now), -1)).toBe(LOOKBACKS.length + PERIODS.length - 1)
   })
 })

@@ -2119,6 +2119,8 @@ export function drillDown(ui: UiStore, data: DataStore, line?: CategoryLine) {
 type HintState = Pick<UiState, "focusedSection" | "drillReturn" | "chartViews"> & {
   /** What [ and ] step the Overview's range by (stepUnit). */
   stepUnit?: string
+  /** The Overview's range is a Custom one (C edits its dates). */
+  customRange?: boolean
   /** The Overview's chart panes on screen (one: no bottom-chart keys). */
   overviewCharts?: 1 | 2
   /** From the data store: the Transactions table is the Uncategorised view. */
@@ -2538,13 +2540,15 @@ const scopes: Record<ScopeId, ScopeEntry> = {
         { key: "h/l", desc: "chart" },
         { key: "d/D", desc: "range" },
         { key: "[ ]", desc: `prev/next ${state?.stepUnit ?? "range"}` },
+        // On a Custom range, its dates are a key away.
+        ...(state?.customRange ? [{ key: "C", desc: "edit dates", label: "Range: custom dates" }] : []),
         { key: "c", desc: "this cycle", label: "Range: this cycle" },
         { key: "a", desc: "account", label: "Next spending account" },
         { key: "i", desc: "review", command: "txn:uncategorised" },
         { key: "/", desc: "search", command: "txn:filter" },
         { key: "?", desc: "smart search", command: "txn:smart-search" },
         // Past the footer's eight: in the palette (the Custom chip shows too).
-        { key: "C", desc: "custom range", label: "Range: custom dates" },
+        ...(state?.customRange ? [] : [{ key: "C", desc: "custom range", label: "Range: custom dates" }]),
         ...(state?.overviewCharts !== 1 ? [{ key: "H/L", desc: "bottom chart" }] : []),
         { key: "0", desc: "now", label: "Range: back to now" },
         ...(state?.chartViews.some((i) => CHART_VIEWS[i]?.group === "Balances") ? [{ key: "z", desc: "$0 axis" }] : []),
@@ -2590,6 +2594,7 @@ export function hintState(ui: UiStore, data?: DataStore): HintState {
     drillReturn: ui.state.drillReturn,
     chartViews: ui.state.chartViews,
     stepUnit: stepUnit(ui.state.timeframe),
+    customRange: ui.state.timeframe.family === "custom",
     overviewCharts: ui.state.overviewCharts,
     uncategorisedOnly: data?.state.uncategorisedOnly,
     tagReview: !!data?.state.tagReview,

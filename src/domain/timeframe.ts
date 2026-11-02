@@ -298,13 +298,14 @@ export function offsetLabel(period: PeriodId, offset: number): string {
   return `${n} ${unit}${n === 1 || unit === "FY" ? "" : "s"} ${offset < 0 ? "back" : "ahead"}`
 }
 
-/** The next (or previous) chip to apply when stepping through them directly:
- * every chip in order, Custom only once a custom range exists. */
+/** The next (or previous) chip to apply when stepping through them directly
+ * (d/D): the Lookback and Period chips in order. Never Custom: its dates
+ * are asked for (C, or enter on its chip). */
 export function stepChip(tf: TimeframeState, delta: 1 | -1): number {
   const n = chipCount()
   let i = activeChipIndex(tf)
   do i = (i + delta + n) % n
-  while (i === CUSTOM_CHIP && !tf.custom)
+  while (i === CUSTOM_CHIP)
   return i
 }
 
