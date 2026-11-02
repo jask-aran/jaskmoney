@@ -39,22 +39,27 @@ export function chartSpeedMs(id: string | undefined): number {
 
 /**
  * Draw-in curves: how progress follows time. All ease out (quick to start,
- * settling at the end); the power is the shape, progress = 1 - (1 - t)^power.
- * Gentle (2) keeps an even pace and a short settle; smooth (3) puts half
- * the chart in the first fifth of the time; sharp (4) is nearly all there
- * at once, then settles slowly.
+ * settling at the end), named by their power, the curve's shape: progress =
+ * 1 - (1 - t)^power. Quadratic keeps an even pace and a short settle; cubic
+ * puts half the chart in the first fifth of the time; quartic is nearly all
+ * there at once, then settles slowly. `feel` says so in a word.
  */
 export const CHART_CURVES = [
-  { id: "gentle", label: "gentle", power: 2 },
-  { id: "smooth", label: "smooth", power: 3 },
-  { id: "sharp", label: "sharp", power: 4 },
+  { id: "quadratic", label: "quadratic", feel: "gentle", power: 2 },
+  { id: "cubic", label: "cubic", feel: "smooth", power: 3 },
+  { id: "quartic", label: "quartic", feel: "sharp", power: 4 },
 ] as const
 export type ChartCurveId = (typeof CHART_CURVES)[number]["id"]
-export const DEFAULT_CHART_CURVE: ChartCurveId = "smooth"
+export const DEFAULT_CHART_CURVE: ChartCurveId = "cubic"
 
 /** A curve's power; an unknown or missing one is the default's. */
 export function chartCurvePower(id: string | undefined): number {
   return (CHART_CURVES.find((c) => c.id === id) ?? CHART_CURVES.find((c) => c.id === DEFAULT_CHART_CURVE)!).power
+}
+
+/** A curve as Settings and the status line name it: "cubic (smooth)". */
+export function chartCurveName(curve: (typeof CHART_CURVES)[number]): string {
+  return `${curve.label} (${curve.feel})`
 }
 
 /** The curve after `id`'s, wrapping. */

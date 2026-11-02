@@ -154,9 +154,9 @@ test("Settings chart rows toggle motion and cycle speed and curve, with persiste
       expect(t.captureCharFrame()).toMatch(new RegExp(`Animation speed\\s+${speed.label}`))
     }
 
-    // The curve: smooth by default, then each shape in turn.
+    // The curve: cubic by default, then each shape in turn, named with its feel.
     ui.setState({ appearanceCursor: APPEARANCE_ROWS.indexOf("chartCurve") })
-    expect(t.captureCharFrame()).toMatch(/Animation curve\s+smooth/)
+    expect(t.captureCharFrame()).toMatch(/Animation curve\s+cubic \(smooth\)/)
     const curveAt = CHART_CURVES.findIndex((curve) => curve.id === DEFAULT_CHART_CURVE)
     for (let step = 1; step <= CHART_CURVES.length; step++) {
       const curve = CHART_CURVES[(curveAt + step) % CHART_CURVES.length]!
@@ -164,8 +164,8 @@ test("Settings chart rows toggle motion and cycle speed and curve, with persiste
       await t.renderOnce()
       expect(data.state.uiPrefs.chartCurve).toBe(curve.id)
       expect(loadSettingsConfig(path).ui?.chartCurve).toBe(curve.id)
-      expect(ui.state.status).toBe(`Animation curve: ${curve.label}`)
-      expect(t.captureCharFrame()).toMatch(new RegExp(`Animation curve\\s+${curve.label}`))
+      expect(ui.state.status).toBe(`Animation curve: ${curve.label} (${curve.feel})`)
+      expect(t.captureCharFrame()).toContain(`${curve.label} (${curve.feel})`)
     }
     data.init(":memory:")
     expect(data.state.uiPrefs).toMatchObject({ chartMotion: "launch", chartSpeed: DEFAULT_CHART_SPEED, chartCurve: DEFAULT_CHART_CURVE })

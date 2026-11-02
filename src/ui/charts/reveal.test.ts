@@ -77,7 +77,7 @@ test("the curves all ease out, from 0 to 1; a higher power gets further sooner a
   }
   const at = (t: number) => CHART_CURVES.map(({ power }) => easeOut(t, power))
   expect(at(0.2)).toEqual([...at(0.2)].sort((a, b) => a - b))
-  // Unknown or missing: the default (smooth, cubic), as before.
+  // Unknown or missing: the default, cubic, as before.
   expect(chartCurvePower(undefined)).toBe(3)
   expect(chartCurvePower("bogus")).toBe(3)
   expect(easeOut(0.3)).toBe(easeOut(0.3, 3))

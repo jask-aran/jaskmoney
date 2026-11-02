@@ -24,7 +24,7 @@ export interface UiPrefs {
   theme?: string
   chartMotion?: ChartMotionMode
   chartSpeed?: ChartSpeedId
-  /** The draw-in's ease-out curve (CHART_CURVES; default smooth). */
+  /** The draw-in's ease-out curve (CHART_CURVES; default cubic). */
   chartCurve?: ChartCurveId
   openRange?: OpenRange
   chartLabels?: ChartLabelMode

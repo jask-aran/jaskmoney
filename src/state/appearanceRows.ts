@@ -1,5 +1,5 @@
 import { DEFAULT_THEME, THEMES } from "../themes"
-import { CHART_CURVES, CHART_LABEL_LABELS, CHART_MOTION_LABELS, CHART_SPEEDS, DEFAULT_CHART_CURVE, DEFAULT_CHART_LABELS, DEFAULT_CHART_MOTION, DEFAULT_CHART_SPEED } from "../ui/charts/motion"
+import { CHART_CURVES, chartCurveName, CHART_LABEL_LABELS, CHART_MOTION_LABELS, CHART_SPEEDS, DEFAULT_CHART_CURVE, DEFAULT_CHART_LABELS, DEFAULT_CHART_MOTION, DEFAULT_CHART_SPEED } from "../ui/charts/motion"
 import { BACKDROPS, DEFAULT_BACKDROP } from "../ui/welcome/backdrop"
 import { DEFAULT_OPEN_RANGE, OPEN_RANGE_LABELS } from "../domain/timeframe"
 import type { UiPrefs } from "./settingsConfig"
@@ -36,7 +36,7 @@ function appearanceLabel(row: AppearanceRow, ctx: AppearanceRowContext): { label
     case "xAxis": return { label: "Charts' $0 line", value: ctx.xAxis ? "on" : "off" }
     case "chartMotion": return { label: "Chart animation", value: CHART_MOTION_LABELS[ctx.chartMotion ?? DEFAULT_CHART_MOTION] }
     case "chartSpeed": return { label: "Animation speed", value: CHART_SPEEDS.find((speed) => speed.id === (ctx.chartSpeed ?? DEFAULT_CHART_SPEED))!.label }
-    case "chartCurve": return { label: "Animation curve", value: CHART_CURVES.find((curve) => curve.id === (ctx.chartCurve ?? DEFAULT_CHART_CURVE))!.label }
+    case "chartCurve": return { label: "Animation curve", value: chartCurveName(CHART_CURVES.find((curve) => curve.id === (ctx.chartCurve ?? DEFAULT_CHART_CURVE))!) }
     case "chartLabels": return { label: "Chart labels", value: CHART_LABEL_LABELS[ctx.chartLabels ?? DEFAULT_CHART_LABELS] }
     case "openRange": return { label: "Range on open", value: OPEN_RANGE_LABELS[ctx.openRange ?? DEFAULT_OPEN_RANGE] }
     case "backdrop": return { label: "Welcome backdrop", value: BACKDROPS.find((backdrop) => backdrop.id === (ctx.backdrop ?? DEFAULT_BACKDROP))!.label }

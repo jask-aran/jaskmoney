@@ -2,7 +2,7 @@ import { nextOpenRange, OPEN_RANGE_LABELS } from "../domain/timeframe"
 import { DEFAULT_THEME, THEMES } from "../themes"
 import { themeName } from "../state/appearanceRows"
 import { BACKDROPS, DEFAULT_BACKDROP } from "../ui/welcome/backdrop"
-import { CHART_LABEL_LABELS, DEFAULT_CHART_LABELS, nextChartCurve, nextChartMotion, nextChartSpeed } from "../ui/charts/motion"
+import { CHART_LABEL_LABELS, DEFAULT_CHART_LABELS, chartCurveName, nextChartCurve, nextChartMotion, nextChartSpeed } from "../ui/charts/motion"
 import { runAsk } from "./ask"
 import { llmModelId } from "../ai/llm"
 import type { AccountSelection, AccountRow } from "../domain/accountTree"
@@ -135,7 +135,7 @@ export function cycleChartSpeed(ui: UiStore, data: DataStore): void {
 
 export function cycleChartCurve(ui: UiStore, data: DataStore): void {
   const curve = nextChartCurve(data.state.uiPrefs.chartCurve)
-  settleData(ui, data.saveUiPrefs({ chartCurve: curve.id }), () => ui.setStatus(`Animation curve: ${curve.label}`))
+  settleData(ui, data.saveUiPrefs({ chartCurve: curve.id }), () => ui.setStatus(`Animation curve: ${chartCurveName(curve)}`))
 }
 
 export function toggleChartLabels(ui: UiStore, data: DataStore): void {
