@@ -3,7 +3,7 @@
 A keyboard-driven personal spending TUI for [Up Bank](https://up.com.au). It syncs your Up accounts, categorises and
 tags transactions (both ways with Up), and shows where the money goes against a budget.
 
-![Overview](docs/screenshots/overview.png)
+![The Overview's charts, from the setup's tour](docs/screenshots/chart.gif)
 
 | Transactions | Budgets | Settings |
 | --- | --- | --- |
@@ -76,13 +76,31 @@ The optional server (`--serve`) trusts every connection from this machine: see
 
 The footer lists the keys for where you are; the [guide](docs/guide.md) has the rest.
 
+## In action
+
+The setup's tour, on its made-up data.
+
+**Filter** (`/`): words, `amt:`, `cat:` and `date:`, combined, filtering as you type.
+
+![Filter](docs/screenshots/filter.gif)
+
+**Smart search** (`?`): ask in words; Jev writes the filter, yours to read and edit.
+
+![Smart search](docs/screenshots/ask.gif)
+
+**Suggestions**: what Amazon and eBay rows bought, from your order emails, and a category suggested for each row from
+that, the merchant and the amount.
+
+![Suggestions](docs/screenshots/suggest.gif)
+
 ## Development
 
 ```bash
 bun run dev           # restarts on save
 bun run typecheck
 bun run test
-bun run screenshots   # these images: the demo in a real terminal (ttyd, Chrome, a Nerd Font)
+bun run screenshots   # the README's images: the demo in a real terminal (ttyd, Chrome, a Nerd Font)
+bun run recordings    # its GIFs: the setup's tour, a loop of each demo
 ```
 
 SolidJS on [OpenTUI](https://github.com/sst/opentui), SQLite through `bun:sqlite`. A release: set `version` in

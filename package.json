@@ -16,6 +16,7 @@
     "build": "bun run scripts/build.ts",
     "bin": "bun run scripts/build.ts && ./dist/jaskmoney",
     "screenshots": "bun run scripts/screenshots.ts",
+    "recordings": "bun run scripts/recordings.ts",
     "test": "bun test --conditions=browser --parallel",
     "typecheck": "tsc --noEmit && tsc --noEmit -p src/web",
     "bench": "bun test --conditions=browser ./src/bench/keys.bench.tsx",

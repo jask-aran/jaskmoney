@@ -141,9 +141,11 @@ export function typed(ms: number, script: Array<[number, string, number]>): stri
   return shown
 }
 
+const FILTER_LOOP = 13000
+
 /** Filter: a shop, then an amount, then a category and last month. */
 export function filterAt(ms: number, t: TourTopics): string {
-  return typed(ms % 13000, [[700, t.shop, 110], [2600, `${t.shop} amt:<-${t.cut}`, 110], [6200, `cat:"${t.category}" date:${t.lastMonth}`, 90], [11800, "", 40]])
+  return typed(ms % FILTER_LOOP, [[700, t.shop, 110], [2600, `${t.shop} amt:<-${t.cut}`, 110], [6200, `cat:"${t.category}" date:${t.lastMonth}`, 90], [11800, "", 40]])
 }
 
 export interface AskFrame {
@@ -174,9 +176,11 @@ const ASK_TYPE_MS = 42, ASK_WRITING_MS = 650, ASK_EDITING_MS = 450, ASK_SHOWN_MS
 /** Smart search: ? and words, Jev writing, the filter it wrote (still
  * being edited), applied for a moment, then the next search. Each search
  * takes about four seconds. */
+const askSpans = (t: TourTopics) => askScript(t).map((s) => s.words.length * ASK_TYPE_MS + ASK_WRITING_MS + ASK_EDITING_MS + ASK_SHOWN_MS + ASK_ERASE_MS)
+
 export function askAt(ms: number, t: TourTopics): AskFrame {
   const script = askScript(t)
-  const spans = script.map((s) => s.words.length * ASK_TYPE_MS + ASK_WRITING_MS + ASK_EDITING_MS + ASK_SHOWN_MS + ASK_ERASE_MS)
+  const spans = askSpans(t)
   let m = ms % spans.reduce((a, b) => a + b, 0)
   let i = 0
   while (m >= spans[i]!) { m -= spans[i]!; i++ }
@@ -276,6 +280,15 @@ const VIEW_MS = 3600
 
 export function chartViewAt(ms: number): number {
   return Math.floor(ms / VIEW_MS) % CHART_VIEWS.length
+}
+
+/** How long a demo's script runs before it starts again (the README's
+ * recordings are one loop: scripts/recordings.ts). */
+export function demoLoopMs(id: (typeof DEMOS)[number]["id"], t: TourTopics): number {
+  if (id === "chart") return VIEW_MS * CHART_VIEWS.length
+  if (id === "filter") return FILTER_LOOP
+  if (id === "suggest") return SUGGEST_LOOP
+  return askSpans(t).reduce((a, b) => a + b, 0)
 }
 
 // ---- Trying a demo yourself.
