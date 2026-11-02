@@ -9,10 +9,10 @@ import { textCells } from "./runs"
 import type { Span } from "../primitives/spans"
 
 /** Columns every y-axis keeps for its labels: room for the money labels
- * charts usually have ("$0", "$500", "$10k", "-$1.5k"), so the axis, and
+ * charts usually have ("$0", "$500", "$10k", "$2.5k", "-$500"), so the axis, and
  * the gridlines after it, stay put from view to view and range to range.
  * Only a longer label widens it. */
-const AXIS_LABEL = 6
+const AXIS_LABEL = 5
 
 /** The y-axis width for `ticks`: the longest label (at least AXIS_LABEL),
  * a space and the tick. */

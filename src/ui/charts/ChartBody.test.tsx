@@ -73,7 +73,8 @@ test("a chart's cells take their inks, and a draw-in leaves the gridlines in the
 
 test("the y-axis keeps one width for the usual money labels, so gridlines stay put across views", () => {
   const width = (...labels: string[]) => axisWidth(new Map(labels.map((l, i) => [i, l])))
-  expect(new Set([width("$0", "$5"), width("$500", "$1k"), width("$10k", "$5k"), width("-$1.5k", "$2k")]).size).toBe(1)
-  expect(width("-$120k")).toBe(width("$10k"))
-  expect(width("$1,200k")).toBeGreaterThan(width("$10k"))
+  expect(new Set([width("$0", "$5"), width("$500", "$1k"), width("$10k", "$5k"), width("$2.5k", "-$500")]).size).toBe(1)
+  // Its widest usual label sits where a Calendar's weekdays do; a longer one widens it.
+  expect(width("$2.5k")).toBe("$2.5k ┤".length)
+  expect(width("-$1.5k")).toBeGreaterThan(width("$10k"))
 })
