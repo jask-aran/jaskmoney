@@ -11,7 +11,7 @@ import { existsSync, mkdirSync, readFileSync, readdirSync, unlinkSync } from "no
 import { join, resolve } from "node:path"
 import {
   loadAccounts, loadCategories, loadDbInfo, loadRules, loadTags, loadTransactions, loadSuggestions, loadMerchantNotes,
-  loadMerchantBreadth, saveMerchantBreadth, loadCategoryChoices, loadPurchaseLookups, logCategories, openDb,
+  loadMerchantBreadth, loadCategoryChoices, loadPurchaseLookups, logCategories, openDb,
   createCategory, updateCategory, setCategoryBudgetIgnored, deleteCategory, createTag, updateTag, deleteTag,
   createRule, updateRule, deleteRule, reorderRule, toggleRule, clearAccountTransactions, clearAllData, defaultDbPath,
   loadImports, removeAccountWithTransactions, setAccountSyncEnabled, loadBudgetCycle, loadBudgets,
@@ -31,7 +31,7 @@ import { smartSearch } from "../domain/smartSearch"
 import { categoryUses, merchantBreadth } from "../domain/suggest"
 import { createFileCredentialStore, installationId, signedIn } from "../ai/oauthStore"
 import { appNow, appToday } from "../domain/days"
-import { DEMO_SEED, DEMO_YEARS, demoSource, generateDemo } from "../domain/demo"
+import { DEMO_SEED, DEMO_YEARS, generateDemo } from "../domain/demo"
 import { seedDemoDb } from "../db/demoSeed"
 import { jaskmoneyHome } from "../storage/home"
 import { stageTagChange } from "../db/tagLinks"
@@ -276,9 +276,11 @@ export function createCore() {
   /** The real database, kept open while demo mode shows the made-up one. */
   let beforeDemo: { path: string; db: Db } | null = null
 
-  /** Demo mode on: three years sampled from your spending, scrambled,
-   * or a built-in life with too little history, in ~/.jaskmoney/demo.db.
-   * Made afresh with its own categories and monthly budget. Returns how many rows. */
+  /** Demo mode on (Settings, or --demo): the built-in made-up life,
+   * three years of it, in ~/.jaskmoney/demo.db. Nothing of yours goes in
+   * (screenshots are taken of it; `bun run eval` makes its own set from
+   * your history). Made afresh with its own categories and monthly
+   * budget. Returns how many rows. */
   /** A sync writes to the database it began on and then runs rules and
    * pushes on the open one: the database stays put until it's done. */
   function ensureNoSync(command: keyof typeof SYNC_CONFLICTING_COMMANDS): void {
@@ -288,16 +290,11 @@ export function createCore() {
   function enterDemo(): number {
     if (state.demo) return state.transactions.length
     ensureNoSync("enterDemo")
-    const demo = generateDemo({ today: appToday(), years: DEMO_YEARS, seed: DEMO_SEED,
-      history: demoSource(transactions(), state.categories) })
+    const demo = generateDemo({ today: appToday(), years: DEMO_YEARS, seed: DEMO_SEED })
     const path = join(jaskmoneyHome(), "demo.db")
     mkdirSync(jaskmoneyHome(), { recursive: true, mode: 0o700 })
     seedDemoDb(path, demo)
-    // Your merchants' checks (does the name say what was bought?) come
-    // along, so the demo's suggestions don't ask them again.
-    const checked = loadMerchantBreadth(db!)
     const demoDb = openDb(path)
-    saveMerchantBreadth(demoDb, checked)
     beforeDemo = { path: actualDbPath, db: db! }
     attach(path, demoDb)
     set({ demo: true })

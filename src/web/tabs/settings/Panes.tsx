@@ -227,7 +227,7 @@ export function Database() {
       <SettingLine plain label="Path" title={where()}><SettingValue mono><span class="st-wrap">{where()}</span></SettingValue></SettingLine>
       <SettingLine plain label="Holds" title={holds()}><SettingValue><span class="st-wrap">{holds()}</span></SettingValue></SettingLine>
       <SettingLine plain label="Weeks start on"><SettingValue>{data.state.weekStart === "sunday" ? "Sunday" : "Monday"}</SettingValue></SettingLine>
-      <SettingLine plain label="Demo mode"><SettingValue>{data.state.demo ? "on · from your spending, scrambled" : "off"}</SettingValue></SettingLine>
+      <SettingLine plain label="Demo mode"><SettingValue>{data.state.demo ? "on · made-up data" : "off"}</SettingValue></SettingLine>
       <SettingNote>Importing, demo mode, clearing and resetting are in the TUI.</SettingNote>
     </SettingGroup>
   )
