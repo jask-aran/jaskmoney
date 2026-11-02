@@ -8,19 +8,14 @@ keyboard.
 
 ## Quick start
 
-**Linux x64 (and WSL):** download `jaskmoney-linux-x64` from the
-[latest release](https://github.com/jask-aran/jaskmoney/releases/latest) and put it on your PATH:
-
-```bash
-chmod +x jaskmoney-linux-x64 && mkdir -p ~/.local/bin && mv jaskmoney-linux-x64 ~/.local/bin/jaskmoney && jaskmoney
-```
-
-**macOS, or any platform from source:** with [Bun](https://bun.sh) 1.4.2 or newer and git, this clones the repository
-to `~/.local/share/jaskmoney`, builds it, and installs `jaskmoney` in `~/.local/bin`. Run it again to update.
-
 ```bash
 curl -fsSL https://raw.githubusercontent.com/jask-aran/jaskmoney/main/scripts/install.sh | bash
 ```
+
+This installs the `jaskmoney` command in `~/.local/bin`. On Linux x64 (and WSL) it downloads the latest release's
+binary; on macOS and other platforms it builds from source, which needs git and [Bun](https://bun.sh) 1.4.2 or newer
+(the clone lives in `~/.local/share/jaskmoney`). `jaskmoney upgrade` updates it the same way, and the top bar says
+when a new release is out.
 
 Or by hand, in a clone:
 
@@ -28,6 +23,8 @@ Or by hand, in a clone:
 git clone https://github.com/jask-aran/jaskmoney.git && cd jaskmoney
 bun install && bun run build --install    # or `bun start` to run without installing
 ```
+
+A binary built in a clone updates there: `git pull && bun install && bun run build --install`.
 
 Screenshots use the built-in demo data: `jaskmoney --demo` (or `bun start --demo`) runs three years of made-up
 transactions without touching yours. A [Nerd Font](https://www.nerdfonts.com) shows the category icons; without one,
@@ -71,7 +68,8 @@ and keys. It's sent only to the services you set up:
   (searching by date and order number) so a transaction can show what was bought. Sign out in Settings › Executor, and
   revoke it at executor.sh.
 
-The setup's ticker-tape backdrop fetches public market prices from Yahoo Finance; no data of yours goes with them.
+Two requests carry nothing of yours: the setup's ticker-tape backdrop fetches public market prices from Yahoo Finance,
+and an installed binary asks GitHub once a day for the latest release (`JASKMONEY_NO_UPDATE_CHECK=1` turns that off).
 Demo mode uses a separate `demo.db` built from made-up data and never syncs.
 
 The optional server (`bun run server`, `--serve`) trusts every connection from this machine: see

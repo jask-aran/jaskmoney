@@ -1,13 +1,14 @@
 #!/usr/bin/env bash
-# Builds Jaskmoney from source and installs the `jaskmoney` command: the way
-# to install on macOS (and any Linux). Run it again to update.
+# Installs the `jaskmoney` command, on any platform; run it again (or
+# `jaskmoney upgrade`) to update.
 #
 #   curl -fsSL https://raw.githubusercontent.com/jask-aran/jaskmoney/main/scripts/install.sh | bash
 #
-# It needs git and Bun (the tested version in package.json, or newer).
-# JASKMONEY_SRC (default ~/.local/share/jaskmoney) holds the source;
-# JASKMONEY_BIN (default ~/.local/bin) gets the command. It builds main, as the
-# repository has it (release tags are for the prebuilt Linux binaries).
+# On Linux x64 it downloads the latest release's binary. Elsewhere (macOS,
+# Linux arm64), or with JASKMONEY_FROM_SOURCE=1, it builds main from source:
+# that needs git and Bun (the tested version in package.json, or newer), and
+# keeps the clone in JASKMONEY_SRC (default ~/.local/share/jaskmoney).
+# JASKMONEY_BIN (default ~/.local/bin) gets the command.
 set -euo pipefail
 
 REPO="${JASKMONEY_REPO:-https://github.com/jask-aran/jaskmoney.git}"
@@ -17,6 +18,27 @@ BIN="${JASKMONEY_BIN:-$HOME/.local/bin}"
 say() { printf '\033[1m%s\033[0m\n' "$*"; }
 fail() { printf 'jaskmoney install: %s\n' "$*" >&2; exit 1; }
 
+on_path() {
+  case ":$PATH:" in
+    *":$BIN:"*) echo "Run: jaskmoney" ;;
+    *) echo "$BIN isn't on your PATH: add it (e.g. echo 'export PATH=\"$BIN:\$PATH\"' >> ~/.zshrc), then run: jaskmoney" ;;
+  esac
+}
+
+# Linux x64: the release binary.
+if [ -z "${JASKMONEY_FROM_SOURCE:-}" ] && [ "$(uname -s)-$(uname -m)" = "Linux-x86_64" ]; then
+  command -v curl >/dev/null || fail "needs curl"
+  say "Downloading the latest release"
+  mkdir -p "$BIN"
+  # Beside it, then renamed over it: a running jaskmoney keeps its file.
+  curl -fSL --progress-bar -o "$BIN/jaskmoney.new" "https://github.com/jask-aran/jaskmoney/releases/latest/download/jaskmoney-linux-x64"
+  chmod +x "$BIN/jaskmoney.new" && mv -f "$BIN/jaskmoney.new" "$BIN/jaskmoney"
+  say "Installed $BIN/jaskmoney"
+  on_path
+  exit 0
+fi
+
+# Anywhere else: build main from source.
 command -v git >/dev/null || fail "needs git"
 
 # The source, as main has it: cloned once, then brought up to date.

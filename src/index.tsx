@@ -1,4 +1,6 @@
-// First: the stores read keys and settings as their modules load.
+// First: `jaskmoney upgrade` and --version run instead of the app.
+import "./cli"
+// Then: the stores read keys and settings as their modules load.
 import "./startup"
 import { createCliRenderer } from "@opentui/core"
 import { render } from "@opentui/solid"
@@ -8,6 +10,7 @@ import { data } from "./state/dataStore"
 import { watchRowLifetimes } from "./state/rowLifetimes"
 import { traceMark } from "./app/trace"
 import { armLaunchReveal } from "./ui/charts/motion"
+import { checkForUpdate } from "./app/updates"
 
 traceMark("modules loaded")
 
@@ -45,3 +48,6 @@ renderer.setMaxListeners(64)
 traceMark("renderer created")
 await render(() => <App />, renderer)
 traceMark("app mounted")
+
+// Once a day, whether a newer release is out (the top bar says so).
+void checkForUpdate()
