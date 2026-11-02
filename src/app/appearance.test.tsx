@@ -91,6 +91,8 @@ test("Appearance enter changes every row, persists choices and reports status", 
     expect(data.state.uiPrefs.chartMotion).toBe("always")
     expect(ui.state.status).toBe("Charts draw in every time")
     await enter("chartMotion")
+    expect(ui.state.status).toBe("Charts don't draw in")
+    await enter("chartMotion")
     expect(ui.state.status).toBe("Charts draw in once, at launch")
     const current = CHART_SPEEDS.findIndex((speed) => speed.id === DEFAULT_CHART_SPEED)
     for (let step = 1; step <= CHART_SPEEDS.length; step++) {

@@ -128,6 +128,13 @@ test("Settings chart rows toggle motion and cycle speed, with persisted values a
     expect(loadSettingsConfig(path).ui?.chartMotion).toBe("always")
     expect(ui.state.status).toBe("Charts draw in every time")
     expect(t.captureCharFrame()).toMatch(/Chart animation\s+always/)
+    // Then off: charts are whole from the start.
+    t.mockInput.pressEnter()
+    await t.renderOnce()
+    expect(data.state.uiPrefs.chartMotion).toBe("off")
+    expect(loadSettingsConfig(path).ui?.chartMotion).toBe("off")
+    expect(ui.state.status).toBe("Charts don't draw in")
+    expect(t.captureCharFrame()).toMatch(/Chart animation\s+off/)
     t.mockInput.pressEnter()
     await t.renderOnce()
     expect(data.state.uiPrefs.chartMotion).toBe("launch")

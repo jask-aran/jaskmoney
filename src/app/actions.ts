@@ -2,7 +2,7 @@ import { nextOpenRange, OPEN_RANGE_LABELS } from "../domain/timeframe"
 import { DEFAULT_THEME, THEMES } from "../themes"
 import { themeName } from "../state/appearanceRows"
 import { BACKDROPS, DEFAULT_BACKDROP } from "../ui/welcome/backdrop"
-import { CHART_LABEL_LABELS, DEFAULT_CHART_LABELS, DEFAULT_CHART_MOTION, nextChartSpeed } from "../ui/charts/motion"
+import { CHART_LABEL_LABELS, DEFAULT_CHART_LABELS, nextChartMotion, nextChartSpeed } from "../ui/charts/motion"
 import { runAsk } from "./ask"
 import { llmModelId } from "../ai/llm"
 import type { AccountSelection, AccountRow } from "../domain/accountTree"
@@ -124,8 +124,8 @@ export function askForRules(ui: UiStore, data: DataStore): void {
 }
 
 export function toggleChartMotion(ui: UiStore, data: DataStore): void {
-  const chartMotion = (data.state.uiPrefs.chartMotion ?? DEFAULT_CHART_MOTION) === "launch" ? "always" : "launch"
-  settleData(ui, data.saveUiPrefs({ chartMotion }), () => ui.setStatus(chartMotion === "always" ? "Charts draw in every time" : "Charts draw in once, at launch"))
+  const chartMotion = nextChartMotion(data.state.uiPrefs.chartMotion)
+  settleData(ui, data.saveUiPrefs({ chartMotion }), () => ui.setStatus(chartMotion === "always" ? "Charts draw in every time" : chartMotion === "off" ? "Charts don't draw in" : "Charts draw in once, at launch"))
 }
 
 export function cycleChartSpeed(ui: UiStore, data: DataStore): void {

@@ -9,12 +9,18 @@ import { easeOut } from "./reveal"
  * it, the Overview takes it). "always": every chart, each time it shows
  * or its view changes. New data under the same view never redraws. The
  * setup's tour always draws in, at "juicy". Tests never arm the launch and
- * keep the default mode, so they see whole charts.
+ * keep the default mode, so they see whole charts. "off": never; charts
+ * are whole from the start (the tour still draws in).
  */
-export type ChartMotionMode = "launch" | "always"
-export const CHART_MOTION_MODES: readonly ChartMotionMode[] = ["launch", "always"]
-export const CHART_MOTION_LABELS: Record<ChartMotionMode, string> = { launch: "first launch", always: "always" }
+export type ChartMotionMode = "launch" | "always" | "off"
+export const CHART_MOTION_MODES: readonly ChartMotionMode[] = ["launch", "always", "off"]
+export const CHART_MOTION_LABELS: Record<ChartMotionMode, string> = { launch: "first launch", always: "always", off: "off" }
 export const DEFAULT_CHART_MOTION: ChartMotionMode = "launch"
+
+/** The mode after `mode`, in CHART_MOTION_MODES' order, wrapping. */
+export function nextChartMotion(mode: ChartMotionMode | undefined): ChartMotionMode {
+  return CHART_MOTION_MODES[(CHART_MOTION_MODES.indexOf(mode ?? DEFAULT_CHART_MOTION) + 1) % CHART_MOTION_MODES.length]!
+}
 
 /** Draw-in speeds, quickest first: from near instant to the tour's. */
 export const CHART_SPEEDS = [

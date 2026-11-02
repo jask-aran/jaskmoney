@@ -452,7 +452,7 @@ export function OverviewTab(props: { focused: SectionId }) {
         height={p.height}
         focused={props.focused === (p.pane === 0 ? "ov.chart" : "ov.chart2")}
         baseline={baseline()}
-        revealKey={data.state.uiPrefs.chartMotion === "always" ? (revealKey() ? `${view().view}:${seen()}` : undefined) : revealKey()}
+        revealKey={data.state.uiPrefs.chartMotion === "off" ? undefined : data.state.uiPrefs.chartMotion === "always" ? (revealKey() ? `${view().view}:${seen()}` : undefined) : revealKey()}
         revealMs={data.state.uiPrefs.chartMotion === "always" ? chartSpeedMs(data.state.uiPrefs.chartSpeed) : revealMs()}
         labels={data.state.uiPrefs.chartLabels}
       />

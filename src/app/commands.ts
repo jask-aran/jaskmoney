@@ -6,7 +6,7 @@ import { accountRows } from "../domain/accountTree"
 import { fuzzyScore } from "../domain/fuzzy"
 import type { DataStore } from "../state/dataStore"
 import { DATABASE_ROWS } from "../state/databaseRows"
-import { CHART_LABEL_LABELS, DEFAULT_CHART_LABELS, CHART_MOTION_LABELS, DEFAULT_CHART_MOTION, nextChartSpeed } from "../ui/charts/motion"
+import { CHART_LABEL_LABELS, DEFAULT_CHART_LABELS, CHART_MOTION_LABELS, nextChartMotion, nextChartSpeed } from "../ui/charts/motion"
 import { SETTINGS_SECTION_LABELS, SETTINGS_SECTIONS, TABS, type ScopeId, type UiState, type UiStore } from "../state/uiStore"
 import { applyAllRules, applySavedFilter, clearTransactionFilter, askForRules, runUndo, showAccount, showDryRun, toggleIcons, toggleWeekStart, toggleXAxis, openThemePicker, toggleChartMotion, cycleChartSpeed, toggleChartLabels, cycleOpenRange, cycleBackdrop, toTransactions } from "./actions"
 import { AI_ROWS, aiRowLabel, isLlmRow } from "./apiKeys"
@@ -128,7 +128,7 @@ function registry(ctx: CommandContext): Entry[] {
     { id: "display:icons", category: "Display", label: `Category icons ${data.state.icons ? "off" : "on"}`, run: () => toggleIcons(ui, data) },
     { id: "display:week", category: "Display", label: `Weeks start ${data.state.weekStart === "monday" ? "Sunday" : "Monday"}`, run: () => toggleWeekStart(ui, data) },
     { id: "display:x-axis", category: "Display", label: `Charts' $0 line ${data.state.uiPrefs.xAxis ? "off" : "on"}`, run: () => toggleXAxis(ui, data) },
-    { id: "display:chart-motion", category: "Display", label: `Chart animation: ${(data.state.uiPrefs.chartMotion ?? DEFAULT_CHART_MOTION) === "always" ? CHART_MOTION_LABELS.launch : CHART_MOTION_LABELS.always}`, run: () => toggleChartMotion(ui, data) },
+    { id: "display:chart-motion", category: "Display", label: `Chart animation: ${CHART_MOTION_LABELS[nextChartMotion(data.state.uiPrefs.chartMotion)]}`, run: () => toggleChartMotion(ui, data) },
     { id: "display:chart-speed", category: "Display", label: `Animation speed: ${nextChartSpeed(data.state.uiPrefs.chartSpeed).label}`, run: () => cycleChartSpeed(ui, data) },
     { id: "display:chart-labels", category: "Display", label: `Chart labels: ${CHART_LABEL_LABELS[(data.state.uiPrefs.chartLabels ?? DEFAULT_CHART_LABELS) === "together" ? "sequential" : "together"]}`, run: () => toggleChartLabels(ui, data) },
     { id: "display:open-range", category: "Display", label: `Range on open: ${OPEN_RANGE_LABELS[nextOpenRange(data.state.uiPrefs.openRange)]}`, run: () => cycleOpenRange(ui, data) },

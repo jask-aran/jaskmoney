@@ -12,6 +12,7 @@ import { executorSignedIn } from "../../ai/executor"
 import { SignInBody } from "../primitives/SignInBody"
 import { spinnerFrame } from "../primitives/Spinner"
 import { swatches, themeDef } from "./ThemePicker"
+import { SettingsBackdrop } from "./Backdrop"
 import { CardColumn, CardSides, actionLine, blank, labelled, noteLines, numbered, usesLines, wrapped, type CardLine } from "../primitives/cardLines"
 import { AI_USES_TEXT, UP_TOKEN_STEPS, UP_USES, type IntegrationUse } from "../../state/integrationUses"
 import { For, Show, createEffect, createMemo, onCleanup, type JSX } from "solid-js"
@@ -798,7 +799,10 @@ export function SettingsTab(props: { focused: SectionId }) {
   const pairs = () => right() >= 100
   // Up Bank as wide as its rows; Web app the rest.
   const upWidth = () => Math.min(62, right() - 1 - 46)
-  return <box width="100%" height="100%" flexDirection="row" gap={1} backgroundColor={theme.canvas}>
+  // The setup's backdrop behind the panes (Backdrop); the panes over it.
+  return <box width="100%" height="100%" backgroundColor={theme.canvas}>
+    <SettingsBackdrop />
+    <box zIndex={1} width="100%" height="100%" flexDirection="row" gap={1}>
     <Show when={dims().width >= 112} fallback={
       <Column>
         {taxonomy(full(), dims().height - 6)}{rules(full())}{up(full())}{webApp(full())}{ai(full())}{appearance(full())}{database(full())}
@@ -815,6 +819,7 @@ export function SettingsTab(props: { focused: SectionId }) {
         </Show>
       </Column>
     </Show>
+    </box>
     <ImportOverlay />
     <ImportHistoryDialog />
     <FactoryResetOverlay />

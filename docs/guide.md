@@ -67,6 +67,7 @@ Wide, Taxonomy (Categories beside Tags) and Rules & Filters are on the left; on 
 - **Taxonomy:** Jaskmoney's own categories (Income, Transfers, Uncategorised, People and any you add), then Up's, then the tags. A group is one row with its size until opened: `space` or `enter` opens or closes it (`l`/`h` too; `h` in a subcategory closes its group), and `e` edits any row. `j` runs on from the categories into the tags.
 - **Rules & Filters:** `j` runs on from the rules into the saved filters.
 - **Web app:** `enter` opens the page in your browser.
+- **Backdrop:** the Welcome backdrop (Appearance) drifts behind the panes while Settings is in view.
 - **Database & Import:** Import history… lists every CSV import.
 
 ## Categorising
