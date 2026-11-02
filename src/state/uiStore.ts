@@ -23,7 +23,7 @@ export type SectionId =
   | "none"
   | "ov.accounts"
   | `bar.${TabId}`
-  | "bar.update"
+  | "bar.version"
   | "bar.web"
   | "bar.sync"
   | "ov.range"

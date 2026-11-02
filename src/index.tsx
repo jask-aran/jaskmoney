@@ -10,7 +10,7 @@ import { data } from "./state/dataStore"
 import { watchRowLifetimes } from "./state/rowLifetimes"
 import { traceMark } from "./app/trace"
 import { armLaunchReveal } from "./ui/charts/motion"
-import { checkForUpdate } from "./app/updates"
+import { watchForUpdates } from "./app/updates"
 
 traceMark("modules loaded")
 
@@ -49,5 +49,5 @@ traceMark("renderer created")
 await render(() => <App />, renderer)
 traceMark("app mounted")
 
-// Once a day, whether a newer release is out (the top bar says so).
-void checkForUpdate()
+// Whether a newer release is out, now and every 10 minutes (the top bar's version says).
+watchForUpdates()

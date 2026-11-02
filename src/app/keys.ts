@@ -7,7 +7,7 @@ import { chooseModel, modelItems, openModelPicker } from "./modelPicker"
 import { regionRects } from "../ui/regions"
 import { nearestRegion } from "../state/spatial"
 import { web } from "./webApp"
-import { updateAvailable } from "./updates"
+import { describeVersion } from "./updates"
 import { unwrap } from "solid-js/store"
 import { merchantKey } from "../domain/history"
 import { footerShown, scopeLabel, type Hint } from "./palette"
@@ -1720,10 +1720,13 @@ export function openBarItem(ui: UiStore, data: DataStore | undefined, id: string
     const served = web.serving()
     if (served) { web.open(served.page); ui.setStatus(`Opening ${served.page}`) }
   } else if (id === "bar.sync" && data) void runSync(ui, data, { manual: true })
-  else if (id === "bar.update") {
-    const version = updateAvailable()
-    if (version) ui.setStatus(`Jaskmoney ${version} is out: quit (ctrl+c) and run \`jaskmoney upgrade\``)
-  }
+  else if (id === "bar.version") void showVersion(ui)
+}
+
+/** The version's word on updates, in the status line (once per change). */
+export async function showVersion(ui: UiStore): Promise<void> {
+  const text = await describeVersion()
+  if (ui.state.status !== text) ui.setStatus(text)
 }
 
 function handleManagerAccounts(ui: UiStore, key: KeyEvent, data?: DataStore): void {
@@ -2498,7 +2501,7 @@ const scopes: Record<ScopeId, ScopeEntry> = {
     },
     hints: (state) => [
       { key: "←→", desc: "move" },
-      { key: "enter", desc: state?.focusedSection === "bar.web" ? "open" : state?.focusedSection === "bar.sync" ? "sync" : state?.focusedSection === "bar.update" ? "how to update" : "switch" },
+      { key: "enter", desc: state?.focusedSection === "bar.web" ? "open" : state?.focusedSection === "bar.sync" ? "sync" : state?.focusedSection === "bar.version" ? "check for updates" : "switch" },
       { key: "↓", desc: "page" },
       { key: "esc", desc: "done" },
     ],

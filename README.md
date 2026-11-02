@@ -14,8 +14,8 @@ curl -fsSL https://raw.githubusercontent.com/jask-aran/jaskmoney/main/scripts/in
 
 This installs the `jaskmoney` command in `~/.local/bin`. On Linux x64 (and WSL) it downloads the latest release's
 binary; on macOS and other platforms it builds from source, which needs git and [Bun](https://bun.sh) 1.4.2 or newer
-(the clone lives in `~/.local/share/jaskmoney`). `jaskmoney upgrade` updates it the same way, and the top bar says
-when a new release is out.
+(the clone lives in `~/.local/share/jaskmoney`). `jaskmoney upgrade` updates it the same way. The top bar shows the
+version, and turns it green when a new release is out.
 
 Or by hand, in a clone:
 
@@ -69,7 +69,8 @@ and keys. It's sent only to the services you set up:
   revoke it at executor.sh.
 
 Two requests carry nothing of yours: the setup's ticker-tape backdrop fetches public market prices from Yahoo Finance,
-and an installed binary asks GitHub once a day for the latest release (`JASKMONEY_NO_UPDATE_CHECK=1` turns that off).
+and an installed binary asks GitHub for the latest release every 10 minutes and when you point at its version
+(`JASKMONEY_NO_UPDATE_CHECK=1` turns that off).
 Demo mode uses a separate `demo.db` built from made-up data and never syncs.
 
 The optional server (`bun run server`, `--serve`) trusts every connection from this machine: see

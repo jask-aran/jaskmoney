@@ -1,5 +1,6 @@
 import { web, webLabel } from "./webApp"
-import { updateAvailable } from "./updates"
+import { updateAvailable, versionLabel } from "./updates"
+import { showVersion } from "./keys"
 import { ModelPicker } from "../ui/settings/ModelPicker"
 import { ThemePicker } from "../ui/settings/ThemePicker"
 import { paintWith } from "./afterPaint"
@@ -182,6 +183,10 @@ export function App() {
     return ui.state.activeTab === "manager" ? selectionLabel(data.state.accounts, data.state.accountSelection) : ""
   }
 
+  // The cursor on the top bar's version checks for a newer one, as
+  // pointing at it with the mouse does.
+  createEffect(on(() => ui.state.focusedSection === "bar.version", (on) => { if (on) void showVersion(ui) }, { defer: true }))
+
   // A theme change (Settings › Appearance › Theme) redraws everything: the
   // view tree remounts on it, reading the new colours. State lives in the
   // stores, so the tabs come back as they were.
@@ -202,8 +207,9 @@ export function App() {
         items={[
           { text: data.state.demo ? "DEMO" : "" },
           { text: accountLabel() },
-          // A newer release, in the good tone: enter says how to get it.
-          { id: "bar.update", text: updateAvailable() ? `update ${updateAvailable()}` : "", fg: tone.good },
+          // The version, in the good tone when a newer one is out; pointed
+          // at (mouse or cursor) it checks and says.
+          { id: "bar.version", text: versionLabel(), fg: updateAvailable() ? tone.good : undefined, onHover: () => void showVersion(ui) },
           { id: "bar.web", text: webLabel(web.serving()) },
           { id: "bar.sync", text: data.state.demo ? "" : syncLabel() },
         ]}

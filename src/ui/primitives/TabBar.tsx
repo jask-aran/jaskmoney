@@ -10,7 +10,7 @@ import { S } from "./S"
 
 /** Matches Go headerBarStyle + activeTabStyle / inactiveTabStyle; the
  * current tab is an active chip (chipLook). */
-export function TabBar(props: { active: TabId; items?: { id?: SectionId; text: string; fg?: string }[]; reserveRight?: number }) {
+export function TabBar(props: { active: TabId; items?: { id?: SectionId; text: string; fg?: string; onHover?: () => void }[]; reserveRight?: number }) {
   const items = () => (props.items ?? [{ text: "All Accounts" }]).filter((item) => item.text)
   return (
     <box
@@ -61,6 +61,7 @@ export function TabBar(props: { active: TabId; items?: { id?: SectionId; text: s
               {i() > 0 ? <text flexShrink={0} fg={ink.note} bg={theme.mantle}>{" · "}</text> : null}
               <text flexShrink={last() ? 1 : 0} ref={item.id ? regionRef(item.id, "bar") : undefined}
                 onMouseDown={item.id ? onPointer(pageScope, () => openBarItem(ui, data, item.id ?? "")) : undefined}
+                onMouseOver={item.onHover}
                 fg={cursor() ? look().fg : item.fg ?? ink.note} bg={look().bg ?? theme.mantle}>
                 {look().bold ? <b>{item.text}</b> : item.text}
               </text>
