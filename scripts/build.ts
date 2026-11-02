@@ -12,13 +12,19 @@ import solidPlugin from "@opentui/solid/bun-plugin"
 // The binary embeds the Bun that builds it, and the pinned one matters:
 // Bun 1.4 binds OpenTUI's ~300 native functions in ~1 ms where 1.3 took
 // ~100 (first frame ~410 → ~180 ms).
+// The tested Bun (package.json engines) or newer; newer builds with a note.
 const pinned = (await Bun.file(new URL("../package.json", import.meta.url)).json()).engines.bun as string
-if (Bun.version !== pinned) {
-  console.error(`Build with Bun ${pinned} (package.json engines), not ${Bun.version}.`)
+if (Bun.semver.order(Bun.version, pinned) < 0) {
+  console.error(`Jaskmoney builds with Bun ${pinned} or newer; this is ${Bun.version}. Run \`bun upgrade\`.`)
   process.exit(1)
 }
+if (Bun.version !== pinned) console.warn(`Building with Bun ${Bun.version}; ${pinned} is the tested version.`)
 
-const outfile = process.argv[2] ?? "dist/jaskmoney"
+// `bun run build [outfile] [--install]`: --install also puts the binary on
+// your PATH as ~/.local/bin/jaskmoney (or $JASKMONEY_BIN/jaskmoney).
+const args = process.argv.slice(2)
+const install = args.includes("--install")
+const outfile = args.find((a) => !a.startsWith("--")) ?? "dist/jaskmoney"
 const result = await Bun.build({
   entrypoints: ["./src/index.tsx"],
   target: "bun",
@@ -41,3 +47,18 @@ if (!result.success) {
   process.exit(1)
 }
 console.log(`Built ${outfile}`)
+
+if (install) {
+  const { copyFileSync, chmodSync, mkdirSync, renameSync } = await import("node:fs")
+  const { join, delimiter } = await import("node:path")
+  const bin = process.env.JASKMONEY_BIN ?? join(process.env.HOME ?? "", ".local", "bin")
+  const target = join(bin, "jaskmoney")
+  mkdirSync(bin, { recursive: true })
+  // Beside it, then renamed over it: a running jaskmoney keeps its file.
+  copyFileSync(outfile, `${target}.new`)
+  chmodSync(`${target}.new`, 0o755)
+  renameSync(`${target}.new`, target)
+  console.log(`Installed ${target}`)
+  const onPath = (process.env.PATH ?? "").split(delimiter).includes(bin)
+  console.log(onPath ? "Run: jaskmoney" : `${bin} isn't on your PATH: add it (e.g. echo 'export PATH="${bin}:$PATH"' >> ~/.zshrc), then run: jaskmoney`)
+}

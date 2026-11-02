@@ -1,7 +1,7 @@
 name: Release
 
 # Push a tag (git tag -a v1.1.0 -m "…" && git push origin v1.1.0) to test, build
-# the standalone binary on each platform and attach them to that tag's GitHub
+# the standalone Linux binary and attach it to that tag's GitHub
 # release (made if it doesn't exist yet). Run it by hand with a tag to rebuild
 # an existing release's binaries.
 on:
@@ -43,10 +43,8 @@ jobs:
           # built on, so each is built on its own runner.
           - runner: ubuntu-latest
             name: linux-x64
-          - runner: macos-latest
-            name: darwin-arm64
-          - runner: macos-15-intel
-            name: darwin-x64
+          # macOS builds from source (scripts/install.sh): a binary from here
+          # isn't signed, and Gatekeeper refuses one downloaded in a browser.
     runs-on: ${{ matrix.runner }}
     steps:
       - uses: actions/checkout@v4
