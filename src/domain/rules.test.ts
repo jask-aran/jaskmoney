@@ -50,17 +50,15 @@ test("samples include only changes, stop at three, and show each rule's own acti
 test("filter and rule editor status covers count, invalid, missing, pending and empty", () => {
   const ctx: FormContext = { accounts: [], categories: [category], tags: [tag], savedFilters: filters, transactions: [transaction, { ...transaction, id: 2, description: "Other" }] }
   const draft = { ...ui.state.settingsDraft, expr: "desc:Coffee", savedFilterId: "coffee" }
-  expect(editorNote("filter", draft, ctx)).toMatchObject({ tone: "ok" })
-  expect(editorNote("filter", draft, ctx)?.text).toContain("1")
-  expect(editorNote("rule", draft, ctx)).toMatchObject({ tone: "ok" })
-  expect(editorNote("filter", { ...draft, expr: "(" }, ctx)).toMatchObject({ tone: "error" })
-  expect(editorNote("filter", { ...draft, expr: " " }, ctx)).toMatchObject({ tone: "muted" })
-  expect(editorNote("rule", { ...draft, savedFilterId: "" }, ctx)).toMatchObject({ tone: "muted" })
-  expect(editorNote("rule", { ...draft, savedFilterId: "gone" }, ctx)).toMatchObject({ tone: "error" })
-  expect(editorNote("rule", draft, { ...ctx, savedFilters: [{ ...filters[0]!, expr: "(" }] })).toMatchObject({ tone: "error" })
+  expect(editorNote("filter", draft, ctx)).toMatchObject({ text: "ok · 1 txns", tone: "ok", dot: true })
+  expect(editorNote("rule", draft, ctx)).toMatchObject({ text: "ok · 1 txns", tone: "ok" })
+  expect(editorNote("filter", { ...draft, expr: "(" }, ctx)).toMatchObject({ text: "invalid: unexpected end of expression", tone: "error" })
+  expect(editorNote("filter", { ...draft, expr: " " }, ctx)).toMatchObject({ text: "empty", tone: "muted" })
+  expect(editorNote("rule", { ...draft, savedFilterId: "" }, ctx)).toMatchObject({ text: "pending", tone: "muted" })
+  expect(editorNote("rule", { ...draft, savedFilterId: "gone" }, ctx)).toMatchObject({ text: "missing: gone", tone: "error" })
+  expect(editorNote("rule", draft, { ...ctx, savedFilters: [{ ...filters[0]!, expr: "(" }] })).toMatchObject({ text: "invalid", tone: "error" })
   // Derive names from current IDs, as applyRules does, rather than stale row labels.
-  const byIds = editorNote("filter", { ...draft, expr: "cat:Food AND tag:Weekly" }, { ...ctx, transactions: [{ ...transaction, categoryId: 10, tagIds: [20] }] })
-  expect(byIds?.text).toBe(editorNote("filter", draft, ctx)?.text)
+  expect(editorNote("filter", { ...draft, expr: "cat:Food AND tag:Weekly" }, { ...ctx, transactions: [{ ...transaction, categoryId: 10, tagIds: [20] }] })).toMatchObject({ text: "ok · 1 txns" })
   expect(editorNote("budget", draft, ctx)?.tone).toBe("muted")
 })
 

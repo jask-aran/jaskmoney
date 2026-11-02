@@ -201,6 +201,12 @@ test("the Custom range dialog: enter on a From that isn't a date keeps the dialo
   handleKey(ui, key("c", { shift: true, sequence: "C" }), data)
   handleKey(ui, key("tab"), data)
   expect(ui.state.customEdit?.focus).toBe("from")
+  // The range's length follows what's typed, as it reads.
+  const days = async () => { await t.renderOnce(); return /From .*To .*? (\d+) days/.exec(t.captureCharFrame().split("\n").find((l) => l.includes("From  ")) ?? "")?.[1] }
+  expect(await days()).toBe("31")
+  handleKey(ui, key("u", { ctrl: true }), data)
+  for (const c of "sep") handleKey(ui, key(c), data)
+  expect(await days()).toBe("50")
   handleKey(ui, key("u", { ctrl: true }), data)
   handleKey(ui, key("z"), data)
   handleKey(ui, key("return"), data)

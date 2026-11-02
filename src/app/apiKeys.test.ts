@@ -5,7 +5,7 @@ import type { AuthInteraction } from "@earendil-works/pi-ai"
 import { credentialsPath, loadSavedCredentials } from "../ai/credentials"
 import { activeLlmProvider, DEFAULT_LLM_MODEL, llmAuth, llmModelId } from "../ai/llm"
 import { createFileCredentialStore, oauthPath } from "../ai/oauthStore"
-import { aiActions, aiContext, aiRow, useActions, useModel } from "../state/aiDialog"
+import { aiActionHint, aiActions, aiContext, aiRow, useActions, useModel } from "../state/aiDialog"
 import { data } from "../state/dataStore"
 import { ui } from "../state/uiStore"
 import { key } from "../testing/keys"
@@ -180,6 +180,15 @@ test("browser sign-in: the address opens, a pasted redirect URL is sent, the sig
   await hanging
   expect(ui.state.llmSignIn).toBeNull()
   expect(data.state.signedIn.openrouter).toBe(false)
+})
+
+test("OpenRouter's sign-in says it makes a key on the account, and removing doesn't revoke it", async () => {
+  setup()
+  await createFileCredentialStore().modify("openrouter", async () => ({ type: "oauth", access: "a", refresh: "", expires: Date.now() + 60_000 }))
+  await data.refreshApiKeys()
+  const ctx = aiContext(data)
+  expect(aiActionHint("openrouter", "signIn", ctx)).toContain("another one: the last stays active until you delete it on openrouter.ai")
+  expect(aiActionHint("openrouter", "remove", ctx)).toBe("Forgets the sign-in here. Its key stays active on OpenRouter: delete it at openrouter.ai/settings/keys.")
 })
 
 test("without its own key, the Jev row shows it goes through OpenRouter when that is connected", () => {
