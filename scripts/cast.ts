@@ -22,6 +22,8 @@ const KEYS: Record<string, string> = { Enter: "\r", Escape: "\x1b", ArrowRight: 
 export interface Session {
   /** Ms since the app started. */
   now(): number
+  /** When the app first wrote after `after` ms (else `after`). */
+  firstWrite(after: number): number
   press(key: string): void
   /** Waits until the app has written `text` (20 s at most). */
   waitFor(text: string): Promise<void>
@@ -48,6 +50,7 @@ export function startApp(binary: string, args: string[], settings?: object): Ses
   const upTo = (at: number) => writes.filter((w) => w.at <= at).map((w) => w.text).join("")
   return {
     now: () => performance.now() - started,
+    firstWrite: (after) => writes.find((w) => w.at > after)?.at ?? after,
     press: (key) => proc.terminal!.write(KEYS[key] ?? key),
     async waitFor(text) {
       for (let i = 0; i < 200; i++) {
@@ -135,10 +138,9 @@ async function heavy(args: string[]): Promise<void> {
 }
 
 /** Draws `cast` (`loopMs` long) with agg, cropped to `crop` (else the
- * whole screen), to these outputs: a .gif (agg's own frames, 20 ms at
- * least: browsers slow shorter ones to 100 ms), an .mp4 of the same
- * frames, or a .png of its last frame. */
-export async function draw(cast: string, loopMs: number, outputs: { gif?: string; mp4?: string; png?: string }, crop?: Cells): Promise<void> {
+ * whole screen), to an .mp4 (agg's frames: every one the app drew, 20 ms
+ * at least) or a .png of its last frame. */
+export async function draw(cast: string, loopMs: number, outputs: { mp4?: string; png?: string }, crop?: Cells): Promise<void> {
   const scratch = mkdtempSync(join(tmpdir(), "jaskmoney-draw-"))
   try {
     // agg draws the emoji presentation selector (U+FE0F) as a box of its
@@ -155,14 +157,6 @@ export async function draw(cast: string, loopMs: number, outputs: { gif?: string
       ? `crop=${Math.round(crop.cols * CELL_W)}:${Math.round(crop.rows * CELL_H)}:${Math.round(x0 + crop.col * CELL_W)}:${Math.round(y0 + crop.row * CELL_H)}`
       : "null"
     const input = ["ffmpeg", "-y", "-loglevel", "error", "-i", drawn]
-    if (outputs.gif) {
-      if (!crop) copyFileSync(drawn, outputs.gif)
-      else {
-        // The palette, then the GIF with it: each streams.
-        await heavy([...input, "-vf", `${cut},palettegen=stats_mode=full:reserve_transparent=0`, join(scratch, "palette.png")])
-        await heavy([...input, "-i", join(scratch, "palette.png"), "-filter_complex", `[0:v]${cut}[v];[v][1:v]paletteuse=dither=none`, "-loop", "0", outputs.gif])
-      }
-    }
     if (outputs.mp4) await heavy([...input, "-vf", `${cut},pad=ceil(iw/2)*2:ceil(ih/2)*2,fps=50`, "-c:v", "libx264", "-crf", "16", "-preset", "medium", "-tune", "animation", "-pix_fmt", "yuv420p", "-movflags", "+faststart", outputs.mp4])
     if (outputs.png) await heavy([...input, "-vf", `${cut}`, "-update", "1", outputs.png])
   } finally {

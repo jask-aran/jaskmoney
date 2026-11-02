@@ -7,9 +7,8 @@
  *   bun run recordings [binary] [--only=overview,filter,ask,suggest,chart]
  *                                    (default: dist/jaskmoney, built first)
  *
- * Writes docs/screenshots/<scene>.gif (GitHub plays a GIF in a README),
- * and to dist/recordings the same as an MP4 (GitHub plays one only
- * uploaded through its web editor) and the loop as asciinema's .cast.
+ * Writes dist/recordings/<scene>.mp4, and the loop as asciinema's .cast.
+ * The README plays the MP4s from GitHub's own uploads (docs/media.md).
  */
 import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs"
 import { tmpdir } from "node:os"
@@ -112,10 +111,21 @@ async function film(binary: string, scene: Scene): Promise<void> {
   // Where a demo's pane is: the first of a few moments that shows it whole.
   const pane = scene.pane ? [0.5, 0.25, 0.75, 0.9].map((f) => paneCells(app.screen(from + scene.loopMs * f))).find(Boolean) : undefined
   if (scene.pane && !pane) throw new Error(`couldn't find ${scene.id}'s pane:\n${app.screen(from + scene.loopMs / 2).join("\n")}`)
-  const cast = app.cast(from, from + scene.loopMs)
+  // From when the key's change shows, not the screen before it (an MP4's
+  // first frame is its preview): the first write that changes the title
+  // row (the demo pane's top, or the Overview's top chart). The app's
+  // first writes after a key can be elsewhere (the tour's card).
+  const titleRow = pane?.row ?? app.screen(from).findIndex((line, row) => row > 3 && line.startsWith("╭─"))
+  let start = app.firstWrite(from)
+  while (start < from + 1000 && app.screen(start)[titleRow] === app.screen(from)[titleRow]) {
+    const next = app.firstWrite(start)
+    if (next === start) break
+    start = next
+  }
+  const cast = app.cast(start, start + scene.loopMs)
   writeFileSync(`dist/recordings/${scene.id}.cast`, cast)
-  await draw(cast, scene.loopMs, { gif: `docs/screenshots/${scene.id}.gif`, mp4: `dist/recordings/${scene.id}.mp4` }, pane ?? undefined)
-  console.log(`docs/screenshots/${scene.id}.gif + dist/recordings/${scene.id}.mp4, .cast  ${(scene.loopMs / 1000).toFixed(1)} s${pane ? `, ${pane.cols}×${pane.rows} cells` : ""}`)
+  await draw(cast, scene.loopMs, { mp4: `dist/recordings/${scene.id}.mp4` }, pane ?? undefined)
+  console.log(`dist/recordings/${scene.id}.mp4, .cast  ${(scene.loopMs / 1000).toFixed(1)} s${pane ? `, ${pane.cols}×${pane.rows} cells` : ""}`)
 }
 
 const only = process.argv.find((a) => a.startsWith("--only="))?.slice(7).split(",")
