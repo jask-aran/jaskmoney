@@ -16,6 +16,11 @@ export interface IntegrationUse {
   promises: string[]
 }
 
+/** How to make an Up token, in the Up app (the setup's Up step, and Settings › Up Bank › Token). */
+export const UP_TOKEN_STEPS: readonly (readonly [string, string])[] = [
+  ["1", "Swipe right"], ["2", "Data sharing › Personal Access Token"], ["3", "Generate a token, choose how long it lasts, copy it"], ["4", "Paste it here, press enter"],
+]
+
 export const UP_USES: IntegrationUse = {
   title: "What jaskmoney does with Up",
   why: "Your accounts and transactions, kept in step with your categories and tags.",

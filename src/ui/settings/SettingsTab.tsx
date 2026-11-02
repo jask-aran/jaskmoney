@@ -12,6 +12,8 @@ import { executorSignedIn } from "../../ai/executor"
 import { SignInBody } from "../primitives/SignInBody"
 import { spinnerFrame } from "../primitives/Spinner"
 import { swatches, themeDef } from "./ThemePicker"
+import { CardColumn, CardSides, actionLine, blank, labelled, noteLines, numbered, usesLines, wrapped, type CardLine } from "../primitives/cardLines"
+import { AI_USES_TEXT, UP_TOKEN_STEPS, UP_USES, type IntegrationUse } from "../../state/integrationUses"
 import { For, Show, createEffect, createMemo, onCleanup, type JSX } from "solid-js"
 import type { MouseEvent, ScrollBoxRenderable } from "@opentui/core"
 import { useTerminalDimensions } from "@opentui/solid"
@@ -440,7 +442,11 @@ export function UpAccountsDialog() {
 /** AI models' height: two columns (Models and Sources beside Uses) from
  * AI_TWO_COLUMNS, else stacked, a blank between the inputs and the uses. */
 const AI_TWO_COLUMNS = 84
-const aiHeight = (width: number) => 2 + (width - 2 >= AI_TWO_COLUMNS ? Math.max(1 + AI_ROWS.length + 2, 1 + AI_USES.length) : AI_ROWS.length + 2 + 1 + 1 + AI_USES.length)
+const aiHeight = (width: number) => {
+  // Each block is its heading and rows: Models, Sources (Executor), Uses.
+  const models = 1 + AI_ROWS.length, sources = 1 + 1, uses = 1 + AI_USES.length
+  return 2 + (width - 2 >= AI_TWO_COLUMNS ? Math.max(models + sources, uses) : models + sources + 1 + uses)
+}
 
 /** Settings › AI models: what goes in (the models and how each is
  * connected, the sources: Executor for Gmail and more), then what comes
@@ -496,63 +502,82 @@ function AiPane(props: { focused: boolean; width: number }) {
   </SectionCard>
 }
 
-/** One model's dialog: how it's connected, then its actions; a field when
- * typing a key, account id or model; a browser sign-in in progress. */
+/** What jaskmoney does with each row's integration (the setup's panels). */
+const ROW_USES: Record<NonNullable<UiState["aiDialog"]>["row"], IntegrationUse> = {
+  up: UP_USES, jev: AI_USES_TEXT.jev, openrouter: AI_USES_TEXT.openrouter, openai: AI_USES_TEXT.openai, workersAi: AI_USES_TEXT.clairic,
+}
+
+/** A dialog laid out as the setup's card: as wide as there's room for (to
+ * 120), what to do beside what the integration does from 100 columns,
+ * else the left side alone. Widths inside the dialog's border and padding. */
+function useCardWidths() {
+  const dims = useTerminalDimensions()
+  const width = () => Math.max(40, Math.min(dims().width - 4, 120))
+  const beside = () => width() >= 100
+  const inner = () => width() - 4
+  const left = () => (beside() ? Math.floor(inner() * 0.5) : inner())
+  const right = () => (beside() ? inner() - left() - 3 : 0)
+  return { width, beside, left, right }
+}
+
+/** One model's dialog (and Up Bank's token): how it's connected, the steps
+ * to a token while there's none (Up), its actions; a field when typing a
+ * key, account id or model; a browser sign-in in progress. Beside it, what
+ * jaskmoney does with it, as the setup shows it. No part of a key is ever
+ * shown: the core sends only where one comes from. */
 export function AiDialog() {
   return (
     <Show when={ui.state.aiDialog}>
       {(d: () => NonNullable<UiState["aiDialog"]>) => {
         const ctx = () => aiContext(data)
+        const card = useCardWidths()
         const actions = () => aiActions(d().row, ctx())
-        const at = () => actions()[Math.min(d().cursor, actions().length - 1)]
+        const cursor = () => Math.min(d().cursor, actions().length - 1)
+        const at = () => actions()[cursor()]
         const signIn = () => (ui.state.llmSignIn?.provider === d().row ? ui.state.llmSignIn : null)
         const fieldLabel = (action: string) => (action === "key" ? (d().row === "up" ? "Token" : d().row === "workersAi" ? "API token" : "API key") : action === "accountId" ? "Account ID" : "Model")
+        const connected = () => !!aiConnection(d().row, ctx())
+        const top = (): CardLine[] => [
+          ...aiStatus(d().row, ctx()).flatMap((line) => labelled(line.label, line.value, card.left(), line.label === "Connection" ? (connected() ? tone.good : ink.faint) : line.label === "Model" ? ink.figure : ink.label)),
+          // Up without a token: how to make one, as the setup says it.
+          ...(d().row === "up" && !connected() && !signIn() ? [blank, ...numbered(UP_TOKEN_STEPS, card.left())] : []),
+          blank,
+        ]
+        const choices = (): CardLine[] => [
+          ...actions().map((action, i) => actionLine({
+            at: i === cursor(), bg: theme.rowCursor,
+            label: action.id === "remove" && i === cursor() && isArmed(ui.state.armed, "aiKey", d().row) ? "Press enter again to remove" : action.label,
+            fg: action.id === "remove" ? tone.bad : undefined,
+          })),
+          ...(at() && aiActionHint(d().row, at()!.id, ctx()) ? [blank, ...wrapped(aiActionHint(d().row, at()!.id, ctx())!, card.left(), ink.note)] : []),
+        ]
+        const result = (): CardLine[] => (d().note ? [blank, ...noteLines(d().note!, card.left())] : [])
         return (
-          <Modal title={AI_NAMES[d().row].name} subtitle={AI_NAMES[d().row].by} width={AI_DIALOG_WIDTH}
+          <Modal title={AI_NAMES[d().row].name} subtitle={AI_NAMES[d().row].by} width={card.width()}
             hints={signIn() ? (signIn()!.paste ? "enter send · esc cancel" : "waiting for your browser · esc cancel") : d().field ? "enter save · esc back" : `paste ${d().row === "up" || d().row === "workersAi" ? "a token" : "a key"} · j/k move · enter do · esc close`}>
-            <For each={aiStatus(d().row, ctx())}>{(line) => (
-              <box flexDirection="row">
-                <text width={12} flexShrink={0} fg={ink.label}>{line.label}</text>
-                <text flexGrow={1} flexShrink={1} wrapMode="word" fg={line.label === "Connection" || line.label === "Model" ? ink.figure : ink.label}>{line.value}</text>
-              </box>
-            )}</For>
-            <text> </text>
-            <Show when={signIn()} fallback={
-              <Show when={d().field} fallback={
-                <>
-                  <For each={actions()}>{(action, i) => {
-                    const here = () => i() === Math.min(d().cursor, actions().length - 1)
-                    return <ListRow cursor={here()} bg={theme.mantle} spans={[{ text: action.id === "remove" && here() && isArmed(ui.state.armed, "aiKey", d().row) ? "Press enter again to remove" : action.label, fg: action.id === "remove" ? tone.bad : ink.label }]} />
-                  }}</For>
-                  <Show when={at() && aiActionHint(d().row, at()!.id, ctx())}>
-                    <text> </text>
-                    <text fg={ink.note} wrapMode="word">{aiActionHint(d().row, at()!.id, ctx())!}</text>
-                  </Show>
-                </>
+            <CardSides beside={card.beside()} leftWidth={card.left()} rightWidth={card.right()} panel={card.beside() ? usesLines(ROW_USES[d().row], card.right() - 3) : []} bg={theme.mantle}>
+              <CardColumn lines={top()} width={card.left()} bg={theme.mantle} />
+              <Show when={signIn()} fallback={
+                <Show when={d().field} fallback={<CardColumn lines={choices()} width={card.left()} bg={theme.mantle} />}>
+                  {(f: () => NonNullable<NonNullable<UiState["aiDialog"]>["field"]>) => (
+                    <>
+                      <text wrapMode="none">
+                        <S fg={tone.key} bold>{" › "}</S>
+                        <S fg={ink.label}>{fieldLabel(f().action).padEnd(12)}</S>
+                        {f().action === "key"
+                          ? <S fg={f().value ? ink.figure : ink.faint}>{secretDisplay(f().value)}</S>
+                          : <TextInput field={{ value: f().value, caret: f().caret }} focused caretColor={ink.figure} />}
+                      </text>
+                      <text> </text>
+                      <CardColumn lines={wrapped(aiActionHint(d().row, f().action, ctx()) ?? "", card.left(), ink.note)} width={card.left()} bg={theme.mantle} />
+                    </>
+                  )}
+                </Show>
               }>
-                {(f: () => NonNullable<NonNullable<UiState["aiDialog"]>["field"]>) => (
-                  <>
-                    <text wrapMode="none">
-                      <S fg={ink.label}>{fieldLabel(f().action).padEnd(12)}</S>
-                      {f().action === "key"
-                        ? <S fg={f().value ? ink.figure : ink.faint}>{secretDisplay(f().value)}</S>
-                        : <TextInput field={{ value: f().value, caret: f().caret }} focused caretColor={ink.figure} />}
-                    </text>
-                    <text fg={ink.note} wrapMode="word">{aiActionHint(d().row, f().action, ctx()) ?? ""}</text>
-                  </>
-                )}
+                {(flow: () => NonNullable<UiState["llmSignIn"]>) => <SignInBody flow={flow()} width={card.left()} />}
               </Show>
-            }>
-              {(flow: () => NonNullable<UiState["llmSignIn"]>) => <SignInBody flow={flow()} width={AI_DIALOG_WIDTH - 4} />}
-            </Show>
-            <Show when={d().note}>
-              {(n: () => NonNullable<NonNullable<UiState["aiDialog"]>["note"]>) => (
-                <>
-                  <text> </text>
-                  <text fg={n().ok === false ? tone.bad : ink.note} wrapMode="word">{n().text}</text>
-                </>
-              )}
-            </Show>
+              <CardColumn lines={result()} width={card.left()} bg={theme.mantle} />
+            </CardSides>
           </Modal>
         )
       }}
@@ -560,7 +585,6 @@ export function AiDialog() {
   )
 }
 
-const AI_DIALOG_WIDTH = 92
 
 /** Database & Import › Import history: every CSV import, newest first, a
  * window of IMPORT_HISTORY_ROWS at a time. */

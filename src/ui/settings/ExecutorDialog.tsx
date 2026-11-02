@@ -1,50 +1,40 @@
-import { For, Show } from "solid-js"
+import { Show } from "solid-js"
+import { useTerminalDimensions } from "@opentui/solid"
 import { executorActions, executorLines } from "../../state/executorDialog"
+import { EMAIL_USES } from "../../state/integrationUses"
 import { ui, type UiState } from "../../state/uiStore"
-import { theme, ink, tone } from "../../theme"
-import { ListRow } from "../primitives/ListRow"
+import { theme, ink } from "../../theme"
+import { CardColumn, CardSides, actionLine, blank, labelled, noteLines, usesLines, wrapped, type CardLine } from "../primitives/cardLines"
 import { Modal } from "../primitives/Modal"
 
-const EXECUTOR_DIALOG_WIDTH = 92
-
 /** Settings › AI models › Sources › Executor: the sign-in to Executor Cloud,
- * what it reaches, and the step to take (app/executorSource). */
+ * what it reaches, and the step to take (app/executorSource); beside it,
+ * what jaskmoney reads, as the setup's Email step shows it. */
 export function ExecutorDialog() {
+  const dims = useTerminalDimensions()
+  const width = () => Math.max(40, Math.min(dims().width - 4, 120))
+  const beside = () => width() >= 100
+  const left = () => (beside() ? Math.floor((width() - 4) * 0.5) : width() - 4)
+  const right = () => (beside() ? width() - 4 - left() - 3 : 0)
   return (
     <Show when={ui.state.executor}>
       {(d: () => NonNullable<UiState["executor"]>) => {
         const actions = () => executorActions(d().status)
+        const lines = (): CardLine[] => [
+          ...executorLines(d().status).flatMap((line) => labelled(line.label, line.value, left(), line.label === "Account" ? ink.figure : ink.note)),
+          blank,
+          ...(d().waiting
+            ? [...wrapped("Your browser should open Executor's sign-in; finish there (or make an account). If it didn't open:", left(), ink.note), ...wrapped(d().waiting!, left(), ink.figure)]
+            : d().busy ? wrapped(d().busy!, left(), ink.note)
+            : actions().map((action, i) => actionLine({ at: i === Math.min(d().cursor, actions().length - 1), label: action.label, bg: theme.rowCursor }))),
+          ...(d().note ? [blank, ...noteLines(d().note!, left())] : []),
+        ]
         return (
-          <Modal title="Executor" subtitle="your accounts, Gmail first" width={EXECUTOR_DIALOG_WIDTH}
+          <Modal title="Executor" subtitle="your accounts, Gmail first" width={width()}
             hints={d().waiting ? "esc cancel" : "j/k move · enter do · esc close"}>
-            <For each={executorLines(d().status)}>{(line) => (
-              <box flexDirection="row">
-                <text width={12} flexShrink={0} fg={ink.label}>{line.label}</text>
-                <text flexGrow={1} flexShrink={1} wrapMode="word" fg={line.label === "Account" ? ink.figure : ink.note}>{line.value}</text>
-              </box>
-            )}</For>
-            <text> </text>
-            <Show when={d().waiting} fallback={
-              <Show when={d().busy} fallback={
-                <For each={actions()}>{(action, i) => {
-                  const here = () => i() === Math.min(d().cursor, actions().length - 1)
-                  return <ListRow cursor={here()} bg={theme.mantle} spans={[{ text: action.label, fg: ink.figure }]} />
-                }}</For>
-              }>
-                <text fg={ink.note}>{d().busy}</text>
-              </Show>
-            }>
-              <text fg={ink.note} wrapMode="word">Your browser should open Executor's sign-in; finish there (or make an account). If it didn't open:</text>
-              <text fg={ink.figure} wrapMode="char">{d().waiting}</text>
-            </Show>
-            <Show when={d().note}>
-              {(n: () => NonNullable<NonNullable<UiState["executor"]>["note"]>) => (
-                <>
-                  <text> </text>
-                  <text fg={n().ok === true ? tone.good : n().ok === false ? tone.bad : ink.note} wrapMode="word">{n().text}</text>
-                </>
-              )}
-            </Show>
+            <CardSides beside={beside()} leftWidth={left()} rightWidth={right()} panel={beside() ? usesLines(EMAIL_USES, right() - 3) : []} bg={theme.mantle}>
+              <CardColumn lines={lines()} width={left()} bg={theme.mantle} />
+            </CardSides>
           </Modal>
         )
       }}

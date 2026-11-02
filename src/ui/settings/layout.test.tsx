@@ -177,3 +177,16 @@ test("AI models: Models and Sources in one column, Uses in the other; stacked, a
     } finally { t.renderer.destroy() }
   }
 })
+
+test("AI models stacked holds all its rows: the border comes after the last use, not over Appearance", async () => {
+  const t = await renderApp({ width: 80, height: 80 })
+  data.init(":memory:")
+  ui.switchTab("settings")
+  ui.setState({ focusedSection: "set.ai", settingsActive: false })
+  await settle(t)
+  const lines = t.captureCharFrame().split("\n")
+  const last = lines.findIndex((line) => /Rules\s+OpenRouter/.test(line))
+  expect(last).toBeGreaterThan(0)
+  expect(lines[last + 1]).toMatch(/^╰─/)
+  expect(lines[last + 2]).toContain("Appearance")
+})

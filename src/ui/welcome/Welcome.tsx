@@ -5,7 +5,8 @@ import { data } from "../../state/dataStore"
 import { ink, mix, theme, tone, whenThemeChanges } from "../../theme"
 import { wrapText } from "../../state/textLayout"
 import { STEP_NAMES, WELCOME_STEPS, emailChecklist, stepMark, tokenShown, welcomeBackdrop, welcomeRows, type ItemState, type WelcomeRow, type WelcomeState } from "../../state/welcome"
-import { AI_USES_TEXT, EMAIL_USES, UP_USES, type IntegrationUse } from "../../state/integrationUses"
+import { AI_USES_TEXT, EMAIL_USES, UP_TOKEN_STEPS, UP_USES } from "../../state/integrationUses"
+import { CardColumn, CardSides, blank, noteLines, numbered, say, usesLines, wrapped, type CardLine } from "../primitives/cardLines"
 import { followTickers, welcomeAct, welcomeContext, welcomeJump } from "../../app/welcome"
 import { onPointer } from "../../app/pointer"
 import { StyledLine, type StyledSpan } from "../primitives/StyledLine"
@@ -49,32 +50,7 @@ whenThemeChanges(() => {
   BACKDROP_INK.down = mix(theme.canvas, tone.bad, 0.4)
 })
 
-type Line = { spans: StyledSpan[]; row?: number }
-const blank: Line = { spans: [] }
-const say = (text: string, fg: string = ink.label, bold = false): Line => ({ spans: [{ text, fg, bold }] })
-const wrapped = (text: string, width: number, fg: string = ink.label): Line[] =>
-  wrapText(text, Math.max(10, width)).map((t) => ({ spans: [{ text: t, fg }] }))
-
-/** An integration's panel: what it's for, the promises, then what it does
- * (writes marked). Short labels ("Sees") sit in a column beside what they
- * say; long ones (an endpoint) take their own line, what it does beneath. */
-function usesLines(use: IntegrationUse, width: number): Line[] {
-  const out: Line[] = [say(use.title, ink.heading, true), ...wrapped(use.why, width, ink.note), blank]
-  // The promises first: on a short screen the list below them is what's cut.
-  for (const p of use.promises) wrapText(p, width - 2).forEach((t, i) => out.push({ spans: [{ text: i === 0 ? "✓ " : "  ", fg: tone.good }, { text: t, fg: ink.label }] }))
-  out.push(blank)
-  const short = use.uses.every((u) => u.what.length <= 10)
-  for (const u of use.uses) {
-    const fg = u.writes ? tone.caution : ink.figure
-    if (short) {
-      wrapText(u.effect, Math.max(10, width - 10)).forEach((t, i) => out.push({ spans: [{ text: (i === 0 ? u.what : "").padEnd(10), fg, bold: true }, { text: t, fg: ink.label }] }))
-    } else {
-      out.push({ spans: [{ text: u.what, fg, bold: true }] })
-      wrapText(u.effect, Math.max(10, width - 2)).forEach((t) => out.push({ spans: [{ text: "  " }, { text: t, fg: ink.note }] }))
-    }
-  }
-  return out
-}
+type Line = CardLine
 
 export function Welcome() {
   return <Show when={ui.state.welcome}><WelcomeScreen /></Show>
@@ -147,13 +123,9 @@ function WelcomeScreen() {
     const busy = state().busy
     if (busy) return [blank, { spans: [{ text: ` ${spinner()} `, fg: tone.ai, bold: true }, { text: busy, fg: ink.label }] }]
     const n = state().note
-    if (!n) return []
-    const fg = n.ok === true ? tone.good : n.ok === false ? tone.bad : ink.note
-    return [blank, ...wrapText(n.text, width - 3).map((t, i) => ({ spans: [{ text: i === 0 ? (n.ok === true ? " ✓ " : n.ok === false ? " ✗ " : " · ") : "   ", fg, bold: true }, { text: t, fg }] }))]
+    return n ? [blank, ...noteLines(n, width)] : []
   }
   const buttons = (): Line[] => [blank, ...rows().flatMap((row, i) => row.gapBefore ? [blank, rowLine(row, i)] : [rowLine(row, i)])]
-  const numbered = (items: [string, string][], width: number): Line[] => items.flatMap(([n, text]) =>
-    wrapText(text, width - 4).map((t, i) => ({ spans: [{ text: i === 0 ? ` ${n}  ` : "    ", fg: tone.key, bold: true }, { text: t, fg: ink.figure }] })))
 
   // ---- A step's left column, and the right panel.
   const left = createMemo((): Line[] => {
@@ -181,7 +153,7 @@ function WelcomeScreen() {
           ] : [
             ...wrapped("Up's API reads with a Personal Access Token. To make one, in the Up app:", w),
             blank,
-            ...numbered([["1", "Swipe right"], ["2", "Data sharing › Personal Access Token"], ["3", "Generate a token, choose how long it lasts, copy it"], ["4", "Paste it here, press enter"]], w),
+            ...numbered(UP_TOKEN_STEPS, w),
             blank,
             ...wrapped("Up shows a token once, and only the newest works: making a new one stops the old. api.up.com.au makes one too (ctrl+o).", w, ink.note),
           ]),
@@ -331,17 +303,6 @@ function WelcomeScreen() {
     })
   }
 
-  const column = (lines: () => Line[], width: () => number) => (
-    <box width={width()} flexDirection="column" flexShrink={0}>
-      {/* By place, not by line: a column rebuilt (the caret blinks, a
-          spinner turns) keeps its rows, and a row the same as it was is left alone. */}
-      <Index each={lines()}>{(line) => (
-        <box height={1} width={width()} onMouseDown={click(line().row)}>
-          <StyledLine spans={line().spans} bg={theme.canvas} />
-        </box>
-      )}</Index>
-    </box>
-  )
 
   return (
     <box position="absolute" zIndex={15} left={0} top={0} width="100%" height={height()} backgroundColor={theme.canvas} flexDirection="column" alignItems="center" justifyContent="center">
@@ -367,12 +328,9 @@ function WelcomeScreen() {
       </box>
       <box height={1} />
       <box width={cardWidth()} border borderStyle="rounded" borderColor={tone.focus} backgroundColor={theme.canvas} paddingLeft={1} paddingRight={1} flexDirection={wide() ? "row" : "column"} gap={wide() ? 3 : 1} maxHeight={height() - 6} overflow="hidden" flexShrink={0}>
-        {column(left, leftWidth)}
-        <Show when={right().length}>
-          <box width={rightWidth()} flexShrink={0} flexDirection="column" border={[wide() ? "left" : "top"]} borderColor={ink.rule} paddingLeft={wide() ? 2 : 0}>
-            {column(right, panelWidth)}
-          </box>
-        </Show>
+        <CardSides beside={wide()} leftWidth={leftWidth()} rightWidth={rightWidth()} panel={right()} bg={theme.canvas}>
+          <CardColumn lines={left()} width={leftWidth()} bg={theme.canvas} click={click} />
+        </CardSides>
       </box>
       <Show when={tour()}>
         <box height={1} />
