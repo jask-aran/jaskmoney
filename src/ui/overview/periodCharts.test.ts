@@ -128,27 +128,65 @@ describe("what made a bar tall, and how much room there is", () => {
     expect(m.labels.slice("3 Nov 25".length, m.today!.start)).not.toMatch(/\b\d{1,2}\b/)
   })
 
-  test("bar charts draw a line chart's gridlines and today's rule, under their bars; a week's bar spans its days", () => {
+  test("Daily draws a line chart's gridlines; Weekly only its weeks' and today's, never through a bar; a week's bar spans its days", () => {
     // Mon 29 Jun – Sun 4 Oct, 80 columns.
     const d = days(98, "2026-06-29")
     const rules = (m: ReturnType<typeof spendingChart>, ink: string) => [...new Set(m.rows.flatMap((runs) => {
       let col = 0
       return runs.flatMap((r) => { const at = col; col += r.text.length; return [...r.text].flatMap((ch, k) => (r.ink === ink && ch === "│" ? [at + k] : [])) })
     }))].sort((a, b) => a - b)
-    // Weekly at 80 columns; Daily at 120, where its 98 days are bars. No
+    // Daily at 120, where its 98 days are bars: the line chart's rules. No
     // spending, so no bar covers a rule: bars hide only the cells they fill.
-    for (const [view, width] of [["Weekly", 80], ["Daily", 120]] as const) {
-      const line = spendingChart("Cumulative", { dates: d, values: d.map(() => 30) }, width, 10, "2026-09-16", [])
-      const bars = spendingChart(view, { dates: d, values: d.map(() => 0) }, width, 10, "2026-09-16", [])
-      for (const ink of ["month", "today", "week"]) expect(rules(bars, ink)).toEqual(rules(line, ink))
-      expect(bars.labels).toBe(line.labels)
-    }
+    const line = spendingChart("Cumulative", { dates: d, values: d.map(() => 30) }, 120, 10, "2026-09-16", [])
+    const daily = spendingChart("Daily", { dates: d, values: d.map(() => 0) }, 120, 10, "2026-09-16", [])
+    for (const ink of ["month", "today", "week"]) expect(rules(daily, ink)).toEqual(rules(line, ink))
+    expect(daily.labels).toBe(line.labels)
+    // Weekly: a rule where each week starts and on today, where a line
+    // chart would draw them; no month rule (1 Jul, 1 Aug… fall mid-week,
+    // inside a bar). With spending every day, no rule's column holds a bar.
+    const weekly = spendingChart("Weekly", { dates: d, values: d.map(() => 30) }, 80, 10, "2026-09-16", [])
+    const todayCol = cellColumn(d.indexOf("2026-09-16"), d.length, 80)
+    expect(rules(weekly, "month")).toEqual([])
+    expect(rules(weekly, "today")).toEqual([todayCol])
+    expect(rules(weekly, "week")).toEqual(d.flatMap((_, i) => (i > 0 && i % 7 === 0 ? [cellColumn(i, d.length, 80)] : [])).filter((c) => c !== todayCol))
+    const grid = weekly.rows.map((runs) => runs.map((r) => r.text).join(""))
+    for (const col of [...rules(weekly, "week"), todayCol]) expect(grid.some((row) => /[▁-█]/.test(row[col]!))).toBe(false)
     // A week's bar runs from just after its first day's column (where a
     // week rule goes) to just before the next week's; the last to the edge.
     const slots = dateSlots(d.filter((_, i) => i % 7 === 0), d, 80)
     for (let k = 1; k < slots.length; k++) expect(slots[k]!.col - 1).toBe(cellColumn(7 * k, d.length, 80))
     for (let k = 0; k + 1 < slots.length; k++) expect(slots[k]!.col + slots[k]!.width).toBe(slots[k + 1]!.col - 1)
     expect(slots.at(-1)!.col + slots.at(-1)!.width).toBe(80)
+  })
+
+  test("Cash flow ending on a Monday: no rule through a bar at any width, whole weeks' bars match, and wide bars are all named", () => {
+    const acc = account({ id: 1, balance: 0 })
+    const pay = (id: number, dateISO: string) => transaction({ id, dateISO, amount: 2800, description: "Acme Pty Ltd", accountName: "Spending", categoryName: "Salary", income: true, status: null })
+    // Mon 2 Nov is today and a week's first day; pay every other Friday,
+    // spending every other day.
+    const range = days(62, "2026-09-01")
+    const today = range.at(-1)!
+    const rows = [
+      ...range.filter((_, i) => i % 14 === 3).map((iso, k) => pay(100 + k, iso)),
+      ...range.filter((_, i) => i % 2 === 0).map((iso, k) => spend(200 + k, iso, 40 + (k % 5) * 30, "Shop")),
+    ]
+    for (let width = 60; width <= 200; width++) {
+      const m = cashFlowChart(range, width, 16, today, [acc], rows, new Set([1]))
+      const grid = m.rows.map((r) => r.map((run) => run.text).join(""))
+      const ruled = [...Array(width).keys()].filter((c) => grid.some((row) => row[c] === "│"))
+      expect({ width, through: ruled.filter((c) => grid.some((row) => /[▁-█]/.test(row[c]!))) }).toEqual({ width, through: [] })
+    }
+    // At 150 columns: the bars of 2 Sep's part week aside, every In and Out
+    // bar is as wide as the others, and each bar carries its amount.
+    const wide = cashFlowChart(range, 150, 16, today, [acc], rows, new Set([1]))
+    const grid = wide.rows.map((r) => r.map((run) => run.text).join(""))
+    // On the bottom row a week's pair is one run of 2w cells, or w where
+    // nothing came in; the part week (the first run) is narrower.
+    const runs = [...grid.at(-1)!.matchAll(/█+/g)].map((r) => r[0].length).slice(1)
+    const w = Math.min(...runs)
+    expect(runs.every((n) => n === w || n === 2 * w)).toBe(true)
+    // 9 whole weeks' outs and 4 pays (plus the part week's): all named.
+    expect((text(wide).match(/[+-]\$\d/g) ?? []).length).toBeGreaterThanOrEqual(13)
   })
 
   test("Cash flow goes monthly when weeks would be too narrow, and nets each period on the axis where they fit", () => {

@@ -6,7 +6,7 @@ import { cumulative, dailySpendSeries, formatWholeMoney, signedWholeMoney, weekl
 import { balanceHistory, biggestPayee, biggestRow, computePeriodFlows, flowRows, historyCovers, historyStart, saverHistories } from "../../domain/position"
 import { accountRole, type Account, type Transaction } from "../../domain/types"
 import { isSpending } from "../../domain/moneyRules"
-import { MONTHS, addDays, dayOfWeek, type WeekStart } from "../../domain/days"
+import { MONTHS, addDays, dayOfWeek, daysBetween, type WeekStart } from "../../domain/days"
 import { shortDate, shortMoney, truncate } from "../text"
 import { barSlots, barTopRow, columnBars, ruleRow } from "../charts/bars"
 import { muted, type Span } from "../primitives/spans"
@@ -90,8 +90,8 @@ export function spendingChart(
     const bars = weeks.map((w) => ({ value: w.startISO <= todayISO ? w.total : 0, ink: partial(w) ? "partial" : "spend" }))
     // Each week's bar spans its days, between the gridlines a line chart
     // over the same days draws (dateSlots), so the panes share them.
-    const spans = dateSlots(weeks.map((w) => w.startISO), dates, width)
-    const { rows: plain, slots } = columnBars(bars, width, height, scale.max, perWeek ? { value: perWeek, ink: "limit" } : undefined, lineMarkers(axis.markers, n, width), 1, spans)
+    const { markers, spans } = runRules(weeks.map((w) => w.startISO), dates, width, todayISO, () => "week")
+    const { rows: plain, slots } = columnBars(bars, width, height, scale.max, perWeek ? { value: perWeek, ink: "limit" } : undefined, markers, 1, spans)
     // Labels: this week, then the biggest (named by its biggest spend where
     // it fits), then the rest by size; all of them when bars are wide, else
     // the biggest few.
@@ -296,6 +296,35 @@ export function dateSlots(starts: string[], dates: string[], width: number): Arr
   })
 }
 
+/**
+ * The gridlines and spans for bars standing for runs of days (a week, a
+ * month): a rule where each run starts and on today, and no other (a
+ * month's first day inside a week's bar would run through it, as would
+ * today's), with each span cut short of today's rule. A run with no
+ * columns left before today's rule gets an empty span (width 0): it draws
+ * nothing. The rules sit where a line chart over the same days draws them,
+ * so the panes still share them.
+ */
+export function runRules(
+  starts: string[],
+  dates: string[],
+  width: number,
+  todayISO: string,
+  ink: (iso: string) => string,
+): { markers: Array<{ col: number; ink: string }>; spans: Array<{ col: number; width: number }> } {
+  const n = dates.length
+  const markers = starts.slice(1).map((iso) => ({ col: cellColumn(Math.max(0, dates.indexOf(iso)), n, width), ink: ink(iso) }))
+  const today = dates.indexOf(todayISO)
+  const todayCol = today > 0 ? cellColumn(today, n, width) : null
+  if (todayCol != null) {
+    for (let i = markers.length - 1; i >= 0; i--) if (markers[i]!.col === todayCol) markers.splice(i, 1)
+    markers.push({ col: todayCol, ink: "today" })
+  }
+  const spans = dateSlots(starts, dates, width).map((s) =>
+    todayCol != null && todayCol >= s.col && todayCol < s.col + s.width ? { col: s.col, width: todayCol - s.col } : s)
+  return { markers, spans }
+}
+
 /** End-of-day balances over the period's `dates` (up to today) for one view:
  * everything, spending accounts, or savers. The axis fits the balances, or
  * runs from $0 with `zeroAxis`. */
@@ -479,24 +508,33 @@ export function cashFlowChart(
   const scale = niceScale(Math.max(0, ...flows.flatMap((f) => [f.income, f.spent])))
   const future = (i: number) => buckets[i]!.start > todayISO
   const bars = flows.flatMap((f, i) => [{ value: future(i) ? 0 : f.income, ink: "in" }, { value: future(i) ? 0 : f.spent, ink: "out" }])
-  // Each period's pair spans its days (dateSlots), in then out, on the
-  // gridlines a line chart over the same days draws.
-  const pairSpans = dateSlots(buckets.map((b) => b.start), dates, width)
-  const pairs = pairSpans.flatMap((p) => {
-    const first = Math.max(1, Math.floor(p.width / 2))
-    return [{ col: p.col, width: first }, { col: p.col + (p.width > 1 ? first : 0), width: Math.max(1, p.width - first) }]
+  // Each period's pair stands in its days (runRules: on the gridlines a
+  // line chart over the same days draws, short of today's), in then out.
+  // Every pair's bars are half the narrowest whole period, so pairs match
+  // (a wider period's spare column is a gap before its next gridline); a
+  // part period at either end (the range starting or ending mid-week) is
+  // narrower.
+  const { markers, spans } = runRules(buckets.map((b) => b.start), dates, width, todayISO, (iso) => (monthly ? (iso.slice(5, 7) === "01" ? "year" : "month") : "week"))
+  const whole = (i: number) => (monthly ? buckets[i]!.start.endsWith("-01") && addDays(buckets[i]!.end, 1).endsWith("-01") : daysBetween(buckets[i]!.start, buckets[i]!.end) === 6)
+  const wholeSpans = spans.filter((_, i) => whole(i))
+  const narrowest = Math.min(...(wholeSpans.length ? wholeSpans : spans).map((s) => s.width))
+  const barWidth = Math.max(1, Math.floor(narrowest / 2))
+  const pairs = spans.flatMap((p) => {
+    const w = Math.min(barWidth, Math.floor(p.width / 2))
+    return [{ col: p.col, width: w }, { col: p.col + w, width: w }]
   })
-  const axis = dateAxis(dates, width, todayISO, undefined, weekStart)
-  const { rows: plain, slots } = columnBars(bars, width, height, scale.max, undefined, lineMarkers(axis.markers, dates.length, width), 2, pairs)
+  const { rows: plain, slots } = columnBars(bars, width, height, scale.max, undefined, markers, 2, pairs)
   // Names over the tallest bars: the tallest in and out first, then by
-  // height; all when pairs are wide, else two of each.
-  const roomy = Math.min(...slots.map((s) => s.width)) >= 4
+  // height; all when bars are wide, else two of each.
+  const roomy = barWidth >= 4
   const order = (kind: 0 | 1) => bars.map((_, i) => i).filter((i) => i % 2 === kind && bars[i]!.value > 0).sort((a, b) => bars[b]!.value - bars[a]!.value).slice(0, roomy ? undefined : 2)
   const [ins, outs] = [order(0), order(1)]
   const ranked = [ins[0], outs[0], ...[...ins.slice(1), ...outs.slice(1)].sort((a, b) => bars[b]!.value - bars[a]!.value)].filter((i): i is number => i != null)
-  const marks: ChartLabel[] = ranked.filter((i) => slots[i]).map((i) => {
+  const marks: ChartLabel[] = ranked.filter((i) => slots[i]?.width).map((i) => {
     const b = buckets[Math.floor(i / 2)]!
-    const payee = biggestPayee(i % 2 === 0 ? rowsOf.income : rowsOf.spent, b.start, b.end)
+    // Named by its biggest payee: the tallest in and out only (the rest
+    // would mostly repeat the same payer); the others, their amounts.
+    const payee = i === ins[0] || i === outs[0] ? biggestPayee(i % 2 === 0 ? rowsOf.income : rowsOf.spent, b.start, b.end) : undefined
     const total = shortMoney(bars[i]!.value)
     const sign = i % 2 === 0 ? "+" : "-"
     const [text, ...shorter] = barNames(`${sign}${total}`, bars[i]!.value, payee, sign)
@@ -507,9 +545,11 @@ export function cashFlowChart(
   const name = (b: (typeof buckets)[number]) => (monthly ? MONTHS[Number(b.start.slice(5, 7)) - 1]! : shortDate(b.start))
   const netText = (i: number) => (future(i) || (!flows[i]!.income && !flows[i]!.spent) ? "" : `${flows[i]!.net > 0.5 ? "+" : ""}${shortMoney(flows[i]!.net)}`)
   const pairEnd = (i: number) => slots[i * 2 + 1] ?? slots[i * 2]
+  // Judged on whole periods: a part one at either end shows its date alone
+  // where its net doesn't fit.
   const withNet = buckets.every((b, i) => {
     const slot = slots[i * 2], next = slots[(i + 1) * 2]
-    if (!slot) return true
+    if (!slot?.width || !whole(i)) return true
     const text = `${name(b)} ${netText(i)}`.trim()
     return slot.col + text.length < (next?.col ?? width + 1)
   })
@@ -518,9 +558,11 @@ export function cashFlowChart(
   let free = 0
   buckets.forEach((b, i) => {
     const slot = slots[i * 2]
-    if (!slot || !pairEnd(i)) return
+    if (!slot?.width || !pairEnd(i)) return
     const date = name(b)
-    const net = withNet ? netText(i) : ""
+    const next = slots[(i + 1) * 2]
+    const fits = (text: string) => slot.col + text.length < (next?.col ?? width + 1)
+    const net = withNet && fits(`${date} ${netText(i)}`) ? netText(i) : ""
     const text = net ? `${date} ${net}` : date
     if (slot.col < free || slot.col + text.length > width) return
     for (let c = 0; c < text.length; c++) line[slot.col + c] = text[c]!
