@@ -8,13 +8,20 @@ keyboard.
 
 ## Quick start
 
-Needs [Bun](https://bun.sh) 1.3+.
+On Linux x64 (and WSL), download `jaskmoney` from the [latest release](https://github.com/jask-aran/jaskmoney/releases/latest)
+and run it:
+
+```bash
+chmod +x jaskmoney && mkdir -p ~/.local/bin && mv jaskmoney ~/.local/bin/ && jaskmoney
+```
+
+Or from source, with [Bun](https://bun.sh) 1.4.2:
 
 ```bash
 git clone https://github.com/jask-aran/jaskmoney.git && cd jaskmoney && bun install && bun start
 ```
 
-To install the `jaskmoney` command, build a standalone binary and link it onto your PATH (run from the repo):
+To install the `jaskmoney` command from source, build a standalone binary and link it onto your PATH (run from the repo):
 
 ```bash
 bun run build && mkdir -p ~/.local/bin && ln -sf "$PWD/dist/jaskmoney" ~/.local/bin/jaskmoney
@@ -22,7 +29,7 @@ bun run build && mkdir -p ~/.local/bin && ln -sf "$PWD/dist/jaskmoney" ~/.local/
 
 Screenshots use the built-in demo data: `jaskmoney --demo` (or `bun start --demo`) runs three years of made-up
 transactions without touching yours. A [Nerd Font](https://www.nerdfonts.com) shows the category icons; without one,
-turn icons off in Settings › Database & Import.
+turn icons off in Settings › Appearance.
 
 ## Features
 
