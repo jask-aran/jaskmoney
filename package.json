@@ -14,6 +14,7 @@
     "dev": "bun run scripts/dev.ts",
     "server": "bun run src/server/main.ts",
     "build": "bun run scripts/build.ts",
+    "bin": "bun run scripts/build.ts && ./dist/jaskmoney",
     "test": "bun test --conditions=browser",
     "typecheck": "tsc --noEmit && tsc --noEmit -p src/web",
     "bench": "bun test --conditions=browser ./src/bench/keys.bench.tsx",

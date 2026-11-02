@@ -24,7 +24,8 @@ git clone https://github.com/jask-aran/jaskmoney.git && cd jaskmoney
 bun install && bun run build --install    # or `bun start` to run without installing
 ```
 
-A binary built in a clone updates there: `git pull && bun install && bun run build --install`.
+A binary built in a clone updates there: `git pull && bun install && bun run build --install`. To try a build without
+installing it, `bun run bin` builds and runs `dist/jaskmoney` (`bun run bin --demo` for the demo data).
 
 Screenshots use the built-in demo data: `jaskmoney --demo` (or `bun start --demo`) runs three years of made-up
 transactions without touching yours. A [Nerd Font](https://www.nerdfonts.com) shows the category icons; without one,
