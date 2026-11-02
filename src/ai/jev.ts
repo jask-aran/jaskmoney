@@ -114,7 +114,7 @@ export function jevEndpoint(provider: JevProvider): { url: string; model: string
 }
 
 /** `token`: the provider's key; without one, OpenRouter uses its sign-in. */
-export function createJevClient({ token, provider = "typesafe", fetch, timeoutMs = 30_000 }: { token?: string; provider?: JevProvider; fetch?: Fetch; timeoutMs?: number }) {
+export function createJevClient({ token, provider = "typesafe", fetch, timeoutMs = 30_000, retries = RETRIES }: { token?: string; provider?: JevProvider; fetch?: Fetch; timeoutMs?: number; retries?: number }) {
   const redact = (message: string) => (token ? message.split(token).join("[redacted]") : message)
   const models = jevModels()
   const entry = models.getModelOfType("classifier", provider, JEV_MODELS[provider].catalog)
@@ -128,7 +128,7 @@ export function createJevClient({ token, provider = "typesafe", fetch, timeoutMs
       const result = await models.classify(model, {
         state: state as ClassifierContext["state"],
         questions: Object.fromEntries(Object.entries(questions).map(([id, q]) => [id, piQuestion(q)])),
-      }, { ...(token ? { apiKey: token } : {}), ...(fetch ? { fetch: fetch as typeof globalThis.fetch } : {}), timeoutMs, maxRetries: RETRIES })
+      }, { ...(token ? { apiKey: token } : {}), ...(fetch ? { fetch: fetch as typeof globalThis.fetch } : {}), timeoutMs, maxRetries: retries })
       if (result.stopReason !== "stop") {
         const error = piError(result.errorMessage ?? "no answer")
         throw new JevError(error.status, redact(error.message === "Jev timed out" ? `Jev timed out after ${timeoutMs / 1000}s` : error.message))

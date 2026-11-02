@@ -79,11 +79,13 @@ function isCategory(value: unknown): value is CategoryResource {
     Array.isArray(value.relationships.children.data) && value.relationships.children.data.every(c => object(c) && c.type === "categories" && typeof c.id === "string")
 }
 
-export function createUpClient({ token, fetch = globalThis.fetch, baseUrl = "https://api.up.com.au/api/v1", sleep = (ms: number) => new Promise<void>(resolve => setTimeout(resolve, ms)) }: {
+export function createUpClient({ token, fetch = globalThis.fetch, baseUrl = "https://api.up.com.au/api/v1", sleep = (ms: number) => new Promise<void>(resolve => setTimeout(resolve, ms)), deadlineMs = 30_000 }: {
   token: string
   fetch?: Fetch
   baseUrl?: string
   sleep?: (ms: number) => Promise<void>
+  /** How long a request may take, headers and body (tests shorten it). */
+  deadlineMs?: number
 }) {
   const redact = (message: string) => token ? message.split(token).join("[redacted]") : message
   function redactValue(value: unknown): unknown {
@@ -103,7 +105,7 @@ export function createUpClient({ token, fetch = globalThis.fetch, baseUrl = "htt
       if (url.origin !== origin) throw new Error("Up pagination URL has a foreign origin")
       for (let retry = 0; ; retry++) {
         const controller = new AbortController()
-        const timer = setTimeout(() => controller.abort(), 30_000)
+        const timer = setTimeout(() => controller.abort(), deadlineMs)
         let response: Response
         let text: string
         try {

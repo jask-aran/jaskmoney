@@ -142,6 +142,9 @@ test("App shows the filter editor on Transactions, updates status colours, and r
   expect(status("ok · 1 txns").fg.toInts()).toEqual([166, 227, 161, 255])
   const name = status("Name")
   expect(name.attributes & TextAttributes.BOLD).toBe(TextAttributes.BOLD)
+  // Past the rule offers' 150 ms debounce from the edits above: what N
+  // itself reads is what's counted.
+  await Bun.sleep(200)
   const previousReads = reads
   handleKey(ui, key("N"), data)
   await draw()

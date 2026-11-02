@@ -1,8 +1,11 @@
-import { afterEach, expect, test } from "bun:test"
+import { afterEach, expect, setDefaultTimeout, test } from "bun:test"
 import { createCore } from "../core/core"
 import { createClientStore } from "../client/store"
 import { wsLink } from "../client/wsLink"
 import { serveCore } from "./serve"
+
+// Real sockets: slower when the other test files run beside these.
+setDefaultTimeout(15_000)
 
 const stops: Array<() => void> = []
 afterEach(() => { for (const stop of stops.splice(0)) stop() })

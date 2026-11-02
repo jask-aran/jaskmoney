@@ -327,7 +327,7 @@ describe("Up tag requests", () => {
 test("request deadlines abort stalled headers and bodies", async () => {
   await Promise.all([false, true].map(headers => {
     let signal: AbortSignal | null | undefined
-    const client = createUpClient({ token, fetch: async (_, init) => {
+    const client = createUpClient({ token, deadlineMs: 50, fetch: async (_, init) => {
       signal = init?.signal
       if (!headers) return new Promise<Response>((_, reject) => {
         signal?.addEventListener("abort", () => reject(new Error(`aborted ${token}`)))
@@ -341,7 +341,7 @@ test("request deadlines abort stalled headers and bodies", async () => {
       expect(signal?.aborted).toBe(true)
     })
   }))
-}, 35_000)
+})
 
 test("Retry-After waits are capped at 60 seconds", async () => {
   for (const retryAfter of ["61", "1e100", "1e999"]) {

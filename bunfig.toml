@@ -4,4 +4,6 @@ preload = ["./src/jsxCache.ts"]
 # Solid must resolve the browser/dev build, not solid-js/server (orphan text crashes).
 [test]
 # testSetup points the settings config at a scratch file (never the user's).
-preload = ["@opentui/solid/preload", "./src/testSetup.ts"]
+# The app's cached Solid transform (each UI test file otherwise spends ~1s
+# compiling the app's TSX through Babel again).
+preload = ["./src/jsxCache.ts", "./src/testSetup.ts"]

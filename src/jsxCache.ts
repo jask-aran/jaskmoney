@@ -8,7 +8,7 @@ import { createSolidTransformPlugin } from "@opentui/solid/bun-plugin"
  * The app's preload: OpenTUI's Solid JSX transform (Babel, ~0.5s for the
  * app's files on every launch and every dev reload), with each file's
  * output cached on disk by its contents and the transform's version, so
- * only changed files go through Babel. Tests keep OpenTUI's own preload.
+ * only changed files go through Babel. Tests use it too (bunfig.toml).
  */
 const VERSION = [
   JSON.parse(readFileSync(require.resolve("@opentui/solid/package.json"), "utf8")).version,

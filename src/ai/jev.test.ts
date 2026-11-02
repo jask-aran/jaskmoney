@@ -54,7 +54,7 @@ describe("Jev client", () => {
       : Response.json({ answers: { q: { type: "noul", noul: 0.5 } } }))
     expect(await jev.judge({ q: { type: "noul", instructions: "?" } }, "s")).toEqual({ q: noul(0.5) })
     expect(calls).toHaveLength(2)
-    const slow = createJevClient({ token, timeoutMs: 10, fetch: (_, init) => new Promise<Response>((_, reject) => {
+    const slow = createJevClient({ token, timeoutMs: 10, retries: 0, fetch: (_, init) => new Promise<Response>((_, reject) => {
       init?.signal?.addEventListener("abort", () => reject(Object.assign(new Error("aborted"), { name: "AbortError" })))
     }) })
     await expect(slow.judge({ q: { type: "noul", instructions: "?" } }, "s")).rejects.toThrow("timed out")

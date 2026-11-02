@@ -22,13 +22,13 @@ async function afterRangeChange(mode: ChartMotionMode) {
   const t = await renderApp({ width: 160, height: 46 })
   try {
     data.init(path)
-    data.setState("uiPrefs", { chartMotion: mode, chartSpeed: "juicy" })
+    data.setState("uiPrefs", { chartMotion: mode, chartSpeed: "quick" })
     data.refresh()
-    await settle(t, 1200)
+    await settle(t, 500)
     ui.setTimeframe({ ...ui.state.timeframe, family: "lookback", lookback: "1M" })
     await settle(t, 60)
     const soon = t.captureCharFrame()
-    await settle(t, 1200)
+    await settle(t, 500)
     return { soon, done: t.captureCharFrame() }
   } finally { t.renderer.destroy(); setAppClock(null) }
 }
