@@ -287,17 +287,18 @@ export const TAB_DEFAULT_FOCUS: Record<TabId, SectionId> = {
 
 /** The Overview's chart pane views, in h/l order, with the group each
  * belongs to (the pane's title and the strip's separators). Both panes offer
- * every view. */
+ * every view. `ranged`: drawn from the Date Range's days (Subscriptions is
+ * the scope's whole history, whatever the range). */
 export const CHART_VIEWS = [
-  { view: "Cumulative", group: "Spending" },
-  { view: "Daily", group: "Spending" },
-  { view: "Weekly", group: "Spending" },
-  { view: "Cash flow", group: "Cash flow" },
-  { view: "Net position", group: "Balances" },
-  { view: "Available", group: "Balances" },
-  { view: "Savers", group: "Balances" },
-  { view: "Calendar", group: "Calendar" },
-  { view: "Subscriptions", group: "Subscriptions" },
+  { view: "Cumulative", group: "Spending", ranged: true },
+  { view: "Daily", group: "Spending", ranged: true },
+  { view: "Weekly", group: "Spending", ranged: true },
+  { view: "Cash flow", group: "Cash flow", ranged: true },
+  { view: "Net position", group: "Balances", ranged: true },
+  { view: "Available", group: "Balances", ranged: true },
+  { view: "Savers", group: "Balances", ranged: true },
+  { view: "Calendar", group: "Calendar", ranged: true },
+  { view: "Subscriptions", group: "Subscriptions", ranged: false },
 ] as const
 
 /** The Budgets tab's chart views: the Overview's spending ones, over the

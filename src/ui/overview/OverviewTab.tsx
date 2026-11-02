@@ -425,7 +425,7 @@ export function OverviewTab(props: { focused: SectionId }) {
   const [launchOver, setLaunchOver] = createSignal(!launchReveal)
   const revealMs = () => (launchOver() ? 0 : chartSpeedMs(data.state.uiPrefs.chartSpeed))
   // "always": again each time the tab comes into view (motion.showings),
-  // and each time the Date Range changes.
+  // and each time the Date Range changes under a view drawn from it.
   const seen = showings(() => shown() && !ui.state.welcome)
   const drawable = () => {
     const top = CHART_VIEWS[ui.state.chartViews[0]]?.view
@@ -456,7 +456,7 @@ export function OverviewTab(props: { focused: SectionId }) {
         height={p.height}
         focused={props.focused === (p.pane === 0 ? "ov.chart" : "ov.chart2")}
         baseline={baseline()}
-        revealKey={data.state.uiPrefs.chartMotion === "off" ? undefined : data.state.uiPrefs.chartMotion === "always" ? (revealKey() ? `${view().view}:${range().bounds.start}:${range().bounds.end}:${seen()}` : undefined) : revealKey()}
+        revealKey={data.state.uiPrefs.chartMotion === "off" ? undefined : data.state.uiPrefs.chartMotion === "always" ? (revealKey() ? `${view().view}:${view().ranged ? `${range().bounds.start}:${range().bounds.end}` : ""}:${seen()}` : undefined) : revealKey()}
         revealMs={data.state.uiPrefs.chartMotion === "always" ? chartSpeedMs(data.state.uiPrefs.chartSpeed) : revealMs()}
         curve={data.state.uiPrefs.chartCurve}
         labels={data.state.uiPrefs.chartLabels}

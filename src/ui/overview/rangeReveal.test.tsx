@@ -9,15 +9,17 @@ import { setAppClock } from "../../domain/days"
 import { generateDemo } from "../../domain/demo"
 import { seedDemoDb } from "../../db/demoSeed"
 import type { ChartMotionMode } from "../charts/motion"
+import { CHART_VIEWS } from "../../state/uiStore"
 
 const settle = async (t: Awaited<ReturnType<typeof renderApp>>, ms = 0) => { if (ms) await Bun.sleep(ms); await t.renderOnce(); await t.renderOnce() }
 
 /** The frame just after the Date Range changes, and once any draw-in is over. */
-async function afterRangeChange(mode: ChartMotionMode) {
+async function afterRangeChange(mode: ChartMotionMode, views: [number, number] = [0, 3]) {
   setAppClock(new Date(2026, 10, 20, 12))
   const path = join(mkdtempSync(join(tmpdir(), "jaskmoney-range-reveal-")), "demo.db")
   seedDemoDb(path, generateDemo({ today: "2026-11-20", years: 1 }))
   ui.switchTab("overview")
+  ui.setState({ chartViews: views })
   ui.setTimeframe({ ...ui.state.timeframe, family: "lookback", lookback: "3M" })
   const t = await renderApp({ width: 160, height: 46 })
   try {
@@ -40,5 +42,11 @@ test("always: a new Date Range draws the charts in again", async () => {
 
 test("first launch: a new Date Range shows the charts whole at once", async () => {
   const { soon, done } = await afterRangeChange("launch")
+  expect(soon).toBe(done)
+})
+
+test("always: Subscriptions, not drawn from the range, stays still when it changes", async () => {
+  const subs = CHART_VIEWS.findIndex((v) => v.view === "Subscriptions")
+  const { soon, done } = await afterRangeChange("always", [subs, subs])
   expect(soon).toBe(done)
 })
