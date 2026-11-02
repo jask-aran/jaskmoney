@@ -946,7 +946,11 @@ export function setAccountSyncEnabled(db: Db, accountId: number, enabled: boolea
     db.query(`UPDATE accounts SET sync_enabled = ? WHERE id = ?`).run(enabled ? 1 : 0, accountId)
     if (enabled) return 0
     db.query(`DELETE FROM account_selection WHERE account_id = ?`).run(accountId)
-    return Number(db.query(`DELETE FROM transactions WHERE account_id = ?`).run(accountId).changes)
+    // Counted, not read from the delete's changes: SQLite versions differ on
+    // whether those include rows its foreign keys cascade to (a tag link).
+    const { n } = db.query(`SELECT COUNT(*) AS n FROM transactions WHERE account_id = ?`).get(accountId) as { n: number }
+    db.query(`DELETE FROM transactions WHERE account_id = ?`).run(accountId)
+    return n
   })()
 }
 

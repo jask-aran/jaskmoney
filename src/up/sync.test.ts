@@ -386,8 +386,8 @@ describe("Up sync", () => {
     const rows = [txn("daily-new", "SETTLED", "2026-04-05T02:10:00+10:00"), txn("saver-old", "HELD", "2025-01-01T00:00:00Z", "saver")]
     await syncUp(db, client(rows), { now })
     const saver = loadAccounts(db).find(a => a.name === "Savings")!
-    // SQLite reports the transaction plus its cascaded tag link.
-    expect(setAccountSyncEnabled(db, saver.id, false)).toBe(2)
+    // One transaction removed (its cascaded tag link isn't a transaction).
+    expect(setAccountSyncEnabled(db, saver.id, false)).toBe(1)
     setAccountSyncEnabled(db, saver.id, true)
     const since: Array<string | undefined> = [], requests: URL[] = []
     expect((await syncUp(db, client(rows, undefined, since, requests), { now })).inserted).toBe(1)
