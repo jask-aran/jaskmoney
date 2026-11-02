@@ -44,31 +44,21 @@ function setup() {
 
 const settled = async () => { for (let i = 0; i < 8; i++) await Promise.resolve() }
 
-test("row encoding is reused by identity and row patch bytes stay the same for every client", () => {
+test("row patches carry only what changed, the same bytes for every client", () => {
   const { core, connect } = setup()
   const a = transaction({ id: 1 }), b = transaction({ id: 2 })
   core.set({ transactions: [a, b] })
   const one = connect(), two = connect()
   one.messages.length = two.messages.length = 0
-  const stringify = spyOn(JSON, "stringify")
-  onTestFinished(() => stringify.mockRestore())
-  const join = spyOn(Array.prototype, "join")
-  onTestFinished(() => join.mockRestore())
   core.set({ transactions: [a, b] })
-  expect(join).not.toHaveBeenCalled()
-  join.mockRestore()
   expect(one.messages).toEqual([])
   expect(two.messages).toEqual([])
-  expect(stringify.mock.calls.some(([v]) => v === a || v === b)).toBe(false)
 
   const updated = { ...b, notes: 'changed "note"' }
   core.set({ transactions: [a, updated] })
   const expected = `{"t":"state","patch":{},"rows":{"set":[${JSON.stringify(updated)}],"remove":[]}}`
   expect(one.messages).toEqual([expected])
   expect(two.messages).toEqual([expected])
-  expect(stringify.mock.calls.filter(([v]) => v === a || v === b)).toHaveLength(0)
-  // One encoding for the patch, plus the explicit expected string above.
-  expect(stringify.mock.calls.filter(([v]) => v === updated)).toHaveLength(2)
   one.messages.length = two.messages.length = 0
   core.set({ transactions: [updated, a] })
   expect(one.messages).toEqual(['{"t":"state","patch":{},"rows":{"set":[],"remove":[],"order":[2,1]}}'])

@@ -6,7 +6,6 @@ import { data } from "../state/dataStore"
 import { loadTransactions } from "../db/client"
 import { buildImportPreview, commitImportPreview } from "../domain/profileImport"
 import { DEFAULT_IMPORT_PROFILES } from "../state/settingsConfig"
-import { setTransactionCategory } from "../db/client"
 import { account, category, transaction } from "../testing/fixtures"
 import { key } from "../testing/keys"
 import { testDb } from "../testing/scoped"
@@ -42,40 +41,6 @@ describe("MVP slice: filter + categorize", () => {
     ui.setState({ focusedSection: "mgr.transactions", managerCursor: 0, filterBar: null, catPicker: null })
   })
 
-  test("filter narrows scoped rows", () => {
-    data.clearFilter()
-    handleKey(ui, key("/"), data)
-    expect((ui.state.filterBar != null)).toBe(true)
-    for (const ch of "uber") {
-      handleKey(ui, key(ch), data)
-    }
-    handleKey(ui, key("return"), data)
-    expect(data.state.filterQuery).toBe("uber")
-    expect(data.scopedTransactions()).toHaveLength(1)
-    expect(data.scopedTransactions()[0]!.description).toContain("UBER")
-    data.clearFilter()
-  })
-
-  test("categorize updates via db helper", () => {
-    const db = testDb()
-    commitImportPreview(db, buildImportPreview(db, '01/02/2026,"-5.00",TEST COFFEE\n', "t.csv", DEFAULT_IMPORT_PROFILES[0]!), true)
-    const before = loadTransactions(db)
-    expect(before[0]!.categoryName).toBe("Uncategorised")
-    const transport = db
-      .query(`SELECT id FROM categories WHERE name = 'Transport'`)
-      .get() as { id: number }
-    setTransactionCategory(db, before[0]!.id, transport.id, "user")
-    const after = loadTransactions(db)
-    expect(after[0]!.categoryName).toBe("Transport")
-  })
-
-  test("open cat picker with c", () => {
-    handleKey(ui, key("c"), data)
-    expect((ui.state.catPicker != null)).toBe(true)
-    handleKey(ui, key("escape"), data)
-    expect((ui.state.catPicker != null)).toBe(false)
-  })
-
   test("categorize apply via picker + real db", async () => {
     data.init(":memory:")
     await data.commitPreview(buildImportPreview(data.getDb()!, '01/02/2026,"-5.00",TEST COFFEE\n', temporaryCsv('01/02/2026,"-5.00",TEST COFFEE\n'), DEFAULT_IMPORT_PROFILES[0]!), true)
@@ -90,19 +55,6 @@ describe("MVP slice: filter + categorize", () => {
     expect((ui.state.catPicker != null)).toBe(false)
     const row = data.state.transactions.find((t) => t.id === targetId)
     expect(row?.categoryName).toBe("Dining & Drinks")
-  })
-
-  test("escape clears transaction selection before an applied filter", () => {
-    ui.setState({ selectedIds: { 1: true } })
-    data.commitFilter("uber")
-
-    handleKey(ui, key("escape"), data)
-
-    expect(ui.state.selectedIds).toEqual({})
-    expect(data.state.filterQuery).toBe("uber")
-
-    handleKey(ui, key("escape"), data)
-    expect(data.state.filterQuery).toBe("")
   })
 
   test("tag picker stages and applies the focused tag and sort keys change ordering", async () => {

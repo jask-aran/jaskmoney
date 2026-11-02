@@ -12,12 +12,6 @@ const ctx = {
 const draft: Draft = { ...ui.state.settingsDraft, scopeKey: "overall", amount: "2000", unit: "month", anchor: "calendar", anchorDate: "" }
 
 describe("settings form", () => {
-  test("the budget editor carries the shared cycle; a date field only off calendar", () => {
-    expect(editorFields("budget", draft, ctx).map((f) => f.label)).toEqual(["Covers", "Amount", "Every", "Starting", "Payday"])
-    expect(editorFields("budget", { ...draft, anchor: "date" }, ctx).map((f) => f.label)).toEqual(["Covers", "Amount", "Every", "Starting", "Day", "Payday"])
-    expect(editorFields("budget", draft, ctx)[0]).toMatchObject({ kind: "picker", display: "Overall spending" })
-  })
-
   test("budget scopes group under headings and filter by group or name", () => {
     const items = pickerItems("budget", "scopeKey", ctx, "")
     expect(items.map((i) => (i.kind === "heading" ? `# ${i.label}` : i.label))).toEqual([
@@ -26,8 +20,10 @@ describe("settings form", () => {
     expect(pickerChoices(pickerItems("budget", "scopeKey", ctx, "home")).map((i) => i.label)).toEqual(["All of Home", "Groceries"])
   })
 
-  test("each unit asks for its start in its own form", () => {
+  test("each unit asks for its start in its own form, and only off calendar; the budget editor carries the cycle", () => {
     const fields = (d: Partial<typeof draft>) => editorFields("cycle", { ...draft, ...d }, ctx).map((f) => `${f.label}:${f.kind}`)
+    expect(fields({ unit: "month", anchor: "calendar" })).toEqual(["Every:choice", "Starting:choice", "Payday:toggle"])
+    expect(editorFields("budget", { ...draft, anchor: "date" }, ctx).map((f) => f.label)).toEqual(expect.arrayContaining(["Covers", "Amount", "Every", "Starting", "Day", "Payday"]))
     expect(fields({ unit: "month", anchor: "date", anchorDate: "15" })).toEqual(["Every:choice", "Starting:choice", "Day:text", "Payday:toggle"])
     expect(fields({ unit: "week", anchor: "date", anchorDate: "Thursday" })).toEqual(["Every:choice", "Starting:choice", "Weekday:choice", "Payday:toggle"])
     expect(fields({ unit: "fortnight", anchor: "date", anchorDate: "2026-10-16" })).toEqual(["Every:choice", "Starting:choice", "Date:text", "Payday:toggle"])

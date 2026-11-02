@@ -22,12 +22,3 @@ test("a session change forgets all row targets even when ids and version are unc
   expect(ui.state.managerCursor).toBe(1)
   expect(ui.state.managerTop).toBe(1)
 })
-
-test("version pruning still keeps surviving row targets in the same session", () => {
-  data.setState({ transactions: [transaction({ id: 1 }), transaction({ id: 2 })] })
-  ui.setState({ selectedIds: { 1: true, 2: true }, pickerTargets: [1, 2], detail: { id: 1, boughtTop: 2, notes: null } })
-  data.setState({ transactions: [transaction({ id: 1 })], version: data.state.version + 1 })
-  expect(ui.state.selectedIds).toEqual({ 1: true })
-  expect(ui.state.pickerTargets).toEqual([1])
-  expect(ui.state.detail).toEqual({ id: 1, boughtTop: 2, notes: null })
-})

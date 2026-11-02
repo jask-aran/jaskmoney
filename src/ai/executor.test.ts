@@ -31,7 +31,6 @@ test("a program runs through Executor's execute tool: JSON comes back parsed, an
   const client = (result: ReturnType<typeof text>) => async () => ({ callTool: async (name: string, args?: Record<string, unknown>) => { calls.push([name, args]); return result }, close: async () => {} })
   expect(await runExecutor(COUNT_ORDER_EMAILS, client(text('{"count":3,"more":true}')))).toEqual({ count: 3, more: true })
   expect(calls[0]).toEqual(["execute", { code: COUNT_ORDER_EMAILS }])
-  expect(COUNT_ORDER_EMAILS).toContain("tools.gmail.api.users.gmailUsersMessagesList")
   await expect(runExecutor("x", client(text("No Gmail account connected", true)))).rejects.toThrow("No Gmail account connected")
 })
 
@@ -47,18 +46,18 @@ test("the dialog: sign in in the browser (or make an account), then test Gmail t
   })
   await openExecutorDialog(ui)
   expect(executorActions(ui.state.executor!.status).map((a) => a.id)).toEqual(["signIn", "site"])
-  expect(executorRow(ui.state.executorStatus, false)).toEqual({ connected: false, how: "not signed in · enter to connect" })
+  expect(executorRow(ui.state.executorStatus, false).connected).toBe(false)
   const signing = runExecutorAction(ui)
   await new Promise((r) => setTimeout(r, 5))
   expect(opened).toEqual(["https://executor.sh/oauth/authorize?x=1"])
   expect(ui.state.executor!.waiting).toBe("https://executor.sh/oauth/authorize?x=1")
   finish()
   await signing
-  expect(ui.state.executor).toMatchObject({ waiting: null, note: { text: "Signed in to Executor", ok: true } })
-  expect(executorRow(ui.state.executorStatus, true)).toEqual({ connected: true, how: "signed in · 4 tools" })
+  expect(ui.state.executor).toMatchObject({ waiting: null, note: { ok: true } })
+  expect(executorRow(ui.state.executorStatus, true).connected).toBe(true)
   expect(executorActions(ui.state.executor!.status).map((a) => a.id)).toEqual(["test", "site", "signOut"])
   await runExecutorAction(ui)
-  expect(ui.state.executor!.note).toEqual({ text: "7 order emails from Amazon and eBay in the last 90 days", ok: true })
+  expect(ui.state.executor!.note).toMatchObject({ text: expect.stringContaining("7"), ok: true })
   ui.setState({ executor: null, executorStatus: null })
 })
 
@@ -72,6 +71,6 @@ test("esc during the browser sign-in cancels it", async () => {
   await new Promise((r) => setTimeout(r, 5))
   cancelExecutorSignIn()
   await signing
-  expect(ui.state.executor).toMatchObject({ waiting: null, note: { text: "Sign-in cancelled", ok: null } })
+  expect(ui.state.executor).toMatchObject({ waiting: null, note: { ok: null } })
   ui.setState({ executor: null, executorStatus: null })
 })

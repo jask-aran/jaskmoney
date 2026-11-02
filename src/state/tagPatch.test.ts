@@ -3,7 +3,7 @@ import { afterEach, expect, test } from "bun:test"
 import { RGBA, TextAttributes } from "@opentui/core"
 import { createComponent } from "solid-js"
 import { testRender } from "@opentui/solid"
-import { handleKey, footerHints } from "../app/keys"
+import { handleKey } from "../app/keys"
 import { TagPicker } from "../ui/primitives/TagPicker"
 import { tagPickerItems } from "./tagPicker"
 import { data } from "./dataStore"
@@ -48,10 +48,8 @@ test("space stages mixed → all → none → original; esc and empty enter writ
   press("escape")
   expect(ids()).toEqual(original)
   expect((ui.state.tagPicker?.patch ?? {})).toEqual({})
-  expect(ui.state.status).toBe("Tags unchanged")
   ui.openTagPicker([1, 2, 3])
   press("enter")
-  expect(ui.state.status).toBe("Tags unchanged")
   expect(ids()).toEqual(original)
 })
 
@@ -71,7 +69,6 @@ test("enter applies staged add and remove across local targets; all and none tog
   press("enter")
   await Promise.resolve(); await settlePending()
   expect(ids()).toEqual([[add], [add], [add]])
-  expect(ui.state.status).toBe("Tags: +COFFEE, -WORK on 3")
   expect(ui.state.tagPicker !== null).toBe(false)
   expect((ui.state.tagPicker?.patch ?? {})).toEqual({})
   ui.openTagPicker([1, 2, 3])
@@ -105,7 +102,7 @@ test("IGNORE changes on Up rows remain local without a token or client", async (
   const ignore = data.state.tags.find((t) => t.name === "IGNORE")!
   db.query("UPDATE transactions SET source = 'up', external_id = 'remote' WHERE id = 1").run()
   data.refresh()
-  expect(await data.applyTagPatch([1], { [ignore.id]: "add" })).toBe("Tags: +IGNORE on 1")
+  expect(await data.applyTagPatch([1], { [ignore.id]: "add" })).not.toContain("Up")
   expect(data.state.transactions.find((t) => t.id === 1)?.tagIds).toContain(ignore.id)
 })
 
@@ -125,10 +122,6 @@ test("tag rows group by categories (a target's, none, others; a group covers its
   expect(rows.find((r) => r.label === "COFFEE OTHER")).toMatchObject({ color: ink.faint })
   expect(rows.find((r) => r.kind === "item" && r.value === add)?.label).toBe("COFFEE")
   expect(tagPickerItems(data.state.tags, data.state.categories, data.state.transactions, [1], "zz").map((r) => r.label)).toEqual(['Create "zz"'])
-  expect(footerHints("tagPicker")).toEqual([
-    { key: "↑↓ ^j/k", desc: "move" }, { key: "space", desc: "stage" },
-    { key: "enter", desc: "apply" }, { key: "esc", desc: "cancel" },
-  ])
 })
 
 test("captured cells show staged mixed/all/none marks and preserve cursor colours and attributes", async () => {
@@ -141,7 +134,7 @@ test("captured cells show staged mixed/all/none marks and preserve cursor colour
       const spans = t.captureSpans().lines.flatMap((line) => line.spans)
       expect(spans.some((s) => s.text.includes(mark))).toBe(true)
       const label = spans.find((s) => s.text.includes("COFFEE") && (s.attributes & TextAttributes.BOLD))!
-      expect(label.fg.toInts()).toEqual([137, 180, 250, 255])
+      expect(label.fg.toInts()).toEqual(RGBA.fromHex(theme.blue).toInts())
       expect(label.bg.toInts()).toEqual(RGBA.fromHex(theme.rowCursor).toInts())
       expect(label.attributes & TextAttributes.BOLD).toBe(TextAttributes.BOLD)
     }

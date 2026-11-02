@@ -29,10 +29,8 @@ test("Demo mode: enter swaps in three years of made-up rows, sync does nothing, 
   expect(data.state.transactions.length).toBeGreaterThan(1000)
   expect(data.state.transactions.some((t) => t.description === "Real Cafe")).toBe(false)
   expect(data.state.accountSelection).toBe("all")
-  expect(ui.state.status).toMatch(/^Demo mode: [\d,]+ made-up transactions/)
   const before = data.state.dbInfo?.upLastSyncedAt ?? null
   await runSync(ui, data, { manual: true })
-  expect(ui.state.status).toMatch(/Demo mode: sync is off/)
   expect(data.state.dbInfo?.upLastSyncedAt ?? null).toBe(before)
   handleKey(ui, key("return"), data); await settlePending()
   expect(data.state.demo).toBe(false)

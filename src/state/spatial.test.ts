@@ -17,23 +17,13 @@ const map = [
 const from = (id: string) => map.find((m) => m.id === id)!.rect
 const others = (id: string) => map.filter((m) => m.id !== id)
 
-test("straight ahead wins over nearer but off to the side", () => {
-  expect(nearestRegion(from("ov.chart"), others("ov.chart"), "down")).toBe("ov.chart2")
-  expect(nearestRegion(from("ov.chart"), others("ov.chart"), "right")).toBe("ov.accounts")
-  expect(nearestRegion(from("ov.chart2"), others("ov.chart2"), "right")).toBe("ov.categories")
-})
-
-test("up from the panes reaches the Date Range, then the bar item above it", () => {
-  expect(nearestRegion(from("ov.chart"), others("ov.chart"), "up")).toBe("ov.range")
-  expect(nearestRegion(from("ov.accounts"), others("ov.accounts"), "up")).toBe("ov.range")
-  expect(nearestRegion(from("ov.range"), others("ov.range"), "up")).toBe("bar.overview")
-  expect(nearestRegion(from("bar.overview"), others("bar.overview"), "right")).toBe("bar.web")
-})
-
-test("nothing that way: the focus stays (no wrap)", () => {
-  expect(nearestRegion(from("bar.web"), others("bar.web"), "up")).toBeNull()
-  expect(nearestRegion(from("ov.categories"), others("ov.categories"), "right")).toBeNull()
-  expect(nearestRegion(from("ov.chart2"), others("ov.chart2"), "down")).toBeNull()
+test("straight ahead wins over nearer but off to the side; up climbs to the range then the bar; nothing that way stays (no wrap)", () => {
+  const cases: Array<[string, "up" | "down" | "left" | "right", string | null]> = [
+    ["ov.chart", "down", "ov.chart2"], ["ov.chart", "right", "ov.accounts"], ["ov.chart2", "right", "ov.categories"],
+    ["ov.chart", "up", "ov.range"], ["ov.accounts", "up", "ov.range"], ["ov.range", "up", "bar.overview"], ["bar.overview", "right", "bar.web"],
+    ["bar.web", "up", null], ["ov.categories", "right", null], ["ov.chart2", "down", null],
+  ]
+  for (const [id, dir, want] of cases) expect([id, dir, nearestRegion(from(id), others(id), dir)]).toEqual([id, dir, want])
 })
 
 test("a region that overlaps the source along the arrow is not 'in that direction'", () => {

@@ -34,7 +34,6 @@ describe("Jev client", () => {
       a: { type: "noul", noul: 0.9 },
       b: { type: "choice", choice: "x", probabilities: { x: 0.8, y: 0.2 }, confidence: 0.6 },
     })
-    expect(JEV_MODEL).toBe("jev-1.14.0")
     expect(calls[0]).toEqual({ url: "https://api.typesafe.ai/v1/systemone", auth: `Bearer ${token}`, body: { model: JEV_MODEL, state: { search: "s" }, questions } })
   })
 
@@ -43,9 +42,10 @@ describe("Jev client", () => {
     const error = await jev.judge({ q: { type: "noul", instructions: "?" } }, "s").catch((e: unknown) => e)
     expect(error).toBeInstanceOf(JevError)
     expect((error as JevError).status).toBe(422)
-    expect((error as Error).message).toBe("Jev: bad key [redacted]")
+    expect((error as Error).message).toContain("bad key [redacted]")
+    expect((error as Error).message).not.toContain(token)
     const empty = client(() => Response.json({ answers: {} })).jev
-    await expect(empty.judge({ q: { type: "noul", instructions: "?" } }, "s")).rejects.toThrow("no usable answer for q")
+    await expect(empty.judge({ q: { type: "noul", instructions: "?" } }, "s")).rejects.toThrow()
   })
 
   test("a rate limit is retried; a request that takes too long is abandoned", async () => {

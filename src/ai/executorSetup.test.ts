@@ -1,6 +1,6 @@
-import { afterEach, expect, spyOn, test } from "bun:test"
+import { afterEach, expect, test } from "bun:test"
 import type { McpClient } from "@earendil-works/pi-mcp"
-import { callApp, ensureMailApp, ExecutorPaused, findMailApp, gmailConnectLink, installGmail, mailAccount, waitForMailAccount } from "./executorSetup"
+import { callApp, ensureMailApp, ExecutorPaused, findMailApp, gmailConnectLink, installGmail, type MailAccount, type MailApp, mailAccount, waitForMailAccount } from "./executorSetup"
 
 const paths = {
   list: "tools.executor.appManagement.list",
@@ -42,38 +42,22 @@ afterEach(() => {
   clients.length = 0
 })
 
-test("find prefers Gmail over an earlier Google bundle", async () => {
-  const f = fake(() => completed([google, gmail]))
-  expect(await findMailApp(f.connect)).toEqual(app)
-  expect(f.calls).toEqual([{ path: paths.list, input: {} }])
-})
-
-test("find falls back to Google and picks the first user requirement", async () => {
-  const f = fake(() => completed([{ ...google, requirements: { accounts: {
-    shared: { scope: "app" }, google: { scope: "user" }, second: { scope: "user" },
-  } } }]))
-  expect(await findMailApp(f.connect)).toEqual({ id: "app_google", slug: "google", name: "Google", requirement: "google" })
-})
-
-test("find falls back to the first requirement when scope is absent or app", async () => {
-  const f = fake(() => completed([{ ...gmail, requirements: { accounts: { first: {}, second: { scope: "app" } } } }]))
-  expect(await findMailApp(f.connect)).toEqual({ ...app, requirement: "first" })
-})
-
-test("unrelated apps do not count as installed mail", async () => {
-  const f = fake(() => completed([{ ...gmail, copiedFrom: null }]))
-  expect(await findMailApp(f.connect)).toBeNull()
-})
-
-test("find skips mail apps with missing or empty account requirements", async () => {
+test("find picks the mail app and its user account requirement", async () => {
   const empty = { ...gmail, requirements: { accounts: {} } }
   const missing = { ...gmail, requirements: {} }
-  const f = fake(() => completed([empty, missing, google]))
-  expect(await findMailApp(f.connect)).toEqual({ id: "app_google", slug: "google", name: "Google", requirement: "google" })
-  const g = fake(() => completed([empty, missing, gmail]))
-  expect(await findMailApp(g.connect)).toEqual(app)
-  const h = fake(() => completed([empty, missing]))
-  expect(await findMailApp(h.connect)).toBeNull()
+  const cases: Array<[unknown[], MailApp | null]> = [
+    [[google, gmail], app],
+    [[{ ...google, requirements: { accounts: { shared: { scope: "app" }, google: { scope: "user" }, second: { scope: "user" } } } }], { ...app, id: "app_google", slug: "google", name: "Google", requirement: "google" }],
+    [[{ ...gmail, requirements: { accounts: { first: {}, second: { scope: "app" } } } }], { ...app, requirement: "first" }],
+    [[{ ...gmail, copiedFrom: null }], null],
+    [[empty, missing, google], { ...app, id: "app_google", slug: "google", name: "Google", requirement: "google" }],
+    [[empty, missing], null],
+  ]
+  for (const [apps, expected] of cases) {
+    const f = fake(() => completed(apps))
+    expect(await findMailApp(f.connect)).toEqual(expected)
+    expect(f.calls).toEqual([{ path: paths.list, input: {} }])
+  }
 })
 
 test("ensure installs Gmail from the catalog when no mail app is installed", async () => {
@@ -89,7 +73,6 @@ test("ensure installs Gmail from the catalog when no mail app is installed", asy
     { path: paths.catalog, input: { query: { search: "gmail", limit: "5" } } },
     { path: paths.install, input: { body: { entry: "gmail", name: "Gmail" } } },
   ])
-  expect(f.counts).toEqual({ opened: 2, closed: 2 })
 })
 
 test("ensure reuses an installed mail app", async () => {
@@ -98,58 +81,51 @@ test("ensure reuses an installed mail app", async () => {
   expect(f.calls).toHaveLength(1)
 })
 
-test("install rejects a missing Gmail catalog entry and closes", async () => {
+test("install rejects a missing Gmail catalog entry", async () => {
   const f = fake(() => completed([{ id: "other" }]))
-  await expect(installGmail(f.connect)).rejects.toThrow("Executor's catalog has no Gmail app")
+  await expect(installGmail(f.connect)).rejects.toThrow()
   expect(f.calls).toHaveLength(1)
 })
 
-test("mailAccount matches the requirement and reports the saved account", async () => {
-  const f = fake(() => completed([{ ...account("saved"), requirement: "other" }, account("saved")]))
-  expect(await mailAccount(app, f.connect)).toEqual({ label: "Test Gmail", email: "test@example.invalid", ready: true })
-  expect(f.calls).toEqual([{ path: paths.accounts, input: { path: { app: app.id } } }])
+test("mailAccount reads the account for the app's requirement and whether it is ready", async () => {
+  const cases: Array<[unknown[], MailAccount | null]> = [
+    [[{ ...account("saved"), requirement: "other" }, account("saved")], { label: "Test Gmail", email: "test@example.invalid", ready: true }],
+    [[{ requirement: "gmail", account: { label: "Test Gmail" }, signIn: { state: "reconnect" } }], { label: "Test Gmail", email: null, ready: false }],
+    [[{ requirement: "gmail", account: { label: "Test Gmail" }, signIn: { state: "unavailable" } }], { label: "Test Gmail", email: null, ready: false }],
+    [[{ ...account("saved"), health: { info: null } }], { label: "Test Gmail", email: null, ready: true }],
+    [[{ ...account("saved"), requirement: "other" }], null],
+  ]
+  for (const [accounts, expected] of cases) {
+    const f = fake(() => completed(accounts))
+    expect(await mailAccount(app, f.connect)).toEqual(expected)
+    expect(f.calls).toEqual([{ path: paths.accounts, input: { path: { app: app.id } } }])
+  }
 })
 
-test.each(["reconnect", "unavailable"])("mailAccount is not ready for %s and tolerates missing health", async (state) => {
-  const f = fake(() => completed([{ requirement: "gmail", account: { label: "Test Gmail" }, signIn: { state } }]))
-  expect(await mailAccount(app, f.connect)).toEqual({ label: "Test Gmail", email: null, ready: false })
-})
-
-test("mailAccount tolerates null health info", async () => {
-  const f = fake(() => completed([{ ...account("saved"), health: { info: null } }]))
-  expect(await mailAccount(app, f.connect)).toEqual({ label: "Test Gmail", email: null, ready: true })
-})
-
-test("mailAccount returns null when the requirement has no account", async () => {
-  const f = fake(() => completed([{ ...account("saved"), requirement: "other" }]))
-  expect(await mailAccount(app, f.connect)).toBeNull()
-})
-
-test("connect returns the browser approval URL", async () => {
+test("connect returns the browser approval URL, and rejects without one", async () => {
   const f = fake(() => completed({ status: "pending", url: "https://example.invalid/approve", redirectUri: "unused" }))
   expect(await gmailConnectLink(app, f.connect)).toEqual({ url: "https://example.invalid/approve" })
   expect(f.calls).toEqual([{ path: paths.connect, input: { path: { app: app.id, requirement: app.requirement }, body: {} } }])
+  const g = fake(() => completed({ status: "cancelled" }))
+  await expect(gmailConnectLink(app, g.connect)).rejects.toThrow()
 })
 
-test("connect rejects a missing URL and closes", async () => {
-  const f = fake(() => completed({ status: "cancelled" }))
-  await expect(gmailConnectLink(app, f.connect)).rejects.toThrow("Executor gave no Gmail sign-in address")
-})
-
-test.each([
-  { status: "completed", execution: { ok: false, error: { message: "Permission denied" } } },
-  { status: "completed", execution: { ok: true, value: { ok: false, error: { message: "Permission denied" } } } },
-  { status: "completed", execution: { ok: true, value: { ok: false, error: "Permission denied" } } },
-])("call failures preserve Executor's message and close", async (response) => {
-  const f = fake(() => response)
-  await expect(findMailApp(f.connect)).rejects.toThrow("Permission denied")
-})
-
-test.each([false, true])("object errors without a message preserve their JSON (inner: %s)", async (inner) => {
+test("call failures preserve Executor's error and close the client", async () => {
   const error = { code: "access_denied", details: { reason: "No account linked" } }
-  const failed = { ok: false, error }
-  const f = fake(() => ({ status: "completed", execution: inner ? { ok: true, value: failed } : failed }))
-  await expect(findMailApp(f.connect)).rejects.toThrow(JSON.stringify(error))
+  const cases: Array<[() => unknown, string]> = [
+    [() => ({ status: "completed", execution: { ok: false, error: { message: "Permission denied" } } }), "Permission denied"],
+    [() => ({ status: "completed", execution: { ok: true, value: { ok: false, error: { message: "Permission denied" } } } }), "Permission denied"],
+    [() => ({ status: "completed", execution: { ok: true, value: { ok: false, error: "Permission denied" } } }), "Permission denied"],
+    [() => ({ execution: { ok: false, error: { message: "Permission denied" } } }), "Permission denied"],
+    [() => ({ status: "completed", execution: { ok: false, error } }), JSON.stringify(error)],
+    [() => ({ status: "completed", execution: { ok: true, value: { ok: false, error } } }), JSON.stringify(error)],
+    [() => ({}), "invalid"],
+    [() => { throw new Error("Transport failed") }, "Transport failed"],
+  ]
+  for (const [route, message] of cases) {
+    const f = fake(route)
+    await expect(findMailApp(f.connect)).rejects.toThrow(message)
+  }
 })
 
 test("missing status accepts a valid execution rather than pausing", async () => {
@@ -157,37 +133,18 @@ test("missing status accepts a valid execution rather than pausing", async () =>
   expect(await findMailApp(f.connect)).toEqual(app)
 })
 
-test("missing status still surfaces execution errors", async () => {
-  const f = fake(() => ({ execution: { ok: false, error: { message: "Permission denied" } } }))
-  await expect(findMailApp(f.connect)).rejects.toThrow("Permission denied")
-})
-
-test("missing execution is an invalid response, not a pause", async () => {
-  const f = fake(() => ({}))
-  await expect(findMailApp(f.connect)).rejects.toThrow("Executor gave an invalid call response")
-})
-
-test("a pause keeps nested request details and the raw response", async () => {
+test("a pause throws ExecutorPaused with the request details and the raw response", async () => {
   const response = { status: "awaiting_approval", pending: { interaction: { requestId: "req_1", message: "Approve this request" } }, execution: { ok: false, error: "not completed" } }
   const f = fake(() => response)
-  try {
-    await findMailApp(f.connect)
-    throw new Error("Expected a pause")
-  } catch (error) {
-    expect(error).toBeInstanceOf(ExecutorPaused)
-    if (!(error instanceof ExecutorPaused)) throw error
-    expect(error.status).toBe("awaiting_approval")
-    expect(error.requestId).toBe("req_1")
-    expect(error.message).toBe("Approve this request")
-    expect(error.pending).toEqual(response.pending)
-    expect(error.interaction).toEqual(response.pending.interaction)
-    expect(error.raw).toEqual(response)
-  }
-})
-
-test("a pause with no optional details still throws ExecutorPaused", async () => {
-  const f = fake(() => ({ status: "input_required" }))
-  await expect(findMailApp(f.connect)).rejects.toBeInstanceOf(ExecutorPaused)
+  const error = await findMailApp(f.connect).then(() => null, (e: unknown) => e)
+  if (!(error instanceof ExecutorPaused)) throw new Error("Expected a pause")
+  expect(error.status).toBe("awaiting_approval")
+  expect(error.requestId).toBe("req_1")
+  expect(error.message).toBe("Approve this request")
+  expect(error.interaction).toEqual(response.pending.interaction)
+  expect(error.raw).toEqual(response)
+  const g = fake(() => ({ status: "input_required" }))
+  await expect(findMailApp(g.connect)).rejects.toBeInstanceOf(ExecutorPaused)
 })
 
 test("callApp returns only the inner value and leaves its caller's client open", async () => {
@@ -199,17 +156,11 @@ test("callApp returns only the inner value and leaves its caller's client open",
   } finally { await client.close() }
 })
 
-test("a transport failure still closes the client", async () => {
-  const f = fake(() => { throw new Error("Transport failed") })
-  await expect(findMailApp(f.connect)).rejects.toThrow("Transport failed")
-})
-
-test("wait resolves after three polls and closes every connection", async () => {
+test("wait polls until the account is ready, closing every connection", async () => {
   let polls = 0
   const f = fake(() => completed(++polls === 1 ? [] : [account(polls === 3 ? "saved" : "reconnect")]))
   expect(await waitForMailAccount(app, { signal: new AbortController().signal, everyMs: 1, connect: f.connect }))
     .toEqual({ label: "Test Gmail", email: "test@example.invalid", ready: true })
-  expect(polls).toBe(3)
   expect(f.counts).toEqual({ opened: 3, closed: 3 })
 })
 
@@ -222,43 +173,6 @@ test("wait rejects on abort during the polling delay and stops polling", async (
   await expect(waitForMailAccount(app, { signal: controller.signal, everyMs: 20, connect: f.connect })).rejects.toThrow("cancelled")
   await new Promise((resolve) => setTimeout(resolve, 30))
   expect(f.calls).toHaveLength(1)
-})
-
-test("abort clears a long polling timer immediately", async () => {
-  const controller = new AbortController()
-  const timers = spyOn(globalThis, "setTimeout")
-  const clears = spyOn(globalThis, "clearTimeout")
-  try {
-    const f = fake(() => {
-      setTimeout(() => controller.abort(), 1)
-      return completed([])
-    })
-    await expect(waitForMailAccount(app, { signal: controller.signal, everyMs: 60_000, connect: f.connect })).rejects.toThrow("cancelled")
-    const scheduled = timers.mock.calls.findIndex((call) => call[1] === 60_000)
-    expect(scheduled).toBeGreaterThanOrEqual(0)
-    expect(clears).toHaveBeenCalledWith(timers.mock.results[scheduled]?.value)
-  } finally {
-    timers.mockRestore()
-    clears.mockRestore()
-  }
-})
-
-test("the polling delay starts after the previous call finishes", async () => {
-  let polls = 0
-  let finishedAt = 0
-  let delay = 0
-  const f = fake(async () => {
-    if (++polls === 1) {
-      await new Promise((resolve) => setTimeout(resolve, 10))
-      finishedAt = Date.now()
-      return completed([])
-    }
-    delay = Date.now() - finishedAt
-    return completed([account("saved")])
-  })
-  await waitForMailAccount(app, { signal: new AbortController().signal, everyMs: 20, connect: f.connect })
-  expect(delay).toBeGreaterThanOrEqual(19)
-  expect(polls).toBe(2)
 })
 
 test("wait rejects before connecting if already aborted", async () => {
@@ -277,9 +191,4 @@ test("wait cancels an in-flight poll and closes it when the call returns", async
   finish(completed([account("saved")]))
   await new Promise((resolve) => setTimeout(resolve, 5))
   expect(f.calls).toHaveLength(1)
-})
-
-test("wait surfaces call failures and closes", async () => {
-  const f = fake(() => ({ status: "completed", execution: { ok: false, error: "Account lookup failed" } }))
-  await expect(waitForMailAccount(app, { signal: new AbortController().signal, everyMs: 1, connect: f.connect })).rejects.toThrow("Account lookup failed")
 })

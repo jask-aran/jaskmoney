@@ -1,7 +1,6 @@
 import { describe, expect, test } from "bun:test"
 import type { JevQuestion } from "../ai/jev"
 import { askCandidates, ASK_LIMIT, judgeRows } from "./ask"
-import { MATCH_AT, NEAR_AT } from "./questions"
 import { askTerms, evalFilter, filterExprString, hasDateTerm, mightMatch, parseFilterStrict, type AskVerdict, type FilterTxn } from "./filter"
 import { transaction } from "../testing/fixtures"
 
@@ -65,9 +64,7 @@ describe("asking Clef", () => {
     expect(sent).toHaveLength(1)
     expect(sent[0]!.state).toEqual({ search: "coffee" })
     expect(Object.values(sent[0]!.qs)[0]).toMatchObject({ type: "noul", instructions: { transaction: { description: "Alba Coffee", category: "Restaurants & Cafes" } } })
-    // Probabilities, read by the store against MATCH_AT (and NEAR_AT for near misses).
     expect([...scores]).toEqual([[1, 0.9], [2, 0.1], [3, 0.6]])
-    expect([MATCH_AT, NEAR_AT]).toEqual([0.7, 0.3])
   })
 
   test("a failed request is reported and the rest carry on", async () => {

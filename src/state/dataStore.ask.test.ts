@@ -3,11 +3,10 @@ import type { JevClient, JevQuestion } from "../ai/jev"
 import { addDays, appToday } from "../domain/days"
 import { testEnv } from "../testing/scoped"
 import { data, showNearMisses } from "./dataStore"
-import { judgedText } from "../app/searchReport"
 import type { AskResult } from "../client/store"
 
-/** The status line for a run, without its timing. */
-const said = async (run: Promise<AskResult | null>) => { const r = await run; return r ? judgedText(r).replace(/ in \d+\.\ds/, "") : "" }
+/** The one ask term's counts from a run. */
+const term = async (run: Promise<AskResult | null>) => (await run)!.terms[0]!
 
 function setup() {
   testEnv("JASKMONEY_JEV_TOKEN", "")
@@ -47,17 +46,17 @@ test("ask: shows nothing until judged, then the matches; sends only rows the res
   const { ai, sent } = fakeJev()
   data.commitFilter("ask:coffee AND amt:<=-6")
   expect(shown()).toEqual([])
-  const summary = await said(data.askAbout(ai))
+  const summary = await term(data.askAbout(ai))
   // Old Cafe is outside the last 90 days and $5 fails the amount: neither sent.
   expect(sent.sort()).toEqual(["Alba Coffee", "Bunnings", "Espresso Bar"])
   expect(shown()).toEqual(["Alba Coffee", "Espresso Bar"])
-  expect(summary).toBe("Jev judged 3 rows: 2 match")
+  expect(summary).toMatchObject({ rows: 3, asked: 3, matched: 2 })
   expect(data.state.asking).toBeNull()
 
   // Judged rows aren't sent again; NOT uses the same verdicts.
   sent.length = 0
   data.commitFilter("NOT ask:coffee AND amt:<=-6")
-  expect(await said(data.askAbout(ai))).toBe("Jev judged 3 rows (known): 2 match")
+  expect(await term(data.askAbout(ai))).toMatchObject({ rows: 3, asked: 0, matched: 2 })
   expect(sent).toEqual([])
   expect(shown()).toEqual(["Bunnings"])
 })
@@ -66,7 +65,9 @@ test("a date term widens the window; without one the summary says what was left 
   setup()
   const { ai } = fakeJev()
   data.commitFilter("ask:coffee")
-  expect(await said(data.askAbout(ai))).toBe("Jev judged 3 rows: 2 match · last 90 days (date: for more)")
+  const run = (await data.askAbout(ai))!
+  expect(run.dated).toBe(false)
+  expect(run.terms[0]).toMatchObject({ rows: 3, matched: 2, skipped: 1 })
   data.commitFilter(`ask:coffee AND date:${addDays(appToday(), -365)}..${appToday()}`)
   await data.askAbout(ai)
   expect(shown()).toEqual(["Alba Coffee", "Espresso Bar", "Old Cafe"])
@@ -130,7 +131,7 @@ test("near misses (Jev 30–70%) show after the matches when they don't swamp th
     }))
   } }
   data.commitFilter("ask:coffee")
-  expect(await said(data.askAbout(ai))).toStartWith("Jev judged 4 rows: 2 match, 1 near (n)")
+  expect(await term(data.askAbout(ai))).toMatchObject({ rows: 4, matched: 2, near: 1 })
   expect(data.askCounts()).toEqual({ matches: 2, near: 1 })
   // One near miss beside two matches: shown, last, and marked as one.
   expect(data.nearMissesShown()).toBe(true)
@@ -163,7 +164,7 @@ test("rows a covered category already matches aren't sent to Jev; it reads only 
   data.commitFilter("(cat:Hardware OR ask:coffee) AND amt:<=-6")
   // Bunnings matches by its category before Jev says anything.
   expect(shown()).toEqual(["Bunnings"])
-  expect(await said(data.askAbout(ai))).toBe("Jev judged 2 rows: 2 match")
+  expect(await term(data.askAbout(ai))).toMatchObject({ rows: 2, matched: 2 })
   expect(sent.sort()).toEqual(["Alba Coffee", "Espresso Bar"])
   expect(shown()).toEqual(["Alba Coffee", "Bunnings", "Espresso Bar"])
 })

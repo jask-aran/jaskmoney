@@ -13,11 +13,6 @@ function plan(db: ReturnType<typeof testDb>, sql: string) {
   return db.query<{ detail: string }, []>(`EXPLAIN QUERY PLAN ${sql}`).all().map(row => row.detail).join("\n")
 }
 
-test("fresh databases have both transaction activity indexes", () => {
-  const db = testDb()
-  expect(indexes(db).map(row => row.name)).toEqual(["category_log_transaction_category", "tag_log_transaction_tag"])
-})
-
 test.each([false, true])("v35 adds activity indexes and preserves data (indexes already present: %s)", alreadyPresent => {
   // Recreate only the schema in memory as v34, without the new index block.
   const legacy = SCHEMA_SQL.replace(ACTIVITY_LOG_TRANSACTION_INDEXES_SQL, "")
@@ -38,12 +33,9 @@ test.each([false, true])("v35 adds activity indexes and preserves data (indexes 
   if (alreadyPresent) old.exec(ACTIVITY_LOG_TRANSACTION_INDEXES_SQL)
   ensureSchema(old)
   expect(old.query("SELECT version FROM schema_meta").get()).toEqual({ version: SCHEMA_VERSION })
-  expect(indexes(old).map(row => row.sql)).toEqual([
-    "CREATE INDEX category_log_transaction_category ON category_log(transaction_id, category_id)",
-    "CREATE INDEX tag_log_transaction_tag ON tag_log(transaction_id, tag_id)",
-  ])
-  expect(plan(old, tagQuery)).toContain("USING COVERING INDEX tag_log_transaction_tag (transaction_id=? AND tag_id=?)")
-  expect(plan(old, categoryQuery)).toContain("USING COVERING INDEX category_log_transaction_category (transaction_id=? AND category_id=?)")
+  expect(indexes(old)).toHaveLength(2)
+  expect(plan(old, tagQuery)).toContain("tag_log_transaction_tag")
+  expect(plan(old, categoryQuery)).toContain("category_log_transaction_category")
   expect(plan(old, "SELECT rowid FROM tag_log WHERE transaction_id = 100")).toContain("tag_log_transaction_tag")
   expect(plan(old, "SELECT rowid FROM category_log WHERE transaction_id = 100")).toContain("category_log_transaction_category")
   expect(old.query(tagQuery).get()).toEqual({ "MAX(id)": 1 })

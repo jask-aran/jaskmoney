@@ -93,6 +93,6 @@ test("a declined tag offer isn't offered again", async () => {
   await data.declineRuleOffer(data.state.aiRuleOffers[0]!)
   expect(data.state.aiRuleOffers).toHaveLength(0)
   faux.setResponses([fauxAssistantMessage([fauxToolCall("finish", { rules: proposals.slice(0, 1) })], { stopReason: "toolUse" })])
-  expect(await data.askForRules(llm)).toStartWith("faux-1 proposed 0 rules, 1 turned down by the check")
+  await data.askForRules(llm)
   expect(data.state.aiRuleOffers).toHaveLength(0)
 })

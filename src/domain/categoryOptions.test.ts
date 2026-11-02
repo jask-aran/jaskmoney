@@ -22,13 +22,10 @@ describe("category picker rows", () => {
     expect(rows.flatMap((r) => (r.kind === "category" ? [r.index] : []))).toEqual([0, 1, 2, 3, 4])
   })
 
-  test("a query matches a category or its group", () => {
+  test("a query matches a category or its group; without groups there are no headings", () => {
     expect(assignableCategories(tree, "take").map((c) => c.name)).toEqual(["Takeaway"])
     expect(assignableCategories(tree, "HOME").map((c) => c.name)).toEqual(["Groceries"])
     expect(categoryPickerRows(tree, "zzz")).toEqual([])
-  })
-
-  test("without groups there is no Other heading", () => {
     expect(categoryPickerRows([category({ id: 1, name: "Uncategorised", isDefault: true }), category({ id: 2, name: "Food" })], "").map((r) => r.kind)).toEqual(["category", "category"])
   })
 })

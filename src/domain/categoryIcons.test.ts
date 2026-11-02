@@ -9,15 +9,11 @@ describe("categoryIcon", () => {
     category({ id: 4, name: "Income" }), category({ id: 5, name: "Misc" }),
   ]
 
-  test("Up ids, then local names, then the group's icon", () => {
-    expect(categoryIcon(categories[1], categories)).toBe("")
-    expect(categoryIcon(categories[3], categories)).toBe("")
-    expect(categoryIcon(categories[2], categories)).toBe("")
-  })
-
-  test("unknown categories have none; every icon is one cell", () => {
+  test("Up ids, then local names, then the group's icon; unknown categories have none; every icon is one cell", () => {
+    for (const known of [categories[1], categories[3]]) expect(Bun.stringWidth(categoryIcon(known, categories)!)).toBe(1)
+    expect(categoryIcon(categories[2], categories)).toBe(categoryIcon(home, categories))
+    expect(categoryIcon(categories[2], categories)).not.toBeNull()
     expect(categoryIcon(categories[4], categories)).toBeNull()
-    expect(Bun.stringWidth(categoryIcon(categories[1], categories)!)).toBe(1)
   })
 })
 

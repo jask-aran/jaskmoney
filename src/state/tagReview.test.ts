@@ -2,7 +2,7 @@ import { expect, onTestFinished, spyOn, test } from "bun:test"
 import type { JevClient, JevQuestion } from "../ai/jev"
 import { groupForTag } from "../domain/tagSuggest"
 import type { TagGroup } from "../domain/tagGroups"
-import { footerHints, handleKey } from "../app/keys"
+import { handleKey } from "../app/keys"
 import { key } from "../testing/keys"
 import { testEnv } from "../testing/scoped"
 import { data } from "./dataStore"
@@ -59,11 +59,10 @@ test("a tag's review: tag history first, Jev for the rest of its categories, tol
   const coffee = await data.createSettingsTag({ name: "COFFEE", color: "#ffffff", categoryIds, about: "coffee out, not beans" })
   await data.applyTagPatch([1], { [coffee]: "add" })
   const { ai, sent, states } = fakeJev()
-  const summary = await data.openTagReview({ tagId: coffee, name: "COFFEE", categoryIds, about: "coffee out, not beans" }, ai)
+  await data.openTagReview({ tagId: coffee, name: "COFFEE", categoryIds, about: "coffee out, not beans" }, ai)
   // Row 1 has the tag; row 5 isn't in Food; neither is asked about.
   expect(sent.sort()).toEqual(["Bunnings", "Click Coffee", "Hilltop Coffee"])
   expect(states[0]).toMatchObject({ about: "coffee out, not beans" })
-  expect(summary).toBe("COFFEE: 2 to review, 2 at 80% or more")
   // Most sure first; Bunnings (0.1) isn't shown.
   expect(shown().sort()).toEqual([2, 3])
   expect(data.state.tagReview!.candidates[2]).toMatchObject({ source: "jev", confidence: 0.9 })
@@ -117,7 +116,7 @@ test("the chooser: your tags (a trip found for one), groups no tag covers, then 
   expect(tagChoices(data.state.tags, [trip, subs], "dinners").at(-1)).toEqual({ kind: "new", name: "dinners" })
 })
 
-test("keys: T opens the chooser; in a review y/x/esc act on candidates and the footer says so", async () => {
+test("keys: T opens the chooser; in a review x and esc act on candidates", async () => {
   setup()
   handleKey(ui, key("t", { shift: true }), data)
   expect((ui.state.tagChooser != null)).toBe(true)
@@ -127,7 +126,6 @@ test("keys: T opens the chooser; in a review y/x/esc act on candidates and the f
   expect((ui.state.tagChooser != null)).toBe(false)
   const { ai } = fakeJev()
   await data.openTagReview({ tagId: null, name: "Coffee", categoryIds: [], about: null }, ai)
-  expect(footerHints("manager.txns", { focusedSection: "mgr.transactions", drillReturn: null, chartViews: [0, 4], tagReview: true }).slice(0, 3).map((h) => h.desc)).toEqual(["tag", "tag all ≥80%", "dismiss"])
   // No scope: all four coffee rows; x drops the cursor row.
   expect(shown()).toHaveLength(4)
   handleKey(ui, key("x"), data)

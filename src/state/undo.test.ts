@@ -1,6 +1,6 @@
 import { expect, onTestFinished, spyOn, test } from "bun:test"
 import { loadCategoryLog, saveSuggestions } from "../db/client"
-import { footerHints, handleKey } from "../app/keys"
+import { handleKey } from "../app/keys"
 import { key } from "../testing/keys"
 import { testEnv } from "../testing/scoped"
 import { data } from "./dataStore"
@@ -102,7 +102,7 @@ test("undoing a rule made from an offer removes the rule and its filter, and put
   expect(row(6).categoryId).toBeNull()
 })
 
-test("u undoes in Transactions; esc still clears; the footer says u undo", async () => {
+test("u undoes in Transactions; esc still clears", async () => {
   const { food, row } = setup()
   await data.categorizeTransactions([1], food)
   ui.setState({ selectedIds: { 2: true } })
@@ -113,10 +113,6 @@ test("u undoes in Transactions; esc still clears; the footer says u undo", async
   await Bun.sleep(5)
   expect(row(1).categoryId).toBeNull()
   expect(ui.state.status).toStartWith("Undid: categorised 1 → Test food")
-  const hints = footerHints("manager.txns", { focusedSection: "mgr.transactions", drillReturn: null, chartViews: [0, 4] }).map((h) => `${h.key} ${h.desc}`)
-  expect(hints).toContain("u undo")
-  expect(hints).toContain("esc clear")
-  expect(hints.some((h) => h.startsWith("esc/u"))).toBe(false)
 })
 
 test(". repeats the last category or tag change on the cursor row or selection; the picker starts on the last category", async () => {

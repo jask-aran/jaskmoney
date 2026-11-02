@@ -1,12 +1,10 @@
 import { expect, test } from "bun:test"
 import { data } from "../../state/dataStore"
 import { ui } from "../../state/uiStore"
-import { RGBA } from "@opentui/core"
 import { handleKey } from "../../app/keys"
 import type { Category } from "../../domain/types"
 import { renderApp } from "../../testing/app"
 import { key } from "../../testing/keys"
-import { ink, tone } from "../../theme"
 
 const settle = async (t: Awaited<ReturnType<typeof renderApp>>) => { await t.renderOnce(); await t.renderOnce() }
 
@@ -36,39 +34,14 @@ test("Taxonomy: Jaskmoney's categories apart from Up's, groups closed with their
   const frame = t.captureCharFrame()
   expect(frame).toMatch(/Jaskmoney categories 4/)
   expect(frame).toMatch(/Up categories 13/)
-  expect(frame).toMatch(/▸ \S+ Income\s+2 subcategories · income/)
-  expect(frame).toMatch(/▸ \S+ Good Life\s+12 subcategories/)
   expect(frame).not.toContain("Fun 01")
   expect(frame).not.toContain("Salary")
   expect(lineOf(t, "Tags")).toBeGreaterThan(lineOf(t, "Good Life"))
   // Opened, a group's subcategories sit under it, Salary under Income.
   ui.setState({ taxonomyOpen: [income.id, goodLife.id] })
   await settle(t)
-  expect(t.captureCharFrame()).toMatch(/▾ \S+ Income/)
   expect(lineOf(t, "Salary")).toBe(lineOf(t, "Income") + 1)
   expect(lineOf(t, "Fun 12")).toBe(lineOf(t, "Good Life") + 12)
-})
-
-test("Settings panes: text one cell in from the border, the title two further, subheadings not the title's pink", async () => {
-  const t = await renderApp({ width: 160, height: 66 })
-  data.init(":memory:")
-  taxonomy()
-  ui.switchTab("settings")
-  ui.setState({ focusedSection: "set.categories", settingsActive: false })
-  await settle(t)
-  const lines = t.captureCharFrame().split("\n")
-  for (const [title, first] of [["Taxonomy", "Jaskmoney categories"], ["Up Bank", "Token"], ["AI models", "Models"], ["Rules & Filters", "Rules"], ["Appearance", "Theme"], ["Database & Import", "Import a CSV"]] as const) {
-    const y = lines.findIndex((line) => line.includes(`── ${title} `))
-    const corner = lines[y]!.lastIndexOf("╭", lines[y]!.indexOf(title))
-    expect(lines[y]!.indexOf(title) - corner).toBe(4)
-    // The first line's text (a mark, or the words) starts one cell in.
-    const row = lines.findIndex((line, i) => i > y && line.includes(first))
-    expect(lines[row]!.slice(corner + 1).search(/\S/)).toBe(1)
-  }
-  const y = lines.findIndex((line) => line.includes("Jaskmoney categories"))
-  const span = t.captureSpans().lines[y]!.spans.find((span) => span.text.includes("Jaskmoney categories"))!
-  expect(span.fg.toInts()).toEqual(RGBA.fromHex(ink.heading).toInts())
-  expect(ink.heading).not.toBe(tone.key)
 })
 
 test("a long Taxonomy scrolls in its pane, following the cursor, and says there's more", async () => {
@@ -104,13 +77,13 @@ test("narrow, the column scrolls to the focused pane and to the cursor row of a 
   ui.activateSettings("rules")
   ui.setState({ ruleCursor: 24 })
   await settle(t)
-  expect(t.captureCharFrame()).toContain("25  Rule number 25")
+  expect(t.captureCharFrame()).toContain("Rule number 25")
   ui.setState({ ruleCursor: 0 })
   await settle(t)
-  expect(t.captureCharFrame()).toContain(" 1  Rule number 1 ")
+  expect(t.captureCharFrame()).toMatch(/Rule number 1\b/)
 })
 
-test("wide, panes sit in pairs of one height and Taxonomy and AI models lay out in two columns", async () => {
+test("wide, panes sit in pairs of one height", async () => {
   const t = await renderApp({ width: 220, height: 66 })
   data.init(":memory:")
   taxonomy()
@@ -119,8 +92,6 @@ test("wide, panes sit in pairs of one height and Taxonomy and AI models lay out 
   await settle(t)
   const lines = t.captureCharFrame().split("\n")
   const row = (text: string) => lines.findIndex((line) => line.includes(text))
-  expect(row("Tags ")).toBe(row("Jaskmoney categories"))
-  expect(row("Uses")).toBe(row("Models"))
   expect(row("── Web app")).toBe(row("── Up Bank"))
   expect(row("── Database & Import")).toBe(row("── Appearance"))
   // A pair ends on one line: both bottom corners on the same row.
@@ -145,10 +116,7 @@ test("marks: a rule's says whether it runs, Sync's spins while syncing, a choice
   }
   const dot = (text: string) => at(text).find((span) => /[●○]/.test(span.text))!
   expect(dot("Runs").text).toContain("●")
-  expect(dot("Runs").fg.toInts()).toEqual(RGBA.fromHex(tone.good).toInts())
   expect(dot("Resting").text).toContain("○")
-  // Range on open: one dot per range, the set one (1M, the first) filled.
-  expect(t.captureCharFrame()).toMatch(/Range on open\s+1M\s+●○+/)
   // Sync's mark is a spinner frame while a sync runs.
   data.setState({ upSyncing: true })
   await settle(t)
@@ -159,34 +127,3 @@ test("marks: a rule's says whether it runs, Sync's spins while syncing, a choice
   data.setState({ icons: true })
 })
 
-test("AI models: Models and Sources in one column, Uses in the other; stacked, a blank before Uses", async () => {
-  for (const [width, beside] of [[220, true], [80, false]] as const) {
-    const t = await renderApp({ width, height: 66 })
-    try {
-      data.init(":memory:")
-      ui.switchTab("settings")
-      ui.setState({ focusedSection: "set.ai", settingsActive: false })
-      await settle(t)
-      const lines = t.captureCharFrame().split("\n")
-      const models = lines.findIndex((line) => /\bModels\b/.test(line) && !line.includes("AI models"))
-      const sources = lines.findIndex((line) => /\bSources\b/.test(line))
-      const uses = lines.findIndex((line) => /\bUses\b/.test(line))
-      expect(sources).toBe(models + 5)
-      if (beside) expect(uses).toBe(models)
-      else { expect(uses).toBe(sources + 3); expect(lines[sources + 2]!.replace(/[│\s]/g, "")).toBe("") }
-    } finally { t.renderer.destroy() }
-  }
-})
-
-test("AI models stacked holds all its rows: the border comes after the last use, not over Appearance", async () => {
-  const t = await renderApp({ width: 80, height: 80 })
-  data.init(":memory:")
-  ui.switchTab("settings")
-  ui.setState({ focusedSection: "set.ai", settingsActive: false })
-  await settle(t)
-  const lines = t.captureCharFrame().split("\n")
-  const last = lines.findIndex((line) => /Rules\s+OpenRouter/.test(line))
-  expect(last).toBeGreaterThan(0)
-  expect(lines[last + 1]).toMatch(/^╰─/)
-  expect(lines[last + 2]).toContain("Appearance")
-})

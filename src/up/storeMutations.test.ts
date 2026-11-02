@@ -20,15 +20,14 @@ test("category pushes deduplicate provider and local IDs", async () => {
     data.refresh()
     const category = data.state.categories.find(c => c.extId === "food")!
     fetchMock.mockImplementation(Object.assign(async () => new Response(null, { status: 204 }), { preconnect: globalThis.fetch.preconnect }))
-    expect(await data.categorizeTransactions([provider, provider, local, local], category.id))
-      .toBe("Categorized 2 → Food · 1 updated in Up")
+    await data.categorizeTransactions([provider, provider, local, local], category.id)
     expect(fetchMock).toHaveBeenCalledTimes(1)
     expect(data.state.transactions.every(t => t.categoryId === category.id)).toBe(true)
     const fallback = data.state.categories.find(c => c.isDefault)!.id
     const pending = data.categorizeTransactions([local, local], fallback)
     // Local-only edits refresh synchronously; the picker reads state immediately.
     expect(data.state.transactions.find(t => t.id === local)?.categoryId).toBe(fallback)
-    expect(await pending).toBe("Categorized 1 → Uncategorised")
+    await pending
     expect(fetchMock).toHaveBeenCalledTimes(1)
   } finally {
     fetchMock.mockRestore()

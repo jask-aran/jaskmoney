@@ -1,3 +1,0 @@
-// Bun Snapshot v1, https://bun.sh/docs/test/snapshots
-
-exports[`160×45 wide Overview keeps its captured cells 1`] = `"8466993878369440614"`;

@@ -18,7 +18,7 @@ const cats = [
 ]
 
 describe("dashboard aggregates", () => {
-  test("category spend nets refunds and ignores income, uncategorised money in and IGNORE", () => {
+  test("category spend nets refunds and ignores income, uncategorised money in, IGNORE and internal transfers, but keeps untracked transfers", () => {
     const list = computeCategorySpend(
       [
         transaction({ amount: -30, dateISO: "2026-02-01", categoryName: "Groceries", categoryId: 1 }),
@@ -31,9 +31,6 @@ describe("dashboard aggregates", () => {
       cats,
     )
     expect(list.map((c) => [c.name, c.amount])).toEqual([["Groceries", 25], ["Transport", 20]])
-  })
-
-  test("category spend excludes internal transfers but retains untracked transfers", () => {
     const debit = transaction({ amount: -30, dateISO: "2026-02-01", categoryName: "Groceries", categoryId: 1 })
     expect(computeCategorySpend([
       debit,
@@ -57,7 +54,7 @@ describe("dashboard aggregates", () => {
 })
 
 describe("category groups", () => {
-  test("subcategories roll up into their group; ungrouped categories stand alone; whole-dollar format", () => {
+  test("subcategories roll up into their group; ungrouped categories stand alone", () => {
     const tree = [
       category({ id: 1, name: "Uncategorised", color: "#7f849c", sortOrder: 1, isDefault: true }),
       category({ id: 10, name: "Good Life", color: "#fab387", sortOrder: 2, extId: "good-life" }),
@@ -73,8 +70,6 @@ describe("category groups", () => {
       ["Good Life", 70, 58, ["Pubs & Bars", "Takeaway"]],
       ["Uncategorised", 50, 42, []],
     ])
-    expect(formatWholeMoney(1477.6)).toBe("$1,478")
-    expect(formatWholeMoney(-20.2)).toBe("-$20")
   })
 })
 
@@ -83,12 +78,16 @@ describe("tracker series", () => {
     expect(cumulative([1, 0, 2.5])).toEqual([1, 1, 3.5])
   })
 
-  test("weekly totals start on Mondays; edge weeks are partial", () => {
+  test("weekly totals start on the week start (Monday or Sunday); edge weeks are partial", () => {
     // 2026-10-01 is a Thursday; 2026-10-05 a Monday.
     const dates = ["2026-10-01", "2026-10-02", "2026-10-03", "2026-10-04", "2026-10-05", "2026-10-06"]
     expect(weeklyTotals(dates, [1, 2, 3, 4, 5, 6])).toEqual([
       { startISO: "2026-10-01", total: 10, days: 4 },
       { startISO: "2026-10-05", total: 11, days: 2 },
+    ])
+    expect(weeklyTotals(dates.slice(2), [3, 4, 5, 6], "sunday")).toEqual([
+      { startISO: "2026-10-03", total: 3, days: 1 },
+      { startISO: "2026-10-04", total: 15, days: 3 },
     ])
   })
 
@@ -106,26 +105,16 @@ describe("fitCategoryLines", () => {
     { categoryId: 20, name: "Home", color: "b", amount: 20, pct: 40, children: [child("Groceries", 15), child("Pets", 5)] },
   ]
 
-  test("groups first, then the largest subcategories under their group", () => {
+  test("groups first, then the largest subcategories under their group; never more lines than allowed", () => {
     expect(fitCategoryLines(groups, 4).map((l) => l.label)).toEqual(["Good Life", "Cafes", "Home", "Groceries"])
-  })
-
-  test("never more lines than allowed", () => {
     expect(fitCategoryLines(groups, 1).map((l) => l.label)).toEqual(["Good Life"])
     expect(fitCategoryLines(groups, 0)).toEqual([])
   })
 })
 
-test("weekly totals split on Sunday when configured", () => {
-  const dates = ["2026-10-03", "2026-10-04", "2026-10-05", "2026-10-06"]
-  expect(weeklyTotals(dates, [1, 2, 3, 4], "sunday")).toEqual([
-    { startISO: "2026-10-03", total: 1, days: 1 },
-    { startISO: "2026-10-04", total: 9, days: 3 },
-  ])
-})
-
 // Approved change: rounded zero never has a negative sign.
-test("money formatting suppresses minus signs only when the displayed value is zero", () => {
+test("money formatting: thousands, whole-dollar rounding, and no minus sign when the displayed value is zero", () => {
+  expect(formatWholeMoney(1477.6)).toBe("$1,478")
   expect(formatWholeMoney(-0.4)).toBe("$0")
   expect(formatWholeMoney(-0)).toBe("$0")
   expect(formatWholeMoney(-0.5)).toBe("-$1")

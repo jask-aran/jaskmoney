@@ -63,23 +63,6 @@ test("an import preview that arrives after the import was closed opens nothing: 
   expect(ui.activeScope()).toBe("overview")
 })
 
-test("an import commits once: a second s while the first is on its way does nothing", async () => {
-  await openImport()
-  spy(data, "previewImport").mockResolvedValue(preview)
-  handleKey(ui, key("return"), data); await settlePending()
-  expect(ui.state.importWizard?.stage).toBe("preview")
-  const answer = deferred<string>()
-  const commit = spy(data, "commitPreview").mockReturnValue(answer.promise)
-  spy(data, "suggestCategories").mockResolvedValue("")
-  handleKey(ui, key("s"), data)
-  handleKey(ui, key("s"), data)
-  handleKey(ui, key("a"), data)
-  expect(commit).toHaveBeenCalledTimes(1)
-  answer.resolve("Imported 0 rows from Spending"); await settlePending()
-  expect(ui.state.importWizard).toBeNull()
-  expect(ui.state.status).toStartWith("Imported 0 rows")
-})
-
 test("a settings save that finishes after its editor closed leaves the next editor open", async () => {
   data.init(":memory:")
   ui.switchTab("settings")

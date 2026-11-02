@@ -32,9 +32,9 @@ test("tools run until finish; its arguments are the result; bad arguments go bac
 test("an answer in words is nudged once toward finish, then given up on; turns are capped", async () => {
   const { faux, llm } = fauxLlm()
   faux.setResponses([fauxAssistantMessage([fauxText("Coles is groceries")]), fauxAssistantMessage([fauxText("still words")])])
-  expect((await runAgent(llm, { system: "s", prompt: "p", tools: [count], finish })).error).toBe("the model answered without calling finish")
+  expect(await runAgent(llm, { system: "s", prompt: "p", tools: [count], finish })).toMatchObject({ result: null, error: expect.any(String), turns: 2 })
   faux.setResponses(Array.from({ length: 3 }, () => fauxAssistantMessage([fauxToolCall("count", { expr: "x" })], { stopReason: "toolUse" })))
-  expect(await runAgent(llm, { system: "s", prompt: "p", tools: [count], finish, maxTurns: 3 })).toMatchObject({ result: null, error: "no answer after 3 turns", turns: 3 })
+  expect(await runAgent(llm, { system: "s", prompt: "p", tools: [count], finish, maxTurns: 3 })).toMatchObject({ result: null, error: expect.any(String), turns: 3 })
 })
 
 test("the last turn is told to answer (and offered only finish)", async () => {

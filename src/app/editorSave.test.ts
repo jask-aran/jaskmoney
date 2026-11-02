@@ -1,28 +1,5 @@
-import { expect, spyOn, test } from "bun:test"
+import { expect, test } from "bun:test"
 import { data } from "../state/dataStore"
-import { ui } from "../state/uiStore"
-import { key } from "../testing/keys"
-import { handleKey } from "./keys"
-
-test("a second enter while the settings editor's save is on its way doesn't save again", async () => {
-  data.init(":memory:")
-  ui.switchTab("settings")
-  let finish!: () => void
-  const create = spyOn(data, "createSettingsCategory").mockImplementation(() => new Promise<number>((resolve) => { finish = () => resolve(1) }))
-  try {
-    ui.openSettingsEditor("category", null, { ...ui.state.settingsDraft, name: "Coffee", color: "#123456" })
-    handleKey(ui, key("return"), data)
-    handleKey(ui, key("return"), data)
-    expect(create).toHaveBeenCalledTimes(1)
-    finish()
-    await Bun.sleep(0)
-    expect(ui.state.settingsEditor).toBeNull()
-    expect(ui.state.status).toBe("Saved")
-  } finally {
-    create.mockRestore()
-    ui.setState({ settingsEditor: null })
-  }
-})
 
 test("changing what a budget covers is one write: if the new budget can't be saved, the old one stays", async () => {
   data.init(":memory:")

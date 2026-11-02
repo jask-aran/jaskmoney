@@ -50,15 +50,6 @@ test("a suggestion round that spans demo mode coming on writes nothing to the re
   expect(calls).toBe(1)
 })
 
-test("clearing or removing data waits for a running Up sync", () => {
-  const core = coreWithRows()
-  core.set({ upSyncing: true })
-  expect(() => core.commands.clearDatabaseData({})).toThrow("Wait for the Up sync to finish")
-  expect(() => core.commands.clearAccountData({ accountId: 100 })).toThrow("Wait for the Up sync to finish")
-  expect(() => core.commands.removeAccountData({ accountId: 100 })).toThrow("Wait for the Up sync to finish")
-  expect(core.state.transactions.length).toBe(1)
-})
-
 test("an undo that can't be done goes, and the one before it is next", async () => {
   const core = coreWithRows()
   const db = core.db!

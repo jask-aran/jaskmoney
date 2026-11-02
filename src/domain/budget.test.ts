@@ -79,12 +79,12 @@ describe("cycleFor", () => {
     })
   })
 
-  for (const unit of ["week", "fortnight", "month"] as const) {
-    for (const anchor of ["calendar", "date", "weekStartNearDate"] as const) {
-      // All anchor days include both directions of Monday shifts and month crossings.
-      const anchorDays = anchor === "calendar" ? [1] : Array.from({ length: 31 }, (_, i) => i + 1)
-      for (const day of anchorDays) {
-        test(`${unit}/${anchor}, anchor day ${day}: daily containment and contiguous cycles over 2023–2025`, () => {
+  test("every unit, anchor and anchor day: daily containment and contiguous cycles over 2023–2025", () => {
+    for (const unit of ["week", "fortnight", "month"] as const) {
+      for (const anchor of ["calendar", "date", "weekStartNearDate"] as const) {
+        // All anchor days include both directions of Monday shifts and month crossings.
+        const anchorDays = anchor === "calendar" ? [1] : Array.from({ length: 31 }, (_, i) => i + 1)
+        for (const day of anchorDays) {
           const config: CycleConfig = { unit, anchor, anchorDate: `2024-01-${String(day).padStart(2, "0")}` }
           let previous = cycleFor(config, "2022-12-31")
           for (let time = Date.parse("2023-01-01T12:00:00Z"); time < Date.parse("2026-01-01T12:00:00Z"); time += 86400000) {
@@ -100,13 +100,13 @@ describe("cycleFor", () => {
             }
             previous = cycle
           }
-        })
+        }
       }
     }
-  }
+  })
 
-  for (const day of [29, 30, 31]) {
-    test(`monthly date anchor ${day} restores the original day after every clamp`, () => {
+  test("monthly date anchors 29–31 restore the original day after every clamp", () => {
+    for (const day of [29, 30, 31]) {
       const config: CycleConfig = { unit: "month", anchor: "date", anchorDate: `2024-01-${day}` }
       for (const year of [2023, 2024, 2025]) {
         const monthLengths = [31, year === 2024 ? 29 : 28, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31]
@@ -115,43 +115,36 @@ describe("cycleFor", () => {
           expect(cycleFor(config, start).start).toBe(start)
         }
       }
-    })
-  }
+    }
+  })
 
-  for (const { config, date, start, end, days } of cycleCases) {
-    test(`${config.unit}/${config.anchor}/${config.anchorDate} at ${date}, start and end`, () => {
+  test("known cycles: the same cycle from a date inside it, its start and its end", () => {
+    for (const { config, date, start, end, days } of cycleCases) {
       const expected = { start, end, days }
-      expect(cycleFor(config, date)).toEqual(expected)
-      expect(cycleFor(config, start)).toEqual(expected)
-      expect(cycleFor(config, end)).toEqual(expected)
-    })
-  }
-
-  for (const unit of ["week", "fortnight"] as const) {
-    for (const [anchorDate, start] of [
-      ["2026-10-05", "2026-10-05"], ["2026-10-06", "2026-10-05"],
-      ["2026-10-07", "2026-10-05"], ["2026-10-08", "2026-10-05"],
-      ["2026-10-09", "2026-10-12"], ["2026-10-10", "2026-10-12"],
-      ["2026-10-11", "2026-10-12"],
-    ]) {
-      test(`${unit} shifts ${anchorDate} to the nearest Monday`, () => {
-        expect(cycleFor({ unit, anchor: "weekStartNearDate", anchorDate }, start).start).toBe(start)
-      })
+      for (const at of [date, start, end]) expect({ config, at, cycle: cycleFor(config, at) }).toEqual({ config, at, cycle: expected })
     }
-  }
+  })
 
-  for (const unit of ["week", "fortnight", "month"] as const) {
-    for (const anchor of ["date", "weekStartNearDate"] as const) {
-      test(`${unit}/${anchor} needs an anchor date`, () => {
-        expect(() => cycleFor({ unit, anchor, anchorDate: null }, "2026-10-07"))
-          .toThrow(new Error("budget cycle needs an anchor date"))
-      })
+  test("weekStartNearDate shifts the anchor to the nearest Monday", () => {
+    for (const unit of ["week", "fortnight"] as const) {
+      for (const [anchorDate, start] of [
+        ["2026-10-05", "2026-10-05"], ["2026-10-06", "2026-10-05"],
+        ["2026-10-07", "2026-10-05"], ["2026-10-08", "2026-10-05"],
+        ["2026-10-09", "2026-10-12"], ["2026-10-10", "2026-10-12"],
+        ["2026-10-11", "2026-10-12"],
+      ]) expect(cycleFor({ unit, anchor: "weekStartNearDate", anchorDate }, start).start).toBe(start)
     }
-    test(`${unit}/calendar ignores anchorDate`, () => {
+  })
+
+  test("date anchors need an anchor date; calendar ignores it", () => {
+    for (const unit of ["week", "fortnight", "month"] as const) {
+      for (const anchor of ["date", "weekStartNearDate"] as const) {
+        expect(() => cycleFor({ unit, anchor, anchorDate: null }, "2026-10-07")).toThrow()
+      }
       expect(cycleFor({ unit, anchor: "calendar", anchorDate: "2030-05-31" }, "1969-12-31"))
         .toEqual(cycleFor({ unit, anchor: "calendar", anchorDate: null }, "1969-12-31"))
-    })
-  }
+    }
+  })
 })
 
 // Rows default to today (2026-10-07) in the group category 10.
@@ -189,10 +182,6 @@ describe("budgetProgress", () => {
         daysLeft: 5, dailyAllowance: (100 - spent) / 5, projected: spent / 3 * 7,
       }
     }))
-    expect(result[0]).toEqual({
-      budget: budgets[0], spent: 25, remaining: 75, usedPct: 25,
-      daysLeft: 5, dailyAllowance: 15, projected: 25 / 3 * 7,
-    })
   })
 
   const excludedRows: Array<[string, Transaction]> = [
@@ -208,23 +197,19 @@ describe("budgetProgress", () => {
     ["after cycle", row(-1000, { dateISO: "2026-10-12" })],
     ["before cycle", row(-1000, { dateISO: "2026-10-04" })],
   ]
-  for (const [name, excluded] of excludedRows) {
-    test(`excludes ${name} from every scope`, () => {
-      expect(budgetProgress(budgets, config, "2026-10-07", accounts, categories, [...transactions, excluded]))
-        .toEqual(budgetProgress(budgets, config, "2026-10-07", accounts, categories, transactions))
-    })
-  }
+  test("excludes inflows, zero, excluded, IGNORE, saver, unknown-account and out-of-cycle rows from every scope", () => {
+    const base = budgetProgress(budgets, config, "2026-10-07", accounts, categories, transactions)
+    for (const [name, excluded] of excludedRows) {
+      expect({ name, progress: budgetProgress(budgets, config, "2026-10-07", accounts, categories, [...transactions, excluded]) }).toEqual({ name, progress: base })
+    }
+  })
 
-  test("over-budget remaining stays negative and allowance is zero", () => {
+  test("over budget, remaining stays negative; over or exactly at the limit, the allowance is zero", () => {
     const budget: Budget = { id: 1, scope: { kind: "overall" }, amount: 50 }
     expect(budgetProgress([budget], config, "2026-10-07", accounts, categories, transactions)).toEqual([
       { budget, spent: 60, remaining: -10, usedPct: 120, daysLeft: 5, dailyAllowance: 0, projected: 140 },
     ])
-  })
-
-  test("spending exactly the limit gives zero allowance", () => {
-    const budget: Budget = { id: 1, scope: { kind: "overall" }, amount: 60 }
-    expect(budgetProgress([budget], config, "2026-10-07", accounts, categories, transactions)[0]?.dailyAllowance).toBe(0)
+    expect(budgetProgress([{ ...budget, amount: 60 }], config, "2026-10-07", accounts, categories, transactions)[0]?.dailyAllowance).toBe(0)
   })
 
   test("shifted monthly progress uses the clamped start and the full 35-day cycle", () => {
@@ -238,12 +223,12 @@ describe("budgetProgress", () => {
     ])
   })
 
-  for (const [today, daysLeft, projected] of [["2026-10-05", 7, 70], ["2026-10-11", 1, 10]] as const) {
-    test(`inclusive elapsed and remaining days on ${today}`, () => {
+  test("elapsed and remaining days are inclusive at both ends of the cycle", () => {
+    for (const [today, daysLeft, projected] of [["2026-10-05", 7, 70], ["2026-10-11", 1, 10]] as const) {
       expect(budgetProgress(budgets.slice(0, 1), config, today, accounts, categories, [row(-10, { dateISO: today })])[0])
         .toEqual({ budget: budgets[0], spent: 10, remaining: 90, usedPct: 10, daysLeft, dailyAllowance: 90 / daysLeft, projected })
-    })
-  }
+    }
+  })
 
   test("a new cycle starts fresh and empty budget input stays empty", () => {
     expect(budgetProgress(budgets, config, "2026-10-12", accounts, categories, transactions).map((p) => p.spent))

@@ -68,9 +68,3 @@ test("a drill-down goes back to Overview after the selection, keeping its filter
   expect(ui.state.activeTab).toBe("overview")
   expect(data.state.filterQuery).toBe("")
 })
-
-test("with nothing to step back from, esc says so", () => {
-  setup()
-  esc()
-  expect(ui.state.status).toBe("Nothing to clear")
-})

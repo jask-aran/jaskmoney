@@ -28,10 +28,11 @@ test("a confirm prompt is withdrawn by another key: the line shows what was ther
   ui.setStatus("Before the prompt")
   ui.setState({ databaseCursor: DATABASE_ROWS.indexOf("clearData") })
   handleKey(ui, key("return"), data)
-  expect(ui.state.status).toStartWith("Press enter again")
+  expect(ui.state.armed).not.toBeNull()
+  const prompt = ui.state.status
   handleKey(ui, key("k"), data)
   expect(ui.state.armed).toBeNull()
   expect(ui.state.status).toBe("Before the prompt")
   // The log kept both: nothing was erased.
-  expect(ui.state.statusLog.some((e) => "text" in e && e.text.startsWith("Press enter again"))).toBe(true)
+  expect(ui.state.statusLog.some((e) => "text" in e && e.text === prompt)).toBe(true)
 })

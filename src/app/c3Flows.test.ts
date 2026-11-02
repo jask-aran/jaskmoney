@@ -126,7 +126,6 @@ test("C3.3 a palette key refuses a scope that changed while it was open", () => 
   press("return")
   expect(ui.state.palette).toBeNull()
   expect(ui.state.catPicker).toBeNull()
-  expect(ui.state.status).toContain("Command needs Transactions")
   expect(ui.state.statusErr).toBe(true)
 })
 

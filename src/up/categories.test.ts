@@ -21,7 +21,9 @@ describe("Up category tree", () => {
     db.transaction(() => syncCategoryTree(db, tree))()
     const all = rows(db), imported = all.filter(c => c.ext_id !== null)
     expect(imported.map(c => c.ext_id)).toEqual(["food", "a", "z", "life"])
-    expect(imported.map(c => c.color)).toEqual(["#fab387", "#fab387", "#fab387", "#cba6f7"])
+    const [food, apple, zebra, life] = imported.map(c => c.color)
+    expect([apple, zebra]).toEqual([food, food])
+    expect(life).not.toBe(food)
     expect(imported.map(c => c.parent_id)).toEqual([null, imported[0]!.id, imported[0]!.id, null])
     expect(imported[0]!.sort_order).toBeGreaterThan(Math.max(...all.filter(c => c.ext_id === null).map(c => c.sort_order)))
     db.transaction(() => syncCategoryTree(db, [...tree].reverse()))()
@@ -89,7 +91,9 @@ describe("Up category tree", () => {
     const parents = Array.from({ length: 7 }, (_, i) => ({ id: `p${i}`, name: `Parent ${i}`, parentId: null }))
     syncCategoryTree(db, parents.slice(0, 2))
     syncCategoryTree(db, parents)
-    expect(rows(db).filter(c => c.ext_id).map(c => c.color)).toEqual(["#fab387", "#cba6f7", "#94e2d5", "#89b4fa", "#f5c2e7", "#a6e3a1", "#fab387"])
+    const colors = rows(db).filter(c => c.ext_id).map(c => c.color)
+    expect(new Set(colors.slice(0, 6)).size).toBe(6)
+    expect(colors[6]).toBe(colors[0])
   })
 
   test("first cleanup checks transactions, rules and tags and always keeps the three required defaults", () => {

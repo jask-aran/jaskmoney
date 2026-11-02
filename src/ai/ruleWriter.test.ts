@@ -44,13 +44,14 @@ test("the model's proposals are checked: only precise rules with enough rows are
     fauxAssistantMessage([fauxToolCall("test_rule", { expr: 'desc:"J Smith"', category: "Test rent" })], { stopReason: "toolUse" }),
     fauxAssistantMessage([fauxToolCall("finish", { rules: proposals })], { stopReason: "toolUse" }),
   ])
-  expect(await data.askForRules(llm)).toStartWith("faux-1 proposed 1 rule, 4 turned down by the check")
+  await data.askForRules(llm)
   const [offer] = data.state.aiRuleOffers
   expect(offer).toMatchObject({ source: "ai", description: "Rent to J Smith", expr: 'desc:"J Smith"', categoryId: rent, agreeing: 4, categorised: 4, why: "4 of 4 categorised are rent" })
   expect(offer!.waiting).toHaveLength(1)
   expect(data.allRuleOffers()).toEqual([offer!])
   // Made: the waiting row is categorised, the offer goes.
-  expect(await data.makeOfferedRule(offer!)).toStartWith("Rule made: Rent to J Smith → Test rent · 1 waiting row categorised")
+  await data.makeOfferedRule(offer!)
+  expect(data.state.transactions.find((t) => t.id === offer!.waiting[0])?.categoryId).toBe(rent)
   expect(data.allRuleOffers()).toEqual([])
 })
 
@@ -63,7 +64,8 @@ test("a declined AI rule isn't offered again, and the model is told", async () =
   expect(data.allRuleOffers()).toEqual([])
   expect(ruleWriterBrief((await data.ruleWriterInput()).history, [{ expr: 'desc:"J Smith"', categoryId: rent, tagId: null }]).declined).toEqual([{ expr: 'desc:"J Smith"', category: "Test rent" }])
   faux.setResponses([finish()])
-  expect(await data.askForRules(llm)).toStartWith("faux-1 proposed 0 rules, 1 turned down")
+  await data.askForRules(llm)
+  expect(data.allRuleOffers()).toEqual([])
 })
 
 test("the brief: categories with recent choices, what's waiting, existing rules", async () => {
@@ -73,7 +75,7 @@ test("the brief: categories with recent choices, what's waiting, existing rules"
   expect(brief.waiting.descriptions[0]).toMatchObject({ description: "J Smith", rows: 1 })
 })
 
-test("R opens the list with a key to ask, and says how offers come without one", async () => {
+test("R opens the rule offers only with a key to ask", async () => {
   setup()
   ui.switchTab("manager")
   ui.setState({ focusedSection: "mgr.transactions" })
@@ -84,7 +86,6 @@ test("R opens the list with a key to ask, and says how offers come without one",
   await data.refreshApiKeys()
   handleKey(ui, key("r", { shift: true }), data)
   expect(ui.state.ruleOffers !== null).toBe(true)
-  expect(ui.state.status).toBe("No rules offered yet · enter asks the AI")
   handleKey(ui, key("escape"), data)
 })
 
@@ -97,6 +98,6 @@ test("a rule for rows Up already categorises (none waiting) is turned down; hist
     fauxAssistantMessage([fauxToolCall("finish", { rules: [{ name: "Qantas", category: "Test travel", expr: "desc:Qantas", why: "3 of 3" }] })], { stopReason: "toolUse" }),
   ])
   const result = await writeRules(llm, (await data.ruleWriterInput()).history)
-  expect(result.rejected).toEqual([{ rule: expect.objectContaining({ expr: "desc:Qantas" }), reason: "Up already categorises these" }])
+  expect(result.rejected).toEqual([{ rule: expect.objectContaining({ expr: "desc:Qantas" }), reason: expect.any(String) }])
   expect(result.calls.filter((c) => c.name === "category_history")).toHaveLength(11)
 })

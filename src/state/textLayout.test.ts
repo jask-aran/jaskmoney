@@ -12,20 +12,14 @@ test("C3.8 word wrap keeps paragraphs, splits long words, and clamps width", () 
   expect(wrapText("abc def ghi", 7)).toEqual(["abc def", "ghi"])
 })
 
-test("C3.8 search help and sent requests split words with the same wrapper", () => {
+test("C3.8 search help and sent requests wrap within their width and keep every character", () => {
   const token = "abcdefghijklmnopqrstuvwxyz0123456789"
   const lines = requestLines({ query: useQueries("suggestions")[0]!, to: "local", body: { text: `${token}\n\nend` }, sample: "test" }, 24)
   const text = lines.flatMap((line) => line.filter((span) => span.tone === "text").map((span) => span.text.trimStart()))
-  expect(text).toEqual(["abcdefghijklmnopqrst", "uvwxyz0123456789", "", "end"])
-  const firstMeaning = searchHelpLines(true, 30).find((line) => line[0]?.text.trim() === "coffee")
-  expect(firstMeaning).toBeDefined()
-  const available = 30 - firstMeaning![0]!.text.length
-  expect(available).toBeLessThan("description".length)
-  expect(firstMeaning![1]!.text).toBe("description".slice(0, available))
-  for (const line of searchHelpLines(true, 30)) {
-    // Meanings wrap in the space after the term column.
-    for (const span of line.filter((span) => span.tone === "text")) expect(span.text.length).toBeLessThanOrEqual(30)
-  }
+  for (const line of lines) expect(line.reduce((n, span) => n + span.text.length, 0)).toBeLessThanOrEqual(24)
+  expect(text.join("")).toBe(`${token}end`)
+  // Meanings wrap in the space after the term column.
+  for (const line of searchHelpLines(true, 30)) for (const span of line.filter((span) => span.tone === "text")) expect(span.text.length).toBeLessThanOrEqual(30)
 })
 
 test("wraps by terminal columns: wide characters take two, an emoji is never cut in half", () => {

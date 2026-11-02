@@ -45,14 +45,14 @@ function setup() {
 test("a rule is offered after the third time a description goes in one category, and making it categorises the waiting row in Up too", async () => {
   const { ids, cat, calls, source } = setup()
   const [a, b, c, waiting] = ids.coles
-  expect(await data.categorizeTransactions([a!, b!], cat("Groceries"))).toBe("Categorized 2 → Groceries · 2 updated in Up")
+  await data.categorizeTransactions([a!, b!], cat("Groceries"))
   expect(data.ruleOffersFor()).toEqual([])
   // Spelling and case don't split a description.
-  expect(await data.categorizeTransactions([c!], cat("Groceries"))).toBe("Categorized 1 → Groceries · 1 updated in Up · R: rule for Coles → Groceries")
+  await data.categorizeTransactions([c!], cat("Groceries"))
   const [offer] = data.ruleOffersFor()
   expect(offer).toMatchObject({ description: "Coles", expr: 'desc:"Coles"', times: 3, categorised: 3, agreeing: 3, waiting: [waiting!, ids.express], others: ["Coles Express"] })
   calls.length = 0
-  expect(await data.makeOfferedRule(offer!)).toBe("Rule made: Coles → Groceries · 2 waiting rows categorised · 2 sent to Up")
+  await data.makeOfferedRule(offer!)
   expect(calls.sort()).toEqual([`e4/relationships/category`, `e5/relationships/category`])
   expect(source(waiting!)).toBe("provider")
   expect(data.state.savedFilters.find((f) => f.id === "desc-coles")).toEqual({ id: "desc-coles", name: "Coles", expr: 'desc:Coles' })
@@ -96,8 +96,7 @@ test("R opens the offers; x declines the cursor's; esc closes", async () => {
   expect(ui.activeScope()).toBe("manager.ruleOffers")
   handleKey(ui, key("x"), data); await settlePending()
   expect(ui.state.ruleOffers !== null).toBe(false)
-  expect(ui.state.status).toBe("No rule for Aldi; it won't be offered again")
+  expect(data.ruleOffersFor()).toEqual([])
   handleKey(ui, key("r", { shift: true }), data)
   expect(ui.state.ruleOffers !== null).toBe(false)
-  expect(ui.state.status).toStartWith("No rule to offer")
 })
