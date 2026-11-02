@@ -48,6 +48,7 @@ export type ScopeId =
   | "palette"
   | "filterPicker"
   | "themePicker"
+  | "modelPicker"
   | "dryRun"
   | "jump"
   | "filter"
@@ -128,6 +129,8 @@ export interface UiState {
   filterPicker: { query: string; cursor: number } | null
   /** The theme picker: the theme at the cursor is shown while it is open. */
   themePicker: { cursor: number } | null
+  /** Choosing a provider's model (app/modelPicker): the filter and the cursor among its matches. */
+  modelPicker: { provider: "openrouter" | "openai"; query: string; cursor: number } | null
   /** The command palette (ctrl+k), over the scope it was opened from. */
   palette: { query: string; cursor: number; from: ScopeId; opened: number } | null
   /** The palette's last command, listed first next time (session only). */
@@ -363,6 +366,7 @@ const MODALS = [
   { key: "searchHelp", scope: () => "searchHelp" },
   { key: "filterPicker", scope: () => "filterPicker" },
   { key: "themePicker", scope: () => "themePicker" },
+  { key: "modelPicker", scope: () => "modelPicker" },
   { key: "dryRun", scope: () => "dryRun" },
   { key: "jump", scope: () => "jump" },
   { key: "catPicker", scope: () => "catPicker" },
@@ -465,6 +469,7 @@ function createUiStore() {
     detail: null,
     filterPicker: null,
     themePicker: null,
+    modelPicker: null,
     palette: null,
     lastCommandId: null,
     dryRun: null,

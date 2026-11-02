@@ -92,35 +92,40 @@ test("Workers AI: a token and an account id, each its own action", async () => {
   expect(aiRow("workersAi", aiContext(data))).toMatchObject({ connected: true, how: "key · saved" })
 })
 
-test("a general model: browser sign-in first; its model checked against the provider; the default isn't saved; u-style 'use' picks it", async () => {
+test("a general model: browser sign-in first; its model chosen from the provider's list; the default isn't saved; u-style 'use' picks it", async () => {
   setup(3)
   handleKey(ui, key("return"), data)
   expect(actions()).toEqual(["signIn", "key", "page", "model"])
+  // The model: a list of the provider's (pi-ai's catalog), on the one in use.
   choose("model")
-  expect(ui.state.aiDialog!.field).toMatchObject({ action: "model", value: "gpt-6.1-sol" })
-  handleKey(ui, key("u", { ctrl: true }), data)
-  handlePaste(ui, "unknown/model-for-test", data)
-  handleKey(ui, key("return"), data)
-  expect(ui.state.aiDialog!.note).toEqual({ text: "OpenAI has no model unknown/model-for-test", ok: false })
-  expect(loadSavedCredentials()).toEqual({})
-  handleKey(ui, key("u", { ctrl: true }), data)
+  expect(ui.activeScope()).toBe("modelPicker")
+  expect(ui.state.modelPicker).toMatchObject({ provider: "openai", query: "", cursor: 0 })
   handlePaste(ui, "gpt-6-luna", data)
   handleKey(ui, key("return"), data); await settlePending()
+  expect(ui.state.modelPicker).toBeNull()
   expect(loadSavedCredentials()).toEqual({ JASKMONEY_OPENAI_MODEL: "gpt-6-luna" })
-  choose("model"); handleKey(ui, key("u", { ctrl: true }), data); handlePaste(ui, "gpt-6.1-sol", data); handleKey(ui, key("return"), data); await settlePending()
+  expect(ui.state.aiDialog!.note).toEqual({ text: "Model: gpt-6-luna", ok: true })
+  // Nothing the provider doesn't list can be chosen.
+  choose("model"); handlePaste(ui, "unknown/model-for-test", data)
+  handleKey(ui, key("return"), data); await settlePending()
+  expect(ui.state.modelPicker).not.toBeNull()
+  expect(loadSavedCredentials()).toEqual({ JASKMONEY_OPENAI_MODEL: "gpt-6-luna" })
+  // The recommended one, first: nothing saved, it follows the app's default.
+  ui.setState("modelPicker", { query: "", cursor: 0 })
+  handleKey(ui, key("return"), data); await settlePending()
   expect(loadSavedCredentials()).toEqual({})
   // OpenRouter set up and so in use: OpenAI, once it has a key, can take
   // over, from the Rules use (a model's dialog only connects it).
   await data.saveApiKeys({ JASKMONEY_OPENROUTER_TOKEN: "or-key-for-test" })
   choose("key"); handlePaste(ui, KEY, data); handleKey(ui, key("return"), data); await settlePending()
   expect(actions()).toEqual(["signIn", "key", "page", "model", "test", "remove"])
-  // Past the Rules use's one query, its model actions.
-  ui.setState({ aiDialog: null, aiUse: { use: "rules", cursor: 1, note: null } })
-  expect(useActions("rules", aiContext(data)).map((a) => a.label)).toEqual(["Use OpenAI instead"])
+  // Past the Rules use's one query and its model, the switch.
+  ui.setState({ aiDialog: null, aiUse: { use: "rules", cursor: 2, note: null } })
+  expect(useActions("rules", aiContext(data)).map((a) => a.label)).toEqual(["Change the model… (meta/muse-spark-1.3-contributor)", "Use OpenAI instead"])
   handleKey(ui, key("return"), data); await settlePending()
   expect(activeLlmProvider()).toBe("openai")
   expect(useModel("rules", aiContext(data))).toEqual({ text: "OpenAI · gpt-6.1-sol", ready: true })
-  expect(useActions("rules", aiContext(data)).map((a) => a.label)).toEqual(["Use OpenRouter instead"])
+  expect(useActions("rules", aiContext(data)).map((a) => a.label)).toEqual(["Change the model… (gpt-6.1-sol)", "Use OpenRouter instead"])
   ui.setState({ aiUse: null })
 })
 

@@ -1,4 +1,5 @@
 import { web, webLabel } from "./webApp"
+import { ModelPicker } from "../ui/settings/ModelPicker"
 import { ThemePicker } from "../ui/settings/ThemePicker"
 import { paintWith } from "./afterPaint"
 import { openWelcome, restingStatus, shouldWelcome } from "./welcome"
@@ -241,6 +242,7 @@ export function App() {
       <EditorOverlay />
       <SavedFilterPicker />
       <ThemePicker />
+      <ModelPicker />
       <DryRunOverlay />
       <Welcome />
       <Show when={ui.state.palette}>

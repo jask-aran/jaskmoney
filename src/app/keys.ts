@@ -3,6 +3,7 @@ import { THEMES } from "../themes"
 import { applyTheme } from "../theme"
 import { triable, tryHints } from "../state/tour"
 import { travel } from "./paneTravel"
+import { chooseModel, modelItems, openModelPicker } from "./modelPicker"
 import { regionRects } from "../ui/regions"
 import { nearestRegion } from "../state/spatial"
 import { web } from "./webApp"
@@ -46,7 +47,7 @@ import { KEY_PAGES, aiPaneRows, aiActions, aiContext, aiDialogFor, useActions, t
 import { useQueries, type QueryId } from "../ai/catalog"
 import { hasWorkersAi } from "../ai/workersAi"
 import { cancelLlmSignIn, openBrowser, signOutLlm, startLlmSignIn, submitSignInPaste } from "./llmSignIn"
-import { createLlm, LLM_PROVIDERS, llmModelId } from "../ai/llm"
+import { createLlm, LLM_PROVIDERS } from "../ai/llm"
 import { credentialEnv } from "../ai/credentials"
 import { runAccept, toggleUncategorised, newSuggestionsNote, suggestNew } from "./suggest"
 import { ACCEPT_ALL_AT } from "../domain/questions"
@@ -167,7 +168,7 @@ function shifted(key: Pick<KeyEvent, "name" | "sequence" | "shift">, letter: str
 }
 
 /** Scopes whose printable keys are text, so a paste can type into them. */
-const PASTE_SCOPES = new Set<ScopeId>(["welcome", "merchantNote", "llmSignIn", "settings.aiDialog", "filter", "manager.detail.notes", "catPicker", "tagPicker", "filterPicker", "settings.import.path", "settings.factoryReset"])
+const PASTE_SCOPES = new Set<ScopeId>(["welcome", "merchantNote", "llmSignIn", "settings.aiDialog", "filter", "manager.detail.notes", "catPicker", "tagPicker", "filterPicker", "modelPicker", "settings.import.path", "settings.factoryReset"])
 
 /** Whether a paste would land as text where input is now: never where
  * letters are commands (a pasted "x" must not dismiss anything). */
@@ -324,6 +325,18 @@ function handleThemePicker(ui: UiStore, key: KeyEvent, data?: DataStore): void {
   if (moved == null || moved === picker.cursor) return
   ui.setState({ themePicker: { cursor: moved } })
   applyTheme(THEMES[moved]!.id)
+}
+
+/** The model picker: type to filter, ↑↓ move, enter use it, esc leave it as it was. */
+function handleModelPicker(ui: UiStore, key: KeyEvent, data?: DataStore): void {
+  const picker = ui.state.modelPicker
+  if (!picker || !data) return
+  const choices = pickerChoices(modelItems(picker.provider, picker.query))
+  queryPickerKey(key, picker, choices.length, {
+    close: () => ui.setState({ modelPicker: null }),
+    update: (next) => ui.setState("modelPicker", next),
+    apply: () => { const choice = choices[picker.cursor]; if (choice) chooseModel(ui, data, picker.provider, String(choice.value)) },
+  })
 }
 
 function handleDryRun(ui: UiStore, key: KeyEvent, data?: DataStore): void {
@@ -1313,6 +1326,9 @@ function handleAiUse(ui: UiStore, key: KeyEvent, data?: DataStore): void {
     case "provider":
       settleData(ui, data.saveApiKeys({ JASKMONEY_LLM_PROVIDER: action.provider }), () => note(`${LLM_PROVIDERS[action.provider].label} now writes rules`))
       return
+    case "model":
+      openModelPicker(ui, action.provider)
+      return
     case "connect":
       ui.setState({ aiUse: null, aiCursor: AI_ROWS.indexOf(action.row) })
       openAiDialog(ui, action.row)
@@ -1420,10 +1436,13 @@ function handleAiDialog(ui: UiStore, key: KeyEvent, data?: DataStore): void {
     case "signIn":
       if (isLlmRow(row)) settleData(ui, startLlmSignIn(ui, data, row), (result) => { if (result) note(result.text, result.ok) })
       return
+    case "model":
+      // A list of the provider's models, not a slug to type.
+      if (isLlmRow(row)) openModelPicker(ui, row)
+      return
     case "key":
-    case "accountId":
-    case "model": {
-      const value = action.id === "model" && isLlmRow(row) ? llmModelId(credentialEnv(), row) : action.id === "accountId" ? (credentialEnv().JASKMONEY_CF_ACCOUNT_ID ?? "") : ""
+    case "accountId": {
+      const value = action.id === "accountId" ? (credentialEnv().JASKMONEY_CF_ACCOUNT_ID ?? "") : ""
       opened.patch({ field: { action: action.id, value, caret: value.length }, note: null })
       return
     }
@@ -2127,6 +2146,11 @@ const scopes: Record<ScopeId, ScopeEntry> = {
     handle: handleThemePicker,
     list: false,
     hints: () => [{ key: "↑↓ j/k", desc: "preview" }, { key: "enter", desc: "keep" }, { key: "esc", desc: "put back" }],
+  },
+  "modelPicker": {
+    handle: handleModelPicker,
+    list: false,
+    hints: () => [{ key: "type", desc: "filter" }, { key: "↑↓", desc: "move" }, { key: "enter", desc: "use it" }, { key: "esc", desc: "leave it" }],
   },
   "dryRun": {
     handle: handleDryRun,

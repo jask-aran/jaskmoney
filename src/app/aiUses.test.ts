@@ -3,6 +3,7 @@ import { rmSync } from "node:fs"
 import { credentialsPath, loadSavedCredentials } from "../ai/credentials"
 import { searchUsesClairic } from "../ai/workersAi"
 import { filterGuide } from "../domain/filterLanguage"
+import { queriesOf } from "../ai/catalog"
 import { AI_ROWS } from "./apiKeys"
 import { previewSent } from "./sentPreview"
 import { aiContext, useActions, useModel } from "../state/aiDialog"
@@ -152,4 +153,29 @@ test("the viewer's outline: fields indented, long text wrapped, a family of ques
   expect(examples).toContain('    Groceries: ["Coles","Aldi"]')
   expect(Math.max(...text.map((l) => l.length))).toBeLessThanOrEqual(40)
   expect(text.filter((l) => l.trim().startsWith("word")).length).toBeGreaterThan(3)
+})
+
+test("Rules: the model is changed where it's used, from a list of the provider's models", async () => {
+  await setup()
+  testEnv("JASKMONEY_OPENROUTER_TOKEN", "openrouter-key-for-test")
+  await data.refreshApiKeys()
+  ui.setState({ aiUse: { use: "rules", cursor: 0, note: null } })
+  const actions = useActions("rules", aiContext(data))
+  expect(actions[0]!.label).toBe("Change the model… (meta/muse-spark-1.3-contributor)")
+  ui.setState({ aiUse: { use: "rules", cursor: queriesOf("general").length, note: null } })
+  handleKey(ui, key("return"), data)
+  expect(ui.activeScope()).toBe("modelPicker")
+  for (const ch of "sonnet-5") handleKey(ui, key(ch === "-" ? "-" : ch, { sequence: ch }), data)
+  handleKey(ui, key("return"), data)
+  await Bun.sleep(20)
+  expect(ui.state.modelPicker).toBeNull()
+  expect(loadSavedCredentials().JASKMONEY_OPENROUTER_MODEL).toMatch(/sonnet-5/)
+  expect(useModel("rules", aiContext(data)).text).toMatch(/sonnet-5/)
+  // The recommended model again: nothing saved, it follows the app's default.
+  ui.setState({ aiUse: { use: "rules", cursor: queriesOf("general").length, note: null } })
+  handleKey(ui, key("return"), data)
+  ui.setState("modelPicker", { cursor: 0 })
+  handleKey(ui, key("return"), data)
+  await Bun.sleep(20)
+  expect(loadSavedCredentials().JASKMONEY_OPENROUTER_MODEL).toBeUndefined()
 })

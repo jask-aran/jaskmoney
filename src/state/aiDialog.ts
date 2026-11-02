@@ -233,7 +233,7 @@ export function useModel(use: AiUse, ctx: AiContext): { text: string; ready: boo
   return { text: `Jev (${via})${clairic ? " + Clairic" : ""}`, ready: true }
 }
 
-export type UseAction = { id: "clairic"; on: boolean } | { id: "provider"; provider: LlmProvider } | { id: "connect"; row: AiRow }
+export type UseAction = { id: "clairic"; on: boolean } | { id: "provider"; provider: LlmProvider } | { id: "connect"; row: AiRow } | { id: "model"; provider: LlmProvider }
 
 /** A use dialog's model actions: choose its model, connect one it needs. */
 export function useActions(use: AiUse, ctx: AiContext): Array<UseAction & { label: string }> {
@@ -246,6 +246,8 @@ export function useActions(use: AiUse, ctx: AiContext): Array<UseAction & { labe
         : { id: "connect", row: provider, label: `Connect ${LLM_PROVIDERS[provider].label}…` })
     }
     if (!aiConnection(ctx.inUse, ctx)) out.unshift({ id: "connect", row: ctx.inUse, label: `Connect ${LLM_PROVIDERS[ctx.inUse].label}…` })
+    // The model that writes them: chosen here, where it's used.
+    else out.unshift({ id: "model", provider: ctx.inUse, label: `Change the model… (${ctx.model(ctx.inUse).id})` })
   } else if (!jevVia(ctx)) out.push({ id: "connect", row: "jev", label: "Connect Jev…" })
   if (use === "search") {
     out.push(aiConnection("workersAi", ctx)
