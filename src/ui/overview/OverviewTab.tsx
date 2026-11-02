@@ -8,8 +8,6 @@ import type { BoxRenderable, ScrollBoxRenderable } from "@opentui/core"
 import { categoryMark } from "../icons"
 import { useTerminalDimensions } from "@opentui/solid"
 import { SectionCard } from "../primitives/SectionCard"
-import { Modal } from "../primitives/Modal"
-import { TextInput } from "../primitives/TextInput"
 import { chipLook } from "../primitives/chip"
 import { centredTop } from "../primitives/ListRow"
 import { changeColor, spendChangeColor } from "../colors"
@@ -26,7 +24,8 @@ import { accountRole, type Account, type Transaction } from "../../domain/types"
 import { addDays, appNow, appToday, daysBetween, type WeekStart } from "../../domain/days"
 import { isSpending, isUncategorised, isUnsortedIn } from "../../domain/moneyRules"
 import { GROUP_NAMES, chipLayout } from "./rangeChips"
-import { CUSTOM_CHIP, CUSTOM_DATE_FORMS, LOOKBACKS, PERIODS, comparisonWindows, filterByTimeframe, rangeOffsetLabel, readCustomRange } from "../../domain/timeframe"
+import { CustomRangeDialog } from "./CustomRangeDialog"
+import { CUSTOM_CHIP, LOOKBACKS, PERIODS, comparisonWindows, filterByTimeframe, rangeOffsetLabel } from "../../domain/timeframe"
 import { count, fit, shortDate, shortMoney, truncate } from "../text"
 import { StyledLine, type StyledSpan } from "../primitives/StyledLine"
 import { monthlyTotal, subscriptions, upcomingCharges, type Subscription } from "../../domain/subscriptions"
@@ -411,12 +410,6 @@ export function OverviewTab(props: { focused: SectionId }) {
     </box>
   )
 
-  // The Custom range dialog's fields as a range, while both read.
-  const readsAs = (edit: { start: { value: string }; end: { value: string } }) => {
-    const read = readCustomRange(edit.start.value, edit.end.value, today())
-    return "error" in read ? null : read
-  }
-
   // A component, not a function call in JSX: its card stays mounted while
   // the view changes (a remounted card has no measured width for a frame or
   // two, so its border picker and legend would blink out).
@@ -558,27 +551,7 @@ export function OverviewTab(props: { focused: SectionId }) {
         </box>
       </Show>
       <Show when={ui.state.customEdit}>
-        {(edit: () => NonNullable<typeof ui.state.customEdit>) => (
-          <Modal title="Custom range" width={54} hints="tab field · ↑↓ a day, ⇧ a week · enter apply">
-            <text wrapMode="none">
-              <S fg={edit().field === 0 ? ink.figure : ink.label} bold={edit().field === 0}>{"Start  "}</S>
-              <TextInput field={edit().start} focused={edit().field === 0} />
-            </text>
-            <text wrapMode="none">
-              <S fg={edit().field === 1 ? ink.figure : ink.label} bold={edit().field === 1}>{"End    "}</S>
-              <TextInput field={edit().end} focused={edit().field === 1} />
-            </text>
-            {/* The range as it reads now, as you type; what it takes while
-                a field doesn't read; the error enter found. */}
-            <Show when={!edit().error} fallback={<text fg={tone.bad} wrapMode="none">{edit().error}</text>}>
-              <Show when={readsAs(edit())} fallback={<text fg={ink.note} wrapMode="none">{CUSTOM_DATE_FORMS}</text>}>
-                {(range: () => { label: string; days: number }) => (
-                  <text wrapMode="none"><S fg={tone.scope}>{range().label}</S><S fg={ink.note}>{` · ${range().days} days`}</S></text>
-                )}
-              </Show>
-            </Show>
-          </Modal>
-        )}
+        {(edit: () => NonNullable<typeof ui.state.customEdit>) => <CustomRangeDialog edit={edit()} />}
       </Show>
     </box>
   )

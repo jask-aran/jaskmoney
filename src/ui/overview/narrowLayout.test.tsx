@@ -238,3 +238,50 @@ test("the Custom range dialog says the range as it reads while typing, what it t
   handleKey(ui, key("escape"), data)
   t.renderer.destroy()
 })
+
+test("the Custom range calendar: enter marks a cell, a second applies; a month twice is that month; esc undoes a mark; clicks do the same", async () => {
+  const t = await overview(140, 44)
+  // The overview's clock: 20 Oct 2026.
+  handleKey(ui, key("c", { shift: true, sequence: "C" }), data)
+  handleKey(ui, key("tab"), data)
+  handleKey(ui, key("tab"), data)
+  expect(ui.state.customEdit?.field).toBe(2)
+  // Cursor on the range's start (20 Sep): mark, move two weeks on, the
+  // fields follow; esc puts them back.
+  const before = ui.state.customEdit!.start.value
+  handleKey(ui, key("return"), data)
+  handleKey(ui, key("down"), data)
+  handleKey(ui, key("down"), data)
+  expect(ui.state.customEdit?.end.value).toBe("4 Oct 2026")
+  handleKey(ui, key("escape"), data)
+  expect(ui.state.customEdit?.mark).toBeNull()
+  expect(ui.state.customEdit?.start.value).toBe(before)
+  // Months (the cursor still on 4 Oct): enter twice on October is October.
+  handleKey(ui, key("m"), data)
+  handleKey(ui, key("return"), data)
+  handleKey(ui, key("return"), data)
+  expect(ui.state.customEdit).toBeNull()
+  expect(ui.state.timeframe).toMatchObject({ family: "custom", custom: { start: "2026-10-01", end: "2026-10-31" } })
+  // Clicks: it opens on October (the range applied); ‹ pages back, › on;
+  // then the days view's 5 and 12.
+  handleKey(ui, key("c", { shift: true, sequence: "C" }), data)
+  await t.renderOnce()
+  const lines = () => t.captureCharFrame().split("\n")
+  const click = async (y: number, x: number) => { await t.mockMouse.click(x, y); await t.renderOnce() }
+  // From line `from` and column `left` on (the chart behind has its own 12s).
+  const at = (text: string, from = 0, left = 0) => { const y = lines().findIndex((l, i) => i >= from && l.indexOf(text, left) >= 0); return { y, x: lines()[y]!.indexOf(text, left) } }
+  const back = at("‹ October 2026")
+  await click(back.y, back.x)
+  expect(lines().some((l) => l.includes("‹ September 2026 ›"))).toBe(true)
+  const next = at("›", back.y)
+  await click(next.y, next.x)
+  expect(lines().some((l) => l.includes("‹ October 2026 ›"))).toBe(true)
+  const { y: header, x: left } = at("Mo  Tu")
+  const five = at("  5  ", header, left - 2)
+  await click(five.y, five.x + 3)
+  const twelve = at(" 12 ", header, left - 2)
+  await click(twelve.y, twelve.x + 2)
+  expect(ui.state.customEdit).toBeNull()
+  expect(ui.state.timeframe.custom).toEqual({ start: "2026-10-05", end: "2026-10-12" })
+  t.renderer.destroy()
+})

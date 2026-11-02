@@ -77,6 +77,7 @@ import {
 import { characters, editText, isPrintable, textField } from "../domain/textField"
 import { addDays, appNow, appToday } from "../domain/days"
 import { amountFromText, rangeDayFromText, rangeDayText } from "../domain/typedInput"
+import { markedRange, moveCursor, pageCursor, unitOf, type CalendarView } from "../domain/rangeCalendar"
 import { drillFilter } from "../domain/drill"
 import type { CategoryLine } from "../domain/dashboard"
 import { allCategoryLines, overviewRange } from "../state/overviewRange"
@@ -603,38 +604,103 @@ function handleManagerDetail(ui: UiStore, key: KeyEvent, data?: DataStore): void
   }
 }
 
-function handleOverviewCustom(ui: UiStore, key: KeyEvent, data?: DataStore): void {
-  const { name } = key
+/** Apply a Custom range, from the dialog's fields or its calendar. */
+function applyCustomRange(ui: UiStore, start: string, end: string): void {
+  const tf: TimeframeState = { ...ui.state.timeframe, family: "custom", custom: { start, end } }
+  ui.setTimeframe(tf)
+  ui.setState({ customEdit: null })
+  ui.setDashChipCursor(CUSTOM_CHIP)
+  const read = readCustomRange(start, end, appToday())
+  ui.setStatus("error" in read ? "Custom range" : `Custom · ${read.label} · [ ] step by ${read.days} days`)
+}
+
+type CustomEdit = NonNullable<UiState["customEdit"]>
+
+/** The calendar's cursor moved (or its view changed): with a first mark
+ * waiting, the fields follow the range it would make. */
+function moveCustomCursor(ui: UiStore, edit: CustomEdit, cursor: string, view = edit.view): void {
+  const range = edit.mark ? markedRange(edit.mark, cursor, view) : null
+  ui.setState({ customEdit: { ...edit, cursor, view, error: "", ...(range ? { start: textField(rangeDayText(range.start)), end: textField(rangeDayText(range.end)) } : {}) } })
+}
+
+/** A press (enter, space or a click) on the calendar's cell at `cursor`:
+ * the first marks it (its whole day, month or year in the fields), the
+ * second applies the range from one to the other. */
+export function markCustomCell(ui: UiStore, cursor: string): void {
   const edit = ui.state.customEdit
   if (!edit) return
-  if (name === "escape") { ui.setState({ customEdit: null }); ui.setStatus("Range unchanged"); return }
-  const today = appToday()
-  const side = edit.field === 0 ? "start" : "end"
-  if (name === "tab") {
-    const field: 0 | 1 = edit.field === 0 ? 1 : 0
-    ui.setState({ customEdit: { ...edit, field, [field === 0 ? "start" : "end"]: textField((field === 0 ? edit.start : edit.end).value), error: "" } })
+  if (edit.mark) {
+    const range = markedRange(edit.mark, cursor, edit.view)
+    applyCustomRange(ui, range.start, range.end)
     return
   }
+  const unit = unitOf(cursor, edit.view)
+  ui.setState({ customEdit: {
+    ...edit, field: 2, cursor, error: "", mark: unit,
+    before: { start: edit.start.value, end: edit.end.value },
+    start: textField(rangeDayText(unit.start)), end: textField(rangeDayText(unit.end)),
+  } })
+  ui.setStatus(`From ${rangeDayText(unit.start)} · enter (or a click) where it ends · esc undoes`)
+}
+
+/** The calendar's view (Days, Months, Years), from a key or a click. */
+export function setCustomView(ui: UiStore, view: CalendarView): void {
+  const edit = ui.state.customEdit
+  if (edit) moveCustomCursor(ui, { ...edit, field: 2 }, edit.cursor, view)
+}
+
+/** ‹ or ›, [ or ]: the calendar a page back or on. */
+export function pageCustomCalendar(ui: UiStore, delta: -1 | 1): void {
+  const edit = ui.state.customEdit
+  if (edit) moveCustomCursor(ui, edit, pageCursor(edit.cursor, edit.view, delta))
+}
+
+function handleOverviewCustom(ui: UiStore, key: KeyEvent, data?: DataStore): void {
+  const { name } = key
+  const seq = key.sequence
+  const edit = ui.state.customEdit
+  if (!edit) return
+  if (name === "escape") {
+    // A first mark waiting: undone, the fields as they were.
+    if (edit.mark && edit.before) { ui.setState({ customEdit: { ...edit, mark: null, before: null, start: textField(edit.before.start), end: textField(edit.before.end) } }); ui.setStatus("Mark undone"); return }
+    ui.setState({ customEdit: null }); ui.setStatus("Range unchanged"); return
+  }
+  const today = appToday()
+  if (name === "tab") {
+    // Start, End, the calendar (shift: back); a field's caret to its end.
+    const field = ((edit.field + (key.shift ? 2 : 1)) % 3) as 0 | 1 | 2
+    ui.setState({ customEdit: { ...edit, field, ...(field === 0 ? { start: textField(edit.start.value) } : field === 1 ? { end: textField(edit.end.value) } : {}), error: "" } })
+    return
+  }
+  if (edit.field === 2) {
+    if (name === "left" || name === "right" || name === "up" || name === "down") { moveCustomCursor(ui, edit, moveCursor(edit.cursor, edit.view, name)); return }
+    if (name === "[" || seq === "[" || name === "]" || seq === "]") { pageCustomCalendar(ui, name === "[" || seq === "[" ? -1 : 1); return }
+    const view = ({ d: "days", m: "months", y: "years" } as const)[name as "d" | "m" | "y"]
+    if (view && !key.ctrl && !key.meta) { setCustomView(ui, view); return }
+    if (name === "t" && !key.ctrl) { moveCustomCursor(ui, edit, today); return }
+    if (name === "return" || name === "enter" || name === "space") { markCustomCell(ui, edit.cursor); return }
+    return
+  }
+  const side = edit.field === 0 ? "start" : "end"
   // Up and down move the field's date a day later or earlier (shift: a week).
   if (name === "up" || name === "down") {
     const day = rangeDayFromText(edit[side].value, today, side)
     if (day === null) { ui.setState({ customEdit: { ...edit, error: `${side === "start" ? "Start" : "End"} isn't a date: ${CUSTOM_DATE_FORMS}` } }); return }
     const next = addDays(day, (name === "up" ? 1 : -1) * (key.shift ? 7 : 1))
-    ui.setState({ customEdit: { ...edit, [side]: textField(rangeDayText(next)), error: "" } })
+    ui.setState({ customEdit: { ...edit, [side]: textField(rangeDayText(next)), cursor: next, error: "" } })
     return
   }
   if (name === "return" || name === "enter") {
     const read = readCustomRange(edit.start.value, edit.end.value, today)
     if ("error" in read) { ui.setState({ customEdit: { ...edit, field: read.field, error: read.error } }); return }
-    const tf: TimeframeState = { ...ui.state.timeframe, family: "custom", custom: { start: read.start, end: read.end } }
-    ui.setTimeframe(tf)
-    ui.setState({ customEdit: null })
-    ui.setDashChipCursor(CUSTOM_CHIP)
-    ui.setStatus(`Custom · ${read.label} · [ ] step by ${read.days} days`)
+    applyCustomRange(ui, read.start, read.end)
     return
   }
   const next = editText(edit[side], key)
-  if (next) ui.setState({ customEdit: { ...edit, [side]: next, error: "" } })
+  if (!next) return
+  // Typing a date that reads takes the calendar there.
+  const day = rangeDayFromText(next.value, today, side)
+  ui.setState({ customEdit: { ...edit, [side]: next, error: "", ...(day ? { cursor: day } : {}) } })
 }
 
 function handleSettingsFactoryReset(ui: UiStore, key: KeyEvent, data?: DataStore): void {
@@ -2044,7 +2110,10 @@ export function stepOverviewRange(ui: UiStore, delta: -1 | 1, data?: DataStore):
  * range on screen. */
 function openCustomRange(ui: UiStore, cycle: CycleConfig | undefined): void {
   const from = ui.state.timeframe.custom ?? timeframeBounds(ui.state.timeframe, appNow(), cycle)
-  ui.setState({ customEdit: { start: textField(rangeDayText(from.start)), end: textField(rangeDayText(from.end)), field: 0, error: "" } })
+  ui.setState({ customEdit: {
+    start: textField(rangeDayText(from.start)), end: textField(rangeDayText(from.end)), field: 0, error: "",
+    view: "days", cursor: from.start, mark: null, before: null,
+  } })
 }
 
 export function handleOverviewRange(ui: UiStore, key: KeyEvent, data?: DataStore): void {

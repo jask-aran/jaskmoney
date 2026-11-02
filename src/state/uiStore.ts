@@ -1,4 +1,5 @@
 import type { WelcomeState } from "./welcome"
+import type { CalendarView } from "../domain/rangeCalendar"
 import type { ExecutorStatus } from "../ai/executor"
 import type { SentPart } from "../app/sentPreview"
 import type { QueryId } from "../ai/catalog"
@@ -150,7 +151,16 @@ export interface UiState {
   dashChipCursor: number
   /** The Custom range dialog: two dates being typed, the focused one and
    * the last validation error. */
-  customEdit: { start: TextField; end: TextField; field: 0 | 1; error: string } | null
+  /** The Custom range dialog. `field`: Start, End, or the calendar (2).
+   * The calendar shows `view` around its `cursor` day; `mark` is a first
+   * mark waiting for the second (which applies), with the fields' text
+   * from before it (`before`) for esc to put back. */
+  customEdit: {
+    start: TextField; end: TextField; field: 0 | 1 | 2; error: string
+    view: CalendarView; cursor: string
+    mark: { start: string; end: string } | null
+    before: { start: string; end: string } | null
+  } | null
   /** The Overview Categories card's cursor (an index into every category
    * line, groups and subcategories). */
   overviewCategoryCursor: number
