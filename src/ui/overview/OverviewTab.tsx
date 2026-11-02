@@ -454,6 +454,7 @@ export function OverviewTab(props: { focused: SectionId }) {
         baseline={baseline()}
         revealKey={data.state.uiPrefs.chartMotion === "off" ? undefined : data.state.uiPrefs.chartMotion === "always" ? (revealKey() ? `${view().view}:${seen()}` : undefined) : revealKey()}
         revealMs={data.state.uiPrefs.chartMotion === "always" ? chartSpeedMs(data.state.uiPrefs.chartSpeed) : revealMs()}
+        curve={data.state.uiPrefs.chartCurve}
         labels={data.state.uiPrefs.chartLabels}
       />
       </box>
@@ -618,13 +619,15 @@ export function OverviewChartCard(props: {
   baseline?: boolean
   revealKey?: string
   revealMs?: number
+  /** The draw-in's curve (CHART_CURVES). */
+  curve?: string
   labels?: ChartLabelMode
 }) {
   const view = () => CHART_VIEWS[props.index] ?? CHART_VIEWS[0]
   // Calendar and Subscriptions aren't charts (ChartBody draws those in):
   // their own draw-in, on the same key.
   const fallback = () => view().view === "Calendar" || view().view === "Subscriptions"
-  const progress = useReveal(() => (fallback() ? props.revealKey : undefined), () => props.revealMs ?? 0)
+  const progress = useReveal(() => (fallback() ? props.revealKey : undefined), () => props.revealMs ?? 0, () => props.curve)
   // The days in date order, once per calendar, not per frame of the draw-in.
   const days = createMemo(() => props.calendar.flat().flatMap((d) => (d ? [d.dateISO] : [])).sort())
   const through = () => {
@@ -647,6 +650,7 @@ export function OverviewChartCard(props: {
       baseline={props.baseline}
       revealKey={props.revealKey}
       revealMs={props.revealMs}
+      curve={props.curve}
       labels={props.labels}
     />
   )

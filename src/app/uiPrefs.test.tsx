@@ -8,7 +8,7 @@ import { renderApp } from "../testing/app"
 import { ui, CHART_VIEWS } from "../state/uiStore"
 import { data } from "../state/dataStore"
 import { loadSettingsConfig, saveSettingsConfig } from "../state/settingsConfig"
-import { CHART_MOTION_MODES, CHART_SPEEDS, DEFAULT_CHART_SPEED, chartSpeedMs } from "../ui/charts/motion"
+import { CHART_CURVES, CHART_MOTION_MODES, CHART_SPEEDS, DEFAULT_CHART_CURVE, DEFAULT_CHART_SPEED, chartSpeedMs } from "../ui/charts/motion"
 import { defaultTimeframe } from "../domain/timeframe"
 
 test("bootstrap-off preserves UI defaults; scoped w updates the hint and calendar cells", async () => {
@@ -109,7 +109,7 @@ test("chart motion and speed load/save known values and discard invalid values",
   for (const speed of CHART_SPEEDS) expect(chartSpeedMs(speed.id)).toBe(speed.ms)
 })
 
-test("Settings chart rows toggle motion and cycle speed, with persisted values and status", async () => {
+test("Settings chart rows toggle motion and cycle speed and curve, with persisted values and status", async () => {
   const previousPath = process.env.JASKMONEY_CONFIG
   const path = join(mkdtempSync(join(tmpdir(), "jaskmoney-chart-settings-")), "settings.json")
   process.env.JASKMONEY_CONFIG = path
@@ -153,8 +153,22 @@ test("Settings chart rows toggle motion and cycle speed, with persisted values a
       expect(ui.state.status).toBe(`Animation speed: ${speed.label}`)
       expect(t.captureCharFrame()).toMatch(new RegExp(`Animation speed\\s+${speed.label}`))
     }
+
+    // The curve: smooth by default, then each shape in turn.
+    ui.setState({ appearanceCursor: APPEARANCE_ROWS.indexOf("chartCurve") })
+    expect(t.captureCharFrame()).toMatch(/Animation curve\s+smooth/)
+    const curveAt = CHART_CURVES.findIndex((curve) => curve.id === DEFAULT_CHART_CURVE)
+    for (let step = 1; step <= CHART_CURVES.length; step++) {
+      const curve = CHART_CURVES[(curveAt + step) % CHART_CURVES.length]!
+      t.mockInput.pressEnter()
+      await t.renderOnce()
+      expect(data.state.uiPrefs.chartCurve).toBe(curve.id)
+      expect(loadSettingsConfig(path).ui?.chartCurve).toBe(curve.id)
+      expect(ui.state.status).toBe(`Animation curve: ${curve.label}`)
+      expect(t.captureCharFrame()).toMatch(new RegExp(`Animation curve\\s+${curve.label}`))
+    }
     data.init(":memory:")
-    expect(data.state.uiPrefs).toMatchObject({ chartMotion: "launch", chartSpeed: DEFAULT_CHART_SPEED })
+    expect(data.state.uiPrefs).toMatchObject({ chartMotion: "launch", chartSpeed: DEFAULT_CHART_SPEED, chartCurve: DEFAULT_CHART_CURVE })
   } finally {
     t.renderer.destroy()
     if (previousPath === undefined) delete process.env.JASKMONEY_CONFIG

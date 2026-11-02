@@ -39,6 +39,8 @@ export function ChartCard(props: {
   /** Draw the chart in over `revealMs` each time `revealKey` changes (ChartBody). */
   revealKey?: string
   revealMs?: number
+  /** The draw-in's curve (CHART_CURVES). */
+  curve?: string
   /** When its labels appear as it draws in (motion). */
   labels?: ChartLabelMode
 }) {
@@ -55,7 +57,7 @@ export function ChartCard(props: {
       focused={props.focused}
     >
       <Show when={props.model} fallback={props.fallback}>
-        {(m: () => ChartModel) => <ChartBody model={m()} inks={INKS} baseline={props.baseline} revealKey={props.revealKey} revealMs={props.revealMs} labels={props.labels} />}
+        {(m: () => ChartModel) => <ChartBody model={m()} inks={INKS} baseline={props.baseline} revealKey={props.revealKey} revealMs={props.revealMs} curve={props.curve} labels={props.labels} />}
       </Show>
     </SectionCard>
   )

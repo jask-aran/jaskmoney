@@ -37,6 +37,32 @@ export function chartSpeedMs(id: string | undefined): number {
   return (CHART_SPEEDS.find((s) => s.id === id) ?? CHART_SPEEDS.find((s) => s.id === DEFAULT_CHART_SPEED)!).ms
 }
 
+/**
+ * Draw-in curves: how progress follows time. All ease out (quick to start,
+ * settling at the end); the power is the shape, progress = 1 - (1 - t)^power.
+ * Gentle (2) keeps an even pace and a short settle; smooth (3) puts half
+ * the chart in the first fifth of the time; sharp (4) is nearly all there
+ * at once, then settles slowly.
+ */
+export const CHART_CURVES = [
+  { id: "gentle", label: "gentle", power: 2 },
+  { id: "smooth", label: "smooth", power: 3 },
+  { id: "sharp", label: "sharp", power: 4 },
+] as const
+export type ChartCurveId = (typeof CHART_CURVES)[number]["id"]
+export const DEFAULT_CHART_CURVE: ChartCurveId = "smooth"
+
+/** A curve's power; an unknown or missing one is the default's. */
+export function chartCurvePower(id: string | undefined): number {
+  return (CHART_CURVES.find((c) => c.id === id) ?? CHART_CURVES.find((c) => c.id === DEFAULT_CHART_CURVE)!).power
+}
+
+/** The curve after `id`'s, wrapping. */
+export function nextChartCurve(id: string | undefined): (typeof CHART_CURVES)[number] {
+  const at = CHART_CURVES.findIndex((c) => c.id === (id ?? DEFAULT_CHART_CURVE))
+  return CHART_CURVES[(at + 1) % CHART_CURVES.length]!
+}
+
 /** The speed after `id`'s, wrapping from the slowest to the quickest. */
 export function nextChartSpeed(id: string | undefined): (typeof CHART_SPEEDS)[number] {
   const at = CHART_SPEEDS.findIndex((s) => s.id === (id ?? DEFAULT_CHART_SPEED))
@@ -75,20 +101,21 @@ export function showings(seen: () => boolean): () => number {
  * view switching) starts nothing. The clock starts on the first tick, not
  * when asked: at launch the frames after the data lands are busy, and a
  * draw-in timed from the ask would be over before it's seen. */
-export function useReveal(key: () => string | undefined, ms: () => number): () => number {
+export function useReveal(key: () => string | undefined, ms: () => number, curve: () => string | undefined = () => undefined): () => number {
   const [shown, setShown] = createSignal(1)
   let timer: ReturnType<typeof setInterval> | undefined
   createEffect(on(createMemo(key), (k) => {
     clearInterval(timer)
     const total = ms()
     if (k === undefined || total <= 0) { setShown(1); return }
+    const power = chartCurvePower(curve())
     setShown(0)
     let start: number | undefined
     // About a frame apart (OpenTUI draws at most 60 a second).
     timer = setInterval(() => {
       start ??= performance.now()
       const t = (performance.now() - start) / total
-      setShown(easeOut(t))
+      setShown(easeOut(t, power))
       if (t >= 1) clearInterval(timer)
     }, 16)
   }))

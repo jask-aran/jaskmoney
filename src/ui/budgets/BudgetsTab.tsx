@@ -284,6 +284,7 @@ export function BudgetsTab(props: { focused: SectionId }) {
     <ChartCard title={subject().title} views={BUDGET_VIEWS} current={ui.state.budgetChart} model={model()} width={mainWidth()} height={chartHeight()} baseline={baseline()}
       revealKey={data.state.uiPrefs.chartMotion === "always" ? `${(BUDGET_VIEWS[ui.state.budgetChart] ?? BUDGET_VIEWS[0]!).view}:${subject().title}:${seen()}` : undefined}
       revealMs={data.state.uiPrefs.chartMotion === "always" ? chartSpeedMs(data.state.uiPrefs.chartSpeed) : undefined}
+      curve={data.state.uiPrefs.chartCurve}
       labels={data.state.uiPrefs.chartLabels} />
   )
   const Lines = () => (

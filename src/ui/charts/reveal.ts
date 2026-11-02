@@ -97,5 +97,7 @@ export function hasMarks(rows: Run[][]): boolean {
   return rows.some((runs) => runs.some((run) => /[\u2801-\u28ff▀-▟]/.test(run.text)))
 }
 
-/** Ease out: quick to start, settling at the end. */
-export const easeOut = (t: number) => 1 - (1 - Math.min(1, Math.max(0, t))) ** 3
+/** Ease out: quick to start, settling at the end. `power` is the curve's
+ * shape: 1 is linear, 2 gentle, 3 the default, higher a sharper start and
+ * a longer settle (CHART_CURVES). */
+export const easeOut = (t: number, power = 3) => 1 - (1 - Math.min(1, Math.max(0, t))) ** power

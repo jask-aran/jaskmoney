@@ -120,7 +120,7 @@ export function DemoReel(props: { scene: number; startedAt: number; now: number;
     <box width={props.width} height={props.height} flexDirection="column">
       <Show when={id() === "chart"}>
         <OverviewChartCard index={view()} model={chart()} calendar={overview().calendar} subs={overview().subs} today={world().today} payday={overview().payday} dueBeforePayday={overview().dueBeforePayday}
-          width={props.width} height={paneHeight()} focused revealKey={CHART_VIEWS[view()]!.view} revealMs={TOUR_CHART_MS} labels={data.state.uiPrefs.chartLabels} />
+          width={props.width} height={paneHeight()} focused revealKey={CHART_VIEWS[view()]!.view} revealMs={TOUR_CHART_MS} curve={data.state.uiPrefs.chartCurve} labels={data.state.uiPrefs.chartLabels} />
       </Show>
       <Show when={id() === "filter"}>
         <TransactionsPane title="Transactions" filter={filterBar()} focused width={props.width} height={paneHeight()} bottom={shown(filterRows().length, cursor())}>

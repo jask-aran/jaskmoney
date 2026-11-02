@@ -75,9 +75,9 @@ function axisLabels(text: string, coloured: Array<{ start: number; length: numbe
  * labels. `inks` maps each run's ink to a colour. With `revealMs`, each
  * new `revealKey` draws the chart in over that long (reveal says how);
  * new data under the same key just shows (motion says when to ask). */
-export function ChartBody(props: { model: ChartModel; inks: Record<string, string>; baseline?: boolean; revealKey?: string; revealMs?: number; labels?: ChartLabelMode }) {
+export function ChartBody(props: { model: ChartModel; inks: Record<string, string>; baseline?: boolean; revealKey?: string; revealMs?: number; curve?: string; labels?: ChartLabelMode }) {
   const axis = () => axisWidth(props.model.ticks)
-  const shown = useReveal(() => props.revealKey, () => props.revealMs ?? 0)
+  const shown = useReveal(() => props.revealKey, () => props.revealMs ?? 0, () => props.curve)
   // The gridlines a reveal leaves standing, and whether it has bars: found
   // once per model, and only for a draw-in (each looks at every cell).
   const frame = perRows(gridColumns)

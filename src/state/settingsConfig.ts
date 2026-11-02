@@ -8,7 +8,7 @@ import type { AccountSelection } from "../domain/accountTree"
 import { customRange, LOOKBACKS, OPEN_RANGES, PERIODS, type OpenRange, type TimeframeState } from "../domain/timeframe"
 import type { ImportProfile, SavedFilter } from "../domain/types"
 import type { WeekStart } from "../domain/days"
-import { CHART_LABEL_MODES, type ChartLabelMode, CHART_MOTION_MODES, CHART_SPEEDS, type ChartMotionMode, type ChartSpeedId } from "../ui/charts/motion"
+import { CHART_CURVES, CHART_LABEL_MODES, type ChartCurveId, type ChartLabelMode, CHART_MOTION_MODES, CHART_SPEEDS, type ChartMotionMode, type ChartSpeedId } from "../ui/charts/motion"
 
 import { BACKDROPS, type BackdropId } from "../ui/welcome/backdrop"
 
@@ -24,6 +24,8 @@ export interface UiPrefs {
   theme?: string
   chartMotion?: ChartMotionMode
   chartSpeed?: ChartSpeedId
+  /** The draw-in's ease-out curve (CHART_CURVES; default smooth). */
+  chartCurve?: ChartCurveId
   openRange?: OpenRange
   chartLabels?: ChartLabelMode
   backdrop?: BackdropId
@@ -117,6 +119,8 @@ function parseUiPrefs(raw: unknown): UiPrefs | undefined {
   if (chartMotion) ui.chartMotion = chartMotion
   const chartSpeed = CHART_SPEEDS.find((speed) => "chartSpeed" in raw && speed.id === raw.chartSpeed)?.id
   if (chartSpeed) ui.chartSpeed = chartSpeed
+  const chartCurve = CHART_CURVES.find((curve) => "chartCurve" in raw && curve.id === raw.chartCurve)?.id
+  if (chartCurve) ui.chartCurve = chartCurve
   const chartLabels = CHART_LABEL_MODES.find((mode) => "chartLabels" in raw && mode === raw.chartLabels)
   if (chartLabels) ui.chartLabels = chartLabels
   const openRange = OPEN_RANGES.find((value) => "openRange" in raw && value === raw.openRange)

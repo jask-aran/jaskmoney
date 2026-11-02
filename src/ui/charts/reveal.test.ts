@@ -1,5 +1,6 @@
 import { expect, test } from "bun:test"
-import { gridColumns, revealRuns } from "./reveal"
+import { easeOut, gridColumns, revealRuns } from "./reveal"
+import { CHART_CURVES, chartCurvePower } from "./motion"
 import type { Run } from "./lineChart"
 
 const text = (runs: Run[]) => runs.map((r) => r.text).join("")
@@ -66,4 +67,18 @@ test("a label with an emoji keeps its row's width while hidden: the gridlines af
       for (const [c, g] of frame) if (p < 0.85 && at.get(c) !== undefined && /[⠀-⣿]/.test(at.get(c)!) === false) expect(at.get(c)).toBe(g.text)
     })
   }
+})
+
+test("the curves all ease out, from 0 to 1; a higher power gets further sooner and settles longer", () => {
+  for (const { power } of CHART_CURVES) {
+    expect(easeOut(0, power)).toBe(0)
+    expect(easeOut(1, power)).toBe(1)
+    expect(easeOut(0.5, power)).toBeGreaterThan(0.5)
+  }
+  const at = (t: number) => CHART_CURVES.map(({ power }) => easeOut(t, power))
+  expect(at(0.2)).toEqual([...at(0.2)].sort((a, b) => a - b))
+  // Unknown or missing: the default (smooth, cubic), as before.
+  expect(chartCurvePower(undefined)).toBe(3)
+  expect(chartCurvePower("bogus")).toBe(3)
+  expect(easeOut(0.3)).toBe(easeOut(0.3, 3))
 })

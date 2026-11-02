@@ -6,9 +6,9 @@ import { accountRows } from "../domain/accountTree"
 import { fuzzyScore } from "../domain/fuzzy"
 import type { DataStore } from "../state/dataStore"
 import { DATABASE_ROWS } from "../state/databaseRows"
-import { CHART_LABEL_LABELS, DEFAULT_CHART_LABELS, CHART_MOTION_LABELS, nextChartMotion, nextChartSpeed } from "../ui/charts/motion"
+import { CHART_LABEL_LABELS, DEFAULT_CHART_LABELS, CHART_MOTION_LABELS, nextChartCurve, nextChartMotion, nextChartSpeed } from "../ui/charts/motion"
 import { SETTINGS_SECTION_LABELS, SETTINGS_SECTIONS, TABS, type ScopeId, type UiState, type UiStore } from "../state/uiStore"
-import { applyAllRules, applySavedFilter, clearTransactionFilter, askForRules, runUndo, showAccount, showDryRun, toggleIcons, toggleWeekStart, toggleXAxis, openThemePicker, toggleChartMotion, cycleChartSpeed, toggleChartLabels, cycleOpenRange, cycleBackdrop, toTransactions } from "./actions"
+import { applyAllRules, applySavedFilter, clearTransactionFilter, askForRules, runUndo, showAccount, showDryRun, toggleIcons, toggleWeekStart, toggleXAxis, openThemePicker, toggleChartMotion, cycleChartSpeed, cycleChartCurve, toggleChartLabels, cycleOpenRange, cycleBackdrop, toTransactions } from "./actions"
 import { AI_ROWS, aiRowLabel, isLlmRow } from "./apiKeys"
 import { keyEvent } from "./keyEvent"
 import { hintEvent, scopeLabel, type Hint } from "./palette"
@@ -130,6 +130,7 @@ function registry(ctx: CommandContext): Entry[] {
     { id: "display:x-axis", category: "Display", label: `Charts' $0 line ${data.state.uiPrefs.xAxis ? "off" : "on"}`, run: () => toggleXAxis(ui, data) },
     { id: "display:chart-motion", category: "Display", label: `Chart animation: ${CHART_MOTION_LABELS[nextChartMotion(data.state.uiPrefs.chartMotion)]}`, run: () => toggleChartMotion(ui, data) },
     { id: "display:chart-speed", category: "Display", label: `Animation speed: ${nextChartSpeed(data.state.uiPrefs.chartSpeed).label}`, run: () => cycleChartSpeed(ui, data) },
+    { id: "display:chart-curve", category: "Display", label: `Animation curve: ${nextChartCurve(data.state.uiPrefs.chartCurve).label}`, run: () => cycleChartCurve(ui, data) },
     { id: "display:chart-labels", category: "Display", label: `Chart labels: ${CHART_LABEL_LABELS[(data.state.uiPrefs.chartLabels ?? DEFAULT_CHART_LABELS) === "together" ? "sequential" : "together"]}`, run: () => toggleChartLabels(ui, data) },
     { id: "display:open-range", category: "Display", label: `Range on open: ${OPEN_RANGE_LABELS[nextOpenRange(data.state.uiPrefs.openRange)]}`, run: () => cycleOpenRange(ui, data) },
     { id: "display:backdrop", category: "Display", label: `Welcome backdrop: ${BACKDROPS[(BACKDROPS.findIndex((entry) => entry.id === (data.state.uiPrefs.backdrop ?? DEFAULT_BACKDROP)) + 1) % BACKDROPS.length]!.label}`, run: () => cycleBackdrop(ui, data) },

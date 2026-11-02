@@ -64,6 +64,7 @@ const SETTING_ICONS = {
   xAxis: "", // line-chart
   chartMotion: "", // play
   chartSpeed: "", // dashboard
+  chartCurve: "", // area-chart
   chartLabels: "", // tag
   openRange: "", // calendar
   backdrop: "", // picture-o
