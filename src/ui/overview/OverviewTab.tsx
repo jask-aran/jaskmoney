@@ -31,7 +31,7 @@ import { count, fit, shortDate, shortMoney, truncate } from "../text"
 import { StyledLine, type StyledSpan } from "../primitives/StyledLine"
 import { monthlyTotal, subscriptions, upcomingCharges, type Subscription } from "../../domain/subscriptions"
 import { allCategoryLines, overviewRange } from "../../state/overviewRange"
-import { AXIS_GUESS, axisWidth, type ChartModel } from "../charts/ChartBody"
+import { AXIS_GUESS, CHART_RIGHT_PAD, axisWidth, type ChartModel } from "../charts/ChartBody"
 import { ChartCard } from "../charts/ChartCard"
 import { chartSpeedMs, showings, takeLaunchReveal, useReveal, type ChartLabelMode } from "../charts/motion"
 import { balancesChart, cashFlowChart, spendingChart, type PeriodNames } from "./periodCharts"
@@ -587,7 +587,7 @@ export const chartRows = (height: number, baseline: boolean) => Math.max(1, heig
  * built once with `guess` as its width, again if the labels need another. */
 export function overviewChartModel(view: string, input: OverviewChartInput, width: number, rows: number, guess = AXIS_GUESS): ChartModel | null {
   const build = (axis: number): ChartModel | null => {
-    const w = Math.max(1, width - axis)
+    const w = Math.max(1, width - axis - CHART_RIGHT_PAD)
     if (view === "Daily" || view === "Cumulative" || view === "Weekly") return spendingChart(view, input.series, w, rows, input.today, input.spending, input.budget, input.names, input.weekStart)
     if (view === "Cash flow") return cashFlowChart(input.series.dates, w, rows, input.today, input.accounts, input.transactions, input.scopeIds, input.weekStart)
     if (view === "Calendar" || view === "Subscriptions") return null

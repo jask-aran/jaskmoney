@@ -19,7 +19,7 @@ import { ListRow, centredTop } from "../primitives/ListRow"
 import { SectionCard } from "../primitives/SectionCard"
 import { S } from "../primitives/S"
 import { fitSpans, type Span } from "../primitives/spans"
-import { AXIS_GUESS, axisWidth, type ChartModel } from "../charts/ChartBody"
+import { AXIS_GUESS, CHART_RIGHT_PAD, axisWidth, type ChartModel } from "../charts/ChartBody"
 import { WIDE } from "../overview/OverviewTab"
 import { cycleLines, cycleLinesLegend, type CycleSpent } from "./budgetCharts"
 import { chartSpeedMs, showings } from "../charts/motion"
@@ -209,7 +209,7 @@ export function BudgetsTab(props: { focused: SectionId }) {
     const height = Math.max(3, chartHeight() - (baseline() ? 4 : 3))
     const series = dailySpendSeries(subjectRows(), cycle().start, cycle().end)
     const view = (BUDGET_VIEWS[ui.state.budgetChart] ?? BUDGET_VIEWS[0]!).view as "Cumulative" | "Daily" | "Weekly"
-    const build = (axis: number) => spendingChart(view, series, Math.max(1, mainWidth() - 4 - axis), height, today(), subjectRows(), subject().amount ?? undefined, { current: "This cycle", previous: "Last cycle" }, data.state.weekStart)
+    const build = (axis: number) => spendingChart(view, series, Math.max(1, mainWidth() - 4 - axis - CHART_RIGHT_PAD), height, today(), subjectRows(), subject().amount ?? undefined, { current: "This cycle", previous: "Last cycle" }, data.state.weekStart)
     let built = build(axisWas)
     const axis = axisWidth(built.ticks)
     if (axis !== axisWas) { axisWas = axis; built = build(axis) }

@@ -90,7 +90,8 @@ export function spendingChart(
     const bars = weeks.map((w) => ({ value: w.startISO <= todayISO ? w.total : 0, ink: partial(w) ? "partial" : "spend" }))
     const spans = barSlots(bars.length, width)
     const weekRuns = weeks.map((w) => ({ start: w.startISO, end: addDays(w.startISO, w.days - 1) }))
-    const { rows: plain, slots } = columnBars(bars, width, height, scale.max, perWeek ? { value: perWeek, ink: "limit" } : undefined, periodMarkers(weekRuns, spans, width, todayISO))
+    const markers = periodMarkers(weekRuns, spans, width, todayISO)
+    const { rows: plain, slots } = columnBars(bars, width, height, scale.max, perWeek ? { value: perWeek, ink: "limit" } : undefined, markers)
     // Labels: this week, then the biggest (named by its biggest spend where
     // it fits), then the rest by size; all of them when bars are wide, else
     // the biggest few.
@@ -111,7 +112,7 @@ export function spendingChart(
     return {
       rows: annotate(plain, marks),
       ticks: moneyTicks(0, scale.max, scale.step, height),
-      ...weekAxis(starts, slots, width, roomy, todayISO, n),
+      ...weekAxis(starts, slots, width, roomy, todayISO, n, markers.find((m) => m.ink === "today")?.col),
       legend: [
         mark(BAR, "spend"),
         muted(bars.some((b) => b.ink === "spend") ? `Weeks, avg ${formatWholeMoney(sum(weeks.filter((w, i) => bars[i]!.ink === "spend").map((w) => w.total)) / bars.filter((b) => b.ink === "spend").length)}` : "No full weeks yet"),
@@ -222,7 +223,11 @@ export function spendingChart(
   // Where a marker goes: today's rule runs through its own bar's column;
   // week and month rules sit in the gap before their day's bar, and the
   // closing month end in the gap after the last.
-  const markerCol = (i: number, ink: string) => (ink === "today" || slots[i]!.col === 0 ? slots[i]!.col : i === n - 1 ? slots[i]!.col + slots[i]!.width : slots[i]!.col - 1)
+  const todayCol = elapsed > 0 ? todayColumn(todayIndex, n, width, gapBefore(slots, todayIndex), (slots[todayIndex + 1]?.col ?? width) - 1) : -1
+  // A week or month rule where a line chart draws it (cellColumn), within
+  // its day's bar and the gap before it; the closing month end after the
+  // last bar.
+  const markerCol = (i: number, ink: string) => (ink === "today" ? todayCol : i === n - 1 && ink !== "week" ? Math.min(width - 1, slots[i]!.col + slots[i]!.width) : Math.max(0, todayColumn(i, n, width, slots[i]!.col - 1, slots[i]!.col + slots[i]!.width - 1)))
   const bars = dates.map((d, i) => ({ value: i < elapsed ? values[i]! : 0, ink: d === todayISO ? "partial" : "spend" }))
   const pastEnd = elapsed > 0 ? slots[todayIndex]!.col + slots[todayIndex]!.width : 0
   const scale = niceScale(Math.max(0, left ?? 0, ...bars.map((b) => b.value)))
@@ -238,7 +243,7 @@ export function spendingChart(
     ...(avg > 0 && pastEnd > 6 ? [{ row: ruleRow(avg, scale.max, height), col: pastEnd - 1 - "avg".length - 1, text: "avg", ink: "ref" }] : []),
     ...(left ? [{ row: ruleRow(left, scale.max, height), col: pastEnd + 2, text: `${shortMoney(left)}/day left`, short: shortMoney(left), ink: "limit" }] : []),
   ]
-  const { labels, today } = dateAxis(dates, width, todayISO, (i) => slots[i]!.col, weekStart)
+  const { labels, today } = dateAxis(dates, width, todayISO, (i) => (i === todayIndex ? todayCol : slots[i]!.col), weekStart)
   return {
     rows: annotate(plain, marks),
     ticks: moneyTicks(0, scale.max, scale.step, height),
@@ -276,7 +281,7 @@ const barNames = (amount: string, total: number, payee: { name: string; amount: 
 
 /** Labels under weekly bars: each week's start date where bars are wide,
  * else the month over the week holding its 1st. */
-function weekAxis(starts: string[], slots: Array<{ col: number; width: number }>, width: number, roomy: boolean, todayISO: string, days: number): Pick<ChartModel, "labels" | "today"> {
+function weekAxis(starts: string[], slots: Array<{ col: number; width: number }>, width: number, roomy: boolean, todayISO: string, days: number, todayCol?: number): Pick<ChartModel, "labels" | "today"> {
   const line = new Array<string>(width).fill(" ")
   const taken = new Array<boolean>(width).fill(false)
   const put = (start: number, text: string) => {
@@ -289,7 +294,9 @@ function weekAxis(starts: string[], slots: Array<{ col: number; width: number }>
   let today: ChartModel["today"]
   if (todaySlot) {
     const text = days <= 45 ? String(Number(todayISO.slice(8, 10))) : shortDate(todayISO)
-    const start = Math.max(0, Math.min(width - text.length, todaySlot.col + Math.floor((todaySlot.width - 1) / 2) - Math.floor((text.length - 1) / 2)))
+    // Under today's rule (periodMarkers), else its week's bar.
+    const at = todayCol ?? todaySlot.col + Math.floor((todaySlot.width - 1) / 2)
+    const start = Math.max(0, Math.min(width - text.length, at - Math.floor((text.length - 1) / 2)))
     if (text.length <= width) { put(start, text); today = { start, length: text.length } }
   }
   starts.forEach((iso, i) => {
@@ -307,13 +314,29 @@ function weekAxis(starts: string[], slots: Array<{ col: number; width: number }>
   return { labels: line.join(""), ...(today ? { today } : {}) }
 }
 
+/** The first column of the gap before bar `i` (its own first column when
+ * there's no gap, or it's the first bar). */
+function gapBefore(spans: Array<{ col: number; width: number }>, i: number): number {
+  const prev = spans[i - 1]
+  return prev ? Math.min(spans[i]!.col, prev.col + prev.width) : spans[i]!.col
+}
+
+/** Today's column on a bar chart: where a line chart over the same `days`
+ * draws today (cellColumn), kept within today's bar and the gaps either
+ * side of it (`from`–`to`), never on a neighbour's bar. The Overview's two panes then put today's rule in the
+ * same column whenever the bars allow, whatever their views. */
+function todayColumn(index: number, days: number, width: number, from: number, to: number): number {
+  return Math.max(from, Math.min(to, cellColumn(index, days, width)))
+}
+
 /**
  * Rules for bars that each stand for a run of days (a week, or a month
  * with `months: false`), as dateAxis draws them for days: a month's rule
  * in the gap nearest its 1st (before the bar it falls in, or after it when
  * the 1st is late in the run), only quarters' when months are under 4
  * cells and only years' when every bar is a month; the closing month end
- * after the last bar; and today's where its day falls across its bar.
+ * after the last bar; and today's where a line chart over the same days
+ * draws it, as near as its bar and the gaps beside it allow (todayColumn).
  */
 function periodMarkers(runs: Array<{ start: string; end: string }>, spans: Array<{ col: number; width: number }>, width: number, todayISO: string, months = true): Array<{ col: number; ink: string }> {
   if (!runs.length || !spans.length) return []
@@ -321,26 +344,28 @@ function periodMarkers(runs: Array<{ start: string; end: string }>, spans: Array
   const quartersOnly = width / (Math.floor(daysBetween(first, last) / 30.44) + 1) < 4
   const inkOf = (iso: string) => (iso.slice(5, 7) === "01" ? "year" : "month")
   const wanted = (iso: string) => inkOf(iso) === "year" || (months && (!quartersOnly || ["04", "07", "10"].includes(iso.slice(5, 7))))
-  const before = (i: number) => spans[i]!.col - 1
-  const after = (i: number) => spans[i]!.col + spans[i]!.width
+  // The gaps either side of bar i: where a line chart over the same days
+  // would draw the rule (cellColumn), as near as the gap allows, so the
+  // Overview's two panes share it where gaps are wide enough.
+  const days = daysBetween(first, last) + 1
+  const lineCol = (iso: string) => cellColumn(daysBetween(first, iso), days, width)
+  const clamp = (c: number, lo: number, hi: number) => Math.max(lo, Math.min(hi, c))
+  const before = (i: number, at: number) => clamp(at, i > 0 && spans[i - 1] ? spans[i - 1]!.col + spans[i - 1]!.width : spans[i]!.col - 1, spans[i]!.col - 1)
+  const after = (i: number, at: number) => clamp(at, spans[i]!.col + spans[i]!.width, Math.max(spans[i]!.col + spans[i]!.width, (spans[i + 1]?.col ?? width) - 1))
   const markers: Array<{ col: number; ink: string }> = []
   runs.forEach((run, i) => {
     if (!spans[i]) return
     for (let iso = run.start; iso <= run.end; iso = addDays(iso, 1)) {
       if (!iso.endsWith("-01") || iso === first || !wanted(iso)) continue
       const late = 2 * daysBetween(run.start, iso) > daysBetween(run.start, run.end) + 1
-      markers.push({ col: late ? after(i) : before(i), ink: inkOf(iso) })
+      markers.push({ col: late ? after(i, lineCol(iso)) : before(i, lineCol(iso)), ink: inkOf(iso) })
     }
   })
   const end = spans.length - 1
-  if (addDays(last, 1).endsWith("-01") && wanted(addDays(last, 1))) markers.push({ col: after(end), ink: inkOf(addDays(last, 1)) })
+  if (addDays(last, 1).endsWith("-01") && wanted(addDays(last, 1))) markers.push({ col: after(end, width - 1), ink: inkOf(addDays(last, 1)) })
   const current = runs.findIndex((r) => r.start <= todayISO && todayISO <= r.end)
   const span = spans[current]
-  if (span) {
-    const run = runs[current]!
-    const at = (daysBetween(run.start, todayISO) + 0.5) / (daysBetween(run.start, run.end) + 1)
-    markers.push({ col: span.col + Math.min(span.width - 1, Math.floor(at * span.width)), ink: "today" })
-  }
+  if (span) markers.push({ col: todayColumn(daysBetween(first, todayISO), daysBetween(first, last) + 1, width, gapBefore(spans, current), (spans[current + 1]?.col ?? width) - 1), ink: "today" })
   return markers.filter((m) => m.col >= 0 && m.col < width)
 }
 

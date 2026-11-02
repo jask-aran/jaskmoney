@@ -20,6 +20,10 @@ export function axisWidth(ticks: Map<number, string>): number {
   return Math.max(AXIS_LABEL, ...[...ticks.values()].map((t) => t.length)) + 2
 }
 
+/** A blank column between a chart's plot and its pane's right edge, to
+ * balance the room the axis labels leave on the left. */
+export const CHART_RIGHT_PAD = 1
+
 /** The axis width before the ticks are known: usually the right one. */
 export const AXIS_GUESS = AXIS_LABEL + 2
 
