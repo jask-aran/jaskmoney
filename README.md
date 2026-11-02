@@ -12,6 +12,12 @@ tags transactions (both ways with Up), and shows where the money goes against a 
 ## Install
 
 ```bash
+curl -fsSL https://get.jask-aran.com/jaskmoney | bash
+```
+
+That serves this repo's [`scripts/install.sh`](scripts/install.sh). To fetch it from GitHub directly instead:
+
+```bash
 curl -fsSL https://raw.githubusercontent.com/jask-aran/jaskmoney/main/scripts/install.sh | bash
 ```
 
