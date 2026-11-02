@@ -22,8 +22,9 @@ const [available, setAvailable] = createSignal<string | null>(null)
 /** The newer version, when there is one. */
 export const updateAvailable = available
 
-/** The top bar's version: "v1.0.1", or "v1.0.1 · 1.0.2 out". */
-export const versionLabel = (): string => `v${VERSION}${available() ? ` · ${available()} out` : ""}`
+/** The top bar's version: "v1.0.1", "v1.0.1 · 1.0.2 out", or run from
+ * source (`bun run dev`, `bun start`) rather than a built binary, "v1.0.1 dev". */
+export const versionLabel = (): string => `v${VERSION}${compiled ? "" : " dev"}${available() ? ` · ${available()} out` : ""}`
 
 /** "v1.2.0" → "1.2.0", when it's newer than `current`. */
 export function newer(tag: string | undefined, current: string = VERSION): string | null {

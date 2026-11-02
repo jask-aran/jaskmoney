@@ -64,12 +64,13 @@ test("the top bar always shows the version; a newer one turns it green; hover, c
   const t = await renderApp({ width: 160, height: 40 })
   await t.renderOnce()
   const bar = () => t.captureSpans().lines[0]!.spans
-  expect(bar().some((s) => s.text.includes(`v${VERSION}`))).toBe(true)
+  // Tests run from source: a dev build says so.
+  expect(bar().some((s) => s.text.includes(`v${VERSION} dev`))).toBe(true)
   expect(bar().some((s) => s.text.includes(" out"))).toBe(false)
   await checkForUpdate({ env: { JASKMONEY_HOME: home() }, fetch: release("v99.0.0"), force: true })
   expect(updateAvailable()).toBe("99.0.0")
   await t.renderOnce()
-  const span = bar().find((s) => s.text.includes(`v${VERSION} · 99.0.0 out`))
+  const span = bar().find((s) => s.text.includes(`v${VERSION} dev · 99.0.0 out`))
   expect(span).toBeDefined()
   expect(span!.fg.toInts()).toEqual(RGBA.fromHex(tone.good).toInts())
   ui.setStatus("")
@@ -86,7 +87,7 @@ test("the top bar always shows the version; a newer one turns it green; hover, c
   // Hovering it with the mouse does the same.
   ui.setState({ focusedSection: "none" })
   ui.setStatus("")
-  const x = t.captureCharFrame().split("\n")[0]!.indexOf(`v${VERSION}`)
+  const x = t.captureCharFrame().split("\n")[0]!.indexOf(`v${VERSION} dev`)
   await t.mockMouse.moveTo(x + 1, 0)
   await Bun.sleep(10)
   expect(ui.state.status).toBe(`Jaskmoney ${VERSION}, from source: git pull to update`)
