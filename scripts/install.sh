@@ -30,8 +30,9 @@ else
 fi
 ref="${JASKMONEY_REF:-$(git -C "$SRC/repo" tag --list 'v*' --sort=-v:refname | head -n 1)}"
 [ -n "$ref" ] || ref=origin/main
-git -C "$SRC/repo" -c advice.detachedHead=false checkout --quiet --force "$ref" 2>/dev/null \
-  || git -C "$SRC/repo" -c advice.detachedHead=false checkout --quiet --force "origin/$ref"
+# A branch as just fetched (origin/<name>), else the tag or commit.
+git -C "$SRC/repo" -c advice.detachedHead=false checkout --quiet --force "origin/${ref#origin/}" 2>/dev/null \
+  || git -C "$SRC/repo" -c advice.detachedHead=false checkout --quiet --force "$ref"
 
 # Your Bun, if it's the tested version (package.json "packageManager") or newer.
 need="$(sed -n 's/.*"packageManager": *"bun@\([0-9.]*\)".*/\1/p' "$SRC/repo/package.json")"
