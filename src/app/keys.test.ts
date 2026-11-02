@@ -389,7 +389,13 @@ describe("key router", () => {
     // Written as the dialog reads them back.
     expect(ui.state.customEdit?.start.value).toBe("1 Oct 2026")
     expect(ui.state.customEdit?.end.value).toBe("31 Oct 2026")
-    // Up and down move a date a day, shift a week; only tab changes field.
+    // It opens on the calendar: arrows move its cursor, not the dates.
+    expect(ui.state.customEdit?.field).toBe(2)
+    handleKey(ui, key("right"), data)
+    expect(ui.state.customEdit?.cursor).toBe("2026-10-02")
+    expect(ui.state.customEdit?.start.value).toBe("1 Oct 2026")
+    // Tab to From: up and down move its date a day, shift a week.
+    handleKey(ui, key("tab"), data)
     handleKey(ui, key("down"), data)
     expect(ui.state.customEdit?.start.value).toBe("30 Sep 2026")
     handleKey(ui, key("up", { shift: true }), data)
@@ -406,10 +412,11 @@ describe("key router", () => {
     // An end before the start is refused with a message.
     handleKey(ui, key("return"), data)
     handleKey(ui, key("tab"), data)
+    handleKey(ui, key("tab"), data)
     handleKey(ui, key("u", { ctrl: true }), data)
     for (const ch of "2026-09-01") handleKey(ui, key(ch), data)
     handleKey(ui, key("return"), data)
-    expect(ui.state.customEdit?.error).toBe("End is before start")
+    expect(ui.state.customEdit?.error).toBe("To is before From")
     handleKey(ui, key("escape"), data)
     expect(ui.state.timeframe.custom).toEqual({ start: "2026-10-01", end: "2026-10-15" })
   })

@@ -220,21 +220,22 @@ test("the two chart panes are the same height, an odd line widening the gap betw
   }
 })
 
-test("the Custom range dialog says the range as it reads while typing, what it takes when it doesn't, and the error enter found", async () => {
-  const t = await overview(140, 40)
+test("the Custom range dialog: typed dates (tab) give the range's length as they read, what they take when they don't, and the error enter found", async () => {
+  const t = await overview(140, 44)
   handleKey(ui, key("c", { shift: true, sequence: "C" }), data)
+  handleKey(ui, key("tab"), data)
   const lines = async () => { await t.renderOnce(); return t.captureCharFrame().split("\n") }
-  expect((await lines()).some((l) => l.includes("Start  20 Sep 2026"))).toBe(true)
+  expect((await lines()).some((l) => l.includes("From  20 Sep 2026"))).toBe(true)
   handleKey(ui, key("u", { ctrl: true }), data)
   for (const c of "sep") handleKey(ui, key(c), data)
-  expect((await lines()).some((l) => l.includes("1 Sep – 20 Oct 2026 · 50 days"))).toBe(true)
+  expect((await lines()).some((l) => /From  sep.*To  20 Oct 2026 +50 days/.test(l))).toBe(true)
   handleKey(ui, key("u", { ctrl: true }), data)
   handleKey(ui, key("z"), data)
   expect((await lines()).some((l) => l.includes("│ 18/11, 1 oct, oct, -14, today"))).toBe(true)
   handleKey(ui, key("return"), data)
-  const error = (await lines()).find((l) => l.includes("Start isn't a date"))!
+  const error = (await lines()).find((l) => l.includes("From isn't a date"))!
   // Whole: the dialog is wide enough for it.
-  expect(error).toMatch(/Start isn't a date: 18\/11, 1 oct, oct, -14, today +│/)
+  expect(error).toMatch(/From isn't a date: 18\/11, 1 oct, oct, -14, today +│/)
   handleKey(ui, key("escape"), data)
   t.renderer.destroy()
 })
@@ -242,9 +243,8 @@ test("the Custom range dialog says the range as it reads while typing, what it t
 test("the Custom range calendar: enter marks a cell, a second applies; a month twice is that month; esc undoes a mark; clicks do the same", async () => {
   const t = await overview(140, 44)
   // The overview's clock: 20 Oct 2026.
+  // It opens on the calendar.
   handleKey(ui, key("c", { shift: true, sequence: "C" }), data)
-  handleKey(ui, key("tab"), data)
-  handleKey(ui, key("tab"), data)
   expect(ui.state.customEdit?.field).toBe(2)
   // Cursor on the range's start (20 Sep): mark, move two weeks on, the
   // fields follow; esc puts them back.
@@ -270,13 +270,13 @@ test("the Custom range calendar: enter marks a cell, a second applies; a month t
   const click = async (y: number, x: number) => { await t.mockMouse.click(x, y); await t.renderOnce() }
   // From line `from` and column `left` on (the chart behind has its own 12s).
   const at = (text: string, from = 0, left = 0) => { const y = lines().findIndex((l, i) => i >= from && l.indexOf(text, left) >= 0); return { y, x: lines()[y]!.indexOf(text, left) } }
-  const back = at("‹ October 2026")
+  const back = at("‹  October 2026")
   await click(back.y, back.x)
-  expect(lines().some((l) => l.includes("‹ September 2026 ›"))).toBe(true)
+  expect(lines().some((l) => l.includes("‹  September 2026  ›"))).toBe(true)
   const next = at("›", back.y)
   await click(next.y, next.x)
-  expect(lines().some((l) => l.includes("‹ October 2026 ›"))).toBe(true)
-  const { y: header, x: left } = at("Mo  Tu")
+  expect(lines().some((l) => l.includes("‹  October 2026  ›"))).toBe(true)
+  const { y: header, x: left } = at("Mo    Tu")
   const five = at("  5  ", header, left - 2)
   await click(five.y, five.x + 3)
   const twelve = at(" 12 ", header, left - 2)

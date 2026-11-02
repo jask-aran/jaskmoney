@@ -163,10 +163,10 @@ export function customRange(start: string, end: string): { start: string; end: s
 export function readCustomRange(startText: string, endText: string, today: string):
   { start: string; end: string; label: string; days: number } | { error: string; field: 0 | 1 } {
   const start = rangeDayFromText(startText, today, "start")
-  if (start === null) return { error: `Start isn't a date: ${CUSTOM_DATE_FORMS}`, field: 0 }
+  if (start === null) return { error: `From isn't a date: ${CUSTOM_DATE_FORMS}`, field: 0 }
   const end = rangeDayFromText(endText, today, "end")
-  if (end === null) return { error: `End isn't a date: ${CUSTOM_DATE_FORMS}`, field: 1 }
-  if (end < start) return { error: "End is before start", field: 1 }
+  if (end === null) return { error: `To isn't a date: ${CUSTOM_DATE_FORMS}`, field: 1 }
+  if (end < start) return { error: "To is before From", field: 1 }
   return { start, end, label: formatDays(start, end), days: daysBetween(start, end) + 1 }
 }
 

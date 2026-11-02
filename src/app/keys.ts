@@ -685,7 +685,7 @@ function handleOverviewCustom(ui: UiStore, key: KeyEvent, data?: DataStore): voi
   // Up and down move the field's date a day later or earlier (shift: a week).
   if (name === "up" || name === "down") {
     const day = rangeDayFromText(edit[side].value, today, side)
-    if (day === null) { ui.setState({ customEdit: { ...edit, error: `${side === "start" ? "Start" : "End"} isn't a date: ${CUSTOM_DATE_FORMS}` } }); return }
+    if (day === null) { ui.setState({ customEdit: { ...edit, error: `${side === "start" ? "From" : "To"} isn't a date: ${CUSTOM_DATE_FORMS}` } }); return }
     const next = addDays(day, (name === "up" ? 1 : -1) * (key.shift ? 7 : 1))
     ui.setState({ customEdit: { ...edit, [side]: textField(rangeDayText(next)), cursor: next, error: "" } })
     return
@@ -2111,7 +2111,8 @@ export function stepOverviewRange(ui: UiStore, delta: -1 | 1, data?: DataStore):
 function openCustomRange(ui: UiStore, cycle: CycleConfig | undefined): void {
   const from = ui.state.timeframe.custom ?? timeframeBounds(ui.state.timeframe, appNow(), cycle)
   ui.setState({ customEdit: {
-    start: textField(rangeDayText(from.start)), end: textField(rangeDayText(from.end)), field: 0, error: "",
+    // The calendar has the focus: arrows move its cursor; tab to type.
+    start: textField(rangeDayText(from.start)), end: textField(rangeDayText(from.end)), field: 2, error: "",
     view: "days", cursor: from.start, mark: null, before: null,
   } })
 }

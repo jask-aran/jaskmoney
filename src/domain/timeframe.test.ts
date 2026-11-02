@@ -185,6 +185,6 @@ describe("readCustomRange", () => {
     expect(readCustomRange("oct", "", "2026-11-02")).toEqual({ start: "2026-10-01", end: "2026-11-02", label: "1 Oct – 2 Nov 2026", days: 33 })
     expect(readCustomRange("oct", "oct", "2026-11-02")).toMatchObject({ start: "2026-10-01", end: "2026-10-31", days: 31 })
     expect(readCustomRange("nope", "", "2026-11-02")).toMatchObject({ field: 0 })
-    expect(readCustomRange("today", "-3", "2026-11-02")).toEqual({ error: "End is before start", field: 1 })
+    expect(readCustomRange("today", "-3", "2026-11-02")).toEqual({ error: "To is before From", field: 1 })
   })
 })
