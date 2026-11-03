@@ -5,7 +5,8 @@ import { VERSION, cloneOf, compiled } from "./app/version"
 /**
  * Commands that run instead of the app (index.tsx imports this first):
  *   jaskmoney --version
- *   jaskmoney upgrade   (or update): the latest release, as installed
+ *   jaskmoney upgrade   (or update): the latest release, as installed;
+ *                       --force reinstalls it when it's this one
  */
 export const INSTALLER = "https://raw.githubusercontent.com/jask-aran/jaskmoney/main/scripts/install.sh"
 
@@ -34,6 +35,6 @@ async function upgrade(): Promise<number> {
     console.error(`Couldn't fetch the installer (${error instanceof Error ? error.message : error}): ${INSTALLER}`)
     return 1
   }
-  const result = spawnSync("bash", ["-s"], { input: script, stdio: ["pipe", "inherit", "inherit"], env: { ...process.env, JASKMONEY_BIN: dirname(process.execPath) } })
+  const result = spawnSync("bash", ["-s"], { input: script, stdio: ["pipe", "inherit", "inherit"], env: { ...process.env, JASKMONEY_BIN: dirname(process.execPath), ...(process.argv.includes("--force") ? { JASKMONEY_FORCE: "1" } : {}) } })
   return result.status ?? 1
 }

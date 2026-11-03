@@ -9,7 +9,8 @@
 # downloaded as a tarball (no git needed), with Bun: yours if it's the tested
 # version (package.json) or newer, else it offers to install that version.
 # The source is kept in JASKMONEY_SRC (default ~/.local/share/jaskmoney);
-# JASKMONEY_BIN (default ~/.local/bin) gets the command. Questions are asked
+# JASKMONEY_BIN (default ~/.local/bin) gets the command; JASKMONEY_FORCE=1
+# reinstalls the release when it's the one installed. Questions are asked
 # on the terminal; with none (CI), every answer is yes.
 set -euo pipefail
 
@@ -17,12 +18,35 @@ TARBALL="https://github.com/jask-aran/jaskmoney/archive/refs/heads/main.tar.gz"
 SRC="${JASKMONEY_SRC:-$HOME/.local/share/jaskmoney}"
 BIN="${JASKMONEY_BIN:-$HOME/.local/bin}"
 
-# The look (after opencode's installer): labels muted, names and versions
-# plain, the bar in the app's brand pink.
-MUTED='' PINK='' NC=''
-[ -t 1 ] && MUTED='\033[2m' PINK='\033[38;2;245;194;231m' NC='\033[0m'
+# The look (after opencode's installer): a spinner while it works, the
+# bar in the app's brand pink, a green ✓ when a step is done; labels
+# muted, names and versions plain. Colour and motion only on a terminal.
+MUTED='' PINK='' GREEN='' NC=''
+[ -t 1 ] && MUTED='\033[2m' PINK='\033[38;2;245;194;231m' GREEN='\033[38;2;166;227;161m' NC='\033[0m'
+FRAMES=(◒ ◐ ◓ ◑)
 say() { printf "${MUTED}%s${NC} %s\n" "$1" "${2:-}"; }
+ok() { local where="${2:-}"; printf "${GREEN}✓${NC} %s ${MUTED}%s${NC}\n" "$1" "${where/#$HOME/\~}"; }
 fail() { printf 'jaskmoney install: %s\n' "$*" >&2; exit 1; }
+cursor() { [ -t 1 ] && printf "\033[?25$1" || true; }
+trap 'cursor h' EXIT
+
+# Runs the rest with a spinner and $1 beside it, cleared when it's done;
+# its output in SPUN.
+spin() {
+  local text=$1 out status=0 i=0; shift
+  out="$(mktemp)"
+  "$@" >"$out" 2>&1 & local pid=$!
+  if [ -t 1 ]; then
+    cursor l
+    while kill -0 "$pid" 2>/dev/null; do
+      printf "\r${PINK}%s${NC} ${MUTED}%s${NC}" "${FRAMES[i++ % 4]}" "$text"; sleep 0.08
+    done
+    printf '\r\033[2K'; cursor h
+  fi
+  wait "$pid" || status=$?
+  SPUN="$(cat "$out")"; rm -f "$out"
+  return "$status"
+}
 command -v curl >/dev/null || fail "needs curl"
 
 # A yes/no question, on the terminal: the script itself is on stdin. Enter is yes.
@@ -46,7 +70,7 @@ rc_file() {
 
 # Offers to put BIN on PATH, then says how to start.
 finish() {
-  say "${1:-Installed}" "$BIN/jaskmoney"
+  ok "${1:-Installed}" "$BIN/jaskmoney"
   case ":$PATH:" in *":$BIN:"*) echo "Run: jaskmoney"; return ;; esac
   local rc line
   rc="$(rc_file)"
@@ -68,27 +92,25 @@ finish() {
 # Downloads $1 to $2 with a bar on the terminal (stderr), from curl's bytes
 # so far against the file's size ($3); quietly anywhere else.
 download() {
-  if ! [ -t 2 ] || [ -z "$3" ]; then curl -fsSL -o "$2" "$1"; return; fi
-  printf '\033[?25l' >&2
-  trap "printf '\\033[?25h' >&2" EXIT
-  curl -fsSL -o "$2" "$1" & local pid=$! got=0
+  if ! [ -t 1 ] || [ -z "$3" ]; then curl -fsSL -o "$2" "$1"; return; fi
+  cursor l
+  curl -fsSL -o "$2" "$1" & local pid=$! i=0 status=0
   while kill -0 "$pid" 2>/dev/null; do
-    got=$(stat -c %s "$2" 2>/dev/null || echo 0)
-    bar "$got" "$3"
-    sleep 0.1
+    bar "${PINK}${FRAMES[i++ % 4]}${NC}" "$(stat -c %s "$2" 2>/dev/null || echo 0)" "$3"
+    sleep 0.08
   done
-  local status=0
   wait "$pid" || status=$?
-  [ "$status" -eq 0 ] && bar "$3" "$3"
-  printf '\n\033[?25h' >&2; trap - EXIT
+  if [ "$status" -eq 0 ]; then bar "${GREEN}✓${NC}" "$3" "$3"; fi
+  printf '\n'; cursor h
   return "$status"
 }
+# bar <mark> <bytes> <of>
 bar() {
-  local width=40 percent=$(( $1 * 100 / $2 ))
+  local width=40 percent=$(( $2 * 100 / $3 ))
   local on=$(( percent * width / 100 )) filled empty
   filled=$(printf "%*s" "$on" ""); empty=$(printf "%*s" "$(( width - on ))" "")
-  printf "\r${PINK}%s${MUTED}%s${NC} %3d%%  ${MUTED}%s / %s MB${NC}" "${filled// /■}" "${empty// /･}" "$percent" \
-    "$(( $1 / 1000000 ))" "$(( $2 / 1000000 ))" >&2
+  printf "\r%b ${PINK}%s${MUTED}%s${NC} %3d%%  ${MUTED}%s / %s MB${NC}" "$1" "${filled// /■}" "${empty// /･}" "$percent" \
+    "$(( $2 / 1000000 ))" "$(( $3 / 1000000 ))"
 }
 
 # Linux x64: the latest release's binary, gzipped (less than half the size;
@@ -96,23 +118,30 @@ bar() {
 # then renamed over the old one (a running jaskmoney keeps its file).
 if [ -z "${JASKMONEY_FROM_SOURCE:-}" ] && [ "$(uname -s)-$(uname -m)" = "Linux-x86_64" ]; then
   releases="https://github.com/jask-aran/jaskmoney/releases"
-  latest="$(curl -fsSI "$releases/latest" | sed -n 's|^[Ll]ocation: .*/tag/v\([0-9.]*\).*|\1|p')"
-  [ -n "$latest" ] || fail "couldn't find the latest release at $releases"
   installed="$("$BIN/jaskmoney" --version 2>/dev/null | sed -n 's/^jaskmoney //p' || true)"
-  if [ "$installed" = "$latest" ]; then say "Up to date:" "jaskmoney $latest"; exit 0; fi
-  if [ -n "$installed" ]; then say "Upgrading jaskmoney" "$installed → $latest"; finished="Upgraded to $latest:"
-  else say "Installing jaskmoney" "$latest"; finished="Installed $latest:"; fi
+  spin "Checking for a new release" curl -fsSI "$releases/latest" || fail "couldn't reach $releases"
+  latest="$(sed -n 's|^[Ll]ocation: .*/tag/v\([0-9.]*\).*|\1|p' <<<"$SPUN")"
+  [ -n "$latest" ] || fail "couldn't find the latest release at $releases"
+  if [ "$installed" = "$latest" ] && [ -z "${JASKMONEY_FORCE:-}" ]; then
+    ok "jaskmoney $latest is up to date" "$BIN/jaskmoney"
+    say "  jaskmoney upgrade --force reinstalls it"
+    exit 0
+  fi
+  if [ "$installed" = "$latest" ]; then say "Reinstalling jaskmoney" "$latest"; finished="Reinstalled $latest"
+  elif [ -n "$installed" ]; then say "Upgrading jaskmoney" "$installed → $latest"; finished="Upgraded to $latest"
+  else say "Installing jaskmoney" "$latest"; finished="Installed $latest"; fi
   mkdir -p "$BIN"
   url="$releases/download/v$latest/jaskmoney-linux-x64"
   size() { curl -fsSIL "$1" 2>/dev/null | tr -d '\r' | sed -n 's/^[Cc]ontent-[Ll]ength: //p' | tail -1; }
   if gz="$(size "$url.gz")" && [ -n "$gz" ]; then
     download "$url.gz" "$BIN/jaskmoney.new.gz" "$gz" || fail "the download failed: $url.gz"
-    gzip -dc "$BIN/jaskmoney.new.gz" >"$BIN/jaskmoney.new"; rm -f "$BIN/jaskmoney.new.gz"
+    spin "Unpacking" sh -c 'gzip -dc "$1.gz" >"$1" && rm -f "$1.gz"' sh "$BIN/jaskmoney.new" || fail "couldn't unpack the download"
   else
     download "$url" "$BIN/jaskmoney.new" "$(size "$url")" || fail "the download failed: $url"
   fi
   chmod +x "$BIN/jaskmoney.new"
-  if [ "$("$BIN/jaskmoney.new" --version 2>/dev/null)" != "jaskmoney $latest" ]; then
+  spin "Checking it runs" "$BIN/jaskmoney.new" --version || true
+  if [ "$SPUN" != "jaskmoney $latest" ]; then
     rm -f "$BIN/jaskmoney.new"; fail "the download doesn't run; nothing was changed"
   fi
   mv -f "$BIN/jaskmoney.new" "$BIN/jaskmoney"
