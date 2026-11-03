@@ -1,6 +1,7 @@
 import { scopeKey } from "./budgetScopes"
 import { budgetsIn, cycleAt, cycleFor, cycleSpending, pastCycles, spendByGroup, type Budget, type BudgetHistoryEntry, type Cycle, type CycleConfig } from "./budget"
 import type { Account, Category, Transaction } from "./types"
+import type { BudgetStyle } from "./topUp"
 
 /** One line of the Budgets tab's category list. */
 export interface BudgetLine {
@@ -90,9 +91,10 @@ export function budgetView(config: CycleConfig, todayISO: string, offset: number
  * the cycle, as one id. */
 export const budgetArmId = (budget: Budget, cycleStart: string) => `${scopeKey(budget.scope)}@${cycleStart}`
 
-/** A row of the Budgets tab's Set budgets pane: the overall budget first,
- * then the categories, groups closed unless opened. */
+/** A row of the Budgets tab's Set budgets pane: the budget style, the
+ * overall budget, then the categories, groups closed unless opened. */
 export type SetupRow =
+  | { kind: "style"; style: BudgetStyle }
   | { kind: "overall"; budget: Budget | null; name: string; average: number }
   | { kind: "line"; line: BudgetLine; open: boolean | null; budgeted: number }
 
@@ -104,7 +106,7 @@ export type SetupRow =
  * `open` on a group is null when it has no categories to show, and
  * `budgeted` counts the budgets inside it (seen while it's closed).
  */
-export function budgetSetupRows(lines: BudgetLine[], budgets: Budget[], open: ReadonlySet<number>, ignored: ReadonlySet<number>): SetupRow[] {
+export function budgetSetupRows(lines: BudgetLine[], budgets: Budget[], open: ReadonlySet<number>, ignored: ReadonlySet<number>, style: BudgetStyle = "tracking"): SetupRow[] {
   const hasCategoryBudgets = budgets.some((b) => b.scope.kind === "category")
   const groups: Array<{ group: BudgetLine; children: BudgetLine[] }> = []
   for (const l of lines) {
@@ -117,6 +119,7 @@ export function budgetSetupRows(lines: BudgetLine[], budgets: Budget[], open: Re
     return sum + group.average - children.filter((c) => c.budget || !counted(c)).reduce((n, c) => n + c.average, 0)
   }, 0)
   return [
+    { kind: "style", style },
     { kind: "overall", budget: budgets.find((b) => b.scope.kind === "overall") ?? null, name: hasCategoryBudgets ? "Everything else" : "Overall spending", average },
     ...groups.flatMap(({ group, children }): SetupRow[] => {
       const isOpen = group.categoryId !== null && open.has(group.categoryId)

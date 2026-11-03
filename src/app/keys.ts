@@ -1949,11 +1949,12 @@ function handleBudgets(ui: UiStore, key: KeyEvent, data?: DataStore): void {
 /** The Set budgets pane's rows, as the tab draws them. */
 function setupRows(ui: UiStore, data: DataStore): SetupRow[] {
   const view = viewedBudgets(ui, data)
-  return budgetSetupRows(budgetLines(ui, data), view.budgets, new Set(ui.state.budgetSetupOpen), budgetIgnoredIds(data.state.categories))
+  return budgetSetupRows(budgetLines(ui, data), view.budgets, new Set(ui.state.budgetSetupOpen), budgetIgnoredIds(data.state.categories), data.state.uiPrefs.budgetStyle)
 }
 
-/** The Budgets tab's Set budgets pane: enter sets or edits the overall
- * budget (first; a new one starts from its average) or the budget of the
+/** The Budgets tab's Set budgets pane: enter on the style switches it
+ * (tracking, top-up); enter sets or edits the overall budget (a new one
+ * starts from its average) or the budget of the
  * group or category at the cursor (a new one starts from its average:
  * allocating down), space opens or closes a group, del twice removes a
  * budget, x leaves a category out of the overall budget (or brings it
@@ -1973,6 +1974,16 @@ function handleBudgetCategories(ui: UiStore, key: KeyEvent, data?: DataStore): v
   if (moved != null) { ui.setState({ budgetCategoryCursor: moved }); return }
   const row = rows[cursor]
   if (!row) return
+  // The style: enter, space or h/l switch tracking and top-up.
+  if (row.kind === "style") {
+    if (name === "return" || name === "enter" || name === "space" || key.sequence === " ") {
+      const style = row.style === "topup" ? "tracking" : "topup"
+      settleData(ui, data.saveUiPrefs({ budgetStyle: style }), () => ui.setStatus(style === "topup"
+        ? "Top-up: each payday Spending is topped up to your budgets' total, the rest of the pay to savers"
+        : "Tracking: spending against your budgets"))
+    }
+    return
+  }
   if (row.kind === "overall") {
     if (name === "return" || name === "enter") { openBudgetEditor(ui, data, row.budget, { kind: "overall" }, row.average); return }
     if ((name === "delete" || name === "backspace") && row.budget) {

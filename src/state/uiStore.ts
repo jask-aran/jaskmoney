@@ -601,7 +601,8 @@ function createUiStore() {
       activeTab: tab,
       drillReturn: null,
       focusedSection: tab === "budgets" && state.budgetsEmpty ? "bud.categories" : TAB_DEFAULT_FOCUS[tab],
-      ...(tab === "budgets" && state.budgetsEmpty ? { budgetCategoryCursor: 0 } : {}),
+      // On the overall budget (the style is first).
+      ...(tab === "budgets" && state.budgetsEmpty ? { budgetCategoryCursor: 1 } : {}),
       range: null,
       settingsActive: false,
       armed: null,

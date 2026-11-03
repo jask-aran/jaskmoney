@@ -1,3 +1,4 @@
+import type { BudgetStyle } from "../domain/topUp"
 import { jaskmoneyHome } from "../storage/home"
 import { THEMES } from "../themes"
 import { existsSync, readFileSync } from "node:fs"
@@ -12,6 +13,7 @@ import { CHART_CURVES, CHART_LABEL_MODES, type ChartCurveId, type ChartLabelMode
 
 import { BACKDROPS, type BackdropId } from "../ui/welcome/backdrop"
 
+
 export interface UiPrefs {
   filterUsage?: Record<string, string>
   timeframe?: Pick<TimeframeState, "family" | "lookback" | "period" | "custom">
@@ -19,6 +21,10 @@ export interface UiPrefs {
   /** Two (saved before the grid) or four. */
   chartViews?: number[]
   weekStart?: WeekStart
+  /** How budgets work: "tracking" (spending against budgets, the default)
+   * or "topup" (each payday Spending is topped up to the budgets' total and
+   * the rest of the pay goes to savers). */
+  budgetStyle?: BudgetStyle
   /** Charts draw an x-axis line under the plot (default off). */
   xAxis?: boolean
   /** The colour theme's id (themes.ts; default Catppuccin Mocha). */
@@ -114,6 +120,7 @@ function parseUiPrefs(raw: unknown): UiPrefs | undefined {
     ui.filterUsage = Object.fromEntries(Object.entries(raw.filterUsage).filter((entry): entry is [string, string] => typeof entry[1] === "string" && Number.isFinite(Date.parse(entry[1]))))
   }
   if ("weekStart" in raw && (raw.weekStart === "monday" || raw.weekStart === "sunday")) ui.weekStart = raw.weekStart
+  if ("budgetStyle" in raw && (raw.budgetStyle === "tracking" || raw.budgetStyle === "topup")) ui.budgetStyle = raw.budgetStyle
   if ("xAxis" in raw && typeof raw.xAxis === "boolean") ui.xAxis = raw.xAxis
   if ("theme" in raw && THEMES.some((t) => t.id === raw.theme)) ui.theme = raw.theme as string
   const chartMotion = CHART_MOTION_MODES.find((mode) => "chartMotion" in raw && mode === raw.chartMotion)
