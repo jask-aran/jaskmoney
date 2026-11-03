@@ -26,6 +26,7 @@ import { tagChoices } from "../state/tagChooser"
 import { RULE_AFTER } from "../domain/ruleOffers"
 import { endTagReview, runTagAccept, startTagReview } from "./tagReview"
 import { budgetLabel, budgetScopeOptions, scopeKey, scopeOfKey } from "../domain/budgetScopes"
+import { usualPay } from "../domain/payday"
 import { allocation, budgetIgnoredIds, cycleAt, type Budget, type BudgetScope, type CycleConfig } from "../domain/budget"
 import { budgetArmId, budgetListRows, budgetSetupRows, type BudgetLine, type SetupRow } from "../domain/budgetLines"
 import { sharedBudgetView, sharedCategoryLines } from "../state/budgetViews"
@@ -948,6 +949,11 @@ function handleSettingsEditor(ui: UiStore, key: KeyEvent, data?: DataStore): voi
           const cycle = cycleFromDraft(draft)
           if (typeof cycle === "string") throw new Error(cycle)
           await data?.setBudgetCycle(cycle)
+        } else if (kind === "pay") {
+          // Empty clears it (0: not set).
+          const amount = draft.amount.trim() ? amountFromText(draft.amount) : 0
+          if (amount === null || amount < 0) throw new Error("enter what you expect each payday")
+          await data?.saveUiPrefs({ expectedPay: amount })
         } else if (kind === "filter") {
           await data?.saveSavedFilter({ id: draft.id, name: draft.name, expr: draft.expr }, typeof id === "string" ? id : undefined)
         } else {
@@ -1957,11 +1963,13 @@ function handleBudgets(ui: UiStore, key: KeyEvent, data?: DataStore): void {
 /** The Budgets pane's rows, as the tab draws them. */
 function setupRows(ui: UiStore, data: DataStore): SetupRow[] {
   const view = viewedBudgets(ui, data)
-  return budgetSetupRows(budgetLines(ui, data), view.budgets, new Set(ui.state.budgetSetupOpen), budgetIgnoredIds(data.state.categories))
+  const pay = { amount: data.state.uiPrefs.expectedPay || null, usual: usualPay(data.state.accounts, data.transactions(), data.cycle().paydays ?? []) }
+  return budgetSetupRows(budgetLines(ui, data), view.budgets, new Set(ui.state.budgetSetupOpen), budgetIgnoredIds(data.state.categories), pay)
 }
 
-/** The Budgets tab's Budgets pane: enter sets or edits the overall budget
- * (a new one starts from its average) or the budget of the
+/** The Budgets tab's Budgets pane: enter sets or edits your pay each
+ * payday (from your usual pay), the overall budget (a new one starts from
+ * its average) or the budget of the
  * group or category at the cursor (a new one starts from its average:
  * allocating down), space opens or closes a group, del twice removes a
  * budget, x leaves a category out of the overall budget (or brings it
@@ -1981,6 +1989,14 @@ function handleBudgetCategories(ui: UiStore, key: KeyEvent, data?: DataStore): v
   if (moved != null) { ui.setState({ budgetCategoryCursor: moved }); return }
   const row = rows[cursor]
   if (!row) return
+  // Your pay each payday: set from your usual pay (empty clears it).
+  if (row.kind === "pay") {
+    if (name === "return" || name === "enter") {
+      const start = row.amount ?? row.usual
+      ui.openSettingsEditor("pay", null, { ...ui.state.settingsDraft, amount: start ? String(Math.round(start)) : "" })
+    }
+    return
+  }
   if (row.kind === "overall") {
     if (name === "return" || name === "enter") { openBudgetEditor(ui, data, row.budget, { kind: "overall" }, row.average); return }
     if ((name === "delete" || name === "backspace") && row.budget) {

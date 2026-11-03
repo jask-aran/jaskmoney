@@ -124,6 +124,7 @@ export const EDITOR_TITLE: Record<SettingsEditorKind, string> = {
   rule: "Rule",
   budget: "Budget",
   cycle: "Budget cycle",
+  pay: "Pay",
 }
 
 /** A key being typed (the AI models dialog): its length, never any of the key. */
@@ -181,6 +182,8 @@ export function editorFields(kind: SettingsEditorKind, draft: Draft, ctx: Omit<F
       ]
     case "cycle":
       return cycleFields(draft)
+    case "pay":
+      return [{ key: "amount", label: "Each payday", kind: "text", display: draft.amount }]
   }
 }
 
@@ -234,6 +237,7 @@ export function editorNote(kind: SettingsEditorKind, draft: Draft, ctx: FormCont
     const count = ctx.transactions.filter(tagCovers({ categoryIds: draft.categoryIds }, ctx.categories)).length
     return { text: `${count} txns in its categories${about}`, tone: "ok", dot: true }
   }
+  if (kind === "pay") return { text: "What you expect in, after tax · empty clears it", tone: "muted" }
   if (kind !== "budget" && kind !== "cycle") return null
   const cycle = cycleFromDraft(draft)
   const text = typeof cycle === "string" ? cycle : describeCycle(cycle)

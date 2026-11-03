@@ -124,7 +124,7 @@ export function settingsSectionFocus(section: SettingsSection, list: SettingsLis
   if (section === "taxonomy") return list === "categories" ? "set.categories" : "set.tags"
   return section === "rules" ? "set.rules" : section === "filters" ? "set.filters" : section === "up" ? "set.up" : section === "web" ? "set.web" : section === "ai" ? "set.ai" : section === "appearance" ? "set.appearance" : "set.database"
 }
-export type SettingsEditorKind = "category" | "tag" | "filter" | "rule" | "budget" | "cycle" 
+export type SettingsEditorKind = "category" | "tag" | "filter" | "rule" | "budget" | "cycle" | "pay" 
 export type ImportStage = "files" | "path" | "profile" | "profileEditor" | "preview"
 
 export interface JumpTarget {

@@ -694,7 +694,7 @@ export function EditorOverlay() {
         return (
           <>
             <Modal
-              title={kind() === "cycle" ? EDITOR_TITLE.cycle : `${ui.state.settingsEditor!.id == null ? "New" : "Edit"} ${EDITOR_TITLE[kind()].toLowerCase()}`}
+              title={kind() === "cycle" || kind() === "pay" ? EDITOR_TITLE[kind()] : `${ui.state.settingsEditor!.id == null ? "New" : "Edit"} ${EDITOR_TITLE[kind()].toLowerCase()}`}
               width={width()}
               hints={EDITOR_HINTS[field().kind]}
             >

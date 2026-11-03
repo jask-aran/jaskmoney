@@ -20,6 +20,9 @@ export interface UiPrefs {
   /** Two (saved before the grid) or four. */
   chartViews?: number[]
   weekStart?: WeekStart
+  /** What you expect to be paid each payday, after tax (the Budgets tab's
+   * plan: pay less spending goes to savers). 0 or absent: not set. */
+  expectedPay?: number
   /** Charts draw an x-axis line under the plot (default off). */
   xAxis?: boolean
   /** The colour theme's id (themes.ts; default Catppuccin Mocha). */
@@ -115,6 +118,7 @@ function parseUiPrefs(raw: unknown): UiPrefs | undefined {
     ui.filterUsage = Object.fromEntries(Object.entries(raw.filterUsage).filter((entry): entry is [string, string] => typeof entry[1] === "string" && Number.isFinite(Date.parse(entry[1]))))
   }
   if ("weekStart" in raw && (raw.weekStart === "monday" || raw.weekStart === "sunday")) ui.weekStart = raw.weekStart
+  if ("expectedPay" in raw && typeof raw.expectedPay === "number" && Number.isFinite(raw.expectedPay) && raw.expectedPay >= 0) ui.expectedPay = raw.expectedPay
   if ("xAxis" in raw && typeof raw.xAxis === "boolean") ui.xAxis = raw.xAxis
   if ("theme" in raw && THEMES.some((t) => t.id === raw.theme)) ui.theme = raw.theme as string
   const chartMotion = CHART_MOTION_MODES.find((mode) => "chartMotion" in raw && mode === raw.chartMotion)

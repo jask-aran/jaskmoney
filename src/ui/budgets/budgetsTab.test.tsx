@@ -46,8 +46,8 @@ test("allocating down: in Categories, enter sets a category's budget starting fr
   await data.setBudget({ kind: "overall" }, 500)
   handleKey(ui, key("v"), data); handleKey(ui, key("c"), data)
   expect(ui.activeScope()).toBe("budgets.categories")
-  // The overall budget first; Groceries under it.
-  ui.setState({ budgetCategoryCursor: 0 })
+  // The plan (pay, then the overall budget) first; Groceries under it.
+  ui.setState({ budgetCategoryCursor: 1 })
   handleKey(ui, key("j"), data)
   handleKey(ui, key("return"), data)
   expect(ui.state.settingsEditor?.kind).toBe("budget")
@@ -63,7 +63,8 @@ test("allocating down: in Categories, enter sets a category's budget starting fr
   handleKey(ui, key("delete"), data)
   handleKey(ui, key("delete"), data)
   expect(data.state.budgets.some((b) => b.scope.kind === "category")).toBe(false)
-  // k from the top (the overall budget) goes back to Progress.
+  // k from the top (your pay) goes back to Progress.
+  handleKey(ui, key("k"), data)
   handleKey(ui, key("k"), data)
   handleKey(ui, key("k"), data)
   expect(ui.activeScope()).toBe("budgets")
@@ -73,7 +74,7 @@ test("x leaves a category out of the budgets (not budgeted: the total and everyt
   const { groceries, frame } = await budgetsTab()
   await data.setBudget({ kind: "overall" }, 500)
   handleKey(ui, key("v"), data); handleKey(ui, key("c"), data)
-  ui.setState({ budgetCategoryCursor: 0 })
+  ui.setState({ budgetCategoryCursor: 1 })
   // The first line is Groceries' group; its row is next.
   handleKey(ui, key("j"), data)
   handleKey(ui, key("x"), data)
@@ -144,7 +145,7 @@ test("with only category budgets, the total is theirs and everything else waits 
   const f = await frame()
   expect(f).toContain("$100 of $300")
   // enter on everything else sets the cap, starting from the categories' total.
-  ui.setState({ budgetCursor: 1 })
+  ui.setState({ focusedSection: "bud.list", budgetCursor: 1 })
   handleKey(ui, key("return"), data)
   expect(ui.state.settingsDraft).toMatchObject({ scopeKey: "overall", amount: "300" })
 })
@@ -270,14 +271,14 @@ test("Set budgets: with none yet the tab opens on it, the overall budget first w
   // Bills & Utilities is closed: Power isn't listed until space opens it.
   expect(f).toMatch(/▸ . Bills/)
   expect(f).not.toContain("Power")
-  // Bills & Utilities is the row after the overall budget and Groceries.
-  ui.setState({ budgetCategoryCursor: 2 })
+  // Bills & Utilities is the row after your pay, the overall budget and Groceries.
+  ui.setState({ budgetCategoryCursor: 3 })
   handleKey(ui, key("space"), data)
   f = await frame()
   expect(f).toMatch(/▾ . Bills/)
   expect(f).toContain("Power")
   // enter on the overall row sets the overall budget from its average.
-  ui.setState({ budgetCategoryCursor: 0 })
+  ui.setState({ budgetCategoryCursor: 1 })
   handleKey(ui, key("return"), data)
   expect(ui.state.settingsDraft).toMatchObject({ scopeKey: "overall", amount: "300" })
   ui.setState({ settingsEditor: null, budgetSetupOpen: [] })
@@ -289,33 +290,45 @@ test("Set budgets: with none yet the tab opens on it, the overall budget first w
   expect(await frame()).not.toContain("start here")
 })
 
-test("the payday, in the Budgets pane for every cycle: in, kept to top up to the budgets' total, sent to savers against what was due; and the next payday at this pace", async () => {
+test("the plan: your pay and your spending give what goes to savers, and what to set Up's pay splitting to; this cycle's payday is checked against it, and nothing without it", async () => {
   setAppClock(new Date(2026, 9, 20, 12))
-  const t = await renderApp({ width: 160, height: 50 })
+  const t = await renderApp({ width: 160, height: 56 })
   data.init(":memory:")
   const db = data.getDb()!
   db.query("INSERT INTO accounts (id, name, type, source, external_kind, balance) VALUES (1, 'Spending', 'debit', 'up', 'TRANSACTIONAL', 1700), (2, 'Rainy day', 'debit', 'up', 'SAVER', 9000)").run()
   const id = (n: string) => data.state.categories.find((c) => c.name === n)!.id
   const add = (date: string, amount: number, description: string, category: number | null, transfer: number | null = null) =>
     db.query("INSERT INTO transactions (date_raw, date_iso, amount, description, account_id, category_id, source, transfer_account_id) VALUES (?, ?, ?, ?, 1, ?, 'up', ?)").run(date, date, amount, description, category, transfer)
-  // $0 left before pay on the 1st; $5,000 in; $3,000 to Rainy day; $300 on groceries.
-  add("2026-10-01", 5000, "EMPLOYER", id("Salary"))
-  add("2026-10-02", -3000, "Transfer to Rainy day", id("Transfers"), 2)
+  add("2026-09-01", 4800, "EMPLOYER", id("Salary"))
+  add("2026-10-01", 5200, "EMPLOYER", id("Salary"))
+  add("2026-10-02", -2500, "Transfer to Rainy day", id("Transfers"), 2)
   add("2026-10-10", -300, "Shop", id("Groceries"))
   data.refresh()
   handleKey(ui, key("3"), data)
+  const frame = async () => { await t.renderOnce(); await t.flush(); await t.renderOnce(); return t.captureCharFrame() }
+  const line = (f: string, label: string) => f.split("\n").find((l) => l.includes(label)) ?? ""
+  // No plan yet: the facts, no judgment.
+  let f = await frame()
+  expect(line(f, "Pay each payday")).toContain("not set")
+  expect(f).toContain("enter sets it from your usual $5,000")
+  const sent = (f: string) => f.split("\n").find((l) => /│\s+to savers\s+\$/.test(l)) ?? ""
+  expect(sent(f)).toMatch(/\$2,500\s/)
+  expect(f).not.toContain("✓")
+  // The pay row opens the Pay editor from your usual pay.
+  expect(ui.state.focusedSection).toBe("bud.categories")
+  ui.setState({ budgetCategoryCursor: 0 })
+  handleKey(ui, key("return"), data)
+  expect(ui.state.settingsEditor?.kind).toBe("pay")
+  expect(ui.state.settingsDraft.amount).toBe("5000")
+  ui.setState({ settingsEditor: null })
+  // Pay $5,000 and spending $2,000: $3,000 to savers, and the Up setting to match.
+  await data.saveUiPrefs({ expectedPay: 5000 })
   await data.setBudget({ kind: "overall" }, 2000)
-  await t.renderOnce(); await t.flush(); await t.renderOnce()
-  const f = t.captureCharFrame()
-  const pane = (label: string) => f.split("\n").find((l) => l.includes(label)) ?? ""
-  expect(pane("Payday 1 Oct")).toContain("$5,000 in")
-  // Kept $2,000 of $5,000 to top up to the $2,000 budget; $3,000 due, $3,000 sent.
-  expect(pane("kept (target $2,000)")).toMatch(/kept \(target \$2,000\)\s+\$2,000/)
-  expect(pane("to savers")).toContain("$3,000 ✓")
-  expect(pane("Next payday 1 Nov")).toContain("at this pace")
-  expect(pane("Spending ends near")).toMatch(/\$[\d,]+/)
-  expect(pane("send about")).toMatch(/\$[\d,]+/)
-  // No style to pick: Progress keeps to the budgets.
-  expect(f).not.toContain("Style")
+  f = await frame()
+  expect(line(f, "To savers each payday")).toContain("$3,000")
+  expect(f).toContain("set Up's pay splitting to this")
+  // This cycle sent $2,500 of the $3,000.
+  expect(sent(f)).toContain("$2,500 of $3,000")
+  expect(line(f, "By 1 Nov, at this pace")).toMatch(/\$[\d,]+/)
   t.renderer.destroy()
 })
