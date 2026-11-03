@@ -349,12 +349,13 @@ export function BudgetsTab(props: { focused: SectionId }) {
         fitSpans([{ text: `  ${nudge}`, fg: tone.caution }], width),
       ]
     }
-    return [[
-      { text: fit(`  ${row.name}`, nameWidth()), fg: ink.figure, bold: true },
-      { text: "".padStart(NUM), fg: ink.note },
-      ...(withAverage() ? [{ text: formatWholeMoney(row.average).padStart(NUM), fg: ink.note }] : []),
-      { text: formatWholeMoney(row.budget.amount).padStart(NUM), fg: ink.figure, bold: true },
-    ]]
+    // Set: the name takes the row (not the categories' name column), the
+    // budget at its end, under Budget.
+    const amount = formatWholeMoney(row.budget.amount).padStart(NUM)
+    return [fitSpans([
+      { text: fit(`  ${row.name}`, width - amount.length - 2), fg: ink.figure, bold: true },
+      { text: amount + "  ", fg: ink.figure, bold: true },
+    ], width)]
   }
   // The overall row (two lines unset), a blank line and the headings stay
   // put; the categories scroll under them.
