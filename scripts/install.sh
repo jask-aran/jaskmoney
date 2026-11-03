@@ -109,6 +109,10 @@ rc_file() {
 # Offers to put BIN on PATH, then says how to start.
 finish() {
   ok "${1:-Installed}" "$BIN/jaskmoney"
+  how_to_run
+  say "Try it on made-up data, with no live connection to Up:" "jaskmoney --demo"
+}
+how_to_run() {
   case ":$PATH:" in *":$BIN:"*) echo "Run: jaskmoney"; return ;; esac
   local rc line
   rc="$(rc_file)"
