@@ -212,8 +212,14 @@ export interface UiState {
   merchantReverse: boolean
   /** Cursor in the Settings budget list. */
   budgetCursor: number
-  /** The Budgets tab's category list (domain/budgetLines order). */
+  /** Cursor in the Budgets tab's Set budgets pane (budgetSetupRows: the
+   * overall budget, then the categories). */
   budgetCategoryCursor: number
+  /** The Set budgets pane's open groups (category ids); closed by default. */
+  budgetSetupOpen: number[]
+  /** No budgets set yet (from the data, App): the Budgets tab opens on
+   * Set budgets, its overall budget first, rather than Progress. */
+  budgetsEmpty: boolean
   /** The Budgets tab's budget pane view: an index into BUDGET_VIEWS (the
    * Overview's spending views over the budget, and its subscriptions). */
   budgetChart: number
@@ -528,6 +534,8 @@ function createUiStore() {
     budgetCursor: 0,
     budgetCategoryCursor: 0,
     budgetChart: 0,
+    budgetSetupOpen: [],
+    budgetsEmpty: false,
     budgetCycleViews: [8, 9],
     budgetCyclePanes: 1,
     budgetOffset: 0,
@@ -592,7 +600,8 @@ function createUiStore() {
       ...ALL_CLOSED,
       activeTab: tab,
       drillReturn: null,
-      focusedSection: TAB_DEFAULT_FOCUS[tab],
+      focusedSection: tab === "budgets" && state.budgetsEmpty ? "bud.categories" : TAB_DEFAULT_FOCUS[tab],
+      ...(tab === "budgets" && state.budgetsEmpty ? { budgetCategoryCursor: 0 } : {}),
       range: null,
       settingsActive: false,
       armed: null,

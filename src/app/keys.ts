@@ -26,8 +26,8 @@ import { tagChoices } from "../state/tagChooser"
 import { RULE_AFTER } from "../domain/ruleOffers"
 import { endTagReview, runTagAccept, startTagReview } from "./tagReview"
 import { budgetLabel, budgetScopeOptions, scopeKey, scopeOfKey } from "../domain/budgetScopes"
-import { cycleAt, type Budget, type BudgetScope, type CycleConfig } from "../domain/budget"
-import { budgetArmId, budgetListRows, type BudgetLine } from "../domain/budgetLines"
+import { budgetIgnoredIds, cycleAt, type Budget, type BudgetScope, type CycleConfig } from "../domain/budget"
+import { budgetArmId, budgetListRows, budgetSetupRows, type BudgetLine, type SetupRow } from "../domain/budgetLines"
 import { sharedBudgetView, sharedCategoryLines } from "../state/budgetViews"
 import { MERCHANT_SORTS, groupByMerchant, merchantFilter, sortMerchantGroups } from "../domain/merchants"
 import { anchorDraft, cycleFromDraft, editorFields, normaliseCycleDraft, pickerChoices, pickerItems, stepChoice } from "../state/settingsForm"
@@ -1946,25 +1946,47 @@ function handleBudgets(ui: UiStore, key: KeyEvent, data?: DataStore): void {
   }
 }
 
-/** The Budgets tab's Categories card: enter sets or edits the budget of the
+/** The Set budgets pane's rows, as the tab draws them. */
+function setupRows(ui: UiStore, data: DataStore): SetupRow[] {
+  const view = viewedBudgets(ui, data)
+  return budgetSetupRows(budgetLines(ui, data), view.budgets, new Set(ui.state.budgetSetupOpen), budgetIgnoredIds(data.state.categories))
+}
+
+/** The Budgets tab's Set budgets pane: enter sets or edits the overall
+ * budget (first; a new one starts from its average) or the budget of the
  * group or category at the cursor (a new one starts from its average:
- * allocating down), del twice removes it, x leaves it out of the overall
- * budget (or brings it back); k past the top goes back to the budgets. */
+ * allocating down), space opens or closes a group, del twice removes a
+ * budget, x leaves a category out of the overall budget (or brings it
+ * back); k past the top goes back to Progress. */
 function handleBudgetCategories(ui: UiStore, key: KeyEvent, data?: DataStore): void {
   const { name } = key
   if (!data) return
   if (budgetKeys(ui, key, data)) return
   const view = viewedBudgets(ui, data)
-  const lines = budgetLines(ui, data)
-  const cursor = Math.min(ui.state.budgetCategoryCursor, Math.max(0, lines.length - 1))
+  const rows = setupRows(ui, data)
+  const cursor = Math.min(ui.state.budgetCategoryCursor, Math.max(0, rows.length - 1))
   if ((name === "k" || name === "up") && cursor === 0) {
     ui.setState({ focusedSection: "bud.list", budgetCursor: budgetListRows(view.budgets, data.state.categories).length - 1 })
     return
   }
-  const moved = listMove(key, cursor, lines.length)
+  const moved = listMove(key, cursor, rows.length)
   if (moved != null) { ui.setState({ budgetCategoryCursor: moved }); return }
-  const line = lines[cursor]
-  if (!line) return
+  const row = rows[cursor]
+  if (!row) return
+  if (row.kind === "overall") {
+    if (name === "return" || name === "enter") { openBudgetEditor(ui, data, row.budget, { kind: "overall" }, row.average); return }
+    if ((name === "delete" || name === "backspace") && row.budget) {
+      confirmTwice(ui, data, { kind: "budget", id: budgetArmId(row.budget, view.cycle.start), label: `the ${row.name.toLowerCase()} budget${view.current ? "" : ` from ${shortDate(view.cycle.start)}`}`, with: "delete" })
+    }
+    return
+  }
+  const line = row.line
+  if (name === "space" || key.sequence === " ") {
+    if (row.open === null || line.categoryId === null) return
+    const id = line.categoryId
+    ui.setState({ budgetSetupOpen: row.open ? ui.state.budgetSetupOpen.filter((g) => g !== id) : [...ui.state.budgetSetupOpen, id] })
+    return
+  }
   if (name === "x") {
     const category = data.state.categories.find((c) => c.id === line.categoryId)
     if (!category) { ui.setStatus("Uncategorised always counts: categorise its rows first", true); return }
@@ -2616,7 +2638,7 @@ const scopes: Record<ScopeId, ScopeEntry> = {
   "budgets.categories": {
     handle: handleBudgetCategories,
     list: true,
-    hints: (state) => [{ key: "j/k", desc: "move" }, { key: "enter", desc: "set budget" }, { key: "x", desc: "leave out" }, { key: "del del", desc: "remove budget" }, { key: "h/l", desc: "chart" }, ...cycleChartHint(state), { key: "[ ]", desc: "cycles" }, { key: "c", desc: "cycle" }, { key: "v", desc: "jump" }, { key: "1-4", desc: "tab" }],
+    hints: (state) => [{ key: "j/k", desc: "move" }, { key: "enter", desc: "set budget" }, { key: "space", desc: "open" }, { key: "x", desc: "leave out" }, { key: "del del", desc: "remove budget" }, { key: "h/l", desc: "chart" }, ...cycleChartHint(state), { key: "[ ]", desc: "cycles" }, { key: "c", desc: "cycle" }, { key: "v", desc: "jump" }, { key: "1-4", desc: "tab" }],
   },
   "manager.merchants": {
     handle: handleManagerMerchants,

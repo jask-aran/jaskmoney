@@ -46,6 +46,9 @@ test("allocating down: in Categories, enter sets a category's budget starting fr
   await data.setBudget({ kind: "overall" }, 500)
   handleKey(ui, key("v"), data); handleKey(ui, key("c"), data)
   expect(ui.activeScope()).toBe("budgets.categories")
+  // The overall budget comes first; Groceries under it.
+  ui.setState({ budgetCategoryCursor: 0 })
+  handleKey(ui, key("j"), data)
   handleKey(ui, key("return"), data)
   expect(ui.state.settingsEditor?.kind).toBe("budget")
   expect(ui.state.settingsDraft).toMatchObject({ scopeKey: `category:${groceries}`, amount: "300" })
@@ -60,7 +63,8 @@ test("allocating down: in Categories, enter sets a category's budget starting fr
   handleKey(ui, key("delete"), data)
   handleKey(ui, key("delete"), data)
   expect(data.state.budgets.some((b) => b.scope.kind === "category")).toBe(false)
-  // k from the top goes back to the budgets.
+  // k from the top (the overall budget) goes back to Progress.
+  handleKey(ui, key("k"), data)
   handleKey(ui, key("k"), data)
   expect(ui.activeScope()).toBe("budgets")
 })
@@ -144,6 +148,7 @@ test("with only category budgets, the total is theirs and everything else waits 
 test("no wash on a budget: the cursor's name and corners take the focus colour, the bar stays on the canvas", async () => {
   const { t, frame } = await budgetsTab()
   await data.setBudget({ kind: "overall" }, 500)
+  ui.setState({ focusedSection: "bud.list", budgetCursor: 0 })
   await frame()
   const lines = t.captureSpans().lines
   const canvas = RGBA.fromHex(theme.canvas).toInts()
@@ -232,4 +237,43 @@ test("the cycle's calendar draws in with the charts: on \"always\", its days til
   expect(calendar(await frame())).toContain("31")
   data.setState("uiPrefs", { ...data.state.uiPrefs, chartMotion: "launch" })
   void t
+})
+
+test("Set budgets: with none yet the tab opens on it, the overall budget first with a nudge from its average; groups closed until space", async () => {
+  const { frame } = await budgetsTab()
+  const db = data.getDb()!
+  const home = data.state.categories.find((c) => c.name === "Bills & Utilities")!
+  db.query("INSERT INTO categories (name, color, parent_id) VALUES ('Power', '#f9e2af', ?)").run(home.id)
+  data.refresh()
+  const power = data.state.categories.find((c) => c.name === "Power")!.id
+  db.query("INSERT INTO transactions (date_raw, date_iso, amount, description, account_id, category_id, source) VALUES ('2026-10-08', '2026-10-08', -80, 'POWER CO', 1, ?, 'up')").run(power)
+  data.refresh()
+  handleKey(ui, key("1"), data); handleKey(ui, key("3"), data)
+  expect(ui.state.focusedSection).toBe("bud.categories")
+  expect(ui.state.budgetCategoryCursor).toBe(0)
+  let f = await frame()
+  expect(f).toContain("Set budgets · start here")
+  // Groceries averaged $300 over the cycle before.
+  expect(f).toMatch(/Overall spending\s+not set/)
+  expect(f).toContain("enter sets it from your $300 average")
+  // Bills & Utilities is closed: Power isn't listed until space opens it.
+  expect(f).toMatch(/▸ . Bills/)
+  expect(f).not.toContain("Power")
+  // Bills & Utilities is the row after the overall budget and Groceries.
+  ui.setState({ budgetCategoryCursor: 2 })
+  handleKey(ui, key("space"), data)
+  f = await frame()
+  expect(f).toMatch(/▾ . Bills/)
+  expect(f).toContain("Power")
+  // enter on the overall row sets the overall budget from its average.
+  ui.setState({ budgetCategoryCursor: 0 })
+  handleKey(ui, key("return"), data)
+  expect(ui.state.settingsDraft).toMatchObject({ scopeKey: "overall", amount: "300" })
+  ui.setState({ settingsEditor: null, budgetSetupOpen: [] })
+  // Once a budget is set, the tab opens on Progress again.
+  await data.setBudget({ kind: "overall" }, 500)
+  await frame()
+  handleKey(ui, key("1"), data); handleKey(ui, key("3"), data)
+  expect(ui.state.focusedSection).toBe("bud.list")
+  expect(await frame()).not.toContain("start here")
 })

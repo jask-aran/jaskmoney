@@ -1,7 +1,7 @@
 import { Index, Show, createEffect, createMemo } from "solid-js"
 import { useTerminalDimensions } from "@opentui/solid"
 import { allocation, cycleFor, budgetCounts, budgetCountsThen, budgetIgnoredIds, budgetIn, budgetProgress, cycleSpending, pastCycles, progressOf, totalBudgetIn, type Budget, type BudgetProgress, type BudgetSubject, type Cycle } from "../../domain/budget"
-import { budgetArmId, budgetListRows, type BudgetLine } from "../../domain/budgetLines"
+import { budgetArmId, budgetListRows, budgetSetupRows, type SetupRow } from "../../domain/budgetLines"
 import { sharedBudgetView, sharedCategoryLines } from "../../state/budgetViews"
 import { budgetLabel } from "../../domain/budgetScopes"
 import { dailySpendSeries, formatWholeMoney } from "../../domain/dashboard"
@@ -125,8 +125,11 @@ export function BudgetsTab(props: { focused: SectionId }) {
     return progressOf({ id: -1, scope: { kind: "overall" }, amount: split().total }, spentOnBudgets, cycle(), through())
   })
   const lines = createMemo(() => sharedCategoryLines(config(), through(), data.state.accounts, data.state.categories, budgets(), transactions()))
-  const categoryCursor = createMemo(() => Math.min(ui.state.budgetCategoryCursor, Math.max(0, lines().length - 1)))
   const ignored = createMemo(() => budgetIgnoredIds(data.state.categories))
+  // The Set budgets pane: the overall budget, then the categories, groups
+  // closed unless opened (space).
+  const setup = createMemo(() => budgetSetupRows(lines(), budgets(), new Set(ui.state.budgetSetupOpen), ignored()))
+  const categoryCursor = createMemo(() => Math.min(ui.state.budgetCategoryCursor, Math.max(0, setup().length - 1)))
   const ignoredNames = () => data.state.categories.filter((c) => c.budgetIgnored).map((c) => c.name)
   const firstData = createMemo(() => transactions().reduce((first, t) => (t.dateISO < first ? t.dateISO : first), today()))
 
@@ -136,7 +139,9 @@ export function BudgetsTab(props: { focused: SectionId }) {
   const subject = createMemo((): { title: string; scope: BudgetSubject | null; counts: (row: Transaction) => boolean; amount: number | null } => {
     const of = (scope: BudgetSubject) => budgetCountsThen(scope, data.state.categories, data.state.budgetHistory, data.state.budgets, config())
     if (props.focused === "bud.categories") {
-      const line = lines()[categoryCursor()]
+      const at = setup()[categoryCursor()]
+      if (at?.kind === "overall") return { title: overallName(), scope: { kind: "overall" }, counts: of({ kind: "overall" }), amount: at.budget?.amount ?? null }
+      const line = at?.line
       if (line) {
         const id = line.categoryId
         return id === null
@@ -308,27 +313,57 @@ export function BudgetsTab(props: { focused: SectionId }) {
   }
   const budgetTop = createMemo(() => centredTop(budgetCursor(), rows().length, budgetRoom()))
 
-  // Categories: a quiet list to set budgets from. Name, this cycle, the
-  // average, and its budget or that it's left out.
-  // The average goes where it would leave names too short.
+  // Set budgets: where budgets are set. The overall budget first (until
+  // set, a nudge in caution: enter sets it from its average), then each
+  // category: name, this cycle, the average, and its budget or that it's
+  // left out; a closed group says how many budgets it holds. The average
+  // goes where it would leave names too short.
   const NUM = 9
   const withAverage = () => rowWidth(categoriesWidth()) - 2 - NUM * 3 >= 12
   const nameWidth = () => rowWidth(categoriesWidth()) - 2 - NUM * (withAverage() ? 3 : 2)
-  const lineSpans = (line: BudgetLine): Span[] => {
+  const lineSpans = (row: Extract<SetupRow, { kind: "line" }>): Span[] => {
+    const line = row.line
     const out = line.categoryId !== null && ignored().has(line.categoryId)
     const name = line.child ? ink.label : ink.figure
+    const chevron = row.open === null ? "  " : row.open ? "▾ " : "▸ "
     return [
-      { text: `${line.child ? "  " : ""}${line.categoryId === null ? "?" : categoryMark(line.categoryId)} `, fg: out ? ink.faint : line.color ?? ink.note },
-      { text: fit(line.name, nameWidth() - (line.child ? 4 : 2)), fg: out ? ink.note : name, bold: !line.child },
+      { text: line.child ? "    " : chevron, fg: ink.note },
+      { text: `${line.categoryId === null ? "?" : categoryMark(line.categoryId)} `, fg: out ? ink.faint : line.color ?? ink.note },
+      { text: fit(line.name, nameWidth() - (line.child ? 6 : 4)), fg: out ? ink.note : name, bold: !line.child },
       { text: formatWholeMoney(line.now).padStart(NUM), fg: out ? ink.note : line.budget && line.now > line.budget.amount ? tone.bad : name },
       ...(withAverage() ? [{ text: formatWholeMoney(line.average).padStart(NUM), fg: ink.note }] : []),
       line.budget ? { text: formatWholeMoney(line.budget.amount).padStart(NUM), fg: ink.figure }
         : out ? { text: "left out".padStart(NUM), fg: ink.faint }
+        : row.open === false && row.budgeted ? { text: `${row.budgeted} set`.padStart(NUM), fg: ink.note }
         : { text: "".padStart(NUM), fg: ink.faint },
     ]
   }
-  const categoryRoom = () => Math.max(1, categoriesHeight() - 3)
-  const categoryTop = createMemo(() => centredTop(categoryCursor(), lines().length, categoryRoom()))
+  // The overall budget: its name and amount on one line; unset, "not set"
+  // in caution with the nudge on a line under it.
+  const overallLines = (row: Extract<SetupRow, { kind: "overall" }>): Span[][] => {
+    const width = rowWidth(categoriesWidth())
+    if (!row.budget) {
+      const nudge = row.average >= 1 ? `enter sets it from your ${formatWholeMoney(row.average)} average` : "enter sets it"
+      return [
+        fitSpans([{ text: fit(`  ${row.name}`, width - 7), fg: ink.figure, bold: true }, { text: "not set", fg: tone.caution }], width),
+        fitSpans([{ text: `  ${nudge}`, fg: tone.caution }], width),
+      ]
+    }
+    return [[
+      { text: fit(`  ${row.name}`, nameWidth()), fg: ink.figure, bold: true },
+      { text: "".padStart(NUM), fg: ink.note },
+      ...(withAverage() ? [{ text: formatWholeMoney(row.average).padStart(NUM), fg: ink.note }] : []),
+      { text: formatWholeMoney(row.budget.amount).padStart(NUM), fg: ink.figure, bold: true },
+    ]]
+  }
+  // The overall row (two lines unset), a blank line and the headings stay
+  // put; the categories scroll under them.
+  const overallHeight = () => ((setup()[0] as Extract<SetupRow, { kind: "overall" }>).budget ? 1 : 2)
+  const categoryRoom = () => Math.max(1, categoriesHeight() - 4 - overallHeight())
+  const categoryLines = createMemo(() => setup().slice(1) as Array<Extract<SetupRow, { kind: "line" }>>)
+  const categoryTop = createMemo(() => centredTop(Math.max(0, categoryCursor() - 1), categoryLines().length, categoryRoom()))
+  // Nothing budgeted yet: the pane says to start here.
+  const nothingSet = () => view().current && budgets().length === 0
 
   const Chart = () => (
     <ChartCard scope={subject().title} views={BUDGET_VIEWS} current={ui.state.budgetChart} model={model()} width={chartWidth()} height={chartHeight()} baseline={baseline()}
@@ -389,14 +424,22 @@ export function BudgetsTab(props: { focused: SectionId }) {
     </SectionCard>
   )
   const Categories = () => (
-    <SectionCard title="Categories" titleSuffix={categoriesFocused() ? "· enter budget · x leave out" : undefined} titleSuffixColor={ink.note} focused={categoriesFocused()} width={categoriesWidth()} height={categoriesHeight()}>
-      <Show when={lines().length} fallback={<text fg={ink.note}>No spending yet.</text>}>
+    <SectionCard title="Set budgets" titleSuffix={nothingSet() ? "· start here" : categoriesFocused() ? "· enter set · space open" : undefined}
+      titleSuffixColor={nothingSet() ? tone.caution : ink.note} focused={categoriesFocused()} width={categoriesWidth()} height={categoriesHeight()}>
+      {(() => {
+        const overall = () => setup()[0] as Extract<SetupRow, { kind: "overall" }>
+        return <Index each={overallLines(overall())}>{(spans, i) => (
+          <ListRow cursor={categoriesFocused() && categoryCursor() === 0} bg={theme.canvas} armed={i === 0 && overall().budget ? armedFor(ui.state.armed, "budget", budgetArmId(overall().budget!, cycle().start)) : undefined} spans={spans()} />
+        )}</Index>
+      })()}
+      <text wrapMode="none">{" "}</text>
+      <Show when={categoryLines().length} fallback={<text fg={ink.note}>{" No spending yet."}</text>}>
         <text wrapMode="none">
           <S fg={ink.note}>{` ${fit("", nameWidth())}`}</S>
           <S fg={ink.label}>{"Spent".padStart(NUM)}{withAverage() ? "Average".padStart(NUM) : ""}{"Budget".padStart(NUM)}</S>
         </text>
-        <Index each={lines().slice(categoryTop(), categoryTop() + categoryRoom())}>{(line, i) => (
-          <ListRow cursor={categoriesFocused() && categoryTop() + i === categoryCursor()} bg={theme.canvas} armed={line().budget ? armedFor(ui.state.armed, "budget", budgetArmId(line().budget!, cycle().start)) : undefined} spans={lineSpans(line())} />
+        <Index each={categoryLines().slice(categoryTop(), categoryTop() + categoryRoom())}>{(row, i) => (
+          <ListRow cursor={categoriesFocused() && categoryTop() + i + 1 === categoryCursor()} bg={theme.canvas} armed={row().line.budget ? armedFor(ui.state.armed, "budget", budgetArmId(row().line.budget!, cycle().start)) : undefined} spans={lineSpans(row())} />
         )}</Index>
       </Show>
     </SectionCard>

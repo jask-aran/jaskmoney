@@ -132,6 +132,12 @@ export function App() {
     bootstrap()
   })()
 
+  // With no budgets yet, the Budgets tab opens on Set budgets (switchTab).
+  createEffect(() => {
+    const none = data.state.ready && data.state.budgets.length === 0
+    if (ui.state.budgetsEmpty !== none) ui.setState({ budgetsEmpty: none })
+  })
+
   // A remote core's state arrives after mount: start once it has.
   createEffect(() => {
     if (remote && data.state.ready && !untrack(bootstrapped)) untrack(bootstrap)
