@@ -49,6 +49,44 @@ spin() {
 }
 command -v curl >/dev/null || fail "needs curl"
 
+# The welcome screen's wordmark (src/ui/welcome/Welcome.tsx): its block
+# letters in pink drifting to lavender, a sheen swept across them once on a
+# terminal. Drawn from ASCII (F █, u ▀, l ▄) so it doesn't hang on the locale.
+WORDMARK=("  F luF Fu Flu FuluF FuF Fl F Fuu FlF" "FlF FuF lF F F F u F FlF F uF FFl  F ")
+# mix <r g b> <r g b> <per mille>: into R G B (no subshell: it's per cell).
+mix() { R=$(( $1 + ($4 - $1) * $7 / 1000 )) G=$(( $2 + ($5 - $2) * $7 / 1000 )) B=$(( $3 + ($6 - $3) * $7 / 1000 )); }
+# One row of the wordmark into ROW, with the sheen at column $2 (thousandths).
+wordmark_row() {
+  local text=${WORDMARK[$1]} n=${#WORDMARK[0]} x ch glyph d core glow lit
+  ROW="  "
+  for (( x = 0; x < n; x++ )); do
+    ch=${text:x:1}
+    case "$ch" in F) glyph=█ ;; u) glyph=▀ ;; l) glyph=▄ ;; *) ROW+=" "; continue ;; esac
+    d=$(( x * 1000 - $2 )); d=${d#-}
+    core=$(( 1000 - d / 2 )); (( core < 0 )) && core=0
+    glow=$(( 1000 - d / 9 )); (( glow < 0 )) && glow=0
+    lit=$(( core * 12 / 10 + glow / 4 )); (( lit > 1000 )) && lit=1000
+    mix 245 194 231 180 190 254 $(( x * 800 / n + 100 ))
+    mix $R $G $B 180 190 254 $(( glow * 6 / 10 ))
+    mix $R $G $B 255 255 255 $lit
+    ROW+="\033[1;38;2;${R};${G};${B}m$glyph"
+  done
+  ROW+="\033[0m"
+}
+wordmark() {
+  if ! [ -t 1 ]; then return; fi
+  local n=${#WORDMARK[0]} f sweep
+  cursor l; echo
+  for (( f = 0; f <= 18; f++ )); do
+    (( f > 0 )) && printf '\033[2A'
+    sweep=$(( f * (n + 24) * 1000 / 18 - 12000 ))
+    wordmark_row 0 "$sweep"; printf '%b\n' "$ROW"
+    wordmark_row 1 $(( sweep - 2000 )); printf '%b\n' "$ROW"
+    sleep 0.04
+  done
+  echo; cursor h
+}
+
 # A yes/no question, on the terminal: the script itself is on stdin. Enter is yes.
 ask() {
   local answer
@@ -117,6 +155,7 @@ bar() {
 # the plain one from a release made before there was one), checked to run,
 # then renamed over the old one (a running jaskmoney keeps its file).
 if [ -z "${JASKMONEY_FROM_SOURCE:-}" ] && [ "$(uname -s)-$(uname -m)" = "Linux-x86_64" ]; then
+  wordmark
   releases="https://github.com/jask-aran/jaskmoney/releases"
   installed="$("$BIN/jaskmoney" --version 2>/dev/null | sed -n 's/^jaskmoney //p' || true)"
   spin "Checking for a new release" curl -fsSI "$releases/latest" || fail "couldn't reach $releases"
