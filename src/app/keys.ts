@@ -26,7 +26,7 @@ import { tagChoices } from "../state/tagChooser"
 import { RULE_AFTER } from "../domain/ruleOffers"
 import { endTagReview, runTagAccept, startTagReview } from "./tagReview"
 import { budgetLabel, budgetScopeOptions, scopeKey, scopeOfKey } from "../domain/budgetScopes"
-import { budgetIgnoredIds, cycleAt, type Budget, type BudgetScope, type CycleConfig } from "../domain/budget"
+import { allocation, budgetIgnoredIds, cycleAt, type Budget, type BudgetScope, type CycleConfig } from "../domain/budget"
 import { budgetArmId, budgetListRows, budgetSetupRows, type BudgetLine, type SetupRow } from "../domain/budgetLines"
 import { sharedBudgetView, sharedCategoryLines } from "../state/budgetViews"
 import { MERCHANT_SORTS, groupByMerchant, merchantFilter, sortMerchantGroups } from "../domain/merchants"
@@ -1939,8 +1939,13 @@ function handleBudgets(ui: UiStore, key: KeyEvent, data?: DataStore): void {
     return
   }
   if (name === "return" || name === "enter") {
-    if (row.kind === "total") { ui.setStatus("The total is your budgets added up: set everything else, or a category's", true); return }
-    if (row.kind === "overall") openBudgetEditor(ui, data, row.budget, { kind: "overall" }, 0)
+    // The total is the overall budget, the cap (or with none, the category
+    // budgets added up: enter sets a cap from them); everything else is
+    // what it leaves, so both edit the cap.
+    if (row.kind === "total" || row.kind === "overall") {
+      const overall = view.budgets.find((b) => b.scope.kind === "overall") ?? null
+      openBudgetEditor(ui, data, overall, { kind: "overall" }, overall ? 0 : allocation(view.budgets, data.state.categories).allocated)
+    }
     else openBudgetEditor(ui, data, row.budget, row.budget.scope, row.budget.amount)
     return
   }

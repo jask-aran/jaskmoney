@@ -154,7 +154,8 @@ const config: CycleConfig = { unit: "week", anchor: "calendar", anchorDate: null
 const accounts = [account({ id: 1 }), account({ id: 2, source: "csv", externalKind: null }), account({ id: 3, externalKind: "SAVER" })]
 const categories = [category({ id: 10 }), category({ id: 11, parentId: 10 }), category({ id: 12, parentId: 10 }), category({ id: 20 })]
 const budgets: Budget[] = [
-  { id: 9, scope: { kind: "overall" }, amount: 100 },
+  // The cap: group 10's $100 comes out of it, leaving everything else $100.
+  { id: 9, scope: { kind: "overall" }, amount: 200 },
   { id: 4, scope: { kind: "category", categoryId: 10 }, amount: 100 },
   { id: 7, scope: { kind: "category", categoryId: 11 }, amount: 100 },
   { id: 2, scope: { kind: "account", accountId: 1 }, amount: 100 },
@@ -177,7 +178,7 @@ describe("budgetProgress", () => {
       // only category 20 and the uncategorised row count.
       const spent = [25, 35, 20, 45, 15, 0][index] ?? 0
       return {
-        budget, spent, remaining: 100 - spent, usedPct: spent,
+        budget: index === 0 ? { ...budget, amount: 100 } : budget, spent, remaining: 100 - spent, usedPct: spent,
         daysLeft: 5, dailyAllowance: (100 - spent) / 5, projected: spent / 3 * 7,
       }
     }))
@@ -224,8 +225,9 @@ describe("budgetProgress", () => {
 
   test("elapsed and remaining days are inclusive at both ends of the cycle", () => {
     for (const [today, daysLeft, projected] of [["2026-10-05", 7, 70], ["2026-10-11", 1, 10]] as const) {
-      expect(budgetProgress(budgets.slice(0, 1), config, today, accounts, categories, [row(-10, { dateISO: today })])[0])
-        .toEqual({ budget: budgets[0], spent: 10, remaining: 90, usedPct: 10, daysLeft, dailyAllowance: 90 / daysLeft, projected })
+      const alone: Budget = { ...budgets[0]!, amount: 100 }
+      expect(budgetProgress([alone], config, today, accounts, categories, [row(-10, { dateISO: today })])[0])
+        .toEqual({ budget: alone, spent: 10, remaining: 90, usedPct: 10, daysLeft, dailyAllowance: 90 / daysLeft, projected })
     }
   })
 

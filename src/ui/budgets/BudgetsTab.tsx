@@ -1,6 +1,6 @@
 import { Index, Show, createEffect, createMemo } from "solid-js"
 import { useTerminalDimensions } from "@opentui/solid"
-import { allocation, cycleFor, budgetCounts, budgetCountsThen, budgetIgnoredIds, budgetIn, budgetProgress, cycleSpending, pastCycles, progressOf, totalBudgetIn, type Budget, type BudgetProgress, type BudgetSubject, type Cycle } from "../../domain/budget"
+import { allocation, measuredBudgetIn, cycleFor, budgetCounts, budgetCountsThen, budgetIgnoredIds, budgetProgress, cycleSpending, pastCycles, progressOf, totalBudgetIn, type Budget, type BudgetProgress, type BudgetSubject, type Cycle } from "../../domain/budget"
 import { budgetArmId, budgetListRows, budgetSetupRows, type SetupRow } from "../../domain/budgetLines"
 import { sharedBudgetView, sharedCategoryLines } from "../../state/budgetViews"
 import { budgetLabel } from "../../domain/budgetScopes"
@@ -142,7 +142,8 @@ export function BudgetsTab(props: { focused: SectionId }) {
     const of = (scope: BudgetSubject) => budgetCountsThen(scope, data.state.categories, data.state.budgetHistory, data.state.budgets, config())
     if (props.focused === "bud.categories") {
       const at = setup()[categoryCursor()]
-      if (at?.kind === "overall") return { title: overallName(), scope: { kind: "overall" }, counts: of({ kind: "overall" }), amount: at.budget?.amount ?? null }
+      // The overall budget here is the cap: all budgeted spending against it.
+      if (at?.kind === "overall") return { title: at.name, scope: { kind: "total" }, counts: of({ kind: "total" }), amount: at.budget ? split().total : null }
       const line = at?.kind === "line" ? at.line : undefined
       if (line) {
         const id = line.categoryId
@@ -153,7 +154,9 @@ export function BudgetsTab(props: { focused: SectionId }) {
     }
     const row = rows()[budgetCursor()]!
     if (row.kind === "total") return { title: TOTAL, scope: { kind: "total" }, counts: of({ kind: "total" }), amount: split().total }
-    return row.budget ? { title: label(row.budget), scope: row.budget.scope, counts: of(row.budget.scope), amount: row.budget.amount } : { title: overallName(), scope: { kind: "overall" }, counts: of({ kind: "overall" }), amount: null }
+    // Everything else is measured against the cap's rest.
+    const measured = row.budget ? progress().get(row.budget.id)?.budget.amount ?? row.budget.amount : null
+    return row.budget ? { title: label(row.budget), scope: row.budget.scope, counts: of(row.budget.scope), amount: measured } : { title: overallName(), scope: { kind: "overall" }, counts: of({ kind: "overall" }), amount: null }
   })
   // Every spending row to today, then the subject's: moving the cursor
   // redoes only the second, and each cycle takes its days from it rather
@@ -180,7 +183,7 @@ export function BudgetsTab(props: { focused: SectionId }) {
       ...past().map((c) => ({
         cycle: c,
         spent: daily(c, c.end).daily.reduce((a, b) => a + b, 0),
-        budget: !scope ? null : scope.kind === "total" ? totalBudgetIn(data.state.budgetHistory, data.state.budgets, data.state.categories, c.start) : budgetIn(data.state.budgetHistory, scope, c.start),
+        budget: !scope ? null : scope.kind === "total" ? totalBudgetIn(data.state.budgetHistory, data.state.budgets, data.state.categories, c.start) : measuredBudgetIn(data.state.budgetHistory, data.state.budgets, data.state.categories, scope, c.start),
       })),
     ]
   })
@@ -196,8 +199,12 @@ export function BudgetsTab(props: { focused: SectionId }) {
   const mainWidth = () => (wide() ? dims().width - 1 - categoriesWidth() : dims().width)
   const summary = createMemo((): Span[] => {
     const spans: Span[] = []
-    const { allocated, overall } = split()
-    if (allocated > 0) spans.push({ text: `Categories ${formatWholeMoney(allocated)} + everything else ${overall == null ? "(not set)" : formatWholeMoney(overall)}`, fg: ink.label })
+    const { allocated, overall, rest } = split()
+    if (allocated > 0) {
+      if (overall == null) spans.push({ text: `Categories ${formatWholeMoney(allocated)} · no overall budget to carve them from`, fg: ink.label })
+      else if (rest! >= 0) spans.push({ text: `Categories ${formatWholeMoney(allocated)} of ${formatWholeMoney(overall)} · everything else ${formatWholeMoney(rest!)}`, fg: ink.label })
+      else spans.push({ text: `Categories ${formatWholeMoney(allocated)}: ${formatWholeMoney(-rest!)} more than your ${formatWholeMoney(overall)}`, fg: tone.caution })
+    }
     const names = ignoredNames()
     if (names.length) spans.push({ text: `${spans.length ? " · " : ""}Not budgeted: ${names.join(", ")}`, fg: ink.note })
     return spans
@@ -400,15 +407,21 @@ export function BudgetsTab(props: { focused: SectionId }) {
     // Set: the name takes the row (not the categories' name column), the
     // budget at its end, under Budget.
     const amount = formatWholeMoney(row.budget.amount).padStart(NUM)
-    return [fitSpans([
+    const cap = fitSpans([
       { text: fit(`  ${row.name}`, width - amount.length - 2), fg: ink.figure, bold: true },
       { text: amount + "  ", fg: ink.figure, bold: true },
-    ], width)]
+    ], width)
+    // With category budgets, how the cap is split: theirs, and the rest.
+    const { allocated, rest } = split()
+    if (!allocated || rest == null) return [cap]
+    return [cap, fitSpans(rest >= 0
+      ? [{ text: `    ${formatWholeMoney(allocated)} to categories · ${formatWholeMoney(rest)} everything else`, fg: ink.note }]
+      : [{ text: `    categories take ${formatWholeMoney(-rest)} more than this`, fg: tone.caution }], width)]
   }
   // The overall row (two lines unset), a blank line and the headings stay
   // put; the categories scroll under them.
   const overallRow = () => setup()[0] as Extract<SetupRow, { kind: "overall" }>
-  const overallHeight = () => (overallRow().budget ? 1 : 2)
+  const overallHeight = () => (!overallRow().budget || (split().allocated && split().rest != null) ? 2 : 1)
   const categoryRoom = () => Math.max(1, categoriesHeight() - 4 - overallHeight() - (paydayLines().length ? paydayLines().length + 1 : 0))
   const categoryLines = createMemo(() => setup().slice(1) as Array<Extract<SetupRow, { kind: "line" }>>)
   const categoryTop = createMemo(() => centredTop(Math.max(0, categoryCursor() - 1), categoryLines().length, categoryRoom()))

@@ -97,27 +97,27 @@ export type SetupRow =
   | { kind: "line"; line: BudgetLine; open: boolean | null; budgeted: number }
 
 /**
- * The Set budgets pane's rows: the overall budget (everything else once
- * categories have their own), with what it would start from, its average:
- * the counted groups' averages less what has a budget of its own. Then each
+ * The Budgets pane's rows: the overall budget, the cap the category
+ * budgets are carved from, with what it would start from, its average:
+ * the counted groups' averages. Then each
  * group of `lines`, its categories under it only when it's in `open`;
  * `open` on a group is null when it has no categories to show, and
  * `budgeted` counts the budgets inside it (seen while it's closed).
  */
 export function budgetSetupRows(lines: BudgetLine[], budgets: Budget[], open: ReadonlySet<number>, ignored: ReadonlySet<number>): SetupRow[] {
-  const hasCategoryBudgets = budgets.some((b) => b.scope.kind === "category")
   const groups: Array<{ group: BudgetLine; children: BudgetLine[] }> = []
   for (const l of lines) {
     if (!l.child || !groups.length) groups.push({ group: l, children: [] })
     else groups.at(-1)!.children.push(l)
   }
   const counted = (l: BudgetLine) => l.categoryId === null || !ignored.has(l.categoryId)
+  // The cap's starting point: everything counted, budgeted or not.
   const average = groups.reduce((sum, { group, children }) => {
-    if (!counted(group) || group.budget) return sum
-    return sum + group.average - children.filter((c) => c.budget || !counted(c)).reduce((n, c) => n + c.average, 0)
+    if (!counted(group)) return sum
+    return sum + group.average - children.filter((c) => !counted(c)).reduce((n, c) => n + c.average, 0)
   }, 0)
   return [
-    { kind: "overall", budget: budgets.find((b) => b.scope.kind === "overall") ?? null, name: hasCategoryBudgets ? "Everything else" : "Overall spending", average },
+    { kind: "overall", budget: budgets.find((b) => b.scope.kind === "overall") ?? null, name: "Overall spending", average },
     ...groups.flatMap(({ group, children }): SetupRow[] => {
       const isOpen = group.categoryId !== null && open.has(group.categoryId)
       return [

@@ -55,10 +55,10 @@ test("allocating down: in Categories, enter sets a category's budget starting fr
   ui.setState({ settingsEditor: null })
   await data.setBudget({ kind: "category", categoryId: groceries }, 300)
   const f = await frame()
-  // With a category budget the overall one is everything else, and the
-  // two add up to the total.
-  // The total adds the category's budget to everything else's.
-  expect(f).toContain("$100 of $800")
+  // The overall budget is the cap: Groceries' $300 comes out of its $500,
+  // leaving everything else $200.
+  expect(f).toContain("$100 of $500")
+  expect(f).toContain("everything else $200")
   // del twice removes the category's budget.
   handleKey(ui, key("delete"), data)
   handleKey(ui, key("delete"), data)
@@ -121,10 +121,13 @@ test("each past cycle's everything else leaves out categories that had their own
   await data.setBudget({ kind: "overall" }, 500)
   await data.setBudget({ kind: "category", categoryId: groceries }, 300)
   await data.removeBudget({ kind: "category", categoryId: groceries })
+  // Progress's overall row (the Budgets pane's is the cap: all of it).
+  ui.setState({ focusedSection: "bud.list", budgetCursor: 0 })
   const f = await frame()
-  // This cycle Groceries is everything else; in September it had its own.
+  // This cycle Groceries is everything else; in September it had its own,
+  // carved out of the $500: everything else had $200.
   expect(f).toMatch(/1 Oct – 31 Oct\s+\$100\s+[█─▏│ ]+\s+\$400 under/)
-  expect(f).toMatch(/1 Sep – 30 Sep\s+\$0\s+[█─▏│ ]+\s+\$500 under/)
+  expect(f).toMatch(/1 Sep – 30 Sep\s+\$0\s+[█─▏│ ]+\s+\$200 under/)
 })
 
 test("a budget set while showing a past cycle applies from that cycle until its next change", async () => {
@@ -140,9 +143,10 @@ test("with only category budgets, the total is theirs and everything else waits 
   await data.setBudget({ kind: "category", categoryId: groceries }, 300)
   const f = await frame()
   expect(f).toContain("$100 of $300")
+  // enter on everything else sets the cap, starting from the categories' total.
   ui.setState({ budgetCursor: 1 })
   handleKey(ui, key("return"), data)
-  expect(ui.state.settingsDraft).toMatchObject({ scopeKey: "overall", amount: "" })
+  expect(ui.state.settingsDraft).toMatchObject({ scopeKey: "overall", amount: "300" })
 })
 
 test("no wash on a budget: the cursor's name and corners take the focus colour, the bar stays on the canvas", async () => {
@@ -237,7 +241,7 @@ test("the cycle's calendar draws in with the charts: on \"always\", its days til
   expect(done).toContain("31")
   // Another budget at the cursor: the days come in again, the last ones not yet.
   await data.setBudget({ kind: "category", categoryId: data.state.categories.find((c) => c.name === "Groceries")!.id }, 300)
-  ui.setState({ budgetCursor: 1 })
+  ui.setState({ focusedSection: "bud.list", budgetCursor: 1 })
   await frame(); await Bun.sleep(40)
   expect(calendar(await frame())).not.toContain("31")
   await Bun.sleep(600)

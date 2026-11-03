@@ -268,15 +268,33 @@ export function budgetCountsThen(subject: BudgetSubject, categories: Category[],
 }
 
 /**
- * How the budgets add up: the overall one (everything else) and the
- * category ones. Budgets on a group and on categories inside it overlap
- * (the group's covers them), so a category's counts only when its group
- * has none. `total` is the two together: what's budgeted in all.
+ * How the budgets add up. The overall budget is the cap: what you'll spend
+ * in all. Category budgets are carved out of it, and everything else gets
+ * the rest (`rest`; below zero when the categories ask for more than the
+ * cap). Budgets on a group and on categories inside it overlap (the
+ * group's covers them), so a category's counts only when its group has
+ * none. `total` is what's budgeted in all: the cap, or with none set, the
+ * category budgets added up.
  */
-export function allocation(budgets: Budget[], categories: Category[]): { overall: number | null; allocated: number; total: number } {
+export function allocation(budgets: Budget[], categories: Category[]): { overall: number | null; allocated: number; total: number; rest: number | null } {
   const overall = budgets.find((b) => b.scope.kind === "overall")?.amount ?? null
   const allocated = sum(topCategoryBudgets(budgets, categories).map((b) => b.amount))
-  return { overall, allocated, total: (overall ?? 0) + allocated }
+  return { overall, allocated, total: overall ?? allocated, rest: overall == null ? null : overall - allocated }
+}
+
+/** The budgets as they're measured: the overall one is everything else's,
+ * so its amount is the cap less what the categories take (none below zero). */
+export function measuredBudgets(budgets: Budget[], categories: Category[]): Budget[] {
+  const { rest } = allocation(budgets, categories)
+  return budgets.map((b) => (b.scope.kind === "overall" && rest != null ? { ...b, amount: Math.max(0, rest) } : b))
+}
+
+/** A scope's budget in the cycle starting `cycleStartISO`, as measured:
+ * the overall scope gets what the cap left everything else then. */
+export function measuredBudgetIn(history: readonly BudgetHistoryEntry[], budgets: Budget[], categories: Category[], scope: BudgetScope, cycleStartISO: string): number | null {
+  if (scope.kind !== "overall") return budgetIn(history, scope, cycleStartISO)
+  const rest = allocation(budgetsIn(history, budgets, cycleStartISO).filter((b) => b.scope.kind !== "account"), categories).rest
+  return rest == null ? null : Math.max(0, rest)
 }
 
 /** Category budgets not inside a group that has one. */
@@ -328,7 +346,8 @@ export function budgetProgress(
 ): BudgetProgress[] {
   const cycle = cycleFor(config, todayISO)
   const rows = cycleSpending(cycle, todayISO, accounts, transactions)
-  return budgets.map((budget) => {
+  // The overall budget is measured as everything else: the cap's rest.
+  return measuredBudgets(budgets, categories).map((budget) => {
     const counts = budgetCounts(budget.scope, categories, budgets)
     return progressOf(budget, rows.reduce((total, row) => (counts(row) ? total - row.amount : total), 0), cycle, todayISO)
   })

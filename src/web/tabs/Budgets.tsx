@@ -13,7 +13,7 @@
 import { For, Show, createMemo, createSignal, onCleanup } from "solid-js"
 import { ChevronLeft, ChevronRight, Eye, EyeOff, Pencil, Trash2 } from "lucide-solid"
 import "./budgets.css"
-import { allocation, budgetCounts, budgetCountsThen, budgetIgnoredIds, budgetIn, budgetProgress, cycleAt, cycleSpending, pastCycles, progressOf, totalBudgetIn, type Budget, type BudgetProgress, type BudgetScope, type BudgetSubject, type Cycle } from "../../domain/budget"
+import { allocation, measuredBudgetIn, budgetCounts, budgetCountsThen, budgetIgnoredIds, budgetProgress, cycleAt, cycleSpending, pastCycles, progressOf, totalBudgetIn, type Budget, type BudgetProgress, type BudgetScope, type BudgetSubject, type Cycle } from "../../domain/budget"
 import { budgetArmId, budgetCategoryLines, budgetListRows, budgetView, type BudgetLine } from "../../domain/budgetLines"
 import { budgetLabel } from "../../domain/budgetScopes"
 import { dailySpendSeries, formatWholeMoney } from "../../domain/dashboard"
@@ -118,7 +118,7 @@ export function Budgets() {
       ...past().map((c) => ({
         cycle: c,
         spent: spentIn(c, c.end),
-        budget: !scope ? null : scope.kind === "total" ? totalBudgetIn(data.state.budgetHistory, data.state.budgets, data.state.categories, c.start) : budgetIn(data.state.budgetHistory, scope, c.start),
+        budget: !scope ? null : scope.kind === "total" ? totalBudgetIn(data.state.budgetHistory, data.state.budgets, data.state.categories, c.start) : measuredBudgetIn(data.state.budgetHistory, data.state.budgets, data.state.categories, scope, c.start),
       })),
     ]
   })
@@ -197,9 +197,11 @@ export function Budgets() {
   })
 
   const summary = () => {
-    const { allocated, overall } = split()
+    const { allocated, overall, rest } = split()
     return [
-      ...(allocated > 0 ? [`Categories ${formatWholeMoney(allocated)} + everything else ${overall == null ? "(not set)" : formatWholeMoney(overall)}`] : []),
+      ...(allocated > 0 ? [overall == null ? `Categories ${formatWholeMoney(allocated)} · no overall budget to carve them from`
+        : rest! >= 0 ? `Categories ${formatWholeMoney(allocated)} of ${formatWholeMoney(overall)} · everything else ${formatWholeMoney(rest!)}`
+        : `Categories ${formatWholeMoney(allocated)}: ${formatWholeMoney(-rest!)} more than your ${formatWholeMoney(overall)}`] : []),
       ...(ignoredNames().length ? [`Not budgeted: ${ignoredNames().join(", ")}`] : []),
     ]
   }
