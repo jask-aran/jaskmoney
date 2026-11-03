@@ -54,7 +54,7 @@ import { runAccept, toggleUncategorised, newSuggestionsNote, suggestNew } from "
 import { ACCEPT_ALL_AT } from "../domain/questions"
 import { categoryRows } from "../state/taxonomyRows"
 import { IMPORT_HISTORY_ROWS } from "../state/databaseRows"
-import { BUDGET_PANES, BUDGET_VIEWS, CHART_VIEWS, chartPaneOf, type ChartViews, type OverviewCharts, SETTINGS_RIGHT, SETTINGS_SECTIONS, type SettingsSection, jumpTargets, TABS, TAB_DEFAULT_FOCUS, settingsSectionFocus, smartQuestionFor, type ScopeId, type UiState, type UiStore } from "../state/uiStore"
+import { BUDGET_PANES, BUDGET_VIEWS, CHART_VIEWS, CYCLE_VIEWS, chartPaneOf, type ChartViews, type OverviewCharts, SETTINGS_RIGHT, SETTINGS_SECTIONS, type SettingsSection, jumpTargets, TABS, TAB_DEFAULT_FOCUS, settingsSectionFocus, smartQuestionFor, type ScopeId, type UiState, type UiStore } from "../state/uiStore"
 import type { DataStore } from "../state/dataStore"
 import {
   CUSTOM_CHIP,
@@ -1863,12 +1863,14 @@ function openBudgetEditor(ui: UiStore, data: DataStore, budget: Budget | null, s
 }
 
 /** Steps one of the Budgets tab's chart panes through its views: the
- * budget pane (0) through BUDGET_VIEWS, a cycle pane (1, 2) through the
- * Overview's CHART_VIEWS. */
+ * budget pane (0) through BUDGET_VIEWS, a cycle pane (1, 2) through
+ * CYCLE_VIEWS. */
 function stepBudgetPane(ui: UiStore, pane: number, step: number): void {
   if (pane === 0) { ui.setState({ budgetChart: (ui.state.budgetChart + step + BUDGET_VIEWS.length) % BUDGET_VIEWS.length }); return }
+  // A cycle pane steps through CYCLE_VIEWS only.
   const views: [number, number] = [...ui.state.budgetCycleViews]
-  views[pane - 1] = (views[pane - 1]! + step + CHART_VIEWS.length) % CHART_VIEWS.length
+  const at = Math.max(0, CYCLE_VIEWS.indexOf(views[pane - 1]!))
+  views[pane - 1] = CYCLE_VIEWS[(at + step + CYCLE_VIEWS.length) % CYCLE_VIEWS.length]!
   ui.setState({ budgetCycleViews: views })
 }
 

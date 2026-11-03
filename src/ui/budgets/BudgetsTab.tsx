@@ -24,7 +24,7 @@ import { cycleLines, cycleLinesLegend, type CycleSpent } from "./budgetCharts"
 import { chartSpeedMs, showings, useReveal } from "../charts/motion"
 import { ChartCard } from "../charts/ChartCard"
 import { spendingChart } from "../overview/periodCharts"
-import { BUDGET_PANES, BUDGET_VIEWS, CHART_VIEWS } from "../../state/uiStore"
+import { BUDGET_PANES, BUDGET_VIEWS, CHART_VIEWS, CYCLE_VIEWS } from "../../state/uiStore"
 import { GRID_PANE_MIN, OverviewChartCard, WIDE, chartRows, overviewChartModel, type OverviewChartInput } from "../overview/OverviewTab"
 import { CalendarView, calendarLegend } from "../overview/CalendarView"
 import { spendingCalendar } from "../../domain/spending"
@@ -402,7 +402,8 @@ export function BudgetsTab(props: { focused: SectionId }) {
     </SectionCard>
   )
 
-  // The cycle panes: the Overview's views over the cycle shown, for every
+  // The cycle panes: the Overview's views (CYCLE_VIEWS: not the spending
+  // ones, the budget pane's, nor the calendar) over the cycle shown, for every
   // spending account (the Overview's "All spending"), with the total
   // budgeted on the spending charts; Merchants against the same days of
   // the cycle before, when the history covers it.
@@ -439,7 +440,7 @@ export function BudgetsTab(props: { focused: SectionId }) {
     const index = () => ui.state.budgetCycleViews[p.pane]!
     return (
       <box ref={regionRef(section, "budgets")} width={cyclePaneWidth(p.pane)} height={cyclePaneHeight(p.pane)} flexShrink={0} onMouseDown={panePointer(section)}>
-        <OverviewChartCard index={index()} model={cycleModels[p.pane]!()} calendar={cycleCalendar()} trends={cycleTrends()} merchants={cycleMerchants()} today={today()}
+        <OverviewChartCard index={index()} views={CYCLE_VIEWS} model={cycleModels[p.pane]!()} calendar={cycleCalendar()} trends={cycleTrends()} merchants={cycleMerchants()} today={today()}
           width={cyclePaneWidth(p.pane)} height={cyclePaneHeight(p.pane)} focused={props.focused === section} baseline={baseline()}
           revealKey={data.state.uiPrefs.chartMotion === "always" ? `${(CHART_VIEWS[index()] ?? CHART_VIEWS[0]).view}:${cycle().start}:${seen()}` : undefined}
           revealMs={data.state.uiPrefs.chartMotion === "always" ? chartSpeedMs(data.state.uiPrefs.chartSpeed) : undefined}

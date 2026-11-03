@@ -352,6 +352,11 @@ export const BUDGET_VIEWS = [
   { view: "Subscriptions", group: "Subscriptions", ranged: false },
 ] as const
 
+/** The Budgets tab's cycle panes' views (indexes into CHART_VIEWS): the
+ * Overview's, less what the tab shows already: the spending views are the
+ * budget pane's, and the calendar is always there. */
+export const CYCLE_VIEWS: readonly number[] = CHART_VIEWS.flatMap((v, i) => (v.group === "Spending" || v.view === "Calendar" ? [] : [i]))
+
 /** The Budgets tab's chart panes: the budget's, then the cycle's two. */
 export const BUDGET_PANES: readonly SectionId[] = ["bud.chart", "bud.cycle", "bud.cycle2"]
 

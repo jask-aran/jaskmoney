@@ -635,6 +635,9 @@ export function overviewChartModel(view: string, input: OverviewChartInput, widt
  * place of a chart. The Overview's two, and the tour's. */
 export function OverviewChartCard(props: {
   index: number
+  /** The views its picker offers (indexes into CHART_VIEWS): all of them
+   * unless given (the Budgets tab's cycle panes: CYCLE_VIEWS). */
+  views?: readonly number[]
   model: ChartModel | null
   calendar: Array<Array<CalendarDay | null>>
   trends: { groups: TrendGroup[]; rows: TrendRow[] }
@@ -664,8 +667,8 @@ export function OverviewChartCard(props: {
   return (
     <ChartCard
       title={view().group}
-      views={CHART_VIEWS}
-      current={props.index}
+      views={props.views ? props.views.map((i) => CHART_VIEWS[i]!) : CHART_VIEWS}
+      current={props.views ? Math.max(0, props.views.indexOf(props.index)) : props.index}
       model={props.model}
       legend={view().view === "Trends" ? trendsLegend(props.trends.groups) : view().view === "Merchants" ? merchantsLegend(props.merchants) : calendarLegend(props.calendar, props.today)}
       fallback={view().view === "Trends" ? <TrendsView groups={props.trends.groups} rows={props.trends.rows} width={props.width - 4} height={props.height - 2} progress={progress()} />

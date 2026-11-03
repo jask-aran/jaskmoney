@@ -1,7 +1,7 @@
 import { afterEach, expect, test } from "bun:test"
 import { setAppClock } from "../../domain/days"
 import { data } from "../../state/dataStore"
-import { CHART_VIEWS, ui } from "../../state/uiStore"
+import { CHART_VIEWS, CYCLE_VIEWS, ui } from "../../state/uiStore"
 import { renderApp } from "../../testing/app"
 import { handleKey } from "../../app/keys"
 import { key } from "../../testing/keys"
@@ -190,7 +190,14 @@ test("the Budgets tab's panes: Progress on top; t, y jump to the budget and cycl
   expect(ui.state.budgetCyclePanes).toBe(1)
   const start = ui.state.budgetCycleViews
   handleKey(ui, key("L"), data)
-  expect(ui.state.budgetCycleViews).toEqual([(start[0] + 1) % CHART_VIEWS.length, start[1]])
+  // The next of CYCLE_VIEWS: never a spending view (the budget pane's) or the calendar.
+  expect(ui.state.budgetCycleViews).toEqual([CYCLE_VIEWS[(CYCLE_VIEWS.indexOf(start[0]) + 1) % CYCLE_VIEWS.length], start[1]])
+  for (let i = 0; i < CHART_VIEWS.length; i++) {
+    handleKey(ui, key("L"), data)
+    const view = CHART_VIEWS[ui.state.budgetCycleViews[0]]!
+    expect(view.group === "Spending" || view.view === "Calendar").toBe(false)
+  }
+  ui.setState({ budgetCycleViews: start })
   handleKey(ui, key("v"), data); handleKey(ui, key("t"), data)
   expect(ui.state.focusedSection).toBe("bud.chart")
   handleKey(ui, key("l"), data)
@@ -198,7 +205,7 @@ test("the Budgets tab's panes: Progress on top; t, y jump to the budget and cycl
   handleKey(ui, key("j"), data)
   expect(ui.state.focusedSection).toBe("bud.cycle")
   handleKey(ui, key("h"), data)
-  expect(ui.state.budgetCycleViews[0]).toBe(start[0])
+  expect(ui.state.budgetCycleViews[0]).toBe(CYCLE_VIEWS[(CYCLE_VIEWS.indexOf(start[0]) - 1 + CYCLE_VIEWS.length) % CYCLE_VIEWS.length])
   handleKey(ui, key("escape"), data)
   expect(ui.state.focusedSection).toBe("bud.list")
   // Progress tops the main column: past its last budget, the budget pane under it.
