@@ -10,35 +10,24 @@ bun run screenshots [binary]
 
 Without `binary`, both build `dist/jaskmoney` first. The outputs:
 
-- **MP4s:** `dist/recordings/<scene>.mp4`, the README's videos.
+- **GIFs:** `docs/screenshots/<scene>.gif`, committed: the README's recordings.
+- **MP4s:** `dist/recordings/<scene>.mp4`, every frame the app drew, at 50 fps. They're not in the README.
 - **`.cast` files:** `dist/recordings/<scene>.cast`, each loop as an asciicast.
 - **PNGs:** `docs/screenshots/{transactions,budgets,settings}.png`, committed.
 
-## Getting the videos into the README
+## Why GIFs, at 25 fps
 
-GitHub plays a video in a README only if it was uploaded through github.com's editor. A video in the repo is stripped
-from the page, even in a `<video>` tag. To replace one:
+A README's videos have to be uploaded through github.com's editor; a video in the repo is stripped from the page.
+GitHub plays an uploaded video in a box with its file name and a collapse arrow, and it doesn't autoplay. GIFs from
+the repo autoplay and loop, with no box.
 
-1. Edit README.md on github.com and drag the new MP4 in. GitHub puts its link (`https://github.com/user-attachments/assets/<id>`)
-   where you drop it.
-2. Move that link to the scene's place, and delete the old one.
+The first GIFs were full size (2820 px wide) at 50 fps. That's more than a browser decodes smoothly, so they looked
+like they dropped frames even though every frame was in the file. The GIFs now:
 
-A link on its own line renders as a player in a box with the file name and a collapse arrow. GitHub draws that box
-for every uploaded video, and the README can't remove it. The links don't carry their file names; to tell which is
-which, download each and compare its checksum or length with `dist/recordings`.
-
-Where each scene goes:
-
-| Scene | Place in the README |
-| --- | --- |
-| `overview` | the hero, under the intro |
-| `filter` | In action › Filter |
-| `ask` | In action › Smart search |
-| `suggest` | In action › Suggestions |
-| `chart` | In action › Charts |
-
-GIFs were tried first. A GIF at this size and frame rate is more than a browser decodes smoothly, so they looked like
-they dropped frames even though every frame was in the file.
+- **Frame rate:** 25 fps (`GIF_FPS`), 4 cs a frame. A GIF's delays are whole centiseconds, so 25 fps is timed exactly;
+  24 fps would alternate 4 and 5 cs.
+- **Width:** twice the README's column, so text stays sharp on high-density screens: 1600 px for the hero, 1280 px
+  for the tour's panes.
 
 ## How it works
 
@@ -71,7 +60,7 @@ turns its frames into the MP4).
    - **Demo panes:** the tour's demos are cropped to the pane below the tour's card. The pane is found from its box
      corners in `screenText`, a minimal screen model that is enough because the app places every run of text with a
      cursor move.
-   - **Encoding:** agg and ffmpeg run two at a time.
+   - **Encoding:** agg and ffmpeg run two at a time. Each GIF gets two passes, the palette first.
 
 You'll need agg (`cargo install --git https://github.com/asciinema/agg`), ffmpeg, MesloLGS Nerd Font Mono in
 `~/.local/share/fonts/meslo`, and DejaVu Sans Mono.
@@ -81,12 +70,11 @@ You'll need agg (`cargo install --git https://github.com/asciinema/agg`), ffmpeg
 - **Speed:** a full `recordings` run takes about 4 minutes. That's mostly agg drawing the tour's demos full screen:
   the tour's ticker-tape backdrop moves on every frame, though only the pane is kept. To fix it, crop the `.cast` to
   the pane before agg sees it. It's untried.
-- **Videos uploaded so far:** the README's videos are from the agg pipeline's first run, with their stale first frame
-  trimmed by hand. `bun run screenshots` hasn't been run on agg yet; the PNGs are from the earlier pipeline.
+- **Screenshots:** `bun run screenshots` hasn't been run on agg yet; the PNGs are from the earlier pipeline.
 
 ## Tried and dropped
 
-- **GIFs in the repo:** see above; browsers don't play them smoothly at this size.
+- **Uploaded MP4s:** they don't autoplay, and GitHub boxes them (see above).
 - **xterm.js in Chrome** (ttyd, Chrome's DevTools Protocol): Chrome screenshots made the first GIFs. It can't
   photograph a terminal as fast as the app draws, even on a GPU. So it recorded the output, then replayed it a frame
   at a time, which made it slow and fiddly:

@@ -7,8 +7,8 @@
  *   bun run recordings [binary] [--only=overview,filter,ask,suggest,chart]
  *                                    (default: dist/jaskmoney, built first)
  *
- * Writes dist/recordings/<scene>.mp4, and the loop as asciinema's .cast.
- * The README plays the MP4s from GitHub's own uploads (docs/media.md).
+ * Writes docs/screenshots/<scene>.gif (the README's), and
+ * dist/recordings/<scene>.mp4 and the loop as asciinema's .cast.
  */
 import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs"
 import { tmpdir } from "node:os"
@@ -131,10 +131,14 @@ async function film(binary: string, scene: Scene): Promise<void> {
     if (next === start) break
     start = next
   }
+  // Then to the end of that frame: the terminal gets a frame in several
+  // writes, a millisecond or so apart (frames are ~16 ms apart); the first
+  // alone leaves the old screen below it.
+  while (app.firstWrite(start) !== start && app.firstWrite(start) - start < 5) start = app.firstWrite(start)
   const cast = app.cast(start, start + scene.loopMs, HOLD_MS)
   writeFileSync(`dist/recordings/${scene.id}.cast`, cast)
-  await draw(cast, scene.loopMs + HOLD_MS, { mp4: `dist/recordings/${scene.id}.mp4` }, pane ?? undefined)
-  console.log(`dist/recordings/${scene.id}.mp4, .cast  ${((scene.loopMs + HOLD_MS) / 1000).toFixed(2)} s${pane ? `, ${pane.cols}×${pane.rows} cells` : ""}`)
+  await draw(cast, scene.loopMs + HOLD_MS, { mp4: `dist/recordings/${scene.id}.mp4`, gif: `docs/screenshots/${scene.id}.gif`, gifWidth: pane ? 1280 : 1600 }, pane ?? undefined)
+  console.log(`docs/screenshots/${scene.id}.gif, dist/recordings/${scene.id}.mp4, .cast  ${((scene.loopMs + HOLD_MS) / 1000).toFixed(2)} s${pane ? `, ${pane.cols}×${pane.rows} cells` : ""}`)
 }
 
 const only = process.argv.find((a) => a.startsWith("--only="))?.slice(7).split(",")

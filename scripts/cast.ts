@@ -138,10 +138,16 @@ async function heavy(args: string[]): Promise<void> {
   }
 }
 
+/** A GIF's frame rate: 25 fps is 4 cs a frame, which a GIF's delays (whole
+ * centiseconds) hold exactly; browsers play it smoothly at GIF_WIDTH. */
+const GIF_FPS = 25
+
 /** Draws `cast` (`loopMs` long) with agg, cropped to `crop` (else the
  * whole screen), to an .mp4 (agg's frames: every one the app drew, 20 ms
- * at least) or a .png of its last frame. */
-export async function draw(cast: string, loopMs: number, outputs: { mp4?: string; png?: string }, crop?: Cells): Promise<void> {
+ * at least), a .gif (GIF_FPS, `gifWidth` px wide: the README's column at
+ * twice its size, for sharp text on high-density screens) or a .png of its
+ * last frame. */
+export async function draw(cast: string, loopMs: number, outputs: { mp4?: string; gif?: string; gifWidth?: number; png?: string }, crop?: Cells): Promise<void> {
   const scratch = mkdtempSync(join(tmpdir(), "jaskmoney-draw-"))
   try {
     // agg draws the emoji presentation selector (U+FE0F) as a box of its
@@ -159,6 +165,14 @@ export async function draw(cast: string, loopMs: number, outputs: { mp4?: string
       : "null"
     const input = ["ffmpeg", "-y", "-loglevel", "error", "-i", drawn]
     if (outputs.mp4) await heavy([...input, "-vf", `${cut},pad=ceil(iw/2)*2:ceil(ih/2)*2,fps=50`, "-c:v", "libx264", "-crf", "16", "-preset", "medium", "-tune", "animation", "-pix_fmt", "yuv420p", "-movflags", "+faststart", outputs.mp4])
+    if (outputs.gif) {
+      // Two passes, the palette first: one pass (split, palettegen) holds
+      // every frame in memory (WSL ran out, 2026-11-02).
+      const frames = `${cut},fps=${GIF_FPS},scale=${outputs.gifWidth ?? 1600}:-2:flags=lanczos`
+      const palette = join(scratch, "palette.png")
+      await heavy([...input, "-vf", `${frames},palettegen=max_colors=256:stats_mode=diff`, palette])
+      await heavy([...input, "-i", palette, "-lavfi", `${frames}[v];[v][1:v]paletteuse=dither=bayer:bayer_scale=4:diff_mode=rectangle`, "-loop", "0", outputs.gif])
+    }
     if (outputs.png) await heavy([...input, "-vf", `${cut}`, "-update", "1", outputs.png])
   } finally {
     rmSync(scratch, { recursive: true, force: true })

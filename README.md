@@ -3,7 +3,7 @@
 A keyboard-driven personal spending TUI for [Up Bank](https://up.com.au). It syncs your Up accounts, categorises and
 tags transactions (both ways with Up), and shows where the money goes against a budget.
 
-https://github.com/user-attachments/assets/a5acf4e8-1cf5-4fc6-9ca6-32ae0252800f
+![The Overview, its charts drawing in one after another](docs/screenshots/overview.gif)
 
 | Transactions | Budgets | Settings |
 | --- | --- | --- |
@@ -82,20 +82,20 @@ The setup's tour, on its made-up data.
 
 **Filter** (`/`): words, `amt:`, `cat:` and `date:`, combined, filtering as you type.
 
-https://github.com/user-attachments/assets/95b3c3a7-ad97-4539-8728-5d47dd851a70
+![Filtering transactions as you type](docs/screenshots/filter.gif)
 
 **Smart search** (`?`): ask in words; Jev writes the filter, yours to read and edit.
 
-https://github.com/user-attachments/assets/b08958d2-e4c8-4760-b4c1-82b69b2aff27
+![Smart search writing a filter from a question](docs/screenshots/ask.gif)
 
 **Suggestions**: what Amazon and eBay rows bought, from your order emails, and a category suggested for each row from
 that, the merchant and the amount.
 
-https://github.com/user-attachments/assets/7054a134-58a7-4de0-a902-33402e9f9711
+![Category suggestions for Amazon and eBay rows](docs/screenshots/suggest.gif)
 
 **Charts** (`h`/`l`): the Overview's views: spending, cash flow, balances, savers, the calendar and your subscriptions.
 
-https://github.com/user-attachments/assets/211c5c2b-0efe-4e8e-bcce-2413226c27ed
+![The Overview chart views](docs/screenshots/chart.gif)
 
 ## Development
 
