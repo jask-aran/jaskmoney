@@ -17,7 +17,11 @@ TARBALL="https://github.com/jask-aran/jaskmoney/archive/refs/heads/main.tar.gz"
 SRC="${JASKMONEY_SRC:-$HOME/.local/share/jaskmoney}"
 BIN="${JASKMONEY_BIN:-$HOME/.local/bin}"
 
-say() { printf '\033[1m%s\033[0m\n' "$*"; }
+# The look (after opencode's installer): labels muted, names and versions
+# plain, the bar in the app's brand pink.
+MUTED='' PINK='' NC=''
+[ -t 1 ] && MUTED='\033[2m' PINK='\033[38;2;245;194;231m' NC='\033[0m'
+say() { printf "${MUTED}%s${NC} %s\n" "$1" "${2:-}"; }
 fail() { printf 'jaskmoney install: %s\n' "$*" >&2; exit 1; }
 command -v curl >/dev/null || fail "needs curl"
 
@@ -42,7 +46,7 @@ rc_file() {
 
 # Offers to put BIN on PATH, then says how to start.
 finish() {
-  say "Installed $BIN/jaskmoney"
+  say "${1:-Installed}" "$BIN/jaskmoney"
   case ":$PATH:" in *":$BIN:"*) echo "Run: jaskmoney"; return ;; esac
   local rc line
   rc="$(rc_file)"
@@ -61,19 +65,58 @@ finish() {
   fi
 }
 
-# Linux x64: the release binary.
+# Downloads $1 to $2 with a bar on the terminal (stderr), from curl's bytes
+# so far against the file's size ($3); quietly anywhere else.
+download() {
+  if ! [ -t 2 ] || [ -z "$3" ]; then curl -fsSL -o "$2" "$1"; return; fi
+  printf '\033[?25l' >&2
+  trap "printf '\\033[?25h' >&2" EXIT
+  curl -fsSL -o "$2" "$1" & local pid=$! got=0
+  while kill -0 "$pid" 2>/dev/null; do
+    got=$(stat -c %s "$2" 2>/dev/null || echo 0)
+    bar "$got" "$3"
+    sleep 0.1
+  done
+  local status=0
+  wait "$pid" || status=$?
+  [ "$status" -eq 0 ] && bar "$3" "$3"
+  printf '\n\033[?25h' >&2; trap - EXIT
+  return "$status"
+}
+bar() {
+  local width=40 percent=$(( $1 * 100 / $2 ))
+  local on=$(( percent * width / 100 )) filled empty
+  filled=$(printf "%*s" "$on" ""); empty=$(printf "%*s" "$(( width - on ))" "")
+  printf "\r${PINK}%s${MUTED}%s${NC} %3d%%  ${MUTED}%s / %s MB${NC}" "${filled// /■}" "${empty// /･}" "$percent" \
+    "$(( $1 / 1000000 ))" "$(( $2 / 1000000 ))" >&2
+}
+
+# Linux x64: the latest release's binary, gzipped (less than half the size;
+# the plain one from a release made before there was one), checked to run,
+# then renamed over the old one (a running jaskmoney keeps its file).
 if [ -z "${JASKMONEY_FROM_SOURCE:-}" ] && [ "$(uname -s)-$(uname -m)" = "Linux-x86_64" ]; then
-  say "Downloading the latest release"
+  releases="https://github.com/jask-aran/jaskmoney/releases"
+  latest="$(curl -fsSI "$releases/latest" | sed -n 's|^[Ll]ocation: .*/tag/v\([0-9.]*\).*|\1|p')"
+  [ -n "$latest" ] || fail "couldn't find the latest release at $releases"
+  installed="$("$BIN/jaskmoney" --version 2>/dev/null | sed -n 's/^jaskmoney //p' || true)"
+  if [ "$installed" = "$latest" ]; then say "Up to date:" "jaskmoney $latest"; exit 0; fi
+  if [ -n "$installed" ]; then say "Upgrading jaskmoney" "$installed → $latest"; finished="Upgraded to $latest:"
+  else say "Installing jaskmoney" "$latest"; finished="Installed $latest:"; fi
   mkdir -p "$BIN"
-  # Beside it, then renamed over it: a running jaskmoney keeps its file.
-  # Gzipped (less than half the size), or the plain binary from a release
-  # made before there was one.
-  release="https://github.com/jask-aran/jaskmoney/releases/latest/download/jaskmoney-linux-x64"
-  if ! curl -fSL --progress-bar "$release.gz" | gzip -dc >"$BIN/jaskmoney.new" 2>/dev/null; then
-    curl -fSL --progress-bar -o "$BIN/jaskmoney.new" "$release"
+  url="$releases/download/v$latest/jaskmoney-linux-x64"
+  size() { curl -fsSIL "$1" 2>/dev/null | tr -d '\r' | sed -n 's/^[Cc]ontent-[Ll]ength: //p' | tail -1; }
+  if gz="$(size "$url.gz")" && [ -n "$gz" ]; then
+    download "$url.gz" "$BIN/jaskmoney.new.gz" "$gz" || fail "the download failed: $url.gz"
+    gzip -dc "$BIN/jaskmoney.new.gz" >"$BIN/jaskmoney.new"; rm -f "$BIN/jaskmoney.new.gz"
+  else
+    download "$url" "$BIN/jaskmoney.new" "$(size "$url")" || fail "the download failed: $url"
   fi
-  chmod +x "$BIN/jaskmoney.new" && mv -f "$BIN/jaskmoney.new" "$BIN/jaskmoney"
-  finish
+  chmod +x "$BIN/jaskmoney.new"
+  if [ "$("$BIN/jaskmoney.new" --version 2>/dev/null)" != "jaskmoney $latest" ]; then
+    rm -f "$BIN/jaskmoney.new"; fail "the download doesn't run; nothing was changed"
+  fi
+  mv -f "$BIN/jaskmoney.new" "$BIN/jaskmoney"
+  finish "$finished"
   exit 0
 fi
 
