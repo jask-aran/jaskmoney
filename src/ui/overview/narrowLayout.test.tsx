@@ -318,6 +318,11 @@ test("full screen (178 wide and up): the charts in a 2×2 grid, each pane its ow
   expect(ui.state.focusedSection).toBe("ov.chart4")
   handleKey(ui, key("l"), data)
   expect(ui.state.chartViews).toEqual([0, 4, 7, 9])
+  // H/L in the right-hand column step its bottom pane, not the left's.
+  ui.setState({ focusedSection: "ov.chart3" })
+  handleKey(ui, key("L", { shift: true, sequence: "L" }), data)
+  expect(ui.state.chartViews).toEqual([0, 4, 7, 0])
+  ui.setState({ focusedSection: "ov.chart4", chartViews: [0, 4, 7, 9] })
   // Left from the bottom right reaches the bottom left.
   handleKey(ui, key("left"), data)
   expect(ui.state.focusedSection).toBe("ov.chart2")

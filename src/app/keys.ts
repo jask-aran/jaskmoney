@@ -1874,8 +1874,9 @@ function stepBudgetPane(ui: UiStore, pane: number, step: number): void {
   ui.setState({ budgetCycleViews: views })
 }
 
-/** Keys every Budgets card and pane shares: h/l step the focused chart
- * pane's views (the budget pane's from the cards), H/L the cycle pane's;
+/** Keys every Budgets card and pane shares: ←/→ move between panes; h/l
+ * step the focused chart pane's views (the budget pane's from the cards),
+ * H/L the cycle pane's;
  * [ and ] show the cycle before or after (up to this one, back to the
  * first with data); c edits the cycle. */
 function budgetKeys(ui: UiStore, key: KeyEvent, data: DataStore, pane = 0): boolean {
@@ -1893,16 +1894,18 @@ function budgetKeys(ui: UiStore, key: KeyEvent, data: DataStore, pane = 0): bool
     stepBudgetPane(ui, 1, seq === "H" ? -1 : 1)
     return true
   }
-  if (name === "h" || name === "left" || name === "l" || name === "right") {
-    stepBudgetPane(ui, pane, name === "h" || name === "left" ? -1 : 1)
+  // ←/→ move between panes, as on the Overview; h/l step views.
+  if (name === "left" || name === "right") { travel(ui, name, data); return true }
+  if (name === "h" || name === "l") {
+    stepBudgetPane(ui, pane, name === "h" ? -1 : 1)
     return true
   }
   if (name === "c") { ui.openSettingsEditor("cycle", null, { ...ui.state.settingsDraft, ...cycleDraft(data.state.budgetCycle) }); return true }
   return false
 }
 
-/** A Budgets chart pane: h/l (and ←/→) its views, j/k (and ↑/↓) to the
- * pane or card in that direction, [ ] and c as on the cards, esc back to
+/** A Budgets chart pane: h/l its views, j/k and the arrows to the pane
+ * or card in that direction, [ ] and c as on the cards, esc back to
  * the budgets. */
 function handleBudgetChart(ui: UiStore, key: KeyEvent, data?: DataStore): void {
   const { name } = key
@@ -1946,15 +1949,14 @@ function handleBudgets(ui: UiStore, key: KeyEvent, data?: DataStore): void {
   }
 }
 
-/** The Set budgets pane's rows, as the tab draws them. */
+/** The Budgets pane's rows, as the tab draws them. */
 function setupRows(ui: UiStore, data: DataStore): SetupRow[] {
   const view = viewedBudgets(ui, data)
-  return budgetSetupRows(budgetLines(ui, data), view.budgets, new Set(ui.state.budgetSetupOpen), budgetIgnoredIds(data.state.categories), data.state.uiPrefs.budgetStyle)
+  return budgetSetupRows(budgetLines(ui, data), view.budgets, new Set(ui.state.budgetSetupOpen), budgetIgnoredIds(data.state.categories))
 }
 
-/** The Budgets tab's Set budgets pane: enter on the style switches it
- * (tracking, top-up); enter sets or edits the overall budget (a new one
- * starts from its average) or the budget of the
+/** The Budgets tab's Budgets pane: enter sets or edits the overall budget
+ * (a new one starts from its average) or the budget of the
  * group or category at the cursor (a new one starts from its average:
  * allocating down), space opens or closes a group, del twice removes a
  * budget, x leaves a category out of the overall budget (or brings it
@@ -1974,16 +1976,6 @@ function handleBudgetCategories(ui: UiStore, key: KeyEvent, data?: DataStore): v
   if (moved != null) { ui.setState({ budgetCategoryCursor: moved }); return }
   const row = rows[cursor]
   if (!row) return
-  // The style: enter, space or h/l switch tracking and top-up.
-  if (row.kind === "style") {
-    if (name === "return" || name === "enter" || name === "space" || key.sequence === " ") {
-      const style = row.style === "topup" ? "tracking" : "topup"
-      settleData(ui, data.saveUiPrefs({ budgetStyle: style }), () => ui.setStatus(style === "topup"
-        ? "Top-up: each payday Spending is topped up to your budgets' total, the rest of the pay to savers"
-        : "Tracking: spending against your budgets"))
-    }
-    return
-  }
   if (row.kind === "overall") {
     if (name === "return" || name === "enter") { openBudgetEditor(ui, data, row.budget, { kind: "overall" }, row.average); return }
     if ((name === "delete" || name === "backspace") && row.budget) {
@@ -2082,14 +2074,16 @@ function handleOverview(ui: UiStore, key: KeyEvent, data?: DataStore): void {
     return
   }
   // h/l (or ,/.) step the focused chart pane's views, the top pane when
-  // none is focused; H/L step the bottom pane, or the one chart when the
-  // Overview shows only one.
+  // none is focused; H/L step the bottom pane (in the 2×2 grid, the bottom
+  // of the focused pane's column), or the one chart when the Overview
+  // shows only one.
   const back = seq === "H" || ((name === "h" || seq === ",") && scope === "overview")
   const forward = seq === "L" || ((name === "l" || seq === ".") && scope === "overview")
   if (back || forward) {
     const focused = chartPaneOf(ui.state.focusedSection)
     const shown = ui.state.overviewCharts
-    const pane = seq === "H" || seq === "L" || key.shift ? (shown > 1 ? 1 : 0) : focused >= 0 && focused < shown ? focused : 0
+    const bottom = shown === 4 && (focused === 2 || focused === 3) ? 3 : shown > 1 ? 1 : 0
+    const pane = seq === "H" || seq === "L" || key.shift ? bottom : focused >= 0 && focused < shown ? focused : 0
     const n = CHART_VIEWS.length
     const views: ChartViews = [...ui.state.chartViews]
     views[pane] = (views[pane] + (back ? -1 : 1) + n) % n

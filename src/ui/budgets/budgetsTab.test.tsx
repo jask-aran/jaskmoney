@@ -46,8 +46,8 @@ test("allocating down: in Categories, enter sets a category's budget starting fr
   await data.setBudget({ kind: "overall" }, 500)
   handleKey(ui, key("v"), data); handleKey(ui, key("c"), data)
   expect(ui.activeScope()).toBe("budgets.categories")
-  // The style, then the overall budget; Groceries under it.
-  ui.setState({ budgetCategoryCursor: 1 })
+  // The overall budget first; Groceries under it.
+  ui.setState({ budgetCategoryCursor: 0 })
   handleKey(ui, key("j"), data)
   handleKey(ui, key("return"), data)
   expect(ui.state.settingsEditor?.kind).toBe("budget")
@@ -63,8 +63,7 @@ test("allocating down: in Categories, enter sets a category's budget starting fr
   handleKey(ui, key("delete"), data)
   handleKey(ui, key("delete"), data)
   expect(data.state.budgets.some((b) => b.scope.kind === "category")).toBe(false)
-  // k from the top (the style) goes back to Progress.
-  handleKey(ui, key("k"), data)
+  // k from the top (the overall budget) goes back to Progress.
   handleKey(ui, key("k"), data)
   handleKey(ui, key("k"), data)
   expect(ui.activeScope()).toBe("budgets")
@@ -74,7 +73,7 @@ test("x leaves a category out of the budgets (not budgeted: the total and everyt
   const { groceries, frame } = await budgetsTab()
   await data.setBudget({ kind: "overall" }, 500)
   handleKey(ui, key("v"), data); handleKey(ui, key("c"), data)
-  ui.setState({ budgetCategoryCursor: 1 })
+  ui.setState({ budgetCategoryCursor: 0 })
   // The first line is Groceries' group; its row is next.
   handleKey(ui, key("j"), data)
   handleKey(ui, key("x"), data)
@@ -204,6 +203,13 @@ test("the Budgets tab's panes: Progress on top; t, y jump to the budget and cycl
     expect(view.group === "Spending" || view.view === "Calendar").toBe(false)
   }
   ui.setState({ budgetCycleViews: start })
+  // ←/→ move between panes: they don't step a chart's views.
+  const chart = ui.state.budgetChart
+  handleKey(ui, key("right"), data)
+  expect(ui.state.budgetChart).toBe(chart)
+  expect(ui.state.focusedSection).toBe("bud.categories")
+  handleKey(ui, key("left"), data)
+  expect(ui.state.budgetChart).toBe(chart)
   handleKey(ui, key("v"), data); handleKey(ui, key("t"), data)
   expect(ui.state.focusedSection).toBe("bud.chart")
   handleKey(ui, key("l"), data)
@@ -251,23 +257,23 @@ test("Set budgets: with none yet the tab opens on it, the overall budget first w
   data.refresh()
   handleKey(ui, key("1"), data); handleKey(ui, key("3"), data)
   expect(ui.state.focusedSection).toBe("bud.categories")
-  expect(ui.state.budgetCategoryCursor).toBe(1)
+  expect(ui.state.budgetCategoryCursor).toBe(0)
   let f = await frame()
-  expect(f).toContain("Set budgets · start here")
+  expect(f).toContain("Budgets · start here")
   // Groceries averaged $300 over the cycle before.
   expect(f).toMatch(/Overall spending\s+not set/)
   expect(f).toContain("enter sets it from your $300 average")
   // Bills & Utilities is closed: Power isn't listed until space opens it.
   expect(f).toMatch(/▸ . Bills/)
   expect(f).not.toContain("Power")
-  // Bills & Utilities is the row after the style, the overall budget and Groceries.
-  ui.setState({ budgetCategoryCursor: 3 })
+  // Bills & Utilities is the row after the overall budget and Groceries.
+  ui.setState({ budgetCategoryCursor: 2 })
   handleKey(ui, key("space"), data)
   f = await frame()
   expect(f).toMatch(/▾ . Bills/)
   expect(f).toContain("Power")
   // enter on the overall row sets the overall budget from its average.
-  ui.setState({ budgetCategoryCursor: 1 })
+  ui.setState({ budgetCategoryCursor: 0 })
   handleKey(ui, key("return"), data)
   expect(ui.state.settingsDraft).toMatchObject({ scopeKey: "overall", amount: "300" })
   ui.setState({ settingsEditor: null, budgetSetupOpen: [] })
@@ -279,7 +285,7 @@ test("Set budgets: with none yet the tab opens on it, the overall budget first w
   expect(await frame()).not.toContain("start here")
 })
 
-test("top-up: switched in Set budgets, Progress leads with the payday (in, kept to the target, sent to savers against what was due) and the next one at this pace", async () => {
+test("the payday, in the Budgets pane for every cycle: in, kept to top up to the budgets' total, sent to savers against what was due; and the next payday at this pace", async () => {
   setAppClock(new Date(2026, 9, 20, 12))
   const t = await renderApp({ width: 160, height: 50 })
   data.init(":memory:")
@@ -295,22 +301,17 @@ test("top-up: switched in Set budgets, Progress leads with the payday (in, kept 
   data.refresh()
   handleKey(ui, key("3"), data)
   await data.setBudget({ kind: "overall" }, 2000)
-  // The style is Set budgets' first row: enter switches it.
-  handleKey(ui, key("v"), data); handleKey(ui, key("c"), data)
-  ui.setState({ budgetCategoryCursor: 0 })
-  handleKey(ui, key("return"), data)
-  await Bun.sleep(30)
-  expect(data.state.uiPrefs.budgetStyle).toBe("topup")
   await t.renderOnce(); await t.flush(); await t.renderOnce()
   const f = t.captureCharFrame()
-  expect(f).toMatch(/Style\s+tracking\s+top-up\s+○●/)
-  // Kept $2,000 of $5,000; $3,000 due, $3,000 sent.
-  expect(f).toContain("Payday 1 Oct · $5,000 in · kept $2,000 to top up to $2,000 · $3,000 to savers ✓")
-  expect(f).toMatch(/Next 1 Nov · at this pace Spending ends near \$[\d,]+ · keep \$[\d,]+ · send about \$[\d,]+/)
-  // Back to tracking: no payday lines.
-  handleKey(ui, key("return"), data)
-  await Bun.sleep(30)
-  await t.renderOnce(); await t.flush(); await t.renderOnce()
-  expect(t.captureCharFrame()).not.toContain("Payday 1 Oct")
+  const pane = (label: string) => f.split("\n").find((l) => l.includes(label)) ?? ""
+  expect(pane("Payday 1 Oct")).toContain("$5,000 in")
+  // Kept $2,000 of $5,000 to top up to the $2,000 budget; $3,000 due, $3,000 sent.
+  expect(pane("kept, topping up to $2,000")).toContain("$2,000")
+  expect(pane("to savers")).toContain("$3,000 ✓")
+  expect(pane("Next payday 1 Nov")).toContain("at this pace")
+  expect(pane("Spending ends near")).toMatch(/\$[\d,]+/)
+  expect(pane("send about")).toMatch(/\$[\d,]+/)
+  // No style to pick: Progress keeps to the budgets.
+  expect(f).not.toContain("Style")
   t.renderer.destroy()
 })

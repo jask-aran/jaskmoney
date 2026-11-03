@@ -130,13 +130,7 @@ export function BudgetsTab(props: { focused: SectionId }) {
   const ignored = createMemo(() => budgetIgnoredIds(data.state.categories))
   // The Set budgets pane: the overall budget, then the categories, groups
   // closed unless opened (space).
-  const style = () => data.state.uiPrefs.budgetStyle ?? "tracking"
-  const topUp = () => style() === "topup"
-  // Top-up's payday lines in Progress (the last payday, and this cycle the
-  // next) and a blank line under them: a fixed count, so the layout doesn't
-  // wait on the payday's figures.
-  const topUpLines = () => (topUp() ? (view().current ? 2 : 1) + 1 : 0)
-  const setup = createMemo(() => budgetSetupRows(lines(), budgets(), new Set(ui.state.budgetSetupOpen), ignored(), style()))
+  const setup = createMemo(() => budgetSetupRows(lines(), budgets(), new Set(ui.state.budgetSetupOpen), ignored()))
   const categoryCursor = createMemo(() => Math.min(ui.state.budgetCategoryCursor, Math.max(0, setup().length - 1)))
   const ignoredNames = () => data.state.categories.filter((c) => c.budgetIgnored).map((c) => c.name)
   const firstData = createMemo(() => transactions().reduce((first, t) => (t.dateISO < first ? t.dateISO : first), today()))
@@ -225,9 +219,9 @@ export function BudgetsTab(props: { focused: SectionId }) {
   // then a blank line, the Each cycle heading and a line a cycle.
   const summaryLines = () => (summary().length ? 1 : 0)
   const progressRoom = () => (grid() ? topQuarter() : wide() ? Math.floor(body() * 0.45) : Math.floor(body() * 0.4))
-  const hung = () => rows().length * 2 + 2 + summaryLines() + topUpLines() <= progressRoom() - 4
-  const budgetRoom = () => (hung() ? rows().length : Math.min(rows().length, Math.max(1, Math.floor(progressRoom() * 0.6) - 2 - summaryLines() - topUpLines())))
-  const budgetLines = () => topUpLines() + budgetRoom() * (hung() ? 2 : 1) + summaryLines()
+  const hung = () => rows().length * 2 + 2 + summaryLines() <= progressRoom() - 4
+  const budgetRoom = () => (hung() ? rows().length : Math.min(rows().length, Math.max(1, Math.floor(progressRoom() * 0.6) - 2 - summaryLines())))
+  const budgetLines = () => budgetRoom() * (hung() ? 2 : 1) + summaryLines()
   // The cycles fill a grid quarter; elsewhere as many as there are, up to
   // what the room leaves (at least two).
   const cycleRoom = () => (grid() ? progressRoom() - 2 - budgetLines() - 2 : Math.min(cycles().length, Math.max(2, progressRoom() - 2 - budgetLines() - 2)))
@@ -321,7 +315,53 @@ export function BudgetsTab(props: { focused: SectionId }) {
   }
   const budgetTop = createMemo(() => centredTop(budgetCursor(), rows().length, budgetRoom()))
 
-  // Set budgets: where budgets are set. The overall budget first (until
+  const spendingIds = createMemo(() => new Set(data.state.accounts.filter((a) => accountRole(a) === "spending").map((a) => a.id)))
+  const allSpending = createMemo(() => transactions().filter((t) => t.accountId != null && spendingIds().has(t.accountId)))
+  const inCycle = createMemo(() => allSpending().filter((t) => t.dateISO >= cycle().start && t.dateISO <= cycle().end))
+  // The cycle's payday: Spending is topped up to the budgets' total and the
+  // rest of the pay goes to savers; and, this cycle, the next payday at
+  // this pace (projectAvailable, as the Overview's Available looks ahead).
+  const target = () => split().total
+  const paydayResult = createMemo(() => {
+    const days = (config().paydays ?? []).filter((d) => d >= addDays(cycle().start, -3) && d <= through())
+    const day = days.at(-1)
+    return day ? paydayResults(data.state.accounts, transactions(), [day], target())[0]! : null
+  })
+  const forecast = createMemo(() => {
+    const last = paydayResult()
+    if (!view().current || !last || last.pay <= 0 || target() <= 0) return null
+    const balance = computePosition(data.state.accounts, transactions(), today()).spendingBalance
+    if (balance == null) return null
+    const regular = subscriptions(allSpending(), today(), { people: true })
+    const usual = usualDailySpend(data.state.accounts, transactions(), today(), new Set(regular.flatMap((s) => s.chargeIds)))
+    const projected = projectAvailable(balance, today(), cycle().end, usual, upcomingCharges(regular, today(), cycle().end))
+    return topUpForecast(projected.at(-1)?.value ?? balance, target(), last.pay)
+  })
+  // The payday, in the Budgets pane: what came in, what was kept to top
+  // up Spending to the budgets' total, what went to savers against what
+  // should have; and, this cycle, the next payday at this pace.
+  const paydayLines = createMemo((): Span[][] => {
+    const p = paydayResult(), width = rowWidth(categoriesWidth())
+    const stat = (label: string, value: string, fg: string = ink.figure, bold = false): Span[] =>
+      fitSpans([{ text: fit(label, Math.max(1, width - value.length - 2)), fg: bold ? ink.figure : ink.label, bold }, { text: `${value}  `, fg }], width)
+    if (!p || p.pay <= 0) return [fitSpans([{ text: "  No pay this cycle (the Salary category)", fg: ink.note }], width)]
+    const lines = [stat(`  Payday ${shortDate(p.dateISO)}`, `${formatWholeMoney(p.pay)} in`, ink.figure, true)]
+    if (target() > 0) {
+      lines.push(stat(`    kept, topping up to ${formatWholeMoney(target())}`, formatWholeMoney(p.keep), ink.label))
+      lines.push(p.sent >= p.due - 1
+        ? stat("    to savers", `${formatWholeMoney(p.sent)} ✓`, tone.good)
+        : stat("    to savers", `${formatWholeMoney(p.sent)} of ${formatWholeMoney(p.due)}`, tone.caution))
+    } else lines.push(stat("    to savers", formatWholeMoney(p.sent), ink.label))
+    const f = forecast()
+    if (f) {
+      lines.push(stat(`  Next payday ${shortDate(addDays(cycle().end, 1))}`, "at this pace", ink.note, true))
+      lines.push(stat("    Spending ends near", formatWholeMoney(f.end), f.end < 0 ? tone.bad : ink.figure))
+      lines.push(stat("    keep", formatWholeMoney(f.keep), ink.label))
+      lines.push(stat("    send about", formatWholeMoney(f.send), tone.good))
+    }
+    return lines
+  })
+  // Budgets: where budgets are set. The overall budget first (until
   // set, a nudge in caution: enter sets it from its average), then each
   // category: name, this cycle, the average, and its budget or that it's
   // left out; a closed group says how many budgets it holds. The average
@@ -367,23 +407,11 @@ export function BudgetsTab(props: { focused: SectionId }) {
   }
   // The overall row (two lines unset), a blank line and the headings stay
   // put; the categories scroll under them.
-  const overallRow = () => setup()[1] as Extract<SetupRow, { kind: "overall" }>
+  const overallRow = () => setup()[0] as Extract<SetupRow, { kind: "overall" }>
   const overallHeight = () => (overallRow().budget ? 1 : 2)
-  const categoryRoom = () => Math.max(1, categoriesHeight() - 5 - overallHeight())
-  const categoryLines = createMemo(() => setup().slice(2) as Array<Extract<SetupRow, { kind: "line" }>>)
-  const categoryTop = createMemo(() => centredTop(Math.max(0, categoryCursor() - 2), categoryLines().length, categoryRoom()))
-  // The style: tracking or top-up, a dot each, enter switches.
-  const styleSpans = (): Span[] => {
-    const topup = style() === "topup"
-    return fitSpans([
-      { text: fit("  Style", nameWidth() - 2), fg: ink.label },
-      { text: "tracking", fg: topup ? ink.note : ink.figure, bold: !topup },
-      { text: "  ", fg: ink.note },
-      { text: "top-up", fg: topup ? ink.figure : ink.note, bold: topup },
-      { text: "  ", fg: ink.note },
-      { text: topup ? "○●" : "●○", fg: tone.key },
-    ], rowWidth(categoriesWidth()))
-  }
+  const categoryRoom = () => Math.max(1, categoriesHeight() - 4 - overallHeight() - (paydayLines().length ? paydayLines().length + 1 : 0))
+  const categoryLines = createMemo(() => setup().slice(1) as Array<Extract<SetupRow, { kind: "line" }>>)
+  const categoryTop = createMemo(() => centredTop(Math.max(0, categoryCursor() - 1), categoryLines().length, categoryRoom()))
   // Nothing budgeted yet: the pane says to start here.
   const nothingSet = () => view().current && budgets().length === 0
 
@@ -402,10 +430,6 @@ export function BudgetsTab(props: { focused: SectionId }) {
   const Progress = () => (
     <SectionCard title="Progress" titleSuffix={view().current ? `· day ${elapsed()} of ${cycle().days}` : `· ${period()} · ] later`} titleSuffixColor={view().current ? tone.scope : tone.caution} focused={listFocused()} width={progressWidth()} height={progressHeight()}
       bottomSpans={cycles().length ? cycleLinesLegend(cycles()) : undefined}>
-      <Show when={topUp()}>
-        <Index each={topUpSpans()}>{(spans) => <ListRow cursor={false} bg={theme.canvas} spans={spans()} />}</Index>
-        <text wrapMode="none">{" "}</text>
-      </Show>
       <Index each={rows().slice(budgetTop(), budgetTop() + budgetRoom())}>{(row, i) => {
         const at = () => listFocused() && budgetTop() + i === budgetCursor()
         const armed = () => (row().budget ? armedFor(ui.state.armed, "budget", budgetArmId(row().budget!, cycle().start)) : undefined)
@@ -450,13 +474,16 @@ export function BudgetsTab(props: { focused: SectionId }) {
     </SectionCard>
   )
   const Categories = () => (
-    <SectionCard title="Set budgets" titleSuffix={nothingSet() ? "· start here" : categoriesFocused() ? "· enter set · space open" : undefined}
+    <SectionCard title="Budgets" titleSuffix={nothingSet() ? "· start here" : categoriesFocused() ? "· enter set · space open" : undefined}
       titleSuffixColor={nothingSet() ? tone.caution : ink.note} focused={categoriesFocused()} width={categoriesWidth()} height={categoriesHeight()}>
-      <ListRow cursor={categoriesFocused() && categoryCursor() === 0} bg={theme.canvas} spans={styleSpans()} />
+      <Show when={paydayLines().length}>
+        <Index each={paydayLines()}>{(spans) => <ListRow cursor={false} bg={theme.canvas} spans={spans()} />}</Index>
+        <text wrapMode="none">{" "}</text>
+      </Show>
       {(() => {
         const overall = overallRow
         return <Index each={overallLines(overall())}>{(spans, i) => (
-          <ListRow cursor={categoriesFocused() && categoryCursor() === 1} bg={theme.canvas} armed={i === 0 && overall().budget ? armedFor(ui.state.armed, "budget", budgetArmId(overall().budget!, cycle().start)) : undefined} spans={spans()} />
+          <ListRow cursor={categoriesFocused() && categoryCursor() === 0} bg={theme.canvas} armed={i === 0 && overall().budget ? armedFor(ui.state.armed, "budget", budgetArmId(overall().budget!, cycle().start)) : undefined} spans={spans()} />
         )}</Index>
       })()}
       <text wrapMode="none">{" "}</text>
@@ -466,7 +493,7 @@ export function BudgetsTab(props: { focused: SectionId }) {
           <S fg={ink.label}>{"Spent".padStart(NUM)}{withAverage() ? "Average".padStart(NUM) : ""}{"Budget".padStart(NUM)}</S>
         </text>
         <Index each={categoryLines().slice(categoryTop(), categoryTop() + categoryRoom())}>{(row, i) => (
-          <ListRow cursor={categoriesFocused() && categoryTop() + i + 2 === categoryCursor()} bg={theme.canvas} armed={row().line.budget ? armedFor(ui.state.armed, "budget", budgetArmId(row().line.budget!, cycle().start)) : undefined} spans={lineSpans(row())} />
+          <ListRow cursor={categoriesFocused() && categoryTop() + i + 1 === categoryCursor()} bg={theme.canvas} armed={row().line.budget ? armedFor(ui.state.armed, "budget", budgetArmId(row().line.budget!, cycle().start)) : undefined} spans={lineSpans(row())} />
         )}</Index>
       </Show>
     </SectionCard>
@@ -477,51 +504,8 @@ export function BudgetsTab(props: { focused: SectionId }) {
   // spending account (the Overview's "All spending"), with the total
   // budgeted on the spending charts; Merchants against the same days of
   // the cycle before, when the history covers it.
-  const spendingIds = createMemo(() => new Set(data.state.accounts.filter((a) => accountRole(a) === "spending").map((a) => a.id)))
-  const allSpending = createMemo(() => transactions().filter((t) => t.accountId != null && spendingIds().has(t.accountId)))
-  const inCycle = createMemo(() => allSpending().filter((t) => t.dateISO >= cycle().start && t.dateISO <= cycle().end))
-  // Top-up (the style): Spending is topped up to the budgets' total each
-  // payday and the rest of the pay goes to savers. Progress leads with the
-  // cycle's payday: what came in, what was kept, what went to savers
-  // against what should have; and, this cycle, the next payday at this
-  // pace (projectAvailable, as the Overview's Available looks ahead).
-  const target = () => split().total
-  const paydayResult = createMemo(() => {
-    if (!topUp()) return null
-    const days = (config().paydays ?? []).filter((d) => d >= addDays(cycle().start, -3) && d <= through())
-    const day = days.at(-1)
-    return day ? paydayResults(data.state.accounts, transactions(), [day], target())[0]! : null
-  })
-  const forecast = createMemo(() => {
-    const last = paydayResult()
-    if (!topUp() || !view().current || !last || last.pay <= 0) return null
-    const balance = computePosition(data.state.accounts, transactions(), today()).spendingBalance
-    if (balance == null) return null
-    const regular = subscriptions(allSpending(), today(), { people: true })
-    const usual = usualDailySpend(data.state.accounts, transactions(), today(), new Set(regular.flatMap((s) => s.chargeIds)))
-    const projected = projectAvailable(balance, today(), cycle().end, usual, upcomingCharges(regular, today(), cycle().end))
-    return topUpForecast(projected.at(-1)?.value ?? balance, target(), last.pay)
-  })
-  const topUpSpans = (): Span[][] => {
-    if (!topUp()) return []
-    const p = paydayResult(), width = rowWidth(progressWidth())
-    if (!p || p.pay <= 0) return [fitSpans([{ text: "No pay found for this cycle: top-up reads pay from the Salary category", fg: ink.note }], width)]
-    const sentOk = p.sent >= p.due - 1
-    const first = fitSpans([
-      { text: `Payday ${shortDate(p.dateISO)}`, fg: ink.figure, bold: true },
-      { text: ` · ${formatWholeMoney(p.pay)} in · kept ${formatWholeMoney(p.keep)} to top up to ${formatWholeMoney(target())} · `, fg: ink.label },
-      sentOk ? { text: `${formatWholeMoney(p.sent)} to savers ✓`, fg: tone.good } : { text: `${formatWholeMoney(p.sent)} of ${formatWholeMoney(p.due)} to savers`, fg: tone.caution },
-    ], width)
-    const f = forecast()
-    if (!f) return [first]
-    return [first, fitSpans([
-      { text: `Next ${shortDate(addDays(cycle().end, 1))}`, fg: ink.figure, bold: true },
-      { text: " · at this pace Spending ends near ", fg: ink.label },
-      { text: formatWholeMoney(f.end), fg: f.end < 0 ? tone.bad : ink.figure },
-      { text: ` · keep ${formatWholeMoney(f.keep)} · send about `, fg: ink.label },
-      { text: formatWholeMoney(f.send), fg: tone.good },
-    ], width)]
-  }
+
+
 
   const cycleViews = () => ui.state.budgetCycleViews.slice(0, cyclePanes()).map((i) => (CHART_VIEWS[i] ?? CHART_VIEWS[0]).view)
   const cycleShows = (view: string) => (cycleViews() as readonly string[]).includes(view)

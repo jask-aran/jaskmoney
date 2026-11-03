@@ -394,7 +394,7 @@ export const JUMP_TARGETS: Record<TabId, JumpTarget[]> = {
   ],
   budgets: [
     { key: "p", section: "bud.list", label: "Progress" },
-    { key: "c", section: "bud.categories", label: "Categories" },
+    { key: "c", section: "bud.categories", label: "Budgets" },
     { key: "t", section: "bud.chart", label: "Budget chart" },
     { key: "y", section: "bud.cycle", label: "Cycle chart" },
     { key: "n", section: "bud.cycle2", label: "Second cycle chart" },
@@ -601,8 +601,7 @@ function createUiStore() {
       activeTab: tab,
       drillReturn: null,
       focusedSection: tab === "budgets" && state.budgetsEmpty ? "bud.categories" : TAB_DEFAULT_FOCUS[tab],
-      // On the overall budget (the style is first).
-      ...(tab === "budgets" && state.budgetsEmpty ? { budgetCategoryCursor: 1 } : {}),
+      ...(tab === "budgets" && state.budgetsEmpty ? { budgetCategoryCursor: 0 } : {}),
       range: null,
       settingsActive: false,
       armed: null,

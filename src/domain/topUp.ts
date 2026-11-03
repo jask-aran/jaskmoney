@@ -4,16 +4,12 @@ import { balanceHistory } from "./position"
 import { accountRole, type Account, type Transaction } from "./types"
 
 /**
- * Top-up budgeting (the Budgets tab's "topup" style): each payday the
+ * The payday (the Budgets tab shows it for every cycle): each payday the
  * spending accounts are topped up to the target (the budgets' total) from
  * the pay, and the rest of the pay goes to savers. Spending less leaves
  * more in Spending at the next payday, so less pay is kept and more is
  * sent: the sweep is the scorecard.
  */
-
-/** How budgets work (Settings: UiPrefs.budgetStyle): "tracking", spending
- * against budgets, or "topup". */
-export type BudgetStyle = "tracking" | "topup"
 
 /** Days after pay arrives that count as its sweep to savers. */
 export const SWEEP_DAYS = 3
