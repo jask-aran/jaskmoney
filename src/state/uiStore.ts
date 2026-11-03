@@ -380,7 +380,7 @@ export const JUMP_TARGETS: Record<TabId, JumpTarget[]> = {
     { key: "t", section: "mgr.transactions", label: "Transactions" },
   ],
   budgets: [
-    { key: "b", section: "bud.list", label: "Budgets" },
+    { key: "p", section: "bud.list", label: "Progress" },
     { key: "c", section: "bud.categories", label: "Categories" },
     { key: "t", section: "bud.chart", label: "Budget chart" },
     { key: "y", section: "bud.cycle", label: "Cycle chart" },

@@ -44,7 +44,7 @@ test("Budgets tab (3): a chart of the budget at the cursor under where it stands
 test("allocating down: in Categories, enter sets a category's budget starting from its average; it joins the budgets, and the chart follows the cursor", async () => {
   const { groceries, frame } = await budgetsTab()
   await data.setBudget({ kind: "overall" }, 500)
-  handleKey(ui, key("j"), data)
+  handleKey(ui, key("v"), data); handleKey(ui, key("c"), data)
   expect(ui.activeScope()).toBe("budgets.categories")
   handleKey(ui, key("return"), data)
   expect(ui.state.settingsEditor?.kind).toBe("budget")
@@ -68,7 +68,7 @@ test("allocating down: in Categories, enter sets a category's budget starting fr
 test("x leaves a category out of the budgets (not budgeted: the total and everything else leave it), and again brings it back", async () => {
   const { groceries, frame } = await budgetsTab()
   await data.setBudget({ kind: "overall" }, 500)
-  handleKey(ui, key("j"), data)
+  handleKey(ui, key("v"), data); handleKey(ui, key("c"), data)
   ui.setState({ budgetCategoryCursor: 0 })
   // The first line is Groceries' group; its row is next.
   handleKey(ui, key("j"), data)
@@ -182,7 +182,7 @@ test("the cycle's calendar is always there: the budget's days so far, and its re
   ui.setState({ budgetOffset: 0 })
 })
 
-test("the Budgets tab's panes: t, y jump to the budget and cycle panes, h/l step the focused one's views, H/L the cycle pane's from the cards, esc back", async () => {
+test("the Budgets tab's panes: Progress on top; t, y jump to the budget and cycle panes, h/l step the focused one's views, H/L the cycle pane's from the cards, esc back", async () => {
   const { frame } = await budgetsTab()
   await data.setBudget({ kind: "overall" }, 500)
   await frame()
@@ -201,9 +201,28 @@ test("the Budgets tab's panes: t, y jump to the budget and cycle panes, h/l step
   expect(ui.state.budgetCycleViews[0]).toBe(start[0])
   handleKey(ui, key("escape"), data)
   expect(ui.state.focusedSection).toBe("bud.list")
-  // Up past the first budget: the pane above.
+  // Progress tops the main column: past its last budget, the budget pane under it.
   ui.setState({ budgetCursor: 0 })
-  handleKey(ui, key("k"), data)
-  expect(ui.state.focusedSection).toBe("bud.cycle")
+  handleKey(ui, key("j"), data)
+  expect(ui.state.focusedSection).toBe("bud.chart")
   ui.setState({ focusedSection: "bud.list", budgetChart: 0, budgetCycleViews: start })
+})
+
+test("the cycle's calendar draws in with the charts: on \"always\", its days tile in when the budget at the cursor changes", async () => {
+  const { t, frame } = await budgetsTab()
+  await data.setBudget({ kind: "overall" }, 500)
+  data.setState("uiPrefs", { ...data.state.uiPrefs, chartMotion: "always", chartSpeed: "quick" })
+  const calendar = (f: string) => f.split("\n").filter((l) => l.includes("Sat")).join("\n")
+  await frame(); await Bun.sleep(600)
+  const done = calendar(await frame())
+  expect(done).toContain("31")
+  // Another budget at the cursor: the days come in again, the last ones not yet.
+  await data.setBudget({ kind: "category", categoryId: data.state.categories.find((c) => c.name === "Groceries")!.id }, 300)
+  ui.setState({ budgetCursor: 1 })
+  await frame(); await Bun.sleep(40)
+  expect(calendar(await frame())).not.toContain("31")
+  await Bun.sleep(600)
+  expect(calendar(await frame())).toContain("31")
+  data.setState("uiPrefs", { ...data.state.uiPrefs, chartMotion: "launch" })
+  void t
 })

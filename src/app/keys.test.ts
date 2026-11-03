@@ -451,7 +451,7 @@ describe("key router", () => {
     expect(ui.activeScope()).toBe("settings.up")
   })
 
-  test("Budgets tab (3): c edits the cycle; h/l switch the chart; budgets delete on del del; j past them goes to the categories", async () => {
+  test("Budgets tab (3): c edits the cycle; h/l switch the chart; budgets delete on del del; v c goes to the categories", async () => {
     data.init(":memory:")
     ui.switchTab("overview")
     handleKey(ui, key("3"), data)
@@ -472,8 +472,8 @@ describe("key router", () => {
     handleKey(ui, key("delete"), data)
     expect(data.state.budgets).toEqual([])
     expect(footerHints("budgets").some((h) => h.key === "c")).toBe(true)
-    // j past the last budget goes to the categories.
-    handleKey(ui, key("j"), data)
+    // The categories: v then c.
+    handleKey(ui, key("v"), data); handleKey(ui, key("c"), data)
     expect(ui.activeScope()).toBe("budgets.categories")
     handleKey(ui, key("4"), data)
     expect(ui.state.activeTab).toBe("settings")

@@ -1911,9 +1911,9 @@ function handleBudgetChart(ui: UiStore, key: KeyEvent, data?: DataStore): void {
   budgetKeys(ui, key, data, Math.max(0, BUDGET_PANES.indexOf(ui.state.focusedSection)))
 }
 
-/** The Budgets tab's Budgets card: enter edits a budget (the total is
- * theirs added up: it has none of its own), a adds, del twice deletes; j
- * past the end goes to the Categories card. */
+/** The Budgets tab's Progress card (its budgets): enter edits a budget
+ * (the total is theirs added up: it has none of its own), a adds, del twice
+ * deletes; j past the end or k above the start go to the pane that way. */
 function handleBudgets(ui: UiStore, key: KeyEvent, data?: DataStore): void {
   const { name } = key
   if (!data) return
@@ -1921,11 +1921,9 @@ function handleBudgets(ui: UiStore, key: KeyEvent, data?: DataStore): void {
   const view = viewedBudgets(ui, data)
   const rows = budgetListRows(view.budgets, data.state.categories)
   const row = rows[Math.min(ui.state.budgetCursor, rows.length - 1)]!
-  if ((name === "j" || name === "down") && ui.state.budgetCursor >= rows.length - 1) {
-    ui.setState({ focusedSection: "bud.categories" })
-    return
-  }
-  // Up past the first budget: the pane above (the chart).
+  // Past the last budget or above the first: the pane in that direction
+  // (Progress tops the main column: the budget pane is under it).
+  if ((name === "j" || name === "down") && ui.state.budgetCursor >= rows.length - 1) { travel(ui, "down", data); return }
   if ((name === "k" || name === "up") && ui.state.budgetCursor === 0) { travel(ui, "up", data); return }
   const moved = listMove(key, ui.state.budgetCursor, rows.length)
   if (moved != null) { ui.setState({ budgetCursor: moved }); return }

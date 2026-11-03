@@ -21,7 +21,7 @@ import { S } from "../primitives/S"
 import { fitSpans, type Span } from "../primitives/spans"
 import { AXIS_GUESS, CHART_RIGHT_PAD, axisWidth, type ChartModel } from "../charts/ChartBody"
 import { cycleLines, cycleLinesLegend, type CycleSpent } from "./budgetCharts"
-import { chartSpeedMs, showings } from "../charts/motion"
+import { chartSpeedMs, showings, useReveal } from "../charts/motion"
 import { ChartCard } from "../charts/ChartCard"
 import { spendingChart } from "../overview/periodCharts"
 import { BUDGET_PANES, BUDGET_VIEWS, CHART_VIEWS } from "../../state/uiStore"
@@ -196,48 +196,42 @@ export function BudgetsTab(props: { focused: SectionId }) {
     return spans
   })
   // The layouts. Wide: the main column, then a side column with the cycle's
-  // calendar over the categories. In the main column, split screen: the
-  // budget pane, a cycle pane under it when there's height for both, and
-  // the budgets beside each cycle along the bottom. Full screen (the main
-  // column fits two panes of GRID_PANE_MIN): a 2×2 grid, the budget pane
-  // and a cycle pane on top, a second cycle pane and the budgets over each
-  // cycle below. Narrow: one column, the budget pane alone.
+  // calendar over the categories. Two columns (split screen): Progress on
+  // top of the main column, then the budget pane, and a cycle pane under it
+  // when there's height for both. Three columns (full screen, the main
+  // column fits two panes of GRID_PANE_MIN): a 2×2 grid, Progress and the
+  // budget pane on top, two cycle panes below. Narrow: one column, the
+  // budget pane alone.
   const grid = () => wide() && mainWidth() >= 2 * GRID_PANE_MIN + 1
   const halfLeft = () => Math.ceil((mainWidth() - 1) / 2)
   const halfRight = () => Math.floor((mainWidth() - 1) / 2)
   const topQuarter = () => Math.floor(body() / 2)
   const bottomQuarter = () => body() - topQuarter()
-  // Each budget takes two lines (hung) when they all fit in the room the
-  // layout gives the budgets, else one; past that, the list scrolls.
+  // Progress: the budgets (each two lines, hung, when they all fit in the
+  // room the layout gives them, else one; past that the list scrolls),
+  // then a blank line, the Each cycle heading and a line a cycle.
   const summaryLines = () => (summary().length ? 1 : 0)
-  const budgetsRoom = () => (grid() ? bottomQuarter() - 5 : wide() ? Math.floor(body() * 0.45) : Math.floor(body() * 0.4))
-  const hung = () => rows().length * 2 + 2 + summaryLines() <= budgetsRoom()
-  const budgetRoom = () => (hung() ? rows().length : Math.min(rows().length, Math.max(1, (wide() ? budgetsRoom() : Math.floor(body() * 0.3)) - 2 - summaryLines())))
-  const budgetsNatural = () => budgetRoom() * (hung() ? 2 : 1) + 2 + summaryLines()
-  // Split screen, the budgets and each cycle share the bottom row when
-  // each gets SIDE_BY_SIDE_MIN columns, as tall as the taller of them wants
-  // (each cycle up to the budgets' room); narrower, each cycle goes under
-  // the budgets.
-  const sideBySide = () => wide() && !grid() && halfLeft() >= SIDE_BY_SIDE_MIN
-  const bottomRow = () => Math.max(budgetsNatural(), Math.min(cycles().length + 2, budgetsRoom()))
-  const linesStacked = () => Math.min(cycles().length + 2, Math.max(4, Math.floor((body() - budgetsNatural()) / 3)))
-  const bottomBlock = () => (sideBySide() ? bottomRow() : budgetsNatural() + linesStacked())
-  const budgetsHeight = () => (sideBySide() ? bottomRow() : budgetsNatural())
-  const linesHeight = () => (grid() ? bottomQuarter() - budgetsNatural() : sideBySide() ? bottomRow() : wide() ? linesStacked() : Math.min(cycles().length + 2, Math.max(5, Math.floor(body() * 0.2))))
+  const progressRoom = () => (grid() ? topQuarter() : wide() ? Math.floor(body() * 0.45) : Math.floor(body() * 0.4))
+  const hung = () => rows().length * 2 + 2 + summaryLines() <= progressRoom() - 4
+  const budgetRoom = () => (hung() ? rows().length : Math.min(rows().length, Math.max(1, Math.floor(progressRoom() * 0.6) - 2 - summaryLines())))
+  const budgetLines = () => budgetRoom() * (hung() ? 2 : 1) + summaryLines()
+  // The cycles fill a grid quarter; elsewhere as many as there are, up to
+  // what the room leaves (at least two).
+  const cycleRoom = () => (grid() ? progressRoom() - 2 - budgetLines() - 2 : Math.min(cycles().length, Math.max(2, progressRoom() - 2 - budgetLines() - 2)))
+  const progressHeight = () => (grid() ? topQuarter() : 2 + budgetLines() + (cycles().length ? 2 + cycleRoom() : 0))
   // The charts take the rest: the budget pane, and a cycle pane under it
   // when both get CYCLE_PANE_MIN rows.
-  const chartArea = () => body() - bottomBlock()
+  const chartArea = () => body() - progressHeight()
   const cyclePanes = (): 0 | 1 | 2 => (grid() ? 2 : wide() && chartArea() >= 2 * CYCLE_PANE_MIN ? 1 : 0)
   const chartHeight = () => (grid() ? topQuarter() : wide() ? (cyclePanes() ? Math.ceil(chartArea() / 2) : chartArea()) : Math.max(10, Math.floor(body() * 0.3)))
-  const cyclePaneHeight = (pane: number) => (grid() ? (pane === 0 ? topQuarter() : bottomQuarter()) : chartArea() - chartHeight())
-  const budgetsWidth = () => (grid() ? halfRight() : sideBySide() ? halfLeft() : mainWidth())
-  const linesWidth = () => (grid() || sideBySide() ? halfRight() : mainWidth())
-  const chartWidth = () => (grid() ? halfLeft() : mainWidth())
-  const cyclePaneWidth = (pane: number) => (grid() ? (pane === 0 ? halfRight() : halfLeft()) : mainWidth())
+  const cyclePaneHeight = (_pane: number) => (grid() ? bottomQuarter() : chartArea() - chartHeight())
+  const progressWidth = () => (grid() ? halfLeft() : mainWidth())
+  const chartWidth = () => (grid() ? halfRight() : mainWidth())
+  const cyclePaneWidth = (pane: number) => (grid() ? (pane === 0 ? halfLeft() : halfRight()) : mainWidth())
   // The cycle's calendar: a band of two lines a weekday where the tab has
   // the height, else one; narrow, only on a tall terminal.
   const calendarHeight = () => (wide() ? (body() >= 17 + 10 ? 17 : 10) : body() >= 40 ? 10 : 0)
-  const categoriesHeight = () => (wide() ? body() - calendarHeight() : Math.max(5, body() - chartHeight() - linesHeight() - budgetsHeight() - calendarHeight()))
+  const categoriesHeight = () => (wide() ? body() - calendarHeight() : Math.max(5, body() - chartHeight() - progressHeight() - calendarHeight()))
   // The panes the keys and jumps reach follow the layout; focus on one
   // that's gone goes back to the budgets.
   createEffect(() => {
@@ -277,8 +271,8 @@ export function BudgetsTab(props: { focused: SectionId }) {
   const listFocused = () => props.focused === "bud.list"
   const categoriesFocused = () => props.focused === "bud.categories"
   const LABEL = () => Math.min(22, Math.max(18, ...rows().map((r) => (r.budget ? label(r.budget).length + 2 : r.kind === "total" ? TOTAL.length + 2 : 18))))
-  const tight = () => rowWidth(budgetsWidth()) - LABEL() - 45 < 10
-  const BAR = () => Math.max(tight() ? 4 : 6, Math.min(48, rowWidth(budgetsWidth()) - LABEL() - (tight() ? 36 : 45)))
+  const tight = () => rowWidth(progressWidth()) - LABEL() - 45 < 10
+  const BAR = () => Math.max(tight() ? 4 : 6, Math.min(48, rowWidth(progressWidth()) - LABEL() - (tight() ? 36 : 45)))
   const budgetSpans = (p: BudgetProgress | undefined): Span[] => {
     if (!p) return []
     const budget = p.budget
@@ -287,7 +281,7 @@ export function BudgetsTab(props: { focused: SectionId }) {
     // Narrow, the figures drop their alignment, and then go, before what's
     // left or over does.
     const figures = { text: tight() ? ` ${formatWholeMoney(p.spent)} of ${formatWholeMoney(budget.amount)} ` : `  ${formatWholeMoney(p.spent).padStart(7)} of ${formatWholeMoney(budget.amount).padEnd(7)}  `, fg: ink.label }
-    const room = rowWidth(budgetsWidth()) - LABEL() - BAR()
+    const room = rowWidth(progressWidth()) - LABEL() - BAR()
     return [...bar(BAR(), used, pace()), ...(figures.text.length + verdict.text.length <= room ? [figures] : [{ text: " ", fg: ink.label }]), verdict]
   }
   // A budget on two lines: its name and spent of budget hung from the bar's
@@ -296,7 +290,7 @@ export function BudgetsTab(props: { focused: SectionId }) {
   // faint rule. No wash marks the cursor here: its name and corners take the
   // focus colour.
   const hungSpans = (name: Span, p: BudgetProgress | undefined, unset: string, cursor: boolean): [Span[], Span[]] => {
-    const width = rowWidth(budgetsWidth())
+    const width = rowWidth(progressWidth())
     const corner = (text: string): Span => ({ text, fg: cursor ? tone.focus : ink.note, bold: cursor })
     if (cursor) name = { ...name, fg: tone.focus }
     const line = (left: Span[], right: Span[]): Span[] => {
@@ -345,18 +339,12 @@ export function BudgetsTab(props: { focused: SectionId }) {
       curve={data.state.uiPrefs.chartCurve}
       labels={data.state.uiPrefs.chartLabels} />
   )
-  const Lines = () => (
-    <SectionCard title="Each cycle" titleSuffix={`· ${subject().title}`} titleSuffixColor={ink.label} bottomSpans={cycleLinesLegend(cycles())} width={linesWidth()} height={linesHeight()}>
-      <Index each={cycleLines(cycles().slice(0, Math.max(1, linesHeight() - 2)), rowWidth(linesWidth()), pace(), today())}>{(spans) => (
-        <text wrapMode="none">
-          <S fg={ink.note}>{" "}</S>
-          <Index each={spans()}>{(span) => <S fg={span().fg} bold={span().bold}>{span().text}</S>}</Index>
-        </text>
-      )}</Index>
-    </SectionCard>
-  )
-  const Budgets = () => (
-    <SectionCard title="Budgets" titleSuffix={view().current ? `· day ${elapsed()} of ${cycle().days}` : `· ${period()} · ] later`} titleSuffixColor={view().current ? tone.scope : tone.caution} focused={listFocused()} width={budgetsWidth()} height={budgetsHeight()}>
+  // Progress: where each budget stands this cycle, then (a blank line
+  // apart) the budget at the cursor cycle by cycle; Each cycle's legend in
+  // the bottom border.
+  const Progress = () => (
+    <SectionCard title="Progress" titleSuffix={view().current ? `· day ${elapsed()} of ${cycle().days}` : `· ${period()} · ] later`} titleSuffixColor={view().current ? tone.scope : tone.caution} focused={listFocused()} width={progressWidth()} height={progressHeight()}
+      bottomSpans={cycles().length ? cycleLinesLegend(cycles()) : undefined}>
       <Index each={rows().slice(budgetTop(), budgetTop() + budgetRoom())}>{(row, i) => {
         const at = () => listFocused() && budgetTop() + i === budgetCursor()
         const armed = () => (row().budget ? armedFor(ui.state.armed, "budget", budgetArmId(row().budget!, cycle().start)) : undefined)
@@ -368,9 +356,9 @@ export function BudgetsTab(props: { focused: SectionId }) {
         }
         const spans = (): Span[] => {
           const r = row()
-          if (r.kind === "total") return fitSpans([{ text: fit(TOTAL, LABEL()), fg: ink.strong, bold: true }, ...budgetSpans(totalProgress())], rowWidth(budgetsWidth()))
-          if (r.budget) return fitSpans([{ text: fit(label(r.budget), LABEL()), fg: ink.figure, bold: true }, ...budgetSpans(progress().get(r.budget.id))], rowWidth(budgetsWidth()))
-          return fitSpans([{ text: fit(overallName(), LABEL()), fg: ink.figure, bold: true }, { text: `not set: enter sets one${hasCategoryBudgets() ? " for the rest" : ""}`, fg: ink.note }], rowWidth(budgetsWidth()))
+          if (r.kind === "total") return fitSpans([{ text: fit(TOTAL, LABEL()), fg: ink.strong, bold: true }, ...budgetSpans(totalProgress())], rowWidth(progressWidth()))
+          if (r.budget) return fitSpans([{ text: fit(label(r.budget), LABEL()), fg: ink.figure, bold: true }, ...budgetSpans(progress().get(r.budget.id))], rowWidth(progressWidth()))
+          return fitSpans([{ text: fit(overallName(), LABEL()), fg: ink.figure, bold: true }, { text: `not set: enter sets one${hasCategoryBudgets() ? " for the rest" : ""}`, fg: ink.note }], rowWidth(progressWidth()))
         }
         return (
           <Show when={hung()} fallback={<ListRow cursor={at()} bg={theme.canvas} armed={armed()} spans={spans()} />}>
@@ -382,8 +370,21 @@ export function BudgetsTab(props: { focused: SectionId }) {
       <Show when={summary().length}>
         <text wrapMode="none">
           <S fg={ink.note}>{" "}</S>
-          <Index each={fitSpans(summary(), rowWidth(budgetsWidth()))}>{(span) => <S fg={span().fg}>{span().text}</S>}</Index>
+          <Index each={fitSpans(summary(), rowWidth(progressWidth()))}>{(span) => <S fg={span().fg}>{span().text}</S>}</Index>
         </text>
+      </Show>
+      <Show when={cycles().length}>
+        <text wrapMode="none">{" "}</text>
+        <text wrapMode="none">
+          <S fg={ink.heading} bold>{" Each cycle"}</S>
+          <S fg={ink.label}>{` · ${subject().title}`}</S>
+        </text>
+        <Index each={cycleLines(cycles().slice(0, Math.max(1, cycleRoom())), rowWidth(progressWidth()), pace(), today())}>{(spans) => (
+          <text wrapMode="none">
+            <S fg={ink.note}>{" "}</S>
+            <Index each={spans()}>{(span) => <S fg={span().fg} bold={span().bold}>{span().text}</S>}</Index>
+          </text>
+        )}</Index>
       </Show>
     </SectionCard>
   )
@@ -469,9 +470,17 @@ export function BudgetsTab(props: { focused: SectionId }) {
       ...(free == null ? [] : [{ text: free >= 0 ? ` · ${formatWholeMoney(free)} free after them` : ` · ${formatWholeMoney(-free)} over after them`, fg: free >= 0 ? tone.good : tone.bad }]),
     ]
   }
+  // Permanent, but it draws in as the charts do ("always": each time the
+  // tab comes into view, the cycle or the budget changes): its days tile in
+  // in date order.
+  const calendarReveal = useReveal(
+    () => (data.state.uiPrefs.chartMotion === "always" ? `${cycle().start}:${subject().title}:${seen()}` : undefined),
+    () => chartSpeedMs(data.state.uiPrefs.chartSpeed), () => data.state.uiPrefs.chartCurve)
+  const calendarDays = createMemo(() => calendarWeeks().flat().flatMap((d) => (d ? [d.dateISO] : [])).sort())
+  const calendarThrough = () => (calendarReveal() >= 1 ? undefined : calendarDays()[Math.ceil(calendarReveal() * calendarDays().length) - 1] ?? "")
   const CycleCalendar = () => (
     <SectionCard title="Calendar" titleSuffix={`· ${subject().title}`} titleSuffixColor={ink.label} bottomSpans={calendarSpans()} width={categoriesWidth()} height={calendarHeight()}>
-      <CalendarView weeks={calendarWeeks()} width={categoriesWidth() - 4} rows={calendarHeight() - 2} today={today()} />
+      <CalendarView weeks={calendarWeeks()} width={categoriesWidth() - 4} rows={calendarHeight() - 2} today={today()} through={calendarThrough()} />
     </SectionCard>
   )
 
@@ -483,33 +492,27 @@ export function BudgetsTab(props: { focused: SectionId }) {
     <box ref={regionRef(id, "budgets")} width={width()} height={height()} flexShrink={0} onMouseDown={panePointer(id)}>{card()}</box>
   )
   const BudgetPane = () => region("bud.chart", chartWidth, chartHeight, () => <Chart />)
-  const BudgetsCard = () => region("bud.list", budgetsWidth, budgetsHeight, () => <Budgets />)
+  const ProgressCard = () => region("bud.list", progressWidth, progressHeight, () => <Progress />)
   const CategoriesCard = () => region("bud.categories", categoriesWidth, categoriesHeight, () => <Categories />)
 
   return (
     <box width="100%" height="100%" flexDirection={wide() ? "row" : "column"} gap={wide() ? 1 : 0} backgroundColor={theme.canvas}>
-      <Show when={wide()} fallback={<><BudgetsCard /><BudgetPane /><Lines /><Show when={calendarHeight()}><CycleCalendar /></Show><CategoriesCard /></>}>
+      <Show when={wide()} fallback={<><ProgressCard /><BudgetPane /><Show when={calendarHeight()}><CycleCalendar /></Show><CategoriesCard /></>}>
         <Show when={grid()} fallback={
           <box flexDirection="column" width={mainWidth()} height={body()}>
+            <ProgressCard />
             <BudgetPane />
             <Show when={cyclePanes() > 0}><CyclePane pane={0} /></Show>
-            <box flexDirection={sideBySide() ? "row" : "column"} gap={sideBySide() ? 1 : 0} width={mainWidth()} height={bottomBlock()} flexShrink={0}>
-              <BudgetsCard />
-              <Lines />
-            </box>
           </box>
         }>
           <box flexDirection="column" width={mainWidth()} height={body()}>
             <box flexDirection="row" gap={1} width={mainWidth()} height={topQuarter()} flexShrink={0}>
+              <ProgressCard />
               <BudgetPane />
-              <CyclePane pane={0} />
             </box>
             <box flexDirection="row" gap={1} width={mainWidth()} height={bottomQuarter()} flexShrink={0}>
+              <CyclePane pane={0} />
               <CyclePane pane={1} />
-              <box flexDirection="column" width={halfRight()} height={bottomQuarter()}>
-                <BudgetsCard />
-                <Lines />
-              </box>
             </box>
           </box>
         </Show>
@@ -524,5 +527,3 @@ export function BudgetsTab(props: { focused: SectionId }) {
 
 /** Fewest rows a Budgets chart pane gets before the cycle pane gives way. */
 const CYCLE_PANE_MIN = 12
-/** Budgets and each cycle sit side by side when each gets this many columns. */
-const SIDE_BY_SIDE_MIN = 56
