@@ -277,7 +277,7 @@ test("drawn: the title in the brand's pink, the button in pink and bold; the dem
   expect(button.fg.toInts()).toEqual(RGBA.fromHex(tone.key).toInts())
   expect(button.attributes & 1).toBe(1)
   // The tour opens on Charts: the Overview's own pane, its first view.
-  expect(t.captureCharFrame()).toContain("Spending · Cumulative")
+  expect(t.captureCharFrame()).toContain("Cumulative spending")
   // Then Filter: the Manager's own table.
   press("right")
   await t.renderOnce()

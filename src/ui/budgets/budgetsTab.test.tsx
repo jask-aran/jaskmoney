@@ -38,7 +38,7 @@ test("Budgets tab (3): a chart of the budget at the cursor under where it stands
   expect(f).toContain("$100 of $500")
   // l: the Overview's next spending view, Daily.
   handleKey(ui, key("l"), data)
-  expect(await frame()).toContain("Overall spending · Daily")
+  expect(await frame()).toContain("Daily spending · Overall spending")
 })
 
 test("allocating down: in Categories, enter sets a category's budget starting from its average; it joins the budgets, and the chart follows the cursor", async () => {
@@ -167,7 +167,7 @@ test("the cycle's calendar is always there: the budget's days so far, and its re
   data.refresh()
   await data.setBudget({ kind: "overall" }, 500)
   const f = await frame()
-  expect(f).toMatch(/Calendar · (Overall spending|Total budgeted)/)
+  expect(f).toMatch(/Spending calendar · (Overall spending|Total budgeted)/)
   // STREAMER's next charge (and the fixture's Shop, regular enough to
   // count) on days to come: their amounts, the days in caution, and the
   // legend's total.

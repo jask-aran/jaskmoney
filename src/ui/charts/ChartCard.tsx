@@ -7,8 +7,10 @@ import { ChartBody, type ChartModel } from "./ChartBody"
 import { INKS } from "../overview/periodCharts"
 import type { ChartLabelMode } from "./motion"
 
-/** A chart pane's views, in h/l order, each with the group it belongs to. */
-export type ChartViews = ReadonlyArray<{ view: string; group: string }>
+/** A chart pane's views, in h/l order: each one's name, its title (what the
+ * chart shows, the pane's title) and the group it belongs to (spacing in
+ * the picker only). */
+export type ChartViews = ReadonlyArray<{ view: string; title: string; group: string }>
 
 /** The views in h/l order as icons (dots when icons are off), the current
  * one bright; a space between groups. */
@@ -21,12 +23,13 @@ export function viewPicker(views: ChartViews, current: number): Span[] {
 
 /**
  * A chart pane, as the Overview's and the Budgets tab's both are: titled
- * by what it shows (`title`) and its view, the views as icons in the top
- * border, the chart's legend in the bottom one. Without a `model` (a view
- * that isn't a chart: the calendar), `fallback` and its `legend` show.
+ * by what its view shows, then whose (`scope`) when the pane covers less
+ * than the tab does (a budget); the views as icons in the top border, the
+ * chart's legend in the bottom one. Without a `model` (a view that isn't
+ * a chart: the calendar), `fallback` and its `legend` show.
  */
 export function ChartCard(props: {
-  title: string
+  scope?: string
   views: ChartViews
   current: number
   model: ChartModel | null
@@ -47,8 +50,8 @@ export function ChartCard(props: {
   const view = () => props.views[props.current] ?? props.views[0]!
   return (
     <SectionCard
-      title={props.title}
-      titleSuffix={props.title === view().view ? undefined : `· ${view().view}`}
+      title={view().title}
+      titleSuffix={props.scope ? `· ${props.scope}` : undefined}
       titleSuffixColor={ink.label}
       titleRight={viewPicker(props.views, props.current)}
       bottomSpans={props.model?.legend ?? props.legend}

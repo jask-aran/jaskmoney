@@ -56,7 +56,7 @@ for (const [width, height, wide] of [[80, 30, false], [80, 45, false], [89, 60, 
     const settle = async () => { await t.renderOnce(); await t.flush() }
     const all = overviewCards(t)
     expect(all).toHaveLength(wide ? 6 : 5)
-    expect(frame().includes("Balances · Net position")).toBe(wide)
+    expect(frame().includes("╭─ Net position")).toBe(wide)
     const sameCards = all.map((card) => card.id)
     for (let i = 0; i < all.length; i++) {
       const a = all[i]!
@@ -71,7 +71,7 @@ for (const [width, height, wide] of [[80, 30, false], [80, 45, false], [89, 60, 
     // the bottom chart and Categories; narrow: Totals and Categories).
     const left = all[wide ? 2 : all.length - 2]!, categories = all.at(-1)!
     expect(left.y + left.height).toBe(categories.y + categories.height)
-    const jumps = [["t", "Spending · Cumulative", "ov.chart", 1], ...(wide ? [["b", "Balances · Net position", "ov.chart2", 2] as const] : []), ["c", "Categories", "ov.categories", all.length - 1], ["d", "Date Range", "ov.range", 0]] as const
+    const jumps = [["t", "Cumulative spending", "ov.chart", 1], ...(wide ? [["b", "╭─ Net position", "ov.chart2", 2] as const] : []), ["c", "Categories", "ov.categories", all.length - 1], ["d", "Date Range", "ov.range", 0]] as const
     for (const [jump, title, section, index] of jumps) {
       t.mockInput.pressKey("v")
       t.mockInput.pressKey(jump)
@@ -81,7 +81,7 @@ for (const [width, height, wide] of [[80, 30, false], [80, 45, false], [89, 60, 
       const focusedCard = all[index]!
       expect(focusedCard.y).toBeGreaterThanOrEqual(2)
       expect(focusedCard.y + focusedCard.height).toBeLessThanOrEqual(height - 2)
-      const heading = t.captureSpans().lines.flatMap((line) => line.spans).find((s) => s.text.includes(` ${title.split(" · ")[0]}`))!
+      const heading = t.captureSpans().lines.flatMap((line) => line.spans).find((s) => s.text.includes(` ${title.replace("╭─ ", "").split(" · ")[0]}`))!
       expect(heading).toBeDefined()
       expect(heading.fg.toInts()).toEqual(RGBA.fromHex(tone.focus).toInts())
       expect(heading.bg.toInts()).toEqual(RGBA.fromHex(theme.canvas).toInts())
@@ -183,7 +183,7 @@ test("the two chart panes are the same height, an odd line widening the gap betw
     await t.renderOnce()
     await t.flush()
     const lines = t.captureCharFrame().split("\n").map((line) => line.slice(0, 110))
-    const tops = lines.flatMap((line, y) => (line.startsWith("╭─ Calendar") ? [y] : []))
+    const tops = lines.flatMap((line, y) => (line.startsWith("╭─ Spending calendar") ? [y] : []))
     const bottoms = lines.flatMap((line, y) => (line.startsWith("╰─ less") ? [y] : []))
     expect(tops).toHaveLength(2)
     const pane = (k: number) => lines.slice(tops[k]! + 1, bottoms[k]!)
@@ -311,7 +311,7 @@ test("full screen (178 wide and up): the charts in a 2×2 grid, each pane its ow
   expect(topRight!.x).toBe(topLeft!.x + topLeft!.width + 1)
   expect(topRight!.height).toBe(topLeft!.height)
   const frame = t.captureCharFrame()
-  for (const title of ["Spending · Cumulative", "Balances · Net position", "Calendar", "Merchants"]) expect(frame).toContain(title)
+  for (const title of ["Cumulative spending", "Net position", "Spending calendar", "Merchants"]) expect(frame).toContain(title)
   // y and n jump to the right-hand panes; h/l step the focused pane's view.
   t.mockInput.pressKey("v"); t.mockInput.pressKey("n")
   await t.renderOnce()

@@ -331,7 +331,7 @@ export function BudgetsTab(props: { focused: SectionId }) {
   const categoryTop = createMemo(() => centredTop(categoryCursor(), lines().length, categoryRoom()))
 
   const Chart = () => (
-    <ChartCard title={subject().title} views={BUDGET_VIEWS} current={ui.state.budgetChart} model={model()} width={chartWidth()} height={chartHeight()} baseline={baseline()}
+    <ChartCard scope={subject().title} views={BUDGET_VIEWS} current={ui.state.budgetChart} model={model()} width={chartWidth()} height={chartHeight()} baseline={baseline()}
       legend={subscriptionsLegend(subs(), dueBeforePayday())}
       fallback={<SubscriptionsView list={subs()} width={chartWidth() - 4} rows={chartHeight() - 2} today={today()} payday={payday()} />}
       revealKey={data.state.uiPrefs.chartMotion === "always" ? `${(BUDGET_VIEWS[ui.state.budgetChart] ?? BUDGET_VIEWS[0]!).view}:${subject().title}:${seen()}` : undefined}
@@ -480,7 +480,7 @@ export function BudgetsTab(props: { focused: SectionId }) {
   const calendarDays = createMemo(() => calendarWeeks().flat().flatMap((d) => (d ? [d.dateISO] : [])).sort())
   const calendarThrough = () => (calendarReveal() >= 1 ? undefined : calendarDays()[Math.ceil(calendarReveal() * calendarDays().length) - 1] ?? "")
   const CycleCalendar = () => (
-    <SectionCard title="Calendar" titleSuffix={`· ${subject().title}`} titleSuffixColor={ink.label} bottomSpans={calendarSpans()} width={categoriesWidth()} height={calendarHeight()}>
+    <SectionCard title="Spending calendar" titleSuffix={`· ${subject().title}`} titleSuffixColor={ink.label} bottomSpans={calendarSpans()} width={categoriesWidth()} height={calendarHeight()}>
       <CalendarView weeks={calendarWeeks()} width={categoriesWidth() - 4} rows={calendarHeight() - 2} today={today()} through={calendarThrough()} />
     </SectionCard>
   )

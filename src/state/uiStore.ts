@@ -309,9 +309,11 @@ export const TAB_DEFAULT_FOCUS: Record<TabId, SectionId> = {
   settings: "none",
 }
 
-/** The Overview's chart pane views, in h/l order, with the group each
- * belongs to (the pane's title and the strip's separators). Both panes offer
- * every view, each drawn from the Date Range: a view that isn't (regular
+/** The Overview's chart pane views, in h/l order. Each has its title, what
+ * the chart shows and the pane's title (whose follows after a dot only
+ * where a pane covers less than its tab: a budget), and a group (spacing
+ * in the view picker only). Every pane offers every view, each drawn from
+ * the Date Range: a view that isn't (regular
  * payments) belongs to the Budgets tab. Merchants and Trends are drawn as tables;
  * they took Subscriptions' place (8) when it moved, so saved indexes keep
  * their meaning. */
@@ -332,16 +334,16 @@ export function chartViewsFrom(raw: unknown, views: number): ChartViews | undefi
 }
 
 export const CHART_VIEWS = [
-  { view: "Cumulative", group: "Spending", ranged: true },
-  { view: "Daily", group: "Spending", ranged: true },
-  { view: "Weekly", group: "Spending", ranged: true },
-  { view: "Cash flow", group: "Cash flow", ranged: true },
-  { view: "Net position", group: "Balances", ranged: true },
-  { view: "Available", group: "Balances", ranged: true },
-  { view: "Savers", group: "Balances", ranged: true },
-  { view: "Calendar", group: "Calendar", ranged: true },
-  { view: "Merchants", group: "Merchants", ranged: true },
-  { view: "Trends", group: "Trends", ranged: true },
+  { view: "Cumulative", title: "Cumulative spending", group: "Spending", ranged: true },
+  { view: "Daily", title: "Daily spending", group: "Spending", ranged: true },
+  { view: "Weekly", title: "Weekly spending", group: "Spending", ranged: true },
+  { view: "Cash flow", title: "Cash flow", group: "Cash flow", ranged: true },
+  { view: "Net position", title: "Net position", group: "Balances", ranged: true },
+  { view: "Available", title: "Available", group: "Balances", ranged: true },
+  { view: "Savers", title: "Saver balances", group: "Balances", ranged: true },
+  { view: "Calendar", title: "Spending calendar", group: "Calendar", ranged: true },
+  { view: "Merchants", title: "Merchants", group: "Merchants", ranged: true },
+  { view: "Trends", title: "Spending trends", group: "Trends", ranged: true },
 ] as const
 
 /** The Budgets tab's chart views: the Overview's spending ones over the
@@ -349,7 +351,7 @@ export const CHART_VIEWS = [
 export const BUDGET_VIEWS = [
   ...CHART_VIEWS.filter((v) => v.group === "Spending"),
   // The regular payments the budget counts, its fixed costs (not a chart).
-  { view: "Subscriptions", group: "Subscriptions", ranged: false },
+  { view: "Subscriptions", title: "Subscriptions", group: "Subscriptions", ranged: false },
 ] as const
 
 /** The Budgets tab's cycle panes' views (indexes into CHART_VIEWS): the

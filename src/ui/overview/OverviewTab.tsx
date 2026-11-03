@@ -666,7 +666,6 @@ export function OverviewChartCard(props: {
   }
   return (
     <ChartCard
-      title={view().group}
       views={props.views ? props.views.map((i) => CHART_VIEWS[i]!) : CHART_VIEWS}
       current={props.views ? Math.max(0, props.views.indexOf(props.index)) : props.index}
       model={props.model}
