@@ -43,3 +43,6 @@ logs/
 .conduit/
 .claude/worktrees/
 .claude/settings.local.json
+
+# Notes kept out of the public repo
+docs/private/
