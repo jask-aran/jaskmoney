@@ -1,0 +1,30 @@
+name: Installer
+
+# scripts/install.sh is served from main to every install and every
+# `jaskmoney upgrade`, so it's run for real whenever it changes
+# (scripts/test-install.sh), and each day, which catches a release or
+# GitHub change that breaks it.
+on:
+  push:
+    branches: [main]
+    paths: [scripts/install.sh, scripts/test-install.sh, .github/workflows/installer.yml]
+  pull_request:
+    paths: [scripts/install.sh, scripts/test-install.sh, .github/workflows/installer.yml]
+  schedule:
+    - cron: "17 20 * * *"
+  workflow_dispatch:
+
+jobs:
+  install:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - { runner: ubuntu-latest, mode: release }
+          - { runner: ubuntu-latest, mode: source }
+          # macOS builds from source: the install a Mac gets.
+          - { runner: macos-latest, mode: source }
+    runs-on: ${{ matrix.runner }}
+    steps:
+      - uses: actions/checkout@v4
+      - run: scripts/test-install.sh ${{ matrix.mode }}
