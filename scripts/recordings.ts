@@ -77,27 +77,27 @@ const typed = (at: number, keys: string[], gap: number) => keys.map((key, i) => 
  * Settings for a moment (Budgets is skipped). It starts on Settings, with
  * the loop's first key (1) bringing the Overview up as it was. */
 const OVERVIEW_KEYS = [
-  // Each change 2.6 s apart, a little quicker than the charts demo's views
-  // (CHART_VIEW_MS): the charts draw in (900 ms), then time to read them.
-  { at: 2600, key: "d" }, // 2M: both charts redraw
-  { at: 5200, key: "l" }, // the top chart: Daily
-  { at: 7800, key: "L" }, // the bottom chart: Available
-  { at: 10400, key: "[" }, // the 2M before
-  { at: 13000, key: "h" }, // back: Cumulative
-  { at: 15600, key: "H" }, // back: Net position
-  { at: 18200, key: "]" }, // back: the last 2M
-  { at: 20800, key: "D" }, // back: 1M
-  { at: 23400, key: "2" }, // Transactions
-  { at: 24200, key: "/" },
-  ...typed(24600, [..."coffee"], 130),
-  ...typed(26800, Array(6).fill("Backspace"), 70),
-  ...typed(27700, [..."guzman"], 130),
-  ...typed(29900, Array(6).fill("Backspace"), 70),
-  { at: 30800, key: "Escape" },
-  { at: 31400, key: "4" }, // Settings
+  // Each change 1.9 s apart: the charts draw in (900 ms), then a second on
+  // them. A pause after each change of screen before its actions start.
+  { at: 2200, key: "d" }, // 2M: both charts redraw
+  { at: 4100, key: "l" }, // the top chart: Daily
+  { at: 6000, key: "L" }, // the bottom chart: Available
+  { at: 7900, key: "[" }, // the 2M before
+  { at: 9800, key: "h" }, // back: Cumulative
+  { at: 11700, key: "H" }, // back: Net position
+  { at: 13600, key: "]" }, // back: the last 2M
+  { at: 15500, key: "D" }, // back: 1M
+  { at: 17400, key: "2" }, // Transactions
+  { at: 18600, key: "/" },
+  ...typed(19000, [..."coffee"], 130),
+  ...typed(21200, Array(6).fill("Backspace"), 70),
+  ...typed(22100, [..."guzman"], 130),
+  ...typed(24300, Array(6).fill("Backspace"), 70),
+  { at: 25100, key: "Escape" },
+  { at: 25700, key: "4" }, // Settings
 ]
 const overview: Scene = {
-  id: "overview", args: ["--demo"], loopMs: 33400, pane: false,
+  id: "overview", args: ["--demo"], loopMs: 27700, pane: false,
   settings: { ui: { chartMotion: "always", ...MOTION } },
   keys: OVERVIEW_KEYS,
   async setup(app) {

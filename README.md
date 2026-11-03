@@ -1,7 +1,10 @@
 # Jaskmoney
 
-A keyboard-driven personal spending TUI for [Up Bank](https://up.com.au). It syncs your Up accounts, categorises and
-tags transactions (both ways with Up), and shows where the money goes against a budget.
+A keyboard-driven personal spending TUI for [Up Bank](https://up.com.au). It syncs your Up accounts and keeps categories
+and tags in step with Up both ways. AI suggests a category for each transaction, reads what you bought from your order
+emails once you connect Gmail, and turns a question in plain words into a filter. Charts over any date range show where
+the money goes: spending by day and over time, cash flow, balances, savers, a calendar and your subscriptions, against a
+budget's pace.
 
 ![The Overview's charts and date ranges, a filter in Transactions, and Settings](docs/screenshots/overview.gif)
 
