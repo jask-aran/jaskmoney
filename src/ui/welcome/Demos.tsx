@@ -15,7 +15,7 @@ import { OverviewChartCard, chartRows, overviewChartModel, type OverviewChartInp
 import { CHART_VIEWS } from "../../state/uiStore"
 import { accountRole } from "../../domain/types"
 import { spendingCalendar } from "../../domain/spending"
-import { subscriptions, upcomingCharges } from "../../domain/subscriptions"
+import { merchantRows, trendRows } from "../../domain/periodTables"
 
 export { DEMOS }
 
@@ -89,17 +89,17 @@ export function DemoReel(props: { scene: number; startedAt: number; now: number;
     const scopeIds = new Set(w.accounts.filter((a) => accountRole(a) === "spending").map((a) => a.id))
     const spending = w.rows.filter((t) => t.accountId != null && scopeIds.has(t.accountId))
     const inPeriod = spending.filter((t) => t.dateISO >= start && t.dateISO <= end)
-    const subs = subscriptions(spending, w.today)
-    const payday = addMonths(monthStart, 1)
     const month = (iso: string) => new Date(`${iso}T00:00:00Z`).toLocaleString("en-AU", { month: "long", timeZone: "UTC" })
     const input: OverviewChartInput = {
       series: dailySpendSeries(inPeriod, start, end), today: w.today, spending, names: { current: month(start), previous: month(addMonths(start, -1)) },
       weekStart: data.state.weekStart, accounts: w.accounts, transactions: w.rows, scopeIds, zeroAxis: false, projection: [],
     }
+    const before = spending.filter((t) => t.dateISO >= addMonths(start, -1) && t.dateISO < start)
     return {
-      input, subs, payday,
+      input,
       calendar: spendingCalendar(inPeriod, start, end, data.state.weekStart),
-      dueBeforePayday: upcomingCharges(subs, w.today, addDays(payday, -1)).reduce((sum, c) => sum + c.amount, 0),
+      trends: trendRows(inPeriod, data.state.categories, start, end, w.today, data.state.weekStart),
+      merchants: merchantRows(inPeriod, before),
     }
   })
   const chart = createMemo(() => overviewChartModel(CHART_VIEWS[view()]!.view, overview().input, props.width - 4, chartRows(paneHeight(), false)))
@@ -119,7 +119,7 @@ export function DemoReel(props: { scene: number; startedAt: number; now: number;
   return (
     <box width={props.width} height={props.height} flexDirection="column">
       <Show when={id() === "chart"}>
-        <OverviewChartCard index={view()} model={chart()} calendar={overview().calendar} subs={overview().subs} today={world().today} payday={overview().payday} dueBeforePayday={overview().dueBeforePayday}
+        <OverviewChartCard index={view()} model={chart()} calendar={overview().calendar} trends={overview().trends} merchants={overview().merchants} today={world().today}
           width={props.width} height={paneHeight()} focused revealKey={CHART_VIEWS[view()]!.view} revealMs={TOUR_CHART_MS} curve={data.state.uiPrefs.chartCurve} labels={data.state.uiPrefs.chartLabels} />
       </Show>
       <Show when={id() === "filter"}>

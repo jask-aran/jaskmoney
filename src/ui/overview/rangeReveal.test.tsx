@@ -9,7 +9,6 @@ import { setAppClock } from "../../domain/days"
 import { generateDemo } from "../../domain/demo"
 import { seedDemoDb } from "../../db/demoSeed"
 import type { ChartMotionMode } from "../charts/motion"
-import { CHART_VIEWS } from "../../state/uiStore"
 
 const settle = async (t: Awaited<ReturnType<typeof renderApp>>, ms = 0) => { if (ms) await Bun.sleep(ms); await t.renderOnce(); await t.renderOnce() }
 
@@ -42,11 +41,5 @@ test("always: a new Date Range draws the charts in again", async () => {
 
 test("first launch: a new Date Range shows the charts whole at once", async () => {
   const { soon, done } = await afterRangeChange("launch")
-  expect(soon).toBe(done)
-})
-
-test("always: Subscriptions, not drawn from the range, stays still when it changes", async () => {
-  const subs = CHART_VIEWS.findIndex((v) => v.view === "Subscriptions")
-  const { soon, done } = await afterRangeChange("always", [subs, subs, subs, subs])
   expect(soon).toBe(done)
 })

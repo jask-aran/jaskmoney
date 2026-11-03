@@ -311,13 +311,13 @@ test("full screen (178 wide and up): the charts in a 2×2 grid, each pane its ow
   expect(topRight!.x).toBe(topLeft!.x + topLeft!.width + 1)
   expect(topRight!.height).toBe(topLeft!.height)
   const frame = t.captureCharFrame()
-  for (const title of ["Spending · Cumulative", "Balances · Net position", "Calendar", "Subscriptions"]) expect(frame).toContain(title)
+  for (const title of ["Spending · Cumulative", "Balances · Net position", "Calendar", "Merchants"]) expect(frame).toContain(title)
   // y and n jump to the right-hand panes; h/l step the focused pane's view.
   t.mockInput.pressKey("v"); t.mockInput.pressKey("n")
   await t.renderOnce()
   expect(ui.state.focusedSection).toBe("ov.chart4")
   handleKey(ui, key("l"), data)
-  expect(ui.state.chartViews).toEqual([0, 4, 7, 0])
+  expect(ui.state.chartViews).toEqual([0, 4, 7, 9])
   // Left from the bottom right reaches the bottom left.
   handleKey(ui, key("left"), data)
   expect(ui.state.focusedSection).toBe("ov.chart2")

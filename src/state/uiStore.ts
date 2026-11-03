@@ -301,8 +301,10 @@ export const TAB_DEFAULT_FOCUS: Record<TabId, SectionId> = {
 
 /** The Overview's chart pane views, in h/l order, with the group each
  * belongs to (the pane's title and the strip's separators). Both panes offer
- * every view. `ranged`: drawn from the Date Range's days (Subscriptions is
- * the scope's whole history, whatever the range). */
+ * every view, each drawn from the Date Range: a view that isn't (regular
+ * payments) belongs to the Budgets tab. Merchants and Trends are drawn as tables;
+ * they took Subscriptions' place (8) when it moved, so saved indexes keep
+ * their meaning. */
 export type ChartViews = [number, number, number, number]
 export type OverviewCharts = 1 | 2 | 4
 /** The Overview's chart panes: top and bottom of the chart column, then the
@@ -310,7 +312,7 @@ export type OverviewCharts = 1 | 2 | 4
 export const CHART_SECTIONS = ["ov.chart", "ov.chart2", "ov.chart3", "ov.chart4"] as const
 /** The pane a chart section is (0 to 3), or -1. */
 export const chartPaneOf = (section: SectionId) => (CHART_SECTIONS as readonly SectionId[]).indexOf(section)
-/** Cumulative and Net position; the grid's right adds Calendar and Subscriptions. */
+/** Cumulative and Net position; the grid's right adds Calendar and Merchants. */
 export const DEFAULT_CHART_VIEWS: ChartViews = [0, 4, 7, 8]
 /** Saved views, two (before the grid) or four, padded with the defaults. */
 export function chartViewsFrom(raw: unknown, views: number): ChartViews | undefined {
@@ -328,12 +330,17 @@ export const CHART_VIEWS = [
   { view: "Available", group: "Balances", ranged: true },
   { view: "Savers", group: "Balances", ranged: true },
   { view: "Calendar", group: "Calendar", ranged: true },
-  { view: "Subscriptions", group: "Subscriptions", ranged: false },
+  { view: "Merchants", group: "Merchants", ranged: true },
+  { view: "Trends", group: "Trends", ranged: true },
 ] as const
 
-/** The Budgets tab's chart views: the Overview's spending ones, over the
- * cycle the tab shows. */
-export const BUDGET_VIEWS = CHART_VIEWS.filter((v) => v.group === "Spending")
+/** The Budgets tab's chart views: the Overview's spending ones over the
+ * cycle the tab shows, then the regular payments in the budget it follows. */
+export const BUDGET_VIEWS = [
+  ...CHART_VIEWS.filter((v) => v.group === "Spending"),
+  // The regular payments the budget counts, its fixed costs (not a chart).
+  { view: "Subscriptions", group: "Subscriptions", ranged: false },
+] as const
 
 /** The tab's jump targets that are on screen: only the chart panes the
  * Overview shows. */

@@ -31,6 +31,9 @@ const VIEW_ICONS: Record<string, string> = {
   Available: "\uf09d", // credit-card
   Savers: "\uf0d6", // money
   Calendar: "\uf073", // calendar
+  Merchants: "\uf07a", // shopping-cart
+  Trends: "\uf1fe", // area-chart
+  // The Budgets tab's regular payments.
   Subscriptions: "\uf021", // refresh
   // The Budgets tab's cycle by cycle (its Cumulative shares the Overview's).
   Cycles: "\uf080", // bar-chart

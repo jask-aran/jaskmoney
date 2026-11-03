@@ -1,11 +1,11 @@
 import { Index, Show, createMemo } from "solid-js"
 import { useTerminalDimensions } from "@opentui/solid"
-import { allocation, budgetCounts, budgetCountsThen, budgetIgnoredIds, budgetIn, budgetProgress, cycleSpending, pastCycles, progressOf, totalBudgetIn, type Budget, type BudgetProgress, type BudgetSubject, type Cycle } from "../../domain/budget"
+import { allocation, cycleFor, budgetCounts, budgetCountsThen, budgetIgnoredIds, budgetIn, budgetProgress, cycleSpending, pastCycles, progressOf, totalBudgetIn, type Budget, type BudgetProgress, type BudgetSubject, type Cycle } from "../../domain/budget"
 import { budgetArmId, budgetListRows, type BudgetLine } from "../../domain/budgetLines"
 import { sharedBudgetView, sharedCategoryLines } from "../../state/budgetViews"
 import { budgetLabel } from "../../domain/budgetScopes"
 import { dailySpendSeries, formatWholeMoney } from "../../domain/dashboard"
-import { appToday, daysBetween } from "../../domain/days"
+import { addDays, appToday, daysBetween } from "../../domain/days"
 import { historyCovers } from "../../domain/position"
 import type { Transaction } from "../../domain/types"
 import type { SectionId } from "../../state/uiStore"
@@ -26,6 +26,8 @@ import { chartSpeedMs, showings } from "../charts/motion"
 import { ChartCard } from "../charts/ChartCard"
 import { spendingChart } from "../overview/periodCharts"
 import { BUDGET_VIEWS } from "../../state/uiStore"
+import { SubscriptionsView, subscriptionsLegend } from "../charts/SubscriptionsView"
+import { subscriptions, upcomingCharges } from "../../domain/subscriptions"
 
 /** Cycles before this one the chart and the cycle lines can show, at most. */
 const HISTORY = 36
@@ -203,12 +205,19 @@ export function BudgetsTab(props: { focused: SectionId }) {
   // the subject counts, with its budget; built once with a guessed axis
   // width, again if the labels need another.
   const baseline = () => data.state.uiPrefs.xAxis === true
+  const chartView = () => (BUDGET_VIEWS[ui.state.budgetChart] ?? BUDGET_VIEWS[0]!).view
+  // Subscriptions: the regular payments among the rows the budget counts
+  // (its fixed costs), what's due before payday, drawn in place of a chart.
+  const subs = createMemo(() => (chartView() === "Subscriptions" ? subscriptions(subjectRows(), today()) : []))
+  const payday = () => addDays(cycleFor(config(), today()).end, 1)
+  const dueBeforePayday = () => upcomingCharges(subs(), today(), addDays(payday(), -1)).reduce((sum, c) => sum + c.amount, 0)
   let axisWas = AXIS_GUESS
-  const model = createMemo((): ChartModel => {
+  const model = createMemo((): ChartModel | null => {
+    if (chartView() === "Subscriptions") return null
     // Border (2), the x-axis line (a setting) and the x labels.
     const height = Math.max(3, chartHeight() - (baseline() ? 4 : 3))
     const series = dailySpendSeries(subjectRows(), cycle().start, cycle().end)
-    const view = (BUDGET_VIEWS[ui.state.budgetChart] ?? BUDGET_VIEWS[0]!).view as "Cumulative" | "Daily" | "Weekly"
+    const view = chartView() as "Cumulative" | "Daily" | "Weekly"
     const build = (axis: number) => spendingChart(view, series, Math.max(1, mainWidth() - 4 - axis - CHART_RIGHT_PAD), height, today(), subjectRows(), subject().amount ?? undefined, { current: "This cycle", previous: "Last cycle" }, data.state.weekStart)
     let built = build(axisWas)
     const axis = axisWidth(built.ticks)
@@ -282,6 +291,8 @@ export function BudgetsTab(props: { focused: SectionId }) {
 
   const Chart = () => (
     <ChartCard title={subject().title} views={BUDGET_VIEWS} current={ui.state.budgetChart} model={model()} width={mainWidth()} height={chartHeight()} baseline={baseline()}
+      legend={subscriptionsLegend(subs(), dueBeforePayday())}
+      fallback={<SubscriptionsView list={subs()} width={mainWidth() - 4} rows={chartHeight() - 2} today={today()} payday={payday()} />}
       revealKey={data.state.uiPrefs.chartMotion === "always" ? `${(BUDGET_VIEWS[ui.state.budgetChart] ?? BUDGET_VIEWS[0]!).view}:${subject().title}:${seen()}` : undefined}
       revealMs={data.state.uiPrefs.chartMotion === "always" ? chartSpeedMs(data.state.uiPrefs.chartSpeed) : undefined}
       curve={data.state.uiPrefs.chartCurve}
