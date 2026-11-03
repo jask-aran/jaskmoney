@@ -3,7 +3,7 @@
 A keyboard-driven personal spending TUI for [Up Bank](https://up.com.au). It syncs your Up accounts, categorises and
 tags transactions (both ways with Up), and shows where the money goes against a budget.
 
-![The Overview, its charts drawing in one after another](docs/screenshots/overview.gif)
+![The Overview's charts and date ranges, a filter in Transactions, and Settings](docs/screenshots/overview.gif)
 
 | Transactions | Budgets | Settings |
 | --- | --- | --- |

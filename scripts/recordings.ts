@@ -14,8 +14,7 @@ import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
 import { loadCategories, openDb } from "../src/db/client"
-import { CHART_VIEW_MS, DEMOS, demoLoopMs, demoWorld, tourTopics } from "../src/state/tour"
-import { CHART_VIEWS } from "../src/state/uiStore"
+import { DEMOS, demoLoopMs, demoWorld, tourTopics } from "../src/state/tour"
 import { appBinary, draw, startApp, type Cells, type Session } from "./cast"
 
 type DemoId = (typeof DEMOS)[number]["id"]
@@ -68,20 +67,43 @@ const tourDemo = (id: DemoId): Scene => ({
   },
 })
 
-/** The README's hero: the Overview on the demo data, its top chart
- * through every view at the tour's pace (l), each drawing in as it does in
- * the tour (chart motion "always"; a new install draws in once; MOTION). It starts
- * a view back, so the loop ends on the switch it begins with. */
+/** Keys typed one after another from `at`, `gap` ms apart. */
+const typed = (at: number, keys: string[], gap: number) => keys.map((key, i) => ({ at: at + i * gap, key }))
+
+/** The README's hero: a tour of the app on the demo data, from Settings
+ * back to Settings so it loops. The Overview (each chart drawing in, MOTION,
+ * chart motion "always"): the range and both charts' views changed in turn,
+ * then every change undone; Transactions: two filters typed and deleted;
+ * Settings for a moment (Budgets is skipped). It starts on Settings, with
+ * the loop's first key (1) bringing the Overview up as it was. */
+const OVERVIEW_KEYS = [
+  { at: 1000, key: "d" }, // 2M: both charts redraw
+  { at: 1900, key: "l" }, // the top chart: Daily
+  { at: 2700, key: "L" }, // the bottom chart: Available
+  { at: 3500, key: "[" }, // the 2M before
+  { at: 4400, key: "h" }, // back: Cumulative
+  { at: 5200, key: "H" }, // back: Net position
+  { at: 6000, key: "]" }, // back: the last 2M
+  { at: 6800, key: "D" }, // back: 1M
+  { at: 7800, key: "2" }, // Transactions
+  { at: 8500, key: "/" },
+  ...typed(8800, [..."coffee"], 90),
+  ...typed(10300, Array(6).fill("Backspace"), 60),
+  ...typed(10900, [..."guzman"], 90),
+  ...typed(12400, Array(6).fill("Backspace"), 60),
+  { at: 13000, key: "Escape" },
+  { at: 13500, key: "4" }, // Settings
+]
 const overview: Scene = {
-  id: "overview", args: ["--demo"], loopMs: CHART_VIEW_MS * CHART_VIEWS.length, pane: false,
+  id: "overview", args: ["--demo"], loopMs: 15500, pane: false,
   settings: { ui: { chartMotion: "always", ...MOTION } },
-  keys: Array.from({ length: CHART_VIEWS.length - 1 }, (_, k) => ({ at: (k + 1) * CHART_VIEW_MS, key: "l" })),
+  keys: OVERVIEW_KEYS,
   async setup(app) {
     await app.waitFor("Demo mode")
     await Bun.sleep(1500)
-    app.press("h")
-    await Bun.sleep(CHART_VIEW_MS)
-    return "l"
+    app.press("4")
+    await Bun.sleep(1500)
+    return "1"
   },
 }
 

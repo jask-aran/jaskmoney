@@ -17,7 +17,7 @@ import { join } from "node:path"
 export const COLS = 188, ROWS = 55
 
 /** What a terminal sends for a named key; anything else is sent as is. */
-const KEYS: Record<string, string> = { Enter: "\r", Escape: "\x1b", ArrowRight: "\x1b[C", ArrowLeft: "\x1b[D", ArrowUp: "\x1b[A", ArrowDown: "\x1b[B" }
+const KEYS: Record<string, string> = { Enter: "\r", Backspace: "\x7f", Escape: "\x1b", ArrowRight: "\x1b[C", ArrowLeft: "\x1b[D", ArrowUp: "\x1b[A", ArrowDown: "\x1b[B" }
 
 export interface Session {
   /** Ms since the app started. */

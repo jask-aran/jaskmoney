@@ -39,9 +39,14 @@ turns its frames into the MP4).
    loop, with its first frame held for 250 ms (`HOLD_MS`) so the screen is seen before it moves. The charts draw in
    at juicy speed on the quadratic curve (`MOTION`, in each recording's `settings.json`).
    The scenes:
-   - **The hero (`overview`):** the Overview's top chart steps through every view with `l`, one every
-     `CHART_VIEW_MS`, the tour's pace. The recording sets chart motion to "always" in its own `settings.json`. It
-     starts one view back, so the loop ends on the same switch it begins with.
+   - **The hero (`overview`):** a tour of the app, scripted in `OVERVIEW_KEYS`:
+     - **Overview:** the date range (`d`, `[`) and each chart's view (`l` top, `L` bottom) change in turn, then
+       every change is undone. Chart motion is "always" (in the recording's own `settings.json`), so each change draws in.
+     - **Transactions:** "coffee", then "guzman", typed into the filter and deleted.
+     - **Settings:** shown for a moment. Budgets is skipped.
+
+     It starts on Settings, and the loop's first key (`1`) brings the Overview up as it was, so the end runs into
+     the start.
    - **The tour's demos:** each demo is restarted with →, or ← for Charts. The loop length is `demoLoopMs`
      (`src/state/tour.ts`), the demo's own script length.
 2. **Make the cast.** `cast(from, to)` writes the loop as an asciicast. The first event at 0 holds everything written
