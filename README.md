@@ -21,8 +21,8 @@ That serves this repo's [`scripts/install.sh`](scripts/install.sh). To fetch it 
 curl -fsSL https://raw.githubusercontent.com/jask-aran/jaskmoney/main/scripts/install.sh | bash
 ```
 
-This puts `jaskmoney` in `~/.local/bin`: the release binary on Linux x64 and WSL, a build from source elsewhere (needs
-git and [Bun](https://bun.sh) 1.4.2+). `jaskmoney upgrade` updates it; the top bar says when a new release is out.
+This puts `jaskmoney` in `~/.local/bin`: the release binary on Linux x64 and WSL, a build from source elsewhere, macOS
+included (with [Bun](https://bun.sh) 1.4.2+, which it offers to install). `jaskmoney upgrade` updates it; the top bar says when a new release is out.
 
 From a clone: `bun install && bun run build --install` (or `bun start` to run without installing).
 
@@ -103,7 +103,7 @@ https://github.com/user-attachments/assets/211c5c2b-0efe-4e8e-bcce-2413226c27ed
 bun run dev           # restarts on save
 bun run typecheck
 bun run test
-bun run recordings    # the README's GIFs and screenshots: docs/media.md
+bun run recordings    # the README's videos: docs/media.md
 bun run screenshots
 ```
 

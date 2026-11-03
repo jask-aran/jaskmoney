@@ -43,10 +43,19 @@ interface Scene {
   pane: boolean
 }
 
+/** How the charts draw in: juicy (900 ms, the tour's own speed) on the
+ * quadratic curve, an even pace with a short settle. */
+const MOTION = { chartSpeed: "juicy", chartCurve: "quadratic" }
+
+/** How long each recording's first frame is held: a look at the screen
+ * before it moves (an Overview chart before it draws in), short enough not
+ * to read as a hitch. */
+const HOLD_MS = 250
+
 /** A tour demo: Welcome › Start, then → to it (each → starts the next
  * demo from its beginning); Charts, the first, starts again with ←. */
 const tourDemo = (id: DemoId): Scene => ({
-  id, args: ["--welcome"], loopMs: demoLoopMs(id, topics), pane: true,
+  id, args: ["--welcome"], loopMs: demoLoopMs(id, topics), pane: true, settings: { ui: MOTION },
   async setup(app) {
     await app.waitFor("Skip setup")
     await Bun.sleep(500)
@@ -61,11 +70,11 @@ const tourDemo = (id: DemoId): Scene => ({
 
 /** The README's hero: the Overview on the demo data, its top chart
  * through every view at the tour's pace (l), each drawing in as it does in
- * the tour (chart motion "always"; a new install draws in once). It starts
+ * the tour (chart motion "always"; a new install draws in once; MOTION). It starts
  * a view back, so the loop ends on the switch it begins with. */
 const overview: Scene = {
   id: "overview", args: ["--demo"], loopMs: CHART_VIEW_MS * CHART_VIEWS.length, pane: false,
-  settings: { ui: { chartMotion: "always" } },
+  settings: { ui: { chartMotion: "always", ...MOTION } },
   keys: Array.from({ length: CHART_VIEWS.length - 1 }, (_, k) => ({ at: (k + 1) * CHART_VIEW_MS, key: "l" })),
   async setup(app) {
     await app.waitFor("Demo mode")
@@ -122,10 +131,10 @@ async function film(binary: string, scene: Scene): Promise<void> {
     if (next === start) break
     start = next
   }
-  const cast = app.cast(start, start + scene.loopMs)
+  const cast = app.cast(start, start + scene.loopMs, HOLD_MS)
   writeFileSync(`dist/recordings/${scene.id}.cast`, cast)
-  await draw(cast, scene.loopMs, { mp4: `dist/recordings/${scene.id}.mp4` }, pane ?? undefined)
-  console.log(`dist/recordings/${scene.id}.mp4, .cast  ${(scene.loopMs / 1000).toFixed(1)} s${pane ? `, ${pane.cols}×${pane.rows} cells` : ""}`)
+  await draw(cast, scene.loopMs + HOLD_MS, { mp4: `dist/recordings/${scene.id}.mp4` }, pane ?? undefined)
+  console.log(`dist/recordings/${scene.id}.mp4, .cast  ${((scene.loopMs + HOLD_MS) / 1000).toFixed(2)} s${pane ? `, ${pane.cols}×${pane.rows} cells` : ""}`)
 }
 
 const only = process.argv.find((a) => a.startsWith("--only="))?.slice(7).split(",")

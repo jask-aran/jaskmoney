@@ -23,7 +23,7 @@ async function upgrade(): Promise<number> {
     return 0
   }
   // The installer, run for where this binary is: on Linux x64 it fetches the
-  // release binary, elsewhere it updates its clone of main and builds.
+  // release binary, elsewhere it downloads main and builds.
   let script: string
   try {
     const response = await fetch(INSTALLER, { signal: AbortSignal.timeout(15_000) })

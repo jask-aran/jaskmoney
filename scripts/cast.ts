@@ -30,8 +30,9 @@ export interface Session {
   /** The screen as text rows, `at` ms in (scripts/cast.ts screenText). */
   screen(at: number): string[]
   /** An asciicast of `from` to `to` ms: everything before as its first
-   * event, then each write at its time. */
-  cast(from: number, to: number): string
+   * event, then each write at its time, `holdMs` later (the first frame
+   * held that long). */
+  cast(from: number, to: number, holdMs?: number): string
   close(): void
 }
 
@@ -60,8 +61,8 @@ export function startApp(binary: string, args: string[], settings?: object): Ses
       throw new Error(`the app never wrote "${text}"`)
     },
     screen: (at) => screenText(upTo(at)),
-    cast(from, to) {
-      const events = writes.filter((w) => w.at > from && w.at < to).map((w) => JSON.stringify([+((w.at - from) / 1000).toFixed(4), "o", w.text]))
+    cast(from, to, holdMs = 0) {
+      const events = writes.filter((w) => w.at > from && w.at < to).map((w) => JSON.stringify([+((w.at - from + holdMs) / 1000).toFixed(4), "o", w.text]))
       return [JSON.stringify({ version: 2, width: COLS, height: ROWS }), JSON.stringify([0, "o", upTo(from)]), ...events].join("\n") + "\n"
     },
     close() {

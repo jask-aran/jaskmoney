@@ -47,7 +47,9 @@ turns its frames into the MP4).
 
 1. **Record.** `scripts/cast.ts` (`startApp`) runs the app in a 188×55 pseudo-terminal (Bun's `terminal` option to
    `Bun.spawn`). It keeps every write with its time and presses the scene's keys on time. A recording is exactly one
-   loop:
+   loop, with its first frame held for 250 ms (`HOLD_MS`) so the screen is seen before it moves. The charts draw in
+   at juicy speed on the quadratic curve (`MOTION`, in each recording's `settings.json`).
+   The scenes:
    - **The hero (`overview`):** the Overview's top chart steps through every view with `l`, one every
      `CHART_VIEW_MS`, the tour's pace. The recording sets chart motion to "always" in its own `settings.json`. It
      starts one view back, so the loop ends on the same switch it begins with.

@@ -58,6 +58,8 @@ if (install) {
   copyFileSync(outfile, `${target}.new`)
   chmodSync(`${target}.new`, 0o755)
   renameSync(`${target}.new`, target)
+  // The installer says the rest itself (scripts/install.sh finish).
+  if (process.env.JASKMONEY_INSTALLER) process.exit(0)
   console.log(`Installed ${target}`)
   const onPath = (process.env.PATH ?? "").split(delimiter).includes(bin)
   console.log(onPath ? "Run: jaskmoney" : `${bin} isn't on your PATH: add it (e.g. echo 'export PATH="${bin}:$PATH"' >> ~/.zshrc), then run: jaskmoney`)
