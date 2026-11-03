@@ -25,7 +25,7 @@ curl -fsSL https://raw.githubusercontent.com/jask-aran/jaskmoney/main/scripts/in
 ```
 
 This puts `jaskmoney` in `~/.local/bin`: the release binary on Linux x64 and WSL, a build from source elsewhere, macOS
-included (with [Bun](https://bun.sh) 1.4.2+, which it offers to install). `jaskmoney upgrade` updates it; the top bar says when a new release is out.
+included (with [Bun](https://bun.sh) 1.4.2+, which it offers to install). `jaskmoney upgrade` updates it (`--force` reinstalls); the top bar says when a new release is out.
 
 From a clone: `bun install && bun run build --install` (or `bun start` to run without installing).
 
