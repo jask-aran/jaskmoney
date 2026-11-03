@@ -66,7 +66,12 @@ if [ -z "${JASKMONEY_FROM_SOURCE:-}" ] && [ "$(uname -s)-$(uname -m)" = "Linux-x
   say "Downloading the latest release"
   mkdir -p "$BIN"
   # Beside it, then renamed over it: a running jaskmoney keeps its file.
-  curl -fSL --progress-bar -o "$BIN/jaskmoney.new" "https://github.com/jask-aran/jaskmoney/releases/latest/download/jaskmoney-linux-x64"
+  # Gzipped (less than half the size), or the plain binary from a release
+  # made before there was one.
+  release="https://github.com/jask-aran/jaskmoney/releases/latest/download/jaskmoney-linux-x64"
+  if ! curl -fSL --progress-bar "$release.gz" | gzip -dc >"$BIN/jaskmoney.new" 2>/dev/null; then
+    curl -fSL --progress-bar -o "$BIN/jaskmoney.new" "$release"
+  fi
   chmod +x "$BIN/jaskmoney.new" && mv -f "$BIN/jaskmoney.new" "$BIN/jaskmoney"
   finish
   exit 0

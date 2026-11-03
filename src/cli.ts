@@ -1,5 +1,6 @@
 import { spawnSync } from "node:child_process"
 import { dirname } from "node:path"
+import { upgradeBinary } from "./app/upgrade"
 import { VERSION, cloneOf, compiled } from "./app/version"
 
 /**
@@ -22,8 +23,9 @@ async function upgrade(): Promise<number> {
     console.log(`This jaskmoney is built from a clone${clone ? ` (${clone})` : ""}: update it there with\n  git pull && bun install && bun run build --install`)
     return 0
   }
-  // The installer, run for where this binary is: on Linux x64 it fetches the
-  // release binary, elsewhere it downloads main and builds.
+  // Linux x64: the release binary, fetched here (src/app/upgrade.ts).
+  if (process.platform === "linux" && process.arch === "x64" && !process.env.JASKMONEY_FROM_SOURCE) return upgradeBinary()
+  // Elsewhere, the installer, which downloads main and builds it.
   let script: string
   try {
     const response = await fetch(INSTALLER, { signal: AbortSignal.timeout(15_000) })

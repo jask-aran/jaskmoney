@@ -75,6 +75,9 @@ jobs:
           GH_REPO: ${{ github.repository }}
         run: |
           chmod +x dist/*
+          # Gzipped too (123 → 54 MB): what the installer and
+          # `jaskmoney upgrade` download; the plain one stays for older binaries.
+          for f in dist/jaskmoney-*; do gzip -9 -k "$f"; done
           if ! gh release view "$TAG" >/dev/null 2>&1; then
             gh release create "$TAG" --title "Jaskmoney ${TAG#v}" --generate-notes --verify-tag
           fi
