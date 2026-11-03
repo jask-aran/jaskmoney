@@ -50,7 +50,10 @@ describe("restore UI preferences", () => {
 
   test("unknown accounts fall back to all and invalid chart pairs are ignored", () => {
     expect(restoreUiPrefs({ accountSelection: 999, chartViews: [0, CHART_VIEWS.length] }, [], now, MONTHLY_CYCLE)).toMatchObject({ accountSelection: "all", chartViews: undefined })
-    expect(restoreUiPrefs({ accountSelection: "savers", chartViews: [0, 1] }, [], now, MONTHLY_CYCLE)).toMatchObject({ accountSelection: "savers", chartViews: [0, 1] })
+    // Two views, saved before the grid: the grid's right-hand panes take the defaults.
+    expect(restoreUiPrefs({ accountSelection: "savers", chartViews: [0, 1] }, [], now, MONTHLY_CYCLE)).toMatchObject({ accountSelection: "savers", chartViews: [0, 1, 7, 8] })
+    expect(restoreUiPrefs({ chartViews: [2, 3, 4, 5] }, [], now, MONTHLY_CYCLE).chartViews).toEqual([2, 3, 4, 5])
+    expect(restoreUiPrefs({ chartViews: [2, 3, 4] }, [], now, MONTHLY_CYCLE).chartViews).toBeUndefined()
     expect(restoreUiPrefs({ chartViews: [-1, 0] }, [], now, MONTHLY_CYCLE).chartViews).toBeUndefined()
     expect(restoreUiPrefs({ chartViews: [0.5, 0] }, [], now, MONTHLY_CYCLE).chartViews).toBeUndefined()
   })

@@ -3,7 +3,7 @@ import { mkdtempSync } from "node:fs"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
 import { data } from "../../state/dataStore"
-import { ui } from "../../state/uiStore"
+import { type ChartViews, ui } from "../../state/uiStore"
 import { renderApp } from "../../testing/app"
 import { setAppClock } from "../../domain/days"
 import { generateDemo } from "../../domain/demo"
@@ -14,7 +14,7 @@ import { CHART_VIEWS } from "../../state/uiStore"
 const settle = async (t: Awaited<ReturnType<typeof renderApp>>, ms = 0) => { if (ms) await Bun.sleep(ms); await t.renderOnce(); await t.renderOnce() }
 
 /** The frame just after the Date Range changes, and once any draw-in is over. */
-async function afterRangeChange(mode: ChartMotionMode, views: [number, number] = [0, 3]) {
+async function afterRangeChange(mode: ChartMotionMode, views: ChartViews = [0, 3, 7, 8]) {
   setAppClock(new Date(2026, 10, 20, 12))
   const path = join(mkdtempSync(join(tmpdir(), "jaskmoney-range-reveal-")), "demo.db")
   seedDemoDb(path, generateDemo({ today: "2026-11-20", years: 1 }))
@@ -47,6 +47,6 @@ test("first launch: a new Date Range shows the charts whole at once", async () =
 
 test("always: Subscriptions, not drawn from the range, stays still when it changes", async () => {
   const subs = CHART_VIEWS.findIndex((v) => v.view === "Subscriptions")
-  const { soon, done } = await afterRangeChange("always", [subs, subs])
+  const { soon, done } = await afterRangeChange("always", [subs, subs, subs, subs])
   expect(soon).toBe(done)
 })

@@ -23,7 +23,7 @@ async function overview(width: number, height: number) {
     uiPrefs: {},
   })
   ui.switchTab("overview")
-  ui.setState({ focusedSection: "none", chartViews: [0, 4], timeframe: { ...ui.state.timeframe, family: "lookback", lookback: "1M" }, customEdit: null, overviewCategoryCursor: 0 })
+  ui.setState({ focusedSection: "none", chartViews: [0, 4, 7, 8], timeframe: { ...ui.state.timeframe, family: "lookback", lookback: "1M" }, customEdit: null, overviewCategoryCursor: 0 })
   await t.renderOnce()
   await t.flush()
   return t
@@ -97,10 +97,10 @@ for (const [width, height, wide] of [[80, 30, false], [80, 45, false], [89, 60, 
     expect(ui.state.overviewCharts).toBe(wide ? 2 : 1)
     t.mockInput.pressKey("L")
     await settle()
-    expect(ui.state.chartViews).toEqual(wide ? [0, 5] : [1, 4])
+    expect(ui.state.chartViews).toEqual(wide ? [0, 5, 7, 8] : [1, 4, 7, 8])
     t.mockInput.pressKey("H")
     await settle()
-    expect(ui.state.chartViews).toEqual([0, 4])
+    expect(ui.state.chartViews).toEqual([0, 4, 7, 8])
     expect(footerHints("overview", hintState(ui, data)).some((h) => h.key === "H/L")).toBe(wide)
     // With one chart, v lists no bottom chart and b does nothing.
     t.mockInput.pressKey("v")
@@ -152,7 +152,7 @@ test("going narrow with the bottom chart focused moves focus to the one chart", 
 
 test("narrow at its shortest: the Calendar chart shows all seven weekdays above its legend", async () => {
   const t = await overview(80, 30)
-  ui.setState({ chartViews: [7, 4], focusedSection: "ov.chart" })
+  ui.setState({ chartViews: [7, 4, 7, 8], focusedSection: "ov.chart" })
   await t.renderOnce()
   await t.flush()
   const pane = t.renderer.root.findDescendantById("overview-narrow-chart")!
@@ -179,7 +179,7 @@ test("the two chart panes are the same height, an odd line widening the gap betw
   // 69 and 59 leave an odd number of lines for the panes.
   for (const height of [59, 69, 70]) {
     const t = await overview(160, height)
-    ui.setState({ chartViews: [7, 7] })
+    ui.setState({ chartViews: [7, 7, 7, 8] })
     await t.renderOnce()
     await t.flush()
     const lines = t.captureCharFrame().split("\n").map((line) => line.slice(0, 110))
@@ -290,4 +290,41 @@ test("the Custom range calendar: enter marks a cell, a second applies; a month t
   expect(ui.state.customEdit).toBeNull()
   expect(ui.state.timeframe.custom).toEqual({ start: "2026-10-05", end: "2026-10-12" })
   t.renderer.destroy()
+})
+
+test("full screen (178 wide and up): the charts in a 2×2 grid, each pane its own view, keys and jump; narrower, back to two", async () => {
+  const t = await overview(177, 50)
+  expect(ui.state.overviewCharts).toBe(2)
+  t.resize(200, 60)
+  await t.renderOnce(); await t.flush()
+  expect(ui.state.overviewCharts).toBe(4)
+  const all = overviewCards(t)
+  // Date Range, four charts, Accounts, Totals, Categories; none overlapping.
+  expect(all).toHaveLength(8)
+  for (let i = 0; i < all.length; i++) for (const b of all.slice(i + 1)) {
+    const a = all[i]!
+    expect(a.x + a.width <= b.x || b.x + b.width <= a.x || a.y + a.height <= b.y || b.y + b.height <= a.y).toBe(true)
+  }
+  const [, topLeft, bottomLeft, topRight, bottomRight] = all
+  expect(topRight!.y).toBe(topLeft!.y)
+  expect(bottomRight!.y).toBe(bottomLeft!.y)
+  expect(topRight!.x).toBe(topLeft!.x + topLeft!.width + 1)
+  expect(topRight!.height).toBe(topLeft!.height)
+  const frame = t.captureCharFrame()
+  for (const title of ["Spending · Cumulative", "Balances · Net position", "Calendar", "Subscriptions"]) expect(frame).toContain(title)
+  // y and n jump to the right-hand panes; h/l step the focused pane's view.
+  t.mockInput.pressKey("v"); t.mockInput.pressKey("n")
+  await t.renderOnce()
+  expect(ui.state.focusedSection).toBe("ov.chart4")
+  handleKey(ui, key("l"), data)
+  expect(ui.state.chartViews).toEqual([0, 4, 7, 0])
+  // Left from the bottom right reaches the bottom left.
+  handleKey(ui, key("left"), data)
+  expect(ui.state.focusedSection).toBe("ov.chart2")
+  // Narrower: the right-hand panes go, and focus on one moves to the top chart.
+  ui.setState({ focusedSection: "ov.chart3" })
+  t.resize(170, 50)
+  await t.renderOnce(); await t.flush()
+  expect(ui.state.overviewCharts).toBe(2)
+  expect(ui.state.focusedSection).toBe("ov.chart")
 })

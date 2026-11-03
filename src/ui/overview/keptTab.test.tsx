@@ -9,7 +9,7 @@ test("the Overview, hidden while the range changes, shows the new range when bac
   const t = await renderApp({ width: 140, height: 44 })
   data.init(":memory:")
   ui.switchTab("overview")
-  ui.setState({ chartViews: [0, 4] })
+  ui.setState({ chartViews: [0, 4, 7, 8] })
   ui.setTimeframe({ ...ui.state.timeframe, family: "custom", custom: { start: "2026-03-01", end: "2026-03-31" } })
   await t.renderOnce()
   expect(t.captureCharFrame()).toContain("1 Mar")

@@ -2,7 +2,7 @@ import { normaliseSelection } from "../domain/accountTree"
 import type { CycleConfig } from "../domain/budget"
 import { DEFAULT_OPEN_RANGE, LOOKBACKS, PERIODS, activeChipIndex, applyChip, customRange, defaultTimeframe } from "../domain/timeframe"
 import type { Account } from "../domain/types"
-import { CHART_VIEWS } from "./uiStore"
+import { CHART_VIEWS, chartViewsFrom } from "./uiStore"
 import type { UiPrefs } from "./settingsConfig"
 
 /** Approved deviation: open on the chosen range; "last" keeps the legacy restore. */
@@ -27,6 +27,6 @@ export function restoreUiPrefs(prefs: UiPrefs, accounts: Account[], now: Date, c
     timeframe = applyChip(timeframe, index, now, cycle)
   }
   const accountSelection = normaliseSelection(accounts, prefs.accountSelection ?? "all")
-  const chartViews = prefs.chartViews?.every((i) => Number.isInteger(i) && i >= 0 && i < CHART_VIEWS.length) && prefs.chartViews.length === 2 ? prefs.chartViews : undefined
+  const chartViews = chartViewsFrom(prefs.chartViews, CHART_VIEWS.length)
   return { timeframe, accountSelection, chartViews }
 }

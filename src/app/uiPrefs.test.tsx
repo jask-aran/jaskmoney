@@ -22,16 +22,16 @@ test("bootstrap-off preserves UI defaults; scoped w updates the hint and calenda
   })
   ui.switchTab("overview")
   ui.setTimeframe(timeframe)
-  ui.setState({ chartViews: [0, 4] })
+  ui.setState({ chartViews: [0, 4, 7, 8] })
   data.setAccountSelection("all")
   const t = await renderApp({ width: 180, height: 50 })
   try {
     await t.renderOnce()
     expect(ui.state.timeframe).toEqual(timeframe)
-    expect(ui.state.chartViews).toEqual([0, 4])
+    expect(ui.state.chartViews).toEqual([0, 4, 7, 8])
     expect(data.state.accountSelection).toBe("all")
     const untouched = readFileSync(path, "utf8")
-    ui.setState({ chartViews: [1, 4] })
+    ui.setState({ chartViews: [1, 4, 7, 8] })
     await t.renderOnce()
     expect(readFileSync(path, "utf8")).toBe(untouched)
 
@@ -63,7 +63,7 @@ test("bootstrap-off preserves UI defaults; scoped w updates the hint and calenda
     ui.cancelImport()
 
     ui.switchTab("overview")
-    ui.setState({ chartViews: [CHART_VIEWS.findIndex((v) => v.view === "Calendar"), 4] })
+    ui.setState({ chartViews: [CHART_VIEWS.findIndex((v) => v.view === "Calendar"), 4, 0, 8] })
     await t.renderOnce()
     const weekdaySpans = () => t.captureSpans().lines.flatMap((line) => line.spans)
       .filter((span) => /^(Mon|Tue|Wed|Thu|Fri|Sat|Sun)\s*$/.test(span.text))
@@ -82,7 +82,7 @@ test("bootstrap-off preserves UI defaults; scoped w updates the hint and calenda
     t.renderer.destroy()
     process.env.JASKMONEY_CONFIG = previousPath
     data.init(":memory:")
-    ui.setState({ chartViews: [0, 4] })
+    ui.setState({ chartViews: [0, 4, 7, 8] })
   }
 })
 

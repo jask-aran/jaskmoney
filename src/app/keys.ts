@@ -54,7 +54,7 @@ import { runAccept, toggleUncategorised, newSuggestionsNote, suggestNew } from "
 import { ACCEPT_ALL_AT } from "../domain/questions"
 import { categoryRows } from "../state/taxonomyRows"
 import { IMPORT_HISTORY_ROWS } from "../state/databaseRows"
-import { BUDGET_VIEWS, CHART_VIEWS, SETTINGS_RIGHT, SETTINGS_SECTIONS, type SettingsSection, jumpTargets, TABS, TAB_DEFAULT_FOCUS, settingsSectionFocus, smartQuestionFor, type ScopeId, type UiState, type UiStore } from "../state/uiStore"
+import { BUDGET_VIEWS, CHART_VIEWS, chartPaneOf, type ChartViews, type OverviewCharts, SETTINGS_RIGHT, SETTINGS_SECTIONS, type SettingsSection, jumpTargets, TABS, TAB_DEFAULT_FOCUS, settingsSectionFocus, smartQuestionFor, type ScopeId, type UiState, type UiStore } from "../state/uiStore"
 import type { DataStore } from "../state/dataStore"
 import {
   CUSTOM_CHIP,
@@ -2021,14 +2021,16 @@ function handleOverview(ui: UiStore, key: KeyEvent, data?: DataStore): void {
     return
   }
   // h/l (or ,/.) step the focused chart pane's views, the top pane when
-  // neither is focused; H/L step the bottom pane, or the one chart when
-  // the Overview shows only one.
+  // none is focused; H/L step the bottom pane, or the one chart when the
+  // Overview shows only one.
   const back = seq === "H" || ((name === "h" || seq === ",") && scope === "overview")
   const forward = seq === "L" || ((name === "l" || seq === ".") && scope === "overview")
   if (back || forward) {
-    const pane = ui.state.overviewCharts === 2 && (seq === "H" || seq === "L" || key.shift || ui.state.focusedSection === "ov.chart2") ? 1 : 0
+    const focused = chartPaneOf(ui.state.focusedSection)
+    const shown = ui.state.overviewCharts
+    const pane = seq === "H" || seq === "L" || key.shift ? (shown > 1 ? 1 : 0) : focused >= 0 && focused < shown ? focused : 0
     const n = CHART_VIEWS.length
-    const views: [number, number] = [...ui.state.chartViews]
+    const views: ChartViews = [...ui.state.chartViews]
     views[pane] = (views[pane] + (back ? -1 : 1) + n) % n
     ui.setState({ chartViews: views })
     return
@@ -2089,7 +2091,7 @@ function handleOverview(ui: UiStore, key: KeyEvent, data?: DataStore): void {
     if ((name === "return" || name === "enter") && line) { drillDown(ui, data, line); return }
   }
   if (focus === "ov.accounts" && (name === "return" || name === "enter")) { ui.switchTab("manager"); ui.setState({ focusedSection: "mgr.accounts" }); return }
-  if (data && (focus === "ov.chart" || focus === "ov.chart2") && (name === "return" || name === "enter")) { drillDown(ui, data); return }
+  if (data && chartPaneOf(focus) >= 0 && (name === "return" || name === "enter")) { drillDown(ui, data); return }
   if (name === "0") {
     // The same kind of range, now (this month, this quarter…).
     const tf = timeframeNow(ui.state.timeframe, appNow(), cycle)
@@ -2214,7 +2216,7 @@ type HintState = Pick<UiState, "focusedSection" | "drillReturn" | "chartViews"> 
   /** The Overview's range is a Custom one (C edits its dates). */
   customRange?: boolean
   /** The Overview's chart panes on screen (one: no bottom-chart keys). */
-  overviewCharts?: 1 | 2
+  overviewCharts?: OverviewCharts
   /** From the data store: the Transactions table is the Uncategorised view. */
   uncategorisedOnly?: boolean
   /** In the filter: ↑ would bring back the smart search's question. */
@@ -2628,7 +2630,7 @@ const scopes: Record<ScopeId, ScopeEntry> = {
       ]
       return [
         { key: "↑↓←→", desc: "panes" },
-        ...(state?.focusedSection === "ov.chart" || state?.focusedSection === "ov.chart2" ? [{ key: "enter", desc: "transactions" }] : []),
+        ...(state && chartPaneOf(state.focusedSection) >= 0 ? [{ key: "enter", desc: "transactions" }] : []),
         { key: "h/l", desc: "chart" },
         { key: "d/D", desc: "range" },
         { key: "[ ]", desc: `prev/next ${state?.stepUnit ?? "range"}` },
@@ -2643,7 +2645,7 @@ const scopes: Record<ScopeId, ScopeEntry> = {
         ...(state?.customRange ? [] : [{ key: "C", desc: "custom range", label: "Range: custom dates" }]),
         ...(state?.overviewCharts !== 1 ? [{ key: "H/L", desc: "bottom chart" }] : []),
         { key: "0", desc: "now", label: "Range: back to now" },
-        ...(state?.chartViews.some((i) => CHART_VIEWS[i]?.group === "Balances") ? [{ key: "z", desc: "$0 axis" }] : []),
+        ...(state?.chartViews.slice(0, state.overviewCharts ?? 2).some((i) => CHART_VIEWS[i]?.group === "Balances") ? [{ key: "z", desc: "$0 axis" }] : []),
         { key: "v", desc: "jump" },
         { key: "1-4", desc: "tab" },
       ]

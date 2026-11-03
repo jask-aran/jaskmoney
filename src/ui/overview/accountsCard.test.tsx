@@ -22,7 +22,7 @@ async function accounts(height: number, savers: boolean) {
     suggestions: {}, budgets: [], accountSelection: "all", ready: true, icons: false, uiPrefs: {},
   })
   ui.switchTab("overview")
-  ui.setState({ focusedSection: "none", chartViews: [0, 4], customEdit: null })
+  ui.setState({ focusedSection: "none", chartViews: [0, 4, 7, 8], customEdit: null })
   await t.renderOnce()
   await t.flush()
   const lines = t.captureCharFrame().split("\n").map((l) => l.slice(160 - 48))

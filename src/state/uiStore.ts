@@ -30,6 +30,8 @@ export type SectionId =
   | "ov.range"
   | "ov.chart"
   | "ov.chart2"
+  | "ov.chart3"
+  | "ov.chart4"
   | "ov.categories"
   | "mgr.accounts"
   | "mgr.transactions"
@@ -168,12 +170,14 @@ export interface UiState {
    * filter it replaced and returns to the section it came from. Cleared on
    * leaving Transactions any other way. */
   drillReturn: { filter: string; focus: SectionId } | null
-  /** Each chart pane's view: indexes into CHART_VIEWS, top pane first. */
-  chartViews: [number, number]
-  /** How many chart panes the Overview shows: 2 at its wide layout, 1
-   * below it (the Overview sets it from its width). With one, the bottom
-   * chart's keys and jump act on the top one. */
-  overviewCharts: 1 | 2
+  /** Each chart pane's view: indexes into CHART_VIEWS, in CHART_SECTIONS'
+   * order (top, bottom, then the grid's top right and bottom right). */
+  chartViews: ChartViews
+  /** How many chart panes the Overview shows: 4 (a 2×2 grid) when the
+   * chart column is wide enough, 2 at its wide layout, 1 below it (the
+   * Overview sets it from its size). Panes past it are off screen: their
+   * keys and jumps act on the top one. */
+  overviewCharts: OverviewCharts
   filterBar: { draft: string; caret: number } | null
   catPicker: { cursor: number; query: string } | null
   /** Choosing a tag to find transactions for (T). */
@@ -299,6 +303,22 @@ export const TAB_DEFAULT_FOCUS: Record<TabId, SectionId> = {
  * belongs to (the pane's title and the strip's separators). Both panes offer
  * every view. `ranged`: drawn from the Date Range's days (Subscriptions is
  * the scope's whole history, whatever the range). */
+export type ChartViews = [number, number, number, number]
+export type OverviewCharts = 1 | 2 | 4
+/** The Overview's chart panes: top and bottom of the chart column, then the
+ * grid's right-hand column, top and bottom. */
+export const CHART_SECTIONS = ["ov.chart", "ov.chart2", "ov.chart3", "ov.chart4"] as const
+/** The pane a chart section is (0 to 3), or -1. */
+export const chartPaneOf = (section: SectionId) => (CHART_SECTIONS as readonly SectionId[]).indexOf(section)
+/** Cumulative and Net position; the grid's right adds Calendar and Subscriptions. */
+export const DEFAULT_CHART_VIEWS: ChartViews = [0, 4, 7, 8]
+/** Saved views, two (before the grid) or four, padded with the defaults. */
+export function chartViewsFrom(raw: unknown, views: number): ChartViews | undefined {
+  if (!Array.isArray(raw) || (raw.length !== 2 && raw.length !== 4)) return undefined
+  if (!raw.every((i) => Number.isSafeInteger(i) && i >= 0 && i < views)) return undefined
+  return [raw[0], raw[1], raw[2] ?? DEFAULT_CHART_VIEWS[2], raw[3] ?? DEFAULT_CHART_VIEWS[3]]
+}
+
 export const CHART_VIEWS = [
   { view: "Cumulative", group: "Spending", ranged: true },
   { view: "Daily", group: "Spending", ranged: true },
@@ -315,11 +335,11 @@ export const CHART_VIEWS = [
  * cycle the tab shows. */
 export const BUDGET_VIEWS = CHART_VIEWS.filter((v) => v.group === "Spending")
 
-/** The tab's jump targets that are on screen: no bottom chart when the
- * Overview shows one chart. */
+/** The tab's jump targets that are on screen: only the chart panes the
+ * Overview shows. */
 export function jumpTargets(state: Pick<UiState, "activeTab" | "overviewCharts">): JumpTarget[] {
   const targets = JUMP_TARGETS[state.activeTab]
-  return state.activeTab === "overview" && state.overviewCharts === 1 ? targets.filter((t) => t.section !== "ov.chart2") : targets
+  return state.activeTab === "overview" ? targets.filter((t) => chartPaneOf(t.section) < state.overviewCharts) : targets
 }
 
 export const JUMP_TARGETS: Record<TabId, JumpTarget[]> = {
@@ -327,6 +347,8 @@ export const JUMP_TARGETS: Record<TabId, JumpTarget[]> = {
     { key: "d", section: "ov.range", label: "Date Range" },
     { key: "t", section: "ov.chart", label: "Top chart" },
     { key: "b", section: "ov.chart2", label: "Bottom chart" },
+    { key: "y", section: "ov.chart3", label: "Top right chart" },
+    { key: "n", section: "ov.chart4", label: "Bottom right chart" },
     { key: "c", section: "ov.categories", label: "Categories" },
   ],
   manager: [
@@ -449,7 +471,7 @@ function createUiStore() {
     customEdit: null,
     overviewCategoryCursor: 0,
     drillReturn: null,
-    chartViews: [0, 4],
+    chartViews: [...DEFAULT_CHART_VIEWS],
     overviewCharts: 2,
     filterBar: null,
     catPicker: null,

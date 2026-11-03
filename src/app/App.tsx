@@ -143,7 +143,7 @@ export function App() {
     const prefs: UiPrefs = {
       timeframe: { family: tf.family, lookback: tf.lookback, period: tf.period, custom: tf.custom ? { start: tf.custom.start, end: tf.custom.end } : null },
       accountSelection: data.state.accountSelection,
-      chartViews: [ui.state.chartViews[0], ui.state.chartViews[1]],
+      chartViews: [...ui.state.chartViews],
     }
     // Written once keys settle: these change on every [ ] d a h l.
     untrack(() => settleData(ui, data.saveUiPrefs(prefs, { soon: true })))

@@ -15,7 +15,7 @@ test("the Subscriptions view lists regular payments with their change and the st
   data.setState({ accounts: [account({ id: 1, name: "Spending" })], accountSelection: "all", ready: true, icons: false,
     transactions: [...months("NETFLIX", [18.99, 18.99, 22.99, 22.99, 22.99]), ...months("GYM", [60, 60, 60])] })
   ui.switchTab("overview")
-  ui.setState({ chartViews: [CHART_VIEWS.findIndex((v) => v.view === "Subscriptions"), 4] })
+  ui.setState({ chartViews: [CHART_VIEWS.findIndex((v) => v.view === "Subscriptions"), 4, 7, 8] })
   await t.renderOnce()
   await t.renderOnce()
   const frame = t.captureCharFrame()

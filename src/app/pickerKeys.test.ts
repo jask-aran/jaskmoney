@@ -50,7 +50,7 @@ test("ctrl+j / ctrl+k move in the category picker, tag picker and tag chooser, a
 
 test("the pickers' footers say ↑/↓ or ctrl+j/k move", () => {
   for (const scope of ["catPicker", "tagPicker", "tagChooser", "filterPicker"] as const) {
-    const hints = footerHints(scope, { focusedSection: "mgr.transactions", drillReturn: null, chartViews: [0, 4] })
+    const hints = footerHints(scope, { focusedSection: "mgr.transactions", drillReturn: null, chartViews: [0, 4, 7, 8] })
     expect(hints[0]).toEqual({ key: "↑↓ ^j/k", desc: "move" })
   }
 })
@@ -71,7 +71,7 @@ test("rule offers: the last row asks the AI (when a model is set up); a no longe
   handleKey(ui, key("return"), data)
   expect(ui.state.status).toStartWith("Asking ")
   await Bun.sleep(20)
-  const hints = footerHints("manager.ruleOffers", { focusedSection: "mgr.transactions", drillReturn: null, chartViews: [0, 4] }).map((h) => h.key)
+  const hints = footerHints("manager.ruleOffers", { focusedSection: "mgr.transactions", drillReturn: null, chartViews: [0, 4, 7, 8] }).map((h) => h.key)
   expect(hints).not.toContain("a")
   handleKey(ui, key("escape"), data)
 })

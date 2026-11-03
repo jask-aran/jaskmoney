@@ -13,7 +13,7 @@ import { centredTop } from "../primitives/ListRow"
 import { changeColor, spendChangeColor } from "../colors"
 import type { Span } from "../primitives/spans"
 import { S } from "../primitives/S"
-import { CHART_VIEWS, ui, type SectionId } from "../../state/uiStore"
+import { CHART_SECTIONS, CHART_VIEWS, chartPaneOf, ui, type SectionId } from "../../state/uiStore"
 import { data } from "../../state/dataStore"
 import { categoryColor, ink, theme, tone } from "../../theme"
 import { dailySpendSeries, fitCategoryLines, formatMoney, formatPct, formatWholeMoney, signedWholeMoney } from "../../domain/dashboard"
@@ -45,6 +45,10 @@ export const WIDE = 90
 const SIDE_MAX = 48
 /** The side stack's narrowest: Accounts' and Totals' labels still fit. */
 const SIDE_MIN = 40
+/** A grid pane's narrowest: the chart column splits into a 2×2 grid of
+ * chart panes once each would be at least this wide (a full-screen
+ * terminal; a split one keeps the two stacked). */
+export const GRID_PANE_MIN = 64
 /** Narrow: the chart's fewest rows before the column scrolls. */
 const NARROW_CHART_MIN = 10
 /** Stack columns: value and note widths; the label takes the rest. */
@@ -109,8 +113,11 @@ export function OverviewTab(props: { focused: SectionId }) {
   const covered = createMemo(() => windows().days === 0 || historyCovers(transactions(), previous(), { start: bounds().start, end: addDays(bounds().start, windows().days - 1) }))
   const before = (text: string) => (covered() ? text : "—")
   const groups = () => range().groups
+  /** The views on screen (overviewCharts, set below from the layout): a
+   * hidden pane's view builds nothing. */
+  const shownViews = () => ui.state.chartViews.slice(0, ui.state.overviewCharts)
   // Built only while a pane shows it.
-  const calendarShown = () => ui.state.chartViews.some((i) => CHART_VIEWS[i]?.view === "Calendar")
+  const calendarShown = () => shownViews().some((i) => CHART_VIEWS[i]?.view === "Calendar")
   const calendar = createMemo(() => (calendarShown() ? spendingCalendar(inPeriod(), bounds().start, bounds().end, data.state.weekStart) : []))
   const inScope = (rows: Transaction[]) => {
     const ids = scopeIds()
@@ -118,7 +125,7 @@ export function OverviewTab(props: { focused: SectionId }) {
   }
   // Regular payments now, from the scope's whole history (no range).
   // Built only while a pane shows it.
-  const subsShown = () => ui.state.chartViews.some((i) => CHART_VIEWS[i]?.view === "Subscriptions")
+  const subsShown = () => shownViews().some((i) => CHART_VIEWS[i]?.view === "Subscriptions")
   const subs = createMemo(() => subsShown() ? subscriptions(inScope(transactions()), today()) : [])
   const series = createMemo(() => dailySpendSeries(inPeriod(), bounds().start, bounds().end))
   // The next payday: the day after the current cycle ends.
@@ -133,7 +140,7 @@ export function OverviewTab(props: { focused: SectionId }) {
   })
   // Where Available is headed, up to the day before the next payday (or
   // the range's end): built only while a pane shows Available.
-  const availableShown = () => ui.state.chartViews.some((i) => CHART_VIEWS[i]?.view === "Available")
+  const availableShown = () => shownViews().some((i) => CHART_VIEWS[i]?.view === "Available")
   const projection = createMemo(() => {
     const p = position()
     if (!availableShown() || p.spendingBalance == null || p.dailySpend == null) return []
@@ -184,13 +191,19 @@ export function OverviewTab(props: { focused: SectionId }) {
   const bodyHeight = () => Math.max(8, dims().height - 7)
   const sideWidth = () => (wide() ? Math.max(SIDE_MIN, Math.min(SIDE_MAX, Math.floor((dims().width - 1) * 0.4))) : Math.floor((dims().width - 1) / 2))
   const mainWidth = () => (wide() ? dims().width - 1 - sideWidth() : dims().width)
-  // The keys act on the charts on screen: with one, the bottom chart's keys
-  // and focus move to it.
+  // Wide and wide enough: the charts in a 2×2 grid, two columns of panes.
+  const grid = () => wide() && mainWidth() >= 2 * GRID_PANE_MIN + 1
+  const charts = () => (grid() ? 4 : wide() ? 2 : 1)
+  /** A chart pane's width: the chart column, or half of it in the grid. */
+  const paneWidth = (pane: number) => (!grid() ? mainWidth() : pane < 2 ? Math.ceil((mainWidth() - 1) / 2) : Math.floor((mainWidth() - 1) / 2))
+  // The keys act on the charts on screen: focus on one that's gone moves
+  // to the top one.
   createEffect(() => {
-    const charts = wide() ? 2 : 1
-    if (ui.state.overviewCharts !== charts) ui.setState({ overviewCharts: charts })
-    if (charts === 1 && ui.state.focusedSection === "ov.chart2") ui.applyJump("ov.chart")
+    const n = charts()
+    if (ui.state.overviewCharts !== n) ui.setState({ overviewCharts: n })
+    if (chartPaneOf(ui.state.focusedSection) >= n) ui.applyJump("ov.chart")
   })
+
 
   // The stacks: label, value (VALUE) and a note or comparison (NOTE).
   // Accounts: available, the balance with what's pending, runway and the
@@ -226,7 +239,7 @@ export function OverviewTab(props: { focused: SectionId }) {
   // then again if the labels need a different one.
   // The axis width each chart had last: the first guess next time, so a
   // chart is usually built once, not twice.
-  const axisWas: [number, number] = [AXIS_GUESS, AXIS_GUESS]
+  const axisWas = [AXIS_GUESS, AXIS_GUESS, AXIS_GUESS, AXIS_GUESS]
   // What the charts draw from, read lazily: a view reads only its own.
   const chartInput: OverviewChartInput = {
     get series() { return series() }, get today() { return today() }, get spending() { return spending() },
@@ -234,16 +247,19 @@ export function OverviewTab(props: { focused: SectionId }) {
     get accounts() { return data.state.accounts }, get transactions() { return transactions() }, get scopeIds() { return scopeIds() },
     get zeroAxis() { return data.state.uiPrefs.zeroAxis === true }, get projection() { return projection() },
   }
-  const model = (slot: 0 | 1, index: number, height: number): ChartModel | null => {
-    const m = overviewChartModel((CHART_VIEWS[index] ?? CHART_VIEWS[0]).view, chartInput, mainWidth() - 4, chartRows(height, baseline()), axisWas[slot])
+  const model = (slot: number, index: number, height: number): ChartModel | null => {
+    const m = overviewChartModel((CHART_VIEWS[index] ?? CHART_VIEWS[0]).view, chartInput, paneWidth(slot) - 4, chartRows(height, baseline()), axisWas[slot])
     if (m && m.ticks.size) axisWas[slot] = axisWidth(m.ticks)
     return m
   }
-  // Each chart follows its own view: switching one leaves the other alone.
-  const topView = createMemo(() => ui.state.chartViews[0])
-  const bottomView = createMemo(() => ui.state.chartViews[1])
-  const topModel = createMemo(() => model(0, topView(), topChartHeight()))
-  const bottomModel = createMemo(() => (wide() ? model(1, bottomView(), bottomChartHeight()) : null))
+  // Each chart follows its own view: switching one leaves the others alone.
+  // A pane off screen builds no model.
+  const paneModel = (slot: number) => {
+    const view = createMemo(() => ui.state.chartViews[slot]!)
+    return createMemo(() => (slot < charts() ? model(slot, view(), slot % 2 ? bottomChartHeight() : topChartHeight()) : null))
+  }
+  const models = [0, 1, 2, 3].map(paneModel)
+  const topModel = models[0]!
 
   // Category lines: name, then amount (9) and share (5).
   const categoryWidth = () => (wide() ? sideWidth() : dims().width - 1 - sideWidth())
@@ -437,12 +453,13 @@ export function OverviewTab(props: { focused: SectionId }) {
     const timer = setTimeout(() => setLaunchOver(true), revealMs() + 500)
     onCleanup(() => clearTimeout(timer))
   }))
-  const ChartPane = (p: { pane: 0 | 1; height: number }) => {
-    const index = () => ui.state.chartViews[p.pane]
+  const ChartPane = (p: { pane: number; height: number }) => {
+    const index = () => ui.state.chartViews[p.pane]!
     const view = () => CHART_VIEWS[index()] ?? CHART_VIEWS[0]
-    const chart = () => (p.pane === 0 ? topModel() : bottomModel())
+    const chart = () => models[p.pane]!()
+    const section = CHART_SECTIONS[p.pane]!
     return (
-      <box ref={regionRef(p.pane === 0 ? "ov.chart" : "ov.chart2", "overview")} width={mainWidth()} height={p.height} flexShrink={0} onMouseDown={panePointer(p.pane === 0 ? "ov.chart" : "ov.chart2")}>
+      <box ref={regionRef(section, "overview")} width={paneWidth(p.pane)} height={p.height} flexShrink={0} onMouseDown={panePointer(section)}>
       <OverviewChartCard
         index={index()}
         model={chart()}
@@ -451,9 +468,9 @@ export function OverviewTab(props: { focused: SectionId }) {
         today={today()}
         payday={payday()}
         dueBeforePayday={dueBeforePayday()}
-        width={mainWidth()}
+        width={paneWidth(p.pane)}
         height={p.height}
-        focused={props.focused === (p.pane === 0 ? "ov.chart" : "ov.chart2")}
+        focused={props.focused === section}
         baseline={baseline()}
         revealKey={data.state.uiPrefs.chartMotion === "off" ? undefined : data.state.uiPrefs.chartMotion === "always" ? (revealKey() ? `${view().view}:${view().ranged ? `${range().bounds.start}:${range().bounds.end}` : ""}:${seen()}` : undefined) : revealKey()}
         revealMs={data.state.uiPrefs.chartMotion === "always" ? chartSpeedMs(data.state.uiPrefs.chartSpeed) : revealMs()}
@@ -539,9 +556,17 @@ export function OverviewTab(props: { focused: SectionId }) {
         fallback={<NarrowColumn />}
       >
         <box flexDirection="row" gap={1} width="100%" height={bodyHeight()}>
-          <box flexDirection="column" gap={1} justifyContent="space-between" width={mainWidth()} height={bodyHeight()}>
-            <ChartPane pane={0} height={topChartHeight()} />
-            <ChartPane pane={1} height={bottomChartHeight()} />
+          <box flexDirection="row" gap={1} width={mainWidth()} height={bodyHeight()} flexShrink={0}>
+            <box flexDirection="column" gap={1} justifyContent="space-between" width={paneWidth(0)} height={bodyHeight()}>
+              <ChartPane pane={0} height={topChartHeight()} />
+              <ChartPane pane={1} height={bottomChartHeight()} />
+            </box>
+            <Show when={grid()}>
+              <box flexDirection="column" gap={1} justifyContent="space-between" width={paneWidth(2)} height={bodyHeight()}>
+                <ChartPane pane={2} height={topChartHeight()} />
+                <ChartPane pane={3} height={bottomChartHeight()} />
+              </box>
+            </Show>
           </box>
           <box flexDirection="column" flexGrow={1} flexBasis={0} minWidth={0} height={bodyHeight()} overflow="hidden">
             {accountsCard()}

@@ -16,7 +16,8 @@ export interface UiPrefs {
   filterUsage?: Record<string, string>
   timeframe?: Pick<TimeframeState, "family" | "lookback" | "period" | "custom">
   accountSelection?: AccountSelection
-  chartViews?: [number, number]
+  /** Two (saved before the grid) or four. */
+  chartViews?: number[]
   weekStart?: WeekStart
   /** Charts draw an x-axis line under the plot (default off). */
   xAxis?: boolean
@@ -132,10 +133,8 @@ function parseUiPrefs(raw: unknown): UiPrefs | undefined {
     const sel = raw.accountSelection
     if (sel === "all" || sel === "savers" || (typeof sel === "number" && Number.isSafeInteger(sel) && sel > 0)) ui.accountSelection = sel
   }
-  if ("chartViews" in raw && Array.isArray(raw.chartViews) && raw.chartViews.length === 2) {
-    const [a, b] = raw.chartViews
-    if (typeof a === "number" && Number.isSafeInteger(a) && a >= 0 && typeof b === "number" && Number.isSafeInteger(b) && b >= 0) ui.chartViews = [a, b]
-  }
+  if ("chartViews" in raw && Array.isArray(raw.chartViews) && (raw.chartViews.length === 2 || raw.chartViews.length === 4)
+    && raw.chartViews.every((i) => typeof i === "number" && Number.isSafeInteger(i) && i >= 0)) ui.chartViews = raw.chartViews as number[]
   if ("timeframe" in raw && raw.timeframe && typeof raw.timeframe === "object") {
     const tf = raw.timeframe
     const lookback = LOOKBACKS.find((id) => "lookback" in tf && id === tf.lookback)

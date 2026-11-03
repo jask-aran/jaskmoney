@@ -40,7 +40,7 @@ const shown = () => data.scopedTransactions().map((t) => t.description + t.id)
 
 test("i shows only rows to categorise, most confident first; y accepts, x dismisses, Y previews then takes the confident ones; i goes back", async () => {
   setup()
-  expect(footerHints("manager.txns", { focusedSection: "mgr.transactions", drillReturn: null, chartViews: [0, 4] }).some((h) => h.key === "i")).toBe(true)
+  expect(footerHints("manager.txns", { focusedSection: "mgr.transactions", drillReturn: null, chartViews: [0, 4, 7, 8] }).some((h) => h.key === "i")).toBe(true)
   handleKey(ui, key("i"), data)
   expect(data.state.uncategorisedOnly).toBe(true)
   expect(data.state.sortColumn).toBe("confidence")
@@ -49,7 +49,7 @@ test("i shows only rows to categorise, most confident first; y accepts, x dismis
   expect(Object.values(data.state.suggestions).map((s) => [s.transactionId, s.categoryId, s.confidence]).sort()).toEqual([[2, 100, 0.8], [4, 100, 0.8]])
   // Suggested rows first (ties newest first), the unsuggested last.
   expect(shown()).toEqual(["Shop4", "Shop2", "Mystery3"])
-  expect(footerHints("manager.txns", { focusedSection: "mgr.transactions", drillReturn: null, chartViews: [0, 4], uncategorisedOnly: true }).map((h) => h.key)).toContain("Y")
+  expect(footerHints("manager.txns", { focusedSection: "mgr.transactions", drillReturn: null, chartViews: [0, 4, 7, 8], uncategorisedOnly: true }).map((h) => h.key)).toContain("Y")
 
   // c opens the picker with the suggestion first.
   handleKey(ui, key("c"), data)

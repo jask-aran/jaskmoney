@@ -284,18 +284,18 @@ describe("key router", () => {
   })
 
   test("overview h/l step the top or focused chart; H/L the bottom one", () => {
-    ui.setState({ focusedSection: "none", chartViews: [0, 4] })
+    ui.setState({ focusedSection: "none", chartViews: [0, 4, 7, 8] })
     handleKey(ui, key("l"), data)
-    expect(ui.state.chartViews).toEqual([1, 4])
+    expect(ui.state.chartViews).toEqual([1, 4, 7, 8])
     handleKey(ui, key("h"), data)
     // From the first view, h wraps to the last.
     handleKey(ui, key("h"), data)
-    expect(ui.state.chartViews).toEqual([CHART_VIEWS.length - 1, 4])
+    expect(ui.state.chartViews).toEqual([CHART_VIEWS.length - 1, 4, 7, 8])
     handleKey(ui, key("l", { shift: true, sequence: "L" }), data)
-    expect(ui.state.chartViews).toEqual([CHART_VIEWS.length - 1, 5])
+    expect(ui.state.chartViews).toEqual([CHART_VIEWS.length - 1, 5, 7, 8])
     ui.setState({ focusedSection: "ov.chart2" })
     handleKey(ui, key("h"), data)
-    expect(ui.state.chartViews).toEqual([CHART_VIEWS.length - 1, 4])
+    expect(ui.state.chartViews).toEqual([CHART_VIEWS.length - 1, 4, 7, 8])
   })
 
   test("drill-down: enter on a category line opens its transactions; esc comes back", () => {
@@ -341,9 +341,9 @@ describe("key router", () => {
   })
 
   test("z runs balance charts from $0 and back; its hint shows with a balance chart", () => {
-    ui.setState({ focusedSection: "none", chartViews: [0, 1] })
+    ui.setState({ focusedSection: "none", chartViews: [0, 1, 7, 8] })
     expect(footerHints("overview", ui.state).some((h) => h.key === "z")).toBe(false)
-    ui.setState({ chartViews: [0, 4] })
+    ui.setState({ chartViews: [0, 4, 7, 8] })
     expect(footerHints("overview", ui.state).some((h) => h.key === "z")).toBe(true)
     const before = data.state.uiPrefs.zeroAxis === true
     handleKey(ui, key("z"), data)

@@ -1,7 +1,7 @@
 import { expect, onTestFinished, test } from "bun:test"
 import { RGBA } from "@opentui/core"
 import { data } from "../state/dataStore"
-import { ui } from "../state/uiStore"
+import { type ChartViews, ui } from "../state/uiStore"
 import { renderApp } from "../testing/app"
 import { key } from "../testing/keys"
 import { testEnv } from "../testing/scoped"
@@ -10,7 +10,7 @@ import { commands, rankCommands } from "./commands"
 import { footerHints, footerLine, handleKey, hintState, paletteList } from "./keys"
 import { FOOTER_LIMIT, hintEvent } from "./palette"
 
-const state = { focusedSection: "mgr.transactions" as const, drillReturn: null, chartViews: [0, 4] as [number, number] }
+const state = { focusedSection: "mgr.transactions" as const, drillReturn: null, chartViews: [0, 4, 7, 8] as ChartViews }
 
 async function setup() {
   testEnv("JASKMONEY_UP_TOKEN", "")
