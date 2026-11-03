@@ -310,7 +310,7 @@ test("the payday, in the Budgets pane for every cycle: in, kept to top up to the
   const pane = (label: string) => f.split("\n").find((l) => l.includes(label)) ?? ""
   expect(pane("Payday 1 Oct")).toContain("$5,000 in")
   // Kept $2,000 of $5,000 to top up to the $2,000 budget; $3,000 due, $3,000 sent.
-  expect(pane("kept, topping up to $2,000")).toContain("$2,000")
+  expect(pane("kept (target $2,000)")).toMatch(/kept \(target \$2,000\)\s+\$2,000/)
   expect(pane("to savers")).toContain("$3,000 ✓")
   expect(pane("Next payday 1 Nov")).toContain("at this pace")
   expect(pane("Spending ends near")).toMatch(/\$[\d,]+/)

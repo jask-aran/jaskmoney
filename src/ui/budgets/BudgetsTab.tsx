@@ -350,11 +350,12 @@ export function BudgetsTab(props: { focused: SectionId }) {
   const paydayLines = createMemo((): Span[][] => {
     const p = paydayResult(), width = rowWidth(categoriesWidth())
     const stat = (label: string, value: string, fg: string = ink.figure, bold = false): Span[] =>
-      fitSpans([{ text: fit(label, Math.max(1, width - value.length - 2)), fg: bold ? ink.figure : ink.label, bold }, { text: `${value}  `, fg }], width)
+      // At least a space between the label and its value.
+      fitSpans([{ text: fit(label, Math.max(1, width - value.length - 3)), fg: bold ? ink.figure : ink.label, bold }, { text: ` ${value}  `, fg }], width)
     if (!p || p.pay <= 0) return [fitSpans([{ text: "  No pay this cycle (the Salary category)", fg: ink.note }], width)]
     const lines = [stat(`  Payday ${shortDate(p.dateISO)}`, `${formatWholeMoney(p.pay)} in`, ink.figure, true)]
     if (target() > 0) {
-      lines.push(stat(`    kept, topping up to ${formatWholeMoney(target())}`, formatWholeMoney(p.keep), ink.label))
+      lines.push(stat(`    kept (target ${formatWholeMoney(target())})`, formatWholeMoney(p.keep), ink.label))
       lines.push(p.sent >= p.due - 1
         ? stat("    to savers", `${formatWholeMoney(p.sent)} ✓`, tone.good)
         : stat("    to savers", `${formatWholeMoney(p.sent)} of ${formatWholeMoney(p.due)}`, tone.caution))
@@ -487,7 +488,7 @@ export function BudgetsTab(props: { focused: SectionId }) {
     </SectionCard>
   )
   const Categories = () => (
-    <SectionCard title="Budgets" titleSuffix={nothingSet() ? "· start here" : categoriesFocused() ? "· enter set · space open" : undefined}
+    <SectionCard title="Budgets" titleSuffix={nothingSet() ? "· start here" : undefined}
       titleSuffixColor={nothingSet() ? tone.caution : ink.note} focused={categoriesFocused()} width={categoriesWidth()} height={categoriesHeight()}>
       <Show when={paydayLines().length}>
         <Index each={paydayLines()}>{(spans) => <ListRow cursor={false} bg={theme.canvas} spans={spans()} />}</Index>
