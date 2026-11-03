@@ -15,6 +15,9 @@ export interface CalendarDay {
   spent: number
   /** 0 = no spending; 1–4 = quartile of the period's non-zero days (1 lowest). */
   level: 0 | 1 | 2 | 3 | 4
+  /** A day to come: charges expected on it (the Budgets tab's calendar:
+   * regular payments due). */
+  expected?: number
 }
 
 /**

@@ -1,7 +1,7 @@
 import { afterEach, expect, test } from "bun:test"
 import { setAppClock } from "../../domain/days"
 import { data } from "../../state/dataStore"
-import { ui } from "../../state/uiStore"
+import { CHART_VIEWS, ui } from "../../state/uiStore"
 import { renderApp } from "../../testing/app"
 import { handleKey } from "../../app/keys"
 import { key } from "../../testing/keys"
@@ -145,13 +145,65 @@ test("no wash on a budget: the cursor's name and corners take the focus colour, 
   const { t, frame } = await budgetsTab()
   await data.setBudget({ kind: "overall" }, 500)
   await frame()
-  const spans = t.captureSpans().lines.flatMap((l) => l.spans)
+  const lines = t.captureSpans().lines
   const canvas = RGBA.fromHex(theme.canvas).toInts()
-  // The corner and name share one style (one span), the closing corner too.
-  const name = spans.find((s) => s.text.includes("╭ Overall spending"))!
-  const corner = spans.find((s) => s.text.includes("╮"))!
-  const bar = spans.find((s) => s.text.startsWith("█"))!
+  // The corner and name share one style (one span), the closing corner too:
+  // on the budget's own line, the bar on the line under it.
+  const at = lines.findIndex((l) => l.spans.some((s) => s.text.includes("╭ Overall spending")))
+  const name = lines[at]!.spans.find((s) => s.text.includes("╭ Overall spending"))!
+  const corner = lines[at]!.spans.find((s) => s.text.includes("╮"))!
+  const bar = lines[at + 1]!.spans.find((s) => s.text.startsWith("█"))!
   for (const s of [name, corner, bar]) expect(s.bg.toInts()).toEqual(canvas)
   expect(name.fg.toInts()).toEqual(RGBA.fromHex(tone.focus).toInts())
   expect(corner.fg.toInts()).toEqual(RGBA.fromHex(tone.focus).toInts())
+})
+
+test("the cycle's calendar is always there: the budget's days so far, and its regular payments due on the days to come, in caution, with what they leave", async () => {
+  const { t, groceries, frame } = await budgetsTab()
+  const db = data.getDb()!
+  for (const month of ["06", "07", "08", "09"]) {
+    db.query("INSERT INTO transactions (date_raw, date_iso, amount, description, account_id, category_id, source) VALUES (?, ?, -15, 'STREAMER', 1, ?, 'up')").run(`2026-${month}-25`, `2026-${month}-25`, groceries)
+  }
+  data.refresh()
+  await data.setBudget({ kind: "overall" }, 500)
+  const f = await frame()
+  expect(f).toMatch(/Calendar · (Overall spending|Total budgeted)/)
+  // STREAMER's next charge (and the fixture's Shop, regular enough to
+  // count) on days to come: their amounts, the days in caution, and the
+  // legend's total.
+  expect(f).toContain("$15")
+  expect(f).toMatch(/■ \d charges? · \$\d+ expected by 31 Oct/)
+  const caution = RGBA.fromHex(tone.caution).toInts().join()
+  const due = t.captureSpans().lines.flatMap((l) => l.spans).filter((s) => s.fg.toInts().join() === caution && /\d/.test(s.text))
+  expect(due.some((s) => s.text.includes("$15"))).toBe(true)
+  // A past cycle expects nothing.
+  handleKey(ui, key("["), data)
+  expect(await frame()).not.toContain("expected by")
+  ui.setState({ budgetOffset: 0 })
+})
+
+test("the Budgets tab's panes: t, y jump to the budget and cycle panes, h/l step the focused one's views, H/L the cycle pane's from the cards, esc back", async () => {
+  const { frame } = await budgetsTab()
+  await data.setBudget({ kind: "overall" }, 500)
+  await frame()
+  // 120×44: the budget pane, a cycle pane under it, the budgets at the bottom.
+  expect(ui.state.budgetCyclePanes).toBe(1)
+  const start = ui.state.budgetCycleViews
+  handleKey(ui, key("L"), data)
+  expect(ui.state.budgetCycleViews).toEqual([(start[0] + 1) % CHART_VIEWS.length, start[1]])
+  handleKey(ui, key("v"), data); handleKey(ui, key("t"), data)
+  expect(ui.state.focusedSection).toBe("bud.chart")
+  handleKey(ui, key("l"), data)
+  expect(ui.state.budgetChart).toBe(1)
+  handleKey(ui, key("j"), data)
+  expect(ui.state.focusedSection).toBe("bud.cycle")
+  handleKey(ui, key("h"), data)
+  expect(ui.state.budgetCycleViews[0]).toBe(start[0])
+  handleKey(ui, key("escape"), data)
+  expect(ui.state.focusedSection).toBe("bud.list")
+  // Up past the first budget: the pane above.
+  ui.setState({ budgetCursor: 0 })
+  handleKey(ui, key("k"), data)
+  expect(ui.state.focusedSection).toBe("bud.cycle")
+  ui.setState({ focusedSection: "bud.list", budgetChart: 0, budgetCycleViews: start })
 })

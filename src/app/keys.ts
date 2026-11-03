@@ -54,7 +54,7 @@ import { runAccept, toggleUncategorised, newSuggestionsNote, suggestNew } from "
 import { ACCEPT_ALL_AT } from "../domain/questions"
 import { categoryRows } from "../state/taxonomyRows"
 import { IMPORT_HISTORY_ROWS } from "../state/databaseRows"
-import { BUDGET_VIEWS, CHART_VIEWS, chartPaneOf, type ChartViews, type OverviewCharts, SETTINGS_RIGHT, SETTINGS_SECTIONS, type SettingsSection, jumpTargets, TABS, TAB_DEFAULT_FOCUS, settingsSectionFocus, smartQuestionFor, type ScopeId, type UiState, type UiStore } from "../state/uiStore"
+import { BUDGET_PANES, BUDGET_VIEWS, CHART_VIEWS, chartPaneOf, type ChartViews, type OverviewCharts, SETTINGS_RIGHT, SETTINGS_SECTIONS, type SettingsSection, jumpTargets, TABS, TAB_DEFAULT_FOCUS, settingsSectionFocus, smartQuestionFor, type ScopeId, type UiState, type UiStore } from "../state/uiStore"
 import type { DataStore } from "../state/dataStore"
 import {
   CUSTOM_CHIP,
@@ -1862,10 +1862,21 @@ function openBudgetEditor(ui: UiStore, data: DataStore, budget: Budget | null, s
   ui.openSettingsEditor("budget", budget?.id ?? null, { ...ui.state.settingsDraft, ...cycleDraft(data.state.budgetCycle), scopeKey: scopeKey(scope), amount: budget ? String(budget.amount) : amount > 0 ? String(Math.round(amount)) : "" })
 }
 
-/** Keys either Budgets card shares: h/l step the chart through its views
- * (the Overview's spending ones); [ and ] show the cycle before or after (up to
- * this one, back to the first with data); c edits the cycle. */
-function budgetKeys(ui: UiStore, key: KeyEvent, data: DataStore): boolean {
+/** Steps one of the Budgets tab's chart panes through its views: the
+ * budget pane (0) through BUDGET_VIEWS, a cycle pane (1, 2) through the
+ * Overview's CHART_VIEWS. */
+function stepBudgetPane(ui: UiStore, pane: number, step: number): void {
+  if (pane === 0) { ui.setState({ budgetChart: (ui.state.budgetChart + step + BUDGET_VIEWS.length) % BUDGET_VIEWS.length }); return }
+  const views: [number, number] = [...ui.state.budgetCycleViews]
+  views[pane - 1] = (views[pane - 1]! + step + CHART_VIEWS.length) % CHART_VIEWS.length
+  ui.setState({ budgetCycleViews: views })
+}
+
+/** Keys every Budgets card and pane shares: h/l step the focused chart
+ * pane's views (the budget pane's from the cards), H/L the cycle pane's;
+ * [ and ] show the cycle before or after (up to this one, back to the
+ * first with data); c edits the cycle. */
+function budgetKeys(ui: UiStore, key: KeyEvent, data: DataStore, pane = 0): boolean {
   const { name, sequence: seq } = key
   if (name === "[" || seq === "[" || name === "]" || seq === "]") {
     const back = name === "[" || seq === "["
@@ -1876,13 +1887,28 @@ function budgetKeys(ui: UiStore, key: KeyEvent, data: DataStore): boolean {
     ui.setState({ budgetOffset: offset })
     return true
   }
+  if ((seq === "H" || seq === "L") && ui.state.budgetCyclePanes > 0) {
+    stepBudgetPane(ui, 1, seq === "H" ? -1 : 1)
+    return true
+  }
   if (name === "h" || name === "left" || name === "l" || name === "right") {
-    const step = name === "h" || name === "left" ? -1 : 1
-    ui.setState({ budgetChart: (ui.state.budgetChart + step + BUDGET_VIEWS.length) % BUDGET_VIEWS.length })
+    stepBudgetPane(ui, pane, name === "h" || name === "left" ? -1 : 1)
     return true
   }
   if (name === "c") { ui.openSettingsEditor("cycle", null, { ...ui.state.settingsDraft, ...cycleDraft(data.state.budgetCycle) }); return true }
   return false
+}
+
+/** A Budgets chart pane: h/l (and ←/→) its views, j/k (and ↑/↓) to the
+ * pane or card in that direction, [ ] and c as on the cards, esc back to
+ * the budgets. */
+function handleBudgetChart(ui: UiStore, key: KeyEvent, data?: DataStore): void {
+  const { name } = key
+  if (!data) return
+  if (name === "escape") { ui.setState({ focusedSection: "bud.list" }); return }
+  if (name === "j" || name === "down") { travel(ui, "down", data); return }
+  if (name === "k" || name === "up") { travel(ui, "up", data); return }
+  budgetKeys(ui, key, data, Math.max(0, BUDGET_PANES.indexOf(ui.state.focusedSection)))
 }
 
 /** The Budgets tab's Budgets card: enter edits a budget (the total is
@@ -1899,6 +1925,8 @@ function handleBudgets(ui: UiStore, key: KeyEvent, data?: DataStore): void {
     ui.setState({ focusedSection: "bud.categories" })
     return
   }
+  // Up past the first budget: the pane above (the chart).
+  if ((name === "k" || name === "up") && ui.state.budgetCursor === 0) { travel(ui, "up", data); return }
   const moved = listMove(key, ui.state.budgetCursor, rows.length)
   if (moved != null) { ui.setState({ budgetCursor: moved }); return }
   if (name === "a") {
@@ -2217,6 +2245,8 @@ type HintState = Pick<UiState, "focusedSection" | "drillReturn" | "chartViews"> 
   customRange?: boolean
   /** The Overview's chart panes on screen (one: no bottom-chart keys). */
   overviewCharts?: OverviewCharts
+  /** The Budgets tab's cycle panes on screen (none: no H/L). */
+  budgetCyclePanes?: 0 | 1 | 2
   /** From the data store: the Transactions table is the Uncategorised view. */
   uncategorisedOnly?: boolean
   /** In the filter: ↑ would bring back the smart search's question. */
@@ -2576,12 +2606,17 @@ const scopes: Record<ScopeId, ScopeEntry> = {
   "budgets": {
     handle: handleBudgets,
     list: true,
-    hints: () => [{ key: "j/k", desc: "move" }, { key: "enter", desc: "edit" }, { key: "a", desc: "add" }, { key: "del del", desc: "delete" }, { key: "h/l", desc: "chart" }, { key: "[ ]", desc: "cycles" }, { key: "c", desc: "cycle" }, { key: "1-4", desc: "tab" }],
+    hints: (state) => [{ key: "j/k", desc: "move" }, { key: "enter", desc: "edit" }, { key: "a", desc: "add" }, { key: "del del", desc: "delete" }, { key: "h/l", desc: "chart" }, ...cycleChartHint(state), { key: "[ ]", desc: "cycles" }, { key: "c", desc: "cycle" }, { key: "v", desc: "jump" }, { key: "1-4", desc: "tab" }],
+  },
+  "budgets.chart": {
+    handle: handleBudgetChart,
+    list: true,
+    hints: (state) => [{ key: "h/l", desc: "view" }, { key: "j/k", desc: "panes" }, ...cycleChartHint(state).filter(() => state?.focusedSection === "bud.chart"), { key: "[ ]", desc: "cycles" }, { key: "c", desc: "cycle" }, { key: "esc", desc: "budgets" }, { key: "v", desc: "jump" }, { key: "1-4", desc: "tab" }],
   },
   "budgets.categories": {
     handle: handleBudgetCategories,
     list: true,
-    hints: () => [{ key: "j/k", desc: "move" }, { key: "enter", desc: "set budget" }, { key: "x", desc: "leave out" }, { key: "del del", desc: "remove budget" }, { key: "h/l", desc: "chart" }, { key: "[ ]", desc: "cycles" }, { key: "c", desc: "cycle" }, { key: "1-4", desc: "tab" }],
+    hints: (state) => [{ key: "j/k", desc: "move" }, { key: "enter", desc: "set budget" }, { key: "x", desc: "leave out" }, { key: "del del", desc: "remove budget" }, { key: "h/l", desc: "chart" }, ...cycleChartHint(state), { key: "[ ]", desc: "cycles" }, { key: "c", desc: "cycle" }, { key: "v", desc: "jump" }, { key: "1-4", desc: "tab" }],
   },
   "manager.merchants": {
     handle: handleManagerMerchants,
@@ -2682,6 +2717,9 @@ export function footerLine(scope: ScopeId, state?: HintState): Hint[] {
 }
 
 /** The state the hints read, from both stores. */
+/** H/L steps the Budgets tab's cycle pane, while one is on screen. */
+const cycleChartHint = (state?: HintState) => ((state?.budgetCyclePanes ?? 1) > 0 ? [{ key: "H/L", desc: "cycle chart" }] : [])
+
 export function hintState(ui: UiStore, data?: DataStore): HintState {
   return {
     focusedSection: ui.state.focusedSection,
@@ -2690,6 +2728,7 @@ export function hintState(ui: UiStore, data?: DataStore): HintState {
     stepUnit: stepUnit(ui.state.timeframe),
     customRange: ui.state.timeframe.family === "custom",
     overviewCharts: ui.state.overviewCharts,
+    budgetCyclePanes: ui.state.budgetCyclePanes,
     uncategorisedOnly: data?.state.uncategorisedOnly,
     tagReview: !!data?.state.tagReview,
     signInPaste: !!ui.state.llmSignIn?.paste,

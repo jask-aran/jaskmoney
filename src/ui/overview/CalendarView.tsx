@@ -2,7 +2,7 @@ import { Index, Show, createMemo } from "solid-js"
 import type { CalendarDay } from "../../domain/spending"
 import { MONTHS } from "../../domain/days"
 import { data } from "../../state/dataStore"
-import { fade, ink, theme, whenThemeChanges } from "../../theme"
+import { fade, ink, theme, tone, whenThemeChanges } from "../../theme"
 import { muted, type Span } from "../primitives/spans"
 import { StyledLine, type StyledSpan } from "../primitives/StyledLine"
 import { shortMoney } from "../text"
@@ -147,7 +147,9 @@ function cell(spans: StyledSpan[], day: CalendarDay | null, width: number, layou
   // The band's last line is its gap: blank, so weekdays read as rows.
   const blankLine = layout.bandGap === 1 && line === layout.band - 1
   const bg = day == null || blankLine ? theme.canvas : past ? LEVEL_BG[day.level] : FUTURE_BG
-  const amount = past && day!.spent > 0 ? shortMoney(day!.spent) : ""
+  // A day to come shows what's expected on it, if anything.
+  const expected = !past && day?.expected ? day.expected : 0
+  const amount = past && day!.spent > 0 ? shortMoney(day!.spent) : expected ? shortMoney(expected) : ""
   const text = (() => {
     if (day == null || blankLine) return " ".repeat(w)
     const { dayNumbers, amounts } = layout
@@ -159,8 +161,9 @@ function cell(spans: StyledSpan[], day: CalendarDay | null, width: number, layou
     if (line === 1 && amounts === "below" && amount.length < w) return ` ${amount}`.padEnd(w)
     return " ".repeat(w)
   })()
-  // Text: dark on the brighter levels; days to come faint; today in its colour.
-  const fg = isToday ? theme.chartToday : !past ? ink.faint : day!.level >= 4 ? theme.crust : line === 0 ? ink.label : ink.figure
+  // Text: dark on the brighter levels; days to come faint, or in caution
+  // with a charge expected; today in its colour.
+  const fg = isToday ? theme.chartToday : !past ? (expected ? tone.caution : ink.faint) : day!.level >= 4 ? theme.crust : line === 0 ? ink.label : ink.figure
   push(spans, { text, fg, bg, bold: isToday })
   if (layout.gap) push(spans, { text: " ", bg: theme.canvas })
 }

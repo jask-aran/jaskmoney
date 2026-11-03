@@ -46,6 +46,9 @@ export type SectionId =
   | "set.web"
   | "bud.list"
   | "bud.categories"
+  | "bud.chart"
+  | "bud.cycle"
+  | "bud.cycle2"
 
 export type ScopeId =
   | "bar"
@@ -77,6 +80,7 @@ export type ScopeId =
   | "settings.importHistory"
   | "budgets"
   | "budgets.categories"
+  | "budgets.chart"
   | "manager.detail"
   | "manager.detail.notes"
   | "settings.editor"
@@ -210,9 +214,15 @@ export interface UiState {
   budgetCursor: number
   /** The Budgets tab's category list (domain/budgetLines order). */
   budgetCategoryCursor: number
-  /** The Budgets tab's chart view: an index into BUDGET_VIEWS (the
-   * Overview's spending views). */
+  /** The Budgets tab's budget pane view: an index into BUDGET_VIEWS (the
+   * Overview's spending views over the budget, and its subscriptions). */
   budgetChart: number
+  /** The Budgets tab's cycle panes' views: indexes into CHART_VIEWS (the
+   * Overview's, over the cycle shown). The second shows full screen only. */
+  budgetCycleViews: [number, number]
+  /** How many cycle panes the Budgets tab shows (0, 1 or 2): set from its
+   * size, as overviewCharts is. */
+  budgetCyclePanes: 0 | 1 | 2
   /** The cycle the Budgets tab shows: 0 this one, -1 the one before, ... */
   budgetOffset: number
   /** Cursor in the Up Bank sync account list. */
@@ -342,11 +352,18 @@ export const BUDGET_VIEWS = [
   { view: "Subscriptions", group: "Subscriptions", ranged: false },
 ] as const
 
+/** The Budgets tab's chart panes: the budget's, then the cycle's two. */
+export const BUDGET_PANES: readonly SectionId[] = ["bud.chart", "bud.cycle", "bud.cycle2"]
+
 /** The tab's jump targets that are on screen: only the chart panes the
- * Overview shows. */
-export function jumpTargets(state: Pick<UiState, "activeTab" | "overviewCharts">): JumpTarget[] {
+ * Overview or the Budgets tab shows. */
+export function jumpTargets(state: Pick<UiState, "activeTab" | "overviewCharts"> & Partial<Pick<UiState, "budgetCyclePanes">>): JumpTarget[] {
   const targets = JUMP_TARGETS[state.activeTab]
-  return state.activeTab === "overview" ? targets.filter((t) => chartPaneOf(t.section) < state.overviewCharts) : targets
+  if (state.activeTab === "overview") return targets.filter((t) => chartPaneOf(t.section) < state.overviewCharts)
+  // A cycle pane is the 2nd or 3rd of BUDGET_PANES: on screen while its
+  // number is within budgetCyclePanes.
+  if (state.activeTab === "budgets") return targets.filter((t) => !(t.section === "bud.cycle" || t.section === "bud.cycle2") || BUDGET_PANES.indexOf(t.section) <= (state.budgetCyclePanes ?? 1))
+  return targets
 }
 
 export const JUMP_TARGETS: Record<TabId, JumpTarget[]> = {
@@ -365,6 +382,9 @@ export const JUMP_TARGETS: Record<TabId, JumpTarget[]> = {
   budgets: [
     { key: "b", section: "bud.list", label: "Budgets" },
     { key: "c", section: "bud.categories", label: "Categories" },
+    { key: "t", section: "bud.chart", label: "Budget chart" },
+    { key: "y", section: "bud.cycle", label: "Cycle chart" },
+    { key: "n", section: "bud.cycle2", label: "Second cycle chart" },
   ],
   settings: [
     { key: "c", section: "set.categories", label: "Categories" },
@@ -501,6 +521,8 @@ function createUiStore() {
     budgetCursor: 0,
     budgetCategoryCursor: 0,
     budgetChart: 0,
+    budgetCycleViews: [8, 9],
+    budgetCyclePanes: 1,
     budgetOffset: 0,
     merchantCursor: 0,
     merchantTop: 0,
@@ -792,7 +814,7 @@ function createUiStore() {
     }
     if (state.focusedSection.startsWith("bar.")) return "bar"
     if (state.activeTab === "overview") return state.focusedSection === "ov.range" ? "overview.range" : "overview"
-    if (state.activeTab === "budgets") return state.focusedSection === "bud.categories" ? "budgets.categories" : "budgets"
+    if (state.activeTab === "budgets") return state.focusedSection === "bud.categories" ? "budgets.categories" : BUDGET_PANES.includes(state.focusedSection) ? "budgets.chart" : "budgets"
     if (state.activeTab === "manager") {
       if (state.focusedSection === "mgr.accounts") return "manager.accounts"
       return state.txnView === "merchants" ? "manager.merchants" : "manager.txns"

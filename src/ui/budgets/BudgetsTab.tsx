@@ -1,4 +1,4 @@
-import { Index, Show, createMemo } from "solid-js"
+import { Index, Show, createEffect, createMemo } from "solid-js"
 import { useTerminalDimensions } from "@opentui/solid"
 import { allocation, cycleFor, budgetCounts, budgetCountsThen, budgetIgnoredIds, budgetIn, budgetProgress, cycleSpending, pastCycles, progressOf, totalBudgetIn, type Budget, type BudgetProgress, type BudgetSubject, type Cycle } from "../../domain/budget"
 import { budgetArmId, budgetListRows, type BudgetLine } from "../../domain/budgetLines"
@@ -14,18 +14,25 @@ import { data } from "../../state/dataStore"
 import { armedFor } from "../../state/armed"
 import { ink, theme, tone } from "../../theme"
 import { categoryMark } from "../icons"
-import { fit, shortDate } from "../text"
+import { count, fit, shortDate } from "../text"
 import { ListRow, centredTop } from "../primitives/ListRow"
 import { SectionCard } from "../primitives/SectionCard"
 import { S } from "../primitives/S"
 import { fitSpans, type Span } from "../primitives/spans"
 import { AXIS_GUESS, CHART_RIGHT_PAD, axisWidth, type ChartModel } from "../charts/ChartBody"
-import { WIDE } from "../overview/OverviewTab"
 import { cycleLines, cycleLinesLegend, type CycleSpent } from "./budgetCharts"
 import { chartSpeedMs, showings } from "../charts/motion"
 import { ChartCard } from "../charts/ChartCard"
 import { spendingChart } from "../overview/periodCharts"
-import { BUDGET_VIEWS } from "../../state/uiStore"
+import { BUDGET_PANES, BUDGET_VIEWS, CHART_VIEWS } from "../../state/uiStore"
+import { GRID_PANE_MIN, OverviewChartCard, WIDE, chartRows, overviewChartModel, type OverviewChartInput } from "../overview/OverviewTab"
+import { CalendarView, calendarLegend } from "../overview/CalendarView"
+import { spendingCalendar } from "../../domain/spending"
+import { merchantRows, trendRows } from "../../domain/periodTables"
+import { accountRole } from "../../domain/types"
+import { regionRef } from "../regions"
+import { onPointer } from "../../app/pointer"
+import type { JSX } from "solid-js"
 import { SubscriptionsView, subscriptionsLegend } from "../charts/SubscriptionsView"
 import { subscriptions, upcomingCharges } from "../../domain/subscriptions"
 
@@ -188,17 +195,57 @@ export function BudgetsTab(props: { focused: SectionId }) {
     if (names.length) spans.push({ text: `${spans.length ? " · " : ""}Not budgeted: ${names.join(", ")}`, fg: ink.note })
     return spans
   })
-  // Each budget takes two lines (hung) when they all fit in two fifths of
-  // the tab, else one; past a third of the tab, the list scrolls.
+  // The layouts. Wide: the main column, then a side column with the cycle's
+  // calendar over the categories. In the main column, split screen: the
+  // budget pane, a cycle pane under it when there's height for both, and
+  // the budgets beside each cycle along the bottom. Full screen (the main
+  // column fits two panes of GRID_PANE_MIN): a 2×2 grid, the budget pane
+  // and a cycle pane on top, a second cycle pane and the budgets over each
+  // cycle below. Narrow: one column, the budget pane alone.
+  const grid = () => wide() && mainWidth() >= 2 * GRID_PANE_MIN + 1
+  const halfLeft = () => Math.ceil((mainWidth() - 1) / 2)
+  const halfRight = () => Math.floor((mainWidth() - 1) / 2)
+  const topQuarter = () => Math.floor(body() / 2)
+  const bottomQuarter = () => body() - topQuarter()
+  // Each budget takes two lines (hung) when they all fit in the room the
+  // layout gives the budgets, else one; past that, the list scrolls.
   const summaryLines = () => (summary().length ? 1 : 0)
-  const hung = () => rows().length * 2 + 2 + summaryLines() <= Math.floor(body() * 0.4)
-  const budgetRoom = () => (hung() ? rows().length : Math.min(rows().length, Math.max(1, Math.floor(body() * 0.3))))
-  const budgetsHeight = () => budgetRoom() * (hung() ? 2 : 1) + 2 + summaryLines()
-  // The cycle lines as tall as their cycles (up to half of what the budgets
-  // leave); the chart the rest.
-  const linesHeight = () => Math.min(cycles().length + 2, wide() ? Math.floor((body() - budgetsHeight()) / 2) : Math.max(5, Math.floor(body() * 0.2)))
-  const chartHeight = () => (wide() ? body() - budgetsHeight() - linesHeight() : Math.max(10, Math.floor(body() * 0.3)))
-  const categoriesHeight = () => (wide() ? body() : Math.max(5, body() - chartHeight() - linesHeight() - budgetsHeight()))
+  const budgetsRoom = () => (grid() ? bottomQuarter() - 5 : wide() ? Math.floor(body() * 0.45) : Math.floor(body() * 0.4))
+  const hung = () => rows().length * 2 + 2 + summaryLines() <= budgetsRoom()
+  const budgetRoom = () => (hung() ? rows().length : Math.min(rows().length, Math.max(1, (wide() ? budgetsRoom() : Math.floor(body() * 0.3)) - 2 - summaryLines())))
+  const budgetsNatural = () => budgetRoom() * (hung() ? 2 : 1) + 2 + summaryLines()
+  // Split screen, the budgets and each cycle share the bottom row when
+  // each gets SIDE_BY_SIDE_MIN columns, as tall as the taller of them wants
+  // (each cycle up to the budgets' room); narrower, each cycle goes under
+  // the budgets.
+  const sideBySide = () => wide() && !grid() && halfLeft() >= SIDE_BY_SIDE_MIN
+  const bottomRow = () => Math.max(budgetsNatural(), Math.min(cycles().length + 2, budgetsRoom()))
+  const linesStacked = () => Math.min(cycles().length + 2, Math.max(4, Math.floor((body() - budgetsNatural()) / 3)))
+  const bottomBlock = () => (sideBySide() ? bottomRow() : budgetsNatural() + linesStacked())
+  const budgetsHeight = () => (sideBySide() ? bottomRow() : budgetsNatural())
+  const linesHeight = () => (grid() ? bottomQuarter() - budgetsNatural() : sideBySide() ? bottomRow() : wide() ? linesStacked() : Math.min(cycles().length + 2, Math.max(5, Math.floor(body() * 0.2))))
+  // The charts take the rest: the budget pane, and a cycle pane under it
+  // when both get CYCLE_PANE_MIN rows.
+  const chartArea = () => body() - bottomBlock()
+  const cyclePanes = (): 0 | 1 | 2 => (grid() ? 2 : wide() && chartArea() >= 2 * CYCLE_PANE_MIN ? 1 : 0)
+  const chartHeight = () => (grid() ? topQuarter() : wide() ? (cyclePanes() ? Math.ceil(chartArea() / 2) : chartArea()) : Math.max(10, Math.floor(body() * 0.3)))
+  const cyclePaneHeight = (pane: number) => (grid() ? (pane === 0 ? topQuarter() : bottomQuarter()) : chartArea() - chartHeight())
+  const budgetsWidth = () => (grid() ? halfRight() : sideBySide() ? halfLeft() : mainWidth())
+  const linesWidth = () => (grid() || sideBySide() ? halfRight() : mainWidth())
+  const chartWidth = () => (grid() ? halfLeft() : mainWidth())
+  const cyclePaneWidth = (pane: number) => (grid() ? (pane === 0 ? halfRight() : halfLeft()) : mainWidth())
+  // The cycle's calendar: a band of two lines a weekday where the tab has
+  // the height, else one; narrow, only on a tall terminal.
+  const calendarHeight = () => (wide() ? (body() >= 17 + 10 ? 17 : 10) : body() >= 40 ? 10 : 0)
+  const categoriesHeight = () => (wide() ? body() - calendarHeight() : Math.max(5, body() - chartHeight() - linesHeight() - budgetsHeight() - calendarHeight()))
+  // The panes the keys and jumps reach follow the layout; focus on one
+  // that's gone goes back to the budgets.
+  createEffect(() => {
+    const n = cyclePanes()
+    if (ui.state.budgetCyclePanes !== n) ui.setState({ budgetCyclePanes: n })
+    const pane = BUDGET_PANES.indexOf(props.focused)
+    if (pane > n) ui.setState({ focusedSection: "bud.list" })
+  })
   const rowWidth = (width: number) => width - 5
 
   // The chart: the Overview's spending view over the cycle shown, for what
@@ -208,7 +255,7 @@ export function BudgetsTab(props: { focused: SectionId }) {
   const chartView = () => (BUDGET_VIEWS[ui.state.budgetChart] ?? BUDGET_VIEWS[0]!).view
   // Subscriptions: the regular payments among the rows the budget counts
   // (its fixed costs), what's due before payday, drawn in place of a chart.
-  const subs = createMemo(() => (chartView() === "Subscriptions" ? subscriptions(subjectRows(), today()) : []))
+  const subs = createMemo(() => subscriptions(subjectRows(), today()))
   const payday = () => addDays(cycleFor(config(), today()).end, 1)
   const dueBeforePayday = () => upcomingCharges(subs(), today(), addDays(payday(), -1)).reduce((sum, c) => sum + c.amount, 0)
   let axisWas = AXIS_GUESS
@@ -218,7 +265,7 @@ export function BudgetsTab(props: { focused: SectionId }) {
     const height = Math.max(3, chartHeight() - (baseline() ? 4 : 3))
     const series = dailySpendSeries(subjectRows(), cycle().start, cycle().end)
     const view = chartView() as "Cumulative" | "Daily" | "Weekly"
-    const build = (axis: number) => spendingChart(view, series, Math.max(1, mainWidth() - 4 - axis - CHART_RIGHT_PAD), height, today(), subjectRows(), subject().amount ?? undefined, { current: "This cycle", previous: "Last cycle" }, data.state.weekStart)
+    const build = (axis: number) => spendingChart(view, series, Math.max(1, chartWidth() - 4 - axis - CHART_RIGHT_PAD), height, today(), subjectRows(), subject().amount ?? undefined, { current: "This cycle", previous: "Last cycle" }, data.state.weekStart)
     let built = build(axisWas)
     const axis = axisWidth(built.ticks)
     if (axis !== axisWas) { axisWas = axis; built = build(axis) }
@@ -230,8 +277,8 @@ export function BudgetsTab(props: { focused: SectionId }) {
   const listFocused = () => props.focused === "bud.list"
   const categoriesFocused = () => props.focused === "bud.categories"
   const LABEL = () => Math.min(22, Math.max(18, ...rows().map((r) => (r.budget ? label(r.budget).length + 2 : r.kind === "total" ? TOTAL.length + 2 : 18))))
-  const tight = () => rowWidth(mainWidth()) - LABEL() - 45 < 10
-  const BAR = () => Math.max(tight() ? 4 : 6, Math.min(48, rowWidth(mainWidth()) - LABEL() - (tight() ? 36 : 45)))
+  const tight = () => rowWidth(budgetsWidth()) - LABEL() - 45 < 10
+  const BAR = () => Math.max(tight() ? 4 : 6, Math.min(48, rowWidth(budgetsWidth()) - LABEL() - (tight() ? 36 : 45)))
   const budgetSpans = (p: BudgetProgress | undefined): Span[] => {
     if (!p) return []
     const budget = p.budget
@@ -240,7 +287,7 @@ export function BudgetsTab(props: { focused: SectionId }) {
     // Narrow, the figures drop their alignment, and then go, before what's
     // left or over does.
     const figures = { text: tight() ? ` ${formatWholeMoney(p.spent)} of ${formatWholeMoney(budget.amount)} ` : `  ${formatWholeMoney(p.spent).padStart(7)} of ${formatWholeMoney(budget.amount).padEnd(7)}  `, fg: ink.label }
-    const room = rowWidth(mainWidth()) - LABEL() - BAR()
+    const room = rowWidth(budgetsWidth()) - LABEL() - BAR()
     return [...bar(BAR(), used, pace()), ...(figures.text.length + verdict.text.length <= room ? [figures] : [{ text: " ", fg: ink.label }]), verdict]
   }
   // A budget on two lines: its name and spent of budget hung from the bar's
@@ -249,7 +296,7 @@ export function BudgetsTab(props: { focused: SectionId }) {
   // faint rule. No wash marks the cursor here: its name and corners take the
   // focus colour.
   const hungSpans = (name: Span, p: BudgetProgress | undefined, unset: string, cursor: boolean): [Span[], Span[]] => {
-    const width = rowWidth(mainWidth())
+    const width = rowWidth(budgetsWidth())
     const corner = (text: string): Span => ({ text, fg: cursor ? tone.focus : ink.note, bold: cursor })
     if (cursor) name = { ...name, fg: tone.focus }
     const line = (left: Span[], right: Span[]): Span[] => {
@@ -290,17 +337,17 @@ export function BudgetsTab(props: { focused: SectionId }) {
   const categoryTop = createMemo(() => centredTop(categoryCursor(), lines().length, categoryRoom()))
 
   const Chart = () => (
-    <ChartCard title={subject().title} views={BUDGET_VIEWS} current={ui.state.budgetChart} model={model()} width={mainWidth()} height={chartHeight()} baseline={baseline()}
+    <ChartCard title={subject().title} views={BUDGET_VIEWS} current={ui.state.budgetChart} model={model()} width={chartWidth()} height={chartHeight()} baseline={baseline()}
       legend={subscriptionsLegend(subs(), dueBeforePayday())}
-      fallback={<SubscriptionsView list={subs()} width={mainWidth() - 4} rows={chartHeight() - 2} today={today()} payday={payday()} />}
+      fallback={<SubscriptionsView list={subs()} width={chartWidth() - 4} rows={chartHeight() - 2} today={today()} payday={payday()} />}
       revealKey={data.state.uiPrefs.chartMotion === "always" ? `${(BUDGET_VIEWS[ui.state.budgetChart] ?? BUDGET_VIEWS[0]!).view}:${subject().title}:${seen()}` : undefined}
       revealMs={data.state.uiPrefs.chartMotion === "always" ? chartSpeedMs(data.state.uiPrefs.chartSpeed) : undefined}
       curve={data.state.uiPrefs.chartCurve}
       labels={data.state.uiPrefs.chartLabels} />
   )
   const Lines = () => (
-    <SectionCard title="Each cycle" titleSuffix={`· ${subject().title}`} titleSuffixColor={ink.label} bottomSpans={cycleLinesLegend(cycles())} width={mainWidth()} height={linesHeight()}>
-      <Index each={cycleLines(cycles().slice(0, Math.max(1, linesHeight() - 2)), rowWidth(mainWidth()), pace(), today())}>{(spans) => (
+    <SectionCard title="Each cycle" titleSuffix={`· ${subject().title}`} titleSuffixColor={ink.label} bottomSpans={cycleLinesLegend(cycles())} width={linesWidth()} height={linesHeight()}>
+      <Index each={cycleLines(cycles().slice(0, Math.max(1, linesHeight() - 2)), rowWidth(linesWidth()), pace(), today())}>{(spans) => (
         <text wrapMode="none">
           <S fg={ink.note}>{" "}</S>
           <Index each={spans()}>{(span) => <S fg={span().fg} bold={span().bold}>{span().text}</S>}</Index>
@@ -309,7 +356,7 @@ export function BudgetsTab(props: { focused: SectionId }) {
     </SectionCard>
   )
   const Budgets = () => (
-    <SectionCard title="Budgets" titleSuffix={view().current ? `· day ${elapsed()} of ${cycle().days}` : `· ${period()} · ] later`} titleSuffixColor={view().current ? tone.scope : tone.caution} focused={listFocused()} width={mainWidth()} height={budgetsHeight()}>
+    <SectionCard title="Budgets" titleSuffix={view().current ? `· day ${elapsed()} of ${cycle().days}` : `· ${period()} · ] later`} titleSuffixColor={view().current ? tone.scope : tone.caution} focused={listFocused()} width={budgetsWidth()} height={budgetsHeight()}>
       <Index each={rows().slice(budgetTop(), budgetTop() + budgetRoom())}>{(row, i) => {
         const at = () => listFocused() && budgetTop() + i === budgetCursor()
         const armed = () => (row().budget ? armedFor(ui.state.armed, "budget", budgetArmId(row().budget!, cycle().start)) : undefined)
@@ -321,9 +368,9 @@ export function BudgetsTab(props: { focused: SectionId }) {
         }
         const spans = (): Span[] => {
           const r = row()
-          if (r.kind === "total") return fitSpans([{ text: fit(TOTAL, LABEL()), fg: ink.strong, bold: true }, ...budgetSpans(totalProgress())], rowWidth(mainWidth()))
-          if (r.budget) return fitSpans([{ text: fit(label(r.budget), LABEL()), fg: ink.figure, bold: true }, ...budgetSpans(progress().get(r.budget.id))], rowWidth(mainWidth()))
-          return fitSpans([{ text: fit(overallName(), LABEL()), fg: ink.figure, bold: true }, { text: `not set: enter sets one${hasCategoryBudgets() ? " for the rest" : ""}`, fg: ink.note }], rowWidth(mainWidth()))
+          if (r.kind === "total") return fitSpans([{ text: fit(TOTAL, LABEL()), fg: ink.strong, bold: true }, ...budgetSpans(totalProgress())], rowWidth(budgetsWidth()))
+          if (r.budget) return fitSpans([{ text: fit(label(r.budget), LABEL()), fg: ink.figure, bold: true }, ...budgetSpans(progress().get(r.budget.id))], rowWidth(budgetsWidth()))
+          return fitSpans([{ text: fit(overallName(), LABEL()), fg: ink.figure, bold: true }, { text: `not set: enter sets one${hasCategoryBudgets() ? " for the rest" : ""}`, fg: ink.note }], rowWidth(budgetsWidth()))
         }
         return (
           <Show when={hung()} fallback={<ListRow cursor={at()} bg={theme.canvas} armed={armed()} spans={spans()} />}>
@@ -335,7 +382,7 @@ export function BudgetsTab(props: { focused: SectionId }) {
       <Show when={summary().length}>
         <text wrapMode="none">
           <S fg={ink.note}>{" "}</S>
-          <Index each={fitSpans(summary(), rowWidth(mainWidth()))}>{(span) => <S fg={span().fg}>{span().text}</S>}</Index>
+          <Index each={fitSpans(summary(), rowWidth(budgetsWidth()))}>{(span) => <S fg={span().fg}>{span().text}</S>}</Index>
         </text>
       </Show>
     </SectionCard>
@@ -354,16 +401,128 @@ export function BudgetsTab(props: { focused: SectionId }) {
     </SectionCard>
   )
 
+  // The cycle panes: the Overview's views over the cycle shown, for every
+  // spending account (the Overview's "All spending"), with the total
+  // budgeted on the spending charts; Merchants against the same days of
+  // the cycle before, when the history covers it.
+  const spendingIds = createMemo(() => new Set(data.state.accounts.filter((a) => accountRole(a) === "spending").map((a) => a.id)))
+  const allSpending = createMemo(() => transactions().filter((t) => t.accountId != null && spendingIds().has(t.accountId)))
+  const inCycle = createMemo(() => allSpending().filter((t) => t.dateISO >= cycle().start && t.dateISO <= cycle().end))
+  const cycleViews = () => ui.state.budgetCycleViews.slice(0, cyclePanes()).map((i) => (CHART_VIEWS[i] ?? CHART_VIEWS[0]).view)
+  const cycleShows = (view: string) => (cycleViews() as readonly string[]).includes(view)
+  const cycleSeries = createMemo(() => dailySpendSeries(inCycle(), cycle().start, cycle().end))
+  const cycleInput: OverviewChartInput = {
+    get series() { return cycleSeries() }, get today() { return today() }, get spending() { return allSpending() },
+    get budget() { return split().total || undefined }, names: { current: "This cycle", previous: "Last cycle" }, get weekStart() { return data.state.weekStart },
+    get accounts() { return data.state.accounts }, get transactions() { return transactions() }, get scopeIds() { return spendingIds() },
+    get zeroAxis() { return data.state.uiPrefs.zeroAxis === true }, projection: [],
+  }
+  const cycleCalendar = createMemo(() => (cycleShows("Calendar") ? spendingCalendar(inCycle(), cycle().start, cycle().end, data.state.weekStart) : []))
+  const cycleTrends = createMemo(() => (cycleShows("Trends") ? trendRows(inCycle(), data.state.categories, cycle().start, cycle().end, today(), data.state.weekStart) : { groups: [], rows: [] }))
+  const cycleMerchants = createMemo(() => {
+    if (!cycleShows("Merchants")) return []
+    const before = past()[0]
+    const until = before ? addDays(before.start, elapsed() - 1) : ""
+    return merchantRows(inCycle().filter((t) => t.dateISO <= through()), before ? allSpending().filter((t) => t.dateISO >= before.start && t.dateISO <= until) : null)
+  })
+  const cycleAxis = [AXIS_GUESS, AXIS_GUESS]
+  const cycleModel = (pane: number) => createMemo(() => {
+    if (pane >= cyclePanes()) return null
+    const m = overviewChartModel((CHART_VIEWS[ui.state.budgetCycleViews[pane]!] ?? CHART_VIEWS[0]).view, cycleInput, cyclePaneWidth(pane) - 4, chartRows(cyclePaneHeight(pane), baseline()), cycleAxis[pane])
+    if (m && m.ticks.size) cycleAxis[pane] = axisWidth(m.ticks)
+    return m
+  })
+  const cycleModels = [cycleModel(0), cycleModel(1)]
+  const CyclePane = (p: { pane: number }) => {
+    const section = BUDGET_PANES[p.pane + 1]!
+    const index = () => ui.state.budgetCycleViews[p.pane]!
+    return (
+      <box ref={regionRef(section, "budgets")} width={cyclePaneWidth(p.pane)} height={cyclePaneHeight(p.pane)} flexShrink={0} onMouseDown={panePointer(section)}>
+        <OverviewChartCard index={index()} model={cycleModels[p.pane]!()} calendar={cycleCalendar()} trends={cycleTrends()} merchants={cycleMerchants()} today={today()}
+          width={cyclePaneWidth(p.pane)} height={cyclePaneHeight(p.pane)} focused={props.focused === section} baseline={baseline()}
+          revealKey={data.state.uiPrefs.chartMotion === "always" ? `${(CHART_VIEWS[index()] ?? CHART_VIEWS[0]).view}:${cycle().start}:${seen()}` : undefined}
+          revealMs={data.state.uiPrefs.chartMotion === "always" ? chartSpeedMs(data.state.uiPrefs.chartSpeed) : undefined}
+          curve={data.state.uiPrefs.chartCurve} labels={data.state.uiPrefs.chartLabels} />
+      </box>
+    )
+  }
+
+  // The cycle's calendar, always there: the budget at the cursor's spending
+  // each day so far, and on the days to come, its regular payments due
+  // (expected charges, in caution). Its legend: what's expected by the
+  // cycle's end, and what of the budget that leaves.
+  const expectedCharges = createMemo(() => (view().current ? upcomingCharges(subs(), addDays(today(), 1), cycle().end) : []))
+  const calendarWeeks = createMemo(() => {
+    const weeks = spendingCalendar(subjectRows().filter((t) => t.dateISO >= cycle().start && t.dateISO <= cycle().end), cycle().start, cycle().end, data.state.weekStart)
+    const due = new Map<string, number>()
+    for (const c of expectedCharges()) due.set(c.dateISO, (due.get(c.dateISO) ?? 0) + c.amount)
+    return weeks.map((week) => week.map((d) => (d && due.has(d.dateISO) ? { ...d, expected: due.get(d.dateISO)! } : d)))
+  })
+  const calendarSpans = (): Span[] => {
+    const expected = expectedCharges().reduce((n, c) => n + c.amount, 0)
+    if (!expected) return calendarLegend(calendarWeeks(), today())
+    const amount = subject().amount
+    const free = amount == null ? null : amount - spent() - expected
+    return [
+      { text: "■ ", fg: tone.caution },
+      { text: `${count(expectedCharges().length, "charge")} · ${formatWholeMoney(expected)} expected by ${shortDate(cycle().end)}`, fg: ink.label },
+      ...(free == null ? [] : [{ text: free >= 0 ? ` · ${formatWholeMoney(free)} free after them` : ` · ${formatWholeMoney(-free)} over after them`, fg: free >= 0 ? tone.good : tone.bad }]),
+    ]
+  }
+  const CycleCalendar = () => (
+    <SectionCard title="Calendar" titleSuffix={`· ${subject().title}`} titleSuffixColor={ink.label} bottomSpans={calendarSpans()} width={categoriesWidth()} height={calendarHeight()}>
+      <CalendarView weeks={calendarWeeks()} width={categoriesWidth() - 4} rows={calendarHeight() - 2} today={today()} />
+    </SectionCard>
+  )
+
+  /** A click on a card or pane focuses it. */
+  const panePointer = (id: SectionId) => onPointer((scope) => scope === "bar" || scope.startsWith("budgets"), () => ui.applyJump(id))
+  // Sizes as accessors: a component's body runs once, so a number read here
+  // would keep its first value.
+  const region = (id: SectionId, width: () => number, height: () => number, card: () => JSX.Element) => (
+    <box ref={regionRef(id, "budgets")} width={width()} height={height()} flexShrink={0} onMouseDown={panePointer(id)}>{card()}</box>
+  )
+  const BudgetPane = () => region("bud.chart", chartWidth, chartHeight, () => <Chart />)
+  const BudgetsCard = () => region("bud.list", budgetsWidth, budgetsHeight, () => <Budgets />)
+  const CategoriesCard = () => region("bud.categories", categoriesWidth, categoriesHeight, () => <Categories />)
+
   return (
     <box width="100%" height="100%" flexDirection={wide() ? "row" : "column"} gap={wide() ? 1 : 0} backgroundColor={theme.canvas}>
-      <Show when={wide()} fallback={<><Budgets /><Chart /><Lines /><Categories /></>}>
-        <box flexDirection="column" width={mainWidth()} height={body()}>
-          <Budgets />
-          <Chart />
-          <Lines />
+      <Show when={wide()} fallback={<><BudgetsCard /><BudgetPane /><Lines /><Show when={calendarHeight()}><CycleCalendar /></Show><CategoriesCard /></>}>
+        <Show when={grid()} fallback={
+          <box flexDirection="column" width={mainWidth()} height={body()}>
+            <BudgetPane />
+            <Show when={cyclePanes() > 0}><CyclePane pane={0} /></Show>
+            <box flexDirection={sideBySide() ? "row" : "column"} gap={sideBySide() ? 1 : 0} width={mainWidth()} height={bottomBlock()} flexShrink={0}>
+              <BudgetsCard />
+              <Lines />
+            </box>
+          </box>
+        }>
+          <box flexDirection="column" width={mainWidth()} height={body()}>
+            <box flexDirection="row" gap={1} width={mainWidth()} height={topQuarter()} flexShrink={0}>
+              <BudgetPane />
+              <CyclePane pane={0} />
+            </box>
+            <box flexDirection="row" gap={1} width={mainWidth()} height={bottomQuarter()} flexShrink={0}>
+              <CyclePane pane={1} />
+              <box flexDirection="column" width={halfRight()} height={bottomQuarter()}>
+                <BudgetsCard />
+                <Lines />
+              </box>
+            </box>
+          </box>
+        </Show>
+        <box flexDirection="column" width={categoriesWidth()} height={body()}>
+          <CycleCalendar />
+          <CategoriesCard />
         </box>
-        <Categories />
       </Show>
     </box>
   )
 }
+
+/** Fewest rows a Budgets chart pane gets before the cycle pane gives way. */
+const CYCLE_PANE_MIN = 12
+/** Budgets and each cycle sit side by side when each gets this many columns. */
+const SIDE_BY_SIDE_MIN = 56
