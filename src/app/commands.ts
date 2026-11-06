@@ -66,11 +66,11 @@ function registry(ctx: CommandContext): Entry[] {
     ctx.press(hintEvent(hint)!, `settings.${section}`)
   }
   const inTransactions = (hint: string) => () => { toTransactions(ui); ctx.press(hintEvent(hint)!, "manager.txns") }
-  // The Budgets list owns these keys, including c for the cycle editor.
+  // The Budgets pane owns these keys, including c for the cycle editor.
   const inBudgets = (hint: string) => () => {
     if (ui.state.activeTab !== "budgets") ui.switchTab("budgets")
-    ui.setState({ focusedSection: "bud.list" })
-    ctx.press(hintEvent(hint)!, "budgets")
+    ui.setState({ focusedSection: "bud.categories" })
+    ctx.press(hintEvent(hint)!, "budgets.categories")
   }
   const filter = data.state.filterQuery
   const undo = data.undoLabel()

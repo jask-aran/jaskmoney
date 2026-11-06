@@ -1,7 +1,7 @@
 import { Index, Show, createEffect, createMemo } from "solid-js"
 import { useTerminalDimensions } from "@opentui/solid"
-import { allocation, measuredBudgetIn, cycleFor, budgetCounts, budgetCountsThen, budgetIgnoredIds, budgetProgress, cycleSpending, pastCycles, progressOf, totalBudgetIn, type Budget, type BudgetProgress, type BudgetSubject, type Cycle } from "../../domain/budget"
-import { budgetArmId, budgetListRows, budgetSetupRows, type SetupRow } from "../../domain/budgetLines"
+import { allocation, measuredBudgetIn, cycleFor, budgetCounts, budgetCountsThen, budgetIgnoredIds, budgetProgress, cycleSpending, pastCycles, progressOf, totalBudgetIn, type Budget, type BudgetSubject, type Cycle } from "../../domain/budget"
+import { budgetArmId, budgetSetupRows, overallAverage, type SetupRow } from "../../domain/budgetLines"
 import { sharedBudgetView, sharedCategoryLines } from "../../state/budgetViews"
 import { budgetLabel } from "../../domain/budgetScopes"
 import { dailySpendSeries, formatWholeMoney } from "../../domain/dashboard"
@@ -41,33 +41,6 @@ import { computePosition, projectAvailable, usualDailySpend } from "../../domain
 
 /** Cycles before this one the chart and the cycle lines can show, at most. */
 const HISTORY = 36
-
-/**
- * A bar in `width` cells for `fill` (0–1 of the width), coloured by how
- * it's going (green, yellow ahead of pace, red over budget), with a mark at
- * `mark` (0–1): where spending would be by today at an even pace. Over
- * budget, the bar is scaled to what was spent: green up to the budget,
- * red past it (the change of colour marks it).
- */
-function bar(width: number, used: number, pace: number): Span[] {
-  const over = used > 1
-  const fill = over ? 1 : Math.max(0, used)
-  const mark = over ? 1 / used : pace
-  const filled = Math.round(fill * width)
-  const at = Math.min(width - 1, Math.round(mark * width))
-  const fg = over ? tone.bad : used > pace ? tone.caution : tone.good
-  const spans: Span[] = []
-  for (let i = 0; i < width; i++) {
-    const cell = i === at && !over ? { text: i < filled ? "▌" : "│", fg: ink.figure }
-      : i < filled ? { text: "█", fg: over && i < at ? tone.good : fg }
-      : { text: "─", fg: ink.rule }
-    const last = spans[spans.length - 1]
-    if (last && last.fg === cell.fg) last.text += cell.text
-    else spans.push(cell)
-  }
-  return spans
-}
-
 
 /**
  * The Budgets tab: how a budget is going, at a glance. A chart of the
@@ -115,10 +88,8 @@ export function BudgetsTab(props: { focused: SectionId }) {
     if (scope.kind === "overall") return overallName()
     return scope.kind === "category" ? data.state.categories.find((c) => c.id === scope.categoryId)?.name ?? "(removed category)" : budgetLabel(budget, data.state.accounts, data.state.categories)
   }
-  const TOTAL = "Total budgeted"
+  const ALL = "All spending"
 
-  const rows = createMemo(() => budgetListRows(budgets(), data.state.categories))
-  const budgetCursor = createMemo(() => Math.min(ui.state.budgetCursor, rows().length - 1))
   const progress = createMemo(() => new Map(budgetProgress(budgets(), config(), through(), data.state.accounts, data.state.categories, transactions()).map((p) => [p.budget.id, p])))
   const split = createMemo(() => allocation(budgets(), data.state.categories))
   // The budgets together against what they count between them.
@@ -129,33 +100,28 @@ export function BudgetsTab(props: { focused: SectionId }) {
   })
   const lines = createMemo(() => sharedCategoryLines(config(), through(), data.state.accounts, data.state.categories, budgets(), transactions()))
   const ignored = createMemo(() => budgetIgnoredIds(data.state.categories))
-  // The Budgets pane's rows: the categories, groups closed unless opened
-  // (space); the pay and the target have keys (p, t), not rows.
-  const setup = createMemo(() => budgetSetupRows(lines(), new Set(ui.state.budgetSetupOpen)))
+  // The Budgets pane's rows: All spending (against the target), the
+  // account budgets, then the categories, groups closed unless opened
+  // (space); your pay has a key (p), not a row.
+  const setup = createMemo(() => budgetSetupRows(lines(), new Set(ui.state.budgetSetupOpen), budgets()))
   const categoryCursor = createMemo(() => Math.min(ui.state.budgetCategoryCursor, Math.max(0, setup().length - 1)))
-  const ignoredNames = () => data.state.categories.filter((c) => c.budgetIgnored).map((c) => c.name)
   const firstData = createMemo(() => transactions().reduce((first, t) => (t.dateISO < first ? t.dateISO : first), today()))
 
-  // What the chart follows: the row at the focused card's cursor.
-  // Its rows are judged by the budgets of their own cycle (budgetCountsThen):
-  // rent is everything else only in cycles it had no budget.
+  // What the charts follow: the Budgets pane's row at its cursor (All
+  // spending to start), wherever the focus is. Its rows are judged by the
+  // budgets of their own cycle (budgetCountsThen): rent is everything else
+  // only in cycles it had no budget.
   const subject = createMemo((): { title: string; scope: BudgetSubject | null; counts: (row: Transaction) => boolean; amount: number | null } => {
     const of = (scope: BudgetSubject) => budgetCountsThen(scope, data.state.categories, data.state.budgetHistory, data.state.budgets, config())
-    if (props.focused === "bud.categories") {
-      const at = setup()[categoryCursor()]
-      const line = at?.kind === "line" ? at.line : undefined
-      if (line) {
-        const id = line.categoryId
-        return id === null
-          ? { title: "Uncategorised", scope: null, counts: (row) => row.categoryId === null, amount: null }
-          : { title: line.name, scope: { kind: "category", categoryId: id }, counts: of({ kind: "category", categoryId: id }), amount: line.budget?.amount ?? null }
-      }
+    const at = setup()[categoryCursor()]
+    if (at?.kind === "line") {
+      const line = at.line, id = line.categoryId
+      return id === null
+        ? { title: "Uncategorised", scope: null, counts: (row) => row.categoryId === null, amount: null }
+        : { title: line.name, scope: { kind: "category", categoryId: id }, counts: of({ kind: "category", categoryId: id }), amount: line.budget?.amount ?? null }
     }
-    const row = rows()[budgetCursor()]!
-    if (row.kind === "total") return { title: TOTAL, scope: { kind: "total" }, counts: of({ kind: "total" }), amount: split().total }
-    // Everything else is measured against the cap's rest.
-    const measured = row.budget ? progress().get(row.budget.id)?.budget.amount ?? row.budget.amount : null
-    return row.budget ? { title: label(row.budget), scope: row.budget.scope, counts: of(row.budget.scope), amount: measured } : { title: overallName(), scope: { kind: "overall" }, counts: of({ kind: "overall" }), amount: null }
+    if (at?.kind === "account") return { title: label(at.budget), scope: at.budget.scope, counts: of(at.budget.scope), amount: at.budget.amount }
+    return { title: ALL, scope: { kind: "total" }, counts: of({ kind: "total" }), amount: split().total || null }
   })
   // Every spending row to today, then the subject's: moving the cursor
   // redoes only the second, and each cycle takes its days from it rather
@@ -196,70 +162,46 @@ export function BudgetsTab(props: { focused: SectionId }) {
   const wide = () => dims().width >= WIDE
   const categoriesWidth = () => (wide() ? Math.min(62, Math.max(40, Math.floor((dims().width - 1) * 0.4))) : dims().width)
   const mainWidth = () => (wide() ? dims().width - 1 - categoriesWidth() : dims().width)
-  const summary = createMemo((): Span[] => {
-    const spans: Span[] = []
-    const { allocated, overall, rest } = split()
-    if (allocated > 0) {
-      if (overall == null) spans.push({ text: `Categories ${formatWholeMoney(allocated)} · no overall budget to carve them from`, fg: ink.label })
-      else if (rest! >= 0) spans.push({ text: `Categories ${formatWholeMoney(allocated)} of ${formatWholeMoney(overall)} · everything else ${formatWholeMoney(rest!)}`, fg: ink.label })
-      else spans.push({ text: `Categories ${formatWholeMoney(allocated)}: ${formatWholeMoney(-rest!)} more than your ${formatWholeMoney(overall)}`, fg: tone.caution })
-    }
-    const names = ignoredNames()
-    if (names.length) spans.push({ text: `${spans.length ? " · " : ""}Not budgeted: ${names.join(", ")}`, fg: ink.note })
-    return spans
-  })
-  // The layouts. Wide: the main column, then a side column with the cycle's
-  // calendar over the categories. Two columns (split screen): Progress on
-  // top of the main column, then the budget pane, and a cycle pane under it
-  // when there's height for both. Three columns (full screen, the main
-  // column fits two panes of GRID_PANE_MIN): a 2×2 grid, Progress and the
-  // budget pane on top, two cycle panes below. Narrow: one column, the
-  // budget pane alone.
+  // The layouts. Wide: the main column, then a side column with the
+  // cycle's calendar over the Budgets pane. Two columns (split screen): the
+  // budget pane on top of the main column and a cycle pane under it where
+  // there's height for both; the calendar the budget pane's height, so
+  // Budgets starts on the cycle pane's line. Three columns (full screen,
+  // the main column fits two panes of GRID_PANE_MIN): the budget pane
+  // across the top, two cycle panes under it. Narrow: one column, the
+  // budget pane, the calendar on a tall terminal, the Budgets pane.
   const grid = () => wide() && mainWidth() >= 2 * GRID_PANE_MIN + 1
   const halfLeft = () => Math.ceil((mainWidth() - 1) / 2)
   const halfRight = () => Math.floor((mainWidth() - 1) / 2)
   const topQuarter = () => Math.floor(body() / 2)
   const bottomQuarter = () => body() - topQuarter()
-  // Progress: the budgets (each two lines, hung, when they all fit in the
-  // room the layout gives them, else one; past that the list scrolls),
-  // then a blank line, the Each cycle heading and a line a cycle.
-  const summaryLines = () => (summary().length ? 1 : 0)
-  const progressRoom = () => (grid() ? topQuarter() : wide() ? Math.floor(body() * 0.45) : Math.floor(body() * 0.4))
-  const hung = () => rows().length * 2 + 2 + summaryLines() <= progressRoom() - 4
-  const budgetRoom = () => (hung() ? rows().length : Math.min(rows().length, Math.max(1, Math.floor(progressRoom() * 0.6) - 2 - summaryLines())))
-  const budgetLines = () => budgetRoom() * (hung() ? 2 : 1) + summaryLines()
-  // The cycles fill a grid quarter; elsewhere as many as there are, up to
-  // what the room leaves (at least two).
-  const cycleRoom = () => (grid() ? progressRoom() - 2 - budgetLines() - 2 : Math.min(cycles().length, Math.max(2, progressRoom() - 2 - budgetLines() - 2)))
-  // Two columns: at least the calendar's own height, as the calendar takes
-  // Progress's (so the budget pane and Budgets start on one line).
-  // Tall (a day's amount under its number) where that doesn't cost the
-  // cycle pane its room.
-  const progressOwn = () => 2 + budgetLines() + (cycles().length ? 2 + cycleRoom() : 0)
-  const calendarOwn = () => (body() >= CALENDAR_TALL + 10 && (grid() || body() - Math.max(CALENDAR_TALL, progressOwn()) >= 2 * CYCLE_PANE_MIN || body() - progressOwn() < 2 * CYCLE_PANE_MIN) ? CALENDAR_TALL : CALENDAR_MIN)
-  const progressHeight = () => (grid() ? topQuarter() : Math.max(wide() ? calendarOwn() : 0, progressOwn()))
-  // The charts take the rest: the budget pane, and a cycle pane under it
-  // when both get CYCLE_PANE_MIN rows.
-  const chartArea = () => body() - progressHeight()
-  const cyclePanes = (): 0 | 1 | 2 => (grid() ? 2 : wide() && chartArea() >= 2 * CYCLE_PANE_MIN ? 1 : 0)
-  const chartHeight = () => (grid() ? topQuarter() : wide() ? (cyclePanes() ? Math.ceil(chartArea() / 2) : chartArea()) : Math.max(10, Math.floor(body() * 0.3)))
-  const cyclePaneHeight = (_pane: number) => (grid() ? bottomQuarter() : chartArea() - chartHeight())
-  const progressWidth = () => (grid() ? halfLeft() : mainWidth())
-  const chartWidth = () => (grid() ? halfRight() : mainWidth())
+  const splitTop = () => Math.max(CALENDAR_TALL, Math.floor(body() * 0.45))
+  const cyclePanes = (): 0 | 1 | 2 => (grid() ? 2 : wide() && body() - splitTop() >= CYCLE_PANE_MIN ? 1 : 0)
+  const chartHeight = () => (grid() ? topQuarter() : wide() ? (cyclePanes() ? splitTop() : body()) : Math.max(10, Math.floor(body() * 0.35)))
+  const cyclePaneHeight = (_pane: number) => (grid() ? bottomQuarter() : body() - chartHeight())
+  const chartWidth = () => mainWidth()
   const cyclePaneWidth = (pane: number) => (grid() ? (pane === 0 ? halfLeft() : halfRight()) : mainWidth())
-  // The cycle's calendar (calendarLayout fills what it's given): two
-  // columns, Progress's height, so Budgets' top lines up with the budget
-  // pane's; the grid, a band of two lines a weekday where the tab has the
-  // height, else one; narrow, only on a tall terminal.
-  const calendarHeight = () => (grid() ? calendarOwn() : wide() ? progressHeight() : body() >= 40 ? CALENDAR_MIN : 0)
-  const categoriesHeight = () => (wide() ? body() - calendarHeight() : Math.max(5, body() - chartHeight() - progressHeight() - calendarHeight()))
+  // The cycle's calendar (calendarLayout fills what it's given): the
+  // budget pane's height where a cycle pane is under it, else a band of two
+  // lines a weekday where the tab has the height, else one; narrow, only
+  // on a tall terminal.
+  // Lined up with the budget pane only where the Budgets pane keeps room
+  // under it for its tiles, its top and a few rows.
+  const budgetsNeed = () => 4 + tilesHeight() + topLines().length + Math.min(setup().length, BUDGETS_ROWS_MIN)
+  const calendarHeight = () => {
+    if (!wide()) return body() >= 40 ? CALENDAR_MIN : 0
+    const own = body() >= CALENDAR_TALL + 10 ? CALENDAR_TALL : CALENDAR_MIN
+    if (cyclePanes() && body() - chartHeight() >= budgetsNeed()) return chartHeight()
+    return body() - own >= budgetsNeed() ? own : CALENDAR_MIN
+  }
+  const categoriesHeight = () => (wide() ? body() - calendarHeight() : Math.max(5, body() - chartHeight() - calendarHeight()))
   // The panes the keys and jumps reach follow the layout; focus on one
   // that's gone goes back to the budgets.
   createEffect(() => {
     const n = cyclePanes()
     if (ui.state.budgetCyclePanes !== n) ui.setState({ budgetCyclePanes: n })
     const pane = BUDGET_PANES.indexOf(props.focused)
-    if (pane > n) ui.setState({ focusedSection: "bud.list" })
+    if (pane > n) ui.setState({ focusedSection: "bud.categories" })
   })
   const rowWidth = (width: number) => width - 5
 
@@ -275,7 +217,7 @@ export function BudgetsTab(props: { focused: SectionId }) {
   const dueBeforePayday = () => upcomingCharges(subs(), today(), addDays(payday(), -1)).reduce((sum, c) => sum + c.amount, 0)
   let axisWas = AXIS_GUESS
   const model = createMemo((): ChartModel | null => {
-    if (chartView() === "Subscriptions") return null
+    if (chartView() === "Subscriptions" || chartView() === "Each cycle") return null
     // Border (2), the x-axis line (a setting) and the x labels.
     const height = Math.max(3, chartHeight() - (baseline() ? 4 : 3))
     const series = dailySpendSeries(subjectRows(), cycle().start, cycle().end)
@@ -287,47 +229,7 @@ export function BudgetsTab(props: { focused: SectionId }) {
     return built
   })
 
-  // One budget in the Budgets card: its bar against an even pace, spent of
-  // budget, what's left (a day) or over.
-  const listFocused = () => props.focused === "bud.list"
   const categoriesFocused = () => props.focused === "bud.categories"
-  const LABEL = () => Math.min(22, Math.max(18, ...rows().map((r) => (r.budget ? label(r.budget).length + 2 : r.kind === "total" ? TOTAL.length + 2 : 18))))
-  const tight = () => rowWidth(progressWidth()) - LABEL() - 45 < 10
-  const BAR = () => Math.max(tight() ? 4 : 6, Math.min(48, rowWidth(progressWidth()) - LABEL() - (tight() ? 36 : 45)))
-  const budgetSpans = (p: BudgetProgress | undefined): Span[] => {
-    if (!p) return []
-    const budget = p.budget
-    const used = budget.amount > 0 ? p.spent / budget.amount : p.spent > 0 ? 2 : 0
-    const verdict = p.remaining < 0 ? { text: `${formatWholeMoney(-p.remaining)} over`, fg: tone.bad } : { text: `${formatWholeMoney(p.remaining)} left · ${formatWholeMoney(p.dailyAllowance)}/day`, fg: tone.good }
-    // Narrow, the figures drop their alignment, and then go, before what's
-    // left or over does.
-    const figures = { text: tight() ? ` ${formatWholeMoney(p.spent)} of ${formatWholeMoney(budget.amount)} ` : `  ${formatWholeMoney(p.spent).padStart(7)} of ${formatWholeMoney(budget.amount).padEnd(7)}  `, fg: ink.label }
-    const room = rowWidth(progressWidth()) - LABEL() - BAR()
-    return [...bar(BAR(), used, pace()), ...(figures.text.length + verdict.text.length <= room ? [figures] : [{ text: " ", fg: ink.label }]), verdict]
-  }
-  // A budget on two lines: its name and spent of budget hung from the bar's
-  // left end (╭), what's left a day or over from its right (╮), and the bar
-  // the row's width under them. A budget not set says how to set one over a
-  // faint rule. No wash marks the cursor here: its name and corners take the
-  // focus colour.
-  const hungSpans = (name: Span, p: BudgetProgress | undefined, unset: string, cursor: boolean): [Span[], Span[]] => {
-    const width = rowWidth(progressWidth())
-    const corner = (text: string): Span => ({ text, fg: cursor ? tone.focus : ink.note, bold: cursor })
-    if (cursor) name = { ...name, fg: tone.focus }
-    const line = (left: Span[], right: Span[]): Span[] => {
-      const used = [...left, ...right].reduce((n, span) => n + span.text.length, 0)
-      return fitSpans([...left, { text: " ".repeat(Math.max(1, width - used)), fg: ink.note }, ...right], width)
-    }
-    if (!p) return [line([corner("╭ "), name, { text: `  ${unset}`, fg: ink.note }], [corner(" ╮")]), [{ text: "─".repeat(width), fg: ink.rule }]]
-    const budget = p.budget
-    const used = budget.amount > 0 ? p.spent / budget.amount : p.spent > 0 ? 2 : 0
-    const verdict = p.remaining < 0 ? { text: `${formatWholeMoney(-p.remaining)} over`, fg: tone.bad } : { text: `${formatWholeMoney(p.remaining)} left · ${formatWholeMoney(p.dailyAllowance)}/day`, fg: tone.good }
-    return [
-      line([corner("╭ "), name, { text: `  ${formatWholeMoney(p.spent)} of ${formatWholeMoney(budget.amount)}`, fg: ink.label }], [verdict, corner(" ╮")]),
-      bar(width, used, pace()),
-    ]
-  }
-  const budgetTop = createMemo(() => centredTop(budgetCursor(), rows().length, budgetRoom()))
 
   const spendingIds = createMemo(() => new Set(data.state.accounts.filter((a) => accountRole(a) === "spending").map((a) => a.id)))
   const allSpending = createMemo(() => transactions().filter((t) => t.accountId != null && spendingIds().has(t.accountId)))
@@ -389,7 +291,22 @@ export function BudgetsTab(props: { focused: SectionId }) {
     ]
   }
   const overallBudget = () => budgets().find((b) => b.scope.kind === "overall") ?? null
-  // The pane's top, on Progress's grid: headings and rows from the left,
+  // All spending: the table's total, against the overall spending target
+  // (or with none, the category budgets added up); an account's budget.
+  const figureRow = (name: string, nameFg: string, spentNow: number, average: number | null, budget: number | null): Span[] => [
+    { text: "  ", fg: ink.note },
+    { text: fit(name, nameWidth() - 2), fg: nameFg, bold: true },
+    { text: formatWholeMoney(spentNow).padStart(NUM), fg: budget != null && spentNow > budget ? tone.bad : nameFg },
+    ...(withAverage() ? [{ text: (average == null ? "" : formatWholeMoney(average)).padStart(NUM), fg: ink.note }] : []),
+    { text: (budget == null ? "" : formatWholeMoney(budget)).padStart(NUM), fg: ink.figure },
+  ]
+  const rowSpans = (row: SetupRow): Span[] => {
+    if (row.kind === "line") return lineSpans(row)
+    if (row.kind === "account") return figureRow(label(row.budget), ink.figure, progress().get(row.budget.id)?.spent ?? 0, null, row.budget.amount)
+    return figureRow(ALL, ink.strong, totalProgress().spent, overallAverage(lines(), ignored()), split().total || null)
+  }
+  const rowBudget = (row: SetupRow) => (row.kind === "line" ? row.line.budget : row.kind === "account" ? row.budget : overallBudget())
+  // The pane's top, on the table's grid: headings and rows from the left,
   // notes two in, figures at the row's end; the pictures the row's width.
   const heading = (text: string, figure = ""): Span[] => {
     const width = rowWidth(categoriesWidth())
@@ -463,72 +380,34 @@ export function BudgetsTab(props: { focused: SectionId }) {
   const Chart = () => (
     <ChartCard scope={subject().title} views={BUDGET_VIEWS} current={ui.state.budgetChart} model={model()} width={chartWidth()} height={chartHeight()} baseline={baseline()}
       focused={props.focused === "bud.chart"}
-      legend={subscriptionsLegend(subs(), dueBeforePayday())}
-      fallback={<SubscriptionsView list={subs()} width={chartWidth() - 4} rows={chartHeight() - 2} today={today()} payday={payday()} />}
+      legend={chartView() === "Each cycle" ? (cycles().length ? cycleLinesLegend(cycles()) : undefined) : subscriptionsLegend(subs(), dueBeforePayday())}
+      fallback={chartView() === "Each cycle" ? <EachCycle /> : <SubscriptionsView list={subs()} width={chartWidth() - 4} rows={chartHeight() - 2} today={today()} payday={payday()} />}
       revealKey={data.state.uiPrefs.chartMotion === "always" ? `${(BUDGET_VIEWS[ui.state.budgetChart] ?? BUDGET_VIEWS[0]!).view}:${subject().title}:${seen()}` : undefined}
       revealMs={data.state.uiPrefs.chartMotion === "always" ? chartSpeedMs(data.state.uiPrefs.chartSpeed) : undefined}
       curve={data.state.uiPrefs.chartCurve}
       labels={data.state.uiPrefs.chartLabels} />
   )
-  // Progress: where each budget stands this cycle, then (a blank line
-  // apart) the budget at the cursor cycle by cycle; Each cycle's legend in
-  // the bottom border.
-  const Progress = () => (
-    <SectionCard title="Progress" titleSuffix={view().current ? `· day ${elapsed()} of ${cycle().days}` : `· ${period()} · ] later`} titleSuffixColor={view().current ? tone.scope : tone.caution} focused={listFocused()} width={progressWidth()} height={progressHeight()}
-      bottomSpans={cycles().length ? cycleLinesLegend(cycles()) : undefined}>
-      <Index each={rows().slice(budgetTop(), budgetTop() + budgetRoom())}>{(row, i) => {
-        const at = () => listFocused() && budgetTop() + i === budgetCursor()
-        const armed = () => (row().budget ? armedFor(ui.state.armed, "budget", budgetArmId(row().budget!, cycle().start)) : undefined)
-        const twoLines = (): [Span[], Span[]] => {
-          const r = row()
-          if (r.kind === "total") return hungSpans({ text: TOTAL, fg: ink.strong, bold: true }, totalProgress(), "", at())
-          if (r.budget) return hungSpans({ text: label(r.budget), fg: ink.figure, bold: true }, progress().get(r.budget.id), "", at())
-          return hungSpans({ text: overallName(), fg: ink.figure, bold: true }, undefined, `not set: enter sets one${hasCategoryBudgets() ? " for the rest" : ""}`, at())
-        }
-        const spans = (): Span[] => {
-          const r = row()
-          if (r.kind === "total") return fitSpans([{ text: fit(TOTAL, LABEL()), fg: ink.strong, bold: true }, ...budgetSpans(totalProgress())], rowWidth(progressWidth()))
-          if (r.budget) return fitSpans([{ text: fit(label(r.budget), LABEL()), fg: ink.figure, bold: true }, ...budgetSpans(progress().get(r.budget.id))], rowWidth(progressWidth()))
-          return fitSpans([{ text: fit(overallName(), LABEL()), fg: ink.figure, bold: true }, { text: `not set: enter sets one${hasCategoryBudgets() ? " for the rest" : ""}`, fg: ink.note }], rowWidth(progressWidth()))
-        }
-        return (
-          <Show when={hung()} fallback={<ListRow cursor={at()} bg={theme.canvas} armed={armed()} spans={spans()} />}>
-            <ListRow cursor={false} bg={theme.canvas} armed={armed()} spans={twoLines()[0]} />
-            <ListRow cursor={false} bg={theme.canvas} spans={twoLines()[1]} />
-          </Show>
-        )
-      }}</Index>
-      <Show when={summary().length}>
-        <text wrapMode="none">
-          <S fg={ink.note}>{" "}</S>
-          <Index each={fitSpans(summary(), rowWidth(progressWidth()))}>{(span) => <S fg={span().fg}>{span().text}</S>}</Index>
-        </text>
-      </Show>
-      <Show when={cycles().length}>
-        <text wrapMode="none">{" "}</text>
-        <text wrapMode="none">
-          <S fg={ink.heading} bold>{" Each cycle"}</S>
-          <S fg={ink.label}>{` · ${subject().title}`}</S>
-        </text>
-        <Index each={cycleLines(cycles().slice(0, Math.max(1, cycleRoom())), rowWidth(progressWidth()), pace(), today())}>{(spans) => (
-          <text wrapMode="none">
-            <S fg={ink.note}>{" "}</S>
-            <Index each={spans()}>{(span) => <S fg={span().fg} bold={span().bold}>{span().text}</S>}</Index>
-          </text>
-        )}</Index>
-      </Show>
-    </SectionCard>
+  // Each cycle: the subject cycle by cycle, newest first, each against the
+  // budget then, as many as fit.
+  const EachCycle = () => (
+    <Index each={cycleLines(cycles().slice(0, Math.max(1, chartHeight() - 2)), chartWidth() - 4, pace(), today())}>{(spans) => (
+      <text wrapMode="none">
+        <Index each={spans()}>{(span) => <S fg={span().fg} bold={span().bold}>{span().text}</S>}</Index>
+      </text>
+    )}</Index>
   )
   const Categories = () => (
-    <SectionCard title="Budgets" titleSuffix={nothingSet() ? "· start here" : undefined}
-      titleSuffixColor={nothingSet() ? tone.caution : ink.note} focused={categoriesFocused()} width={categoriesWidth()} height={categoriesHeight()}>
+    <SectionCard title="Budgets" titleSuffix={nothingSet() ? "· start here" : view().current ? `· day ${elapsed()} of ${cycle().days}` : `· ${period()} · ] later`}
+      titleSuffixColor={nothingSet() || !view().current ? tone.caution : tone.scope} focused={categoriesFocused()} width={categoriesWidth()} height={categoriesHeight()}>
       <Show when={tiles()}>
         <box paddingLeft={1} height={TILE_HEIGHT} flexShrink={0}><PaydayTiles width={rowWidth(categoriesWidth())} next={addDays(cycle().end, 1)} today={today()}
           perDay={overallBudget() ? { remaining: totalProgress().remaining, daily: totalProgress().dailyAllowance } : null} /></box>
         <text wrapMode="none">{" "}</text>
       </Show>
       <Index each={topLines()}>{(line) => (
-        <text wrapMode="none">
+        // Never shrunk: past the pane's height, lines clip rather than
+        // overlap.
+        <text wrapMode="none" flexShrink={0}>
           <S>{" "}</S>
           <Index each={line().spans}>{(span) => <S fg={span().fg} bg={line().bg} bold={span().bold}>{span().text}</S>}</Index>
           <Show when={line().bg}><S bg={line().bg}>{" ".repeat(Math.max(0, rowWidth(categoriesWidth()) - line().spans.reduce((n, x) => n + x.text.length, 0)))}</S></Show>
@@ -542,7 +421,7 @@ export function BudgetsTab(props: { focused: SectionId }) {
           <S fg={ink.label}>{"Spent".padStart(NUM)}{withAverage() ? "Average".padStart(NUM) : ""}{"Budget".padStart(NUM)}</S>
         </text>
         <Index each={categoryLines().slice(categoryTop(), categoryTop() + categoryRoom())}>{(row, i) => (
-          <ListRow cursor={categoriesFocused() && categoryTop() + i === categoryCursor()} bg={theme.canvas} armed={row().line.budget ? armedFor(ui.state.armed, "budget", budgetArmId(row().line.budget!, cycle().start)) : undefined} spans={lineSpans(row())} />
+          <ListRow cursor={categoriesFocused() && categoryTop() + i === categoryCursor()} bg={theme.canvas} armed={rowBudget(row()) ? armedFor(ui.state.armed, "budget", budgetArmId(rowBudget(row())!, cycle().start)) : undefined} spans={rowSpans(row())} />
         )}</Index>
       </Show>
     </SectionCard>
@@ -639,24 +518,19 @@ export function BudgetsTab(props: { focused: SectionId }) {
     <box ref={regionRef(id, "budgets")} width={width()} height={height()} flexShrink={0} onMouseDown={panePointer(id)}>{card()}</box>
   )
   const BudgetPane = () => region("bud.chart", chartWidth, chartHeight, () => <Chart />)
-  const ProgressCard = () => region("bud.list", progressWidth, progressHeight, () => <Progress />)
   const CategoriesCard = () => region("bud.categories", categoriesWidth, categoriesHeight, () => <Categories />)
 
   return (
     <box width="100%" height="100%" flexDirection={wide() ? "row" : "column"} gap={wide() ? 1 : 0} backgroundColor={theme.canvas}>
-      <Show when={wide()} fallback={<><ProgressCard /><BudgetPane /><Show when={calendarHeight()}><CycleCalendar /></Show><CategoriesCard /></>}>
+      <Show when={wide()} fallback={<><BudgetPane /><Show when={calendarHeight()}><CycleCalendar /></Show><CategoriesCard /></>}>
         <Show when={grid()} fallback={
           <box flexDirection="column" width={mainWidth()} height={body()}>
-            <ProgressCard />
             <BudgetPane />
             <Show when={cyclePanes() > 0}><CyclePane pane={0} /></Show>
           </box>
         }>
           <box flexDirection="column" width={mainWidth()} height={body()}>
-            <box flexDirection="row" gap={1} width={mainWidth()} height={topQuarter()} flexShrink={0}>
-              <ProgressCard />
-              <BudgetPane />
-            </box>
+            <BudgetPane />
             <box flexDirection="row" gap={1} width={mainWidth()} height={bottomQuarter()} flexShrink={0}>
               <CyclePane pane={0} />
               <CyclePane pane={1} />
@@ -676,6 +550,9 @@ export function BudgetsTab(props: { focused: SectionId }) {
 const CALENDAR_MIN = 10
 /** Its height with two lines a weekday (each day's amount under its number). */
 const CALENDAR_TALL = 17
+
+/** The Budgets pane's fewest table rows before the calendar gives way. */
+const BUDGETS_ROWS_MIN = 5
 
 /** Fewest rows a Budgets chart pane gets before the cycle pane gives way. */
 const CYCLE_PANE_MIN = 12

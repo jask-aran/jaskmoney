@@ -27,8 +27,8 @@ import { RULE_AFTER } from "../domain/ruleOffers"
 import { endTagReview, runTagAccept, startTagReview } from "./tagReview"
 import { budgetLabel, budgetScopeOptions, scopeKey, scopeOfKey } from "../domain/budgetScopes"
 import { usualPay } from "../domain/payday"
-import { allocation, budgetIgnoredIds, cycleAt, type Budget, type BudgetScope, type CycleConfig } from "../domain/budget"
-import { budgetArmId, budgetListRows, budgetSetupRows, overallAverage, type BudgetLine, type SetupRow } from "../domain/budgetLines"
+import { budgetIgnoredIds, cycleAt, type Budget, type BudgetScope, type CycleConfig } from "../domain/budget"
+import { budgetArmId, budgetSetupRows, overallAverage, type BudgetLine, type SetupRow } from "../domain/budgetLines"
 import { sharedBudgetView, sharedCategoryLines } from "../state/budgetViews"
 import { MERCHANT_SORTS, groupByMerchant, merchantFilter, sortMerchantGroups } from "../domain/merchants"
 import { anchorDraft, cycleFromDraft, editorFields, normaliseCycleDraft, pickerChoices, pickerItems, stepChoice } from "../state/settingsForm"
@@ -1916,61 +1916,24 @@ function budgetKeys(ui: UiStore, key: KeyEvent, data: DataStore, pane = 0): bool
 function handleBudgetChart(ui: UiStore, key: KeyEvent, data?: DataStore): void {
   const { name } = key
   if (!data) return
-  if (name === "escape") { ui.setState({ focusedSection: "bud.list" }); return }
+  if (name === "escape") { ui.setState({ focusedSection: "bud.categories" }); return }
   if (name === "j" || name === "down") { travel(ui, "down", data); return }
   if (name === "k" || name === "up") { travel(ui, "up", data); return }
   budgetKeys(ui, key, data, Math.max(0, BUDGET_PANES.indexOf(ui.state.focusedSection)))
 }
 
-/** The Budgets tab's Progress card (its budgets): enter edits a budget
- * (the total is theirs added up: it has none of its own), a adds, del twice
- * deletes; j past the end or k above the start go to the pane that way. */
-function handleBudgets(ui: UiStore, key: KeyEvent, data?: DataStore): void {
-  const { name } = key
-  if (!data) return
-  if (budgetKeys(ui, key, data)) return
-  const view = viewedBudgets(ui, data)
-  const rows = budgetListRows(view.budgets, data.state.categories)
-  const row = rows[Math.min(ui.state.budgetCursor, rows.length - 1)]!
-  // Past the last budget or above the first: the pane in that direction
-  // (Progress tops the main column: the budget pane is under it).
-  if ((name === "j" || name === "down") && ui.state.budgetCursor >= rows.length - 1) { travel(ui, "down", data); return }
-  if ((name === "k" || name === "up") && ui.state.budgetCursor === 0) { travel(ui, "up", data); return }
-  const moved = listMove(key, ui.state.budgetCursor, rows.length)
-  if (moved != null) { ui.setState({ budgetCursor: moved }); return }
-  if (name === "a") {
-    const taken = new Set(data.state.budgets.map((b) => scopeKey(b.scope)))
-    const free = budgetScopeOptions(data.state.accounts, data.state.categories).find((o) => !taken.has(o.key))
-    ui.openSettingsEditor("budget", null, { ...ui.state.settingsDraft, ...cycleDraft(data.state.budgetCycle), scopeKey: free?.key ?? "overall", amount: "" })
-    return
-  }
-  if (name === "return" || name === "enter") {
-    // The total is the overall budget, the cap (or with none, the category
-    // budgets added up: enter sets a cap from them); everything else is
-    // what it leaves, so both edit the cap.
-    if (row.kind === "total" || row.kind === "overall") {
-      const overall = view.budgets.find((b) => b.scope.kind === "overall") ?? null
-      openBudgetEditor(ui, data, overall, { kind: "overall" }, overall ? 0 : allocation(view.budgets, data.state.categories).allocated)
-    }
-    else openBudgetEditor(ui, data, row.budget, row.budget.scope, row.budget.amount)
-    return
-  }
-  if ((name === "delete" || name === "backspace") && row.budget) {
-    confirmTwice(ui, data, { kind: "budget", id: budgetArmId(row.budget, view.cycle.start), label: `the ${budgetLabel(row.budget, data.state.accounts, data.state.categories)} budget${view.current ? "" : ` from ${shortDate(view.cycle.start)}`}`, with: "delete" })
-  }
-}
-
 /** The Budgets pane's rows, as the tab draws them. */
 function setupRows(ui: UiStore, data: DataStore): SetupRow[] {
-  return budgetSetupRows(budgetLines(ui, data), new Set(ui.state.budgetSetupOpen))
+  return budgetSetupRows(budgetLines(ui, data), new Set(ui.state.budgetSetupOpen), viewedBudgets(ui, data).budgets)
 }
 
 /** The Budgets tab's Budgets pane: p sets your pay each payday (from your
- * usual pay), t the overall spending target (a new one from its average);
- * enter sets or edits the budget of the group or category at the cursor (a new one starts from its average:
- * allocating down), space opens or closes a group, del twice removes a
- * budget, x leaves a category out of the overall budget (or brings it
- * back); k past the top goes back to Progress. */
+ * usual pay), t the overall spending target (a new one from its average),
+ * a adds a budget on anything; enter sets or edits the budget of the row
+ * at the cursor (All spending: the target; a new category's starts from
+ * its average: allocating down), space opens or closes a group, del twice
+ * removes a budget, x leaves a category out of the overall budget (or
+ * brings it back); k past the top goes to the pane above. */
 function handleBudgetCategories(ui: UiStore, key: KeyEvent, data?: DataStore): void {
   const { name } = key
   if (!data) return
@@ -1978,10 +1941,8 @@ function handleBudgetCategories(ui: UiStore, key: KeyEvent, data?: DataStore): v
   const view = viewedBudgets(ui, data)
   const rows = setupRows(ui, data)
   const cursor = Math.min(ui.state.budgetCategoryCursor, Math.max(0, rows.length - 1))
-  if ((name === "k" || name === "up") && cursor === 0) {
-    ui.setState({ focusedSection: "bud.list", budgetCursor: budgetListRows(view.budgets, data.state.categories).length - 1 })
-    return
-  }
+  // Above the first row: the pane in that direction.
+  if ((name === "k" || name === "up") && cursor === 0) { travel(ui, "up", data); return }
   const moved = listMove(key, cursor, rows.length)
   if (moved != null) { ui.setState({ budgetCategoryCursor: moved }); return }
   // Your pay each payday, from your usual pay (empty clears it).
@@ -1996,8 +1957,29 @@ function handleBudgetCategories(ui: UiStore, key: KeyEvent, data?: DataStore): v
     openBudgetEditor(ui, data, overall, { kind: "overall" }, overallAverage(budgetLines(ui, data), budgetIgnoredIds(data.state.categories)))
     return
   }
+  // a: a new budget, on whatever it covers (the first scope without one).
+  if (name === "a" && !key.shift) {
+    const taken = new Set(data.state.budgets.map((b) => scopeKey(b.scope)))
+    const free = budgetScopeOptions(data.state.accounts, data.state.categories).find((o) => !taken.has(o.key))
+    ui.openSettingsEditor("budget", null, { ...ui.state.settingsDraft, ...cycleDraft(data.state.budgetCycle), scopeKey: free?.key ?? "overall", amount: "" })
+    return
+  }
   const row = rows[cursor]
   if (!row) return
+  const removeTwice = (budget: Budget, label: string) =>
+    confirmTwice(ui, data, { kind: "budget", id: budgetArmId(budget, view.cycle.start), label: `the ${label} budget${view.current ? "" : ` from ${shortDate(view.cycle.start)}`}`, with: "delete" })
+  // All spending: the overall spending target (as t); del twice removes it.
+  if (row.kind === "total") {
+    const overall = view.budgets.find((b) => b.scope.kind === "overall") ?? null
+    if (name === "return" || name === "enter") openBudgetEditor(ui, data, overall, { kind: "overall" }, overallAverage(budgetLines(ui, data), budgetIgnoredIds(data.state.categories)))
+    else if ((name === "delete" || name === "backspace") && overall) removeTwice(overall, "overall spending target's")
+    return
+  }
+  if (row.kind === "account") {
+    if (name === "return" || name === "enter") openBudgetEditor(ui, data, row.budget, row.budget.scope, row.budget.amount)
+    else if (name === "delete" || name === "backspace") removeTwice(row.budget, budgetLabel(row.budget, data.state.accounts, data.state.categories))
+    return
+  }
   const line = row.line
   if (name === "space" || key.sequence === " ") {
     if (row.open === null || line.categoryId === null) return
@@ -2645,11 +2627,6 @@ const scopes: Record<ScopeId, ScopeEntry> = {
       { key: "v", desc: "jump" },
     ],
   },
-  "budgets": {
-    handle: handleBudgets,
-    list: true,
-    hints: (state) => [{ key: "j/k", desc: "move" }, { key: "enter", desc: "edit" }, { key: "a", desc: "add" }, { key: "del del", desc: "delete" }, { key: "h/l", desc: "chart" }, ...cycleChartHint(state), { key: "[ ]", desc: "cycles" }, { key: "c", desc: "cycle" }, { key: "v", desc: "jump" }, { key: "1-4", desc: "tab" }],
-  },
   "budgets.chart": {
     handle: handleBudgetChart,
     list: true,
@@ -2658,7 +2635,7 @@ const scopes: Record<ScopeId, ScopeEntry> = {
   "budgets.categories": {
     handle: handleBudgetCategories,
     list: true,
-    hints: (state) => [{ key: "j/k", desc: "move" }, { key: "enter", desc: "set budget" }, { key: "space", desc: "open" }, { key: "x", desc: "leave out" }, { key: "del del", desc: "remove budget" }, { key: "p", desc: "pay" }, { key: "t", desc: "target" }, { key: "h/l", desc: "chart" }, ...cycleChartHint(state), { key: "[ ]", desc: "cycles" }, { key: "c", desc: "cycle" }, { key: "v", desc: "jump" }, { key: "1-4", desc: "tab" }],
+    hints: (state) => [{ key: "j/k", desc: "move" }, { key: "enter", desc: "set budget" }, { key: "space", desc: "open" }, { key: "x", desc: "leave out" }, { key: "del del", desc: "remove budget" }, { key: "a", desc: "add" }, { key: "p", desc: "pay" }, { key: "t", desc: "target" }, { key: "h/l", desc: "chart" }, ...cycleChartHint(state), { key: "[ ]", desc: "cycles" }, { key: "c", desc: "cycle" }, { key: "v", desc: "jump" }, { key: "1-4", desc: "tab" }],
   },
   "manager.merchants": {
     handle: handleManagerMerchants,

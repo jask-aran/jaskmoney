@@ -44,7 +44,6 @@ export type SectionId =
   | "set.up"
   | "set.ai"
   | "set.web"
-  | "bud.list"
   | "bud.categories"
   | "bud.chart"
   | "bud.cycle"
@@ -78,7 +77,6 @@ export type ScopeId =
   | "settings.ai"
   | "settings.web"
   | "settings.importHistory"
-  | "budgets"
   | "budgets.categories"
   | "budgets.chart"
   | "manager.detail"
@@ -311,7 +309,7 @@ export interface UiState {
 export const TAB_DEFAULT_FOCUS: Record<TabId, SectionId> = {
   overview: "none",
   manager: "mgr.transactions",
-  budgets: "bud.list",
+  budgets: "bud.categories",
   settings: "none",
 }
 
@@ -358,6 +356,8 @@ export const BUDGET_VIEWS = [
   ...CHART_VIEWS.filter((v) => v.group === "Spending"),
   // The regular payments the budget counts, its fixed costs (not a chart).
   { view: "Subscriptions", title: "Subscriptions", group: "Subscriptions", ranged: false },
+  // The budget cycle by cycle against what it was then (not a chart).
+  { view: "Each cycle", title: "Each cycle", group: "Each cycle", ranged: false },
 ] as const
 
 /** The Budgets tab's cycle panes' views (indexes into CHART_VIEWS): the
@@ -393,7 +393,6 @@ export const JUMP_TARGETS: Record<TabId, JumpTarget[]> = {
     { key: "t", section: "mgr.transactions", label: "Transactions" },
   ],
   budgets: [
-    { key: "p", section: "bud.list", label: "Progress" },
     { key: "c", section: "bud.categories", label: "Budgets" },
     { key: "t", section: "bud.chart", label: "Budget chart" },
     { key: "y", section: "bud.cycle", label: "Cycle chart" },
@@ -830,7 +829,7 @@ function createUiStore() {
     }
     if (state.focusedSection.startsWith("bar.")) return "bar"
     if (state.activeTab === "overview") return state.focusedSection === "ov.range" ? "overview.range" : "overview"
-    if (state.activeTab === "budgets") return state.focusedSection === "bud.categories" ? "budgets.categories" : BUDGET_PANES.includes(state.focusedSection) ? "budgets.chart" : "budgets"
+    if (state.activeTab === "budgets") return BUDGET_PANES.includes(state.focusedSection) ? "budgets.chart" : "budgets.categories"
     if (state.activeTab === "manager") {
       if (state.focusedSection === "mgr.accounts") return "manager.accounts"
       return state.txnView === "merchants" ? "manager.merchants" : "manager.txns"

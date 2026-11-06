@@ -451,12 +451,12 @@ describe("key router", () => {
     expect(ui.activeScope()).toBe("settings.up")
   })
 
-  test("Budgets tab (3): c edits the cycle; h/l switch the chart; budgets delete on del del; v c goes to the categories", async () => {
+  test("Budgets tab (3): c edits the cycle; h/l switch the chart; the target deletes on del del from All spending; v t goes to the budget pane", async () => {
     data.init(":memory:")
     ui.switchTab("overview")
     handleKey(ui, key("3"), data)
     expect(ui.state.activeTab).toBe("budgets")
-    expect(ui.activeScope()).toBe("budgets")
+    expect(ui.activeScope()).toBe("budgets.categories")
     handleKey(ui, key("c"), data)
     expect(ui.state.settingsEditor?.kind).toBe("cycle")
     ui.setState({ settingsEditor: null })
@@ -466,14 +466,17 @@ describe("key router", () => {
     handleKey(ui, key("h"), data)
     expect(ui.state.budgetChart).toBe(0)
     await data.setBudget({ kind: "overall" }, 500)
-    ui.setState({ budgetCursor: 0 })
+    // All spending, the Budgets pane's first row, is the target.
+    ui.setState({ budgetCategoryCursor: 0 })
     handleKey(ui, key("delete"), data)
     expect(ui.state.armed?.kind).toBe("budget")
     handleKey(ui, key("delete"), data)
     expect(data.state.budgets).toEqual([])
-    expect(footerHints("budgets").some((h) => h.key === "c")).toBe(true)
-    // The categories: v then c.
-    handleKey(ui, key("v"), data); handleKey(ui, key("c"), data)
+    expect(footerHints("budgets.categories").some((h) => h.key === "c")).toBe(true)
+    // The budget pane: v then t; esc back to the Budgets pane.
+    handleKey(ui, key("v"), data); handleKey(ui, key("t"), data)
+    expect(ui.activeScope()).toBe("budgets.chart")
+    handleKey(ui, key("escape"), data)
     expect(ui.activeScope()).toBe("budgets.categories")
     handleKey(ui, key("4"), data)
     expect(ui.state.activeTab).toBe("settings")

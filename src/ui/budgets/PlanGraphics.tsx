@@ -44,9 +44,10 @@ function cellsOf(amounts: number[], width: number): number[] {
  * bad, between the target and savers: it comes out of what savers get,
  * as the next top-up keeps that much more of the pay. Then savers, what's
  * left of the pay, in good. Past the pay too, the bar is the spending.
- * Under it a bracket a part (the target: what's spent and left, or the
- * target once it's gone; how far over; savers), then the categories'
- * legend, spent of budget. With no pay set, there are no savers.
+ * Under it two brackets: spending (over the target and any overspend:
+ * what's spent of the target, and what's left or how far over) and
+ * savers; then the categories' legend, spent of budget. With no pay set,
+ * there are no savers.
  */
 export function payBar(width: number, pay: number | null, target: number, categories: PayPart[], restSpent: number): Span[][] {
   const allocated = categories.reduce((n, c) => n + c.amount, 0)
@@ -86,16 +87,28 @@ export function payBar(width: number, pay: number | null, target: number, catego
     return [{ text: " ".repeat(left), fg: ink.rule }, ...bare, { text: " ".repeat(room - left), fg: ink.rule }]
   }
   const money = (text: string, fg: string = ink.figure): Span => ({ text, fg })
-  const targetLabels: Span[][] = spent >= target
-    ? [[{ text: "target ", fg: ink.label }, money(formatWholeMoney(target))], [money(formatWholeMoney(target))]]
+  // Spending's bracket spans the target and any overspend: what's spent of
+  // the target and what's left, or how far over; savers have their own.
+  const of = [{ text: " of ", fg: ink.note }, money(formatWholeMoney(target))]
+  const slash = [{ text: "/", fg: ink.note }, money(formatWholeMoney(target))]
+  const dot: Span = { text: " · ", fg: ink.note }
+  const spendLabels: Span[][] = over > 0
+    ? [
+      [money(formatWholeMoney(spent)), ...of, dot, money(`${formatWholeMoney(over)} over`, tone.bad)],
+      [money(formatWholeMoney(spent)), ...slash, dot, money(`${formatWholeMoney(over)} over`, tone.bad)],
+      [money(formatWholeMoney(spent)), dot, money(`${formatWholeMoney(over)} over`, tone.bad)],
+      [money(`${formatWholeMoney(over)} over`, tone.bad)],
+      [money(`+${formatWholeMoney(over)}`, tone.bad)],
+    ]
     : [
-      [{ text: "spent ", fg: ink.label }, money(formatWholeMoney(spent)), { text: " · ", fg: ink.note }, money(`${formatWholeMoney(target - spent)} left`)],
+      [money(formatWholeMoney(spent)), ...of, dot, money(`${formatWholeMoney(target - spent)} left`)],
+      [money(formatWholeMoney(spent)), ...slash, dot, money(`${formatWholeMoney(target - spent)} left`)],
+      [money(formatWholeMoney(spent)), ...of],
       [money(`${formatWholeMoney(target - spent)} left`)],
       [money(formatWholeMoney(target - spent))],
     ]
   const brackets: Span[] = [
-    ...bracket(cellsIn("target"), targetLabels),
-    ...bracket(cellsIn("over"), [[money(`${formatWholeMoney(over)} over`, tone.bad)], [money(`+${formatWholeMoney(over)}`, tone.bad)]]),
+    ...bracket(cellsIn("target") + cellsIn("over"), spendLabels),
     ...bracket(cellsIn("savers"), [[{ text: "savers ", fg: ink.label }, money(formatWholeMoney(saved))], [money(formatWholeMoney(saved))]]),
   ]
   const out = [bar, brackets]
@@ -218,7 +231,7 @@ export function bigDigits(value: string): [string, string, string] {
  * wide in all: what changes day to day, its number drawn large under its
  * label. Next payday (its day of the month; the month and weekday
  * beside), the days to it, and what's left of the target a day till then
- * ($0 once it's spent: how far over is Progress's to say; with no target,
+ * ($0 once it's spent: how far over is Each pay's to say; with no target,
  * which key sets one).
  */
 export function PaydayTiles(props: { width: number; next: string; today: string; perDay: { remaining: number; daily: number } | null }) {

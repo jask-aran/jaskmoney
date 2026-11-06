@@ -80,7 +80,7 @@ test("commands go beyond keys: from anywhere, per saved filter and account; keys
 test("every hint that names a command names a real one, in every pane and state", async () => {
   await setup()
   const states = [{}, { uncategorisedOnly: true }, { tagReview: true }, { ruleOfferCount: 2 }, { asks: true }]
-  for (const scope of ["overview", "manager.txns", "manager.merchants", "manager.accounts", "settings", "settings.taxonomy", "settings.rules", "settings.filters", "budgets", "settings.up", "settings.ai", "settings.appearance", "settings.database"] as const) {
+  for (const scope of ["overview", "manager.txns", "manager.merchants", "manager.accounts", "settings", "settings.taxonomy", "settings.rules", "settings.filters", "budgets.categories", "budgets.chart", "settings.up", "settings.ai", "settings.appearance", "settings.database"] as const) {
     for (const extra of states) {
       const ctx = { ui, data, from: scope, press: () => {} }
       expect(() => commands(ctx, footerHints(scope, { ...hintState(ui, data), ...extra }))).not.toThrow()

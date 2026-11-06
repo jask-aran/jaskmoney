@@ -102,17 +102,17 @@ test("C3.2 Overview review and drill-down return to rows after merchants", () =>
   }
 })
 
-test("C3.3 Budgets commands focus their list and c opens the cycle editor", () => {
+test("C3.3 Budgets commands focus the Budgets pane and c opens the cycle editor", () => {
   ui.switchTab("budgets")
-  ui.setState({ focusedSection: "bud.categories", budgetCursor: 2 })
+  ui.setState({ focusedSection: "bud.chart", budgetCategoryCursor: 2 })
   chooseCommand("settings:cycle")
-  expect(ui.state.focusedSection).toBe("bud.list")
-  expect(ui.state.budgetCursor).toBe(2)
+  expect(ui.state.focusedSection).toBe("bud.categories")
+  expect(ui.state.budgetCategoryCursor).toBe(2)
   expect(ui.state.settingsEditor?.kind).toBe("cycle")
   press("escape")
-  ui.setState({ focusedSection: "bud.categories" })
+  ui.setState({ focusedSection: "bud.chart" })
   chooseCommand("add:budget")
-  expect(ui.state.focusedSection).toBe("bud.list")
+  expect(ui.state.focusedSection).toBe("bud.categories")
   expect(ui.state.settingsEditor?.kind).toBe("budget")
 })
 

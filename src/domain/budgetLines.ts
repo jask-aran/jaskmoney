@@ -90,10 +90,13 @@ export function budgetView(config: CycleConfig, todayISO: string, offset: number
  * the cycle, as one id. */
 export const budgetArmId = (budget: Budget, cycleStart: string) => `${scopeKey(budget.scope)}@${cycleStart}`
 
-/** A row of the Budgets tab's Budgets pane: a category, groups closed
- * unless opened (the pay and the overall spending target have keys, not
- * rows). */
-export type SetupRow = { kind: "line"; line: BudgetLine; open: boolean | null; budgeted: number }
+/** A row of the Budgets tab's Budgets pane: all spending (against the
+ * overall spending target: its total row), an account's budget, or a
+ * category, groups closed unless opened. Your pay has a key, not a row. */
+export type SetupRow =
+  | { kind: "total" }
+  | { kind: "account"; budget: Budget }
+  | { kind: "line"; line: BudgetLine; open: boolean | null; budgeted: number }
 
 /** Group `lines` (a group, then its categories). */
 function grouped(lines: BudgetLine[]): Array<{ group: BudgetLine; children: BudgetLine[] }> {
@@ -116,17 +119,22 @@ export function overallAverage(lines: BudgetLine[], ignored: ReadonlySet<number>
 }
 
 /**
- * The Budgets pane's rows: each group of `lines`, its categories under it
- * only when it's in `open`; `open` on a group is null when it has no
- * categories to show, and `budgeted` counts the budgets inside it (seen
- * while it's closed).
+ * The Budgets pane's rows: all spending first (the table's total, against
+ * the overall spending target), then each account's budget, then each
+ * group of `lines`, its categories under it only when it's in `open`;
+ * `open` on a group is null when it has no categories to show, and
+ * `budgeted` counts the budgets inside it (seen while it's closed).
  */
-export function budgetSetupRows(lines: BudgetLine[], open: ReadonlySet<number>): SetupRow[] {
-  return grouped(lines).flatMap(({ group, children }): SetupRow[] => {
-    const isOpen = group.categoryId !== null && open.has(group.categoryId)
-    return [
-      { kind: "line", line: group, open: children.length ? isOpen : null, budgeted: children.filter((c) => c.budget).length },
-      ...(isOpen ? children.map((line): SetupRow => ({ kind: "line", line, open: null, budgeted: 0 })) : []),
-    ]
-  })
+export function budgetSetupRows(lines: BudgetLine[], open: ReadonlySet<number>, budgets: Budget[] = []): SetupRow[] {
+  return [
+    { kind: "total" },
+    ...budgets.flatMap((budget): SetupRow[] => (budget.scope.kind === "account" ? [{ kind: "account", budget }] : [])),
+    ...grouped(lines).flatMap(({ group, children }): SetupRow[] => {
+      const isOpen = group.categoryId !== null && open.has(group.categoryId)
+      return [
+        { kind: "line", line: group, open: children.length ? isOpen : null, budgeted: children.filter((c) => c.budget).length },
+        ...(isOpen ? children.map((line): SetupRow => ({ kind: "line", line, open: null, budgeted: 0 })) : []),
+      ]
+    }),
+  ]
 }

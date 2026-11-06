@@ -35,8 +35,8 @@ const VIEW_ICONS: Record<string, string> = {
   Trends: "\uf1fe", // area-chart
   // The Budgets tab's regular payments.
   Subscriptions: "\uf021", // refresh
-  // The Budgets tab's cycle by cycle (its Cumulative shares the Overview's).
-  Cycles: "\uf080", // bar-chart
+  // The Budgets tab's budget cycle by cycle.
+  "Each cycle": "\uf03a", // list
 }
 
 /** A chart view's mark in the pane's view picker: its icon when icons are
