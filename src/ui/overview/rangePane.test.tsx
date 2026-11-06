@@ -136,3 +136,52 @@ test("the Range pane's categories: groups closed until space opens them, as Budg
   expect(text).not.toContain("Groceries")
   t.renderer.destroy()
 })
+
+test("the Range pane spending more than came in: where it came from (in, each saver drawn on, Spending's balance) over what was spent, the same total, edges between", async () => {
+  // In $1,000; spent $1,600: $400 from Rainy day, the other $200 from
+  // Spending's balance.
+  const withdraw = (dateISO: string, amount: number) => [
+    row(dateISO, amount, { transferAccountId: 2, internal: true, excluded: true, description: "Transfer from Rainy day" }),
+    transaction({ id: ++id, accountId: 2, dateISO, amount: -amount, transferAccountId: 1, internal: true, excluded: true, description: "Transfer to Spending" }),
+  ]
+  const { t, frame } = await overview([
+    pay("2026-10-01", 1000), ...withdraw("2026-10-03", 400),
+    spend("2026-10-05", 1200, 10, "Groceries"), spend("2026-10-06", 400, 11, "Fuel"),
+  ], "1M")
+  const f = await frame()
+  const at = f.findIndex((l) => /\$1,000 in/.test(l) && !l.includes("↓"))
+  expect(at).toBeGreaterThan(0)
+  // Each source's figure; the smaller ones' names where they fit.
+  expect(f[at]).toMatch(/\$1,000 in\s+\$400( Rainy day)?\s+\$200( Spending)?/)
+  // The two bars, edges between them, the same width; the hatching under
+  // what the savers and Spending paid.
+  const inside = (l: string) => l.slice(3, l.lastIndexOf("│") - 1)
+  expect(inside(f[at + 1]!)).toMatch(/^█+$/)
+  expect(inside(f[at + 2]!)).toMatch(/^│ +│$/)
+  expect(inside(f[at + 3]!)).toMatch(/^█+╱+$/)
+  expect(inside(f[at + 3]!).indexOf("╱")).toBe(Math.round((1000 / 1600) * inside(f[at + 1]!).length))
+  expect(f[at + 4]).toMatch(/\$1,600 spent\s+-\$600 net/)
+  // No opening and no net bar: there's no net to open out.
+  expect(f.join("\n")).not.toMatch(/╭─+╯/)
+  t.renderer.destroy()
+})
+
+test("spending more than came in, edge cases: savers drawn on past the gap cover only the gap; nothing in, all hatched", async () => {
+  const withdraw = (dateISO: string, amount: number) => [
+    row(dateISO, amount, { transferAccountId: 2, internal: true, excluded: true, description: "Transfer from Rainy day" }),
+    transaction({ id: ++id, accountId: 2, dateISO, amount: -amount, transferAccountId: 1, internal: true, excluded: true, description: "Transfer to Spending" }),
+  ]
+  // $900 drawn on, $300 needed: Rainy day's part is the $300; none from Spending.
+  let o = await overview([pay("2026-10-01", 1000), ...withdraw("2026-10-03", 900), spend("2026-10-05", 1300, 10, "Groceries")], "1M")
+  let f = await o.frame()
+  expect(f.join("\n")).toMatch(/\$1,000 in\s+\$300 Rainy day\s*│/)
+  o.t.renderer.destroy()
+  // Nothing in: the spending all from Spending's balance, all of it hatched.
+  o = await overview([spend("2026-10-05", 500, 10, "Groceries")], "1M")
+  f = await o.frame()
+  const at = f.findIndex((l) => /\$500 Spending/.test(l))
+  expect(at).toBeGreaterThan(0)
+  expect(f[at + 3]!.slice(3, f[at + 3]!.lastIndexOf("│") - 1)).toMatch(/^╱+$/)
+  expect(f[at + 4]).toMatch(/\$500 spent/)
+  o.t.renderer.destroy()
+})

@@ -21,6 +21,23 @@ const runs = (parts: Array<{ cells: number; color: string }>): Span[] =>
 const money = (n: number, fg: string): Span => ({ text: formatWholeMoney(n), fg, bold: true })
 
 /**
+ * Each part's figure and name centred on it. Where they don't all fit, the
+ * smallest parts lose their names first (their colours say whose), until
+ * every figure has its place; failing that, what fits.
+ */
+function partLabels(width: number, parts: Array<{ amount: number; name: string; figure: string }>, cells: number[]): Span[] {
+  const shown = parts.map((p, i) => ({ ...p, cells: cells[i]!, from: cells.slice(0, i).reduce((n, c) => n + c, 0) })).filter((p) => p.cells > 0)
+  const place = (bare: Set<number>) => labelled(width, shown.map((p, i) => ({ mid: p.from + p.cells / 2, options: [[money(p.amount, p.figure), ...(bare.has(i) ? [] : [{ text: ` ${p.name}`, fg: ink.note }])]] })))
+  const placed = (spans: Span[]) => spans.filter((x) => x.bold).length
+  const smallest = shown.map((p, i) => ({ i, cells: p.cells })).sort((a, b) => a.cells - b.cells).map((x) => x.i)
+  for (let n = 0; n <= shown.length; n++) {
+    const spans = place(new Set(smallest.slice(0, n)))
+    if (placed(spans) === shown.length) return spans
+  }
+  return place(new Set(smallest))
+}
+
+/**
  * What came in as one bar `width` wide: what's spent in spending's colour
  * (the charts'), then the net in good. Spending past what came in runs
  * on, hatched in bad. Over it each part's figure. `netFrom` is the column
@@ -53,13 +70,7 @@ export function netBar(width: number, net: number, savers: SaverPart[]): { bar: 
   const parts = [...gains.map((s) => ({ amount: s.change, color: s.color, name: s.name, figure: s.color })), { amount: kept, color: fade(tone.good, KEPT_FADE), name: "kept", figure: ink.figure }]
   const cells = cellsOf(parts.map((p) => p.amount), width)
   const bar = runs(parts.map((p, i) => ({ cells: cells[i]!, color: p.color })))
-  let from = 0
-  const labels = labelled(width, parts.flatMap((p, i) => {
-    const mid = from + cells[i]! / 2
-    from += cells[i]!
-    if (cells[i]! <= 0) return []
-    return [{ mid, options: [[money(p.amount, p.figure), { text: ` ${p.name}`, fg: ink.note }], [money(p.amount, p.figure)]] }]
-  }))
+  const labels = partLabels(width, parts, cells)
   return { bar: bar.length ? bar : [{ text: "┄".repeat(width), fg: ink.faint }], labels }
 }
 
@@ -92,4 +103,41 @@ export function spendBar(width: number, groups: Array<{ amount: number; color: s
     : tick + w <= width ? labelled(width, [{ at: tick, options: [[{ text: "▲ ", fg: ink.strong }, ...words]] }])
     : labelled(width, [{ at: Math.max(0, tick - w + 1), options: [[...words, { text: " ▲", fg: ink.strong }]] }])
   return { bar, below }
+}
+
+/**
+ * Spending more than came in: where the spending came from, over what was
+ * spent, both `width` wide for the same total (what was spent), a line of
+ * edges between them saying so. The sources: what came in (good), each
+ * saver's withdrawal in its colour, largest first, and the rest from
+ * Spending's own balance (a dim good, as kept is). Withdrawals past what
+ * the spending needed cover only that (shared by their size); the rest of
+ * them stayed in Spending. Under it what was spent: what came in covered
+ * in spending's colour, and past it hatched in bad, under the parts that
+ * paid for it. Figures over the sources, under the spending.
+ */
+export function sourcesBars(width: number, income: number, spent: number, savers: SaverPart[]): Span[][] {
+  const covered = Math.min(spent, Math.max(0, income)), gap = spent - covered
+  const drawn = savers.filter((s) => s.change <= -0.5).map((s) => ({ ...s, amount: -s.change })).sort((a, b) => b.amount - a.amount)
+  const total = drawn.reduce((n, s) => n + s.amount, 0)
+  const share = total > gap ? gap / total : 1
+  const fromSavers = drawn.map((s) => ({ ...s, amount: s.amount * share }))
+  const fromSpending = Math.max(0, gap - total * share)
+  const parts = [
+    { amount: covered, color: tone.good, name: "in", figure: ink.figure },
+    ...fromSavers.map((s) => ({ amount: s.amount, color: s.color, name: s.name, figure: s.color })),
+    { amount: fromSpending, color: fade(tone.good, KEPT_FADE), name: "Spending", figure: ink.figure },
+  ]
+  const cells = cellsOf(parts.map((p) => p.amount), width)
+  const sources = runs(parts.map((p, i) => ({ cells: cells[i]!, color: p.color })))
+  const above = partLabels(width, parts, cells)
+  // The same columns: what came in covered ends where its source does.
+  const c = cells[0]!, o = width - c
+  const spending: Span[] = [...runs([{ cells: c, color: INKS.spend! }]), ...(o > 0 ? [hatched(o, tone.bad, tone.bad)] : [])]
+  const below = labelled(width, [
+    { mid: c > 0 ? c / 2 : width / 2, options: [[money(spent, ink.figure), { text: " spent", fg: ink.note }], [money(spent, ink.figure)]] },
+    ...(o > 0 && c > 0 ? [{ mid: c + o / 2, options: [[{ text: signedWholeMoney(-gap), fg: tone.bad, bold: true }, { text: " net", fg: ink.note }], [{ text: signedWholeMoney(-gap), fg: tone.bad, bold: true }]] }] : []),
+  ])
+  const edges: Span[] = [{ text: "│", fg: ink.rule }, { text: " ".repeat(Math.max(0, width - 2)), fg: ink.note }, { text: "│", fg: ink.rule }]
+  return [above, sources, edges, spending, below]
 }
