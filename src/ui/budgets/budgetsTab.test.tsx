@@ -298,12 +298,6 @@ test("the plan: your pay and your spending target give what goes to savers; each
   // No plan yet: the facts, no judgment.
   let f = await frame()
   expect(f).toContain("Set your pay and your spending target")
-  // The tiles: the next payday and the days till it (drawn large: no
-  // "11" in the text, but "days" beside the digits).
-  expect(f).toMatch(/Next payday\s+Days to pay\s+Left per day/)
-  expect(f).toMatch(/Nov\s/)
-  expect(f).toContain(" days")
-  expect(f).toContain("t sets your")
   // This cycle: the track, 1 Oct to 1 Nov, today on it and the send
   // (its day over it where there's room: here, none beside 1 Oct); the pay
   // in and the send under it.
@@ -327,11 +321,6 @@ test("the plan: your pay and your spending target give what goes to savers; each
   expect(line(f, "usual pay")).toMatch(/Pay\s+usual pay\s+\$5,000 │/)
   // No Up pay-splitting hint: the API can't see the split, so it's not the app's to say.
   expect(f).not.toContain("pay splitting")
-  // The third tile: what's left of the target a day till payday.
-  // ($2,000 less $300 spent, over the 12 days to 1 Nov: $142, drawn large.)
-  const { bigDigits } = await import("./PlanGraphics")
-  expect(f).toContain("$ " + bigDigits("142")[0])
-  expect(f).not.toContain("t sets your")
   // The pay as a bar filling as you spend, each part's figure over it:
   // the target, and what's left of the pay.
   let rows = f.split("\n")
@@ -340,7 +329,8 @@ test("the plan: your pay and your spending target give what goes to savers; each
   expect(rows[above + 1]).toMatch(/█+/)
   // Savers: the bar's savers end opened out to the plan ($5,000 less
   // $2,000) at full width, $2,500 of it sent and $500 still to send.
-  expect(rows[above + 2]).toMatch(/╭─+╯\s+savers plan \$3,000\s+│/)
+  // Along the opening, under the target: what's been spent in all.
+  expect(rows[above + 2]).toMatch(/╭─+ \$300 spent ─+╯\s+savers plan \$3,000\s+│/)
   expect(rows[above + 3]).toMatch(/█+/)
   expect(rows[above + 4]).toMatch(/\$2,500 sent\s+\$500( to send)?/)
   // $2,300 spent on a $2,000 target: $300 over, hatched in bad between the
@@ -354,7 +344,7 @@ test("the plan: your pay and your spending target give what goes to savers; each
   // The $300 over comes out of the plan: $300 short, hatched first.
   expect(rows[overAt + 4]).toMatch(/\$300 short\s+\$2,500 sent(\s+\$200( to send)?)?/)
   expect(f).not.toContain("more than your pay")
-  expect(f).not.toContain("more sent than")
+  expect(rows[overAt + 2]).toContain("$2,300 spent")
   const bad = RGBA.fromHex(tone.bad).toInts().join()
   const hatchAt = (row: number) => {
     let col = 0
@@ -387,13 +377,6 @@ test("two columns: the budget pane draws its focus; Budgets is the side column's
   await frame()
   expect(ui.state.focusedSection).toBe("bud.chart")
   expect(titleFocused()).toBe(true)
-})
-
-test("big digits: three lines of light, rounded strokes, a column between digits", async () => {
-  const { bigDigits } = await import("./PlanGraphics")
-  // Light, rounded lines, three cells a digit, a column between.
-  expect(bigDigits("8")).toEqual(["╭─╮", "├─┤", "╰─╯"])
-  expect(bigDigits("14")).toEqual(["╶╮  ╷ ╷", " │  ╰─┤", "╶┴╴   ╵"])
 })
 
 test("the calendar runs on to the next payday, marked pay in good, outside the cycle (no tile)", async () => {

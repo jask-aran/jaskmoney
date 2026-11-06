@@ -36,7 +36,7 @@ import type { JSX } from "solid-js"
 import { SubscriptionsView, subscriptionsLegend } from "../charts/SubscriptionsView"
 import { subscriptions, upcomingCharges } from "../../domain/subscriptions"
 import { cyclePay } from "../../domain/payday"
-import { PaydayTiles, TILE_HEIGHT, cycleTrack, payBar, planOpening, saversMeter, type PayPart } from "./PlanGraphics"
+import { cycleTrack, payBar, planOpening, saversMeter, type PayPart } from "./PlanGraphics"
 
 /** Cycles before this one the chart and the cycle lines can show, at most. */
 const HISTORY = 36
@@ -334,12 +334,10 @@ export function BudgetsTab(props: { focused: SectionId }) {
       out.push({ spans: bar.above }, { spans: bar.bar, sweeps: true })
       if (planned) {
         // Savers: the bar's savers end opened out to the full width, the
-        // plan as a meter. Spending past the target comes out of it; sent
-        // past what's left of it is said under it.
+        // plan as a meter. Spending past the target comes out of it.
         const short = Math.min(plan!, Math.max(0, spent - total))
         const meter = saversMeter(width, plan!, p.sent, short)
-        out.push({ spans: planOpening(width, bar.targetCells, plan!) }, { spans: meter.bar, sweeps: true }, { spans: meter.labels })
-        if (meter.oversent > 0.5) out.push({ spans: note(`${formatWholeMoney(meter.oversent)} more sent than the pay had left`, tone.caution, "") })
+        out.push({ spans: planOpening(width, bar.targetCells, plan!, spent, spent > total + 0.5) }, { spans: meter.bar, sweeps: true }, { spans: meter.labels })
       }
       for (const spans of bar.legend) out.push({ spans })
     }
@@ -372,22 +370,18 @@ export function BudgetsTab(props: { focused: SectionId }) {
       return p >= 0.3 + 0.6 * (i / lines.length) ? line : { ...line, spans: [{ text: " ", fg: ink.note }] }
     })
   })
-  // The payday tiles, this cycle only (a past one has no next payday to
-  // count to), and a blank line under them.
-  const tiles = () => view().current
-  const tilesHeight = () => (tiles() ? TILE_HEIGHT + 1 : 0)
   // The top (the plan, this cycle), a blank line and the Categories
   // heading stay put; the categories scroll under them.
   // The cycle's calendar, in the pane between This cycle and the table,
   // compact: two lines a weekday (15 rows) where the pane has room for it
   // and a few table rows, else one (8), else none.
   const calendarRows = () => {
-    const room = categoriesHeight() - 4 - tilesHeight() - topLines().length - 3 - Math.min(setup().length, BUDGETS_ROWS_MIN)
+    const room = categoriesHeight() - 4 - topLines().length - 3 - Math.min(setup().length, BUDGETS_ROWS_MIN)
     return room >= CALENDAR_TALL ? CALENDAR_TALL : room >= CALENDAR_MIN ? CALENDAR_MIN : 0
   }
   // Its heading, the days, its legend and a blank line.
   const calendarBlock = () => (calendarRows() ? calendarRows() + 3 : 0)
-  const categoryRoom = () => Math.max(1, categoriesHeight() - 4 - tilesHeight() - topLines().length - calendarBlock())
+  const categoryRoom = () => Math.max(1, categoriesHeight() - 4 - topLines().length - calendarBlock())
   const categoryLines = setup
   const categoryTop = createMemo(() => centredTop(categoryCursor(), categoryLines().length, categoryRoom()))
   // Nothing budgeted yet: the pane says to start here.
@@ -425,11 +419,6 @@ export function BudgetsTab(props: { focused: SectionId }) {
   const Categories = () => (
     <SectionCard title="Budgets" titleSuffix={nothingSet() ? "· start here" : view().current ? `· day ${elapsed()} of ${cycle().days}` : `· ${period()} · ] later`}
       titleSuffixColor={nothingSet() || !view().current ? tone.caution : tone.scope} focused={categoriesFocused()} width={categoriesWidth()} height={categoriesHeight()}>
-      <Show when={tiles()}>
-        <box paddingLeft={1} height={TILE_HEIGHT} flexShrink={0}><PaydayTiles width={rowWidth(categoriesWidth())} next={addDays(cycle().end, 1)} today={today()}
-          perDay={overallBudget() ? { remaining: totalProgress().remaining, daily: totalProgress().dailyAllowance } : null} /></box>
-        <text wrapMode="none">{" "}</text>
-      </Show>
       <Index each={shownTop()}>{(line) => (
         // Never shrunk: past the pane's height, lines clip rather than
         // overlap.

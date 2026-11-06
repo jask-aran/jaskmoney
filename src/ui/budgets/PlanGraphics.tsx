@@ -1,18 +1,15 @@
-import { Index, Show } from "solid-js"
 import { formatWholeMoney } from "../../domain/dashboard"
 import { daysBetween } from "../../domain/days"
 import { fade, ink, theme, tone } from "../../theme"
 import { LEVEL_BG } from "../overview/CalendarView"
-import { shortDate, truncate } from "../text"
-import { S } from "../primitives/S"
+import { shortDate } from "../text"
 import type { Span } from "../primitives/spans"
 
 /**
- * The Budgets pane's pictures of the plan and the cycle: the payday tiles
- * (flat fills, as the calendar's days), each pay as one bar (where it
+ * The Budgets pane's pictures of the plan and the cycle: each pay as one bar (where it
  * goes: the category budgets, the rest of the spending target, savers),
  * the plan for savers as a meter, and the cycle as a track from payday to
- * payday. Pure builders, but for the tiles.
+ * payday. Pure builders.
  */
 
 /** The target's colour: the charts' Budget line's, so the target reads
@@ -120,17 +117,26 @@ export function payBar(width: number, pay: number | null, target: number, catego
  * Under the pay bar, the line that opens its savers end (from `from` to
  * the end) out to the full width for Savers' meter under it: a corner
  * under where savers start, running back to the left edge, the right edge
- * straight down, and the plan between.
+ * straight down, and the plan between. Along the run back, under the
+ * target, what's been spent in all.
  */
-export function planOpening(width: number, from: number, plan: number): Span[] {
+export function planOpening(width: number, from: number, plan: number, spent: number, over: boolean): Span[] {
   if (from <= 0 || from >= width - 1) return [{ text: " ", fg: ink.note }]
   const label: Span[] = [{ text: "savers plan ", fg: ink.note }, { text: formatWholeMoney(plan), fg: ink.figure, bold: true }]
   const room = width - 1 - (from + 1)
   const fits = spansWidth(label) + 2 <= room
   const pad = fits ? room - spansWidth(label) : room
   const leftPad = Math.floor(pad / 2)
+  // The run back: "─ $3,244 spent ─" where it fits, else the figure, else bare.
+  const spentFg = over ? tone.bad : ink.figure
+  const run = from - 1
+  const spentLabel = [[{ text: formatWholeMoney(spent), fg: spentFg, bold: true }, { text: " spent", fg: ink.note }], [{ text: formatWholeMoney(spent), fg: spentFg, bold: true }]]
+    .find((l) => spansWidth(l) + 4 <= run)
+  const runSpans: Span[] = spentLabel
+    ? (() => { const r = run - spansWidth(spentLabel) - 2, l = Math.floor(r / 2); return [{ text: `╭${"─".repeat(l)} `, fg: ink.rule }, ...spentLabel, { text: ` ${"─".repeat(r - l)}╯`, fg: ink.rule }] })()
+    : [{ text: `╭${"─".repeat(run)}╯`, fg: ink.rule }]
   return [
-    { text: `╭${"─".repeat(from - 1)}╯`, fg: ink.rule },
+    ...runSpans,
     { text: " ".repeat(fits ? leftPad : room), fg: ink.note },
     ...(fits ? [...label, { text: " ".repeat(pad - leftPad), fg: ink.note }] : []),
     { text: "│", fg: ink.rule },
@@ -141,41 +147,27 @@ export function planOpening(width: number, from: number, plan: number): Span[] {
  * The plan for savers as a meter `width` wide, all of it the plan, ordered
  * as the pay bar's savers end it opens out: what spending past the target
  * has taken from it first (hatched in bad), then what's gone to savers
- * (good) and what's still to send (a dim good). Sent past what's left of
- * the plan runs back over what's short, hatched in good: sent from money
- * the spending needed. Under it each part's figure where it fits.
+ * (good) and what's still to send (a dim good). Sent fills at most what's
+ * left of the plan; its figure is all of it. Under it each part's figure
+ * where it fits.
  */
-export function saversMeter(width: number, plan: number, sent: number, short: number): { bar: Span[]; labels: Span[]; oversent: number } {
+export function saversMeter(width: number, plan: number, sent: number, short: number): { bar: Span[]; labels: Span[] } {
   const available = Math.max(0, plan - short)
-  const oversent = Math.max(0, sent - available)
-  const sentFrom = oversent > 0 ? Math.max(0, plan - sent) : short
-  const sentTo = Math.min(plan, sentFrom + sent)
-  const toSend = Math.max(0, plan - sentTo)
-  // Each cell by what its middle falls in.
-  const kind = (c: number) => {
-    const x = ((c + 0.5) / width) * plan
-    const inShort = x < short, inSent = x >= sentFrom && x < sentTo
-    return inShort && inSent ? "both" : inShort ? "short" : inSent ? "sent" : "send"
-  }
-  const bar: Span[] = []
-  const counts: Record<string, { from: number; cells: number }> = {}
-  for (let c = 0; c < width; c++) {
-    const k = kind(c)
-    counts[k] = counts[k] ? { ...counts[k]!, cells: counts[k]!.cells + 1 } : { from: c, cells: 1 }
-    const span: Span = k === "short" ? hatched(1, tone.bad, tone.bad) : k === "both" ? hatched(1, tone.good, tone.bad) : { text: "█", fg: k === "sent" ? tone.good : fade(tone.good, LEFT_FADE) }
-    const last = bar.at(-1)
-    if (last && last.fg === span.fg && last.bg === span.bg) last.text += span.text
-    else bar.push(span)
-  }
-  const at = (k: string) => (counts[k] ? counts[k]!.from + counts[k]!.cells / 2 : null)
-  const shortMid = at("short") ?? at("both"), sentMid = counts.sent ? counts.sent.from + (counts.sent.cells + (counts.both?.cells ?? 0)) / 2 - (counts.both?.cells ?? 0) : null
+  const shown = Math.min(sent, available)
+  const toSend = available - shown
+  const [shortCells, sentCells, sendCells] = cellsOf([short, shown, toSend], width) as [number, number, number]
+  const bar: Span[] = [
+    ...(shortCells ? [hatched(shortCells, tone.bad, tone.bad)] : []),
+    ...(sentCells ? [{ text: "█".repeat(sentCells), fg: tone.good }] : []),
+    ...(sendCells ? [{ text: "█".repeat(sendCells), fg: fade(tone.good, LEFT_FADE) }] : []),
+  ]
   const money = (n: number, fg: string): Span => ({ text: formatWholeMoney(n), fg, bold: true })
   const labels = labelled(width, [
-    ...(short > 0.5 && shortMid != null ? [{ mid: shortMid, options: [[money(short, tone.bad), { text: " short", fg: tone.bad }], [money(short, tone.bad)]] }] : []),
-    ...(sent > 0.5 && sentMid != null ? [{ mid: sentMid, options: [[money(sent, tone.good), { text: " sent", fg: ink.note }], [money(sent, tone.good)]] }] : []),
-    ...(toSend > 0.5 && counts.send ? [{ mid: at("send")!, options: [[money(toSend, ink.figure), { text: " to send", fg: ink.note }], [money(toSend, ink.figure)]] }] : []),
+    ...(shortCells ? [{ mid: shortCells / 2, options: [[money(short, tone.bad), { text: " short", fg: tone.bad }], [money(short, tone.bad)]] }] : []),
+    ...(sentCells ? [{ mid: shortCells + sentCells / 2, options: [[money(sent, tone.good), { text: " sent", fg: ink.note }], [money(sent, tone.good)]] }] : []),
+    ...(sendCells ? [{ mid: shortCells + sentCells + sendCells / 2, options: [[money(toSend, ink.figure), { text: " to send", fg: ink.note }], [money(toSend, ink.figure)]] }] : []),
   ])
-  return { bar, labels, oversent }
+  return { bar, labels }
 }
 
 /** A label for `labelled`: its options, best first, placed from `at`
@@ -258,96 +250,3 @@ export function cycleTrack(width: number, start: string, next: string, today: st
   ])
   return [labels, track, figures]
 }
-
-/** Digits drawn in light, rounded box-drawing lines, three cells wide
- * and three lines high: strokes, not blocks, so a number sits lightly on
- * its tile (a seven-segment look). */
-const DIGITS: Record<string, [string, string, string]> = {
-  "0": ["╭─╮", "│ │", "╰─╯"], "1": ["╶╮ ", " │ ", "╶┴╴"],
-  "2": ["╭─╮", "╭─╯", "╰─╴"], "3": ["╭─╮", "╶─┤", "╰─╯"],
-  "4": ["╷ ╷", "╰─┤", "  ╵"], "5": ["╭─╴", "╰─╮", "╶─╯"],
-  "6": ["╭─╴", "├─╮", "╰─╯"], "7": ["╶─╮", "  │", "  ╵"],
-  "8": ["╭─╮", "├─┤", "╰─╯"], "9": ["╭─╮", "╰─┤", "╶─╯"],
-}
-
-/** A number drawn large: its digits' three lines, a column between
- * digits. */
-export function bigDigits(value: string): [string, string, string] {
-  const lines: [string, string, string] = ["", "", ""]
-  const digits = [...value].flatMap((d) => (DIGITS[d] ? [DIGITS[d]!] : []))
-  digits.forEach((glyph, n) => {
-    for (let line = 0; line < 3; line++) lines[line] += (n ? " " : "") + glyph[line]
-  })
-  return lines
-}
-
-/**
- * The payday tiles, flat grey fills as the calendar's empty days, `width`
- * wide in all: what changes day to day, its number drawn large under its
- * label. Next payday (its day of the month; the month and weekday
- * beside), the days to it, and what's left of the target a day till then
- * ($0 once it's spent: how far over is Each pay's to say; with no target,
- * which key sets one).
- */
-export function PaydayTiles(props: { width: number; next: string; today: string; perDay: { remaining: number; daily: number } | null }) {
-  const tile = () => Math.floor((props.width - 2) / 3)
-  const days = () => Math.max(0, daysBetween(props.today, props.next))
-  const month = () => new Date(props.next + "T12:00:00Z").toLocaleDateString("en-AU", { month: "short", timeZone: "UTC" })
-  // The weekday in full where it fits beside the date, else short.
-  const weekday = () => {
-    const long = new Date(props.next + "T12:00:00Z").toLocaleDateString("en-AU", { weekday: "long", timeZone: "UTC" })
-    const room = tile() - 1 - bigDigits(String(Number(props.next.slice(8, 10))))[0].length - 2
-    return long.length <= room ? long : long.slice(0, 3)
-  }
-  return (
-    <box flexDirection="row" gap={1} width={props.width} height={TILE_HEIGHT} flexShrink={0}>
-      <Tile width={tile()} bg={theme.surface0} label="Next payday" labelFg={ink.label} value={String(Number(props.next.slice(8, 10)))} fg={ink.strong}
-        beside={[month(), weekday(), ""]} besideFg={ink.label} />
-      <Tile width={tile()} bg={theme.surface0} label="Days to pay" labelFg={ink.label} value={String(days())} fg={ink.strong}
-        beside={["", days() === 1 ? "day" : "days", ""]} besideFg={ink.label} />
-      <Show when={props.perDay} fallback={
-        <Tile width={props.width - 2 - 2 * tile()} bg={theme.surface0} label="Left per day" labelFg={ink.label} value="" fg={ink.faint}
-          beside={["t sets your", "spending target", ""]} besideFg={ink.note} />
-      }>
-        <Tile width={props.width - 2 - 2 * tile()} bg={theme.surface0} label="Left per day" labelFg={ink.label}
-          prefix="$ " value={String(Math.round(props.perDay!.daily))} fg={ink.strong} beside={["", "", ""]} besideFg={ink.label} />
-      </Show>
-    </box>
-  )
-}
-
-/** A tile: its label, a line of fill, a number drawn large (`prefix`
- * small at its top left, as prices set the dollar sign) with words beside
- * each line, and a line of fill under. Too wide to draw large, the number
- * goes in plain bold on the middle line. */
-function Tile(p: { width: number; bg: string; label: string; labelFg: string; value: string; fg: string; beside: [string, string, string]; besideFg: string; prefix?: string }) {
-  const drawn = () => bigDigits(p.value)
-  const fits = () => 1 + (p.prefix?.length ?? 0) + drawn()[0].length <= p.width
-  const plain = () => `${p.prefix?.trim() ?? ""}${Number(p.value).toLocaleString("en-AU")}`
-  const big = (): [string, string, string] => (fits() ? drawn() : ["", p.value ? plain() : "", ""])
-  const lead = (i: number) => (p.prefix && fits() ? (i === 0 ? p.prefix : " ".repeat(p.prefix.length)) : "")
-  const line = (parts: Array<{ text: string; fg: string; bold?: boolean }>) => (
-    <text wrapMode="none" bg={p.bg}>
-      <Index each={parts}>{(part) => <S fg={part().fg} bg={p.bg} bold={part().bold}>{part().text}</S>}</Index>
-      <S bg={p.bg}>{" ".repeat(Math.max(0, p.width - parts.reduce((n, part) => n + part.text.length, 0)))}</S>
-    </text>
-  )
-  return (
-    <box flexDirection="column" width={p.width} height={TILE_HEIGHT} backgroundColor={p.bg}>
-      {line([{ text: truncate(` ${p.label}`, p.width), fg: p.labelFg }])}
-      {line([])}
-      <Index each={[0, 1, 2]}>{(i) => {
-        const digits = () => ` ${lead(i())}${big()[i()]}`
-        return line([
-          { text: truncate(digits(), p.width), fg: p.fg, bold: true },
-          { text: truncate(`${big()[i()] ? "  " : ""}${p.beside[i()]}`, Math.max(0, p.width - digits().length)), fg: p.besideFg },
-        ])
-      }}</Index>
-      {line([])}
-    </box>
-  )
-}
-
-/** The tiles' height: a label, a line of fill, three lines of big digits,
- * a line of fill. */
-export const TILE_HEIGHT = 6
