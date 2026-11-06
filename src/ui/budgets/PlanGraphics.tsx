@@ -1,7 +1,7 @@
 import { Index, Show } from "solid-js"
 import { formatWholeMoney } from "../../domain/dashboard"
 import { daysBetween } from "../../domain/days"
-import { fade, ink, theme, tone } from "../../theme"
+import { ink, theme, tone } from "../../theme"
 import { LEVEL_BG } from "../overview/CalendarView"
 import { fit, shortDate, truncate } from "../text"
 import { S } from "../primitives/S"
@@ -169,12 +169,12 @@ export function bigDigits(value: string): [string, string, string] {
 }
 
 /**
- * The payday tiles, flat fills as the calendar's days, `width` wide in
- * all: what changes day to day, its number drawn large under its label.
- * Next payday (its day of the month; the month and weekday beside), the
- * days till it on spending's fill, and what's left of the target a day
- * till then (over it, how much, in caution; with no target, which key
- * sets one).
+ * The payday tiles, flat grey fills as the calendar's empty days, `width`
+ * wide in all: what changes day to day, its number drawn large under its
+ * label. Next payday (its day of the month; the month and weekday
+ * beside), the days to it, and what's left of the target a day till then
+ * ($0 once it's spent: how far over is Progress's to say; with no target,
+ * which key sets one).
  */
 export function PaydayTiles(props: { width: number; next: string; today: string; perDay: { remaining: number; daily: number } | null }) {
   const tile = () => Math.floor((props.width - 2) / 3)
@@ -186,20 +186,18 @@ export function PaydayTiles(props: { width: number; next: string; today: string;
     const room = tile() - 1 - bigDigits(String(Number(props.next.slice(8, 10))))[0].length - 2
     return long.length <= room ? long : long.slice(0, 3)
   }
-  const over = () => props.perDay != null && props.perDay.remaining < 0
   return (
     <box flexDirection="row" gap={1} width={props.width} height={TILE_HEIGHT} flexShrink={0}>
       <Tile width={tile()} bg={theme.surface0} label="Next payday" labelFg={ink.label} value={String(Number(props.next.slice(8, 10)))} fg={ink.strong}
         beside={[month(), weekday(), ""]} besideFg={ink.label} />
-      <Tile width={tile()} bg={spendingFill()} label="Days to pay" labelFg={theme.crust} value={String(days())} fg={theme.crust}
-        beside={["", days() === 1 ? "day" : "days", ""]} besideFg={theme.crust} />
+      <Tile width={tile()} bg={theme.surface0} label="Days to pay" labelFg={ink.label} value={String(days())} fg={ink.strong}
+        beside={["", days() === 1 ? "day" : "days", ""]} besideFg={ink.label} />
       <Show when={props.perDay} fallback={
         <Tile width={props.width - 2 - 2 * tile()} bg={theme.surface0} label="Left per day" labelFg={ink.label} value="" fg={ink.faint}
           beside={["t sets your", "spending target", ""]} besideFg={ink.note} />
       }>
-        <Tile width={props.width - 2 - 2 * tile()} bg={over() ? fade(tone.caution, 0.55) : theme.surface0} label={over() ? "Over target" : "Left per day"}
-          labelFg={over() ? theme.crust : ink.label} prefix="$ " value={String(Math.round(over() ? -props.perDay!.remaining : props.perDay!.daily))}
-          fg={over() ? theme.crust : ink.strong} beside={["", "", ""]} besideFg={over() ? theme.crust : ink.label} />
+        <Tile width={props.width - 2 - 2 * tile()} bg={theme.surface0} label="Left per day" labelFg={ink.label}
+          prefix="$ " value={String(Math.round(props.perDay!.daily))} fg={ink.strong} beside={["", "", ""]} besideFg={ink.label} />
       </Show>
     </box>
   )
