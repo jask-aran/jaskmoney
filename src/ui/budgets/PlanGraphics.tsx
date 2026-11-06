@@ -199,9 +199,9 @@ const LEFT_FADE = 0.65
 /**
  * The cycle as a track `width` wide, from its payday (●) to the next (○):
  * the days gone solid, today marked in today's colour, the days to come
- * dotted, and each send to savers on its day. Above it the two paydays'
- * dates, today and each send's; under it what came in, what's gone to
- * savers and what's been spent (under today, where there's room).
+ * dotted, and each send to savers on its day. Over it what came in,
+ * what's gone to savers and what's been spent (over today, where there's
+ * room); under it the two paydays' dates, today and each send's.
  *
  * Over any span (the Overview's Date Range): `end` labels the right end
  * (else the next payday), and the paydays inside it are ●. Marks that
@@ -265,5 +265,6 @@ export function cycleTrack(width: number, start: string, next: string, today: st
     // Under today where there's room.
     ...(pay.spent > 0 ? [{ at: Math.max(after, Math.round((now >= 0 ? Math.min(now, width - 1) : width - 1) + 0.5 - spansWidth(spentSpans) / 2)), options: [spentSpans] }] : []),
   ])
-  return [labels, track, figures]
+  // The figures over the track, the dates under it.
+  return [figures, track, labels]
 }
