@@ -343,13 +343,13 @@ test("the plan: your pay and your spending target give what goes to savers; each
   // The $300 over comes out of the plan: $300 short, hatched first.
   expect(rows[overAt + 4]).toMatch(/\$300 short\s+\$2,500 sent(\s+\$200( to send)?)?/)
   expect(f).not.toContain("more than your pay")
-  // The facts over it: the last pay and when, the next, what's spent this
-  // period (over the target: bad) and the days till pay.
-  expect(f).toMatch(/Last pay\s+Next pay/)
-  expect(f).toMatch(/\$5,200  1 Oct\s+Sun 1 Nov/)
-  expect(f).toMatch(/Spent this period\s+Days till pay/)
-  expect(f).toMatch(/\$2,300\s+12 days/)
-  const spentRow = rows.findIndex((l) => /\$2,300\s+12 days/.test(l))
+  // The facts over it, a line each: the last pay and when, the next, the
+  // days till it, and what's spent this period (over the target: bad).
+  expect(f).toMatch(/Last pay\s+1 Oct\s+\$5,200 │/)
+  expect(f).toMatch(/Next pay\s+Sun 1 Nov │/)
+  expect(f).toMatch(/Days till pay\s+12 │/)
+  expect(f).toMatch(/Spent this period\s+\$2,300 │/)
+  const spentRow = rows.findIndex((l) => /Spent this period\s+\$2,300/.test(l))
   expect(t.captureSpans().lines[spentRow]!.spans.some((s) => s.text.includes("$2,300") && s.fg.toInts().join() === RGBA.fromHex(tone.bad).toInts().join())).toBe(true)
   const bad = RGBA.fromHex(tone.bad).toInts().join()
   const hatchAt = (row: number) => {
