@@ -312,8 +312,18 @@ test("the plan: your pay and your spending give what goes to savers, and what to
   let f = await frame()
   expect(line(f, "Pay each payday")).toContain("not set")
   expect(f).toContain("enter sets it from your usual $5,000")
-  const sent = (f: string) => f.split("\n").find((l) => l.includes("To savers so far")) ?? ""
-  expect(sent(f)).toMatch(/\$2,500\s/)
+  // The tiles: the next payday and the days till it (drawn large: no
+  // "11" in the text, but "days" beside the digits).
+  expect(f).toMatch(/Next payday\s+Days till pay/)
+  expect(line(f, "Next payday")).toBeTruthy()
+  expect(f).toMatch(/1 Nov\s+\S+\s+\S+/)
+  expect(f).toContain(" days")
+  // The track: 1 Oct to 1 Nov, today on it; the pay in and the send.
+  expect(f).toMatch(/1 Oct\s+today\s+1 Nov/)
+  expect(f).toMatch(/●[━◆┿]+┄+○/)
+  expect(line(f, "to savers")).toMatch(/↓ \$5,200 in\s+◆ \$2,500 to savers/)
+  // No plan, no meter and no judgment.
+  expect(f).not.toContain("still to send")
   expect(f).not.toContain("✓")
   // The pay row opens the Pay editor from your usual pay.
   expect(ui.state.focusedSection).toBe("bud.categories")
@@ -328,9 +338,11 @@ test("the plan: your pay and your spending give what goes to savers, and what to
   f = await frame()
   expect(line(f, "To savers each payday")).toContain("$3,000")
   expect(f).toContain("set Up's pay splitting to this")
-  // This cycle sent $2,500 of the $3,000.
-  expect(sent(f)).toMatch(/To savers so far\s+\$2,500/)
-  expect(f).toContain("$500 still to send of $3,000")
+  // Each pay as a bar: the target, then savers.
+  expect(f).toMatch(/└─+ target \$2,000 ─+┘└─+ savers \$3,000 ─+┘/)
+  // This cycle sent $2,500 of the $3,000: the meter, short.
+  expect(f).toMatch(/█+─+ of \$3,000/)
+  expect(f).toContain("$500 still to send")
   expect(line(f, "Left by 1 Nov")).toMatch(/\$[\d,]+/)
   expect(f).toContain("at this pace")
   t.renderer.destroy()

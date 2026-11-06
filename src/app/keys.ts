@@ -1963,7 +1963,7 @@ function handleBudgets(ui: UiStore, key: KeyEvent, data?: DataStore): void {
 /** The Budgets pane's rows, as the tab draws them. */
 function setupRows(ui: UiStore, data: DataStore): SetupRow[] {
   const view = viewedBudgets(ui, data)
-  const pay = { amount: data.state.uiPrefs.expectedPay || null, usual: usualPay(data.state.accounts, data.transactions(), data.cycle().paydays ?? []) }
+  const pay = { amount: data.state.uiPrefs.expectedPay || null, usual: usualPay(data.state.accounts, data.transactions()) }
   return budgetSetupRows(budgetLines(ui, data), view.budgets, new Set(ui.state.budgetSetupOpen), budgetIgnoredIds(data.state.categories), pay)
 }
 
