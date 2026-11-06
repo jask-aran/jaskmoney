@@ -9,6 +9,8 @@ whenThemeChanges(() => Object.assign(INKS, {
   prev: theme.overlay0,
   ref: theme.surface2,
   in: tone.good,
+  // Money in from outside your accounts (another bank): not income.
+  transfers: theme.sapphire,
   out: tone.bad,
   limit: theme.chartBudget,
   balance: theme.lavender,

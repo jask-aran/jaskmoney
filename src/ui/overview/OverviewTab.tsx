@@ -39,6 +39,7 @@ import { UP_LOGO_WIDTH } from "../primitives/UpLogo"
 import { CalendarView, calendarLegend } from "./CalendarView"
 import { cycleTrack, planOpening } from "../budgets/PlanGraphics"
 import { inBar, netBar, sourcesBars, spendBar, spendOpening } from "./RangeGraphics"
+import { INKS } from "../charts/inks"
 import { leadingEmoji, saverInks } from "../charts/saverInks"
 import { cyclePay } from "../../domain/payday"
 import { computeCategorySpend, groupCategorySpend } from "../../domain/dashboard"
@@ -442,7 +443,7 @@ export function OverviewTab(props: { focused: SectionId }) {
       const fromSavers = savers.map((s, i) => ({ amount: rows.filter((t) => t.internal && t.transferAccountId === s.accountId).reduce((n, t) => n + t.amount, 0), color: colors[i]!, name: parts[i]!.name, figure: colors[i]! }))
       const fell = -rows.reduce((n, t) => n + t.amount, 0)
       const sources = [
-        { amount: outside, color: theme.sapphire, name: "transfers", figure: theme.sapphire },
+        { amount: outside, color: INKS.transfers!, name: "transfers", figure: INKS.transfers! },
         ...fromSavers.sort((x, y) => y.amount - x.amount),
         { amount: fell, color: fade(tone.good, 0.65), name: "Spending", figure: ink.figure },
       ]
