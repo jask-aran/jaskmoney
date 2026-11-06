@@ -36,7 +36,7 @@ import type { JSX } from "solid-js"
 import { SubscriptionsView, subscriptionsLegend } from "../charts/SubscriptionsView"
 import { subscriptions, upcomingCharges } from "../../domain/subscriptions"
 import { cyclePay } from "../../domain/payday"
-import { PaydayTiles, TILE_HEIGHT, cycleTrack, payBar, saversMeter, type PayPart } from "./PlanGraphics"
+import { PaydayTiles, TILE_HEIGHT, cycleTrack, payBar, planOpening, saversMeter, type PayPart } from "./PlanGraphics"
 
 /** Cycles before this one the chart and the cycle lines can show, at most. */
 const HISTORY = 36
@@ -297,11 +297,6 @@ export function BudgetsTab(props: { focused: SectionId }) {
     const w = end.reduce((n, x) => n + x.text.length, 0)
     return fitSpans([{ ...label, text: fit(label.text, Math.max(1, width - w)) }, ...end], width)
   }
-  // A heading with a note at the row's end.
-  const headed = (text: string, after: Span[]): Span[] => {
-    const width = rowWidth(categoriesWidth()), w = after.reduce((n, x) => n + x.text.length, 0)
-    return fitSpans([{ text: fit(text, Math.max(1, width - w)), fg: ink.heading, bold: true }, ...after], width)
-  }
   // Under the tiles: Pay (your pay, what's spent and what remains of it,
   // and the pay as a bar: the category budgets, the rest of the target,
   // savers), Savers (the plan for them as a meter: what's gone, what's
@@ -316,8 +311,9 @@ export function BudgetsTab(props: { focused: SectionId }) {
     const plan = toSavers()
     const total = split().total
     const spent = totalProgress().spent
-    // The pay bar's cells, for Savers' meter to line up under it.
-    let bar: ReturnType<typeof payBar> | null = null
+    const p = paid()
+    // Savers is drawn once pay and target leave something for it.
+    const planned = pay != null && !!target && plan != null && plan > 0
     if (pay == null && !target) {
       out.push({ spans: heading("Pay"), stays: true })
       const fill = fade(tone.caution, 0.8)
@@ -328,26 +324,30 @@ export function BudgetsTab(props: { focused: SectionId }) {
         { spans: blank, bg: fill },
       )
     } else {
-      // Pay; what's spent and what's left are on its bar, just under it.
+      // Pay, then its bar with each part's figure over it.
       out.push({ spans: pay != null
         ? ledger(payLabel, { text: formatWholeMoney(pay), fg: ink.figure, bold: true }, [{ text: "usual pay", fg: ink.note }])
         : ledger(payLabel, { text: "", fg: ink.note }, [{ text: "p sets your pay", fg: tone.caution }]), stays: true })
       // The rest of the target's spending: all of it less the categories' own.
       const restSpent = target ? Math.max(0, spent - targetParts().reduce((n, c) => n + c.spent, 0)) : 0
-      bar = payBar(width, pay, target ? total : 0, target ? targetParts() : [], restSpent)
-      for (const spans of bar.lines) out.push({ spans, sweeps: spans.some((x) => x.text.includes("█")) })
+      const bar = payBar(width, pay, target ? total : 0, target ? targetParts() : [], restSpent)
+      out.push({ spans: bar.above }, { spans: bar.bar, sweeps: true })
+      if (planned) {
+        // Savers: the bar's savers end opened out to the full width, the
+        // plan as a meter. Spending past the target comes out of it; sent
+        // past what's left of it is said under it.
+        const short = Math.min(plan!, Math.max(0, spent - total))
+        const meter = saversMeter(width, plan!, p.sent, short)
+        out.push({ spans: planOpening(width, bar.targetCells, plan!) }, { spans: meter.bar, sweeps: true }, { spans: meter.labels })
+        if (meter.oversent > 0.5) out.push({ spans: note(`${formatWholeMoney(meter.oversent)} more sent than the pay had left`, tone.caution, "") })
+      }
+      for (const spans of bar.legend) out.push({ spans })
     }
-    out.push({ spans: blank, stays: true }, { spans: plan != null && plan > 0 ? headed("Savers", [{ text: "plan ", fg: ink.note }, { text: formatWholeMoney(plan), fg: ink.figure, bold: true }]) : heading("Savers"), stays: true })
-    const p = paid()
-    if (pay == null) out.push({ spans: note("p: your pay, to see what goes to savers", tone.caution, "") })
-    else if (!target) out.push({ spans: note("t: your spending target, to see what's saved", tone.caution, "") })
-    else if (plan != null && plan < 0) out.push({ spans: note(`The target is ${formatWholeMoney(-plan)} more than your pay`, tone.caution, "") })
-    else if (plan != null && plan > 0) {
-      // Spending past the target comes out of the plan; what's left of it,
-      // less what's gone, is still to send.
-      const short = Math.min(plan, Math.max(0, spent - total))
-      const toSend = Math.max(0, plan - short - p.sent)
-      for (const spans of saversMeter(width, bar?.targetCells ?? 0, bar?.overCells ?? 0, p.sent, toSend, short)) out.push({ spans, sweeps: spans.some((x) => x.text.includes("█")) })
+    if (!planned) {
+      out.push({ spans: blank, stays: true }, { spans: heading("Savers"), stays: true })
+      if (pay == null) out.push({ spans: note("p: your pay, to see what goes to savers", tone.caution, "") })
+      else if (!target) out.push({ spans: note("t: your spending target, to see what's saved", tone.caution, "") })
+      else if (plan != null && plan < 0) out.push({ spans: note(`The target is ${formatWholeMoney(-plan)} more than your pay`, tone.caution, "") })
     }
     if (!p.pay && view().current) out.push({ spans: note("no pay found yet (the Salary category)", ink.note, "") })
     out.push({ spans: blank, stays: true }, { spans: heading("This cycle"), stays: true })
@@ -435,7 +435,7 @@ export function BudgetsTab(props: { focused: SectionId }) {
         // overlap.
         <text wrapMode="none" flexShrink={0}>
           <S>{" "}</S>
-          <Index each={line().spans}>{(span) => <S fg={span().fg} bg={line().bg} bold={span().bold}>{span().text}</S>}</Index>
+          <Index each={line().spans}>{(span) => <S fg={span().fg} bg={span().bg ?? line().bg} bold={span().bold}>{span().text}</S>}</Index>
           <Show when={line().bg}><S bg={line().bg}>{" ".repeat(Math.max(0, rowWidth(categoriesWidth()) - line().spans.reduce((n, x) => n + x.text.length, 0)))}</S></Show>
         </text>
       )}</Index>

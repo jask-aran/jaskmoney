@@ -6,6 +6,8 @@ export interface Span {
   text: string
   fg: string
   bold?: boolean
+  /** Behind the text, where a span has its own (hatching); else the line's. */
+  bg?: string
 }
 
 export const muted = (text: string): Span => ({ text, fg: ink.note })

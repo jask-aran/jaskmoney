@@ -40,7 +40,7 @@ test("Budgets tab (3): the charts follow the Budgets pane's row at the cursor, A
   await data.setBudget({ kind: "overall" }, 500)
   const f = await frame()
   // $120 less the $20 refund: in Each pay, and the table's total.
-  expect(f).toMatch(/−\$100 spent\s+\$400 left/)
+  expect(f).toMatch(/\$100 spent\s+\$400 left/)
   expect(f).toMatch(/All spending\s+\$100/)
   expect(f).toContain("Cumulative spending · All spending")
   // l: the Overview's next spending view, Daily.
@@ -66,7 +66,7 @@ test("allocating down: in the Budgets pane, enter sets a category's budget start
   expect(f).toContain("Cumulative spending · Groceries")
   // The target is the cap: Groceries' $300 comes out of its $500, leaving
   // the rest $200.
-  expect(f).toMatch(/−\$100 spent\s+\$400 left/)
+  expect(f).toMatch(/\$100 spent\s+\$400 left/)
   expect(f).toMatch(/the rest \$0 of \$200/)
   // del twice removes the category's budget.
   handleKey(ui, key("delete"), data)
@@ -332,45 +332,42 @@ test("the plan: your pay and your spending target give what goes to savers; each
   const { bigDigits } = await import("./PlanGraphics")
   expect(f).toContain("$ " + bigDigits("142")[0])
   expect(f).not.toContain("t sets your")
-  // The pay as a bar filling as you spend: the target's end marked over
-  // it, with the target; under it what's spent and what remains of the pay.
+  // The pay as a bar filling as you spend, each part's figure over it:
+  // the target, and what's left of the pay.
   let rows = f.split("\n")
-  const tick = rows.findIndex((l) => l.includes("▾ target $2,000"))
-  expect(rows[tick + 1]).toMatch(/█+/)
-  expect(rows[tick + 2]).toMatch(/−\$300 spent\s+\$4,700 left/)
-  // Savers: the plan ($5,000 less $2,000) as a meter, $2,500 of it sent
-  // and $500 still to send over its parts.
-  expect(line(f, "Savers")).toMatch(/Savers\s+plan \$3,000/)
-  const meterTop = rows.findIndex((l) => l.includes("$2,500 sent"))
-  expect(rows[meterTop]).toMatch(/\$2,500 sent\s+\$500( to send)?/)
-  expect(rows[meterTop + 1]).toMatch(/█+/)
-  // $2,300 spent on a $2,000 target: $300 over, drawn in bad between the
+  const above = rows.findIndex((l) => /\$2,000 target\s+\$4,700 left/.test(l))
+  expect(above).toBeGreaterThan(0)
+  expect(rows[above + 1]).toMatch(/█+/)
+  // Savers: the bar's savers end opened out to the plan ($5,000 less
+  // $2,000) at full width, $2,500 of it sent and $500 still to send.
+  expect(rows[above + 2]).toMatch(/╭─+╯\s+savers plan \$3,000\s+│/)
+  expect(rows[above + 3]).toMatch(/█+/)
+  expect(rows[above + 4]).toMatch(/\$2,500 sent\s+\$500( to send)?/)
+  // $2,300 spent on a $2,000 target: $300 over, hatched in bad between the
   // target and savers, and savers get $300 less.
   add("2026-10-15", -2000, "Shop", id("Groceries"))
   data.refresh()
   f = await frame()
-  // Spent past the target; the $300 over comes out of the plan: $200
-  // still to send, $300 short.
-  expect(f).toMatch(/−\$2,300 spent\s+\$2,700 left/)
-  expect(line(f, "$2,500 sent")).toMatch(/\$300 short\s+\$2,500 sent(\s+\$200( to send)?)?/)
-  expect(f).not.toContain("more than your pay")
-  const bad = RGBA.fromHex(tone.bad).toInts().join()
   rows = f.split("\n")
-  const barLine = rows.findIndex((l) => l.includes("▾ target")) + 1
-  expect(t.captureSpans().lines[barLine]!.spans.some((s) => s.text.includes("█") && s.fg.toInts().join() === bad)).toBe(true)
-  // Savers' meter is on the pay bar's scale, under it: its short is the
-  // bar's overspend, cell for cell.
-  const redCells = (row: number) => {
+  const overAt = rows.findIndex((l) => /\$2,000 target\s+\$300( over)?\s+\$2,700 left/.test(l))
+  expect(overAt).toBeGreaterThan(0)
+  // The $300 over comes out of the plan: $300 short, hatched first.
+  expect(rows[overAt + 4]).toMatch(/\$300 short\s+\$2,500 sent(\s+\$200( to send)?)?/)
+  expect(f).not.toContain("more than your pay")
+  expect(f).not.toContain("more sent than")
+  const bad = RGBA.fromHex(tone.bad).toInts().join()
+  const hatchAt = (row: number) => {
     let col = 0
-    const out: number[] = []
     for (const span of t.captureSpans().lines[row]!.spans) {
-      for (const ch of span.text) { if (ch === "█" && span.fg.toInts().join() === bad) out.push(col); col++ }
+      for (const ch of span.text) { if (ch === "╱" && span.fg.toInts().join() === bad) return col; col++ }
     }
-    return out
+    return -1
   }
-  const meterLine = rows.findIndex((l) => l.includes("$300 short")) + 1
-  expect(redCells(meterLine).length).toBeGreaterThan(0)
-  expect(redCells(meterLine)).toEqual(redCells(barLine))
+  // The opening's corner is under where the hatching starts; the meter's
+  // short starts at the left edge.
+  const corner = [...rows[overAt + 2]!].indexOf("╯")
+  expect(hatchAt(overAt + 1)).toBe(corner)
+  expect(hatchAt(overAt + 3)).toBe([...rows[overAt + 2]!].indexOf("╭"))
   t.renderer.destroy()
 })
 
@@ -414,11 +411,13 @@ test("Each pay, Savers and This cycle draw in on \"always\": the bars sweep in f
   const { frame } = await budgetsTab({ width: 145, height: 60 })
   await data.setBudget({ kind: "overall" }, 500)
   data.setState("uiPrefs", { ...data.state.uiPrefs, chartMotion: "always", chartSpeed: "quick" })
-  // The pay's bar: the first line after Pay with blocks, at rest.
+  // The pay's bar: the first line after Pay with blocks, at rest (in the
+  // Budgets pane's columns: the main column has bars of its own).
   await frame(); await Bun.sleep(600)
   const rest = (await frame()).split("\n"), head = rest.findIndex((l) => l.includes("p sets your pay"))
-  const at = head + rest.slice(head).findIndex((l) => l.includes("█"))
-  const bar = (f: string) => (f.split("\n")[at]!.match(/█/g) ?? []).length
+  const from = rest.find((l) => l.includes("╭─ Budgets"))!.indexOf("╭─ Budgets")
+  const at = head + rest.slice(head).findIndex((l) => l.slice(from).includes("█"))
+  const bar = (f: string) => (f.split("\n")[at]!.slice(from).match(/█/g) ?? []).length
   const full = bar(await frame())
   expect(full).toBeGreaterThan(20)
   // The cycle changes ([): it draws in again, the bar short of its width at first.
