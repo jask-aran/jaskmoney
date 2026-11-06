@@ -316,6 +316,8 @@ export function BudgetsTab(props: { focused: SectionId }) {
     const plan = toSavers()
     const total = split().total
     const spent = totalProgress().spent
+    // The pay bar's cells, for Savers' meter to line up under it.
+    let bar: ReturnType<typeof payBar> | null = null
     if (pay == null && !target) {
       out.push({ spans: heading("Pay"), stays: true })
       const fill = fade(tone.caution, 0.8)
@@ -332,7 +334,8 @@ export function BudgetsTab(props: { focused: SectionId }) {
         : ledger(payLabel, { text: "", fg: ink.note }, [{ text: "p sets your pay", fg: tone.caution }]), stays: true })
       // The rest of the target's spending: all of it less the categories' own.
       const restSpent = target ? Math.max(0, spent - targetParts().reduce((n, c) => n + c.spent, 0)) : 0
-      for (const spans of payBar(width, pay, target ? total : 0, target ? targetParts() : [], restSpent)) out.push({ spans, sweeps: spans.some((x) => x.text.includes("█")) })
+      bar = payBar(width, pay, target ? total : 0, target ? targetParts() : [], restSpent)
+      for (const spans of bar.lines) out.push({ spans, sweeps: spans.some((x) => x.text.includes("█")) })
     }
     out.push({ spans: blank, stays: true }, { spans: plan != null && plan > 0 ? headed("Savers", [{ text: "plan ", fg: ink.note }, { text: formatWholeMoney(plan), fg: ink.figure, bold: true }]) : heading("Savers"), stays: true })
     const p = paid()
@@ -344,7 +347,7 @@ export function BudgetsTab(props: { focused: SectionId }) {
       // less what's gone, is still to send.
       const short = Math.min(plan, Math.max(0, spent - total))
       const toSend = Math.max(0, plan - short - p.sent)
-      for (const spans of saversMeter(width, p.sent, toSend, short)) out.push({ spans, sweeps: spans.some((x) => x.text.includes("█")) })
+      for (const spans of saversMeter(width, bar?.targetCells ?? 0, bar?.overCells ?? 0, p.sent, toSend, short)) out.push({ spans, sweeps: spans.some((x) => x.text.includes("█")) })
     }
     if (!p.pay && view().current) out.push({ spans: note("no pay found yet (the Salary category)", ink.note, "") })
     out.push({ spans: blank, stays: true }, { spans: heading("This cycle"), stays: true })

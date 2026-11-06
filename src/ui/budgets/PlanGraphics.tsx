@@ -47,7 +47,7 @@ function cellsOf(amounts: number[], width: number): number[] {
  * under it what's spent and what's left (of the pay, or of the target),
  * then the categories' legend, spent of budget.
  */
-export function payBar(width: number, pay: number | null, target: number, categories: PayPart[], restSpent: number): Span[][] {
+export function payBar(width: number, pay: number | null, target: number, categories: PayPart[], restSpent: number): { lines: Span[][]; targetCells: number; overCells: number } {
   const allocated = categories.reduce((n, c) => n + c.amount, 0)
   const cap = Math.max(target, allocated)
   const rest = Math.max(0, target - allocated)
@@ -70,6 +70,7 @@ export function payBar(width: number, pay: number | null, target: number, catego
   const cells = cellsOf(runs.map((r) => r.amount), width)
   const bar: Span[] = runs.flatMap((r, i): Span[] => (cells[i]! > 0 ? [{ text: "█".repeat(cells[i]!), fg: r.color }] : []))
   const targetCells = runs.reduce((n, r, i) => n + (r.part === "target" ? cells[i]! : 0), 0)
+  const overCells = runs.reduce((n, r, i) => n + (r.part === "over" ? cells[i]! : 0), 0)
   const out: Span[][] = []
   // The target's end, marked over its last cell (none when the target is
   // all the bar: nothing beyond it to tell apart).
@@ -111,28 +112,36 @@ export function payBar(width: number, pay: number | null, target: number, catego
     }
     if (line.length) out.push(line)
   }
-  return out
+  return { lines: out, targetCells, overCells }
 }
 
 /**
- * The plan for savers as a meter `width` wide, all of it the plan: what's
- * gone to savers (good), what's still to send (a dim good) and what
- * spending past the target has taken from it (bad), each part's figure
- * centred over it where it fits.
+ * The plan for savers as a meter on the pay bar's scale, `width` wide,
+ * under the bar's savers end: blank for the `from` cells the target takes,
+ * then what spending past the target has taken from the plan (bad, its
+ * `shortCells` the bar's overspend, so the two line up), what's gone to
+ * savers (good) and what's still to send (a dim good). Each part's figure
+ * goes centred over it where it fits.
  */
-export function saversMeter(width: number, sent: number, toSend: number, short: number): Span[][] {
+export function saversMeter(width: number, from: number, shortCells: number, sent: number, toSend: number, short: number): Span[][] {
+  const region = Math.max(0, width - from)
+  const short_ = Math.min(region, shortCells)
+  // What's sent beyond what's left of the plan still only fills it.
+  const [sentCells, sendCells] = cellsOf([sent, toSend], region - short_)
   const runs = [
-    { amount: sent, color: tone.good, labels: [[{ text: formatWholeMoney(sent), fg: tone.good, bold: true }, { text: " sent", fg: ink.note }], [{ text: formatWholeMoney(sent), fg: tone.good, bold: true }]] },
-    { amount: toSend, color: fade(tone.good, LEFT_FADE), labels: [[{ text: formatWholeMoney(toSend), fg: ink.figure }, { text: " to send", fg: ink.note }], [{ text: formatWholeMoney(toSend), fg: ink.figure }]] },
-    { amount: short, color: tone.bad, labels: [[{ text: formatWholeMoney(short), fg: tone.bad, bold: true }, { text: " short", fg: tone.bad }], [{ text: formatWholeMoney(short), fg: tone.bad, bold: true }]] },
+    { cells: short_, color: tone.bad, labels: [[{ text: formatWholeMoney(short), fg: tone.bad, bold: true }, { text: " short", fg: tone.bad }], [{ text: formatWholeMoney(short), fg: tone.bad, bold: true }]] },
+    { cells: sentCells!, color: tone.good, labels: [[{ text: formatWholeMoney(sent), fg: tone.good, bold: true }, { text: " sent", fg: ink.note }], [{ text: formatWholeMoney(sent), fg: tone.good, bold: true }]] },
+    { cells: sendCells!, color: fade(tone.good, LEFT_FADE), labels: [[{ text: formatWholeMoney(toSend), fg: ink.figure }, { text: " to send", fg: ink.note }], [{ text: formatWholeMoney(toSend), fg: ink.figure }]] },
   ]
-  const cells = cellsOf(runs.map((r) => r.amount), width)
-  const bar: Span[] = runs.flatMap((r, i): Span[] => (cells[i]! > 0 ? [{ text: "█".repeat(cells[i]!), fg: r.color }] : []))
-  if (spansWidth(bar) === 0) bar.push({ text: "─".repeat(width), fg: ink.rule })
+  const bar: Span[] = [
+    ...(from > 0 ? [{ text: " ".repeat(Math.min(width, from)), fg: ink.note }] : []),
+    ...runs.flatMap((r): Span[] => (r.cells > 0 ? [{ text: "█".repeat(r.cells), fg: r.color }] : [])),
+  ]
+  if (runs.every((r) => r.cells === 0) && region > 0) bar.push({ text: "─".repeat(region), fg: ink.rule })
   // Short first, then sent, then what's to send, where room is left.
-  let from = 0
-  const mids = cells.map((c) => { const mid = from + c / 2; from += c; return mid })
-  const labels = [2, 0, 1].flatMap((i) => (cells[i]! > 0 ? [{ mid: mids[i]!, options: runs[i]!.labels as Span[][] }] : []))
+  let at = from
+  const mids = runs.map((r) => { const mid = at + r.cells / 2; at += r.cells; return mid })
+  const labels = runs.flatMap((r, i) => (r.cells > 0 ? [{ mid: mids[i]!, options: r.labels as Span[][] }] : []))
   return [labelled(width, labels), bar]
 }
 

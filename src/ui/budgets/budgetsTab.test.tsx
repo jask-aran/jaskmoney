@@ -352,12 +352,25 @@ test("the plan: your pay and your spending target give what goes to savers; each
   // Spent past the target; the $300 over comes out of the plan: $200
   // still to send, $300 short.
   expect(f).toMatch(/−\$2,300 spent\s+\$2,700 left/)
-  expect(line(f, "$2,500 sent")).toMatch(/\$2,500 sent\s+(\$200( to send)?\s+)?\$300 short/)
+  expect(line(f, "$2,500 sent")).toMatch(/\$300 short\s+\$2,500 sent(\s+\$200( to send)?)?/)
   expect(f).not.toContain("more than your pay")
   const bad = RGBA.fromHex(tone.bad).toInts().join()
   rows = f.split("\n")
   const barLine = rows.findIndex((l) => l.includes("▾ target")) + 1
   expect(t.captureSpans().lines[barLine]!.spans.some((s) => s.text.includes("█") && s.fg.toInts().join() === bad)).toBe(true)
+  // Savers' meter is on the pay bar's scale, under it: its short is the
+  // bar's overspend, cell for cell.
+  const redCells = (row: number) => {
+    let col = 0
+    const out: number[] = []
+    for (const span of t.captureSpans().lines[row]!.spans) {
+      for (const ch of span.text) { if (ch === "█" && span.fg.toInts().join() === bad) out.push(col); col++ }
+    }
+    return out
+  }
+  const meterLine = rows.findIndex((l) => l.includes("$300 short")) + 1
+  expect(redCells(meterLine).length).toBeGreaterThan(0)
+  expect(redCells(meterLine)).toEqual(redCells(barLine))
   t.renderer.destroy()
 })
 
