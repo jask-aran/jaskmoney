@@ -65,8 +65,9 @@ test("the Range pane: the range as a track, what came in as a bar against before
   expect(text).toMatch(/Savings rate\s+before\s+\S+\s+\S+/)
   expect(text).toMatch(/Daily average\s+before \$\d+\s+\$\d+/)
   expect(text).toMatch(/Transactions\s+before 2\s+\d+/)
-  // Runway: the net position at the last 90 days' spending a day.
-  expect(text).toMatch(/Runway\s+at \$\d+\/day \(90 days\)\s+\d+ days/)
+  // Runway: the net position ($10,500) at the range's daily average
+  // ($400 over 31 days, $13).
+  expect(text).toMatch(/Runway\s+at \$13\/day\s+814 days/)
   // The categories: a heading over the columns, each group's change on before.
   expect(text).toMatch(/Categories\s+Spent\s+%\s+Before/)
   expect(text).toMatch(/Groceries\s+\$300\s+75%\s+-\$100/)

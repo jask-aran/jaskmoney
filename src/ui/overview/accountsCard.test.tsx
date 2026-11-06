@@ -34,20 +34,32 @@ async function accounts(height: number, savers: boolean) {
   return { rows }
 }
 
-test("Accounts: available first, the balance with what's pending, then each saver, their subtotal and the net position", async () => {
+test("Accounts: a ledger, available first, the balance with what's pending, then each saver with its 30 days' change, their total and the net position", async () => {
   const { rows } = await accounts(45, true)
-  const text = rows.join("\n")
   // Balance less pending is available: $1,246.50 − $96.94, 2 held.
-  expect(rows[0]).toMatch(/Available.*\$1,149\.56/)
-  expect(rows[1]).toMatch(/Balance.*\$1,246\.50.*2 txn/)
-  expect(text).toMatch(/Total.*\$8,400/)
-  expect(rows.at(-1)).toMatch(/Net position.*\$9,549\.56/)
+  expect(rows[0]).toMatch(/Available\s+\$1,149\.56$/)
+  expect(rows[1]).toMatch(/Balance\s+\$97 pending · 2\s+\$1,246\.50$/)
+  // The savers set apart, under their heading, change then balance.
+  expect(rows[2]).toBe("")
+  expect(rows[3]).toMatch(/Savers\s+30 days$/)
+  expect(rows[4]).toMatch(/Holiday\s+\$0\s+\$3,400$/)
+  expect(rows[6]).toMatch(/Total\s+\$0\s+\$8,400$/)
+  expect(rows[7]).toBe("")
+  // The net position last, its 30 days' change beside it.
+  expect(rows.at(-1)).toMatch(/Net position\s+[+-]?\$[\d,]+\s+\$9,549\.56$/)
+  // The changes in one column.
+  const column = (r: string) => r.search(/\S+\s+\S+$/) + r.match(/(\S+)\s+\S+$/)![1]!.length
+  expect(new Set([rows[4]!, rows[6]!, rows.at(-1)!].map(column)).size).toBe(1)
 })
 
 test("Accounts: short of rows, savers fold to their subtotal; with no savers, no savers or net position", async () => {
-  // Runway is the Range pane's (the default): Available, Balance, the
-  // 30 day change, then savers.
-  expect((await accounts(30, true)).rows.slice(3).map((r) => r.split(/\s{2,}/))).toEqual([["Savers", "$8,400", "$0"], ["Net position", "$9,549.56"]])
+  // Runway is the Range pane's (the default). Folded: Available,
+  // Balance, then the savers' line between blank lines.
+  const folded = (await accounts(30, true)).rows.slice(2)
+  expect(folded[0]).toBe("")
+  expect(folded[1]!.trim().split(/\s{2,}/)).toEqual(["Savers", "$0", "$8,400"])
+  expect(folded[2]).toBe("")
+  expect(folded[3]!.trim()).toMatch(/^Net position\s+\S+\s+\$9,549\.56$/)
   const none = (await accounts(45, false)).rows
   expect(none).toHaveLength(3)
   expect(none.join("\n")).not.toContain("Runway")
