@@ -45,8 +45,11 @@ test("Accounts: available first, the balance with what's pending, then each save
 })
 
 test("Accounts: short of rows, savers fold to their subtotal; with no savers, no savers or net position", async () => {
-  expect((await accounts(30, true)).rows.slice(4).map((r) => r.split(/\s{2,}/))).toEqual([["Savers", "$8,400", "$0"], ["Net position", "$9,549.56"]])
+  // Runway is the Range pane's (the default): Available, Balance, the
+  // 30 day change, then savers.
+  expect((await accounts(30, true)).rows.slice(3).map((r) => r.split(/\s{2,}/))).toEqual([["Savers", "$8,400", "$0"], ["Net position", "$9,549.56"]])
   const none = (await accounts(45, false)).rows
-  expect(none).toHaveLength(4)
+  expect(none).toHaveLength(3)
+  expect(none.join("\n")).not.toContain("Runway")
   expect(none.join("\n")).not.toMatch(/Savers|Net position/)
 })

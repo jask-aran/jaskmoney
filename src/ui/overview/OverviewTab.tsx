@@ -232,7 +232,8 @@ export function OverviewTab(props: { focused: SectionId }) {
   // subtotal (folded: the subtotal alone), and the net position.
   const hasSavers = () => position().savers.length > 0
   const saverRows = (full: boolean) => (!hasSavers() ? 0 : full ? 2 + position().savers.length : 1) + (hasSavers() ? 1 : 0)
-  const accountRows = (full: boolean) => 3 + (position().pendingCount > 0 ? 1 : 0) + saverRows(full)
+  // Runway is the Range pane's, with it.
+  const accountRows = (full: boolean) => (rangePane() ? 2 : 3) + (position().pendingCount > 0 ? 1 : 0) + saverRows(full)
   // Column headings sit in the top border, so no row of their own.
   const totalsRows = () => 7 + (budget() ? (budget()!.remaining > 0 ? 2 : 1) : 0)
   // Narrow: the stack beside Categories, and so the height of both (the
@@ -350,7 +351,7 @@ export function OverviewTab(props: { focused: SectionId }) {
       <Show when={position().pendingCount > 0 && available() != null}>
         {stat("Balance", formatMoney(available()! - position().pendingAmount), pendingNote(), { value: ink.label })}
       </Show>
-      {stat("Runway", position().runwayDays != null ? `${Math.round(position().runwayDays!)} days` : "—", position().dailySpend != null ? `${formatWholeMoney(position().dailySpend!)}/day` : "")}
+      <Show when={!rangePane()}>{stat("Runway", position().runwayDays != null ? `${Math.round(position().runwayDays!)} days` : "—", position().dailySpend != null ? `${formatWholeMoney(position().dailySpend!)}/day` : "")}</Show>
       {stat("30 day change", signedWholeMoney(change30()), "", { value: changeColor(change30()) })}
       <Show when={hasSavers()}>
         <Show
@@ -413,8 +414,8 @@ export function OverviewTab(props: { focused: SectionId }) {
     const bar = rangeBar(width, f.income, groups().map((g) => ({ amount: g.amount, color: g.color })), f.savedToSavers, f.net, covered() && b.spent > 0 ? b.spent : null)
     lines.push(bar.above, bar.bar, bar.below, [])
     // The ratios: label, before (a note) and the figure at the row's end.
-    const ratio = (label: string, value: string, was: string): Span[] => {
-      const note = covered() ? `before ${was}` : ""
+    const ratio = (label: string, value: string, was: string | null, aside?: string): Span[] => {
+      const note = aside ?? (covered() && was != null ? `before ${was}` : "")
       const gap = Math.max(1, width - label.length - note.length - Math.max(VALUE - 2, value.length))
       return [{ text: label, fg: ink.label }, { text: " ".repeat(gap) + note, fg: ink.note }, { text: value.padStart(Math.max(VALUE - 2, value.length)), fg: ink.strong, bold: true }]
     }
@@ -422,6 +423,11 @@ export function OverviewTab(props: { focused: SectionId }) {
       ratio("Savings rate", formatPct(f.savingsRate), formatPct(b.savingsRate)),
       ratio("Daily average", daily(f.spent), daily(b.spent)),
       ratio("Transactions", String(f.txnCount), String(b.txnCount)),
+      // How long the net position lasts at the last 90 days' spending a
+      // day: whatever the range, so its own note says so.
+      ...(position().runwayDays != null && position().dailySpend != null
+        ? [ratio("Runway", `${Math.round(position().runwayDays!)} days`, null, `at ${formatWholeMoney(position().dailySpend!)}/day (90 days)`)]
+        : []),
       [],
     )
     // The categories' heading, its columns over theirs.
