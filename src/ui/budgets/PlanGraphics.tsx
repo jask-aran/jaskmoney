@@ -117,26 +117,17 @@ export function payBar(width: number, pay: number | null, target: number, catego
  * Under the pay bar, the line that opens its savers end (from `from` to
  * the end) out to the full width for Savers' meter under it: a corner
  * under where savers start, running back to the left edge, the right edge
- * straight down, and the plan between. Along the run back, under the
- * target, what's been spent in all.
+ * straight down, and the plan between.
  */
-export function planOpening(width: number, from: number, plan: number, spent: number, over: boolean): Span[] {
+export function planOpening(width: number, from: number, plan: number): Span[] {
   if (from <= 0 || from >= width - 1) return [{ text: " ", fg: ink.note }]
   const label: Span[] = [{ text: "savers plan ", fg: ink.note }, { text: formatWholeMoney(plan), fg: ink.figure, bold: true }]
   const room = width - 1 - (from + 1)
   const fits = spansWidth(label) + 2 <= room
   const pad = fits ? room - spansWidth(label) : room
   const leftPad = Math.floor(pad / 2)
-  // The run back: "─ $3,244 spent ─" where it fits, else the figure, else bare.
-  const spentFg = over ? tone.bad : ink.figure
-  const run = from - 1
-  const spentLabel = [[{ text: formatWholeMoney(spent), fg: spentFg, bold: true }, { text: " spent", fg: ink.note }], [{ text: formatWholeMoney(spent), fg: spentFg, bold: true }]]
-    .find((l) => spansWidth(l) + 4 <= run)
-  const runSpans: Span[] = spentLabel
-    ? (() => { const r = run - spansWidth(spentLabel) - 2, l = Math.floor(r / 2); return [{ text: `╭${"─".repeat(l)} `, fg: ink.rule }, ...spentLabel, { text: ` ${"─".repeat(r - l)}╯`, fg: ink.rule }] })()
-    : [{ text: `╭${"─".repeat(run)}╯`, fg: ink.rule }]
   return [
-    ...runSpans,
+    { text: `╭${"─".repeat(from - 1)}╯`, fg: ink.rule },
     { text: " ".repeat(fits ? leftPad : room), fg: ink.note },
     ...(fits ? [...label, { text: " ".repeat(pad - leftPad), fg: ink.note }] : []),
     { text: "│", fg: ink.rule },

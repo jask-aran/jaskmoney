@@ -329,8 +329,7 @@ test("the plan: your pay and your spending target give what goes to savers; each
   expect(rows[above + 1]).toMatch(/█+/)
   // Savers: the bar's savers end opened out to the plan ($5,000 less
   // $2,000) at full width, $2,500 of it sent and $500 still to send.
-  // Along the opening, under the target: what's been spent in all.
-  expect(rows[above + 2]).toMatch(/╭─+ \$300 spent ─+╯\s+savers plan \$3,000\s+│/)
+  expect(rows[above + 2]).toMatch(/╭─+╯\s+savers plan \$3,000\s+│/)
   expect(rows[above + 3]).toMatch(/█+/)
   expect(rows[above + 4]).toMatch(/\$2,500 sent\s+\$500( to send)?/)
   // $2,300 spent on a $2,000 target: $300 over, hatched in bad between the
@@ -344,7 +343,14 @@ test("the plan: your pay and your spending target give what goes to savers; each
   // The $300 over comes out of the plan: $300 short, hatched first.
   expect(rows[overAt + 4]).toMatch(/\$300 short\s+\$2,500 sent(\s+\$200( to send)?)?/)
   expect(f).not.toContain("more than your pay")
-  expect(rows[overAt + 2]).toContain("$2,300 spent")
+  // The facts over it: the last pay and when, the next, what's spent this
+  // period (over the target: bad) and the days till pay.
+  expect(f).toMatch(/Last pay\s+Next pay/)
+  expect(f).toMatch(/\$5,200  1 Oct\s+Sun 1 Nov/)
+  expect(f).toMatch(/Spent this period\s+Days till pay/)
+  expect(f).toMatch(/\$2,300\s+12 days/)
+  const spentRow = rows.findIndex((l) => /\$2,300\s+12 days/.test(l))
+  expect(t.captureSpans().lines[spentRow]!.spans.some((s) => s.text.includes("$2,300") && s.fg.toInts().join() === RGBA.fromHex(tone.bad).toInts().join())).toBe(true)
   const bad = RGBA.fromHex(tone.bad).toInts().join()
   const hatchAt = (row: number) => {
     let col = 0

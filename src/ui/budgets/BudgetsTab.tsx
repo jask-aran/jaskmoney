@@ -312,6 +312,27 @@ export function BudgetsTab(props: { focused: SectionId }) {
     const total = split().total
     const spent = totalProgress().spent
     const p = paid()
+    // The cycle's facts, two to a line, each its label over its value:
+    // the last pay (what came in, and when), the next (this cycle only),
+    // what's been spent and the days till pay.
+    const half = Math.floor(width / 2)
+    const fact = (label: string, value: Span[]) => ({ label, value })
+    const weekday = (iso: string) => new Date(iso + "T12:00:00Z").toLocaleDateString("en-AU", { weekday: "short", timeZone: "UTC" })
+    const next = addDays(cycle().end, 1)
+    const days = Math.max(0, daysBetween(today(), next))
+    const facts = [
+      fact(view().current ? "Last pay" : "Pay", p.pay > 0 ? [{ text: formatWholeMoney(p.pay), fg: ink.strong, bold: true }, { text: `  ${shortDate(p.dateISO!)}`, fg: ink.label }] : [{ text: "none yet", fg: ink.note }]),
+      ...(view().current ? [fact("Next pay", [{ text: `${weekday(next)} ${shortDate(next)}`, fg: ink.strong, bold: true }])] : []),
+      fact(view().current ? "Spent this period" : "Spent", [{ text: formatWholeMoney(spent), fg: target && spent > total + 0.5 ? tone.bad : ink.strong, bold: true }]),
+      ...(view().current ? [fact("Days till pay", [{ text: String(days), fg: ink.strong, bold: true }, { text: days === 1 ? " day" : " days", fg: ink.label }])] : []),
+    ]
+    const cell = (spans: Span[], w: number): Span[] => { const n = spans.reduce((k, x) => k + x.text.length, 0); return [...spans, { text: " ".repeat(Math.max(0, w - n)), fg: ink.note }] }
+    for (let i = 0; i < facts.length; i += 2) {
+      const [a, b] = [facts[i]!, facts[i + 1]]
+      out.push({ spans: fitSpans([...cell([{ text: a.label, fg: ink.label }], half), ...(b ? [{ text: b.label, fg: ink.label }] : [])], width), stays: true })
+      out.push({ spans: fitSpans([...cell(a.value, half), ...(b?.value ?? [])], width) })
+    }
+    out.push({ spans: blank, stays: true })
     // Savers is drawn once pay and target leave something for it.
     const planned = pay != null && !!target && plan != null && plan > 0
     if (pay == null && !target) {
@@ -337,7 +358,7 @@ export function BudgetsTab(props: { focused: SectionId }) {
         // plan as a meter. Spending past the target comes out of it.
         const short = Math.min(plan!, Math.max(0, spent - total))
         const meter = saversMeter(width, plan!, p.sent, short)
-        out.push({ spans: planOpening(width, bar.targetCells, plan!, spent, spent > total + 0.5) }, { spans: meter.bar, sweeps: true }, { spans: meter.labels })
+        out.push({ spans: planOpening(width, bar.targetCells, plan!) }, { spans: meter.bar, sweeps: true }, { spans: meter.labels })
       }
       for (const spans of bar.legend) out.push({ spans })
     }
