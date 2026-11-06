@@ -289,7 +289,7 @@ test("Set budgets: with none yet the tab opens on it, the overall budget first w
   expect(await frame()).not.toContain("start here")
 })
 
-test("the plan: your pay and your spending give what goes to savers, and what to set Up's pay splitting to; this cycle's payday is checked against it, and nothing without it", async () => {
+test("the plan: your pay and your spending target give what goes to savers; each pay's bar fills as you spend and going over comes out of savers; this cycle's payday is checked against it, and nothing without it", async () => {
   setAppClock(new Date(2026, 9, 20, 12))
   const t = await renderApp({ width: 160, height: 56 })
   data.init(":memory:")
@@ -333,19 +333,33 @@ test("the plan: your pay and your spending give what goes to savers, and what to
   await data.setBudget({ kind: "overall" }, 2000)
   f = await frame()
   expect(line(f, "Each pay")).toContain("$5,000")
-  expect(f).toContain("Set Up's pay splitting to send $3,000 to savers")
+  // No Up pay-splitting hint: the API can't see the split, so it's not the app's to say.
+  expect(f).not.toContain("pay splitting")
   // The third tile: what's left of the target a day till payday.
   // ($2,000 less $300 spent, over the 12 days to 1 Nov: $142, drawn large.)
   const { bigDigits } = await import("./PlanGraphics")
   expect(f).toContain("$ " + bigDigits("142")[0])
   expect(f).not.toContain("t sets your")
-  // Each pay as a bar: the target, then savers.
-  expect(f).toMatch(/└─+ target \$2,000 ─+┘└─+ savers \$3,000 ─+┘/)
+  // Each pay as a bar filling as you spend: the target ($300 of it spent),
+  // then savers.
+  expect(f).toMatch(/└─+ (spent \$300 · )?\$1,700 left ─+┘└─+ savers \$3,000 ─+┘/)
   // This cycle sent $2,500 of the $3,000: the meter, short.
   expect(f).toMatch(/█+─+ of \$3,000/)
   expect(f).toContain("$500 still to send")
   expect(line(f, "Left by 1 Nov")).toMatch(/\$[\d,]+/)
   expect(f).toContain("at this pace")
+  // $2,300 spent on a $2,000 target: $300 over, drawn in bad between the
+  // target and savers, and savers get $300 less.
+  add("2026-10-15", -2000, "Shop", id("Groceries"))
+  data.refresh()
+  f = await frame()
+  // (Here the overspend is only a few cells: too narrow for its figure,
+  // which Progress gives anyway.)
+  expect(f).toMatch(/└─+ target \$2,000 ─+┘\s*(└─* )?(\$300 over|\+\$300)?( ─*┘)?\s*└─+ savers \$2,700 ─+┘/)
+  expect(f).not.toContain("more than your pay")
+  const bad = RGBA.fromHex(tone.bad).toInts().join()
+  const barLine = f.split("\n").findIndex((l) => l.includes("Each pay")) + 1
+  expect(t.captureSpans().lines[barLine]!.spans.some((s) => s.text.includes("█") && s.fg.toInts().join() === bad)).toBe(true)
   t.renderer.destroy()
 })
 

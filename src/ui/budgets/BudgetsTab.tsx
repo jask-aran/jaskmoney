@@ -347,7 +347,7 @@ export function BudgetsTab(props: { focused: SectionId }) {
       if (b.scope.kind !== "category") return []
       const c = data.state.categories.find((x) => x.id === (b.scope as { categoryId: number }).categoryId)
       if (c?.parentId != null && onCategory.has(c.parentId)) return []
-      return [{ name: c?.name ?? "?", amount: b.amount, color: categoryColor(c?.color) }]
+      return [{ name: c?.name ?? "?", amount: b.amount, color: categoryColor(c?.color), spent: progress().get(b.id)?.spent ?? 0 }]
     })
   })
   // This cycle: where Spending would be by the next payday at this pace
@@ -422,11 +422,12 @@ export function BudgetsTab(props: { focused: SectionId }) {
         { spans: blank, bg: fill },
       )
     } else {
-      for (const spans of payBar(width, pay, target ? split().total : 0, target ? targetParts() : [])) out.push({ spans })
+      // The rest of the target's spending: all of it less the categories' own.
+      const restSpent = target ? Math.max(0, totalProgress().spent - targetParts().reduce((n, c) => n + c.spent, 0)) : 0
+      for (const spans of payBar(width, pay, target ? split().total : 0, target ? targetParts() : [], restSpent)) out.push({ spans })
       if (pay == null) out.push({ spans: note("p: your pay, to see what goes to savers", tone.caution, "") })
       else if (!target) out.push({ spans: note("t: your spending target, to see what's saved", tone.caution, "") })
-      else if (saving != null && saving >= 0) out.push({ spans: fitSpans([{ text: "Set Up's pay splitting to send ", fg: ink.note }, { text: formatWholeMoney(saving), fg: tone.good, bold: true }, { text: " to savers", fg: ink.note }], width) })
-      else if (saving != null) out.push({ spans: note(`The target is ${formatWholeMoney(-saving)} more than your pay`, tone.caution, "") })
+      else if (saving != null && saving < 0) out.push({ spans: note(`The target is ${formatWholeMoney(-saving)} more than your pay`, tone.caution, "") })
     }
     out.push({ spans: blank }, { spans: heading("This cycle") })
     const p = paid()

@@ -1,9 +1,9 @@
 import { Index, Show } from "solid-js"
 import { formatWholeMoney } from "../../domain/dashboard"
 import { daysBetween } from "../../domain/days"
-import { ink, theme, tone } from "../../theme"
+import { fade, ink, theme, tone } from "../../theme"
 import { LEVEL_BG } from "../overview/CalendarView"
-import { fit, shortDate, truncate } from "../text"
+import { shortDate, truncate } from "../text"
 import { S } from "../primitives/S"
 import type { Span } from "../primitives/spans"
 
@@ -20,7 +20,7 @@ import type { Span } from "../primitives/spans"
 const spendingFill = () => LEVEL_BG[2] ?? theme.surface1
 
 /** One part of each pay: a category's budget, the rest of the target, savers. */
-export interface PayPart { name: string; amount: number; color: string }
+export interface PayPart { name: string; amount: number; color: string; spent: number }
 
 /** Cells for each part across `width`, from the running total so the
  * rounding never shortens the whole. */
@@ -36,50 +36,95 @@ function cellsOf(amounts: number[], width: number): number[] {
 }
 
 /**
- * Each pay as one bar `width` wide: the category budgets in their colours
- * and the rest of the target in spending's, together the overall spending
- * target; then savers, what's left of the pay. Under it, a bracket a side
- * naming the target and savers' share; then the categories' legend. With
- * no pay set, the bar is the target alone.
+ * Each pay as one bar `width` wide, filling as the cycle's spending comes
+ * in. The target first: each category budget in its colour, then the rest
+ * of the target in spending's, each solid for what's spent against it and
+ * a dim shade of its colour for what's left (a category over its budget
+ * takes the excess from the rest). Spending past the target is drawn in
+ * bad, between the target and savers: it comes out of what savers get,
+ * as the next top-up keeps that much more of the pay. Then savers, what's
+ * left of the pay, in good. Past the pay too, the bar is the spending.
+ * Under it a bracket a part (the target: what's spent and left, or the
+ * target once it's gone; how far over; savers), then the categories'
+ * legend, spent of budget. With no pay set, there are no savers.
  */
-export function payBar(width: number, pay: number | null, target: number, categories: PayPart[]): Span[][] {
+export function payBar(width: number, pay: number | null, target: number, categories: PayPart[], restSpent: number): Span[][] {
   const allocated = categories.reduce((n, c) => n + c.amount, 0)
   const rest = Math.max(0, target - allocated)
-  const saved = pay != null ? Math.max(0, pay - Math.max(target, allocated)) : 0
-  const parts: PayPart[] = [...categories, { name: "the rest", amount: rest, color: spendingFill() }, ...(saved > 0 ? [{ name: "savers", amount: saved, color: tone.good }] : [])]
-  const cells = cellsOf(parts.map((p) => p.amount), width)
-  const bar: Span[] = parts.flatMap((p, i): Span[] => (cells[i]! > 0 ? [{ text: "█".repeat(cells[i]!), fg: p.color }] : []))
-  // The brackets: the spending target's cells, then savers'.
-  const targetCells = cells.slice(0, categories.length + 1).reduce((n, c) => n + c, 0)
-  const bracket = (cellsWide: number, label: string, amount: string): Span[] => {
-    const text = ` ${label} ${amount} `
-    if (cellsWide < 2) return cellsWide ? [{ text: " ", fg: ink.rule }] : []
-    if (cellsWide < text.length + 2) return [{ text: fit(` ${amount}`, cellsWide), fg: ink.label }]
-    const left = Math.floor((cellsWide - 2 - text.length) / 2), right = cellsWide - 2 - text.length - left
-    return [
-      { text: `└${"─".repeat(left)}`, fg: ink.rule },
-      { text: ` ${label} `, fg: ink.label },
-      { text: `${amount} `, fg: ink.figure },
-      { text: `${"─".repeat(right)}┘`, fg: ink.rule },
-    ]
-  }
-  const over = allocated > target
-  const brackets: Span[] = [
-    ...bracket(targetCells, "target", formatWholeMoney(target)),
-    ...(saved > 0 ? bracket(width - targetCells, "savers", formatWholeMoney(saved)) : []),
+  const spent = categories.reduce((n, c) => n + c.spent, 0) + restSpent
+  const excess = categories.reduce((n, c) => n + Math.max(0, c.spent - c.amount), 0)
+  const restFilled = Math.min(rest, restSpent + excess)
+  const over = Math.max(0, spent - Math.max(target, allocated))
+  const saved = pay != null ? Math.max(0, pay - Math.max(target, allocated) - over) : 0
+  // Each part's spent and left, in that order, as runs of the bar.
+  const runs: Array<{ amount: number; color: string; part: "target" | "over" | "savers" }> = [
+    ...categories.flatMap((c) => [
+      { amount: Math.min(c.spent, c.amount), color: c.color, part: "target" as const },
+      { amount: c.amount - Math.min(c.spent, c.amount), color: fade(c.color, LEFT_FADE), part: "target" as const },
+    ]),
+    { amount: restFilled, color: spendingFill(), part: "target" },
+    { amount: rest - restFilled, color: fade(spendingFill(), LEFT_FADE), part: "target" },
+    { amount: over, color: tone.bad, part: "over" },
+    { amount: saved, color: tone.good, part: "savers" },
   ]
-  const lines = [bar, brackets]
-  if (categories.length) {
-    lines.push([
-      ...categories.flatMap((c, i): Span[] => [{ text: `${i ? "  " : ""}■ `, fg: c.color }, { text: `${c.name} `, fg: ink.label }, { text: formatWholeMoney(c.amount), fg: ink.figure }]),
-      over
-        ? { text: `  ${formatWholeMoney(allocated - target)} over the target`, fg: tone.caution }
-        : { text: "  ■ ", fg: spendingFill() },
-      ...(over ? [] : [{ text: "the rest ", fg: ink.label }, { text: formatWholeMoney(rest), fg: ink.figure }]),
-    ])
+  const cells = cellsOf(runs.map((r) => r.amount), width)
+  const bar: Span[] = runs.flatMap((r, i): Span[] => (cells[i]! > 0 ? [{ text: "█".repeat(cells[i]!), fg: r.color }] : []))
+  const cellsIn = (part: string) => runs.reduce((n, r, i) => n + (r.part === part ? cells[i]! : 0), 0)
+  // A part's bracket: the first label that fits between its corners;
+  // else the first that fits bare, centred; else blank.
+  const width_ = (spans: Span[]) => spans.reduce((n, l) => n + l.text.length, 0)
+  const bracket = (cellsWide: number, labels: Span[][]): Span[] => {
+    if (cellsWide < 1) return []
+    const inside = labels.find((l) => width_(l) + 4 <= cellsWide)
+    if (inside) {
+      const room = cellsWide - 4 - width_(inside), left = Math.floor(room / 2)
+      return [{ text: `└${"─".repeat(left)} `, fg: ink.rule }, ...inside, { text: ` ${"─".repeat(room - left)}┘`, fg: ink.rule }]
+    }
+    const bare = labels.find((l) => width_(l) + 2 <= cellsWide)
+    if (!bare) return [{ text: " ".repeat(cellsWide), fg: ink.rule }]
+    const room = cellsWide - width_(bare), left = Math.floor(room / 2)
+    return [{ text: " ".repeat(left), fg: ink.rule }, ...bare, { text: " ".repeat(room - left), fg: ink.rule }]
   }
-  return lines
+  const money = (text: string, fg: string = ink.figure): Span => ({ text, fg })
+  const targetLabels: Span[][] = spent >= target
+    ? [[{ text: "target ", fg: ink.label }, money(formatWholeMoney(target))], [money(formatWholeMoney(target))]]
+    : [
+      [{ text: "spent ", fg: ink.label }, money(formatWholeMoney(spent)), { text: " · ", fg: ink.note }, money(`${formatWholeMoney(target - spent)} left`)],
+      [money(`${formatWholeMoney(target - spent)} left`)],
+      [money(formatWholeMoney(target - spent))],
+    ]
+  const brackets: Span[] = [
+    ...bracket(cellsIn("target"), targetLabels),
+    ...bracket(cellsIn("over"), [[money(`${formatWholeMoney(over)} over`, tone.bad)], [money(`+${formatWholeMoney(over)}`, tone.bad)]]),
+    ...bracket(cellsIn("savers"), [[{ text: "savers ", fg: ink.label }, money(formatWholeMoney(saved))], [money(formatWholeMoney(saved))]]),
+  ]
+  const out = [bar, brackets]
+  if (categories.length) {
+    // Each part spent of its budget; onto a second line where they don't fit.
+    const item = (name: string, color: string, used: number, budget: number): Span[] => [
+      { text: "■ ", fg: color },
+      { text: `${name} `, fg: ink.label },
+      { text: formatWholeMoney(used), fg: used > budget + 0.5 ? tone.bad : ink.figure },
+      { text: ` of ${formatWholeMoney(budget)}`, fg: ink.note },
+    ]
+    const items = [
+      ...categories.map((c) => item(c.name, c.color, c.spent, c.amount)),
+      allocated > target
+        ? [{ text: `categories ${formatWholeMoney(allocated - target)} over the target`, fg: tone.caution }]
+        : item("the rest", spendingFill(), restSpent, rest),
+    ]
+    let line: Span[] = []
+    for (const it of items) {
+      if (line.length && width_(line) + 2 + width_(it) > width) { out.push(line); line = [] }
+      line = line.length ? [...line, { text: "  ", fg: ink.note }, ...it] : it
+    }
+    if (line.length) out.push(line)
+  }
+  return out
 }
+
+/** How much a part's colour fades for what's left of it. */
+const LEFT_FADE = 0.65
 
 /** Place `items` on a line `width` wide, each at its column or just past
  * the one before (never overlapping, dropping what won't fit). */
