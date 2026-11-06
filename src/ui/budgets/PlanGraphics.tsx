@@ -1,9 +1,9 @@
-import { Index } from "solid-js"
+import { Index, Show } from "solid-js"
 import { formatWholeMoney } from "../../domain/dashboard"
 import { daysBetween } from "../../domain/days"
-import { ink, theme, tone } from "../../theme"
+import { fade, ink, theme, tone } from "../../theme"
 import { LEVEL_BG } from "../overview/CalendarView"
-import { fit, shortDate } from "../text"
+import { fit, shortDate, truncate } from "../text"
 import { S } from "../primitives/S"
 import type { Span } from "../primitives/spans"
 
@@ -146,14 +146,15 @@ export function sentMeter(width: number, sent: number, planned: number): Span[] 
   ]
 }
 
-/** Digits 3 pixels wide and 5 tall ("#" a pixel), drawn three lines high
- * in half blocks (bigDigits). */
+/** Digits 3 pixels wide and 6 tall ("#" a pixel): three lines of half
+ * blocks hold six pixel rows, so a digit fills its lines, top to bottom
+ * (five rows left a half line empty under each). */
 const DIGITS: Record<string, string[]> = {
-  "0": ["###", "#.#", "#.#", "#.#", "###"], "1": [".#.", "##.", ".#.", ".#.", "###"],
-  "2": ["###", "..#", "###", "#..", "###"], "3": ["###", "..#", "###", "..#", "###"],
-  "4": ["#.#", "#.#", "###", "..#", "..#"], "5": ["###", "#..", "###", "..#", "###"],
-  "6": ["###", "#..", "###", "#.#", "###"], "7": ["###", "..#", "..#", "..#", "..#"],
-  "8": ["###", "#.#", "###", "#.#", "###"], "9": ["###", "#.#", "###", "..#", "###"],
+  "0": ["###", "#.#", "#.#", "#.#", "#.#", "###"], "1": [".#.", "##.", ".#.", ".#.", ".#.", "###"],
+  "2": ["###", "..#", "###", "#..", "#..", "###"], "3": ["###", "..#", "###", "..#", "..#", "###"],
+  "4": ["#.#", "#.#", "###", "..#", "..#", "..#"], "5": ["###", "#..", "###", "..#", "..#", "###"],
+  "6": ["###", "#..", "###", "#.#", "#.#", "###"], "7": ["###", "..#", "..#", "..#", "..#", "..#"],
+  "8": ["###", "#.#", "###", "#.#", "#.#", "###"], "9": ["###", "#.#", "###", "..#", "..#", "###"],
 }
 
 /** A number drawn large: three lines, each a pair of pixel rows (█ both,
@@ -164,7 +165,7 @@ export function bigDigits(value: string): [string, string, string] {
     const rows = DIGITS[d]
     if (!rows) return
     for (let line = 0; line < 3; line++) {
-      const top = rows[line * 2]!, bottom = rows[line * 2 + 1] ?? "..."
+      const top = rows[line * 2]!, bottom = rows[line * 2 + 1]!
       lines[line] += (n ? " " : "") + [0, 1, 2].map((c) => (top[c] === "#" ? (bottom[c] === "#" ? "█" : "▀") : bottom[c] === "#" ? "▄" : " ")).join("")
     }
   })
@@ -172,44 +173,74 @@ export function bigDigits(value: string): [string, string, string] {
 }
 
 /**
- * The payday tiles: flat fills, as the calendar's days, `width` wide in
- * all. Next payday, its day of the month drawn large with the month and
- * weekday beside; and the days till it, large, on spending's fill.
+ * The payday tiles, flat fills as the calendar's days, `width` wide in
+ * all: what changes day to day, its number drawn large under its label.
+ * Next payday (its day of the month; the month and weekday beside), the
+ * days till it on spending's fill, and what's left of the target a day
+ * till then (over it, how much, in caution; with no target, which key
+ * sets one).
  */
-export function PaydayTiles(props: { width: number; next: string; today: string }) {
-  const tile = () => Math.floor((props.width - 1) / 2)
+export function PaydayTiles(props: { width: number; next: string; today: string; perDay: { remaining: number; daily: number } | null }) {
+  const tile = () => Math.floor((props.width - 2) / 3)
   const days = () => Math.max(0, daysBetween(props.today, props.next))
   const month = () => new Date(props.next + "T12:00:00Z").toLocaleDateString("en-AU", { month: "short", timeZone: "UTC" })
-  const weekday = () => new Date(props.next + "T12:00:00Z").toLocaleDateString("en-AU", { weekday: "long", timeZone: "UTC" })
-  /** A tile's line: its text from the left, then words beside the digits. */
-  const line = (width: number, bg: string, parts: Array<{ text: string; fg: string; bold?: boolean }>) => (
-    <text wrapMode="none" bg={bg}>
-      <Index each={parts}>{(p) => <S fg={p().fg} bg={bg} bold={p().bold}>{p().text}</S>}</Index>
-      <S bg={bg}>{" ".repeat(Math.max(0, width - parts.reduce((n, p) => n + p.text.length, 0)))}</S>
-    </text>
-  )
-  /** A tile: its label, then a number drawn large with words beside it. */
-  const Tile = (p: { width: number; bg: string; label: string; labelFg: string; value: string; fg: string; beside: [string, string, string]; besideFg: string }) => {
-    const big = () => bigDigits(p.value)
-    return (
-      <box flexDirection="column" width={p.width} height={TILE_HEIGHT} backgroundColor={p.bg}>
-        {line(p.width, p.bg, [{ text: fit(` ${p.label}`, p.width), fg: p.labelFg }])}
-        <Index each={[0, 1, 2]}>{(i) => line(p.width, p.bg, [
-          { text: ` ${big()[i()]}`, fg: p.fg, bold: true },
-          { text: fit(`  ${p.beside[i()]}`, Math.max(0, p.width - 1 - big()[i()].length)), fg: p.besideFg },
-        ])}</Index>
-      </box>
-    )
+  // The weekday in full where it fits beside the date, else short.
+  const weekday = () => {
+    const long = new Date(props.next + "T12:00:00Z").toLocaleDateString("en-AU", { weekday: "long", timeZone: "UTC" })
+    const room = tile() - 1 - bigDigits(String(Number(props.next.slice(8, 10))))[0].length - 2
+    return long.length <= room ? long : long.slice(0, 3)
   }
+  const over = () => props.perDay != null && props.perDay.remaining < 0
   return (
     <box flexDirection="row" gap={1} width={props.width} height={TILE_HEIGHT} flexShrink={0}>
       <Tile width={tile()} bg={theme.surface0} label="Next payday" labelFg={ink.label} value={String(Number(props.next.slice(8, 10)))} fg={ink.strong}
         beside={[month(), weekday(), ""]} besideFg={ink.label} />
-      <Tile width={props.width - 1 - tile()} bg={spendingFill()} label="Days till pay" labelFg={theme.crust} value={String(days())} fg={theme.crust}
+      <Tile width={tile()} bg={spendingFill()} label="Days to pay" labelFg={theme.crust} value={String(days())} fg={theme.crust}
         beside={["", days() === 1 ? "day" : "days", ""]} besideFg={theme.crust} />
+      <Show when={props.perDay} fallback={
+        <Tile width={props.width - 2 - 2 * tile()} bg={theme.surface0} label="Left per day" labelFg={ink.label} value="" fg={ink.faint}
+          beside={["t sets your", "spending target", ""]} besideFg={ink.note} />
+      }>
+        <Tile width={props.width - 2 - 2 * tile()} bg={over() ? fade(tone.caution, 0.55) : theme.surface0} label={over() ? "Over target" : "Left per day"}
+          labelFg={over() ? theme.crust : ink.label} prefix="$ " value={String(Math.round(over() ? -props.perDay!.remaining : props.perDay!.daily))}
+          fg={over() ? theme.crust : ink.strong} beside={["", "", ""]} besideFg={over() ? theme.crust : ink.label} />
+      </Show>
     </box>
   )
 }
 
-/** The tiles' height: a label, then three lines of big digits. */
-export const TILE_HEIGHT = 4
+/** A tile: its label, a line of fill, a number drawn large (`prefix`
+ * small at its top left, as prices set the dollar sign) with words beside
+ * each line, and a line of fill under. Too wide to draw large, the number
+ * goes in plain bold on the middle line. */
+function Tile(p: { width: number; bg: string; label: string; labelFg: string; value: string; fg: string; beside: [string, string, string]; besideFg: string; prefix?: string }) {
+  const drawn = () => bigDigits(p.value)
+  const fits = () => 1 + (p.prefix?.length ?? 0) + drawn()[0].length <= p.width
+  const plain = () => `${p.prefix?.trim() ?? ""}${Number(p.value).toLocaleString("en-AU")}`
+  const big = (): [string, string, string] => (fits() ? drawn() : ["", p.value ? plain() : "", ""])
+  const lead = (i: number) => (p.prefix && fits() ? (i === 0 ? p.prefix : " ".repeat(p.prefix.length)) : "")
+  const line = (parts: Array<{ text: string; fg: string; bold?: boolean }>) => (
+    <text wrapMode="none" bg={p.bg}>
+      <Index each={parts}>{(part) => <S fg={part().fg} bg={p.bg} bold={part().bold}>{part().text}</S>}</Index>
+      <S bg={p.bg}>{" ".repeat(Math.max(0, p.width - parts.reduce((n, part) => n + part.text.length, 0)))}</S>
+    </text>
+  )
+  return (
+    <box flexDirection="column" width={p.width} height={TILE_HEIGHT} backgroundColor={p.bg}>
+      {line([{ text: truncate(` ${p.label}`, p.width), fg: p.labelFg }])}
+      {line([])}
+      <Index each={[0, 1, 2]}>{(i) => {
+        const digits = () => ` ${lead(i())}${big()[i()]}`
+        return line([
+          { text: truncate(digits(), p.width), fg: p.fg, bold: true },
+          { text: truncate(`${big()[i()] ? "  " : ""}${p.beside[i()]}`, Math.max(0, p.width - digits().length)), fg: p.besideFg },
+        ])
+      }}</Index>
+      {line([])}
+    </box>
+  )
+}
+
+/** The tiles' height: a label, a line of fill, three lines of big digits,
+ * a line of fill. */
+export const TILE_HEIGHT = 6

@@ -28,7 +28,7 @@ import { endTagReview, runTagAccept, startTagReview } from "./tagReview"
 import { budgetLabel, budgetScopeOptions, scopeKey, scopeOfKey } from "../domain/budgetScopes"
 import { usualPay } from "../domain/payday"
 import { allocation, budgetIgnoredIds, cycleAt, type Budget, type BudgetScope, type CycleConfig } from "../domain/budget"
-import { budgetArmId, budgetListRows, budgetSetupRows, type BudgetLine, type SetupRow } from "../domain/budgetLines"
+import { budgetArmId, budgetListRows, budgetSetupRows, overallAverage, type BudgetLine, type SetupRow } from "../domain/budgetLines"
 import { sharedBudgetView, sharedCategoryLines } from "../state/budgetViews"
 import { MERCHANT_SORTS, groupByMerchant, merchantFilter, sortMerchantGroups } from "../domain/merchants"
 import { anchorDraft, cycleFromDraft, editorFields, normaliseCycleDraft, pickerChoices, pickerItems, stepChoice } from "../state/settingsForm"
@@ -1962,15 +1962,12 @@ function handleBudgets(ui: UiStore, key: KeyEvent, data?: DataStore): void {
 
 /** The Budgets pane's rows, as the tab draws them. */
 function setupRows(ui: UiStore, data: DataStore): SetupRow[] {
-  const view = viewedBudgets(ui, data)
-  const pay = { amount: data.state.uiPrefs.expectedPay || null, usual: usualPay(data.state.accounts, data.transactions()) }
-  return budgetSetupRows(budgetLines(ui, data), view.budgets, new Set(ui.state.budgetSetupOpen), budgetIgnoredIds(data.state.categories), pay)
+  return budgetSetupRows(budgetLines(ui, data), new Set(ui.state.budgetSetupOpen))
 }
 
-/** The Budgets tab's Budgets pane: enter sets or edits your pay each
- * payday (from your usual pay), the overall budget (a new one starts from
- * its average) or the budget of the
- * group or category at the cursor (a new one starts from its average:
+/** The Budgets tab's Budgets pane: p sets your pay each payday (from your
+ * usual pay), t the overall spending target (a new one from its average);
+ * enter sets or edits the budget of the group or category at the cursor (a new one starts from its average:
  * allocating down), space opens or closes a group, del twice removes a
  * budget, x leaves a category out of the overall budget (or brings it
  * back); k past the top goes back to Progress. */
@@ -1987,23 +1984,20 @@ function handleBudgetCategories(ui: UiStore, key: KeyEvent, data?: DataStore): v
   }
   const moved = listMove(key, cursor, rows.length)
   if (moved != null) { ui.setState({ budgetCategoryCursor: moved }); return }
+  // Your pay each payday, from your usual pay (empty clears it).
+  if (name === "p" && !key.shift) {
+    const start = data.state.uiPrefs.expectedPay || usualPay(data.state.accounts, data.transactions())
+    ui.openSettingsEditor("pay", null, { ...ui.state.settingsDraft, amount: start ? String(Math.round(start)) : "" })
+    return
+  }
+  // The overall spending target, a new one from its average.
+  if (name === "t" && !key.shift) {
+    const overall = view.budgets.find((b) => b.scope.kind === "overall") ?? null
+    openBudgetEditor(ui, data, overall, { kind: "overall" }, overallAverage(budgetLines(ui, data), budgetIgnoredIds(data.state.categories)))
+    return
+  }
   const row = rows[cursor]
   if (!row) return
-  // Your pay each payday: set from your usual pay (empty clears it).
-  if (row.kind === "pay") {
-    if (name === "return" || name === "enter") {
-      const start = row.amount ?? row.usual
-      ui.openSettingsEditor("pay", null, { ...ui.state.settingsDraft, amount: start ? String(Math.round(start)) : "" })
-    }
-    return
-  }
-  if (row.kind === "overall") {
-    if (name === "return" || name === "enter") { openBudgetEditor(ui, data, row.budget, { kind: "overall" }, row.average); return }
-    if ((name === "delete" || name === "backspace") && row.budget) {
-      confirmTwice(ui, data, { kind: "budget", id: budgetArmId(row.budget, view.cycle.start), label: `the ${row.name.toLowerCase()} budget${view.current ? "" : ` from ${shortDate(view.cycle.start)}`}`, with: "delete" })
-    }
-    return
-  }
   const line = row.line
   if (name === "space" || key.sequence === " ") {
     if (row.open === null || line.categoryId === null) return
@@ -2664,7 +2658,7 @@ const scopes: Record<ScopeId, ScopeEntry> = {
   "budgets.categories": {
     handle: handleBudgetCategories,
     list: true,
-    hints: (state) => [{ key: "j/k", desc: "move" }, { key: "enter", desc: "set budget" }, { key: "space", desc: "open" }, { key: "x", desc: "leave out" }, { key: "del del", desc: "remove budget" }, { key: "h/l", desc: "chart" }, ...cycleChartHint(state), { key: "[ ]", desc: "cycles" }, { key: "c", desc: "cycle" }, { key: "v", desc: "jump" }, { key: "1-4", desc: "tab" }],
+    hints: (state) => [{ key: "j/k", desc: "move" }, { key: "enter", desc: "set budget" }, { key: "space", desc: "open" }, { key: "x", desc: "leave out" }, { key: "del del", desc: "remove budget" }, { key: "p", desc: "pay" }, { key: "t", desc: "target" }, { key: "h/l", desc: "chart" }, ...cycleChartHint(state), { key: "[ ]", desc: "cycles" }, { key: "c", desc: "cycle" }, { key: "v", desc: "jump" }, { key: "1-4", desc: "tab" }],
   },
   "manager.merchants": {
     handle: handleManagerMerchants,

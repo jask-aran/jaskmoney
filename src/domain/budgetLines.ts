@@ -90,43 +90,43 @@ export function budgetView(config: CycleConfig, todayISO: string, offset: number
  * the cycle, as one id. */
 export const budgetArmId = (budget: Budget, cycleStart: string) => `${scopeKey(budget.scope)}@${cycleStart}`
 
-/** A row of the Budgets tab's Budgets pane: the plan (your pay each
- * payday, the overall budget), then the categories, groups closed unless
- * opened. */
-export type SetupRow =
-  | { kind: "pay"; amount: number | null; usual: number | null }
-  | { kind: "overall"; budget: Budget | null; name: string; average: number }
-  | { kind: "line"; line: BudgetLine; open: boolean | null; budgeted: number }
+/** A row of the Budgets tab's Budgets pane: a category, groups closed
+ * unless opened (the pay and the overall spending target have keys, not
+ * rows). */
+export type SetupRow = { kind: "line"; line: BudgetLine; open: boolean | null; budgeted: number }
 
-/**
- * The Budgets pane's rows: the overall budget, the cap the category
- * budgets are carved from, with what it would start from, its average:
- * the counted groups' averages. Then each
- * group of `lines`, its categories under it only when it's in `open`;
- * `open` on a group is null when it has no categories to show, and
- * `budgeted` counts the budgets inside it (seen while it's closed).
- */
-export function budgetSetupRows(lines: BudgetLine[], budgets: Budget[], open: ReadonlySet<number>, ignored: ReadonlySet<number>, pay: { amount: number | null; usual: number | null } = { amount: null, usual: null }): SetupRow[] {
+/** Group `lines` (a group, then its categories). */
+function grouped(lines: BudgetLine[]): Array<{ group: BudgetLine; children: BudgetLine[] }> {
   const groups: Array<{ group: BudgetLine; children: BudgetLine[] }> = []
   for (const l of lines) {
     if (!l.child || !groups.length) groups.push({ group: l, children: [] })
     else groups.at(-1)!.children.push(l)
   }
+  return groups
+}
+
+/** Where a new overall spending target starts: everything counted's
+ * average, budgeted or not (the categories are carved from it). */
+export function overallAverage(lines: BudgetLine[], ignored: ReadonlySet<number>): number {
   const counted = (l: BudgetLine) => l.categoryId === null || !ignored.has(l.categoryId)
-  // The cap's starting point: everything counted, budgeted or not.
-  const average = groups.reduce((sum, { group, children }) => {
+  return grouped(lines).reduce((sum, { group, children }) => {
     if (!counted(group)) return sum
     return sum + group.average - children.filter((c) => !counted(c)).reduce((n, c) => n + c.average, 0)
   }, 0)
-  return [
-    { kind: "pay", ...pay },
-    { kind: "overall", budget: budgets.find((b) => b.scope.kind === "overall") ?? null, name: "Overall spending", average },
-    ...groups.flatMap(({ group, children }): SetupRow[] => {
-      const isOpen = group.categoryId !== null && open.has(group.categoryId)
-      return [
-        { kind: "line", line: group, open: children.length ? isOpen : null, budgeted: children.filter((c) => c.budget).length },
-        ...(isOpen ? children.map((line): SetupRow => ({ kind: "line", line, open: null, budgeted: 0 })) : []),
-      ]
-    }),
-  ]
+}
+
+/**
+ * The Budgets pane's rows: each group of `lines`, its categories under it
+ * only when it's in `open`; `open` on a group is null when it has no
+ * categories to show, and `budgeted` counts the budgets inside it (seen
+ * while it's closed).
+ */
+export function budgetSetupRows(lines: BudgetLine[], open: ReadonlySet<number>): SetupRow[] {
+  return grouped(lines).flatMap(({ group, children }): SetupRow[] => {
+    const isOpen = group.categoryId !== null && open.has(group.categoryId)
+    return [
+      { kind: "line", line: group, open: children.length ? isOpen : null, budgeted: children.filter((c) => c.budget).length },
+      ...(isOpen ? children.map((line): SetupRow => ({ kind: "line", line, open: null, budgeted: 0 })) : []),
+    ]
+  })
 }

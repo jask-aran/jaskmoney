@@ -26,6 +26,8 @@ async function budgetsTab(size = { width: 120, height: 44 }) {
   }
   data.refresh()
   handleKey(ui, key("3"), data)
+  // With nothing set the tab opens on Budgets; these start from Progress.
+  ui.setState({ focusedSection: "bud.list", budgetCursor: 0 })
   const frame = async () => { await t.renderOnce(); await t.flush(); return t.captureCharFrame() }
   return { t, groceries, frame }
 }
@@ -46,9 +48,8 @@ test("allocating down: in Categories, enter sets a category's budget starting fr
   await data.setBudget({ kind: "overall" }, 500)
   handleKey(ui, key("v"), data); handleKey(ui, key("c"), data)
   expect(ui.activeScope()).toBe("budgets.categories")
-  // The plan (pay, then the overall budget) first; Groceries under it.
-  ui.setState({ budgetCategoryCursor: 1 })
-  handleKey(ui, key("j"), data)
+  // The categories are the rows: Groceries first.
+  ui.setState({ budgetCategoryCursor: 0 })
   handleKey(ui, key("return"), data)
   expect(ui.state.settingsEditor?.kind).toBe("budget")
   expect(ui.state.settingsDraft).toMatchObject({ scopeKey: `category:${groceries}`, amount: "300" })
@@ -63,9 +64,7 @@ test("allocating down: in Categories, enter sets a category's budget starting fr
   handleKey(ui, key("delete"), data)
   handleKey(ui, key("delete"), data)
   expect(data.state.budgets.some((b) => b.scope.kind === "category")).toBe(false)
-  // k from the top (your pay) goes back to Progress.
-  handleKey(ui, key("k"), data)
-  handleKey(ui, key("k"), data)
+  // k from the top goes back to Progress.
   handleKey(ui, key("k"), data)
   expect(ui.activeScope()).toBe("budgets")
 })
@@ -266,21 +265,20 @@ test("Set budgets: with none yet the tab opens on it, the overall budget first w
   expect(ui.state.budgetCategoryCursor).toBe(0)
   let f = await frame()
   expect(f).toContain("Budgets · start here")
-  // Groceries averaged $300 over the cycle before.
-  expect(f).toMatch(/Overall spending\s+not set/)
-  expect(f).toContain("enter sets it from your $300 average")
+  // Nothing set: a tile says which keys set the pay and the target.
+  expect(f).toContain("Set your pay and your spending target")
+  expect(f).toMatch(/p your pay\s+t your spending target/)
   // Bills & Utilities is closed: Power isn't listed until space opens it.
   expect(f).toMatch(/▸ . Bills/)
   expect(f).not.toContain("Power")
-  // Bills & Utilities is the row after your pay, the overall budget and Groceries.
-  ui.setState({ budgetCategoryCursor: 3 })
+  // Bills & Utilities is the row after Groceries.
+  ui.setState({ budgetCategoryCursor: 1 })
   handleKey(ui, key("space"), data)
   f = await frame()
   expect(f).toMatch(/▾ . Bills/)
   expect(f).toContain("Power")
-  // enter on the overall row sets the overall budget from its average.
-  ui.setState({ budgetCategoryCursor: 1 })
-  handleKey(ui, key("return"), data)
+  // t sets the overall spending target from its average (Groceries' $300).
+  handleKey(ui, key("t"), data)
   expect(ui.state.settingsDraft).toMatchObject({ scopeKey: "overall", amount: "300" })
   ui.setState({ settingsEditor: null, budgetSetupOpen: [] })
   // Once a budget is set, the tab opens on Progress again.
@@ -310,14 +308,13 @@ test("the plan: your pay and your spending give what goes to savers, and what to
   const line = (f: string, label: string) => f.split("\n").find((l) => l.includes(label)) ?? ""
   // No plan yet: the facts, no judgment.
   let f = await frame()
-  expect(line(f, "Pay each payday")).toContain("not set")
-  expect(f).toContain("enter sets it from your usual $5,000")
+  expect(f).toContain("Set your pay and your spending target")
   // The tiles: the next payday and the days till it (drawn large: no
   // "11" in the text, but "days" beside the digits).
-  expect(f).toMatch(/Next payday\s+Days till pay/)
-  expect(line(f, "Next payday")).toBeTruthy()
-  expect(f).toMatch(/1 Nov\s+\S+\s+\S+/)
+  expect(f).toMatch(/Next payday\s+Days to pay\s+Left per day/)
+  expect(f).toMatch(/Nov\s/)
   expect(f).toContain(" days")
+  expect(f).toContain("t sets your")
   // The track: 1 Oct to 1 Nov, today on it; the pay in and the send.
   expect(f).toMatch(/1 Oct\s+today\s+1 Nov/)
   expect(f).toMatch(/●[━◆┿]+┄+○/)
@@ -325,10 +322,9 @@ test("the plan: your pay and your spending give what goes to savers, and what to
   // No plan, no meter and no judgment.
   expect(f).not.toContain("still to send")
   expect(f).not.toContain("✓")
-  // The pay row opens the Pay editor from your usual pay.
+  // p opens the Pay editor from your usual pay.
   expect(ui.state.focusedSection).toBe("bud.categories")
-  ui.setState({ budgetCategoryCursor: 0 })
-  handleKey(ui, key("return"), data)
+  handleKey(ui, key("p"), data)
   expect(ui.state.settingsEditor?.kind).toBe("pay")
   expect(ui.state.settingsDraft.amount).toBe("5000")
   ui.setState({ settingsEditor: null })
@@ -336,8 +332,13 @@ test("the plan: your pay and your spending give what goes to savers, and what to
   await data.saveUiPrefs({ expectedPay: 5000 })
   await data.setBudget({ kind: "overall" }, 2000)
   f = await frame()
-  expect(line(f, "To savers each payday")).toContain("$3,000")
-  expect(f).toContain("set Up's pay splitting to this")
+  expect(line(f, "Each pay")).toContain("$5,000")
+  expect(f).toContain("Set Up's pay splitting to send $3,000 to savers")
+  // The third tile: what's left of the target a day till payday.
+  // ($2,000 less $300 spent, over the 12 days to 1 Nov: $142, drawn large.)
+  const { bigDigits } = await import("./PlanGraphics")
+  expect(f).toContain("$ " + bigDigits("142")[0])
+  expect(f).not.toContain("t sets your")
   // Each pay as a bar: the target, then savers.
   expect(f).toMatch(/└─+ target \$2,000 ─+┘└─+ savers \$3,000 ─+┘/)
   // This cycle sent $2,500 of the $3,000: the meter, short.
@@ -367,6 +368,7 @@ test("two columns: the budget pane draws its focus, and Budgets' top lines up wi
 
 test("big digits: three lines of half blocks, a column between digits", async () => {
   const { bigDigits } = await import("./PlanGraphics")
-  expect(bigDigits("8")).toEqual(["█▀█", "█▀█", "▀▀▀"])
-  expect(bigDigits("14")).toEqual(["▄█  █ █", " █  ▀▀█", "▀▀▀   ▀"])
+  // Six pixel rows fill all three lines: no half line empty under them.
+  expect(bigDigits("8")).toEqual(["█▀█", "█▀█", "█▄█"])
+  expect(bigDigits("14")).toEqual(["▄█  █ █", " █  ▀▀█", "▄█▄   █"])
 })
