@@ -222,12 +222,14 @@ export function BudgetsTab(props: { focused: SectionId }) {
   const spendingIds = createMemo(() => new Set(data.state.accounts.filter((a) => accountRole(a) === "spending").map((a) => a.id)))
   const allSpending = createMemo(() => transactions().filter((t) => t.accountId != null && spendingIds().has(t.accountId)))
   const inCycle = createMemo(() => allSpending().filter((t) => t.dateISO >= cycle().start && t.dateISO <= cycle().end))
-  // The plan, as you give it: your pay each payday and your spending (the
-  // overall budget). Pay less spending goes to savers; that's what to set
-  // Up's pay splitting to send. Nothing is judged without it.
+  // The plan: the cycle's pay and your spending (the overall budget); pay
+  // less spending goes to savers. The cycle's pay is what came in, or
+  // until it has, your usual pay (what you expect each payday). Nothing is
+  // judged without them.
   const expectedPay = () => data.state.uiPrefs.expectedPay || null
+  const planPay = () => (paid().pay > 0 ? paid().pay : expectedPay())
   const spendingPlan = () => (budgets().length ? split().total : null)
-  const toSavers = () => (expectedPay() != null && spendingPlan() != null ? expectedPay()! - spendingPlan()! : null)
+  const toSavers = () => (planPay() != null && spendingPlan() != null ? planPay()! - spendingPlan()! : null)
   // This cycle's pay as it happened: all of it, and what's gone to savers.
   const paid = createMemo(() => cyclePay(data.state.accounts, transactions(), cycle().start, through()))
   // The parts of the target: the category budgets not inside a group with one.
@@ -305,16 +307,16 @@ export function BudgetsTab(props: { focused: SectionId }) {
   // them. A line with `bg` is filled to the row's end.
   const topLines = createMemo((): Array<TopLine> => {
     const width = rowWidth(categoriesWidth())
-    const pay = expectedPay(), target = overallBudget()
+    const pay = planPay(), usual = expectedPay(), target = overallBudget()
     const out: Array<TopLine> = []
-    const payLabel: Span = { text: "Pay", fg: ink.heading, bold: true }
     const plan = toSavers()
     const total = split().total
     const spent = totalProgress().spent
     const p = paid()
     // The cycle's facts, a line each, the label at the left and the value
-    // at the end: the last pay (and when), the next and the days till it
-    // (this cycle only), and what's been spent.
+    // at the end: the last pay (and when), the next (when, and your usual
+    // pay: what's expected) and the days till it (this cycle only), and
+    // what's been spent.
     const weekday = (iso: string) => new Date(iso + "T12:00:00Z").toLocaleDateString("en-AU", { weekday: "short", timeZone: "UTC" })
     const next = addDays(cycle().end, 1)
     const days = Math.max(0, daysBetween(today(), next))
@@ -324,7 +326,10 @@ export function BudgetsTab(props: { focused: SectionId }) {
       ? ledger(factLabel(view().current ? "Last pay" : "Pay"), strong(formatWholeMoney(p.pay)), [{ text: shortDate(p.dateISO!), fg: ink.label }])
       : ledger(factLabel(view().current ? "Last pay" : "Pay"), { text: "none yet", fg: ink.note }) })
     if (view().current) {
-      out.push({ spans: ledger(factLabel("Next pay"), strong(`${weekday(next)} ${shortDate(next)}`)) })
+      const when = `${weekday(next)} ${shortDate(next)}`
+      out.push({ spans: usual != null
+        ? ledger(factLabel("Next pay"), strong(formatWholeMoney(usual)), [{ text: when, fg: ink.label }])
+        : ledger(factLabel("Next pay"), strong(when), [{ text: "p sets your pay", fg: tone.caution }]) })
       out.push({ spans: ledger(factLabel("Days till pay"), strong(String(days))) })
     }
     out.push({ spans: ledger(factLabel(view().current ? "Spent this period" : "Spent"), strong(formatWholeMoney(spent), target && spent > total + 0.5 ? tone.bad : ink.strong)) })
@@ -341,10 +346,8 @@ export function BudgetsTab(props: { focused: SectionId }) {
         { spans: blank, bg: fill },
       )
     } else {
-      // Pay, then its bar with each part's figure over it.
-      out.push({ spans: pay != null
-        ? ledger(payLabel, { text: formatWholeMoney(pay), fg: ink.figure, bold: true }, [{ text: "usual pay", fg: ink.note }])
-        : ledger(payLabel, { text: "", fg: ink.note }, [{ text: "p sets your pay", fg: tone.caution }]), stays: true })
+      // The pay's bar (the facts say the pay, and Next pay which key sets
+      // it), each part's figure over it.
       // The rest of the target's spending: all of it less the categories' own.
       const restSpent = target ? Math.max(0, spent - targetParts().reduce((n, c) => n + c.spent, 0)) : 0
       const bar = payBar(width, pay, target ? total : 0, target ? targetParts() : [], restSpent)

@@ -294,10 +294,13 @@ test("the plan: your pay and your spending target give what goes to savers; each
   data.refresh()
   handleKey(ui, key("3"), data)
   const frame = async () => { await t.renderOnce(); await t.flush(); await t.renderOnce(); return t.captureCharFrame() }
-  const line = (f: string, label: string) => f.split("\n").find((l) => l.includes(label)) ?? ""
-  // No plan yet: the facts, no judgment.
+  // No plan yet: the facts, no judgment. The pay has come in ($5,200 on
+  // 1 Oct), so only the target is asked for; the next pay asks for your
+  // usual pay.
   let f = await frame()
-  expect(f).toContain("Set your pay and your spending target")
+  expect(f).toMatch(/Last pay\s+1 Oct\s+\$5,200 │/)
+  expect(f).toMatch(/Next pay\s+p sets your pay\s+Sun 1 Nov │/)
+  expect(f).toContain("t: your spending target")
   // This cycle: the track, 1 Oct to 1 Nov, today on it and the send
   // (its day over it where there's room: here, none beside 1 Oct); the pay
   // in and the send under it.
@@ -313,40 +316,42 @@ test("the plan: your pay and your spending target give what goes to savers; each
   expect(ui.state.settingsEditor?.kind).toBe("pay")
   expect(ui.state.settingsDraft.amount).toBe("5000")
   ui.setState({ settingsEditor: null })
-  // Pay $5,000 and spending $2,000: $3,000 to savers, and the Up setting to match.
+  // Usual pay $5,000 (the next pay's) and spending $2,000. This cycle's
+  // plan is from what came in: $5,200 less $2,000, $3,200 to savers.
   await data.saveUiPrefs({ expectedPay: 5000 })
   await data.setBudget({ kind: "overall" }, 2000)
   f = await frame()
-  // Pay, its figure at the row's end.
-  expect(line(f, "usual pay")).toMatch(/Pay\s+usual pay\s+\$5,000 │/)
+  // The next pay: when, and your usual pay.
+  expect(f).toMatch(/Next pay\s+Sun 1 Nov\s+\$5,000 │/)
   // No Up pay-splitting hint: the API can't see the split, so it's not the app's to say.
   expect(f).not.toContain("pay splitting")
   // The pay as a bar filling as you spend, each part's figure over it:
   // the target, and what's left of the pay.
   let rows = f.split("\n")
-  const above = rows.findIndex((l) => /\$2,000 target\s+\$4,700 left/.test(l))
+  const above = rows.findIndex((l) => /\$2,000 target\s+\$4,900 left/.test(l))
   expect(above).toBeGreaterThan(0)
   expect(rows[above + 1]).toMatch(/█+/)
-  // Savers: the bar's savers end opened out to the plan ($5,000 less
-  // $2,000) at full width, $2,500 of it sent and $500 still to send.
-  expect(rows[above + 2]).toMatch(/╭─+╯\s+savers plan \$3,000\s+│/)
+  // Savers: the bar's savers end opened out to the plan ($5,200 less
+  // $2,000) at full width, $2,500 of it sent and $700 still to send.
+  expect(rows[above + 2]).toMatch(/╭─+╯\s+savers plan \$3,200\s+│/)
   expect(rows[above + 3]).toMatch(/█+/)
-  expect(rows[above + 4]).toMatch(/\$2,500 sent\s+\$500( to send)?/)
+  expect(rows[above + 4]).toMatch(/\$2,500 sent\s+\$700( to send)?/)
   // $2,300 spent on a $2,000 target: $300 over, hatched in bad between the
   // target and savers, and savers get $300 less.
   add("2026-10-15", -2000, "Shop", id("Groceries"))
   data.refresh()
   f = await frame()
   rows = f.split("\n")
-  const overAt = rows.findIndex((l) => /\$2,000 target\s+\$300( over)?\s+\$2,700 left/.test(l))
+  const overAt = rows.findIndex((l) => /\$2,000 target\s+\$300( over)?\s+\$2,900 left/.test(l))
   expect(overAt).toBeGreaterThan(0)
-  // The $300 over comes out of the plan: $300 short, hatched first.
-  expect(rows[overAt + 4]).toMatch(/\$300 short\s+\$2,500 sent(\s+\$200( to send)?)?/)
+  // The $300 over comes out of the plan: $300 short, hatched first, $400
+  // still to send.
+  expect(rows[overAt + 4]).toMatch(/\$300 short\s+\$2,500 sent(\s+\$400( to send)?)?/)
   expect(f).not.toContain("more than your pay")
   // The facts over it, a line each: the last pay and when, the next, the
   // days till it, and what's spent this period (over the target: bad).
   expect(f).toMatch(/Last pay\s+1 Oct\s+\$5,200 │/)
-  expect(f).toMatch(/Next pay\s+Sun 1 Nov │/)
+  expect(f).toMatch(/Next pay\s+Sun 1 Nov\s+\$5,000 │/)
   expect(f).toMatch(/Days till pay\s+12 │/)
   expect(f).toMatch(/Spent this period\s+\$2,300 │/)
   const spentRow = rows.findIndex((l) => /Spent this period\s+\$2,300/.test(l))
@@ -400,10 +405,10 @@ test("Each pay, Savers and This cycle draw in on \"always\": the bars sweep in f
   const { frame } = await budgetsTab({ width: 145, height: 60 })
   await data.setBudget({ kind: "overall" }, 500)
   data.setState("uiPrefs", { ...data.state.uiPrefs, chartMotion: "always", chartSpeed: "quick" })
-  // The pay's bar: the first line after Pay with blocks, at rest (in the
+  // The pay's bar: the first line after the facts with blocks, at rest (in the
   // Budgets pane's columns: the main column has bars of its own).
   await frame(); await Bun.sleep(600)
-  const rest = (await frame()).split("\n"), head = rest.findIndex((l) => l.includes("p sets your pay"))
+  const rest = (await frame()).split("\n"), head = rest.findIndex((l) => l.includes("Spent this period"))
   const from = rest.find((l) => l.includes("╭─ Budgets"))!.indexOf("╭─ Budgets")
   const at = head + rest.slice(head).findIndex((l) => l.slice(from).includes("█"))
   const bar = (f: string) => (f.split("\n")[at]!.slice(from).match(/█/g) ?? []).length
