@@ -1,3 +1,4 @@
+import { Index } from "solid-js"
 import { formatWholeMoney } from "../../domain/dashboard"
 import { daysBetween } from "../../domain/days"
 import { ink, theme, tone } from "../../theme"
@@ -145,36 +146,70 @@ export function sentMeter(width: number, sent: number, planned: number): Span[] 
   ]
 }
 
+/** Digits 3 pixels wide and 5 tall ("#" a pixel), drawn three lines high
+ * in half blocks (bigDigits). */
+const DIGITS: Record<string, string[]> = {
+  "0": ["###", "#.#", "#.#", "#.#", "###"], "1": [".#.", "##.", ".#.", ".#.", "###"],
+  "2": ["###", "..#", "###", "#..", "###"], "3": ["###", "..#", "###", "..#", "###"],
+  "4": ["#.#", "#.#", "###", "..#", "..#"], "5": ["###", "#..", "###", "..#", "###"],
+  "6": ["###", "#..", "###", "#.#", "###"], "7": ["###", "..#", "..#", "..#", "..#"],
+  "8": ["###", "#.#", "###", "#.#", "###"], "9": ["###", "#.#", "###", "..#", "###"],
+}
+
+/** A number drawn large: three lines, each a pair of pixel rows (█ both,
+ * ▀ the top, ▄ the bottom), a column between digits. */
+export function bigDigits(value: string): [string, string, string] {
+  const lines: [string, string, string] = ["", "", ""]
+  ;[...value].forEach((d, n) => {
+    const rows = DIGITS[d]
+    if (!rows) return
+    for (let line = 0; line < 3; line++) {
+      const top = rows[line * 2]!, bottom = rows[line * 2 + 1] ?? "..."
+      lines[line] += (n ? " " : "") + [0, 1, 2].map((c) => (top[c] === "#" ? (bottom[c] === "#" ? "█" : "▀") : bottom[c] === "#" ? "▄" : " ")).join("")
+    }
+  })
+  return lines
+}
+
 /**
  * The payday tiles: flat fills, as the calendar's days, `width` wide in
- * all. Next payday, its date bold; and the days till it, drawn large
- * (the tiny font: two lines a digit), on spending's fill.
+ * all. Next payday, its day of the month drawn large with the month and
+ * weekday beside; and the days till it, large, on spending's fill.
  */
 export function PaydayTiles(props: { width: number; next: string; today: string }) {
   const tile = () => Math.floor((props.width - 1) / 2)
   const days = () => Math.max(0, daysBetween(props.today, props.next))
+  const month = () => new Date(props.next + "T12:00:00Z").toLocaleDateString("en-AU", { month: "short", timeZone: "UTC" })
   const weekday = () => new Date(props.next + "T12:00:00Z").toLocaleDateString("en-AU", { weekday: "long", timeZone: "UTC" })
-  const line = (text: string, fg: string, bg: string, bold = false) => (
-    <text wrapMode="none" bg={bg}><S fg={fg} bg={bg} bold={bold}>{fit(` ${text}`, tile()).padEnd(tile())}</S></text>
+  /** A tile's line: its text from the left, then words beside the digits. */
+  const line = (width: number, bg: string, parts: Array<{ text: string; fg: string; bold?: boolean }>) => (
+    <text wrapMode="none" bg={bg}>
+      <Index each={parts}>{(p) => <S fg={p().fg} bg={bg} bold={p().bold}>{p().text}</S>}</Index>
+      <S bg={bg}>{" ".repeat(Math.max(0, width - parts.reduce((n, p) => n + p.text.length, 0)))}</S>
+    </text>
   )
+  /** A tile: its label, then a number drawn large with words beside it. */
+  const Tile = (p: { width: number; bg: string; label: string; labelFg: string; value: string; fg: string; beside: [string, string, string]; besideFg: string }) => {
+    const big = () => bigDigits(p.value)
+    return (
+      <box flexDirection="column" width={p.width} height={TILE_HEIGHT} backgroundColor={p.bg}>
+        {line(p.width, p.bg, [{ text: fit(` ${p.label}`, p.width), fg: p.labelFg }])}
+        <Index each={[0, 1, 2]}>{(i) => line(p.width, p.bg, [
+          { text: ` ${big()[i()]}`, fg: p.fg, bold: true },
+          { text: fit(`  ${p.beside[i()]}`, Math.max(0, p.width - 1 - big()[i()].length)), fg: p.besideFg },
+        ])}</Index>
+      </box>
+    )
+  }
   return (
     <box flexDirection="row" gap={1} width={props.width} height={TILE_HEIGHT} flexShrink={0}>
-      <box flexDirection="column" width={tile()} height={TILE_HEIGHT} backgroundColor={theme.surface0}>
-        {line("Next payday", ink.label, theme.surface0)}
-        {line(shortDate(props.next), ink.strong, theme.surface0, true)}
-        {line(weekday(), ink.label, theme.surface0)}
-      </box>
-      <box flexDirection="column" width={props.width - 1 - tile()} height={TILE_HEIGHT} backgroundColor={spendingFill()}>
-        {line("Days till pay", theme.crust, spendingFill())}
-        <box flexDirection="row" height={2} paddingLeft={1} backgroundColor={spendingFill()}>
-          <ascii_font text={String(days())} font="tiny" color={theme.crust} backgroundColor={spendingFill()} />
-          <text wrapMode="none" bg={spendingFill()} alignSelf="flex-end"><S fg={theme.crust} bg={spendingFill()}>{days() === 1 ? " day" : " days"}</S></text>
-        </box>
-      </box>
+      <Tile width={tile()} bg={theme.surface0} label="Next payday" labelFg={ink.label} value={String(Number(props.next.slice(8, 10)))} fg={ink.strong}
+        beside={[month(), weekday(), ""]} besideFg={ink.label} />
+      <Tile width={props.width - 1 - tile()} bg={spendingFill()} label="Days till pay" labelFg={theme.crust} value={String(days())} fg={theme.crust}
+        beside={["", days() === 1 ? "day" : "days", ""]} besideFg={theme.crust} />
     </box>
   )
 }
 
-/** The tiles' height: a label, then two lines of big digits (or the date
- * and its weekday). */
-export const TILE_HEIGHT = 3
+/** The tiles' height: a label, then three lines of big digits. */
+export const TILE_HEIGHT = 4

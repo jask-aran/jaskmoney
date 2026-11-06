@@ -364,3 +364,9 @@ test("two columns: the budget pane draws its focus, and Budgets' top lines up wi
   expect(ui.state.focusedSection).toBe("bud.chart")
   expect(titleFocused()).toBe(true)
 })
+
+test("big digits: three lines of half blocks, a column between digits", async () => {
+  const { bigDigits } = await import("./PlanGraphics")
+  expect(bigDigits("8")).toEqual(["█▀█", "█▀█", "▀▀▀"])
+  expect(bigDigits("14")).toEqual(["▄█  █ █", " █  ▀▀█", "▀▀▀   ▀"])
+})
