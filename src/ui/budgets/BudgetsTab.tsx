@@ -25,7 +25,7 @@ import { chartSpeedMs, showings, useReveal } from "../charts/motion"
 import { ChartCard } from "../charts/ChartCard"
 import { spendingChart } from "../overview/periodCharts"
 import { BUDGET_PANES, BUDGET_VIEWS, CHART_VIEWS, CYCLE_VIEWS } from "../../state/uiStore"
-import { GRID_PANE_MIN, OverviewChartCard, WIDE, chartRows, overviewChartModel, type OverviewChartInput } from "../overview/OverviewTab"
+import { GRID_PANE_MIN, OverviewChartCard, sideColumnWidth, WIDE, chartRows, overviewChartModel, type OverviewChartInput } from "../overview/OverviewTab"
 import { CalendarView, calendarLegend } from "../overview/CalendarView"
 import { spendingCalendar } from "../../domain/spending"
 import { merchantRows, trendRows } from "../../domain/periodTables"
@@ -160,7 +160,8 @@ export function BudgetsTab(props: { focused: SectionId }) {
   // The Overview's breakpoint; the categories take a column of about the
   // Overview's side column, wider on a wide terminal.
   const wide = () => dims().width >= WIDE
-  const categoriesWidth = () => (wide() ? Math.min(62, Math.max(40, Math.floor((dims().width - 1) * 0.4))) : dims().width)
+  // The Overview's side column width.
+  const categoriesWidth = () => (wide() ? sideColumnWidth(dims().width) : dims().width)
   const mainWidth = () => (wide() ? dims().width - 1 - categoriesWidth() : dims().width)
   // The layouts. Wide: the main column, then a side column with the
   // cycle's calendar over the Budgets pane. Two columns (split screen): the
@@ -181,20 +182,8 @@ export function BudgetsTab(props: { focused: SectionId }) {
   const cyclePaneHeight = (_pane: number) => (grid() ? bottomQuarter() : body() - chartHeight())
   const chartWidth = () => mainWidth()
   const cyclePaneWidth = (pane: number) => (grid() ? (pane === 0 ? halfLeft() : halfRight()) : mainWidth())
-  // The cycle's calendar (calendarLayout fills what it's given): the
-  // budget pane's height where a cycle pane is under it, else a band of two
-  // lines a weekday where the tab has the height, else one; narrow, only
-  // on a tall terminal.
-  // Lined up with the budget pane only where the Budgets pane keeps room
-  // under it for its tiles, its top and a few rows.
-  const budgetsNeed = () => 4 + tilesHeight() + topLines().length + Math.min(setup().length, BUDGETS_ROWS_MIN)
-  const calendarHeight = () => {
-    if (!wide()) return body() >= 40 ? CALENDAR_MIN : 0
-    const own = body() >= CALENDAR_TALL + 10 ? CALENDAR_TALL : CALENDAR_MIN
-    if (cyclePanes() && body() - chartHeight() >= budgetsNeed()) return chartHeight()
-    return body() - own >= budgetsNeed() ? own : CALENDAR_MIN
-  }
-  const categoriesHeight = () => (wide() ? body() - calendarHeight() : Math.max(5, body() - chartHeight() - calendarHeight()))
+  // The Budgets pane: the side column's full height; narrow, under the budget pane.
+  const categoriesHeight = () => (wide() ? body() : Math.max(5, body() - chartHeight()))
   // The panes the keys and jumps reach follow the layout; focus on one
   // that's gone goes back to the budgets.
   createEffect(() => {
@@ -371,7 +360,16 @@ export function BudgetsTab(props: { focused: SectionId }) {
   const tilesHeight = () => (tiles() ? TILE_HEIGHT + 1 : 0)
   // The top (the plan, this cycle), a blank line and the Categories
   // heading stay put; the categories scroll under them.
-  const categoryRoom = () => Math.max(1, categoriesHeight() - 4 - tilesHeight() - topLines().length)
+  // The cycle's calendar, in the pane between This cycle and the table,
+  // compact: two lines a weekday (15 rows) where the pane has room for it
+  // and a few table rows, else one (8), else none.
+  const calendarRows = () => {
+    const room = categoriesHeight() - 4 - tilesHeight() - topLines().length - 3 - Math.min(setup().length, BUDGETS_ROWS_MIN)
+    return room >= CALENDAR_TALL ? CALENDAR_TALL : room >= CALENDAR_MIN ? CALENDAR_MIN : 0
+  }
+  // Its heading, the days, its legend and a blank line.
+  const calendarBlock = () => (calendarRows() ? calendarRows() + 3 : 0)
+  const categoryRoom = () => Math.max(1, categoriesHeight() - 4 - tilesHeight() - topLines().length - calendarBlock())
   const categoryLines = setup
   const categoryTop = createMemo(() => centredTop(categoryCursor(), categoryLines().length, categoryRoom()))
   // Nothing budgeted yet: the pane says to start here.
@@ -414,6 +412,17 @@ export function BudgetsTab(props: { focused: SectionId }) {
         </text>
       )}</Index>
       <text wrapMode="none">{" "}</text>
+      <Show when={calendarRows()}>
+        <text wrapMode="none" flexShrink={0}><S>{" "}</S><S fg={ink.heading} bold>{"Spending calendar"}</S></text>
+        <box paddingLeft={1} height={calendarRows()} flexShrink={0}>
+          <CalendarView weeks={calendarWeeks()} width={rowWidth(categoriesWidth())} rows={calendarRows()} today={today()} through={calendarThrough()} />
+        </box>
+        <text wrapMode="none" flexShrink={0}>
+          <S>{" "}</S>
+          <Index each={fitSpans(calendarSpans(), rowWidth(categoriesWidth()))}>{(span) => <S fg={span().fg} bold={span().bold}>{span().text}</S>}</Index>
+        </text>
+        <text wrapMode="none" flexShrink={0}>{" "}</text>
+      </Show>
       <Show when={categoryLines().length} fallback={<text fg={ink.note}>{" No spending yet."}</text>}>
         <text wrapMode="none">
           <S fg={ink.note}>{" "}</S>
@@ -504,11 +513,7 @@ export function BudgetsTab(props: { focused: SectionId }) {
     () => chartSpeedMs(data.state.uiPrefs.chartSpeed), () => data.state.uiPrefs.chartCurve)
   const calendarDays = createMemo(() => calendarWeeks().flat().flatMap((d) => (d ? [d.dateISO] : [])).sort())
   const calendarThrough = () => (calendarReveal() >= 1 ? undefined : calendarDays()[Math.ceil(calendarReveal() * calendarDays().length) - 1] ?? "")
-  const CycleCalendar = () => (
-    <SectionCard title="Spending calendar" titleSuffix={`· ${subject().title}`} titleSuffixColor={ink.label} bottomSpans={calendarSpans()} width={categoriesWidth()} height={calendarHeight()}>
-      <CalendarView weeks={calendarWeeks()} width={categoriesWidth() - 4} rows={calendarHeight() - 2} today={today()} through={calendarThrough()} />
-    </SectionCard>
-  )
+
 
   /** A click on a card or pane focuses it. */
   const panePointer = (id: SectionId) => onPointer((scope) => scope === "bar" || scope.startsWith("budgets"), () => ui.applyJump(id))
@@ -522,7 +527,7 @@ export function BudgetsTab(props: { focused: SectionId }) {
 
   return (
     <box width="100%" height="100%" flexDirection={wide() ? "row" : "column"} gap={wide() ? 1 : 0} backgroundColor={theme.canvas}>
-      <Show when={wide()} fallback={<><BudgetPane /><Show when={calendarHeight()}><CycleCalendar /></Show><CategoriesCard /></>}>
+      <Show when={wide()} fallback={<><BudgetPane /><CategoriesCard /></>}>
         <Show when={grid()} fallback={
           <box flexDirection="column" width={mainWidth()} height={body()}>
             <BudgetPane />
@@ -537,19 +542,16 @@ export function BudgetsTab(props: { focused: SectionId }) {
             </box>
           </box>
         </Show>
-        <box flexDirection="column" width={categoriesWidth()} height={body()}>
-          <CycleCalendar />
-          <CategoriesCard />
-        </box>
+        <CategoriesCard />
       </Show>
     </box>
   )
 }
 
-/** The cycle calendar's fewest rows: a line a weekday, the months, borders. */
-const CALENDAR_MIN = 10
-/** Its height with two lines a weekday (each day's amount under its number). */
-const CALENDAR_TALL = 17
+/** The cycle calendar's rows with a line a weekday (and the months). */
+const CALENDAR_MIN = 8
+/** Its rows with two lines a weekday (each day's amount under its number). */
+const CALENDAR_TALL = 15
 
 /** The Budgets pane's fewest table rows before the calendar gives way. */
 const BUDGETS_ROWS_MIN = 5

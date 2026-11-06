@@ -45,8 +45,8 @@ function cellsOf(amounts: number[], width: number): number[] {
  * as the next top-up keeps that much more of the pay. Then savers, what's
  * left of the pay, in good. Past the pay too, the bar is the spending.
  * Under it two brackets: spending (over the target and any overspend:
- * what's spent of the target, and what's left or how far over) and
- * savers; then the categories' legend, spent of budget. With no pay set,
+ * what's spent of the target, and what's left) and savers; how far over
+ * goes above the bar, over the red run; then the categories' legend, spent of budget. With no pay set,
  * there are no savers.
  */
 export function payBar(width: number, pay: number | null, target: number, categories: PayPart[], restSpent: number): Span[][] {
@@ -93,17 +93,13 @@ export function payBar(width: number, pay: number | null, target: number, catego
   const slash = [{ text: "/", fg: ink.note }, money(formatWholeMoney(target))]
   const dot: Span = { text: " · ", fg: ink.note }
   const spendLabels: Span[][] = over > 0
-    ? [
-      [money(formatWholeMoney(spent)), ...of, dot, money(`${formatWholeMoney(over)} over`, tone.bad)],
-      [money(formatWholeMoney(spent)), ...slash, dot, money(`${formatWholeMoney(over)} over`, tone.bad)],
-      [money(formatWholeMoney(spent)), dot, money(`${formatWholeMoney(over)} over`, tone.bad)],
-      [money(`${formatWholeMoney(over)} over`, tone.bad)],
-      [money(`+${formatWholeMoney(over)}`, tone.bad)],
-    ]
+    // Over: how far goes above the bar, over its red run.
+    ? [[money(formatWholeMoney(spent)), ...of], [money(formatWholeMoney(spent)), ...slash], [money(formatWholeMoney(spent))]]
     : [
       [money(formatWholeMoney(spent)), ...of, dot, money(`${formatWholeMoney(target - spent)} left`)],
       [money(formatWholeMoney(spent)), ...slash, dot, money(`${formatWholeMoney(target - spent)} left`)],
       [money(formatWholeMoney(spent)), ...of],
+      [money(formatWholeMoney(spent)), ...slash],
       [money(`${formatWholeMoney(target - spent)} left`)],
       [money(formatWholeMoney(target - spent))],
     ]
@@ -112,6 +108,13 @@ export function payBar(width: number, pay: number | null, target: number, catego
     ...bracket(cellsIn("savers"), [[{ text: "savers ", fg: ink.label }, money(formatWholeMoney(saved))], [money(formatWholeMoney(saved))]]),
   ]
   const out = [bar, brackets]
+  if (over > 0) {
+    // Above the bar, centred over the red run (kept inside the bar).
+    const text = `${formatWholeMoney(over)} over`
+    const mid = cellsIn("target") + cellsIn("over") / 2
+    const at = Math.max(0, Math.min(width - text.length, Math.round(mid - text.length / 2)))
+    out.unshift([{ text: " ".repeat(at), fg: ink.note }, { text, fg: tone.bad, bold: true }])
+  }
   if (categories.length) {
     // Each part spent of its budget; onto a second line where they don't fit.
     const item = (name: string, color: string, used: number, budget: number): Span[] => [

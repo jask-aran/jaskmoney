@@ -68,6 +68,11 @@ const MIN_CATEGORIES = 8
  * (see spendingScope); internal transfers and not-spending categories are
  * excluded.
  */
+/** The side column's width on a wide terminal (the Budgets tab's too). */
+export function sideColumnWidth(width: number): number {
+  return Math.max(SIDE_MIN, Math.min(SIDE_MAX, Math.floor((width - 1) * 0.4)))
+}
+
 export function OverviewTab(props: { focused: SectionId }) {
   // Hidden (another tab shown, the tab kept mounted), the tab's inputs keep
   // their last values, so the costly results stop following the data;
@@ -193,7 +198,7 @@ export function OverviewTab(props: { focused: SectionId }) {
   // When even the smallest chart doesn't fit, the column scrolls.
   const wide = () => dims().width >= WIDE
   const bodyHeight = () => Math.max(8, dims().height - 7)
-  const sideWidth = () => (wide() ? Math.max(SIDE_MIN, Math.min(SIDE_MAX, Math.floor((dims().width - 1) * 0.4))) : Math.floor((dims().width - 1) / 2))
+  const sideWidth = () => (wide() ? sideColumnWidth(dims().width) : Math.floor((dims().width - 1) / 2))
   const mainWidth = () => (wide() ? dims().width - 1 - sideWidth() : dims().width)
   // Wide and wide enough: the charts in a 2×2 grid, two columns of panes.
   const grid = () => wide() && mainWidth() >= 2 * GRID_PANE_MIN + 1

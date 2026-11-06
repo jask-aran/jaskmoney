@@ -169,7 +169,8 @@ test("the cycle's calendar is always there: the budget's days so far, and its re
   data.refresh()
   await data.setBudget({ kind: "overall" }, 500)
   const f = await frame()
-  expect(f).toContain("Spending calendar · All spending")
+  // In the Budgets pane, between This cycle and the table.
+  expect(f).toMatch(/This cycle[\s\S]*Spending calendar[\s\S]*Categories/)
   // STREAMER's next charge (and the fixture's Shop, regular enough to
   // count) on days to come: their amounts, the days in caution, and the
   // legend's total.
@@ -344,24 +345,25 @@ test("the plan: your pay and your spending target give what goes to savers; each
   f = await frame()
   // One bracket over the target and the overspend: what's spent of the
   // target, and how far over.
-  expect(f).toMatch(/└─+ \$2,300(( of |\/)\$2,000)? · \$300 over ─+┘└─+ savers \$2,700 ─+┘/)
+  // How far over goes above the bar; the bracket under it, what's spent of the target.
+  const rows = f.split("\n"), overAt = rows.findIndex((l) => l.includes("$300 over"))
+  expect(rows[overAt + 1]).toMatch(/█+/)
+  expect(rows[overAt + 2]).toMatch(/└─* \$2,300( of |\/)\$2,000 ─*┘└─* savers \$2,700 ─*┘/)
   expect(f).not.toContain("more than your pay")
   const bad = RGBA.fromHex(tone.bad).toInts().join()
-  const barLine = f.split("\n").findIndex((l) => l.includes("Each pay")) + 1
+  const barLine = overAt + 1
   expect(t.captureSpans().lines[barLine]!.spans.some((s) => s.text.includes("█") && s.fg.toInts().join() === bad)).toBe(true)
   t.renderer.destroy()
 })
 
-test("two columns: the budget pane draws its focus, and Budgets' top lines up with the cycle pane's", async () => {
+test("two columns: the budget pane draws its focus; Budgets is the side column's one pane, its full height", async () => {
   const { t, frame } = await budgetsTab({ width: 145, height: 60 })
   await data.setBudget({ kind: "overall" }, 500)
   const f = (await frame()).split("\n")
-  const budgetsTop = f.findIndex((l) => l.includes("╭─ Budgets"))
-  expect(budgetsTop).toBeGreaterThan(0)
-  // The cycle pane (Merchants to start) begins on Budgets' line.
-  expect(f[budgetsTop]).toContain("╭─ Merchants")
   const chartTop = f.findIndex((l) => l.includes("╭─ Cumulative spending"))
-  expect(chartTop).toBe(f.findIndex((l) => l.includes("╭─ Spending calendar")))
+  expect(chartTop).toBeGreaterThan(0)
+  expect(f[chartTop]).toContain("╭─ Budgets")
+  expect(f.filter((l) => l.includes("╭─ Spending calendar"))).toEqual([])
   // Focused, its title takes the focus colour, as every pane's does.
   const focus = RGBA.fromHex(tone.focus).toInts().join()
   const titleFocused = () => t.captureSpans().lines[chartTop]!.spans.some((s) => s.text.includes("Cumulative spending") && s.fg.toInts().join() === focus)
