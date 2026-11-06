@@ -15,7 +15,7 @@ import type { Span } from "../primitives/spans"
 import { S } from "../primitives/S"
 import { CHART_SECTIONS, CHART_VIEWS, chartPaneOf, ui, type SectionId } from "../../state/uiStore"
 import { data } from "../../state/dataStore"
-import { ink, theme, tone } from "../../theme"
+import { fade, ink, theme, tone } from "../../theme"
 import { dailySpendSeries, fitCategoryLines, formatMoney, formatPct, formatWholeMoney, signedWholeMoney } from "../../domain/dashboard"
 import { computePeriodFlows, computePosition, historyCovers, projectAvailable, usualDailySpend } from "../../domain/position"
 import { allocation, budgetProgress, cycleFor, cycleSpending, progressOf, type BudgetProgress } from "../../domain/budget"
@@ -433,7 +433,20 @@ export function OverviewTab(props: { focused: SectionId }) {
     if (f.spent - f.income >= 0.5) {
       // Spending more than came in: where it came from, over what was
       // spent (and, where the spending went, its categories under that).
-      lines.push(...sourcesBars(width, f.income, f.spent, parts, bySpending ? groupParts : undefined, before))
+      // Each source measured over the range: transfers in from outside
+      // (not income, not spending, from no tracked account), net; what each
+      // saver sent into Spending, net; and how far Spending's own balance
+      // fell.
+      const rows = inPeriod()
+      const outside = rows.filter((t) => t.excluded && !t.internal && !t.income).reduce((n, t) => n + t.amount, 0)
+      const fromSavers = savers.map((s, i) => ({ amount: rows.filter((t) => t.internal && t.transferAccountId === s.accountId).reduce((n, t) => n + t.amount, 0), color: colors[i]!, name: parts[i]!.name, figure: colors[i]! }))
+      const fell = -rows.reduce((n, t) => n + t.amount, 0)
+      const sources = [
+        { amount: outside, color: theme.sapphire, name: "transfers", figure: theme.sapphire },
+        ...fromSavers.sort((x, y) => y.amount - x.amount),
+        { amount: fell, color: fade(tone.good, 0.65), name: "Spending", figure: ink.figure },
+      ]
+      lines.push(...sourcesBars(width, f.income, f.spent, sources, bySpending ? groupParts : undefined, before))
     } else {
       // What came in: spent, then the net; one of them opened out under
       // it: the spending to its categories, or the net to where it went,

@@ -236,3 +236,17 @@ test("spending more than came in, where the spending went: its categories as a t
   expect(f.join("\n")).toMatch(/Categories\s+Spent\s+%\s+Before[^\n]*\n[^\n]*Groceries/)
   t.renderer.destroy()
 })
+
+test("spending more than came in, paid for by money from outside (transfers in, not income): a measured part of its own, nothing guessed as Spending's balance", async () => {
+  // In $1,000, spent $1,600; $2,000 arrived from another bank: the $600
+  // past what came in was paid by it (its share), and Spending's balance
+  // rose, so it gave nothing.
+  const { t, frame } = await overview([
+    pay("2026-10-01", 1000), row("2026-10-02", 2000, { excluded: true, categoryName: "Transfers", description: "FROM OTHER BANK" }),
+    spend("2026-10-05", 1200, 10, "Groceries"), spend("2026-10-06", 400, 11, "Fuel"),
+  ], "1M")
+  const text = (await frame()).join("\n")
+  expect(text).toMatch(/\$1,000 in\s+\$600( transfers)?/)
+  expect(text).not.toMatch(/\$\d[\d,]* (Spending|other)/)
+  t.renderer.destroy()
+})
