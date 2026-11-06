@@ -85,7 +85,7 @@ export function calendarLayout(weekCount: number, width: number, rows: number): 
  * today's chart colour; days to come are dim. `through`: drawing in, the
  * days after it are blank (the tiles come in in date order).
  */
-export function CalendarView(props: { weeks: Array<Array<CalendarDay | null>>; width: number; rows: number; today: string; through?: string }) {
+export function CalendarView(props: { weeks: Array<Array<CalendarDay | null>>; width: number; rows: number; today: string; through?: string; markColor?: string }) {
   const layout = createMemo(() => calendarLayout(props.weeks.length, props.width, props.rows))
   const shown = createMemo(() => props.weeks.slice(-layout().weeks))
   // Months' spending under the grid when their names have no room for it
@@ -94,7 +94,7 @@ export function CalendarView(props: { weeks: Array<Array<CalendarDay | null>>; w
   // A line is one text of styled runs: a half year is a few dozen nodes,
   // not a pair per day per line, and a frame of the draw-in restyles only
   // the lines it changed (StyledLine).
-  const lines = createMemo(() => calendarLines(shown(), layout(), WEEKDAYS(), props.today, props.through))
+  const lines = createMemo(() => calendarLines(shown(), layout(), WEEKDAYS(), props.today, props.through, props.markColor))
   return (
     <>
       <text wrapMode="none" fg={ink.note}>{" ".repeat(LABEL) + monthLabels(shown(), layout().widths, props.today)}</text>
@@ -114,8 +114,8 @@ export function gridLines(layout: CalendarLayout): number {
 
 /** The grid's lines under the month names, as styled runs: each weekday's
  * label, then each week's cell on that line and its gap column. Days after
- * `through` are blank. */
-export function calendarLines(weeks: Array<Array<CalendarDay | null>>, layout: CalendarLayout, weekdays: string[], today: string, through?: string): StyledSpan[][] {
+ * `through` are blank; a day's mark is in `markColor`. */
+export function calendarLines(weeks: Array<Array<CalendarDay | null>>, layout: CalendarLayout, weekdays: string[], today: string, through?: string, markColor: string = ink.figure): StyledSpan[][] {
   const out: StyledSpan[][] = []
   for (let row = 0; row < 7; row++) {
     for (let line = 0; line < layout.band; line++) {
@@ -124,7 +124,7 @@ export function calendarLines(weeks: Array<Array<CalendarDay | null>>, layout: C
       weeks.forEach((week, i) => {
         const d = week[row] ?? null
         const day = d && through !== undefined && d.dateISO > through ? null : d
-        cell(spans, day, layout.widths[i] ?? layout.cell, layout, line, today)
+        cell(spans, day, layout.widths[i] ?? layout.cell, layout, line, today, markColor)
       })
       out.push(spans)
     }
@@ -140,16 +140,18 @@ function push(spans: StyledSpan[], span: StyledSpan) {
 }
 
 /** One line of one day's cell, then its gap column. */
-function cell(spans: StyledSpan[], day: CalendarDay | null, width: number, layout: CalendarLayout, line: number, today: string) {
+function cell(spans: StyledSpan[], day: CalendarDay | null, width: number, layout: CalendarLayout, line: number, today: string, markColor: string) {
   const w = width - layout.gap
   const past = day != null && day.dateISO <= today
   const isToday = day?.dateISO === today
   // The band's last line is its gap: blank, so weekdays read as rows.
   const blankLine = layout.bandGap === 1 && line === layout.band - 1
-  const bg = day == null || blankLine ? theme.canvas : past ? LEVEL_BG[day.level] : FUTURE_BG
-  // A day to come shows what's expected on it, if anything.
+  // A day outside the range has no tile: its number on the canvas.
+  const bg = day == null || blankLine || day.outside ? theme.canvas : past ? LEVEL_BG[day.level] : FUTURE_BG
+  // A day to come shows what's expected on it, if anything; a mark goes
+  // where the amount would.
   const expected = !past && day?.expected ? day.expected : 0
-  const amount = past && day!.spent > 0 ? shortMoney(day!.spent) : expected ? shortMoney(expected) : ""
+  const amount = day?.mark ?? (past && day!.spent > 0 ? shortMoney(day!.spent) : expected ? shortMoney(expected) : "")
   const text = (() => {
     if (day == null || blankLine) return " ".repeat(w)
     const { dayNumbers, amounts } = layout
@@ -163,8 +165,9 @@ function cell(spans: StyledSpan[], day: CalendarDay | null, width: number, layou
   })()
   // Text: dark on the brighter levels; days to come faint, or in caution
   // with a charge expected; today in its colour.
-  const fg = isToday ? theme.chartToday : !past ? (expected ? tone.caution : ink.faint) : day!.level >= 4 ? theme.crust : line === 0 ? ink.label : ink.figure
-  push(spans, { text, fg, bg, bold: isToday })
+  const marked = day?.mark != null && line > 0 || (day?.mark != null && layout.amounts === "beside")
+  const fg = marked ? markColor : isToday ? theme.chartToday : day?.outside ? ink.note : !past ? (expected ? tone.caution : ink.faint) : day!.level >= 4 ? theme.crust : line === 0 ? ink.label : ink.figure
+  push(spans, { text, fg, bg, bold: isToday || marked })
   if (layout.gap) push(spans, { text: " ", bg: theme.canvas })
 }
 

@@ -18,6 +18,12 @@ export interface CalendarDay {
   /** A day to come: charges expected on it (the Budgets tab's calendar:
    * regular payments due). */
   expected?: number
+  /** Past the range (spendingCalendar's `through`): shown, not part of it
+   * (no spending, no level). */
+  outside?: true
+  /** A word on the day, where its amount would go (the Budgets tab's
+   * calendar: payday). */
+  mark?: string
 }
 
 /**
@@ -25,8 +31,10 @@ export interface CalendarDay {
  * columns of seven days. Days outside the range are null (padding in the first
  * and last week). Weeks are oldest first.
  */
-export function spendingCalendar(transactions: Transaction[], startISO: string, endISO: string, weekStart: WeekStart = "monday"): Array<Array<CalendarDay | null>> {
-  const days = daysBetween(startISO, endISO) + 1
+export function spendingCalendar(transactions: Transaction[], startISO: string, endISO: string, weekStart: WeekStart = "monday", options: { through?: string } = {}): Array<Array<CalendarDay | null>> {
+  // The grid runs on to `through` (a day or two past the range, outside it).
+  const shownEnd = options.through && options.through > endISO ? options.through : endISO
+  const days = daysBetween(startISO, shownEnd) + 1
   const { dates, values } = dailySpendSeries(transactions, startISO, endISO)
   const totals = new Map(dates.map((date, i) => [date, values[i]!]))
   const nonZero = values.filter((spent) => spent !== 0).sort((a, b) => a - b)
@@ -47,6 +55,7 @@ export function spendingCalendar(transactions: Transaction[], startISO: string, 
         week.push(null)
       } else {
         const dateISO = addDays(startISO, day)
+        if (dateISO > endISO) { week.push({ dateISO, spent: 0, level: 0, outside: true }); continue }
         const spent = totals.get(dateISO) ?? 0
         week.push({ dateISO, spent, level: levels.get(spent) ?? 0 })
       }

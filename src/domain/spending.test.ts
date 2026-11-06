@@ -65,3 +65,13 @@ describe("spendingCalendar", () => {
     }
   })
 })
+
+test("spendingCalendar runs on to `through`: days past the range are outside it, with no spending or level", () => {
+  const rows = [transaction({ id: 1, dateISO: "2026-10-31", amount: -50 }), transaction({ id: 2, dateISO: "2026-11-01", amount: -80 })]
+  const days = spendingCalendar(rows, "2026-10-26", "2026-10-31", "monday", { through: "2026-11-01" }).flat().filter((d): d is CalendarDay => d != null)
+  expect(days.at(-1)).toEqual({ dateISO: "2026-11-01", spent: 0, level: 0, outside: true })
+  expect(days.find((d) => d.dateISO === "2026-10-31")).toMatchObject({ spent: 50 })
+  expect(days.filter((d) => d.outside)).toHaveLength(1)
+  // No `through`, or one inside the range: the range alone.
+  expect(spendingCalendar(rows, "2026-10-26", "2026-10-31", "monday", { through: "2026-10-30" }).flat().some((d) => d?.outside)).toBe(false)
+})

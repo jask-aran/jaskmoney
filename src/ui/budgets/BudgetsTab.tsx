@@ -314,10 +314,10 @@ export function BudgetsTab(props: { focused: SectionId }) {
   // budgets, the rest of the target, savers), then this cycle as a track.
   // Until either is set, a caution tile says which keys set them. A line
   // with `bg` is filled to the row's end.
-  const topLines = createMemo((): Array<{ spans: Span[]; bg?: string }> => {
+  const topLines = createMemo((): Array<TopLine> => {
     const width = rowWidth(categoriesWidth())
     const pay = expectedPay(), target = overallBudget()
-    const out: Array<{ spans: Span[]; bg?: string }> = [{ spans: heading("Each pay", pay != null ? formatWholeMoney(pay) : "") }]
+    const out: Array<TopLine> = [{ spans: heading("Each pay", pay != null ? formatWholeMoney(pay) : ""), stays: true }]
     const saving = toSavers()
     if (pay == null && !target) {
       const fill = fade(tone.caution, 0.8)
@@ -330,21 +330,21 @@ export function BudgetsTab(props: { focused: SectionId }) {
     } else {
       // The rest of the target's spending: all of it less the categories' own.
       const restSpent = target ? Math.max(0, totalProgress().spent - targetParts().reduce((n, c) => n + c.spent, 0)) : 0
-      for (const spans of payBar(width, pay, target ? split().total : 0, target ? targetParts() : [], restSpent)) out.push({ spans })
+      for (const spans of payBar(width, pay, target ? split().total : 0, target ? targetParts() : [], restSpent)) out.push({ spans, sweeps: spans.some((x) => x.text.includes("█")) })
       if (pay == null) out.push({ spans: note("p: your pay, to see what goes to savers", tone.caution, "") })
       else if (!target) out.push({ spans: note("t: your spending target, to see what's saved", tone.caution, "") })
       else if (saving != null && saving < 0) out.push({ spans: note(`The target is ${formatWholeMoney(-saving)} more than your pay`, tone.caution, "") })
     }
-    out.push({ spans: blank }, { spans: heading("This cycle") })
+    out.push({ spans: blank, stays: true }, { spans: heading("This cycle"), stays: true })
     const p = paid()
     const next = addDays(cycle().end, 1)
     const planned = saving != null && saving > 0 ? saving : null
     const met = planned != null && p.sent >= planned - 1
     const sentColor = planned == null ? ink.figure : met ? tone.good : tone.caution
-    for (const spans of cycleTrack(width, cycle().start, next, today(), p, sentColor)) out.push({ spans })
+    for (const [n, spans] of cycleTrack(width, cycle().start, next, today(), p, sentColor).entries()) out.push({ spans, sweeps: n === 1 })
     if (!p.pay) out.push({ spans: note("no pay found yet (the Salary category)", ink.note, "") })
     if (planned != null) {
-      out.push({ spans: [...sentMeter(width - NUM - 1, p.sent, planned), { text: " ", fg: ink.note }, { text: (met ? `✓ ${formatWholeMoney(planned)}` : `of ${formatWholeMoney(planned)}`).padStart(NUM), fg: met ? tone.good : ink.label }] })
+      out.push({ spans: [...sentMeter(width - NUM - 1, p.sent, planned), { text: " ", fg: ink.note }, { text: (met ? `✓ ${formatWholeMoney(planned)}` : `of ${formatWholeMoney(planned)}`).padStart(NUM), fg: met ? tone.good : ink.label }], sweeps: true })
       if (!met) out.push({ spans: note(`${formatWholeMoney(planned - p.sent)} still to send`, tone.caution) })
     }
     const end = forecast()
@@ -353,6 +353,24 @@ export function BudgetsTab(props: { focused: SectionId }) {
       out.push({ spans: note(end >= 0.5 ? "at this pace: you could send it too" : end < 0 ? "at this pace: the next cycle starts behind" : "at this pace: nothing left over", end < 0 ? tone.caution : ink.note) })
     }
     return out
+  })
+  // Drawing in, as Subscriptions does ("always": each time the tab shows
+  // or the cycle changes, not as the cursor moves): the bars (each pay,
+  // the cycle's track, the meter) sweep in from the left, and the lines
+  // with them drop in, in order; the headings are there from the start.
+  const planReveal = useReveal(
+    () => (data.state.uiPrefs.chartMotion === "always" ? `${cycle().start}:${seen()}` : undefined),
+    () => chartSpeedMs(data.state.uiPrefs.chartSpeed), () => data.state.uiPrefs.chartCurve)
+  const shownTop = createMemo((): TopLine[] => {
+    const p = planReveal(), lines = topLines()
+    if (p >= 1) return lines
+    const width = rowWidth(categoriesWidth())
+    const edge = Math.round(Math.min(1, p / 0.7) * width)
+    return lines.map((line, i) => {
+      if (line.stays) return line
+      if (line.sweeps) return { ...line, spans: sweptTo(line.spans, edge) }
+      return p >= 0.3 + 0.6 * (i / lines.length) ? line : { ...line, spans: [{ text: " ", fg: ink.note }] }
+    })
   })
   // The payday tiles, this cycle only (a past one has no next payday to
   // count to), and a blank line under them.
@@ -375,25 +393,35 @@ export function BudgetsTab(props: { focused: SectionId }) {
   // Nothing budgeted yet: the pane says to start here.
   const nothingSet = () => view().current && budgets().length === 0 && !data.state.uiPrefs.expectedPay
 
+  // The budget pane's key while it draws in ("always"): each view, budget
+  // and showing. Its views that aren't charts (Subscriptions, Each cycle)
+  // draw in on it too, as the Overview's table views do.
+  const chartKey = () => (data.state.uiPrefs.chartMotion === "always" ? `${(BUDGET_VIEWS[ui.state.budgetChart] ?? BUDGET_VIEWS[0]!).view}:${subject().title}:${seen()}` : undefined)
+  const tableReveal = useReveal(() => (model() ? undefined : chartKey()), () => chartSpeedMs(data.state.uiPrefs.chartSpeed), () => data.state.uiPrefs.chartCurve)
   const Chart = () => (
     <ChartCard scope={subject().title} views={BUDGET_VIEWS} current={ui.state.budgetChart} model={model()} width={chartWidth()} height={chartHeight()} baseline={baseline()}
       focused={props.focused === "bud.chart"}
       legend={chartView() === "Each cycle" ? (cycles().length ? cycleLinesLegend(cycles()) : undefined) : subscriptionsLegend(subs(), dueBeforePayday())}
-      fallback={chartView() === "Each cycle" ? <EachCycle /> : <SubscriptionsView list={subs()} width={chartWidth() - 4} rows={chartHeight() - 2} today={today()} payday={payday()} />}
-      revealKey={data.state.uiPrefs.chartMotion === "always" ? `${(BUDGET_VIEWS[ui.state.budgetChart] ?? BUDGET_VIEWS[0]!).view}:${subject().title}:${seen()}` : undefined}
+      fallback={chartView() === "Each cycle" ? <EachCycle /> : <SubscriptionsView list={subs()} width={chartWidth() - 4} rows={chartHeight() - 2} today={today()} payday={payday()} progress={tableReveal()} />}
+      revealKey={chartKey()}
       revealMs={data.state.uiPrefs.chartMotion === "always" ? chartSpeedMs(data.state.uiPrefs.chartSpeed) : undefined}
       curve={data.state.uiPrefs.chartCurve}
       labels={data.state.uiPrefs.chartLabels} />
   )
   // Each cycle: the subject cycle by cycle, newest first, each against the
   // budget then, as many as fit.
-  const EachCycle = () => (
-    <Index each={cycleLines(cycles().slice(0, Math.max(1, chartHeight() - 2)), chartWidth() - 4, pace(), today())}>{(spans) => (
-      <text wrapMode="none">
-        <Index each={spans()}>{(span) => <S fg={span().fg} bold={span().bold}>{span().text}</S>}</Index>
-      </text>
-    )}</Index>
-  )
+  // Drawing in, its rows drop in newest first, each bar sweeping in.
+  const EachCycle = () => {
+    const shown = () => cycles().slice(0, Math.max(1, chartHeight() - 2))
+    const rowsIn = () => Math.ceil(Math.min(1, tableReveal() / 0.6) * shown().length)
+    return (
+      <Index each={cycleLines(shown(), chartWidth() - 4, pace(), today())}>{(spans, i) => (
+        <text wrapMode="none">
+          <Index each={i < rowsIn() ? spans() : []}>{(span) => <S fg={span().fg} bold={span().bold}>{span().text}</S>}</Index>
+        </text>
+      )}</Index>
+    )
+  }
   const Categories = () => (
     <SectionCard title="Budgets" titleSuffix={nothingSet() ? "· start here" : view().current ? `· day ${elapsed()} of ${cycle().days}` : `· ${period()} · ] later`}
       titleSuffixColor={nothingSet() || !view().current ? tone.caution : tone.scope} focused={categoriesFocused()} width={categoriesWidth()} height={categoriesHeight()}>
@@ -402,7 +430,7 @@ export function BudgetsTab(props: { focused: SectionId }) {
           perDay={overallBudget() ? { remaining: totalProgress().remaining, daily: totalProgress().dailyAllowance } : null} /></box>
         <text wrapMode="none">{" "}</text>
       </Show>
-      <Index each={topLines()}>{(line) => (
+      <Index each={shownTop()}>{(line) => (
         // Never shrunk: past the pane's height, lines clip rather than
         // overlap.
         <text wrapMode="none" flexShrink={0}>
@@ -415,7 +443,7 @@ export function BudgetsTab(props: { focused: SectionId }) {
       <Show when={calendarRows()}>
         <text wrapMode="none" flexShrink={0}><S>{" "}</S><S fg={ink.heading} bold>{"Spending calendar"}</S></text>
         <box paddingLeft={1} height={calendarRows()} flexShrink={0}>
-          <CalendarView weeks={calendarWeeks()} width={rowWidth(categoriesWidth())} rows={calendarRows()} today={today()} through={calendarThrough()} />
+          <CalendarView weeks={calendarWeeks()} width={rowWidth(categoriesWidth())} rows={calendarRows()} today={today()} through={calendarThrough()} markColor={tone.good} />
         </box>
         <text wrapMode="none" flexShrink={0}>
           <S>{" "}</S>
@@ -488,11 +516,17 @@ export function BudgetsTab(props: { focused: SectionId }) {
   // (expected charges, in caution). Its legend: what's expected by the
   // cycle's end, and what of the budget that leaves.
   const expectedCharges = createMemo(() => (view().current ? upcomingCharges(subs(), addDays(today(), 1), cycle().end) : []))
+  // The grid runs on a day, to the next cycle's payday, marked "pay".
   const calendarWeeks = createMemo(() => {
-    const weeks = spendingCalendar(subjectRows().filter((t) => t.dateISO >= cycle().start && t.dateISO <= cycle().end), cycle().start, cycle().end, data.state.weekStart)
+    const nextPayday = addDays(cycle().end, 1)
+    const weeks = spendingCalendar(subjectRows().filter((t) => t.dateISO >= cycle().start && t.dateISO <= cycle().end), cycle().start, cycle().end, data.state.weekStart, { through: nextPayday })
     const due = new Map<string, number>()
     for (const c of expectedCharges()) due.set(c.dateISO, (due.get(c.dateISO) ?? 0) + c.amount)
-    return weeks.map((week) => week.map((d) => (d && due.has(d.dateISO) ? { ...d, expected: due.get(d.dateISO)! } : d)))
+    return weeks.map((week) => week.map((d) => {
+      if (!d) return d
+      if (d.dateISO === nextPayday) return { ...d, mark: "pay" }
+      return due.has(d.dateISO) ? { ...d, expected: due.get(d.dateISO)! } : d
+    }))
   })
   const calendarSpans = (): Span[] => {
     const expected = expectedCharges().reduce((n, c) => n + c.amount, 0)
@@ -558,3 +592,22 @@ const BUDGETS_ROWS_MIN = 5
 
 /** Fewest rows a Budgets chart pane gets before the cycle pane gives way. */
 const CYCLE_PANE_MIN = 12
+
+/** A line of the Budgets pane's top: `stays` while it draws in (headings),
+ * `sweeps` in from the left (bars), or drops in; `bg` fills it to the row's
+ * end. */
+interface TopLine { spans: Span[]; bg?: string; sweeps?: boolean; stays?: boolean }
+
+/** `spans` cut at `edge` cells, the rest blank: a bar sweeping in. */
+function sweptTo(spans: Span[], edge: number): Span[] {
+  const out: Span[] = []
+  let left = edge, width = 0
+  for (const span of spans) {
+    width += span.text.length
+    if (left <= 0) continue
+    out.push(span.text.length <= left ? span : { ...span, text: span.text.slice(0, left) })
+    left -= span.text.length
+  }
+  const shown = out.reduce((n, x) => n + x.text.length, 0)
+  return [...out, { text: " ".repeat(Math.max(0, width - shown)), fg: ink.note }]
+}

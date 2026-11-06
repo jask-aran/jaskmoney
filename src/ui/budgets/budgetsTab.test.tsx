@@ -380,3 +380,34 @@ test("big digits: three lines of light, rounded strokes, a column between digits
   expect(bigDigits("8")).toEqual(["╭─╮", "├─┤", "╰─╯"])
   expect(bigDigits("14")).toEqual(["╶╮  ╷ ╷", " │  ╰─┤", "╶┴╴   ╵"])
 })
+
+test("the calendar runs on to the next payday, marked pay in good, outside the cycle (no tile)", async () => {
+  const { t, frame } = await budgetsTab({ width: 145, height: 60 })
+  await data.setBudget({ kind: "overall" }, 500)
+  const f = await frame()
+  // Monthly cycles from the 1st: 1 Nov is the next payday.
+  const spans = t.captureSpans().lines.flatMap((l) => l.spans)
+  const pay = spans.find((s) => s.text.includes("pay") && s.fg.toInts().join() === RGBA.fromHex(tone.good).toInts().join())
+  expect(pay).toBeTruthy()
+  expect(f).toMatch(/Nov/)
+})
+
+test("Each pay and This cycle draw in on \"always\": the bars sweep in from the left, the lines drop in, then all of it", async () => {
+  const { frame } = await budgetsTab({ width: 145, height: 60 })
+  await data.setBudget({ kind: "overall" }, 500)
+  data.setState("uiPrefs", { ...data.state.uiPrefs, chartMotion: "always", chartSpeed: "quick" })
+  const bar = (f: string) => (f.split("\n")[f.split("\n").findIndex((l) => l.includes("Each pay")) + 1]!.match(/█/g) ?? []).length
+  await frame(); await Bun.sleep(600)
+  const full = bar(await frame())
+  expect(full).toBeGreaterThan(20)
+  // The cycle changes ([): it draws in again, the bar short of its width at first.
+  handleKey(ui, key("["), data)
+  handleKey(ui, key("]"), data)
+  ui.setState({ activeTab: "overview" }); await frame()
+  ui.setState({ activeTab: "budgets" })
+  await frame(); await Bun.sleep(30)
+  expect(bar(await frame())).toBeLessThan(full)
+  await Bun.sleep(600)
+  expect(bar(await frame())).toBe(full)
+  data.setState("uiPrefs", { ...data.state.uiPrefs, chartMotion: "launch" })
+})
