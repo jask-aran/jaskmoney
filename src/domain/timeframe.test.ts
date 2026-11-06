@@ -141,6 +141,24 @@ describe("stepRange", () => {
   })
 })
 
+describe("labels", () => {
+  test("periods by their short names; lookbacks, cycles and custom ranges by their days, the year short", () => {
+    const at = (period: string, periodAnchor: string) => timeframeBounds({ ...defaultTimeframe(), family: "period", period, periodAnchor } as Parameters<typeof timeframeBounds>[0], new Date(2026, 10, 7)).label
+    expect(at("month", "2026-10-15")).toBe("Oct 26")
+    expect(at("qtr", "2026-10-15")).toBe("Q4 26")
+    expect(at("qtr", "2026-02-15")).toBe("Q1 26")
+    expect(at("half", "2026-03-15")).toBe("1H 26")
+    expect(at("half", "2026-10-15")).toBe("2H 26")
+    // The financial year by the year it ends in: Jul 2026 – Jun 2027.
+    expect(at("fy", "2026-10-15")).toBe("FY27")
+    expect(at("fy", "2026-03-15")).toBe("FY26")
+    expect(at("year", "2026-10-15")).toBe("2026")
+    // 1M on 7 Nov: its days, not its months.
+    expect(timeframeBounds({ ...defaultTimeframe(), family: "lookback", lookback: "1M" } as Parameters<typeof timeframeBounds>[0], new Date(2026, 10, 7)).label).toBe("7 Oct – 7 Nov '26")
+    expect(readCustomRange("16 dec 2026", "15 jan 2027", "2026-11-02")).toMatchObject({ label: "16 Dec '26 – 15 Jan '27" })
+  })
+})
+
 describe("readCustomRange", () => {
   test("a range with its label and length, or what's wrong and where", () => {
     expect(readCustomRange("oct", "", "2026-11-02")).toMatchObject({ start: "2026-10-01", end: "2026-11-02", days: 33 })

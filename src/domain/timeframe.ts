@@ -66,7 +66,7 @@ export function timeframeBounds(tf: TimeframeState, now: Date, cycle: CycleConfi
     const months = LOOKBACK_MONTHS[tf.lookback]
     const end = tf.lookbackOffset ? addMonths(day, tf.lookbackOffset * months) : day
     const start = addMonths(end, -months)
-    return { start, end, label: formatRange(start, end) }
+    return { start, end, label: formatDays(start, end) }
   }
 
   if (tf.period === "cycle") {
@@ -101,25 +101,32 @@ export function timeframeBounds(tf: TimeframeState, now: Date, cycle: CycleConfi
   }
   // Convert the internal exclusive end to the inclusive public bound.
   const end = addDays(addMonths(start, months), -1)
-  return { start, end, label: formatRange(start, end) }
+  return { start, end, label: periodLabel(tf.period, start, end) }
 }
 
-/** "1 Oct – 31 Oct 2026", or "16 Dec 2026 – 15 Jan 2027" across years. */
+/** A short year: "26". */
+const yy = (iso: string) => iso.slice(2, 4)
+
+/** A period by its name, short: "Oct 26", "Q4 26", "1H 26", "FY26" (the
+ * year it ends in), "2026". */
+function periodLabel(period: Exclude<PeriodId, "cycle">, start: string, end: string): string {
+  const month = Number(start.slice(5, 7))
+  switch (period) {
+    case "month": return `${MONTHS[month - 1]} ${yy(start)}`
+    case "qtr": return `Q${Math.floor((month - 1) / 3) + 1} ${yy(start)}`
+    case "half": return `${month < 7 ? 1 : 2}H ${yy(start)}`
+    case "fy": return `FY${yy(end)}`
+    case "year": return start.slice(0, 4)
+  }
+}
+
+/** "1 Oct – 31 Oct '26", or "16 Dec '26 – 15 Jan '27" across years: the
+ * year short, its ' keeping it apart from the day before it. */
 function formatDays(start: string, end: string): string {
   const day = (iso: string) => `${Number(iso.slice(8, 10))} ${MONTHS[Number(iso.slice(5, 7)) - 1]}`
   return start.slice(0, 4) === end.slice(0, 4)
-    ? `${day(start)} – ${day(end)} ${end.slice(0, 4)}`
-    : `${day(start)} ${start.slice(0, 4)} – ${day(end)} ${end.slice(0, 4)}`
-}
-
-function formatRange(start: string, end: string): string {
-  // One month reads "Aug 2026", not "Aug 2026 – Aug 2026".
-  if (pretty(start) === pretty(end)) return pretty(start)
-  return `${pretty(start)} – ${pretty(end)}`
-}
-
-function pretty(iso: string): string {
-  return `${MONTHS[Number(iso.slice(5, 7)) - 1]} ${Number(iso.slice(0, 4))}`
+    ? `${day(start)} – ${day(end)} '${yy(end)}`
+    : `${day(start)} '${yy(start)} – ${day(end)} '${yy(end)}`
 }
 
 export function filterByTimeframe(
