@@ -150,6 +150,8 @@ export function spendingChart(
     const paceLine = dates.map((_, i) => pace(i))
     const marks: ChartLabel[] = [
       ...(elapsed > 0 ? [{ ...at(elapsed - 1, now), text: `${names.current} ${shortMoney(now)}`, ink: "spend", required: true }] : []),
+      // Where the budget's pace line crosses today: what's due by now.
+      ...(budget != null && elapsed > 0 && elapsed < n ? [{ ...at(elapsed - 1, pace(elapsed - 1)), text: shortMoney(pace(elapsed - 1)), ink: "limit" }] : []),
       ...(projected != null ? [{ ...at(n - 1, projected), text: `≈ ${shortMoney(projected)}`, ink: "spend" }] : []),
       ...(prev.length ? [{ ...at(n - 1, prev[n - 1]!), text: names.previous, name: names.previous, along: lineAnchors(prev, n - 2, at), ink: "prev" }] : []),
       ...(budget != null ? [{ ...at(n - 1, budget), text: "Budget", name: "Budget", along: lineAnchors(paceLine, n - 2, at), ink: "limit" }] : []),

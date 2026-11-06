@@ -40,7 +40,7 @@ test("Budgets tab (3): the charts follow the Budgets pane's row at the cursor, A
   await data.setBudget({ kind: "overall" }, 500)
   const f = await frame()
   // $120 less the $20 refund: in Each pay, and the table's total.
-  expect(f).toMatch(/Spent\s+−\$100  \$400 left of \$500/)
+  expect(f).toMatch(/−\$100 spent\s+\$400 left/)
   expect(f).toMatch(/All spending\s+\$100/)
   expect(f).toContain("Cumulative spending · All spending")
   // l: the Overview's next spending view, Daily.
@@ -66,7 +66,7 @@ test("allocating down: in the Budgets pane, enter sets a category's budget start
   expect(f).toContain("Cumulative spending · Groceries")
   // The target is the cap: Groceries' $300 comes out of its $500, leaving
   // the rest $200.
-  expect(f).toMatch(/Spent\s+−\$100  \$400 left of \$500/)
+  expect(f).toMatch(/−\$100 spent\s+\$400 left/)
   expect(f).toMatch(/the rest \$0 of \$200/)
   // del twice removes the category's budget.
   handleKey(ui, key("delete"), data)
@@ -86,7 +86,7 @@ test("x leaves a category out of the budgets (the target no longer counts it), a
   handleKey(ui, key("x"), data)
   expect(data.state.categories.find((c) => c.id === groceries)!.budgetIgnored).toBe(true)
   const f = await frame()
-  expect(f).toMatch(/Spent\s+\$0  \$500 left of \$500/)
+  expect(f).toMatch(/\$0 spent\s+\$500 left/)
   handleKey(ui, key("x"), data)
   expect(data.state.categories.find((c) => c.id === groceries)!.budgetIgnored).toBe(false)
 })
@@ -304,11 +304,14 @@ test("the plan: your pay and your spending target give what goes to savers; each
   expect(f).toMatch(/Nov\s/)
   expect(f).toContain(" days")
   expect(f).toContain("t sets your")
-  // This cycle: the track, 1 Oct to 1 Nov, today on it and the send.
+  // This cycle: the track, 1 Oct to 1 Nov, today on it and the send
+  // (its day over it where there's room: here, none beside 1 Oct); the pay
+  // in and the send under it.
   expect(f).toMatch(/1 Oct\s+today\s+1 Nov/)
   expect(f).toMatch(/●[━◆┿]+┄+○/)
-  // No plan, no Savers ledger and no judgment.
-  expect(f).not.toContain("To send")
+  expect(f).toMatch(/↓ \$5,200 in\s+◆ \$2,500 to savers/)
+  // No plan, no meter and no judgment.
+  expect(f).not.toContain("to send")
   expect(f).not.toContain("✓")
   // p opens the Pay editor from your usual pay.
   expect(ui.state.focusedSection).toBe("bud.categories")
@@ -320,9 +323,8 @@ test("the plan: your pay and your spending target give what goes to savers; each
   await data.saveUiPrefs({ expectedPay: 5000 })
   await data.setBudget({ kind: "overall" }, 2000)
   f = await frame()
-  // Each pay's ledger: your pay, and what's spent of the target.
-  expect(line(f, "Pay  ")).toMatch(/Pay\s+\$5,000  usual pay/)
-  expect(line(f, "Spent  ")).toMatch(/Spent\s+−\$300  \$1,700 left of \$2,000/)
+  // Pay, its figure at the row's end.
+  expect(line(f, "usual pay")).toMatch(/Pay\s+usual pay\s+\$5,000 │/)
   // No Up pay-splitting hint: the API can't see the split, so it's not the app's to say.
   expect(f).not.toContain("pay splitting")
   // The third tile: what's left of the target a day till payday.
@@ -330,27 +332,27 @@ test("the plan: your pay and your spending target give what goes to savers; each
   const { bigDigits } = await import("./PlanGraphics")
   expect(f).toContain("$ " + bigDigits("142")[0])
   expect(f).not.toContain("t sets your")
-  // Each pay as a bar filling as you spend: the target's end marked over
-  // it, today's even pace under it.
+  // The pay as a bar filling as you spend: the target's end marked over
+  // it, with the target; under it what's spent and what remains of the pay.
   let rows = f.split("\n")
-  expect(rows[rows.findIndex((l) => l.includes("▾ target")) + 1]).toMatch(/█+/)
-  expect(f).toMatch(/▴ today \$[\d,]+/)
-  // Savers: the plan ($5,000 less $2,000), $2,500 of it sent on 2 Oct,
-  // $500 still to send; on plan, no brackets.
+  const tick = rows.findIndex((l) => l.includes("▾ target $2,000"))
+  expect(rows[tick + 1]).toMatch(/█+/)
+  expect(rows[tick + 2]).toMatch(/−\$300 spent\s+\$4,700 left/)
+  // Savers: the plan ($5,000 less $2,000) as a meter, $2,500 of it sent
+  // and $500 still to send over its parts.
   expect(line(f, "Savers")).toMatch(/Savers\s+plan \$3,000/)
-  expect(line(f, "Sent  ")).toMatch(/Sent\s+\$2,500  2 Oct/)
-  expect(line(f, "To send")).toMatch(/To send\s+\$500\s*│/)
-  expect(f).not.toMatch(/└─* sent/)
+  const meterTop = rows.findIndex((l) => l.includes("$2,500 sent"))
+  expect(rows[meterTop]).toMatch(/\$2,500 sent\s+\$500( to send)?/)
+  expect(rows[meterTop + 1]).toMatch(/█+/)
   // $2,300 spent on a $2,000 target: $300 over, drawn in bad between the
   // target and savers, and savers get $300 less.
   add("2026-10-15", -2000, "Shop", id("Groceries"))
   data.refresh()
   f = await frame()
-  // Spent says the target; the $300 over comes out of the plan: $200
-  // still to send, $300 short, and the meter's parts bracketed.
-  expect(line(f, "Spent  ")).toMatch(/Spent\s+−\$2,300  target \$2,000/)
-  expect(line(f, "To send")).toMatch(/To send\s+\$200  \$300 short/)
-  expect(f).toMatch(/└─* sent ─*┘/)
+  // Spent past the target; the $300 over comes out of the plan: $200
+  // still to send, $300 short.
+  expect(f).toMatch(/−\$2,300 spent\s+\$2,700 left/)
+  expect(line(f, "$2,500 sent")).toMatch(/\$2,500 sent\s+(\$200( to send)?\s+)?\$300 short/)
   expect(f).not.toContain("more than your pay")
   const bad = RGBA.fromHex(tone.bad).toInts().join()
   rows = f.split("\n")
@@ -399,9 +401,9 @@ test("Each pay, Savers and This cycle draw in on \"always\": the bars sweep in f
   const { frame } = await budgetsTab({ width: 145, height: 60 })
   await data.setBudget({ kind: "overall" }, 500)
   data.setState("uiPrefs", { ...data.state.uiPrefs, chartMotion: "always", chartSpeed: "quick" })
-  // Each pay's bar: the first line after the heading with blocks, at rest.
+  // The pay's bar: the first line after Pay with blocks, at rest.
   await frame(); await Bun.sleep(600)
-  const rest = (await frame()).split("\n"), head = rest.findIndex((l) => l.includes("Each pay"))
+  const rest = (await frame()).split("\n"), head = rest.findIndex((l) => l.includes("p sets your pay"))
   const at = head + rest.slice(head).findIndex((l) => l.includes("█"))
   const bar = (f: string) => (f.split("\n")[at]!.match(/█/g) ?? []).length
   const full = bar(await frame())
