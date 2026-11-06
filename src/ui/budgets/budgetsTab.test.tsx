@@ -366,9 +366,9 @@ test("two columns: the budget pane draws its focus, and Budgets' top lines up wi
   expect(titleFocused()).toBe(true)
 })
 
-test("big digits: three lines of half blocks, a column between digits", async () => {
+test("big digits: three lines of light, rounded strokes, a column between digits", async () => {
   const { bigDigits } = await import("./PlanGraphics")
-  // Six pixel rows fill all three lines: no half line empty under them.
-  expect(bigDigits("8")).toEqual(["█▀█", "█▀█", "█▄█"])
-  expect(bigDigits("14")).toEqual(["▄█  █ █", " █  ▀▀█", "▄█▄   █"])
+  // Light, rounded lines, three cells a digit, a column between.
+  expect(bigDigits("8")).toEqual(["╭─╮", "├─┤", "╰─╯"])
+  expect(bigDigits("14")).toEqual(["╶╮  ╷ ╷", " │  ╰─┤", "╶┴╴   ╵"])
 })

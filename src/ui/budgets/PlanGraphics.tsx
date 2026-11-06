@@ -146,28 +146,24 @@ export function sentMeter(width: number, sent: number, planned: number): Span[] 
   ]
 }
 
-/** Digits 3 pixels wide and 6 tall ("#" a pixel): three lines of half
- * blocks hold six pixel rows, so a digit fills its lines, top to bottom
- * (five rows left a half line empty under each). */
-const DIGITS: Record<string, string[]> = {
-  "0": ["###", "#.#", "#.#", "#.#", "#.#", "###"], "1": [".#.", "##.", ".#.", ".#.", ".#.", "###"],
-  "2": ["###", "..#", "###", "#..", "#..", "###"], "3": ["###", "..#", "###", "..#", "..#", "###"],
-  "4": ["#.#", "#.#", "###", "..#", "..#", "..#"], "5": ["###", "#..", "###", "..#", "..#", "###"],
-  "6": ["###", "#..", "###", "#.#", "#.#", "###"], "7": ["###", "..#", "..#", "..#", "..#", "..#"],
-  "8": ["###", "#.#", "###", "#.#", "#.#", "###"], "9": ["###", "#.#", "###", "..#", "..#", "###"],
+/** Digits drawn in light, rounded box-drawing lines, three cells wide
+ * and three lines high: strokes, not blocks, so a number sits lightly on
+ * its tile (a seven-segment look). */
+const DIGITS: Record<string, [string, string, string]> = {
+  "0": ["╭─╮", "│ │", "╰─╯"], "1": ["╶╮ ", " │ ", "╶┴╴"],
+  "2": ["╭─╮", "╭─╯", "╰─╴"], "3": ["╭─╮", "╶─┤", "╰─╯"],
+  "4": ["╷ ╷", "╰─┤", "  ╵"], "5": ["╭─╴", "╰─╮", "╶─╯"],
+  "6": ["╭─╴", "├─╮", "╰─╯"], "7": ["╶─╮", "  │", "  ╵"],
+  "8": ["╭─╮", "├─┤", "╰─╯"], "9": ["╭─╮", "╰─┤", "╶─╯"],
 }
 
-/** A number drawn large: three lines, each a pair of pixel rows (█ both,
- * ▀ the top, ▄ the bottom), a column between digits. */
+/** A number drawn large: its digits' three lines, a column between
+ * digits. */
 export function bigDigits(value: string): [string, string, string] {
   const lines: [string, string, string] = ["", "", ""]
-  ;[...value].forEach((d, n) => {
-    const rows = DIGITS[d]
-    if (!rows) return
-    for (let line = 0; line < 3; line++) {
-      const top = rows[line * 2]!, bottom = rows[line * 2 + 1]!
-      lines[line] += (n ? " " : "") + [0, 1, 2].map((c) => (top[c] === "#" ? (bottom[c] === "#" ? "█" : "▀") : bottom[c] === "#" ? "▄" : " ")).join("")
-    }
+  const digits = [...value].flatMap((d) => (DIGITS[d] ? [DIGITS[d]!] : []))
+  digits.forEach((glyph, n) => {
+    for (let line = 0; line < 3; line++) lines[line] += (n ? " " : "") + glyph[line]
   })
   return lines
 }
