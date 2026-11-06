@@ -215,6 +215,8 @@ export interface UiState {
   budgetCategoryCursor: number
   /** The Set budgets pane's open groups (category ids); closed by default. */
   budgetSetupOpen: number[]
+  /** The Overview's Range pane's open category groups (ids); closed by default. */
+  overviewOpen: number[]
   /** No budgets set yet (from the data, App): the Budgets tab opens on
    * Set budgets, its overall budget first, rather than Progress. */
   budgetsEmpty: boolean
@@ -534,6 +536,7 @@ function createUiStore() {
     budgetCategoryCursor: 0,
     budgetChart: 0,
     budgetSetupOpen: [],
+    overviewOpen: [],
     budgetsEmpty: false,
     budgetCycleViews: [8, 9],
     budgetCyclePanes: 1,

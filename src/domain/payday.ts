@@ -22,20 +22,23 @@ export interface CyclePay {
   sent: number
   /** Each day's net sends to savers, in date order. */
   sends: Array<{ dateISO: string; amount: number }>
+  /** Each day pay came in, in date order. */
+  paydays: string[]
 }
 
 /** A cycle's pay and sends from `start` to `through` (inclusive). */
 export function cyclePay(accounts: Account[], transactions: Transaction[], start: string, through: string): CyclePay {
   const spending = spendingIds(accounts), savers = saverIds(accounts), pay = isPay(spending)
   let first: string | null = null, total = 0
+  const days = new Set<string>()
   const byDay = new Map<string, number>()
   for (const t of transactions) {
     if (t.dateISO < start || t.dateISO > through) continue
-    if (pay(t)) { total += t.amount; if (!first || t.dateISO < first) first = t.dateISO }
+    if (pay(t)) { total += t.amount; days.add(t.dateISO); if (!first || t.dateISO < first) first = t.dateISO }
     if (t.accountId != null && spending.has(t.accountId) && t.transferAccountId != null && savers.has(t.transferAccountId)) byDay.set(t.dateISO, (byDay.get(t.dateISO) ?? 0) - t.amount)
   }
   const sends = [...byDay].filter(([, a]) => Math.abs(a) >= 0.5).sort(([a], [b]) => a.localeCompare(b)).map(([dateISO, amount]) => ({ dateISO, amount }))
-  return { dateISO: first, pay: total, sent: sends.reduce((n, s) => n + s.amount, 0), sends }
+  return { dateISO: first, pay: total, sent: sends.reduce((n, s) => n + s.amount, 0), sends, paydays: [...days].sort() }
 }
 
 /** Your usual pay, the plan's starting point: the median of the last

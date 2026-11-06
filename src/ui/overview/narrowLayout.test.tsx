@@ -11,7 +11,7 @@ import { key } from "../../testing/keys"
 
 afterEach(() => setAppClock(null))
 
-async function overview(width: number, height: number) {
+async function overview(width: number, height: number, totalsCards = true) {
   setAppClock(new Date(2026, 9, 20, 12))
   const t = await renderApp({ width, height })
   await t.renderOnce()
@@ -20,7 +20,7 @@ async function overview(width: number, height: number) {
     categories: Array.from({ length: 12 }, (_, i) => category({ id: i + 10, name: `Category ${i + 1}`, color: "#fab387" })),
     transactions: Array.from({ length: 40 }, (_, i) => transaction({ id: i + 1, dateISO: `2026-10-${String(i % 19 + 1).padStart(2, "0")}`, categoryId: i % 13 === 0 ? null : i % 12 + 10, categoryName: i % 13 === 0 ? "Uncategorised" : `Category ${i % 12 + 1}`, amount: -(i + 1) * 3 })),
     suggestions: {}, budgets: [], accountSelection: "all", ready: true, icons: false,
-    uiPrefs: {},
+    uiPrefs: { totalsCards },
   })
   ui.switchTab("overview")
   ui.setState({ focusedSection: "none", chartViews: [0, 4, 7, 8], timeframe: { ...ui.state.timeframe, family: "lookback", lookback: "1M" }, customEdit: null, overviewCategoryCursor: 0 })
@@ -49,13 +49,14 @@ function overviewCards(t: Awaited<ReturnType<typeof overview>>): BoxRenderable[]
 
 // Wide (>= 90 columns): two charts beside the stack. Narrow: one chart, then
 // Accounts and Totals beside Categories, both columns one height.
-for (const [width, height, wide] of [[80, 30, false], [80, 45, false], [89, 60, false], [90, 40, true], [100, 57, true], [160, 45, true]] as const) {
-  test(`${width}×${height}: ${wide ? "two columns" : "one chart, cards beside Categories"}; no overlaps; jumps reach whole cards in focus paint`, async () => {
-    const t = await overview(width, height)
+// The Range pane (t) takes Totals' and Categories' place: one card fewer.
+for (const totals of [true, false]) for (const [width, height, wide] of [[80, 30, false], [80, 45, false], [89, 60, false], [90, 40, true], [100, 57, true], [160, 45, true]] as const) {
+  test(`${width}×${height}${totals ? "" : " (Range pane)"}: ${wide ? "two columns" : "one chart, cards beside Categories"}; no overlaps; jumps reach whole cards in focus paint`, async () => {
+    const t = await overview(width, height, totals)
     const frame = () => t.captureCharFrame()
     const settle = async () => { await t.renderOnce(); await t.flush() }
     const all = overviewCards(t)
-    expect(all).toHaveLength(wide ? 6 : 5)
+    expect(all).toHaveLength((wide ? 6 : 5) - (totals ? 0 : 1))
     expect(frame().includes("╭─ Net position")).toBe(wide)
     const sameCards = all.map((card) => card.id)
     for (let i = 0; i < all.length; i++) {
@@ -71,7 +72,7 @@ for (const [width, height, wide] of [[80, 30, false], [80, 45, false], [89, 60, 
     // the bottom chart and Categories; narrow: Totals and Categories).
     const left = all[wide ? 2 : all.length - 2]!, categories = all.at(-1)!
     expect(left.y + left.height).toBe(categories.y + categories.height)
-    const jumps = [["t", "Cumulative spending", "ov.chart", 1], ...(wide ? [["b", "╭─ Net position", "ov.chart2", 2] as const] : []), ["c", "Categories", "ov.categories", all.length - 1], ["d", "Date Range", "ov.range", 0]] as const
+    const jumps = [["t", "Cumulative spending", "ov.chart", 1], ...(wide ? [["b", "╭─ Net position", "ov.chart2", 2] as const] : []), ["c", totals ? "Categories" : "╭─ Range", "ov.categories", all.length - 1], ["d", "Date Range", "ov.range", 0]] as const
     for (const [jump, title, section, index] of jumps) {
       t.mockInput.pressKey("v")
       t.mockInput.pressKey(jump)
@@ -81,7 +82,10 @@ for (const [width, height, wide] of [[80, 30, false], [80, 45, false], [89, 60, 
       const focusedCard = all[index]!
       expect(focusedCard.y).toBeGreaterThanOrEqual(2)
       expect(focusedCard.y + focusedCard.height).toBeLessThanOrEqual(height - 2)
-      const heading = t.captureSpans().lines.flatMap((line) => line.spans).find((s) => s.text.includes(` ${title.replace("╭─ ", "").split(" · ")[0]}`))!
+      // The title itself first ("Range" is in "Date Range" too).
+      const name = title.replace("╭─ ", "").split(" · ")[0]!
+      const spans = t.captureSpans().lines.flatMap((line) => line.spans)
+      const heading = (name === "Range" ? spans.find((s) => s.text.trim() === name) : spans.find((s) => s.text.includes(` ${name}`)))!
       expect(heading).toBeDefined()
       expect(heading.fg.toInts()).toEqual(RGBA.fromHex(tone.focus).toInts())
       expect(heading.bg.toInts()).toEqual(RGBA.fromHex(theme.canvas).toInts())

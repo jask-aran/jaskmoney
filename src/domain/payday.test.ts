@@ -14,6 +14,7 @@ test("a cycle's pay: its first pay day, all its pay, and what went to savers day
   expect(cyclePay([spending, saver], rows, "2026-09-14", "2026-10-13")).toEqual({
     dateISO: "2026-09-14", pay: 5760, sent: 3200,
     sends: [{ dateISO: "2026-09-15", amount: 3000 }, { dateISO: "2026-10-02", amount: 200 }],
+    paydays: ["2026-09-14", "2026-09-28"],
   })
   expect(cyclePay([spending, saver], rows, "2026-10-20", "2026-10-25")).toMatchObject({ dateISO: null, pay: 0, sent: 0 })
 })

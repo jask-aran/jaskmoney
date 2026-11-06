@@ -37,6 +37,9 @@ export interface UiPrefs {
   /** Balance charts' y-axis runs from $0 rather than fitting the balances
    * (default off). */
   zeroAxis?: boolean
+  /** The Overview's side column as the Totals and Categories cards rather
+   * than the one Range pane (default off: the Range pane). */
+  totalsCards?: boolean
 }
 
 export interface SettingsConfig {
@@ -134,6 +137,7 @@ function parseUiPrefs(raw: unknown): UiPrefs | undefined {
   const backdrop = BACKDROPS.find((entry) => "backdrop" in raw && entry.id === raw.backdrop)?.id
   if (backdrop) ui.backdrop = backdrop
   if ("zeroAxis" in raw && typeof raw.zeroAxis === "boolean") ui.zeroAxis = raw.zeroAxis
+  if ("totalsCards" in raw && typeof raw.totalsCards === "boolean") ui.totalsCards = raw.totalsCards
   if ("accountSelection" in raw) {
     const sel = raw.accountSelection
     if (sel === "all" || sel === "savers" || (typeof sel === "number" && Number.isSafeInteger(sel) && sel > 0)) ui.accountSelection = sel

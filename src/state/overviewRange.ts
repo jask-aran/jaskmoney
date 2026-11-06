@@ -33,3 +33,22 @@ export function overviewRange(
 export function allCategoryLines(range: ReturnType<typeof overviewRange>): CategoryLine[] {
   return fitCategoryLines(range.groups, Number.MAX_SAFE_INTEGER)
 }
+
+/** The Overview's category lines, what its cursor moves over: in the
+ * Range pane (`open`, the open groups' ids), each group and the open ones'
+ * subcategories, as Budgets does; with the Categories card (null), every
+ * line. */
+export function overviewCategoryLines(range: ReturnType<typeof overviewRange>, open: number[] | null): CategoryLine[] {
+  const all = allCategoryLines(range)
+  if (!open) return all
+  let shown = false
+  return all.filter((line) => {
+    if (!line.child) shown = line.categoryId != null && open.includes(line.categoryId)
+    return !line.child || shown
+  })
+}
+
+/** The Range pane's open groups, or null when the Categories card shows. */
+export function openGroups(prefs: { totalsCards?: boolean }, u: Pick<UiState, "overviewOpen">): number[] | null {
+  return prefs.totalsCards ? null : u.overviewOpen
+}

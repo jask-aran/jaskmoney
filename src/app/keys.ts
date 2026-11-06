@@ -80,7 +80,7 @@ import { amountFromText, rangeDayFromText, rangeDayText } from "../domain/typedI
 import { CALENDAR_VIEWS, CUSTOM_FOCUS_ORDER, leftHalf, markedRange, moveCursor, pageCursor, rowStep, unitOf, type CalendarView, type CustomFocus } from "../domain/rangeCalendar"
 import { drillFilter } from "../domain/drill"
 import type { CategoryLine } from "../domain/dashboard"
-import { allCategoryLines, overviewRange } from "../state/overviewRange"
+import { openGroups, overviewCategoryLines, overviewRange } from "../state/overviewRange"
 import { tagPickerItems, tagPickerState } from "../state/tagPicker"
 import { savedFilterOptions } from "../state/savedFilters"
 import { nextSettingsId, nextSavedFilterId } from "../state/settingsConfig"
@@ -1809,7 +1809,7 @@ export function selectAccountRow(ui: UiStore, data: DataStore, index: number): v
 }
 
 export function moveOverviewCategory(ui: UiStore, data: DataStore, index: number): void {
-  const lines = allCategoryLines(overviewRange(data, ui.state))
+  const lines = overviewCategoryLines(overviewRange(data, ui.state), openGroups(data.state.uiPrefs, ui.state))
   ui.setState({ overviewCategoryCursor: Math.max(0, Math.min(lines.length - 1, index)) })
 }
 
@@ -2060,7 +2060,7 @@ function handleOverview(ui: UiStore, key: KeyEvent, data?: DataStore): void {
   // h/l, ,/., H/L still step charts. Range arrows keep chip movement.
   if (name === "up" || name === "down" || name === "left" || name === "right") {
     if (data && ui.state.focusedSection === "ov.categories" && (name === "up" || name === "down")) {
-      const last = allCategoryLines(overviewRange(data, ui.state)).length - 1
+      const last = overviewCategoryLines(overviewRange(data, ui.state), openGroups(data.state.uiPrefs, ui.state)).length - 1
       const cursor = Math.min(ui.state.overviewCategoryCursor, last)
       if (name === "up" ? cursor > 0 : cursor < last) {
         moveOverviewCategory(ui, data, cursor + (name === "up" ? -1 : 1))
@@ -2135,10 +2135,22 @@ function handleOverview(ui: UiStore, key: KeyEvent, data?: DataStore): void {
   // comes back. With Categories focused, j/k move over every line.
   const focus = ui.state.focusedSection
   if (data && focus === "ov.categories") {
-    const lines = allCategoryLines(overviewRange(data, ui.state))
+    const lines = overviewCategoryLines(overviewRange(data, ui.state), openGroups(data.state.uiPrefs, ui.state))
     const moveTo = (i: number) => moveOverviewCategory(ui, data, i)
     const moved = listMove(key, ui.state.overviewCategoryCursor, lines.length)
     if (moved != null) { moveTo(moved); return }
+    // The Range pane: space opens or closes the cursor's group (from a
+    // subcategory, its group, the cursor going to it).
+    const open = openGroups(data.state.uiPrefs, ui.state)
+    if (open && (name === "space" || seq === " ")) {
+      const at = Math.min(ui.state.overviewCategoryCursor, lines.length - 1)
+      let g = at
+      while (g > 0 && lines[g]!.child) g--
+      const id = lines[g]?.categoryId
+      if (id == null) return
+      ui.setState({ overviewOpen: open.includes(id) ? open.filter((x) => x !== id) : [...open, id], overviewCategoryCursor: g })
+      return
+    }
     const line = lines[Math.min(ui.state.overviewCategoryCursor, lines.length - 1)]
     if ((name === "return" || name === "enter") && line) { drillDown(ui, data, line); return }
   }
@@ -2149,6 +2161,12 @@ function handleOverview(ui: UiStore, key: KeyEvent, data?: DataStore): void {
     const tf = timeframeNow(ui.state.timeframe, appNow(), cycle)
     ui.setTimeframe(tf)
     ui.setStatus(`Now · ${timeframeBounds(tf, clock, cycle).label}`)
+    return
+  }
+  // t: the side column as the one Range pane, or the Totals and
+  // Categories cards.
+  if (name === "t" && !key.shift && !key.ctrl && !key.meta && data) {
+    settleData(ui, data.saveUiPrefs({ totalsCards: !data.state.uiPrefs.totalsCards }), () => ui.setStatus(data.state.uiPrefs.totalsCards ? "Totals and Categories" : "Range: totals and categories as one"))
     return
   }
   if (name === "z" && data) {
@@ -2263,6 +2281,7 @@ export function drillDown(ui: UiStore, data: DataStore, line?: CategoryLine) {
 }
 
 type HintState = Pick<UiState, "focusedSection" | "drillReturn" | "chartViews"> & {
+  totalsCards?: boolean
   /** What [ and ] step the Overview's range by (stepUnit). */
   stepUnit?: string
   /** The Overview's range is a Custom one (C edits its dates). */
@@ -2678,6 +2697,7 @@ const scopes: Record<ScopeId, ScopeEntry> = {
     hints: (state) => {
       if (state?.focusedSection === "ov.categories") return [
         { key: "j/k", desc: "move" },
+        ...(state.totalsCards ? [] : [{ key: "space", desc: "open group" }]),
         { key: "enter", desc: "transactions" },
         { key: "[ ]", desc: `prev/next ${state?.stepUnit ?? "range"}` },
         { key: "esc", desc: "done" },
@@ -2692,6 +2712,7 @@ const scopes: Record<ScopeId, ScopeEntry> = {
         ...(state?.customRange ? [{ key: "C", desc: "edit dates", label: "Range: custom dates" }] : []),
         { key: "c", desc: "this cycle", label: "Range: this cycle" },
         { key: "a", desc: "account", label: "Next spending account" },
+        { key: "t", desc: state?.totalsCards ? "range pane" : "totals", label: "Range pane or Totals and Categories" },
         { key: "i", desc: "review", command: "txn:uncategorised" },
         { key: "/", desc: "search", command: "txn:filter" },
         { key: "?", desc: "smart search", command: "txn:smart-search" },
@@ -2747,6 +2768,7 @@ export function hintState(ui: UiStore, data?: DataStore): HintState {
     stepUnit: stepUnit(ui.state.timeframe),
     customRange: ui.state.timeframe.family === "custom",
     overviewCharts: ui.state.overviewCharts,
+    totalsCards: data?.state.uiPrefs.totalsCards === true,
     budgetCyclePanes: ui.state.budgetCyclePanes,
     uncategorisedOnly: data?.state.uncategorisedOnly,
     tagReview: !!data?.state.tagReview,

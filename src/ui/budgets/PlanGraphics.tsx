@@ -21,7 +21,7 @@ export interface PayPart { name: string; amount: number; color: string; spent: n
 
 /** Cells for each part across `width`, from the running total so the
  * rounding never shortens the whole. */
-function cellsOf(amounts: number[], width: number): number[] {
+export function cellsOf(amounts: number[], width: number): number[] {
   const total = amounts.reduce((n, a) => n + Math.max(0, a), 0)
   if (total <= 0) return amounts.map(() => 0)
   let before = 0
@@ -163,12 +163,12 @@ export function saversMeter(width: number, plan: number, sent: number, short: nu
 
 /** A label for `labelled`: its options, best first, placed from `at`
  * or centred on `mid`. */
-interface Label { at?: number; mid?: number; options: Span[][] }
+export interface Label { at?: number; mid?: number; options: Span[][] }
 
 /** Labels on a line `width` wide, in priority order: each takes its first
  * option that fits where it goes (kept on the line) without touching one
  * already placed, else is dropped. */
-function labelled(width: number, labels: Label[]): Span[] {
+export function labelled(width: number, labels: Label[]): Span[] {
   const taken: Array<{ from: number; to: number; spans: Span[] }> = []
   for (const label of labels) {
     for (const option of label.options) {
@@ -191,7 +191,7 @@ function labelled(width: number, labels: Label[]): Span[] {
   return out.length ? out : [{ text: " ", fg: ink.note }]
 }
 
-const spansWidth = (spans: Span[]) => spans.reduce((n, l) => n + l.text.length, 0)
+export const spansWidth = (spans: Span[]) => spans.reduce((n, l) => n + l.text.length, 0)
 
 /** How much a part's colour fades for what's left of it. */
 const LEFT_FADE = 0.65
@@ -202,18 +202,28 @@ const LEFT_FADE = 0.65
  * dotted, and each send to savers on its day. Above it the two paydays'
  * dates, today and each send's; under it what came in, what's gone to
  * savers and what's been spent (under today, where there's room).
+ *
+ * Over any span (the Overview's Date Range): `end` labels the right end
+ * (else the next payday), and the paydays inside it are ●. Marks that
+ * would crowd (a year's sends) aren't drawn: the sends first, then the
+ * paydays; the figures under it are the whole span's either way.
  */
-export function cycleTrack(width: number, start: string, next: string, today: string, pay: { pay: number; sent: number; spent: number; sends: Array<{ dateISO: string }> }, sentColor: string): Span[][] {
+export function cycleTrack(width: number, start: string, next: string, today: string, pay: { pay: number; sent: number; spent: number; sends: Array<{ dateISO: string }>; paydays?: string[] }, sentColor: string, end?: string): Span[][] {
   const days = Math.max(1, daysBetween(start, next))
   const col = (date: string) => Math.max(0, Math.min(width - 1, Math.round((daysBetween(start, date) / days) * (width - 1))))
   const now = today >= start && today < next ? col(today) : today >= next ? width : -1
-  const sendCols = new Set(pay.sends.map((s) => col(s.dateISO)))
+  const roomy = (n: number) => n <= Math.floor(width / 4)
+  const sends = roomy(pay.sends.length) ? pay.sends : []
+  const paydays = (pay.paydays ?? []).filter((d) => d > start && d < next)
+  const sendCols = new Set(sends.map((s) => col(s.dateISO)))
+  const payCols = new Set(roomy(paydays.length) ? paydays.map(col) : [])
   const track: Span[] = []
   for (let c = 0; c < width; c++) {
     const span: Span = c === 0 ? { text: "●", fg: ink.figure }
       : c === width - 1 ? { text: "○", fg: ink.label }
       : c === now ? { text: "┿", fg: theme.chartToday, bold: true }
       : sendCols.has(c) ? { text: "◆", fg: sentColor }
+      : payCols.has(c) ? { text: "●", fg: ink.figure }
       : c < now ? { text: "━", fg: LEVEL_BG[2] ?? theme.surface1 }
       : { text: "┄", fg: ink.faint }
     const last = track.at(-1)
@@ -222,31 +232,38 @@ export function cycleTrack(width: number, start: string, next: string, today: st
   }
   // The paydays and today first; each send's date over it where there's
   // room (its day alone, where the month is the start's).
-  const nextLabel = shortDate(next)
+  // A span across years (a year's range) gives each end its year.
+  const endDate = end ?? next
+  const years = start.slice(0, 4) !== endDate.slice(0, 4)
+  const dated = (d: string) => (years ? `${shortDate(d)} ${d.slice(0, 4)}` : shortDate(d))
+  const nextLabel = dated(endDate)
   const labels = labelled(width, [
-    { at: 0, options: [[{ text: shortDate(start), fg: ink.label }]] },
+    { at: 0, options: [[{ text: dated(start), fg: ink.label }]] },
     { at: width - nextLabel.length, options: [[{ text: nextLabel, fg: ink.label }]] },
     ...(now >= 0 && now < width ? [{ mid: now + 0.5, options: [[{ text: "today", fg: theme.chartToday }]] }] : []),
-    ...pay.sends.map((s) => ({ mid: col(s.dateISO) + 0.5, options: [[{ text: shortDate(s.dateISO), fg: ink.note }], [{ text: String(Number(s.dateISO.slice(8, 10))), fg: ink.note }]] })),
+    ...sends.map((s) => ({ mid: col(s.dateISO) + 0.5, options: [[{ text: shortDate(s.dateISO), fg: ink.note }], [{ text: String(Number(s.dateISO.slice(8, 10))), fg: ink.note }]] })),
   ])
   // Under it what came in, what's gone to savers from the first send, and
   // what's been spent, centred under today but clear of the others.
-  const firstSend = pay.sends[0]
-  const inText = pay.pay > 0 ? `↓ ${formatWholeMoney(pay.pay)} in` : ""
-  const sentAt = firstSend ? Math.max(col(firstSend.dateISO), inText ? inText.length + 2 : 0) : 0
-  const sentText = firstSend ? `◆ ${formatWholeMoney(pay.sent)} savers` : ""
-  const spentText = `${formatWholeMoney(pay.spent)} spent`
-  const after = sentText ? sentAt + sentText.length + 2 : inText ? inText.length + 2 : 0
+  const firstSend = sends[0] ?? (pay.sent > 0.5 ? { dateISO: start } : undefined)
+  // Each figure in words where they all fit, else bare (savers' first,
+  // then what came in's), so what's spent always has its place.
+  const spentSpans: Span[] = [{ text: formatWholeMoney(pay.spent), fg: tone.bad }, { text: " spent", fg: ink.note }]
+  const inSpans = (words: boolean): Span[] => (pay.pay > 0 ? [{ text: "↓ ", fg: ink.note }, { text: formatWholeMoney(pay.pay), fg: ink.figure }, ...(words ? [{ text: " in", fg: ink.note }] : [])] : [])
+  const sentSpans = (words: boolean): Span[] => (firstSend ? [{ text: "◆ ", fg: sentColor }, { text: formatWholeMoney(pay.sent), fg: sentColor }, ...(words ? [{ text: " savers", fg: ink.note }] : [])] : [])
+  const room = (a: Span[], b: Span[]) => [a, b, pay.spent > 0 ? spentSpans : []].filter((x) => x.length).reduce((n, x) => n + spansWidth(x) + 2, -2) <= width
+  const [inFig, sentFig] = room(inSpans(true), sentSpans(true)) ? [inSpans(true), sentSpans(true)]
+    : room(inSpans(true), sentSpans(false)) ? [inSpans(true), sentSpans(false)] : [inSpans(false), sentSpans(false)]
+  const inEnd = inFig.length ? spansWidth(inFig) + 2 : 0
+  const spentW = pay.spent > 0 ? spansWidth(spentSpans) + 2 : 0
+  // Savers from its send's column, but never so far that spent has no room.
+  const sentAt = firstSend ? Math.max(inEnd, Math.min(col(firstSend.dateISO), width - spansWidth(sentFig) - spentW)) : 0
+  const after = sentFig.length ? sentAt + spansWidth(sentFig) + 2 : inEnd
   const figures = labelled(width, [
-    ...(inText ? [{ at: 0, options: [[{ text: "↓ ", fg: ink.note }, { text: formatWholeMoney(pay.pay), fg: ink.figure }, { text: " in", fg: ink.note }]] }] : []),
-    // From its send's column, or just past what came in.
-    ...(firstSend ? [{ at: sentAt, options: [
-      [{ text: "◆ ", fg: sentColor }, { text: formatWholeMoney(pay.sent), fg: sentColor }, { text: " savers", fg: ink.note }],
-      [{ text: "◆ ", fg: sentColor }, { text: formatWholeMoney(pay.sent), fg: sentColor }],
-    ] }] : []),
-    ...(pay.spent > 0 ? [{ at: Math.max(after, Math.round((now >= 0 ? Math.min(now, width - 1) : width - 1) + 0.5 - spentText.length / 2)), options: [
-      [{ text: formatWholeMoney(pay.spent), fg: tone.bad }, { text: " spent", fg: ink.note }],
-    ] }] : []),
+    ...(inFig.length ? [{ at: 0, options: [inFig] }] : []),
+    ...(sentFig.length ? [{ at: sentAt, options: [sentFig] }] : []),
+    // Under today where there's room.
+    ...(pay.spent > 0 ? [{ at: Math.max(after, Math.round((now >= 0 ? Math.min(now, width - 1) : width - 1) + 0.5 - spansWidth(spentSpans) / 2)), options: [spentSpans] }] : []),
   ])
   return [labels, track, figures]
 }
