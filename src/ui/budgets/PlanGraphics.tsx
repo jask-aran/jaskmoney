@@ -245,7 +245,7 @@ export function cycleTrack(width: number, start: string, next: string, today: st
       [{ text: "◆ ", fg: sentColor }, { text: formatWholeMoney(pay.sent), fg: sentColor }],
     ] }] : []),
     ...(pay.spent > 0 ? [{ at: Math.max(after, Math.round((now >= 0 ? Math.min(now, width - 1) : width - 1) + 0.5 - spentText.length / 2)), options: [
-      [{ text: formatWholeMoney(pay.spent), fg: ink.figure }, { text: " spent", fg: ink.note }],
+      [{ text: formatWholeMoney(pay.spent), fg: tone.bad }, { text: " spent", fg: ink.note }],
     ] }] : []),
   ])
   return [labels, track, figures]

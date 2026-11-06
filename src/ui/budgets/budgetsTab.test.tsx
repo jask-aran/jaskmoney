@@ -296,16 +296,15 @@ test("the plan: your pay and your spending target give what goes to savers; each
   data.refresh()
   handleKey(ui, key("3"), data)
   const frame = async () => { await t.renderOnce(); await t.flush(); await t.renderOnce(); return t.captureCharFrame() }
-  // No plan yet: the facts, no judgment. The pay has come in ($5,200 on
+  // No plan yet: the track, no judgment. The pay has come in ($5,200 on
   // 1 Oct), so only the target is asked for; the next pay asks for your
   // usual pay.
   let f = await frame()
-  expect(f).toMatch(/Last pay\s+1 Oct\s+\$5,200 │/)
   expect(f).toMatch(/Next pay\s+p sets your pay\s+Sun 1 Nov │/)
   expect(f).toContain("t: your spending target")
-  // This cycle: the track, 1 Oct to 1 Nov, today on it and the send
+  // At the top, the track, 1 Oct to 1 Nov, today on it and the send
   // (its day over it where there's room: here, none beside 1 Oct); the pay
-  // in and the send under it.
+  // in, the send and what's spent (in bad) under it.
   expect(f).toMatch(/1 Oct\s+today\s+1 Nov/)
   expect(f).toMatch(/●[━◆┿]+┄+○/)
   expect(f).toMatch(/↓ \$5,200 in\s+◆ \$2,500 savers\s+\$300 spent/)
@@ -326,7 +325,7 @@ test("the plan: your pay and your spending target give what goes to savers; each
   // The next pay: when, and your usual pay.
   expect(f).toMatch(/Next pay\s+Sun 1 Nov\s+\$5,000 │/)
   // It's under the calendar: the top is this period's own.
-  expect(f).toMatch(/Spent this period[\s\S]*less ■[\s\S]*Next pay[\s\S]*Days till pay\s+12 │[\s\S]*Categories/)
+  expect(f).toMatch(/○[\s\S]*less ■[\s\S]*Next pay[\s\S]*Days till pay\s+12 │[\s\S]*Categories/)
   // No Up pay-splitting hint: the API can't see the split, so it's not the app's to say.
   expect(f).not.toContain("pay splitting")
   // The pay as a bar filling as you spend, each part's figure over it:
@@ -352,13 +351,13 @@ test("the plan: your pay and your spending target give what goes to savers; each
   // still to send.
   expect(rows[overAt + 4]).toMatch(/\$300 short\s+\$2,500 sent(\s+\$400( to send)?)?/)
   expect(f).not.toContain("more than your pay")
-  // The facts over it, a line each: the last pay and when, the next, the
-  // days till it, and what's spent this period (over the target: bad).
-  expect(f).toMatch(/Last pay\s+1 Oct\s+\$5,200 │/)
+  // The next pay and the days till it under the calendar; the track's
+  // spent at the top, in bad, and no Last pay or Spent this period lines.
   expect(f).toMatch(/Next pay\s+Sun 1 Nov\s+\$5,000 │/)
   expect(f).toMatch(/Days till pay\s+12 │/)
-  expect(f).toMatch(/Spent this period\s+\$2,300 │/)
-  const spentRow = rows.findIndex((l) => /Spent this period\s+\$2,300/.test(l))
+  expect(f).not.toMatch(/Last pay|Spent this period/)
+  const spentRow = rows.findIndex((l) => /\$2,300 spent/.test(l))
+  expect(spentRow).toBeLessThan(overAt)
   expect(t.captureSpans().lines[spentRow]!.spans.some((s) => s.text.includes("$2,300") && s.fg.toInts().join() === RGBA.fromHex(tone.bad).toInts().join())).toBe(true)
   const bad = RGBA.fromHex(tone.bad).toInts().join()
   const hatchAt = (row: number) => {
@@ -409,10 +408,10 @@ test("Each pay, Savers and This cycle draw in on \"always\": the bars sweep in f
   const { frame } = await budgetsTab({ width: 145, height: 60 })
   await data.setBudget({ kind: "overall" }, 500)
   data.setState("uiPrefs", { ...data.state.uiPrefs, chartMotion: "always", chartSpeed: "quick" })
-  // The pay's bar: the first line after the facts with blocks, at rest (in the
+  // The pay's bar: the first line after the track with blocks, at rest (in the
   // Budgets pane's columns: the main column has bars of its own).
   await frame(); await Bun.sleep(600)
-  const rest = (await frame()).split("\n"), head = rest.findIndex((l) => l.includes("Spent this period"))
+  const rest = (await frame()).split("\n"), head = rest.findIndex((l) => l.includes("○")) + 1
   const from = rest.find((l) => l.includes("╭─ Budgets"))!.indexOf("╭─ Budgets")
   const at = head + rest.slice(head).findIndex((l) => l.slice(from).includes("█"))
   const bar = (f: string) => (f.split("\n")[at]!.slice(from).match(/█/g) ?? []).length

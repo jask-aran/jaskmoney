@@ -313,14 +313,9 @@ export function BudgetsTab(props: { focused: SectionId }) {
     const total = split().total
     const spent = totalProgress().spent
     const p = paid()
-    // This period's facts, a line each, the label at the left and the value
-    // at the end: the pay (and when) and what's been spent.
-    const factLabel = (text: string): Span => ({ text, fg: ink.label })
-    const strong = (text: string, fg: string = ink.strong): Span => ({ text, fg, bold: true })
-    out.push({ spans: p.pay > 0
-      ? ledger(factLabel(view().current ? "Last pay" : "Pay"), strong(formatWholeMoney(p.pay)), [{ text: shortDate(p.dateISO!), fg: ink.label }])
-      : ledger(factLabel(view().current ? "Last pay" : "Pay"), { text: "none yet", fg: ink.note }) })
-    out.push({ spans: ledger(factLabel(view().current ? "Spent this period" : "Spent"), strong(formatWholeMoney(spent), target && spent > total + 0.5 ? tone.bad : ink.strong)) })
+    // The cycle's track first: its paydays, today and the sends, and under
+    // it what came in, what's gone to savers and what's been spent.
+    for (const [n, spans] of cycleTrack(width, cycle().start, addDays(cycle().end, 1), today(), { ...p, spent }, plan != null && plan > 0 ? tone.good : ink.figure).entries()) out.push({ spans, sweeps: n === 1 })
     out.push({ spans: blank, stays: true })
     // Savers is drawn once pay and target leave something for it.
     const planned = pay != null && !!target && plan != null && plan > 0
@@ -356,8 +351,6 @@ export function BudgetsTab(props: { focused: SectionId }) {
       else if (plan != null && plan < 0) out.push({ spans: note(`The target is ${formatWholeMoney(-plan)} more than your pay`, tone.caution, "") })
     }
     if (!p.pay && view().current) out.push({ spans: note("no pay found yet (the Salary category)", ink.note, "") })
-    out.push({ spans: blank, stays: true })
-    for (const [n, spans] of cycleTrack(width, cycle().start, addDays(cycle().end, 1), today(), { ...p, spent }, plan != null && plan > 0 ? tone.good : ink.figure).entries()) out.push({ spans, sweeps: n === 1 })
     return out
   })
   // The next pay, under the calendar (this cycle only): when, and your usual
