@@ -307,31 +307,19 @@ export function BudgetsTab(props: { focused: SectionId }) {
   // them. A line with `bg` is filled to the row's end.
   const topLines = createMemo((): Array<TopLine> => {
     const width = rowWidth(categoriesWidth())
-    const pay = planPay(), usual = expectedPay(), target = overallBudget()
+    const pay = planPay(), target = overallBudget()
     const out: Array<TopLine> = []
     const plan = toSavers()
     const total = split().total
     const spent = totalProgress().spent
     const p = paid()
-    // The cycle's facts, a line each, the label at the left and the value
-    // at the end: the last pay (and when), the next (when, and your usual
-    // pay: what's expected) and the days till it (this cycle only), and
-    // what's been spent.
-    const weekday = (iso: string) => new Date(iso + "T12:00:00Z").toLocaleDateString("en-AU", { weekday: "short", timeZone: "UTC" })
-    const next = addDays(cycle().end, 1)
-    const days = Math.max(0, daysBetween(today(), next))
+    // This period's facts, a line each, the label at the left and the value
+    // at the end: the pay (and when) and what's been spent.
     const factLabel = (text: string): Span => ({ text, fg: ink.label })
     const strong = (text: string, fg: string = ink.strong): Span => ({ text, fg, bold: true })
     out.push({ spans: p.pay > 0
       ? ledger(factLabel(view().current ? "Last pay" : "Pay"), strong(formatWholeMoney(p.pay)), [{ text: shortDate(p.dateISO!), fg: ink.label }])
       : ledger(factLabel(view().current ? "Last pay" : "Pay"), { text: "none yet", fg: ink.note }) })
-    if (view().current) {
-      const when = `${weekday(next)} ${shortDate(next)}`
-      out.push({ spans: usual != null
-        ? ledger(factLabel("Next pay"), strong(formatWholeMoney(usual)), [{ text: when, fg: ink.label }])
-        : ledger(factLabel("Next pay"), strong(when), [{ text: "p sets your pay", fg: tone.caution }]) })
-      out.push({ spans: ledger(factLabel("Days till pay"), strong(String(days))) })
-    }
     out.push({ spans: ledger(factLabel(view().current ? "Spent this period" : "Spent"), strong(formatWholeMoney(spent), target && spent > total + 0.5 ? tone.bad : ink.strong)) })
     out.push({ spans: blank, stays: true })
     // Savers is drawn once pay and target leave something for it.
@@ -372,6 +360,24 @@ export function BudgetsTab(props: { focused: SectionId }) {
     for (const [n, spans] of cycleTrack(width, cycle().start, addDays(cycle().end, 1), today(), p, plan != null && plan > 0 ? tone.good : ink.figure).entries()) out.push({ spans, sweeps: n === 1 })
     return out
   })
+  // The next pay, under the calendar (this cycle only): when, and your usual
+  // pay (what's expected; until set, which key sets it); the days till it.
+  const nextPayLines = createMemo((): Span[][] => {
+    if (!view().current) return []
+    const next = addDays(cycle().end, 1)
+    const days = Math.max(0, daysBetween(today(), next))
+    const when = `${new Date(next + "T12:00:00Z").toLocaleDateString("en-AU", { weekday: "short", timeZone: "UTC" })} ${shortDate(next)}`
+    const usual = expectedPay()
+    const label = (text: string): Span => ({ text, fg: ink.label })
+    return [
+      usual != null
+        ? ledger(label("Next pay"), { text: formatWholeMoney(usual), fg: ink.strong, bold: true }, [{ text: when, fg: ink.label }])
+        : ledger(label("Next pay"), { text: when, fg: ink.strong, bold: true }, [{ text: "p sets your pay", fg: tone.caution }]),
+      ledger(label("Days till pay"), { text: String(days), fg: ink.strong, bold: true }),
+    ]
+  })
+  // Its lines and a blank line under them.
+  const nextPayBlock = () => (nextPayLines().length ? nextPayLines().length + 1 : 0)
   // Drawing in, as Subscriptions does ("always": each time the tab shows
   // or the cycle changes, not as the cursor moves): the bars (each pay,
   // the cycle's track, the meter) sweep in from the left, and the lines
@@ -396,12 +402,12 @@ export function BudgetsTab(props: { focused: SectionId }) {
   // compact: two lines a weekday (15 rows) where the pane has room for it
   // and a few table rows, else one (8), else none.
   const calendarRows = () => {
-    const room = categoriesHeight() - 4 - topLines().length - 3 - Math.min(setup().length, BUDGETS_ROWS_MIN)
+    const room = categoriesHeight() - 4 - topLines().length - nextPayBlock() - 3 - Math.min(setup().length, BUDGETS_ROWS_MIN)
     return room >= CALENDAR_TALL ? CALENDAR_TALL : room >= CALENDAR_MIN ? CALENDAR_MIN : 0
   }
   // Its heading, the days, its legend and a blank line.
   const calendarBlock = () => (calendarRows() ? calendarRows() + 3 : 0)
-  const categoryRoom = () => Math.max(1, categoriesHeight() - 4 - topLines().length - calendarBlock())
+  const categoryRoom = () => Math.max(1, categoriesHeight() - 4 - topLines().length - calendarBlock() - nextPayBlock())
   const categoryLines = setup
   const categoryTop = createMemo(() => centredTop(categoryCursor(), categoryLines().length, categoryRoom()))
   // Nothing budgeted yet: the pane says to start here.
@@ -460,6 +466,10 @@ export function BudgetsTab(props: { focused: SectionId }) {
         </text>
         <text wrapMode="none" flexShrink={0}>{" "}</text>
       </Show>
+      <Index each={nextPayLines()}>{(spans) => (
+        <text wrapMode="none" flexShrink={0}><S>{" "}</S><Index each={spans()}>{(span) => <S fg={span().fg} bold={span().bold}>{span().text}</S>}</Index></text>
+      )}</Index>
+      <Show when={nextPayLines().length}><text wrapMode="none" flexShrink={0}>{" "}</text></Show>
       <Show when={categoryLines().length} fallback={<text fg={ink.note}>{" No spending yet."}</text>}>
         <text wrapMode="none">
           <S fg={ink.note}>{" "}</S>

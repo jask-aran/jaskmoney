@@ -323,6 +323,8 @@ test("the plan: your pay and your spending target give what goes to savers; each
   f = await frame()
   // The next pay: when, and your usual pay.
   expect(f).toMatch(/Next pay\s+Sun 1 Nov\s+\$5,000 │/)
+  // It's under the calendar: the top is this period's own.
+  expect(f).toMatch(/Spent this period[\s\S]*Spending calendar[\s\S]*Next pay[\s\S]*Days till pay\s+12 │[\s\S]*Categories/)
   // No Up pay-splitting hint: the API can't see the split, so it's not the app's to say.
   expect(f).not.toContain("pay splitting")
   // The pay as a bar filling as you spend, each part's figure over it:
