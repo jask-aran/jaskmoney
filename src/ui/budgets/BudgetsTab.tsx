@@ -233,7 +233,13 @@ export function BudgetsTab(props: { focused: SectionId }) {
   // The cycles fill a grid quarter; elsewhere as many as there are, up to
   // what the room leaves (at least two).
   const cycleRoom = () => (grid() ? progressRoom() - 2 - budgetLines() - 2 : Math.min(cycles().length, Math.max(2, progressRoom() - 2 - budgetLines() - 2)))
-  const progressHeight = () => (grid() ? topQuarter() : 2 + budgetLines() + (cycles().length ? 2 + cycleRoom() : 0))
+  // Two columns: at least the calendar's own height, as the calendar takes
+  // Progress's (so the budget pane and Budgets start on one line).
+  // Tall (a day's amount under its number) where that doesn't cost the
+  // cycle pane its room.
+  const progressOwn = () => 2 + budgetLines() + (cycles().length ? 2 + cycleRoom() : 0)
+  const calendarOwn = () => (body() >= CALENDAR_TALL + 10 && (grid() || body() - Math.max(CALENDAR_TALL, progressOwn()) >= 2 * CYCLE_PANE_MIN || body() - progressOwn() < 2 * CYCLE_PANE_MIN) ? CALENDAR_TALL : CALENDAR_MIN)
+  const progressHeight = () => (grid() ? topQuarter() : Math.max(wide() ? calendarOwn() : 0, progressOwn()))
   // The charts take the rest: the budget pane, and a cycle pane under it
   // when both get CYCLE_PANE_MIN rows.
   const chartArea = () => body() - progressHeight()
@@ -243,9 +249,11 @@ export function BudgetsTab(props: { focused: SectionId }) {
   const progressWidth = () => (grid() ? halfLeft() : mainWidth())
   const chartWidth = () => (grid() ? halfRight() : mainWidth())
   const cyclePaneWidth = (pane: number) => (grid() ? (pane === 0 ? halfLeft() : halfRight()) : mainWidth())
-  // The cycle's calendar: a band of two lines a weekday where the tab has
-  // the height, else one; narrow, only on a tall terminal.
-  const calendarHeight = () => (wide() ? (body() >= 17 + 10 ? 17 : 10) : body() >= 40 ? 10 : 0)
+  // The cycle's calendar (calendarLayout fills what it's given): two
+  // columns, Progress's height, so Budgets' top lines up with the budget
+  // pane's; the grid, a band of two lines a weekday where the tab has the
+  // height, else one; narrow, only on a tall terminal.
+  const calendarHeight = () => (grid() ? calendarOwn() : wide() ? progressHeight() : body() >= 40 ? CALENDAR_MIN : 0)
   const categoriesHeight = () => (wide() ? body() - calendarHeight() : Math.max(5, body() - chartHeight() - progressHeight() - calendarHeight()))
   // The panes the keys and jumps reach follow the layout; focus on one
   // that's gone goes back to the budgets.
@@ -377,75 +385,67 @@ export function BudgetsTab(props: { focused: SectionId }) {
         : { text: "".padStart(NUM), fg: ink.faint },
     ]
   }
-  // The overall budget: its name and amount on one line; unset, "not set"
-  // in caution with the nudge on a line under it.
-  const overallLines = (row: Extract<SetupRow, { kind: "overall" }>): Span[][] => {
-    const width = rowWidth(categoriesWidth())
-    if (!row.budget) {
-      const nudge = row.average >= 1 ? `enter sets it from your ${formatWholeMoney(row.average)} average` : "enter sets it"
-      return [
-        fitSpans([{ text: fit(`  ${row.name}`, width - 7), fg: ink.figure, bold: true }, { text: "not set", fg: tone.caution }], width),
-        fitSpans([{ text: `  ${nudge}`, fg: tone.caution }], width),
-      ]
-    }
-    // Set: the name takes the row (not the categories' name column), the
-    // budget at its end, under Budget.
-    const amount = formatWholeMoney(row.budget.amount).padStart(NUM)
-    const cap = fitSpans([
-      { text: fit(`  ${row.name}`, width - amount.length - 2), fg: ink.figure, bold: true },
-      { text: amount + "  ", fg: ink.figure, bold: true },
-    ], width)
-    // With category budgets, how the cap is split: theirs, and the rest.
-    const { allocated, rest } = split()
-    if (!allocated || rest == null) return [cap]
-    return [cap, fitSpans(rest >= 0
-      ? [{ text: `    ${formatWholeMoney(allocated)} in categories · ${formatWholeMoney(rest)} the rest`, fg: ink.note }]
-      : [{ text: `    categories take ${formatWholeMoney(-rest)} more than this`, fg: tone.caution }], width)]
-  }
-  // The overall row (two lines unset), a blank line and the headings stay
-  // put; the categories scroll under them.
   const overallRow = () => setup()[1] as Extract<SetupRow, { kind: "overall" }>
-  /** A label and its figure, at least a space apart. */
-  const stat = (label: string, value: string, fg: string = ink.figure, bold = false): Span[] => {
+  // The pane's top, on the categories' grid: a section's heading where
+  // their chevrons are, its rows where their marks are, a row's notes where
+  // their names are, and every figure under Budget. Labels say what a
+  // figure is; the figure column holds only figures.
+  const heading = (text: string): Span[] => [{ text, fg: ink.heading, bold: true }]
+  const stat = (label: string, value: string, look: { label?: string; value?: string; bold?: boolean } = {}): Span[] => {
     const width = rowWidth(categoriesWidth())
-    return fitSpans([{ text: fit(label, Math.max(1, width - value.length - 3)), fg: bold ? ink.figure : ink.label, bold }, { text: ` ${value}  `, fg }], width)
+    return fitSpans([
+      { text: fit(label, Math.max(1, width - 2 - NUM)), fg: look.label ?? ink.label, bold: look.bold },
+      { text: value.padStart(NUM), fg: look.value ?? ink.figure, bold: look.bold },
+    ], width)
   }
-  const heading = (text: string): Span[] => [{ text: ` ${text}`, fg: ink.heading, bold: true }]
-  const note = (text: string, fg: string = ink.note): Span[] => fitSpans([{ text, fg }], rowWidth(categoriesWidth()))
-  // The pane's top: the plan (the pay and overall rows take the cursor, 0
-  // and 1), then this cycle. Each line says which cursor row it belongs to.
+  const note = (text: string, fg: string = ink.note): Span[] => fitSpans([{ text: `    ${text}`, fg }], rowWidth(categoriesWidth()))
+  const blank: Span[] = [{ text: " ", fg: ink.note }]
+  // The plan (the pay and overall rows take the cursor, 0 and 1), then
+  // this cycle against it. Each line says which cursor row it belongs to.
   const topLines = createMemo((): Array<{ spans: Span[]; row?: number }> => {
     const out: Array<{ spans: Span[]; row?: number }> = [{ spans: heading("Plan") }]
     const pay = expectedPay()
-    if (pay != null) out.push({ spans: stat("  Pay each payday", formatWholeMoney(pay)), row: 0 })
+    out.push({ spans: stat("  Pay each payday", pay != null ? formatWholeMoney(pay) : "not set", { label: ink.figure, value: pay != null ? ink.figure : tone.caution }), row: 0 })
+    if (pay == null) out.push({ spans: note(usual() ? `enter sets it from your usual ${formatWholeMoney(usual()!)}` : "enter: what you expect in, after tax", tone.caution), row: 0 })
+    const overall = overallRow()
+    out.push({ spans: stat(`  ${overall.name}`, overall.budget ? formatWholeMoney(overall.budget.amount) : "not set", { label: ink.figure, value: overall.budget ? ink.figure : tone.caution }), row: 1 })
+    if (!overall.budget) out.push({ spans: note(overall.average >= 1 ? `enter sets it from your ${formatWholeMoney(overall.average)} average` : "enter sets it", tone.caution), row: 1 })
     else {
-      out.push({ spans: stat("  Pay each payday", "not set", tone.caution), row: 0 })
-      out.push({ spans: note(usual() ? `    enter sets it from your usual ${formatWholeMoney(usual()!)}` : "    enter sets it: what you expect in, after tax", tone.caution), row: 0 })
+      // How the cap is split: the categories' budgets, and the rest.
+      const { allocated, rest } = split()
+      if (allocated && rest != null && rest >= 0) {
+        out.push({ spans: stat("    in categories", formatWholeMoney(allocated)), row: 1 })
+        out.push({ spans: stat("    the rest", formatWholeMoney(rest)), row: 1 })
+      } else if (allocated && rest != null) out.push({ spans: note(`categories take ${formatWholeMoney(-rest)} more than this`, tone.caution), row: 1 })
     }
-    for (const spans of overallLines(overallRow())) out.push({ spans, row: 1 })
     const saving = toSavers()
     if (saving != null && saving >= 0) {
-      out.push({ spans: stat("  To savers each payday", formatWholeMoney(saving), tone.good, true) })
-      out.push({ spans: note("    set Up's pay splitting to this") })
-    } else if (saving != null) out.push({ spans: note(`  Spending is ${formatWholeMoney(-saving)} more than your pay`, tone.caution) })
-    else if (pay == null) out.push({ spans: note("  With your pay set: what goes to savers") })
-    out.push({ spans: [{ text: " ", fg: ink.note }] }, { spans: heading("This cycle") })
+      out.push({ spans: stat("  To savers each payday", formatWholeMoney(saving), { label: ink.figure, value: tone.good, bold: true }) })
+      out.push({ spans: note("set Up's pay splitting to this") })
+    } else if (saving != null) {
+      out.push({ spans: stat("  To savers each payday", "none", { label: ink.figure, value: tone.caution }) })
+      out.push({ spans: note(`spending is ${formatWholeMoney(-saving)} more than your pay`, tone.caution) })
+    } else out.push({ spans: stat("  To savers each payday", "—", { label: ink.figure, value: ink.faint }) })
+    out.push({ spans: blank }, { spans: heading("This cycle") })
     const p = paydayResult()
-    if (!p || p.pay <= 0) out.push({ spans: note("  No pay found yet (the Salary category)") })
+    if (!p || p.pay <= 0) out.push({ spans: note("no pay found yet (the Salary category)") })
     else {
-      out.push({ spans: stat(`  Payday ${shortDate(p.dateISO)}`, `${formatWholeMoney(p.pay)} in`) })
-      out.push({ spans: saving != null && saving > 0
-        ? p.sent >= saving - 1 ? stat("    to savers", `${formatWholeMoney(p.sent)} ✓`, tone.good) : stat("    to savers", `${formatWholeMoney(p.sent)} of ${formatWholeMoney(saving)}`, tone.caution)
-        : stat("    to savers", formatWholeMoney(p.sent), ink.label) })
+      out.push({ spans: stat(`  Paid ${shortDate(p.dateISO)}`, formatWholeMoney(p.pay)) })
+      // Against the plan only when there is one.
+      const planned = saving != null && saving > 0 ? saving : null
+      const met = planned != null && p.sent >= planned - 1
+      out.push({ spans: stat("  To savers so far", `${met ? "✓ " : ""}${formatWholeMoney(p.sent)}`, { value: planned == null ? ink.figure : met ? tone.good : tone.caution }) })
+      if (planned != null && !met) out.push({ spans: note(`${formatWholeMoney(planned - p.sent)} still to send of ${formatWholeMoney(planned)}`, tone.caution) })
     }
     const end = forecast()
     if (end != null) {
-      out.push({ spans: stat(`  By ${shortDate(addDays(cycle().end, 1))}, at this pace`, formatWholeMoney(end), end < 0 ? tone.bad : ink.figure) })
-      out.push({ spans: note(end >= 0.5 ? "    left in Spending: you could send it too" : end < 0 ? "    short: the next cycle starts behind" : "    nothing left over", end < 0 ? tone.caution : ink.note) })
+      out.push({ spans: stat(`  Left by ${shortDate(addDays(cycle().end, 1))}`, formatWholeMoney(end), { value: end < 0 ? tone.bad : ink.figure }) })
+      out.push({ spans: note(end >= 0.5 ? "at this pace: you could send it too" : end < 0 ? "at this pace: the next cycle starts behind" : "at this pace: nothing left over", end < 0 ? tone.caution : ink.note) })
     }
     return out
-  })  // The top (the plan, this cycle), a blank line and the headings stay put;
-  // the categories scroll under them.
+  })
+  // The top (the plan, this cycle), a blank line and the Categories
+  // heading stay put; the categories scroll under them.
   const categoryRoom = () => Math.max(1, categoriesHeight() - 4 - topLines().length)
   const categoryLines = createMemo(() => setup().slice(2) as Array<Extract<SetupRow, { kind: "line" }>>)
   const categoryTop = createMemo(() => centredTop(Math.max(0, categoryCursor() - 2), categoryLines().length, categoryRoom()))
@@ -454,6 +454,7 @@ export function BudgetsTab(props: { focused: SectionId }) {
 
   const Chart = () => (
     <ChartCard scope={subject().title} views={BUDGET_VIEWS} current={ui.state.budgetChart} model={model()} width={chartWidth()} height={chartHeight()} baseline={baseline()}
+      focused={props.focused === "bud.chart"}
       legend={subscriptionsLegend(subs(), dueBeforePayday())}
       fallback={<SubscriptionsView list={subs()} width={chartWidth() - 4} rows={chartHeight() - 2} today={today()} payday={payday()} />}
       revealKey={data.state.uiPrefs.chartMotion === "always" ? `${(BUDGET_VIEWS[ui.state.budgetChart] ?? BUDGET_VIEWS[0]!).view}:${subject().title}:${seen()}` : undefined}
@@ -520,7 +521,8 @@ export function BudgetsTab(props: { focused: SectionId }) {
       <text wrapMode="none">{" "}</text>
       <Show when={categoryLines().length} fallback={<text fg={ink.note}>{" No spending yet."}</text>}>
         <text wrapMode="none">
-          <S fg={ink.note}>{` ${fit("", nameWidth())}`}</S>
+          <S fg={ink.note}>{" "}</S>
+          <S fg={ink.heading} bold>{fit("Categories", nameWidth())}</S>
           <S fg={ink.label}>{"Spent".padStart(NUM)}{withAverage() ? "Average".padStart(NUM) : ""}{"Budget".padStart(NUM)}</S>
         </text>
         <Index each={categoryLines().slice(categoryTop(), categoryTop() + categoryRoom())}>{(row, i) => (
@@ -653,6 +655,11 @@ export function BudgetsTab(props: { focused: SectionId }) {
     </box>
   )
 }
+
+/** The cycle calendar's fewest rows: a line a weekday, the months, borders. */
+const CALENDAR_MIN = 10
+/** Its height with two lines a weekday (each day's amount under its number). */
+const CALENDAR_TALL = 17
 
 /** Fewest rows a Budgets chart pane gets before the cycle pane gives way. */
 const CYCLE_PANE_MIN = 12

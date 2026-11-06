@@ -14,9 +14,9 @@ afterEach(() => setAppClock(null))
 
 /** Monthly cycles from the 1st: Groceries $300 in September; this cycle
  * $120 spent and a $20 refund into Groceries (it reduces spending). */
-async function budgetsTab() {
+async function budgetsTab(size = { width: 120, height: 44 }) {
   setAppClock(new Date(2026, 9, 20, 12))
-  const t = await renderApp({ width: 120, height: 44 })
+  const t = await renderApp(size)
   data.init(":memory:")
   const db = data.getDb()!
   db.query("INSERT INTO accounts (id, name, type, source, external_kind) VALUES (1, 'Spending', 'debit', 'up', 'TRANSACTIONAL')").run()
@@ -169,7 +169,8 @@ test("no wash on a budget: the cursor's name and corners take the focus colour, 
 })
 
 test("the cycle's calendar is always there: the budget's days so far, and its regular payments due on the days to come, in caution, with what they leave", async () => {
-  const { t, groceries, frame } = await budgetsTab()
+  // Tall enough for the calendar's amounts and the cycle pane both.
+  const { t, groceries, frame } = await budgetsTab({ width: 120, height: 60 })
   const db = data.getDb()!
   for (const month of ["06", "07", "08", "09"]) {
     db.query("INSERT INTO transactions (date_raw, date_iso, amount, description, account_id, category_id, source) VALUES (?, ?, -15, 'STREAMER', 1, ?, 'up')").run(`2026-${month}-25`, `2026-${month}-25`, groceries)
@@ -311,7 +312,7 @@ test("the plan: your pay and your spending give what goes to savers, and what to
   let f = await frame()
   expect(line(f, "Pay each payday")).toContain("not set")
   expect(f).toContain("enter sets it from your usual $5,000")
-  const sent = (f: string) => f.split("\n").find((l) => /│\s+to savers\s+\$/.test(l)) ?? ""
+  const sent = (f: string) => f.split("\n").find((l) => l.includes("To savers so far")) ?? ""
   expect(sent(f)).toMatch(/\$2,500\s/)
   expect(f).not.toContain("✓")
   // The pay row opens the Pay editor from your usual pay.
@@ -328,7 +329,26 @@ test("the plan: your pay and your spending give what goes to savers, and what to
   expect(line(f, "To savers each payday")).toContain("$3,000")
   expect(f).toContain("set Up's pay splitting to this")
   // This cycle sent $2,500 of the $3,000.
-  expect(sent(f)).toContain("$2,500 of $3,000")
-  expect(line(f, "By 1 Nov, at this pace")).toMatch(/\$[\d,]+/)
+  expect(sent(f)).toMatch(/To savers so far\s+\$2,500/)
+  expect(f).toContain("$500 still to send of $3,000")
+  expect(line(f, "Left by 1 Nov")).toMatch(/\$[\d,]+/)
+  expect(f).toContain("at this pace")
   t.renderer.destroy()
+})
+
+test("two columns: the budget pane draws its focus, and Budgets' top lines up with its top", async () => {
+  const { t, frame } = await budgetsTab({ width: 145, height: 60 })
+  await data.setBudget({ kind: "overall" }, 500)
+  const f = (await frame()).split("\n")
+  const chartTop = f.findIndex((l) => l.includes("╭─ Cumulative spending"))
+  expect(chartTop).toBeGreaterThan(0)
+  expect(f[chartTop]).toContain("╭─ Budgets")
+  // Focused, its title takes the focus colour, as every pane's does.
+  const focus = RGBA.fromHex(tone.focus).toInts().join()
+  const titleFocused = () => t.captureSpans().lines[chartTop]!.spans.some((s) => s.text.includes("Cumulative spending") && s.fg.toInts().join() === focus)
+  expect(titleFocused()).toBe(false)
+  handleKey(ui, key("v"), data); handleKey(ui, key("t"), data)
+  await frame()
+  expect(ui.state.focusedSection).toBe("bud.chart")
+  expect(titleFocused()).toBe(true)
 })
