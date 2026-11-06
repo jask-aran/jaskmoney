@@ -38,7 +38,7 @@ import { balancesChart, cashFlowChart, spendingChart, type PeriodNames } from ".
 import { UP_LOGO_WIDTH } from "../primitives/UpLogo"
 import { CalendarView, calendarLegend } from "./CalendarView"
 import { cycleTrack, planOpening } from "../budgets/PlanGraphics"
-import { inBar, netBar, sourcesBars, spendBar } from "./RangeGraphics"
+import { inBar, netBar, sourcesBars, spendBar, spendOpening } from "./RangeGraphics"
 import { leadingEmoji, saverInks } from "../charts/saverInks"
 import { cyclePay } from "../../domain/payday"
 import { computeCategorySpend, groupCategorySpend } from "../../domain/dashboard"
@@ -209,6 +209,8 @@ export function OverviewTab(props: { focused: SectionId }) {
   // The side column as the Range pane (the default) or, after t, the
   // Totals and Categories cards.
   const rangePane = () => !data.state.uiPrefs.totalsCards
+  // The Range pane shows where the spending went (s), or where the net went.
+  const spendingView = () => data.state.uiPrefs.rangeView === "spending"
   const bodyHeight = () => Math.max(8, dims().height - 7)
   // The Range pane's column is wider: its Before column and the names both fit.
   const sideWidth = () => (wide() ? (rangePane() ? sideColumnWidth(dims().width, RANGE_SIDE_MAX, 0.45) : sideColumnWidth(dims().width)) : Math.floor((dims().width - 1) / 2))
@@ -394,37 +396,8 @@ export function OverviewTab(props: { focused: SectionId }) {
     const width = categoryWidth() - 5
     const f = flows(), b = previousFlows()
     const lines: Span[][] = []
-    // The track: what came in and what went to savers are the range's
-    // flows (as Totals counts them). What's spent is the bar's, under it.
-    lines.push(...cycleTrack(width, bounds().start, addDays(bounds().end, 1), today(), { ...pay, pay: f.income, sent: f.savedToSavers, spent: 0 }, tone.good, bounds().end))
-    lines.push([])
-    // What came in: spent, then the net; the net opened out under it to
-    // where it went, each saver in its colour (the Savers chart's) and
-    // what stayed in Spending.
-    // Each saver's change over the range, in its colour (the Savers
-    // chart's), named without their emoji: the colour is theirs, and an
-    // emoji's width would put the labels out.
-    const savers = [...position().savers].sort((x, y) => y.balance - x.balance)
-    const colors = saverInks(savers.map((s) => s.name))
-    const parts = savers.map((s, i) => ({
-      name: (leadingEmoji(s.name) ? s.name.trim().replace(/^\p{Extended_Pictographic}[\u{FE0E}\u{FE0F}]?\s*/u, "") : s.name).trim(),
-      color: colors[i]!, change: f.saverChanges.find((c) => c.accountId === s.accountId)?.change ?? 0,
-    }))
-    if (f.spent - f.income >= 0.5) {
-      // Spending more than came in: where it came from, over what was spent.
-      lines.push(...sourcesBars(width, f.income, f.spent, parts))
-    } else {
-      // What came in: spent, then the net; the net opened out under it to
-      // where it went, each saver and what stayed in Spending.
-      const bar = inBar(width, f.income, f.spent)
-      lines.push(bar.above, bar.bar)
-      if (f.net >= 0.5 && bar.netFrom > 0) {
-        const net = netBar(width, f.net, parts)
-        lines.push(planOpening(width, bar.netFrom, [{ text: formatPct(f.savingsRate), fg: ink.figure, bold: true }, { text: " saved", fg: ink.note }]), net.bar, net.labels)
-      }
-    }
-    lines.push([])
-    // The ratios: label, before (a note) and the figure at the row's end.
+    // The ratios first: label, before (a note) and the figure at the
+    // row's end.
     const ratio = (label: string, value: string, was: string | null, aside?: string): Span[] => {
       const note = aside ?? (covered() && was != null ? `before ${was}` : "")
       const gap = Math.max(1, width - label.length - note.length - Math.max(VALUE - 2, value.length))
@@ -439,13 +412,52 @@ export function OverviewTab(props: { focused: SectionId }) {
         : []),
       [],
     )
+    // The track: what came in and what went to savers are the range's
+    // flows (as Totals counts them). What's spent is the bar's, under it.
+    lines.push(...cycleTrack(width, bounds().start, addDays(bounds().end, 1), today(), { ...pay, pay: f.income, sent: f.savedToSavers, spent: 0 }, tone.good, bounds().end))
+    lines.push([])
+    // Each saver's change over the range, in its colour (the Savers
+    // chart's), named without their emoji: the colour is theirs, and an
+    // emoji's width would put the labels out.
+    const savers = [...position().savers].sort((x, y) => y.balance - x.balance)
+    const colors = saverInks(savers.map((s) => s.name))
+    const parts = savers.map((s, i) => ({
+      name: (leadingEmoji(s.name) ? s.name.trim().replace(/^\p{Extended_Pictographic}[\u{FE0E}\u{FE0F}]?\s*/u, "") : s.name).trim(),
+      color: colors[i]!, change: f.saverChanges.find((c) => c.accountId === s.accountId)?.change ?? 0,
+    }))
+    // Where the spending went (s) or where the net went: the categories'
+    // bar opens out of the spent bar, or sits over the categories.
+    const bySpending = spendingView()
+    const groupParts = groups().map((g) => ({ amount: g.amount, color: g.color }))
+    const before = covered() && b.spent > 0 ? b.spent : null
+    if (f.spent - f.income >= 0.5) {
+      // Spending more than came in: where it came from, over what was
+      // spent (and, where the spending went, its categories under that).
+      lines.push(...sourcesBars(width, f.income, f.spent, parts, bySpending ? groupParts : undefined, before))
+    } else {
+      // What came in: spent, then the net; one of them opened out under
+      // it: the spending to its categories, or the net to where it went,
+      // each saver and what stayed in Spending.
+      const bar = inBar(width, f.income, f.spent)
+      lines.push(bar.above, bar.bar)
+      if (bySpending && f.spent >= 0.5) {
+        const spending = spendBar(width, groupParts, before)
+        lines.push(spendOpening(width, bar.netFrom, [{ text: formatPct(f.income > 0 ? (f.spent / f.income) * 100 : null), fg: ink.figure, bold: true }, { text: " spent", fg: ink.note }]), spending.bar, spending.below)
+      } else if (!bySpending && f.net >= 0.5 && bar.netFrom > 0) {
+        const net = netBar(width, f.net, parts)
+        lines.push(planOpening(width, bar.netFrom, [{ text: formatPct(f.savingsRate), fg: ink.figure, bold: true }, { text: " saved", fg: ink.note }]), net.bar, net.labels)
+      }
+    }
+    lines.push([])
     // The categories' heading, its columns over theirs.
     const cols = `${"Spent".padStart(9)}${"%".padStart(5)}${"Before".padStart(BEFORE)}`
     lines.push([{ text: "Categories".padEnd(Math.max(10, width - 1 - cols.length)), fg: ink.heading, bold: true }, { text: cols, fg: ink.label }])
-    // Over the categories, their spending as a bar in their colours,
+    // Where the net went: their spending as a bar over the categories,
     // against before's.
-    const spending = spendBar(width, groups().map((g) => ({ amount: g.amount, color: g.color })), covered() && b.spent > 0 ? b.spent : null)
-    lines.push(spending.bar, spending.below)
+    if (!bySpending) {
+      const spending = spendBar(width, groupParts, before)
+      lines.push(spending.bar, spending.below)
+    }
     return lines.map((l) => (l.length ? l : [{ text: " ", fg: ink.note }]))
   })
   const rangeTop = () => rangeLines().length

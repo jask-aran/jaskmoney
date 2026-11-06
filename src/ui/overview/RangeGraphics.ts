@@ -80,14 +80,16 @@ export function netBar(width: number, net: number, savers: SaverPart[]): { bar: 
  * history covers it): the bar runs to whichever is more, the rest dotted,
  * with a tick where before reached and its figure under it.
  */
-export function spendBar(width: number, groups: Array<{ amount: number; color: string }>, before: number | null): { bar: Span[]; below: Span[] } {
+export function spendBar(width: number, groups: Array<{ amount: number; color: string }>, before: number | null, fixed = false): { bar: Span[]; below: Span[] } {
   const parts = groups.filter((g) => g.amount > 0)
   const spent = parts.reduce((n, g) => n + g.amount, 0)
-  const scale = Math.max(spent, before ?? 0)
+  // Fixed (under a bar of the same total): the spending's width whatever
+  // before was; before past it is a figure at the end.
+  const scale = fixed ? spent : Math.max(spent, before ?? 0)
   if (scale <= 0) return { bar: [{ text: "┄".repeat(width), fg: ink.faint }], below: [{ text: " ", fg: ink.note }] }
   const cells = cellsOf([...parts.map((g) => g.amount), scale - spent], width)
   const colors = parts.flatMap((g, i) => Array<string>(Math.max(0, cells[i]!)).fill(g.color))
-  const tick = before != null && before > 0 ? Math.min(width - 1, Math.max(0, Math.round((before / scale) * width) - 1)) : -1
+  const tick = before != null && before > 0 && before <= scale ? Math.min(width - 1, Math.max(0, Math.round((before / scale) * width) - 1)) : -1
   const bar: Span[] = []
   for (let c = 0; c < width; c++) {
     const span: Span = c === tick ? { text: "┃", fg: ink.strong, bg: colors[c], bold: true } : c < colors.length ? { text: "█", fg: colors[c]! } : { text: "┄", fg: ink.faint }
@@ -99,7 +101,7 @@ export function spendBar(width: number, groups: Array<{ amount: number; color: s
   // it where they'd run off the end.
   const words: Span[] = before != null ? [{ text: "before ", fg: ink.note }, money(before, ink.label)] : []
   const w = words.reduce((n, x) => n + x.text.length, 0) + 2
-  const below = tick < 0 ? [{ text: " ", fg: ink.note }]
+  const below = tick < 0 ? (before != null && before > scale ? labelled(width, [{ at: width, options: [[...words, { text: " ▸", fg: ink.strong }]] }]) : [{ text: " ", fg: ink.note }])
     : tick + w <= width ? labelled(width, [{ at: tick, options: [[{ text: "▲ ", fg: ink.strong }, ...words]] }])
     : labelled(width, [{ at: Math.max(0, tick - w + 1), options: [[...words, { text: " ▲", fg: ink.strong }]] }])
   return { bar, below }
@@ -116,7 +118,7 @@ export function spendBar(width: number, groups: Array<{ amount: number; color: s
  * in spending's colour, and past it hatched in bad, under the parts that
  * paid for it. Figures over the sources, under the spending.
  */
-export function sourcesBars(width: number, income: number, spent: number, savers: SaverPart[]): Span[][] {
+export function sourcesBars(width: number, income: number, spent: number, savers: SaverPart[], categories?: Array<{ amount: number; color: string }>, before: number | null = null): Span[][] {
   const covered = Math.min(spent, Math.max(0, income)), gap = spent - covered
   const drawn = savers.filter((s) => s.change <= -0.5).map((s) => ({ ...s, amount: -s.change })).sort((a, b) => b.amount - a.amount)
   const total = drawn.reduce((n, s) => n + s.amount, 0)
@@ -134,10 +136,38 @@ export function sourcesBars(width: number, income: number, spent: number, savers
   // The same columns: what came in covered ends where its source does.
   const c = cells[0]!, o = width - c
   const spending: Span[] = [...runs([{ cells: c, color: INKS.spend! }]), ...(o > 0 ? [hatched(o, tone.bad, tone.bad)] : [])]
-  const below = labelled(width, [
-    { mid: c > 0 ? c / 2 : width / 2, options: [[money(spent, ink.figure), { text: " spent", fg: ink.note }], [money(spent, ink.figure)]] },
-    ...(o > 0 && c > 0 ? [{ mid: c + o / 2, options: [[{ text: signedWholeMoney(-gap), fg: tone.bad, bold: true }, { text: " net", fg: ink.note }], [{ text: signedWholeMoney(-gap), fg: tone.bad, bold: true }]] }] : []),
+  // Where the spending went (s): under the spending, its categories as a
+  // third bar of the same total, the spent and net figures between them
+  // inside the edges; before's tick on it, or its figure where it was more.
+  const inner = categories ? width - 4 : width
+  const below = labelled(inner, [
+    { mid: Math.max(0, (c > 0 ? c / 2 : width / 2) - (categories ? 2 : 0)), options: [[money(spent, ink.figure), { text: " spent", fg: ink.note }], [money(spent, ink.figure)]] },
+    ...(o > 0 && c > 0 ? [{ mid: c + o / 2 - (categories ? 2 : 0), options: [[{ text: signedWholeMoney(-gap), fg: tone.bad, bold: true }, { text: " net", fg: ink.note }], [{ text: signedWholeMoney(-gap), fg: tone.bad, bold: true }]] }] : []),
   ])
   const edges: Span[] = [{ text: "│", fg: ink.rule }, { text: " ".repeat(Math.max(0, width - 2)), fg: ink.note }, { text: "│", fg: ink.rule }]
-  return [above, sources, edges, spending, below]
+  if (!categories) return [above, sources, edges, spending, below]
+  const inside: Span[] = [{ text: "│ ", fg: ink.rule }, ...below, { text: " ".repeat(Math.max(0, inner - below.reduce((n, x) => n + x.text.length, 0))), fg: ink.note }, { text: " │", fg: ink.rule }]
+  const bar = spendBar(width, categories, before, true)
+  return [above, sources, edges, spending, inside, bar.bar, bar.below]
+}
+
+/**
+ * Under the in bar, the line that opens its spent end (columns 0 to `to`)
+ * out to the full width for the spending's breakdown under it: the left
+ * edge straight down, a corner under where the spending ends running on
+ * to the right edge, and `label` between. The savers opening's mirror.
+ */
+export function spendOpening(width: number, to: number, label: Span[]): Span[] {
+  const room = Math.max(0, to - 2)
+  const w = label.reduce((n, x) => n + x.text.length, 0)
+  const fits = w + 2 <= room
+  const pad = fits ? room - w : room
+  const left = Math.floor(pad / 2)
+  if (to >= width - 1) return [{ text: "│", fg: ink.rule }, { text: " ".repeat(Math.max(0, left)), fg: ink.note }, ...(fits ? label : []), { text: " ".repeat(Math.max(0, width - 2 - left - (fits ? w : 0))), fg: ink.note }, { text: "│", fg: ink.rule }]
+  return [
+    { text: "│", fg: ink.rule },
+    { text: " ".repeat(fits ? left : room), fg: ink.note },
+    ...(fits ? [...label, { text: " ".repeat(pad - left), fg: ink.note }] : []),
+    { text: `╰${"─".repeat(Math.max(0, width - to - 1))}╮`, fg: ink.rule },
+  ]
 }

@@ -40,6 +40,9 @@ export interface UiPrefs {
   /** The Overview's side column as the Totals and Categories cards rather
    * than the one Range pane (default off: the Range pane). */
   totalsCards?: boolean
+  /** What the Range pane's bar opens out to: where the net went (default)
+   * or where the spending went. */
+  rangeView?: "net" | "spending"
 }
 
 export interface SettingsConfig {
@@ -138,6 +141,7 @@ function parseUiPrefs(raw: unknown): UiPrefs | undefined {
   if (backdrop) ui.backdrop = backdrop
   if ("zeroAxis" in raw && typeof raw.zeroAxis === "boolean") ui.zeroAxis = raw.zeroAxis
   if ("totalsCards" in raw && typeof raw.totalsCards === "boolean") ui.totalsCards = raw.totalsCards
+  if ("rangeView" in raw && (raw.rangeView === "net" || raw.rangeView === "spending")) ui.rangeView = raw.rangeView
   if ("accountSelection" in raw) {
     const sel = raw.accountSelection
     if (sel === "all" || sel === "savers" || (typeof sel === "number" && Number.isSafeInteger(sel) && sel > 0)) ui.accountSelection = sel

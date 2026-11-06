@@ -185,3 +185,54 @@ test("spending more than came in, edge cases: savers drawn on past the gap cover
   expect(f[at + 4]).toMatch(/\$500 spent/)
   o.t.renderer.destroy()
 })
+
+test("the Range pane: the ratios first; s switches the bar to where the spending went (the categories' bar opened out of the spent part) and back", async () => {
+  const { t, frame } = await overview([
+    spend("2026-08-01", 5, 10, "Groceries"), spend("2026-09-01", 400, 10, "Groceries"), spend("2026-09-02", 200, 11, "Fuel"),
+    pay("2026-10-01", 5000), send("2026-10-02", 1000), transaction({ id: ++id, accountId: 2, dateISO: "2026-10-02", amount: 1000, transferAccountId: 1, internal: true, excluded: true, description: "Transfer from Spending" }),
+    spend("2026-10-05", 300, 10, "Groceries"), spend("2026-10-06", 100, 11, "Fuel"),
+  ], "1M")
+  let text = (await frame()).join("\n")
+  // The ratios, then the track, then the bar.
+  expect(text).toMatch(/╭─ Range[^\n]*\n[^\n]*Daily average[^\n]*\n[^\n]*Transactions[^\n]*\n[^\n]*Runway[\s\S]*↓ \$5,000 in[\s\S]*\$400 spent/)
+  expect(text).toMatch(/╭─+╯\s+92\.0% saved/)
+  t.mockInput.pressKey("s")
+  let f = await frame()
+  text = f.join("\n")
+  expect(data.state.uiPrefs.rangeView).toBe("spending")
+  // The spent part opened out: the left edge down, a corner where the
+  // spending ends; the categories' bar under it, before's under that.
+  const opening = f.findIndex((l) => /│\s+\S+% spent\s+╰─+╮/.test(l) || /│\s+╰─+╮/.test(l))
+  expect(opening).toBeGreaterThan(0)
+  expect(f[opening + 1]).toMatch(/█+┄*┃/)
+  expect(f[opening + 2]).toMatch(/before \$600/)
+  // No net bar; the Categories heading straight over the rows.
+  expect(text.slice(text.indexOf("╭─ Range"))).not.toMatch(/Rainy day|kept|saved/)
+  expect(text).toMatch(/Categories\s+Spent\s+%\s+Before[^\n]*\n[^\n]*Groceries/)
+  t.mockInput.pressKey("s")
+  text = (await frame()).join("\n")
+  expect(data.state.uiPrefs.rangeView).toBe("net")
+  expect(text).toMatch(/92\.0% saved/)
+  t.renderer.destroy()
+})
+
+test("spending more than came in, where the spending went: its categories as a third bar under the spending, the same total, the figures inside the edges between", async () => {
+  const { t, frame } = await overview([pay("2026-10-01", 1000), spend("2026-10-05", 1200, 10, "Groceries"), spend("2026-10-06", 400, 11, "Fuel")], "1M")
+  data.setState("uiPrefs", { ...data.state.uiPrefs, rangeView: "spending" })
+  const f = await frame()
+  const inside = (l: string) => l.slice(3, l.lastIndexOf("│") - 1)
+  // The spent bar plain: spending's colour, then hatched.
+  const spentAt = f.findIndex((l) => /^█+╱+$/.test(inside(l)))
+  expect(spentAt).toBeGreaterThan(0)
+  // Under it, the figures inside the edges; then the categories' bar, as wide.
+  expect(inside(f[spentAt + 1]!)).toMatch(/^│ .*\$1,600 spent\s+-\$600 net.* │$/)
+  expect(inside(f[spentAt + 2]!)).toMatch(/^█+$/)
+  const spans = t.captureSpans().lines[spentAt + 2]!.spans
+  const groceries = RGBA.fromHex("#a6e3a1").toInts().join(), fuel = RGBA.fromHex("#fab387").toInts().join()
+  expect(spans.some((s) => s.text.includes("█") && s.fg.toInts().join() === groceries)).toBe(true)
+  expect(spans.some((s) => s.text.includes("█") && s.fg.toInts().join() === fuel)).toBe(true)
+  expect(t.captureSpans().lines[spentAt]!.spans.some((s) => s.text.includes("╱") && s.fg.toInts().join() === fuel)).toBe(false)
+  // No bar of their own over the categories.
+  expect(f.join("\n")).toMatch(/Categories\s+Spent\s+%\s+Before[^\n]*\n[^\n]*Groceries/)
+  t.renderer.destroy()
+})

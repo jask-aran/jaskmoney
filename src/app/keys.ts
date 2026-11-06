@@ -2169,6 +2169,13 @@ function handleOverview(ui: UiStore, key: KeyEvent, data?: DataStore): void {
     settleData(ui, data.saveUiPrefs({ totalsCards: !data.state.uiPrefs.totalsCards }), () => ui.setStatus(data.state.uiPrefs.totalsCards ? "Totals and Categories" : "Range: totals and categories as one"))
     return
   }
+  // s: the Range pane's bar opens out to where the spending went, or where
+  // the net went.
+  if (name === "s" && !key.shift && !key.ctrl && !key.meta && data && !data.state.uiPrefs.totalsCards) {
+    const spending = data.state.uiPrefs.rangeView !== "spending"
+    settleData(ui, data.saveUiPrefs({ rangeView: spending ? "spending" : "net" }), () => ui.setStatus(spending ? "Range: where the spending went" : "Range: where the net went"))
+    return
+  }
   if (name === "z" && data) {
     // Balance charts: fit the balances, or run the axis from $0.
     settleData(ui, data.saveUiPrefs({ zeroAxis: !data.state.uiPrefs.zeroAxis }), () => ui.setStatus(data.state.uiPrefs.zeroAxis ? "Balance charts from $0" : "Balance charts fit their balances"))
@@ -2282,6 +2289,7 @@ export function drillDown(ui: UiStore, data: DataStore, line?: CategoryLine) {
 
 type HintState = Pick<UiState, "focusedSection" | "drillReturn" | "chartViews"> & {
   totalsCards?: boolean
+  rangeView?: "net" | "spending"
   /** What [ and ] step the Overview's range by (stepUnit). */
   stepUnit?: string
   /** The Overview's range is a Custom one (C edits its dates). */
@@ -2713,6 +2721,7 @@ const scopes: Record<ScopeId, ScopeEntry> = {
         { key: "c", desc: "this cycle", label: "Range: this cycle" },
         { key: "a", desc: "account", label: "Next spending account" },
         { key: "t", desc: state?.totalsCards ? "range pane" : "totals", label: "Range pane or Totals and Categories" },
+        ...(state?.totalsCards ? [] : [{ key: "s", desc: state?.rangeView === "spending" ? "net view" : "spending view", label: "Range: where the spending or the net went" }]),
         { key: "i", desc: "review", command: "txn:uncategorised" },
         { key: "/", desc: "search", command: "txn:filter" },
         { key: "?", desc: "smart search", command: "txn:smart-search" },
@@ -2769,6 +2778,7 @@ export function hintState(ui: UiStore, data?: DataStore): HintState {
     customRange: ui.state.timeframe.family === "custom",
     overviewCharts: ui.state.overviewCharts,
     totalsCards: data?.state.uiPrefs.totalsCards === true,
+    rangeView: data?.state.uiPrefs.rangeView,
     budgetCyclePanes: ui.state.budgetCyclePanes,
     uncategorisedOnly: data?.state.uncategorisedOnly,
     tagReview: !!data?.state.tagReview,
