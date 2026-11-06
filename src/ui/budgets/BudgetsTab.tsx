@@ -36,8 +36,7 @@ import type { JSX } from "solid-js"
 import { SubscriptionsView, subscriptionsLegend } from "../charts/SubscriptionsView"
 import { subscriptions, upcomingCharges } from "../../domain/subscriptions"
 import { cyclePay } from "../../domain/payday"
-import { PaydayTiles, TILE_HEIGHT, cycleTrack, payBar, sentMeter, type PayPart } from "./PlanGraphics"
-import { computePosition, projectAvailable, usualDailySpend } from "../../domain/position"
+import { PaydayTiles, TILE_HEIGHT, cycleTrack, payBar, saversMeter, type PayPart } from "./PlanGraphics"
 
 /** Cycles before this one the chart and the cycle lines can show, at most. */
 const HISTORY = 36
@@ -241,19 +240,6 @@ export function BudgetsTab(props: { focused: SectionId }) {
       return [{ name: c?.name ?? "?", amount: b.amount, color: categoryColor(c?.color), spent: progress().get(b.id)?.spent ?? 0 }]
     })
   })
-  // This cycle: where Spending would be by the next payday at this pace
-  // (projectAvailable: a usual day and the regular payments due), what's
-  // left over to send too, or short.
-  const forecast = createMemo(() => {
-    if (!view().current) return null
-    const balance = computePosition(data.state.accounts, transactions(), today()).spendingBalance
-    if (balance == null) return null
-    const regular = subscriptions(allSpending(), today(), { people: true })
-    const usualDay = usualDailySpend(data.state.accounts, transactions(), today(), new Set(regular.flatMap((s) => s.chargeIds)))
-    const projected = projectAvailable(balance, today(), cycle().end, usualDay, upcomingCharges(regular, today(), cycle().end))
-    return projected.at(-1)?.value ?? balance
-  })
-
   // Budgets: where budgets are set. The overall budget first (until
   // set, a nudge in caution: enter sets it from its average), then each
   // category: name, this cycle, the average, and its budget or that it's
@@ -301,24 +287,31 @@ export function BudgetsTab(props: { focused: SectionId }) {
     const width = rowWidth(categoriesWidth())
     return fitSpans([{ text: fit(text, Math.max(1, width - NUM)), fg: ink.heading, bold: true }, { text: figure.padStart(NUM), fg: ink.figure, bold: true }], width)
   }
-  const stat = (label: string, value: string, look: { label?: string; value?: string; bold?: boolean } = {}): Span[] => {
-    const width = rowWidth(categoriesWidth())
-    return fitSpans([
-      { text: fit(label, Math.max(1, width - NUM)), fg: look.label ?? ink.label, bold: look.bold },
-      { text: value.padStart(NUM), fg: look.value ?? ink.figure, bold: look.bold },
-    ], width)
-  }
   const note = (text: string, fg: string = ink.note, inset = "  "): Span[] => fitSpans([{ text: `${inset}${text}`, fg }], rowWidth(categoriesWidth()))
   const blank: Span[] = [{ text: " ", fg: ink.note }]
-  // Under the tiles: each pay as a bar (where it goes: the category
-  // budgets, the rest of the target, savers), then this cycle as a track.
-  // Until either is set, a caution tile says which keys set them. A line
-  // with `bg` is filled to the row's end.
+  // A ledger line: its label, its figure in the figures' column, then a
+  // note on it.
+  const LEDGER_LABEL = 8
+  const ledger = (label: string, figure: string, figureFg: string, after: Span[] = []): Span[] =>
+    fitSpans([{ text: label.padEnd(LEDGER_LABEL), fg: ink.label }, { text: figure.padStart(NUM), fg: figureFg }, { text: "  ", fg: ink.note }, ...after], rowWidth(categoriesWidth()))
+  // A heading with a note at the row's end.
+  const headed = (text: string, after: Span[]): Span[] => {
+    const width = rowWidth(categoriesWidth()), w = after.reduce((n, x) => n + x.text.length, 0)
+    return fitSpans([{ text: fit(text, Math.max(1, width - w)), fg: ink.heading, bold: true }, ...after], width)
+  }
+  // Under the tiles: Each pay (your pay and what's spent of the target, and
+  // the pay as a bar: the category budgets, the rest of the target,
+  // savers), Savers (the plan for them: what's gone, what's still to send
+  // and what spending past the target has taken), then This cycle as a
+  // track. Until pay or target is set, a caution tile says which keys set
+  // them. A line with `bg` is filled to the row's end.
   const topLines = createMemo((): Array<TopLine> => {
     const width = rowWidth(categoriesWidth())
     const pay = expectedPay(), target = overallBudget()
-    const out: Array<TopLine> = [{ spans: heading("Each pay", pay != null ? formatWholeMoney(pay) : ""), stays: true }]
-    const saving = toSavers()
+    const out: Array<TopLine> = [{ spans: heading("Each pay"), stays: true }]
+    const plan = toSavers()
+    const total = split().total
+    const spent = totalProgress().spent
     if (pay == null && !target) {
       const fill = fade(tone.caution, 0.8)
       out.push(
@@ -328,30 +321,39 @@ export function BudgetsTab(props: { focused: SectionId }) {
         { spans: blank, bg: fill },
       )
     } else {
+      if (pay != null) out.push({ spans: ledger("Pay", formatWholeMoney(pay), ink.figure, [{ text: "usual pay", fg: ink.note }]) })
+      if (target) {
+        const over = spent > total + 0.5
+        out.push({ spans: ledger("Spent", spent > 0.5 ? `−${formatWholeMoney(spent)}` : formatWholeMoney(0), over ? tone.bad : ink.figure, over
+          ? [{ text: "target ", fg: ink.note }, { text: formatWholeMoney(total), fg: ink.figure }]
+          : [{ text: `${formatWholeMoney(total - spent)} left`, fg: ink.figure }, { text: " of ", fg: ink.note }, { text: formatWholeMoney(total), fg: ink.figure }]) })
+      }
+      out.push({ spans: blank, stays: true })
       // The rest of the target's spending: all of it less the categories' own.
-      const restSpent = target ? Math.max(0, totalProgress().spent - targetParts().reduce((n, c) => n + c.spent, 0)) : 0
-      for (const spans of payBar(width, pay, target ? split().total : 0, target ? targetParts() : [], restSpent)) out.push({ spans, sweeps: spans.some((x) => x.text.includes("█")) })
-      if (pay == null) out.push({ spans: note("p: your pay, to see what goes to savers", tone.caution, "") })
-      else if (!target) out.push({ spans: note("t: your spending target, to see what's saved", tone.caution, "") })
-      else if (saving != null && saving < 0) out.push({ spans: note(`The target is ${formatWholeMoney(-saving)} more than your pay`, tone.caution, "") })
+      const restSpent = target ? Math.max(0, spent - targetParts().reduce((n, c) => n + c.spent, 0)) : 0
+      const paceSpent = target && view().current ? total * pace() : null
+      for (const spans of payBar(width, pay, target ? total : 0, target ? targetParts() : [], restSpent, paceSpent)) out.push({ spans, sweeps: spans.some((x) => x.text.includes("█")) })
     }
-    out.push({ spans: blank, stays: true }, { spans: heading("This cycle"), stays: true })
+    out.push({ spans: blank, stays: true }, { spans: plan != null && plan > 0 ? headed("Savers", [{ text: "plan ", fg: ink.note }, { text: formatWholeMoney(plan), fg: ink.figure, bold: true }]) : heading("Savers"), stays: true })
     const p = paid()
-    const next = addDays(cycle().end, 1)
-    const planned = saving != null && saving > 0 ? saving : null
-    const met = planned != null && p.sent >= planned - 1
-    const sentColor = planned == null ? ink.figure : met ? tone.good : tone.caution
-    for (const [n, spans] of cycleTrack(width, cycle().start, next, today(), p, sentColor).entries()) out.push({ spans, sweeps: n === 1 })
-    if (!p.pay) out.push({ spans: note("no pay found yet (the Salary category)", ink.note, "") })
-    if (planned != null) {
-      out.push({ spans: [...sentMeter(width - NUM - 1, p.sent, planned), { text: " ", fg: ink.note }, { text: (met ? `✓ ${formatWholeMoney(planned)}` : `of ${formatWholeMoney(planned)}`).padStart(NUM), fg: met ? tone.good : ink.label }], sweeps: true })
-      if (!met) out.push({ spans: note(`${formatWholeMoney(planned - p.sent)} still to send`, tone.caution) })
+    if (pay == null) out.push({ spans: note("p: your pay, to see what goes to savers", tone.caution, "") })
+    else if (!target) out.push({ spans: note("t: your spending target, to see what's saved", tone.caution, "") })
+    else if (plan != null && plan < 0) out.push({ spans: note(`The target is ${formatWholeMoney(-plan)} more than your pay`, tone.caution, "") })
+    else if (plan != null && plan > 0) {
+      // Spending past the target comes out of the plan; what's left of it,
+      // less what's gone, is still to send.
+      const short = Math.min(plan, Math.max(0, spent - total))
+      const toSend = Math.max(0, plan - short - p.sent)
+      out.push({ spans: ledger("Sent", formatWholeMoney(p.sent), p.sent > 0 ? tone.good : ink.figure, [{ text: p.sends.map((x) => shortDate(x.dateISO)).join(", "), fg: ink.note }]) })
+      out.push({ spans: ledger("To send", formatWholeMoney(toSend), toSend > 0.5 ? ink.figure : tone.good, short > 0.5
+        ? [{ text: formatWholeMoney(short), fg: tone.bad, bold: true }, { text: " short", fg: tone.bad }]
+        : toSend <= 0.5 ? [{ text: "✓ all sent", fg: tone.good }] : []) })
+      out.push({ spans: blank, stays: true })
+      for (const spans of saversMeter(width, Math.min(p.sent, plan - short), toSend, short)) out.push({ spans, sweeps: spans.some((x) => x.text.includes("█")) })
     }
-    const end = forecast()
-    if (end != null) {
-      out.push({ spans: stat(`Left by ${shortDate(next)}`, formatWholeMoney(end), { label: ink.figure, value: end < 0 ? tone.bad : ink.figure }) })
-      out.push({ spans: note(end >= 0.5 ? "at this pace: you could send it too" : end < 0 ? "at this pace: the next cycle starts behind" : "at this pace: nothing left over", end < 0 ? tone.caution : ink.note) })
-    }
+    if (!p.pay && view().current) out.push({ spans: note("no pay found yet (the Salary category)", ink.note, "") })
+    out.push({ spans: blank, stays: true }, { spans: heading("This cycle"), stays: true })
+    for (const [n, spans] of cycleTrack(width, cycle().start, addDays(cycle().end, 1), today(), p, ink.figure).entries()) out.push({ spans, sweeps: n === 1 })
     return out
   })
   // Drawing in, as Subscriptions does ("always": each time the tab shows

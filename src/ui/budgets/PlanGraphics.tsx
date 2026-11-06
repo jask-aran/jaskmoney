@@ -11,8 +11,8 @@ import type { Span } from "../primitives/spans"
  * The Budgets pane's pictures of the plan and the cycle: the payday tiles
  * (flat fills, as the calendar's days), each pay as one bar (where it
  * goes: the category budgets, the rest of the spending target, savers),
- * the cycle as a track from payday to payday, and a meter of what's gone
- * to savers against the plan. Pure builders, but for the tiles.
+ * the plan for savers as a meter, and the cycle as a track from payday to
+ * payday. Pure builders, but for the tiles.
  */
 
 /** Spending's colour here: the calendar's middle level (LEVEL_BG follows
@@ -41,22 +41,22 @@ function cellsOf(amounts: number[], width: number): number[] {
  * of the target in spending's, each solid for what's spent against it and
  * a dim shade of its colour for what's left (a category over its budget
  * takes the excess from the rest). Spending past the target is drawn in
- * bad, between the target and savers: it comes out of what savers get,
- * as the next top-up keeps that much more of the pay. Then savers, what's
- * left of the pay, in good. Past the pay too, the bar is the spending.
- * Under it two brackets: spending (over the target and any overspend:
- * what's spent of the target, and what's left) and savers; how far over
- * goes above the bar, over the red run; then the categories' legend, spent of budget. With no pay set,
- * there are no savers.
+ * bad, between the target and savers: it comes out of what savers get.
+ * Then savers, what's left of the pay, in good. With no pay set, there are
+ * no savers. Above the bar a tick where the target ends; under it, where
+ * spending would be by today at an even pace (`paceSpent`, if given); then
+ * the categories' legend, spent of budget. The figures are the ledger's
+ * beside it, so the bar has none of its own.
  */
-export function payBar(width: number, pay: number | null, target: number, categories: PayPart[], restSpent: number): Span[][] {
+export function payBar(width: number, pay: number | null, target: number, categories: PayPart[], restSpent: number, paceSpent: number | null = null): Span[][] {
   const allocated = categories.reduce((n, c) => n + c.amount, 0)
+  const cap = Math.max(target, allocated)
   const rest = Math.max(0, target - allocated)
   const spent = categories.reduce((n, c) => n + c.spent, 0) + restSpent
   const excess = categories.reduce((n, c) => n + Math.max(0, c.spent - c.amount), 0)
   const restFilled = Math.min(rest, restSpent + excess)
-  const over = Math.max(0, spent - Math.max(target, allocated))
-  const saved = pay != null ? Math.max(0, pay - Math.max(target, allocated) - over) : 0
+  const over = Math.max(0, spent - cap)
+  const saved = pay != null ? Math.max(0, pay - cap - over) : 0
   // Each part's spent and left, in that order, as runs of the bar.
   const runs: Array<{ amount: number; color: string; part: "target" | "over" | "savers" }> = [
     ...categories.flatMap((c) => [
@@ -68,52 +68,18 @@ export function payBar(width: number, pay: number | null, target: number, catego
     { amount: over, color: tone.bad, part: "over" },
     { amount: saved, color: tone.good, part: "savers" },
   ]
+  const total = runs.reduce((n, r) => n + Math.max(0, r.amount), 0)
   const cells = cellsOf(runs.map((r) => r.amount), width)
   const bar: Span[] = runs.flatMap((r, i): Span[] => (cells[i]! > 0 ? [{ text: "█".repeat(cells[i]!), fg: r.color }] : []))
-  const cellsIn = (part: string) => runs.reduce((n, r, i) => n + (r.part === part ? cells[i]! : 0), 0)
-  // A part's bracket: the first label that fits between its corners;
-  // else the first that fits bare, centred; else blank.
-  const width_ = (spans: Span[]) => spans.reduce((n, l) => n + l.text.length, 0)
-  const bracket = (cellsWide: number, labels: Span[][]): Span[] => {
-    if (cellsWide < 1) return []
-    const inside = labels.find((l) => width_(l) + 4 <= cellsWide)
-    if (inside) {
-      const room = cellsWide - 4 - width_(inside), left = Math.floor(room / 2)
-      return [{ text: `└${"─".repeat(left)} `, fg: ink.rule }, ...inside, { text: ` ${"─".repeat(room - left)}┘`, fg: ink.rule }]
-    }
-    const bare = labels.find((l) => width_(l) + 2 <= cellsWide)
-    if (!bare) return [{ text: " ".repeat(cellsWide), fg: ink.rule }]
-    const room = cellsWide - width_(bare), left = Math.floor(room / 2)
-    return [{ text: " ".repeat(left), fg: ink.rule }, ...bare, { text: " ".repeat(room - left), fg: ink.rule }]
-  }
-  const money = (text: string, fg: string = ink.figure): Span => ({ text, fg })
-  // Spending's bracket spans the target and any overspend: what's spent of
-  // the target and what's left, or how far over; savers have their own.
-  const of = [{ text: " of ", fg: ink.note }, money(formatWholeMoney(target))]
-  const slash = [{ text: "/", fg: ink.note }, money(formatWholeMoney(target))]
-  const dot: Span = { text: " · ", fg: ink.note }
-  const spendLabels: Span[][] = over > 0
-    // Over: how far goes above the bar, over its red run.
-    ? [[money(formatWholeMoney(spent)), ...of], [money(formatWholeMoney(spent)), ...slash], [money(formatWholeMoney(spent))]]
-    : [
-      [money(formatWholeMoney(spent)), ...of, dot, money(`${formatWholeMoney(target - spent)} left`)],
-      [money(formatWholeMoney(spent)), ...slash, dot, money(`${formatWholeMoney(target - spent)} left`)],
-      [money(formatWholeMoney(spent)), ...of],
-      [money(formatWholeMoney(spent)), ...slash],
-      [money(`${formatWholeMoney(target - spent)} left`)],
-      [money(formatWholeMoney(target - spent))],
-    ]
-  const brackets: Span[] = [
-    ...bracket(cellsIn("target") + cellsIn("over"), spendLabels),
-    ...bracket(cellsIn("savers"), [[{ text: "savers ", fg: ink.label }, money(formatWholeMoney(saved))], [money(formatWholeMoney(saved))]]),
-  ]
-  const out = [bar, brackets]
-  if (over > 0) {
-    // Above the bar, centred over the red run (kept inside the bar).
-    const text = `${formatWholeMoney(over)} over`
-    const mid = cellsIn("target") + cellsIn("over") / 2
-    const at = Math.max(0, Math.min(width - text.length, Math.round(mid - text.length / 2)))
-    out.unshift([{ text: " ".repeat(at), fg: ink.note }, { text, fg: tone.bad, bold: true }])
+  const targetCells = runs.reduce((n, r, i) => n + (r.part === "target" ? cells[i]! : 0), 0)
+  const out: Span[][] = []
+  // The target's end, marked over its last cell (none when the target is
+  // all the bar: nothing beyond it to tell apart).
+  if (targetCells > 0 && targetCells < width) out.push(marker(width, targetCells - 1, "▾", [{ text: "target", fg: ink.label }], ink.label))
+  out.push(bar)
+  if (paceSpent != null && total > 0) {
+    const at = Math.max(0, Math.min(width - 1, Math.round((paceSpent / total) * width) - 1))
+    out.push(marker(width, at, "▴", [{ text: "today ", fg: theme.chartToday }, { text: formatWholeMoney(paceSpent), fg: ink.figure }], theme.chartToday))
   }
   if (categories.length) {
     // Each part spent of its budget; onto a second line where they don't fit.
@@ -131,12 +97,58 @@ export function payBar(width: number, pay: number | null, target: number, catego
     ]
     let line: Span[] = []
     for (const it of items) {
-      if (line.length && width_(line) + 2 + width_(it) > width) { out.push(line); line = [] }
+      if (line.length && spansWidth(line) + 2 + spansWidth(it) > width) { out.push(line); line = [] }
       line = line.length ? [...line, { text: "  ", fg: ink.note }, ...it] : it
     }
     if (line.length) out.push(line)
   }
   return out
+}
+
+/**
+ * The plan for savers as a meter `width` wide, all of it the plan: what's
+ * gone to savers (good), what's still to send (a dim good) and what
+ * spending past the target has taken from it (bad). With some taken, a
+ * bracket under each part names it, so the red isn't read as spending.
+ */
+export function saversMeter(width: number, sent: number, toSend: number, short: number): Span[][] {
+  const runs = [
+    { amount: sent, color: tone.good, name: "sent" },
+    { amount: toSend, color: fade(tone.good, LEFT_FADE), name: "to send" },
+    { amount: short, color: tone.bad, name: "short" },
+  ]
+  const cells = cellsOf(runs.map((r) => r.amount), width)
+  const bar: Span[] = runs.flatMap((r, i): Span[] => (cells[i]! > 0 ? [{ text: "█".repeat(cells[i]!), fg: r.color }] : []))
+  if (spansWidth(bar) === 0) bar.push({ text: "─".repeat(width), fg: ink.rule })
+  if (short <= 0) return [bar]
+  return [bar, runs.flatMap((r, i) => bracket(cells[i]!, [[{ text: r.name, fg: r.name === "short" ? tone.bad : ink.label }]]))]
+}
+
+const spansWidth = (spans: Span[]) => spans.reduce((n, l) => n + l.text.length, 0)
+
+/** A mark at column `at` of a line `width` wide, its label after it, or
+ * before it where it would run off the end. */
+function marker(width: number, at: number, mark: string, label: Span[], fg: string): Span[] {
+  const w = spansWidth(label) + 2
+  const before = at + w > width
+  const from = before ? Math.max(0, at - w + 1) : at
+  const body: Span[] = before ? [...label, { text: " ", fg }, { text: mark, fg, bold: true }] : [{ text: mark, fg, bold: true }, { text: " ", fg }, ...label]
+  return [...(from ? [{ text: " ".repeat(from), fg: ink.note }] : []), ...body]
+}
+
+/** A bracket `cellsWide` wide: the first label that fits between its
+ * corners, else the first that fits bare, centred, else blank. */
+function bracket(cellsWide: number, labels: Span[][]): Span[] {
+  if (cellsWide < 1) return []
+  const inside = labels.find((l) => spansWidth(l) + 4 <= cellsWide)
+  if (inside) {
+    const room = cellsWide - 4 - spansWidth(inside), left = Math.floor(room / 2)
+    return [{ text: `└${"─".repeat(left)} `, fg: ink.rule }, ...inside, { text: ` ${"─".repeat(room - left)}┘`, fg: ink.rule }]
+  }
+  const bare = labels.find((l) => spansWidth(l) + 2 <= cellsWide)
+  if (!bare) return [{ text: " ".repeat(cellsWide), fg: ink.rule }]
+  const room = cellsWide - spansWidth(bare), left = Math.floor(room / 2)
+  return [{ text: " ".repeat(left), fg: ink.rule }, ...bare, { text: " ".repeat(room - left), fg: ink.rule }]
 }
 
 /** How much a part's colour fades for what's left of it. */
@@ -162,9 +174,9 @@ function placed(width: number, items: Array<{ at: number; spans: Span[] }>): Spa
  * The cycle as a track `width` wide, from its payday (●) to the next (○):
  * the days gone solid, today marked in today's colour, the days to come
  * dotted, and each send to savers on its day. Above it the two paydays'
- * dates and today; under it what came in and what's gone to savers.
+ * dates and today.
  */
-export function cycleTrack(width: number, start: string, next: string, today: string, pay: { dateISO: string | null; pay: number; sent: number; sends: Array<{ dateISO: string }> }, sentColor: string): Span[][] {
+export function cycleTrack(width: number, start: string, next: string, today: string, pay: { sends: Array<{ dateISO: string }> }, sentColor: string): Span[][] {
   const days = Math.max(1, daysBetween(start, next))
   const col = (date: string) => Math.max(0, Math.min(width - 1, Math.round((daysBetween(start, date) / days) * (width - 1))))
   const now = today >= start && today < next ? col(today) : today >= next ? width : -1
@@ -187,24 +199,7 @@ export function cycleTrack(width: number, start: string, next: string, today: st
     ...(now >= 0 && now < width ? [{ at: now - 2, spans: [{ text: "today", fg: theme.chartToday }] }] : []),
     { at: width - nextLabel.length, spans: [{ text: nextLabel, fg: ink.label }] },
   ])
-  const firstSend = pay.sends[0]
-  const figures = placed(width, [
-    ...(pay.pay > 0 ? [{ at: 0, spans: [{ text: "↓ ", fg: ink.note }, { text: formatWholeMoney(pay.pay), fg: ink.figure }, { text: " in", fg: ink.note }] }] : []),
-    ...(firstSend ? [{ at: col(firstSend.dateISO), spans: [{ text: "◆ ", fg: sentColor }, { text: formatWholeMoney(pay.sent), fg: sentColor }, { text: " to savers", fg: ink.note }] }] : []),
-  ])
-  return [labels, track, figures]
-}
-
-/** What's gone to savers against the plan, `width` wide: filled in good
- * once it's all gone, else caution; the rest a rule. */
-export function sentMeter(width: number, sent: number, planned: number): Span[] {
-  const share = planned > 0 ? Math.max(0, Math.min(1, sent / planned)) : 0
-  const filled = Math.round(share * width)
-  const met = sent >= planned - 1
-  return [
-    ...(filled ? [{ text: "█".repeat(filled), fg: met ? tone.good : tone.caution }] : []),
-    ...(width - filled ? [{ text: "─".repeat(width - filled), fg: ink.rule }] : []),
-  ]
+  return [labels, track]
 }
 
 /** Digits drawn in light, rounded box-drawing lines, three cells wide
