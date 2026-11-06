@@ -200,10 +200,10 @@ const LEFT_FADE = 0.65
  * The cycle as a track `width` wide, from its payday (●) to the next (○):
  * the days gone solid, today marked in today's colour, the days to come
  * dotted, and each send to savers on its day. Above it the two paydays'
- * dates, today and each send's; under it what came in and what's gone to
- * savers.
+ * dates, today and each send's; under it what came in, what's gone to
+ * savers and what's been spent (under today, where there's room).
  */
-export function cycleTrack(width: number, start: string, next: string, today: string, pay: { pay: number; sent: number; sends: Array<{ dateISO: string }> }, sentColor: string): Span[][] {
+export function cycleTrack(width: number, start: string, next: string, today: string, pay: { pay: number; sent: number; spent: number; sends: Array<{ dateISO: string }> }, sentColor: string): Span[][] {
   const days = Math.max(1, daysBetween(start, next))
   const col = (date: string) => Math.max(0, Math.min(width - 1, Math.round((daysBetween(start, date) / days) * (width - 1))))
   const now = today >= start && today < next ? col(today) : today >= next ? width : -1
@@ -229,14 +229,23 @@ export function cycleTrack(width: number, start: string, next: string, today: st
     ...(now >= 0 && now < width ? [{ mid: now + 0.5, options: [[{ text: "today", fg: theme.chartToday }]] }] : []),
     ...pay.sends.map((s) => ({ mid: col(s.dateISO) + 0.5, options: [[{ text: shortDate(s.dateISO), fg: ink.note }], [{ text: String(Number(s.dateISO.slice(8, 10))), fg: ink.note }]] })),
   ])
-  // Under it what came in, and what's gone to savers from the first send.
+  // Under it what came in, what's gone to savers from the first send, and
+  // what's been spent, centred under today but clear of the others.
   const firstSend = pay.sends[0]
+  const inText = pay.pay > 0 ? `↓ ${formatWholeMoney(pay.pay)} in` : ""
+  const sentAt = firstSend ? Math.max(col(firstSend.dateISO), inText ? inText.length + 2 : 0) : 0
+  const sentText = firstSend ? `◆ ${formatWholeMoney(pay.sent)} savers` : ""
+  const spentText = `${formatWholeMoney(pay.spent)} spent`
+  const after = sentText ? sentAt + sentText.length + 2 : inText ? inText.length + 2 : 0
   const figures = labelled(width, [
-    ...(pay.pay > 0 ? [{ at: 0, options: [[{ text: "↓ ", fg: ink.note }, { text: formatWholeMoney(pay.pay), fg: ink.figure }, { text: " in", fg: ink.note }]] }] : []),
+    ...(inText ? [{ at: 0, options: [[{ text: "↓ ", fg: ink.note }, { text: formatWholeMoney(pay.pay), fg: ink.figure }, { text: " in", fg: ink.note }]] }] : []),
     // From its send's column, or just past what came in.
-    ...(firstSend ? [{ at: Math.max(col(firstSend.dateISO), pay.pay > 0 ? `↓ ${formatWholeMoney(pay.pay)} in`.length + 2 : 0), options: [
-      [{ text: "◆ ", fg: sentColor }, { text: formatWholeMoney(pay.sent), fg: sentColor }, { text: " to savers", fg: ink.note }],
+    ...(firstSend ? [{ at: sentAt, options: [
+      [{ text: "◆ ", fg: sentColor }, { text: formatWholeMoney(pay.sent), fg: sentColor }, { text: " savers", fg: ink.note }],
       [{ text: "◆ ", fg: sentColor }, { text: formatWholeMoney(pay.sent), fg: sentColor }],
+    ] }] : []),
+    ...(pay.spent > 0 ? [{ at: Math.max(after, Math.round((now >= 0 ? Math.min(now, width - 1) : width - 1) + 0.5 - spentText.length / 2)), options: [
+      [{ text: formatWholeMoney(pay.spent), fg: ink.figure }, { text: " spent", fg: ink.note }],
     ] }] : []),
   ])
   return [labels, track, figures]

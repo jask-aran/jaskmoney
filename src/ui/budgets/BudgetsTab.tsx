@@ -356,8 +356,8 @@ export function BudgetsTab(props: { focused: SectionId }) {
       else if (plan != null && plan < 0) out.push({ spans: note(`The target is ${formatWholeMoney(-plan)} more than your pay`, tone.caution, "") })
     }
     if (!p.pay && view().current) out.push({ spans: note("no pay found yet (the Salary category)", ink.note, "") })
-    out.push({ spans: blank, stays: true }, { spans: heading("This cycle"), stays: true })
-    for (const [n, spans] of cycleTrack(width, cycle().start, addDays(cycle().end, 1), today(), p, plan != null && plan > 0 ? tone.good : ink.figure).entries()) out.push({ spans, sweeps: n === 1 })
+    out.push({ spans: blank, stays: true })
+    for (const [n, spans] of cycleTrack(width, cycle().start, addDays(cycle().end, 1), today(), { ...p, spent }, plan != null && plan > 0 ? tone.good : ink.figure).entries()) out.push({ spans, sweeps: n === 1 })
     return out
   })
   // The next pay, under the calendar (this cycle only): when, and your usual
@@ -402,11 +402,11 @@ export function BudgetsTab(props: { focused: SectionId }) {
   // compact: two lines a weekday (15 rows) where the pane has room for it
   // and a few table rows, else one (8), else none.
   const calendarRows = () => {
-    const room = categoriesHeight() - 4 - topLines().length - nextPayBlock() - 3 - Math.min(setup().length, BUDGETS_ROWS_MIN)
+    const room = categoriesHeight() - 4 - topLines().length - nextPayBlock() - 2 - Math.min(setup().length, BUDGETS_ROWS_MIN)
     return room >= CALENDAR_TALL ? CALENDAR_TALL : room >= CALENDAR_MIN ? CALENDAR_MIN : 0
   }
-  // Its heading, the days, its legend and a blank line.
-  const calendarBlock = () => (calendarRows() ? calendarRows() + 3 : 0)
+  // The days, its legend and a blank line.
+  const calendarBlock = () => (calendarRows() ? calendarRows() + 2 : 0)
   const categoryRoom = () => Math.max(1, categoriesHeight() - 4 - topLines().length - calendarBlock() - nextPayBlock())
   const categoryLines = setup
   const categoryTop = createMemo(() => centredTop(categoryCursor(), categoryLines().length, categoryRoom()))
@@ -456,7 +456,6 @@ export function BudgetsTab(props: { focused: SectionId }) {
       )}</Index>
       <text wrapMode="none">{" "}</text>
       <Show when={calendarRows()}>
-        <text wrapMode="none" flexShrink={0}><S>{" "}</S><S fg={ink.heading} bold>{"Spending calendar"}</S></text>
         <box paddingLeft={1} height={calendarRows()} flexShrink={0}>
           <CalendarView weeks={calendarWeeks()} width={rowWidth(categoriesWidth())} rows={calendarRows()} today={today()} through={calendarThrough()} markColor={tone.good} />
         </box>

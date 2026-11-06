@@ -169,8 +169,10 @@ test("the cycle's calendar is always there: the budget's days so far, and its re
   data.refresh()
   await data.setBudget({ kind: "overall" }, 500)
   const f = await frame()
-  // In the Budgets pane, between This cycle and the table.
-  expect(f).toMatch(/This cycle[\s\S]*Spending calendar[\s\S]*Categories/)
+  // In the Budgets pane, between the cycle's track and the table, with
+  // no heading (it's plainly a calendar).
+  expect(f).toMatch(/○[\s\S]*Mon[\s\S]*Sun[\s\S]*Categories/)
+  expect(f).not.toMatch(/│\s+Spending calendar/)
   // STREAMER's next charge (and the fixture's Shop, regular enough to
   // count) on days to come: their amounts, the days in caution, and the
   // legend's total.
@@ -306,7 +308,7 @@ test("the plan: your pay and your spending target give what goes to savers; each
   // in and the send under it.
   expect(f).toMatch(/1 Oct\s+today\s+1 Nov/)
   expect(f).toMatch(/●[━◆┿]+┄+○/)
-  expect(f).toMatch(/↓ \$5,200 in\s+◆ \$2,500 to savers/)
+  expect(f).toMatch(/↓ \$5,200 in\s+◆ \$2,500 savers\s+\$300 spent/)
   // No plan, no meter and no judgment.
   expect(f).not.toContain("to send")
   expect(f).not.toContain("✓")
@@ -324,7 +326,7 @@ test("the plan: your pay and your spending target give what goes to savers; each
   // The next pay: when, and your usual pay.
   expect(f).toMatch(/Next pay\s+Sun 1 Nov\s+\$5,000 │/)
   // It's under the calendar: the top is this period's own.
-  expect(f).toMatch(/Spent this period[\s\S]*Spending calendar[\s\S]*Next pay[\s\S]*Days till pay\s+12 │[\s\S]*Categories/)
+  expect(f).toMatch(/Spent this period[\s\S]*less ■[\s\S]*Next pay[\s\S]*Days till pay\s+12 │[\s\S]*Categories/)
   // No Up pay-splitting hint: the API can't see the split, so it's not the app's to say.
   expect(f).not.toContain("pay splitting")
   // The pay as a bar filling as you spend, each part's figure over it:
