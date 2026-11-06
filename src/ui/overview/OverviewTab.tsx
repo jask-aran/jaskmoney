@@ -37,8 +37,9 @@ import { chartSpeedMs, showings, takeLaunchReveal, useReveal, type ChartLabelMod
 import { balancesChart, cashFlowChart, spendingChart, type PeriodNames } from "./periodCharts"
 import { UP_LOGO_WIDTH } from "../primitives/UpLogo"
 import { CalendarView, calendarLegend } from "./CalendarView"
-import { cycleTrack } from "../budgets/PlanGraphics"
-import { rangeBar } from "./RangeGraphics"
+import { cycleTrack, planOpening } from "../budgets/PlanGraphics"
+import { inBar, netBar, spendBar } from "./RangeGraphics"
+import { leadingEmoji, saverInks } from "../charts/saverInks"
 import { cyclePay } from "../../domain/payday"
 import { computeCategorySpend, groupCategorySpend } from "../../domain/dashboard"
 
@@ -394,11 +395,27 @@ export function OverviewTab(props: { focused: SectionId }) {
     const f = flows(), b = previousFlows()
     const lines: Span[][] = []
     // The track: what came in and what went to savers are the range's
-    // flows (as Totals counts them), so the bar and the figures agree.
-    lines.push(...cycleTrack(width, bounds().start, addDays(bounds().end, 1), today(), { ...pay, pay: f.income, sent: f.savedToSavers, spent: f.spent }, tone.good, bounds().end))
+    // flows (as Totals counts them). What's spent is the bar's, under it.
+    lines.push(...cycleTrack(width, bounds().start, addDays(bounds().end, 1), today(), { ...pay, pay: f.income, sent: f.savedToSavers, spent: 0 }, tone.good, bounds().end))
     lines.push([])
-    const bar = rangeBar(width, f.income, groups().map((g) => ({ amount: g.amount, color: g.color })), f.savedToSavers, f.net, covered() && b.spent > 0 ? b.spent : null)
-    lines.push(bar.above, bar.bar, bar.below, [])
+    // What came in: spent, then the net; the net opened out under it to
+    // where it went, each saver in its colour (the Savers chart's) and
+    // what stayed in Spending.
+    const bar = inBar(width, f.income, f.spent)
+    lines.push(bar.above, bar.bar)
+    if (f.net >= 0.5 && bar.netFrom > 0) {
+      const savers = [...position().savers].sort((x, y) => y.balance - x.balance)
+      const colors = saverInks(savers.map((s) => s.name))
+      // Named without their emoji: the colour is theirs, and an emoji's
+      // width would put the labels out.
+      const parts = savers.map((s, i) => ({
+        name: (leadingEmoji(s.name) ? s.name.trim().replace(/^\p{Extended_Pictographic}[\u{FE0E}\u{FE0F}]?\s*/u, "") : s.name).trim(),
+        color: colors[i]!, change: f.saverChanges.find((c) => c.accountId === s.accountId)?.change ?? 0,
+      }))
+      const net = netBar(width, f.net, parts)
+      lines.push(planOpening(width, bar.netFrom, [{ text: formatPct(f.savingsRate), fg: ink.figure, bold: true }, { text: " saved", fg: ink.note }]), net.bar, net.labels)
+    }
+    lines.push([])
     // The ratios: label, before (a note) and the figure at the row's end.
     const ratio = (label: string, value: string, was: string | null, aside?: string): Span[] => {
       const note = aside ?? (covered() && was != null ? `before ${was}` : "")
@@ -406,7 +423,6 @@ export function OverviewTab(props: { focused: SectionId }) {
       return [{ text: label, fg: ink.label }, { text: " ".repeat(gap) + note, fg: ink.note }, { text: value.padStart(Math.max(VALUE - 2, value.length)), fg: ink.strong, bold: true }]
     }
     lines.push(
-      ratio("Savings rate", formatPct(f.savingsRate), formatPct(b.savingsRate)),
       ratio("Daily average", daily(f.spent), daily(b.spent)),
       ratio("Transactions", String(f.txnCount), String(b.txnCount)),
       // How long the net position lasts at the range's daily average.
@@ -418,6 +434,10 @@ export function OverviewTab(props: { focused: SectionId }) {
     // The categories' heading, its columns over theirs.
     const cols = `${"Spent".padStart(9)}${"%".padStart(5)}${"Before".padStart(BEFORE)}`
     lines.push([{ text: "Categories".padEnd(Math.max(10, width - 1 - cols.length)), fg: ink.heading, bold: true }, { text: cols, fg: ink.label }])
+    // Over the categories, their spending as a bar in their colours,
+    // against before's.
+    const spending = spendBar(width, groups().map((g) => ({ amount: g.amount, color: g.color })), covered() && b.spent > 0 ? b.spent : null)
+    lines.push(spending.bar, spending.below)
     return lines.map((l) => (l.length ? l : [{ text: " ", fg: ink.note }]))
   })
   const rangeTop = () => rangeLines().length

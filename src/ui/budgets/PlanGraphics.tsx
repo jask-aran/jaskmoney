@@ -35,7 +35,7 @@ export function cellsOf(amounts: number[], width: number): number[] {
 /** Hatching: what's gone past where it should, drawn as diagonal lines
  * in `fg` over a dim shade of `base`. */
 const HATCH = "╱"
-const hatched = (cells: number, fg: string, base: string): Span => ({ text: HATCH.repeat(cells), fg, bg: fade(base, 0.7) })
+export const hatched = (cells: number, fg: string, base: string): Span => ({ text: HATCH.repeat(cells), fg, bg: fade(base, 0.7) })
 
 /**
  * Each pay as one bar `width` wide, filling as the cycle's spending comes
@@ -119,9 +119,10 @@ export function payBar(width: number, pay: number | null, target: number, catego
  * under where savers start, running back to the left edge, the right edge
  * straight down, and the plan between.
  */
-export function planOpening(width: number, from: number, plan: number): Span[] {
+export function planOpening(width: number, from: number, plan: number | Span[]): Span[] {
   if (from <= 0 || from >= width - 1) return [{ text: " ", fg: ink.note }]
-  const label: Span[] = [{ text: "savers plan ", fg: ink.note }, { text: formatWholeMoney(plan), fg: ink.figure, bold: true }]
+  // The savers plan; or, given spans (the Range pane's), those.
+  const label: Span[] = typeof plan === "number" ? [{ text: "savers plan ", fg: ink.note }, { text: formatWholeMoney(plan), fg: ink.figure, bold: true }] : plan
   const room = width - 1 - (from + 1)
   const fits = spansWidth(label) + 2 <= room
   const pad = fits ? room - spansWidth(label) : room

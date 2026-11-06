@@ -6,6 +6,7 @@ import { ui } from "../../state/uiStore"
 import { renderApp } from "../../testing/app"
 import { account, category, transaction } from "../../testing/fixtures"
 import { tone } from "../../theme"
+import { INKS } from "../charts/inks"
 
 afterEach(() => setAppClock(null))
 
@@ -37,39 +38,43 @@ const pay = (dateISO: string, amount: number) => row(dateISO, amount, { category
 const send = (dateISO: string, amount: number) => row(dateISO, -amount, { transferAccountId: 2, internal: true, excluded: true, description: "Transfer to Rainy day" })
 const spend = (dateISO: string, amount: number, categoryId: number, categoryName: string) => row(dateISO, -amount, { categoryId, categoryName, description: categoryName.toUpperCase() })
 
-test("the Range pane: the range as a track, what came in as a bar against before, the ratios and the categories with Before; t switches to Totals and Categories and back", async () => {
+test("the Range pane: the range as a track, what came in as a bar (spent, net), the net opened out to where it went, the ratios, and the categories under their bar against before; t switches to Totals and Categories and back", async () => {
   // 1M on 20 Oct: 20 Sep to 20 Oct; before it, the month before.
   const { t, frame } = await overview([
     spend("2026-08-01", 5, 10, "Groceries"),
     spend("2026-09-01", 400, 10, "Groceries"), spend("2026-09-02", 200, 11, "Fuel"),
-    pay("2026-10-01", 5000), send("2026-10-02", 1000),
+    pay("2026-10-01", 5000), send("2026-10-02", 1000), transaction({ id: ++id, accountId: 2, dateISO: "2026-10-02", amount: 1000, transferAccountId: 1, internal: true, excluded: true, description: "Transfer from Spending" }),
     spend("2026-10-05", 300, 10, "Groceries"), spend("2026-10-06", 100, 11, "Fuel"),
   ], "1M")
   let f = await frame()
   const text = f.join("\n")
   expect(text).toContain("╭─ Range")
   expect(text).not.toContain("Totals")
-  // The track: the ends, today; what came in, went to savers, was spent.
-  // Ending today, the range's end is its own label.
-  expect(text).toMatch(/20 Sep\s+2 Oct\s+20 Oct/)
-  expect(text).toMatch(/●[━◆●┿]+/)
-  expect(text).toMatch(/↓ \$5,000 in\s+◆ \$1,000 savers\s+\$400 spent/)
-  const spentRow = f.findIndex((l) => /\$400 spent/.test(l) && l.includes("↓"))
-  const bad = RGBA.fromHex(tone.bad).toInts().join()
-  expect(t.captureSpans().lines[spentRow]!.spans.some((s) => s.text === "$400" && s.fg.toInts().join() === bad)).toBe(true)
-  // The bar: spent and the net over it, before's tick on it and under it.
-  expect(text).toMatch(/\$400 spent\s+\+\$4,600 net/)
-  expect(text).toContain("┃")
-  expect(text).toMatch(/▲ before \$600|before \$600 ▲/)
-  // The ratios, before beside each.
-  expect(text).toMatch(/Savings rate\s+before\s+\S+\s+\S+/)
+  // The track: the ends, today; what came in and went to savers over it
+  // (what's spent is the bar's). Ending today, the end is its own label.
+  expect(text).toMatch(/↓ \$5,000 in\s+◆ \$1,000 savers\s*│[\s\S]*●[━◆●┿┄]+○[\s\S]*20 Sep\s+2 Oct\s+20 Oct/)
+  // What came in: spent in spending's colour, the net in good, each
+  // figure over its part.
+  const barAt = f.findIndex((l) => /\$400 spent\s+\+\$4,600 net/.test(l)) + 1
+  expect(barAt).toBeGreaterThan(0)
+  const colorsOf = (row: number) => t.captureSpans().lines[row]!.spans.filter((s) => s.text.includes("█")).map((s) => s.fg.toInts().join())
+  expect(colorsOf(barAt)[0]).toBe(RGBA.fromHex(INKS.spend!).toInts().join())
+  expect(colorsOf(barAt).at(-1)).toBe(RGBA.fromHex(tone.good).toInts().join())
+  // Its net end opened out under it, the savings rate in the opening; then
+  // where the net went: Rainy day's $1,000, and $3,600 kept in Spending.
+  expect(f[barAt + 1]).toMatch(/╭─+╯\s+92\.0% saved\s+│/)
+  expect(f[barAt + 3]).toMatch(/\$1,000 Rainy day\s+\$3,600 kept/)
+  // No Savings rate row: the opening says it.
+  expect(text).not.toContain("Savings rate")
   expect(text).toMatch(/Daily average\s+before \$\d+\s+\$\d+/)
   expect(text).toMatch(/Transactions\s+before 2\s+\d+/)
   // Runway: the net position ($10,500) at the range's daily average
   // ($400 over 31 days, $13).
   expect(text).toMatch(/Runway\s+at \$13\/day\s+814 days/)
-  // The categories: a heading over the columns, each group's change on before.
-  expect(text).toMatch(/Categories\s+Spent\s+%\s+Before/)
+  // The categories: a heading over the columns, their spending as a bar
+  // under it with before's tick (before was more: the bar stops short,
+  // dotted to the tick), each group's change on before.
+  expect(text).toMatch(/Categories\s+Spent\s+%\s+Before[^\n]*\n[^\n]*█+┄+┃[^\n]*\n[^\n]*before \$600 ▲/)
   expect(text).toMatch(/Groceries\s+\$300\s+75%\s+-\$100/)
   expect(text).toMatch(/Fuel\s+\$100\s+25%\s+-\$100/)
   // t: Totals and Categories, saved; again, back.
@@ -100,7 +105,7 @@ test("the Range pane over a year: a fortnight's paydays and sends would crowd th
   expect(track.match(/[●◆]/g)).toEqual(["●"])
   // Its ends' years; the figures (short of their words where they'd crowd).
   expect(text).toMatch(/20 Oct 2025\s+20 Oct 2026/)
-  expect(text).toMatch(/↓ \$52,000 in\s+◆ \$13,000( savers)?\s+\$26,000 spent/)
+  expect(text).toMatch(/↓ \$52,000 in\s+◆ \$13,000 savers/)
   expect(text).toMatch(/\$26,000 spent\s+\+\$26,000 net/)
   t.renderer.destroy()
 })
