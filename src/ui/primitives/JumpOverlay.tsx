@@ -9,7 +9,7 @@ export function JumpOverlay(props: { active: boolean; tab: TabId }) {
   return (
     <Show when={props.active}>
       <Modal title="Jump" width={40} hints="press a key to focus · esc cancel">
-        <For each={jumpTargets({ activeTab: props.tab, overviewCharts: ui.state.overviewCharts, budgetCyclePanes: ui.state.budgetCyclePanes })}>
+        <For each={jumpTargets({ activeTab: props.tab, overviewCharts: ui.state.overviewCharts, budgetCyclePanes: ui.state.budgetCyclePanes, chartViews: ui.state.chartViews })}>
           {(t) => (
             <text wrapMode="none">
               <S fg={theme.rowCursorText} bg={tone.key} bold>{`[${t.key}]`}</S>

@@ -650,11 +650,13 @@ export function OverviewTab(props: { focused: SectionId }) {
   const NarrowColumn = () => {
     let column: ScrollBoxRenderable | undefined
     // Only a short terminal scrolls: the Range pane's categories (its
-    // last rows, the column's) into view when it has focus, else back to
-    // the top (the chart).
+    // last rows, the column's) into view when it has focus, Accounts' rows
+    // when it has, else back to the top (the chart).
     const followFocus = () => {
       if (!shown()) return
       if (categoriesFocused()) column?.scrollTo(column.scrollHeight)
+      // Accounts: its rows, at the cards' top.
+      else if (props.focused === "ov.accounts") column?.scrollChildIntoView("overview-narrow-cards")
       else column?.scrollTo(0)
     }
     createEffect(followFocus)

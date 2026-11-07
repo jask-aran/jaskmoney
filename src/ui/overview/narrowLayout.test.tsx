@@ -2,7 +2,7 @@ import { afterEach, expect, test } from "bun:test"
 import { BoxRenderable, RGBA, type BaseRenderable, TextAttributes } from "@opentui/core"
 import { setAppClock } from "../../domain/days"
 import { data } from "../../state/dataStore"
-import { ui } from "../../state/uiStore"
+import { jumpTargets, ui } from "../../state/uiStore"
 import { renderApp } from "../../testing/app"
 import { account, category, transaction } from "../../testing/fixtures"
 import { theme, tone } from "../../theme"
@@ -72,7 +72,7 @@ for (const text of [false, true]) for (const [width, height, wide] of [[80, 30, 
     // the bottom chart and the Range pane; narrow: Accounts and the Range pane).
     const left = all[wide ? 2 : all.length - 2]!, categories = all.at(-1)!
     expect(left.y + left.height).toBe(categories.y + categories.height)
-    const jumps = [["t", "Cumulative spending", "ov.chart", 1], ...(wide ? [["b", "╭─ Net position", "ov.chart2", 2] as const] : []), ["c", "╭─ Range", "ov.categories", all.length - 1], ["d", "Date Range", "ov.range", 0]] as const
+    const jumps = [["t", "Cumulative spending", "ov.chart", 1], ...(wide ? [["b", "╭─ Net position", "ov.chart2", 2] as const] : []), ["a", "╭─ Accounts", "ov.accounts", all.length - 2], ["r", "╭─ Range", "ov.categories", all.length - 1], ["d", "Date Range", "ov.range", 0]] as const
     for (const [jump, title, section, index] of jumps) {
       t.mockInput.pressKey("v")
       t.mockInput.pressKey(jump)
@@ -91,7 +91,7 @@ for (const text of [false, true]) for (const [width, height, wide] of [[80, 30, 
       expect(heading.fg.toInts()).toEqual(RGBA.fromHex(tone.focus).toInts())
       expect(heading.bg.toInts()).toEqual(RGBA.fromHex(theme.canvas).toInts())
       expect(heading.attributes & TextAttributes.BOLD).toBe(TextAttributes.BOLD)
-      if (jump === "c") {
+      if (jump === "r") {
         t.mockInput.pressKey("j")
         await settle()
         expect(ui.state.overviewCategoryCursor).toBe(1)
@@ -315,6 +315,12 @@ test("full screen (178 wide and up): the charts in a 2×2 grid, each pane its ow
   expect(topRight!.height).toBe(topLeft!.height)
   const frame = t.captureCharFrame()
   for (const title of ["Cumulative spending", "Net position", "Spending calendar", "Merchants"]) expect(frame).toContain(title)
+  // Jump reaches every pane: the four charts named by where they are and
+  // what they show, Accounts, the Range pane and the Date Range.
+  expect(jumpTargets(ui.state).map((j) => `${j.key} ${j.label}`)).toEqual([
+    "d Date Range", "t Top left chart · Cumulative spending", "b Bottom left chart · Net position",
+    "y Top right chart · Spending calendar", "n Bottom right chart · Merchants", "a Accounts", "r Range",
+  ])
   // y and n jump to the right-hand panes; h/l step the focused pane's view.
   t.mockInput.pressKey("v"); t.mockInput.pressKey("n")
   await t.renderOnce()

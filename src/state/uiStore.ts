@@ -372,9 +372,20 @@ export const BUDGET_PANES: readonly SectionId[] = ["bud.chart", "bud.cycle", "bu
 
 /** The tab's jump targets that are on screen: only the chart panes the
  * Overview or the Budgets tab shows. */
-export function jumpTargets(state: Pick<UiState, "activeTab" | "overviewCharts"> & Partial<Pick<UiState, "budgetCyclePanes">>): JumpTarget[] {
+export function jumpTargets(state: Pick<UiState, "activeTab" | "overviewCharts"> & Partial<Pick<UiState, "budgetCyclePanes" | "chartViews">>): JumpTarget[] {
   const targets = JUMP_TARGETS[state.activeTab]
-  if (state.activeTab === "overview") return targets.filter((t) => chartPaneOf(t.section) < state.overviewCharts)
+  if (state.activeTab === "overview") {
+    // Each chart on screen by where it is in this layout (one, two stacked,
+    // or the 2×2 grid) and the view it shows.
+    const n = state.overviewCharts
+    const places = n === 1 ? ["Chart"] : n === 2 ? ["Top chart", "Bottom chart"] : ["Top left chart", "Bottom left chart", "Top right chart", "Bottom right chart"]
+    return targets.filter((t) => chartPaneOf(t.section) < n).map((t) => {
+      const pane = chartPaneOf(t.section)
+      if (pane < 0) return t
+      const view = state.chartViews ? CHART_VIEWS[state.chartViews[pane] ?? 0]?.title : undefined
+      return { ...t, label: view ? `${places[pane]} · ${view}` : places[pane]! }
+    })
+  }
   // A cycle pane is the 2nd or 3rd of BUDGET_PANES: on screen while its
   // number is within budgetCyclePanes.
   if (state.activeTab === "budgets") return targets.filter((t) => !(t.section === "bud.cycle" || t.section === "bud.cycle2") || BUDGET_PANES.indexOf(t.section) <= (state.budgetCyclePanes ?? 1))
@@ -388,7 +399,8 @@ export const JUMP_TARGETS: Record<TabId, JumpTarget[]> = {
     { key: "b", section: "ov.chart2", label: "Bottom chart" },
     { key: "y", section: "ov.chart3", label: "Top right chart" },
     { key: "n", section: "ov.chart4", label: "Bottom right chart" },
-    { key: "c", section: "ov.categories", label: "Categories" },
+    { key: "a", section: "ov.accounts", label: "Accounts" },
+    { key: "r", section: "ov.categories", label: "Range" },
   ],
   manager: [
     { key: "a", section: "mgr.accounts", label: "Accounts" },
