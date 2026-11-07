@@ -192,13 +192,17 @@ test("a click on any column of a Date Range chip chooses that chip: each chip is
       // Each chip is " label ": its first column is the space before. Read
       // from what's drawn now: a chosen range changes the text beside the
       // chips, and with it their spacing.
-      const labels = ["1M", "2M", "3M", "6M", "1Y", "Cycle", "Month", "QTR", "Half", "FY", "Year", "Custom"]
+      // Each label, full or (where the chips tighten) short.
+      const labels = [["1M"], ["2M"], ["3M"], ["6M"], ["1Y"], ["Budget", "Bud"], ["Month", "Mth"], ["QTR"], ["Half"], ["FY"], ["Year", "Yr"], ["Custom"]]
       expect(labels.length).toBe(CUSTOM_CHIP + 1)
       const chipAt = (index: number) => {
         const row = t.captureCharFrame().split("\n")[y]!
-        let at = -1
-        for (const label of labels.slice(0, index + 1)) at = row.indexOf(label, at + 1)
-        return { first: at - 1, last: at + labels[index]!.length }
+        let at = -1, shown = ""
+        for (const forms of labels.slice(0, index + 1)) {
+          shown = forms.find((f) => row.indexOf(` ${f} `, at + 1) >= 0)!
+          at = row.indexOf(` ${shown} `, at + 1) + 1
+        }
+        return { first: at - 1, last: at + shown.length }
       }
       for (const index of labels.keys()) {
         for (const end of ["first", "last"] as const) {

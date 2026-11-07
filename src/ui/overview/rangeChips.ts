@@ -16,7 +16,7 @@ export interface ChipLayout { gap: string; separator: string; label: (period: Pe
  * code's own names for them (TimeframeState's family). */
 export const GROUP_NAMES = { lookback: "Lookback", period: "Period" } as const
 
-const SHORT: Partial<Record<PeriodId, string>> = { cycle: "Cyc", month: "Mth", year: "Yr" }
+const SHORT: Partial<Record<PeriodId, string>> = { cycle: "Bud", month: "Mth", year: "Yr" }
 
 const TIERS = [
   { gap: " ", separator: " │ ", label: (p: PeriodId) => PERIOD_LABEL[p], groups: true },

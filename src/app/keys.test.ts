@@ -330,7 +330,7 @@ describe("key router", () => {
     data.clearFilter()
   })
 
-  test("0 returns to now for the range's kind; c to this cycle", () => {
+  test("0 returns to now for the range's kind; b to this budget cycle; c does nothing", () => {
     ui.setState({ focusedSection: "none" })
     const now = new Date()
     ui.setTimeframe(applyChip(ui.state.timeframe, LOOKBACKS.length + PERIODS.indexOf("month"), now))
@@ -340,6 +340,8 @@ describe("key router", () => {
     handleKey(ui, key("0"), data)
     expect(ui.state.timeframe).toMatchObject({ family: "period", period: "month", periodAnchor: thisMonth })
     handleKey(ui, key("c"), data)
+    expect(ui.state.timeframe).toMatchObject({ family: "period", period: "month" })
+    handleKey(ui, key("b"), data)
     expect(ui.state.timeframe).toMatchObject({ family: "period", period: "cycle" })
   })
 

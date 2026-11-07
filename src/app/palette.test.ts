@@ -63,7 +63,7 @@ test("the footer: the pane's name, its keys, a rule, the tab's, as many as the w
   // Transactions' keys and the rest are the palette's from the Overview:
   // reachable, not suggested.
   const overview = footerHints("overview", { ...state, focusedSection: "none" })
-  for (const k of ["i", "/", "?", "c"]) expect(overview.find((h) => h.key === k)?.paletteOnly).toBe(true)
+  for (const k of ["i", "/", "?", "C"]) expect(overview.find((h) => h.key === k)?.paletteOnly).toBe(true)
   expect(footerLine("overview", { ...state, focusedSection: "none" }).hints.map((h) => h.key)).not.toContain("i")
   // Nothing focused: no name, the tab's keys alone.
   expect(footerLine("overview", { ...state, focusedSection: "none" }).pane).toBeNull()
@@ -93,7 +93,7 @@ test("commands go beyond keys: from anywhere, per saved filter and account; keys
   expect(rules.find((c) => c.id === "rules:apply")).toMatchObject({ key: "S-a", category: "Settings › Rules" })
   expect(rules.some((c) => c.id.startsWith("key:manager.txns"))).toBe(false)
   // Overview's own key with its own words.
-  expect(listFrom("overview").find((c) => c.id === "key:overview:c")?.key).toBe("c")
+  expect(listFrom("overview").find((c) => c.id === "key:overview:b")?.key).toBe("b")
 })
 
 test("every hint that names a command names a real one, in every pane and state", async () => {

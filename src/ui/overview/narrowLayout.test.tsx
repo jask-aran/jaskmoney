@@ -171,7 +171,7 @@ test("the Date Range chips all show at every width, nothing running past the car
     const t = await overview(width, 40)
     const line = t.captureCharFrame().split("\n")[3]!
     for (const label of ["1M", "2M", "3M", "6M", "1Y", "QTR", "Half", "FY", "Custom"]) expect(line).toContain(` ${label} `)
-    expect(line).toMatch(/ (Cycle|Cyc) .* (Month|Mth) .* (Year|Yr) /)
+    expect(line).toMatch(/ (Budget|Bud) .* (Month|Mth) .* (Year|Yr) /)
     expect(line.trimEnd().match(/│/g)!.length).toBeGreaterThanOrEqual(2)
     t.renderer.destroy()
   }

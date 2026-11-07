@@ -28,7 +28,7 @@ export const LOOKBACKS: LookbackId[] = ["1M", "2M", "3M", "6M", "1Y"]
 export const PERIODS: PeriodId[] = ["cycle", "month", "qtr", "half", "fy", "year"]
 
 export const PERIOD_LABEL: Record<PeriodId, string> = {
-  cycle: "Cycle",
+  cycle: "Budget",
   month: "Month",
   qtr: "QTR",
   half: "Half",
@@ -342,7 +342,7 @@ export type OpenRange = typeof OPEN_RANGES[number]
 export const DEFAULT_OPEN_RANGE: OpenRange = "1M"
 export const OPEN_RANGE_LABELS: Record<OpenRange, string> = {
   "1M": "1M", "3M": "3M", "6M": "6M", "1Y": "1Y",
-  cycle: "this cycle", month: "this month", last: "where you left it",
+  cycle: "this budget cycle", month: "this month", last: "where you left it",
 }
 
 export function nextOpenRange(value: OpenRange = DEFAULT_OPEN_RANGE): OpenRange {

@@ -2177,12 +2177,12 @@ function handleOverview(ui: UiStore, key: KeyEvent, data?: DataStore): void {
     return
   }
   if (shifted(key, "c") && !key.ctrl && !key.meta) { openCustomRange(ui, cycle); return }
-  if (name === "c" && !key.ctrl && !key.meta) {
+  if (name === "b" && !key.shift && !key.ctrl && !key.meta) {
     // Home: the current budget cycle, whatever the range was.
     const tf = applyChip({ ...ui.state.timeframe, family: "period", period: "cycle" }, LOOKBACKS.length, appNow(), cycle)
     ui.setTimeframe(tf)
     ui.setDashChipCursor(activeChipIndex(tf))
-    ui.setStatus(`This cycle · ${timeframeBounds(tf, clock, cycle).label}`)
+    ui.setStatus(`This budget cycle · ${timeframeBounds(tf, clock, cycle).label}`)
     return
   }
   if (name === "escape" && ui.state.focusedSection !== "none") ui.clearFocus()
@@ -2352,17 +2352,17 @@ function overviewTabKeys(state: HintState | undefined, own: { chart: number }): 
     { key: "[ ]", desc: "period" },
     // On a Custom range, its dates are a key away.
     ...(state?.customRange ? [{ key: "C", desc: "edit dates", label: "Range: custom dates" }] : []),
-    // In the palette, not suggested: the Cyc chip is d/D away, and 0
-    // brings any range back to now.
-    { key: "c", desc: "this cycle", label: "Range: this cycle", paletteOnly: true },
+    // b: the current budget cycle, whatever the range; 0: the range's own
+    // kind, back to now.
+    { key: "b", desc: "budget", label: "Range: this budget cycle" },
     // With one spending account there's nothing for a to switch.
     ...((state?.spendingAccounts ?? 0) > 1 ? [{ key: "a", desc: "account", label: "Next spending account" }] : []),
     // Transactions' own, a key away from here too: in the palette.
     { key: "i", desc: "review", command: "txn:uncategorised", paletteOnly: true },
     { key: "/", desc: "search", command: "txn:filter", paletteOnly: true },
     { key: "?", desc: "smart search", command: "txn:smart-search", paletteOnly: true },
-    ...(state?.customRange ? [] : [{ key: "C", desc: "custom range", label: "Range: custom dates" }]),
-    { key: "0", desc: "now", label: "Range: back to now" },
+    ...(state?.customRange ? [] : [{ key: "C", desc: "custom range", label: "Range: custom dates", paletteOnly: true }]),
+    { key: "0", desc: "now", label: "Range: back to now", description: "the same kind of range" },
     ...(own.chart < 0 && state?.chartViews.slice(0, state.overviewCharts ?? 2).some(balances) ? [{ key: "z", desc: "$0 axis", paletteOnly: true }] : []),
     ...(focus && focus !== "none" ? [{ key: "esc", desc: "done" }] : []),
     { key: "v", desc: "jump" },
