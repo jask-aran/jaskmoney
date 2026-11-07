@@ -37,8 +37,9 @@ import { chartSpeedMs, showings, takeLaunchReveal, useReveal, type ChartLabelMod
 import { balancesChart, cashFlowChart, spendingChart, type PeriodNames } from "./periodCharts"
 import { UP_LOGO_WIDTH } from "../primitives/UpLogo"
 import { CalendarView, calendarLegend } from "./CalendarView"
-import { cycleTrack, planOpening } from "../budgets/PlanGraphics"
-import { categoryBar, inBar, netBar, sourcesBars, spendOpening } from "./RangeGraphics"
+import { cycleTrack } from "../budgets/PlanGraphics"
+import { flowOpening } from "../charts/flow"
+import { categoryBar, inBar, netBar, sourcesBars } from "./RangeGraphics"
 import { INKS } from "../charts/inks"
 import { leadingEmoji, saverInks } from "../charts/saverInks"
 import { cyclePay } from "../../domain/payday"
@@ -456,10 +457,10 @@ export function OverviewTab(props: { focused: SectionId }) {
       lines.push(bar.above, bar.bar)
       if (bySpending && f.spent >= 0.5) {
         const spending = categoryBar(width, groupParts)
-        lines.push(spendOpening(width, bar.netFrom, [{ text: formatPct(f.income > 0 ? (f.spent / f.income) * 100 : null), fg: ink.figure, bold: true }, { text: " spent", fg: ink.note }]), spending.bar, spending.labels)
+        lines.push(flowOpening(width, 0, bar.netFrom, [{ text: formatPct(f.income > 0 ? (f.spent / f.income) * 100 : null), fg: ink.figure, bold: true }, { text: " spent", fg: ink.note }]), spending.bar, spending.labels)
       } else if (!bySpending && f.net >= 0.5 && bar.netFrom > 0) {
         const net = netBar(width, f.net, parts)
-        lines.push(planOpening(width, bar.netFrom, [{ text: formatPct(f.savingsRate), fg: ink.figure, bold: true }, { text: " saved", fg: ink.note }]), net.bar, net.labels)
+        lines.push(flowOpening(width, bar.netFrom, width, [{ text: formatPct(f.savingsRate), fg: ink.figure, bold: true }, { text: " saved", fg: ink.note }]), net.bar, net.labels)
       }
     }
     lines.push([])

@@ -36,7 +36,8 @@ import type { JSX } from "solid-js"
 import { SubscriptionsView, subscriptionsLegend } from "../charts/SubscriptionsView"
 import { subscriptions, upcomingCharges } from "../../domain/subscriptions"
 import { cyclePay } from "../../domain/payday"
-import { cycleTrack, payBar, planOpening, saversMeter, type PayPart } from "./PlanGraphics"
+import { cycleTrack, payBar, saversMeter, type PayPart } from "./PlanGraphics"
+import { flowOpening } from "../charts/flow"
 
 /** Cycles before this one the chart and the cycle lines can show, at most. */
 const HISTORY = 36
@@ -340,7 +341,7 @@ export function BudgetsTab(props: { focused: SectionId }) {
         // plan as a meter. Spending past the target comes out of it.
         const short = Math.min(plan!, Math.max(0, spent - total))
         const meter = saversMeter(width, plan!, p.sent, short)
-        out.push({ spans: planOpening(width, bar.targetCells, plan!) }, { spans: meter.bar, sweeps: true }, { spans: meter.labels })
+        out.push({ spans: flowOpening(width, bar.targetCells, width, [{ text: "savers plan ", fg: ink.note }, { text: formatWholeMoney(plan!), fg: ink.figure, bold: true }]) }, { spans: meter.bar, sweeps: true }, { spans: meter.labels })
       }
       for (const spans of bar.legend) out.push({ spans })
     }

@@ -4,38 +4,25 @@ import { fade, ink, theme, tone } from "../../theme"
 import { LEVEL_BG } from "../overview/CalendarView"
 import { shortDate } from "../text"
 import type { Span } from "../primitives/spans"
+import { cellsOf, flowBar, labelled, money as bold, spansWidth, type FlowPart } from "../charts/flow"
 
 /**
- * The Budgets pane's pictures of the plan and the cycle: each pay as one bar (where it
- * goes: the category budgets, the rest of the spending target, savers),
- * the plan for savers as a meter, and the cycle as a track from payday to
- * payday. Pure builders.
+ * The Budgets pane's pictures of the plan and the cycle: each pay as one
+ * bar (where it goes: the category budgets, the rest of the spending
+ * target, savers), its savers end opened out to the plan for savers as a
+ * meter (both flows: `../charts/flow`), and the cycle as a track from
+ * payday to payday. Pure builders.
  */
 
 /** The target's colour: the charts' Budget line's, so the target reads
  * the same in the bar as on the chart. */
 const targetFill = () => theme.chartBudget
 
+/** A figure in bold, the flow's way. */
+const money = (n: number, fg: string): Span => bold(formatWholeMoney(n), fg)
+
 /** One part of each pay: a category's budget, the rest of the target, savers. */
 export interface PayPart { name: string; amount: number; color: string; spent: number }
-
-/** Cells for each part across `width`, from the running total so the
- * rounding never shortens the whole. */
-export function cellsOf(amounts: number[], width: number): number[] {
-  const total = amounts.reduce((n, a) => n + Math.max(0, a), 0)
-  if (total <= 0) return amounts.map(() => 0)
-  let before = 0
-  return amounts.map((a) => {
-    const from = Math.round((before / total) * width)
-    before += Math.max(0, a)
-    return Math.round((before / total) * width) - from
-  })
-}
-
-/** Hatching: what's gone past where it should, drawn as diagonal lines
- * in `fg` over a dim shade of `base`. */
-const HATCH = "╱"
-export const hatched = (cells: number, fg: string, base: string): Span => ({ text: HATCH.repeat(cells), fg, bg: fade(base, 0.7) })
 
 /**
  * Each pay as one bar `width` wide, filling as the cycle's spending comes
@@ -60,33 +47,31 @@ export function payBar(width: number, pay: number | null, target: number, catego
   const over = Math.max(0, spent - cap)
   const saved = pay != null ? Math.max(0, pay - cap - over) : 0
   // Each part's spent and left, in that order, as runs of the bar.
-  const runs: Array<{ amount: number; color: string; part: "target" | "over" | "savers" }> = [
+  const runs: Array<FlowPart & { part: "target" | "over" | "savers" }> = [
     ...categories.flatMap((c) => [
       { amount: Math.min(c.spent, c.amount), color: c.color, part: "target" as const },
       { amount: c.amount - Math.min(c.spent, c.amount), color: fade(c.color, LEFT_FADE), part: "target" as const },
     ]),
     { amount: restFilled, color: targetFill(), part: "target" },
     { amount: rest - restFilled, color: fade(targetFill(), LEFT_FADE), part: "target" },
-    { amount: over, color: tone.bad, part: "over" },
+    { amount: over, color: tone.bad, part: "over", hatch: true },
     { amount: saved, color: tone.good, part: "savers" },
   ]
-  const cells = cellsOf(runs.map((r) => r.amount), width)
-  const bar: Span[] = runs.flatMap((r, i): Span[] => (cells[i]! <= 0 ? [] : r.part === "over" ? [hatched(cells[i]!, r.color, r.color)] : [{ text: "█".repeat(cells[i]!), fg: r.color }]))
-  const targetCells = runs.reduce((n, r, i) => n + (r.part === "target" ? cells[i]! : 0), 0)
-  const overCells = runs.reduce((n, r, i) => n + (r.part === "over" ? cells[i]! : 0), 0)
   // Over the bar: the target over its part, how far over over the hatching,
   // and what's left of the pay over the rest (left of the target, with no
-  // pay). The target and how far over first, where room is short.
+  // pay). Each a label over its columns of the bar.
+  const left = (pay ?? target) - spent
+  const cells = cellsOf(runs.map((r) => r.amount), width)
+  const targetCells = runs.reduce((n, r, i) => n + (r.part === "target" ? cells[i]! : 0), 0)
+  const overCells = runs.reduce((n, r, i) => n + (r.part === "over" ? cells[i]! : 0), 0)
   const total = runs.reduce((n, r) => n + Math.max(0, r.amount), 0)
   const spentCells = total > 0 ? Math.min(width, Math.round((Math.min(spent, total) / total) * width)) : 0
-  const left = (pay ?? target) - spent
-  const money = (n: number, fg: string): Span => ({ text: formatWholeMoney(n), fg, bold: true })
-  const above = packLabels(width, [
+  const { bar, labels: above } = flowBar(width, runs, [
     // With no pay the target is the whole bar: what's spent of it instead.
-    ...(pay == null ? [{ from: 0, cells: Math.max(1, spentCells), options: [[money(spent, over > 0 ? tone.bad : ink.figure), { text: " spent", fg: ink.note }], [money(spent, ink.figure)]] }]
-      : targetCells > 0 ? [{ from: 0, cells: targetCells, options: [[money(target, ink.figure), { text: " target", fg: ink.note }], [money(target, ink.figure)]] }] : []),
-    ...(overCells > 0 ? [{ from: targetCells, cells: overCells, options: [[money(over, tone.bad), { text: " over", fg: tone.bad }], [money(over, tone.bad)]] }] : []),
-    ...(left > 0.5 && width - spentCells > 0 ? [{ from: spentCells, cells: width - spentCells, options: [[money(left, ink.figure), { text: " left", fg: ink.note }], [money(left, ink.figure)]] }] : []),
+    ...(pay == null ? [{ cols: [0, Math.max(1, spentCells)] as [number, number], options: [[money(spent, over > 0 ? tone.bad : ink.figure), { text: " spent", fg: ink.note }], [money(spent, ink.figure)]] }]
+      : targetCells > 0 ? [{ cols: [0, targetCells] as [number, number], options: [[money(target, ink.figure), { text: " target", fg: ink.note }], [money(target, ink.figure)]] }] : []),
+    ...(overCells > 0 ? [{ cols: [targetCells, targetCells + overCells] as [number, number], options: [[money(over, tone.bad), { text: " over", fg: tone.bad }], [money(over, tone.bad)]] }] : []),
+    ...(left > 0.5 && width - spentCells > 0 ? [{ cols: [spentCells, width] as [number, number], options: [[money(left, ink.figure), { text: " left", fg: ink.note }], [money(left, ink.figure)]] }] : []),
   ])
   const legend: Span[][] = []
   if (categories.length) {
@@ -114,28 +99,6 @@ export function payBar(width: number, pay: number | null, target: number, catego
 }
 
 /**
- * Under the pay bar, the line that opens its savers end (from `from` to
- * the end) out to the full width for Savers' meter under it: a corner
- * under where savers start, running back to the left edge, the right edge
- * straight down, and the plan between.
- */
-export function planOpening(width: number, from: number, plan: number | Span[]): Span[] {
-  if (from <= 0 || from >= width - 1) return [{ text: " ", fg: ink.note }]
-  // The savers plan; or, given spans (the Range pane's), those.
-  const label: Span[] = typeof plan === "number" ? [{ text: "savers plan ", fg: ink.note }, { text: formatWholeMoney(plan), fg: ink.figure, bold: true }] : plan
-  const room = width - 1 - (from + 1)
-  const fits = spansWidth(label) + 2 <= room
-  const pad = fits ? room - spansWidth(label) : room
-  const leftPad = Math.floor(pad / 2)
-  return [
-    { text: `╭${"─".repeat(from - 1)}╯`, fg: ink.rule },
-    { text: " ".repeat(fits ? leftPad : room), fg: ink.note },
-    ...(fits ? [...label, { text: " ".repeat(pad - leftPad), fg: ink.note }] : []),
-    { text: "│", fg: ink.rule },
-  ]
-}
-
-/**
  * The plan for savers as a meter `width` wide, all of it the plan, ordered
  * as the pay bar's savers end it opens out: what spending past the target
  * has taken from it first (hatched in bad), then what's gone to savers
@@ -147,94 +110,12 @@ export function saversMeter(width: number, plan: number, sent: number, short: nu
   const available = Math.max(0, plan - short)
   const shown = Math.min(sent, available)
   const toSend = available - shown
-  const [shortCells, sentCells, sendCells] = cellsOf([short, shown, toSend], width) as [number, number, number]
-  const bar: Span[] = [
-    ...(shortCells ? [hatched(shortCells, tone.bad, tone.bad)] : []),
-    ...(sentCells ? [{ text: "█".repeat(sentCells), fg: tone.good }] : []),
-    ...(sendCells ? [{ text: "█".repeat(sendCells), fg: fade(tone.good, LEFT_FADE) }] : []),
-  ]
-  const money = (n: number, fg: string): Span => ({ text: formatWholeMoney(n), fg, bold: true })
-  const labels = packLabels(width, [
-    ...(shortCells ? [{ from: 0, cells: shortCells, options: [[money(short, tone.bad), { text: " short", fg: tone.bad }], [money(short, tone.bad)]] }] : []),
-    ...(sentCells ? [{ from: shortCells, cells: sentCells, options: [[money(sent, tone.good), { text: " sent", fg: ink.note }], [money(sent, tone.good)]] }] : []),
-    ...(sendCells ? [{ from: shortCells + sentCells, cells: sendCells, options: [[money(toSend, ink.figure), { text: " to send", fg: ink.note }], [money(toSend, ink.figure)]] }] : []),
+  const { bar, labels } = flowBar(width, [
+    { amount: short, color: tone.bad, hatch: true, label: [[money(short, tone.bad), { text: " short", fg: tone.bad }], [money(short, tone.bad)]] },
+    { amount: shown, color: tone.good, label: [[money(sent, tone.good), { text: " sent", fg: ink.note }], [money(sent, tone.good)]] },
+    { amount: toSend, color: fade(tone.good, LEFT_FADE), label: [[money(toSend, ink.figure), { text: " to send", fg: ink.note }], [money(toSend, ink.figure)]] },
   ])
   return { bar, labels }
-}
-
-/** A label for `labelled`: its options, best first, placed from `at`
- * or centred on `mid`. */
-export interface Label { at?: number; mid?: number; options: Span[][] }
-
-/** Labels on a line `width` wide, in priority order: each takes its first
- * option that fits where it goes (kept on the line) without touching one
- * already placed, else is dropped. */
-export function labelled(width: number, labels: Label[]): Span[] {
-  const taken: Array<{ from: number; to: number; spans: Span[] }> = []
-  for (const label of labels) {
-    for (const option of label.options) {
-      const w = spansWidth(option)
-      if (w > width) continue
-      const want = label.at ?? Math.round((label.mid ?? 0) - w / 2)
-      const from = Math.max(0, Math.min(width - w, want)), to = from + w
-      if (taken.some((t) => from < t.to + 1 && t.from < to + 1)) continue
-      taken.push({ from, to, spans: option })
-      break
-    }
-  }
-  const out: Span[] = []
-  let col = 0
-  for (const t of taken.sort((a, b) => a.from - b.from)) {
-    if (t.from > col) out.push({ text: " ".repeat(t.from - col), fg: ink.note })
-    out.push(...t.spans)
-    col = t.to
-  }
-  return out.length ? out : [{ text: " ", fg: ink.note }]
-}
-
-export const spansWidth = (spans: Span[]) => spans.reduce((n, l) => n + l.text.length, 0)
-
-/** A part's label for `packLabels`: the part's columns, its options
- * best first, and whether it may go unlabelled before others lose words. */
-export interface PartLabel { from: number; cells: number; options: Span[][]; optional?: boolean }
-
-/** The cells between two labels. */
-const LABEL_GAP = 2
-
-/**
- * Labels for a bar's parts on a line `width` wide, each as near centred
- * on its part as the others let it be: crowded, they slide apart (each
- * still over some of its part) rather than one dropping. Where they still
- * don't fit, in turn: optional parts' labels go (smallest first), then the
- * smallest parts take their shorter options (a bare figure), then the
- * smallest go.
- */
-export function packLabels(width: number, parts: PartLabel[]): Span[] {
-  const items = parts.filter((p) => p.cells > 0 && p.options.length > 0)
-  const level = items.map(() => 0)
-  const bySize = items.map((_, k) => k).sort((x, y) => items[x]!.cells - items[y]!.cells)
-  // Where the shown labels go, or null where they can't all.
-  const fit = (): Array<{ at: number; spans: Span[] }> | null => {
-    const shown = items.map((p, k) => ({ p, spans: p.options[level[k]!] })).filter((x): x is { p: PartLabel; spans: Span[] } => x.spans != null)
-      .map((x) => ({ ...x, w: spansWidth(x.spans), mid: x.p.from + x.p.cells / 2 })).sort((x, y) => x.mid - y.mid)
-    const at = shown.map((x) => Math.round(x.mid - x.w / 2))
-    for (let i = 0; i < shown.length; i++) at[i] = Math.max(at[i]!, 0, i > 0 ? at[i - 1]! + shown[i - 1]!.w + LABEL_GAP : 0)
-    for (let i = shown.length - 1; i >= 0; i--) at[i] = Math.min(at[i]!, width - shown[i]!.w, i < shown.length - 1 ? at[i + 1]! - LABEL_GAP - shown[i]!.w : width)
-    const ok = shown.every((x, i) => at[i]! >= 0 && (i === 0 || at[i]! >= at[i - 1]! + shown[i - 1]!.w + LABEL_GAP) && at[i]! < x.p.from + x.p.cells && at[i]! + x.w > x.p.from)
-    return ok ? shown.map((x, i) => ({ at: at[i]!, spans: x.spans })) : null
-  }
-  const dropped = (k: number) => level[k]! >= items[k]!.options.length
-  for (;;) {
-    const placed = fit()
-    if (placed) return placed.length ? labelled(width, placed.map((x) => ({ at: x.at, options: [x.spans] }))) : [{ text: " ", fg: ink.note }]
-    const step = bySize.find((k) => items[k]!.optional && !dropped(k))
-    if (step != null) { level[step] = items[step]!.options.length; continue }
-    const shorter = bySize.find((k) => level[k]! < items[k]!.options.length - 1)
-    if (shorter != null) { level[shorter]!++; continue }
-    const drop = bySize.find((k) => !dropped(k))
-    if (drop == null) return [{ text: " ", fg: ink.note }]
-    level[drop] = items[drop]!.options.length
-  }
 }
 
 /** How much a part's colour fades for what's left of it. */

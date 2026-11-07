@@ -1,31 +1,34 @@
 import { formatWholeMoney, signedWholeMoney } from "../../domain/dashboard"
 import { fade, ink, tone } from "../../theme"
 import { INKS } from "../charts/inks"
-import { cellsOf, hatched, packLabels } from "../budgets/PlanGraphics"
+import { cellsOf, flowBar, flowEdges, money as bold, packLabels, type FlowPart } from "../charts/flow"
 import type { Span } from "../primitives/spans"
 
 /**
- * The Range pane's pictures of the Date Range's money, the Budgets pay
- * bar's way: what came in as a bar (spent, net), its net end opened out to
- * where the net went (each saver, kept), and the spending by category
- * group opened out of the spent part instead (s). Pure builders.
+ * The Range pane's flows (`../charts/flow`), the Budgets pay bar's way:
+ * what came in as a bar (spent, net), its net end opened out to where the
+ * net went (each saver, kept), or its spent end to where the spending
+ * went (each category group, s); spending past what came in, where it
+ * came from over what was spent. Pure builders.
  */
 
 /** How much "kept" (net that stayed in Spending) fades from good. */
 const KEPT_FADE = 0.65
 
-/** Runs of solid cells, one span a run. */
-const runs = (parts: Array<{ cells: number; color: string }>): Span[] =>
-  parts.filter((p) => p.cells > 0).map((p) => ({ text: "█".repeat(p.cells), fg: p.color }))
+const money = (n: number, fg: string): Span => bold(formatWholeMoney(n), fg)
+const signed = (n: number, fg: string): Span => bold(signedWholeMoney(n), fg)
+const words = (figure: Span, text: string, fg: string = ink.note): Span[][] => [[figure, { text: ` ${text}`, fg }], [figure]]
 
-const money = (n: number, fg: string): Span => ({ text: formatWholeMoney(n), fg, bold: true })
+/** A part with its figure (in `figure`) and name. */
+interface Named { amount: number; color: string; name: string; figure: string }
 
-/** Each part's figure and name over (or under) it, as `packLabels` places
- * them. A part narrower than its bare figure may go unlabelled. */
-function partLabels(width: number, parts: Array<{ amount: number; name: string; figure: string }>, cells: number[]): Span[] {
-  return packLabels(width, parts.map((p, i) => ({
-    from: cells.slice(0, i).reduce((n, c) => n + c, 0), cells: cells[i]!,
-    options: [[money(p.amount, p.figure), { text: ` ${p.name}`, fg: ink.note }], [money(p.amount, p.figure)]],
+/** Named parts as a bar `width` wide, each figure and name under it where
+ * they fit: a part thinner than its figure may go unlabelled. */
+function namedBar(width: number, parts: Named[]): { bar: Span[]; labels: Span[]; cells: number[] } {
+  const cells = cellsOf(parts.map((p) => p.amount), width)
+  return flowBar(width, parts.map((p, i) => ({
+    amount: p.amount, color: p.color,
+    label: words(money(p.amount, p.figure), p.name),
     optional: formatWholeMoney(p.amount).length > cells[i]!,
   })))
 }
@@ -33,19 +36,21 @@ function partLabels(width: number, parts: Array<{ amount: number; name: string; 
 /**
  * What came in as one bar `width` wide: what's spent in spending's colour
  * (the charts'), then the net in good. Spending past what came in runs
- * on, hatched in bad. Over it each part's figure. `netFrom` is the column
- * the net starts at, for the opening under it.
+ * on, hatched in bad. Over it each part's figure, what's spent over all
+ * of it. `netFrom` is the column the net starts at, for the opening under
+ * it.
  */
 export function inBar(width: number, income: number, spent: number): { above: Span[]; bar: Span[]; netFrom: number } {
   const within = Math.min(spent, Math.max(0, income)), over = Math.max(0, spent - Math.max(0, income)), net = Math.max(0, income - spent)
-  const [s, o, n] = cellsOf([within, over, net], width) as [number, number, number]
-  const bar: Span[] = [...runs([{ cells: s, color: INKS.spend! }]), ...(o > 0 ? [hatched(o, tone.bad, tone.bad)] : []), ...runs([{ cells: n, color: tone.good }])]
-  const above = packLabels(width, [
-    ...(spent > 0 ? [{ from: 0, cells: s + o, options: [[money(spent, ink.figure), { text: " spent", fg: ink.note }], [money(spent, ink.figure)]] }] : []),
-    ...(o > 0 ? [{ from: s, cells: o, options: [[money(over, tone.bad), { text: " over", fg: tone.bad }], [money(over, tone.bad)]] }] : []),
-    ...(n > 0 ? [{ from: s + o, cells: n, options: [[{ text: signedWholeMoney(net), fg: tone.good, bold: true }, { text: " net", fg: ink.note }], [{ text: signedWholeMoney(net), fg: tone.good, bold: true }]] }] : []),
-  ])
-  return { above, bar: bar.length ? bar : [{ text: "┄".repeat(width), fg: ink.faint }], netFrom: s + o }
+  const parts: FlowPart[] = [
+    { amount: within, color: INKS.spend! },
+    { amount: over, color: tone.bad, hatch: true, label: words(money(over, tone.bad), "over", tone.bad) },
+    { amount: net, color: tone.good, label: words(signed(net, tone.good), "net") },
+  ]
+  const cells = cellsOf(parts.map((p) => p.amount), width)
+  const netFrom = cells[0]! + cells[1]!
+  const { bar, labels } = flowBar(width, parts, spent > 0 ? [{ cols: [0, netFrom], options: words(money(spent, ink.figure), "spent") }] : [])
+  return { above: labels, bar, netFrom }
 }
 
 /** A saver's part of the net: its change over the range, in its colour. */
@@ -60,11 +65,10 @@ export interface SaverPart { name: string; change: number; color: string }
 export function netBar(width: number, net: number, savers: SaverPart[]): { bar: Span[]; labels: Span[] } {
   const gains = savers.filter((s) => s.change >= 0.5).sort((a, b) => b.change - a.change)
   const kept = Math.max(0, net - gains.reduce((n, s) => n + s.change, 0))
-  const parts = [...gains.map((s) => ({ amount: s.change, color: s.color, name: s.name, figure: s.color })), { amount: kept, color: fade(tone.good, KEPT_FADE), name: "kept", figure: ink.figure }]
-  const cells = cellsOf(parts.map((p) => p.amount), width)
-  const bar = runs(parts.map((p, i) => ({ cells: cells[i]!, color: p.color })))
-  const labels = partLabels(width, parts, cells)
-  return { bar: bar.length ? bar : [{ text: "┄".repeat(width), fg: ink.faint }], labels }
+  return namedBar(width, [
+    ...gains.map((s) => ({ amount: s.change, color: s.color, name: s.name, figure: s.color })),
+    { amount: kept, color: fade(tone.good, KEPT_FADE), name: "kept", figure: ink.figure },
+  ])
 }
 
 /**
@@ -73,10 +77,7 @@ export function netBar(width: number, net: number, savers: SaverPart[]): { bar: 
  * they fit, the smallest's words going first.
  */
 export function categoryBar(width: number, groups: Array<{ amount: number; color: string; name: string }>): { bar: Span[]; labels: Span[] } {
-  const parts = groups.filter((g) => g.amount >= 0.5).sort((a, b) => b.amount - a.amount).map((g) => ({ amount: g.amount, color: g.color, name: g.name, figure: g.color }))
-  const cells = cellsOf(parts.map((p) => p.amount), width)
-  const bar = runs(parts.map((p, i) => ({ cells: cells[i]!, color: p.color })))
-  return { bar: bar.length ? bar : [{ text: "┄".repeat(width), fg: ink.faint }], labels: partLabels(width, parts, cells) }
+  return namedBar(width, groups.filter((g) => g.amount >= 0.5).sort((a, b) => b.amount - a.amount).map((g) => ({ ...g, figure: g.color })))
 }
 
 /** A source of spending past what came in, measured: transfers in from
@@ -100,51 +101,26 @@ export function sourcesBars(width: number, income: number, spent: number, source
   const total = given.reduce((n, s) => n + s.amount, 0)
   const share = total > gap ? gap / total : 1
   const other = Math.max(0, gap - total * share)
-  const parts = [
+  const from = namedBar(width, [
     { amount: covered, color: tone.good, name: "in", figure: ink.figure },
     ...given.map((s) => ({ ...s, amount: s.amount * share })),
     ...(other >= 0.5 ? [{ amount: other, color: ink.faint, name: "other", figure: ink.label }] : []),
-  ]
-  const cells = cellsOf(parts.map((p) => p.amount), width)
-  const sourceBar = runs(parts.map((p, i) => ({ cells: cells[i]!, color: p.color })))
-  const above = partLabels(width, parts, cells)
-  // The same columns: what came in covered ends where its source does.
-  const c = cells[0]!, o = width - c
-  const spending: Span[] = [...runs([{ cells: c, color: INKS.spend! }]), ...(o > 0 ? [hatched(o, tone.bad, tone.bad)] : [])]
+  ])
+  // The same total, so the same columns: what came in covered ends where
+  // its source does.
+  const spending = flowBar(width, [{ amount: covered, color: INKS.spend! }, { amount: gap, color: tone.bad, hatch: true }])
+  const c = from.cells[0]!
   // Where the spending went (s): under the spending, its categories as a
   // third bar of the same total, the spent and net figures between them
-  // inside the edges, the largest groups named under it.
-  const inner = categories ? width - 4 : width
-  // Inside the edges, two cells in from each side.
-  const inset = categories ? 2 : 0
+  // inside the edges (two cells in from each), the groups named under it.
+  const inset = categories ? 2 : 0, inner = width - 2 * inset
   const below = packLabels(inner, [
-    { from: 0, cells: Math.max(1, (c > 0 ? c : width) - inset), options: [[money(spent, ink.figure), { text: " spent", fg: ink.note }], [money(spent, ink.figure)]] },
-    ...(o > 0 && c > 0 ? [{ from: Math.max(0, c - inset), cells: Math.max(1, Math.min(o, inner - c + inset)), options: [[{ text: signedWholeMoney(-gap), fg: tone.bad, bold: true }, { text: " net", fg: ink.note }], [{ text: signedWholeMoney(-gap), fg: tone.bad, bold: true }]] }] : []),
+    { from: 0, cells: Math.max(1, (c > 0 ? c : width) - inset), options: words(money(spent, ink.figure), "spent") },
+    ...(gap > 0 && c > 0 && c < width ? [{ from: Math.max(0, c - inset), cells: Math.max(1, Math.min(inner, width - inset) - Math.max(0, c - inset)), options: words(signed(-gap, tone.bad), "net") }] : []),
   ])
-  const edges: Span[] = [{ text: "│", fg: ink.rule }, { text: " ".repeat(Math.max(0, width - 2)), fg: ink.note }, { text: "│", fg: ink.rule }]
-  if (!categories) return [above, sourceBar, edges, spending, below]
+  const head = [from.labels, from.bar, flowEdges(width), spending.bar]
+  if (!categories) return [...head, below]
   const inside: Span[] = [{ text: "│ ", fg: ink.rule }, ...below, { text: " ".repeat(Math.max(0, inner - below.reduce((n, x) => n + x.text.length, 0))), fg: ink.note }, { text: " │", fg: ink.rule }]
   const bar = categoryBar(width, categories)
-  return [above, sourceBar, edges, spending, inside, bar.bar, bar.labels]
-}
-
-/**
- * Under the in bar, the line that opens its spent end (columns 0 to `to`)
- * out to the full width for the spending's breakdown under it: the left
- * edge straight down, a corner under where the spending ends running on
- * to the right edge, and `label` between. The savers opening's mirror.
- */
-export function spendOpening(width: number, to: number, label: Span[]): Span[] {
-  const room = Math.max(0, to - 2)
-  const w = label.reduce((n, x) => n + x.text.length, 0)
-  const fits = w + 2 <= room
-  const pad = fits ? room - w : room
-  const left = Math.floor(pad / 2)
-  if (to >= width - 1) return [{ text: "│", fg: ink.rule }, { text: " ".repeat(Math.max(0, left)), fg: ink.note }, ...(fits ? label : []), { text: " ".repeat(Math.max(0, width - 2 - left - (fits ? w : 0))), fg: ink.note }, { text: "│", fg: ink.rule }]
-  return [
-    { text: "│", fg: ink.rule },
-    { text: " ".repeat(fits ? left : room), fg: ink.note },
-    ...(fits ? [...label, { text: " ".repeat(pad - left), fg: ink.note }] : []),
-    { text: `╰${"─".repeat(Math.max(0, width - to - 1))}╮`, fg: ink.rule },
-  ]
+  return [...head, inside, bar.bar, bar.labels]
 }
