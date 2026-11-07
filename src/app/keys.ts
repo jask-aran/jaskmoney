@@ -55,7 +55,7 @@ import { runAccept, toggleUncategorised, newSuggestionsNote, suggestNew } from "
 import { ACCEPT_ALL_AT } from "../domain/questions"
 import { categoryRows } from "../state/taxonomyRows"
 import { IMPORT_HISTORY_ROWS } from "../state/databaseRows"
-import { BUDGET_PANES, BUDGET_VIEWS, CHART_VIEWS, CYCLE_VIEWS, chartPaneOf, type ChartViews, type OverviewCharts, SETTINGS_RIGHT, SETTINGS_SECTION_LABELS, SETTINGS_SECTIONS, type SettingsSection, jumpTargets, TABS, TAB_DEFAULT_FOCUS, settingsSectionFocus, smartQuestionFor, type ScopeId, type UiState, type UiStore } from "../state/uiStore"
+import { BUDGET_PANES, BUDGET_VIEWS, CATEGORIES, CHART_VIEWS, budgetListInPane, budgetsHome, chartPaneOf, cycleViewsFor, type ChartViews, type OverviewCharts, SETTINGS_RIGHT, SETTINGS_SECTION_LABELS, SETTINGS_SECTIONS, type SettingsSection, jumpTargets, TABS, TAB_DEFAULT_FOCUS, settingsSectionFocus, smartQuestionFor, type ScopeId, type UiState, type UiStore } from "../state/uiStore"
 import type { DataStore } from "../state/dataStore"
 import {
   CUSTOM_CHIP,
@@ -1873,11 +1873,15 @@ function openBudgetEditor(ui: UiStore, data: DataStore, budget: Budget | null, s
  * CYCLE_VIEWS. */
 function stepBudgetPane(ui: UiStore, pane: number, step: number): void {
   if (pane === 0) { ui.setState({ budgetChart: (ui.state.budgetChart + step + BUDGET_VIEWS.length) % BUDGET_VIEWS.length }); return }
-  // A cycle pane steps through CYCLE_VIEWS only.
+  // A cycle pane steps through its views (the first's the list, then
+  // CYCLE_VIEWS); focus on the first follows it between the list and a chart.
+  const order = cycleViewsFor(pane - 1)
   const views: [number, number] = [...ui.state.budgetCycleViews]
-  const at = Math.max(0, CYCLE_VIEWS.indexOf(views[pane - 1]!))
-  views[pane - 1] = CYCLE_VIEWS[(at + step + CYCLE_VIEWS.length) % CYCLE_VIEWS.length]!
-  ui.setState({ budgetCycleViews: views })
+  const at = Math.max(0, order.indexOf(views[pane - 1]!))
+  views[pane - 1] = order[(at + step + order.length) % order.length]!
+  const focused = ui.state.focusedSection
+  const onPane = pane === 1 && (focused === "bud.cycle" || (focused === "bud.categories" && budgetListInPane(ui.state)))
+  ui.setState({ budgetCycleViews: views, ...(onPane ? { focusedSection: views[0] === CATEGORIES ? "bud.categories" : "bud.cycle" } : {}) })
 }
 
 /** Keys every Budgets card and pane shares: ←/→ move between panes; h/l
@@ -1916,7 +1920,7 @@ function budgetKeys(ui: UiStore, key: KeyEvent, data: DataStore, pane = 0): bool
 function handleBudgetChart(ui: UiStore, key: KeyEvent, data?: DataStore): void {
   const { name } = key
   if (!data) return
-  if (name === "escape") { ui.setState({ focusedSection: "bud.categories" }); return }
+  if (name === "escape") { ui.setState({ focusedSection: budgetsHome(ui.state) }); return }
   if (name === "j" || name === "down") { travel(ui, "down", data); return }
   if (name === "k" || name === "up") { travel(ui, "up", data); return }
   budgetKeys(ui, key, data, Math.max(0, BUDGET_PANES.indexOf(ui.state.focusedSection)))
@@ -1925,6 +1929,50 @@ function handleBudgetChart(ui: UiStore, key: KeyEvent, data?: DataStore): void {
 /** The Budgets pane's rows, as the tab draws them. */
 function setupRows(ui: UiStore, data: DataStore): SetupRow[] {
   return budgetSetupRows(budgetLines(ui, data), new Set(ui.state.budgetSetupOpen), viewedBudgets(ui, data).budgets)
+}
+
+/** The Budgets pane's keys, from it or the list: p your pay, t the
+ * overall spending target, a a new budget, s the flow's view. */
+function budgetPlanKeys(ui: UiStore, key: KeyEvent, data: DataStore): boolean {
+  const { name } = key
+  const view = viewedBudgets(ui, data)
+  // Your pay each payday, from your usual pay (empty clears it).
+  if (name === "p" && !key.shift) {
+    const start = data.state.uiPrefs.expectedPay || usualPay(data.state.accounts, data.transactions())
+    ui.openSettingsEditor("pay", null, { ...ui.state.settingsDraft, amount: start ? String(Math.round(start)) : "" })
+    return true
+  }
+  // The overall spending target, a new one from its average.
+  if (name === "t" && !key.shift) {
+    const overall = view.budgets.find((b) => b.scope.kind === "overall") ?? null
+    openBudgetEditor(ui, data, overall, { kind: "overall" }, overallAverage(budgetLines(ui, data), budgetIgnoredIds(data.state.categories)))
+    return true
+  }
+  // s: the flow over the categories opens out to where the spending went,
+  // or where the net went (the Overview's Range pane's view too).
+  if (name === "s" && !key.shift && !key.ctrl && !key.meta) {
+    const spending = data.state.uiPrefs.rangeView !== "spending"
+    settleData(ui, data.saveUiPrefs({ rangeView: spending ? "spending" : "net" }), () => ui.setStatus(spending ? "Where the spending went" : "Where the net went"))
+    return true
+  }
+  // a: a new budget, on whatever it covers (the first scope without one).
+  if (name === "a" && !key.shift) {
+    const taken = new Set(data.state.budgets.map((b) => scopeKey(b.scope)))
+    const free = budgetScopeOptions(data.state.accounts, data.state.categories).find((o) => !taken.has(o.key))
+    ui.openSettingsEditor("budget", null, { ...ui.state.settingsDraft, ...cycleDraft(data.state.budgetCycle), scopeKey: free?.key ?? "overall", amount: "" })
+    return true
+  }
+  return false
+}
+
+/** The Budgets pane (the list in the cycle pane): its keys, j/k to the
+ * pane in that direction. */
+function handleBudgetPlan(ui: UiStore, key: KeyEvent, data?: DataStore): void {
+  const { name } = key
+  if (!data) return
+  if (budgetKeys(ui, key, data) || budgetPlanKeys(ui, key, data)) return
+  if (name === "j" || name === "down") { travel(ui, "down", data); return }
+  if (name === "k" || name === "up") travel(ui, "up", data)
 }
 
 /** The Budgets tab's Budgets pane: p sets your pay each payday (from your
@@ -1937,7 +1985,9 @@ function setupRows(ui: UiStore, data: DataStore): SetupRow[] {
 function handleBudgetCategories(ui: UiStore, key: KeyEvent, data?: DataStore): void {
   const { name } = key
   if (!data) return
-  if (budgetKeys(ui, key, data)) return
+  // h/l: in the cycle pane, its views (the list's the first); in the
+  // Budgets pane, the budget chart's.
+  if (budgetKeys(ui, key, data, budgetListInPane(ui.state) ? 1 : 0) || budgetPlanKeys(ui, key, data)) return
   const view = viewedBudgets(ui, data)
   const rows = setupRows(ui, data)
   const cursor = Math.min(ui.state.budgetCategoryCursor, Math.max(0, rows.length - 1))
@@ -1945,32 +1995,6 @@ function handleBudgetCategories(ui: UiStore, key: KeyEvent, data?: DataStore): v
   if ((name === "k" || name === "up") && cursor === 0) { travel(ui, "up", data); return }
   const moved = listMove(key, cursor, rows.length)
   if (moved != null) { ui.setState({ budgetCategoryCursor: moved }); return }
-  // Your pay each payday, from your usual pay (empty clears it).
-  if (name === "p" && !key.shift) {
-    const start = data.state.uiPrefs.expectedPay || usualPay(data.state.accounts, data.transactions())
-    ui.openSettingsEditor("pay", null, { ...ui.state.settingsDraft, amount: start ? String(Math.round(start)) : "" })
-    return
-  }
-  // The overall spending target, a new one from its average.
-  if (name === "t" && !key.shift) {
-    const overall = view.budgets.find((b) => b.scope.kind === "overall") ?? null
-    openBudgetEditor(ui, data, overall, { kind: "overall" }, overallAverage(budgetLines(ui, data), budgetIgnoredIds(data.state.categories)))
-    return
-  }
-  // a: a new budget, on whatever it covers (the first scope without one).
-  // s: the flow over the categories opens out to where the spending went,
-  // or where the net went (the Overview's Range pane's view too).
-  if (name === "s" && !key.shift && !key.ctrl && !key.meta && data) {
-    const spending = data.state.uiPrefs.rangeView !== "spending"
-    settleData(ui, data.saveUiPrefs({ rangeView: spending ? "spending" : "net" }), () => ui.setStatus(spending ? "Where the spending went" : "Where the net went"))
-    return
-  }
-  if (name === "a" && !key.shift) {
-    const taken = new Set(data.state.budgets.map((b) => scopeKey(b.scope)))
-    const free = budgetScopeOptions(data.state.accounts, data.state.categories).find((o) => !taken.has(o.key))
-    ui.openSettingsEditor("budget", null, { ...ui.state.settingsDraft, ...cycleDraft(data.state.budgetCycle), scopeKey: free?.key ?? "overall", amount: "" })
-    return
-  }
   const row = rows[cursor]
   if (!row) return
   const removeTwice = (budget: Budget, label: string) =>
@@ -2304,6 +2328,8 @@ type HintState = Pick<UiState, "focusedSection" | "drillReturn" | "chartViews"> 
   overviewCharts?: OverviewCharts
   /** The Budgets tab's cycle panes on screen (none: no H/L). */
   budgetCyclePanes?: 0 | 1 | 2
+  /** The Budgets tab's list is the cycle pane's Categories view. */
+  budgetListInPane?: boolean
   /** From the data store: the Transactions table is the Uncategorised view. */
   uncategorisedOnly?: boolean
   /** In the filter: ↑ would bring back the smart search's question. */
@@ -2714,8 +2740,16 @@ const scopes: Record<ScopeId, ScopeEntry> = {
   "budgets.categories": {
     handle: handleBudgetCategories,
     list: true,
+    // In the cycle pane, the list is its Categories view; else it's the
+    // Budgets pane's, under the plan.
+    pane: (state) => (state?.budgetListInPane ? "Categories" : "Budgets"),
+    hints: (state) => [{ key: "j/k", desc: "move" }, { key: "enter", desc: "set budget" }, { key: "space", desc: "open" }, { key: "x", desc: "leave out" }, { key: "del del", desc: "remove budget" }, { key: "a", desc: "add" }, ...(state?.budgetListInPane ? [{ key: "h/l", desc: "view" }] : []), ...tabWide([...budgetPlanHints(state), { key: "[ ]", desc: "cycles" }, { key: "c", desc: "cycle" }, ...(state?.budgetListInPane ? [] : [{ key: "h/l", desc: "chart" }, ...cycleChartHint(state)]), { key: "v", desc: "jump" }, { key: "1-4", desc: "tab" }])],
+  },
+  "budgets.plan": {
+    handle: handleBudgetPlan,
+    list: true,
     pane: () => "Budgets",
-    hints: (state) => [{ key: "j/k", desc: "move" }, { key: "enter", desc: "set budget" }, { key: "space", desc: "open" }, { key: "x", desc: "leave out" }, { key: "del del", desc: "remove budget" }, { key: "a", desc: "add" }, { key: "s", desc: state?.rangeView === "spending" ? "net view" : "spending view", label: "Flow: where the spending or the net went" }, ...tabWide([{ key: "p", desc: "pay" }, { key: "t", desc: "target" }, { key: "[ ]", desc: "cycles" }, { key: "c", desc: "cycle" }, { key: "h/l", desc: "chart" }, ...cycleChartHint(state), { key: "v", desc: "jump" }, { key: "1-4", desc: "tab" }])],
+    hints: (state) => [...budgetPlanHints(state), { key: "a", desc: "add" }, ...tabWide([{ key: "[ ]", desc: "cycles" }, { key: "c", desc: "cycle" }, { key: "h/l", desc: "chart" }, ...cycleChartHint(state), { key: "v", desc: "jump" }, { key: "1-4", desc: "tab" }])],
   },
   "manager.merchants": {
     handle: handleManagerMerchants,
@@ -2744,7 +2778,7 @@ const scopes: Record<ScopeId, ScopeEntry> = {
       const { name } = key
       if (name === "left" || name === "right" || name === "up" || name === "down") travel(ui, name, data)
       else if (name === "return" || name === "enter") openBarItem(ui, data, ui.state.focusedSection)
-      else if (name === "escape") ui.setState({ focusedSection: TAB_DEFAULT_FOCUS[ui.state.activeTab] })
+      else if (name === "escape") ui.setState({ focusedSection: ui.state.activeTab === "budgets" ? budgetsHome(ui.state) : TAB_DEFAULT_FOCUS[ui.state.activeTab] })
     },
     hints: (state) => [
       { key: "←→", desc: "move" },
@@ -2807,6 +2841,8 @@ export function footerLine(scope: ScopeId, state?: HintState, width = Infinity):
 
 /** The state the hints read, from both stores. */
 /** H/L steps the Budgets tab's cycle pane, while one is on screen. */
+/** The Budgets pane's own keys: your pay, the target and the flow's view. */
+const budgetPlanHints = (state?: HintState): Hint[] => [{ key: "p", desc: "pay" }, { key: "t", desc: "target" }, { key: "s", desc: state?.rangeView === "spending" ? "net view" : "spending view", label: "Flow: where the spending or the net went" }]
 const cycleChartHint = (state?: HintState) => ((state?.budgetCyclePanes ?? 1) > 0 ? [{ key: "H/L", desc: "cycle chart" }] : [])
 
 export function hintState(ui: UiStore, data?: DataStore): HintState {
@@ -2820,6 +2856,7 @@ export function hintState(ui: UiStore, data?: DataStore): HintState {
     rangeText: data?.state.uiPrefs.rangeText === true,
     rangeView: data?.state.uiPrefs.rangeView,
     budgetCyclePanes: ui.state.budgetCyclePanes,
+    budgetListInPane: budgetListInPane(ui.state),
     uncategorisedOnly: data?.state.uncategorisedOnly,
     tagReview: !!data?.state.tagReview,
     signInPaste: !!ui.state.llmSignIn?.paste,

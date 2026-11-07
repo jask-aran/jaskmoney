@@ -467,11 +467,14 @@ describe("key router", () => {
     handleKey(ui, key("c"), data)
     expect(ui.state.settingsEditor?.kind).toBe("cycle")
     ui.setState({ settingsEditor: null })
+    // h/l on the budget pane switch its chart; esc home.
     expect(ui.state.budgetChart).toBe(0)
+    ui.setState({ focusedSection: "bud.chart" })
     handleKey(ui, key("l"), data)
     expect(ui.state.budgetChart).toBe(1)
     handleKey(ui, key("h"), data)
     expect(ui.state.budgetChart).toBe(0)
+    handleKey(ui, key("escape"), data)
     await data.setBudget({ kind: "overall" }, 500)
     // All spending, the Budgets pane's first row, is the target.
     ui.setState({ budgetCategoryCursor: 0 })

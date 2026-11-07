@@ -13,7 +13,7 @@ import { centredTop } from "../primitives/ListRow"
 import { changeColor, spendChangeColor } from "../colors"
 import type { Span } from "../primitives/spans"
 import { S } from "../primitives/S"
-import { CHART_SECTIONS, CHART_VIEWS, chartPaneOf, ui, type SectionId } from "../../state/uiStore"
+import { CHART_SECTIONS, CHART_VIEWS, chartPaneOf, cycleView, ui, type SectionId } from "../../state/uiStore"
 import { data } from "../../state/dataStore"
 import { ink, theme, tone } from "../../theme"
 import { dailySpendSeries, fitCategoryLines, formatMoney, formatPct, formatWholeMoney, signedWholeMoney } from "../../domain/dashboard"
@@ -784,7 +784,7 @@ export function OverviewChartCard(props: {
   }
   return (
     <ChartCard
-      views={props.views ? props.views.map((i) => CHART_VIEWS[i]!) : CHART_VIEWS}
+      views={props.views ? props.views.map(cycleView) : CHART_VIEWS}
       current={props.views ? Math.max(0, props.views.indexOf(props.index)) : props.index}
       model={props.model}
       legend={view().view === "Trends" ? trendsLegend(props.trends.groups) : view().view === "Merchants" ? merchantsLegend(props.merchants) : calendarLegend(props.calendar, props.today)}

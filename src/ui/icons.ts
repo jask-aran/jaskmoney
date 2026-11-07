@@ -37,6 +37,8 @@ const VIEW_ICONS: Record<string, string> = {
   Subscriptions: "\uf021", // refresh
   // The Budgets tab's budget cycle by cycle.
   "Each cycle": "\uf03a", // list
+  // The Budgets tab's list, a cycle pane's first view.
+  Categories: "\uf0ca", // list-ul
 }
 
 /** A chart view's mark in the pane's view picker: its icon when icons are

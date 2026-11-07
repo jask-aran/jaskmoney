@@ -22,9 +22,9 @@ import { fitSpans, type Span } from "../primitives/spans"
 import { AXIS_GUESS, CHART_RIGHT_PAD, axisWidth, type ChartModel } from "../charts/ChartBody"
 import { cycleLines, cycleLinesLegend, type CycleSpent } from "./budgetCharts"
 import { chartSpeedMs, showings, useReveal } from "../charts/motion"
-import { ChartCard } from "../charts/ChartCard"
+import { ChartCard, viewPicker } from "../charts/ChartCard"
 import { spendingChart } from "../overview/periodCharts"
-import { BUDGET_PANES, BUDGET_VIEWS, CHART_VIEWS, CYCLE_VIEWS } from "../../state/uiStore"
+import { BUDGET_PANES, BUDGET_VIEWS, CATEGORIES, CHART_VIEWS, cycleView, cycleViewsFor } from "../../state/uiStore"
 import { GRID_PANE_MIN, OverviewChartCard, sideColumnWidth, WIDE, chartRows, overviewChartModel, type OverviewChartInput } from "../overview/OverviewTab"
 import { CalendarView, calendarLegend } from "../overview/CalendarView"
 import { spendingCalendar } from "../../domain/spending"
@@ -187,11 +187,18 @@ export function BudgetsTab(props: { focused: SectionId }) {
   const categoriesHeight = () => (wide() ? body() : Math.max(5, body() - chartHeight()))
   // The panes the keys and jumps reach follow the layout; focus on one
   // that's gone goes back to the budgets.
+  // The list is the first cycle pane's Categories view (the tab's home),
+  // or without a cycle pane, the Budgets pane's under the plan.
+  const listInPane = () => cyclePanes() > 0 && ui.state.budgetCycleViews[0] === CATEGORIES
+  const listInSide = () => cyclePanes() === 0
+  const sideId = (): SectionId => (listInSide() ? "bud.categories" : "bud.plan")
   createEffect(() => {
     const n = cyclePanes()
     if (ui.state.budgetCyclePanes !== n) ui.setState({ budgetCyclePanes: n })
     const pane = BUDGET_PANES.indexOf(props.focused)
-    if (pane > n) ui.setState({ focusedSection: "bud.categories" })
+    const home = listInSide() || listInPane() ? "bud.categories" : "bud.plan"
+    if (pane > n || (props.focused === "bud.categories" && home !== "bud.categories") || (props.focused === "bud.plan" && listInSide())) ui.setState({ focusedSection: home })
+    else if (props.focused === "bud.cycle" && listInPane()) ui.setState({ focusedSection: "bud.categories" })
   })
   const rowWidth = (width: number) => width - 5
 
@@ -253,8 +260,11 @@ export function BudgetsTab(props: { focused: SectionId }) {
   // left out; a closed group says how many budgets it holds. The average
   // goes where it would leave names too short.
   const NUM = 9
-  const withAverage = () => rowWidth(categoriesWidth()) - NUM * 3 >= 14
-  const nameWidth = () => rowWidth(categoriesWidth()) - NUM * (withAverage() ? 3 : 2)
+  // The list's rows: the Budgets pane's width, or in the cycle pane its
+  // (the figures kept near the names: at most LIST_MAX wide).
+  const listWidth = () => (listInSide() ? rowWidth(categoriesWidth()) : Math.min(LIST_MAX, rowWidth(cyclePaneWidth(0))))
+  const withAverage = () => listWidth() - NUM * 3 >= 14
+  const nameWidth = () => listWidth() - NUM * (withAverage() ? 3 : 2)
   const lineSpans = (row: Extract<SetupRow, { kind: "line" }>): Span[] => {
     const line = row.line
     const out = line.categoryId !== null && ignored().has(line.categoryId)
@@ -415,12 +425,13 @@ export function BudgetsTab(props: { focused: SectionId }) {
   // compact: two lines a weekday (15 rows) where the pane has room for it
   // and a few table rows, else one (8), else none.
   const calendarRows = () => {
-    const room = categoriesHeight() - 4 - topLines().length - nextPayBlock() - flowBlock() - 2 - Math.min(setup().length, BUDGETS_ROWS_MIN)
+    const room = categoriesHeight() - 4 - topLines().length - nextPayBlock() - flowBlock() - (listInSide() ? 2 + Math.min(setup().length, BUDGETS_ROWS_MIN) : 0)
     return room >= CALENDAR_TALL ? CALENDAR_TALL : room >= CALENDAR_MIN ? CALENDAR_MIN : 0
   }
   // The days, its legend and a blank line.
   const calendarBlock = () => (calendarRows() ? calendarRows() + 2 : 0)
-  const categoryRoom = () => Math.max(1, categoriesHeight() - 4 - topLines().length - calendarBlock() - nextPayBlock() - flowBlock())
+  // In the cycle pane: its height less the borders and the column heads.
+  const categoryRoom = () => Math.max(1, listInSide() ? categoriesHeight() - 4 - topLines().length - calendarBlock() - nextPayBlock() - flowBlock() : cyclePaneHeight(0) - 3)
   const categoryLines = setup
   const categoryTop = createMemo(() => centredTop(categoryCursor(), categoryLines().length, categoryRoom()))
   // Nothing budgeted yet: the pane says to start here.
@@ -455,9 +466,31 @@ export function BudgetsTab(props: { focused: SectionId }) {
       )}</Index>
     )
   }
+  // The list: its column heads, then the rows from the one at the top.
+  const CategoryList = (p: { heading: string }) => (
+  <Show when={categoryLines().length} fallback={<text fg={ink.note}>{" No spending yet."}</text>}>
+    <text wrapMode="none">
+      <S fg={ink.note}>{" "}</S>
+      <S fg={ink.heading} bold>{fit(p.heading, nameWidth())}</S>
+      <S fg={ink.label}>{"Spent".padStart(NUM)}{withAverage() ? "Average".padStart(NUM) : ""}{"Budget".padStart(NUM)}</S>
+    </text>
+    <Index each={categoryLines().slice(categoryTop(), categoryTop() + categoryRoom())}>{(row, i) => (
+      <ListRow cursor={categoriesFocused() && categoryTop() + i === categoryCursor()} bg={theme.canvas} armed={rowBudget(row()) ? armedFor(ui.state.armed, "budget", budgetArmId(rowBudget(row())!, cycle().start)) : undefined} spans={rowSpans(row())} />
+    )}</Index>
+  </Show>
+  )
+  // The list as the first cycle pane's view: its picker, the list's
+  // cursor while it's focused.
+  const CategoriesPane = () => (
+    <box ref={regionRef("bud.categories", "budgets")} width={cyclePaneWidth(0)} height={cyclePaneHeight(0)} flexShrink={0} onMouseDown={panePointer("bud.categories")}>
+      <SectionCard title="Categories" titleRight={viewPicker(cycleViewsFor(0).map(cycleView), 0)} focused={categoriesFocused()} width={cyclePaneWidth(0)} height={cyclePaneHeight(0)}>
+        <CategoryList heading="Category" />
+      </SectionCard>
+    </box>
+  )
   const Categories = () => (
     <SectionCard title="Budgets" titleSuffix={nothingSet() ? "· start here" : view().current ? `· day ${elapsed()} of ${cycle().days}` : `· ${period()} · ] later`}
-      titleSuffixColor={nothingSet() || !view().current ? tone.caution : tone.scope} focused={categoriesFocused()} width={categoriesWidth()} height={categoriesHeight()}>
+      titleSuffixColor={nothingSet() || !view().current ? tone.caution : tone.scope} focused={props.focused === sideId()} width={categoriesWidth()} height={categoriesHeight()}>
       <Index each={shownTop()}>{(line) => (
         // Never shrunk: past the pane's height, lines clip rather than
         // overlap.
@@ -487,16 +520,7 @@ export function BudgetsTab(props: { focused: SectionId }) {
         <text wrapMode="none" flexShrink={0}><S>{" "}</S><Index each={planReveal() >= 1 ? spans() : sweptTo(spans(), Math.round(Math.min(1, planReveal() / 0.7) * rowWidth(categoriesWidth())))}>{(span) => <S fg={span().fg} bold={span().bold}>{span().text}</S>}</Index></text>
       )}</Index>
       <Show when={flowLines().length}><text wrapMode="none" flexShrink={0}>{" "}</text></Show>
-      <Show when={categoryLines().length} fallback={<text fg={ink.note}>{" No spending yet."}</text>}>
-        <text wrapMode="none">
-          <S fg={ink.note}>{" "}</S>
-          <S fg={ink.heading} bold>{fit("Categories", nameWidth())}</S>
-          <S fg={ink.label}>{"Spent".padStart(NUM)}{withAverage() ? "Average".padStart(NUM) : ""}{"Budget".padStart(NUM)}</S>
-        </text>
-        <Index each={categoryLines().slice(categoryTop(), categoryTop() + categoryRoom())}>{(row, i) => (
-          <ListRow cursor={categoriesFocused() && categoryTop() + i === categoryCursor()} bg={theme.canvas} armed={rowBudget(row()) ? armedFor(ui.state.armed, "budget", budgetArmId(rowBudget(row())!, cycle().start)) : undefined} spans={rowSpans(row())} />
-        )}</Index>
-      </Show>
+      <Show when={listInSide()}><CategoryList heading="Categories" /></Show>
     </SectionCard>
   )
 
@@ -508,7 +532,7 @@ export function BudgetsTab(props: { focused: SectionId }) {
 
 
 
-  const cycleViews = () => ui.state.budgetCycleViews.slice(0, cyclePanes()).map((i) => (CHART_VIEWS[i] ?? CHART_VIEWS[0]).view)
+  const cycleViews = () => ui.state.budgetCycleViews.slice(0, cyclePanes()).map((i) => cycleView(i).view)
   const cycleShows = (view: string) => (cycleViews() as readonly string[]).includes(view)
   const cycleSeries = createMemo(() => dailySpendSeries(inCycle(), cycle().start, cycle().end))
   const cycleInput: OverviewChartInput = {
@@ -527,7 +551,7 @@ export function BudgetsTab(props: { focused: SectionId }) {
   })
   const cycleAxis = [AXIS_GUESS, AXIS_GUESS]
   const cycleModel = (pane: number) => createMemo(() => {
-    if (pane >= cyclePanes()) return null
+    if (pane >= cyclePanes() || ui.state.budgetCycleViews[pane] === CATEGORIES) return null
     const m = overviewChartModel((CHART_VIEWS[ui.state.budgetCycleViews[pane]!] ?? CHART_VIEWS[0]).view, cycleInput, cyclePaneWidth(pane) - 4, chartRows(cyclePaneHeight(pane), baseline()), cycleAxis[pane])
     if (m && m.ticks.size) cycleAxis[pane] = axisWidth(m.ticks)
     return m
@@ -538,7 +562,7 @@ export function BudgetsTab(props: { focused: SectionId }) {
     const index = () => ui.state.budgetCycleViews[p.pane]!
     return (
       <box ref={regionRef(section, "budgets")} width={cyclePaneWidth(p.pane)} height={cyclePaneHeight(p.pane)} flexShrink={0} onMouseDown={panePointer(section)}>
-        <OverviewChartCard index={index()} views={CYCLE_VIEWS} model={cycleModels[p.pane]!()} calendar={cycleCalendar()} trends={cycleTrends()} merchants={cycleMerchants()} today={today()}
+        <OverviewChartCard index={index()} views={cycleViewsFor(p.pane)} model={cycleModels[p.pane]!()} calendar={cycleCalendar()} trends={cycleTrends()} merchants={cycleMerchants()} today={today()}
           width={cyclePaneWidth(p.pane)} height={cyclePaneHeight(p.pane)} focused={props.focused === section} baseline={baseline()}
           revealKey={data.state.uiPrefs.chartMotion === "always" ? `${(CHART_VIEWS[index()] ?? CHART_VIEWS[0]).view}:${cycle().start}:${seen()}` : undefined}
           revealMs={data.state.uiPrefs.chartMotion === "always" ? chartSpeedMs(data.state.uiPrefs.chartSpeed) : undefined}
@@ -593,7 +617,11 @@ export function BudgetsTab(props: { focused: SectionId }) {
     <box ref={regionRef(id, "budgets")} width={width()} height={height()} flexShrink={0} onMouseDown={panePointer(id)}>{card()}</box>
   )
   const BudgetPane = () => region("bud.chart", chartWidth, chartHeight, () => <Chart />)
-  const CategoriesCard = () => region("bud.categories", categoriesWidth, categoriesHeight, () => <Categories />)
+  // Keyed on its id: a ref is taken once, and the pane is the list's or
+  // the plan's by the layout.
+  const CategoriesCard = () => <Show when={sideId()} keyed>{(id: SectionId) => region(id, categoriesWidth, categoriesHeight, () => <Categories />)}</Show>
+  // The first cycle pane: the list (Categories) or a chart.
+  const FirstCyclePane = () => <Show when={listInPane()} fallback={<CyclePane pane={0} />}><CategoriesPane /></Show>
 
   return (
     <box width="100%" height="100%" flexDirection={wide() ? "row" : "column"} gap={wide() ? 1 : 0} backgroundColor={theme.canvas}>
@@ -601,13 +629,13 @@ export function BudgetsTab(props: { focused: SectionId }) {
         <Show when={grid()} fallback={
           <box flexDirection="column" width={mainWidth()} height={body()}>
             <BudgetPane />
-            <Show when={cyclePanes() > 0}><CyclePane pane={0} /></Show>
+            <Show when={cyclePanes() > 0}><FirstCyclePane /></Show>
           </box>
         }>
           <box flexDirection="column" width={mainWidth()} height={body()}>
             <BudgetPane />
             <box flexDirection="row" gap={1} width={mainWidth()} height={bottomQuarter()} flexShrink={0}>
-              <CyclePane pane={0} />
+              <FirstCyclePane />
               <CyclePane pane={1} />
             </box>
           </box>
@@ -625,6 +653,8 @@ const CALENDAR_TALL = 15
 
 /** The Budgets pane's fewest table rows before the calendar gives way. */
 const BUDGETS_ROWS_MIN = 5
+/** Widest the list's rows are in the cycle pane. */
+const LIST_MAX = 72
 
 /** Fewest rows a Budgets chart pane gets before the cycle pane gives way. */
 const CYCLE_PANE_MIN = 12

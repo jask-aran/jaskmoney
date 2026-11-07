@@ -1,7 +1,7 @@
 import { afterEach, expect, test } from "bun:test"
 import { setAppClock } from "../../domain/days"
 import { data } from "../../state/dataStore"
-import { BUDGET_PANES, BUDGET_VIEWS, CHART_VIEWS, CYCLE_VIEWS, ui } from "../../state/uiStore"
+import { BUDGET_VIEWS, CATEGORIES, CHART_VIEWS, CYCLE_VIEWS, ui } from "../../state/uiStore"
 import { renderApp } from "../../testing/app"
 import { handleKey } from "../../app/keys"
 import { key } from "../../testing/keys"
@@ -43,7 +43,8 @@ test("Budgets tab (3): the charts follow the Budgets pane's row at the cursor, A
   expect(f).toMatch(/\$100 spent\s+\$400 left/)
   expect(f).toMatch(/All spending\s+\$100/)
   expect(f).toContain("Cumulative spending · All spending")
-  // l: the Overview's next spending view, Daily.
+  // l on the budget pane: the Overview's next spending view, Daily.
+  handleKey(ui, key("v"), data); handleKey(ui, key("t"), data)
   handleKey(ui, key("l"), data)
   expect(await frame()).toContain("Daily spending · All spending")
 })
@@ -187,39 +188,53 @@ test("the cycle's calendar is always there: the budget's days so far, and its re
   ui.setState({ budgetOffset: 0 })
 })
 
-test("the Budgets tab's panes: the budget pane on top; t, y jump to the budget and cycle panes, h/l step the focused one's views, H/L the cycle pane's from the Budgets pane, esc back", async () => {
+test("the Budgets tab's panes: the budget pane on top, the list (Categories) under it as the cycle pane's first view and the tab's home; h/l step the focused pane's views, focus following the list's pane between the list and a chart; esc home", async () => {
   const { frame } = await budgetsTab()
   await data.setBudget({ kind: "overall" }, 500)
-  await frame()
-  // 120×44: the budget pane, a cycle pane under it.
+  const f = await frame()
+  // 120×44: the budget pane, a cycle pane under it, on the list.
   expect(ui.state.budgetCyclePanes).toBe(1)
+  expect(ui.state.budgetCycleViews[0]).toBe(CATEGORIES)
+  expect(f).toMatch(/Categories ─/)
+  expect(f).toMatch(/Category\s+Spent\s+Average\s+Budget/)
   const start = ui.state.budgetCycleViews
-  handleKey(ui, key("L"), data)
-  // The next of CYCLE_VIEWS: never a spending view (the budget pane's) or the calendar.
-  expect(ui.state.budgetCycleViews).toEqual([CYCLE_VIEWS[(CYCLE_VIEWS.indexOf(start[0]) + 1) % CYCLE_VIEWS.length], start[1]])
+  // l on the list: the pane's next view, a chart, and the focus with it.
+  handleKey(ui, key("l"), data)
+  expect(ui.state.budgetCycleViews[0]).toBe(CYCLE_VIEWS[0])
+  expect(ui.state.focusedSection).toBe("bud.cycle")
+  // Its views: never a spending view (the budget pane's) or the calendar.
   for (let i = 0; i < CHART_VIEWS.length; i++) {
-    handleKey(ui, key("L"), data)
-    const view = CHART_VIEWS[ui.state.budgetCycleViews[0]]!
-    expect(view.group === "Spending" || view.view === "Calendar").toBe(false)
+    handleKey(ui, key("l"), data)
+    const at = ui.state.budgetCycleViews[0]
+    if (at !== CATEGORIES) expect(CHART_VIEWS[at]!.group === "Spending" || CHART_VIEWS[at]!.view === "Calendar").toBe(false)
   }
-  ui.setState({ budgetCycleViews: start })
-  // ←/→ move between panes: they don't step a chart's views.
-  const chart = ui.state.budgetChart
-  handleKey(ui, key("left"), data)
-  expect(ui.state.budgetChart).toBe(chart)
-  expect(BUDGET_PANES).toContain(ui.state.focusedSection)
-  handleKey(ui, key("right"), data)
+  // Back round to the list: the focus on it again.
+  ui.setState({ budgetCycleViews: [CYCLE_VIEWS.at(-1)!, start[1]], focusedSection: "bud.cycle" })
+  handleKey(ui, key("l"), data)
+  expect(ui.state.budgetCycleViews[0]).toBe(CATEGORIES)
   expect(ui.state.focusedSection).toBe("bud.categories")
+  // → to the Budgets pane (the plan), ← back to the main column.
+  handleKey(ui, key("right"), data)
+  expect(ui.state.focusedSection).toBe("bud.plan")
+  expect(ui.activeScope()).toBe("budgets.plan")
+  handleKey(ui, key("left"), data)
+  expect(["bud.chart", "bud.categories"]).toContain(ui.state.focusedSection)
+  // The budget pane: h/l its views; esc home, the list.
   handleKey(ui, key("v"), data); handleKey(ui, key("t"), data)
   expect(ui.state.focusedSection).toBe("bud.chart")
   handleKey(ui, key("l"), data)
   expect(ui.state.budgetChart).toBe(1)
-  handleKey(ui, key("j"), data)
-  expect(ui.state.focusedSection).toBe("bud.cycle")
-  handleKey(ui, key("h"), data)
-  expect(ui.state.budgetCycleViews[0]).toBe(CYCLE_VIEWS[(CYCLE_VIEWS.indexOf(start[0]) - 1 + CYCLE_VIEWS.length) % CYCLE_VIEWS.length])
   handleKey(ui, key("escape"), data)
   expect(ui.state.focusedSection).toBe("bud.categories")
+  // A chart in the list's place: home is the Budgets pane, and the tab
+  // opens there; H/L from it step the cycle pane, back to the list.
+  handleKey(ui, key("h"), data)
+  expect(ui.state.focusedSection).toBe("bud.cycle")
+  handleKey(ui, key("escape"), data)
+  expect(ui.state.focusedSection).toBe("bud.plan")
+  handleKey(ui, key("L"), data)
+  expect(ui.state.budgetCycleViews[0]).toBe(CATEGORIES)
+  expect(ui.state.focusedSection).toBe("bud.plan")
   ui.setState({ budgetChart: 0, budgetCycleViews: start })
 })
 

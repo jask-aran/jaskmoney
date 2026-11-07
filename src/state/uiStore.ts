@@ -45,6 +45,7 @@ export type SectionId =
   | "set.ai"
   | "set.web"
   | "bud.categories"
+  | "bud.plan"
   | "bud.chart"
   | "bud.cycle"
   | "bud.cycle2"
@@ -78,6 +79,7 @@ export type ScopeId =
   | "settings.web"
   | "settings.importHistory"
   | "budgets.categories"
+  | "budgets.plan"
   | "budgets.chart"
   | "manager.detail"
   | "manager.detail.notes"
@@ -224,7 +226,8 @@ export interface UiState {
    * Overview's spending views over the budget, and its subscriptions). */
   budgetChart: number
   /** The Budgets tab's cycle panes' views: indexes into CHART_VIEWS (the
-   * Overview's, over the cycle shown). The second shows full screen only. */
+   * Overview's, over the cycle shown), or the first's CATEGORIES (the
+   * budgets list). The second shows full screen only. */
   budgetCycleViews: [number, number]
   /** How many cycle panes the Budgets tab shows (0, 1 or 2): set from its
    * size, as overviewCharts is. */
@@ -370,9 +373,32 @@ export const CYCLE_VIEWS: readonly number[] = CHART_VIEWS.flatMap((v, i) => (v.g
 /** The Budgets tab's chart panes: the budget's, then the cycle's two. */
 export const BUDGET_PANES: readonly SectionId[] = ["bud.chart", "bud.cycle", "bud.cycle2"]
 
+/** The first cycle pane's view that is the budgets list (Categories): the
+ * tab's home, its rows where budgets are set and whose cursor the budget
+ * chart follows. Without a cycle pane (narrow, short) the list is in the
+ * Budgets pane, under the plan. */
+export const CATEGORIES = -1
+/** A cycle pane's views in h/l order: the first's the list, then the charts. */
+export function cycleViewsFor(pane: number): readonly number[] {
+  return pane === 0 ? [CATEGORIES, ...CYCLE_VIEWS] : CYCLE_VIEWS
+}
+/** A cycle pane view's picker entry. */
+export function cycleView(index: number): { view: string; title: string; group: string } {
+  return index === CATEGORIES ? { view: "Categories", title: "Categories", group: "Categories" } : CHART_VIEWS[index] ?? CHART_VIEWS[0]
+}
+/** Whether the budgets list is in the first cycle pane (else the Budgets pane). */
+export function budgetListInPane(state: Pick<UiState, "budgetCyclePanes" | "budgetCycleViews">): boolean {
+  return state.budgetCyclePanes > 0 && state.budgetCycleViews[0] === CATEGORIES
+}
+/** The Budgets tab's home focus: the list wherever it is, else (a chart
+ * in its pane) the Budgets pane. */
+export function budgetsHome(state: Pick<UiState, "budgetCyclePanes" | "budgetCycleViews">): SectionId {
+  return state.budgetCyclePanes === 0 || budgetListInPane(state) ? "bud.categories" : "bud.plan"
+}
+
 /** The tab's jump targets that are on screen: only the chart panes the
  * Overview or the Budgets tab shows. */
-export function jumpTargets(state: Pick<UiState, "activeTab" | "overviewCharts"> & Partial<Pick<UiState, "budgetCyclePanes" | "chartViews">>): JumpTarget[] {
+export function jumpTargets(state: Pick<UiState, "activeTab" | "overviewCharts"> & Partial<Pick<UiState, "budgetCyclePanes" | "budgetCycleViews" | "chartViews">>): JumpTarget[] {
   const targets = JUMP_TARGETS[state.activeTab]
   if (state.activeTab === "overview") {
     // Each chart on screen by where it is in this layout (one, two stacked,
@@ -388,7 +414,19 @@ export function jumpTargets(state: Pick<UiState, "activeTab" | "overviewCharts">
   }
   // A cycle pane is the 2nd or 3rd of BUDGET_PANES: on screen while its
   // number is within budgetCyclePanes.
-  if (state.activeTab === "budgets") return targets.filter((t) => !(t.section === "bud.cycle" || t.section === "bud.cycle2") || BUDGET_PANES.indexOf(t.section) <= (state.budgetCyclePanes ?? 1))
+  // The list and the Budgets pane are one pane without a cycle pane; the
+  // first cycle pane is the list or a chart.
+  if (state.activeTab === "budgets") {
+    const panes = state.budgetCyclePanes ?? 1
+    const list = panes > 0 && (state.budgetCycleViews ?? [CATEGORIES])[0] === CATEGORIES
+    return targets.filter((t) => {
+      if (t.section === "bud.plan") return panes > 0
+      if (t.section === "bud.categories") return panes === 0 || list
+      if (t.section === "bud.cycle") return panes > 0 && !list
+      if (t.section === "bud.cycle2") return panes > 1
+      return true
+    })
+  }
   return targets
 }
 
@@ -407,7 +445,8 @@ export const JUMP_TARGETS: Record<TabId, JumpTarget[]> = {
     { key: "t", section: "mgr.transactions", label: "Transactions" },
   ],
   budgets: [
-    { key: "c", section: "bud.categories", label: "Budgets" },
+    { key: "c", section: "bud.categories", label: "Categories" },
+    { key: "b", section: "bud.plan", label: "Budgets" },
     { key: "t", section: "bud.chart", label: "Budget chart" },
     { key: "y", section: "bud.cycle", label: "Cycle chart" },
     { key: "n", section: "bud.cycle2", label: "Second cycle chart" },
@@ -550,7 +589,7 @@ function createUiStore() {
     budgetSetupOpen: [],
     overviewOpen: [],
     budgetsEmpty: false,
-    budgetCycleViews: [8, 9],
+    budgetCycleViews: [CATEGORIES, 8],
     budgetCyclePanes: 1,
     budgetOffset: 0,
     merchantCursor: 0,
@@ -614,8 +653,9 @@ function createUiStore() {
       ...ALL_CLOSED,
       activeTab: tab,
       drillReturn: null,
-      focusedSection: tab === "budgets" && state.budgetsEmpty ? "bud.categories" : TAB_DEFAULT_FOCUS[tab],
-      ...(tab === "budgets" && state.budgetsEmpty ? { budgetCategoryCursor: 0 } : {}),
+      focusedSection: tab === "budgets" ? (state.budgetsEmpty ? "bud.categories" : budgetsHome(state)) : TAB_DEFAULT_FOCUS[tab],
+      // Nothing budgeted yet: the list, its first row, to start there.
+      ...(tab === "budgets" && state.budgetsEmpty ? { budgetCategoryCursor: 0, budgetCycleViews: [CATEGORIES, state.budgetCycleViews[1]] as [number, number] } : {}),
       range: null,
       settingsActive: false,
       armed: null,
@@ -844,7 +884,7 @@ function createUiStore() {
     }
     if (state.focusedSection.startsWith("bar.")) return "bar"
     if (state.activeTab === "overview") return state.focusedSection === "ov.range" ? "overview.range" : "overview"
-    if (state.activeTab === "budgets") return BUDGET_PANES.includes(state.focusedSection) ? "budgets.chart" : "budgets.categories"
+    if (state.activeTab === "budgets") return BUDGET_PANES.includes(state.focusedSection) ? "budgets.chart" : state.focusedSection === "bud.plan" ? "budgets.plan" : "budgets.categories"
     if (state.activeTab === "manager") {
       if (state.focusedSection === "mgr.accounts") return "manager.accounts"
       return state.txnView === "merchants" ? "manager.merchants" : "manager.txns"
