@@ -6,7 +6,7 @@ import { sharedBudgetView, sharedCategoryLines } from "../../state/budgetViews"
 import { budgetLabel } from "../../domain/budgetScopes"
 import { dailySpendSeries, formatWholeMoney } from "../../domain/dashboard"
 import { addDays, appToday, daysBetween } from "../../domain/days"
-import { historyCovers } from "../../domain/position"
+import { computePeriodFlows, historyCovers } from "../../domain/position"
 import type { Transaction } from "../../domain/types"
 import type { SectionId } from "../../state/uiStore"
 import { ui } from "../../state/uiStore"
@@ -223,12 +223,14 @@ export function BudgetsTab(props: { focused: SectionId }) {
   const spendingIds = createMemo(() => new Set(data.state.accounts.filter((a) => accountRole(a) === "spending").map((a) => a.id)))
   const allSpending = createMemo(() => transactions().filter((t) => t.accountId != null && spendingIds().has(t.accountId)))
   const inCycle = createMemo(() => allSpending().filter((t) => t.dateISO >= cycle().start && t.dateISO <= cycle().end))
-  // The plan: the cycle's pay and your spending (the overall budget); pay
-  // less spending goes to savers. The cycle's pay is what came in, or
-  // until it has, your usual pay (what you expect each payday). Nothing is
+  // The plan: what came in this cycle and your spending (the overall
+  // budget); the rest goes to savers. What came in is all income (pay and
+  // interest: the Overview's "in", so what's left here is its net), or
+  // until pay has, your usual pay (what you expect each payday). Nothing is
   // judged without them.
   const expectedPay = () => data.state.uiPrefs.expectedPay || null
-  const planPay = () => (paid().pay > 0 ? paid().pay : expectedPay())
+  const income = createMemo(() => computePeriodFlows(data.state.accounts, transactions().filter((t) => t.dateISO >= cycle().start && t.dateISO <= through())).income)
+  const planPay = () => (paid().pay > 0 ? income() : expectedPay())
   const spendingPlan = () => (budgets().length ? split().total : null)
   const toSavers = () => (planPay() != null && spendingPlan() != null ? planPay()! - spendingPlan()! : null)
   // This cycle's pay as it happened: all of it, and what's gone to savers.
@@ -316,7 +318,7 @@ export function BudgetsTab(props: { focused: SectionId }) {
     const p = paid()
     // The cycle's track first: its paydays, today and the sends, and under
     // it what came in, what's gone to savers and what's been spent.
-    for (const [n, spans] of cycleTrack(width, cycle().start, addDays(cycle().end, 1), today(), { ...p, spent }, plan != null && plan > 0 ? tone.good : ink.figure).entries()) out.push({ spans, sweeps: n === 1 })
+    for (const [n, spans] of cycleTrack(width, cycle().start, addDays(cycle().end, 1), today(), { ...p, pay: income(), spent }, plan != null && plan > 0 ? tone.good : ink.figure, cycle().end).entries()) out.push({ spans, sweeps: n === 1 })
     out.push({ spans: blank, stays: true })
     // Savers is drawn once pay and target leave something for it.
     const planned = pay != null && !!target && plan != null && plan > 0

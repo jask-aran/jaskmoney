@@ -302,10 +302,10 @@ test("the plan: your pay and your spending target give what goes to savers; each
   let f = await frame()
   expect(f).toMatch(/Next pay\s+p sets your pay\s+Sun 1 Nov │/)
   expect(f).toContain("t: your spending target")
-  // At the top, the track, 1 Oct to 1 Nov, today on it and the send
+  // At the top, the track, 1 Oct to 31 Oct (its last day), today on it and the send
   // (its day over it where there's room: here, none beside 1 Oct); the pay
   // in, the send and what's spent (in bad) under it.
-  expect(f).toMatch(/1 Oct\s+today\s+1 Nov/)
+  expect(f).toMatch(/1 Oct\s+today\s+31 Oct/)
   expect(f).toMatch(/●[━◆┿]+┄+○/)
   expect(f).toMatch(/↓ \$5,200 in\s+◆ \$2,500 savers\s+\$300 spent/)
   // No plan, no meter and no judgment.
