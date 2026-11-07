@@ -63,8 +63,9 @@ only to the services you set up:
 
 Nothing of yours goes with two other requests: public market prices from Yahoo Finance (the setup's backdrop), and
 GitHub's latest release, asked by an installed binary every 10 minutes (`JASKMONEY_NO_UPDATE_CHECK=1` turns it off).
-The optional server (`--serve`) trusts every connection from this machine: see
-[docs/client-server.md](docs/client-server.md#security).
+The optional server (`--serve`) listens on 127.0.0.1 only and refuses other host names and foreign origins, but has no
+token: anything running on this machine can connect, read everything and change credentials. Serve only on a machine
+whose other users you trust, and put a login in front of any tunnel or proxy.
 
 ## Keys
 
@@ -77,7 +78,7 @@ The optional server (`--serve`) trusts every connection from this machine: see
 | `u` | Undo |
 | `ctrl+c` | Quit |
 
-The footer lists the keys for where you are; the [guide](docs/guide.md) has the rest.
+The footer lists the keys for where you are; `ctrl+k` has the rest.
 
 ## In action
 
@@ -106,7 +107,7 @@ that, the merchant and the amount.
 bun run dev           # restarts on save
 bun run typecheck
 bun run test
-bun run recordings    # the README's videos: docs/media.md
+bun run recordings    # the README's videos
 bun run screenshots
 ```
 

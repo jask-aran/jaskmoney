@@ -1,12 +1,12 @@
 # Jaskmoney
 
-The repository root is the OpenTUI product. `docs/` holds the guide, the client/server split and the backlog.
+The repository root is the OpenTUI product. The app documents itself (footer, `ctrl+k`); the README is the only doc, and `docs/screenshots/` holds its media.
 
 ## Work in the active product
 
 ```bash
 bun start
-bun run server    # the core alone: the web app and other clients connect (docs/client-server.md)
+bun run server    # the core alone: the web app and other clients connect
 bun run typecheck
 bun run test
 bun run eval      # category suggestions vs the demo's hidden truth (src/eval/run.ts)
@@ -15,7 +15,7 @@ bun run eval:search  # smart search's filters, with and without Clairic (src/eva
 
 `bun run eval` freezes a demo made from your history into `~/.jaskmoney/eval` (never the repo) and scores the suggestion pipeline against its hidden categories: right, top 3, accept-all precision, by source and by unseen merchant, with the change since the last run. Run it before and after changing a decision-model prompt or context block; `--limit N` for a fixed sample, `--fresh` to remake the set, `--misses` to list the wrong picks. Confirm a change on a set it wasn't found on (`--set 1`, `--set 2`: other seeds, other held-out merchants), and prefer fixing what fails outright to nudging what's already right.
 
-The data lives in one core (`src/core/`) that the TUI and the web app reach as clients through `src/client/store.ts`; `docs/client-server.md` says what goes where.
+The data lives in one core (`src/core/`) that the TUI and the web app reach as clients through `src/client/store.ts`.
 
 ## General TUI rules
 
