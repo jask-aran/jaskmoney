@@ -15,7 +15,7 @@ import type { Span } from "../primitives/spans"
 import { S } from "../primitives/S"
 import { CHART_SECTIONS, CHART_VIEWS, chartPaneOf, ui, type SectionId } from "../../state/uiStore"
 import { data } from "../../state/dataStore"
-import { fade, ink, theme, tone } from "../../theme"
+import { ink, theme, tone } from "../../theme"
 import { dailySpendSeries, fitCategoryLines, formatMoney, formatPct, formatWholeMoney, signedWholeMoney } from "../../domain/dashboard"
 import { computePeriodFlows, computePosition, historyCovers, projectAvailable, usualDailySpend } from "../../domain/position"
 import { allocation, budgetProgress, cycleFor, cycleSpending, progressOf } from "../../domain/budget"
@@ -38,10 +38,7 @@ import { balancesChart, cashFlowChart, spendingChart, type PeriodNames } from ".
 import { UP_LOGO_WIDTH } from "../primitives/UpLogo"
 import { CalendarView, calendarLegend } from "./CalendarView"
 import { cycleTrack } from "../budgets/PlanGraphics"
-import { flowOpening } from "../charts/flow"
-import { categoryBar, inBar, netBar, sourcesBars } from "./RangeGraphics"
-import { INKS } from "../charts/inks"
-import { leadingEmoji, saverInks } from "../charts/saverInks"
+import { spendFlow } from "./RangeGraphics"
 import { cyclePay } from "../../domain/payday"
 import { computeCategorySpend, groupCategorySpend } from "../../domain/dashboard"
 
@@ -408,51 +405,11 @@ export function OverviewTab(props: { focused: SectionId }) {
     // flows (as the text's totals count them). What's spent is the bar's, under it.
     lines.push(...cycleTrack(width, bounds().start, addDays(bounds().end, 1), today(), { ...pay, pay: f.income, sent: f.savedToSavers, spent: 0 }, tone.good, bounds().end))
     lines.push([])
-    // Each saver's change over the range, in its colour (the Savers
-    // chart's), named without their emoji: the colour is theirs, and an
-    // emoji's width would put the labels out.
-    const bare = (name: string) => (leadingEmoji(name) ? name.trim().replace(/^\p{Extended_Pictographic}[\u{FE0E}\u{FE0F}]?\s*/u, "") : name).trim()
-    const savers = [...position().savers].sort((x, y) => y.balance - x.balance)
-    const colors = saverInks(savers.map((s) => s.name))
-    const parts = savers.map((s, i) => ({
-      name: bare(s.name),
-      color: colors[i]!, change: f.saverChanges.find((c) => c.accountId === s.accountId)?.change ?? 0,
+    // Where the spending or the net went (s): the Budgets pane's flow too.
+    lines.push(...spendFlow(width, {
+      ...f, rows: inPeriod(), groups: groups(), bySpending: spendingView(),
+      savers: [...position().savers].sort((x, y) => y.balance - x.balance),
     }))
-    // Where the spending went (s) or where the net went: the categories'
-    // bar opens out of the spent bar in the savers' place.
-    const bySpending = spendingView()
-    const groupParts = groups().map((g) => ({ amount: g.amount, color: g.color, name: bare(g.name) }))
-    if (f.spent - f.income >= 0.5) {
-      // Spending more than came in: where it came from, over what was
-      // spent (and, where the spending went, its categories under that).
-      // Each source measured over the range: transfers in from outside
-      // (not income, not spending, from no tracked account), net; what each
-      // saver sent into Spending, net; and how far Spending's own balance
-      // fell.
-      const rows = inPeriod()
-      const outside = rows.filter((t) => t.excluded && !t.internal && !t.income).reduce((n, t) => n + t.amount, 0)
-      const fromSavers = savers.map((s, i) => ({ amount: rows.filter((t) => t.internal && t.transferAccountId === s.accountId).reduce((n, t) => n + t.amount, 0), color: colors[i]!, name: parts[i]!.name, figure: colors[i]! }))
-      const fell = -rows.reduce((n, t) => n + t.amount, 0)
-      const sources = [
-        { amount: outside, color: INKS.transfers!, name: "transfers", figure: INKS.transfers! },
-        ...fromSavers.sort((x, y) => y.amount - x.amount),
-        { amount: fell, color: fade(tone.good, 0.65), name: "Spending", figure: ink.figure },
-      ]
-      lines.push(...sourcesBars(width, f.income, f.spent, sources, bySpending ? groupParts : undefined))
-    } else {
-      // What came in: spent, then the net; one of them opened out under
-      // it: the spending to its categories, or the net to where it went,
-      // each saver and what stayed in Spending.
-      const bar = inBar(width, f.income, f.spent)
-      lines.push(bar.above, bar.bar)
-      if (bySpending && f.spent >= 0.5) {
-        const spending = categoryBar(width, groupParts)
-        lines.push(flowOpening(width, 0, bar.netFrom, [{ text: formatPct(f.income > 0 ? (f.spent / f.income) * 100 : null), fg: ink.figure, bold: true }, { text: " spent", fg: ink.note }]), spending.bar, spending.labels)
-      } else if (!bySpending && f.net >= 0.5 && bar.netFrom > 0) {
-        const net = netBar(width, f.net, parts)
-        lines.push(flowOpening(width, bar.netFrom, width, [{ text: formatPct(f.savingsRate), fg: ink.figure, bold: true }, { text: " saved", fg: ink.note }]), net.bar, net.labels)
-      }
-    }
     lines.push([], heading())
     return done()
   })

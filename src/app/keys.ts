@@ -1958,6 +1958,13 @@ function handleBudgetCategories(ui: UiStore, key: KeyEvent, data?: DataStore): v
     return
   }
   // a: a new budget, on whatever it covers (the first scope without one).
+  // s: the flow over the categories opens out to where the spending went,
+  // or where the net went (the Overview's Range pane's view too).
+  if (name === "s" && !key.shift && !key.ctrl && !key.meta && data) {
+    const spending = data.state.uiPrefs.rangeView !== "spending"
+    settleData(ui, data.saveUiPrefs({ rangeView: spending ? "spending" : "net" }), () => ui.setStatus(spending ? "Where the spending went" : "Where the net went"))
+    return
+  }
   if (name === "a" && !key.shift) {
     const taken = new Set(data.state.budgets.map((b) => scopeKey(b.scope)))
     const free = budgetScopeOptions(data.state.accounts, data.state.categories).find((o) => !taken.has(o.key))
@@ -2708,7 +2715,7 @@ const scopes: Record<ScopeId, ScopeEntry> = {
     handle: handleBudgetCategories,
     list: true,
     pane: () => "Budgets",
-    hints: (state) => [{ key: "j/k", desc: "move" }, { key: "enter", desc: "set budget" }, { key: "space", desc: "open" }, { key: "x", desc: "leave out" }, { key: "del del", desc: "remove budget" }, { key: "a", desc: "add" }, ...tabWide([{ key: "p", desc: "pay" }, { key: "t", desc: "target" }, { key: "[ ]", desc: "cycles" }, { key: "c", desc: "cycle" }, { key: "h/l", desc: "chart" }, ...cycleChartHint(state), { key: "v", desc: "jump" }, { key: "1-4", desc: "tab" }])],
+    hints: (state) => [{ key: "j/k", desc: "move" }, { key: "enter", desc: "set budget" }, { key: "space", desc: "open" }, { key: "x", desc: "leave out" }, { key: "del del", desc: "remove budget" }, { key: "a", desc: "add" }, { key: "s", desc: state?.rangeView === "spending" ? "net view" : "spending view", label: "Flow: where the spending or the net went" }, ...tabWide([{ key: "p", desc: "pay" }, { key: "t", desc: "target" }, { key: "[ ]", desc: "cycles" }, { key: "c", desc: "cycle" }, { key: "h/l", desc: "chart" }, ...cycleChartHint(state), { key: "v", desc: "jump" }, { key: "1-4", desc: "tab" }])],
   },
   "manager.merchants": {
     handle: handleManagerMerchants,

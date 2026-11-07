@@ -1,5 +1,6 @@
 import { expect, test } from "bun:test"
-import { categoryBar, netBar, sourcesBars } from "./RangeGraphics"
+import { categoryBar, netBar, sourcesBars, spendFlow } from "./RangeGraphics"
+import { transaction } from "../../testing/fixtures"
 import type { Span } from "../primitives/spans"
 
 const text = (spans: Span[]) => spans.map((s) => s.text).join("")
@@ -41,4 +42,15 @@ test("where the net went: savers' gains largest first, then what stayed in Spend
 test("where the spending went: every category group named where it fits, largest first", () => {
   const { labels } = categoryBar(W, [{ amount: 100, color: "#0af", name: "Fuel" }, { amount: 300, color: "#fa0", name: "Groceries" }])
   expect(text(labels)).toMatch(/\$300 Groceries\s+\$100 Fuel/)
+})
+
+test("the net's flow is what was sent to each saver, then kept: the Budgets savers meter's sent and to send", () => {
+  const sent = (to: number, amount: number) => transaction({ amount: -amount, internal: true, excluded: true, transferAccountId: to })
+  const lines = spendFlow(W, {
+    income: 3000, spent: 1000, net: 2000, savingsRate: 66.7, bySpending: false, groups: [],
+    rows: [sent(7, 900), sent(8, 300), transaction({ amount: 100, internal: true, excluded: true, transferAccountId: 8 })],
+    savers: [{ accountId: 7, name: "Trip" }, { accountId: 8, name: "Rainy day" }],
+  })
+  // $900 to Trip, $200 net to Rainy day; of the $2,000 net, $900 kept.
+  expect(text(lines.at(-1)!)).toMatch(/\$900 Trip\s+\$200 Rainy day\s+\$900 kept/)
 })

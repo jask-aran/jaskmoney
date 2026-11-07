@@ -1,7 +1,9 @@
-import { formatWholeMoney, signedWholeMoney } from "../../domain/dashboard"
+import { formatPct, formatWholeMoney, signedWholeMoney } from "../../domain/dashboard"
+import type { Transaction } from "../../domain/types"
+import { leadingEmoji, saverInks } from "../charts/saverInks"
 import { fade, ink, tone } from "../../theme"
 import { INKS } from "../charts/inks"
-import { cellsOf, flowBar, flowEdges, money as bold, packLabels, type FlowPart } from "../charts/flow"
+import { cellsOf, flowBar, flowEdges, flowOpening, money as bold, packLabels, type FlowPart } from "../charts/flow"
 import type { Span } from "../primitives/spans"
 
 /**
@@ -57,7 +59,7 @@ export function inBar(width: number, income: number, spent: number): { above: Sp
 export interface SaverPart { name: string; change: number; color: string }
 
 /**
- * Where the net went, as a bar `width` wide: each saver's gain in its
+ * Where the net went, as a bar `width` wide: what went to each saver in its
  * colour (largest first), then what stayed in Spending (a dim good). Under
  * it each part's figure and name where they fit. Savers that gained more
  * than the net between them fill the bar with their gains alone.
@@ -123,4 +125,61 @@ export function sourcesBars(width: number, income: number, spent: number, source
   const inside: Span[] = [{ text: "│ ", fg: ink.rule }, ...below, { text: " ".repeat(Math.max(0, inner - below.reduce((n, x) => n + x.text.length, 0))), fg: ink.note }, { text: " │", fg: ink.rule }]
   const bar = categoryBar(width, categories)
   return [...head, inside, bar.bar, bar.labels]
+}
+
+/** A name without its leading emoji: the colour is the saver's, and an
+ * emoji's width would put the labels out. */
+const bare = (name: string) => (leadingEmoji(name) ? name.trim().replace(/^\p{Extended_Pictographic}[\u{FE0E}\u{FE0F}]?\s*/u, "") : name).trim()
+
+/** What a span's flow is drawn from: its flows (computePeriodFlows'), the
+ * spending accounts' rows in it, the savers (in their chart's order) and
+ * the category groups' spending. */
+export interface SpendFlow {
+  income: number
+  spent: number
+  net: number
+  savingsRate: number | null
+  rows: Transaction[]
+  savers: Array<{ accountId: number; name: string }>
+  groups: Array<{ amount: number; color: string; name: string }>
+  /** Open out where the spending went (else where the net went). */
+  bySpending: boolean
+}
+
+/**
+ * A span's flow, the Overview's Range pane's and the Budgets pane's alike:
+ * what came in as a bar (spent, net), one end opened out under it: the
+ * spending to its category groups, or the net to where it went (what was
+ * sent to each saver, then what stayed in Spending as kept: with the
+ * savers meter's sent and to send, the same figures). Spending past what
+ * came in: where it came from over what was spent.
+ */
+export function spendFlow(width: number, f: SpendFlow): Span[][] {
+  const colors = saverInks(f.savers.map((s) => s.name))
+  const groups = f.groups.map((g) => ({ ...g, name: bare(g.name) }))
+  // Each saver's net with Spending over the span: in from it (+), sent to it (-).
+  const withSaver = f.savers.map((s, i) => ({ name: bare(s.name), color: colors[i]!, amount: f.rows.filter((t) => t.internal && t.transferAccountId === s.accountId).reduce((n, t) => n + t.amount, 0) }))
+  if (f.spent - f.income >= 0.5) {
+    // Each source measured over the span: transfers in from outside (not
+    // income, not spending, from no tracked account), net; what each saver
+    // sent into Spending, net; and how far Spending's own balance fell.
+    const outside = f.rows.filter((t) => t.excluded && !t.internal && !t.income).reduce((n, t) => n + t.amount, 0)
+    const fell = -f.rows.reduce((n, t) => n + t.amount, 0)
+    const sources = [
+      { amount: outside, color: INKS.transfers!, name: "transfers", figure: INKS.transfers! },
+      ...withSaver.map((s) => ({ ...s, figure: s.color })).sort((x, y) => y.amount - x.amount),
+      { amount: fell, color: fade(tone.good, KEPT_FADE), name: "Spending", figure: ink.figure },
+    ]
+    return sourcesBars(width, f.income, f.spent, sources, f.bySpending ? groups : undefined)
+  }
+  const bar = inBar(width, f.income, f.spent)
+  const lines = [bar.above, bar.bar]
+  if (f.bySpending && f.spent >= 0.5) {
+    const spending = categoryBar(width, groups)
+    lines.push(flowOpening(width, 0, bar.netFrom, [{ text: formatPct(f.income > 0 ? (f.spent / f.income) * 100 : null), fg: ink.figure, bold: true }, { text: " spent", fg: ink.note }]), spending.bar, spending.labels)
+  } else if (!f.bySpending && f.net >= 0.5 && bar.netFrom > 0) {
+    const net = netBar(width, f.net, withSaver.map((s) => ({ name: s.name, color: s.color, change: -s.amount })))
+    lines.push(flowOpening(width, bar.netFrom, width, [{ text: formatPct(f.savingsRate), fg: ink.figure, bold: true }, { text: " saved", fg: ink.note }]), net.bar, net.labels)
+  }
+  return lines
 }

@@ -4,9 +4,9 @@ import { allocation, measuredBudgetIn, cycleFor, budgetCounts, budgetCountsThen,
 import { budgetArmId, budgetSetupRows, overallAverage, type SetupRow } from "../../domain/budgetLines"
 import { sharedBudgetView, sharedCategoryLines } from "../../state/budgetViews"
 import { budgetLabel } from "../../domain/budgetScopes"
-import { dailySpendSeries, formatWholeMoney } from "../../domain/dashboard"
+import { computeCategorySpend, dailySpendSeries, formatWholeMoney, groupCategorySpend } from "../../domain/dashboard"
 import { addDays, appToday, daysBetween } from "../../domain/days"
-import { computePeriodFlows, historyCovers } from "../../domain/position"
+import { computePeriodFlows, computePosition, historyCovers } from "../../domain/position"
 import type { Transaction } from "../../domain/types"
 import type { SectionId } from "../../state/uiStore"
 import { ui } from "../../state/uiStore"
@@ -38,6 +38,7 @@ import { subscriptions, upcomingCharges } from "../../domain/subscriptions"
 import { cyclePay } from "../../domain/payday"
 import { cycleTrack, payBar, saversMeter, type PayPart } from "./PlanGraphics"
 import { flowOpening } from "../charts/flow"
+import { spendFlow } from "../overview/RangeGraphics"
 
 /** Cycles before this one the chart and the cycle lines can show, at most. */
 const HISTORY = 36
@@ -229,7 +230,8 @@ export function BudgetsTab(props: { focused: SectionId }) {
   // until pay has, your usual pay (what you expect each payday). Nothing is
   // judged without them.
   const expectedPay = () => data.state.uiPrefs.expectedPay || null
-  const income = createMemo(() => computePeriodFlows(data.state.accounts, transactions().filter((t) => t.dateISO >= cycle().start && t.dateISO <= through())).income)
+  const flows = createMemo(() => computePeriodFlows(data.state.accounts, transactions().filter((t) => t.dateISO >= cycle().start && t.dateISO <= through())))
+  const income = () => flows().income
   const planPay = () => (paid().pay > 0 ? income() : expectedPay())
   const spendingPlan = () => (budgets().length ? split().total : null)
   const toSavers = () => (planPay() != null && spendingPlan() != null ? planPay()! - spendingPlan()! : null)
@@ -374,6 +376,21 @@ export function BudgetsTab(props: { focused: SectionId }) {
   })
   // Its lines and a blank line under them.
   const nextPayBlock = () => (nextPayLines().length ? nextPayLines().length + 1 : 0)
+  // Over the categories, the cycle's flow so far, the Overview's Range
+  // pane's (s, the same view): what came in, spent and net, opened out to
+  // where the spending went or where the net went. Its figures are the
+  // plan's: its net is what's left, its savers what's sent.
+  const flowLines = createMemo((): Span[][] => {
+    const f = flows()
+    if (f.income < 0.5 && f.spent < 0.5) return []
+    const rows = allSpending().filter((t) => t.dateISO >= cycle().start && t.dateISO <= through())
+    return spendFlow(rowWidth(categoriesWidth()), {
+      ...f, rows, bySpending: data.state.uiPrefs.rangeView === "spending",
+      groups: groupCategorySpend(computeCategorySpend(rows, data.state.categories), data.state.categories),
+      savers: [...computePosition(data.state.accounts, transactions(), today()).savers].sort((x, y) => y.balance - x.balance),
+    })
+  })
+  const flowBlock = () => (flowLines().length ? flowLines().length + 1 : 0)
   // Drawing in, as Subscriptions does ("always": each time the tab shows
   // or the cycle changes, not as the cursor moves): the bars (each pay,
   // the cycle's track, the meter) sweep in from the left, and the lines
@@ -398,12 +415,12 @@ export function BudgetsTab(props: { focused: SectionId }) {
   // compact: two lines a weekday (15 rows) where the pane has room for it
   // and a few table rows, else one (8), else none.
   const calendarRows = () => {
-    const room = categoriesHeight() - 4 - topLines().length - nextPayBlock() - 2 - Math.min(setup().length, BUDGETS_ROWS_MIN)
+    const room = categoriesHeight() - 4 - topLines().length - nextPayBlock() - flowBlock() - 2 - Math.min(setup().length, BUDGETS_ROWS_MIN)
     return room >= CALENDAR_TALL ? CALENDAR_TALL : room >= CALENDAR_MIN ? CALENDAR_MIN : 0
   }
   // The days, its legend and a blank line.
   const calendarBlock = () => (calendarRows() ? calendarRows() + 2 : 0)
-  const categoryRoom = () => Math.max(1, categoriesHeight() - 4 - topLines().length - calendarBlock() - nextPayBlock())
+  const categoryRoom = () => Math.max(1, categoriesHeight() - 4 - topLines().length - calendarBlock() - nextPayBlock() - flowBlock())
   const categoryLines = setup
   const categoryTop = createMemo(() => centredTop(categoryCursor(), categoryLines().length, categoryRoom()))
   // Nothing budgeted yet: the pane says to start here.
@@ -465,6 +482,11 @@ export function BudgetsTab(props: { focused: SectionId }) {
         <text wrapMode="none" flexShrink={0}><S>{" "}</S><Index each={spans()}>{(span) => <S fg={span().fg} bold={span().bold}>{span().text}</S>}</Index></text>
       )}</Index>
       <Show when={nextPayLines().length}><text wrapMode="none" flexShrink={0}>{" "}</text></Show>
+      <Index each={flowLines()}>{(spans) => (
+        // Sweeping in with the plan's bars.
+        <text wrapMode="none" flexShrink={0}><S>{" "}</S><Index each={planReveal() >= 1 ? spans() : sweptTo(spans(), Math.round(Math.min(1, planReveal() / 0.7) * rowWidth(categoriesWidth())))}>{(span) => <S fg={span().fg} bold={span().bold}>{span().text}</S>}</Index></text>
+      )}</Index>
+      <Show when={flowLines().length}><text wrapMode="none" flexShrink={0}>{" "}</text></Show>
       <Show when={categoryLines().length} fallback={<text fg={ink.note}>{" No spending yet."}</text>}>
         <text wrapMode="none">
           <S fg={ink.note}>{" "}</S>
