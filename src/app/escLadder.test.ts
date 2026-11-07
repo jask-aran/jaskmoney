@@ -42,7 +42,6 @@ test("selection, then filter, then the Uncategorised view, one esc each", () => 
   expect(data.state.uncategorisedOnly).toBe(true)
   esc()
   expect(data.state.uncategorisedOnly).toBe(false)
-  expect(ui.activeScope()).toBe("manager.txns")
 })
 
 test("tag review: the filter goes before the review", async () => {

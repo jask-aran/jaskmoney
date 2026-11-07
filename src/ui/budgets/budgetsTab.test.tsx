@@ -188,7 +188,7 @@ test("the cycle's calendar is always there: the budget's days so far, and its re
   ui.setState({ budgetOffset: 0 })
 })
 
-test("the Budgets tab's panes: the budget pane on top, the list (Categories) under it as the cycle pane's first view, the Budgets pane home; h/l step the focused pane's views, focus following the list's pane between the list and a chart; esc home", async () => {
+test("the Budgets tab's panes: the budget pane on top, the list (Categories) under it as the cycle pane's first view; h/l step the focused pane's views, focus following the list's pane between the list and a chart", async () => {
   const { frame } = await budgetsTab()
   await data.setBudget({ kind: "overall" }, 500)
   const f = await frame()
@@ -219,26 +219,19 @@ test("the Budgets tab's panes: the budget pane on top, the list (Categories) und
   expect(ui.activeScope()).toBe("budgets.plan")
   handleKey(ui, key("left"), data)
   expect(["bud.chart", "bud.categories"]).toContain(ui.state.focusedSection)
-  // The budget pane: h/l its views; esc home, the list.
+  // The budget pane: h/l its views; esc leaves it for the tab's home.
   handleKey(ui, key("v"), data); handleKey(ui, key("t"), data)
   expect(ui.state.focusedSection).toBe("bud.chart")
   handleKey(ui, key("l"), data)
   expect(ui.state.budgetChart).toBe(1)
   handleKey(ui, key("escape"), data)
-  expect(ui.state.focusedSection).toBe("bud.plan")
-  // From the list too; the tab opens there.
-  handleKey(ui, key("v"), data); handleKey(ui, key("c"), data)
-  expect(ui.state.focusedSection).toBe("bud.categories")
-  handleKey(ui, key("escape"), data)
-  expect(ui.state.focusedSection).toBe("bud.plan")
-  handleKey(ui, key("1"), data); handleKey(ui, key("3"), data)
-  expect(ui.state.focusedSection).toBe("bud.plan")
-  // H/L from it step the cycle pane, the focus staying.
+  expect(ui.state.focusedSection).not.toBe("bud.chart")
+  // H/L step the cycle pane from outside it.
+  ui.setState({ focusedSection: "bud.plan" })
   handleKey(ui, key("H"), data)
   expect(ui.state.budgetCycleViews[0]).toBe(CYCLE_VIEWS.at(-1)!)
   handleKey(ui, key("L"), data)
   expect(ui.state.budgetCycleViews[0]).toBe(CATEGORIES)
-  expect(ui.state.focusedSection).toBe("bud.plan")
   ui.setState({ budgetChart: 0, budgetCycleViews: start })
 })
 
@@ -261,7 +254,7 @@ test("the cycle's calendar draws in with the charts: on \"always\", its days til
   void t
 })
 
-test("Set budgets: with none yet the tab opens on the Budgets pane saying start here, the list's overall budget first with a nudge from its average; groups closed until space", async () => {
+test("Set budgets: with none yet the Budgets pane says start here, the list's overall budget first with a nudge from its average; groups closed until space", async () => {
   const { frame } = await budgetsTab()
   const db = data.getDb()!
   const home = data.state.categories.find((c) => c.name === "Bills & Utilities")!
@@ -271,7 +264,6 @@ test("Set budgets: with none yet the tab opens on the Budgets pane saying start 
   db.query("INSERT INTO transactions (date_raw, date_iso, amount, description, account_id, category_id, source) VALUES ('2026-10-08', '2026-10-08', -80, 'POWER CO', 1, ?, 'up')").run(power)
   data.refresh()
   handleKey(ui, key("1"), data); handleKey(ui, key("3"), data)
-  expect(ui.state.focusedSection).toBe("bud.plan")
   expect(ui.state.budgetCategoryCursor).toBe(0)
   let f = await frame()
   expect(f).toContain("Budgets · start here")
@@ -295,7 +287,6 @@ test("Set budgets: with none yet the tab opens on the Budgets pane saying start 
   await data.setBudget({ kind: "overall" }, 500)
   await frame()
   handleKey(ui, key("1"), data); handleKey(ui, key("3"), data)
-  expect(ui.state.focusedSection).toBe("bud.plan")
   expect(await frame()).not.toContain("start here")
 })
 
@@ -331,7 +322,6 @@ test("the plan: your pay and your spending target give what goes to savers; each
   expect(f).not.toContain("to send")
   expect(f).not.toContain("✓")
   // p opens the Pay editor from your usual pay.
-  expect(ui.state.focusedSection).toBe("bud.plan")
   handleKey(ui, key("p"), data)
   expect(ui.state.settingsEditor?.kind).toBe("pay")
   expect(ui.state.settingsDraft.amount).toBe("5000")

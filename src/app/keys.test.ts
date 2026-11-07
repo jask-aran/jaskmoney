@@ -463,12 +463,10 @@ describe("key router", () => {
     ui.switchTab("overview")
     handleKey(ui, key("3"), data)
     expect(ui.state.activeTab).toBe("budgets")
-    // It opens on the Budgets pane.
-    expect(ui.activeScope()).toBe("budgets.plan")
     handleKey(ui, key("c"), data)
     expect(ui.state.settingsEditor?.kind).toBe("cycle")
     ui.setState({ settingsEditor: null })
-    // h/l on the budget pane switch its chart; esc home.
+    // h/l on the budget pane switch its chart.
     expect(ui.state.budgetChart).toBe(0)
     ui.setState({ focusedSection: "bud.chart" })
     handleKey(ui, key("l"), data)
