@@ -81,12 +81,12 @@ export function payBar(width: number, pay: number | null, target: number, catego
   const spentCells = total > 0 ? Math.min(width, Math.round((Math.min(spent, total) / total) * width)) : 0
   const left = (pay ?? target) - spent
   const money = (n: number, fg: string): Span => ({ text: formatWholeMoney(n), fg, bold: true })
-  const above = labelled(width, [
+  const above = packLabels(width, [
     // With no pay the target is the whole bar: what's spent of it instead.
-    ...(pay == null ? [{ mid: spentCells / 2, options: [[money(spent, over > 0 ? tone.bad : ink.figure), { text: " spent", fg: ink.note }], [money(spent, ink.figure)]] }]
-      : targetCells > 0 ? [{ mid: targetCells / 2, options: [[money(target, ink.figure), { text: " target", fg: ink.note }], [money(target, ink.figure)]] }] : []),
-    ...(overCells > 0 ? [{ mid: targetCells + overCells / 2, options: [[money(over, tone.bad), { text: " over", fg: tone.bad }], [money(over, tone.bad)]] }] : []),
-    ...(left > 0.5 && width - spentCells > 0 ? [{ mid: (spentCells + width) / 2, options: [[money(left, ink.figure), { text: " left", fg: ink.note }], [money(left, ink.figure)]] }] : []),
+    ...(pay == null ? [{ from: 0, cells: Math.max(1, spentCells), options: [[money(spent, over > 0 ? tone.bad : ink.figure), { text: " spent", fg: ink.note }], [money(spent, ink.figure)]] }]
+      : targetCells > 0 ? [{ from: 0, cells: targetCells, options: [[money(target, ink.figure), { text: " target", fg: ink.note }], [money(target, ink.figure)]] }] : []),
+    ...(overCells > 0 ? [{ from: targetCells, cells: overCells, options: [[money(over, tone.bad), { text: " over", fg: tone.bad }], [money(over, tone.bad)]] }] : []),
+    ...(left > 0.5 && width - spentCells > 0 ? [{ from: spentCells, cells: width - spentCells, options: [[money(left, ink.figure), { text: " left", fg: ink.note }], [money(left, ink.figure)]] }] : []),
   ])
   const legend: Span[][] = []
   if (categories.length) {
@@ -154,10 +154,10 @@ export function saversMeter(width: number, plan: number, sent: number, short: nu
     ...(sendCells ? [{ text: "█".repeat(sendCells), fg: fade(tone.good, LEFT_FADE) }] : []),
   ]
   const money = (n: number, fg: string): Span => ({ text: formatWholeMoney(n), fg, bold: true })
-  const labels = labelled(width, [
-    ...(shortCells ? [{ mid: shortCells / 2, options: [[money(short, tone.bad), { text: " short", fg: tone.bad }], [money(short, tone.bad)]] }] : []),
-    ...(sentCells ? [{ mid: shortCells + sentCells / 2, options: [[money(sent, tone.good), { text: " sent", fg: ink.note }], [money(sent, tone.good)]] }] : []),
-    ...(sendCells ? [{ mid: shortCells + sentCells + sendCells / 2, options: [[money(toSend, ink.figure), { text: " to send", fg: ink.note }], [money(toSend, ink.figure)]] }] : []),
+  const labels = packLabels(width, [
+    ...(shortCells ? [{ from: 0, cells: shortCells, options: [[money(short, tone.bad), { text: " short", fg: tone.bad }], [money(short, tone.bad)]] }] : []),
+    ...(sentCells ? [{ from: shortCells, cells: sentCells, options: [[money(sent, tone.good), { text: " sent", fg: ink.note }], [money(sent, tone.good)]] }] : []),
+    ...(sendCells ? [{ from: shortCells + sentCells, cells: sendCells, options: [[money(toSend, ink.figure), { text: " to send", fg: ink.note }], [money(toSend, ink.figure)]] }] : []),
   ])
   return { bar, labels }
 }
@@ -193,6 +193,49 @@ export function labelled(width: number, labels: Label[]): Span[] {
 }
 
 export const spansWidth = (spans: Span[]) => spans.reduce((n, l) => n + l.text.length, 0)
+
+/** A part's label for `packLabels`: the part's columns, its options
+ * best first, and whether it may go unlabelled before others lose words. */
+export interface PartLabel { from: number; cells: number; options: Span[][]; optional?: boolean }
+
+/** The cells between two labels. */
+const LABEL_GAP = 2
+
+/**
+ * Labels for a bar's parts on a line `width` wide, each as near centred
+ * on its part as the others let it be: crowded, they slide apart (each
+ * still over some of its part) rather than one dropping. Where they still
+ * don't fit, in turn: optional parts' labels go (smallest first), then the
+ * smallest parts take their shorter options (a bare figure), then the
+ * smallest go.
+ */
+export function packLabels(width: number, parts: PartLabel[]): Span[] {
+  const items = parts.filter((p) => p.cells > 0 && p.options.length > 0)
+  const level = items.map(() => 0)
+  const bySize = items.map((_, k) => k).sort((x, y) => items[x]!.cells - items[y]!.cells)
+  // Where the shown labels go, or null where they can't all.
+  const fit = (): Array<{ at: number; spans: Span[] }> | null => {
+    const shown = items.map((p, k) => ({ p, spans: p.options[level[k]!] })).filter((x): x is { p: PartLabel; spans: Span[] } => x.spans != null)
+      .map((x) => ({ ...x, w: spansWidth(x.spans), mid: x.p.from + x.p.cells / 2 })).sort((x, y) => x.mid - y.mid)
+    const at = shown.map((x) => Math.round(x.mid - x.w / 2))
+    for (let i = 0; i < shown.length; i++) at[i] = Math.max(at[i]!, 0, i > 0 ? at[i - 1]! + shown[i - 1]!.w + LABEL_GAP : 0)
+    for (let i = shown.length - 1; i >= 0; i--) at[i] = Math.min(at[i]!, width - shown[i]!.w, i < shown.length - 1 ? at[i + 1]! - LABEL_GAP - shown[i]!.w : width)
+    const ok = shown.every((x, i) => at[i]! >= 0 && (i === 0 || at[i]! >= at[i - 1]! + shown[i - 1]!.w + LABEL_GAP) && at[i]! < x.p.from + x.p.cells && at[i]! + x.w > x.p.from)
+    return ok ? shown.map((x, i) => ({ at: at[i]!, spans: x.spans })) : null
+  }
+  const dropped = (k: number) => level[k]! >= items[k]!.options.length
+  for (;;) {
+    const placed = fit()
+    if (placed) return placed.length ? labelled(width, placed.map((x) => ({ at: x.at, options: [x.spans] }))) : [{ text: " ", fg: ink.note }]
+    const step = bySize.find((k) => items[k]!.optional && !dropped(k))
+    if (step != null) { level[step] = items[step]!.options.length; continue }
+    const shorter = bySize.find((k) => level[k]! < items[k]!.options.length - 1)
+    if (shorter != null) { level[shorter]!++; continue }
+    const drop = bySize.find((k) => !dropped(k))
+    if (drop == null) return [{ text: " ", fg: ink.note }]
+    level[drop] = items[drop]!.options.length
+  }
+}
 
 /** How much a part's colour fades for what's left of it. */
 const LEFT_FADE = 0.65

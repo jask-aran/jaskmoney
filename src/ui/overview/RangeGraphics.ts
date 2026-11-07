@@ -1,7 +1,7 @@
 import { formatWholeMoney, signedWholeMoney } from "../../domain/dashboard"
 import { fade, ink, tone } from "../../theme"
 import { INKS } from "../charts/inks"
-import { cellsOf, hatched, labelled, spansWidth } from "../budgets/PlanGraphics"
+import { cellsOf, hatched, packLabels } from "../budgets/PlanGraphics"
 import type { Span } from "../primitives/spans"
 
 /**
@@ -19,49 +19,6 @@ const runs = (parts: Array<{ cells: number; color: string }>): Span[] =>
   parts.filter((p) => p.cells > 0).map((p) => ({ text: "█".repeat(p.cells), fg: p.color }))
 
 const money = (n: number, fg: string): Span => ({ text: formatWholeMoney(n), fg, bold: true })
-
-/** A part's label for `packLabels`: the part's columns, its options
- * best first, and whether it may go unlabelled before others lose words. */
-interface PartLabel { from: number; cells: number; options: Span[][]; optional?: boolean }
-
-/** The cells between two labels. */
-const LABEL_GAP = 2
-
-/**
- * Labels for a bar's parts on a line `width` wide, each as near centred
- * on its part as the others let it be: crowded, they slide apart (each
- * still over some of its part) rather than one dropping. Where they still
- * don't fit, in turn: optional parts' labels go (smallest first), then the
- * smallest parts take their shorter options (a bare figure), then the
- * smallest go.
- */
-export function packLabels(width: number, parts: PartLabel[]): Span[] {
-  const items = parts.filter((p) => p.cells > 0 && p.options.length > 0)
-  const level = items.map(() => 0)
-  const bySize = items.map((_, k) => k).sort((x, y) => items[x]!.cells - items[y]!.cells)
-  // Where the shown labels go, or null where they can't all.
-  const fit = (): Array<{ at: number; spans: Span[] }> | null => {
-    const shown = items.map((p, k) => ({ p, spans: p.options[level[k]!] })).filter((x): x is { p: PartLabel; spans: Span[] } => x.spans != null)
-      .map((x) => ({ ...x, w: spansWidth(x.spans), mid: x.p.from + x.p.cells / 2 })).sort((x, y) => x.mid - y.mid)
-    const at = shown.map((x) => Math.round(x.mid - x.w / 2))
-    for (let i = 0; i < shown.length; i++) at[i] = Math.max(at[i]!, 0, i > 0 ? at[i - 1]! + shown[i - 1]!.w + LABEL_GAP : 0)
-    for (let i = shown.length - 1; i >= 0; i--) at[i] = Math.min(at[i]!, width - shown[i]!.w, i < shown.length - 1 ? at[i + 1]! - LABEL_GAP - shown[i]!.w : width)
-    const ok = shown.every((x, i) => at[i]! >= 0 && (i === 0 || at[i]! >= at[i - 1]! + shown[i - 1]!.w + LABEL_GAP) && at[i]! < x.p.from + x.p.cells && at[i]! + x.w > x.p.from)
-    return ok ? shown.map((x, i) => ({ at: at[i]!, spans: x.spans })) : null
-  }
-  const dropped = (k: number) => level[k]! >= items[k]!.options.length
-  for (;;) {
-    const placed = fit()
-    if (placed) return placed.length ? labelled(width, placed.map((x) => ({ at: x.at, options: [x.spans] }))) : [{ text: " ", fg: ink.note }]
-    const step = bySize.find((k) => items[k]!.optional && !dropped(k))
-    if (step != null) { level[step] = items[step]!.options.length; continue }
-    const shorter = bySize.find((k) => level[k]! < items[k]!.options.length - 1)
-    if (shorter != null) { level[shorter]!++; continue }
-    const drop = bySize.find((k) => !dropped(k))
-    if (drop == null) return [{ text: " ", fg: ink.note }]
-    level[drop] = items[drop]!.options.length
-  }
-}
 
 /** Each part's figure and name over (or under) it, as `packLabels` places
  * them. A part narrower than its bare figure may go unlabelled. */
