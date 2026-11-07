@@ -212,11 +212,15 @@ export function TransactionTable(props: {
   tagCandidate?: (id: number) => TableTagCandidate | undefined
   /** Rows shown only as near misses: marked ≈ and dimmed, after the matches. */
   nearMiss?: (id: number) => boolean
+  /** How far the rows have drawn in (0–1): those past it, top to bottom,
+   * not yet drawn. */
+  reveal?: number
 }) {
   const widest = createMemo(longest)
   const layout = createMemo(() => tableLayout(props.width, props.showAccount, props.showTags, widest()))
   const mark = (column: string) => props.sortMark?.(column) ?? ""
   const windowRows = createMemo(() => props.rows.slice(props.top, props.top + props.visible))
+  const rowsIn = () => (props.reveal == null || props.reveal >= 1 ? Infinity : Math.ceil(props.reveal * windowRows().length))
   return (
     <box flexGrow={1} width="100%" flexDirection="column" onMouseScroll={onPointer((scope) => scope === "bar" || scope === "manager.txns" || scope === "manager.accounts", (event) => {
       if (event.scroll?.direction !== "up" && event.scroll?.direction !== "down") return
@@ -298,7 +302,7 @@ export function TransactionTable(props: {
                 ui.applyJump("mgr.transactions")
                 moveTxnCursor(ui, data, absIndex() - ui.state.managerCursor, false)
                 if (open) openTransaction(ui, data)
-              })}><StyledLine spans={line()} bg={rowBg()} /></box>
+              })}><StyledLine spans={i < rowsIn() ? line() : []} bg={i < rowsIn() ? rowBg() : theme.canvas} /></box>
             }}
           </Index>
         </box>

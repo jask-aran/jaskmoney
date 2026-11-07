@@ -18,6 +18,7 @@ import { AccountsPane } from "./AccountsPane"
 import { TransactionTable, type TableTagCandidate } from "./TransactionTable"
 import { TransactionsPane, rowsShown, rowsToCategorise, type FilterBarView } from "./TransactionsPane"
 import { MerchantTable } from "./MerchantTable"
+import { chartSpeedMs, showings, useReveal } from "../charts/motion"
 import { merchantKey } from "../../domain/history"
 import { groupByMerchant, sortMerchantGroups } from "../../domain/merchants"
 import { TransactionDetail } from "./TransactionDetail"
@@ -40,6 +41,12 @@ function merchantNote(merchant: string): { text: string; prompt: boolean } | nul
 export function ManagerTab(props: { focused: SectionId }) {
   const dims = useTerminalDimensions()
   const rows = createMemo(() => data.scopedTransactions())
+  // Drawing in (chart motion "always"): each time the tab shows, the
+  // table's rows drop in top to bottom.
+  const tabShowings = showings(() => ui.state.activeTab === "manager")
+  const rowsReveal = useReveal(
+    () => (data.state.uiPrefs.chartMotion === "always" ? String(tabShowings()) : undefined),
+    () => chartSpeedMs(data.state.uiPrefs.chartSpeed), () => data.state.uiPrefs.chartCurve)
   const highlighted = createMemo(() => ui.highlightedIds(rows()))
   const showAccount = () => selectedAccounts(data.state.accounts, data.state.accountSelection).length > 1
 
@@ -283,6 +290,7 @@ export function ManagerTab(props: { focused: SectionId }) {
           rows={tableRows()}
           top={ui.state.managerTop}
           visible={ui.state.managerVisible}
+          reveal={rowsReveal()}
           cursor={txFocused() && ui.state.filterBar == null ? ui.state.managerCursor : null}
           width={dims().width - 4}
           showAccount={showAccount()}

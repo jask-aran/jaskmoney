@@ -57,7 +57,7 @@ Where information lives: the Overview is figures and charts (point-in-time ones 
 ### Transactions
 
 - **Accounts pane** above a full-width table: a stack per bank (e.g. Up (API)) headed by its net position, listing its spending accounts and one Savers row for all its savers (their rows are transfers and interest). With more than one spending account, an All accounts stack comes first for all spending together. The selected row decides which transactions the table shows: `v a` focuses the pane, `j`/`k` move, `h`/`l` go to the bank beside, `enter` returns to the table. In the table, `a` steps to the next account. The pane scrolls sideways when its stacks don't fit.
-- **The table:** `s` cycles the sort and `S` reverses it; `space` selects, `S-j/k` selects a range. `enter` opens a transaction's details (`c` category, `t` tags, `n` notes); pending transactions show a clock after the amount.
+- **The table:** `s` cycles the sort and `S` reverses it; `space` selects, `S-j/k` selects a range. `enter` opens a transaction's details (`c` category, `t` tags, `n` notes); pending transactions show a clock after the amount. On "always" chart motion its rows drop in top to bottom each time the tab shows, at the chart speed and curve.
 - **Merchants:** `m` regroups the table by merchant (signed totals, counts, averages, last seen). The filter, account and sort work the same; `enter` narrows the filter to a merchant, and `c`/`t` act on all of its transactions.
 - **Saved filters:** `ctrl+s` saves the current filter and `ctrl+l` applies a saved one (most recently used first). The filter and rule editors show whether an expression parses and how many transactions it matches as you type.
 
