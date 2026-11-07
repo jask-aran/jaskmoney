@@ -160,10 +160,10 @@ test("Overview mouse focuses from the bar, scrolls Categories one line and appli
   await t.renderOnce()
   expect(ui.state.focusedSection).toBe("ov.range")
   expect(ui.state.timeframe.lookback).toBe("3M")
+  // enter on a pane opens nothing: o opens the range's transactions.
   ui.setState({ focusedSection: "ov.accounts" })
   handleKey(ui, keyEvent("return"), data)
-  expect(ui.state.activeTab).toBe("manager")
-  expect(ui.state.focusedSection).toBe("mgr.accounts")
+  expect(ui.state.activeTab).toBe("overview")
 })
 
 test("KeptTab regions stay mounted but cannot be targets while hidden", async () => {

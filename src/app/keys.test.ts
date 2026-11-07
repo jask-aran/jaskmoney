@@ -301,7 +301,7 @@ describe("key router", () => {
     expect(ui.state.chartViews).toEqual([CHART_VIEWS.length - 1, 3, 7, 8])
   })
 
-  test("drill-down: enter on a category line opens its transactions; esc comes back", () => {
+  test("drill-down: o on a category line opens its transactions, enter nothing; esc comes back", () => {
     const txn = (id: number, categoryId: number, categoryName: string, amount: number) => transaction({
       id, categoryId, categoryName, amount, dateISO: "2026-10-10", description: `T${id}`, accountName: "Spending",
     })
@@ -319,6 +319,8 @@ describe("key router", () => {
     // Lines: Groceries, Good Life, Pubs & Bars (largest group first).
     handleKey(ui, key("j"), data)
     handleKey(ui, key("return"), data)
+    expect(ui.state.activeTab).toBe("overview")
+    handleKey(ui, key("o"), data)
     expect(ui.state.activeTab).toBe("manager")
     expect(data.state.filterQuery).toContain('(cat:"Good Life" OR cat:"Pubs & Bars")')
     expect(data.scopedTransactions().map((t) => t.id)).toEqual([1])

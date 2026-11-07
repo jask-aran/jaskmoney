@@ -59,7 +59,7 @@ test("the footer: the pane's name, its keys, a rule, the tab's, as many as the w
   // The Overview's Range pane: its own keys under its name, then the tab's
   // after a rule.
   const range = footerLine("overview", { ...state, focusedSection: "ov.categories" })
-  expect(text(range)).toMatch(/^Range {2}j\/k move {2}space open group {2}enter transactions {2}t text {2}s spending view {2}│ {2}d\/D range {2}\[ \] period/)
+  expect(text(range)).toMatch(/^Range {2}j\/k move {2}space open group {2}o its transactions {2}t text {2}s spending view {2}│ {2}d\/D range {2}\[ \] period/)
   // Transactions' keys and the rest are the palette's from the Overview:
   // reachable, not suggested.
   const overview = footerHints("overview", { ...state, focusedSection: "none" })

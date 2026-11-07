@@ -129,7 +129,7 @@ test("a resize to narrow keeps Categories in view, and drill returns to its curs
   t.mockInput.pressKey("k")
   await t.renderOnce()
   expect(ui.state.overviewCategoryCursor).toBe(10)
-  t.mockInput.pressEnter()
+  t.mockInput.pressKey("o")
   await t.renderOnce()
   expect(ui.state.activeTab).toBe("manager")
   // Dispatch Escape directly; a bare ESC byte waits for the input parser's

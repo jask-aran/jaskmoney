@@ -91,10 +91,10 @@ for (const command of ["txn:tag-review", "rules:offers", "txn:uncategorised"]) {
 
 test("C3.2 Overview review and drill-down return to rows after merchants", () => {
   keep(spyOn(data, "suggestCategories")).mockResolvedValue(0)
-  for (const action of ["i", "return", "/", "?"]) {
+  for (const action of ["i", "o", "/", "?"]) {
     data.setState({ uncategorisedOnly: false })
     ui.switchTab("overview")
-    ui.setState({ txnView: "merchants", focusedSection: action === "return" ? "ov.chart" : "none" })
+    ui.setState({ txnView: "merchants", focusedSection: "none" })
     press(action)
     expect(ui.state.txnView).toBe("rows")
     expect(ui.state.focusedSection).toBe("mgr.transactions")

@@ -2147,11 +2147,13 @@ function handleOverview(ui: UiStore, key: KeyEvent, data?: DataStore): void {
       ui.setState({ overviewOpen: open.includes(id) ? open.filter((x) => x !== id) : [...open, id], overviewCategoryCursor: g })
       return
     }
+    // o: the cursor's category's transactions in the range.
     const line = lines[Math.min(ui.state.overviewCategoryCursor, lines.length - 1)]
-    if ((name === "return" || name === "enter") && line) { drillDown(ui, data, line); return }
+    if (name === "o" && !key.shift && !key.ctrl && !key.meta && line) { drillDown(ui, data, line); return }
   }
-  if (focus === "ov.accounts" && (name === "return" || name === "enter")) { ui.switchTab("manager"); ui.setState({ focusedSection: "mgr.accounts" }); return }
-  if (data && chartPaneOf(focus) >= 0 && (name === "return" || name === "enter")) { drillDown(ui, data); return }
+  // o: the range's transactions, from anywhere on the Overview (the whole
+  // screen is the one range; no pane needs focus for it).
+  if (data && name === "o" && !key.shift && !key.ctrl && !key.meta) { drillDown(ui, data); return }
   if (name === "0") {
     // The same kind of range, now (this month, this quarter…).
     const tf = timeframeNow(ui.state.timeframe, appNow(), cycle)
@@ -2344,10 +2346,12 @@ const rangePaneKeys = (state?: HintState): Hint[] => [
 /** The Overview's keys that work whichever pane has focus (a chart's h/l
  * and z and the Range pane's t and s are theirs, with focus). */
 function overviewTabKeys(state: HintState | undefined, own: { chart: number }): Hint[] {
+  const range = state?.focusedSection === "ov.categories"
   const balances = (i: number | undefined) => i != null && CHART_VIEWS[i]?.group === "Balances"
   const focus = state?.focusedSection
   return tabWide([
     // The arrows between panes go without saying.
+    ...(range ? [] : [{ key: "o", desc: "transactions", label: "The range's transactions" }]),
     { key: "d/D", desc: "range" },
     { key: "[ ]", desc: "period" },
     // On a Custom range, its dates are a key away.
@@ -2757,9 +2761,8 @@ const scopes: Record<ScopeId, ScopeEntry> = {
       const balances = (i: number | undefined) => i != null && CHART_VIEWS[i]?.group === "Balances"
       const range = focus === "ov.categories"
       const rangeKeys = rangePaneKeys(state)
-      const pane: Hint[] = range ? [{ key: "j/k", desc: "move" }, ...(state?.rangeText ? [] : [{ key: "space", desc: "open group" }]), { key: "enter", desc: "transactions" }, ...rangeKeys]
-        : chart >= 0 ? [{ key: "enter", desc: "transactions" }, { key: "h/l", desc: "view" }, ...(balances(state!.chartViews[chart]) ? [{ key: "z", desc: "$0 axis", paletteOnly: true }] : [])]
-        : focus === "ov.accounts" ? [{ key: "enter", desc: "accounts", label: "Accounts in Transactions" }]
+      const pane: Hint[] = range ? [{ key: "j/k", desc: "move" }, ...(state?.rangeText ? [] : [{ key: "space", desc: "open group" }]), { key: "o", desc: "its transactions", label: "The category's transactions" }, ...rangeKeys]
+        : chart >= 0 ? [{ key: "h/l", desc: "view" }, ...(balances(state!.chartViews[chart]) ? [{ key: "z", desc: "$0 axis", paletteOnly: true }] : [])]
         : []
       return [...pane, ...overviewTabKeys(state, { chart })]
     },
