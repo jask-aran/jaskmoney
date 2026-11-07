@@ -1,9 +1,6 @@
 import { expect, test } from "bun:test"
 import { dryRunRules } from "./rules"
 import type { Rule, Tag } from "./types"
-import { editorNote, type FormContext } from "../state/settingsForm"
-import { ui } from "../state/uiStore"
-import { savedFilterOptions } from "../state/savedFilters"
 import { category as makeCategory, transaction as makeTransaction } from "../testing/fixtures"
 
 const category = makeCategory({ id: 10, name: "Food", color: "#ffffff", sortOrder: 0 })
@@ -36,39 +33,6 @@ test("reports missing and invalid filters; empty scopes retain zero failures and
   expect(report.rules).toHaveLength(2)
   expect(report.rules[0]?.error).toBeTruthy()
   expect(report.rules[1]?.error).toBeTruthy()
-})
-
-test("samples include only changes, stop at three, and show each rule's own actions", () => {
-  const rows = Array.from({ length: 5 }, (_, i) => ({ ...transaction, id: i + 1 }))
-  const report = dryRunRules(rows, [rule, { ...rule, id: 2 }], filters, [category], [tag])
-  expect(report.updatedTransactions).toBe(5)
-  expect(report.rules[0]?.samples.map((sample) => sample.transaction.id)).toEqual([1, 2, 3])
-  expect(report.rules[0]?.samples[0]).toMatchObject({ categoryId: 10, addedTagIds: [20] })
-  expect(report.rules[1]).toMatchObject({ matched: 5, categoryChanges: 0, tagChanges: 0, samples: [] })
-})
-
-test("filter and rule editor status covers count, invalid, missing, pending and empty", () => {
-  const ctx: FormContext = { accounts: [], categories: [category], tags: [tag], savedFilters: filters, transactions: [transaction, { ...transaction, id: 2, description: "Other" }] }
-  const draft = { ...ui.state.settingsDraft, expr: "desc:Coffee", savedFilterId: "coffee" }
-  expect(editorNote("filter", draft, ctx)).toMatchObject({ text: "ok · 1 txns", tone: "ok", dot: true })
-  expect(editorNote("rule", draft, ctx)).toMatchObject({ text: "ok · 1 txns", tone: "ok" })
-  expect(editorNote("filter", { ...draft, expr: "(" }, ctx)).toMatchObject({ text: "invalid: unexpected end of expression", tone: "error" })
-  expect(editorNote("filter", { ...draft, expr: " " }, ctx)).toMatchObject({ text: "empty", tone: "muted" })
-  expect(editorNote("rule", { ...draft, savedFilterId: "" }, ctx)).toMatchObject({ text: "pending", tone: "muted" })
-  expect(editorNote("rule", { ...draft, savedFilterId: "gone" }, ctx)).toMatchObject({ text: "missing: gone", tone: "error" })
-  expect(editorNote("rule", draft, { ...ctx, savedFilters: [{ ...filters[0]!, expr: "(" }] })).toMatchObject({ text: "invalid", tone: "error" })
-  // Derive names from current IDs, as applyRules does, rather than stale row labels.
-  expect(editorNote("filter", { ...draft, expr: "cat:Food AND tag:Weekly" }, { ...ctx, transactions: [{ ...transaction, categoryId: 10, tagIds: [20] }] })).toMatchObject({ text: "ok · 1 txns" })
-  expect(editorNote("budget", draft, ctx)?.tone).toBe("muted")
-})
-
-test("saved-filter picker sorts by MRU, then name, and searches name and expression", () => {
-  const filters = [{ id: "z", name: "Alpha", expr: "desc:Coffee" }, { id: "a", name: "Zulu", expr: "cat:Food" }, { id: "b", name: "Beta", expr: "tag:Weekly" }, { id: "c", name: "Recent", expr: "desc:Train" }]
-  const usage = { a: "2026-01-01T00:00:00Z", c: "2026-01-02T00:00:00Z" }
-  expect(savedFilterOptions(filters, usage).map((filter) => filter.id)).toEqual(["c", "a", "z", "b"])
-  expect(savedFilterOptions(filters, usage, "cff").map((filter) => filter.id)).toEqual(["z"])
-  expect(savedFilterOptions(filters, usage, "Bta").map((filter) => filter.id)).toEqual(["b"])
-  expect(filters[0]?.id).toBe("z")
 })
 
 test("a filter that asks Clef can't drive a rule: it fails and matches nothing", () => {

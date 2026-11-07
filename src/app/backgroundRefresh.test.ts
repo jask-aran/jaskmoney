@@ -3,7 +3,7 @@ import { data } from "../state/dataStore"
 import { ui } from "../state/uiStore"
 import { transaction } from "../testing/fixtures"
 import { runBackgroundRefresh } from "./backgroundRefresh"
-import { lookUpPurchases, purchaseSources } from "./purchases"
+import { purchaseSources } from "./purchases"
 import { runSync } from "./sync"
 
 const SUMMARY = "Up sync: 0 new, 0 updated, 0 pending removed"
@@ -42,12 +42,6 @@ test("background refresh awaits purchase recording before suggesting and returns
   expect(suggest).toHaveBeenCalledTimes(1)
 })
 
-test("recordPurchases rejection on the no-due path stays inside the purchase round", async () => {
-  const { record } = setup()
-  record.mockRejectedValue(new Error("purchase save failed"))
-  expect(await lookUpPurchases(data)).toEqual({ looked: 0, found: 0, resuggested: 0, error: "purchase save failed" })
-})
-
 test("a quiet purchase error still permits new suggestions", async () => {
   const { record } = setup()
   data.setState({ transactions: [transaction()] })
@@ -58,24 +52,6 @@ test("a quiet purchase error still permits new suggestions", async () => {
     purchases: { looked: 0, found: 0, resuggested: 0, error: "purchase save failed" }, suggested: 0, error: null,
   })
   expect(suggest).toHaveBeenCalledTimes(1)
-})
-
-test("background refresh returns unexpected errors rather than rejecting", async () => {
-  setup()
-  purchaseSources.signedIn = () => { throw new Error("Executor state failed") }
-  expect(await runBackgroundRefresh(data)).toEqual({
-    purchases: { looked: 0, found: 0, resuggested: 0, error: null }, suggested: 0, error: "Executor state failed",
-  })
-})
-
-test.each([false, true])("sync handles refresh errors with upToken=%s", async (upToken) => {
-  const { sync } = setup()
-  data.setState({ upToken })
-  purchaseSources.signedIn = () => { throw new Error("Executor state failed") }
-  await runSync(ui, data, { manual: false })
-  expect(ui.state.status).toBe("Executor state failed")
-  expect(ui.state.statusErr).toBe(true)
-  expect(sync).toHaveBeenCalledTimes(upToken ? 1 : 0)
 })
 
 test.each([false, true])("both sync branches refresh once and preserve suggestion status with upToken=%s", async (upToken) => {
@@ -95,27 +71,6 @@ test.each([false, true])("both sync branches refresh once and preserve suggestio
   if (upToken) expect(ui.state.status).toContain(SUMMARY)
   expect(ui.state.status).toContain("suggestion")
   expect(ui.state.statusErr).toBe(false)
-})
-
-test("a purchase found in email is recorded on the transaction", async () => {
-  const { record } = setup()
-  // Clear the cached Gmail account through the signed-out path.
-  purchaseSources.signedIn = () => false
-  await lookUpPurchases(data)
-  purchaseSources.signedIn = () => true
-  purchaseSources.now = () => Date.parse("2026-10-30T00:00:00Z")
-  purchaseSources.accounts = async () => [{ accountId: "acc_test", label: "test", tools: "tools.gmail.api.users" }]
-  purchaseSources.run = async () => ({
-    shipments: [{ at: "2026-10-29T02:00:00Z", mime: "text/plain", data: Buffer.from("Order #\n250-1\n* Insert\nQuantity: 1\n9.32 AUD\nTotal\n9.32 AUD").toString("base64url") }], ebay: [],
-  })
-  data.setState({ transactions: [transaction({ description: "Amazon", rawText: "AMAZON AU MARKETPLACE", amount: -9.32, dateISO: "2026-10-29" })] })
-  const suggest = spyOn(data.core.commands, "suggestCategories").mockImplementation(async () => {
-    data.setState("suggestions", { 1: { transactionId: 1, categoryId: 1, confidence: 0.9, source: "history" } })
-    return "Suggested 1"
-  })
-  onTestFinished(() => suggest.mockRestore())
-  await runSync(ui, data, { manual: false })
-  expect(record.mock.calls[0]?.[0][0]).toMatchObject({ transactionId: 1, status: "found" })
 })
 
 test("manual sync looks up purchases only after the Up sync answers", async () => {

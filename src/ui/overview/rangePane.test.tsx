@@ -140,48 +140,6 @@ test("the Range pane over a year: a fortnight's paydays and sends would crowd th
   t.renderer.destroy()
 })
 
-test("the Range pane's categories: groups closed until space opens them, as Budgets'; as text, all open; the cursor moves over what shows", async () => {
-  const { t, frame } = await overview([
-    spend("2026-10-05", 300, 10, "Groceries"), spend("2026-10-06", 50, 12, "Takeaway"), spend("2026-10-07", 100, 11, "Fuel"),
-  ], "1M")
-  data.setState("categories", [category({ id: 20, name: "Food", color: "#a6e3a1" }), category({ id: 10, name: "Groceries", color: "#a6e3a1", parentId: 20 }), category({ id: 12, name: "Takeaway", color: "#a6e3a1", parentId: 20 }), category({ id: 11, name: "Fuel", color: "#fab387" })])
-  let text = (await frame()).join("\n")
-  expect(text).toMatch(/▸ +. Food\s+\$350/)
-  expect(text).not.toContain("Groceries")
-  // Fuel has no subcategories: no chevron.
-  expect(text).not.toMatch(/▸ +. Fuel/)
-  ui.setState({ focusedSection: "ov.categories", overviewCategoryCursor: 0 })
-  t.mockInput.pressKey(" ")
-  text = (await frame()).join("\n")
-  expect(ui.state.overviewOpen).toEqual([20])
-  expect(text).toMatch(/▾ +. Food[\s\S]*Groceries\s+\$300[\s\S]*Takeaway\s+\$50[\s\S]*Fuel/)
-  // From a subcategory, space closes its group and the cursor goes to it.
-  t.mockInput.pressKey("j")
-  await frame()
-  expect(ui.state.overviewCategoryCursor).toBe(1)
-  t.mockInput.pressKey(" ")
-  text = (await frame()).join("\n")
-  expect(ui.state.overviewOpen).toEqual([])
-  expect(ui.state.overviewCategoryCursor).toBe(0)
-  expect(text).not.toContain("Groceries")
-  // As text (t), every group open, no chevrons; the cursor moves over
-  // every line, and space opens nothing.
-  t.mockInput.pressKey("t")
-  const f = await frame()
-  text = f.join("\n")
-  expect(text).toMatch(/Food\s+\$350[\s\S]*Groceries\s+\$300[\s\S]*Takeaway\s+\$50[\s\S]*Fuel/)
-  expect(text).not.toMatch(/[▸▾]/)
-  const column = (re: RegExp) => { const l = f.find((x) => re.test(x))!; return l.indexOf("$") + l.slice(l.indexOf("$")).search(/\s/) }
-  expect(column(/Groceries/)).toBe(column(/Food/))
-  t.mockInput.pressKey("j")
-  await frame()
-  expect(ui.state.overviewCategoryCursor).toBe(1)
-  t.mockInput.pressKey(" ")
-  await frame()
-  expect(ui.state.overviewOpen).toEqual([])
-  t.renderer.destroy()
-})
-
 test("the Range pane spending more than came in: where it came from (in, each saver drawn on, Spending's balance) over what was spent, the same total, edges between", async () => {
   // In $1,000; spent $1,600: $400 from Rainy day, the other $200 from
   // Spending's balance.

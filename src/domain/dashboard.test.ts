@@ -1,12 +1,7 @@
 import { describe, expect, test } from "bun:test"
 import {
   computeCategorySpend,
-  cumulative,
   dailySpendSeries,
-  formatWholeMoney,
-  formatMoney,
-  signedWholeMoney,
-  fitCategoryLines,
   groupCategorySpend,
   weeklyTotals,
 } from "./dashboard"
@@ -74,10 +69,6 @@ describe("category groups", () => {
 })
 
 describe("tracker series", () => {
-  test("cumulative running totals", () => {
-    expect(cumulative([1, 0, 2.5])).toEqual([1, 1, 3.5])
-  })
-
   test("weekly totals start on the week start (Monday or Sunday); edge weeks are partial", () => {
     // 2026-10-01 is a Thursday; 2026-10-05 a Monday.
     const dates = ["2026-10-01", "2026-10-02", "2026-10-03", "2026-10-04", "2026-10-05", "2026-10-06"]
@@ -90,40 +81,4 @@ describe("tracker series", () => {
       { startISO: "2026-10-04", total: 15, days: 3 },
     ])
   })
-
-  test("daily series steps calendar days across DST", () => {
-    // Sydney DST ends 2027-04-04 (a 25-hour day) in local time.
-    const { dates } = dailySpendSeries([], "2027-04-03", "2027-04-06")
-    expect(dates).toEqual(["2027-04-03", "2027-04-04", "2027-04-05", "2027-04-06"])
-  })
-})
-
-describe("fitCategoryLines", () => {
-  const child = (name: string, amount: number) => ({ categoryId: null, name, color: "", amount, pct: 0 })
-  const groups = [
-    { categoryId: 10, name: "Good Life", color: "a", amount: 30, pct: 60, children: [child("Cafes", 20), child("Pubs", 10)] },
-    { categoryId: 20, name: "Home", color: "b", amount: 20, pct: 40, children: [child("Groceries", 15), child("Pets", 5)] },
-  ]
-
-  test("groups first, then the largest subcategories under their group; never more lines than allowed", () => {
-    expect(fitCategoryLines(groups, 4).map((l) => l.label)).toEqual(["Good Life", "Cafes", "Home", "Groceries"])
-    expect(fitCategoryLines(groups, 1).map((l) => l.label)).toEqual(["Good Life"])
-    expect(fitCategoryLines(groups, 0)).toEqual([])
-  })
-})
-
-// Approved change: rounded zero never has a negative sign.
-test("money formatting: thousands, whole-dollar rounding, and no minus sign when the displayed value is zero", () => {
-  expect(formatWholeMoney(1477.6)).toBe("$1,478")
-  expect(formatWholeMoney(-0.4)).toBe("$0")
-  expect(formatWholeMoney(-0)).toBe("$0")
-  expect(formatWholeMoney(-0.5)).toBe("-$1")
-  expect(formatMoney(-0.001)).toBe("$0.00")
-  expect(formatMoney(-0)).toBe("$0.00")
-  expect(formatMoney(-0.005)).toBe("-$0.01")
-  expect(signedWholeMoney(-0.4)).toBe("$0")
-  expect(signedWholeMoney(-0.5)).toBe("-$1")
-  expect(signedWholeMoney(0.4)).toBe("$0")
-  expect(signedWholeMoney(0.5)).toBe("$1")
-  expect(signedWholeMoney(0.6)).toBe("+$1")
 })

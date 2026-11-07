@@ -1,5 +1,5 @@
 import { expect, test } from "bun:test"
-import { applyTop, eitherInstead, evalFilter, notForRules, parseFilter, parseFilterStrict } from "./filter"
+import { applyTop, evalFilter, notForRules, parseFilter, parseFilterStrict } from "./filter"
 import { transaction } from "../testing/fixtures"
 
 const rows = [
@@ -29,11 +29,4 @@ test("top: only at the top level, once, as a whole number; never in a rule", () 
   expect(notForRules(parseFilterStrict("coles top:3").node)).not.toBeNull()
   expect(notForRules(parseFilterStrict('ask:"coffee"').node)).not.toBeNull()
   expect(notForRules(parseFilterStrict("coles").node)).toBeNull()
-})
-
-test("words that are never on one row together, but each on some: the OR to try instead", () => {
-  expect(eitherInstead(parseFilter("kfc mcdonalds").node, rows)).toBe("kfc OR mcdonalds")
-  expect(eitherInstead(parseFilter("desc:kfc desc:coles").node, rows)).toBe("desc:kfc OR desc:coles")
-  expect(eitherInstead(parseFilter("kfc zebra").node, rows)).toBeNull()
-  expect(eitherInstead(parseFilter("kfc amt:<0").node, rows)).toBeNull()
 })

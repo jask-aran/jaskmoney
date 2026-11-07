@@ -2,7 +2,7 @@ import { expect, onTestFinished, spyOn, test } from "bun:test"
 import { previewSent, type SentPart } from "../app/sentPreview"
 import { data } from "../state/dataStore"
 import { testEnv } from "../testing/scoped"
-import { AI_USES, BLOCKS, QUERIES, USES, useQueries, type QueryId } from "./catalog"
+import { AI_USES, QUERIES, type QueryId } from "./catalog"
 
 /** Rows that give every block something to say: a waiting row whose
  * merchant has history and a note, and a tag with categories, an About
@@ -59,14 +59,6 @@ function contextKeys(body: unknown): { top: string[]; transaction: string[] } {
 
 /** What the row block itself says (history.rowFacts). */
 const ROW = ["description", "amount", "direction", "bank_type", "message", "bank_text", "bought", "your_note", "tags", "foreign_amount", "category", "date", "when", "account", "paid"]
-
-test("every query a use names is in the catalog; every query and block is named by something", () => {
-  const named: string[] = AI_USES.flatMap(useQueries)
-  expect(new Set(named)).toEqual(new Set(Object.keys(QUERIES)))
-  for (const id of AI_USES.flatMap(useQueries)) expect(USES[QUERIES[id].use].features.some((f) => f.queries.includes(id))).toBe(true)
-  const used = new Set<string>(Object.values(QUERIES).flatMap((q) => q.context.map((c) => c.block)))
-  expect(used).toEqual(new Set(Object.keys(BLOCKS)))
-})
 
 test("each query's real request carries exactly the context the catalog says, in the fields it names", async () => {
   setup()

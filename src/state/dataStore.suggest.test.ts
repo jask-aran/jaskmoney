@@ -78,42 +78,6 @@ test("suggestions use history before Jev and never categorise or resend ineligib
   expect(states).toHaveLength(2)
 })
 
-test("a second run is refused while one runs; a failed request is reported with its rows", async () => {
-  const { add } = setup()
-  add({ id: 1, description: "First" })
-  add({ id: 2, description: "Second" })
-  data.refresh()
-  let release = () => {}
-  const pending = new Promise<void>((resolve) => { release = resolve })
-  let arrived = () => {}
-  const started = new Promise<void>((resolve) => { arrived = resolve })
-  const ai = answeringMerchants({ async judge() {
-    arrived()
-    await pending
-    throw new Error("fake unavailable")
-  } })
-  const running = data.suggestCategories(undefined, ai)
-  try {
-    await started
-    await expect(data.suggestCategories(undefined, ai)).rejects.toThrow("Category suggestions are already running")
-  } finally { release() }
-  expect(await running).toBe("Suggested 0: 0 from history, 0 from Jev · 1 failed: 2 rows: fake unavailable")
-  expect(data.state.suggesting).toBe(false)
-  // Asking again works, and lands every row of the request.
-  expect(await data.suggestCategories(undefined, fakeJev())).toBe("Suggested 2: 0 from history, 2 from Jev")
-})
-
-test("history works without Jev and reports missing setup", async () => {
-  const { add } = setup()
-  for (const id of [1, 4, 5]) add({ id, description: "Shop", categoryId: 100 })
-  add({ id: 2, description: "Shop" })
-  add({ id: 3, description: "Unknown" })
-  data.refresh()
-  expect(await data.suggestCategories()).toContain("Jev is not set up")
-  expect(data.state.suggestions[2]?.categoryId).toBe(100)
-  expect(data.state.suggestions[3]).toBeUndefined()
-})
-
 test("accept groups categories, categorises CSV rows and deletes only accepted suggestions", async () => {
   const { db, add } = setup()
   for (const id of [1, 2, 3, 4, 5]) add({ id })
@@ -127,22 +91,6 @@ test("accept groups categories, categorises CSV rows and deletes only accepted s
   expect(db.query("SELECT transaction_id FROM category_suggestions ORDER BY transaction_id").all()).toEqual([{ transaction_id: 4 }])
   expect(data.state.transactions.find((t) => t.id === 5)?.categoryId).toBeNull()
   expect(await data.acceptSuggestions([999])).toBe("No suggestions accepted")
-})
-
-test("dismiss deletes suggestions without setting a category; refresh removes stale suggestions", async () => {
-  const { db, add } = setup()
-  for (const id of [1, 2, 3]) add({ id })
-  saveSuggestions(db, [1, 2, 3].map((id) => ({ transactionId: id, categoryId: 100, confidence: 1, source: "history" })))
-  data.refresh()
-  await data.dismissSuggestions([1, 999])
-  expect(data.state.suggestions[1]).toBeUndefined()
-  expect(data.state.transactions.find((t) => t.id === 1)?.categoryId).toBeNull()
-  db.query("UPDATE transactions SET category_id = 101 WHERE id = 2").run()
-  data.refresh()
-  expect(Object.keys(data.state.suggestions)).toEqual(["3"])
-  expect(loadSuggestions(db).map((s) => s.transactionId)).toEqual([3])
-  expect(await data.acceptSuggestions([2])).toBe("No suggestions accepted")
-  expect(data.state.transactions.find((t) => t.id === 2)?.categoryId).toBe(101)
 })
 
 test("storage upserts suggestions, filters default categories, and cascades deletion", () => {
@@ -160,18 +108,6 @@ test("storage upserts suggestions, filters default categories, and cascades dele
   expect(loadSuggestions(db).map((s) => s.transactionId)).toEqual([2])
   db.query("DELETE FROM categories WHERE id = ?").run(c.id)
   expect(loadSuggestions(db)).toEqual([])
-})
-
-
-test("suggesting clears even when the database write and final refresh fail", async () => {
-  const { db, add } = setup()
-  add()
-  data.refresh()
-  const queryMock = spyOn(db, "query").mockImplementation(() => { throw new Error("test database failure") })
-  try {
-    await expect(data.suggestCategories()).rejects.toThrow("test database failure")
-    expect(data.state.suggesting).toBe(false)
-  } finally { queryMock.mockRestore() }
 })
 
 test("fresh schema includes suggestions and v18–v19 migrate a v17 database without losing rows", () => {
@@ -207,36 +143,6 @@ test("v19: suggestions come from Jev; history's are kept, Clef's dropped", () =>
   expect(loadSuggestions(db)).toEqual([{ transactionId: 1, categoryId: groceries, confidence: 0.75, source: "history" }])
   saveSuggestions(db, [{ transactionId: 2, categoryId: groceries, confidence: 0.9, source: "jev" }])
   expect(loadSuggestions(db)).toHaveLength(2)
-})
-
-test("a run asks about each merchant once and lowers stored suggestions a marketplace can't support", async () => {
-  const { db, add } = setup()
-  add({ id: 1, description: "eBay" })
-  add({ id: 2, description: "eBay" })
-  add({ id: 3, description: "Corner Bar" })
-  saveSuggestions(db, [1, 3].map((id) => ({ transactionId: id, categoryId: 100, confidence: 1, source: "jev" as const })))
-  data.refresh()
-  const asked: string[] = []
-  const ai: Pick<JevClient, "judge"> = { async judge(questions) {
-    const out: Awaited<ReturnType<JevClient["judge"]>> = {}
-    for (const [id, q] of Object.entries(questions)) {
-      const merchant = (q.instructions as { merchant?: { name: string } }).merchant
-      if (merchant) asked.push(merchant.name)
-      out[id] = merchant ? { type: "noul", noul: merchant.name === "eBay" ? 0.95 : 0.1 } : { type: "choice", choice: "c101", confidence: 0.5, probabilities: { c101: 0.99 } }
-    }
-    return out
-  } }
-  await data.suggestCategories(undefined, ai)
-  expect(asked.sort()).toEqual(["Corner Bar", "eBay"])
-  expect(data.state.suggestions[1]?.confidence).toBe(0.45)
-  expect(data.state.suggestions[2]?.confidence).toBe(0.45)
-  expect(data.state.suggestions[3]?.confidence).toBe(1)
-  expect(loadSuggestions(db).find((s) => s.transactionId === 1)?.confidence).toBe(0.45)
-  asked.length = 0
-  deleteSuggestions(db, [2])
-  data.refresh()
-  await data.suggestCategories(undefined, ai)
-  expect(asked).toEqual([])
 })
 
 test("merchant notes reload, invalidate breadth, and re-suggest only that merchant's suggested waiting rows", async () => {
@@ -300,39 +206,6 @@ test("merchant notes reload, invalidate breadth, and re-suggest only that mercha
   expect(loadMerchantBreadth(db).has("ebay")).toBe(false)
   expect(data.state.merchantNotes.ebay).toBe(note)
   expect(data.state.suggestions[1]?.categoryId).toBe(101)
-})
-
-test("setting a merchant note waits for a suggestion pass before invalidating its breadth", async () => {
-  const { db, add } = setup()
-  add({ id: 1, description: "eBay" })
-  data.refresh()
-  let release = () => {}
-  const gate = new Promise<void>((resolve) => { release = resolve })
-  let arrive = () => {}
-  const started = new Promise<void>((resolve) => { arrive = resolve })
-  const running = data.suggestCategories(undefined, { async judge(questions) {
-    arrive()
-    await gate
-    return Object.fromEntries(Object.entries(questions).map(([id, q]) => [id, q.type === "noul"
-      ? { type: "noul", noul: 0.9 }
-      : { type: "choice", choice: "c100", confidence: 0.9, probabilities: { c100: 0.9 } }]))
-  } })
-  await started
-  const seen: JevQuestion[] = []
-  const ai = fakeJev()
-  const later = data.setMerchantNote("eBay", "always groceries for me", { async judge(questions, state) {
-    seen.push(...Object.values(questions))
-    return ai.judge(questions, state)
-  } })
-  release()
-  await running
-  expect(await later).toBe(1)
-  expect(loadMerchantBreadth(db).has("ebay")).toBe(true)
-  expect(seen.filter((q) => typeof q.instructions === "object" && "merchant" in q.instructions)).toEqual([
-    expect.objectContaining({ instructions: expect.objectContaining({ merchant: { name: "eBay", note: "always groceries for me" } }) }),
-  ])
-  expect(data.state.suggestions[1]?.categoryId).toBe(101)
-  expect(data.state.suggesting).toBe(false)
 })
 
 

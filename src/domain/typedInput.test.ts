@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test"
-import { amountFromText, dayFromText, rangeDayFromText, rangeDayText } from "./typedInput"
+import { amountFromText, dayFromText, rangeDayFromText } from "./typedInput"
 
 describe("amountFromText", () => {
   test("reads plain amounts, ignoring $, commas and spaces", () => {
@@ -16,9 +16,7 @@ describe("amountFromText", () => {
     expect(amountFromText("$50 * 4")).toBe(200)
     expect(amountFromText("100/3")).toBe(33.33)
     expect(amountFromText("0.1+0.2")).toBe(0.3)
-  })
 
-  test("refuses what isn't an amount", () => {
     for (const bad of ["", "   ", "abc", "12+", "*3", "(1+2", "1+2)", "1/0", "12..5", "1e3", "2**3", "Math.PI", "1;2"]) {
       expect(amountFromText(bad)).toBeNull()
     }
@@ -40,9 +38,7 @@ describe("dayFromText", () => {
     expect(dayFromText("18.11.25", today)).toBe("2025-11-18")
     expect(dayFromText("2025-06-30", today)).toBe("2025-06-30")
     expect(dayFromText(" 2025-06-30 ", today)).toBe("2025-06-30")
-  })
 
-  test("refuses days that don't exist and other text", () => {
     for (const bad of ["", "0", "32", "31/11", "30/2", "29/2/25", "18/13", "2026-02-30", "abc", "18/11/202", "1/2/3/4"]) {
       expect(dayFromText(bad, today)).toBeNull()
     }
@@ -69,9 +65,5 @@ describe("rangeDayFromText", () => {
     expect(rangeDayFromText("", today, "end")).toBe(today)
     expect(rangeDayFromText("", today, "start")).toBeNull()
     for (const bad of ["ma", "31 feb", "smarch", "1 oct 202", "--3"]) expect(rangeDayFromText(bad, today, "start")).toBeNull()
-  })
-
-  test("writes a day the way it reads one back", () => {
-    for (const iso of ["2026-09-02", "2025-12-31"]) expect(rangeDayFromText(rangeDayText(iso), today, "start")).toBe(iso)
   })
 })

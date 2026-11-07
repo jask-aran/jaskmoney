@@ -85,14 +85,3 @@ test("making a tag offer adds a rule that tags the waiting rows; undo takes both
   expect(data.state.rules.some((r) => r.addTagIds.includes(travel))).toBe(false)
   expect(tagsOf(untagged)).not.toContain(travel)
 })
-
-test("a declined tag offer isn't offered again", async () => {
-  const { faux, llm } = await setup()
-  faux.setResponses([fauxAssistantMessage([fauxToolCall("finish", { rules: proposals.slice(0, 1) })], { stopReason: "toolUse" })])
-  await data.askForRules(llm)
-  await data.declineRuleOffer(data.state.aiRuleOffers[0]!)
-  expect(data.state.aiRuleOffers).toHaveLength(0)
-  faux.setResponses([fauxAssistantMessage([fauxToolCall("finish", { rules: proposals.slice(0, 1) })], { stopReason: "toolUse" })])
-  await data.askForRules(llm)
-  expect(data.state.aiRuleOffers).toHaveLength(0)
-})

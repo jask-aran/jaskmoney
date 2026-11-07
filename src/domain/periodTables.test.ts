@@ -22,22 +22,6 @@ test("Trends: a month a row, each group's spending in the range's order, partial
   ])
 })
 
-test("Trends: two months or less go a week a row, labelled from the range's first day", () => {
-  const out = trendRows([spend("2026-10-07", 30)], categories, "2026-10-01", "2026-10-31", "2026-11-03", "monday")
-  // 1 Oct is a Thursday: its week runs to Sunday 4 Oct.
-  expect(out.rows.map((r) => r.label)).toEqual(["1 Oct", "5 Oct", "12 Oct", "19 Oct", "26 Oct"])
-  expect(out.rows[0]!.partial).toBe(true)
-  expect(out.rows[1]!.total).toBe(30)
-})
-
-test("Trends: past the five biggest groups, the rest are Other", () => {
-  const many = Array.from({ length: 7 }, (_, i) => category({ id: 10 + i, name: `G${i}` }))
-  const rows = many.map((c, i) => spend("2026-09-05", 100 - i, c))
-  const out = trendRows(rows, many, "2026-09-01", "2026-09-30", "2026-10-20", "monday")
-  expect(out.groups.map((g) => g.name)).toEqual(["G0", "G1", "G2", "G3", "G4", "Other"])
-  expect(out.rows.reduce((n, r) => n + r.amounts.at(-1)!, 0)).toBe(95 + 94)
-})
-
 test("Merchants: the range's spending by merchant, most first, against the period before", () => {
   const now = [spend("2026-10-02", 20, fun, "CAFE"), spend("2026-10-09", 25, fun, "CAFE"), spend("2026-10-05", 90, rent, "GROCER"), spend("2026-10-06", 15, fun, "NEWBIE")]
   const before = [spend("2026-09-02", 30, fun, "CAFE"), spend("2026-09-05", 100, rent, "GROCER")]

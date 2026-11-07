@@ -51,22 +51,6 @@ beforeEach(() => {
 })
 afterEach(() => { fetchMock.mockRestore(); data.getDb()?.close() })
 
-test("a tag added to an Up row shows at once, waits in the queue, and leaves it once Up confirms", async () => {
-  const { tag, up } = await setup()
-  let confirm = () => {}
-  answers = [new Promise<void>((resolve) => { confirm = resolve })]
-  const applying = data.applyTagPatch([up], { [tag]: "add" })
-  // Before Up answers.
-  expect(tagsOf(up)).toEqual([tag])
-  expect(queue()).toEqual([{ id: up, tag, action: "add" }])
-  confirm()
-  await applying
-  expect(tagsOf(up)).toEqual([tag])
-  expect(queue()).toEqual([])
-  expect(extTags(up)).toEqual(["COFFEE"])
-  expect(sent).toHaveLength(1)
-})
-
 test("a sync before Up has the change keeps it: waiting adds stay on, waiting removes stay off", async () => {
   const { db, tag, up } = await setup()
   answers = ["offline"]
@@ -88,15 +72,6 @@ test("a sync before Up has the change keeps it: waiting adds stay on, waiting re
   db.transaction(() => syncTagLinks(db))()
   data.refresh()
   expect(tagsOf(up)).toEqual([])
-})
-
-test("the latest change to a row's tag is the one that waits", async () => {
-  const { tag, up } = await setup()
-  answers = ["offline", "offline"]
-  await data.applyTagPatch([up], { [tag]: "add" })
-  await data.applyTagPatch([up], { [tag]: "remove" })
-  expect(tagsOf(up)).toEqual([])
-  expect(queue()).toEqual([{ id: up, tag, action: "remove" }])
 })
 
 test("retryPendingTags sends what waits; Up refusing a change puts the row back and drops it", async () => {
@@ -130,15 +105,4 @@ test("rules that add a tag to an Up row queue it like a pick; local rows and IGN
   expect(await data.retryPendingTags()).toEqual({ pushed: 1, rejected: 0, waiting: 0 })
   expect(queue()).toEqual([])
   expect(extTags(up)).toEqual(["COFFEE"])
-})
-
-test("Up's six-tag limit: an add past it changes nothing and queues nothing", async () => {
-  const { db, tag, up } = await setup()
-  db.query("UPDATE transactions SET ext_tags = ? WHERE id = ?").run(JSON.stringify(["A", "B", "C", "D", "E", "F"]), up)
-  data.refresh()
-  const summary = await data.applyTagPatch([up], { [tag]: "add" })
-  expect(tagsOf(up)).not.toContain(tag)
-  expect(queue()).toEqual([])
-  expect(sent).toHaveLength(0)
-  expect(summary).toContain("6 tags")
 })

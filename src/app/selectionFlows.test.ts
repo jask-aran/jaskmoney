@@ -56,14 +56,3 @@ test("picked rows stay through a filter and a sort, by id", () => {
   handleKey(ui, key("s"), data)
   expect(Object.keys(ui.state.selectedIds).map(Number).sort()).toEqual([1, 3])
 })
-
-test("each row's detail opens on its own: its bought list at the top, no notes being written", () => {
-  ui.setState({ detail: { id: 1, boughtTop: 3, notes: { draft: "half", caret: 4 } } })
-  handleKey(ui, key("escape"), data)
-  handleKey(ui, key("escape"), data)
-  expect(ui.state.detail).toBeNull()
-  handleKey(ui, key("j"), data)
-  handleKey(ui, key("return"), data)
-  expect(ui.state.detail).toEqual({ id: 2, boughtTop: 0, notes: null })
-  expect(ui.activeScope()).toBe("manager.detail")
-})

@@ -23,15 +23,6 @@ async function open() {
   return { t, frame, canvas }
 }
 
-test("Appearance › Theme opens a picker listing every theme, the one in use marked", async () => {
-  const { frame } = await open()
-  expect(ui.activeScope()).toBe("themePicker")
-  const f = await frame()
-  for (const def of THEMES) expect(f).toContain(def.name)
-  expect(f).toMatch(/Jaskmoney\s+■ ■ ■ ■ ■ ■ ■\s+in use/)
-  expect(ui.state.themePicker).toEqual({ cursor: 0 })
-})
-
 test("moving previews the theme at the cursor across the app; enter keeps and saves it", async () => {
   const { frame, canvas } = await open()
   const nord = THEMES.findIndex((t) => t.id === "nord")

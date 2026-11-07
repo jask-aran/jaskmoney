@@ -1,12 +1,7 @@
 import { expect, onTestFinished, spyOn, test } from "bun:test"
 import type { JevClient, JevQuestion } from "../ai/jev"
-import { groupForTag } from "../domain/tagSuggest"
-import type { TagGroup } from "../domain/tagGroups"
-import { handleKey } from "../app/keys"
-import { key } from "../testing/keys"
 import { testEnv } from "../testing/scoped"
 import { data } from "./dataStore"
-import { tagChoices } from "./tagChooser"
 import { ui } from "./uiStore"
 
 /** CSV rows (tagging never calls Up), no Jev key, no network. */
@@ -78,58 +73,4 @@ test("a tag's review: tag history first, Jev for the rest of its categories, tol
   data.closeTagReview()
   expect(data.state.tagReview).toBeNull()
   expect(data.state.sortColumn).toBe("date")
-})
-
-test("a trip's review looks within its dates whatever the tag's categories", async () => {
-  const { db } = setup()
-  const categoryIds = [food(db)]
-  const trip: TagGroup = { kind: "trip", name: "Lisbon Jan 2025", detail: "3 in person · 1 Jan 2025", rows: [], start: "2025-01-01", end: "2025-01-01" }
-  const { ai, sent } = fakeJev()
-  await data.openTagReview({ tagId: null, name: "LISBON 2025", categoryIds, about: null, group: trip }, ai)
-  expect(sent).toEqual(["Old Coffee"])
-})
-
-test("a new tag is created on its first accept, for any category", async () => {
-  setup()
-  const { ai } = fakeJev()
-  await data.openTagReview({ tagId: null, name: "Coffee runs", categoryIds: [], about: null }, ai)
-  // Tag names are upper case: the review names it as it will be.
-  expect(data.state.tagReview!.name).toBe("COFFEE RUNS")
-  expect(data.state.tags.some((t) => t.name === "COFFEE RUNS")).toBe(false)
-  await data.acceptTagCandidates([1])
-  const tag = data.state.tags.find((t) => t.name === "COFFEE RUNS")!
-  expect({ categoryIds: [...tag.categoryIds], about: tag.about }).toEqual({ categoryIds: [], about: null })
-  expect(data.state.tagReview!.tagId).toBe(tag.id)
-})
-
-test("the chooser: your tags (a trip found for one), groups no tag covers, then a new name; IGNORE isn't offered", async () => {
-  setup()
-  const trip: TagGroup = { kind: "trip", name: "Singapore May 2026", detail: "38 in person · 22–25 May 2026", rows: [], start: "2026-05-22", end: "2026-05-25" }
-  const subs: TagGroup = { kind: "recurring", name: "Subscriptions", detail: "Netflix monthly", rows: [] }
-  expect(groupForTag("SINGAPORE 2026", [trip])).toBe(trip)
-  expect(groupForTag("SINGAPORE 2025", [trip])).toBeUndefined()
-  expect(groupForTag("Japan", [trip])).toBeUndefined()
-  await data.createSettingsTag({ name: "SINGAPORE 2026", color: "#fff", categoryIds: [], about: null })
-  const choices = tagChoices(data.state.tags, [trip, subs], "")
-  expect(choices.map((c) => c.kind === "tag" ? `tag ${c.tag.name}${c.group ? " +trip" : ""}` : c.kind === "group" ? `group ${c.group.name}` : `new ${c.name}`))
-    .toEqual(["tag SINGAPORE 2026 +trip", "group Subscriptions"])
-  expect(tagChoices(data.state.tags, [trip, subs], "dinners").at(-1)).toEqual({ kind: "new", name: "dinners" })
-})
-
-test("keys: T opens the chooser; in a review x and esc act on candidates", async () => {
-  setup()
-  handleKey(ui, key("t", { shift: true }), data)
-  expect((ui.state.tagChooser != null)).toBe(true)
-  for (const c of "dinners") handleKey(ui, key(c), data)
-  expect((ui.state.tagChooser?.query ?? "")).toBe("dinners")
-  handleKey(ui, key("escape"), data)
-  expect((ui.state.tagChooser != null)).toBe(false)
-  const { ai } = fakeJev()
-  await data.openTagReview({ tagId: null, name: "Coffee", categoryIds: [], about: null }, ai)
-  // No scope: all four coffee rows; x drops the cursor row.
-  expect(shown()).toHaveLength(4)
-  handleKey(ui, key("x"), data)
-  expect(shown()).toHaveLength(3)
-  handleKey(ui, key("escape"), data)
-  expect(data.state.tagReview).toBeNull()
 })

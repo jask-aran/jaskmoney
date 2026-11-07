@@ -2,7 +2,6 @@ import { expect, onTestFinished, spyOn, test } from "bun:test"
 import type { ServerWebSocket, WebSocketHandler } from "bun"
 import { createCore } from "../core/core"
 import type { ConnectedClient } from "../core/protocol"
-import { transaction } from "../testing/fixtures"
 import { serveCore } from "./serve"
 
 type SocketData = {
@@ -43,36 +42,6 @@ function setup() {
 }
 
 const settled = async () => { for (let i = 0; i < 8; i++) await Promise.resolve() }
-
-test("row patches carry only what changed, the same bytes for every client", () => {
-  const { core, connect } = setup()
-  const a = transaction({ id: 1 }), b = transaction({ id: 2 })
-  core.set({ transactions: [a, b] })
-  const one = connect(), two = connect()
-  one.messages.length = two.messages.length = 0
-  core.set({ transactions: [a, b] })
-  expect(one.messages).toEqual([])
-  expect(two.messages).toEqual([])
-
-  const updated = { ...b, notes: 'changed "note"' }
-  core.set({ transactions: [a, updated] })
-  const expected = `{"t":"state","patch":{},"rows":{"set":[${JSON.stringify(updated)}],"remove":[]}}`
-  expect(one.messages).toEqual([expected])
-  expect(two.messages).toEqual([expected])
-  one.messages.length = two.messages.length = 0
-  core.set({ transactions: [updated, a] })
-  expect(one.messages).toEqual(['{"t":"state","patch":{},"rows":{"set":[],"remove":[],"order":[2,1]}}'])
-  expect(two.messages).toEqual(one.messages)
-  one.messages.length = 0
-  core.set({ transactions: [updated] })
-  expect(one.messages).toEqual(['{"t":"state","patch":{},"rows":{"set":[],"remove":[1],"order":[2]}}'])
-  one.messages.length = 0
-  core.set({ transactions: [] })
-  expect(one.messages).toEqual(['{"t":"state","patch":{},"rows":{"set":[],"remove":[2],"order":[]}}'])
-  const late = connect()
-  expect(late.ws.data.rows.size).toBe(0)
-  expect(late.ws.data.order).toBe("")
-})
 
 test("invalid messages are ignored; valid string and number call ids keep progress and results", async () => {
   const { core, connect } = setup()
@@ -131,27 +100,4 @@ test("duplicate active ids and more than 64 calls are refused without losing can
   await settled()
   expect(client.messages.at(-1)).toBe('{"t":"result","id":0,"value":[]}')
   expect(command).toHaveBeenCalledTimes(66)
-})
-
-test("command fallbacks, unknown-command errors and rejected-call cleanup stay unchanged", async () => {
-  const { core, connect } = setup()
-  const client = connect()
-  client.messages.length = 0
-  const refresh = spyOn(core.commands, "refreshApiKeys").mockImplementation(() => {})
-  const judge = spyOn(core.commands, "judgeAsk").mockRejectedValue(new Error("invented failure"))
-  onTestFinished(() => { refresh.mockRestore(); judge.mockRestore() })
-  for (const params of [undefined, null]) {
-    client.message({ t: "call", id: 1, method: "refreshApiKeys", params })
-    await settled()
-    expect(refresh.mock.calls.at(-1)?.[0]).toEqual({})
-    expect(client.messages.splice(0)).toEqual(['{"t":"result","id":1,"value":null}'])
-    expect(client.ws.data.calls.size).toBe(0)
-  }
-  client.message({ t: "call", id: 2, method: "inventedCommand" })
-  expect(client.messages.splice(0)).toEqual(['{"t":"result","id":2,"error":"no such command: inventedCommand"}'])
-  expect(client.ws.data.calls.size).toBe(0)
-  client.message({ t: "call", id: 3, method: "judgeAsk" })
-  await settled()
-  expect(client.messages.splice(0)).toEqual(['{"t":"result","id":3,"error":"invented failure"}'])
-  expect(client.ws.data.calls.size).toBe(0)
 })

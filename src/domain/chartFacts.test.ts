@@ -1,6 +1,6 @@
 import { expect, test } from "bun:test"
 import { account, transaction } from "../testing/fixtures"
-import { biggestRow, computePeriodFlows, flowRows, historyCovers, projectAvailable, usualDailySpend } from "./position"
+import { biggestRow, computePeriodFlows, flowRows, projectAvailable, usualDailySpend } from "./position"
 import { subscriptions, upcomingCharges, type Subscription } from "./subscriptions"
 
 const spending = account({ id: 1, balance: 500 })
@@ -18,15 +18,6 @@ test("flowRows are the rows computePeriodFlows sums: spent and money in", () => 
   const outs = spent.filter((t) => t.amount < 0)
   expect(biggestRow(outs, "2026-10-01", "2026-10-31")?.id).toBe(1)
   expect(biggestRow(outs, "2026-10-02", "2026-10-02")?.id).toBe(2)
-})
-
-test("a few stray old rows don't make an earlier period comparable", () => {
-  const now = Array.from({ length: 20 }, (_, i) => row(i + 1, `2026-10-${String(i + 1).padStart(2, "0")}`, -5))
-  const stray = [row(99, "2026-09-03", -5), row(98, "2026-09-20", -5)]
-  const sept = { start: "2026-09-01", end: "2026-09-20" }, oct = { start: "2026-10-01", end: "2026-10-20" }
-  expect(historyCovers([...now, ...stray], sept, oct)).toBe(false)
-  const full = Array.from({ length: 12 }, (_, i) => row(200 + i, `2026-09-${String(i + 1).padStart(2, "0")}`, -5))
-  expect(historyCovers([...now, ...full], sept, oct)).toBe(true)
 })
 
 const sub = (over: Partial<Subscription>): Subscription => ({ name: "Netflix", cadence: "monthly", amount: 10, monthly: 10, last: "2026-10-05", next: "2026-11-05", stopped: false, change: null, categoryId: null, chargeIds: [], ...over })

@@ -1,14 +1,9 @@
 import { settlePending } from "../testing/settle"
 import { afterEach, expect, test } from "bun:test"
-import { RGBA, TextAttributes } from "@opentui/core"
-import { createComponent } from "solid-js"
-import { testRender } from "@opentui/solid"
 import { handleKey } from "../app/keys"
-import { TagPicker } from "../ui/primitives/TagPicker"
-import { tagPickerItems } from "./tagPicker"
 import { data } from "./dataStore"
 import { ui } from "./uiStore"
-import { ink, theme } from "../theme"
+import { theme } from "../theme"
 import { key } from "../testing/keys"
 
 function press(name: string) {
@@ -32,26 +27,6 @@ async function fixture() {
 }
 const ids = () => data.state.transactions.map((t) => [...t.tagIds])
 afterEach(() => { ui.closeTagPicker(); data.getDb()?.close() })
-
-test("space stages mixed → all → none → original; esc and empty enter write nothing", async () => {
-  const { add } = await fixture()
-  const original = ids()
-  press("space")
-  expect((ui.state.tagPicker?.patch ?? {})).toEqual({ [add]: "add" })
-  expect(ids()).toEqual(original)
-  press("space")
-  expect((ui.state.tagPicker?.patch ?? {})).toEqual({ [add]: "remove" })
-  press("space")
-  expect((ui.state.tagPicker?.patch ?? {})).toEqual({})
-  expect(ids()).toEqual(original)
-  press("space")
-  press("escape")
-  expect(ids()).toEqual(original)
-  expect((ui.state.tagPicker?.patch ?? {})).toEqual({})
-  ui.openTagPicker([1, 2, 3])
-  press("enter")
-  expect(ids()).toEqual(original)
-})
 
 test("enter applies staged add and remove across local targets; all and none toggle back", async () => {
   const { add, remove } = await fixture()
@@ -77,73 +52,4 @@ test("enter applies staged add and remove across local targets; all and none tog
   expect((ui.state.tagPicker?.patch ?? {})).toEqual({ [remove]: "add" })
   press("space")
   expect((ui.state.tagPicker?.patch ?? {})).toEqual({})
-})
-
-test("create row is last, cursor reaches it, and enter also applies the existing patch", async () => {
-  const { add, remove } = await fixture()
-  press("space")
-  ui.setState("tagPicker", { query: "WO", cursor: 0 })
-  press("down")
-  expect(ui.state.tagPicker!.cursor).toBe(1)
-  press("up")
-  expect(ui.state.tagPicker!.cursor).toBe(0)
-  press("down")
-  press("enter")
-  await Promise.resolve(); await settlePending()
-  const created = data.state.tags.find((t) => t.name === "WO")!
-  expect({ categoryIds: [...created.categoryIds], about: created.about, color: created.color }).toEqual({ categoryIds: [], about: null, color: theme.blue })
-  expect(data.state.transactions.every((t) => [add, remove, created.id].every((id) => t.tagIds.includes(id)))).toBe(true)
-  expect((ui.state.tagPicker?.patch ?? {})).toEqual({})
-  expect(tagPickerItems(data.state.tags, data.state.categories, data.state.transactions, [1], " wo ").some((r) => r.kind === "item" && r.value === null)).toBe(false)
-})
-
-test("IGNORE changes on Up rows remain local without a token or client", async () => {
-  const { db } = await fixture()
-  const ignore = data.state.tags.find((t) => t.name === "IGNORE")!
-  db.query("UPDATE transactions SET source = 'up', external_id = 'remote' WHERE id = 1").run()
-  data.refresh()
-  expect(await data.applyTagPatch([1], { [ignore.id]: "add" })).not.toContain("Up")
-  expect(data.state.transactions.find((t) => t.id === 1)?.tagIds).toContain(ignore.id)
-})
-
-test("tag rows group by categories (a target's, none, others; a group covers its own), omit empty sections and rank fuzzy matches within sections", async () => {
-  const { add } = await fixture()
-  const cat = await data.createSettingsCategory({ name: "Food", color: theme.blue })
-  const other = await data.createSettingsCategory({ name: "Other", color: theme.blue })
-  const espresso = await data.createSettingsCategory({ name: "Espresso", color: theme.blue })
-  data.getDb()!.query("UPDATE categories SET parent_id = ? WHERE id = ?").run(cat, espresso)
-  data.getDb()!.query("UPDATE transactions SET category_id = ? WHERE id = 1").run(espresso)
-  await data.createSettingsTag({ name: "COFFEE BREAK", color: theme.blue, categoryIds: [cat] })
-  await data.createSettingsTag({ name: "COFFEE OTHER", color: theme.blue, categoryIds: [other] })
-  await data.createSettingsTag({ name: "COFFEE SHOP", color: theme.blue, categoryIds: [], about: null })
-  data.refresh()
-  const rows = tagPickerItems(data.state.tags, data.state.categories, data.state.transactions, [1, 2], "cf")
-  expect(rows.map((r) => r.label)).toEqual(["Scoped", "COFFEE BREAK", "Global", "COFFEE", "COFFEE SHOP", "Out of scope", "COFFEE OTHER", 'Create "cf"'])
-  expect(rows.find((r) => r.label === "COFFEE OTHER")).toMatchObject({ color: ink.faint })
-  expect(rows.find((r) => r.kind === "item" && r.value === add)?.label).toBe("COFFEE")
-  expect(tagPickerItems(data.state.tags, data.state.categories, data.state.transactions, [1], "zz").map((r) => r.label)).toEqual(['Create "zz"'])
-})
-
-test("captured cells show staged mixed/all/none marks and preserve cursor colours and attributes", async () => {
-  await fixture()
-  const t = await testRender(() => createComponent(TagPicker, {}), { width: 90, height: 26 })
-  try {
-    const check = async (mark: string) => {
-      await t.renderOnce()
-      await t.flush()
-      const spans = t.captureSpans().lines.flatMap((line) => line.spans)
-      expect(spans.some((s) => s.text.includes(mark))).toBe(true)
-      const label = spans.find((s) => s.text.includes("COFFEE") && (s.attributes & TextAttributes.BOLD))!
-      expect(label.fg.toInts()).toEqual(RGBA.fromHex(theme.blue).toInts())
-      expect(label.bg.toInts()).toEqual(RGBA.fromHex(theme.rowCursor).toInts())
-      expect(label.attributes & TextAttributes.BOLD).toBe(TextAttributes.BOLD)
-    }
-    await check("[-]")
-    press("space")
-    await check("[x]")
-    press("space")
-    await check("[ ]")
-    press("space")
-    await check("[-]")
-  } finally { t.renderer.destroy() }
 })

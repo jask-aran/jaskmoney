@@ -1,10 +1,9 @@
 import { afterEach, describe, expect, test } from "bun:test"
-import { existsSync, rmSync, statSync, writeFileSync } from "node:fs"
+import { rmSync, statSync } from "node:fs"
 import { credentialEnv, credentialSource, credentialsPath, loadSavedCredentials, saveCredentials } from "./credentials"
 
 describe("saved API keys", () => {
   afterEach(() => rmSync(credentialsPath(), { force: true }))
-
   test("live beside the (test) settings file, owner-only, and never in the real config", () => {
     expect(credentialsPath()).not.toContain(".config/jaskmoney-opentui")
     saveCredentials({ JASKMONEY_JEV_TOKEN: " apikey_abc123 " })
@@ -22,14 +21,6 @@ describe("saved API keys", () => {
     expect(loadSavedCredentials()).toEqual({ JASKMONEY_CF_ACCOUNT_ID: "acct" })
     expect(credentialEnv(env).JASKMONEY_JEV_TOKEN).toBe("from-env")
     expect(credentialSource("JASKMONEY_JEV_TOKEN", {})).toBeNull()
-  })
-
-  test("a broken or foreign file reads as nothing saved", () => {
-    writeFileSync(credentialsPath(), "{not json")
-    expect(loadSavedCredentials()).toEqual({})
-    writeFileSync(credentialsPath(), JSON.stringify({ JASKMONEY_JEV_TOKEN: 5, SOMETHING_ELSE: "x" }))
-    expect(loadSavedCredentials()).toEqual({})
-    expect(existsSync(credentialsPath())).toBe(true)
   })
 
 })

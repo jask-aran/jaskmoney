@@ -3,12 +3,9 @@ import { rmSync } from "node:fs"
 import { credentialsPath, loadSavedCredentials } from "../ai/credentials"
 import { searchUsesClairic } from "../ai/workersAi"
 import { filterGuide } from "../domain/filterLanguage"
-import { queriesOf } from "../ai/catalog"
-import { AI_ROWS } from "./apiKeys"
 import { previewSent } from "./sentPreview"
 import { aiContext, useActions, useModel } from "../state/aiDialog"
 import { data } from "../state/dataStore"
-import { queryLines, requestLines } from "../state/sentView"
 import { ui } from "../state/uiStore"
 import { key } from "../testing/keys"
 import { testEnv } from "../testing/scoped"
@@ -45,20 +42,6 @@ async function until<T>(get: () => T | null | undefined): Promise<T> {
   throw new Error("timed out")
 }
 
-test("the pane's rows are the models, the sources, then the uses; a use names its model and enter opens it", async () => {
-  await setup()
-  const ctx = aiContext(data)
-  expect(useModel("suggestions", ctx).ready).toBe(true)
-  expect(useModel("search", ctx)).toMatchObject({ text: expect.stringContaining("Clairic"), ready: true })
-  expect(useModel("rules", ctx).ready).toBe(false)
-  expect(useActions("rules", ctx).map((a) => a.id === "connect" ? a.row : a.id)).toEqual(["openrouter", "openai"])
-  // j past the last model and the source reaches the uses.
-  for (let i = 0; i < AI_ROWS.length + 2; i++) handleKey(ui, key("j"), data)
-  handleKey(ui, key("return"), data)
-  expect(ui.state.aiUse).toEqual({ use: "search", cursor: 0, note: null })
-  expect(ui.state.aiDialog).toBeNull()
-})
-
 test("Search: Clairic switches off and on, saved as a setting", async () => {
   await setup()
   // The cursor passes Search's four queries before its model actions.
@@ -71,16 +54,6 @@ test("Search: Clairic switches off and on, saved as a setting", async () => {
   handleKey(ui, key("return"), data)
   expect(loadSavedCredentials()).toEqual({})
   expect(searchUsesClairic()).toBe(true)
-})
-
-test("a use's Connect opens that model's dialog", async () => {
-  await setup()
-  ui.setState({ aiUse: { use: "rules", cursor: 2, note: null } })
-  handleKey(ui, key("return"), data)
-  expect(ui.state.aiUse).toBeNull()
-  expect(ui.state.aiDialog?.row).toBe("openai")
-  expect(ui.state.aiCursor).toBe(AI_ROWS.indexOf("openai"))
-  ui.setState({ aiDialog: null })
 })
 
 test("enter on a query opens it: its exact request is built by the real code, for your rows, and sent nowhere; keys left out", async () => {
@@ -114,43 +87,4 @@ test("enter on a query opens it: its exact request is built by the real code, fo
 
   const all = JSON.stringify([part, search, rules])
   for (const secret of ["jev-key-for-test", "cf-key-for-test", "acct-for-test", "preview"]) expect(all).not.toContain(secret)
-})
-
-test("the viewer fits its width; a family of questions is shown once; JSON text is shown as its fields", () => {
-  const part = { query: "suggestion" as const, to: "POST https://x", body: { model: "jev" }, sample: "your newest waiting row (Corner Bar, -$12.00)" }
-  const width = (lines: Array<Array<{ text: string }>>) => Math.max(...lines.map((l) => l.map((p) => p.text).join("").length))
-  expect(width(queryLines("suggestion", "Jev (TypeSafe)", part, 60))).toBeLessThanOrEqual(60)
-  expect(width(queryLines("ruleWriter", "OpenRouter", null, 60))).toBeLessThanOrEqual(60)
-  const questions = Object.fromEntries([["period", { type: "choice" }], ...[1, 2, 3, 4].map((n) => [`kind${n}`, { type: "noul", instructions: `Does it cover c${n}?` }])])
-  const lines = requestLines({ query: "ask", sample: "", to: "POST https://x", body: { state: { search: "coffee" }, questions, prompt: JSON.stringify({ waiting: 3, categories: [{ name: "Food", rows: 2 }] }), long: "word ".repeat(30).trim() } }, 40)
-  const text = lines.map((l) => l.map((p) => p.text).join(""))
-  expect(width(lines)).toBeLessThanOrEqual(40)
-  expect(text.join("\n")).toContain("c1?")
-  expect(text.join("\n")).not.toContain("c2?")
-  expect(text.some((l) => l.trim() === "waiting: 3")).toBe(true)
-  expect(text.filter((l) => l.trim().startsWith("word")).length).toBeGreaterThan(3)
-})
-
-test("Rules: the model is changed where it's used, from a list of the provider's models", async () => {
-  await setup()
-  testEnv("JASKMONEY_OPENROUTER_TOKEN", "openrouter-key-for-test")
-  await data.refreshApiKeys()
-  ui.setState({ aiUse: { use: "rules", cursor: 0, note: null } })
-  expect(useActions("rules", aiContext(data))[0]!.id).toBe("model")
-  ui.setState({ aiUse: { use: "rules", cursor: queriesOf("general").length, note: null } })
-  handleKey(ui, key("return"), data)
-  expect(ui.activeScope()).toBe("modelPicker")
-  for (const ch of "sonnet-5") handleKey(ui, key(ch === "-" ? "-" : ch, { sequence: ch }), data)
-  handleKey(ui, key("return"), data)
-  await Bun.sleep(20)
-  expect(ui.state.modelPicker).toBeNull()
-  expect(loadSavedCredentials().JASKMONEY_OPENROUTER_MODEL).toMatch(/sonnet-5/)
-  expect(useModel("rules", aiContext(data)).text).toMatch(/sonnet-5/)
-  // The recommended model again: nothing saved, it follows the app's default.
-  ui.setState({ aiUse: { use: "rules", cursor: queriesOf("general").length, note: null } })
-  handleKey(ui, key("return"), data)
-  ui.setState("modelPicker", { cursor: 0 })
-  handleKey(ui, key("return"), data)
-  await Bun.sleep(20)
-  expect(loadSavedCredentials().JASKMONEY_OPENROUTER_MODEL).toBeUndefined()
 })

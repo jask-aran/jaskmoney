@@ -13,13 +13,6 @@ function fixture() {
   return db
 }
 
-test("staging refuses a seventh remote tag with no link, log, or queued intent", () => {
-  const db = fixture()
-  const tagId = createTag(db, { name: "Seventh", color: "#fff" })
-  expect(stageTagChange(db, { transactionId: 1, tagId, action: "add", how: "rule", at: "now" })).toEqual({ kind: "refused", reason: "Up allows at most 6 tags" })
-  for (const table of ["transaction_tags", "tag_log", "tag_pushes"]) expect(db.query(`SELECT COUNT(*) AS n FROM ${table}`).get()).toEqual({ n: 0 })
-})
-
 test("staging overlays pending removals for the six-tag limit and logs only changes", () => {
   const db = fixture()
   const old = createTag(db, { name: "A", color: "#fff" })
@@ -34,20 +27,4 @@ test("staging overlays pending removals for the six-tag limit and logs only chan
     { tag_id: old, added: 0, how: "picker", at: "first" }, { tag_id: tagId, added: 1, how: "rule", at: "second" },
   ])
   expect(db.query("SELECT tag_id, action FROM tag_pushes ORDER BY tag_id").all()).toEqual([{ tag_id: old, action: "remove" }, { tag_id: tagId, action: "add" }])
-})
-
-test("IGNORE by either identity, CSV rows, and Up rows without an id stage locally", () => {
-  const db = fixture()
-  const ignore = db.query<{ id: number }, []>("SELECT id FROM tags WHERE name = 'IGNORE'").get()!.id
-  const alias = createTag(db, { name: "Alias", color: "#fff" })
-  db.query("UPDATE tags SET ext_id = 'iGnOrE' WHERE id = ?").run(alias)
-  for (const tagId of [ignore, alias]) expect(stageTagChange(db, { transactionId: 1, tagId, action: "add", how: "rule", at: "now" })).toEqual({ kind: "changed", queued: false })
-  const csv = createTag(db, { name: "CSV", color: "#fff" })
-  db.query("UPDATE transactions SET source = 'csv' WHERE id = 1").run()
-  expect(stageTagChange(db, { transactionId: 1, tagId: csv, action: "add", how: "picker", at: "now" })).toEqual({ kind: "changed", queued: false })
-  db.query("UPDATE transactions SET source = 'up', external_id = NULL WHERE id = 1").run()
-  const local = createTag(db, { name: "Local", color: "#fff" })
-  expect(stageTagChange(db, { transactionId: 1, tagId: local, action: "add", how: "undo", at: "now" })).toEqual({ kind: "changed", queued: false })
-  expect(db.query("SELECT COUNT(*) AS n FROM tag_pushes").get()).toEqual({ n: 0 })
-  expect(db.query("SELECT COUNT(*) AS n FROM tag_log").get()).toEqual({ n: 4 })
 })

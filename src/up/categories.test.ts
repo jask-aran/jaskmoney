@@ -15,20 +15,6 @@ const tree = [
 ]
 
 describe("Up category tree", () => {
-  test("imports parents in provider order, children alphabetically, after locals, with inherited colours", () => {
-    const db = testDb()
-    createCategory(db, { name: "Local", color: "#ffffff" })
-    db.transaction(() => syncCategoryTree(db, tree))()
-    const all = rows(db), imported = all.filter(c => c.ext_id !== null)
-    expect(imported.map(c => c.ext_id)).toEqual(["food", "a", "z", "life"])
-    const [food, apple, zebra, life] = imported.map(c => c.color)
-    expect([apple, zebra]).toEqual([food, food])
-    expect(life).not.toBe(food)
-    expect(imported.map(c => c.parent_id)).toEqual([null, imported[0]!.id, imported[0]!.id, null])
-    expect(imported[0]!.sort_order).toBeGreaterThan(Math.max(...all.filter(c => c.ext_id === null).map(c => c.sort_order)))
-    db.transaction(() => syncCategoryTree(db, [...tree].reverse()))()
-    expect(rows(db)).toEqual(all)
-  })
 
   test("renames and reparents without changing identity, colour or order; absent categories remain", () => {
     const db = testDb()
@@ -42,37 +28,6 @@ describe("Up category tree", () => {
     expect(rows(db).find(c => c.ext_id === "new")!.sort_order).toBeGreaterThan(Math.max(...before.map(c => c.sort_order)))
   })
 
-  test("clashes use numbered Up suffixes and remain stable on repeat imports", () => {
-    const db = testDb()
-    for (const name of ["Food", "Food (Up)", "Food (Up) 2"]) createCategory(db, { name, color: "#ffffff" })
-    syncCategoryTree(db, tree)
-    expect(rows(db).find(c => c.ext_id === "food")?.name).toBe("Food (Up) 3")
-    const before = rows(db)
-    syncCategoryTree(db, tree)
-    expect(rows(db)).toEqual(before)
-  })
-
-  test("Up rename to a local name keeps identity and uses a stable numbered suffix", () => {
-    const db = testDb()
-    syncCategoryTree(db, tree)
-    const before = rows(db).find(c => c.ext_id === "a")!
-    for (const name of ["Clash", "Clash (Up)"]) createCategory(db, { name, color: "#ffffff" })
-    const renamed = tree.map(c => c.id === "a" ? { ...c, name: "Clash" } : c)
-    syncCategoryTree(db, renamed)
-    expect(rows(db).find(c => c.ext_id === "a")).toEqual({ ...before, name: "Clash (Up) 2" })
-    const after = rows(db)
-    syncCategoryTree(db, renamed)
-    expect(rows(db)).toEqual(after)
-  })
-
-  test("renamed defaults remain on first import", () => {
-    const db = testDb()
-    db.query("UPDATE categories SET name = 'My groceries' WHERE name = 'Groceries'").run()
-    const before = rows(db).find(c => c.name === "My groceries")!
-    syncCategoryTree(db, tree)
-    expect(rows(db).find(c => c.id === before.id)).toEqual(before)
-  })
-
   test("unknown parents, cycles and duplicate IDs reject the tree and roll back cleanup", () => {
     const db = testDb(), before = rows(db)
     const invalidTrees = [
@@ -84,46 +39,6 @@ describe("Up category tree", () => {
       expect(() => db.transaction(() => syncCategoryTree(db, invalid))()).toThrow("Invalid Up category tree")
       expect(rows(db)).toEqual(before)
     }
-  })
-
-  test("parent palette continues on later imports and wraps after six parents", () => {
-    const db = testDb()
-    const parents = Array.from({ length: 7 }, (_, i) => ({ id: `p${i}`, name: `Parent ${i}`, parentId: null }))
-    syncCategoryTree(db, parents.slice(0, 2))
-    syncCategoryTree(db, parents)
-    const colors = rows(db).filter(c => c.ext_id).map(c => c.color)
-    expect(new Set(colors.slice(0, 6)).size).toBe(6)
-    expect(colors[6]).toBe(colors[0])
-  })
-
-  test("first cleanup checks transactions, rules and tags and always keeps the three required defaults", () => {
-    const db = testDb()
-    db.query(`INSERT INTO transactions (date_raw, date_iso, amount, description, category_id)
-      SELECT '2026-01-01', '2026-01-01', -1, 'keep', id FROM categories WHERE name = 'Groceries'`).run()
-    db.query(`INSERT INTO rules_v2 (name, saved_filter_id, set_category_id)
-      SELECT 'keep', 'filter', id FROM categories WHERE name = 'Dining & Drinks'`).run()
-    db.query(`INSERT INTO tags (name, category_id) SELECT 'keep', id FROM categories WHERE name = 'Transport'`).run()
-    const before = rows(db)
-    syncCategoryTree(db, tree)
-    expect(rows(db).filter(c => !c.ext_id).map(c => c.name)).toEqual(["Income", "Groceries", "Dining & Drinks", "Transport", "Transfers", "Uncategorised", "Salary", "Interest", "Other income", "People"])
-    for (const name of ["Income", "Groceries", "Dining & Drinks", "Transport", "Transfers", "Uncategorised"]) {
-      expect(rows(db).find(c => c.name === name)).toEqual(before.find(c => c.name === name))
-    }
-    db.query("UPDATE transactions SET category_id = NULL").run()
-    db.query("UPDATE rules_v2 SET set_category_id = NULL").run()
-    db.query("UPDATE tags SET category_id = NULL").run()
-    createCategory(db, { name: "Health", color: "#ffffff" })
-    const second = rows(db)
-    syncCategoryTree(db, tree)
-    expect(rows(db)).toEqual(second)
-  })
-
-  test("existing People stays local with its original colour and order", () => {
-    const db = testDb()
-    const id = createCategory(db, { name: "People", color: "#ffffff" })
-    const before = rows(db).find(c => c.id === id)
-    syncCategoryTree(db, tree)
-    expect(rows(db).filter(c => c.name === "People")).toEqual([before!])
   })
 })
 

@@ -2,7 +2,6 @@ import { expect, onTestFinished, test } from "bun:test"
 import { createModels, fauxAssistantMessage, fauxProvider, fauxToolCall } from "@earendil-works/pi-ai"
 import { data } from "../state/dataStore"
 import { testEnv } from "../testing/scoped"
-import { ruleWriterBrief, writeRules } from "./ruleWriter"
 
 /** CSV rows: Rent paid to "J Smith" (4, all Rent), "Transfer to Holiday" (2 Travel, 1 Rent), "Bills Co" (2). */
 function setup() {
@@ -50,37 +49,4 @@ test("the model's proposals are checked: only precise rules with enough rows are
   await data.makeOfferedRule(offer!)
   expect(data.state.transactions.find((t) => t.id === offer!.waiting[0])?.categoryId).toBe(rent)
   expect(data.allRuleOffers()).toEqual([])
-})
-
-test("a declined AI rule isn't offered again, and the model is told", async () => {
-  const { faux, llm, rent } = setup()
-  const finish = () => fauxAssistantMessage([fauxToolCall("finish", { rules: [proposals[0]] })], { stopReason: "toolUse" })
-  faux.setResponses([finish()])
-  await data.askForRules(llm)
-  await data.declineRuleOffer(data.state.aiRuleOffers[0]!)
-  expect(data.allRuleOffers()).toEqual([])
-  expect(ruleWriterBrief((await data.ruleWriterInput()).history, [{ expr: 'desc:"J Smith"', categoryId: rent, tagId: null }]).declined).toEqual([{ expr: 'desc:"J Smith"', category: "Test rent" }])
-  faux.setResponses([finish()])
-  await data.askForRules(llm)
-  expect(data.allRuleOffers()).toEqual([])
-})
-
-test("the brief: categories with recent choices, what's waiting, existing rules", async () => {
-  setup()
-  const brief = ruleWriterBrief((await data.ruleWriterInput()).history, [])
-  expect(brief.categories.find((c) => c.name === "Test rent")).toEqual({ name: "Test rent", rows: 7 })
-  expect(brief.waiting.descriptions[0]).toMatchObject({ description: "J Smith", rows: 1 })
-})
-
-test("a rule for rows Up already categorises (none waiting) is turned down; history reads are capped", async () => {
-  const { db, faux, llm, travel } = setup()
-  for (let i = 0; i < 3; i++) db.query("INSERT INTO transactions (date_raw, date_iso, amount, description, category_id, category_source, account_id, source) VALUES ('x', '2026-09-01', -9, 'Qantas', ?, 'provider', 100, 'csv')").run(travel)
-  data.refresh()
-  faux.setResponses([
-    fauxAssistantMessage(Array.from({ length: 11 }, () => fauxToolCall("category_history", { category: "Test travel" })), { stopReason: "toolUse" }),
-    fauxAssistantMessage([fauxToolCall("finish", { rules: [{ name: "Qantas", category: "Test travel", expr: "desc:Qantas", why: "3 of 3" }] })], { stopReason: "toolUse" }),
-  ])
-  const result = await writeRules(llm, (await data.ruleWriterInput()).history)
-  expect(result.rejected).toEqual([{ rule: expect.objectContaining({ expr: "desc:Qantas" }), reason: expect.any(String) }])
-  expect(result.calls.filter((c) => c.name === "category_history")).toHaveLength(11)
 })

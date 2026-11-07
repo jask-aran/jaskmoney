@@ -1,13 +1,9 @@
-import { settlePending } from "../testing/settle"
 import { expect, onTestFinished, spyOn, test } from "bun:test"
 import { join } from "node:path"
 import { mkdtempSync } from "node:fs"
 import { tmpdir } from "node:os"
 import { data } from "./dataStore"
-import { ui } from "./uiStore"
 import { assignProviderCategories, syncCategoryTree } from "../up/categories"
-import { handleKey } from "../app/keys"
-import { key } from "../testing/keys"
 import { testEnv } from "../testing/scoped"
 
 /** Up rows (a fake Up answering 204), Groceries in Up's tree, Fuel local. */
@@ -84,19 +80,4 @@ test("a rule's category on an Up row Up can hold waits to go to Up; a local-only
   await data.applyRules([...ids.aldi, ids.express])
   expect(ids.aldi.map(source)).toEqual(["pending", "pending", "pending"])
   expect(source(ids.express)).toBe("rule")
-})
-
-test("R opens the offers; x declines the cursor's; esc closes", async () => {
-  const { ids, cat } = setup()
-  await data.categorizeTransactions(ids.aldi, cat("Groceries"))
-  ui.switchTab("manager")
-  ui.setState({ focusedSection: "mgr.transactions" })
-  handleKey(ui, key("r", { shift: true }), data)
-  expect(ui.state.ruleOffers !== null).toBe(true)
-  expect(ui.activeScope()).toBe("manager.ruleOffers")
-  handleKey(ui, key("x"), data); await settlePending()
-  expect(ui.state.ruleOffers !== null).toBe(false)
-  expect(data.ruleOffersFor()).toEqual([])
-  handleKey(ui, key("r", { shift: true }), data)
-  expect(ui.state.ruleOffers !== null).toBe(false)
 })

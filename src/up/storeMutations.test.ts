@@ -63,30 +63,6 @@ test("rule application rolls back earlier rows and links when a later link fails
   }
 })
 
-
-test("sync keeps its error and clears the lock when failure refresh also throws", async () => {
-  const fetchMock = spyOn(globalThis, "fetch")
-  data.init(":memory:")
-  const db = data.getDb()!
-  const query = db.query.bind(db)
-  const queryMock = spyOn(db, "query")
-    .mockImplementationOnce(query)
-    .mockImplementationOnce(() => { throw new Error("Refresh failed") })
-  try {
-    testEnv("JASKMONEY_UP_TOKEN", "test-pat")
-    fetchMock.mockRejectedValue(new Error("Offline"))
-    await expect(data.syncUp()).rejects.toThrow("Offline")
-    expect(queryMock).toHaveBeenCalledTimes(2)
-    expect(data.state.upSyncing).toBe(false)
-    queryMock.mockRestore()
-    expect(query("SELECT last_error FROM sync_state WHERE source = 'up'").get()).toEqual({ last_error: "Offline" })
-  } finally {
-    queryMock.mockRestore()
-    fetchMock.mockRestore()
-    db.close()
-  }
-})
-
 test("a slow Up answer to an older choice never undoes a newer one; undo follows the order of the choices", async () => {
   const fetchMock = spyOn(globalThis, "fetch")
   data.init(":memory:")

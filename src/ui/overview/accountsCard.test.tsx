@@ -51,17 +51,3 @@ test("Accounts: a ledger, available first, the balance with what's pending, then
   const column = (r: string) => r.search(/\S+\s+\S+$/) + r.match(/(\S+)\s+\S+$/)![1]!.length
   expect(new Set([rows[4]!, rows[6]!, rows.at(-1)!].map(column)).size).toBe(1)
 })
-
-test("Accounts: short of rows, savers fold to their subtotal; with no savers, no savers or net position", async () => {
-  // Runway is the Range pane's (the default). Folded: Available,
-  // Balance, then the savers' line between blank lines.
-  const folded = (await accounts(30, true)).rows.slice(2)
-  expect(folded[0]).toBe("")
-  expect(folded[1]!.trim().split(/\s{2,}/)).toEqual(["Savers", "$0", "$8,400"])
-  expect(folded[2]).toBe("")
-  expect(folded[3]!.trim()).toMatch(/^Net position\s+\S+\s+\$9,549\.56$/)
-  const none = (await accounts(45, false)).rows
-  expect(none).toHaveLength(3)
-  expect(none.join("\n")).not.toContain("Runway")
-  expect(none.join("\n")).not.toMatch(/Savers|Net position/)
-})

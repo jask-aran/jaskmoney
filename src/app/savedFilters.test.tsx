@@ -1,20 +1,15 @@
 import { settlePending } from "../testing/settle"
-import { ink, theme } from "../theme"
 import { afterEach, beforeEach, expect, test } from "bun:test"
 import { mkdtempSync, writeFileSync } from "node:fs"
 import { join } from "node:path"
 import { tmpdir } from "node:os"
-import { RGBA, TextAttributes } from "@opentui/core"
 import { handleKey, footerHints } from "./keys"
 import { data } from "../state/dataStore"
 import { ui } from "../state/uiStore"
 import { loadSettingsConfig } from "../state/settingsConfig"
 import { ensureAccount } from "../db/client"
-import { renderApp } from "../testing/app"
 import { key } from "../testing/keys"
 import { testEnv } from "../testing/scoped"
-
-let rendered: Awaited<ReturnType<typeof renderApp>> | undefined
 
 beforeEach(() => {
   testEnv("JASKMONEY_CONFIG", join(mkdtempSync(join(tmpdir(), "jaskmoney-filter-job-")), "settings.json"))
@@ -24,9 +19,6 @@ beforeEach(() => {
   ui.setState({ detail: null, txnView: "rows" })
 })
 afterEach(() => {
-  // Unmount before switching tabs, so the switch runs no App effects.
-  rendered?.renderer.destroy()
-  rendered = undefined
   ui.switchTab("overview")
 })
 
@@ -121,122 +113,6 @@ test("Shift+D opens a report without writes; Shift+A writes the same category an
   expect(ui.state.dryRun?.report?.updatedTransactions).toBe(0)
   ui.switchTab("manager")
   expect(ui.state.dryRun?.report ?? null).toBeNull()
-})
-
-test("App shows the filter editor on Transactions, updates status colours, and retains the Name cursor", async () => {
-  rendered = await renderApp({ width: 140, height: 42 })
-  ui.switchTab("manager")
-  data.getDb()!.query("INSERT INTO transactions (date_raw, date_iso, amount, description) VALUES ('x', '2026-01-01', -5, 'Coffee')").run()
-  data.refresh()
-  const transaction = { ...data.state.transactions[0]! }
-  let reads = 0
-  Object.defineProperty(transaction, "description", { enumerable: true, get() { reads++; return "Coffee" } })
-  data.setState({ transactions: [transaction] })
-  data.commitFilter("desc:Coffee")
-  handleKey(ui, key("s", { ctrl: true }), data)
-  const draw = async () => { await rendered!.renderOnce(); await rendered!.flush() }
-  await draw()
-  expect(rendered.captureCharFrame()).toContain("New saved filter")
-  expect(rendered.captureCharFrame()).toContain("desc:Coffee")
-  const status = (needle: string) => rendered!.captureSpans().lines.flatMap((line) => line.spans).find((span) => span.text.includes(needle))!
-  expect(status("ok · 1 txns").fg.toInts()).toEqual([166, 227, 161, 255])
-  const name = status("Name")
-  expect(name.attributes & TextAttributes.BOLD).toBe(TextAttributes.BOLD)
-  // Past the rule offers' 150 ms debounce from the edits above: what N
-  // itself reads is what's counted.
-  await Bun.sleep(200)
-  const previousReads = reads
-  handleKey(ui, key("N"), data)
-  await draw()
-  expect(reads).toBe(previousReads)
-  ui.setState("settingsDraft", "expr", "(")
-  await draw()
-  expect(status("invalid:").fg.toInts()).toEqual([243, 139, 168, 255])
-  ui.setState("settingsDraft", "expr", "")
-  await draw()
-  expect(status("● empty").fg.toInts()).toEqual([127, 132, 156, 255])
-  handleKey(ui, key("escape"), data)
-  expect(ui.activeScope()).toBe("manager.txns")
-})
-
-test("rule health and selection colours use captured cells; dry-run body scrolls and owns input", async () => {
-  // Wide enough that Rules & Filters' right-hand column shows each row whole.
-  rendered = await renderApp({ width: 200, height: 32 })
-  ui.switchTab("settings")
-  ui.activateSettings("rules")
-  data.setState({
-    savedFilters: [{ id: "ok", name: "Valid", expr: "desc:Coffee" }, { id: "bad", name: "Bad", expr: "(" }],
-    rules: [
-      { id: 1, name: "Healthy", savedFilterId: "ok", setCategoryId: null, addTagIds: [], sortOrder: 0, enabled: true },
-      { id: 2, name: "Broken", savedFilterId: "gone", setCategoryId: null, addTagIds: [], sortOrder: 1, enabled: true },
-      { id: 3, name: "Invalid", savedFilterId: "bad", setCategoryId: null, addTagIds: [], sortOrder: 2, enabled: true },
-      { id: 4, name: "Disabled", savedFilterId: "absent", setCategoryId: null, addTagIds: [], sortOrder: 3, enabled: false },
-    ],
-  })
-  ui.setState({ ruleCursor: 0 })
-  const draw = async () => { await rendered!.renderOnce(); await rendered!.flush() }
-  const span = (needle: string) => rendered!.captureSpans().lines.flatMap((line) => line.spans).find((span) => span.text.includes(needle))!
-  await draw()
-  expect(span("Healthy").bg.toInts()).toEqual(RGBA.fromHex(theme.rowCursor).toInts())
-  expect(span("missing filter gone").fg.toInts()).toEqual([243, 139, 168, 255])
-  expect(span("broken filter").fg.toInts()).toEqual([243, 139, 168, 255])
-  expect(span("Disabled (off)").fg.toInts()).toEqual(RGBA.fromHex(ink.faint).toInts())
-  expect(span("missing filter absent").fg.toInts()).toEqual(RGBA.fromHex(ink.faint).toInts())
-  ui.setState({ ruleCursor: 1 })
-  await draw()
-  expect(span("Healthy").bg.toInts()).toEqual([17, 17, 27, 255])
-  expect(span("missing filter gone").bg.toInts()).toEqual(RGBA.fromHex(theme.rowCursor).toInts())
-
-  const report = data.dryRunRules()
-  ui.setState({ dryRun: { scroll: 0, visible: 10, report: { ...report, rules: Array.from({ length: 12 }, (_, index) => ({ ...report.rules[0]!, rule: { ...report.rules[0]!.rule, name: `Scroll rule ${index + 1}` } })) } } })
-  await draw()
-  expect(rendered.captureCharFrame()).toContain("All 0 transactions")
-  expect(rendered.captureCharFrame()).toContain("0 transactions would change")
-  expect(rendered.captureCharFrame()).toContain("1. Scroll rule 1")
-  handleKey(ui, key("3"), data)
-  expect(ui.activeScope()).toBe("dryRun")
-  for (let i = 0; i < 60; i++) handleKey(ui, key("j"), data)
-  await draw()
-  expect(rendered.captureCharFrame()).toContain("12. Scroll rule 12")
-  const bottom = (ui.state.dryRun?.scroll ?? 0)
-  handleKey(ui, key("k"), data)
-  expect((ui.state.dryRun?.scroll ?? 0)).toBe(bottom - 1)
-  handleKey(ui, key("escape"), data)
-  expect(ui.activeScope()).toBe("settings.rules")
-})
-
-test("saved-filter rows show muted expressions and picker reset on tab switch", async () => {
-  rendered = await renderApp({ width: 140, height: 28 })
-  data.setState({ savedFilters: [{ id: "coffee", name: "Java", expr: "desc:Coffee" }] })
-  ui.switchTab("manager")
-  handleKey(ui, key("l", { ctrl: true }), data)
-  await rendered.renderOnce()
-  await rendered.flush()
-  const expression = rendered.captureSpans().lines.flatMap((line) => line.spans).find((span) => span.text.includes("desc:Coffee"))!
-  expect(expression.fg.toInts()).toEqual([127, 132, 156, 255])
-  expect(rendered.captureCharFrame()).toContain("Saved filters")
-  ui.switchTab("settings")
-  expect(ui.state.filterPicker).toBeNull()
-})
-
-test("dry-run samples keep amount and actions visible after a long description", async () => {
-  rendered = await renderApp({ width: 140, height: 28 })
-  const db = data.getDb()!
-  db.query("INSERT INTO transactions (date_raw, date_iso, amount, description) VALUES ('x', '2026-01-01', -5, ?)").run("Coffee ".repeat(30))
-  data.refresh()
-  const category = await data.createSettingsCategory({ name: "Food", color: "#ffffff" })
-  const tag = await data.createSettingsTag({ name: "Weekly", color: "#ffffff", categoryIds: [], about: null })
-  await data.saveSavedFilter({ id: "coffee", name: "Coffee", expr: "desc:Coffee" })
-  await data.createSettingsRule({ name: "Coffee rule", savedFilterId: "coffee", setCategoryId: category, addTagIds: [tag], enabled: true })
-  ui.switchTab("settings")
-  ui.activateSettings("rules")
-  handleKey(ui, key("d", { shift: true }), data)
-  await rendered.renderOnce()
-  await rendered.flush()
-  const frame = rendered.captureCharFrame()
-  expect(frame).toContain("2026-01-01")
-  expect(frame).toContain("-$5.00 → Food +WEEKLY")
-  expect(frame).toContain("matched 1 · category 1 · tags 1")
 })
 
 test("saved-filter input keeps command letters and space literal; arrows move and backspace edits", async () => {

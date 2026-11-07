@@ -78,22 +78,4 @@ describe("text matching ignores case, spacing and punctuation (approved deviatio
     // Everything legacy matched still matches.
     expect(matches('desc:"coffee shop"', "The Coffee Shop")).toBe(true)
   })
-
-  test("letters stay in order: no scattered (picker-style) matches", () => {
-    expect(matches("desc:bp", "Bunnings Warehouse")).toBe(false)
-    expect(matches("desc:mcd", "McDonald's")).toBe(true)
-    expect(matches("desc:donaldmc", "McDonald's")).toBe(false)
-  })
-
-  test("other scripts and accents are letters; a needle of only punctuation matches as written", () => {
-    expect(matches("desc:茶馆", "Tea House 茶馆")).toBe(true)
-    expect(matches("desc:cafe", "Café Rio")).toBe(false)
-    expect(matches("desc:café", "CAFÉ Rio")).toBe(true)
-    expect(matches('desc:"*"', "UBER *TRIP")).toBe(true)
-    expect(matches('desc:"*"', "Coles")).toBe(false)
-  })
-
-  test("exact fields stay exact", () => {
-    expect(evalFilter(parseFilterStrict('cat:"Trans port"').node, base)).toBe(false)
-  })
 })

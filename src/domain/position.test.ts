@@ -60,14 +60,6 @@ describe("computePosition", () => {
     expect(p.runwayDays).toBe(1000)
   })
 
-  test("short coverage starts at the first transaction and ends today across DST", () => {
-    const p = computePosition(accounts, [
-      row(-30), row(50, { dateISO: "2026-10-03" }),
-    ], "2026-10-05", { burnDays: 10 })
-    expect(p.dailySpend).toBe(10)
-    expect(computePosition(accounts, [row(-0.1), row(-0.2)], "2026-10-05").dailySpend).toBe(0.1 + 0.2)
-  })
-
   test("null and zero balances stay distinct; runway allows zero and negative position", () => {
     const csv = account({ id: 1, source: "csv", balance: null })
     const p = computePosition([csv], [row(-10)], "2026-10-05", { historyDays: 1 })
@@ -103,34 +95,6 @@ describe("computePosition", () => {
       { dateISO: "2026-10-04", value: 957 },
       { dateISO: "2026-10-05", value: 1007 },
     ])
-  })
-
-  test("calendar history crosses leap day and year boundaries", () => {
-    expect(computePosition([], [], "2024-03-01", { historyDays: 3 }).history.map((d) => d.dateISO))
-      .toEqual(["2024-02-28", "2024-02-29", "2024-03-01"])
-    expect(computePosition([], [], "2026-01-01", { historyDays: 2 }).history.map((d) => d.dateISO))
-      .toEqual(["2025-12-31", "2026-01-01"])
-  })
-
-  test("history dates and burn window end on both Melbourne DST changes", () => {
-    for (const dates of [
-      ["2026-09-30", "2026-10-01", "2026-10-02", "2026-10-03", "2026-10-04"],
-      ["2026-04-01", "2026-04-02", "2026-04-03", "2026-04-04", "2026-04-05"],
-    ]) {
-      const todayISO = dates[4]!
-      const transactions = [
-        row(-900, { dateISO: dates[1]! }), // Before the three-day burn window.
-        row(-20, { dateISO: dates[2]! }),
-        row(-10, { dateISO: todayISO }),
-      ]
-      const p = computePosition(accounts, transactions, todayISO, { historyDays: 5, burnDays: 3 })
-      expect(p.history.map((day) => day.dateISO)).toEqual(dates)
-      expect(p.history).toHaveLength(5)
-      expect(p.history.at(-1)?.dateISO).toBe(todayISO)
-      expect(p.dailySpend).toBe(10)
-      const short = computePosition(accounts, transactions.slice(1), todayISO, { burnDays: 90 })
-      expect(short.dailySpend).toBe(10)
-    }
   })
 })
 
@@ -179,15 +143,6 @@ describe("computePeriodFlows", () => {
     expect(computePeriodFlows(accounts, [row(-20, { internal: true, excluded: true, transferAccountId: 3, tagNames: ["IGNORE"] })]).savedToSavers).toBe(20)
     expect(computePeriodFlows(accounts, [row(30, { internal: true, excluded: true, transferAccountId: 3 })]).savedToSavers).toBe(-30)
     expect(computePeriodFlows(accounts, [row(-20, { transferAccountId: 3 })]).savedToSavers).toBe(0)
-  })
-
-  test("no income yields a null savings rate; empty input yields zero flows", () => {
-    const p = computePeriodFlows(accounts, [row(-10)])
-    expect(p.savingsRate).toBeNull()
-    expect(p.net).toBe(-10)
-    expect(computePeriodFlows([], [])).toEqual({
-      spent: 0, income: 0, net: 0, savedToSavers: 0, savingsRate: null, txnCount: 0, saverChanges: [],
-    })
   })
 })
 

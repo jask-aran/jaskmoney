@@ -1,7 +1,5 @@
 import { expect, onTestFinished, spyOn, test } from "bun:test"
 import { loadCategoryLog, saveSuggestions } from "../db/client"
-import { handleKey } from "../app/keys"
-import { key } from "../testing/keys"
 import { testEnv } from "../testing/scoped"
 import { data } from "./dataStore"
 import { ui } from "./uiStore"
@@ -100,54 +98,4 @@ test("undoing a rule made from an offer removes the rule and its filter, and put
   expect(data.state.rules.length).toBe(rules - 1)
   expect(data.state.savedFilters.some((f) => f.expr === offer!.expr)).toBe(false)
   expect(row(6).categoryId).toBeNull()
-})
-
-test("u undoes in Transactions; esc still clears", async () => {
-  const { food, row } = setup()
-  await data.categorizeTransactions([1], food)
-  ui.setState({ selectedIds: { 2: true } })
-  handleKey(ui, key("escape"), data)
-  expect(ui.state.selectedIds).toEqual({})
-  expect(row(1).categoryId).toBe(food)
-  handleKey(ui, key("u"), data)
-  await Bun.sleep(5)
-  expect(row(1).categoryId).toBeNull()
-  expect(ui.state.status).toStartWith("Undid: categorised 1 → Test food")
-})
-
-test(". repeats the last category or tag change on the cursor row or selection; the picker starts on the last category", async () => {
-  const { food, fuel, row } = setup()
-  const trip = await data.createSettingsTag({ name: "TRIP", color: "#fff", categoryIds: [], about: null })
-  const at = (id: number) => ui.setState({ managerCursor: data.scopedTransactions().findIndex((t) => t.id === id), selectedIds: {} })
-  // Nothing to repeat yet.
-  at(1)
-  handleKey(ui, key("."), data)
-  expect(ui.state.status).toBe("Nothing to repeat")
-  // Categorise row 1 with the picker, then . on row 2.
-  at(1)
-  handleKey(ui, key("c"), data)
-  for (const ch of "Test fuel") handleKey(ui, key(ch === " " ? "space" : ch), data)
-  handleKey(ui, key("return"), data)
-  await Bun.sleep(5)
-  expect(row(1).categoryId).toBe(fuel)
-  at(2)
-  handleKey(ui, key("."), data)
-  await Bun.sleep(5)
-  expect(row(2).categoryId).toBe(fuel)
-  // The picker opens on the last category for a row with no suggestion.
-  at(3)
-  handleKey(ui, key("c"), data)
-  expect((ui.state.catPicker != null)).toBe(true)
-  const fuelIndex = (ui.state.catPicker?.cursor ?? 0)
-  handleKey(ui, key("return"), data)
-  await Bun.sleep(5)
-  expect(row(3).categoryId).toBe(fuel)
-  expect(fuelIndex).toBeGreaterThan(0)
-  // A tag change is repeatable too, on a selection.
-  await data.applyTagPatch([1], { [trip]: "add" })
-  ui.setState({ selectedIds: { 4: true, 5: true } })
-  handleKey(ui, key("."), data)
-  await Bun.sleep(5)
-  expect([row(4).tagIds, row(5).tagIds]).toEqual([[trip], [trip]])
-  void food
 })

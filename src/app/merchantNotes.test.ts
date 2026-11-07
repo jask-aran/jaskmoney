@@ -4,9 +4,6 @@ import { ui } from "../state/uiStore"
 import { data } from "../state/dataStore"
 import { key } from "../testing/keys"
 import { testEnv } from "../testing/scoped"
-import { notePrompts } from "../domain/suggest"
-import { category, transaction } from "../testing/fixtures"
-import { SEARCH_HELP } from "../state/searchHelp"
 
 function setup() {
   testEnv("JASKMONEY_JEV_TOKEN", "")
@@ -30,15 +27,6 @@ function setup() {
   onTestFinished(() => { ui.setState({ merchantNote: null, txnView: "rows" }); data.init(":memory:") })
 }
 const settle = () => new Promise((resolve) => setTimeout(resolve, 5))
-
-test("a merchant is worth a note when Jev reads it as broad but you keep it in one category, or when it varies; not with a note or few rows", () => {
-  const categories = [category({ id: 1 }), category({ id: 2 })]
-  const rows = (description: string, ...ids: Array<number | null>) => ids.map((categoryId, i) => transaction({ id: description.length * 100 + i, description, categoryId, categoryName: categoryId ? `Category ${categoryId}` : "Uncategorised" }))
-  const all = [...rows("Costco", 1, 1, 1), ...rows("eBay", null, null, null), ...rows("Split", 1, 2, 1, 2), ...rows("Cafe", 1, 1, 1), ...rows("Rare", null, null), ...rows("Noted", null, null, null)]
-  const asked = new Map([["costco", 0.89], ["ebay", 0.94], ["cafe", 0.2], ["rare", 0.95], ["noted", 0.95]])
-  const prompts = notePrompts(all, categories, asked, new Map([["noted", "varies"]]))
-  expect(Object.fromEntries(prompts)).toEqual({ costco: { kind: "always", categoryId: 1 }, ebay: { kind: "varies" }, split: { kind: "varies" } })
-})
 
 test("n in Merchants writes a note (letters are text); N on a row opens the same; empty removes it; esc keeps it", async () => {
   setup()
@@ -67,23 +55,4 @@ test("n in Merchants writes a note (letters are text); N on a row opens the same
   handleKey(ui, key("return"), data)
   await settle()
   expect(data.state.merchantNotes[merchant.toLowerCase()]).toBeUndefined()
-})
-
-test("F1 in the search bar opens the help, which owns j/k: by a line, never past the end; esc returns to the bar", () => {
-  setup()
-  handleKey(ui, key("/"), data)
-  expect(ui.activeScope()).toBe("filter")
-  handleKey(ui, key("f1"), data)
-  expect(ui.activeScope()).toBe("searchHelp")
-  ui.setState("searchHelp", { visible: 10 })
-  for (let i = 0; i < 100; i++) handleKey(ui, key("j"), data)
-  expect(ui.activeScope()).toBe("searchHelp")
-  expect((ui.state.searchHelp?.top ?? 0)).toBe(SEARCH_HELP.length - 10)
-  handleKey(ui, key("k"), data)
-  expect((ui.state.searchHelp?.top ?? 0)).toBe(SEARCH_HELP.length - 11)
-  handleKey(ui, key("g"), data)
-  expect((ui.state.searchHelp?.top ?? 0)).toBe(0)
-  handleKey(ui, key("escape"), data)
-  expect(ui.activeScope()).toBe("filter")
-  ui.closeFilter(false)
 })

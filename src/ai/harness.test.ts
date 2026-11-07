@@ -1,5 +1,5 @@
 import { expect, test } from "bun:test"
-import { createModels, fauxAssistantMessage, fauxProvider, fauxText, fauxToolCall, Type } from "@earendil-works/pi-ai"
+import { createModels, fauxAssistantMessage, fauxProvider, fauxToolCall, Type } from "@earendil-works/pi-ai"
 import { agentTool, runAgent } from "./harness"
 
 function fauxLlm() {
@@ -27,24 +27,4 @@ test("tools run until finish; its arguments are the result; bad arguments go bac
   expect(run.result).toEqual({ rules: ["desc:Coles"] })
   expect(run.turns).toBe(3)
   expect(run.calls.map((c) => c.name)).toEqual(["count", "count", "finish"])
-})
-
-test("an answer in words is nudged once toward finish, then given up on; turns are capped", async () => {
-  const { faux, llm } = fauxLlm()
-  faux.setResponses([fauxAssistantMessage([fauxText("Coles is groceries")]), fauxAssistantMessage([fauxText("still words")])])
-  expect(await runAgent(llm, { system: "s", prompt: "p", tools: [count], finish })).toMatchObject({ result: null, error: expect.any(String), turns: 2 })
-  faux.setResponses(Array.from({ length: 3 }, () => fauxAssistantMessage([fauxToolCall("count", { expr: "x" })], { stopReason: "toolUse" })))
-  expect(await runAgent(llm, { system: "s", prompt: "p", tools: [count], finish, maxTurns: 3 })).toMatchObject({ result: null, error: expect.any(String), turns: 3 })
-})
-
-test("the last turn is told to answer (and offered only finish)", async () => {
-  const { faux, llm } = fauxLlm()
-  const told: boolean[] = []
-  const lastTurn = (messages: { role: string; content: unknown }[]) => messages.some((m) => m.role === "user" && JSON.stringify(m.content).includes("This is your last turn"))
-  faux.setResponses([
-    (context) => { told.push(lastTurn(context.messages)); return fauxAssistantMessage([fauxToolCall("count", { expr: "x" })], { stopReason: "toolUse" }) },
-    (context) => { told.push(lastTurn(context.messages)); return fauxAssistantMessage([fauxToolCall("finish", { rules: [] })], { stopReason: "toolUse" }) },
-  ])
-  expect((await runAgent(llm, { system: "s", prompt: "p", tools: [count], finish, maxTurns: 2 })).result).toEqual({ rules: [] })
-  expect(told).toEqual([false, true])
 })

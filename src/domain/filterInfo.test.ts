@@ -28,9 +28,7 @@ test("info: finds what a row bought (ignoring case, spaces and punctuation), the
   expect(matches("info:blender", brush)).toBe(false)
   expect(matches("info:rent", row({ description: "Sam Lee", message: "Rent for October" }))).toBe(true)
   expect(matches("info:marketplace", row({ rawText: "AMAZON AU MARKETPLACE, SYDNEY" }))).toBe(true)
-})
 
-test("info: doesn't search the description, notes or category; a row with nothing more never matches", () => {
   expect(matches("info:amazon", row())).toBe(false)
   expect(matches("info:gift", row({ notes: "gift" }))).toBe(false)
   expect(matches("info:anything", row({ bought: [], message: null, rawText: null }))).toBe(false)
@@ -45,15 +43,7 @@ test("bare words in rules and desc: stay description-only", () => {
   // Strict JQL, saved as written.
   expect(parseFilterStrict("info:toothbrush").error).toBeUndefined()
   expect(canonicalFilter('info:"brush heads"').text).toBe('info:"brush heads"')
-})
 
-/** The search bar (2026-10-30, approved): words alone, with no field in
- * the search, also find what a row bought, its message and your notes (as
- * they find category and tag names, from the Go app). The bank's raw text
- * stays under info: (it's full of city names). */
-const searched = (input: string, t: FilterTxn) => evalFilter(reparseFilterInput(input).expr, t)
-
-test("in the search bar, words alone find what it bought, its message and your notes, not the raw text", () => {
   expect(searched("toothbrush", brush)).toBe(true)
   expect(searched("rent", row({ description: "Sam Lee", message: "Rent for October" }))).toBe(true)
   expect(searched("gift", row({ notes: "Gift for Sam" }))).toBe(true)
@@ -62,3 +52,9 @@ test("in the search bar, words alone find what it bought, its message and your n
   expect(searched("toothbrush amt:<0", brush)).toBe(false)
   expect(searched("amazon amt:<0", brush)).toBe(true)
 })
+
+/** The search bar (2026-10-30, approved): words alone, with no field in
+ * the search, also find what a row bought, its message and your notes (as
+ * they find category and tag names, from the Go app). The bank's raw text
+ * stays under info: (it's full of city names). */
+const searched = (input: string, t: FilterTxn) => evalFilter(reparseFilterInput(input).expr, t)

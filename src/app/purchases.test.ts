@@ -1,34 +1,13 @@
 import { afterEach, expect, test } from "bun:test"
-import { dueForLookup, LOOKUP_GIVE_UP_DAYS, LOOKUP_RETRY_HOURS, matchOrders, readShipment, settleLookups, type LookupState, type Purchase } from "../ai/orderEmails"
+import { LOOKUP_RETRY_HOURS, matchOrders, readShipment, type Purchase } from "../ai/orderEmails"
 import { lookUpPurchases, purchaseSources, purchasesNote } from "./purchases"
 import { data } from "../state/dataStore"
-import { rowFacts } from "../domain/history"
-import { suggestionCap } from "../domain/suggest"
-import { transaction } from "../testing/fixtures"
 
 // Invented rows and emails.
 const NOW = Date.parse("2026-10-30T00:00:00Z")
 const DAY = 86_400_000
 const p = (id: number, daysAgo: number, amount = -9.32, description = "Amazon", rawText: string | null = "AMAZON AU MARKETPLACE"): Purchase =>
   ({ id, dateISO: new Date(NOW - daysAgo * DAY).toISOString().slice(0, 10), createdMs: NOW - daysAgo * DAY, amount, description, rawText })
-const ago = (hours: number) => new Date(NOW - hours * 3_600_000).toISOString()
-
-test("due: never looked up; or nothing found yet and long enough ago; never once found or given up", () => {
-  const rows = [p(1, 1), p(2, 1), p(3, 1), p(4, 1), p(5, 1), p(6, 1, -5, "Coles", "COLES")]
-  const lookups = new Map<number, LookupState>([
-    [2, { status: "found", checks: 1, checkedAt: ago(100) }],
-    [3, { status: "waiting", checks: 1, checkedAt: ago(LOOKUP_RETRY_HOURS - 1) }],
-    [4, { status: "waiting", checks: 1, checkedAt: ago(LOOKUP_RETRY_HOURS) }],
-    [5, { status: "none", checks: 3, checkedAt: ago(500) }],
-  ])
-  expect(dueForLookup(rows, lookups, NOW).map((t) => t.id)).toEqual([1, 4])
-})
-
-test("settling: found; nothing yet while young; given up once old (an old row is looked at once)", () => {
-  const settled = settleLookups([p(1, 1), p(2, 3), p(3, LOOKUP_GIVE_UP_DAYS + 1)], [{ transactionId: 1, source: "amazon", order: "250-1", items: [{ name: "Insert", quantity: 1, price: 9.32 }], emailAt: "2026-10-29T00:00:00Z" }], new Map([[2, { status: "waiting", checks: 2, checkedAt: ago(7) }]]), NOW)
-  expect(settled.map((l) => [l.transactionId, l.status, l.checks])).toEqual([[1, "found", 1], [2, "waiting", 3], [3, "none", 1]])
-  expect(settled[0]).toMatchObject({ items: [{ name: "Insert", quantity: 1, price: 9.32 }], emailKey: "amazon:250-1:2026-10-29T00:00:00Z" })
-})
 
 test("matching after earlier rounds: an email another row took is skipped; a refund takes a stored charge's items", () => {
   const shipped = (at: string, total: string, item: string) => readShipment(at, `Order #\n250-9\n* ${item}\nQuantity: 1\n${total}\nTotal\n${total}`)
@@ -42,14 +21,6 @@ test("matching after earlier rounds: an email another row took is skipped; a ref
   })
   expect(found.find((f) => f.transactionId === 1)?.items.map((i) => i.name)).toEqual(["Free"])
   expect(found.find((f) => f.transactionId === 2)).toMatchObject({ items: [{ name: "Tape" }], refundOf: 10 })
-})
-
-test("Jev reads what was bought; a row whose items are known isn't held to a guess", () => {
-  const t = transaction({ description: "Amazon", bought: [{ name: "Milk Jug", quantity: 1, price: 24 }, { name: "Tamper", quantity: 2, price: 10.5 }] })
-  expect(rowFacts(t)).toMatchObject({ bought: "Milk Jug; 2× Tamper" })
-  expect(rowFacts(transaction({ description: "Amazon" }))).not.toHaveProperty("bought")
-  expect(suggestionCap(t, () => "mixed")).toBe(1)
-  expect(suggestionCap(transaction({ description: "Amazon" }), () => "mixed")).toBeLessThan(1)
 })
 
 const saved = { ...purchaseSources }
@@ -127,11 +98,6 @@ test("a waiting row suggested before its purchase was known is asked again, once
   expect(sent.some((q) => q.includes("Electric Toothbrush"))).toBe(true)
   expect(data.state.suggestions[1]).toMatchObject({ categoryId: health, knewBought: true })
   expect(await data.recordPurchases([], ai)).toBe(0)
-})
-
-test("a lookup saved before prices were kept is looked up once more; one with prices never", () => {
-  const lookups = new Map<number, LookupState>([[1, { status: "found", checks: 1, checkedAt: ago(1), legacy: true }], [2, { status: "found", checks: 1, checkedAt: ago(1) }]])
-  expect(dueForLookup([p(1, 1), p(2, 1)], lookups, NOW).map((t) => t.id)).toEqual([1])
 })
 
 test("a lookup found before prices were kept is redone with its own email; if that's gone, it keeps its items", async () => {

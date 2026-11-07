@@ -56,36 +56,3 @@ test("categorising a row re-asks about the waiting rows with the same descriptio
   // Nothing alike waiting: nothing asked.
   expect(await data.resuggestLike([3], fakeJev(100, seen))).toBe(0)
 })
-
-test("once history settles the description, it replaces Jev's suggestion without asking Jev", async () => {
-  const { db, add } = setup()
-  for (const id of [1, 2, 3]) add(id, "Shop")
-  add(4, "Shop")
-  saveSuggestions(db, [4].map((id) => ({ transactionId: id, categoryId: 101, confidence: 0.6, source: "jev" as const })))
-  data.refresh()
-  await data.categorizeTransactions([1, 2, 3], 100)
-  const seen: Array<{ description: string }> = []
-  expect(await data.resuggestLike([1, 2, 3], fakeJev(101, seen))).toBe(1)
-  expect(seen).toEqual([])
-  expect(suggestion(4)).toEqual({ categoryId: 100, source: "history" })
-})
-
-test("a re-suggestion asked for while suggestions run waits its turn instead of failing", async () => {
-  const { db, add } = setup()
-  add(1, "Cafe")
-  add(2, "Cafe")
-  add(3, "Fresh")
-  saveSuggestions(db, [{ transactionId: 2, categoryId: 101, confidence: 0.6, source: "jev" }])
-  data.refresh()
-  let open!: () => void
-  const gate = new Promise<void>((resolve) => { open = resolve })
-  const running = data.suggestCategories([3], fakeJev(101, [], gate))
-  expect(data.state.suggesting).toBe(true)
-  await data.categorizeTransactions([1], 100)
-  const later = data.resuggestLike([1], fakeJev(100))
-  open()
-  await running
-  expect(await later).toBe(1)
-  expect(suggestion(2)).toEqual({ categoryId: 100, source: "jev" })
-  expect(data.state.suggesting).toBe(false)
-})

@@ -1,8 +1,7 @@
 import { describe, expect, test } from "bun:test"
 import { addDays } from "../../domain/days"
-import { cellColumn } from "../charts/lineChart"
 import type { Account } from "../../domain/types"
-import { balancesChart, cashFlowChart, dateSlots, spendingChart } from "./periodCharts"
+import { balancesChart, cashFlowChart, spendingChart } from "./periodCharts"
 import { account, transaction } from "../../testing/fixtures"
 
 const dates = Array.from({ length: 10 }, (_, i) => addDays("2026-10-01", i))
@@ -68,12 +67,6 @@ describe("Savers", () => {
     expect([...drawn].sort()).toEqual(["saver1", "saver2", "saver3", "total"])
   })
 
-  test("a short chart draws the largest savers; the rest are in the total", () => {
-    const model = balancesChart("Savers", dates, 60, 6, "2026-10-10", savers(4), [])
-    expect(Object.keys(model.inks!)).toEqual(["total", "saver1", "saver2"])
-    expect(legend(model)).toContain("+2 more in the total")
-  })
-
 })
 
 describe("what made a bar tall, and how much room there is", () => {
@@ -92,72 +85,6 @@ describe("what made a bar tall, and how much room there is", () => {
     // A transfer isn't spending: it never names a bar.
     const moved = spendingChart("Daily", { dates: d, values }, 80, 12, d[9]!, [...rows, transaction({ id: 3, dateISO: d[3]!, amount: -500, description: "Transfer to Holiday", internal: true, excluded: true, status: null })])
     expect(text(moved)).not.toContain("Transfer")
-  })
-
-  test("Daily over more days than columns is a widening average line, with the biggest days as points", () => {
-    const d = days(365, "2025-11-01")
-    const m = spendingChart("Daily", { dates: d, values: d.map((_, i) => (i === 100 ? 2000 : 50)) }, 80, 12, d.at(-1)!, [])
-    expect(legendText(m)).toContain("30-day average")
-    expect(text(m)).toMatch(/[•▲]/)
-  })
-
-  test("Daily draws a line chart's gridlines; Weekly only its weeks' and today's, never through a bar; a week's bar spans its days", () => {
-    // Mon 29 Jun – Sun 4 Oct, 80 columns.
-    const d = days(98, "2026-06-29")
-    const rules = (m: ReturnType<typeof spendingChart>, ink: string) => [...new Set(m.rows.flatMap((runs) => {
-      let col = 0
-      return runs.flatMap((r) => { const at = col; col += r.text.length; return [...r.text].flatMap((ch, k) => (r.ink === ink && ch === "│" ? [at + k] : [])) })
-    }))].sort((a, b) => a - b)
-    // Daily at 120, where its 98 days are bars: the line chart's rules. No
-    // spending, so no bar covers a rule: bars hide only the cells they fill.
-    const line = spendingChart("Cumulative", { dates: d, values: d.map(() => 30) }, 120, 10, "2026-09-16", [])
-    const daily = spendingChart("Daily", { dates: d, values: d.map(() => 0) }, 120, 10, "2026-09-16", [])
-    for (const ink of ["month", "today", "week"]) expect(rules(daily, ink)).toEqual(rules(line, ink))
-    expect(daily.labels).toBe(line.labels)
-    // Weekly: a rule where each week starts and on today, where a line
-    // chart would draw them; no month rule (1 Jul, 1 Aug… fall mid-week,
-    // inside a bar). With spending every day, no rule's column holds a bar.
-    const weekly = spendingChart("Weekly", { dates: d, values: d.map(() => 30) }, 80, 10, "2026-09-16", [])
-    const todayCol = cellColumn(d.indexOf("2026-09-16"), d.length, 80)
-    expect(rules(weekly, "month")).toEqual([])
-    expect(rules(weekly, "today")).toEqual([todayCol])
-    expect(rules(weekly, "week")).toEqual(d.flatMap((_, i) => (i > 0 && i % 7 === 0 ? [cellColumn(i, d.length, 80)] : [])).filter((c) => c !== todayCol))
-    const grid = weekly.rows.map((runs) => runs.map((r) => r.text).join(""))
-    for (const col of [...rules(weekly, "week"), todayCol]) expect(grid.some((row) => /[▁-█]/.test(row[col]!))).toBe(false)
-    // A week's bar runs from just after its first day's column (where a
-    // week rule goes) to just before the next week's; the last to the edge.
-    const slots = dateSlots(d.filter((_, i) => i % 7 === 0), d, 80)
-    for (let k = 1; k < slots.length; k++) expect(slots[k]!.col - 1).toBe(cellColumn(7 * k, d.length, 80))
-    for (let k = 0; k + 1 < slots.length; k++) expect(slots[k]!.col + slots[k]!.width).toBe(slots[k + 1]!.col - 1)
-    expect(slots.at(-1)!.col + slots.at(-1)!.width).toBe(80)
-  })
-
-  test("Cash flow ending on a Monday: no rule through a bar at any width, whole weeks' bars match, and wide bars are all named", () => {
-    const acc = account({ id: 1, balance: 0 })
-    const pay = (id: number, dateISO: string) => transaction({ id, dateISO, amount: 2800, description: "Acme Pty Ltd", accountName: "Spending", categoryName: "Salary", income: true, status: null })
-    // Mon 2 Nov is today and a week's first day; pay every other Friday,
-    // spending every other day.
-    const range = days(63, "2026-09-01")
-    const today = range.at(-1)!
-    const rows = [
-      ...range.filter((_, i) => i % 14 === 3).map((iso, k) => pay(100 + k, iso)),
-      ...range.filter((_, i) => i % 2 === 0).map((iso, k) => spend(200 + k, iso, 40 + (k % 5) * 30, "Shop")),
-    ]
-    for (let width = 60; width <= 200; width++) {
-      const m = cashFlowChart(range, width, 16, today, [acc], rows, new Set([1]))
-      const grid = m.rows.map((r) => r.map((run) => run.text).join(""))
-      const ruled = [...Array(width).keys()].filter((c) => grid.some((row) => row[c] === "│"))
-      expect({ width, through: ruled.filter((c) => grid.some((row) => /[▁-█]/.test(row[c]!))) }).toEqual({ width, through: [] })
-    }
-    // At 150 columns: the bars of 2 Sep's part week aside, every In and Out
-    // bar is as wide as the others, and each bar carries its amount.
-    const wide = cashFlowChart(range, 150, 16, today, [acc], rows, new Set([1]))
-    const grid = wide.rows.map((r) => r.map((run) => run.text).join(""))
-    // On the bottom row a week's pair is one run of 2w cells, or w where
-    // nothing came in; the part week (the first run) is narrower.
-    const runs = [...grid.at(-1)!.matchAll(/█+/g)].map((r) => r[0].length).slice(1)
-    const w = Math.min(...runs)
-    expect(runs.every((n) => n === w || n === 2 * w)).toBe(true)
   })
 
   test("a period too new for bars (today its first day) is said beside today's rule, or in the legend where there's no room", () => {

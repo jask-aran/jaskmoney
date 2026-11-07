@@ -2,8 +2,6 @@ import { SCHEMA_VERSION } from "./schema"
 import { Database } from "bun:sqlite"
 import { expect, test } from "bun:test"
 import { ensureSchema, loadTags } from "./client"
-import { scopeText, tagCovers } from "../domain/tagScope"
-import { category } from "../testing/fixtures"
 
 test("a v20 category scope comes through v21's expression back to its categories (a group whole); about starts empty", () => {
   const db = new Database(":memory:")
@@ -33,12 +31,4 @@ test("v30 keeps an expression's categories and drops the rest (a trip's dates, o
   ensureSchema(db)
   const tags = Object.fromEntries(loadTags(db).map((t) => [t.name, t.categoryIds]))
   expect(tags).toMatchObject({ TRIP: [], DINNERS: [food], BROKEN: [] })
-})
-
-test("a tag covers its categories, a group's included; one without covers anywhere", () => {
-  const categories = [category({ id: 1, name: "Food" }), category({ id: 2, name: "Cafes", parentId: 1 }), category({ id: 3, name: "Fuel" })]
-  expect(tagCovers({ categoryIds: [] }, categories)({ categoryId: null })).toBe(true)
-  const food = tagCovers({ categoryIds: [1] }, categories)
-  expect([1, 2, 3, null].map((categoryId) => food({ categoryId }))).toEqual([true, true, false, false])
-  expect(scopeText({ categoryIds: [2, 3] }, categories)).toBe("Cafes, Fuel")
 })

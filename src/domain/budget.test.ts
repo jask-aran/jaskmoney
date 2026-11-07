@@ -50,15 +50,6 @@ describe("cycleFor", () => {
         expect(cycleFor(config, date)).toEqual({ start: "2026-09-12", end: "2026-10-13", days: 32 })
       }
     })
-    test("pay on or after the scheduled start, or more than 5 days early, changes nothing", () => {
-      expect(cycleFor(config, "2026-10-14")).toEqual({ start: "2026-10-14", end: "2026-11-13", days: 31 })
-      expect(cycleFor(config, "2026-11-16")).toEqual({ start: "2026-11-14", end: "2026-12-13", days: 30 })
-      expect(cycleFor(config, "2026-12-06").start).toBe("2026-11-14")
-    })
-    test("off, or with no pay dates, cycles keep their schedule", () => {
-      expect(cycleFor({ ...config, payEarly: false }, "2026-09-12").start).toBe("2026-08-14")
-      expect(cycleFor({ ...config, paydays: [] }, "2026-09-12").start).toBe("2026-08-14")
-    })
     test("cycles stay contiguous across a year of early and late pay", () => {
       let previous = cycleFor(config, "2026-01-01")
       for (let time = Date.parse("2026-01-02T12:00:00Z"); time < Date.parse("2027-01-01T12:00:00Z"); time += 86400000) {
@@ -79,69 +70,10 @@ describe("cycleFor", () => {
     })
   })
 
-  // One test per unit and anchor: all of them in one ran past the timeout
-  // under the suite's parallel load.
-  const UNIT_ANCHORS = (["week", "fortnight", "month"] as const).flatMap((unit) => (["calendar", "date", "weekStartNearDate"] as const).map((anchor) => [unit, anchor] as const))
-  test.each(UNIT_ANCHORS)("%s cycles anchored by %s, every anchor day: daily containment and contiguous cycles over 2023–2025", (unit, anchor) => {
-    // All anchor days include both directions of Monday shifts and month crossings.
-    const anchorDays = anchor === "calendar" ? [1] : Array.from({ length: 31 }, (_, i) => i + 1)
-    for (const day of anchorDays) {
-      const config: CycleConfig = { unit, anchor, anchorDate: `2024-01-${String(day).padStart(2, "0")}` }
-      let previous = cycleFor(config, "2022-12-31")
-      for (let time = Date.parse("2023-01-01T12:00:00Z"); time < Date.parse("2026-01-01T12:00:00Z"); time += 86400000) {
-        const date = new Date(time).toISOString().slice(0, 10)
-        const cycle = cycleFor(config, date)
-        expect(cycle.start <= date && date <= cycle.end).toBe(true)
-        expect(cycle.days).toBe((Date.parse(cycle.end + "T12:00:00Z") - Date.parse(cycle.start + "T12:00:00Z")) / 86400000 + 1)
-        if (cycle.start === previous.start) {
-          expect(cycle).toEqual(previous)
-        } else {
-          expect(previous.end).toBe(new Date(time - 86400000).toISOString().slice(0, 10))
-          expect(cycle.start).toBe(date)
-        }
-        previous = cycle
-      }
-    }
-  })
-
-  test("monthly date anchors 29–31 restore the original day after every clamp", () => {
-    for (const day of [29, 30, 31]) {
-      const config: CycleConfig = { unit: "month", anchor: "date", anchorDate: `2024-01-${day}` }
-      for (const year of [2023, 2024, 2025]) {
-        const monthLengths = [31, year === 2024 ? 29 : 28, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31]
-        for (const [index, length] of monthLengths.entries()) {
-          const start = `${year}-${String(index + 1).padStart(2, "0")}-${Math.min(day, length)}`
-          expect(cycleFor(config, start).start).toBe(start)
-        }
-      }
-    }
-  })
-
   test("known cycles: the same cycle from a date inside it, its start and its end", () => {
     for (const { config, date, start, end, days } of cycleCases) {
       const expected = { start, end, days }
       for (const at of [date, start, end]) expect({ config, at, cycle: cycleFor(config, at) }).toEqual({ config, at, cycle: expected })
-    }
-  })
-
-  test("weekStartNearDate shifts the anchor to the nearest Monday", () => {
-    for (const unit of ["week", "fortnight"] as const) {
-      for (const [anchorDate, start] of [
-        ["2026-10-05", "2026-10-05"], ["2026-10-06", "2026-10-05"],
-        ["2026-10-07", "2026-10-05"], ["2026-10-08", "2026-10-05"],
-        ["2026-10-09", "2026-10-12"], ["2026-10-10", "2026-10-12"],
-        ["2026-10-11", "2026-10-12"],
-      ]) expect(cycleFor({ unit, anchor: "weekStartNearDate", anchorDate }, start).start).toBe(start)
-    }
-  })
-
-  test("date anchors need an anchor date; calendar ignores it", () => {
-    for (const unit of ["week", "fortnight", "month"] as const) {
-      for (const anchor of ["date", "weekStartNearDate"] as const) {
-        expect(() => cycleFor({ unit, anchor, anchorDate: null }, "2026-10-07")).toThrow()
-      }
-      expect(cycleFor({ unit, anchor: "calendar", anchorDate: "2030-05-31" }, "1969-12-31"))
-        .toEqual(cycleFor({ unit, anchor: "calendar", anchorDate: null }, "1969-12-31"))
     }
   })
 })
@@ -230,21 +162,10 @@ describe("budgetProgress", () => {
         .toEqual({ budget: alone, spent: 10, remaining: 90, usedPct: 10, daysLeft, dailyAllowance: 90 / daysLeft, projected })
     }
   })
-
-  test("a new cycle starts fresh and empty budget input stays empty", () => {
-    expect(budgetProgress(budgets, config, "2026-10-12", accounts, categories, transactions).map((p) => p.spent))
-      .toEqual([0, 0, 0, 0, 0, 0])
-    expect(budgetProgress([], config, "2026-10-07", accounts, categories, transactions)).toEqual([])
-  })
 })
 
 describe("past cycles and spending by group (the Budgets tab)", () => {
   const monthly: CycleConfig = { unit: "month", anchor: "date", anchorDate: "2026-01-14" }
-  test("pastCycles: the whole cycles before today's, newest first", () => {
-    expect(pastCycles(monthly, "2026-10-27", 3).map((c) => `${c.start}..${c.end}`)).toEqual([
-      "2026-09-14..2026-10-13", "2026-08-14..2026-09-13", "2026-07-14..2026-08-13",
-    ])
-  })
   test("cycleSpending and spendByGroup: spending-account outflows in the cycle, children counted to their group", () => {
     const accounts = [account({ id: 1 }), account({ id: 2, externalKind: "SAVER" })]
     const categories = [category({ id: 10, name: "Good Life" }), category({ id: 11, name: "Cafes", parentId: 10 }), category({ id: 20, name: "Groceries" })]

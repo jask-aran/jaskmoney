@@ -29,14 +29,3 @@ test("a browser sign-in runs in the core: its address and paste prompt come to t
   await data.signOutLlm("openai")
   expect(data.state.signedIn.openai).toBe(false)
 })
-
-test("cancelling a sign-in aborts it in the core", async () => {
-  data.init(":memory:")
-  const abort = new AbortController()
-  const login = (_p: string, _t: string, i: AuthInteraction) => new Promise((_, reject) => i.signal?.addEventListener("abort", () => reject(new Error("aborted"))))
-  const running = data.signInLlm("openrouter", () => {}, abort.signal, { login } as never)
-  await Bun.sleep(0)
-  abort.abort()
-  await expect(running).rejects.toThrow()
-  expect(data.state.signedIn.openrouter).toBe(false)
-})

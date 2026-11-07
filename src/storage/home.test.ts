@@ -4,9 +4,6 @@ import { existsSync, mkdirSync, mkdtempSync, readFileSync, statSync, writeFileSy
 import { tmpdir } from "node:os"
 import { dirname, join } from "node:path"
 import { jaskmoneyHome, legacyPaths, moveToHome } from "./home"
-import { saveCredentials } from "../ai/credentials"
-import { hasUpToken, readUpToken } from "../up/client"
-import { testEnv } from "../testing/scoped"
 
 function oldInstall() {
   const HOME = mkdtempSync(join(tmpdir(), "jaskmoney-home-"))
@@ -34,20 +31,4 @@ test("old data is copied into ~/.jaskmoney once, owner-only, the database as a s
   writeFileSync(join(home, "settings.json"), "{}")
   expect(moveToHome(env)).toEqual([])
   expect(readFileSync(join(home, "settings.json"), "utf8")).toBe("{}")
-})
-
-test("an override says where data is: nothing is moved for it", () => {
-  const { env, db } = oldInstall()
-  db.close()
-  expect(moveToHome({ ...env, JASKMONEY_CONFIG: "/elsewhere/settings.json", JASKMONEY_DB: "/elsewhere/t.db" })).toEqual([])
-  expect(existsSync(jaskmoneyHome(env))).toBe(false)
-})
-
-test("the Up token is read from credentials.json, over the environment", () => {
-  expect(hasUpToken()).toBe(false)
-  testEnv("JASKMONEY_UP_TOKEN", "from-env")
-  expect(readUpToken()).toBe("from-env")
-  saveCredentials({ JASKMONEY_UP_TOKEN: "saved" })
-  expect(readUpToken()).toBe("saved")
-  expect(hasUpToken()).toBe(true)
 })

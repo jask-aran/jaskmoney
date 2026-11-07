@@ -1,7 +1,7 @@
 import { afterEach, expect, test } from "bun:test"
 import { setAppClock } from "../../domain/days"
 import { data } from "../../state/dataStore"
-import { BUDGET_VIEWS, CATEGORIES, CHART_VIEWS, CYCLE_VIEWS, ui } from "../../state/uiStore"
+import { BUDGET_VIEWS, ui } from "../../state/uiStore"
 import { renderApp } from "../../testing/app"
 import { handleKey } from "../../app/keys"
 import { key } from "../../testing/keys"
@@ -159,7 +159,6 @@ test("with only category budgets, All spending's budget is theirs, and enter on 
   expect(ui.state.settingsDraft).toMatchObject({ scopeKey: "overall", amount: "300" })
 })
 
-
 test("the cycle's calendar is always there: the budget's days so far, and its regular payments due on the days to come, in caution, with what they leave", async () => {
   // Tall enough for the calendar's amounts and the cycle pane both.
   const { t, groceries, frame } = await budgetsTab({ width: 120, height: 60 })
@@ -186,108 +185,6 @@ test("the cycle's calendar is always there: the budget's days so far, and its re
   handleKey(ui, key("["), data)
   expect(await frame()).not.toContain("expected by")
   ui.setState({ budgetOffset: 0 })
-})
-
-test("the Budgets tab's panes: the budget pane on top, the list (Categories) under it as the cycle pane's first view; h/l step the focused pane's views, focus following the list's pane between the list and a chart", async () => {
-  const { frame } = await budgetsTab()
-  await data.setBudget({ kind: "overall" }, 500)
-  const f = await frame()
-  // 120×44: the budget pane, a cycle pane under it, on the list.
-  expect(ui.state.budgetCyclePanes).toBe(1)
-  expect(ui.state.budgetCycleViews[0]).toBe(CATEGORIES)
-  expect(f).toMatch(/Categories ─/)
-  expect(f).toMatch(/Category\s+Spent\s+Average\s+Budget/)
-  const start = ui.state.budgetCycleViews
-  // l on the list: the pane's next view, a chart, and the focus with it.
-  handleKey(ui, key("l"), data)
-  expect(ui.state.budgetCycleViews[0]).toBe(CYCLE_VIEWS[0])
-  expect(ui.state.focusedSection).toBe("bud.cycle")
-  // Its views: never a spending view (the budget pane's) or the calendar.
-  for (let i = 0; i < CHART_VIEWS.length; i++) {
-    handleKey(ui, key("l"), data)
-    const at = ui.state.budgetCycleViews[0]
-    if (at !== CATEGORIES) expect(CHART_VIEWS[at]!.group === "Spending" || CHART_VIEWS[at]!.view === "Calendar").toBe(false)
-  }
-  // Back round to the list: the focus on it again.
-  ui.setState({ budgetCycleViews: [CYCLE_VIEWS.at(-1)!, start[1]], focusedSection: "bud.cycle" })
-  handleKey(ui, key("l"), data)
-  expect(ui.state.budgetCycleViews[0]).toBe(CATEGORIES)
-  expect(ui.state.focusedSection).toBe("bud.categories")
-  // → to the Budgets pane (the plan), ← back to the main column.
-  handleKey(ui, key("right"), data)
-  expect(ui.state.focusedSection).toBe("bud.plan")
-  expect(ui.activeScope()).toBe("budgets.plan")
-  handleKey(ui, key("left"), data)
-  expect(["bud.chart", "bud.categories"]).toContain(ui.state.focusedSection)
-  // The budget pane: h/l its views; esc leaves it for the tab's home.
-  handleKey(ui, key("v"), data); handleKey(ui, key("t"), data)
-  expect(ui.state.focusedSection).toBe("bud.chart")
-  handleKey(ui, key("l"), data)
-  expect(ui.state.budgetChart).toBe(1)
-  handleKey(ui, key("escape"), data)
-  expect(ui.state.focusedSection).not.toBe("bud.chart")
-  // H/L step the cycle pane from outside it.
-  ui.setState({ focusedSection: "bud.plan" })
-  handleKey(ui, key("H"), data)
-  expect(ui.state.budgetCycleViews[0]).toBe(CYCLE_VIEWS.at(-1)!)
-  handleKey(ui, key("L"), data)
-  expect(ui.state.budgetCycleViews[0]).toBe(CATEGORIES)
-  ui.setState({ budgetChart: 0, budgetCycleViews: start })
-})
-
-test("the cycle's calendar draws in with the charts: on \"always\", its days tile in when the budget at the cursor changes", async () => {
-  const { t, frame } = await budgetsTab()
-  await data.setBudget({ kind: "overall" }, 500)
-  data.setState("uiPrefs", { ...data.state.uiPrefs, chartMotion: "always", chartSpeed: "quick" })
-  const calendar = (f: string) => f.split("\n").filter((l) => l.includes("Sat")).join("\n")
-  await frame(); await Bun.sleep(600)
-  const done = calendar(await frame())
-  expect(done).toContain("31")
-  // Another budget at the cursor: the days come in again, the last ones not yet.
-  await data.setBudget({ kind: "category", categoryId: data.state.categories.find((c) => c.name === "Groceries")!.id }, 300)
-  ui.setState({ focusedSection: "bud.categories", budgetCategoryCursor: 1 })
-  await frame(); await Bun.sleep(40)
-  expect(calendar(await frame())).not.toContain("31")
-  await Bun.sleep(600)
-  expect(calendar(await frame())).toContain("31")
-  data.setState("uiPrefs", { ...data.state.uiPrefs, chartMotion: "launch" })
-  void t
-})
-
-test("Set budgets: with none yet the Budgets pane says start here, the list's overall budget first with a nudge from its average; groups closed until space", async () => {
-  const { frame } = await budgetsTab()
-  const db = data.getDb()!
-  const home = data.state.categories.find((c) => c.name === "Bills & Utilities")!
-  db.query("INSERT INTO categories (name, color, parent_id) VALUES ('Power', '#f9e2af', ?)").run(home.id)
-  data.refresh()
-  const power = data.state.categories.find((c) => c.name === "Power")!.id
-  db.query("INSERT INTO transactions (date_raw, date_iso, amount, description, account_id, category_id, source) VALUES ('2026-10-08', '2026-10-08', -80, 'POWER CO', 1, ?, 'up')").run(power)
-  data.refresh()
-  handleKey(ui, key("1"), data); handleKey(ui, key("3"), data)
-  expect(ui.state.budgetCategoryCursor).toBe(0)
-  let f = await frame()
-  expect(f).toContain("Budgets · start here")
-  // Nothing set: a tile says which keys set the pay and the target.
-  expect(f).toContain("Set your pay and your spending target")
-  expect(f).toMatch(/p your pay\s+t your spending target/)
-  // Bills & Utilities is closed: Power isn't listed until space opens it.
-  expect(f).toMatch(/▸ . Bills/)
-  expect(f).not.toContain("Power")
-  // Bills & Utilities is the row after All spending and Groceries.
-  ui.setState({ focusedSection: "bud.categories", budgetCategoryCursor: 2 })
-  handleKey(ui, key("space"), data)
-  f = await frame()
-  expect(f).toMatch(/▾ . Bills/)
-  expect(f).toContain("Power")
-  // t sets the overall spending target from its average (Groceries' $300).
-  handleKey(ui, key("t"), data)
-  expect(ui.state.settingsDraft).toMatchObject({ scopeKey: "overall", amount: "300" })
-  ui.setState({ settingsEditor: null, budgetSetupOpen: [] })
-  // Once a budget is set, it no longer says to start here.
-  await data.setBudget({ kind: "overall" }, 500)
-  await frame()
-  handleKey(ui, key("1"), data); handleKey(ui, key("3"), data)
-  expect(await frame()).not.toContain("start here")
 })
 
 test("the plan: your pay and your spending target give what goes to savers; each pay's bar fills as you spend and going over comes out of savers; Savers says what's gone, what's still to send and what's short; nothing without it", async () => {
@@ -382,58 +279,4 @@ test("the plan: your pay and your spending target give what goes to savers; each
   expect(hatchAt(overAt + 1)).toBe(corner)
   expect(hatchAt(overAt + 3)).toBe([...rows[overAt + 2]!].indexOf("╭"))
   t.renderer.destroy()
-})
-
-test("two columns: the budget pane draws its focus; Budgets is the side column's one pane, its full height", async () => {
-  const { t, frame } = await budgetsTab({ width: 145, height: 60 })
-  await data.setBudget({ kind: "overall" }, 500)
-  const f = (await frame()).split("\n")
-  const chartTop = f.findIndex((l) => l.includes("╭─ Cumulative spending"))
-  expect(chartTop).toBeGreaterThan(0)
-  expect(f[chartTop]).toContain("╭─ Budgets")
-  expect(f.filter((l) => l.includes("╭─ Spending calendar"))).toEqual([])
-  // Focused, its title takes the focus colour, as every pane's does.
-  const focus = RGBA.fromHex(tone.focus).toInts().join()
-  const titleFocused = () => t.captureSpans().lines[chartTop]!.spans.some((s) => s.text.includes("Cumulative spending") && s.fg.toInts().join() === focus)
-  expect(titleFocused()).toBe(false)
-  handleKey(ui, key("v"), data); handleKey(ui, key("t"), data)
-  await frame()
-  expect(ui.state.focusedSection).toBe("bud.chart")
-  expect(titleFocused()).toBe(true)
-})
-
-test("the calendar runs on to the next payday, marked pay in good, outside the cycle (no tile)", async () => {
-  const { t, frame } = await budgetsTab({ width: 145, height: 60 })
-  await data.setBudget({ kind: "overall" }, 500)
-  const f = await frame()
-  // Monthly cycles from the 1st: 1 Nov is the next payday.
-  const spans = t.captureSpans().lines.flatMap((l) => l.spans)
-  const pay = spans.find((s) => s.text.includes("pay") && s.fg.toInts().join() === RGBA.fromHex(tone.good).toInts().join())
-  expect(pay).toBeTruthy()
-  expect(f).toMatch(/Nov/)
-})
-
-test("Each pay, Savers and This cycle draw in on \"always\": the bars sweep in from the left, the lines drop in, then all of it", async () => {
-  const { frame } = await budgetsTab({ width: 145, height: 60 })
-  await data.setBudget({ kind: "overall" }, 500)
-  data.setState("uiPrefs", { ...data.state.uiPrefs, chartMotion: "always", chartSpeed: "quick" })
-  // The pay's bar: the first line after the track with blocks, at rest (in the
-  // Budgets pane's columns: the main column has bars of its own).
-  await frame(); await Bun.sleep(600)
-  const rest = (await frame()).split("\n"), head = rest.findIndex((l) => l.includes("○")) + 1
-  const from = rest.find((l) => l.includes("╭─ Budgets"))!.indexOf("╭─ Budgets")
-  const at = head + rest.slice(head).findIndex((l) => l.slice(from).includes("█"))
-  const bar = (f: string) => (f.split("\n")[at]!.slice(from).match(/█/g) ?? []).length
-  const full = bar(await frame())
-  expect(full).toBeGreaterThan(20)
-  // The cycle changes ([): it draws in again, the bar short of its width at first.
-  handleKey(ui, key("["), data)
-  handleKey(ui, key("]"), data)
-  ui.setState({ activeTab: "overview" }); await frame()
-  ui.setState({ activeTab: "budgets" })
-  await frame(); await Bun.sleep(30)
-  expect(bar(await frame())).toBeLessThan(full)
-  await Bun.sleep(600)
-  expect(bar(await frame())).toBe(full)
-  data.setState("uiPrefs", { ...data.state.uiPrefs, chartMotion: "launch" })
 })

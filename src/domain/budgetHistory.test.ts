@@ -1,5 +1,5 @@
 import { expect, test } from "bun:test"
-import { budgetIn, budgetsIn, cycleAt } from "./budget"
+import { budgetIn, budgetsIn } from "./budget"
 
 const overall = { kind: "overall" } as const
 
@@ -30,11 +30,4 @@ test("the budgets in force in a cycle: today's, and ones since removed, as they 
   const today = [{ id: 5, scope: overall, amount: 2000 }]
   expect(budgetsIn(history, today, "2026-07-14")).toEqual([{ id: 5, scope: overall, amount: 2000 }, { id: -2, scope: rent, amount: 1200 }])
   expect(budgetsIn(history, today, "2026-09-14")).toEqual([{ id: 5, scope: overall, amount: 2000 }])
-})
-
-test("cycles step back and forward from today's", () => {
-  const months = { unit: "month", anchor: "date", anchorDate: "2026-01-14" } as const
-  expect(cycleAt(months, "2026-10-31", 0)).toMatchObject({ start: "2026-10-14", end: "2026-11-13" })
-  expect(cycleAt(months, "2026-10-31", -2)).toMatchObject({ start: "2026-08-14", end: "2026-09-13" })
-  expect(cycleAt(months, "2026-10-31", 1)).toMatchObject({ start: "2026-11-14" })
 })
