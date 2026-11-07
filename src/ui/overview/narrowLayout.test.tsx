@@ -78,7 +78,8 @@ for (const text of [false, true]) for (const [width, height, wide] of [[80, 30, 
       t.mockInput.pressKey(jump)
       await settle()
       expect(ui.state.focusedSection).toBe(section)
-      expect(frame().split(title).length - 1).toBe(1)
+      // Once above the footer (which names the focused pane too).
+      expect(frame().trimEnd().split("\n").slice(0, -1).join("\n").split(title).length - 1).toBe(1)
       const focusedCard = all[index]!
       expect(focusedCard.y).toBeGreaterThanOrEqual(2)
       expect(focusedCard.y + focusedCard.height).toBeLessThanOrEqual(height - 2)

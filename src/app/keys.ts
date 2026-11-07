@@ -55,7 +55,7 @@ import { runAccept, toggleUncategorised, newSuggestionsNote, suggestNew } from "
 import { ACCEPT_ALL_AT } from "../domain/questions"
 import { categoryRows } from "../state/taxonomyRows"
 import { IMPORT_HISTORY_ROWS } from "../state/databaseRows"
-import { BUDGET_PANES, BUDGET_VIEWS, CHART_VIEWS, CYCLE_VIEWS, chartPaneOf, type ChartViews, type OverviewCharts, SETTINGS_RIGHT, SETTINGS_SECTIONS, type SettingsSection, jumpTargets, TABS, TAB_DEFAULT_FOCUS, settingsSectionFocus, smartQuestionFor, type ScopeId, type UiState, type UiStore } from "../state/uiStore"
+import { BUDGET_PANES, BUDGET_VIEWS, CHART_VIEWS, CYCLE_VIEWS, chartPaneOf, type ChartViews, type OverviewCharts, SETTINGS_RIGHT, SETTINGS_SECTION_LABELS, SETTINGS_SECTIONS, type SettingsSection, jumpTargets, TABS, TAB_DEFAULT_FOCUS, settingsSectionFocus, smartQuestionFor, type ScopeId, type UiState, type UiStore } from "../state/uiStore"
 import type { DataStore } from "../state/dataStore"
 import {
   CUSTOM_CHIP,
@@ -2327,9 +2327,15 @@ type HintState = Pick<UiState, "focusedSection" | "drillReturn" | "chartViews"> 
 type ScopeEntry = {
   handle: (ui: UiStore, key: KeyEvent, data?: DataStore) => void
   hints: (state?: HintState) => Hint[]
+  /** The focused pane's name, before its keys in the footer (none: the
+   * keys are the tab's or the dialog's). */
+  pane?: (state?: HintState) => string | null
   /** Not text entry: the palette (ctrl+k) and the ctrl aliases work here. */
   list: boolean
 }
+
+/** Hints that are the tab's, whichever pane has focus: after the pane's. */
+const tabWide = (hints: Hint[]): Hint[] => hints.map((h) => ({ ...h, tab: true }))
 
 const scopes: Record<ScopeId, ScopeEntry> = {
   "palette": {
@@ -2581,6 +2587,7 @@ const scopes: Record<ScopeId, ScopeEntry> = {
   "manager.txns": {
     handle: handleManagerTxns,
     list: true,
+    pane: (state) => (state?.tagReview ? "Tag review" : state?.uncategorisedOnly ? "Review" : "Transactions"),
     hints: (state) => state?.tagReview ? [
       { key: "y", desc: "tag", label: "Tag the candidate", description: "selection or row" },
       { key: "Y", desc: `tag all ≥${ACCEPT_ALL_AT * 100}%`, label: `Tag all ≥${ACCEPT_ALL_AT * 100}%…`, description: "shows them first" },
@@ -2645,6 +2652,7 @@ const scopes: Record<ScopeId, ScopeEntry> = {
   "manager.accounts": {
     handle: handleManagerAccounts,
     list: true,
+    pane: () => "Accounts",
     hints: () => [
       { key: "j/k", desc: "account" },
       { key: "h/l", desc: "bank" },
@@ -2656,16 +2664,19 @@ const scopes: Record<ScopeId, ScopeEntry> = {
   "budgets.chart": {
     handle: handleBudgetChart,
     list: true,
-    hints: (state) => [{ key: "h/l", desc: "view" }, { key: "j/k", desc: "panes" }, ...cycleChartHint(state).filter(() => state?.focusedSection === "bud.chart"), { key: "[ ]", desc: "cycles" }, { key: "c", desc: "cycle" }, { key: "esc", desc: "budgets" }, { key: "v", desc: "jump" }, { key: "1-4", desc: "tab" }],
+    pane: (state) => (state?.focusedSection === "bud.cycle" ? "Cycle chart" : state?.focusedSection === "bud.cycle2" ? "Second cycle chart" : "Budget chart"),
+    hints: (state) => [{ key: "h/l", desc: "view" }, ...cycleChartHint(state).filter(() => state?.focusedSection === "bud.chart"), ...tabWide([{ key: "j/k", desc: "panes" }, { key: "[ ]", desc: "cycles" }, { key: "c", desc: "cycle" }, { key: "esc", desc: "budgets" }, { key: "v", desc: "jump" }, { key: "1-4", desc: "tab" }])],
   },
   "budgets.categories": {
     handle: handleBudgetCategories,
     list: true,
-    hints: (state) => [{ key: "j/k", desc: "move" }, { key: "enter", desc: "set budget" }, { key: "space", desc: "open" }, { key: "x", desc: "leave out" }, { key: "del del", desc: "remove budget" }, { key: "a", desc: "add" }, { key: "p", desc: "pay" }, { key: "t", desc: "target" }, { key: "h/l", desc: "chart" }, ...cycleChartHint(state), { key: "[ ]", desc: "cycles" }, { key: "c", desc: "cycle" }, { key: "v", desc: "jump" }, { key: "1-4", desc: "tab" }],
+    pane: () => "Budgets",
+    hints: (state) => [{ key: "j/k", desc: "move" }, { key: "enter", desc: "set budget" }, { key: "space", desc: "open" }, { key: "x", desc: "leave out" }, { key: "del del", desc: "remove budget" }, { key: "a", desc: "add" }, ...tabWide([{ key: "p", desc: "pay" }, { key: "t", desc: "target" }, { key: "[ ]", desc: "cycles" }, { key: "c", desc: "cycle" }, { key: "h/l", desc: "chart" }, ...cycleChartHint(state), { key: "v", desc: "jump" }, { key: "1-4", desc: "tab" }])],
   },
   "manager.merchants": {
     handle: handleManagerMerchants,
     list: true,
+    pane: () => "Merchants",
     hints: () => [
       { key: "j/k", desc: "move" },
       { key: "enter", desc: "its transactions", label: "Its transactions" },
@@ -2701,42 +2712,53 @@ const scopes: Record<ScopeId, ScopeEntry> = {
   "overview": {
     handle: handleOverview,
     list: true,
+    pane: (state) => {
+      const focus = state?.focusedSection
+      const chart = focus ? chartPaneOf(focus) : -1
+      if (chart >= 0) return CHART_VIEWS[state!.chartViews[chart] ?? 0]?.title ?? "Chart"
+      return focus === "ov.categories" ? "Range" : focus === "ov.accounts" ? "Accounts" : null
+    },
     hints: (state) => {
-      if (state?.focusedSection === "ov.categories") return [
-        { key: "j/k", desc: "move" },
-        { key: "space", desc: "open group" },
-        { key: "enter", desc: "transactions" },
-        { key: "[ ]", desc: `prev/next ${state?.stepUnit ?? "range"}` },
-        { key: "esc", desc: "done" },
+      const focus = state?.focusedSection
+      const chart = state && focus ? chartPaneOf(focus) : -1
+      const balances = (i: number | undefined) => i != null && CHART_VIEWS[i]?.group === "Balances"
+      const range = focus === "ov.categories"
+      // The Range pane's own: t and s are its, wherever focus is.
+      const rangeKeys: Hint[] = [
+        { key: "t", desc: state?.rangeText ? "bars" : "text", label: "Range pane: bars or text" },
+        ...(state?.rangeText ? [] : [{ key: "s", desc: state?.rangeView === "spending" ? "net view" : "spending view", label: "Range: where the spending or the net went" }]),
       ]
-      return [
+      const pane: Hint[] = range ? [{ key: "j/k", desc: "move" }, { key: "space", desc: "open group" }, { key: "enter", desc: "transactions" }, ...rangeKeys]
+        : chart >= 0 ? [{ key: "enter", desc: "transactions" }, { key: "h/l", desc: "view" }, ...(balances(state!.chartViews[chart]) ? [{ key: "z", desc: "$0 axis" }] : [])]
+        : focus === "ov.accounts" ? [{ key: "enter", desc: "accounts", label: "Accounts in Transactions" }]
+        : []
+      return [...pane, ...tabWide([
         { key: "↑↓←→", desc: "panes" },
-        ...(state && chartPaneOf(state.focusedSection) >= 0 ? [{ key: "enter", desc: "transactions" }] : []),
-        { key: "h/l", desc: "chart" },
         { key: "d/D", desc: "range" },
         { key: "[ ]", desc: `prev/next ${state?.stepUnit ?? "range"}` },
         // On a Custom range, its dates are a key away.
         ...(state?.customRange ? [{ key: "C", desc: "edit dates", label: "Range: custom dates" }] : []),
         { key: "c", desc: "this cycle", label: "Range: this cycle" },
         { key: "a", desc: "account", label: "Next spending account" },
-        { key: "t", desc: state?.rangeText ? "bars" : "text", label: "Range pane: bars or text" },
-        ...(state?.rangeText ? [] : [{ key: "s", desc: state?.rangeView === "spending" ? "net view" : "spending view", label: "Range: where the spending or the net went" }]),
+        ...(range ? [] : rangeKeys),
+        ...(chart >= 0 ? [] : [{ key: "h/l", desc: "chart" }]),
+        ...(state?.overviewCharts !== 1 ? [{ key: "H/L", desc: "bottom chart" }] : []),
         { key: "i", desc: "review", command: "txn:uncategorised" },
         { key: "/", desc: "search", command: "txn:filter" },
         { key: "?", desc: "smart search", command: "txn:smart-search" },
-        // Past the footer's eight: in the palette (the Custom chip shows too).
         ...(state?.customRange ? [] : [{ key: "C", desc: "custom range", label: "Range: custom dates" }]),
-        ...(state?.overviewCharts !== 1 ? [{ key: "H/L", desc: "bottom chart" }] : []),
         { key: "0", desc: "now", label: "Range: back to now" },
-        ...(state?.chartViews.slice(0, state.overviewCharts ?? 2).some((i) => CHART_VIEWS[i]?.group === "Balances") ? [{ key: "z", desc: "$0 axis" }] : []),
+        ...(chart < 0 && state?.chartViews.slice(0, state.overviewCharts ?? 2).some(balances) ? [{ key: "z", desc: "$0 axis" }] : []),
+        ...(focus && focus !== "none" ? [{ key: "esc", desc: "done" }] : []),
         { key: "v", desc: "jump" },
         { key: "1-4", desc: "tab" },
-      ]
+      ])]
     },
   },
   "overview.range": {
     handle: handleOverviewRange,
     list: true,
+    pane: () => "Date Range",
     hints: (state) => [
       { key: "h/l", desc: "chip" },
       { key: "enter", desc: "apply" },
@@ -2758,10 +2780,14 @@ export function footerHints(scope: ScopeId, state?: HintState): Hint[] {
   return scopes[scope].hints(state)
 }
 
-/** What the footer shows in a scope: its hints, cut to the first few and
- * "ctrl+k all" where the palette opens. */
-export function footerLine(scope: ScopeId, state?: HintState): Hint[] {
-  return footerShown(footerHints(scope, state), scopes[scope].list)
+/** What the footer shows in a scope on a line `width` wide: the focused
+ * pane's name and its hints, as many as fit, "ctrl+k all" where the
+ * palette opens and some didn't. */
+export function footerLine(scope: ScopeId, state?: HintState, width = Infinity): { pane: string | null; hints: Hint[] } {
+  // A Settings section is its pane.
+  const section = SETTINGS_SECTIONS.find((x) => scope === `settings.${x}`)
+  const pane = scopes[scope].pane?.(state) ?? (section ? SETTINGS_SECTION_LABELS[section] : null)
+  return { pane, hints: footerShown(footerHints(scope, state), scopes[scope].list, width, pane) }
 }
 
 /** The state the hints read, from both stores. */

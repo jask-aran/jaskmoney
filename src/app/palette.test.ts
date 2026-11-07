@@ -8,7 +8,7 @@ import { testEnv } from "../testing/scoped"
 import { theme } from "../theme"
 import { commands, rankCommands } from "./commands"
 import { footerHints, footerLine, handleKey, hintState, paletteList } from "./keys"
-import { FOOTER_LIMIT, hintEvent } from "./palette"
+import { footerParts, hintEvent } from "./palette"
 
 const state = { focusedSection: "mgr.transactions" as const, drillReturn: null, chartViews: [0, 4, 7, 8] as ChartViews }
 
@@ -42,12 +42,26 @@ test("a hint's key becomes one key press; several keys don't", () => {
   for (const several of ["j/k", "S-j/k", "1-3", "d/D", "[ ]", "h/l", "type"]) expect(hintEvent(several)).toBeNull()
 })
 
-test("the footer shows the first few hints, then ctrl+k all; short lists stay whole", () => {
-  const line = footerLine("manager.txns", state)
-  expect(line).toHaveLength(FOOTER_LIMIT + 1)
-  expect(line.at(-1)).toEqual({ key: "ctrl+k", desc: "all" })
-  expect(footerLine("settings.taxonomy", state)).toEqual(footerHints("settings.taxonomy", state))
-  expect(footerLine("catPicker", state).some((h) => h.key === "ctrl+k")).toBe(false)
+test("the footer: the pane's name, its keys, a rule, the tab's; as many as the width holds, then ctrl+k all; short lists stay whole", () => {
+  const text = (line: ReturnType<typeof footerLine>) => footerParts(line.pane, line.hints).map((p) => p.text).join("")
+  // Wide enough, every hint and no ctrl+k.
+  const all = footerLine("manager.txns", state)
+  expect(all.pane).toBe("Transactions")
+  expect(all.hints).toEqual(footerHints("manager.txns", state))
+  // 80 wide: the first that fit, then ctrl+k all, within the width.
+  const cut = footerLine("manager.txns", state, 80)
+  expect(cut.hints.at(-1)).toEqual({ key: "ctrl+k", desc: "all" })
+  expect(cut.hints.slice(0, -1)).toEqual(footerHints("manager.txns", state).slice(0, cut.hints.length - 1))
+  expect(text(cut).length).toBeLessThanOrEqual(80)
+  expect(text(footerLine("manager.txns", state, 120)).length).toBeGreaterThan(text(cut).length)
+  expect(footerLine("settings.taxonomy", state, 200).hints).toEqual(footerHints("settings.taxonomy", state))
+  expect(footerLine("catPicker", state, 40).hints.some((h) => h.key === "ctrl+k")).toBe(false)
+  // The Overview's Range pane: its own keys under its name, then the tab's
+  // after a rule (they still work there).
+  const range = footerLine("overview", { ...state, focusedSection: "ov.categories" })
+  expect(text(range)).toMatch(/^Range {2}j\/k move {2}space open group {2}enter transactions {2}t text {2}s spending view {2}│ {2}↑↓←→ panes {2}d\/D range/)
+  // Nothing focused: no name, the tab's keys alone.
+  expect(footerLine("overview", { ...state, focusedSection: "none" }).pane).toBeNull()
 })
 
 test("commands go beyond keys: from anywhere, per saved filter and account; keys come from the pane's hints", async () => {

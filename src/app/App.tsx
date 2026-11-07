@@ -11,7 +11,7 @@ import { traceFrames, traceKey, traceMark } from "./trace"
 import { settleData, toggleDemo } from "./actions"
 import { BudgetsTab } from "../ui/budgets/BudgetsTab"
 import { ErrorBoundary, Show, createEffect, createMemo, createSignal, untrack, on, onCleanup } from "solid-js"
-import { useKeyboard, usePaste, useRenderer } from "@opentui/solid"
+import { useKeyboard, usePaste, useRenderer, useTerminalDimensions } from "@opentui/solid"
 import { decodePasteBytes, type KeyEvent } from "@opentui/core"
 import { TABS, TAB_DEFAULT_FOCUS, ui, type SectionId, type TabId } from "../state/uiStore"
 import type { JSX } from "@opentui/solid"
@@ -55,6 +55,7 @@ function flagValue(name: string): string | null {
 
 export function App() {
   const renderer = useRenderer()
+  const terminal = useTerminalDimensions()
 
   const [bootstrapped, setBootstrapped] = createSignal(false)
   // The same array until the palette reopens or its query changes (keys'
@@ -239,7 +240,8 @@ export function App() {
         text={ui.state.jump != null ? "Jump mode · press target letter" : ui.state.welcome ? welcomeStatus(ui.state.welcome, data.state.uiPrefs.backdrop) : ui.state.status}
         isErr={ui.state.jump == null && !ui.state.welcome && ui.state.statusErr}
       />
-      <Footer hints={footerLine(ui.activeScope(), hintState(ui, data))} />
+      {/* The footer's line, less its padding either side. */}
+      <Footer line={footerLine(ui.activeScope(), hintState(ui, data), terminal().width - 2)} />
       <Show when={ui.state.activeTab === "overview"}>
         <UpLogo />
       </Show>
