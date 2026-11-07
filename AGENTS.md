@@ -9,6 +9,7 @@ bun start
 bun run server    # the core alone: the web app and other clients connect
 bun run typecheck
 bun run test
+bun run lint      # the size budget (also run by typecheck and test)
 bun run eval      # category suggestions vs the demo's hidden truth (src/eval/run.ts)
 bun run eval:search  # smart search's filters, with and without Clairic (src/eval/search.ts)
 ```
@@ -16,6 +17,10 @@ bun run eval:search  # smart search's filters, with and without Clairic (src/eva
 `bun run eval` freezes a demo made from your history into `~/.jaskmoney/eval` (never the repo) and scores the suggestion pipeline against its hidden categories: right, top 3, accept-all precision, by source and by unseen merchant, with the change since the last run. Run it before and after changing a decision-model prompt or context block; `--limit N` for a fixed sample, `--fresh` to remake the set, `--misses` to list the wrong picks. Confirm a change on a set it wasn't found on (`--set 1`, `--set 2`: other seeds, other held-out merchants), and prefer fixing what fails outright to nudging what's already right.
 
 The data lives in one core (`src/core/`) that the TUI and the web app reach as clients through `src/client/store.ts`.
+
+## Size budget
+
+`scripts/sizeBudget.ts` caps the tests (count, lines), the source (lines, characters, files), any one file's lines and the dependencies, at about 20% over their size on 2026-11-08. When `bun run lint` fails, stop and tell the owner that the codebase needs cutting; never raise a limit to make room.
 
 ## General TUI rules
 

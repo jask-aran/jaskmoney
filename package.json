@@ -17,8 +17,9 @@
     "bin": "bun run scripts/build.ts && ./dist/jaskmoney",
     "screenshots": "bun run scripts/screenshots.ts",
     "recordings": "bun run scripts/recordings.ts",
-    "test": "bun test --conditions=browser --parallel",
-    "typecheck": "tsc --noEmit && tsc --noEmit -p src/web",
+    "lint": "bun run scripts/lint.ts",
+    "test": "bun run scripts/lint.ts && bun test --conditions=browser --parallel",
+    "typecheck": "bun run scripts/lint.ts && tsc --noEmit && tsc --noEmit -p src/web",
     "bench": "bun test --conditions=browser ./src/bench/keys.bench.tsx",
     "eval": "bun --conditions=browser run src/eval/run.ts",
     "eval:search": "bun --conditions=browser run src/eval/search.ts"
