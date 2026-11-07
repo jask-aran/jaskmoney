@@ -80,7 +80,7 @@ import { amountFromText, rangeDayFromText, rangeDayText } from "../domain/typedI
 import { CALENDAR_VIEWS, CUSTOM_FOCUS_ORDER, leftHalf, markedRange, moveCursor, pageCursor, rowStep, unitOf, type CalendarView, type CustomFocus } from "../domain/rangeCalendar"
 import { drillFilter } from "../domain/drill"
 import type { CategoryLine } from "../domain/dashboard"
-import { overviewCategoryLines, overviewRange } from "../state/overviewRange"
+import { openGroups, overviewCategoryLines, overviewRange } from "../state/overviewRange"
 import { tagPickerItems, tagPickerState } from "../state/tagPicker"
 import { savedFilterOptions } from "../state/savedFilters"
 import { nextSettingsId, nextSavedFilterId } from "../state/settingsConfig"
@@ -1809,7 +1809,7 @@ export function selectAccountRow(ui: UiStore, data: DataStore, index: number): v
 }
 
 export function moveOverviewCategory(ui: UiStore, data: DataStore, index: number): void {
-  const lines = overviewCategoryLines(overviewRange(data, ui.state), ui.state.overviewOpen)
+  const lines = overviewCategoryLines(overviewRange(data, ui.state), openGroups(data.state.uiPrefs, ui.state))
   ui.setState({ overviewCategoryCursor: Math.max(0, Math.min(lines.length - 1, index)) })
 }
 
@@ -2060,7 +2060,7 @@ function handleOverview(ui: UiStore, key: KeyEvent, data?: DataStore): void {
   // h/l, ,/., H/L still step charts. Range arrows keep chip movement.
   if (name === "up" || name === "down" || name === "left" || name === "right") {
     if (data && ui.state.focusedSection === "ov.categories" && (name === "up" || name === "down")) {
-      const last = overviewCategoryLines(overviewRange(data, ui.state), ui.state.overviewOpen).length - 1
+      const last = overviewCategoryLines(overviewRange(data, ui.state), openGroups(data.state.uiPrefs, ui.state)).length - 1
       const cursor = Math.min(ui.state.overviewCategoryCursor, last)
       if (name === "up" ? cursor > 0 : cursor < last) {
         moveOverviewCategory(ui, data, cursor + (name === "up" ? -1 : 1))
@@ -2135,13 +2135,13 @@ function handleOverview(ui: UiStore, key: KeyEvent, data?: DataStore): void {
   // comes back. With Categories focused, j/k move over every line.
   const focus = ui.state.focusedSection
   if (data && focus === "ov.categories") {
-    const lines = overviewCategoryLines(overviewRange(data, ui.state), ui.state.overviewOpen)
+    const lines = overviewCategoryLines(overviewRange(data, ui.state), openGroups(data.state.uiPrefs, ui.state))
     const moveTo = (i: number) => moveOverviewCategory(ui, data, i)
     const moved = listMove(key, ui.state.overviewCategoryCursor, lines.length)
     if (moved != null) { moveTo(moved); return }
     // The Range pane: space opens or closes the cursor's group (from a
     // subcategory, its group, the cursor going to it).
-    const open = ui.state.overviewOpen
+    const open = openGroups(data.state.uiPrefs, ui.state)
     if (open && (name === "space" || seq === " ")) {
       const at = Math.min(ui.state.overviewCategoryCursor, lines.length - 1)
       let g = at
@@ -2759,7 +2759,7 @@ const scopes: Record<ScopeId, ScopeEntry> = {
       const balances = (i: number | undefined) => i != null && CHART_VIEWS[i]?.group === "Balances"
       const range = focus === "ov.categories"
       const rangeKeys = rangePaneKeys(state)
-      const pane: Hint[] = range ? [{ key: "j/k", desc: "move" }, { key: "space", desc: "open group" }, { key: "enter", desc: "transactions" }, ...rangeKeys]
+      const pane: Hint[] = range ? [{ key: "j/k", desc: "move" }, ...(state?.rangeText ? [] : [{ key: "space", desc: "open group" }]), { key: "enter", desc: "transactions" }, ...rangeKeys]
         : chart >= 0 ? [{ key: "enter", desc: "transactions" }, { key: "h/l", desc: "view" }, ...(balances(state!.chartViews[chart]) ? [{ key: "z", desc: "$0 axis" }] : [])]
         : focus === "ov.accounts" ? [{ key: "enter", desc: "accounts", label: "Accounts in Transactions" }]
         : []

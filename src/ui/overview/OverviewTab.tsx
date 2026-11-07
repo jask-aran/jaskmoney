@@ -30,7 +30,7 @@ import { fit } from "../text"
 import { subscriptions, upcomingCharges } from "../../domain/subscriptions"
 import { merchantRows, trendRows, type MerchantRow, type TrendGroup, type TrendRow } from "../../domain/periodTables"
 import { MerchantsView, TrendsView, merchantsLegend, trendsLegend } from "./TableViews"
-import { overviewCategoryLines, overviewRange } from "../../state/overviewRange"
+import { openGroups, overviewCategoryLines, overviewRange } from "../../state/overviewRange"
 import { AXIS_GUESS, CHART_RIGHT_PAD, axisWidth, type ChartModel } from "../charts/ChartBody"
 import { ChartCard } from "../charts/ChartCard"
 import { chartSpeedMs, showings, takeLaunchReveal, useReveal, type ChartLabelMode } from "../charts/motion"
@@ -527,14 +527,18 @@ export function OverviewTab(props: { focused: SectionId }) {
   // The Range pane's chevron: a group's open or closed (none without
   // subcategories); a subcategory's indent.
   const chevron = (line: { categoryId: number | null; child: boolean }) => {
+    // As text, every group is open: no chevrons, only the space that
+    // lines the marks up under the heading.
+    if (textual()) return " "
     if (line.child) return "   "
     const g = groups().find((x) => x.categoryId === line.categoryId)
     return !g?.children.length || line.categoryId == null ? "   " : ui.state.overviewOpen.includes(line.categoryId) ? " ▾ " : " ▸ "
   }
   const categoryRows = createMemo(() => {
     const rows = Math.max(1, categoriesHeight() - 2 - rangeTop())
-    // The Range pane: its groups closed until space opens them, as Budgets'.
-    const open = ui.state.overviewOpen
+    // As bars, its groups closed until space opens them, as Budgets'; as
+    // text, every line (unfocused, the largest subcategories that fit).
+    const open = openGroups(data.state.uiPrefs, ui.state)
     if (!categoriesFocused()) return (open ? overviewCategoryLines(range(), open).slice(0, rows) : fitCategoryLines(groups(), rows)).map((line) => ({ line, cursor: false }))
     const lines = overviewCategoryLines(range(), open)
     const cursor = Math.min(ui.state.overviewCategoryCursor, lines.length - 1)
@@ -564,7 +568,7 @@ export function OverviewTab(props: { focused: SectionId }) {
             const bg = () => cursor() ? theme.rowCursor : undefined
             return (
               <text wrapMode="none" bg={bg()} onMouseDown={onPointer((s) => s === "bar" || s === "overview" || s === "overview.range", () => {
-                const lines = overviewCategoryLines(range(), ui.state.overviewOpen)
+                const lines = overviewCategoryLines(range(), openGroups(data.state.uiPrefs, ui.state))
                 const index = lines.findIndex((l) => l.categoryId === line().categoryId && l.child === line().child)
                 const open = categoriesFocused() && index === ui.state.overviewCategoryCursor
                 ui.applyJump("ov.categories")
@@ -573,7 +577,7 @@ export function OverviewTab(props: { focused: SectionId }) {
               })}>
                 <S fg={ink.note} bg={bg()}>{chevron(line())}</S>
                 <S fg={line().color} bg={bg()}>{line().child ? "  " : ""}{`${categoryMark(line().categoryId)} `}</S>
-                <S fg={line().child && !cursor() ? ink.label : line().color} bg={bg()} bold={!line().child || cursor()}>{fit(line().label, -(line().child ? 4 : 2) - 3 + categoryNameWidth())}</S>
+                <S fg={line().child && !cursor() ? ink.label : line().color} bg={bg()} bold={!line().child || cursor()}>{fit(line().label, -(line().child ? 4 : 2) - (textual() ? 1 : 3) + categoryNameWidth())}</S>
                 <S fg={line().child ? ink.label : ink.figure} bg={bg()} bold={!line().child}>{formatWholeMoney(line().amount).padStart(9)}</S>
                 <S fg={ink.note} bg={bg()}>{(line().pct != null ? `${Math.round(line().pct!)}%` : "").padStart(5)}</S>
                 <S fg={beforeChange(line()).fg} bg={bg()}>{beforeChange(line()).text}</S>

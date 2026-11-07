@@ -138,7 +138,7 @@ test("the Range pane over a year: a fortnight's paydays and sends would crowd th
   t.renderer.destroy()
 })
 
-test("the Range pane's categories: groups closed until space opens them, as Budgets'; the cursor moves over what shows", async () => {
+test("the Range pane's categories: groups closed until space opens them, as Budgets'; as text, all open; the cursor moves over what shows", async () => {
   const { t, frame } = await overview([
     spend("2026-10-05", 300, 10, "Groceries"), spend("2026-10-06", 50, 12, "Takeaway"), spend("2026-10-07", 100, 11, "Fuel"),
   ], "1M")
@@ -162,6 +162,21 @@ test("the Range pane's categories: groups closed until space opens them, as Budg
   expect(ui.state.overviewOpen).toEqual([])
   expect(ui.state.overviewCategoryCursor).toBe(0)
   expect(text).not.toContain("Groceries")
+  // As text (t), every group open, no chevrons; the cursor moves over
+  // every line, and space opens nothing.
+  t.mockInput.pressKey("t")
+  const f = await frame()
+  text = f.join("\n")
+  expect(text).toMatch(/Food\s+\$350[\s\S]*Groceries\s+\$300[\s\S]*Takeaway\s+\$50[\s\S]*Fuel/)
+  expect(text).not.toMatch(/[▸▾]/)
+  const column = (re: RegExp) => { const l = f.find((x) => re.test(x))!; return l.indexOf("$") + l.slice(l.indexOf("$")).search(/\s/) }
+  expect(column(/Groceries/)).toBe(column(/Food/))
+  t.mockInput.pressKey("j")
+  await frame()
+  expect(ui.state.overviewCategoryCursor).toBe(1)
+  t.mockInput.pressKey(" ")
+  await frame()
+  expect(ui.state.overviewOpen).toEqual([])
   t.renderer.destroy()
 })
 
