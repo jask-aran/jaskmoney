@@ -1,7 +1,7 @@
 import { formatWholeMoney, signedWholeMoney } from "../../domain/dashboard"
 import { fade, ink, tone } from "../../theme"
 import { INKS } from "../charts/inks"
-import { cellsOf, hatched, labelled } from "../budgets/PlanGraphics"
+import { cellsOf, hatched, labelled, spansWidth } from "../budgets/PlanGraphics"
 import type { Span } from "../primitives/spans"
 
 /**
@@ -20,25 +20,57 @@ const runs = (parts: Array<{ cells: number; color: string }>): Span[] =>
 
 const money = (n: number, fg: string): Span => ({ text: formatWholeMoney(n), fg, bold: true })
 
+/** A part's label for `packLabels`: the part's columns, its options
+ * best first, and whether it may go unlabelled before others lose words. */
+interface PartLabel { from: number; cells: number; options: Span[][]; optional?: boolean }
+
+/** The cells between two labels. */
+const LABEL_GAP = 2
+
 /**
- * Each part's figure and name centred on it. Where they don't all fit, the
- * smallest parts lose their names first (their colours say whose), until
- * every figure has its place; failing that, what fits. Only the first
- * `top` parts are labelled.
+ * Labels for a bar's parts on a line `width` wide, each as near centred
+ * on its part as the others let it be: crowded, they slide apart (each
+ * still over some of its part) rather than one dropping. Where they still
+ * don't fit, in turn: optional parts' labels go (smallest first), then the
+ * smallest parts take their shorter options (a bare figure), then the
+ * smallest go.
  */
-function partLabels(width: number, parts: Array<{ amount: number; name: string; figure: string }>, cells: number[], top = parts.length): Span[] {
-  const shown = parts.map((p, i) => ({ ...p, cells: cells[i]!, from: cells.slice(0, i).reduce((n, c) => n + c, 0) })).filter((p, i) => i < top && p.cells > 0)
-  const place = (bare: Set<number>) => labelled(width, shown.map((p, i) => ({ mid: p.from + p.cells / 2, options: [[money(p.amount, p.figure), ...(bare.has(i) ? [] : [{ text: ` ${p.name}`, fg: ink.note }])]] })))
-  const placed = (spans: Span[]) => spans.filter((x) => x.bold).length
-  // A part narrower than its bare figure by more than a cell either side
-  // may go unlabelled; the rest must each have a figure.
-  const need = shown.filter((p) => formatWholeMoney(p.amount).length <= p.cells + 2).length
-  const smallest = shown.map((p, i) => ({ i, cells: p.cells })).sort((a, b) => a.cells - b.cells).map((x) => x.i)
-  for (let n = 0; n <= shown.length; n++) {
-    const spans = place(new Set(smallest.slice(0, n)))
-    if (placed(spans) >= need) return spans
+export function packLabels(width: number, parts: PartLabel[]): Span[] {
+  const items = parts.filter((p) => p.cells > 0 && p.options.length > 0)
+  const level = items.map(() => 0)
+  const bySize = items.map((_, k) => k).sort((x, y) => items[x]!.cells - items[y]!.cells)
+  // Where the shown labels go, or null where they can't all.
+  const fit = (): Array<{ at: number; spans: Span[] }> | null => {
+    const shown = items.map((p, k) => ({ p, spans: p.options[level[k]!] })).filter((x): x is { p: PartLabel; spans: Span[] } => x.spans != null)
+      .map((x) => ({ ...x, w: spansWidth(x.spans), mid: x.p.from + x.p.cells / 2 })).sort((x, y) => x.mid - y.mid)
+    const at = shown.map((x) => Math.round(x.mid - x.w / 2))
+    for (let i = 0; i < shown.length; i++) at[i] = Math.max(at[i]!, 0, i > 0 ? at[i - 1]! + shown[i - 1]!.w + LABEL_GAP : 0)
+    for (let i = shown.length - 1; i >= 0; i--) at[i] = Math.min(at[i]!, width - shown[i]!.w, i < shown.length - 1 ? at[i + 1]! - LABEL_GAP - shown[i]!.w : width)
+    const ok = shown.every((x, i) => at[i]! >= 0 && (i === 0 || at[i]! >= at[i - 1]! + shown[i - 1]!.w + LABEL_GAP) && at[i]! < x.p.from + x.p.cells && at[i]! + x.w > x.p.from)
+    return ok ? shown.map((x, i) => ({ at: at[i]!, spans: x.spans })) : null
   }
-  return place(new Set(smallest))
+  const dropped = (k: number) => level[k]! >= items[k]!.options.length
+  for (;;) {
+    const placed = fit()
+    if (placed) return placed.length ? labelled(width, placed.map((x) => ({ at: x.at, options: [x.spans] }))) : [{ text: " ", fg: ink.note }]
+    const step = bySize.find((k) => items[k]!.optional && !dropped(k))
+    if (step != null) { level[step] = items[step]!.options.length; continue }
+    const shorter = bySize.find((k) => level[k]! < items[k]!.options.length - 1)
+    if (shorter != null) { level[shorter]!++; continue }
+    const drop = bySize.find((k) => !dropped(k))
+    if (drop == null) return [{ text: " ", fg: ink.note }]
+    level[drop] = items[drop]!.options.length
+  }
+}
+
+/** Each part's figure and name over (or under) it, as `packLabels` places
+ * them. A part narrower than its bare figure may go unlabelled. */
+function partLabels(width: number, parts: Array<{ amount: number; name: string; figure: string }>, cells: number[]): Span[] {
+  return packLabels(width, parts.map((p, i) => ({
+    from: cells.slice(0, i).reduce((n, c) => n + c, 0), cells: cells[i]!,
+    options: [[money(p.amount, p.figure), { text: ` ${p.name}`, fg: ink.note }], [money(p.amount, p.figure)]],
+    optional: formatWholeMoney(p.amount).length > cells[i]!,
+  })))
 }
 
 /**
@@ -51,10 +83,10 @@ export function inBar(width: number, income: number, spent: number): { above: Sp
   const within = Math.min(spent, Math.max(0, income)), over = Math.max(0, spent - Math.max(0, income)), net = Math.max(0, income - spent)
   const [s, o, n] = cellsOf([within, over, net], width) as [number, number, number]
   const bar: Span[] = [...runs([{ cells: s, color: INKS.spend! }]), ...(o > 0 ? [hatched(o, tone.bad, tone.bad)] : []), ...runs([{ cells: n, color: tone.good }])]
-  const above = labelled(width, [
-    ...(spent > 0 ? [{ mid: (s + o) / 2, options: [[money(spent, ink.figure), { text: " spent", fg: ink.note }], [money(spent, ink.figure)]] }] : []),
-    ...(o > 0 ? [{ mid: s + o / 2, options: [[money(over, tone.bad), { text: " over", fg: tone.bad }], [money(over, tone.bad)]] }] : []),
-    ...(n > 0 ? [{ mid: s + o + n / 2, options: [[{ text: signedWholeMoney(net), fg: tone.good, bold: true }, { text: " net", fg: ink.note }], [{ text: signedWholeMoney(net), fg: tone.good, bold: true }]] }] : []),
+  const above = packLabels(width, [
+    ...(spent > 0 ? [{ from: 0, cells: s + o, options: [[money(spent, ink.figure), { text: " spent", fg: ink.note }], [money(spent, ink.figure)]] }] : []),
+    ...(o > 0 ? [{ from: s, cells: o, options: [[money(over, tone.bad), { text: " over", fg: tone.bad }], [money(over, tone.bad)]] }] : []),
+    ...(n > 0 ? [{ from: s + o, cells: n, options: [[{ text: signedWholeMoney(net), fg: tone.good, bold: true }, { text: " net", fg: ink.note }], [{ text: signedWholeMoney(net), fg: tone.good, bold: true }]] }] : []),
   ])
   return { above, bar: bar.length ? bar : [{ text: "┄".repeat(width), fg: ink.faint }], netFrom: s + o }
 }
@@ -78,19 +110,16 @@ export function netBar(width: number, net: number, savers: SaverPart[]): { bar: 
   return { bar: bar.length ? bar : [{ text: "┄".repeat(width), fg: ink.faint }], labels }
 }
 
-/** How many of the largest category groups the categories' bar names. */
-const TOP_GROUPS = 3
-
 /**
  * Where the spending went, as a bar `width` wide: each category group in
- * its colour, largest first. Under it the largest groups' figures and
- * names where they fit (the rest by their colours).
+ * its colour, largest first. Under it each group's figure and name where
+ * they fit, the smallest's words going first.
  */
 export function categoryBar(width: number, groups: Array<{ amount: number; color: string; name: string }>): { bar: Span[]; labels: Span[] } {
   const parts = groups.filter((g) => g.amount >= 0.5).sort((a, b) => b.amount - a.amount).map((g) => ({ amount: g.amount, color: g.color, name: g.name, figure: g.color }))
   const cells = cellsOf(parts.map((p) => p.amount), width)
   const bar = runs(parts.map((p, i) => ({ cells: cells[i]!, color: p.color })))
-  return { bar: bar.length ? bar : [{ text: "┄".repeat(width), fg: ink.faint }], labels: partLabels(width, parts, cells, TOP_GROUPS) }
+  return { bar: bar.length ? bar : [{ text: "┄".repeat(width), fg: ink.faint }], labels: partLabels(width, parts, cells) }
 }
 
 /** A source of spending past what came in, measured: transfers in from
@@ -129,9 +158,11 @@ export function sourcesBars(width: number, income: number, spent: number, source
   // third bar of the same total, the spent and net figures between them
   // inside the edges, the largest groups named under it.
   const inner = categories ? width - 4 : width
-  const below = labelled(inner, [
-    { mid: Math.max(0, (c > 0 ? c / 2 : width / 2) - (categories ? 2 : 0)), options: [[money(spent, ink.figure), { text: " spent", fg: ink.note }], [money(spent, ink.figure)]] },
-    ...(o > 0 && c > 0 ? [{ mid: c + o / 2 - (categories ? 2 : 0), options: [[{ text: signedWholeMoney(-gap), fg: tone.bad, bold: true }, { text: " net", fg: ink.note }], [{ text: signedWholeMoney(-gap), fg: tone.bad, bold: true }]] }] : []),
+  // Inside the edges, two cells in from each side.
+  const inset = categories ? 2 : 0
+  const below = packLabels(inner, [
+    { from: 0, cells: Math.max(1, (c > 0 ? c : width) - inset), options: [[money(spent, ink.figure), { text: " spent", fg: ink.note }], [money(spent, ink.figure)]] },
+    ...(o > 0 && c > 0 ? [{ from: Math.max(0, c - inset), cells: Math.max(1, Math.min(o, inner - c + inset)), options: [[{ text: signedWholeMoney(-gap), fg: tone.bad, bold: true }, { text: " net", fg: ink.note }], [{ text: signedWholeMoney(-gap), fg: tone.bad, bold: true }]] }] : []),
   ])
   const edges: Span[] = [{ text: "│", fg: ink.rule }, { text: " ".repeat(Math.max(0, width - 2)), fg: ink.note }, { text: "│", fg: ink.rule }]
   if (!categories) return [above, sourceBar, edges, spending, below]
