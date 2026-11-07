@@ -451,7 +451,7 @@ describe("key router", () => {
     expect(ui.activeScope()).toBe("settings.up")
   })
 
-  test("Budgets tab (3): c edits the cycle; h/l switch the chart; the target deletes on del del from All spending; v t goes to the budget pane", async () => {
+  test("Budgets tab (3): c edits the cycle; h/l switch the chart; the target deletes on del del from All spending", async () => {
     data.init(":memory:")
     ui.switchTab("overview")
     handleKey(ui, key("3"), data)
@@ -473,11 +473,7 @@ describe("key router", () => {
     handleKey(ui, key("delete"), data)
     expect(data.state.budgets).toEqual([])
     expect(footerHints("budgets.categories").some((h) => h.key === "c")).toBe(true)
-    // The budget pane: v then t; esc back to the Budgets pane.
-    handleKey(ui, key("v"), data); handleKey(ui, key("t"), data)
-    expect(ui.activeScope()).toBe("budgets.chart")
-    handleKey(ui, key("escape"), data)
-    expect(ui.activeScope()).toBe("budgets.categories")
+    // v t to the budget pane and esc back: budgetsTab.test.tsx.
     handleKey(ui, key("4"), data)
     expect(ui.state.activeTab).toBe("settings")
   })

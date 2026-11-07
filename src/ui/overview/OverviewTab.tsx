@@ -49,11 +49,12 @@ import { computeCategorySpend, groupCategorySpend } from "../../domain/dashboard
 /** At or above this width the cards take a right-hand column beside the
  * two charts; below it one chart spans the tab with the cards under it. */
 export const WIDE = 90
-/** The categories column's widest useful size: Up's longest names fit. */
+/** Budgets' side column's widest useful size: Up's longest names fit. */
 const SIDE_MAX = 48
-/** The side column's widest with the Range pane. */
+/** The Overview's side column's widest: the Range pane's Before column and
+ * the names both fit. */
 const RANGE_SIDE_MAX = 56
-/** The side stack's narrowest: Accounts' and Totals' labels still fit. */
+/** The side column's narrowest: Accounts' labels still fit. */
 const SIDE_MIN = 40
 /** A grid pane's narrowest: the chart column splits into a 2×2 grid of
  * chart panes once each would be at least this wide (a full-screen
@@ -74,9 +75,8 @@ const BEFORE = 8
  * The overview: the Date Range (opens on the current budget cycle), two chart
  * panes cycling through spending, cash flow, balance and calendar views (h/l
  * the top or focused pane, H/L the bottom), and a column of stacks: Accounts
- * (balances now, with no range), Totals (the range against the same days of
- * the previous period, with the overall budget when the range is the current
- * cycle) and Categories. Spending figures cover the selected spending account
+ * (balances now, with no range) and the Range pane (the range against the
+ * same days of the previous period, as bars or text, and its categories). Spending figures cover the selected spending account
  * (see spendingScope); internal transfers and not-spending categories are
  * excluded.
  */
@@ -145,7 +145,7 @@ export function OverviewTab(props: { focused: SectionId }) {
   // Built only while a pane shows it.
   // The tables, each built only while a pane shows it: the range's spending
   // a month (or week) a row by category group, and by merchant against
-  // Before (when the history covers it, as Totals compares).
+  // Before (when the history covers it, as the Range pane compares).
   const shows = (view: string) => shownViews().some((i) => CHART_VIEWS[i]?.view === view)
   const trends = createMemo(() => (shows("Trends") ? trendRows(inPeriod(), data.state.categories, bounds().start, bounds().end, today(), data.state.weekStart) : { groups: [], rows: [] }))
   const merchants = createMemo(() => (shows("Merchants") ? merchantRows(inPeriod(), covered() ? inScope(inPrevious()) : null) : []))
@@ -204,9 +204,9 @@ export function OverviewTab(props: { focused: SectionId }) {
 
   // Fixed rows: tab bar + gap (2), status + footer (2), Date Range (3).
   // Wide: two chart panes share the left column; the right column (SIDE_MIN
-  // to SIDE_MAX wide) stacks Accounts, Totals and Categories. Narrow: the
-  // top chart across the tab takes what the cards leave; under it Accounts
-  // and Totals stack beside Categories, the two columns one height.
+  // to RANGE_SIDE_MAX wide) stacks Accounts over the Range pane. Narrow:
+  // the top chart across the tab takes what the cards leave; under it
+  // Accounts beside the Range pane, the two columns one height.
   // When even the smallest chart doesn't fit, the column scrolls.
   const wide = () => dims().width >= WIDE
   // The Range pane as its bars (the default) or, after t, as text.
@@ -339,11 +339,11 @@ export function OverviewTab(props: { focused: SectionId }) {
     </box>
   )
 
-  // Totals: the range against the same days of the previous period.
+  // The range's daily average spending.
   const daily = (spent: number) => formatWholeMoney(windows().days ? spent / windows().days : 0)
 
-  // The Range pane (the default; t switches to Totals and Categories):
-  // Totals and Categories as one. The range as a track (its paydays, sends
+  // The Range pane: the range's totals and categories as one, as bars (t:
+  // as text). The ratios, the range as a track (its paydays, sends
   // to savers and today; what came in, what went to savers and what was
   // spent), what came in as a bar (spent, net) opened out to where the net
   // went (each saver, kept) or, with s, where the spending went (its
@@ -405,7 +405,7 @@ export function OverviewTab(props: { focused: SectionId }) {
       [],
     )
     // The track: what came in and what went to savers are the range's
-    // flows (as Totals counts them). What's spent is the bar's, under it.
+    // flows (as the text's totals count them). What's spent is the bar's, under it.
     lines.push(...cycleTrack(width, bounds().start, addDays(bounds().end, 1), today(), { ...pay, pay: f.income, sent: f.savedToSavers, spent: 0 }, tone.good, bounds().end))
     lines.push([])
     // Each saver's change over the range, in its colour (the Savers

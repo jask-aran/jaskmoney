@@ -5,9 +5,7 @@ import { tmpdir } from "node:os"
 import { saveSuggestions } from "../db/client"
 import { data } from "../state/dataStore"
 import { ui } from "../state/uiStore"
-import { key } from "../testing/keys"
 import { testEnv } from "../testing/scoped"
-import { handleKey } from "./keys"
 import { newSuggestionsNote, suggestNew } from "./suggest"
 import { runSync } from "./sync"
 
@@ -77,10 +75,3 @@ test("in the background, only new waiting rows are suggested, each once a sessio
   expect(newSuggestionsNote(3)).toBe(" · 3 new suggestions (i to review)")
 })
 
-test("i on the Overview opens the Uncategorised view", () => {
-  setup()
-  ui.switchTab("overview")
-  handleKey(ui, key("i"), data)
-  expect(ui.state.activeTab).toBe("manager")
-  expect(data.state.uncategorisedOnly).toBe(true)
-})

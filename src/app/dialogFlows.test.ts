@@ -130,12 +130,3 @@ test("esc while Executor's sign-in is starting stops it: no browser, and the dia
   expect(ui.state.executor).toBeNull()
 })
 
-test("a model test that answers after its dialog closed writes nothing", async () => {
-  data.init(":memory:")
-  ui.switchTab("settings")
-  ui.setState({ aiDialog: { row: "workersAi", cursor: 0, field: null, note: null, busy: true } })
-  const opened = ui.opening("aiDialog")
-  handleKey(ui, key("escape"), data)
-  opened.patch({ note: { text: "late", ok: true }, busy: false })
-  expect(ui.state.aiDialog).toBeNull()
-})

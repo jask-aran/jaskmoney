@@ -9,7 +9,7 @@ import { SETTINGS_SECTIONS, settingsSectionFocus, ui } from "../state/uiStore"
 import { renderApp } from "../testing/app"
 import { key } from "../testing/keys"
 import { theme } from "../theme"
-import { CHART_LABEL_MODES, CHART_SPEEDS, DEFAULT_CHART_SPEED } from "../ui/charts/motion"
+import { CHART_LABEL_MODES } from "../ui/charts/motion"
 import { BACKDROPS, DEFAULT_BACKDROP } from "../ui/welcome/backdrop"
 import { handleKey, paletteList } from "./keys"
 
@@ -32,13 +32,7 @@ test("Appearance enter steps every row's value and persists it", () => {
   expect(loadSettingsConfig(path).ui?.xAxis).toBe(true)
   enter("xAxis")
   expect(data.state.uiPrefs.xAxis).toBe(false)
-  enter("chartMotion")
-  expect(data.state.uiPrefs.chartMotion).toBe("always")
-  const current = CHART_SPEEDS.findIndex((speed) => speed.id === DEFAULT_CHART_SPEED)
-  for (let step = 1; step <= CHART_SPEEDS.length; step++) {
-    enter("chartSpeed")
-    expect(data.state.uiPrefs.chartSpeed).toBe(CHART_SPEEDS[(current + step) % CHART_SPEEDS.length]!.id)
-  }
+  // Chart motion and speed: uiPrefs.test.tsx steps them through all.
   for (const mode of ["sequential", "together"] as const) {
     enter("chartLabels")
     expect(data.state.uiPrefs.chartLabels).toBe(mode)

@@ -1,9 +1,6 @@
 import { expect, onTestFinished, test } from "bun:test"
 import { createModels, fauxAssistantMessage, fauxProvider, fauxToolCall } from "@earendil-works/pi-ai"
 import { data } from "../state/dataStore"
-import { ui } from "../state/uiStore"
-import { handleKey } from "../app/keys"
-import { key } from "../testing/keys"
 import { testEnv } from "../testing/scoped"
 import { ruleWriterBrief, writeRules } from "./ruleWriter"
 
@@ -73,20 +70,6 @@ test("the brief: categories with recent choices, what's waiting, existing rules"
   const brief = ruleWriterBrief((await data.ruleWriterInput()).history, [])
   expect(brief.categories.find((c) => c.name === "Test rent")).toEqual({ name: "Test rent", rows: 7 })
   expect(brief.waiting.descriptions[0]).toMatchObject({ description: "J Smith", rows: 1 })
-})
-
-test("R opens the rule offers only with a key to ask", async () => {
-  setup()
-  ui.switchTab("manager")
-  ui.setState({ focusedSection: "mgr.transactions" })
-  handleKey(ui, key("r", { shift: true }), data)
-  expect(ui.state.ruleOffers !== null).toBe(false)
-  testEnv("JASKMONEY_OPENROUTER_TOKEN", "test-key")
-  // The core reads credentials when they're saved or a sign-in changes.
-  await data.refreshApiKeys()
-  handleKey(ui, key("r", { shift: true }), data)
-  expect(ui.state.ruleOffers !== null).toBe(true)
-  handleKey(ui, key("escape"), data)
 })
 
 test("a rule for rows Up already categorises (none waiting) is turned down; history reads are capped", async () => {

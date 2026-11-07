@@ -93,7 +93,7 @@ test("enter on a tab in the top bar switches to it", async () => {
   expect(ui.state.activeTab).toBe("manager")
 })
 
-test("a click is the same machine: a tab switches, a pane takes focus, the web app opens", async () => {
+test("a click is the same machine: a tab switches, the web app opens (a pane taking focus: pointerTravel)", async () => {
   const opened: string[] = []
   const open = web.open
   web.open = (url) => { opened.push(url) }
@@ -106,11 +106,6 @@ test("a click is the same machine: a tab switches, a pane takes focus, the web a
     await t.renderOnce()
     expect(opened).toEqual(["http://127.0.0.1:4417/"])
 
-    const categories = find(t, "Categories")
-    await t.mockMouse.click(categories.x + 2, categories.y + 2)
-    await t.renderOnce()
-    expect(ui.state.focusedSection).toBe("ov.categories")
-
     const tab = find(t, "Transactions")
     await t.mockMouse.click(tab.x + 2, tab.y)
     await t.renderOnce()
@@ -121,7 +116,7 @@ test("a click is the same machine: a tab switches, a pane takes focus, the web a
   }
 })
 
-test("Transactions: a click puts the cursor on the row; a click on the cursor row opens it; the wheel moves the cursor", async () => {
+test("Transactions: a click puts the cursor on the row; a click on the cursor row opens it (the wheel: pointerTravel)", async () => {
   ui.switchTab("manager")
   const t = await renderApp({ width: 160, height: 48 })
   await t.renderOnce()
@@ -140,13 +135,6 @@ test("Transactions: a click puts the cursor on the row; a click on the cursor ro
   await t.mockMouse.click(40, y)
   await t.renderOnce()
   expect(ui.state.detail?.id).toBe(third.id)
-  // Close the detail through the store: a lone esc waits out OpenTUI's
-  // escape-sequence delay.
-  ui.setState({ detail: null })
-  await t.renderOnce()
-  await t.mockMouse.scroll(40, y, "down")
-  await t.renderOnce()
-  expect(ui.state.managerCursor).toBeGreaterThan(3)
   await data.leaveDemo()
 })
 

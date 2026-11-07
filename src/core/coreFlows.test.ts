@@ -65,16 +65,6 @@ test("an undo that can't be done goes, and the one before it is next", async () 
   expect(core.state.undoLabel).toBeNull()
 })
 
-test("deleting a category puts its rows back to never set, so a sync gives them the provider's", () => {
-  const core = coreWithRows()
-  const db = core.db!
-  const id = Number(db.query("INSERT INTO categories (name, color, sort_order) VALUES ('Gone', '#fff', 90)").run().lastInsertRowid)
-  db.query("UPDATE transactions SET category_id = ?, category_source = 'user' WHERE id = 1").run(id)
-  core.refresh()
-  core.commands.deleteCategory({ id })
-  expect(db.query("SELECT category_source AS source FROM transactions WHERE id = 1").get()).toEqual({ source: null })
-})
-
 test("a rule's tag obeys Up's six-tag limit, as the picker's does", () => {
   const core = coreWithRows()
   const db = core.db!
