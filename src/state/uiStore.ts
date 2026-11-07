@@ -373,9 +373,8 @@ export const CYCLE_VIEWS: readonly number[] = CHART_VIEWS.flatMap((v, i) => (v.g
 /** The Budgets tab's chart panes: the budget's, then the cycle's two. */
 export const BUDGET_PANES: readonly SectionId[] = ["bud.chart", "bud.cycle", "bud.cycle2"]
 
-/** The first cycle pane's view that is the budgets list (Categories): the
- * tab's home, its rows where budgets are set and whose cursor the budget
- * chart follows. Without a cycle pane (narrow, short) the list is in the
+/** The first cycle pane's view that is the budgets list (Categories): its
+ * rows where budgets are set and whose cursor the budget chart follows. Without a cycle pane (narrow, short) the list is in the
  * Budgets pane, under the plan. */
 export const CATEGORIES = -1
 /** A cycle pane's views in h/l order: the first's the list, then the charts. */
@@ -390,10 +389,10 @@ export function cycleView(index: number): { view: string; title: string; group: 
 export function budgetListInPane(state: Pick<UiState, "budgetCyclePanes" | "budgetCycleViews">): boolean {
   return state.budgetCyclePanes > 0 && state.budgetCycleViews[0] === CATEGORIES
 }
-/** The Budgets tab's home focus: the list wherever it is, else (a chart
- * in its pane) the Budgets pane. */
-export function budgetsHome(state: Pick<UiState, "budgetCyclePanes" | "budgetCycleViews">): SectionId {
-  return state.budgetCyclePanes === 0 || budgetListInPane(state) ? "bud.categories" : "bud.plan"
+/** The Budgets tab's home focus: the Budgets pane (the list's, without a
+ * cycle pane). */
+export function budgetsHome(state: Pick<UiState, "budgetCyclePanes">): SectionId {
+  return state.budgetCyclePanes === 0 ? "bud.categories" : "bud.plan"
 }
 
 /** The tab's jump targets that are on screen: only the chart panes the
@@ -653,9 +652,8 @@ function createUiStore() {
       ...ALL_CLOSED,
       activeTab: tab,
       drillReturn: null,
-      focusedSection: tab === "budgets" ? (state.budgetsEmpty ? "bud.categories" : budgetsHome(state)) : TAB_DEFAULT_FOCUS[tab],
-      // Nothing budgeted yet: the list, its first row, to start there.
-      ...(tab === "budgets" && state.budgetsEmpty ? { budgetCategoryCursor: 0, budgetCycleViews: [CATEGORIES, state.budgetCycleViews[1]] as [number, number] } : {}),
+      focusedSection: tab === "budgets" ? budgetsHome(state) : TAB_DEFAULT_FOCUS[tab],
+      ...(tab === "budgets" && state.budgetsEmpty ? { budgetCategoryCursor: 0 } : {}),
       range: null,
       settingsActive: false,
       armed: null,

@@ -463,7 +463,8 @@ describe("key router", () => {
     ui.switchTab("overview")
     handleKey(ui, key("3"), data)
     expect(ui.state.activeTab).toBe("budgets")
-    expect(ui.activeScope()).toBe("budgets.categories")
+    // It opens on the Budgets pane.
+    expect(ui.activeScope()).toBe("budgets.plan")
     handleKey(ui, key("c"), data)
     expect(ui.state.settingsEditor?.kind).toBe("cycle")
     ui.setState({ settingsEditor: null })
@@ -476,8 +477,8 @@ describe("key router", () => {
     expect(ui.state.budgetChart).toBe(0)
     handleKey(ui, key("escape"), data)
     await data.setBudget({ kind: "overall" }, 500)
-    // All spending, the Budgets pane's first row, is the target.
-    ui.setState({ budgetCategoryCursor: 0 })
+    // All spending, the list's first row, is the target.
+    ui.setState({ focusedSection: "bud.categories", budgetCategoryCursor: 0 })
     handleKey(ui, key("delete"), data)
     expect(ui.state.armed?.kind).toBe("budget")
     handleKey(ui, key("delete"), data)

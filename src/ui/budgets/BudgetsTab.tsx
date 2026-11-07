@@ -196,8 +196,8 @@ export function BudgetsTab(props: { focused: SectionId }) {
     const n = cyclePanes()
     if (ui.state.budgetCyclePanes !== n) ui.setState({ budgetCyclePanes: n })
     const pane = BUDGET_PANES.indexOf(props.focused)
-    const home = listInSide() || listInPane() ? "bud.categories" : "bud.plan"
-    if (pane > n || (props.focused === "bud.categories" && home !== "bud.categories") || (props.focused === "bud.plan" && listInSide())) ui.setState({ focusedSection: home })
+    const home = listInSide() ? "bud.categories" : "bud.plan"
+    if (pane > n || (props.focused === "bud.categories" && !listInSide() && !listInPane()) || (props.focused === "bud.plan" && listInSide())) ui.setState({ focusedSection: home })
     else if (props.focused === "bud.cycle" && listInPane()) ui.setState({ focusedSection: "bud.categories" })
   })
   const rowWidth = (width: number) => width - 5
@@ -263,19 +263,20 @@ export function BudgetsTab(props: { focused: SectionId }) {
   // The list's rows: the Budgets pane's width, or in the cycle pane its
   // (the figures kept near the names: at most LIST_MAX wide).
   const listWidth = () => (listInSide() ? rowWidth(categoriesWidth()) : Math.min(LIST_MAX, rowWidth(cyclePaneWidth(0))))
-  const withAverage = () => listWidth() - NUM * 3 >= 14
-  const nameWidth = () => listWidth() - NUM * (withAverage() ? 3 : 2)
-  const lineSpans = (row: Extract<SetupRow, { kind: "line" }>): Span[] => {
+  const withAverage = (w = listWidth()) => w - NUM * 3 >= 14
+  const nameWidth = (w = listWidth()) => w - NUM * (withAverage(w) ? 3 : 2)
+  // `brief`: the Budgets pane's quick reference, no chevrons.
+  const lineSpans = (row: Extract<SetupRow, { kind: "line" }>, w = listWidth(), brief = false): Span[] => {
     const line = row.line
     const out = line.categoryId !== null && ignored().has(line.categoryId)
     const name = line.child ? ink.label : ink.figure
-    const chevron = row.open === null ? "  " : row.open ? "▾ " : "▸ "
+    const chevron = row.open === null || brief ? "  " : row.open ? "▾ " : "▸ "
     return [
       { text: line.child ? "    " : chevron, fg: ink.note },
       { text: `${line.categoryId === null ? "?" : categoryMark(line.categoryId)} `, fg: out ? ink.faint : line.color ?? ink.note },
-      { text: fit(line.name, nameWidth() - (line.child ? 6 : 4)), fg: out ? ink.note : name, bold: !line.child },
+      { text: fit(line.name, nameWidth(w) - (line.child ? 6 : 4)), fg: out ? ink.note : name, bold: !line.child },
       { text: formatWholeMoney(line.now).padStart(NUM), fg: out ? ink.note : line.budget && line.now > line.budget.amount ? tone.bad : name },
-      ...(withAverage() ? [{ text: formatWholeMoney(line.average).padStart(NUM), fg: ink.note }] : []),
+      ...(withAverage(w) ? [{ text: formatWholeMoney(line.average).padStart(NUM), fg: ink.note }] : []),
       line.budget ? { text: formatWholeMoney(line.budget.amount).padStart(NUM), fg: ink.figure }
         : out ? { text: "left out".padStart(NUM), fg: ink.faint }
         : row.open === false && row.budgeted ? { text: `${row.budgeted} set`.padStart(NUM), fg: ink.note }
@@ -285,17 +286,17 @@ export function BudgetsTab(props: { focused: SectionId }) {
   const overallBudget = () => budgets().find((b) => b.scope.kind === "overall") ?? null
   // All spending: the table's total, against the overall spending target
   // (or with none, the category budgets added up); an account's budget.
-  const figureRow = (name: string, nameFg: string, spentNow: number, average: number | null, budget: number | null): Span[] => [
+  const figureRow = (name: string, nameFg: string, spentNow: number, average: number | null, budget: number | null, w = listWidth()): Span[] => [
     { text: "  ", fg: ink.note },
-    { text: fit(name, nameWidth() - 2), fg: nameFg, bold: true },
+    { text: fit(name, nameWidth(w) - 2), fg: nameFg, bold: true },
     { text: formatWholeMoney(spentNow).padStart(NUM), fg: budget != null && spentNow > budget ? tone.bad : nameFg },
-    ...(withAverage() ? [{ text: (average == null ? "" : formatWholeMoney(average)).padStart(NUM), fg: ink.note }] : []),
+    ...(withAverage(w) ? [{ text: (average == null ? "" : formatWholeMoney(average)).padStart(NUM), fg: ink.note }] : []),
     { text: (budget == null ? "" : formatWholeMoney(budget)).padStart(NUM), fg: ink.figure },
   ]
-  const rowSpans = (row: SetupRow): Span[] => {
-    if (row.kind === "line") return lineSpans(row)
-    if (row.kind === "account") return figureRow(label(row.budget), ink.figure, progress().get(row.budget.id)?.spent ?? 0, null, row.budget.amount)
-    return figureRow(ALL, ink.strong, totalProgress().spent, overallAverage(lines(), ignored()), split().total || null)
+  const rowSpans = (row: SetupRow, w = listWidth(), brief = false): Span[] => {
+    if (row.kind === "line") return lineSpans(row, w, brief)
+    if (row.kind === "account") return figureRow(label(row.budget), ink.figure, progress().get(row.budget.id)?.spent ?? 0, null, row.budget.amount, w)
+    return figureRow(ALL, ink.strong, totalProgress().spent, overallAverage(lines(), ignored()), split().total || null, w)
   }
   const rowBudget = (row: SetupRow) => (row.kind === "line" ? row.line.budget : row.kind === "account" ? row.budget : overallBudget())
   // The pane's top, on the table's grid: headings and rows from the left,
@@ -425,7 +426,7 @@ export function BudgetsTab(props: { focused: SectionId }) {
   // compact: two lines a weekday (15 rows) where the pane has room for it
   // and a few table rows, else one (8), else none.
   const calendarRows = () => {
-    const room = categoriesHeight() - 4 - topLines().length - nextPayBlock() - flowBlock() - (listInSide() ? 2 + Math.min(setup().length, BUDGETS_ROWS_MIN) : 0)
+    const room = categoriesHeight() - 4 - topLines().length - nextPayBlock() - flowBlock() - 2 - Math.min((listInSide() ? setup() : briefRows()).length, BUDGETS_ROWS_MIN)
     return room >= CALENDAR_TALL ? CALENDAR_TALL : room >= CALENDAR_MIN ? CALENDAR_MIN : 0
   }
   // The days, its legend and a blank line.
@@ -433,6 +434,11 @@ export function BudgetsTab(props: { focused: SectionId }) {
   // In the cycle pane: its height less the borders and the column heads.
   const categoryRoom = () => Math.max(1, listInSide() ? categoriesHeight() - 4 - topLines().length - calendarBlock() - nextPayBlock() - flowBlock() : cyclePaneHeight(0) - 3)
   const categoryLines = setup
+  // With the list in the cycle pane, the Budgets pane ends on a quick
+  // reference to it: All spending and the groups, closed, no chevrons, as
+  // many as fit.
+  const briefRows = createMemo(() => budgetSetupRows(lines(), new Set(), budgets()))
+  const briefRoom = () => Math.max(0, categoriesHeight() - 4 - topLines().length - calendarBlock() - nextPayBlock() - flowBlock() - 1)
   const categoryTop = createMemo(() => centredTop(categoryCursor(), categoryLines().length, categoryRoom()))
   // Nothing budgeted yet: the pane says to start here.
   const nothingSet = () => view().current && budgets().length === 0 && !data.state.uiPrefs.expectedPay
@@ -520,7 +526,16 @@ export function BudgetsTab(props: { focused: SectionId }) {
         <text wrapMode="none" flexShrink={0}><S>{" "}</S><Index each={planReveal() >= 1 ? spans() : sweptTo(spans(), Math.round(Math.min(1, planReveal() / 0.7) * rowWidth(categoriesWidth())))}>{(span) => <S fg={span().fg} bold={span().bold}>{span().text}</S>}</Index></text>
       )}</Index>
       <Show when={flowLines().length}><text wrapMode="none" flexShrink={0}>{" "}</text></Show>
-      <Show when={listInSide()}><CategoryList heading="Categories" /></Show>
+      <Show when={listInSide()} fallback={
+        <Show when={briefRows().length && briefRoom() > 1}>
+          <text wrapMode="none">
+            <S fg={ink.note}>{" "}</S>
+            <S fg={ink.heading} bold>{fit("Categories", nameWidth(rowWidth(categoriesWidth())))}</S>
+            <S fg={ink.label}>{"Spent".padStart(NUM)}{withAverage(rowWidth(categoriesWidth())) ? "Average".padStart(NUM) : ""}{"Budget".padStart(NUM)}</S>
+          </text>
+          <Index each={briefRows().slice(0, briefRoom())}>{(row) => <ListRow cursor={false} bg={theme.canvas} spans={rowSpans(row(), rowWidth(categoriesWidth()), true)} />}</Index>
+        </Show>
+      }><CategoryList heading="Categories" /></Show>
     </SectionCard>
   )
 

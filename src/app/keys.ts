@@ -1988,6 +1988,8 @@ function handleBudgetCategories(ui: UiStore, key: KeyEvent, data?: DataStore): v
   // h/l: in the cycle pane, its views (the list's the first); in the
   // Budgets pane, the budget chart's.
   if (budgetKeys(ui, key, data, budgetListInPane(ui.state) ? 1 : 0) || budgetPlanKeys(ui, key, data)) return
+  // In the cycle pane, esc home (the Budgets pane), as from a chart.
+  if (name === "escape" && budgetListInPane(ui.state)) { ui.setState({ focusedSection: budgetsHome(ui.state) }); return }
   const view = viewedBudgets(ui, data)
   const rows = setupRows(ui, data)
   const cursor = Math.min(ui.state.budgetCategoryCursor, Math.max(0, rows.length - 1))
@@ -2743,7 +2745,7 @@ const scopes: Record<ScopeId, ScopeEntry> = {
     // In the cycle pane, the list is its Categories view; else it's the
     // Budgets pane's, under the plan.
     pane: (state) => (state?.budgetListInPane ? "Categories" : "Budgets"),
-    hints: (state) => [{ key: "j/k", desc: "move" }, { key: "enter", desc: "set budget" }, { key: "space", desc: "open" }, { key: "x", desc: "leave out" }, { key: "del del", desc: "remove budget" }, { key: "a", desc: "add" }, ...(state?.budgetListInPane ? [{ key: "h/l", desc: "view" }] : []), ...tabWide([...budgetPlanHints(state), { key: "[ ]", desc: "cycles" }, { key: "c", desc: "cycle" }, ...(state?.budgetListInPane ? [] : [{ key: "h/l", desc: "chart" }, ...cycleChartHint(state)]), { key: "v", desc: "jump" }, { key: "1-4", desc: "tab" }])],
+    hints: (state) => [{ key: "j/k", desc: "move" }, { key: "enter", desc: "set budget" }, { key: "space", desc: "open" }, { key: "x", desc: "leave out" }, { key: "del del", desc: "remove budget" }, { key: "a", desc: "add" }, ...(state?.budgetListInPane ? [{ key: "h/l", desc: "view" }] : []), ...tabWide([...budgetPlanHints(state), { key: "[ ]", desc: "cycles" }, { key: "c", desc: "cycle" }, ...(state?.budgetListInPane ? [{ key: "esc", desc: "budgets" }] : [{ key: "h/l", desc: "chart" }, ...cycleChartHint(state)]), { key: "v", desc: "jump" }, { key: "1-4", desc: "tab" }])],
   },
   "budgets.plan": {
     handle: handleBudgetPlan,
