@@ -18,7 +18,7 @@ import { data } from "../../state/dataStore"
 import { fade, ink, theme, tone } from "../../theme"
 import { dailySpendSeries, fitCategoryLines, formatMoney, formatPct, formatWholeMoney, signedWholeMoney } from "../../domain/dashboard"
 import { computePeriodFlows, computePosition, historyCovers, projectAvailable, usualDailySpend } from "../../domain/position"
-import { allocation, budgetProgress, cycleFor, cycleSpending, progressOf, type BudgetProgress } from "../../domain/budget"
+import { allocation, budgetProgress, cycleFor, cycleSpending, progressOf } from "../../domain/budget"
 import { spendingCalendar, type CalendarDay } from "../../domain/spending"
 import { accountRole, type Account, type Transaction } from "../../domain/types"
 import { addDays, appNow, appToday, type WeekStart } from "../../domain/days"
@@ -30,7 +30,7 @@ import { fit } from "../text"
 import { subscriptions, upcomingCharges } from "../../domain/subscriptions"
 import { merchantRows, trendRows, type MerchantRow, type TrendGroup, type TrendRow } from "../../domain/periodTables"
 import { MerchantsView, TrendsView, merchantsLegend, trendsLegend } from "./TableViews"
-import { openGroups, overviewCategoryLines, overviewRange } from "../../state/overviewRange"
+import { overviewCategoryLines, overviewRange } from "../../state/overviewRange"
 import { AXIS_GUESS, CHART_RIGHT_PAD, axisWidth, type ChartModel } from "../charts/ChartBody"
 import { ChartCard } from "../charts/ChartCard"
 import { chartSpeedMs, showings, takeLaunchReveal, useReveal, type ChartLabelMode } from "../charts/motion"
@@ -61,11 +61,12 @@ const SIDE_MIN = 40
 export const GRID_PANE_MIN = 64
 /** Narrow: the chart's fewest rows before the column scrolls. */
 const NARROW_CHART_MIN = 10
-/** Stack columns: value and note widths; the label takes the rest. */
+/** The Range pane's ratios' value column. */
 const VALUE = 11
-const NOTE = 12
 /** Savers fold to their subtotal before Categories drop under this many rows. */
 const MIN_CATEGORIES = 8
+/** Narrow: the Range pane's fewest category rows under its top. */
+const NARROW_CATEGORIES = 5
 /** The Range pane's Before column: a category's change on before. */
 const BEFORE = 8
 
@@ -208,14 +209,13 @@ export function OverviewTab(props: { focused: SectionId }) {
   // and Totals stack beside Categories, the two columns one height.
   // When even the smallest chart doesn't fit, the column scrolls.
   const wide = () => dims().width >= WIDE
-  // The side column as the Range pane (the default) or, after t, the
-  // Totals and Categories cards.
-  const rangePane = () => !data.state.uiPrefs.totalsCards
+  // The Range pane as its bars (the default) or, after t, as text.
+  const textual = () => data.state.uiPrefs.rangeText === true
   // The Range pane shows where the spending went (s), or where the net went.
   const spendingView = () => data.state.uiPrefs.rangeView === "spending"
   const bodyHeight = () => Math.max(8, dims().height - 7)
   // The Range pane's column is wider: its Before column and the names both fit.
-  const sideWidth = () => (wide() ? (rangePane() ? sideColumnWidth(dims().width, RANGE_SIDE_MAX, 0.45) : sideColumnWidth(dims().width)) : Math.floor((dims().width - 1) / 2))
+  const sideWidth = () => (wide() ? sideColumnWidth(dims().width, RANGE_SIDE_MAX, 0.45) : Math.floor((dims().width - 1) / 2))
   const mainWidth = () => (wide() ? dims().width - 1 - sideWidth() : dims().width)
   // Wide and wide enough: the charts in a 2×2 grid, two columns of panes.
   const grid = () => wide() && mainWidth() >= 2 * GRID_PANE_MIN + 1
@@ -231,23 +231,20 @@ export function OverviewTab(props: { focused: SectionId }) {
   })
 
 
-  // The stacks: label, value (VALUE) and a note or comparison (NOTE).
-  // Accounts: available, the balance with what's pending, runway and the
-  // 30 day change; then, with savers, a heading, each saver and their
+  // Accounts: available, the balance with what's pending and the 30 day
+  // change; then, with savers, a heading, each saver and their
   // subtotal (folded: the subtotal alone), and the net position.
   const hasSavers = () => position().savers.length > 0
   // With savers: a blank line, the heading, each saver and their total
   // (folded: one line), a blank line and the net position. Without: the
   // 30 day change.
   const saverRows = (full: boolean) => (!hasSavers() ? 1 : (full ? 2 + position().savers.length : 1) + 3)
-  // Runway is the Range pane's, with it.
-  const accountRows = (full: boolean) => (rangePane() ? 1 : 2) + (position().pendingCount > 0 ? 1 : 0) + saverRows(full)
-  // Column headings sit in the top border, so no row of their own.
-  const totalsRows = () => 7 + (budget() ? (budget()!.remaining > 0 ? 2 : 1) : 0)
-  // Narrow: the stack beside Categories, and so the height of both (the
-  // Range pane's too: Accounts alone beside it). Wide, the Range pane
-  // takes Totals' place and Categories'.
-  const lowerHeight = (full: boolean) => accountRows(full) + 2 + (wide() && rangePane() ? 0 : totalsRows() + 2)
+  // Runway is the Range pane's.
+  const accountRows = (full: boolean) => 1 + (position().pendingCount > 0 ? 1 : 0) + saverRows(full)
+  // Narrow: Accounts beside the Range pane, the two one height: the Range
+  // pane's top and a few categories, or Accounts where that's taller.
+  // Wide, Accounts over the Range pane.
+  const lowerHeight = (full: boolean) => (wide() ? accountRows(full) + 2 : Math.max(accountRows(full) + 2, rangeTop() + 2 + NARROW_CATEGORIES))
   // Savers fold to their total when Categories (wide) or the chart (narrow)
   // would get too small.
   const saversFull = () =>
@@ -261,7 +258,6 @@ export function OverviewTab(props: { focused: SectionId }) {
   const topChartHeight = () => (wide() ? Math.floor((bodyHeight() - 1) / 2) : Math.max(NARROW_CHART_MIN, bodyHeight() - lowerHeight(saversFull())))
   const bottomChartHeight = () => topChartHeight()
   const stackWidth = () => sideWidth() - 4
-  const labelWidth = () => Math.max(6, stackWidth() - VALUE - NOTE)
 
   // Chart panes: border + padding (4) across; border (2), the x-axis line
   // (Settings › Database b, default off) and the x labels down. The view
@@ -290,12 +286,10 @@ export function OverviewTab(props: { focused: SectionId }) {
     const view = createMemo(() => ui.state.chartViews[slot]!)
     return createMemo(() => (slot < charts() ? model(slot, view(), slot % 2 ? bottomChartHeight() : topChartHeight()) : null))
   }
-  const models = [0, 1, 2, 3].map(paneModel)
-  const topModel = models[0]!
 
   // Category lines: name, then amount (9) and share (5).
   const categoryWidth = () => (wide() ? sideWidth() : dims().width - 1 - sideWidth())
-  const categoryNameWidth = () => Math.max(8, categoryWidth() - 5 - 14 - (rangePane() ? BEFORE : 0))
+  const categoryNameWidth = () => Math.max(8, categoryWidth() - 5 - 14 - BEFORE)
 
   // The dates on the right, between the [ ] that step them, and how far
   // the range is from the current period (with 0 to come back).
@@ -327,22 +321,6 @@ export function OverviewTab(props: { focused: SectionId }) {
     })}>{chip(label, idx, active)}</text>
   )
 
-  // A note too long for its column (a space before it) takes room from the
-  // label's padding.
-  const stat = (label: string, value: string, note = "", colors: { label?: string; value?: string; note?: string; bold?: boolean } = {}) => {
-    const spill = Math.max(0, Math.min(note.length + 1 - NOTE, labelWidth() - label.length - 1))
-    return (
-      <text wrapMode="none">
-        <S fg={colors.label ?? ink.label} bold={colors.bold}>{fit(label, labelWidth() - spill)}</S>
-        <S fg={colors.value ?? ink.figure} bold={colors.bold}>{value.padStart(VALUE)}</S>
-        <S fg={colors.note ?? ink.note}>{note.padStart(NOTE + spill)}</S>
-      </text>
-    )
-  }
-  // Value and note column headings for a stack's top border, right-aligned
-  // over their columns.
-  const headings = (value: string, note: string): Span[] => [{ text: `${value}${" ".repeat(Math.max(1, NOTE - note.length))}${note}`, fg: ink.label }]
-
   // Available is what Up shows: the balance less what's pending. The
   // balance's note is the pending money and how many rows it is.
   const available = () => position().spendingBalance
@@ -350,7 +328,7 @@ export function OverviewTab(props: { focused: SectionId }) {
   const saversTotalChange = () => saverChanges().reduce((sum, c) => sum + c.change, 0)
   const panePointer = (id: SectionId) => onPointer((s) => s === "bar" || s === "overview" || s === "overview.range", () => ui.applyJump(id))
   // Narrow beside the Range pane, Accounts is its height: the two end on one row.
-  const accountsHeight = () => (!wide() && rangePane() ? categoriesHeight() : accountRows(saversFull()) + 2)
+  const accountsHeight = () => (!wide() ? categoriesHeight() : accountRows(saversFull()) + 2)
   const accountsCard = () => (
     <box ref={regionRef("ov.accounts", "overview")} width={sideWidth()} height={accountsHeight()} flexShrink={0} onMouseDown={panePointer("ov.accounts")}>
     <SectionCard title="Accounts" focused={props.focused === "ov.accounts"} active={props.focused === "ov.accounts"} width={sideWidth()} height={accountsHeight()}>
@@ -363,27 +341,6 @@ export function OverviewTab(props: { focused: SectionId }) {
 
   // Totals: the range against the same days of the previous period.
   const daily = (spent: number) => formatWholeMoney(windows().days ? spent / windows().days : 0)
-  const totalsCard = () => (
-    <SectionCard title="Totals" titleRight={headings("Range", "Before")} titleRightFlush width={sideWidth()} height={totalsRows() + 2}>
-      {stat("Spent", formatWholeMoney(flows().spent), before(formatWholeMoney(previousFlows().spent)), { value: covered() && previousFlows().spent > 0 ? spendChangeColor(flows().spent - previousFlows().spent) : ink.figure })}
-      {stat("Income", formatWholeMoney(flows().income), before(formatWholeMoney(previousFlows().income)))}
-      {stat("Net", signedWholeMoney(flows().net), before(signedWholeMoney(previousFlows().net)), { value: changeColor(flows().net) })}
-      {stat("To savers", signedWholeMoney(flows().savedToSavers), before(signedWholeMoney(previousFlows().savedToSavers)), { value: changeColor(flows().savedToSavers) })}
-      {stat("Savings rate", formatPct(flows().savingsRate), before(formatPct(previousFlows().savingsRate)))}
-      {stat("Daily", daily(flows().spent), before(daily(previousFlows().spent)))}
-      {stat("Transactions", String(flows().txnCount), before(String(previousFlows().txnCount)))}
-      <Show when={budget()}>
-        {(p: () => BudgetProgress) => (
-          <>
-            {stat("Budget", formatWholeMoney(p().budget.amount), `${Number.isFinite(p().usedPct) ? Math.round(p().usedPct) : "—"}% used`, {
-              note: p().usedPct > 100 ? tone.bad : p().usedPct >= 80 ? tone.caution : tone.good,
-            })}
-            <Show when={p().remaining > 0}>{stat("  left", formatWholeMoney(p().remaining), `${formatWholeMoney(p().dailyAllowance)}/day`)}</Show>
-          </>
-        )}
-      </Show>
-    </SectionCard>
-  )
 
   // The Range pane (the default; t switches to Totals and Categories):
   // Totals and Categories as one. The range as a track (its paydays, sends
@@ -391,13 +348,46 @@ export function OverviewTab(props: { focused: SectionId }) {
   // spent), what came in as a bar (spent, net) opened out to where the net
   // went (each saver, kept) or, with s, where the spending went (its
   // category groups), then the categories with a Before column.
-  const rangePay = createMemo(() => (rangePane() ? cyclePay(data.state.accounts, transactions(), bounds().start, bounds().end) : null))
+  const rangePay = createMemo(() => cyclePay(data.state.accounts, transactions(), bounds().start, bounds().end))
   const rangeLines = createMemo((): Span[][] => {
     const pay = rangePay()
-    if (!pay) return []
     const width = categoryWidth() - 5
     const f = flows(), b = previousFlows()
     const lines: Span[][] = []
+    // The categories' heading, its columns over theirs: under the bars, or
+    // the text.
+    const cols = `${"Spent".padStart(9)}${"%".padStart(5)}${"Before".padStart(BEFORE)}`
+    const heading = (): Span[] => [{ text: "Categories".padEnd(Math.max(10, width - 1 - cols.length)), fg: ink.heading, bold: true }, { text: cols, fg: ink.label }]
+    const done = () => lines.map((l) => (l.length ? l : [{ text: " ", fg: ink.note }]))
+    if (textual()) {
+      // As text (t): the totals against before, line by line, the range's
+      // figure under Spent and before's under Before; then the categories.
+      const RANGE = 9, WAS = 5 + BEFORE
+      const line = (label: string, value: string, was: string, look: { value?: string; was?: string; label?: string; bold?: boolean } = {}): Span[] => [
+        { text: fit(label, Math.max(4, width - 1 - RANGE - WAS)).padEnd(Math.max(4, width - 1 - RANGE - WAS)), fg: look.label ?? ink.label, bold: look.bold },
+        { text: value.padStart(RANGE), fg: look.value ?? ink.figure, bold: look.bold },
+        { text: was.padStart(WAS), fg: look.was ?? ink.note },
+      ]
+      lines.push(
+        line("Totals", "Range", "Before", { label: ink.heading, value: ink.label, was: ink.label, bold: true }),
+        line("Spent", formatWholeMoney(f.spent), before(formatWholeMoney(b.spent)), { value: covered() && b.spent > 0 ? spendChangeColor(f.spent - b.spent) : ink.figure }),
+        line("Income", formatWholeMoney(f.income), before(formatWholeMoney(b.income))),
+        line("Net", signedWholeMoney(f.net), before(signedWholeMoney(b.net)), { value: changeColor(f.net) }),
+        line("To savers", signedWholeMoney(f.savedToSavers), before(signedWholeMoney(b.savedToSavers)), { value: changeColor(f.savedToSavers) }),
+        line("Savings rate", formatPct(f.savingsRate), before(formatPct(b.savingsRate))),
+        line("Daily", daily(f.spent), before(daily(b.spent))),
+        line("Transactions", String(f.txnCount), before(String(b.txnCount))),
+      )
+      // How long the net position lasts at the range's daily average.
+      if (position().netPosition != null && f.spent > 0 && windows().days > 0) lines.push(line("Runway", `${Math.round(position().netPosition! / (f.spent / windows().days))} days`, `at ${daily(f.spent)}/day`))
+      const p = budget()
+      if (p) {
+        lines.push(line("Budget", formatWholeMoney(p.budget.amount), `${Number.isFinite(p.usedPct) ? Math.round(p.usedPct) : "—"}% used`, { was: p.usedPct > 100 ? tone.bad : p.usedPct >= 80 ? tone.caution : tone.good }))
+        if (p.remaining > 0) lines.push(line("  left", formatWholeMoney(p.remaining), `${formatWholeMoney(p.dailyAllowance)}/day`))
+      }
+      lines.push([], heading())
+      return done()
+    }
     // The ratios first: label, before (a note) and the figure at the
     // row's end.
     const ratio = (label: string, value: string, was: string | null, aside?: string): Span[] => {
@@ -463,17 +453,18 @@ export function OverviewTab(props: { focused: SectionId }) {
         lines.push(flowOpening(width, bar.netFrom, width, [{ text: formatPct(f.savingsRate), fg: ink.figure, bold: true }, { text: " saved", fg: ink.note }]), net.bar, net.labels)
       }
     }
-    lines.push([])
-    // The categories' heading, its columns over theirs.
-    const cols = `${"Spent".padStart(9)}${"%".padStart(5)}${"Before".padStart(BEFORE)}`
-    lines.push([{ text: "Categories".padEnd(Math.max(10, width - 1 - cols.length)), fg: ink.heading, bold: true }, { text: cols, fg: ink.label }])
-    return lines.map((l) => (l.length ? l : [{ text: " ", fg: ink.note }]))
+    lines.push([], heading())
+    return done()
   })
   const rangeTop = () => rangeLines().length
+  // The chart panes' models, after the Range pane's lines: narrow, their
+  // height is what the Range pane leaves.
+  const models = [0, 1, 2, 3].map(paneModel)
+  const topModel = models[0]!
   // The earlier period's spending a category (and a group), for the
   // Before column: only where the history covers it.
   const beforeSpend = createMemo(() => {
-    if (!rangePane() || !covered()) return null
+    if (!covered()) return null
     const list = computeCategorySpend(inScope(inPrevious()), data.state.categories)
     const by = new Map<string, number>()
     for (const c of list) by.set(`c${c.categoryId}`, (by.get(`c${c.categoryId}`) ?? 0) + c.amount)
@@ -507,7 +498,6 @@ export function OverviewTab(props: { focused: SectionId }) {
     const p = position()
     const lines: Span[][] = [row("Available", "", available() != null ? formatMoney(available()!) : "—", { label: ink.figure, value: ink.strong, bold: true })]
     if (p.pendingCount > 0 && available() != null) lines.push(row("Balance", `${formatWholeMoney(-p.pendingAmount)} pending · ${p.pendingCount}`, formatMoney(available()! - p.pendingAmount), { value: ink.label }))
-    if (!rangePane()) lines.push(row("Runway", p.dailySpend != null ? `${formatWholeMoney(p.dailySpend)}/day` : "", p.runwayDays != null ? `${Math.round(p.runwayDays)} days` : "—"))
     if (!hasSavers()) {
       lines.push(row("30 day change", signedWholeMoney(change30()), "", { mid: changeColor(change30()) }))
       return lines
@@ -544,7 +534,7 @@ export function OverviewTab(props: { focused: SectionId }) {
   const categoryRows = createMemo(() => {
     const rows = Math.max(1, categoriesHeight() - 2 - rangeTop())
     // The Range pane: its groups closed until space opens them, as Budgets'.
-    const open = openGroups(data.state.uiPrefs, ui.state)
+    const open = ui.state.overviewOpen
     if (!categoriesFocused()) return (open ? overviewCategoryLines(range(), open).slice(0, rows) : fitCategoryLines(groups(), rows)).map((line) => ({ line, cursor: false }))
     const lines = overviewCategoryLines(range(), open)
     const cursor = Math.min(ui.state.overviewCategoryCursor, lines.length - 1)
@@ -558,7 +548,7 @@ export function OverviewTab(props: { focused: SectionId }) {
         ui.applyJump("ov.categories")
         moveOverviewCategory(ui, data, ui.state.overviewCategoryCursor + (event.scroll.direction === "down" ? 1 : -1) * event.scroll.delta)
       })}>
-    <SectionCard title={rangePane() ? "Range" : "Categories"} titleSuffix={categoriesFocused() ? "· enter to open" : undefined} titleSuffixColor={ink.note} bottomSpans={uncategorised() || toReview() ? [
+    <SectionCard title="Range" titleSuffix={categoriesFocused() ? "· enter to open" : undefined} titleSuffixColor={ink.note} bottomSpans={uncategorised() || toReview() ? [
         ...(uncategorised() ? [{ text: `${uncategorised()} uncategorised`, fg: tone.caution }] : []),
         ...(toReview() ? [{ text: `${uncategorised() ? " · " : ""}${toReview()} to review (i)`, fg: tone.ai }] : []),
       ] : undefined} width={categoryWidth()} height={categoriesHeight()} focused={categoriesFocused()} active={categoriesFocused()}>
@@ -574,19 +564,19 @@ export function OverviewTab(props: { focused: SectionId }) {
             const bg = () => cursor() ? theme.rowCursor : undefined
             return (
               <text wrapMode="none" bg={bg()} onMouseDown={onPointer((s) => s === "bar" || s === "overview" || s === "overview.range", () => {
-                const lines = overviewCategoryLines(range(), openGroups(data.state.uiPrefs, ui.state))
+                const lines = overviewCategoryLines(range(), ui.state.overviewOpen)
                 const index = lines.findIndex((l) => l.categoryId === line().categoryId && l.child === line().child)
                 const open = categoriesFocused() && index === ui.state.overviewCategoryCursor
                 ui.applyJump("ov.categories")
                 moveOverviewCategory(ui, data, index)
                 if (open) drillDown(ui, data, lines[index])
               })}>
-                <Show when={rangePane()}><S fg={ink.note} bg={bg()}>{chevron(line())}</S></Show>
+                <S fg={ink.note} bg={bg()}>{chevron(line())}</S>
                 <S fg={line().color} bg={bg()}>{line().child ? "  " : ""}{`${categoryMark(line().categoryId)} `}</S>
-                <S fg={line().child && !cursor() ? ink.label : line().color} bg={bg()} bold={!line().child || cursor()}>{fit(line().label, -(line().child ? 4 : 2) - (rangePane() ? 3 : 0) + categoryNameWidth())}</S>
+                <S fg={line().child && !cursor() ? ink.label : line().color} bg={bg()} bold={!line().child || cursor()}>{fit(line().label, -(line().child ? 4 : 2) - 3 + categoryNameWidth())}</S>
                 <S fg={line().child ? ink.label : ink.figure} bg={bg()} bold={!line().child}>{formatWholeMoney(line().amount).padStart(9)}</S>
                 <S fg={ink.note} bg={bg()}>{(line().pct != null ? `${Math.round(line().pct!)}%` : "").padStart(5)}</S>
-                <Show when={rangePane()}><S fg={beforeChange(line()).fg} bg={bg()}>{beforeChange(line()).text}</S></Show>
+                <S fg={beforeChange(line()).fg} bg={bg()}>{beforeChange(line()).text}</S>
               </text>
             )
           }}
@@ -655,11 +645,12 @@ export function OverviewTab(props: { focused: SectionId }) {
   // of clipping them. Keys and focus order are unchanged.
   const NarrowColumn = () => {
     let column: ScrollBoxRenderable | undefined
-    // Only a short terminal scrolls: Categories into view when it has focus,
-    // else back to the top (the chart).
+    // Only a short terminal scrolls: the Range pane's categories (its
+    // last rows, the column's) into view when it has focus, else back to
+    // the top (the chart).
     const followFocus = () => {
       if (!shown()) return
-      if (categoriesFocused()) column?.scrollChildIntoView("overview-narrow-cards")
+      if (categoriesFocused()) column?.scrollTo(column.scrollHeight)
       else column?.scrollTo(0)
     }
     createEffect(followFocus)
@@ -674,7 +665,6 @@ export function OverviewTab(props: { focused: SectionId }) {
       <box id="overview-narrow-cards" ref={(row: BoxRenderable) => { row.onSizeChange = followFocus }} width="100%" height={categoriesHeight()} flexDirection="row" gap={1} flexShrink={0}>
         <box width={sideWidth()} flexDirection="column">
           {accountsCard()}
-          <Show when={!rangePane()}>{totalsCard()}</Show>
         </box>
         {categoriesCard()}
       </box>
@@ -739,8 +729,7 @@ export function OverviewTab(props: { focused: SectionId }) {
           </box>
           <box flexDirection="column" flexGrow={1} flexBasis={0} minWidth={0} height={bodyHeight()} overflow="hidden">
             {accountsCard()}
-            <Show when={!rangePane()}>{totalsCard()}</Show>
-            {categoriesCard()}
+              {categoriesCard()}
           </box>
         </box>
       </Show>

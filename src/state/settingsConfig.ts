@@ -37,9 +37,9 @@ export interface UiPrefs {
   /** Balance charts' y-axis runs from $0 rather than fitting the balances
    * (default off). */
   zeroAxis?: boolean
-  /** The Overview's side column as the Totals and Categories cards rather
-   * than the one Range pane (default off: the Range pane). */
-  totalsCards?: boolean
+  /** The Overview's Range pane as text (the totals against before, line
+   * by line) rather than its bars (default off: the bars). */
+  rangeText?: boolean
   /** What the Range pane's bar opens out to: where the net went (default)
    * or where the spending went. */
   rangeView?: "net" | "spending"
@@ -140,7 +140,7 @@ function parseUiPrefs(raw: unknown): UiPrefs | undefined {
   const backdrop = BACKDROPS.find((entry) => "backdrop" in raw && entry.id === raw.backdrop)?.id
   if (backdrop) ui.backdrop = backdrop
   if ("zeroAxis" in raw && typeof raw.zeroAxis === "boolean") ui.zeroAxis = raw.zeroAxis
-  if ("totalsCards" in raw && typeof raw.totalsCards === "boolean") ui.totalsCards = raw.totalsCards
+  if ("rangeText" in raw && typeof raw.rangeText === "boolean") ui.rangeText = raw.rangeText
   if ("rangeView" in raw && (raw.rangeView === "net" || raw.rangeView === "spending")) ui.rangeView = raw.rangeView
   if ("accountSelection" in raw) {
     const sel = raw.accountSelection

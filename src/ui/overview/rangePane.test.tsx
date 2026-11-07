@@ -38,7 +38,7 @@ const pay = (dateISO: string, amount: number) => row(dateISO, amount, { category
 const send = (dateISO: string, amount: number) => row(dateISO, -amount, { transferAccountId: 2, internal: true, excluded: true, description: "Transfer to Rainy day" })
 const spend = (dateISO: string, amount: number, categoryId: number, categoryName: string) => row(dateISO, -amount, { categoryId, categoryName, description: categoryName.toUpperCase() })
 
-test("the Range pane: the range as a track, what came in as a bar (spent, net), the net opened out to where it went, the ratios, and the categories under their bar against before; t switches to Totals and Categories and back", async () => {
+test("the Range pane: the range as a track, what came in as a bar (spent, net), the net opened out to where it went, the ratios, and the categories under their bar against before; t switches it to text and back", async () => {
   // 1M on 20 Oct: 20 Sep to 20 Oct; before it, the month before.
   const { t, frame } = await overview([
     spend("2026-08-01", 5, 10, "Groceries"),
@@ -77,17 +77,28 @@ test("the Range pane: the range as a track, what came in as a bar (spent, net), 
   expect(text).not.toMatch(/┃|before \$600/)
   expect(text).toMatch(/Groceries\s+\$300\s+75%\s+-\$100/)
   expect(text).toMatch(/Fuel\s+\$100\s+25%\s+-\$100/)
-  // t: Totals and Categories, saved; again, back.
+  // t: the Range pane as text, saved: the totals against before line by
+  // line (the range's under Spent, before's under Before), Runway, then
+  // the categories; no bars. The column and Accounts are as they were.
   t.mockInput.pressKey("t")
   f = await frame()
-  expect(data.state.uiPrefs.totalsCards).toBe(true)
-  expect(f.join("\n")).toContain("╭─ Totals")
-  expect(f.join("\n")).toContain("╭─ Categories")
-  expect(f.join("\n")).not.toContain("╭─ Range")
+  const text2 = f.join("\n")
+  expect(data.state.uiPrefs.rangeText).toBe(true)
+  expect(text2).toContain("╭─ Range")
+  expect(text2).not.toMatch(/╭─ (Totals|Categories)/)
+  expect(text2).not.toMatch(/█|spent ╰|saved/)
+  expect(text2).toMatch(/Totals\s+Range\s+Before[^\n]*\n[^\n]*Spent\s+\$400\s+\$600/)
+  expect(text2).toMatch(/Income\s+\$5,000/)
+  expect(text2).toMatch(/Runway\s+814 days\s+at \$13\/day/)
+  expect(text2).toMatch(/Categories\s+Spent\s+%\s+Before[^\n]*\n[^\n]*Groceries\s+\$300/)
+  const column = (l: string | undefined, word: string) => l!.indexOf(word) + word.length
+  const spentRow = f.find((l) => /Spent\s+\$400/.test(l)), heading = f.find((l) => /Categories\s+Spent/.test(l))
+  expect(column(spentRow, "$400")).toBe(column(heading, "Spent"))
+  expect(column(spentRow, "$600")).toBe(column(heading, "Before"))
   t.mockInput.pressKey("t")
   f = await frame()
-  expect(data.state.uiPrefs.totalsCards).toBe(false)
-  expect(f.join("\n")).toContain("╭─ Range")
+  expect(data.state.uiPrefs.rangeText).toBe(false)
+  expect(f.join("\n")).toMatch(/92\.0% saved/)
   t.renderer.destroy()
 })
 

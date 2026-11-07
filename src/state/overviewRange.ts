@@ -48,7 +48,3 @@ export function overviewCategoryLines(range: ReturnType<typeof overviewRange>, o
   })
 }
 
-/** The Range pane's open groups, or null when the Categories card shows. */
-export function openGroups(prefs: { totalsCards?: boolean }, u: Pick<UiState, "overviewOpen">): number[] | null {
-  return prefs.totalsCards ? null : u.overviewOpen
-}

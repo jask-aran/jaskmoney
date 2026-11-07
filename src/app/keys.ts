@@ -80,7 +80,7 @@ import { amountFromText, rangeDayFromText, rangeDayText } from "../domain/typedI
 import { CALENDAR_VIEWS, CUSTOM_FOCUS_ORDER, leftHalf, markedRange, moveCursor, pageCursor, rowStep, unitOf, type CalendarView, type CustomFocus } from "../domain/rangeCalendar"
 import { drillFilter } from "../domain/drill"
 import type { CategoryLine } from "../domain/dashboard"
-import { openGroups, overviewCategoryLines, overviewRange } from "../state/overviewRange"
+import { overviewCategoryLines, overviewRange } from "../state/overviewRange"
 import { tagPickerItems, tagPickerState } from "../state/tagPicker"
 import { savedFilterOptions } from "../state/savedFilters"
 import { nextSettingsId, nextSavedFilterId } from "../state/settingsConfig"
@@ -1809,7 +1809,7 @@ export function selectAccountRow(ui: UiStore, data: DataStore, index: number): v
 }
 
 export function moveOverviewCategory(ui: UiStore, data: DataStore, index: number): void {
-  const lines = overviewCategoryLines(overviewRange(data, ui.state), openGroups(data.state.uiPrefs, ui.state))
+  const lines = overviewCategoryLines(overviewRange(data, ui.state), ui.state.overviewOpen)
   ui.setState({ overviewCategoryCursor: Math.max(0, Math.min(lines.length - 1, index)) })
 }
 
@@ -2060,7 +2060,7 @@ function handleOverview(ui: UiStore, key: KeyEvent, data?: DataStore): void {
   // h/l, ,/., H/L still step charts. Range arrows keep chip movement.
   if (name === "up" || name === "down" || name === "left" || name === "right") {
     if (data && ui.state.focusedSection === "ov.categories" && (name === "up" || name === "down")) {
-      const last = overviewCategoryLines(overviewRange(data, ui.state), openGroups(data.state.uiPrefs, ui.state)).length - 1
+      const last = overviewCategoryLines(overviewRange(data, ui.state), ui.state.overviewOpen).length - 1
       const cursor = Math.min(ui.state.overviewCategoryCursor, last)
       if (name === "up" ? cursor > 0 : cursor < last) {
         moveOverviewCategory(ui, data, cursor + (name === "up" ? -1 : 1))
@@ -2135,13 +2135,13 @@ function handleOverview(ui: UiStore, key: KeyEvent, data?: DataStore): void {
   // comes back. With Categories focused, j/k move over every line.
   const focus = ui.state.focusedSection
   if (data && focus === "ov.categories") {
-    const lines = overviewCategoryLines(overviewRange(data, ui.state), openGroups(data.state.uiPrefs, ui.state))
+    const lines = overviewCategoryLines(overviewRange(data, ui.state), ui.state.overviewOpen)
     const moveTo = (i: number) => moveOverviewCategory(ui, data, i)
     const moved = listMove(key, ui.state.overviewCategoryCursor, lines.length)
     if (moved != null) { moveTo(moved); return }
     // The Range pane: space opens or closes the cursor's group (from a
     // subcategory, its group, the cursor going to it).
-    const open = openGroups(data.state.uiPrefs, ui.state)
+    const open = ui.state.overviewOpen
     if (open && (name === "space" || seq === " ")) {
       const at = Math.min(ui.state.overviewCategoryCursor, lines.length - 1)
       let g = at
@@ -2163,15 +2163,14 @@ function handleOverview(ui: UiStore, key: KeyEvent, data?: DataStore): void {
     ui.setStatus(`Now · ${timeframeBounds(tf, clock, cycle).label}`)
     return
   }
-  // t: the side column as the one Range pane, or the Totals and
-  // Categories cards.
+  // t: the Range pane as text (the totals line by line), or its bars.
   if (name === "t" && !key.shift && !key.ctrl && !key.meta && data) {
-    settleData(ui, data.saveUiPrefs({ totalsCards: !data.state.uiPrefs.totalsCards }), () => ui.setStatus(data.state.uiPrefs.totalsCards ? "Totals and Categories" : "Range: totals and categories as one"))
+    settleData(ui, data.saveUiPrefs({ rangeText: !data.state.uiPrefs.rangeText }), () => ui.setStatus(data.state.uiPrefs.rangeText ? "Range as text" : "Range as bars"))
     return
   }
   // s: the Range pane's bar opens out to where the spending went, or where
   // the net went.
-  if (name === "s" && !key.shift && !key.ctrl && !key.meta && data && !data.state.uiPrefs.totalsCards) {
+  if (name === "s" && !key.shift && !key.ctrl && !key.meta && data && !data.state.uiPrefs.rangeText) {
     const spending = data.state.uiPrefs.rangeView !== "spending"
     settleData(ui, data.saveUiPrefs({ rangeView: spending ? "spending" : "net" }), () => ui.setStatus(spending ? "Range: where the spending went" : "Range: where the net went"))
     return
@@ -2288,7 +2287,7 @@ export function drillDown(ui: UiStore, data: DataStore, line?: CategoryLine) {
 }
 
 type HintState = Pick<UiState, "focusedSection" | "drillReturn" | "chartViews"> & {
-  totalsCards?: boolean
+  rangeText?: boolean
   rangeView?: "net" | "spending"
   /** What [ and ] step the Overview's range by (stepUnit). */
   stepUnit?: string
@@ -2705,7 +2704,7 @@ const scopes: Record<ScopeId, ScopeEntry> = {
     hints: (state) => {
       if (state?.focusedSection === "ov.categories") return [
         { key: "j/k", desc: "move" },
-        ...(state.totalsCards ? [] : [{ key: "space", desc: "open group" }]),
+        { key: "space", desc: "open group" },
         { key: "enter", desc: "transactions" },
         { key: "[ ]", desc: `prev/next ${state?.stepUnit ?? "range"}` },
         { key: "esc", desc: "done" },
@@ -2720,8 +2719,8 @@ const scopes: Record<ScopeId, ScopeEntry> = {
         ...(state?.customRange ? [{ key: "C", desc: "edit dates", label: "Range: custom dates" }] : []),
         { key: "c", desc: "this cycle", label: "Range: this cycle" },
         { key: "a", desc: "account", label: "Next spending account" },
-        { key: "t", desc: state?.totalsCards ? "range pane" : "totals", label: "Range pane or Totals and Categories" },
-        ...(state?.totalsCards ? [] : [{ key: "s", desc: state?.rangeView === "spending" ? "net view" : "spending view", label: "Range: where the spending or the net went" }]),
+        { key: "t", desc: state?.rangeText ? "bars" : "text", label: "Range pane: bars or text" },
+        ...(state?.rangeText ? [] : [{ key: "s", desc: state?.rangeView === "spending" ? "net view" : "spending view", label: "Range: where the spending or the net went" }]),
         { key: "i", desc: "review", command: "txn:uncategorised" },
         { key: "/", desc: "search", command: "txn:filter" },
         { key: "?", desc: "smart search", command: "txn:smart-search" },
@@ -2777,7 +2776,7 @@ export function hintState(ui: UiStore, data?: DataStore): HintState {
     stepUnit: stepUnit(ui.state.timeframe),
     customRange: ui.state.timeframe.family === "custom",
     overviewCharts: ui.state.overviewCharts,
-    totalsCards: data?.state.uiPrefs.totalsCards === true,
+    rangeText: data?.state.uiPrefs.rangeText === true,
     rangeView: data?.state.uiPrefs.rangeView,
     budgetCyclePanes: ui.state.budgetCyclePanes,
     uncategorisedOnly: data?.state.uncategorisedOnly,
