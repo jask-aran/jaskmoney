@@ -2337,6 +2337,41 @@ type ScopeEntry = {
 /** Hints that are the tab's, whichever pane has focus: after the pane's. */
 const tabWide = (hints: Hint[]): Hint[] => hints.map((h) => ({ ...h, tab: true }))
 
+/** The Range pane's t and s, wherever focus is in the Overview. */
+const rangePaneKeys = (state?: HintState): Hint[] => [
+  { key: "t", desc: state?.rangeText ? "bars" : "text", label: "Range pane: bars or text" },
+  ...(state?.rangeText ? [] : [{ key: "s", desc: state?.rangeView === "spending" ? "net view" : "spending view", label: "Range: where the spending or the net went" }]),
+]
+
+/** The Overview's keys that work whichever pane has focus (less those the
+ * focused pane lists as its own: the Range pane's t and s, a chart's h/l
+ * and z, the Date Range's h/l). */
+function overviewTabKeys(state: HintState | undefined, own: { range: boolean; chart: number; chips?: boolean }): Hint[] {
+  const balances = (i: number | undefined) => i != null && CHART_VIEWS[i]?.group === "Balances"
+  const focus = state?.focusedSection
+  return tabWide([
+    { key: "↑↓←→", desc: "panes" },
+    { key: "d/D", desc: "range" },
+    { key: "[ ]", desc: `prev/next ${state?.stepUnit ?? "range"}` },
+    // On a Custom range, its dates are a key away.
+    ...(state?.customRange ? [{ key: "C", desc: "edit dates", label: "Range: custom dates" }] : []),
+    { key: "c", desc: "this cycle", label: "Range: this cycle" },
+    { key: "a", desc: "account", label: "Next spending account" },
+    ...(own.range ? [] : rangePaneKeys(state)),
+    ...(own.chart >= 0 || own.chips ? [] : [{ key: "h/l", desc: "chart" }]),
+    ...(state?.overviewCharts !== 1 ? [{ key: "H/L", desc: "bottom chart" }] : []),
+    { key: "i", desc: "review", command: "txn:uncategorised" },
+    { key: "/", desc: "search", command: "txn:filter" },
+    { key: "?", desc: "smart search", command: "txn:smart-search" },
+    ...(state?.customRange ? [] : [{ key: "C", desc: "custom range", label: "Range: custom dates" }]),
+    { key: "0", desc: "now", label: "Range: back to now" },
+    ...(own.chart < 0 && state?.chartViews.slice(0, state.overviewCharts ?? 2).some(balances) ? [{ key: "z", desc: "$0 axis" }] : []),
+    ...(focus && focus !== "none" ? [{ key: "esc", desc: "done" }] : []),
+    { key: "v", desc: "jump" },
+    { key: "1-4", desc: "tab" },
+  ])
+}
+
 const scopes: Record<ScopeId, ScopeEntry> = {
   "palette": {
     handle: handlePalette,
@@ -2723,48 +2758,20 @@ const scopes: Record<ScopeId, ScopeEntry> = {
       const chart = state && focus ? chartPaneOf(focus) : -1
       const balances = (i: number | undefined) => i != null && CHART_VIEWS[i]?.group === "Balances"
       const range = focus === "ov.categories"
-      // The Range pane's own: t and s are its, wherever focus is.
-      const rangeKeys: Hint[] = [
-        { key: "t", desc: state?.rangeText ? "bars" : "text", label: "Range pane: bars or text" },
-        ...(state?.rangeText ? [] : [{ key: "s", desc: state?.rangeView === "spending" ? "net view" : "spending view", label: "Range: where the spending or the net went" }]),
-      ]
+      const rangeKeys = rangePaneKeys(state)
       const pane: Hint[] = range ? [{ key: "j/k", desc: "move" }, { key: "space", desc: "open group" }, { key: "enter", desc: "transactions" }, ...rangeKeys]
         : chart >= 0 ? [{ key: "enter", desc: "transactions" }, { key: "h/l", desc: "view" }, ...(balances(state!.chartViews[chart]) ? [{ key: "z", desc: "$0 axis" }] : [])]
         : focus === "ov.accounts" ? [{ key: "enter", desc: "accounts", label: "Accounts in Transactions" }]
         : []
-      return [...pane, ...tabWide([
-        { key: "↑↓←→", desc: "panes" },
-        { key: "d/D", desc: "range" },
-        { key: "[ ]", desc: `prev/next ${state?.stepUnit ?? "range"}` },
-        // On a Custom range, its dates are a key away.
-        ...(state?.customRange ? [{ key: "C", desc: "edit dates", label: "Range: custom dates" }] : []),
-        { key: "c", desc: "this cycle", label: "Range: this cycle" },
-        { key: "a", desc: "account", label: "Next spending account" },
-        ...(range ? [] : rangeKeys),
-        ...(chart >= 0 ? [] : [{ key: "h/l", desc: "chart" }]),
-        ...(state?.overviewCharts !== 1 ? [{ key: "H/L", desc: "bottom chart" }] : []),
-        { key: "i", desc: "review", command: "txn:uncategorised" },
-        { key: "/", desc: "search", command: "txn:filter" },
-        { key: "?", desc: "smart search", command: "txn:smart-search" },
-        ...(state?.customRange ? [] : [{ key: "C", desc: "custom range", label: "Range: custom dates" }]),
-        { key: "0", desc: "now", label: "Range: back to now" },
-        ...(chart < 0 && state?.chartViews.slice(0, state.overviewCharts ?? 2).some(balances) ? [{ key: "z", desc: "$0 axis" }] : []),
-        ...(focus && focus !== "none" ? [{ key: "esc", desc: "done" }] : []),
-        { key: "v", desc: "jump" },
-        { key: "1-4", desc: "tab" },
-      ])]
+      return [...pane, ...overviewTabKeys(state, { range, chart })]
     },
   },
   "overview.range": {
     handle: handleOverviewRange,
     list: true,
     pane: () => "Date Range",
-    hints: (state) => [
-      { key: "h/l", desc: "chip" },
-      { key: "enter", desc: "apply" },
-      { key: "[ ]", desc: `prev/next ${state?.stepUnit ?? "range"}` },
-      { key: "esc", desc: "done" },
-    ],
+    // Its own keys; the rest fall through to the Overview's.
+    hints: (state) => [{ key: "h/l", desc: "chip" }, { key: "enter", desc: "apply" }, ...overviewTabKeys(state, { range: false, chart: -1, chips: true })],
   },
   "manager.detail.notes": {
     handle: handleManagerDetailNotes,
