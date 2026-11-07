@@ -2070,17 +2070,13 @@ function handleOverview(ui: UiStore, key: KeyEvent, data?: DataStore): void {
     travel(ui, name, data)
     return
   }
-  // h/l (or ,/.) step the focused chart pane's views, the top pane when
-  // none is focused; H/L step the bottom pane (in the 2×2 grid, the bottom
-  // of the focused pane's column), or the one chart when the Overview
-  // shows only one.
-  const back = seq === "H" || ((name === "h" || seq === ",") && scope === "overview")
-  const forward = seq === "L" || ((name === "l" || seq === ".") && scope === "overview")
-  if (back || forward) {
-    const focused = chartPaneOf(ui.state.focusedSection)
-    const shown = ui.state.overviewCharts
-    const bottom = shown === 4 && (focused === 2 || focused === 3) ? 3 : shown > 1 ? 1 : 0
-    const pane = seq === "H" || seq === "L" || key.shift ? bottom : focused >= 0 && focused < shown ? focused : 0
+  // h/l (or ,/.) step the focused chart's views: however many charts
+  // show, the one with focus is the one that changes.
+  const back = (name === "h" || seq === ",") && !key.shift && scope === "overview"
+  const forward = (name === "l" || seq === ".") && !key.shift && scope === "overview"
+  const focused = chartPaneOf(ui.state.focusedSection)
+  if ((back || forward) && focused >= 0 && focused < ui.state.overviewCharts) {
+    const pane = focused
     const n = CHART_VIEWS.length
     const views: ChartViews = [...ui.state.chartViews]
     views[pane] = (views[pane] + (back ? -1 : 1) + n) % n
@@ -2164,13 +2160,13 @@ function handleOverview(ui: UiStore, key: KeyEvent, data?: DataStore): void {
     return
   }
   // t: the Range pane as text (the totals line by line), or its bars.
-  if (name === "t" && !key.shift && !key.ctrl && !key.meta && data) {
+  if (name === "t" && !key.shift && !key.ctrl && !key.meta && data && ui.state.focusedSection === "ov.categories") {
     settleData(ui, data.saveUiPrefs({ rangeText: !data.state.uiPrefs.rangeText }), () => ui.setStatus(data.state.uiPrefs.rangeText ? "Range as text" : "Range as bars"))
     return
   }
   // s: the Range pane's bar opens out to where the spending went, or where
   // the net went.
-  if (name === "s" && !key.shift && !key.ctrl && !key.meta && data && !data.state.uiPrefs.rangeText) {
+  if (name === "s" && !key.shift && !key.ctrl && !key.meta && data && !data.state.uiPrefs.rangeText && ui.state.focusedSection === "ov.categories") {
     const spending = data.state.uiPrefs.rangeView !== "spending"
     settleData(ui, data.saveUiPrefs({ rangeView: spending ? "spending" : "net" }), () => ui.setStatus(spending ? "Range: where the spending went" : "Range: where the net went"))
     return
@@ -2288,6 +2284,8 @@ export function drillDown(ui: UiStore, data: DataStore, line?: CategoryLine) {
 
 type HintState = Pick<UiState, "focusedSection" | "drillReturn" | "chartViews"> & {
   rangeText?: boolean
+  /** How many spending accounts: the Overview's a switches between them. */
+  spendingAccounts?: number
   rangeView?: "net" | "spending"
   /** What [ and ] step the Overview's range by (stepUnit). */
   stepUnit?: string
@@ -2337,29 +2335,26 @@ type ScopeEntry = {
 /** Hints that are the tab's, whichever pane has focus: after the pane's. */
 const tabWide = (hints: Hint[]): Hint[] => hints.map((h) => ({ ...h, tab: true }))
 
-/** The Range pane's t and s, wherever focus is in the Overview. */
+/** The Range pane's t and s, with it focused. */
 const rangePaneKeys = (state?: HintState): Hint[] => [
   { key: "t", desc: state?.rangeText ? "bars" : "text", label: "Range pane: bars or text" },
   ...(state?.rangeText ? [] : [{ key: "s", desc: state?.rangeView === "spending" ? "net view" : "spending view", label: "Range: where the spending or the net went" }]),
 ]
 
-/** The Overview's keys that work whichever pane has focus (less those the
- * focused pane lists as its own: the Range pane's t and s, a chart's h/l
- * and z, the Date Range's h/l). */
-function overviewTabKeys(state: HintState | undefined, own: { range: boolean; chart: number; chips?: boolean }): Hint[] {
+/** The Overview's keys that work whichever pane has focus (a chart's h/l
+ * and z and the Range pane's t and s are theirs, with focus). */
+function overviewTabKeys(state: HintState | undefined, own: { chart: number }): Hint[] {
   const balances = (i: number | undefined) => i != null && CHART_VIEWS[i]?.group === "Balances"
   const focus = state?.focusedSection
   return tabWide([
-    { key: "↑↓←→", desc: "panes" },
+    // The arrows between panes go without saying.
     { key: "d/D", desc: "range" },
-    { key: "[ ]", desc: `prev/next ${state?.stepUnit ?? "range"}` },
+    { key: "[ ]", desc: "period" },
     // On a Custom range, its dates are a key away.
     ...(state?.customRange ? [{ key: "C", desc: "edit dates", label: "Range: custom dates" }] : []),
     { key: "c", desc: "this cycle", label: "Range: this cycle" },
-    { key: "a", desc: "account", label: "Next spending account" },
-    ...(own.range ? [] : rangePaneKeys(state)),
-    ...(own.chart >= 0 || own.chips ? [] : [{ key: "h/l", desc: "chart" }]),
-    ...(state?.overviewCharts !== 1 ? [{ key: "H/L", desc: "bottom chart" }] : []),
+    // With one spending account there's nothing for a to switch.
+    ...((state?.spendingAccounts ?? 0) > 1 ? [{ key: "a", desc: "account", label: "Next spending account" }] : []),
     { key: "i", desc: "review", command: "txn:uncategorised" },
     { key: "/", desc: "search", command: "txn:filter" },
     { key: "?", desc: "smart search", command: "txn:smart-search" },
@@ -2763,7 +2758,7 @@ const scopes: Record<ScopeId, ScopeEntry> = {
         : chart >= 0 ? [{ key: "enter", desc: "transactions" }, { key: "h/l", desc: "view" }, ...(balances(state!.chartViews[chart]) ? [{ key: "z", desc: "$0 axis" }] : [])]
         : focus === "ov.accounts" ? [{ key: "enter", desc: "accounts", label: "Accounts in Transactions" }]
         : []
-      return [...pane, ...overviewTabKeys(state, { range, chart })]
+      return [...pane, ...overviewTabKeys(state, { chart })]
     },
   },
   "overview.range": {
@@ -2771,7 +2766,7 @@ const scopes: Record<ScopeId, ScopeEntry> = {
     list: true,
     pane: () => "Date Range",
     // Its own keys; the rest fall through to the Overview's.
-    hints: (state) => [{ key: "h/l", desc: "chip" }, { key: "enter", desc: "apply" }, ...overviewTabKeys(state, { range: false, chart: -1, chips: true })],
+    hints: (state) => [{ key: "h/l", desc: "chip" }, { key: "enter", desc: "apply" }, ...overviewTabKeys(state, { chart: -1 })],
   },
   "manager.detail.notes": {
     handle: handleManagerDetailNotes,
@@ -2820,6 +2815,7 @@ export function hintState(ui: UiStore, data?: DataStore): HintState {
     welcomeStep: ui.state.welcome?.step,
     welcomeTyping: !!ui.state.welcome && !ui.state.welcome.busy && !!data && welcomeRows(ui.state.welcome, welcomeContext(data)).some((r) => r.action === "token"),
     welcomeBusy: !!ui.state.welcome?.busy,
+    spendingAccounts: data ? data.state.accounts.filter((a) => accountRole(a) === "spending").length : 0,
     welcomeTry: ui.state.welcome?.trying ? ui.state.welcome.demo : null,
     welcomeTriable: !!ui.state.welcome && triable(ui.state.welcome.demo),
     boughtScrolls: (data?.transactions().find((t) => t.id === (ui.state.detail?.id ?? null))?.bought?.length ?? 0) > BOUGHT_LINES,

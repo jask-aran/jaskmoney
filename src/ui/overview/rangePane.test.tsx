@@ -79,6 +79,8 @@ test("the Range pane: the range as a track, what came in as a bar (spent, net), 
   expect(text).toMatch(/Fuel\s+\$100\s+25%\s+-\$100/)
   // The ratios first, then the track, then the bar.
   expect(text).toMatch(/╭─ Range[^\n]*\n[^\n]*Daily average[^\n]*\n[^\n]*Transactions[^\n]*\n[^\n]*Runway[\s\S]*↓ \$5,000 in[\s\S]*\$400 spent/)
+  // s and t are the Range pane's, with it focused.
+  ui.setState({ focusedSection: "ov.categories" })
   // s: where the spending went, saved. The spent part opened out (the
   // left edge down, a corner where the spending ends) to the categories'
   // bar in the savers' place, the groups named under it; no net bar.

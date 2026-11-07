@@ -283,19 +283,22 @@ describe("key router", () => {
     expect(ui.state.managerCursor).toBe(0)
   })
 
-  test("overview h/l step the top or focused chart; H/L the bottom one", () => {
+  test("overview h/l step the focused chart's views, whichever it is; with none focused, nothing; H/L nothing", () => {
     ui.setState({ focusedSection: "none", chartViews: [0, 4, 7, 8] })
     handleKey(ui, key("l"), data)
+    expect(ui.state.chartViews).toEqual([0, 4, 7, 8])
+    ui.setState({ focusedSection: "ov.chart" })
+    handleKey(ui, key("l"), data)
     expect(ui.state.chartViews).toEqual([1, 4, 7, 8])
-    handleKey(ui, key("h"), data)
     // From the first view, h wraps to the last.
     handleKey(ui, key("h"), data)
-    expect(ui.state.chartViews).toEqual([CHART_VIEWS.length - 1, 4, 7, 8])
-    handleKey(ui, key("l", { shift: true, sequence: "L" }), data)
-    expect(ui.state.chartViews).toEqual([CHART_VIEWS.length - 1, 5, 7, 8])
-    ui.setState({ focusedSection: "ov.chart2" })
     handleKey(ui, key("h"), data)
     expect(ui.state.chartViews).toEqual([CHART_VIEWS.length - 1, 4, 7, 8])
+    ui.setState({ focusedSection: "ov.chart2" })
+    handleKey(ui, key("h"), data)
+    expect(ui.state.chartViews).toEqual([CHART_VIEWS.length - 1, 3, 7, 8])
+    handleKey(ui, key("l", { shift: true, sequence: "L" }), data)
+    expect(ui.state.chartViews).toEqual([CHART_VIEWS.length - 1, 3, 7, 8])
   })
 
   test("drill-down: enter on a category line opens its transactions; esc comes back", () => {

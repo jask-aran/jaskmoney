@@ -97,16 +97,13 @@ for (const text of [false, true]) for (const [width, height, wide] of [[80, 30, 
         expect(ui.state.overviewCategoryCursor).toBe(1)
       }
     }
-    // H/L step the bottom chart, or the one chart on screen.
+    // h/l step the focused chart; with none focused, nothing (and no hint).
     ui.setState({ focusedSection: "none" })
     expect(ui.state.overviewCharts).toBe(wide ? 2 : 1)
-    t.mockInput.pressKey("L")
-    await settle()
-    expect(ui.state.chartViews).toEqual(wide ? [0, 5, 7, 8] : [1, 4, 7, 8])
-    t.mockInput.pressKey("H")
+    t.mockInput.pressKey("l")
     await settle()
     expect(ui.state.chartViews).toEqual([0, 4, 7, 8])
-    expect(footerHints("overview", hintState(ui, data)).some((h) => h.key === "H/L")).toBe(wide)
+    expect(footerHints("overview", hintState(ui, data)).some((h) => h.key === "h/l")).toBe(false)
     // With one chart, v lists no bottom chart and b does nothing.
     t.mockInput.pressKey("v")
     await settle()
@@ -324,10 +321,9 @@ test("full screen (178 wide and up): the charts in a 2×2 grid, each pane its ow
   expect(ui.state.focusedSection).toBe("ov.chart4")
   handleKey(ui, key("l"), data)
   expect(ui.state.chartViews).toEqual([0, 4, 7, 9])
-  // H/L in the right-hand column step its bottom pane, not the left's.
   ui.setState({ focusedSection: "ov.chart3" })
-  handleKey(ui, key("L", { shift: true, sequence: "L" }), data)
-  expect(ui.state.chartViews).toEqual([0, 4, 7, 0])
+  handleKey(ui, key("h"), data)
+  expect(ui.state.chartViews).toEqual([0, 4, 6, 9])
   ui.setState({ focusedSection: "ov.chart4", chartViews: [0, 4, 7, 9] })
   // Left from the bottom right reaches the bottom left.
   handleKey(ui, key("left"), data)

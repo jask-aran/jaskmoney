@@ -84,7 +84,7 @@ test("the tour's keys are the app's keys", () => {
   const appKeys = (hints: Array<{ key: string; desc: string }>) => new Map(hints.map((h) => [h.key, h.desc]))
   const uncategorised = appKeys(footerHints("manager.txns", { uncategorisedOnly: true } as never))
   for (const h of tryHints(at("suggest")).filter((h) => h.key !== "j/k")) expect(uncategorised.get(h.key)).toBe(h.desc)
-  // The Overview's charts switch view with h/l there too.
-  expect(appKeys(footerHints("overview", { chartViews: [0, 3] } as never)).get("h/l")).toBe("chart")
+  // The Overview's charts switch view with h/l there too (the focused one).
+  expect(appKeys(footerHints("overview", { chartViews: [0, 3], focusedSection: "ov.chart" } as never)).get("h/l")).toBe("view")
   expect(tryHints(at("chart")).map((h) => h.key)).toEqual(["h/l"])
 })
