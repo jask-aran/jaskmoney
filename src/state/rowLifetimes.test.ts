@@ -32,7 +32,7 @@ test("row zero is a range anchor; a missing end clears only the range during val
   expect(ui.state.selectedIds).toEqual({ 1: true })
 })
 
-test("a reload prunes picker targets and keeps the surviving detail and picked rows", async () => {
+test("rows that no longer exist leave the selection, the picker's targets and the open detail; surviving ones stay", async () => {
   data.init(":memory:")
   const db = data.getDb()!
   db.query("INSERT INTO accounts (id, name, type, source) VALUES (100, 'One', 'debit', 'csv'), (200, 'Two', 'debit', 'csv')").run()
@@ -43,4 +43,9 @@ test("a reload prunes picker targets and keeps the surviving detail and picked r
   expect(ui.state.selectedIds).toEqual({ 1: true })
   expect(ui.state.pickerTargets).toEqual([1])
   expect(ui.state.detail).toEqual({ id: 1, boughtTop: 3, notes: { draft: "keep", caret: 4 } })
+  // Its row gone too, the detail closes.
+  await data.clearAccountData(100)
+  expect(ui.state.selectedIds).toEqual({})
+  expect(ui.state.pickerTargets).toEqual([])
+  expect(ui.state.detail).toBeNull()
 })

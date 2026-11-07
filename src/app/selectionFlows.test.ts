@@ -2,7 +2,6 @@ import { afterEach, beforeEach, expect, test } from "bun:test"
 import { data } from "../state/dataStore"
 import { ui } from "../state/uiStore"
 import { key } from "../testing/keys"
-import { settlePending } from "../testing/settle"
 import { handleKey } from "./keys"
 
 /**
@@ -56,20 +55,6 @@ test("picked rows stay through a filter and a sort, by id", () => {
   data.commitFilter("desc:alpha or desc:charlie")
   handleKey(ui, key("s"), data)
   expect(Object.keys(ui.state.selectedIds).map(Number).sort()).toEqual([1, 3])
-})
-
-test("rows that no longer exist leave the selection, the open detail and the picker's targets", async () => {
-  handleKey(ui, key("G"), data)
-  expect(rows()[ui.state.managerCursor]!.id).toBe(5)
-  handleKey(ui, key("space"), data)
-  handleKey(ui, key("g"), data)
-  handleKey(ui, key("space"), data)
-  expect(Object.keys(ui.state.selectedIds).map(Number).sort()).toEqual([1, 5])
-  ui.setState({ detail: { id: 5, boughtTop: 0, notes: null } })
-  await data.clearAccountData(200)
-  await settlePending()
-  expect(Object.keys(ui.state.selectedIds).map(Number)).toEqual([1])
-  expect(ui.state.detail).toBeNull()
 })
 
 test("each row's detail opens on its own: its bought list at the top, no notes being written", () => {
