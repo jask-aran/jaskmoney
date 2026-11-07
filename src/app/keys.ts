@@ -2352,15 +2352,18 @@ function overviewTabKeys(state: HintState | undefined, own: { chart: number }): 
     { key: "[ ]", desc: "period" },
     // On a Custom range, its dates are a key away.
     ...(state?.customRange ? [{ key: "C", desc: "edit dates", label: "Range: custom dates" }] : []),
-    { key: "c", desc: "this cycle", label: "Range: this cycle" },
+    // In the palette, not suggested: the Cyc chip is d/D away, and 0
+    // brings any range back to now.
+    { key: "c", desc: "this cycle", label: "Range: this cycle", paletteOnly: true },
     // With one spending account there's nothing for a to switch.
     ...((state?.spendingAccounts ?? 0) > 1 ? [{ key: "a", desc: "account", label: "Next spending account" }] : []),
-    { key: "i", desc: "review", command: "txn:uncategorised" },
-    { key: "/", desc: "search", command: "txn:filter" },
-    { key: "?", desc: "smart search", command: "txn:smart-search" },
+    // Transactions' own, a key away from here too: in the palette.
+    { key: "i", desc: "review", command: "txn:uncategorised", paletteOnly: true },
+    { key: "/", desc: "search", command: "txn:filter", paletteOnly: true },
+    { key: "?", desc: "smart search", command: "txn:smart-search", paletteOnly: true },
     ...(state?.customRange ? [] : [{ key: "C", desc: "custom range", label: "Range: custom dates" }]),
     { key: "0", desc: "now", label: "Range: back to now" },
-    ...(own.chart < 0 && state?.chartViews.slice(0, state.overviewCharts ?? 2).some(balances) ? [{ key: "z", desc: "$0 axis" }] : []),
+    ...(own.chart < 0 && state?.chartViews.slice(0, state.overviewCharts ?? 2).some(balances) ? [{ key: "z", desc: "$0 axis", paletteOnly: true }] : []),
     ...(focus && focus !== "none" ? [{ key: "esc", desc: "done" }] : []),
     { key: "v", desc: "jump" },
     { key: "1-4", desc: "tab" },
@@ -2755,7 +2758,7 @@ const scopes: Record<ScopeId, ScopeEntry> = {
       const range = focus === "ov.categories"
       const rangeKeys = rangePaneKeys(state)
       const pane: Hint[] = range ? [{ key: "j/k", desc: "move" }, ...(state?.rangeText ? [] : [{ key: "space", desc: "open group" }]), { key: "enter", desc: "transactions" }, ...rangeKeys]
-        : chart >= 0 ? [{ key: "enter", desc: "transactions" }, { key: "h/l", desc: "view" }, ...(balances(state!.chartViews[chart]) ? [{ key: "z", desc: "$0 axis" }] : [])]
+        : chart >= 0 ? [{ key: "enter", desc: "transactions" }, { key: "h/l", desc: "view" }, ...(balances(state!.chartViews[chart]) ? [{ key: "z", desc: "$0 axis", paletteOnly: true }] : [])]
         : focus === "ov.accounts" ? [{ key: "enter", desc: "accounts", label: "Accounts in Transactions" }]
         : []
       return [...pane, ...overviewTabKeys(state, { chart })]
@@ -2783,13 +2786,13 @@ export function footerHints(scope: ScopeId, state?: HintState): Hint[] {
 }
 
 /** What the footer shows in a scope on a line `width` wide: the focused
- * pane's name and its hints, as many as fit, "ctrl+k all" where the
- * palette opens and some didn't. */
-export function footerLine(scope: ScopeId, state?: HintState, width = Infinity): { pane: string | null; hints: Hint[] } {
+ * pane's name and its hints, as many as fit, and whether "ctrl+k all"
+ * shows at its right (the palette opens here). */
+export function footerLine(scope: ScopeId, state?: HintState, width = Infinity): { pane: string | null; hints: Hint[]; palette: boolean } {
   // A Settings section is its pane.
   const section = SETTINGS_SECTIONS.find((x) => scope === `settings.${x}`)
   const pane = scopes[scope].pane?.(state) ?? (section ? SETTINGS_SECTION_LABELS[section] : null)
-  return { pane, hints: footerShown(footerHints(scope, state), scopes[scope].list, width, pane) }
+  return { pane, hints: footerShown(footerHints(scope, state), scopes[scope].list, width, pane), palette: scopes[scope].list }
 }
 
 /** The state the hints read, from both stores. */

@@ -42,24 +42,29 @@ test("a hint's key becomes one key press; several keys don't", () => {
   for (const several of ["j/k", "S-j/k", "1-3", "d/D", "[ ]", "h/l", "type"]) expect(hintEvent(several)).toBeNull()
 })
 
-test("the footer: the pane's name, its keys, a rule, the tab's; as many as the width holds, then ctrl+k all; short lists stay whole", () => {
+test("the footer: the pane's name, its keys, a rule, the tab's, as many as the width holds; ctrl+k all always at the right where the palette opens; palette-only hints not suggested", () => {
   const text = (line: ReturnType<typeof footerLine>) => footerParts(line.pane, line.hints).map((p) => p.text).join("")
-  // Wide enough, every hint and no ctrl+k.
+  // Wide enough, every hint the footer suggests.
   const all = footerLine("manager.txns", state)
   expect(all.pane).toBe("Transactions")
-  expect(all.hints).toEqual(footerHints("manager.txns", state))
-  // 80 wide: the first that fit, then ctrl+k all, within the width.
+  expect(all.palette).toBe(true)
+  expect(all.hints).toEqual(footerHints("manager.txns", state).filter((h) => !h.paletteOnly))
+  // 80 wide: the first that fit, leaving ctrl+k all its room.
   const cut = footerLine("manager.txns", state, 80)
-  expect(cut.hints.at(-1)).toEqual({ key: "ctrl+k", desc: "all" })
-  expect(cut.hints.slice(0, -1)).toEqual(footerHints("manager.txns", state).slice(0, cut.hints.length - 1))
-  expect(text(cut).length).toBeLessThanOrEqual(80)
+  expect(cut.hints).toEqual(footerHints("manager.txns", state).slice(0, cut.hints.length))
+  expect(text(cut).length).toBeLessThanOrEqual(80 - "ctrl+k all".length - 2)
   expect(text(footerLine("manager.txns", state, 120)).length).toBeGreaterThan(text(cut).length)
-  expect(footerLine("settings.taxonomy", state, 200).hints).toEqual(footerHints("settings.taxonomy", state))
-  expect(footerLine("catPicker", state, 40).hints.some((h) => h.key === "ctrl+k")).toBe(false)
+  // A dialog's footer: no palette.
+  expect(footerLine("catPicker", state, 40).palette).toBe(false)
   // The Overview's Range pane: its own keys under its name, then the tab's
-  // after a rule (they still work there).
+  // after a rule.
   const range = footerLine("overview", { ...state, focusedSection: "ov.categories" })
   expect(text(range)).toMatch(/^Range {2}j\/k move {2}space open group {2}enter transactions {2}t text {2}s spending view {2}│ {2}d\/D range {2}\[ \] period/)
+  // Transactions' keys and the rest are the palette's from the Overview:
+  // reachable, not suggested.
+  const overview = footerHints("overview", { ...state, focusedSection: "none" })
+  for (const k of ["i", "/", "?", "c"]) expect(overview.find((h) => h.key === k)?.paletteOnly).toBe(true)
+  expect(footerLine("overview", { ...state, focusedSection: "none" }).hints.map((h) => h.key)).not.toContain("i")
   // Nothing focused: no name, the tab's keys alone.
   expect(footerLine("overview", { ...state, focusedSection: "none" }).pane).toBeNull()
 })

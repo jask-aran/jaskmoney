@@ -5,15 +5,16 @@ import { keyEvent } from "./keyEvent"
 /**
  * The footer (K5) and the command palette's pane commands (K4, app/commands)
  * read one source: a scope's hints. The footer names the focused pane and
- * shows its keys, then the tab's (`tab`), as many as the line holds, then
- * "ctrl+k all" where some didn't fit; the palette has a command for each
- * hint that is one key press, run by pressing it. Hints that name several keys
+ * shows its keys, then the tab's (`tab`), as many as the line holds, with
+ * "ctrl+k all" at its right wherever the palette opens; a hint for the
+ * palette alone (`paletteOnly`) isn't suggested there. The palette has a
+ * command for each hint that is one key press, run by pressing it. Hints that name several keys
  * ("j/k", "S-j/k", "1-4") are movement, kept for the footer only.
  */
 /** A footer hint: its key and short text. A one-key hint is also a palette
  * command: the registry command it names (`command`, app/commands), or its
  * own, by `label` and `description` (else its text, capitalised). */
-export interface Hint { key: string; desc: string; command?: string; label?: string; description?: string; tab?: boolean }
+export interface Hint { key: string; desc: string; command?: string; label?: string; description?: string; tab?: boolean; paletteOnly?: boolean }
 
 /** A footer piece, as the footer draws it: the pane's name, a hint's key
  * or words, the gap between hints, or the rule between the pane's keys
@@ -34,7 +35,9 @@ export function footerParts(pane: string | null, hints: Hint[]): FooterPart[] {
 }
 
 const partsWidth = (parts: FooterPart[]) => parts.reduce((n, p) => n + p.text.length, 0)
-const ALL: Hint = { key: "ctrl+k", desc: "all" }
+/** The palette's key, at the footer's right wherever it opens. */
+export const ALL: Hint = { key: "ctrl+k", desc: "all" }
+const ALL_WIDTH = ALL.key.length + 1 + ALL.desc.length + 2
 
 const NAMED: Record<string, string> = { enter: "return", esc: "escape", del: "delete", "del del": "delete", space: "space", tab: "tab" }
 
@@ -51,17 +54,17 @@ export function hintEvent(hint: string): KeyEvent | null {
   return null
 }
 
-/** The footer's hints on a line `width` wide after the pane's name: all
- * of them where they fit; else, in order, those that fit with "ctrl+k
- * all" after them (`palette`: it can open here), the pane's first. */
+/** The footer's hints on a line `width` wide after the pane's name, less
+ * those for the palette alone: in order, as many as fit, leaving room at
+ * the right for "ctrl+k all" (`palette`: it can open here). */
 export function footerShown(hints: Hint[], palette: boolean, width = Infinity, pane: string | null = null): Hint[] {
-  if (partsWidth(footerParts(pane, hints)) <= width) return hints
+  const room = width - (palette ? ALL_WIDTH : 0)
   const shown: Hint[] = []
-  for (const h of hints) {
-    if (partsWidth(footerParts(pane, [...shown, h, ...(palette ? [ALL] : [])])) > width) break
+  for (const h of hints.filter((x) => !x.paletteOnly)) {
+    if (partsWidth(footerParts(pane, [...shown, h])) > room) break
     shown.push(h)
   }
-  return palette ? [...shown, ALL] : shown
+  return shown
 }
 
 const SCOPE_LABELS: Partial<Record<ScopeId, string>> = {
