@@ -20,7 +20,7 @@ The data lives in one core (`src/core/`) that the TUI and the web app reach as c
 
 ## Size budget
 
-`scripts/sizeBudget.ts` caps the tests (count, lines), the source (lines, characters, files), any one file's lines and the dependencies, at about 20% over their size on 2026-11-08. When `bun run lint` fails, stop and tell the owner that the codebase needs cutting; never raise a limit to make room.
+`bun run lint` (also run by `typecheck` and `test`) holds the codebase to `scripts/sizeBudget.json`, set about 20% over its size on 2026-11-08: the tests (count, files, lines), the source (files, lines, characters), each folder under `src/`, any file (600 lines) and function (80), with the bigger ones then held where they were; unused exports and repeated code may only fall; no new folders; no more dependencies. When it fails over a limit, stop and tell the owner the codebase needs cutting; never raise a limit to make room. When it fails because a limit has room to spare, run `bun run lint --ratchet` and commit the budget. `bun run lint --report` lists the refactoring targets.
 
 ## General TUI rules
 
