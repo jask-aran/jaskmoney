@@ -8,7 +8,7 @@ import type { Span } from "../primitives/spans"
  * The Range pane's pictures of the Date Range's money, the Budgets pay
  * bar's way: what came in as a bar (spent, net), its net end opened out to
  * where the net went (each saver, kept), and the spending by category
- * group over the categories. Pure builders.
+ * group opened out of the spent part instead (s). Pure builders.
  */
 
 /** How much "kept" (net that stayed in Spending) fades from good. */
@@ -23,10 +23,11 @@ const money = (n: number, fg: string): Span => ({ text: formatWholeMoney(n), fg,
 /**
  * Each part's figure and name centred on it. Where they don't all fit, the
  * smallest parts lose their names first (their colours say whose), until
- * every figure has its place; failing that, what fits.
+ * every figure has its place; failing that, what fits. Only the first
+ * `top` parts are labelled.
  */
-function partLabels(width: number, parts: Array<{ amount: number; name: string; figure: string }>, cells: number[]): Span[] {
-  const shown = parts.map((p, i) => ({ ...p, cells: cells[i]!, from: cells.slice(0, i).reduce((n, c) => n + c, 0) })).filter((p) => p.cells > 0)
+function partLabels(width: number, parts: Array<{ amount: number; name: string; figure: string }>, cells: number[], top = parts.length): Span[] {
+  const shown = parts.map((p, i) => ({ ...p, cells: cells[i]!, from: cells.slice(0, i).reduce((n, c) => n + c, 0) })).filter((p, i) => i < top && p.cells > 0)
   const place = (bare: Set<number>) => labelled(width, shown.map((p, i) => ({ mid: p.from + p.cells / 2, options: [[money(p.amount, p.figure), ...(bare.has(i) ? [] : [{ text: ` ${p.name}`, fg: ink.note }])]] })))
   const placed = (spans: Span[]) => spans.filter((x) => x.bold).length
   // A part narrower than its bare figure by more than a cell either side
@@ -77,37 +78,19 @@ export function netBar(width: number, net: number, savers: SaverPart[]): { bar: 
   return { bar: bar.length ? bar : [{ text: "┄".repeat(width), fg: ink.faint }], labels }
 }
 
+/** How many of the largest category groups the categories' bar names. */
+const TOP_GROUPS = 3
+
 /**
- * The range's spending by category group as a bar `width` wide, each in
- * its colour, against before (the earlier period's spending, where the
- * history covers it): the bar runs to whichever is more, the rest dotted,
- * with a tick where before reached and its figure under it.
+ * Where the spending went, as a bar `width` wide: each category group in
+ * its colour, largest first. Under it the largest groups' figures and
+ * names where they fit (the rest by their colours).
  */
-export function spendBar(width: number, groups: Array<{ amount: number; color: string }>, before: number | null, fixed = false): { bar: Span[]; below: Span[] } {
-  const parts = groups.filter((g) => g.amount > 0)
-  const spent = parts.reduce((n, g) => n + g.amount, 0)
-  // Fixed (under a bar of the same total): the spending's width whatever
-  // before was; before past it is a figure at the end.
-  const scale = fixed ? spent : Math.max(spent, before ?? 0)
-  if (scale <= 0) return { bar: [{ text: "┄".repeat(width), fg: ink.faint }], below: [{ text: " ", fg: ink.note }] }
-  const cells = cellsOf([...parts.map((g) => g.amount), scale - spent], width)
-  const colors = parts.flatMap((g, i) => Array<string>(Math.max(0, cells[i]!)).fill(g.color))
-  const tick = before != null && before > 0 && before <= scale ? Math.min(width - 1, Math.max(0, Math.round((before / scale) * width) - 1)) : -1
-  const bar: Span[] = []
-  for (let c = 0; c < width; c++) {
-    const span: Span = c === tick ? { text: "┃", fg: ink.strong, bg: colors[c], bold: true } : c < colors.length ? { text: "█", fg: colors[c]! } : { text: "┄", fg: ink.faint }
-    const last = bar.at(-1)
-    if (last && c !== tick && c - 1 !== tick && last.fg === span.fg && last.text[0] === span.text) last.text += span.text
-    else bar.push(span)
-  }
-  // Before's figure, its ▲ under the tick: the words after it, or before
-  // it where they'd run off the end.
-  const words: Span[] = before != null ? [{ text: "before ", fg: ink.note }, money(before, ink.label)] : []
-  const w = words.reduce((n, x) => n + x.text.length, 0) + 2
-  const below = tick < 0 ? (before != null && before > scale ? labelled(width, [{ at: width, options: [[...words, { text: " ▸", fg: ink.strong }]] }]) : [{ text: " ", fg: ink.note }])
-    : tick + w <= width ? labelled(width, [{ at: tick, options: [[{ text: "▲ ", fg: ink.strong }, ...words]] }])
-    : labelled(width, [{ at: Math.max(0, tick - w + 1), options: [[...words, { text: " ▲", fg: ink.strong }]] }])
-  return { bar, below }
+export function categoryBar(width: number, groups: Array<{ amount: number; color: string; name: string }>): { bar: Span[]; labels: Span[] } {
+  const parts = groups.filter((g) => g.amount >= 0.5).sort((a, b) => b.amount - a.amount).map((g) => ({ amount: g.amount, color: g.color, name: g.name, figure: g.color }))
+  const cells = cellsOf(parts.map((p) => p.amount), width)
+  const bar = runs(parts.map((p, i) => ({ cells: cells[i]!, color: p.color })))
+  return { bar: bar.length ? bar : [{ text: "┄".repeat(width), fg: ink.faint }], labels: partLabels(width, parts, cells, TOP_GROUPS) }
 }
 
 /** A source of spending past what came in, measured: transfers in from
@@ -125,7 +108,7 @@ export interface SourcePart { amount: number; color: string; name: string; figur
  * and past it hatched in bad, under the parts that paid for it. Figures
  * over the sources, under the spending.
  */
-export function sourcesBars(width: number, income: number, spent: number, sources: SourcePart[], categories?: Array<{ amount: number; color: string }>, before: number | null = null): Span[][] {
+export function sourcesBars(width: number, income: number, spent: number, sources: SourcePart[], categories?: Array<{ amount: number; color: string; name: string }>): Span[][] {
   const covered = Math.min(spent, Math.max(0, income)), gap = spent - covered
   const given = sources.filter((s) => s.amount >= 0.5)
   const total = given.reduce((n, s) => n + s.amount, 0)
@@ -144,7 +127,7 @@ export function sourcesBars(width: number, income: number, spent: number, source
   const spending: Span[] = [...runs([{ cells: c, color: INKS.spend! }]), ...(o > 0 ? [hatched(o, tone.bad, tone.bad)] : [])]
   // Where the spending went (s): under the spending, its categories as a
   // third bar of the same total, the spent and net figures between them
-  // inside the edges; before's tick on it, or its figure where it was more.
+  // inside the edges, the largest groups named under it.
   const inner = categories ? width - 4 : width
   const below = labelled(inner, [
     { mid: Math.max(0, (c > 0 ? c / 2 : width / 2) - (categories ? 2 : 0)), options: [[money(spent, ink.figure), { text: " spent", fg: ink.note }], [money(spent, ink.figure)]] },
@@ -153,8 +136,8 @@ export function sourcesBars(width: number, income: number, spent: number, source
   const edges: Span[] = [{ text: "│", fg: ink.rule }, { text: " ".repeat(Math.max(0, width - 2)), fg: ink.note }, { text: "│", fg: ink.rule }]
   if (!categories) return [above, sourceBar, edges, spending, below]
   const inside: Span[] = [{ text: "│ ", fg: ink.rule }, ...below, { text: " ".repeat(Math.max(0, inner - below.reduce((n, x) => n + x.text.length, 0))), fg: ink.note }, { text: " │", fg: ink.rule }]
-  const bar = spendBar(width, categories, before, true)
-  return [above, sourceBar, edges, spending, inside, bar.bar, bar.below]
+  const bar = categoryBar(width, categories)
+  return [above, sourceBar, edges, spending, inside, bar.bar, bar.labels]
 }
 
 /**

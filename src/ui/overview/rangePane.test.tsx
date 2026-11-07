@@ -71,10 +71,10 @@ test("the Range pane: the range as a track, what came in as a bar (spent, net), 
   // Runway: the net position ($10,500) at the range's daily average
   // ($400 over 31 days, $13).
   expect(text).toMatch(/Runway\s+at \$13\/day\s+814 days/)
-  // The categories: a heading over the columns, their spending as a bar
-  // under it with before's tick (before was more: the bar stops short,
-  // dotted to the tick), each group's change on before.
-  expect(text).toMatch(/Categories\s+Spent\s+%\s+Before[^\n]*\n[^\n]*█+┄+┃[^\n]*\n[^\n]*before \$600 ▲/)
+  // The categories: a heading over the columns, straight over the rows
+  // (their bar is the spending view's), each group's change on before.
+  expect(text).toMatch(/Categories\s+Spent\s+%\s+Before[^\n]*\n[^\n]*Groceries/)
+  expect(text).not.toMatch(/┃|before \$600/)
   expect(text).toMatch(/Groceries\s+\$300\s+75%\s+-\$100/)
   expect(text).toMatch(/Fuel\s+\$100\s+25%\s+-\$100/)
   // t: Totals and Categories, saved; again, back.
@@ -201,11 +201,13 @@ test("the Range pane: the ratios first; s switches the bar to where the spending
   text = f.join("\n")
   expect(data.state.uiPrefs.rangeView).toBe("spending")
   // The spent part opened out: the left edge down, a corner where the
-  // spending ends; the categories' bar under it, before's under that.
+  // spending ends; the categories' bar under it, the largest groups'
+  // figures and names under that; no before tick.
   const opening = f.findIndex((l) => /│\s+\S+% spent\s+╰─+╮/.test(l) || /│\s+╰─+╮/.test(l))
   expect(opening).toBeGreaterThan(0)
-  expect(f[opening + 1]).toMatch(/█+┄*┃/)
-  expect(f[opening + 2]).toMatch(/before \$600/)
+  expect(f[opening + 1]).toMatch(/│  █+ │/)
+  expect(f[opening + 2]).toMatch(/\$300 Groceries\s+\$100 Fuel/)
+  expect(text).not.toMatch(/┃|before \$600/)
   // No net bar; the Categories heading straight over the rows.
   expect(text.slice(text.indexOf("╭─ Range"))).not.toMatch(/Rainy day|kept|saved/)
   expect(text).toMatch(/Categories\s+Spent\s+%\s+Before[^\n]*\n[^\n]*Groceries/)
@@ -232,7 +234,9 @@ test("spending more than came in, where the spending went: its categories as a t
   expect(spans.some((s) => s.text.includes("█") && s.fg.toInts().join() === groceries)).toBe(true)
   expect(spans.some((s) => s.text.includes("█") && s.fg.toInts().join() === fuel)).toBe(true)
   expect(t.captureSpans().lines[spentAt]!.spans.some((s) => s.text.includes("╱") && s.fg.toInts().join() === fuel)).toBe(false)
-  // No bar of their own over the categories.
+  // The largest groups named under it; no bar of their own over the
+  // categories.
+  expect(f[spentAt + 3]).toMatch(/\$1,200 Groceries\s+\$400 Fuel/)
   expect(f.join("\n")).toMatch(/Categories\s+Spent\s+%\s+Before[^\n]*\n[^\n]*Groceries/)
   t.renderer.destroy()
 })
