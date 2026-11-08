@@ -205,3 +205,21 @@ test("spending more than came in, paid for by money from outside (transfers in, 
   expect(text).not.toMatch(/\$\d[\d,]* (Spending|other)/)
   t.renderer.destroy()
 })
+
+test("the Range pane draws in with the charts, as the Budgets pane does: its bars sweep in under the Chart animation setting, the headings there from the start", async () => {
+  const { t, frame } = await overview([
+    spend("2026-09-01", 400, 10, "Groceries"), pay("2026-10-01", 5000),
+    spend("2026-10-05", 300, 10, "Groceries"), spend("2026-10-06", 100, 11, "Fuel"),
+  ], "1M")
+  const bars = (f: string[]) => f.join("").split("█").length - 1
+  const whole = bars(await frame())
+  expect(whole).toBeGreaterThan(0)
+  // "always": the setting's change is a new key, and the draw-in starts.
+  data.setState({ uiPrefs: { chartMotion: "always", chartSpeed: "juicy" } })
+  const early = await frame()
+  expect(bars(early)).toBeLessThan(whole)
+  expect(early.join("\n")).toMatch(/Categories\s+Spent/)
+  await Bun.sleep(1100)
+  expect(bars(await frame())).toBe(whole)
+  t.renderer.destroy()
+})

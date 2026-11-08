@@ -8,6 +8,7 @@ import { openGroups, overviewCategoryLines } from "../../state/overviewRange"
 import { ui, type SectionId } from "../../state/uiStore"
 import { ink, theme, tone } from "../../theme"
 import { cycleTrack } from "../budgets/PlanGraphics"
+import { revealLines, type TopLine } from "../charts/reveal"
 import { changeColor, spendChangeColor } from "../colors"
 import { categoryMark } from "../icons"
 import { centredTop } from "../primitives/ListRow"
@@ -32,7 +33,7 @@ function rangeText(input: RangeInput, width: number, f: ReturnType<OverviewModel
   const before = (text: string) => (covered() ? text : "—")
   // The range's daily average spending.
   const daily = (spent: number) => formatWholeMoney(windows().days ? spent / windows().days : 0)
-  const lines: Span[][] = []
+  const lines: TopLine[] = []
   // As text (t): the totals against before, line by line, the range's
   // figure under Spent and before's under Before; then the categories.
   const RANGE = 9, WAS = 5 + BEFORE
@@ -41,8 +42,8 @@ function rangeText(input: RangeInput, width: number, f: ReturnType<OverviewModel
     { text: value.padStart(RANGE), fg: look.value ?? ink.figure, bold: look.bold },
     { text: was.padStart(WAS), fg: look.was ?? ink.note },
   ]
-  lines.push(
-    line("Totals", "Range", "Before", { label: ink.heading, value: ink.label, was: ink.label, bold: true }),
+  lines.push({ spans: line("Totals", "Range", "Before", { label: ink.heading, value: ink.label, was: ink.label, bold: true }), stays: true })
+  lines.push(...[
     line("Spent", formatWholeMoney(f.spent), before(formatWholeMoney(b.spent)), { value: covered() && b.spent > 0 ? spendChangeColor(f.spent - b.spent) : ink.figure }),
     line("Income", formatWholeMoney(f.income), before(formatWholeMoney(b.income))),
     line("Net", signedWholeMoney(f.net), before(signedWholeMoney(b.net)), { value: changeColor(f.net) }),
@@ -50,15 +51,15 @@ function rangeText(input: RangeInput, width: number, f: ReturnType<OverviewModel
     line("Savings rate", formatPct(f.savingsRate), before(formatPct(b.savingsRate))),
     line("Daily", daily(f.spent), before(daily(b.spent))),
     line("Transactions", String(f.txnCount), before(String(b.txnCount))),
-  )
+  ].map((spans) => ({ spans })))
   // How long the net position lasts at the range's daily average.
-  if (position().netPosition != null && f.spent > 0 && windows().days > 0) lines.push(line("Runway", `${Math.round(position().netPosition! / (f.spent / windows().days))} days`, `at ${daily(f.spent)}/day`))
+  if (position().netPosition != null && f.spent > 0 && windows().days > 0) lines.push({ spans: line("Runway", `${Math.round(position().netPosition! / (f.spent / windows().days))} days`, `at ${daily(f.spent)}/day`) })
   const p = budget()
   if (p) {
-    lines.push(line("Budget", formatWholeMoney(p.budget.amount), `${Number.isFinite(p.usedPct) ? Math.round(p.usedPct) : "—"}% used`, { was: p.usedPct > 100 ? tone.bad : p.usedPct >= 80 ? tone.caution : tone.good }))
-    if (p.remaining > 0) lines.push(line("  left", formatWholeMoney(p.remaining), `${formatWholeMoney(p.dailyAllowance)}/day`))
+    lines.push({ spans: line("Budget", formatWholeMoney(p.budget.amount), `${Number.isFinite(p.usedPct) ? Math.round(p.usedPct) : "—"}% used`, { was: p.usedPct > 100 ? tone.bad : p.usedPct >= 80 ? tone.caution : tone.good }) })
+    if (p.remaining > 0) lines.push({ spans: line("  left", formatWholeMoney(p.remaining), `${formatWholeMoney(p.dailyAllowance)}/day`) })
   }
-  lines.push([], heading())
+  lines.push({ spans: [], stays: true }, { spans: heading(), stays: true })
   return lines
 }
 
@@ -66,7 +67,7 @@ function rangeBars(input: RangeInput, width: number, f: ReturnType<OverviewModel
   const { covered, position, windows, bounds, today, inPeriod, groups, spendingView } = input
   // The range's daily average spending.
   const daily = (spent: number) => formatWholeMoney(windows().days ? spent / windows().days : 0)
-  const lines: Span[][] = []
+  const lines: TopLine[] = []
   // The ratios first: label, before (a note) and the figure at the
   // row's end.
   const ratio = (label: string, value: string, was: string | null, aside?: string): Span[] => {
@@ -74,25 +75,25 @@ function rangeBars(input: RangeInput, width: number, f: ReturnType<OverviewModel
     const gap = Math.max(1, width - label.length - note.length - Math.max(VALUE - 2, value.length))
     return [{ text: label, fg: ink.label }, { text: " ".repeat(gap) + note, fg: ink.note }, { text: value.padStart(Math.max(VALUE - 2, value.length)), fg: ink.strong, bold: true }]
   }
-  lines.push(
+  lines.push(...[
     ratio("Daily average", daily(f.spent), daily(b.spent)),
     ratio("Transactions", String(f.txnCount), String(b.txnCount)),
     // How long the net position lasts at the range's daily average.
     ...(position().netPosition != null && f.spent > 0 && windows().days > 0
       ? [ratio("Runway", `${Math.round(position().netPosition! / (f.spent / windows().days))} days`, null, `at ${daily(f.spent)}/day`)]
       : []),
-    [],
-  )
+  ].map((spans) => ({ spans })), { spans: [], stays: true })
   // The track: what came in and what went to savers are the range's
   // flows (as the text's totals count them). What's spent is the bar's, under it.
-  lines.push(...cycleTrack(width, bounds().start, addDays(bounds().end, 1), today(), { ...pay, pay: f.income, sent: f.savedToSavers, spent: 0 }, tone.good, bounds().end))
-  lines.push([])
+  // Drawing in, its bar sweeps in, as the Budgets pane's does.
+  lines.push(...cycleTrack(width, bounds().start, addDays(bounds().end, 1), today(), { ...pay, pay: f.income, sent: f.savedToSavers, spent: 0 }, tone.good, bounds().end).map((spans, n) => ({ spans, sweeps: n === 1 })))
+  lines.push({ spans: [], stays: true })
   // Where the spending or the net went (s): the Budgets pane's flow too.
   lines.push(...spendFlow(width, {
     ...f, rows: inPeriod(), groups: groups(), bySpending: spendingView(),
     savers: [...position().savers].sort((x, y) => y.balance - x.balance),
-  }))
-  lines.push([], heading())
+  }).map((spans) => ({ spans, sweeps: true })))
+  lines.push({ spans: [], stays: true }, { spans: heading(), stays: true })
   return lines
 }
 
@@ -104,7 +105,7 @@ export function createRangeLines(input: RangeInput) {
   // spent), what came in as a bar (spent, net) opened out to where the net
   // went (each saver, kept) or, with s, where the spending went (its
   // category groups), then the categories with a Before column.
-  const rangeLines = createMemo((): Span[][] => {
+  const rangeLines = createMemo((): TopLine[] => {
     const pay = rangePay()
     const width = categoryWidth() - 5
     const f = flows(), b = previousFlows()
@@ -113,7 +114,7 @@ export function createRangeLines(input: RangeInput) {
     const cols = `${"Spent".padStart(9)}${"%".padStart(5)}${"Before".padStart(BEFORE)}`
     const heading = (): Span[] => [{ text: "Categories".padEnd(Math.max(10, width - 1 - cols.length)), fg: ink.heading, bold: true }, { text: cols, fg: ink.label }]
     const lines = textual() ? rangeText(input, width, f, b, heading) : rangeBars(input, width, f, b, pay, heading)
-    return lines.map((l) => (l.length ? l : [{ text: " ", fg: ink.note }]))
+    return lines.map((l) => (l.spans.length ? l : { ...l, spans: [{ text: " ", fg: ink.note }] }))
   })
   const rangeTop = () => rangeLines().length
   return { rangeLines, rangeTop }
@@ -154,9 +155,11 @@ export function createCategoryRows(input: CategoryInput) {
   return { beforeChange, chevron, categoryRows }
 }
 
-export function RangePane(input: CategoryInput & ReturnType<typeof createCategoryRows>) {
-  const { categoryWidth, categoriesHeight, categoriesFocused, uncategorised, toReview, rangeLines, groups, range, textual, categoryNameWidth } = input
+export function RangePane(input: CategoryInput & ReturnType<typeof createCategoryRows> & { reveal: () => number }) {
+  const { categoryWidth, categoriesHeight, categoriesFocused, uncategorised, toReview, rangeLines, groups, range, textual, categoryNameWidth, reveal } = input
   const { beforeChange, chevron, categoryRows } = input
+  // Drawing in with the charts (motion.ts: the same key, time and curve).
+  const shownLines = createMemo(() => revealLines(rangeLines(), reveal(), categoryWidth() - 5))
   return (
     <box ref={regionRef("ov.categories", "overview")} width={categoryWidth()} height={categoriesHeight()} flexShrink={0} onMouseDown={panePointer("ov.categories")}
       onMouseScroll={onPointer((s) => s === "bar" || s === "overview" || s === "overview.range", (event) => {
@@ -168,8 +171,8 @@ export function RangePane(input: CategoryInput & ReturnType<typeof createCategor
         ...(uncategorised() ? [{ text: `${uncategorised()} uncategorised`, fg: tone.caution }] : []),
         ...(toReview() ? [{ text: `${uncategorised() ? " · " : ""}${toReview()} to review (i)`, fg: tone.ai }] : []),
       ] : undefined} width={categoryWidth()} height={categoriesHeight()} focused={categoriesFocused()} active={categoriesFocused()}>
-      <Index each={rangeLines()}>{(spans) => (
-        <text wrapMode="none" flexShrink={0}><S>{" "}</S><Index each={spans()}>{(span) => <S fg={span().fg} bg={span().bg} bold={span().bold}>{span().text}</S>}</Index></text>
+      <Index each={shownLines()}>{(line) => (
+        <text wrapMode="none" flexShrink={0}><S>{" "}</S><Index each={line().spans}>{(span) => <S fg={span().fg} bg={span().bg} bold={span().bold}>{span().text}</S>}</Index></text>
       )}</Index>
       <Show when={groups().length} fallback={<text fg={ink.note}>No spending in this period</text>}>
         {/* Index: a new range or cursor move updates rows in place. */}

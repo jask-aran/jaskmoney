@@ -4,7 +4,7 @@ import { data } from "../../state/dataStore"
 import { CHART_SECTIONS, CHART_VIEWS, chartPaneOf, ui, type SectionId } from "../../state/uiStore"
 import { theme } from "../../theme"
 import { AXIS_GUESS, axisWidth, type ChartModel } from "../charts/ChartBody"
-import { chartSpeedMs, showings, takeLaunchReveal } from "../charts/motion"
+import { chartSpeedMs, showings, takeLaunchReveal, useReveal } from "../charts/motion"
 import { hasMarks } from "../charts/reveal"
 import { tabColumns } from "../primitives/columns"
 import { regionRef } from "../regions"
@@ -159,12 +159,18 @@ function createLaunchReveal(input: OverviewModel & ReturnType<typeof createChart
     const timer = setTimeout(() => setLaunchOver(true), revealMs() + 500)
     onCleanup(() => clearTimeout(timer))
   }))
-  return { revealKey, revealMs, seen }
+  // A pane's key and time under the global setting: "off", none; "always",
+  // `view`'s own (with the showing); "first launch", the latched one.
+  const motionKey = (view: string) => {
+    const mode = data.state.uiPrefs.chartMotion
+    return mode === "off" ? undefined : mode === "always" ? (revealKey() ? `${view}:${seen()}` : undefined) : revealKey()
+  }
+  const motionMs = () => (data.state.uiPrefs.chartMotion === "always" ? chartSpeedMs(data.state.uiPrefs.chartSpeed) : revealMs())
+  return { motionKey, motionMs }
 }
 
-function createChartPane(input: OverviewModel & OverviewLayout & ReturnType<typeof createChartModels> & { focused: () => SectionId }) {
-  const { models, paneWidth, calendar, trends, merchants, today, baseline, range } = input
-  const { revealKey, revealMs, seen } = createLaunchReveal(input)
+function createChartPane(input: OverviewModel & OverviewLayout & ReturnType<typeof createChartModels> & ReturnType<typeof createLaunchReveal> & { focused: () => SectionId }) {
+  const { models, paneWidth, calendar, trends, merchants, today, baseline, range, motionKey, motionMs } = input
   return (p: { pane: number; height: number }) => {
     const index = () => ui.state.chartViews[p.pane]!
     const view = () => CHART_VIEWS[index()] ?? CHART_VIEWS[0]
@@ -183,8 +189,8 @@ function createChartPane(input: OverviewModel & OverviewLayout & ReturnType<type
         height={p.height}
         focused={input.focused() === section}
         baseline={baseline()}
-        revealKey={data.state.uiPrefs.chartMotion === "off" ? undefined : data.state.uiPrefs.chartMotion === "always" ? (revealKey() ? `${view().view}:${view().ranged ? `${range().bounds.start}:${range().bounds.end}` : ""}:${seen()}` : undefined) : revealKey()}
-        revealMs={data.state.uiPrefs.chartMotion === "always" ? chartSpeedMs(data.state.uiPrefs.chartSpeed) : revealMs()}
+        revealKey={motionKey(`${view().view}:${view().ranged ? `${range().bounds.start}:${range().bounds.end}` : ""}`)}
+        revealMs={motionMs()}
         curve={data.state.uiPrefs.chartCurve}
         labels={data.state.uiPrefs.chartLabels}
       />
@@ -279,6 +285,9 @@ export function OverviewTab(props: { focused: SectionId }) {
   const pay = createOverviewPay(model)
   const rangeLines = createRangeLines({ ...model, ...layout, ...pay })
   const charts = createChartModels({ ...model, ...layout, ...chartInput })
+  const motion = createLaunchReveal({ ...model, ...charts })
+  // The Range pane draws in as the charts do: each new Date Range ("always").
+  const rangeReveal = useReveal(() => motion.motionKey(`Range:${model.range().bounds.start}:${model.range().bounds.end}`), motion.motionMs, () => data.state.uiPrefs.chartCurve)
   const before = createOverviewBefore(model)
   const accounts = createAccountsCard({ ...model, ...layout, focused: () => props.focused })
   // Unfocused, the lines that fit (every group, then the largest
@@ -287,11 +296,11 @@ export function OverviewTab(props: { focused: SectionId }) {
   const categoriesFocused = () => props.focused === "ov.categories"
   const counts = createOverviewCounts(model)
   const cards = { ...model, ...layout, focused: () => props.focused }
-  const categories = { ...cards, ...rangeLines, ...counts, ...before, categoriesFocused }
+  const categories = { ...cards, ...rangeLines, ...counts, ...before, categoriesFocused, reveal: rangeReveal }
   const categoryRows = createCategoryRows(categories)
   const accountsCard = () => <AccountsCard {...cards} {...accounts} />
   const categoriesCard = () => <RangePane {...categories} {...categoryRows} />
-  const ChartPane = createChartPane({ ...model, ...layout, ...charts, focused: () => props.focused })
+  const ChartPane = createChartPane({ ...model, ...layout, ...charts, ...motion, focused: () => props.focused })
   return (
     <box width="100%" height="100%" flexDirection="column" backgroundColor={theme.canvas}>
       <DateRangeCard {...model} {...date} focused={() => props.focused} />

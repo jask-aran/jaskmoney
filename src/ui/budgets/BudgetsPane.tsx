@@ -7,6 +7,7 @@ import type { SectionId } from "../../state/uiStore"
 import { fade, ink, theme, tone } from "../../theme"
 import { flowOpening } from "../charts/flow"
 import { chartSpeedMs, useReveal } from "../charts/motion"
+import { revealLines, sweptIn, type TopLine } from "../charts/reveal"
 import { CalendarView } from "../overview/CalendarView"
 import { spendFlow } from "../overview/RangeGraphics"
 import { ListRow } from "../primitives/ListRow"
@@ -141,17 +142,7 @@ export function createPlanFlow(input: Pick<ReturnType<typeof createBudgetInputs>
   const planReveal = useReveal(
     () => (data.state.uiPrefs.chartMotion === "always" ? `${cycle().start}:${seen()}` : undefined),
     () => chartSpeedMs(data.state.uiPrefs.chartSpeed), () => data.state.uiPrefs.chartCurve)
-  const shownTop = createMemo((): TopLine[] => {
-    const p = planReveal(), lines = topLines()
-    if (p >= 1) return lines
-    const width = rowWidth(categoriesWidth())
-    const edge = Math.round(Math.min(1, p / 0.7) * width)
-    return lines.map((line, i) => {
-      if (line.stays) return line
-      if (line.sweeps) return { ...line, spans: sweptTo(line.spans, edge) }
-      return p >= 0.3 + 0.6 * (i / lines.length) ? line : { ...line, spans: [{ text: " ", fg: ink.note }] }
-    })
-  })
+  const shownTop = createMemo(() => revealLines(topLines(), planReveal(), rowWidth(categoriesWidth())))
   return { nextPayBlock, flowBlock, shownTop, nextPayLines, flowLines, planReveal }
 }
 
@@ -186,7 +177,7 @@ export function createBudgetsPane(input: Pick<ReturnType<typeof createCategoryRo
       <Show when={nextPayLines().length}><text wrapMode="none" flexShrink={0}>{" "}</text></Show>
       <Index each={flowLines()}>{(spans) => (
         // Sweeping in with the plan's bars.
-        <text wrapMode="none" flexShrink={0}><S>{" "}</S><Index each={planReveal() >= 1 ? spans() : sweptTo(spans(), Math.round(Math.min(1, planReveal() / 0.7) * rowWidth(categoriesWidth())))}>{(span) => <S fg={span().fg} bold={span().bold}>{span().text}</S>}</Index></text>
+        <text wrapMode="none" flexShrink={0}><S>{" "}</S><Index each={sweptIn(spans(), planReveal(), rowWidth(categoriesWidth()))}>{(span) => <S fg={span().fg} bold={span().bold}>{span().text}</S>}</Index></text>
       )}</Index>
       <Show when={flowLines().length}><text wrapMode="none" flexShrink={0}>{" "}</text></Show>
       <Show when={listInSide()} fallback={
@@ -202,23 +193,4 @@ export function createBudgetsPane(input: Pick<ReturnType<typeof createCategoryRo
     </SectionCard>
   )
   return { Categories }
-}
-
-/** A line of the Budgets pane's top: `stays` while it draws in (headings),
- * `sweeps` in from the left (bars), or drops in; `bg` fills it to the row's
- * end. */
-interface TopLine { spans: Span[]; bg?: string; sweeps?: boolean; stays?: boolean }
-
-/** `spans` cut at `edge` cells, the rest blank: a bar sweeping in. */
-function sweptTo(spans: Span[], edge: number): Span[] {
-  const out: Span[] = []
-  let left = edge, width = 0
-  for (const span of spans) {
-    width += span.text.length
-    if (left <= 0) continue
-    out.push(span.text.length <= left ? span : { ...span, text: span.text.slice(0, left) })
-    left -= span.text.length
-  }
-  const shown = out.reduce((n, x) => n + x.text.length, 0)
-  return [...out, { text: " ".repeat(Math.max(0, width - shown)), fg: ink.note }]
 }

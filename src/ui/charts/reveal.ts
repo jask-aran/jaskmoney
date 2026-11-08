@@ -1,5 +1,7 @@
 import type { Run } from "./lineChart"
 import type { ChartLabelMode } from "./motion"
+import { ink } from "../../theme"
+import type { Span } from "../primitives/spans"
 import { textCells } from "./runs"
 
 /**
@@ -101,3 +103,36 @@ export function hasMarks(rows: Run[][]): boolean {
  * shape: 1 is linear, 2 gentle, 3 the default, higher a sharper start and
  * a longer settle (CHART_CURVES). */
 export const easeOut = (t: number, power = 3) => 1 - (1 - Math.min(1, Math.max(0, t))) ** power
+
+/** A line of a pane drawn as lines (the Budgets pane's top, the Range
+ * pane's): `stays` while it draws in (headings, blanks), `sweeps` in from
+ * the left (bars), or drops in; `bg` fills it to the row's end. */
+export interface TopLine { spans: Span[]; bg?: string; sweeps?: boolean; stays?: boolean }
+
+/** `spans` `p` of the way (0–1) through sweeping in from the left: cut at
+ * an edge that reaches the row's end (`width`) at 0.7, the rest blank. */
+export function sweptIn(spans: Span[], p: number, width: number): Span[] {
+  if (p >= 1) return spans
+  const out: Span[] = []
+  let left = Math.round(Math.min(1, p / 0.7) * width), total = 0
+  for (const span of spans) {
+    total += span.text.length
+    if (left <= 0) continue
+    out.push(span.text.length <= left ? span : { ...span, text: span.text.slice(0, left) })
+    left -= span.text.length
+  }
+  const shown = out.reduce((n, x) => n + x.text.length, 0)
+  return [...out, { text: " ".repeat(Math.max(0, total - shown)), fg: ink.note }]
+}
+
+/** `lines` `p` of the way through drawing in: the bars sweep in (sweptIn),
+ * the rest drop in, in order, from 0.3 to 0.9; `stays` lines are there from
+ * the start. Pure, as revealRuns. */
+export function revealLines(lines: TopLine[], p: number, width: number): TopLine[] {
+  if (p >= 1) return lines
+  return lines.map((line, i) => {
+    if (line.stays) return line
+    if (line.sweeps) return { ...line, spans: sweptIn(line.spans, p, width) }
+    return p >= 0.3 + 0.6 * (i / lines.length) ? line : { ...line, spans: [{ text: " ", fg: ink.note }] }
+  })
+}
