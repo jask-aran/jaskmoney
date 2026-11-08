@@ -51,6 +51,41 @@ const FREE = new Set([" ", "│", "┈"])
  * its width. */
 const labelCells = textCells
 
+// Where `n` cells could go for a point, best first.
+const spots = (row: number, col: number, n: number): Array<[number, number]> => {
+  const centred: Array<[number, number]> = [[row - 1, col - Math.floor((n - 1) / 2)], [row + 1, col - Math.floor((n - 1) / 2)]]
+  // Right of the point, or of a line two cells wide there (a spike), then left.
+  const beside: Array<[number, number]> = [[row, col + 2], [row, col + 3], [row, col - 1 - n]]
+  return [
+    ...beside,
+    ...centred,
+    [row - 1, col + 1],
+    [row - 1, col - n],
+    [row + 1, col + 1],
+    [row + 1, col - n],
+    [row - 2, col - n],
+    [row - 2, col + 1],
+    [row + 2, col - n],
+    [row + 2, col + 1],
+    // Further out to the side: past a line a few cells wide (a spike).
+    ...[4, 5, 6].flatMap((d): Array<[number, number]> => [[row, col + d], [row - 1, col + d], [row + 1, col + d], [row, col - n - d + 2]]),
+  ]
+}
+
+// Where `n` cells could go for a bar whose top is `row`, nearest first:
+// touching it (the row over it, centred and then shifted while the
+// label's middle stays over the bar, or right of its top past a blank
+// column), then two rows up or right of the row under its top, then
+// three up.
+const barTiers = (row: number, bar: { col: number; width: number }, n: number): Array<Array<[number, number]>> => {
+  const centred = bar.col + Math.floor((bar.width - n) / 2)
+  const lo = bar.col - Math.floor((n - 1) / 2), hi = bar.col + bar.width - 1 - Math.floor((n - 1) / 2)
+  const starts = [centred, ...Array.from({ length: 2 * Math.max(0, hi - lo) }, (_, k) => centred + (k % 2 ? 1 : -1) * Math.ceil((k + 1) / 2))].filter((c) => c >= lo && c <= hi)
+  const over = (d: number) => starts.map((c): [number, number] => [row - d, c])
+  const beside = (d: number): Array<[number, number]> => [[row + d, bar.col + bar.width + 1]]
+  return [[...over(1), ...beside(0)], [...over(2), ...beside(1)], over(3)]
+}
+
 export function annotate(rows: Run[][], labels: ChartLabel[]): Run[][] {
   if (!labels.length || !rows.length) return rows
   const grid = cellGrid(rows)
@@ -61,39 +96,6 @@ export function annotate(rows: Run[][], labels: ChartLabel[]): Run[][] {
     const cells = grid.row(r)
     for (let c = Math.max(0, from - 1); c < Math.min(width, to + 1); c++) if (!FREE.has(cells[c]!.text)) return false
     return true
-  }
-  // Where `n` cells could go for a point, best first.
-  const spots = (row: number, col: number, n: number): Array<[number, number]> => {
-    const centred: Array<[number, number]> = [[row - 1, col - Math.floor((n - 1) / 2)], [row + 1, col - Math.floor((n - 1) / 2)]]
-    // Right of the point, or of a line two cells wide there (a spike), then left.
-    const beside: Array<[number, number]> = [[row, col + 2], [row, col + 3], [row, col - 1 - n]]
-    return [
-      ...beside,
-      ...centred,
-      [row - 1, col + 1],
-      [row - 1, col - n],
-      [row + 1, col + 1],
-      [row + 1, col - n],
-      [row - 2, col - n],
-      [row - 2, col + 1],
-      [row + 2, col - n],
-      [row + 2, col + 1],
-      // Further out to the side: past a line a few cells wide (a spike).
-      ...[4, 5, 6].flatMap((d): Array<[number, number]> => [[row, col + d], [row - 1, col + d], [row + 1, col + d], [row, col - n - d + 2]]),
-    ]
-  }
-  // Where `n` cells could go for a bar whose top is `row`, nearest first:
-  // touching it (the row over it, centred and then shifted while the
-  // label's middle stays over the bar, or right of its top past a blank
-  // column), then two rows up or right of the row under its top, then
-  // three up.
-  const barTiers = (row: number, bar: { col: number; width: number }, n: number): Array<Array<[number, number]>> => {
-    const centred = bar.col + Math.floor((bar.width - n) / 2)
-    const lo = bar.col - Math.floor((n - 1) / 2), hi = bar.col + bar.width - 1 - Math.floor((n - 1) / 2)
-    const starts = [centred, ...Array.from({ length: 2 * Math.max(0, hi - lo) }, (_, k) => centred + (k % 2 ? 1 : -1) * Math.ceil((k + 1) / 2))].filter((c) => c >= lo && c <= hi)
-    const over = (d: number) => starts.map((c): [number, number] => [row - d, c])
-    const beside = (d: number): Array<[number, number]> => [[row + d, bar.col + bar.width + 1]]
-    return [[...over(1), ...beside(0)], [...over(2), ...beside(1)], over(3)]
   }
   // Cells near a placed label: another label there reads as its neighbour.
   const near = new Uint8Array(grid.height * width)
