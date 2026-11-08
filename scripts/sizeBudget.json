@@ -36,7 +36,6 @@
     "src/domain/filter.ts": 910,
     "src/state/uiStore.ts": 900,
     "src/ui/settings/SettingsTab.tsx": 800,
-    "src/ui/overview/OverviewTab.tsx": 770,
     "src/core/core.ts": 740,
     "src/client/store.ts": 740,
     "src/ui/budgets/BudgetsTab.tsx": 690,
@@ -45,7 +44,6 @@
   "functionLines": 80,
   "frozenFunctions": {
     "src/core/core.ts:createCore": 660,
-    "src/ui/overview/OverviewTab.tsx:OverviewTab": 620,
     "src/ui/budgets/BudgetsTab.tsx:BudgetsTab": 610,
     "src/client/store.ts:createClientStore": 600,
     "src/state/uiStore.ts:createUiStore": 380,

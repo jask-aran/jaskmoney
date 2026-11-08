@@ -21,20 +21,8 @@ export function viewPicker(views: ChartViews, current: number): Span[] {
   ])
 }
 
-/**
- * A chart pane, as the Overview's and the Budgets tab's both are: titled
- * by what its view shows, then whose (`scope`) when the pane covers less
- * than the tab does (a budget); the views as icons in the top border, the
- * chart's legend in the bottom one. Without a `model` (a view that isn't
- * a chart: the calendar), `fallback` and its `legend` show.
- */
-export function ChartCard(props: {
-  scope?: string
-  views: ChartViews
-  current: number
+export interface ChartCardProps {
   model: ChartModel | null
-  legend?: Span[]
-  fallback?: JSX.Element
   width: number
   height: number
   focused?: boolean
@@ -46,6 +34,21 @@ export function ChartCard(props: {
   curve?: string
   /** When its labels appear as it draws in (motion). */
   labels?: ChartLabelMode
+}
+
+/**
+ * A chart pane, as the Overview's and the Budgets tab's both are: titled
+ * by what its view shows, then whose (`scope`) when the pane covers less
+ * than the tab does (a budget); the views as icons in the top border, the
+ * chart's legend in the bottom one. Without a `model` (a view that isn't
+ * a chart: the calendar), `fallback` and its `legend` show.
+ */
+export function ChartCard(props: ChartCardProps & {
+  scope?: string
+  views: ChartViews
+  current: number
+  legend?: Span[]
+  fallback?: JSX.Element
 }) {
   const view = () => props.views[props.current] ?? props.views[0]!
   return (
