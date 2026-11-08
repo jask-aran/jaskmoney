@@ -1,4 +1,3 @@
-import { web, webLabel } from "./webApp"
 import { updateAvailable, versionLabel } from "./updates"
 import { showVersion } from "./keys"
 import { ModelPicker } from "../ui/settings/ModelPicker"
@@ -64,7 +63,7 @@ export function App() {
 
   // `--connect <ws url>`: a core elsewhere (bun run server, or a TUI's
   // --serve). Otherwise the core is this process's; `--serve[=port]` serves
-  // it to the web app and other clients too.
+  // it to other clients (a TUI's --connect) too.
   const remote = flagValue("--connect")
   const serving = remote == null ? flagValue("--serve") : null
 
@@ -120,7 +119,7 @@ export function App() {
         const served = serveCore(data.core, { port: Number(serving) || DEFAULT_PORT })
         // A listening server would keep the process alive after quitting.
         onCleanup(() => served.stop())
-        ui.setStatus(`Web app at ${served.page}`)
+        ui.setStatus(`Serving the core at ${served.api}`)
       }
     } catch (e) {
       ui.setStatus(`DB error: ${e instanceof Error ? e.message : String(e)}`, true)
@@ -217,7 +216,6 @@ export function App() {
           // The version, in the good tone when a newer one is out; pointed
           // at (mouse or cursor) it checks and says.
           { id: "bar.version", text: versionLabel(), fg: updateAvailable() ? tone.good : undefined, onHover: () => void showVersion(ui) },
-          { id: "bar.web", text: webLabel(web.serving()) },
           { id: "bar.sync", text: data.state.demo ? "" : syncLabel() },
         ]}
         reserveRight={ui.state.activeTab === "overview" ? UP_LOGO_WIDTH : 0}

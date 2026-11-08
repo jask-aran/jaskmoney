@@ -16,6 +16,5 @@
     },
     "baseUrl": "."
   },
-  "include": ["src/**/*"],
-  "exclude": ["src/web"]
+  "include": ["src/**/*"]
 }

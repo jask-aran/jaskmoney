@@ -19,7 +19,7 @@
     "recordings": "bun run scripts/recordings.ts",
     "lint": "bun run scripts/lint.ts",
     "test": "bun run scripts/lint.ts && bun test --conditions=browser --parallel",
-    "typecheck": "bun run scripts/lint.ts && tsc --noEmit && tsc --noEmit -p src/web",
+    "typecheck": "bun run scripts/lint.ts && tsc --noEmit",
     "bench": "bun test --conditions=browser ./src/bench/keys.bench.tsx",
     "eval": "bun --conditions=browser run src/eval/run.ts",
     "eval:search": "bun --conditions=browser run src/eval/search.ts"
@@ -29,10 +29,6 @@
     "@earendil-works/pi-mcp": "1.4.0",
     "@opentui/core": "0.7.0",
     "@opentui/solid": "0.7.0",
-    "@unovis/solid": "1.7.1",
-    "@unovis/ts": "1.7.1",
-    "clsx": "^2.1.1",
-    "lucide-solid": "1.25.0",
     "solid-js": "1.9.12"
   },
   "devDependencies": {

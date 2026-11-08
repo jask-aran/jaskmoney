@@ -40,8 +40,6 @@ process.on("SIGINT", () => {})
 
 watch("src", { recursive: true }, (_, name) => {
   if (!name || !/\.tsx?$/.test(name) || /\.test\.tsx?$/.test(name)) return
-  // The web app isn't the TUI: a reload rebuilds it (server/webBuild).
-  if (name.startsWith("web/")) return
   // An editor's save can be several writes: restart once they settle.
   clearTimeout(timer)
   timer = setTimeout(() => void restart(), 150)

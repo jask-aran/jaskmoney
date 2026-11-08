@@ -6,7 +6,6 @@ import { travel } from "./paneTravel"
 import { chooseModel, modelItems, openModelPicker } from "./modelPicker"
 import { regionRects } from "../ui/regions"
 import { nearestRegion } from "../state/spatial"
-import { web } from "./webApp"
 import { describeVersion } from "./updates"
 import { unwrap } from "solid-js/store"
 import { merchantKey } from "../domain/history"
@@ -369,7 +368,6 @@ function handleJump(ui: UiStore, key: KeyEvent, data?: DataStore): void {
       else if (hit.section === "set.appearance") ui.activateSettings("appearance")
       else if (hit.section === "set.database") ui.activateSettings("database")
       else if (hit.section === "set.up") ui.activateSettings("up")
-      else if (hit.section === "set.web") ui.activateSettings("web")
       else if (hit.section === "set.ai") ui.activateSettings("ai")
       return
     }
@@ -1272,16 +1270,6 @@ function handleSettingsUp(ui: UiStore, key: KeyEvent, data?: DataStore): void {
   if (name === "s" && data) { void runSync(ui, data, { manual: true }); return }
 }
 
-/** Settings › Web app: enter opens the page this core serves. */
-function handleSettingsWeb(ui: UiStore, key: KeyEvent, data?: DataStore): void {
-  const { name } = key
-  if (name === "escape") { ui.leaveSettings(); return }
-  if (name === "return" || name === "enter" || name === "o") {
-    if (web.serving()) openBarItem(ui, data, "bar.web")
-    else ui.setStatus("Not serving the web app · start with --serve")
-  }
-}
-
 /** Database & Import › Import history: every import, newest first. */
 function handleImportHistory(ui: UiStore, key: KeyEvent, data?: DataStore): void {
   if (key.name === "escape") { ui.setState({ importHistory: null }); return }
@@ -1816,10 +1804,7 @@ export function moveOverviewCategory(ui: UiStore, data: DataStore, index: number
 export function openBarItem(ui: UiStore, data: DataStore | undefined, id: string): void {
   const tab = TABS.find((tab) => id === `bar.${tab.id}`)
   if (tab) ui.switchTab(tab.id)
-  else if (id === "bar.web") {
-    const served = web.serving()
-    if (served) { web.open(served.page); ui.setStatus(`Opening ${served.page}`) }
-  } else if (id === "bar.sync" && data) void runSync(ui, data, { manual: true })
+  else if (id === "bar.sync" && data) void runSync(ui, data, { manual: true })
   else if (id === "bar.version") void showVersion(ui)
 }
 
@@ -2631,11 +2616,6 @@ const scopes: Record<ScopeId, ScopeEntry> = {
     list: true,
     hints: () => [{ key: "j/k", desc: "move" }, { key: "enter", desc: "open" }, { key: "s", desc: "sync now" }, { key: "esc", desc: "done" }],
   },
-  "settings.web": {
-    handle: handleSettingsWeb,
-    list: true,
-    hints: () => [{ key: "enter", desc: "open in browser" }, { key: "esc", desc: "done" }],
-  },
   "settings.importHistory": {
     handle: handleImportHistory,
     list: true,
@@ -2784,7 +2764,7 @@ const scopes: Record<ScopeId, ScopeEntry> = {
     },
     hints: (state) => [
       { key: "←→", desc: "move" },
-      { key: "enter", desc: state?.focusedSection === "bar.web" ? "open" : state?.focusedSection === "bar.sync" ? "sync" : state?.focusedSection === "bar.version" ? "check for updates" : "switch" },
+      { key: "enter", desc: state?.focusedSection === "bar.sync" ? "sync" : state?.focusedSection === "bar.version" ? "check for updates" : "switch" },
       { key: "↓", desc: "page" },
       { key: "esc", desc: "done" },
     ],

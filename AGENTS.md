@@ -6,7 +6,7 @@ The repository root is the OpenTUI product. The app documents itself (footer, `c
 
 ```bash
 bun start
-bun run server    # the core alone: the web app and other clients connect
+bun run server    # the core alone: a TUI connects with --connect
 bun run typecheck
 bun run test
 bun run lint      # the size budget (also run by typecheck and test)
@@ -16,7 +16,7 @@ bun run eval:search  # smart search's filters, with and without Clairic (src/eva
 
 `bun run eval` freezes a demo made from your history into `~/.jaskmoney/eval` (never the repo) and scores the suggestion pipeline against its hidden categories: right, top 3, accept-all precision, by source and by unseen merchant, with the change since the last run. Run it before and after changing a decision-model prompt or context block; `--limit N` for a fixed sample, `--fresh` to remake the set, `--misses` to list the wrong picks. Confirm a change on a set it wasn't found on (`--set 1`, `--set 2`: other seeds, other held-out merchants), and prefer fixing what fails outright to nudging what's already right.
 
-The data lives in one core (`src/core/`) that the TUI and the web app reach as clients through `src/client/store.ts`.
+The data lives in one core (`src/core/`) that the TUI reaches as a client through `src/client/store.ts` (in this process, or over a WebSocket with `--connect`).
 
 ## Size budget
 

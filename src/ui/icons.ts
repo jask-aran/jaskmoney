@@ -62,8 +62,6 @@ const SETTING_ICONS = {
   sync: "", // refresh
   accounts: "", // university
   setup: "", // magic
-  web: "", // globe
-  tui: "", // terminal
   theme: "", // paint-brush
   icons: "", // tags
   xAxis: "", // line-chart

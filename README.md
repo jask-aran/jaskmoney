@@ -63,9 +63,9 @@ only to the services you set up:
 
 Nothing of yours goes with two other requests: public market prices from Yahoo Finance (the setup's backdrop), and
 GitHub's latest release, asked by an installed binary every 10 minutes (`JASKMONEY_NO_UPDATE_CHECK=1` turns it off).
-The optional server (`--serve`) listens on 127.0.0.1 only and refuses other host names and foreign origins, but has no
-token: anything running on this machine can connect, read everything and change credentials. Serve only on a machine
-whose other users you trust, and put a login in front of any tunnel or proxy.
+The optional server (`--serve`, for a TUI elsewhere to `--connect`) listens on 127.0.0.1 only and refuses other host names
+and browser pages, but has no token: anything running on this machine can connect, read everything and change
+credentials. Serve only on a machine whose other users you trust.
 
 ## Keys
 

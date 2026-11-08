@@ -1,7 +1,6 @@
 import { expect, onTestFinished, spyOn, test } from "bun:test"
 import type { ServerWebSocket, WebSocketHandler } from "bun"
 import { createCore } from "../core/core"
-import type { ConnectedClient } from "../core/protocol"
 import { serveCore } from "./serve"
 
 type SocketData = {
@@ -10,7 +9,6 @@ type SocketData = {
   rows: Map<string, string>
   order: string
   calls: Map<string | number, AbortController>
-  client: ConnectedClient
 }
 
 /** Capture the handlers: no listener, HTTP request or WebSocket is started. */
@@ -26,12 +24,10 @@ function setup() {
   onTestFinished(() => { server.stop(); core.close() })
   if (!handlers) throw new Error("missing WebSocket handlers")
   const websocket = handlers
-  let clientId = 0
   function connect() {
     const messages: string[] = []
     const data: SocketData = {
       sent: new Map(), entries: new Map(), rows: new Map(), order: "", calls: new Map(),
-      client: { id: ++clientId, kind: "tui", agent: "test", address: "127.0.0.1", via: "direct", since: 0 },
     }
     // Only data and send are used by these handlers.
     const ws = { data, send: (text: string) => { messages.push(text); return text.length } } as ServerWebSocket<SocketData>

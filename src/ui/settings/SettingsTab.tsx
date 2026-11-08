@@ -53,7 +53,7 @@ import { EDITOR_TITLE, editorFields, editorNote, editorWidth, pickerItems, type 
 const rowWidth = (width: number) => Math.max(10, width - 4)
 
 /** Where a click on a pane counts: the page, or a pane of it (not under a dialog). */
-const SETTINGS_SCOPES = new Set<ScopeId>(["bar", "settings", "settings.taxonomy", "settings.rules", "settings.filters", "settings.up", "settings.web", "settings.ai", "settings.appearance", "settings.database"])
+const SETTINGS_SCOPES = new Set<ScopeId>(["bar", "settings", "settings.taxonomy", "settings.rules", "settings.filters", "settings.up", "settings.ai", "settings.appearance", "settings.database"])
 const onSettings = (action: (event: MouseEvent) => void) => onPointer((scope) => SETTINGS_SCOPES.has(scope), action)
 
 /** A line of a pane that isn't a cursor row: a subheading, a note, a blank. */
@@ -382,36 +382,6 @@ function UpPane(props: { focused: boolean; width: number; height?: number }) {
     <Show when={info()?.upLastError}>{(error: () => string) => <Line spans={[{ text: " ".repeat(13), fg: ink.label }, { text: error(), fg: tone.bad }]} />}</Show>
     {row(2, mark("accounts", !accounts().length ? "off" : off().length ? "caution" : "good"), "Accounts", linked(), ink.figure)}
     {row(3, mark("setup", "plain", "", "›"), "Setup", "first-time setup: Up, AI, email", ink.note)}
-  </SectionCard>
-}
-
-/** Web app's height: borders, the address, then a row per client (or "none connected"). */
-const webHeight = () => 3 + (data.state.server ? Math.max(1, data.state.clients.length) : 0)
-
-/** Web app: where this core serves it and who is connected, as the daemon
- * broadcasts them (core server, clients). Enter on the address opens the
- * page (as the top bar's web item does). */
-function WebAppPane(props: { focused: boolean; width: number; height?: number }) {
-  const active = () => ui.state.settingsActive && ui.state.settingsSection === "web"
-  const server = () => data.state.server
-  const clients = () => data.state.clients
-  const time = (at: number) => new Date(at).toLocaleTimeString("en-AU", { hour: "numeric", minute: "2-digit" })
-  const pick = onSettings(() => ui.activateSettings("web"))
-  const row = (lead: Span, label: string, value: string, fg: string, note = "") =>
-    <ListRow cursor={false} bg={theme.canvas} onMouseDown={pick} spans={[lead, { text: fit(label, 9), fg: ink.label }, { text: value, fg }, ...(note ? [{ text: `  ${note}`, fg: ink.note }] : [])]} />
-  return <SectionCard inset title={SETTINGS_SECTION_LABELS.web} focused={props.focused} active={active()} height={props.height ?? webHeight()} width={props.width}>
-    <ListRow cursor={active()} bg={theme.canvas} onMouseDown={pick} spans={[
-      mark("web", server() ? "good" : "off"), { text: fit("Address", 9), fg: ink.label },
-      server() ? { text: server()!.page, fg: ink.figure } : { text: "not serving · start with --serve", fg: ink.faint },
-    ]} />
-    <Show when={server()}>
-      <Show when={clients().length} fallback={row(mark("web", "off", "", " "), "Clients", "none connected", ink.faint)}>
-        <For each={clients()}>
-          {(client, i) => row(mark(client.kind === "tui" ? "tui" : "web", "good"), i() === 0 ? "Clients" : "", client.agent, ink.figure,
-            `${client.address}${client.via === "tunnel" ? " · tunnel" : ""} · since ${time(client.since)}`)}
-        </For>
-      </Show>
-    </Show>
   </SectionCard>
 }
 
@@ -772,7 +742,7 @@ export function SettingsTab(props: { focused: SectionId }) {
     </scrollbox>
   )
   // Wide: Taxonomy over Rules & Filters on the left (full width of the
-  // column); on the right Up Bank beside Web app, AI models, Appearance
+  // column); on the right Up Bank, AI models, Appearance
   // beside Database & Import (each
   // pair one height), stacked when the column is too narrow for pairs.
   // Narrower: one column in the same order (SETTINGS_SECTIONS).
@@ -791,28 +761,23 @@ export function SettingsTab(props: { focused: SectionId }) {
   const taxonomy = (width: number, room: number) => <Pane section="set.categories" settings="taxonomy"><TaxonomyPane focused={taxonomyFocused()} height={taxonomyHeight(width, room)} width={width} /></Pane>
   const rules = (width: number) => <Pane section="set.rules" settings="rules"><RulesPane focused={props.focused === "set.rules" || props.focused === "set.filters"} width={width} /></Pane>
   const up = (width: number, height?: number) => <Pane section="set.up" settings="up" width={width}><UpPane focused={props.focused === "set.up"} width={width} height={height} /></Pane>
-  const webApp = (width: number, height?: number) => <Pane section="set.web" settings="web" width={width}><WebAppPane focused={props.focused === "set.web"} width={width} height={height} /></Pane>
   const ai = (width: number) => <Pane section="set.ai" settings="ai"><AiPane focused={props.focused === "set.ai"} width={width} /></Pane>
   const appearance = (width: number, height?: number) => <Pane section="set.appearance" settings="appearance" width={width}><AppearancePane focused={props.focused === "set.appearance"} width={width} height={height} /></Pane>
   const database = (width: number, height?: number) => <Pane section="set.database" settings="database" width={width}><DatabasePane focused={props.focused === "set.database"} width={width} height={height} /></Pane>
   // Pairs need room for Up Bank's rows and Database's values beside their partners.
   const pairs = () => right() >= 100
-  // Up Bank as wide as its rows; Web app the rest.
-  const upWidth = () => Math.min(62, right() - 1 - 46)
   // The setup's backdrop behind the panes (Backdrop); the panes over it.
   return <box width="100%" height="100%" backgroundColor={theme.canvas}>
     <SettingsBackdrop />
     <box zIndex={1} width="100%" height="100%" flexDirection="row" gap={1}>
     <Show when={dims().width >= 112} fallback={
       <Column>
-        {taxonomy(full(), dims().height - 6)}{rules(full())}{up(full())}{webApp(full())}{ai(full())}{appearance(full())}{database(full())}
+        {taxonomy(full(), dims().height - 6)}{rules(full())}{up(full())}{ai(full())}{appearance(full())}{database(full())}
       </Column>
     }>
       <Column width={left()}>{taxonomy(left(), body() - rulesHeight())}{rules(left())}</Column>
       <Column>
-        <Show when={pairs()} fallback={<>{up(right())}{webApp(right())}</>}>
-          <Pair>{up(upWidth(), Math.max(upHeight(), webHeight()))}{webApp(right() - 1 - upWidth(), Math.max(upHeight(), webHeight()))}</Pair>
-        </Show>
+        {up(right())}
         {ai(right())}
         <Show when={pairs()} fallback={<>{appearance(right())}{database(right())}</>}>
           <Pair>{appearance(APPEARANCE_WIDTH, DATABASE_ROWS.length + 5)}{database(right() - 1 - APPEARANCE_WIDTH, DATABASE_ROWS.length + 5)}</Pair>

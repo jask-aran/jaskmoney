@@ -1,19 +1,16 @@
 /**
- * The core to other clients: the web app at / (server/webBuild), and the
- * core's protocol (core/protocol) as JSON over a WebSocket at /api. One
- * process owns the database; everything else connects here.
+ * The core to other clients (a TUI's --connect): the core's protocol
+ * (core/protocol) as JSON over a WebSocket at /api. One process owns the
+ * database; everything else connects here.
  *
  * It listens on this machine only, and /api answers only requests
- * addressed to it by a loopback name, and a browser only from this
- * server's own page: a WebSocket ignores CORS, and a DNS-rebound page could
- * otherwise name its own host. There is no token: reaching it from
+ * addressed to it by a loopback name, and no browser page: a WebSocket
+ * ignores CORS, and a DNS-rebound page could otherwise name its own host. There is no token: reaching it from
  * elsewhere (a tunnel) is the tunnel's business, and its own login.
  */
 import type { ServerWebSocket } from "bun"
-import { FRESH, webBundler } from "./webBuild"
 import type { Core } from "../core/core"
-import { KEYED_SLICES, type ClientMessage, type ConnectedClient, type CoreState, type ServerMessage } from "../core/protocol"
-import { describeClient } from "./clients"
+import { KEYED_SLICES, type ClientMessage, type CoreState, type ServerMessage } from "../core/protocol"
 
 export const DEFAULT_PORT = 4417
 
@@ -28,8 +25,6 @@ interface Connection {
   rows: Map<string, string>
   order: string
   calls: Map<string | number, AbortController>
-  /** Who this is, as the core's clients list shows it. */
-  client: ConnectedClient
 }
 
 /** A patch serialised once for every client: whole slices, keyed slices by
@@ -104,11 +99,6 @@ type Call = Omit<Extract<ClientMessage, { t: "call" }>, "id"> & { id: string | n
 type Reply = (Omit<Extract<ServerMessage, { t: "result" }>, "id"> | Omit<Extract<ServerMessage, { t: "progress" }>, "id">) & { id: Call["id"] }
 const send = (ws: ServerWebSocket<Connection>, message: Reply) => ws.send(JSON.stringify(message))
 
-/** A served file: hashed bundles keep forever; the page, the worker, the manifest and icons are asked for fresh. */
-function fileResponse(file: { body: Uint8Array; type: string }, fresh: boolean): Response {
-  return new Response(file.body, { headers: { "content-type": file.type, "cache-control": fresh ? "no-cache" : "public, max-age=31536000, immutable" } })
-}
-
 export interface ServeOptions {
   port?: number
   hostname?: string
@@ -118,8 +108,6 @@ export function serveCore(core: Core, { port = DEFAULT_PORT, hostname = "127.0.0
   const hosts = new Set([...LOOPBACK, hostname])
   const connections = new Set<ServerWebSocket<Connection>>()
   const encode = createEncoder()
-  let clientIds = 0
-  const bundler = webBundler()
   // One subscription for every client: each patch is serialised once.
   const unsubscribe = core.subscribe((patch) => {
     if (!connections.size) return
@@ -154,30 +142,18 @@ export function serveCore(core: Core, { port = DEFAULT_PORT, hostname = "127.0.0
   const server = Bun.serve<Connection>({
     port,
     hostname,
-    async fetch(req, server) {
+    fetch(req, server) {
       const url = new URL(req.url)
       if (!hosts.has(url.hostname)) return new Response("Misdirected", { status: 421 })
-      if (url.pathname !== "/api") {
-        if (req.method !== "GET" && req.method !== "HEAD") return new Response("Not found", { status: 404 })
-        const page = url.pathname === "/" || url.pathname === "/index.html"
-        // The page and the service worker are where a new build shows: either may make it.
-        const bundle = await bundler.get(page || url.pathname === "/sw.js")
-        if (bundle.error) return new Response(`The web app didn't build:\n\n${bundle.error}`, { status: 500, headers: { "content-type": "text/plain; charset=utf-8" } })
-        const path = page ? "/" : url.pathname
-        const file = bundle.files.get(path)
-        return file ? fileResponse(file, FRESH.has(path)) : new Response("Not found", { status: 404 })
-      }
-      const origin = req.headers.get("origin")
-      if (origin && new URL(origin).host !== url.host) return new Response("Forbidden", { status: 403 })
-      const client = describeClient(++clientIds, req.headers, server.requestIP(req)?.address ?? null, Date.now())
-      if (server.upgrade(req, { data: { sent: new Map(), entries: new Map(), rows: new Map(), order: "", calls: new Map(), client } })) return undefined
+      if (url.pathname !== "/api") return new Response("Not found", { status: 404 })
+      // A browser page (any origin): no client of this core is one.
+      if (req.headers.get("origin")) return new Response("Forbidden", { status: 403 })
+      if (server.upgrade(req, { data: { sent: new Map(), entries: new Map(), rows: new Map(), order: "", calls: new Map() } })) return undefined
       return new Response("WebSocket only", { status: 426 })
     },
     websocket: {
       open(ws) {
         connections.add(ws)
-        // The daemon broadcasts who is connected, as state, to every client.
-        core.set({ clients: [...core.state.clients, ws.data.client] })
         const message = stateMessage(ws, encode(core.state))
         if (message) ws.send(message)
       },
@@ -192,24 +168,18 @@ export function serveCore(core: Core, { port = DEFAULT_PORT, hostname = "127.0.0
       },
       close(ws) {
         connections.delete(ws)
-        core.set({ clients: core.state.clients.filter((c) => c.id !== ws.data.client.id) })
         for (const abort of ws.data.calls.values()) abort.abort()
       },
     },
   })
 
-  const page = server.url.href
-  const api = new URL("/api", page).href.replace(/^http/, "ws")
-  core.set({ server: { page, api } })
+  const api = new URL("/api", server.url.href).href.replace(/^http/, "ws")
   return {
-    /** The web app. */
-    page,
     /** Where clients connect (`--connect`). */
     api,
     stop() {
       unsubscribe()
       server.stop(true)
-      core.set({ server: null, clients: [] })
     },
   }
 }

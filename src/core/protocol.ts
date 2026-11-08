@@ -1,7 +1,7 @@
 /**
  * The contract between the jaskmoney core (the server: the database, the
  * settings, the credentials, Up and the models) and its clients (the TUI,
- * the web app).
+ * here or with --connect).
  *
  * A client mirrors `CoreState` from the patches the core sends (the first is
  * the whole state) and asks for changes with commands. Every command is a
@@ -91,27 +91,6 @@ export interface CoreState {
   undoLabel: string | null
   /** What `.` repeats on other rows. */
   lastRepeat: Repeat | null
-  /** Where this core serves the web app and other clients (server/serve),
-   * or null when it doesn't. The process, not the database: a switch of
-   * database leaves it. */
-  server: { page: string; api: string } | null
-  /** Who is connected to it now, oldest first. */
-  clients: ConnectedClient[]
-}
-
-/** A client of the core's server (server/clients describeClient). */
-export interface ConnectedClient {
-  id: number
-  /** "web": a browser on the web app; "tui": a TUI with --connect. */
-  kind: "web" | "tui"
-  /** "Edge on Windows", "jaskmoney TUI". */
-  agent: string
-  /** Where it connects from: the visitor's address through the tunnel. */
-  address: string
-  /** Through the Cloudflare tunnel, or straight to the port. */
-  via: "tunnel" | "direct"
-  /** When it connected (epoch ms). */
-  since: number
 }
 
 /** The state before a database is open. */
@@ -123,7 +102,7 @@ export function emptyCoreState(): CoreState {
     accounts: [], syncAccounts: [], budgets: [], budgetHistory: [],
     budgetCycle: { unit: "month", anchor: "calendar", anchorDate: null, payEarly: false },
     categories: [], tags: [], rules: [], savedFilters: [], icons: true, welcomed: false, uiPrefs: {}, weekStart: "monday",
-    server: null, clients: [],
+
     importProfiles: [], imports: [], transactions: [], dbInfo: null, undoLabel: null, lastRepeat: null,
   }
 }

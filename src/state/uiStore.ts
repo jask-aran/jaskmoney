@@ -25,7 +25,6 @@ export type SectionId =
   | "ov.accounts"
   | `bar.${TabId}`
   | "bar.version"
-  | "bar.web"
   | "bar.sync"
   | "ov.range"
   | "ov.chart"
@@ -43,7 +42,6 @@ export type SectionId =
   | "set.database"
   | "set.up"
   | "set.ai"
-  | "set.web"
   | "bud.categories"
   | "bud.plan"
   | "bud.chart"
@@ -76,7 +74,6 @@ export type ScopeId =
   | "settings.database"
   | "settings.up"
   | "settings.ai"
-  | "settings.web"
   | "settings.importHistory"
   | "budgets.categories"
   | "budgets.plan"
@@ -104,25 +101,25 @@ export type ScopeId =
   | "welcome"
 
 export type SettingsList = "categories" | "tags"
-export type SettingsSection = "taxonomy" | "rules" | "filters" | "up" | "web" | "ai" | "appearance" | "database"
+export type SettingsSection = "taxonomy" | "rules" | "filters" | "up" | "ai" | "appearance" | "database"
 /** The panes in reading order (j/k between them): the wide layout's left
  * column (Taxonomy, Rules & Filters), then its right, row by row (Up Bank,
- * Web app beside it, AI models, Appearance, Database & Import beside it);
+ * AI models, Appearance, Database & Import beside it);
  * the one-column layouts stack them in the same order. One stop per pane:
  * Saved filters is entered from Rules (or f in jump). */
-export const SETTINGS_SECTIONS: SettingsSection[] = ["taxonomy", "rules", "up", "web", "ai", "appearance", "database"]
+export const SETTINGS_SECTIONS: SettingsSection[] = ["taxonomy", "rules", "up", "ai", "appearance", "database"]
 /** The panes of the wide layout's right column (l goes to its first). */
-export const SETTINGS_RIGHT: SettingsSection[] = ["up", "web", "ai", "appearance", "database"]
+export const SETTINGS_RIGHT: SettingsSection[] = ["up", "ai", "appearance", "database"]
 
 /** Each Settings section's name: its pane's title and the palette's. (Jump badges are shorter.) */
 export const SETTINGS_SECTION_LABELS: Record<SettingsSection, string> = {
   taxonomy: "Taxonomy", ai: "AI models", rules: "Rules",
-  filters: "Saved Filters", up: "Up Bank", web: "Web app", appearance: "Appearance", database: "Database & Import",
+  filters: "Saved Filters", up: "Up Bank", appearance: "Appearance", database: "Database & Import",
 }
 
 export function settingsSectionFocus(section: SettingsSection, list: SettingsList = "categories"): SectionId {
   if (section === "taxonomy") return list === "categories" ? "set.categories" : "set.tags"
-  return section === "rules" ? "set.rules" : section === "filters" ? "set.filters" : section === "up" ? "set.up" : section === "web" ? "set.web" : section === "ai" ? "set.ai" : section === "appearance" ? "set.appearance" : "set.database"
+  return section === "rules" ? "set.rules" : section === "filters" ? "set.filters" : section === "up" ? "set.up" : section === "ai" ? "set.ai" : section === "appearance" ? "set.appearance" : "set.database"
 }
 export type SettingsEditorKind = "category" | "tag" | "filter" | "rule" | "budget" | "cycle" | "pay" 
 export type ImportStage = "files" | "path" | "profile" | "profileEditor" | "preview"
@@ -456,7 +453,6 @@ export const JUMP_TARGETS: Record<TabId, JumpTarget[]> = {
     { key: "r", section: "set.rules", label: "Rules" },
     { key: "f", section: "set.filters", label: "Filters" },
     { key: "u", section: "set.up", label: "Up Bank" },
-    { key: "w", section: "set.web", label: "Web app" },
     { key: "a", section: "set.ai", label: "AI models" },
     { key: "p", section: "set.appearance", label: "Appearance" },
     { key: "d", section: "set.database", label: "Database & Import" },
@@ -892,7 +888,6 @@ function createUiStore() {
     if (state.settingsSection === "rules") return "settings.rules"
     if (state.settingsSection === "filters") return "settings.filters"
     if (state.settingsSection === "up") return "settings.up"
-    if (state.settingsSection === "web") return "settings.web"
     if (state.settingsSection === "ai") return "settings.ai"
     if (state.settingsSection === "appearance") return "settings.appearance"
     return "settings.database"

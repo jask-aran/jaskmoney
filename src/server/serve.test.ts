@@ -21,7 +21,7 @@ function served() {
   core.refresh()
   const server = serveCore(core, { port: 0 })
   stops.push(() => { server.stop(); core.close() })
-  return { core, server, base: new URL(server.page) }
+  return { core, server, base: new URL(server.api.replace(/^ws/, "http")) }
 }
 
 async function until(ready: () => boolean) {
@@ -29,17 +29,16 @@ async function until(ready: () => boolean) {
   expect(ready()).toBe(true)
 }
 
-test("/api takes only a loopback host name and its own page's origin", async () => {
+test("/api takes only a loopback host name and no browser page", async () => {
   const { base } = served()
   const api = (headers: Record<string, string> = {}) => fetch(`http://127.0.0.1:${base.port}/api`, { headers })
   // A plain request is only refused for not being a WebSocket.
   expect((await api()).status).toBe(426)
-  expect((await api({ origin: `http://127.0.0.1:${base.port}` })).status).toBe(426)
   // DNS rebinding: a page on evil.example resolved to 127.0.0.1 names its own host.
   expect((await api({ host: `evil.example:${base.port}`, origin: `http://evil.example:${base.port}` })).status).toBe(421)
   // Another site's page in the browser, reaching for localhost.
   expect((await api({ origin: "http://evil.example" })).status).toBe(403)
-  expect((await fetch(`http://127.0.0.1:${base.port}/`)).status).toBe(200)
+  expect((await fetch(`http://127.0.0.1:${base.port}/`)).status).toBe(404)
 })
 
 test("two clients share the core: a write reaches both, sending only the row it changed", async () => {
