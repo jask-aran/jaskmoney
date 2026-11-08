@@ -31,7 +31,6 @@
   },
   "fileLines": 600,
   "frozenFiles": {
-    "src/db/client.ts": 970,
     "src/domain/filter.ts": 910,
     "src/ui/settings/SettingsTab.tsx": 800
   },
