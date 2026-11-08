@@ -41,22 +41,12 @@ import { cycleTrack } from "../budgets/PlanGraphics"
 import { spendFlow } from "./RangeGraphics"
 import { cyclePay } from "../../domain/payday"
 import { computeCategorySpend, groupCategorySpend } from "../../domain/dashboard"
+import { tabColumns } from "../primitives/columns"
 
 
-/** At or above this width the cards take a right-hand column beside the
- * two charts; below it one chart spans the tab with the cards under it. */
-export const WIDE = 90
-/** Budgets' side column's widest useful size: Up's longest names fit. */
-const SIDE_MAX = 48
 /** The Overview's side column's widest: the Range pane's Before column and
  * the names both fit. */
 const RANGE_SIDE_MAX = 56
-/** The side column's narrowest: Accounts' labels still fit. */
-const SIDE_MIN = 40
-/** A grid pane's narrowest: the chart column splits into a 2×2 grid of
- * chart panes once each would be at least this wide (a full-screen
- * terminal; a split one keeps the two stacked). */
-export const GRID_PANE_MIN = 64
 /** Narrow: the chart's fewest rows before the column scrolls. */
 const NARROW_CHART_MIN = 10
 /** The Range pane's ratios' value column. */
@@ -77,11 +67,6 @@ const BEFORE = 8
  * (see spendingScope); internal transfers and not-spending categories are
  * excluded.
  */
-/** The side column's width on a wide terminal (the Budgets tab's too). */
-export function sideColumnWidth(width: number, max = SIDE_MAX, share = 0.4): number {
-  return Math.max(SIDE_MIN, Math.min(max, Math.floor((width - 1) * share)))
-}
-
 export function OverviewTab(props: { focused: SectionId }) {
   // Hidden (another tab shown, the tab kept mounted), the tab's inputs keep
   // their last values, so the costly results stop following the data;
@@ -205,20 +190,23 @@ export function OverviewTab(props: { focused: SectionId }) {
   // the top chart across the tab takes what the cards leave; under it
   // Accounts beside the Range pane, the two columns one height.
   // When even the smallest chart doesn't fit, the column scrolls.
-  const wide = () => dims().width >= WIDE
+  // Wide: the side column beside the charts (wider than Budgets': the
+  // Range pane's Before column and the names both fit); narrow, Accounts
+  // beside the Range pane, half the width each.
+  const columns = createMemo(() => tabColumns(dims().width, { max: RANGE_SIDE_MAX, share: 0.45, narrow: (width) => Math.floor((width - 1) / 2) }))
+  const wide = () => columns().wide
   // The Range pane as its bars (the default) or, after t, as text.
   const textual = () => data.state.uiPrefs.rangeText === true
   // The Range pane shows where the spending went (s), or where the net went.
   const spendingView = () => data.state.uiPrefs.rangeView === "spending"
   const bodyHeight = () => Math.max(8, dims().height - 7)
-  // The Range pane's column is wider: its Before column and the names both fit.
-  const sideWidth = () => (wide() ? sideColumnWidth(dims().width, RANGE_SIDE_MAX, 0.45) : Math.floor((dims().width - 1) / 2))
-  const mainWidth = () => (wide() ? dims().width - 1 - sideWidth() : dims().width)
+  const sideWidth = () => columns().side
+  const mainWidth = () => columns().main
   // Wide and wide enough: the charts in a 2×2 grid, two columns of panes.
-  const grid = () => wide() && mainWidth() >= 2 * GRID_PANE_MIN + 1
+  const grid = () => columns().grid
   const charts = () => (grid() ? 4 : wide() ? 2 : 1)
   /** A chart pane's width: the chart column, or half of it in the grid. */
-  const paneWidth = (pane: number) => (!grid() ? mainWidth() : pane < 2 ? Math.ceil((mainWidth() - 1) / 2) : Math.floor((mainWidth() - 1) / 2))
+  const paneWidth = (pane: number) => (!grid() ? mainWidth() : pane < 2 ? columns().left : columns().right)
   // The keys act on the charts on screen: focus on one that's gone moves
   // to the top one.
   createEffect(() => {

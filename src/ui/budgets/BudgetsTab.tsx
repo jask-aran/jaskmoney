@@ -25,7 +25,8 @@ import { chartSpeedMs, showings, useReveal } from "../charts/motion"
 import { ChartCard, viewPicker } from "../charts/ChartCard"
 import { spendingChart } from "../overview/periodCharts"
 import { BUDGET_PANES, BUDGET_VIEWS, CATEGORIES, CHART_VIEWS, cycleView, cycleViewsFor } from "../../state/uiStore"
-import { GRID_PANE_MIN, OverviewChartCard, sideColumnWidth, WIDE, chartRows, overviewChartModel, type OverviewChartInput } from "../overview/OverviewTab"
+import { OverviewChartCard, chartRows, overviewChartModel, type OverviewChartInput } from "../overview/OverviewTab"
+import { tabColumns } from "../primitives/columns"
 import { CalendarView, calendarLegend } from "../overview/CalendarView"
 import { spendingCalendar } from "../../domain/spending"
 import { merchantRows, trendRows } from "../../domain/periodTables"
@@ -158,23 +159,23 @@ export function BudgetsTab(props: { focused: SectionId }) {
   // the chart and the budgets share the left and the categories run down
   // the right; narrow, they stack.
   const body = () => Math.max(16, dims().height - 4)
-  // The Overview's breakpoint; the categories take a column of about the
-  // Overview's side column, wider on a wide terminal.
-  const wide = () => dims().width >= WIDE
-  // The Overview's side column width.
-  const categoriesWidth = () => (wide() ? sideColumnWidth(dims().width) : dims().width)
-  const mainWidth = () => (wide() ? dims().width - 1 - categoriesWidth() : dims().width)
+  // The Overview's breakpoint and its columns; the Budgets pane takes the
+  // side column (up to SIDE_MAX: Up's longest names fit), narrow the width.
+  const columns = createMemo(() => tabColumns(dims().width, { max: SIDE_MAX, share: 0.4, narrow: (width) => width }))
+  const wide = () => columns().wide
+  const categoriesWidth = () => columns().side
+  const mainWidth = () => columns().main
   // The layouts. Wide: the main column, then a side column with the
   // cycle's calendar over the Budgets pane. Two columns (split screen): the
   // budget pane on top of the main column and a cycle pane under it where
   // there's height for both; the calendar the budget pane's height, so
   // Budgets starts on the cycle pane's line. Three columns (full screen,
-  // the main column fits two panes of GRID_PANE_MIN): the budget pane
+  // the main column fits two panes of GRID_PANE_MIN, columns.ts): the budget pane
   // across the top, two cycle panes under it. Narrow: one column, the
   // budget pane, the calendar on a tall terminal, the Budgets pane.
-  const grid = () => wide() && mainWidth() >= 2 * GRID_PANE_MIN + 1
-  const halfLeft = () => Math.ceil((mainWidth() - 1) / 2)
-  const halfRight = () => Math.floor((mainWidth() - 1) / 2)
+  const grid = () => columns().grid
+  const halfLeft = () => columns().left
+  const halfRight = () => columns().right
   const topQuarter = () => Math.floor(body() / 2)
   const bottomQuarter = () => body() - topQuarter()
   const splitTop = () => Math.max(CALENDAR_TALL, Math.floor(body() * 0.45))
@@ -671,6 +672,8 @@ const BUDGETS_ROWS_MIN = 5
 /** Widest the list's rows are in the cycle pane. */
 const LIST_MAX = 72
 
+/** The Budgets pane's widest useful size: Up's longest names fit. */
+const SIDE_MAX = 48
 /** Fewest rows a Budgets chart pane gets before the cycle pane gives way. */
 const CYCLE_PANE_MIN = 12
 

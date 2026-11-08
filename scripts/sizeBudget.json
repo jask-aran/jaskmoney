@@ -36,7 +36,7 @@
     "src/domain/filter.ts": 930,
     "src/state/uiStore.ts": 900,
     "src/ui/settings/SettingsTab.tsx": 800,
-    "src/ui/overview/OverviewTab.tsx": 790,
+    "src/ui/overview/OverviewTab.tsx": 770,
     "src/core/core.ts": 740,
     "src/client/store.ts": 740,
     "src/ui/budgets/BudgetsTab.tsx": 690,
