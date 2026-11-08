@@ -5,18 +5,25 @@ import type { SentPart } from "../app/sentPreview"
 import type { QueryId } from "../ai/catalog"
 import type { Written } from "../app/searchReport"
 import type { Armed } from "./armed"
-import { latestStatus, type StatusEntry } from "./statusLog"
+import type { StatusEntry } from "./statusLog"
 import type { DryRunReport } from "../domain/rules"
 import type { CycleAnchor, CycleUnit } from "../domain/budget"
 import type { MerchantSort } from "../domain/merchants"
-import { createStore, reconcile, unwrap } from "solid-js/store"
+import { createStore, reconcile } from "solid-js/store"
 import {
-  defaultTimeframe,
   type TimeframeState,
 } from "../domain/timeframe"
 import type { ImportPreview, ImportProfile } from "../domain/types"
 import type { TextField } from "../domain/textField"
-import { editorFields } from "./settingsForm"
+
+import { initialUiState } from "./uiInitial"
+import { createFocusActions } from "./uiFocus"
+import { createDialogActions } from "./uiDialogs"
+import { createSettingsActions } from "./uiSettings"
+import { createPickerActions } from "./uiDialogs"
+import { createSelectionActions } from "./uiSelection"
+import { createCursorActions } from "./uiSelection"
+export { SETTINGS_SECTIONS, SETTINGS_RIGHT, SETTINGS_SECTION_LABELS, settingsSectionFocus, TAB_DEFAULT_FOCUS, CHART_SECTIONS, chartPaneOf, chartViewsFrom, CHART_VIEWS, BUDGET_VIEWS, CYCLE_VIEWS, BUDGET_PANES, CATEGORIES, cycleViewsFor, cycleView, budgetListInPane, budgetsHome, jumpTargets, TABS } from "./uiTables"
 
 export type TabId = "overview" | "manager" | "budgets" | "settings"
 
@@ -102,33 +109,8 @@ export type ScopeId =
 
 type SettingsList = "categories" | "tags"
 export type SettingsSection = "taxonomy" | "rules" | "filters" | "up" | "ai" | "appearance" | "database"
-/** The panes in reading order (j/k between them): the wide layout's left
- * column (Taxonomy, Rules & Filters), then its right, row by row (Up Bank,
- * AI models, Appearance, Database & Import beside it);
- * the one-column layouts stack them in the same order. One stop per pane:
- * Saved filters is entered from Rules (or f in jump). */
-export const SETTINGS_SECTIONS: SettingsSection[] = ["taxonomy", "rules", "up", "ai", "appearance", "database"]
-/** The panes of the wide layout's right column (l goes to its first). */
-export const SETTINGS_RIGHT: SettingsSection[] = ["up", "ai", "appearance", "database"]
-
-/** Each Settings section's name: its pane's title and the palette's. (Jump badges are shorter.) */
-export const SETTINGS_SECTION_LABELS: Record<SettingsSection, string> = {
-  taxonomy: "Taxonomy", ai: "AI models", rules: "Rules",
-  filters: "Saved Filters", up: "Up Bank", appearance: "Appearance", database: "Database & Import",
-}
-
-export function settingsSectionFocus(section: SettingsSection, list: SettingsList = "categories"): SectionId {
-  if (section === "taxonomy") return list === "categories" ? "set.categories" : "set.tags"
-  return section === "rules" ? "set.rules" : section === "filters" ? "set.filters" : section === "up" ? "set.up" : section === "ai" ? "set.ai" : section === "appearance" ? "set.appearance" : "set.database"
-}
 export type SettingsEditorKind = "category" | "tag" | "filter" | "rule" | "budget" | "cycle" | "pay" 
 type ImportStage = "files" | "path" | "profile" | "profileEditor" | "preview"
-
-interface JumpTarget {
-  key: string
-  section: SectionId
-  label: string
-}
 
 export interface UiState {
   filterPicker: { query: string; cursor: number } | null
@@ -308,13 +290,6 @@ export interface UiState {
   searchHelp: { full: boolean; top: number; visible: number } | null
 }
 
-export const TAB_DEFAULT_FOCUS: Record<TabId, SectionId> = {
-  overview: "none",
-  manager: "mgr.transactions",
-  budgets: "bud.categories",
-  settings: "none",
-}
-
 /** The Overview's chart pane views, in h/l order. Each has its title, what
  * the chart shows and the pane's title (whose follows after a dot only
  * where a pane covers less than its tab: a budget), and a group (spacing
@@ -325,204 +300,6 @@ export const TAB_DEFAULT_FOCUS: Record<TabId, SectionId> = {
  * their meaning. */
 export type ChartViews = [number, number, number, number]
 export type OverviewCharts = 1 | 2 | 4
-/** The Overview's chart panes: top and bottom of the chart column, then the
- * grid's right-hand column, top and bottom. */
-export const CHART_SECTIONS = ["ov.chart", "ov.chart2", "ov.chart3", "ov.chart4"] as const
-/** The pane a chart section is (0 to 3), or -1. */
-export const chartPaneOf = (section: SectionId) => (CHART_SECTIONS as readonly SectionId[]).indexOf(section)
-/** Cumulative and Net position; the grid's right adds Calendar and Merchants. */
-const DEFAULT_CHART_VIEWS: ChartViews = [0, 4, 7, 8]
-/** Saved views, two (before the grid) or four, padded with the defaults. */
-export function chartViewsFrom(raw: unknown, views: number): ChartViews | undefined {
-  if (!Array.isArray(raw) || (raw.length !== 2 && raw.length !== 4)) return undefined
-  if (!raw.every((i) => Number.isSafeInteger(i) && i >= 0 && i < views)) return undefined
-  return [raw[0], raw[1], raw[2] ?? DEFAULT_CHART_VIEWS[2], raw[3] ?? DEFAULT_CHART_VIEWS[3]]
-}
-
-export const CHART_VIEWS = [
-  { view: "Cumulative", title: "Cumulative spending", group: "Spending", ranged: true },
-  { view: "Daily", title: "Daily spending", group: "Spending", ranged: true },
-  { view: "Weekly", title: "Weekly spending", group: "Spending", ranged: true },
-  { view: "Cash flow", title: "Cash flow", group: "Cash flow", ranged: true },
-  { view: "Net position", title: "Net position", group: "Balances", ranged: true },
-  { view: "Available", title: "Available", group: "Balances", ranged: true },
-  { view: "Savers", title: "Saver balances", group: "Balances", ranged: true },
-  { view: "Calendar", title: "Spending calendar", group: "Calendar", ranged: true },
-  { view: "Merchants", title: "Merchants", group: "Merchants", ranged: true },
-  { view: "Trends", title: "Spending trends", group: "Trends", ranged: true },
-] as const
-
-/** The Budgets tab's chart views: the Overview's spending ones over the
- * cycle the tab shows, then the regular payments in the budget it follows. */
-export const BUDGET_VIEWS = [
-  ...CHART_VIEWS.filter((v) => v.group === "Spending"),
-  // The regular payments the budget counts, its fixed costs (not a chart).
-  { view: "Subscriptions", title: "Subscriptions", group: "Subscriptions", ranged: false },
-  // The budget cycle by cycle against what it was then (not a chart).
-  { view: "Each cycle", title: "Each cycle", group: "Each cycle", ranged: false },
-] as const
-
-/** The Budgets tab's cycle panes' views (indexes into CHART_VIEWS): the
- * Overview's, less what the tab shows already: the spending views are the
- * budget pane's, and the calendar is always there. */
-export const CYCLE_VIEWS: readonly number[] = CHART_VIEWS.flatMap((v, i) => (v.group === "Spending" || v.view === "Calendar" ? [] : [i]))
-
-/** The Budgets tab's chart panes: the budget's, then the cycle's two. */
-export const BUDGET_PANES: readonly SectionId[] = ["bud.chart", "bud.cycle", "bud.cycle2"]
-
-/** The first cycle pane's view that is the budgets list (Categories): its
- * rows where budgets are set and whose cursor the budget chart follows. Without a cycle pane (narrow, short) the list is in the
- * Budgets pane, under the plan. */
-export const CATEGORIES = -1
-/** A cycle pane's views in h/l order: the first's the list, then the charts. */
-export function cycleViewsFor(pane: number): readonly number[] {
-  return pane === 0 ? [CATEGORIES, ...CYCLE_VIEWS] : CYCLE_VIEWS
-}
-/** A cycle pane view's picker entry. */
-export function cycleView(index: number): { view: string; title: string; group: string } {
-  return index === CATEGORIES ? { view: "Categories", title: "Categories", group: "Categories" } : CHART_VIEWS[index] ?? CHART_VIEWS[0]
-}
-/** Whether the budgets list is in the first cycle pane (else the Budgets pane). */
-export function budgetListInPane(state: Pick<UiState, "budgetCyclePanes" | "budgetCycleViews">): boolean {
-  return state.budgetCyclePanes > 0 && state.budgetCycleViews[0] === CATEGORIES
-}
-/** The Budgets tab's home focus: the Budgets pane (the list's, without a
- * cycle pane). */
-export function budgetsHome(state: Pick<UiState, "budgetCyclePanes">): SectionId {
-  return state.budgetCyclePanes === 0 ? "bud.categories" : "bud.plan"
-}
-
-/** The tab's jump targets that are on screen: only the chart panes the
- * Overview or the Budgets tab shows. */
-export function jumpTargets(state: Pick<UiState, "activeTab" | "overviewCharts"> & Partial<Pick<UiState, "budgetCyclePanes" | "budgetCycleViews" | "chartViews">>): JumpTarget[] {
-  const targets = JUMP_TARGETS[state.activeTab]
-  if (state.activeTab === "overview") {
-    // Each chart on screen by where it is in this layout (one, two stacked,
-    // or the 2×2 grid) and the view it shows.
-    const n = state.overviewCharts
-    const places = n === 1 ? ["Chart"] : n === 2 ? ["Top chart", "Bottom chart"] : ["Top left chart", "Bottom left chart", "Top right chart", "Bottom right chart"]
-    return targets.filter((t) => chartPaneOf(t.section) < n).map((t) => {
-      const pane = chartPaneOf(t.section)
-      if (pane < 0) return t
-      const view = state.chartViews ? CHART_VIEWS[state.chartViews[pane] ?? 0]?.title : undefined
-      return { ...t, label: view ? `${places[pane]} · ${view}` : places[pane]! }
-    })
-  }
-  // A cycle pane is the 2nd or 3rd of BUDGET_PANES: on screen while its
-  // number is within budgetCyclePanes.
-  // The list and the Budgets pane are one pane without a cycle pane; the
-  // first cycle pane is the list or a chart.
-  if (state.activeTab === "budgets") {
-    const panes = state.budgetCyclePanes ?? 1
-    const list = panes > 0 && (state.budgetCycleViews ?? [CATEGORIES])[0] === CATEGORIES
-    return targets.filter((t) => {
-      if (t.section === "bud.plan") return panes > 0
-      if (t.section === "bud.categories") return panes === 0 || list
-      if (t.section === "bud.cycle") return panes > 0 && !list
-      if (t.section === "bud.cycle2") return panes > 1
-      return true
-    })
-  }
-  return targets
-}
-
-const JUMP_TARGETS: Record<TabId, JumpTarget[]> = {
-  overview: [
-    { key: "d", section: "ov.range", label: "Date Range" },
-    { key: "t", section: "ov.chart", label: "Top chart" },
-    { key: "b", section: "ov.chart2", label: "Bottom chart" },
-    { key: "y", section: "ov.chart3", label: "Top right chart" },
-    { key: "n", section: "ov.chart4", label: "Bottom right chart" },
-    { key: "a", section: "ov.accounts", label: "Accounts" },
-    { key: "r", section: "ov.categories", label: "Range" },
-  ],
-  manager: [
-    { key: "a", section: "mgr.accounts", label: "Accounts" },
-    { key: "t", section: "mgr.transactions", label: "Transactions" },
-  ],
-  budgets: [
-    { key: "c", section: "bud.categories", label: "Categories" },
-    { key: "b", section: "bud.plan", label: "Budgets" },
-    { key: "t", section: "bud.chart", label: "Budget chart" },
-    { key: "y", section: "bud.cycle", label: "Cycle chart" },
-    { key: "n", section: "bud.cycle2", label: "Second cycle chart" },
-  ],
-  settings: [
-    { key: "c", section: "set.categories", label: "Categories" },
-    { key: "t", section: "set.tags", label: "Tags" },
-    { key: "r", section: "set.rules", label: "Rules" },
-    { key: "f", section: "set.filters", label: "Filters" },
-    { key: "u", section: "set.up", label: "Up Bank" },
-    { key: "a", section: "set.ai", label: "AI models" },
-    { key: "p", section: "set.appearance", label: "Appearance" },
-    { key: "d", section: "set.database", label: "Database & Import" },
-  ],
-}
-
-export const TABS: { id: TabId; label: string; hotkey: string }[] = [
-  { id: "overview", label: "Overview", hotkey: "1" },
-  { id: "manager", label: "Transactions", hotkey: "2" },
-  { id: "budgets", label: "Budgets", hotkey: "3" },
-  { id: "settings", label: "Settings", hotkey: "4" },
-]
-
-/** Clamp a list cursor and scroll only when it crosses a window edge. */
-function cursorWindow(cursor: number, top: number, count: number, visible: number): { cursor: number; top: number } {
-  if (count <= 0) return { cursor: 0, top: 0 }
-  cursor = Math.max(0, Math.min(count - 1, cursor))
-  const vis = Math.max(1, visible)
-  if (cursor < top) top = cursor
-  if (cursor >= top + vis) top = cursor - vis + 1
-  return { cursor, top: Math.max(0, top) }
-}
-
-/** A dialog key and its scope while open. */
-type Modal = {
-  [K in DialogKey]: { key: K; scope: (value: NonNullable<UiState[K]>) => ScopeId }
-}[DialogKey]
-
-/** Every dialog, in input precedence order. Tab switches close them all. */
-const MODALS = [
-  { key: "palette", scope: () => "palette" },
-  { key: "searchHelp", scope: () => "searchHelp" },
-  { key: "filterPicker", scope: () => "filterPicker" },
-  { key: "themePicker", scope: () => "themePicker" },
-  { key: "modelPicker", scope: () => "modelPicker" },
-  { key: "dryRun", scope: () => "dryRun" },
-  { key: "jump", scope: () => "jump" },
-  { key: "catPicker", scope: () => "catPicker" },
-  { key: "tagPicker", scope: () => "tagPicker" },
-  { key: "tagChooser", scope: () => "tagChooser" },
-  { key: "filterBar", scope: () => "filter" },
-  { key: "merchantNote", scope: () => "merchantNote" },
-  { key: "detail", scope: (value) => value.notes ? "manager.detail.notes" : "manager.detail" },
-  { key: "settingsEditor", scope: () => "settings.editor" },
-  { key: "importWizard", scope: (value) => `settings.import.${value.stage}` },
-  { key: "accountAction", scope: () => "manager.accountAction" },
-  { key: "acceptPreview", scope: () => "manager.acceptPreview" },
-  { key: "ruleOffers", scope: () => "manager.ruleOffers" },
-  { key: "llmSignIn", scope: () => "llmSignIn" },
-  { key: "aiSent", scope: () => "settings.aiSent" },
-  { key: "aiUse", scope: () => "settings.aiUse" },
-  { key: "aiDialog", scope: () => "settings.aiDialog" },
-  { key: "executor", scope: () => "settings.executor" },
-  { key: "upAccounts", scope: () => "settings.upAccounts" },
-  { key: "importHistory", scope: () => "settings.importHistory" },
-  { key: "factoryReset", scope: () => "settings.factoryReset" },
-  { key: "customEdit", scope: () => "overview.custom" },
-  // Under every dialog: a sign-in or key dialog it opens takes the keys.
-  { key: "welcome", scope: () => "welcome" },
-] satisfies Modal[]
-
-/** What closing every dialog writes. */
-const ALL_CLOSED: Partial<UiState> = Object.assign({}, ...MODALS.map(({ key }) => ({ [key]: null })))
-
-/** Nullable object fields, including the accept-all preview array. */
-type DialogKey = {
-  [K in keyof UiState]-?: null extends UiState[K]
-    ? NonNullable<UiState[K]> extends object ? K : never
-    : never
-}[keyof UiState]
 
 /** One opening of a dialog, held by work that finishes later (a save, a
  * test, a sign-in): it writes to that opening only. Once the dialog closed,
@@ -536,93 +313,11 @@ export interface Opening<T> {
   close(): void
 }
 
-/** No ids: one shared object, so "still nothing highlighted" changes nothing downstream. */
-const NO_IDS: Record<number, boolean> = Object.freeze({}) as Record<number, boolean>
-
 function createUiStore() {
   let statusId = 0
   // The initial entry is the same after each test-only reset.
   const initialStatusAt = Date.now()
-  const initialState = (): UiState => ({
-    activeTab: "overview",
-    focusedSection: "none",
-    jump: null,
-    statusLog: [{ id: 0, at: initialStatusAt, text: "OpenTUI shell", level: "info" }],
-    get status() { return latestStatus(this.statusLog).text },
-    get statusErr() { return latestStatus(this.statusLog).level === "error" },
-    managerCursor: 0,
-    managerTop: 0,
-    managerVisible: 24,
-    timeframe: defaultTimeframe(),
-    dashChipCursor: 5,
-    customEdit: null,
-    overviewCategoryCursor: 0,
-    drillReturn: null,
-    chartViews: [...DEFAULT_CHART_VIEWS],
-    overviewCharts: 2,
-    filterBar: null,
-    catPicker: null,
-    tagChooser: null,
-    tagPicker: null,
-    pickerTargets: [],
-    selectedIds: {},
-    range: null,
-    settingsActive: false,
-    settingsSection: "taxonomy",
-    taxonomyList: "categories",
-    categoryCursor: 0,
-    tagCursor: 0,
-    taxonomyOpen: [],
-    taxonomyVisible: 10,
-    ruleCursor: 0,
-    filterCursor: 0,
-    upCursor: 0,
-    aiCursor: 0,
-    budgetCursor: 0,
-    budgetCategoryCursor: 0,
-    budgetChart: 0,
-    budgetSetupOpen: [],
-    overviewOpen: [],
-    budgetsEmpty: false,
-    budgetCycleViews: [CATEGORIES, 8],
-    budgetCyclePanes: 1,
-    budgetOffset: 0,
-    merchantCursor: 0,
-    merchantTop: 0,
-    txnView: "rows",
-    merchantSort: "total",
-    merchantReverse: false,
-    detail: null,
-    filterPicker: null,
-    themePicker: null,
-    modelPicker: null,
-    palette: null,
-    lastCommandId: null,
-    dryRun: null,
-    settingsEditor: null,
-    settingsDraft: { name: "", color: "#94e2d5", categoryId: null, id: "", expr: "", savedFilterId: "", setCategoryId: null, addTagIds: [], notSpending: false, categoryIds: [], about: "", scopeKey: "overall", amount: "", unit: "month", anchor: "calendar", anchorDate: "", payEarly: false },
-    armed: null,
-    appearanceCursor: 0,
-    databaseCursor: 0,
-    accountAction: null,
-    importWizard: null,
-    smartQuestion: null,
-    smartWriting: false,
-    acceptPreview: null,
-    ruleOffers: null,
-    llmSignIn: null,
-    aiDialog: null,
-    executor: null,
-    executorStatus: null,
-    aiUse: null,
-    aiSent: null,
-    upAccounts: null,
-    importHistory: null,
-    welcome: null,
-    factoryReset: null,
-    merchantNote: null,
-    searchHelp: null,
-  })
+  const initialState = (): UiState => initialUiState(initialStatusAt)
   const [state, setState] = createStore<UiState>(initialState())
 
   /** Test isolation only: restore initial UI state and discard session edits. */
@@ -643,255 +338,12 @@ function createUiStore() {
     return appendStatus({ id: ++statusId, at: Date.now(), withdraws: id })
   }
 
-  function switchTab(tab: TabId) {
-    setState({
-      ...ALL_CLOSED,
-      activeTab: tab,
-      drillReturn: null,
-      focusedSection: tab === "budgets" ? budgetsHome(state) : TAB_DEFAULT_FOCUS[tab],
-      ...(tab === "budgets" && state.budgetsEmpty ? { budgetCategoryCursor: 0 } : {}),
-      range: null,
-      settingsActive: false,
-      armed: null,
-    })
-  }
-
-  /** The dialog open at `key` now, for work that finishes later (Opening). */
-  function opening<K extends DialogKey>(key: K): Opening<NonNullable<UiState[K]>> {
-    const at = unwrap(state)[key]
-    const open = () => at != null && unwrap(state)[key] === at
-    return {
-      get open() { return open() },
-      patch: (patch) => { if (open()) (setState as (k: K, v: unknown) => void)(key, patch) },
-      close: () => { if (open()) setState({ [key]: null } as Partial<UiState>) },
-    }
-  }
-
-  function cycleTab(delta: number) {
-    const ids = TABS.map((t) => t.id)
-    const i = ids.indexOf(state.activeTab)
-    switchTab(ids[(i + delta + ids.length) % ids.length]!)
-  }
-
-  function enterJump() {
-    if (state.jump) {
-      cancelJump()
-      return
-    }
-    setState({
-      jump: { previousFocus: state.focusedSection },
-      filterBar: null,
-      catPicker: null,
-      tagPicker: null,
-    })
-  }
-
-  function cancelJump() {
-    setState({
-      jump: null,
-      focusedSection: (state.jump?.previousFocus ?? "none"),
-    })
-  }
-
-  function applyJump(section: SectionId) {
-    setState({
-      jump: null,
-      focusedSection: section,
-    })
-  }
-
-  function activateSettings(section: UiState["settingsSection"], list: SettingsList = "categories", reset = false) {
-    const updates: Partial<UiState> = { settingsActive: true, settingsSection: section, taxonomyList: list, focusedSection: settingsSectionFocus(section, list), jump: null }
-    if (reset && list === "categories") updates.categoryCursor = 0
-    if (reset && list === "tags") updates.tagCursor = 0
-    setState(updates)
-  }
-
-  function leaveSettings() {
-    setState({ settingsActive: false, settingsEditor: null, armed: null, importWizard: null })
-    setStatus("Settings · navigate sections")
-  }
-  function openSettingsEditor(kind: SettingsEditorKind, id: number | string | null, draft: UiState["settingsDraft"]) {
-    const field = editorFields(kind, draft, { accounts: [], categories: [], tags: [], savedFilters: [] })[0]
-    setState({ settingsEditor: { kind, id, field: 0, picker: null, caret: field?.kind === "text" ? field.display.length : 0, saving: false }, settingsDraft: draft, armed: null, jump: null })
-  }
-  function closeSettingsEditor() { setState({ settingsEditor: null }) }
-  function arm(armed: Armed) { setState({ armed }) }
-  function disarm() { if (state.armed) setState({ armed: null }) }
-
-  function beginImport(directory: string, files: string[]) {
-    setState({ importWizard: { stage: "files", directory, files, cursor: 0, path: "", pathCaret: 0, profileCursor: 0, managing: false, profileDraft: { id: "", name: "", account: "", accountType: "debit", importPrefix: "", hasHeader: true, delimiter: ",", dateColumn: 0, amountColumn: 1, descriptionColumns: [2], descriptionJoin: false, amountStrip: "$", dateFormat: "DMY" }, profileEditId: null, profileField: 0, profileCaret: 0, preview: null, previewCursor: 0, previewShowAll: false, previewRules: true, committing: false }, jump: null })
-  }
-  function cancelImport() { setState({ importWizard: null }) }
-  function openProfileEditor(draft: ImportProfile, id: string | null) { if (!state.importWizard) beginImport("", []); setState("importWizard", { stage: "profileEditor", profileDraft: draft, profileEditId: id, profileField: 0, profileCaret: draft.id.length }) }
-
-  function clearFocus() {
-    setState({ focusedSection: "none" })
-    setStatus("Focus cleared")
-  }
-
-  function openFilter(seed = "") {
-    setState({
-      filterBar: { draft: seed, caret: seed.length },
-      catPicker: null,
-      tagPicker: null,
-      jump: null,
-    })
-    setStatus("Search: JQL, or ? then words")
-  }
-
-  function closeFilter(apply: boolean) {
-    const draft = state.filterBar?.draft ?? ""
-    setState({ filterBar: null })
-    return apply ? draft : null
-  }
-
-  function openCatPicker(targets: number[]) {
-    setState({
-      pickerTargets: targets,
-      catPicker: { cursor: 0, query: "" },
-      tagPicker: null,
-      filterBar: null,
-      jump: null,
-      range: null,
-    })
-    setStatus("Quick categorize · j/k · enter · esc")
-  }
-
-  function closeCatPicker() {
-    setState({ catPicker: null })
-  }
-
-  function openTagPicker(targets: number[]) {
-    setState({
-      pickerTargets: targets,
-      tagPicker: { cursor: 0, query: "", patch: {}, applying: false },
-      catPicker: null,
-      filterBar: null,
-      jump: null,
-      range: null,
-    })
-    setStatus("Quick tags · space stage · enter apply · esc cancel")
-  }
-
-  function closeTagPicker() {
-    setState({ tagPicker: null })
-  }
-
-  function clearSelection() {
-    setState({ selectedIds: {}, range: null })
-  }
-
-  function toggleSelectedId(id: number) {
-    const next = { ...state.selectedIds }
-    if (next[id]) delete next[id]
-    else next[id] = true
-    setState({ selectedIds: next })
-  }
-
-  function setRangeFromMove(
-    anchorId: number,
-    cursorId: number,
-    selecting: boolean,
-  ) {
-    setState({ range: selecting ? { anchorId, cursorId } : null })
-  }
-
-  function highlightedIds(rows: { id: number }[]): Record<number, boolean> {
-    const range = state.range
-    if (!range) return NO_IDS
-    let a = rows.findIndex((r) => r.id === range.anchorId)
-    let b = rows.findIndex((r) => r.id === range.cursorId)
-    if (a < 0 || b < 0) return NO_IDS
-    if (a > b) [a, b] = [b, a]
-    const out: Record<number, boolean> = {}
-    for (let i = a; i <= b; i++) {
-      const id = rows[i]?.id
-      if (id != null) out[id] = true
-    }
-    return out
-  }
-
-  /** A range exists only while both ends are in the shown rows. */
-  function ensureRange(rows: { id: number }[]) {
-    const range = state.range
-    if (range && (!rows.some((row) => row.id === range.anchorId) || !rows.some((row) => row.id === range.cursorId))) {
-      setState({ range: null })
-    }
-  }
-
-  /** Another database can reuse row ids; no row target carries across. */
-  function forgetRows() {
-    setState({ selectedIds: {}, range: null, pickerTargets: [], detail: null, acceptPreview: null })
-  }
-
-  /** Data reloads remove targets only when their transactions no longer exist. */
-  function pruneRows(existing: ReadonlySet<number>) {
-    if (!Object.keys(state.selectedIds).some((id) => !existing.has(Number(id)))
-      && !state.pickerTargets.some((id) => !existing.has(id))
-      && (!state.detail || existing.has(state.detail.id))) return
-    setState({
-      selectedIds: Object.fromEntries(Object.entries(state.selectedIds).filter(([id]) => existing.has(Number(id)))),
-      pickerTargets: state.pickerTargets.filter((id) => existing.has(id)),
-      detail: state.detail && !existing.has(state.detail.id) ? null : state.detail,
-    })
-  }
-
-  function moveManagerCursor(delta: number, rowCount: number) {
-    const { cursor, top } = cursorWindow(state.managerCursor + delta, state.managerTop, rowCount, state.managerVisible)
-    setState({ managerCursor: cursor, managerTop: top })
-  }
-
-  function jumpManagerCursor(index: number, rowCount: number) {
-    const { cursor, top } = cursorWindow(index, state.managerTop, rowCount, state.managerVisible)
-    setState({ managerCursor: cursor, managerTop: top })
-  }
-
-  function setTimeframe(tf: TimeframeState) {
-    setState({ timeframe: tf })
-  }
-
-  function setDashChipCursor(i: number) {
-    setState({ dashChipCursor: i })
-  }
-
-  /** Rows an action applies to: the open detail transaction, else the
-   * highlighted range, else the selection, else the cursor row. */
-  function targetIds(rows: { id: number }[]): number[] {
-    if (state.detail) return [state.detail.id]
-    const hl = Object.keys(highlightedIds(rows)).map(Number)
-    if (hl.length) return hl
-    const sel = Object.keys(state.selectedIds).map(Number)
-    if (sel.length) return sel
-    const row = rows[state.managerCursor]
-    return row ? [row.id] : []
-  }
-
-  function activeScope(): ScopeId {
-    for (const modal of MODALS) {
-      const value = state[modal.key]
-      if (value != null) {
-        if (modal.key === "detail") return modal.scope(state.detail!)
-        if (modal.key === "importWizard") return modal.scope(state.importWizard!)
-        return modal.scope()
-      }
-    }
-    if (state.focusedSection.startsWith("bar.")) return "bar"
-    if (state.activeTab === "overview") return state.focusedSection === "ov.range" ? "overview.range" : "overview"
-    if (state.activeTab === "budgets") return BUDGET_PANES.includes(state.focusedSection) ? "budgets.chart" : state.focusedSection === "bud.plan" ? "budgets.plan" : "budgets.categories"
-    if (state.activeTab === "manager") {
-      if (state.focusedSection === "mgr.accounts") return "manager.accounts"
-      return state.txnView === "merchants" ? "manager.merchants" : "manager.txns"
-    }
-    if (!state.settingsActive) return "settings"
-    if (state.settingsSection === "taxonomy") return "settings.taxonomy"
-    if (state.settingsSection === "rules") return "settings.rules"
-    if (state.settingsSection === "filters") return "settings.filters"
-    if (state.settingsSection === "up") return "settings.up"
-    if (state.settingsSection === "ai") return "settings.ai"
-    if (state.settingsSection === "appearance") return "settings.appearance"
-    return "settings.database"
-  }
+  const focus = createFocusActions(state, setState, setStatus)
+  const dialogs = createDialogActions(state, setState)
+  const settings = createSettingsActions(state, setState, setStatus)
+  const pickers = createPickerActions(state, setState, setStatus)
+  const selection = createSelectionActions(state, setState)
+  const cursors = createCursorActions(state, setState)
 
   return {
     state,
@@ -899,41 +351,41 @@ function createUiStore() {
     reset,
     setStatus,
     withdrawStatus,
-    switchTab,
-    opening,
-    cycleTab,
-    enterJump,
-    cancelJump,
-    applyJump,
-    activateSettings,
-    leaveSettings,
-    openSettingsEditor,
-    closeSettingsEditor,
-    arm,
-    disarm,
-    beginImport,
-    cancelImport,
-    openProfileEditor,
-    clearFocus,
-    openFilter,
-    closeFilter,
-    openCatPicker,
-    closeCatPicker,
-    openTagPicker,
-    closeTagPicker,
-    clearSelection,
-    toggleSelectedId,
-    setRangeFromMove,
-    highlightedIds,
-    ensureRange,
-    forgetRows,
-    pruneRows,
-    moveManagerCursor,
-    jumpManagerCursor,
-    setTimeframe,
-    setDashChipCursor,
-    activeScope,
-    targetIds,
+    switchTab: focus.switchTab,
+    opening: dialogs.opening,
+    cycleTab: focus.cycleTab,
+    enterJump: focus.enterJump,
+    cancelJump: focus.cancelJump,
+    applyJump: focus.applyJump,
+    activateSettings: settings.activateSettings,
+    leaveSettings: settings.leaveSettings,
+    openSettingsEditor: settings.openSettingsEditor,
+    closeSettingsEditor: settings.closeSettingsEditor,
+    arm: settings.arm,
+    disarm: settings.disarm,
+    beginImport: settings.beginImport,
+    cancelImport: settings.cancelImport,
+    openProfileEditor: settings.openProfileEditor,
+    clearFocus: focus.clearFocus,
+    openFilter: pickers.openFilter,
+    closeFilter: pickers.closeFilter,
+    openCatPicker: pickers.openCatPicker,
+    closeCatPicker: pickers.closeCatPicker,
+    openTagPicker: pickers.openTagPicker,
+    closeTagPicker: pickers.closeTagPicker,
+    clearSelection: selection.clearSelection,
+    toggleSelectedId: selection.toggleSelectedId,
+    setRangeFromMove: selection.setRangeFromMove,
+    highlightedIds: selection.highlightedIds,
+    ensureRange: selection.ensureRange,
+    forgetRows: selection.forgetRows,
+    pruneRows: selection.pruneRows,
+    moveManagerCursor: cursors.moveManagerCursor,
+    jumpManagerCursor: cursors.jumpManagerCursor,
+    setTimeframe: cursors.setTimeframe,
+    setDashChipCursor: cursors.setDashChipCursor,
+    activeScope: dialogs.activeScope,
+    targetIds: selection.targetIds,
   }
 }
 

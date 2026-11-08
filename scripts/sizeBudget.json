@@ -33,12 +33,10 @@
   "frozenFiles": {
     "src/db/client.ts": 970,
     "src/domain/filter.ts": 910,
-    "src/state/uiStore.ts": 900,
     "src/ui/settings/SettingsTab.tsx": 800
   },
   "functionLines": 80,
   "frozenFunctions": {
-    "src/state/uiStore.ts:createUiStore": 380,
     "src/app/keys/manager.ts:handleManagerTxns": 160,
     "src/app/keys/overview.ts:handleOverview": 150,
     "src/app/keys/settings.ts:handleSettingsEditor": 140,
