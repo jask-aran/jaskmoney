@@ -18,7 +18,7 @@ const DATA_COLOURS = new Set([
   "src/ui/charts/inks.ts",
   "src/ui/charts/saverInks.ts",
   "src/ui/overview/CalendarView.tsx",
-  "src/ui/manager/ManagerTab.tsx",
+  "src/ui/manager/managerModel.ts",
   "src/ui/manager/TransactionTable.tsx",
   "src/app/keys.ts",
   "src/state/tagPicker.ts",

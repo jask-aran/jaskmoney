@@ -37,16 +37,13 @@
     "src/state/uiStore.ts": 900,
     "src/ui/settings/SettingsTab.tsx": 800,
     "src/core/core.ts": 740,
-    "src/ui/budgets/BudgetsTab.tsx": 690,
     "src/ui/overview/periodCharts.ts": 620
   },
   "functionLines": 80,
   "frozenFunctions": {
     "src/core/core.ts:createCore": 660,
-    "src/ui/budgets/BudgetsTab.tsx:BudgetsTab": 610,
     "src/state/uiStore.ts:createUiStore": 380,
     "src/core/upPush.ts:createUpPush": 360,
-    "src/ui/manager/ManagerTab.tsx:ManagerTab": 350,
     "src/domain/demo.ts:generateDemo": 310,
     "src/ui/overview/periodCharts.ts:spendingChart": 210,
     "src/app/keys.ts:handleManagerTxns": 160,
