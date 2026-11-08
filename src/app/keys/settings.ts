@@ -5,9 +5,9 @@ import { toggleDemo, applyAllRules, settleData, showDryRun, toggleIcons, toggleW
 import { DATABASE_ROWS } from "../../state/databaseRows"
 import { type KeyEvent } from "@opentui/core"
 import { budgetScopeOptions } from "../../domain/budgetScopes"
-import { cycleFromDraft, editorFields, normaliseCycleDraft, pickerChoices, pickerItems, stepChoice } from "../../state/settingsForm"
+import { cycleFromDraft, editorFields, type FormField, normaliseCycleDraft, pickerChoices, pickerItems, stepChoice } from "../../state/settingsForm"
 import { categoryRows } from "../../state/taxonomyRows"
-import { SETTINGS_RIGHT, SETTINGS_SECTIONS, type SettingsSection, settingsSectionFocus, type ScopeId, type UiStore } from "../../state/uiStore"
+import { SETTINGS_RIGHT, SETTINGS_SECTIONS, type SettingsSection, settingsSectionFocus, type ScopeId, type Opening, type SettingsEditorKind, type UiState, type UiStore } from "../../state/uiStore"
 import type { DataStore } from "../../state/dataStore"
 import { editText } from "../../domain/textField"
 import { amountFromText } from "../../domain/typedInput"
@@ -35,6 +35,81 @@ function handleSettingsFactoryReset(ui: UiStore, key: KeyEvent, data?: DataStore
   if (next) ui.setState("factoryReset", { draft: next.value, caret: next.caret })
 }
 
+type Draft = UiState["settingsDraft"]
+type EditorContext = Parameters<typeof editorFields>[2]
+type EditorPicker = NonNullable<NonNullable<UiState["settingsEditor"]>["picker"]>
+
+/** A picker field's list: arrows move, printable keys filter, enter
+ * chooses (or toggles, for a multi-choice field), esc closes. */
+function settingsEditorPicker(ui: UiStore, key: KeyEvent, kind: SettingsEditorKind, field: FormField, draft: Draft, ctx: EditorContext, picker: EditorPicker): void {
+  const choices = pickerChoices(pickerItems(kind, field.key, ctx, picker.query))
+  queryPickerKey(key, picker, choices.length, {
+    close: () => ui.setState("settingsEditor", { picker: null }),
+    update: (next) => ui.setState("settingsEditor", { picker: next }),
+    apply: () => {
+      const choice = choices[picker.cursor]
+      if (!choice) return
+      if (field.multi) {
+        // Multi-choice (a rule's tags, a tag's categories): enter toggles; esc closes.
+        const id = Number(choice.value)
+        const multiKey = field.key as "addTagIds" | "categoryIds"
+        const ids = draft[multiKey]
+        ui.setState("settingsDraft", multiKey, ids.includes(id) ? ids.filter((t) => t !== id) : [...ids, id])
+        return
+      }
+      ui.setState("settingsDraft", field.key as "scopeKey", choice.value as never)
+      ui.setState("settingsEditor", { picker: null })
+    },
+  })
+}
+
+/** Save the editor's draft as its kind's record, then close; a bad draft throws. */
+async function saveSettingsEditor(ui: UiStore, kind: SettingsEditorKind, id: number | string | null, draft: Draft, ctx: EditorContext, opened: Opening<NonNullable<UiState["settingsEditor"]>>, data?: DataStore): Promise<void> {
+  try {
+    if (kind === "category") {
+      if (id == null) await data?.createSettingsCategory({ name: draft.name, color: draft.color, notSpending: draft.notSpending })
+      else await data?.updateSettingsCategory(Number(id), { name: draft.name, color: draft.color, notSpending: draft.notSpending })
+    } else if (kind === "tag") {
+      const tag = { name: draft.name, color: draft.color, categoryIds: draft.categoryIds, about: draft.about.trim() || null }
+      if (id == null) await data?.createSettingsTag(tag)
+      else await data?.updateSettingsTag(Number(id), tag)
+    } else if (kind === "budget") {
+      const option = budgetScopeOptions(ctx.accounts, ctx.categories).find((o) => o.key === draft.scopeKey)
+      const amount = amountFromText(draft.amount)
+      if (!option) throw new Error("choose what the budget covers")
+      if (amount === null) throw new Error("enter the budget amount")
+      const cycle = cycleFromDraft(draft)
+      if (typeof cycle === "string") throw new Error(cycle)
+      const current = data?.state.budgetCycle
+      // The cycle is shared by every budget; save it first so a bad date
+      // stops the whole edit.
+      if (current && (current.unit !== cycle.unit || current.anchor !== cycle.anchor || current.anchorDate !== cycle.anchorDate || !!current.payEarly !== !!cycle.payEarly)) await data?.setBudgetCycle(cycle)
+      // From the cycle the Budgets tab shows (this one elsewhere).
+      const view = data ? viewedBudgets(ui, data) : undefined
+      const editing = view?.budgets.find((b) => b.id === id)
+      // A new scope ends the old budget in the same write.
+      await data?.setBudget(option.scope, amount, view?.cycle.start, editing?.scope)
+    } else if (kind === "cycle") {
+      const cycle = cycleFromDraft(draft)
+      if (typeof cycle === "string") throw new Error(cycle)
+      await data?.setBudgetCycle(cycle)
+    } else if (kind === "pay") {
+      // Empty clears it (0: not set).
+      const amount = draft.amount.trim() ? amountFromText(draft.amount) : 0
+      if (amount === null || amount < 0) throw new Error("enter what you expect each payday")
+      await data?.saveUiPrefs({ expectedPay: amount })
+    } else if (kind === "filter") {
+      await data?.saveSavedFilter({ id: draft.id, name: draft.name, expr: draft.expr }, typeof id === "string" ? id : undefined)
+    } else {
+      const existing = data?.state.rules.find((r) => r.id === id)
+      const rule = { id: Number(id ?? 0), name: draft.name, savedFilterId: draft.savedFilterId, setCategoryId: draft.setCategoryId, addTagIds: draft.addTagIds, enabled: existing?.enabled ?? true, sortOrder: existing?.sortOrder ?? 0 }
+      if (id == null) await data?.createSettingsRule(rule)
+      else await data?.updateSettingsRule(rule)
+    }
+    opened.close(); ui.setStatus("Saved")
+  } finally { opened.patch({ saving: false }) }
+}
+
 function handleSettingsEditor(ui: UiStore, key: KeyEvent, data?: DataStore): void {
   const { name } = key
   const kind = ui.state.settingsEditor?.kind
@@ -52,25 +127,7 @@ function handleSettingsEditor(ui: UiStore, key: KeyEvent, data?: DataStore): voi
   // picker: arrows move, printable keys filter).
   const picker = ui.state.settingsEditor!.picker
   if (picker) {
-    const choices = pickerChoices(pickerItems(kind, field.key, ctx, picker.query))
-    queryPickerKey(key, picker, choices.length, {
-      close: () => ui.setState("settingsEditor", { picker: null }),
-      update: (next) => ui.setState("settingsEditor", { picker: next }),
-      apply: () => {
-        const choice = choices[picker.cursor]
-        if (!choice) return
-        if (field.multi) {
-          // Multi-choice (a rule's tags, a tag's categories): enter toggles; esc closes.
-          const id = Number(choice.value)
-          const multiKey = field.key as "addTagIds" | "categoryIds"
-          const ids = draft[multiKey]
-          ui.setState("settingsDraft", multiKey, ids.includes(id) ? ids.filter((t) => t !== id) : [...ids, id])
-          return
-        }
-        ui.setState("settingsDraft", field.key as "scopeKey", choice.value as never)
-        ui.setState("settingsEditor", { picker: null })
-      },
-    })
+    settingsEditorPicker(ui, key, kind, field, draft, ctx, picker)
     return
   }
 
@@ -95,51 +152,7 @@ function handleSettingsEditor(ui: UiStore, key: KeyEvent, data?: DataStore): voi
     // One save at a time: over a socket the editor stays open until the
     // core answers, and a second enter would create the record twice.
     opened.patch({ saving: true })
-    settleData(ui, (async () => {
-      try {
-        if (kind === "category") {
-          if (id == null) await data?.createSettingsCategory({ name: draft.name, color: draft.color, notSpending: draft.notSpending })
-          else await data?.updateSettingsCategory(Number(id), { name: draft.name, color: draft.color, notSpending: draft.notSpending })
-        } else if (kind === "tag") {
-          const tag = { name: draft.name, color: draft.color, categoryIds: draft.categoryIds, about: draft.about.trim() || null }
-          if (id == null) await data?.createSettingsTag(tag)
-          else await data?.updateSettingsTag(Number(id), tag)
-        } else if (kind === "budget") {
-          const option = budgetScopeOptions(ctx.accounts, ctx.categories).find((o) => o.key === draft.scopeKey)
-          const amount = amountFromText(draft.amount)
-          if (!option) throw new Error("choose what the budget covers")
-          if (amount === null) throw new Error("enter the budget amount")
-          const cycle = cycleFromDraft(draft)
-          if (typeof cycle === "string") throw new Error(cycle)
-          const current = data?.state.budgetCycle
-          // The cycle is shared by every budget; save it first so a bad date
-          // stops the whole edit.
-          if (current && (current.unit !== cycle.unit || current.anchor !== cycle.anchor || current.anchorDate !== cycle.anchorDate || !!current.payEarly !== !!cycle.payEarly)) await data?.setBudgetCycle(cycle)
-          // From the cycle the Budgets tab shows (this one elsewhere).
-          const view = data ? viewedBudgets(ui, data) : undefined
-          const editing = view?.budgets.find((b) => b.id === id)
-          // A new scope ends the old budget in the same write.
-          await data?.setBudget(option.scope, amount, view?.cycle.start, editing?.scope)
-        } else if (kind === "cycle") {
-          const cycle = cycleFromDraft(draft)
-          if (typeof cycle === "string") throw new Error(cycle)
-          await data?.setBudgetCycle(cycle)
-        } else if (kind === "pay") {
-          // Empty clears it (0: not set).
-          const amount = draft.amount.trim() ? amountFromText(draft.amount) : 0
-          if (amount === null || amount < 0) throw new Error("enter what you expect each payday")
-          await data?.saveUiPrefs({ expectedPay: amount })
-        } else if (kind === "filter") {
-          await data?.saveSavedFilter({ id: draft.id, name: draft.name, expr: draft.expr }, typeof id === "string" ? id : undefined)
-        } else {
-          const existing = data?.state.rules.find((r) => r.id === id)
-          const rule = { id: Number(id ?? 0), name: draft.name, savedFilterId: draft.savedFilterId, setCategoryId: draft.setCategoryId, addTagIds: draft.addTagIds, enabled: existing?.enabled ?? true, sortOrder: existing?.sortOrder ?? 0 }
-          if (id == null) await data?.createSettingsRule(rule)
-          else await data?.updateSettingsRule(rule)
-        }
-        opened.close(); ui.setStatus("Saved")
-      } finally { opened.patch({ saving: false }) }
-    })())
+    settleData(ui, saveSettingsEditor(ui, kind, id, draft, ctx, opened, data))
     return
   }
   const left = name === "left" || (!isText && name === "h")

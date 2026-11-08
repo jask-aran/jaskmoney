@@ -53,28 +53,23 @@ export const CATEGORIES = ["Transactions", "Rules", "Data", "Add", "AI models", 
 type Entry = Omit<Command, "category"> & { category: (typeof CATEGORIES)[number] }
 type Section = UiState["settingsSection"]
 
-function registry(ctx: CommandContext): Entry[] {
-  const { ui, data } = ctx
-  const toSettings = (section: Section, list: "categories" | "tags" = "categories") => {
-    if (ui.state.activeTab !== "settings") ui.switchTab("settings")
-    ui.activateSettings(section, list)
-  }
-  // A Settings pane's own key, pressed there.
-  const inSettings = (section: Section, hint: string, setup?: () => void, list?: "categories" | "tags") => () => {
-    toSettings(section, list)
-    setup?.()
-    ctx.press(hintEvent(hint)!, `settings.${section}`)
-  }
-  const inTransactions = (hint: string) => () => { toTransactions(ui); ctx.press(hintEvent(hint)!, "manager.txns") }
-  // The Budgets pane owns these keys, including c for the cycle editor.
-  const inBudgets = (hint: string) => () => {
-    if (ui.state.activeTab !== "budgets") ui.switchTab("budgets")
-    ui.setState({ focusedSection: "bud.categories" })
-    ctx.press(hintEvent(hint)!, "budgets.categories")
-  }
-  const filter = data.state.filterQuery
-  const undo = data.undoLabel()
-  const offers = data.allRuleOffers().length
+/** What the registry's groups build from: the context, how a command
+ * goes to the pane it needs, and what the commands read. */
+interface Parts {
+  ctx: CommandContext
+  ui: UiStore
+  data: DataStore
+  toSettings: (section: Section, list?: "categories" | "tags") => void
+  inSettings: (section: Section, hint: string, setup?: () => void, list?: "categories" | "tags") => () => void
+  inTransactions: (hint: string) => () => void
+  inBudgets: (hint: string) => () => void
+  filter: string
+  undo: ReturnType<DataStore["undoLabel"]>
+  offers: number
+}
+
+/** Transactions: its views, the filter, undo, saved filters and accounts. */
+function transactionCommands({ ui, data, inTransactions, filter, undo }: Parts): Entry[] {
   return [
     // Transactions
     { id: "txn:uncategorised", category: "Transactions", label: "Review uncategorised", description: "rows waiting for a category",
@@ -97,6 +92,12 @@ function registry(ctx: CommandContext): Entry[] {
       disabled: data.state.accountSelection === row.selection ? "showing it now" : undefined,
       run: () => { toTransactions(ui); showAccount(ui, data, row) },
     })),
+  ]
+}
+
+/** Rules, then the data: sync, import, clear and reset. */
+function ruleAndDataCommands({ ui, data, inSettings, inTransactions, offers }: Parts): Entry[] {
+  return [
     // Rules
     { id: "rules:offers", category: "Rules", label: offers ? `Rules offered (${offers})…` : "Rules offered…", description: "from repeated categorising",
       disabled: offers || data.state.llm ? undefined : "none yet", run: inTransactions("R") },
@@ -112,6 +113,12 @@ function registry(ctx: CommandContext): Entry[] {
     { id: "data:import", category: "Data", label: "Import a CSV…", run: inSettings("database", "enter", () => ui.setState({ databaseCursor: DATABASE_ROWS.indexOf("import") })) },
     { id: "data:clear", category: "Data", label: "Clear transaction data…", description: "asks again", run: inSettings("database", "enter", () => ui.setState({ databaseCursor: DATABASE_ROWS.indexOf("clearData") })) },
     { id: "data:reset", category: "Data", label: "Reset the database…", description: "type RESET", run: inSettings("database", "enter", () => ui.setState({ databaseCursor: DATABASE_ROWS.indexOf("reset") })) },
+  ]
+}
+
+/** New records, then the AI models' dialogs. */
+function addCommands({ ui, inSettings, inBudgets }: Parts): Entry[] {
+  return [
     // Add
     { id: "add:category", category: "Add", label: "Category…", run: inSettings("taxonomy", "a", undefined, "categories") },
     { id: "add:tag", category: "Add", label: "Tag…", run: inSettings("taxonomy", "a", undefined, "tags") },
@@ -123,6 +130,12 @@ function registry(ctx: CommandContext): Entry[] {
       id: `ai:${row}`, category: "AI models", label: `${aiRowLabel(row)}…`, description: isLlmRow(row) ? "sign in or key" : "key",
       run: inSettings("ai", "enter", () => ui.setState({ aiCursor: i })),
     })),
+  ]
+}
+
+/** Display preferences: each names what it changes to. */
+function displayCommands({ ui, data }: Parts): Entry[] {
+  return [
     // Display
     { id: "display:theme", category: "Display", label: "Theme…", description: "preview and pick a colour theme", run: () => openThemePicker(ui, data) },
     { id: "display:icons", category: "Display", label: `Category icons ${data.state.icons ? "off" : "on"}`, run: () => toggleIcons(ui, data) },
@@ -134,6 +147,12 @@ function registry(ctx: CommandContext): Entry[] {
     { id: "display:chart-labels", category: "Display", label: `Chart labels: ${CHART_LABEL_LABELS[(data.state.uiPrefs.chartLabels ?? DEFAULT_CHART_LABELS) === "together" ? "sequential" : "together"]}`, run: () => toggleChartLabels(ui, data) },
     { id: "display:open-range", category: "Display", label: `Range on open: ${OPEN_RANGE_LABELS[nextOpenRange(data.state.uiPrefs.openRange)]}`, run: () => cycleOpenRange(ui, data) },
     { id: "display:backdrop", category: "Display", label: `Welcome backdrop: ${BACKDROPS[(BACKDROPS.findIndex((entry) => entry.id === (data.state.uiPrefs.backdrop ?? DEFAULT_BACKDROP)) + 1) % BACKDROPS.length]!.label}`, run: () => cycleBackdrop(ui, data) },
+  ]
+}
+
+/** Settings, then going to a tab or pane. */
+function settingsCommands({ ctx, ui, toSettings, inBudgets }: Parts): Entry[] {
+  return [
     // Settings
     { id: "settings:cycle", category: "Settings", label: "Budget cycle…", description: "e.g. from payday", run: inBudgets("c") },
     { id: "settings:setup", category: "Settings", label: "First-time setup…", description: "Up, the AI, your email", run: () => openWelcome(ui) },
@@ -145,6 +164,32 @@ function registry(ctx: CommandContext): Entry[] {
     })),
     { id: "go:jump", category: "Go to", label: "Jump to a pane", key: "v", run: () => ctx.press(keyEvent("v"), ctx.from) },
   ]
+}
+
+function registry(ctx: CommandContext): Entry[] {
+  const { ui, data } = ctx
+  const toSettings = (section: Section, list: "categories" | "tags" = "categories") => {
+    if (ui.state.activeTab !== "settings") ui.switchTab("settings")
+    ui.activateSettings(section, list)
+  }
+  // A Settings pane's own key, pressed there.
+  const inSettings = (section: Section, hint: string, setup?: () => void, list?: "categories" | "tags") => () => {
+    toSettings(section, list)
+    setup?.()
+    ctx.press(hintEvent(hint)!, `settings.${section}`)
+  }
+  const inTransactions = (hint: string) => () => { toTransactions(ui); ctx.press(hintEvent(hint)!, "manager.txns") }
+  // The Budgets pane owns these keys, including c for the cycle editor.
+  const inBudgets = (hint: string) => () => {
+    if (ui.state.activeTab !== "budgets") ui.switchTab("budgets")
+    ui.setState({ focusedSection: "bud.categories" })
+    ctx.press(hintEvent(hint)!, "budgets.categories")
+  }
+  const filter = data.state.filterQuery
+  const undo = data.undoLabel()
+  const offers = data.allRuleOffers().length
+  const parts: Parts = { ctx, ui, data, toSettings, inSettings, inTransactions, inBudgets, filter, undo, offers }
+  return [...transactionCommands(parts), ...ruleAndDataCommands(parts), ...addCommands(parts), ...displayCommands(parts), ...settingsCommands(parts)]
 }
 
 /** The pane's commands (its one-key hints, in their order), then the rest

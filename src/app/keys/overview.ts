@@ -141,11 +141,9 @@ function handleOverviewCustom(ui: UiStore, key: KeyEvent, data?: DataStore): voi
   ui.setState({ customEdit: { ...edit, [side]: next, error: "", ...(day ? { cursor: day } : {}) } })
 }
 
-function handleOverview(ui: UiStore, key: KeyEvent, data?: DataStore): void {
-  const { name, sequence: seq } = key
-  const scope = ui.activeScope()
-  const clock = appNow()
-  const cycle = data?.cycle()
+/** Arrows travel panes (the Range pane's lines first, with it focused). */
+function overviewArrowKeys(ui: UiStore, key: KeyEvent, data?: DataStore): boolean {
+  const { name } = key
   // Approved deviation, user request 2026-11-01: arrows travel panes.
   // Legacy keys.go:232 binds left/right only in the timeframe scope;
   // h/l, ,/., H/L still step charts. Range arrows keep chip movement.
@@ -155,12 +153,20 @@ function handleOverview(ui: UiStore, key: KeyEvent, data?: DataStore): void {
       const cursor = Math.min(ui.state.overviewCategoryCursor, last)
       if (name === "up" ? cursor > 0 : cursor < last) {
         moveOverviewCategory(ui, data, cursor + (name === "up" ? -1 : 1))
-        return
+        return true
       }
     }
     travel(ui, name, data)
-    return
+    return true
   }
+  return false
+}
+
+/** The charts' views, the date range chip, and the Overview's ways out:
+ * review, search, the account and the range before or after. */
+function overviewChartKeys(ui: UiStore, key: KeyEvent, clock: Date, cycle: CycleConfig | undefined, data?: DataStore): boolean {
+  const { name, sequence: seq } = key
+  const scope = ui.activeScope()
   // h/l (or ,/.) step the focused chart's views: however many charts
   // show, the one with focus is the one that changes.
   const back = (name === "h" || seq === ",") && !key.shift && scope === "overview"
@@ -172,7 +178,7 @@ function handleOverview(ui: UiStore, key: KeyEvent, data?: DataStore): void {
     const views: ChartViews = [...ui.state.chartViews]
     views[pane] = (views[pane] + (back ? -1 : 1) + n) % n
     ui.setState({ chartViews: views })
-    return
+    return true
   }
   // d / D: the next or previous date range chip, applied at once (no need
   // to focus the Date Range first). Custom joins once a range exists.
@@ -182,25 +188,25 @@ function handleOverview(ui: UiStore, key: KeyEvent, data?: DataStore): void {
     ui.setTimeframe(tf)
     ui.setDashChipCursor(index)
     ui.setStatus(`${chipLabel(index)} · ${timeframeBounds(tf, clock, cycle).label}`)
-    return
+    return true
   }
   // i: review what's waiting for a category, in Transactions.
   if (name === "i" && !key.shift && scope === "overview" && data) {
     toTransactions(ui)
     if (!data.state.uncategorisedOnly) toggleUncategorised(ui, data)
-    return
+    return true
   }
   // / searches: the Transactions filter, opened from here (the Overview
   // itself is not filtered); ? goes straight to a smart search.
   if (isSmartSearchKey(key) && scope === "overview") {
     toTransactions(ui)
     openSmartSearch(ui, data)
-    return
+    return true
   }
   if ((name === "/" || seq === "/") && scope === "overview") {
     toTransactions(ui)
     ui.openFilter(data?.state.filterQuery ?? "")
-    return
+    return true
   }
   // Which spending account the period covers: all, or one of them.
   if (name === "a" && data) {
@@ -211,12 +217,18 @@ function handleOverview(ui: UiStore, key: KeyEvent, data?: DataStore): void {
     const next = choices[(at + 1) % choices.length]!
     changeAccountScope(ui, data, next, "overview")
     ui.setStatus(`Overview · ${spendingScope(data.state.accounts, next).label}`)
-    return
+    return true
   }
   if (name === "[" || seq === "[" || name === "]" || seq === "]") {
     stepOverviewRange(ui, name === "[" || seq === "[" ? -1 : 1, data)
-    return
+    return true
   }
+  return false
+}
+
+/** The Range pane's lines, drill-down, and the range's own keys. */
+function overviewRangeKeys(ui: UiStore, key: KeyEvent, clock: Date, cycle: CycleConfig | undefined, data?: DataStore): boolean {
+  const { name, sequence: seq } = key
   // Drill-down (Go app): enter opens Transactions filtered to the focused
   // category line, or to all the range's spending from a chart; esc there
   // comes back. With Categories focused, j/k move over every line.
@@ -225,7 +237,7 @@ function handleOverview(ui: UiStore, key: KeyEvent, data?: DataStore): void {
     const lines = overviewCategoryLines(overviewRange(data, ui.state), openGroups(data.state.uiPrefs, ui.state))
     const moveTo = (i: number) => moveOverviewCategory(ui, data, i)
     const moved = listMove(key, ui.state.overviewCategoryCursor, lines.length)
-    if (moved != null) { moveTo(moved); return }
+    if (moved != null) { moveTo(moved); return true }
     // The Range pane: space opens or closes the cursor's group (from a
     // subcategory, its group, the cursor going to it).
     const open = openGroups(data.state.uiPrefs, ui.state)
@@ -234,50 +246,60 @@ function handleOverview(ui: UiStore, key: KeyEvent, data?: DataStore): void {
       let g = at
       while (g > 0 && lines[g]!.child) g--
       const id = lines[g]?.categoryId
-      if (id == null) return
+      if (id == null) return true
       ui.setState({ overviewOpen: open.includes(id) ? open.filter((x) => x !== id) : [...open, id], overviewCategoryCursor: g })
-      return
+      return true
     }
     // o: the cursor's category's transactions in the range.
     const line = lines[Math.min(ui.state.overviewCategoryCursor, lines.length - 1)]
-    if (name === "o" && !key.shift && !key.ctrl && !key.meta && line) { drillDown(ui, data, line); return }
+    if (name === "o" && !key.shift && !key.ctrl && !key.meta && line) { drillDown(ui, data, line); return true }
   }
   // o: the range's transactions, from anywhere on the Overview (the whole
   // screen is the one range; no pane needs focus for it).
-  if (data && name === "o" && !key.shift && !key.ctrl && !key.meta) { drillDown(ui, data); return }
+  if (data && name === "o" && !key.shift && !key.ctrl && !key.meta) { drillDown(ui, data); return true }
   if (name === "0") {
     // The same kind of range, now (this month, this quarter…).
     const tf = timeframeNow(ui.state.timeframe, appNow(), cycle)
     ui.setTimeframe(tf)
     ui.setStatus(`Now · ${timeframeBounds(tf, clock, cycle).label}`)
-    return
+    return true
   }
   // t: the Range pane as text (the totals line by line), or its bars.
   if (name === "t" && !key.shift && !key.ctrl && !key.meta && data && ui.state.focusedSection === "ov.categories") {
     settleData(ui, data.saveUiPrefs({ rangeText: !data.state.uiPrefs.rangeText }), () => ui.setStatus(data.state.uiPrefs.rangeText ? "Range as text" : "Range as bars"))
-    return
+    return true
   }
   // s: the Range pane's bar opens out to where the spending went, or where
   // the net went.
   if (name === "s" && !key.shift && !key.ctrl && !key.meta && data && !data.state.uiPrefs.rangeText && ui.state.focusedSection === "ov.categories") {
     const spending = data.state.uiPrefs.rangeView !== "spending"
     settleData(ui, data.saveUiPrefs({ rangeView: spending ? "spending" : "net" }), () => ui.setStatus(spending ? "Range: where the spending went" : "Range: where the net went"))
-    return
+    return true
   }
   if (name === "z" && data) {
     // Balance charts: fit the balances, or run the axis from $0.
     settleData(ui, data.saveUiPrefs({ zeroAxis: !data.state.uiPrefs.zeroAxis }), () => ui.setStatus(data.state.uiPrefs.zeroAxis ? "Balance charts from $0" : "Balance charts fit their balances"))
-    return
+    return true
   }
-  if (shifted(key, "c") && !key.ctrl && !key.meta) { openCustomRange(ui, cycle); return }
+  if (shifted(key, "c") && !key.ctrl && !key.meta) { openCustomRange(ui, cycle); return true }
   if (name === "b" && !key.shift && !key.ctrl && !key.meta) {
     // Home: the current budget cycle, whatever the range was.
     const tf = applyChip({ ...ui.state.timeframe, family: "period", period: "cycle" }, LOOKBACKS.length, appNow(), cycle)
     ui.setTimeframe(tf)
     ui.setDashChipCursor(activeChipIndex(tf))
     ui.setStatus(`This budget cycle · ${timeframeBounds(tf, clock, cycle).label}`)
-    return
+    return true
   }
+  return false
+}
+
+function handleOverview(ui: UiStore, key: KeyEvent, data?: DataStore): void {
+  const { name } = key
+  const clock = appNow()
+  const cycle = data?.cycle()
+  if (overviewArrowKeys(ui, key, data)) return
+  if (overviewChartKeys(ui, key, clock, cycle, data)) return
+  if (overviewRangeKeys(ui, key, clock, cycle, data)) return
   if (name === "escape" && ui.state.focusedSection !== "none") ui.clearFocus()
 }
 

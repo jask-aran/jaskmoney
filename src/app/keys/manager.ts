@@ -158,28 +158,31 @@ function stepBack(ui: UiStore, data?: DataStore): void {
   ui.setStatus("Nothing to clear")
 }
 
-function handleManagerTxns(ui: UiStore, key: KeyEvent, data?: DataStore): void {
+/** The table's rows (scopedTransactions), read once per key. */
+type Rows = ReturnType<DataStore["scopedTransactions"]>
+
+/** The table's commands: saved filters, undo, repeat, the account, merchants,
+ * notes, near misses and rule offers. */
+function txnsCommandKeys(ui: UiStore, key: KeyEvent, rows: Rows, data?: DataStore): boolean {
   const { name, sequence: seq } = key
-  const rows = data?.scopedTransactions() ?? []
-  ui.ensureRange(rows)
-  if (savedFilterKeys(ui, data, key)) return
+  if (savedFilterKeys(ui, data, key)) return true
   // u undoes the last change (dataStore.undo); esc clears, below.
-  if (name === "u" && data) { runUndo(ui, data); return }
+  if (name === "u" && data) { runUndo(ui, data); return true }
 
   if ((name === "." || seq === ".") && data) {
-    if (!data.lastRepeat()) { ui.setStatus("Nothing to repeat"); return }
+    if (!data.lastRepeat()) { ui.setStatus("Nothing to repeat"); return true }
     settleData(ui, data.repeatLast(ui.targetIds(rows)), (summary) => ui.setStatus(summary, summary.includes("failed:")))
-    return
+    return true
   }
 
   // Step through the accounts pane from the table.
-  if (name === "a" && !key.shift && data) { stepAccount(ui, data); return }
-  if (name === "m") { ui.setState({ txnView: "merchants", merchantCursor: 0, merchantTop: 0 }); ui.setStatus("Grouped by merchant · m for rows"); return }
+  if (name === "a" && !key.shift && data) { stepAccount(ui, data); return true }
+  if (name === "m") { ui.setState({ txnView: "merchants", merchantCursor: 0, merchantTop: 0 }); ui.setStatus("Grouped by merchant · m for rows"); return true }
   // N: a note on the row's merchant (what you buy there), for suggestions.
   if ((name === "N" || (name === "n" && key.shift)) && data) {
     const row = data.scopedTransactions()[ui.state.managerCursor]
     if (row) openMerchantNote(ui, data, row.description)
-    return
+    return true
   }
   // With ask: terms, n shows near misses too (rows Jev hasn't settled).
   if (name === "n" && !key.shift && data && askTerms(data.state.filterExpr).length) {
@@ -189,28 +192,34 @@ function handleManagerTxns(ui: UiStore, key: KeyEvent, data?: DataStore): void {
     const counts = data.askCounts()
     const tally = `${counts?.matches ?? 0} match, ${counts?.near ?? 0} near`
     ui.setStatus(on ? `${tally}: near misses below the matches (n hides them)` : `${tally}: matches only (n shows the near)`)
-    return
+    return true
   }
   // R: rules offered from what you've categorised the same way repeatedly.
   if (name === "r" && key.shift && data) {
     const n = data.allRuleOffers().length
     // With a model to ask, the list opens on the final action row when empty.
-    if (!n && !!!data?.state.llm) { ui.setStatus(`No rule to offer: one comes after you put a description in the same category ${RULE_AFTER} times`); return }
+    if (!n && !!!data?.state.llm) { ui.setStatus(`No rule to offer: one comes after you put a description in the same category ${RULE_AFTER} times`); return true }
     ui.setState({ ruleOffers: { cursor: 0, busy: false } })
     ui.setStatus(n ? `${count(n, "rule")} offered` : "No rules offered yet · enter asks the AI")
-    return
+    return true
   }
+  return false
+}
+
+/** Tag review and the Uncategorised view: their candidates and suggestions. */
+function txnsReviewKeys(ui: UiStore, key: KeyEvent, rows: Rows, data?: DataStore): boolean {
+  const { name } = key
   // Tag review: a tag's candidates, accepted (y, Y) or dismissed (x) like
   // category suggestions; T chooses another tag, esc leaves.
-  if (name === "t" && key.shift && data) { ui.setState({ tagChooser: { cursor: 0, query: "" } }); ui.setStatus("Find transactions for a tag · type to filter or name a new one"); return }
+  if (name === "t" && key.shift && data) { ui.setState({ tagChooser: { cursor: 0, query: "" } }); ui.setStatus("Find transactions for a tag · type to filter or name a new one"); return true }
   const review = data?.state.tagReview
   if (review && data) {
-    if (name === "y" && !key.shift) { void runTagAccept(ui, data, ui.targetIds(rows)); return }
+    if (name === "y" && !key.shift) { void runTagAccept(ui, data, ui.targetIds(rows)); return true }
     if (name === "y" && key.shift) {
       const ids = rows.filter((r) => (review.candidates[r.id]?.confidence ?? 0) >= ACCEPT_ALL_AT).map((r) => r.id)
-      if (!ids.length) { ui.setStatus(`No candidate is ${ACCEPT_ALL_AT * 100}% sure or more`); return }
+      if (!ids.length) { ui.setStatus(`No candidate is ${ACCEPT_ALL_AT * 100}% sure or more`); return true }
       ui.setState({ acceptPreview: ids })
-      return
+      return true
     }
     if (name === "x" && !key.shift) {
       const ids = ui.targetIds(rows).filter((id) => review.candidates[id])
@@ -219,20 +228,20 @@ function handleManagerTxns(ui: UiStore, key: KeyEvent, data?: DataStore): void {
         ui.jumpManagerCursor(Math.min(ui.state.managerCursor, Math.max(0, data.scopedTransactions().length - 1)), data.scopedTransactions().length)
         ui.setStatus(ids.length ? `Dismissed ${count(ids.length, "candidate")} for this session` : "No candidate to dismiss")
       })
-      return
+      return true
     }
   }
   // The Uncategorised view: rows waiting for a category, with suggestions
   // to accept (y: these rows, Y: every confident one) or dismiss (x).
-  if (name === "i" && !key.shift && data) { if (review) data.closeTagReview(); toggleUncategorised(ui, data); return }
+  if (name === "i" && !key.shift && data) { if (review) data.closeTagReview(); toggleUncategorised(ui, data); return true }
   if (data?.state.uncategorisedOnly) {
-    if (name === "y" && !key.shift) { void runAccept(ui, data, ui.targetIds(rows)); return }
+    if (name === "y" && !key.shift) { void runAccept(ui, data, ui.targetIds(rows)); return true }
     if (name === "y" && key.shift) {
       // Several rows, possibly pushed to Up: show what it would do first.
       const ids = rows.filter((r) => (data.state.suggestions[r.id]?.confidence ?? 0) >= ACCEPT_ALL_AT).map((r) => r.id)
-      if (!ids.length) { ui.setStatus(`No suggestion is ${ACCEPT_ALL_AT * 100}% sure or more`); return }
+      if (!ids.length) { ui.setStatus(`No suggestion is ${ACCEPT_ALL_AT * 100}% sure or more`); return true }
       ui.setState({ acceptPreview: ids })
-      return
+      return true
     }
     if (name === "x" && !key.shift) {
       const ids = ui.targetIds(rows).filter((id) => data.state.suggestions[id])
@@ -240,46 +249,58 @@ function handleManagerTxns(ui: UiStore, key: KeyEvent, data?: DataStore): void {
         ui.clearSelection()
         ui.setStatus(ids.length ? `Dismissed ${count(ids.length, "suggestion")}` : "No suggestion to dismiss")
       })
-      return
+      return true
     }
   }
+  return false
+}
+
+/** The row's detail, search and filter, stepping back, sort, category and tag. */
+function txnsTableKeys(ui: UiStore, key: KeyEvent, rows: Rows, data?: DataStore): boolean {
+  const { name, sequence: seq } = key
   if (name === "return" || name === "enter") {
     openTransaction(ui, data)
-    return
+    return true
   }
-  if (isSmartSearchKey(key)) { openSmartSearch(ui, data); return }
+  if (isSmartSearchKey(key)) { openSmartSearch(ui, data); return true }
   if (name === "/" || seq === "/") {
     ui.openFilter(data?.state.filterQuery ?? "")
-    return
+    return true
   }
-  if (name === "escape") { stepBack(ui, data); return }
+  if (name === "escape") { stepBack(ui, data); return true }
   if (name === "s" && !key.shift) {
     const col = data?.cycleSortColumn() ?? "date"
     ui.jumpManagerCursor(0, rows.length)
     ui.setStatus(`Sort: ${col} ${data?.state.sortAscending ? "↑" : "↓"}`)
-    return
+    return true
   }
   if ((name === "s" && key.shift) || name === "S") {
     const asc = data?.toggleSortDirection() ?? false
     ui.setStatus(`Sort: ${data?.state.sortColumn ?? "date"} ${asc ? "↑" : "↓"}`)
-    return
+    return true
   }
   if (name === "c") {
     if (rows.length === 0) {
       ui.setStatus("No row to categorize", true)
-      return
+      return true
     }
     openCategoryPicker(ui, ui.targetIds(rows), data)
-    return
+    return true
   }
   if (name === "t") {
     if (rows.length === 0) {
       ui.setStatus("No row to tag", true)
-      return
+      return true
     }
     ui.openTagPicker(ui.targetIds(rows))
-    return
+    return true
   }
+  return false
+}
+
+/** Selection (space, over a range too) and the cursor. */
+function txnsCursorKeys(ui: UiStore, key: KeyEvent, rows: Rows, data?: DataStore): void {
+  const { name, sequence: seq } = key
   if (name === "space" || seq === " ") {
     const hl = ui.highlightedIds(rows)
     const hlIds = Object.keys(hl).map(Number)
@@ -309,6 +330,15 @@ function handleManagerTxns(ui: UiStore, key: KeyEvent, data?: DataStore): void {
     } else moveTxnCursor(ui, data, moved - ui.state.managerCursor, key.shift)
     return
   }
+}
+
+function handleManagerTxns(ui: UiStore, key: KeyEvent, data?: DataStore): void {
+  const rows = data?.scopedTransactions() ?? []
+  ui.ensureRange(rows)
+  if (txnsCommandKeys(ui, key, rows, data)) return
+  if (txnsReviewKeys(ui, key, rows, data)) return
+  if (txnsTableKeys(ui, key, rows, data)) return
+  txnsCursorKeys(ui, key, rows, data)
 }
 
 function handleManagerAccounts(ui: UiStore, key: KeyEvent, data?: DataStore): void {

@@ -13,7 +13,7 @@ import { hasWorkersAi } from "../../ai/workersAi"
 import { cancelLlmSignIn, openBrowser, startLlmSignIn, submitSignInPaste } from "../llmSignIn"
 import { createLlm, LLM_PROVIDERS } from "../../ai/llm"
 import { credentialEnv } from "../../ai/credentials"
-import { type ScopeId, type UiState, type UiStore } from "../../state/uiStore"
+import { type Opening, type ScopeId, type UiState, type UiStore } from "../../state/uiStore"
 import type { DataStore } from "../../state/dataStore"
 import { editText } from "../../domain/textField"
 import { queryPickerKey, listMove, scrolled, confirmTwice, type ScopeEntry } from "./shared"
@@ -121,6 +121,56 @@ function handleExecutor(ui: UiStore, key: KeyEvent): void {
   if (key.name === "return" || key.name === "enter") settleData(ui, runExecutorAction(ui))
 }
 
+type AiDialog = NonNullable<UiState["aiDialog"]>
+
+/** Save a typed field: a key, Clairic's account ID, or an LLM's model. */
+async function saveAiField(row: AiDialog["row"], field: NonNullable<AiDialog["field"]>, value: string, opened: Opening<AiDialog>, note: (text: string, ok: boolean | null) => void, data: DataStore): Promise<void> {
+  try {
+    if (field.action === "key") {
+      if (!value) { opened.patch({ field: null }); return }
+      await data.saveApiKeys(row === "up" ? { JASKMONEY_UP_TOKEN: value } : row === "jev" ? { JASKMONEY_JEV_TOKEN: value } : row === "workersAi" ? { JASKMONEY_CF_TOKEN: value } : { [LLM_PROVIDERS[row].keyName]: value })
+      // Clairic's account comes from its token: nobody has to find the ID.
+      if (row === "workersAi") {
+        const found = await data.findCloudflareAccount().catch((e: unknown) => ({ error: e instanceof Error ? e.message : String(e) }))
+        opened.patch({ field: null, note: "name" in found ? { text: `Token saved · account: ${found.name}`, ok: true }
+          : "count" in found ? { text: `Token saved · it reaches ${found.count} accounts: enter the account ID`, ok: null }
+          : { text: `Token saved, but Cloudflare didn't list its account (${found.error}): enter the account ID`, ok: false } })
+        return
+      }
+      opened.patch({ field: null, note: { text: row === "up" ? "Token saved · Test checks it; s in Up Bank syncs" : "Key saved", ok: true } })
+    } else if (field.action === "accountId") {
+      await data.saveApiKeys({ JASKMONEY_CF_ACCOUNT_ID: value || null })
+      opened.patch({ field: null, note: { text: value ? "Account ID saved" : "Account ID removed", ok: true } })
+    } else if (isLlmRow(row)) {
+      const { modelName, defaultModel } = LLM_PROVIDERS[row]
+      // An id the provider doesn't have is refused; the default isn't saved, so it follows the app's.
+      createLlm({ provider: row, apiKey: "x", modelId: value || defaultModel })
+      await data.saveApiKeys({ [modelName]: value && value !== defaultModel ? value : null, ...(row === "openrouter" ? { JASKMONEY_LLM_MODEL: null } : {}) })
+      opened.patch({ field: null, note: { text: `Model: ${value || defaultModel}`, ok: true } })
+    }
+  } catch (e) {
+    note(e instanceof Error ? e.message : String(e), false)
+  } finally { opened.patch({ busy: false }) }
+}
+
+/** A typed field (a key, an account ID): it owns input until esc or enter. */
+function handleAiField(ui: UiStore, key: KeyEvent, dialog: AiDialog, opened: Opening<AiDialog>, note: (text: string, ok: boolean | null) => void, data: DataStore): void {
+  const { name } = key
+  const row = dialog.row
+  if (dialog.busy && name !== "escape") return
+  const field = dialog.field!
+  if (name === "escape") { opened.patch({ field: null }); return }
+  if (name === "return" || name === "enter") {
+    const value = field.value.trim()
+    opened.patch({ busy: true })
+    settleData(ui, saveAiField(row, field, value, opened, note, data))
+    return
+  }
+  // A key is never shown, so edits apply at its end.
+  const next = editText({ value: field.value, caret: field.action === "key" ? field.value.length : field.caret }, key)
+  if (next) ui.setState("aiDialog", "field", { value: next.value, caret: next.caret })
+}
+
 function handleAiDialog(ui: UiStore, key: KeyEvent, data?: DataStore): void {
   const dialog = ui.state.aiDialog
   if (!dialog || !data) return
@@ -130,45 +180,7 @@ function handleAiDialog(ui: UiStore, key: KeyEvent, data?: DataStore): void {
   const opened = ui.opening("aiDialog")
   const note = (text: string, ok: boolean | null) => opened.patch({ note: { text, ok }, busy: false })
   if (dialog.field) {
-    if (dialog.busy && name !== "escape") return
-    const field = dialog.field
-    if (name === "escape") { opened.patch({ field: null }); return }
-    if (name === "return" || name === "enter") {
-      const value = field.value.trim()
-      opened.patch({ busy: true })
-      settleData(ui, (async () => {
-        try {
-          if (field.action === "key") {
-            if (!value) { opened.patch({ field: null }); return }
-            await data.saveApiKeys(row === "up" ? { JASKMONEY_UP_TOKEN: value } : row === "jev" ? { JASKMONEY_JEV_TOKEN: value } : row === "workersAi" ? { JASKMONEY_CF_TOKEN: value } : { [LLM_PROVIDERS[row].keyName]: value })
-            // Clairic's account comes from its token: nobody has to find the ID.
-            if (row === "workersAi") {
-              const found = await data.findCloudflareAccount().catch((e: unknown) => ({ error: e instanceof Error ? e.message : String(e) }))
-              opened.patch({ field: null, note: "name" in found ? { text: `Token saved · account: ${found.name}`, ok: true }
-                : "count" in found ? { text: `Token saved · it reaches ${found.count} accounts: enter the account ID`, ok: null }
-                : { text: `Token saved, but Cloudflare didn't list its account (${found.error}): enter the account ID`, ok: false } })
-              return
-            }
-            opened.patch({ field: null, note: { text: row === "up" ? "Token saved · Test checks it; s in Up Bank syncs" : "Key saved", ok: true } })
-          } else if (field.action === "accountId") {
-            await data.saveApiKeys({ JASKMONEY_CF_ACCOUNT_ID: value || null })
-            opened.patch({ field: null, note: { text: value ? "Account ID saved" : "Account ID removed", ok: true } })
-          } else if (isLlmRow(row)) {
-            const { modelName, defaultModel } = LLM_PROVIDERS[row]
-            // An id the provider doesn't have is refused; the default isn't saved, so it follows the app's.
-            createLlm({ provider: row, apiKey: "x", modelId: value || defaultModel })
-            await data.saveApiKeys({ [modelName]: value && value !== defaultModel ? value : null, ...(row === "openrouter" ? { JASKMONEY_LLM_MODEL: null } : {}) })
-            opened.patch({ field: null, note: { text: `Model: ${value || defaultModel}`, ok: true } })
-          }
-        } catch (e) {
-          note(e instanceof Error ? e.message : String(e), false)
-        } finally { opened.patch({ busy: false }) }
-      })())
-      return
-    }
-    // A key is never shown, so edits apply at its end.
-    const next = editText({ value: field.value, caret: field.action === "key" ? field.value.length : field.caret }, key)
-    if (next) ui.setState("aiDialog", "field", { value: next.value, caret: next.caret })
+    handleAiField(ui, key, dialog, opened, note, data)
     return
   }
   const ctx = aiContext(data)
