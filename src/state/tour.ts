@@ -35,7 +35,7 @@ export const triable = (demo: number) => DEMOS[demo]?.id !== "ask"
 
 // ---- The world: demo mode's made-up years, as ordinary rows.
 
-interface DemoWorld {
+export interface DemoWorld {
   /** Newest first, as the Transactions table sorts. */
   rows: Transaction[]
   spending: Transaction[]
@@ -92,7 +92,7 @@ export function demoWorld(categories: Category[]): DemoWorld {
   return world
 }
 
-interface TourTopics { shop: string; category: string; lastMonth: string; cut: number; categories: string[]
+export interface TourTopics { shop: string; category: string; lastMonth: string; cut: number; categories: string[]
   /** This year so far, as a date: range. */
   year: string }
 

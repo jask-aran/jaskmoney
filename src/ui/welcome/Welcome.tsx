@@ -2,17 +2,17 @@ import { useTerminalDimensions } from "@opentui/solid"
 import { Index, Show, on, createEffect, createMemo, createSignal, onCleanup, untrack } from "solid-js"
 import { ui } from "../../state/uiStore"
 import { data } from "../../state/dataStore"
-import { ink, mix, theme, tone, whenThemeChanges } from "../../theme"
-import { wrapText } from "../../state/textLayout"
-import { STEP_NAMES, WELCOME_STEPS, emailChecklist, stepMark, tokenShown, welcomeBackdrop, welcomeRows, type ItemState, type WelcomeRow, type WelcomeState } from "../../state/welcome"
-import { AI_USES_TEXT, EMAIL_USES, UP_TOKEN_STEPS, UP_USES } from "../../state/integrationUses"
-import { CardColumn, CardSides, blank, noteLines, numbered, say, usesLines, wrapped, type CardLine } from "../primitives/cardLines"
+import { mix, theme, tone, whenThemeChanges } from "../../theme"
+import { welcomeBackdrop, welcomeRows, type WelcomeContext, type WelcomeState } from "../../state/welcome"
+import { CardColumn, CardSides, type CardLine } from "../primitives/cardLines"
 import { followTickers, welcomeAct, welcomeContext, welcomeJump } from "../../app/welcome"
 import { onPointer } from "../../app/pointer"
 import { StyledLine, type StyledSpan } from "../primitives/StyledLine"
 import { SPINNER } from "../primitives/Spinner"
 import { BACKDROP_LEVELS, backdropLines, keepSameLines, type BackdropId, type BackdropInk } from "./backdrop"
-import { DEMOS, DemoReel } from "./Demos"
+import { DemoReel } from "./Demos"
+import { leftLines, rightLines, type CardInputs } from "./card"
+import { railSegments, titleSpans } from "./header"
 
 /**
  * The first-run setup, full screen over the app (state/welcome is the
@@ -31,13 +31,6 @@ const FRAME_MS = 80
  * exactly. 25 a second: the fastest tape (11 columns a second) moves under
  * half a column a step, so it still moves in even steps. */
 const CLOCK_MS = FRAME_MS / 2
-
-/** The title, two rows of block letters. */
-const LETTERS: Record<string, [string, string]> = {
-  J: ["  █", "█▄█"], A: ["▄▀█", "█▀█"], S: ["█▀", "▄█"], K: ["█▄▀", "█ █"], M: ["█▀▄▀█", "█ ▀ █"],
-  O: ["█▀█", "█▄█"], N: ["█▄ █", "█ ▀█"], E: ["█▀▀", "██▄"], Y: ["█▄█", " █ "],
-}
-const TITLE: [string, string] = [0, 1].map((r) => [..."JASKMONEY"].map((c) => LETTERS[c]![r]).join(" ")) as [string, string]
 
 /** The backdrop's colours, faint over the canvas: its levels mixed once,
  * not per cell per frame. */
@@ -61,25 +54,7 @@ function WelcomeScreen() {
   const state = () => ui.state.welcome as WelcomeState
   const ctx = createMemo(() => { void data.state.apiKeys; void data.state.signedIn; void data.state.upToken; void state().email.phase; return welcomeContext(data) })
   const rows = createMemo(() => welcomeRows(state(), ctx()))
-
-  // ---- The clock, while the setup is open: one for everything that moves
-  // on it (the backdrop, the title's light, the rail, a spinner, the caret,
-  // the tour's demo), so each of its steps is one frame drawn; clocks of
-  // their own would each ask for frames of their own. The backdrop moves
-  // on every step; the rest on every other one (`tick`, FRAME_MS).
-  // A step: how many there have been, and when it came.
-  const [clock, setClock] = createSignal({ step: 0, at: performance.now() })
-  const timer = setInterval(() => setClock((c) => ({ step: c.step + 1, at: performance.now() })), CLOCK_MS)
-  onCleanup(() => clearInterval(timer))
-  const now = () => clock().at
-  const tick = createMemo(() => clock().step >> 1)
-  let shownAt = 0
-  createEffect(() => { void state().shown; shownAt = untrack(tick) })
-  const since = () => tick() - shownAt
-  const spinner = () => SPINNER[tick() % SPINNER.length]!
-  // The token's caret blinks: on for six ticks, off for six. The card is
-  // rebuilt when it blinks, not on every tick.
-  const caretOn = createMemo(() => Math.floor(tick() / 6) % 2 === 0)
+  const { now, tick, since, spinner, caretOn } = useClock(state)
 
   // ---- Layout.
   const height = () => Math.max(12, dims().height - 2)
@@ -93,144 +68,17 @@ function WelcomeScreen() {
   const rightWidth = () => (wide() ? inner() - leftWidth() - 3 : inner())
   const panelWidth = () => rightWidth() - (wide() ? 3 : 0)
 
-  // ---- A row of the step: a button.
-  // The token as dots and a caret; empty, a caret and a faint hint, so it
-  // doesn't read as text the paste goes into the middle of.
-  const tokenField = (): { text: string; hint: string } => {
-    const shown = tokenShown(state().token.value)
-    const caret = caretOn() ? "▌" : " "
-    return shown ? { text: `${shown}${caret}`, hint: "" } : { text: caret, hint: "paste it here" }
-  }
-  const rowLine = (row: WelcomeRow, i: number): Line => {
-    const at = state().cursor === i && !state().busy
-    const bg = at ? theme.surface0 : undefined
-    const field = row.action === "token" ? tokenField() : null
-    const label = field ? `Token  ${field.text}` : row.label
-    return {
-      row: i,
-      spans: [
-        { text: at ? " ›" : "  ", fg: tone.key, bold: true, bg },
-        { text: row.done ? " ✓ " : "   ", fg: tone.good, bold: true, bg },
-        // An Up account: its dot, green when it syncs, grey when it won't.
-        ...(row.account ? [{ text: `${label.match(/^ */)![0]}● `, fg: row.syncs ? tone.good : ink.faint, bg }] : []),
-        { text: row.account ? label.trimStart() : label, fg: row.primary ? tone.key : row.account && !row.syncs ? ink.faint : at ? ink.strong : ink.figure, bold: at || row.primary, bg },
-        ...(field?.hint ? [{ text: field.hint, fg: ink.faint, bg }] : []),
-        { text: row.detail ? `  ${row.detail} ` : " ", fg: row.done || row.syncs ? tone.good : ink.note, bg },
-      ],
-    }
-  }
-  const note = (width: number): Line[] => {
-    const busy = state().busy
-    if (busy) return [blank, { spans: [{ text: ` ${spinner()} `, fg: tone.ai, bold: true }, { text: busy, fg: ink.label }] }]
-    const n = state().note
-    return n ? [blank, ...noteLines(n, width)] : []
-  }
-  const buttons = (): Line[] => [blank, ...rows().flatMap((row, i) => row.gapBefore ? [blank, rowLine(row, i)] : [rowLine(row, i)])]
-
-  // ---- A step's left column, and the right panel.
+  // ---- A step's left column, and the right panel (ui/welcome/card).
+  const card: CardInputs = { state, ctx, rows, spinner, caretOn }
   const left = createMemo((): Line[] => {
     const s = state(), w = leftWidth()
-    switch (s.step) {
-      // No heading: the title above says it, and the status line welcomes.
-      case "hello": return [
-        ...wrapped("Setup connects Up Bank, an AI model and your email. Every step is optional; Settings › Up Bank › Setup runs it again.", w),
-        blank,
-        ...wrapped("Start shows a short tour first: the app's own screens, playing on made-up data.", w, ink.note),
-        ...buttons(),
-      ]
-      case "tour": return tourCard()
-      case "up": {
-        const accounts = s.upAccounts
-        const connected = ctx().up && !s.token.value
-        return [
-          say("Up Bank", ink.strong, true),
-          blank,
-          ...(connected ? [
-            ...(accounts
-              // The accounts are the rows below: enter switches one.
-              ? [say("Up answered. Choose the accounts to sync:", tone.good), ...wrapped("A saver is part of its spending account and comes with it. Settings › Up Bank changes this any time.", w, ink.note)]
-              : [say("Connected.", tone.good), blank, ...wrapped(data.state.upSyncing ? "Syncing your transactions." : `${data.state.transactions.length} transactions so far.`, w, ink.note)]),
-          ] : [
-            ...wrapped("Up's API reads with a Personal Access Token. To make one, in the Up app:", w),
-            blank,
-            ...numbered(UP_TOKEN_STEPS, w),
-            blank,
-            ...wrapped("Up shows a token once, and only the newest works: making a new one stops the old. api.up.com.au makes one too (ctrl+o).", w, ink.note),
-          ]),
-          ...buttons(), ...note(w),
-        ]
-      }
-      case "ai": return [
-        say("AI", ink.strong, true),
-        blank,
-        ...wrapped("Optional, by provider: each enables what it lists. OpenRouter alone covers suggestions, smart search and rules; Cloudflare adds Clairic for the dates in a search.", w),
-        ...buttons(), ...note(w),
-      ]
-      case "email": {
-        const items = emailChecklist(s, ctx())
-        const icon = (st: ItemState) => (st === "done" ? { text: " ✓ ", fg: tone.good } : st === "failed" ? { text: " ✗ ", fg: tone.bad } : st === "active" ? { text: ` ${spinner()} `, fg: tone.ai } : { text: " ○ ", fg: ink.faint })
-        return [
-          say("Email", ink.strong, true),
-          blank,
-          ...wrapped("Optional. Amazon and eBay rows say only \"Amazon\"; the order emails say what you bought. Executor reads Gmail for jaskmoney and keeps your Google sign-in. You sign in and approve in the browser; the rest happens here.", w),
-          blank,
-          ...items.flatMap((it) => [
-            { spans: [{ ...icon(it.state), bold: true }, { text: it.label, fg: it.state === "todo" ? ink.label : ink.figure, bold: it.state === "active" }] },
-            ...wrapText(it.detail, w - 4).map((t) => ({ spans: [{ text: "    " }, { text: t, fg: it.state === "done" ? tone.good : ink.note }] })),
-          ]),
-          ...(s.busy && s.email.url ? [blank, ...wrapped(`Browser didn't open? ${s.email.url}`, w, ink.faint)] : []),
-          ...buttons(), ...note(w),
-        ]
-      }
-      case "done": {
-        const c = ctx()
-        const line = (ok: boolean, name: string, how: string): Line => ({ spans: [{ text: ok ? " ✓ " : " – ", fg: ok ? tone.good : ink.faint, bold: true }, { text: name.padEnd(10), fg: ink.figure, bold: true }, { text: how, fg: ok ? ink.label : ink.note }] })
-        return [
-          say("Ready", ink.strong, true),
-          blank,
-          line(c.up, "Up Bank", c.up ? (data.state.upSyncing ? "syncing your transactions" : `${data.state.transactions.length} transactions`) : "not connected: Settings › Up Bank"),
-          line(c.jev || c.openai, "AI", c.openrouter ? "OpenRouter: suggestions, search, rules" : c.openai ? "ChatGPT: rules" : c.jev ? "Jev: suggestions, search" : "off: Settings › AI models"),
-          line(s.email.phase === "done" || c.executor, "Email", s.email.phase === "done" ? `Gmail through Executor${s.email.account ? ` (${s.email.account})` : ""}` : c.executor ? "Executor signed in" : "off: Settings › AI models › Sources"),
-          blank,
-          ...wrapped("Settings › Up Bank › Setup runs this again.", w, ink.note),
-          ...buttons(),
-        ]
-      }
-    }
+    return leftLines(card, s, w)
   })
   const right = createMemo((): Line[] => {
     const s = state(), w = panelWidth()
-    if (s.step === "up") return usesLines(UP_USES, w)
-    if (s.step === "email") return usesLines(EMAIL_USES, w)
-    if (s.step === "ai") {
-      const at = rows()[s.cursor]?.action
-      const lines = usesLines(AI_USES_TEXT[at === "openai" ? "openai" : at === "jevKey" ? "jev" : at === "clairic" ? "clairic" : "openrouter"], w)
-      // As tall as the tallest provider's: the card keeps its size as the cursor moves.
-      const tallest = Math.max(...Object.values(AI_USES_TEXT).map((u) => usesLines(u, w).length))
-      return [...lines, ...Array.from({ length: tallest - lines.length }, () => blank)]
-    }
-    return []
+    return rightLines(card, s, w)
   })
 
-  // ---- The tour's card: where you are among the demos, what this one
-  // shows, the rows. The demo itself plays below the card.
-  function tourCard(): Line[] {
-    const demo = DEMOS[state().demo]!
-    return [
-    say(`Tour · ${demo.name}`, ink.strong, true),
-    blank,
-    ...demo.caption.map(([k, text]): Line => ({ spans: [{ text: k.padEnd(4), fg: tone.key, bold: true }, { text: text, fg: ink.label }] })),
-    // Two lines each, so the card (and the demo under it) stays put.
-    ...(demo.caption.length < 2 ? [blank] : []),
-    blank,
-    { spans: DEMOS.flatMap((d, i): StyledSpan[] => [
-      ...(i ? [{ text: "   " }] : []),
-      { text: i === state().demo ? "● " : "○ ", fg: i === state().demo ? tone.key : ink.faint, bold: true },
-      { text: d.name, fg: i === state().demo ? ink.strong : ink.faint, bold: i === state().demo },
-    ]) },
-    ...buttons(),
-    ]
-  }
   // Below the card, as wide as there's room for. Height: the title, the
   // rail and their gaps (5), the card and its border, a gap; at most about
   // the table's size in the app, and taller where there's room.
@@ -244,65 +92,7 @@ function WelcomeScreen() {
     welcomeAct(ui, data, at.action, at)
   })
 
-  // ---- The title: its gradient drifts, and every few seconds a slanted
-  // sheen sweeps across it, a white-hot core in a wide glow.
-  const SHEEN_EVERY = 40 // frames: a sweep, then a rest
-  const SHEEN_FRAMES = 18
-  const titleSpans = (r: 0 | 1): StyledSpan[] => {
-    const text = TITLE[r], n = text.length
-    const f = tick() % SHEEN_EVERY
-    // The lower row trails: the sheen leans.
-    const sweep = f < SHEEN_FRAMES ? (f / SHEEN_FRAMES) * (n + 24) - 12 - r * 2 : -99
-    const drift = (Math.sin(tick() / 25) + 1) / 2
-    return [...text].map((ch, x) => {
-      const d = Math.abs(x - sweep)
-      const core = Math.max(0, 1 - d / 2)
-      const glow = Math.max(0, 1 - d / 9)
-      const base = mix(tone.key, tone.focus, Math.min(1, Math.max(0, x / n * 0.8 + drift * 0.4 - 0.1)))
-      return { text: ch, fg: mix(mix(base, tone.focus, glow * 0.6), ink.strong, Math.min(1, core * 1.2 + glow * 0.25)), bold: true }
-    })
-  }
-
-  // ---- The setup's backdrop, behind every step: money marks drifting,
-  // faint (BACKDROP_INK); the cards and the demo are solid over it.
-  // Settings › Appearance's choice; b on the welcome page tries the next.
-  const backdropId = (): BackdropId => welcomeBackdrop(state(), data.state.uiPrefs.backdrop)
-  // Behind every step, moving on each step of the clock.
-  const backdropT = () => now() / 1000
-  // The tape's real prices, while it's the backdrop.
-  createEffect(() => {
-    if (backdropId() !== "ticker") return
-    onCleanup(followTickers(ui))
-  })
-  // Seconds since this backdrop began: a new one starts from its beginning
-  // (a ticker tape from empty, streaming in).
-  const backdropSince = createMemo(on(backdropId, () => untrack(backdropT)))
-  // A frame's lines that are as they were stay the same lines (and a frame
-  // that changes nothing, the same frame): only what moved is drawn again.
-  let drawn: StyledSpan[][] = []
-  const backdrop = createMemo(() => (drawn = keepSameLines(drawn, backdropLines(backdropId(), dims().width, height(), backdropT() - backdropSince(), BACKDROP_INK, state().tickers))))
-
-  // ---- The rail: where you are among the steps; the way to here fills in.
-  // A segment per step (the line into it, its mark, its name), each its own
-  // box: a click on it is OpenTUI's to place, not sums of widths here.
-  const railSegments = (): Array<{ step: WelcomeState["step"]; spans: StyledSpan[]; width: number }> => {
-    const at = WELCOME_STEPS.indexOf(state().step)
-    return WELCOME_STEPS.map((step, i) => {
-      const spans: StyledSpan[] = []
-      if (i > 0) {
-        const lit = i <= at ? (i === at ? Math.min(5, since()) : 5) : 0
-        spans.push({ text: " " + "━".repeat(lit), fg: tone.key }, { text: "─".repeat(5 - lit) + " ", fg: ink.rule })
-      }
-      const mark = stepMark(step, state(), ctx())
-      spans.push(
-        // Ready: a star, hollow until you get there.
-        { text: step === "done" ? (mark === "ahead" ? "☆ " : "★ ") : mark === "done" ? "✓ " : mark === "skipped" ? "– " : mark === "current" ? "● " : "○ ", fg: mark === "done" ? tone.good : mark === "current" ? tone.key : ink.faint, bold: true },
-        { text: STEP_NAMES[step], fg: mark === "current" ? ink.strong : mark === "done" ? ink.label : ink.faint, bold: mark === "current" },
-      )
-      return { step, spans, width: spans.reduce((n, s) => n + Bun.stringWidth(s.text), 0) }
-    })
-  }
-
+  const backdrop = useBackdrop(state, now, () => dims().width, height)
 
   return (
     <box position="absolute" zIndex={15} left={0} top={0} width="100%" height={height()} backgroundColor={theme.canvas} flexDirection="column" alignItems="center" justifyContent="center">
@@ -313,20 +103,7 @@ function WelcomeScreen() {
       </Show>
       {/* Over the backdrop: an absolute child paints after the flow, so the content takes a higher z. */}
       <box zIndex={1} flexDirection="column" alignItems="center">
-      <box height={2} flexDirection="column" alignItems="center">
-        <StyledLine spans={titleSpans(0)} bg={theme.canvas} />
-        <StyledLine spans={titleSpans(1)} bg={theme.canvas} />
-      </box>
-      <box height={1} />
-      <box height={1} flexDirection="row">
-        {/* A step on the rail: a click goes there. */}
-        <Index each={railSegments()}>{(segment) => (
-          <box height={1} width={segment().width} flexShrink={0} onMouseDown={onPointer("welcome", () => welcomeJump(ui, data, segment().step))}>
-            <StyledLine spans={segment().spans} bg={theme.canvas} />
-          </box>
-        )}</Index>
-      </box>
-      <box height={1} />
+      <WelcomeHeader tick={tick} state={state} ctx={ctx} since={since} />
       <box width={cardWidth()} border borderStyle="rounded" borderColor={tone.focus} backgroundColor={theme.canvas} paddingLeft={1} paddingRight={1} flexDirection={wide() ? "row" : "column"} gap={wide() ? 3 : 1} maxHeight={height() - 6} overflow="hidden" flexShrink={0}>
         <CardSides beside={wide()} leftWidth={leftWidth()} rightWidth={rightWidth()} panel={right()} bg={theme.canvas}>
           <CardColumn lines={left()} width={leftWidth()} bg={theme.canvas} click={click} />
@@ -341,5 +118,70 @@ function WelcomeScreen() {
       </Show>
       </box>
     </box>
+  )
+}
+
+// ---- The clock, while the setup is open: one for everything that moves
+// on it (the backdrop, the title's light, the rail, a spinner, the caret,
+// the tour's demo), so each of its steps is one frame drawn; clocks of
+// their own would each ask for frames of their own. The backdrop moves
+// on every step; the rest on every other one (`tick`, FRAME_MS).
+function useClock(state: () => WelcomeState) {
+  // A step: how many there have been, and when it came.
+  const [clock, setClock] = createSignal({ step: 0, at: performance.now() })
+  const timer = setInterval(() => setClock((c) => ({ step: c.step + 1, at: performance.now() })), CLOCK_MS)
+  onCleanup(() => clearInterval(timer))
+  const now = () => clock().at
+  const tick = createMemo(() => clock().step >> 1)
+  let shownAt = 0
+  createEffect(() => { void state().shown; shownAt = untrack(tick) })
+  const since = () => tick() - shownAt
+  const spinner = () => SPINNER[tick() % SPINNER.length]!
+  // The token's caret blinks: on for six ticks, off for six. The card is
+  // rebuilt when it blinks, not on every tick.
+  const caretOn = createMemo(() => Math.floor(tick() / 6) % 2 === 0)
+  return { now, tick, since, spinner, caretOn }
+}
+
+// ---- The setup's backdrop, behind every step: money marks drifting,
+// faint (BACKDROP_INK); the cards and the demo are solid over it.
+// Settings › Appearance's choice; b on the welcome page tries the next.
+function useBackdrop(state: () => WelcomeState, now: () => number, width: () => number, height: () => number) {
+  const backdropId = (): BackdropId => welcomeBackdrop(state(), data.state.uiPrefs.backdrop)
+  // Behind every step, moving on each step of the clock.
+  const backdropT = () => now() / 1000
+  // The tape's real prices, while it's the backdrop.
+  createEffect(() => {
+    if (backdropId() !== "ticker") return
+    onCleanup(followTickers(ui))
+  })
+  // Seconds since this backdrop began: a new one starts from its beginning
+  // (a ticker tape from empty, streaming in).
+  const backdropSince = createMemo(on(backdropId, () => untrack(backdropT)))
+  // A frame's lines that are as they were stay the same lines (and a frame
+  // that changes nothing, the same frame): only what moved is drawn again.
+  let drawn: StyledSpan[][] = []
+  return createMemo(() => (drawn = keepSameLines(drawn, backdropLines(backdropId(), width(), height(), backdropT() - backdropSince(), BACKDROP_INK, state().tickers))))
+}
+
+/** The title (ui/welcome/header), a gap, the rail, a gap. */
+function WelcomeHeader(props: { tick: () => number; state: () => WelcomeState; ctx: () => WelcomeContext; since: () => number }) {
+  return (
+    <>
+      <box height={2} flexDirection="column" alignItems="center">
+        <StyledLine spans={titleSpans(props.tick, 0)} bg={theme.canvas} />
+        <StyledLine spans={titleSpans(props.tick, 1)} bg={theme.canvas} />
+      </box>
+      <box height={1} />
+      <box height={1} flexDirection="row">
+        {/* A step on the rail: a click goes there. */}
+        <Index each={railSegments(props.state, props.ctx, props.since)}>{(segment) => (
+          <box height={1} width={segment().width} flexShrink={0} onMouseDown={onPointer("welcome", () => welcomeJump(ui, data, segment().step))}>
+            <StyledLine spans={segment().spans} bg={theme.canvas} />
+          </box>
+        )}</Index>
+      </box>
+      <box height={1} />
+    </>
   )
 }
