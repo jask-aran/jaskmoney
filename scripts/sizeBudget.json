@@ -36,12 +36,10 @@
     "src/domain/filter.ts": 910,
     "src/state/uiStore.ts": 900,
     "src/ui/settings/SettingsTab.tsx": 800,
-    "src/core/core.ts": 740,
     "src/ui/overview/periodCharts.ts": 620
   },
   "functionLines": 80,
   "frozenFunctions": {
-    "src/core/core.ts:createCore": 660,
     "src/state/uiStore.ts:createUiStore": 380,
     "src/core/upPush.ts:createUpPush": 360,
     "src/domain/demo.ts:generateDemo": 310,
@@ -62,6 +60,6 @@
     "src/ui/overview/periodCharts.ts:balancesChart": 100,
     "src/client/wsLink.ts:wsLink": 100
   },
-  "unusedExports": 5,
+  "unusedExports": 3,
   "repeats": 3
 }
