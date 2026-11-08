@@ -20,7 +20,7 @@ const DATA_COLOURS = new Set([
   "src/ui/overview/CalendarView.tsx",
   "src/ui/manager/managerModel.ts",
   "src/ui/manager/TransactionTable.tsx",
-  "src/app/keys.ts",
+  "src/app/keys/pickers.ts",
   "src/state/tagPicker.ts",
   "src/state/tagChooser.ts",
 ])
