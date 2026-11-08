@@ -81,13 +81,73 @@ export function demoSource(transactions: Transaction[], categories: Category[]):
   })
 }
 
+/** The seeded draws, all from one stream: each stage takes its own in turn. */
+interface DemoDraws {
+  random: () => number
+  integer: (n: number) => number
+  pick: <T>(values: readonly T[], fallback: T) => T
+  normal: () => number
+  amount: (median: number, spread?: number) => number
+  poisson: (rate: number) => number
+}
+
+/** What each stage of the demo's life adds to or draws from. */
+interface DemoLife extends DemoDraws {
+  options: { today: string; hide?: "demo" | "evaluation" }
+  history: DemoSourceRow[] | null
+  start: string
+  totalDays: number
+  months: string[]
+  accounts: DemoAccount[]
+  transactions: DemoData["transactions"]
+  add: (dateISO: string, value: number, description: string, categoryName: string, extra?: Partial<Omit<DemoTransaction, "truthCategory">>) => void
+}
+
 /** Scrambled spending, or a built-in life. All randomness comes from the supplied seed. */
 export function generateDemo(options: { today: string; years?: number; seed?: number; history?: DemoSourceRow[]; hide?: "demo" | "evaluation" }): DemoData {
   if (!parseDay(options.today)) throw new Error("Invalid demo today: expected YYYY-MM-DD")
   const years = options.years ?? 3
   const history = options.history && options.history.length >= 20 ? options.history : null
   if (!Number.isFinite(years) || years <= 0 || years > 100) throw new Error("Demo years must be greater than 0 and at most 100")
-  let state = (options.seed ?? 7) >>> 0
+  const draws = demoDraws(options.seed)
+  const start = addDays(addMonthsClamped(options.today, -Math.max(1, Math.round(years * 12))), 1)
+  const firstMonth = start.slice(0, 8) + "01"
+  const totalDays = daysBetween(start, options.today) + 1
+  const months: string[] = []
+  for (let month = firstMonth; month <= options.today; month = addMonthsClamped(month, 1)) months.push(month)
+  const accounts: DemoAccount[] = [
+    { key: "spending", name: "Spending", kind: "spending", balance: 1842.67 },
+    { key: "holiday", name: "🏖️ Next adventure", kind: "saver", balance: 7900.32 },
+    { key: "emergency", name: "☔ Rainy day", kind: "saver", balance: 18400.55 },
+  ]
+  const transactions: DemoData["transactions"] = []
+  const add = (dateISO: string, value: number, description: string, categoryName: string,
+    extra: Partial<Omit<DemoTransaction, "truthCategory">> = {}) => {
+    if (dateISO < start || dateISO > options.today) return
+    transactions.push({ accountKey: "spending", dateISO, amount: round(value), description, categoryName,
+      truthCategory: categoryName,
+      rawText: null, cardMethod: null, time: "07:00",
+      transactionType: "Purchase", message: null, foreignAmount: null, status: "SETTLED", ...extra })
+  }
+  const life: DemoLife = { ...draws, options, history, start, totalDays, months, accounts, transactions, add }
+  builtInMonths(life)
+  builtInCalendar(life)
+  if (history) {
+    historyRows(life, history)
+    hideHistory(life, history)
+  }
+  finishDraws(life)
+  laterTransfers(life, years)
+  saverShowcase(life)
+  saverOutflows(life)
+  mirrorTransfers(life)
+  transactions.sort((a, b) => a.dateISO < b.dateISO ? -1 : a.dateISO > b.dateISO ? 1 : 0)
+  return { accounts, transactions, categories: DEMO_CATEGORIES, budget: { monthly: 4200 } }
+}
+
+/** The seeded stream (mulberry32) and the draws made from it. */
+function demoDraws(seed: number | undefined): DemoDraws {
+  let state = (seed ?? 7) >>> 0
   const random = () => {
     state = (state + 0x6d2b79f5) | 0
     let t = Math.imul(state ^ (state >>> 15), 1 | state)
@@ -108,25 +168,13 @@ export function generateDemo(options: { today: string; years?: number; seed?: nu
     }
     return count
   }
-  const start = addDays(addMonthsClamped(options.today, -Math.max(1, Math.round(years * 12))), 1)
-  const firstMonth = start.slice(0, 8) + "01"
-  const totalDays = daysBetween(start, options.today) + 1
-  const months: string[] = []
-  for (let month = firstMonth; month <= options.today; month = addMonthsClamped(month, 1)) months.push(month)
-  const accounts: DemoAccount[] = [
-    { key: "spending", name: "Spending", kind: "spending", balance: 1842.67 },
-    { key: "holiday", name: "🏖️ Next adventure", kind: "saver", balance: 7900.32 },
-    { key: "emergency", name: "☔ Rainy day", kind: "saver", balance: 18400.55 },
-  ]
-  const transactions: DemoData["transactions"] = []
-  const add = (dateISO: string, value: number, description: string, categoryName: string,
-    extra: Partial<Omit<DemoTransaction, "truthCategory">> = {}) => {
-    if (dateISO < start || dateISO > options.today) return
-    transactions.push({ accountKey: "spending", dateISO, amount: round(value), description, categoryName,
-      truthCategory: categoryName,
-      rawText: null, cardMethod: null, time: "07:00",
-      transactionType: "Purchase", message: null, foreignAmount: null, status: "SETTLED", ...extra })
-  }
+  return { random, integer, pick, normal, amount, poisson }
+}
+
+/** The built-in life month by month: its merchants, bills, subscriptions,
+ * interest, people and big purchases. */
+function builtInMonths(life: DemoLife) {
+  const { options, history, start, months, accounts, add, integer, pick, normal, amount, poisson } = life
   // Large purchases have two following months of reduced discretionary spending.
   const purchases = [
     { fraction: 0.16, description: "JB Hi-Fi", category: "Technology", value: 1899 },
@@ -188,6 +236,11 @@ export function generateDemo(options: { today: string; years?: number; seed?: nu
     }
     for (const purchase of purchases.filter(p => p.month === index)) add(date(), -purchase.value, purchase.description, purchase.category)
   })
+}
+
+/** The built-in life's weekly shops, pays, emergencies and holidays. */
+function builtInCalendar(life: DemoLife) {
+  const { options, history, start, totalDays, add, integer, pick, amount } = life
   // Weekly groceries avoid random clusters of several full shops in one week.
   const groceries = MERCHANTS.find(m => m.category === "Groceries")
   if (!history && groceries) for (let date = addDays(start, 1); date <= options.today; date = addDays(date, 7)) {
@@ -222,76 +275,90 @@ export function generateDemo(options: { today: string; years?: number; seed?: nu
       }
     }
   }
-  if (history) {
-    const weightedIndex = (weights: number[]) => {
-      let remaining = random() * weights.reduce((sum, weight) => sum + weight, 0)
-      for (let i = 0; i < weights.length; i++) {
-        remaining -= weights[i]
-        if (remaining < 0) return i
-      }
-      return weights.length - 1
+}
+
+/** Your history's purchases, scrambled across the months. */
+function historyRows(life: DemoLife, history: DemoSourceRow[]) {
+  const { options, start, months, add, random, integer, normal } = life
+  const weightedIndex = (weights: number[]) => {
+    let remaining = random() * weights.reduce((sum, weight) => sum + weight, 0)
+    for (let i = 0; i < weights.length; i++) {
+      remaining -= weights[i]
+      if (remaining < 0) return i
     }
-    let logWeight = 0
-    const calendar = months.map(month => {
-      // Bound the walk so quiet months still receive examples across the whole period.
-      logWeight = Math.max(-1.2, Math.min(1.2, logWeight + normal() * 0.45))
-      const from = month < start ? start : month
-      const end = addDays(addMonthsClamped(month, 1), -1)
-      const to = end > options.today ? options.today : end
-      const days = Array.from({ length: daysBetween(from, to) + 1 }, (_, i) => addDays(from, i))
-      const dayWeights = days.map(day => {
-        const weekday = new Date(`${day}T00:00:00Z`).getUTCDay()
-        return weekday === 5 || weekday === 6 ? 1.6 : 1
-      })
-      const available = [...days]
-      const bursts: string[] = []
-      for (let n = 0, count = Math.min(days.length, 2 + integer(3)); n < count; n++) {
-        bursts.push(...available.splice(integer(available.length), 1))
-      }
-      return { weight: Math.exp(logWeight), days, dayWeights, bursts }
+    return weights.length - 1
+  }
+  let logWeight = 0
+  const calendar = months.map(month => {
+    // Bound the walk so quiet months still receive examples across the whole period.
+    logWeight = Math.max(-1.2, Math.min(1.2, logWeight + normal() * 0.45))
+    const from = month < start ? start : month
+    const end = addDays(addMonthsClamped(month, 1), -1)
+    const to = end > options.today ? options.today : end
+    const days = Array.from({ length: daysBetween(from, to) + 1 }, (_, i) => addDays(from, i))
+    const dayWeights = days.map(day => {
+      const weekday = new Date(`${day}T00:00:00Z`).getUTCDay()
+      return weekday === 5 || weekday === 6 ? 1.6 : 1
     })
-    const monthWeights = calendar.map(month => month.weight)
-    for (let n = 0; n < history.length * DEMO_HISTORY_FACTOR; n++) {
-      const source = history[integer(history.length)]
-      const month = calendar[weightedIndex(monthWeights)]
-      const date = random() < 0.25 ? month.bursts[integer(month.bursts.length)] : month.days[weightedIndex(month.dayWeights)]
-      let value = source.amount * Math.exp(normal() * 0.35)
-      if (random() < 0.1) value *= 1.5 + random() * 1.5
-      add(date, -Math.max(0.01, Math.abs(round(value))), source.description, source.categoryName, {
-        rawText: source.rawText, transactionType: source.transactionType, cardMethod: source.cardMethod,
-      })
+    const available = [...days]
+    const bursts: string[] = []
+    for (let n = 0, count = Math.min(days.length, 2 + integer(3)); n < count; n++) {
+      bursts.push(...available.splice(integer(available.length), 1))
     }
-    // Which rows wait for a category, once they're all made. A held-out
-    // merchant has none categorised (history can't know it; built-in trips
-    // and purchases under its name included); the rest lose a few.
-    const key = (description: string) => description.trim().toLowerCase()
-    const yours = new Set(history.map(t => key(t.description)))
-    const rows = new Map<string, DemoData["transactions"]>()
-    for (const t of transactions) if (yours.has(key(t.description))) rows.set(key(t.description), [...rows.get(key(t.description)) ?? [], t])
-    const merchants = [...rows.keys()]
-    const heldOut = new Set<string>()
-    if (options.hide === "evaluation") {
-      for (let n = 0, count = Math.round(merchants.length * EVAL_HELD_OUT_SHARE); n < count; n++) {
-        heldOut.add(merchants.splice(integer(merchants.length), 1)[0])
-      }
-    } else {
-      // The rarer merchants, as a real backlog of new places is, up to
-      // DEMO_ASK_ROWS rows; ties in a random order.
-      const order = new Map(merchants.map(m => [m, random()]))
-      merchants.sort((a, b) => rows.get(a)!.length - rows.get(b)!.length || order.get(a)! - order.get(b)!)
-      let total = 0
-      for (const m of merchants) {
-        if (total + rows.get(m)!.length > DEMO_ASK_ROWS) break
-        heldOut.add(m)
-        total += rows.get(m)!.length
-      }
+    return { weight: Math.exp(logWeight), days, dayWeights, bursts }
+  })
+  const monthWeights = calendar.map(month => month.weight)
+  for (let n = 0; n < history.length * DEMO_HISTORY_FACTOR; n++) {
+    const source = history[integer(history.length)]
+    const month = calendar[weightedIndex(monthWeights)]
+    const date = random() < 0.25 ? month.bursts[integer(month.bursts.length)] : month.days[weightedIndex(month.dayWeights)]
+    let value = source.amount * Math.exp(normal() * 0.35)
+    if (random() < 0.1) value *= 1.5 + random() * 1.5
+    add(date, -Math.max(0.01, Math.abs(round(value))), source.description, source.categoryName, {
+      rawText: source.rawText, transactionType: source.transactionType, cardMethod: source.cardMethod,
+    })
+  }
+}
+
+/** Which of your history's rows wait for a category. */
+function hideHistory(life: DemoLife, history: DemoSourceRow[]) {
+  const { options, transactions, random, integer } = life
+  // Which rows wait for a category, once they're all made. A held-out
+  // merchant has none categorised (history can't know it; built-in trips
+  // and purchases under its name included); the rest lose a few.
+  const key = (description: string) => description.trim().toLowerCase()
+  const yours = new Set(history.map(t => key(t.description)))
+  const rows = new Map<string, DemoData["transactions"]>()
+  for (const t of transactions) if (yours.has(key(t.description))) rows.set(key(t.description), [...rows.get(key(t.description)) ?? [], t])
+  const merchants = [...rows.keys()]
+  const heldOut = new Set<string>()
+  if (options.hide === "evaluation") {
+    for (let n = 0, count = Math.round(merchants.length * EVAL_HELD_OUT_SHARE); n < count; n++) {
+      heldOut.add(merchants.splice(integer(merchants.length), 1)[0])
     }
-    const share = options.hide === "evaluation" ? EVAL_HIDDEN_SHARE : DEMO_HIDDEN_SHARE
-    for (const [m, list] of rows) for (const t of list) {
-      if (heldOut.has(m)) t.categoryName = null
-      else if (t.categoryName !== null && random() < share) t.categoryName = null
+  } else {
+    // The rarer merchants, as a real backlog of new places is, up to
+    // DEMO_ASK_ROWS rows; ties in a random order.
+    const order = new Map(merchants.map(m => [m, random()]))
+    merchants.sort((a, b) => rows.get(a)!.length - rows.get(b)!.length || order.get(a)! - order.get(b)!)
+    let total = 0
+    for (const m of merchants) {
+      if (total + rows.get(m)!.length > DEMO_ASK_ROWS) break
+      heldOut.add(m)
+      total += rows.get(m)!.length
     }
   }
+  const share = options.hide === "evaluation" ? EVAL_HIDDEN_SHARE : DEMO_HIDDEN_SHARE
+  for (const [m, list] of rows) for (const t of list) {
+    if (heldOut.has(m)) t.categoryName = null
+    else if (t.categoryName !== null && random() < share) t.categoryName = null
+  }
+}
+
+/** The last seeded draws: the built-in life's hidden categories, held
+ * rows and every row's time. */
+function finishDraws(life: DemoLife) {
+  const { options, history, transactions, random, integer } = life
   // Without history, hide exactly 4.5% of spending rows, sampled without replacement.
   const spending = transactions.filter(t => t.amount < 0 && !t.transferToKey)
   const candidates = [...spending]
@@ -308,6 +375,12 @@ export function generateDemo(options: { today: string; years?: number; seed?: nu
     const minutes = 7 * 60 + integer(17 * 60)
     t.time = `${String(Math.floor(minutes / 60)).padStart(2, "0")}:${String(minutes % 60).padStart(2, "0")}`
   }
+}
+
+/** Rows after every seeded draw: the dental bill and each year's saver
+ * transfers. */
+function laterTransfers(life: DemoLife, years: number) {
+  const { start, totalDays, accounts, add } = life
   // New rows follow all seeded draws, including transaction times.
   add(addDays(start, Math.floor(totalDays * 0.64)), 3200, "Transfer from Rainy day", "Transfers", {
     transactionType: "Transfer", transferToKey: "emergency", message: "Dental bill",
@@ -321,6 +394,11 @@ export function generateDemo(options: { today: string; years?: number; seed?: nu
       })
     }
   }
+}
+
+/** Last month's saver drops and refills, for the setup's tour. */
+function saverShowcase(life: DemoLife) {
+  const { options, accounts, transactions } = life
   // Last month, the one the setup's tour charts: each saver drops and
   // refills by a fifth to a half of its balance, so the Savers view shows
   // what savers do (sized from today's balances, which last month ends near).
@@ -338,6 +416,11 @@ export function generateDemo(options: { today: string; years?: number; seed?: nu
     row(outDay, saver.balance * out, `Transfer from ${name}`, outWhy)
     row(inDay, -saver.balance * back, `Transfer to ${name}`, inWhy)
   }
+}
+
+/** Money out of the savers on their own days, keeping their past balances plausible. */
+function saverOutflows(life: DemoLife) {
+  const { options, start, totalDays, accounts, transactions } = life
   // Money out of the savers as well as in, on their own irregular days and
   // for their own reasons: as much as keeps each saver's balance three
   // years ago a plausible half of today's (deposits every pay would
@@ -366,6 +449,11 @@ export function generateDemo(options: { today: string; years?: number; seed?: nu
         foreignAmount: null, status: "SETTLED", transferToKey: saverKey })
     })
   }
+}
+
+/** Each transfer's saver side. */
+function mirrorTransfers(life: DemoLife) {
+  const { accounts, transactions } = life
   // Each transfer shows on both accounts, as Up shows it: the saver's side
   // too, or its balance (rebuilt from its own rows) never moves. After every
   // draw, so the rest of the life is unchanged.
@@ -374,6 +462,4 @@ export function generateDemo(options: { today: string; years?: number; seed?: nu
     transactions.push({ ...t, accountKey: t.transferToKey!, transferToKey: "spending", amount: round(-t.amount),
       description: t.amount < 0 ? `Transfer from ${spendingName}` : `Transfer to ${spendingName}` })
   }
-  transactions.sort((a, b) => a.dateISO < b.dateISO ? -1 : a.dateISO > b.dateISO ? 1 : 0)
-  return { accounts, transactions, categories: DEMO_CATEGORIES, budget: { monthly: 4200 } }
 }

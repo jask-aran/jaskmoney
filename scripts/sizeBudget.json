@@ -34,20 +34,16 @@
     "src/db/client.ts": 970,
     "src/domain/filter.ts": 910,
     "src/state/uiStore.ts": 900,
-    "src/ui/settings/SettingsTab.tsx": 800,
-    "src/ui/overview/periodCharts.ts": 620
+    "src/ui/settings/SettingsTab.tsx": 800
   },
   "functionLines": 80,
   "frozenFunctions": {
     "src/state/uiStore.ts:createUiStore": 380,
     "src/core/upPush.ts:createUpPush": 360,
-    "src/domain/demo.ts:generateDemo": 310,
-    "src/ui/overview/periodCharts.ts:spendingChart": 210,
     "src/app/keys/manager.ts:handleManagerTxns": 160,
     "src/app/keys/overview.ts:handleOverview": 150,
     "src/ai/ruleWriter.ts:writeRules": 150,
     "src/app/keys/settings.ts:handleSettingsEditor": 140,
-    "src/ui/overview/periodCharts.ts:cashFlowChart": 140,
     "src/ui/manager/TransactionTable.tsx:TransactionTable": 140,
     "src/ui/overview/CustomRangeDialog.tsx:CustomRangeDialog": 130,
     "src/ui/settings/SettingsTab.tsx:TaxonomyPane": 110,
@@ -55,8 +51,6 @@
     "src/app/commands.ts:registry": 110,
     "src/core/upPush.ts:applyCategories": 100,
     "src/app/keys/ai.ts:handleAiDialog": 100,
-    "src/ui/charts/lineChart.ts:lineChart": 100,
-    "src/ui/overview/periodCharts.ts:balancesChart": 100,
     "src/client/wsLink.ts:wsLink": 100
   },
   "unusedExports": 1,

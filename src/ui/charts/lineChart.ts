@@ -116,8 +116,14 @@ export function lineChart(opts: {
     }
     if (best) { masks[cell] = best.masks[cell]!; inks[cell] = best.ink }
   }
+  return paintRows(masks, inks, opts.markers ?? [], length, width, height)
+}
+
+/** The rows of a line chart's cells (top first): each cell's dots in its
+ * ink, else a marker's rule, else blank. */
+function paintRows(masks: number[], inks: Array<string | null>, markers: Marker[], length: number, width: number, height: number): Run[][] {
   const markerInk = new Map<number, string>()
-  for (const m of opts.markers ?? []) {
+  for (const m of markers) {
     if (m.index >= 0 && m.index < length) markerInk.set(cellColumn(m.index, length, width), m.ink)
   }
   const rows: Run[][] = []
