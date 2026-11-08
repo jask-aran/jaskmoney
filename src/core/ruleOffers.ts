@@ -10,8 +10,8 @@ import { createLane } from "./lane"
 import type { CategorySource } from "../db/schema"
 
 export function createRuleOffers(ctx: CoreContext, deps: Pick<ReturnType<typeof createUpPush>, "retryPendingCategories" | "retryPendingTags" | "applyTagPatch">) {
-  const { state, set, mutate, transactions, recordUndo, saveSavedFilter, createSettingsRule, applyRules, deleteSettingsRule, deleteSavedFilter, restoreCategories } = ctx
-  const { retryPendingCategories, retryPendingTags, applyTagPatch } = deps
+  const { state, set, mutate, transactions, recordUndo } = ctx
+  const makeOfferedRule = createOfferedRuleMaker(ctx, deps)
 
   /** The history the AI reads (domain/aiHistory): current state and the logs. */
   function historyData(): HistoryData {
@@ -58,6 +58,26 @@ export function createRuleOffers(ctx: CoreContext, deps: Pick<ReturnType<typeof 
     return ` · R: rule for ${offers[0]!.description} → ${category?.name ?? "?"}`
   }
 
+  function declineRuleOffer(offer: RuleOffer): void {
+    if (offer.source === "ai") {
+      mutate((db) => declineRule(db, offer.expr, offer.categoryId, offer.tagId))
+      set({ aiRuleOffers: state.aiRuleOffers.filter((o) => !(o.expr === offer.expr && o.categoryId === offer.categoryId && o.tagId === offer.tagId)) })
+    } else mutate((db) => declineCategoryChoice(db, offer.description, offer.categoryId))
+    recordUndo(`declined rule ${offer.description}`, async () => {
+      mutate((db) => offer.source === "ai" ? undeclineRule(db, offer.expr, offer.categoryId, offer.tagId) : declineCategoryChoice(db, offer.description, offer.categoryId, false))
+      if (offer.source === "ai") set({ aiRuleOffers: [...state.aiRuleOffers, offer] })
+      return ""
+    })
+  }
+
+  return { historyData, askForRules, ruleOfferNote, makeOfferedRule, declineRuleOffer }
+}
+
+/** createRuleOffers' makeOfferedRule, with what it reads from the core. */
+function createOfferedRuleMaker(ctx: CoreContext, deps: Pick<ReturnType<typeof createUpPush>, "retryPendingCategories" | "retryPendingTags" | "applyTagPatch">) {
+  const { state, set, transactions, recordUndo, saveSavedFilter, createSettingsRule, applyRules, deleteSettingsRule, deleteSavedFilter, restoreCategories } = ctx
+  const { retryPendingCategories, retryPendingTags, applyTagPatch } = deps
+
   /** Make an offered rule: a saved filter and a rule (last in order), then
    * run it on the rows it finds waiting, Up rows sent to Up. */
   async function makeOfferedRule(offer: RuleOffer): Promise<string> {
@@ -95,17 +115,5 @@ export function createRuleOffers(ctx: CoreContext, deps: Pick<ReturnType<typeof 
     ].filter(Boolean).join(" · ")
   }
 
-  function declineRuleOffer(offer: RuleOffer): void {
-    if (offer.source === "ai") {
-      mutate((db) => declineRule(db, offer.expr, offer.categoryId, offer.tagId))
-      set({ aiRuleOffers: state.aiRuleOffers.filter((o) => !(o.expr === offer.expr && o.categoryId === offer.categoryId && o.tagId === offer.tagId)) })
-    } else mutate((db) => declineCategoryChoice(db, offer.description, offer.categoryId))
-    recordUndo(`declined rule ${offer.description}`, async () => {
-      mutate((db) => offer.source === "ai" ? undeclineRule(db, offer.expr, offer.categoryId, offer.tagId) : declineCategoryChoice(db, offer.description, offer.categoryId, false))
-      if (offer.source === "ai") set({ aiRuleOffers: [...state.aiRuleOffers, offer] })
-      return ""
-    })
-  }
-
-  return { historyData, askForRules, ruleOfferNote, makeOfferedRule, declineRuleOffer }
+  return makeOfferedRule
 }

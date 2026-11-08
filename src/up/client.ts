@@ -87,6 +87,62 @@ export function createUpClient({ token, fetch = globalThis.fetch, baseUrl = "htt
   /** How long a request may take, headers and body (tests shorten it). */
   deadlineMs?: number
 }) {
+  const { normalizeError, request } = createRequest({ token, fetch, baseUrl, sleep, deadlineMs })
+  async function list<T>(path: string, valid: (value: unknown) => value is T, since?: string, paginated = true): Promise<T[]> {
+    try {
+      let url: URL | null = new URL(`${baseUrl.replace(/\/$/, "")}/${path}`)
+      if (paginated) url.searchParams.set("page[size]", "100")
+      if (since !== undefined) url.searchParams.set("filter[since]", since)
+      const items: T[] = []
+      while (url) {
+        const body = await request(url)
+        if (!object(body) || !Array.isArray(body.data) || !body.data.every(valid)) throw new Error("Invalid Up API page")
+        let next: string | null = null
+        if (paginated || body.links !== undefined) {
+          if (!object(body.links) || (paginated && !nullableString(body.links.prev)) ||
+            !nullableString(body.links.next)) throw new Error("Invalid Up API page")
+          next = body.links.next
+        }
+        items.push(...body.data)
+        url = next === null ? null : new URL(next, url)
+      }
+      return items
+    } catch (error) {
+      throw normalizeError(error)
+    }
+  }
+  async function changeTransactionTags(transactionId: string, tags: string[], method: "POST" | "DELETE"): Promise<void> {
+    if (transactionId === "." || transactionId === "..") throw new Error("Invalid Up transaction ID")
+    await request(new URL(`${baseUrl.replace(/\/$/, "")}/transactions/${encodeURIComponent(transactionId)}/relationships/tags`), {
+      method, body: JSON.stringify({ data: tags.map(id => ({ type: "tags", id })) }),
+    })
+  }
+  return {
+    addTransactionTags: (transactionId: string, tags: string[]) => changeTransactionTags(transactionId, tags, "POST"),
+    removeTransactionTags: (transactionId: string, tags: string[]) => changeTransactionTags(transactionId, tags, "DELETE"),
+    async ping(): Promise<void> { await request(new URL(`${baseUrl.replace(/\/$/, "")}/util/ping`)) },
+    async setTransactionCategory(transactionId: string, categoryId: string | null): Promise<void> {
+      if (transactionId === "." || transactionId === "..") throw new Error("Invalid Up transaction ID")
+      await request(new URL(`${baseUrl.replace(/\/$/, "")}/transactions/${encodeURIComponent(transactionId)}/relationships/category`), {
+        method: "PATCH", body: JSON.stringify({ data: categoryId === null ? null : { type: "categories", id: categoryId } }),
+      })
+    },
+    async listCategories(): Promise<Array<{ id: string; name: string; parentId: string | null }>> {
+      return (await list("categories", isCategory, undefined, false)).map(c => ({ id: c.id, name: c.attributes.name, parentId: c.relationships.parent.data?.id ?? null }))
+    },
+    listAccounts: () => list("accounts", isAccount),
+    listTransactions: ({ since }: { since?: string } = {}) => list("transactions", isTransaction, since),
+    async listAccountTransactions(accountId: string, { since }: { since?: string } = {}) {
+      // URL parsing normalises even percent-encoded dot-only path segments.
+      if (accountId === "." || accountId === "..") throw new Error("Invalid Up account ID")
+      return list(`accounts/${encodeURIComponent(accountId)}/transactions`, isTransaction, since)
+    },
+  }
+}
+
+/** createUpClient's requests: one call to Up, retried on 429, its errors
+ * redacted of the token. */
+function createRequest({ token, fetch, baseUrl, sleep, deadlineMs }: { token: string; fetch: Fetch; baseUrl: string; sleep: (ms: number) => Promise<void>; deadlineMs: number }) {
   const redact = (message: string) => token ? message.split(token).join("[redacted]") : message
   function redactValue(value: unknown): unknown {
     if (typeof value === "string") return redact(value)
@@ -147,54 +203,5 @@ export function createUpClient({ token, fetch = globalThis.fetch, baseUrl = "htt
       throw normalizeError(error)
     }
   }
-  async function list<T>(path: string, valid: (value: unknown) => value is T, since?: string, paginated = true): Promise<T[]> {
-    try {
-      let url: URL | null = new URL(`${baseUrl.replace(/\/$/, "")}/${path}`)
-      if (paginated) url.searchParams.set("page[size]", "100")
-      if (since !== undefined) url.searchParams.set("filter[since]", since)
-      const items: T[] = []
-      while (url) {
-        const body = await request(url)
-        if (!object(body) || !Array.isArray(body.data) || !body.data.every(valid)) throw new Error("Invalid Up API page")
-        let next: string | null = null
-        if (paginated || body.links !== undefined) {
-          if (!object(body.links) || (paginated && !nullableString(body.links.prev)) ||
-            !nullableString(body.links.next)) throw new Error("Invalid Up API page")
-          next = body.links.next
-        }
-        items.push(...body.data)
-        url = next === null ? null : new URL(next, url)
-      }
-      return items
-    } catch (error) {
-      throw normalizeError(error)
-    }
-  }
-  async function changeTransactionTags(transactionId: string, tags: string[], method: "POST" | "DELETE"): Promise<void> {
-    if (transactionId === "." || transactionId === "..") throw new Error("Invalid Up transaction ID")
-    await request(new URL(`${baseUrl.replace(/\/$/, "")}/transactions/${encodeURIComponent(transactionId)}/relationships/tags`), {
-      method, body: JSON.stringify({ data: tags.map(id => ({ type: "tags", id })) }),
-    })
-  }
-  return {
-    addTransactionTags: (transactionId: string, tags: string[]) => changeTransactionTags(transactionId, tags, "POST"),
-    removeTransactionTags: (transactionId: string, tags: string[]) => changeTransactionTags(transactionId, tags, "DELETE"),
-    async ping(): Promise<void> { await request(new URL(`${baseUrl.replace(/\/$/, "")}/util/ping`)) },
-    async setTransactionCategory(transactionId: string, categoryId: string | null): Promise<void> {
-      if (transactionId === "." || transactionId === "..") throw new Error("Invalid Up transaction ID")
-      await request(new URL(`${baseUrl.replace(/\/$/, "")}/transactions/${encodeURIComponent(transactionId)}/relationships/category`), {
-        method: "PATCH", body: JSON.stringify({ data: categoryId === null ? null : { type: "categories", id: categoryId } }),
-      })
-    },
-    async listCategories(): Promise<Array<{ id: string; name: string; parentId: string | null }>> {
-      return (await list("categories", isCategory, undefined, false)).map(c => ({ id: c.id, name: c.attributes.name, parentId: c.relationships.parent.data?.id ?? null }))
-    },
-    listAccounts: () => list("accounts", isAccount),
-    listTransactions: ({ since }: { since?: string } = {}) => list("transactions", isTransaction, since),
-    async listAccountTransactions(accountId: string, { since }: { since?: string } = {}) {
-      // URL parsing normalises even percent-encoded dot-only path segments.
-      if (accountId === "." || accountId === "..") throw new Error("Invalid Up account ID")
-      return list(`accounts/${encodeURIComponent(accountId)}/transactions`, isTransaction, since)
-    },
-  }
+  return { normalizeError, request }
 }
