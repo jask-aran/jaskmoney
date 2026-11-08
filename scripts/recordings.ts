@@ -70,6 +70,10 @@ const tourDemo = (id: DemoId): Scene => ({
 /** Keys typed one after another from `at`, `gap` ms apart. */
 const typed = (at: number, keys: string[], gap: number) => keys.map((key, i) => ({ at: at + i * gap, key }))
 
+/** A chart's view stepped: the jump (v) to the chart (t top, b bottom),
+ * then h or l, quickly enough that the jump's labels barely show. */
+const onChart = (at: number, chart: string, step: string) => typed(at - 120, ["v", chart, step], 60)
+
 /** The README's hero: a tour of the app on the demo data, from Settings
  * back to Settings so it loops. The Overview (each chart drawing in, MOTION,
  * chart motion "always"): the range and both charts' views changed in turn,
@@ -80,11 +84,11 @@ const OVERVIEW_KEYS = [
   // Each change 1.9 s apart: the charts draw in (900 ms), then a second on
   // them. A pause after each change of screen before its actions start.
   { at: 2200, key: "d" }, // 2M: both charts redraw
-  { at: 4100, key: "l" }, // the top chart: Daily
-  { at: 6000, key: "L" }, // the bottom chart: Available
+  ...onChart(4100, "t", "l"), // the top chart: Daily
+  ...onChart(6000, "b", "l"), // the bottom chart: Available
   { at: 7900, key: "[" }, // the 2M before
-  { at: 9800, key: "h" }, // back: Cumulative
-  { at: 11700, key: "H" }, // back: Net position
+  ...onChart(9800, "t", "h"), // back: Cumulative
+  ...onChart(11700, "b", "h"), // back: Net position
   { at: 13600, key: "]" }, // back: the last 2M
   { at: 15500, key: "D" }, // back: 1M
   { at: 17400, key: "2" }, // Transactions
@@ -103,6 +107,9 @@ const overview: Scene = {
   async setup(app) {
     await app.waitFor("Demo mode")
     await Bun.sleep(1500)
+    // Focus as the loop leaves it: on the bottom chart.
+    app.press("v"); await Bun.sleep(60); app.press("b")
+    await Bun.sleep(300)
     app.press("4")
     await Bun.sleep(1500)
     return "1"
