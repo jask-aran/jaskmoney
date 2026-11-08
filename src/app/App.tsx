@@ -1,19 +1,62 @@
 import { welcomeStatus } from "../state/welcome"
 import { BudgetsTab } from "../ui/budgets/BudgetsTab"
-import { Show, createMemo, createSignal } from "solid-js"
+import { Show, createMemo, createSignal, For } from "solid-js"
 import { useRenderer, useTerminalDimensions } from "@opentui/solid"
 import { ui } from "../state/uiStore"
 import { data } from "../state/dataStore"
 import { footerLine, hintState, paletteList } from "./keys"
-import { StatusBar } from "../ui/primitives/StatusBar"
-import { Footer } from "../ui/primitives/Footer"
 import { OverviewTab } from "../ui/overview/OverviewTab"
-import { ManagerTab } from "../ui/manager/ManagerTab"
 import { SettingsTab } from "../ui/settings/SettingsTab"
-import { theme, themeVersion } from "../theme"
+import { theme, themeVersion, ink, tone } from "../theme"
 import { KeptTab } from "./KeptTab"
 import { AppBar, Overlays } from "./AppChrome"
+import { ManagerTab } from "../ui/manager/ManagerTables"
 import { appInput, bootstrapper, followEffects, startCore, startupEffects, syncClock } from "./startup"
+import { ALL, footerParts, type Hint } from "./palette"
+import { S } from "../ui/primitives/S"
+
+/**
+ * The footer: the focused pane's name, its keys, then (after a rule) the
+ * tab's, each `key desc`, two spaces between, on one line (the hints
+ * already fitted to it, `footerLine`); "ctrl+k all" at the right wherever
+ * the palette opens. The pane's name in focus's colour, as its border is;
+ * keys in the key tone, bold; words in labels'.
+ */
+function Footer(props: { line: { pane: string | null; hints: Hint[]; palette: boolean } }) {
+  const color = { pane: tone.focus, key: tone.key, desc: ink.label, gap: ink.label, rule: ink.rule } as const
+  return (
+    <box width="100%" height={1} flexDirection="row" justifyContent="space-between" backgroundColor={theme.mantle} paddingLeft={1} paddingRight={1} overflow="hidden">
+      <text bg={theme.mantle} wrapMode="none" flexShrink={1}>
+        <For each={footerParts(props.line.pane, props.line.hints)}>
+          {(part) => <S fg={color[part.kind]} bg={theme.mantle} bold={part.kind === "key" || part.kind === "pane"}>{part.text}</S>}
+        </For>
+      </text>
+      <Show when={props.line.palette}>
+        <text bg={theme.mantle} wrapMode="none" flexShrink={0}>
+          <S fg={tone.key} bg={theme.mantle} bold>{ALL.key}</S>
+          <S fg={ink.label} bg={theme.mantle}>{` ${ALL.desc}`}</S>
+        </text>
+      </Show>
+    </box>
+  )
+}
+
+/** Go statusBarStyle: surface0 bg, subtext1 fg; error = red fg. */
+function StatusBar(props: { text: string; isErr?: boolean }) {
+  return (
+    <box
+      width="100%"
+      height={1}
+      backgroundColor={theme.surface0}
+      paddingLeft={1}
+      paddingRight={1}
+    >
+      <text fg={props.isErr ? tone.bad : ink.label} bg={theme.surface0}>
+        {props.text || " "}
+      </text>
+    </box>
+  )
+}
 
 /** A flag's value: `--name=value` or `--name value`, "" when it has none, null when absent. */
 function flagValue(name: string): string | null {

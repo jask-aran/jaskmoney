@@ -13,7 +13,7 @@ import type { RuleOffer } from "../domain/ruleOffers"
 import type { PurchaseLookup } from "../db/client"
 import { type CoreProgress } from "./protocol"
 import type { CoreRuntime } from "./runtime"
-import { keyState } from "./coreState"
+import { keyState } from "./runtime"
 import type { CallContext } from "./core"
 
 export class AiCommands {

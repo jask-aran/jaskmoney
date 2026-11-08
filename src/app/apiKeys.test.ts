@@ -1,4 +1,4 @@
-import { settlePending } from "../testing/settle"
+import { settlePending } from "../testing/keys"
 import { afterEach, expect, onTestFinished, spyOn, test } from "bun:test"
 import { rmSync } from "node:fs"
 import type { AuthInteraction } from "@earendil-works/pi-ai"

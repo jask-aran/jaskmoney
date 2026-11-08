@@ -1,4 +1,4 @@
-import { settlePending } from "../testing/settle"
+import { settlePending } from "../testing/keys"
 import { afterEach, beforeEach, expect, test } from "bun:test"
 import { mkdtempSync, writeFileSync } from "node:fs"
 import { join } from "node:path"

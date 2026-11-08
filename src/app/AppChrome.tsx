@@ -1,30 +1,22 @@
 import { updateAvailable, versionLabel } from "./updates"
-import { showVersion } from "./keys"
+import { showVersion, type paletteList } from "./keys"
 import { ModelPicker } from "../ui/settings/ModelPicker"
 import { ThemePicker } from "../ui/settings/ThemePicker"
 import { Welcome } from "../ui/welcome/Welcome"
 import { Show, type Accessor } from "solid-js"
 import { ui } from "../state/uiStore"
 import { data } from "../state/dataStore"
-import type { paletteList } from "./keys"
 import { CommandPalette } from "../ui/primitives/CommandPalette"
 import { TabBar } from "../ui/primitives/TabBar"
 import { UP_LOGO_WIDTH, UpLogo } from "../ui/primitives/UpLogo"
-import { JumpOverlay } from "../ui/primitives/JumpOverlay"
 import { CatPicker } from "../ui/primitives/CatPicker"
-import { TagChooser } from "../ui/primitives/TagChooser"
-import { MerchantNoteBox } from "../ui/manager/MerchantNoteBox"
-import { SearchHelp } from "../ui/manager/SearchHelp"
 import { AiQueryView, AiUseDialog } from "../ui/settings/AiUseDialogs"
-import { TagPicker } from "../ui/primitives/TagPicker"
-import { SavedFilterPicker } from "../ui/manager/SavedFilterPicker"
 import { EditorOverlay, DryRunOverlay, AiDialog, UpAccountsDialog } from "../ui/settings/SettingsTab"
 import { ExecutorDialog } from "../ui/settings/ExecutorDialog"
 import { tone } from "../theme"
 import { selectionLabel } from "../domain/accountTree"
+import { JumpOverlay, MerchantNoteBox, SavedFilterPicker, SearchHelp, TagChooser, TagPicker } from "../ui/primitives/Dialogs"
 
-/** The top bar: the tabs, and the demo flag, accounts, version and sync on
- * its right. */
 export function AppBar(props: { syncLabel: () => string }) {
   // The Manager's account selection; the other tabs are not account-scoped.
   const accountLabel = () => {

@@ -1,7 +1,7 @@
 import type { DataStore } from "../state/dataStore"
 import type { UiStore } from "../state/uiStore"
 import { lookUpPurchases, purchasesNote } from "./purchases"
-import { afterPaint } from "./afterPaint"
+import { afterPaint } from "./startup"
 
 /** Turn the Uncategorised view on or off. On, it suggests categories for the
  * rows shown that have none yet (history at once, Jev as answers arrive). */

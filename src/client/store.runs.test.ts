@@ -3,7 +3,7 @@ import { createCore, type CallContext } from "../core/core"
 import type { CoreProgress } from "../core/protocol"
 import { appToday } from "../domain/days"
 import { account, transaction } from "../testing/fixtures"
-import { localLink } from "./localLink"
+import { localLink } from "../state/dataStore"
 import { createClientStore } from "./store"
 
 function deferred<T>() {

@@ -1,10 +1,22 @@
 import { UP_TOKEN_SETUP } from "../up/client"
 import type { DataStore } from "../state/dataStore"
-import { newSuggestionsNote } from "./suggest"
-import { purchasesNote } from "./purchases"
-import { runBackgroundRefresh } from "./backgroundRefresh"
+import { newSuggestionsNote, suggestNew } from "./suggest"
+import { purchasesNote, lookUpPurchases, type PurchaseRound } from "./purchases"
 import type { UiStore } from "../state/uiStore"
 import { traceMark } from "./trace"
+
+/** Learn purchases before suggesting. Lookup failures stay quiet in the
+ * purchase round; an unexpected failure is returned for the sync status. */
+export async function runBackgroundRefresh(data: DataStore): Promise<{ purchases: PurchaseRound; suggested: number; error: string | null }> {
+  let purchases: PurchaseRound = { looked: 0, found: 0, resuggested: 0, error: null }
+  try {
+    purchases = await lookUpPurchases(data)
+    const suggested = await suggestNew(data)
+    return { purchases, suggested, error: null }
+  } catch (error) {
+    return { purchases, suggested: 0, error: error instanceof Error ? error.message : String(error) }
+  }
+}
 
 /** Background sync interval (startup sync runs immediately). */
 export const SYNC_INTERVAL_MS = 5 * 60 * 1000

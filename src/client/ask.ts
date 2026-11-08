@@ -1,5 +1,5 @@
 import { createEffect, createMemo, createRoot, createSignal, on } from "solid-js"
-import { unwrap } from "solid-js/store"
+import { unwrap, type SetStoreFunction } from "solid-js/store"
 import { askTerms, evalFilter, hasDateTerm, undecided, type AskVerdict } from "../domain/filter"
 import { MATCH_AT, NEAR_AT } from "../domain/questions"
 import { askCandidates } from "../domain/ask"
@@ -7,12 +7,30 @@ import { appToday } from "../domain/days"
 import type { Transaction } from "../domain/types"
 import { JEV_SETUP } from "../ai/judge"
 import type { JevClient } from "../ai/jev"
-import type { AskResult } from "./store"
+import type { AskResult, DataState } from "./store"
 import type { createHistoryRows } from "./derived"
 import type { createMirror } from "./mirror"
-import { createLatestRun } from "./latestRun"
-import type { SetStoreFunction } from "solid-js/store"
-import type { DataState } from "./store"
+
+/** Only the latest run can write results; stopping also invalidates it. */
+export function createLatestRun(): { start(): { signal: AbortSignal; isCurrent(): boolean }; stop(): void } {
+  let active: AbortController | null = null
+
+  function stop(): void {
+    const previous = active
+    active = null
+    previous?.abort()
+  }
+
+  return {
+    start() {
+      stop()
+      const current = new AbortController()
+      active = current
+      return { signal: current.signal, isCurrent: () => active === current }
+    },
+    stop,
+  }
+}
 
 /** Near misses show by themselves when they don't swamp the results: at
  * most as many as the matches, and a handful whatever the matches. */

@@ -7,7 +7,7 @@ import type { Category, ImportProfile, Rule, RuleRunResult, SavedFilter } from "
 import { saveSettingsConfig, validateImportProfile, validateSavedFilter, type SettingsConfig, type UiPrefs } from "../state/settingsConfig"
 import { categoryPush, type PushableRow } from "./upPush"
 import type { CoreRuntime } from "./runtime"
-import { CONFIG_SETTLE_MS } from "./coreState"
+import { CONFIG_SETTLE_MS } from "./runtime"
 
 export class SettingsCommands {
   constructor(private readonly ctx: CoreRuntime) {}

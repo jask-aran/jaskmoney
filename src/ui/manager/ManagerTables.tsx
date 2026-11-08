@@ -1,13 +1,17 @@
 import { merchantKey } from "../../domain/history"
 import { data } from "../../state/dataStore"
-import { ui } from "../../state/uiStore"
+import { ui, type SectionId } from "../../state/uiStore"
+import { theme } from "../../theme"
+import { AccountsPane } from "./AccountsPane"
+import { createAcceptModals, createAccountModal, createRuleModal } from "./ManagerModals"
+import { TransactionDetail } from "./TransactionDetail"
 import { regionRef } from "../regions"
 import { MerchantTable } from "./MerchantTable"
 import { TransactionTable } from "./TransactionTable"
 import { TransactionsPane } from "./TransactionsPane"
 import { createManagerFilter, createManagerIndicator, createManagerPreviews, createManagerRows, createMerchantRows } from "./managerModel"
 
-export function createManagerTables(input: Pick<ReturnType<typeof createMerchantRows>, "merchants" | "txFocused" | "groups" | "tableRows" | "sortMark"> & Pick<ReturnType<typeof createManagerFilter>, "filterBar"> & Pick<ReturnType<typeof createManagerRows>, "dims" | "measureTables" | "rowsReveal" | "showAccount" | "highlighted"> & Pick<ReturnType<typeof createManagerIndicator>, "scrollIndicator"> & Pick<ReturnType<typeof createManagerPreviews>, "tagCandidate">) {
+function createManagerTables(input: Pick<ReturnType<typeof createMerchantRows>, "merchants" | "txFocused" | "groups" | "tableRows" | "sortMark"> & Pick<ReturnType<typeof createManagerFilter>, "filterBar"> & Pick<ReturnType<typeof createManagerRows>, "dims" | "measureTables" | "rowsReveal" | "showAccount" | "highlighted"> & Pick<ReturnType<typeof createManagerIndicator>, "scrollIndicator"> & Pick<ReturnType<typeof createManagerPreviews>, "tagCandidate">) {
   const { merchants, filterBar, txFocused, dims, scrollIndicator, measureTables, groups, tableRows, rowsReveal, showAccount, highlighted, sortMark, tagCandidate } = input
   const Tables = () => (
     <>
@@ -77,4 +81,26 @@ function merchantNote(merchant: string): { text: string; prompt: boolean } | nul
   if (!prompt) return null
   if (prompt.kind === "varies") return { text: "varies? n", prompt: true }
   return { text: `always ${data.state.categories.find((c) => c.id === prompt.categoryId)?.name ?? "one"}? n`, prompt: true }
+}
+
+export function ManagerTab(props: { focused: SectionId }) {
+  const { rows, dims, measureTables, rowsReveal, showAccount, highlighted } = createManagerRows()
+  const { merchants, groups, selCount, txFocused, tableRows, sortMark, acctFocused } = createMerchantRows({ rows, props })
+  const { scrollIndicator } = createManagerIndicator({ rows, merchants, groups, selCount })
+  const { filterBar } = createManagerFilter()
+  const { tagCandidate, tagPreview, ACCEPT_LINES, acceptGroups, ruleOffers, ruleTop, RULE_LINES, accountAction } = createManagerPreviews()
+  const { Tables } = createManagerTables({ merchants, filterBar, txFocused, dims, scrollIndicator, measureTables, groups, tableRows, rowsReveal, showAccount, highlighted, sortMark, tagCandidate })
+  const { AcceptModals } = createAcceptModals({ tagPreview, ACCEPT_LINES, acceptGroups })
+  const { RuleModal } = createRuleModal({ ruleOffers, ruleTop, RULE_LINES })
+  const { AccountModal } = createAccountModal({ accountAction })
+  return (
+    <box width="100%" height="100%" flexDirection="column" backgroundColor={theme.canvas}>
+      <AccountsPane focused={acctFocused()} width={dims().width} />
+      <Tables />
+      <TransactionDetail />
+      <AcceptModals />
+      <RuleModal />
+      <AccountModal />
+    </box>
+  )
 }

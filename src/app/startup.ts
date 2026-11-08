@@ -1,14 +1,12 @@
-import { showVersion } from "./keys"
-import { paintWith } from "./afterPaint"
+import { showVersion, handleKey, handlePaste } from "./keys"
 import { openWelcome, restingStatus, shouldWelcome } from "./welcome"
 import { traceFrames, traceKey, traceMark } from "./trace"
 import { settleData, toggleDemo } from "./actions"
 import { createEffect, createSignal, untrack, on, onCleanup, type Accessor, type Setter } from "solid-js"
 import { usePaste, useKeyboard, type useRenderer } from "@opentui/solid"
-import { decodePasteBytes, type KeyEvent } from "@opentui/core"
+import { decodePasteBytes, type KeyEvent, type CliRenderer } from "@opentui/core"
 import { ui } from "../state/uiStore"
 import { data } from "../state/dataStore"
-import { handleKey, handlePaste } from "./keys"
 import { appNow } from "../domain/days"
 import { applyTheme } from "../theme"
 import { SYNC_INTERVAL_MS, runSync, syncAgo } from "./sync"
@@ -17,6 +15,27 @@ import type { UiPrefs } from "../state/settingsConfig"
 import { restoreUiPrefs } from "../state/uiPrefs"
 import { wsLink } from "../client/wsLink"
 import { warmTabs } from "./KeptTab"
+
+/**
+ * Run `fn` once the frame the current key asked for is on screen: work a
+ * key sets off but its frame doesn't need (background suggesting, lookups)
+ * waits for it rather than holding it up. Without a renderer (tests), or
+ * if no frame comes within 50 ms, it runs on a timer.
+ */
+export function afterPaint(fn: () => void): void {
+  let done = false
+  const run = () => { if (!done) { done = true; fn() } }
+  renderer?.once("frame", () => setTimeout(run, 0))
+  setTimeout(run, renderer ? 50 : 0)
+}
+
+let renderer: CliRenderer | null = null
+
+/** App start: frames come from this renderer. Returns the undo. */
+function paintWith(r: CliRenderer): () => void {
+  renderer = r
+  return () => { if (renderer === r) renderer = null }
+}
 
 /** App's start once the core's data is in: the saved range and accounts,
  * the welcome, the sync timer and the tabs' warm-up. */

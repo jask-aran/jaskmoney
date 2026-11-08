@@ -2,7 +2,7 @@ import type { JSX } from "@opentui/solid"
 import { useTerminalDimensions } from "@opentui/solid"
 import { Show } from "solid-js"
 import { theme, ink, tone } from "../../theme"
-import { BorderText } from "./BorderText"
+import { BorderText } from "./SectionCard"
 import { fitSpans, spansWidth, type Span } from "./spans"
 
 const TONE = { get accent() { return tone.key }, get error() { return tone.bad }, get warning() { return tone.caution }, get focus() { return tone.focus } }

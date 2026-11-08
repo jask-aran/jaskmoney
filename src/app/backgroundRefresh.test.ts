@@ -2,7 +2,7 @@ import { expect, onTestFinished, spyOn, test } from "bun:test"
 import { data } from "../state/dataStore"
 import { ui } from "../state/uiStore"
 import { transaction } from "../testing/fixtures"
-import { runBackgroundRefresh } from "./backgroundRefresh"
+import { runBackgroundRefresh } from "./sync"
 import { purchaseSources } from "./purchases"
 import { runSync } from "./sync"
 

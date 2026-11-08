@@ -4,7 +4,7 @@ import { ui } from "../state/uiStore"
 import { nextSavedFilterId, nextSettingsId } from "../state/settingsConfig"
 import type { ImportProfile } from "../domain/types"
 import { key } from "../testing/keys"
-import { settlePending } from "../testing/settle"
+import { settlePending } from "../testing/keys"
 import { handleKey } from "./keys"
 
 const restores: Array<() => void> = []

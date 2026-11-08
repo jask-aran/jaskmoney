@@ -1,11 +1,25 @@
+import { credentialEnv } from "./credentials"
+
+export type Fetch = (input: string | URL | Request, init?: RequestInit) => Promise<Response>
+
+/** Buffer the body under the same deadline, leaving the response readable by the caller. */
+async function fetchWithTimeout(fetch: Fetch, input: string | URL | Request, init: RequestInit, timeoutMs: number): Promise<Response> {
+  const controller = new AbortController()
+  const timer = setTimeout(() => controller.abort(), timeoutMs)
+  try {
+    const response = await fetch(input, { ...init, signal: controller.signal })
+    await response.clone().arrayBuffer()
+    return response
+  } finally {
+    clearTimeout(timer)
+  }
+}
+
 /**
  * Cloudflare Workers AI's Clairic: extracts typed values from text (here:
  * amounts, dates and words from a search), never prose. Requests go only to
  * api.cloudflare.com. Typed judgments come from Jev (`./jev`).
  */
-
-import { credentialEnv } from "./credentials"
-import { fetchWithTimeout, type Fetch } from "./http"
 
 export class WorkersAiError extends Error {
   constructor(public readonly status: number, message: string) {

@@ -13,7 +13,7 @@
 import type { ClassifierAnswer, ClassifierContext, ClassifierQuestion, Models } from "@earendil-works/pi-ai"
 import { piModels, piProviders } from "./piAi"
 import { credentialEnv } from "./credentials"
-import type { Fetch } from "./http"
+import type { Fetch } from "./workersAi"
 import { createFileCredentialStore, signedIn } from "./oauthStore"
 import { JEV_SETUP, type JevAnswer, type JevQuestion, type JevState } from "./judge"
 

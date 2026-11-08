@@ -1,10 +1,24 @@
+import type { Account, Category, Transaction } from "../domain/types"
+import type { JevClient } from "../ai/jev"
+
+/** A Jev fake that answers the merchant-breadth questions itself (every
+ * name `p`, single by default) and hands the rest to `jev`: tests of other
+ * questions see only theirs. */
+export function answeringMerchants(jev: Pick<JevClient, "judge">, p = 0.1): Pick<JevClient, "judge"> {
+  return { async judge(questions, state) {
+    const isMerchant = (q: (typeof questions)[string]) => typeof q.instructions === "object" && "merchant" in q.instructions
+    const merchants = Object.entries(questions).filter(([, q]) => isMerchant(q))
+    const rest = Object.fromEntries(Object.entries(questions).filter(([, q]) => !isMerchant(q)))
+    const out: Awaited<ReturnType<JevClient["judge"]>> = Object.fromEntries(merchants.map(([id]) => [id, { type: "noul", noul: p }]))
+    return Object.keys(rest).length ? { ...out, ...(await jev.judge(rest, state)) } : out
+  } }
+}
+
 /**
  * Domain fixtures for tests: complete objects from a few overrides. Defaults
  * are neutral; a test that depends on a value passes it explicitly. Every
  * call returns fresh arrays.
  */
-import type { Account, Category, Transaction } from "../domain/types"
-
 /** A settled $10 Up debit on 2026-10-05 in account 1 ("A"), uncategorised.
  * `dateRaw` follows `dateISO` unless given. */
 export function transaction(overrides: Partial<Transaction> = {}): Transaction {

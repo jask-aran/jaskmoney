@@ -1,7 +1,7 @@
 import { uncategorisedCategoryId, type Db } from "../db/client"
 import type { createUpClient } from "./client"
 import { assignProviderCategories, assignTypeCategories, syncCategoryTree } from "./categories"
-import { resolveUpName } from "./names"
+import { resolveUpName } from "./categories"
 import { syncTagLinks } from "./tags"
 import type { UpAccount, UpTransaction } from "./types"
 

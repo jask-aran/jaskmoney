@@ -6,7 +6,7 @@ import type { Transaction } from "../domain/types"
 import { account, category, transaction } from "../testing/fixtures"
 import { testDb, testEnv } from "../testing/scoped"
 import { data } from "./dataStore"
-import { answeringMerchants } from "../testing/merchantFake"
+import { answeringMerchants } from "../testing/fixtures"
 
 function setup() {
   testEnv("JASKMONEY_JEV_TOKEN", "")

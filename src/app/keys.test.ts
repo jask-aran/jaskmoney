@@ -1,4 +1,4 @@
-import { settlePending } from "../testing/settle"
+import { settlePending } from "../testing/keys"
 import { DATABASE_ROWS } from "../state/databaseRows"
 import { describe, expect, test, beforeEach } from "bun:test"
 import { handleKey } from "./keys"

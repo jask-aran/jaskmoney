@@ -5,7 +5,7 @@ import type { JevClient } from "../ai/jev"
 import type { createHistoryRows } from "./derived"
 import type { createMirror } from "./mirror"
 import type { createTransactionCommands } from "./commands"
-import { createLatestRun } from "./latestRun"
+import { createLatestRun } from "./ask"
 import type { SetStoreFunction } from "solid-js/store"
 import type { DataState } from "./store"
 

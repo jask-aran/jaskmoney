@@ -1,4 +1,4 @@
-import { settlePending } from "../testing/settle"
+import { settlePending } from "../testing/keys"
 import { expect, onTestFinished, spyOn, test } from "bun:test"
 import { footerHints, handleKey } from "./keys"
 import { ui } from "../state/uiStore"

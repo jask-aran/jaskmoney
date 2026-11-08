@@ -5,7 +5,7 @@ import { buildImportPreview } from "../domain/profileImport"
 import { DEFAULT_IMPORT_PROFILES } from "../state/settingsConfig"
 import type { RuleOffer } from "../domain/ruleOffers"
 import { key } from "../testing/keys"
-import { settlePending } from "../testing/settle"
+import { settlePending } from "../testing/keys"
 import { handleKey } from "./keys"
 
 function deferred<T>() {

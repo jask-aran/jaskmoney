@@ -3,7 +3,7 @@ import type { JevClient, JevQuestion } from "../ai/jev"
 import { saveSuggestions } from "../db/client"
 import { testEnv } from "../testing/scoped"
 import { data } from "./dataStore"
-import { answeringMerchants } from "../testing/merchantFake"
+import { answeringMerchants } from "../testing/fixtures"
 
 /** CSV rows (so categorising never calls Up), no Jev key, no network. */
 function setup() {
