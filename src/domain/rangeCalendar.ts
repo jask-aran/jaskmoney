@@ -18,12 +18,12 @@ export const CALENDAR_VIEWS: readonly CalendarView[] = ["days", "months", "years
 export const CALENDAR_VIEW_LABELS: Record<CalendarView, string> = { days: "Days", months: "Months", years: "Years" }
 
 /** Months and years views: cells in rows of four. */
-export const CALENDAR_COLUMNS = 4
+const CALENDAR_COLUMNS = 4
 
 const monthStart = (iso: string) => `${iso.slice(0, 7)}-01`
 const monthEnd = (iso: string) => addDays(addMonthsClamped(monthStart(iso), 1), -1)
 /** The first year of the twelve the years view shows around `iso`. */
-export const yearsFrom = (iso: string) => Math.floor(Number(iso.slice(0, 4)) / 12) * 12
+const yearsFrom = (iso: string) => Math.floor(Number(iso.slice(0, 4)) / 12) * 12
 
 /** The days a cell holding `iso` stands for in `view`. */
 export function unitOf(iso: string, view: CalendarView): { start: string; end: string } {

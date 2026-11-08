@@ -25,7 +25,7 @@ function suggestionCategories(categories: Category[]): Category[] {
  * HISTORY_MIN_SHARE), "unsure" from MIXED_UNSURE_AT, else "single". A name
  * Jev hasn't been asked about counts as single.
  */
-export type Breadth = "mixed" | "unsure" | "single"
+type Breadth = "mixed" | "unsure" | "single"
 
 /** Per merchant, how its categorised rows (not people or payment apps)
  * fall: the most used category, its count, the total, and whether they're
@@ -53,7 +53,7 @@ export function merchantBreadth(transactions: Transaction[], categories: Categor
 
 /** Why a merchant could use a note: you put it in one category nearly
  * always, though Jev reads its name as broad ("always"), or it varies. */
-export type NotePrompt = { kind: "always"; categoryId: number } | { kind: "varies" }
+type NotePrompt = { kind: "always"; categoryId: number } | { kind: "varies" }
 
 /**
  * The merchants worth a note, by key: spending at them at least

@@ -7,7 +7,7 @@ import { pickerChoices } from "../state/settingsForm"
 import { settleData } from "./actions"
 
 /** A provider's chat models, as pi-ai's catalog has them. */
-export function modelEntries(provider: LlmProvider): ModelEntry[] {
+function modelEntries(provider: LlmProvider): ModelEntry[] {
   return llmModels().getModels(provider).map((m) => ({ id: m.id, name: m.name, input: m.cost.input, output: m.cost.output, context: m.contextWindow }))
 }
 

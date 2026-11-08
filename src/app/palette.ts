@@ -19,7 +19,7 @@ export interface Hint { key: string; desc: string; command?: string; label?: str
 /** A footer piece, as the footer draws it: the pane's name, a hint's key
  * or words, the gap between hints, or the rule between the pane's keys
  * and the tab's. */
-export interface FooterPart { text: string; kind: "pane" | "key" | "desc" | "gap" | "rule" }
+interface FooterPart { text: string; kind: "pane" | "key" | "desc" | "gap" | "rule" }
 
 /** The footer's pieces for the pane named `pane` (none: the tab's keys
  * alone) and `hints`: the pane's name, its keys, a rule, the tab's. */

@@ -30,12 +30,6 @@ export class JevError extends Error {
   }
 }
 
-export function readJevToken(env: Record<string, string | undefined> = credentialEnv()): string {
-  const token = env.JASKMONEY_JEV_TOKEN?.trim()
-  if (!token) throw new Error("Set JASKMONEY_JEV_TOKEN (a TypeSafe API key) for Jev")
-  return token
-}
-
 /** How Jev is reached now: a TypeSafe key first (the pinned version, at
  * TypeSafe's price), else OpenRouter's key or browser sign-in (the general
  * model's); null when neither is set up. */

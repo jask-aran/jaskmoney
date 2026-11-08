@@ -5,13 +5,13 @@ import { DEFAULT_OPEN_RANGE, OPEN_RANGE_LABELS } from "../domain/timeframe"
 import type { UiPrefs } from "./settingsConfig"
 
 /** Approved port deviation: display settings live in Appearance. */
-export type AppearanceRow = "theme" | "icons" | "xAxis" | "chartMotion" | "chartSpeed" | "chartCurve" | "chartLabels" | "openRange" | "backdrop"
+type AppearanceRow = "theme" | "icons" | "xAxis" | "chartMotion" | "chartSpeed" | "chartCurve" | "chartLabels" | "openRange" | "backdrop"
 export const APPEARANCE_ROWS: readonly AppearanceRow[] = ["theme", "icons", "xAxis", "chartMotion", "chartSpeed", "chartCurve", "chartLabels", "openRange", "backdrop"]
-export type AppearanceRowContext = Pick<UiPrefs, "theme" | "xAxis" | "chartMotion" | "chartSpeed" | "chartCurve" | "chartLabels" | "openRange" | "backdrop"> & { icons: boolean }
+type AppearanceRowContext = Pick<UiPrefs, "theme" | "xAxis" | "chartMotion" | "chartSpeed" | "chartCurve" | "chartLabels" | "openRange" | "backdrop"> & { icons: boolean }
 
 /** A row's label and value; for a choice, which of how many it is (a
  * toggle's on or off as `on`). */
-export interface AppearanceRowView { label: string; value: string; on?: boolean; choice?: { index: number; count: number } }
+interface AppearanceRowView { label: string; value: string; on?: boolean; choice?: { index: number; count: number } }
 
 export function appearanceRow(row: AppearanceRow, ctx: AppearanceRowContext): AppearanceRowView {
   const view = appearanceLabel(row, ctx)

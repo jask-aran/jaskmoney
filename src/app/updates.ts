@@ -14,8 +14,8 @@ import { VERSION, compiled } from "./version"
  * JASKMONEY_NO_UPDATE_CHECK=1 turns it off. Nothing of yours is sent: it's
  * one GET of a public page.
  */
-export const LATEST_RELEASE = "https://api.github.com/repos/jask-aran/jaskmoney/releases/latest"
-export const CHECK_EVERY_MS = 10 * 60 * 1000
+const LATEST_RELEASE = "https://api.github.com/repos/jask-aran/jaskmoney/releases/latest"
+const CHECK_EVERY_MS = 10 * 60 * 1000
 const ON_HOVER_MS = 60 * 1000
 
 const [available, setAvailable] = createSignal<string | null>(null)
@@ -37,7 +37,7 @@ type CheckOptions = { env?: Record<string, string | undefined>; fetch?: typeof f
 
 /** The newer version, asking GitHub when the kept answer is older than
  * `maxAgeMs` (default 10 minutes); null when there's none, or offline. */
-export async function checkForUpdate(options: CheckOptions = {}): Promise<string | null> {
+async function checkForUpdate(options: CheckOptions = {}): Promise<string | null> {
   const env = options.env ?? process.env
   if ((!compiled && !options.force) || env.JASKMONEY_NO_UPDATE_CHECK) return null
   const file = join(jaskmoneyHome(env), "update.json")

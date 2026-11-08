@@ -38,7 +38,7 @@ export interface FilterBarView {
 }
 
 /** The bar's look, from what it is (one pure function: AGENTS.md). */
-export function filterBarLook(fb: FilterBarView) {
+function filterBarLook(fb: FilterBarView) {
   // parse: searched as one phrase; check: works, but a name or field is a guess.
   const flag = fb.note?.tone === "warn" ? "check" : fb.err ? "parse" : "ok"
   const dot = flag === "check" ? tone.caution : flag === "parse" ? tone.bad : ink.note
@@ -49,7 +49,7 @@ export function filterBarLook(fb: FilterBarView) {
 }
 
 /** The title names the filter: by its question when a smart search wrote it. */
-export function filterTitle(fb: FilterBarView | null): string | undefined {
+function filterTitle(fb: FilterBarView | null): string | undefined {
   if (fb?.question) return `[?${truncate(fb.question, 47)}]`
   if (!fb?.preview) return undefined
   return `[${truncate(fb.preview, 48)}]`

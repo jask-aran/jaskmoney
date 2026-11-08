@@ -43,7 +43,7 @@ return { count: (list.messages ?? []).length };`) as { count?: number }
   },
 }
 
-export const UP_TOKEN_PAGE = "https://api.up.com.au/getting_started"
+const UP_TOKEN_PAGE = "https://api.up.com.au/getting_started"
 
 /** What's connected now (the AI pane's view of it, and Executor's sign-in). */
 export function welcomeContext(data: DataStore): WelcomeContext {
@@ -93,7 +93,7 @@ export function restingStatus(ui: UiStore, data: DataStore): void {
 }
 
 /** Leave the setup, finished or skipped: it won't open by itself again. */
-export function closeWelcome(ui: UiStore, data: DataStore): void {
+function closeWelcome(ui: UiStore, data: DataStore): void {
   emailFlow?.abort()
   // A tab switch closes every dialog, the setup's own and any it opened.
   ui.switchTab("overview")

@@ -17,10 +17,10 @@ import { RULE_WRITER_TURNS } from "./ruleWriter"
 export const AI_USES = ["suggestions", "search", "rules"] as const
 export type AiUse = (typeof AI_USES)[number]
 
-export type BlockId = "framing" | "row" | "merchant" | "merchantHistory" | "merchantNote" | "similarMessages" | "merchantCheck" | "categories" | "categoryExamples" | "tag" | "tagExamples" | "search" | "today" | "jql" | "ruleBrief" | "ruleTools"
+type BlockId = "framing" | "row" | "merchant" | "merchantHistory" | "merchantNote" | "similarMessages" | "merchantCheck" | "categories" | "categoryExamples" | "tag" | "tagExamples" | "search" | "today" | "jql" | "ruleBrief" | "ruleTools"
 
 /** A piece of context: what it says, where it's gathered from, and the code that gathers it. */
-export interface ContextBlock {
+interface ContextBlock {
   name: string
   says: string
   from: string
@@ -133,9 +133,9 @@ export type QueryId = "suggestion" | "merchantCheck" | "tagFind" | "searchTerms"
 /** Where a block goes in a query's request: its field names there, or none
  * when the block decides without being sent. `via` a tool's result rather
  * than the first request. */
-export interface BlockUse { block: BlockId; fields: string[]; via?: "tools" }
+interface BlockUse { block: BlockId; fields: string[]; via?: "tools" }
 
-export interface QueryInfo {
+interface QueryInfo {
   use: AiUse
   name: string
   model: "jev" | "clairic" | "general"
@@ -268,7 +268,7 @@ export const QUERIES: Record<QueryId, QueryInfo> = {
 }
 
 /** An app feature a use powers: what it's called, how you reach it, and the code. */
-export interface Feature { name: string; reach: string; code: string; queries: QueryId[] }
+interface Feature { name: string; reach: string; code: string; queries: QueryId[] }
 
 export const USES: Record<AiUse, { name: string; features: Feature[]; withoutModel?: string }> = {
   suggestions: {

@@ -21,8 +21,8 @@ import type { SettingsEditorKind, UiState } from "./uiStore"
  * - secret: typing and pasting append, backspace deletes; shown masked, never
  *   as typed (`display` is the mask, the value stays in the draft).
  */
-export type Draft = UiState["settingsDraft"]
-export type FieldKind = "text" | "choice" | "toggle" | "picker"
+type Draft = UiState["settingsDraft"]
+type FieldKind = "text" | "choice" | "toggle" | "picker"
 
 export interface FormField {
   key: keyof Draft
@@ -41,7 +41,7 @@ export type PickerItem =
   | { kind: "heading"; label: string }
   | { kind: "item"; label: string; value: string | number | null; color?: string; detail?: string }
 
-export interface FormContext {
+interface FormContext {
   accounts: Account[]
   categories: Category[]
   tags: Tag[]
@@ -49,7 +49,7 @@ export interface FormContext {
   transactions: Transaction[]
 }
 
-export const CYCLE_UNITS: readonly CycleUnit[] = ["week", "fortnight", "month"]
+const CYCLE_UNITS: readonly CycleUnit[] = ["week", "fortnight", "month"]
 const UNIT_LABEL: Record<CycleUnit, string> = { week: "Week", fortnight: "Fortnight", month: "Month" }
 export const WEEKDAYS = ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"] as const
 
@@ -61,7 +61,7 @@ export const WEEKDAYS = ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday",
  * turns it into the stored anchor date. "Monday nearest" makes no sense for
  * weeks, so weeks offer only the first two starts.
  */
-export function anchorChoices(unit: CycleUnit): readonly CycleAnchor[] {
+function anchorChoices(unit: CycleUnit): readonly CycleAnchor[] {
   return unit === "week" ? ["calendar", "date"] : ["calendar", "date", "weekStartNearDate"]
 }
 
@@ -80,7 +80,7 @@ export function anchorDraft(cycle: CycleConfig): string {
 }
 
 /** What the start field holds for a unit before anything is typed. */
-export function defaultAnchorDraft(unit: CycleUnit, today = appToday()): string {
+function defaultAnchorDraft(unit: CycleUnit, today = appToday()): string {
   return unit === "month" ? "1" : unit === "week" ? "Monday" : today
 }
 

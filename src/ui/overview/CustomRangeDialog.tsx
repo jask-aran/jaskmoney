@@ -33,7 +33,7 @@ const DIALOG_WIDTH = 7 * DAY_CELL + 18
  * tone), one of its ends (solid scope, dark number), the cursor (the
  * cursor wash, while the calendar has focus), today (bold).
  */
-export function calendarCellLook(state: { inRange: boolean; end: boolean; cursor: boolean; today: boolean }): { fg: string; bg: string | undefined; bold: boolean } {
+function calendarCellLook(state: { inRange: boolean; end: boolean; cursor: boolean; today: boolean }): { fg: string; bg: string | undefined; bold: boolean } {
   if (state.cursor) {
     const look = rowAppearance(state.inRange, false, true)
     return { fg: look.fg ?? ink.figure, bg: look.bg ?? undefined, bold: true }

@@ -8,7 +8,7 @@
 import { MONTHS, addDays, dayOfWeek, type WeekStart } from "../../domain/days"
 import { appendRun } from "./runs"
 
-export interface LineSeries {
+interface LineSeries {
   /** One value per x position; null leaves a gap (e.g. days after today). */
   values: Array<number | null>
   ink: string
@@ -17,7 +17,7 @@ export interface LineSeries {
   fill?: string
 }
 
-export interface Marker {
+interface Marker {
   /** X position (index into the series). */
   index: number
   ink: string
@@ -35,7 +35,7 @@ const DOT_BITS = [
 ]
 
 /** Dot column for x position `index` of `length`, spread over `width` cells. */
-export function dotColumn(index: number, length: number, width: number): number {
+function dotColumn(index: number, length: number, width: number): number {
   return length <= 1 ? 0 : Math.round((index * (2 * width - 1)) / (length - 1))
 }
 
@@ -267,7 +267,7 @@ export function dateAxis(
 
 /** Round axis bounds around `lo`..`hi` with their tick step (see niceScale).
  * A flat series gets a band around its value. */
-export function niceRange(lo: number, hi: number, ticks = 4): { min: number; max: number; step: number } {
+function niceRange(lo: number, hi: number, ticks = 4): { min: number; max: number; step: number } {
   const spread = hi - lo || Math.abs(hi) || 1
   const { step } = niceScale(spread, ticks)
   const min = Math.floor(lo / step + 1e-9) * step

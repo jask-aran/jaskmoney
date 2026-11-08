@@ -4,7 +4,7 @@ import type { Category, Tag } from "./types"
  * A tag's scope: the categories it fits, a group covering those under it.
  * A tag without categories fits anywhere.
  */
-export function scopeCategoryIds(tag: Pick<Tag, "categoryIds">, categories: Category[]): Set<number> {
+function scopeCategoryIds(tag: Pick<Tag, "categoryIds">, categories: Category[]): Set<number> {
   const ids = new Set(tag.categoryIds)
   for (const c of categories) if (c.parentId != null && ids.has(c.parentId)) ids.add(c.id)
   return ids

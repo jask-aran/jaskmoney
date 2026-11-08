@@ -2,7 +2,7 @@ import { evalFilter, notForRules, parseFilterStrict } from "./filter"
 import { incomeCategoryIds } from "./moneyRules"
 import type { Category, Rule, RuleRunResult, SavedFilter, Tag, Transaction } from "./types"
 
-export interface RuleSample {
+interface RuleSample {
   transaction: Transaction
   categoryId: number | null
   addedTagIds: number[]

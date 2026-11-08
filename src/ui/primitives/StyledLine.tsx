@@ -43,7 +43,7 @@ function sameSpans(a: StyledSpan[], b: StyledSpan[]): boolean {
   return true
 }
 
-export function styledText(spans: StyledSpan[]): StyledText {
+function styledText(spans: StyledSpan[]): StyledText {
   return new StyledText(spans.map((span): TextChunk => ({
     __isChunk: true,
     text: span.text,

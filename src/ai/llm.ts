@@ -19,10 +19,7 @@ export const LLM_PROVIDERS: Record<LlmProvider, { label: string; keyName: "JASKM
   openai: { label: "OpenAI", keyName: "JASKMONEY_OPENAI_TOKEN", modelName: "JASKMONEY_OPENAI_MODEL", defaultModel: "gpt-6.1-sol", signIn: "Sign in with ChatGPT" },
 }
 
-/** OpenRouter's default model (the first provider's). */
-export const DEFAULT_LLM_MODEL = LLM_PROVIDERS.openrouter.defaultModel
-
-export class LlmError extends Error {}
+class LlmError extends Error {}
 
 /** How a provider is reached: a key saved in Settings or in .env, a browser sign-in, or not at all. */
 export function llmAuth(provider: LlmProvider, env: Env = credentialEnv()): "key" | "signed in" | null {
@@ -49,7 +46,7 @@ export function llmModelId(env: Env = credentialEnv(), provider: LlmProvider = a
 }
 
 /** How hard the model thinks: the highest of these it supports. */
-export const LLM_EFFORT: readonly ThinkingLevel[] = ["xhigh", "high", "medium"]
+const LLM_EFFORT: readonly ThinkingLevel[] = ["xhigh", "high", "medium"]
 
 export function llmEffort(model: Model<Api>): ThinkingLevel | undefined {
   if (!model.reasoning) return undefined

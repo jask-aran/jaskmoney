@@ -5,9 +5,9 @@ import { EXECUTOR_MCP, type ExecutorStatus } from "../ai/executor"
  * status as last read (ai/executor). Executor Cloud holds your accounts
  * (Gmail first); the app signs in to Executor and reaches them through it.
  */
-export type ExecutorAction = "signIn" | "test" | "site" | "recheck" | "signOut"
+type ExecutorAction = "signIn" | "test" | "site" | "recheck" | "signOut"
 
-export interface StatusLine { label: string; value: string }
+interface StatusLine { label: string; value: string }
 
 /** Gmail is among what Executor reaches (its tools name it, or a program can). */
 const gmailListed = (status: ExecutorStatus) => status.tools.some((t) => /gmail/i.test(t))

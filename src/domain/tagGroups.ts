@@ -17,7 +17,7 @@ export interface TagGroup {
   end?: string
 }
 
-export const CURRENCY_PLACES: Readonly<Record<string, string>> = {
+const CURRENCY_PLACES: Readonly<Record<string, string>> = {
   SGD: "Singapore", JPY: "Japan", KRW: "Korea", USD: "USA", GBP: "UK",
   EUR: "Europe", NZD: "New Zealand", IDR: "Indonesia", THB: "Thailand",
   VND: "Vietnam", MYR: "Malaysia", HKD: "Hong Kong", CNY: "China",
@@ -85,7 +85,7 @@ export function detectTrips(transactions: readonly Transaction[]): TagGroup[] {
   return trips.sort((a, b) => (b.start ?? "").localeCompare(a.start ?? "") || a.name.localeCompare(b.name))
 }
 
-export interface RegularCharges {
+interface RegularCharges {
   name: string
   cadence: Cadence
   /** Oldest first. */
@@ -95,7 +95,7 @@ export interface RegularCharges {
   payments: Array<{ dateISO: string; amount: number }>
 }
 
-export interface Cadence { name: string; min: number; max: number; perMonth: number }
+interface Cadence { name: string; min: number; max: number; perMonth: number }
 
 const CADENCES: Cadence[] = [
   { name: "weekly", min: 5, max: 9, perMonth: 52 / 12 },

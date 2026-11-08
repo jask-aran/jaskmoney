@@ -1,9 +1,9 @@
 import { fuzzyScore } from "./fuzzy"
 import type { Category, CategorySuggestion } from "./types"
 
-export interface PickerSuggestion { categoryId: number; confidence?: number }
+interface PickerSuggestion { categoryId: number; confidence?: number }
 
-export type PickerRow =
+type PickerRow =
   | { kind: "heading"; label: string }
   | { kind: "category"; category: Category; index: number; confidence?: number }
 

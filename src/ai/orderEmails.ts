@@ -22,8 +22,8 @@ import type { BoughtItem } from "../domain/types"
  */
 export interface Purchase { id: number; dateISO: string; createdMs: number | null; amount: number; description: string; rawText: string | null }
 
-export interface Shipment { at: string; total: number | null; order: string | null; items: Array<{ name: string; quantity: number; price: number | null }> }
-export interface EbayOrder { order: string; at: string | null; item: string | null }
+interface Shipment { at: string; total: number | null; order: string | null; items: Array<{ name: string; quantity: number; price: number | null }> }
+interface EbayOrder { order: string; at: string | null; item: string | null }
 
 export interface OrderContext { transactionId: number; source: "amazon" | "ebay"; order: string | null; items: BoughtItem[]; emailAt: string | null; refundOf?: number }
 
@@ -36,8 +36,8 @@ export interface Prior { rows: Purchase[]; found: OrderContext[]; usedEmails: Re
 /** The eBay order number in a row's bank text, if any. */
 export const ebayOrderOf = (rawText: string | null) => /eBay O\*(\d{2}-\d{5}-\d{5})/i.exec(rawText ?? "")?.[1] ?? null
 
-export const isAmazon = (t: Pick<Purchase, "description" | "rawText">) => /^amazon(?! prime)/i.test(t.description.trim()) && !/AMZNPRIME/i.test(t.rawText ?? "")
-export const isEbay = (t: Pick<Purchase, "description" | "rawText">) => /^ebay/i.test(t.description.trim()) || !!ebayOrderOf(t.rawText)
+const isAmazon = (t: Pick<Purchase, "description" | "rawText">) => /^amazon(?! prime)/i.test(t.description.trim()) && !/AMZNPRIME/i.test(t.rawText ?? "")
+const isEbay = (t: Pick<Purchase, "description" | "rawText">) => /^ebay/i.test(t.description.trim()) || !!ebayOrderOf(t.rawText)
 
 const gmailDate = (iso: string) => iso.replace(/-/g, "/")
 
@@ -96,7 +96,7 @@ export function emailText(mime: string | null, data: string | null): string {
 
 const ENTITIES: Record<string, string> = { amp: "&", lt: "<", gt: ">", quot: '"', apos: "'", nbsp: " ", "#39": "'", "#160": " " }
 
-export function htmlToMarkdown(html: string): string {
+function htmlToMarkdown(html: string): string {
   return html
     .replace(/<(style|script|head|title)[\s\S]*?<\/\1>/gi, "")
     .replace(/<!--[\s\S]*?-->/g, "")
@@ -202,9 +202,9 @@ export const marketplaceRows = <T extends Pick<Purchase, "description" | "rawTex
 export const LOOKUP_RETRY_HOURS = 6
 /** Emails can come days after the charge (Amazon ships, then emails):
  * nothing found by this age, after one look at that age, is given up. */
-export const LOOKUP_GIVE_UP_DAYS = 14
+const LOOKUP_GIVE_UP_DAYS = 14
 
-export interface LookupState { status: "found" | "waiting" | "none"; checks: number; checkedAt: string; legacy?: boolean }
+interface LookupState { status: "found" | "waiting" | "none"; checks: number; checkedAt: string; legacy?: boolean }
 
 const ageDays = (t: Purchase, nowMs: number) => (nowMs - (t.createdMs ?? Date.parse(`${t.dateISO}T12:00:00Z`))) / 86_400_000
 

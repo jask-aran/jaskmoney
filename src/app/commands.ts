@@ -25,7 +25,7 @@ import { runSync } from "./sync"
  * app/actions', shared with the keys). Only global keys (ctrl+r, the tabs,
  * v) are declared here.
  */
-export interface CommandContext {
+interface CommandContext {
   ui: UiStore
   data: DataStore
   /** The scope the palette opened over. */

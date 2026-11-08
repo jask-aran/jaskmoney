@@ -19,7 +19,7 @@ export interface ModelEntry {
 }
 
 /** "$0.10 / $0.20 per M · 1049k" (or "free"): what a model costs and holds. */
-export function modelDetail(entry: ModelEntry): string {
+function modelDetail(entry: ModelEntry): string {
   const money = (n: number) => `$${n < 1 ? n.toFixed(2) : n % 1 ? n.toFixed(2) : n.toFixed(0)}`
   const price = entry.input === 0 && entry.output === 0 ? "free" : `${money(entry.input)} / ${money(entry.output)} per M`
   const context = entry.context >= 1000 ? `${Math.round(entry.context / 1000)}k` : String(entry.context)

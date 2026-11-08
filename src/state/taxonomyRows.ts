@@ -8,7 +8,7 @@ import type { Category } from "../domain/types"
  * its subcategories follow it. Each subcategory sits under its group
  * whatever its sort order (Salary under Income, not after Transport).
  */
-export type Origin = "jaskmoney" | "up"
+type Origin = "jaskmoney" | "up"
 
 export interface CategoryRow {
   category: Category

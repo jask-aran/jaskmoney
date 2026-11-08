@@ -21,14 +21,14 @@ const PAID: Record<string, string> = {
 }
 
 /** A row's date as read aloud, "Mon 3 Mar 2026", with the time when the bank gave one. */
-export function whenText(t: Pick<Transaction, "dateISO" | "dateRaw">): string {
+function whenText(t: Pick<Transaction, "dateISO" | "dateRaw">): string {
   const [y, m, d] = t.dateISO.split("-").map(Number) as [number, number, number]
   const date = `${["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"][weekdayIndex(t.dateISO)]} ${d} ${MONTHS[m - 1]} ${y}`
   const time = /T(\d\d:\d\d)/.exec(t.dateRaw ?? "")?.[1]
   return time ? `${date}, ${time}` : date
 }
 
-export interface RowFactsOptions {
+interface RowFactsOptions {
   /** Its category, when it has a real one. */
   category?: boolean
   /** The date, YYYY-MM-DD (as JQL writes it). */
@@ -153,7 +153,7 @@ export function examplesOf(rows: readonly Transaction[], limit: number): string[
 const messageWords = (message: string) => new Set(message.toLowerCase().match(/[\p{L}\p{N}]{3,}/gu) ?? [])
 
 /** How many earlier rows with a message `similarMessages` names at most. */
-export const SIMILAR_MESSAGES = 3
+const SIMILAR_MESSAGES = 3
 
 /**
  * For a row with a message: up to SIMILAR_MESSAGES of your categorised rows

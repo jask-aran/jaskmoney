@@ -144,7 +144,7 @@ const toneOf = (p: Palette) => ({
 export const tone: ReturnType<typeof toneOf> = toneOf(theme)
 
 /** Uncategorised / muted category label (Go overlay1). */
-export let uncategorisedColor = theme.overlay1
+let uncategorisedColor = theme.overlay1
 
 /** The theme shown (its id), and a count that changes with it: App's view
  * tree remounts on it, so everything redraws in the new colours. */

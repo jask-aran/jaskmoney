@@ -4,15 +4,6 @@ import { cellsToRuns } from "./runs"
 
 const EIGHTHS = ["", "▁", "▂", "▃", "▄", "▅", "▆", "▇", "█"]
 
-/** `n` spans sharing `width` columns as evenly as whole columns allow
- * (each ⌊width/n⌋ or one more), starting at `from`. */
-export function shareColumns(n: number, width: number, from = 0): Array<{ col: number; width: number }> {
-  return Array.from({ length: n }, (_, i) => {
-    const start = Math.floor((i * width) / n), end = Math.floor(((i + 1) * width) / n)
-    return { col: from + start, width: end - start }
-  })
-}
-
 /**
  * Where each of `n` bars goes across `width` columns: in groups of `group`
  * bars that stand together (a week's money in and out), the groups spread
@@ -47,7 +38,7 @@ export function barSlots(n: number, width: number, group = 1): Array<{ col: numb
  * a layer under the bars: a bar over a rule's column hides it there.
  * `at` places the bars instead of barSlots (bars placed by their dates).
  */
-export interface BarRule { value: number; ink: string; from?: number; to?: number }
+interface BarRule { value: number; ink: string; from?: number; to?: number }
 
 export function columnBars(
   bars: Array<{ value: number; ink: string }>,

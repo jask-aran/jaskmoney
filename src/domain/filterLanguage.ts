@@ -26,7 +26,7 @@ export interface Row {
 }
 
 /** A mistake as people make it, what's wrong, and the input that works. */
-export interface Gotcha extends Row { fix: string }
+interface Gotcha extends Row { fix: string }
 
 export type Block =
   | { kind: "text"; text: string; searchOnly?: boolean }

@@ -26,7 +26,7 @@ export function writtenText(w: Written): string {
 
 /** What Jev judged: "Jev judged 313 rows in 3.4s: 48 match, 77 near (n) ·
  * last 90 days (date: for more)". Rows already judged aren't sent again. */
-export function judgedText(r: AskResult): string {
+function judgedText(r: AskResult): string {
   const parts = r.terms.map((t) => {
     const sent = t.asked === t.rows ? `${t.rows} rows` : t.asked ? `${t.asked} new of ${t.rows} rows` : `${t.rows} rows (known)`
     const named = r.terms.length > 1 ? ` "${t.words}"` : ""

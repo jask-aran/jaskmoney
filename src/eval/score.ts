@@ -11,7 +11,7 @@ import type { CategorySuggestion } from "../domain/types"
  */
 export interface Hidden { id: number; truth: string; description: string; heldOut: boolean }
 
-export interface Tally { rows: number; suggested: number; right: number; top3: number; sure: number; sureRight: number }
+interface Tally { rows: number; suggested: number; right: number; top3: number; sure: number; sureRight: number }
 
 export interface SuggestionReport {
   all: Tally

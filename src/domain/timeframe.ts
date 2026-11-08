@@ -3,9 +3,9 @@ import type { Transaction } from "./types"
 import { cycleFor, type CycleConfig } from "./budget"
 import { rangeDayFromText } from "./typedInput"
 
-export type LookbackId = "1M" | "2M" | "3M" | "6M" | "1Y"
+type LookbackId = "1M" | "2M" | "3M" | "6M" | "1Y"
 export type PeriodId = "cycle" | "month" | "qtr" | "half" | "fy" | "year"
-export type TimeframeFamily = "lookback" | "period" | "custom"
+type TimeframeFamily = "lookback" | "period" | "custom"
 
 const LOOKBACK_MONTHS: Record<LookbackId, number> = { "1M": 1, "2M": 2, "3M": 3, "6M": 6, "1Y": 12 }
 
@@ -37,7 +37,7 @@ export const PERIOD_LABEL: Record<PeriodId, string> = {
 }
 
 /** Calendar months: the budget cycle when none is configured. */
-export const MONTHLY_CYCLE: CycleConfig = { unit: "month", anchor: "calendar", anchorDate: null }
+const MONTHLY_CYCLE: CycleConfig = { unit: "month", anchor: "calendar", anchorDate: null }
 
 /** The budget cycle containing `now`. */
 export function defaultTimeframe(now: Date = appNow(), cycle: CycleConfig = MONTHLY_CYCLE): TimeframeState {
@@ -50,7 +50,7 @@ export function defaultTimeframe(now: Date = appNow(), cycle: CycleConfig = MONT
   }
 }
 
-export interface DateBounds {
+interface DateBounds {
   start: string // inclusive YYYY-MM-DD
   end: string // inclusive YYYY-MM-DD
   label: string
@@ -203,7 +203,7 @@ export function applyChip(tf: TimeframeState, index: number, now: Date, cycle: C
 }
 
 /** A custom range moved by its own length: `delta` ranges back or forward. */
-export function stepCustom(tf: TimeframeState, delta: number): TimeframeState {
+function stepCustom(tf: TimeframeState, delta: number): TimeframeState {
   if (tf.family !== "custom" || !tf.custom) return tf
   const shift = delta * (daysBetween(tf.custom.start, tf.custom.end) + 1)
   return { ...tf, custom: { start: addDays(tf.custom.start, shift), end: addDays(tf.custom.end, shift) } }
@@ -215,7 +215,7 @@ export function activeChipIndex(tf: TimeframeState): number {
   return LOOKBACKS.length + PERIODS.indexOf(tf.period)
 }
 
-export function stepPeriod(tf: TimeframeState, delta: number, cycle: CycleConfig = MONTHLY_CYCLE): TimeframeState {
+function stepPeriod(tf: TimeframeState, delta: number, cycle: CycleConfig = MONTHLY_CYCLE): TimeframeState {
   if (tf.family !== "period") return tf
   if (tf.period === "cycle") {
     // Step a cycle at a time: the cycle containing the day before this one's
@@ -248,7 +248,7 @@ export function rangeOffsetLabel(tf: TimeframeState, now: Date, cycle: CycleConf
 
 /** How many steps a period (or lookback) is from the one containing `now`: negative
  * back, positive ahead, 0 for the current one (and for other families). */
-export function periodOffset(tf: TimeframeState, now: Date, cycle: CycleConfig = MONTHLY_CYCLE): number {
+function periodOffset(tf: TimeframeState, now: Date, cycle: CycleConfig = MONTHLY_CYCLE): number {
   if (tf.family === "lookback") return tf.lookbackOffset ?? 0
   if (tf.family !== "period") return 0
   const target = timeframeBounds(tf, now, cycle).start
@@ -298,7 +298,7 @@ export function stepUnit(tf: TimeframeState): string {
 }
 
 /** "2 cycles back", "1 quarter ahead"; "" for the current period. */
-export function offsetLabel(period: PeriodId, offset: number): string {
+function offsetLabel(period: PeriodId, offset: number): string {
   if (!offset) return ""
   const unit = { cycle: "cycle", month: "month", qtr: "quarter", half: "half", fy: "FY", year: "year" }[period]
   const n = Math.abs(offset)

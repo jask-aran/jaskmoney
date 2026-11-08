@@ -34,7 +34,7 @@ const UP_YELLOW = "#ffe94f"
 const UP_CORAL = "#ff7461"
 
 export const UP_LOGO_WIDTH = GLYPHS[0]!.length
-export const UP_LOGO_HEIGHT = GLYPHS.length
+const UP_LOGO_HEIGHT = GLYPHS.length
 
 function colour(code: string, row: number): string {
   if (code === "Y") return UP_YELLOW

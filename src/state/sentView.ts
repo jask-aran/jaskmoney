@@ -75,7 +75,7 @@ function outline(key: string, value: unknown, indent: number, width: number, out
 }
 
 /** The exact request, as an outline under its address. */
-export function requestLines(part: SentPart, width: number): HelpLine[] {
+function requestLines(part: SentPart, width: number): HelpLine[] {
   const out: HelpLine[] = [[{ text: part.to, tone: "key" }]]
   outline("", part.body, 2, width, out)
   return out

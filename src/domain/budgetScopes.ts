@@ -1,7 +1,7 @@
 import { accountRole, type Account, type Category } from "./types"
 import type { Budget, BudgetScope } from "./budget"
 
-export interface BudgetScopeOption {
+interface BudgetScopeOption {
   key: string
   label: string
   scope: BudgetScope

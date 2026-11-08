@@ -99,7 +99,7 @@ type Call = Omit<Extract<ClientMessage, { t: "call" }>, "id"> & { id: string | n
 type Reply = (Omit<Extract<ServerMessage, { t: "result" }>, "id"> | Omit<Extract<ServerMessage, { t: "progress" }>, "id">) & { id: Call["id"] }
 const send = (ws: ServerWebSocket<Connection>, message: Reply) => ws.send(JSON.stringify(message))
 
-export interface ServeOptions {
+interface ServeOptions {
   port?: number
   hostname?: string
 }

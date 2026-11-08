@@ -6,7 +6,7 @@
 import { addDays, addMonths, dayTime, parseDay } from "./days"
 import { isIncome, isSpending } from "./moneyRules"
 
-export type FilterNodeKind = "text" | "field" | "and" | "or" | "not"
+type FilterNodeKind = "text" | "field" | "and" | "or" | "not"
 
 export interface FilterNode {
   kind: FilterNodeKind
@@ -138,13 +138,13 @@ function resolveNames(node: FilterNode, names: FilterNames, hints: string[], amb
   return node.children ? { ...node, children: node.children.map((child) => resolveNames(child, names, hints, ambiguities)) } : node
 }
 
-export function fallbackPlainTextFilter(input: string): FilterNode | null {
+function fallbackPlainTextFilter(input: string): FilterNode | null {
   const text = input.trim()
   if (!text) return null
   return { kind: "text", op: "contains_meta", value: text }
 }
 
-export function markTextNodesAsMetadata(node: FilterNode | null): FilterNode | null {
+function markTextNodesAsMetadata(node: FilterNode | null): FilterNode | null {
   if (!node) return null
   if (node.kind === "text" && node.op === "contains") {
     return { ...node, op: "contains_meta" }
@@ -158,7 +158,7 @@ export function markTextNodesAsMetadata(node: FilterNode | null): FilterNode | n
   return node
 }
 
-export function filterContainsFieldPredicate(node: FilterNode | null): boolean {
+function filterContainsFieldPredicate(node: FilterNode | null): boolean {
   if (!node) return false
   if (node.kind === "field") return true
   return (node.children ?? []).some(filterContainsFieldPredicate)
@@ -224,14 +224,6 @@ export function evalFilter<T extends FilterTxn>(
 }
 
 const unjudged = () => undefined
-
-/**
- * Whether a row could pass once its unjudged `ask:` terms are judged: false
- * only when no verdict could make it pass. The rows worth asking about.
- */
-export function mightMatch<T extends FilterTxn>(node: FilterNode | null, t: T, ask: AskVerdict<T>): boolean {
-  return verdict3(node, t, ask) !== false
-}
 
 /** Whether the row's match waits on an unjudged `ask:` term (neither
  * matched nor ruled out without it). */
@@ -708,7 +700,7 @@ function canStartTerm(k: TokKind): boolean {
 }
 
 /** Every field the parser knows (each described in domain/filterLanguage). */
-export const FILTER_FIELDS = ["desc", "cat", "tag", "acc", "amt", "type", "note", "info", "date", "ask", "top"] as const
+const FILTER_FIELDS = ["desc", "cat", "tag", "acc", "amt", "type", "note", "info", "date", "ask", "top"] as const
 
 function isField(v: string): boolean {
   return (FILTER_FIELDS as readonly string[]).includes(v)

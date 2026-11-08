@@ -35,7 +35,7 @@ export function removeTagLink(db: Db, transactionId: number, tagId: number): num
 }
 
 /** Save the latest intent. The caller changes the link in the same transaction. */
-export function queueTagPush(db: Db, transactionId: number, tagId: number, action: "add" | "remove"): void {
+function queueTagPush(db: Db, transactionId: number, tagId: number, action: "add" | "remove"): void {
   db.query(`INSERT INTO tag_pushes (transaction_id, tag_id, action) VALUES (?, ?, ?)
     ON CONFLICT (transaction_id, tag_id) DO UPDATE SET action = excluded.action`).run(transactionId, tagId, action)
 }

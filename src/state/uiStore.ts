@@ -100,7 +100,7 @@ export type ScopeId =
   | "searchHelp"
   | "welcome"
 
-export type SettingsList = "categories" | "tags"
+type SettingsList = "categories" | "tags"
 export type SettingsSection = "taxonomy" | "rules" | "filters" | "up" | "ai" | "appearance" | "database"
 /** The panes in reading order (j/k between them): the wide layout's left
  * column (Taxonomy, Rules & Filters), then its right, row by row (Up Bank,
@@ -122,9 +122,9 @@ export function settingsSectionFocus(section: SettingsSection, list: SettingsLis
   return section === "rules" ? "set.rules" : section === "filters" ? "set.filters" : section === "up" ? "set.up" : section === "ai" ? "set.ai" : section === "appearance" ? "set.appearance" : "set.database"
 }
 export type SettingsEditorKind = "category" | "tag" | "filter" | "rule" | "budget" | "cycle" | "pay" 
-export type ImportStage = "files" | "path" | "profile" | "profileEditor" | "preview"
+type ImportStage = "files" | "path" | "profile" | "profileEditor" | "preview"
 
-export interface JumpTarget {
+interface JumpTarget {
   key: string
   section: SectionId
   label: string
@@ -331,7 +331,7 @@ export const CHART_SECTIONS = ["ov.chart", "ov.chart2", "ov.chart3", "ov.chart4"
 /** The pane a chart section is (0 to 3), or -1. */
 export const chartPaneOf = (section: SectionId) => (CHART_SECTIONS as readonly SectionId[]).indexOf(section)
 /** Cumulative and Net position; the grid's right adds Calendar and Merchants. */
-export const DEFAULT_CHART_VIEWS: ChartViews = [0, 4, 7, 8]
+const DEFAULT_CHART_VIEWS: ChartViews = [0, 4, 7, 8]
 /** Saved views, two (before the grid) or four, padded with the defaults. */
 export function chartViewsFrom(raw: unknown, views: number): ChartViews | undefined {
   if (!Array.isArray(raw) || (raw.length !== 2 && raw.length !== 4)) return undefined
@@ -426,7 +426,7 @@ export function jumpTargets(state: Pick<UiState, "activeTab" | "overviewCharts">
   return targets
 }
 
-export const JUMP_TARGETS: Record<TabId, JumpTarget[]> = {
+const JUMP_TARGETS: Record<TabId, JumpTarget[]> = {
   overview: [
     { key: "d", section: "ov.range", label: "Date Range" },
     { key: "t", section: "ov.chart", label: "Top chart" },
@@ -518,7 +518,7 @@ const MODALS = [
 const ALL_CLOSED: Partial<UiState> = Object.assign({}, ...MODALS.map(({ key }) => ({ [key]: null })))
 
 /** Nullable object fields, including the accept-all preview array. */
-export type DialogKey = {
+type DialogKey = {
   [K in keyof UiState]-?: null extends UiState[K]
     ? NonNullable<UiState[K]> extends object ? K : never
     : never

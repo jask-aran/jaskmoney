@@ -10,7 +10,7 @@ import { traceMark } from "./trace"
 export const SYNC_INTERVAL_MS = 5 * 60 * 1000
 
 /** The core has an Up token (sync runs where the core runs). */
-export function syncConfigured(data: DataStore): boolean {
+function syncConfigured(data: DataStore): boolean {
   return data.state.upToken
 }
 

@@ -75,7 +75,7 @@ export function defaultSettingsConfigPath(): string {
   return join(jaskmoneyHome(), "settings.json")
 }
 
-export function normalizeSavedFilterId(raw: string): string {
+function normalizeSavedFilterId(raw: string): string {
   const id = raw.trim().toLowerCase()
   if (!/^[a-z0-9][a-z0-9_-]{0,62}$/.test(id)) throw new Error("filter ID must be 1–63 chars: a-z, 0-9, _ or -, starting with a-z or 0-9")
   return id

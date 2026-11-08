@@ -37,7 +37,7 @@ export type RuleOffer = {
 } & ({ source: "repeat" | "ai"; categoryId: number; tagId: null } | { source: "ai"; categoryId: null; tagId: number })
 
 /** `desc:"…"` for a description, quoted and escaped. */
-export function descExpr(description: string): string {
+function descExpr(description: string): string {
   return `desc:"${description.trim().replace(/["\\]/g, "\\$&")}"`
 }
 

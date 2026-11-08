@@ -3,11 +3,11 @@
  * pane. Toggles flip on enter; Clear data arms (enter again clears); Reset
  * opens the typed RESET confirmation (the one action that wipes everything).
  */
-export type DatabaseRow = "import" | "history" | "profiles" | "weekStart" | "demo" | "clearData" | "reset"
+type DatabaseRow = "import" | "history" | "profiles" | "weekStart" | "demo" | "clearData" | "reset"
 
 export const DATABASE_ROWS: readonly DatabaseRow[] = ["import", "history", "profiles", "weekStart", "demo", "clearData", "reset"]
 
-export interface DatabaseRowContext { weekStart: "monday" | "sunday"; profiles: number; demo: boolean; imports?: number }
+interface DatabaseRowContext { weekStart: "monday" | "sunday"; profiles: number; demo: boolean; imports?: number }
 
 /** Imports the history dialog shows at once. */
 export const IMPORT_HISTORY_ROWS = 12

@@ -1,7 +1,7 @@
-export type AccountType = "debit" | "credit"
+type AccountType = "debit" | "credit"
 
 /** Where rows come from: a CSV import profile, or a provider sync. */
-export type DataSource = "csv" | "up"
+type DataSource = "csv" | "up"
 
 export interface Account {
   id: number
@@ -20,7 +20,7 @@ export interface Account {
 
 /** Spending accounts carry day-to-day detail; savers are tracked by balance
  * and money moved in or out. */
-export type AccountRole = "spending" | "saver"
+type AccountRole = "spending" | "saver"
 
 export function accountRole(account: Pick<Account, "externalKind">): AccountRole {
   return account.externalKind === "SAVER" ? "saver" : "spending"

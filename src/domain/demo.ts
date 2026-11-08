@@ -6,8 +6,8 @@ import type { Category, Transaction } from "./types"
 
 export { DEMO_CATEGORIES } from "./demoData"
 export interface DemoCategory { name: string; color: string; parent: string | null; income?: boolean; notSpending?: boolean }
-export interface DemoAccount { key: string; name: string; kind: "spending" | "saver"; balance: number }
-export interface DemoTransaction {
+interface DemoAccount { key: string; name: string; kind: "spending" | "saver"; balance: number }
+interface DemoTransaction {
   accountKey: string
   dateISO: string
   amount: number
@@ -56,15 +56,15 @@ export interface DemoSourceRow {
 export const DEMO_YEARS = 3
 export const DEMO_SEED = 20261027
 
-export const DEMO_HISTORY_FACTOR = 5
+const DEMO_HISTORY_FACTOR = 5
 /** The demo: about this many rows from the rarer merchants are left wholly
  * uncategorised, for the decision model (a suggestion run stays cheap), and
  * this share of the other merchants' rows, for history. */
 export const DEMO_ASK_ROWS = 100
-export const DEMO_HIDDEN_SHARE = 0.01
+const DEMO_HIDDEN_SHARE = 0.01
 /** The evaluation's set: a fifth of all merchants, and 3% of the rest. */
-export const EVAL_HELD_OUT_SHARE = 0.2
-export const EVAL_HIDDEN_SHARE = 0.03
+const EVAL_HELD_OUT_SHARE = 0.2
+const EVAL_HIDDEN_SHARE = 0.03
 
 /** Ordinary purchases in the demo tree, excluding its scheduled bills. */
 export function demoSource(transactions: Transaction[], categories: Category[]): DemoSourceRow[] {

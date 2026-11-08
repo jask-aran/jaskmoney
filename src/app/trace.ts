@@ -16,8 +16,6 @@ const file = process.env.JASKMONEY_TRACE
 const write = (line: string) => appendFileSync(file!, line, { mode: 0o600 })
 let pending: { key: string; scope: string; at: number; handler: number } | null = null
 
-export const tracing = !!file
-
 /** A milestone (start-up, a sync's stages): how long after the process started. */
 export function traceMark(label: string): void {
   if (file) write(`mark ${label.padEnd(24)} ${performance.now().toFixed(0)} ms\n`)

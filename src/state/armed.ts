@@ -5,7 +5,7 @@
  * destructive action: del on a list row, enter on a dialog action. Typing
  * RESET stays only for wiping the whole database.
  */
-export type ArmedKind =
+type ArmedKind =
   | "category" | "tag" | "rule" | "filter" | "profile" | "budget"
   | "clearData" | "clearAccount" | "deleteAccount" | "desyncAccount"
   /** Settings › AI models: remove a row's saved keys (its id is the row). */

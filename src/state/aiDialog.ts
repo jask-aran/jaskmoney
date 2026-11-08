@@ -15,12 +15,12 @@ import { workersAiUrl } from "../ai/workersAi"
  */
 /** The AI models pane's rows in cursor order: the inputs (the models, then
  * the sources), then the outputs (the uses). */
-export type AiPaneRow = { kind: "model"; row: AiRow } | { kind: "source" } | { kind: "use"; use: AiUse }
+type AiPaneRow = { kind: "model"; row: AiRow } | { kind: "source" } | { kind: "use"; use: AiUse }
 export const aiPaneRows = (models: readonly AiRow[]): AiPaneRow[] => [
   ...models.map((row) => ({ kind: "model" as const, row })), { kind: "source" as const }, ...AI_USES.map((use) => ({ kind: "use" as const, use })),
 ]
 
-export type AiAction = "signIn" | "key" | "page" | "accountId" | "model" | "test" | "remove"
+type AiAction = "signIn" | "key" | "page" | "accountId" | "model" | "test" | "remove"
 
 /** Where a key or token is made, for the dialog's "Open … to make one". */
 export const KEY_PAGES: Partial<Record<KeyRow, { url: string; site: string }>> = {
@@ -86,10 +86,6 @@ export function aiConnection(row: KeyRow, ctx: AiContext): { long: string; short
     if (openrouter) return { long: `through OpenRouter (${openrouter.long})`, short: "via OpenRouter" }
   }
   return null
-}
-
-export function aiInUse(row: KeyRow, ctx: AiContext): boolean {
-  return isLlmRow(row) && ctx.inUse === row && aiConnection(row, ctx) !== null
 }
 
 /** The pane's row. */
@@ -202,7 +198,7 @@ export function aiActionHint(row: KeyRow, action: AiAction, ctx: AiContext): str
 }
 
 /** Something saved here to remove (a key from the environment stays: it isn't the app's). */
-export function removable(row: KeyRow, ctx: AiContext): boolean {
+function removable(row: KeyRow, ctx: AiContext): boolean {
   if (row === "up") return ctx.keys.JASKMONEY_UP_TOKEN.source === "saved"
   if (row === "jev") return ctx.keys.JASKMONEY_JEV_TOKEN.source === "saved"
   if (row === "workersAi") return ctx.keys.JASKMONEY_CF_TOKEN.source === "saved" || ctx.keys.JASKMONEY_CF_ACCOUNT_ID.source === "saved"
@@ -233,7 +229,7 @@ export function useModel(use: AiUse, ctx: AiContext): { text: string; ready: boo
   return { text: `Jev (${via})${clairic ? " + Clairic" : ""}`, ready: true }
 }
 
-export type UseAction = { id: "clairic"; on: boolean } | { id: "provider"; provider: LlmProvider } | { id: "connect"; row: AiRow } | { id: "model"; provider: LlmProvider }
+type UseAction = { id: "clairic"; on: boolean } | { id: "provider"; provider: LlmProvider } | { id: "connect"; row: AiRow } | { id: "model"; provider: LlmProvider }
 
 /** A use dialog's model actions: choose its model, connect one it needs. */
 export function useActions(use: AiUse, ctx: AiContext): Array<UseAction & { label: string }> {

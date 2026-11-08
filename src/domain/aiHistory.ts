@@ -53,7 +53,7 @@ function common<T>(rows: Transaction[], pick: (t: Transaction) => T | null | und
 const round = (n: number) => Math.round(n * 100) / 100
 
 /** What a set of rows share: accounts, Up's types, card use, currencies, repeated amounts. */
-export function sharedFacts(rows: Transaction[]) {
+function sharedFacts(rows: Transaction[]) {
   const named = <T>(groups: Group<T>[], name: string) => groups.map(({ key, rows, share }) => ({ [name]: key, rows, share }))
   return {
     rows: rows.length,
@@ -73,7 +73,7 @@ export function sharedFacts(rows: Transaction[]) {
  * how many wait for one. A description whose rows are all inside is a
  * perfect match.
  */
-export function descriptionGroups(inside: Transaction[], all: Transaction[], limit = 30) {
+function descriptionGroups(inside: Transaction[], all: Transaction[], limit = 30) {
   const insideIds = new Set(inside.map((t) => t.id))
   const byKey = groupByDescription(all)
   const keys = [...new Set(inside.map(descKey))]
@@ -103,7 +103,7 @@ function words(rows: Transaction[]): Set<string> {
 
 /** Rows outside that share a word with the inside rows' descriptions, by
  * description: what a desc: rule might catch by mistake. */
-export function lookalikes(inside: Transaction[], all: Transaction[], limit = 12) {
+function lookalikes(inside: Transaction[], all: Transaction[], limit = 12) {
   const insideIds = new Set(inside.map((t) => t.id))
   const insideKeys = new Set(inside.map(descKey))
   const vocab = words(inside)
@@ -196,7 +196,7 @@ export function findRows(data: HistoryData, expr: string): { rows: Transaction[]
   return { rows: data.transactions.filter((t) => evalFilter(node, names.row(t, t.categoryId, t.tagIds))) }
 }
 
-export type MatchTarget = { categoryId: number } | { tagId: number }
+type MatchTarget = { categoryId: number } | { tagId: number }
 
 /**
  * How a filter expression does against the history, for a target category

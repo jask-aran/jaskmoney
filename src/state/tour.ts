@@ -35,7 +35,7 @@ export const triable = (demo: number) => DEMOS[demo]?.id !== "ask"
 
 // ---- The world: demo mode's made-up years, as ordinary rows.
 
-export interface DemoWorld {
+interface DemoWorld {
   /** Newest first, as the Transactions table sorts. */
   rows: Transaction[]
   spending: Transaction[]
@@ -92,7 +92,7 @@ export function demoWorld(categories: Category[]): DemoWorld {
   return world
 }
 
-export interface TourTopics { shop: string; category: string; lastMonth: string; cut: number; categories: string[]
+interface TourTopics { shop: string; category: string; lastMonth: string; cut: number; categories: string[]
   /** This year so far, as a date: range. */
   year: string }
 
@@ -148,7 +148,7 @@ export function filterAt(ms: number, t: TourTopics): string {
   return typed(ms % FILTER_LOOP, [[700, t.shop, 110], [2600, `${t.shop} amt:<-${t.cut}`, 110], [6200, `cat:"${t.category}" date:${t.lastMonth}`, 90], [11800, "", 40]])
 }
 
-export interface AskFrame {
+interface AskFrame {
   /** What's in the bar: ?words while asking, then the filter written. */
   raw: string
   editing: boolean
@@ -160,7 +160,7 @@ export interface AskFrame {
 /** What the Smart search demo asks, and the filter Jev's answer is
  * (scripted: no model is asked), from what the demo year makes good to
  * find. */
-export function askScript(t: TourTopics): Array<{ words: string; filter: string }> {
+function askScript(t: TourTopics): Array<{ words: string; filter: string }> {
   const plain = (c: string) => c.toLowerCase().replace(" & ", " and ")
   const second = t.categories[1] ?? t.category
   return [
@@ -195,7 +195,7 @@ export function askAt(ms: number, t: TourTopics): AskFrame {
   return { raw: "?", editing: true, writing: false, question: null }
 }
 
-export interface Suggestion { categoryId: number; confidence: number; source: "history" | "jev" }
+interface Suggestion { categoryId: number; confidence: number; source: "history" | "jev" }
 export interface Waiting {
   /** Uncategorised, as they'd wait in the app. */
   rows: Transaction[]
@@ -276,7 +276,7 @@ export function suggestAt(ms: number, world: DemoWorld): { state: DemoTry; press
  * to draw in and be looked at. */
 // 3.6 s: 0.9 to draw in (TOUR_CHART_MS), the rest to be looked at; at 2.2
 // it moved on too soon (2026-11-01 first-run test).
-export const CHART_VIEW_MS = 3600
+const CHART_VIEW_MS = 3600
 
 export function chartViewAt(ms: number): number {
   return Math.floor(ms / CHART_VIEW_MS) % CHART_VIEWS.length
@@ -323,14 +323,14 @@ export function tryFrom(demo: number, ms: number, world: DemoWorld): DemoTry {
 }
 
 /** The rows a try shows: what its filter keeps, or what's still waiting. */
-export function tryRows(demo: number, s: DemoTry, world: DemoWorld): Transaction[] {
+function tryRows(demo: number, s: DemoTry, world: DemoWorld): Transaction[] {
   const id = DEMOS[demo]?.id
   if (id === "suggest") return waiting(world).rows.filter((r) => !s.accepted.includes(r.id))
   if (id === "filter") return demoFilter(world, s.filter.value).rows
   return []
 }
 
-export type TryKey = TextKey & { shift?: boolean }
+type TryKey = TextKey & { shift?: boolean }
 
 const capital = (key: TryKey, letter: string) => key.sequence === letter.toUpperCase() || (key.name === letter && !!key.shift)
 

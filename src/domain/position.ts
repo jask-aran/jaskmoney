@@ -24,13 +24,13 @@ import { accountRole, type Account, type Transaction } from "./types"
  *   moneyRules).
  */
 
-export interface SaverBalance {
+interface SaverBalance {
   accountId: number
   name: string
   balance: number
 }
 
-export interface Position {
+interface Position {
   /** Sum of balances of tracked accounts that report one (spending + savers);
    * null when none does. CSV accounts report no balance. */
   netPosition: number | null
@@ -117,7 +117,7 @@ export function computePosition(
   }
 }
 
-export interface PeriodFlows {
+interface PeriodFlows {
   /** Positive total of outflows from spending accounts in scope. */
   spent: number
   /** Total inflows to spending accounts in scope. */
@@ -244,7 +244,7 @@ export function biggestPayee(rows: Transaction[], start: string, end: string): {
   return best
 }
 
-export interface BalancePoint {
+interface BalancePoint {
   dateISO: string
   /** All balance-reporting accounts. */
   net: number
@@ -286,7 +286,7 @@ export function balanceHistory(accounts: Account[], transactions: Transaction[],
 }
 
 /** One saver's end-of-day balances, as `balanceHistory` reconstructs them. */
-export interface SaverHistory {
+interface SaverHistory {
   accountId: number
   name: string
   /** Today's balance. */

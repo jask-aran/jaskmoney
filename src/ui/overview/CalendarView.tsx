@@ -25,7 +25,7 @@ const LABEL = 4
 const MAX_CELL = 20
 const MAX_BAND = 6
 
-export interface CalendarLayout {
+interface CalendarLayout {
   /** How many weeks fit (the latest). */
   weeks: number
   /** Columns each shown week takes, its gap included: the pane's width
@@ -52,7 +52,7 @@ export interface CalendarLayout {
  * in a big pane gets roomy cells with day numbers and amounts; the same
  * month squeezed, or a year anywhere, becomes a carpet of colour.
  */
-export function calendarLayout(weekCount: number, width: number, rows: number): CalendarLayout {
+function calendarLayout(weekCount: number, width: number, rows: number): CalendarLayout {
   const across = Math.max(1, width - LABEL)
   const weeks = Math.max(1, Math.min(weekCount, across))
   const share = Math.min(MAX_CELL * weeks, across)
@@ -108,14 +108,14 @@ export function CalendarView(props: { weeks: Array<Array<CalendarDay | null>>; w
 
 /** Lines the weekdays take: a band each, less the last band's gap (nothing
  * comes after it to keep apart). */
-export function gridLines(layout: CalendarLayout): number {
+function gridLines(layout: CalendarLayout): number {
   return 7 * layout.band - layout.bandGap
 }
 
 /** The grid's lines under the month names, as styled runs: each weekday's
  * label, then each week's cell on that line and its gap column. Days after
  * `through` are blank; a day's mark is in `markColor`. */
-export function calendarLines(weeks: Array<Array<CalendarDay | null>>, layout: CalendarLayout, weekdays: string[], today: string, through?: string, markColor: string = ink.figure): StyledSpan[][] {
+function calendarLines(weeks: Array<Array<CalendarDay | null>>, layout: CalendarLayout, weekdays: string[], today: string, through?: string, markColor: string = ink.figure): StyledSpan[][] {
   const out: StyledSpan[][] = []
   for (let row = 0; row < 7; row++) {
     for (let line = 0; line < layout.band; line++) {
@@ -201,14 +201,14 @@ function placeAt(width: number, items: Array<{ pos: number; text: string }>): st
 }
 
 /** Whether every month's name has room for its spending beside it. */
-export function totalsFitBeside(weeks: Array<Array<CalendarDay | null>>, widths: number[], today: string): boolean {
+function totalsFitBeside(weeks: Array<Array<CalendarDay | null>>, widths: number[], today: string): boolean {
   const { starts, width } = monthStarts(weeks, widths, today)
   return starts.every((m, k) => m.pos + m.name.length + (m.total ? m.total.length + 1 : 0) < (starts[k + 1]?.pos ?? width + 1))
 }
 
 /** Month names over the week each month starts in, with each month's
  * spending so far when every name has room for it, else names alone. */
-export function monthLabels(weeks: Array<Array<CalendarDay | null>>, widths: number[], today: string): string {
+function monthLabels(weeks: Array<Array<CalendarDay | null>>, widths: number[], today: string): string {
   const { starts, width } = monthStarts(weeks, widths, today)
   const beside = totalsFitBeside(weeks, widths, today)
   return placeAt(width, starts.map((m) => ({ pos: m.pos, text: beside && m.total ? `${m.name} ${m.total}` : m.name })))
@@ -216,7 +216,7 @@ export function monthLabels(weeks: Array<Array<CalendarDay | null>>, widths: num
 
 /** Each month's spending alone, under its weeks: for a grid whose names
  * have no room for it. */
-export function monthTotals(weeks: Array<Array<CalendarDay | null>>, widths: number[], today: string): string {
+function monthTotals(weeks: Array<Array<CalendarDay | null>>, widths: number[], today: string): string {
   const { starts, width } = monthStarts(weeks, widths, today)
   return placeAt(width, starts.map((m) => ({ pos: m.pos, text: m.total })))
 }

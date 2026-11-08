@@ -559,7 +559,7 @@ export function AiDialog() {
 
 /** Database & Import › Import history: every CSV import, newest first, a
  * window of IMPORT_HISTORY_ROWS at a time. */
-export function ImportHistoryDialog() {
+function ImportHistoryDialog() {
   const when = (iso: string) => { const d = new Date(iso.includes("T") ? iso : `${iso.replace(" ", "T")}Z`); return Number.isNaN(d.getTime()) ? iso : d.toLocaleString("en-AU", { dateStyle: "medium", timeStyle: "short" }) }
   const imports = () => data.state.imports
   const top = () => Math.min(ui.state.importHistory?.top ?? 0, Math.max(0, imports().length - IMPORT_HISTORY_ROWS))

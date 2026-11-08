@@ -47,7 +47,7 @@ export interface ChartModel {
 
 /** The x-axis line under the plot: a corner under the y-axis, then a rule
  * with a tick wherever a gridline comes down to it. */
-export function xAxisLine(rows: Run[][]): string {
+function xAxisLine(rows: Run[][]): string {
   const gridlines = new Set<number>()
   for (const runs of rows) {
     let col = 0

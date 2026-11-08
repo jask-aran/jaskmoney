@@ -1,6 +1,6 @@
 import { theme, whenThemeChanges } from "../theme"
 
-export interface RowAppearance {
+interface RowAppearance {
   /** Row background; null = the table canvas. */
   bg: string | null
   /** Text colour for every cell, overriding column colours; null = keep them. */

@@ -43,7 +43,7 @@ const TAGS_MIN = 8
  * the category, take the rest so row backgrounds span the table. As in Go
  * (hasMultipleAccountNames), the Account column only shows for several
  * accounts. */
-export function tableLayout(
+function tableLayout(
   contentWidth: number,
   showAccount: boolean,
   showTags: boolean,
@@ -155,7 +155,7 @@ function describe(t: Transaction, width: number, details: boolean): string[] {
 }
 
 /** What the table needs of a category suggestion. */
-export interface TableSuggestion { categoryId: number; confidence: number; source: "history" | "jev" }
+interface TableSuggestion { categoryId: number; confidence: number; source: "history" | "jev" }
 
 /** Every tag in its own colour, comma-joined and cut to `width` (Go app). */
 function formatTags(names: string[], colors: string[], width: number): Span[] {

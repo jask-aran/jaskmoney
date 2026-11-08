@@ -10,7 +10,7 @@ import { parseDay } from "./days"
 interface CsvRecord { fields: string[]; line: number }
 
 /** RFC4180-style records, including escaped quotes and quoted newlines. */
-export function parseCsvRecords(text: string, delimiter: string): { records: CsvRecord[]; errors: ImportPreviewError[] } {
+function parseCsvRecords(text: string, delimiter: string): { records: CsvRecord[]; errors: ImportPreviewError[] } {
   const records: CsvRecord[] = []
   const errors: ImportPreviewError[] = []
   let fields: string[] = [], value = "", quoted = false, start = true, line = 1, rowLine = 1

@@ -33,7 +33,7 @@ export const hatched = (cells: number, fg: string, base: string): Span => ({ tex
 
 /** A label for `labelled`: its options, best first, placed from `at`
  * or centred on `mid`. */
-export interface Label { at?: number; mid?: number; options: Span[][] }
+interface Label { at?: number; mid?: number; options: Span[][] }
 
 /** Labels on a line `width` wide, in priority order: each takes its first
  * option that fits where it goes (kept on the line) without touching one
@@ -63,7 +63,7 @@ export function labelled(width: number, labels: Label[]): Span[] {
 
 /** A part's label for `packLabels`: the part's columns, its options
  * best first, and whether it may go unlabelled before others lose words. */
-export interface PartLabel { from: number; cells: number; options: Span[][]; optional?: boolean }
+interface PartLabel { from: number; cells: number; options: Span[][]; optional?: boolean }
 
 /** The cells between two labels. */
 const LABEL_GAP = 2
@@ -114,7 +114,7 @@ export interface FlowPart { amount: number; color: string; hatch?: boolean | { b
 
 /** A label over columns `cols` (from, to) of a bar rather than one of
  * its parts: a total over several parts, or what's spent of them. */
-export interface FlowSpanLabel { cols: [number, number]; options: Span[][]; optional?: boolean }
+interface FlowSpanLabel { cols: [number, number]; options: Span[][]; optional?: boolean }
 
 /**
  * A flow's bar `width` wide: each part's cells in its colour, the bar

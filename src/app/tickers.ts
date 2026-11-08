@@ -10,7 +10,7 @@ export interface Ticker { name: string; price: number; change: number; group: Ti
 /** What a tape carries: one kind each, as Yahoo types them (instrumentType:
  * EQUITY, INDEX, CURRENCY, CRYPTOCURRENCY, FUTURE), equities split by
  * market. */
-export type TickerGroup = "Indices" | "ASX" | "US" | "FX" | "Crypto" | "Commodities"
+type TickerGroup = "Indices" | "ASX" | "US" | "FX" | "Crypto" | "Commodities"
 
 /** What the tapes show, as Yahoo names them, what to call them, and their kind. */
 const SYMBOLS: Array<[string, string, TickerGroup]> = [
@@ -45,7 +45,7 @@ export async function fetchTickers(fetcher: typeof fetch = fetch): Promise<Ticke
 }
 
 /** Yahoo's spark answer → tickers, in SYMBOLS' order; ones without a price left out. */
-export function parseSpark(body: unknown, names: ReadonlyMap<string, { name: string; group: TickerGroup }>): Ticker[] {
+function parseSpark(body: unknown, names: ReadonlyMap<string, { name: string; group: TickerGroup }>): Ticker[] {
   const results = (body as { spark?: { result?: Array<{ symbol?: string; response?: Array<{ meta?: { regularMarketPrice?: unknown; regularMarketChangePercent?: unknown } }> }> } })?.spark?.result ?? []
   const bySymbol = new Map<string, Ticker>()
   for (const r of results) {

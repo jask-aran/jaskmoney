@@ -8,7 +8,7 @@ import { addTagLink, removeTagLink, stageTagChange } from "../db/tagLinks"
 import { appNow } from "../domain/days"
 import type { CoreContext, Session, TagPatch } from "./context"
 
-export interface CategorizeResult { done: number; pushed: number; failures: string[]; waiting: number; waitingError?: string }
+interface CategorizeResult { done: number; pushed: number; failures: string[]; waiting: number; waitingError?: string }
 
 /** "<what> · N updated in Up · N waiting for Up … · N failed: <first error>". */
 export function operationSummary(head: string, r: Pick<CategorizeResult, "pushed" | "failures"> & Partial<Pick<CategorizeResult, "waiting" | "waitingError">>): string {

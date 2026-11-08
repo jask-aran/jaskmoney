@@ -42,7 +42,7 @@ function namedBar(width: number, parts: Named[]): { bar: Span[]; labels: Span[];
  * of it. `netFrom` is the column the net starts at, for the opening under
  * it.
  */
-export function inBar(width: number, income: number, spent: number): { above: Span[]; bar: Span[]; netFrom: number } {
+function inBar(width: number, income: number, spent: number): { above: Span[]; bar: Span[]; netFrom: number } {
   const within = Math.min(spent, Math.max(0, income)), over = Math.max(0, spent - Math.max(0, income)), net = Math.max(0, income - spent)
   const parts: FlowPart[] = [
     { amount: within, color: INKS.spend! },
@@ -56,7 +56,7 @@ export function inBar(width: number, income: number, spent: number): { above: Sp
 }
 
 /** A saver's part of the net: its change over the range, in its colour. */
-export interface SaverPart { name: string; change: number; color: string }
+interface SaverPart { name: string; change: number; color: string }
 
 /**
  * Where the net went, as a bar `width` wide: what went to each saver in its
@@ -84,7 +84,7 @@ export function categoryBar(width: number, groups: Array<{ amount: number; color
 
 /** A source of spending past what came in, measured: transfers in from
  * outside, a saver drawn on, Spending's own balance. */
-export interface SourcePart { amount: number; color: string; name: string; figure: string }
+interface SourcePart { amount: number; color: string; name: string; figure: string }
 
 /**
  * Spending more than came in: where the spending came from, over what was
@@ -134,7 +134,7 @@ const bare = (name: string) => (leadingEmoji(name) ? name.trim().replace(/^\p{Ex
 /** What a span's flow is drawn from: its flows (computePeriodFlows'), the
  * spending accounts' rows in it, the savers (in their chart's order) and
  * the category groups' spending. */
-export interface SpendFlow {
+interface SpendFlow {
   income: number
   spent: number
   net: number

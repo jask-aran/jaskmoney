@@ -15,7 +15,7 @@ export type HelpLine = Array<{ text: string; tone: HelpTone }>
 
 export const SEARCH_HELP_WIDTH = 76
 
-export function searchHelpLines(full: boolean, width = SEARCH_HELP_WIDTH): HelpLine[] {
+function searchHelpLines(full: boolean, width = SEARCH_HELP_WIDTH): HelpLine[] {
   const keep = keeps(false)
   const out: HelpLine[] = [
     ...wrapText(JQL_SUMMARY, width).map((line): HelpLine => [{ text: line, tone: "text" }]),

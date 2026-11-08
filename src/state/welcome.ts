@@ -23,7 +23,7 @@ import type { Ticker } from "../app/tickers"
  * step (on hello it closes, as skipping does). Leaving any way marks the
  * setup as seen (core welcomed): it doesn't open by itself again.
  */
-export type WelcomeStep = "hello" | "tour" | "up" | "ai" | "email" | "done"
+type WelcomeStep = "hello" | "tour" | "up" | "ai" | "email" | "done"
 export const WELCOME_STEPS: readonly WelcomeStep[] = ["hello", "tour", "up", "ai", "email", "done"]
 export const STEP_NAMES: Record<WelcomeStep, string> = { hello: "Welcome", tour: "Tour", up: "Up Bank", ai: "AI", email: "Email", done: "Ready" }
 
@@ -124,7 +124,7 @@ export interface UpChoice { id: string; name: string; type: string; ownership: s
  * last, on its own. In order, with each one's spending account (null for
  * a spending account itself).
  */
-export function upAccountTree(accounts: UpChoice[]): Array<{ account: UpChoice; under: UpChoice | null }> {
+function upAccountTree(accounts: UpChoice[]): Array<{ account: UpChoice; under: UpChoice | null }> {
   const heads = accounts.filter((a) => a.type !== "SAVER")
   const headOf = (saver: UpChoice) => heads.find((h) => h.ownership === saver.ownership) ?? null
   const savers = accounts.filter((a) => a.type === "SAVER")

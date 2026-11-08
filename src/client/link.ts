@@ -9,7 +9,7 @@ import type { JevClient } from "../ai/jev"
 import type { Llm } from "../ai/llm"
 import type { CoreMethod, CoreParams, CoreResult, CoreState, ProgressOf } from "../core/protocol"
 
-export interface CallOptions<M extends CoreMethod> {
+interface CallOptions<M extends CoreMethod> {
   onProgress?: (data: ProgressOf<M>) => void
   signal?: AbortSignal
   /** In-process links only (tests): stand-ins for Jev and the general model. */

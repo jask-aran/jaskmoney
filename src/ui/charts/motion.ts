@@ -53,7 +53,7 @@ export type ChartCurveId = (typeof CHART_CURVES)[number]["id"]
 export const DEFAULT_CHART_CURVE: ChartCurveId = "cubic"
 
 /** A curve's power; an unknown or missing one is the default's. */
-export function chartCurvePower(id: string | undefined): number {
+function chartCurvePower(id: string | undefined): number {
   return (CHART_CURVES.find((c) => c.id === id) ?? CHART_CURVES.find((c) => c.id === DEFAULT_CHART_CURVE)!).power
 }
 

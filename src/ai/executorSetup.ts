@@ -3,7 +3,7 @@ import { connectExecutor } from "./executor"
 
 type Connect<K extends keyof McpClient> = () => Promise<Pick<McpClient, K | "close">>
 
-export interface MailApp { id: string; slug: string; name: string; requirement: string }
+interface MailApp { id: string; slug: string; name: string; requirement: string }
 export interface MailAccount { label: string; email: string | null; ready: boolean }
 
 function object(value: unknown): Record<string, unknown> {
@@ -52,7 +52,7 @@ function failure(value: unknown): Error {
 }
 
 /** Unwrap both call envelopes; a pause needs the user's action, not a retry. */
-export async function callApp(client: Pick<McpClient, "callTool">, path: string, input: Record<string, unknown>): Promise<unknown> {
+async function callApp(client: Pick<McpClient, "callTool">, path: string, input: Record<string, unknown>): Promise<unknown> {
   const result = await client.callTool("call", { calls: { path, input } })
   const text = (result.content ?? []).flatMap((part) => part.type === "text" ? [part.text] : []).join("")
   let parsed: unknown
@@ -95,7 +95,7 @@ export async function findMailApp(connect: Connect<"callTool"> = connectExecutor
 }
 
 /** Use the catalog entry so setup installs Executor's Gmail app. */
-export async function installGmail(connect: Connect<"callTool"> = connectExecutor): Promise<MailApp> {
+async function installGmail(connect: Connect<"callTool"> = connectExecutor): Promise<MailApp> {
   const client = await connect()
   try {
     const entries = list(await callApp(client, "tools.executor.organization.catalog", { query: { search: "gmail", limit: "5" } }))

@@ -13,7 +13,7 @@ const saverIds = (accounts: Account[]) => new Set(accounts.filter((a) => account
 const isPay = (spending: Set<number>) => (t: Transaction) =>
   t.accountId != null && spending.has(t.accountId) && isIncome(t) && t.amount > 0 && t.categoryName === "Salary"
 
-export interface CyclePay {
+interface CyclePay {
   /** The cycle's first pay day; null with no pay in it yet. */
   dateISO: string | null
   /** All pay in the cycle so far (a final pay or a bonus mid-cycle too). */

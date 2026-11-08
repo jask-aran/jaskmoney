@@ -55,7 +55,7 @@ export interface ParsedSearch {
 
 /** Categories whose name has every one of `words` as a whole word
  * ("travel" names Holidays & Travel; "eating out" names nothing). */
-export function categoriesNamed(words: string, categories: Category[]): Category[] {
+function categoriesNamed(words: string, categories: Category[]): Category[] {
   const split = (s: string) => s.toLowerCase().split(/[^a-z0-9]+/).filter(Boolean)
   const wanted = split(words)
   if (!wanted.length) return []
@@ -139,7 +139,7 @@ const MONTHS = ["january", "february", "march", "april", "may", "june", "july", 
  *   "from", that month to today. "may" counts only after "in", "since" or
  *   the like, being a word too.
  */
-export function searchDates(from: string | null, to: string | null, query: string, today: string, period: Period): Pick<ParsedSearch, "from" | "to" | "period"> {
+function searchDates(from: string | null, to: string | null, query: string, today: string, period: Period): Pick<ParsedSearch, "from" | "to" | "period"> {
   const back = (d: string | null) => (d && d > today ? `${Number(d.slice(0, 4)) - 1}${d.slice(4)}` : d)
   // A first date alone runs to today after "since" and the like; else it's
   // that one day ("spending on 14 October").

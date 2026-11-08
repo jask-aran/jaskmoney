@@ -4,7 +4,7 @@
  * sync reads are declared; the API returns more.
  */
 
-export interface UpMoney {
+interface UpMoney {
   currencyCode: string
   /** Decimal string without symbol, e.g. "-10.56". */
   value: string
@@ -12,7 +12,7 @@ export interface UpMoney {
   valueInBaseUnits: number
 }
 
-export type UpAccountType = "SAVER" | "TRANSACTIONAL" | "HOME_LOAN"
+type UpAccountType = "SAVER" | "TRANSACTIONAL" | "HOME_LOAN"
 
 export interface UpAccount {
   type: "accounts"
@@ -31,7 +31,7 @@ interface UpRelationship<T extends string> {
   data: { type: T; id: string } | null
 }
 
-export type UpTransactionStatus = "HELD" | "SETTLED"
+type UpTransactionStatus = "HELD" | "SETTLED"
 
 export interface UpTransaction {
   type: "transactions"

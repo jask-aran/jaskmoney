@@ -57,26 +57,6 @@ export function budgetCategoryLines(
     .map((c) => line(c.id, catNow.get(c.id) ?? 0, average(catBefore, c.id), catBefore[0] ? catBefore[0].get(c.id) ?? 0 : null, true)).filter(worth).sort(order))])
 }
 
-/** The Budgets tab's Budgets card: with category budgets, their total
- * with the overall one first; the overall budget (everything else; shown
- * unset too), then account budgets, then category budgets in `categories`
- * order. */
-export function budgetListRows(budgets: Budget[], categories: Category[]): ({ kind: "total"; budget: null } | { kind: "overall"; budget: Budget | null } | { kind: "account" | "category"; budget: Budget })[] {
-  // A group, then the categories under it.
-  const order = new Map(categories.map((c, i) => [c.id, i]))
-  const place = ({ scope }: Budget) => {
-    const c = scope.kind === "category" ? categories.find((x) => x.id === scope.categoryId) : undefined
-    if (!c) return Infinity
-    return c.parentId == null ? order.get(c.id)! * 1000 : (order.get(c.parentId) ?? 0) * 1000 + 1 + order.get(c.id)!
-  }
-  return [
-    ...(budgets.some((b) => b.scope.kind === "category") ? [{ kind: "total" as const, budget: null }] : []),
-    { kind: "overall", budget: budgets.find((b) => b.scope.kind === "overall") ?? null },
-    ...budgets.filter((b) => b.scope.kind === "account").map((budget) => ({ kind: "account" as const, budget })),
-    ...budgets.filter((b) => b.scope.kind === "category").sort((a, b) => place(a) - place(b)).map((budget) => ({ kind: "category" as const, budget })),
-  ]
-}
-
 /** What the Budgets tab shows for the cycle `offset` from today's (0 this
  * one, -1 the one before): the cycle, the day it's shown up to (today, or
  * its last day once it's over), and the budgets in force in it. */

@@ -32,8 +32,8 @@
   "fileLines": 600,
   "frozenFiles": {
     "src/app/keys.ts": 2760,
-    "src/db/client.ts": 1000,
-    "src/domain/filter.ts": 930,
+    "src/db/client.ts": 970,
+    "src/domain/filter.ts": 910,
     "src/state/uiStore.ts": 900,
     "src/ui/settings/SettingsTab.tsx": 800,
     "src/ui/overview/OverviewTab.tsx": 770,
@@ -78,6 +78,6 @@
     "src/ui/overview/periodCharts.ts:balancesChart": 100,
     "src/client/wsLink.ts:wsLink": 100
   },
-  "unusedExports": 195,
+  "unusedExports": 5,
   "repeats": 3
 }

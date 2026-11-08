@@ -9,7 +9,7 @@ import type { Llm } from "./llm"
  * changes data; whatever the result proposes, the app checks and the user
  * accepts.
  */
-export interface AgentTool<P extends TSchema = TSchema> {
+interface AgentTool<P extends TSchema = TSchema> {
   name: string
   description: string
   parameters: P
@@ -23,7 +23,7 @@ export function agentTool<P extends TSchema>(tool: AgentTool<P>): AgentTool {
 
 export interface AgentUsage { input: number; output: number; cost: number }
 
-export interface AgentRun<T> {
+interface AgentRun<T> {
   /** The finish tool's arguments, or null (see `error`). */
   result: T | null
   error?: string

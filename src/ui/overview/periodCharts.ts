@@ -290,7 +290,7 @@ function lineMarkers(markers: Array<{ index: number; ink: string }>, days: numbe
  * which is left as its gap; the last runs to the right edge. `starts` are
  * the runs' first days, in `dates`. Widths follow the days a run has: a
  * partial week is narrower. */
-export function dateSlots(starts: string[], dates: string[], width: number): Array<{ col: number; width: number }> {
+function dateSlots(starts: string[], dates: string[], width: number): Array<{ col: number; width: number }> {
   const n = dates.length
   const cols = starts.map((iso) => cellColumn(Math.max(0, dates.indexOf(iso)), n, width))
   return cols.map((col, k) => {
@@ -327,7 +327,7 @@ function unshownPeriod(name: string, amounts: Array<{ value: number; sign: strin
  * nothing. The rules sit where a line chart over the same days draws them,
  * so the panes still share them.
  */
-export function runRules(
+function runRules(
   starts: string[],
   dates: string[],
   width: number,

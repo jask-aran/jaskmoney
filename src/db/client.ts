@@ -3,7 +3,7 @@ import { jaskmoneyHome } from "../storage/home"
 import { Database } from "bun:sqlite"
 import { chmodSync, mkdirSync } from "node:fs"
 import { dirname, join } from "node:path"
-import { addTagLink, decodeStoredTags, removeTagLink } from "./tagLinks"
+import { decodeStoredTags } from "./tagLinks"
 import {
   ACCOUNT_SYNC_COLUMNS_LIST,
   BUDGET_PAY_EARLY_COLUMN,
@@ -202,7 +202,7 @@ const MIGRATIONS: Record<number, (db: Db) => void> = {
  * INCOME_CATEGORIES under it. Adds what is missing (a local category of the
  * same name moves under the group); renames nothing. Returns the group's id.
  */
-export function ensureIncomeCategories(db: Db): number {
+function ensureIncomeCategories(db: Db): number {
   const local = (where: string) => db.query<{ id: number }, []>(`SELECT id FROM categories WHERE ext_id IS NULL AND parent_id IS NULL AND ${where} ORDER BY id LIMIT 1`).get()?.id
   let group = local("income = 1") ?? local("name = 'Income'")
   if (group === undefined) {
@@ -622,12 +622,6 @@ export function savePurchaseLookups(db: Db, lookups: PurchaseLookup[]): void {
   })()
 }
 
-/** Look again: a row's lookup forgotten (it's due at the next one). */
-export function forgetPurchaseLookups(db: Db, ids: number[]): void {
-  const forget = db.query("DELETE FROM purchase_lookups WHERE transaction_id = ?")
-  db.transaction(() => { for (const id of ids) forget.run(id) })()
-}
-
 export function loadSuggestions(db: Db): CategorySuggestion[] {
   return db.query<Omit<CategorySuggestion, "ranked" | "knewBought"> & { ranked: string | null; knewBought: number }, []>(`SELECT s.transaction_id AS transactionId,
     s.category_id AS categoryId, s.confidence, s.source, s.ranked, s.knew_bought AS knewBought
@@ -861,26 +855,6 @@ export function setTransactionCategory(
   } else {
     db.query(`UPDATE transactions SET category_id = ?, category_source = ? WHERE id = ?`).run(categoryId, source, txnId)
   }
-}
-
-export function addTagToTransactions(
-  db: Db,
-  txnIds: number[],
-  tagId: number,
-): void {
-  db.transaction(() => {
-    for (const id of txnIds) addTagLink(db, id, tagId)
-  })()
-}
-
-export function removeTagFromTransactions(
-  db: Db,
-  txnIds: number[],
-  tagId: number,
-): void {
-  db.transaction(() => {
-    for (const id of txnIds) removeTagLink(db, id, tagId)
-  })()
 }
 
 export interface DbInfo {

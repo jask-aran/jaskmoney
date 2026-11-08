@@ -2,7 +2,7 @@ import { addDays, dayOfWeek, daysBetween, dayTime, type WeekStart } from "./days
 import { isSpending } from "./moneyRules"
 import type { Category, Transaction } from "./types"
 
-export interface CategorySpend {
+interface CategorySpend {
   categoryId: number | null
   name: string
   color: string

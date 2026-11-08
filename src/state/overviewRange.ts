@@ -29,7 +29,7 @@ export function overviewRange(
 }
 
 /** Every category line, groups then their subcategories. */
-export function allCategoryLines(range: ReturnType<typeof overviewRange>): CategoryLine[] {
+function allCategoryLines(range: ReturnType<typeof overviewRange>): CategoryLine[] {
   return fitCategoryLines(range.groups, Number.MAX_SAFE_INTEGER)
 }
 

@@ -12,9 +12,9 @@ import type { Category, Transaction } from "./types"
  */
 
 /** Ranges this many days or fewer go a week a row. */
-export const WEEKLY_UP_TO = 62
+const WEEKLY_UP_TO = 62
 /** Trends names this many groups; the rest are "Other". */
-export const TREND_GROUPS = 5
+const TREND_GROUPS = 5
 
 export interface TrendGroup {
   /** The group's category; null for Uncategorised, and for Other. */

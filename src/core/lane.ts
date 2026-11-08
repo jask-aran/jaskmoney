@@ -1,7 +1,7 @@
 import type { CoreState } from "./protocol"
 
 /** The CoreState flags that show a lane's run to the clients. */
-export type LaneFlag = "upSyncing" | "suggesting" | "writingRules"
+type LaneFlag = "upSyncing" | "suggesting" | "writingRules"
 
 /**
  * Work of one kind that runs one at a time: an Up sync, a round of category

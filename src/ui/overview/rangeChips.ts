@@ -10,7 +10,7 @@ import { LOOKBACKS, PERIODS, PERIOD_LABEL, type PeriodId } from "../../domain/ti
  * shortened. The dates on the right show with full labels only (the
  * roomiest spacing that leaves them room); labels aren't shortened for them.
  */
-export interface ChipLayout { gap: string; separator: string; label: (period: PeriodId) => string; timeframe: boolean; groups: boolean }
+interface ChipLayout { gap: string; separator: string; label: (period: PeriodId) => string; timeframe: boolean; groups: boolean }
 
 /** The chip families' names, before each family where there's room: the
  * code's own names for them (TimeframeState's family). */
@@ -26,7 +26,7 @@ const TIERS = [
 ]
 
 /** The chips' width in a tier: each label padded by a space either side. */
-export function chipsWidth(tier: Omit<ChipLayout, "timeframe" | "groups"> & { groups?: boolean }): number {
+function chipsWidth(tier: Omit<ChipLayout, "timeframe" | "groups"> & { groups?: boolean }): number {
   const chips = [...LOOKBACKS, ...PERIODS.map(tier.label), "Custom"].reduce((n, label) => n + label.length + 2, 0)
   const gaps = (LOOKBACKS.length - 1 + PERIODS.length - 1) * tier.gap.length
   // A name and a space before each family.

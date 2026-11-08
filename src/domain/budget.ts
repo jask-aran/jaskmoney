@@ -176,7 +176,7 @@ export interface Budget {
   amount: number
 }
 
-export interface BudgetProgress {
+interface BudgetProgress {
   budget: Budget
   /** Positive dollars spent in the cycle up to and including today. */
   spent: number
@@ -207,7 +207,7 @@ const sum = (values: number[]) => values.reduce((a, b) => a + b, 0)
 export type BudgetSubject = BudgetScope | { kind: "total" }
 
 /** Category ids with a budget of their own, and those under one. */
-export function budgetedCategoryIds(budgets: Budget[], categories: Category[]): Set<number> {
+function budgetedCategoryIds(budgets: Budget[], categories: Category[]): Set<number> {
   const own = new Set(budgets.flatMap((b) => (b.scope.kind === "category" ? [b.scope.categoryId] : [])))
   return new Set(categories.filter((c) => own.has(c.id) || (c.parentId !== null && own.has(c.parentId))).map((c) => c.id))
 }

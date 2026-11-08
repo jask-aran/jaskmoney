@@ -23,7 +23,7 @@ const NET = " · Net position"
 
 /** The pane's height, borders included: a header line per stack, then its
  * rows (the tallest stack sets it). */
-export function accountsPaneHeight(stacks: AccountStack[]): number {
+function accountsPaneHeight(stacks: AccountStack[]): number {
   return 3 + Math.max(0, ...stacks.map((stack) => stack.rows.length))
 }
 
@@ -114,7 +114,7 @@ export function AccountsPane(props: { focused: boolean; width: number }) {
 /** Which stacks fit in `width` cells, keeping `selected` in view: as many
  * before it as fit, then as many after. Stacks are `GAP` apart; a cut-off
  * side takes `MORE` cells for its mark. */
-export function stripWindow(widths: number[], selected: number, width: number): { start: number; end: number } {
+function stripWindow(widths: number[], selected: number, width: number): { start: number; end: number } {
   const span = (start: number, end: number) =>
     widths.slice(start, end).reduce((sum, w) => sum + w, 0) + GAP * (end - start - 1) +
     (start > 0 ? MORE : 0) + (end < widths.length ? MORE : 0)

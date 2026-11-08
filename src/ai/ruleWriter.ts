@@ -16,7 +16,7 @@ import type { Llm } from "./llm"
  */
 export const RULE_WRITER_TURNS = 14
 /** History calls a run may make: after these it tests what it has. */
-export const HISTORY_LOOKS = 10
+const HISTORY_LOOKS = 10
 const PROPOSALS = 8
 
 const SYSTEM = `You write categorisation rules for a personal finance app.
@@ -28,9 +28,9 @@ Answer with finish. Give each rule a short name, the exact category or tag name,
 
 ${FILTER_GUIDE}`
 
-export type ProposedRule = { name: string; expr: string; why: string } & ({ category: string; tag?: never } | { tag: string; category?: never })
+type ProposedRule = { name: string; expr: string; why: string } & ({ category: string; tag?: never } | { tag: string; category?: never })
 
-export interface RuleWriterResult {
+interface RuleWriterResult {
   offers: RuleOffer[]
   /** Proposals the check turned down, and why (shown in logs and tests). */
   rejected: { rule: ProposedRule; reason: string }[]
