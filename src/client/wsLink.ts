@@ -17,26 +17,7 @@ export function wsLink(url: string, { onClose, onOpen }: { onClose?: (reason: st
   let nextId = 1
   let closed: string | null = null
 
-  /** Transactions by id, in the core's order. */
-  const rows = new Map<number, Transaction>()
-  let order: number[] = []
-
-  /** The keyed slices and transactions a message changes, whole again. */
-  function wholeSlices(message: Extract<ServerMessage, { t: "state" }>): Partial<CoreState> {
-    const whole: Record<string, unknown> = {}
-    for (const [slice, change] of Object.entries(message.keyed ?? {})) {
-      const next: Record<string, unknown> = { ...(seen[slice as keyof CoreState] as object | undefined), ...change.set }
-      for (const key of change.remove) delete next[key]
-      whole[slice] = next
-    }
-    if (message.rows) {
-      for (const id of message.rows.remove) rows.delete(id)
-      for (const t of message.rows.set) rows.set(t.id, t)
-      if (message.rows.order) order = message.rows.order
-      whole.transactions = order.map((id) => rows.get(id)!)
-    }
-    return whole
-  }
+  const wholeSlices = createWholeSlices(seen)
 
   const send = (message: ClientMessage) => {
     const text = JSON.stringify(message)
@@ -92,4 +73,29 @@ export function wsLink(url: string, { onClose, onOpen }: { onClose?: (reason: st
     },
     close: () => socket.close(),
   }
+}
+
+function createWholeSlices(seen: Partial<CoreState>) {
+  /** Transactions by id, in the core's order. */
+  const rows = new Map<number, Transaction>()
+  let order: number[] = []
+
+  /** The keyed slices and transactions a message changes, whole again. */
+  function wholeSlices(message: Extract<ServerMessage, { t: "state" }>): Partial<CoreState> {
+    const whole: Record<string, unknown> = {}
+    for (const [slice, change] of Object.entries(message.keyed ?? {})) {
+      const next: Record<string, unknown> = { ...(seen[slice as keyof CoreState] as object | undefined), ...change.set }
+      for (const key of change.remove) delete next[key]
+      whole[slice] = next
+    }
+    if (message.rows) {
+      for (const id of message.rows.remove) rows.delete(id)
+      for (const t of message.rows.set) rows.set(t.id, t)
+      if (message.rows.order) order = message.rows.order
+      whole.transactions = order.map((id) => rows.get(id)!)
+    }
+    return whole
+  }
+
+  return wholeSlices
 }

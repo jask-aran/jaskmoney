@@ -73,6 +73,21 @@ export async function writeRules(
   options: { declined?: RuleDecline[]; focus?: string; signal?: AbortSignal } = {},
 ): Promise<RuleWriterResult> {
   const declined = options.declined ?? []
+  const { tools, finish, categoryNamed, tagNamed, oneTarget } = createRuleWriterTools(data)
+  const run = await runAgent(llm, {
+    system: SYSTEM,
+    prompt: JSON.stringify(ruleWriterBrief(data, declined, options.focus)),
+    tools,
+    finish,
+    maxTurns: RULE_WRITER_TURNS,
+    signal: options.signal,
+  })
+  const result: RuleWriterResult = { offers: [], rejected: [], usage: run.usage, turns: run.turns, calls: run.calls, ...(run.error ? { error: run.error } : {}) }
+  checkRuleProposals(data, declined, run.result?.rules ?? [], result, { categoryNamed, tagNamed, oneTarget })
+  return result
+}
+
+function createRuleWriterTools(data: HistoryData) {
   let looks = 0
   const categoryNamed = (name: string) => data.categories.find((c) => c.name.toLowerCase() === name.trim().toLowerCase())
   const { Type } = piAi()
@@ -136,17 +151,18 @@ export async function writeRules(
       rules: Type.Array(Type.Object({ name: Type.String(), expr: Type.String(), why: Type.String(), ...target }), { maxItems: PROPOSALS }),
     }),
   }
-  const run = await runAgent(llm, {
-    system: SYSTEM,
-    prompt: JSON.stringify(ruleWriterBrief(data, declined, options.focus)),
-    tools,
-    finish,
-    maxTurns: RULE_WRITER_TURNS,
-    signal: options.signal,
-  })
-  const result: RuleWriterResult = { offers: [], rejected: [], usage: run.usage, turns: run.turns, calls: run.calls, ...(run.error ? { error: run.error } : {}) }
+  return { tools, finish, categoryNamed, tagNamed, oneTarget }
+}
+
+function checkRuleProposals(
+  data: HistoryData,
+  declined: RuleDecline[],
+  rules: { name: string; expr: string; why: string; category?: string; tag?: string }[],
+  result: RuleWriterResult,
+  { categoryNamed, tagNamed, oneTarget }: Pick<ReturnType<typeof createRuleWriterTools>, "categoryNamed" | "tagNamed" | "oneTarget">,
+) {
   const seen = new Set(data.savedFilters.map((f) => f.expr.toLowerCase()))
-  for (const rule of run.result?.rules ?? []) {
+  for (const rule of rules) {
     const reject = (reason: string) => result.rejected.push({ rule: rule as ProposedRule, reason })
     if (!oneTarget(rule)) { reject("give exactly one of category or tag"); continue }
     if (rule.tag != null) {
@@ -201,5 +217,4 @@ export async function writeRules(
       why: rule.why,
     })
   }
-  return result
 }

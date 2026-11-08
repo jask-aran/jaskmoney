@@ -62,6 +62,32 @@ function upRejected(error: unknown): boolean {
 }
 
 export function createUpPush(ctx: CoreContext, deps: { ruleOfferNote: (ids: number[]) => string }) {
+  const env = createPushEnvironment(ctx, deps)
+  const { watchUpWrites } = env
+  const applyCategories = createCategoryApplier(ctx, env)
+  const retryPendingCategories = createCategoryRetry(ctx, env)
+  const categorizeTransactions = createCategorizer(ctx, env, applyCategories)
+  const tagPushKey = (p: TagPush) => `${p.id}:${p.tagId}`
+  const pushQueuedTags = createTagPusher(ctx, env, tagPushKey)
+  async function retryPendingTags(): Promise<{ pushed: number; rejected: number; waiting: number }> {
+    if (!ctx.db) return { pushed: 0, rejected: 0, waiting: 0 }
+    const session = ctx.session()
+    const rows = session.db.query<TagPush, []>("SELECT transaction_id AS id, tag_id AS tagId, action FROM tag_pushes ORDER BY transaction_id, tag_id").all()
+    // Nothing waiting: nothing to send or reload (after every sync).
+    if (!rows.length) return { pushed: 0, rejected: 0, waiting: 0 }
+    const { pushed, rejected, waiting } = await pushQueuedTags(session, rows)
+    ctx.ensureCurrent(session, "pending tags were sent to Up")
+    return { pushed, rejected, waiting }
+  }
+
+  const applyTagPatch = createTagApplier(ctx, env, pushQueuedTags)
+
+  return { applyCategories, retryPendingCategories, retryPendingTags, categorizeTransactions, applyTagPatch, watchUpWrites }
+}
+
+type TagPush = { id: number; tagId: number; action: "add" | "remove" }
+
+function createPushEnvironment(ctx: CoreContext, deps: { ruleOfferNote: (ids: number[]) => string }) {
   const { state, refresh, transactions, upClient, recordUndo, categorySnapshot, restoreCategories, setLastRepeat } = ctx
   const { ruleOfferNote } = deps
   // Only the latest local write owns a row when Up answers.
@@ -81,7 +107,7 @@ export function createUpPush(ctx: CoreContext, deps: { ruleOfferNote: (ids: numb
     if (count <= 1) ids.delete(id)
     else ids.set(id, count - 1)
   }
-  let sequence = 0
+  const writeCategories = createCategoryWriter({ state, transactions, reserve, release })
 
   // Rows Up confirmed a change for, heard by each sync fetching meanwhile.
   const watchers = new Set<Set<number>>()
@@ -95,27 +121,14 @@ export function createUpPush(ctx: CoreContext, deps: { ruleOfferNote: (ids: numb
     return { ids, stop: () => { watchers.delete(ids) } }
   }
 
-  /**
-   * Give each row (id → category id) its category: all of them locally at
-   * once, shown before any request, then pushed to the provider where it
-   * can hold the choice: an Up transaction it marks categorisable takes an
-   * Up subcategory, or "no category" for the default (Uncategorised). Pushed
-   * rows then follow the provider (source 'provider'). Anything else (a
-   * local-only category, a transfer, a CSV row) is the user's choice
-   * ('user'). A rejected push puts its row back as it was, unless a newer
-   * local write owns it. `afterLocal` records undo before any push. Up has
-   * no batch endpoint: pushes run PUSH_CONCURRENCY at a time, `onProgress` hearing
-   * each (0 of n first, once every row shows its new category).
-   */
-  async function applyCategories(
-    assignments: Map<number, number>,
-    how: CategoryHow,
-    onProgress?: (pushed: number, total: number) => void,
-    afterLocal?: () => void,
-  ): Promise<CategorizeResult> {
-    const session = ctx.session()
-    const database = session.db
-    const { latest, pushingIds } = pushesFor(session)
+  return { state, refresh, transactions, upClient, recordUndo, categorySnapshot, restoreCategories, setLastRepeat, ruleOfferNote, pushesFor, reserve, release, confirmed, watchUpWrites, writeCategories }
+}
+
+type PushEnvironment = ReturnType<typeof createPushEnvironment>
+
+function createCategoryWriter({ state, transactions, reserve, release }: Pick<PushEnvironment, "state" | "transactions" | "reserve" | "release">) {
+  let sequence = 0
+  function writeCategories(database: Db, pushingIds: Map<number, number>, assignments: Map<number, number>, how: CategoryHow) {
     type Prior = { categoryId: number | null; source: CategorySource | null; ext: string | null; extParent: string | null }
     const pushes = new Map<number, CategoryPush & { prior: Prior; sequence: number }>()
     const writes = new Map<number, number>()
@@ -155,6 +168,34 @@ export function createUpPush(ctx: CoreContext, deps: { ruleOfferNote: (ids: numb
       for (const id of pushes.keys()) release(pushingIds, id)
       throw error
     }
+    return { pushes, writes, local }
+  }
+  return writeCategories
+}
+
+function createCategoryApplier(ctx: CoreContext, { refresh, upClient, pushesFor, release, confirmed, writeCategories }: PushEnvironment) {
+  /**
+   * Give each row (id → category id) its category: all of them locally at
+   * once, shown before any request, then pushed to the provider where it
+   * can hold the choice: an Up transaction it marks categorisable takes an
+   * Up subcategory, or "no category" for the default (Uncategorised). Pushed
+   * rows then follow the provider (source 'provider'). Anything else (a
+   * local-only category, a transfer, a CSV row) is the user's choice
+   * ('user'). A rejected push puts its row back as it was, unless a newer
+   * local write owns it. `afterLocal` records undo before any push. Up has
+   * no batch endpoint: pushes run PUSH_CONCURRENCY at a time, `onProgress` hearing
+   * each (0 of n first, once every row shows its new category).
+   */
+  async function applyCategories(
+    assignments: Map<number, number>,
+    how: CategoryHow,
+    onProgress?: (pushed: number, total: number) => void,
+    afterLocal?: () => void,
+  ): Promise<CategorizeResult> {
+    const session = ctx.session()
+    const database = session.db
+    const { latest, pushingIds } = pushesFor(session)
+    const { pushes, writes, local } = writeCategories(database, pushingIds, assignments, how)
     // A rolled-back transaction must not supersede an in-flight push.
     for (const [id, sequence] of writes) latest.set(id, sequence)
     refresh(writes.keys())
@@ -196,6 +237,10 @@ export function createUpPush(ctx: CoreContext, deps: { ruleOfferNote: (ids: numb
     return { done: local + pushed + waiting, pushed, failures, waiting, waitingError: waitingErrors[0] }
   }
 
+  return applyCategories
+}
+
+function createCategoryRetry(ctx: CoreContext, { state, refresh, upClient, pushesFor, reserve, release, confirmed }: PushEnvironment) {
   /**
    * Push the categorisations Up hasn't confirmed ('pending': the app closed
    * mid-push, or Up didn't answer), after each Up sync. Confirmed rows follow
@@ -253,6 +298,10 @@ export function createUpPush(ctx: CoreContext, deps: { ruleOfferNote: (ids: numb
     return { pushed, rejected, waiting }
   }
 
+  return retryPendingCategories
+}
+
+function createCategorizer(ctx: CoreContext, { state, transactions, recordUndo, categorySnapshot, restoreCategories, setLastRepeat, ruleOfferNote }: PushEnvironment, applyCategories: ReturnType<typeof createCategoryApplier>) {
   /** Put `txnIds` in one category (see applyCategories). */
   async function categorizeTransactions(txnIds: number[], categoryId: number, onProgress?: (pushed: number, total: number) => void): Promise<string> {
     const session = ctx.session()
@@ -278,9 +327,10 @@ export function createUpPush(ctx: CoreContext, deps: { ruleOfferNote: (ids: numb
     return operationSummary(`Categorized ${result.done} → ${category.name}`, result) + ruleOfferNote(txnIds)
   }
 
-  type TagPush = { id: number; tagId: number; action: "add" | "remove" }
-  const tagPushKey = (p: TagPush) => `${p.id}:${p.tagId}`
+  return categorizeTransactions
+}
 
+function createTagPusher(ctx: CoreContext, { refresh, upClient, pushesFor, confirmed }: PushEnvironment, tagPushKey: (p: TagPush) => string) {
   /** State matrix (approved provider deviation from legacy local-only tags):
    * local/IGNORE: link + log only; Up: link + log + latest queued intent.
    * Confirm: update provider snapshot + drop intent; refuse: inverse link +
@@ -351,17 +401,10 @@ export function createUpPush(ctx: CoreContext, deps: { ruleOfferNote: (ids: numb
     return { pushed, pushedIds, rejected, waiting, waitingError, failures: result.failures }
   }
 
-  async function retryPendingTags(): Promise<{ pushed: number; rejected: number; waiting: number }> {
-    if (!ctx.db) return { pushed: 0, rejected: 0, waiting: 0 }
-    const session = ctx.session()
-    const rows = session.db.query<TagPush, []>("SELECT transaction_id AS id, tag_id AS tagId, action FROM tag_pushes ORDER BY transaction_id, tag_id").all()
-    // Nothing waiting: nothing to send or reload (after every sync).
-    if (!rows.length) return { pushed: 0, rejected: 0, waiting: 0 }
-    const { pushed, rejected, waiting } = await pushQueuedTags(session, rows)
-    ctx.ensureCurrent(session, "pending tags were sent to Up")
-    return { pushed, rejected, waiting }
-  }
+  return pushQueuedTags
+}
 
+function createTagApplier(ctx: CoreContext, { state, refresh, transactions, recordUndo, setLastRepeat }: PushEnvironment, pushQueuedTags: ReturnType<typeof createTagPusher>) {
   async function applyTagPatch(txnIds: number[], patch: TagPatch, how: TagHow = "picker"): Promise<string> {
     const session = ctx.session()
     const database = session.db
@@ -414,5 +457,5 @@ export function createUpPush(ctx: CoreContext, deps: { ruleOfferNote: (ids: numb
     return operationSummary(`Tags: ${labels.join(", ")} on ${updated.size}`, { ...result, pushed: result.pushedIds.size, failures })
   }
 
-  return { applyCategories, retryPendingCategories, retryPendingTags, categorizeTransactions, applyTagPatch, watchUpWrites }
+  return applyTagPatch
 }
