@@ -16,6 +16,8 @@ import { onPointer } from "../../app/pointer"
 import { markCustomCell, pageCustomCalendar, setCustomView } from "../../app/keys"
 
 type Edit = NonNullable<typeof ui.state.customEdit>
+/** The fields' range as it reads, or null while one doesn't. */
+type Read = () => Exclude<ReturnType<typeof readCustomRange>, { error: string }> | null
 
 /** A day's cell is six columns, a month's or a year's twelve; a blank
  * line between weeks. */
@@ -43,6 +45,10 @@ function calendarCellLook(state: { inRange: boolean; end: boolean; cursor: boole
   return { fg: state.today ? ink.figure : ink.label, bg: undefined, bold: state.today }
 }
 
+/** Where a click on the dialog counts. */
+const here = (s: string) => s === "overview.custom"
+const today = () => appToday()
+
 /**
  * The Custom range dialog: a calendar to mark the range on, and From and
  * To to type it (tab). The calendar has the focus as it opens: arrows move
@@ -51,15 +57,65 @@ function calendarCellLook(state: { inRange: boolean; end: boolean; cursor: boole
  * it ends, and applies it. Keys: app/keys handleOverviewCustom.
  */
 export function CustomRangeDialog(props: { edit: Edit }) {
-  const here = (s: string) => s === "overview.custom"
-  const today = () => appToday()
   const read = () => {
     const r = readCustomRange(props.edit.start.value, props.edit.end.value, today())
     return "error" in r ? null : r
   }
+  const hints = () => ({
+    page: "←→ page · ↓ calendar · tab next · esc cancel",
+    views: "←→ Days, Months, Years · ↓ calendar · tab next",
+    grid: props.edit.mark ? "enter where it ends · esc undo · arrows move" : "enter mark · arrows move, off the edge to leave · tab",
+    from: "type a date · enter apply · ↑ calendar · tab next",
+    to: "type a date · enter apply · ↑ calendar · tab next",
+  })[props.edit.focus]
+  return (
+    <Modal title="Custom range" width={DIALOG_WIDTH} hints={hints()}>
+      <text> </text>
+      <CustomRangePager edit={props.edit} />
+      <text> </text>
+      <CustomRangeCalendar edit={props.edit} read={read} />
+      <CustomRangeFields edit={props.edit} read={read} />
+      {/* What enter found wrong, or what the fields take while one doesn't
+          read. */}
+      <Show when={props.edit.error || !read()}>
+        <text wrapMode="none" paddingLeft={1} fg={props.edit.error ? tone.bad : ink.note}>{props.edit.error || CUSTOM_DATE_FORMS}</text>
+      </Show>
+    </Modal>
+  )
+}
+
+/** Where the calendar is, between ‹ › (each a click), and its views. */
+function CustomRangePager(props: { edit: Edit }) {
+  const pageLook = () => chipLook({ active: false, cursor: props.edit.focus === "page" })
+  return (
+    <box flexDirection="row" justifyContent="space-between" paddingLeft={1} paddingRight={1}>
+      <box flexDirection="row">
+        <text wrapMode="none" onMouseDown={onPointer(here, () => pageCustomCalendar(ui, -1))}><S fg={tone.key} bold>{"‹ "}</S></text>
+        <text wrapMode="none"><S fg={props.edit.focus === "page" ? pageLook().fg : ink.strong} bg={pageLook().bg} bold>{` ${pageLabel(props.edit.cursor, props.edit.view)} `}</S></text>
+        <text wrapMode="none" onMouseDown={onPointer(here, () => pageCustomCalendar(ui, 1))}><S fg={tone.key} bold>{" ›"}</S></text>
+      </box>
+      <box flexDirection="row">
+        <For each={CALENDAR_VIEWS}>
+          {(view) => {
+            const l = () => chipLook({ active: props.edit.view === view, cursor: props.edit.focus === "views" && props.edit.view === view })
+            return (
+              <text wrapMode="none" onMouseDown={onPointer(here, () => setCustomView(ui, view))}>
+                <S fg={l().fg} bg={l().bg} bold={l().bold}>{` ${CALENDAR_VIEW_LABELS[view]} `}</S>
+              </text>
+            )
+          }}
+        </For>
+      </box>
+    </box>
+  )
+}
+
+/** The calendar: the days of the cursor's month under their weekday
+ * names, or the months or years around it. */
+function CustomRangeCalendar(props: { edit: Edit; read: Read }) {
   // The range drawn: the one a waiting mark would make with the cursor,
   // else the fields' as they read.
-  const shown = () => (props.edit.mark ? markedRange(props.edit.mark, props.edit.cursor, props.edit.view) : read())
+  const shown = () => (props.edit.mark ? markedRange(props.edit.mark, props.edit.cursor, props.edit.view) : props.read())
   const calendarFocused = () => props.edit.focus === "grid"
   const look = (iso: string, view: CalendarView) => {
     const unit = unitOf(iso, view), range = shown()
@@ -85,6 +141,38 @@ export function CustomRangeDialog(props: { edit: Edit }) {
     )
   }
   const blank = (width: number) => <text wrapMode="none">{" ".repeat(width)}</text>
+  return (
+    <box flexDirection="column" alignItems="center" height={GRID_LINES + 1}>
+      <Show when={props.edit.view === "days"} fallback={
+        <box flexDirection="column" paddingTop={1}>
+          <Index each={unitGrid(props.edit.cursor, props.edit.view as "months" | "years")}>
+            {(row, r) => (
+              <box flexDirection="row" marginBottom={r < 2 ? 3 : 0}>
+                <Index each={row()}>{(iso) => cell(iso, () => props.edit.view, UNIT_CELL)}</Index>
+              </box>
+            )}
+          </Index>
+        </box>
+      }>
+        <text wrapMode="none" fg={ink.note}>{weekdayNames(data.state.weekStart).map((d) => " ".repeat(Math.ceil((DAY_CELL - 2) / 2)) + d + " ".repeat(Math.floor((DAY_CELL - 2) / 2))).join("")}</text>
+        <Index each={monthWeeks(props.edit.cursor, data.state.weekStart)}>
+          {(week, w) => (
+            <box flexDirection="row" marginTop={w > 0 ? 1 : 0}>
+              <Index each={week()}>{(iso) => (
+                <Show when={iso()} fallback={blank(DAY_CELL)}>
+                  {cell(() => iso() ?? "", () => "days", DAY_CELL)}
+                </Show>
+              )}</Index>
+            </box>
+          )}
+        </Index>
+      </Show>
+    </box>
+  )
+}
+
+/** What's marked, to type over (tab), and how long. */
+function CustomRangeFields(props: { edit: Edit; read: Read }) {
   const field = (focus: "from" | "to", name: string) => (
     <text wrapMode="none" onMouseDown={onPointer(here, () => {
       const e = ui.state.customEdit
@@ -94,77 +182,13 @@ export function CustomRangeDialog(props: { edit: Edit }) {
       <TextInput field={focus === "from" ? props.edit.start : props.edit.end} focused={props.edit.focus === focus} />
     </text>
   )
-  const hints = () => ({
-    page: "←→ page · ↓ calendar · tab next · esc cancel",
-    views: "←→ Days, Months, Years · ↓ calendar · tab next",
-    grid: props.edit.mark ? "enter where it ends · esc undo · arrows move" : "enter mark · arrows move, off the edge to leave · tab",
-    from: "type a date · enter apply · ↑ calendar · tab next",
-    to: "type a date · enter apply · ↑ calendar · tab next",
-  })[props.edit.focus]
-  const pageLook = () => chipLook({ active: false, cursor: props.edit.focus === "page" })
   return (
-    <Modal title="Custom range" width={DIALOG_WIDTH} hints={hints()}>
-      <text> </text>
-      {/* Where the calendar is, between ‹ › (each a click), and its views. */}
-      <box flexDirection="row" justifyContent="space-between" paddingLeft={1} paddingRight={1}>
-        <box flexDirection="row">
-          <text wrapMode="none" onMouseDown={onPointer(here, () => pageCustomCalendar(ui, -1))}><S fg={tone.key} bold>{"‹ "}</S></text>
-          <text wrapMode="none"><S fg={props.edit.focus === "page" ? pageLook().fg : ink.strong} bg={pageLook().bg} bold>{` ${pageLabel(props.edit.cursor, props.edit.view)} `}</S></text>
-          <text wrapMode="none" onMouseDown={onPointer(here, () => pageCustomCalendar(ui, 1))}><S fg={tone.key} bold>{" ›"}</S></text>
-        </box>
-        <box flexDirection="row">
-          <For each={CALENDAR_VIEWS}>
-            {(view) => {
-              const l = () => chipLook({ active: props.edit.view === view, cursor: props.edit.focus === "views" && props.edit.view === view })
-              return (
-                <text wrapMode="none" onMouseDown={onPointer(here, () => setCustomView(ui, view))}>
-                  <S fg={l().fg} bg={l().bg} bold={l().bold}>{` ${CALENDAR_VIEW_LABELS[view]} `}</S>
-                </text>
-              )
-            }}
-          </For>
-        </box>
+    <box flexDirection="row" paddingLeft={1} paddingRight={1} justifyContent="space-between">
+      <box flexDirection="row" gap={3}>
+        {field("from", "From  ")}
+        {field("to", "To  ")}
       </box>
-      <text> </text>
-      <box flexDirection="column" alignItems="center" height={GRID_LINES + 1}>
-        <Show when={props.edit.view === "days"} fallback={
-          <box flexDirection="column" paddingTop={1}>
-            <Index each={unitGrid(props.edit.cursor, props.edit.view as "months" | "years")}>
-              {(row, r) => (
-                <box flexDirection="row" marginBottom={r < 2 ? 3 : 0}>
-                  <Index each={row()}>{(iso) => cell(iso, () => props.edit.view, UNIT_CELL)}</Index>
-                </box>
-              )}
-            </Index>
-          </box>
-        }>
-          <text wrapMode="none" fg={ink.note}>{weekdayNames(data.state.weekStart).map((d) => " ".repeat(Math.ceil((DAY_CELL - 2) / 2)) + d + " ".repeat(Math.floor((DAY_CELL - 2) / 2))).join("")}</text>
-          <Index each={monthWeeks(props.edit.cursor, data.state.weekStart)}>
-            {(week, w) => (
-              <box flexDirection="row" marginTop={w > 0 ? 1 : 0}>
-                <Index each={week()}>{(iso) => (
-                  <Show when={iso()} fallback={blank(DAY_CELL)}>
-                    {cell(() => iso() ?? "", () => "days", DAY_CELL)}
-                  </Show>
-                )}</Index>
-              </box>
-            )}
-          </Index>
-        </Show>
-      </box>
-      {/* What's marked, to type over (tab), and how long. */}
-      <box flexDirection="row" paddingLeft={1} paddingRight={1} justifyContent="space-between">
-        <box flexDirection="row" gap={3}>
-          {field("from", "From  ")}
-          {field("to", "To  ")}
-        </box>
-        <text wrapMode="none" fg={ink.note}>{read() ? `${read()!.days} days` : ""}</text>
-      </box>
-      {/* What enter found wrong, or what the fields take while one doesn't
-          read. */}
-      <Show when={props.edit.error || !read()}>
-        <text wrapMode="none" paddingLeft={1} fg={props.edit.error ? tone.bad : ink.note}>{props.edit.error || CUSTOM_DATE_FORMS}</text>
-      </Show>
-    </Modal>
+      <text wrapMode="none" fg={ink.note}>{props.read() ? `${props.read()!.days} days` : ""}</text>
+    </box>
   )
 }

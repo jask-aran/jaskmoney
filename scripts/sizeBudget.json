@@ -30,18 +30,12 @@
     "src/up": 808
   },
   "fileLines": 600,
-  "frozenFiles": {
-    "src/ui/settings/SettingsTab.tsx": 800
-  },
+  "frozenFiles": {},
   "functionLines": 80,
   "frozenFunctions": {
     "src/app/keys/manager.ts:handleManagerTxns": 160,
     "src/app/keys/overview.ts:handleOverview": 150,
     "src/app/keys/settings.ts:handleSettingsEditor": 140,
-    "src/ui/manager/TransactionTable.tsx:TransactionTable": 140,
-    "src/ui/overview/CustomRangeDialog.tsx:CustomRangeDialog": 130,
-    "src/ui/settings/SettingsTab.tsx:TaxonomyPane": 110,
-    "src/ui/settings/SettingsTab.tsx:SettingsTab": 90,
     "src/app/commands.ts:registry": 110,
     "src/app/keys/ai.ts:handleAiDialog": 100
   },

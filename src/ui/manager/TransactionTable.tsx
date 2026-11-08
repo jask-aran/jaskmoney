@@ -188,7 +188,8 @@ function pendingMark(): string {
   return data.state.icons ? "\uf017" : "◷"
 }
 
-export function TransactionTable(props: {
+/** What the table is given. */
+interface TableProps {
   rows: Transaction[]
   /** Index of the first row in view, and how many fit. */
   top: number
@@ -215,10 +216,13 @@ export function TransactionTable(props: {
   /** How far the rows have drawn in (0–1): those past it, top to bottom,
    * not yet drawn. */
   reveal?: number
-}) {
+}
+
+type Layout = ReturnType<typeof tableLayout>
+
+export function TransactionTable(props: TableProps) {
   const widest = createMemo(longest)
   const layout = createMemo(() => tableLayout(props.width, props.showAccount, props.showTags, widest()))
-  const mark = (column: string) => props.sortMark?.(column) ?? ""
   const windowRows = createMemo(() => props.rows.slice(props.top, props.top + props.visible))
   const rowsIn = () => (props.reveal == null || props.reveal >= 1 ? Infinity : Math.ceil(props.reveal * windowRows().length))
   return (
@@ -227,86 +231,101 @@ export function TransactionTable(props: {
       ui.applyJump("mgr.transactions")
       moveTxnCursor(ui, data, (event.scroll.direction === "down" ? 3 : -3) * event.scroll.delta, false)
     })}>
-      <text fg={ink.label}>
-        <b>
-          {" ".repeat(columns.marker)}
-          {`Date${mark("date")}`.padEnd(columns.date)}
-          {" ".repeat(columns.gap)}
-          {`Amount${mark("amount")}`.padEnd(columns.amount)}
-          {" ".repeat(columns.gap)}
-          {fit(`Description${mark("description")}`, layout().description)}
-          {layout().showAccount ? " ".repeat(columns.gap) + `Account${mark("account")}`.padEnd(columns.account) : ""}
-          {" ".repeat(columns.gap)}
-          {`Category${mark("category")}`.padEnd(layout().category)}
-          {layout().showTags ? " ".repeat(columns.gap) + fit(props.suggestions ? "Details" : "Tags", layout().tags) : ""}
-        </b>
-      </text>
+      <TableHeader table={props} layout={layout} />
       <Show when={props.rows.length} fallback={<text fg={ink.note}>{props.empty}</text>}>
         <box flexGrow={1} flexDirection="column">
           {/* Index keeps each screen row and updates it in place: a filter
               that changes every row would otherwise rebuild them all. */}
           <Index each={windowRows()}>
-            {(r, i) => {
-              const absIndex = () => props.top + i
-              const isCursor = () => props.cursor === absIndex()
-              // Booleans as memos: the maps they read are rebuilt whole on a
-              // write, and a row whose own state didn't change must not redraw.
-              const selected = createMemo(() => !!props.selectedIds?.[r().id])
-              const hl = createMemo(() => !!props.highlighted?.[r().id])
-              // OpenTUI cannot repaint a previous cell to transparency: it must
-              // receive the table canvas colour when a row loses its state bg.
-              // This is visually identical to the unstyled table background.
-              const look = createMemo(() => rowAppearance(selected(), hl(), isCursor()))
-              const rowBg = () => look().bg ?? theme.canvas
-              const fg = (column: string) => look().fg ?? column
-              // A near miss reads quieter than a match, unless cursor, selection or range colour it.
-              const near = createMemo(() => !!props.nearMiss?.(r().id))
-              const faint = (column: string) => look().fg ?? (near() ? ink.note : column)
-              // Up holds (pending) render italic, with a clock, until they settle.
-              const held = () => r().status === "HELD"
-              const tags = createMemo(() => {
-                if (props.suggestions) return formatDetails(r(), layout().tags)
-                const candidate = props.tagCandidate?.(r().id)
-                return candidate ? formatTagCandidate(candidate, r().tagNames, r().tagColors, layout().tags) : formatTags(r().tagNames, r().tagColors, layout().tags)
-              })
-              const category = createMemo(() => props.suggestions
-                ? formatSuggestion(props.suggestions[r().id], layout().category)
-                : withAskScore(formatCategory(r().categoryId, r().categoryName, r().categoryColor, layout().category), props.askScore?.(r().id), layout().category))
-              const strong = () => look().bold
-              // One styled line (StyledLine), not a span per cell: a page
-              // or a sort rewrites every row.
-              const line = createMemo((): StyledSpan[] => {
-                const bg = rowBg(), bold = strong(), cat = category(), catBold = bold && (!cat.muted || !!look().fg)
-                return [
-                  { text: selected() ? "*" : near() ? "≈" : " ", fg: fg(tone.key), bg, bold },
-                  { text: fmtDate(r().dateISO).padEnd(columns.date), fg: faint(ink.label), bg, bold },
-                  { text: " ".repeat(columns.gap), fg: fg(ink.figure), bg, bold },
-                  { text: formatMoney(r().amount).padEnd(columns.amount - 2), fg: faint(amountColor(r().amount)), bg, bold, italic: held() },
-                  { text: held() ? `${pendingMark()} ` : "  ", fg: fg(ink.note), bg },
-                  { text: " ".repeat(columns.gap), fg: fg(ink.figure), bg, bold },
-                  ...describe(r(), layout().description, !!props.suggestions).map((part, k) => ({ text: part, fg: k ? faint(ink.note) : faint(ink.figure), bg, bold: bold && !k, italic: held() })),
-                  { text: layout().showAccount ? " ".repeat(columns.gap) + fit(r().accountName, columns.account) : "", fg: fg(ink.label), bg, bold },
-                  { text: " ".repeat(columns.gap), fg: fg(ink.figure), bg, bold },
-                  ...(cat.lead ? [{ text: cat.lead, fg: fg(cat.leadColor ?? ink.note), bg }] : []),
-                  { text: cat.marker, fg: fg(cat.markerColor), bg, bold: catBold },
-                  { text: cat.text, fg: fg(cat.textColor), bg, bold: catBold, dim: cat.muted && !look().fg, italic: cat.italic },
-                  { text: cat.note ?? "", fg: fg(cat.noteColor ?? ink.note), bg },
-                  ...(layout().showTags ? [
-                    { text: " ".repeat(columns.gap), fg: fg(ink.figure), bg, bold },
-                    ...tags().map((span) => ({ text: span.text, fg: fg(span.fg), bg, bold })),
-                  ] : []),
-                ]
-              })
-              return <box height={1} width="100%" onMouseDown={onPointer((scope) => scope === "bar" || scope === "manager.txns" || scope === "manager.accounts", () => {
-                const open = ui.state.focusedSection === "mgr.transactions" && ui.state.managerCursor === absIndex()
-                ui.applyJump("mgr.transactions")
-                moveTxnCursor(ui, data, absIndex() - ui.state.managerCursor, false)
-                if (open) openTransaction(ui, data)
-              })}><StyledLine spans={i < rowsIn() ? line() : []} bg={i < rowsIn() ? rowBg() : theme.canvas} /></box>
-            }}
+            {(r, i) => <TransactionRow table={props} layout={layout} r={r} i={i} rowsIn={rowsIn} />}
           </Index>
         </box>
       </Show>
     </box>
   )
+}
+
+/** The column headings, each with its sort mark. */
+function TableHeader(props: { table: TableProps; layout: () => Layout }) {
+  const mark = (column: string) => props.table.sortMark?.(column) ?? ""
+  const layout = props.layout
+  return (
+    <text fg={ink.label}>
+      <b>
+        {" ".repeat(columns.marker)}
+        {`Date${mark("date")}`.padEnd(columns.date)}
+        {" ".repeat(columns.gap)}
+        {`Amount${mark("amount")}`.padEnd(columns.amount)}
+        {" ".repeat(columns.gap)}
+        {fit(`Description${mark("description")}`, layout().description)}
+        {layout().showAccount ? " ".repeat(columns.gap) + `Account${mark("account")}`.padEnd(columns.account) : ""}
+        {" ".repeat(columns.gap)}
+        {`Category${mark("category")}`.padEnd(layout().category)}
+        {layout().showTags ? " ".repeat(columns.gap) + fit(props.table.suggestions ? "Details" : "Tags", layout().tags) : ""}
+      </b>
+    </text>
+  )
+}
+
+/** One screen row: `i` its place in the window, `r` the transaction there. */
+function TransactionRow(row: { table: TableProps; layout: () => Layout; r: () => Transaction; i: number; rowsIn: () => number }) {
+  // The table's props, and the row's accessors (stable: read once).
+  const props = row.table
+  const { layout, r, i, rowsIn } = row
+  const absIndex = () => props.top + i
+  const isCursor = () => props.cursor === absIndex()
+  // Booleans as memos: the maps they read are rebuilt whole on a
+  // write, and a row whose own state didn't change must not redraw.
+  const selected = createMemo(() => !!props.selectedIds?.[r().id])
+  const hl = createMemo(() => !!props.highlighted?.[r().id])
+  // OpenTUI cannot repaint a previous cell to transparency: it must
+  // receive the table canvas colour when a row loses its state bg.
+  // This is visually identical to the unstyled table background.
+  const look = createMemo(() => rowAppearance(selected(), hl(), isCursor()))
+  const rowBg = () => look().bg ?? theme.canvas
+  const fg = (column: string) => look().fg ?? column
+  // A near miss reads quieter than a match, unless cursor, selection or range colour it.
+  const near = createMemo(() => !!props.nearMiss?.(r().id))
+  const faint = (column: string) => look().fg ?? (near() ? ink.note : column)
+  // Up holds (pending) render italic, with a clock, until they settle.
+  const held = () => r().status === "HELD"
+  const tags = createMemo(() => {
+    if (props.suggestions) return formatDetails(r(), layout().tags)
+    const candidate = props.tagCandidate?.(r().id)
+    return candidate ? formatTagCandidate(candidate, r().tagNames, r().tagColors, layout().tags) : formatTags(r().tagNames, r().tagColors, layout().tags)
+  })
+  const category = createMemo(() => props.suggestions
+    ? formatSuggestion(props.suggestions[r().id], layout().category)
+    : withAskScore(formatCategory(r().categoryId, r().categoryName, r().categoryColor, layout().category), props.askScore?.(r().id), layout().category))
+  const strong = () => look().bold
+  // One styled line (StyledLine), not a span per cell: a page
+  // or a sort rewrites every row.
+  const line = createMemo((): StyledSpan[] => {
+    const bg = rowBg(), bold = strong(), cat = category(), catBold = bold && (!cat.muted || !!look().fg)
+    return [
+      { text: selected() ? "*" : near() ? "≈" : " ", fg: fg(tone.key), bg, bold },
+      { text: fmtDate(r().dateISO).padEnd(columns.date), fg: faint(ink.label), bg, bold },
+      { text: " ".repeat(columns.gap), fg: fg(ink.figure), bg, bold },
+      { text: formatMoney(r().amount).padEnd(columns.amount - 2), fg: faint(amountColor(r().amount)), bg, bold, italic: held() },
+      { text: held() ? `${pendingMark()} ` : "  ", fg: fg(ink.note), bg },
+      { text: " ".repeat(columns.gap), fg: fg(ink.figure), bg, bold },
+      ...describe(r(), layout().description, !!props.suggestions).map((part, k) => ({ text: part, fg: k ? faint(ink.note) : faint(ink.figure), bg, bold: bold && !k, italic: held() })),
+      { text: layout().showAccount ? " ".repeat(columns.gap) + fit(r().accountName, columns.account) : "", fg: fg(ink.label), bg, bold },
+      { text: " ".repeat(columns.gap), fg: fg(ink.figure), bg, bold },
+      ...(cat.lead ? [{ text: cat.lead, fg: fg(cat.leadColor ?? ink.note), bg }] : []),
+      { text: cat.marker, fg: fg(cat.markerColor), bg, bold: catBold },
+      { text: cat.text, fg: fg(cat.textColor), bg, bold: catBold, dim: cat.muted && !look().fg, italic: cat.italic },
+      { text: cat.note ?? "", fg: fg(cat.noteColor ?? ink.note), bg },
+      ...(layout().showTags ? [
+        { text: " ".repeat(columns.gap), fg: fg(ink.figure), bg, bold },
+        ...tags().map((span) => ({ text: span.text, fg: fg(span.fg), bg, bold })),
+      ] : []),
+    ]
+  })
+  return <box height={1} width="100%" onMouseDown={onPointer((scope) => scope === "bar" || scope === "manager.txns" || scope === "manager.accounts", () => {
+    const open = ui.state.focusedSection === "mgr.transactions" && ui.state.managerCursor === absIndex()
+    ui.applyJump("mgr.transactions")
+    moveTxnCursor(ui, data, absIndex() - ui.state.managerCursor, false)
+    if (open) openTransaction(ui, data)
+  })}><StyledLine spans={i < rowsIn() ? line() : []} bg={i < rowsIn() ? rowBg() : theme.canvas} /></box>
 }
